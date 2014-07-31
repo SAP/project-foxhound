@@ -23,6 +23,8 @@
 #include "js/GCAPI.h"
 #include "js/RootingAPI.h"
 
+#include "taint.h"
+
 class JSDependentString;
 class JSExtensibleString;
 class JSExternalString;
@@ -152,6 +154,9 @@ class JSString : public js::gc::BarrieredCell<JSString>
             };
             uintptr_t              flattenData;         /* JSRope (temporary while flattening) */
         } u1;
+#ifdef _TAINT_ON_
+        TaintStringRef *startTaint;
+#endif
         union {
             union {
                 /* JS(Fat)InlineString */
@@ -311,6 +316,58 @@ class JSString : public js::gc::BarrieredCell<JSString>
     void setNonInlineChars(const CharT *chars);
 
   public:
+
+#ifdef _TAINT_ON_
+    MOZ_ALWAYS_INLINE
+    bool isTainted() const {
+        return d.startTaint != NULL;
+    }
+
+    //MOZ_ALWAYS_INLINE
+    TaintStringRef *getTopTaintRef() {
+        return d.startTaint;
+    }
+
+    //MOZ_ALWAYS_INLINE
+    void addTaintRef(TaintStringRef *tsr) {
+        if(!tsr)
+            return;
+
+        if(isTainted()) {
+            tsr->next = d.startTaint;
+        }
+        d.startTaint = tsr;
+    }
+
+    //MOZ_ALWAYS_INLINE
+    TaintStringRef *newTaintRefMem() {
+        void *p = js_malloc(sizeof(TaintStringRef));
+
+        return ()
+    }
+
+    //MOZ_ALWAYS_INLINE
+    TaintStringRef *addNewTaintRef(uint32_t begin, uint32_t end, TaintNode* node = nullptr) {
+        void *p = newTaintRefMem();
+        TaintStringRef *newtsr = new (p) TaintStringRef(begin, end, node);
+        this->addTaintRef(newtsr);
+
+        return newtsr;
+    }
+
+    //MOZ_ALWAYS_INLINE
+    void removeAllTaint() {
+        for(TaintStringRef *tsr = d.startTaint; tsr != nullptr; ) {
+            TaintStringRef *next = tsr->next;
+            tsr->~TaintStringRef();
+            js_free(tsr);
+            tsr = next;
+        }
+
+        d.startTaint = nullptr;
+    }
+#endif
+
     /* All strings have length. */
 
     MOZ_ALWAYS_INLINE

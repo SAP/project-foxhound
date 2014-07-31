@@ -20,6 +20,8 @@
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 
+#include "taint.h"
+
 /*
  * This macro checks if the stack pointer has exceeded a given limit. If
  * |tolerance| is non-zero, it returns true only if the stack pointer has
@@ -592,6 +594,9 @@ struct String
     static const uint32_t TYPE_FLAGS_MASK  = JS_BIT(6) - 1;
     uint32_t flags;
     uint32_t length;
+#ifdef _TAINT_ON_
+        TaintStringRef *startTaint;
+#endif
     union {
         const JS::Latin1Char *nonInlineCharsLatin1;
         const jschar *nonInlineCharsTwoByte;

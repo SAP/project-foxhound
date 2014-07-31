@@ -166,6 +166,7 @@ UNIFIED_SOURCES += [
     'jswrapper.cpp',
     'perf/jsperf.cpp',
     'prmjtime.cpp',
+    'taint.cpp',
     'vm/ArgumentsObject.cpp',
     'vm/ArrayBufferObject.cpp',
     'vm/CallNonGenericMethod.cpp',

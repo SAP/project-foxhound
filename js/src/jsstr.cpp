@@ -61,6 +61,8 @@
 #include "vm/String-inl.h"
 #include "vm/StringObject-inl.h"
 
+#include "taint.h"
+
 using namespace js;
 using namespace js::gc;
 using namespace js::types;
@@ -4124,8 +4126,23 @@ static const JSFunctionSpec string_methods[] = {
     JS_SELF_HOSTED_FN("fontsize", "String_fontsize",   1,0),
 
     JS_SELF_HOSTED_FN("@@iterator", "String_iterator", 0,0),
+
+#if _TAINT_ON_
+    TAINT_ADD_JSSTR_METHODS
+#endif
+
     JS_FS_END
 };
+
+#if _TAINT_ON_
+
+static const
+JSPropertySpec string_properties_taint[] = {
+    TAINT_ADD_JSSTR_PROPS
+    JS_PS_END
+};
+
+#endif
 
 bool
 js_String(JSContext *cx, unsigned argc, Value *vp)
@@ -4215,6 +4232,9 @@ static const JSFunctionSpec string_static_methods[] = {
 #if EXPOSE_INTL_API
     JS_SELF_HOSTED_FN("localeCompare", "String_static_localeCompare", 2,0),
 #endif
+#if _TAINT_ON_
+    TAINT_ADD_JSSTR_STATIC_METHODS
+#endif
     JS_FS_END
 };
 
@@ -4250,6 +4270,12 @@ js_InitStringClass(JSContext *cx, HandleObject obj)
 
     if (!LinkConstructorAndPrototype(cx, ctor, proto))
         return nullptr;
+
+#if _TAINT_ON_
+    if(!DefinePropertiesAndFunctions(cx, proto, string_properties_taint, nullptr)) {
+        return nullptr;
+    }
+#endif
 
     if (!DefinePropertiesAndFunctions(cx, proto, nullptr, string_methods) ||
         !DefinePropertiesAndFunctions(cx, ctor, nullptr, string_static_methods))
