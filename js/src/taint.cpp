@@ -24,18 +24,6 @@ TaintNode::decrease()
     }
 }
 
-void
-TaintStringRef::attachTo(TaintNode *node)
-{
-    if(this->thisTaint) {
-        this->thisTaint->decrease();
-        this->thisTaint = nullptr;
-    }
-
-    node->increase();
-    this->thisTaint = node;
-}
-
 
 TaintStringRef::TaintStringRef(uint32_t s, uint32_t e, TaintNode* node) :
     begin(s),
@@ -48,14 +36,14 @@ TaintStringRef::TaintStringRef(uint32_t s, uint32_t e, TaintNode* node) :
     
 }
 
-const TaintStringRef::TaintStringRef(TaintStringRef *ref) :
-    begin(ref->begin),
-    end(ref->end),
+TaintStringRef::TaintStringRef(const TaintStringRef &ref) :
+    begin(ref.begin),
+    end(ref.end),
     thisTaint(nullptr),
     next(nullptr)
 {
-    if(ref->thisTaint)
-        this->attachTo(ref->thisTaint);
+    if(ref.thisTaint)
+        this->attachTo(ref.thisTaint);
 }
 
 TaintStringRef::~TaintStringRef()
@@ -68,14 +56,16 @@ TaintStringRef::~TaintStringRef()
 //-------
 
 bool
-taint_str_testpropagate(JSContext *cx, unsigned argc, JS::Value *vp)
+taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
     if(!str)
         return false;
 
-    TAINT_ADD_PROPAGATOR(taintedStr, "Manual Taint", 0, taintedStr->length());
+    RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter incoming!")));
+
+    TAINT_MUTATOR_ADD_ALL_PARAM(str, "Mutation activated!", param);
 
     args.rval().setUndefined();
     return true;
@@ -177,16 +167,38 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 }
 
 void
-taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr);
+taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr)
 {
     //duplicate all refs (keep references to Nodes)
-    for()
+    TaintStringRef *newchainlast = nullptr;
+    for(TaintStringRef *tsr = srcstr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
+    {
+        void *p = taint_new_taintref_mem();
+        TaintStringRef *newtsr = new (p) TaintStringRef(*tsr);
+
+        //add the first element directly to the string
+        //all others will be appended to it
+        if(!newchainlast) {
+            dststr->addTaintRef(newtsr);
+            newchainlast = newtsr;
+        } else {
+            newchainlast->next = newtsr;
+        }
+    }
 }
 
 void
-taint_str_add_all_node(JS::HandleString dstr, JS::HandleString name, JS::HandleValue param);\
+taint_str_add_all_node(JS::HandleString dststr, const char* name, JS::HandleValue param)
 {
     //add a new node to all references
+    //TODO: this might install duplicates if multiple parts of the string derive from the same tree
+    for(TaintStringRef *tsr = dststr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
+    {
+        TaintNode *taint_node = taint_str_add_source_node(name);
+        taint_node->setPrev(tsr->thisTaint);
+        taint_node->param = param;
+        tsr->attachTo(taint_node);
+    }
 }
 
 #endif

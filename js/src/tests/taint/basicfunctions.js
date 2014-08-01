@@ -21,23 +21,43 @@ assertEq(untaintedStr.taint.length, 0);
 
 //Explicit tainted string should be tainted
 //also test basic source reporting here
-var taintedStr = String.newAllTainted(untaintedStr);
-assertEq(untaintedStr.taint.length, 0); //check if untaintedStr is still untainted after copy
+//[{begin:0, end:4, operators:[{op:"Manual Taint", param:(void 0)}]}]
+var taintedStr = String.newAllTainted("is it tainted?");
 assertEq(taintedStr.taint.length, 1); //tainted copy should have a taint attached
-var taintEntry = taintedStr.taint[0];
-assertEq(taintEntry.begin, 0); //which spans the whole string
-assertEq(taintEntry.end, taintedStr.length);
-assertEq(taintEntry.operators.length, 1); //one op
-assertEq(taintEntry.operators[0].op.length > 0, true); //which has a name set
-assertEq("param" in taintEntry.operators[0], true); //param exists
-assertEq(taintEntry.operators[0].param, undefined); //no param set
+assertEq(taintedStr.taint[0].begin, 0); 
+assertEq(taintedStr.taint[0].end, taintedStr.length); // spans the whole string
+assertEq(taintedStr.taint[0].operators.length, 1); //one op
+assertEq(taintedStr.taint[0].operators[0].op.length > 0, true); //which has a name set
+assertEq("param" in taintedStr.taint[0].operators[0], true); //param exists
+assertEq(taintedStr.taint[0].operators[0].param, undefined); //no param set
 
+//String copy should work:
+//new string tainted, source remains untainted
+var taintStrCopySrc = "is it tainted?"
+var taintStrCopy = String.newAllTainted(taintStrCopySrc);
+assertEq(taintStrCopySrc.taint.length, 0);
+assertEq(taintStrCopy.taint.length, 1);
 //untainted and tained strings should equal the same by basic comparison
-assertEq(untaintedStr == taintedStr, true);
+assertEq(taintStrCopySrc === taintStrCopy, true);
+
 
 //untaint should work
-taintedStr.untaint();
-assertEq(taintedStr.taint.length, 0);
+var taintStrUntaint = String.newAllTainted("is it tainted?");
+taintStrUntaint.untaint();
+assertEq(taintStrUntaint.taint.length, 0);
+
+
+//Mutator should add an OP, while taints itself remain the same
+//also check that parameter setting works
+//[{begin:0, end:4, operators:[{op:"Mutation activated!", param:"String parameter incoming!"}, {op:"Manual Taint", param:(void 0)}]}]
+var taintStrMutator = String.newAllTainted("is it tainted?");
+taintStrMutator.mutateTaint();
+assertEq(taintStrMutator.taint.length, 1);
+assertEq(taintStrMutator.taint[0].begin, 0);
+assertEq(taintStrMutator.taint[0].end, taintStrMutator.length);
+assertEq(taintStrMutator.taint[0].operators.length, 2);
+assertEq(taintStrMutator.taint[0].operators[0].op.length > 0, true);
+assertEq(taintStrMutator.taint[0].operators[0].param.length > 0, true);
 
 
 if (typeof reportCompare === "function")

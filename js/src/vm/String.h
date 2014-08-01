@@ -340,15 +340,8 @@ class JSString : public js::gc::BarrieredCell<JSString>
     }
 
     //MOZ_ALWAYS_INLINE
-    TaintStringRef *newTaintRefMem() {
-        void *p = js_malloc(sizeof(TaintStringRef));
-
-        return ()
-    }
-
-    //MOZ_ALWAYS_INLINE
     TaintStringRef *addNewTaintRef(uint32_t begin, uint32_t end, TaintNode* node = nullptr) {
-        void *p = newTaintRefMem();
+        void *p = taint_new_taintref_mem();
         TaintStringRef *newtsr = new (p) TaintStringRef(begin, end, node);
         this->addTaintRef(newtsr);
 
