@@ -14,7 +14,7 @@ startTest();
 var TITLE = 'Taint:basic';
 
 
-//Plain new strings should be untainted
+//plain new strings should be untainted
 var untaintedStr = "is it tainted?";
 assertEq(untaintedStr.taint.length, 0);
 
@@ -57,7 +57,7 @@ assertEq(taintStrMutator.taint[0].begin, 0);
 assertEq(taintStrMutator.taint[0].end, taintStrMutator.length);
 assertEq(taintStrMutator.taint[0].operators.length, 2);
 assertEq(taintStrMutator.taint[0].operators[0].op.length > 0, true);
-assertEq(taintStrMutator.taint[0].operators[0].param.length > 0, true);
+assertEq(taintStrMutator.taint[0].operators[0].param == null, true);
 
 
 if (typeof reportCompare === "function")

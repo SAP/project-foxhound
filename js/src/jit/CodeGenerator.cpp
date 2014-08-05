@@ -5167,6 +5167,11 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
         MOZ_ASSUME_UNREACHABLE("No such execution mode");
     }
 
+#if _TAINT_ON_
+    //store taint
+    masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
+#endif
+
     // Store length and flags.
     uint32_t flags = JSString::INIT_FAT_INLINE_FLAGS;
     if (!isTwoByte)
@@ -5299,6 +5304,11 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
     // Store left and right nodes.
     masm.storePtr(lhs, Address(output, JSRope::offsetOfLeft()));
     masm.storePtr(rhs, Address(output, JSRope::offsetOfRight()));
+
+#if _TAINT_ON_
+    //store taint
+    masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
+#endif
     masm.ret();
 
     masm.bind(&leftEmpty);

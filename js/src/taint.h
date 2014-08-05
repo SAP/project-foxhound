@@ -63,25 +63,33 @@ typedef struct TaintStringRef
 // augmentation defs and functions
 
 //basic creator
-//this is not meant to be used throughout the codebase
+// this is not meant to be used throughout the codebase
 #define TAINT_ADD_NODE(str, name, begin, end) \
 TaintNode *taint_node=taint_str_add_source_node(name);\
 str->addNewTaintRef(begin, end, taint_node);
 
-//set a source, this includes resetting all previous taint
+//set a (new) source, this includes resetting all previous taint
+// use for all sources
+//TODO: add this to the public JSAPI exports
 #define TAINT_SET_SOURCE(str, name, begin, end) \
 {\
     str->removeAllTaint();\
     TAINT_ADD_NODE(str, name, begin, end)\
 }
+#define TAINT_SET_SOURCE_ALL(str, name) \
+{\
+    str->removeAllTaint();\
+    TAINT_ADD_NODE(str, name, 0, str->length())\
+}
 
 //mutator/function call
-//--> same string I/O, add step to all taints
-//TODO: maybe check/assert that indices do not overlap
+// use, when same string is used in and out to record a specific mutator
+// has been called
+// -- apparrently there is no shortcut for default/undefined Value handles...
 #define TAINT_MUTATOR_ADD_ALL(str, name) \
 {\
     if(str->isTainted()) {\
-        taint_str_add_all_node(str, name);\
+        taint_str_add_all_node(str, name, JS::UndefinedHandleValue);\
     }\
 }
 #define TAINT_MUTATOR_ADD_ALL_PARAM(str, name, param) \
@@ -90,6 +98,15 @@ str->addNewTaintRef(begin, end, taint_node);
         taint_str_add_all_node(str, name, param);\
     }\
 }
+
+//copy reference to another string (with offset)
+/*#define TAINT_MIRROR(dstr, srcstr) \
+{\
+    taint_str_mirror_offset();
+}*/
+
+//
+//TODO: maybe check/assert that indices do not overlap
 /*
 {\
     TAINT_ADD_NODE(str, name, begin, end)\
@@ -144,7 +161,7 @@ bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
 void taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr);
-void taint_str_add_all_node(JS::HandleString dststr, const char* name, JS::HandleValue param = JS::NullPtr()); //TODO DEFAULT
+void taint_str_add_all_node(JS::HandleString dststr, const char* name, JS::HandleValue param);
 
 #endif
 

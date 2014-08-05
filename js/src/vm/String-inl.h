@@ -104,8 +104,8 @@ JSString::validateLength(js::ThreadSafeContext *maybecx, size_t length)
 MOZ_ALWAYS_INLINE void
 JSRope::init(js::ThreadSafeContext *cx, JSString *left, JSString *right, size_t length)
 {
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
 
     d.u1.length = length;
@@ -147,8 +147,8 @@ JSDependentString::init(js::ThreadSafeContext *cx, JSLinearString *base, size_t 
 {
     MOZ_ASSERT(!js::IsPoisonedPtr(base));
     MOZ_ASSERT(start + length <= base->length());
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     JS::AutoCheckCannotGC nogc;
@@ -216,8 +216,8 @@ JSString::markBase(JSTracer *trc)
 MOZ_ALWAYS_INLINE void
 JSFlatString::init(const jschar *chars, size_t length)
 {
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = FLAT_BIT;
@@ -227,8 +227,8 @@ JSFlatString::init(const jschar *chars, size_t length)
 MOZ_ALWAYS_INLINE void
 JSFlatString::init(const JS::Latin1Char *chars, size_t length)
 {
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = FLAT_BIT | LATIN1_CHARS_BIT;
@@ -278,8 +278,8 @@ MOZ_ALWAYS_INLINE jschar *
 JSInlineString::initTwoByte(size_t length)
 {
     JS_ASSERT(twoByteLengthFits(length));
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_INLINE_FLAGS;
@@ -290,8 +290,8 @@ MOZ_ALWAYS_INLINE JS::Latin1Char *
 JSInlineString::initLatin1(size_t length)
 {
     JS_ASSERT(latin1LengthFits(length));
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_INLINE_FLAGS | LATIN1_CHARS_BIT;
@@ -302,8 +302,8 @@ MOZ_ALWAYS_INLINE jschar *
 JSFatInlineString::initTwoByte(size_t length)
 {
     JS_ASSERT(twoByteLengthFits(length));
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_FAT_INLINE_FLAGS;
@@ -314,8 +314,8 @@ MOZ_ALWAYS_INLINE JS::Latin1Char *
 JSFatInlineString::initLatin1(size_t length)
 {
     JS_ASSERT(latin1LengthFits(length));
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_FAT_INLINE_FLAGS | LATIN1_CHARS_BIT;
@@ -362,8 +362,8 @@ JSExternalString::init(const jschar *chars, size_t length, const JSStringFinaliz
 {
     JS_ASSERT(fin);
     JS_ASSERT(fin->finalize);
-#ifdef _TAINT_ON_
-    d.startTaint = NULL;
+#if _TAINT_ON_
+    d.u0.startTaint = nullptr;
 #endif
     d.u1.length = length;
     d.u1.flags = EXTERNAL_FLAGS;
@@ -415,6 +415,10 @@ JSString::finalize(js::FreeOp *fop)
     /* FatInline strings are in a different arena. */
     JS_ASSERT(getAllocKind() != js::gc::FINALIZE_FAT_INLINE_STRING);
 
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
+
     if (isFlat())
         asFlat().finalize(fop);
     else
@@ -426,6 +430,10 @@ JSFlatString::finalize(js::FreeOp *fop)
 {
     JS_ASSERT(getAllocKind() != js::gc::FINALIZE_FAT_INLINE_STRING);
 
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
+
     if (!isInline())
         fop->free_(nonInlineCharsRaw());
 }
@@ -434,6 +442,10 @@ inline void
 JSFatInlineString::finalize(js::FreeOp *fop)
 {
     JS_ASSERT(getAllocKind() == js::gc::FINALIZE_FAT_INLINE_STRING);
+
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
 
     if (!isInline())
         fop->free_(nonInlineCharsRaw());
@@ -445,6 +457,10 @@ JSAtom::finalize(js::FreeOp *fop)
     JS_ASSERT(JSString::isAtom());
     JS_ASSERT(JSString::isFlat());
 
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
+
     if (!isInline())
         fop->free_(nonInlineCharsRaw());
 }
@@ -452,6 +468,10 @@ JSAtom::finalize(js::FreeOp *fop)
 inline void
 JSExternalString::finalize(js::FreeOp *fop)
 {
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
+
     const JSStringFinalizer *fin = externalFinalizer();
     fin->finalize(fin, const_cast<jschar *>(rawTwoByteChars()));
 }

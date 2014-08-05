@@ -592,11 +592,11 @@ struct String
     static const uint32_t LATIN1_CHARS_BIT = JS_BIT(6);
     static const uint32_t ROPE_FLAGS       = 0;
     static const uint32_t TYPE_FLAGS_MASK  = JS_BIT(6) - 1;
-    uint32_t flags;
-    uint32_t length;
-#ifdef _TAINT_ON_
+#if _TAINT_ON_
         TaintStringRef *startTaint;
 #endif
+    uint32_t flags;
+    uint32_t length;
     union {
         const JS::Latin1Char *nonInlineCharsLatin1;
         const jschar *nonInlineCharsTwoByte;

@@ -20,7 +20,8 @@ TaintNode::decrease()
             old = prev;
             continue;
         }
-        return;
+        else
+            break;
     }
 }
 
@@ -64,8 +65,8 @@ taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp)
         return false;
 
     RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter incoming!")));
-
-    TAINT_MUTATOR_ADD_ALL_PARAM(str, "Mutation activated!", param);
+    TAINT_MUTATOR_ADD_ALL_PARAM(str, "Mutation with param", param);
+    TAINT_MUTATOR_ADD_ALL(str, "Mutation w/o param");
 
     args.rval().setUndefined();
     return true;
@@ -107,7 +108,7 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
         }
     }
 
-    TAINT_SET_SOURCE(taintedStr, "Manual Taint", 0, taintedStr->length());
+    TAINT_SET_SOURCE_ALL(taintedStr, "Manual Taint");
 
     args.rval().setString(taintedStr);
     return true;
@@ -120,6 +121,10 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
     RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
     if(!str)
         return false;
+
+#ifdef DEBUG
+    JS_SetGCZeal(cx, 2, 1);
+#endif
 
     AutoValueVector taints(cx);
     for(TaintStringRef *cur = str->getTopTaintRef(); cur != nullptr; cur = cur->next) {

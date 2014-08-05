@@ -26,6 +26,21 @@ using mozilla::RoundUpPow2;
 
 using JS::AutoCheckCannotGC;
 
+#if _TAINT_ON_
+void
+JSString::removeAllTaint()
+{
+    for(TaintStringRef *tsr = d.u0.startTaint; tsr != nullptr; ) {
+        TaintStringRef *next = tsr->next;
+        tsr->~TaintStringRef();
+        js_free(tsr);
+        tsr = next;
+    }
+
+    d.u0.startTaint = nullptr;
+}
+#endif
+
 size_t
 JSString::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
 {

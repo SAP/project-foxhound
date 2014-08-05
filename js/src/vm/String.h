@@ -147,6 +147,11 @@ class JSString : public js::gc::BarrieredCell<JSString>
     /* Fields only apply to string types commented on the right. */
     struct Data
     {
+#if _TAINT_ON_
+        struct {
+            TaintStringRef *startTaint;
+        } u0;
+#endif
         union {
             struct {
                 uint32_t           flags;               /* JSString */
@@ -154,9 +159,6 @@ class JSString : public js::gc::BarrieredCell<JSString>
             };
             uintptr_t              flattenData;         /* JSRope (temporary while flattening) */
         } u1;
-#ifdef _TAINT_ON_
-        TaintStringRef *startTaint;
-#endif
         union {
             union {
                 /* JS(Fat)InlineString */
@@ -285,6 +287,10 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
         /* Ensure js::shadow::String has the same layout. */
         using js::shadow::String;
+#if _TAINT_ON_
+        static_assert(offsetof(JSString, d.u0.startTaint) == offsetof(String, startTaint),
+                      "shadow::String startTaint offset must match JSString");
+#endif
         static_assert(offsetof(JSString, d.u1.length) == offsetof(String, length),
                       "shadow::String length offset must match JSString");
         static_assert(offsetof(JSString, d.u1.flags) == offsetof(String, flags),
@@ -317,15 +323,15 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
   public:
 
-#ifdef _TAINT_ON_
+#if _TAINT_ON_
     MOZ_ALWAYS_INLINE
     bool isTainted() const {
-        return d.startTaint != NULL;
+        return d.u0.startTaint != NULL;
     }
 
     //MOZ_ALWAYS_INLINE
     TaintStringRef *getTopTaintRef() {
-        return d.startTaint;
+        return d.u0.startTaint;
     }
 
     //MOZ_ALWAYS_INLINE
@@ -334,9 +340,9 @@ class JSString : public js::gc::BarrieredCell<JSString>
             return;
 
         if(isTainted()) {
-            tsr->next = d.startTaint;
+            tsr->next = d.u0.startTaint;
         }
-        d.startTaint = tsr;
+        d.u0.startTaint = tsr;
     }
 
     //MOZ_ALWAYS_INLINE
@@ -349,16 +355,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
     }
 
     //MOZ_ALWAYS_INLINE
-    void removeAllTaint() {
-        for(TaintStringRef *tsr = d.startTaint; tsr != nullptr; ) {
-            TaintStringRef *next = tsr->next;
-            tsr->~TaintStringRef();
-            js_free(tsr);
-            tsr = next;
-        }
-
-        d.startTaint = nullptr;
-    }
+    void removeAllTaint();
 #endif
 
     /* All strings have length. */
@@ -516,6 +513,12 @@ class JSString : public js::gc::BarrieredCell<JSString>
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
     /* Offsets for direct field from jit code. */
+
+#if _TAINT_ON_
+    static size_t offsetOfTaint() {
+        return offsetof(JSString, d.u0.startTaint);
+    }
+#endif
 
     static size_t offsetOfLength() {
         return offsetof(JSString, d.u1.length);
