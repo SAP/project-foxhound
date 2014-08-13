@@ -55,7 +55,8 @@ taintStrMutator.mutateTaint();
 assertEq(taintStrMutator.taint.length, 1);
 assertEq(taintStrMutator.taint[0].begin, 0);
 assertEq(taintStrMutator.taint[0].end, taintStrMutator.length);
-assertEq(taintStrMutator.taint[0].operators.length, 2);
+assertEq(taintStrMutator.taint[0].operators.length, 3);
+print(JSON.stringify(taintStrMutator.taint));
 assertEq(taintStrMutator.taint[0].operators[0].op.length > 0, true);
 assertEq(taintStrMutator.taint[0].operators[0].param == null, true);
 

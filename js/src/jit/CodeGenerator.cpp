@@ -5168,8 +5168,7 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
     }
 
 #if _TAINT_ON_
-    //store taint
-    masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
+    TAINT_INIT_ASM(masm, output)
 #endif
 
     // Store length and flags.
@@ -5306,8 +5305,7 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
     masm.storePtr(rhs, Address(output, JSRope::offsetOfRight()));
 
 #if _TAINT_ON_
-    //store taint
-    masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
+    TAINT_INIT_ASM(masm, output)
 #endif
     masm.ret();
 

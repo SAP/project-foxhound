@@ -8,6 +8,26 @@
 
 using namespace js;
 
+//------------------------------------
+// Local helpers
+
+inline void*
+taint_new_tainref_mem()
+{
+    return js_malloc(sizeof(TaintStringRef));
+}
+
+inline TaintNode*
+taint_str_add_source_node(const char *fn)
+{
+    void *p = js_malloc(sizeof(TaintNode));
+    TaintNode *node = new (p) TaintNode(fn);
+    return node;
+}
+
+//----------------------------------
+// Reference Node
+
 void
 TaintNode::decrease()
 {
@@ -26,14 +46,23 @@ TaintNode::decrease()
 }
 
 
+//--------------------------------------
+// String Taint Reference
+
 TaintStringRef::TaintStringRef(uint32_t s, uint32_t e, TaintNode* node) :
     begin(s),
     end(e),
     thisTaint(nullptr),
     next(nullptr)
 {
+
+/*
+#ifdef DEBUG
+    JS_SetGCZeal(cx, 2, 1);
+#endif*/
+
     if(node)
-        this->attachTo(node);
+        attachTo(node);
     
 }
 
@@ -44,17 +73,19 @@ TaintStringRef::TaintStringRef(const TaintStringRef &ref) :
     next(nullptr)
 {
     if(ref.thisTaint)
-        this->attachTo(ref.thisTaint);
+        attachTo(ref.thisTaint);
 }
 
 TaintStringRef::~TaintStringRef()
 {
-    if(this->thisTaint) {
-        this->thisTaint->decrease();
-        this->thisTaint = nullptr;
+    if(thisTaint) {
+        thisTaint->decrease();
+        thisTaint = nullptr;
     }
 }
-//-------
+
+//------------------------------------------------
+// Library Test/Debug functions
 
 bool
 taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp)
@@ -64,9 +95,9 @@ taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp)
     if(!str)
         return false;
 
-    RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter incoming!")));
-    TAINT_MUTATOR_ADD_ALL_PARAM(str, "Mutation with param", param);
-    TAINT_MUTATOR_ADD_ALL(str, "Mutation w/o param");
+    RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter")));
+    taint_tag_mutator_const(str, "Mutation with param", param);
+    taint_tag_mutator_const(str, "Mutation w/o param");
 
     args.rval().setUndefined();
     return true;
@@ -108,11 +139,14 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
         }
     }
 
-    TAINT_SET_SOURCE_ALL(taintedStr, "Manual Taint");
+    taint_tag_source(taintedStr, "Manual taint source");
 
     args.rval().setString(taintedStr);
     return true;
 }
+
+//----------------------------------
+// Taint reporter
 
 bool
 taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
@@ -121,10 +155,6 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
     RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
     if(!str)
         return false;
-
-#ifdef DEBUG
-    JS_SetGCZeal(cx, 2, 1);
-#endif
 
     AutoValueVector taints(cx);
     for(TaintStringRef *cur = str->getTopTaintRef(); cur != nullptr; cur = cur->next) {
@@ -171,6 +201,29 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
+//-----------------------------
+// Tagging functions
+
+void taint_tag_mutator_const(HandleString str, const char *name, HandleValue param)
+{
+    if(str->isTainted()) {
+        taint_str_add_all_node(str, name, param);
+    }
+}
+
+void taint_tag_source(JS::HandleString str, const char* name, uint32_t begin, uint32_t end)
+{
+    if(end == 0)
+        end = str->length();
+
+    if(str->isTainted()) {
+        str->removeAllTaint();
+    }
+    
+    TaintNode *taint_node = taint_str_add_source_node(name);
+    str->addNewTaintRef(begin, end, taint_node);
+}
+
 void
 taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr)
 {
@@ -178,8 +231,7 @@ taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr)
     TaintStringRef *newchainlast = nullptr;
     for(TaintStringRef *tsr = srcstr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
-        void *p = taint_new_taintref_mem();
-        TaintStringRef *newtsr = new (p) TaintStringRef(*tsr);
+        TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
 
         //add the first element directly to the string
         //all others will be appended to it
@@ -200,10 +252,40 @@ taint_str_add_all_node(JS::HandleString dststr, const char* name, JS::HandleValu
     for(TaintStringRef *tsr = dststr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
         TaintNode *taint_node = taint_str_add_source_node(name);
+        //attach new node before changing the string ref as this would delete the old node
         taint_node->setPrev(tsr->thisTaint);
         taint_node->param = param;
         tsr->attachTo(taint_node);
     }
+}
+
+
+TaintStringRef*
+taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node)
+{
+    void *p = taint_new_tainref_mem();
+    return new (p) TaintStringRef(begin, end, node);
+}
+
+TaintStringRef*
+taint_str_taintref_build(TaintStringRef &ref)
+{
+    void *p = taint_new_tainref_mem();
+    return new (p) TaintStringRef(ref);
+}
+
+
+void
+taint_str_remove_taint_all(JSString *str)
+{
+    for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; ) {
+        TaintStringRef *next = tsr->next;
+        tsr->~TaintStringRef();
+        js_free(tsr);
+        tsr = next;
+    }
+
+    str->addTaintRef(nullptr, false);
 }
 
 #endif

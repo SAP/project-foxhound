@@ -21,17 +21,17 @@ typedef struct TaintNode
 
     void decrease();
     inline void increase() {
-        this->refCount++;
+        refCount++;
     }
 
     inline void setPrev(TaintNode *other) {
-        if(this->prev) {
-            this->prev->decrease();
+        if(prev) {
+            prev->decrease();
         }
         if(other) {
             other->increase();
         }
-        this->prev = other;
+        prev = other;
     }
 } TaintNode;
 
@@ -47,57 +47,60 @@ typedef struct TaintStringRef
     ~TaintStringRef();
 
     inline void attachTo(TaintNode *node) {
-        if(this->thisTaint) {
-            this->thisTaint->decrease();
+        if(thisTaint) {
+            thisTaint->decrease();
         }
 
         if(node) {
             node->increase();
         }
-        this->thisTaint = node;
+        
+        thisTaint = node;
     }
 } TaintStringRef;
 
+//------------------------------
+//"backend" defs and functions
+//DO NOT CALL THIS IN THE LIB/APP CODE
 
-//-------
-// augmentation defs and functions
+#define TAINT_ADD_JSSTR_METHODS \
+JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
+JS_FN("mutateTaint",            taint_str_testmutator,          0,JSFUN_GENERIC_NATIVE),
 
-//basic creator
-// this is not meant to be used throughout the codebase
-#define TAINT_ADD_NODE(str, name, begin, end) \
-TaintNode *taint_node=taint_str_add_source_node(name);\
-str->addNewTaintRef(begin, end, taint_node);
+#define TAINT_ADD_JSSTR_STATIC_METHODS \
+JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
+
+#define TAINT_ADD_JSSTR_PROPS \
+JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT),
+
+//TODO add reference merger
+#define TAINT_INIT_ASM(masm, out) \
+    masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfTaint()));
+
+TaintStringRef *taint_str_taintref_build(TaintStringRef &ref);
+TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
+void taint_str_remove_taint_all(JSString *str);
+bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
+bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
+bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
+bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
+void taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr);
+void taint_str_add_all_node(JS::HandleString dststr, const char* name, JS::HandleValue param);
+
+//-----------------------------------
+// tag defs and functions
 
 //set a (new) source, this includes resetting all previous taint
 // use for all sources
 //TODO: add this to the public JSAPI exports
-#define TAINT_SET_SOURCE(str, name, begin, end) \
-{\
-    str->removeAllTaint();\
-    TAINT_ADD_NODE(str, name, begin, end)\
-}
-#define TAINT_SET_SOURCE_ALL(str, name) \
-{\
-    str->removeAllTaint();\
-    TAINT_ADD_NODE(str, name, 0, str->length())\
-}
+void taint_tag_source(JS::HandleString str, const char* name, 
+    uint32_t begin = 0, uint32_t end = 0);
 
 //mutator/function call
 // use, when same string is used in and out to record a specific mutator
 // has been called
-// -- apparrently there is no shortcut for default/undefined Value handles...
-#define TAINT_MUTATOR_ADD_ALL(str, name) \
-{\
-    if(str->isTainted()) {\
-        taint_str_add_all_node(str, name, JS::UndefinedHandleValue);\
-    }\
-}
-#define TAINT_MUTATOR_ADD_ALL_PARAM(str, name, param) \
-{\
-    if(str->isTainted()) {\
-        taint_str_add_all_node(str, name, param);\
-    }\
-}
+void taint_tag_mutator_const(JS::HandleString str, const char *name, 
+    JS::HandleValue param = JS::UndefinedHandleValue);
 
 //copy reference to another string (with offset)
 /*#define TAINT_MIRROR(dstr, srcstr) \
@@ -130,38 +133,6 @@ str->addNewTaintRef(begin, end, taint_node);
     taint_str_apply_all(dststr, srcstr);\
     taint_str_add_all_node(dstr, name, param);\
 }*/
-
-inline TaintNode*
-taint_str_add_source_node(const char *fn)
-{
-    void *p = js_malloc(sizeof(TaintNode));
-    TaintNode *node = new (p) TaintNode(fn);
-    return node;
-}
-
-//----------
-//"backend" defs and functions
-
-#define TAINT_ADD_JSSTR_METHODS \
-JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
-JS_FN("mutateTaint",            taint_str_testmutator,          0,JSFUN_GENERIC_NATIVE),
-
-#define TAINT_ADD_JSSTR_STATIC_METHODS \
-JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
-
-#define TAINT_ADD_JSSTR_PROPS \
-JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT),
-
-inline void *taint_new_taintref_mem() {
-    return js_malloc(sizeof(TaintStringRef));
-}
-
-bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
-void taint_str_apply_all(JS::HandleString dststr, JS::HandleString srcstr);
-void taint_str_add_all_node(JS::HandleString dststr, const char* name, JS::HandleValue param);
 
 #endif
 

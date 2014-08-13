@@ -329,33 +329,34 @@ class JSString : public js::gc::BarrieredCell<JSString>
         return d.u0.startTaint != NULL;
     }
 
-    //MOZ_ALWAYS_INLINE
+    MOZ_ALWAYS_INLINE
     TaintStringRef *getTopTaintRef() {
         return d.u0.startTaint;
     }
 
-    //MOZ_ALWAYS_INLINE
-    void addTaintRef(TaintStringRef *tsr) {
-        if(!tsr)
-            return;
-
+    MOZ_ALWAYS_INLINE
+    void addTaintRef(TaintStringRef *tsr, bool cleanup = true)  {
         if(isTainted()) {
-            tsr->next = d.u0.startTaint;
+            if(cleanup)
+                removeAllTaint();
+            else if(tsr)
+                tsr->next = d.u0.startTaint;
         }
+
         d.u0.startTaint = tsr;
     }
 
-    //MOZ_ALWAYS_INLINE
+    MOZ_ALWAYS_INLINE
     TaintStringRef *addNewTaintRef(uint32_t begin, uint32_t end, TaintNode* node = nullptr) {
-        void *p = taint_new_taintref_mem();
-        TaintStringRef *newtsr = new (p) TaintStringRef(begin, end, node);
-        this->addTaintRef(newtsr);
-
+        TaintStringRef *newtsr = taint_str_taintref_build(begin, end, node);
+        addTaintRef(newtsr);
         return newtsr;
     }
 
-    //MOZ_ALWAYS_INLINE
-    void removeAllTaint();
+    MOZ_ALWAYS_INLINE
+    void removeAllTaint() {
+        taint_str_remove_taint_all(this);
+    }
 #endif
 
     /* All strings have length. */
