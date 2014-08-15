@@ -335,7 +335,22 @@ class JSString : public js::gc::BarrieredCell<JSString>
     }
 
     MOZ_ALWAYS_INLINE
-    void addTaintRef(TaintStringRef *tsr, bool cleanup = true)  {
+    void addTaintRef(TaintStringRef *tsr, bool cleanup = false)  {
+        /*if(isTainted()) {
+            if(cleanup) {
+                removeAllTaint();
+                d.u0.startTaint = nullptr;
+            }
+
+            //find end of current ref chain
+            if(tsr) {
+                TaintStringRef *last;
+                for(last = d.u0.startTaint; last->next != nullptr; last = last->next);
+                last->next = tsr;
+            }
+        } else
+            d.u0.startTaint = tsr;*/
+
         if(isTainted()) {
             if(cleanup)
                 removeAllTaint();

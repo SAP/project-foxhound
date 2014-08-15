@@ -17,6 +17,10 @@
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 
+#if _TAINT_ON_
+#include "taint.h"
+#endif
+
 using namespace js;
 
 using mozilla::IsSame;
@@ -483,6 +487,8 @@ js::ConcatStrings(ThreadSafeContext *cx,
     if (!JSString::validateLength(cx, wholeLength))
         return nullptr;
 
+    JSString *concatstr;
+
     bool isLatin1 = left->hasLatin1Chars() && right->hasLatin1Chars();
     bool canUseFatInline = isLatin1
                            ? JSFatInlineString::latin1LengthFits(wholeLength)
@@ -516,10 +522,17 @@ js::ConcatStrings(ThreadSafeContext *cx,
             buf[wholeLength] = 0;
         }
 
-        return str;
+        concatstr = str;
+    }
+    else {
+        concatstr = JSRope::new_<allowGC>(cx, left, right, wholeLength);
     }
 
-    return JSRope::new_<allowGC>(cx, left, right, wholeLength);
+#if _TAINT_ON_
+    taint_str_concat(concatstr, left, right);
+#endif
+
+    return concatstr;
 }
 
 template JSString *

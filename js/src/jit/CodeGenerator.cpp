@@ -5168,7 +5168,7 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
     }
 
 #if _TAINT_ON_
-    TAINT_INIT_ASM(masm, output)
+    TAINT_STR_ASM_CONCAT(masm, output, lhs, rhs)
 #endif
 
     // Store length and flags.
@@ -5292,6 +5292,10 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
         MOZ_ASSUME_UNREACHABLE("No such execution mode");
     }
 
+#if _TAINT_ON_
+    TAINT_STR_ASM_CONCAT(masm, output, lhs, rhs)
+#endif
+
     // Store rope length and flags. temp1 still holds the result of AND'ing the
     // lhs and rhs flags, so we just have to clear the other flags to get our
     // rope flags (Latin1 if both lhs and rhs are Latin1).
@@ -5303,10 +5307,6 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
     // Store left and right nodes.
     masm.storePtr(lhs, Address(output, JSRope::offsetOfLeft()));
     masm.storePtr(rhs, Address(output, JSRope::offsetOfRight()));
-
-#if _TAINT_ON_
-    TAINT_INIT_ASM(masm, output)
-#endif
     masm.ret();
 
     masm.bind(&leftEmpty);

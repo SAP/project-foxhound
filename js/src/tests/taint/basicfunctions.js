@@ -31,35 +31,46 @@ assertEq(taintedStr.taint[0].operators[0].op.length > 0, true); //which has a na
 assertEq("param" in taintedStr.taint[0].operators[0], true); //param exists
 assertEq(taintedStr.taint[0].operators[0].param, undefined); //no param set
 
-//String copy should work:
+
+//taint copy allocator should work
 //new string tainted, source remains untainted
 var taintStrCopySrc = "is it tainted?"
 var taintStrCopy = String.newAllTainted(taintStrCopySrc);
 assertEq(taintStrCopySrc.taint.length, 0);
 assertEq(taintStrCopy.taint.length, 1);
-//untainted and tained strings should equal the same by basic comparison
+//untainted and tained strings should equal the same by comparison
 assertEq(taintStrCopySrc === taintStrCopy, true);
 
 
 //untaint should work
+//[]
 var taintStrUntaint = String.newAllTainted("is it tainted?");
 taintStrUntaint.untaint();
 assertEq(taintStrUntaint.taint.length, 0);
 
 
-//Mutator should add an OP, while taints itself remain the same
-//also check that parameter setting works
-//[{begin:0, end:4, operators:[{op:"Mutation activated!", param:"String parameter incoming!"}, {op:"Manual Taint", param:(void 0)}]}]
+//Test mutators should add one op with a string param and one w/o any param
+//mirror mutator is not tested here, see concat operator test
+//[{begin:0, end:14, operators:[{op:"Mutation w/o param", param:(void 0)}, {op:"Mutation with param", param:"String parameter"}, {op:"Manual Taint", param:(void 0)}]}]
 var taintStrMutator = String.newAllTainted("is it tainted?");
 taintStrMutator.mutateTaint();
-assertEq(taintStrMutator.taint.length, 1);
-assertEq(taintStrMutator.taint[0].begin, 0);
-assertEq(taintStrMutator.taint[0].end, taintStrMutator.length);
-assertEq(taintStrMutator.taint[0].operators.length, 3);
-print(JSON.stringify(taintStrMutator.taint));
+assertEq(taintStrMutator.taint.length, 1); // one taintref
+assertEq(taintStrMutator.taint[0].begin, 0); 
+assertEq(taintStrMutator.taint[0].end, taintStrMutator.length); //spans the whole string
+assertEq(taintStrMutator.taint[0].operators.length, 3); // source + 2 mutating OPs
+//the list is built backwards, so start w/o param
 assertEq(taintStrMutator.taint[0].operators[0].op.length > 0, true);
-assertEq(taintStrMutator.taint[0].operators[0].param == null, true);
+assertEq(taintStrMutator.taint[0].operators[0].param, undefined);
+//now check the OP with param
+assertEq(taintStrMutator.taint[0].operators[1].op.length > 0, true);
+assertEq(typeof taintStrMutator.taint[0].operators[1].param, "string");
+assertEq(taintStrMutator.taint[0].operators[1].param.length > 0, true);
+//source op is already checked above
 
+//check JIT operation
+for(var i = 0; i < 100000; i++) {
+  var z = String.newAllTainted("is it tainted?");
+}
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);
