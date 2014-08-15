@@ -487,8 +487,6 @@ js::ConcatStrings(ThreadSafeContext *cx,
     if (!JSString::validateLength(cx, wholeLength))
         return nullptr;
 
-    JSString *concatstr;
-
     bool isLatin1 = left->hasLatin1Chars() && right->hasLatin1Chars();
     bool canUseFatInline = isLatin1
                            ? JSFatInlineString::latin1LengthFits(wholeLength)
@@ -522,17 +520,14 @@ js::ConcatStrings(ThreadSafeContext *cx,
             buf[wholeLength] = 0;
         }
 
-        concatstr = str;
-    }
-    else {
-        concatstr = JSRope::new_<allowGC>(cx, left, right, wholeLength);
-    }
-
 #if _TAINT_ON_
-    taint_str_concat(concatstr, left, right);
+        taint_str_concat(str, left, right);
 #endif
 
-    return concatstr;
+        return str;
+    }
+
+    return JSRope::new_<allowGC>(cx, left, right, wholeLength);
 }
 
 template JSString *

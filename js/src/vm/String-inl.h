@@ -106,6 +106,7 @@ JSRope::init(js::ThreadSafeContext *cx, JSString *left, JSString *right, size_t 
 {
 #if _TAINT_ON_
     d.u0.startTaint = nullptr;
+    taint_str_concat(this, left, right);
 #endif
 
     d.u1.length = length;

@@ -120,6 +120,9 @@ void taint_tag_mutator(JSString * str, const char *name,
 void taint_tag_propagator(JSString * dststr, JSString * srcstr,
     const char *name, uint32_t offset = 0, JS::HandleValue param = JS::UndefinedHandleValue);
 
+/*void taint_copy_taint(JSString *dststr, JSString *srcstr,
+    uint32_t frombegin, uint32_t tobegin, uint32_t fromend, uint32_t toend);*/
+
 #endif
 
 #endif
