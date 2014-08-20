@@ -28,9 +28,10 @@ assertEq(taintedStr.taint[0].begin, 0);
 assertEq(taintedStr.taint[0].end, taintedStr.length); // spans the whole string
 assertEq(taintedStr.taint[0].operators.length, 1); //one op
 assertEq(taintedStr.taint[0].operators[0].op.length > 0, true); //which has a name set
-assertEq("param" in taintedStr.taint[0].operators[0], true); //param exists
-assertEq(taintedStr.taint[0].operators[0].param, undefined); //no param set
-
+assertEq("param1" in taintedStr.taint[0].operators[0], true); //param1 exists
+assertEq(taintedStr.taint[0].operators[0].param1, undefined); //no param1 set
+assertEq("param2" in taintedStr.taint[0].operators[0], true); //param2 exists
+assertEq(taintedStr.taint[0].operators[0].param2, undefined); //no param2 set
 
 //taint copy allocator should work
 //new string tainted, source remains untainted
@@ -60,11 +61,13 @@ assertEq(taintStrMutator.taint[0].end, taintStrMutator.length); //spans the whol
 assertEq(taintStrMutator.taint[0].operators.length, 3); // source + 2 mutating OPs
 //the list is built backwards, so start w/o param
 assertEq(taintStrMutator.taint[0].operators[0].op.length > 0, true);
-assertEq(taintStrMutator.taint[0].operators[0].param, undefined);
+assertEq(taintStrMutator.taint[0].operators[0].param1, undefined);
 //now check the OP with param
 assertEq(taintStrMutator.taint[0].operators[1].op.length > 0, true);
-assertEq(typeof taintStrMutator.taint[0].operators[1].param, "string");
-assertEq(taintStrMutator.taint[0].operators[1].param.length > 0, true);
+assertEq(typeof taintStrMutator.taint[0].operators[1].param1, "string");
+assertEq(taintStrMutator.taint[0].operators[1].param1.length > 0, true);
+assertEq(typeof taintStrMutator.taint[0].operators[1].param2, "string");
+assertEq(taintStrMutator.taint[0].operators[1].param2.length > 0, true);
 //source op is already checked above
 
 //check JIT operation

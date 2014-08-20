@@ -362,13 +362,6 @@ class JSString : public js::gc::BarrieredCell<JSString>
     }
 
     MOZ_ALWAYS_INLINE
-    TaintStringRef *addNewTaintRef(uint32_t begin, uint32_t end, TaintNode* node = nullptr) {
-        TaintStringRef *newtsr = taint_str_taintref_build(begin, end, node);
-        addTaintRef(newtsr);
-        return newtsr;
-    }
-
-    MOZ_ALWAYS_INLINE
     void removeAllTaint() {
         taint_str_remove_taint_all(this);
     }

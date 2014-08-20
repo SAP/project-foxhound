@@ -11,6 +11,9 @@ using namespace js;
 //------------------------------------
 // Local helpers
 
+#define MAX(x,y) ((x) >= (y) ? x : y)
+#define MIN(x,y) ((x) <= (y) ? x : y)
+
 inline void*
 taint_new_tainref_mem()
 {
@@ -96,7 +99,7 @@ taint_str_testmutator(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter")));
-    taint_tag_mutator(str, "Mutation with param", param);
+    taint_tag_mutator(str, "Mutation with params", param, param);
     taint_tag_mutator(str, "Mutation w/o param");
 
     args.rval().setUndefined();
@@ -172,7 +175,8 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             RootedObject taintobj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
             RootedString opnamestr(cx, NewStringCopyZ<CanGC>(cx, curnode->op));
             RootedValue opname(cx, StringValue(opnamestr));
-            RootedValue paramval(cx, curnode->param);
+            RootedValue param1val(cx, curnode->param1);
+            RootedValue param2val(cx, curnode->param2);
 
             if(!taintobj)
                 return false;
@@ -181,7 +185,8 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
                 return false;
 
             //param is optional
-            JS_DefineProperty(cx, taintobj, "param", paramval, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
+            JS_DefineProperty(cx, taintobj, "param1", param1val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
+            JS_DefineProperty(cx, taintobj, "param2", param2val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
 
             if(!taintchain.append(ObjectValue(*taintobj)))
                 return false;
@@ -216,55 +221,43 @@ taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
     }
     
     TaintNode *taint_node = taint_str_add_source_node(name);
-    str->addNewTaintRef(begin, end, taint_node);
-}
-
-//create nodes on all taintstringsrefs of a string
-void
-taint_tag_mutator(JSString *str, const char *name, HandleValue param)
-{
-    taint_str_add_all_node(str, name, param);
-}
-
-
-//mirror all taintstringrefs of a source string and add them to a destination
-//string with an offset, also add a node to all of the refs indicating this mutator
-void
-taint_tag_propagator(JSString *dststr, JSString *srcstr,
-    const char *name, uint32_t offset, HandleValue param)
-{
-    taint_str_copy_taint(dststr, srcstr, offset);
-    taint_str_add_all_node(dststr, name, param);
+    TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
+    str->addTaintRef(newtsr, true);
 }
 
 //duplicate all taintstringrefs form a string to another
 //and point to the same nodes (shallow copy)
 void
-taint_str_copy_taint(JSString *dststr, JSString *srcstr, uint32_t offset)
+taint_str_copy_taint(JSString *dststr, JSString *srcstr,
+    uint32_t frombegin, uint32_t offset, uint32_t fromend)
 {
+    if(fromend == 0)
+        fromend = srcstr->length();
+
     TaintStringRef *newchainlast = nullptr;
     for(TaintStringRef *tsr = srcstr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
+        if(tsr->end < frombegin || tsr->begin >= fromend)
+            continue;
+
         TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
-        if(offset > 0) {
-            newtsr->begin += offset;
-            newtsr->end   += offset;
-        }
+        newtsr->begin = MAX(frombegin, tsr->begin) + offset;
+        newtsr->end   = MIN(tsr->end, fromend) + offset;
 
         //add the first element directly to the string
         //all others will be appended to it
-        if(!newchainlast) {
-            dststr->addTaintRef(newtsr);
-            newchainlast = newtsr;
-        } else {
+        if(newchainlast)
             newchainlast->next = newtsr;
-        }
+        else
+            newchainlast = newtsr;
     }
+    if(newchainlast)
+        dststr->addTaintRef(newchainlast);
 }
 
 //add a new node to all taintstringrefs on a string
 void
-taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param)
+taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param1, HandleValue param2)
 {
     //TODO: this might install duplicates if multiple parts of the string derive from the same tree
     for(TaintStringRef *tsr = dststr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
@@ -272,11 +265,21 @@ taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param)
         TaintNode *taint_node = taint_str_add_source_node(name);
         //attach new node before changing the string ref as this would delete the old node
         taint_node->setPrev(tsr->thisTaint);
-        taint_node->param = param;
+        taint_node->param1 = param1;
+        taint_node->param2 = param2;
         tsr->attachTo(taint_node);
     }
 }
 
+void
+taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
+    uint32_t start, uint32_t length)
+{
+    js::RootedValue startval(cx, INT_TO_JSVAL(start));
+    js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
+    taint_str_copy_taint(str, base, start, 0, start + length);
+    taint_str_add_all_node(str, "substring", startval, endval);
+}
 
 
 //create a new taintstringref
@@ -319,7 +322,7 @@ taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs)
         taint_str_copy_taint(dst, lhs);
 
     if(rhs->isTainted())
-        taint_str_copy_taint(dst, rhs, lhs->length());
+        taint_str_copy_taint(dst, rhs, 0, lhs->length());
 
     //no need to add a taint node for concat as this does not
     //add any valuable information
