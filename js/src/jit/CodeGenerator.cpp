@@ -839,6 +839,10 @@ CodeGenerator::visitBooleanToString(LBooleanToString *lir)
 void
 CodeGenerator::emitIntToString(Register input, Register output, Label *ool)
 {
+#if _TAINT_ON_
+    TAINT_GETELEM_SKIPSTATIC_ASM(ool);
+#endif
+
     masm.branch32(Assembler::AboveOrEqual, input, Imm32(StaticStrings::INT_STATIC_LIMIT), ool);
 
     // Fast path for small integers.
@@ -5449,6 +5453,10 @@ CodeGenerator::visitFromCharCode(LFromCharCode *lir)
     OutOfLineCode *ool = oolCallVM(StringFromCharCodeInfo, lir, (ArgList(), code), StoreRegisterTo(output));
     if (!ool)
         return false;
+
+#if _TAINT_ON_
+    TAINT_GETELEM_SKIPSTATIC_ASM(ool->entry());
+#endif
 
     // OOL path if code >= UNIT_STATIC_LIMIT.
     masm.branch32(Assembler::AboveOrEqual, code, Imm32(StaticStrings::UNIT_STATIC_LIMIT),

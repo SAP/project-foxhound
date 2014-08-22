@@ -227,10 +227,16 @@ taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
 
 //duplicate all taintstringrefs form a string to another
 //and point to the same nodes (shallow copy)
-void
+JSString *
 taint_str_copy_taint(JSString *dststr, JSString *srcstr,
     uint32_t frombegin, uint32_t offset, uint32_t fromend)
 {
+    if(!srcstr || !dststr)
+        return nullptr;
+
+    if(!srcstr->isTainted())
+        return dststr;
+
     if(fromend == 0)
         fromend = srcstr->length();
 
@@ -253,12 +259,17 @@ taint_str_copy_taint(JSString *dststr, JSString *srcstr,
     }
     if(newchainlast)
         dststr->addTaintRef(newchainlast);
+
+    return dststr;
 }
 
 //add a new node to all taintstringrefs on a string
-void
+JSString *
 taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param1, HandleValue param2)
 {
+    if(!dststr)
+        return nullptr;
+
     //TODO: this might install duplicates if multiple parts of the string derive from the same tree
     for(TaintStringRef *tsr = dststr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
@@ -269,16 +280,26 @@ taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param1, H
         taint_node->param2 = param2;
         tsr->attachTo(taint_node);
     }
+
+    return dststr;
 }
 
-void
+JSString *
 taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     uint32_t start, uint32_t length)
 {
+    if(!str)
+        return nullptr;
+
+    if(!base->isTainted())
+        return str;
+
     js::RootedValue startval(cx, INT_TO_JSVAL(start));
     js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
     taint_str_copy_taint(str, base, start, 0, start + length);
     taint_str_add_all_node(str, "substring", startval, endval);
+
+    return str;
 }
 
 

@@ -284,16 +284,19 @@ CopyStringPure(JSContext *cx, JSString *str)
             JS::AutoCheckCannotGC nogc;
             copy = NewStringCopyNDontDeflate<NoGC>(cx, str->asLinear().twoByteChars(nogc), len);
         }
-        if (copy)
-            return copy;
+        if (copy) {
+            return TAINT_STR_COPY(copy, str);
+        }
 
         AutoStableStringChars chars(cx);
         if (!chars.init(cx, str))
             return nullptr;
 
-        return chars.isLatin1()
+        return TAINT_STR_COPY(chars.isLatin1()
                ? NewStringCopyN<CanGC>(cx, chars.latin1Range().start().get(), len)
-               : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len);
+               : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len),
+                str);
+
     }
 
     if (str->hasLatin1Chars()) {
@@ -301,14 +304,14 @@ CopyStringPure(JSContext *cx, JSString *str)
         if (!str->asRope().copyLatin1CharsZ(cx, copiedChars))
             return nullptr;
 
-        return NewString<CanGC>(cx, copiedChars.forget(), len);
+        return TAINT_STR_COPY(NewString<CanGC>(cx, copiedChars.forget(), len), str);
     }
 
     ScopedJSFreePtr<jschar> copiedChars;
     if (!str->asRope().copyTwoByteCharsZ(cx, copiedChars))
         return nullptr;
 
-    return NewStringDontDeflate<CanGC>(cx, copiedChars.forget(), len);
+    return TAINT_STR_COPY(NewStringDontDeflate<CanGC>(cx, copiedChars.forget(), len), str);
 }
 
 bool

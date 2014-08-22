@@ -4481,6 +4481,10 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler &masm)
     // Get char code.
     masm.loadStringChar(str, key, scratchReg);
 
+#if _TAINT_ON_
+    TAINT_GETELEM_SKIPSTATIC_ASM(&failure);
+#endif
+
     // Check if char code >= UNIT_STATIC_LIMIT.
     masm.branch32(Assembler::AboveOrEqual, scratchReg, Imm32(StaticStrings::UNIT_STATIC_LIMIT),
                   &failure);

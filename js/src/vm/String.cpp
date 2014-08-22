@@ -782,6 +782,9 @@ template <typename CharT>
 /* static */ bool
 StaticStrings::isStatic(const CharT *chars, size_t length)
 {
+#if _TAINT_ON_
+    return false;
+#endif
     switch (length) {
       case 1:
         return chars[0] < UNIT_STATIC_LIMIT;

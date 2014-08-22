@@ -399,7 +399,7 @@ js::StaticStrings::getUnitStringForElement(JSContext *cx, JSString *str, size_t 
     jschar c;
     if (!str->getChar(cx, index, &c))
         return nullptr;
-    if (c < UNIT_STATIC_LIMIT)
+    if (StaticStrings::hasUnit(c))
         return getUnit(c);
     return NewDependentString(cx, str, index, 1);
 }

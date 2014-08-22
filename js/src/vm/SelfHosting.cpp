@@ -1135,16 +1135,17 @@ CloneString(JSContext *cx, JSFlatString *selfHostedString)
         else
             clone = NewStringCopyNDontDeflate<NoGC>(cx, selfHostedString->twoByteChars(nogc), len);
         if (clone)
-            return clone;
+            return TAINT_STR_COPY(clone, selfHostedString);
     }
 
     AutoStableStringChars chars(cx);
     if (!chars.init(cx, selfHostedString))
         return nullptr;
 
-    return chars.isLatin1()
+    return TAINT_STR_COPY(chars.isLatin1()
            ? NewStringCopyN<CanGC>(cx, chars.latin1Range().start().get(), len)
-           : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len);
+           : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len),
+            selfHostedString);
 }
 
 static JSObject *

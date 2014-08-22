@@ -92,6 +92,10 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     if(base->isTainted()) \
         taint_str_substr(s, cx, base, start, length);
 
+//skip static string optimizations
+#define TAINT_GETELEM_SKIPSTATIC_ASM(target) \
+    masm.jump(target);
+
 //merge references after initializing the taint pointer
 #define TAINT_STR_ASM_CONCAT(masm, out, lhs, rhs) \
 { \
@@ -113,7 +117,7 @@ bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
-void taint_str_add_all_node(JSString *dststr, const char* name,
+JSString* taint_str_add_all_node(JSString *dststr, const char* name,
     JS::HandleValue param1 = JS::UndefinedHandleValue, JS::HandleValue param2 = JS::UndefinedHandleValue);
 
 //special cases
@@ -129,10 +133,13 @@ void taint_tag_source(JSString * str, const char* name,
     uint32_t begin = 0, uint32_t end = 0);
 
 //mutator/function call
-void taint_str_copy_taint(JSString *dststr, JSString *srcstr,
+JSString *taint_str_copy_taint(JSString *dststr, JSString *srcstr,
     uint32_t frombegin = 0, uint32_t offset = 0, uint32_t fromend = 0);
-void taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
+JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     uint32_t start, uint32_t length);
+#define TAINT_STR_COPY(str, base) \
+    taint_str_copy_taint((str), base)
+
 
 // use, when same string is used in and out to record a specific mutator
 // has been called
@@ -144,14 +151,21 @@ inline void taint_tag_mutator(JSString * str, const char *name,
 
 // use, when a propagator creates a new string with partly tainted contents
 // located at an offset
-inline void taint_tag_propagator(JSString * dststr, JSString * srcstr,
+inline JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     const char *name, uint32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue)
 {
     taint_str_copy_taint(dststr, srcstr, 0, offset);
     taint_str_add_all_node(dststr, name, param1, param2);
+
+    return dststr;
 }
 
+#else
+
+#define TAINT_STR_COPY(str, base) (str)
+
 #endif
+
 
 #endif

@@ -805,6 +805,10 @@ ToUpperCase(JSContext *cx, JSLinearString *str)
     if (!res)
         return nullptr;
 
+#if _TAINT_ON_
+    taint_tag_propagator(res, str, "toUpperCase");
+#endif
+
     newChars.forget();
     return res;
 }
@@ -966,6 +970,10 @@ str_normalize(JSContext *cx, unsigned argc, Value *vp)
     JSString *ns = NewStringCopyN<CanGC>(cx, chars.begin(), size);
     if (!ns)
         return false;
+
+#if _TAINT_ON_
+    taint_tag_propagator(ns, str, "normalize");
+#endif
 
     // Step 9.
     args.rval().setString(ns);

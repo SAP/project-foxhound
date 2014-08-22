@@ -46,13 +46,17 @@ assertEq(JSON.stringify(tainted.substr(3,5).taint), JSON.stringify(halftaint));
 assertEq(JSON.stringify(tainted.slice(5,10).taint), JSON.stringify(fulltaint));
 assertEq(JSON.stringify(tainted.slice(3,8).taint), JSON.stringify(halftaint));
 
+//access to single chars should remain taint - behave like slice(x)
+//TODO!
+//assertEq(tainted[6].taint.length, 1);
+//assertEq(JSON.stringify(tainted[6].taint), JSON.stringify(tainted[6].taint));
 
 //check JIT operation
-var add = tainted;
-for(var i = 0; i < 100000; i++) {
-	add = i + add;
+for(var i = 1; i < 10000; i++) {
+	assertEq(tainted.substr(5,i).taint.length, 1);
+	//var str=String.newAllTainted(i);
+	//assertEq(str[0].taint.length, 1);
 }
-assertEq(add.taint.length, 1);
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);

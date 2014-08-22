@@ -1100,7 +1100,12 @@ class StaticStrings
     bool init(JSContext *cx);
     void trace(JSTracer *trc);
 
-    static bool hasUint(uint32_t u) { return u < INT_STATIC_LIMIT; }
+    static bool hasUint(uint32_t u) {
+#if _TAINT_ON_
+        return false;
+#endif
+        return u < INT_STATIC_LIMIT; 
+    }
 
     JSAtom *getUint(uint32_t u) {
         JS_ASSERT(hasUint(u));
@@ -1108,6 +1113,9 @@ class StaticStrings
     }
 
     static bool hasInt(int32_t i) {
+#if _TAINT_ON_
+        return false;
+#endif
         return uint32_t(i) < INT_STATIC_LIMIT;
     }
 
@@ -1116,7 +1124,12 @@ class StaticStrings
         return getUint(uint32_t(i));
     }
 
-    static bool hasUnit(jschar c) { return c < UNIT_STATIC_LIMIT; }
+    static bool hasUnit(jschar c) {
+#if _TAINT_ON_
+        return false;
+#endif
+        return c < UNIT_STATIC_LIMIT;
+    }
 
     JSAtom *getUnit(jschar c) {
         JS_ASSERT(hasUnit(c));
@@ -1133,6 +1146,9 @@ class StaticStrings
     /* Return null if no static atom exists for the given (chars, length). */
     template <typename CharT>
     JSAtom *lookup(const CharT *chars, size_t length) {
+#if _TAINT_ON_
+        return nullptr;
+#endif
         switch (length) {
           case 1: {
             jschar c = chars[0];
