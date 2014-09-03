@@ -241,7 +241,7 @@ taint_str_copy_taint(JSString *dststr, JSString *srcstr,
         fromend = srcstr->length();
 
     TaintStringRef *newchainlast = nullptr;
-    for(TaintStringRef *tsr = srcstr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
+    for(TaintStringRef *tsr = srcstr->getTopTaintRef(); tsr; tsr = tsr->next)
     {
         if(tsr->end < frombegin || tsr->begin >= fromend)
             continue;
@@ -284,6 +284,42 @@ taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param1, H
     return dststr;
 }
 
+TaintStringRef *
+taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx)
+{
+    if(!source || !target)
+        return nullptr;
+
+    //we are in the same TSR, still
+    if(*target) {
+        if(sidx < source->end) { //this will trigger len(str) times
+            (*target)->end = tidx;
+            return source;
+        }
+
+        //if we completed the last TSR advance the source pointer
+        source = source->next;
+    }
+
+    //no new TSR currently pending or end of tsr chain -> no more taint to copy
+    if(!source || sidx < source->begin)
+        return source;
+
+    //as we are called for every index
+    //we can assume sidx is the smallest idx with sidx >= source->begin
+    TaintStringRef *tsr = taint_str_taintref_build(*source);
+    tsr->begin = tidx;
+
+    if(*target == nullptr) {
+        *target = tsr;
+    } else {
+        (*target)->next = tsr;
+    }
+
+    //return source so we get this for comparison later
+    return source;
+}
+
 JSString *
 taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     uint32_t start, uint32_t length)
@@ -317,6 +353,13 @@ taint_str_taintref_build(TaintStringRef &ref)
 {
     void *p = taint_new_tainref_mem();
     return new (p) TaintStringRef(ref);
+}
+
+TaintStringRef*
+taint_str_taintref_build()
+{
+    void *p = taint_new_tainref_mem();
+    return new (p) TaintStringRef();
 }
 
 

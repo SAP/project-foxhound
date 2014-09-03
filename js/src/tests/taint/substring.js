@@ -46,6 +46,10 @@ assertEq(JSON.stringify(tainted.substr(3,5).taint), JSON.stringify(halftaint));
 assertEq(JSON.stringify(tainted.slice(5,10).taint), JSON.stringify(fulltaint));
 assertEq(JSON.stringify(tainted.slice(3,8).taint), JSON.stringify(halftaint));
 
+//charAt/single char access behaves like substring(x, 1)
+assertEq(JSON.stringify(tainted.substring(3, 1).taint), JSON.stringify(tainted.charAt(3).taint));
+assertEq(JSON.stringify(tainted.substring(3, 1).taint), JSON.stringify(tainted[3].taint));
+
 //access to single chars should remain taint - behave like slice(x)
 //TODO!
 //assertEq(tainted[6].taint.length, 1);
@@ -54,6 +58,7 @@ assertEq(JSON.stringify(tainted.slice(3,8).taint), JSON.stringify(halftaint));
 //check JIT operation
 for(var i = 1; i < 10000; i++) {
 	assertEq(tainted.substr(5,i).taint.length, 1);
+	//todo slice
 	//var str=String.newAllTainted(i);
 	//assertEq(str[0].taint.length, 1);
 }

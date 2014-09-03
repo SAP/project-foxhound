@@ -408,8 +408,8 @@ js::AtomizeString(ExclusiveContext *cx, JSString *str,
 
     JS::AutoCheckCannotGC nogc;
     return linear->hasLatin1Chars()
-           ? AtomizeAndCopyChars(cx, linear->latin1Chars(nogc), linear->length(), ib)
-           : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc), linear->length(), ib);
+           ? TAINT_ATOM_CLEARCOPY(AtomizeAndCopyChars(cx, linear->latin1Chars(nogc), linear->length(), ib), linear)
+           : TAINT_ATOM_CLEARCOPY(AtomizeAndCopyChars(cx, linear->twoByteChars(nogc), linear->length(), ib), linear);
 }
 
 JSAtom *
@@ -424,8 +424,8 @@ js::AtomizeSubstring(ExclusiveContext *cx, JSString *str, size_t start, size_t l
 
     JS::AutoCheckCannotGC nogc;
     return linear->hasLatin1Chars()
-           ? AtomizeAndCopyChars(cx, linear->latin1Chars(nogc) + start, length, ib)
-           : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc) + start, length, ib);
+           ? TAINT_ATOM_CLEARCOPY(AtomizeAndCopyChars(cx, linear->latin1Chars(nogc) + start, length, ib), linear)
+           : TAINT_ATOM_CLEARCOPY(AtomizeAndCopyChars(cx, linear->twoByteChars(nogc) + start, length, ib), linear);
 }
 
 JSAtom *

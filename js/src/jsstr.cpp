@@ -121,7 +121,7 @@ str_encodeURI_Component(JSContext *cx, unsigned argc, Value *vp);
 /* ES5 B.2.1 */
 template <typename CharT>
 static Latin1Char *
-Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOut)
+TAINT_ESCAPE_DEF(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOut)
 {
     static const uint8_t shouldPassThrough[128] = {
          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -158,9 +158,17 @@ Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOu
 
     static const char digits[] = "0123456789ABCDEF";
 
+#if _TAINT_ON_
+    TAINT_ESCAPE_PRE
+#endif
+
+
     size_t i, ni;
     for (i = 0, ni = 0; i < length; i++) {
         jschar ch = chars[i];
+#if _TAINT_ON_
+    TAINT_ESCAPE_MATCH
+#endif
         if (ch < 128 && shouldPassThrough[ch]) {
             newChars[ni++] = ch;
         } else if (ch < 256) {
@@ -179,6 +187,10 @@ Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOu
     JS_ASSERT(ni == newLength);
     newChars[newLength] = 0;
 
+#if _TAINT_ON_
+    TAINT_ESCAPE_MATCH
+#endif
+
     *newLengthOut = newLength;
     return newChars;
 }
@@ -192,14 +204,18 @@ str_escape(JSContext *cx, unsigned argc, Value *vp)
     if (!str)
         return false;
 
+#if _TAINT_ON_
+    TAINT_ESCAPE_VAR
+#endif
+
     ScopedJSFreePtr<Latin1Char> newChars;
     uint32_t newLength;
     if (str->hasLatin1Chars()) {
         AutoCheckCannotGC nogc;
-        newChars = Escape(cx, str->latin1Chars(nogc), str->length(), &newLength);
+        newChars = TAINT_ESCAPE_CALL(cx, str->latin1Chars(nogc), str->length(), &newLength);
     } else {
         AutoCheckCannotGC nogc;
-        newChars = Escape(cx, str->twoByteChars(nogc), str->length(), &newLength);
+        newChars = TAINT_ESCAPE_CALL(cx, str->twoByteChars(nogc), str->length(), &newLength);
     }
 
     if (!newChars)
@@ -208,6 +224,10 @@ str_escape(JSContext *cx, unsigned argc, Value *vp)
     JSString *res = NewString<CanGC>(cx, newChars.get(), newLength);
     if (!res)
         return false;
+
+#if _TAINT_ON_
+    TAINT_ESCAPE_APPLY
+#endif
 
     newChars.forget();
     args.rval().setString(res);
@@ -724,6 +744,10 @@ ToLowerCase(JSContext *cx, JSLinearString *str)
     JSString *res = NewStringDontDeflate<CanGC>(cx, newChars.get(), length);
     if (!res)
         return nullptr;
+
+#if _TAINT_ON_
+    taint_tag_propagator(res, str, "toLowerCase");
+#endif
 
     newChars.forget();
     return res;
@@ -1924,6 +1948,14 @@ TrimString(JSContext *cx, Value *vp, bool trimLeft, bool trimRight)
     if (!str)
         return false;
 
+#if _TAINT_ON_
+    { 
+        RootedValue leftp(cx, BOOLEAN_TO_JSVAL(trimLeft));
+        RootedValue rightp(cx, BOOLEAN_TO_JSVAL(trimRight));
+        taint_tag_mutator(str, "trim", leftp, rightp);
+    }
+#endif
+
     call.rval().setString(str);
     return true;
 }
@@ -2406,10 +2438,10 @@ js::str_match(JSContext *cx, unsigned argc, Value *vp)
 
     /* Steps 5-6, 7. */
     if (!g.regExp().global())
-        return DoMatchLocal(cx, args, res, linearStr, g.regExp());
+        return TAINT_MARK_MATCH(DoMatchLocal(cx, args, res, linearStr, g.regExp()), linearStr);
 
     /* Steps 6, 8. */
-    return DoMatchGlobal(cx, args, res, linearStr, g);
+    return TAINT_MARK_MATCH(DoMatchGlobal(cx, args, res, linearStr, g), linearStr);
 }
 
 bool
