@@ -229,7 +229,7 @@ taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
 //and point to the same nodes (shallow copy)
 JSString *
 taint_str_copy_taint(JSString *dststr, JSString *srcstr,
-    uint32_t frombegin, uint32_t offset, uint32_t fromend)
+    uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
     if(!srcstr || !dststr)
         return nullptr;
@@ -332,7 +332,7 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
 
     js::RootedValue startval(cx, INT_TO_JSVAL(start));
     js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
-    taint_str_copy_taint(str, base, start, 0, start + length);
+    taint_str_copy_taint(str, base, start, -start, start + length);
     taint_str_add_all_node(str, "substring", startval, endval);
 
     return str;

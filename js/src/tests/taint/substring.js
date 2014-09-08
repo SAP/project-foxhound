@@ -23,8 +23,8 @@ assertEq(tainted.substring(0,5).taint.length, 0);
 // full taint
 var fulltaint=tainted.substring(5,10).taint;
 assertEq(fulltaint.length, 1);
-assertEq(fulltaint[0].begin, 5); //substring has absolute indices for start
-assertEq(fulltaint[0].end, 10); // .. and end
+assertEq(fulltaint[0].begin, 0); //after substring indices are relative to the new string not the old
+assertEq(fulltaint[0].end, 5);
 assertEq(fulltaint[0].operators.length, 2);
 assertEq(fulltaint[0].operators[0].op, "substring");
 assertEq(fulltaint[0].operators[0].param1, 5); //this should be the absolute start
@@ -32,8 +32,8 @@ assertEq(fulltaint[0].operators[0].param2, 10); // and end
 // half
 var halftaint=tainted.substring(3,8).taint;
 assertEq(halftaint.length, 1);
-assertEq(halftaint[0].begin, 5); //the taint starts at 5 even if we have some untainted string prepended
-assertEq(halftaint[0].end, 8);
+assertEq(halftaint[0].begin, 2);
+assertEq(halftaint[0].end, 5);
 assertEq(halftaint[0].operators[0].param1, 3); //this should be the absolute start
 assertEq(halftaint[0].operators[0].param2, 8); // and end
 

@@ -164,6 +164,36 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     bres; \
 })
 
+#define TAINT_MARK_REPLACE(str) \
+({ \
+    bool bres = str; \
+    RootedValue regexVal(cx, args[0]); \
+    RootedValue replaceVal(cx, args[1]); \
+    taint_str_add_all_node(args.rval().get().toString(), "replace", regexVal, replaceVal); \
+    bres; \
+})
+
+#define TAINT_MARK_REPLACE_RAW(str, re) \
+({ \
+    bool bres = str; \
+    RootedValue regexVal(cx, re); \
+    RootedValue replaceVal(cx, StringValue(replacement)); \
+    taint_str_add_all_node(rval.get().toString(), "replace", regexVal, replaceVal); \
+    bres; \
+})
+
+#define TAINT_MARK_SPLIT \
+    RootedValue splitVal(cx, args[0]); \
+    for(uint32_t ki = 0; ki < aobj->getDenseInitializedLength(); ki++) { \
+        RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
+        taint_str_add_all_node(aobj->getDenseElement(ki).toString(), "split", splitVal, resultIdx); \
+    }
+
+/*
+#define TAINT_CHAR_SPLIT_MARK \
+    RootedValue markEmpty(cx, StringValue(cx->runtime()->emptyString)); \
+    taint_str_add_all_node(sub, "split", markEmpty); */
+
 
 TaintStringRef *taint_str_taintref_build();
 TaintStringRef *taint_str_taintref_build(TaintStringRef &ref);
@@ -191,7 +221,7 @@ void taint_tag_source(JSString * str, const char* name,
 
 //mutator/function call
 JSString *taint_str_copy_taint(JSString *dststr, JSString *srcstr,
-    uint32_t frombegin = 0, uint32_t offset = 0, uint32_t fromend = 0);
+    uint32_t frombegin = 0, int32_t offset = 0, uint32_t fromend = 0);
 JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     uint32_t start, uint32_t length);
 #define TAINT_STR_COPY(str, base) \
@@ -211,7 +241,7 @@ inline void taint_tag_mutator(JSString * str, const char *name,
 // use, when a propagator creates a new string with partly tainted contents
 // located at an offset
 inline JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
-    const char *name, uint32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
+    const char *name, int32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue)
 {
     taint_str_copy_taint(dststr, srcstr, 0, offset);

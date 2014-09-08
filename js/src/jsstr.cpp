@@ -3329,6 +3329,7 @@ StrReplaceRegExp(JSContext *cx, ReplaceData &rdata, MutableHandleValue rval)
     if (!retstr)
         return false;
 
+
     rval.setString(retstr);
     return true;
 }
@@ -3353,7 +3354,7 @@ js::str_replace_regexp_raw(JSContext *cx, HandleString string, HandleObject rege
             return false;
 
         RegExpShared &re = guard.regExp();
-        return StrReplaceRegexpRemove(cx, string, re, rval);
+        return TAINT_MARK_REPLACE_RAW(StrReplaceRegexpRemove(cx, string, re, rval), ObjectValue(*regexp));
     }
 
     ReplaceData rdata(cx);
@@ -3368,7 +3369,7 @@ js::str_replace_regexp_raw(JSContext *cx, HandleString string, HandleObject rege
     if (!rdata.g.init(cx, regexp))
         return false;
 
-    return StrReplaceRegExp(cx, rdata, rval);
+    return TAINT_MARK_REPLACE_RAW(StrReplaceRegExp(cx, rdata, rval), ObjectValue(*regexp));
 }
 
 static inline bool
@@ -3406,7 +3407,7 @@ js::str_replace_string_raw(JSContext *cx, HandleString string, HandleString patt
         return true;
     }
 
-    return StrReplaceString(cx, rdata, *fm, rval);
+    return TAINT_MARK_REPLACE_RAW(StrReplaceString(cx, rdata, *fm, rval), StringValue(pattern));
 }
 
 static inline bool
@@ -3566,7 +3567,7 @@ js::str_replace(JSContext *cx, unsigned argc, Value *vp)
     if (!fm) {
         if (cx->isExceptionPending())  /* oom in RopeMatch in tryFlatMatch */
             return false;
-        return str_replace_regexp(cx, args, rdata);
+        return TAINT_MARK_REPLACE(str_replace_regexp(cx, args, rdata));
     }
 
     if (fm->match() < 0) {
@@ -3575,8 +3576,8 @@ js::str_replace(JSContext *cx, unsigned argc, Value *vp)
     }
 
     if (rdata.lambda)
-        return str_replace_flat_lambda(cx, args, rdata, *fm);
-    return StrReplaceString(cx, rdata, *fm, args.rval());
+        return TAINT_MARK_REPLACE(str_replace_flat_lambda(cx, args, rdata, *fm));
+    return TAINT_MARK_REPLACE(StrReplaceString(cx, rdata, *fm, args.rval()));
 }
 
 namespace {
@@ -3918,6 +3919,10 @@ js::str_split(JSContext *cx, unsigned argc, Value *vp)
     }
     if (!aobj)
         return false;
+
+#if _TAINT_ON_
+    TAINT_MARK_SPLIT
+#endif
 
     /* Step 16. */
     aobj->setType(type);
