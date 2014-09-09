@@ -108,18 +108,18 @@ StringBuffer::finishString()
     if (isLatin1()) {
         if (JSFatInlineString::latin1LengthFits(len)) {
             mozilla::Range<const Latin1Char> range(latin1Chars().begin(), len);
-            return NewFatInlineString<CanGC>(cx, range);
+            return TAINT_REF_COPY(NewFatInlineString<CanGC>(cx, range), startTaint);
         }
     } else {
         if (JSFatInlineString::twoByteLengthFits(len)) {
             mozilla::Range<const jschar> range(twoByteChars().begin(), len);
-            return NewFatInlineString<CanGC>(cx, range);
+            return TAINT_REF_COPY(NewFatInlineString<CanGC>(cx, range), startTaint);
         }
     }
 
-    return isLatin1()
+    return TAINT_REF_COPY(isLatin1()
         ? FinishStringFlat<Latin1Char>(cx, *this, latin1Chars())
-        : FinishStringFlat<jschar>(cx, *this, twoByteChars());
+        : FinishStringFlat<jschar>(cx, *this, twoByteChars()), startTaint);
 }
 
 JSAtom *
@@ -137,7 +137,7 @@ StringBuffer::finishAtom()
 
     JSAtom *atom = AtomizeChars(cx, twoByteChars().begin(), len);
     twoByteChars().clear();
-    return atom;
+    return TAINT_REF_COPY(atom, startTaint);
 }
 
 bool

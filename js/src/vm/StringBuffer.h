@@ -13,6 +13,7 @@
 #include "jscntxt.h"
 
 #include "js/Vector.h"
+#include "taint.h"
 
 namespace js {
 
@@ -44,7 +45,6 @@ class StringBuffer
      * and copies the Latin1 chars.
      */
     mozilla::MaybeOneOf<Latin1CharBuffer, TwoByteCharBuffer> cb;
-
     /*
      * Make sure ensureTwoByteChars() is called before calling
      * infallibleAppend(jschar).
@@ -53,6 +53,11 @@ class StringBuffer
 
     /* Number of reserve()'d chars, see inflateChars. */
     size_t reserved_;
+
+#if _TAINT_ON_
+    TaintStringRef *startTaint;
+    TaintStringRef *endTaint;
+#endif
 
     StringBuffer(const StringBuffer &other) MOZ_DELETE;
     void operator=(const StringBuffer &other) MOZ_DELETE;
@@ -75,9 +80,48 @@ class StringBuffer
   public:
     explicit StringBuffer(ExclusiveContext *cx)
       : cx(cx), hasEnsuredTwoByteChars_(false), reserved_(0)
+#if _TAINT_ON_
+      , startTaint(nullptr), endTaint(nullptr)
+#endif
     {
         cb.construct<Latin1CharBuffer>(cx);
     }
+
+    ~StringBuffer() {
+#if _TAINT_ON_
+        removeAllTaint();
+#endif
+    }
+
+#if _TAINT_ON_
+    inline bool isTainted() const {
+        return startTaint && endTaint;
+    }
+
+    inline TaintStringRef *getTopTaintRef() {
+        return startTaint;
+    }
+
+    inline void addTaintRef(TaintStringRef *tsr)  {
+        if(isTainted()) {
+            if(!tsr) {
+                removeAllTaint();
+                return;
+            }
+            
+            endTaint->next = tsr;
+            endTaint = tsr;
+        } else
+            startTaint = endTaint = tsr;
+
+        //fastforward endTaint
+        for(; endTaint->next != nullptr; endTaint = endTaint->next);
+    }
+
+    inline void removeAllTaint() {
+        taint_str_remove_taint_all(&startTaint, &endTaint);
+    }
+#endif
 
     inline bool reserve(size_t len) {
         if (len > reserved_)
@@ -241,6 +285,11 @@ StringBuffer::append(const jschar *begin, const jschar *end)
 inline bool
 StringBuffer::append(JSLinearString *str)
 {
+
+#if _TAINT_ON_
+    taint_str_copy_taint(this, str->getTopTaintRef(), 0, length(), 0);
+#endif
+
     JS::AutoCheckCannotGC nogc;
     if (isLatin1()) {
         if (str->hasLatin1Chars())
@@ -259,6 +308,10 @@ StringBuffer::infallibleAppendSubstring(JSLinearString *base, size_t off, size_t
     MOZ_ASSERT(off + len <= base->length());
     MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
+#if _TAINT_ON_
+    taint_str_copy_taint(this, base->getTopTaintRef(), off, length(), off + len);
+#endif
+
     JS::AutoCheckCannotGC nogc;
     if (base->hasLatin1Chars())
         infallibleAppend(base->latin1Chars(nogc) + off, len);
@@ -271,10 +324,15 @@ StringBuffer::appendSubstring(JSLinearString *base, size_t off, size_t len)
 {
     MOZ_ASSERT(off + len <= base->length());
 
+#if _TAINT_ON_
+    taint_str_copy_taint(this, base->getTopTaintRef(), off, length(), off + len);
+#endif
+
     JS::AutoCheckCannotGC nogc;
     if (isLatin1()) {
         if (base->hasLatin1Chars())
             return latin1Chars().append(base->latin1Chars(nogc) + off, len);
+
         if (!inflateChars())
             return false;
     }
