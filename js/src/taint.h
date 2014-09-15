@@ -139,7 +139,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     TaintStringRef *current_tsr = sourceref; \
     TaintStringRef *target_last_tsr = nullptr; \
     if(targetref) \
-        target_last_tsr = *targetref;
+        target_last_tsr = *targetref; //TODO maybe this is wrong? not the last but first tsr?
 #define TAINT_ESCAPE_MATCH \
     current_tsr = taint_copy_until(&target_last_tsr, current_tsr, i, ni); \
     if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
@@ -189,6 +189,50 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
         taint_str_add_all_node(aobj->getDenseElement(ki).toString(), "split", splitVal, resultIdx); \
     }
 
+#define TAINT_JSON_PARSE_CALL(a,b,c,d, str) ParseJSONWithReviver(a,b,c,d, str->getTopTaintRef())
+#define TAINT_JSON_PARSE_CALL_NULL(a,b,c,d) ParseJSONWithReviver(a,b,c,d, nullptr);
+#define TAINT_JSON_PARSE_DEF(a,b,c,d) ParseJSONWithReviver(a,b,c,d, TaintStringRef *ref)
+#define TAINT_JSON_EVAL_CALL(a,b,c) ParseEvalStringAsJSON(a,b,c, str->getTopTaintRef())
+#define TAINT_JSON_EVAL_DEF(a,b,c) ParseEvalStringAsJSON(a,b,c,TaintStringRef *ref)
+#define TAINT_JSON_PARSE_PRE \
+    TaintStringRef *current_tsr = sourceRef; \
+    TaintStringRef *target_first_tsr = nullptr; \
+    TaintStringRef *target_last_tsr = nullptr; \
+    const CharPtr s_start = current;
+#define TAINT_JSON_PARSE_OPT \
+    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, current - s_start, current - start); \
+    if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
+        target_first_tsr = target_last_tsr;
+#define TAINT_JSON_PARSE_MATCH \
+    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, current - s_start, buffer.length() + (size_t)(current - start)); \
+    if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
+        target_first_tsr = target_last_tsr;
+#define TAINT_JSON_PARSE_APPLY \
+    str->addTaintRef(target_first_tsr); \
+    taint_str_add_all_node(str, "JSON.parse");
+    
+
+#define TAINT_SB_APPEND_DECL(a) append(a,bool taint = true)
+#define TAINT_SB_APPEND_DEF(a) append(a,bool taint)
+#define TAINT_SB_APPEND_CALL(a) append(a,taint)
+#define TAINT_SB_INFAPPENDSUBSTRING_DECL(a,b,c) infallibleAppendSubstring(a,b,c, bool taint = true)
+#define TAINT_SB_INFAPPENDSUBSTRING_DEF(a,b,c) infallibleAppendSubstring(a,b,c, bool taint)
+#define TAINT_SB_APPENDSUBSTRING_DECL(a,b,c) appendSubstring(a,b,c, bool taint = true)
+#define TAINT_SB_APPENDSUBSTRING_DEF(a,b,c) appendSubstring(a,b,c, bool taint)
+#define TAINT_SB_APPENDSUBSTRING_CALL(a,b,c) appendSubstring(a,b,c,taint)
+#define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c,false)
+#define TAINT_JSON_QUOTE_PRE \
+    TaintStringRef *current_tsr = str->getTopTaintRef(); \
+    TaintStringRef *target_first_tsr = nullptr; \
+    TaintStringRef *target_last_tsr = nullptr;
+#define TAINT_JSON_QUOTE_MATCH(k, off) \
+    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length() + off); \
+    if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
+        target_first_tsr = target_last_tsr;
+#define TAINT_JSON_QUOTE_APPLY \
+    sb.addTaintRef(target_first_tsr);
+
+
 
 //#define 
 
@@ -234,6 +278,13 @@ JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *ba
     taint_str_copy_taint((str), base->getTopTaintRef(), 0, 0, 0)
 #define TAINT_REF_COPY(str, ref) \
     taint_str_copy_taint((str), ref, 0, 0, 0)
+#define TAINT_REF_COPYCLEAR(str, ref) \
+({ \
+    JSString *res = TAINT_REF_COPY(str, ref); \
+    taint_str_remove_taint_all(&ref); \
+    res; \
+})
+
 
 #define TAINT_ATOM_CLEARCOPY(str, base) \
 ({ \
@@ -260,7 +311,21 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
 #else
 
 #define TAINT_STR_COPY(str, base) (str)
-#define TAINT_STR_CLEARCOPY(str, base) (str)
+#define TAINT_REF_COPY(str, ref) (str)
+#define TAINT_REF_TAINT_ATOM_CLEARCOPY(str, base) (str)
+#define TAINT_REF_COPYCLEAR(str, base) (str)
+
+#define TAINT_JSON_PARSE_CALL(a,b,c,d) ParseJSONWithReviver(a,b,c,d)
+#define TAINT_JSON_EVAL_DEF(a,b,c) ParseEvalStringAsJSON(a,b,c)
+#define TAINT_SB_APPENDSUBSTRING_DECL(a,b,c) appendSubstring(a,b,c)
+#define TAINT_SB_INFAPPENDSUBSTRING_DECL(a,b,c) infallibleAppendSubstring(a,b,c)
+#define TAINT_SB_APPENDSUBSTRING_DEF(a,b,c) appendSubstring(a,b,c)
+#define TAINT_SB_INFAPPENDSUBSTRING_DEF(a,b,c) infallibleAppendSubstring(a,b,c)
+#define TAINT_SB_APPENDSUBSTRING_CALL(a,b,c) appendSubstring(a,b,c)
+#define TAINT_SB_APPEND_DECL(a) append(a)
+#define TAINT_SB_APPEND_DEF(a) append(a)
+#define TAINT_SB_APPEND_CALL(a) append(a)
+#define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c)
 
 #endif
 

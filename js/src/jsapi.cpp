@@ -5625,7 +5625,7 @@ JS_ParseJSON(JSContext *cx, const jschar *chars, uint32_t len, MutableHandleValu
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    return ParseJSONWithReviver(cx, mozilla::Range<const jschar>(chars, len), NullHandleValue, vp);
+    return TAINT_JSON_PARSE_CALL_NULL(cx, mozilla::Range<const jschar>(chars, len), NullHandleValue, vp);
 }
 
 JS_PUBLIC_API(bool)
@@ -5639,7 +5639,7 @@ JS_ParseJSONWithReviver(JSContext *cx, const jschar *chars, uint32_t len, Handle
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    return ParseJSONWithReviver(cx, mozilla::Range<const jschar>(chars, len), reviver, vp);
+    return TAINT_JSON_PARSE_CALL_NULL(cx, mozilla::Range<const jschar>(chars, len), reviver, vp);
 }
 
 JS_PUBLIC_API(bool)
@@ -5654,8 +5654,8 @@ JS_ParseJSONWithReviver(JSContext *cx, HandleString str, HandleValue reviver, Mu
         return false;
 
     return stableChars.isLatin1()
-           ? ParseJSONWithReviver(cx, stableChars.latin1Range(), reviver, vp)
-           : ParseJSONWithReviver(cx, stableChars.twoByteRange(), reviver, vp);
+           ? TAINT_JSON_PARSE_CALL(cx, stableChars.latin1Range(), reviver, vp, str)
+           : TAINT_JSON_PARSE_CALL(cx, stableChars.twoByteRange(), reviver, vp, str);
 }
 
 /************************************************************************/

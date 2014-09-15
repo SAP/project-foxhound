@@ -188,16 +188,30 @@ class MOZ_STACK_CLASS JSONParser : public JSONParserBase
     CharPtr current;
     const CharPtr begin, end;
 
+#if _TAINT_ON_
+    TaintStringRef *sourceRef;
+#endif
+
   public:
     /* Public API */
 
     /* Create a parser for the provided JSON data. */
+#if _TAINT_ON_
+    JSONParser(JSContext *cx, mozilla::Range<const CharT> data,
+               TaintStringRef *source, ErrorHandling errorHandling = RaiseError)
+      : JSONParserBase(cx, errorHandling),
+        current(data.start()),
+        begin(current),
+        end(data.end()),
+        sourceRef(source)
+#else
     JSONParser(JSContext *cx, mozilla::Range<const CharT> data,
                ErrorHandling errorHandling = RaiseError)
       : JSONParserBase(cx, errorHandling),
         current(data.start()),
         begin(current),
         end(data.end())
+#endif
     {
         JS_ASSERT(current <= end);
     }

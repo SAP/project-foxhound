@@ -12,6 +12,7 @@
 #include "NamespaceImports.h"
 
 #include "js/RootingAPI.h"
+#include "taint.h"
 
 namespace js {
 class StringBuffer;
@@ -28,7 +29,7 @@ namespace js {
 
 template <typename CharT>
 extern bool
-ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const CharT> chars,
+TAINT_JSON_PARSE_DEF(JSContext *cx, const mozilla::Range<const CharT> chars,
                      HandleValue reviver, MutableHandleValue vp);
 
 } // namespace js

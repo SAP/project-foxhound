@@ -247,13 +247,21 @@ TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
 
         //add the first element directly to the string
         //all others will be appended to it
+        if(!newchainlast)
+            dst->addTaintRef(newtsr);
+        else
+            newchainlast->next = newtsr;
+
+        newchainlast = newtsr;
+        /*
         if(newchainlast)
             newchainlast->next = newtsr;
         else
-            newchainlast = newtsr;
+            newchainlast = newtsr;*/
     }
+    /*
     if(newchainlast)
-        dst->addTaintRef(newchainlast);
+        dst->addTaintRef(newchainlast);*/
 
     return dst;
 }
@@ -296,7 +304,7 @@ taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
 
     //we are in the same TSR, still
     if(*target) {
-        if(sidx < source->end) { //this will trigger len(str) times
+        if(sidx <= source->end) { //this will trigger len(str) times
             (*target)->end = tidx;
             return source;
         }
@@ -313,12 +321,12 @@ taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
     //we can assume sidx is the smallest idx with sidx >= source->begin
     TaintStringRef *tsr = taint_str_taintref_build(*source);
     tsr->begin = tidx;
+    tsr->end = tidx;
 
-    if(*target == nullptr) {
-        *target = tsr;
-    } else {
+    if(*target) {
         (*target)->next = tsr;
     }
+    *target = tsr;
 
     //return source so we get this for comparison later
     return source;

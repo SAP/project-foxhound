@@ -14,6 +14,25 @@
 
 using namespace js;
 
+#if _TAINT_ON_
+void StringBuffer::addTaintRef(TaintStringRef *tsr)
+{
+    if(isTainted()) {
+        if(!tsr) {
+            removeAllTaint();
+            return;
+        }
+        
+        endTaint->next = tsr;
+        endTaint = tsr;
+    } else
+        startTaint = endTaint = tsr;
+
+    //fastforward endTaint
+    for(; endTaint->next != nullptr; endTaint = endTaint->next);
+}
+#endif
+
 template <typename CharT, class Buffer>
 static CharT *
 ExtractWellSized(ExclusiveContext *cx, Buffer &cb)

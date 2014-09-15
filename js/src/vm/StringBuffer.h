@@ -102,21 +102,7 @@ class StringBuffer
         return startTaint;
     }
 
-    inline void addTaintRef(TaintStringRef *tsr)  {
-        if(isTainted()) {
-            if(!tsr) {
-                removeAllTaint();
-                return;
-            }
-            
-            endTaint->next = tsr;
-            endTaint = tsr;
-        } else
-            startTaint = endTaint = tsr;
-
-        //fastforward endTaint
-        for(; endTaint->next != nullptr; endTaint = endTaint->next);
-    }
+    void addTaintRef(TaintStringRef *tsr);
 
     inline void removeAllTaint() {
         taint_str_remove_taint_all(&startTaint, &endTaint);
@@ -184,10 +170,10 @@ class StringBuffer
         return isLatin1() ? latin1Chars().appendN(c, n) : twoByteChars().appendN(c, n);
     }
 
-    inline bool append(JSString *str);
-    inline bool append(JSLinearString *str);
-    inline bool appendSubstring(JSString *base, size_t off, size_t len);
-    inline bool appendSubstring(JSLinearString *base, size_t off, size_t len);
+    inline bool TAINT_SB_APPEND_DECL(JSString *str);
+    inline bool TAINT_SB_APPEND_DECL(JSLinearString *str);
+    inline bool TAINT_SB_APPENDSUBSTRING_DECL(JSString *base, size_t off, size_t len);
+    inline bool TAINT_SB_APPENDSUBSTRING_DECL(JSLinearString *base, size_t off, size_t len);
 
     inline bool append(const char *chars, size_t len) {
         return append(reinterpret_cast<const Latin1Char *>(chars), len);
@@ -218,7 +204,7 @@ class StringBuffer
         infallibleAppend(reinterpret_cast<const Latin1Char *>(chars), len);
     }
 
-    void infallibleAppendSubstring(JSLinearString *base, size_t off, size_t len);
+    void TAINT_SB_INFAPPENDSUBSTRING_DECL(JSLinearString *base, size_t off, size_t len);
 
     /*
      * Because inflation is fallible, these methods should only be used after
@@ -283,11 +269,12 @@ StringBuffer::append(const jschar *begin, const jschar *end)
 }
 
 inline bool
-StringBuffer::append(JSLinearString *str)
+StringBuffer::TAINT_SB_APPEND_DEF(JSLinearString *str)
 {
 
 #if _TAINT_ON_
-    taint_str_copy_taint(this, str->getTopTaintRef(), 0, length(), 0);
+    if(taint)
+        taint_str_copy_taint(this, str->getTopTaintRef(), 0, length(), 0);
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -303,13 +290,14 @@ StringBuffer::append(JSLinearString *str)
 }
 
 inline void
-StringBuffer::infallibleAppendSubstring(JSLinearString *base, size_t off, size_t len)
+StringBuffer::TAINT_SB_INFAPPENDSUBSTRING_DEF(JSLinearString *base, size_t off, size_t len)
 {
     MOZ_ASSERT(off + len <= base->length());
     MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
 #if _TAINT_ON_
-    taint_str_copy_taint(this, base->getTopTaintRef(), off, length(), off + len);
+    if(taint)
+        taint_str_copy_taint(this, base->getTopTaintRef(), off, length(), off + len);
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -320,12 +308,13 @@ StringBuffer::infallibleAppendSubstring(JSLinearString *base, size_t off, size_t
 }
 
 inline bool
-StringBuffer::appendSubstring(JSLinearString *base, size_t off, size_t len)
+StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSLinearString *base, size_t off, size_t len)
 {
     MOZ_ASSERT(off + len <= base->length());
 
 #if _TAINT_ON_
-    taint_str_copy_taint(this, base->getTopTaintRef(), off, length(), off + len);
+    if(taint)
+        taint_str_copy_taint(this, base->getTopTaintRef(), off, length(), off + len);
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -342,23 +331,23 @@ StringBuffer::appendSubstring(JSLinearString *base, size_t off, size_t len)
 }
 
 inline bool
-StringBuffer::appendSubstring(JSString *base, size_t off, size_t len)
+StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSString *base, size_t off, size_t len)
 {
     JSLinearString *linear = base->ensureLinear(cx);
     if (!linear)
         return false;
 
-    return appendSubstring(linear, off, len);
+    return TAINT_SB_APPENDSUBSTRING_CALL(linear, off, len);
 }
 
 inline bool
-StringBuffer::append(JSString *str)
+StringBuffer::TAINT_SB_APPEND_DEF(JSString *str)
 {
     JSLinearString *linear = str->ensureLinear(cx);
     if (!linear)
         return false;
 
-    return append(linear);
+    return TAINT_SB_APPEND_CALL(linear);
 }
 
 /* ES5 9.8 ToString, appending the result to the string buffer. */

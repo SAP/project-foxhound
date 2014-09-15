@@ -183,7 +183,7 @@ EvalStringMightBeJSON(const mozilla::Range<const CharT> chars)
 
 template <typename CharT>
 static EvalJSONResult
-ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval)
+TAINT_JSON_EVAL_DEF(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval)
 {
     size_t len = chars.length();
     MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||
@@ -193,7 +193,11 @@ ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, Mu
                      ? chars
                      : mozilla::Range<const CharT>(chars.start().get() + 1U, len - 2);
 
+#if _TAINT_ON_
+    JSONParser<CharT> parser(cx, jsonChars, ref, JSONParserBase::NoError);
+#else
     JSONParser<CharT> parser(cx, jsonChars, JSONParserBase::NoError);
+#endif
     if (!parser.parse(rval))
         return EvalJSON_Failure;
 
@@ -225,8 +229,8 @@ TryEvalJSON(JSContext *cx, JSScript *callerScript, JSFlatString *str, MutableHan
         return EvalJSON_Failure;
 
     return flatChars.isLatin1()
-           ? ParseEvalStringAsJSON(cx, flatChars.latin1Range(), rval)
-           : ParseEvalStringAsJSON(cx, flatChars.twoByteRange(), rval);
+           ? TAINT_JSON_EVAL_CALL(cx, flatChars.latin1Range(), rval)
+           : TAINT_JSON_EVAL_CALL(cx, flatChars.twoByteRange(), rval);
 }
 
 // Define subset of ExecuteType so that casting performs the injection.
