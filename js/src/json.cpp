@@ -119,11 +119,13 @@ Quote(StringBuffer &sb, JSLinearString *str)
                 return false;
             }
         }
+#if _TAINT_ON_
+        TAINT_JSON_QUOTE_MATCH(i, 0)
+#endif
     }
 
 #if _TAINT_ON_
     TAINT_JSON_QUOTE_MATCH(len, 0)
-    TAINT_JSON_QUOTE_APPLY
 #endif
 
     /* Steps 3-4. */
@@ -896,7 +898,7 @@ json_stringify(JSContext *cx, unsigned argc, Value *vp)
         if (!str)
             return false;
 #if _TAINT_ON_
-        taint_str_add_all_node(str, "JSON.stringify");
+        taint_str_add_all_node(str->getTopTaintRef(), "JSON.stringify");
 #endif
         args.rval().setString(str);
     } else {

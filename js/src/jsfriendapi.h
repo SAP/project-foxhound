@@ -594,6 +594,7 @@ struct String
     static const uint32_t TYPE_FLAGS_MASK  = JS_BIT(6) - 1;
 #if _TAINT_ON_
         TaintStringRef *startTaint;
+        TaintStringRef *endTaint;
 #endif
     uint32_t flags;
     uint32_t length;

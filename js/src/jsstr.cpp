@@ -266,7 +266,7 @@ Unhex2(const RangedPtr<const CharT> chars, jschar *result)
 
 template <typename CharT>
 static bool
-Unescape(StringBuffer &sb, const mozilla::Range<const CharT> chars)
+TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
 {
     /*
      * NB: use signed integers for length/index to allow simple length
@@ -283,6 +283,10 @@ Unescape(StringBuffer &sb, const mozilla::Range<const CharT> chars)
     /* Step 4. */
     int k = 0;
     bool building = false;
+
+#if _TAINT_ON_
+    TAINT_UNESCAPE_PRE
+#endif
 
     /* Step 5. */
     while (k < length) {
@@ -307,7 +311,11 @@ Unescape(StringBuffer &sb, const mozilla::Range<const CharT> chars)
                 building = true;                             \
                 if (!sb.reserve(length))                     \
                     return false;                            \
-                sb.infallibleAppend(chars.start().get(), k); \
+                for(int i = 0; i < k; i++) {                 \
+                    TAINT_UNESCAPE_MATCH(i)                  \
+                    sb.infallibleAppend(chars.start().get() + i, 1); \
+                }                                            \
+                TAINT_UNESCAPE_MATCH(k)                      \
             }                                                \
         } while(false);
 
@@ -330,12 +338,19 @@ Unescape(StringBuffer &sb, const mozilla::Range<const CharT> chars)
         }
 
       step_18:
+#if _TAINT_ON_
+        TAINT_UNESCAPE_MATCH(k)
+#endif
         if (building && !sb.append(c))
             return false;
 
         /* Step 19. */
         k += 1;
     }
+
+#if _TAINT_ON_
+        TAINT_UNESCAPE_MATCH(k)
+#endif
 
     return true;
 #undef ENSURE_BUILDING
@@ -359,11 +374,11 @@ str_unescape(JSContext *cx, unsigned argc, Value *vp)
 
     if (str->hasLatin1Chars()) {
         AutoCheckCannotGC nogc;
-        if (!Unescape(sb, str->latin1Range(nogc)))
+        if (!TAINT_UNESCAPE_CALL(sb, str->latin1Range(nogc)))
             return false;
     } else {
         AutoCheckCannotGC nogc;
-        if (!Unescape(sb, str->twoByteRange(nogc)))
+        if (!TAINT_UNESCAPE_CALL(sb, str->twoByteRange(nogc)))
             return false;
     }
 
@@ -375,6 +390,10 @@ str_unescape(JSContext *cx, unsigned argc, Value *vp)
     } else {
         result = str;
     }
+
+#if _TAINT_ON_
+    taint_str_add_all_node(result->getTopTaintRef(), "unescape");
+#endif
 
     args.rval().setString(result);
     return true;
@@ -1952,7 +1971,7 @@ TrimString(JSContext *cx, Value *vp, bool trimLeft, bool trimRight)
     { 
         RootedValue leftp(cx, BOOLEAN_TO_JSVAL(trimLeft));
         RootedValue rightp(cx, BOOLEAN_TO_JSVAL(trimRight));
-        taint_tag_mutator(str, "trim", leftp, rightp);
+        taint_str_add_all_node(str->getTopTaintRef(), "trim", leftp, rightp);
     }
 #endif
 
@@ -4889,7 +4908,7 @@ enum EncodeResult { Encode_Failure, Encode_BadUri, Encode_Success };
 
 template <typename CharT>
 static EncodeResult
-Encode(StringBuffer &sb, const CharT *chars, size_t length,
+TAINT_ENCODE_DEF(StringBuffer &sb, const CharT *chars, size_t length,
        const bool *unescapedSet, const bool *unescapedSet2)
 {
     static const char HexDigits[] = "0123456789ABCDEF"; /* NB: uppercase */
@@ -4898,8 +4917,17 @@ Encode(StringBuffer &sb, const CharT *chars, size_t length,
     hexBuf[0] = '%';
     hexBuf[3] = 0;
 
+#if _TAINT_ON_
+    TAINT_ENCODE_PRE
+#endif
+
     for (size_t k = 0; k < length; k++) {
         jschar c = chars[k];
+
+#if _TAINT_ON_
+    TAINT_ENCODE_MATCH(k)
+#endif
+
         if (c < 128 && (unescapedSet[c] || (unescapedSet2 && unescapedSet2[c]))) {
             if (!sb.append(c))
                 return Encode_Failure;
@@ -4932,6 +4960,10 @@ Encode(StringBuffer &sb, const CharT *chars, size_t length,
         }
     }
 
+#if _TAINT_ON_
+    TAINT_ENCODE_MATCH(length)
+#endif
+
     return Encode_Success;
 }
 
@@ -4952,10 +4984,10 @@ Encode(JSContext *cx, HandleLinearString str, const bool *unescapedSet,
     EncodeResult res;
     if (str->hasLatin1Chars()) {
         AutoCheckCannotGC nogc;
-        res = Encode(sb, str->latin1Chars(nogc), str->length(), unescapedSet, unescapedSet2);
+        res = TAINT_ENCODE_CALL(sb, str->latin1Chars(nogc), str->length(), unescapedSet, unescapedSet2);
     } else {
         AutoCheckCannotGC nogc;
-        res = Encode(sb, str->twoByteChars(nogc), str->length(), unescapedSet, unescapedSet2);
+        res = TAINT_ENCODE_CALL(sb, str->twoByteChars(nogc), str->length(), unescapedSet, unescapedSet2);
     }
 
     if (res == Encode_Failure)
@@ -4966,6 +4998,10 @@ Encode(JSContext *cx, HandleLinearString str, const bool *unescapedSet,
         return false;
     }
 
+#if _TAINT_ON_
+    taint_str_add_all_node(sb.getTopTaintRef(), "encodeURIComponent");
+#endif
+
     MOZ_ASSERT(res == Encode_Success);
     return TransferBufferToString(sb, rval);
 }
@@ -4974,10 +5010,18 @@ enum DecodeResult { Decode_Failure, Decode_BadUri, Decode_Success };
 
 template <typename CharT>
 static DecodeResult
-Decode(StringBuffer &sb, const CharT *chars, size_t length, const bool *reservedSet)
+TAINT_DECODE_DEF(StringBuffer &sb, const CharT *chars, size_t length, const bool *reservedSet)
 {
+
+#if _TAINT_ON_
+    TAINT_DECODE_PRE
+#endif
+
     for (size_t k = 0; k < length; k++) {
         jschar c = chars[k];
+#if _TAINT_ON_
+        TAINT_DECODE_MATCH(k)
+#endif
         if (c == '%') {
             size_t start = k;
             if ((k + 2) >= length)
@@ -5045,6 +5089,10 @@ Decode(StringBuffer &sb, const CharT *chars, size_t length, const bool *reserved
         }
     }
 
+#if _TAINT_ON_
+        TAINT_DECODE_MATCH(length)
+#endif
+
     return Decode_Success;
 }
 
@@ -5062,10 +5110,10 @@ Decode(JSContext *cx, HandleLinearString str, const bool *reservedSet, MutableHa
     DecodeResult res;
     if (str->hasLatin1Chars()) {
         AutoCheckCannotGC nogc;
-        res = Decode(sb, str->latin1Chars(nogc), str->length(), reservedSet);
+        res = TAINT_DECODE_CALL(sb, str->latin1Chars(nogc), str->length(), reservedSet);
     } else {
         AutoCheckCannotGC nogc;
-        res = Decode(sb, str->twoByteChars(nogc), str->length(), reservedSet);
+        res = TAINT_DECODE_CALL(sb, str->twoByteChars(nogc), str->length(), reservedSet);
     }
 
     if (res == Decode_Failure)
@@ -5075,6 +5123,10 @@ Decode(JSContext *cx, HandleLinearString str, const bool *reservedSet, MutableHa
         JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_BAD_URI);
         return false;
     }
+
+#if _TAINT_ON_
+    taint_str_add_all_node(sb.getTopTaintRef(), "decodeURIComponent");
+#endif
 
     MOZ_ASSERT(res == Decode_Success);
     return TransferBufferToString(sb, rval);

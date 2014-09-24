@@ -100,8 +100,8 @@ taint_str_testmutator(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter")));
-    taint_tag_mutator(str, "Mutation with params", param, param);
-    taint_tag_mutator(str, "Mutation w/o param");
+    taint_str_add_all_node(str->getTopTaintRef(), "Mutation with params", param, param);
+    taint_str_add_all_node(str->getTopTaintRef(), "Mutation w/o param");
 
     args.rval().setUndefined();
     return true;
@@ -223,7 +223,7 @@ taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
     
     TaintNode *taint_node = taint_str_add_source_node(name);
     TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
-    str->addTaintRef(newtsr, true);
+    str->addTaintRef(newtsr);
 }
 
 //duplicate all taintstringrefs form a string to another
@@ -276,14 +276,14 @@ template StringBuffer* taint_str_copy_taint<StringBuffer>(StringBuffer *dst, Tai
 
 
 //add a new node to all taintstringrefs on a string
-JSString *
-taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param1, HandleValue param2)
+void
+taint_str_add_all_node(TaintStringRef *dst, const char* name, HandleValue param1, HandleValue param2)
 {
-    if(!dststr)
-        return nullptr;
+    if(!dst)
+        return;
 
     //TODO: this might install duplicates if multiple parts of the string derive from the same tree
-    for(TaintStringRef *tsr = dststr->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
+    for(TaintStringRef *tsr = dst; tsr != nullptr; tsr = tsr->next)
     {
         TaintNode *taint_node = taint_str_add_source_node(name);
         //attach new node before changing the string ref as this would delete the old node
@@ -292,8 +292,6 @@ taint_str_add_all_node(JSString *dststr, const char* name, HandleValue param1, H
         taint_node->param2 = param2;
         tsr->attachTo(taint_node);
     }
-
-    return dststr;
 }
 
 TaintStringRef *
@@ -306,7 +304,8 @@ taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
     if(*target) {
         if(sidx <= source->end) { //this will trigger len(str) times
             (*target)->end = tidx;
-            return source;
+            if(sidx < source->end)
+                return source;
         }
 
         //if we completed the last TSR advance the source pointer
@@ -345,7 +344,7 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     js::RootedValue startval(cx, INT_TO_JSVAL(start));
     js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
     taint_str_copy_taint(str, base->getTopTaintRef(), start, 0, start + length);
-    taint_str_add_all_node(str, "substring", startval, endval);
+    taint_str_add_all_node(str->getTopTaintRef(), "substring", startval, endval);
 
     return str;
 }
@@ -404,7 +403,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     const char *name, int32_t offset, JS::HandleValue param1, JS::HandleValue param2)
 {
     taint_str_copy_taint(dststr, srcstr->getTopTaintRef(), 0, offset, 0);
-    taint_str_add_all_node(dststr, name, param1, param2);
+    taint_str_add_all_node(dststr->getTopTaintRef(), name, param1, param2);
 
     return dststr;
 }

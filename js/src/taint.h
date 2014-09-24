@@ -78,7 +78,8 @@ JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
 JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT),
 
 #define TAINT_STR_INIT \
-    d.u0.startTaint = nullptr;
+    d.u0.startTaint = nullptr; \
+    d.u0.endTaint = nullptr;
 
 #define TAINT_ROPE_INIT \
     TAINT_STR_INIT \
@@ -101,7 +102,8 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
 #define TAINT_STR_ASM_CONCAT(masm, out, lhs, rhs) \
 { \
     RegisterSet taintSaveRegs = RegisterSet::Volatile(); \
-    masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfTaint())); \
+    masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfStartTaint())); \
+    masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfEndTaint())); \
     masm.PushRegsInMask(taintSaveRegs); \
     masm.setupUnalignedABICall(3, temp1); \
     masm.passABIArg(out); \
@@ -131,7 +133,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     TaintStringRef *targetref = nullptr;
 #define TAINT_QUOTE_STRING_APPLY \
     res->addTaintRef(targetref); \
-    taint_str_add_all_node(res, "quote");
+    taint_str_add_all_node(res->getTopTaintRef(), "quote");
 
 #define TAINT_ESCAPE_DEF(a,b,c,d) Escape(a,b,c,d,TaintStringRef **targetref, TaintStringRef *sourceref)
 #define TAINT_ESCAPE_CALL(a,b,c,d) Escape(a,b,c,d,&targetref,str->getTopTaintRef())
@@ -147,7 +149,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
 #define TAINT_ESCAPE_VAR TAINT_QUOTE_STRING_VAR
 #define TAINT_ESCAPE_APPLY \
     res->addTaintRef(targetref); \
-    taint_str_add_all_node(res, "escape");
+    taint_str_add_all_node(res->getTopTaintRef(), "escape");
 
 
 #define TAINT_MARK_MATCH(str, regex) \
@@ -159,7 +161,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
         return bres; \
     for(uint32_t ki = 0; ki < obj->getDenseCapacity(); ki++) { \
         RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-        taint_str_add_all_node(obj->getDenseElement(ki).toString(), "match", patVal, resultIdx); \
+        taint_str_add_all_node(obj->getDenseElement(ki).toString()->getTopTaintRef(), "match", patVal, resultIdx); \
     } \
     bres; \
 })
@@ -169,7 +171,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     bool bres = str; \
     RootedValue regexVal(cx, args[0]); \
     RootedValue replaceVal(cx, args[1]); \
-    taint_str_add_all_node(args.rval().get().toString(), "replace", regexVal, replaceVal); \
+    taint_str_add_all_node(args.rval().get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
     bres; \
 })
 
@@ -178,7 +180,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     bool bres = str; \
     RootedValue regexVal(cx, re); \
     RootedValue replaceVal(cx, StringValue(replacement)); \
-    taint_str_add_all_node(rval.get().toString(), "replace", regexVal, replaceVal); \
+    taint_str_add_all_node(rval.get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
     bres; \
 })
 
@@ -186,7 +188,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     RootedValue splitVal(cx, args[0]); \
     for(uint32_t ki = 0; ki < aobj->getDenseInitializedLength(); ki++) { \
         RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-        taint_str_add_all_node(aobj->getDenseElement(ki).toString(), "split", splitVal, resultIdx); \
+        taint_str_add_all_node(aobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", splitVal, resultIdx); \
     }
 
 #define TAINT_JSON_PARSE_CALL(a,b,c,d, str) ParseJSONWithReviver(a,b,c,d, str->getTopTaintRef())
@@ -209,7 +211,7 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
         target_first_tsr = target_last_tsr;
 #define TAINT_JSON_PARSE_APPLY \
     str->addTaintRef(target_first_tsr); \
-    taint_str_add_all_node(str, "JSON.parse");
+    taint_str_add_all_node(str->getTopTaintRef(), "JSON.parse");
     
 
 #define TAINT_SB_APPEND_DECL(a) append(a,bool taint = true)
@@ -223,16 +225,42 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
 #define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c,false)
 #define TAINT_JSON_QUOTE_PRE \
     TaintStringRef *current_tsr = str->getTopTaintRef(); \
-    TaintStringRef *target_first_tsr = nullptr; \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_JSON_QUOTE_MATCH(k, off) \
     current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length() + off); \
-    if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
-        target_first_tsr = target_last_tsr;
-#define TAINT_JSON_QUOTE_APPLY \
-    sb.addTaintRef(target_first_tsr);
+    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+        sb.addTaintRef(target_last_tsr);
+
+#define TAINT_UNESCAPE_DEF(a,b) Unescape(a,b,TaintStringRef *source)
+#define TAINT_UNESCAPE_CALL(a,b) Unescape(a,b,str->getTopTaintRef())
+#define TAINT_UNESCAPE_PRE \
+    TaintStringRef *current_tsr = source; \
+    TaintStringRef *target_last_tsr = nullptr;
+#define TAINT_UNESCAPE_MATCH(k) \
+    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
+    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+        sb.addTaintRef(target_last_tsr);
+
+#define TAINT_ENCODE_CALL(a,b,c,d,e) Encode(a,b,c,d,e,str->getTopTaintRef())
+#define TAINT_ENCODE_DEF(a,b,c,d,e) Encode(a,b,c,d,e,TaintStringRef *source)
+#define TAINT_ENCODE_PRE \
+    TaintStringRef *current_tsr = source; \
+    TaintStringRef *target_last_tsr = nullptr;
+#define TAINT_ENCODE_MATCH(k) \
+    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
+    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+        sb.addTaintRef(target_last_tsr);
 
 
+#define TAINT_DECODE_CALL(a,b,c,d) Decode(a,b,c,d,str->getTopTaintRef())
+#define TAINT_DECODE_DEF(a,b,c,d) Decode(a,b,c,d,TaintStringRef *source)
+#define TAINT_DECODE_PRE \
+    TaintStringRef *current_tsr = source; \
+    TaintStringRef *target_last_tsr = nullptr;
+#define TAINT_DECODE_MATCH(k) \
+    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
+    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+        sb.addTaintRef(target_last_tsr);
 
 //#define 
 
@@ -250,8 +278,11 @@ bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
-JSString* taint_str_add_all_node(JSString *dststr, const char* name,
+
+void
+taint_str_add_all_node(TaintStringRef *dst, const char* name,
     JS::HandleValue param1 = JS::UndefinedHandleValue, JS::HandleValue param2 = JS::UndefinedHandleValue);
+
 TaintStringRef *taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx);
 
 //special cases
@@ -294,20 +325,13 @@ JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *ba
     res;\
 })
 
-
-// use, when same string is used in and out to record a specific mutator
-// has been called
-inline void taint_tag_mutator(JSString * str, const char *name, 
-    JS::HandleValue param1 = JS::UndefinedHandleValue, JS::HandleValue param2 = JS::UndefinedHandleValue)
-{
-    taint_str_add_all_node(str, name, param1, param2);
-}
-
 // use, when a propagator creates a new string with partly tainted contents
 // located at an offset
 JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     const char *name, int32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
+
+
 #else
 
 #define TAINT_STR_COPY(str, base) (str)
@@ -326,6 +350,9 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
 #define TAINT_SB_APPEND_DEF(a) append(a)
 #define TAINT_SB_APPEND_CALL(a) append(a)
 #define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c)
+#define TAINT_UNESCAPE_DEF(a,b) Unescape(a,b)
+#define TAINT_UNESCAPE_CALL(a,b) Unescape(a,b)
+#define TAINT_UNESCAPE_MATCH ;
 
 #endif
 
