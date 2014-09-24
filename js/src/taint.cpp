@@ -242,8 +242,8 @@ TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
             continue;
 
         TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
-        newtsr->begin = MAX(frombegin, tsr->begin) + offset;
-        newtsr->end   = (fromend > 0 ? MIN(tsr->end, fromend) : tsr->end) + offset;
+        newtsr->begin = MAX(frombegin, tsr->begin) - frombegin + offset;
+        newtsr->end   = (fromend > 0 ? MIN(tsr->end, fromend) : tsr->end) - frombegin + offset;
 
         //add the first element directly to the string
         //all others will be appended to it
@@ -344,7 +344,7 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
 
     js::RootedValue startval(cx, INT_TO_JSVAL(start));
     js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
-    taint_str_copy_taint(str, base->getTopTaintRef(), start, -start, start + length);
+    taint_str_copy_taint(str, base->getTopTaintRef(), start, 0, start + length);
     taint_str_add_all_node(str, "substring", startval, endval);
 
     return str;

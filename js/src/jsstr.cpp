@@ -2850,6 +2850,11 @@ DoReplace(RegExpStatics *res, ReplaceData &rdata)
             dp = js_strchr_limit(dp, '$', ep);
         } while (dp);
     }
+
+#if _TAINT_ON_
+    //copy taint of replaced string
+    taint_str_copy_taint(&rdata.sb, repstr->getTopTaintRef(), 0, rdata.sb.length(), 0);
+#endif
     rdata.sb.infallibleAppend(cp, repstr->length() - (cp - bp));
 }
 
