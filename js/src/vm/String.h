@@ -357,7 +357,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     void removeAllTaint() {
-        taint_str_remove_taint_all(&d.u0.startTaint, &d.u0.endTaint);
+        taint_remove_all(&d.u0.startTaint, &d.u0.endTaint);
     }
 #endif
 

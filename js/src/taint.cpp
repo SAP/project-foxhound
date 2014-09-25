@@ -39,13 +39,11 @@ TaintNode::decrease()
     for(TaintNode *old = this; old != nullptr;) {
         TaintNode *prev = old->prev;
         old->refCount--;
-        if(old->refCount == 0) {
-            js_free(old);
-            old = prev;
-            continue;
-        }
-        else
+        if(old->refCount > 0)
             break;
+        
+        js_free(old);
+        old = prev;
     }
 }
 
@@ -92,7 +90,7 @@ TaintStringRef::~TaintStringRef()
 // Library Test/Debug functions
 
 bool
-taint_str_testmutator(JSContext *cx, unsigned argc, Value *vp)
+taint_str_testop(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
@@ -100,8 +98,8 @@ taint_str_testmutator(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter")));
-    taint_str_add_all_node(str->getTopTaintRef(), "Mutation with params", param, param);
-    taint_str_add_all_node(str->getTopTaintRef(), "Mutation w/o param");
+    taint_add_op(str->getTopTaintRef(), "Mutation with params", param, param);
+    taint_add_op(str->getTopTaintRef(), "Mutation w/o param");
 
     args.rval().setUndefined();
     return true;
@@ -229,13 +227,21 @@ taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
 //duplicate all taintstringrefs form a string to another
 //and point to the same nodes (shallow copy)
 template <typename TaintedT>
-TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
+TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
-    if(!src || !dst)
-        return dst;
+    JS_ASSERT(dst && src);
 
     TaintStringRef *newchainlast = nullptr;
+/*
+    //look for the currect insertion point in dst
+    for(TaintStringRef *itr = dst->getTopTaintRef(); 
+        itr != nullptr && itr->end <= offset;
+        itr = itr->next) {
+
+        newchainlast = itr;
+    } */
+    
     for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
     {
         if(tsr->end < frombegin || (fromend > 0 && tsr->begin >= fromend))
@@ -253,31 +259,23 @@ TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
             newchainlast->next = newtsr;
 
         newchainlast = newtsr;
-        /*
-        if(newchainlast)
-            newchainlast->next = newtsr;
-        else
-            newchainlast = newtsr;*/
     }
-    /*
-    if(newchainlast)
-        dst->addTaintRef(newchainlast);*/
 
     return dst;
 }
-template JSFlatString* taint_str_copy_taint<JSFlatString>(JSFlatString *dst, TaintStringRef *src,
+template JSFlatString* taint_copy_range<JSFlatString>(JSFlatString *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
-template JSAtom* taint_str_copy_taint<JSAtom>(JSAtom *dst, TaintStringRef *src,
+template JSAtom* taint_copy_range<JSAtom>(JSAtom *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
-template JSInlineString* taint_str_copy_taint<JSInlineString>(JSInlineString *dst, TaintStringRef *src,
+template JSInlineString* taint_copy_range<JSInlineString>(JSInlineString *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
-template StringBuffer* taint_str_copy_taint<StringBuffer>(StringBuffer *dst, TaintStringRef *src,
+template StringBuffer* taint_copy_range<StringBuffer>(StringBuffer *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
 
 //add a new node to all taintstringrefs on a string
 void
-taint_str_add_all_node(TaintStringRef *dst, const char* name, HandleValue param1, HandleValue param2)
+taint_add_op(TaintStringRef *dst, const char* name, HandleValue param1, HandleValue param2)
 {
     if(!dst)
         return;
@@ -295,7 +293,7 @@ taint_str_add_all_node(TaintStringRef *dst, const char* name, HandleValue param1
 }
 
 TaintStringRef *
-taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx)
+taint_copy_exact(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx)
 {
     if(!source || !target)
         return nullptr;
@@ -343,8 +341,8 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
 
     js::RootedValue startval(cx, INT_TO_JSVAL(start));
     js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
-    taint_str_copy_taint(str, base->getTopTaintRef(), start, 0, start + length);
-    taint_str_add_all_node(str->getTopTaintRef(), "substring", startval, endval);
+    taint_copy_range(str, base->getTopTaintRef(), start, 0, start + length);
+    taint_add_op(str->getTopTaintRef(), "substring", startval, endval);
 
     return str;
 }
@@ -376,8 +374,10 @@ taint_str_taintref_build()
 
 //remove all taintref associated to a string
 void
-taint_str_remove_taint_all(TaintStringRef **start, TaintStringRef **end)
+taint_remove_all(TaintStringRef **start, TaintStringRef **end)
 {
+    JS_ASSERT(end && start);
+
 #if DEBUG
     bool found_end = false;
 #endif
@@ -393,21 +393,28 @@ taint_str_remove_taint_all(TaintStringRef **start, TaintStringRef **end)
         tsr = next;
     }
 
-    JS_ASSERT(!end || !(*end) || found_end);
+#if DEBUG
+    JS_ASSERT(!(*end) || found_end);
+#endif
     *start = nullptr;
     if(end)
         *end = nullptr;
 }
 
-JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
-    const char *name, int32_t offset, JS::HandleValue param1, JS::HandleValue param2)
+JSString*
+taint_copy_and_op(JSString * dststr, JSString * srcstr,
+    const char *name, JS::HandleValue param1,
+    JS::HandleValue param2)
 {
-    taint_str_copy_taint(dststr, srcstr->getTopTaintRef(), 0, offset, 0);
-    taint_str_add_all_node(dststr->getTopTaintRef(), name, param1, param2);
+
+    if(!srcstr->isTainted())
+        return dststr;
+
+    taint_copy_range(dststr, srcstr->getTopTaintRef(), 0, 0, 0);
+    taint_add_op(dststr->getTopTaintRef(), name, param1, param2);
 
     return dststr;
 }
-
 
 //handle taint propagation for tainted strings
 //TODO optimize for lhs == rhs
@@ -415,10 +422,10 @@ void
 taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs)
 {
     if(lhs->isTainted())
-        taint_str_copy_taint(dst, lhs->getTopTaintRef(), 0, 0, 0);
+        taint_copy_range(dst, lhs->getTopTaintRef(), 0, 0, 0);
 
     if(rhs->isTainted())
-        taint_str_copy_taint(dst, rhs->getTopTaintRef(), 0, lhs->length(), 0);
+        taint_copy_range(dst, rhs->getTopTaintRef(), 0, lhs->length(), 0);
 
     //no need to add a taint node for concat as this does not
     //add any valuable information

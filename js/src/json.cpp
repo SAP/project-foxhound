@@ -898,7 +898,7 @@ json_stringify(JSContext *cx, unsigned argc, Value *vp)
         if (!str)
             return false;
 #if _TAINT_ON_
-        taint_str_add_all_node(str->getTopTaintRef(), "JSON.stringify");
+        taint_add_op(str->getTopTaintRef(), "JSON.stringify");
 #endif
         args.rval().setString(str);
     } else {

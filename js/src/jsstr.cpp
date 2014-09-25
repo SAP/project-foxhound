@@ -392,7 +392,7 @@ str_unescape(JSContext *cx, unsigned argc, Value *vp)
     }
 
 #if _TAINT_ON_
-    taint_str_add_all_node(result->getTopTaintRef(), "unescape");
+    taint_add_op(result->getTopTaintRef(), "unescape");
 #endif
 
     args.rval().setString(result);
@@ -765,7 +765,7 @@ ToLowerCase(JSContext *cx, JSLinearString *str)
         return nullptr;
 
 #if _TAINT_ON_
-    taint_tag_propagator(res, str, "toLowerCase");
+    taint_copy_and_op(res, str, "toLowerCase");
 #endif
 
     newChars.forget();
@@ -849,7 +849,7 @@ ToUpperCase(JSContext *cx, JSLinearString *str)
         return nullptr;
 
 #if _TAINT_ON_
-    taint_tag_propagator(res, str, "toUpperCase");
+    taint_copy_and_op(res, str, "toUpperCase");
 #endif
 
     newChars.forget();
@@ -1015,7 +1015,7 @@ str_normalize(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
 #if _TAINT_ON_
-    taint_tag_propagator(ns, str, "normalize");
+    taint_copy_and_op(ns, str, "normalize");
 #endif
 
     // Step 9.
@@ -1971,7 +1971,7 @@ TrimString(JSContext *cx, Value *vp, bool trimLeft, bool trimRight)
     { 
         RootedValue leftp(cx, BOOLEAN_TO_JSVAL(trimLeft));
         RootedValue rightp(cx, BOOLEAN_TO_JSVAL(trimRight));
-        taint_str_add_all_node(str->getTopTaintRef(), "trim", leftp, rightp);
+        taint_add_op(str->getTopTaintRef(), "trim", leftp, rightp);
     }
 #endif
 
@@ -2872,7 +2872,8 @@ DoReplace(RegExpStatics *res, ReplaceData &rdata)
 
 #if _TAINT_ON_
     //copy taint of replaced string
-    taint_str_copy_taint(&rdata.sb, repstr->getTopTaintRef(), 0, rdata.sb.length(), 0);
+    if(repstr->isTainted())
+        taint_copy_range(&rdata.sb, repstr->getTopTaintRef(), 0, rdata.sb.length(), 0);
 #endif
     rdata.sb.infallibleAppend(cp, repstr->length() - (cp - bp));
 }
@@ -4999,7 +5000,7 @@ Encode(JSContext *cx, HandleLinearString str, const bool *unescapedSet,
     }
 
 #if _TAINT_ON_
-    taint_str_add_all_node(sb.getTopTaintRef(), "encodeURIComponent");
+    taint_add_op(sb.getTopTaintRef(), "encodeURIComponent");
 #endif
 
     MOZ_ASSERT(res == Encode_Success);
@@ -5125,7 +5126,7 @@ Decode(JSContext *cx, HandleLinearString str, const bool *reservedSet, MutableHa
     }
 
 #if _TAINT_ON_
-    taint_str_add_all_node(sb.getTopTaintRef(), "decodeURIComponent");
+    taint_add_op(sb.getTopTaintRef(), "decodeURIComponent");
 #endif
 
     MOZ_ASSERT(res == Decode_Success);

@@ -67,7 +67,7 @@ typedef struct TaintStringRef
 //
 #define TAINT_ADD_JSSTR_METHODS \
 JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
-JS_FN("mutateTaint",            taint_str_testmutator,          0,JSFUN_GENERIC_NATIVE),
+JS_FN("mutateTaint",            taint_str_testop,          0,JSFUN_GENERIC_NATIVE),
 
 #define TAINT_ADD_JSSTR_STATIC_METHODS \
 JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
@@ -102,33 +102,50 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     masm.PopRegsInMask(taintSaveRegs); \
 }
 
+//special struct builder (using js_malloc)
 TaintStringRef *taint_str_taintref_build();
 TaintStringRef *taint_str_taintref_build(TaintStringRef &ref);
 TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
-void taint_str_remove_taint_all(TaintStringRef **start, TaintStringRef **end);
-bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
+//remove taint from start to end
+void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
 
+//JavaScript functions
+//JavaScript copy constructor for new all-tainted strings
+bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
+//JavaScript taint info
+bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
+//JavaScript function to forcefully untaint a string
+bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
+//JavaScript mutator for testing purposes
+bool taint_str_testop(JSContext *cx, unsigned argc, JS::Value *vp);
+
+//concat taint of two strings into a third
+void
+taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
+//range copy for a substring operation
+JSString *
+taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
+    uint32_t start, uint32_t length);
 
 //------------------------------
 //common core taint tracking logic
 //
 
-//add a new 
+//add a new operator to all TaintStringRefs following dst
 void
-taint_str_add_all_node(TaintStringRef *dst, const char* name,
+taint_add_op(TaintStringRef *dst, const char* name,
     JS::HandleValue param1 = JS::UndefinedHandleValue, 
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
-TaintStringRef *taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx);
-
-//special cases
-void taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
-
-//-----------------------------------
-// tag defs and functions
+//exact taint copy when length of in/out do not match
+// - needs to be called for every "token" in source
+// - *target starts out with nullptr and continues to hold the
+//   last taintref of the new chain
+// - return value has to be fed back into source, starts with
+//   the top taintref of the source (and has to be ordered!)
+TaintStringRef *
+taint_copy_exact(TaintStringRef **target, 
+    TaintStringRef *source, size_t sidx, size_t tidx);
 
 //set a (new) source, this includes resetting all previous taint
 // use for all sources
@@ -136,46 +153,38 @@ void taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
 void taint_tag_source(JSString * str, const char* name, 
     uint32_t begin = 0, uint32_t end = 0);
 
-//mutator/function call
+//partial taint copy
+// - copy taint from source from frombegin until fromend
+// - insert at offset into dst
 template <typename TaintedT>
-TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
+TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
-JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
-    uint32_t start, uint32_t length);
 
+//defs for in place use of primitives
 #define TAINT_STR_COPY(str, base) \
-    taint_str_copy_taint((str), base->getTopTaintRef(), 0, 0, 0)
+    base->isTainted() ? taint_copy_range((str), base->getTopTaintRef(), 0, 0, 0) : (str)
 #define TAINT_REF_COPY(str, ref) \
-    taint_str_copy_taint((str), ref, 0, 0, 0)
-#define TAINT_REF_COPYCLEAR(str, ref) \
-({ \
-    JSString *res = TAINT_REF_COPY(str, ref); \
-    taint_str_remove_taint_all(&ref); \
-    res; \
-})
-
-
+    ref ? taint_copy_range((str), ref, 0, 0, 0) : (str)
+//do not copy taint for atoms for now
+//until we figured out how to handle this problem
 #define TAINT_ATOM_CLEARCOPY(str, base) \
 ({ \
     JSAtom *res = (str); \
-    res->removeAllTaint(); \
-    taint_str_copy_taint(res, base->getTopTaintRef(), 0, 0, 0); \
+    /*res->removeAllTaint(); \
+    if(base->isTainted()) \
+        taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); */ \
     res;\
 })
 
-// use, when a propagator creates a new string with partly tainted contents
-// located at an offset
-JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
-    const char *name, int32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
+//other shortcut
+JSString*
+taint_copy_and_op(JSString * dststr, JSString * srcstr,
+    const char *name, JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
-
-
-
-
-//skip static string optimizations
-
+//-----------------------------------
+//call manipulation and augmentation
 
 //quote special call manipulation
 #define TAINT_QUOTE_STRING_CALL(a,b,c) QuoteString(a,b,c,&targetref)
@@ -190,14 +199,14 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     if(targetref) \
         target_last_tsr = *targetref;
 #define TAINT_QUOTE_STRING_MATCH \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
     if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
         *targetref = target_last_tsr;
 #define TAINT_QUOTE_STRING_VAR \
     TaintStringRef *targetref = nullptr;
 #define TAINT_QUOTE_STRING_APPLY \
     res->addTaintRef(targetref); \
-    taint_str_add_all_node(res->getTopTaintRef(), "quote");
+    taint_add_op(res->getTopTaintRef(), "quote");
 
 #define TAINT_ESCAPE_DEF(a,b,c,d) Escape(a,b,c,d,TaintStringRef **targetref, TaintStringRef *sourceref)
 #define TAINT_ESCAPE_CALL(a,b,c,d) Escape(a,b,c,d,&targetref,str->getTopTaintRef())
@@ -207,13 +216,13 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     if(targetref) \
         target_last_tsr = *targetref; //TODO maybe this is wrong? not the last but first tsr?
 #define TAINT_ESCAPE_MATCH \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, i, ni); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, i, ni); \
     if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
         *targetref = target_last_tsr;
 #define TAINT_ESCAPE_VAR TAINT_QUOTE_STRING_VAR
 #define TAINT_ESCAPE_APPLY \
     res->addTaintRef(targetref); \
-    taint_str_add_all_node(res->getTopTaintRef(), "escape");
+    taint_add_op(res->getTopTaintRef(), "escape");
 
 
 #define TAINT_MARK_MATCH(str, regex) \
@@ -225,7 +234,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
         return bres; \
     for(uint32_t ki = 0; ki < obj->getDenseCapacity(); ki++) { \
         RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-        taint_str_add_all_node(obj->getDenseElement(ki).toString()->getTopTaintRef(), "match", patVal, resultIdx); \
+        taint_add_op(obj->getDenseElement(ki).toString()->getTopTaintRef(), "match", patVal, resultIdx); \
     } \
     bres; \
 })
@@ -235,7 +244,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     bool bres = str; \
     RootedValue regexVal(cx, args[0]); \
     RootedValue replaceVal(cx, args[1]); \
-    taint_str_add_all_node(args.rval().get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
+    taint_add_op(args.rval().get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
     bres; \
 })
 
@@ -244,7 +253,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     bool bres = str; \
     RootedValue regexVal(cx, re); \
     RootedValue replaceVal(cx, StringValue(replacement)); \
-    taint_str_add_all_node(rval.get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
+    taint_add_op(rval.get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
     bres; \
 })
 
@@ -252,7 +261,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     RootedValue splitVal(cx, args[0]); \
     for(uint32_t ki = 0; ki < aobj->getDenseInitializedLength(); ki++) { \
         RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-        taint_str_add_all_node(aobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", splitVal, resultIdx); \
+        taint_add_op(aobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", splitVal, resultIdx); \
     }
 
 #define TAINT_JSON_PARSE_CALL(a,b,c,d, str) ParseJSONWithReviver(a,b,c,d, str->getTopTaintRef())
@@ -266,16 +275,16 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     TaintStringRef *target_last_tsr = nullptr; \
     const CharPtr s_start = current;
 #define TAINT_JSON_PARSE_OPT \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, current - s_start, current - start); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - s_start, current - start); \
     if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
         target_first_tsr = target_last_tsr;
 #define TAINT_JSON_PARSE_MATCH \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, current - s_start, buffer.length() + (size_t)(current - start)); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - s_start, buffer.length() + (size_t)(current - start)); \
     if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
         target_first_tsr = target_last_tsr;
 #define TAINT_JSON_PARSE_APPLY \
     str->addTaintRef(target_first_tsr); \
-    taint_str_add_all_node(str->getTopTaintRef(), "JSON.parse");
+    taint_add_op(str->getTopTaintRef(), "JSON.parse");
     
 
 #define TAINT_SB_APPEND_DECL(a) append(a,bool taint = true)
@@ -291,7 +300,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     TaintStringRef *current_tsr = str->getTopTaintRef(); \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_JSON_QUOTE_MATCH(k, off) \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length() + off); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length() + off); \
     if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
         sb.addTaintRef(target_last_tsr);
 
@@ -301,7 +310,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     TaintStringRef *current_tsr = source; \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_UNESCAPE_MATCH(k) \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
     if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
         sb.addTaintRef(target_last_tsr);
 
@@ -311,7 +320,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     TaintStringRef *current_tsr = source; \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_ENCODE_MATCH(k) \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
     if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
         sb.addTaintRef(target_last_tsr);
 
@@ -322,7 +331,7 @@ JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
     TaintStringRef *current_tsr = source; \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_DECODE_MATCH(k) \
-    current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
+    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
     if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
         sb.addTaintRef(target_last_tsr);
 

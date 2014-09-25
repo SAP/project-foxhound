@@ -167,7 +167,7 @@ JSDependentString::init(js::ThreadSafeContext *cx, JSLinearString *base, size_t 
 
 #if _TAINT_ON_
     TAINT_STR_INIT;
-    if(base->isTainted());
+    if(base->isTainted())
         taint_str_substr(this, cx->asExclusiveContext(), base, start, length);
 #endif
 
@@ -228,7 +228,7 @@ MOZ_ALWAYS_INLINE void
 JSFlatString::init(const jschar *chars, size_t length)
 {
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = FLAT_BIT;
@@ -239,7 +239,7 @@ MOZ_ALWAYS_INLINE void
 JSFlatString::init(const JS::Latin1Char *chars, size_t length)
 {
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = FLAT_BIT | LATIN1_CHARS_BIT;
@@ -290,7 +290,7 @@ JSInlineString::initTwoByte(size_t length)
 {
     JS_ASSERT(twoByteLengthFits(length));
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_INLINE_FLAGS;
@@ -302,7 +302,7 @@ JSInlineString::initLatin1(size_t length)
 {
     JS_ASSERT(latin1LengthFits(length));
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_INLINE_FLAGS | LATIN1_CHARS_BIT;
@@ -314,7 +314,7 @@ JSFatInlineString::initTwoByte(size_t length)
 {
     JS_ASSERT(twoByteLengthFits(length));
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_FAT_INLINE_FLAGS;
@@ -326,7 +326,7 @@ JSFatInlineString::initLatin1(size_t length)
 {
     JS_ASSERT(latin1LengthFits(length));
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = INIT_FAT_INLINE_FLAGS | LATIN1_CHARS_BIT;
@@ -374,7 +374,7 @@ JSExternalString::init(const jschar *chars, size_t length, const JSStringFinaliz
     JS_ASSERT(fin);
     JS_ASSERT(fin->finalize);
 #if _TAINT_ON_
-    TAINT_STR_INIT
+    TAINT_STR_INIT;
 #endif
     d.u1.length = length;
     d.u1.flags = EXTERNAL_FLAGS;
