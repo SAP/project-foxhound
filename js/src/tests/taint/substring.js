@@ -8,14 +8,11 @@
    Author:       Stephan Pfistner
 */
 
-var SECTION = 'no section';
-var VERSION = 'no version';
+load("taint/taint-setup.js");
 startTest();
-var TITLE = 'Taint:op:substring';
-
 
 var tainted = "is it" + String.newAllTainted("tainted");
-assertEq(tainted.taint.length, 1);
+_isTainted(tainted);
 
 //substring
 // full non taint
@@ -50,18 +47,8 @@ assertEq(JSON.stringify(tainted.slice(3,8).taint), JSON.stringify(halftaint));
 assertEq(JSON.stringify(tainted.substring(3, 1).taint), JSON.stringify(tainted.charAt(3).taint));
 assertEq(JSON.stringify(tainted.substring(3, 1).taint), JSON.stringify(tainted[3].taint));
 
-//access to single chars should remain taint - behave like slice(x)
 //TODO!
 //assertEq(tainted[6].taint.length, 1);
 //assertEq(JSON.stringify(tainted[6].taint), JSON.stringify(tainted[6].taint));
 
-//check JIT operation
-for(var i = 1; i < 10000; i++) {
-	assertEq(tainted.substr(5,i).taint.length, 1);
-	//todo slice
-	//var str=String.newAllTainted(i);
-	//assertEq(str[0].taint.length, 1);
-}
-
-if (typeof reportCompare === "function")
-  reportCompare(true, true);
+reportCompare(true, true);
