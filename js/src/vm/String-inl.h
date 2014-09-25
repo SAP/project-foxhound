@@ -73,7 +73,8 @@ NewFatInlineString(ExclusiveContext *cx, HandleLinearString base, size_t start, 
         return nullptr;
 
 #if _TAINT_ON_
-    TAINT_FATINLINE_INIT
+    if(base->isTainted())
+        taint_str_substr(s, cx, base, start, length);
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -108,16 +109,18 @@ JSString::validateLength(js::ThreadSafeContext *maybecx, size_t length)
 MOZ_ALWAYS_INLINE void
 JSRope::init(js::ThreadSafeContext *cx, JSString *left, JSString *right, size_t length)
 {
-#if _TAINT_ON_
-    TAINT_ROPE_INIT
-#endif
-
     d.u1.length = length;
     d.u1.flags = ROPE_FLAGS;
     if (left->hasLatin1Chars() && right->hasLatin1Chars())
         d.u1.flags |= LATIN1_CHARS_BIT;
     d.s.u2.left = left;
     d.s.u3.right = right;
+
+#if _TAINT_ON_
+    TAINT_STR_INIT;
+    taint_str_concat(this, left, right);
+#endif
+
     js::StringWriteBarrierPost(cx, &d.s.u2.left);
     js::StringWriteBarrierPost(cx, &d.s.u3.right);
 }
@@ -161,10 +164,14 @@ JSDependentString::init(js::ThreadSafeContext *cx, JSLinearString *base, size_t 
         d.s.u2.nonInlineCharsTwoByte = base->twoByteChars(nogc) + start;
     }
     d.s.u3.base = base;
-    js::StringWriteBarrierPost(cx, reinterpret_cast<JSString **>(&d.s.u3.base));
+
 #if _TAINT_ON_
-    TAINT_DEPSTR_INIT
+    TAINT_STR_INIT;
+    if(base->isTainted());
+        taint_str_substr(this, cx->asExclusiveContext(), base, start, length);
 #endif
+
+    js::StringWriteBarrierPost(cx, reinterpret_cast<JSString **>(&d.s.u3.base));
 }
 
 MOZ_ALWAYS_INLINE JSLinearString *

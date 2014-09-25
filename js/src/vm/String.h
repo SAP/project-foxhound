@@ -339,44 +339,20 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     void addTaintRef(TaintStringRef *tsr)  {
-    if(isTainted()) {
-        if(!tsr) {
-            removeAllTaint();
-            return;
-        }
-        
-        d.u0.endTaint->next = tsr;
-        d.u0.endTaint = tsr;
-    } else
-        d.u0.startTaint = d.u0.endTaint = tsr;
-
-    //fastforward endTaint
-    if(d.u0.endTaint)
-        for(; d.u0.endTaint->next != nullptr; d.u0.endTaint = d.u0.endTaint->next);
-
-        /*if(isTainted()) {
-            if(cleanup) {
-                removeAllTaint();
-                d.u0.startTaint = nullptr;
-            }
-
-            //find end of current ref chain
-            if(tsr) {
-                TaintStringRef *last;
-                for(last = d.u0.startTaint; last->next != nullptr; last = last->next);
-                last->next = tsr;
-            }
-        } else
-            d.u0.startTaint = tsr;
-
         if(isTainted()) {
-            if(cleanup)
+            if(!tsr) {
                 removeAllTaint();
-            else if(tsr)
-                tsr->next = d.u0.startTaint;
-        }
+                return;
+            }
+            
+            d.u0.endTaint->next = tsr;
+            d.u0.endTaint = tsr;
+        } else
+            d.u0.startTaint = d.u0.endTaint = tsr;
 
-        d.u0.startTaint = tsr; */
+        //fastforward endTaint
+        if(d.u0.endTaint)
+            for(; d.u0.endTaint->next != nullptr; d.u0.endTaint = d.u0.endTaint->next);
     }
 
     MOZ_ALWAYS_INLINE

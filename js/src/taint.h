@@ -63,10 +63,8 @@ typedef struct TaintStringRef
 } TaintStringRef;
 
 //------------------------------
-//"backend" defs and functions
-//use this functionality at own risk and just in special cases
-//not handled below
-
+//taint handling for the JSString class
+//
 #define TAINT_ADD_JSSTR_METHODS \
 JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
 JS_FN("mutateTaint",            taint_str_testmutator,          0,JSFUN_GENERIC_NATIVE),
@@ -77,24 +75,15 @@ JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
 #define TAINT_ADD_JSSTR_PROPS \
 JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT),
 
+//initialize new string instances
 #define TAINT_STR_INIT \
-    d.u0.startTaint = nullptr; \
-    d.u0.endTaint = nullptr;
+    do { \
+        d.u0.startTaint = nullptr; \
+        d.u0.endTaint = nullptr; \
+    } while(false)
 
-#define TAINT_ROPE_INIT \
-    TAINT_STR_INIT \
-    taint_str_concat(this, left, right);
-
-#define TAINT_DEPSTR_INIT \
-    TAINT_STR_INIT \
-    if(base->isTainted()) \
-        taint_str_substr(this, cx->asExclusiveContext(), base, start, length);
-
-#define TAINT_FATINLINE_INIT \
-    if(base->isTainted()) \
-        taint_str_substr(s, cx, base, start, length);
-
-//skip static string optimizations
+//skip "statictable" optimization, that reads short
+//strings from a pre-calculated table instead of creating new
 #define TAINT_GETELEM_SKIPSTATIC_ASM(target) \
     masm.jump(target);
 
@@ -112,6 +101,81 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, taint_str_concat)); \
     masm.PopRegsInMask(taintSaveRegs); \
 }
+
+TaintStringRef *taint_str_taintref_build();
+TaintStringRef *taint_str_taintref_build(TaintStringRef &ref);
+TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
+void taint_str_remove_taint_all(TaintStringRef **start, TaintStringRef **end);
+bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
+bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
+bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
+bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
+
+
+//------------------------------
+//common core taint tracking logic
+//
+
+//add a new 
+void
+taint_str_add_all_node(TaintStringRef *dst, const char* name,
+    JS::HandleValue param1 = JS::UndefinedHandleValue, 
+    JS::HandleValue param2 = JS::UndefinedHandleValue);
+
+TaintStringRef *taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx);
+
+//special cases
+void taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
+
+//-----------------------------------
+// tag defs and functions
+
+//set a (new) source, this includes resetting all previous taint
+// use for all sources
+//TODO: add this to the public JSAPI exports
+void taint_tag_source(JSString * str, const char* name, 
+    uint32_t begin = 0, uint32_t end = 0);
+
+//mutator/function call
+template <typename TaintedT>
+TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
+    uint32_t frombegin, int32_t offset, uint32_t fromend);
+
+JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
+    uint32_t start, uint32_t length);
+
+#define TAINT_STR_COPY(str, base) \
+    taint_str_copy_taint((str), base->getTopTaintRef(), 0, 0, 0)
+#define TAINT_REF_COPY(str, ref) \
+    taint_str_copy_taint((str), ref, 0, 0, 0)
+#define TAINT_REF_COPYCLEAR(str, ref) \
+({ \
+    JSString *res = TAINT_REF_COPY(str, ref); \
+    taint_str_remove_taint_all(&ref); \
+    res; \
+})
+
+
+#define TAINT_ATOM_CLEARCOPY(str, base) \
+({ \
+    JSAtom *res = (str); \
+    res->removeAllTaint(); \
+    taint_str_copy_taint(res, base->getTopTaintRef(), 0, 0, 0); \
+    res;\
+})
+
+// use, when a propagator creates a new string with partly tainted contents
+// located at an offset
+JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
+    const char *name, int32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
+    JS::HandleValue param2 = JS::UndefinedHandleValue);
+
+
+
+
+
+//skip static string optimizations
+
 
 //quote special call manipulation
 #define TAINT_QUOTE_STRING_CALL(a,b,c) QuoteString(a,b,c,&targetref)
@@ -261,76 +325,6 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     current_tsr = taint_copy_until(&target_last_tsr, current_tsr, k, sb.length()); \
     if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
         sb.addTaintRef(target_last_tsr);
-
-//#define 
-
-/*
-#define TAINT_CHAR_SPLIT_MARK \
-    RootedValue markEmpty(cx, StringValue(cx->runtime()->emptyString)); \
-    taint_str_add_all_node(sub, "split", markEmpty); */
-
-
-TaintStringRef *taint_str_taintref_build();
-TaintStringRef *taint_str_taintref_build(TaintStringRef &ref);
-TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
-void taint_str_remove_taint_all(TaintStringRef **start, TaintStringRef **end);
-bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
-bool taint_str_testmutator(JSContext *cx, unsigned argc, JS::Value *vp);
-
-void
-taint_str_add_all_node(TaintStringRef *dst, const char* name,
-    JS::HandleValue param1 = JS::UndefinedHandleValue, JS::HandleValue param2 = JS::UndefinedHandleValue);
-
-TaintStringRef *taint_copy_until(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx);
-
-//special cases
-void taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
-
-//-----------------------------------
-// tag defs and functions
-
-//set a (new) source, this includes resetting all previous taint
-// use for all sources
-//TODO: add this to the public JSAPI exports
-void taint_tag_source(JSString * str, const char* name, 
-    uint32_t begin = 0, uint32_t end = 0);
-
-//mutator/function call
-template <typename TaintedT>
-TaintedT *taint_str_copy_taint(TaintedT *dst, TaintStringRef *src,
-    uint32_t frombegin, int32_t offset, uint32_t fromend);
-
-JSString *taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
-    uint32_t start, uint32_t length);
-
-#define TAINT_STR_COPY(str, base) \
-    taint_str_copy_taint((str), base->getTopTaintRef(), 0, 0, 0)
-#define TAINT_REF_COPY(str, ref) \
-    taint_str_copy_taint((str), ref, 0, 0, 0)
-#define TAINT_REF_COPYCLEAR(str, ref) \
-({ \
-    JSString *res = TAINT_REF_COPY(str, ref); \
-    taint_str_remove_taint_all(&ref); \
-    res; \
-})
-
-
-#define TAINT_ATOM_CLEARCOPY(str, base) \
-({ \
-    JSAtom *res = (str); \
-    res->removeAllTaint(); \
-    taint_str_copy_taint(res, base->getTopTaintRef(), 0, 0, 0); \
-    res;\
-})
-
-// use, when a propagator creates a new string with partly tainted contents
-// located at an offset
-JSString* taint_tag_propagator(JSString * dststr, JSString * srcstr,
-    const char *name, int32_t offset = 0, JS::HandleValue param1 = JS::UndefinedHandleValue,
-    JS::HandleValue param2 = JS::UndefinedHandleValue);
-
 
 #else
 
