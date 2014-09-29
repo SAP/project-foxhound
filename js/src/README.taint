@@ -1,0 +1,8 @@
+spidermonkey:
+	* CXXFLAGS="-g3" ../configure --enable-debug --disable-optimize --enable-gc-trace --enable-taint-tracking && make -j8
+	* tests: ./tests/jstests.py -o build-debug/dist/bin/js taint
+	* shell: build-debug/dist/bin/js
+gecko:
+	* ./mach build
+	* ./mach run
+

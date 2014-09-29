@@ -353,6 +353,17 @@ if test -n "$GNU_CC" -a -z "$CLANG_CC" ; then
     fi
 fi
 
+dnl ========================================================
+dnl = Enable safe browsing (anti-phishing)
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(taint-tracking,
+[  --enable-taint-tracking  Enable taint tracking (ALL)],
+    TAINT=1,
+    TAINT= )
+if test "$TAINT" = "1"; then
+    AC_DEFINE(_TAINT_ON_, 1)
+fi
+
 dnl Special win32 checks
 dnl ========================================================
 

@@ -59,6 +59,7 @@ EXPORTS += [
     'jsversion.h',
     'jswrapper.h',
     'perf/jsperf.h',
+    'taint.h'
 ]
 
 # If you add a header here, add it to js/src/jsapi-tests/testIntTypesABI.cpp so

@@ -6577,6 +6577,17 @@ if test -n "$MOZ_HELP_VIEWER"; then
 fi
 
 dnl ========================================================
+dnl = Enable taint tracking
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(taint-tracking,
+[  --enable-taint-tracking  Enable taint tracking (ALL)],
+    TAINT=1,
+    TAINT= )
+if test "$TAINT" = "1"; then
+    AC_DEFINE(_TAINT_ON_, 1)
+fi
+
+dnl ========================================================
 dnl = Enable safe browsing (anti-phishing)
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(safe-browsing,

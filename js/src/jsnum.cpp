@@ -1331,7 +1331,9 @@ js_NumberToStringWithBase(ThreadSafeContext *cx, double d, int base)
             if (i < 10)
                 return cx->staticStrings().getInt(i);
             jschar c = 'a' + i - 10;
+#ifndef _TAINT_ON_
             JS_ASSERT(StaticStrings::hasUnit(c));
+#endif
             return cx->staticStrings().getUnit(c);
         }
 

@@ -61,7 +61,7 @@
 #include "vm/String-inl.h"
 #include "vm/StringObject-inl.h"
 
-#include "taint.h"
+#include "taint-private.h"
 
 using namespace js;
 using namespace js::gc;
@@ -121,7 +121,12 @@ str_encodeURI_Component(JSContext *cx, unsigned argc, Value *vp);
 /* ES5 B.2.1 */
 template <typename CharT>
 static Latin1Char *
-TAINT_ESCAPE_DEF(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOut)
+#if _TAINT_ON_
+    Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOut,
+        TaintStringRef **targetref, TaintStringRef *sourceref)
+#else
+    Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOut)
+#endif
 {
     static const uint8_t shouldPassThrough[128] = {
          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -672,6 +677,19 @@ DoSubstr(JSContext *cx, JSString *str, size_t begin, size_t len)
         RootedString rhs(cx, NewDependentString(cx, ropeRoot->rightChild(), 0, rhsLength));
         if (!rhs)
             return nullptr;
+
+#if _TAINT_ON_
+        //recalculate the offsets for the rhs
+        //TODO: this is hacky and may stop working if we optimize doubled node creation
+        //but is covered by tests, so no problem :)
+        TAINT_ITER_TAINTREF(rhs)
+        {
+            RootedValue param1val(cx, INT_TO_JSVAL(tsr->thisTaint->param1.toInt32() + ropeRoot->leftChild()->length()));
+            RootedValue param2val(cx, INT_TO_JSVAL(tsr->thisTaint->param2.toInt32() + ropeRoot->leftChild()->length()));
+            tsr->thisTaint->param1 = param1val;
+            tsr->thisTaint->param2 = param2val;
+        }
+#endif
 
         return JSRope::new_<CanGC>(cx, lhs, rhs, len);
     }

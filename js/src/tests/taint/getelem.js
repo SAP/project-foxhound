@@ -1,10 +1,7 @@
-/* -*- tab-width: 2; indent-tabs-mode: nil; js-indent-level: 2 -*- */
 // |reftest| fails -- GetElem is not patched for the optimized case
-
 load("taint/taint-setup.js");
 
-var str = _t(_flat());
-
+var str = _flatTaint();
 
 //access to single chars should remain taint - behave like slice(x)
 var sub = str.substring(3, 4);

@@ -12,7 +12,7 @@
 #include "NamespaceImports.h"
 
 #include "js/RootingAPI.h"
-#include "taint.h"
+#include "taint-private.h"
 
 namespace js {
 class StringBuffer;

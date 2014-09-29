@@ -5,7 +5,7 @@
 #include "vm/StringBuffer.h"
 
 #include "jsarray.h"
-#include "taint.h"
+#include "taint-private.h"
 
 using namespace js;
 
@@ -244,12 +244,15 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     
     for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
     {
-        if(tsr->end < frombegin || (fromend > 0 && tsr->begin >= fromend))
+        if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
             continue;
 
+        uint32_t begin = MAX(frombegin, tsr->begin);
+        uint32_t end   = (fromend > 0 ? MIN(tsr->end, fromend) : tsr->end);
+        
         TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
-        newtsr->begin = MAX(frombegin, tsr->begin) - frombegin + offset;
-        newtsr->end   = (fromend > 0 ? MIN(tsr->end, fromend) : tsr->end) - frombegin + offset;
+        newtsr->begin = begin - frombegin + offset;
+        newtsr->end   = end - frombegin + offset;
 
         //add the first element directly to the string
         //all others will be appended to it
@@ -272,6 +275,15 @@ template JSInlineString* taint_copy_range<JSInlineString>(JSInlineString *dst, T
 template StringBuffer* taint_copy_range<StringBuffer>(StringBuffer *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
+void taint_add_op_single(TaintStringRef *dst, const char* name, HandleValue param1, HandleValue param2)
+{
+    TaintNode *taint_node = taint_str_add_source_node(name);
+    //attach new node before changing the string ref as this would delete the old node
+    taint_node->setPrev(dst->thisTaint);
+    taint_node->param1 = param1;
+    taint_node->param2 = param2;
+    dst->attachTo(taint_node);
+}
 
 //add a new node to all taintstringrefs on a string
 void
@@ -283,12 +295,7 @@ taint_add_op(TaintStringRef *dst, const char* name, HandleValue param1, HandleVa
     //TODO: this might install duplicates if multiple parts of the string derive from the same tree
     for(TaintStringRef *tsr = dst; tsr != nullptr; tsr = tsr->next)
     {
-        TaintNode *taint_node = taint_str_add_source_node(name);
-        //attach new node before changing the string ref as this would delete the old node
-        taint_node->setPrev(tsr->thisTaint);
-        taint_node->param1 = param1;
-        taint_node->param2 = param2;
-        tsr->attachTo(taint_node);
+        taint_add_op_single(tsr, name, param1, param2);
     }
 }
 
@@ -339,11 +346,16 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     if(!base->isTainted())
         return str;
 
-    js::RootedValue startval(cx, INT_TO_JSVAL(start));
-    js::RootedValue endval(cx, INT_TO_JSVAL(start + length));
-    taint_copy_range(str, base->getTopTaintRef(), start, 0, start + length);
-    taint_add_op(str->getTopTaintRef(), "substring", startval, endval);
+    uint32_t end = start + length;
 
+    taint_copy_range(str, base->getTopTaintRef(), start, 0, end);
+    TAINT_ITER_TAINTREF(str)
+    {
+        js::RootedValue startval(cx, INT_TO_JSVAL(tsr->begin + start));
+        js::RootedValue endval(cx, INT_TO_JSVAL(tsr->end + start));
+        taint_add_op_single(tsr, "substring", startval, endval);
+    }
+        
     return str;
 }
 

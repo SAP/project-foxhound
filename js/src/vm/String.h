@@ -23,7 +23,7 @@
 #include "js/GCAPI.h"
 #include "js/RootingAPI.h"
 
-#include "taint.h"
+#include "taint-private.h"
 
 class JSDependentString;
 class JSExtensibleString;
@@ -1098,9 +1098,6 @@ class StaticStrings
     void trace(JSTracer *trc);
 
     static bool hasUint(uint32_t u) {
-#if _TAINT_ON_
-        return false;
-#endif
         return u < INT_STATIC_LIMIT; 
     }
 
@@ -1110,9 +1107,6 @@ class StaticStrings
     }
 
     static bool hasInt(int32_t i) {
-#if _TAINT_ON_
-        return false;
-#endif
         return uint32_t(i) < INT_STATIC_LIMIT;
     }
 
@@ -1129,7 +1123,9 @@ class StaticStrings
     }
 
     JSAtom *getUnit(jschar c) {
+#ifndef _TAINT_ON_
         JS_ASSERT(hasUnit(c));
+#endif
         return unitStaticTable[c];
     }
 

@@ -17,9 +17,7 @@
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 
-#if _TAINT_ON_
-#include "taint.h"
-#endif
+#include "taint-private.h"
 
 using namespace js;
 

@@ -13,7 +13,7 @@
 #include "jscntxt.h"
 
 #include "js/Vector.h"
-#include "taint.h"
+#include "taint-private.h"
 
 namespace js {
 

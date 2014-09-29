@@ -183,7 +183,12 @@ EvalStringMightBeJSON(const mozilla::Range<const CharT> chars)
 
 template <typename CharT>
 static EvalJSONResult
-TAINT_JSON_EVAL_DEF(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval)
+#if _TAINT_ON_
+ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval,
+    TaintStringRef *ref)
+#else
+ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval)
+#endif
 {
     size_t len = chars.length();
     MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||

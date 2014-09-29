@@ -796,7 +796,11 @@ js_DumpScriptDepth(JSContext *cx, JSScript *scriptArg, jsbytecode *pc)
 }
 
 static char *
-TAINT_QUOTE_STRING_DEF(Sprinter *sp, JSString *str, jschar quote);
+#if _TAINT_ON_
+QuoteString(Sprinter *sp, JSString *str, jschar quote, TaintStringRef **targetref);
+#else
+QuoteString(Sprinter *sp, JSString *str, jschar quote);
+#endif
 
 static bool
 ToDisassemblySource(JSContext *cx, HandleValue v, JSAutoByteString *bytes)
@@ -1294,7 +1298,12 @@ const char js_EscapeMap[] = {
 
 template <typename CharT>
 static char *
-TAINT_QUOTE_STRING_DEF_INNER(Sprinter *sp, const CharT *s, size_t length, jschar quote)
+#if _TAINT_ON_
+QuoteString(Sprinter *sp, const CharT *s, size_t length, jschar quote,
+    TaintStringRef **targetref, TaintStringRef *sourceref)
+#else
+QuoteString(Sprinter *sp, const CharT *s, size_t length, jschar quote)
+#endif
 {
     /* Sample off first for later return value pointer computation. */
     ptrdiff_t offset = sp->getOffset();
@@ -1370,7 +1379,11 @@ TAINT_QUOTE_STRING_DEF_INNER(Sprinter *sp, const CharT *s, size_t length, jschar
 }
 
 static char *
-TAINT_QUOTE_STRING_DEF(Sprinter *sp, JSString *str, jschar quote)
+#if _TAINT_ON_
+QuoteString(Sprinter *sp, JSString *str, jschar quote, TaintStringRef **targetref)
+#else
+QuoteString(Sprinter *sp, JSString *str, jschar quote)
+#endif
 {
     JSLinearString *linear = str->ensureLinear(sp->context);
     if (!linear)
