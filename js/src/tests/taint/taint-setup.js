@@ -3,7 +3,7 @@ function _t(str) {
 	return String.newAllTainted(str);
 }
 
-var b = "Hello\u01C3";
+var b = "Hello\u1E9B";
 var m = " \"Dr.\" String ";
 var e = "reporting in";
 
@@ -39,4 +39,8 @@ function _isTainted(a) {
 
 function _isNotTainted(a) {
 	assertEq(a.taint.length, 0, "notaint "+a);
+}
+
+function _hasLastOp(a, op) {
+	assertEq(a.operators[0].op, op);
 }

@@ -224,6 +224,21 @@ taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
     str->addTaintRef(newtsr);
 }
 
+void
+taint_inject_substring_op(ExclusiveContext *cx, TaintStringRef *last, 
+    uint32_t offset, uint32_t begin)
+{
+        //add an artificial substring operator, as there is no adequate call.
+        //one taint_copy_range call can add multiple TaintRefs, we can find them
+        //as they follow the "last" var captured _before_ the call
+        for(TaintStringRef *tsr = last; tsr; tsr = tsr->next)
+        {
+            RootedValue startval(cx, INT_TO_JSVAL(tsr->begin - offset + begin));
+            RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
+            taint_add_op_single(tsr, "substring", startval, endval);
+        }
+}
+
 //duplicate all taintstringrefs form a string to another
 //and point to the same nodes (shallow copy)
 template <typename TaintedT>
@@ -233,6 +248,7 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     JS_ASSERT(dst && src);
 
     TaintStringRef *newchainlast = nullptr;
+
 /*
     //look for the currect insertion point in dst
     for(TaintStringRef *itr = dst->getTopTaintRef(); 
@@ -263,6 +279,8 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
 
         newchainlast = newtsr;
     }
+    if(newchainlast)
+        dst->ffTaint();
 
     return dst;
 }
@@ -306,11 +324,15 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
         return nullptr;
 
     //we are in the same TSR, still
-    if(*target) {
-        if(sidx <= source->end) { //this will trigger len(str) times
+    if(sidx > source->begin) {
+        //if we were called ever idx a new tsr should be created in *target
+        JS_ASSERT(*target);
+        
+        if(sidx <= source->end) { //this will trigger len(str) times //<=
             (*target)->end = tidx;
-            if(sidx < source->end)
-                return source;
+            //if(sidx < source->end)
+            //drop out if we updated the end, there is no new source ref for sure
+            return source;
         }
 
         //if we completed the last TSR advance the source pointer
@@ -343,7 +365,7 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     if(!str)
         return nullptr;
 
-    if(!base->isTainted())
+    if(!base->isTainted() || length == 0)
         return str;
 
     uint32_t end = start + length;

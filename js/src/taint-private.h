@@ -88,6 +88,7 @@ taint_add_op(TaintStringRef *dst, const char* name,
     JS::HandleValue param1 = JS::UndefinedHandleValue, 
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
+
 //exact taint copy when length of in/out do not match
 // - needs to be called for every "token" in source
 // - *target starts out with nullptr and continues to hold the
@@ -122,10 +123,10 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
 #define TAINT_ATOM_CLEARCOPY(str, base) \
 ({ \
     JSAtom *res = (str); \
-    /*res->removeAllTaint(); \
-    if(base->isTainted()) \
-        taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); */ \
-    res;\
+    res->removeAllTaint(); \
+    if(base->isTainted() && !res->isTainted()) \
+        taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); \
+    res; \
 })
 #define TAINT_ITER_TAINTREF(str) \
     for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
@@ -135,6 +136,13 @@ JSString*
 taint_copy_and_op(JSString * dststr, JSString * srcstr,
     const char *name, JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
+
+//injects substrings after taint_copy
+//last is the last TaintRef before taint was copied
+//offset/begin are the values passed into taint_copy_range
+void
+taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last, 
+    uint32_t offset, uint32_t begin);
 
 //-----------------------------------
 //call manipulation and augmentation
@@ -259,9 +267,6 @@ taint_copy_and_op(JSString * dststr, JSString * srcstr,
 
 #define TAINT_UNESCAPE_DEF(a,b) Unescape(a,b,TaintStringRef *source)
 #define TAINT_UNESCAPE_CALL(a,b) Unescape(a,b,str->getTopTaintRef())
-#define TAINT_UNESCAPE_PRE \
-    TaintStringRef *current_tsr = source; \
-    TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_UNESCAPE_MATCH(k) \
     current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
     if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \

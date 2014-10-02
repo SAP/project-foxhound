@@ -290,13 +290,17 @@ TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
     bool building = false;
 
 #if _TAINT_ON_
-    TAINT_UNESCAPE_PRE
+    TaintStringRef *current_tsr = source;
+    TaintStringRef *target_last_tsr = nullptr;
 #endif
 
     /* Step 5. */
     while (k < length) {
         /* Step 6. */
         jschar c = chars[k];
+#if _TAINT_ON_
+        TAINT_UNESCAPE_MATCH(k)
+#endif
 
         /* Step 7. */
         if (c != '%')
@@ -317,7 +321,6 @@ TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
                 if (!sb.reserve(length))                     \
                     return false;                            \
                 for(int i = 0; i < k; i++) {                 \
-                    TAINT_UNESCAPE_MATCH(i)                  \
                     sb.infallibleAppend(chars.start().get() + i, 1); \
                 }                                            \
                 TAINT_UNESCAPE_MATCH(k)                      \
@@ -343,9 +346,6 @@ TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
         }
 
       step_18:
-#if _TAINT_ON_
-        TAINT_UNESCAPE_MATCH(k)
-#endif
         if (building && !sb.append(c))
             return false;
 
@@ -684,10 +684,10 @@ DoSubstr(JSContext *cx, JSString *str, size_t begin, size_t len)
         //but is covered by tests, so no problem :)
         TAINT_ITER_TAINTREF(rhs)
         {
-            RootedValue param1val(cx, INT_TO_JSVAL(tsr->thisTaint->param1.toInt32() + ropeRoot->leftChild()->length()));
-            RootedValue param2val(cx, INT_TO_JSVAL(tsr->thisTaint->param2.toInt32() + ropeRoot->leftChild()->length()));
-            tsr->thisTaint->param1 = param1val;
-            tsr->thisTaint->param2 = param2val;
+            JS_ASSERT(tsr->thisTaint->param1.isInt32());
+            JS_ASSERT(tsr->thisTaint->param2.isInt32());
+            tsr->thisTaint->param1 = INT_TO_JSVAL(tsr->thisTaint->param1.toInt32() + ropeRoot->leftChild()->length());
+            tsr->thisTaint->param2 = INT_TO_JSVAL(tsr->thisTaint->param2.toInt32() + ropeRoot->leftChild()->length());
         }
 #endif
 
@@ -1986,6 +1986,9 @@ TrimString(JSContext *cx, Value *vp, bool trimLeft, bool trimRight)
         return false;
 
 #if _TAINT_ON_
+    //do not add an operator if nothing changed
+    //str is still the input string!
+    if(begin != 0 || (end-begin) != length)
     { 
         RootedValue leftp(cx, BOOLEAN_TO_JSVAL(trimLeft));
         RootedValue rightp(cx, BOOLEAN_TO_JSVAL(trimRight));
@@ -2422,7 +2425,17 @@ BuildFlatMatchArray(JSContext *cx, HandleString textstr, const FlatMatch &fm, Ca
     if (!obj)
         return false;
 
-    RootedValue patternVal(cx, StringValue(fm.pattern()));
+    RootedString patcpy(cx, fm.pattern());
+#if _TAINT_ON_
+    JSString *taintpattern = NewDependentString(cx, textstr, fm.match(), fm.patternLength());
+    RootedValue taintidx(cx, INT_TO_JSVAL(0));
+    RootedValue taintpat(cx, StringValue(patcpy));
+
+    taint_add_op(taintpattern->getTopTaintRef(), "match", taintpat, taintidx);
+    patcpy = taintpattern;
+#endif
+
+    RootedValue patternVal(cx, StringValue(patcpy));
     RootedValue matchVal(cx, Int32Value(fm.match()));
     RootedValue textVal(cx, StringValue(textstr));
 
@@ -2887,11 +2900,12 @@ DoReplace(RegExpStatics *res, ReplaceData &rdata)
             dp = js_strchr_limit(dp, '$', ep);
         } while (dp);
     }
-
 #if _TAINT_ON_
-    //copy taint of replaced string
-    if(repstr->isTainted())
-        taint_copy_range(&rdata.sb, repstr->getTopTaintRef(), 0, rdata.sb.length(), 0);
+    else {
+        //copy taint of replaced string
+        if(repstr->isTainted())
+            taint_copy_range(&rdata.sb, repstr->getTopTaintRef(), 0, rdata.sb.length(), repstr->length() - (cp - bp));
+    }
 #endif
     rdata.sb.infallibleAppend(cp, repstr->length() - (cp - bp));
 }
@@ -3178,6 +3192,25 @@ FlattenSubstrings(JSContext *cx, Handle<JSFlatString*> flatStr, const StringRang
         CopySubstringsToFatInline(str, flatStr->latin1Chars(nogc), ranges, rangesLen, outputLen);
     else
         CopySubstringsToFatInline(str, flatStr->twoByteChars(nogc), ranges, rangesLen, outputLen);
+
+#if _TAINT_ON_
+
+    size_t acclen = 0;
+    for(size_t i = 0; i < rangesLen; i++) {
+        TaintStringRef *last = str->getBottomTaintRef();
+
+        taint_copy_range<JSString>(str, flatStr->getTopTaintRef(), 
+            ranges[i].start, acclen, ranges[i].start + ranges[i].length);
+
+        taint_inject_substring_op(cx, (last ? last->next : str->getTopTaintRef()), 
+            acclen, ranges[i].start);
+
+        acclen += ranges[i].length;
+    }
+  
+
+#endif
+
     return str;
 }
 
@@ -5018,7 +5051,10 @@ Encode(JSContext *cx, HandleLinearString str, const bool *unescapedSet,
     }
 
 #if _TAINT_ON_
-    taint_add_op(sb.getTopTaintRef(), "encodeURIComponent");
+    if(unescapedSet2 == js_isUriReservedPlusPound)
+        taint_add_op(sb.getTopTaintRef(), "encodeURI");
+    else
+        taint_add_op(sb.getTopTaintRef(), "encodeURIComponent");
 #endif
 
     MOZ_ASSERT(res == Encode_Success);
@@ -5144,7 +5180,10 @@ Decode(JSContext *cx, HandleLinearString str, const bool *reservedSet, MutableHa
     }
 
 #if _TAINT_ON_
-    taint_add_op(sb.getTopTaintRef(), "decodeURIComponent");
+    if(reservedSet == js_isUriReservedPlusPound)
+        taint_add_op(sb.getTopTaintRef(), "decodeURI");
+    else
+        taint_add_op(sb.getTopTaintRef(), "decodeURIComponent");
 #endif
 
     MOZ_ASSERT(res == Decode_Success);

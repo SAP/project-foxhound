@@ -1,13 +1,3 @@
-/* -*- tab-width: 2; indent-tabs-mode: nil; js-indent-level: 2 -*- */
-
-
-/**
-   Filename:     basicfunctions.js
-   Description:  'This tests the new basic tainted functions of strings.'
-
-   Author:       Stephan Pfistner
-*/
-
 load("taint/taint-setup.js");
 startTest();
 

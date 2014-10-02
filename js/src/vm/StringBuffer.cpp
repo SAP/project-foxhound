@@ -28,9 +28,7 @@ void StringBuffer::addTaintRef(TaintStringRef *tsr)
     } else
         startTaint = endTaint = tsr;
 
-    //fastforward endTaint
-    if(endTaint)
-        for(; endTaint->next != nullptr; endTaint = endTaint->next);
+    ffTaint();
 }
 #endif
 

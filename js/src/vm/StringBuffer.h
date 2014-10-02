@@ -104,8 +104,18 @@ class StringBuffer
 
     void addTaintRef(TaintStringRef *tsr);
 
+    inline TaintStringRef *getBottomTaintRef() {
+        return endTaint;
+    } 
+
     inline void removeAllTaint() {
         taint_remove_all(&startTaint, &endTaint);
+    }
+
+    inline void ffTaint() {
+        //fastforward endTaint
+        if(endTaint)
+            for(; endTaint->next != nullptr; endTaint = endTaint->next);
     }
 #endif
 
@@ -296,8 +306,12 @@ StringBuffer::TAINT_SB_INFAPPENDSUBSTRING_DEF(JSLinearString *base, size_t off, 
     MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
 #if _TAINT_ON_
-    if(taint && base->isTainted())
+    if(taint && base->isTainted() && len > 0) {
+        TaintStringRef *last = getBottomTaintRef();
+
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
+        taint_inject_substring_op(cx, (last ? last->next : getTopTaintRef()), length(), off);
+    }
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -313,8 +327,12 @@ StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSLinearString *base, size_t off, siz
     MOZ_ASSERT(off + len <= base->length());
 
 #if _TAINT_ON_
-    if(taint && base->isTainted())
+    if(taint && base->isTainted() && len > 0) {
+        TaintStringRef *last = getBottomTaintRef();
+        
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
+        taint_inject_substring_op(cx, (last ? last->next : getTopTaintRef()), length(), off);
+    }
 #endif
 
     JS::AutoCheckCannotGC nogc;

@@ -338,6 +338,11 @@ class JSString : public js::gc::BarrieredCell<JSString>
     }
 
     MOZ_ALWAYS_INLINE
+    TaintStringRef *getBottomTaintRef() {
+        return d.u0.endTaint;
+    } 
+
+    MOZ_ALWAYS_INLINE
     void addTaintRef(TaintStringRef *tsr)  {
         if(isTainted()) {
             if(!tsr) {
@@ -350,6 +355,11 @@ class JSString : public js::gc::BarrieredCell<JSString>
         } else
             d.u0.startTaint = d.u0.endTaint = tsr;
 
+        ffTaint();
+    }
+
+    MOZ_ALWAYS_INLINE
+    void ffTaint() {
         //fastforward endTaint
         if(d.u0.endTaint)
             for(; d.u0.endTaint->next != nullptr; d.u0.endTaint = d.u0.endTaint->next);
