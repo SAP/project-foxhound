@@ -46,13 +46,6 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     masm.PopRegsInMask(taintSaveRegs); \
 }
 
-//special struct builder (using js_malloc)
-TaintStringRef *taint_str_taintref_build();
-TaintStringRef *taint_str_taintref_build(TaintStringRef &ref);
-TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
-//remove taint from start to end
-void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
-
 //JavaScript functions
 //JavaScript copy constructor for new all-tainted strings
 bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);
@@ -98,20 +91,6 @@ taint_add_op(TaintStringRef *dst, const char* name,
 TaintStringRef *
 taint_copy_exact(TaintStringRef **target, 
     TaintStringRef *source, size_t sidx, size_t tidx);
-
-//set a (new) source, this includes resetting all previous taint
-// use for all sources
-//TODO: add this to the public JSAPI exports
-void taint_tag_source(JSString * str, const char* name, 
-    uint32_t begin = 0, uint32_t end = 0);
-
-//partial taint copy
-// - copy taint from source from frombegin until fromend
-// - insert at offset into dst
-template <typename TaintedT>
-TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
-    uint32_t frombegin, int32_t offset, uint32_t fromend);
-
 
 //defs for in place use of primitives
 #define TAINT_STR_COPY(str, base) \

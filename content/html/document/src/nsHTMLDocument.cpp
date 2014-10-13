@@ -1264,6 +1264,9 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
     // because it assumes that the input is valid.
     nsContentUtils::ConvertStringFromEncoding(NS_LITERAL_CSTRING("UTF-8"),
                                               cookie, aCookie);
+#if _TAINT_ON_
+    taint_tag_source(&aCookie, "document.cookie");
+#endif
   }
 }
 

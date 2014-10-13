@@ -107,6 +107,9 @@ class nsStringContainer;
 struct nsStringContainer_base
 {
 protected:
+#if _TAINT_ON_
+  void *t1, *t2;
+#endif
   void* d1;
   uint32_t d2;
   uint32_t d3;

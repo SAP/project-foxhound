@@ -327,48 +327,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
   public:
 
 #if _TAINT_ON_
-    MOZ_ALWAYS_INLINE
-    bool isTainted() const {
-        return d.u0.startTaint && d.u0.endTaint;
-    }
-
-    MOZ_ALWAYS_INLINE
-    TaintStringRef *getTopTaintRef() {
-        return d.u0.startTaint;
-    }
-
-    MOZ_ALWAYS_INLINE
-    TaintStringRef *getBottomTaintRef() {
-        return d.u0.endTaint;
-    } 
-
-    MOZ_ALWAYS_INLINE
-    void addTaintRef(TaintStringRef *tsr)  {
-        if(isTainted()) {
-            if(!tsr) {
-                removeAllTaint();
-                return;
-            }
-            
-            d.u0.endTaint->next = tsr;
-            d.u0.endTaint = tsr;
-        } else
-            d.u0.startTaint = d.u0.endTaint = tsr;
-
-        ffTaint();
-    }
-
-    MOZ_ALWAYS_INLINE
-    void ffTaint() {
-        //fastforward endTaint
-        if(d.u0.endTaint)
-            for(; d.u0.endTaint->next != nullptr; d.u0.endTaint = d.u0.endTaint->next);
-    }
-
-    MOZ_ALWAYS_INLINE
-    void removeAllTaint() {
-        taint_remove_all(&d.u0.startTaint, &d.u0.endTaint);
-    }
+  TAINT_STRING_HOOKS(d.u0.startTaint, d.u0.endTaint)
 #endif
 
     /* All strings have length. */

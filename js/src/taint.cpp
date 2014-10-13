@@ -21,12 +21,27 @@ taint_new_tainref_mem()
     return js_malloc(sizeof(TaintStringRef));
 }
 
-inline TaintNode*
+TaintNode*
 taint_str_add_source_node(const char *fn)
 {
     void *p = js_malloc(sizeof(TaintNode));
     TaintNode *node = new (p) TaintNode(fn);
     return node;
+}
+
+void taint_tag_source_internal(JSString * str, const char* name, 
+    uint32_t begin = 0, uint32_t end = 0)
+{
+    if(end == 0)
+        end = str->length();
+
+    if(str->isTainted()) {
+        str->removeAllTaint();
+    }
+    
+    TaintNode *taint_node = taint_str_add_source_node(name);
+    TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
+    str->addTaintRef(newtsr);
 }
 
 //----------------------------------
@@ -141,7 +156,7 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
         }
     }
 
-    taint_tag_source(taintedStr, "Manual taint source");
+    taint_tag_source_internal(taintedStr, "Manual taint source");
 
     args.rval().setString(taintedStr);
     return true;
@@ -207,22 +222,6 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 
 //-----------------------------
 // Tagging functions
-
-//reset the taint of a string and a new taintstringref with a source
-void
-taint_tag_source(JSString *str, const char* name, uint32_t begin, uint32_t end)
-{
-    if(end == 0)
-        end = str->length();
-
-    if(str->isTainted()) {
-        str->removeAllTaint();
-    }
-    
-    TaintNode *taint_node = taint_str_add_source_node(name);
-    TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
-    str->addTaintRef(newtsr);
-}
 
 void
 taint_inject_substring_op(ExclusiveContext *cx, TaintStringRef *last, 
@@ -392,7 +391,7 @@ taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node)
 
 //create (copy) a new taintstringref
 TaintStringRef*
-taint_str_taintref_build(TaintStringRef &ref)
+taint_str_taintref_build(const TaintStringRef &ref)
 {
     void *p = taint_new_tainref_mem();
     return new (p) TaintStringRef(ref);

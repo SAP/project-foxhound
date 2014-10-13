@@ -7,6 +7,7 @@
 
 #include "mozilla/Casting.h"
 #include "mozilla/MemoryReporting.h"
+#include "taint.h"
 
 #ifndef MOZILLA_INTERNAL_API
 #error Cannot use internal string classes without MOZILLA_INTERNAL_API defined. Use the frozen header nsStringAPI.h instead.
@@ -92,6 +93,9 @@ public:
   // this acts like a virtual destructor
   ~nsTSubstring_CharT()
   {
+#if _TAINT_ON_
+        removeAllTaint();
+#endif
     Finalize();
   }
 
@@ -823,6 +827,9 @@ public:
     : mData(nullptr)
     , mLength(0)
     , mFlags(F_NONE)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
     Assign(aTuple);
   }
@@ -843,6 +850,9 @@ public:
     : mData(aData)
     , mLength(aLength)
     , mFlags(aFlags)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 #endif /* DEBUG || FORCE_BUILD_REFCNT_LOGGING */
@@ -868,6 +878,10 @@ public:
   size_t SizeOfIncludingThisEvenIfShared(mozilla::MallocSizeOf aMallocSizeOf)
   const;
 
+#if _TAINT_ON_
+  TAINT_STRING_HOOKS(startTaint, endTaint)
+#endif
+
 protected:
 
   friend class nsTObsoleteAStringThunk_CharT;
@@ -879,6 +893,11 @@ protected:
   char_type*  mData;
   size_type   mLength;
   uint32_t    mFlags;
+
+#if _TAINT_ON_
+  TaintStringRef *startTaint;
+  TaintStringRef *endTaint;
+#endif
 
   // default initialization
   nsTSubstring_CharT()

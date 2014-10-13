@@ -3195,17 +3195,19 @@ FlattenSubstrings(JSContext *cx, Handle<JSFlatString*> flatStr, const StringRang
 
 #if _TAINT_ON_
 
-    size_t acclen = 0;
-    for(size_t i = 0; i < rangesLen; i++) {
-        TaintStringRef *last = str->getBottomTaintRef();
+    if(flatStr->isTainted()) {
+        size_t acclen = 0;
+        for(size_t i = 0; i < rangesLen; i++) {
+            TaintStringRef *last = str->getBottomTaintRef();
 
-        taint_copy_range<JSString>(str, flatStr->getTopTaintRef(), 
-            ranges[i].start, acclen, ranges[i].start + ranges[i].length);
+            taint_copy_range<JSString>(str, flatStr->getTopTaintRef(), 
+                ranges[i].start, acclen, ranges[i].start + ranges[i].length);
 
-        taint_inject_substring_op(cx, (last ? last->next : str->getTopTaintRef()), 
-            acclen, ranges[i].start);
+            taint_inject_substring_op(cx, (last ? last->next : str->getTopTaintRef()), 
+                acclen, ranges[i].start);
 
-        acclen += ranges[i].length;
+            acclen += ranges[i].length;
+        }
     }
   
 

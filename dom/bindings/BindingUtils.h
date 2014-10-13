@@ -35,6 +35,9 @@
 #include "nsIVariant.h"
 #include "pldhash.h" // For PLDHashOperator
 
+
+#include "taint.h"
+
 #include "nsWrapperCacheInlines.h"
 
 class nsIJSID;
@@ -1738,6 +1741,9 @@ namespace binding_detail {
 struct FakeString {
   FakeString() :
     mFlags(nsString::F_TERMINATED)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 
@@ -1745,6 +1751,9 @@ struct FakeString {
     if (mFlags & nsString::F_SHARED) {
       nsStringBuffer::FromData(mData)->Release();
     }
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
   }
 
   void Rebind(const nsString::char_type* aData, nsString::size_type aLength) {
@@ -1814,10 +1823,19 @@ struct FakeString {
     return *reinterpret_cast<const nsString*>(this);
   }
 
+#if _TAINT_ON_
+  TAINT_STRING_HOOKS(startTaint, endTaint)
+#endif
+
 private:
   nsString::char_type* mData;
   nsString::size_type mLength;
   uint32_t mFlags;
+
+#if _TAINT_ON_
+  TaintStringRef *startTaint;
+  TaintStringRef *endTaint;
+#endif
 
   static const size_t sInlineCapacity = 64;
   nsString::char_type mInlineStorage[sInlineCapacity];

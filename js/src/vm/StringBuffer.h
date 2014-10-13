@@ -94,29 +94,7 @@ class StringBuffer
     }
 
 #if _TAINT_ON_
-    inline bool isTainted() const {
-        return startTaint && endTaint;
-    }
-
-    inline TaintStringRef *getTopTaintRef() {
-        return startTaint;
-    }
-
-    void addTaintRef(TaintStringRef *tsr);
-
-    inline TaintStringRef *getBottomTaintRef() {
-        return endTaint;
-    } 
-
-    inline void removeAllTaint() {
-        taint_remove_all(&startTaint, &endTaint);
-    }
-
-    inline void ffTaint() {
-        //fastforward endTaint
-        if(endTaint)
-            for(; endTaint->next != nullptr; endTaint = endTaint->next);
-    }
+  TAINT_STRING_HOOKS(startTaint, endTaint)
 #endif
 
     inline bool reserve(size_t len) {
