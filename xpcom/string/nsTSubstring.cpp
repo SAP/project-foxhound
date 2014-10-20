@@ -14,6 +14,9 @@ nsTSubstring_CharT::nsTSubstring_CharT(char_type* aData, size_type aLength,
   : mData(aData),
     mLength(aLength),
     mFlags(aFlags)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
 {
   if (aFlags & F_OWNED) {
     STRING_STAT_INCREMENT(Adopt);

@@ -904,6 +904,9 @@ protected:
     : mData(char_traits::sEmptyBuffer)
     ,  mLength(0)
     ,  mFlags(F_TERMINATED)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 
@@ -911,6 +914,9 @@ protected:
   explicit
   nsTSubstring_CharT(uint32_t aFlags)
     : mFlags(aFlags)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 
@@ -920,6 +926,9 @@ protected:
     : mData(aStr.mData)
     ,  mLength(aStr.mLength)
     ,  mFlags(aStr.mFlags & (F_TERMINATED | F_VOIDED))
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 
