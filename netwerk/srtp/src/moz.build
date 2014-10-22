@@ -31,7 +31,7 @@ UNIFIED_SOURCES += [
     'srtp/srtp.c',
 ]
 
-LIBRARY_NAME = 'nksrtp_s'
+Library('nksrtp_s')
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
@@ -68,3 +68,5 @@ if CONFIG['OS_TARGET'] == 'WINNT':
 
 if CONFIG['GNU_CC']:
     CFLAGS += ['-std=gnu99']
+
+FAIL_ON_WARNINGS = True

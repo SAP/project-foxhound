@@ -13,6 +13,7 @@
 #include "mozilla/gfx/Rect.h"           // for Rect, IntRect
 #include "mozilla/gfx/Types.h"          // for Float
 #include "mozilla/layers/CompositorTypes.h"  // for DiagnosticTypes, etc
+#include "mozilla/layers/FenceUtils.h"  // for FenceHandle
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 #include "nsRegion.h"
@@ -99,7 +100,7 @@
  * under gfx/layers/. To add a new backend, implement at least the following
  * interfaces:
  * - Compositor (ex. CompositorOGL)
- * - TextureHost (ex. SharedTextureHostOGL)
+ * - TextureHost (ex. SurfaceTextureHost)
  * Depending on the type of data that needs to be serialized, you may need to
  * add specific TextureClient implementations.
  */
@@ -122,7 +123,7 @@ struct EffectChain;
 class Image;
 class ISurfaceAllocator;
 class Layer;
-class NewTextureSource;
+class TextureSource;
 class DataTextureSource;
 class CompositingRenderTarget;
 class PCompositorParent;
@@ -197,7 +198,7 @@ protected:
 public:
   NS_INLINE_DECL_REFCOUNTING(Compositor)
 
-  Compositor(PCompositorParent* aParent = nullptr)
+  explicit Compositor(PCompositorParent* aParent = nullptr)
     : mCompositorID(0)
     , mDiagnosticTypes(DiagnosticTypes::NO_DIAGNOSTIC)
     , mParent(aParent)
@@ -342,7 +343,6 @@ public:
    */
   virtual void BeginFrame(const nsIntRegion& aInvalidRegion,
                           const gfx::Rect* aClipRectIn,
-                          const gfx::Matrix& aTransform,
                           const gfx::Rect& aRenderBounds,
                           gfx::Rect* aClipRectOut = nullptr,
                           gfx::Rect* aRenderBoundsOut = nullptr) = 0;
@@ -353,6 +353,11 @@ public:
   virtual void EndFrame() = 0;
 
   virtual void SetFBAcquireFence(Layer* aLayer) {}
+
+  virtual FenceHandle GetReleaseFence()
+  {
+    return FenceHandle();
+  }
 
   /**
    * Post-rendering stuff if the rendering is done outside of this Compositor
@@ -373,11 +378,8 @@ public:
    * target, usually the screen. Calling this method prepares the compositor to
    * render using a different viewport (that is, size and transform), usually
    * associated with a new render target.
-   * aWorldTransform is the transform from user space to the new viewport's
-   * coordinate space.
    */
-  virtual void PrepareViewport(const gfx::IntSize& aSize,
-                               const gfx::Matrix& aWorldTransform) = 0;
+  virtual void PrepareViewport(const gfx::IntSize& aSize) = 0;
 
   /**
    * Whether textures created by this compositor can receive partial updates.
@@ -498,7 +500,7 @@ public:
   // at the OS level rather than in Gecko.
   // In addition, the clip rect needs to be offset by the rendering origin.
   // This becomes important if intermediate surfaces are used.
-  gfx::Rect ClipRectInLayersCoordinates(gfx::Rect aClip) const;
+  RenderTargetRect ClipRectInLayersCoordinates(Layer* aLayer, RenderTargetIntRect aClip) const;
 
 protected:
   void DrawDiagnosticsInternal(DiagnosticFlags aFlags,

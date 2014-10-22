@@ -292,7 +292,7 @@ public:
   TextureHostD3D9(TextureFlags aFlags,
                   const SurfaceDescriptorD3D9& aDescriptor);
 
-  virtual NewTextureSource* GetTextureSources() MOZ_OVERRIDE;
+  virtual TextureSource* GetTextureSources() MOZ_OVERRIDE;
 
   virtual void DeallocateDeviceData() MOZ_OVERRIDE;
 
@@ -333,7 +333,7 @@ public:
   DXGITextureHostD3D9(TextureFlags aFlags,
     const SurfaceDescriptorD3D10& aDescriptor);
 
-  virtual NewTextureSource* GetTextureSources() MOZ_OVERRIDE;
+  virtual TextureSource* GetTextureSources() MOZ_OVERRIDE;
 
   virtual void DeallocateDeviceData() MOZ_OVERRIDE;
 
@@ -353,6 +353,9 @@ public:
   }
 
 protected:
+  void OpenSharedHandle();
+  IDirect3DDevice9* GetDevice();
+
   RefPtr<DataTextureSourceD3D9> mTextureSource;
   RefPtr<CompositorD3D9> mCompositor;
   WindowsHandle mHandle;

@@ -3,6 +3,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# NB: IF YOU ADD ITEMS TO THIS FILE, PLEASE UPDATE THE WHITELIST IN
+# BrowserUITelemetry.jsm. SEE BUG 991757 FOR DETAILS.
+
       <menugroup id="context-navigation">
         <menuitem id="context-back"
                   class="menuitem-iconic"
@@ -69,8 +72,8 @@
                 accesskey="&bookmarkThisLinkCmd.accesskey;"
                 oncommand="gContextMenu.bookmarkLink();"/>
       <menuitem id="context-sharelink"
-                label="&shareLinkCmd.label;"
-                accesskey="&shareLinkCmd.accesskey;"
+                label="&shareLink.label;"
+                accesskey="&shareLink.accesskey;"
                 oncommand="gContextMenu.shareLink();"/>
       <menuitem id="context-savelink"
                 label="&saveLinkCmd.label;"
@@ -197,8 +200,8 @@
                 accesskey="&saveImageCmd.accesskey;"
                 oncommand="gContextMenu.saveMedia();"/>
       <menuitem id="context-shareimage"
-                label="&shareImageCmd.label;"
-                accesskey="&shareImageCmd.accesskey;"
+                label="&shareImage.label;"
+                accesskey="&shareImage.accesskey;"
                 oncommand="gContextMenu.shareImage();"/>
       <menuitem id="context-sendimage"
                 label="&emailImageCmd.label;"
@@ -222,8 +225,8 @@
                 accesskey="&saveVideoCmd.accesskey;"
                 oncommand="gContextMenu.saveMedia();"/>
       <menuitem id="context-sharevideo"
-                label="&shareVideoCmd.label;"
-                accesskey="&shareVideoCmd.accesskey;"
+                label="&shareVideo.label;"
+                accesskey="&shareVideo.accesskey;"
                 oncommand="gContextMenu.shareVideo();"/>
       <menuitem id="context-saveaudio"
                 label="&saveAudioCmd.label;"
@@ -237,6 +240,11 @@
                 label="&emailVideoCmd.label;"
                 accesskey="&emailVideoCmd.accesskey;"
                 oncommand="gContextMenu.sendMedia();"/>
+      <menu id="context-castvideo"
+                label="&castVideoCmd.label;"
+                accesskey="&castVideoCmd.accesskey;">
+        <menupopup id="context-castvideo-popup" onpopupshowing="gContextMenu.populateCastVideoMenu(this)"/>
+      </menu>
       <menuitem id="context-sendaudio"
                 label="&emailAudioCmd.label;"
                 accesskey="&emailAudioCmd.accesskey;"
@@ -302,8 +310,8 @@
       <menuitem id="context-searchselect"
                 oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms);"/>
       <menuitem id="context-shareselect"
-                label="&shareSelectCmd.label;"
-                accesskey="&shareSelectCmd.accesskey;"
+                label="&shareSelect.label;"
+                accesskey="&shareSelect.accesskey;"
                 oncommand="gContextMenu.shareSelect(getBrowserSelection());"/>
       <menuseparator id="frame-sep"/>
       <menu id="frame" label="&thisFrameMenu.label;" accesskey="&thisFrameMenu.accesskey;">
@@ -365,7 +373,7 @@
       <menuitem id="context-viewsource"
                 label="&viewPageSourceCmd.label;"
                 accesskey="&viewPageSourceCmd.accesskey;"
-                oncommand="BrowserViewSourceOfDocument(gContextMenu.browser.contentDocument);"
+                oncommand="BrowserViewSourceOfDocument(gContextMenu.browser.contentDocumentAsCPOW);"
                 observes="isImage"/>
       <menuitem id="context-viewinfo"
                 label="&viewPageInfoCmd.label;"

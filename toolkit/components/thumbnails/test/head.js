@@ -137,6 +137,7 @@ function captureAndCheckColor(aRed, aGreen, aBlue, aMessage) {
 /**
  * For a given URL, loads the corresponding thumbnail
  * to a canvas and passes its image data to the callback.
+ * Note, not compat with e10s!
  * @param aURL The url associated with the thumbnail.
  * @param aCallback The function to pass the image data to.
  */
@@ -230,7 +231,7 @@ function addVisits(aPlaceInfo, aCallback) {
   // Create mozIVisitInfo for each entry.
   let now = Date.now();
   for (let i = 0; i < places.length; i++) {
-    if (typeof(places[i] == "string")) {
+    if (typeof(places[i]) == "string") {
       places[i] = { uri: Services.io.newURI(places[i], "", null) };
     }
     if (!places[i].title) {

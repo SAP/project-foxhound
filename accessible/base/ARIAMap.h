@@ -180,6 +180,7 @@ struct nsRoleMapEntry
   mozilla::a11y::aria::EStateRule attributeMap1;
   mozilla::a11y::aria::EStateRule attributeMap2;
   mozilla::a11y::aria::EStateRule attributeMap3;
+  mozilla::a11y::aria::EStateRule attributeMap4;
 };
 
 
@@ -233,7 +234,7 @@ uint8_t AttrCharacteristicsFor(nsIAtom* aAtom);
 class AttrIterator
 {
 public:
-  AttrIterator(nsIContent* aContent) : 
+  explicit AttrIterator(nsIContent* aContent) : 
     mContent(aContent), mAttrIdx(0) 
   { 
     mAttrCount = mContent->GetAttrCount();

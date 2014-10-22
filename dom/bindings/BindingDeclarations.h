@@ -35,6 +35,15 @@ struct DictionaryBase
 protected:
   bool ParseJSON(JSContext* aCx, const nsAString& aJSON,
                  JS::MutableHandle<JS::Value> aVal);
+
+  bool StringifyToJSON(JSContext* aCx,
+                       JS::MutableHandle<JS::Value> aValue,
+                       nsAString& aJSON) const;
+private:
+  // aString is expected to actually be an nsAString*.  Should only be
+  // called from StringifyToJSON.
+  static bool AppendJSONToString(const char16_t* aJSONData,
+                                 uint32_t aDataLength, void* aString);
 };
 
 // Struct that serves as a base class for all typed arrays and array buffers and
@@ -97,63 +106,61 @@ public:
 
   explicit Optional_base(const T& aValue)
   {
-    mImpl.construct(aValue);
+    mImpl.emplace(aValue);
   }
 
   template<typename T1, typename T2>
   explicit Optional_base(const T1& aValue1, const T2& aValue2)
   {
-    mImpl.construct(aValue1, aValue2);
+    mImpl.emplace(aValue1, aValue2);
   }
 
   bool WasPassed() const
   {
-    return !mImpl.empty();
+    return mImpl.isSome();
   }
 
   // Return InternalType here so we can work with it usefully.
   InternalType& Construct()
   {
-    mImpl.construct();
-    return mImpl.ref();
+    mImpl.emplace();
+    return *mImpl;
   }
 
   template <class T1>
   InternalType& Construct(const T1 &t1)
   {
-    mImpl.construct(t1);
-    return mImpl.ref();
+    mImpl.emplace(t1);
+    return *mImpl;
   }
 
   template <class T1, class T2>
   InternalType& Construct(const T1 &t1, const T2 &t2)
   {
-    mImpl.construct(t1, t2);
-    return mImpl.ref();
+    mImpl.emplace(t1, t2);
+    return *mImpl;
   }
 
   void Reset()
   {
-    if (WasPassed()) {
-      mImpl.destroy();
-    }
+    mImpl.reset();
   }
 
   const T& Value() const
   {
-    return mImpl.ref();
+    return *mImpl;
   }
 
   // Return InternalType here so we can work with it usefully.
   InternalType& Value()
   {
-    return mImpl.ref();
+    return *mImpl;
   }
 
   // And an explicit way to get the InternalType even if we're const.
   const InternalType& InternalValue() const
   {
-    return mImpl.ref();
+    return *mImpl;
   }
 
   // If we ever decide to add conversion operators for optional arrays
@@ -191,7 +198,7 @@ public:
     Optional_base<JS::Handle<T>, JS::Rooted<T> >()
   {}
 
-  Optional(JSContext* cx) :
+  explicit Optional(JSContext* cx) :
     Optional_base<JS::Handle<T>, JS::Rooted<T> >()
   {
     this->Construct(cx);
@@ -205,14 +212,14 @@ public:
   // returning references to temporaries.
   JS::Handle<T> Value() const
   {
-    return this->mImpl.ref();
+    return *this->mImpl;
   }
 
   // And we have to override the non-const one too, since we're
   // shadowing the one on the superclass.
   JS::Rooted<T>& Value()
   {
-    return this->mImpl.ref();
+    return *this->mImpl;
   }
 };
 
@@ -268,14 +275,14 @@ public:
   // types...
   T& Value() const
   {
-    return *this->mImpl.ref().get();
+    return *this->mImpl->get();
   }
 
   // And we have to override the non-const one too, since we're
   // shadowing the one on the superclass.
   NonNull<T>& Value()
   {
-    return this->mImpl.ref();
+    return *this->mImpl;
   }
 };
 
@@ -290,14 +297,14 @@ public:
   // types...
   T& Value() const
   {
-    return *this->mImpl.ref().get();
+    return *this->mImpl->get();
   }
 
   // And we have to override the non-const one too, since we're
   // shadowing the one on the superclass.
   OwningNonNull<T>& Value()
   {
-    return this->mImpl.ref();
+    return *this->mImpl;
   }
 };
 

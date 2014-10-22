@@ -33,7 +33,7 @@
 using namespace mozilla;
 
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHtml5TreeOpExecutor)
-  NS_INTERFACE_TABLE_INHERITED(nsHtml5TreeOpExecutor, 
+  NS_INTERFACE_TABLE_INHERITED(nsHtml5TreeOpExecutor,
                                nsIContentSink)
 NS_INTERFACE_TABLE_TAIL_INHERITING(nsHtml5DocumentBuilder)
 
@@ -46,7 +46,7 @@ class nsHtml5ExecutorReflusher : public nsRunnable
   private:
     nsRefPtr<nsHtml5TreeOpExecutor> mExecutor;
   public:
-    nsHtml5ExecutorReflusher(nsHtml5TreeOpExecutor* aExecutor)
+    explicit nsHtml5ExecutorReflusher(nsHtml5TreeOpExecutor* aExecutor)
       : mExecutor(aExecutor)
     {}
     NS_IMETHODIMP Run()
@@ -305,7 +305,7 @@ class nsHtml5FlushLoopGuard
     uint32_t mStartTime;
     #endif
   public:
-    nsHtml5FlushLoopGuard(nsHtml5TreeOpExecutor* aExecutor)
+    explicit nsHtml5FlushLoopGuard(nsHtml5TreeOpExecutor* aExecutor)
       : mExecutor(aExecutor)
     #ifdef DEBUG_NS_HTML5_TREE_OP_EXECUTOR_FLUSH
       , mStartTime(PR_IntervalToMilliseconds(PR_IntervalNow()))
@@ -917,6 +917,16 @@ nsHtml5TreeOpExecutor::PreloadImage(const nsAString& aURL,
   mDocument->MaybePreLoadImage(uri, aCrossOrigin);
 }
 
+void
+nsHtml5TreeOpExecutor::AddBase(const nsAString& aURL)
+{
+  const nsCString& charset = mDocument->GetDocumentCharacterSet();
+  nsresult rv = NS_NewURI(getter_AddRefs(mViewSourceBaseURI), aURL,
+                                     charset.get(), GetViewSourceBaseURI());
+  if (NS_FAILED(rv)) {
+    mViewSourceBaseURI = nullptr;
+  }
+}
 void
 nsHtml5TreeOpExecutor::SetSpeculationBase(const nsAString& aURL)
 {

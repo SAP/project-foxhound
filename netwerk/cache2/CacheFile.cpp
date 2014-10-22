@@ -110,7 +110,7 @@ class DoomFileHelper : public CacheFileIOListener
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  DoomFileHelper(CacheFileListener *aListener)
+  explicit DoomFileHelper(CacheFileListener *aListener)
     : mListener(aListener)
   {
     MOZ_COUNT_CTOR(DoomFileHelper);
@@ -265,7 +265,7 @@ CacheFile::Init(const nsACString &aKey,
 
     mOpeningFile = true;
     mListener = aCallback;
-    rv = CacheFileIOManager::OpenFile(mKey, flags, true, this);
+    rv = CacheFileIOManager::OpenFile(mKey, flags, this);
     if (NS_FAILED(rv)) {
       mListener = nullptr;
       mOpeningFile = false;
@@ -330,6 +330,13 @@ CacheFile::OnChunkRead(nsresult aResult, CacheFileChunk *aChunk)
 nsresult
 CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
 {
+  // In case the chunk was reused, made dirty and released between calls to
+  // CacheFileChunk::Write() and CacheFile::OnChunkWritten(), we must write
+  // the chunk to the disk again. When the chunk is unused and is dirty simply
+  // addref and release (outside the lock) the chunk which ensures that
+  // CacheFile::DeactivateChunk() will be called again.
+  nsRefPtr<CacheFileChunk> deactivateChunkAgain;
+
   CacheFileAutoLock lock(this);
 
   nsresult rv;
@@ -364,6 +371,14 @@ CacheFile::OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk)
     LOG(("CacheFile::OnChunkWritten() - Chunk is still used [this=%p, chunk=%p,"
          " refcnt=%d]", this, aChunk, aChunk->mRefCnt.get()));
 
+    return NS_OK;
+  }
+
+  if (aChunk->IsDirty()) {
+    LOG(("CacheFile::OnChunkWritten() - Unused chunk is dirty. We must go "
+         "through deactivation again. [this=%p, chunk=%p]", this, aChunk));
+
+    deactivateChunkAgain = aChunk;
     return NS_OK;
   }
 
@@ -409,7 +424,7 @@ CacheFile::OnFileOpened(CacheFileHandle *aHandle, nsresult aResult)
   class AutoFailDoomListener
   {
   public:
-    AutoFailDoomListener(CacheFileHandle *aHandle)
+    explicit AutoFailDoomListener(CacheFileHandle *aHandle)
       : mHandle(aHandle)
       , mAlreadyDoomed(false)
     {}
@@ -663,6 +678,19 @@ CacheFile::OpenInputStream(nsIInputStream **_retval)
     return NS_ERROR_NOT_AVAILABLE;
   }
 
+  if (NS_FAILED(mStatus)) {
+    LOG(("CacheFile::OpenInputStream() - CacheFile is in a failure state "
+         "[this=%p, status=0x%08x]", this, mStatus));
+
+    // Don't allow opening the input stream when this CacheFile is in
+    // a failed state.  This is the only way to protect consumers correctly
+    // from reading a broken entry.  When the file is in the failed state,
+    // it's also doomed, so reopening the entry won't make any difference -
+    // data will still be inaccessible anymore.  Note that for just doomed 
+    // files, we must allow reading the data.
+    return mStatus;
+  }
+
   // Once we open input stream we no longer allow preloading of chunks without
   // input stream, i.e. we will no longer keep first few chunks preloaded when
   // the last input stream is closed.
@@ -896,27 +924,6 @@ CacheFile::GetExpirationTime(uint32_t *_retval)
 }
 
 nsresult
-CacheFile::SetLastModified(uint32_t aLastModified)
-{
-  CacheFileAutoLock lock(this);
-  MOZ_ASSERT(mMetadata);
-  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
-
-  PostWriteTimer();
-  return mMetadata->SetLastModified(aLastModified);
-}
-
-nsresult
-CacheFile::GetLastModified(uint32_t *_retval)
-{
-  CacheFileAutoLock lock(this);
-  MOZ_ASSERT(mMetadata);
-  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
-
-  return mMetadata->GetLastModified(_retval);
-}
-
-nsresult
 CacheFile::SetFrecency(uint32_t aFrecency)
 {
   CacheFileAutoLock lock(this);
@@ -942,6 +949,16 @@ CacheFile::GetFrecency(uint32_t *_retval)
 }
 
 nsresult
+CacheFile::GetLastModified(uint32_t *_retval)
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  return mMetadata->GetLastModified(_retval);
+}
+
+nsresult
 CacheFile::GetLastFetched(uint32_t *_retval)
 {
   CacheFileAutoLock lock(this);
@@ -959,6 +976,18 @@ CacheFile::GetFetchCount(uint32_t *_retval)
   NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
 
   return mMetadata->GetFetchCount(_retval);
+}
+
+nsresult
+CacheFile::OnFetched()
+{
+  CacheFileAutoLock lock(this);
+  MOZ_ASSERT(mMetadata);
+  NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
+
+  PostWriteTimer();
+
+  return mMetadata->OnFetched();
 }
 
 void
@@ -1550,6 +1579,13 @@ CacheFile::RemoveOutput(CacheFileOutputStream *aOutput, nsresult aStatus)
   if (!mMemoryOnly)
     WriteMetadataIfNeededLocked();
 
+  // Make sure the CacheFile status is set to a failure when the output stream
+  // is closed with a fatal error.  This way we propagate correctly and w/o any
+  // windows the failure state of this entry to end consumers.
+  if (NS_SUCCEEDED(mStatus) && NS_FAILED(aStatus) && aStatus != NS_BASE_STREAM_CLOSED) {
+    mStatus = aStatus;
+  }
+
   // Notify close listener as the last action
   aOutput->NotifyCloseListener();
 
@@ -1594,7 +1630,12 @@ CacheFile::QueueChunkListener(uint32_t aIndex,
   MOZ_ASSERT(aCallback);
 
   ChunkListenerItem *item = new ChunkListenerItem();
-  item->mTarget = NS_GetCurrentThread();
+  item->mTarget = CacheFileIOManager::IOTarget();
+  if (!item->mTarget) {
+    LOG(("CacheFile::QueueChunkListener() - Cannot get Cache I/O thread! Using "
+         "main thread for callback."));
+    item->mTarget = do_GetMainThread();
+  }
   item->mCallback = aCallback;
 
   ChunkListeners *listeners;

@@ -4,6 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsPageFrame.h"
+
+#include "mozilla/gfx/2D.h"
+#include "nsDeviceContext.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsRenderingContext.h"
 #include "nsGkAtoms.h"
@@ -25,6 +29,7 @@ extern PRLogModuleInfo *GetLayoutPrintingLog();
 #endif
 
 using namespace mozilla;
+using namespace mozilla::gfx;
 
 nsPageFrame*
 NS_NewPageFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
@@ -149,12 +154,10 @@ nsPageFrame::Reflow(nsPresContext*           aPresContext,
 
   // Return our desired size
   WritingMode wm = aReflowState.GetWritingMode();
-  LogicalSize finalSize(wm);
-  finalSize.ISize(wm) = aReflowState.AvailableISize();
+  aDesiredSize.ISize(wm) = aReflowState.AvailableISize();
   if (aReflowState.AvailableBSize() != NS_UNCONSTRAINEDSIZE) {
-    finalSize.BSize(wm) = aReflowState.AvailableBSize();
+    aDesiredSize.BSize(wm) = aReflowState.AvailableBSize();
   }
-  aDesiredSize.SetSize(wm, finalSize);
 
   aDesiredSize.SetOverflowAreasToDesiredBounds();
   FinishAndStoreOverflow(&aDesiredSize);
@@ -374,12 +377,16 @@ nsPageFrame::DrawHeaderFooter(nsRenderingContext& aRenderingContext,
       y = aRect.YMost() - aHeight - mPD->mEdgePaperMargin.bottom;
     }
 
+    DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
+    gfxContext* gfx = aRenderingContext.ThebesContext();
+
     // set up new clip and draw the text
-    aRenderingContext.PushState();
-    aRenderingContext.SetColor(NS_RGB(0,0,0));
-    aRenderingContext.IntersectClip(aRect);
+    gfx->Save();
+    gfx->Clip(NSRectToRect(aRect, PresContext()->AppUnitsPerDevPixel(),
+                           *drawTarget));
+    aRenderingContext.ThebesContext()->SetColor(NS_RGB(0,0,0));
     nsLayoutUtils::DrawString(this, &aRenderingContext, str.get(), str.Length(), nsPoint(x, y + aAscent));
-    aRenderingContext.PopState();
+    gfx->Restore();
   }
 }
 
@@ -462,10 +469,10 @@ static void PaintHeaderFooter(nsIFrame* aFrame, nsRenderingContext* aCtx,
   static_cast<nsPageFrame*>(aFrame)->PaintHeaderFooter(*aCtx, aPt);
 }
 
-static gfx3DMatrix ComputePageTransform(nsIFrame* aFrame, float aAppUnitsPerPixel)
+static gfx::Matrix4x4 ComputePageTransform(nsIFrame* aFrame, float aAppUnitsPerPixel)
 {
   float scale = aFrame->PresContext()->GetPageScale();
-  return gfx3DMatrix::ScalingMatrix(scale, scale, 1);
+  return gfx::Matrix4x4::Scaling(scale, scale, 1);
 }
 
 //------------------------------------------------------------------------------
@@ -580,11 +587,12 @@ nsPageFrame::PaintHeaderFooter(nsRenderingContext& aRenderingContext,
   }
 
   nsRect rect(aPt, mRect.Size());
-  aRenderingContext.SetColor(NS_RGB(0,0,0));
+  aRenderingContext.ThebesContext()->SetColor(NS_RGB(0,0,0));
 
   // Get the FontMetrics to determine width.height of strings
   nsRefPtr<nsFontMetrics> fontMet;
   pc->DeviceContext()->GetMetricsFor(mPD->mHeadFootFont, nullptr,
+                                     gfxFont::eHorizontal,
                                      pc->GetUserFontSet(),
                                      pc->GetTextPerfMetrics(),
                                      *getter_AddRefs(fontMet));

@@ -85,6 +85,12 @@ void BasicCompositor::Destroy()
 TemporaryRef<CompositingRenderTarget>
 BasicCompositor::CreateRenderTarget(const IntRect& aRect, SurfaceInitMode aInit)
 {
+  MOZ_ASSERT(aRect.width != 0 && aRect.height != 0, "Trying to create a render target of invalid size");
+
+  if (aRect.width * aRect.height == 0) {
+    return nullptr;
+  }
+
   RefPtr<DrawTarget> target = mDrawTarget->CreateSimilarDrawTarget(aRect.Size(), SurfaceFormat::B8G8R8A8);
 
   if (!target) {
@@ -245,7 +251,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
   RefPtr<DrawTarget> dest = buffer;
 
   buffer->PushClipRect(aClipRect);
-  AutoSaveTransform autoSaveTransform(dest);
+  AutoRestoreTransform autoRestoreTransform(dest);
 
   Matrix newTransform;
   Rect transformBounds;
@@ -261,9 +267,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
       return;
     }
 
-    Matrix destTransform;
-    destTransform.Translate(-aRect.x, -aRect.y);
-    dest->SetTransform(destTransform);
+    dest->SetTransform(Matrix::Translation(-aRect.x, -aRect.y));
 
     // Get the bounds post-transform.
     new3DTransform = To3DMatrix(aTransform);
@@ -274,7 +278,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     transformBounds.RoundOut();
 
     // Propagate the coordinate offset to our 2D draw target.
-    newTransform.Translate(transformBounds.x, transformBounds.y);
+    newTransform = Matrix::Translation(transformBounds.x, transformBounds.y);
 
     // When we apply the 3D transformation, we do it against a temporary
     // surface, so undo the coordinate offset.
@@ -292,7 +296,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     MOZ_ASSERT(effectMask->mMaskTransform.Is2D(), "How did we end up with a 3D transform here?!");
     MOZ_ASSERT(!effectMask->mIs3D);
     maskTransform = effectMask->mMaskTransform.As2D();
-    maskTransform.Translate(-offset.x, -offset.y);
+    maskTransform.PreTranslate(-offset.x, -offset.y);
   }
 
   switch (aEffectChain.mPrimaryEffect->mType) {
@@ -365,7 +369,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     RefPtr<DataSourceSurface> source = snapshot->GetDataSurface();
     RefPtr<DataSourceSurface> temp =
       Factory::CreateDataSourceSurface(RoundOut(transformBounds).Size(), SurfaceFormat::B8G8R8A8);
-    if (!temp) {
+    if (NS_WARN_IF(!temp)) {
       return;
     }
 
@@ -387,7 +391,6 @@ BasicCompositor::ClearRect(const gfx::Rect& aRect)
 void
 BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
                             const gfx::Rect *aClipRectIn,
-                            const gfx::Matrix& aTransform,
                             const gfx::Rect& aRenderBounds,
                             gfx::Rect *aClipRectOut /* = nullptr */,
                             gfx::Rect *aRenderBoundsOut /* = nullptr */)
@@ -441,9 +444,8 @@ BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
 
   // We only allocate a surface sized to the invalidated region, so we need to
   // translate future coordinates.
-  Matrix transform;
-  transform.Translate(-invalidRect.x, -invalidRect.y);
-  mRenderTarget->mDrawTarget->SetTransform(transform);
+  mRenderTarget->mDrawTarget->SetTransform(Matrix::Translation(-invalidRect.x,
+                                                               -invalidRect.y));
 
   gfxUtils::ClipToRegion(mRenderTarget->mDrawTarget, invalidRegionSafe);
 

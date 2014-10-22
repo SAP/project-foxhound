@@ -3,7 +3,15 @@
 
 const {Cc: Cc, Ci: Ci, Cr: Cr, Cu: Cu} = SpecialPowers;
 
-let Promise = Cu.import("resource://gre/modules/Promise.jsm").Promise;
+// Emulate Promise.jsm semantics.
+Promise.defer = function() { return new Deferred(); }
+function Deferred()  {
+  this.promise = new Promise(function(resolve, reject) {
+    this.resolve = resolve;
+    this.reject = reject;
+  }.bind(this));
+  Object.freeze(this);
+}
 
 /**
  * Push a list of preference settings. Never reject.
@@ -22,6 +30,7 @@ function pushPrefEnv(aPrefs) {
   let deferred = Promise.defer();
 
   SpecialPowers.pushPrefEnv(aPrefs, function() {
+    ok(true, "preferences pushed: " + JSON.stringify(aPrefs));
     deferred.resolve();
   });
 
@@ -242,18 +251,17 @@ function getMessage(aId) {
  * Reject params:
  *   event -- a DOMEvent
  *
- * @param aFilter an optional MozSmsFilter instance.
- * @param aReverse a boolean value indicating whether the order of the messages
- *                 should be reversed.
+ * @param aFilter [optional]
+ *        A MobileMessageFilter object.
+ * @param aReverse [optional]
+ *        A boolean value indicating whether the order of the message should be
+ *        reversed. Default: false.
  *
  * @return A deferred promise.
  */
 function getMessages(aFilter, aReverse) {
   let deferred = Promise.defer();
 
-  if (!aFilter) {
-    aFilter = new MozSmsFilter;
-  }
   let messages = [];
   let cursor = manager.getMessages(aFilter, aReverse || false);
   cursor.onsuccess = function(aEvent) {
@@ -561,22 +569,12 @@ function compareSmsMessage(aFrom, aTo) {
 }
 
 /**
- * Flush permission settings and call |finish()|.
+ * Wait for pending emulator transactions and call |finish()|.
  */
 function cleanUp() {
   ok(true, ":: CLEANING UP ::");
 
-  waitFor(function() {
-    SpecialPowers.flushPermissions(function() {
-      ok(true, "permissions flushed");
-
-      SpecialPowers.flushPrefEnv(function() {
-        ok(true, "preferences flushed");
-
-        finish();
-      })
-    });
-  }, function() {
+  waitFor(finish, function() {
     return pendingEmulatorCmdCount === 0;
   });
 }

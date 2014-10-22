@@ -31,6 +31,10 @@
 #include "nsContentUtils.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIObserverService.h"
+#include "nsProxyRelease.h"
+#include "nsPIDOMWindow.h"
+#include "nsPerformance.h"
+#include "nsINetworkInterceptController.h"
 
 #include <algorithm>
 
@@ -65,6 +69,8 @@ HttpBaseChannel::HttpBaseChannel()
   , mLoadUnblocked(false)
   , mResponseTimeoutEnabled(true)
   , mAllRedirectsSameOrigin(true)
+  , mAllRedirectsPassTimingAllowCheck(true)
+  , mForceNoIntercept(false)
   , mSuspendCount(0)
   , mProxyResolveFlags(0)
   , mContentDispositionHint(UINT32_MAX)
@@ -82,6 +88,15 @@ HttpBaseChannel::HttpBaseChannel()
 HttpBaseChannel::~HttpBaseChannel()
 {
   LOG(("Destroying HttpBaseChannel @%x\n", this));
+
+  if (mLoadInfo) {
+    nsCOMPtr<nsIThread> mainThread;
+    NS_GetMainThread(getter_AddRefs(mainThread));
+    
+    nsILoadInfo *forgetableLoadInfo;
+    mLoadInfo.forget(&forgetableLoadInfo);
+    NS_ProxyRelease(mainThread, forgetableLoadInfo, false);
+  }
 
   // Make sure we don't leak
   CleanRedirectCacheChainIfNecessary();
@@ -604,13 +619,19 @@ HttpBaseChannel::SetApplyConversion(bool value)
   return NS_OK;
 }
 
-nsresult
-HttpBaseChannel::ApplyContentConversions()
+NS_IMETHODIMP
+HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
+                                           nsIStreamListener** aNewNextListener,
+                                           nsISupports *aCtxt)
 {
-  if (!mResponseHead)
+  *aNewNextListener = nullptr;
+  if (!mResponseHead || ! aNextListener) {
     return NS_OK;
+  }
 
-  LOG(("HttpBaseChannel::ApplyContentConversions [this=%p]\n", this));
+  nsCOMPtr<nsIStreamListener> nextListener = aNextListener;
+
+  LOG(("HttpBaseChannel::DoApplyContentConversions [this=%p]\n", this));
 
   if (!mApplyConversion) {
     LOG(("not applying conversion per mApplyConversion\n"));
@@ -659,8 +680,8 @@ HttpBaseChannel::ApplyContentConversions()
       ToLowerCase(from);
       rv = serv->AsyncConvertData(from.get(),
                                   "uncompressed",
-                                  mListener,
-                                  mListenerContext,
+                                  nextListener,
+                                  aCtxt,
                                   getter_AddRefs(converter));
       if (NS_FAILED(rv)) {
         LOG(("Unexpected failure of AsyncConvertData %s\n", val));
@@ -668,14 +689,15 @@ HttpBaseChannel::ApplyContentConversions()
       }
 
       LOG(("converter removed '%s' content-encoding\n", val));
-      mListener = converter;
+      nextListener = converter;
     }
     else {
       if (val)
         LOG(("Unknown content encoding '%s', ignoring\n", val));
     }
   }
-
+  *aNewNextListener = nextListener;
+  NS_IF_ADDREF(*aNewNextListener);
   return NS_OK;
 }
 
@@ -1644,6 +1666,12 @@ HttpBaseChannel::GetLastModifiedTime(PRTime* lastModifiedTime)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+HttpBaseChannel::ForceNoIntercept()
+{
+  mForceNoIntercept = true;
+  return NS_OK;
+}
 
 //-----------------------------------------------------------------------------
 // HttpBaseChannel::nsISupportsPriority
@@ -1731,7 +1759,7 @@ HttpBaseChannel::GetPrincipal(bool requireAppId)
       return nullptr;
   }
 
-  securityManager->GetChannelPrincipal(this, getter_AddRefs(mPrincipal));
+  securityManager->GetChannelResultPrincipal(this, getter_AddRefs(mPrincipal));
   if (!mPrincipal) {
       LOG(("HttpBaseChannel::GetPrincipal: No channel principal [this=%p]",
            this));
@@ -1745,6 +1773,19 @@ HttpBaseChannel::GetPrincipal(bool requireAppId)
   }
 
   return mPrincipal;
+}
+
+bool
+HttpBaseChannel::ShouldIntercept()
+{
+  nsCOMPtr<nsINetworkInterceptController> controller;
+  GetCallback(controller);
+  bool shouldIntercept = false;
+  if (controller && !mForceNoIntercept) {
+    nsresult rv = controller->ShouldPrepareForIntercept(mURI, &shouldIntercept);
+    NS_ENSURE_SUCCESS(rv, false);
+  }
+  return shouldIntercept;
 }
 
 // nsIRedirectHistory
@@ -2080,6 +2121,17 @@ HttpBaseChannel::SetupReplacementChannel(nsIURI       *newURI,
     // Check whether or not this was a cross-domain redirect.
     newTimedChannel->SetAllRedirectsSameOrigin(
         mAllRedirectsSameOrigin && SameOriginWithOriginalUri(newURI));
+
+    // Execute the timing allow check to determine whether
+    // to report the redirect timing info
+    nsCOMPtr<nsILoadInfo> loadInfo;
+    GetLoadInfo(getter_AddRefs(loadInfo));
+    if (loadInfo) {
+      nsCOMPtr<nsIPrincipal> principal = loadInfo->LoadingPrincipal();
+      newTimedChannel->SetAllRedirectsPassTimingAllowCheck(
+        mAllRedirectsPassTimingAllowCheck &&
+        oldTimedChannel->TimingAllowCheck(principal));
+    }
   }
 
   // This channel has been redirected. Don't report timing info.
@@ -2187,6 +2239,63 @@ HttpBaseChannel::SetAllRedirectsSameOrigin(bool aAllRedirectsSameOrigin)
 }
 
 NS_IMETHODIMP
+HttpBaseChannel::GetAllRedirectsPassTimingAllowCheck(bool *aPassesCheck)
+{
+  *aPassesCheck = mAllRedirectsPassTimingAllowCheck;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetAllRedirectsPassTimingAllowCheck(bool aPassesCheck)
+{
+  mAllRedirectsPassTimingAllowCheck = aPassesCheck;
+  return NS_OK;
+}
+
+// http://www.w3.org/TR/resource-timing/#timing-allow-check
+NS_IMETHODIMP
+HttpBaseChannel::TimingAllowCheck(nsIPrincipal *aOrigin, bool *_retval)
+{
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+  nsCOMPtr<nsIPrincipal> resourcePrincipal;
+  nsresult rv = ssm->GetChannelURIPrincipal(this, getter_AddRefs(resourcePrincipal));
+  if (NS_FAILED(rv) || !resourcePrincipal || !aOrigin) {
+    *_retval = false;
+    return NS_OK;
+  }
+
+  bool sameOrigin = false;
+  rv = resourcePrincipal->Equals(aOrigin, &sameOrigin);
+  if (NS_SUCCEEDED(rv) && sameOrigin) {
+    *_retval = true;
+    return NS_OK;
+  }
+
+  nsAutoCString headerValue;
+  rv = GetResponseHeader(NS_LITERAL_CSTRING("Timing-Allow-Origin"), headerValue);
+  if (NS_FAILED(rv)) {
+    *_retval = false;
+    return NS_OK;
+  }
+
+  if (headerValue == "*") {
+    *_retval = true;
+    return NS_OK;
+  }
+
+  nsAutoCString origin;
+  nsContentUtils::GetASCIIOrigin(aOrigin, origin);
+
+  if (headerValue == origin) {
+    *_retval = true;
+    return NS_OK;
+  }
+
+  *_retval = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 HttpBaseChannel::GetDomainLookupStart(TimeStamp* _retval) {
   *_retval = mTransactionTimings.domainLookupStart;
   return NS_OK;
@@ -2284,6 +2393,45 @@ IMPL_TIMING_ATTR(RedirectEnd)
 
 #undef IMPL_TIMING_ATTR
 
+nsPerformance*
+HttpBaseChannel::GetPerformance()
+{
+    // If performance timing is disabled, there is no need for the nsPerformance
+    // object anymore.
+    if (!mTimingEnabled) {
+        return nullptr;
+    }
+    nsCOMPtr<nsILoadContext> loadContext;
+    NS_QueryNotificationCallbacks(this, loadContext);
+    if (!loadContext) {
+        return nullptr;
+    }
+    nsCOMPtr<nsIDOMWindow> domWindow;
+    loadContext->GetAssociatedWindow(getter_AddRefs(domWindow));
+    if (!domWindow) {
+        return nullptr;
+    }
+    nsCOMPtr<nsPIDOMWindow> pDomWindow = do_QueryInterface(domWindow);
+    if (!pDomWindow) {
+        return nullptr;
+    }
+    if (!pDomWindow->IsInnerWindow()) {
+        pDomWindow = pDomWindow->GetCurrentInnerWindow();
+        if (!pDomWindow) {
+            return nullptr;
+        }
+    }
+
+    nsPerformance* docPerformance = pDomWindow->GetPerformance();
+    if (!docPerformance) {
+      return nullptr;
+    }
+    // iframes should be added to the parent's entries list.
+    if (mLoadFlags & LOAD_DOCUMENT_URI) {
+      return docPerformance->GetParentPerformance();
+    }
+    return docPerformance;
+}
 
 //------------------------------------------------------------------------------
 

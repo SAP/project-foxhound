@@ -41,11 +41,21 @@ const RW_OWNER = 0600;
 const NUMBER_OF_THREADS_TO_LAUNCH = 30;
 let gNumberOfThreadsLaunched = 0;
 
+const PREF_BRANCH = "toolkit.telemetry.";
+const PREF_ENABLED = PREF_BRANCH + "enabled";
+const PREF_FHR_UPLOAD_ENABLED = "datareporting.healthreport.uploadEnabled";
+
 const Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
 
 let gHttpServer = new HttpServer();
 let gServerStarted = false;
 let gRequestIterator = null;
+let gDataReportingClientID = null;
+
+XPCOMUtils.defineLazyGetter(this, "gDatareportingService",
+  () => Cc["@mozilla.org/datareporting/service;1"]
+          .getService(Ci.nsISupports)
+          .wrappedJSObject);
 
 function sendPing () {
   TelemetryPing.gatherStartup();
@@ -80,8 +90,10 @@ function setupTestData() {
   Services.startup.interrupted = true;
   Telemetry.registerAddonHistogram(ADDON_NAME, ADDON_HISTOGRAM, 1, 5, 6,
                                    Telemetry.HISTOGRAM_LINEAR);
-  h1 = Telemetry.getAddonHistogram(ADDON_NAME, ADDON_HISTOGRAM);
+  let h1 = Telemetry.getAddonHistogram(ADDON_NAME, ADDON_HISTOGRAM);
   h1.add(1);
+  let h2 = Telemetry.getHistogramById("TELEMETRY_TEST_COUNT");
+  h2.add();
 }
 
 function getSavedHistogramsFile(basename) {
@@ -156,7 +168,16 @@ function checkPayloadInfo(payload, reason) {
   do_check_true("appUpdateChannel" in payload.info);
   do_check_true("locale" in payload.info);
   do_check_true("revision" in payload.info);
-  do_check_true(payload.info.revision.startsWith("http"));
+  if (Services.appinfo.isOfficial) {
+    do_check_true(payload.info.revision.startsWith("http"));
+  }
+
+  if ("@mozilla.org/datareporting/service;1" in Cc &&
+      Services.prefs.getBoolPref(PREF_FHR_UPLOAD_ENABLED)) {
+    do_check_true("clientID" in payload);
+    do_check_neq(payload.clientID, null);
+    do_check_eq(payload.clientID, gDataReportingClientID);
+  }
 
   try {
     // If we've not got nsIGfxInfoDebug, then this will throw and stop us doing
@@ -209,9 +230,14 @@ function checkPayload(request, reason, successfulPings) {
   const TELEMETRY_PING = "TELEMETRY_PING";
   const TELEMETRY_SUCCESS = "TELEMETRY_SUCCESS";
   const TELEMETRY_TEST_FLAG = "TELEMETRY_TEST_FLAG";
+  const TELEMETRY_TEST_COUNT = "TELEMETRY_TEST_COUNT";
   const READ_SAVED_PING_SUCCESS = "READ_SAVED_PING_SUCCESS";
+
   do_check_true(TELEMETRY_PING in payload.histograms);
   do_check_true(READ_SAVED_PING_SUCCESS in payload.histograms);
+  do_check_true(TELEMETRY_TEST_FLAG in payload.histograms);
+  do_check_true(TELEMETRY_TEST_COUNT in payload.histograms);
+
   let rh = Telemetry.registeredHistograms([]);
   for (let name of rh) {
     if (/SQLITE/.test(name) && name in payload.histograms) {
@@ -233,6 +259,19 @@ function checkPayload(request, reason, successfulPings) {
   };
   let flag = payload.histograms[TELEMETRY_TEST_FLAG];
   do_check_eq(uneval(flag), uneval(expected_flag));
+
+  // We should have a test count.
+  const expected_count = {
+    range: [1, 2],
+    bucket_count: 3,
+    histogram_type: 4,
+    values: {0:1, 1:0},
+    sum: 1,
+    sum_squares_lo: 1,
+    sum_squares_hi: 0,
+  };
+  let count = payload.histograms[TELEMETRY_TEST_COUNT];
+  do_check_eq(uneval(count), uneval(expected_count));
 
   // There should be one successful report from the previous telemetry ping.
   const expected_tc = {
@@ -357,6 +396,16 @@ function run_test() {
   do_get_profile();
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
+  Services.prefs.setBoolPref(PREF_ENABLED, true);
+  Services.prefs.setBoolPref(PREF_FHR_UPLOAD_ENABLED, true);
+
+  // Send the needed startup notifications to the datareporting service
+  // to ensure that it has been initialized.
+  if ("@mozilla.org/datareporting/service;1" in Cc) {
+    gDatareportingService.observe(null, "app-startup", null);
+    gDatareportingService.observe(null, "profile-after-change", null);
+  }
+
   // Make it look like we've previously failed to lock a profile a couple times.
   write_fake_failedprofilelocks_file();
 
@@ -402,6 +451,14 @@ function actualTest() {
 
   run_next_test();
 }
+
+add_task(function* asyncSetup() {
+  yield TelemetryPing.setup();
+
+  if ("@mozilla.org/datareporting/service;1" in Cc) {
+    gDataReportingClientID = yield gDatareportingService.getClientID();
+  }
+});
 
 // Ensure that not overwriting an existing file fails silently
 add_task(function* test_overwritePing() {

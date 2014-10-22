@@ -111,7 +111,7 @@ nsRangeFrame::MakeAnonymousDiv(Element** aResult,
                                nsCSSPseudoElements::Type aPseudoType,
                                nsTArray<ContentInfo>& aElements)
 {
-  nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
+  nsCOMPtr<nsIDocument> doc = mContent->GetComposedDoc();
   nsRefPtr<Element> resultElement = doc->CreateHTMLElement(nsGkAtoms::div);
 
   // Associate the pseudo-element with the anonymous child.
@@ -154,12 +154,20 @@ nsRangeFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 }
 
 void
-nsRangeFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
+nsRangeFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                        uint32_t aFilter)
 {
-  aElements.MaybeAppendElement(mTrackDiv);
-  aElements.MaybeAppendElement(mProgressDiv);
-  aElements.MaybeAppendElement(mThumbDiv);
+  if (mTrackDiv) {
+    aElements.AppendElement(mTrackDiv);
+  }
+
+  if (mProgressDiv) {
+    aElements.AppendElement(mProgressDiv);
+  }
+
+  if (mThumbDiv) {
+    aElements.AppendElement(mThumbDiv);
+  }
 }
 
 class nsDisplayRangeFocusRing : public nsDisplayItem
@@ -466,8 +474,8 @@ nsRangeFrame::GetValueAsFractionOfRange()
 Decimal
 nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent)
 {
-  MOZ_ASSERT(aEvent->eventStructType == NS_MOUSE_EVENT ||
-             aEvent->eventStructType == NS_TOUCH_EVENT,
+  MOZ_ASSERT(aEvent->mClass == eMouseEventClass ||
+             aEvent->mClass == eTouchEventClass,
              "Unexpected event type - aEvent->refPoint may be meaningless");
 
   MOZ_ASSERT(mContent->IsHTML(nsGkAtoms::input), "bad cast");
@@ -485,7 +493,7 @@ nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent)
   Decimal range = maximum - minimum;
 
   LayoutDeviceIntPoint absPoint;
-  if (aEvent->eventStructType == NS_TOUCH_EVENT) {
+  if (aEvent->mClass == eTouchEventClass) {
     MOZ_ASSERT(aEvent->AsTouchEvent()->touches.Length() == 1,
                "Unexpected number of touches");
     absPoint = LayoutDeviceIntPoint::FromUntyped(
@@ -720,11 +728,15 @@ nsRangeFrame::AttributeChanged(int32_t  aNameSpaceID,
   return nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 }
 
-nsSize
+LogicalSize
 nsRangeFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
-                              nsSize aCBSize, nscoord aAvailableWidth,
-                              nsSize aMargin, nsSize aBorder,
-                              nsSize aPadding, bool aShrinkWrap)
+                              WritingMode aWM,
+                              const LogicalSize& aCBSize,
+                              nscoord aAvailableISize,
+                              const LogicalSize& aMargin,
+                              const LogicalSize& aBorder,
+                              const LogicalSize& aPadding,
+                              bool aShrinkWrap)
 {
   nscoord oneEm = NSToCoordRound(StyleFont()->mFont.size *
                                  nsLayoutUtils::FontSizeInflationFor(this)); // 1em
@@ -732,9 +744,10 @@ nsRangeFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   // frameSizeOverride values just gets us to fall back to being horizontal
   // (the actual values are irrelevant, as long as width > height):
   nsSize frameSizeOverride(10,1);
-  bool isHorizontal = IsHorizontal(&frameSizeOverride);
+  bool isInlineOriented = IsHorizontal(&frameSizeOverride);
 
-  nsSize autoSize;
+  const WritingMode wm = GetWritingMode();
+  LogicalSize autoSize(wm);
 
   // nsFrame::ComputeSize calls GetMinimumWidgetSize to prevent us from being
   // given too small a size when we're natively themed. If we're themed, we set
@@ -742,15 +755,15 @@ nsRangeFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   // GetMinimumWidgetSize check to correct that dimension to the natural
   // thickness of a slider in the current theme.
 
-  if (isHorizontal) {
-    autoSize.width = LONG_SIDE_TO_SHORT_SIDE_RATIO * oneEm;
-    autoSize.height = IsThemed() ? 0 : oneEm;
+  if (isInlineOriented) {
+    autoSize.ISize(wm) = LONG_SIDE_TO_SHORT_SIDE_RATIO * oneEm;
+    autoSize.BSize(wm) = IsThemed() ? 0 : oneEm;
   } else {
-    autoSize.width = IsThemed() ? 0 : oneEm;
-    autoSize.height = LONG_SIDE_TO_SHORT_SIDE_RATIO * oneEm;
+    autoSize.ISize(wm) = IsThemed() ? 0 : oneEm;
+    autoSize.BSize(wm) = LONG_SIDE_TO_SHORT_SIDE_RATIO * oneEm;
   }
 
-  return autoSize;
+  return autoSize.ConvertTo(aWM, wm);
 }
 
 nscoord

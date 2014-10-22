@@ -4,6 +4,10 @@
 
 %include ../../shared/customizableui/panelUIOverlay.inc.css
 
+.panel-subviews {
+  background-color: hsla(0,0%,100%,.97);
+}
+
 @media (min-resolution: 2dppx) {
   #PanelUI-help[panel-multiview-anchor="true"]::after,
   toolbarbutton[panel-multiview-anchor="true"] {
@@ -70,6 +74,30 @@
     background-image: url("chrome://global/skin/menu/shared-menu-check@2x.png");
   }
 
+  #panic-button-success-icon,
+  #PanelUI-panic-timeframe-icon {
+    list-style-image: url(chrome://browser/skin/panic-panel/header@2x.png);
+  }
+
+  #PanelUI-panic-timeframe-icon-small {
+    list-style-image: url(chrome://browser/skin/panic-panel/header-small@2x.png);
+  }
+
+  #PanelUI-panic-actionlist-cookies {
+    background-image: -moz-image-rect(url(chrome://browser/skin/panic-panel/icons@2x.png), 0, 32, 32, 0);
+  }
+
+  #PanelUI-panic-actionlist-history {
+    background-image: -moz-image-rect(url(chrome://browser/skin/panic-panel/icons@2x.png), 0, 64, 32, 32);
+  }
+
+  #PanelUI-panic-actionlist-windows {
+    background-image: -moz-image-rect(url(chrome://browser/skin/panic-panel/icons@2x.png), 0, 96, 32, 64);
+  }
+
+  #PanelUI-panic-actionlist-newwindow {
+    background-image: -moz-image-rect(url(chrome://browser/skin/panic-panel/icons@2x.png), 0, 128, 32, 96);
+  }
 }
 
 .panelUI-grid .toolbarbutton-1 {
@@ -115,15 +143,15 @@ menuitem.subviewbutton:not(.panel-subview-footer) {
 /* Override OSX-specific toolkit styles for the bookmarks panel */
 menu.subviewbutton > .menu-right {
   -moz-margin-end: 0;
-}
-menu.subviewbutton > .menu-right > image {
-  -moz-image-region: rect(0, 9px, 10px, 0);
+  -moz-appearance: none;
 }
 
-@media (min-resolution: 2dppx) {
-  menu.subviewbutton > .menu-right > image {
-    -moz-image-region: rect(0, 18px, 20px, 0);
-  }
+menu.subviewbutton > .menu-right > image {
+ /* We don't want the arrow to highlight when the .subviewbutton is hovered,
+  * so we set the -moz-appearance rule on the image
+  * (which doesn't inherit the _moz-menuactive attribute) instead.
+  */
+  -moz-appearance: menuarrow;
 }
 
 .widget-overflow-list .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker {

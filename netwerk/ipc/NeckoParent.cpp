@@ -31,12 +31,14 @@
 #include "nsPrintfCString.h"
 #include "nsHTMLDNSPrefetch.h"
 #include "nsIAppsService.h"
-#include "nsIUDPSocketFilter.h"
 #include "nsEscape.h"
 #include "RemoteOpenFileParent.h"
 #include "SerializedLoadContext.h"
 #include "nsAuthInformationHolder.h"
 #include "nsIAuthPromptCallback.h"
+#include "nsPrincipal.h"
+#include "nsIOService.h"
+#include "mozilla/net/OfflineObserver.h"
 
 using mozilla::dom::ContentParent;
 using mozilla::dom::TabParent;
@@ -74,10 +76,15 @@ NeckoParent::NeckoParent()
     LossyCopyUTF16toASCII(corePath, mCoreAppsBasePath);
     LossyCopyUTF16toASCII(webPath, mWebAppsBasePath);
   }
+
+  mObserver = new OfflineObserver(this);
 }
 
 NeckoParent::~NeckoParent()
 {
+  if (mObserver) {
+    mObserver->RemoveObserver();
+  }
 }
 
 static PBOverrideStatus
@@ -445,45 +452,18 @@ NeckoParent::DeallocPTCPServerSocketParent(PTCPServerSocketParent* actor)
 }
 
 PUDPSocketParent*
-NeckoParent::AllocPUDPSocketParent(const nsCString& aHost,
-                                   const uint16_t& aPort,
-                                   const nsCString& aFilter)
+NeckoParent::AllocPUDPSocketParent(const nsCString& /* unused */)
 {
-  UDPSocketParent* p = nullptr;
+  nsRefPtr<UDPSocketParent> p = new UDPSocketParent();
 
-  // Only allow socket if it specifies a valid packet filter.
-  nsAutoCString contractId(NS_NETWORK_UDP_SOCKET_FILTER_HANDLER_PREFIX);
-  contractId.Append(aFilter);
-
-  if (!aFilter.IsEmpty()) {
-    nsCOMPtr<nsIUDPSocketFilterHandler> filterHandler =
-      do_GetService(contractId.get());
-    if (filterHandler) {
-      nsCOMPtr<nsIUDPSocketFilter> filter;
-      nsresult rv = filterHandler->NewFilter(getter_AddRefs(filter));
-      if (NS_SUCCEEDED(rv)) {
-        p = new UDPSocketParent(filter);
-      } else {
-        printf_stderr("Cannot create filter that content specified. "
-                      "filter name: %s, error code: %d.", aFilter.get(), rv);
-      }
-    } else {
-      printf_stderr("Content doesn't have a valid filter. "
-                    "filter name: %s.", aFilter.get());
-    }
-  }
-
-  NS_IF_ADDREF(p);
-  return p;
+  return p.forget().take();
 }
 
 bool
 NeckoParent::RecvPUDPSocketConstructor(PUDPSocketParent* aActor,
-                                       const nsCString& aHost,
-                                       const uint16_t& aPort,
                                        const nsCString& aFilter)
 {
-  return static_cast<UDPSocketParent*>(aActor)->Init(aHost, aPort);
+  return static_cast<UDPSocketParent*>(aActor)->Init(aFilter);
 }
 
 bool
@@ -584,7 +564,25 @@ NeckoParent::AllocPRemoteOpenFileParent(const SerializedLoadContext& aSerialized
       }
     }
 
-    if (hasManage || netErrorWhiteList) {
+    // Check if we load a resource from the shared theme url space.
+    // If we try to load the theme but have no permission, refuse to load.
+    bool themeWhitelist = false;
+    if (Preferences::GetBool("dom.mozApps.themable") && appUri) {
+      nsAutoCString origin;
+      nsPrincipal::GetOriginForURI(appUri, getter_Copies(origin));
+      nsAutoCString themeOrigin;
+      themeOrigin = Preferences::GetCString("b2g.theme.origin");
+      themeWhitelist = origin.Equals(themeOrigin);
+      if (themeWhitelist) {
+        bool hasThemePerm = false;
+        mozApp->HasPermission("themeable", &hasThemePerm);
+        if (!hasThemePerm) {
+          return nullptr;
+        }
+      }
+    }
+
+    if (hasManage || netErrorWhiteList || themeWhitelist) {
       // webapps-manage permission means allow reading any application.zip file
       // in either the regular webapps directory, or the core apps directory (if
       // we're using one).
@@ -803,6 +801,45 @@ NeckoParent::RecvOnAuthCancelled(const uint64_t& aCallbackId,
   CallbackMap().erase(aCallbackId);
   callback->OnAuthCancelled(nullptr, aUserCancel);
   return true;
+}
+
+nsresult
+NeckoParent::OfflineNotification(nsISupports *aSubject)
+{
+  nsCOMPtr<nsIAppOfflineInfo> info(do_QueryInterface(aSubject));
+  if (!info) {
+    return NS_OK;
+  }
+
+  uint32_t targetAppId = NECKO_UNKNOWN_APP_ID;
+  info->GetAppId(&targetAppId);
+
+  for (uint32_t i = 0; i < Manager()->ManagedPBrowserParent().Length(); ++i) {
+    nsRefPtr<TabParent> tabParent =
+      static_cast<TabParent*>(Manager()->ManagedPBrowserParent()[i]);
+    uint32_t appId = tabParent->OwnOrContainingAppId();
+
+    if (appId == targetAppId) {
+      if (gIOService) {
+        bool offline = false;
+        nsresult rv = gIOService->IsAppOffline(appId, &offline);
+        if (NS_FAILED(rv)) {
+          printf_stderr("Unexpected - NeckoParent: "
+                        "appId not found by isAppOffline(): %u\n", appId);
+          break;
+        }
+        if (!SendAppOfflineStatus(appId, offline)) {
+          printf_stderr("NeckoParent: "
+                        "SendAppOfflineStatus failed for appId: %u\n", appId);
+        }
+        // Once we found the targetAppId, we don't need to continue
+        break;
+      }
+    }
+
+  }
+
+  return NS_OK;
 }
 
 }} // mozilla::net

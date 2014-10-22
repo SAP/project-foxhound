@@ -6,23 +6,16 @@
 
 XPCSHELL_TESTS_MANIFESTS += ['unit/xpcshell.ini']
 
-SOURCES += [
-    'NormalizationTest.cpp',
-    'UnicharSelfTest.cpp',
-]
-
-SIMPLE_PROGRAMS += [
-    "%s" % (fyl[0:-4]) for fyl in SOURCES
-]
-
-LOCAL_INCLUDES += [
-    '../public',
-]
+SimplePrograms([
+    'NormalizationTest',
+    'UnicharSelfTest',
+])
 
 USE_STATIC_LIBS = True
 
 USE_LIBS += [
     'mozalloc',
+    'nspr',
     'unicharutil_external_s',
     'xul',
 ]

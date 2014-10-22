@@ -70,15 +70,24 @@ public:
                                  InlineMinISizeData *aData) MOZ_OVERRIDE;
   virtual void AddInlinePrefISize(nsRenderingContext *aRenderingContext,
                                   InlinePrefISizeData *aData) MOZ_OVERRIDE;
-  virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
-                             nsSize aCBSize, nscoord aAvailableWidth,
-                             nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             uint32_t aFlags) MOZ_OVERRIDE;
+  virtual mozilla::LogicalSize
+  ComputeSize(nsRenderingContext *aRenderingContext,
+              mozilla::WritingMode aWritingMode,
+              const mozilla::LogicalSize& aCBSize,
+              nscoord aAvailableISize,
+              const mozilla::LogicalSize& aMargin,
+              const mozilla::LogicalSize& aBorder,
+              const mozilla::LogicalSize& aPadding,
+              uint32_t aFlags) MOZ_OVERRIDE;
   virtual nsRect ComputeTightBounds(gfxContext* aContext) const MOZ_OVERRIDE;
   virtual void Reflow(nsPresContext* aPresContext,
                       nsHTMLReflowMetrics& aDesiredSize,
                       const nsHTMLReflowState& aReflowState,
                       nsReflowStatus& aStatus) MOZ_OVERRIDE;
+
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID,
+                                    nsIAtom* aAttribute,
+                                    int32_t aModType) MOZ_OVERRIDE;
 
   virtual bool CanContinueTextRun() const MOZ_OVERRIDE;
 
@@ -127,7 +136,7 @@ protected:
     }
   };
 
-  nsInlineFrame(nsStyleContext* aContext) : nsContainerFrame(aContext) {}
+  explicit nsInlineFrame(nsStyleContext* aContext) : nsContainerFrame(aContext) {}
 
   virtual LogicalSides GetLogicalSkipSides(const nsHTMLReflowState* aReflowState = nullptr) const MOZ_OVERRIDE;
 
@@ -212,7 +221,7 @@ public:
   virtual bool DrainSelfOverflowList() MOZ_OVERRIDE;
 
 protected:
-  nsFirstLineFrame(nsStyleContext* aContext) : nsInlineFrame(aContext) {}
+  explicit nsFirstLineFrame(nsStyleContext* aContext) : nsInlineFrame(aContext) {}
 
   virtual nsIFrame* PullOneFrame(nsPresContext* aPresContext,
                                  InlineReflowState& rs,

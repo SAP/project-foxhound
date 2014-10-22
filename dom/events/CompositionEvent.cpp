@@ -17,7 +17,7 @@ CompositionEvent::CompositionEvent(EventTarget* aOwner,
   : UIEvent(aOwner, aPresContext,
             aEvent ? aEvent : new WidgetCompositionEvent(false, 0, nullptr))
 {
-  NS_ASSERTION(mEvent->eventStructType == NS_COMPOSITION_EVENT,
+  NS_ASSERTION(mEvent->mClass == eCompositionEventClass,
                "event type mismatch");
 
   if (aEvent) {
@@ -32,7 +32,8 @@ CompositionEvent::CompositionEvent(EventTarget* aOwner,
     mEvent->mFlags.mCancelable = false;
   }
 
-  mData = mEvent->AsCompositionEvent()->data;
+  // XXX Do we really need to duplicate the data value?
+  mData = mEvent->AsCompositionEvent()->mData;
   // TODO: Native event should have locale information.
 }
 

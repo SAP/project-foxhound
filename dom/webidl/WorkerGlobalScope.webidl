@@ -12,6 +12,7 @@
  * this document.
  */
 
+[Exposed=Worker]
 interface WorkerGlobalScope : EventTarget {
   readonly attribute WorkerGlobalScope self;
 
@@ -37,10 +38,17 @@ partial interface WorkerGlobalScope {
 
 WorkerGlobalScope implements WindowTimers;
 WorkerGlobalScope implements WindowBase64;
+WorkerGlobalScope implements GlobalFetch;
+
+// Not implemented yet: bug 1072107.
+// WorkerGlobalScope implements FontFaceSource;
 
 // Mozilla extensions
 partial interface WorkerGlobalScope {
   attribute EventHandler onclose;
 
   void dump(optional DOMString str);
+
+  // XXXbz no spec for this yet, because the webperf WG is a bit dysfunctional
+  readonly attribute Performance performance;
 };

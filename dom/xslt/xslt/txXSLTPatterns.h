@@ -7,6 +7,7 @@
 #define TX_XSLT_PATTERNS_H
 
 #include "mozilla/Attributes.h"
+#include "txExpandedName.h"
 #include "txExpr.h"
 #include "txXMLUtils.h"
 
@@ -187,7 +188,7 @@ private:
 class txIdPattern : public txPattern
 {
 public:
-    txIdPattern(const nsSubstring& aString);
+    explicit txIdPattern(const nsSubstring& aString);
 
     TX_DECL_PATTERN;
 

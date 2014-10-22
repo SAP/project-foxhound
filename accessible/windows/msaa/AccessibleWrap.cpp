@@ -778,9 +778,7 @@ AccessibleWrap::get_accDefaultAction(
     return CO_E_OBJNOTCONNECTED;
 
   nsAutoString defaultAction;
-  if (NS_FAILED(xpAccessible->GetActionName(0, defaultAction)))
-    return E_FAIL;
-
+  xpAccessible->ActionNameAt(0, defaultAction);
   *pszDefaultAction = ::SysAllocStringLen(defaultAction.get(),
                                           defaultAction.Length());
   return *pszDefaultAction ? S_OK : E_OUTOFMEMORY;
@@ -859,14 +857,11 @@ AccessibleWrap::accLocation(
   if (xpAccessible->IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  int32_t x, y, width, height;
-  if (NS_FAILED(xpAccessible->GetBounds(&x, &y, &width, &height)))
-    return E_FAIL;
-
-  *pxLeft = x;
-  *pyTop = y;
-  *pcxWidth = width;
-  *pcyHeight = height;
+  nsIntRect rect = xpAccessible->Bounds();
+  *pxLeft = rect.x;
+  *pyTop = rect.y;
+  *pcxWidth = rect.width;
+  *pcyHeight = rect.height;
   return S_OK;
 
   A11Y_TRYBLOCK_END
@@ -900,7 +895,7 @@ AccessibleWrap::accNavigate(
 
 #define RELATIONTYPE(geckoType, stringType, atkType, msaaType, ia2Type) \
   case msaaType: \
-    xpRelation.construct(RelationType::geckoType); \
+    xpRelation.emplace(RelationType::geckoType); \
     break;
 
   switch(navDir) {
@@ -935,8 +930,8 @@ AccessibleWrap::accNavigate(
 
   pvarEndUpAt->vt = VT_EMPTY;
 
-  if (!xpRelation.empty()) {
-    Relation rel = RelationByType(xpRelation.ref());
+  if (xpRelation) {
+    Relation rel = RelationByType(*xpRelation);
     navAccessible = rel.Next();
   }
 
@@ -1004,7 +999,7 @@ AccessibleWrap::accDoDefaultAction(
   if (xpAccessible->IsDefunct())
     return CO_E_OBJNOTCONNECTED;
 
-  return GetHRESULT(xpAccessible->DoAction(0));
+  return xpAccessible->DoAction(0) ? S_OK : E_INVALIDARG;
 
   A11Y_TRYBLOCK_END
 }

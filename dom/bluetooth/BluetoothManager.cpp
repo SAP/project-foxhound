@@ -100,7 +100,6 @@ BluetoothManager::BluetoothManager(nsPIDOMWindow *aWindow)
   , BluetoothPropertyContainer(BluetoothObjectType::TYPE_MANAGER)
 {
   MOZ_ASSERT(aWindow);
-  MOZ_ASSERT(IsDOMBinding());
 
   mPath.Assign('/');
 
@@ -208,18 +207,6 @@ BluetoothManager::Notify(const BluetoothSignal& aData)
     BT_WARNING(warningMsg.get());
 #endif
   }
-}
-
-bool
-BluetoothManager::IsConnected(uint16_t aProfileId, ErrorResult& aRv)
-{
-  BluetoothService* bs = BluetoothService::Get();
-  if (!bs) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return false;
-  }
-
-  return bs->IsConnected(aProfileId);
 }
 
 JSObject*

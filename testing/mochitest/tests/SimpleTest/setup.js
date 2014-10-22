@@ -176,6 +176,7 @@ RunSet.runtests = function(e) {
       my_tests[i] = tmp;
     }
   }
+  TestRunner.setParameterInfo(params);
   TestRunner.runTests(my_tests);
 }
 
@@ -240,7 +241,7 @@ function hookupTests(testList) {
   } else {
     gTestList = [];
     for (var obj in testList) {
-        gTestList.push(obj);
+        gTestList.push(testList[obj]);
     }
   }
 

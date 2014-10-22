@@ -48,13 +48,15 @@ public final class WebActivityMapper {
         /**
          * If 'type' is present in data object, uses the value as the MIME type.
          */
+        @Override
         public String getMime(JSONObject data) throws JSONException {
             return data.optString("type", null);
         }
 
         /**
-         * If 'uri' or 'url' is present in data object, uses the respecitve value as the Uri.
+         * If 'uri' or 'url' is present in data object, uses the respective value as the Uri.
          */
+        @Override
         public String getUri(JSONObject data) throws JSONException {
             // Will return uri or url if present.
             String uri = data.optString("uri", null);
@@ -129,6 +131,13 @@ public final class WebActivityMapper {
             optPutExtra("html_text", Intent.EXTRA_HTML_TEXT, data, intent);
             optPutExtra("stream", Intent.EXTRA_STREAM, data, intent);
         }
+
+        private static void optPutExtra(String key, String extraName, JSONObject data, Intent intent) {
+            final String extraValue = data.optString(key);
+            if (!TextUtils.isEmpty(extraValue)) {
+                intent.putExtra(extraName, extraValue);
+            }
+        }
     }
 
     private static class ViewMapping extends BaseMapping {
@@ -146,13 +155,6 @@ public final class WebActivityMapper {
             } else {
                 return type;
             }
-        }
-    }
-
-    private static void optPutExtra(String key, String extraName, JSONObject data, Intent intent) {
-        final String extraValue = data.optString(key);
-        if (!TextUtils.isEmpty(extraValue)) {
-            intent.putExtra(extraName, extraValue);
         }
     }
 }

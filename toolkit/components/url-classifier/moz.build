@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_TOOL_DIRS += ['tests']
+TEST_DIRS += ['tests']
 
 XPIDL_SOURCES += [
     'nsIUrlClassifierDBService.idl',
@@ -71,3 +71,4 @@ LOCAL_INCLUDES += [
     '/ipc/chromium/src',
 ]
 
+CXXFLAGS += CONFIG['SQLITE_CFLAGS']

@@ -10,6 +10,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
+Cu.import("resource://gre/modules/Promise.jsm");
 
 const NETWORKSERVICE_CONTRACTID = "@mozilla.org/network/service;1";
 const NETWORKSERVICE_CID = Components.ID("{baec696c-c78d-42db-8b44-603f8fbfafb4}");
@@ -124,41 +125,35 @@ NetworkService.prototype = {
   getNetworkInterfaceStats: function(networkName, callback) {
     if(DEBUG) debug("getNetworkInterfaceStats for " + networkName);
 
-    if (this.shutdown) {
-      return;
-    }
-
     let file = new FileUtils.File("/proc/net/dev");
     if (!file) {
-      callback.networkStatsAvailable(false, -1, -1, new Date());
+      callback.networkStatsAvailable(false, 0, 0, Date.now());
       return;
     }
 
     NetUtil.asyncFetch(file, function(inputStream, status) {
-      let result = {
-        success: true,  // netd always return success even interface doesn't exist.
-        rxBytes: 0,
-        txBytes: 0
-      };
-      result.date = new Date();
+      let rxBytes = 0,
+          txBytes = 0,
+          now = Date.now();
 
       if (Components.isSuccessCode(status)) {
         // Find record for corresponding interface.
         let statExpr = /(\S+): +(\d+) +\d+ +\d+ +\d+ +\d+ +\d+ +\d+ +\d+ +(\d+) +\d+ +\d+ +\d+ +\d+ +\d+ +\d+ +\d+/;
-        let data = NetUtil.readInputStreamToString(inputStream,
-                    inputStream.available()).split("\n");
+        let data =
+          NetUtil.readInputStreamToString(inputStream, inputStream.available())
+                 .split("\n");
         for (let i = 2; i < data.length; i++) {
           let parseResult = statExpr.exec(data[i]);
           if (parseResult && parseResult[1] === networkName) {
-            result.rxBytes = parseInt(parseResult[2], 10);
-            result.txBytes = parseInt(parseResult[3], 10);
+            rxBytes = parseInt(parseResult[2], 10);
+            txBytes = parseInt(parseResult[3], 10);
             break;
           }
         }
       }
 
-      callback.networkStatsAvailable(result.success, result.rxBytes,
-                                     result.txBytes, result.date);
+      // netd always return success even interface doesn't exist.
+      callback.networkStatsAvailable(true, rxBytes, txBytes, now);
     });
   },
 
@@ -193,7 +188,6 @@ NetworkService.prototype = {
     };
 
     params.report = true;
-    params.isAsync = true;
 
     this.controlMessage(params, function(result) {
       if (!isError(result.resultCode)) {
@@ -215,7 +209,6 @@ NetworkService.prototype = {
     };
 
     params.report = true;
-    params.isAsync = true;
 
     this.controlMessage(params, function(result) {
       if (!isError(result.resultCode)) {
@@ -235,7 +228,6 @@ NetworkService.prototype = {
     };
 
     params.report = true;
-    params.isAsync = true;
 
     this.controlMessage(params, function(result) {
       callback(result);
@@ -252,7 +244,6 @@ NetworkService.prototype = {
     };
 
     params.report = true;
-    params.isAsync = true;
 
     this.controlMessage(params, function(result) {
       if (isError(result.resultCode)) {
@@ -282,8 +273,8 @@ NetworkService.prototype = {
     }
   },
 
-  setDNS: function(networkInterface) {
-    if(DEBUG) debug("Going DNS to " + networkInterface.name);
+  setDNS: function(networkInterface, callback) {
+    if (DEBUG) debug("Going DNS to " + networkInterface.name);
     let dnses = networkInterface.getDnses();
     let options = {
       cmd: "setDNS",
@@ -291,23 +282,23 @@ NetworkService.prototype = {
       domain: "mozilla." + networkInterface.name + ".doman",
       dnses: dnses
     };
-    this.controlMessage(options);
+    this.controlMessage(options, function(result) {
+      callback.setDnsResult(result.success ? null : result.reason);
+    });
   },
 
-  setDefaultRouteAndDNS: function(network, oldInterface) {
-    if(DEBUG) debug("Going to change route and DNS to " + network.name);
+  setDefaultRoute: function(network, oldInterface, callback) {
+    if (DEBUG) debug("Going to change default route to " + network.name);
     let gateways = network.getGateways();
-    let dnses = network.getDnses();
     let options = {
-      cmd: "setDefaultRouteAndDNS",
+      cmd: "setDefaultRoute",
       ifname: network.name,
       oldIfname: (oldInterface && oldInterface !== network) ? oldInterface.name : null,
-      gateways: gateways,
-      domain: "mozilla." + network.name + ".doman",
-      dnses: dnses
+      gateways: gateways
     };
-    this.controlMessage(options);
-    this.setNetworkProxy(network);
+    this.controlMessage(options, function(result) {
+      callback.nativeCommandResult(!result.error);
+    });
   },
 
   removeDefaultRoute: function(network) {
@@ -321,30 +312,33 @@ NetworkService.prototype = {
     this.controlMessage(options);
   },
 
-  addHostRoute: function(network) {
-    if(DEBUG) debug("Going to add host route on " + network.name);
-    let gateways = network.getGateways();
-    let dnses = network.getDnses();
+  _setHostRoute: function(doAdd, interfaceName, gateway, host) {
+    let command = doAdd ? "addHostRoute" : "removeHostRoute";
+
+    if (DEBUG) debug(command + " " + host + " on " + interfaceName);
+    let deferred = Promise.defer();
     let options = {
-      cmd: "addHostRoute",
-      ifname: network.name,
-      gateways: gateways,
-      hostnames: dnses.concat(network.httpProxyHost)
+      cmd: command,
+      ifname: interfaceName,
+      gateway: gateway,
+      ip: host
     };
-    this.controlMessage(options);
+    this.controlMessage(options, function(data) {
+      if (data.error) {
+        deferred.reject(data.reason);
+        return;
+      }
+      deferred.resolve();
+    });
+    return deferred.promise;
   },
 
-  removeHostRoute: function(network) {
-    if(DEBUG) debug("Going to remove host route on " + network.name);
-    let gateways = network.getGateways();
-    let dnses = network.getDnses();
-    let options = {
-      cmd: "removeHostRoute",
-      ifname: network.name,
-      gateways: gateways,
-      hostnames: dnses.concat(network.httpProxyHost)
-    };
-    this.controlMessage(options);
+  addHostRoute: function(interfaceName, gateway, host) {
+    return this._setHostRoute(true, interfaceName, gateway, host);
+  },
+
+  removeHostRoute: function(interfaceName, gateway, host) {
+    return this._setHostRoute(false, interfaceName, gateway, host);
   },
 
   removeHostRoutes: function(ifname) {
@@ -352,30 +346,6 @@ NetworkService.prototype = {
     let options = {
       cmd: "removeHostRoutes",
       ifname: ifname,
-    };
-    this.controlMessage(options);
-  },
-
-  addHostRouteWithResolve: function(network, hosts) {
-    if(DEBUG) debug("Going to add host route after dns resolution on " + network.name);
-    let gateways = network.getGateways();
-    let options = {
-      cmd: "addHostRoute",
-      ifname: network.name,
-      gateways: gateways,
-      hostnames: hosts
-    };
-    this.controlMessage(options);
-  },
-
-  removeHostRouteWithResolve: function(network, hosts) {
-    if(DEBUG) debug("Going to remove host route after dns resolution on " + network.name);
-    let gateways = network.getGateways();
-    let options = {
-      cmd: "removeHostRoute",
-      ifname: network.name,
-      gateways: gateways,
-      hostnames: hosts
     };
     this.controlMessage(options);
   },
@@ -441,7 +411,6 @@ NetworkService.prototype = {
     }
 
     config.cmd = "setDhcpServer";
-    config.isAsync = true;
     config.enabled = enabled;
 
     this.controlMessage(config, function setDhcpServerResult(response) {
@@ -463,7 +432,6 @@ NetworkService.prototype = {
     config.cmd = "setWifiTethering";
 
     // The callback function in controlMessage may not be fired immediately.
-    config.isAsync = true;
     this.controlMessage(config, function setWifiTetheringResult(data) {
       let code = data.resultCode;
       let reason = data.resultReason;
@@ -484,7 +452,6 @@ NetworkService.prototype = {
   setUSBTethering: function(enable, config, callback) {
     config.cmd = "setUSBTethering";
     // The callback function in controlMessage may not be fired immediately.
-    config.isAsync = true;
     this.controlMessage(config, function setUsbTetheringResult(data) {
       let code = data.resultCode;
       let reason = data.resultReason;
@@ -517,7 +484,6 @@ NetworkService.prototype = {
     }
 
     // The callback function in controlMessage may not be fired immediately.
-    params.isAsync = true;
     //this._usbTetheringAction = TETHERING_STATE_ONGOING;
     this.controlMessage(params, function(data) {
       callback.enableUsbRndisResult(data.result, data.enable);
@@ -527,7 +493,6 @@ NetworkService.prototype = {
   updateUpStream: function(previous, current, callback) {
     let params = {
       cmd: "updateUpStream",
-      isAsync: true,
       preInternalIfname: previous.internalIfname,
       preExternalIfname: previous.externalIfname,
       curInternalIfname: current.internalIfname,
@@ -539,6 +504,66 @@ NetworkService.prototype = {
       let reason = data.resultReason;
       if(DEBUG) debug("updateUpStream result: Code " + code + " reason " + reason);
       callback.updateUpStreamResult(!isError(code), data.curExternalIfname);
+    });
+  },
+
+  configureInterface: function(config, callback) {
+    let params = {
+      cmd: "configureInterface",
+      ifname: config.ifname,
+      ipaddr: config.ipaddr,
+      mask: config.mask,
+      gateway_long: config.gateway,
+      dns1_long: config.dns1,
+      dns2_long: config.dns2,
+    };
+
+    this.controlMessage(params, function(result) {
+      callback.nativeCommandResult(!result.error);
+    });
+  },
+
+  dhcpRequest: function(interfaceName, callback) {
+    let params = {
+      cmd: "dhcpRequest",
+      ifname: interfaceName
+    };
+
+    this.controlMessage(params, function(result) {
+      callback.dhcpRequestResult(!result.error, result.error ? null : result);
+    });
+  },
+
+  enableInterface: function(interfaceName, callback) {
+    let params = {
+      cmd: "enableInterface",
+      ifname: interfaceName
+    };
+
+    this.controlMessage(params, function(result) {
+      callback.nativeCommandResult(!result.error);
+    });
+  },
+
+  disableInterface: function(interfaceName, callback) {
+    let params = {
+      cmd: "disableInterface",
+      ifname: interfaceName
+    };
+
+    this.controlMessage(params, function(result) {
+      callback.nativeCommandResult(!result.error);
+    });
+  },
+
+  resetConnections: function(interfaceName, callback) {
+    let params = {
+      cmd: "resetConnections",
+      ifname: interfaceName
+    };
+
+    this.controlMessage(params, function(result) {
+      callback.nativeCommandResult(!result.error);
     });
   },
 

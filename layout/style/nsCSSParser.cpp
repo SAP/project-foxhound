@@ -217,6 +217,13 @@ public:
                               nsIPrincipal* aSheetPrincipal,
                               nsCSSValue& aValue);
 
+  bool ParseFontFaceDescriptor(nsCSSFontDesc aDescID,
+                               const nsAString& aBuffer,
+                               nsIURI* aSheetURL,
+                               nsIURI* aBaseURL,
+                               nsIPrincipal* aSheetPrincipal,
+                               nsCSSValue& aValue);
+
   bool IsValueValidForProperty(const nsCSSProperty aPropID,
                                const nsAString& aPropValue);
 
@@ -326,7 +333,7 @@ protected:
    */
   class nsAutoParseCompoundProperty {
     public:
-      nsAutoParseCompoundProperty(CSSParserImpl* aParser) : mParser(aParser)
+      explicit nsAutoParseCompoundProperty(CSSParserImpl* aParser) : mParser(aParser)
       {
         NS_ASSERTION(!aParser->IsParsingCompoundProperty(),
                      "already parsing compound property");
@@ -376,8 +383,8 @@ protected:
    */
   class nsAutoSuppressErrors {
     public:
-      nsAutoSuppressErrors(CSSParserImpl* aParser,
-                           bool aSuppressErrors = true)
+      explicit nsAutoSuppressErrors(CSSParserImpl* aParser,
+                                    bool aSuppressErrors = true)
         : mParser(aParser),
           mOriginalValue(aParser->mSuppressErrors)
       {
@@ -506,6 +513,7 @@ protected:
 
   bool ParseCounterStyleRule(RuleAppendFunc aAppendFunc, void* aProcessData);
   bool ParseCounterStyleName(nsAString& aName, bool aForDefinition);
+  bool ParseCounterStyleNameValue(nsCSSValue& aValue);
   bool ParseCounterDescriptor(nsCSSCounterStyleRule *aRule);
   bool ParseCounterDescriptorValue(nsCSSCounterDesc aDescID,
                                    nsCSSValue& aValue);
@@ -652,11 +660,14 @@ protected:
   bool ParseBackgroundPosition();
 
   // ParseBoxPositionValues parses the CSS 2.1 background-position syntax,
-  // which is still used by some properties. See ParseBackgroundPositionValues
+  // which is still used by some properties. See ParsePositionValue
   // for the css3-background syntax.
   bool ParseBoxPositionValues(nsCSSValuePair& aOut, bool aAcceptsInherit,
                               bool aAllowExplicitCenter = true); // deprecated
-  bool ParseBackgroundPositionValues(nsCSSValue& aOut, bool aAcceptsInherit);
+
+  // ParsePositionValue parses a CSS <position> value, which is used by
+  // the 'background-position' property.
+  bool ParsePositionValue(nsCSSValue& aOut);
 
   bool ParseBackgroundSize();
   bool ParseBackgroundSizeValues(nsCSSValuePair& aOut);
@@ -757,12 +768,15 @@ protected:
   bool ParseFontSynthesis(nsCSSValue& aValue);
   bool ParseSingleAlternate(int32_t& aWhichFeature, nsCSSValue& aValue);
   bool ParseFontVariantAlternates(nsCSSValue& aValue);
+  bool MergeBitmaskValue(int32_t aNewValue, const int32_t aMasks[],
+                         int32_t& aMergedValue);
   bool ParseBitmaskValues(nsCSSValue& aValue,
                           const KTableValue aKeywordTable[],
                           const int32_t aMasks[]);
   bool ParseFontVariantEastAsian(nsCSSValue& aValue);
   bool ParseFontVariantLigatures(nsCSSValue& aValue);
   bool ParseFontVariantNumeric(nsCSSValue& aValue);
+  bool ParseFontVariant();
   bool ParseFontWeight(nsCSSValue& aValue);
   bool ParseOneFamily(nsAString& aFamily, bool& aOneKeyword, bool& aQuoted);
   bool ParseFamily(nsCSSValue& aValue);
@@ -774,7 +788,9 @@ protected:
   bool ParseListStyleType(nsCSSValue& aValue);
   bool ParseMargin();
   bool ParseMarks(nsCSSValue& aValue);
+  bool ParseClipPath();
   bool ParseTransform(bool aIsPrefixed);
+  bool ParseObjectPosition();
   bool ParseOutline();
   bool ParseOverflow();
   bool ParsePadding();
@@ -922,6 +938,7 @@ protected:
                         const nsCSSProps::KTableValue aPropertyKTable[] = nullptr);
   bool ParseCounter(nsCSSValue& aValue);
   bool ParseAttr(nsCSSValue& aValue);
+  bool ParseSymbols(nsCSSValue& aValue);
   bool SetValueToURL(nsCSSValue& aValue, const nsString& aURL);
   bool TranslateDimension(nsCSSValue& aValue, int32_t aVariantMask,
                             float aNumber, const nsString& aUnit);
@@ -944,6 +961,11 @@ protected:
   bool IsParsingCompoundProperty(void) const {
     return mParsingCompoundProperty;
   }
+
+  /* Functions for basic shapes */
+  bool ParseBasicShape(nsCSSValue& aValue, bool* aConsumedTokens);
+  bool ParsePolygonFunction(nsCSSValue& aValue);
+  bool ParseCircleOrEllipseFunction(nsCSSKeyword, nsCSSValue& aValue);
 
   /* Functions for transform Parsing */
   bool ParseSingleTransform(bool aIsPrefixed, nsCSSValue& aValue);
@@ -2545,6 +2567,27 @@ CSSParserImpl::ParseCounterDescriptor(nsCSSCounterDesc aDescID,
   return success;
 }
 
+bool
+CSSParserImpl::ParseFontFaceDescriptor(nsCSSFontDesc aDescID,
+                                       const nsAString& aBuffer,
+                                       nsIURI* aSheetURL,
+                                       nsIURI* aBaseURL,
+                                       nsIPrincipal* aSheetPrincipal,
+                                       nsCSSValue& aValue)
+{
+  nsCSSScanner scanner(aBuffer, 0);
+  css::ErrorReporter reporter(scanner, mSheet, mChildLoader, aSheetURL);
+  InitScanner(scanner, reporter, aSheetURL, aBaseURL, aSheetPrincipal);
+
+  bool success = ParseFontDescriptorValue(aDescID, aValue) &&
+                 !GetToken(true);
+
+  OUTPUT_ERROR();
+  ReleaseScanner();
+
+  return success;
+}
+
 //----------------------------------------------------------------------
 
 bool
@@ -2752,8 +2795,7 @@ CSSParserImpl::ParseAtRule(RuleAppendFunc aAppendFunc,
     parseFunc = &CSSParserImpl::ParseFontFaceRule;
     newSection = eCSSSection_General;
 
-  } else if (mToken.mIdent.LowerCaseEqualsLiteral("font-feature-values") &&
-             nsCSSFontFeatureValuesRule::PrefEnabled()) {
+  } else if (mToken.mIdent.LowerCaseEqualsLiteral("font-feature-values")) {
     parseFunc = &CSSParserImpl::ParseFontFeatureValuesRule;
     newSection = eCSSSection_General;
 
@@ -4325,6 +4367,17 @@ CSSParserImpl::ParseCounterStyleName(nsAString& aName, bool aForDefinition)
 }
 
 bool
+CSSParserImpl::ParseCounterStyleNameValue(nsCSSValue& aValue)
+{
+  nsString name;
+  if (ParseCounterStyleName(name, false)) {
+    aValue.SetStringValue(name, eCSSUnit_Ident);
+    return true;
+  }
+  return false;
+}
+
+bool
 CSSParserImpl::ParseCounterDescriptor(nsCSSCounterStyleRule* aRule)
 {
   if (eCSSToken_Ident != mToken.mType) {
@@ -4385,12 +4438,12 @@ CSSParserImpl::ParseCounterDescriptorValue(nsCSSCounterDesc aDescID,
           return true;
         }
         case NS_STYLE_COUNTER_SYSTEM_EXTENDS: {
-          nsString name;
-          if (!ParseCounterStyleName(name, false)) {
+          nsCSSValue name;
+          if (!ParseCounterStyleNameValue(name)) {
             REPORT_UNEXPECTED_TOKEN(PECounterExtendsNotIdent);
             return false;
           }
-          aValue.SetPairValue(system, nsCSSValue(name, eCSSUnit_Ident));
+          aValue.SetPairValue(system, name);
           return true;
         }
         default:
@@ -4448,14 +4501,8 @@ CSSParserImpl::ParseCounterDescriptorValue(nsCSSCounterDesc aDescID,
       return true;
     }
 
-    case eCSSCounterDesc_Fallback: {
-      nsString name;
-      if (!ParseCounterStyleName(name, false)) {
-        return false;
-      }
-      aValue.SetStringValue(name, eCSSUnit_Ident);
-      return true;
-    }
+    case eCSSCounterDesc_Fallback:
+      return ParseCounterStyleNameValue(aValue);
 
     case eCSSCounterDesc_Symbols: {
       nsCSSValueList* item = nullptr;
@@ -4505,7 +4552,7 @@ CSSParserImpl::ParseCounterDescriptorValue(nsCSSCounterDesc aDescID,
       // should always return in the loop
     }
 
-    case eCSSCounterDesc_SpeakAs: {
+    case eCSSCounterDesc_SpeakAs:
       if (ParseVariant(aValue, VARIANT_AUTO | VARIANT_KEYWORD,
                       nsCSSProps::kCounterSpeakAsKTable)) {
         if (aValue.GetUnit() == eCSSUnit_Enumerated &&
@@ -4517,13 +4564,7 @@ CSSParserImpl::ParseCounterDescriptorValue(nsCSSCounterDesc aDescID,
         }
         return true;
       }
-      nsString name;
-      if (ParseCounterStyleName(name, false)) {
-        aValue.SetStringValue(name, eCSSUnit_Ident);
-        return true;
-      }
-      return false;
-    }
+      return ParseCounterStyleNameValue(aValue);
 
     default:
       NS_NOTREACHED("unknown descriptor");
@@ -7172,15 +7213,15 @@ CSSParserImpl::ParseCounter(nsCSSValue& aValue)
     }
 
     // get optional type
-    nsString type = NS_LITERAL_STRING("decimal");
+    int32_t typeItem = eCSSUnit_Counters == unit ? 2 : 1;
+    nsCSSValue& type = val->Item(typeItem);
     if (ExpectSymbol(',', true)) {
-      if (!ParseCounterStyleName(type, false)) {
+      if (!ParseCounterStyleNameValue(type) && !ParseSymbols(type)) {
         break;
       }
+    } else {
+      type.SetStringValue(NS_LITERAL_STRING("decimal"), eCSSUnit_Ident);
     }
-
-    int32_t typeItem = eCSSUnit_Counters == unit ? 2 : 1;
-    val->Item(typeItem).SetStringValue(type, eCSSUnit_Ident);
 
     if (!ExpectSymbol(')', true)) {
       break;
@@ -7258,6 +7299,54 @@ CSSParserImpl::ParseAttr(nsCSSValue& aValue)
   }
   aValue.SetStringValue(attr, eCSSUnit_Attr);
   return true;
+}
+
+bool
+CSSParserImpl::ParseSymbols(nsCSSValue& aValue)
+{
+  if (!GetToken(true)) {
+    return false;
+  }
+  if (mToken.mType != eCSSToken_Function &&
+      !mToken.mIdent.LowerCaseEqualsLiteral("symbols")) {
+    UngetToken();
+    return false;
+  }
+
+  nsRefPtr<nsCSSValue::Array> params = nsCSSValue::Array::Create(2);
+  nsCSSValue& type = params->Item(0);
+  nsCSSValue& symbols = params->Item(1);
+
+  if (!ParseEnum(type, nsCSSProps::kCounterSymbolsSystemKTable)) {
+    type.SetIntValue(NS_STYLE_COUNTER_SYSTEM_SYMBOLIC, eCSSUnit_Enumerated);
+  }
+
+  bool first = true;
+  nsCSSValueList* item = symbols.SetListValue();
+  for (;;) {
+    // FIXME Should also include VARIANT_IMAGE. See bug 1071436.
+    if (!ParseVariant(item->mValue, VARIANT_STRING, nullptr)) {
+      break;
+    }
+    if (ExpectSymbol(')', true)) {
+      if (first) {
+        switch (type.GetIntValue()) {
+          case NS_STYLE_COUNTER_SYSTEM_NUMERIC:
+          case NS_STYLE_COUNTER_SYSTEM_ALPHABETIC:
+            // require at least two symbols
+            return false;
+        }
+      }
+      aValue.SetArrayValue(params, eCSSUnit_Symbols);
+      return true;
+    }
+    item->mNext = new nsCSSValueList;
+    item = item->mNext;
+    first = false;
+  }
+
+  SkipUntil(')');
+  return false;
 }
 
 bool
@@ -7407,11 +7496,12 @@ CSSParserImpl::ParseFlex()
     return true;
   }
 
-  // Next, check for 'none' == '0 0 auto'
+  // Next, check for 'none' == '0 0 main-size'
   if (ParseVariant(tmpVal, VARIANT_NONE, nullptr)) {
     AppendValue(eCSSProperty_flex_grow, nsCSSValue(0.0f, eCSSUnit_Number));
     AppendValue(eCSSProperty_flex_shrink, nsCSSValue(0.0f, eCSSUnit_Number));
-    AppendValue(eCSSProperty_flex_basis, nsCSSValue(eCSSUnit_Auto));
+    AppendValue(eCSSProperty_flex_basis,
+                nsCSSValue(NS_STYLE_FLEX_BASIS_MAIN_SIZE, eCSSUnit_Enumerated));
     return true;
   }
 
@@ -7451,7 +7541,7 @@ CSSParserImpl::ParseFlex()
   // "a unitless zero that is not already preceded by two flex factors must be
   //  interpreted as a flex factor.
   if (!ParseNonNegativeVariant(tmpVal, flexBasisVariantMask | VARIANT_NUMBER,
-                               nsCSSProps::kWidthKTable)) {
+                               nsCSSProps::kFlexBasisKTable)) {
     // First component was not a valid flex-basis or flex-grow value. Fail.
     return false;
   }
@@ -7469,6 +7559,15 @@ CSSParserImpl::ParseFlex()
       // Failed to parse anything after our flex-basis -- that's fine. We can
       // skip the remaining parsing.
       doneParsing = true;
+      if (flexBasis.GetUnit() == eCSSUnit_Auto) {
+        // We've just parsed "flex:auto", without a number after "auto".  In
+        // this case, "auto" is *not* actually the flex-basis -- it's a special
+        // keyword for the "flex" shorthand, which expands to "1 1 main-size".
+        // Fortunately, the variables flexGrow & flexShrink are already set to
+        // 1, so we don't need to adjust them; we just need to set flexBasis.
+        flexBasis.SetIntValue(NS_STYLE_FLEX_BASIS_MAIN_SIZE,
+                              eCSSUnit_Enumerated);
+      }
     }
   }
 
@@ -7499,7 +7598,7 @@ CSSParserImpl::ParseFlex()
     // unitless 0 encountered here *must* have been preceded by 2 flex factors.
     if (!wasFirstComponentFlexBasis &&
         ParseNonNegativeVariant(tmpVal, flexBasisVariantMask,
-                                nsCSSProps::kWidthKTable)) {
+                                nsCSSProps::kFlexBasisKTable)) {
       flexBasis = tmpVal;
     }
   }
@@ -8521,9 +8620,8 @@ CSSParserImpl::ParseGridLine(nsCSSValue& aValue)
     eCSSKeyword_UNKNOWN  // End-of-array marker
   };
   bool hasSpan = false;
-  bool hasInteger = false;
   bool hasIdent = false;
-  int32_t integer;
+  Maybe<int32_t> integer;
   nsCSSValue ident;
 
   if (!GetToken(true)) {
@@ -8542,20 +8640,19 @@ CSSParserImpl::ParseGridLine(nsCSSValue& aValue)
         mToken.mType == eCSSToken_Ident &&
         ParseCustomIdent(ident, mToken.mIdent, kGridLineKeywords)) {
       hasIdent = true;
-    } else if (!hasInteger &&
+    } else if (integer.isNothing() &&
                mToken.mType == eCSSToken_Number &&
                mToken.mIntegerValid &&
                mToken.mInteger != 0) {
-      hasInteger = true;
-      integer = mToken.mInteger;
+      integer.emplace(mToken.mInteger);
     } else {
       UngetToken();
       break;
     }
-  } while (!(hasInteger && hasIdent) && GetToken(true));
+  } while (!(integer.isSome() && hasIdent) && GetToken(true));
 
   // Require at least one of <integer> or <custom-ident>
-  if (!(hasInteger || hasIdent)) {
+  if (!(integer.isSome() || hasIdent)) {
     return false;
   }
 
@@ -8571,7 +8668,7 @@ CSSParserImpl::ParseGridLine(nsCSSValue& aValue)
   nsCSSValueList* item = aValue.SetListValue();
   if (hasSpan) {
     // Given "span", a negative <integer> is invalid.
-    if (hasInteger && integer < 0) {
+    if (integer.isSome() && integer.ref() < 0) {
       return false;
     }
     // '1' here is a dummy value.
@@ -8580,8 +8677,8 @@ CSSParserImpl::ParseGridLine(nsCSSValue& aValue)
     item->mNext = new nsCSSValueList;
     item = item->mNext;
   }
-  if (hasInteger) {
-    item->mValue.SetIntValue(integer, eCSSUnit_Integer);
+  if (integer.isSome()) {
+    item->mValue.SetIntValue(integer.ref(), eCSSUnit_Integer);
     if (hasIdent) {
       item->mNext = new nsCSSValueList;
       item = item->mNext;
@@ -9728,6 +9825,8 @@ CSSParserImpl::ParsePropertyByFunction(nsCSSProperty aPropID)
     return ParseFlexFlow();
   case eCSSProperty_font:
     return ParseFont();
+  case eCSSProperty_font_variant:
+    return ParseFontVariant();
   case eCSSProperty_grid_auto_flow:
     return ParseGridAutoFlow();
   case eCSSProperty_grid_auto_columns:
@@ -9773,6 +9872,8 @@ CSSParserImpl::ParsePropertyByFunction(nsCSSProperty aPropID)
   case eCSSProperty_margin_start:
     return ParseDirectionalBoxProperty(eCSSProperty_margin_start,
                                        NS_BOXPROP_SOURCE_LOGICAL);
+  case eCSSProperty_object_position:
+    return ParseObjectPosition();
   case eCSSProperty_outline:
     return ParseOutline();
   case eCSSProperty_overflow:
@@ -9822,6 +9923,8 @@ CSSParserImpl::ParsePropertyByFunction(nsCSSProperty aPropID)
     return ParseMarker();
   case eCSSProperty_paint_order:
     return ParsePaintOrder();
+  case eCSSProperty_clip_path:
+    return ParseClipPath();
   case eCSSProperty_all:
     return ParseAll();
   default:
@@ -10185,7 +10288,7 @@ CSSParserImpl::ParseBackgroundItem(CSSParserImpl::BackgroundParseState& aState)
         if (havePositionAndSize)
           return false;
         havePositionAndSize = true;
-        if (!ParseBackgroundPositionValues(aState.mPosition->mValue, false)) {
+        if (!ParsePositionValue(aState.mPosition->mValue)) {
           return false;
         }
         if (ExpectSymbol('/', true)) {
@@ -10269,7 +10372,7 @@ CSSParserImpl::ParseBackgroundItem(CSSParserImpl::BackgroundParseState& aState)
       if (havePositionAndSize)
         return false;
       havePositionAndSize = true;
-      if (!ParseBackgroundPositionValues(aState.mPosition->mValue, false)) {
+      if (!ParsePositionValue(aState.mPosition->mValue)) {
         return false;
       }
       if (ExpectSymbol('/', true)) {
@@ -10381,7 +10484,7 @@ CSSParserImpl::ParseBackgroundPosition()
   // 'initial', 'inherit' and 'unset' stand alone, no list permitted.
   if (!ParseVariant(value, VARIANT_INHERIT, nullptr)) {
     nsCSSValue itemValue;
-    if (!ParseBackgroundPositionValues(itemValue, false)) {
+    if (!ParsePositionValue(itemValue)) {
       return false;
     }
     nsCSSValueList* item = value.SetListValue();
@@ -10390,7 +10493,7 @@ CSSParserImpl::ParseBackgroundPosition()
       if (!ExpectSymbol(',', true)) {
         break;
       }
-      if (!ParseBackgroundPositionValues(itemValue, false)) {
+      if (!ParsePositionValue(itemValue)) {
         return false;
       }
       item->mNext = new nsCSSValueList;
@@ -10503,19 +10606,11 @@ bool CSSParserImpl::ParseBoxPositionValues(nsCSSValuePair &aOut,
   return true;
 }
 
-bool CSSParserImpl::ParseBackgroundPositionValues(nsCSSValue& aOut,
-                                                  bool aAcceptsInherit)
+// Parses a CSS <position> value, for e.g. the 'background-position' property.
+// Spec reference: http://www.w3.org/TR/css3-background/#ltpositiongt
+bool
+CSSParserImpl::ParsePositionValue(nsCSSValue& aOut)
 {
-  // css3-background allows positions to be defined as offsets
-  // from an edge. There can be 2 keywords and 2 offsets given. These
-  // four 'values' are stored in an array in the following order:
-  // [keyword offset keyword offset]. If a keyword or offset isn't
-  // parsed the value of the corresponding array element is set
-  // to eCSSUnit_Null by a call to nsCSSValue::Reset().
-  if (aAcceptsInherit && ParseVariant(aOut, VARIANT_INHERIT, nullptr)) {
-    return true;
-  }
-
   nsRefPtr<nsCSSValue::Array> value = nsCSSValue::Array::Create(4);
   aOut.SetArrayValue(value, eCSSUnit_Array);
 
@@ -11717,13 +11812,10 @@ CSSParserImpl::ParseFont()
 {
   static const nsCSSProperty fontIDs[] = {
     eCSSProperty_font_style,
-    eCSSProperty_font_variant,
+    eCSSProperty_font_variant_caps,
     eCSSProperty_font_weight
   };
 
-  // font-variant-alternates enabled ==> layout.css.font-features.enabled is true
-  bool featuresEnabled =
-    nsCSSProps::IsEnabled(eCSSProperty_font_variant_alternates);
   nsCSSValue  family;
   if (ParseVariant(family, VARIANT_HK, nsCSSProps::kFontKTable)) {
     if (eCSSUnit_Inherit == family.GetUnit() ||
@@ -11732,7 +11824,6 @@ CSSParserImpl::ParseFont()
       AppendValue(eCSSProperty__x_system_font, nsCSSValue(eCSSUnit_None));
       AppendValue(eCSSProperty_font_family, family);
       AppendValue(eCSSProperty_font_style, family);
-      AppendValue(eCSSProperty_font_variant, family);
       AppendValue(eCSSProperty_font_weight, family);
       AppendValue(eCSSProperty_font_size, family);
       AppendValue(eCSSProperty_line_height, family);
@@ -11740,23 +11831,20 @@ CSSParserImpl::ParseFont()
       AppendValue(eCSSProperty_font_size_adjust, family);
       AppendValue(eCSSProperty_font_feature_settings, family);
       AppendValue(eCSSProperty_font_language_override, family);
-      if (featuresEnabled) {
-        AppendValue(eCSSProperty_font_kerning, family);
-        AppendValue(eCSSProperty_font_synthesis, family);
-        AppendValue(eCSSProperty_font_variant_alternates, family);
-        AppendValue(eCSSProperty_font_variant_caps, family);
-        AppendValue(eCSSProperty_font_variant_east_asian, family);
-        AppendValue(eCSSProperty_font_variant_ligatures, family);
-        AppendValue(eCSSProperty_font_variant_numeric, family);
-        AppendValue(eCSSProperty_font_variant_position, family);
-      }
+      AppendValue(eCSSProperty_font_kerning, family);
+      AppendValue(eCSSProperty_font_synthesis, family);
+      AppendValue(eCSSProperty_font_variant_alternates, family);
+      AppendValue(eCSSProperty_font_variant_caps, family);
+      AppendValue(eCSSProperty_font_variant_east_asian, family);
+      AppendValue(eCSSProperty_font_variant_ligatures, family);
+      AppendValue(eCSSProperty_font_variant_numeric, family);
+      AppendValue(eCSSProperty_font_variant_position, family);
     }
     else {
       AppendValue(eCSSProperty__x_system_font, family);
       nsCSSValue systemFont(eCSSUnit_System_Font);
       AppendValue(eCSSProperty_font_family, systemFont);
       AppendValue(eCSSProperty_font_style, systemFont);
-      AppendValue(eCSSProperty_font_variant, systemFont);
       AppendValue(eCSSProperty_font_weight, systemFont);
       AppendValue(eCSSProperty_font_size, systemFont);
       AppendValue(eCSSProperty_line_height, systemFont);
@@ -11764,16 +11852,14 @@ CSSParserImpl::ParseFont()
       AppendValue(eCSSProperty_font_size_adjust, systemFont);
       AppendValue(eCSSProperty_font_feature_settings, systemFont);
       AppendValue(eCSSProperty_font_language_override, systemFont);
-      if (featuresEnabled) {
-        AppendValue(eCSSProperty_font_kerning, systemFont);
-        AppendValue(eCSSProperty_font_synthesis, systemFont);
-        AppendValue(eCSSProperty_font_variant_alternates, systemFont);
-        AppendValue(eCSSProperty_font_variant_caps, systemFont);
-        AppendValue(eCSSProperty_font_variant_east_asian, systemFont);
-        AppendValue(eCSSProperty_font_variant_ligatures, systemFont);
-        AppendValue(eCSSProperty_font_variant_numeric, systemFont);
-        AppendValue(eCSSProperty_font_variant_position, systemFont);
-      }
+      AppendValue(eCSSProperty_font_kerning, systemFont);
+      AppendValue(eCSSProperty_font_synthesis, systemFont);
+      AppendValue(eCSSProperty_font_variant_alternates, systemFont);
+      AppendValue(eCSSProperty_font_variant_caps, systemFont);
+      AppendValue(eCSSProperty_font_variant_east_asian, systemFont);
+      AppendValue(eCSSProperty_font_variant_ligatures, systemFont);
+      AppendValue(eCSSProperty_font_variant_numeric, systemFont);
+      AppendValue(eCSSProperty_font_variant_position, systemFont);
     }
     return true;
   }
@@ -11794,7 +11880,15 @@ CSSParserImpl::ParseFont()
   }
   if ((found & 2) == 0) {
     // Provide default font-variant
-    values[1].SetIntValue(NS_FONT_VARIANT_NORMAL, eCSSUnit_Enumerated);
+    values[1].SetNormalValue();
+  } else {
+    if (values[1].GetUnit() == eCSSUnit_Enumerated &&
+        values[1].GetIntValue() != NS_FONT_VARIANT_CAPS_SMALLCAPS) {
+      // only normal or small-caps is allowed in font shorthand
+      // this also assumes other values for font-variant-caps never overlap
+      // possible values for style or weight
+      return false;
+    }
   }
   if ((found & 4) == 0) {
     // Provide default font-weight
@@ -11830,7 +11924,7 @@ CSSParserImpl::ParseFont()
       AppendValue(eCSSProperty__x_system_font, nsCSSValue(eCSSUnit_None));
       AppendValue(eCSSProperty_font_family, family);
       AppendValue(eCSSProperty_font_style, values[0]);
-      AppendValue(eCSSProperty_font_variant, values[1]);
+      AppendValue(eCSSProperty_font_variant_caps, values[1]);
       AppendValue(eCSSProperty_font_weight, values[2]);
       AppendValue(eCSSProperty_font_size, size);
       AppendValue(eCSSProperty_line_height, lineHeight);
@@ -11839,24 +11933,21 @@ CSSParserImpl::ParseFont()
       AppendValue(eCSSProperty_font_size_adjust, nsCSSValue(eCSSUnit_None));
       AppendValue(eCSSProperty_font_feature_settings, nsCSSValue(eCSSUnit_Normal));
       AppendValue(eCSSProperty_font_language_override, nsCSSValue(eCSSUnit_Normal));
-      if (featuresEnabled) {
-        AppendValue(eCSSProperty_font_kerning,
-                    nsCSSValue(NS_FONT_KERNING_AUTO, eCSSUnit_Enumerated));
-        AppendValue(eCSSProperty_font_synthesis,
-                    nsCSSValue(NS_FONT_SYNTHESIS_WEIGHT | NS_FONT_SYNTHESIS_STYLE,
-                               eCSSUnit_Enumerated));
-        AppendValue(eCSSProperty_font_variant_alternates,
-                    nsCSSValue(eCSSUnit_Normal));
-        AppendValue(eCSSProperty_font_variant_caps, nsCSSValue(eCSSUnit_Normal));
-        AppendValue(eCSSProperty_font_variant_east_asian,
-                    nsCSSValue(eCSSUnit_Normal));
-        AppendValue(eCSSProperty_font_variant_ligatures,
-                    nsCSSValue(eCSSUnit_Normal));
-        AppendValue(eCSSProperty_font_variant_numeric,
-                    nsCSSValue(eCSSUnit_Normal));
-        AppendValue(eCSSProperty_font_variant_position,
-                    nsCSSValue(eCSSUnit_Normal));
-      }
+      AppendValue(eCSSProperty_font_kerning,
+                  nsCSSValue(NS_FONT_KERNING_AUTO, eCSSUnit_Enumerated));
+      AppendValue(eCSSProperty_font_synthesis,
+                  nsCSSValue(NS_FONT_SYNTHESIS_WEIGHT | NS_FONT_SYNTHESIS_STYLE,
+                             eCSSUnit_Enumerated));
+      AppendValue(eCSSProperty_font_variant_alternates,
+                  nsCSSValue(eCSSUnit_Normal));
+      AppendValue(eCSSProperty_font_variant_east_asian,
+                  nsCSSValue(eCSSUnit_Normal));
+      AppendValue(eCSSProperty_font_variant_ligatures,
+                  nsCSSValue(eCSSUnit_Normal));
+      AppendValue(eCSSProperty_font_variant_numeric,
+                  nsCSSValue(eCSSUnit_Normal));
+      AppendValue(eCSSProperty_font_variant_position,
+                  nsCSSValue(eCSSUnit_Normal));
       return true;
     }
   }
@@ -11900,7 +11991,7 @@ CSSParserImpl::ParseFontSynthesis(nsCSSValue& aValue)
 // parameter lists with one or more idents which are later resolved
 // based on values defined in @font-feature-value rules.
 //
-// font-variant-alternates: swash(flowing), historical-forms, styleset(alt-g, alt-m);
+// font-variant-alternates: swash(flowing) historical-forms styleset(alt-g, alt-m);
 //
 // So for this the nsCSSValue is set to a pair value, with one
 // value for a bitmask of both simple and functional property values
@@ -11921,6 +12012,17 @@ CSSParserImpl::ParseFontSynthesis(nsCSSValue& aValue)
 // list will match the number of functional values.
 
 #define MAX_ALLOWED_FEATURES 512
+
+static uint16_t
+MaxElementsForAlternateType(nsCSSKeyword keyword)
+{
+  uint16_t maxElems = 1;
+  if (keyword == eCSSKeyword_styleset ||
+      keyword == eCSSKeyword_character_variant) {
+    maxElems = MAX_ALLOWED_FEATURES;
+  }
+  return maxElems;
+}
 
 bool
 CSSParserImpl::ParseSingleAlternate(int32_t& aWhichFeature,
@@ -11957,13 +12059,8 @@ CSSParserImpl::ParseSingleAlternate(int32_t& aWhichFeature,
     return true;
   }
 
-  uint16_t maxElems = 1;
-  if (keyword == eCSSKeyword_styleset ||
-      keyword == eCSSKeyword_character_variant) {
-    maxElems = MAX_ALLOWED_FEATURES;
-  }
   return ParseFunction(keyword, nullptr, VARIANT_IDENTIFIER,
-                       1, maxElems, aValue);
+                       1, MaxElementsForAlternateType(keyword), aValue);
 }
 
 bool
@@ -12016,6 +12113,35 @@ CSSParserImpl::ParseFontVariantAlternates(nsCSSValue& aValue)
   return true;
 }
 
+bool
+CSSParserImpl::MergeBitmaskValue(int32_t aNewValue,
+                                 const int32_t aMasks[],
+                                 int32_t& aMergedValue)
+{
+  // check to make sure value not already set
+  if (aNewValue & aMergedValue) {
+    return false;
+  }
+
+  const int32_t *m = aMasks;
+  int32_t c = 0;
+
+  while (*m != MASK_END_VALUE) {
+    if (*m & aNewValue) {
+      c = aMergedValue & *m;
+      break;
+    }
+    m++;
+  }
+
+  if (c) {
+    return false;
+  }
+
+  aMergedValue |= aNewValue;
+  return true;
+}
+
 // aMasks - array of masks for mutually-exclusive property values,
 //          e.g. proportial-nums, tabular-nums
 
@@ -12035,29 +12161,9 @@ CSSParserImpl::ParseBitmaskValues(nsCSSValue& aValue,
 
   while (ParseEnum(nextValue, aKeywordTable))
   {
-    int32_t nextIntValue = nextValue.GetIntValue();
-
-    // check to make sure value not already set
-    if (nextIntValue & mergedValue) {
+    if (!MergeBitmaskValue(nextValue.GetIntValue(), aMasks, mergedValue)) {
       return false;
     }
-
-    const int32_t *m = aMasks;
-    int32_t c = 0;
-
-    while (*m != MASK_END_VALUE) {
-      if (*m & nextIntValue) {
-        c = mergedValue & *m;
-        break;
-      }
-      m++;
-    }
-
-    if (c) {
-      return false;
-    }
-
-    mergedValue |= nextIntValue;
   }
 
   aValue.SetIntValue(mergedValue, eCSSUnit_Enumerated);
@@ -12097,7 +12203,9 @@ static const int32_t maskLigatures[] = {
 bool
 CSSParserImpl::ParseFontVariantLigatures(nsCSSValue& aValue)
 {
-  if (ParseVariant(aValue, VARIANT_INHERIT | VARIANT_NORMAL, nullptr)) {
+  if (ParseVariant(aValue,
+                   VARIANT_INHERIT | VARIANT_NORMAL | VARIANT_NONE,
+                   nullptr)) {
     return true;
   }
 
@@ -12105,20 +12213,8 @@ CSSParserImpl::ParseFontVariantLigatures(nsCSSValue& aValue)
                  MASK_END_VALUE,
                "incorrectly terminated array");
 
-  bool parsed =
-    ParseBitmaskValues(aValue, nsCSSProps::kFontVariantLigaturesKTable,
-                       maskLigatures);
-
-  // if none value included, no other values are possible
-  if (parsed && eCSSUnit_Enumerated == aValue.GetUnit()) {
-    int32_t val = aValue.GetIntValue();
-    if ((val & NS_FONT_VARIANT_LIGATURES_NONE) &&
-        (val & ~int32_t(NS_FONT_VARIANT_LIGATURES_NONE))) {
-      parsed = false;
-    }
-  }
-
-  return parsed;
+  return ParseBitmaskValues(aValue, nsCSSProps::kFontVariantLigaturesKTable,
+                            maskLigatures);
 }
 
 static const int32_t maskNumeric[] = {
@@ -12141,6 +12237,194 @@ CSSParserImpl::ParseFontVariantNumeric(nsCSSValue& aValue)
 
   return ParseBitmaskValues(aValue, nsCSSProps::kFontVariantNumericKTable,
                             maskNumeric);
+}
+
+bool
+CSSParserImpl::ParseFontVariant()
+{
+  // parse single values - normal/inherit/none
+  nsCSSValue value;
+  nsCSSValue normal(eCSSUnit_Normal);
+
+  if (ParseVariant(value,
+                   VARIANT_INHERIT | VARIANT_NORMAL | VARIANT_NONE,
+                   nullptr)) {
+    AppendValue(eCSSProperty_font_variant_ligatures, value);
+    if (eCSSUnit_None == value.GetUnit()) {
+      // 'none' applies the value 'normal' to all properties other
+      // than 'font-variant-ligatures'
+      value.SetNormalValue();
+    }
+    AppendValue(eCSSProperty_font_variant_alternates, value);
+    AppendValue(eCSSProperty_font_variant_caps, value);
+    AppendValue(eCSSProperty_font_variant_east_asian, value);
+    AppendValue(eCSSProperty_font_variant_numeric, value);
+    AppendValue(eCSSProperty_font_variant_position, value);
+    return true;
+  }
+
+  // set each of the individual subproperties
+  int32_t altFeatures = 0, capsFeatures = 0, eastAsianFeatures = 0,
+          ligFeatures = 0, numericFeatures = 0, posFeatures = 0;
+  nsCSSValue altListValue;
+  nsCSSValueList* altList = nullptr;
+
+  // if no functional values, this may be a list with a single, unused element
+  altListValue.SetListValue();
+
+  bool foundValid = false; // found at least one proper value
+  while (GetToken(true)) {
+    // only an ident or a function at this point
+    bool isFunction = (mToken.mType == eCSSToken_Function);
+    if (mToken.mType != eCSSToken_Ident && !isFunction) {
+      UngetToken();
+      break;
+    }
+
+    nsCSSKeyword keyword = nsCSSKeywords::LookupKeyword(mToken.mIdent);
+    if (keyword == eCSSKeyword_UNKNOWN) {
+      UngetToken();
+      return false;
+    }
+
+    int32_t feature;
+
+    // function? ==> font-variant-alternates
+    if (isFunction) {
+      if (!nsCSSProps::FindKeyword(keyword,
+                                   nsCSSProps::kFontVariantAlternatesFuncsKTable,
+                                   feature) ||
+          (feature & altFeatures)) {
+        UngetToken();
+        return false;
+      }
+
+      altFeatures |= feature;
+      nsCSSValue funcValue;
+      if (!ParseFunction(keyword, nullptr, VARIANT_IDENTIFIER, 1,
+                         MaxElementsForAlternateType(keyword), funcValue) ||
+          funcValue.GetUnit() != eCSSUnit_Function) {
+        UngetToken();
+        return false;
+      }
+
+      if (!altList) {
+        altList = altListValue.GetListValue();
+      } else {
+        altList->mNext = new nsCSSValueList;
+        altList = altList->mNext;
+      }
+      altList->mValue = funcValue;
+    } else if (nsCSSProps::FindKeyword(keyword,
+                                       nsCSSProps::kFontVariantCapsKTable,
+                                       feature)) {
+      if (capsFeatures != 0) {
+        // multiple values for font-variant-caps
+        UngetToken();
+        return false;
+      }
+      capsFeatures = feature;
+    } else if (nsCSSProps::FindKeyword(keyword,
+                                       nsCSSProps::kFontVariantAlternatesKTable,
+                                       feature)) {
+      if (feature & altFeatures) {
+        // same value repeated
+        UngetToken();
+        return false;
+      }
+      altFeatures |= feature;
+    } else if (nsCSSProps::FindKeyword(keyword,
+                                       nsCSSProps::kFontVariantEastAsianKTable,
+                                       feature)) {
+      if (!MergeBitmaskValue(feature, maskEastAsian, eastAsianFeatures)) {
+        // multiple mutually exclusive values
+        UngetToken();
+        return false;
+      }
+    } else if (nsCSSProps::FindKeyword(keyword,
+                                       nsCSSProps::kFontVariantLigaturesKTable,
+                                       feature)) {
+      if (keyword == eCSSKeyword_none ||
+          !MergeBitmaskValue(feature, maskLigatures, ligFeatures)) {
+        // none or multiple mutually exclusive values
+        UngetToken();
+        return false;
+      }
+    } else if (nsCSSProps::FindKeyword(keyword,
+                                       nsCSSProps::kFontVariantNumericKTable,
+                                       feature)) {
+      if (!MergeBitmaskValue(feature, maskNumeric, numericFeatures)) {
+        // multiple mutually exclusive values
+        UngetToken();
+        return false;
+      }
+    } else if (nsCSSProps::FindKeyword(keyword,
+                                       nsCSSProps::kFontVariantPositionKTable,
+                                       feature)) {
+      if (posFeatures != 0) {
+        // multiple values for font-variant-caps
+        UngetToken();
+        return false;
+      }
+      posFeatures = feature;
+    } else {
+      // bogus keyword, bail...
+      UngetToken();
+      return false;
+    }
+
+    foundValid = true;
+  }
+
+  if (!foundValid) {
+    return false;
+  }
+
+  if (altFeatures) {
+    nsCSSValue featureValue;
+    featureValue.SetIntValue(altFeatures, eCSSUnit_Enumerated);
+    value.SetPairValue(featureValue, altListValue);
+    AppendValue(eCSSProperty_font_variant_alternates, value);
+  } else {
+    AppendValue(eCSSProperty_font_variant_alternates, normal);
+  }
+
+  if (capsFeatures) {
+    value.SetIntValue(capsFeatures, eCSSUnit_Enumerated);
+    AppendValue(eCSSProperty_font_variant_caps, value);
+  } else {
+    AppendValue(eCSSProperty_font_variant_caps, normal);
+  }
+
+  if (eastAsianFeatures) {
+    value.SetIntValue(eastAsianFeatures, eCSSUnit_Enumerated);
+    AppendValue(eCSSProperty_font_variant_east_asian, value);
+  } else {
+    AppendValue(eCSSProperty_font_variant_east_asian, normal);
+  }
+
+  if (ligFeatures) {
+    value.SetIntValue(ligFeatures, eCSSUnit_Enumerated);
+    AppendValue(eCSSProperty_font_variant_ligatures, value);
+  } else {
+    AppendValue(eCSSProperty_font_variant_ligatures, normal);
+  }
+
+  if (numericFeatures) {
+    value.SetIntValue(numericFeatures, eCSSUnit_Enumerated);
+    AppendValue(eCSSProperty_font_variant_numeric, value);
+  } else {
+    AppendValue(eCSSProperty_font_variant_numeric, normal);
+  }
+
+  if (posFeatures) {
+    value.SetIntValue(posFeatures, eCSSUnit_Enumerated);
+    AppendValue(eCSSProperty_font_variant_position, value);
+  } else {
+    AppendValue(eCSSProperty_font_variant_position, normal);
+  }
+
+  return true;
 }
 
 bool
@@ -12245,7 +12529,8 @@ AppendGeneric(nsCSSKeyword aKeyword, FontFamilyList *aFamilyList)
 bool
 CSSParserImpl::ParseFamily(nsCSSValue& aValue)
 {
-  nsRefPtr<FontFamilyList> familyList = new FontFamilyList();
+  nsRefPtr<css::FontFamilyListRefCnt> familyList =
+    new css::FontFamilyListRefCnt();
   nsAutoString family;
   bool single, quoted;
 
@@ -12641,11 +12926,10 @@ CSSParserImpl::ParseListStyleType(nsCSSValue& aValue)
     return true;
   }
 
-  nsString name;
-  if (ParseCounterStyleName(name, false)) {
-    aValue.SetStringValue(name, eCSSUnit_Ident);
+  if (ParseCounterStyleNameValue(aValue) || ParseSymbols(aValue)) {
     return true;
   }
+
   return false;
 }
 
@@ -12693,6 +12977,18 @@ CSSParserImpl::ParseMarks(nsCSSValue& aValue)
     return true;
   }
   return false;
+}
+
+bool
+CSSParserImpl::ParseObjectPosition()
+{
+  nsCSSValue value;
+  if (!ParseVariant(value, VARIANT_INHERIT, nullptr) &&
+      !ParsePositionValue(value)) {
+    return false;
+  }
+  AppendValue(eCSSProperty_object_position, value);
+  return true;
 }
 
 bool
@@ -13492,6 +13788,198 @@ bool CSSParserImpl::ParseTransform(bool aIsPrefixed)
   return true;
 }
 
+/* Reads a polygon function's argument list.
+ */
+bool
+CSSParserImpl::ParsePolygonFunction(nsCSSValue& aValue)
+{
+  uint16_t numArgs = 1;
+
+  nsCSSValue fillRuleValue;
+  if (ParseEnum(fillRuleValue, nsCSSProps::kFillRuleKTable)) {
+    numArgs++;
+
+    // The fill-rule must be comma separated from the polygon points.
+    if (!ExpectSymbol(',', true)) {
+      REPORT_UNEXPECTED_TOKEN(PEExpectedComma);
+      SkipUntil(')');
+      return false;
+    }
+  }
+
+  nsCSSValue coordinates;
+  nsCSSValuePairList* item = coordinates.SetPairListValue();
+  for (;;) {
+    nsCSSValue xValue, yValue;
+    if (!ParseVariant(xValue, VARIANT_LPCALC, nullptr) ||
+        !ParseVariant(yValue, VARIANT_LPCALC, nullptr)) {
+      REPORT_UNEXPECTED_TOKEN(PECoordinatePair);
+      SkipUntil(')');
+      return false;
+    }
+    item->mXValue = xValue;
+    item->mYValue = yValue;
+
+    // See whether to continue or whether to look for end of function.
+    if (!ExpectSymbol(',', true)) {
+      // We need to read the closing parenthesis.
+      if (!ExpectSymbol(')', true)) {
+        REPORT_UNEXPECTED_TOKEN(PEExpectedCloseParen);
+        SkipUntil(')');
+        return false;
+      }
+      break;
+    }
+    item->mNext = new nsCSSValuePairList;
+    item = item->mNext;
+  }
+
+  nsRefPtr<nsCSSValue::Array> functionArray =
+    aValue.InitFunction(eCSSKeyword_polygon, numArgs);
+  functionArray->Item(numArgs) = coordinates;
+  if (numArgs > 1) {
+    functionArray->Item(1) = fillRuleValue;
+  }
+
+  return true;
+}
+
+bool
+CSSParserImpl::ParseCircleOrEllipseFunction(nsCSSKeyword aKeyword,
+                                            nsCSSValue& aValue)
+{
+  nsCSSValue radiusX, radiusY, position;
+  bool hasRadius = false, hasPosition = false;
+
+  int32_t mask = VARIANT_LPCALC | VARIANT_NONNEGATIVE_DIMENSION |
+                 VARIANT_KEYWORD;
+  if (ParseVariant(radiusX, mask, nsCSSProps::kShapeRadiusKTable)) {
+    if (aKeyword == eCSSKeyword_ellipse) {
+      if (!ParseVariant(radiusY, mask, nsCSSProps::kShapeRadiusKTable)) {
+        REPORT_UNEXPECTED_TOKEN(PEExpectedRadius);
+        SkipUntil(')');
+        return false;
+      }
+    }
+    hasRadius = true;
+  }
+
+  if (!ExpectSymbol(')', true)) {
+    if (!GetToken(true)) {
+      REPORT_UNEXPECTED_EOF(PEPositionEOF);
+      return false;
+    }
+
+    if (mToken.mType != eCSSToken_Ident ||
+        !mToken.mIdent.LowerCaseEqualsLiteral("at") ||
+        !ParsePositionValue(position)) {
+      REPORT_UNEXPECTED_TOKEN(PEExpectedPosition);
+      SkipUntil(')');
+      return false;
+    }
+    if (!ExpectSymbol(')', true)) {
+      REPORT_UNEXPECTED_TOKEN(PEExpectedCloseParen);
+      SkipUntil(')');
+      return false;
+    }
+    hasPosition = true;
+  }
+
+  size_t count = aKeyword == eCSSKeyword_circle ? 2 : 3;
+  nsRefPtr<nsCSSValue::Array> functionArray =
+    aValue.InitFunction(aKeyword, count);
+  if (hasRadius) {
+    functionArray->Item(1) = radiusX;
+    if (aKeyword == eCSSKeyword_ellipse) {
+      functionArray->Item(2) = radiusY;
+    }
+  }
+  if (hasPosition) {
+    functionArray->Item(count) = position;
+  }
+
+  return true;
+}
+
+bool
+CSSParserImpl::ParseBasicShape(nsCSSValue& aValue, bool* aConsumedTokens)
+{
+  if (!GetToken(true)) {
+    return false;
+  }
+
+  if (mToken.mType != eCSSToken_Function) {
+    UngetToken();
+    return false;
+  }
+
+  // Specific shape function parsing always consumes tokens.
+  *aConsumedTokens = true;
+  nsCSSKeyword keyword = nsCSSKeywords::LookupKeyword(mToken.mIdent);
+  switch (keyword) {
+  case eCSSKeyword_polygon:
+    return ParsePolygonFunction(aValue);
+  case eCSSKeyword_circle:
+  case eCSSKeyword_ellipse:
+    return ParseCircleOrEllipseFunction(keyword, aValue);
+  default:
+    return false;
+  }
+}
+
+/* Parse a clip-path url to a <clipPath> element or a basic shape. */
+bool CSSParserImpl::ParseClipPath()
+{
+  nsCSSValue value;
+  if (!ParseVariant(value, VARIANT_HUO, nullptr)) {
+    if (!nsLayoutUtils::CSSClipPathShapesEnabled()) {
+      // With CSS Clip Path Shapes disabled, we should only accept
+      // SVG clipPath reference and none.
+      REPORT_UNEXPECTED_TOKEN(PEExpectedNoneOrURL);
+      return false;
+    }
+
+    nsCSSValueList* cur = value.SetListValue();
+
+    nsCSSValue referenceBox;
+    bool hasBox = ParseEnum(referenceBox, nsCSSProps::kClipShapeSizingKTable);
+
+    nsCSSValue basicShape;
+    bool basicShapeConsumedTokens = false;
+    bool hasShape = ParseBasicShape(basicShape, &basicShapeConsumedTokens);
+
+    // Parsing wasn't successful if ParseBasicShape consumed tokens but failed
+    // or if the token was neither a reference box nor a basic shape.
+    if ((!hasShape && basicShapeConsumedTokens) || (!hasBox && !hasShape)) {
+      return false;
+    }
+
+    // We need to preserve the specified order of arguments for inline style.
+    if (hasBox) {
+      cur->mValue = referenceBox;
+    }
+
+    if (hasShape) {
+      if (hasBox) {
+        cur->mNext = new nsCSSValueList;
+        cur = cur->mNext;
+      }
+      cur->mValue = basicShape;
+    }
+
+    // Check if the second argument is a reference box if the first wasn't.
+    if (!hasBox &&
+        ParseEnum(referenceBox, nsCSSProps::kClipShapeSizingKTable)) {
+        cur->mNext = new nsCSSValueList;
+        cur = cur->mNext;
+        cur->mValue = referenceBox;
+    }
+  }
+
+  AppendValue(eCSSProperty_clip_path, value);
+  return true;
+}
+
 bool CSSParserImpl::ParseTransformOrigin(bool aPerspective)
 {
   nsCSSValuePair position;
@@ -13579,6 +14067,7 @@ CSSParserImpl::ParseSingleFilter(nsCSSValue* aValue)
 
   if (mToken.mType != eCSSToken_Function) {
     REPORT_UNEXPECTED_TOKEN(PEExpectedNoneOrURLOrFilterFunction);
+    UngetToken();
     return false;
   }
 
@@ -15038,10 +15527,22 @@ nsCSSParser::ParseCounterDescriptor(nsCSSCounterDesc aDescID,
 }
 
 bool
+nsCSSParser::ParseFontFaceDescriptor(nsCSSFontDesc aDescID,
+                                     const nsAString& aBuffer,
+                                     nsIURI* aSheetURL,
+                                     nsIURI* aBaseURL,
+                                     nsIPrincipal* aSheetPrincipal,
+                                     nsCSSValue& aValue)
+{
+  return static_cast<CSSParserImpl*>(mImpl)->
+    ParseFontFaceDescriptor(aDescID, aBuffer,
+                           aSheetURL, aBaseURL, aSheetPrincipal, aValue);
+}
+
+bool
 nsCSSParser::IsValueValidForProperty(const nsCSSProperty aPropID,
                                      const nsAString&    aPropValue)
 {
   return static_cast<CSSParserImpl*>(mImpl)->
     IsValueValidForProperty(aPropID, aPropValue);
 }
-

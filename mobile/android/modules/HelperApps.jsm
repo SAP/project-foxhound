@@ -7,8 +7,12 @@ const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Prompt.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
+                                  "resource://gre/modules/Prompt.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "Messaging",
+                                  "resource://gre/modules/Messaging.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "ContentAreaUtils", function() {
   let ContentAreaUtils = {};
@@ -140,7 +144,7 @@ var HelperApps =  {
         return [];
       return parseData(data);
     } else {
-      sendMessageToJava(msg, function(data) {
+      Messaging.sendRequestForResult(msg).then(function(data) {
         callback(parseData(data));
       });
     }
@@ -148,7 +152,7 @@ var HelperApps =  {
 
   launchUri: function launchUri(uri) {
     let msg = this._getMessage("Intent:Open", uri);
-    sendMessageToJava(msg);
+    Messaging.sendRequest(msg);
   },
 
   _parseApps: function _parseApps(appInfo) {
@@ -189,22 +193,20 @@ var HelperApps =  {
             className: app.activityName
         });
 
-        sendMessageToJava(msg, function(data) {
-            callback(data);
-        });
+        Messaging.sendRequestForResult(msg).then(callback);
     } else {
         let msg = this._getMessage("Intent:Open", uri, {
             packageName: app.packageName,
             className: app.activityName
         });
 
-        sendMessageToJava(msg);
+        Messaging.sendRequest(msg);
     }
   },
 
   _sendMessageSync: function(msg) {
     let res = null;
-    sendMessageToJava(msg, function(data) {
+    Messaging.sendRequestForResult(msg).then(function(data) {
       res = data;
     });
 

@@ -24,7 +24,7 @@ class nsSVGForeignObjectFrame : public nsSVGForeignObjectFrameBase,
   friend nsContainerFrame*
   NS_NewSVGForeignObjectFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 protected:
-  nsSVGForeignObjectFrame(nsStyleContext* aContext);
+  explicit nsSVGForeignObjectFrame(nsStyleContext* aContext);
 
 public:
   NS_DECL_QUERYFRAME
@@ -77,9 +77,9 @@ public:
 
   // nsISVGChildFrame interface:
   virtual nsresult PaintSVG(nsRenderingContext *aContext,
-                            const nsIntRect *aDirtyRect,
-                            nsIFrame* aTransformRoot = nullptr) MOZ_OVERRIDE;
-  virtual nsIFrame* GetFrameForPoint(const nsPoint &aPoint) MOZ_OVERRIDE;
+                            const gfxMatrix& aTransform,
+                            const nsIntRect* aDirtyRect = nullptr) MOZ_OVERRIDE;
+  virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) MOZ_OVERRIDE;
   virtual nsRect GetCoveredRegion() MOZ_OVERRIDE;
   virtual void ReflowSVG() MOZ_OVERRIDE;
   virtual void NotifySVGChanged(uint32_t aFlags) MOZ_OVERRIDE;
@@ -87,7 +87,7 @@ public:
                                       uint32_t aFlags) MOZ_OVERRIDE;
   virtual bool IsDisplayContainer() MOZ_OVERRIDE { return true; }
 
-  gfxMatrix GetCanvasTM(uint32_t aFor, nsIFrame* aTransformRoot = nullptr);
+  gfxMatrix GetCanvasTM();
 
   nsRect GetInvalidRegion();
 

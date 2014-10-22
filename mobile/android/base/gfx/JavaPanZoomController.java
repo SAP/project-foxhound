@@ -5,23 +5,22 @@
 
 package org.mozilla.gecko.gfx;
 
+import org.json.JSONObject;
+import org.mozilla.gecko.AppConstants.Versions;
+import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.PrefsHelper;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
 import org.mozilla.gecko.ZoomConstraints;
-import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.util.GamepadUtils;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.util.ThreadUtils;
 
-import org.json.JSONObject;
-
 import android.graphics.PointF;
 import android.graphics.RectF;
-import android.os.Build;
 import android.util.FloatMath;
 import android.util.Log;
 import android.view.GestureDetector;
@@ -42,9 +41,9 @@ class JavaPanZoomController
 {
     private static final String LOGTAG = "GeckoPanZoomController";
 
-    private static String MESSAGE_ZOOM_RECT = "Browser:ZoomToRect";
-    private static String MESSAGE_ZOOM_PAGE = "Browser:ZoomToPageWidth";
-    private static String MESSAGE_TOUCH_LISTENER = "Tab:HasTouchListener";
+    private static final String MESSAGE_ZOOM_RECT = "Browser:ZoomToRect";
+    private static final String MESSAGE_ZOOM_PAGE = "Browser:ZoomToPageWidth";
+    private static final String MESSAGE_TOUCH_LISTENER = "Tab:HasTouchListener";
 
     // Animation stops if the velocity is below this value when overscrolled or panning.
     private static final float STOPPED_THRESHOLD = 4.0f;
@@ -156,7 +155,6 @@ class JavaPanZoomController
         String[] prefs = { "ui.scrolling.axis_lock_mode",
                            "ui.scrolling.negate_wheel_scrollY",
                            "ui.scrolling.gamepad_dead_zone" };
-        mNegateWheelScrollY = false;
         PrefsHelper.getPrefs(prefs, new PrefsHelper.PrefHandlerBase() {
             @Override public void prefValue(String pref, String value) {
                 if (pref.equals("ui.scrolling.axis_lock_mode")) {
@@ -172,7 +170,7 @@ class JavaPanZoomController
 
             @Override public void prefValue(String pref, int value) {
                 if (pref.equals("ui.scrolling.gamepad_dead_zone")) {
-                    GamepadUtils.overrideDeadZoneThreshold((float)value / 1000f);
+                    GamepadUtils.overrideDeadZoneThreshold(value / 1000f);
                 }
             }
 
@@ -277,6 +275,11 @@ class JavaPanZoomController
             } else if (MESSAGE_TOUCH_LISTENER.equals(event)) {
                 int tabId = message.getInt("tabID");
                 final Tab tab = Tabs.getInstance().getTab(tabId);
+                // Make sure we still have a Tab
+                if (tab == null) {
+                    return;
+                }
+
                 tab.setHasTouchListeners(true);
                 mTarget.post(new Runnable() {
                     @Override
@@ -294,7 +297,7 @@ class JavaPanZoomController
     /** This function MUST be called on the UI thread */
     @Override
     public boolean onKeyEvent(KeyEvent event) {
-        if (Build.VERSION.SDK_INT <= 11) {
+        if (Versions.preHCMR1) {
             return false;
         }
 
@@ -314,7 +317,7 @@ class JavaPanZoomController
     /** This function MUST be called on the UI thread */
     @Override
     public boolean onMotionEvent(MotionEvent event) {
-        if (Build.VERSION.SDK_INT <= 11) {
+        if (Versions.preHCMR1) {
             return false;
         }
 
@@ -393,7 +396,7 @@ class JavaPanZoomController
         mSubscroller.cancel();
         if (waitingForTouchListeners && (event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_DOWN) {
             // this is the first touch point going down, so we enter the pending state
-            // seting the state will kill any animations in progress, possibly leaving
+            // setting the state will kill any animations in progress, possibly leaving
             // the page in overscroll
             setState(PanZoomState.WAITING_LISTENERS);
         }
@@ -657,7 +660,7 @@ class JavaPanZoomController
     }
 
     private void track(float x, float y, long time) {
-        float timeDelta = (float)(time - mLastEventTime);
+        float timeDelta = (time - mLastEventTime);
         if (FloatUtils.fuzzyEquals(timeDelta, 0)) {
             // probably a duplicate event, ignore it. using a zero timeDelta will mess
             // up our velocity
@@ -899,8 +902,8 @@ class JavaPanZoomController
          * The viewport metrics that represent the start and end of the bounce-back animation,
          * respectively.
          */
-        private ImmutableViewportMetrics mBounceStartMetrics;
-        private ImmutableViewportMetrics mBounceEndMetrics;
+        private final ImmutableViewportMetrics mBounceStartMetrics;
+        private final ImmutableViewportMetrics mBounceEndMetrics;
         // How long ago this bounce was started in ns.
         private long mBounceDuration;
 
@@ -1195,7 +1198,7 @@ class JavaPanZoomController
             mLastZoomFocus.set(detector.getFocusX(), detector.getFocusY());
             ImmutableViewportMetrics target = getMetrics().scaleTo(zoomFactor, mLastZoomFocus);
 
-            // If overscroll is diabled, prevent zooming outside the normal document pans.
+            // If overscroll is disabled, prevent zooming outside the normal document pans.
             if (mX.getOverScrollMode() == View.OVER_SCROLL_NEVER || mY.getOverScrollMode() == View.OVER_SCROLL_NEVER) {
                 target = getValidViewportMetrics(target);
             }
@@ -1346,7 +1349,12 @@ class JavaPanZoomController
 
     @Override
     public void onLongPress(MotionEvent motionEvent) {
-        sendPointToGecko("Gesture:LongPress", motionEvent);
+        GeckoEvent e = GeckoEvent.createLongPressEvent(motionEvent);
+        GeckoAppShell.sendEventToGecko(e);
+    }
+
+    private boolean waitForDoubleTap() {
+        return !mMediumPress && mTarget.getZoomConstraints().getAllowDoubleTapZoom();
     }
 
     @Override
@@ -1355,7 +1363,7 @@ class JavaPanZoomController
         // going to be a double-tap.
         // However, if mMediumPress is true then we know there will be no
         // double-tap so we treat this as a click.
-        if (mMediumPress || !mTarget.getZoomConstraints().getAllowDoubleTapZoom()) {
+        if (!waitForDoubleTap()) {
             sendPointToGecko("Gesture:SingleTap", motionEvent);
         }
         // return false because we still want to get the ACTION_UP event that triggers this
@@ -1364,8 +1372,8 @@ class JavaPanZoomController
 
     @Override
     public boolean onSingleTapConfirmed(MotionEvent motionEvent) {
-        // When zooming is disabled, we handle this in onSingleTapUp.
-        if (mTarget.getZoomConstraints().getAllowDoubleTapZoom()) {
+        // In cases where we don't wait for double-tap, we handle this in onSingleTapUp.
+        if (waitForDoubleTap()) {
             sendPointToGecko("Gesture:SingleTap", motionEvent);
         }
         return true;

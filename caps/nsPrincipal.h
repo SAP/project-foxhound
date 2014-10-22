@@ -44,7 +44,7 @@ protected:
   nsCOMPtr<nsIContentSecurityPolicy> mCSP;
 };
 
-class nsPrincipal : public nsBasePrincipal
+class nsPrincipal MOZ_FINAL : public nsBasePrincipal
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -123,7 +123,7 @@ protected:
 class nsExpandedPrincipal : public nsIExpandedPrincipal, public nsBasePrincipal
 {
 public:
-  nsExpandedPrincipal(nsTArray< nsCOMPtr<nsIPrincipal> > &aWhiteList);
+  explicit nsExpandedPrincipal(nsTArray< nsCOMPtr<nsIPrincipal> > &aWhiteList);
 
 protected:
   virtual ~nsExpandedPrincipal();

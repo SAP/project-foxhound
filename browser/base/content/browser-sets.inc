@@ -38,7 +38,7 @@
 
     <commandset id="editMenuCommands"/>
 
-    <command id="View:PageSource" oncommand="BrowserViewSourceOfDocument(content.document);" observes="isImage"/>
+    <command id="View:PageSource" oncommand="BrowserViewSourceOfDocument(window.gBrowser.selectedBrowser.contentDocumentAsCPOW);" observes="isImage"/>
     <command id="View:PageInfo" oncommand="BrowserPageInfo();"/>
     <command id="View:FullScreen" oncommand="BrowserFullScreen();"/>
     <command id="cmd_find"
@@ -119,7 +119,7 @@
 #endif
     <command id="History:UndoCloseTab" oncommand="undoCloseTab();"/>
     <command id="History:UndoCloseWindow" oncommand="undoCloseWindow();"/>
-    <command id="Social:SharePage" oncommand="SocialShare.sharePage();" disabled="true"/>
+    <command id="Social:SharePage" oncommand="SocialShare.sharePage();"/>
     <command id="Social:ToggleSidebar" oncommand="SocialSidebar.toggleSidebar();" hidden="true"/>
     <command id="Social:ToggleNotifications" oncommand="Social.toggleNotifications();" hidden="true"/>
     <command id="Social:Addons" oncommand="BrowserOpenAddonsMgr('addons://list/service');"/>
@@ -134,6 +134,7 @@
   </commandset>
 
   <broadcasterset id="mainBroadcasterSet">
+    <broadcaster id="Social:PageShareOrMark" disabled="true"/>
     <broadcaster id="viewBookmarksSidebar" autoCheck="false" label="&bookmarksButton.label;"
                  type="checkbox" group="sidebar" sidebarurl="chrome://browser/content/bookmarks/bookmarksPanel.xul"
                  oncommand="toggleSidebar('viewBookmarksSidebar');"/>
@@ -201,7 +202,8 @@
                  command="Tools:DevAppMgr"/>
     <broadcaster id="devtoolsMenuBroadcaster_webide"
                  label="&webide.label;"
-                 command="Tools:WebIDE"/>
+                 command="Tools:WebIDE"
+                 key="key_webide"/>
     <broadcaster id="devtoolsMenuBroadcaster_BrowserToolbox"
                  label="&browserToolboxMenu.label;"
                  command="Tools:BrowserToolbox"/>
@@ -292,7 +294,8 @@
         modifiers="accel,shift"
 #endif
     />
-
+    <key id="key_webide" keycode="&webide.keycode;" command="Tools:WebIDE"
+         modifiers="shift" keytext="&webide.keytext;"/>
     <key id="key_devToolboxMenuItem" keytext="&devToolboxMenuItem.keytext;"
          command="Tools:DevToolbox" key="&devToolboxMenuItem.keytext;"
 #ifdef XP_MACOSX
@@ -344,11 +347,11 @@
 #endif
     <key id="goHome" keycode="VK_HOME" command="Browser:Home" modifiers="alt"/>
     <key keycode="VK_F5" command="Browser:Reload"/>
+    <key keycode="VK_F6" command="Browser:FocusNextFrame"/>
+    <key keycode="VK_F6" command="Browser:FocusNextFrame" modifiers="shift"/>
 #ifndef XP_MACOSX
     <key id="showAllHistoryKb" key="&showAllHistoryCmd.commandkey;" command="Browser:ShowAllHistory" modifiers="accel,shift"/>
     <key keycode="VK_F5" command="Browser:ReloadSkipCache" modifiers="accel"/>
-    <key keycode="VK_F6" command="Browser:FocusNextFrame"/>
-    <key keycode="VK_F6" command="Browser:FocusNextFrame" modifiers="shift"/>
     <key id="key_fullScreen" keycode="VK_F11" command="View:FullScreen"/>
 #else
     <key id="key_fullScreen" key="&fullScreenCmd.macCommandKey;" command="View:FullScreen" modifiers="accel,control"/>

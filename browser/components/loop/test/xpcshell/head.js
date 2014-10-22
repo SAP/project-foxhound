@@ -7,9 +7,9 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Http.jsm");
 Cu.import("resource://testing-common/httpd.js");
-
-XPCOMUtils.defineLazyModuleGetter(this, "MozLoopService",
-                                  "resource:///modules/loop/MozLoopService.jsm");
+Cu.import("resource:///modules/loop/MozLoopService.jsm");
+Cu.import("resource://gre/modules/Promise.jsm");
+const { MozLoopServiceInternal } = Cu.import("resource:///modules/loop/MozLoopService.jsm", {});
 
 XPCOMUtils.defineLazyModuleGetter(this, "MozLoopPushHandler",
                                   "resource:///modules/loop/MozLoopPushHandler.jsm");
@@ -23,6 +23,10 @@ const kUAID = "f47ac11b-58ca-4372-9567-0e02b2c3d479";
 
 // Fake loop server
 var loopServer;
+
+// Ensure loop is always enabled for tests
+Services.prefs.setBoolPref("loop.enabled", true);
+Services.prefs.setBoolPref("loop.throttled", false);
 
 function setupFakeLoopServer() {
   loopServer = new HttpServer();
@@ -38,6 +42,30 @@ function setupFakeLoopServer() {
   });
 }
 
+function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
+  function tryAgain() {
+    function tryNow() {
+      tries++;
+      if (aConditionFn()) {
+        deferred.resolve();
+      } else if (tries < aMaxTries) {
+        tryAgain();
+      } else {
+        deferred.reject("Condition timed out: " + aConditionFn.toSource());
+      }
+    }
+    do_timeout(aCheckInterval, tryNow);
+  }
+  let deferred = Promise.defer();
+  let tries = 0;
+  tryAgain();
+  return deferred.promise;
+}
+
+function getLoopString(stringID) {
+  return MozLoopServiceInternal.localizedStrings[stringID].textContent;
+}
+
 /**
  * This is used to fake push registration and notifications for
  * MozLoopService tests. There is only one object created per test instance, as
@@ -47,12 +75,13 @@ let mockPushHandler = {
   // This sets the registration result to be returned when initialize
   // is called. By default, it is equivalent to success.
   registrationResult: null,
+  registrationPushURL: undefined,
 
   /**
    * MozLoopPushHandler API
    */
   initialize: function(registerCallback, notificationCallback) {
-    registerCallback(this.registrationResult);
+    registerCallback(this.registrationResult, this.registrationPushURL);
     this._notificationCallback = notificationCallback;
   },
 
@@ -69,8 +98,9 @@ let mockPushHandler = {
  * enables us to check parameters and return messages similar to the push
  * server.
  */
-let MockWebSocketChannel = function(initRegStatus) {
-  this.initRegStatus = initRegStatus;
+let MockWebSocketChannel = function(options) {
+  let _options = options || {};
+  this.defaultMsgHandler = _options.defaultMsgHandler;
 };
 
 MockWebSocketChannel.prototype = {
@@ -111,6 +141,8 @@ MockWebSocketChannel.prototype = {
                           channelID: this.channelID,
                           pushEndpoint: kEndPointUrl}));
         break;
+      default:
+        this.defaultMsgHandler && this.defaultMsgHandler(message);
     }
   },
 

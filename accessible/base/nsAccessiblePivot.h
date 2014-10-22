@@ -25,7 +25,7 @@ class nsAccessiblePivot MOZ_FINAL : public nsIAccessiblePivot
 public:
   typedef mozilla::a11y::Accessible Accessible;
 
-  nsAccessiblePivot(Accessible* aRoot);
+  explicit nsAccessiblePivot(Accessible* aRoot);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsAccessiblePivot, nsIAccessiblePivot)
@@ -49,7 +49,8 @@ private:
    */
   bool NotifyOfPivotChange(Accessible* aOldAccessible,
                            int32_t aOldStart, int32_t aOldEnd,
-                           PivotMoveReason aReason);
+                           PivotMoveReason aReason,
+                           bool aIsFromUserInput);
 
   /*
    * Check to see that the given accessible is a descendant of given ancestor
@@ -95,7 +96,8 @@ private:
   /*
    * Update the pivot, and notify observers. Return true if it moved.
    */
-  bool MovePivotInternal(Accessible* aPosition, PivotMoveReason aReason);
+  bool MovePivotInternal(Accessible* aPosition, PivotMoveReason aReason,
+                         bool aIsFromUserInput);
 
   /*
    * Get initial node we should start a search from with a given rule.

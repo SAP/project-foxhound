@@ -20,7 +20,7 @@ namespace dom {
 class SVGCircleElement MOZ_FINAL : public SVGCircleElementBase
 {
 protected:
-  SVGCircleElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGCircleElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx) MOZ_OVERRIDE;
   friend nsresult (::NS_NewSVGCircleElement(nsIContent **aResult,
                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -30,8 +30,7 @@ public:
   virtual bool HasValidDimensions() const MOZ_OVERRIDE;
 
   // nsSVGPathGeometryElement methods:
-  virtual void ConstructPath(gfxContext *aCtx) MOZ_OVERRIDE;
-  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder = nullptr) MOZ_OVERRIDE;
+  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder) MOZ_OVERRIDE;
 
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 

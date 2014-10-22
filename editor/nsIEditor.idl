@@ -21,7 +21,7 @@ interface nsIEditActionListener;
 interface nsIInlineSpellChecker;
 interface nsITransferable;
 
-[scriptable, uuid(65523eab-db1f-44aa-893e-dfe57ad306f0)]
+[scriptable, uuid(a1ddae68-35d0-11e4-9329-cb55463f21c9)]
 
 interface nsIEditor  : nsISupports
 {
@@ -41,6 +41,11 @@ interface nsIEditor  : nsISupports
   const short eNoStrip = 1;
 
   readonly attribute nsISelection selection;
+
+  /**
+   * Finalizes selection and caret for the editor.
+   */
+  [noscript] void finalizeSelection();
 
   /**
    * Init is to tell the implementation of nsIEditor to begin its services
@@ -549,4 +554,11 @@ interface nsIEditor  : nsISupports
 
   /* Set true if you want to suppress dispatching input event. */
   attribute boolean suppressDispatchingInputEvent;
+
+  /**
+   * True if an edit action is being handled (in other words, between calls of
+   * nsIEditorObserver::BeforeEditAction() and nsIEditorObserver::EditAction()
+   * or nsIEditorObserver::CancelEditAction().  Otherwise, false.
+   */
+  [noscript] readonly attribute boolean isInEditAction;
 };

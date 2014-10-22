@@ -131,7 +131,13 @@ nsXULPrototypeCache::Observe(nsISupports* aSubject,
 nsXULPrototypeDocument*
 nsXULPrototypeCache::GetPrototype(nsIURI* aURI)
 {
-    nsXULPrototypeDocument* protoDoc = mPrototypeTable.GetWeak(aURI);
+    if (!aURI)
+        return nullptr;
+
+    nsCOMPtr<nsIURI> uriWithoutRef;
+    aURI->CloneIgnoringRef(getter_AddRefs(uriWithoutRef));
+
+    nsXULPrototypeDocument* protoDoc = mPrototypeTable.GetWeak(uriWithoutRef);
     if (protoDoc)
         return protoDoc;
 
@@ -164,7 +170,13 @@ nsXULPrototypeCache::GetPrototype(nsIURI* aURI)
 nsresult
 nsXULPrototypeCache::PutPrototype(nsXULPrototypeDocument* aDocument)
 {
-    nsCOMPtr<nsIURI> uri = aDocument->GetURI();
+    if (!aDocument->GetURI()) {
+        return NS_ERROR_FAILURE;
+    }
+
+    nsCOMPtr<nsIURI> uri;
+    aDocument->GetURI()->CloneIgnoringRef(getter_AddRefs(uri));
+
     // Put() releases any old value and addrefs the new one
     mPrototypeTable.Put(uri, aDocument);
 
@@ -641,7 +653,7 @@ static PLDHashOperator
 MarkScriptsInGC(nsIURI* aKey, JS::Heap<JSScript*>& aScript, void* aClosure)
 {
     JSTracer* trc = static_cast<JSTracer*>(aClosure);
-    JS_CallHeapScriptTracer(trc, &aScript, "nsXULPrototypeCache script");
+    JS_CallScriptTracer(trc, &aScript, "nsXULPrototypeCache script");
     return PL_DHASH_NEXT;
 }
 

@@ -8,7 +8,9 @@ module.metadata = {
 };
 
 var { exit, stdout } = require("../system");
-var cfxArgs = require("@test/options");
+var cfxArgs = require("../test/options");
+var events = require("../system/events");
+const { resolve } = require("../core/promise");
 
 function runTests(findAndRunTests) {
   var harness = require("./harness");
@@ -18,14 +20,18 @@ function runTests(findAndRunTests) {
     var total = tests.passed + tests.failed;
     stdout.write(tests.passed + " of " + total + " tests passed.\n");
 
+    events.emit("sdk:test:results", { data: JSON.stringify(tests) });
+
     if (tests.failed == 0) {
       if (tests.passed === 0)
         stdout.write("No tests were run\n");
-      exit(0);
+      if (!cfxArgs.keepOpen)
+        exit(0);
     } else {
       if (cfxArgs.verbose || cfxArgs.parseable)
         printFailedTests(tests, stdout.write);
-      exit(1);
+      if (!cfxArgs.keepOpen)
+        exit(1);
     }
   };
 
@@ -53,13 +59,13 @@ function printFailedTests(tests, print) {
 
   print("\nThe following tests failed:\n");
 
-  for each (let testRun in tests.testRuns) {
+  for (let testRun of tests.testRuns) {
     iterationNumber++;
 
     if (!singleIteration)
       print("  Iteration " + iterationNumber + ":\n");
 
-    for each (let test in testRun) {
+    for (let test of testRun) {
       if (test.failed > 0) {
         print(padding + "  " + test.name + ": " + test.errors +"\n");
       }
@@ -102,7 +108,7 @@ exports.runTestsFromModule = function runTestsFromModule(module) {
 
     // Reproduce what is done in sdk/deprecated/unit-test-finder.findTests()
     let tests = [];
-    for each (let name in Object.keys(exports).sort()) {
+    for (let name of Object.keys(exports).sort()) {
       tests.push({
         setup: exports.setup,
         teardown: exports.teardown,
@@ -115,7 +121,9 @@ exports.runTestsFromModule = function runTestsFromModule(module) {
     var { TestRunner } = loader.require("../deprecated/unit-test");
     var runner = new TestRunner();
     runner.startMany({
-      tests: tests,
+      tests: {
+        getNext: () => resolve(tests.shift())
+      },
       stopOnError: cfxArgs.stopOnError,
       onDone: nextIteration
     });

@@ -40,7 +40,7 @@ class GestureEventListener MOZ_FINAL {
 public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GestureEventListener)
 
-  GestureEventListener(AsyncPanZoomController* aAsyncPanZoomController);
+  explicit GestureEventListener(AsyncPanZoomController* aAsyncPanZoomController);
 
   // --------------------------------------------------------------------------
   // These methods must only be called on the controller/UI thread.
@@ -174,6 +174,15 @@ private:
    * Cached copy of the last touch input.
    */
   MultiTouchInput mLastTouchInput;
+
+  /**
+   * Cached copy of the last tap gesture input.
+   * In the situation when we have a tap followed by a pinch we lose info
+   * about tap since we keep only last input and to dispatch it correctly
+   * we save last tap copy into this variable.
+   * For more info see bug 947892.
+   */
+  MultiTouchInput mLastTapInput;
 
   /**
    * Position of the last touch starting. This is only valid during an attempt

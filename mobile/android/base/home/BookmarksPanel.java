@@ -13,12 +13,13 @@ import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.home.BookmarksListAdapter.FolderInfo;
 import org.mozilla.gecko.home.BookmarksListAdapter.OnRefreshFolderListener;
 import org.mozilla.gecko.home.BookmarksListAdapter.RefreshType;
+import org.mozilla.gecko.home.HomeContextMenuInfo.RemoveItemType;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenListener;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.res.Resources;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.support.v4.app.LoaderManager.LoaderCallbacks;
@@ -78,6 +79,7 @@ public class BookmarksPanel extends HomeFragment {
                 info.url = cursor.getString(cursor.getColumnIndexOrThrow(Bookmarks.URL));
                 info.title = cursor.getString(cursor.getColumnIndexOrThrow(Bookmarks.TITLE));
                 info.bookmarkId = cursor.getInt(cursor.getColumnIndexOrThrow(Bookmarks._ID));
+                info.itemType = RemoveItemType.BOOKMARKS;
                 return info;
             }
         });
@@ -140,23 +142,10 @@ public class BookmarksPanel extends HomeFragment {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        // Reattach the fragment, forcing a reinflation of its view.
-        // We use commitAllowingStateLoss() instead of commit() here to avoid
-        // an IllegalStateException. If the phone is rotated while Fennec
-        // is in the background, onConfigurationChanged() is fired.
-        // onConfigurationChanged() is called before onResume(), so
-        // using commit() would throw an IllegalStateException since it can't
-        // be used between the Activity's onSaveInstanceState() and
-        // onResume().
         if (isVisible()) {
             // The parent stack is saved just so that the folder state can be
             // restored on rotation.
             mSavedParentStack = mListAdapter.getParentStack();
-
-            getFragmentManager().beginTransaction()
-                                .detach(this)
-                                .attach(this)
-                                .commitAllowingStateLoss();
         }
     }
 

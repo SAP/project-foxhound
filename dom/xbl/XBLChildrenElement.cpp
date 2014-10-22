@@ -62,8 +62,7 @@ XBLChildrenElement::ParseAttribute(int32_t aNamespaceID,
     nsCharSeparatedTokenizer tok(aValue, '|',
                                  nsCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
     while (tok.hasMoreTokens()) {
-      nsCOMPtr<nsIAtom> atom = do_GetAtom(tok.nextToken());
-      mIncludes.AppendElement(atom);
+      mIncludes.AppendElement(do_GetAtom(tok.nextToken()));
     }
   }
 
@@ -81,7 +80,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsAnonymousContentList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsAnonymousContentList)
 
 NS_INTERFACE_TABLE_HEAD(nsAnonymousContentList)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
   NS_INTERFACE_TABLE_INHERITED(nsAnonymousContentList, nsINodeList,
                                nsIDOMNodeList)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE

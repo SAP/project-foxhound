@@ -62,7 +62,7 @@ DOMTimeStamp nsListControlFrame::gLastKeyTime = 0;
 class nsListEventListener MOZ_FINAL : public nsIDOMEventListener
 {
 public:
-  nsListEventListener(nsListControlFrame *aFrame)
+  explicit nsListEventListener(nsListControlFrame *aFrame)
     : mFrame(aFrame) { }
 
   void SetFrame(nsListControlFrame *aFrame) { mFrame = aFrame; }
@@ -588,7 +588,8 @@ nsListControlFrame::GetScrollbarStyles() const
   // and GetScrollbarStyles can be devirtualized
   int32_t verticalStyle = IsInDropDownMode() ? NS_STYLE_OVERFLOW_AUTO
     : NS_STYLE_OVERFLOW_SCROLL;
-  return ScrollbarStyles(NS_STYLE_OVERFLOW_HIDDEN, verticalStyle);
+  return ScrollbarStyles(NS_STYLE_OVERFLOW_HIDDEN, verticalStyle,
+                         NS_STYLE_SCROLL_BEHAVIOR_AUTO);
 }
 
 bool
@@ -1078,7 +1079,7 @@ nsListControlFrame::GetCurrentOption()
     GetSelectedIndex() : mEndSelectionIndex;
 
   if (focusedIndex != kNothingSelected) {
-    return GetOption(SafeCast<uint32_t>(focusedIndex));
+    return GetOption(AssertedCast<uint32_t>(focusedIndex));
   }
 
   // There is no selected item. Return the first non-disabled item.
@@ -1803,7 +1804,8 @@ nsListControlFrame::MouseDown(nsIDOMEvent* aMouseEvent)
   } else {
     // NOTE: the combo box is responsible for dropping it down
     if (mComboboxFrame) {
-      if (XRE_GetProcessType() == GeckoProcessType_Content && BrowserTabsRemote()) {
+      if (XRE_GetProcessType() == GeckoProcessType_Content &&
+          Preferences::GetBool("browser.tabs.remote.desktopbehavior", false)) {
         nsContentUtils::DispatchChromeEvent(mContent->OwnerDoc(), mContent,
                                             NS_LITERAL_STRING("mozshowdropdown"), true,
                                             false);
@@ -1906,7 +1908,7 @@ nsListControlFrame::ScrollToIndex(int32_t aIndex)
     ScrollTo(nsPoint(0, 0), nsIScrollableFrame::INSTANT);
   } else {
     nsRefPtr<dom::HTMLOptionElement> option =
-      GetOption(SafeCast<uint32_t>(aIndex));
+      GetOption(AssertedCast<uint32_t>(aIndex));
     if (option) {
       ScrollToFrame(*option);
     }

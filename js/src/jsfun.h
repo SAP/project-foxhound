@@ -25,7 +25,7 @@ typedef JSThreadSafeNative ThreadSafeNative;
 
 struct JSAtomState;
 
-class JSFunction : public JSObject
+class JSFunction : public js::NativeObject
 {
   public:
     static const js::Class class_;
@@ -93,7 +93,7 @@ class JSFunction : public JSObject
 
     /* Call objects must be created for each invocation of a heavyweight function. */
     bool isHeavyweight() const {
-        JS_ASSERT(!isInterpretedLazy());
+        MOZ_ASSERT(!isInterpretedLazy());
 
         if (isNative())
             return false;
@@ -168,7 +168,8 @@ class JSFunction : public JSObject
 
     /* Returns the strictness of this function, which must be interpreted. */
     bool strict() const {
-        return nonLazyScript()->strict();
+        MOZ_ASSERT(isInterpreted());
+        return isInterpretedLazy() ? lazyScript()->strict() : nonLazyScript()->strict();
     }
 
     void setFlags(uint16_t flags) {
@@ -186,17 +187,17 @@ class JSFunction : public JSObject
     }
 
     void setIsSelfHostedBuiltin() {
-        JS_ASSERT(!isSelfHostedBuiltin());
+        MOZ_ASSERT(!isSelfHostedBuiltin());
         flags_ |= SELF_HOSTED;
     }
 
     void setIsSelfHostedConstructor() {
-        JS_ASSERT(!isSelfHostedConstructor());
+        MOZ_ASSERT(!isSelfHostedConstructor());
         flags_ |= SELF_HOSTED_CTOR;
     }
 
     void setIsFunctionPrototype() {
-        JS_ASSERT(!isFunctionPrototype());
+        MOZ_ASSERT(!isFunctionPrototype());
         flags_ |= IS_FUN_PROTO;
     }
 
@@ -218,9 +219,9 @@ class JSFunction : public JSObject
     }
 
     void setGuessedAtom(JSAtom *atom) {
-        JS_ASSERT(!atom_);
-        JS_ASSERT(atom);
-        JS_ASSERT(!hasGuessedAtom());
+        MOZ_ASSERT(!atom_);
+        MOZ_ASSERT(atom);
+        MOZ_ASSERT(!hasGuessedAtom());
         atom_ = atom;
         flags_ |= HAS_GUESSED_ATOM;
     }
@@ -233,17 +234,17 @@ class JSFunction : public JSObject
      * activations (stack frames) of the function.
      */
     JSObject *environment() const {
-        JS_ASSERT(isInterpreted());
+        MOZ_ASSERT(isInterpreted());
         return u.i.env_;
     }
 
     void setEnvironment(JSObject *obj) {
-        JS_ASSERT(isInterpreted());
+        MOZ_ASSERT(isInterpreted());
         *(js::HeapPtrObject *)&u.i.env_ = obj;
     }
 
     void initEnvironment(JSObject *obj) {
-        JS_ASSERT(isInterpreted());
+        MOZ_ASSERT(isInterpreted());
         ((js::HeapPtrObject *)&u.i.env_)->init(obj);
     }
 
@@ -277,8 +278,8 @@ class JSFunction : public JSObject
     // - For functions known to have a JSScript, nonLazyScript() will get it.
 
     JSScript *getOrCreateScript(JSContext *cx) {
-        JS_ASSERT(isInterpreted());
-        JS_ASSERT(cx);
+        MOZ_ASSERT(isInterpreted());
+        MOZ_ASSERT(cx);
         if (isInterpretedLazy()) {
             JS::RootedFunction self(cx, this);
             if (!createScriptForLazilyInterpretedFunction(cx, self))
@@ -301,7 +302,7 @@ class JSFunction : public JSObject
             MOZ_ASSERT(fun);
             JSScript *script = fun->nonLazyScript();
 
-            if (shadowZone()->needsBarrier())
+            if (shadowZone()->needsIncrementalBarrier())
                 js::LazyScript::writeBarrierPre(lazy);
 
             flags_ &= ~INTERPRETED_LAZY;
@@ -312,8 +313,8 @@ class JSFunction : public JSObject
     }
 
     JSScript *nonLazyScript() const {
-        JS_ASSERT(hasScript());
-        JS_ASSERT(u.i.s.script_);
+        MOZ_ASSERT(hasScript());
+        MOZ_ASSERT(u.i.s.script_);
         return u.i.s.script_;
     }
 
@@ -328,17 +329,17 @@ class JSFunction : public JSObject
     }
 
     js::HeapPtrScript &mutableScript() {
-        JS_ASSERT(isInterpreted());
+        MOZ_ASSERT(isInterpreted());
         return *(js::HeapPtrScript *)&u.i.s.script_;
     }
 
     js::LazyScript *lazyScript() const {
-        JS_ASSERT(isInterpretedLazy() && u.i.s.lazy_);
+        MOZ_ASSERT(isInterpretedLazy() && u.i.s.lazy_);
         return u.i.s.lazy_;
     }
 
     js::LazyScript *lazyScriptOrNull() const {
-        JS_ASSERT(isInterpretedLazy());
+        MOZ_ASSERT(isInterpretedLazy());
         return u.i.s.lazy_;
     }
 
@@ -349,7 +350,7 @@ class JSFunction : public JSObject
             return nonLazyScript()->generatorKind();
         if (js::LazyScript *lazy = lazyScriptOrNull())
             return lazy->generatorKind();
-        JS_ASSERT(isSelfHostedBuiltin());
+        MOZ_ASSERT(isSelfHostedBuiltin());
         return js::NotGenerator;
     }
 
@@ -360,19 +361,19 @@ class JSFunction : public JSObject
     bool isStarGenerator() const { return generatorKind() == js::StarGenerator; }
 
     void setScript(JSScript *script_) {
-        JS_ASSERT(hasScript());
+        MOZ_ASSERT(hasScript());
         mutableScript() = script_;
     }
 
     void initScript(JSScript *script_) {
-        JS_ASSERT(hasScript());
+        MOZ_ASSERT(hasScript());
         mutableScript().init(script_);
     }
 
     void setUnlazifiedScript(JSScript *script) {
         // Note: createScriptForLazilyInterpretedFunction triggers a barrier on
         // lazy script before it is overwritten here.
-        JS_ASSERT(isInterpretedLazy());
+        MOZ_ASSERT(isInterpretedLazy());
         if (!lazyScript()->maybeScript())
             lazyScript()->initScript(script);
         flags_ &= ~INTERPRETED_LAZY;
@@ -381,14 +382,14 @@ class JSFunction : public JSObject
     }
 
     void initLazyScript(js::LazyScript *lazy) {
-        JS_ASSERT(isInterpreted());
+        MOZ_ASSERT(isInterpreted());
         flags_ &= ~INTERPRETED;
         flags_ |= INTERPRETED_LAZY;
         u.i.s.lazy_ = lazy;
     }
 
     JSNative native() const {
-        JS_ASSERT(isNative());
+        MOZ_ASSERT(isNative());
         return u.n.native;
     }
 
@@ -397,7 +398,7 @@ class JSFunction : public JSObject
     }
 
     JSParallelNative parallelNative() const {
-        JS_ASSERT(hasParallelNative());
+        MOZ_ASSERT(hasParallelNative());
         return jitInfo()->parallelNative;
     }
 
@@ -406,18 +407,18 @@ class JSFunction : public JSObject
     }
 
     void initNative(js::Native native, const JSJitInfo *jitinfo) {
-        JS_ASSERT(native);
+        MOZ_ASSERT(native);
         u.n.native = native;
         u.n.jitinfo = jitinfo;
     }
 
     const JSJitInfo *jitInfo() const {
-        JS_ASSERT(isNative());
+        MOZ_ASSERT(isNative());
         return u.n.jitinfo;
     }
 
     void setJitInfo(const JSJitInfo *data) {
-        JS_ASSERT(isNative());
+        MOZ_ASSERT(isNative());
         u.n.jitinfo = data;
     }
 
@@ -443,7 +444,7 @@ class JSFunction : public JSObject
                                   const js::Value *args, unsigned argslen);
 
     JSObject *getBoundFunctionTarget() const {
-        JS_ASSERT(isBoundFunction());
+        MOZ_ASSERT(isBoundFunction());
 
         /* Bound functions abuse |parent| to store their target function. */
         return getParent();
@@ -460,7 +461,7 @@ class JSFunction : public JSObject
   public:
     inline bool isExtended() const {
         JS_STATIC_ASSERT(FinalizeKind != ExtendedFinalizeKind);
-        JS_ASSERT_IF(isTenured(), !!(flags() & EXTENDED) == (tenuredGetAllocKind() == ExtendedFinalizeKind));
+        MOZ_ASSERT_IF(isTenured(), !!(flags() & EXTENDED) == (asTenured().getAllocKind() == ExtendedFinalizeKind));
         return !!(flags() & EXTENDED);
     }
 
@@ -483,7 +484,7 @@ class JSFunction : public JSObject
         js::gc::AllocKind kind = FinalizeKind;
         if (isExtended())
             kind = ExtendedFinalizeKind;
-        JS_ASSERT_IF(isTenured(), kind == tenuredGetAllocKind());
+        MOZ_ASSERT_IF(isTenured(), kind == asTenured().getAllocKind());
         return kind;
     }
 };
@@ -520,6 +521,9 @@ NewFunctionWithProto(ExclusiveContext *cx, HandleObject funobj, JSNative native,
                      JSObject *proto, gc::AllocKind allocKind = JSFunction::FinalizeKind,
                      NewObjectKind newKind = GenericObject);
 
+extern JSAtom *
+IdToFunctionName(JSContext *cx, HandleId id);
+
 extern JSFunction *
 DefineFunction(JSContext *cx, HandleObject obj, HandleId id, JSNative native,
                unsigned nargs, unsigned flags,
@@ -531,6 +535,12 @@ FunctionHasResolveHook(const JSAtomState &atomState, PropertyName *name);
 
 extern bool
 fun_resolve(JSContext *cx, HandleObject obj, HandleId id, MutableHandleObject objp);
+
+extern bool
+fun_toString(JSContext *cx, unsigned argc, Value *vp);
+
+extern bool
+fun_bind(JSContext *cx, unsigned argc, Value *vp);
 
 /*
  * Function extended with reserved slots for use by various kinds of functions.
@@ -565,7 +575,6 @@ CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
                     gc::AllocKind kind = JSFunction::FinalizeKind,
                     NewObjectKind newKindArg = GenericObject);
 
-
 extern bool
 FindBody(JSContext *cx, HandleFunction fun, HandleLinearString src, size_t *bodyStart,
          size_t *bodyEnd);
@@ -575,23 +584,23 @@ FindBody(JSContext *cx, HandleFunction fun, HandleLinearString src, size_t *body
 inline js::FunctionExtended *
 JSFunction::toExtended()
 {
-    JS_ASSERT(isExtended());
+    MOZ_ASSERT(isExtended());
     return static_cast<js::FunctionExtended *>(this);
 }
 
 inline const js::FunctionExtended *
 JSFunction::toExtended() const
 {
-    JS_ASSERT(isExtended());
+    MOZ_ASSERT(isExtended());
     return static_cast<const js::FunctionExtended *>(this);
 }
 
 inline void
 JSFunction::initializeExtended()
 {
-    JS_ASSERT(isExtended());
+    MOZ_ASSERT(isExtended());
 
-    JS_ASSERT(mozilla::ArrayLength(toExtended()->extendedSlots) == 2);
+    MOZ_ASSERT(mozilla::ArrayLength(toExtended()->extendedSlots) == 2);
     toExtended()->extendedSlots[0].init(js::UndefinedValue());
     toExtended()->extendedSlots[1].init(js::UndefinedValue());
 }
@@ -599,21 +608,21 @@ JSFunction::initializeExtended()
 inline void
 JSFunction::initExtendedSlot(size_t which, const js::Value &val)
 {
-    JS_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
+    MOZ_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
     toExtended()->extendedSlots[which].init(val);
 }
 
 inline void
 JSFunction::setExtendedSlot(size_t which, const js::Value &val)
 {
-    JS_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
+    MOZ_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
     toExtended()->extendedSlots[which] = val;
 }
 
 inline const js::Value &
 JSFunction::getExtendedSlot(size_t which) const
 {
-    JS_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
+    MOZ_ASSERT(which < mozilla::ArrayLength(toExtended()->extendedSlots));
     return toExtended()->extendedSlots[which];
 }
 
@@ -624,7 +633,7 @@ JSString *FunctionToString(JSContext *cx, HandleFunction fun, bool bodyOnly, boo
 template<XDRMode mode>
 bool
 XDRInterpretedFunction(XDRState<mode> *xdr, HandleObject enclosingScope,
-                       HandleScript enclosingScript, MutableHandleObject objp);
+                       HandleScript enclosingScript, MutableHandleFunction objp);
 
 extern JSObject *
 CloneFunctionAndScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun);
@@ -657,7 +666,7 @@ js_fun_apply(JSContext *cx, unsigned argc, js::Value *vp);
 extern bool
 js_fun_call(JSContext *cx, unsigned argc, js::Value *vp);
 
-extern JSObject*
+extern JSObject *
 js_fun_bind(JSContext *cx, js::HandleObject target, js::HandleValue thisArg,
             js::Value *boundArgs, unsigned argslen);
 

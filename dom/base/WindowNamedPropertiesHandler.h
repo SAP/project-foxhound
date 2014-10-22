@@ -15,7 +15,7 @@ namespace dom {
 class WindowNamedPropertiesHandler : public BaseDOMProxyHandler
 {
 public:
-  WindowNamedPropertiesHandler()
+  MOZ_CONSTEXPR WindowNamedPropertiesHandler()
     : BaseDOMProxyHandler(nullptr, /* hasPrototype = */ true)
   {
   }
@@ -28,10 +28,11 @@ public:
     return false;
   }
   virtual bool
-  getOwnPropertyDescriptor(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-                           JS::Handle<jsid> aId,
-                           JS::MutableHandle<JSPropertyDescriptor> aDesc)
-                           const MOZ_OVERRIDE;
+  getOwnPropDescriptor(JSContext* aCx, JS::Handle<JSObject*> aProxy,
+                       JS::Handle<jsid> aId,
+                       bool /* unused */,
+                       JS::MutableHandle<JSPropertyDescriptor> aDesc)
+                       const MOZ_OVERRIDE;
   virtual bool
   defineProperty(JSContext* aCx, JS::Handle<JSObject*> aProxy,
                  JS::Handle<jsid> aId,
@@ -62,9 +63,10 @@ public:
     return &instance;
   }
 
-  // For Install, aProto is the proto of the Window we're associated with.
-  static void
-  Install(JSContext *aCx, JS::Handle<JSObject*> aProto);
+  // For Create, aProto is the parent of the interface prototype object of the
+  // Window we're associated with.
+  static JSObject*
+  Create(JSContext *aCx, JS::Handle<JSObject*> aProto);
 };
 
 } // namespace dom

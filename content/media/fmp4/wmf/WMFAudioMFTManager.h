@@ -29,14 +29,19 @@ public:
   // a null aOutput in this case.
   virtual HRESULT Output(int64_t aStreamOffset,
                          nsAutoPtr<MediaData>& aOutput) MOZ_OVERRIDE;
+
+  virtual void Shutdown() MOZ_OVERRIDE;
+
 private:
+
+  HRESULT UpdateOutputType();
 
   // IMFTransform wrapper that performs the decoding.
   RefPtr<MFTDecoder> mDecoder;
 
-  const uint32_t mAudioChannels;
+  uint32_t mAudioChannels;
   const uint32_t mAudioBytesPerSample;
-  const uint32_t mAudioRate;
+  uint32_t mAudioRate;
   nsTArray<BYTE> mUserData;
 
   // The offset, in audio frames, at which playback started since the
@@ -45,6 +50,16 @@ private:
   // The number of audio frames that we've played since the last
   // discontinuity.
   int64_t mAudioFrameSum;
+
+  enum StreamType {
+    Unknown,
+    AAC,
+    MP3
+  };
+  StreamType mStreamType;
+
+  const GUID& GetMFTGUID();
+  const GUID& GetMediaSubtypeGUID();
 
   // True if we need to re-initialize mAudioFrameOffset and mAudioFrameSum
   // from the next audio packet we decode. This happens after a seek, since

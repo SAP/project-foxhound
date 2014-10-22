@@ -9,6 +9,7 @@
 const { Cu, Cc, Ci, components } = require("chrome");
 
 const TAB_SIZE    = "devtools.editor.tabsize";
+const ENABLE_CODE_FOLDING = "devtools.editor.enableCodeFolding";
 const EXPAND_TAB  = "devtools.editor.expandtab";
 const KEYMAP      = "devtools.editor.keymap";
 const AUTO_CLOSE  = "devtools.editor.autoclosebrackets";
@@ -131,8 +132,8 @@ Editor.modes = {
  * properties go to CodeMirror's documentation (see below).
  *
  * Other than that, it accepts one additional and optional
- * property contextMenu. This property should be an ID of
- * an element we can use as a context menu.
+ * property contextMenu. This property should be an element, or
+ * an ID of an element that we can use as a context menu.
  *
  * This object is also an event emitter.
  *
@@ -188,14 +189,12 @@ function Editor(config) {
     });
   });
 
-  // Set the code folding gutter, if needed.
-  if (this.config.enableCodeFolding) {
-    this.config.foldGutter = true;
-
-    if (!this.config.gutters) {
-      this.config.gutters = this.config.lineNumbers ? ["CodeMirror-linenumbers"] : [];
-      this.config.gutters.push("CodeMirror-foldgutter");
-    }
+  if (!this.config.gutters) {
+    this.config.gutters = [];
+  }
+  if (this.config.lineNumbers
+      && this.config.gutters.indexOf("CodeMirror-linenumbers") === -1) {
+    this.config.gutters.push("CodeMirror-linenumbers");
   }
 
   // Remember the initial value of autoCloseBrackets.
@@ -286,7 +285,9 @@ Editor.prototype = {
       cm.getWrapperElement().addEventListener("contextmenu", (ev) => {
         ev.preventDefault();
         if (!this.config.contextMenu) return;
-        let popup = el.ownerDocument.getElementById(this.config.contextMenu);
+        let popup = this.config.contextMenu;
+        if (typeof popup == "string")
+          popup = el.ownerDocument.getElementById(this.config.contextMenu);
         popup.openPopupAtScreen(ev.screenX, ev.screenY, true);
       }, false);
 
@@ -331,6 +332,7 @@ Editor.prototype = {
       this._prefObserver.on(AUTO_CLOSE, this.reloadPreferences);
       this._prefObserver.on(AUTOCOMPLETE, this.reloadPreferences);
       this._prefObserver.on(DETECT_INDENT, this.reloadPreferences);
+      this._prefObserver.on(ENABLE_CODE_FOLDING, this.reloadPreferences);
 
       this.reloadPreferences();
       def.resolve();
@@ -428,6 +430,7 @@ Editor.prototype = {
       this.setOption("keyMap", keyMap)
     else
       this.setOption("keyMap", "default");
+    this.updateCodeFoldingGutter();
 
     this.resetIndentUnit();
     this.setupAutoCompletion();
@@ -614,6 +617,32 @@ Editor.prototype = {
 
     let cm = editors.get(this);
     cm.lineInfo(line).gutterMarkers[gutterName].classList.remove(markerClass);
+  },
+
+  /**
+   * Adds a marker with a specified class and an HTML content to a line's
+   * gutter. If another marker exists on that line, it is overwritten by a new
+   * marker.
+   */
+  addContentMarker: function (line, gutterName, markerClass, content) {
+    let cm = editors.get(this);
+    let info = cm.lineInfo(line);
+    if (!info)
+      return;
+
+    let marker = cm.getWrapperElement().ownerDocument.createElement("div");
+    marker.className = markerClass;
+    marker.innerHTML = content;
+    cm.setGutterMarker(info.line, gutterName, marker);
+  },
+
+  /**
+   * The reverse of addContentMarker. Removes any line's markers in the
+   * specified gutter.
+   */
+  removeContentMarker: function (line, gutterName) {
+    let cm = editors.get(this);
+    cm.setGutterMarker(info.line, gutterName, null);
   },
 
   getMarker: function(line, gutterName) {
@@ -927,6 +956,12 @@ Editor.prototype = {
     } else {
       cm.setOption(o, v);
     }
+
+    if (o === "enableCodeFolding") {
+      // The new value maybe explicitly force foldGUtter on or off, ignoring
+      // the prefs service.
+      this.updateCodeFoldingGutter();
+    }
   },
 
   /**
@@ -1008,10 +1043,46 @@ Editor.prototype = {
       this._prefObserver.off(AUTO_CLOSE, this.reloadPreferences);
       this._prefObserver.off(AUTOCOMPLETE, this.reloadPreferences);
       this._prefObserver.off(DETECT_INDENT, this.reloadPreferences);
+      this._prefObserver.off(ENABLE_CODE_FOLDING, this.reloadPreferences);
       this._prefObserver.destroy();
     }
 
     this.emit("destroy");
+  },
+
+  updateCodeFoldingGutter: function () {
+    let shouldFoldGutter = this.config.enableCodeFolding,
+        foldGutterIndex = this.config.gutters.indexOf("CodeMirror-foldgutter"),
+        cm = editors.get(this);
+
+    if (shouldFoldGutter === undefined) {
+      shouldFoldGutter = Services.prefs.getBoolPref(ENABLE_CODE_FOLDING);
+    }
+
+    if (shouldFoldGutter) {
+      // Add the gutter before enabling foldGutter
+      if (foldGutterIndex === -1) {
+        let gutters = this.config.gutters.slice();
+        gutters.push("CodeMirror-foldgutter");
+        this.setOption("gutters", gutters);
+      }
+
+      this.setOption("foldGutter", true);
+    } else {
+      // No code should remain folded when folding is off.
+      if (cm) {
+        cm.execCommand("unfoldAll");
+      }
+
+      // Remove the gutter so it doesn't take up space
+      if (foldGutterIndex !== -1) {
+        let gutters = this.config.gutters.slice();
+        gutters.splice(foldGutterIndex, 1);
+        this.setOption("gutters", gutters);
+      }
+
+      this.setOption("foldGutter", false);
+    }
   }
 };
 

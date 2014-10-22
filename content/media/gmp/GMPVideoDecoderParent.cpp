@@ -14,13 +14,6 @@
 #include "GMPMessageUtils.h"
 #include "mozilla/gmp/GMPTypes.h"
 
-template <>
-class nsAutoRefTraits<GMPVideoEncodedFrame> : public nsPointerRefTraits<GMPVideoEncodedFrame>
-{
-public:
-  static void Release(GMPVideoEncodedFrame* aFrame) { aFrame->Destroy(); }
-};
-
 namespace mozilla {
 
 #ifdef LOG
@@ -50,7 +43,9 @@ namespace gmp {
 // Dead: mIsOpen == false
 
 GMPVideoDecoderParent::GMPVideoDecoderParent(GMPParent* aPlugin)
-  : mIsOpen(false)
+  : GMPSharedMemManager(aPlugin)
+  , mIsOpen(false)
+  , mShuttingDown(false)
   , mPlugin(aPlugin)
   , mCallback(nullptr)
   , mVideoHost(MOZ_THIS_IN_INITIALIZER_LIST())
@@ -113,13 +108,11 @@ GMPVideoDecoderParent::InitDecode(const GMPVideoCodec& aCodecSettings,
 }
 
 nsresult
-GMPVideoDecoderParent::Decode(GMPVideoEncodedFrame* aInputFrame,
+GMPVideoDecoderParent::Decode(UniquePtr<GMPVideoEncodedFrame> aInputFrame,
                               bool aMissingFrames,
                               const nsTArray<uint8_t>& aCodecSpecificInfo,
                               int64_t aRenderTimeMs)
 {
-  nsAutoRef<GMPVideoEncodedFrame> autoDestroy(aInputFrame);
-
   if (!mIsOpen) {
     NS_WARNING("Trying to use an dead GMP video decoder");
     return NS_ERROR_FAILURE;
@@ -127,13 +120,14 @@ GMPVideoDecoderParent::Decode(GMPVideoEncodedFrame* aInputFrame,
 
   MOZ_ASSERT(mPlugin->GMPThread() == NS_GetCurrentThread());
 
-  auto inputFrameImpl = static_cast<GMPVideoEncodedFrameImpl*>(aInputFrame);
+  UniquePtr<GMPVideoEncodedFrameImpl> inputFrameImpl(
+    static_cast<GMPVideoEncodedFrameImpl*>(aInputFrame.release()));
 
   // Very rough kill-switch if the plugin stops processing.  If it's merely
   // hung and continues, we'll come back to life eventually.
   // 3* is because we're using 3 buffers per frame for i420 data for now.
-  if (NumInUse(kGMPFrameData) > 3*GMPSharedMemManager::kGMPBufLimit ||
-      NumInUse(kGMPEncodedData) > GMPSharedMemManager::kGMPBufLimit) {
+  if ((NumInUse(GMPSharedMem::kGMPFrameData) > 3*GMPSharedMem::kGMPBufLimit) ||
+      (NumInUse(GMPSharedMem::kGMPEncodedData) > GMPSharedMem::kGMPBufLimit)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -194,6 +188,11 @@ GMPVideoDecoderParent::Shutdown()
   LOGD(("%s: %p", __FUNCTION__, this));
   MOZ_ASSERT(mPlugin->GMPThread() == NS_GetCurrentThread());
 
+  if (mShuttingDown) {
+    return NS_OK;
+  }
+  mShuttingDown = true;
+
   // Notify client we're gone!  Won't occur after Close()
   if (mCallback) {
     mCallback->Terminated();
@@ -201,11 +200,8 @@ GMPVideoDecoderParent::Shutdown()
   }
   mVideoHost.DoneWithAPI();
 
-  if (mIsOpen) {
-    // Don't send DecodingComplete if we died
-    mIsOpen = false;
-    unused << SendDecodingComplete();
-  }
+  mIsOpen = false;
+  unused << SendDecodingComplete();
 
   return NS_OK;
 }
@@ -228,12 +224,6 @@ GMPVideoDecoderParent::ActorDestroy(ActorDestroyReason aWhy)
   mVideoHost.ActorDestroyed();
 }
 
-void
-GMPVideoDecoderParent::CheckThread()
-{
-  MOZ_ASSERT(mPlugin->GMPThread() == NS_GetCurrentThread());
-}
-
 bool
 GMPVideoDecoderParent::RecvDecoded(const GMPVideoi420FrameData& aDecodedFrame)
 {
@@ -241,6 +231,10 @@ GMPVideoDecoderParent::RecvDecoded(const GMPVideoi420FrameData& aDecodedFrame)
     return false;
   }
 
+  if (!GMPVideoi420FrameImpl::CheckFrameData(aDecodedFrame)) {
+    LOG(PR_LOG_ERROR, ("%s: Decoded frame corrupt, ignoring", __FUNCTION__));
+    return false;
+  }
   auto f = new GMPVideoi420FrameImpl(aDecodedFrame, &mVideoHost);
 
   // Ignore any return code. It is OK for this to fail without killing the process.
@@ -331,7 +325,7 @@ bool
 GMPVideoDecoderParent::RecvParentShmemForPool(Shmem& aEncodedBuffer)
 {
   if (aEncodedBuffer.IsWritable()) {
-    mVideoHost.SharedMemMgr()->MgrDeallocShmem(GMPSharedMemManager::kGMPEncodedData,
+    mVideoHost.SharedMemMgr()->MgrDeallocShmem(GMPSharedMem::kGMPEncodedData,
                                                aEncodedBuffer);
   }
   return true;
@@ -343,7 +337,7 @@ GMPVideoDecoderParent::AnswerNeedShmem(const uint32_t& aFrameBufferSize,
 {
   ipc::Shmem mem;
 
-  if (!mVideoHost.SharedMemMgr()->MgrAllocShmem(GMPSharedMemManager::kGMPFrameData,
+  if (!mVideoHost.SharedMemMgr()->MgrAllocShmem(GMPSharedMem::kGMPFrameData,
                                                 aFrameBufferSize,
                                                 ipc::SharedMemory::TYPE_BASIC, &mem))
   {

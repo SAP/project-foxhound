@@ -1,3 +1,0 @@
-conformance/misc/uninitialized-test.html
-conformance/renderbuffers/framebuffer-object-attachment.html
-conformance/textures/texture-size.html

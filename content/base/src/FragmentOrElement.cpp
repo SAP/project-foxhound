@@ -25,6 +25,7 @@
 #include "nsDOMAttributeMap.h"
 #include "nsIAtom.h"
 #include "mozilla/dom/NodeInfo.h"
+#include "mozilla/dom/Event.h"
 #include "nsIDocumentInlines.h"
 #include "nsIDocumentEncoder.h"
 #include "nsIDOMNodeList.h"
@@ -87,7 +88,6 @@
 
 #include "nsNodeInfoManager.h"
 #include "nsICategoryManager.h"
-#include "nsIDOMUserDataHandler.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIEditor.h"
 #include "nsIEditorIMESupport.h"
@@ -132,7 +132,7 @@ using namespace mozilla::dom;
 
 int32_t nsIContent::sTabFocusModel = eTabFocus_any;
 bool nsIContent::sTabFocusModelAppliesToXUL = false;
-uint32_t nsMutationGuard::sMutationCount = 0;
+uint64_t nsMutationGuard::sGeneration = 0;
 
 nsIContent*
 nsIContent::FindFirstNonChromeOnlyAccessContent() const
@@ -152,21 +152,23 @@ nsIContent::FindFirstNonChromeOnlyAccessContent() const
 nsIContent*
 nsIContent::GetFlattenedTreeParent() const
 {
-  nsIContent* parent = nullptr;
+  nsIContent* parent = GetParent();
 
-  nsTArray<nsIContent*>* destInsertionPoints = GetExistingDestInsertionPoints();
-  if (destInsertionPoints && !destInsertionPoints->IsEmpty()) {
-    // This node was distributed into an insertion point. The last node in
-    // the list of destination insertion insertion points is where this node
-    // appears in the composed tree (see Shadow DOM spec).
-    nsIContent* lastInsertionPoint = destInsertionPoints->LastElement();
-    parent = lastInsertionPoint->GetParent();
+  if (nsContentUtils::HasDistributedChildren(parent)) {
+    // This node is distributed to insertion points, thus we
+    // need to consult the destination insertion points list to
+    // figure out where this node was inserted in the flattened tree.
+    // It may be the case that |parent| distributes its children
+    // but the child does not match any insertion points, thus
+    // the flattened tree parent is nullptr.
+    nsTArray<nsIContent*>* destInsertionPoints = GetExistingDestInsertionPoints();
+    parent = destInsertionPoints && !destInsertionPoints->IsEmpty() ?
+      destInsertionPoints->LastElement()->GetParent() : nullptr;
   } else if (HasFlag(NODE_MAY_BE_IN_BINDING_MNGR)) {
-    parent = GetXBLInsertionParent();
-  }
-
-  if (!parent) {
-    parent = GetParent();
+    nsIContent* insertionParent = GetXBLInsertionParent();
+    if (insertionParent) {
+      parent = insertionParent;
+    }
   }
 
   // Shadow roots never shows up in the flattened tree. Return the host
@@ -201,7 +203,7 @@ nsIContent::GetDesiredIMEState()
   if (editableAncestor && editableAncestor != this) {
     return editableAncestor->GetDesiredIMEState();
   }
-  nsIDocument* doc = GetCurrentDoc();
+  nsIDocument* doc = GetComposedDoc();
   if (!doc) {
     return IMEState(IMEState::DISABLED);
   }
@@ -236,10 +238,10 @@ nsIContent::GetEditingHost()
   // If this isn't editable, return nullptr.
   NS_ENSURE_TRUE(IsEditableInternal(), nullptr);
 
-  nsIDocument* doc = GetCurrentDoc();
+  nsIDocument* doc = GetComposedDoc();
   NS_ENSURE_TRUE(doc, nullptr);
   // If this is in designMode, we should return <body>
-  if (doc->HasFlag(NODE_IS_EDITABLE)) {
+  if (doc->HasFlag(NODE_IS_EDITABLE) && !IsInShadowTree()) {
     return doc->GetBodyElement();
   }
 
@@ -392,7 +394,7 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsChildContentList)
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 NS_INTERFACE_TABLE_HEAD(nsChildContentList)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
   NS_INTERFACE_TABLE(nsChildContentList, nsINodeList, nsIDOMNodeList)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(nsChildContentList)
 NS_INTERFACE_MAP_END
@@ -659,48 +661,9 @@ already_AddRefed<nsINodeList>
 FragmentOrElement::GetChildren(uint32_t aFilter)
 {
   nsRefPtr<nsSimpleContentList> list = new nsSimpleContentList(this);
-  if (!list) {
-    return nullptr;
-  }
-
-  nsIFrame *frame = GetPrimaryFrame();
-
-  // Append :before generated content.
-  if (frame) {
-    nsIFrame *beforeFrame = nsLayoutUtils::GetBeforeFrame(frame);
-    if (beforeFrame) {
-      list->AppendElement(beforeFrame->GetContent());
-    }
-  }
-
-  // If XBL is bound to this node then append XBL anonymous content including
-  // explict content altered by insertion point if we were requested for XBL
-  // anonymous content, otherwise append explicit content with respect to
-  // insertion point if any.
-  if (!(aFilter & eAllButXBL)) {
-    FlattenedChildIterator iter(this);
-    for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
-      list->AppendElement(child);
-    }
-  } else {
-    ExplicitChildIterator iter(this);
-    for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
-      list->AppendElement(child);
-    }
-  }
-
-  if (frame) {
-    // Append native anonymous content to the end.
-    nsIAnonymousContentCreator* creator = do_QueryFrame(frame);
-    if (creator) {
-      creator->AppendAnonymousContentTo(*list, aFilter);
-    }
-
-    // Append :after generated content.
-    nsIFrame *afterFrame = nsLayoutUtils::GetAfterFrame(frame);
-    if (afterFrame) {
-      list->AppendElement(afterFrame->GetContent());
-    }
+  AllChildrenIterator iter(this, aFilter);
+  while (nsIContent* kid = iter.GetNextChild()) {
+    list->AppendElement(kid);
   }
 
   return list.forget();
@@ -735,13 +698,26 @@ nsIContent::PreHandleEvent(EventChainPreVisitor& aVisitor)
        aVisitor.mEvent->message == NS_POINTER_OUT) &&
       // Check if we should stop event propagation when event has just been
       // dispatched or when we're about to propagate from
-      // chrome access only subtree.
+      // chrome access only subtree or if we are about to propagate out of
+      // a shadow root to a shadow root host.
       ((this == aVisitor.mEvent->originalTarget &&
-        !ChromeOnlyAccess()) || isAnonForEvents)) {
+        !ChromeOnlyAccess()) || isAnonForEvents || GetShadowRoot())) {
      nsCOMPtr<nsIContent> relatedTarget =
        do_QueryInterface(aVisitor.mEvent->AsMouseEvent()->relatedTarget);
     if (relatedTarget &&
         relatedTarget->OwnerDoc() == OwnerDoc()) {
+
+      // In the web components case, we may need to stop propagation of events
+      // at shadow root host.
+      if (GetShadowRoot()) {
+        nsIContent* adjustedTarget =
+          Event::GetShadowRelatedTarget(this, relatedTarget);
+        if (this == adjustedTarget) {
+          aVisitor.mParentTarget = nullptr;
+          aVisitor.mCanHandle = false;
+          return NS_OK;
+        }
+      }
 
       // If current target is anonymous for events or we know that related
       // target is descendant of an element which is anonymous for events,
@@ -806,6 +782,99 @@ nsIContent::PreHandleEvent(EventChainPreVisitor& aVisitor)
   }
 
   nsIContent* parent = GetParent();
+
+  // Web components have a special event chain that need to account
+  // for destination insertion points where nodes have been distributed.
+  nsTArray<nsIContent*>* destPoints = GetExistingDestInsertionPoints();
+  if (destPoints && !destPoints->IsEmpty()) {
+    // Push destination insertion points to aVisitor.mDestInsertionPoints
+    // excluding shadow insertion points.
+    bool didPushNonShadowInsertionPoint = false;
+    for (uint32_t i = 0; i < destPoints->Length(); i++) {
+      nsIContent* point = destPoints->ElementAt(i);
+      if (!ShadowRoot::IsShadowInsertionPoint(point)) {
+        aVisitor.mDestInsertionPoints.AppendElement(point);
+        didPushNonShadowInsertionPoint = true;
+      }
+    }
+
+    // Next node in the event path is the final destination
+    // (non-shadow) insertion point that was pushed.
+    if (didPushNonShadowInsertionPoint) {
+      parent = aVisitor.mDestInsertionPoints.LastElement();
+      aVisitor.mDestInsertionPoints.SetLength(
+        aVisitor.mDestInsertionPoints.Length() - 1);
+    }
+  }
+
+  ShadowRoot* thisShadowRoot = ShadowRoot::FromNode(this);
+  if (thisShadowRoot) {
+    // The following events must always be stopped at the root node of the node tree:
+    //   abort
+    //   error
+    //   select
+    //   change
+    //   load
+    //   reset
+    //   resize
+    //   scroll
+    //   selectstart
+    bool stopEvent = false;
+    switch (aVisitor.mEvent->message) {
+      case NS_IMAGE_ABORT:
+      case NS_LOAD_ERROR:
+      case NS_FORM_SELECTED:
+      case NS_FORM_CHANGE:
+      case NS_LOAD:
+      case NS_FORM_RESET:
+      case NS_RESIZE_EVENT:
+      case NS_SCROLL_EVENT:
+        stopEvent = true;
+        break;
+      case NS_USER_DEFINED_EVENT:
+        if (aVisitor.mDOMEvent) {
+          nsAutoString eventType;
+          aVisitor.mDOMEvent->GetType(eventType);
+          if (eventType.EqualsLiteral("abort") ||
+              eventType.EqualsLiteral("error") ||
+              eventType.EqualsLiteral("select") ||
+              eventType.EqualsLiteral("change") ||
+              eventType.EqualsLiteral("load") ||
+              eventType.EqualsLiteral("reset") ||
+              eventType.EqualsLiteral("resize") ||
+              eventType.EqualsLiteral("scroll") ||
+              eventType.EqualsLiteral("selectstart")) {
+            stopEvent = true;
+          }
+        }
+        break;
+    }
+
+    if (stopEvent) {
+      // If we do stop propagation, we still want to propagate
+      // the event to chrome (nsPIDOMWindow::GetParentTarget()).
+      // The load event is special in that we don't ever propagate it
+      // to chrome.
+      nsCOMPtr<nsPIDOMWindow> win = OwnerDoc()->GetWindow();
+      EventTarget* parentTarget = win && aVisitor.mEvent->message != NS_LOAD
+        ? win->GetParentTarget() : nullptr;
+
+      aVisitor.mParentTarget = parentTarget;
+      return NS_OK;
+    }
+
+    if (!aVisitor.mDestInsertionPoints.IsEmpty()) {
+      parent = aVisitor.mDestInsertionPoints.LastElement();
+      aVisitor.mDestInsertionPoints.SetLength(
+        aVisitor.mDestInsertionPoints.Length() - 1);
+    } else {
+      // The pool host for the youngest shadow root is shadow DOM host,
+      // for older shadow roots, it is the shadow insertion point
+      // where the shadow root is projected, nullptr if none exists.
+      parent = thisShadowRoot->GetPoolHost();
+    }
+  }
+
   // Event may need to be retargeted if this is the root of a native
   // anonymous content subtree or event is dispatched somewhere inside XBL.
   if (isAnonForEvents) {
@@ -814,7 +883,7 @@ nsIContent::PreHandleEvent(EventChainPreVisitor& aVisitor)
     // all the events are allowed even in the native anonymous content..
     nsCOMPtr<nsIContent> t = do_QueryInterface(aVisitor.mEvent->originalTarget);
     NS_ASSERTION(!t || !t->ChromeOnlyAccess() ||
-                 aVisitor.mEvent->eventStructType != NS_MUTATION_EVENT ||
+                 aVisitor.mEvent->mClass != eMutationEventClass ||
                  aVisitor.mDOMEvent,
                  "Mutation event dispatched in native anonymous content!?!");
 #endif
@@ -841,7 +910,7 @@ nsIContent::PreHandleEvent(EventChainPreVisitor& aVisitor)
   if (parent) {
     aVisitor.mParentTarget = parent;
   } else {
-    aVisitor.mParentTarget = GetCurrentDoc();
+    aVisitor.mParentTarget = GetComposedDoc();
   }
   return NS_OK;
 }
@@ -1100,10 +1169,12 @@ FragmentOrElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
 }
 
 void
-FragmentOrElement::GetTextContentInternal(nsAString& aTextContent)
+FragmentOrElement::GetTextContentInternal(nsAString& aTextContent,
+                                          ErrorResult& aError)
 {
-  if(!nsContentUtils::GetNodeTextContent(this, true, aTextContent))
-    NS_RUNTIMEABORT("OOM");
+  if(!nsContentUtils::GetNodeTextContent(this, true, aTextContent)) {
+    aError.Throw(NS_ERROR_OUT_OF_MEMORY);
+  }
 }
 
 void
@@ -1322,6 +1393,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
     unbind the child nodes.
   } */
 
+  // Clear flag here because unlinking slots will clear the
+  // containing shadow root pointer.
+  tmp->UnsetFlags(NODE_IS_IN_SHADOW_TREE);
+
   // Unlink any DOM slots of interest.
   {
     nsDOMSlots *slots = tmp->GetExistingDOMSlots();
@@ -1349,13 +1424,6 @@ FragmentOrElement::MarkUserData(void* aObject, nsIAtom* aKey, void* aChild,
 }
 
 void
-FragmentOrElement::MarkUserDataHandler(void* aObject, nsIAtom* aKey,
-                                      void* aChild, void* aData)
-{
-  xpc_TryUnmarkWrappedGrayObject(static_cast<nsISupports*>(aChild));
-}
-
-void
 FragmentOrElement::MarkNodeChildren(nsINode* aNode)
 {
   JSObject* o = GetJSObjectChild(aNode);
@@ -1372,9 +1440,6 @@ FragmentOrElement::MarkNodeChildren(nsINode* aNode)
     nsIDocument* ownerDoc = aNode->OwnerDoc();
     ownerDoc->PropertyTable(DOM_USER_DATA)->
       Enumerate(aNode, FragmentOrElement::MarkUserData,
-                &nsCCUncollectableMarker::sGeneration);
-    ownerDoc->PropertyTable(DOM_USER_DATA_HANDLER)->
-      Enumerate(aNode, FragmentOrElement::MarkUserDataHandler,
                 &nsCCUncollectableMarker::sGeneration);
   }
 }
@@ -1436,7 +1501,9 @@ FragmentOrElement::CanSkipInCC(nsINode* aNode)
     return false;
   }
 
-  nsIDocument* currentDoc = aNode->GetCurrentDoc();
+  //XXXsmaug Need to figure out in which cases Shadow DOM can be optimized out
+  //         from the CC graph.
+  nsIDocument* currentDoc = aNode->GetUncomposedDoc();
   if (currentDoc &&
       nsCCUncollectableMarker::InGeneration(currentDoc->GetMarkedCCGeneration())) {
     return !NeedsScriptTraverse(aNode);
@@ -1613,7 +1680,7 @@ FragmentOrElement::CanSkip(nsINode* aNode, bool aRemovingAllowed)
   }
 
   bool unoptimizable = aNode->UnoptimizableCCNode();
-  nsIDocument* currentDoc = aNode->GetCurrentDoc();
+  nsIDocument* currentDoc = aNode->GetUncomposedDoc();
   if (currentDoc &&
       nsCCUncollectableMarker::InGeneration(currentDoc->GetMarkedCCGeneration()) &&
       (!unoptimizable || NodeHasActiveFrame(currentDoc, aNode) ||
@@ -1742,7 +1809,7 @@ FragmentOrElement::CanSkipThis(nsINode* aNode)
   if (aNode->IsBlack()) {
     return true;
   }
-  nsIDocument* c = aNode->GetCurrentDoc();
+  nsIDocument* c = aNode->GetUncomposedDoc();
   return 
     ((c && nsCCUncollectableMarker::InGeneration(c->GetMarkedCCGeneration())) ||
      aNode->InCCBlackTree()) && !NeedsScriptTraverse(aNode);
@@ -2196,7 +2263,7 @@ private:
     return mLast->mUnits.AppendElement();
   }
 
-  StringBuilder(StringBuilder* aFirst)
+  explicit StringBuilder(StringBuilder* aFirst)
   : mLast(nullptr), mLength(0)
   {
     MOZ_COUNT_CTOR(StringBuilder);
@@ -2887,6 +2954,6 @@ FragmentOrElement::SetIsElementInStyleScopeFlagOnShadowTree(bool aInStyleScope)
   ShadowRoot* shadowRoot = GetShadowRoot();
   while (shadowRoot) {
     shadowRoot->SetIsElementInStyleScopeFlagOnSubtree(aInStyleScope);
-    shadowRoot = shadowRoot->GetOlderShadow();
+    shadowRoot = shadowRoot->GetOlderShadowRoot();
   }
 }

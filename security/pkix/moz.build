@@ -10,8 +10,10 @@ SOURCES += [
     'lib/pkixcert.cpp',
     'lib/pkixcheck.cpp',
     'lib/pkixder.cpp',
-    'lib/pkixkey.cpp',
+    'lib/pkixnss.cpp',
     'lib/pkixocsp.cpp',
+    'lib/pkixresult.cpp',
+    'lib/pkixtime.cpp',
 ]
 
 LOCAL_INCLUDES += [
@@ -36,6 +38,6 @@ if CONFIG['_MSC_VER']:
 
 FAIL_ON_WARNINGS = True
 
-LIBRARY_NAME = 'mozillapkix'
+Library('mozillapkix')
 
 FINAL_LIBRARY = 'xul'

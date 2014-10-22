@@ -609,7 +609,8 @@ inDOMUtils::GetSubpropertiesForCSSProperty(const nsAString& aProperty,
   nsCSSProperty propertyID =
     nsCSSProps::LookupProperty(aProperty, nsCSSProps::eEnabledForAllContent);
 
-  if (propertyID == eCSSProperty_UNKNOWN) {
+  if (propertyID == eCSSProperty_UNKNOWN ||
+      propertyID == eCSSPropertyExtra_variable) {
     return NS_ERROR_FAILURE;
   }
 
@@ -942,7 +943,7 @@ inDOMUtils::GetRuleNodeForElement(dom::Element* aElement,
   *aRuleNode = nullptr;
   *aStyleContext = nullptr;
 
-  nsIDocument* doc = aElement->GetDocument();
+  nsIDocument* doc = aElement->GetComposedDoc();
   NS_ENSURE_TRUE(doc, NS_ERROR_UNEXPECTED);
 
   nsIPresShell *presShell = doc->GetShell();

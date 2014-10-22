@@ -1,12 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+///////////////////
+//
+// Whitelisting this test.
+// As part of bug 1077403, the leaking uncaught rejection should be fixed. 
+//
+thisTestLeaksUncaughtRejectionsAndShouldBeFixed("Error: Shader Editor is still waiting for a WebGL context to be created.");
+
 /**
  * Tests if editing a vertex and a fragment shader works properly.
  */
 
 function ifWebGLSupported() {
-  let [target, debuggee, panel] = yield initShaderEditor(SIMPLE_CANVAS_URL);
+  let { target, panel } = yield initShaderEditor(SIMPLE_CANVAS_URL);
   let { gFront, $, EVENTS, ShadersEditorsView } = panel.panelWin;
 
   reload(target);
@@ -28,9 +35,9 @@ function ifWebGLSupported() {
   is($("#fs-editor-label").hasAttribute("selected"), false,
     "The vertex shader editor shouldn't be initially selected.");
 
-  yield ensurePixelIs(debuggee, { x: 0, y: 0 }, { r: 255, g: 0, b: 0, a: 255 }, true);
-  yield ensurePixelIs(debuggee, { x: 128, y: 128 }, { r: 191, g: 64, b: 0, a: 255 }, true);
-  yield ensurePixelIs(debuggee, { x: 511, y: 511 }, { r: 0, g: 255, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 0, y: 0 }, { r: 255, g: 0, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 128, y: 128 }, { r: 191, g: 64, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 511, y: 511 }, { r: 0, g: 255, b: 0, a: 255 }, true);
 
   vsEditor.focus();
 
@@ -44,9 +51,9 @@ function ifWebGLSupported() {
 
   ok(true, "Vertex shader was changed.");
 
-  yield ensurePixelIs(debuggee, { x: 0, y: 0 }, { r: 0, g: 0, b: 0, a: 255 }, true);
-  yield ensurePixelIs(debuggee, { x: 128, y: 128 }, { r: 255, g: 0, b: 0, a: 255 }, true);
-  yield ensurePixelIs(debuggee, { x: 511, y: 511 }, { r: 0, g: 0, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 0, y: 0 }, { r: 0, g: 0, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 128, y: 128 }, { r: 255, g: 0, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 511, y: 511 }, { r: 0, g: 0, b: 0, a: 255 }, true);
 
   ok(true, "The vertex shader was recompiled successfully.");
 
@@ -62,9 +69,9 @@ function ifWebGLSupported() {
 
   ok(true, "Fragment shader was changed.");
 
-  yield ensurePixelIs(debuggee, { x: 0, y: 0 }, { r: 0, g: 0, b: 0, a: 255 }, true);
-  yield ensurePixelIs(debuggee, { x: 128, y: 128 }, { r: 255, g: 0, b: 0, a: 127 }, true);
-  yield ensurePixelIs(debuggee, { x: 511, y: 511 }, { r: 0, g: 0, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 0, y: 0 }, { r: 0, g: 0, b: 0, a: 255 }, true);
+  yield ensurePixelIs(gFront, { x: 128, y: 128 }, { r: 255, g: 0, b: 0, a: 127 }, true);
+  yield ensurePixelIs(gFront, { x: 511, y: 511 }, { r: 0, g: 0, b: 0, a: 255 }, true);
 
   ok(true, "The fragment shader was recompiled successfully.");
 

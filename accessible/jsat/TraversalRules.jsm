@@ -34,6 +34,10 @@ function BaseTraversalRule(aRoles, aMatchFunc, aPreFilter) {
   if (aRoles.indexOf(Roles.LABEL) < 0) {
     this._matchRoles.push(Roles.LABEL);
   }
+  if (aRoles.indexOf(Roles.INTERNAL_FRAME) < 0) {
+    // Used for traversing in to child OOP frames.
+    this._matchRoles.push(Roles.INTERNAL_FRAME);
+  }
   this._matchFunc = aMatchFunc || function() { return Filters.MATCH; };
   this.preFilter = aPreFilter || gSimplePreFilter;
 }
@@ -96,15 +100,16 @@ var gSimpleTraversalRoles =
    Roles.SPINBUTTON,
    Roles.OPTION,
    Roles.LISTITEM,
-   // Used for traversing in to child OOP frames.
-   Roles.INTERNAL_FRAME];
+   Roles.GRID_CELL,
+   Roles.COLUMNHEADER,
+   Roles.ROWHEADER];
 
 var gSimpleMatchFunc = function gSimpleMatchFunc(aAccessible) {
   // An object is simple, if it either has a single child lineage,
   // or has a flat subtree.
   function isSingleLineage(acc) {
     for (let child = acc; child; child = child.firstChild) {
-      if (child.childCount > 1) {
+      if (Utils.visibleChildCount(child) > 1) {
         return false;
       }
     }
@@ -118,7 +123,7 @@ var gSimpleMatchFunc = function gSimpleMatchFunc(aAccessible) {
       if ([Roles.TEXT_LEAF, Roles.STATICTEXT].indexOf(child.role) >= 0) {
         continue;
       }
-      if (child.childCount > 0 || child.actionCount > 0) {
+      if (Utils.visibleChildCount(child) > 0 || child.actionCount > 0) {
         return false;
       }
     }
@@ -144,11 +149,16 @@ var gSimpleMatchFunc = function gSimpleMatchFunc(aAccessible) {
     return TraversalRules._shouldSkipImage(aAccessible);
   case Roles.HEADER:
   case Roles.HEADING:
+  case Roles.COLUMNHEADER:
+  case Roles.ROWHEADER:
     if ((aAccessible.childCount > 0 || aAccessible.name) &&
         (isSingleLineage(aAccessible) || isFlatSubtree(aAccessible))) {
       return Filters.MATCH | Filters.IGNORE_SUBTREE;
     }
     return Filters.IGNORE;
+  case Roles.GRID_CELL:
+    return isSingleLineage(aAccessible) || isFlatSubtree(aAccessible) ?
+      Filters.MATCH | Filters.IGNORE_SUBTREE : Filters.IGNORE;
   case Roles.LISTITEM:
     {
       let item = aAccessible.childCount === 2 &&

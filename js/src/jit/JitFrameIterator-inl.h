@@ -7,8 +7,6 @@
 #ifndef jit_JitFrameIterator_inl_h
 #define jit_JitFrameIterator_inl_h
 
-#ifdef JS_ION
-
 #include "jit/JitFrameIterator.h"
 
 #include "jit/Bailouts.h"
@@ -21,7 +19,7 @@ namespace jit {
 inline BaselineFrame *
 JitFrameIterator::baselineFrame() const
 {
-    JS_ASSERT(isBaselineJS());
+    MOZ_ASSERT(isBaselineJS());
     return (BaselineFrame *)(fp() - BaselineFrame::FramePointerOffset - BaselineFrame::Size());
 }
 
@@ -36,7 +34,5 @@ JitFrameIterator::isExitFrameLayout() const
 
 } // namespace jit
 } // namespace js
-
-#endif // JS_ION
 
 #endif /* jit_JitFrameIterator_inl_h */

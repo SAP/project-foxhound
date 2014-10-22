@@ -153,7 +153,9 @@ ElementStyle.prototype = {
     // engine, we will set properties on a dummy element and observe
     // how their .style attribute reflects them as computed values.
     return this.dummyElementPromise = createDummyDocument().then(document => {
-      this.dummyElement = document.createElementNS(this.element.namespaceURI,
+      // ::before and ::after do not have a namespaceURI
+      let namespaceURI = this.element.namespaceURI || document.documentElement.namespaceURI;
+      this.dummyElement = document.createElementNS(namespaceURI,
                                                    this.element.tagName);
       document.documentElement.appendChild(this.dummyElement);
       return this.dummyElement;
@@ -163,9 +165,7 @@ ElementStyle.prototype = {
   destroy: function() {
     this.dummyElement = null;
     this.dummyElementPromise.then(dummyElement => {
-      if (dummyElement.parentNode) {
-        dummyElement.parentNode.removeChild(dummyElement);
-      }
+      dummyElement.remove();
       this.dummyElementPromise = null;
     }, console.error);
   },
@@ -633,12 +633,6 @@ Rule.prototype = {
           };
         }
 
-        if (aName && textProp.name == aName) {
-          store.userProperties.setProperty(
-            this.style,
-            textProp.name,
-            textProp.value);
-        }
         textProp.priority = cssProp.priority;
       }
 
@@ -1038,12 +1032,25 @@ TextProperty.prototype = {
     }
   },
 
-  setValue: function(aValue, aPriority) {
+  setValue: function(aValue, aPriority, force=false) {
+    let store = this.rule.elementStyle.store;
+
+    if (aValue !== this.editor.committed.value || force) {
+      store.userProperties.setProperty(this.rule.style, this.name, aValue);
+    }
+
     this.rule.setPropertyValue(this, aValue, aPriority);
     this.updateEditor();
   },
 
   setName: function(aName) {
+    let store = this.rule.elementStyle.store;
+
+    if (aName !== this.name) {
+      store.userProperties.setProperty(this.rule.style, aName,
+                                       this.editor.committed.value);
+    }
+
     this.rule.setPropertyName(this, aName);
     this.updateEditor();
   },
@@ -1177,7 +1184,8 @@ CssRuleView.prototype = {
     this.menuitemSources = createMenuItem(this._contextmenu, {
       label: "ruleView.contextmenu.showOrigSources",
       accesskey: "ruleView.contextmenu.showOrigSources.accessKey",
-      command: this._onToggleOrigSources
+      command: this._onToggleOrigSources,
+      type: "checkbox"
     });
 
     let popupset = doc.documentElement.querySelector("popupset");
@@ -1219,16 +1227,10 @@ CssRuleView.prototype = {
     this.menuitemCopyColor.hidden = !this._isColorPopup();
     this.menuitemCopy.disabled = !copy;
 
-    let label = "ruleView.contextmenu.showOrigSources";
-    if (Services.prefs.getBoolPref(PREF_ORIG_SOURCES)) {
-      label = "ruleView.contextmenu.showCSSSources";
-    }
-    this.menuitemSources.setAttribute("label",
-                                      _strings.GetStringFromName(label));
+    var showOrig = Services.prefs.getBoolPref(PREF_ORIG_SOURCES);
+    this.menuitemSources.setAttribute("checked", showOrig);
 
-    let accessKey = label + ".accessKey";
-    this.menuitemSources.setAttribute("accesskey",
-                                      _strings.GetStringFromName(accessKey));
+    this.menuitemAddRule.disabled = this.inspector.selection.isAnonymousNode();
   },
 
   /**
@@ -1241,6 +1243,10 @@ CssRuleView.prototype = {
    * returns null of the node isn't anything we care about
    */
   getNodeInfo: function(node) {
+    if (!node) {
+      return null;
+    }
+
     let type, value;
     let classes = node.classList;
     let prop = getParentTextProperty(node);
@@ -1284,10 +1290,7 @@ CssRuleView.prototype = {
       return null;
     }
 
-    return {
-      type: type,
-      value: value
-    };
+    return {type, value};
   },
 
   /**
@@ -1411,7 +1414,7 @@ CssRuleView.prototype = {
         this.element.appendChild(editor.element);
       } else {
         for (let rule of rules) {
-          if (rule.selectorText === "element") {
+          if (rule.domRule.type === ELEMENT_STYLE) {
             let referenceElement = rule.editor.element.nextSibling;
             this.element.insertBefore(editor.element, referenceElement);
             break;
@@ -1483,6 +1486,10 @@ CssRuleView.prototype = {
 
     // Remove context menu
     if (this._contextmenu) {
+      // Destroy the Add Rule menuitem.
+      this.menuitemAddRule.removeEventListener("command", this._onAddRule);
+      this.menuitemAddRule = null;
+
       // Destroy the Select All menuitem.
       this.menuitemSelectAll.removeEventListener("command", this._onSelectAll);
       this.menuitemSelectAll = null;
@@ -1819,10 +1826,14 @@ function RuleEditor(aRuleView, aRule) {
 RuleEditor.prototype = {
   get isSelectorEditable() {
     let toolbox = this.ruleView.inspector.toolbox;
-    return this.isEditable &&
+    let trait = this.isEditable &&
       toolbox.target.client.traits.selectorEditable &&
       this.rule.domRule.type !== ELEMENT_STYLE &&
-      this.rule.domRule.type !== Ci.nsIDOMCSSRule.KEYFRAME_RULE
+      this.rule.domRule.type !== Ci.nsIDOMCSSRule.KEYFRAME_RULE;
+
+    // Do not allow editing anonymousselectors until we can
+    // detect mutations on  pseudo elements in Bug 1034110.
+    return trait && !this.rule.elementStyle.element.isAnonymous;
   },
 
   _create: function() {
@@ -1943,7 +1954,9 @@ RuleEditor.prototype = {
     let sourceLabel = this.element.querySelector(".source-link-label");
     let sourceHref = (this.rule.sheet && this.rule.sheet.href) ?
       this.rule.sheet.href : this.rule.title;
-    sourceLabel.setAttribute("tooltiptext", sourceHref);
+    let sourceLine = this.rule.ruleLine > 0 ? ":" + this.rule.ruleLine : "";
+
+    sourceLabel.setAttribute("tooltiptext", sourceHref + sourceLine);
 
     if (this.rule.isSystem) {
       let uaLabel = _strings.GetStringFromName("rule.userAgentStyles");
@@ -2290,10 +2303,18 @@ TextPropertyEditor.prototype = {
     this.valueSpan.textProperty = this.prop;
     this.nameSpan.textProperty = this.prop;
 
+    // If the value is a color property we need to put it through the parser
+    // so that colors can be coerced into the default color type. This prevents
+    // us from thinking that when colors are coerced they have been changed by
+    // the user.
+    let outputParser = this.ruleEditor.ruleView._outputParser;
+    let frag = outputParser.parseCssProperty(this.prop.name, this.prop.value);
+    let parsedValue = frag.textContent;
+
     // Save the initial value as the last committed value,
     // for restoring after pressing escape.
     this.committed = { name: this.prop.name,
-                       value: this.prop.value,
+                       value: parsedValue,
                        priority: this.prop.priority };
 
     appendText(propertyContainer, ";");
@@ -2455,12 +2476,13 @@ TextPropertyEditor.prototype = {
 
     // Combine the property's value and priority into one string for
     // the value.
-    let val = this.prop.value;
+    let store = this.prop.rule.elementStyle.store;
+    let val = store.userProperties.getProperty(this.prop.rule.style, name,
+                                               this.prop.value);
     if (this.prop.priority) {
       val += " !" + this.prop.priority;
     }
 
-    let store = this.prop.rule.elementStyle.store;
     let propDirty = store.userProperties.contains(this.prop.rule.style, name);
 
     if (propDirty) {
@@ -2495,7 +2517,7 @@ TextPropertyEditor.prototype = {
         this.ruleEditor.ruleView.tooltips.colorPicker.addSwatch(span, {
           onPreview: () => this._previewValue(this.valueSpan.textContent),
           onCommit: () => this._applyNewValue(this.valueSpan.textContent),
-          onRevert: () => this._applyNewValue(originalValue)
+          onRevert: () => this._applyNewValue(originalValue, false)
         });
       }
     }
@@ -2510,7 +2532,7 @@ TextPropertyEditor.prototype = {
         this.ruleEditor.ruleView.tooltips.cubicBezier.addSwatch(span, {
           onPreview: () => this._previewValue(this.valueSpan.textContent),
           onCommit: () => this._applyNewValue(this.valueSpan.textContent),
-          onRevert: () => this._applyNewValue(originalValue)
+          onRevert: () => this._applyNewValue(originalValue, false)
         });
       }
     }
@@ -2683,6 +2705,7 @@ TextPropertyEditor.prototype = {
 
     // First, set this property value (common case, only modified a property)
     let val = parseSingleValue(firstValue);
+
     this.prop.setValue(val.value, val.priority);
     this.removeOnRevert = false;
     this.committed.value = this.prop.value;
@@ -2751,10 +2774,27 @@ TextPropertyEditor.prototype = {
     };
   },
 
-  _applyNewValue: function(aValue) {
+  /**
+   * Apply a new value.
+   *
+   * @param  {String} aValue
+   *         The value to replace.
+   * @param  {Boolean} markChanged=true
+   *         Set this to false if you need to prevent the property from being
+   *         marked as changed e.g. tooltips do this when <escape> is pressed
+   *         in order to revert the value.
+   */
+  _applyNewValue: function(aValue, markChanged=true) {
     let val = parseSingleValue(aValue);
 
-    this.prop.setValue(val.value, val.priority);
+    if (!markChanged) {
+      let store = this.prop.rule.elementStyle.store;
+      this.prop.editor.committed.value = aValue;
+      store.userProperties.setProperty(this.prop.rule.style,
+                                       this.prop.rule.name, aValue);
+    }
+
+    this.prop.setValue(val.value, val.priority, markChanged);
     this.removeOnRevert = false;
     this.committed.value = this.prop.value;
     this.committed.priority = this.prop.priority;
@@ -2825,8 +2865,7 @@ UserProperties.prototype = {
    * @param {string} aName
    *        The name of the property to get.
    * @param {string} aDefault
-   *        The value to return if the property is has been changed outside of
-   *        the rule view.
+   *        Default value.
    * @return {string}
    *          The property value if it has previously been set by the user, null
    *          otherwise.
@@ -2836,12 +2875,7 @@ UserProperties.prototype = {
     let entry = this.map.get(key, null);
 
     if (entry && aName in entry) {
-      let item = entry[aName];
-      if (item != aDefault) {
-        delete entry[aName];
-        return aDefault;
-      }
-      return item;
+      return entry[aName];
     }
     return aDefault;
   },
@@ -2857,8 +2891,9 @@ UserProperties.prototype = {
    *        The value of the property to set.
    */
   setProperty: function(aStyle, aName, aUserValue) {
-    let key = this.getKey(aStyle);
+    let key = this.getKey(aStyle, aName);
     let entry = this.map.get(key, null);
+
     if (entry) {
       entry[aName] = aUserValue;
     } else {
@@ -2877,13 +2912,17 @@ UserProperties.prototype = {
    *        The name of the property to check.
    */
   contains: function(aStyle, aName) {
-    let key = this.getKey(aStyle);
+    let key = this.getKey(aStyle, aName);
     let entry = this.map.get(key, null);
     return !!entry && aName in entry;
   },
 
-  getKey: function(aStyle) {
-    return aStyle.href + ":" + aStyle.line;
+  getKey: function(aStyle, aName) {
+    return aStyle.actorID + ":" + aName;
+  },
+
+  clear: function() {
+    this.map.clear();
   }
 };
 

@@ -34,12 +34,12 @@ protected:
     virtual ~nsDirectoryViewerFactory();
 };
 
-class nsHTTPIndex : public nsIHTTPIndex,
-                    public nsIRDFDataSource,
-                    public nsIStreamListener,
-                    public nsIDirIndexListener,
-                    public nsIInterfaceRequestor,
-                    public nsIFTPEventSink
+class nsHTTPIndex MOZ_FINAL : public nsIHTTPIndex,
+                              public nsIRDFDataSource,
+                              public nsIStreamListener,
+                              public nsIDirIndexListener,
+                              public nsIInterfaceRequestor,
+                              public nsIFTPEventSink
 {
 private:
 
@@ -79,7 +79,7 @@ protected:
     nsIInterfaceRequestor*       mRequestor; // WEAK
     nsCOMPtr<nsIRDFResource>     mDirectory;
 
-    nsHTTPIndex(nsIInterfaceRequestor* aRequestor);
+    explicit nsHTTPIndex(nsIInterfaceRequestor* aRequestor);
     nsresult CommonInit(void);
     nsresult Init(nsIURI* aBaseURL);
     void        GetDestination(nsIRDFResource* r, nsXPIDLCString& dest);

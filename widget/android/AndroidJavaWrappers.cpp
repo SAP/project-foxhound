@@ -11,6 +11,7 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
+#include "GeneratedSDKWrappers.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -24,6 +25,7 @@ jfieldID AndroidGeckoEvent::jTimeField = 0;
 jfieldID AndroidGeckoEvent::jPoints = 0;
 jfieldID AndroidGeckoEvent::jPointIndicies = 0;
 jfieldID AndroidGeckoEvent::jPressures = 0;
+jfieldID AndroidGeckoEvent::jToolTypes = 0;
 jfieldID AndroidGeckoEvent::jPointRadii = 0;
 jfieldID AndroidGeckoEvent::jOrientations = 0;
 jfieldID AndroidGeckoEvent::jXField = 0;
@@ -70,6 +72,7 @@ jfieldID AndroidGeckoEvent::jGamepadButtonPressedField = 0;
 jfieldID AndroidGeckoEvent::jGamepadButtonValueField = 0;
 jfieldID AndroidGeckoEvent::jGamepadValuesField = 0;
 jfieldID AndroidGeckoEvent::jPrefNamesField = 0;
+jfieldID AndroidGeckoEvent::jObjectField = 0;
 
 jclass AndroidGeckoEvent::jDomKeyLocationClass = 0;
 jfieldID AndroidGeckoEvent::jDomKeyLocationValueField = 0;
@@ -138,6 +141,7 @@ AndroidGeckoEvent::InitGeckoEventClass(JNIEnv *jEnv)
     jPointIndicies = getField("mPointIndicies", "[I");
     jOrientations = getField("mOrientations", "[F");
     jPressures = getField("mPressures", "[F");
+    jToolTypes = getField("mToolTypes", "[I");
     jPointRadii = getField("mPointRadii", "[Landroid/graphics/Point;");
     jXField = getField("mX", "D");
     jYField = getField("mY", "D");
@@ -181,6 +185,7 @@ AndroidGeckoEvent::InitGeckoEventClass(JNIEnv *jEnv)
     jGamepadButtonValueField = getField("mGamepadButtonValue", "F");
     jGamepadValuesField = getField("mGamepadValues", "[F");
     jPrefNamesField = getField("mPrefNames", "[Ljava/lang/String;");
+    jObjectField = getField("mObject", "Ljava/lang/Object;");
 
     // Init GeckoEvent.DomKeyLocation enum
     jDomKeyLocationClass = getClassGlobalRef("org/mozilla/gecko/GeckoEvent$DomKeyLocation");
@@ -454,6 +459,7 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             break;
 
         case MOTION_EVENT:
+        case LONG_PRESS:
             mTime = jenv->GetLongField(jobj, jTimeField);
             mMetaState = jenv->GetIntField(jobj, jMetaStateField);
             mCount = jenv->GetIntField(jobj, jCountField);
@@ -462,6 +468,7 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             ReadPointArray(mPointRadii, jenv, jPointRadii, mCount);
             ReadFloatArray(mOrientations, jenv, jOrientations, mCount);
             ReadFloatArray(mPressures, jenv, jPressures, mCount);
+            ReadIntArray(mToolTypes, jenv, jToolTypes, mCount);
             ReadPointArray(mPoints, jenv, jPoints, mCount);
             ReadIntArray(mPointIndicies, jenv, jPointIndicies, mCount);
 
@@ -471,7 +478,8 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             mStart = jenv->GetIntField(jobj, jStartField);
             mEnd = jenv->GetIntField(jobj, jEndField);
 
-            if (mAction == IME_REPLACE_TEXT) {
+            if (mAction == IME_REPLACE_TEXT ||
+                    mAction == IME_COMPOSE_TEXT) {
                 ReadCharactersField(jenv);
             } else if (mAction == IME_UPDATE_COMPOSITION ||
                     mAction == IME_ADD_COMPOSITION_RANGE) {
@@ -497,6 +505,13 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
              mFlags = jenv->GetIntField(jobj, jFlagsField);
              mMetaState = jenv->GetIntField(jobj, jMetaStateField);
              break;
+
+        case PROCESS_OBJECT: {
+            const jobject obj = jenv->GetObjectField(jobj, jObjectField);
+            mObject.Init(obj, jenv);
+            jenv->DeleteLocalRef(obj);
+            break;
+        }
 
         case LOCATION_EVENT: {
             jobject location = jenv->GetObjectField(jobj, jLocationField);
@@ -655,22 +670,61 @@ AndroidGeckoEvent::Init(AndroidGeckoEvent *aResizeEvent)
     mPoints = aResizeEvent->mPoints; // x,y coordinates
 }
 
+bool
+AndroidGeckoEvent::CanCoalesceWith(AndroidGeckoEvent* ae)
+{
+    if (Type() == MOTION_EVENT && ae->Type() == MOTION_EVENT) {
+        return Action() == AndroidMotionEvent::ACTION_MOVE
+            && ae->Action() == AndroidMotionEvent::ACTION_MOVE;
+    } else if (Type() == APZ_INPUT_EVENT && ae->Type() == APZ_INPUT_EVENT) {
+        return mApzInput.mType == MultiTouchInput::MULTITOUCH_MOVE
+            && ae->mApzInput.mType == MultiTouchInput::MULTITOUCH_MOVE;
+    }
+    return false;
+}
+
+mozilla::layers::ScrollableLayerGuid
+AndroidGeckoEvent::ApzGuid()
+{
+    MOZ_ASSERT(Type() == APZ_INPUT_EVENT);
+    return mApzGuid;
+}
+
 WidgetTouchEvent
 AndroidGeckoEvent::MakeTouchEvent(nsIWidget* widget)
 {
+    if (Type() == APZ_INPUT_EVENT) {
+        return mApzInput.ToWidgetTouchEvent(widget);
+    }
+
     int type = NS_EVENT_NULL;
     int startIndex = 0;
     int endIndex = Count();
 
     switch (Action()) {
+        case AndroidMotionEvent::ACTION_HOVER_ENTER: {
+            if (ToolTypes()[0] == AndroidMotionEvent::TOOL_TYPE_MOUSE) {
+                break;
+            }
+        }
         case AndroidMotionEvent::ACTION_DOWN:
         case AndroidMotionEvent::ACTION_POINTER_DOWN: {
             type = NS_TOUCH_START;
             break;
         }
+        case AndroidMotionEvent::ACTION_HOVER_MOVE: {
+            if (ToolTypes()[0] == AndroidMotionEvent::TOOL_TYPE_MOUSE) {
+                break;
+            }
+        }
         case AndroidMotionEvent::ACTION_MOVE: {
             type = NS_TOUCH_MOVE;
             break;
+        }
+        case AndroidMotionEvent::ACTION_HOVER_EXIT: {
+            if (ToolTypes()[0] == AndroidMotionEvent::TOOL_TYPE_MOUSE) {
+                break;
+            }
         }
         case AndroidMotionEvent::ACTION_UP:
         case AndroidMotionEvent::ACTION_POINTER_UP: {
@@ -791,10 +845,10 @@ AndroidGeckoEvent::MakeMouseEvent(nsIWidget* widget)
                 msg = NS_MOUSE_MOVE;
                 break;
             case AndroidMotionEvent::ACTION_HOVER_ENTER:
-                msg = NS_MOUSEENTER;
+                msg = NS_MOUSE_ENTER;
                 break;
             case AndroidMotionEvent::ACTION_HOVER_EXIT:
-                msg = NS_MOUSELEAVE;
+                msg = NS_MOUSE_EXIT;
                 break;
             default:
                 break;

@@ -34,7 +34,7 @@ interface Element : Node {
   readonly attribute DOMTokenList classList;
 
   [SameObject]
-  readonly attribute MozNamedAttrMap attributes;
+  readonly attribute NamedNodeMap attributes;
   [Pure]
   DOMString? getAttribute(DOMString name);
   [Pure]
@@ -51,6 +51,14 @@ interface Element : Node {
   boolean hasAttribute(DOMString name);
   [Pure]
   boolean hasAttributeNS(DOMString? namespace, DOMString localName);
+  [Pure]
+  boolean hasAttributes();
+
+  [Throws, Pure]
+  Element? closest(DOMString selector);
+
+  [Throws, Pure]
+  boolean matches(DOMString selector);
 
   [Pure]
   HTMLCollection getElementsByTagName(DOMString localName);
@@ -146,19 +154,32 @@ interface Element : Node {
   boolean scrollByNoFlush(long dx, long dy);
 };
 
+// http://dev.w3.org/csswg/cssom-view/
+enum ScrollLogicalPosition { "start", "end" };
+dictionary ScrollIntoViewOptions : ScrollOptions {
+  ScrollLogicalPosition block = "start";
+};
+
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-element-interface
 partial interface Element {
   DOMRectList getClientRects();
   DOMRect getBoundingClientRect();
 
   // scrolling
-  void scrollIntoView();
   void scrollIntoView(boolean top);
+  void scrollIntoView(optional ScrollIntoViewOptions options);
   // None of the CSSOM attributes are [Pure], because they flush
            attribute long scrollTop;   // scroll on setting
            attribute long scrollLeft;  // scroll on setting
   readonly attribute long scrollWidth;
   readonly attribute long scrollHeight;
+  
+  void scroll(unrestricted double x, unrestricted double y);
+  void scroll(optional ScrollToOptions options);
+  void scrollTo(unrestricted double x, unrestricted double y);
+  void scrollTo(optional ScrollToOptions options);
+  void scrollBy(unrestricted double x, unrestricted double y);
+  void scrollBy(optional ScrollToOptions options);
 
   readonly attribute long clientTop;
   readonly attribute long clientLeft;
@@ -213,3 +234,4 @@ Element implements ChildNode;
 Element implements NonDocumentTypeChildNode;
 Element implements ParentNode;
 Element implements Animatable;
+Element implements GeometryUtils;

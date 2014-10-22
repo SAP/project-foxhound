@@ -41,7 +41,7 @@ FontInspector.prototype = {
    */
   destroy: function FI_destroy() {
     this.chromeDoc = null;
-    this.inspector.sidebar.off("layoutview-selected", this.onNewNode);
+    this.inspector.sidebar.off("fontinspector-selected", this.onNewNode);
     this.inspector.selection.off("new-node", this.onNewNode);
     this.showAllButton.removeEventListener("click", this.showAll);
   },
@@ -93,7 +93,7 @@ FontInspector.prototype = {
 
     // We don't get fonts for a node, but for a range
     let rng = contentDocument.createRange();
-    rng.selectNode(node);
+    rng.selectNodeContents(node);
     let fonts = DOMUtils.getUsedFontFaces(rng);
     let fontsArray = [];
     for (let i = 0; i < fonts.length; i++) {

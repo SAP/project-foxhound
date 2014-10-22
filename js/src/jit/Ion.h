@@ -7,8 +7,6 @@
 #ifndef jit_Ion_h
 #define jit_Ion_h
 
-#ifdef JS_ION
-
 #include "mozilla/MemoryReporting.h"
 
 #include "jscntxt.h"
@@ -34,6 +32,7 @@ enum MethodStatus
 enum AbortReason {
     AbortReason_Alloc,
     AbortReason_Inlining,
+    AbortReason_NewScriptProperties,
     AbortReason_Disable,
     AbortReason_Error,
     AbortReason_NoAbort
@@ -85,17 +84,16 @@ void SetIonContext(IonContext *ctx);
 bool CanIonCompileScript(JSContext *cx, JSScript *script, bool osr);
 
 MethodStatus CanEnterAtBranch(JSContext *cx, JSScript *script,
-                              BaselineFrame *frame, jsbytecode *pc, bool isConstructing);
+                              BaselineFrame *frame, jsbytecode *pc);
 MethodStatus CanEnter(JSContext *cx, RunState &state);
-MethodStatus CompileFunctionForBaseline(JSContext *cx, HandleScript script, BaselineFrame *frame,
-                                        bool isConstructing);
+MethodStatus CompileFunctionForBaseline(JSContext *cx, HandleScript script, BaselineFrame *frame);
 MethodStatus CanEnterUsingFastInvoke(JSContext *cx, HandleScript script, uint32_t numActualArgs);
 
 MethodStatus CanEnterInParallel(JSContext *cx, HandleScript script);
 
 MethodStatus
 Recompile(JSContext *cx, HandleScript script, BaselineFrame *osrFrame, jsbytecode *osrPc,
-          bool constructing);
+          bool constructing, bool force);
 
 enum IonExecStatus
 {
@@ -137,9 +135,6 @@ bool Invalidate(JSContext *cx, JSScript *script, ExecutionMode mode, bool resetU
 bool Invalidate(JSContext *cx, JSScript *script, bool resetUses = true,
                 bool cancelOffThread = true);
 
-void MarkValueFromIon(JSRuntime *rt, Value *vp);
-void MarkShapeFromIon(JSRuntime *rt, Shape **shapep);
-
 void ToggleBarriers(JS::Zone *zone, bool needs);
 
 class IonBuilder;
@@ -153,15 +148,21 @@ CodeGenerator *GenerateCode(MIRGenerator *mir, LIRGraph *lir);
 CodeGenerator *CompileBackEnd(MIRGenerator *mir);
 
 void AttachFinishedCompilations(JSContext *cx);
-void FinishOffThreadBuilder(IonBuilder *builder);
+void FinishOffThreadBuilder(JSContext *cx, IonBuilder *builder);
 void StopAllOffThreadCompilations(JSCompartment *comp);
+
+uint8_t *LazyLinkTopActivation(JSContext *cx);
 
 static inline bool
 IsIonEnabled(JSContext *cx)
 {
+#ifdef JS_CODEGEN_NONE
+    return false;
+#else
     return cx->runtime()->options().ion() &&
            cx->runtime()->options().baseline() &&
            cx->runtime()->jitSupportsFloatingPoint;
+#endif
 }
 
 inline bool
@@ -173,9 +174,15 @@ IsIonInlinablePC(jsbytecode *pc) {
 }
 
 inline bool
-TooManyArguments(unsigned nargs)
+TooManyActualArguments(unsigned nargs)
 {
-    return nargs >= SNAPSHOT_MAX_NARGS || nargs > js_JitOptions.maxStackArgs;
+    return nargs > js_JitOptions.maxStackArgs;
+}
+
+inline bool
+TooManyFormalArguments(unsigned nargs)
+{
+    return nargs >= SNAPSHOT_MAX_NARGS || TooManyActualArguments(nargs);
 }
 
 inline size_t
@@ -201,9 +208,10 @@ bool RematerializeAllFrames(JSContext *cx, JSCompartment *comp);
 bool UpdateForDebugMode(JSContext *maybecx, JSCompartment *comp,
                         AutoDebugModeInvalidation &invalidate);
 
+bool JitSupportsFloatingPoint();
+bool JitSupportsSimd();
+
 } // namespace jit
 } // namespace js
-
-#endif // JS_ION
 
 #endif /* jit_Ion_h */

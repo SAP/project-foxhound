@@ -107,7 +107,7 @@ public:
     const char* GetEntryNameAt(uint16_t i);
 
 private:
-    xptiTypelibGuts(XPTHeader* aHeader)
+    explicit xptiTypelibGuts(XPTHeader* aHeader)
         : mHeader(aHeader)
     { }
     ~xptiTypelibGuts();
@@ -128,7 +128,7 @@ class xptiInfoFlags
 {
     enum {STATE_MASK = 3};
 public:
-    xptiInfoFlags(uint8_t n) : mData(n) {}
+    explicit xptiInfoFlags(uint8_t n) : mData(n) {}
     xptiInfoFlags(const xptiInfoFlags& r) : mData(r.mData) {}
 
     static uint8_t GetStateMask()
@@ -180,7 +180,7 @@ public:
     };
     
     // Additional bit flags...
-    enum {SCRIPTABLE = 4, BUILTINCLASS = 8};
+    enum {SCRIPTABLE = 4, BUILTINCLASS = 8, HASNOTXPCOM = 16};
 
     uint8_t GetResolveState() const {return mFlags.GetState();}
     
@@ -195,6 +195,17 @@ public:
                 {mFlags.SetFlagBit(uint8_t(BUILTINCLASS),on);}
     bool GetBuiltinClassFlag() const
                 {return mFlags.GetFlagBit(uint8_t(BUILTINCLASS));}
+
+
+    // AddRef/Release are special and are not considered for the NOTXPCOM flag.
+    void SetHasNotXPCOMFlag()
+    {
+        mFlags.SetFlagBit(HASNOTXPCOM, true);
+    }
+    bool GetHasNotXPCOMFlag() const
+    {
+        return mFlags.GetFlagBit(HASNOTXPCOM);
+    }
 
     const nsID* GetTheIID()  const {return &mIID;}
     const char* GetTheName() const {return mName;}
@@ -334,7 +345,7 @@ public:
     NS_IMETHOD GetIIDForParamNoAlloc(uint16_t methodIndex, const nsXPTParamInfo * param, nsIID *iid) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetIIDForParamNoAlloc(methodIndex, param, iid); }
 
 public:
-    xptiInterfaceInfo(xptiInterfaceEntry* entry);
+    explicit xptiInterfaceInfo(xptiInterfaceEntry* entry);
 
     void Invalidate() 
         {NS_IF_RELEASE(mParent); mEntry = nullptr;}

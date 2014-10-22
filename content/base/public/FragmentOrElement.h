@@ -48,10 +48,9 @@ class Element;
 class nsChildContentList MOZ_FINAL : public nsINodeList
 {
 public:
-  nsChildContentList(nsINode* aNode)
+  explicit nsChildContentList(nsINode* aNode)
     : mNode(aNode)
   {
-    SetIsDOMBinding();
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -96,7 +95,7 @@ public:
 
   NS_DECL_NSIDOMXPATHNSRESOLVER
 
-  nsNode3Tearoff(nsINode *aNode) : mNode(aNode)
+  explicit nsNode3Tearoff(nsINode *aNode) : mNode(aNode)
   {
   }
 
@@ -114,7 +113,7 @@ private:
 class nsNodeWeakReference MOZ_FINAL : public nsIWeakReference
 {
 public:
-  nsNodeWeakReference(nsINode* aNode)
+  explicit nsNodeWeakReference(nsINode* aNode)
     : mNode(aNode)
   {
   }
@@ -143,7 +142,7 @@ private:
 class nsNodeSupportsWeakRefTearoff MOZ_FINAL : public nsISupportsWeakReference
 {
 public:
-  nsNodeSupportsWeakRefTearoff(nsINode* aNode)
+  explicit nsNodeSupportsWeakRefTearoff(nsINode* aNode)
     : mNode(aNode)
   {
   }
@@ -175,8 +174,8 @@ class UndoManager;
 class FragmentOrElement : public nsIContent
 {
 public:
-  FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
@@ -190,7 +189,8 @@ public:
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify) MOZ_OVERRIDE;
   virtual void RemoveChildAt(uint32_t aIndex, bool aNotify) MOZ_OVERRIDE;
-  virtual void GetTextContentInternal(nsAString& aTextContent) MOZ_OVERRIDE;
+  virtual void GetTextContentInternal(nsAString& aTextContent,
+                                      mozilla::ErrorResult& aError) MOZ_OVERRIDE;
   virtual void SetTextContentInternal(const nsAString& aTextContent,
                                       mozilla::ErrorResult& aError) MOZ_OVERRIDE;
 
@@ -292,8 +292,6 @@ public:
   static void InitCCCallbacks();
   static void MarkUserData(void* aObject, nsIAtom* aKey, void* aChild,
                            void *aData);
-  static void MarkUserDataHandler(void* aObject, nsIAtom* aKey, void* aChild,
-                                  void* aData);
 
 protected:
   virtual ~FragmentOrElement();
@@ -414,7 +412,7 @@ public:
     /**
      * Web components custom element data.
      */
-    nsAutoPtr<CustomElementData> mCustomElementData;
+    nsRefPtr<CustomElementData> mCustomElementData;
   };
 
 protected:

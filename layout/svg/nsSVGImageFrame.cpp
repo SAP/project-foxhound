@@ -32,7 +32,7 @@ class nsSVGImageFrame;
 class nsSVGImageListener MOZ_FINAL : public imgINotificationObserver
 {
 public:
-  nsSVGImageListener(nsSVGImageFrame *aFrame);
+  explicit nsSVGImageListener(nsSVGImageFrame *aFrame);
 
   NS_DECL_ISUPPORTS
   NS_DECL_IMGINOTIFICATIONOBSERVER
@@ -54,8 +54,8 @@ class nsSVGImageFrame : public nsSVGImageFrameBase,
   NS_NewSVGImageFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
 protected:
-  nsSVGImageFrame(nsStyleContext* aContext) : nsSVGImageFrameBase(aContext),
-                                              mReflowCallbackPosted(false) {}
+  explicit nsSVGImageFrame(nsStyleContext* aContext) : nsSVGImageFrameBase(aContext),
+                                                       mReflowCallbackPosted(false) {}
   virtual ~nsSVGImageFrame();
 
 public:
@@ -63,9 +63,9 @@ public:
 
   // nsISVGChildFrame interface:
   virtual nsresult PaintSVG(nsRenderingContext *aContext,
-                            const nsIntRect *aDirtyRect,
-                            nsIFrame* aTransformRoot) MOZ_OVERRIDE;
-  virtual nsIFrame* GetFrameForPoint(const nsPoint &aPoint) MOZ_OVERRIDE;
+                            const gfxMatrix& aTransform,
+                            const nsIntRect* aDirtyRect = nullptr) MOZ_OVERRIDE;
+  virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) MOZ_OVERRIDE;
   virtual void ReflowSVG() MOZ_OVERRIDE;
 
   // nsSVGPathGeometryFrame methods:
@@ -100,13 +100,10 @@ public:
 
 private:
   gfx::Matrix GetRasterImageTransform(int32_t aNativeWidth,
-                                      int32_t aNativeHeight,
-                                      uint32_t aFor,
-                                      nsIFrame* aTransformRoot = nullptr);
-  gfx::Matrix GetVectorImageTransform(uint32_t aFor,
-                                      nsIFrame* aTransformRoot = nullptr);
+                                      int32_t aNativeHeight);
+  gfx::Matrix GetVectorImageTransform();
   bool TransformContextForPainting(gfxContext* aGfxContext,
-                                   nsIFrame* aTransformRoot);
+                                   const gfxMatrix& aTransform);
 
   nsCOMPtr<imgINotificationObserver> mListener;
 
@@ -230,9 +227,7 @@ nsSVGImageFrame::AttributeChanged(int32_t         aNameSpaceID,
 
 gfx::Matrix
 nsSVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
-                                         int32_t aNativeHeight,
-                                         uint32_t aFor,
-                                         nsIFrame* aTransformRoot)
+                                         int32_t aNativeHeight)
 {
   float x, y, width, height;
   SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
@@ -243,14 +238,11 @@ nsSVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
                                          0, 0, aNativeWidth, aNativeHeight,
                                          element->mPreserveAspectRatio);
 
-  return viewBoxTM *
-         gfx::Matrix::Translation(x, y) *
-         gfx::ToMatrix(GetCanvasTM(aFor, aTransformRoot));
+  return viewBoxTM * gfx::Matrix::Translation(x, y);
 }
 
 gfx::Matrix
-nsSVGImageFrame::GetVectorImageTransform(uint32_t aFor,
-                                         nsIFrame* aTransformRoot)
+nsSVGImageFrame::GetVectorImageTransform()
 {
   float x, y, width, height;
   SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
@@ -260,17 +252,16 @@ nsSVGImageFrame::GetVectorImageTransform(uint32_t aFor,
   // "native size" that the SVG image has, and it will handle viewBox and
   // preserveAspectRatio on its own once we give it a region to draw into.
 
-  return gfx::Matrix::Translation(x, y) *
-         gfx::ToMatrix(GetCanvasTM(aFor, aTransformRoot));
+  return gfx::Matrix::Translation(x, y);
 }
 
 bool
 nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
-                                             nsIFrame* aTransformRoot)
+                                             const gfxMatrix& aTransform)
 {
   gfx::Matrix imageTransform;
   if (mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
-    imageTransform = GetVectorImageTransform(FOR_PAINTING, aTransformRoot);
+    imageTransform = GetVectorImageTransform() * ToMatrix(aTransform);
   } else {
     int32_t nativeWidth, nativeHeight;
     if (NS_FAILED(mImageContainer->GetWidth(&nativeWidth)) ||
@@ -279,15 +270,14 @@ nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
       return false;
     }
     imageTransform =
-      GetRasterImageTransform(nativeWidth, nativeHeight, FOR_PAINTING,
-                              aTransformRoot);
+      GetRasterImageTransform(nativeWidth, nativeHeight) * ToMatrix(aTransform);
 
     // NOTE: We need to cancel out the effects of Full-Page-Zoom, or else
     // it'll get applied an extra time by DrawSingleUnscaledImage.
     nscoord appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
     gfxFloat pageZoomFactor =
       nsPresContext::AppUnitsToFloatCSSPixels(appUnitsPerDevPx);
-    imageTransform.Scale(pageZoomFactor, pageZoomFactor);
+    imageTransform.PreScale(pageZoomFactor, pageZoomFactor);
   }
 
   if (imageTransform.IsSingular()) {
@@ -302,8 +292,8 @@ nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
 // nsISVGChildFrame methods:
 nsresult
 nsSVGImageFrame::PaintSVG(nsRenderingContext *aContext,
-                          const nsIntRect *aDirtyRect,
-                          nsIFrame* aTransformRoot)
+                          const gfxMatrix& aTransform,
+                          const nsIntRect *aDirtyRect)
 {
   nsresult rv = NS_OK;
 
@@ -334,11 +324,10 @@ nsSVGImageFrame::PaintSVG(nsRenderingContext *aContext,
     if (StyleDisplay()->IsScrollableOverflow()) {
       gfxRect clipRect = nsSVGUtils::GetClipRectForFrame(this, x, y,
                                                          width, height);
-      nsSVGUtils::SetClipRect(ctx, GetCanvasTM(FOR_PAINTING, aTransformRoot),
-                              clipRect);
+      nsSVGUtils::SetClipRect(ctx, aTransform, clipRect);
     }
 
-    if (!TransformContextForPainting(ctx, aTransformRoot)) {
+    if (!TransformContextForPainting(ctx, aTransform)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -363,8 +352,8 @@ nsSVGImageFrame::PaintSVG(nsRenderingContext *aContext,
       dirtyRect = aDirtyRect->ToAppUnits(appUnitsPerDevPx);
       // Adjust dirtyRect to match our local coordinate system.
       nsRect rootRect =
-        nsSVGUtils::TransformFrameRectToOuterSVG(mRect,
-                      GetCanvasTM(FOR_PAINTING), PresContext());
+        nsSVGUtils::TransformFrameRectToOuterSVG(mRect, aTransform,
+                                                 PresContext());
       dirtyRect.MoveBy(-rootRect.TopLeft());
     }
 
@@ -377,7 +366,8 @@ nsSVGImageFrame::PaintSVG(nsRenderingContext *aContext,
     if (mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
       // Package up the attributes of this image element which can override the
       // attributes of mImageContainer's internal SVG document.
-      SVGImageContext context(imgElem->mPreserveAspectRatio.GetAnimValue());
+      SVGImageContext context(nsIntSize(width, height),
+                              Some(imgElem->mPreserveAspectRatio.GetAnimValue()));
 
       nsRect destRect(0, 0,
                       appUnitsPerDevPx * width,
@@ -418,13 +408,25 @@ nsSVGImageFrame::PaintSVG(nsRenderingContext *aContext,
 }
 
 nsIFrame*
-nsSVGImageFrame::GetFrameForPoint(const nsPoint &aPoint)
+nsSVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint)
 {
+  Rect rect;
+  SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
+  element->GetAnimatedLengthValues(&rect.x, &rect.y,
+                                   &rect.width, &rect.height, nullptr);
+
+  if (!rect.Contains(ToPoint(aPoint))) {
+    return nullptr;
+  }
+
   // Special case for raster images -- we only want to accept points that fall
-  // in the underlying image's (transformed) native bounds.  That region
-  // doesn't necessarily map to our <image> element's [x,y,width,height].  So,
-  // we have to look up the native image size & our image transform in order
-  // to filter out points that fall outside that area.
+  // in the underlying image's (scaled to fit) native bounds.  That region
+  // doesn't necessarily map to our <image> element's [x,y,width,height] if the
+  // raster image's aspect ratio is being preserved.  We have to look up the
+  // native image size & our viewBox transform in order to filter out points
+  // that fall outside that area.  (This special case doesn't apply to vector
+  // images because they don't limit their drawing to explicit "native
+  // bounds" -- they have an infinite canvas on which to place content.)
   if (StyleDisplay()->IsScrollableOverflow() && mImageContainer) {
     if (mImageContainer->GetType() == imgIContainer::TYPE_RASTER) {
       int32_t nativeWidth, nativeHeight;
@@ -433,23 +435,19 @@ nsSVGImageFrame::GetFrameForPoint(const nsPoint &aPoint)
           nativeWidth == 0 || nativeHeight == 0) {
         return nullptr;
       }
-
-      if (!nsSVGUtils::HitTestRect(
-               GetRasterImageTransform(nativeWidth, nativeHeight,
-                                       FOR_HIT_TESTING),
-               0, 0, nativeWidth, nativeHeight,
-               PresContext()->AppUnitsToFloatCSSPixels(aPoint.x),
-               PresContext()->AppUnitsToFloatCSSPixels(aPoint.y))) {
+      Matrix viewBoxTM =
+        SVGContentUtils::GetViewBoxTransform(rect.width, rect.height,
+                                             0, 0, nativeWidth, nativeHeight,
+                                             element->mPreserveAspectRatio);
+      if (!nsSVGUtils::HitTestRect(viewBoxTM,
+                                   0, 0, nativeWidth, nativeHeight,
+                                   aPoint.x - rect.x, aPoint.y - rect.y)) {
         return nullptr;
       }
     }
-    // The special case above doesn't apply to vector images, because they
-    // don't limit their drawing to explicit "native bounds" -- they have
-    // an infinite canvas on which to place content.  So it's reasonable to
-    // just fall back on our <image> element's own bounds here.
   }
 
-  return nsSVGImageFrameBase::GetFrameForPoint(aPoint);
+  return this;
 }
 
 nsIAtom *

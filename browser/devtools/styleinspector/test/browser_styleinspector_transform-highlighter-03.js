@@ -72,20 +72,20 @@ let test = asyncTest(function*() {
     "The highlighter was shown once, after several mousemove");
 
   info("Checking that the right NodeFront reference is passed");
-  yield selectNode(content.document.documentElement, inspector);
-  let {valueSpan} = getRuleViewProperty(rView, "html", "transform");
+  yield selectNode("html", inspector);
+  ({valueSpan} = getRuleViewProperty(rView, "html", "transform"));
   rView.highlighters._onMouseMove({target: valueSpan});
   is(HighlighterFront.nodeFront.tagName, "HTML",
     "The right NodeFront is passed to the highlighter (1)");
 
   yield selectNode("body", inspector);
-  let {valueSpan} = getRuleViewProperty(rView, "body", "transform");
+  ({valueSpan} = getRuleViewProperty(rView, "body", "transform"));
   rView.highlighters._onMouseMove({target: valueSpan});
   is(HighlighterFront.nodeFront.tagName, "BODY",
     "The right NodeFront is passed to the highlighter (2)");
 
   info("Checking that the highlighter gets hidden when hovering a non-transform property");
-  let {valueSpan} = getRuleViewProperty(rView, "body", "color");
+  ({valueSpan} = getRuleViewProperty(rView, "body", "color"));
   rView.highlighters._onMouseMove({target: valueSpan});
   ok(!HighlighterFront.isShown, "The highlighter is hidden");
 });

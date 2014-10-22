@@ -4,10 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef MOZ_LOGGING
-#define FORCE_PR_LOG
-#endif
-
 #include "nsSocketTransport2.h"
 
 #include "mozilla/Attributes.h"
@@ -943,6 +939,15 @@ nsSocketTransport::InitWithConnectedSocket(PRFileDesc *fd, const NetAddr *addr)
 }
 
 nsresult
+nsSocketTransport::InitWithConnectedSocket(PRFileDesc* aFD,
+                                           const NetAddr* aAddr,
+                                           nsISupports* aSecInfo)
+{
+    mSecInfo = aSecInfo;
+    return InitWithConnectedSocket(aFD, aAddr);
+}
+
+nsresult
 nsSocketTransport::PostEvent(uint32_t type, nsresult status, nsISupports *param)
 {
     SOCKET_LOG(("nsSocketTransport::PostEvent [this=%p type=%u status=%x param=%p]\n",
@@ -1176,7 +1181,15 @@ nsSocketTransport::InitiateSocket()
 {
     SOCKET_LOG(("nsSocketTransport::InitiateSocket [this=%p]\n", this));
 
-    static bool crashOnNonLocalConnections = !!getenv("MOZ_DISABLE_NONLOCAL_CONNECTIONS");
+    static int crashOnNonLocalConnections = -1;
+    if (crashOnNonLocalConnections == -1) {
+        const char *s = getenv("MOZ_DISABLE_NONLOCAL_CONNECTIONS");
+        if (s) {
+            crashOnNonLocalConnections = !!strncmp(s, "0", 1);
+        } else {
+            crashOnNonLocalConnections = 0;
+        }
+    }
 
     nsresult rv;
     bool isLocal;
@@ -1193,11 +1206,11 @@ nsSocketTransport::InitiateSocket()
             nsRefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
             netaddr->GetAddress(ipaddr);
             fprintf_stderr(stderr,
-                           "Non-local network connections are disabled and a connection "
-                           "attempt to %s (%s) was made.  You should only access hostnames "
+                           "FATAL ERROR: Non-local network connections are disabled and a connection "
+                           "attempt to %s (%s) was made.\nYou should only access hostnames "
                            "available via the test networking proxy (if running mochitests) "
-                           "or from a test-specific httpd.js server (if running xpcshell tests)."
-                           " Browser services should be disabled or redirected to a local server.\n",
+                           "or from a test-specific httpd.js server (if running xpcshell tests). "
+                           "Browser services should be disabled or redirected to a local server.\n",
                            mHost.get(), ipaddr.get());
             MOZ_CRASH("Attempting to connect to non-local address!");
         }
@@ -1222,7 +1235,9 @@ nsSocketTransport::InitiateSocket()
                         netAddrCString.get()));
         }
 #endif
-        return NS_ERROR_CONNECTION_REFUSED;
+        mCondition = NS_ERROR_CONNECTION_REFUSED;
+        OnSocketDetached(nullptr);
+        return mCondition;
     }
 
     //
@@ -1338,6 +1353,18 @@ nsSocketTransport::InitiateSocket()
     // Initiate the connect() to the host...
     //
     PRNetAddr prAddr;
+    {
+        if (mBindAddr) {
+            MutexAutoLock lock(mLock);
+            NetAddrToPRNetAddr(mBindAddr.get(), &prAddr);
+            status = PR_Bind(fd, &prAddr);
+            if (status != PR_SUCCESS) {
+                return NS_ERROR_FAILURE;
+            }
+            mBindAddr = nullptr;
+        }
+    }
+
     NetAddrToPRNetAddr(&mNetAddr, &prAddr);
 
     MOZ_EVENT_TRACER_EXEC(this, "net::tcp::connect");
@@ -1608,7 +1635,7 @@ nsSocketTransport::GetFD_Locked()
 class ThunkPRClose : public nsRunnable
 {
 public:
-  ThunkPRClose(PRFileDesc *fd) : mFD(fd) {}
+  explicit ThunkPRClose(PRFileDesc *fd) : mFD(fd) {}
 
   NS_IMETHOD Run()
   {
@@ -2202,6 +2229,22 @@ nsSocketTransport::GetSelfAddr(NetAddr *addr)
     PRNetAddrToNetAddr(&prAddr, addr);
 
     return rv;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::Bind(NetAddr *aLocalAddr)
+{
+    NS_ENSURE_ARG(aLocalAddr);
+
+    MutexAutoLock lock(mLock);
+    if (mAttached) {
+        return NS_ERROR_FAILURE;
+    }
+
+    mBindAddr = new NetAddr();
+    memcpy(mBindAddr.get(), aLocalAddr, sizeof(NetAddr));
+
+    return NS_OK;
 }
 
 /* nsINetAddr getScriptablePeerAddr (); */

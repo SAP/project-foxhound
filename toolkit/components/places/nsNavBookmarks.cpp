@@ -19,9 +19,9 @@
 
 #include "GeckoProfiler.h"
 
-#define BOOKMARKS_TO_KEYWORDS_INITIAL_CACHE_SIZE 64
-#define RECENT_BOOKMARKS_INITIAL_CACHE_SIZE 10
-// Threashold to expire old bookmarks if the initial cache size is exceeded.
+#define BOOKMARKS_TO_KEYWORDS_INITIAL_CACHE_LENGTH 32
+#define RECENT_BOOKMARKS_INITIAL_CACHE_LENGTH 10
+// Threshold to expire old bookmarks if the initial cache size is exceeded.
 #define RECENT_BOOKMARKS_THRESHOLD PRTime((int64_t)1 * 60 * PR_USEC_PER_SEC)
 
 #define BEGIN_CRITICAL_BOOKMARK_CACHE_SECTION(_itemId_) \
@@ -60,7 +60,7 @@ PLACES_FACTORY_SINGLETON_IMPLEMENTATION(nsNavBookmarks, gBookmarksService)
 
 #define BOOKMARKS_ANNO_PREFIX "bookmarks/"
 #define BOOKMARKS_TOOLBAR_FOLDER_ANNO NS_LITERAL_CSTRING(BOOKMARKS_ANNO_PREFIX "toolbarFolder")
-#define READ_ONLY_ANNO NS_LITERAL_CSTRING("placesInternal/READ_ONLY")
+#define FEED_URI_ANNO NS_LITERAL_CSTRING("livemark/feedURI")
 
 
 namespace {
@@ -169,7 +169,7 @@ ExpireNonrecentBookmarksCallback(BookmarkKeyClass* aKey,
 static void
 ExpireNonrecentBookmarks(nsTHashtable<BookmarkKeyClass>* hashTable)
 {
-  if (hashTable->Count() > RECENT_BOOKMARKS_INITIAL_CACHE_SIZE) {
+  if (hashTable->Count() > RECENT_BOOKMARKS_INITIAL_CACHE_LENGTH) {
     int64_t threshold = PR_Now() - RECENT_BOOKMARKS_THRESHOLD;
     (void)hashTable->EnumerateEntries(ExpireNonrecentBookmarksCallback,
                                       reinterpret_cast<void*>(&threshold));
@@ -208,10 +208,10 @@ nsNavBookmarks::nsNavBookmarks()
   , mCanNotify(false)
   , mCacheObservers("bookmark-observers")
   , mBatching(false)
-  , mBookmarkToKeywordHash(BOOKMARKS_TO_KEYWORDS_INITIAL_CACHE_SIZE)
+  , mBookmarkToKeywordHash(BOOKMARKS_TO_KEYWORDS_INITIAL_CACHE_LENGTH)
   , mBookmarkToKeywordHashInitialized(false)
-  , mRecentBookmarksCache(RECENT_BOOKMARKS_INITIAL_CACHE_SIZE)
-  , mUncachableBookmarks(RECENT_BOOKMARKS_INITIAL_CACHE_SIZE)
+  , mRecentBookmarksCache(RECENT_BOOKMARKS_INITIAL_CACHE_LENGTH)
+  , mUncachableBookmarks(RECENT_BOOKMARKS_INITIAL_CACHE_LENGTH)
 {
   NS_ASSERTION(!gBookmarksService,
                "Attempting to create two instances of the service!");
@@ -790,45 +790,17 @@ nsNavBookmarks::CreateFolder(int64_t aParent, const nsACString& aName,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsNavBookmarks::GetFolderReadonly(int64_t aFolder, bool* aResult)
+bool nsNavBookmarks::IsLivemark(int64_t aFolderId)
 {
-  NS_ENSURE_ARG_MIN(aFolder, 1);
-  NS_ENSURE_ARG_POINTER(aResult);
-
   nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationService();
-  NS_ENSURE_TRUE(annosvc, NS_ERROR_OUT_OF_MEMORY);
-  nsresult rv = annosvc->ItemHasAnnotation(aFolder, READ_ONLY_ANNO, aResult);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return NS_OK;
+  NS_ENSURE_TRUE(annosvc, false);
+  bool isLivemark;
+  nsresult rv = annosvc->ItemHasAnnotation(aFolderId,
+                                           FEED_URI_ANNO,
+                                           &isLivemark);
+  NS_ENSURE_SUCCESS(rv, false);
+  return isLivemark;
 }
-
-
-NS_IMETHODIMP
-nsNavBookmarks::SetFolderReadonly(int64_t aFolder, bool aReadOnly)
-{
-  NS_ENSURE_ARG_MIN(aFolder, 1);
-
-  nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationService();
-  NS_ENSURE_TRUE(annosvc, NS_ERROR_OUT_OF_MEMORY);
-  nsresult rv;
-  if (aReadOnly) {
-    rv = annosvc->SetItemAnnotationInt32(aFolder, READ_ONLY_ANNO, 1, 0,
-                                         nsAnnotationService::EXPIRE_NEVER);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-  else {
-    bool hasAnno;
-    rv = annosvc->ItemHasAnnotation(aFolder, READ_ONLY_ANNO, &hasAnno);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (hasAnno) {
-      rv = annosvc->RemoveItemAnnotation(aFolder, READ_ONLY_ANNO);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-  }
-  return NS_OK;
-}
-
 
 nsresult
 nsNavBookmarks::CreateContainerWithID(int64_t aItemId,
@@ -1866,11 +1838,10 @@ nsNavBookmarks::ProcessFolderNodeRow(
     }
   }
   else if (itemType == TYPE_FOLDER) {
+    // ExcludeReadOnlyFolders currently means "ExcludeLivemarks" (to be fixed in
+    // bug 1072833)
     if (aOptions->ExcludeReadOnlyFolders()) {
-      // If the folder is read-only, skip it.
-      bool readOnly = false;
-      GetFolderReadonly(id, &readOnly);
-      if (readOnly)
+      if (IsLivemark(id))
         return NS_OK;
     }
 

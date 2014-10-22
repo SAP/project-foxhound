@@ -3,7 +3,7 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<resources>
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
         Base application theme. This could be overridden by GeckoBaseTheme
@@ -14,6 +14,9 @@
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="arrowPopupWidth">400dp</item>
+        <item name="menuItemActionBarStyleNewTablet">@style/Widget.MenuItemActionBar.NewTablet</item>
     </style>
+
+    <style name="GeckoStartPane" parent="Gecko.Dialog"/>
     
 </resources>

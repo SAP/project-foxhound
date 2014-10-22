@@ -54,50 +54,39 @@ private:
   IOPMAssertionID mAssertionID = kIOPMNullAssertionID;
 
   NS_IMETHOD Callback(const nsAString& aTopic, const nsAString& aState) {
-    bool isLocked = mLockedTopics.Contains(aTopic);
-    bool shouldLock = aState.EqualsLiteral("locked-foreground");
-    if (isLocked == shouldLock) {
+    if (!aTopic.EqualsASCII("screen")) {
       return NS_OK;
     }
-    if (shouldLock) {
-      if (!mLockedTopics.Count()) {
-        // This is the first topic to request the screen saver be disabled.
-        // Prevent screen saver.
-        CFStringRef cf_topic =
-          ::CFStringCreateWithCharacters(kCFAllocatorDefault,
-                                         reinterpret_cast<const UniChar*>
-                                           (aTopic.Data()),
-                                         aTopic.Length());
-        IOReturn success =
-          ::IOPMAssertionCreateWithName(kIOPMAssertionTypeNoDisplaySleep,
-                                        kIOPMAssertionLevelOn,
-                                        cf_topic,
-                                        &mAssertionID);
-        CFRelease(cf_topic);
-        if (success != kIOReturnSuccess) {
-          NS_WARNING("fail to disable screensaver");
-        }
+    // Note the wake lock code ensures that we're not sent duplicate
+    // "locked-foreground" notifications when multiple wake locks are held.
+    if (aState.EqualsASCII("locked-foreground")) {
+      // Prevent screen saver.
+      CFStringRef cf_topic =
+        ::CFStringCreateWithCharacters(kCFAllocatorDefault,
+                                       reinterpret_cast<const UniChar*>
+                                         (aTopic.Data()),
+                                       aTopic.Length());
+      IOReturn success =
+        ::IOPMAssertionCreateWithName(kIOPMAssertionTypeNoDisplaySleep,
+                                      kIOPMAssertionLevelOn,
+                                      cf_topic,
+                                      &mAssertionID);
+      CFRelease(cf_topic);
+      if (success != kIOReturnSuccess) {
+        NS_WARNING("failed to disable screensaver");
       }
-      mLockedTopics.PutEntry(aTopic);
     } else {
-      mLockedTopics.RemoveEntry(aTopic);
-      if (!mLockedTopics.Count()) {
-        // No other outstanding topics have requested screen saver be disabled.
-        // Re-enable screen saver.
-        if (mAssertionID != kIOPMNullAssertionID) {
-          IOReturn result = ::IOPMAssertionRelease(mAssertionID);
-          if (result != kIOReturnSuccess) {
-            NS_WARNING("fail to release screensaver");
-          }
+      // Re-enable screen saver.
+      NS_WARNING("Releasing screensaver");
+      if (mAssertionID != kIOPMNullAssertionID) {
+        IOReturn result = ::IOPMAssertionRelease(mAssertionID);
+        if (result != kIOReturnSuccess) {
+          NS_WARNING("failed to release screensaver");
         }
       }
     }
     return NS_OK;
   }
-  // Keep track of all the topics that have requested a wake lock. When the
-  // number of topics in the hashtable reaches zero, we can uninhibit the
-  // screensaver again.
-  nsTHashtable<nsStringHashKey> mLockedTopics;
 };
 
 // defined in nsCocoaWindow.mm
@@ -177,7 +166,7 @@ nsAppShell::nsAppShell()
 , mNativeEventScheduledDepth(0)
 {
   // A Cocoa event loop is running here if (and only if) we've been embedded
-  // by a Cocoa app (like Camino).
+  // by a Cocoa app.
   mRunningCocoaEmbedded = [NSApp isRunning] ? true : false;
 }
 
@@ -243,8 +232,8 @@ nsAppShell::Init()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  // No event loop is running yet (unless Camino is running, or another
-  // embedding app that uses NSApplicationMain()).
+  // No event loop is running yet (unless an embedding app that uses
+  // NSApplicationMain() is running).
   NSAutoreleasePool* localPool = [[NSAutoreleasePool alloc] init];
 
   // mAutoreleasePools is used as a stack of NSAutoreleasePool objects created
@@ -269,9 +258,8 @@ nsAppShell::Init()
   // This call initializes NSApplication unless:
   // 1) we're using xre -- NSApp's already been initialized by
   //    MacApplicationDelegate.mm's EnsureUseCocoaDockAPI().
-  // 2) Camino is running (or another embedding app that uses
-  //    NSApplicationMain()) -- NSApp's already been initialized and
-  //    its main run loop is already running.
+  // 2) an embedding app that uses NSApplicationMain() is running -- NSApp's
+  //    already been initialized and its main run loop is already running.
   [NSBundle loadNibFile:
                      [NSString stringWithUTF8String:(const char*)nibPath.get()]
       externalNameTable:
@@ -308,7 +296,7 @@ nsAppShell::Init()
 
   if (!gAppShellMethodsSwizzled) {
     // We should only replace the original terminate: method if we're not
-    // running in a Cocoa embedder (like Camino).  See bug 604901.
+    // running in a Cocoa embedder. See bug 604901.
     if (!mRunningCocoaEmbedded) {
       nsToolkit::SwizzleMethods([NSApplication class], @selector(terminate:),
                                 @selector(nsAppShell_NSApplication_terminate:));
@@ -629,8 +617,8 @@ nsAppShell::ProcessNextNativeEvent(bool aMayWait)
 // to be processed elsewhere (in NativeEventCallback(), called from
 // ProcessGeckoEvents()).
 //
-// Camino calls [NSApp run] on its own (via NSApplicationMain()), and so
-// doesn't call nsAppShell::Run().
+// Camino called [NSApp run] on its own (via NSApplicationMain()), and so
+// didn't call nsAppShell::Run().
 //
 // public
 NS_IMETHODIMP

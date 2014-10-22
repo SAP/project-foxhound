@@ -29,7 +29,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(MediaKeyMessageEvent, Event)
 protected:
   virtual ~MediaKeyMessageEvent();
-  MediaKeyMessageEvent(EventTarget* aOwner);
+  explicit MediaKeyMessageEvent(EventTarget* aOwner);
 
   JS::Heap<JSObject*> mMessage;
   nsString mDestinationURL;
@@ -37,7 +37,7 @@ protected:
 public:
   virtual MediaKeyMessageEvent* AsMediaKeyMessageEvent();
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObjectInternal(JSContext* aCx) MOZ_OVERRIDE;
 
   static already_AddRefed<MediaKeyMessageEvent>
     Constructor(EventTarget* aOwner,

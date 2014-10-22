@@ -29,11 +29,12 @@ class NoCommandError(MachError):
 class UnknownCommandError(MachError):
     """Raised when we attempted to execute an unknown command."""
 
-    def __init__(self, command, verb):
+    def __init__(self, command, verb, suggested_commands=None):
         MachError.__init__(self)
 
         self.command = command
         self.verb = verb
+        self.suggested_commands = suggested_commands or []
 
 class UnrecognizedArgumentError(MachError):
     """Raised when an unknown argument is passed to mach."""
@@ -76,9 +77,6 @@ class MethodHandler(object):
         # Description of the purpose of this command.
         'description',
 
-        # Whether to allow all arguments from the parser.
-        'allow_all_arguments',
-
         # Functions used to 'skip' commands if they don't meet the conditions
         # in a given context.
         'conditions',
@@ -90,20 +88,23 @@ class MethodHandler(object):
         # Arguments added to this command's parser. This is a 2-tuple of
         # positional and named arguments, respectively.
         'arguments',
+
+        # Argument groups added to this command's parser.
+        'argument_group_names',
     )
 
     def __init__(self, cls, method, name, category=None, description=None,
-        allow_all_arguments=False, conditions=None, parser=None, arguments=None,
-        pass_context=False):
+        conditions=None, parser=None, arguments=None,
+        argument_group_names=None, pass_context=False):
 
         self.cls = cls
         self.method = method
         self.name = name
         self.category = category
         self.description = description
-        self.allow_all_arguments = allow_all_arguments
         self.conditions = conditions or []
         self.parser = parser
         self.arguments = arguments or []
+        self.argument_group_names = argument_group_names or []
         self.pass_context = pass_context
 

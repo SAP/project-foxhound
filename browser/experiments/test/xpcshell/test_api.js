@@ -65,8 +65,6 @@ add_task(function* test_setup() {
   });
   do_register_cleanup(() => gHttpServer.stop(() => {}));
 
-  disableCertificateChecks();
-
   Services.prefs.setBoolPref(PREF_EXPERIMENTS_ENABLED, true);
   Services.prefs.setIntPref(PREF_LOGGING_LEVEL, 0);
   Services.prefs.setBoolPref(PREF_LOGGING_DUMP, true);
@@ -1634,7 +1632,7 @@ add_task(function* test_foreignUninstallAndRestart() {
   yield AddonTestUtils.uninstallAddonByID(EXPERIMENT1_ID);
   yield experiments._mainTask;
 
-  let addons = yield getExperimentAddons();
+  addons = yield getExperimentAddons();
   Assert.equal(addons.length, 0, "Experiment add-on should have been removed.");
 
   experimentList = yield experiments.getExperiments();
@@ -1647,7 +1645,7 @@ add_task(function* test_foreignUninstallAndRestart() {
   experiments = new Experiments.Experiments(gPolicy);
   yield experiments.updateManifest();
 
-  let addons = yield getExperimentAddons();
+  addons = yield getExperimentAddons();
   Assert.equal(addons.length, 0, "No experiment add-ons installed.");
 
   experimentList = yield experiments.getExperiments();

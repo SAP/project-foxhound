@@ -826,7 +826,7 @@ nsBinaryInputStream::ReadByteArray(uint32_t aLength, uint8_t** aResult)
 NS_IMETHODIMP
 nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
                                      JS::Handle<JS::Value> aBuffer,
-                                     JSContext* aCx, uint32_t *rLength)
+                                     JSContext* aCx, uint32_t* aReadLength)
 {
   if (!aBuffer.isObject()) {
     return NS_ERROR_FAILURE;
@@ -841,20 +841,15 @@ nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
     return NS_ERROR_FAILURE;
   }
 
-  char* data = reinterpret_cast<char*>(JS_GetStableArrayBufferData(aCx, buffer));
-  if (!data) {
-    return NS_ERROR_FAILURE;
-  }
-
   uint32_t bufSize = std::min<uint32_t>(aLength, 4096);
   UniquePtr<char[]> buf = MakeUnique<char[]>(bufSize);
 
-  uint32_t remaining = aLength;
-  *rLength = 0;
+  uint32_t pos = 0;
+  *aReadLength = 0;
   do {
     // Read data into temporary buffer.
     uint32_t bytesRead;
-    uint32_t amount = std::min(remaining, bufSize);
+    uint32_t amount = std::min(aLength - pos, bufSize);
     nsresult rv = Read(buf.get(), amount, &bytesRead);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -866,16 +861,22 @@ nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
     }
 
     // Copy data into actual buffer.
+
+    JS::AutoCheckCannotGC nogc;
     if (bufferLength != JS_GetArrayBufferByteLength(buffer)) {
       return NS_ERROR_FAILURE;
     }
 
-    *rLength += bytesRead;
-    PodCopy(data, buf.get(), bytesRead);
+    char* data = reinterpret_cast<char*>(JS_GetArrayBufferData(buffer, nogc));
+    if (!data) {
+      return NS_ERROR_FAILURE;
+    }
 
-    remaining -= bytesRead;
-    data += bytesRead;
-  } while (remaining > 0);
+    *aReadLength += bytesRead;
+    PodCopy(data + pos, buf.get(), bytesRead);
+
+    pos += bytesRead;
+  } while (pos < aLength);
 
   return NS_OK;
 }

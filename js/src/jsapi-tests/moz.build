@@ -4,31 +4,33 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-PROGRAM = 'jsapi-tests'
+Program('jsapi-tests')
 
 UNIFIED_SOURCES += [
     'selfTest.cpp',
     'testAddPropertyPropcache.cpp',
     'testArgumentsObject.cpp',
     'testArrayBuffer.cpp',
+    'testArrayBufferView.cpp',
     'testBindCallable.cpp',
     'testBug604087.cpp',
     'testCallNonGenericMethodOnProxy.cpp',
     'testChromeBuffer.cpp',
     'testClassGetter.cpp',
     'testCloneScript.cpp',
-    'testConservativeGC.cpp',
     'testContexts.cpp',
     'testCustomIterator.cpp',
     'testDebugger.cpp',
     'testDeepFreeze.cpp',
     'testDefineGetterSetterNonEnumerable.cpp',
     'testDefineProperty.cpp',
+    'testDefinePropertyIgnoredAttributes.cpp',
     'testEnclosingFunction.cpp',
     'testErrorCopying.cpp',
     'testException.cpp',
     'testExternalStrings.cpp',
     'testFindSCCs.cpp',
+    'testForOfIterator.cpp',
     'testFreshGlobalEvalRedefinition.cpp',
     'testFuncCallback.cpp',
     'testFunctionProperties.cpp',
@@ -49,29 +51,33 @@ UNIFIED_SOURCES += [
     'testLookup.cpp',
     'testLooselyEqual.cpp',
     'testMappedArrayBuffer.cpp',
+    'testMutedErrors.cpp',
     'testNewObject.cpp',
     'testNullRoot.cpp',
     'testObjectEmulatingUndefined.cpp',
     'testOOM.cpp',
     'testOps.cpp',
-    'testOriginPrincipals.cpp',
     'testParseJSON.cpp',
     'testPersistentRooted.cpp',
+    'testPreserveJitCode.cpp',
     'testProfileStrings.cpp',
     'testPropCache.cpp',
     'testRegExp.cpp',
     'testResolveRecursion.cpp',
     'tests.cpp',
     'testSameValue.cpp',
+    'testSavedStacks.cpp',
     'testScriptInfo.cpp',
     'testScriptObject.cpp',
     'testSetProperty.cpp',
+    'testSetPropertyIgnoringNamedGetter.cpp',
     'testSourcePolicy.cpp',
     'testStringBuffer.cpp',
     'testStructuredClone.cpp',
     'testSymbol.cpp',
     'testToIntWidth.cpp',
     'testTypedArrays.cpp',
+    'testUbiNode.cpp',
     'testUncaughtError.cpp',
     'testUTF8.cpp',
     'testWeakMap.cpp',
@@ -80,7 +86,10 @@ UNIFIED_SOURCES += [
 
 if CONFIG['ENABLE_ION']:
     UNIFIED_SOURCES += [
+        'testJitDCEinGVN.cpp',
         'testJitFoldsTo.cpp',
+        'testJitGVN.cpp',
+        'testJitMoveEmitterCycles-mips.cpp',
         'testJitMoveEmitterCycles.cpp',
         'testJitRValueAlloc.cpp',
     ]
@@ -96,3 +105,5 @@ GENERATED_INCLUDES += ['..']
 USE_LIBS += [
     'static:js',
 ]
+
+OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']

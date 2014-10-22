@@ -7,7 +7,6 @@
 #define mozilla_dom_Console_h
 
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/UnionConversions.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
@@ -15,6 +14,8 @@
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsWrapperCache.h"
+#include "nsDOMNavigationTiming.h"
+#include "nsPIDOMWindow.h"
 
 class nsIConsoleAPIStorage;
 
@@ -37,7 +38,7 @@ public:
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSIOBSERVER
 
-  Console(nsPIDOMWindow* aWindow);
+  explicit Console(nsPIDOMWindow* aWindow);
 
   // WebIDL methods
   nsISupports* GetParentObject() const
@@ -65,6 +66,9 @@ public:
 
   void
   Debug(JSContext* aCx, const Sequence<JS::Value>& aData);
+
+  void
+  Table(JSContext* aCx, const Sequence<JS::Value>& aData);
 
   void
   Trace(JSContext* aCx);
@@ -111,6 +115,7 @@ private:
     MethodError,
     MethodException,
     MethodDebug,
+    MethodTable,
     MethodTrace,
     MethodDir,
     MethodGroup,
@@ -190,7 +195,7 @@ private:
   ClearConsoleData();
 
   bool
-  ShouldIncludeStackrace(MethodName aMethodName);
+  ShouldIncludeStackTrace(MethodName aMethodName);
 
   nsCOMPtr<nsPIDOMWindow> mWindow;
   nsCOMPtr<nsITimer> mTimer;

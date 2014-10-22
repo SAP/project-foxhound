@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-PROGRAM = 'ipdlunittest'
+Program('ipdlunittest')
 
 SOURCES += [
     'TestIPDL.cpp',
@@ -21,6 +21,7 @@ if CONFIG['_MSC_VER']:
 
 USE_LIBS += [
     'mozalloc',
+    'nspr',
     'xpcomglue_s',
     'xul',
 ]

@@ -18,7 +18,6 @@
 #include "nsDOMString.h"
 #include "nsIContentInlines.h"
 #include "nsIDocument.h"
-#include "nsIDOMUserDataHandler.h"
 #include "nsGkAtoms.h"
 #include "nsCOMArray.h"
 #include "nsNameSpaceManager.h"
@@ -55,8 +54,6 @@ Attr::Attr(nsDOMAttributeMap *aAttrMap,
 
   // We don't add a reference to our content. It will tell us
   // to drop our reference when it goes away.
-
-  SetIsDOMBinding();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(Attr)
@@ -103,7 +100,7 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 // QueryInterface implementation for Attr
 NS_INTERFACE_TABLE_HEAD(Attr)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
   NS_INTERFACE_TABLE(Attr, nsINode, nsIDOMAttr, nsIAttribute, nsIDOMNode,
                      nsIDOMEventTarget, EventTarget)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(Attr)
@@ -302,7 +299,8 @@ Attr::GetBaseURI(bool aTryUseXHRDocBaseURI) const
 }
 
 void
-Attr::GetTextContentInternal(nsAString& aTextContent)
+Attr::GetTextContentInternal(nsAString& aTextContent,
+                             ErrorResult& aError)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eTextContent);
 
@@ -388,7 +386,7 @@ Attr::Shutdown()
 }
 
 JSObject*
-Attr::WrapObject(JSContext* aCx)
+Attr::WrapNode(JSContext* aCx)
 {
   return AttrBinding::Wrap(aCx, this);
 }

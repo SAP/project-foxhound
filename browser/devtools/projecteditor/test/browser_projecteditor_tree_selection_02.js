@@ -4,6 +4,13 @@
 
 "use strict";
 
+///////////////////
+//
+// Whitelisting this test.
+// As part of bug 1077403, the leaking uncaught rejection should be fixed.
+//
+thisTestLeaksUncaughtRejectionsAndShouldBeFixed("destroy");
+
 // Test that files get reselected in the tree when their editor
 // is focused.  https://bugzilla.mozilla.org/show_bug.cgi?id=1011116.
 
@@ -18,7 +25,7 @@ let test = asyncTest(function*() {
 
   is (
     resources.map(r=>r.basename).join("|"),
-    "ProjectEditor|css|styles.css|data|img|icons|128x128.png|16x16.png|32x32.png|vector.svg|fake.png|js|script.js|index.html|LICENSE|README.md",
+    TEMP_FOLDER_NAME + "|css|styles.css|data|img|icons|128x128.png|16x16.png|32x32.png|vector.svg|fake.png|js|script.js|index.html|LICENSE|README.md",
     "Resources came through in proper order"
   );
 

@@ -19,7 +19,8 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsStubMutationObserver.h"
-#include "nsIDocument.h"
+
+class nsIDocument;
 
 namespace mozilla {
 class EventChainPreVisitor;
@@ -42,7 +43,8 @@ public:
 
   // nsIDOMNode interface
   NS_FORWARD_NSIDOMNODE_TO_NSINODE
-  virtual void GetTextContentInternal(nsAString& aTextContent) MOZ_OVERRIDE;
+  virtual void GetTextContentInternal(nsAString& aTextContent,
+                                      ErrorResult& aError) MOZ_OVERRIDE;
   virtual void SetTextContentInternal(const nsAString& aTextContent,
                                       ErrorResult& aError) MOZ_OVERRIDE;
   virtual void GetNodeValueInternal(nsAString& aNodeValue) MOZ_OVERRIDE;
@@ -80,7 +82,7 @@ public:
   virtual nsIDOMNode* AsDOMNode() { return this; }
 
   // WebIDL
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  virtual JSObject* WrapNode(JSContext* aCx) MOZ_OVERRIDE;
 
   // XPCOM GetName() is OK
   // XPCOM GetValue() is OK

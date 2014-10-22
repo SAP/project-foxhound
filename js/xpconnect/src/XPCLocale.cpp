@@ -214,11 +214,12 @@ private:
           if (unicharLength + 1 < srcLength + 1) {
             char16_t *shrunkUnichars =
               (char16_t *)JS_realloc(cx, unichars,
-                                      (unicharLength + 1) * sizeof(char16_t));
+                                     (srcLength + 1) * sizeof(char16_t),
+                                     (unicharLength + 1) * sizeof(char16_t));
             if (shrunkUnichars)
               unichars = shrunkUnichars;
           }
-          JSString *str = JS_NewUCString(cx, reinterpret_cast<jschar*>(unichars), unicharLength);
+          JSString *str = JS_NewUCString(cx, reinterpret_cast<char16_t*>(unichars), unicharLength);
           if (str) {
             rval.setString(str);
             return true;

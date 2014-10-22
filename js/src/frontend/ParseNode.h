@@ -44,8 +44,8 @@ class UpvarCookie
     static const uint32_t FREE_LEVEL = SCOPECOORD_HOPS_LIMIT - 1;
     bool isFree() const { return level_ == FREE_LEVEL; }
 
-    uint32_t level() const { JS_ASSERT(!isFree()); return level_; }
-    uint32_t slot()  const { JS_ASSERT(!isFree()); return slot_; }
+    uint32_t level() const { MOZ_ASSERT(!isFree()); return level_; }
+    uint32_t slot()  const { MOZ_ASSERT(!isFree()); return slot_; }
 
     // This fails and issues an error message if newLevel or newSlot are too large.
     bool set(TokenStream &ts, unsigned newLevel, uint32_t newSlot) {
@@ -63,7 +63,7 @@ class UpvarCookie
     void makeFree() {
         level_ = FREE_LEVEL;
         slot_ = 0;      // value doesn't matter, won't be used
-        JS_ASSERT(isFree());
+        MOZ_ASSERT(isFree());
     }
 };
 
@@ -89,10 +89,13 @@ class UpvarCookie
     F(OBJECT) \
     F(CALL) \
     F(NAME) \
+    F(COMPUTED_NAME) \
     F(NUMBER) \
     F(STRING) \
     F(TEMPLATE_STRING_LIST) \
     F(TEMPLATE_STRING) \
+    F(TAGGED_TEMPLATE) \
+    F(CALLSITEOBJ) \
     F(REGEXP) \
     F(TRUE) \
     F(FALSE) \
@@ -121,6 +124,7 @@ class UpvarCookie
     F(FINALLY) \
     F(THROW) \
     F(DEBUGGER) \
+    F(GENERATOR) \
     F(YIELD) \
     F(YIELD_STAR) \
     F(GENEXP) \
@@ -142,6 +146,7 @@ class UpvarCookie
     F(FORHEAD) \
     F(ARGSBODY) \
     F(SPREAD) \
+    F(MUTATEPROTO) \
     \
     /* Unary operators. */ \
     F(TYPEOF) \
@@ -391,12 +396,22 @@ enum ParseNodeKind
  *                          pn_left: property id, pn_right: value
  * PNK_SHORTHAND binary     Same fields as PNK_COLON. This is used for object
  *                          literal properties using shorthand ({x}).
+ * PNK_COMPUTED_NAME unary  ES6 ComputedPropertyName.
+ *                          pn_kid: the AssignmentExpression inside the square brackets
  * PNK_NAME,    name        pn_atom: name, string, or object atom
  * PNK_STRING               pn_op: JSOP_NAME, JSOP_STRING, or JSOP_OBJECT
  *                          If JSOP_NAME, pn_op may be JSOP_*ARG or JSOP_*VAR
  *                          with pn_cookie telling (staticLevel, slot) (see
  *                          jsscript.h's UPVAR macros) and pn_dflags telling
  *                          const-ness and static analysis results
+ * PNK_TEMPLATE_STRING_LIST pn_head: list of alternating expr and template strings
+ *              list
+ * PNK_TEMPLATE_STRING      pn_atom: template string atom
+                nullary     pn_op: JSOP_NOP
+ * PNK_TAGGED_TEMPLATE      pn_head: list of call, call site object, arg1, arg2, ... argN
+ *              list        pn_count: 2 + N (N is the number of substitutions)
+ * PNK_CALLSITEOBJ list     pn_head: a PNK_ARRAY node followed by
+ *                          list of pn_count - 1 PNK_TEMPLATE_STRING nodes
  * PNK_REGEXP   nullary     pn_objbox: RegExp model object
  * PNK_NAME     name        If pn_used, PNK_NAME uses the lexdef member instead
  *                          of the expr member it overlays
@@ -408,6 +423,9 @@ enum ParseNodeKind
  *
  * PNK_LEXICALSCOPE name    pn_objbox: block object in ObjectBox holder
  *                          pn_expr: block body
+ * PNK_GENERATOR    nullary
+ * PNK_YIELD,       binary  pn_left: expr or null; pn_right: generator object
+ * PNK_YIELD_STAR
  * PNK_ARRAYCOMP    list    pn_count: 1
  *                          pn_head: list of 1 element, which is block
  *                          enclosing for loop(s) and optionally
@@ -454,7 +472,7 @@ class ParseNode
       : pn_type(kind), pn_op(op), pn_arity(arity), pn_parens(0), pn_used(0), pn_defn(0),
         pn_pos(0, 0), pn_offset(0), pn_next(nullptr), pn_link(nullptr)
     {
-        JS_ASSERT(kind < PNK_LIMIT);
+        MOZ_ASSERT(kind < PNK_LIMIT);
         memset(&pn_u, 0, sizeof pn_u);
     }
 
@@ -462,7 +480,7 @@ class ParseNode
       : pn_type(kind), pn_op(op), pn_arity(arity), pn_parens(0), pn_used(0), pn_defn(0),
         pn_pos(pos), pn_offset(0), pn_next(nullptr), pn_link(nullptr)
     {
-        JS_ASSERT(kind < PNK_LIMIT);
+        MOZ_ASSERT(kind < PNK_LIMIT);
         memset(&pn_u, 0, sizeof pn_u);
     }
 
@@ -471,11 +489,11 @@ class ParseNode
     bool isOp(JSOp op) const               { return getOp() == op; }
 
     ParseNodeKind getKind() const {
-        JS_ASSERT(pn_type < PNK_LIMIT);
+        MOZ_ASSERT(pn_type < PNK_LIMIT);
         return ParseNodeKind(pn_type);
     }
     void setKind(ParseNodeKind kind) {
-        JS_ASSERT(kind < PNK_LIMIT);
+        MOZ_ASSERT(kind < PNK_LIMIT);
         pn_type = kind;
     }
     bool isKind(ParseNodeKind kind) const  { return getKind() == kind; }
@@ -598,8 +616,8 @@ class ParseNode
         pn_op = op;
         pn_arity = arity;
         pn_parens = false;
-        JS_ASSERT(!pn_used);
-        JS_ASSERT(!pn_defn);
+        MOZ_ASSERT(!pn_used);
+        MOZ_ASSERT(!pn_defn);
         pn_next = pn_link = nullptr;
     }
 
@@ -633,14 +651,14 @@ class ParseNode
      * and pn->lexdef(). Otherwise, use pn->maybeExpr() and pn->maybeLexDef().
      */
     ParseNode *expr() const {
-        JS_ASSERT(!pn_used);
-        JS_ASSERT(pn_arity == PN_NAME || pn_arity == PN_CODE);
+        MOZ_ASSERT(!pn_used);
+        MOZ_ASSERT(pn_arity == PN_NAME || pn_arity == PN_CODE);
         return pn_expr;
     }
 
     Definition *lexdef() const {
-        JS_ASSERT(pn_used || isDeoptimized());
-        JS_ASSERT(pn_arity == PN_NAME);
+        MOZ_ASSERT(pn_used || isDeoptimized());
+        MOZ_ASSERT(pn_arity == PN_NAME);
         return pn_lexdef;
     }
 
@@ -650,7 +668,7 @@ class ParseNode
     Definition *resolve();
 
 /* PN_CODE and PN_NAME pn_dflags bits. */
-#define PND_LET                 0x01    /* let (block-scoped) binding */
+#define PND_LET                 0x01    /* let (block-scoped) binding or use of a hoisted let */
 #define PND_CONST               0x02    /* const binding (orthogonal to let) */
 #define PND_ASSIGNED            0x04    /* set if ever LHS of assignment */
 #define PND_PLACEHOLDER         0x08    /* placeholder definition for lexdep */
@@ -687,23 +705,23 @@ class ParseNode
     static_assert(PNX_NONCONST < (1 << NumListFlagBits), "Not enough bits");
 
     unsigned frameLevel() const {
-        JS_ASSERT(pn_arity == PN_CODE || pn_arity == PN_NAME);
+        MOZ_ASSERT(pn_arity == PN_CODE || pn_arity == PN_NAME);
         return pn_cookie.level();
     }
 
     uint32_t frameSlot() const {
-        JS_ASSERT(pn_arity == PN_CODE || pn_arity == PN_NAME);
+        MOZ_ASSERT(pn_arity == PN_CODE || pn_arity == PN_NAME);
         return pn_cookie.slot();
     }
 
     bool functionIsHoisted() const {
-        JS_ASSERT(pn_arity == PN_CODE && getKind() == PNK_FUNCTION);
-        JS_ASSERT(isOp(JSOP_LAMBDA) ||        // lambda, genexpr
-                  isOp(JSOP_LAMBDA_ARROW) ||  // arrow function
-                  isOp(JSOP_DEFFUN) ||        // non-body-level function statement
-                  isOp(JSOP_NOP) ||           // body-level function stmt in global code
-                  isOp(JSOP_GETLOCAL) ||      // body-level function stmt in function code
-                  isOp(JSOP_GETARG));         // body-level function redeclaring formal
+        MOZ_ASSERT(pn_arity == PN_CODE && getKind() == PNK_FUNCTION);
+        MOZ_ASSERT(isOp(JSOP_LAMBDA) ||        // lambda, genexpr
+                   isOp(JSOP_LAMBDA_ARROW) ||  // arrow function
+                   isOp(JSOP_DEFFUN) ||        // non-body-level function statement
+                   isOp(JSOP_NOP) ||           // body-level function stmt in global code
+                   isOp(JSOP_GETLOCAL) ||      // body-level function stmt in function code
+                   isOp(JSOP_GETARG));         // body-level function redeclaring formal
         return !isOp(JSOP_LAMBDA) && !isOp(JSOP_LAMBDA_ARROW) && !isOp(JSOP_DEFFUN);
     }
 
@@ -722,7 +740,7 @@ class ParseNode
      */
     JSAtom *isStringExprStatement() const {
         if (getKind() == PNK_SEMI) {
-            JS_ASSERT(pn_arity == PN_UNARY);
+            MOZ_ASSERT(pn_arity == PN_UNARY);
             ParseNode *kid = pn_kid;
             if (kid && kid->getKind() == PNK_STRING && !kid->pn_parens)
                 return kid->pn_atom;
@@ -732,7 +750,7 @@ class ParseNode
 
     inline bool test(unsigned flag) const;
 
-    bool isLet() const          { return test(PND_LET); }
+    bool isLet() const          { return test(PND_LET) && !isUsed(); }
     bool isConst() const        { return test(PND_CONST); }
     bool isPlaceholder() const  { return test(PND_PLACEHOLDER); }
     bool isDeoptimized() const  { return test(PND_DEOPTIMIZED); }
@@ -740,6 +758,7 @@ class ParseNode
     bool isClosed() const       { return test(PND_CLOSED); }
     bool isBound() const        { return test(PND_BOUND); }
     bool isImplicitArguments() const { return test(PND_IMPLICITARGUMENTS); }
+    bool isHoistedLetUse() const { return test(PND_LET) && isUsed(); }
 
     /* True if pn is a parsenode representing a literal constant. */
     bool isLiteral() const {
@@ -755,11 +774,12 @@ class ParseNode
 
 #ifdef JS_HAS_GENERATOR_EXPRS
     ParseNode *generatorExpr() const {
-        JS_ASSERT(isKind(PNK_GENEXP));
+        MOZ_ASSERT(isKind(PNK_GENEXP));
         ParseNode *callee = this->pn_head;
         ParseNode *body = callee->pn_body;
-        JS_ASSERT(body->isKind(PNK_LEXICALSCOPE));
-        return body->pn_expr;
+        MOZ_ASSERT(body->isKind(PNK_STATEMENTLIST));
+        MOZ_ASSERT(body->last()->isKind(PNK_LEXICALSCOPE) || body->last()->isKind(PNK_FOR));
+        return body->last();
     }
 #endif
 
@@ -770,20 +790,20 @@ class ParseNode
      * must be non-empty for correct PN_LAST usage -- this is asserted!
      */
     ParseNode *last() const {
-        JS_ASSERT(pn_arity == PN_LIST);
-        JS_ASSERT(pn_count != 0);
+        MOZ_ASSERT(pn_arity == PN_LIST);
+        MOZ_ASSERT(pn_count != 0);
         return (ParseNode *)(uintptr_t(pn_tail) - offsetof(ParseNode, pn_next));
     }
 
     void initNumber(double value, DecimalPoint decimalPoint) {
-        JS_ASSERT(pn_arity == PN_NULLARY);
-        JS_ASSERT(getKind() == PNK_NUMBER);
+        MOZ_ASSERT(pn_arity == PN_NULLARY);
+        MOZ_ASSERT(getKind() == PNK_NUMBER);
         pn_u.number.value = value;
         pn_u.number.decimalPoint = decimalPoint;
     }
 
     void makeEmpty() {
-        JS_ASSERT(pn_arity == PN_LIST);
+        MOZ_ASSERT(pn_arity == PN_LIST);
         pn_head = nullptr;
         pn_tail = &pn_head;
         pn_count = 0;
@@ -792,7 +812,7 @@ class ParseNode
     }
 
     void initList(ParseNode *pn) {
-        JS_ASSERT(pn_arity == PN_LIST);
+        MOZ_ASSERT(pn_arity == PN_LIST);
         if (pn->pn_pos.begin < pn_pos.begin)
             pn_pos.begin = pn->pn_pos.begin;
         pn_pos.end = pn->pn_pos.end;
@@ -804,8 +824,8 @@ class ParseNode
     }
 
     void append(ParseNode *pn) {
-        JS_ASSERT(pn_arity == PN_LIST);
-        JS_ASSERT(pn->pn_pos.begin >= pn_pos.begin);
+        MOZ_ASSERT(pn_arity == PN_LIST);
+        MOZ_ASSERT(pn->pn_pos.begin >= pn_pos.begin);
         pn_pos.end = pn->pn_pos.end;
         *pn_tail = pn;
         pn_tail = &pn->pn_next;
@@ -818,7 +838,13 @@ class ParseNode
 #endif
     ;
 
-    bool getConstantValue(ExclusiveContext *cx, bool strictChecks, MutableHandleValue vp);
+    enum AllowConstantObjects {
+        DontAllowObjects = 0,
+        DontAllowNestedObjects,
+        AllowObjects
+    };
+
+    bool getConstantValue(ExclusiveContext *cx, AllowConstantObjects allowObjects, MutableHandleValue vp);
     inline bool isConstant();
 
     template <class NodeType>
@@ -829,13 +855,13 @@ class ParseNode
     /* Casting operations. */
     template <class NodeType>
     inline NodeType &as() {
-        JS_ASSERT(NodeType::test(*this));
+        MOZ_ASSERT(NodeType::test(*this));
         return *static_cast<NodeType *>(this);
     }
 
     template <class NodeType>
     inline const NodeType &as() const {
-        JS_ASSERT(NodeType::test(*this));
+        MOZ_ASSERT(NodeType::test(*this));
         return *static_cast<const NodeType *>(this);
     }
 
@@ -1031,7 +1057,7 @@ struct NameNode : public ParseNode
         pn_cookie.makeFree();
         pn_dflags = 0;
         pn_blockid = blockid;
-        JS_ASSERT(pn_blockid == blockid);  // check for bitfield overflow
+        MOZ_ASSERT(pn_blockid == blockid);  // check for bitfield overflow
     }
 
     static bool test(const ParseNode &node) {
@@ -1070,8 +1096,8 @@ class LabeledStatement : public ParseNode
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_LABEL);
-        JS_ASSERT_IF(match, node.isArity(PN_NAME));
-        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        MOZ_ASSERT_IF(match, node.isArity(PN_NAME));
+        MOZ_ASSERT_IF(match, node.isOp(JSOP_NOP));
         return match;
     }
 };
@@ -1082,7 +1108,7 @@ class LoopControlStatement : public ParseNode
     LoopControlStatement(ParseNodeKind kind, PropertyName *label, const TokenPos &pos)
       : ParseNode(kind, JSOP_NOP, PN_NULLARY, pos)
     {
-        JS_ASSERT(kind == PNK_BREAK || kind == PNK_CONTINUE);
+        MOZ_ASSERT(kind == PNK_BREAK || kind == PNK_CONTINUE);
         pn_u.loopControl.label = label;
     }
 
@@ -1094,8 +1120,8 @@ class LoopControlStatement : public ParseNode
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_BREAK) || node.isKind(PNK_CONTINUE);
-        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
-        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        MOZ_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        MOZ_ASSERT_IF(match, node.isOp(JSOP_NOP));
         return match;
     }
 };
@@ -1109,8 +1135,8 @@ class BreakStatement : public LoopControlStatement
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_BREAK);
-        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
-        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        MOZ_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        MOZ_ASSERT_IF(match, node.isOp(JSOP_NOP));
         return match;
     }
 };
@@ -1124,8 +1150,8 @@ class ContinueStatement : public LoopControlStatement
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_CONTINUE);
-        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
-        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        MOZ_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        MOZ_ASSERT_IF(match, node.isOp(JSOP_NOP));
         return match;
     }
 };
@@ -1145,9 +1171,9 @@ class ConditionalExpression : public ParseNode
       : ParseNode(PNK_CONDITIONAL, JSOP_NOP, PN_TERNARY,
                   TokenPos(condition->pn_pos.begin, elseExpr->pn_pos.end))
     {
-        JS_ASSERT(condition);
-        JS_ASSERT(thenExpr);
-        JS_ASSERT(elseExpr);
+        MOZ_ASSERT(condition);
+        MOZ_ASSERT(thenExpr);
+        MOZ_ASSERT(elseExpr);
         pn_u.ternary.kid1 = condition;
         pn_u.ternary.kid2 = thenExpr;
         pn_u.ternary.kid3 = elseExpr;
@@ -1167,8 +1193,8 @@ class ConditionalExpression : public ParseNode
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_CONDITIONAL);
-        JS_ASSERT_IF(match, node.isArity(PN_TERNARY));
-        JS_ASSERT_IF(match, node.isOp(JSOP_NOP));
+        MOZ_ASSERT_IF(match, node.isArity(PN_TERNARY));
+        MOZ_ASSERT_IF(match, node.isOp(JSOP_NOP));
         return match;
     }
 };
@@ -1206,8 +1232,8 @@ class RegExpLiteral : public NullaryNode
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_REGEXP);
-        JS_ASSERT_IF(match, node.isArity(PN_NULLARY));
-        JS_ASSERT_IF(match, node.isOp(JSOP_REGEXP));
+        MOZ_ASSERT_IF(match, node.isArity(PN_NULLARY));
+        MOZ_ASSERT_IF(match, node.isOp(JSOP_REGEXP));
         return match;
     }
 };
@@ -1218,15 +1244,15 @@ class PropertyAccess : public ParseNode
     PropertyAccess(ParseNode *lhs, PropertyName *name, uint32_t begin, uint32_t end)
       : ParseNode(PNK_DOT, JSOP_NOP, PN_NAME, TokenPos(begin, end))
     {
-        JS_ASSERT(lhs != nullptr);
-        JS_ASSERT(name != nullptr);
+        MOZ_ASSERT(lhs != nullptr);
+        MOZ_ASSERT(name != nullptr);
         pn_u.name.expr = lhs;
         pn_u.name.atom = name;
     }
 
     static bool test(const ParseNode &node) {
         bool match = node.isKind(PNK_DOT);
-        JS_ASSERT_IF(match, node.isArity(PN_NAME));
+        MOZ_ASSERT_IF(match, node.isArity(PN_NAME));
         return match;
     }
 
@@ -1247,6 +1273,21 @@ class PropertyByValue : public ParseNode
     {
         pn_u.binary.left = lhs;
         pn_u.binary.right = propExpr;
+    }
+};
+
+/*
+ * A CallSiteNode represents the implicit call site object argument in a TaggedTemplate.
+ */
+struct CallSiteNode : public ListNode {
+    explicit CallSiteNode(uint32_t begin): ListNode(PNK_CALLSITEOBJ, TokenPos(begin, begin + 1)) {}
+
+    static bool test(const ParseNode &node) {
+        return node.isKind(PNK_CALLSITEOBJ);
+    }
+
+    bool getRawArrayValue(ExclusiveContext *cx, MutableHandleValue vp) {
+        return pn_head->getConstantValue(cx, AllowObjects, vp);
     }
 };
 
@@ -1357,7 +1398,7 @@ void DumpParseTree(ParseNode *pn, int indent = 0);
 struct Definition : public ParseNode
 {
     bool isFreeVar() const {
-        JS_ASSERT(isDefn());
+        MOZ_ASSERT(isDefn());
         return pn_cookie.isFree();
     }
 
@@ -1373,7 +1414,7 @@ struct Definition : public ParseNode
                 return ARG;
             return VAR;
         }
-        JS_ASSERT(getKind() == PNK_NAME);
+        MOZ_ASSERT(getKind() == PNK_NAME);
         if (isOp(JSOP_CALLEE))
             return NAMED_LAMBDA;
         if (isPlaceholder())
@@ -1409,12 +1450,12 @@ class ParseNodeAllocator
 inline bool
 ParseNode::test(unsigned flag) const
 {
-    JS_ASSERT(pn_defn || pn_arity == PN_CODE || pn_arity == PN_NAME);
+    MOZ_ASSERT(pn_defn || pn_arity == PN_CODE || pn_arity == PN_NAME);
 #ifdef DEBUG
     if ((flag & PND_ASSIGNED) && pn_defn && !(pn_dflags & flag)) {
         for (ParseNode *pn = ((Definition *) this)->dn_uses; pn; pn = pn->pn_link) {
-            JS_ASSERT(!pn->pn_defn);
-            JS_ASSERT(!(pn->pn_dflags & flag));
+            MOZ_ASSERT(!pn->pn_defn);
+            MOZ_ASSERT(!(pn->pn_dflags & flag));
         }
     }
 #endif
@@ -1424,7 +1465,7 @@ ParseNode::test(unsigned flag) const
 inline void
 ParseNode::markAsAssigned()
 {
-    JS_ASSERT(js_CodeSpec[pn_op].format & JOF_NAME);
+    MOZ_ASSERT(js_CodeSpec[pn_op].format & JOF_NAME);
     if (isUsed())
         pn_lexdef->pn_dflags |= PND_ASSIGNED;
     pn_dflags |= PND_ASSIGNED;
@@ -1435,7 +1476,7 @@ ParseNode::resolve()
 {
     if (isDefn())
         return (Definition *)this;
-    JS_ASSERT(lexdef()->isDefn());
+    MOZ_ASSERT(lexdef()->isDefn());
     return (Definition *)lexdef();
 }
 
@@ -1445,13 +1486,14 @@ ParseNode::isConstant()
     switch (pn_type) {
       case PNK_NUMBER:
       case PNK_STRING:
+      case PNK_TEMPLATE_STRING:
       case PNK_NULL:
       case PNK_FALSE:
       case PNK_TRUE:
         return true;
       case PNK_ARRAY:
       case PNK_OBJECT:
-        JS_ASSERT(isOp(JSOP_NEWINIT));
+        MOZ_ASSERT(isOp(JSOP_NEWINIT));
         return !(pn_xflags & PNX_NONCONST);
       default:
         return false;
@@ -1461,9 +1503,9 @@ ParseNode::isConstant()
 class ObjectBox
 {
   public:
-    JSObject *object;
+    NativeObject *object;
 
-    ObjectBox(JSObject *object, ObjectBox *traceLink);
+    ObjectBox(NativeObject *object, ObjectBox *traceLink);
     bool isFunctionBox() { return object->is<JSFunction>(); }
     FunctionBox *asFunctionBox();
     void trace(JSTracer *trc);
@@ -1485,18 +1527,18 @@ enum ParseReportKind
     ParseStrictError
 };
 
-enum FunctionSyntaxKind { Expression, Statement, Arrow };
+enum FunctionSyntaxKind { Expression, Statement, Arrow, Method };
 
 static inline ParseNode *
 FunctionArgsList(ParseNode *fn, unsigned *numFormals)
 {
-    JS_ASSERT(fn->isKind(PNK_FUNCTION));
+    MOZ_ASSERT(fn->isKind(PNK_FUNCTION));
     ParseNode *argsBody = fn->pn_body;
-    JS_ASSERT(argsBody->isKind(PNK_ARGSBODY));
+    MOZ_ASSERT(argsBody->isKind(PNK_ARGSBODY));
     *numFormals = argsBody->pn_count;
     if (*numFormals > 0 && argsBody->last()->isKind(PNK_STATEMENTLIST))
         (*numFormals)--;
-    JS_ASSERT(argsBody->isArity(PN_LIST));
+    MOZ_ASSERT(argsBody->isArity(PN_LIST));
     return argsBody->pn_head;
 }
 

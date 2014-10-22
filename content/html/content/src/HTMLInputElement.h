@@ -22,12 +22,11 @@
 #include "nsIContentPrefService2.h"
 #include "mozilla/Decimal.h"
 #include "nsContentUtils.h"
+#include "nsTextEditorState.h"
 
-class nsDOMFileList;
 class nsIRadioGroupContainer;
 class nsIRadioGroupVisitor;
 class nsIRadioVisitor;
-class nsTextEditorState;
 
 namespace mozilla {
 
@@ -38,6 +37,8 @@ namespace dom {
 
 class Date;
 class DirPickerFileListBuilderTask;
+class File;
+class FileList;
 
 class UploadLastDir MOZ_FINAL : public nsIObserver, public nsSupportsWeakReference {
 
@@ -210,12 +211,12 @@ public:
 
   void GetDisplayFileName(nsAString& aFileName) const;
 
-  const nsTArray<nsCOMPtr<nsIDOMFile> >& GetFilesInternal() const
+  const nsTArray<nsRefPtr<File>>& GetFilesInternal() const
   {
     return mFiles;
   }
 
-  void SetFiles(const nsTArray<nsCOMPtr<nsIDOMFile> >& aFiles, bool aSetValueChanged);
+  void SetFiles(const nsTArray<nsRefPtr<File>>& aFiles, bool aSetValueChanged);
   void SetFiles(nsIDOMFileList* aFiles, bool aSetValueChanged);
 
   // Called when a nsIFilePicker or a nsIColorPicker terminate.
@@ -249,6 +250,28 @@ public:
   static void DestroyUploadLastDir();
 
   void MaybeLoadImage();
+
+  void SetSelectionProperties(const nsTextEditorState::SelectionProperties& aProps)
+  {
+    MOZ_ASSERT(mType == NS_FORM_INPUT_NUMBER);
+    mSelectionCached = true;
+    mSelectionProperties = aProps;
+  }
+  bool IsSelectionCached() const
+  {
+    MOZ_ASSERT(mType == NS_FORM_INPUT_NUMBER);
+    return mSelectionCached;
+  }
+  void ClearSelectionCached()
+  {
+    MOZ_ASSERT(mType == NS_FORM_INPUT_NUMBER);
+    mSelectionCached = false;
+  }
+  nsTextEditorState::SelectionProperties& GetSelectionProperties()
+  {
+    MOZ_ASSERT(mType == NS_FORM_INPUT_NUMBER);
+    return mSelectionProperties;
+  }
 
   // nsITimerCallback
   NS_DECL_NSITIMERCALLBACK
@@ -370,7 +393,7 @@ public:
     SetHTMLAttr(nsGkAtoms::autocomplete, aValue, aRv);
   }
 
-  void GetAutocompleteInfo(AutocompleteInfo& aInfo);
+  void GetAutocompleteInfo(Nullable<AutocompleteInfo>& aInfo);
 
   bool Autofocus() const
   {
@@ -410,7 +433,7 @@ public:
 
   // XPCOM GetForm() is OK
 
-  nsDOMFileList* GetFiles();
+  FileList* GetFiles();
 
   void OpenDirectoryPicker(ErrorResult& aRv);
   void CancelDirectoryPickerScanIfRunning();
@@ -940,6 +963,11 @@ protected:
   bool DoesValueAsNumberApply() const { return DoesMinMaxApply(); }
 
   /**
+   * Returns if autocomplete attribute applies for the current type.
+   */
+  bool DoesAutocompleteApply() const;
+
+  /**
    * Returns if the maxlength attribute applies for the current type.
    */
   bool MaxLengthApplies() const { return IsSingleLineTextControl(false, mType); }
@@ -1224,9 +1252,9 @@ protected:
    * the frame. Whenever the frame wants to change the filename it has to call
    * SetFileNames to update this member.
    */
-  nsTArray<nsCOMPtr<nsIDOMFile> >   mFiles;
+  nsTArray<nsRefPtr<File>> mFiles;
 
-  nsRefPtr<nsDOMFileList>  mFileList;
+  nsRefPtr<FileList>  mFileList;
 
   nsRefPtr<DirPickerFileListBuilderTask> mDirPickerFileListBuilderTask;
 
@@ -1254,6 +1282,13 @@ protected:
    * under that directory tree is built.
    */
   nsCOMPtr<nsITimer> mProgressTimer;
+
+  /**
+   * The selection properties cache for number controls.  This is needed because
+   * the number controls don't recycle their text field, so the normal cache in
+   * nsTextEditorState cannot do its job.
+   */
+  nsTextEditorState::SelectionProperties mSelectionProperties;
 
   // Step scale factor values, for input types that have one.
   static const Decimal kStepScaleFactorDate;
@@ -1295,6 +1330,7 @@ protected:
   bool                     mNumberControlSpinnerIsSpinning : 1;
   bool                     mNumberControlSpinnerSpinsUp : 1;
   bool                     mPickerRunning : 1;
+  bool                     mSelectionCached : 1;
 
 private:
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
@@ -1327,7 +1363,7 @@ private:
     nsFilePickerFilter()
       : mFilterMask(0), mIsTrusted(false) {}
 
-    nsFilePickerFilter(int32_t aFilterMask)
+    explicit nsFilePickerFilter(int32_t aFilterMask)
       : mFilterMask(aFilterMask), mIsTrusted(true) {}
 
     nsFilePickerFilter(const nsString& aTitle,

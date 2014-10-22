@@ -22,6 +22,8 @@
 #include "nsContentList.h"
 #include "nsStyleSet.h"
 #include "nsIDOMMutationEvent.h"
+#include "nsThreadUtils.h"
+#include "mozilla/FloatingPoint.h"
 
 #ifdef ACCESSIBILITY
 #include "mozilla/a11y/AccTypes.h"
@@ -259,6 +261,28 @@ nsNumberControlFrame::GetTextFieldFrame()
   return do_QueryFrame(GetAnonTextControl()->GetPrimaryFrame());
 }
 
+class FocusTextField : public nsRunnable
+{
+public:
+  FocusTextField(nsIContent* aNumber, nsIContent* aTextField)
+    : mNumber(aNumber),
+      mTextField(aTextField)
+  {}
+
+  NS_IMETHODIMP Run() MOZ_OVERRIDE
+  {
+    if (mNumber->AsElement()->State().HasState(NS_EVENT_STATE_FOCUS)) {
+      HTMLInputElement::FromContent(mTextField)->Focus();
+    }
+
+    return NS_OK;
+  }
+
+private:
+  nsCOMPtr<nsIContent> mNumber;
+  nsCOMPtr<nsIContent> mTextField;
+};
+
 nsresult
 nsNumberControlFrame::MakeAnonymousElement(Element** aResult,
                                            nsTArray<ContentInfo>& aElements,
@@ -267,7 +291,7 @@ nsNumberControlFrame::MakeAnonymousElement(Element** aResult,
                                            nsStyleContext* aParentContext)
 {
   // Get the NodeInfoManager and tag necessary to create the anonymous divs.
-  nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
+  nsCOMPtr<nsIDocument> doc = mContent->GetComposedDoc();
   nsRefPtr<Element> resultElement = doc->CreateHTMLElement(aTagName);
 
   // If we legitimately fail this assertion and need to allow
@@ -364,10 +388,8 @@ nsNumberControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 
   if (mContent->AsElement()->State().HasState(NS_EVENT_STATE_FOCUS)) {
     // We don't want to focus the frame but the text field.
-    nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-    nsCOMPtr<nsIDOMElement> element = do_QueryInterface(mTextField);
-    NS_ASSERTION(element, "Really, this should be a nsIDOMElement!");
-    fm->SetFocus(element, 0);
+    nsRefPtr<FocusTextField> focusJob = new FocusTextField(mContent, mTextField);
+    nsContentUtils::AddScriptRunner(focusJob);
   }
 
   if (StyleDisplay()->mAppearance == NS_THEME_TEXTFIELD) {
@@ -542,8 +564,7 @@ nsNumberControlFrame::GetNumberControlFrameForSpinButton(nsIFrame* aFrame)
 int32_t
 nsNumberControlFrame::GetSpinButtonForPointerEvent(WidgetGUIEvent* aEvent) const
 {
-  MOZ_ASSERT(aEvent->eventStructType == NS_MOUSE_EVENT,
-             "Unexpected event type");
+  MOZ_ASSERT(aEvent->mClass == eMouseEventClass, "Unexpected event type");
 
   if (!mSpinBox) {
     // we don't have a spinner
@@ -656,11 +677,13 @@ nsNumberControlFrame::ShouldUseNativeStyleForSpinner() const
 }
 
 void
-nsNumberControlFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
+nsNumberControlFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                                uint32_t aFilter)
 {
   // Only one direct anonymous child:
-  aElements.MaybeAppendElement(mOuterWrapper);
+  if (mOuterWrapper) {
+    aElements.AppendElement(mOuterWrapper);
+  }
 }
 
 void
@@ -750,7 +773,7 @@ nsNumberControlFrame::GetValueOfAnonTextControl(nsAString& aValue)
   // serialization.
   ICUUtils::LanguageTagIterForContent langTagIter(mContent);
   double value = ICUUtils::ParseNumber(aValue, langTagIter);
-  if (NS_finite(value) &&
+  if (IsFinite(value) &&
       value != HTMLInputElement::StringToDecimal(aValue).toDouble()) {
     aValue.Truncate();
     aValue.AppendFloat(value);

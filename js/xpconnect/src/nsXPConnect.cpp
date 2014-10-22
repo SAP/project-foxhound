@@ -13,7 +13,6 @@
 #include "xpcprivate.h"
 #include "XPCWrapper.h"
 #include "jsfriendapi.h"
-#include "js/OldDebugAPI.h"
 #include "nsJSEnvironment.h"
 #include "nsThreadUtils.h"
 #include "nsDOMJSUtils.h"
@@ -54,8 +53,9 @@ bool         nsXPConnect::gOnceAliveNowDead = false;
 uint32_t     nsXPConnect::gReportAllJSExceptions = 0;
 
 // Global cache of the default script security manager (QI'd to
-// nsIScriptSecurityManager)
+// nsIScriptSecurityManager) and the system principal.
 nsIScriptSecurityManager *nsXPConnect::gScriptSecurityManager = nullptr;
+nsIPrincipal *nsXPConnect::gSystemPrincipal = nullptr;
 
 const char XPC_CONTEXT_STACK_CONTRACTID[] = "@mozilla.org/js/xpc/ContextStack;1";
 const char XPC_RUNTIME_CONTRACTID[]       = "@mozilla.org/js/xpc/RuntimeService;1";
@@ -102,6 +102,7 @@ nsXPConnect::~nsXPConnect()
     // maps that our finalize callback depends on.
     JS_GC(mRuntime->Runtime());
 
+    NS_RELEASE(gSystemPrincipal);
     gScriptSecurityManager = nullptr;
 
     // shutdown the logging system
@@ -135,9 +136,14 @@ nsXPConnect::InitStatics()
     // Fire up the SSM.
     nsScriptSecurityManager::InitStatics();
     gScriptSecurityManager = nsScriptSecurityManager::GetScriptSecurityManager();
+    gScriptSecurityManager->GetSystemPrincipal(&gSystemPrincipal);
+    MOZ_RELEASE_ASSERT(gSystemPrincipal);
 
     // Initialize the SafeJSContext.
     gSelf->mRuntime->GetJSContextStack()->InitSafeJSContext();
+
+    // Initialize our singleton scopes.
+    gSelf->mRuntime->InitSingletonScopes();
 }
 
 nsXPConnect*
@@ -180,56 +186,96 @@ nsXPConnect::IsISupportsDescendant(nsIInterfaceInfo* info)
 }
 
 void
-xpc::SystemErrorReporter(JSContext *cx, const char *message, JSErrorReport *rep)
+xpc::ErrorReport::Init(JSErrorReport *aReport, const char *aFallbackMessage,
+                       bool aIsChrome, uint64_t aWindowID)
 {
-    // It would be nice to assert !DescribeScriptedCaller here, to be sure
-    // that there isn't any script running that could catch the exception. But
-    // the JS engine invokes the error reporter directly if someone reports an
-    // ErrorReport that it doesn't know how to turn into an exception. Arguably
-    // it should just learn how to throw everything. But either way, if the
-    // exception is ending here, it's not going to get propagated to a caller,
-    // so it's up to us to make it known.
+    mCategory = aIsChrome ? NS_LITERAL_CSTRING("chrome javascript")
+                          : NS_LITERAL_CSTRING("content javascript");
+    mWindowID = aWindowID;
 
-    nsresult rv;
-
-    /* Use the console service to register the error. */
-    nsCOMPtr<nsIConsoleService> consoleService =
-        do_GetService(NS_CONSOLESERVICE_CONTRACTID);
-
-    /*
-     * Make an nsIScriptError, populate it with information from this
-     * error, then log it with the console service.
-     */
-    nsCOMPtr<nsIScriptError> errorObject =
-        do_CreateInstance(NS_SCRIPTERROR_CONTRACTID);
-
-    if (consoleService && errorObject) {
-        uint32_t column = rep->uctokenptr - rep->uclinebuf;
-
-        const char16_t* ucmessage =
-            static_cast<const char16_t*>(rep->ucmessage);
-        const char16_t* uclinebuf =
-            static_cast<const char16_t*>(rep->uclinebuf);
-
-        rv = errorObject->Init(
-              ucmessage ? nsDependentString(ucmessage) : EmptyString(),
-              NS_ConvertASCIItoUTF16(rep->filename),
-              uclinebuf ? nsDependentString(uclinebuf) : EmptyString(),
-              rep->lineno, column, rep->flags,
-              "system javascript");
-        if (NS_SUCCEEDED(rv))
-            consoleService->LogMessage(errorObject);
+    const char16_t* m = static_cast<const char16_t*>(aReport->ucmessage);
+    if (m) {
+        JSFlatString* name = js::GetErrorTypeName(CycleCollectedJSRuntime::Get()->Runtime(), aReport->exnType);
+        if (name) {
+            AssignJSFlatString(mErrorMsg, name);
+            mErrorMsg.AppendLiteral(": ");
+        }
+        mErrorMsg.Append(m);
     }
 
-    if (nsContentUtils::DOMWindowDumpEnabled()) {
-        fprintf(stderr, "System JS : %s %s:%d - %s\n",
-                JSREPORT_IS_WARNING(rep->flags) ? "WARNING" : "ERROR",
-                rep->filename, rep->lineno,
-                message ? message : "<no message>");
+    if (mErrorMsg.IsEmpty() && aFallbackMessage) {
+        mErrorMsg.AssignWithConversion(aFallbackMessage);
     }
 
+    if (!aReport->filename) {
+        mFileName.SetIsVoid(true);
+    } else {
+        mFileName.AssignWithConversion(aReport->filename);
+    }
+
+    mSourceLine = static_cast<const char16_t*>(aReport->uclinebuf);
+
+    mLineNumber = aReport->lineno;
+    mColumn = aReport->column;
+    mFlags = aReport->flags;
+    mIsMuted = aReport->isMuted;
 }
 
+#ifdef PR_LOGGING
+static PRLogModuleInfo* gJSDiagnostics;
+#endif
+
+void
+xpc::ErrorReport::LogToConsole()
+{
+    // Log to stdout.
+    if (nsContentUtils::DOMWindowDumpEnabled()) {
+        nsAutoCString error;
+        error.AssignLiteral("JavaScript ");
+        if (JSREPORT_IS_STRICT(mFlags))
+            error.AppendLiteral("strict ");
+        if (JSREPORT_IS_WARNING(mFlags))
+            error.AppendLiteral("warning: ");
+        else
+            error.AppendLiteral("error: ");
+        error.Append(NS_LossyConvertUTF16toASCII(mFileName));
+        error.AppendLiteral(", line ");
+        error.AppendInt(mLineNumber, 10);
+        error.AppendLiteral(": ");
+        error.Append(NS_LossyConvertUTF16toASCII(mErrorMsg));
+
+        fprintf(stderr, "%s\n", error.get());
+        fflush(stderr);
+    }
+
+#ifdef PR_LOGGING
+    // Log to the PR Log Module.
+    if (!gJSDiagnostics)
+        gJSDiagnostics = PR_NewLogModule("JSDiagnostics");
+    if (gJSDiagnostics) {
+        PR_LOG(gJSDiagnostics,
+                JSREPORT_IS_WARNING(mFlags) ? PR_LOG_WARNING : PR_LOG_ERROR,
+                ("file %s, line %u\n%s", NS_LossyConvertUTF16toASCII(mFileName).get(),
+                 mLineNumber, NS_LossyConvertUTF16toASCII(mErrorMsg).get()));
+    }
+#endif
+
+    // Log to the console. We do this last so that we can simply return if
+    // there's no console service without affecting the other reporting
+    // mechanisms.
+    nsCOMPtr<nsIConsoleService> consoleService =
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID);
+    nsCOMPtr<nsIScriptError> errorObject =
+      do_CreateInstance("@mozilla.org/scripterror;1");
+    NS_ENSURE_TRUE_VOID(consoleService && errorObject);
+
+    nsresult rv = errorObject->InitWithWindowID(mErrorMsg, mFileName, mSourceLine,
+                                                mLineNumber, mColumn, mFlags,
+                                                mCategory, mWindowID);
+    NS_ENSURE_SUCCESS_VOID(rv);
+    consoleService->LogMessage(errorObject);
+
+}
 
 /***************************************************************************/
 
@@ -298,10 +344,17 @@ static inline T UnexpectedFailure(T rv)
 }
 
 void
-TraceXPCGlobal(JSTracer *trc, JSObject *obj)
+xpc::TraceXPCGlobal(JSTracer *trc, JSObject *obj)
 {
     if (js::GetObjectClass(obj)->flags & JSCLASS_DOM_GLOBAL)
         mozilla::dom::TraceProtoAndIfaceCache(trc, obj);
+
+    // We might be called from a GC during the creation of a global, before we've
+    // been able to set up the compartment private or the XPCWrappedNativeScope,
+    // so we need to null-check those.
+    xpc::CompartmentPrivate* compartmentPrivate = xpc::CompartmentPrivate::Get(obj);
+    if (compartmentPrivate && compartmentPrivate->scope)
+        compartmentPrivate->scope->TraceInside(trc);
 }
 
 namespace xpc {
@@ -374,6 +427,13 @@ InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal, uint32_t 
                        status == nsIPrincipal::APP_STATUS_CERTIFIED;
         }
         JS::CompartmentOptionsRef(aGlobal).setDiscardSource(isSystem);
+    }
+
+    if (ExtraWarningsForSystemJS()) {
+        nsIPrincipal *prin = GetObjectPrincipal(aGlobal);
+        bool isSystem = nsContentUtils::IsSystemPrincipal(prin);
+        if (isSystem)
+            JS::CompartmentOptionsRef(aGlobal).extraWarningsOverride().set(true);
     }
 
     // Stuff coming through this path always ends up as a DOM global.
@@ -908,11 +968,7 @@ nsXPConnect::DebugDumpJSStack(bool showArgs,
                               bool showLocals,
                               bool showThisProps)
 {
-    JSContext* cx = GetCurrentJSContext();
-    if (!cx)
-        printf("there is no JSContext on the nsIThreadJSContextStack!\n");
-    else
-        xpc_DumpJSStack(cx, showArgs, showLocals, showThisProps);
+    xpc_DumpJSStack(showArgs, showLocals, showThisProps);
 
     return NS_OK;
 }
@@ -929,19 +985,6 @@ nsXPConnect::DebugPrintJSStack(bool showArgs,
         return xpc_PrintJSStack(cx, showArgs, showLocals, showThisProps);
 
     return nullptr;
-}
-
-/* void debugDumpEvalInJSStackFrame (in uint32_t aFrameNumber, in string aSourceText); */
-NS_IMETHODIMP
-nsXPConnect::DebugDumpEvalInJSStackFrame(uint32_t aFrameNumber, const char *aSourceText)
-{
-    JSContext* cx = GetCurrentJSContext();
-    if (!cx)
-        printf("there is no JSContext on the nsIThreadJSContextStack!\n");
-    else
-        xpc_DumpEvalInJSStackFrame(cx, aFrameNumber, aSourceText);
-
-    return NS_OK;
 }
 
 /* jsval variantToJS (in JSContextPtr ctx, in JSObjectPtr scope, in nsIVariant value); */
@@ -1226,10 +1269,6 @@ nsXPConnect::NotifyDidPaint()
     return NS_OK;
 }
 
-// Note - We used to have HAS_PRINCIPALS_FLAG = 1 here, so reusing that flag
-// will require bumping the XDR version number.
-static const uint8_t HAS_ORIGIN_PRINCIPALS_FLAG        = 2;
-
 static nsresult
 WriteScriptOrFunction(nsIObjectOutputStream *stream, JSContext *cx,
                       JSScript *scriptArg, HandleObject functionObj)
@@ -1243,28 +1282,11 @@ WriteScriptOrFunction(nsIObjectOutputStream *stream, JSContext *cx,
         script.set(JS_GetFunctionScript(cx, fun));
     }
 
-    nsIPrincipal *principal =
-        nsJSPrincipals::get(JS_GetScriptPrincipals(script));
-    nsIPrincipal *originPrincipal =
-        nsJSPrincipals::get(JS_GetScriptOriginPrincipals(script));
-
-    uint8_t flags = 0;
-
-    // Optimize for the common case when originPrincipals == principals. As
-    // originPrincipals is set to principals when the former is null we can
-    // simply skip the originPrincipals when they are the same as principals.
-    if (originPrincipal && originPrincipal != principal)
-        flags |= HAS_ORIGIN_PRINCIPALS_FLAG;
-
+    uint8_t flags = 0; // We don't have flags anymore.
     nsresult rv = stream->Write8(flags);
     if (NS_FAILED(rv))
         return rv;
 
-    if (flags & HAS_ORIGIN_PRINCIPALS_FLAG) {
-        rv = stream->WriteObject(originPrincipal, true);
-        if (NS_FAILED(rv))
-            return rv;
-    }
 
     uint32_t size;
     void* data;
@@ -1298,16 +1320,11 @@ ReadScriptOrFunction(nsIObjectInputStream *stream, JSContext *cx,
     if (NS_FAILED(rv))
         return rv;
 
-    nsJSPrincipals* originPrincipal = nullptr;
-    nsCOMPtr<nsIPrincipal> readOriginPrincipal;
-    if (flags & HAS_ORIGIN_PRINCIPALS_FLAG) {
-        nsCOMPtr<nsISupports> supports;
-        rv = stream->ReadObject(true, getter_AddRefs(supports));
-        if (NS_FAILED(rv))
-            return rv;
-        readOriginPrincipal = do_QueryInterface(supports);
-        originPrincipal = nsJSPrincipals::get(readOriginPrincipal);
-    }
+    // We don't serialize mutedError-ness of scripts, which is fine as long as
+    // we only serialize system and XUL-y things. We can detect this by checking
+    // where the caller wants us to deserialize.
+    MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome() ||
+                       CurrentGlobalOrNull(cx) == xpc::CompilationScope());
 
     uint32_t size;
     rv = stream->Read32(&size);
@@ -1321,14 +1338,13 @@ ReadScriptOrFunction(nsIObjectInputStream *stream, JSContext *cx,
 
     {
         if (scriptp) {
-            JSScript *script = JS_DecodeScript(cx, data, size, originPrincipal);
+            JSScript *script = JS_DecodeScript(cx, data, size);
             if (!script)
                 rv = NS_ERROR_OUT_OF_MEMORY;
             else
                 *scriptp = script;
         } else {
-            JSObject *funobj = JS_DecodeInterpretedFunction(cx, data, size,
-                                                            originPrincipal);
+            JSObject *funobj = JS_DecodeInterpretedFunction(cx, data, size);
             if (!funobj)
                 rv = NS_ERROR_OUT_OF_MEMORY;
             else
@@ -1365,24 +1381,11 @@ nsXPConnect::ReadFunction(nsIObjectInputStream *stream, JSContext *cx, JSObject 
     return ReadScriptOrFunction(stream, cx, nullptr, functionObjp);
 }
 
-NS_IMETHODIMP
-nsXPConnect::MarkErrorUnreported(JSContext *cx)
-{
-    XPCContext *xpcc = XPCContext::GetXPCContext(cx);
-    xpcc->MarkErrorUnreported();
-    return NS_OK;
-}
-
 /* These are here to be callable from a debugger */
 extern "C" {
 JS_EXPORT_API(void) DumpJSStack()
 {
-    nsresult rv;
-    nsCOMPtr<nsIXPConnect> xpc(do_GetService(nsIXPConnect::GetCID(), &rv));
-    if (NS_SUCCEEDED(rv) && xpc)
-        xpc->DebugDumpJSStack(true, true, false);
-    else
-        printf("failed to get XPConnect service!\n");
+    xpc_DumpJSStack(true, true, false);
 }
 
 JS_EXPORT_API(char*) PrintJSStack()
@@ -1392,16 +1395,6 @@ JS_EXPORT_API(char*) PrintJSStack()
     return (NS_SUCCEEDED(rv) && xpc) ?
         xpc->DebugPrintJSStack(true, true, false) :
         nullptr;
-}
-
-JS_EXPORT_API(void) DumpJSEval(uint32_t frameno, const char* text)
-{
-    nsresult rv;
-    nsCOMPtr<nsIXPConnect> xpc(do_GetService(nsIXPConnect::GetCID(), &rv));
-    if (NS_SUCCEEDED(rv) && xpc)
-        xpc->DebugDumpEvalInJSStackFrame(frameno, text);
-    else
-        printf("failed to get XPConnect service!\n");
 }
 
 JS_EXPORT_API(void) DumpCompleteHeap()
@@ -1470,7 +1463,7 @@ SetAddonInterposition(const nsACString &addonIdStr, nsIAddonInterposition *inter
         // We enter the junk scope just to allocate a string, which actually will go
         // in the system zone.
         AutoJSAPI jsapi;
-        jsapi.Init(xpc::GetJunkScopeGlobal());
+        jsapi.Init(xpc::PrivilegedJunkScope());
         addonId = NewAddonId(jsapi.cx(), addonIdStr);
         if (!addonId)
             return false;

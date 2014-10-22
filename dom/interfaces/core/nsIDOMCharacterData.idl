@@ -13,7 +13,7 @@
  * http://www.w3.org/TR/DOM-Level-2-Core/
  */
 
-[uuid(84f72a38-1873-46f8-937c-1df22d7e7cae)]
+[uuid(844b8e7e-6d37-4fa1-8196-86e3afdfa0ca)]
 interface nsIDOMCharacterData : nsIDOMNode
 {
            attribute DOMString            data;

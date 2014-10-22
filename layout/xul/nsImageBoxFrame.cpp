@@ -44,6 +44,7 @@
 #include "nsDisplayList.h"
 #include "ImageLayers.h"
 #include "ImageContainer.h"
+#include "nsIContent.h"
 
 #include "nsContentUtils.h"
 
@@ -53,6 +54,7 @@
 #define ONLOAD_CALLED_TOO_EARLY 1
 
 using namespace mozilla;
+using namespace mozilla::gfx;
 using namespace mozilla::layers;
 
 class nsImageBoxFrameEvent : public nsRunnable
@@ -220,7 +222,7 @@ nsImageBoxFrame::UpdateImage()
   mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
   mUseSrcAttr = !src.IsEmpty();
   if (mUseSrcAttr) {
-    nsIDocument* doc = mContent->GetDocument();
+    nsIDocument* doc = mContent->GetComposedDoc();
     if (!doc) {
       // No need to do anything here...
       return;
@@ -401,10 +403,9 @@ nsDisplayXULImage::ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset)
   NS_ASSERTION(imageWidth != 0 && imageHeight != 0, "Invalid image size!");
 
   gfxPoint p = destRect.TopLeft() + aOffset;
-  gfx::Matrix transform;
-  transform.Translate(p.x, p.y);
-  transform.Scale(destRect.Width()/imageWidth,
-                  destRect.Height()/imageHeight);
+  Matrix transform = Matrix::Translation(p.x, p.y);
+  transform.PreScale(destRect.Width() / imageWidth,
+                     destRect.Height() / imageHeight);
   aLayer->SetBaseTransform(gfx::Matrix4x4::From2D(transform));
 }
 

@@ -36,7 +36,7 @@ MOZ_BEGIN_ENUM_CLASS(ImageFormat)
    * The CAIRO_SURFACE format creates a CairoImage. All backends should
    * support this format, because video rendering sometimes requires it.
    *
-   * This format is useful even though a ThebesLayer could be used.
+   * This format is useful even though a PaintedLayer could be used.
    * It makes it easy to render a cairo surface when another Image format
    * could be used. It can also avoid copying the surface data in some
    * cases.
@@ -53,25 +53,27 @@ MOZ_BEGIN_ENUM_CLASS(ImageFormat)
   MAC_IOSURFACE,
 
   /**
-   * An bitmap image that can be shared with a remote process.
+   * An Android SurfaceTexture ID that can be shared across threads and
+   * processes.
    */
-  REMOTE_IMAGE_BITMAP,
+  SURFACE_TEXTURE,
 
   /**
-   * A OpenGL texture that can be shared across threads or processes
+   * An EGL Image that can be shared across threads.
    */
-  SHARED_TEXTURE,
-
-  /**
-   * An DXGI shared surface handle that can be shared with a remote process.
-   */
-  REMOTE_IMAGE_DXGI_TEXTURE,
+  EGLIMAGE,
 
   /**
    * The D3D9_RGB32_TEXTURE format creates a D3D9SurfaceImage, and wraps a
    * IDirect3DTexture9 in RGB32 layout.
    */
-  D3D9_RGB32_TEXTURE
+  D3D9_RGB32_TEXTURE,
+
+  /**
+   * An Image type carries an opaque handle once for each stream.
+   * The opaque handle would be a platform specific identifier.
+   */
+  OVERLAY_IMAGE
 MOZ_END_ENUM_CLASS(ImageFormat)
 
 MOZ_BEGIN_ENUM_CLASS(StereoMode)

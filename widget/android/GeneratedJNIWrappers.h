@@ -14,6 +14,18 @@ namespace widget {
 namespace android {
 void InitStubs(JNIEnv *jEnv);
 
+class DownloadsIntegration : public AutoGlobalWrappedJavaObject {
+public:
+    static void InitStubs(JNIEnv *jEnv);
+    static DownloadsIntegration* Wrap(jobject obj);
+    DownloadsIntegration(jobject obj, JNIEnv* env) : AutoGlobalWrappedJavaObject(obj, env) {};
+    static void ScanMedia(const nsAString& a0, const nsAString& a1);
+    DownloadsIntegration() : AutoGlobalWrappedJavaObject() {};
+protected:
+    static jclass mDownloadsIntegrationClass;
+    static jmethodID jScanMedia;
+};
+
 class GeckoAppShell : public AutoGlobalWrappedJavaObject {
 public:
     static void InitStubs(JNIEnv *jEnv);
@@ -29,7 +41,7 @@ public:
     static void CloseNotification(const nsAString& a0);
     static jstring ConnectionGetMimeType(jobject a0);
     static jobject CreateInputStream(jobject a0);
-    static void CreateMessageListWrapper(int64_t a0, int64_t a1, jobjectArray a2, int32_t a3, int32_t a4, bool a5, int32_t a6);
+    static void CreateMessageListWrapper(int64_t a0, int64_t a1, jobjectArray a2, int32_t a3, const nsAString& a4, bool a5, bool a6, int64_t a7, bool a8, int32_t a9);
     static void CreateShortcut(const nsAString& a0, const nsAString& a1, const nsAString& a2);
     static void DeleteMessageWrapper(int32_t a0, int32_t a1);
     static void DisableBatteryNotifications();
@@ -86,7 +98,7 @@ public:
     static bool PumpMessageLoop();
     static void RegisterSurfaceTextureFrameListener(jobject a0, int32_t a1);
     static void RemovePluginView(jobject a0, bool a1);
-    static void ScanMedia(const nsAString& a0, const nsAString& a1);
+    static void RequestUiThreadCallback(int64_t a0);
     static void ScheduleRestart();
     static void SendMessageWrapper(const nsAString& a0, const nsAString& a1, int32_t a2);
     static void SetFullScreen(bool a0);
@@ -171,7 +183,7 @@ protected:
     static jmethodID jPumpMessageLoop;
     static jmethodID jRegisterSurfaceTextureFrameListener;
     static jmethodID jRemovePluginView;
-    static jmethodID jScanMedia;
+    static jmethodID jRequestUiThreadCallback;
     static jmethodID jScheduleRestart;
     static jmethodID jSendMessageWrapper;
     static jmethodID jSetFullScreen;
@@ -186,34 +198,6 @@ protected:
     static jmethodID jUnregisterSurfaceTextureFrameListener;
     static jmethodID jVibrate1;
     static jmethodID jVibrateA;
-};
-
-class JavaDomKeyLocation : public AutoGlobalWrappedJavaObject {
-public:
-    static void InitStubs(JNIEnv *jEnv);
-    static JavaDomKeyLocation* Wrap(jobject obj);
-    JavaDomKeyLocation(jobject obj, JNIEnv* env) : AutoGlobalWrappedJavaObject(obj, env) {};
-    static jobject valueOf(const nsAString& a0);
-    static jobjectArray values();
-    static jobject getDOM_KEY_LOCATION_JOYSTICK();
-    static jobject getDOM_KEY_LOCATION_LEFT();
-    static jobject getDOM_KEY_LOCATION_MOBILE();
-    static jobject getDOM_KEY_LOCATION_NUMPAD();
-    static jobject getDOM_KEY_LOCATION_RIGHT();
-    static jobject getDOM_KEY_LOCATION_STANDARD();
-    int32_t getvalue();
-    JavaDomKeyLocation() : AutoGlobalWrappedJavaObject() {};
-protected:
-    static jclass mDomKeyLocationClass;
-    static jmethodID jvalueOf;
-    static jmethodID jvalues;
-    static jfieldID jDOM_KEY_LOCATION_JOYSTICK;
-    static jfieldID jDOM_KEY_LOCATION_LEFT;
-    static jfieldID jDOM_KEY_LOCATION_MOBILE;
-    static jfieldID jDOM_KEY_LOCATION_NUMPAD;
-    static jfieldID jDOM_KEY_LOCATION_RIGHT;
-    static jfieldID jDOM_KEY_LOCATION_STANDARD;
-    static jfieldID jvalue;
 };
 
 class GeckoJavaSampler : public AutoGlobalWrappedJavaObject {
@@ -238,6 +222,22 @@ protected:
     static jmethodID jStartJavaProfiling;
     static jmethodID jStopJavaProfiling;
     static jmethodID jUnpauseJavaProfiling;
+};
+
+class RestrictedProfiles : public AutoGlobalWrappedJavaObject {
+public:
+    static void InitStubs(JNIEnv *jEnv);
+    static RestrictedProfiles* Wrap(jobject obj);
+    RestrictedProfiles(jobject obj, JNIEnv* env) : AutoGlobalWrappedJavaObject(obj, env) {};
+    static jstring GetUserRestrictions();
+    static bool IsAllowed(int32_t a0, const nsAString& a1);
+    static bool IsUserRestricted();
+    RestrictedProfiles() : AutoGlobalWrappedJavaObject() {};
+protected:
+    static jclass mRestrictedProfilesClass;
+    static jmethodID jGetUserRestrictions;
+    static jmethodID jIsAllowed;
+    static jmethodID jIsUserRestricted;
 };
 
 class SurfaceBits : public AutoGlobalWrappedJavaObject {
@@ -311,7 +311,7 @@ public:
     void ActivateProgram();
     void ContentDocumentChanged();
     jobject CreateFrame();
-    void DeactivateProgram();
+    void DeactivateProgramAndRestoreState(bool a0, int32_t a1, int32_t a2, int32_t a3, int32_t a4);
     jobject GetDisplayPort(bool a0, bool a1, int32_t a2, jobject a3);
     bool IsContentDocumentDisplayed();
     jobject ProgressiveUpdateCallback(bool a0, jfloat a1, jfloat a2, jfloat a3, jfloat a4, jfloat a5, bool a6);
@@ -325,7 +325,7 @@ protected:
     static jmethodID jActivateProgram;
     static jmethodID jContentDocumentChanged;
     static jmethodID jCreateFrame;
-    static jmethodID jDeactivateProgram;
+    static jmethodID jDeactivateProgramAndRestoreState;
     static jmethodID jGetDisplayPort;
     static jmethodID jIsContentDocumentDisplayed;
     static jmethodID jProgressiveUpdateCallback;
@@ -364,12 +364,10 @@ public:
     static void InitStubs(JNIEnv *jEnv);
     static NativePanZoomController* Wrap(jobject obj);
     NativePanZoomController(jobject obj, JNIEnv* env) : AutoGlobalWrappedJavaObject(obj, env) {};
-    void PostDelayedCallbackWrapper(int64_t a0);
     void RequestContentRepaintWrapper(jfloat a0, jfloat a1, jfloat a2, jfloat a3, jfloat a4);
     NativePanZoomController() : AutoGlobalWrappedJavaObject() {};
 protected:
     static jclass mNativePanZoomControllerClass;
-    static jmethodID jPostDelayedCallbackWrapper;
     static jmethodID jRequestContentRepaintWrapper;
 };
 

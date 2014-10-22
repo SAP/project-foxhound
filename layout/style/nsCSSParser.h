@@ -41,8 +41,8 @@ class StyleRule;
 
 class MOZ_STACK_CLASS nsCSSParser {
 public:
-  nsCSSParser(mozilla::css::Loader* aLoader = nullptr,
-              mozilla::CSSStyleSheet* aSheet = nullptr);
+  explicit nsCSSParser(mozilla::css::Loader* aLoader = nullptr,
+                       mozilla::CSSStyleSheet* aSheet = nullptr);
   ~nsCSSParser();
 
   static void Shutdown();
@@ -296,6 +296,13 @@ public:
                               nsIURI* aBaseURL,
                               nsIPrincipal* aSheetPrincipal,
                               nsCSSValue& aValue);
+
+  bool ParseFontFaceDescriptor(nsCSSFontDesc aDescID,
+                               const nsAString& aBuffer,
+                               nsIURI* aSheetURL,
+                               nsIURI* aBaseURL,
+                               nsIPrincipal* aSheetPrincipal,
+                               nsCSSValue& aValue);
 
   // Check whether a given value can be applied to a property.
   bool IsValueValidForProperty(const nsCSSProperty aPropID,

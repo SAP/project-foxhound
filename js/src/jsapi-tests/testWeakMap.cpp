@@ -9,8 +9,6 @@
 
 #include "jsapi-tests/tests.h"
 
-#ifdef JSGC_USE_EXACT_ROOTING
-
 BEGIN_TEST(testWeakMap_basicOperations)
 {
     JS::RootedObject map(cx, JS::NewWeakMapObject(cx));
@@ -66,6 +64,10 @@ checkSize(JS::HandleObject map, uint32_t expected)
 }
 END_TEST(testWeakMap_basicOperations)
 
+// TODO: this test stores object pointers in a private slot which is not marked
+// and so doesn't work with compacting GC.
+#ifndef JSGC_COMPACTING
+
 BEGIN_TEST(testWeakMap_keyDelegates)
 {
     JS_SetGCParameter(rt, JSGC_MODE, JSGC_MODE_INCREMENTAL);
@@ -87,7 +89,7 @@ BEGIN_TEST(testWeakMap_keyDelegates)
      * zone to finish marking before the delegate zone.
      */
     CHECK(newCCW(map, delegate));
-    GCDebugSlice(rt, true, 1000000);
+    rt->gc.gcDebugSlice(true, 1000000);
 #ifdef DEBUG
     CHECK(map->zone()->lastZoneGroupIndex() < delegate->zone()->lastZoneGroupIndex());
 #endif
@@ -100,7 +102,7 @@ BEGIN_TEST(testWeakMap_keyDelegates)
     /* Check the delegate keeps the entry alive even if the key is not reachable. */
     key = nullptr;
     CHECK(newCCW(map, delegate));
-    GCDebugSlice(rt, true, 100000);
+    rt->gc.gcDebugSlice(true, 100000);
     CHECK(checkSize(map, 1));
 
     /*
@@ -111,7 +113,7 @@ BEGIN_TEST(testWeakMap_keyDelegates)
     CHECK(map->zone()->lastZoneGroupIndex() == delegate->zone()->lastZoneGroupIndex());
 #endif
 
-    /* Check that when the delegate becomes unreacable the entry is removed. */
+    /* Check that when the delegate becomes unreachable the entry is removed. */
     delegate = nullptr;
     JS_GC(rt);
     CHECK(checkSize(map, 0));
@@ -241,4 +243,4 @@ checkSize(JS::HandleObject map, uint32_t expected)
 }
 END_TEST(testWeakMap_keyDelegates)
 
-#endif // JSGC_USE_EXACT_ROOTING
+#endif

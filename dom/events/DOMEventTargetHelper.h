@@ -36,23 +36,19 @@ public:
     , mHasOrHasHadOwnerWindow(false)
   {
   }
-  DOMEventTargetHelper(nsPIDOMWindow* aWindow)
+  explicit DOMEventTargetHelper(nsPIDOMWindow* aWindow)
     : mParentObject(nullptr)
     , mOwnerWindow(nullptr)
     , mHasOrHasHadOwnerWindow(false)
   {
     BindToOwner(aWindow);
-    // All objects coming through here are WebIDL objects
-    SetIsDOMBinding();
   }
-  DOMEventTargetHelper(DOMEventTargetHelper* aOther)
+  explicit DOMEventTargetHelper(DOMEventTargetHelper* aOther)
     : mParentObject(nullptr)
     , mOwnerWindow(nullptr)
     , mHasOrHasHadOwnerWindow(false)
   {
     BindToOwner(aOther);
-    // All objects coming through here are WebIDL objects
-    SetIsDOMBinding();
   }
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS

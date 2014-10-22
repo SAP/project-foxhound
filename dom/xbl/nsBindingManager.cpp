@@ -490,7 +490,7 @@ nsBindingManager::PutXBLDocumentInfo(nsXBLDocumentInfo* aDocumentInfo)
   NS_PRECONDITION(aDocumentInfo, "Must have a non-null documentinfo!");
 
   if (!mDocumentTable) {
-    mDocumentTable = new nsRefPtrHashtable<nsURIHashKey,nsXBLDocumentInfo>(16);
+    mDocumentTable = new nsRefPtrHashtable<nsURIHashKey,nsXBLDocumentInfo>();
   }
 
   mDocumentTable->Put(aDocumentInfo->DocumentURI(), aDocumentInfo);
@@ -521,7 +521,8 @@ nsBindingManager::PutLoadingDocListener(nsIURI* aURL, nsIStreamListener* aListen
   NS_PRECONDITION(aListener, "Must have a non-null listener!");
 
   if (!mLoadingDocTable) {
-    mLoadingDocTable = new nsInterfaceHashtable<nsURIHashKey,nsIStreamListener>(16);
+    mLoadingDocTable =
+      new nsInterfaceHashtable<nsURIHashKey,nsIStreamListener>();
   }
   mLoadingDocTable->Put(aURL, aListener);
 
@@ -656,6 +657,7 @@ nsBindingManager::GetBindingImplementation(nsIContent* aContent, REFNSIID aIID,
       // If there's no separate XBL scope, or if the reflector itself lives in
       // the XBL scope, we'll end up with the global of the reflector.
       JS::Rooted<JSObject*> xblScope(cx, xpc::GetXBLScopeOrGlobal(cx, jsobj));
+      NS_ENSURE_TRUE(xblScope, NS_ERROR_UNEXPECTED);
       JSAutoCompartment ac(cx, xblScope);
       bool ok = JS_WrapObject(cx, &jsobj);
       NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);

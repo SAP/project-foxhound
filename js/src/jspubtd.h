@@ -21,8 +21,9 @@
 
 #include "js/TypeDecls.h"
 
-#if defined(JSGC_USE_EXACT_ROOTING) || defined(JS_DEBUG)
-# define JSGC_TRACK_EXACT_ROOTS
+#if (defined(JSGC_GENERATIONAL) && defined(JS_GC_ZEAL)) || \
+    (defined(JSGC_COMPACTING) && defined(DEBUG))
+# define JSGC_HASH_TABLE_CHECKS
 #endif
 
 namespace JS {
@@ -123,9 +124,8 @@ enum JSGCTraceKind {
 /* Struct forward declarations. */
 struct JSClass;
 struct JSCompartment;
-struct JSConstDoubleSpec;
 struct JSCrossCompartmentCall;
-struct JSErrorReport;
+class JSErrorReport;
 struct JSExceptionState;
 struct JSFunctionSpec;
 struct JSIdArray;
@@ -146,6 +146,10 @@ class JSFlatString;
 
 typedef struct PRCallOnceType   JSCallOnceType;
 typedef bool                    (*JSInitCallback)(void);
+
+template<typename T> struct JSConstScalarSpec;
+typedef JSConstScalarSpec<double> JSConstDoubleSpec;
+typedef JSConstScalarSpec<int32_t> JSConstIntegerSpec;
 
 /*
  * Generic trace operation that calls JS_CallTracer on each traceable thing
@@ -173,7 +177,7 @@ namespace shadow {
 struct Runtime
 {
     /* Restrict zone access during Minor GC. */
-    bool needsBarrier_;
+    bool needsIncrementalBarrier_;
 
 #ifdef JSGC_GENERATIONAL
   private:
@@ -186,14 +190,14 @@ struct Runtime
         js::gc::StoreBuffer *storeBuffer
 #endif
     )
-      : needsBarrier_(false)
+      : needsIncrementalBarrier_(false)
 #ifdef JSGC_GENERATIONAL
       , gcStoreBufferPtr_(storeBuffer)
 #endif
     {}
 
-    bool needsBarrier() const {
-        return needsBarrier_;
+    bool needsIncrementalBarrier() const {
+        return needsIncrementalBarrier_;
     }
 
 #ifdef JSGC_GENERATIONAL
@@ -297,15 +301,14 @@ class JS_PUBLIC_API(AutoGCRooter)
         NAMEVECTOR =  -17, /* js::AutoNameVector */
         HASHABLEVALUE=-18, /* js::HashableValue */
         IONMASM =     -19, /* js::jit::MacroAssembler */
-        IONALLOC =    -20, /* js::jit::AutoTempAllocatorRooter */
-        WRAPVECTOR =  -21, /* js::AutoWrapperVector */
-        WRAPPER =     -22, /* js::AutoWrapperRooter */
-        OBJOBJHASHMAP=-23, /* js::AutoObjectObjectHashMap */
-        OBJU32HASHMAP=-24, /* js::AutoObjectUnsigned32HashMap */
-        OBJHASHSET =  -25, /* js::AutoObjectHashSet */
-        JSONPARSER =  -26, /* js::JSONParser */
-        CUSTOM =      -27, /* js::CustomAutoRooter */
-        FUNVECTOR =   -28  /* js::AutoFunctionVector */
+        WRAPVECTOR =  -20, /* js::AutoWrapperVector */
+        WRAPPER =     -21, /* js::AutoWrapperRooter */
+        OBJOBJHASHMAP=-22, /* js::AutoObjectObjectHashMap */
+        OBJU32HASHMAP=-23, /* js::AutoObjectUnsigned32HashMap */
+        OBJHASHSET =  -24, /* js::AutoObjectHashSet */
+        JSONPARSER =  -25, /* js::JSONParser */
+        CUSTOM =      -26, /* js::CustomAutoRooter */
+        FUNVECTOR =   -27  /* js::AutoFunctionVector */
     };
 
   private:
@@ -405,9 +408,7 @@ struct ContextFriendFields
     explicit ContextFriendFields(JSRuntime *rt)
       : runtime_(rt), compartment_(nullptr), zone_(nullptr), autoGCRooters(nullptr)
     {
-#ifdef JSGC_TRACK_EXACT_ROOTS
         mozilla::PodArrayZero(thingGCRooters);
-#endif
     }
 
     static const ContextFriendFields *get(const JSContext *cx) {
@@ -418,7 +419,6 @@ struct ContextFriendFields
         return reinterpret_cast<ContextFriendFields *>(cx);
     }
 
-#ifdef JSGC_TRACK_EXACT_ROOTS
   private:
     /*
      * Stack allocated GC roots for stack GC heap pointers, which may be
@@ -432,8 +432,6 @@ struct ContextFriendFields
         js::ThingRootKind kind = RootKind<T>::rootKind();
         return reinterpret_cast<JS::Rooted<T> *>(thingGCRooters[kind]);
     }
-
-#endif
 
     void checkNoGCRooters();
 
@@ -497,7 +495,6 @@ struct PerThreadDataFriendFields
 
     PerThreadDataFriendFields();
 
-#ifdef JSGC_TRACK_EXACT_ROOTS
   private:
     /*
      * Stack allocated GC roots for stack GC heap pointers, which may be
@@ -511,7 +508,6 @@ struct PerThreadDataFriendFields
         js::ThingRootKind kind = RootKind<T>::rootKind();
         return reinterpret_cast<JS::Rooted<T> *>(thingGCRooters[kind]);
     }
-#endif
 
     /* Limit pointer for checking native stack consumption. */
     uintptr_t nativeStackLimit[StackKindCount];

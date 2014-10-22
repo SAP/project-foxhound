@@ -8,9 +8,11 @@ const { classes: Cc, interfaces: Ci, manager: Cm, utils: Cu, results: Cr } = Com
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Prompt.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "sendMessageToJava",
+XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
+                                  "resource://gre/modules/Prompt.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "Messaging",
                                   "resource://gre/modules/Messaging.jsm");
 
 function TabSource() {
@@ -70,7 +72,7 @@ TabSource.prototype = {
     let tabs = app.tabs;
     for (var i in tabs) {
       if (tabs[i].browser.contentWindow == window) {
-        sendMessageToJava({ type: "Tab:StreamStart", tabID: tabs[i].id });
+        Messaging.sendRequest({ type: "Tab:StreamStart", tabID: tabs[i].id });
       }
     }
   },
@@ -80,7 +82,7 @@ TabSource.prototype = {
     let tabs = app.tabs;
     for (let i in tabs) {
       if (tabs[i].browser.contentWindow == window) {
-        sendMessageToJava({ type: "Tab:StreamStop", tabID: tabs[i].id });
+        Messaging.sendRequest({ type: "Tab:StreamStop", tabID: tabs[i].id });
       }
     }
   }

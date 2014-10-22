@@ -878,7 +878,7 @@ function GetNumberOption(options, property, minimum, maximum, fallback) {
     // Step 2.
     if (value !== undefined) {
         value = ToNumber(value);
-        if (std_isNaN(value) || value < minimum || value > maximum)
+        if (Number_isNaN(value) || value < minimum || value > maximum)
             ThrowError(JSMSG_INVALID_DIGITS_VALUE, value);
         return std_Math_floor(value);
     }
@@ -1274,7 +1274,7 @@ function InitializeCollator(collator, locales, options) {
     // Step 13, unrolled.
     var numericValue = GetOption(options, "numeric", "boolean", undefined, undefined);
     if (numericValue !== undefined)
-        numericValue = callFunction(std_Boolean_toString, numericValue);
+        numericValue = numericValue ? 'true' : 'false';
     opt.kn = numericValue;
 
     var caseFirstValue = GetOption(options, "caseFirst", "string", ["upper", "lower", "false"], undefined);

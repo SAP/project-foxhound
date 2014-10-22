@@ -99,7 +99,8 @@ let listener = {
     }
 
     // Make sure we exit all nested event loops so that the test can finish.
-    while (DebuggerServer.xpcInspector.eventLoopNestLevel > 0) {
+    while (DebuggerServer.xpcInspector
+           && DebuggerServer.xpcInspector.eventLoopNestLevel > 0) {
       DebuggerServer.xpcInspector.exitNestedEventLoop();
     }
 
@@ -174,9 +175,9 @@ function attachTestTab(aClient, aTitle, aCallback) {
 // TabClient referring to the tab, and a ThreadClient referring to the
 // thread.
 function attachTestThread(aClient, aTitle, aCallback) {
-  attachTestTab(aClient, aTitle, function (aResponse, aTabClient) {
+  attachTestTab(aClient, aTitle, function (aTabResponse, aTabClient) {
     function onAttach(aResponse, aThreadClient) {
-      aCallback(aResponse, aTabClient, aThreadClient);
+      aCallback(aResponse, aTabClient, aThreadClient, aTabResponse);
     }
     aTabClient.attachThread({
       useSourceMaps: true,
@@ -202,7 +203,6 @@ function attachTestTabAndResume(aClient, aTitle, aCallback) {
  */
 function initTestDebuggerServer(aServer = DebuggerServer)
 {
-  aServer.registerModule("devtools/server/actors/script");
   aServer.registerModule("xpcshell-test/testactors");
   // Allow incoming connections.
   aServer.init(function () { return true; });
@@ -210,9 +210,12 @@ function initTestDebuggerServer(aServer = DebuggerServer)
 
 function initTestTracerServer(aServer = DebuggerServer)
 {
-  aServer.registerModule("devtools/server/actors/script");
   aServer.registerModule("xpcshell-test/testactors");
-  aServer.registerModule("devtools/server/actors/tracer");
+  aServer.registerModule("devtools/server/actors/tracer", {
+    prefix: "trace",
+    constructor: "TracerActor",
+    type: { global: true, tab: true }
+  });
   // Allow incoming connections.
   aServer.init(function () { return true; });
 }

@@ -1177,13 +1177,13 @@ nsContentSink::StartLayout(bool aIgnorePendingSheets)
   // If the document we are loading has a reference or it is a
   // frameset document, disable the scroll bars on the views.
 
-  mDocument->SetScrollToRef(mDocumentURI);
+  mDocument->SetScrollToRef(mDocument->GetDocumentURI());
 }
 
 void
 nsContentSink::NotifyAppend(nsIContent* aContainer, uint32_t aStartIndex)
 {
-  if (aContainer->GetCurrentDoc() != mDocument) {
+  if (aContainer->GetUncomposedDoc() != mDocument) {
     // aContainer is not actually in our document anymore.... Just bail out of
     // here; notifying on our document for this append would be wrong.
     return;

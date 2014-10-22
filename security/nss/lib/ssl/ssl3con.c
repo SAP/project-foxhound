@@ -31,18 +31,6 @@
 #include "blapi.h"
 #endif
 
-#ifdef ANDROID_STUB_H
-#include <android/log.h>
-#define androidLog(...) __android_log_print(ANDROID_LOG_VERBOSE, "GeckoNSS", __VA_ARGS__)
-#else
-#ifdef _MSC_VER
-#define androidLog(...)
-#else
-#define androidLog(...) ((void) 0)
-#endif
-#endif
-
-
 #include <stdio.h>
 #ifdef NSS_ENABLE_ZLIB
 #include "zlib.h"
@@ -227,7 +215,10 @@ compressionEnabled(sslSocket *ss, SSLCompressionMethod compression)
 	return PR_TRUE;  /* Always enabled */
 #ifdef NSS_ENABLE_ZLIB
     case ssl_compression_deflate:
-	return ss->opt.enableDeflate;
+        if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
+            return ss->opt.enableDeflate;
+        }
+        return PR_FALSE;
 #endif
     default:
 	return PR_FALSE;
@@ -649,14 +640,16 @@ ssl3_CipherSuiteAllowedForVersionRange(
     case TLS_DHE_RSA_WITH_AES_256_CBC_SHA256:
     case TLS_RSA_WITH_AES_256_CBC_SHA256:
     case TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:
-    case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
     case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:
-    case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
     case TLS_DHE_RSA_WITH_AES_128_CBC_SHA256:
-    case TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:
     case TLS_RSA_WITH_AES_128_CBC_SHA256:
     case TLS_RSA_WITH_AES_128_GCM_SHA256:
     case TLS_RSA_WITH_NULL_SHA256:
+        return vrange->max == SSL_LIBRARY_VERSION_TLS_1_2;
+
+    case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
+    case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+    case TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:
 	return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_2;
 
     /* RFC 4492: ECC cipher suites need TLS extensions to negotiate curves and
@@ -681,10 +674,11 @@ ssl3_CipherSuiteAllowedForVersionRange(
     case TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:
     case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:
     case TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
-	return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_0;
+        return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_0 &&
+               vrange->min < SSL_LIBRARY_VERSION_TLS_1_3;
 
     default:
-	return PR_TRUE;
+        return vrange->min < SSL_LIBRARY_VERSION_TLS_1_3;
     }
 }
 
@@ -3364,6 +3358,9 @@ ssl3_HandleAlert(sslSocket *ss, sslBuffer *buf)
     case certificate_unknown: 	error = SSL_ERROR_CERTIFICATE_UNKNOWN_ALERT;
 			        					  break;
     case illegal_parameter: 	error = SSL_ERROR_ILLEGAL_PARAMETER_ALERT;break;
+    case inappropriate_fallback:
+        error = SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT;
+        break;
 
     /* All alerts below are TLS only. */
     case unknown_ca: 		error = SSL_ERROR_UNKNOWN_CA_ALERT;       break;
@@ -4885,6 +4882,7 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     int              num_suites;
     int              actual_count = 0;
     PRBool           isTLS = PR_FALSE;
+    PRBool           requestingResume = PR_FALSE, fallbackSCSV = PR_FALSE;
     PRInt32          total_exten_len = 0;
     unsigned         paddingExtensionLen;
     unsigned         numCompressionMethods;
@@ -5027,6 +5025,7 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     }
 
     if (sid) {
+	requestingResume = PR_TRUE;
 	SSL_AtomicIncrementLong(& ssl3stats.sch_sid_cache_hits );
 
 	PRINT_BUF(4, (ss, "client, found session-id:", sid->u.ssl3.sessionID,
@@ -5141,8 +5140,15 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     	if (sid->u.ssl3.lock) { PR_RWLock_Unlock(sid->u.ssl3.lock); }
     	return SECFailure;	/* count_cipher_suites has set error code. */
     }
+
+    fallbackSCSV = ss->opt.enableFallbackSCSV && (!requestingResume ||
+						  ss->version < sid->version);
+    /* make room for SCSV */
     if (ss->ssl3.hs.sendingSCSV) {
-	++num_suites;   /* make room for SCSV */
+	++num_suites;
+    }
+    if (fallbackSCSV) {
+	++num_suites;
     }
 
     /* count compression methods */
@@ -5241,6 +5247,15 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     if (ss->ssl3.hs.sendingSCSV) {
 	/* Add the actual SCSV */
 	rv = ssl3_AppendHandshakeNumber(ss, TLS_EMPTY_RENEGOTIATION_INFO_SCSV,
+					sizeof(ssl3CipherSuite));
+	if (rv != SECSuccess) {
+	    if (sid->u.ssl3.lock) { PR_RWLock_Unlock(sid->u.ssl3.lock); }
+	    return rv;	/* err set by ssl3_AppendHandshake* */
+	}
+	actual_count++;
+    }
+    if (fallbackSCSV) {
+	rv = ssl3_AppendHandshakeNumber(ss, TLS_FALLBACK_SCSV,
 					sizeof(ssl3CipherSuite));
 	if (rv != SECSuccess) {
 	    if (sid->u.ssl3.lock) { PR_RWLock_Unlock(sid->u.ssl3.lock); }
@@ -7723,12 +7738,31 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 	goto loser;		/* malformed */
     }
 
+    /* If the ClientHello version is less than our maximum version, check for a
+     * TLS_FALLBACK_SCSV and reject the connection if found. */
+    if (ss->vrange.max > ss->clientHelloVersion) {
+	for (i = 0; i + 1 < suites.len; i += 2) {
+	    PRUint16 suite_i = (suites.data[i] << 8) | suites.data[i + 1];
+	    if (suite_i != TLS_FALLBACK_SCSV)
+		continue;
+	    desc = inappropriate_fallback;
+	    errCode = SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT;
+	    goto alert_loser;
+	}
+    }
+
     /* grab the list of compression methods. */
     rv = ssl3_ConsumeHandshakeVariable(ss, &comps, 1, &b, &length);
     if (rv != SECSuccess) {
 	goto loser;		/* malformed */
     }
 
+    /* TLS 1.3 requires that compression be empty */
+    if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
+        if (comps.len != 1 || comps.data[0] != ssl_compression_null) {
+            goto loser;
+        }
+    }
     desc = handshake_failure;
 
     /* Handle TLS hello extensions for SSL3 & TLS. We do not know if
@@ -9391,6 +9425,10 @@ skip:
 	}
 	rv = ssl3_HandleECDHClientKeyExchange(ss, b, length, 
 					      serverPubKey, serverKey);
+	if (ss->ephemeralECDHKeyPair) {
+	    ssl3_FreeKeyPair(ss->ephemeralECDHKeyPair);
+	    ss->ephemeralECDHKeyPair = NULL;
+	}
 	if (rv != SECSuccess) {
 	    return SECFailure;	/* error code set */
 	}
@@ -9701,16 +9739,10 @@ ssl3_SendCertificateStatus(sslSocket *ss)
 static void
 ssl3_CleanupPeerCerts(sslSocket *ss)
 {
-#ifndef _MSC_VER
-    androidLog("Top of ssl3_CleanupPeerCerts ss=%p", ss);
-#endif
     PLArenaPool * arena = ss->ssl3.peerCertArena;
     ssl3CertNode *certs = (ssl3CertNode *)ss->ssl3.peerCertChain;
 
     for (; certs; certs = certs->next) {
-#ifndef _MSC_VER
-        androidLog("ssl3_CleanupPeerCerts certs->cert=%p", certs->cert);
-#endif
 	CERT_DestroyCertificate(certs->cert);
     }
     if (arena) PORT_FreeArena(arena, PR_FALSE);
@@ -9795,8 +9827,6 @@ ssl3_HandleCertificate(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 
     SSL_TRC(3, ("%d: SSL3[%d]: handle certificate handshake",
 		SSL_GETPID(), ss->fd));
-    androidLog("Top of ssl3_HandleCertificate ss=%p fd=%d", ss, ss->fd);
-
     PORT_Assert( ss->opt.noLocks || ssl_HaveRecvBufLock(ss) );
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
 
@@ -9910,9 +9940,6 @@ ssl3_HandleCertificate(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 	}
 
 	c->next = NULL;
-
-        androidLog("ssl3_HandleCertificate ss=%p fd=%d lastcert=%p c=%p c->next=%p c->cert=%p", ss, ss->fd, lastCert, c, c->next, c->cert);
-
 	if (lastCert) {
 	    lastCert->next = c;
 	} else {
@@ -9932,13 +9959,11 @@ ssl3_HandleCertificate(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     } else {
        rv = ssl3_AuthCertificate(ss); /* sets ss->ssl3.hs.ws */
     }
-    androidLog("ssl3_HandleCertificate returning ss=%p fd=%d rv=%d peercertChain=%p", ss, ss->fd, rv, ss->ssl3.peerCertChain);
 
     return rv;
 
 ambiguous_err:
     errCode = PORT_GetError();
-    androidLog("ssl3_HandleCertificate amb_err ss=%p fd=%d error=%d", ss, ss->fd, errCode);
     switch (errCode) {
     case PR_OUT_OF_MEMORY_ERROR:
     case SEC_ERROR_BAD_DATABASE:
@@ -9953,15 +9978,12 @@ ambiguous_err:
     goto loser;
 
 decode_loser:
-    androidLog("ssl3_HandleCertificate decode_loser ss=%p fd=%d", ss, ss->fd);
     desc = isTLS ? decode_error : bad_certificate;
 
 alert_loser:
-    androidLog("ssl3_HandleCertificate alert_loser ss=%p fd=%d", ss, ss->fd);
     (void)SSL3_SendAlert(ss, alert_fatal, desc);
 
 loser:
-    androidLog("ssl3_HandleCertificate loser ss=%p fd=%d peercertChain=%p", ss, ss->fd, ss->ssl3.peerCertChain);
     (void)ssl_MapLowLevelError(errCode);
     return SECFailure;
 }

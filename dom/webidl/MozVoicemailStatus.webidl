@@ -4,9 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-[JSImplementation="@mozilla.org/voicemailstatus;1",
-Pref="dom.voicemail.enabled"]
-
+[Pref="dom.voicemail.enabled"]
 interface MozVoicemailStatus 
 {
   readonly attribute unsigned long serviceId;
@@ -37,11 +35,11 @@ interface MozVoicemailStatus
    * Return call number received for this voicemail status, or null if one
    * wasn't provided.
    */
-  readonly attribute DOMString returnNumber;
+  readonly attribute DOMString? returnNumber;
 
   /**
    * Displayable return call message received for this voicemail status, or null
    * if one wasn't provided.
    */
-  readonly attribute DOMString returnMessage;
+  readonly attribute DOMString? returnMessage;
 };

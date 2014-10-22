@@ -15,6 +15,7 @@
 
 namespace mozilla {
 namespace dom {
+class File;
 class DOMRequest;
 struct MediaMetaData;
 struct MediaPlayStatus;
@@ -119,16 +120,21 @@ public:
 
   already_AddRefed<DOMRequest>
     Connect(BluetoothDevice& aDevice,
-            const Optional<short unsigned int>& aServiceUuid, ErrorResult& aRv);
+            const Optional<uint16_t>& aServiceUuid, ErrorResult& aRv);
   already_AddRefed<DOMRequest>
     Disconnect(BluetoothDevice& aDevice,
-               const Optional<short unsigned int>& aServiceUuid,
+               const Optional<uint16_t>& aServiceUuid,
                ErrorResult& aRv);
+
+  already_AddRefed<DOMRequest>
+    IsConnected(const uint16_t aServiceUuid,
+                ErrorResult& aRv);
+
   already_AddRefed<DOMRequest>
     GetConnectedDevices(uint16_t aServiceUuid, ErrorResult& aRv);
 
   already_AddRefed<DOMRequest>
-    SendFile(const nsAString& aDeviceAddress, nsIDOMBlob* aBlob,
+    SendFile(const nsAString& aDeviceAddress, File& aBlob,
              ErrorResult& aRv);
   already_AddRefed<DOMRequest>
     StopSendingFile(const nsAString& aDeviceAddress, ErrorResult& aRv);

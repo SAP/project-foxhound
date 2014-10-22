@@ -41,7 +41,7 @@ public:
   NS_DECL_NSAHTTPSEGMENTREADER
   NS_DECL_NSAHTTPSEGMENTWRITER
 
-  Http2Session(nsISocketTransport *);
+  explicit Http2Session(nsISocketTransport *);
 
   bool AddStream(nsAHttpTransaction *, int32_t,
                  bool, nsIInterfaceRequestor *);
@@ -75,17 +75,18 @@ public:
 */
 
   enum frameType {
-    FRAME_TYPE_DATA = 0,
-    FRAME_TYPE_HEADERS = 1,
-    FRAME_TYPE_PRIORITY = 2,
-    FRAME_TYPE_RST_STREAM = 3,
-    FRAME_TYPE_SETTINGS = 4,
-    FRAME_TYPE_PUSH_PROMISE = 5,
-    FRAME_TYPE_PING = 6,
-    FRAME_TYPE_GOAWAY = 7,
-    FRAME_TYPE_WINDOW_UPDATE = 8,
-    FRAME_TYPE_CONTINUATION = 9,
-    FRAME_TYPE_LAST = 10
+    FRAME_TYPE_DATA          = 0x0,
+    FRAME_TYPE_HEADERS       = 0x1,
+    FRAME_TYPE_PRIORITY      = 0x2,
+    FRAME_TYPE_RST_STREAM    = 0x3,
+    FRAME_TYPE_SETTINGS      = 0x4,
+    FRAME_TYPE_PUSH_PROMISE  = 0x5,
+    FRAME_TYPE_PING          = 0x6,
+    FRAME_TYPE_GOAWAY        = 0x7,
+    FRAME_TYPE_WINDOW_UPDATE = 0x8,
+    FRAME_TYPE_CONTINUATION  = 0x9,
+    FRAME_TYPE_ALTSVC        = 0xA,
+    FRAME_TYPE_LAST          = 0xB
   };
 
   // NO_ERROR is a macro defined on windows, so we'll name the HTTP2 goaway
@@ -112,7 +113,6 @@ public:
   const static uint8_t kFlag_END_HEADERS = 0x04; // headers, continuation
   const static uint8_t kFlag_END_PUSH_PROMISE = 0x04; // push promise
   const static uint8_t kFlag_ACK = 0x01; // ping and settings
-  const static uint8_t kFlag_END_SEGMENT = 0x02; // data
   const static uint8_t kFlag_PADDED = 0x08; // data, headers, push promise, continuation
   const static uint8_t kFlag_PRIORITY = 0x20; // headers
 
@@ -120,7 +120,8 @@ public:
     SETTINGS_TYPE_HEADER_TABLE_SIZE = 1, // compression table size
     SETTINGS_TYPE_ENABLE_PUSH = 2,     // can be used to disable push
     SETTINGS_TYPE_MAX_CONCURRENT = 3,  // streams recvr allowed to initiate
-    SETTINGS_TYPE_INITIAL_WINDOW = 4  // bytes for flow control default
+    SETTINGS_TYPE_INITIAL_WINDOW = 4,  // bytes for flow control default
+    SETTINGS_TYPE_MAX_FRAME_SIZE = 5   // max frame size settings sender allows receipt of
   };
 
   // This should be big enough to hold all of your control packets,
@@ -148,9 +149,16 @@ public:
   // The default rwin is 64KB - 1 unless updated by a settings frame
   const static uint32_t kDefaultRwin = 65535;
 
-  // Frames with HTTP semantics are limited to 2^14 - 1 bytes of length in
-  // order to preserve responsiveness
-  const static uint32_t kMaxFrameData = 16383;
+  // We limit frames to 2^14 bytes of length in order to preserve responsiveness
+  // This is the smallest allowed value for SETTINGS_MAX_FRAME_SIZE
+  const static uint32_t kMaxFrameData = 0x4000;
+
+  const static uint8_t kFrameLengthBytes = 3;
+  const static uint8_t kFrameStreamIDBytes = 4;
+  const static uint8_t kFrameFlagBytes = 1;
+  const static uint8_t kFrameTypeBytes = 1;
+  const static uint8_t kFrameHeaderBytes = kFrameLengthBytes + kFrameFlagBytes +
+    kFrameTypeBytes + kFrameStreamIDBytes;
 
   static nsresult RecvHeaders(Http2Session *);
   static nsresult RecvPriority(Http2Session *);
@@ -161,6 +169,7 @@ public:
   static nsresult RecvGoAway(Http2Session *);
   static nsresult RecvWindowUpdate(Http2Session *);
   static nsresult RecvContinuation(Http2Session *);
+  static nsresult RecvAltSvc(Http2Session *);
 
   char       *EnsureOutputBuffer(uint32_t needed);
 
@@ -191,6 +200,7 @@ public:
   void MaybeDecrementConcurrent(Http2Stream *stream);
 
   nsresult ConfirmTLSProfile();
+  static bool ALPNCallback(nsISupports *securityInfo);
 
   uint64_t Serial() { return mSerial; }
 
@@ -203,6 +213,9 @@ public:
   nsISocketTransport *SocketTransport() { return mSocketTransport; }
   int64_t ServerSessionWindow() { return mServerSessionWindow; }
   void DecrementServerSessionWindow (uint32_t bytes) { mServerSessionWindow -= bytes; }
+  void GetNegotiatedToken(nsACString &s) { s.Assign(mNegotiatedToken); }
+
+  void SendPing() MOZ_OVERRIDE;
 
 private:
 
@@ -233,6 +246,7 @@ private:
   void        GenerateRstStream(uint32_t, uint32_t);
   void        GenerateGoAway(uint32_t);
   void        CleanupStream(Http2Stream *, nsresult, errorType);
+  void        CleanupStream(uint32_t, nsresult, errorType);
   void        CloseStream(Http2Stream *, nsresult);
   void        SendHello();
   void        RemoveStreamFromQueues(Http2Stream *);
@@ -433,6 +447,9 @@ private:
   PRIntervalTime       mLastDataReadEpoch; // used for IdleTime()
   PRIntervalTime       mPingSentEpoch;
 
+  PRIntervalTime       mPreviousPingThreshold; // backup for the former value
+  bool                 mPreviousUsed;          // true when backup is used
+
   // used as a temporary buffer while enumerating the stream hash during GoAway
   nsDeque  mGoAwayStreamsToRestart;
 
@@ -447,6 +464,9 @@ private:
   // of that state so we can behave appropriately.
   bool mWaitingForSettingsAck;
   bool mGoAwayOnPush;
+
+  // For caching whether we negotiated "h2" or "h2-<draft>"
+  nsCString mNegotiatedToken;
 
 private:
 /// connect tunnels

@@ -5,11 +5,12 @@
 
 package org.mozilla.gecko.gfx;
 
+import org.mozilla.gecko.AppConstants.Versions;
+
 import android.content.Context;
 import android.graphics.Canvas;
-import android.os.Build;
-import android.widget.EdgeEffect;
 import android.view.View;
+import android.widget.EdgeEffect;
 
 
 public class OverscrollEdgeEffect implements Overscroll {
@@ -33,6 +34,7 @@ public class OverscrollEdgeEffect implements Overscroll {
         }
     }
 
+    @Override
     public void setSize(final int width, final int height) {
         mEdges[LEFT].setSize(height, width);
         mEdges[RIGHT].setSize(height, width);
@@ -57,13 +59,14 @@ public class OverscrollEdgeEffect implements Overscroll {
     }
 
     private void invalidate() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+        if (Versions.feature16Plus) {
             mView.postInvalidateOnAnimation();
         } else {
             mView.postInvalidateDelayed(10);
         }
     }
 
+    @Override
     public void setVelocity(final float velocity, final Axis axis) {
         final EdgeEffect edge = getEdgeForAxisAndSide(axis, velocity);
 
@@ -78,6 +81,7 @@ public class OverscrollEdgeEffect implements Overscroll {
         invalidate();
     }
 
+    @Override
     public void setDistance(final float distance, final Axis axis) {
         // The first overscroll event often has zero distance. Throw it out
         if (distance == 0.0f) {
@@ -89,6 +93,7 @@ public class OverscrollEdgeEffect implements Overscroll {
         invalidate();
     }
 
+    @Override
     public void draw(final Canvas canvas, final ImmutableViewportMetrics metrics) {
         if (metrics == null) {
             return;
@@ -118,7 +123,7 @@ public class OverscrollEdgeEffect implements Overscroll {
         }
     }
 
-    public boolean draw(final EdgeEffect edge, final Canvas canvas, final float translateX, final float translateY, final float rotation) {
+    private static boolean draw(final EdgeEffect edge, final Canvas canvas, final float translateX, final float translateY, final float rotation) {
         final int state = canvas.save();
         canvas.translate(translateX, translateY);
         canvas.rotate(rotation);

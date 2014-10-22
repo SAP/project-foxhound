@@ -11,13 +11,12 @@
 #include "nsCSPService.h"
 #include "nsError.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsIChannelPolicy.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMHTMLElement.h"
-#include "nsIDOMWindowUtils.h"
+#include "nsIDOMNode.h"
 #include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -25,18 +24,18 @@
 #include "nsIObjectOutputStream.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
-#include "nsIPrincipal.h"
-#include "nsIPropertyBag2.h"
 #include "nsIStringStream.h"
 #include "nsIUploadChannel.h"
 #include "nsIScriptError.h"
 #include "nsIWebNavigation.h"
-#include "nsIWritablePropertyBag2.h"
 #include "nsNetUtil.h"
+#include "nsNullPrincipal.h"
+#include "nsIContentPolicy.h"
 #include "nsSupportsPrimitives.h"
 #include "nsThreadUtils.h"
 #include "nsString.h"
 #include "prlog.h"
+#include "mozilla/dom/CSPReportBinding.h"
 
 using namespace mozilla;
 
@@ -171,6 +170,9 @@ nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
     if (!mPolicies[p]->permits(aContentType,
                                aContentLocation,
                                nonce,
+                               // aExtra is only non-null if
+                               // the channel got redirected.
+                               (aExtra != nullptr),
                                violatedDirective)) {
       // If the policy is violated and not report-only, reject the load and
       // report to the console
@@ -236,12 +238,6 @@ nsCSPContext::~nsCSPContext()
 }
 
 NS_IMETHODIMP
-nsCSPContext::GetIsInitialized(bool *outIsInitialized)
-{
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 nsCSPContext::GetPolicy(uint32_t aIndex, nsAString& outStr)
 {
   if (aIndex >= mPolicies.Length()) {
@@ -272,16 +268,11 @@ nsCSPContext::RemovePolicy(uint32_t aIndex)
 
 NS_IMETHODIMP
 nsCSPContext::AppendPolicy(const nsAString& aPolicyString,
-                           nsIURI* aSelfURI,
                            bool aReportOnly)
 {
   CSPCONTEXTLOG(("nsCSPContext::AppendPolicy: %s",
                  NS_ConvertUTF16toUTF8(aPolicyString).get()));
 
-  if (aSelfURI) {
-    // aSelfURI will be disregarded since we will remove it with bug 991474
-    NS_WARNING("aSelfURI should be a nullptr in AppendPolicy and removed in bug 991474");
-  }
   // Use the mSelfURI from setRequestContext, see bug 991474
   NS_ASSERTION(mSelfURI, "mSelfURI required for AppendPolicy, but not set");
   nsCSPPolicy* policy = nsCSPParser::parseContentSecurityPolicy(aPolicyString, mSelfURI, aReportOnly, mInnerWindowID);
@@ -499,55 +490,9 @@ nsCSPContext::LogViolationDetails(uint16_t aViolationType,
 
 #undef CASE_CHECK_AND_REPORT
 
-uint64_t
-getInnerWindowID(nsIRequest* aRequest) {
-  // can't do anything if there's no nsIRequest!
-  if (!aRequest) {
-    return 0;
-  }
-
-  nsCOMPtr<nsILoadGroup> loadGroup;
-  nsresult rv = aRequest->GetLoadGroup(getter_AddRefs(loadGroup));
-
-  if (NS_FAILED(rv) || !loadGroup) {
-    return 0;
-  }
-
-  nsCOMPtr<nsIInterfaceRequestor> callbacks;
-  rv = loadGroup->GetNotificationCallbacks(getter_AddRefs(callbacks));
-  if (NS_FAILED(rv) || !callbacks) {
-    return 0;
-  }
-
-  nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(callbacks);
-  if (!loadContext) {
-    return 0;
-  }
-
-  nsCOMPtr<nsIDOMWindow> window;
-  rv = loadContext->GetAssociatedWindow(getter_AddRefs(window));
-  if (NS_FAILED(rv) || !window) {
-    return 0;
-  }
-
-  uint64_t id = 0;
-  nsCOMPtr<nsIDOMWindowUtils> du = do_GetInterface(window);
-  if (!du) {
-    return 0;
-  }
-
-  rv = du->GetCurrentInnerWindowID(&id);
-  if (NS_FAILED(rv)) {
-    return 0;
-  }
-
-  return id;
-}
-
 NS_IMETHODIMP
 nsCSPContext::SetRequestContext(nsIURI* aSelfURI,
                                 nsIURI* aReferrer,
-                                nsIPrincipal* aDocumentPrincipal,
                                 nsIChannel* aChannel)
 {
   NS_PRECONDITION(aSelfURI || aChannel, "Need aSelfURI or aChannel to set the context properly");
@@ -563,8 +508,19 @@ nsCSPContext::SetRequestContext(nsIURI* aSelfURI,
   NS_ASSERTION(mSelfURI, "No aSelfURI and no URI available from channel in SetRequestContext, can not translate 'self' into actual URI");
 
   if (aChannel) {
-    mInnerWindowID = getInnerWindowID(aChannel);
+    mInnerWindowID = nsContentUtils::GetInnerWindowID(aChannel);
     aChannel->GetLoadGroup(getter_AddRefs(mCallingChannelLoadGroup));
+
+    // Storing the nsINode from the LoadInfo of the original channel,
+    // so we can reuse that information when sending reports.
+    nsCOMPtr<nsILoadInfo> loadInfo;
+    aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+    if (loadInfo) {
+      nsINode* loadingNode = loadInfo->LoadingNode();
+      if (loadingNode) {
+        mLoadingContext = do_GetWeakReference(loadingNode);
+      }
+    }
   }
   else {
     NS_WARNING("Channel needed (but null) in SetRequestContext.  Cannot query loadgroup, which means report sending may fail.");
@@ -604,86 +560,83 @@ nsCSPContext::SendReports(nsISupports* aBlockedContentSource,
   }
 #endif
 
+  dom::CSPReport report;
   nsresult rv;
-  nsString csp_report;
-  csp_report.AppendASCII("{\"csp-report\": {");
 
   // blocked-uri
-  csp_report.AppendASCII("\"blocked-uri\": \"");
   if (aBlockedContentSource) {
     nsAutoCString reportBlockedURI;
     nsCOMPtr<nsIURI> uri = do_QueryInterface(aBlockedContentSource);
     // could be a string or URI
     if (uri) {
-      uri->GetSpec(reportBlockedURI);
+      uri->GetSpecIgnoringRef(reportBlockedURI);
     } else {
       nsCOMPtr<nsISupportsCString> cstr = do_QueryInterface(aBlockedContentSource);
       if (cstr) {
         cstr->GetData(reportBlockedURI);
       }
     }
-    csp_report.AppendASCII(reportBlockedURI.get());
+    if (reportBlockedURI.IsEmpty()) {
+      // this can happen for frame-ancestors violation where the violating
+      // ancestor is cross-origin.
+      NS_WARNING("No blocked URI (null aBlockedContentSource) for CSP violation report.");
+    }
+    report.mCsp_report.mBlocked_uri = NS_ConvertUTF8toUTF16(reportBlockedURI);
   }
-  else {
-    // this can happen for frame-ancestors violation where the violating
-    // ancestor is cross-origin.
-    NS_WARNING("No blocked URI (null aBlockedContentSource) for CSP violation report.");
-  }
-  csp_report.AppendASCII("\", ");
 
   // document-uri
-  csp_report.AppendASCII("\"document-uri\": \"");
   if (aOriginalURI) {
     nsAutoCString reportDocumentURI;
-    aOriginalURI->GetSpec(reportDocumentURI);
-    csp_report.AppendASCII(reportDocumentURI.get());
+    aOriginalURI->GetSpecIgnoringRef(reportDocumentURI);
+    report.mCsp_report.mDocument_uri = NS_ConvertUTF8toUTF16(reportDocumentURI);
   }
-  csp_report.AppendASCII("\", ");
 
   // original-policy
-  csp_report.AppendASCII("\"original-policy\": \"");
   nsAutoString originalPolicy;
   rv = this->GetPolicy(aViolatedPolicyIndex, originalPolicy);
   NS_ENSURE_SUCCESS(rv, rv);
-  csp_report.Append(originalPolicy);
-  csp_report.AppendASCII("\", ");
+  report.mCsp_report.mOriginal_policy = originalPolicy;
 
   // referrer
-  csp_report.AppendASCII("\"referrer\": \"");
   if (mReferrer) {
     nsAutoCString referrerURI;
     mReferrer->GetSpec(referrerURI);
-    csp_report.AppendASCII(referrerURI.get());
+    report.mCsp_report.mReferrer = NS_ConvertUTF8toUTF16(referrerURI);
   }
-  csp_report.AppendASCII("\", ");
 
   // violated-directive
-  csp_report.AppendASCII("\"violated-directive\": \"");
-  csp_report.Append(aViolatedDirective);
-  csp_report.AppendASCII("\"");
+  report.mCsp_report.mViolated_directive = aViolatedDirective;
 
   // source-file
   if (!aSourceFile.IsEmpty()) {
-    csp_report.AppendASCII(", \"source-file\": \"");
-    csp_report.Append(aSourceFile);
-    csp_report.AppendASCII("\"");
+    // if aSourceFile is a URI, we have to make sure to strip fragments
+    nsCOMPtr<nsIURI> sourceURI;
+    NS_NewURI(getter_AddRefs(sourceURI), aSourceFile);
+    if (sourceURI) {
+      nsAutoCString spec;
+      sourceURI->GetSpecIgnoringRef(spec);
+      aSourceFile = NS_ConvertUTF8toUTF16(spec);
+    }
+    report.mCsp_report.mSource_file.Construct();
+    report.mCsp_report.mSource_file.Value() = aSourceFile;
   }
 
   // script-sample
   if (!aScriptSample.IsEmpty()) {
-    csp_report.AppendASCII(", \"script-sample\": \"");
-    csp_report.Append(aScriptSample);
-    csp_report.AppendASCII("\"");
+    report.mCsp_report.mScript_sample.Construct();
+    report.mCsp_report.mScript_sample.Value() = aScriptSample;
   }
 
   // line-number
   if (aLineNum != 0) {
-    csp_report.AppendASCII(", \"line-number\": \"");
-    csp_report.AppendInt(aLineNum);
-    csp_report.AppendASCII("\"");
+    report.mCsp_report.mLine_number.Construct();
+    report.mCsp_report.mLine_number.Value() = aLineNum;
   }
 
-  csp_report.AppendASCII("}}\n\n");
+  nsString csp_report;
+  if (!report.ToJSON(csp_report)) {
+    return NS_ERROR_FAILURE;
+  }
 
   // ---------- Assembled, now send it to all the report URIs ----------- //
 
@@ -692,6 +645,9 @@ nsCSPContext::SendReports(nsISupports* aBlockedContentSource,
 
   nsCOMPtr<nsIURI> reportURI;
   nsCOMPtr<nsIChannel> reportChannel;
+
+  nsCOMPtr<nsIDOMNode> loadingContext = do_QueryReferent(mLoadingContext);
+  nsCOMPtr<nsINode> loadingNode = do_QueryInterface(loadingContext);
 
   for (uint32_t r = 0; r < reportURIs.Length(); r++) {
     nsAutoCString reportURICstring = NS_ConvertUTF16toUTF8(reportURIs[r]);
@@ -709,11 +665,41 @@ nsCSPContext::SendReports(nsISupports* aBlockedContentSource,
     }
 
     // try to create a new channel for every report-uri
-    rv = NS_NewChannel(getter_AddRefs(reportChannel), reportURI);
+    if (loadingNode) {
+      rv = NS_NewChannel(getter_AddRefs(reportChannel),
+                         reportURI,
+                         loadingNode,
+                         nsILoadInfo::SEC_NORMAL,
+                         nsIContentPolicy::TYPE_CSP_REPORT);
+    }
+    else {
+      nsCOMPtr<nsIPrincipal> nullPrincipal =
+        do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = NS_NewChannel(getter_AddRefs(reportChannel),
+                         reportURI,
+                         nullPrincipal,
+                         nsILoadInfo::SEC_NORMAL,
+                         nsIContentPolicy::TYPE_CSP_REPORT);
+    }
+
     if (NS_FAILED(rv)) {
       CSPCONTEXTLOG(("Could not create new channel for report URI %s",
                      reportURICstring.get()));
       continue; // don't return yet, there may be more URIs
+    }
+
+    // log a warning to console if scheme is not http or https
+    bool isHttpScheme =
+      (NS_SUCCEEDED(reportURI->SchemeIs("http", &isHttpScheme)) && isHttpScheme) ||
+      (NS_SUCCEEDED(reportURI->SchemeIs("https", &isHttpScheme)) && isHttpScheme);
+
+    if (!isHttpScheme) {
+      const char16_t* params[] = { reportURIs[r].get() };
+      CSP_LogLocalizedStr(NS_LITERAL_STRING("reportURInotHttpsOrHttp2").get(),
+                          params, ArrayLength(params),
+                          aSourceFile, aScriptSample, aLineNum, 0,
+                          nsIScriptError::errorFlag, "CSP", mInnerWindowID);
     }
 
     // make sure this is an anonymous request (no cookies) so in case the
@@ -819,7 +805,8 @@ class CSPReportSenderRunnable MOZ_FINAL : public nsRunnable
                             uint64_t aInnerWindowID,
                             nsCSPContext* aCSPContext)
       : mBlockedContentSource(aBlockedContentSource)
-      , mOriginalURI(aOriginalURI) , mViolatedPolicyIndex(aViolatedPolicyIndex)
+      , mOriginalURI(aOriginalURI)
+      , mViolatedPolicyIndex(aViolatedPolicyIndex)
       , mReportOnlyFlag(aReportOnlyFlag)
       , mViolatedDirective(aViolatedDirective)
       , mSourceFile(aSourceFile)
@@ -898,7 +885,7 @@ class CSPReportSenderRunnable MOZ_FINAL : public nsRunnable
     nsString                mScriptSample;
     uint32_t                mLineNum;
     uint64_t                mInnerWindowID;
-    nsCSPContext*           mCSPContext;
+    nsRefPtr<nsCSPContext>  mCSPContext;
 };
 
 /**
@@ -1051,6 +1038,7 @@ nsCSPContext::PermitsAncestry(nsIDocShell* aDocShell, bool* outPermitsAncestry)
       if (!mPolicies[i]->permits(nsIContentPolicy::TYPE_DOCUMENT,
                                  ancestorsArray[a],
                                  EmptyString(), // no nonce
+                                 false, // no redirect
                                  violatedDirective)) {
         // Policy is violated
         // Send reports, but omit the ancestor URI if cross-origin as per spec
@@ -1069,6 +1057,48 @@ nsCSPContext::PermitsAncestry(nsIDocShell* aDocShell, bool* outPermitsAncestry)
       }
     }
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCSPContext::PermitsBaseURI(nsIURI* aURI, bool* outPermitsBaseURI)
+{
+  // Can't perform check without aURI
+  if (aURI == nullptr) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *outPermitsBaseURI = true;
+
+  for (uint32_t i = 0; i < mPolicies.Length(); i++) {
+    if (!mPolicies[i]->permitsBaseURI(aURI)) {
+      // policy is violated, report to caller if not report-only
+      if (!mPolicies[i]->getReportOnlyFlag()) {
+        *outPermitsBaseURI = false;
+      }
+      nsAutoString violatedDirective;
+      mPolicies[i]->getDirectiveStringForBaseURI(violatedDirective);
+      this->AsyncReportViolation(aURI,
+                                 mSelfURI,
+                                 violatedDirective,
+                                 i,             /* policy index        */
+                                 EmptyString(), /* no observer subject */
+                                 EmptyString(), /* no source file      */
+                                 EmptyString(), /* no script sample    */
+                                 0);            /* no line number      */
+    }
+  }
+
+#ifdef PR_LOGGING
+  {
+    nsAutoCString spec;
+    aURI->GetSpec(spec);
+    CSPCONTEXTLOG(("nsCSPContext::PermitsBaseURI, aUri: %s, isAllowed: %s",
+                  spec.get(),
+                  *outPermitsBaseURI ? "allow" : "deny"));
+  }
+#endif
+
   return NS_OK;
 }
 
@@ -1227,6 +1257,7 @@ nsCSPContext::Write(nsIObjectOutputStream* aStream)
 
   nsAutoString polStr;
   for (uint32_t p = 0; p < mPolicies.Length(); p++) {
+    polStr.Truncate();
     mPolicies[p]->toString(polStr);
     aStream->WriteWStringZ(polStr.get());
     aStream->WriteBoolean(mPolicies[p]->getReportOnlyFlag());

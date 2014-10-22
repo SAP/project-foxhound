@@ -33,9 +33,11 @@ ifdef MOZ_SOURCE_STAMP
 DEFINES += -DMOZ_SOURCE_STAMP='$(MOZ_SOURCE_STAMP)'
 endif
 
+ifdef MOZILLA_OFFICIAL
 source_repo ?= $(call getSourceRepo,$(topsrcdir)/$(MOZ_BUILD_APP)/..)
 ifneq (,$(source_repo))
   DEFINES += -DMOZ_SOURCE_REPO='$(source_repo)'
+endif
 endif
 
 endif
@@ -63,6 +65,13 @@ PP_TARGETS += LLDBINIT_OBJDIR
 LLDBINIT_FINAL_TARGET_FILES := $(DEPTH)/.lldbinit
 LLDBINIT_FINAL_TARGET_DEST = $(FINAL_TARGET)
 INSTALL_TARGETS += LLDBINIT_FINAL_TARGET
+
+ifeq (1_1,$(MOZ_ASAN)_$(CLANG_CL))
+# Install the clang-cl runtime library for ASAN next to the binaries we produce.
+CLANG_RT_ASAN_FILES := $(MOZ_CLANG_RT_ASAN_LIB_PATH)
+CLANG_RT_ASAN_DEST = $(FINAL_TARGET)
+INSTALL_TARGETS += CLANG_RT_ASAN
+endif
 
 include $(topsrcdir)/config/rules.mk
 
@@ -96,7 +105,7 @@ libs:: $(_VALGRIND_FILES)
 	$(INSTALL) $^ $(_VALGRIND_DIR)
 endif
 
-ifdef ENABLE_TESTS
+ifneq (,$(ENABLE_TESTS)$(MOZ_DMD))
 libs:: $(topsrcdir)/tools/rb/fix_stack_using_bpsyms.py
 	$(INSTALL) $< $(DIST)/bin
 
@@ -106,10 +115,17 @@ libs:: $(topsrcdir)/tools/rb/fix_macosx_stack.py
 endif
 
 ifeq ($(OS_ARCH),Linux)
-libs:: $(topsrcdir)/tools/rb/fix-linux-stack.pl
+libs:: $(topsrcdir)/tools/rb/fix_linux_stack.py
+	$(INSTALL) $< $(DIST)/bin
+endif
+endif # ENABLE_TESTS or MOZ_DMD
+
+ifdef ENABLE_TESTS
+GARBAGE += $(srcdir)/automationutils.pyc
+endif # ENABLE_TESTS
+
+ifdef MOZ_DMD
+libs:: $(topsrcdir)/memory/replace/dmd/dmd.py
 	$(INSTALL) $< $(DIST)/bin
 endif
 
-GARBAGE += $(srcdir)/automationutils.pyc
-
-endif # ENABLE_TESTS

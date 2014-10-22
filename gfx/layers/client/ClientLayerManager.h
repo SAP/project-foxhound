@@ -20,6 +20,7 @@
 #include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_ABORT_IF_FALSE
+#include "nsIObserver.h"                // for nsIObserver
 #include "nsISupportsImpl.h"            // for Layer::Release, etc
 #include "nsRect.h"                     // for nsIntRect
 #include "nsTArray.h"                   // for nsTArray
@@ -31,19 +32,24 @@ class nsIWidget;
 namespace mozilla {
 namespace layers {
 
-class ClientThebesLayer;
+class ClientPaintedLayer;
 class CompositorChild;
 class ImageLayer;
 class PLayerChild;
 class TextureClientPool;
-class SimpleTextureClientPool;
 
-class ClientLayerManager : public LayerManager
+class ClientLayerManager MOZ_FINAL : public LayerManager
 {
   typedef nsTArray<nsRefPtr<Layer> > LayerRefArray;
 
 public:
-  ClientLayerManager(nsIWidget* aWidget);
+  explicit ClientLayerManager(nsIWidget* aWidget);
+
+  virtual void Destroy()
+  {
+    LayerManager::Destroy();
+    ClearCachedResources();
+  }
 
 protected:
   virtual ~ClientLayerManager();
@@ -65,7 +71,7 @@ public:
   virtual void BeginTransactionWithTarget(gfxContext* aTarget);
   virtual void BeginTransaction();
   virtual bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT);
-  virtual void EndTransaction(DrawThebesLayerCallback aCallback,
+  virtual void EndTransaction(DrawPaintedLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT);
 
@@ -81,13 +87,14 @@ public:
 
   virtual void Mutated(Layer* aLayer);
 
-  virtual bool IsOptimizedFor(ThebesLayer* aLayer, ThebesLayerCreationHint aHint);
+  virtual bool IsOptimizedFor(PaintedLayer* aLayer, PaintedLayerCreationHint aHint);
 
-  virtual already_AddRefed<ThebesLayer> CreateThebesLayer();
-  virtual already_AddRefed<ThebesLayer> CreateThebesLayerWithHint(ThebesLayerCreationHint aHint);
+  virtual already_AddRefed<PaintedLayer> CreatePaintedLayer();
+  virtual already_AddRefed<PaintedLayer> CreatePaintedLayerWithHint(PaintedLayerCreationHint aHint);
   virtual already_AddRefed<ContainerLayer> CreateContainerLayer();
   virtual already_AddRefed<ImageLayer> CreateImageLayer();
   virtual already_AddRefed<CanvasLayer> CreateCanvasLayer();
+  virtual already_AddRefed<ReadbackLayer> CreateReadbackLayer();
   virtual already_AddRefed<ColorLayer> CreateColorLayer();
   virtual already_AddRefed<RefLayer> CreateRefLayer();
 
@@ -116,11 +123,17 @@ public:
   virtual void SetIsFirstPaint() MOZ_OVERRIDE;
 
   TextureClientPool* GetTexturePool(gfx::SurfaceFormat aFormat);
-  SimpleTextureClientPool* GetSimpleTileTexturePool(gfx::SurfaceFormat aFormat);
+
+  /// Utility methods for managing texture clients.
+  void ReturnTextureClientDeferred(TextureClient& aClient);
+  void ReturnTextureClient(TextureClient& aClient);
+  void ReportClientLost(TextureClient& aClient);
 
   // Drop cached resources and ask our shadow manager to do the same,
   // if we have one.
   virtual void ClearCachedResources(Layer* aSubtree = nullptr) MOZ_OVERRIDE;
+
+  void HandleMemoryPressure();
 
   void SetRepeatTransaction() { mRepeatTransaction = true; }
   bool GetRepeatTransaction() { return mRepeatTransaction; }
@@ -135,11 +148,11 @@ public:
 
   bool CompositorMightResample() { return mCompositorMightResample; } 
   
-  DrawThebesLayerCallback GetThebesLayerCallback() const
-  { return mThebesLayerCallback; }
+  DrawPaintedLayerCallback GetPaintedLayerCallback() const
+  { return mPaintedLayerCallback; }
 
-  void* GetThebesLayerCallbackData() const
-  { return mThebesLayerCallbackData; }
+  void* GetPaintedLayerCallbackData() const
+  { return mPaintedLayerCallbackData; }
 
   CompositorChild* GetRemoteRenderer();
 
@@ -227,6 +240,7 @@ public:
 
   void SetTransactionIdAllocator(TransactionIdAllocator* aAllocator) { mTransactionIdAllocator = aAllocator; }
 
+  float RequestProperty(const nsAString& aProperty) MOZ_OVERRIDE;
 protected:
   enum TransactionPhase {
     PHASE_NONE, PHASE_CONSTRUCTION, PHASE_DRAWING, PHASE_FORWARD
@@ -234,6 +248,29 @@ protected:
   TransactionPhase mPhase;
 
 private:
+  // Listen memory-pressure event for ClientLayerManager
+  class MemoryPressureObserver MOZ_FINAL : public nsIObserver
+  {
+  public:
+    NS_DECL_ISUPPORTS
+    NS_DECL_NSIOBSERVER
+
+    explicit MemoryPressureObserver(ClientLayerManager* aClientLayerManager)
+      : mClientLayerManager(aClientLayerManager)
+    {
+      RegisterMemoryPressureEvent();
+    }
+
+    void Destroy();
+
+  private:
+    virtual ~MemoryPressureObserver() {}
+    void RegisterMemoryPressureEvent();
+    void UnregisterMemoryPressureEvent();
+
+    ClientLayerManager* mClientLayerManager;
+  };
+
   /**
    * Forward transaction results to the parent context.
    */
@@ -247,21 +284,18 @@ private:
 
   void ClearLayer(Layer* aLayer);
 
-  bool EndTransactionInternal(DrawThebesLayerCallback aCallback,
+  bool EndTransactionInternal(DrawPaintedLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags);
-
-  // The bounds of |mTarget| in device pixels.
-  nsIntRect mTargetBounds;
 
   LayerRefArray mKeepAlive;
 
   nsIWidget* mWidget;
   
-  /* Thebes layer callbacks; valid at the end of a transaciton,
+  /* PaintedLayer callbacks; valid at the end of a transaciton,
    * while rendering */
-  DrawThebesLayerCallback mThebesLayerCallback;
-  void *mThebesLayerCallbackData;
+  DrawPaintedLayerCallback mPaintedLayerCallback;
+  void *mPaintedLayerCallbackData;
 
   // When we're doing a transaction in order to draw to a non-default
   // target, the layers transaction is only performed in order to send
@@ -299,9 +333,9 @@ private:
   RefPtr<ShadowLayerForwarder> mForwarder;
   nsAutoTArray<RefPtr<TextureClientPool>,2> mTexturePools;
   nsAutoTArray<dom::OverfillCallback*,0> mOverfillCallbacks;
+  mozilla::TimeStamp mTransactionStart;
 
-  // indexed by gfx::SurfaceFormat
-  nsTArray<RefPtr<SimpleTextureClientPool> > mSimpleTilePools;
+  nsRefPtr<MemoryPressureObserver> mMemoryPressureObserver;
 };
 
 class ClientLayer : public ShadowableLayer
@@ -333,8 +367,9 @@ public:
   virtual void ClearCachedResources() { }
 
   virtual void RenderLayer() = 0;
+  virtual void RenderLayerWithReadback(ReadbackProcessor *aReadback) { RenderLayer(); }
 
-  virtual ClientThebesLayer* AsThebes() { return nullptr; }
+  virtual ClientPaintedLayer* AsThebes() { return nullptr; }
 
   static inline ClientLayer *
   ToClientLayer(Layer* aLayer)

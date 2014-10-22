@@ -53,6 +53,34 @@ svg {
   stroke: #aaaaaa; /* Splitters */
 }
 
+/* AudioParam connection edges */
+g.edgePath.param-connection {
+  stroke-dasharray: 5,5;
+}
+
+.theme-dark .edgePath.param-connection path {
+  stroke: #b6babf; /* Grey foreground text */
+}
+.theme-light .edgePath.param-connection path {
+  stroke: #aaaaaa; /* Splitters */
+}
+
+/* Labels in AudioParam connection should have background that match
+ * the main background so there's whitespace around the label, on top of the
+ * dotted lines. */
+.theme-dark g.edgeLabel rect {
+  fill: #14171a;
+}
+.theme-light g.edgeLabel rect {
+  fill: #fcfcfc; /* Background - Editor */
+}
+.theme-dark g.edgeLabel tspan {
+  fill: #b6babf; /* Grey foreground text */
+}
+.theme-light g.edgeLabel tspan {
+  fill: #585959; /* Grey foreground text */
+}
+
 /* Audio Nodes */
 .nodes rect {
   stroke-width: 1px;
@@ -77,9 +105,9 @@ svg {
   fill: #4c9ed9; /* Select Highlight Blue */
 }
 
-/* Text in nodes */
+/* Text in nodes and edges */
 text {
-  cursor: pointer;
+  cursor: default; /* override the "text" cursor */
   font-weight: 300;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serf;
   font-size: 14px;
@@ -95,9 +123,17 @@ text {
   fill: #f0f1f2; /* Toolbars */
 }
 
+.nodes text {
+  cursor: pointer;
+}
+
 /**
  * Inspector Styles
  */
+
+#web-audio-inspector-title {
+  margin: 6px;
+}
 
 .web-audio-inspector .error {
   background-image: url(alerticon-warning.png);

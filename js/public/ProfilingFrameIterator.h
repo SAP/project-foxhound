@@ -15,7 +15,11 @@
 
 class JSAtom;
 struct JSRuntime;
-namespace js { class AsmJSActivation; class AsmJSProfilingFrameIterator; }
+
+namespace js {
+    class Activation;
+    class AsmJSProfilingFrameIterator;
+}
 
 namespace JS {
 
@@ -25,16 +29,16 @@ namespace JS {
 // unwound.
 class JS_PUBLIC_API(ProfilingFrameIterator)
 {
-    js::AsmJSActivation *activation_;
+    js::Activation *activation_;
 
-    static const unsigned StorageSpace = 5 * sizeof(void*);
+    static const unsigned StorageSpace = 6 * sizeof(void*);
     mozilla::AlignedStorage<StorageSpace> storage_;
-    js::AsmJSProfilingFrameIterator &iter() {
-        JS_ASSERT(!done());
+    js::AsmJSProfilingFrameIterator &asmJSIter() {
+        MOZ_ASSERT(!done());
         return *reinterpret_cast<js::AsmJSProfilingFrameIterator*>(storage_.addr());
     }
-    const js::AsmJSProfilingFrameIterator &iter() const {
-        JS_ASSERT(!done());
+    const js::AsmJSProfilingFrameIterator &asmJSIter() const {
+        MOZ_ASSERT(!done());
         return *reinterpret_cast<const js::AsmJSProfilingFrameIterator*>(storage_.addr());
     }
 
@@ -43,11 +47,10 @@ class JS_PUBLIC_API(ProfilingFrameIterator)
   public:
     struct RegisterState
     {
+        RegisterState() : pc(nullptr), sp(nullptr), lr(nullptr) {}
         void *pc;
         void *sp;
-#if defined(JS_CODEGEN_ARM)
         void *lr;
-#endif
     };
 
     ProfilingFrameIterator(JSRuntime *rt, const RegisterState &state);
@@ -55,19 +58,22 @@ class JS_PUBLIC_API(ProfilingFrameIterator)
     void operator++();
     bool done() const { return !activation_; }
 
-    enum Kind {
-        Function,
-        AsmJSTrampoline,
-        CppFunction
-    };
-    Kind kind() const;
+    // Assuming the stack grows down (we do), the return value:
+    //  - always points into the stack
+    //  - is weakly monotonically increasing (may be equal for successive frames)
+    //  - will compare greater than newer native and psuedo-stack frame addresses
+    //    and less than older native and psuedo-stack frame addresses
+    void *stackAddress() const;
 
-    // Methods available if kind() == Function:
-    JSAtom *functionDisplayAtom() const;
-    const char *functionFilename() const;
+    // Return a label suitable for regexp-matching as performed by
+    // browser/devtools/profiler/cleopatra/js/parserWorker.js
+    const char *label() const;
 
-    // Methods available if kind() != Function
-    const char *nonFunctionDescription() const;
+  private:
+    void iteratorConstruct(const RegisterState &state);
+    void iteratorConstruct();
+    void iteratorDestroy();
+    bool iteratorDone();
 };
 
 } // namespace JS

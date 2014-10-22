@@ -21,63 +21,6 @@ namespace js {
 class ScopeIter;
 
 /*
- * Announce to the debugger that the thread has entered a new JavaScript frame,
- * |frame|. Call whatever hooks have been registered to observe new frames, and
- * return a JSTrapStatus code indication how execution should proceed:
- *
- * - JSTRAP_CONTINUE: Continue execution normally.
- *
- * - JSTRAP_THROW: Throw an exception. ScriptDebugPrologue has set |cx|'s
- *   pending exception to the value to be thrown.
- *
- * - JSTRAP_ERROR: Terminate execution (as is done when a script is terminated
- *   for running too long). ScriptDebugPrologue has cleared |cx|'s pending
- *   exception.
- *
- * - JSTRAP_RETURN: Return from the new frame immediately. ScriptDebugPrologue
- *   has set |frame|'s return value appropriately.
- */
-extern JSTrapStatus
-ScriptDebugPrologue(JSContext *cx, AbstractFramePtr frame, jsbytecode *pc);
-
-/*
- * Announce to the debugger that the thread has exited a JavaScript frame, |frame|.
- * If |ok| is true, the frame is returning normally; if |ok| is false, the frame
- * is throwing an exception or terminating.
- *
- * Call whatever hooks have been registered to observe frame exits. Change cx's
- * current exception and |frame|'s return value to reflect the changes in behavior
- * the hooks request, if any. Return the new error/success value.
- *
- * This function may be called twice for the same outgoing frame; only the
- * first call has any effect. (Permitting double calls simplifies some
- * cases where an onPop handler's resumption value changes a return to a
- * throw, or vice versa: we can redirect to a complete copy of the
- * alternative path, containing its own call to ScriptDebugEpilogue.)
- */
-extern bool
-ScriptDebugEpilogue(JSContext *cx, AbstractFramePtr frame, jsbytecode *pc, bool ok);
-
-/*
- * Announce to the debugger that an exception has been thrown and propagated
- * to |frame|. Call whatever hooks have been registered to observe this and
- * return a JSTrapStatus code indication how execution should proceed:
- *
- * - JSTRAP_CONTINUE: Continue throwing the current exception.
- *
- * - JSTRAP_THROW: Throw another value. DebugExceptionUnwind has set |cx|'s
- *   pending exception to the new value.
- *
- * - JSTRAP_ERROR: Terminate execution. DebugExceptionUnwind has cleared |cx|'s
- *   pending exception.
- *
- * - JSTRAP_RETURN: Return from |frame|. DebugExceptionUnwind has cleared
- *   |cx|'s pending exception and set |frame|'s return value.
- */
-extern JSTrapStatus
-DebugExceptionUnwind(JSContext *cx, AbstractFramePtr frame, jsbytecode *pc);
-
-/*
  * For a given |call|, convert null/undefined |this| into the global object for
  * the callee and replace other primitives with boxed versions. This assumes
  * that call.callee() is not strict mode code. This is the special/slow case of
@@ -149,7 +92,8 @@ InvokeConstructor(JSContext *cx, CallArgs args);
 
 /* See the fval overload of Invoke. */
 extern bool
-InvokeConstructor(JSContext *cx, Value fval, unsigned argc, const Value *argv, Value *rval);
+InvokeConstructor(JSContext *cx, Value fval, unsigned argc, const Value *argv,
+                  MutableHandleValue rval);
 
 /*
  * Executes a script with the given scopeChain/this. The 'type' indicates
@@ -167,7 +111,6 @@ Execute(JSContext *cx, HandleScript script, JSObject &scopeChain, Value *rval);
 
 class ExecuteState;
 class InvokeState;
-class GeneratorState;
 
 // RunState is passed to RunScript and RunScript then eiter passes it to the
 // interpreter or to the JITs. RunState contains all information we need to
@@ -175,7 +118,7 @@ class GeneratorState;
 class RunState
 {
   protected:
-    enum Kind { Execute, Invoke, Generator };
+    enum Kind { Execute, Invoke };
     Kind kind_;
 
     RootedScript script_;
@@ -188,19 +131,14 @@ class RunState
   public:
     bool isExecute() const { return kind_ == Execute; }
     bool isInvoke() const { return kind_ == Invoke; }
-    bool isGenerator() const { return kind_ == Generator; }
 
     ExecuteState *asExecute() const {
-        JS_ASSERT(isExecute());
+        MOZ_ASSERT(isExecute());
         return (ExecuteState *)this;
     }
     InvokeState *asInvoke() const {
-        JS_ASSERT(isInvoke());
+        MOZ_ASSERT(isInvoke());
         return (InvokeState *)this;
-    }
-    GeneratorState *asGenerator() const {
-        JS_ASSERT(isGenerator());
-        return (GeneratorState *)this;
     }
 
     JS::HandleScript script() const { return script_; }
@@ -208,11 +146,12 @@ class RunState
     virtual InterpreterFrame *pushInterpreterFrame(JSContext *cx) = 0;
     virtual void setReturnValue(Value v) = 0;
 
+    bool maybeCreateThisForConstructor(JSContext *cx);
+
   private:
     RunState(const RunState &other) MOZ_DELETE;
     RunState(const ExecuteState &other) MOZ_DELETE;
     RunState(const InvokeState &other) MOZ_DELETE;
-    RunState(const GeneratorState &other) MOZ_DELETE;
     void operator=(const RunState &other) MOZ_DELETE;
 };
 
@@ -278,24 +217,6 @@ class InvokeState : public RunState
     }
 };
 
-// Generator script.
-class GeneratorState : public RunState
-{
-    JSContext *cx_;
-    JSGenerator *gen_;
-    JSGeneratorState futureState_;
-    bool entered_;
-
-  public:
-    GeneratorState(JSContext *cx, JSGenerator *gen, JSGeneratorState futureState);
-    ~GeneratorState();
-
-    virtual InterpreterFrame *pushInterpreterFrame(JSContext *cx);
-    virtual void setReturnValue(Value) { }
-
-    JSGenerator *gen() const { return gen_; }
-};
-
 extern bool
 RunScript(JSContext *cx, RunState &state);
 
@@ -322,6 +243,15 @@ HasInstance(JSContext *cx, HandleObject obj, HandleValue v, bool *bp);
 // the given bytecode position.
 extern void
 UnwindScope(JSContext *cx, ScopeIter &si, jsbytecode *pc);
+
+// Unwind all scopes.
+extern void
+UnwindAllScopes(JSContext *cx, ScopeIter &si);
+
+// Compute the pc needed to unwind the scope to the beginning of the block
+// pointed to by the try note.
+extern jsbytecode *
+UnwindScopeToTryPc(JSScript *script, JSTryNote *tn);
 
 /*
  * Unwind for an uncatchable exception. This means not running finalizers, etc;
@@ -353,6 +283,9 @@ class TryNoteIter
 
 bool
 Throw(JSContext *cx, HandleValue v);
+
+bool
+ThrowingOperation(JSContext *cx, HandleValue v);
 
 bool
 GetProperty(JSContext *cx, HandleValue value, HandlePropertyName name, MutableHandleValue vp);
@@ -438,12 +371,6 @@ ImplicitThisOperation(JSContext *cx, HandleObject scopeObj, HandlePropertyName n
                       MutableHandleValue res);
 
 bool
-IteratorMore(JSContext *cx, JSObject *iterobj, bool *cond, MutableHandleValue rval);
-
-bool
-IteratorNext(JSContext *cx, HandleObject iterobj, MutableHandleValue rval);
-
-bool
 RunOnceScriptPrologue(JSContext *cx, HandleScript script);
 
 bool
@@ -473,6 +400,15 @@ SetConstOperation(JSContext *cx, HandleObject varobj, HandlePropertyName name, H
                                     JS_PropertyStub, JS_StrictPropertyStub,
                                     JSPROP_ENUMERATE | JSPROP_PERMANENT | JSPROP_READONLY);
 }
+
+void
+ReportUninitializedLexical(JSContext *cx, HandlePropertyName name);
+
+void
+ReportUninitializedLexical(JSContext *cx, HandleScript script, jsbytecode *pc);
+
+void
+ReportUninitializedLexical(JSContext *cx, HandleScript script, jsbytecode *pc, ScopeCoordinate sc);
 
 }  /* namespace js */
 

@@ -73,6 +73,10 @@ enum TracingMetadata {
 // PROFILER_LABEL_PRINTF. Arguments must be string literals.
 #define PROFILER_LABEL(name_space, info, category) do {} while (0)
 
+// Similar to PROFILER_LABEL, PROFILER_LABEL_FUNC will push/pop the enclosing
+// functon name as the pseudostack label.
+#define PROFILER_LABEL_FUNC(category) do {} while (0)
+
 // Format a dynamic string as a pseudo label. These labels will a considerable
 // storage size in the circular buffer compared to regular labels. This function
 // can be used to annotate custom information such as URL for the resource being
@@ -200,7 +204,7 @@ static inline bool profiler_in_privacy_mode() { return false; }
 
 class GeckoProfilerInitRAII {
 public:
-  GeckoProfilerInitRAII(void* stackTop) {
+  explicit GeckoProfilerInitRAII(void* stackTop) {
     profiler_init(stackTop);
   }
   ~GeckoProfilerInitRAII() {

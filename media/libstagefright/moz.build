@@ -23,14 +23,16 @@ elif CONFIG['OS_TARGET'] == 'Darwin':
     DEFINES['HAVE_SYS_UIO_H'] = True
     DEFINES['off64_t'] = 'off_t'
     LOCAL_INCLUDES += [ 'ports/darwin/include' ]
-elif CONFIG['OS_TARGET'] in ('DragonFly', 'FreeBSD', 'OpenBSD', 'NetBSD'):
-    if not CONFIG['OS_TARGET'] == 'NetBSD':
+elif CONFIG['OS_TARGET'] in ('DragonFly', 'FreeBSD', 'OpenBSD', 'NetBSD',
+        'GNU/kFreeBSD'):
+    if CONFIG['OS_TARGET'] != 'NetBSD':
         DEFINES['ENODATA'] = '-0x80000003'
     if CONFIG['OS_TARGET'] == 'OpenBSD':
         DEFINES['EBADMSG'] = '-0x80000006'
     DEFINES['HAVE_SYS_UIO_H'] = True
-    DEFINES['off64_t'] = 'off_t'
-    LOCAL_INCLUDES += [ 'ports/bsd/include' ]
+    if CONFIG['OS_TARGET'] != 'GNU/kFreeBSD':
+        DEFINES['off64_t'] = 'off_t'
+        LOCAL_INCLUDES += [ 'ports/bsd/include' ]
 else:
     DEFINES['HAVE_SYS_UIO_H'] = True
 
@@ -47,8 +49,11 @@ if CONFIG['OS_TARGET'] != 'Android':
 
 EXPORTS.mp4_demuxer += [
     'binding/include/mp4_demuxer/AnnexB.h',
+    'binding/include/mp4_demuxer/BufferStream.h',
+    'binding/include/mp4_demuxer/ByteReader.h',
     'binding/include/mp4_demuxer/DecoderData.h',
     'binding/include/mp4_demuxer/Interval.h',
+    'binding/include/mp4_demuxer/MoofParser.h',
     'binding/include/mp4_demuxer/mp4_demuxer.h',
 ]
 
@@ -64,8 +69,11 @@ SOURCES += [
 UNIFIED_SOURCES += [
     'binding/Adts.cpp',
     'binding/AnnexB.cpp',
+    'binding/Box.cpp',
+    'binding/BufferStream.cpp',
     'binding/DecoderData.cpp',
     'binding/Index.cpp',
+    'binding/MoofParser.cpp',
     'binding/mp4_demuxer.cpp',
     'frameworks/av/media/libstagefright/DataSource.cpp',
     'frameworks/av/media/libstagefright/ESDS.cpp',

@@ -236,10 +236,17 @@ var gPermissionManager = {
         }
         this._tree.treeBoxObject.invalidate();
       }
-      // No UI other than this window causes this method to be sent a "deleted"
-      // notification, so we don't need to implement it since Delete is handled
-      // directly by the Permission Removal handlers. If that ever changes, those
-      // implementations will have to move into here. 
+      else if (aData == "deleted") {
+        for (var i = 0; i < this._permissions.length; i++) {
+          if (this._permissions[i].host == permission.host) {
+            this._permissions.splice(i, 1);
+            this._view._rowCount--;
+            this._tree.treeBoxObject.rowCountChanged(this._view.rowCount - 1, -1);
+            this._tree.treeBoxObject.invalidate();
+            break;
+          }
+        }
+      }
     }
   },
   
@@ -325,7 +332,7 @@ var gPermissionManager = {
     this._view._rowCount = this._permissions.length;
 
     // sort and display the table
-    this._tree.treeBoxObject.view = this._view;
+    this._tree.view = this._view;
     this.onPermissionSort("rawHost", false);
 
     // disable "remove all" button if there are none
@@ -363,4 +370,3 @@ function initWithParams(aParams)
 {
   gPermissionManager.init(aParams);
 }
-

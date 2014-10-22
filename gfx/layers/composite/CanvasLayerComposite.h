@@ -28,7 +28,7 @@ class CanvasLayerComposite : public CanvasLayer,
                              public LayerComposite
 {
 public:
-  CanvasLayerComposite(LayerManagerComposite* aManager);
+  explicit CanvasLayerComposite(LayerManagerComposite* aManager);
 
 protected:
   virtual ~CanvasLayerComposite();
@@ -48,6 +48,8 @@ public:
   {
     Destroy();
   }
+
+  virtual void SetLayerManager(LayerManagerComposite* aManager) MOZ_OVERRIDE;
 
   virtual Layer* GetLayer() MOZ_OVERRIDE;
   virtual void RenderLayer(const nsIntRect& aClipRect) MOZ_OVERRIDE;

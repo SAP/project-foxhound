@@ -4,18 +4,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-CPP_UNIT_TESTS += [
+CppUnitTests([
   'test_tone'
-]
+])
 
 if CONFIG['OS_TARGET'] != 'Android':
-  CPP_UNIT_TESTS += [
+  CppUnitTests([
     'test_audio',
     'test_latency',
     'test_sanity'
-  ]
-
-SOURCES += sorted('%s.cpp' % t for t in CPP_UNIT_TESTS)
+  ])
 
 LOCAL_INCLUDES += [
     '../include'
@@ -28,7 +26,11 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     # /media/libspeex_resampler, so we can't get away with just linking cubeb's
     # .o
     USE_LIBS += [
-        'gkmedias',
+        'cubeb',
+        'speex',
+    ]
+    OS_LIBS += [
+        'ole32'
     ]
 else:
     # Otherwise, we can just grab all the compiled .o and compile against that,
@@ -44,6 +46,20 @@ else:
 
 USE_LIBS += [
     'mozalloc',
+    'nspr',
     'xpcomglue_s',
     'xul',
 ]
+
+if CONFIG['OS_TARGET'] == 'Darwin':
+    OS_LIBS += [
+        '-framework AudioUnit',
+        '-framework CoreAudio',
+    ]
+elif CONFIG['OS_TARGET'] == 'OpenBSD':
+    OS_LIBS += [
+        'sndio',
+    ]
+else:
+    OS_LIBS += CONFIG['MOZ_ALSA_LIBS']
+    OS_LIBS += CONFIG['MOZ_PULSEAUDIO_LIBS']

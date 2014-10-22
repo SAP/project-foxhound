@@ -50,7 +50,7 @@ class BufferOffset
     }
 
     BufferOffset() : offset(INT_MIN) {}
-    bool assigned() const { return offset != INT_MIN; };
+    bool assigned() const { return offset != INT_MIN; }
 };
 
 template<int SliceSize>
@@ -240,7 +240,7 @@ struct AssemblerBuffer
             return BufferOffset(bufferSize);
     }
     BufferOffset prevOffset() const {
-        MOZ_ASSUME_UNREACHABLE("Don't current record lastInstSize");
+        MOZ_CRASH("Don't current record lastInstSize");
     }
 
     // Break the instruction stream so we can go back and edit it at this point
@@ -278,7 +278,7 @@ struct AssemblerBuffer
             Inst *i = m_buffer->getInst(bo);
             bo = BufferOffset(bo.getOffset() + i->size());
             return cur();
-        };
+        }
         Inst *cur() {
             return m_buffer->getInst(bo);
         }

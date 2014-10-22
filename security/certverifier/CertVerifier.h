@@ -28,7 +28,7 @@ public:
   // Only one usage per verification is supported.
   SECStatus VerifyCert(CERTCertificate* cert,
                        SECCertificateUsage usage,
-                       PRTime time,
+                       mozilla::pkix::Time time,
                        void* pinArg,
                        const char* hostname,
                        Flags flags = 0,
@@ -39,14 +39,15 @@ public:
   SECStatus VerifySSLServerCert(
                     CERTCertificate* peerCert,
        /*optional*/ const SECItem* stapledOCSPResponse,
-                    PRTime time,
+                    mozilla::pkix::Time time,
        /*optional*/ void* pinarg,
                     const char* hostname,
                     bool saveIntermediatesInPermanentDatabase = false,
+                    Flags flags = 0,
    /*optional out*/ ScopedCERTCertList* builtChain = nullptr,
    /*optional out*/ SECOidTag* evOidPolicy = nullptr);
 
-  enum pinning_enforcement_config {
+  enum PinningMode {
     pinningDisabled = 0,
     pinningAllowUserCAMITM = 1,
     pinningStrict = 2,
@@ -62,8 +63,7 @@ public:
   bool IsOCSPDownloadEnabled() const { return mOCSPDownloadEnabled; }
 
   CertVerifier(ocsp_download_config odc, ocsp_strict_config osc,
-               ocsp_get_config ogc,
-               pinning_enforcement_config pinningEnforcementLevel);
+               ocsp_get_config ogc, PinningMode pinningMode);
   ~CertVerifier();
 
   void ClearOCSPCache() { mOCSPCache.Clear(); }
@@ -71,13 +71,18 @@ public:
   const bool mOCSPDownloadEnabled;
   const bool mOCSPStrict;
   const bool mOCSPGETEnabled;
-  const pinning_enforcement_config mPinningEnforcementLevel;
+  const PinningMode mPinningMode;
 
 private:
   OCSPCache mOCSPCache;
 };
 
 void InitCertVerifierLog();
+SECStatus IsCertBuiltInRoot(CERTCertificate* cert, bool& result);
+mozilla::pkix::Result CertListContainsExpectedKeys(
+  const CERTCertList* certList, const char* hostname, mozilla::pkix::Time time,
+  CertVerifier::PinningMode pinningMode);
+
 } } // namespace mozilla::psm
 
 #endif // mozilla_psm__CertVerifier_h

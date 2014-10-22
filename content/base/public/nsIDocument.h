@@ -38,7 +38,6 @@ class nsHTMLDocument;
 class nsHTMLStyleSheet;
 class nsIAtom;
 class nsIBFCacheEntry;
-class nsIBoxObject;
 class nsIChannel;
 class nsIContent;
 class nsIContentSink;
@@ -85,6 +84,7 @@ namespace mozilla {
 class CSSStyleSheet;
 class ErrorResult;
 class EventStates;
+class SVGAttrAnimationRuleProcessor;
 
 namespace css {
 class Loader;
@@ -94,6 +94,7 @@ class ImageLoader;
 namespace dom {
 class AnimationTimeline;
 class Attr;
+class BoxObject;
 class CDATASection;
 class Comment;
 struct CustomElementDefinition;
@@ -105,6 +106,7 @@ class Element;
 struct ElementRegistrationOptions;
 class Event;
 class EventTarget;
+class FontFaceSet;
 class FrameRequestCallback;
 class ImportManager;
 class OverfillCallback;
@@ -133,8 +135,8 @@ typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0xa45ef8f0, 0x7c5b, 0x425d, \
-  { 0xa5, 0xe7, 0x11, 0x41, 0x5c, 0x41, 0x0c, 0x7a } }
+{ 0x42a263db, 0x6ac6, 0x40ff, \
+  { 0x89, 0xe2, 0x25, 0x12, 0xe4, 0xbc, 0x2d, 0x2d } }
 
 // Enum for requesting a particular type of document when creating a doc
 enum DocumentFlavor {
@@ -533,6 +535,38 @@ public:
   }
 
   /**
+   * Get tracking content blocked flag for this document.
+   */
+  bool GetHasTrackingContentBlocked()
+  {
+    return mHasTrackingContentBlocked;
+  }
+
+  /**
+   * Set the tracking content blocked flag for this document.
+   */
+  void SetHasTrackingContentBlocked(bool aHasTrackingContentBlocked)
+  {
+    mHasTrackingContentBlocked = aHasTrackingContentBlocked;
+  }
+
+  /**
+   * Get tracking content loaded flag for this document.
+   */
+  bool GetHasTrackingContentLoaded()
+  {
+    return mHasTrackingContentLoaded;
+  }
+
+  /**
+   * Set the tracking content loaded flag for this document.
+   */
+  void SetHasTrackingContentLoaded(bool aHasTrackingContentLoaded)
+  {
+    mHasTrackingContentLoaded = aHasTrackingContentLoaded;
+  }
+
+  /**
    * Get the sandbox flags for this document.
    * @see nsSandboxFlags.h for the possible flags
    */
@@ -688,7 +722,7 @@ private:
   class SelectorCacheKey
   {
     public:
-      SelectorCacheKey(const nsAString& aString) : mKey(aString)
+      explicit SelectorCacheKey(const nsAString& aString) : mKey(aString)
       {
         MOZ_COUNT_CTOR(SelectorCacheKey);
       }
@@ -891,6 +925,16 @@ public:
    */
   nsHTMLCSSStyleSheet* GetInlineStyleSheet() const {
     return mStyleAttrStyleSheet;
+  }
+
+  /**
+   * Get this document's SVG Animation rule processor.  May return null
+   * if there isn't one.
+   */
+  mozilla::SVGAttrAnimationRuleProcessor*
+  GetSVGAttrAnimationRuleProcessor() const
+  {
+    return mSVGAttrAnimationRuleProcessor;
   }
 
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aGlobalObject) = 0;
@@ -1456,7 +1500,7 @@ public:
    * Get the box object for an element. This is not exposed through a
    * scriptable interface except for XUL documents.
    */
-  virtual already_AddRefed<nsIBoxObject>
+  virtual already_AddRefed<mozilla::dom::BoxObject>
     GetBoxObjectFor(mozilla::dom::Element* aElement,
                     mozilla::ErrorResult& aRv) = 0;
 
@@ -2317,14 +2361,17 @@ public:
   virtual nsHTMLDocument* AsHTMLDocument() { return nullptr; }
   virtual mozilla::dom::SVGDocument* AsSVGDocument() { return nullptr; }
 
-  virtual JSObject* WrapObject(JSContext *aCx) MOZ_OVERRIDE;
-
-  // Each import tree has exactly one master document which is
-  // the root of the tree, and owns the browser context.
-  virtual already_AddRefed<nsIDocument> MasterDocument() = 0;
+  // The root document of the import tree. If this document is not an import
+  // this will return the document itself.
+  virtual nsIDocument* MasterDocument() = 0;
   virtual void SetMasterDocument(nsIDocument* master) = 0;
   virtual bool IsMasterDocument() = 0;
-  virtual already_AddRefed<mozilla::dom::ImportManager> ImportManager() = 0;
+  virtual mozilla::dom::ImportManager* ImportManager() = 0;
+  // We keep track of the order of sub imports were added to the document.
+  virtual bool HasSubImportLink(nsINode* aLink) = 0;
+  virtual uint32_t IndexOfSubImportLink(nsINode* aLink) = 0;
+  virtual void AddSubImportLink(nsINode* aLink) = 0;
+  virtual nsINode* GetSubImportLink(uint32_t aIdx) = 0;
 
   /*
    * Given a node, get a weak reference to it and append that reference to
@@ -2343,6 +2390,11 @@ public:
       mBlockedTrackingNodes.AppendElement(weakNode);
     }
   }
+
+  // FontFaceSource
+  mozilla::dom::FontFaceSet* GetFonts(mozilla::ErrorResult& aRv);
+
+  bool DidFireDOMContentLoaded() const { return mDidFireDOMContentLoaded; }
 
 private:
   uint64_t mWarnedAbout;
@@ -2413,6 +2465,7 @@ protected:
   nsRefPtr<mozilla::css::ImageLoader> mStyleImageLoader;
   nsRefPtr<nsHTMLStyleSheet> mAttrStyleSheet;
   nsRefPtr<nsHTMLCSSStyleSheet> mStyleAttrStyleSheet;
+  nsRefPtr<mozilla::SVGAttrAnimationRuleProcessor> mSVGAttrAnimationRuleProcessor;
 
   // The set of all object, embed, applet, video/audio elements or
   // nsIObjectLoadingContent or nsIDocumentActivity for which this is the
@@ -2530,6 +2583,12 @@ protected:
 
   // True if a document has blocked Mixed Display/Passive Content (see nsMixedContentBlocker.cpp)
   bool mHasMixedDisplayContentBlocked;
+
+  // True if a document has blocked Tracking Content
+  bool mHasTrackingContentBlocked;
+
+  // True if a document has loaded Tracking Content
+  bool mHasTrackingContentLoaded;
 
   // True if DisallowBFCaching has been called on this document.
   bool mBFCacheDisallowed;
@@ -2728,7 +2787,7 @@ private:
 class MOZ_STACK_CLASS nsAutoSyncOperation
 {
 public:
-  nsAutoSyncOperation(nsIDocument* aDocument);
+  explicit nsAutoSyncOperation(nsIDocument* aDocument);
   ~nsAutoSyncOperation();
 private:
   nsCOMArray<nsIDocument> mDocuments;

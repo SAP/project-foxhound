@@ -21,6 +21,7 @@
 #include "nsIAnonymousContentCreator.h"
 #include "nsFrameManager.h"
 #include "nsIDocument.h"
+#include "ScrollbarStyles.h"
 
 struct nsFrameItems;
 struct nsAbsoluteItems;
@@ -763,7 +764,7 @@ private:
 
     class Iterator {
     public:
-      Iterator(FrameConstructionItemList& list) :
+      explicit Iterator(FrameConstructionItemList& list) :
         mCurrent(PR_NEXT_LINK(&list.mItems)),
         mEnd(&list.mItems),
         mList(list)
@@ -1425,7 +1426,7 @@ private:
   //  Calls BeginBuildingScrollFrame, InitAndRestoreFrame, and then FinishBuildingScrollFrame.
   // @param aNewFrame the created scrollframe --- output only
   // @param aParentFrame the geometric parent that the scrollframe will have.
-  nsresult
+  void
   BuildScrollFrame(nsFrameConstructorState& aState,
                    nsIContent*              aContent,
                    nsStyleContext*          aContentStyle,

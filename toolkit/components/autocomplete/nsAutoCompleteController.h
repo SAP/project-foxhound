@@ -20,10 +20,10 @@
 #include "nsCOMArray.h"
 #include "nsCycleCollectionParticipant.h"
 
-class nsAutoCompleteController : public nsIAutoCompleteController,
-                                 public nsIAutoCompleteObserver,
-                                 public nsITimerCallback,
-                                 public nsITreeView
+class nsAutoCompleteController MOZ_FINAL : public nsIAutoCompleteController,
+                                           public nsIAutoCompleteObserver,
+                                           public nsITimerCallback,
+                                           public nsITreeView
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -48,6 +48,7 @@ protected:
   nsresult StartSearches();
   void AfterSearches();
   nsresult ClearSearchTimer();
+  void MaybeCompletePlaceholder();
 
   nsresult ProcessResult(int32_t aSearchIndex, nsIAutoCompleteResult *aResult);
   nsresult PostSearchCleanup();
@@ -134,6 +135,7 @@ protected:
   nsCOMPtr<nsITreeBoxObject> mTree;
 
   nsString mSearchString;
+  nsString mPlaceholderCompletionString;
   bool mDefaultIndexCompleted;
   bool mBackspaced;
   bool mPopupClosedByCompositionStart;

@@ -23,6 +23,7 @@ class DebugScopeObject;
 class GCMarker;
 class GlobalObject;
 class LazyScript;
+class NestedScopeObject;
 class SavedFrame;
 class ScopeObject;
 class Shape;
@@ -97,6 +98,7 @@ void Mark##base##RootRange(JSTracer *trc, size_t len, type **thing, const char *
 bool Is##base##Marked(type **thingp);                                                             \
 bool Is##base##Marked(BarrieredBase<type*> *thingp);                                              \
 bool Is##base##AboutToBeFinalized(type **thingp);                                                 \
+bool Is##base##AboutToBeFinalizedFromAnyThread(type **thingp);                                    \
 bool Is##base##AboutToBeFinalized(BarrieredBase<type*> *thingp);                                  \
 type *Update##base##IfRelocated(JSRuntime *rt, BarrieredBase<type*> *thingp);                     \
 type *Update##base##IfRelocated(JSRuntime *rt, type **thingp);
@@ -104,16 +106,21 @@ type *Update##base##IfRelocated(JSRuntime *rt, type **thingp);
 DeclMarker(BaseShape, BaseShape)
 DeclMarker(BaseShape, UnownedBaseShape)
 DeclMarker(JitCode, jit::JitCode)
+DeclMarker(Object, NativeObject)
+DeclMarker(Object, ArrayObject)
 DeclMarker(Object, ArgumentsObject)
 DeclMarker(Object, ArrayBufferObject)
+DeclMarker(Object, ArrayBufferObjectMaybeShared)
 DeclMarker(Object, ArrayBufferViewObject)
-DeclMarker(Object, SharedArrayBufferObject)
 DeclMarker(Object, DebugScopeObject)
 DeclMarker(Object, GlobalObject)
 DeclMarker(Object, JSObject)
 DeclMarker(Object, JSFunction)
+DeclMarker(Object, NestedScopeObject)
 DeclMarker(Object, SavedFrame)
 DeclMarker(Object, ScopeObject)
+DeclMarker(Object, SharedArrayBufferObject)
+DeclMarker(Object, SharedTypedArrayObject)
 DeclMarker(Script, JSScript)
 DeclMarker(LazyScript, LazyScript)
 DeclMarker(Shape, Shape)
@@ -213,6 +220,9 @@ IsValueMarked(Value *v);
 bool
 IsValueAboutToBeFinalized(Value *v);
 
+bool
+IsValueAboutToBeFinalizedFromAnyThread(Value *v);
+
 /*** Slot Marking ***/
 
 bool
@@ -225,7 +235,7 @@ void
 MarkArraySlots(JSTracer *trc, size_t len, HeapSlot *vec, const char *name);
 
 void
-MarkObjectSlots(JSTracer *trc, JSObject *obj, uint32_t start, uint32_t nslots);
+MarkObjectSlots(JSTracer *trc, NativeObject *obj, uint32_t start, uint32_t nslots);
 
 void
 MarkCrossCompartmentObjectUnbarriered(JSTracer *trc, JSObject *src, JSObject **dst_obj,
@@ -240,14 +250,14 @@ MarkCrossCompartmentScriptUnbarriered(JSTracer *trc, JSObject *src, JSScript **d
  * being GC'd. (Although it won't be marked if it's in the wrong compartment.)
  */
 void
-MarkCrossCompartmentSlot(JSTracer *trc, JSObject *src, HeapSlot *dst_slot, const char *name);
+MarkCrossCompartmentSlot(JSTracer *trc, JSObject *src, HeapValue *dst_slot, const char *name);
 
 
 /*** Special Cases ***/
 
 /*
  * MarkChildren<JSObject> is exposed solely for preWriteBarrier on
- * JSObject::TradeGuts. It should not be considered external interface.
+ * JSObject::swap. It should not be considered external interface.
  */
 void
 MarkChildren(JSTracer *trc, JSObject *obj);
@@ -301,6 +311,13 @@ Mark(JSTracer *trc, JSObject **objp, const char *name)
     MarkObjectUnbarriered(trc, objp, name);
 }
 
+/* For use by Debugger::WeakMap's missingScopes HashKeyRef instantiation. */
+inline void
+Mark(JSTracer *trc, NativeObject **obj, const char *name)
+{
+    MarkObjectUnbarriered(trc, obj, name);
+}
+
 /* For use by Debugger::WeakMap's proxiedScopes HashKeyRef instantiation. */
 inline void
 Mark(JSTracer *trc, ScopeObject **obj, const char *name)
@@ -313,6 +330,9 @@ IsCellMarked(Cell **thingp);
 
 bool
 IsCellAboutToBeFinalized(Cell **thing);
+
+bool
+IsCellAboutToBeFinalizedFromAnyThread(Cell **thing);
 
 inline bool
 IsMarked(BarrieredBase<Value> *v)
@@ -354,9 +374,6 @@ IsAboutToBeFinalized(BarrieredBase<JSScript*> *scriptp)
     return IsScriptAboutToBeFinalized(scriptp);
 }
 
-#ifdef JS_ION
-/* Nonsense to get WeakCache to work with new Marking semantics. */
-
 inline bool
 IsAboutToBeFinalized(const js::jit::VMFunction **vmfunc)
 {
@@ -372,7 +389,6 @@ IsAboutToBeFinalized(ReadBarrieredJitCode code)
 {
     return IsJitCodeAboutToBeFinalized(code.unsafeGet());
 }
-#endif
 
 inline Cell *
 ToMarkable(const Value &v)
@@ -391,12 +407,12 @@ ToMarkable(Cell *cell)
 inline JSGCTraceKind
 TraceKind(const Value &v)
 {
-    JS_ASSERT(v.isMarkable());
+    MOZ_ASSERT(v.isMarkable());
     if (v.isObject())
         return JSTRACE_OBJECT;
     if (v.isString())
         return JSTRACE_STRING;
-    JS_ASSERT(v.isSymbol());
+    MOZ_ASSERT(v.isSymbol());
     return JSTRACE_SYMBOL;
 }
 

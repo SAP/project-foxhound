@@ -202,7 +202,7 @@ if test -n "$gonkdir" ; then
     STRIP="$gonk_toolchain_prefix"strip
     OBJCOPY="$gonk_toolchain_prefix"objcopy
 
-    STLPORT_CPPFLAGS="-I$gonkdir/external/stlport/stlport"
+    STLPORT_CPPFLAGS="-I$_topsrcdir/build/stlport/stlport -I$gonkdir/ndk/sources/cxx-stl/system/include"
     STLPORT_LIBS="-lstlport"
 
     case "$target_cpu" in
@@ -211,6 +211,9 @@ if test -n "$gonkdir" ; then
         ;;
     i?86)
         ARCH_DIR=arch-x86
+        ;;
+    mips*)
+        ARCH_DIR=arch-mips
         ;;
     esac
 
@@ -565,6 +568,7 @@ if test -n "$_WIN32_MSVC"; then
 
     AC_DEFINE(HAVE_LOCALECONV)
     AC_DEFINE(HAVE_HYPOT)
+    AC_CHECK_FUNCS([_getc_nolock])
 fi
 
 fi # COMPILE_ENVIRONMENT
@@ -1084,6 +1088,22 @@ if test -n "$MOZ_ASAN"; then
     MOZ_PATH_PROG(LLVM_SYMBOLIZER, llvm-symbolizer)
 fi
 AC_SUBST(MOZ_ASAN)
+
+dnl ========================================================
+dnl = Use Memory Sanitizer
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(memory-sanitizer,
+[  --enable-memory-sanitizer       Enable Memory Sanitizer (default=no)],
+    MOZ_MSAN=1,
+    MOZ_MSAN= )
+if test -n "$MOZ_MSAN"; then
+    MOZ_LLVM_HACKS=1
+    AC_DEFINE(MOZ_MSAN)
+    MOZ_PATH_PROG(LLVM_SYMBOLIZER, llvm-symbolizer)
+fi
+AC_SUBST(MOZ_MSAN)
+
+# The LLVM symbolizer is used by all sanitizers
 AC_SUBST(LLVM_SYMBOLIZER)
 
 dnl ========================================================
@@ -1155,22 +1175,62 @@ if test "$GNU_CC"; then
                   AC_MSG_RESULT([no])
                   LDFLAGS=$_SAVE_LDFLAGS)
 
-    # Turn on GNU-specific warnings:
-    # -Wall - turn on a lot of warnings
-    # -Wpointer-arith - good to have
-    # -Wdeclaration-after-statement - MSVC doesn't like these
-    # -Werror=return-type - catches missing returns, zero false positives
-    # -Werror=int-to-pointer-cast - catches cast to pointer from integer of different size
-    # -Wtype-limits - catches overflow bugs, few false positives
-    # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
-    # -Wsign-compare - catches comparison of signed and unsigned types
+    # Turn on gcc/clang warnings:
+    # https://gcc.gnu.org/onlinedocs/gcc-4.4.0/gcc/Warning-Options.html
     #
-    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wall -Wpointer-arith -Wdeclaration-after-statement"
-    MOZ_C_SUPPORTS_WARNING(-W, error=return-type, ac_c_has_werror_return_type)
-    MOZ_C_SUPPORTS_WARNING(-W, error=int-to-pointer-cast, ac_c_has_werror_int_to_pointer_cast)
-    MOZ_C_SUPPORTS_WARNING(-W, type-limits, ac_c_has_wtype_limits)
-    MOZ_C_SUPPORTS_WARNING(-W, empty-body, ac_c_has_wempty_body)
-    MOZ_C_SUPPORTS_WARNING(-W, sign-compare, ac_c_has_sign_compare)
+    # -Wall - turn on a lot of warnings
+    # -Waddress - catches suspicious uses of memory addresses
+    # -Wchar-subscripts - catches array index using signed char
+    # -Wcomment - catches nested comments
+    # -Wdeclaration-after-statement - MSVC doesn't like these
+    # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
+    # -Wendif-labels - catches `#else FOO` and `#endif FOO` not in comment
+    # -Wenum-compare - catches comparison of different enum types
+    # -Wignored-qualifiers - catches returns types with qualifiers like const
+    # -Wimplicit-function-declaration - catches missing C function prototypes
+    # -Wint-to-pointer-cast - catches cast to pointer from integer of different size
+    # -Wmissing-braces - catches aggregate initializers missing nested braces
+    # -Wmultichar - catches multicharacter integer constants like 'THIS'
+    # -Wnonnull - catches NULL used with functions arguments marked as non-null
+    # -Wpointer-arith - catches pointer arithmetic using NULL or sizeof(void)
+    # -Wpointer-sign - catches mixing pointers to signed and unsigned types
+    # -Wpointer-to-int-cast - catches casts from pointer to different sized int
+    # -Wreturn-type - catches missing returns, zero false positives
+    # -Wsequence-point - catches undefined order behavior like `a = a++`
+    # -Wsign-compare - catches comparison of signed and unsigned types
+    # -Wswitch - catches switches without all enum cases or default case
+    # -Wtrigraphs - catches unlikely use of trigraphs
+    # -Wtype-limits - catches overflow bugs, few false positives
+    # -Wunknown-pragmas - catches unexpected #pragma directives
+    # -Wwrite-strings - catches non-const char* pointers to string literals
+    #
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wall"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wdeclaration-after-statement"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wsign-compare"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wtype-limits"
+
+    # Treat some warnings as errors:
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=address"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=char-subscripts"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=comment"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=empty-body"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=endif-labels"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=enum-compare"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=ignored-qualifiers"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=implicit-function-declaration"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=int-to-pointer-cast"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=missing-braces"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=multichar"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=nonnull"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=pointer-arith"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=pointer-sign"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=pointer-to-int-cast"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=return-type"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=sequence-point"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=switch"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=trigraphs"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=unknown-pragmas"
+    _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Werror=write-strings"
 
     # Turn off the following warnings that -Wall turns on:
     # -Wno-unused - lots of violations in third-party code
@@ -1217,29 +1277,63 @@ else
 fi
 
 if test "$GNU_CXX"; then
-    # Turn on GNU-specific warnings:
-    # -Wall - turn on a lot of warnings
-    # -Wpointer-arith - good to have
-    # -Woverloaded-virtual - ???
-    # -Werror=return-type - catches missing returns, zero false positives
-    # -Werror=int-to-pointer-cast - catches cast to pointer from integer of different size
-    # -Wtype-limits - catches overflow bugs, few false positives
-    # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
-    # -Werror=conversion-null - catches conversions between NULL and non-pointer types
-    # -Wsign-compare - catches comparison of signed and unsigned types
+    # Turn on gcc/clang warnings:
+    # https://gcc.gnu.org/onlinedocs/gcc-4.4.0/gcc/Warning-Options.html
     #
-    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wall -Wpointer-arith -Woverloaded-virtual"
-    MOZ_CXX_SUPPORTS_WARNING(-W, error=return-type, ac_cxx_has_werror_return_type)
-    MOZ_CXX_SUPPORTS_WARNING(-W, error=int-to-pointer-cast, ac_cxx_has_werror_int_to_pointer_cast)
-    MOZ_CXX_SUPPORTS_WARNING(-W, type-limits, ac_cxx_has_wtype_limits)
-    MOZ_CXX_SUPPORTS_WARNING(-W, empty-body, ac_cxx_has_wempty_body)
-    MOZ_CXX_SUPPORTS_WARNING(-W, error=conversion-null, ac_cxx_has_werror_conversion_null)
-    MOZ_CXX_SUPPORTS_WARNING(-W, sign-compare, ac_cxx_has_sign_compare)
+    # -Wall - turn on a lot of warnings
+    # -Wchar-subscripts - catches array index using signed char
+    # -Wcomment - catches nested comments
+    # -Wconversion-null - catches conversions between NULL and non-pointer types
+    # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
+    # -Wendif-labels - catches `#else FOO` and `#endif FOO` not in comment
+    # -Wignored-qualifiers - catches returns types with qualifiers like const
+    # -Wint-to-pointer-cast - catches cast to pointer from integer of different size
+    # -Wmissing-braces - catches aggregate initializers missing nested braces
+    # -Woverloaded-virtual - function declaration hides virtual function from base class
+    # -Wpointer-arith - catches pointer arithmetic using NULL or sizeof(void)
+    # -Wpointer-to-int-cast - catches casts from pointer to different sized int
+    # -Wreorder - catches ctor initializer list not matching class definition order
+    # -Wreturn-type - catches missing returns, zero false positives
+    # -Wsequence-point - catches undefined order behavior like `a = a++`
+    # -Wsign-compare - catches comparison of signed and unsigned types
+    # -Wswitch - catches switches without all enum cases or default case
+    # -Wtrigraphs - catches unlikely use of trigraphs
+    # -Wtype-limits - catches overflow bugs, few false positives
+    # -Wunknown-pragmas - catches unexpected #pragma directives
+    # -Wunused-label - catches unused goto labels
+    # -Wunused-value - catches unused expression results
+    # -Wwrite-strings - catches non-const char* pointers to string literals
+    #
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wall"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wsign-compare"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wtype-limits"
+
+    # Treat some warnings as errors:
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=char-subscripts"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=comment"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=empty-body"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=endif-labels"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=ignored-qualifiers"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=int-to-pointer-cast"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=missing-braces"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=overloaded-virtual"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=pointer-arith"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=reorder"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=return-type"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=sequence-point"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=switch"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=trigraphs"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=unknown-pragmas"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=unused-label"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=unused-value"
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Werror=write-strings"
+
+    MOZ_CXX_SUPPORTS_WARNING(-Werror=, conversion-null, ac_cxx_has_werror_conversion_null)
 
     # Turn off the following warnings that -Wall turns on:
     # -Wno-invalid-offsetof - we use offsetof on non-POD types frequently
     #
-    MOZ_CXX_SUPPORTS_WARNING(-Wno-, invalid-offsetof, ac_cxx_has_wno_invalid_offsetof)
+    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wno-invalid-offsetof"
 
     if test -z "$INTEL_CXX" -a -z "$CLANG_CXX"; then
        # Don't use -Wcast-align with ICC or clang
@@ -1561,7 +1655,10 @@ ia64*-hpux*)
     TARGET_NSPR_MDCPUCFG='\"md/_linux.cfg\"'
 
     MOZ_GFX_OPTIMIZE_MOBILE=1
-    MOZ_OPTIMIZE_FLAGS="-O3 -freorder-blocks -fno-reorder-functions"
+    MOZ_OPTIMIZE_FLAGS="-O3 -fno-reorder-functions"
+    if test -z "$CLANG_CC"; then
+       MOZ_OPTIMIZE_FLAGS="-freorder-blocks $MOZ_OPTIMIZE_FLAGS"
+    fi
     # The Maemo builders don't know about this flag
     MOZ_ARM_VFP_FLAGS="-mfpu=vfp"
     ;;
@@ -1580,7 +1677,10 @@ ia64*-hpux*)
             MOZ_OPTIMIZE_SIZE_TWEAK="-finline-limit=50"
         esac
         MOZ_PGO_OPTIMIZE_FLAGS="-O3"
-        MOZ_OPTIMIZE_FLAGS="-O3 -freorder-blocks $MOZ_OPTIMIZE_SIZE_TWEAK"
+        MOZ_OPTIMIZE_FLAGS="-O3 $MOZ_OPTIMIZE_SIZE_TWEAK"
+        if test -z "$CLANG_CC"; then
+           MOZ_OPTIMIZE_FLAGS="-freorder-blocks $MOZ_OPTIMIZE_FLAGS"
+        fi
     fi
 
     TARGET_NSPR_MDCPUCFG='\"md/_linux.cfg\"'
@@ -1621,7 +1721,10 @@ ia64*-hpux*)
         LIBS="$LIBS -lgdi32 -lwinmm -lwsock32 -lpsapi"
         MOZ_FIX_LINK_PATHS=
         DLL_PREFIX=
-        IMPORT_LIB_SUFFIX=dll.a
+        IMPORT_LIB_SUFFIX=a
+
+        WIN32_CONSOLE_EXE_LDFLAGS=-mconsole
+        WIN32_GUI_EXE_LDFLAGS=-mwindows
 
         # We use mix of both POSIX and Win32 printf format across the tree, so format
         # warnings are useless on mingw.
@@ -1653,13 +1756,21 @@ ia64*-hpux*)
         MKCSHLIB='$(LD) -NOLOGO -DLL -OUT:$@ -PDB:$(LINK_PDBFILE) $(DSO_LDOPTS)'
         MKSHLIB_FORCE_ALL=
         MKSHLIB_UNFORCE_ALL=
-        DSO_LDOPTS=-SUBSYSTEM:WINDOWS
+        dnl Set subsystem version 5 for Windows XP.
+        if test "$CPU_ARCH" = "x86"; then
+            WIN32_SUBSYSTEM_VERSION=5.01
+        else
+            WIN32_SUBSYSTEM_VERSION=5.02
+        fi
+        WIN32_CONSOLE_EXE_LDFLAGS=-SUBSYSTEM:CONSOLE,$WIN32_SUBSYSTEM_VERSION
+        WIN32_GUI_EXE_LDFLAGS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
+        DSO_LDOPTS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
         _USE_CPP_INCLUDE_FLAG=1
         _DEFINES_CFLAGS='-FI $(DEPTH)/js/src/js-confdefs.h -DMOZILLA_CLIENT'
         _DEFINES_CXXFLAGS='-FI $(DEPTH)/js/src/js-confdefs.h -DMOZILLA_CLIENT'
         CFLAGS="$CFLAGS -W3 -Gy"
         CXXFLAGS="$CXXFLAGS -W3 -Gy"
-        if test "$_CC_SUITE" -ge "11"; then
+        if test "$_CC_SUITE" -ge "11" -a "$CPU_ARCH" = "x86"; then
             dnl VS2012+ defaults to -arch:SSE2.
             CFLAGS="$CFLAGS -arch:IA32"
             CXXFLAGS="$CXXFLAGS -arch:IA32"
@@ -1667,19 +1778,19 @@ ia64*-hpux*)
         if test "$_CC_SUITE" -ge "12"; then
             dnl VS2013+ requires -FS when parallel building by make -jN.
             dnl If nothing, compiler sometimes causes C1041 error.
-            dnl
-            dnl Visual Studio 2013 supports -Gw flags
-            dnl http://blogs.msdn.com/b/vcblog/archive/2013/09/11/introducing-gw-compiler-switch.aspx
-            CFLAGS="$CFLAGS -FS -Gw"
-            CXXFLAGS="$CXXFLAGS -FS -Gw"
+            CFLAGS="$CFLAGS -FS"
+            CXXFLAGS="$CXXFLAGS -FS"
         fi
         # khuey says we can safely ignore MSVC warning C4251
         # MSVC warning C4244 (implicit type conversion may lose data) warns
         # and requires workarounds for perfectly valid code.  Also, GCC/clang
         # don't warn about it by default. So for consistency/sanity, we turn
         # it off on MSVC, too.
-        CFLAGS="$CFLAGS -wd4244"
-        CXXFLAGS="$CXXFLAGS -wd4244 -wd4251"
+        # MSVC warning C4267 warns for narrowing type conversions from size_t
+        # to 32-bit integer types on 64-bit platforms.  Since this is virtually
+        # the same thing as C4244, we disable C4267, too.
+        CFLAGS="$CFLAGS -wd4244 -wd4267"
+        CXXFLAGS="$CXXFLAGS -wd4244 -wd4267 -wd4251"
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
@@ -1713,6 +1824,7 @@ ia64*-hpux*)
         LDFLAGS="$LDFLAGS -DYNAMICBASE"
     fi
     AC_DEFINE(HAVE_SNPRINTF)
+    AC_DEFINE(HAVE__MSIZE)
     AC_DEFINE(_WINDOWS)
     AC_DEFINE(WIN32)
     AC_DEFINE(XP_WIN)
@@ -1961,7 +2073,7 @@ case "$target" in
         ;;
     *-solaris*)
         if test -z "$GNU_CC"; then
-         eOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS='-M $(BUILD_TOOLS)/gnu-ld-scripts/components-mapfile'
+         MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS='-M $(BUILD_TOOLS)/gnu-ld-scripts/components-mapfile'
         else
          if test -z "$GCC_USE_GNU_LD"; then
           MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS='-Wl,-M -Wl,$(BUILD_TOOLS)/gnu-ld-scripts/components-mapfile'
@@ -1991,39 +2103,35 @@ case "$target" in
 i?86-*)
     ENABLE_ION=1
     AC_DEFINE(JS_CPU_X86)
-    AC_DEFINE(JS_NUNBOX32)
     ;;
 x86_64*-*)
     ENABLE_ION=1
     AC_DEFINE(JS_CPU_X64)
-    AC_DEFINE(JS_PUNBOX64)
     ;;
 arm*-*)
     ENABLE_ION=1
     AC_DEFINE(JS_CPU_ARM)
-    AC_DEFINE(JS_NUNBOX32)
     ;;
-sparc*-*)
-    if test ! "$HAVE_64BIT_BUILD" ; then
+sparc-*)
 dnl ENABLE_ION=0
     AC_DEFINE(JS_CPU_SPARC)
-    AC_DEFINE(JS_NUNBOX32)
-    else
-    AC_DEFINE(JS_CPU_SPARC64)
-    AC_DEFINE(JS_PUNBOX64)
-    fi
-    ;;
-powerpc64-*)
-    AC_DEFINE(JS_CPU_PPC64)
-    AC_DEFINE(JS_PUNBOX64)
-    ;;
-powerpc-*)
-    AC_DEFINE(JS_CPU_PPC)
-    AC_DEFINE(JS_NUNBOX32)
     ;;
 mips*-*)
+    ENABLE_ION=1
     AC_DEFINE(JS_CPU_MIPS)
-    AC_DEFINE(JS_NUNBOX32)
+    ;;
+esac
+
+case "$target" in
+mips*-*)
+     AC_DEFINE(JS_NUNBOX32)
+     ;;
+*)
+    if test "$HAVE_64BIT_BUILD" ; then
+        AC_DEFINE(JS_PUNBOX64)
+    else
+        AC_DEFINE(JS_NUNBOX32)
+    fi
     ;;
 esac
 
@@ -2034,10 +2142,6 @@ MOZ_ARG_DISABLE_BOOL(ion,
 AC_SUBST(ENABLE_METHODJIT_SPEW)
 
 AC_SUBST(ENABLE_ION)
-
-if test "$ENABLE_ION"; then
-    AC_DEFINE(JS_ION)
-fi
 
 if test -n "$COMPILE_ENVIRONMENT"; then
     MOZ_COMPILER_OPTS
@@ -2063,20 +2167,6 @@ AC_CACHE_VAL(ac_cv_type_ssize_t,
                  [ac_cv_type_ssize_t=false])])
 if test "$ac_cv_type_ssize_t" = true ; then
   AC_DEFINE(HAVE_SSIZE_T)
-  AC_MSG_RESULT(yes)
-else
-  AC_MSG_RESULT(no)
-fi
-AC_STRUCT_ST_BLKSIZE
-AC_MSG_CHECKING(for siginfo_t)
-AC_CACHE_VAL(ac_cv_siginfo_t,
- [AC_TRY_COMPILE([#define _POSIX_C_SOURCE 199506L
-                  #include <signal.h>],
-                 [siginfo_t* info;],
-                 [ac_cv_siginfo_t=true],
-                 [ac_cv_siginfo_t=false])])
-if test "$ac_cv_siginfo_t" = true ; then
-  AC_DEFINE(HAVE_SIGINFO_T)
   AC_MSG_RESULT(yes)
 else
   AC_MSG_RESULT(no)
@@ -2168,7 +2258,7 @@ dnl Quota support
 MOZ_CHECK_HEADERS(sys/quota.h)
 MOZ_CHECK_HEADERS(linux/quota.h)
 
-AC_ARG_ENABLE(dtrace,
+MOZ_ARG_ENABLE_BOOL(dtrace,
               [  --enable-dtrace         build with dtrace support if available (default=no)],
               [enable_dtrace="yes"],)
 if test "x$enable_dtrace" = "xyes"; then
@@ -3115,18 +3205,15 @@ JSGC_GENERATIONAL_CONFIGURED=$JSGC_GENERATIONAL
 AC_SUBST(JSGC_GENERATIONAL_CONFIGURED)
 
 dnl ========================================================
-dnl = Use exact stack rooting for GC
+dnl = Use compacting GC
 dnl ========================================================
-dnl Use exact rooting by default in all shell builds. The top-level mozilla
-dnl configure.in will configure SpiderMonkey with --disable-exact-rooting as
-dnl needed on a per-platform basis.
-JSGC_USE_EXACT_ROOTING=1
-MOZ_ARG_DISABLE_BOOL(exact-rooting,
-[  --disable-exact-rooting  Enable use of conservative stack scanning for GC],
-    JSGC_USE_EXACT_ROOTING= ,
-    JSGC_USE_EXACT_ROOTING=1 )
-if test -n "$JSGC_USE_EXACT_ROOTING"; then
-    AC_DEFINE(JSGC_USE_EXACT_ROOTING)
+dnl Compact the heap by moving GC things when doing a shrinking colletion.
+MOZ_ARG_ENABLE_BOOL(gccompacting,
+[  --enable-gccompacting   Compact the heap by moving GC things],
+    JSGC_COMPACTING=1,
+    JSGC_COMPACTING= )
+if test -n "$JSGC_COMPACTING"; then
+    AC_DEFINE(JSGC_COMPACTING)
 fi
 
 dnl ========================================================
@@ -3178,13 +3265,32 @@ MOZ_ARG_ENABLE_BOOL(arm-simulator,
 [  --enable-arm-simulator Enable ARM simulator for JIT code],
     JS_ARM_SIMULATOR=1,
     JS_ARM_SIMULATOR= )
-if test -n "$JS_ARM_SIMULATOR"; then
+MOZ_ARG_ENABLE_BOOL(mips-simulator,
+[  --enable-mips-simulator Enable MIPS simulator for JIT code],
+    JS_MIPS_SIMULATOR=1,
+    JS_MIPS_SIMULATOR= )
+
+if test -n "$JS_ARM_SIMULATOR" && test -n "$JS_MIPS_SIMULATOR"; then
+    AC_MSG_ERROR([Flags --enable-arm-simulator and --enable-mips-simulator cannot be used together.])
+fi
+
+if test -z "$ENABLE_ION"; then
+    AC_DEFINE(JS_CODEGEN_NONE)
+    JS_CODEGEN_NONE=1
+elif test -n "$JS_ARM_SIMULATOR"; then
     if test "$CPU_ARCH" != "x86"; then
         AC_MSG_ERROR([The ARM simulator only works on x86.])
     fi
     AC_DEFINE(JS_ARM_SIMULATOR)
     AC_DEFINE(JS_CODEGEN_ARM)
     JS_CODEGEN_ARM=1
+elif test -n "$JS_MIPS_SIMULATOR"; then
+    if test "$CPU_ARCH" != "x86"; then
+        AC_MSG_ERROR([The MIPS simulator only works on x86.])
+    fi
+    AC_DEFINE(JS_MIPS_SIMULATOR)
+    AC_DEFINE(JS_CODEGEN_MIPS)
+    JS_CODEGEN_MIPS=1
 elif test "$CPU_ARCH" = "x86"; then
     AC_DEFINE(JS_CODEGEN_X86)
     JS_CODEGEN_X86=1
@@ -3194,12 +3300,18 @@ elif test "$CPU_ARCH" = "x86_64"; then
 elif test "$CPU_ARCH" = "arm"; then
     AC_DEFINE(JS_CODEGEN_ARM)
     JS_CODEGEN_ARM=1
+elif test "$CPU_ARCH" = "mips"; then
+    AC_DEFINE(JS_CODEGEN_MIPS)
+    JS_CODEGEN_MIPS=1
 fi
 
 AC_SUBST(JS_ARM_SIMULATOR)
+AC_SUBST(JS_MIPS_SIMULATOR)
 AC_SUBST(JS_CODEGEN_ARM)
+AC_SUBST(JS_CODEGEN_MIPS)
 AC_SUBST(JS_CODEGEN_X86)
 AC_SUBST(JS_CODEGEN_X64)
+AC_SUBST(JS_CODEGEN_NONE)
 
 dnl ========================================================
 dnl jprof
@@ -3340,8 +3452,6 @@ if test -n "$JS_OOM_BREAKPOINT"; then
     AC_DEFINE(JS_OOM_BREAKPOINT)
 fi
 
-MOZ_CHECK_CCACHE
-
 dnl ========================================================
 dnl = Enable static checking using gcc-dehydra
 dnl ========================================================
@@ -3364,18 +3474,7 @@ dnl ========================================================
 dnl = Enable using the clang plugin to build
 dnl ========================================================
 
-MOZ_ARG_ENABLE_BOOL(clang-plugin,
-[  --enable-clang-plugin   Enable building with the mozilla clang plugin ],
-   ENABLE_CLANG_PLUGIN=1,
-   ENABLE_CLANG_PLUGIN= )
-if test -n "$ENABLE_CLANG_PLUGIN"; then
-    if test -z "$CLANG_CC"; then
-        AC_MSG_ERROR([Can't use clang plugin without clang.])
-    fi
-    AC_DEFINE(MOZ_CLANG_PLUGIN)
-fi
-
-AC_SUBST(ENABLE_CLANG_PLUGIN)
+MOZ_CONFIG_CLANG_PLUGIN
 
 dnl ========================================================
 dnl = Enable static checking using sixgill
@@ -3642,7 +3741,7 @@ if test -z "$SKIP_LIBRARY_CHECKS" -a -z "$NO_EDITLINE"; then
 fi
 AC_SUBST(JS_BUNDLED_EDITLINE)
 AC_SUBST(JS_DISABLE_SHELL)
-AC_SUBST(EDITLINE_LIBS)
+AC_SUBST_LIST(EDITLINE_LIBS)
 
 dnl ========================================================
 dnl =
@@ -3780,7 +3879,7 @@ HOST_CXXFLAGS=`echo \
     $_DEPEND_CFLAGS`
 
 AC_SUBST(NSPR_CFLAGS)
-AC_SUBST(NSPR_LIBS)
+AC_SUBST_LIST(NSPR_LIBS)
 AC_SUBST(MOZ_NATIVE_NSPR)
 
 if test -n "$MOZ_NUWA_PROCESS"; then
@@ -3853,6 +3952,8 @@ AC_SUBST(CC_VERSION)
 AC_SUBST(CXX_VERSION)
 AC_SUBST(MSMANIFEST_TOOL)
 AC_SUBST(MOZ_LINKER)
+AC_SUBST(WIN32_CONSOLE_EXE_LDFLAGS)
+AC_SUBST(WIN32_GUI_EXE_LDFLAGS)
 
 AC_CHECK_FUNCS(posix_fadvise posix_fallocate)
 
@@ -3898,8 +3999,8 @@ dnl ========================================================
 dnl JavaScript shell
 dnl ========================================================
 
-AC_HAVE_FUNCS(setlocale)
-AC_HAVE_FUNCS(localeconv)
+AC_CHECK_HEADERS(malloc.h malloc/malloc.h)
+AC_CHECK_FUNCS(setlocale localeconv malloc_size malloc_usable_size)
 
 AC_SUBST(MOZILLA_VERSION)
 

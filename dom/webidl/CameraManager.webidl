@@ -5,7 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-enum CameraMode { "picture", "video" };
+enum CameraMode { "unspecified", "picture", "video" };
 
 /* Used for the dimensions of a captured picture,
    a preview stream, a video capture stream, etc. */
@@ -18,10 +18,10 @@ dictionary CameraSize
 /* Pre-emptive camera configuration options. */
 dictionary CameraConfiguration
 {
-  CameraMode mode = "picture";
+  CameraMode mode = "unspecified";
   CameraSize previewSize = null;
-  DOMString recorderProfile = "cif";  // or some other recording profile
-                                      // supported by the CameraControl
+  DOMString recorderProfile = ""; // one of the profiles reported by
+                                  // CameraControl.capabilities.recorderProfiles
 };
 
 callback CameraErrorCallback = void (DOMString error);
@@ -36,10 +36,10 @@ interface CameraManager
      identifiers returned by getListOfCameras() below.
   */
   [Throws]
-  void getCamera(DOMString camera,
-                 CameraConfiguration initialConfiguration,
-                 GetCameraCallback callback,
-                 optional CameraErrorCallback errorCallback);
+  Promise<CameraGetPromiseData> getCamera(DOMString camera,
+                                          optional CameraConfiguration initialConfiguration,
+                                          optional GetCameraCallback callback,
+                                          optional CameraErrorCallback errorCallback);
 
   /* return an array of camera identifiers, e.g.
        [ "front", "back" ]

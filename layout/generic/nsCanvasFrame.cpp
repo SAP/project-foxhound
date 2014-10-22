@@ -6,6 +6,8 @@
 /* rendering object that goes directly inside the document's scrollbars */
 
 #include "nsCanvasFrame.h"
+
+#include "gfxUtils.h"
 #include "nsContainerFrame.h"
 #include "nsCSSRendering.h"
 #include "nsPresContext.h"
@@ -114,11 +116,19 @@ nsCanvasFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 }
 
 void
-nsCanvasFrame::AppendAnonymousContentTo(nsBaseContentList& aElements, uint32_t aFilter)
+nsCanvasFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements, uint32_t aFilter)
 {
-  aElements.MaybeAppendElement(mTouchCaretElement);
-  aElements.MaybeAppendElement(mSelectionCaretsStartElement);
-  aElements.MaybeAppendElement(mSelectionCaretsEndElement);
+  if (mTouchCaretElement) {
+    aElements.AppendElement(mTouchCaretElement);
+  }
+
+  if (mSelectionCaretsStartElement) {
+    aElements.AppendElement(mSelectionCaretsStartElement);
+  }
+
+  if (mSelectionCaretsEndElement) {
+    aElements.AppendElement(mSelectionCaretsEndElement);
+  }
 }
 
 void
@@ -234,8 +244,10 @@ nsDisplayCanvasBackgroundColor::Paint(nsDisplayListBuilder* aBuilder,
   nsPoint offset = ToReferenceFrame();
   nsRect bgClipRect = frame->CanvasArea() + offset;
   if (NS_GET_A(mColor) > 0) {
-    aCtx->SetColor(mColor);
-    aCtx->FillRect(bgClipRect);
+    DrawTarget* drawTarget = aCtx->GetDrawTarget();
+    int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
+    Rect devPxRect = NSRectToRect(bgClipRect, appUnitsPerDevPixel, *drawTarget);
+    drawTarget->FillRect(devPxRect, ColorPattern(ToDeviceColor(mColor)));
   }
 }
 
@@ -285,9 +297,10 @@ nsDisplayCanvasBackgroundImage::Paint(nsDisplayListBuilder* aBuilder,
     dt = destDT->CreateSimilarDrawTarget(IntSize(ceil(destRect.width), ceil(destRect.height)), SurfaceFormat::B8G8R8A8);
     if (dt) {
       nsRefPtr<gfxContext> ctx = new gfxContext(dt);
-      ctx->Translate(-gfxPoint(destRect.x, destRect.y));
+      ctx->SetMatrix(
+        ctx->CurrentMatrix().Translate(-destRect.x, -destRect.y));
       context = new nsRenderingContext();
-      context->Init(aCtx->DeviceContext(), ctx);
+      context->Init(ctx);
     }
   }
 #endif
@@ -407,6 +420,11 @@ nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
   nsIFrame* kid;
   for (kid = GetFirstPrincipalChild(); kid; kid = kid->GetNextSibling()) {
+    // Skip touch caret frame if we do not build caret.
+    if (!aBuilder->IsBuildingCaret() && kid->GetContent() == mTouchCaretElement) {
+      continue;
+    }
+
     // Put our child into its own pseudo-stack.
     BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
   }

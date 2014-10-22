@@ -109,7 +109,7 @@ public:
     // with a U and V plane that are half the size of the Y plane, i.e 8 bit,
     // 2x2 subsampled. Have the data pointers of each frame point to the
     // first plane, they'll always be zero'd memory anyway.
-    uint8_t* frame = new uint8_t[mFrameWidth * mFrameHeight];
+    nsAutoArrayPtr<uint8_t> frame(new uint8_t[mFrameWidth * mFrameHeight]);
     memset(frame, 0, mFrameWidth * mFrameHeight);
     VideoData::YCbCrBuffer buffer;
 
@@ -193,7 +193,8 @@ public:
                          aDuration,
                          uint32_t(frames.value()),
                          samples,
-                         mChannelCount);
+                         mChannelCount,
+                         mSampleRate);
   }
 
 private:
@@ -211,28 +212,42 @@ public:
   }
 
   // Decode thread.
-  virtual MediaDataDecoder* CreateH264Decoder(const mp4_demuxer::VideoDecoderConfig& aConfig,
-                                              layers::LayersBackend aLayersBackend,
-                                              layers::ImageContainer* aImageContainer,
-                                              MediaTaskQueue* aVideoTaskQueue,
-                                              MediaDataDecoderCallback* aCallback) MOZ_OVERRIDE {
-    BlankVideoDataCreator* decoder = new BlankVideoDataCreator(
+  virtual already_AddRefed<MediaDataDecoder>
+  CreateH264Decoder(const mp4_demuxer::VideoDecoderConfig& aConfig,
+                    layers::LayersBackend aLayersBackend,
+                    layers::ImageContainer* aImageContainer,
+                    MediaTaskQueue* aVideoTaskQueue,
+                    MediaDataDecoderCallback* aCallback) MOZ_OVERRIDE {
+    BlankVideoDataCreator* creator = new BlankVideoDataCreator(
       aConfig.display_width, aConfig.display_height, aImageContainer);
-    return new BlankMediaDataDecoder<BlankVideoDataCreator>(decoder,
-                                                            aVideoTaskQueue,
-                                                            aCallback);
+    nsRefPtr<MediaDataDecoder> decoder =
+      new BlankMediaDataDecoder<BlankVideoDataCreator>(creator,
+                                                       aVideoTaskQueue,
+                                                       aCallback);
+    return decoder.forget();
   }
 
   // Decode thread.
-  virtual MediaDataDecoder* CreateAACDecoder(const mp4_demuxer::AudioDecoderConfig& aConfig,
-                                             MediaTaskQueue* aAudioTaskQueue,
-                                             MediaDataDecoderCallback* aCallback) MOZ_OVERRIDE {
-    BlankAudioDataCreator* decoder = new BlankAudioDataCreator(
+  virtual already_AddRefed<MediaDataDecoder>
+  CreateAudioDecoder(const mp4_demuxer::AudioDecoderConfig& aConfig,
+                     MediaTaskQueue* aAudioTaskQueue,
+                     MediaDataDecoderCallback* aCallback) MOZ_OVERRIDE {
+    BlankAudioDataCreator* creator = new BlankAudioDataCreator(
       aConfig.channel_count, aConfig.samples_per_second);
-    return new BlankMediaDataDecoder<BlankAudioDataCreator>(decoder,
-                                                            aAudioTaskQueue,
-                                                            aCallback);
+
+    nsRefPtr<MediaDataDecoder> decoder =
+      new BlankMediaDataDecoder<BlankAudioDataCreator>(creator,
+                                                       aAudioTaskQueue,
+                                                       aCallback);
+    return decoder.forget();
   }
+
+  virtual bool
+  SupportsAudioMimeType(const char* aMimeType) MOZ_OVERRIDE
+  {
+    return true;
+  }
+
 };
 
 PlatformDecoderModule* CreateBlankDecoderModule()

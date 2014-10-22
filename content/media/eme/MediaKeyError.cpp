@@ -15,7 +15,7 @@ MediaKeyError::MediaKeyError(EventTarget* aOwner, uint32_t aSystemCode)
   : Event(aOwner, nullptr, nullptr)
   , mSystemCode(aSystemCode)
 {
-  SetIsDOMBinding();
+  InitEvent(NS_LITERAL_STRING("error"), false, false);
 }
 
 MediaKeyError::~MediaKeyError()
@@ -29,7 +29,7 @@ MediaKeyError::SystemCode() const
 }
 
 JSObject*
-MediaKeyError::WrapObject(JSContext* aCx)
+MediaKeyError::WrapObjectInternal(JSContext* aCx)
 {
   return MediaKeyErrorBinding::Wrap(aCx, this);
 }

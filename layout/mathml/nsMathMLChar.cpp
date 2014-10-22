@@ -4,10 +4,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMathMLChar.h"
+
+#include "gfxUtils.h"
+#include "mozilla/gfx/2D.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include "nsCOMPtr.h"
+#include "nsDeviceContext.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsStyleContext.h"
 #include "nsUnicharUtils.h"
@@ -18,6 +23,7 @@
 #include "nsIObserverService.h"
 #include "nsIObserver.h"
 #include "nsNetUtil.h"
+#include "nsContentUtils.h"
 
 #include "mozilla/LookAndFeel.h"
 #include "nsCSSRendering.h"
@@ -31,6 +37,7 @@
 #include "gfxMathTable.h"
 
 using namespace mozilla;
+using namespace mozilla::gfx;
 
 //#define NOISY_SEARCH 1
 
@@ -45,7 +52,7 @@ static void
 NormalizeDefaultFont(nsFont& aFont)
 {
   if (aFont.fontlist.GetDefaultFontType() != eFamily_none) {
-    aFont.fontlist.Append(aFont.fontlist.GetDefaultFontType());
+    aFont.fontlist.Append(FontFamilyName(aFont.fontlist.GetDefaultFontType()));
     aFont.fontlist.SetDefaultFontType(eFamily_none);
   }
 }
@@ -150,8 +157,10 @@ LoadProperties(const nsString& aName,
   uriStr.Append(aName);
   uriStr.StripWhitespace(); // that may come from aName
   uriStr.AppendLiteral(".properties");
-  return NS_LoadPersistentPropertiesFromURISpec(getter_AddRefs(aProperties), 
-                                                NS_ConvertUTF16toUTF8(uriStr));
+  return NS_LoadPersistentPropertiesFromURISpec(getter_AddRefs(aProperties),
+                                                NS_ConvertUTF16toUTF8(uriStr),
+                                                nsContentUtils::GetSystemPrincipal(),
+                                                nsIContentPolicy::TYPE_OTHER);
 }
 
 class nsPropertiesTable MOZ_FINAL : public nsGlyphTable {
@@ -552,13 +561,16 @@ nsOpenTypeTable::MakeTextRun(gfxContext*        aThebesContext,
     aThebesContext, nullptr, nullptr, nullptr, 0, aAppUnitsPerDevPixel
   };
   gfxTextRun* textRun = gfxTextRun::Create(&params, 1, aFontGroup, 0);
-  textRun->AddGlyphRun(aFontGroup->GetFontAt(0), gfxTextRange::kFontGroup, 0,
-                       false);
+  textRun->AddGlyphRun(aFontGroup->GetFirstValidFont(),
+                       gfxTextRange::kFontGroup, 0,
+                       false, gfxTextRunFactory::TEXT_ORIENT_HORIZONTAL);
+                              // We don't care about CSS writing mode here;
+                              // math runs are assumed to be horizontal.
   gfxTextRun::DetailedGlyph detailedGlyph;
   detailedGlyph.mGlyphID = aGlyph.glyphID;
   detailedGlyph.mAdvance =
     NSToCoordRound(aAppUnitsPerDevPixel *
-                   aFontGroup->GetFontAt(0)->
+                   aFontGroup->GetFirstValidFont()->
                    GetGlyphHAdvance(aThebesContext, aGlyph.glyphID));
   detailedGlyph.mXOffset = detailedGlyph.mYOffset = 0;
   gfxShapedText::CompressedGlyph g;
@@ -983,17 +995,16 @@ nsMathMLChar::SetFontFamily(nsPresContext*          aPresContext,
     aPresContext->DeviceContext()->
       GetMetricsFor(font,
                     mStyleContext->StyleFont()->mLanguage,
+                    gfxFont::eHorizontal,
                     aPresContext->GetUserFontSet(),
                     aPresContext->GetTextPerfMetrics(),
                     *getter_AddRefs(fm));
     // Set the font if it is an unicode table
     // or if the same family name has been found
-    gfxFont *firstFont = fm->GetThebesFontGroup()->GetFontAt(0);
+    gfxFont *firstFont = fm->GetThebesFontGroup()->GetFirstValidFont();
     FontFamilyList firstFontList;
-    if (firstFont) {
-      firstFontList.Append(
-        FontFamilyName(firstFont->GetFontEntry()->FamilyName(), eUnquotedName));
-    }
+    firstFontList.Append(
+      FontFamilyName(firstFont->GetFontEntry()->FamilyName(), eUnquotedName));
     if (aGlyphTable == &gGlyphTableList->mUnicodeTable ||
         firstFontList == familyList) {
       aFont.fontlist = familyList;
@@ -1434,7 +1445,7 @@ nsMathMLChar::StretchEnumContext::EnumCallback(const FontFamilyName& aFamily,
     glyphTable = &gGlyphTableList->mUnicodeTable;
   } else {
     // If the font contains an Open Type MATH table, use it.
-    openTypeTable = nsOpenTypeTable::Create(fontGroup->GetFontAt(0));
+    openTypeTable = nsOpenTypeTable::Create(fontGroup->GetFirstValidFont());
     if (openTypeTable) {
       glyphTable = openTypeTable;
     } else {
@@ -1523,6 +1534,7 @@ nsMathMLChar::StretchInternal(nsPresContext*           aPresContext,
   aPresContext->DeviceContext()->
     GetMetricsFor(font,
                   mStyleContext->StyleFont()->mLanguage,
+                  gfxFont::eHorizontal,
                   aPresContext->GetUserFontSet(),
                   aPresContext->GetTextPerfMetrics(),
                   *getter_AddRefs(fm));
@@ -1821,12 +1833,15 @@ private:
 void nsDisplayMathMLSelectionRect::Paint(nsDisplayListBuilder* aBuilder,
                                          nsRenderingContext* aCtx)
 {
+  DrawTarget* drawTarget = aCtx->GetDrawTarget();
+  Rect rect = NSRectToRect(mRect + ToReferenceFrame(),
+                           mFrame->PresContext()->AppUnitsPerDevPixel(),
+                           *drawTarget);
   // get color to use for selection from the look&feel object
   nscolor bgColor =
     LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectBackground,
                           NS_RGB(0, 0, 0));
-  aCtx->SetColor(bgColor);
-  aCtx->FillRect(mRect + ToReferenceFrame());
+  drawTarget->FillRect(rect, ColorPattern(ToDeviceColor(bgColor)));
 }
 
 class nsDisplayMathMLCharBackground : public nsDisplayItem {
@@ -2028,16 +2043,18 @@ nsMathMLChar::ApplyTransforms(gfxContext* aThebesContext,
   // apply the transforms
   if (mMirrored) {
     nsPoint pt = r.TopRight();
-    aThebesContext->
-      Translate(gfxPoint(NSAppUnitsToFloatPixels(pt.x, aAppUnitsPerGfxUnit),
-                         NSAppUnitsToFloatPixels(pt.y, aAppUnitsPerGfxUnit)));
-    aThebesContext->Scale(-mScaleX, mScaleY);
+    gfxPoint devPixelOffset(NSAppUnitsToFloatPixels(pt.x, aAppUnitsPerGfxUnit),
+                            NSAppUnitsToFloatPixels(pt.y, aAppUnitsPerGfxUnit));
+    aThebesContext->SetMatrix(
+      aThebesContext->CurrentMatrix().Translate(devPixelOffset).
+                                      Scale(-mScaleX, mScaleY));
   } else {
     nsPoint pt = r.TopLeft();
-    aThebesContext->
-      Translate(gfxPoint(NSAppUnitsToFloatPixels(pt.x, aAppUnitsPerGfxUnit),
-                         NSAppUnitsToFloatPixels(pt.y, aAppUnitsPerGfxUnit)));
-    aThebesContext->Scale(mScaleX, mScaleY);
+    gfxPoint devPixelOffset(NSAppUnitsToFloatPixels(pt.x, aAppUnitsPerGfxUnit),
+                            NSAppUnitsToFloatPixels(pt.y, aAppUnitsPerGfxUnit));
+    aThebesContext->SetMatrix(
+      aThebesContext->CurrentMatrix().Translate(devPixelOffset).
+                                      Scale(mScaleX, mScaleY));
   }
 
   // update the bounding rectangle.

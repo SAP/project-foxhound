@@ -2,6 +2,13 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+///////////////////
+//
+// Whitelisting this test.
+// As part of bug 1077403, the leaking uncaught rejection should be fixed.
+//
+thisTestLeaksUncaughtRejectionsAndShouldBeFixed("TypeError: window.location is null");
+
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
   "resource://gre/modules/Promise.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
@@ -188,6 +195,38 @@ let gTests = [
     yield promiseOneMessage(tab, "test:document:load");
     is(tab.linkedBrowser.contentDocument.location.href, "about:accounts?action=signin");
   }
+},
+{
+  desc: "Test entrypoint query string, no action, no user logged in",
+  teardown: () => gBrowser.removeCurrentTab(),
+  run: function* () {
+    // When this loads with no user logged-in, we expect the "normal" URL
+    setPref("identity.fxaccounts.remote.signup.uri", "https://example.com/");
+    let [tab, url] = yield promiseNewTabWithIframeLoadEvent("about:accounts?entrypoint=abouthome");
+    is(url, "https://example.com/?entrypoint=abouthome", "entrypoint=abouthome got the expected URL");
+  },
+},
+{
+  desc: "Test entrypoint query string for signin",
+  teardown: () => gBrowser.removeCurrentTab(),
+  run: function* () {
+    // When this loads with no user logged-in, we expect the "normal" URL
+    const expected_url = "https://example.com/?is_sign_in";
+    setPref("identity.fxaccounts.remote.signin.uri", expected_url);
+    let [tab, url] = yield promiseNewTabWithIframeLoadEvent("about:accounts?action=signin&entrypoint=abouthome");
+    is(url, expected_url + "&entrypoint=abouthome", "entrypoint=abouthome got the expected URL");
+  },
+},
+{
+  desc: "Test entrypoint query string for signup",
+  teardown: () => gBrowser.removeCurrentTab(),
+  run: function* () {
+    // When this loads with no user logged-in, we expect the "normal" URL
+    const sign_up_url = "https://example.com/?is_sign_up";
+    setPref("identity.fxaccounts.remote.signup.uri", sign_up_url);
+    let [tab, url] = yield promiseNewTabWithIframeLoadEvent("about:accounts?entrypoint=abouthome&action=signup");
+    is(url, sign_up_url + "&entrypoint=abouthome", "entrypoint=abouthome got the expected URL");
+  },
 },
 ]; // gTests
 

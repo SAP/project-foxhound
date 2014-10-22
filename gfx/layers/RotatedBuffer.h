@@ -31,7 +31,7 @@ class Matrix;
 namespace layers {
 
 class TextureClient;
-class ThebesLayer;
+class PaintedLayer;
 
 /**
  * This is a cairo/Thebes surface, but with a literal twist. Scrolling
@@ -52,12 +52,9 @@ class RotatedBuffer {
 public:
   typedef gfxContentType ContentType;
 
-  RotatedBuffer(gfx::DrawTarget* aDTBuffer, gfx::DrawTarget* aDTBufferOnWhite,
-                const nsIntRect& aBufferRect,
+  RotatedBuffer(const nsIntRect& aBufferRect,
                 const nsIntPoint& aBufferRotation)
-    : mDTBuffer(aDTBuffer)
-    , mDTBufferOnWhite(aDTBufferOnWhite)
-    , mBufferRect(aBufferRect)
+    : mBufferRect(aBufferRect)
     , mBufferRotation(aBufferRotation)
     , mDidSelfCopy(false)
   { }
@@ -89,8 +86,10 @@ public:
   const nsIntRect& BufferRect() const { return mBufferRect; }
   const nsIntPoint& BufferRotation() const { return mBufferRotation; }
 
-  virtual bool HaveBuffer() const { return mDTBuffer; }
-  virtual bool HaveBufferOnWhite() const { return mDTBufferOnWhite; }
+  virtual bool HaveBuffer() const = 0;
+  virtual bool HaveBufferOnWhite() const = 0;
+
+  virtual TemporaryRef<gfx::SourceSurface> GetSourceSurface(ContextSource aSource) const = 0;
 
 protected:
 
@@ -116,9 +115,7 @@ protected:
                           gfx::SourceSurface* aMask,
                           const gfx::Matrix* aMaskTransform) const;
 
-  RefPtr<gfx::DrawTarget> mDTBuffer;
-  RefPtr<gfx::DrawTarget> mDTBufferOnWhite;
-  /** The area of the ThebesLayer that is covered by the buffer as a whole */
+  /** The area of the PaintedLayer that is covered by the buffer as a whole */
   nsIntRect             mBufferRect;
   /**
    * The x and y rotation of the buffer. Conceptually the buffer
@@ -136,6 +133,27 @@ protected:
   bool                  mDidSelfCopy;
 };
 
+class SourceRotatedBuffer : public RotatedBuffer
+{
+public:
+  SourceRotatedBuffer(gfx::SourceSurface* aSource, gfx::SourceSurface* aSourceOnWhite,
+                      const nsIntRect& aBufferRect,
+                      const nsIntPoint& aBufferRotation)
+    : RotatedBuffer(aBufferRect, aBufferRotation)
+    , mSource(aSource)
+    , mSourceOnWhite(aSourceOnWhite)
+  { }
+
+  virtual TemporaryRef<gfx::SourceSurface> GetSourceSurface(ContextSource aSource) const;
+
+  virtual bool HaveBuffer() const { return !!mSource; }
+  virtual bool HaveBufferOnWhite() const { return !!mSourceOnWhite; }
+
+private:
+  RefPtr<gfx::SourceSurface> mSource;
+  RefPtr<gfx::SourceSurface> mSourceOnWhite;
+};
+
 // Mixin class for classes which need logic for loaning out a draw target.
 // See comments on BorrowDrawTargetForQuadrantUpdate.
 class BorrowDrawTarget
@@ -151,7 +169,7 @@ protected:
 };
 
 /**
- * This class encapsulates the buffer used to retain ThebesLayer contents,
+ * This class encapsulates the buffer used to retain PaintedLayer contents,
  * i.e., the contents of the layer's GetVisibleRegion().
  */
 class RotatedContentBuffer : public RotatedBuffer
@@ -163,7 +181,7 @@ public:
   /**
    * Controls the size of the backing buffer of this.
    * - SizedToVisibleBounds: the backing buffer is exactly the same
-   *   size as the bounds of ThebesLayer's visible region
+   *   size as the bounds of PaintedLayer's visible region
    * - ContainsVisibleBounds: the backing buffer is large enough to
    *   fit visible bounds.  May be larger.
    */
@@ -172,7 +190,7 @@ public:
     ContainsVisibleBounds
   };
 
-  RotatedContentBuffer(BufferSizePolicy aBufferSizePolicy)
+  explicit RotatedContentBuffer(BufferSizePolicy aBufferSizePolicy)
     : mBufferProvider(nullptr)
     , mBufferProviderOnWhite(nullptr)
     , mBufferSizePolicy(aBufferSizePolicy)
@@ -211,7 +229,7 @@ public:
       : mRegionToDraw()
       , mRegionToInvalidate()
       , mMode(SurfaceMode::SURFACE_NONE)
-      , mClip(DrawRegionClip::CLIP_NONE)
+      , mClip(DrawRegionClip::NONE)
       , mContentType(gfxContentType::SENTINEL)
       , mDidSelfCopy(false)
     {}
@@ -249,7 +267,7 @@ public:
    * will need to call BorrowDrawTargetForPainting multiple times to achieve
    * this.
    */
-  PaintState BeginPaint(ThebesLayer* aLayer,
+  PaintState BeginPaint(PaintedLayer* aLayer,
                         uint32_t aFlags);
 
   struct DrawIterator {
@@ -308,12 +326,14 @@ public:
   gfx::DrawTarget* GetDTBuffer() { return mDTBuffer; }
   gfx::DrawTarget* GetDTBufferOnWhite() { return mDTBufferOnWhite; }
 
+  virtual TemporaryRef<gfx::SourceSurface> GetSourceSurface(ContextSource aSource) const;
+
   /**
    * Complete the drawing operation. The region to draw must have been
    * drawn before this is called. The contents of the buffer are drawn
    * to aTarget.
    */
-  void DrawTo(ThebesLayer* aLayer,
+  void DrawTo(PaintedLayer* aLayer,
               gfx::DrawTarget* aTarget,
               float aOpacity,
               gfx::CompositionOp aOp,
@@ -397,6 +417,9 @@ protected:
    * drawing the next frame.
    */
   virtual void FinalizeFrame(const nsIntRegion& aRegionToDraw) {}
+
+  RefPtr<gfx::DrawTarget> mDTBuffer;
+  RefPtr<gfx::DrawTarget> mDTBufferOnWhite;
 
   /**
    * These members are only set transiently.  They're used to map mDTBuffer

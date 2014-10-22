@@ -562,39 +562,6 @@ DuplicateNPVariant(NPVariant& aDest, const NPVariant& aSrc)
   }
 }
 
-void
-drawAsyncBitmapColor(InstanceData* instanceData)
-{
-  NPP npp = instanceData->npp;
-
-  uint32_t *pixelData = (uint32_t*)instanceData->backBuffer->bitmap.data;
-
-  uint32_t rgba = instanceData->scriptableObject->drawColor;
-
-  unsigned char subpixels[4];
-  subpixels[0] = rgba & 0xFF;
-  subpixels[1] = (rgba & 0xFF00) >> 8;
-  subpixels[2] = (rgba & 0xFF0000) >> 16;
-  subpixels[3] = (rgba & 0xFF000000) >> 24;
-
-  subpixels[0] = uint8_t(float(subpixels[3] * subpixels[0]) / 0xFF);
-  subpixels[1] = uint8_t(float(subpixels[3] * subpixels[1]) / 0xFF);
-  subpixels[2] = uint8_t(float(subpixels[3] * subpixels[2]) / 0xFF);
-  uint32_t premultiplied;
-  memcpy(&premultiplied, subpixels, sizeof(premultiplied));
-
-  for (uint32_t* lastPixel = pixelData + instanceData->backBuffer->size.width * instanceData->backBuffer->size.height;
-	pixelData < lastPixel;
-	++pixelData) {
-    *pixelData = premultiplied;
-  }
-
-  NPN_SetCurrentAsyncSurface(npp, instanceData->backBuffer, nullptr);
-  NPAsyncSurface *oldFront = instanceData->frontBuffer;
-  instanceData->frontBuffer = instanceData->backBuffer;
-  instanceData->backBuffer = oldFront;
-}
-
 static bool bug813906(NPP npp, const char* const function, const char* const url, const char* const frame)
 {
   NPObject *windowObj = nullptr;
@@ -829,9 +796,6 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->eventModel = 0;
   instanceData->closeStream = false;
   instanceData->wantsAllStreams = false;
-  instanceData->asyncDrawing = AD_NONE;
-  instanceData->frontBuffer = nullptr;
-  instanceData->backBuffer = nullptr;
   instanceData->mouseUpEventCount = 0;
   instanceData->bugMode = -1;
   instance->pdata = instanceData;
@@ -868,18 +832,6 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
     else if (strcmp(argn[i], "wmode") == 0) {
       if (strcmp(argv[i], "window") == 0) {
         requestWindow = true;
-      }
-    }
-    else if (strcmp(argn[i], "asyncmodel") == 0) {
-      if (strcmp(argv[i], "bitmap") == 0) {
-        if (pluginSupportsAsyncBitmapDrawing()) {
-          instanceData->asyncDrawing = AD_BITMAP;
-        }
-      }
-      if (strcmp(argv[i], "dxgi") == 0) {
-        if (pluginSupportsAsyncDXGIDrawing()) {
-          instanceData->asyncDrawing = AD_DXGI;
-        }
       }
     }
     if (strcmp(argn[i], "streammode") == 0) {
@@ -996,27 +948,6 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
     NPN_SetValue(instance, NPPVpluginTransparentBool, (void*)true);
   }
 
-  if (instanceData->asyncDrawing == AD_BITMAP) {
-    NPBool supportsAsyncBitmap = false;
-    if ((NPN_GetValue(instance, NPNVsupportsAsyncBitmapSurfaceBool, &supportsAsyncBitmap) == NPERR_NO_ERROR) &&
-        supportsAsyncBitmap) {
-      NPN_SetValue(instance, NPPVpluginDrawingModel, (void*)NPDrawingModelAsyncBitmapSurface);
-    } else {
-      instanceData->asyncDrawing = AD_NONE;
-    }
-  }
-#ifdef XP_WIN
-  else if (instanceData->asyncDrawing == AD_DXGI) {
-    NPBool supportsAsyncDXGI = false;
-    if ((NPN_GetValue(instance, NPNVsupportsAsyncWindowsDXGISurfaceBool, &supportsAsyncDXGI) == NPERR_NO_ERROR) &&
-        supportsAsyncDXGI) {
-      NPN_SetValue(instance, NPPVpluginDrawingModel, (void*)NPDrawingModelAsyncWindowsDXGISurface);
-    } else {
-      instanceData->asyncDrawing = AD_NONE;
-    }
-  }
-#endif
-
   instanceData->lastReportedPrivateModeState = false;
   instanceData->lastMouseX = instanceData->lastMouseY = -1;
   instanceData->widthAtLastPaint = -1;
@@ -1081,7 +1012,6 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
 NPError
 NPP_Destroy(NPP instance, NPSavedData** save)
 {
-  printf("NPP_Destroy\n");
   InstanceData* instanceData = (InstanceData*)(instance->pdata);
 
   if (instanceData->crashOnDestroy)
@@ -1107,16 +1037,6 @@ NPP_Destroy(NPP instance, NPSavedData** save)
     nextrange = reinterpret_cast<TestRange*>(currentrange->next);
     delete currentrange;
     currentrange = nextrange;
-  }
-
-  if (instanceData->frontBuffer) {
-    NPN_SetCurrentAsyncSurface(instance, nullptr, nullptr);
-    NPN_FinalizeAsyncSurface(instance, instanceData->frontBuffer);
-    NPN_MemFree(instanceData->frontBuffer);
-  }
-  if (instanceData->backBuffer) {
-    NPN_FinalizeAsyncSurface(instance, instanceData->backBuffer);
-    NPN_MemFree(instanceData->backBuffer);
   }
 
   pluginInstanceShutdown(instanceData);
@@ -1151,43 +1071,12 @@ NPP_SetWindow(NPP instance, NPWindow* window)
     pluginWidgetInit(instanceData, oldWindow);
   }
 
-  if (instanceData->asyncDrawing == AD_BITMAP) {
-    if (instanceData->frontBuffer &&
-	instanceData->frontBuffer->size.width >= 0 &&
-       (uint32_t)instanceData->frontBuffer->size.width == window->width &&
-       instanceData ->frontBuffer->size.height >= 0 &&
-       (uint32_t)instanceData->frontBuffer->size.height == window->height) {
-          return NPERR_NO_ERROR;
-    }
-    if (instanceData->frontBuffer) {
-      NPN_FinalizeAsyncSurface(instance, instanceData->frontBuffer);
-      NPN_MemFree(instanceData->frontBuffer);
-    }
-    if (instanceData->backBuffer) {
-      NPN_FinalizeAsyncSurface(instance, instanceData->backBuffer);
-      NPN_MemFree(instanceData->backBuffer);
-    }
-    instanceData->frontBuffer = (NPAsyncSurface*)NPN_MemAlloc(sizeof(NPAsyncSurface));
-    instanceData->backBuffer = (NPAsyncSurface*)NPN_MemAlloc(sizeof(NPAsyncSurface));
-
-    NPSize size;
-    size.width = window->width;
-    size.height = window->height;
-
-    memcpy(instanceData->backBuffer, instanceData->frontBuffer, sizeof(NPAsyncSurface));
-
-    NPN_InitAsyncSurface(instance, &size, NPImageFormatBGRA32, nullptr, instanceData->frontBuffer);
-    NPN_InitAsyncSurface(instance, &size, NPImageFormatBGRA32, nullptr, instanceData->backBuffer);
-
-    drawAsyncBitmapColor(instanceData);
-  }
   return NPERR_NO_ERROR;
 }
 
 NPError
 NPP_NewStream(NPP instance, NPMIMEType type, NPStream* stream, NPBool seekable, uint16_t* stype)
 {
-  printf("NPP_NewStream\n");
   InstanceData* instanceData = (InstanceData*)(instance->pdata);
 
   if (instanceData->functionToFail == FUNCTION_NPP_NEWSTREAM &&
@@ -1226,7 +1115,6 @@ NPP_NewStream(NPP instance, NPMIMEType type, NPStream* stream, NPBool seekable, 
 NPError
 NPP_DestroyStream(NPP instance, NPStream* stream, NPReason reason)
 {
-  printf("NPP_DestroyStream\n");
   InstanceData* instanceData = (InstanceData*)(instance->pdata);
 
   if (instanceData->functionToFail == FUNCTION_NPP_NEWSTREAM) {
@@ -1293,7 +1181,6 @@ NPP_DestroyStream(NPP instance, NPStream* stream, NPReason reason)
 int32_t
 NPP_WriteReady(NPP instance, NPStream* stream)
 {
-  printf("NPP_WriteReady\n");
   InstanceData* instanceData = (InstanceData*)(instance->pdata);
   instanceData->writeReadyCount++;
   if (instanceData->functionToFail == FUNCTION_NPP_NEWSTREAM) {
@@ -1428,7 +1315,6 @@ NPP_Write(NPP instance, NPStream* stream, int32_t offset, int32_t len, void* buf
 void
 NPP_StreamAsFile(NPP instance, NPStream* stream, const char* fname)
 {
-  printf("NPP_StreamAsFile, file=%s\n", fname);
   size_t size;
 
   InstanceData* instanceData = (InstanceData*)(instance->pdata);
@@ -1481,7 +1367,6 @@ NPP_URLNotify(NPP instance, const char* url, NPReason reason, void* notifyData)
   InstanceData* instanceData = (InstanceData*)(instance->pdata);
   URLNotifyData* ndata = static_cast<URLNotifyData*>(notifyData);
 
-  printf("NPP_URLNotify called\n");
   if (&kNotifyData == ndata) {
     if (instanceData->frame.length() > 0) {
       sendBufferToFrame(instance);
@@ -1936,25 +1821,6 @@ void
 NPN_URLRedirectResponse(NPP instance, void* notifyData, NPBool allow)
 {
   return sBrowserFuncs->urlredirectresponse(instance, notifyData, allow);
-}
-
-NPError
-NPN_InitAsyncSurface(NPP instance, NPSize *size, NPImageFormat format,
-                     void *initData, NPAsyncSurface *surface)
-{
-  return sBrowserFuncs->initasyncsurface(instance, size, format, initData, surface);
-}
-
-NPError
-NPN_FinalizeAsyncSurface(NPP instance, NPAsyncSurface *surface)
-{
-  return sBrowserFuncs->finalizeasyncsurface(instance, surface);
-}
-
-void
-NPN_SetCurrentAsyncSurface(NPP instance, NPAsyncSurface *surface, NPRect *changed)
-{
-  sBrowserFuncs->setcurrentasyncsurface(instance, surface, changed);
 }
 
 //
@@ -2854,16 +2720,7 @@ setColor(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* r
   r.top = 0;
   r.right = id->window.width;
   r.bottom = id->window.height;
-  if (id->asyncDrawing == AD_NONE) {
-    NPN_InvalidateRect(npp, &r);
-  } else if (id->asyncDrawing == AD_BITMAP) {
-    drawAsyncBitmapColor(id);
-  }
-#ifdef XP_WIN
-  else if (id->asyncDrawing == AD_DXGI) {
-    pluginDrawAsyncDxgiColor(id);
-  }
-#endif
+  NPN_InvalidateRect(npp, &r);
 
   VOID_TO_NPVARIANT(*result);
   return true;

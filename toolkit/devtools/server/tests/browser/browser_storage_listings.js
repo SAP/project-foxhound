@@ -1,16 +1,11 @@
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
-let tempScope = {};
-Cu.import("resource://gre/modules/devtools/dbg-client.jsm", tempScope);
-Cu.import("resource://gre/modules/devtools/dbg-server.jsm", tempScope);
-let {DebuggerServer, DebuggerClient} = tempScope;
-tempScope = null;
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
+/* Any copyright is dedicated to the Public Domain.
+   http://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
 
 const {StorageFront} = require("devtools/server/actors/storage");
-let {Task} = require("resource://gre/modules/Task.jsm");
 let gWindow = null;
-
-const domStorageProperties = ['length', 'key', 'getItem','setItem', 'removeItem', 'clear'];
 
 const storeMap = {
   cookies: {
@@ -350,7 +345,7 @@ function finishTests(client) {
       forceCollections();
       DebuggerServer.destroy();
       forceCollections();
-      gWindow = DebuggerClient = DebuggerServer = null;
+      gWindow = null;
       finish();
     });
   }
@@ -421,13 +416,9 @@ function testLocalStorage(localStorageActor) {
 let testLocalStorageObjects = Task.async(function*(index, hosts, localStorageActor) {
   let host = Object.keys(hosts)[index];
   let matchItems = data => {
-    is(data.total - domStorageProperties.length, storeMap.localStorage[host].length,
+    is(data.total, storeMap.localStorage[host].length,
        "Number of local storage items in host " + host + " matches");
     for (let item of data.data) {
-      if (domStorageProperties.indexOf(item.name) != -1) {
-        continue;
-      }
-
       let found = false;
       for (let toMatch of storeMap.localStorage[host]) {
         if (item.name == toMatch.name) {
@@ -462,13 +453,9 @@ function testSessionStorage(sessionStorageActor) {
 let testSessionStorageObjects = Task.async(function*(index, hosts, sessionStorageActor) {
   let host = Object.keys(hosts)[index];
   let matchItems = data => {
-    is(data.total - domStorageProperties.length, storeMap.sessionStorage[host].length,
+    is(data.total, storeMap.sessionStorage[host].length,
        "Number of session storage items in host " + host + " matches");
     for (let item of data.data) {
-      if (domStorageProperties.indexOf(item.name) != -1) {
-        continue;
-      }
-
       let found = false;
       for (let toMatch of storeMap.sessionStorage[host]) {
         if (item.name == toMatch.name) {
@@ -649,26 +636,15 @@ let testIDBEntries = Task.async(function*(index, hosts, indexedDBActor) {
 });
 
 function test() {
-  waitForExplicitFinish();
-  addTab(MAIN_DOMAIN + "storage-listings.html", function(doc) {
-    try {
-      // Sometimes debugger server does not get destroyed correctly by previous
-      // tests.
-      DebuggerServer.destroy();
-    } catch (ex) { }
-    DebuggerServer.init(function () { return true; });
-    DebuggerServer.addBrowserActors();
+  addTab(MAIN_DOMAIN + "storage-listings.html").then(function(doc) {
+    initDebuggerServer();
 
     let createConnection = () => {
       let client = new DebuggerClient(DebuggerServer.connectPipe());
-      client.connect(function onConnect() {
-        client.listTabs(function onListTabs(aResponse) {
-          let form = aResponse.tabs[aResponse.selected];
-          let front = StorageFront(client, form);
-
-          front.listStores().then(data => testStores(data))
-               .then(() => finishTests(client));
-        });
+      connectDebuggerClient(client).then(form => {
+        let front = StorageFront(client, form);
+        front.listStores().then(data => testStores(data))
+                          .then(() => finishTests(client));
       });
     };
 

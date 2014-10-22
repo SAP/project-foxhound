@@ -190,6 +190,9 @@ destroying the MediaDecoder object.
 #include "MediaStreamGraph.h"
 #include "AbstractMediaDecoder.h"
 #include "necko-config.h"
+#ifdef MOZ_EME
+#include "mozilla/CDMProxy.h"
+#endif
 
 class nsIStreamListener;
 class nsIPrincipal;
@@ -304,9 +307,6 @@ public:
 
   // Called in |Load| to open mResource.
   nsresult OpenResource(nsIStreamListener** aStreamListener);
-
-  // Called when the video file has completed downloading.
-  virtual void ResourceLoaded();
 
   // Called if the media file encounters a network error.
   virtual void NetworkError();
@@ -567,7 +567,7 @@ public:
 
   // Called as data arrives on the stream and is read into the cache.  Called
   // on the main thread only.
-  virtual void NotifyDataArrived(const char* aBuffer, uint32_t aLength, int64_t aOffset);
+  virtual void NotifyDataArrived(const char* aBuffer, uint32_t aLength, int64_t aOffset) MOZ_OVERRIDE;
 
   // Called by MediaResource when the principal of the resource has
   // changed. Called on main thread only.
@@ -577,8 +577,6 @@ public:
   // from the resource. Called on the main by an event runner dispatched
   // by the MediaResource read functions.
   void NotifyBytesConsumed(int64_t aBytes, int64_t aOffset) MOZ_FINAL MOZ_OVERRIDE;
-
-  int64_t GetEndMediaTime() const MOZ_FINAL MOZ_OVERRIDE;
 
   // Return true if we are currently seeking in the media resource.
   // Call on the main thread only.
@@ -691,6 +689,12 @@ public:
     return mPlayState;
   }
 
+  // Called by the media element to start timer to update download progress.
+  nsresult StartProgress();
+
+  // Called by the media element to stop progress information timer.
+  nsresult StopProgress();
+
   // Fire progress events if needed according to the time and byte
   // constraints outlined in the specification. aTimer is true
   // if the method is called as a result of the progress timer rather
@@ -754,6 +758,9 @@ public:
   void QueueMetadata(int64_t aPublishTime,
                      MediaInfo* aInfo,
                      MetadataTags* aTags);
+
+  int64_t GetSeekTime() { return mRequestedSeekTarget.mTime; }
+  void ResetSeekTime() { mRequestedSeekTarget.Reset(); }
 
   /******
    * The following methods must only be called on the main
@@ -848,6 +855,14 @@ public:
   // calls Play() and then Seek(), we still count as logically playing.
   // The decoder monitor must be held.
   bool IsLogicallyPlaying();
+
+#ifdef MOZ_EME
+  // This takes the decoder monitor.
+  virtual nsresult SetCDMProxy(CDMProxy* aProxy) MOZ_OVERRIDE;
+
+  // Decoder monitor must be held.
+  virtual CDMProxy* GetCDMProxy() MOZ_OVERRIDE;
+#endif
 
 #ifdef MOZ_RAW
   static bool IsRawEnabled();
@@ -1004,6 +1019,7 @@ public:
 
 protected:
   virtual ~MediaDecoder();
+  void SetStateMachineParameters();
 
   /******
    * The following members should be accessed with the decoder lock held.
@@ -1078,7 +1094,7 @@ private:
   class RestrictedAccessMonitor
   {
   public:
-    RestrictedAccessMonitor(const char* aName) :
+    explicit RestrictedAccessMonitor(const char* aName) :
       mReentrantMonitor(aName)
     {
       MOZ_COUNT_CTOR(RestrictedAccessMonitor);
@@ -1098,6 +1114,10 @@ private:
 
   // The |RestrictedAccessMonitor| member object.
   RestrictedAccessMonitor mReentrantMonitor;
+
+#ifdef MOZ_EME
+  nsRefPtr<CDMProxy> mProxy;
+#endif
 
 protected:
   // Data about MediaStreams that are being fed by this decoder.
@@ -1142,11 +1162,6 @@ protected:
   // been requested. When a seek is started this is reset to invalid.
   SeekTarget mRequestedSeekTarget;
 
-  // True when we have fully loaded the resource and reported that
-  // to the element (i.e. reached NETWORK_LOADED state).
-  // Accessed on the main thread only.
-  bool mCalledResourceLoaded;
-
   // True when seeking or otherwise moving the play position around in
   // such a manner that progress event data is inaccurate. This is set
   // during seek and duration operations to prevent the progress indicator
@@ -1156,12 +1171,6 @@ protected:
 
   // True if the stream is infinite (e.g. a webradio).
   bool mInfiniteStream;
-
-  // Start timer to update download progress information.
-  nsresult StartProgress();
-
-  // Stop progress information timer.
-  nsresult StopProgress();
 
   // Ensures our media stream has been pinned.
   void PinForSeek();

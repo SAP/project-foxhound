@@ -246,7 +246,11 @@
            onpopuphidden="SocialShare.onHidden()"
            hidden="true">
       <vbox class="social-share-toolbar">
-        <arrowscrollbox id="social-share-provider-buttons" orient="vertical" flex="1"/>
+        <arrowscrollbox id="social-share-provider-buttons" orient="vertical" flex="1">
+          <toolbarbutton id="add-share-provider" class="toolbarbutton share-provider-button" type="radio"
+                         group="share-providers" tooltiptext="&findShareServices.label;"
+                         oncommand="SocialShare.showDirectory()"/>
+        </arrowscrollbox>
       </vbox>
     </panel>
 
@@ -496,6 +500,11 @@
 #endif
     </tooltip>
 
+    <tooltip id="share-button-tooltip" onpopupshowing="SocialShare.createTooltip(event);">
+      <label class="tooltip-label"/>
+      <label class="tooltip-label"/>
+    </tooltip>
+
 #include popup-notifications.inc
 
 #include ../../components/customizableui/content/panelUI.inc.xul
@@ -669,7 +678,7 @@
              aria-label="&navbarCmd.label;"
              fullscreentoolbar="true" mode="icons" customizable="true"
              iconsize="small"
-             defaultset="urlbar-container,search-container,bookmarks-menu-button,downloads-button,home-button,loop-call-button,social-share-button,social-toolbar-item"
+             defaultset="urlbar-container,search-container,bookmarks-menu-button,downloads-button,home-button,loop-call-button"
              customizationtarget="nav-bar-customization-target"
              overflowable="true"
              overflowbutton="nav-bar-overflow-button"
@@ -712,7 +721,7 @@
                      ontextreverted="return this.handleRevert();"
                      pageproxystate="invalid"
                      onfocus="document.getElementById('identity-box').style.MozUserFocus= 'normal'"
-                     onblur="setTimeout(function() document.getElementById('identity-box').style.MozUserFocus = '', 0);">
+                     onblur="setTimeout(() => { document.getElementById('identity-box').style.MozUserFocus = ''; }, 0);">
               <box id="notification-popup-box" hidden="true" align="center">
                 <image id="default-notification-icon" class="notification-anchor-icon" role="button"/>
                 <image id="identity-notification-icon" class="notification-anchor-icon" role="button"/>
@@ -723,8 +732,8 @@
                 <image id="webapps-notification-icon" class="notification-anchor-icon" role="button"/>
                 <image id="plugins-notification-icon" class="notification-anchor-icon" role="button"/>
                 <image id="web-notifications-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="plugin-install-notification-icon" class="notification-anchor-icon" role="button"/>
-                <image id="mixed-content-blocked-notification-icon" class="notification-anchor-icon" role="button"/>
+                <image id="bad-content-blocked-notification-icon" class="notification-anchor-icon" role="button"/>
+                <image id="bad-content-unblocked-notification-icon" class="notification-anchor-icon" role="button"/>
                 <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon" role="button"/>
                 <image id="webRTC-sharingDevices-notification-icon" class="notification-anchor-icon" role="button"/>
                 <image id="webRTC-shareMicrophone-notification-icon" class="notification-anchor-icon" role="button"/>
@@ -755,7 +764,7 @@
                 </hbox>
               </box>
               <box id="urlbar-display-box" align="center">
-                <label id="urlbar-display" value="&urlbar.switchToTab.label;"/>
+                <label class="urlbar-display urlbar-display-switchtab" value="&urlbar.switchToTab.label;"/>
               </box>
               <hbox id="urlbar-icons">
                 <image id="page-report-button"
@@ -916,31 +925,6 @@
                        onclick="BrowserGoHome(event);"
                        cui-areatype="toolbar"
                        aboutHomeOverrideTooltip="&abouthome.pageTitle;"/>
-
-        <!-- XXX Bug 1013989 will provide a label for the button -->
-        <!-- This uses badged to be compatible with the social api code it shares.
-             We may also want it to be badged in the future, for notification
-             purposes. -->
-        <toolbarbutton id="loop-call-button"
-                       class="toolbarbutton-1 chromeclass-toolbar-additional"
-                       persist="class"
-                       type="badged"
-                       removable="true"
-                       tooltiptext="&loopCallButton.tooltip;"
-                       oncommand="LoopUI.openCallPanel(event);"
-                       cui-areatype="toolbar"
-                       >
-        </toolbarbutton>
-
-
-        <toolbarbutton id="social-share-button"
-                       class="toolbarbutton-1 chromeclass-toolbar-additional"
-                       label="&sharePageCmd.label;"
-                       tooltiptext="&sharePageCmd.label;"
-                       cui-areatype="toolbar"
-                       removable="true"
-                       hidden="true"
-                       command="Social:SharePage"/>
       </hbox>
 
       <toolbarbutton id="nav-bar-overflow-button"
@@ -1085,7 +1069,7 @@
     </toolbarpalette>
   </toolbox>
 
-  <hbox id="fullscr-toggler" collapsed="true"/>
+  <hbox id="fullscr-toggler" hidden="true"/>
 
   <deck id="content-deck" flex="1">
     <hbox flex="1" id="browser">

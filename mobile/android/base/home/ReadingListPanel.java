@@ -12,13 +12,12 @@ import org.mozilla.gecko.ReaderModeUtils;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.db.BrowserContract.ReadingListItems;
+import org.mozilla.gecko.db.BrowserContract.URLColumns;
 import org.mozilla.gecko.db.BrowserDB;
-import org.mozilla.gecko.db.BrowserDB.URLColumns;
+import org.mozilla.gecko.home.HomeContextMenuInfo.RemoveItemType;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenListener;
 
-import android.app.Activity;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.support.v4.app.LoaderManager.LoaderCallbacks;
@@ -60,28 +59,6 @@ public class ReadingListPanel extends HomeFragment {
     // Callbacks used for the reading list and favicon cursor loaders
     private CursorLoaderCallbacks mCursorLoaderCallbacks;
 
-    // On URL open listener
-    private OnUrlOpenListener mUrlOpenListener;
-
-    @Override
-    public void onAttach(Activity activity) {
-        super.onAttach(activity);
-
-        try {
-            mUrlOpenListener = (OnUrlOpenListener) activity;
-        } catch (ClassCastException e) {
-            throw new ClassCastException(activity.toString()
-                    + " must implement HomePager.OnUrlOpenListener");
-        }
-    }
-
-    @Override
-    public void onDetach() {
-        super.onDetach();
-
-        mUrlOpenListener = null;
-    }
-
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         return inflater.inflate(R.layout.home_reading_list_panel, container, false);
@@ -121,6 +98,7 @@ public class ReadingListPanel extends HomeFragment {
                 info.url = cursor.getString(cursor.getColumnIndexOrThrow(ReadingListItems.URL));
                 info.title = cursor.getString(cursor.getColumnIndexOrThrow(ReadingListItems.TITLE));
                 info.readingListItemId = cursor.getInt(cursor.getColumnIndexOrThrow(ReadingListItems._ID));
+                info.itemType = RemoveItemType.READING_LIST;
                 return info;
             }
         });
@@ -133,19 +111,6 @@ public class ReadingListPanel extends HomeFragment {
         mList = null;
         mTopView = null;
         mEmptyView = null;
-    }
-
-    @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-
-        // Detach and reattach the fragment as the layout changes.
-        if (isVisible()) {
-            getFragmentManager().beginTransaction()
-                                .detach(this)
-                                .attach(this)
-                                .commitAllowingStateLoss();
-        }
     }
 
     @Override

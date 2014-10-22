@@ -14,6 +14,7 @@
 #include "nsStyleStruct.h"
 #include "nsIFrame.h"
 
+class gfxDrawable;
 class nsStyleContext;
 class nsPresContext;
 class nsRenderingContext;
@@ -588,6 +589,7 @@ struct nsCSSRendering {
                                      nscolor              aBorderColor,
                                      const nsStyleBackground* aBGColor,
                                      const nsRect&        aBorderRect,
+                                     int32_t              aAppUnitsPerDevPixel,
                                      int32_t              aAppUnitsPerCSSPixel,
                                      uint8_t              aStartBevelSide = 0,
                                      nscoord              aStartBevelOffset = 0,
@@ -598,23 +600,29 @@ struct nsCSSRendering {
    * Function for painting the decoration lines for the text.
    * NOTE: aPt, aLineSize, aAscent and aOffset are non-rounded device pixels,
    *       not app units.
+   * NOTE: aLineSize is a "logical" size in textRun orientation, so that for
+   *       a vertical textrun, aLineSize.width (which is the decoration line
+   *       length) will actually be a physical height; and conversely,
+   *       aLineSize.height [thickness] will be a physical width. The alternate
+   *       names in [brackets] in the comments here apply to the vertical case.
+   *
    *   input:
    *     @param aFrame            the frame which needs the decoration line
    *     @param aGfxContext
    *     @param aDirtyRect        no need to paint outside this rect
    *     @param aColor            the color of the decoration line
    *     @param aPt               the top/left edge of the text
-   *     @param aXInFrame         the distance between aPt.x and left edge of
-   *                              aFrame.  If the decoration line is for shadow,
-   *                              set the distance between the left edge of
-   *                              the aFrame and the position of the text as
+   *     @param aICoordInFrame    the distance between aPt.x [y] and left [top]
+   *                              edge of aFrame. If the decoration line is for
+   *                              shadow, set the distance between the left edge
+   *                              of the aFrame and the position of the text as
    *                              positioned without offset of the shadow.
-   *     @param aLineSize         the width and the height of the decoration
-   *                              line
+   *     @param aLineSize         the width [length] and the height [thickness]
+   *                              of the decoration line
    *     @param aAscent           the ascent of the text
    *     @param aOffset           the offset of the decoration line from
    *                              the baseline of the text (if the value is
-   *                              positive, the line is lifted up)
+   *                              positive, the line is lifted up [right])
    *     @param aDecoration       which line will be painted. The value can be
    *                              NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE or
    *                              NS_STYLE_TEXT_DECORATION_LINE_OVERLINE or
@@ -638,12 +646,13 @@ struct nsCSSRendering {
                                   const gfxRect& aDirtyRect,
                                   const nscolor aColor,
                                   const gfxPoint& aPt,
-                                  const gfxFloat aXInFrame,
+                                  const gfxFloat aICoordInFrame,
                                   const gfxSize& aLineSize,
                                   const gfxFloat aAscent,
                                   const gfxFloat aOffset,
                                   const uint8_t aDecoration,
                                   const uint8_t aStyle,
+                                  bool aVertical,
                                   const gfxFloat aDescentLimit = -1.0);
 
   /**
@@ -658,12 +667,13 @@ struct nsCSSRendering {
                                    const gfxRect& aDirtyRect,
                                    const nscolor aColor,
                                    const gfxPoint& aPt,
-                                   const gfxFloat aXInFrame,
+                                   const gfxFloat aICoordInFrame,
                                    const gfxSize& aLineSize,
                                    const gfxFloat aAscent,
                                    const gfxFloat aOffset,
                                    const uint8_t aDecoration,
                                    const uint8_t aStyle,
+                                   bool aVertical,
                                    const gfxFloat aDescentLimit = -1.0);
 
   /**
@@ -705,6 +715,7 @@ struct nsCSSRendering {
                                       const gfxFloat aOffset,
                                       const uint8_t aDecoration,
                                       const uint8_t aStyle,
+                                      bool aVertical,
                                       const gfxFloat aDescentLimit = -1.0);
 
   static gfxContext::GraphicsOperator GetGFXBlendMode(uint8_t mBlendMode) {
@@ -738,7 +749,8 @@ protected:
                                                const gfxFloat aOffset,
                                                const uint8_t aDecoration,
                                                const uint8_t aStyle,
-                                               const gfxFloat aDscentLimit);
+                                               bool aVertical,
+                                               const gfxFloat aDescentLimit);
 
   /**
    * Returns inflated rect for painting a decoration line.
@@ -755,16 +767,17 @@ protected:
    *                              NS_STYLE_TEXT_DECORATION_STYLE_WAVY.
    *     @param aClippedRect      the clipped rect for the decoration line.
    *                              in other words, visible area of the line.
-   *     @param aXInFrame         the distance between left edge of aFrame and
-   *                              aClippedRect.pos.x.
+   *     @param aICoordInFrame  the distance between inline-start edge of aFrame
+   *                              and aClippedRect.pos.
    *     @param aCycleLength      the width of one cycle of the line style.
    */
   static gfxRect ExpandPaintingRectForDecorationLine(
                    nsIFrame* aFrame,
                    const uint8_t aStyle,
                    const gfxRect &aClippedRect,
-                   const gfxFloat aXInFrame,
-                   const gfxFloat aCycleLength);
+                   const gfxFloat aICoordInFrame,
+                   const gfxFloat aCycleLength,
+                   bool aVertical);
 };
 
 /*
@@ -893,7 +906,7 @@ public:
                             const gfxRect& aSkipRect);
 
 protected:
-  gfxAlphaBoxBlur blur;
+  gfxAlphaBoxBlur mAlphaBoxBlur;
   nsRefPtr<gfxContext> mContext;
   gfxContext* mDestinationCtx;
 

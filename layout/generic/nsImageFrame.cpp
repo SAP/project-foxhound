@@ -3,12 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* rendering object for replaced elements with bitmap image data */
+/* rendering object for replaced elements with image data */
 
 #include "nsImageFrame.h"
 
+#include "gfx2DGlue.h"
+#include "gfxUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Helpers.h"
+#include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/MouseEvents.h"
 
 #include "nsCOMPtr.h"
@@ -41,6 +46,11 @@
 #include "nsIDOMNode.h"
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
+#include "nsIContent.h"
+#include "nsIDocument.h"
+#include "FrameLayerBuilder.h"
+#include "nsISelectionController.h"
+#include "nsISelection.h"
 
 #include "imgIContainer.h"
 #include "imgLoader.h"
@@ -65,21 +75,20 @@
 #include "mozilla/dom/Link.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
+using namespace mozilla::gfx;
+using namespace mozilla::layers;
 
 // sizes (pixels) for image icon, padding and border frame
 #define ICON_SIZE        (16)
 #define ICON_PADDING     (3)
 #define ALT_BORDER_WIDTH (1)
 
-
 //we must add hooks soon
 #define IMAGE_EDITOR_CHECK 1
 
 // Default alignment value (so we can tell an unset value from a set value)
 #define ALIGN_UNSET uint8_t(-1)
-
-using namespace mozilla::layers;
-using namespace mozilla::dom;
 
 // static icon information
 nsImageFrame::IconLoad* nsImageFrame::gIconLoad = nullptr;
@@ -725,7 +734,7 @@ nsImageFrame::FrameChanged(imgIRequest *aRequest,
 }
 
 void
-nsImageFrame::EnsureIntrinsicSizeAndRatio(nsPresContext* aPresContext)
+nsImageFrame::EnsureIntrinsicSizeAndRatio()
 {
   // If mIntrinsicSize.width and height are 0, then we need to update from the
   // image container.
@@ -754,14 +763,18 @@ nsImageFrame::EnsureIntrinsicSizeAndRatio(nsPresContext* aPresContext)
   }
 }
 
-/* virtual */ nsSize
+/* virtual */
+LogicalSize
 nsImageFrame::ComputeSize(nsRenderingContext *aRenderingContext,
-                          nsSize aCBSize, nscoord aAvailableWidth,
-                          nsSize aMargin, nsSize aBorder, nsSize aPadding,
+                          WritingMode aWM,
+                          const LogicalSize& aCBSize,
+                          nscoord aAvailableISize,
+                          const LogicalSize& aMargin,
+                          const LogicalSize& aBorder,
+                          const LogicalSize& aPadding,
                           uint32_t aFlags)
 {
-  nsPresContext *presContext = PresContext();
-  EnsureIntrinsicSizeAndRatio(presContext);
+  EnsureIntrinsicSizeAndRatio();
 
   nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
   NS_ASSERTION(imageLoader, "No content node??");
@@ -792,16 +805,31 @@ nsImageFrame::ComputeSize(nsRenderingContext *aRenderingContext,
     }
   }
 
-  return nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
+  return nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(aWM,
                             aRenderingContext, this,
-                            intrinsicSize, mIntrinsicRatio, aCBSize,
-                            aMargin, aBorder, aPadding);
+                            intrinsicSize, mIntrinsicRatio,
+                            aCBSize,
+                            aMargin,
+                            aBorder,
+                            aPadding);
 }
 
+// XXXdholbert This function's clients should probably just be calling
+// GetContentRectRelativeToSelf() directly.
 nsRect 
 nsImageFrame::GetInnerArea() const
 {
-  return GetContentRect() - GetPosition();
+  return GetContentRectRelativeToSelf();
+}
+
+Element*
+nsImageFrame::GetMapElement() const
+{
+  nsAutoString usemap;
+  if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::usemap, usemap)) {
+    return mContent->OwnerDoc()->FindImageMap(usemap);
+  }
+  return nullptr;
 }
 
 // get the offset into the content area of the image where aImg starts if it is a continuation.
@@ -823,8 +851,7 @@ nsImageFrame::GetMinISize(nsRenderingContext *aRenderingContext)
   // min-height, and max-height properties.
   DebugOnly<nscoord> result;
   DISPLAY_MIN_WIDTH(this, result);
-  nsPresContext *presContext = PresContext();
-  EnsureIntrinsicSizeAndRatio(presContext);
+  EnsureIntrinsicSizeAndRatio();
   return mIntrinsicSize.width.GetUnit() == eStyleUnit_Coord ?
     mIntrinsicSize.width.GetCoordValue() : 0;
 }
@@ -836,8 +863,7 @@ nsImageFrame::GetPrefISize(nsRenderingContext *aRenderingContext)
   // min-height, and max-height properties.
   DebugOnly<nscoord> result;
   DISPLAY_PREF_WIDTH(this, result);
-  nsPresContext *presContext = PresContext();
-  EnsureIntrinsicSizeAndRatio(presContext);
+  EnsureIntrinsicSizeAndRatio();
   // convert from normal twips to scaled twips (printing...)
   return mIntrinsicSize.width.GetUnit() == eStyleUnit_Coord ?
     mIntrinsicSize.width.GetCoordValue() : 0;
@@ -1050,7 +1076,7 @@ nsImageFrame::DisplayAltText(nsPresContext*      aPresContext,
                              const nsRect&        aRect)
 {
   // Set font and color
-  aRenderingContext.SetColor(StyleColor()->mColor);
+  aRenderingContext.ThebesContext()->SetColor(StyleColor()->mColor);
   nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
     nsLayoutUtils::FontSizeInflationFor(this));
@@ -1194,9 +1220,13 @@ nsImageFrame::DisplayAltFeedback(nsRenderingContext& aRenderingContext,
     return;
   }
 
+  DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
+  gfxContext* gfx = aRenderingContext.ThebesContext();
+
   // Clip so we don't render outside the inner rect
-  aRenderingContext.PushState();
-  aRenderingContext.IntersectClip(inner);
+  gfx->Save();
+  gfx->Clip(NSRectToRect(inner, PresContext()->AppUnitsPerDevPixel(),
+                         *drawTarget));
 
   // Check if we should display image placeholders
   if (gIconLoad->mPrefShowPlaceholders) {
@@ -1234,15 +1264,27 @@ nsImageFrame::DisplayAltFeedback(nsRenderingContext& aRenderingContext,
     // if we could not draw the icon, flag that we're waiting for it and
     // just draw some graffiti in the mean time
     if (!iconUsed) {
+      ColorPattern color(ToDeviceColor(Color(1.f, 0.f, 0.f, 1.f)));
+
       nscoord iconXPos = (vis->mDirection ==   NS_STYLE_DIRECTION_RTL) ?
                          inner.XMost() - size : inner.x;
+
+      // stroked rect:
+      nsRect rect(iconXPos, inner.y, size, size);
+      Rect devPxRect =
+        ToRect(nsLayoutUtils::RectToGfxRect(rect, PresContext()->AppUnitsPerDevPixel()));
+      drawTarget->StrokeRect(devPxRect, color);
+
+      // filled circle in bottom right quadrant of stroked rect:
       nscoord twoPX = nsPresContext::CSSPixelsToAppUnits(2);
-      aRenderingContext.DrawRect(iconXPos, inner.y,size,size);
-      aRenderingContext.PushState();
-      aRenderingContext.SetColor(NS_RGB(0xFF,0,0));
-      aRenderingContext.FillEllipse(size/2 + iconXPos, size/2 + inner.y,
-                                    size/2 - twoPX, size/2 - twoPX);
-      aRenderingContext.PopState();
+      rect = nsRect(iconXPos + size/2, inner.y + size/2,
+                    size/2 - twoPX, size/2 - twoPX);
+      devPxRect =
+        ToRect(nsLayoutUtils::RectToGfxRect(rect, PresContext()->AppUnitsPerDevPixel()));
+      RefPtr<PathBuilder> builder = drawTarget->CreatePathBuilder();
+      AppendEllipseToPath(builder, devPxRect.Center(), devPxRect.Size());
+      RefPtr<Path> ellipse = builder->Finish();
+      drawTarget->Fill(ellipse, color);
     }
 
     // Reduce the inner rect by the width of the icon, and leave an
@@ -1264,20 +1306,24 @@ nsImageFrame::DisplayAltFeedback(nsRenderingContext& aRenderingContext,
     }
   }
 
-  aRenderingContext.PopState();
+  aRenderingContext.ThebesContext()->Restore();
 }
 
 #ifdef DEBUG
 static void PaintDebugImageMap(nsIFrame* aFrame, nsRenderingContext* aCtx,
-     const nsRect& aDirtyRect, nsPoint aPt) {
+                               const nsRect& aDirtyRect, nsPoint aPt)
+{
   nsImageFrame* f = static_cast<nsImageFrame*>(aFrame);
   nsRect inner = f->GetInnerArea() + aPt;
-
-  aCtx->SetColor(NS_RGB(0, 0, 0));
-  aCtx->PushState();
-  aCtx->Translate(inner.TopLeft());
-  f->GetImageMap()->Draw(aFrame, *aCtx);
-  aCtx->PopState();
+  gfxPoint devPixelOffset =
+    nsLayoutUtils::PointToGfxPoint(inner.TopLeft(),
+                                   aFrame->PresContext()->AppUnitsPerDevPixel());
+  DrawTarget* drawTarget = aCtx->GetDrawTarget();
+  AutoRestoreTransform autoRestoreTransform(drawTarget);
+  drawTarget->SetTransform(
+    drawTarget->GetTransform().PreTranslate(ToPoint(devPixelOffset)));
+  f->GetImageMap()->Draw(aFrame, *drawTarget,
+                         ColorPattern(ToDeviceColor(Color(0.f, 0.f, 0.f, 1.f))));
 }
 #endif
 
@@ -1322,11 +1368,11 @@ gfxRect
 nsDisplayImage::GetDestRect()
 {
   int32_t factor = mFrame->PresContext()->AppUnitsPerDevPixel();
-  nsImageFrame* imageFrame = static_cast<nsImageFrame*>(mFrame);
 
-  nsRect dest = imageFrame->GetInnerArea() + ToReferenceFrame();
+  bool snap;
+  nsRect dest = GetBounds(&snap);
   gfxRect destRect(dest.x, dest.y, dest.width, dest.height);
-  destRect.ScaleInverse(factor); 
+  destRect.ScaleInverse(factor);
 
   return destRect;
 }
@@ -1419,11 +1465,10 @@ nsDisplayImage::ConfigureLayer(ImageLayer *aLayer, const nsIntPoint& aOffset)
 
   const gfxRect destRect = GetDestRect();
 
-  gfx::Matrix transform;
   gfxPoint p = destRect.TopLeft() + aOffset;
-  transform.Translate(p.x, p.y);
-  transform.Scale(destRect.Width()/imageWidth,
-                  destRect.Height()/imageHeight);
+  Matrix transform = Matrix::Translation(p.x, p.y);
+  transform.PreScale(destRect.Width() / imageWidth,
+                     destRect.Height() / imageHeight);
   aLayer->SetBaseTransform(gfx::Matrix4x4::From2D(transform));
 }
 
@@ -1432,6 +1477,8 @@ nsImageFrame::PaintImage(nsRenderingContext& aRenderingContext, nsPoint aPt,
                          const nsRect& aDirtyRect, imgIContainer* aImage,
                          uint32_t aFlags)
 {
+  DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
+
   // Render the image into our content area (the area inside
   // the borders and padding)
   NS_ASSERTION(GetInnerArea().width == mComputedSize.width, "bad width");
@@ -1444,16 +1491,23 @@ nsImageFrame::PaintImage(nsRenderingContext& aRenderingContext, nsPoint aPt,
     nullptr, aFlags);
 
   nsImageMap* map = GetImageMap();
-  if (nullptr != map) {
-    aRenderingContext.PushState();
-    aRenderingContext.Translate(inner.TopLeft());
-    aRenderingContext.SetColor(NS_RGB(255, 255, 255));
-    aRenderingContext.SetLineStyle(nsLineStyle_kSolid);
-    map->Draw(this, aRenderingContext);
-    aRenderingContext.SetColor(NS_RGB(0, 0, 0));
-    aRenderingContext.SetLineStyle(nsLineStyle_kDotted);
-    map->Draw(this, aRenderingContext);
-    aRenderingContext.PopState();
+  if (map) {
+    gfxPoint devPixelOffset =
+      nsLayoutUtils::PointToGfxPoint(inner.TopLeft(),
+                                     PresContext()->AppUnitsPerDevPixel());
+    AutoRestoreTransform autoRestoreTransform(drawTarget);
+    drawTarget->SetTransform(
+      drawTarget->GetTransform().PreTranslate(ToPoint(devPixelOffset)));
+
+    // solid white stroke:
+    ColorPattern white(ToDeviceColor(Color(1.f, 1.f, 1.f, 1.f)));
+    map->Draw(this, *drawTarget, white);
+
+    // then dashed black stroke over the top:
+    ColorPattern black(ToDeviceColor(Color(0.f, 0.f, 0.f, 1.f)));
+    StrokeOptions strokeOptions;
+    nsLayoutUtils::InitDashPattern(strokeOptions, NS_STYLE_BORDER_STYLE_DOTTED);
+    map->Draw(this, *drawTarget, black, strokeOptions);
   }
 }
 
@@ -1901,7 +1955,6 @@ nsImageFrame::LoadIcon(const nsAString& aSpec,
                        nullptr,      /* Not associated with any particular document */
                        loadFlags,
                        nullptr,
-                       nullptr,      /* channel policy not needed */
                        EmptyString(),
                        aRequest);
 }
@@ -1910,9 +1963,9 @@ void
 nsImageFrame::GetDocumentCharacterSet(nsACString& aCharset) const
 {
   if (mContent) {
-    NS_ASSERTION(mContent->GetDocument(),
+    NS_ASSERTION(mContent->GetComposedDoc(),
                  "Frame still alive after content removed from document!");
-    aCharset = mContent->GetDocument()->GetDocumentCharacterSet();
+    aCharset = mContent->GetComposedDoc()->GetDocumentCharacterSet();
   }
 }
 

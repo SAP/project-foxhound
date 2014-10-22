@@ -1,3 +1,4 @@
+/* vim: set ts=2 sts=2 sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,38 +35,41 @@ NS_IMPL_CYCLE_COLLECTION(mozSpellChecker,
                          mPersonalDictionary)
 
 mozSpellChecker::mozSpellChecker()
+  : mEngine(nullptr)
 {
 }
 
 mozSpellChecker::~mozSpellChecker()
 {
-  if(mPersonalDictionary){
+  if (mPersonalDictionary) {
     //    mPersonalDictionary->Save();
     mPersonalDictionary->EndSession();
   }
   mSpellCheckingEngine = nullptr;
   mPersonalDictionary = nullptr;
 
-  if(XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (mEngine) {
+    MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Content);
     mEngine->Send__delete__(mEngine);
+    MOZ_ASSERT(!mEngine);
   }
 }
 
-nsresult 
+nsresult
 mozSpellChecker::Init()
 {
-  mPersonalDictionary = do_GetService("@mozilla.org/spellchecker/personaldictionary;1");
-  
   mSpellCheckingEngine = nullptr;
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     mozilla::dom::ContentChild* contentChild = mozilla::dom::ContentChild::GetSingleton();
     MOZ_ASSERT(contentChild);
     mEngine = new RemoteSpellcheckEngineChild(this);
     contentChild->SendPRemoteSpellcheckEngineConstructor(mEngine);
+  } else {
+    mPersonalDictionary = do_GetService("@mozilla.org/spellchecker/personaldictionary;1");
   }
 
   return NS_OK;
-} 
+}
 
 NS_IMETHODIMP 
 mozSpellChecker::SetDocument(nsITextServicesDocument *aDoc, bool aFromStartofDoc)
@@ -128,7 +132,12 @@ mozSpellChecker::CheckWord(const nsAString &aWord, bool *aIsMisspelled, nsTArray
 
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     nsString wordwrapped = nsString(aWord);
-    bool rv = mEngine->SendCheckForMisspelling(wordwrapped, aIsMisspelled);
+    bool rv;
+    if (aSuggestions) {
+      rv = mEngine->SendCheckAndSuggest(wordwrapped, aIsMisspelled, aSuggestions);
+    } else {
+      rv = mEngine->SendCheck(wordwrapped, aIsMisspelled);
+    }
     return rv ? NS_OK : NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -297,9 +306,15 @@ mozSpellChecker::GetPersonalDictionary(nsTArray<nsString> *aWordList)
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 mozSpellChecker::GetDictionaryList(nsTArray<nsString> *aDictionaryList)
 {
+  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    ContentChild *child = ContentChild::GetSingleton();
+    child->GetAvailableDictionaries(*aDictionaryList);
+    return NS_OK;
+  }
+
   nsresult rv;
 
   // For catching duplicates
@@ -339,9 +354,14 @@ mozSpellChecker::GetDictionaryList(nsTArray<nsString> *aDictionaryList)
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 mozSpellChecker::GetCurrentDictionary(nsAString &aDictionary)
 {
+  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    aDictionary = mCurrentDictionary;
+    return NS_OK;
+  }
+
   if (!mSpellCheckingEngine) {
     aDictionary.Truncate();
     return NS_OK;
@@ -353,14 +373,20 @@ mozSpellChecker::GetCurrentDictionary(nsAString &aDictionary)
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 mozSpellChecker::SetCurrentDictionary(const nsAString &aDictionary)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     nsString wrappedDict = nsString(aDictionary);
     bool isSuccess;
     mEngine->SendSetDictionary(wrappedDict, &isSuccess);
-    return isSuccess ? NS_OK : NS_ERROR_NOT_AVAILABLE;
+    if (!isSuccess) {
+      mCurrentDictionary.Truncate();
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    mCurrentDictionary = wrappedDict;
+    return NS_OK;
   }
 
   // Calls to mozISpellCheckingEngine::SetDictionary might destroy us
@@ -397,7 +423,7 @@ mozSpellChecker::SetCurrentDictionary(const nsAString &aDictionary)
   }
 
   mSpellCheckingEngine = nullptr;
-  
+
   // We could not find any engine with the requested dictionary
   return NS_ERROR_NOT_AVAILABLE;
 }
@@ -510,6 +536,8 @@ mozSpellChecker::GetCurrentBlockIndex(nsITextServicesDocument *aDoc, int32_t *ou
 nsresult
 mozSpellChecker::GetEngineList(nsCOMArray<mozISpellCheckingEngine>* aSpellCheckingEngines)
 {
+  MOZ_ASSERT(XRE_GetProcessType() != GeckoProcessType_Content);
+
   nsresult rv;
   bool hasMoreEngines;
 
@@ -558,8 +586,4 @@ mozSpellChecker::GetEngineList(nsCOMArray<mozISpellCheckingEngine>* aSpellChecki
   aSpellCheckingEngines->AppendObject(engine);
 
   return NS_OK;
-}
-
-void mozSpellChecker::DeleteRemoteEngine() {
-  mEngine = nullptr;
 }

@@ -221,7 +221,7 @@ if test "$OS_TARGET" = "Android" -a -z "$gonkdir"; then
 
     AC_SUBST(ANDROID_CPU_ARCH)
 
-    if test -z "$STLPORT_CPPFLAGS$STLPORT_LDFLAGS$STLPORT_LIBS"; then
+    if test -z "$STLPORT_CPPFLAGS$STLPORT_LIBS"; then
         if test -n "$MOZ_ANDROID_LIBSTDCXX" ; then
             if test -e "$android_ndk/sources/cxx-stl/gnu-libstdc++/$android_gnu_compiler_version/libs/$ANDROID_CPU_ARCH/libgnustl_static.a"; then
                 # android-ndk-r8b
@@ -239,7 +239,7 @@ if test "$OS_TARGET" = "Android" -a -z "$gonkdir"; then
                 AC_MSG_ERROR([Couldn't find path to gnu-libstdc++ in the android ndk])
             fi
         else
-            STLPORT_CPPFLAGS="-isystem $_topsrcdir/build/stlport/stlport -isystem $android_ndk/sources/cxx-stl/system/include"
+            STLPORT_CPPFLAGS="-isystem $_topsrcdir/build/stlport/stlport -isystem $_topsrcdir/build/stlport/overrides -isystem $android_ndk/sources/cxx-stl/system/include"
             STLPORT_LIBS="$_objdir/build/stlport/libstlport_static.a -static-libstdc++"
         fi
     fi
@@ -247,6 +247,45 @@ if test "$OS_TARGET" = "Android" -a -z "$gonkdir"; then
 fi
 AC_SUBST([MOZ_ANDROID_LIBSTDCXX])
 AC_SUBST([STLPORT_LIBS])
+
+])
+
+AC_DEFUN([MOZ_ANDROID_GOOGLE_PLAY_SERVICES],
+[
+
+if test -n "$MOZ_NATIVE_DEVICES" ; then
+    AC_SUBST(MOZ_NATIVE_DEVICES)
+
+    AC_MSG_CHECKING([for google play services])
+    GOOGLE_PLAY_SERVICES_LIB="${ANDROID_SDK_ROOT}/extras/google/google_play_services/libproject/google-play-services_lib/libs/google-play-services.jar"
+    GOOGLE_PLAY_SERVICES_RES="${ANDROID_SDK_ROOT}/extras/google/google_play_services/libproject/google-play-services_lib/res"
+    AC_SUBST(GOOGLE_PLAY_SERVICES_LIB)
+    AC_SUBST(GOOGLE_PLAY_SERVICES_RES)
+    if ! test -e $GOOGLE_PLAY_SERVICES_LIB ; then
+        AC_MSG_ERROR([You must download Google Play Services to build with native video casting support enabled.  Run the Android SDK tool and install Google Play Services under Extras.  See http://developer.android.com/google/play-services/setup.html for more info. (looked for $GOOGLE_PLAY_SERVICES_LIB) ])
+    fi
+    AC_MSG_RESULT([$GOOGLE_PLAY_SERVICES_LIB])
+
+    ANDROID_APPCOMPAT_LIB="$ANDROID_COMPAT_DIR_BASE/v7/appcompat/libs/android-support-v7-appcompat.jar"
+    ANDROID_APPCOMPAT_RES="$ANDROID_COMPAT_DIR_BASE/v7/appcompat/res"
+    AC_MSG_CHECKING([for v7 appcompat library])
+    if ! test -e $ANDROID_APPCOMPAT_LIB ; then
+        AC_MSG_ERROR([You must download the v7 app compat Android support library when targeting Android with native video casting support enabled.  Run the Android SDK tool and install Android Support Library under Extras.  See https://developer.android.com/tools/extras/support-library.html for more info. (looked for $ANDROID_APPCOMPAT_LIB)])
+    fi
+    AC_MSG_RESULT([$ANDROID_APPCOMPAT_LIB])
+    AC_SUBST(ANDROID_APPCOMPAT_LIB)
+    AC_SUBST(ANDROID_APPCOMPAT_RES)
+
+    ANDROID_MEDIAROUTER_LIB="$ANDROID_COMPAT_DIR_BASE/v7/mediarouter/libs/android-support-v7-mediarouter.jar"
+    ANDROID_MEDIAROUTER_RES="$ANDROID_COMPAT_DIR_BASE/v7/mediarouter/res"
+    AC_MSG_CHECKING([for v7 mediarouter library])
+    if ! test -e $ANDROID_MEDIAROUTER_LIB ; then
+        AC_MSG_ERROR([You must download the v7 media router Android support library when targeting Android with native video casting support enabled.  Run the Android SDK tool and install Android Support Library under Extras.  See https://developer.android.com/tools/extras/support-library.html for more info. (looked for $ANDROID_MEDIAROUTER_LIB)])
+    fi
+    AC_MSG_RESULT([$ANDROID_MEDIAROUTER_LIB])
+    AC_SUBST(ANDROID_MEDIAROUTER_LIB)
+    AC_SUBST(ANDROID_MEDIAROUTER_RES)
+fi
 
 ])
 
@@ -347,40 +386,6 @@ case "$target" in
     fi
     AC_MSG_RESULT([$ANDROID_COMPAT_LIB])
 
-    if test -n "$MOZ_NATIVE_DEVICES" ; then
-        AC_SUBST(MOZ_NATIVE_DEVICES)
-
-        AC_MSG_CHECKING([for google play services])
-        GOOGLE_PLAY_SERVICES_LIB="${ANDROID_SDK_ROOT}/extras/google/google_play_services/libproject/google-play-services_lib/libs/google-play-services.jar"
-        GOOGLE_PLAY_SERVICES_RES="${ANDROID_SDK_ROOT}/extras/google/google_play_services/libproject/google-play-services_lib/res"
-        AC_SUBST(GOOGLE_PLAY_SERVICES_LIB)
-        AC_SUBST(GOOGLE_PLAY_SERVICES_RES)
-        if ! test -e $GOOGLE_PLAY_SERVICES_LIB ; then
-            AC_MSG_ERROR([You must download Google Play Services to build with native video casting support enabled.  Run the Android SDK tool and install Google Play Services under Extras.  See http://developer.android.com/google/play-services/setup.html for more info. (looked for $GOOGLE_PLAY_SERVICES_LIB) ])
-        fi
-        AC_MSG_RESULT([$GOOGLE_PLAY_SERVICES_LIB])
-
-        ANDROID_APPCOMPAT_LIB="$ANDROID_COMPAT_DIR_BASE/v7/appcompat/libs/android-support-v7-appcompat.jar"
-        ANDROID_APPCOMPAT_RES="$ANDROID_COMPAT_DIR_BASE/v7/appcompat/res"
-        AC_MSG_CHECKING([for v7 appcompat library])
-        if ! test -e $ANDROID_APPCOMPAT_LIB ; then
-            AC_MSG_ERROR([You must download the v7 app compat Android support library when targeting Android with native video casting support enabled.  Run the Android SDK tool and install Android Support Library under Extras.  See https://developer.android.com/tools/extras/support-library.html for more info. (looked for $ANDROID_APPCOMPAT_LIB)])
-        fi
-        AC_MSG_RESULT([$ANDROID_APPCOMPAT_LIB])
-        AC_SUBST(ANDROID_APPCOMPAT_LIB)
-        AC_SUBST(ANDROID_APPCOMPAT_RES)
-
-        ANDROID_MEDIAROUTER_LIB="$ANDROID_COMPAT_DIR_BASE/v7/mediarouter/libs/android-support-v7-mediarouter.jar"
-        ANDROID_MEDIAROUTER_RES="$ANDROID_COMPAT_DIR_BASE/v7/mediarouter/res"
-        AC_MSG_CHECKING([for v7 mediarouter library])
-        if ! test -e $ANDROID_MEDIAROUTER_LIB ; then
-            AC_MSG_ERROR([You must download the v7 media router Android support library when targeting Android with native video casting support enabled.  Run the Android SDK tool and install Android Support Library under Extras.  See https://developer.android.com/tools/extras/support-library.html for more info. (looked for $ANDROID_MEDIAROUTER_LIB)])
-        fi
-        AC_MSG_RESULT([$ANDROID_MEDIAROUTER_LIB])
-        AC_SUBST(ANDROID_MEDIAROUTER_LIB)
-        AC_SUBST(ANDROID_MEDIAROUTER_RES)
-    fi
-
     dnl Google has a history of moving the Android tools around.  We don't
     dnl care where they are, so let's try to find them anywhere we can.
     ALL_ANDROID_TOOLS_PATHS="$ANDROID_TOOLS:$ANDROID_BUILD_TOOLS:$ANDROID_PLATFORM_TOOLS"
@@ -407,5 +412,53 @@ case "$target" in
     fi
     ;;
 esac
+
+MOZ_ARG_DISABLE_BOOL(android-include-fonts,
+[  --disable-android-include-fonts
+                          disable the inclusion of fonts into the final APK],
+    MOZ_ANDROID_EXCLUDE_FONTS=1)
+
+if test -n "$MOZ_ANDROID_EXCLUDE_FONTS"; then
+    AC_DEFINE(MOZ_ANDROID_EXCLUDE_FONTS, $MOZ_ANDROID_EXCLUDE_FONTS)
+    AC_SUBST(MOZ_ANDROID_EXCLUDE_FONTS)
+fi
+
+MOZ_ARG_ENABLE_BOOL(android-resource-constrained,
+[  --enable-android-resource-constrained
+                          exclude hi-res images and similar from the final APK],
+    MOZ_ANDROID_RESOURCE_CONSTRAINED=1)
+
+if test -n "$MOZ_ANDROID_RESOURCE_CONSTRAINED"; then
+    AC_DEFINE(MOZ_ANDROID_RESOURCE_CONSTRAINED, $MOZ_ANDROID_RESOURCE_CONSTRAINED)
+    AC_SUBST(MOZ_ANDROID_RESOURCE_CONSTRAINED)
+fi
+
+MOZ_ARG_WITH_STRING(android-min-sdk,
+[  --with-android-min-sdk=[VER]     Impose a minimum Firefox for Android SDK version],
+[ MOZ_ANDROID_MIN_SDK_VERSION=$withval ])
+
+MOZ_ARG_WITH_STRING(android-max-sdk,
+[  --with-android-max-sdk=[VER]     Impose a maximum Firefox for Android SDK version],
+[ MOZ_ANDROID_MAX_SDK_VERSION=$withval ])
+
+if test -n "$MOZ_ANDROID_MIN_SDK_VERSION"; then
+    if test -n "$MOZ_ANDROID_MAX_SDK_VERSION"; then
+        if test $MOZ_ANDROID_MAX_SDK_VERSION -lt $MOZ_ANDROID_MIN_SDK_VERSION ; then
+            AC_MSG_ERROR([--with-android-max-sdk must be at least the value of --with-android-min-sdk.])
+        fi
+    fi
+
+    if test $MOZ_ANDROID_MIN_SDK_VERSION -gt $ANDROID_TARGET_SDK ; then
+        AC_MSG_ERROR([--with-android-min-sdk is expected to be less than $ANDROID_TARGET_SDK])
+    fi
+
+    AC_DEFINE_UNQUOTED(MOZ_ANDROID_MIN_SDK_VERSION, $MOZ_ANDROID_MIN_SDK_VERSION)
+    AC_SUBST(MOZ_ANDROID_MIN_SDK_VERSION)
+fi
+
+if test -n "$MOZ_ANDROID_MAX_SDK_VERSION"; then
+    AC_DEFINE_UNQUOTED(MOZ_ANDROID_MAX_SDK_VERSION, $MOZ_ANDROID_MAX_SDK_VERSION)
+    AC_SUBST(MOZ_ANDROID_MAX_SDK_VERSION)
+fi
 
 ])

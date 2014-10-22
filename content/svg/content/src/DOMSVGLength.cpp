@@ -14,6 +14,7 @@
 #include "nsError.h"
 #include "nsMathUtils.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "mozilla/FloatingPoint.h"
 #include "nsSVGAttrTearoffTable.h"
 
 // See the architecture comment in DOMSVGAnimatedLengthList.h.
@@ -67,7 +68,7 @@ NS_INTERFACE_MAP_END
 class MOZ_STACK_CLASS AutoChangeLengthNotifier
 {
 public:
-  AutoChangeLengthNotifier(DOMSVGLength* aLength MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoChangeLengthNotifier(DOMSVGLength* aLength MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     : mLength(aLength)
   {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
@@ -111,8 +112,6 @@ DOMSVGLength::DOMSVGLength(DOMSVGLengthList *aList,
                     aListIndex <= MaxListIndex(), "bad arg");
 
   NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGNumber!");
-
-  SetIsDOMBinding();
 }
 
 DOMSVGLength::DOMSVGLength()
@@ -124,7 +123,6 @@ DOMSVGLength::DOMSVGLength()
   , mValue(0.0f)
   , mVal(nullptr)
 {
-  SetIsDOMBinding();
 }
 
 DOMSVGLength::DOMSVGLength(nsSVGLength2* aVal, nsSVGElement* aSVGElement,
@@ -138,7 +136,6 @@ DOMSVGLength::DOMSVGLength(nsSVGLength2* aVal, nsSVGElement* aSVGElement,
   , mVal(aVal)
   , mSVGElement(aSVGElement)
 {
-  SetIsDOMBinding();
 }
 
 DOMSVGLength::~DOMSVGLength()
@@ -168,6 +165,25 @@ DOMSVGLength::GetTearOff(nsSVGLength2* aVal, nsSVGElement* aSVGElement,
   }
 
   return domLength.forget();
+}
+
+DOMSVGLength*
+DOMSVGLength::Copy()
+{
+  NS_ASSERTION(HasOwner() || IsReflectingAttribute(), "unexpected caller");
+  DOMSVGLength *copy = new DOMSVGLength();
+  uint16_t unit;
+  float value;
+  if (mVal) {
+    unit = mVal->mSpecifiedUnitType;
+    value = mIsAnimValItem ? mVal->mAnimVal : mVal->mBaseVal;
+  } else {
+    SVGLength &length = InternalItem();
+    unit = length.GetUnit();
+    value = length.GetValueInCurrentUnits();
+  }
+  copy->NewValueSpecifiedUnits(unit, value);
+  return copy;
 }
 
 uint16_t
@@ -209,7 +225,7 @@ DOMSVGLength::GetValue(ErrorResult& aRv)
   }
   if (HasOwner()) {
     float value = InternalItem().GetValueInUserUnits(Element(), Axis());
-    if (!NS_finite(value)) {
+    if (!IsFinite(value)) {
       aRv.Throw(NS_ERROR_FAILURE);
     }
     return value;
@@ -257,7 +273,7 @@ DOMSVGLength::SetValue(float aUserUnitValue, ErrorResult& aRv)
     float uuPerUnit = InternalItem().GetUserUnitsPerUnit(Element(), Axis());
     if (uuPerUnit > 0) {
       float newValue = aUserUnitValue / uuPerUnit;
-      if (NS_finite(newValue)) {
+      if (IsFinite(newValue)) {
         AutoChangeLengthNotifier notifier(this);
         InternalItem().SetValueAndUnit(newValue, InternalItem().GetUnit());
         return;
@@ -276,7 +292,7 @@ DOMSVGLength::SetValue(float aUserUnitValue, ErrorResult& aRv)
 NS_IMETHODIMP
 DOMSVGLength::SetValue(float aUserUnitValue)
 {
-  if (!NS_finite(aUserUnitValue)) {
+  if (!IsFinite(aUserUnitValue)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -336,7 +352,7 @@ DOMSVGLength::SetValueInSpecifiedUnits(float aValue, ErrorResult& aRv)
 NS_IMETHODIMP
 DOMSVGLength::SetValueInSpecifiedUnits(float aValue)
 {
-  if (!NS_finite(aValue)) {
+  if (!IsFinite(aValue)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -441,7 +457,7 @@ DOMSVGLength::NewValueSpecifiedUnits(uint16_t aUnit, float aValue,
 NS_IMETHODIMP
 DOMSVGLength::NewValueSpecifiedUnits(uint16_t aUnit, float aValue)
 {
-  if (!NS_finite(aValue)) {
+  if (!IsFinite(aValue)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -473,7 +489,7 @@ DOMSVGLength::ConvertToSpecifiedUnits(uint16_t aUnit, ErrorResult& aRv)
     }
     float val = InternalItem().GetValueInSpecifiedUnit(
                                  aUnit, Element(), Axis());
-    if (NS_finite(val)) {
+    if (IsFinite(val)) {
       AutoChangeLengthNotifier notifier(this);
       InternalItem().SetValueAndUnit(val, aUnit);
       return;
@@ -481,7 +497,7 @@ DOMSVGLength::ConvertToSpecifiedUnits(uint16_t aUnit, ErrorResult& aRv)
   } else {
     SVGLength len(mValue, mUnit);
     float val = len.GetValueInSpecifiedUnit(aUnit, nullptr, 0);
-    if (NS_finite(val)) {
+    if (IsFinite(val)) {
       mValue = val;
       mUnit = aUnit;
       return;

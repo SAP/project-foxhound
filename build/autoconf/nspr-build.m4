@@ -171,7 +171,6 @@ elif test -z "$JS_POSIX_NSPR"; then
 fi
 
 AC_SUBST(NSPR_CFLAGS)
-AC_SUBST(NSPR_LIBS)
 
 NSPR_PKGCONF_CHECK="nspr"
 if test -n "$MOZ_NATIVE_NSPR"; then
@@ -198,6 +197,11 @@ AC_DEFUN([MOZ_SUBCONFIGURE_NSPR], [
 
 if test -z "$MOZ_NATIVE_NSPR"; then
     ac_configure_args="$_SUBDIR_CONFIG_ARGS --with-dist-prefix=$MOZ_BUILD_ROOT/dist --with-mozilla"
+    if test -n "$MOZ_USING_CCACHE"; then
+        # Avoid double prepending ccache by omitting --with-ccache in building NSPR.
+        ac_configure_args="`echo $ac_configure_args | sed -e 's/--with-ccache[[^ ]]*//'`"
+    fi
+
     if test -z "$MOZ_DEBUG"; then
         ac_configure_args="$ac_configure_args --disable-debug"
     else

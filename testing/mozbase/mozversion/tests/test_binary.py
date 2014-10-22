@@ -9,7 +9,8 @@ import tempfile
 import unittest
 
 import mozfile
-from mozversion import get_version
+
+from mozversion import errors, get_version
 
 
 class BinaryTest(unittest.TestCase):
@@ -41,21 +42,37 @@ SourceRepository = PlatformSourceRepo
         os.chdir(self.cwd)
         mozfile.remove(self.tempdir)
 
-    def test_binary(self):
-        with open(os.path.join(self.tempdir, 'application.ini'), 'w') as f:
-            f.writelines(self.application_ini)
+    @unittest.skipIf(not os.environ.get('BROWSER_PATH'),
+                     'No binary has been specified.')
+    def test_real_binary(self):
+        v = get_version(os.environ.get('BROWSER_PATH'))
+        self.assertTrue(isinstance(v, dict))
 
-        with open(os.path.join(self.tempdir, 'platform.ini'), 'w') as f:
-            f.writelines(self.platform_ini)
+    def test_binary(self):
+        self._write_ini_files()
 
         self._check_version(get_version(self.binary))
 
-    def test_binary_in_current_path(self):
-        with open(os.path.join(self.tempdir, 'application.ini'), 'w') as f:
-            f.writelines(self.application_ini)
+    @unittest.skipIf(not hasattr(os, 'symlink'),
+                     'os.symlink not supported on this platform')
+    def test_symlinked_binary(self):
+        self._write_ini_files()
 
-        with open(os.path.join(self.tempdir, 'platform.ini'), 'w') as f:
-            f.writelines(self.platform_ini)
+        # create a symlink of the binary in another directory and check
+        # version against this symlink
+        tempdir = tempfile.mkdtemp()
+        try:
+            browser_link = os.path.join(tempdir,
+                                        os.path.basename(self.binary))
+            os.symlink(self.binary, browser_link)
+
+            self._check_version(get_version(browser_link))
+        finally:
+            mozfile.remove(tempdir)
+
+    def test_binary_in_current_path(self):
+        self._write_ini_files()
+
         os.chdir(self.tempdir)
         self._check_version(get_version())
 
@@ -63,9 +80,38 @@ SourceRepository = PlatformSourceRepo
         self.assertRaises(IOError, get_version,
                           os.path.join(self.tempdir, 'invalid'))
 
-    def test_missing_ini_files(self):
+    def test_without_ini_files(self):
+        """With missing ini files an exception should be thrown"""
+        self.assertRaises(errors.AppNotFoundError, get_version,
+                          self.binary)
+
+    def test_without_platform_file(self):
+        """With a missing platform file no exception should be thrown"""
+        self._write_ini_files(platform=False)
+
         v = get_version(self.binary)
-        self.assertEqual(v, {})
+        self.assertTrue(isinstance(v, dict))
+
+    def test_with_exe(self):
+        """Test that we can resolve .exe files"""
+        self._write_ini_files()
+
+        exe_name_unprefixed = self.binary + '1'
+        exe_name = exe_name_unprefixed + '.exe'
+        with open(exe_name, 'w') as f:
+            f.write('foobar')
+        self._check_version(get_version(exe_name_unprefixed))
+
+    def test_not_found_with_binary_specified(self):
+        self.assertRaises(errors.LocalAppNotFoundError, get_version, self.binary)
+
+    def _write_ini_files(self, application=True, platform=True):
+        if application:
+            with open(os.path.join(self.tempdir, 'application.ini'), 'w') as f:
+                f.writelines(self.application_ini)
+        if platform:
+            with open(os.path.join(self.tempdir, 'platform.ini'), 'w') as f:
+                f.writelines(self.platform_ini)
 
     def _check_version(self, version):
         self.assertEqual(version.get('application_name'), 'AppName')

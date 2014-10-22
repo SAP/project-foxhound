@@ -28,52 +28,6 @@ public:
   NetworkParams() {
   }
 
-  NetworkParams(const NetworkParams& aOther) {
-    mIp = aOther.mIp;
-    mCmd = aOther.mCmd;
-    mDomain = aOther.mDomain;
-    mGateway = aOther.mGateway;
-    mGateways = aOther.mGateways;
-    mHostnames = aOther.mHostnames;
-    mId = aOther.mId;
-    mIfname = aOther.mIfname;
-    mPrefixLength = aOther.mPrefixLength;
-    mOldIfname = aOther.mOldIfname;
-    mMode = aOther.mMode;
-    mReport = aOther.mReport;
-    mIsAsync = aOther.mIsAsync;
-    mEnabled = aOther.mEnabled;
-    mWifictrlinterfacename = aOther.mWifictrlinterfacename;
-    mInternalIfname = aOther.mInternalIfname;
-    mExternalIfname = aOther.mExternalIfname;
-    mEnable = aOther.mEnable;
-    mSsid = aOther.mSsid;
-    mSecurity = aOther.mSecurity;
-    mKey = aOther.mKey;
-    mPrefix = aOther.mPrefix;
-    mLink = aOther.mLink;
-    mInterfaceList = aOther.mInterfaceList;
-    mWifiStartIp = aOther.mWifiStartIp;
-    mWifiEndIp = aOther.mWifiEndIp;
-    mUsbStartIp = aOther.mUsbStartIp;
-    mUsbEndIp = aOther.mUsbEndIp;
-    mDns1 = aOther.mDns1;
-    mDns2 = aOther.mDns2;
-    mDnses = aOther.mDnses;
-    mRxBytes = aOther.mRxBytes;
-    mTxBytes = aOther.mTxBytes;
-    mDate = aOther.mDate;
-    mStartIp = aOther.mStartIp;
-    mEndIp = aOther.mEndIp;
-    mServerIp = aOther.mServerIp;
-    mMaskLength = aOther.mMaskLength;
-    mPreInternalIfname = aOther.mPreInternalIfname;
-    mPreExternalIfname = aOther.mPreExternalIfname;
-    mCurInternalIfname = aOther.mCurInternalIfname;
-    mCurExternalIfname = aOther.mCurExternalIfname;
-    mThreshold = aOther.mThreshold;
-  }
-
   NetworkParams(const mozilla::dom::NetworkCommandOptions& aOther) {
 
 #define COPY_SEQUENCE_FIELD(prop, type)                                                      \
@@ -110,14 +64,12 @@ public:
     COPY_OPT_STRING_FIELD(mDomain, EmptyString())
     COPY_OPT_STRING_FIELD(mGateway, EmptyString())
     COPY_SEQUENCE_FIELD(mGateways, nsString)
-    COPY_SEQUENCE_FIELD(mHostnames, nsString)
     COPY_OPT_STRING_FIELD(mIfname, EmptyString())
     COPY_OPT_STRING_FIELD(mIp, EmptyString())
     COPY_OPT_FIELD(mPrefixLength, 0)
     COPY_OPT_STRING_FIELD(mOldIfname, EmptyString())
     COPY_OPT_STRING_FIELD(mMode, EmptyString())
     COPY_OPT_FIELD(mReport, false)
-    COPY_OPT_FIELD(mIsAsync, true)
     COPY_OPT_FIELD(mEnabled, false)
     COPY_OPT_STRING_FIELD(mWifictrlinterfacename, EmptyString())
     COPY_OPT_STRING_FIELD(mInternalIfname, EmptyString())
@@ -136,9 +88,6 @@ public:
     COPY_OPT_STRING_FIELD(mDns1, EmptyString())
     COPY_OPT_STRING_FIELD(mDns2, EmptyString())
     COPY_SEQUENCE_FIELD(mDnses, nsString)
-    COPY_OPT_FIELD(mRxBytes, -1)
-    COPY_OPT_FIELD(mTxBytes, -1)
-    COPY_OPT_STRING_FIELD(mDate, EmptyString())
     COPY_OPT_STRING_FIELD(mStartIp, EmptyString())
     COPY_OPT_STRING_FIELD(mEndIp, EmptyString())
     COPY_OPT_STRING_FIELD(mServerIp, EmptyString())
@@ -148,6 +97,11 @@ public:
     COPY_OPT_STRING_FIELD(mCurInternalIfname, EmptyString())
     COPY_OPT_STRING_FIELD(mCurExternalIfname, EmptyString())
     COPY_OPT_FIELD(mThreshold, -1)
+    COPY_OPT_FIELD(mIpaddr, 0)
+    COPY_OPT_FIELD(mMask, 0)
+    COPY_OPT_FIELD(mGateway_long, 0)
+    COPY_OPT_FIELD(mDns1_long, 0)
+    COPY_OPT_FIELD(mDns2_long, 0)
 
 #undef COPY_SEQUENCE_FIELD
 #undef COPY_OPT_STRING_FIELD
@@ -160,14 +114,12 @@ public:
   nsString mDomain;
   nsString mGateway;
   nsTArray<nsString> mGateways;
-  nsTArray<nsString> mHostnames;
   nsString mIfname;
   nsString mIp;
   uint32_t mPrefixLength;
   nsString mOldIfname;
   nsString mMode;
   bool mReport;
-  bool mIsAsync;
   bool mEnabled;
   nsString mWifictrlinterfacename;
   nsString mInternalIfname;
@@ -186,9 +138,6 @@ public:
   nsString mDns1;
   nsString mDns2;
   nsTArray<nsString> mDnses;
-  float mRxBytes;
-  float mTxBytes;
-  nsString mDate;
   nsString mStartIp;
   nsString mEndIp;
   nsString mServerIp;
@@ -198,6 +147,11 @@ public:
   nsString mCurInternalIfname;
   nsString mCurExternalIfname;
   long mThreshold;
+  long mIpaddr;
+  long mMask;
+  long mGateway_long;
+  long mDns1_long;
+  long mDns2_long;
 };
 
 // CommandChain store the necessary information to execute command one by one.
@@ -247,6 +201,25 @@ private:
   ErrorCallback mError;
 };
 
+// A helper class to easily construct a resolved
+// or a pending result for command execution.
+class CommandResult
+{
+public:
+  struct Pending {};
+
+public:
+  CommandResult(int32_t aResultCode);
+  CommandResult(const mozilla::dom::NetworkResultOptions& aResult);
+  CommandResult(const Pending&);
+  bool isPending() const;
+
+  mozilla::dom::NetworkResultOptions mResult;
+
+private:
+  bool mIsPending;
+};
+
 class NetworkUtils MOZ_FINAL
 {
 public:
@@ -262,25 +235,29 @@ private:
   /**
    * Commands supported by NetworkUtils.
    */
-  bool setDNS(NetworkParams& aOptions);
-  bool setDefaultRouteAndDNS(NetworkParams& aOptions);
-  bool addHostRoute(NetworkParams& aOptions);
-  bool removeDefaultRoute(NetworkParams& aOptions);
-  bool removeHostRoute(NetworkParams& aOptions);
-  bool removeHostRoutes(NetworkParams& aOptions);
-  bool removeNetworkRoute(NetworkParams& aOptions);
-  bool addSecondaryRoute(NetworkParams& aOptions);
-  bool removeSecondaryRoute(NetworkParams& aOptions);
-  bool getNetworkInterfaceStats(NetworkParams& aOptions);
-  bool setNetworkInterfaceAlarm(NetworkParams& aOptions);
-  bool enableNetworkInterfaceAlarm(NetworkParams& aOptions);
-  bool disableNetworkInterfaceAlarm(NetworkParams& aOptions);
-  bool setWifiOperationMode(NetworkParams& aOptions);
-  bool setDhcpServer(NetworkParams& aOptions);
-  bool setWifiTethering(NetworkParams& aOptions);
-  bool setUSBTethering(NetworkParams& aOptions);
-  bool enableUsbRndis(NetworkParams& aOptions);
-  bool updateUpStream(NetworkParams& aOptions);
+  CommandResult configureInterface(NetworkParams& aOptions);
+  CommandResult dhcpRequest(NetworkParams& aOptions);
+  CommandResult enableInterface(NetworkParams& aOptions);
+  CommandResult disableInterface(NetworkParams& aOptions);
+  CommandResult resetConnections(NetworkParams& aOptions);
+  CommandResult setDefaultRoute(NetworkParams& aOptions);
+  CommandResult addHostRoute(NetworkParams& aOptions);
+  CommandResult removeDefaultRoute(NetworkParams& aOptions);
+  CommandResult removeHostRoute(NetworkParams& aOptions);
+  CommandResult removeHostRoutes(NetworkParams& aOptions);
+  CommandResult removeNetworkRoute(NetworkParams& aOptions);
+  CommandResult setDNS(NetworkParams& aOptions);
+  CommandResult addSecondaryRoute(NetworkParams& aOptions);
+  CommandResult removeSecondaryRoute(NetworkParams& aOptions);
+  CommandResult setNetworkInterfaceAlarm(NetworkParams& aOptions);
+  CommandResult enableNetworkInterfaceAlarm(NetworkParams& aOptions);
+  CommandResult disableNetworkInterfaceAlarm(NetworkParams& aOptions);
+  CommandResult setWifiOperationMode(NetworkParams& aOptions);
+  CommandResult setDhcpServer(NetworkParams& aOptions);
+  CommandResult setWifiTethering(NetworkParams& aOptions);
+  CommandResult setUSBTethering(NetworkParams& aOptions);
+  CommandResult enableUsbRndis(NetworkParams& aOptions);
+  CommandResult updateUpStream(NetworkParams& aOptions);
 
   /**
    * function pointer array holds all netd commands should be executed
@@ -297,7 +274,6 @@ private:
   static CommandFunc sUpdateUpStreamChain[];
   static CommandFunc sStartDhcpServerChain[];
   static CommandFunc sStopDhcpServerChain[];
-  static CommandFunc sNetworkInterfaceStatsChain[];
   static CommandFunc sNetworkInterfaceEnableAlarmChain[];
   static CommandFunc sNetworkInterfaceDisableAlarmChain[];
   static CommandFunc sNetworkInterfaceSetAlarmChain[];
@@ -317,8 +293,6 @@ private:
   static void startSoftAP(PARAMS);
   static void stopSoftAP(PARAMS);
   static void clearWifiTetherParms(PARAMS);
-  static void getRxBytes(PARAMS);
-  static void getTxBytes(PARAMS);
   static void enableAlarm(PARAMS);
   static void disableAlarm(PARAMS);
   static void setQuota(PARAMS);
@@ -340,7 +314,6 @@ private:
   static void setInterfaceDns(PARAMS);
   static void wifiTetheringSuccess(PARAMS);
   static void usbTetheringSuccess(PARAMS);
-  static void networkInterfaceStatsSuccess(PARAMS);
   static void networkInterfaceAlarmSuccess(PARAMS);
   static void updateUpStreamSuccess(PARAMS);
   static void setDhcpServerSuccess(PARAMS);
@@ -357,7 +330,6 @@ private:
   static void usbTetheringFail(PARAMS);
   static void updateUpStreamFail(PARAMS);
   static void setDhcpServerFail(PARAMS);
-  static void networkInterfaceStatsFail(PARAMS);
   static void networkInterfaceAlarmFail(PARAMS);
   static void setDnsFail(PARAMS);
 #undef PARAMS
@@ -378,7 +350,7 @@ private:
   /**
    * Utility functions.
    */
-  void checkUsbRndisState(NetworkParams& aOptions);
+  CommandResult checkUsbRndisState(NetworkParams& aOptions);
   void dumpParams(NetworkParams& aOptions, const char* aType);
 
   static void escapeQuote(nsCString& aString);

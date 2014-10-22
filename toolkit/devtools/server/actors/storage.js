@@ -28,20 +28,12 @@ XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
 XPCOMUtils.defineLazyModuleGetter(this, "OS",
   "resource://gre/modules/osfile.jsm");
 
-exports.register = function(handle) {
-  handle.addTabActor(StorageActor, "storageActor");
-};
-
-exports.unregister = function(handle) {
-  handle.removeTabActor(StorageActor);
-};
-
 // Global required for window less Indexed DB instantiation.
 let global = this;
 
 // Maximum number of cookies/local storage key-value-pairs that can be sent
 // over the wire to the client in one request.
-const MAX_STORE_OBJECT_COUNT = 30;
+const MAX_STORE_OBJECT_COUNT = 50;
 // Interval for the batch job that sends the accumilated update packets to the
 // client.
 const UPDATE_INTERVAL = 500; // ms
@@ -280,6 +272,10 @@ StorageActors.defaults = function(typeName, observationTopic, storeObjectType) {
      *        The window which was removed.
      */
     onWindowDestroyed: function(window) {
+      if (!window.location) {
+        // Nothing can be done if location object is null
+        return;
+      }
       let host = this.getHostName(window.location);
       if (!this.hosts.has(host)) {
         this.hostVsStores.delete(host);
@@ -726,7 +722,7 @@ function getObjectForLocalOrSessionStorage(type) {
   return {
     getNamesForHost: function(host) {
       let storage = this.hostVsStores.get(host);
-      return [key for (key in storage)];
+      return Object.keys(storage);
     },
 
     getValuesForHost: function(host, name) {
@@ -734,7 +730,12 @@ function getObjectForLocalOrSessionStorage(type) {
       if (name) {
         return [{name: name, value: storage.getItem(name)}];
       }
-      return [{name: name, value: storage.getItem(name)} for (name in storage)];
+      return Object.keys(storage).map(name => {
+        return {
+          name: name,
+          value: storage.getItem(name)
+        };
+      });
     },
 
     getHostName: function(location) {

@@ -49,7 +49,7 @@ extern PRLogModuleInfo* GetMediaManagerLog();
 NS_IMPL_ISUPPORTS0(MediaEngineWebRTCAudioSource)
 
 // XXX temp until MSG supports registration
-StaticAutoPtr<AudioOutputObserver> gFarendObserver;
+StaticRefPtr<AudioOutputObserver> gFarendObserver;
 
 AudioOutputObserver::AudioOutputObserver()
   : mPlayoutFreq(0)
@@ -88,6 +88,19 @@ uint32_t
 AudioOutputObserver::Size()
 {
   return mPlayoutFifo->size();
+}
+
+void
+AudioOutputObserver::MixerCallback(AudioDataValue* aMixedBuffer,
+                                   AudioSampleFormat aFormat,
+                                   uint32_t aChannels,
+                                   uint32_t aFrames,
+                                   uint32_t aSampleRate)
+{
+  if (gFarendObserver) {
+    gFarendObserver->InsertFarEnd(aMixedBuffer, aFrames, false,
+                                  aSampleRate, aChannels, aFormat);
+  }
 }
 
 // static
@@ -391,12 +404,6 @@ MediaEngineWebRTCAudioSource::NotifyPull(MediaStreamGraph* aGraph,
   LOG(("Audio: NotifyPull: aDesiredTime %ld, target %ld, delta %ld",(int64_t) aDesiredTime, (int64_t) target, (int64_t) delta));
   aLastEndTime = target;
 #endif
-}
-
-nsresult
-MediaEngineWebRTCAudioSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
-{
-   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 void

@@ -9,13 +9,11 @@
 #include <queue>
 #include <string>
 #include <vector>
-
 #include <map>
+
 #include "base/lock.h"
 #include "base/message_pump.h"
 #include "base/observer_list.h"
-#include "base/ref_counted.h"
-#include "base/scoped_ptr.h"
 #include "base/task.h"
 #include "base/timer.h"
 
@@ -26,6 +24,8 @@
 #elif defined(OS_POSIX)
 #include "base/message_pump_libevent.h"
 #endif
+
+#include "nsAutoPtr.h"
 
 namespace mozilla {
 namespace ipc {
@@ -207,13 +207,18 @@ public:
   //   This type of ML is used in Mozilla parent processes which initialize
   //   XPCOM and use the nsThread event loop.
   //
+  // TYPE_MOZILLA_NONMAINUITHREAD
+  //   This type of ML is used in Mozilla processes which initialize XPCOM
+  //   and use TYPE_UI loop logic.
+  //
   enum Type {
     TYPE_DEFAULT,
     TYPE_UI,
     TYPE_IO,
     TYPE_MOZILLA_CHILD,
     TYPE_MOZILLA_UI,
-    TYPE_MOZILLA_NONMAINTHREAD
+    TYPE_MOZILLA_NONMAINTHREAD,
+    TYPE_MOZILLA_NONMAINUITHREAD
   };
 
   // Normally, it is not necessary to instantiate a MessageLoop.  Instead, it
@@ -410,7 +415,7 @@ public:
   // once we're out of nested message loops.
   TaskQueue deferred_non_nestable_work_queue_;
 
-  scoped_refptr<base::MessagePump> pump_;
+  nsRefPtr<base::MessagePump> pump_;
 
   base::ObserverList<DestructionObserver> destruction_observers_;
 
@@ -458,7 +463,7 @@ public:
 //
 class MessageLoopForUI : public MessageLoop {
  public:
-  MessageLoopForUI(Type type=TYPE_UI) : MessageLoop(type) {
+  explicit MessageLoopForUI(Type type=TYPE_UI) : MessageLoop(type) {
   }
 
   // Returns the MessageLoopForUI of the current thread.

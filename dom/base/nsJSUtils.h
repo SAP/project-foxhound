@@ -22,6 +22,12 @@
 class nsIScriptContext;
 class nsIScriptGlobalObject;
 
+namespace mozilla {
+namespace dom {
+class AutoJSAPI;
+}
+}
+
 class nsJSUtils
 {
 public:
@@ -31,10 +37,6 @@ public:
   static nsIScriptGlobalObject *GetStaticScriptGlobal(JSObject* aObj);
 
   static nsIScriptContext *GetStaticScriptContext(JSObject* aObj);
-
-  static nsIScriptGlobalObject *GetDynamicScriptGlobal(JSContext *aContext);
-
-  static nsIScriptContext *GetDynamicScriptContext(JSContext *aContext);
 
   /**
    * Retrieve the inner window ID based on the given JSContext.
@@ -53,7 +55,7 @@ public:
    */
   static void ReportPendingException(JSContext *aContext);
 
-  static nsresult CompileFunction(JSContext* aCx,
+  static nsresult CompileFunction(mozilla::dom::AutoJSAPI& jsapi,
                                   JS::Handle<JSObject*> aTarget,
                                   JS::CompileOptions& aOptions,
                                   const nsACString& aName,
@@ -124,7 +126,7 @@ class MOZ_STACK_CLASS AutoDontReportUncaught {
   bool mWasSet;
 
 public:
-  AutoDontReportUncaught(JSContext* aContext) : mContext(aContext) {
+  explicit AutoDontReportUncaught(JSContext* aContext) : mContext(aContext) {
     MOZ_ASSERT(aContext);
     mWasSet = JS::ContextOptionsRef(mContext).dontReportUncaught();
     if (!mWasSet) {

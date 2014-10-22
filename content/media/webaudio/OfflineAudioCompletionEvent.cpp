@@ -25,7 +25,6 @@ OfflineAudioCompletionEvent::OfflineAudioCompletionEvent(AudioContext* aOwner,
                                                          WidgetEvent* aEvent)
   : Event(aOwner, aPresContext, aEvent)
 {
-  SetIsDOMBinding();
 }
 
 OfflineAudioCompletionEvent::~OfflineAudioCompletionEvent()
@@ -33,7 +32,7 @@ OfflineAudioCompletionEvent::~OfflineAudioCompletionEvent()
 }
 
 JSObject*
-OfflineAudioCompletionEvent::WrapObject(JSContext* aCx)
+OfflineAudioCompletionEvent::WrapObjectInternal(JSContext* aCx)
 {
   return OfflineAudioCompletionEventBinding::Wrap(aCx, this);
 }

@@ -40,7 +40,7 @@ public:
 
   // default constructor supplied by the compiler
 
-  nsTableCellFrame(nsStyleContext* aContext);
+  explicit nsTableCellFrame(nsStyleContext* aContext);
   ~nsTableCellFrame();
 
   virtual void Init(nsIContent*       aContent,
@@ -287,12 +287,12 @@ inline void nsTableCellFrame::SetHasPctOverHeight(bool aValue)
 }
 
 // nsBCTableCellFrame
-class nsBCTableCellFrame : public nsTableCellFrame
+class nsBCTableCellFrame MOZ_FINAL : public nsTableCellFrame
 {
 public:
   NS_DECL_FRAMEARENA_HELPERS
 
-  nsBCTableCellFrame(nsStyleContext* aContext);
+  explicit nsBCTableCellFrame(nsStyleContext* aContext);
 
   ~nsBCTableCellFrame();
 

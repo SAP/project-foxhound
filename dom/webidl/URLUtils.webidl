@@ -13,42 +13,39 @@
  * http://www.openwebfoundation.org/legal/the-owf-1-0-agreements/owfa-1-0.
  */
 
-[NoInterfaceObject]
-interface URLUtilsNoSearchParams {
+[NoInterfaceObject,
+ Exposed=(Window, Worker)]
+interface URLUtils {
   // Bug 824857: no support for stringifier attributes yet.
-  //  stringifier attribute DOMString href;
+  //  stringifier attribute ScalarValueString href;
   [Throws, CrossOriginWritable=Location]
-           attribute DOMString href;
+           attribute ScalarValueString href;
   [Throws]
-  readonly attribute DOMString origin;
+  readonly attribute ScalarValueString origin;
 
   [Throws]
-           attribute DOMString protocol;
+           attribute ScalarValueString protocol;
   [Throws]
-           attribute DOMString username;
+           attribute ScalarValueString username;
   [Throws]
-           attribute DOMString password;
+           attribute ScalarValueString password;
   [Throws]
-           attribute DOMString host;
+           attribute ScalarValueString host;
   [Throws]
-           attribute DOMString hostname;
+           attribute ScalarValueString hostname;
   [Throws]
-           attribute DOMString port;
+           attribute ScalarValueString port;
   [Throws]
-           attribute DOMString pathname;
+           attribute ScalarValueString pathname;
   [Throws]
-           attribute DOMString search;
-  // searchParams should go here once Location implements it.  See bug 1037715.
+           attribute ScalarValueString search;
+
+           attribute URLSearchParams searchParams;
+
   [Throws]
-           attribute DOMString hash;
+           attribute ScalarValueString hash;
 
   // Bug 824857 should remove this.
   [Throws]
   stringifier;
-};
-
-[NoInterfaceObject]
-interface URLUtils : URLUtilsNoSearchParams
-{
-           attribute URLSearchParams searchParams;
 };

@@ -37,7 +37,7 @@ class AutoEntryHolder {
     AutoEntryHolder(JSContext *cx, Map &map, Map::Ptr p)
       : map(map), p(p), gen(map.generation()), obj(cx, p->key().object), id(cx, p->key().id)
     {
-        JS_ASSERT(!p->value().held);
+        MOZ_ASSERT(!p->value().held);
         p->value().held = true;
     }
 
@@ -61,7 +61,7 @@ bool
 WatchpointMap::watch(JSContext *cx, HandleObject obj, HandleId id,
                      JSWatchPointHandler handler, HandleObject closure)
 {
-    JS_ASSERT(JSID_IS_STRING(id) || JSID_IS_INT(id));
+    MOZ_ASSERT(JSID_IS_STRING(id) || JSID_IS_INT(id) || JSID_IS_SYMBOL(id));
 
     if (!obj->setWatched(cx))
         return false;
@@ -89,7 +89,7 @@ WatchpointMap::unwatch(JSObject *obj, jsid id,
         if (closurep) {
             // Read barrier to prevent an incorrectly gray closure from escaping the
             // watchpoint. See the comment before UnmarkGrayChildren in gc/Marking.cpp
-            JS::ExposeGCThingToActiveJS(p->value().closure, JSTRACE_OBJECT);
+            JS::ExposeObjectToActiveJS(p->value().closure);
             *closurep = p->value().closure;
         }
         map.remove(p);
@@ -129,15 +129,16 @@ WatchpointMap::triggerWatchpoint(JSContext *cx, HandleObject obj, HandleId id, M
     Value old;
     old.setUndefined();
     if (obj->isNative()) {
-        if (Shape *shape = obj->nativeLookup(cx, id)) {
+        NativeObject *nobj = &obj->as<NativeObject>();
+        if (Shape *shape = nobj->lookup(cx, id)) {
             if (shape->hasSlot())
-                old = obj->nativeGetSlot(shape->slot());
+                old = nobj->getSlot(shape->slot());
         }
     }
 
     // Read barrier to prevent an incorrectly gray closure from escaping the
     // watchpoint. See the comment before UnmarkGrayChildren in gc/Marking.cpp
-    JS::ExposeGCThingToActiveJS(closure, JSTRACE_OBJECT);
+    JS::ExposeObjectToActiveJS(closure);
 
     /* Call the handler. */
     return handler(cx, obj, id, old, vp.address(), closure);
@@ -168,7 +169,9 @@ WatchpointMap::markIteratively(JSTracer *trc)
                 marked = true;
             }
 
-            JS_ASSERT(JSID_IS_STRING(priorKeyId) || JSID_IS_INT(priorKeyId));
+            MOZ_ASSERT(JSID_IS_STRING(priorKeyId) ||
+                       JSID_IS_INT(priorKeyId) ||
+                       JSID_IS_SYMBOL(priorKeyId));
             MarkId(trc, const_cast<PreBarrieredId *>(&entry.key().id), "WatchKey::id");
 
             if (entry.value().closure && !IsObjectMarked(&entry.value().closure)) {
@@ -191,7 +194,7 @@ WatchpointMap::markAll(JSTracer *trc)
         Map::Entry &entry = e.front();
         WatchKey key = entry.key();
         WatchKey prior = key;
-        JS_ASSERT(JSID_IS_STRING(prior.id) || JSID_IS_INT(prior.id));
+        MOZ_ASSERT(JSID_IS_STRING(prior.id) || JSID_IS_INT(prior.id) || JSID_IS_SYMBOL(prior.id));
 
         MarkObject(trc, const_cast<PreBarrieredObject *>(&key.object),
                    "held Watchpoint object");
@@ -219,7 +222,7 @@ WatchpointMap::sweep()
         Map::Entry &entry = e.front();
         JSObject *obj(entry.key().object);
         if (IsObjectAboutToBeFinalized(&obj)) {
-            JS_ASSERT(!entry.value().held);
+            MOZ_ASSERT(!entry.value().held);
             e.removeFront();
         } else if (obj != entry.key().object) {
             e.rekeyFront(WatchKey(obj, entry.key().id));

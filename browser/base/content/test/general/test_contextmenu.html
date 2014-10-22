@@ -15,8 +15,6 @@ Browser context menu tests.
 </div>
 
 <pre id="test">
-<script> var perWindowPrivateBrowsing = false; </script>
-<script type="text/javascript" src="privateBrowsingMode.js"></script>
 <script type="text/javascript" src="contextmenu_common.js"></script>
 <script class="testbody" type="text/javascript">
 
@@ -111,26 +109,15 @@ function runTest(testNum) {
 
     function () {
         // Context menu for text link
-        if (perWindowPrivateBrowsing) {
-          checkContextMenu(["context-openlinkintab", true,
-                            "context-openlink",      true,
-                            "context-openlinkprivate", true,
-                            "---",                   null,
-                            "context-bookmarklink",  true,
-                            "context-savelink",      true,
-                            "context-copylink",      true,
-                            "context-searchselect",  true
-                           ].concat(inspectItems));
-        } else {
-          checkContextMenu(["context-openlinkintab", true,
-                            "context-openlink",      true,
-                            "---",                   null,
-                            "context-bookmarklink",  true,
-                            "context-savelink",      true,
-                            "context-copylink",      true,
-                            "context-searchselect",  true
-                           ].concat(inspectItems));
-        }
+        checkContextMenu(["context-openlinkintab", true,
+                          "context-openlink",      true,
+                          "context-openlinkprivate", true,
+                          "---",                   null,
+                          "context-bookmarklink",  true,
+                          "context-savelink",      true,
+                          "context-copylink",      true,
+                          "context-searchselect",  true
+                         ].concat(inspectItems));
         closeContextMenu();
         openContextMenuFor(mailto); // Invoke context menu for next test.
     },
@@ -187,7 +174,9 @@ function runTest(testNum) {
                           "---",                        null,
                           "context-savevideo",          true,
                           "context-video-saveimage",    true,
-                          "context-sendvideo",          true
+                          "context-sendvideo",          true,
+                          "context-castvideo",          null,
+                            [], null
                          ].concat(inspectItems));
         closeContextMenu();
         openContextMenuFor(audio_in_video); // Invoke context menu for next test.
@@ -231,7 +220,9 @@ function runTest(testNum) {
                           "---",                        null,
                           "context-savevideo",          true,
                           "context-video-saveimage",    false,
-                          "context-sendvideo",          true
+                          "context-sendvideo",          true,
+                          "context-castvideo",          null,
+                            [], null
                          ].concat(inspectItems));
         closeContextMenu();
         openContextMenuFor(video_bad2); // Invoke context menu for next test.
@@ -255,7 +246,9 @@ function runTest(testNum) {
                           "---",                        null,
                           "context-savevideo",          false,
                           "context-video-saveimage",    false,
-                          "context-sendvideo",          false
+                          "context-sendvideo",          false,
+                          "context-castvideo",          null,
+                            [], null
                          ].concat(inspectItems));
         closeContextMenu();
         openContextMenuFor(iframe); // Invoke context menu for next test.
@@ -314,6 +307,8 @@ function runTest(testNum) {
                           "context-savevideo",          true,
                           "context-video-saveimage",    true,
                           "context-sendvideo",          true,
+                          "context-castvideo",          null,
+                            [], null,
                           "frame",                null,
                               ["context-showonlythisframe", true,
                                "context-openframeintab",    true,
@@ -587,34 +582,19 @@ function runTest(testNum) {
         // Context menu for selected text which matches valid URL pattern
         if (SpecialPowers.Services.appinfo.OS == "Darwin") {
           // This test is only enabled on Mac due to bug 736399.
-          if (perWindowPrivateBrowsing) {
-            checkContextMenu(["context-openlinkincurrent",           true,
-                              "context-openlinkintab",               true,
-                              "context-openlink",                    true,
-                              "context-openlinkprivate",             true,
-                              "---",                                 null,
-                              "context-bookmarklink",                true,
-                              "context-savelink",                    true,
-                              "context-copy",                        true,
-                              "context-selectall",                   true,
-                              "---",                                 null,
-                              "context-searchselect",                true,
-                              "context-viewpartialsource-selection", true
-                             ].concat(inspectItems));
-          } else {
-            checkContextMenu(["context-openlinkincurrent",           true,
-                              "context-openlinkintab",               true,
-                              "context-openlink",                    true,
-                              "---",                                 null,
-                              "context-bookmarklink",                true,
-                              "context-savelink",                    true,
-                              "context-copy",                        true,
-                              "context-selectall",                   true,
-                              "---",                                 null,
-                              "context-searchselect",                true,
-                              "context-viewpartialsource-selection", true
-                             ].concat(inspectItems));
-          }
+          checkContextMenu(["context-openlinkincurrent",           true,
+                            "context-openlinkintab",               true,
+                            "context-openlink",                    true,
+                            "context-openlinkprivate",             true,
+                            "---",                                 null,
+                            "context-bookmarklink",                true,
+                            "context-savelink",                    true,
+                            "context-copy",                        true,
+                            "context-selectall",                   true,
+                            "---",                                 null,
+                            "context-searchselect",                true,
+                            "context-viewpartialsource-selection", true
+                           ].concat(inspectItems));
         }
         closeContextMenu();
         // clear the selection because following tests don't expect any selection
@@ -625,42 +605,23 @@ function runTest(testNum) {
 
     function () {
         // Context menu for image link
-        if (perWindowPrivateBrowsing) {
-          checkContextMenu(["context-openlinkintab", true,
-                            "context-openlink",      true,
-                            "context-openlinkprivate", true,
-                            "---",                   null,
-                            "context-bookmarklink",  true,
-                            "context-savelink",      true,
-                            "context-copylink",      true,
-                            "---",                   null,
-                            "context-viewimage",            true,
-                            "context-copyimage-contents",   true,
-                            "context-copyimage",            true,
-                            "---",                          null,
-                            "context-saveimage",            true,
-                            "context-sendimage",            true,
-                            "context-setDesktopBackground", true,
-                            "context-viewimageinfo",        true
-                           ].concat(inspectItems));
-        } else {
-          checkContextMenu(["context-openlinkintab", true,
-                            "context-openlink",      true,
-                            "---",                   null,
-                            "context-bookmarklink",  true,
-                            "context-savelink",      true,
-                            "context-copylink",      true,
-                            "---",                   null,
-                            "context-viewimage",            true,
-                            "context-copyimage-contents",   true,
-                            "context-copyimage",            true,
-                            "---",                          null,
-                            "context-saveimage",            true,
-                            "context-sendimage",            true,
-                            "context-setDesktopBackground", true,
-                            "context-viewimageinfo",        true
-                           ].concat(inspectItems));
-        }
+        checkContextMenu(["context-openlinkintab", true,
+                          "context-openlink",      true,
+                          "context-openlinkprivate", true,
+                          "---",                   null,
+                          "context-bookmarklink",  true,
+                          "context-savelink",      true,
+                          "context-copylink",      true,
+                          "---",                   null,
+                          "context-viewimage",            true,
+                          "context-copyimage-contents",   true,
+                          "context-copyimage",            true,
+                          "---",                          null,
+                          "context-saveimage",            true,
+                          "context-sendimage",            true,
+                          "context-setDesktopBackground", true,
+                          "context-viewimageinfo",        true
+                         ].concat(inspectItems));
         closeContextMenu();
         selectInputText(select_inputtext); // Select text prior to opening context menu.
         openContextMenuFor(select_inputtext); // Invoke context menu for next test.
@@ -689,10 +650,10 @@ function runTest(testNum) {
         // Context menu for selected text in input[type="password"]
         checkContextMenu(["context-undo",        false,
                           "---",                 null,
-                          "context-cut",         true,
-                          "context-copy",        true,
+                          "context-cut",         false,
+                          "context-copy",        false,
                           "context-paste",       null, // ignore clipboard state
-                          "context-delete",      true,
+                          "context-delete",      false,
                           "---",                 null,
                           "context-selectall",   true,
                           "---",                 null,

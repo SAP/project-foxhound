@@ -16,9 +16,11 @@
 #include "mozilla/gfx/Rect.h"           // for Rect
 #include "mozilla/gfx/Types.h"          // for Filter
 #include "mozilla/ipc/ProtocolUtils.h"
+#include "mozilla/layers/Compositor.h"  // for Compositor
 #include "mozilla/layers/CompositorTypes.h"  // for TextureInfo, etc
 #include "mozilla/layers/Effects.h"     // for Texture Effect
 #include "mozilla/layers/LayersTypes.h"  // for LayerRenderState, etc
+#include "mozilla/layers/LayersMessages.h"
 #include "mozilla/layers/TextureHost.h" // for TextureHost
 #include "mozilla/mozalloc.h"           // for operator delete
 #include "nsCOMPtr.h"                   // for already_AddRefed
@@ -37,14 +39,6 @@ class DataSourceSurface;
 
 namespace layers {
 
-// Some properties of a Layer required for tiling
-struct TiledLayerProperties
-{
-  nsIntRegion mVisibleRegion;
-  nsIntRegion mValidRegion;
-  CSSToScreenScale mEffectiveResolution;
-};
-
 class Layer;
 class SurfaceDescriptor;
 class Compositor;
@@ -61,18 +55,34 @@ struct EffectChain;
 class CompositableBackendSpecificData
 {
 protected:
-  virtual ~CompositableBackendSpecificData() { }
+  virtual ~CompositableBackendSpecificData() {}
 
 public:
   NS_INLINE_DECL_REFCOUNTING(CompositableBackendSpecificData)
 
-  CompositableBackendSpecificData()
+  CompositableBackendSpecificData();
+
+  virtual void ClearData() {}
+  virtual void SetCompositor(Compositor* aCompositor) {}
+
+  bool IsAllowingSharingTextureHost()
   {
+    return mAllowSharingTextureHost;
   }
 
-  virtual void SetCompositor(Compositor* aCompositor) {}
-  virtual void ClearData() {}
+  void SetAllowSharingTextureHost(bool aAllow)
+  {
+    mAllowSharingTextureHost = aAllow;
+  }
 
+  uint64_t GetId()
+  {
+    return mId;
+  }
+
+public:
+  bool mAllowSharingTextureHost;
+  uint64_t mId;
 };
 
 /**
@@ -96,7 +106,7 @@ protected:
 
 public:
   NS_INLINE_DECL_REFCOUNTING(CompositableHost)
-  CompositableHost(const TextureInfo& aTextureInfo);
+  explicit CompositableHost(const TextureInfo& aTextureInfo);
 
   static TemporaryRef<CompositableHost> Create(const TextureInfo& aTextureInfo);
 
@@ -121,8 +131,7 @@ public:
                          const gfx::Matrix4x4& aTransform,
                          const gfx::Filter& aFilter,
                          const gfx::Rect& aClipRect,
-                         const nsIntRegion* aVisibleRegion = nullptr,
-                         TiledLayerProperties* aLayerProperties = nullptr) = 0;
+                         const nsIntRegion* aVisibleRegion = nullptr) = 0;
 
   /**
    * Update the content host.
@@ -264,6 +273,7 @@ public:
   virtual void UseTextureHost(TextureHost* aTexture);
   virtual void UseComponentAlphaTextures(TextureHost* aTextureOnBlack,
                                          TextureHost* aTextureOnWhite);
+  virtual void UseOverlaySource(OverlaySource aOverlay) { }
 
   virtual void RemoveTextureHost(TextureHost* aTexture);
 
@@ -302,7 +312,7 @@ protected:
   TextureInfo mTextureInfo;
   uint64_t mAsyncID;
   uint64_t mCompositorID;
-  Compositor* mCompositor;
+  RefPtr<Compositor> mCompositor;
   Layer* mLayer;
   RefPtr<CompositableBackendSpecificData> mBackendData;
   uint32_t mFlashCounter; // used when the pref "layers.flash-borders" is true.
@@ -313,7 +323,7 @@ protected:
 class AutoLockCompositableHost MOZ_FINAL
 {
 public:
-  AutoLockCompositableHost(CompositableHost* aHost)
+  explicit AutoLockCompositableHost(CompositableHost* aHost)
     : mHost(aHost)
   {
     mSucceeded = mHost->Lock();

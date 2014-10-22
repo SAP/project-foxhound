@@ -201,7 +201,7 @@ CacheFileChunk::Read(CacheFileHandle *aHandle, uint32_t aLen,
   DoMemoryReport(MemorySize());
 
   rv = CacheFileIOManager::Read(aHandle, mIndex * kChunkSize, mRWBuf, aLen,
-                                true, this);
+                                this);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     rv = mIndex ? NS_ERROR_FILE_CORRUPTED : NS_ERROR_FILE_NOT_FOUND;
     SetError(rv);
@@ -267,7 +267,14 @@ CacheFileChunk::WaitForUpdate(CacheFileChunkListener *aCallback)
 #endif
 
   ChunkListenerItem *item = new ChunkListenerItem();
-  item->mTarget = NS_GetCurrentThread();
+  item->mTarget = CacheFileIOManager::IOTarget();
+  if (!item->mTarget) {
+    LOG(("CacheFileChunk::WaitForUpdate() - Cannot get Cache I/O thread! Using "
+         "main thread for callback."));
+    item->mTarget = do_GetMainThread();
+  }
+  item->mCallback = aCallback;
+  MOZ_ASSERT(item->mTarget);
   item->mCallback = aCallback;
 
   mUpdateListeners.AppendElement(item);
@@ -534,7 +541,7 @@ CacheFileChunk::OnDataRead(CacheFileHandle *aHandle, char *aBuf,
               invalidOffset = mValidityMap[i].Offset() + mValidityMap[i].Len();
             }
             if (invalidOffset < mRWBufSize) {
-              invalidLength = invalidOffset - mRWBufSize;
+              invalidLength = mRWBufSize - invalidOffset;
               memcpy(mBuf + invalidOffset, mRWBuf + invalidOffset,
                      invalidLength);
             }

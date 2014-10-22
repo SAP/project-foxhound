@@ -12,23 +12,19 @@
 #include "nsIContent.h"
 #include "nsCSPService.h"
 #include "nsIContentSecurityPolicy.h"
-#include "nsIChannelPolicy.h"
-#include "nsIChannelEventSink.h"
-#include "nsIPropertyBag2.h"
-#include "nsIWritablePropertyBag2.h"
 #include "nsError.h"
-#include "nsChannelProperties.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "mozilla/Preferences.h"
 #include "nsIScriptError.h"
 #include "nsContentUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsPrincipal.h"
 
 using namespace mozilla;
 
 /* Keeps track of whether or not CSP is enabled */
 bool CSPService::sCSPEnabled = true;
-bool CSPService::sNewBackendEnabled = true;
 
 #ifdef PR_LOGGING
 static PRLogModuleInfo* gCspPRLog;
@@ -37,7 +33,6 @@ static PRLogModuleInfo* gCspPRLog;
 CSPService::CSPService()
 {
   Preferences::AddBoolVarCache(&sCSPEnabled, "security.csp.enable");
-  Preferences::AddBoolVarCache(&sNewBackendEnabled, "security.csp.newbackend.enable");
 
 #ifdef PR_LOGGING
   if (!gCspPRLog)
@@ -100,8 +95,9 @@ CSPService::ShouldLoad(uint32_t aContentType,
 
 
   // These content types are not subject to CSP content policy checks:
-  // TYPE_CSP_REPORT, TYPE_REFRESH, TYPE_DOCUMENT
-  // (their mappings are null in contentSecurityPolicy.js)
+  // TYPE_CSP_REPORT -- csp can't block csp reports
+  // TYPE_REFRESH    -- never passed to ShouldLoad (see nsIContentPolicy.idl)
+  // TYPE_DOCUMENT   -- used for frame-ancestors
   if (aContentType == nsIContentPolicy::TYPE_CSP_REPORT ||
     aContentType == nsIContentPolicy::TYPE_REFRESH ||
     aContentType == nsIContentPolicy::TYPE_DOCUMENT) {
@@ -122,9 +118,10 @@ CSPService::ShouldLoad(uint32_t aContentType,
 
   if (status == nsIPrincipal::APP_STATUS_CERTIFIED) {
     // The CSP for certified apps is :
-    // "default-src *; script-src 'self'; object-src 'none'; style-src 'self'"
+    // "default-src *; script-src 'self'; object-src 'none'; style-src 'self' app://theme.gaiamobile.org:*"
     // That means we can optimize for this case by:
-    // - loading only same origin scripts and stylesheets.
+    // - loading same origin scripts and stylesheets, and stylesheets from the
+    //   theme url space.
     // - never loading objects.
     // - accepting everything else.
 
@@ -132,9 +129,13 @@ CSPService::ShouldLoad(uint32_t aContentType,
       case nsIContentPolicy::TYPE_SCRIPT:
       case nsIContentPolicy::TYPE_STYLESHEET:
         {
+          // Whitelist the theme resources.
+          auto themeOrigin = Preferences::GetCString("b2g.theme.origin");
           nsAutoCString sourceOrigin;
           aRequestOrigin->GetPrePath(sourceOrigin);
-          if (!sourceOrigin.Equals(contentOrigin)) {
+
+          if (!(sourceOrigin.Equals(contentOrigin) ||
+                (themeOrigin && themeOrigin.Equals(contentOrigin)))) {
             *aDecision = nsIContentPolicy::REJECT_SERVER;
           }
         }
@@ -231,53 +232,56 @@ CSPService::AsyncOnChannelRedirect(nsIChannel *oldChannel,
 {
   nsAsyncRedirectAutoCallback autoCallback(callback);
 
-  // get the Content Security Policy and load type from the property bag
-  nsCOMPtr<nsISupports> policyContainer;
-  nsCOMPtr<nsIPropertyBag2> props(do_QueryInterface(oldChannel));
-  if (!props)
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  nsresult rv = oldChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+
+  // if no loadInfo on the channel, nothing for us to do
+  if (!loadInfo) {
     return NS_OK;
+  }
 
-  props->GetPropertyAsInterface(NS_CHANNEL_PROP_CHANNEL_POLICY,
-                                NS_GET_IID(nsISupports),
-                                getter_AddRefs(policyContainer));
+  // The loadInfo must not necessarily contain a Node, hence we try to query
+  // the CSP in the following order:
+  //   a) Get the Node, the Principal of that Node, and the CSP of that Principal
+  //   b) Get the Principal and the CSP of that Principal
 
-  // see if we have a valid nsIChannelPolicy containing CSP and load type
-  nsCOMPtr<nsIChannelPolicy> channelPolicy(do_QueryInterface(policyContainer));
-  if (!channelPolicy)
-    return NS_OK;
-
-  nsCOMPtr<nsISupports> supports;
+  nsCOMPtr<nsINode> loadingNode = loadInfo->LoadingNode();
+  nsCOMPtr<nsIPrincipal> principal = loadingNode ?
+                                     loadingNode->NodePrincipal() :
+                                     loadInfo->LoadingPrincipal();
+  NS_ASSERTION(principal, "Can not evaluate CSP without a principal");
   nsCOMPtr<nsIContentSecurityPolicy> csp;
-  channelPolicy->GetContentSecurityPolicy(getter_AddRefs(supports));
-  csp = do_QueryInterface(supports);
-  uint32_t loadType;
-  channelPolicy->GetLoadType(&loadType);
+  rv = principal->GetCsp(getter_AddRefs(csp));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  // if no CSP in the channelPolicy, nothing for us to add to the channel
-  if (!csp)
+  // if there is no CSP, nothing for us to do
+  if (!csp) {
     return NS_OK;
+  }
 
   /* Since redirecting channels don't call into nsIContentPolicy, we call our
-   * Content Policy implementation directly when redirects occur. When channels
-   * are created using NS_NewChannel(), callers can optionally pass in a
-   * nsIChannelPolicy containing a CSP object and load type, which is placed in
-   * the new channel's property bag. This container is propagated forward when
-   * channels redirect.
+   * Content Policy implementation directly when redirects occur using the
+   * information set in the LoadInfo when channels are created.
+   *
+   * We check if the CSP permits this host for this type of load, if not,
+   * we cancel the load now.
    */
 
-  // Does the CSP permit this host for this type of load?
-  // If not, cancel the load now.
   nsCOMPtr<nsIURI> newUri;
-  newChannel->GetURI(getter_AddRefs(newUri));
+  rv = newChannel->GetURI(getter_AddRefs(newUri));
+  NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIURI> originalUri;
-  oldChannel->GetOriginalURI(getter_AddRefs(originalUri));
+  rv = oldChannel->GetOriginalURI(getter_AddRefs(originalUri));
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsContentPolicyType policyType = loadInfo->GetContentPolicyType();
+
   int16_t aDecision = nsIContentPolicy::ACCEPT;
-  csp->ShouldLoad(loadType,        // load type per nsIContentPolicy (uint32_t)
-                  newUri,          // nsIURI
-                  nullptr,          // nsIURI
-                  nullptr,          // nsISupports
-                  EmptyCString(),  // ACString - MIME guess
-                  originalUri,     // nsISupports - extra
+  csp->ShouldLoad(policyType,     // load type per nsIContentPolicy (uint32_t)
+                  newUri,         // nsIURI
+                  nullptr,        // nsIURI
+                  nullptr,        // nsISupports
+                  EmptyCString(), // ACString - MIME guess
+                  originalUri,    // aMimeTypeGuess
                   &aDecision);
 
 #ifdef PR_LOGGING
@@ -297,36 +301,9 @@ CSPService::AsyncOnChannelRedirect(nsIChannel *oldChannel,
 #endif
 
   // if ShouldLoad doesn't accept the load, cancel the request
-  if (aDecision != 1) {
+  if (!NS_CP_ACCEPTED(aDecision)) {
     autoCallback.DontCallback();
     return NS_BINDING_FAILED;
   }
-
-  // the redirect is permitted, so propagate the Content Security Policy
-  // and load type to the redirecting channel
-  nsresult rv;
-  nsCOMPtr<nsIWritablePropertyBag2> props2 = do_QueryInterface(newChannel);
-  if (props2) {
-    rv = props2->SetPropertyAsInterface(NS_CHANNEL_PROP_CHANNEL_POLICY,
-                                        channelPolicy);
-    if (NS_SUCCEEDED(rv)) {
-      return NS_OK;
-    }
-  }
-
-  // The redirecting channel isn't a writable property bag, we won't be able
-  // to enforce the load policy if it redirects again, so we stop it now.
-  nsAutoCString newUriSpec;
-  rv = newUri->GetSpec(newUriSpec);
-  NS_ConvertUTF8toUTF16 unicodeSpec(newUriSpec);
-  const char16_t *formatParams[] = { unicodeSpec.get() };
-  if (NS_SUCCEEDED(rv)) {
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                    NS_LITERAL_CSTRING("Redirect Error"), nullptr,
-                                    nsContentUtils::eDOM_PROPERTIES,
-                                    "InvalidRedirectChannelWarning",
-                                    formatParams, 1);
-  }
-
-  return NS_BINDING_FAILED;
+  return NS_OK;
 }

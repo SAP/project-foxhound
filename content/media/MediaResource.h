@@ -17,6 +17,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/TimeStamp.h"
 #include "nsThreadUtils.h"
+#include <algorithm>
 
 // For HTTP seeking, if number of bytes needing to be
 // seeked forward is less than this value then a read is
@@ -55,7 +56,7 @@ class MediaChannelStatistics {
 public:
   MediaChannelStatistics() { Reset(); }
 
-  MediaChannelStatistics(MediaChannelStatistics * aCopyFrom)
+  explicit MediaChannelStatistics(MediaChannelStatistics * aCopyFrom)
   {
     MOZ_ASSERT(aCopyFrom);
     mAccumulatedBytes = aCopyFrom->mAccumulatedBytes;
@@ -135,10 +136,14 @@ public:
     NS_ASSERTION(mStart < mEnd, "Range should end after start!");
   }
 
-  MediaByteRange(TimestampedMediaByteRange& aByteRange);
+  explicit MediaByteRange(TimestampedMediaByteRange& aByteRange);
 
   bool IsNull() const {
     return mStart == 0 && mEnd == 0;
+  }
+
+  bool operator==(const MediaByteRange& aRange) const {
+    return mStart == aRange.mStart && mEnd == aRange.mEnd;
   }
 
   // Clears byte range values.
@@ -149,6 +154,15 @@ public:
 
   bool Contains(const MediaByteRange& aByteRange) const {
     return aByteRange.mStart >= mStart && aByteRange.mEnd <= mEnd;
+  }
+
+  MediaByteRange Extents(const MediaByteRange& aByteRange) const
+  {
+    if (IsNull()) {
+      return aByteRange;
+    }
+    return MediaByteRange(std::min(mStart, aByteRange.mStart),
+                          std::max(mEnd, aByteRange.mEnd));
   }
 
   int64_t mStart, mEnd;
@@ -297,8 +311,6 @@ public:
   // The file strategy doesn't block for any great length of time so
   // is fine for a no-op cancel.
   virtual nsresult Seek(int32_t aWhence, int64_t aOffset) = 0;
-  virtual void StartSeekingForMetadata() = 0;
-  virtual void EndSeekingForMetadata() = 0;
   // Report the current offset in bytes from the start of the stream.
   virtual int64_t Tell() = 0;
   // Moves any existing channel loads into the background, so that they don't
@@ -574,8 +586,6 @@ public:
   virtual nsresult ReadAt(int64_t offset, char* aBuffer,
                           uint32_t aCount, uint32_t* aBytes);
   virtual nsresult Seek(int32_t aWhence, int64_t aOffset);
-  virtual void     StartSeekingForMetadata();
-  virtual void     EndSeekingForMetadata();
   virtual int64_t  Tell();
 
   // Any thread
@@ -614,7 +624,7 @@ public:
   {
     ~Listener() {}
   public:
-    Listener(ChannelMediaResource* aResource) : mResource(aResource) {}
+    explicit Listener(ChannelMediaResource* aResource) : mResource(aResource) {}
 
     NS_DECL_ISUPPORTS
     NS_DECL_NSIREQUESTOBSERVER
@@ -699,9 +709,6 @@ protected:
   // to resume later. This is usually due to the channel not being in the
   // isPending state at the time of the suspend request.
   bool mIgnoreResume;
-
-  // True if we are seeking to get the real duration of the file.
-  bool mSeekingForMetadata;
 
   // Start and end offset of the bytes to be requested.
   MediaByteRange mByteRange;

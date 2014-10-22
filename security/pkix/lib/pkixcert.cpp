@@ -37,17 +37,13 @@ BackCert::Init()
   //         signatureAlgorithm   AlgorithmIdentifier,
   //         signatureValue       BIT STRING  }
 
-  Input tbsCertificate;
+  Reader tbsCertificate;
 
   // The scope of |input| and |certificate| are limited to this block so we
   // don't accidentally confuse them for tbsCertificate later.
   {
-    Input input;
-    rv = input.Init(der.data, der.len);
-    if (rv != Success) {
-      return rv;
-    }
-    Input certificate;
+    Reader input(der);
+    Reader certificate;
     rv = der::ExpectTagAndGetValue(input, der::SEQUENCE, certificate);
     if (rv != Success) {
       return rv;
@@ -128,43 +124,70 @@ BackCert::Init()
 
   static const uint8_t CSC = der::CONTEXT_SPECIFIC | der::CONSTRUCTED;
 
-  // RFC 5280 says: "These fields MUST only appear if the version is 2 or 3
-  // (Section 4.1.2.1). These fields MUST NOT appear if the version is 1."
-  if (version != der::Version::v1) {
+  // According to RFC 5280, all fields below this line are forbidden for
+  // certificate versions less than v3.  However, for compatibility reasons,
+  // we parse v1/v2 certificates in the same way as v3 certificates.  So if
+  // these fields appear in a v1 certificate, they will be used.
 
-    // Ignore issuerUniqueID if present.
-    if (tbsCertificate.Peek(CSC | 1)) {
-      rv = der::ExpectTagAndSkipValue(tbsCertificate, CSC | 1);
-      if (rv != Success) {
-        return rv;
-      }
-    }
-
-    // Ignore subjectUniqueID if present.
-    if (tbsCertificate.Peek(CSC | 2)) {
-      rv = der::ExpectTagAndSkipValue(tbsCertificate, CSC | 2);
-      if (rv != Success) {
-        return rv;
-      }
-    }
-  }
-
-  // Extensions were added in v3, so only accept extensions in v3 certificates.
-  if (version == der::Version::v3) {
-    rv = der::OptionalExtensions(tbsCertificate, CSC | 3,
-                                 bind(&BackCert::RememberExtension, this, _1,
-                                      _2, _3));
+  // Ignore issuerUniqueID if present.
+  if (tbsCertificate.Peek(CSC | 1)) {
+    rv = der::ExpectTagAndSkipValue(tbsCertificate, CSC | 1);
     if (rv != Success) {
       return rv;
     }
   }
 
+  // Ignore subjectUniqueID if present.
+  if (tbsCertificate.Peek(CSC | 2)) {
+    rv = der::ExpectTagAndSkipValue(tbsCertificate, CSC | 2);
+    if (rv != Success) {
+      return rv;
+    }
+  }
+
+  rv = der::OptionalExtensions(tbsCertificate, CSC | 3,
+                               bind(&BackCert::RememberExtension, this, _1,
+                                    _2, _3, _4));
+  if (rv != Success) {
+    return rv;
+  }
+
+  // The Netscape Certificate Type extension is an obsolete
+  // Netscape-proprietary mechanism that we ignore in favor of the standard
+  // extensions. However, some CAs have issued certificates with the Netscape
+  // Cert Type extension marked critical. Thus, for compatibility reasons, we
+  // "understand" this extension by ignoring it when it is not critical, and
+  // by ensuring that the equivalent standardized extensions are present when
+  // it is marked critical, based on the assumption that the information in
+  // the Netscape Cert Type extension is consistent with the information in
+  // the standard extensions.
+  //
+  // Here is a mapping between the Netscape Cert Type extension and the
+  // standard extensions:
+  //
+  // Netscape Cert Type  |  BasicConstraints.cA  |  Extended Key Usage
+  // --------------------+-----------------------+----------------------
+  // SSL Server          |  false                |  id_kp_serverAuth
+  // SSL Client          |  false                |  id_kp_clientAuth
+  // S/MIME Client       |  false                |  id_kp_emailProtection
+  // Object Signing      |  false                |  id_kp_codeSigning
+  // SSL Server CA       |  true                 |  id_pk_serverAuth
+  // SSL Client CA       |  true                 |  id_kp_clientAuth
+  // S/MIME CA           |  true                 |  id_kp_emailProtection
+  // Object Signing CA   |  true                 |  id_kp_codeSigning
+  if (criticalNetscapeCertificateType.GetLength() > 0 &&
+      (basicConstraints.GetLength() == 0 || extKeyUsage.GetLength() == 0)) {
+    return Result::ERROR_UNKNOWN_CRITICAL_EXTENSION;
+  }
+
   return der::End(tbsCertificate);
 }
 
+// XXX: The second value is of type |const Input&| instead of type |Input| due
+// to limitations in our std::bind polyfill.
 Result
-BackCert::RememberExtension(Input& extnID, const SECItem& extnValue,
-                            /*out*/ bool& understood)
+BackCert::RememberExtension(Reader& extnID, const Input& extnValue,
+                            bool critical, /*out*/ bool& understood)
 {
   understood = false;
 
@@ -204,8 +227,12 @@ BackCert::RememberExtension(Input& extnID, const SECItem& extnValue,
   static const uint8_t id_pe_authorityInfoAccess[] = {
     0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x01, 0x01
   };
+  // python DottedOIDToCode.py Netscape-certificate-type 2.16.840.1.113730.1.1
+  static const uint8_t Netscape_certificate_type[] = {
+    0x60, 0x86, 0x48, 0x01, 0x86, 0xf8, 0x42, 0x01, 0x01
+  };
 
-  SECItem* out = nullptr;
+  Input* out = nullptr;
 
   // We already enforce the maximum possible constraints for policies so we
   // can safely ignore even critical policy constraint extensions.
@@ -213,7 +240,7 @@ BackCert::RememberExtension(Input& extnID, const SECItem& extnValue,
   // XXX: Doing it this way won't allow us to detect duplicate
   // policyConstraints extensions, but that's OK because (and only because) we
   // ignore the extension.
-  SECItem dummyPolicyConstraints = { siBuffer, nullptr, 0 };
+  Input dummyPolicyConstraints;
 
   // RFC says "Conforming CAs MUST mark this extension as non-critical" for
   // both authorityKeyIdentifier and subjectKeyIdentifier, and we do not use
@@ -237,19 +264,20 @@ BackCert::RememberExtension(Input& extnID, const SECItem& extnValue,
     out = &inhibitAnyPolicy;
   } else if (extnID.MatchRest(id_pe_authorityInfoAccess)) {
     out = &authorityInfoAccess;
+  } else if (extnID.MatchRest(Netscape_certificate_type) && critical) {
+    out = &criticalNetscapeCertificateType;
   }
 
   if (out) {
     // Don't allow an empty value for any extension we understand. This way, we
-    // can test out->len to check for duplicates.
-    if (extnValue.len == 0) {
-      return Fail(SEC_ERROR_EXTENSION_VALUE_INVALID);
+    // can test out->GetLength() != 0 or out->Init() to check for duplicates.
+    if (extnValue.GetLength() == 0) {
+      return Result::ERROR_EXTENSION_VALUE_INVALID;
     }
-    if (out->len != 0) {
+    if (out->Init(extnValue) != Success) {
       // Duplicate extension
-      return Fail(SEC_ERROR_EXTENSION_VALUE_INVALID);
+      return Result::ERROR_EXTENSION_VALUE_INVALID;
     }
-    *out = extnValue;
     understood = true;
   }
 

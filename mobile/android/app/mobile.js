@@ -26,8 +26,6 @@ pref("toolkit.browser.contentViewExpire", 3000);
 pref("toolkit.defaultChromeURI", "chrome://browser/content/browser.xul");
 pref("browser.chromeURL", "chrome://browser/content/");
 
-pref("browser.tabs.remote", false);
-
 // If a tab has not been active for this long (seconds), then it may be
 // turned into a zombie tab to preemptively free up memory. -1 disables time-based
 // expiration (but low-memory conditions may still require the tab to be zombified).
@@ -144,6 +142,7 @@ pref("browser.download.manager.openDelay", 0);
 pref("browser.download.manager.focusWhenStarting", false);
 pref("browser.download.manager.flashCount", 2);
 pref("browser.download.manager.displayedHistoryDays", 7);
+pref("browser.download.manager.addToRecentDocs", true);
 
 /* download helper */
 pref("browser.helperApps.deleteTempFileOnExit", false);
@@ -216,7 +215,7 @@ pref("extensions.compatability.locales.buildid", "0");
 /* blocklist preferences */
 pref("extensions.blocklist.enabled", true);
 pref("extensions.blocklist.interval", 86400);
-pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
+pref("extensions.blocklist.url", "https://blocklist.addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
 pref("extensions.blocklist.detailsURL", "https://www.mozilla.com/%LOCALE%/blocklist/");
 
 /* block popups by default, and notify the user about blocked popups */
@@ -281,10 +280,13 @@ pref("browser.search.official", true);
 #endif
 
 // Control media casting feature
-#ifdef RELEASE_BUILD
-pref("browser.casting.enabled", false);
-#else
 pref("browser.casting.enabled", true);
+#ifdef RELEASE_BUILD
+pref("browser.mirroring.enabled", false);
+pref("browser.mirroring.enabled.roku", false);
+#else
+pref("browser.mirroring.enabled", true);
+pref("browser.mirroring.enabled.roku", true);
 #endif
 
 // Enable sparse localization by setting a few package locale overrides
@@ -295,60 +297,10 @@ pref("chrome.override_package.passwordmgr", "browser");
 // enable xul error pages
 pref("browser.xul.error_pages.enabled", true);
 
-// Specify emptyRestriction = 0 so that bookmarks appear in the list by default
-pref("browser.urlbar.default.behavior", 0);
-pref("browser.urlbar.default.behavior.emptyRestriction", 0);
-
-// Let the faviconservice know that we display favicons as 32x32px so that it
-// uses the right size when optimizing favicons
-pref("places.favicons.optimizeToDimension", 32);
-
-// various and sundry awesomebar prefs (should remove/re-evaluate
-// these once bug 447900 is fixed)
-pref("browser.urlbar.clickSelectsAll", true);
-pref("browser.urlbar.doubleClickSelectsAll", true);
-pref("browser.urlbar.autoFill", false);
-pref("browser.urlbar.matchOnlyTyped", false);
-pref("browser.urlbar.matchBehavior", 1);
-pref("browser.urlbar.filter.javascript", true);
-pref("browser.urlbar.maxRichResults", 24); // increased so we see more results when portrait
-pref("browser.urlbar.search.chunkSize", 1000);
-pref("browser.urlbar.search.timeout", 100);
-pref("browser.urlbar.restrict.history", "^");
-pref("browser.urlbar.restrict.bookmark", "*");
-pref("browser.urlbar.restrict.tag", "+");
-pref("browser.urlbar.match.title", "#");
-pref("browser.urlbar.match.url", "@");
-pref("browser.urlbar.autocomplete.search_threshold", 5);
 pref("browser.history.grouping", "day");
 pref("browser.history.showSessions", false);
 pref("browser.sessionhistory.max_entries", 50);
 pref("browser.history_expire_sites", 40000);
-pref("browser.places.migratePostDataAnnotations", true);
-pref("browser.places.updateRecentTagsUri", true);
-pref("places.frecency.numVisits", 10);
-pref("places.frecency.numCalcOnIdle", 50);
-pref("places.frecency.numCalcOnMigrate", 50);
-pref("places.frecency.updateIdleTime", 60000);
-pref("places.frecency.firstBucketCutoff", 4);
-pref("places.frecency.secondBucketCutoff", 14);
-pref("places.frecency.thirdBucketCutoff", 31);
-pref("places.frecency.fourthBucketCutoff", 90);
-pref("places.frecency.firstBucketWeight", 100);
-pref("places.frecency.secondBucketWeight", 70);
-pref("places.frecency.thirdBucketWeight", 50);
-pref("places.frecency.fourthBucketWeight", 30);
-pref("places.frecency.defaultBucketWeight", 10);
-pref("places.frecency.embedVisitBonus", 0);
-pref("places.frecency.linkVisitBonus", 100);
-pref("places.frecency.typedVisitBonus", 2000);
-pref("places.frecency.bookmarkVisitBonus", 150);
-pref("places.frecency.downloadVisitBonus", 0);
-pref("places.frecency.permRedirectVisitBonus", 0);
-pref("places.frecency.tempRedirectVisitBonus", 0);
-pref("places.frecency.defaultVisitBonus", 0);
-pref("places.frecency.unvisitedBookmarkBonus", 140);
-pref("places.frecency.unvisitedTypedBonus", 200);
 
 // disable color management
 pref("gfx.color_management.mode", 0);
@@ -406,7 +358,6 @@ pref("privacy.item.syncAccount", true);
 
 // enable geo
 pref("geo.enabled", true);
-pref("app.geo.reportdata", 0);
 
 // content sink control -- controls responsiveness during page load
 // see https://bugzilla.mozilla.org/show_bug.cgi?id=481566#c9
@@ -444,19 +395,28 @@ pref("dom.max_script_run_time", 20);
 
 // JS error console
 pref("devtools.errorconsole.enabled", false);
+// Absolute path to the devtools unix domain socket file used
+// to communicate with a usb cable via adb forward.
+pref("devtools.debugger.unix-domain-socket", "/data/data/@ANDROID_PACKAGE_NAME@/firefox-debugger-socket");
 
 pref("font.size.inflation.minTwips", 120);
 
 // When true, zooming will be enabled on all sites, even ones that declare user-scalable=no.
 pref("browser.ui.zoom.force-user-scalable", false);
 
-// Touch radius (area around the touch location to look for target elements),
-// in 1/240-inch pixels:
-pref("browser.ui.touch.left", 32);
-pref("browser.ui.touch.right", 32);
-pref("browser.ui.touch.top", 48);
-pref("browser.ui.touch.bottom", 16);
-pref("browser.ui.touch.weight.visited", 120); // percentage
+pref("ui.touch.radius.enabled", true);
+pref("ui.touch.radius.leftmm", 3);
+pref("ui.touch.radius.topmm", 5);
+pref("ui.touch.radius.rightmm", 3);
+pref("ui.touch.radius.bottommm", 2);
+pref("ui.touch.radius.visitedWeight", 120);
+
+pref("ui.mouse.radius.enabled", true);
+pref("ui.mouse.radius.leftmm", 3);
+pref("ui.mouse.radius.topmm", 5);
+pref("ui.mouse.radius.rightmm", 3);
+pref("ui.mouse.radius.bottommm", 2);
+pref("ui.mouse.radius.visitedWeight", 120);
 
 // The percentage of the screen that needs to be scrolled before margins are exposed.
 pref("browser.ui.show-margins-threshold", 10);
@@ -480,7 +440,7 @@ pref("plugin.default.state", 1);
 pref("breakpad.reportURL", "https://crash-stats.mozilla.com/report/index/");
 pref("app.support.baseURL", "http://support.mozilla.org/1/mobile/%VERSION%/%OS%/%LOCALE%/");
 // Used to submit data to input from about:feedback
-pref("app.feedback.postURL", "https://input.mozilla.org/%LOCALE%/feedback");
+pref("app.feedback.postURL", "https://input.mozilla.org/api/v1/feedback/");
 pref("app.privacyURL", "https://www.mozilla.org/privacy/firefox/");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
 pref("app.channelURL", "http://www.mozilla.org/%LOCALE%/firefox/channel/");
@@ -505,6 +465,9 @@ pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616
 
 // Block insecure active content on https pages
 pref("security.mixed_content.block_active_content", true);
+
+// Enable pinning
+pref("security.cert_pinning.enforcement_level", 1);
 
 // Override some named colors to avoid inverse OS themes
 pref("ui.-moz-dialog", "#efebe7");
@@ -550,7 +513,7 @@ pref("app.update.enabled", false);
 pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
 
 // If you are looking for app.update.url, we no longer use it.
-// See mobile/android/base/UpdateServiceHelper.java.in
+// See mobile/android/base/updater/UpdateServiceHelper.java
 #endif
 
 // replace newlines with spaces on paste into single-line text boxes
@@ -564,6 +527,9 @@ pref("ui.dragThresholdY", 25);
 pref("layers.acceleration.disabled", false);
 pref("layers.offmainthreadcomposition.enabled", true);
 pref("layers.async-video.enabled", true);
+#ifdef MOZ_ANDROID_APZ
+pref("layers.async-pan-zoom.enabled", true);
+#endif
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
 pref("layers.low-precision-resolution", "0.25");
@@ -593,6 +559,12 @@ pref("media.preload.auto", 2);    // preload metadata if preload=auto
 // chronically starved of video frames. All decoders seen so far have a value
 // of at least 4.
 pref("media.video-queue.default-size", 3);
+
+// Enable the MediaCodec PlatformDecoderModule by default.
+pref("media.fragmented-mp4.exposed", true);
+pref("media.fragmented-mp4.enabled", true);
+pref("media.fragmented-mp4.android-media-codec.enabled", true);
+pref("media.fragmented-mp4.android-media-codec.preferred", true);
 
 // optimize images memory usage
 pref("image.mem.decodeondraw", true);
@@ -630,6 +602,9 @@ pref("urlclassifier.alternate_error_page", "blocked");
 
 // The number of random entries to send with a gethash request.
 pref("urlclassifier.gethashnoise", 4);
+
+// Gethash timeout for Safebrowsing.
+pref("urlclassifier.gethash.timeout_ms", 5000);
 
 // If an urlclassifier table has not been updated in this number of seconds,
 // a gethash request will be forced to check that the result is still in
@@ -692,6 +667,8 @@ pref("ui.scrolling.gamepad_dead_zone", 115);
 // Enable accessibility mode if platform accessibility is enabled.
 pref("accessibility.accessfu.activate", 2);
 pref("accessibility.accessfu.quicknav_modes", "Link,Heading,FormElement,Landmark,ListItem");
+// Active quicknav mode, index value of list from quicknav_modes
+pref("accessibility.accessfu.quicknav_index", 0);
 // Setting for an utterance order (0 - description first, 1 - description last).
 pref("accessibility.accessfu.utterance", 1);
 // Whether to skip images with empty alt text
@@ -747,7 +724,6 @@ pref("app.orientation.default", "");
 // back to the system.
 pref("memory.free_dirty_pages", true);
 
-pref("layout.imagevisibility.enabled", true);
 pref("layout.imagevisibility.numscrollportwidths", 1);
 pref("layout.imagevisibility.numscrollportheights", 1);
 
@@ -833,6 +809,7 @@ pref("browser.snippets.statsUrl", "https://snippets-stats.mozilla.org/mobile");
 // These prefs require a restart to take effect.
 pref("browser.snippets.enabled", true);
 pref("browser.snippets.syncPromo.enabled", true);
+pref("browser.snippets.firstrunHomepage.enabled", true);
 
 // The URL of the APK factory from which we obtain APKs for webapps.
 pref("browser.webapps.apkFactoryUrl", "https://controller.apk.firefox.com/application.apk");

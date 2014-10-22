@@ -21,15 +21,14 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "js/OldDebugAPI.h"
 #include "nsJSPrincipals.h"
-#include "xpcpublic.h" // For xpc::SystemErrorReporter
 #include "xpcprivate.h" // For xpc::OptionsBase
 #include "jswrapper.h"
 
 #include "mozilla/scache/StartupCache.h"
 #include "mozilla/scache/StartupCacheUtils.h"
 #include "mozilla/unused.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla::scache;
 using namespace JS;
@@ -38,8 +37,8 @@ using namespace mozilla;
 
 class MOZ_STACK_CLASS LoadSubScriptOptions : public OptionsBase {
 public:
-    LoadSubScriptOptions(JSContext *cx = xpc_GetSafeJSContext(),
-                         JSObject *options = nullptr)
+    explicit LoadSubScriptOptions(JSContext *cx = xpc_GetSafeJSContext(),
+                                  JSObject *options = nullptr)
         : OptionsBase(cx, options)
         , target(cx)
         , charset(NullString())
@@ -107,8 +106,17 @@ mozJSSubScriptLoader::ReadScript(nsIURI *uri, JSContext *cx, JSObject *targetObj
     // SetContentType, to avoid expensive MIME type lookups (bug 632490).
     nsCOMPtr<nsIChannel> chan;
     nsCOMPtr<nsIInputStream> instream;
-    nsresult rv = NS_NewChannel(getter_AddRefs(chan), uri, serv,
-                                nullptr, nullptr, nsIRequest::LOAD_NORMAL);
+    nsresult rv;
+    rv = NS_NewChannel(getter_AddRefs(chan),
+                       uri,
+                       nsContentUtils::GetSystemPrincipal(),
+                       nsILoadInfo::SEC_NORMAL,
+                       nsIContentPolicy::TYPE_OTHER,
+                       nullptr,  // aLoadGroup
+                       nullptr,  // aCallbacks
+                       nsIRequest::LOAD_NORMAL,
+                       serv);
+
     if (NS_SUCCEEDED(rv)) {
         chan->SetContentType(NS_LITERAL_CSTRING("application/javascript"));
         rv = chan->Open(getter_AddRefs(instream));
@@ -134,14 +142,10 @@ mozJSSubScriptLoader::ReadScript(nsIURI *uri, JSContext *cx, JSObject *targetObj
     if (NS_FAILED(rv))
         return rv;
 
-    /* set our own error reporter so we can report any bad things as catchable
-     * exceptions, including the source/line number */
-    JSErrorReporter er = JS_SetErrorReporter(cx, xpc::SystemErrorReporter);
-
     JS::CompileOptions options(cx);
     options.setFileAndLine(uriStr, 1);
     if (!charset.IsVoid()) {
-        jschar *scriptBuf = nullptr;
+        char16_t *scriptBuf = nullptr;
         size_t scriptLength = 0;
 
         rv = nsScriptLoader::ConvertToUTF16(nullptr, reinterpret_cast<const uint8_t*>(buf.get()), len,
@@ -174,9 +178,6 @@ mozJSSubScriptLoader::ReadScript(nsIURI *uri, JSContext *cx, JSObject *targetObj
                                 len, function);
         }
     }
-
-    /* repent for our evil deeds */
-    JS_SetErrorReporter(cx, er);
 
     return NS_OK;
 }
@@ -402,7 +403,7 @@ private:
     nsRefPtr<nsIObserver> mObserver;
     nsRefPtr<nsIPrincipal> mPrincipal;
     nsRefPtr<nsIChannel> mChannel;
-    jschar* mScriptBuf;
+    char16_t* mScriptBuf;
     size_t mScriptLength;
 };
 
@@ -413,7 +414,7 @@ class NotifyPrecompilationCompleteRunnable : public nsRunnable
 public:
     NS_DECL_NSIRUNNABLE
 
-    NotifyPrecompilationCompleteRunnable(ScriptPrecompiler* aPrecompiler)
+    explicit NotifyPrecompilationCompleteRunnable(ScriptPrecompiler* aPrecompiler)
         : mPrecompiler(aPrecompiler)
         , mToken(nullptr)
     {}
@@ -431,7 +432,7 @@ protected:
 /* RAII helper class to send observer notifications */
 class AutoSendObserverNotification {
 public:
-    AutoSendObserverNotification(ScriptPrecompiler* aPrecompiler)
+    explicit AutoSendObserverNotification(ScriptPrecompiler* aPrecompiler)
         : mPrecompiler(aPrecompiler)
     {}
 
@@ -478,7 +479,7 @@ ScriptPrecompiler::OnStreamComplete(nsIStreamLoader* aLoader,
     // Just notify that we are done with this load.
     NS_ENSURE_SUCCESS(aStatus, NS_OK);
 
-    // Convert data to jschar* and prepare to call CompileOffThread.
+    // Convert data to char16_t* and prepare to call CompileOffThread.
     nsAutoString hintCharset;
     nsresult rv =
         nsScriptLoader::ConvertToUTF16(mChannel, aString, aLength,
@@ -564,8 +565,11 @@ mozJSSubScriptLoader::PrecompileScript(nsIURI* aURI,
 {
     nsCOMPtr<nsIChannel> channel;
     nsresult rv = NS_NewChannel(getter_AddRefs(channel),
-                                aURI, nullptr, nullptr, nullptr,
-                                nsIRequest::LOAD_NORMAL, nullptr);
+                                aURI,
+                                nsContentUtils::GetSystemPrincipal(),
+                                nsILoadInfo::SEC_NORMAL,
+                                nsIContentPolicy::TYPE_OTHER);
+
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsRefPtr<ScriptPrecompiler> loadObserver =

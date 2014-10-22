@@ -4,7 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Sandbox.h"
+#include "Sandbox.h"
+#include "SandboxInternal.h"
+#include "SandboxLogging.h"
 
 #include <unistd.h>
 #include <stdio.h>
@@ -19,89 +21,68 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include "mozilla/Atomics.h"
 #include "mozilla/NullPtr.h"
 #include "mozilla/unused.h"
-#include "mozilla/dom/Exceptions.h"
-#include "nsString.h"
-#include "nsThreadUtils.h"
-
-#ifdef MOZ_CRASHREPORTER
-#include "nsExceptionHandler.h"
-#endif
 
 #if defined(ANDROID)
 #include "android_ucontext.h"
-#include <android/log.h>
 #endif
 
-#if defined(MOZ_CONTENT_SANDBOX)
 #include "linux_seccomp.h"
 #include "SandboxFilter.h"
-#endif
-
-#ifdef MOZ_LOGGING
-#define FORCE_PR_LOG 1
-#endif
-#include "prlog.h"
-#include "prenv.h"
 
 // See definition of SandboxDie, below.
 #include "sandbox/linux/seccomp-bpf/die.h"
 
 namespace mozilla {
-#if defined(ANDROID)
-#define LOG_ERROR(args...) __android_log_print(ANDROID_LOG_ERROR, "Sandbox", ## args)
-#elif defined(PR_LOGGING)
-static PRLogModuleInfo* gSeccompSandboxLog;
-#define LOG_ERROR(args...) PR_LOG(mozilla::gSeccompSandboxLog, PR_LOG_ERROR, (args))
-#else
-#define LOG_ERROR(args...)
+
+SandboxCrashFunc gSandboxCrashFunc;
+
+#ifdef MOZ_GMP_SANDBOX
+// For media plugins, we can start the sandbox before we dlopen the
+// module, so we have to pre-open the file and simulate the sandboxed
+// open().
+static int gMediaPluginFileDesc = -1;
+static const char *gMediaPluginFilePath;
 #endif
 
-/**
- * Log JS stack info in the same place as the sandbox violation
- * message.  Useful in case the responsible code is JS and all we have
- * are logs and a minidump with the C++ stacks (e.g., on TBPL).
- */
-static void
-SandboxLogJSStack(void)
-{
-  if (!NS_IsMainThread()) {
-    // This might be a worker thread... or it might be a non-JS
-    // thread, or a non-NSPR thread.  There's isn't a good API for
-    // dealing with this, yet.
-    return;
-  }
-  nsCOMPtr<nsIStackFrame> frame = dom::GetCurrentJSStack();
-  for (int i = 0; frame != nullptr; ++i) {
-    nsAutoString fileName, funName;
-    int32_t lineNumber;
+struct SandboxFlags {
+  bool isSupported;
+#ifdef MOZ_CONTENT_SANDBOX
+  bool isDisabledForContent;
+#endif
+#ifdef MOZ_GMP_SANDBOX
+  bool isDisabledForGMP;
+#endif
 
-    // Don't stop unwinding if an attribute can't be read.
-    fileName.SetIsVoid(true);
-    unused << frame->GetFilename(fileName);
-    lineNumber = 0;
-    unused << frame->GetLineNumber(&lineNumber);
-    funName.SetIsVoid(true);
-    unused << frame->GetName(funName);
-
-    if (!funName.IsVoid() || !fileName.IsVoid()) {
-      LOG_ERROR("JS frame %d: %s %s line %d", i,
-                funName.IsVoid() ?
-                  "(anonymous)" : NS_ConvertUTF16toUTF8(funName).get(),
-                fileName.IsVoid() ?
-                  "(no file)" : NS_ConvertUTF16toUTF8(fileName).get(),
-                lineNumber);
+  SandboxFlags() {
+    // Allow simulating the absence of seccomp-bpf support, for testing.
+    if (getenv("MOZ_FAKE_NO_SANDBOX")) {
+      isSupported = false;
+    } else {
+      // Determine whether seccomp-bpf is supported by trying to
+      // enable it with an invalid pointer for the filter.  This will
+      // fail with EFAULT if supported and EINVAL if not, without
+      // changing the process's state.
+      if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr) != -1) {
+        MOZ_CRASH("prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr)"
+                  " didn't fail");
+      }
+      isSupported = errno == EFAULT;
     }
-
-    nsCOMPtr<nsIStackFrame> nextFrame;
-    nsresult rv = frame->GetCaller(getter_AddRefs(nextFrame));
-    NS_ENSURE_SUCCESS_VOID(rv);
-    frame = nextFrame;
+#ifdef MOZ_CONTENT_SANDBOX
+    isDisabledForContent = getenv("MOZ_DISABLE_CONTENT_SANDBOX");
+#endif
+#ifdef MOZ_GMP_SANDBOX
+    isDisabledForGMP = getenv("MOZ_DISABLE_GMP_SANDBOX");
+#endif
   }
-}
+};
+
+static const SandboxFlags gSandboxFlags;
 
 /**
  * This is the SIGSYS handler function. It is used to report to the user
@@ -117,7 +98,7 @@ Reporter(int nr, siginfo_t *info, void *void_context)
 {
   ucontext_t *ctx = static_cast<ucontext_t*>(void_context);
   unsigned long syscall_nr, args[6];
-  pid_t pid = getpid(), tid = syscall(__NR_gettid);
+  pid_t pid = getpid();
 
   if (nr != SIGSYS) {
     return;
@@ -137,27 +118,36 @@ Reporter(int nr, siginfo_t *info, void *void_context)
   args[4] = SECCOMP_PARM5(ctx);
   args[5] = SECCOMP_PARM6(ctx);
 
-  LOG_ERROR("seccomp sandbox violation: pid %d, syscall %lu, args %lu %lu %lu"
-            " %lu %lu %lu.  Killing process.", pid, syscall_nr,
-            args[0], args[1], args[2], args[3], args[4], args[5]);
+#ifdef MOZ_GMP_SANDBOX
+  if (syscall_nr == __NR_open && gMediaPluginFilePath) {
+    const char *path = reinterpret_cast<const char*>(args[0]);
+    int flags = int(args[1]);
 
-#ifdef MOZ_CRASHREPORTER
-  // Bug 1017393: record syscall number somewhere useful.
-  info->si_addr = reinterpret_cast<void*>(syscall_nr);
-  bool dumped = CrashReporter::WriteMinidumpForSigInfo(nr, info, void_context);
-  if (!dumped) {
-    LOG_ERROR("Failed to write minidump");
+    if ((flags & O_ACCMODE) != O_RDONLY) {
+      SANDBOX_LOG_ERROR("non-read-only open of file %s attempted (flags=0%o)",
+                        path, flags);
+    } else if (strcmp(path, gMediaPluginFilePath) != 0) {
+      SANDBOX_LOG_ERROR("attempt to open file %s which is not the media plugin"
+                        " %s", path, gMediaPluginFilePath);
+    } else if (gMediaPluginFileDesc == -1) {
+      SANDBOX_LOG_ERROR("multiple opens of media plugin file unimplemented");
+    } else {
+      SECCOMP_RESULT(ctx) = gMediaPluginFileDesc;
+      gMediaPluginFileDesc = -1;
+      return;
+    }
   }
 #endif
 
-  // Do this last, in case it crashes or deadlocks.
-  SandboxLogJSStack();
+  SANDBOX_LOG_ERROR("seccomp sandbox violation: pid %d, syscall %lu,"
+                    " args %lu %lu %lu %lu %lu %lu.  Killing process.",
+                    pid, syscall_nr,
+                    args[0], args[1], args[2], args[3], args[4], args[5]);
 
-  // Try to reraise, so the parent sees that this process crashed.
-  // (If tgkill is forbidden, then seccomp will raise SIGSYS, which
-  // also accomplishes that goal.)
-  signal(SIGSYS, SIG_DFL);
-  syscall(__NR_tgkill, pid, tid, nr);
+  // Bug 1017393: record syscall number somewhere useful.
+  info->si_addr = reinterpret_cast<void*>(syscall_nr);
+
+  gSandboxCrashFunc(nr, info, void_context);
   _exit(127);
 }
 
@@ -205,20 +195,23 @@ InstallSyscallReporter(void)
  * to pass a bpf program (in our case, it contains a syscall
  * whitelist).
  *
- * @return 0 on success, 1 on failure.
+ * Reports failure by crashing.
+ *
  * @see sock_fprog (the seccomp_prog).
  */
-static int
+static void
 InstallSyscallFilter(const sock_fprog *prog)
 {
   if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
-    return 1;
+    SANDBOX_LOG_ERROR("prctl(PR_SET_NO_NEW_PRIVS) failed: %s", strerror(errno));
+    MOZ_CRASH("prctl(PR_SET_NO_NEW_PRIVS)");
   }
 
   if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, (unsigned long)prog, 0, 0)) {
-    return 1;
+    SANDBOX_LOG_ERROR("prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER) failed: %s",
+                      strerror(errno));
+    MOZ_CRASH("prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)");
   }
-  return 0;
 }
 
 // Use signals for permissions that need to be set per-thread.
@@ -249,23 +242,16 @@ FindFreeSignalNumber()
   return 0;
 }
 
+// Returns true if sandboxing was enabled, or false if sandboxing
+// already was enabled.  Crashes if sandboxing could not be enabled.
 static bool
 SetThreadSandbox()
 {
-  bool didAnything = false;
-
-  if (PR_GetEnv("MOZ_DISABLE_CONTENT_SANDBOX") == nullptr &&
-      prctl(PR_GET_SECCOMP, 0, 0, 0, 0) == 0) {
-    if (InstallSyscallFilter(sSetSandboxFilter) == 0) {
-      didAnything = true;
-    }
-    /*
-     * Bug 880797: when all B2G devices are required to support
-     * seccomp-bpf, this should exit/crash if InstallSyscallFilter
-     * returns nonzero (ifdef MOZ_WIDGET_GONK).
-     */
+  if (prctl(PR_GET_SECCOMP, 0, 0, 0, 0) == 0) {
+    InstallSyscallFilter(sSetSandboxFilter);
+    return true;
   }
-  return didAnything;
+  return false;
 }
 
 static void
@@ -285,34 +271,34 @@ SetThreadSandboxHandler(int signum)
 }
 
 static void
-BroadcastSetThreadSandbox()
+BroadcastSetThreadSandbox(SandboxType aType)
 {
   int signum;
-  pid_t pid, tid;
+  pid_t pid, tid, myTid;
   DIR *taskdp;
   struct dirent *de;
-  SandboxFilter filter(&sSetSandboxFilter,
-                       PR_GetEnv("MOZ_CONTENT_SANDBOX_VERBOSE"));
+  SandboxFilter filter(&sSetSandboxFilter, aType,
+                       getenv("MOZ_SANDBOX_VERBOSE"));
 
   static_assert(sizeof(mozilla::Atomic<int>) == sizeof(int),
                 "mozilla::Atomic<int> isn't represented by an int");
-  MOZ_ASSERT(NS_IsMainThread());
   pid = getpid();
+  myTid = syscall(__NR_gettid);
   taskdp = opendir("/proc/self/task");
   if (taskdp == nullptr) {
-    LOG_ERROR("opendir /proc/self/task: %s\n", strerror(errno));
+    SANDBOX_LOG_ERROR("opendir /proc/self/task: %s\n", strerror(errno));
     MOZ_CRASH();
   }
   signum = FindFreeSignalNumber();
   if (signum == 0) {
-    LOG_ERROR("No available signal numbers!");
+    SANDBOX_LOG_ERROR("No available signal numbers!");
     MOZ_CRASH();
   }
   void (*oldHandler)(int);
   oldHandler = signal(signum, SetThreadSandboxHandler);
   if (oldHandler != SIG_DFL) {
     // See the comment on FindFreeSignalNumber about race conditions.
-    LOG_ERROR("signal %d in use by handler %p!\n", signum, oldHandler);
+    SANDBOX_LOG_ERROR("signal %d in use by handler %p!\n", signum, oldHandler);
     MOZ_CRASH();
   }
 
@@ -330,21 +316,21 @@ BroadcastSetThreadSandbox()
         // Not a task ID.
         continue;
       }
-      if (tid == pid) {
-        // Drop the main thread's privileges last, below, so
-        // we can continue to signal other threads.
+      if (tid == myTid) {
+        // Drop this thread's privileges last, below, so we can
+        // continue to signal other threads.
         continue;
       }
       // Reset the futex cell and signal.
       sSetSandboxDone = 0;
       if (syscall(__NR_tgkill, pid, tid, signum) != 0) {
         if (errno == ESRCH) {
-          LOG_ERROR("Thread %d unexpectedly exited.", tid);
+          SANDBOX_LOG_ERROR("Thread %d unexpectedly exited.", tid);
           // Rescan threads, in case it forked before exiting.
           sandboxProgress = true;
           continue;
         }
-        LOG_ERROR("tgkill(%d,%d): %s\n", pid, tid, strerror(errno));
+        SANDBOX_LOG_ERROR("tgkill(%d,%d): %s\n", pid, tid, strerror(errno));
         MOZ_CRASH();
       }
       // It's unlikely, but if the thread somehow manages to exit
@@ -371,7 +357,7 @@ BroadcastSetThreadSandbox()
         if (syscall(__NR_futex, reinterpret_cast<int*>(&sSetSandboxDone),
                   FUTEX_WAIT, 0, &futexTimeout) != 0) {
           if (errno != EWOULDBLOCK && errno != ETIMEDOUT && errno != EINTR) {
-            LOG_ERROR("FUTEX_WAIT: %s\n", strerror(errno));
+            SANDBOX_LOG_ERROR("FUTEX_WAIT: %s\n", strerror(errno));
             MOZ_CRASH();
           }
         }
@@ -385,7 +371,7 @@ BroadcastSetThreadSandbox()
         // Has the thread ceased to exist?
         if (syscall(__NR_tgkill, pid, tid, 0) != 0) {
           if (errno == ESRCH) {
-            LOG_ERROR("Thread %d unexpectedly exited.", tid);
+            SANDBOX_LOG_ERROR("Thread %d unexpectedly exited.", tid);
           }
           // Rescan threads, in case it forked before exiting.
           // Also, if it somehow failed in a way that wasn't ESRCH,
@@ -398,8 +384,9 @@ BroadcastSetThreadSandbox()
         if (now.tv_sec > timeLimit.tv_nsec ||
             (now.tv_sec == timeLimit.tv_nsec &&
              now.tv_nsec > timeLimit.tv_nsec)) {
-          LOG_ERROR("Thread %d unresponsive for %d seconds.  Killing process.",
-                    tid, crashDelay);
+          SANDBOX_LOG_ERROR("Thread %d unresponsive for %d seconds."
+                            "  Killing process.",
+                            tid, crashDelay);
           MOZ_CRASH();
         }
       }
@@ -409,7 +396,8 @@ BroadcastSetThreadSandbox()
   oldHandler = signal(signum, SIG_DFL);
   if (oldHandler != SetThreadSandboxHandler) {
     // See the comment on FindFreeSignalNumber about race conditions.
-    LOG_ERROR("handler for signal %d was changed to %p!", signum, oldHandler);
+    SANDBOX_LOG_ERROR("handler for signal %d was changed to %p!",
+                      signum, oldHandler);
     MOZ_CRASH();
   }
   unused << closedir(taskdp);
@@ -417,68 +405,80 @@ BroadcastSetThreadSandbox()
   SetThreadSandbox();
 }
 
-// This function can overapproximate (i.e., return true even if
-// sandboxing isn't supported, but not the reverse).  See bug 993145.
-static bool
-IsSandboxingSupported(void)
+// Common code for sandbox startup.
+static void
+SetCurrentProcessSandbox(SandboxType aType)
 {
-  return prctl(PR_GET_SECCOMP) != -1;
-}
-
-/**
- * Starts the seccomp sandbox for this process and sets user/group-based privileges.
- * Should be called only once, and before any potentially harmful content is loaded.
- *
- * Should normally make the process exit on failure.
-*/
-void
-SetCurrentProcessSandbox()
-{
-#if !defined(ANDROID) && defined(PR_LOGGING)
-  if (!gSeccompSandboxLog) {
-    gSeccompSandboxLog = PR_NewLogModule("SeccompSandbox");
-  }
-  PR_ASSERT(gSeccompSandboxLog);
-#endif
+  MOZ_ASSERT(gSandboxCrashFunc);
 
   if (InstallSyscallReporter()) {
-    LOG_ERROR("install_syscall_reporter() failed\n");
+    SANDBOX_LOG_ERROR("install_syscall_reporter() failed\n");
   }
 
-  if (IsSandboxingSupported()) {
-    BroadcastSetThreadSandbox();
-  }
+  BroadcastSetThreadSandbox(aType);
 }
+
+#ifdef MOZ_CONTENT_SANDBOX
+/**
+ * Starts the seccomp sandbox for a content process.  Should be called
+ * only once, and before any potentially harmful content is loaded.
+ *
+ * Will normally make the process exit on failure.
+*/
+void
+SetContentProcessSandbox()
+{
+  if (gSandboxFlags.isDisabledForContent) {
+    return;
+  }
+
+  SetCurrentProcessSandbox(kSandboxContentProcess);
+}
+
+bool
+CanSandboxContentProcess()
+{
+  return gSandboxFlags.isSupported || gSandboxFlags.isDisabledForContent;
+}
+#endif // MOZ_CONTENT_SANDBOX
+
+#ifdef MOZ_GMP_SANDBOX
+/**
+ * Starts the seccomp sandbox for a media plugin process.  Should be
+ * called only once, and before any potentially harmful content is
+ * loaded -- including the plugin itself, if it's considered untrusted.
+ *
+ * The file indicated by aFilePath, if non-null, can be open()ed once
+ * read-only after the sandbox starts; it should be the .so file
+ * implementing the not-yet-loaded plugin.
+ *
+ * Will normally make the process exit on failure.
+*/
+void
+SetMediaPluginSandbox(const char *aFilePath)
+{
+  if (gSandboxFlags.isDisabledForGMP) {
+    return;
+  }
+
+  if (aFilePath) {
+    gMediaPluginFilePath = strdup(aFilePath);
+    gMediaPluginFileDesc = open(aFilePath, O_RDONLY | O_CLOEXEC);
+    if (gMediaPluginFileDesc == -1) {
+      SANDBOX_LOG_ERROR("failed to open plugin file %s: %s",
+                        aFilePath, strerror(errno));
+      MOZ_CRASH();
+    }
+  }
+  // Finally, start the sandbox.
+  SetCurrentProcessSandbox(kSandboxMediaPlugin);
+}
+
+bool
+CanSandboxMediaPlugin()
+{
+  return gSandboxFlags.isSupported || gSandboxFlags.isDisabledForGMP;
+}
+#endif // MOZ_GMP_SANDBOX
 
 } // namespace mozilla
-
-
-// "Polyfill" for sandbox::Die, the real version of which requires
-// Chromium's logging code.
-namespace sandbox {
-
-void
-Die::SandboxDie(const char* msg, const char* file, int line)
-{
-  LOG_ERROR("%s:%d: %s\n", file, line, msg);
-  _exit(127);
-}
-
-} // namespace sandbox
-
-
-// Stubs for unreached logging calls from Chromium CHECK() macro.
-#include "base/logging.h"
-namespace logging {
-
-LogMessage::LogMessage(const char *file, int line, int)
-  : file_(file), line_(line)
-{
-  MOZ_CRASH("Unexpected call to logging::LogMessage::LogMessage");
-}
-
-LogMessage::~LogMessage() {
-  MOZ_CRASH("Unexpected call to logging::LogMessage::~LogMessage");
-}
-
-} // namespace logging

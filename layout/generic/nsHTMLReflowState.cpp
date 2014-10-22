@@ -60,6 +60,7 @@ nsHTMLReflowState::nsHTMLReflowState(nsPresContext*       aPresContext,
                                      uint32_t             aFlags)
   : nsCSSOffsetState(aFrame, aRenderingContext)
   , mBlockDelta(0)
+  , mOrthogonalLimit(NS_UNCONSTRAINEDSIZE)
   , mReflowDepth(0)
 {
   NS_PRECONDITION(aRenderingContext, "no rendering context");
@@ -165,6 +166,7 @@ nsHTMLReflowState::nsHTMLReflowState(nsPresContext*           aPresContext,
                                      uint32_t                 aFlags)
   : nsCSSOffsetState(aFrame, aParentReflowState.rendContext)
   , mBlockDelta(0)
+  , mOrthogonalLimit(NS_UNCONSTRAINEDSIZE)
   , mReflowDepth(aParentReflowState.mReflowDepth + 1)
   , mFlags(aParentReflowState.mFlags)
 {
@@ -329,6 +331,19 @@ nsHTMLReflowState::Init(nsPresContext* aPresContext,
                         const nsMargin* aBorder,
                         const nsMargin* aPadding)
 {
+  if (AvailableISize() == NS_UNCONSTRAINEDSIZE) {
+    // Look up the parent chain for an orthogonal inline limit,
+    // and reset AvailableISize() if found.
+    for (const nsHTMLReflowState *parent = parentReflowState;
+         parent != nullptr; parent = parent->parentReflowState) {
+      if (parent->GetWritingMode().IsOrthogonalTo(mWritingMode) &&
+          parent->mOrthogonalLimit != NS_UNCONSTRAINEDSIZE) {
+        AvailableISize() = parent->mOrthogonalLimit;
+        break;
+      }
+    }
+  }
+
   NS_WARN_IF_FALSE(AvailableISize() != NS_UNCONSTRAINEDSIZE,
                    "have unconstrained inline-size; this should only result from "
                    "very large sizes, not attempts at intrinsic inline-size "
@@ -1454,28 +1469,24 @@ nsHTMLReflowState::InitAbsoluteConstraints(nsPresContext* aPresContext,
   {
     AutoMaybeDisableFontInflation an(frame);
 
-    nsSize size =
-      frame->ComputeSize(rendContext,
-                         nsSize(containingBlockWidth,
-                                containingBlockHeight),
+    WritingMode wm = GetWritingMode();
+    LogicalSize size =
+      frame->ComputeSize(rendContext, wm,
+                         LogicalSize(wm, nsSize(containingBlockWidth,
+                                containingBlockHeight)),
                          containingBlockWidth, // XXX or mAvailableWidth?
-                         nsSize(ComputedPhysicalMargin().LeftRight() +
-                                  ComputedPhysicalOffsets().LeftRight(),
-                                ComputedPhysicalMargin().TopBottom() +
-                                  ComputedPhysicalOffsets().TopBottom()),
-                         nsSize(ComputedPhysicalBorderPadding().LeftRight() -
-                                  ComputedPhysicalPadding().LeftRight(),
-                                ComputedPhysicalBorderPadding().TopBottom() -
-                                  ComputedPhysicalPadding().TopBottom()),
-                         nsSize(ComputedPhysicalPadding().LeftRight(),
-                                ComputedPhysicalPadding().TopBottom()),
+                         ComputedLogicalMargin().Size(wm) +
+                           ComputedLogicalOffsets().Size(wm),
+                         ComputedLogicalBorderPadding().Size(wm) -
+                           ComputedLogicalPadding().Size(wm),
+                         ComputedLogicalPadding().Size(wm),
                          computeSizeFlags);
-    ComputedWidth() = size.width;
-    ComputedHeight() = size.height;
+    ComputedISize() = size.ISize(wm);
+    ComputedBSize() = size.BSize(wm);
   }
-  NS_ASSERTION(ComputedWidth() >= 0, "Bogus width");
-  NS_ASSERTION(ComputedHeight() == NS_UNCONSTRAINEDSIZE ||
-               ComputedHeight() >= 0, "Bogus height");
+  NS_ASSERTION(ComputedISize() >= 0, "Bogus inline-size");
+  NS_ASSERTION(ComputedBSize() == NS_UNCONSTRAINEDSIZE ||
+               ComputedBSize() >= 0, "Bogus block-size");
 
   // XXX Now that we have ComputeSize, can we condense many of the
   // branches off of widthIsAuto?
@@ -2133,26 +2144,23 @@ nsHTMLReflowState::InitConstraints(nsPresContext* aPresContext,
                    "'mIsFlexContainerMeasuringHeight' shouldn't be set");
       }
 
-      nsSize size =
-        frame->ComputeSize(rendContext,
-                           nsSize(aContainingBlockWidth,
-                                  aContainingBlockHeight),
+      WritingMode wm = GetWritingMode();
+      LogicalSize size =
+        frame->ComputeSize(rendContext, wm,
+                           LogicalSize(wm, nsSize(aContainingBlockWidth,
+                                                  aContainingBlockHeight)),
                            AvailableWidth(),
-                           nsSize(ComputedPhysicalMargin().LeftRight(),
-                                  ComputedPhysicalMargin().TopBottom()),
-                           nsSize(ComputedPhysicalBorderPadding().LeftRight() -
-                                    ComputedPhysicalPadding().LeftRight(),
-                                  ComputedPhysicalBorderPadding().TopBottom() -
-                                    ComputedPhysicalPadding().TopBottom()),
-                           nsSize(ComputedPhysicalPadding().LeftRight(),
-                                  ComputedPhysicalPadding().TopBottom()),
+                           ComputedLogicalMargin().Size(wm),
+                           ComputedLogicalBorderPadding().Size(wm) -
+                             ComputedLogicalPadding().Size(wm),
+                           ComputedLogicalPadding().Size(wm),
                            computeSizeFlags);
 
-      ComputedWidth() = size.width;
-      ComputedHeight() = size.height;
-      NS_ASSERTION(ComputedWidth() >= 0, "Bogus width");
-      NS_ASSERTION(ComputedHeight() == NS_UNCONSTRAINEDSIZE ||
-                   ComputedHeight() >= 0, "Bogus height");
+      ComputedISize() = size.ISize(wm);
+      ComputedBSize() = size.BSize(wm);
+      NS_ASSERTION(ComputedISize() >= 0, "Bogus inline-size");
+      NS_ASSERTION(ComputedBSize() == NS_UNCONSTRAINEDSIZE ||
+                   ComputedBSize() >= 0, "Bogus block-size");
 
       // Exclude inline tables and flex items from the block margin calculations
       if (isBlock &&

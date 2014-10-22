@@ -15,6 +15,8 @@
 #include "mozilla/NullPtr.h"
 #include "mozilla/Attributes.h"
 
+#include "nsCSSValue.h"
+
 class nsPresContext;
 class nsCSSCounterStyleRule;
 
@@ -25,6 +27,7 @@ class WritingMode;
 typedef int32_t CounterValue;
 
 class CounterStyleManager;
+class AnonymousCounterStyle;
 
 struct NegativeType;
 struct PadType;
@@ -86,11 +89,13 @@ public:
   virtual void CallFallbackStyle(CounterValue aOrdinal,
                                  WritingMode aWritingMode,
                                  nsSubstring& aResult,
-                                 bool& aIsRTL) = 0;
+                                 bool& aIsRTL);
   virtual bool GetInitialCounterText(CounterValue aOrdinal,
                                      WritingMode aWritingMode,
                                      nsSubstring& aResult,
                                      bool& aIsRTL) = 0;
+
+  virtual AnonymousCounterStyle* AsAnonymous() { return nullptr; }
 
   NS_IMETHOD_(MozExternalRefCountType) AddRef() = 0;
   NS_IMETHOD_(MozExternalRefCountType) Release() = 0;
@@ -99,12 +104,48 @@ protected:
   int32_t mStyle;
 };
 
+class AnonymousCounterStyle MOZ_FINAL : public CounterStyle
+{
+public:
+  explicit AnonymousCounterStyle(const nsCSSValue::Array* aValue);
+
+  virtual void GetPrefix(nsAString& aResult) MOZ_OVERRIDE;
+  virtual void GetSuffix(nsAString& aResult) MOZ_OVERRIDE;
+  virtual bool IsBullet() MOZ_OVERRIDE;
+
+  virtual void GetNegative(NegativeType& aResult) MOZ_OVERRIDE;
+  virtual bool IsOrdinalInRange(CounterValue aOrdinal) MOZ_OVERRIDE;
+  virtual bool IsOrdinalInAutoRange(CounterValue aOrdinal) MOZ_OVERRIDE;
+  virtual void GetPad(PadType& aResult) MOZ_OVERRIDE;
+  virtual CounterStyle* GetFallback() MOZ_OVERRIDE;
+  virtual uint8_t GetSpeakAs() MOZ_OVERRIDE;
+  virtual bool UseNegativeSign() MOZ_OVERRIDE;
+
+  virtual bool GetInitialCounterText(CounterValue aOrdinal,
+                                     WritingMode aWritingMode,
+                                     nsSubstring& aResult,
+                                     bool& aIsRTL) MOZ_OVERRIDE;
+
+  virtual AnonymousCounterStyle* AsAnonymous() MOZ_OVERRIDE { return this; }
+
+  uint8_t GetSystem() const { return mSystem; }
+  const nsTArray<nsString>& GetSymbols() const { return mSymbols; }
+
+  NS_INLINE_DECL_REFCOUNTING(AnonymousCounterStyle)
+
+private:
+  ~AnonymousCounterStyle() {}
+
+  uint8_t mSystem;
+  nsTArray<nsString> mSymbols;
+};
+
 class CounterStyleManager MOZ_FINAL
 {
 private:
   ~CounterStyleManager();
 public:
-  CounterStyleManager(nsPresContext* aPresContext);
+  explicit CounterStyleManager(nsPresContext* aPresContext);
 
   static void InitializeBuiltinCounterStyles();
 
@@ -117,6 +158,7 @@ public:
   }
 
   CounterStyle* BuildCounterStyle(const nsSubstring& aName);
+  CounterStyle* BuildCounterStyle(const nsCSSValue::Array* aParams);
 
   static CounterStyle* GetBuiltinStyle(int32_t aStyle);
   static CounterStyle* GetNoneStyle()
@@ -133,6 +175,8 @@ public:
   // if any counter style is changed, false elsewise. This method should
   // be called when any counter style may be affected.
   bool NotifyRuleChanged();
+
+  nsPresContext* PresContext() const { return mPresContext; }
 
   NS_INLINE_DECL_REFCOUNTING(CounterStyleManager)
 

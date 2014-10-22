@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG['OS_TARGET'] != 'Android':
-    PROGRAM = 'crashreporter'
+    Program('crashreporter')
 
     UNIFIED_SOURCES += [
         'crashreporter.cpp',
@@ -22,8 +22,15 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     DEFINES['UNICODE'] = True
     DEFINES['_UNICODE'] = True
     USE_LIBS += [
-        'google_breakpad_libxul_s',
+        'google_breakpad_libxul_staticruntime_s',
     ]
+    OS_LIBS += [
+        'comctl32',
+        'shell32',
+        'wininet',
+        'shlwapi',
+    ]
+    USE_STATIC_LIBS = True
 elif CONFIG['OS_ARCH'] == 'Darwin':
     UNIFIED_SOURCES += [
         'crashreporter_osx.mm',
@@ -32,7 +39,7 @@ elif CONFIG['OS_ARCH'] == 'Darwin':
     LOCAL_INCLUDES += [
         '../google-breakpad/src/common/mac',
     ]
-    LDFLAGS += ['-framework Cocoa']
+    OS_LIBS += ['-framework Cocoa']
     USE_LIBS += [
         'breakpad_common_s',
         'breakpad_mac_common_s',
@@ -55,6 +62,8 @@ if CONFIG['MOZ_ENABLE_GTK']:
     USE_LIBS += [
         'breakpad_linux_common_s',
     ]
+    OS_LIBS += CONFIG['TK_LIBS']
+    OS_LIBS += CONFIG['MOZ_GTHREAD_LIBS']
 
 RCINCLUDE = 'crashreporter.rc'
 

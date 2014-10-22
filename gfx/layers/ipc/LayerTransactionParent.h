@@ -17,8 +17,6 @@
 #include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsTArrayForwardDeclare.h"     // for InfallibleTArray
 
-class gfx3DMatrix;
-
 namespace mozilla {
 
 namespace ipc {
@@ -88,6 +86,9 @@ public:
   void SetPendingTransactionId(uint64_t aId) { mPendingTransaction = aId; }
 
   // CompositableParentManager
+  virtual void SendFenceHandleIfPresent(PTextureParent* aTexture,
+                                        CompositableHost* aCompositableHost) MOZ_OVERRIDE;
+
   virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
                                PTextureParent* aTexture,
                                const FenceHandle& aFence) MOZ_OVERRIDE;
@@ -100,6 +101,8 @@ public:
   }
 
 protected:
+  virtual bool RecvShutdown() MOZ_OVERRIDE;
+
   virtual bool RecvUpdate(const EditArray& cset,
                           const uint64_t& aTransactionId,
                           const TargetConfig& targetConfig,
@@ -107,6 +110,7 @@ protected:
                           const bool& scheduleComposite,
                           const uint32_t& paintSequenceNumber,
                           const bool& isRepeatTransaction,
+                          const mozilla::TimeStamp& aTransactionStart,
                           EditReplyArray* reply) MOZ_OVERRIDE;
 
   virtual bool RecvUpdateNoSwap(const EditArray& cset,
@@ -115,7 +119,8 @@ protected:
                                 const bool& isFirstPaint,
                                 const bool& scheduleComposite,
                                 const uint32_t& paintSequenceNumber,
-                                const bool& isRepeatTransaction) MOZ_OVERRIDE;
+                                const bool& isRepeatTransaction,
+                                const mozilla::TimeStamp& aTransactionStart) MOZ_OVERRIDE;
 
   virtual bool RecvClearCachedResources() MOZ_OVERRIDE;
   virtual bool RecvForceComposite() MOZ_OVERRIDE;
@@ -126,9 +131,10 @@ protected:
   virtual bool RecvGetAnimationTransform(PLayerParent* aParent,
                                          MaybeTransform* aTransform)
                                          MOZ_OVERRIDE;
-  virtual bool RecvSetAsyncScrollOffset(PLayerParent* aLayer,
+  virtual bool RecvSetAsyncScrollOffset(const FrameMetrics::ViewID& aId,
                                         const int32_t& aX, const int32_t& aY) MOZ_OVERRIDE;
-  virtual bool RecvGetAPZTestData(APZTestData* aOutData);
+  virtual bool RecvGetAPZTestData(APZTestData* aOutData) MOZ_OVERRIDE;
+  virtual bool RecvRequestProperty(const nsString& aProperty, float* aValue) MOZ_OVERRIDE;
 
   virtual PLayerParent* AllocPLayerParent() MOZ_OVERRIDE;
   virtual bool DeallocPLayerParent(PLayerParent* actor) MOZ_OVERRIDE;

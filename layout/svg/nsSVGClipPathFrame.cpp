@@ -8,13 +8,17 @@
 
 // Keep others in (case-insensitive) order:
 #include "gfxContext.h"
+#include "mozilla/dom/SVGClipPathElement.h"
 #include "nsGkAtoms.h"
 #include "nsRenderingContext.h"
-#include "mozilla/dom/SVGClipPathElement.h"
 #include "nsSVGEffects.h"
+#include "nsSVGPathGeometryElement.h"
+#include "nsSVGPathGeometryFrame.h"
 #include "nsSVGUtils.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::gfx;
 
 //----------------------------------------------------------------------
 // Implementation
@@ -28,9 +32,9 @@ NS_NewSVGClipPathFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGClipPathFrame)
 
 nsresult
-nsSVGClipPathFrame::ClipPaint(nsRenderingContext* aContext,
-                              nsIFrame* aParent,
-                              const gfxMatrix &aMatrix)
+nsSVGClipPathFrame::ApplyClipOrPaintClipMask(nsRenderingContext* aContext,
+                                             nsIFrame* aClippedFrame,
+                                             const gfxMatrix& aMatrix)
 {
   // If the flag is set when we get here, it means this clipPath frame
   // has already been used painting the current clip, and the document
@@ -41,39 +45,54 @@ nsSVGClipPathFrame::ClipPaint(nsRenderingContext* aContext,
   }
   AutoClipPathReferencer clipRef(this);
 
-  mClipParent = aParent;
-  if (mClipParentMatrix) {
-    *mClipParentMatrix = aMatrix;
-  } else {
-    mClipParentMatrix = new gfxMatrix(aMatrix);
-  }
+  mMatrixForChildren = GetClipPathTransform(aClippedFrame) * aMatrix;
 
-  gfxContext *gfx = aContext->ThebesContext();
+  gfxContext* gfx = aContext->ThebesContext();
 
-  nsISVGChildFrame *singleClipPathChild = nullptr;
+  nsISVGChildFrame* singleClipPathChild = nullptr;
 
   if (IsTrivial(&singleClipPathChild)) {
-    // Notify our child that it's painting as part of a clipPath, and that
-    // we only require it to draw its path (it should skip filling, etc.):
-    SVGAutoRenderState mode(aContext, SVGAutoRenderState::CLIP);
-
-    if (!singleClipPathChild) {
-      // We have no children - the spec says clip away everything:
-      gfx->Rectangle(gfxRect());
+    gfxContextMatrixAutoSaveRestore autoRestore(gfx);
+    RefPtr<Path> clipPath;
+    if (singleClipPathChild) {
+      nsSVGPathGeometryFrame* pathFrame = do_QueryFrame(singleClipPathChild);
+      if (pathFrame) {
+        nsSVGPathGeometryElement* pathElement =
+          static_cast<nsSVGPathGeometryElement*>(pathFrame->GetContent());
+        gfxMatrix toChildsUserSpace = pathElement->
+          PrependLocalTransformsTo(mMatrixForChildren,
+                                   nsSVGElement::eUserSpaceToParent);
+        gfxMatrix newMatrix =
+          gfx->CurrentMatrix().PreMultiply(toChildsUserSpace).NudgeToIntegers();
+        if (!newMatrix.IsSingular()) {
+          gfx->SetMatrix(newMatrix);
+          clipPath = pathElement->GetOrBuildPath(*gfx->GetDrawTarget(),
+                                                 nsSVGUtils::ToFillRule(pathFrame->StyleSVG()->mClipRule));
+        }
+      }
+    }
+    gfx->NewPath();
+    if (clipPath) {
+      gfx->SetPath(clipPath);
+      // gfxContext::Clip() resets the FillRule on any Path set by
+      // gfxContext::SetPath() call to the contexts own current FillRule.
+      // So as long as we're doing the clipping via the gfxContext we need to
+      // set the FillRule on the context (even though that's a Path state):
+      gfx->SetFillRule(clipPath->GetFillRule());
     } else {
-      singleClipPathChild->NotifySVGChanged(
-                             nsISVGChildFrame::TRANSFORM_CHANGED);
-      singleClipPathChild->PaintSVG(aContext, nullptr);
+      // The spec says clip away everything if we have no children or the
+      // clipping path otherwise can't be resolved:
+      gfx->Rectangle(gfxRect());
     }
     gfx->Clip();
     gfx->NewPath();
     return NS_OK;
   }
 
-  // Seems like this is a non-trivial clipPath, so we need to use a clip mask.
-
-  // Notify our children that they're painting into a clip mask:
-  SVGAutoRenderState mode(aContext, SVGAutoRenderState::CLIP_MASK);
+  // This is a non-trivial clipPath, so we need to paint its contents into a
+  // temporary surface and use that to mask the clipped content.  Note that
+  // nsSVGPathGeometryFrame::Render checks for the NS_STATE_SVG_CLIPPATH_CHILD
+  // state bit and paints into our mask surface using opaque black in that case.
 
   // Check if this clipPath is itself clipped by another clipPath:
   nsSVGClipPathFrame *clipPathFrame =
@@ -83,7 +102,7 @@ nsSVGClipPathFrame::ClipPaint(nsRenderingContext* aContext,
     referencedClipIsTrivial = clipPathFrame->IsTrivial();
     gfx->Save();
     if (referencedClipIsTrivial) {
-      clipPathFrame->ClipPaint(aContext, aParent, aMatrix);
+      clipPathFrame->ApplyClipOrPaintClipMask(aContext, aClippedFrame, aMatrix);
     } else {
       gfx->PushGroup(gfxContentType::ALPHA);
     }
@@ -109,26 +128,35 @@ nsSVGClipPathFrame::ClipPaint(nsRenderingContext* aContext,
         isTrivial = clipPathFrame->IsTrivial();
         gfx->Save();
         if (isTrivial) {
-          clipPathFrame->ClipPaint(aContext, aParent, aMatrix);
+          clipPathFrame->ApplyClipOrPaintClipMask(aContext, aClippedFrame, aMatrix);
         } else {
           gfx->PushGroup(gfxContentType::ALPHA);
         }
       }
 
-      SVGFrame->PaintSVG(aContext, nullptr);
+      gfxMatrix toChildsUserSpace = mMatrixForChildren;
+      nsIFrame* child = do_QueryFrame(SVGFrame);
+      nsIContent* childContent = child->GetContent();
+      if (childContent->IsSVG()) {
+        toChildsUserSpace =
+          static_cast<const nsSVGElement*>(childContent)->
+            PrependLocalTransformsTo(mMatrixForChildren,
+                                     nsSVGElement::eUserSpaceToParent);
+      }
+      SVGFrame->PaintSVG(aContext, toChildsUserSpace);
 
       if (clipPathFrame) {
         if (!isTrivial) {
           gfx->PopGroupToSource();
 
-          nsRefPtr<gfxPattern> clipMaskSurface;
           gfx->PushGroup(gfxContentType::ALPHA);
 
-          clipPathFrame->ClipPaint(aContext, aParent, aMatrix);
-          clipMaskSurface = gfx->PopGroup();
+          clipPathFrame->ApplyClipOrPaintClipMask(aContext, aClippedFrame, aMatrix);
+          Matrix maskTransform;
+          RefPtr<SourceSurface> clipMaskSurface = gfx->PopGroupToSurface(&maskTransform);
 
           if (clipMaskSurface) {
-            gfx->Mask(clipMaskSurface);
+            gfx->Mask(clipMaskSurface, maskTransform);
           }
         }
         gfx->Restore();
@@ -140,14 +168,14 @@ nsSVGClipPathFrame::ClipPaint(nsRenderingContext* aContext,
     if (!referencedClipIsTrivial) {
       gfx->PopGroupToSource();
 
-      nsRefPtr<gfxPattern> clipMaskSurface;
       gfx->PushGroup(gfxContentType::ALPHA);
 
-      clipPathFrame->ClipPaint(aContext, aParent, aMatrix);
-      clipMaskSurface = gfx->PopGroup();
+      clipPathFrame->ApplyClipOrPaintClipMask(aContext, aClippedFrame, aMatrix);
+      Matrix maskTransform;
+      RefPtr<SourceSurface> clipMaskSurface = gfx->PopGroupToSurface(&maskTransform);
 
       if (clipMaskSurface) {
-        gfx->Mask(clipMaskSurface);
+        gfx->Mask(clipMaskSurface, maskTransform);
       }
     }
     gfx->Restore();
@@ -157,9 +185,8 @@ nsSVGClipPathFrame::ClipPaint(nsRenderingContext* aContext,
 }
 
 bool
-nsSVGClipPathFrame::ClipHitTest(nsIFrame* aParent,
-                                const gfxMatrix &aMatrix,
-                                const nsPoint &aPoint)
+nsSVGClipPathFrame::PointIsInsideClipPath(nsIFrame* aClippedFrame,
+                                          const gfxPoint &aPoint)
 {
   // If the flag is set when we get here, it means this clipPath frame
   // has already been used in hit testing against the current clip,
@@ -170,29 +197,40 @@ nsSVGClipPathFrame::ClipHitTest(nsIFrame* aParent,
   }
   AutoClipPathReferencer clipRef(this);
 
-  mClipParent = aParent;
-  if (mClipParentMatrix) {
-    *mClipParentMatrix = aMatrix;
-  } else {
-    mClipParentMatrix = new gfxMatrix(aMatrix);
+  gfxMatrix matrix = GetClipPathTransform(aClippedFrame);
+  if (!matrix.Invert()) {
+    return false;
   }
+  gfxPoint point = matrix.Transform(aPoint);
 
+  // clipPath elements can themselves be clipped by a different clip path. In
+  // that case the other clip path further clips away the element that is being
+  // clipped by the original clipPath. If this clipPath is being clipped by a
+  // different clip path we need to check if it prevents the original element
+  // from recieving events at aPoint:
   nsSVGClipPathFrame *clipPathFrame =
     nsSVGEffects::GetEffectProperties(this).GetClipPathFrame(nullptr);
-  if (clipPathFrame && !clipPathFrame->ClipHitTest(aParent, aMatrix, aPoint))
+  if (clipPathFrame &&
+      !clipPathFrame->PointIsInsideClipPath(aClippedFrame, aPoint)) {
     return false;
+  }
 
   for (nsIFrame* kid = mFrames.FirstChild(); kid;
        kid = kid->GetNextSibling()) {
     nsISVGChildFrame* SVGFrame = do_QueryFrame(kid);
     if (SVGFrame) {
-      // Notify the child frame that we may be working with a
-      // different transform, so it can update its covered region
-      // (used to shortcut hit testing).
-      SVGFrame->NotifySVGChanged(nsISVGChildFrame::TRANSFORM_CHANGED);
-
-      if (SVGFrame->GetFrameForPoint(aPoint))
+      gfxPoint pointForChild = point;
+      gfxMatrix m = static_cast<nsSVGElement*>(kid->GetContent())->
+        PrependLocalTransformsTo(gfxMatrix(), nsSVGElement::eUserSpaceToParent);
+      if (!m.IsIdentity()) {
+        if (!m.Invert()) {
+          return false;
+        }
+        pointForChild = m.Transform(point);
+      }
+      if (SVGFrame->GetFrameForPoint(pointForChild)) {
         return true;
+      }
     }
   }
   return false;
@@ -313,17 +351,22 @@ nsSVGClipPathFrame::GetType() const
 }
 
 gfxMatrix
-nsSVGClipPathFrame::GetCanvasTM(uint32_t aFor, nsIFrame* aTransformRoot)
+nsSVGClipPathFrame::GetCanvasTM()
+{
+  return mMatrixForChildren;
+}
+
+gfxMatrix
+nsSVGClipPathFrame::GetClipPathTransform(nsIFrame* aClippedFrame)
 {
   SVGClipPathElement *content = static_cast<SVGClipPathElement*>(mContent);
 
-  gfxMatrix tm =
-    content->PrependLocalTransformsTo(mClipParentMatrix ?
-                                      *mClipParentMatrix : gfxMatrix());
+  gfxMatrix tm = content->PrependLocalTransformsTo(gfxMatrix());
 
-  return nsSVGUtils::AdjustMatrixForUnits(tm,
-                                          &content->mEnumAttributes[SVGClipPathElement::CLIPPATHUNITS],
-                                          mClipParent);
+  nsSVGEnum* clipPathUnits =
+    &content->mEnumAttributes[SVGClipPathElement::CLIPPATHUNITS];
+
+  return nsSVGUtils::AdjustMatrixForUnits(tm, clipPathUnits, aClippedFrame);
 }
 
 SVGBBox

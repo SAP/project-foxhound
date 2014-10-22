@@ -26,10 +26,9 @@ ExtractWellSized(ExclusiveContext *cx, Buffer &cb)
         return nullptr;
 
     /* For medium/big buffers, avoid wasting more than 1/4 of the memory. */
-    JS_ASSERT(capacity >= length);
+    MOZ_ASSERT(capacity >= length);
     if (length > Buffer::sMaxInlineStorage && capacity - length > length / 4) {
-        size_t bytes = sizeof(CharT) * (length + 1);
-        CharT *tmp = (CharT *)cx->realloc_(buf, bytes);
+        CharT *tmp = cx->zone()->pod_realloc<CharT>(buf, capacity, length + 1);
         if (!tmp) {
             js_free(buf);
             return nullptr;
@@ -40,13 +39,13 @@ ExtractWellSized(ExclusiveContext *cx, Buffer &cb)
     return buf;
 }
 
-jschar *
+char16_t *
 StringBuffer::stealChars()
 {
     if (isLatin1() && !inflateChars())
         return nullptr;
 
-    return ExtractWellSized<jschar>(cx, twoByteChars());
+    return ExtractWellSized<char16_t>(cx, twoByteChars());
 }
 
 bool
@@ -88,6 +87,12 @@ FinishStringFlat(ExclusiveContext *cx, StringBuffer &sb, Buffer &cb)
     if (!str)
         return nullptr;
 
+    /*
+     * The allocation was made on a TempAllocPolicy, so account for the string
+     * data on the string's zone.
+     */
+    str->zone()->updateMallocCounter(sizeof(CharT) * len);
+
     buf.forget();
     return str;
 }
@@ -112,14 +117,14 @@ StringBuffer::finishString()
         }
     } else {
         if (JSFatInlineString::twoByteLengthFits(len)) {
-            mozilla::Range<const jschar> range(twoByteChars().begin(), len);
+            mozilla::Range<const char16_t> range(twoByteChars().begin(), len);
             return TAINT_REF_COPY(NewFatInlineString<CanGC>(cx, range), startTaint);
         }
     }
 
     return TAINT_REF_COPY(isLatin1()
         ? FinishStringFlat<Latin1Char>(cx, *this, latin1Chars())
-        : FinishStringFlat<jschar>(cx, *this, twoByteChars()), startTaint);
+        : FinishStringFlat<char16_t>(cx, *this, twoByteChars()), startTaint);
 }
 
 JSAtom *
@@ -159,6 +164,6 @@ js::ValueToStringBufferSlow(JSContext *cx, const Value &arg, StringBuffer &sb)
         JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_SYMBOL_TO_STRING);
         return false;
     }
-    JS_ASSERT(v.isUndefined());
+    MOZ_ASSERT(v.isUndefined());
     return sb.append(cx->names().undefined);
 }

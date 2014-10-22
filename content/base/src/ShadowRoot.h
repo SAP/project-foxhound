@@ -93,8 +93,7 @@ public:
   void RemoveInsertionPoint(HTMLContentElement* aInsertionPoint);
 
   void SetYoungerShadow(ShadowRoot* aYoungerShadow);
-  ShadowRoot* GetOlderShadow() { return mOlderShadow; }
-  ShadowRoot* GetYoungerShadow() { return mYoungerShadow; }
+  ShadowRoot* GetYoungerShadowRoot() { return mYoungerShadow; }
   void SetInsertionPointChanged() { mInsertionPointChanged = true; }
 
   void SetAssociatedBinding(nsXBLBinding* aBinding) { mAssociatedBinding = aBinding; }
@@ -125,6 +124,8 @@ public:
     GetElementsByClassName(const nsAString& aClasses);
   void GetInnerHTML(nsAString& aInnerHTML);
   void SetInnerHTML(const nsAString& aInnerHTML, ErrorResult& aError);
+  Element* Host();
+  ShadowRoot* GetOlderShadowRoot() { return mOlderShadow; }
   void StyleSheetChanged();
 protected:
   virtual ~ShadowRoot();
@@ -175,7 +176,7 @@ protected:
 class ShadowRootStyleSheetList : public StyleSheetList
 {
 public:
-  ShadowRootStyleSheetList(ShadowRoot* aShadowRoot);
+  explicit ShadowRootStyleSheetList(ShadowRoot* aShadowRoot);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ShadowRootStyleSheetList, StyleSheetList)

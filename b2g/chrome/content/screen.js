@@ -5,6 +5,9 @@
 // TODO: support multiple device pixels per CSS pixel
 // 
 
+let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+let isMulet = "ResponsiveUI" in browserWindow;
+
 // We do this on ContentStart because querying the displayDPI fails otherwise.
 window.addEventListener('ContentStart', function() {
   // This is the toplevel <window> element
@@ -59,8 +62,8 @@ window.addEventListener('ContentStart', function() {
   // Get the command line arguments that were passed to the b2g client
   let args;
   try {
-    // On Firefox Mulet, we don't always have a command line argument
-    args = window.arguments[0].QueryInterface(Ci.nsICommandLine);
+    let service = Cc["@mozilla.org/commandlinehandler/general-startup;1?type=b2gcmds"].getService(Ci.nsISupports);
+    args = service.wrappedJSObject.cmdLine;
   } catch(e) {}
 
   let screenarg = null;
@@ -148,8 +151,14 @@ window.addEventListener('ContentStart', function() {
     }
     let chromewidth = window.outerWidth - window.innerWidth;
     let chromeheight = window.outerHeight - window.innerHeight + controlsHeight;
-    window.resizeTo(Math.round(width * scale) + chromewidth,
-                    Math.round(height * scale) + chromeheight);
+    if (isMulet) {
+      let responsive = browserWindow.gBrowser.selectedTab.__responsiveUI;
+      responsive.setSize((Math.round(width * scale) + 14*2),
+                        (Math.round(height * scale) + controlsHeight + 61));
+    } else {
+      window.resizeTo(Math.round(width * scale) + chromewidth,
+                      Math.round(height * scale) + chromeheight);
+    }
 
     let frameWidth = width, frameHeight = height;
     if (shouldFlip) {

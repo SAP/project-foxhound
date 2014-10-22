@@ -27,6 +27,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Environment;
+import android.support.v4.net.ConnectivityManagerCompat;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.NotificationCompat.Builder;
 import android.util.Log;
@@ -106,6 +107,11 @@ public class UpdateService extends IntentService {
         } else if (UpdateServiceHelper.ACTION_CANCEL_DOWNLOAD.equals(intent.getAction())) {
             mCancelDownload = true;
         } else {
+            if (!UpdateServiceHelper.ACTION_APPLY_UPDATE.equals(intent.getAction())) {
+                // Delete the update package used to install the current version.
+                deleteUpdatePackage(getLastFileName());
+            }
+
             super.onStartCommand(intent, flags, startId);
         }
 
@@ -208,7 +214,6 @@ public class UpdateService extends IntentService {
 
         Log.i(LOGTAG, "update available, buildID = " + info.buildID);
 
-        int connectionType = netInfo.getType();
         int autoDownloadPolicy = getAutoDownloadPolicy();
 
 
@@ -217,12 +222,12 @@ public class UpdateService extends IntentService {
          *
          * - We have a FORCE_DOWNLOAD flag passed in
          * - The preference is set to 'always'
-         * - The preference is set to 'wifi' and we are actually using wifi (or regular ethernet)
+         * - The preference is set to 'wifi' and we are using a non-metered network (i.e. the user
+         *   is OK with large data transfers occurring)
          */
         boolean shouldStartDownload = hasFlag(flags, UpdateServiceHelper.FLAG_FORCE_DOWNLOAD) ||
             autoDownloadPolicy == UpdateServiceHelper.AUTODOWNLOAD_ENABLED ||
-            (autoDownloadPolicy == UpdateServiceHelper.AUTODOWNLOAD_WIFI &&
-             (connectionType == ConnectivityManager.TYPE_WIFI || connectionType == ConnectivityManager.TYPE_ETHERNET));
+            (autoDownloadPolicy == UpdateServiceHelper.AUTODOWNLOAD_WIFI && !ConnectivityManagerCompat.isActiveNetworkMetered(mConnectivityManager));
 
         if (!shouldStartDownload) {
             Log.i(LOGTAG, "not initiating automatic update download due to policy " + autoDownloadPolicy);
@@ -389,10 +394,10 @@ public class UpdateService extends IntentService {
 
         mBuilder = new NotificationCompat.Builder(this);
         mBuilder.setContentTitle(getResources().getString(R.string.updater_downloading_title))
-    	    .setContentText(mApplyImmediately ? "" : getResources().getString(R.string.updater_downloading_select))
-    	    .setSmallIcon(android.R.drawable.stat_sys_download)
-    	    .setContentIntent(contentIntent)
-            .setDeleteIntent(deleteIntent);
+                .setContentText(mApplyImmediately ? "" : getResources().getString(R.string.updater_downloading_select))
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentIntent(contentIntent)
+                .setDeleteIntent(deleteIntent);
 
         mBuilder.setProgress(100, 0, true);
         mNotificationManager.notify(NOTIFICATION_ID, mBuilder.build());
@@ -413,8 +418,27 @@ public class UpdateService extends IntentService {
         mNotificationManager.notify(NOTIFICATION_ID, notification);
     }
 
+    private boolean deleteUpdatePackage(String path) {
+        if (path == null) {
+            return false;
+        }
+
+        File pkg = new File(path);
+        if (!pkg.exists()) {
+            return false;
+        }
+
+        pkg.delete();
+        Log.i(LOGTAG, "deleted update package: " + path);
+
+        return true;
+    }
+
     private File downloadUpdatePackage(UpdateInfo info, boolean overwriteExisting) {
-        File downloadFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), new File(info.url.getFile()).getName());
+        File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        path.mkdirs();
+        String fileName = new File(info.url.getFile()).getName();
+        File downloadFile = new File(path, fileName);
 
         if (!overwriteExisting && info.buildID.equals(getLastBuildID()) && downloadFile.exists()) {
             // The last saved buildID is the same as the one for the current update. We also have a file
@@ -457,10 +481,10 @@ public class UpdateService extends IntentService {
                 output.write(buf, 0, len);
                 bytesRead += len;
                 // Updating the notification takes time so only do it every 1MB
-                if(bytesRead - lastNotify > 1048576) {
-	                mBuilder.setProgress(length, bytesRead, false);
-	                mNotificationManager.notify(NOTIFICATION_ID, mBuilder.build());
-	                lastNotify = bytesRead;
+                if (bytesRead - lastNotify > 1048576) {
+                    mBuilder.setProgress(length, bytesRead, false);
+                    mNotificationManager.notify(NOTIFICATION_ID, mBuilder.build());
+                    lastNotify = bytesRead;
                 }
             }
 
@@ -534,7 +558,7 @@ public class UpdateService extends IntentService {
 
     private void applyUpdate(String updatePath) {
         if (updatePath == null) {
-            updatePath = mPrefs.getString(KEY_LAST_FILE_NAME, null);
+            updatePath = getLastFileName();
         }
         applyUpdate(new File(updatePath));
     }
@@ -568,6 +592,10 @@ public class UpdateService extends IntentService {
 
     private String getLastHashValue() {
         return mPrefs.getString(KEY_LAST_HASH_VALUE, null);
+    }
+
+    private String getLastFileName() {
+        return mPrefs.getString(KEY_LAST_FILE_NAME, null);
     }
 
     private Calendar getLastAttemptDate() {

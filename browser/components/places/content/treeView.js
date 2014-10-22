@@ -23,6 +23,14 @@ function PlacesTreeView(aFlatList, aOnOpenFlatContainer, aController) {
 PlacesTreeView.prototype = {
   get wrappedJSObject() this,
 
+  __xulStore: null,
+  get _xulStore() {
+    if (!this.__xulStore) {
+      this.__xulStore = Cc["@mozilla.org/xul/xulstore;1"].getService(Ci.nsIXULStore);
+    }
+    return this.__xulStore;
+  },
+
   __dateService: null,
   get _dateService() {
     if (!this.__dateService) {
@@ -307,11 +315,14 @@ PlacesTreeView.prototype = {
       if (!this._flatList &&
           curChild instanceof Ci.nsINavHistoryContainerResultNode &&
           !this._controller.hasCachedLivemarkInfo(curChild)) {
-        let resource = this._getResourceForNode(curChild);
-        let isopen = resource != null &&
-                     PlacesUIUtils.localStore.HasAssertion(resource,
-                                                           openLiteral,
-                                                           trueLiteral, true);
+        let uri = curChild.uri;
+        let isopen = false;
+
+        if (uri) {
+          let val = this._xulStore.getValue(document.documentURI, uri, "open");
+          isopen = (val == "true");
+        }
+
         if (isopen != curChild.containerOpen)
           aToOpen.push(curChild);
         else if (curChild.containerOpen && curChild.childCount > 0)
@@ -1109,13 +1120,6 @@ PlacesTreeView.prototype = {
     return Ci.nsINavHistoryResultTreeViewer.INDEX_INVISIBLE;
   },
 
-  _getResourceForNode: function PTV_getResourceForNode(aNode)
-  {
-    let uri = aNode.uri;
-    NS_ASSERT(uri, "if there is no uri, we can't persist the open state");
-    return uri ? PlacesUIUtils.RDF.GetResource(uri) : null;
-  },
-
   // nsITreeView
   get rowCount() this._rows.length,
   get selection() this._selection,
@@ -1339,9 +1343,10 @@ PlacesTreeView.prototype = {
     if (PlacesControllerDragHelper.disallowInsertion(container))
       return null;
 
+    let tagName = PlacesUtils.nodeIsTagQuery(container) ? container.title : null;
     return new InsertionPoint(PlacesUtils.getConcreteItemId(container),
                               index, orientation,
-                              PlacesUtils.nodeIsTagQuery(container),
+                              tagName,
                               dropNearItemId);
   },
 
@@ -1350,8 +1355,10 @@ PlacesTreeView.prototype = {
     // parameters into a container id and index within the container,
     // since this information is specific to the tree view.
     let ip = this._getInsertionPoint(aRow, aOrientation);
-    if (ip)
-      PlacesControllerDragHelper.onDrop(ip, aDataTransfer);
+    if (ip) {
+      PlacesControllerDragHelper.onDrop(ip, aDataTransfer)
+                                .then(null, Components.utils.reportError);
+    }
 
     PlacesControllerDragHelper.currentDropTarget = null;
   },
@@ -1396,7 +1403,11 @@ PlacesTreeView.prototype = {
     if (this._getColumnType(aColumn) != this.COLUMN_TYPE_TITLE)
       return "";
 
-    return this._getNodeForRow(aRow).icon;
+    let node = this._getNodeForRow(aRow);
+    if (PlacesUtils.nodeIsURI(node) && node.icon)
+      return PlacesUtils.getImageURLForResolution(window, node.icon);
+
+    return node.icon;
   },
 
   getProgressMode: function(aRow, aColumn) { },
@@ -1493,15 +1504,16 @@ PlacesTreeView.prototype = {
 
     // Persist containers open status, but never persist livemarks.
     if (!this._controller.hasCachedLivemarkInfo(node)) {
-      let resource = this._getResourceForNode(node);
-      if (resource) {
-        const openLiteral = PlacesUIUtils.RDF.GetResource("http://home.netscape.com/NC-rdf#open");
-        const trueLiteral = PlacesUIUtils.RDF.GetLiteral("true");
+      let uri = node.uri;
 
-        if (node.containerOpen)
-          PlacesUIUtils.localStore.Unassert(resource, openLiteral, trueLiteral);
-        else
-          PlacesUIUtils.localStore.Assert(resource, openLiteral, trueLiteral, true);
+      if (uri) {
+        let docURI = document.documentURI;
+
+        if (node.containerOpen) {
+          this._xulStore.removeValue(docURI, uri, "open");
+        } else {
+          this._xulStore.setValue(docURI, uri, "open", "true");
+        }
       }
     }
 
@@ -1637,23 +1649,39 @@ PlacesTreeView.prototype = {
     if (aColumn.index != 0)
       return false;
 
-    // Only bookmark-nodes are editable, and those are never built lazily
     let node = this._rows[aRow];
-    if (!node || node.itemId == -1)
+    if (!node) {
+      Cu.reportError("isEditable called for an unbuilt row.");
+      return false;
+    }
+    let itemId = node.itemId;
+
+    // Only bookmark-nodes are editable.  Fortunately, this checks also takes
+    // care of livemark children.
+    if (itemId == -1)
       return false;
 
-    // The following items are never editable:
-    // * Read-only items.
+    // The following items are also not editable, even though they are bookmark
+    // items.
     // * places-roots
+    // * the left pane special folders and queries (those are place: uri
+    //   bookmarks)
     // * separators
-    if (PlacesUtils.nodeIsReadOnly(node) ||
-        PlacesUtils.nodeIsSeparator(node))
+    //
+    // Note that concrete itemIds aren't used intentionally.  For example, we
+    // have no reason to disallow renaming a shortcut to the Bookmarks Toolbar,
+    // except for the one under All Bookmarks.
+    if (PlacesUtils.nodeIsSeparator(node) || PlacesUtils.isRootItem(itemId))
       return false;
 
-    if (PlacesUtils.nodeIsFolder(node)) {
-      let itemId = PlacesUtils.getConcreteItemId(node);
-      if (PlacesUtils.isRootItem(itemId))
-        return false;
+    let parentId = PlacesUtils.getConcreteItemId(node.parent);
+    if (parentId == PlacesUIUtils.leftPaneFolderId ||
+        parentId == PlacesUIUtils.allBookmarksFolderId) {
+      // Note that the for the time being this is the check that actually
+      // blocks renaming places "roots", and not the isRootItem check above.
+      // That's because places root are only exposed through folder shortcuts
+      // descendants of the left pane folder.
+      return false;
     }
 
     return true;

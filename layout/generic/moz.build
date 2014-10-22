@@ -25,10 +25,9 @@ EXPORTS += [
     'nsIObjectFrame.h',
     'nsIPageSequenceFrame.h',
     'nsIScrollableFrame.h',
-    'nsIScrollbarOwner.h',
     'nsIScrollPositionListener.h',
     'nsIStatefulFrame.h',
-    'nsObjectFrame.h',
+    'nsPluginFrame.h',
     'nsQueryFrame.h',
     'nsSplittableFrame.h',
     'nsSubDocumentFrame.h',
@@ -101,10 +100,10 @@ UNIFIED_SOURCES += [
 ]
 
 # nsLineLayout.cpp needs to be built separately because it uses plarena.h.
-# nsObjectFrame.cpp needs to be built separately because of name clashes in the OS X headers.
+# nsPluginFrame.cpp needs to be built separately because of name clashes in the OS X headers.
 SOURCES += [
     'nsLineLayout.cpp',
-    'nsObjectFrame.cpp',
+    'nsPluginFrame.cpp',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
@@ -142,3 +141,11 @@ RESOURCE_FILES.html = [
 
 MOCHITEST_MANIFESTS += ['test/mochitest.ini']
 MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
+
+CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
+
+if CONFIG['MOZ_WIDGET_GTK']:
+    CXXFLAGS += CONFIG['TK_CFLAGS']
+
+if CONFIG['MOZ_ENABLE_QT']:
+    CXXFLAGS += CONFIG['MOZ_QT_CFLAGS']

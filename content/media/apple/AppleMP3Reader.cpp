@@ -166,6 +166,10 @@ AppleMP3Reader::PassthroughInputDataCallback(AudioConverterRef aAudioConverter,
                                              AudioStreamPacketDescription **aPacketDesc,
                                              void *aUserData)
 {
+  if (!aPacketDesc) {
+    return kAudioFileStreamError_UnspecifiedError;
+  }
+
   PassthroughUserData *userData = (PassthroughUserData *)aUserData;
   if (userData->mDone) {
     // We make sure this callback is run _once_, with all the data we received
@@ -260,7 +264,7 @@ AppleMP3Reader::AudioSampleCallback(UInt32 aNumBytes,
     AudioData *audio = new AudioData(mDecoder->GetResource()->Tell(),
                                      time, duration, numFrames,
                                      reinterpret_cast<AudioDataValue *>(decoded.forget()),
-                                     mAudioChannels);
+                                     mAudioChannels, mAudioSampleRate);
     mAudioQueue.Push(audio);
 
     mCurrentAudioFrame += numFrames;

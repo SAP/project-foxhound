@@ -15,6 +15,7 @@
 
 var Cc = SpecialPowers.Cc;
 var Ci = SpecialPowers.Ci;
+var firstLoad = true;
 
 // Add some URLs to the malware database.
 var testData = "malware.example.com/";
@@ -26,16 +27,20 @@ var testUpdate =
 var dbService = Cc["@mozilla.org/url-classifier/dbservice;1"]
                 .getService(Ci.nsIUrlClassifierDBService);
 
+function loadTestFrame() {
+  document.getElementById("testFrame").src = "classifierFrame.html";
+}
+
 function doUpdate(update) {
   var listener = {
-    QueryInterface: function(iid)
+    QueryInterface: SpecialPowers.wrapCallback(function(iid)
     {
       if (iid.equals(Ci.nsISupports) ||
           iid.equals(Ci.nsIUrlClassifierUpdateObserver))
         return this;
 
       throw Cr.NS_ERROR_NO_INTERFACE;
-    },
+    }),
     updateUrlRequested: function(url) { },
     streamFinished: function(status) { },
     updateError: function(errorCode) {
@@ -46,10 +51,7 @@ function doUpdate(update) {
     updateSuccess: function(requestedTimeout) {
       SpecialPowers.pushPrefEnv(
         {"set" : [["browser.safebrowsing.malware.enabled", true]]},
-        function loadTestFrame() {
-          document.getElementById("testFrame").src = "classifierFrame.html";
-        }
-      );
+        loadTestFrame);
     }
   };
 

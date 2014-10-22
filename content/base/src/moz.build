@@ -42,7 +42,7 @@ if CONFIG['MOZ_WEBRTC']:
         'nsDOMDataChannel.h',
         'nsDOMDataChannelDeclarations.h',
     ]
-    SOURCES += [
+    UNIFIED_SOURCES += [
         'nsDOMDataChannel.cpp',
     ]
     LOCAL_INCLUDES += [
@@ -61,6 +61,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'Attr.h',
+    'ChildIterator.h',
     'Comment.h',
     'DocumentFragment.h',
     'DocumentType.h',
@@ -80,6 +81,7 @@ EXPORTS.mozilla.dom += [
     'StyleSheetList.h',
     'Text.h',
     'TreeWalker.h',
+    'WebSocket.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -98,17 +100,18 @@ UNIFIED_SOURCES += [
     'DOMStringList.cpp',
     'Element.cpp',
     'EventSource.cpp',
+    'File.cpp',
     'FileIOObject.cpp',
     'FragmentOrElement.cpp',
     'ImportManager.cpp',
     'Link.cpp',
+    'MultipartFileImpl.cpp',
     'NodeIterator.cpp',
     'nsAtomListUtils.cpp',
     'nsAttrAndChildArray.cpp',
     'nsAttrValue.cpp',
     'nsAttrValueOrString.cpp',
     'nsCCUncollectableMarker.cpp',
-    'nsChannelPolicy.cpp',
     'nsContentAreaDragDrop.cpp',
     'nsContentIterator.cpp',
     'nsContentList.cpp',
@@ -121,11 +124,10 @@ UNIFIED_SOURCES += [
     'nsCSPService.cpp',
     'nsCSPUtils.cpp',
     'nsDataDocumentContentPolicy.cpp',
+    'nsDocument.cpp',
     'nsDocumentEncoder.cpp',
     'nsDOMAttributeMap.cpp',
-    'nsDOMBlobBuilder.cpp',
     'nsDOMCaretPosition.cpp',
-    'nsDOMFile.cpp',
     'nsDOMFileReader.cpp',
     'nsDOMMutationObserver.cpp',
     'nsDOMSerializer.cpp',
@@ -149,6 +151,7 @@ UNIFIED_SOURCES += [
     'nsMixedContentBlocker.cpp',
     'nsNameSpaceManager.cpp',
     'nsNoDataProtocolContentPolicy.cpp',
+    'nsNodeInfoManager.cpp',
     'nsNodeUtils.cpp',
     'nsPlainTextSerializer.cpp',
     'nsPropertyTable.cpp',
@@ -183,12 +186,6 @@ SOURCES += [
     'nsImageLoadingContent.cpp',
 ]
 
-# These files cannot be built in unified mode because they use FORCE_PR_LOG
-SOURCES += [
-    'nsDocument.cpp',
-    'nsNodeInfoManager.cpp',
-]
-
 # These files cannot be built in unified mode because of OS X headers.
 SOURCES += [
     'nsContentUtils.cpp',
@@ -198,17 +195,8 @@ SOURCES += [
 EXTRA_COMPONENTS += [
     'contentAreaDropListener.js',
     'contentAreaDropListener.manifest',
-    'contentSecurityPolicy.manifest',
     'messageWakeupService.js',
     'messageWakeupService.manifest',
-]
-
-EXTRA_PP_COMPONENTS += [
-    'contentSecurityPolicy.js',
-]
-
-EXTRA_JS_MODULES += [
-    'CSPUtils.jsm',
 ]
 
 FAIL_ON_WARNINGS = True
@@ -223,8 +211,6 @@ LOCAL_INCLUDES += [
     '/content/html/content/src',
     '/content/html/document/src',
     '/content/svg/content/src',
-    '/content/xml/content/src',
-    '/content/xml/document/src',
     '/content/xul/content/src',
     '/content/xul/document/src',
     '/docshell/base',
@@ -232,6 +218,7 @@ LOCAL_INCLUDES += [
     '/dom/ipc',
     '/dom/workers',
     '/dom/xbl',
+    '/dom/xml',
     '/dom/xslt/xpath',
     '/image/src',
     '/js/ipc',

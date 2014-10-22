@@ -92,39 +92,53 @@ class MathCache
 extern JSObject *
 js_InitMathClass(JSContext *cx, js::HandleObject obj);
 
+namespace js {
+
+extern void
+random_initState(uint64_t *rngState);
+
+extern uint64_t
+random_next(uint64_t *rngState, int bits);
+
+static const double RNG_DSCALE = double(1LL << 53);
+
+inline double
+random_nextDouble(uint64_t *rng)
+{
+    return double((random_next(rng, 26) << 27) + random_next(rng, 27)) / RNG_DSCALE;
+}
+
 extern double
 math_random_no_outparam(JSContext *cx);
 
 extern bool
-js_math_random(JSContext *cx, unsigned argc, js::Value *vp);
+math_random(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern bool
-js_math_abs_handle(JSContext *cx, js::HandleValue v, js::MutableHandleValue r);
+math_abs_handle(JSContext *cx, js::HandleValue v, js::MutableHandleValue r);
 
 extern bool
-js_math_abs(JSContext *cx, unsigned argc, js::Value *vp);
+math_abs(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern bool
-js_math_max(JSContext *cx, unsigned argc, js::Value *vp);
+math_max(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern bool
-js_math_min(JSContext *cx, unsigned argc, js::Value *vp);
+math_min(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern bool
-js_math_sqrt(JSContext *cx, unsigned argc, js::Value *vp);
+math_sqrt(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern bool
-js_math_pow_handle(JSContext *cx, js::HandleValue base, js::HandleValue power,
-                   js::MutableHandleValue result);
+math_pow_handle(JSContext *cx, js::HandleValue base, js::HandleValue power,
+                js::MutableHandleValue result);
 
 extern bool
-js_math_pow(JSContext *cx, unsigned argc, js::Value *vp);
+math_pow(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern bool
-js_minmax_impl(JSContext *cx, bool max, js::HandleValue a, js::HandleValue b,
-               js::MutableHandleValue res);
-
-namespace js {
+minmax_impl(JSContext *cx, bool max, js::HandleValue a, js::HandleValue b,
+            js::MutableHandleValue res);
 
 extern bool
 math_sqrt_handle(JSContext *cx, js::HandleValue number, js::MutableHandleValue result);
@@ -293,6 +307,9 @@ math_floor(JSContext *cx, unsigned argc, Value *vp);
 
 extern double
 math_floor_impl(double x);
+
+template<typename T>
+extern T GetBiggestNumberLessThan(T x);
 
 extern bool
 math_round_handle(JSContext *cx, HandleValue arg, MutableHandleValue res);

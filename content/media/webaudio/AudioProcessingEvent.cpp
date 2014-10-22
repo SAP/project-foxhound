@@ -28,7 +28,6 @@ AudioProcessingEvent::AudioProcessingEvent(ScriptProcessorNode* aOwner,
   , mPlaybackTime(0.0)
   , mNode(aOwner)
 {
-  SetIsDOMBinding();
 }
 
 AudioProcessingEvent::~AudioProcessingEvent()
@@ -36,7 +35,7 @@ AudioProcessingEvent::~AudioProcessingEvent()
 }
 
 JSObject*
-AudioProcessingEvent::WrapObject(JSContext* aCx)
+AudioProcessingEvent::WrapObjectInternal(JSContext* aCx)
 {
   return AudioProcessingEventBinding::Wrap(aCx, this);
 }

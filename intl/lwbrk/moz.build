@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_TOOL_DIRS += ['tests']
+TEST_DIRS += ['tests']
 
 XPIDL_SOURCES += [
     'nsISemanticUnitScanner.idl',
@@ -47,3 +47,6 @@ else:
 MSVC_ENABLE_PGO = True
 
 FINAL_LIBRARY = 'xul'
+
+if CONFIG['MOZ_WIDGET_GTK']:
+    CXXFLAGS += CONFIG['MOZ_PANGO_CFLAGS']

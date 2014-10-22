@@ -9,7 +9,9 @@
 #include "jscntxt.h"
 #include "jscompartment.h"
 
+#include "builtin/SymbolObject.h"
 #include "gc/Rooting.h"
+#include "vm/StringBuffer.h"
 
 #include "jscompartmentinlines.h"
 #include "jsgcinlines.h"
@@ -111,4 +113,40 @@ SymbolRegistry::sweep()
         if (IsSymbolAboutToBeFinalized(&sym))
             e.removeFront();
     }
+}
+
+bool
+js::SymbolDescriptiveString(JSContext *cx, Symbol *sym, MutableHandleValue result)
+{
+    // steps 2-5
+    StringBuffer sb(cx);
+    if (!sb.append("Symbol("))
+        return false;
+    RootedString str(cx, sym->description());
+    if (str) {
+        if (!sb.append(str))
+            return false;
+    }
+    if (!sb.append(')'))
+        return false;
+
+    // step 6
+    str = sb.finishString();
+    if (!str)
+        return false;
+    result.setString(str);
+    return true;
+}
+
+bool
+js::IsSymbolOrSymbolWrapper(Value v)
+{
+    return v.isSymbol() || (v.isObject() && v.toObject().is<SymbolObject>());
+}
+
+JS::Symbol *
+js::ToSymbolPrimitive(Value v)
+{
+    MOZ_ASSERT(IsSymbolOrSymbolWrapper(v));
+    return v.isSymbol() ? v.toSymbol() : v.toObject().as<SymbolObject>().unbox();
 }

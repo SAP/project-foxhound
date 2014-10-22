@@ -5,7 +5,7 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "mozilla/BasicEvents.h"
+#include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "nsSMILTimedElement.h"
@@ -92,8 +92,7 @@ namespace
 
     NS_IMETHOD Run()
     {
-      InternalUIEvent event(true, mMsg);
-      event.eventStructType = NS_SMIL_TIME_EVENT;
+      InternalSMILTimeEvent event(true, mMsg);
       event.detail = mDetail;
 
       nsPresContext* context = nullptr;
@@ -123,7 +122,7 @@ namespace
 class MOZ_STACK_CLASS nsSMILTimedElement::AutoIntervalUpdateBatcher
 {
 public:
-  AutoIntervalUpdateBatcher(nsSMILTimedElement& aTimedElement)
+  explicit AutoIntervalUpdateBatcher(nsSMILTimedElement& aTimedElement)
     : mTimedElement(aTimedElement),
       mDidSetFlag(!aTimedElement.mDeferIntervalUpdates)
   {
@@ -161,7 +160,7 @@ private:
 class MOZ_STACK_CLASS nsSMILTimedElement::AutoIntervalUpdater
 {
 public:
-  AutoIntervalUpdater(nsSMILTimedElement& aTimedElement)
+  explicit AutoIntervalUpdater(nsSMILTimedElement& aTimedElement)
     : mTimedElement(aTimedElement) { }
 
   ~AutoIntervalUpdater()
@@ -472,7 +471,7 @@ namespace
   class MOZ_STACK_CLASS RemoveByCreator
   {
   public:
-    RemoveByCreator(const nsSMILTimeValueSpec* aCreator) : mCreator(aCreator)
+    explicit RemoveByCreator(const nsSMILTimeValueSpec* aCreator) : mCreator(aCreator)
     { }
 
     bool operator()(nsSMILInstanceTime* aInstanceTime, uint32_t /*aIndex*/)
@@ -1339,7 +1338,7 @@ namespace
   class MOZ_STACK_CLASS RemoveByFunction
   {
   public:
-    RemoveByFunction(nsSMILTimedElement::RemovalTestFunction aFunction)
+    explicit RemoveByFunction(nsSMILTimedElement::RemovalTestFunction aFunction)
       : mFunction(aFunction) { }
     bool operator()(nsSMILInstanceTime* aInstanceTime, uint32_t /*aIndex*/)
     {
@@ -1417,7 +1416,7 @@ namespace
   class MOZ_STACK_CLASS RemoveReset
   {
   public:
-    RemoveReset(const nsSMILInstanceTime* aCurrentIntervalBegin)
+    explicit RemoveReset(const nsSMILInstanceTime* aCurrentIntervalBegin)
       : mCurrentIntervalBegin(aCurrentIntervalBegin) { }
     bool operator()(nsSMILInstanceTime* aInstanceTime, uint32_t /*aIndex*/)
     {
@@ -1615,7 +1614,7 @@ namespace
   class MOZ_STACK_CLASS RemoveFiltered
   {
   public:
-    RemoveFiltered(nsSMILTimeValue aCutoff) : mCutoff(aCutoff) { }
+    explicit RemoveFiltered(nsSMILTimeValue aCutoff) : mCutoff(aCutoff) { }
     bool operator()(nsSMILInstanceTime* aInstanceTime, uint32_t /*aIndex*/)
     {
       // We can filter instance times that:

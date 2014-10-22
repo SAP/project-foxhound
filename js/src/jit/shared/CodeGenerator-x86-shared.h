@@ -151,8 +151,10 @@ class CodeGeneratorX86Shared : public CodeGeneratorShared
     virtual bool visitDouble(LDouble *ins);
     virtual bool visitFloat32(LFloat32 *ins);
     virtual bool visitMinMaxD(LMinMaxD *ins);
+    virtual bool visitMinMaxF(LMinMaxF *ins);
     virtual bool visitAbsD(LAbsD *ins);
     virtual bool visitAbsF(LAbsF *ins);
+    virtual bool visitClzI(LClzI *ins);
     virtual bool visitSqrtD(LSqrtD *ins);
     virtual bool visitSqrtF(LSqrtF *ins);
     virtual bool visitPowHalfD(LPowHalfD *ins);
@@ -203,6 +205,32 @@ class CodeGeneratorX86Shared : public CodeGeneratorShared
     bool visitNegI(LNegI *lir);
     bool visitNegD(LNegD *lir);
     bool visitNegF(LNegF *lir);
+
+    // SIMD operators
+    bool visitSimdValueInt32x4(LSimdValueInt32x4 *lir);
+    bool visitSimdValueFloat32x4(LSimdValueFloat32x4 *lir);
+    bool visitSimdSplatX4(LSimdSplatX4 *lir);
+    bool visitInt32x4(LInt32x4 *ins);
+    bool visitFloat32x4(LFloat32x4 *ins);
+    bool visitInt32x4ToFloat32x4(LInt32x4ToFloat32x4 *ins);
+    bool visitFloat32x4ToInt32x4(LFloat32x4ToInt32x4 *ins);
+    bool visitSimdExtractElementI(LSimdExtractElementI *lir);
+    bool visitSimdExtractElementF(LSimdExtractElementF *lir);
+    bool visitSimdInsertElementI(LSimdInsertElementI *lir);
+    bool visitSimdInsertElementF(LSimdInsertElementF *lir);
+    bool visitSimdSignMaskX4(LSimdSignMaskX4 *ins);
+    bool visitSimdSwizzleI(LSimdSwizzleI *lir);
+    bool visitSimdSwizzleF(LSimdSwizzleF *lir);
+    bool visitSimdShuffle(LSimdShuffle *lir);
+    bool visitSimdUnaryArithIx4(LSimdUnaryArithIx4 *lir);
+    bool visitSimdUnaryArithFx4(LSimdUnaryArithFx4 *lir);
+    bool visitSimdBinaryCompIx4(LSimdBinaryCompIx4 *lir);
+    bool visitSimdBinaryCompFx4(LSimdBinaryCompFx4 *lir);
+    bool visitSimdBinaryArithIx4(LSimdBinaryArithIx4 *lir);
+    bool visitSimdBinaryArithFx4(LSimdBinaryArithFx4 *lir);
+    bool visitSimdBinaryBitwiseX4(LSimdBinaryBitwiseX4 *lir);
+    bool visitSimdShift(LSimdShift *lir);
+    bool visitSimdSelect(LSimdSelect *ins);
 
     // Out of line visitors.
     bool visitOutOfLineBailout(OutOfLineBailout *ool);

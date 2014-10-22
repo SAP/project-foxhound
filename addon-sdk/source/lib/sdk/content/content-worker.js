@@ -41,20 +41,14 @@ Object.freeze({
         return [];
       let args = Array.slice(arguments, 1);
       let results = [];
-      for each (let callback in listeners[name]) {
+      for (let callback of listeners[name]) {
         results.push(callback.apply(null, args));
       }
       return results;
     }
-    function hasListenerFor(name) {
-      if (!(name in listeners))
-        return false;
-      return listeners[name].length > 0;
-    }
     return {
       eventEmitter: eventEmitter,
-      emit: onEvent,
-      hasListenerFor: hasListenerFor
+      emit: onEvent
     };
   },
 
@@ -83,7 +77,7 @@ Object.freeze({
       emitToChrome(str);
     }
 
-    let { eventEmitter, emit, hasListenerFor } =
+    let { eventEmitter, emit } =
       ContentWorker.createEventEmitter(onEvent);
 
     return {
@@ -95,8 +89,7 @@ Object.freeze({
         // and modules (only used for context-menu API)
         let args = typeof array == "string" ? JSON.parse(array) : array;
         return emit.apply(null, args);
-      },
-      hasListenerFor: hasListenerFor
+      }
     };
   },
 
@@ -325,7 +318,7 @@ Object.freeze({
 
   inject: function (exports, chromeAPI, emitToChrome, options) {
     let ContentWorker = this;
-    let { pipe, onChromeEvent, hasListenerFor } =
+    let { pipe, onChromeEvent } =
       ContentWorker.createPipe(emitToChrome);
 
     ContentWorker.injectConsole(exports, pipe);
@@ -337,9 +330,6 @@ Object.freeze({
 
     Object.freeze( exports.self );
 
-    return {
-      emitToContent: onChromeEvent,
-      hasListenerFor: hasListenerFor
-    };
+    return onChromeEvent;
   }
 });

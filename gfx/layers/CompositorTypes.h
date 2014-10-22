@@ -84,9 +84,6 @@ MOZ_BEGIN_ENUM_CLASS(TextureFlags, uint32_t)
   // buffered pair, and so we can guarantee that the producer/consumer
   // won't be racing to access its contents.
   DOUBLE_BUFFERED    = 1 << 16,
-  // We've previously tried a texture and it didn't work for some reason. If there
-  // is a fallback available, try that.
-  ALLOC_FALLBACK     = 1 << 17,
   // Data in this texture has not been alpha-premultiplied.
   NON_PREMULTIPLIED  = 1 << 18,
 
@@ -146,6 +143,7 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(DiagnosticFlags)
 MOZ_BEGIN_ENUM_CLASS(EffectTypes, uint8_t)
   MASK,
   BLEND_MODE,
+  COLOR_MATRIX,
   MAX_SECONDARY, // sentinel for the count of secondary effect types
   RGB,
   YCBCR,
@@ -164,15 +162,16 @@ MOZ_BEGIN_ENUM_CLASS(CompositableType, uint8_t)
   BUFFER_IMAGE_SINGLE,    // image/canvas with a single texture, single buffered
   BUFFER_IMAGE_BUFFERED,  // canvas, double buffered
   BUFFER_BRIDGE,          // image bridge protocol
-  BUFFER_CONTENT_INC,     // thebes layer interface, only sends incremental
+  BUFFER_CONTENT_INC,     // painted layer interface, only sends incremental
                           // updates to a texture on the compositor side.
   // somewhere in the middle
-  BUFFER_TILED,           // tiled thebes layer
+  BUFFER_TILED,           // tiled painted layer
   BUFFER_SIMPLE_TILED,
   // the new compositable types
   IMAGE,     // image with single buffering
-  CONTENT_SINGLE,  // thebes layer interface, single buffering
-  CONTENT_DOUBLE,  // thebes layer interface, double buffering
+  IMAGE_OVERLAY, // image without buffer
+  CONTENT_SINGLE,  // painted layer interface, single buffering
+  CONTENT_DOUBLE,  // painted layer interface, double buffering
   BUFFER_COUNT
 MOZ_END_ENUM_CLASS(CompositableType)
 
@@ -202,11 +201,11 @@ struct TextureFactoryIdentifier
   bool mSupportsTextureBlitting;
   bool mSupportsPartialUploads;
 
-  TextureFactoryIdentifier(LayersBackend aLayersBackend = LayersBackend::LAYERS_NONE,
-                           GeckoProcessType aParentProcessId = GeckoProcessType_Default,
-                           int32_t aMaxTextureSize = 4096,
-                           bool aSupportsTextureBlitting = false,
-                           bool aSupportsPartialUploads = false)
+  explicit TextureFactoryIdentifier(LayersBackend aLayersBackend = LayersBackend::LAYERS_NONE,
+                                    GeckoProcessType aParentProcessId = GeckoProcessType_Default,
+                                    int32_t aMaxTextureSize = 4096,
+                                    bool aSupportsTextureBlitting = false,
+                                    bool aSupportsPartialUploads = false)
     : mParentBackend(aLayersBackend)
     , mParentProcessId(aParentProcessId)
     , mSupportedBlendModes(gfx::CompositionOp::OP_OVER)
@@ -249,7 +248,7 @@ struct TextureInfo
     , mTextureFlags(TextureFlags::NO_FLAGS)
   {}
 
-  TextureInfo(CompositableType aType)
+  explicit TextureInfo(CompositableType aType)
     : mCompositableType(aType)
     , mDeprecatedTextureHostFlags(DeprecatedTextureHostFlags::DEFAULT)
     , mTextureFlags(TextureFlags::NO_FLAGS)

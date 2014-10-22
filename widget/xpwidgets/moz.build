@@ -82,7 +82,7 @@ LOCAL_INCLUDES += [
     '/layout/forms',
     '/layout/generic',
     '/layout/xul',
-    '/view/src',
+    '/view',
 ]
 
 widget_dir = CONFIG['MOZ_WIDGET_TOOLKIT']
@@ -97,3 +97,5 @@ FINAL_LIBRARY = 'xul'
 
 if CONFIG['MOZ_ENABLE_D3D10_LAYER']:
     DEFINES['MOZ_ENABLE_D3D10_LAYER'] = True
+
+CXXFLAGS += CONFIG['TK_CFLAGS']

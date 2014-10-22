@@ -437,16 +437,19 @@ var gEventManager = {
       contextMenu.setAttribute("addontype", addon.type);
 
       var menuSep = document.getElementById("addonitem-menuseparator");
-      var countEnabledMenuCmds = 0;
+      var countMenuItemsBeforeSep = 0;
       for (let child of contextMenu.children) {
+        if (child == menuSep) {
+          break;
+        }
         if (child.nodeName == "menuitem" &&
           gViewController.isCommandEnabled(child.command)) {
-            countEnabledMenuCmds++;
+            countMenuItemsBeforeSep++;
         }
       }
 
-      // with only one menu item, we hide the menu separator
-      menuSep.hidden = (countEnabledMenuCmds <= 1);
+      // Hide the separator if there are no visible menu items before it
+      menuSep.hidden = (countMenuItemsBeforeSep == 0);
 
     }, false);
   },
@@ -1482,8 +1485,8 @@ function sortElements(aElements, aSortBy, aAscending) {
   //    * Incompatible
   //    * Blocklisted
 
-  const UISTATE_ORDER = ["enabled", "pendingDisable", "pendingUninstall",
-                         "disabled"];
+  const UISTATE_ORDER = ["enabled", "askToActivate", "pendingDisable",
+                         "pendingUninstall", "disabled"];
 
   function dateCompare(a, b) {
     var aTime = a.getTime();
@@ -1520,6 +1523,8 @@ function sortElements(aElements, aSortBy, aAscending) {
       return aObj.getAttribute(aKey);
 
     var addon = aObj.mAddon || aObj.mInstall;
+    var addonType = aObj.mAddon && AddonManager.addonTypes[aObj.mAddon.type];
+
     if (!addon)
       return null;
 
@@ -1532,6 +1537,9 @@ function sortElements(aElements, aSortBy, aAscending) {
           (addon.pendingOperations != AddonManager.PENDING_ENABLE &&
            addon.pendingOperations != AddonManager.PENDING_INSTALL))
         return "disabled";
+      if (addonType && (addonType.flags & AddonManager.TYPE_SUPPORTS_ASK_TO_ACTIVATE) &&
+          addon.userDisabled == AddonManager.STATE_ASK_TO_ACTIVATE)
+        return "askToActivate";
       else
         return "enabled";
     }
@@ -2784,7 +2792,14 @@ var gDetailView = {
 
     var fullDesc = document.getElementById("detail-fulldesc");
     if (aAddon.fullDescription) {
-      fullDesc.textContent = aAddon.fullDescription;
+      // The following is part of an awful hack to include the OpenH264 license
+      // without having bug 624602 fixed yet, and intentionally ignores
+      // localisation.
+      if (aAddon.id == OPENH264_ADDON_ID)
+        fullDesc.innerHTML = aAddon.fullDescription;
+      else
+        fullDesc.textContent = aAddon.fullDescription;
+
       fullDesc.hidden = false;
     } else {
       fullDesc.hidden = true;
@@ -3101,13 +3116,13 @@ var gDetailView = {
 
     let menulist = document.getElementById("detail-state-menulist");
     let addonType = AddonManager.addonTypes[this._addon.type];
-    if (addonType.flags & AddonManager.TYPE_SUPPORTS_ASK_TO_ACTIVATE &&
-        (hasPermission(this._addon, "ask_to_activate") ||
-         hasPermission(this._addon, "enable") ||
-         hasPermission(this._addon, "disable"))) {
+    if (addonType.flags & AddonManager.TYPE_SUPPORTS_ASK_TO_ACTIVATE) {
       let askItem = document.getElementById("detail-ask-to-activate-menuitem");
       let alwaysItem = document.getElementById("detail-always-activate-menuitem");
       let neverItem = document.getElementById("detail-never-activate-menuitem");
+      let hasActivatePermission =
+        ["ask_to_activate", "enable", "disable"].some(perm => hasPermission(this._addon, perm));
+
       if (this._addon.userDisabled === true) {
         menulist.selectedItem = neverItem;
       } else if (this._addon.userDisabled == AddonManager.STATE_ASK_TO_ACTIVATE) {
@@ -3115,7 +3130,10 @@ var gDetailView = {
       } else {
         menulist.selectedItem = alwaysItem;
       }
+
+      menulist.disabled = !hasActivatePermission;
       menulist.hidden = false;
+      menulist.classList.add('no-auto-hide');
     } else {
       menulist.hidden = true;
     }
@@ -3249,7 +3267,6 @@ var gDetailView = {
       let detailViewBoxObject = gDetailView.node.boxObject;
       top -= detailViewBoxObject.y;
 
-      detailViewBoxObject.QueryInterface(Ci.nsIScrollBoxObject);
       detailViewBoxObject.scrollTo(0, top);
     }
   },

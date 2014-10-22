@@ -26,7 +26,7 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
 public:
   NS_INLINE_DECL_REFCOUNTING(GMPVideoEncoderParent)
 
-  GMPVideoEncoderParent(GMPParent *aPlugin);
+  explicit GMPVideoEncoderParent(GMPParent *aPlugin);
 
   GMPVideoHostImpl& Host();
   void Shutdown();
@@ -38,7 +38,7 @@ public:
                             GMPVideoEncoderCallbackProxy* aCallback,
                             int32_t aNumberOfCores,
                             uint32_t aMaxPayloadSize) MOZ_OVERRIDE;
-  virtual GMPErr Encode(GMPVideoi420Frame* aInputFrame,
+  virtual GMPErr Encode(UniquePtr<GMPVideoi420Frame> aInputFrame,
                         const nsTArray<uint8_t>& aCodecSpecificInfo,
                         const nsTArray<GMPVideoFrameType>& aFrameTypes) MOZ_OVERRIDE;
   virtual GMPErr SetChannelParameters(uint32_t aPacketLoss, uint32_t aRTT) MOZ_OVERRIDE;
@@ -47,8 +47,7 @@ public:
   virtual const uint64_t ParentID() MOZ_OVERRIDE { return reinterpret_cast<uint64_t>(mPlugin.get()); }
 
   // GMPSharedMemManager
-  virtual void CheckThread();
-  virtual bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType, Shmem* aMem)
+  virtual bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType, Shmem* aMem) MOZ_OVERRIDE
   {
 #ifdef GMP_SAFE_SHMEM
     return AllocShmem(aSize, aType, aMem);
@@ -56,7 +55,7 @@ public:
     return AllocUnsafeShmem(aSize, aType, aMem);
 #endif
   }
-  virtual void Dealloc(Shmem& aMem)
+  virtual void Dealloc(Shmem& aMem) MOZ_OVERRIDE
   {
     DeallocShmem(aMem);
   }
@@ -75,9 +74,11 @@ private:
   virtual bool Recv__delete__() MOZ_OVERRIDE;
 
   bool mIsOpen;
+  bool mShuttingDown;
   nsRefPtr<GMPParent> mPlugin;
   GMPVideoEncoderCallbackProxy* mCallback;
   GMPVideoHostImpl mVideoHost;
+  nsCOMPtr<nsIThread> mEncodedThread;
 };
 
 } // namespace gmp

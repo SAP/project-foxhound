@@ -17,6 +17,9 @@ namespace base {
 }
 
 namespace mozilla {
+namespace HangMonitor {
+  class HangAnnotations;
+}
 namespace Telemetry {
 
 #include "TelemetryHistogramEnums.h"
@@ -94,7 +97,7 @@ struct AccumulateDelta_impl<Microsecond>
 template<ID id, TimerResolution res = Millisecond>
 class AutoTimer {
 public:
-  AutoTimer(TimeStamp aStart = TimeStamp::Now() MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoTimer(TimeStamp aStart = TimeStamp::Now() MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
      : start(aStart)
   {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
@@ -112,7 +115,7 @@ private:
 template<ID id>
 class AutoCounter {
 public:
-  AutoCounter(uint32_t counterStart = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoCounter(uint32_t counterStart = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     : counter(counterStart)
   {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
@@ -195,12 +198,14 @@ class ProcessedStack;
  * @param aStack - Array of PCs from the hung call stack
  * @param aSystemUptime - System uptime at the time of the hang, in minutes
  * @param aFirefoxUptime - Firefox uptime at the time of the hang, in minutes
+ * @param aAnnotations - Any annotations to be added to the report
  */
 #if defined(MOZ_ENABLE_PROFILER_SPS)
 void RecordChromeHang(uint32_t aDuration,
                       ProcessedStack &aStack,
                       int32_t aSystemUptime,
-                      int32_t aFirefoxUptime);
+                      int32_t aFirefoxUptime,
+                      mozilla::HangMonitor::HangAnnotations* aAnnotations = nullptr);
 #endif
 
 class ThreadHangStats;

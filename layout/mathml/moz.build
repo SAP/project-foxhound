@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+if CONFIG['ENABLE_TESTS']:
+    MOCHITEST_MANIFESTS += ['tests/mochitest.ini']
+
 UNIFIED_SOURCES += [
     'nsMathMLChar.cpp',
     'nsMathMLContainerFrame.cpp',
@@ -43,13 +46,8 @@ LOCAL_INCLUDES += [
     '../tables',
     '../xul',
     '/content/base/src',
-    '/content/mathml/content/src',
+    '/dom/mathml',
 ]
-
-if CONFIG['ENABLE_TESTS']:
-    PARALLEL_DIRS += [
-        'tests',
-    ]
 
 JAR_MANIFESTS += ['jar.mn']
 

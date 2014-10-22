@@ -12,6 +12,7 @@ this.EXPORTED_SYMBOLS = ["OnRefTestLoad"];
 const CC = Components.classes;
 const CI = Components.interfaces;
 const CR = Components.results;
+const CU = Components.utils;
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -600,15 +601,15 @@ function BuildConditionSandbox(aURL) {
     var xr = CC[NS_XREAPPINFO_CONTRACTID].getService(CI.nsIXULRuntime);
     var appInfo = CC[NS_XREAPPINFO_CONTRACTID].getService(CI.nsIXULAppInfo);
     sandbox.isDebugBuild = gDebug.isDebugBuild;
-    sandbox.xulRuntime = {widgetToolkit: xr.widgetToolkit, OS: xr.OS, __exposedProps__: { widgetToolkit: "r", OS: "r", XPCOMABI: "r", shell: "r" } };
 
     // xr.XPCOMABI throws exception for configurations without full ABI
     // support (mobile builds on ARM)
+    var XPCOMABI = "";
     try {
-        sandbox.xulRuntime.XPCOMABI = xr.XPCOMABI;
-    } catch(e) {
-        sandbox.xulRuntime.XPCOMABI = "";
-    }
+        XPCOMABI = xr.XPCOMABI;
+    } catch(e) {}
+
+    sandbox.xulRuntime = CU.cloneInto({widgetToolkit: xr.widgetToolkit, OS: xr.OS, XPCOMABI: XPCOMABI}, sandbox);
 
     var testRect = gBrowser.getBoundingClientRect();
     sandbox.smallScreen = false;
@@ -669,14 +670,11 @@ function BuildConditionSandbox(aURL) {
 
     var hh = CC[NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX + "http"].
                  getService(CI.nsIHttpProtocolHandler);
-    sandbox.http = { __exposedProps__: {} };
-    for each (var prop in [ "userAgent", "appName", "appVersion",
-                            "vendor", "vendorSub",
-                            "product", "productSub",
-                            "platform", "oscpu", "language", "misc" ]) {
-        sandbox.http[prop] = hh[prop];
-        sandbox.http.__exposedProps__[prop] = "r";
-    }
+    var httpProps = ["userAgent", "appName", "appVersion", "vendor",
+                     "vendorSub", "product", "productSub", "platform",
+                     "oscpu", "language", "misc"];
+    sandbox.http = new sandbox.Object();
+    httpProps.forEach((x) => sandbox.http[x] = hh[x]);
 
     // Set OSX to the Mac OS X version for Mac, and 0 otherwise.
     var osxmatch = /Mac OS X (\d+.\d+)$/.exec(hh.oscpu);
@@ -686,14 +684,10 @@ function BuildConditionSandbox(aURL) {
     // and set a sandox prop accordingly
     var navigator = gContainingWindow.navigator;
     var testPlugin = navigator.plugins["Test Plug-in"];
-    sandbox.haveTestPlugin = !!testPlugin;
+    sandbox.haveTestPlugin = !!testPlugin && !gBrowserIsRemote;
 
     // Set a flag on sandbox if the windows default theme is active
-    var box = gContainingWindow.document.createElement("box");
-    box.setAttribute("id", "_box_windowsDefaultTheme");
-    gContainingWindow.document.documentElement.appendChild(box);
-    sandbox.windowsDefaultTheme = (gContainingWindow.getComputedStyle(box, null).display == "none");
-    gContainingWindow.document.documentElement.removeChild(box);
+    sandbox.windowsDefaultTheme = gContainingWindow.matchMedia("(-moz-windows-default-theme)").matches;
 
     var prefs = CC["@mozilla.org/preferences-service;1"].
                 getService(CI.nsIPrefBranch);
@@ -703,21 +697,12 @@ function BuildConditionSandbox(aURL) {
         sandbox.nativeThemePref = true;
     }
 
-    sandbox.prefs = {
-        __exposedProps__: {
-            getBoolPref: 'r',
-            getIntPref: 'r',
-        },
-        _prefs:      prefs,
-        getBoolPref: function(p) { return this._prefs.getBoolPref(p); },
-        getIntPref:  function(p) { return this._prefs.getIntPref(p); }
-    }
+    sandbox.prefs = CU.cloneInto({
+        getBoolPref: function(p) { return prefs.getBoolPref(p); },
+        getIntPref:  function(p) { return prefs.getIntPref(p); }
+    }, sandbox, { cloneFunctions: true });
 
     sandbox.testPluginIsOOP = function () {
-        try {
-            netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-        } catch (ex) {}
-
         var prefservice = Components.classes["@mozilla.org/preferences-service;1"]
                                     .getService(CI.nsIPrefBranch);
 
@@ -752,13 +737,15 @@ function BuildConditionSandbox(aURL) {
     // crash the content process
     sandbox.browserIsRemote = gBrowserIsRemote;
 
-    // Distinguish the Fennecs:
-    sandbox.xulFennec    = sandbox.Android &&  sandbox.browserIsRemote;
-    sandbox.nativeFennec = sandbox.Android && !sandbox.browserIsRemote;
+    try {
+        sandbox.asyncPanZoom = prefs.getBoolPref("layers.async-pan-zoom.enabled");
+    } catch (e) {
+        sandbox.asyncPanZoom = false;
+    }
 
     if (!gDumpedConditionSandbox) {
         dump("REFTEST INFO | Dumping JSON representation of sandbox \n");
-        dump("REFTEST INFO | " + JSON.stringify(sandbox) + " \n");
+        dump("REFTEST INFO | " + JSON.stringify(CU.waiveXrays(sandbox)) + " \n");
         gDumpedConditionSandbox = true;
     }
     return sandbox;
@@ -918,7 +905,7 @@ function ReadManifest(aURL, inherited_status)
             } else if ((m = item.match(/^require-or\((.*?)\)$/))) {
                 var args = m[1].split(/,/);
                 if (args.length != 2) {
-                    throw "Error 7 in manifest file " + aURL.spec + " line " + lineNo + ": wrong number of args to require-or";
+                    throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": wrong number of args to require-or";
                 }
                 var [precondition_str, fallback_action] = args;
                 var preconditions = precondition_str.split(/&&/);
@@ -964,7 +951,7 @@ function ReadManifest(aURL, inherited_status)
                 fuzzy_max_pixels = Number(m[3]);
               }
             } else {
-                throw "Error 1 in manifest file " + aURL.spec + " line " + lineNo;
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unexpected item " + item;
             }
 
             if (cond) {
@@ -1015,17 +1002,20 @@ function ReadManifest(aURL, inherited_status)
         var principal = secMan.getSimpleCodebasePrincipal(aURL);
 
         if (items[0] == "include") {
-            if (items.length != 2 || runHttp)
-                throw "Error 2 in manifest file " + aURL.spec + " line " + lineNo;
+            if (items.length != 2)
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to include";
+            if (runHttp)
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": use of include with http";
             var incURI = gIOService.newURI(items[1], null, listURL);
             secMan.checkLoadURIWithPrincipal(principal, incURI,
                                              CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
             ReadManifest(incURI, expected_status);
         } else if (items[0] == TYPE_LOAD) {
-            if (items.length != 2 ||
-                (expected_status != EXPECTED_PASS &&
-                 expected_status != EXPECTED_DEATH))
-                throw "Error 3 in manifest file " + aURL.spec + " line " + lineNo;
+            if (items.length != 2)
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to load";
+            if (expected_status != EXPECTED_PASS &&
+                expected_status != EXPECTED_DEATH)
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect known failure type for load test";
             var [testURI] = runHttp
                             ? ServeFiles(principal, httpDepth,
                                          listURL, [items[1]])
@@ -1051,7 +1041,7 @@ function ReadManifest(aURL, inherited_status)
                           url2: null });
         } else if (items[0] == TYPE_SCRIPT) {
             if (items.length != 2)
-                throw "Error 4 in manifest file " + aURL.spec + " line " + lineNo;
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to script";
             var [testURI] = runHttp
                             ? ServeFiles(principal, httpDepth,
                                          listURL, [items[1]])
@@ -1077,7 +1067,7 @@ function ReadManifest(aURL, inherited_status)
                           url2: null });
         } else if (items[0] == TYPE_REFTEST_EQUAL || items[0] == TYPE_REFTEST_NOTEQUAL) {
             if (items.length != 3)
-                throw "Error 5 in manifest file " + aURL.spec + " line " + lineNo;
+                throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to " + items[0];
             var [testURI, refURI] = runHttp
                                   ? ServeFiles(principal, httpDepth,
                                                listURL, [items[1], items[2]])
@@ -1105,7 +1095,7 @@ function ReadManifest(aURL, inherited_status)
                           url1: testURI,
                           url2: refURI });
         } else {
-            throw "Error 6 in manifest file " + aURL.spec + " line " + lineNo;
+            throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unknown test type " + items[0];
         }
     }
 }

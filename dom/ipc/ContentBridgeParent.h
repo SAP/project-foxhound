@@ -17,7 +17,7 @@ class ContentBridgeParent : public PContentBridgeParent
                           , public nsIContentParent
 {
 public:
-  ContentBridgeParent(Transport* aTransport);
+  explicit ContentBridgeParent(Transport* aTransport);
 
   NS_DECL_ISUPPORTS
 
@@ -39,7 +39,7 @@ public:
                           const bool& aIsForApp,
                           const bool& aIsForBrowser) MOZ_OVERRIDE;
 
-  jsipc::JavaScriptParent* GetCPOWManager();
+  jsipc::JavaScriptShared* GetCPOWManager() MOZ_OVERRIDE;
 
   virtual uint64_t ChildID() MOZ_OVERRIDE
   {

@@ -223,12 +223,10 @@ void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
   TickSample* sample = &sample_obj;
   sample->context = context;
 
-#ifdef ENABLE_SPS_LEAF_DATA
   // If profiling, we extract the current pc and sp.
   if (Sampler::GetActiveSampler()->IsProfiling()) {
     SetSampleContext(sample, context);
   }
-#endif
   sample->threadProfile = sCurrentThreadProfile;
   sample->timestamp = mozilla::TimeStamp::Now();
   sample->rssMemory = sample->threadProfile->mRssMemory;
@@ -313,7 +311,7 @@ static void* SignalSender(void* arg) {
         ThreadInfo* info = threads[i];
 
         // This will be null if we're not interested in profiling this thread.
-        if (!info->Profile())
+        if (!info->Profile() || info->IsPendingDelete())
           continue;
 
         PseudoStack::SleepState sleeping = info->Stack()->observeSleeping();
@@ -461,7 +459,7 @@ bool Sampler::RegisterCurrentThread(const char* aName,
   int id = gettid();
   for (uint32_t i = 0; i < sRegisteredThreads->size(); i++) {
     ThreadInfo* info = sRegisteredThreads->at(i);
-    if (info->ThreadId() == id) {
+    if (info->ThreadId() == id && !info->IsPendingDelete()) {
       // Thread already registered. This means the first unregister will be
       // too early.
       ASSERT(false);
@@ -497,10 +495,18 @@ void Sampler::UnregisterCurrentThread()
 
   for (uint32_t i = 0; i < sRegisteredThreads->size(); i++) {
     ThreadInfo* info = sRegisteredThreads->at(i);
-    if (info->ThreadId() == id) {
-      delete info;
-      sRegisteredThreads->erase(sRegisteredThreads->begin() + i);
-      break;
+    if (info->ThreadId() == id && !info->IsPendingDelete()) {
+      if (profiler_is_active()) {
+        // We still want to show the results of this thread if you
+        // save the profile shortly after a thread is terminated.
+        // For now we will defer the delete to profile stop.
+        info->SetPendingDelete();
+        break;
+      } else {
+        delete info;
+        sRegisteredThreads->erase(sRegisteredThreads->begin() + i);
+        break;
+      }
     }
   }
 
@@ -633,19 +639,26 @@ void TickSample::PopulateContext(void* aContext)
   }
 }
 
-// WARNING: Works with values up to 1 second
 void OS::SleepMicro(int microseconds)
 {
+  if (MOZ_UNLIKELY(microseconds >= 1000000)) {
+    // Use usleep for larger intervals, because the nanosleep
+    // code below only supports intervals < 1 second.
+    MOZ_ALWAYS_TRUE(!::usleep(microseconds));
+    return;
+  }
+
   struct timespec ts;
   ts.tv_sec  = 0;
   ts.tv_nsec = microseconds * 1000UL;
 
-  while (true) {
-    // in the case of interrupt we keep waiting
-    // nanosleep puts the remaining to back into ts
-    if (!nanosleep(&ts, &ts) || errno != EINTR) {
-      return;
-    }
-  }
-}
+  int rv = ::nanosleep(&ts, &ts);
 
+  while (rv != 0 && errno == EINTR) {
+    // Keep waiting in case of interrupt.
+    // nanosleep puts the remaining time back into ts.
+    rv = ::nanosleep(&ts, &ts);
+  }
+
+  MOZ_ASSERT(!rv, "nanosleep call failed");
+}

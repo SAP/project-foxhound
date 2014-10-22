@@ -11,7 +11,9 @@
 #include "ImageContainer.h"
 #include "SharedThreadPool.h"
 #include "mozilla/Preferences.h"
-
+#include "mozilla/Base64.h"
+#include "nsIRandomGenerator.h"
+#include "nsIServiceManager.h"
 #include <stdint.h>
 
 namespace mozilla {
@@ -197,5 +199,75 @@ TemporaryRef<SharedThreadPool> GetMediaDecodeThreadPool()
   return SharedThreadPool::Get(NS_LITERAL_CSTRING("Media Decode"),
                                Preferences::GetUint("media.num-decode-threads", 25));
 }
+
+bool
+ExtractH264CodecDetails(const nsAString& aCodec,
+                        int16_t& aProfile,
+                        int16_t& aLevel)
+{
+  // H.264 codecs parameters have a type defined as avc1.PPCCLL, where
+  // PP = profile_idc, CC = constraint_set flags, LL = level_idc.
+  // We ignore the constraint_set flags, as it's not clear from any
+  // documentation what constraints the platform decoders support.
+  // See http://blog.pearce.org.nz/2013/11/what-does-h264avc1-codecs-parameters.html
+  // for more details.
+  if (aCodec.Length() != strlen("avc1.PPCCLL")) {
+    return false;
+  }
+
+  // Verify the codec starts with "avc1.".
+  const nsAString& sample = Substring(aCodec, 0, 5);
+  if (!sample.EqualsASCII("avc1.")) {
+    return false;
+  }
+
+  // Extract the profile_idc, constrains, and level_idc.
+  nsresult rv = NS_OK;
+  aProfile = PromiseFlatString(Substring(aCodec, 5, 2)).ToInteger(&rv, 16);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  aLevel = PromiseFlatString(Substring(aCodec, 9, 2)).ToInteger(&rv, 16);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  return true;
+}
+
+nsresult
+GenerateRandomPathName(nsCString& aOutSalt, uint32_t aLength)
+{
+  nsresult rv;
+  nsCOMPtr<nsIRandomGenerator> rg =
+    do_GetService("@mozilla.org/security/random-generator;1", &rv);
+  if (NS_FAILED(rv)) return rv;
+
+  // For each three bytes of random data we will get four bytes of
+  // ASCII. Request a bit more to be safe and truncate to the length
+  // we want at the end.
+  const uint32_t requiredBytesLength =
+    static_cast<uint32_t>((aLength + 1) / 4 * 3);
+
+  uint8_t* buffer;
+  rv = rg->GenerateRandomBytes(requiredBytesLength, &buffer);
+  if (NS_FAILED(rv)) return rv;
+
+  nsAutoCString temp;
+  nsDependentCSubstring randomData(reinterpret_cast<const char*>(buffer),
+                                   requiredBytesLength);
+  rv = Base64Encode(randomData, temp);
+  NS_Free(buffer);
+  buffer = nullptr;
+  if (NS_FAILED (rv)) return rv;
+
+  temp.Truncate(aLength);
+
+  // Base64 characters are alphanumeric (a-zA-Z0-9) and '+' and '/', so we need
+  // to replace illegal characters -- notably '/'
+  temp.ReplaceChar(FILE_PATH_SEPARATOR FILE_ILLEGAL_CHARACTERS, '_');
+
+  aOutSalt = temp;
+
+  return NS_OK;
+}
+
 
 } // end namespace mozilla

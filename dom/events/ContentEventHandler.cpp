@@ -118,11 +118,8 @@ ContentEventHandler::Init(WidgetQueryContentEvent* aEvent)
   NS_ENSURE_SUCCESS(rv, NS_ERROR_NOT_AVAILABLE);
   aEvent->mReply.mHasSelection = !isCollapsed;
 
-  nsRefPtr<nsCaret> caret = mPresShell->GetCaret();
-  NS_ASSERTION(caret, "GetCaret returned null");
-
   nsRect r;
-  nsIFrame* frame = caret->GetGeometry(mSelection, &r);
+  nsIFrame* frame = nsCaret::GetGeometry(mSelection, &r);
   NS_ENSURE_TRUE(frame, NS_ERROR_FAILURE);
 
   aEvent->mReply.mFocusedWidget = frame->GetNearestWidget();
@@ -298,6 +295,20 @@ static uint32_t CountNewlinesInNativeLength(nsIContent* aContent,
 
 /* static */ uint32_t
 ContentEventHandler::GetNativeTextLength(nsIContent* aContent,
+                                         uint32_t aStartOffset,
+                                         uint32_t aEndOffset)
+{
+  MOZ_ASSERT(aEndOffset >= aStartOffset,
+             "aEndOffset must be equals or larger than aStartOffset");
+  if (aStartOffset == aEndOffset) {
+    return 0;
+  }
+  return GetTextLength(aContent, LINE_BREAK_TYPE_NATIVE, aEndOffset) -
+           GetTextLength(aContent, LINE_BREAK_TYPE_NATIVE, aStartOffset);
+}
+
+/* static */ uint32_t
+ContentEventHandler::GetNativeTextLength(nsIContent* aContent,
                                          uint32_t aMaxLength)
 {
   return GetTextLength(aContent, LINE_BREAK_TYPE_NATIVE, aMaxLength);
@@ -429,8 +440,8 @@ ContentEventHandler::ExpandToClusterBoundary(nsIContent* aContent,
 
   nsRefPtr<nsFrameSelection> fs = mPresShell->FrameSelection();
   int32_t offsetInFrame;
-  nsFrameSelection::HINT hint =
-    aForward ? nsFrameSelection::HINTLEFT : nsFrameSelection::HINTRIGHT;
+  CaretAssociationHint hint =
+    aForward ? CARET_ASSOCIATE_BEFORE : CARET_ASSOCIATE_AFTER;
   nsIFrame* frame = fs->GetFrameForNodeOffset(aContent, int32_t(*aXPOffset),
                                               hint, &offsetInFrame);
   if (!frame) {
@@ -496,9 +507,6 @@ ContentEventHandler::SetRangeFromFlatTextOffset(nsRange* aRange,
     }
 
     if (offset <= aOffset && aOffset < offset + textLength) {
-      nsCOMPtr<nsIDOMNode> domNode(do_QueryInterface(content));
-      NS_ASSERTION(domNode, "aContent doesn't have nsIDOMNode!");
-
       uint32_t xpOffset;
       if (!content->IsNodeOfType(nsINode::eTEXT)) {
         xpOffset = 0;
@@ -519,20 +527,18 @@ ContentEventHandler::SetRangeFromFlatTextOffset(nsRange* aRange,
         }
       }
 
-      rv = aRange->SetStart(domNode, int32_t(xpOffset));
+      rv = aRange->SetStart(content, int32_t(xpOffset));
       NS_ENSURE_SUCCESS(rv, rv);
       startSet = true;
       if (aLength == 0) {
         // Ensure that the end offset and the start offset are same.
-        rv = aRange->SetEnd(domNode, int32_t(xpOffset));
+        rv = aRange->SetEnd(content, int32_t(xpOffset));
         NS_ENSURE_SUCCESS(rv, rv);
         return NS_OK;
       }
     }
     if (endOffset <= offset + textLength) {
-      nsCOMPtr<nsIDOMNode> domNode(do_QueryInterface(content));
-      NS_ASSERTION(domNode, "aContent doesn't have nsIDOMNode!");
-
+      nsINode* endNode = content;
       uint32_t xpOffset;
       if (content->IsNodeOfType(nsINode::eTEXT)) {
         xpOffset = endOffset - offset;
@@ -551,10 +557,10 @@ ContentEventHandler::SetRangeFromFlatTextOffset(nsRange* aRange,
         if (iter->IsDone()) {
           break;
         }
-        domNode = do_QueryInterface(iter->GetCurrentNode());
+        endNode = iter->GetCurrentNode();
       }
 
-      rv = aRange->SetEnd(domNode, int32_t(xpOffset));
+      rv = aRange->SetEnd(endNode, int32_t(xpOffset));
       NS_ENSURE_SUCCESS(rv, rv);
       return NS_OK;
     }
@@ -566,17 +572,15 @@ ContentEventHandler::SetRangeFromFlatTextOffset(nsRange* aRange,
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIDOMNode> domNode(do_QueryInterface(mRootContent));
-  NS_ASSERTION(domNode, "lastContent doesn't have nsIDOMNode!");
   if (!startSet) {
     MOZ_ASSERT(!mRootContent->IsNodeOfType(nsINode::eTEXT));
-    rv = aRange->SetStart(domNode, int32_t(mRootContent->GetChildCount()));
+    rv = aRange->SetStart(mRootContent, int32_t(mRootContent->GetChildCount()));
     NS_ENSURE_SUCCESS(rv, rv);
     if (aNewOffset) {
       *aNewOffset = offset;
     }
   }
-  rv = aRange->SetEnd(domNode, int32_t(mRootContent->GetChildCount()));
+  rv = aRange->SetEnd(mRootContent, int32_t(mRootContent->GetChildCount()));
   NS_ASSERTION(NS_SUCCEEDED(rv), "nsIDOMRange::SetEnd failed");
   return rv;
 }
@@ -829,14 +833,14 @@ ContentEventHandler::OnQueryCaretRect(WidgetQueryContentEvent* aEvent)
 
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
 
-  nsRefPtr<nsCaret> caret = mPresShell->GetCaret();
-  NS_ASSERTION(caret, "GetCaret returned null");
-
   // When the selection is collapsed and the queried offset is current caret
   // position, we should return the "real" caret rect.
   bool selectionIsCollapsed;
   rv = mSelection->GetIsCollapsed(&selectionIsCollapsed);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  nsRect caretRect;
+  nsIFrame* caretFrame = nsCaret::GetGeometry(mSelection, &caretRect);
 
   if (selectionIsCollapsed) {
     uint32_t offset;
@@ -844,15 +848,13 @@ ContentEventHandler::OnQueryCaretRect(WidgetQueryContentEvent* aEvent)
                                   lineBreakType);
     NS_ENSURE_SUCCESS(rv, rv);
     if (offset == aEvent->mInput.mOffset) {
-      nsRect rect;
-      nsIFrame* caretFrame = caret->GetGeometry(mSelection, &rect);
       if (!caretFrame) {
         return NS_ERROR_FAILURE;
       }
-      rv = ConvertToRootViewRelativeOffset(caretFrame, rect);
+      rv = ConvertToRootViewRelativeOffset(caretFrame, caretRect);
       NS_ENSURE_SUCCESS(rv, rv);
       aEvent->mReply.mRect =
-        rect.ToOutsidePixels(caretFrame->PresContext()->AppUnitsPerDevPixel());
+        caretRect.ToOutsidePixels(caretFrame->PresContext()->AppUnitsPerDevPixel());
       aEvent->mReply.mOffset = aEvent->mInput.mOffset;
       aEvent->mSucceeded = true;
       return NS_OK;
@@ -878,7 +880,7 @@ ContentEventHandler::OnQueryCaretRect(WidgetQueryContentEvent* aEvent)
   nsRect rect;
   rect.x = posInFrame.x;
   rect.y = posInFrame.y;
-  rect.width = caret->GetCaretRect().width;
+  rect.width = caretRect.width;
   rect.height = frame->GetSize().height;
 
   rv = ConvertToRootViewRelativeOffset(frame, rect);

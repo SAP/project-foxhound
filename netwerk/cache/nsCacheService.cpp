@@ -227,7 +227,7 @@ NS_IMPL_ISUPPORTS(nsSetDiskSmartSizeCallback, nsITimerCallback)
 class nsSetSmartSizeEvent: public nsRunnable 
 {
 public:
-    nsSetSmartSizeEvent(int32_t smartSize)
+    explicit nsSetSmartSizeEvent(int32_t smartSize)
         : mSmartSize(smartSize) {}
 
     NS_IMETHOD Run() 
@@ -974,7 +974,7 @@ nsCacheProfilePrefObserver::CacheCompressionLevel()
 
 class nsProcessRequestEvent : public nsRunnable {
 public:
-    nsProcessRequestEvent(nsCacheRequest *aRequest)
+    explicit nsProcessRequestEvent(nsCacheRequest *aRequest)
     {
         MOZ_EVENT_TRACER_NAME_OBJECT(aRequest, aRequest->mKey.get());
         MOZ_EVENT_TRACER_WAIT(aRequest, "net::cache::ProcessRequest");
@@ -1323,12 +1323,9 @@ nsCacheService::CreateSessionInternal(const char *          clientID,
                                       bool                  streamBased,
                                       nsICacheSession     **result)
 {
-    if (this == nullptr)  return NS_ERROR_NOT_AVAILABLE;
-
-    nsCacheSession * session = new nsCacheSession(clientID, storagePolicy, streamBased);
-    if (!session)  return NS_ERROR_OUT_OF_MEMORY;
-
-    NS_ADDREF(*result = session);
+    nsRefPtr<nsCacheSession> session =
+        new nsCacheSession(clientID, storagePolicy, streamBased);
+    session.forget(result);
 
     return NS_OK;
 }
@@ -1347,7 +1344,7 @@ namespace {
 class EvictionNotifierRunnable : public nsRunnable
 {
 public:
-    EvictionNotifierRunnable(nsISupports* aSubject)
+    explicit EvictionNotifierRunnable(nsISupports* aSubject)
         : mSubject(aSubject)
     { }
 

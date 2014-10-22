@@ -9,7 +9,7 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "jit/IonSpewer.h"
+#include "jit/JitSpewer.h"
 #include "jit/shared/IonAssemblerBuffer.h"
 
 // This code extends the AssemblerBuffer to support the pooling of values loaded
@@ -504,9 +504,9 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
 
         if (pool_.checkFull(poolOffset)) {
             if (numPoolEntries)
-                IonSpew(IonSpew_Pools, "[%d] Inserting pool entry caused a spill", id);
+                JitSpew(JitSpew_Pools, "[%d] Inserting pool entry caused a spill", id);
             else
-                IonSpew(IonSpew_Pools, "[%d] Inserting instruction(%d) caused a spill", id,
+                JitSpew(JitSpew_Pools, "[%d] Inserting instruction(%d) caused a spill", id,
                         sizeExcludingCurrentPool());
 
             finishPool();
@@ -538,15 +538,15 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
 
 #ifdef DEBUG
         if (numPoolEntries) {
-            IonSpew(IonSpew_Pools, "[%d] Inserting %d entries into pool", id, numPoolEntries);
-            IonSpewStart(IonSpew_Pools, "[%d] data is: 0x", id);
+            JitSpew(JitSpew_Pools, "[%d] Inserting %d entries into pool", id, numPoolEntries);
+            JitSpewStart(JitSpew_Pools, "[%d] data is: 0x", id);
             size_t length = numPoolEntries * sizeof(PoolAllocUnit);
             for (unsigned idx = 0; idx < length; idx++) {
-                IonSpewCont(IonSpew_Pools, "%02x", data[length - idx - 1]);
+                JitSpewCont(JitSpew_Pools, "%02x", data[length - idx - 1]);
                 if (((idx & 3) == 3) && (idx + 1 != length))
-                    IonSpewCont(IonSpew_Pools, "_");
+                    JitSpewCont(JitSpew_Pools, "_");
             }
-            IonSpewFin(IonSpew_Pools);
+            JitSpewFin(JitSpew_Pools);
         }
 #endif
 
@@ -557,7 +557,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         if (numPoolEntries) {
             if (this->oom())
                 return BufferOffset();
-            IonSpew(IonSpew_Pools, "[%d] Entry has index %u, offset %u", id, index,
+            JitSpew(JitSpew_Pools, "[%d] Entry has index %u, offset %u", id, index,
                     sizeExcludingCurrentPool());
             Asm::InsertIndexIntoTag(inst, index);
             // Figure out the offset within the pool entries.
@@ -598,12 +598,12 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
     }
 
     void finishPool() {
-        IonSpew(IonSpew_Pools, "[%d] Attempting to finish pool %d with %d entries.", id,
+        JitSpew(JitSpew_Pools, "[%d] Attempting to finish pool %d with %d entries.", id,
                 numDumps_, pool_.numEntries());
 
         if (pool_.numEntries() == 0) {
             // If there is no data in the pool being dumped, don't dump anything.
-            IonSpew(IonSpew_Pools, "[%d] Aborting because the pool is empty", id);
+            JitSpew(JitSpew_Pools, "[%d] Aborting because the pool is empty", id);
             return;
         }
 
@@ -625,7 +625,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         BufferOffset perforation = this->nextOffset();
         Parent::perforate();
         perforatedSlice->isNatural = false;
-        IonSpew(IonSpew_Pools, "[%d] Adding a perforation at offset %d", id, perforation.getOffset());
+        JitSpew(JitSpew_Pools, "[%d] Adding a perforation at offset %d", id, perforation.getOffset());
 
         // With the pool's final position determined it is now possible to patch
         // the instructions that reference entries in this pool, and this is
@@ -656,7 +656,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
             // the pool entry that is being loaded.  We need to do a non-trivial
             // amount of math here, since the pool that we've made does not
             // actually reside there in memory.
-            IonSpew(IonSpew_Pools, "[%d] Fixing entry %d offset to %u", id, idx,
+            JitSpew(JitSpew_Pools, "[%d] Fixing entry %d offset to %u", id, idx,
                     codeOffset - magicAlign);
             Asm::PatchConstantPoolLoad(inst, (uint8_t *)inst + codeOffset - magicAlign);
         }
@@ -699,7 +699,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
     void flushPool() {
         if (this->oom())
             return;
-        IonSpew(IonSpew_Pools, "[%d] Requesting a pool flush", id);
+        JitSpew(JitSpew_Pools, "[%d] Requesting a pool flush", id);
         finishPool();
     }
 
@@ -715,7 +715,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         size_t poolOffset = sizeExcludingCurrentPool() + (maxInst + guardSize_ + headerSize_) * InstSize;
 
         if (pool_.checkFull(poolOffset)) {
-            IonSpew(IonSpew_Pools, "[%d] No-Pool instruction(%d) caused a spill.", id,
+            JitSpew(JitSpew_Pools, "[%d] No-Pool instruction(%d) caused a spill.", id,
                     sizeExcludingCurrentPool());
             finishPool();
         }
@@ -727,7 +727,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         canNotPlacePoolMaxInst_ = maxInst;
 #endif
 
-        canNotPlacePool_++;
+        canNotPlacePool_ = true;
     }
 
     void leaveNoPool() {
@@ -738,7 +738,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         MOZ_ASSERT(this->nextOffset().getOffset() - canNotPlacePoolStartOffset_ <= canNotPlacePoolMaxInst_ * InstSize);
     }
 
-    ptrdiff_t poolSizeBefore(ptrdiff_t offset) const {
+    size_t poolSizeBefore(size_t offset) const {
         // Linear search of the poolInfo to find the pool before the given
         // buffer offset, and then return the cumulative size of the pools
         // before this offset. This is used to convert a buffer offset to its
@@ -771,7 +771,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
                               + (1 + guardSize_ + headerSize_) * InstSize;
         if (pool_.checkFull(poolOffset)) {
             // Alignment would cause a pool dump, so dump the pool now.
-            IonSpew(IonSpew_Pools, "[%d] Alignment of %d at %d caused a spill.", id, alignment,
+            JitSpew(JitSpew_Pools, "[%d] Alignment of %d at %d caused a spill.", id, alignment,
                     sizeExcludingCurrentPool());
             finishPool();
         }
@@ -783,13 +783,13 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
     }
 
   private:
-    void patchBranch(Inst *i, int curpool, BufferOffset branch) {
+    void patchBranch(Inst *i, unsigned curpool, BufferOffset branch) {
         const Inst *ci = i;
         ptrdiff_t offset = Asm::GetBranchOffset(ci);
         // If the offset is 0, then there is nothing to do.
         if (offset == 0)
             return;
-        int destOffset = branch.getOffset() + offset;
+        unsigned destOffset = branch.getOffset() + offset;
         if (offset > 0) {
             while (curpool < numDumps_ && poolInfo_[curpool].offset <= destOffset) {
                 offset += poolInfo_[curpool].size;
@@ -798,13 +798,8 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
         } else {
             // Ignore the pool that comes next, since this is a backwards
             // branch.
-            curpool--;
-            while (curpool >= 0 && poolInfo_[curpool].offset > destOffset) {
-                offset -= poolInfo_[curpool].size;
-                curpool--;
-            }
-            // Can't assert anything here, since the first pool may be after the
-            // target.
+            for (int p = curpool - 1; p >= 0 && poolInfo_[p].offset > destOffset; p--)
+                offset -= poolInfo_[p].size;
         }
         Asm::RetargetNearBranch(i, offset, false);
     }
@@ -864,7 +859,7 @@ struct AssemblerBufferWithConstantPools : public AssemblerBuffer<SliceSize, Inst
                 return pi->finalPos - pi->size + headerSize_ * InstSize + offset;
             offset -= size;
         }
-        MOZ_ASSUME_UNREACHABLE("Entry is not in a pool");
+        MOZ_CRASH("Entry is not in a pool");
     }
 };
 

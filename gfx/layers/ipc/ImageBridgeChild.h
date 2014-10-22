@@ -101,9 +101,9 @@ bool InImageBridgeChildThread();
  * not used at all (except for the very first transaction that provides the
  * CompositableHost with an AsyncID).
  */
-class ImageBridgeChild : public PImageBridgeChild
-                       , public CompositableForwarder
-                       , public AsyncTransactionTrackersHolder
+class ImageBridgeChild MOZ_FINAL : public PImageBridgeChild
+                                 , public CompositableForwarder
+                                 , public AsyncTransactionTrackersHolder
 {
   friend class ImageContainer;
   typedef InfallibleTArray<AsyncParentMessageData> AsyncParentMessageArray;
@@ -224,6 +224,10 @@ public:
   virtual void UseComponentAlphaTextures(CompositableClient* aCompositable,
                                          TextureClient* aClientOnBlack,
                                          TextureClient* aClientOnWhite) MOZ_OVERRIDE;
+#ifdef MOZ_WIDGET_GONK
+  virtual void UseOverlaySource(CompositableClient* aCompositable,
+                                const OverlaySource& aOverlay) MOZ_OVERRIDE;
+#endif
 
   virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
                                PTextureChild* aTexture,
@@ -306,7 +310,7 @@ public:
 
   virtual bool IsSameProcess() const MOZ_OVERRIDE;
 
-  void SendPendingAsyncMessge();
+  virtual void SendPendingAsyncMessges();
 
   void MarkShutDown();
 protected:

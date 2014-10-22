@@ -40,7 +40,7 @@ public:
   NS_DECL_NSAHTTPSEGMENTREADER
   NS_DECL_NSAHTTPSEGMENTWRITER
 
-  SpdySession3(nsISocketTransport *);
+  explicit SpdySession3(nsISocketTransport *);
 
   bool AddStream(nsAHttpTransaction *, int32_t,
                  bool, nsIInterfaceRequestor *);
@@ -188,6 +188,8 @@ public:
   uint32_t PushAllowance() { return mPushAllowance; }
   z_stream *UpstreamZlib() { return &mUpstreamZlib; }
   nsISocketTransport *SocketTransport() { return mSocketTransport; }
+
+  void SendPing() MOZ_OVERRIDE;
 
 private:
 
@@ -377,6 +379,9 @@ private:
   PRIntervalTime       mLastDataReadEpoch; // used for IdleTime()
   PRIntervalTime       mPingSentEpoch;
   uint32_t             mNextPingID;
+
+  PRIntervalTime       mPreviousPingThreshold; // backup for the former value
+  bool                 mPreviousUsed;          // true when backup is used
 
   // used as a temporary buffer while enumerating the stream hash during GoAway
   nsDeque  mGoAwayStreamsToRestart;

@@ -6,10 +6,12 @@
 #if !defined(MediaOmxReader_h_)
 #define MediaOmxReader_h_
 
+#include "MediaOmxCommonReader.h"
 #include "MediaResource.h"
 #include "MediaDecoderReader.h"
+#include "nsMimeTypes.h"
+#include "MP3FrameParser.h"
 #include "nsRect.h"
-#include "mozilla/dom/AudioChannelBinding.h"
 #include <ui/GraphicBuffer.h>
 #include <stagefright/MediaSource.h>
 
@@ -26,8 +28,10 @@ namespace dom {
 
 class AbstractMediaDecoder;
 
-class MediaOmxReader : public MediaDecoderReader
+class MediaOmxReader : public MediaOmxCommonReader
 {
+  // This flag protect the mIsShutdown variable, that may access by decoder / main / IO thread.
+  Mutex mMutex;
   nsCString mType;
   bool mHasVideo;
   bool mHasAudio;
@@ -35,13 +39,18 @@ class MediaOmxReader : public MediaDecoderReader
   nsIntSize mInitialFrame;
   int64_t mVideoSeekTimeUs;
   int64_t mAudioSeekTimeUs;
+  int64_t mLastParserDuration;
   int32_t mSkipCount;
-  dom::AudioChannel mAudioChannel;
-  android::sp<android::MediaSource> mAudioOffloadTrack;
-
+  bool mUseParserDuration;
+  bool mIsShutdown;
 protected:
   android::sp<android::OmxDecoder> mOmxDecoder;
   android::sp<android::MediaExtractor> mExtractor;
+  MP3FrameParser mMP3FrameParser;
+
+  // A cache value updated by UpdateIsWaitingMediaResources(), makes the
+  // "waiting resources state" is synchronous to StateMachine.
+  bool mIsWaitingResources;
 
   // Called by ReadMetadata() during MediaDecoderStateMachine::DecodeMetadata()
   // on decode thread. It create and initialize the OMX decoder including
@@ -52,6 +61,11 @@ protected:
   // Called inside DecodeVideoFrame, DecodeAudioData, ReadMetadata and Seek
   // to activate the decoder automatically.
   virtual void EnsureActive();
+
+  // Check the underlying HW resources are available and store the result in
+  // mIsWaitingResources. The result might be changed by binder thread,
+  // Can only called by ReadMetadata.
+  void UpdateIsWaitingMediaResources();
 
 public:
   MediaOmxReader(AbstractMediaDecoder* aDecoder);
@@ -75,11 +89,13 @@ public:
     return mHasVideo;
   }
 
-  virtual bool IsWaitingMediaResources();
+  // Return mIsWaitingResources.
+  virtual bool IsWaitingMediaResources() MOZ_OVERRIDE;
 
   virtual bool IsDormantNeeded();
   virtual void ReleaseMediaResources();
 
+  virtual void PreReadMetadata() MOZ_OVERRIDE;
   virtual nsresult ReadMetadata(MediaInfo* aInfo,
                                 MetadataTags** aTags);
   virtual nsresult Seek(int64_t aTime, int64_t aStartTime, int64_t aEndTime, int64_t aCurrentTime);
@@ -90,22 +106,18 @@ public:
 
   virtual void Shutdown() MOZ_OVERRIDE;
 
-  void SetAudioChannel(dom::AudioChannel aAudioChannel) {
-    mAudioChannel = aAudioChannel;
+  bool IsShutdown() {
+    MutexAutoLock lock(mMutex);
+    return mIsShutdown;
   }
-
-  android::sp<android::MediaSource> GetAudioOffloadTrack() {
-    return mAudioOffloadTrack;
-  }
-
-#ifdef MOZ_AUDIO_OFFLOAD
-  // Check whether it is possible to offload current audio track. This access
-  // canOffloadStream() from libStageFright Utils.cpp, which is not there in
-  // ANDROID_VERSION < 19
-  void CheckAudioOffload();
-#endif
 
   void ReleaseDecoder();
+
+  int64_t ProcessCachedData(int64_t aOffset, bool aWaitForCompletion);
+
+  void CancelProcessCachedData();
+
+  android::sp<android::MediaSource> GetAudioOffloadTrack();
 };
 
 } // namespace mozilla

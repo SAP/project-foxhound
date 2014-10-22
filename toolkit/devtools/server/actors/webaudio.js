@@ -15,17 +15,7 @@ const { CallWatcherActor, CallWatcherFront } = require("devtools/server/actors/c
 const { ThreadActor } = require("devtools/server/actors/script");
 
 const { on, once, off, emit } = events;
-const { method, Arg, Option, RetVal } = protocol;
-
-exports.register = function(handle) {
-  handle.addTabActor(WebAudioActor, "webaudioActor");
-  handle.addGlobalActor(WebAudioActor, "webaudioActor");
-};
-
-exports.unregister = function(handle) {
-  handle.removeTabActor(WebAudioActor);
-  handle.removeGlobalActor(WebAudioActor);
-};
+const { types, method, Arg, Option, RetVal } = protocol;
 
 const AUDIO_GLOBALS = [
   "AudioContext", "AudioNode"
@@ -119,6 +109,7 @@ const NODE_PROPERTIES = {
  * An Audio Node actor allowing communication to a specific audio node in the
  * Audio Context graph.
  */
+types.addActorType("audionode");
 let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
   typeName: "audionode",
 
@@ -164,6 +155,44 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
     return !!~this.type.indexOf("Source") || this.type === "OscillatorNode";
   }, {
     response: { source: RetVal("boolean") }
+  }),
+
+  /**
+   * Returns a boolean indicating if the AudioNode has been "bypassed",
+   * via `AudioNodeActor#bypass` method.
+   *
+   * @return Boolean
+   */
+  isBypassed: method(function () {
+    let node = this.node.get();
+    if (node === null) {
+      return false;
+    }
+
+    return node.passThrough;
+  }, {
+    response: { bypassed: RetVal("boolean") }
+  }),
+
+  /**
+   * Takes a boolean, either enabling or disabling the "passThrough" option
+   * on an AudioNode. If a node is bypassed, an effects processing node (like gain, biquad),
+   * will allow the audio stream to pass through the node, unaffected.
+   *
+   * @param Boolean enable
+   *        Whether the bypass value should be set on or off.
+   */
+  bypass: method(function (enable) {
+    let node = this.node.get();
+
+    if (node === null) {
+      return;
+    }
+
+    node.passThrough = enable;
+  }, {
+    request: { enable: Arg(0, "boolean") },
+    oneway: true
   }),
 
   /**
@@ -261,7 +290,90 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
       ({ param: prop, value: this.getParam(prop), flags: this.getParamFlags(prop) }));
   }, {
     response: { params: RetVal("json") }
+  }),
+
+  /**
+   * Connects this audionode to an AudioParam via `node.connect(param)`.
+   */
+  connectParam: method(function (destActor, paramName, output) {
+    let srcNode = this.node.get();
+    let destNode = destActor.node.get();
+
+    if (srcNode === null || destNode === null) {
+      return CollectedAudioNodeError();
+    }
+
+    try {
+      // Connect via the unwrapped node, so we can call the
+      // patched method that fires the webaudio actor's `connect-param` event.
+      // Connect directly to the wrapped `destNode`, otherwise
+      // the patched method thinks this is a new node and won't be
+      // able to find it in `_nativeToActorID`.
+      XPCNativeWrapper.unwrap(srcNode).connect(destNode[paramName], output);
+    } catch (e) {
+      return constructError(e);
+    }
+  }, {
+    request: {
+      destActor: Arg(0, "audionode"),
+      paramName: Arg(1, "string"),
+      output: Arg(2, "nullable:number")
+    },
+    response: { error: RetVal("nullable:json") }
+  }),
+
+  /**
+   * Connects this audionode to another via `node.connect(dest)`.
+   */
+  connectNode: method(function (destActor, output, input) {
+    let srcNode = this.node.get();
+    let destNode = destActor.node.get();
+
+    if (srcNode === null || destNode === null) {
+      return CollectedAudioNodeError();
+    }
+
+    try {
+      // Connect via the unwrapped node, so we can call the
+      // patched method that fires the webaudio actor's `connect-node` event.
+      // Connect directly to the wrapped `destNode`, otherwise
+      // the patched method thinks this is a new node and won't be
+      // able to find it in `_nativeToActorID`.
+      XPCNativeWrapper.unwrap(srcNode).connect(destNode, output, input);
+    } catch (e) {
+      return constructError(e);
+    }
+  }, {
+    request: {
+      destActor: Arg(0, "audionode"),
+      output: Arg(1, "nullable:number"),
+      input: Arg(2, "nullable:number")
+    },
+    response: { error: RetVal("nullable:json") }
+  }),
+
+  /**
+   * Disconnects this audionode from all connections via `node.disconnect()`.
+   */
+  disconnect: method(function (destActor, output) {
+    let node = this.node.get();
+
+    if (node === null) {
+      return CollectedAudioNodeError();
+    }
+
+    try {
+      // Disconnect via the unwrapped node, so we can call the
+      // patched method that fires the webaudio actor's `disconnect` event.
+      XPCNativeWrapper.unwrap(node).disconnect(output);
+    } catch (e) {
+      return constructError(e);
+    }
+  }, {
+    request: { output: Arg(0, "nullable:number") },
+    response: { error: RetVal("nullable:json") }
   })
+
 });
 
 /**
@@ -270,7 +382,11 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
 let AudioNodeFront = protocol.FrontClass(AudioNodeActor, {
   initialize: function (client, form) {
     protocol.Front.prototype.initialize.call(this, client, form);
-    this.manage(this);
+    // if we were manually passed a form, this was created manually and
+    // needs to own itself for now.
+    if (form) {
+      this.manage(this);
+    }
   }
 });
 
@@ -294,6 +410,7 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
 
     this._onDestroyNode = this._onDestroyNode.bind(this);
     this._onGlobalDestroyed = this._onGlobalDestroyed.bind(this);
+    this._onGlobalCreated = this._onGlobalCreated.bind(this);
   },
 
   destroy: function(conn) {
@@ -332,11 +449,12 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
       holdWeak: true,
       storeCalls: false
     });
-    // Bind to the `global-destroyed` event on the content observer so we can
-    // unbind events between the global destruction and the `finalize` cleanup
-    // method on the actor.
-    // TODO expose these events on CallWatcherActor itself, bug 1021321
-    on(this._callWatcher._contentObserver, "global-destroyed", this._onGlobalDestroyed);
+    // Bind to `window-ready` so we can reenable recording on the
+    // call watcher
+    on(this.tabActor, "window-ready", this._onGlobalCreated);
+    // Bind to the `window-destroyed` event so we can unbind events between
+    // the global destruction and the `finalize` cleanup method on the actor.
+    on(this.tabActor, "window-destroyed", this._onGlobalDestroyed);
   }, {
     request: { reload: Option(0, "boolean") },
     oneway: true
@@ -404,9 +522,12 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
     if (!this._initialized) {
       return;
     }
-    this.tabActor = null;
     this._initialized = false;
-    off(this._callWatcher._contentObserver, "global-destroyed", this._onGlobalDestroyed);
+    systemOff("webaudio-node-demise", this._onDestroyNode);
+
+    off(this.tabActor, "window-destroyed", this._onGlobalDestroyed);
+    off(this.tabActor, "window-ready", this._onGlobalCreated);
+    this.tabActor = null;
     this._nativeToActorID = null;
     this._callWatcher.eraseRecording();
     this._callWatcher.finalize();
@@ -516,6 +637,7 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
   _onConnectNode: function (source, dest) {
     let sourceActor = this._getActorByNativeID(source.id);
     let destActor = this._getActorByNativeID(dest.id);
+
     emit(this, "connect-node", {
       source: sourceActor,
       dest: destActor
@@ -582,11 +704,19 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
   },
 
   /**
+   * Ensures that the new global has recording on
+   * so we can proxy the function calls.
+   */
+  _onGlobalCreated: function () {
+    this._callWatcher.resumeRecording();
+  },
+
+  /**
    * Called when the underlying ContentObserver fires `global-destroyed`
    * so we can cleanup some things between the global being destroyed and
    * when the actor's `finalize` method gets called.
    */
-  _onGlobalDestroyed: function (id) {
+  _onGlobalDestroyed: function ({id}) {
     if (this._callWatcher._tracedWindowId !== id) {
       return;
     }

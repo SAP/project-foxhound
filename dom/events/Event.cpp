@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EventStateManager.h"
@@ -61,12 +62,8 @@ Event::ConstructorInit(EventTarget* aOwner,
                        nsPresContext* aPresContext,
                        WidgetEvent* aEvent)
 {
-  SetIsDOMBinding();
   SetOwner(aOwner);
   mIsMainThreadEvent = mOwner || NS_IsMainThread();
-  if (mIsMainThreadEvent) {
-    nsJSContext::LikelyShortLivingObjectCreated();
-  }
 
   if (mIsMainThreadEvent && !sReturnHighResTimeStampIsSet) {
     Preferences::AddBoolVarCache(&sReturnHighResTimeStamp,
@@ -76,6 +73,7 @@ Event::ConstructorInit(EventTarget* aOwner,
   }
 
   mPrivateDataDuplicated = false;
+  mWantsPopupControlCheck = false;
 
   if (aEvent) {
     mEvent = aEvent;
@@ -157,27 +155,27 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Event)
     tmp->mEvent->target = nullptr;
     tmp->mEvent->currentTarget = nullptr;
     tmp->mEvent->originalTarget = nullptr;
-    switch (tmp->mEvent->eventStructType) {
-      case NS_MOUSE_EVENT:
-      case NS_MOUSE_SCROLL_EVENT:
-      case NS_WHEEL_EVENT:
-      case NS_SIMPLE_GESTURE_EVENT:
-      case NS_POINTER_EVENT:
+    switch (tmp->mEvent->mClass) {
+      case eMouseEventClass:
+      case eMouseScrollEventClass:
+      case eWheelEventClass:
+      case eSimpleGestureEventClass:
+      case ePointerEventClass:
         tmp->mEvent->AsMouseEventBase()->relatedTarget = nullptr;
         break;
-      case NS_DRAG_EVENT: {
+      case eDragEventClass: {
         WidgetDragEvent* dragEvent = tmp->mEvent->AsDragEvent();
         dragEvent->dataTransfer = nullptr;
         dragEvent->relatedTarget = nullptr;
         break;
       }
-      case NS_CLIPBOARD_EVENT:
+      case eClipboardEventClass:
         tmp->mEvent->AsClipboardEvent()->clipboardData = nullptr;
         break;
-      case NS_MUTATION_EVENT:
+      case eMutationEventClass:
         tmp->mEvent->AsMutationEvent()->mRelatedNode = nullptr;
         break;
-      case NS_FOCUS_EVENT:
+      case eFocusEventClass:
         tmp->mEvent->AsFocusEvent()->relatedTarget = nullptr;
         break;
       default:
@@ -195,16 +193,16 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEvent->target)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEvent->currentTarget)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEvent->originalTarget)
-    switch (tmp->mEvent->eventStructType) {
-      case NS_MOUSE_EVENT:
-      case NS_MOUSE_SCROLL_EVENT:
-      case NS_WHEEL_EVENT:
-      case NS_SIMPLE_GESTURE_EVENT:
-      case NS_POINTER_EVENT:
+    switch (tmp->mEvent->mClass) {
+      case eMouseEventClass:
+      case eMouseScrollEventClass:
+      case eWheelEventClass:
+      case eSimpleGestureEventClass:
+      case ePointerEventClass:
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->relatedTarget");
         cb.NoteXPCOMChild(tmp->mEvent->AsMouseEventBase()->relatedTarget);
         break;
-      case NS_DRAG_EVENT: {
+      case eDragEventClass: {
         WidgetDragEvent* dragEvent = tmp->mEvent->AsDragEvent();
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->dataTransfer");
         cb.NoteXPCOMChild(dragEvent->dataTransfer);
@@ -212,15 +210,15 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
         cb.NoteXPCOMChild(dragEvent->relatedTarget);
         break;
       }
-      case NS_CLIPBOARD_EVENT:
+      case eClipboardEventClass:
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->clipboardData");
         cb.NoteXPCOMChild(tmp->mEvent->AsClipboardEvent()->clipboardData);
         break;
-      case NS_MUTATION_EVENT:
+      case eMutationEventClass:
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mRelatedNode");
         cb.NoteXPCOMChild(tmp->mEvent->AsMutationEvent()->mRelatedNode);
         break;
-      case NS_FOCUS_EVENT:
+      case eFocusEventClass:
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->relatedTarget");
         cb.NoteXPCOMChild(tmp->mEvent->AsFocusEvent()->relatedTarget);
         break;
@@ -233,6 +231,22 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+
+JSObject*
+Event::WrapObject(JSContext* aCx)
+{
+  if (mIsMainThreadEvent && !GetWrapperPreserveColor()) {
+    nsJSContext::LikelyShortLivingObjectCreated();
+  }
+  return WrapObjectInternal(aCx);
+}
+
+JSObject*
+Event::WrapObjectInternal(JSContext* aCx)
+{
+  return EventBinding::Wrap(aCx, this);
+}
 
 bool
 Event::IsChrome(JSContext* aCx) const
@@ -525,7 +539,7 @@ Event::SetEventType(const nsAString& aEventTypeArg)
   if (mIsMainThreadEvent) {
     mEvent->typeString.Truncate();
     mEvent->userType =
-      nsContentUtils::GetEventIdAndAtom(aEventTypeArg, mEvent->eventStructType,
+      nsContentUtils::GetEventIdAndAtom(aEventTypeArg, mEvent->mClass,
                                         &(mEvent->message));
   } else {
     mEvent->userType = nullptr;
@@ -655,14 +669,22 @@ PopupAllowedForEvent(const char *eventName)
 
 // static
 PopupControlState
-Event::GetEventPopupControlState(WidgetEvent* aEvent)
+Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
 {
   // generally if an event handler is running, new windows are disallowed.
   // check for exceptions:
   PopupControlState abuse = openAbused;
 
-  switch(aEvent->eventStructType) {
-  case NS_EVENT :
+  if (aDOMEvent && aDOMEvent->InternalDOMEvent()->GetWantsPopupControlCheck()) {
+    nsAutoString type;
+    aDOMEvent->GetType(type);
+    if (PopupAllowedForEvent(NS_ConvertUTF16toUTF8(type).get())) {
+      return openAllowed;
+    }
+  }
+
+  switch(aEvent->mClass) {
+  case eBasicEventClass:
     // For these following events only allow popups if they're
     // triggered while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
@@ -681,7 +703,7 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent)
       }
     }
     break;
-  case NS_EDITOR_INPUT_EVENT :
+  case eEditorInputEventClass:
     // For this following event only allow popups if it's triggered
     // while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
@@ -695,7 +717,7 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent)
       }
     }
     break;
-  case NS_INPUT_EVENT :
+  case eInputEventClass:
     // For this following event only allow popups if it's triggered
     // while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
@@ -712,7 +734,7 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent)
       }
     }
     break;
-  case NS_KEY_EVENT :
+  case eKeyboardEventClass:
     if (aEvent->mFlags.mIsTrusted) {
       uint32_t key = aEvent->AsKeyboardEvent()->keyCode;
       switch(aEvent->message) {
@@ -740,7 +762,7 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent)
       }
     }
     break;
-  case NS_TOUCH_EVENT :
+  case eTouchEventClass:
     if (aEvent->mFlags.mIsTrusted) {
       switch (aEvent->message) {
       case NS_TOUCH_START :
@@ -756,7 +778,7 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent)
       }
     }
     break;
-  case NS_MOUSE_EVENT :
+  case eMouseEventClass:
     if (aEvent->mFlags.mIsTrusted &&
         aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
       switch(aEvent->message) {
@@ -787,7 +809,7 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent)
       }
     }
     break;
-  case NS_FORM_EVENT :
+  case eFormEventClass:
     // For these following events only allow popups if they're
     // triggered while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
@@ -847,13 +869,13 @@ Event::GetScreenCoords(nsPresContext* aPresContext,
   }
 
   if (!aEvent || 
-       (aEvent->eventStructType != NS_MOUSE_EVENT &&
-        aEvent->eventStructType != NS_MOUSE_SCROLL_EVENT &&
-        aEvent->eventStructType != NS_WHEEL_EVENT &&
-        aEvent->eventStructType != NS_POINTER_EVENT &&
-        aEvent->eventStructType != NS_TOUCH_EVENT &&
-        aEvent->eventStructType != NS_DRAG_EVENT &&
-        aEvent->eventStructType != NS_SIMPLE_GESTURE_EVENT)) {
+       (aEvent->mClass != eMouseEventClass &&
+        aEvent->mClass != eMouseScrollEventClass &&
+        aEvent->mClass != eWheelEventClass &&
+        aEvent->mClass != ePointerEventClass &&
+        aEvent->mClass != eTouchEventClass &&
+        aEvent->mClass != eDragEventClass &&
+        aEvent->mClass != eSimpleGestureEventClass)) {
     return nsIntPoint(0, 0);
   }
 
@@ -903,13 +925,13 @@ Event::GetClientCoords(nsPresContext* aPresContext,
   }
 
   if (!aEvent ||
-      (aEvent->eventStructType != NS_MOUSE_EVENT &&
-       aEvent->eventStructType != NS_MOUSE_SCROLL_EVENT &&
-       aEvent->eventStructType != NS_WHEEL_EVENT &&
-       aEvent->eventStructType != NS_TOUCH_EVENT &&
-       aEvent->eventStructType != NS_DRAG_EVENT &&
-       aEvent->eventStructType != NS_POINTER_EVENT &&
-       aEvent->eventStructType != NS_SIMPLE_GESTURE_EVENT) ||
+      (aEvent->mClass != eMouseEventClass &&
+       aEvent->mClass != eMouseScrollEventClass &&
+       aEvent->mClass != eWheelEventClass &&
+       aEvent->mClass != eTouchEventClass &&
+       aEvent->mClass != eDragEventClass &&
+       aEvent->mClass != ePointerEventClass &&
+       aEvent->mClass != eSimpleGestureEventClass) ||
       !aPresContext ||
       !aEvent->AsGUIEvent()->widget) {
     return aDefaultPoint;
@@ -996,16 +1018,14 @@ Event::TimeStamp() const
   }
 
   // For dedicated workers, we should make times relative to the navigation
-  // start of the document that created the worker. We currently don't have
-  // that information handy so for now we treat shared workers and dedicated
-  // workers alike and make times relative to the worker creation time. We can
-  // fix this when we implement WorkerPerformance.
+  // start of the document that created the worker, which is the same as the
+  // timebase for performance.now().
   workers::WorkerPrivate* workerPrivate =
     workers::GetCurrentThreadWorkerPrivate();
   MOZ_ASSERT(workerPrivate);
 
   TimeDuration duration =
-    mEvent->timeStamp - workerPrivate->CreationTimeStamp();
+    mEvent->timeStamp - workerPrivate->NowBaseTimeStamp();
   return duration.ToMilliseconds();
 }
 
@@ -1117,6 +1137,44 @@ Event::SetOwner(mozilla::dom::EventTarget* aOwner)
   nsCOMPtr<nsPIWindowRoot> root = do_QueryInterface(aOwner);
   MOZ_ASSERT(root, "Unexpected EventTarget!");
 #endif
+}
+
+// static
+nsIContent*
+Event::GetShadowRelatedTarget(nsIContent* aCurrentTarget,
+                              nsIContent* aRelatedTarget)
+{
+  if (!aCurrentTarget || !aRelatedTarget) {
+    return nullptr;
+  }
+
+  // Walk up the ancestor node trees of the related target until
+  // we encounter the node tree of the current target in order
+  // to find the adjusted related target. Walking up the tree may
+  // not find a common ancestor node tree if the related target is in
+  // an ancestor tree, but in that case it does not need to be adjusted.
+  ShadowRoot* currentTargetShadow = aCurrentTarget->GetContainingShadow();
+  if (!currentTargetShadow) {
+    return nullptr;
+  }
+
+  nsIContent* relatedTarget = aCurrentTarget;
+  while (relatedTarget) {
+    ShadowRoot* ancestorShadow = relatedTarget->GetContainingShadow();
+    if (currentTargetShadow == ancestorShadow) {
+      return relatedTarget;
+    }
+
+    // Didn't find the ancestor tree, thus related target does not have to
+    // adjusted.
+    if (!ancestorShadow) {
+      return nullptr;
+    }
+
+    relatedTarget = ancestorShadow->GetHost();
+  }
+
+  return nullptr;
 }
 
 } // namespace dom

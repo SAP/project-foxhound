@@ -4,12 +4,13 @@
 
 package org.mozilla.gecko.db;
 
+import org.mozilla.gecko.AppConstants.Versions;
+
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
-import android.os.Build;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -49,8 +50,8 @@ import android.util.Log;
 public abstract class AbstractTransactionalProvider extends ContentProvider {
     private static final String LOGTAG = "GeckoTransProvider";
 
-    private static boolean logDebug = Log.isLoggable(LOGTAG, Log.DEBUG);
-    private static boolean logVerbose = Log.isLoggable(LOGTAG, Log.VERBOSE);
+    private static final boolean logDebug = Log.isLoggable(LOGTAG, Log.DEBUG);
+    private static final boolean logVerbose = Log.isLoggable(LOGTAG, Log.VERBOSE);
 
     protected abstract SQLiteDatabase getReadableDatabase(Uri uri);
     protected abstract SQLiteDatabase getWritableDatabase(Uri uri);
@@ -94,7 +95,7 @@ public abstract class AbstractTransactionalProvider extends ContentProvider {
      */
     @SuppressWarnings("static-method")
     protected boolean shouldUseTransactions() {
-        return Build.VERSION.SDK_INT >= 11;
+        return Versions.feature11Plus;
     }
 
     private boolean isInBatch() {
@@ -102,7 +103,8 @@ public abstract class AbstractTransactionalProvider extends ContentProvider {
         if (isInBatch == null) {
             return false;
         }
-        return isInBatch.booleanValue();
+
+        return isInBatch;
     }
 
     /**

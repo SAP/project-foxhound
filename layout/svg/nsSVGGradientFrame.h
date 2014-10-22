@@ -40,18 +40,19 @@ typedef nsSVGPaintServerFrame nsSVGGradientFrameBase;
 class nsSVGGradientFrame : public nsSVGGradientFrameBase
 {
 protected:
-  nsSVGGradientFrame(nsStyleContext* aContext);
+  explicit nsSVGGradientFrame(nsStyleContext* aContext);
 
 public:
   NS_DECL_FRAMEARENA_HELPERS
 
   // nsSVGPaintServerFrame methods:
   virtual already_AddRefed<gfxPattern>
-    GetPaintServerPattern(nsIFrame *aSource,
+    GetPaintServerPattern(nsIFrame* aSource,
+                          const DrawTarget* aDrawTarget,
                           const gfxMatrix& aContextMatrix,
                           nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
                           float aGraphicOpacity,
-                          const gfxRect *aOverrideBounds) MOZ_OVERRIDE;
+                          const gfxRect* aOverrideBounds) MOZ_OVERRIDE;
 
   // nsIFrame interface:
   virtual nsresult AttributeChanged(int32_t         aNameSpaceID,
@@ -130,7 +131,7 @@ class nsSVGLinearGradientFrame : public nsSVGLinearGradientFrameBase
   friend nsIFrame* NS_NewSVGLinearGradientFrame(nsIPresShell* aPresShell,
                                                 nsStyleContext* aContext);
 protected:
-  nsSVGLinearGradientFrame(nsStyleContext* aContext) :
+  explicit nsSVGLinearGradientFrame(nsStyleContext* aContext) :
     nsSVGLinearGradientFrameBase(aContext) {}
 
 public:
@@ -175,7 +176,7 @@ class nsSVGRadialGradientFrame : public nsSVGRadialGradientFrameBase
   friend nsIFrame* NS_NewSVGRadialGradientFrame(nsIPresShell* aPresShell,
                                                 nsStyleContext* aContext);
 protected:
-  nsSVGRadialGradientFrame(nsStyleContext* aContext) :
+  explicit nsSVGRadialGradientFrame(nsStyleContext* aContext) :
     nsSVGRadialGradientFrameBase(aContext) {}
 
 public:

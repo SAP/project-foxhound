@@ -11,7 +11,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLFormControlsCollectionBinding.h"
 #include "mozilla/dom/HTMLFormElement.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "nsGenericHTMLElement.h" // nsGenericHTMLFormElement
 #include "nsIDocument.h"
 #include "nsIDOMNode.h"
@@ -74,9 +73,8 @@ HTMLFormControlsCollection::HTMLFormControlsCollection(HTMLFormElement* aForm)
   // Initialize the elements list to have an initial capacity
   // of 8 to reduce allocations on small forms.
   , mElements(8)
-  , mNameLookupTable(HTMLFormElement::FORM_CONTROL_LIST_HASHTABLE_SIZE)
+  , mNameLookupTable(HTMLFormElement::FORM_CONTROL_LIST_HASHTABLE_LENGTH)
 {
-  SetIsDOMBinding();
 }
 
 HTMLFormControlsCollection::~HTMLFormControlsCollection()
@@ -113,7 +111,7 @@ void
 HTMLFormControlsCollection::FlushPendingNotifications()
 {
   if (mForm) {
-    nsIDocument* doc = mForm->GetCurrentDoc();
+    nsIDocument* doc = mForm->GetUncomposedDoc();
     if (doc) {
       doc->FlushPendingNotifications(Flush_Content);
     }
@@ -136,7 +134,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 // XPConnect interface list for HTMLFormControlsCollection
 NS_INTERFACE_TABLE_HEAD(HTMLFormControlsCollection)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
   NS_INTERFACE_TABLE(HTMLFormControlsCollection,
                      nsIHTMLCollection,
                      nsIDOMHTMLCollection)

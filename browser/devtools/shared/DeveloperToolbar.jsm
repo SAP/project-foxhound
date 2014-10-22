@@ -104,6 +104,13 @@ let CommandUtils = {
         if (command == null) {
           throw new Error("No command '" + typed + "'");
         }
+
+        // Do not build a button for a non-remote safe command in a non-local target.
+        if (!target.isLocalTab && !command.isRemoteSafe) {
+          requisition.clear();
+          return;
+        }
+
         if (command.buttonId != null) {
           button.id = command.buttonId;
           if (command.buttonClass != null) {
@@ -166,7 +173,9 @@ let CommandUtils = {
           command.state.onChange(target, onChange);
           onChange("", { target: target });
           document.defaultView.addEventListener("unload", () => {
-            command.state.offChange(target, onChange);
+            if (command.state.offChange) {
+              command.state.offChange(target, onChange);
+            }
           }, false);
         }
 

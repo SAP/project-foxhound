@@ -7,7 +7,7 @@
 #define nsCoreUtils_h_
 
 #include "nsIContent.h"
-#include "nsIDocument.h"
+#include "nsIDocument.h" // for GetShell()
 #include "nsIPresShell.h"
 
 #include "nsPoint.h"
@@ -44,7 +44,7 @@ public:
    */
   static void DispatchClickEvent(nsITreeBoxObject *aTreeBoxObj,
                                  int32_t aRowIndex, nsITreeColumn *aColumn,
-                                 const nsCString& aPseudoElt = EmptyCString());
+                                 const nsAString& aPseudoElt = EmptyString());
 
   /**
    * Send mouse event to the given element.
@@ -314,4 +314,3 @@ public:
 };
 
 #endif
-

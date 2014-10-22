@@ -103,6 +103,7 @@ nsInProcessTabChildGlobal::nsInProcessTabChildGlobal(nsIDocShell* aShell,
 : mDocShell(aShell), mInitialized(false), mLoadingScript(false),
   mOwner(aOwner), mChromeMessageManager(aChrome)
 {
+  SetIsNotDOMBinding();
   mozilla::HoldJSObjects(this);
 
   // If owner corresponds to an <iframe mozbrowser> or <iframe mozapp>, we'll
@@ -305,6 +306,8 @@ nsInProcessTabChildGlobal::PreHandleEvent(EventChainPreVisitor& aVisitor)
 nsresult
 nsInProcessTabChildGlobal::InitTabChildGlobal()
 {
+  // If you change this, please change GetCompartmentName() in XPCJSRuntime.cpp
+  // accordingly.
   nsAutoCString id;
   id.AssignLiteral("inProcessTabChildGlobal");
   nsIURI* uri = mOwner->OwnerDoc()->GetDocumentURI();

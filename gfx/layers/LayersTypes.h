@@ -32,6 +32,8 @@ struct PRLogModuleInfo;
 #  define MOZ_LAYERS_LOG_IF_SHADOWABLE(layer, _args)
 #endif  // if defined(DEBUG) || defined(PR_LOGGING)
 
+#define INVALID_OVERLAY -1
+
 namespace android {
 class GraphicBuffer;
 }
@@ -62,8 +64,7 @@ MOZ_END_ENUM_CLASS(BufferMode)
 
 MOZ_BEGIN_ENUM_CLASS(DrawRegionClip, int8_t)
   DRAW,
-  DRAW_SNAPPED,
-  CLIP_NONE
+  NONE
 MOZ_END_ENUM_CLASS(DrawRegionClip)
 
 MOZ_BEGIN_ENUM_CLASS(SurfaceMode, int8_t)
@@ -93,6 +94,7 @@ struct LayerRenderState {
     : mFlags(LayerRenderStateFlags::LAYER_RENDER_STATE_DEFAULT)
     , mHasOwnOffset(false)
     , mSurface(nullptr)
+    , mOverlayId(INVALID_OVERLAY)
     , mTexture(nullptr)
 #endif
   {}
@@ -105,6 +107,7 @@ struct LayerRenderState {
     : mFlags(aFlags)
     , mHasOwnOffset(false)
     , mSurface(aSurface)
+    , mOverlayId(INVALID_OVERLAY)
     , mSize(aSize)
     , mTexture(aTexture)
   {}
@@ -117,6 +120,9 @@ struct LayerRenderState {
 
   bool FormatRBSwapped() const
   { return bool(mFlags & LayerRenderStateFlags::FORMAT_RB_SWAP); }
+
+  void SetOverlayId(const int32_t& aId)
+  { mOverlayId = aId; }
 #endif
 
   void SetOffset(const nsIntPoint& aOffset)
@@ -134,7 +140,8 @@ struct LayerRenderState {
 #ifdef MOZ_WIDGET_GONK
   // surface to render
   android::sp<android::GraphicBuffer> mSurface;
-  // size of mSurface 
+  int32_t mOverlayId;
+  // size of mSurface
   nsIntSize mSize;
   TextureHost* mTexture;
 #endif

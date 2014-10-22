@@ -8,12 +8,13 @@
 #define vm_SavedStacks_h
 
 #include "jscntxt.h"
+#include "jsmath.h"
 #include "js/HashTable.h"
 #include "vm/Stack.h"
 
 namespace js {
 
-class SavedFrame : public JSObject {
+class SavedFrame : public NativeObject {
     friend class SavedStacks;
 
   public:
@@ -100,8 +101,20 @@ struct SavedFrame::HashPolicy
 };
 
 class SavedStacks {
+    friend bool SavedStacksMetadataCallback(JSContext *cx, JSObject **pmetadata);
+
   public:
-    SavedStacks() : frames(), savedFrameProto(nullptr) { }
+    SavedStacks()
+      : frames(),
+        savedFrameProto(nullptr),
+        allocationSamplingProbability(1.0),
+        allocationSkipCount(0),
+        // XXX: Initialize the RNG state to 0 so that random_initSeed is lazily
+        // called for us on the first call to random_next (via
+        // random_nextDouble). We need to do this here because /dev/urandom
+        // doesn't exist on Android, resulting in assertion failures.
+        rngState(0)
+    { }
 
     bool     init();
     bool     initialized() const { return frames.initialized(); }
@@ -110,12 +123,16 @@ class SavedStacks {
     void     trace(JSTracer *trc);
     uint32_t count();
     void     clear();
+    void     setRNGState(uint64_t state) { rngState = state; }
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
   private:
-    SavedFrame::Set frames;
-    JSObject        *savedFrameProto;
+    SavedFrame::Set     frames;
+    ReadBarrieredObject savedFrameProto;
+    double              allocationSamplingProbability;
+    uint32_t            allocationSkipCount;
+    uint64_t            rngState;
 
     bool       insertFrames(JSContext *cx, FrameIter &iter, MutableHandleSavedFrame frame,
                             unsigned maxFrameCount = 0);
@@ -124,6 +141,7 @@ class SavedStacks {
     // be accessed through this method.
     JSObject   *getOrCreateSavedFramePrototype(JSContext *cx);
     SavedFrame *createFrameFromLookup(JSContext *cx, SavedFrame::HandleLookup lookup);
+    void       chooseSamplingProbability(JSContext* cx);
 
     // Cache for memoizing PCToLineNumber lookups.
 
@@ -155,7 +173,7 @@ class SavedStacks {
     class MOZ_STACK_CLASS AutoLocationValueRooter : public JS::CustomAutoRooter
     {
       public:
-        AutoLocationValueRooter(JSContext *cx)
+        explicit AutoLocationValueRooter(JSContext *cx)
             : JS::CustomAutoRooter(cx),
               value() {}
 
@@ -208,13 +226,16 @@ class SavedStacks {
     struct FrameState
     {
         FrameState() : principals(nullptr), name(nullptr), location() { }
-        FrameState(const FrameIter &iter);
+        explicit FrameState(const FrameIter &iter);
         FrameState(const FrameState &fs);
 
         ~FrameState();
 
         void trace(JSTracer *trc);
 
+        // Note: we don't have to hold/drop principals, because we're
+        // only alive while the stack is being walked and during this
+        // time the principals are kept alive by the stack itself.
         JSPrincipals  *principals;
         JSAtom        *name;
         LocationValue location;
@@ -222,12 +243,12 @@ class SavedStacks {
 
     class MOZ_STACK_CLASS AutoFrameStateVector : public JS::CustomAutoRooter {
       public:
-        AutoFrameStateVector(JSContext *cx)
+        explicit AutoFrameStateVector(JSContext *cx)
           : JS::CustomAutoRooter(cx),
             frames(cx)
         { }
 
-        typedef Vector<FrameState> FrameStateVector;
+        typedef Vector<FrameState, 20> FrameStateVector;
         inline FrameStateVector *operator->() { return &frames; }
         inline FrameState &operator[](size_t i) { return frames[i]; }
 

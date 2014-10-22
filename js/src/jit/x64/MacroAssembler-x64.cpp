@@ -37,7 +37,7 @@ MacroAssemblerX64::loadConstantDouble(double d, FloatRegister dest)
             return;
     }
     Double &dbl = doubles_[doubleIndex];
-    JS_ASSERT(!dbl.uses.bound());
+    MOZ_ASSERT(!dbl.uses.bound());
 
     // The constants will be stored in a pool appended to the text (see
     // finish()), so they will always be a fixed distance from the
@@ -71,11 +71,71 @@ MacroAssemblerX64::loadConstantFloat32(float f, FloatRegister dest)
             return;
     }
     Float &flt = floats_[floatIndex];
-    JS_ASSERT(!flt.uses.bound());
+    MOZ_ASSERT(!flt.uses.bound());
 
     // See comment in loadConstantDouble
     JmpSrc j = masm.movss_ripr(dest.code());
     JmpSrc prev = JmpSrc(flt.uses.use(j.offset()));
+    masm.setNextJump(j, prev);
+}
+
+MacroAssemblerX64::SimdData *
+MacroAssemblerX64::getSimdData(const SimdConstant &v)
+{
+    if (!simdMap_.initialized()) {
+        enoughMemory_ &= simdMap_.init();
+        if (!enoughMemory_)
+            return nullptr;
+    }
+
+    size_t index;
+    if (SimdMap::AddPtr p = simdMap_.lookupForAdd(v)) {
+        index = p->value();
+    } else {
+        index = simds_.length();
+        enoughMemory_ &= simds_.append(SimdData(v));
+        enoughMemory_ &= simdMap_.add(p, v, index);
+        if (!enoughMemory_)
+            return nullptr;
+    }
+    return &simds_[index];
+}
+
+void
+MacroAssemblerX64::loadConstantInt32x4(const SimdConstant &v, FloatRegister dest)
+{
+    MOZ_ASSERT(v.type() == SimdConstant::Int32x4);
+    if (maybeInlineInt32x4(v, dest))
+        return;
+
+    SimdData *val = getSimdData(v);
+    if (!val)
+        return;
+
+    MOZ_ASSERT(!val->uses.bound());
+    MOZ_ASSERT(val->type() == SimdConstant::Int32x4);
+
+    JmpSrc j = masm.movdqa_ripr(dest.code());
+    JmpSrc prev = JmpSrc(val->uses.use(j.offset()));
+    masm.setNextJump(j, prev);
+}
+
+void
+MacroAssemblerX64::loadConstantFloat32x4(const SimdConstant&v, FloatRegister dest)
+{
+    MOZ_ASSERT(v.type() == SimdConstant::Float32x4);
+    if (maybeInlineFloat32x4(v, dest))
+        return;
+
+    SimdData *val = getSimdData(v);
+    if (!val)
+        return;
+
+    MOZ_ASSERT(!val->uses.bound());
+    MOZ_ASSERT(val->type() == SimdConstant::Float32x4);
+
+    JmpSrc j = masm.movaps_ripr(dest.code());
+    JmpSrc prev = JmpSrc(val->uses.use(j.offset()));
     masm.setNextJump(j, prev);
 }
 
@@ -98,13 +158,26 @@ MacroAssemblerX64::finish()
         masm.floatConstant(flt.value);
     }
 
+    // SIMD memory values must be suitably aligned.
+    if (!simds_.empty())
+        masm.align(SimdStackAlignment);
+    for (size_t i = 0; i < simds_.length(); i++) {
+        SimdData &v = simds_[i];
+        bind(&v.uses);
+        switch(v.type()) {
+          case SimdConstant::Int32x4:   masm.int32x4Constant(v.value.asInt32x4());     break;
+          case SimdConstant::Float32x4: masm.float32x4Constant(v.value.asFloat32x4()); break;
+          default: MOZ_CRASH("unexpected SimdConstant type");
+        }
+    }
+
     MacroAssemblerX86Shared::finish();
 }
 
 void
 MacroAssemblerX64::setupABICall(uint32_t args)
 {
-    JS_ASSERT(!inCall_);
+    MOZ_ASSERT(!inCall_);
     inCall_ = true;
 
     args_ = args;
@@ -127,7 +200,7 @@ MacroAssemblerX64::setupUnalignedABICall(uint32_t args, Register scratch)
     dynamicAlignment_ = true;
 
     movq(rsp, scratch);
-    andq(Imm32(~(StackAlignment - 1)), rsp);
+    andq(Imm32(~(ABIStackAlignment - 1)), rsp);
     push(scratch);
 }
 
@@ -150,7 +223,7 @@ MacroAssemblerX64::passABIArg(const MoveOperand &from, MoveOp::Type type)
             switch (type) {
               case MoveOp::FLOAT32: stackForCall_ += sizeof(float);  break;
               case MoveOp::DOUBLE:  stackForCall_ += sizeof(double); break;
-              default: MOZ_ASSUME_UNREACHABLE("Unexpected float register class argument type");
+              default: MOZ_CRASH("Unexpected float register class argument type");
             }
         }
         break;
@@ -170,7 +243,7 @@ MacroAssemblerX64::passABIArg(const MoveOperand &from, MoveOp::Type type)
         break;
       }
       default:
-        MOZ_ASSUME_UNREACHABLE("Unexpected argument type");
+        MOZ_CRASH("Unexpected argument type");
     }
 
     enoughMemory_ = moveResolver_.addMove(from, to, type);
@@ -191,17 +264,17 @@ MacroAssemblerX64::passABIArg(FloatRegister reg, MoveOp::Type type)
 void
 MacroAssemblerX64::callWithABIPre(uint32_t *stackAdjust)
 {
-    JS_ASSERT(inCall_);
-    JS_ASSERT(args_ == passedIntArgs_ + passedFloatArgs_);
+    MOZ_ASSERT(inCall_);
+    MOZ_ASSERT(args_ == passedIntArgs_ + passedFloatArgs_);
 
     if (dynamicAlignment_) {
         *stackAdjust = stackForCall_
                      + ComputeByteAlignment(stackForCall_ + sizeof(intptr_t),
-                                            StackAlignment);
+                                            ABIStackAlignment);
     } else {
         *stackAdjust = stackForCall_
                      + ComputeByteAlignment(stackForCall_ + framePushed_,
-                                            StackAlignment);
+                                            ABIStackAlignment);
     }
 
     reserveStack(*stackAdjust);
@@ -220,7 +293,7 @@ MacroAssemblerX64::callWithABIPre(uint32_t *stackAdjust)
 #ifdef DEBUG
     {
         Label good;
-        testq(rsp, Imm32(StackAlignment - 1));
+        testq(rsp, Imm32(ABIStackAlignment - 1));
         j(Equal, &good);
         breakpoint();
         bind(&good);
@@ -235,7 +308,7 @@ MacroAssemblerX64::callWithABIPost(uint32_t stackAdjust, MoveOp::Type result)
     if (dynamicAlignment_)
         pop(rsp);
 
-    JS_ASSERT(inCall_);
+    MOZ_ASSERT(inCall_);
     inCall_ = false;
 }
 
@@ -278,7 +351,25 @@ MacroAssemblerX64::callWithABI(Address fun, MoveOp::Type result)
         fun.base = r10;
     }
 
-    JS_ASSERT(!IsIntArgReg(fun.base));
+    MOZ_ASSERT(!IsIntArgReg(fun.base));
+
+    uint32_t stackAdjust;
+    callWithABIPre(&stackAdjust);
+    call(Operand(fun));
+    callWithABIPost(stackAdjust, result);
+}
+
+void
+MacroAssemblerX64::callWithABI(Register fun, MoveOp::Type result)
+{
+    if (IsIntArgReg(fun)) {
+        // Callee register may be clobbered for an argument. Move the callee to
+        // r10, a volatile, non-argument register.
+        moveResolver_.addMove(MoveOperand(fun), MoveOperand(r10), MoveOp::GENERAL);
+        fun = r10;
+    }
+
+    MOZ_ASSERT(!IsIntArgReg(fun));
 
     uint32_t stackAdjust;
     callWithABIPre(&stackAdjust);
@@ -411,9 +502,9 @@ MacroAssemblerX64::storeUnboxedValue(ConstantOrRegister value, MIRType valueType
 void
 MacroAssemblerX64::branchPtrInNurseryRange(Condition cond, Register ptr, Register temp, Label *label)
 {
-    JS_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-    JS_ASSERT(ptr != temp);
-    JS_ASSERT(ptr != ScratchReg);
+    MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
+    MOZ_ASSERT(ptr != temp);
+    MOZ_ASSERT(ptr != ScratchReg);
 
     const Nursery &nursery = GetIonContext()->runtime->gcNursery();
     movePtr(ImmWord(-ptrdiff_t(nursery.start())), ScratchReg);
@@ -426,7 +517,7 @@ void
 MacroAssemblerX64::branchValueIsNurseryObject(Condition cond, ValueOperand value, Register temp,
                                               Label *label)
 {
-    JS_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
+    MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 
     // 'Value' representing the start of the nursery tagged as a JSObject
     const Nursery &nursery = GetIonContext()->runtime->gcNursery();

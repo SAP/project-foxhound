@@ -15,14 +15,13 @@
 #include "jsfriendapi.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/ProgressEvent.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
 
-#include "File.h"
 #include "RuntimeService.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
@@ -293,7 +292,7 @@ class AsyncTeardownRunnable MOZ_FINAL : public nsRunnable
   nsRefPtr<Proxy> mProxy;
 
 public:
-  AsyncTeardownRunnable(Proxy* aProxy)
+  explicit AsyncTeardownRunnable(Proxy* aProxy)
   : mProxy(aProxy)
   {
     MOZ_ASSERT(aProxy);
@@ -447,8 +446,8 @@ public:
   private:
     virtual void trace(JSTracer* aTrc)
     {
-      JS_CallHeapValueTracer(aTrc, &mStateData->mResponse,
-                             "XMLHttpRequest::StateData::mResponse");
+      JS_CallValueTracer(aTrc, &mStateData->mResponse,
+                         "XMLHttpRequest::StateData::mResponse");
     }
   };
 
@@ -869,7 +868,7 @@ class AutoUnpinXHR
   XMLHttpRequest* mXMLHttpRequestPrivate;
 
 public:
-  AutoUnpinXHR(XMLHttpRequest* aXMLHttpRequestPrivate)
+  explicit AutoUnpinXHR(XMLHttpRequest* aXMLHttpRequestPrivate)
   : mXMLHttpRequestPrivate(aXMLHttpRequestPrivate)
   {
     MOZ_ASSERT(aXMLHttpRequestPrivate);
@@ -1072,6 +1071,18 @@ Proxy::HandleEvent(nsIDOMEvent* aEvent)
   {
     AutoSafeJSContext cx;
     JSAutoRequest ar(cx);
+
+    JS::Rooted<JSObject*> scope(cx, xpc::UnprivilegedJunkScope());
+    JSAutoCompartment ac(cx, scope);
+
+    JS::Rooted<JS::Value> value(cx);
+    if (!WrapNewBindingObject(cx, mXHR, &value)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    scope = js::UncheckedUnwrap(&value.toObject());
+    JSAutoCompartment ac2(cx, scope);
+
     runnable->Dispatch(cx);
   }
 
@@ -1213,8 +1224,8 @@ EventRunnable::PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
           // Anything subject to GC must be cloned.
           JSStructuredCloneCallbacks* callbacks =
             aWorkerPrivate->IsChromeWorker() ?
-            ChromeWorkerStructuredCloneCallbacks(true) :
-            WorkerStructuredCloneCallbacks(true);
+            workers::ChromeWorkerStructuredCloneCallbacks(true) :
+            workers::WorkerStructuredCloneCallbacks(true);
 
           nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
 
@@ -1321,8 +1332,8 @@ EventRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
 
         JSStructuredCloneCallbacks* callbacks =
           aWorkerPrivate->IsChromeWorker() ?
-          ChromeWorkerStructuredCloneCallbacks(false) :
-          WorkerStructuredCloneCallbacks(false);
+          workers::ChromeWorkerStructuredCloneCallbacks(false) :
+          workers::WorkerStructuredCloneCallbacks(false);
 
         nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
         clonedObjects.SwapElements(mClonedObjects);
@@ -1505,8 +1516,8 @@ SendRunnable::MainThreadRun()
 
     JSStructuredCloneCallbacks* callbacks =
       mWorkerPrivate->IsChromeWorker() ?
-      ChromeWorkerStructuredCloneCallbacks(true) :
-      WorkerStructuredCloneCallbacks(true);
+      workers::ChromeWorkerStructuredCloneCallbacks(true) :
+      workers::WorkerStructuredCloneCallbacks(true);
 
     JS::Rooted<JS::Value> body(cx);
     if (mBody.read(cx, &body, callbacks, &mClonedObjects)) {
@@ -1576,7 +1587,7 @@ XMLHttpRequest::XMLHttpRequest(WorkerPrivate* aWorkerPrivate)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
-  SetIsDOMBinding();
+  mozilla::HoldJSObjects(this);
 }
 
 XMLHttpRequest::~XMLHttpRequest()
@@ -1847,8 +1858,8 @@ XMLHttpRequest::SendInternal(const nsAString& aStringBody,
   nsCOMPtr<nsIEventTarget> syncLoopTarget;
   bool isSyncXHR = mProxy->mIsSyncXHR;
   if (isSyncXHR) {
-    autoSyncLoop.construct(mWorkerPrivate);
-    syncLoopTarget = autoSyncLoop.ref().EventTarget();
+    autoSyncLoop.emplace(mWorkerPrivate);
+    syncLoopTarget = autoSyncLoop->EventTarget();
   }
 
   mProxy->mOuterChannelId++;
@@ -1865,13 +1876,13 @@ XMLHttpRequest::SendInternal(const nsAString& aStringBody,
 
   if (!isSyncXHR)  {
     autoUnpin.Clear();
-    MOZ_ASSERT(autoSyncLoop.empty());
+    MOZ_ASSERT(!autoSyncLoop);
     return;
   }
 
   autoUnpin.Clear();
 
-  if (!autoSyncLoop.ref().Run()) {
+  if (!autoSyncLoop->Run()) {
     aRv.Throw(NS_ERROR_FAILURE);
   }
 }
@@ -2118,8 +2129,7 @@ XMLHttpRequest::Send(JS::Handle<JSObject*> aBody, ErrorResult& aRv)
   }
 
   JS::Rooted<JS::Value> valToClone(cx);
-  if (JS_IsArrayBufferObject(aBody) || JS_IsArrayBufferViewObject(aBody) ||
-      file::GetDOMBlobFromJSObject(aBody)) {
+  if (JS_IsArrayBufferObject(aBody) || JS_IsArrayBufferViewObject(aBody)) {
     valToClone.setObject(*aBody);
   }
   else {
@@ -2141,6 +2151,44 @@ XMLHttpRequest::Send(JS::Handle<JSObject*> aBody, ErrorResult& aRv)
 
   JSAutoStructuredCloneBuffer buffer;
   if (!buffer.write(cx, valToClone, callbacks, &clonedObjects)) {
+    aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
+    return;
+  }
+
+  SendInternal(EmptyString(), Move(buffer), clonedObjects, aRv);
+}
+
+void
+XMLHttpRequest::Send(File& aBody, ErrorResult& aRv)
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  JSContext* cx = mWorkerPrivate->GetJSContext();
+
+  if (mCanceled) {
+    aRv.Throw(UNCATCHABLE_EXCEPTION);
+    return;
+  }
+
+  if (!mProxy) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return;
+  }
+
+  JS::Rooted<JS::Value> value(cx);
+  if (!WrapNewBindingObject(cx, &aBody, &value)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  JSStructuredCloneCallbacks* callbacks =
+    mWorkerPrivate->IsChromeWorker() ?
+    ChromeWorkerStructuredCloneCallbacks(false) :
+    WorkerStructuredCloneCallbacks(false);
+
+  nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
+
+  JSAutoStructuredCloneBuffer buffer;
+  if (!buffer.write(cx, value, callbacks, &clonedObjects)) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
     return;
   }
@@ -2364,8 +2412,5 @@ XMLHttpRequest::UpdateState(const StateData& aStateData,
   }
   else {
     mStateData = aStateData;
-  }
-  if (mStateData.mResponse.isGCThing()) {
-    mozilla::HoldJSObjects(this);
   }
 }

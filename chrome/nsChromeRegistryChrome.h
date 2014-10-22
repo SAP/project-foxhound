@@ -10,6 +10,7 @@
 #include "nsChromeRegistry.h"
 #include "nsTArray.h"
 #include "mozilla/Move.h"
+#include "nsClassHashtable.h"
 
 namespace mozilla {
 namespace dom {
@@ -18,6 +19,7 @@ class PContentParent;
 }
 
 class nsIPrefBranch;
+struct ChromePackage;
 
 class nsChromeRegistryChrome : public nsChromeRegistry
 {
@@ -44,13 +46,22 @@ class nsChromeRegistryChrome : public nsChromeRegistry
   NS_IMETHOD GetStyleOverlays(nsIURI *aURI,
                               nsISimpleEnumerator **_retval) MOZ_OVERRIDE;
 #endif
-  
+
+  // If aChild is non-null then it is a new child to notify. If aChild is
+  // null, then we have installed new chrome and we are resetting all of our
+  // children's registered chrome.
   void SendRegisteredChrome(mozilla::dom::PContentParent* aChild);
 
  private:
-  static PLDHashOperator CollectPackages(PLDHashTable *table,
-                                         PLDHashEntryHdr *entry,
-                                         uint32_t number, void *arg);
+  struct PackageEntry;
+  static void ChromePackageFromPackageEntry(const nsACString& aPackageName,
+                                            PackageEntry* aPackage,
+                                            ChromePackage* aChromePackage,
+                                            const nsCString& aSelectedLocale,
+                                            const nsCString& aSelectedSkin);
+  static PLDHashOperator CollectPackages(const nsACString &aKey,
+                                         PackageEntry *package,
+                                         void *arg);
 
   nsresult OverrideLocalePackage(const nsACString& aPackage,
                                  nsACString& aOverride);
@@ -61,14 +72,6 @@ class nsChromeRegistryChrome : public nsChromeRegistry
                                  const nsCString& aPath) MOZ_OVERRIDE;
   nsresult GetFlagsFromPackage(const nsCString& aPackage,
                                uint32_t* aFlags) MOZ_OVERRIDE;
-
-  static const PLDHashTableOps kTableOps;
-  static PLDHashNumber HashKey(PLDHashTable *table, const void *key);
-  static bool          MatchKey(PLDHashTable *table, const PLDHashEntryHdr *entry,
-                                const void *key);
-  static void          ClearEntry(PLDHashTable *table, PLDHashEntryHdr *entry);
-  static bool          InitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
-                                 const void *key);
 
   struct ProviderEntry
   {
@@ -108,11 +111,10 @@ class nsChromeRegistryChrome : public nsChromeRegistry
 
   struct PackageEntry : public PLDHashEntryHdr
   {
-    PackageEntry(const nsACString& package)
-    : package(package), flags(0) { }
+    PackageEntry()
+    : flags(0) { }
     ~PackageEntry() { }
 
-    nsCString        package;
     nsCOMPtr<nsIURI> baseURI;
     uint32_t         flags;
     nsProviderArray  locales;
@@ -125,7 +127,7 @@ class nsChromeRegistryChrome : public nsChromeRegistry
     typedef nsURIHashKey::KeyType        KeyType;
     typedef nsURIHashKey::KeyTypePointer KeyTypePointer;
 
-    OverlayListEntry(KeyTypePointer aKey) : nsURIHashKey(aKey) { }
+    explicit OverlayListEntry(KeyTypePointer aKey) : nsURIHashKey(aKey) { }
     OverlayListEntry(OverlayListEntry&& toMove) : nsURIHashKey(mozilla::Move(toMove)),
                                                   mArray(mozilla::Move(toMove.mArray)) { }
     ~OverlayListEntry() { }
@@ -155,12 +157,13 @@ class nsChromeRegistryChrome : public nsChromeRegistry
   OverlayListHash mStyleHash;
 
   bool mProfileLoaded;
-  
+  bool mDynamicRegistration;
+
   nsCString mSelectedLocale;
   nsCString mSelectedSkin;
 
   // Hash of package names ("global") to PackageEntry objects
-  PLDHashTable mPackagesHash;
+  nsClassHashtable<nsCStringHashKey, PackageEntry> mPackagesHash;
 
   virtual void ManifestContent(ManifestProcessingContext& cx, int lineno,
                                char *const * argv, bool platform,

@@ -27,6 +27,7 @@
 #include "nsWrapperCache.h"
 #include "nsHashKeys.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/dom/NameSpaceConstants.h"
 
 namespace mozilla {
 namespace dom {
@@ -38,11 +39,6 @@ class Element;
 class nsBaseContentList : public nsINodeList
 {
 public:
-  nsBaseContentList()
-  {
-    SetIsDOMBinding();
-  }
-
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   // nsIDOMNodeList
@@ -116,8 +112,8 @@ protected:
 class nsSimpleContentList : public nsBaseContentList
 {
 public:
-  nsSimpleContentList(nsINode *aRoot) : nsBaseContentList(),
-                                        mRoot(aRoot)
+  explicit nsSimpleContentList(nsINode* aRoot) : nsBaseContentList(),
+                                                 mRoot(aRoot)
   {
   }
 

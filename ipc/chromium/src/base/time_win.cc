@@ -45,7 +45,6 @@
 #include "base/logging.h"
 #include "base/cpu.h"
 #include "base/singleton.h"
-#include "base/system_monitor.h"
 #include "mozilla/Casting.h"
 
 using base::Time;
@@ -128,7 +127,7 @@ Time Time::Now() {
       continue;
     }
 
-    return Time(elapsed + initial_time);
+    return Time(elapsed + Time(initial_time));
   }
 }
 

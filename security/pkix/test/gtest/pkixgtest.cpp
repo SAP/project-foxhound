@@ -7,7 +7,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-/* Copyright 2014 Mozilla Contributors
+/* Copyright 2013 Mozilla Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,39 +24,17 @@
 
 #include "pkixgtest.h"
 
+#include <ctime>
+
+#include "pkix/nullptr.h"
+#include "pkix/Time.h"
+
 namespace mozilla { namespace pkix { namespace test {
 
-std::ostream&
-operator<<(std::ostream& os, const ResultWithPRErrorCode& value)
-{
-  switch (value.mRv)
-  {
-    case Success:
-      os << "Success";
-      break;
-    case RecoverableError:
-      os << "RecoverableError";
-      break;
-    case SECFailure:
-      os << "FatalError";
-      break;
-    default:
-      os << "[Invalid Result: " << static_cast<int64_t>(value.mRv) << ']';
-      break;
-  }
-
-  if (value.mRv != Success) {
-    os << '(';
-    const char* name = PR_ErrorToName(value.mErrorCode);
-    if (name) {
-      os << name;
-    } else {
-      os << value.mErrorCode;
-    }
-    os << ')';
-  }
-
-  return os;
-}
+// This assumes that time/time_t are POSIX-compliant in that time() returns
+// the number of seconds since the Unix epoch.
+const std::time_t now(time(nullptr));
+const std::time_t oneDayBeforeNow(time(nullptr) - Time::ONE_DAY_IN_SECONDS);
+const std::time_t oneDayAfterNow(time(nullptr) + Time::ONE_DAY_IN_SECONDS);
 
 } } } // namespace mozilla::pkix::test

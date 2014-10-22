@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += ['test']
-
 XPIDL_SOURCES += [
     'nsIConsoleAPIStorage.idl',
     'nsIDOMDOMCursor.idl',
@@ -31,7 +29,6 @@ EXPORTS += [
     'nsIDOMClassInfo.h',
     'nsIDOMScriptObjectFactory.h',
     'nsIGlobalObject.h',
-    'nsIJSNativeInitializer.h',
     'nsIScriptContext.h',
     'nsIScriptGlobalObject.h',
     'nsIScriptNameSpaceManager.h',
@@ -55,6 +52,7 @@ EXPORTS.mozilla.dom += [
     'DOMError.h',
     'DOMException.h',
     'DOMRequest.h',
+    'ImageEncoder.h',
     'MessageChannel.h',
     'MessagePort.h',
     'MessagePortList.h',
@@ -81,6 +79,7 @@ UNIFIED_SOURCES += [
     'DOMError.cpp',
     'DOMException.cpp',
     'DOMRequest.cpp',
+    'ImageEncoder.cpp',
     'MessageChannel.cpp',
     'MessagePortList.cpp',
     'Navigator.cpp',
@@ -94,6 +93,7 @@ UNIFIED_SOURCES += [
     'nsGlobalWindowCommands.cpp',
     'nsHistory.cpp',
     'nsIGlobalObject.cpp',
+    'nsJSEnvironment.cpp',
     'nsJSTimeoutHandler.cpp',
     'nsJSUtils.cpp',
     'nsLocation.cpp',
@@ -123,8 +123,6 @@ SOURCES += [
     'nsDOMWindowUtils.cpp',
     # This file has a #error "Never include windows.h in this file!"
     'nsGlobalWindow.cpp',
-    # This file forces NSPR logging.
-    'nsJSEnvironment.cpp',
     # nsPluginArray.cpp includes npapi.h indirectly, and that includes a lot of system headers
     'nsPluginArray.cpp',
 ]
@@ -152,15 +150,15 @@ LOCAL_INCLUDES += [
     '../bluetooth',
     '../events',
     '../media',
-    '../network/src',
-    '../src/geolocation',
-    '../src/storage',
+    '../network',
     '../time',
     '../workers',
     '../xbl',
     '/content/base/src',
     '/content/html/document/src',
     '/content/xul/document/src',
+    '/dom/geolocation',
+    '/dom/storage',
     '/layout/base',
     '/layout/generic',
     '/layout/style',
@@ -189,3 +187,9 @@ for var in ('MOZ_B2G_RIL', 'MOZ_B2G_FM'):
 
 if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
     DEFINES['HAVE_SIDEBAR'] = True
+
+MOCHITEST_MANIFESTS += ['test/mochitest.ini']
+MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
+
+if CONFIG['MOZ_X11']:
+    CXXFLAGS += CONFIG['TK_CFLAGS']

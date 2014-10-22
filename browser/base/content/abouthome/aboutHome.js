@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 const SEARCH_ENGINES = {
   "Google": {
     // This is the "2x" image designed for OS X retina resolution, Windows at 192dpi, etc.;
@@ -269,13 +271,13 @@ function ensureSnippetsMapThen(aCallback)
 
       // The cache has been filled up, create the snippets map.
       gSnippetsMap = Object.freeze({
-        get: function (aKey) cache.get(aKey),
+        get: (aKey) => cache.get(aKey),
         set: function (aKey, aValue) {
           db.transaction(SNIPPETS_OBJECTSTORE_NAME, "readwrite")
             .objectStore(SNIPPETS_OBJECTSTORE_NAME).put(aValue, aKey);
           return cache.set(aKey, aValue);
         },
-        has: function (aKey) cache.has(aKey),
+        has: (aKey) => cache.has(aKey),
         delete: function (aKey) {
           db.transaction(SNIPPETS_OBJECTSTORE_NAME, "readwrite")
             .objectStore(SNIPPETS_OBJECTSTORE_NAME).delete(aKey);
@@ -286,7 +288,7 @@ function ensureSnippetsMapThen(aCallback)
             .objectStore(SNIPPETS_OBJECTSTORE_NAME).clear();
           return cache.clear();
         },
-        get size() cache.size
+        get size() { return cache.size; },
       });
 
       setTimeout(invokeCallbacks, 0);
@@ -296,23 +298,41 @@ function ensureSnippetsMapThen(aCallback)
 
 function onSearchSubmit(aEvent)
 {
-  let searchTerms = document.getElementById("searchText").value;
+  let searchText = document.getElementById("searchText");
+  let searchTerms = searchText.value;
   let engineName = document.documentElement.getAttribute("searchEngineName");
 
   if (engineName && searchTerms.length > 0) {
     // Send an event that will perform a search and Firefox Health Report will
     // record that a search from about:home has occurred.
-    let eventData = JSON.stringify({
+
+    let eventData = {
       engineName: engineName,
       searchTerms: searchTerms
-    });
+    };
+
+    if (searchText.hasAttribute("selection-index")) {
+      eventData.selection = {
+        index: searchText.getAttribute("selection-index"),
+        kind: searchText.getAttribute("selection-kind")
+      };
+    }
+
+    eventData = JSON.stringify(eventData);
+
     let event = new CustomEvent("AboutHomeSearchEvent", {detail: eventData});
     document.dispatchEvent(event);
   }
 
-  aEvent.preventDefault();
+  gSearchSuggestionController.addInputValueToFormHistory();
+
+  if (aEvent) {
+    aEvent.preventDefault();
+  }
 }
 
+
+let gSearchSuggestionController;
 
 function setupSearchEngine()
 {
@@ -341,6 +361,12 @@ function setupSearchEngine()
     searchText.placeholder = searchEngineName;
   }
 
+  if (!gSearchSuggestionController) {
+    gSearchSuggestionController =
+      new SearchSuggestionUIController(searchText, searchText.parentNode,
+                                       onSearchSubmit);
+  }
+  gSearchSuggestionController.engineName = searchEngineName;
 }
 
 /**

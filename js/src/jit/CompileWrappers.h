@@ -7,8 +7,6 @@
 #ifndef jit_CompileWrappers_h
 #define jit_CompileWrappers_h
 
-#ifdef JS_ION
-
 #include "jscntxt.h"
 
 namespace js {
@@ -68,6 +66,7 @@ class CompileRuntime
     bool profilingScripts();
 
     const JSAtomState &names();
+    const PropertyName *emptyString();
     const StaticStrings &staticStrings();
     const Value &NaNValue();
     const Value &positiveInfinityValue();
@@ -93,7 +92,7 @@ class CompileZone
   public:
     static CompileZone *get(Zone *zone);
 
-    const void *addressOfNeedsBarrier();
+    const void *addressOfNeedsIncrementalBarrier();
 
     // allocator.arenas.getFreeList(allocKind)
     const void *addressOfFreeListFirst(gc::AllocKind allocKind);
@@ -141,10 +140,7 @@ class JitCompileOptions
     bool spsSlowAssertionsEnabled_;
 };
 
-
 } // namespace jit
 } // namespace js
-
-#endif // JS_ION
 
 #endif // jit_CompileWrappers_h

@@ -10,7 +10,6 @@
 #include "nsIWebProgress.h"
 #include "nsCURILoader.h"
 #include "nsICachingChannel.h"
-#include "nsICacheVisitor.h"
 #include "nsIHttpChannel.h"
 #include "nsIURL.h"
 #include "nsISimpleEnumerator.h"
@@ -29,6 +28,7 @@
 #include "nsIDOMNode.h"
 #include "nsINode.h"
 #include "nsIDocument.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 
@@ -74,7 +74,7 @@ class nsPrefetchQueueEnumerator MOZ_FINAL : public nsISimpleEnumerator
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSISIMPLEENUMERATOR
-    nsPrefetchQueueEnumerator(nsPrefetchService *aService);
+    explicit nsPrefetchQueueEnumerator(nsPrefetchService *aService);
 
 private:
     ~nsPrefetchQueueEnumerator();
@@ -189,9 +189,14 @@ nsPrefetchNode::OpenChannel()
     nsCOMPtr<nsILoadGroup> loadGroup = source->OwnerDoc()->GetDocumentLoadGroup();
     nsresult rv = NS_NewChannel(getter_AddRefs(mChannel),
                                 mURI,
-                                nullptr, loadGroup, this,
+                                nsContentUtils::GetSystemPrincipal(),
+                                nsILoadInfo::SEC_NORMAL,
+                                nsIContentPolicy::TYPE_OTHER,
+                                loadGroup, // aLoadGroup
+                                this,      // aCallbacks
                                 nsIRequest::LOAD_BACKGROUND |
                                 nsICachingChannel::LOAD_ONLY_IF_MODIFIED);
+
     NS_ENSURE_SUCCESS(rv, rv);
 
     // configure HTTP specific stuff

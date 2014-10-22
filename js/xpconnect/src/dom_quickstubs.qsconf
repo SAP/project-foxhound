@@ -27,21 +27,9 @@ members = [
     #
     # (And nsIDOMModalContentWindow.returnValue is an attribute of type
     # nsIVariant, which qsgen.py can't handle.)
-    #
-    # nsLocationSH has ~ALLOW_PROP_MODS_TO_PROTOTYPE, so don't try.
-    #'nsIDOMLocation.hostname',
-    #'nsIDOMLocation.href',
 
     # dom/interfaces/xpath
     'nsIDOMXPathNSResolver.lookupNamespaceURI',
-
-    # layout/xul/base/public
-    'nsIBoxObject.x',
-    'nsIBoxObject.y',
-    'nsIBoxObject.screenX',
-    'nsIBoxObject.screenY',
-    'nsIBoxObject.width',
-    'nsIBoxObject.height',
 
     ]
 
@@ -59,12 +47,10 @@ irregularFilenames = {
 customIncludes = [
     'mozilla/dom/BindingUtils.h',
     'mozilla/dom/EventTargetBinding.h',
-    'mozilla/dom/WindowBinding.h',
     ]
 
 newBindingProperties = {
     # Once the last entry here goes away, we can make the sNativePropertyHooks
     # of bindings static.
     'nsIDOMEventTarget': '&mozilla::dom::EventTargetBinding::sNativePropertyHooks->mNativeProperties',
-    'nsIDOMWindow': '&mozilla::dom::WindowBinding::sNativePropertyHooks->mNativeProperties',
     }

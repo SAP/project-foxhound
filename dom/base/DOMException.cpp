@@ -6,7 +6,6 @@
 #include "mozilla/dom/DOMException.h"
 
 #include "jsprf.h"
-#include "js/OldDebugAPI.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Exceptions.h"
@@ -74,6 +73,19 @@ enum DOM4ErrorTypeCodeMap {
 
   /* WebCrypto errors https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html#dfn-DataError */
   OperationError           = 0,
+
+  /* Bluetooth API errors */
+  BtFailError              = 0,
+  BtNotReadyError          = 0,
+  BtNoMemError             = 0,
+  BtBusyError              = 0,
+  BtDoneError              = 0,
+  BtUnsupportedError       = 0,
+  BtParmInvalidError       = 0,
+  BtUnhandledError         = 0,
+  BtAuthFailureError       = 0,
+  BtRmtDevDownError        = 0,
+  BtAuthRejectedError      = 0,
 };
 
 #define DOM4_MSG_DEF(name, message, nsresult) {(nsresult), name, #name, message},
@@ -187,8 +199,6 @@ Exception::Exception(const nsACString& aMessage,
   mInitialized(false),
   mHoldingJSVal(false)
 {
-  SetIsDOMBinding();
-
   // A little hack... The nsIGenericModule nsIClassInfo scheme relies on there
   // having been at least one instance made via the factory. Otherwise, the
   // shared factory/classinsance object never gets created and our QI getter
@@ -587,7 +597,6 @@ DOMException::DOMException(nsresult aRv, const nsACString& aMessage,
     mMessage(aMessage),
     mCode(aCode)
 {
-  SetIsDOMBinding();
 }
 
 NS_IMETHODIMP

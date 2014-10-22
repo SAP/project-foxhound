@@ -8,6 +8,7 @@
 #include "xptcprivate.h"
 #include "xptiprivate.h"
 #include "mozilla/XPTInterfaceInfoManager.h"
+#include "nsPrintfCString.h"
 
 using namespace mozilla;
 
@@ -52,6 +53,14 @@ NS_GetXPTCallStub(REFNSIID aIID, nsIXPTCProxy* aOuter,
     if (!iie || !iie->EnsureResolved() || iie->GetBuiltinClassFlag())
         return NS_ERROR_FAILURE;
 
+    if (iie->GetHasNotXPCOMFlag()) {
+#ifdef DEBUG
+        nsPrintfCString msg("XPTCall will not implement interface %s because of [notxpcom] members.", iie->GetTheName());
+        NS_WARNING(msg.get());
+#endif
+        return NS_ERROR_FAILURE;
+    }
+
     nsXPTCStubBase* newbase = new nsXPTCStubBase(aOuter, iie);
     if (!newbase)
         return NS_ERROR_OUT_OF_MEMORY;
@@ -65,4 +74,13 @@ NS_DestroyXPTCallStub(nsISomeInterface* aStub)
 {
     nsXPTCStubBase* stub = static_cast<nsXPTCStubBase*>(aStub);
     delete(stub);
+}
+
+EXPORT_XPCOM_API(size_t)
+NS_SizeOfIncludingThisXPTCallStub(const nsISomeInterface* aStub,
+                                  mozilla::MallocSizeOf aMallocSizeOf)
+{
+    // We could cast aStub to nsXPTCStubBase, but that class doesn't seem to own anything,
+    // so just measure the size of the object itself.
+    return aMallocSizeOf(aStub);
 }

@@ -28,12 +28,14 @@ if not CONFIG['MOZ_NATIVE_HUNSPELL']:
     # This variable is referenced in configure.in.  Make sure to change that file
     # too if you need to change this variable.
     DEFINES['HUNSPELL_STATIC'] = True
+else:
+    CXXFLAGS += CONFIG['MOZ_HUNSPELL_CFLAGS']
 
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
     '/content/base/src',
-    '/editor/libeditor/base',
+    '/editor/libeditor',
     '/extensions/spellcheck/src',
 ]
 

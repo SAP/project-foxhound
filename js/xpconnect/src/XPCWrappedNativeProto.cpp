@@ -7,7 +7,6 @@
 /* Shared proto object for XPCWrappedNative. */
 
 #include "xpcprivate.h"
-#include "nsCxPusher.h"
 #include "pratom.h"
 
 using namespace mozilla;
@@ -141,6 +140,13 @@ XPCWrappedNativeProto::JSProtoObjectFinalized(js::FreeOp *fop, JSObject *obj)
     GetRuntime()->GetDyingWrappedNativeProtoMap()->Add(this);
 
     mJSProtoObject.finalize(js::CastToJSFreeOp(fop)->runtime());
+}
+
+void
+XPCWrappedNativeProto::JSProtoObjectMoved(JSObject *obj, const JSObject *old)
+{
+    MOZ_ASSERT(mJSProtoObject == old);
+    mJSProtoObject.init(obj); // Update without triggering barriers.
 }
 
 void

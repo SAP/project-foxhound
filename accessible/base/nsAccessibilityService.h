@@ -15,7 +15,7 @@
 #include "nsIObserver.h"
 
 class nsImageFrame;
-class nsObjectFrame;
+class nsPluginFrame;
 class nsITreeView;
 
 namespace mozilla {
@@ -41,11 +41,11 @@ ApplicationAccessible* ApplicationAcc();
 } // namespace a11y
 } // namespace mozilla
 
-class nsAccessibilityService : public mozilla::a11y::DocManager,
-                               public mozilla::a11y::FocusManager,
-                               public mozilla::a11y::SelectionManager,
-                               public nsIAccessibilityService,
-                               public nsIObserver
+class nsAccessibilityService MOZ_FINAL : public mozilla::a11y::DocManager,
+                                         public mozilla::a11y::FocusManager,
+                                         public mozilla::a11y::SelectionManager,
+                                         public nsIAccessibilityService,
+                                         public nsIObserver
 {
 public:
   typedef mozilla::a11y::Accessible Accessible;
@@ -63,7 +63,7 @@ public:
   virtual Accessible* GetRootDocumentAccessible(nsIPresShell* aPresShell,
                                                 bool aCanCreate);
   already_AddRefed<Accessible>
-    CreatePluginAccessible(nsObjectFrame* aFrame, nsIContent* aContent,
+    CreatePluginAccessible(nsPluginFrame* aFrame, nsIContent* aContent,
                            Accessible* aContext);
 
   /**
@@ -90,8 +90,7 @@ public:
   /**
    * Notification used to update the accessible tree when content is removed.
    */
-  void ContentRemoved(nsIPresShell* aPresShell, nsIContent* aContainer,
-                      nsIContent* aChild);
+  void ContentRemoved(nsIPresShell* aPresShell, nsIContent* aChild);
 
   virtual void UpdateText(nsIPresShell* aPresShell, nsIContent* aContent);
 
@@ -237,6 +236,19 @@ inline nsAccessibilityService*
 GetAccService()
 {
   return nsAccessibilityService::gAccessibilityService;
+}
+
+/**
+ * Return true if we're in a content process and not B2G.
+ */
+inline bool
+IPCAccessibilityActive()
+{
+#ifdef MOZ_B2G
+  return false;
+#else
+  return XRE_GetProcessType() != GeckoProcessType_Default;
+#endif
 }
 
 /**

@@ -42,13 +42,11 @@ public:
   NS_IMETHOD GetImageContainer(layers::LayerManager* aManager,
                                layers::ImageContainer** _retval) MOZ_OVERRIDE;
   NS_IMETHOD Draw(gfxContext* aContext,
-                  GraphicsFilter aFilter,
-                  const gfxMatrix& aUserSpaceToImageSpace,
-                  const gfxRect& aFill,
-                  const nsIntRect& aSubimage,
-                  const nsIntSize& aViewportSize,
-                  const SVGImageContext* aSVGContext,
+                  const nsIntSize& aSize,
+                  const ImageRegion& aRegion,
                   uint32_t aWhichFrame,
+                  GraphicsFilter aFilter,
+                  const Maybe<SVGImageContext>& aSVGContext,
                   uint32_t aFlags) MOZ_OVERRIDE;
   NS_IMETHOD_(void) RequestRefresh(const TimeStamp& aTime) MOZ_OVERRIDE;
   NS_IMETHOD GetAnimationMode(uint16_t* aAnimationMode) MOZ_OVERRIDE;
@@ -57,7 +55,7 @@ public:
   NS_IMETHOD_(float) GetFrameIndex(uint32_t aWhichFrame) MOZ_OVERRIDE;
 
 protected:
-  FrozenImage(Image* aImage) : ImageWrapper(aImage) { }
+  explicit FrozenImage(Image* aImage) : ImageWrapper(aImage) { }
   virtual ~FrozenImage() { }
 
 private:

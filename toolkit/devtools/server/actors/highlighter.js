@@ -11,6 +11,7 @@ const {Arg, Option, method} = protocol;
 const events = require("sdk/event/core");
 const Heritage = require("sdk/core/heritage");
 
+const {CssLogic} = require("devtools/styleinspector/css-logic");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const GUIDE_STROKE_WIDTH = 1;
 
@@ -31,11 +32,15 @@ const HIGHLIGHTER_PICKED_TIMER = 1000;
 const INFO_BAR_OFFSET = 5;
 // The minimum distance a line should be before it has an arrow marker-end
 const ARROW_LINE_MIN_DISTANCE = 10;
+// How many maximum nodes can be highlighted at the same time by the
+// SelectorHighlighter
+const MAX_HIGHLIGHTED_ELEMENTS = 100;
 
 // All possible highlighter classes
 let HIGHLIGHTER_CLASSES = exports.HIGHLIGHTER_CLASSES = {
   "BoxModelHighlighter": BoxModelHighlighter,
-  "CssTransformHighlighter": CssTransformHighlighter
+  "CssTransformHighlighter": CssTransformHighlighter,
+  "SelectorHighlighter": SelectorHighlighter
 };
 
 /**
@@ -827,8 +832,7 @@ BoxModelHighlighter.prototype = Heritage.extend(XULBasedHighlighter.prototype, {
     }
 
     if (!this._computedStyle) {
-      this._computedStyle =
-        this.currentNode.ownerDocument.defaultView.getComputedStyle(this.currentNode);
+      this._computedStyle = CssLogic.getComputedStyle(this.currentNode);
     }
 
     return this._computedStyle.getPropertyValue("display") !== "none";
@@ -957,12 +961,13 @@ BoxModelHighlighter.prototype = Heritage.extend(XULBasedHighlighter.prototype, {
       return;
     }
 
-    let node = this.currentNode;
     let info = this.nodeInfo;
+
+    let {bindingElement:node, pseudo} =
+      CssLogic.getBindingElementAndPseudo(this.currentNode);
 
     // Update the tag, id, classes, pseudo-classes and dimensions only if they
     // changed to avoid triggering paint events
-
     let tagName = node.tagName;
     if (info.tagNameLabel.textContent !== tagName) {
       info.tagNameLabel.textContent = tagName;
@@ -973,7 +978,7 @@ BoxModelHighlighter.prototype = Heritage.extend(XULBasedHighlighter.prototype, {
       info.idLabel.textContent = id;
     }
 
-    let classList = node.classList.length ? "." + [...node.classList].join(".") : "";
+    let classList = (node.classList || []).length ? "." + [...node.classList].join(".") : "";
     if (info.classesBox.textContent !== classList) {
       info.classesBox.textContent = classList;
     }
@@ -981,6 +986,12 @@ BoxModelHighlighter.prototype = Heritage.extend(XULBasedHighlighter.prototype, {
     let pseudos = PSEUDO_CLASSES.filter(pseudo => {
       return DOMUtils.hasPseudoClassLock(node, pseudo);
     }, this).join("");
+
+    if (pseudo) {
+      // Display :after as ::after
+      pseudos += ":" + pseudo;
+    }
+
     if (info.pseudoClassesBox.textContent !== pseudos) {
       info.pseudoClassesBox.textContent = pseudos;
     }
@@ -1156,8 +1167,8 @@ CssTransformHighlighter.prototype = Heritage.extend(XULBasedHighlighter.prototyp
    * Checks if the supplied node is transformed and not inline
    */
   _isTransformed: function(node) {
-    let style = node.ownerDocument.defaultView.getComputedStyle(node);
-    return style.transform !== "none" && style.display !== "inline";
+    let style = CssLogic.getComputedStyle(node);
+    return style && (style.transform !== "none" && style.display !== "inline");
   },
 
   _setPolygonPoints: function(quad, poly) {
@@ -1223,6 +1234,69 @@ CssTransformHighlighter.prototype = Heritage.extend(XULBasedHighlighter.prototyp
     this._svgRoot.removeAttribute("hidden");
   }
 });
+
+/**
+ * The SelectorHighlighter runs a given selector through querySelectorAll on the
+ * document of the provided context node and then uses the BoxModelHighlighter
+ * to highlight the matching nodes
+ */
+function SelectorHighlighter(tabActor) {
+  this.tabActor = tabActor;
+  this._highlighters = [];
+}
+
+SelectorHighlighter.prototype = {
+  /**
+   * Show BoxModelHighlighter on each node that matches that provided selector.
+   * @param {DOMNode} node A context node that is used to get the document on
+   * which querySelectorAll should be executed. This node will NOT be
+   * highlighted.
+   * @param {Object} options Should at least contain the 'selector' option, a
+   * string that will be used in querySelectorAll. On top of this, all of the
+   * valid options to BoxModelHighlighter.show are also valid here.
+   */
+  show: function(node, options={}) {
+    this.hide();
+
+    if (!isNodeValid(node) || !options.selector) {
+      return;
+    }
+
+    let nodes = [];
+    try {
+      nodes = [...node.ownerDocument.querySelectorAll(options.selector)];
+    } catch (e) {}
+
+    delete options.selector;
+
+    let i = 0;
+    for (let matchingNode of nodes) {
+      if (i >= MAX_HIGHLIGHTED_ELEMENTS) {
+        break;
+      }
+
+      let highlighter = new BoxModelHighlighter(this.tabActor);
+      if (options.fill) {
+        highlighter.regionFill[options.region || "border"] = options.fill;
+      }
+      highlighter.show(matchingNode, options);
+      this._highlighters.push(highlighter);
+      i ++;
+    }
+  },
+
+  hide: function() {
+    for (let highlighter of this._highlighters) {
+      highlighter.destroy();
+    }
+    this._highlighters = [];
+  },
+
+  destroy: function() {
+    this.hide();
+    this.tabActor = null;
+  }
+};
 
 /**
  * The SimpleOutlineHighlighter is a class that has the same API than the
@@ -1311,9 +1385,16 @@ function isNodeValid(node) {
     return false;
   }
 
-  // Is it connected to the document?
+  // Is the document inaccessible?
   let doc = node.ownerDocument;
-  if (!doc || !doc.defaultView || !doc.documentElement.contains(node)) {
+  if (!doc || !doc.defaultView) {
+    return false;
+  }
+
+  // Is the node connected to the document? Using getBindingParent adds
+  // support for anonymous elements generated by a node in the document.
+  let bindingParent = LayoutHelpers.getRootBindingParent(node);
+  if (!doc.documentElement.contains(bindingParent)) {
     return false;
   }
 

@@ -15,6 +15,8 @@
 #include "mozilla/EventForwards.h"
 
 class nsCanvasFrame;
+class nsFrameSelection;
+class nsIContent;
 class nsIDocument;
 class nsIFrame;
 class nsIPresShell;
@@ -23,6 +25,10 @@ class nsIWidget;
 class nsPresContext;
 
 namespace mozilla {
+
+namespace dom {
+class Selection;
+}
 
 /**
  * The SelectionCarets draw a pair of carets when the selection is not
@@ -63,6 +69,10 @@ public:
 
   // nsIScrollObserver
   virtual void ScrollPositionChanged() MOZ_OVERRIDE;
+
+  // AsyncPanZoom started/stopped callbacks from nsIScrollObserver
+  virtual void AsyncPanZoomStarted(const mozilla::CSSIntPoint aScrollPos) MOZ_OVERRIDE;
+  virtual void AsyncPanZoomStopped(const mozilla::CSSIntPoint aScrollPos) MOZ_OVERRIDE;
 
   void Terminate()
   {
@@ -118,10 +128,10 @@ private:
   nscoord GetCaretYCenterPosition();
 
   /**
-   * Simulate mouse down state when we change the selection range.
+   * Simulate drag state when we change the selection range.
    * Hence, the selection change event will fire normally.
    */
-  void SetMouseDownState(bool aState);
+  void SetSelectionDragState(bool aState);
 
   void SetSelectionDirection(bool aForward);
 
@@ -136,6 +146,16 @@ private:
    * In app units.
    */
   void SetEndFramePos(const nsPoint& aPosition);
+
+  /**
+   * Check if aPosition is on the start or end frame of the
+   * selection carets.
+   *
+   * @param aPosition should be relative to document's canvas frame
+   * in app units
+   */
+  bool IsOnStartFrame(const nsPoint& aPosition);
+  bool IsOnEndFrame(const nsPoint& aPosition);
 
   /**
    * Get rect of selection caret's start frame relative
@@ -168,9 +188,9 @@ private:
   void SetTilted(bool aIsTilt);
 
   // Utility function
-  nsIFrame* GetCaretFocusFrame();
-  bool GetCaretVisible();
-  nsISelection* GetSelection();
+  dom::Selection* GetSelection();
+  already_AddRefed<nsFrameSelection> GetFrameSelection();
+  nsIContent* GetFocusedContent();
 
   /**
    * Detecting long tap using timer
@@ -204,9 +224,12 @@ private:
 
   nscoord mCaretCenterToDownPointOffsetY;
   DragMode mDragMode;
-  bool mVisible;
-  bool mStartCaretVisible;
+
+  // True if AsyncPanZoom is enabled
+  bool mAPZenabled;
   bool mEndCaretVisible;
+  bool mStartCaretVisible;
+  bool mVisible;
 
   // Preference
   static int32_t sSelectionCaretsInflateSize;

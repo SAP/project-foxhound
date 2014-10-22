@@ -9,7 +9,6 @@
 
 #include "BluetoothCommon.h"
 #include "BluetoothProfileManagerBase.h"
-#include "mozilla/dom/ipc/Blob.h"
 #include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIDOMFile.h"
@@ -17,7 +16,13 @@
 #include "nsTObserverArray.h"
 #include "nsThreadUtils.h"
 
+class nsIDOMBlob;
+
 namespace mozilla {
+namespace dom {
+class BlobChild;
+class BlobParent;
+}
 namespace ipc {
 class UnixSocketConsumer;
 }
@@ -33,7 +38,6 @@ class BluetoothSignal;
 typedef mozilla::ObserverList<BluetoothSignal> BluetoothSignalObserverList;
 
 class BluetoothService : public nsIObserver
-                       , public BluetoothSignalObserver
 {
   class ToggleBtTask;
   friend class ToggleBtTask;
@@ -96,13 +100,6 @@ public:
    */
   void
   DistributeSignal(const BluetoothSignal& aEvent);
-
-  /**
-   * Called when get a Bluetooth Signal from BluetoothDBusService
-   *
-   */
-  void
-  Notify(const BluetoothSignal& aParam);
 
   /**
    * Returns the BluetoothService singleton. Only to be called from main thread.
@@ -219,15 +216,15 @@ public:
   UpdateSdpRecords(const nsAString& aDeviceAddress,
                    BluetoothProfileManagerBase* aManager) = 0;
 
-  virtual bool
+  virtual void
   SetPinCodeInternal(const nsAString& aDeviceAddress, const nsAString& aPinCode,
                      BluetoothReplyRunnable* aRunnable) = 0;
 
-  virtual bool
+  virtual void
   SetPasskeyInternal(const nsAString& aDeviceAddress, uint32_t aPasskey,
                      BluetoothReplyRunnable* aRunnable) = 0;
 
-  virtual bool
+  virtual void
   SetPairingConfirmationInternal(const nsAString& aDeviceAddress, bool aConfirm,
                                  BluetoothReplyRunnable* aRunnable) = 0;
 
@@ -379,7 +376,7 @@ protected:
    * Called when "mozsettings-changed" observer topic fires.
    */
   nsresult
-  HandleSettingsChanged(const nsAString& aData);
+  HandleSettingsChanged(nsISupports* aSubject);
 
   /**
    * Called when XPCOM is shutting down.

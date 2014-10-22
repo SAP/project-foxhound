@@ -27,6 +27,7 @@ class CDMProxy;
 
 namespace dom {
 
+class ArrayBufferViewOrArrayBuffer;
 class MediaKeyError;
 
 class MediaKeySession MOZ_FINAL : public DOMEventTargetHelper
@@ -53,6 +54,8 @@ public:
 
   void GetSessionId(nsString& aRetval) const;
 
+  const nsString& GetSessionId() const;
+
   // Number of ms since epoch at which expiration occurs, or NaN if unknown.
   // TODO: The type of this attribute is still under contention.
   // https://www.w3.org/Bugs/Public/show_bug.cgi?id=25902
@@ -60,17 +63,28 @@ public:
 
   Promise* Closed() const;
 
-  already_AddRefed<Promise> Update(const Uint8Array& response,
+  already_AddRefed<Promise> GenerateRequest(const nsAString& aInitDataType,
+                                            const ArrayBufferViewOrArrayBuffer& aInitData,
+                                            ErrorResult& aRv);
+
+  already_AddRefed<Promise> Load(const nsAString& aSessionId,
+                                 ErrorResult& aRv);
+
+  already_AddRefed<Promise> Update(const ArrayBufferViewOrArrayBuffer& response,
                                    ErrorResult& aRv);
 
   already_AddRefed<Promise> Close(ErrorResult& aRv);
 
   already_AddRefed<Promise> Remove(ErrorResult& aRv);
 
+  already_AddRefed<Promise> GetUsableKeyIds(ErrorResult& aRv);
+
   void DispatchKeyMessage(const nsTArray<uint8_t>& aMessage,
-                          const nsString& aURL);
+                          const nsAString& aURL);
 
   void DispatchKeyError(uint32_t system_code);
+
+  void DispatchKeysChange();
 
   void OnClosed();
 
@@ -87,6 +101,7 @@ private:
   nsString mSessionId;
   const SessionType mSessionType;
   bool mIsClosed;
+  bool mUninitialized;
 };
 
 } // namespace dom

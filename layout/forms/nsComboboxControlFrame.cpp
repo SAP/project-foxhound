@@ -2,8 +2,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "nsCOMPtr.h"
+
 #include "nsComboboxControlFrame.h"
+
+#include "gfxUtils.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/PathHelpers.h"
+#include "nsCOMPtr.h"
 #include "nsFocusManager.h"
 #include "nsFormControlFrame.h"
 #include "nsGkAtoms.h"
@@ -31,6 +36,7 @@
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
 #include "nsITheme.h"
+#include "nsThemeConstants.h"
 #include "nsRenderingContext.h"
 #include "mozilla/Likely.h"
 #include <algorithm>
@@ -42,6 +48,7 @@
 #include "mozilla/unused.h"
 
 using namespace mozilla;
+using namespace mozilla::gfx;
 
 NS_IMETHODIMP
 nsComboboxControlFrame::RedisplayTextEvent::Run()
@@ -86,7 +93,7 @@ public:
     return NS_OK;
   }
 
-  nsComboButtonListener(nsComboboxControlFrame* aCombobox)
+  explicit nsComboButtonListener(nsComboboxControlFrame* aCombobox)
   {
     mComboBox = aCombobox;
   }
@@ -360,11 +367,11 @@ nsComboboxControlFrame::ShowList(bool aShowList)
   return weakFrame.IsAlive();
 }
 
-class nsResizeDropdownAtFinalPosition
+class nsResizeDropdownAtFinalPosition MOZ_FINAL
   : public nsIReflowCallback, public nsRunnable
 {
 public:
-  nsResizeDropdownAtFinalPosition(nsComboboxControlFrame* aFrame)
+  explicit nsResizeDropdownAtFinalPosition(nsComboboxControlFrame* aFrame)
     : mFrame(aFrame)
   {
     MOZ_COUNT_CTOR(nsResizeDropdownAtFinalPosition);
@@ -462,11 +469,11 @@ nsComboboxControlFrame::GetCSSTransformTranslation()
 {
   nsIFrame* frame = this;
   bool is3DTransform = false;
-  gfxMatrix transform;
+  Matrix transform;
   while (frame) {
     nsIFrame* parent;
-    gfx3DMatrix ctm = frame->GetTransformMatrix(nullptr, &parent);
-    gfxMatrix matrix;
+    Matrix4x4 ctm = frame->GetTransformMatrix(nullptr, &parent);
+    Matrix matrix;
     if (ctm.Is2D(&matrix)) {
       transform = transform * matrix;
     } else {
@@ -478,17 +485,14 @@ nsComboboxControlFrame::GetCSSTransformTranslation()
   nsPoint translation;
   if (!is3DTransform && !transform.HasNonTranslation()) {
     nsPresContext* pc = PresContext();
-    gfxPoint pixelTranslation = transform.GetTranslation();
-    int32_t apd = pc->AppUnitsPerDevPixel();
-    translation.x = NSFloatPixelsToAppUnits(float(pixelTranslation.x), apd);
-    translation.y = NSFloatPixelsToAppUnits(float(pixelTranslation.y), apd);
     // To get the translation introduced only by transforms we subtract the
     // regular non-transform translation.
     nsRootPresContext* rootPC = pc->GetRootPresContext();
     if (rootPC) {
+      int32_t apd = pc->AppUnitsPerDevPixel();
+      translation.x = NSFloatPixelsToAppUnits(transform._31, apd);
+      translation.y = NSFloatPixelsToAppUnits(transform._32, apd);
       translation -= GetOffsetToCrossDoc(rootPC->PresShell()->GetRootFrame());
-    } else {
-      translation.x = translation.y = 0;
     }
   }
   return translation;
@@ -497,7 +501,7 @@ nsComboboxControlFrame::GetCSSTransformTranslation()
 class nsAsyncRollup : public nsRunnable
 {
 public:
-  nsAsyncRollup(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
+  explicit nsAsyncRollup(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
   NS_IMETHODIMP Run()
   {
     if (mFrame.IsAlive()) {
@@ -512,7 +516,7 @@ public:
 class nsAsyncResize : public nsRunnable
 {
 public:
-  nsAsyncResize(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
+  explicit nsAsyncResize(nsComboboxControlFrame* aFrame) : mFrame(aFrame) {}
   NS_IMETHODIMP Run()
   {
     if (mFrame.IsAlive()) {
@@ -737,8 +741,11 @@ nsComboboxControlFrame::GetIntrinsicISize(nsRenderingContext* aRenderingContext,
   }
 
   // add room for the dropmarker button if there is one
-  if (!IsThemed() || presContext->GetTheme()->ThemeNeedsComboboxDropmarker())
+  if ((!IsThemed() ||
+       presContext->GetTheme()->ThemeNeedsComboboxDropmarker()) &&
+      StyleDisplay()->mAppearance != NS_THEME_NONE) {
     displayWidth += scrollbarWidth;
+  }
 
   return displayWidth;
 
@@ -816,7 +823,8 @@ nsComboboxControlFrame::Reflow(nsPresContext*          aPresContext,
   // dropdown button.
   nscoord buttonWidth;
   const nsStyleDisplay *disp = StyleDisplay();
-  if (IsThemed(disp) && !aPresContext->GetTheme()->ThemeNeedsComboboxDropmarker()) {
+  if ((IsThemed(disp) && !aPresContext->GetTheme()->ThemeNeedsComboboxDropmarker()) ||
+      StyleDisplay()->mAppearance == NS_THEME_NONE) {
     buttonWidth = 0;
   }
   else {
@@ -1184,11 +1192,16 @@ nsComboboxControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 }
 
 void
-nsComboboxControlFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
+nsComboboxControlFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                                  uint32_t aFilter)
 {
-  aElements.MaybeAppendElement(mDisplayContent);
-  aElements.MaybeAppendElement(mButtonContent);
+  if (mDisplayContent) {
+    aElements.AppendElement(mDisplayContent);
+  }
+
+  if (mButtonContent) {
+    aElements.AppendElement(mButtonContent);
+  }
 }
 
 // XXXbz this is a for-now hack.  Now that display:inline-block works,
@@ -1466,7 +1479,7 @@ nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   }
 
   // draw a focus indicator only when focus rings should be drawn
-  nsIDocument* doc = mContent->GetCurrentDoc();
+  nsIDocument* doc = mContent->GetComposedDoc();
   if (doc) {
     nsPIDOMWindow* window = doc->GetWindow();
     if (window && window->ShouldShowFocusRing()) {
@@ -1492,9 +1505,13 @@ void nsComboboxControlFrame::PaintFocus(nsRenderingContext& aRenderingContext,
   if (eventStates.HasState(NS_EVENT_STATE_DISABLED) || sFocused != this)
     return;
 
-  aRenderingContext.PushState();
+  gfxContext* gfx = aRenderingContext.ThebesContext();
+
+  gfx->Save();
   nsRect clipRect = mDisplayFrame->GetRect() + aPt;
-  aRenderingContext.IntersectClip(clipRect);
+  gfx->Clip(NSRectToRect(clipRect,
+                         PresContext()->AppUnitsPerDevPixel(),
+                         *aRenderingContext.GetDrawTarget()));
 
   // REVIEW: Why does the old code paint mDisplayFrame again? We've
   // already painted it in the children above. So clipping it here won't do
@@ -1503,20 +1520,18 @@ void nsComboboxControlFrame::PaintFocus(nsRenderingContext& aRenderingContext,
   /////////////////////
   // draw focus
 
-  aRenderingContext.SetLineStyle(nsLineStyle_kDotted);
-  aRenderingContext.SetColor(StyleColor()->mColor);
-
-  //aRenderingContext.DrawRect(clipRect);
-
+  StrokeOptions strokeOptions;
+  nsLayoutUtils::InitDashPattern(strokeOptions, NS_STYLE_BORDER_STYLE_DOTTED);
+  ColorPattern color(ToDeviceColor(StyleColor()->mColor));
   nscoord onePixel = nsPresContext::CSSPixelsToAppUnits(1);
   clipRect.width -= onePixel;
   clipRect.height -= onePixel;
-  aRenderingContext.DrawLine(clipRect.TopLeft(), clipRect.TopRight());
-  aRenderingContext.DrawLine(clipRect.TopRight(), clipRect.BottomRight());
-  aRenderingContext.DrawLine(clipRect.BottomRight(), clipRect.BottomLeft());
-  aRenderingContext.DrawLine(clipRect.BottomLeft(), clipRect.TopLeft());
+  Rect r =
+    ToRect(nsLayoutUtils::RectToGfxRect(clipRect, PresContext()->AppUnitsPerDevPixel()));
+  StrokeSnappedEdgesOfRect(r, *aRenderingContext.GetDrawTarget(),
+                           color, strokeOptions);
 
-  aRenderingContext.PopState();
+  gfx->Restore();
 }
 
 //---------------------------------------------------------
@@ -1589,12 +1604,7 @@ nsComboboxControlFrame::RestoreState(nsPresState* aState)
 }
 
 
-//
-// Camino uses a native widget for the combobox
-// popup, which affects drawing and event
-// handling here and in nsListControlFrame.
-//
-// Also, Fennec use a custom combobox built-in widget
+// Fennec uses a custom combobox built-in widget.
 //
 
 /* static */

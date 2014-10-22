@@ -71,7 +71,7 @@ private:
  * Collect embedded objects. Provide quick access to accessible by index and
  * vice versa.
  */
-class EmbeddedObjCollector : public AccCollector
+class EmbeddedObjCollector MOZ_FINAL : public AccCollector
 {
 public:
   virtual ~EmbeddedObjCollector() { }
@@ -81,7 +81,7 @@ public:
 
 protected:
   // Make sure it's used by Accessible class only.
-  EmbeddedObjCollector(Accessible* aRoot) :
+  explicit EmbeddedObjCollector(Accessible* aRoot) :
     AccCollector(aRoot, filters::GetEmbeddedObject) { }
 
   virtual void AppendObject(Accessible* aAccessible);

@@ -88,10 +88,9 @@ LogHeaders(const char *lineStart)
 //-----------------------------------------------------------------------------
 
 nsHttpTransaction::nsHttpTransaction()
-    : mCallbacksLock("transaction mCallbacks lock")
+    : mLock("transaction lock")
     , mRequestSize(0)
     , mConnection(nullptr)
-    , mConnInfo(nullptr)
     , mRequestHead(nullptr)
     , mResponseHead(nullptr)
     , mContentLength(-1)
@@ -124,6 +123,7 @@ nsHttpTransaction::nsHttpTransaction()
     , mDispatchedAsBlocking(false)
     , mResponseTimeoutEnabled(true)
     , mDontRouteViaWildCard(false)
+    , mForceRestart(false)
     , mReportedStart(false)
     , mReportedResponseHeader(false)
     , mForTakeResponseHead(nullptr)
@@ -148,11 +148,9 @@ nsHttpTransaction::~nsHttpTransaction()
         mTokenBucketCancel = nullptr;
     }
 
-    // Force the callbacks to be released right now
+    // Force the callbacks and connection to be released right now
     mCallbacks = nullptr;
-
-    NS_IF_RELEASE(mConnection);
-    NS_IF_RELEASE(mConnInfo);
+    mConnection = nullptr;
 
     delete mResponseHead;
     delete mForTakeResponseHead;
@@ -271,7 +269,7 @@ nsHttpTransaction::Init(uint32_t caps,
                                         !activityDistributorActive);
     if (NS_FAILED(rv)) return rv;
 
-    NS_ADDREF(mConnInfo = cinfo);
+    mConnInfo = cinfo;
     mCallbacks = callbacks;
     mConsumerTarget = target;
     mCaps = caps;
@@ -375,14 +373,25 @@ nsHttpTransaction::Init(uint32_t caps,
 
     Classify();
 
-    NS_ADDREF(*responseBody = mPipeIn);
+    nsCOMPtr<nsIAsyncInputStream> tmp(mPipeIn);
+    tmp.forget(responseBody);
     return NS_OK;
 }
 
+// This method should only be used on the socket thread
 nsAHttpConnection *
 nsHttpTransaction::Connection()
 {
-    return mConnection;
+    MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
+    return mConnection.get();
+}
+
+already_AddRefed<nsAHttpConnection>
+nsHttpTransaction::GetConnectionReference()
+{
+    MutexAutoLock lock(mLock);
+    nsRefPtr<nsAHttpConnection> connection(mConnection);
+    return connection.forget();
 }
 
 nsHttpResponseHead *
@@ -448,8 +457,10 @@ nsHttpTransaction::TakeSubTransactions(
 void
 nsHttpTransaction::SetConnection(nsAHttpConnection *conn)
 {
-    NS_IF_RELEASE(mConnection);
-    NS_IF_ADDREF(mConnection = conn);
+    {
+        MutexAutoLock lock(mLock);
+        mConnection = conn;
+    }
 
     if (conn) {
         MOZ_EVENT_TRACER_EXEC(static_cast<nsAHttpTransaction*>(this),
@@ -460,15 +471,16 @@ nsHttpTransaction::SetConnection(nsAHttpConnection *conn)
 void
 nsHttpTransaction::GetSecurityCallbacks(nsIInterfaceRequestor **cb)
 {
-    MutexAutoLock lock(mCallbacksLock);
-    NS_IF_ADDREF(*cb = mCallbacks);
+    MutexAutoLock lock(mLock);
+    nsCOMPtr<nsIInterfaceRequestor> tmp(mCallbacks);
+    tmp.forget(cb);
 }
 
 void
 nsHttpTransaction::SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks)
 {
     {
-        MutexAutoLock lock(mCallbacksLock);
+        MutexAutoLock lock(mLock);
         mCallbacks = aCallbacks;
     }
 
@@ -836,6 +848,11 @@ nsHttpTransaction::Close(nsresult reason)
     //
     if (reason == NS_ERROR_NET_RESET || reason == NS_OK) {
 
+        if (mForceRestart && NS_SUCCEEDED(Restart())) {
+            LOG(("transaction force restarted\n"));
+            return;
+        }
+
         // reallySentData is meant to separate the instances where data has
         // been sent by this transaction but buffered at a higher level while
         // a TLS session (perhaps via a tunnel) is setup.
@@ -922,8 +939,10 @@ nsHttpTransaction::Close(nsresult reason)
         mTimings.responseEnd.IsNull() && !mTimings.responseStart.IsNull())
         mTimings.responseEnd = TimeStamp::Now();
 
-    if (relConn && mConnection)
-        NS_RELEASE(mConnection);
+    if (relConn && mConnection) {
+        MutexAutoLock lock(mLock);
+        mConnection = nullptr;
+    }
 
     // save network statistics in the end of transaction
     SaveNetworkStats(true);
@@ -952,7 +971,7 @@ nsHttpTransaction::Close(nsresult reason)
 nsHttpConnectionInfo *
 nsHttpTransaction::ConnectionInfo()
 {
-    return mConnInfo;
+    return mConnInfo.get();
 }
 
 nsresult
@@ -1086,7 +1105,8 @@ nsHttpTransaction::Restart()
     mSecurityInfo = 0;
     if (mConnection) {
         mConnection->DontReuse();
-        NS_RELEASE(mConnection);
+        MutexAutoLock lock(mLock);
+        mConnection = nullptr;
     }
 
     // disable pipelining for the next attempt in case pipelining caused the
@@ -1094,6 +1114,17 @@ nsHttpTransaction::Restart()
     // was the problem here.
     mCaps &= ~NS_HTTP_ALLOW_PIPELINING;
     SetPipelinePosition(0);
+
+    if (!mConnInfo->GetAuthenticationHost().IsEmpty()) {
+        MutexAutoLock lock(*nsHttp::GetLock());
+        nsRefPtr<nsHttpConnectionInfo> ci;
+         mConnInfo->CloneAsDirectRoute(getter_AddRefs(ci));
+         mConnInfo = ci;
+        if (mRequestHead) {
+            mRequestHead->SetHeader(nsHttp::Alternate_Service_Used, NS_LITERAL_CSTRING("0"));
+        }
+    }
+    mForceRestart = false;
 
     return gHttpHandler->InitiateTransaction(this, mPriority);
 }
@@ -1366,11 +1397,11 @@ nsHttpTransaction::ParseHead(char *buf,
     return NS_OK;
 }
 
-// called on the socket thread
 nsresult
 nsHttpTransaction::HandleContentStart()
 {
     LOG(("nsHttpTransaction::HandleContentStart [this=%p]\n", this));
+    MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
 
     if (mResponseHead) {
 #if defined(PR_LOGGING)
@@ -1413,6 +1444,14 @@ nsHttpTransaction::HandleContentStart()
         case 304:
             mNoContent = true;
             LOG(("this response should not contain a body.\n"));
+            break;
+        case 421:
+            if (!mConnInfo->GetAuthenticationHost().IsEmpty()) {
+                LOG(("Not Authoritative.\n"));
+                gHttpHandler->ConnMgr()->
+                    ClearHostMapping(mConnInfo->GetHost(), mConnInfo->Port());
+                mForceRestart = true;
+            }
             break;
         }
 
@@ -1743,7 +1782,7 @@ nsHttpTransaction::ReleaseBlockingTransaction()
 
 class DeleteHttpTransaction : public nsRunnable {
 public:
-    DeleteHttpTransaction(nsHttpTransaction *trans)
+    explicit DeleteHttpTransaction(nsHttpTransaction *trans)
         : mTrans(trans)
     {}
 

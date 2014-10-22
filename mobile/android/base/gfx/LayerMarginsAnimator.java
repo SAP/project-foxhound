@@ -8,7 +8,6 @@ package org.mozilla.gecko.gfx;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.PrefsHelper;
-import org.mozilla.gecko.TouchEventInterceptor;
 import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
@@ -20,7 +19,7 @@ import android.view.animation.DecelerateInterpolator;
 import android.view.MotionEvent;
 import android.view.View;
 
-public class LayerMarginsAnimator implements TouchEventInterceptor {
+public class LayerMarginsAnimator {
     private static final String LOGTAG = "GeckoLayerMarginsAnimator";
     // The duration of the animation in ns
     private static final long MARGIN_ANIMATION_DURATION = 250000000;
@@ -46,7 +45,7 @@ public class LayerMarginsAnimator implements TouchEventInterceptor {
     /* The distance that has been scrolled since either the first touch event,
      * or since the margins were last fully hidden */
     private final PointF mTouchTravelDistance;
-    /* The ID of the prefs listener for the show-marginss threshold */
+    /* The ID of the prefs listener for the show-margins threshold */
     private Integer mPrefObserverId;
 
     public LayerMarginsAnimator(GeckoLayerClient aTarget, LayerView aView) {
@@ -62,7 +61,7 @@ public class LayerMarginsAnimator implements TouchEventInterceptor {
         mPrefObserverId = PrefsHelper.getPref(PREF_SHOW_MARGINS_THRESHOLD, new PrefsHelper.PrefHandlerBase() {
             @Override
             public void prefValue(String pref, int value) {
-                SHOW_MARGINS_THRESHOLD = (float)value / 100.0f;
+                SHOW_MARGINS_THRESHOLD = value / 100.0f;
             }
 
             @Override
@@ -70,9 +69,6 @@ public class LayerMarginsAnimator implements TouchEventInterceptor {
                 return true;
             }
         });
-
-        // Listen to touch events, for auto-pinning
-        aView.addTouchInterceptor(this);
     }
 
     public void destroy() {
@@ -247,15 +243,7 @@ public class LayerMarginsAnimator implements TouchEventInterceptor {
         return aMetrics.setMargins(newMarginsX[0], newMarginsY[0], newMarginsX[1], newMarginsY[1]).offsetViewportBy(aDx, aDy);
     }
 
-    /** Implementation of TouchEventInterceptor */
-    @Override
-    public boolean onTouch(View view, MotionEvent event) {
-        return false;
-    }
-
-    /** Implementation of TouchEventInterceptor */
-    @Override
-    public boolean onInterceptTouchEvent(View view, MotionEvent event) {
+    boolean onInterceptTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN && event.getPointerCount() == 1) {
             mTouchTravelDistance.set(0.0f, 0.0f);
@@ -265,8 +253,8 @@ public class LayerMarginsAnimator implements TouchEventInterceptor {
     }
 
     class LayerMarginsAnimationTask extends RenderTask {
-        private float mStartLeft, mStartTop, mStartRight, mStartBottom;
-        private float mTop, mBottom, mLeft, mRight;
+        private final float mStartLeft, mStartTop, mStartRight, mStartBottom;
+        private final float mTop, mBottom, mLeft, mRight;
         private boolean mContinueAnimation;
 
         public LayerMarginsAnimationTask(boolean runAfter, ImmutableViewportMetrics metrics,

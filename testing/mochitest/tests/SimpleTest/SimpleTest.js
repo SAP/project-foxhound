@@ -23,8 +23,13 @@ var parentRunner = null;
 // the primary window.  In single test runs, if there is no parent and there
 // is no opener then it is the primary window.
 var isSingleTestRun = (parent == window && !opener)
-var isPrimaryTestWindow = !!parent.TestRunner || isSingleTestRun;
-
+try {
+  var isPrimaryTestWindow = !!parent.TestRunner || isSingleTestRun;
+} catch(e) {
+  dump("TEST-UNEXPECTED-FAIL, Exception caught: " + e.message +
+                ", at: " + e.fileName + " (" + e.lineNumber +
+                "), location: " + window.location.href + "\n");
+}
 // Finds the TestRunner for this test run and the SpecialPowers object (in
 // case it is not defined) from a parent/opener window.
 //
@@ -49,6 +54,10 @@ var isPrimaryTestWindow = !!parent.TestRunner || isSingleTestRun;
             window.SpecialPowers = w.SpecialPowers;
         }
         w = ancestor(w);
+    }
+
+    if (parentRunner) {
+        SimpleTest.harnessParameters = parentRunner.getParameterInfo();
     }
 })();
 
@@ -229,14 +238,33 @@ SimpleTest.testPluginIsOOP = function () {
 SimpleTest._tests = [];
 SimpleTest._stopOnLoad = true;
 SimpleTest._cleanupFunctions = [];
+SimpleTest.expected = 'pass';
+SimpleTest.num_failed = 0;
+
+SimpleTest.setExpected = function () {
+  if (parent.TestRunner) {
+    SimpleTest.expected = parent.TestRunner.expected;
+  }
+}
+SimpleTest.setExpected();
 
 /**
  * Something like assert.
 **/
 SimpleTest.ok = function (condition, name, diag) {
+
     var test = {'result': !!condition, 'name': name, 'diag': diag};
-    var successInfo = {status:"PASS", expected:"PASS", message:"TEST-PASS"};
-    var failureInfo = {status:"FAIL", expected:"PASS", message:"TEST-UNEXPECTED-FAIL"};
+    if (SimpleTest.expected == 'fail') {
+      if (!test.result) {
+        SimpleTest.num_failed++;
+        test.result = !test.result;
+      }
+      var successInfo = {status:"PASS", expected:"PASS", message:"TEST-PASS"};
+      var failureInfo = {status:"FAIL", expected:"FAIL", message:"TEST-KNOWN-FAIL"};
+    } else {
+      var successInfo = {status:"PASS", expected:"PASS", message:"TEST-PASS"};
+      var failureInfo = {status:"FAIL", expected:"PASS", message:"TEST-UNEXPECTED-FAIL"};
+    }
     SimpleTest._logResult(test, successInfo, failureInfo);
     SimpleTest._tests.push(test);
 };
@@ -652,7 +680,7 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
             !SimpleTest.waitForFocus_started) {
             SimpleTest._pendingWaitForFocusCount--;
             SimpleTest.waitForFocus_started = true;
-            setTimeout(callback, 0, targetWindow);
+            SimpleTest.executeSoon(function() { callback(targetWindow) });
         }
     }
 
@@ -812,6 +840,18 @@ SimpleTest.finish = function() {
         }
     }
 
+    if (SimpleTest.expected == 'fail' && SimpleTest.num_failed <= 0) {
+        msg = 'We expected at least one failure';
+        var test = {'result': false, 'name': 'fail-if condition in manifest', 'diag': msg};
+        var successInfo = {status:"PASS", expected:"PASS", message:"TEST-PASS"};
+        var failureInfo = {status:"FAIL", expected:"FAIL", message:"TEST-KNOWN-FAIL"};
+
+        SimpleTest._logResult(test, successInfo, failureInfo);
+        SimpleTest._tests.push(test);
+    }
+
+    SimpleTest.testsLength = SimpleTest._tests.length;
+
     SimpleTest._alreadyFinished = true;
 
     var afterCleanup = function() {
@@ -841,7 +881,9 @@ SimpleTest.finish = function() {
         if (parentRunner) {
             /* We're running in an iframe, and the parent has a TestRunner */
             parentRunner.testFinished(SimpleTest._tests);
-        } else {
+        }
+
+        if (!parentRunner || parentRunner.showTestReport) {
             SpecialPowers.flushAllAppsLaunchable();
             SpecialPowers.flushPermissions(function () {
               SpecialPowers.flushPrefEnv(function() {
@@ -1299,7 +1341,9 @@ window.onerror = function simpletestOnerror(errorMsg, url, lineNumber) {
     var message = (isExpected ? "expected " : "") + "uncaught exception";
     var error = errorMsg + " at " + url + ":" + lineNumber;
     if (!SimpleTest._ignoringAllUncaughtExceptions) {
-        SimpleTest.ok(isExpected, message, error);
+        // Don't log if SimpleTest.finish() is already called, it would cause failures
+        if (!SimpleTest._alreadyFinished)
+          SimpleTest.ok(isExpected, message, error);
         SimpleTest._expectingUncaughtException = false;
     } else {
         SimpleTest.todo(false, message + ": " + error);

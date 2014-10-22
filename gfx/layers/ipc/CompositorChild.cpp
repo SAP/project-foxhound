@@ -21,8 +21,11 @@
 #include "nsXULAppAPI.h"                // for XRE_GetIOMessageLoop, etc
 #include "FrameLayerBuilder.h"
 #include "mozilla/dom/TabChild.h"
+#include "mozilla/unused.h"
 
 using mozilla::layers::LayerTransactionChild;
+using mozilla::dom::TabChildBase;
+using mozilla::unused;
 
 namespace mozilla {
 namespace layers {
@@ -47,9 +50,11 @@ CompositorChild::Destroy()
 {
   mLayerManager->Destroy();
   mLayerManager = nullptr;
-  while (size_t len = ManagedPLayerTransactionChild().Length()) {
+  // start from the end of the array because Destroy() can cause the
+  // LayerTransactionChild to be removed from the array.
+  for (int i = ManagedPLayerTransactionChild().Length() - 1; i >= 0; --i) {
     RefPtr<LayerTransactionChild> layers =
-      static_cast<LayerTransactionChild*>(ManagedPLayerTransactionChild()[len - 1]);
+      static_cast<LayerTransactionChild*>(ManagedPLayerTransactionChild()[i]);
     layers->Destroy();
   }
   SendStop();
@@ -254,6 +259,52 @@ uint32_t
 CompositorChild::SharedFrameMetricsData::GetAPZCId()
 {
   return mAPZCId;
+}
+
+
+bool
+CompositorChild::RecvRemotePaintIsReady()
+{
+  // Used on the content thread, this bounces the message to the
+  // TabParent (via the TabChild) if the notification was previously requested.
+  // XPCOM gives a soup of compiler errors when trying to do_QueryReference
+  // so I'm using static_cast<>
+  MOZ_LAYERS_LOG(("[RemoteGfx] CompositorChild received RemotePaintIsReady"));
+  nsRefPtr<nsISupports> iTabChildBase(do_QueryReferent(mWeakTabChild));
+  if (!iTabChildBase) {
+    MOZ_LAYERS_LOG(("[RemoteGfx] Note: TabChild was released before RemotePaintIsReady. "
+        "MozAfterRemotePaint will not be sent to listener."));
+    return true;
+  }
+  TabChildBase* tabChildBase = static_cast<TabChildBase*>(iTabChildBase.get());
+  TabChild* tabChild = static_cast<TabChild*>(tabChildBase);
+  MOZ_ASSERT(tabChild);
+  unused << tabChild->SendRemotePaintIsReady();
+  mWeakTabChild = nullptr;
+  return true;
+}
+
+
+void
+CompositorChild::RequestNotifyAfterRemotePaint(TabChild* aTabChild)
+{
+  MOZ_ASSERT(aTabChild, "NULL TabChild not allowed in CompositorChild::RequestNotifyAfterRemotePaint");
+  mWeakTabChild = do_GetWeakReference( static_cast<dom::TabChildBase*>(aTabChild) );
+  unused << SendRequestNotifyAfterRemotePaint();
+}
+
+void
+CompositorChild::CancelNotifyAfterRemotePaint(TabChild* aTabChild)
+{
+  nsRefPtr<nsISupports> iTabChildBase(do_QueryReferent(mWeakTabChild));
+  if (!iTabChildBase) {
+    return;
+  }
+  TabChildBase* tabChildBase = static_cast<TabChildBase*>(iTabChildBase.get());
+  TabChild* tabChild = static_cast<TabChild*>(tabChildBase);
+  if (tabChild == aTabChild) {
+    mWeakTabChild = nullptr;
+  }
 }
 
 } // namespace layers

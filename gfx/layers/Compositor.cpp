@@ -104,35 +104,19 @@ Compositor::DrawDiagnostics(DiagnosticFlags aFlags,
                           aFlashCounter);
 }
 
-gfx::Rect
-Compositor::ClipRectInLayersCoordinates(gfx::Rect aClip) const {
-  gfx::Rect result;
-  aClip = aClip + GetCurrentRenderTarget()->GetOrigin();
-  gfx::IntSize destSize = GetWidgetSize();
-
-  switch (mScreenRotation) {
-    case ROTATION_0:
-      result = aClip;
-      break;
-    case ROTATION_90:
-      result = gfx::Rect(aClip.y,
-                         destSize.width - aClip.x - aClip.width,
-                         aClip.height, aClip.width);
-      break;
-    case ROTATION_270:
-      result = gfx::Rect(destSize.height - aClip.y - aClip.height,
-                         aClip.x,
-                         aClip.height, aClip.width);
-      break;
-    case ROTATION_180:
-      result = gfx::Rect(destSize.width - aClip.x - aClip.width,
-                         destSize.height - aClip.y - aClip.height,
-                         aClip.width, aClip.height);
-      break;
-      // ScreenRotation has a sentinel value, need to catch it in the switch
-      // statement otherwise the build fails (-WError)
-    default: {}
+RenderTargetRect
+Compositor::ClipRectInLayersCoordinates(Layer* aLayer, RenderTargetIntRect aClip) const {
+  ContainerLayer* parent = aLayer->AsContainerLayer() ? aLayer->AsContainerLayer() : aLayer->GetParent();
+  while (!parent->UseIntermediateSurface() && parent->GetParent()) {
+    parent = parent->GetParent();
   }
+
+  RenderTargetIntPoint renderTargetOffset = RenderTargetIntRect::FromUntyped(
+    parent->GetEffectiveVisibleRegion().GetBounds()).TopLeft();
+
+  RenderTargetRect result;
+  aClip = aClip + renderTargetOffset;
+  result = RenderTargetRect(aClip.x, aClip.y, aClip.width, aClip.height);
   return result;
 }
 

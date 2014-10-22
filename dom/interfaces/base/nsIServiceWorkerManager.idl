@@ -8,18 +8,50 @@
 interface nsIDocument;
 interface nsIURI;
 
-[uuid(cc539f1e-1ce6-4af5-bf94-195b30bde010)]
+[builtinclass, uuid(d6a9d4b6-39b0-4cd2-957d-28a57df5a031)]
+interface nsIServiceWorkerUnregisterCallback : nsISupports
+{
+  // aState is true if the unregistration succeded.
+  // It's false if this ServiceWorkerRegistration doesn't exist.
+  [noscript] void UnregisterSucceeded(in bool aState);
+  [noscript] void UnregisterFailed();
+};
+
+[builtinclass, uuid(79ad5b57-d65d-46d3-b5e9-32d27e16052d)]
 interface nsIServiceWorkerManager : nsISupports
 {
-  // Returns a Promise
-  nsISupports register(in nsIDOMWindow aWindow, in DOMString aScope, in DOMString aScriptURI);
+  /**
+   * Registers a ServiceWorker with script loaded from `aScriptURI` to act as
+   * the ServiceWorker for aScope.  Requires a valid entry settings object on
+   * the stack. This means you must call this from content code 'within'
+   * a window.
+   *
+   * Returns a Promise.
+   */
+  nsISupports register(in DOMString aScope, in DOMString aScriptURI);
+
+  /**
+   * Unregister an existing ServiceWorker registration for `aScope`.
+   * It keeps aCallback alive until the operation is concluded.
+   */
+  void unregister(in nsIServiceWorkerUnregisterCallback aCallback,
+                  in DOMString aScope);
 
   // Returns a Promise
-  nsISupports unregister(in nsIDOMWindow aWindow, in DOMString aScope);
+  nsISupports getRegistrations(in nsIDOMWindow aWindow);
 
-  // aTarget MUST be a ServiceWorkerContainer.
-  [noscript] void AddContainerEventListener(in nsIURI aPageURI, in nsIDOMEventTarget aTarget);
-  [noscript] void RemoveContainerEventListener(in nsIURI aPageURI, in nsIDOMEventTarget aTarget);
+  // Returns a Promise
+  nsISupports getRegistration(in nsIDOMWindow aWindow, in DOMString aScope);
+
+  // Returns a Promise
+  nsISupports getReadyPromise(in nsIDOMWindow aWindow);
+
+  // Remove ready pending Promise
+  void removeReadyPromise(in nsIDOMWindow aWindow);
+
+  // aTarget MUST be a ServiceWorkerRegistration.
+  [noscript] void AddRegistrationEventListener(in nsIURI aPageURI, in nsIDOMEventTarget aTarget);
+  [noscript] void RemoveRegistrationEventListener(in nsIURI aPageURI, in nsIDOMEventTarget aTarget);
 
   /**
    * Call this to request that document `aDoc` be controlled by a ServiceWorker
@@ -36,10 +68,19 @@ interface nsIServiceWorkerManager : nsISupports
    */
   [notxpcom,nostdcall] void MaybeStopControlling(in nsIDocument aDoc);
 
-  // Returns a ServiceWorker
-  [noscript] nsISupports GetInstalling(in nsIDOMWindow aWindow);
-  [noscript] nsISupports GetWaiting(in nsIDOMWindow aWindow);
-  [noscript] nsISupports GetActive(in nsIDOMWindow aWindow);
+  /*
+   * Returns a ServiceWorker.
+   * window is the window of the caller. scope is the registration's scope and must be
+   * a valid entry that window is allowed to load, otherwise this will return nullptr.
+   * These are only meant to be called from ServiceWorkerRegistration instances.
+   */
+  [noscript] nsISupports GetInstalling(in nsIDOMWindow aWindow, in DOMString aScope);
+  [noscript] nsISupports GetWaiting(in nsIDOMWindow aWindow, in DOMString aScope);
+  [noscript] nsISupports GetActive(in nsIDOMWindow aWindow, in DOMString aScope);
+
+  /*
+   * Returns a ServiceWorker.
+   */
   [noscript] nsISupports GetDocumentController(in nsIDOMWindow aWindow);
 
   // Testing

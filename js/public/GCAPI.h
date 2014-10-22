@@ -43,7 +43,7 @@ namespace JS {
     D(TOO_MUCH_MALLOC)                          \
     D(ALLOC_TRIGGER)                            \
     D(DEBUG_GC)                                 \
-    D(TRANSPLANT)                               \
+    D(COMPARTMENT_REVIVED)                      \
     D(RESET)                                    \
     D(OUT_OF_NURSERY)                           \
     D(EVICT_NURSERY)                            \
@@ -90,7 +90,7 @@ namespace JS {
     D(REFRESH_FRAME)                            \
     D(FULL_GC_TIMER)                            \
     D(SHUTDOWN_CC)                              \
-    D(FINISH_LARGE_EVALUTE)
+    D(FINISH_LARGE_EVALUATE)
 
 namespace gcreason {
 
@@ -250,8 +250,8 @@ struct JS_FRIEND_API(GCDescription) {
     explicit GCDescription(bool isCompartment)
       : isCompartment_(isCompartment) {}
 
-    jschar *formatMessage(JSRuntime *rt) const;
-    jschar *formatJSON(JSRuntime *rt, uint64_t timestamp) const;
+    char16_t *formatMessage(JSRuntime *rt) const;
+    char16_t *formatJSON(JSRuntime *rt, uint64_t timestamp) const;
 };
 
 typedef void
@@ -393,12 +393,34 @@ class JS_PUBLIC_API(AutoAssertOnGC)
 };
 
 /*
- * Disable the static rooting hazard analysis in the live region, but assert if
- * any GC occurs while this guard object is live. This is most useful to help
- * the exact rooting hazard analysis in complex regions, since it cannot
- * understand dataflow.
+ * Assert if an allocation of a GC thing occurs while this class is live. This
+ * class does not disable the static rooting hazard analysis.
+ */
+class JS_PUBLIC_API(AutoAssertNoAlloc)
+{
+#ifdef JS_DEBUG
+    js::gc::GCRuntime *gc;
+
+  public:
+    AutoAssertNoAlloc() : gc(nullptr) {}
+    explicit AutoAssertNoAlloc(JSRuntime *rt);
+    void disallowAlloc(JSRuntime *rt);
+    ~AutoAssertNoAlloc();
+#else
+  public:
+    AutoAssertNoAlloc() {}
+    explicit AutoAssertNoAlloc(JSRuntime *rt) {}
+    void disallowAlloc(JSRuntime *rt) {}
+#endif
+};
+
+/*
+ * Disable the static rooting hazard analysis in the live region and assert if
+ * any allocation that could potentially trigger a GC occurs while this guard
+ * object is live. This is most useful to help the exact rooting hazard analysis
+ * in complex regions, since it cannot understand dataflow.
  *
- * Note: GC behavior is unpredictable even when deterministice and is generally
+ * Note: GC behavior is unpredictable even when deterministic and is generally
  *       non-deterministic in practice. The fact that this guard has not
  *       asserted is not a guarantee that a GC cannot happen in the guarded
  *       region. As a rule, anyone performing a GC unsafe action should
@@ -406,11 +428,25 @@ class JS_PUBLIC_API(AutoAssertOnGC)
  *       that the hazard analysis is correct for that code, rather than relying
  *       on this class.
  */
-class JS_PUBLIC_API(AutoSuppressGCAnalysis) : public AutoAssertOnGC
+class JS_PUBLIC_API(AutoSuppressGCAnalysis) : public AutoAssertNoAlloc
 {
   public:
-    AutoSuppressGCAnalysis() : AutoAssertOnGC() {}
-    explicit AutoSuppressGCAnalysis(JSRuntime *rt) : AutoAssertOnGC(rt) {}
+    AutoSuppressGCAnalysis() : AutoAssertNoAlloc() {}
+    explicit AutoSuppressGCAnalysis(JSRuntime *rt) : AutoAssertNoAlloc(rt) {}
+};
+
+/*
+ * Assert that code is only ever called from a GC callback, disable the static
+ * rooting hazard analysis and assert if any allocation that could potentially
+ * trigger a GC occurs while this guard object is live.
+ *
+ * This is useful to make the static analysis ignore code that runs in GC
+ * callbacks.
+ */
+class JS_PUBLIC_API(AutoAssertGCCallback) : public AutoSuppressGCAnalysis
+{
+  public:
+    explicit AutoAssertGCCallback(JSObject *obj);
 };
 
 /*
@@ -437,6 +473,37 @@ class JS_PUBLIC_API(AutoCheckCannotGC) : public AutoAssertOnGC
 extern JS_FRIEND_API(bool)
 UnmarkGrayGCThingRecursively(void *thing, JSGCTraceKind kind);
 
+} /* namespace JS */
+
+namespace js {
+namespace gc {
+
+static MOZ_ALWAYS_INLINE void
+ExposeGCThingToActiveJS(void *thing, JSGCTraceKind kind)
+{
+    MOZ_ASSERT(kind != JSTRACE_SHAPE);
+
+    JS::shadow::Runtime *rt = GetGCThingRuntime(thing);
+#ifdef JSGC_GENERATIONAL
+    /*
+     * GC things residing in the nursery cannot be gray: they have no mark bits.
+     * All live objects in the nursery are moved to tenured at the beginning of
+     * each GC slice, so the gray marker never sees nursery things.
+     */
+    if (IsInsideNursery((Cell *)thing))
+        return;
+#endif
+    if (JS::IsIncrementalBarrierNeededOnTenuredGCThing(rt, thing, kind))
+        JS::IncrementalReferenceBarrier(thing, kind);
+    else if (JS::GCThingIsMarkedGray(thing))
+        JS::UnmarkGrayGCThingRecursively(thing, kind);
+}
+
+} /* namespace gc */
+} /* namespace js */
+
+namespace JS {
+
 /*
  * This should be called when an object that is marked gray is exposed to the JS
  * engine (by handing it to running JS code or writing it into live JS
@@ -444,30 +511,15 @@ UnmarkGrayGCThingRecursively(void *thing, JSGCTraceKind kind);
  * we conservatively mark the object black.
  */
 static MOZ_ALWAYS_INLINE void
-ExposeGCThingToActiveJS(void *thing, JSGCTraceKind kind)
+ExposeObjectToActiveJS(JSObject *obj)
 {
-    MOZ_ASSERT(kind != JSTRACE_SHAPE);
-
-    shadow::Runtime *rt = js::gc::GetGCThingRuntime(thing);
-#ifdef JSGC_GENERATIONAL
-    /*
-     * GC things residing in the nursery cannot be gray: they have no mark bits.
-     * All live objects in the nursery are moved to tenured at the beginning of
-     * each GC slice, so the gray marker never sees nursery things.
-     */
-    if (js::gc::IsInsideNursery((js::gc::Cell *)thing))
-        return;
-#endif
-    if (IsIncrementalBarrierNeededOnGCThing(rt, thing, kind))
-        IncrementalReferenceBarrier(thing, kind);
-    else if (GCThingIsMarkedGray(thing))
-        UnmarkGrayGCThingRecursively(thing, kind);
+    js::gc::ExposeGCThingToActiveJS(obj, JSTRACE_OBJECT);
 }
 
 static MOZ_ALWAYS_INLINE void
-ExposeObjectToActiveJS(JSObject *obj)
+ExposeScriptToActiveJS(JSScript *script)
 {
-    ExposeGCThingToActiveJS(obj, JSTRACE_OBJECT);
+    js::gc::ExposeGCThingToActiveJS(script, JSTRACE_SCRIPT);
 }
 
 /*
@@ -484,7 +536,7 @@ MarkGCThingAsLive(JSRuntime *rt_, void *thing, JSGCTraceKind kind)
     if (js::gc::IsInsideNursery((js::gc::Cell *)thing))
         return;
 #endif
-    if (IsIncrementalBarrierNeededOnGCThing(rt, thing, kind))
+    if (IsIncrementalBarrierNeededOnTenuredGCThing(rt, thing, kind))
         IncrementalReferenceBarrier(thing, kind);
 }
 

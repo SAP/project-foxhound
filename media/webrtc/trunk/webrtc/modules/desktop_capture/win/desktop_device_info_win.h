@@ -15,8 +15,15 @@ public:
   DesktopDeviceInfoWin();
   ~DesktopDeviceInfoWin();
 
+protected:
   //DesktopDeviceInfo Interfaces
-  virtual int32_t Init();
+  virtual void InitializeApplicationList() OVERRIDE;
+  virtual void InitializeScreenList() OVERRIDE;
+
+private:
+#if !defined(MULTI_MONITOR_SCREENSHARE)
+  void MultiMonitorScreenshare();
+#endif
 };
 
 }// namespace webrtc

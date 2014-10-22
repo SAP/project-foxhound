@@ -50,6 +50,9 @@ extern PRLogModuleInfo* gRtspLog;
 namespace mozilla {
 namespace net {
 
+//-----------------------------------------------------------------------------
+// RtspController
+//-----------------------------------------------------------------------------
 NS_IMPL_ISUPPORTS(RtspController,
                   nsIStreamingProtocolController)
 
@@ -67,6 +70,9 @@ RtspController::~RtspController()
   }
 }
 
+//-----------------------------------------------------------------------------
+// nsIStreamingProtocolController
+//-----------------------------------------------------------------------------
 NS_IMETHODIMP
 RtspController::GetTrackMetaData(uint8_t index,
                                  nsIStreamingProtocolMetaData * *_retval)
@@ -112,35 +118,13 @@ RtspController::Pause(void)
 NS_IMETHODIMP
 RtspController::Resume(void)
 {
-  LOG(("RtspController::Resume()"));
-  if (!mRtspSource.get()) {
-    MOZ_ASSERT(mRtspSource.get(), "mRtspSource should not be null!");
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  if (mState != CONNECTED) {
-    return NS_ERROR_NOT_CONNECTED;
-  }
-
-  mRtspSource->play();
-  return NS_OK;
+  return Play();
 }
 
 NS_IMETHODIMP
 RtspController::Suspend(void)
 {
-  LOG(("RtspController::Suspend()"));
-  if (!mRtspSource.get()) {
-    MOZ_ASSERT(mRtspSource.get(), "mRtspSource should not be null!");
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  if (mState != CONNECTED) {
-    return NS_ERROR_NOT_CONNECTED;
-  }
-
-  mRtspSource->pause();
-  return NS_OK;
+  return Pause();
 }
 
 NS_IMETHODIMP
@@ -210,6 +194,9 @@ RtspController::AsyncOpen(nsIStreamingProtocolListener *aListener)
   return NS_OK;
 }
 
+//-----------------------------------------------------------------------------
+// nsIStreamingProtocolListener
+//-----------------------------------------------------------------------------
 class SendMediaDataTask : public nsRunnable
 {
 public:
@@ -329,6 +316,7 @@ RtspController::OnDisconnected(uint8_t index,
 {
   LOG(("RtspController::OnDisconnected() for track %d reason = 0x%x", index, reason));
   mState = DISCONNECTED;
+
   if (mListener) {
     nsRefPtr<SendOnDisconnectedTask> task =
       new SendOnDisconnectedTask(mListener, index, reason);

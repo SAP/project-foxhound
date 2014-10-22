@@ -8,6 +8,8 @@
 #include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/HTMLTrackElementBinding.h"
 #include "mozilla/dom/HTMLUnknownElement.h"
+#include "nsIContentPolicy.h"
+#include "mozilla/LoadInfo.h"
 #include "WebVTTListener.h"
 #include "nsAttrValueInlines.h"
 #include "nsCOMPtr.h"
@@ -19,7 +21,6 @@
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsICachingChannel.h"
 #include "nsIChannelEventSink.h"
-#include "nsIChannelPolicy.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIDocument.h"
@@ -235,29 +236,15 @@ HTMLTrackElement::LoadResource()
     CreateTextTrack();
   }
 
-  // Check for a Content Security Policy to pass down to the channel
-  // created to load the media content.
-  nsCOMPtr<nsIChannelPolicy> channelPolicy;
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = NodePrincipal()->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_TRUE_VOID(NS_SUCCEEDED(rv));
-  if (csp) {
-    channelPolicy = do_CreateInstance("@mozilla.org/nschannelpolicy;1");
-    if (!channelPolicy) {
-      return;
-    }
-    channelPolicy->SetContentSecurityPolicy(csp);
-    channelPolicy->SetLoadType(nsIContentPolicy::TYPE_MEDIA);
-  }
   nsCOMPtr<nsIChannel> channel;
   nsCOMPtr<nsILoadGroup> loadGroup = OwnerDoc()->GetDocumentLoadGroup();
   rv = NS_NewChannel(getter_AddRefs(channel),
                      uri,
-                     nullptr,
-                     loadGroup,
-                     nullptr,
-                     nsIRequest::LOAD_NORMAL,
-                     channelPolicy);
+                     static_cast<Element*>(this),
+                     nsILoadInfo::SEC_NORMAL,
+                     nsIContentPolicy::TYPE_MEDIA,
+                     loadGroup);
+
   NS_ENSURE_TRUE_VOID(NS_SUCCEEDED(rv));
 
   mListener = new WebVTTListener(this);

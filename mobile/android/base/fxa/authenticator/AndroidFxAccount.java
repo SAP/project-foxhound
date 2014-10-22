@@ -24,6 +24,7 @@ import org.mozilla.gecko.fxa.login.State.StateLabel;
 import org.mozilla.gecko.fxa.login.StateFactory;
 import org.mozilla.gecko.sync.ExtendedJSONObject;
 import org.mozilla.gecko.sync.Utils;
+import org.mozilla.gecko.sync.setup.Constants;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -62,8 +63,7 @@ public class AndroidFxAccount {
   public static final String BUNDLE_KEY_STATE_LABEL = "stateLabel";
   public static final String BUNDLE_KEY_STATE = "state";
 
-  protected static final List<String> ANDROID_AUTHORITIES = Collections.unmodifiableList(Arrays.asList(
-      new String[] { BrowserContract.AUTHORITY }));
+  protected static final List<String> ANDROID_AUTHORITIES = Collections.unmodifiableList(Arrays.asList(BrowserContract.AUTHORITY));
 
   protected final Context context;
   protected final AccountManager accountManager;
@@ -96,7 +96,7 @@ public class AndroidFxAccount {
    * {@link AccountPickler#pickle}, and is identical to calling it directly.
    * <p>
    * Note that pickling is different from bundling, which involves operations on a
-   * {@link android.os.Bundle Bundle} object of miscellaenous data associated with the account.
+   * {@link android.os.Bundle Bundle} object of miscellaneous data associated with the account.
    * See {@link #persistBundle} and {@link #unbundle} for more.
    */
   public void pickle(final String filename) {
@@ -169,7 +169,7 @@ public class AndroidFxAccount {
     if (b == null) {
       return def;
     }
-    return b.booleanValue();
+    return b;
   }
 
   protected byte[] getBundleDataBytes(String key) {
@@ -483,6 +483,13 @@ public class AndroidFxAccount {
         " to state " + state.getStateLabel().toString());
     updateBundleValue(BUNDLE_KEY_STATE_LABEL, state.getStateLabel().name());
     updateBundleValue(BUNDLE_KEY_STATE, state.toJSONObject().toJSONString());
+    broadcastAccountStateChangedIntent();
+  }
+
+  protected void broadcastAccountStateChangedIntent() {
+    final Intent intent = new Intent(FxAccountConstants.ACCOUNT_STATE_CHANGED_ACTION);
+    intent.putExtra(Constants.JSON_KEY_ACCOUNT, account.name);
+    context.sendBroadcast(intent, FxAccountConstants.PER_ACCOUNT_TYPE_PERMISSION);
   }
 
   public synchronized State getState() {

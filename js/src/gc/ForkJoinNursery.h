@@ -13,9 +13,6 @@
 #ifndef JSGC_GENERATIONAL
 #error "JSGC_GENERATIONAL is required for the ForkJoinNursery"
 #endif
-#ifndef JS_ION
-#error "JS_ION is required for the ForkJoinNursery"
-#endif
 
 #include "jsalloc.h"
 #include "jspubtd.h"
@@ -39,6 +36,7 @@ namespace gc {
 class ForkJoinGCShared;
 class ForkJoinNursery;
 class ForkJoinNurseryCollectionTracer;
+class RelocationOverlay;
 
 // This tracer comes into play when a class has a tracer function, but
 // is otherwise unused and has no other functionality.
@@ -79,7 +77,7 @@ struct ForkJoinNurseryChunk
 class ForkJoinGCShared
 {
   public:
-    ForkJoinGCShared(ForkJoinShared *shared) : shared_(shared) {}
+    explicit ForkJoinGCShared(ForkJoinShared *shared) : shared_(shared) {}
 
     JSRuntime *runtime();
     JS::Zone *zone();
@@ -168,6 +166,8 @@ class ForkJoinNursery
     // Return true iff collection is ongoing and obj is inside the current fromspace.
     MOZ_ALWAYS_INLINE bool isInsideFromspace(const void *obj);
 
+    MOZ_ALWAYS_INLINE bool isForwarded(Cell *cell);
+
     template <typename T>
     MOZ_ALWAYS_INLINE bool getForwardedPointer(T **ref);
 
@@ -208,12 +208,13 @@ class ForkJoinNursery
     void *allocate(size_t size);
 
     // Allocate an external slot array and register it with this nursery.
-    HeapSlot *allocateHugeSlots(size_t nslots);
+    HeapSlot *allocateHugeSlots(JSObject *obj, size_t nslots);
 
     // Reallocate an external slot array, unregister the old array and
     // register the new array.  If the allocation fails then leave
     // everything unchanged.
-    HeapSlot *reallocateHugeSlots(HeapSlot *oldSlots, uint32_t oldSize, uint32_t newSize);
+    HeapSlot *reallocateHugeSlots(JSObject *obj, HeapSlot *oldSlots,
+                                  uint32_t oldCount, uint32_t newCount);
 
     // Walk the list of registered slot arrays and free them all.
     void sweepHugeSlots();
@@ -243,14 +244,14 @@ class ForkJoinNursery
     void computeNurserySizeAfterGC(size_t live, const char **msg);
 
     AllocKind getObjectAllocKind(JSObject *src);
-    void *allocateInTospace(AllocKind thingKind);
-    void *allocateInTospace(size_t nelem, size_t elemSize);
     void *allocateInTospaceInfallible(size_t thingSize);
+    void *allocateInTospace(AllocKind thingKind);
+    template <typename T> T *allocateInTospace(size_t nelem);
     MOZ_ALWAYS_INLINE bool shouldMoveObject(void **thingp);
     void *moveObjectToTospace(JSObject *src);
     size_t copyObjectToTospace(JSObject *dst, JSObject *src, gc::AllocKind dstKind);
-    size_t copyElementsToTospace(JSObject *dst, JSObject *src, gc::AllocKind dstKind);
-    size_t copySlotsToTospace(JSObject *dst, JSObject *src, gc::AllocKind dstKind);
+    size_t copyElementsToTospace(NativeObject *dst, NativeObject *src, gc::AllocKind dstKind);
+    size_t copySlotsToTospace(NativeObject *dst, NativeObject *src, gc::AllocKind dstKind);
     MOZ_ALWAYS_INLINE void insertIntoFixupList(RelocationOverlay *entry);
 
     void setSlotsForwardingPointer(HeapSlot *oldSlots, HeapSlot *newSlots, uint32_t nslots);

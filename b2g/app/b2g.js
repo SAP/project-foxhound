@@ -54,7 +54,7 @@ pref("browser.cache.memory_limit", 2048); // 2 MB
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
 pref("image.high_quality_downscaling.enabled", false);
-pref("canvas.image.cache.limit", 10485760); // 10 MB
+pref("canvas.image.cache.limit", 20971520); // 20 MB
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", false);
@@ -81,6 +81,7 @@ pref("network.http.max-persistent-connections-per-proxy", 20);
 pref("network.cookie.cookieBehavior", 0);
 
 // spdy
+pref("network.http.spdy.enabled.http2draft", false);
 pref("network.http.spdy.push-allowance", 32768);
 
 // See bug 545869 for details on why these are set the way they are
@@ -246,6 +247,15 @@ pref("security.alternate_certificate_error_page", "certerror");
 
 pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616712.
 
+// 2 = strict certificate pinning checks.
+// This default preference is more strict than Firefox because B2G
+// currently does not have a way to install local root certificates.
+// Strict checking is effectively equivalent to non-strict checking as
+// long as that is true.  If an ability to add local certificates is
+// added, there may be a need to change this pref.
+pref("security.cert_pinning.enforcement_level", 2);
+
+
 // Override some named colors to avoid inverse OS themes
 pref("ui.-moz-dialog", "#efebe7");
 pref("ui.-moz-dialogtext", "#101010");
@@ -309,7 +319,10 @@ pref("dom.indexedDB.warningQuota", 5);
 pref("media.preload.default", 1); // default to preload none
 pref("media.preload.auto", 2);    // preload metadata if preload=auto
 pref("media.cache_size", 4096);    // 4MB media cache
-
+#ifdef MOZ_FMP4
+// Enable/Disable Gonk Decoder Module
+pref("media.fragmented-mp4.gonk.enabled", false);
+#endif
 // The default number of decoded video frames that are enqueued in
 // MediaDecoderReader's mVideoQueue.
 pref("media.video-queue.default-size", 3);
@@ -363,6 +376,9 @@ pref("urlclassifier.alternate_error_page", "blocked");
 // The number of random entries to send with a gethash request.
 pref("urlclassifier.gethashnoise", 4);
 
+// Gethash timeout for Safebrowsing.
+pref("urlclassifier.gethash.timeout_ms", 5000);
+
 // If an urlclassifier table has not been updated in this number of seconds,
 // a gethash request will be forced to check that the result is still in
 // the database.
@@ -389,10 +405,11 @@ pref("content.ime.strict_policy", true);
 // $ adb shell start
 pref("browser.dom.window.dump.enabled", false);
 
-// Default Content Security Policy to apply to privileged and certified apps
-pref("security.apps.privileged.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'");
+// Default Content Security Policy to apply to certified apps.
 // If you change this CSP, make sure to update the fast path in nsCSPService.cpp
-pref("security.apps.certified.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'");
+pref("security.apps.certified.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' app://theme.gaiamobile.org");
+// Default Content Security Policy to apply to trusted apps.
+pref("security.apps.trusted.CSP.default", "default-src *; object-src 'none'; frame-src 'none'");
 
 // Temporarily force-enable GL compositing.  This is default-disabled
 // deep within the bowels of the widgetry system.  Remove me when GL
@@ -661,6 +678,8 @@ pref("javascript.options.mem.gc_max_empty_chunk_count", 2);
 // Show/Hide scrollbars when active/inactive
 pref("ui.showHideScrollbars", 1);
 pref("ui.useOverlayScrollbars", 1);
+pref("ui.scrollbarFadeBeginDelay", 450);
+pref("ui.scrollbarFadeDuration", 200);
 
 // Enable the ProcessPriorityManager, and give processes with no visible
 // documents a 1s grace period before they're eligible to be marked as
@@ -728,14 +747,14 @@ pref("hal.processPriorityManager.gonk.LowCPUNice", 18);
 // priority can be enabled by setting this pref to a value between 1 and 99.
 // Note that audio processing currently runs at RT priority 2 or 3 at most.
 //
-// If RT priority is disabled, then the compositor nice value is used.  The
-// code will default to ANDROID_PRIORITY_URGENT_DISPLAY which is -8.  Per gfx
-// request we are keeping the compositor at nice level 0 until we can complete
-// the investigation in bug 982972.
+// If RT priority is disabled, then the compositor nice value is used. We prefer
+// to use a nice value of -4, which matches Android's preferences. Setting a preference
+// of RT priority 1 would mean it is higher than audio, which is -16. The compositor
+// priority must be below the audio thread.
 //
 // Do not change these values without gfx team review.
 pref("hal.gonk.COMPOSITOR.rt_priority", 0);
-pref("hal.gonk.COMPOSITOR.nice", 0);
+pref("hal.gonk.COMPOSITOR.nice", -4);
 
 // Fire a memory pressure event when the system has less than Xmb of memory
 // remaining.  You should probably set this just above Y.KillUnderKB for
@@ -772,6 +791,8 @@ pref("dom.disable_window_open_dialog_feature", true);
 // Screen reader support
 pref("accessibility.accessfu.activate", 2);
 pref("accessibility.accessfu.quicknav_modes", "Link,Heading,FormElement,Landmark,ListItem");
+// Active quicknav mode, index value of list from quicknav_modes
+pref("accessibility.accessfu.quicknav_index", 0);
 // Setting for an utterance order (0 - description first, 1 - description last).
 pref("accessibility.accessfu.utterance", 1);
 // Whether to skip images with empty alt text
@@ -809,7 +830,10 @@ pref("network.gonk.manage-offline-status", true);
 // On Firefox Mulet, we can't enable shared JSM scope
 // as it breaks most Firefox JSMs (see bug 961777)
 #ifndef MOZ_MULET
+// Break any JSMs or JS components that rely on shared scope
+#ifndef DEBUG
 pref("jsloader.reuseGlobal", true);
+#endif
 #endif
 
 // Enable font inflation for browser tab content.
@@ -827,7 +851,6 @@ pref("memory.system_memory_reporter", true);
 // Don't dump memory reports on OOM, by default.
 pref("memory.dump_reports_on_oom", false);
 
-pref("layout.imagevisibility.enabled", true);
 pref("layout.imagevisibility.numscrollportwidths", 1);
 pref("layout.imagevisibility.numscrollportheights", 1);
 
@@ -851,6 +874,8 @@ pref("general.useragent.updates.enabled", true);
 pref("general.useragent.updates.url", "https://dynamicua.cdn.mozilla.net/0/%APP_ID%");
 pref("general.useragent.updates.interval", 604800); // 1 week
 pref("general.useragent.updates.retry", 86400); // 1 day
+// Device ID can be composed of letter, numbers, hyphen ("-") and dot (".")
+pref("general.useragent.device_id", "");
 
 // Make <audio> and <video> talk to the AudioChannelService.
 pref("media.useAudioChannelService", true);
@@ -886,6 +911,10 @@ pref("network.sntp.timeout", 30); // In seconds.
 
 // Enable dataStore
 pref("dom.datastore.enabled", true);
+// When an entry is changed, use two timers to fire system messages in a more
+// moderate pattern.
+pref("dom.datastore.sysMsgOnChangeShortTimeoutSec", 10);
+pref("dom.datastore.sysMsgOnChangeLongTimeoutSec", 60);
 
 // DOM Inter-App Communication API.
 pref("dom.inter-app-communication-api.enabled", true);
@@ -920,6 +949,11 @@ pref("gfx.gralloc.fence-with-readpixels", true);
 
 // The url of the page used to display network error details.
 pref("b2g.neterror.url", "app://system.gaiamobile.org/net_error.html");
+
+// The origin used for the shared themes uri space.
+pref("b2g.theme.origin", "app://theme.gaiamobile.org");
+pref("dom.mozApps.themable", true);
+pref("dom.mozApps.selected_theme", "default_theme.gaiamobile.org");
 
 // Enable Web Speech synthesis API
 pref("media.webspeech.synth.enabled", true);
@@ -959,18 +993,17 @@ pref("apz.x_stationary_size_multiplier", "1.5");
 pref("apz.y_stationary_size_multiplier", "1.8");
 pref("apz.enlarge_displayport_when_clipped", true);
 // Use "sticky" axis locking
-pref("apz.axis_lock_mode", 2);
+pref("apz.axis_lock.mode", 2);
 pref("apz.subframe.enabled", true);
 
 // Overscroll-related settings
 pref("apz.overscroll.enabled", true);
-pref("apz.overscroll.fling_friction", "0.02");
+pref("apz.overscroll.fling_friction", "0.05");
 pref("apz.overscroll.fling_stopped_threshold", "0.4");
-pref("apz.overscroll.clamping", "0.5");
-pref("apz.overscroll.z_effect", "0.5");
-pref("apz.overscroll.snap_back.spring_stiffness", "0.6");
+pref("apz.overscroll.stretch_factor", "0.5");
+pref("apz.overscroll.snap_back.spring_stiffness", "0.05");
 pref("apz.overscroll.snap_back.spring_friction", "0.1");
-pref("apz.overscroll.snap_back.mass", "1200");
+pref("apz.overscroll.snap_back.mass", "100");
 
 // This preference allows FirefoxOS apps (and content, I think) to force
 // the use of software (instead of hardware accelerated) 2D canvases by
@@ -989,8 +1022,8 @@ pref("browser.autofocus", false);
 // Enable wakelock
 pref("dom.wakelock.enabled", true);
 
-// Disable touch caret by default
-pref("touchcaret.enabled", false);
+// Enable touch caret by default
+pref("touchcaret.enabled", true);
 
 // Disable selection caret by default
 pref("selectioncaret.enabled", false);
@@ -1006,3 +1039,6 @@ pref("services.mobileid.server.uri", "https://msisdn.services.mozilla.com");
 #ifndef XP_WIN
 pref("dom.mapped_arraybuffer.enabled", true);
 #endif
+
+// UDPSocket API
+pref("dom.udpsocket.enabled", true);

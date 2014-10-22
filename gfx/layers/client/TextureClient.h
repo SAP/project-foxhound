@@ -34,7 +34,7 @@ class gfxImageSurface;
 namespace mozilla {
 namespace gl {
 class GLContext;
-class SurfaceStream;
+class SharedSurface;
 }
 
 namespace layers {
@@ -90,6 +90,27 @@ public:
 };
 
 /**
+ * This class may be used to asynchronously receive an update when the content
+ * drawn to this texture client is available for reading in CPU memory. This
+ * can only be used on texture clients that support draw target creation.
+ */
+class TextureReadbackSink
+{
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TextureReadbackSink)
+public:
+  /**
+   * Callback function to implement in order to receive a DataSourceSurface
+   * containing the data read back from the texture client. This will always
+   * be called on the main thread, and this may not hold on to the
+   * DataSourceSurface beyond the execution of this function.
+   */
+  virtual void ProcessReadback(gfx::DataSourceSurface *aSourceSurface) = 0;
+
+protected:
+  virtual ~TextureReadbackSink() {}
+};
+
+/**
  * TextureClient is a thin abstraction over texture data that need to be shared
  * between the content process and the compositor process. It is the
  * content-side half of a TextureClient/TextureHost pair. A corresponding
@@ -116,7 +137,7 @@ class TextureClient
   : public AtomicRefCountedWithFinalize<TextureClient>
 {
 public:
-  TextureClient(TextureFlags aFlags = TextureFlags::DEFAULT);
+  explicit TextureClient(TextureFlags aFlags = TextureFlags::DEFAULT);
   virtual ~TextureClient();
 
   // Creates and allocates a TextureClient usable with Moz2D.
@@ -275,6 +296,23 @@ public:
    */
   TextureFlags GetFlags() const { return mFlags; }
 
+  bool HasFlags(TextureFlags aFlags) const
+  {
+    return (mFlags & aFlags) == aFlags;
+  }
+
+  void AddFlags(TextureFlags aFlags)
+  {
+    MOZ_ASSERT(!IsSharedWithCompositor());
+    mFlags |= aFlags;
+  }
+
+  void RemoveFlags(TextureFlags aFlags)
+  {
+    MOZ_ASSERT(!IsSharedWithCompositor());
+    mFlags &= ~aFlags;
+  }
+
   /**
    * valid only for TextureFlags::RECYCLE TextureClient.
    * When called this texture client will grab a strong reference and release
@@ -337,7 +375,7 @@ public:
 
   virtual void SetReleaseFenceHandle(FenceHandle aReleaseFenceHandle)
   {
-    mReleaseFenceHandle = aReleaseFenceHandle;
+    mReleaseFenceHandle.Merge(aReleaseFenceHandle);
   }
 
   const FenceHandle& GetReleaseFenceHandle() const
@@ -373,6 +411,15 @@ public:
      mWasteTracker.Update(aWasteArea, BytesPerPixel(GetFormat()));
    }
 
+   /**
+    * This sets the readback sink that this texture is to use. This will
+    * receive the data for this texture as soon as it becomes available after
+    * texture unlock.
+    */
+   virtual void SetReadbackSink(TextureReadbackSink* aReadbackSink) {
+     mReadbackSink = aReadbackSink;
+   }
+
 private:
   /**
    * Called once, just before the destructor.
@@ -401,12 +448,6 @@ protected:
    */
   virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) = 0;
 
-  void AddFlags(TextureFlags  aFlags)
-  {
-    MOZ_ASSERT(!IsSharedWithCompositor());
-    mFlags |= aFlags;
-  }
-
   ISurfaceAllocator* GetAllocator()
   {
     return mAllocator;
@@ -421,6 +462,8 @@ protected:
   bool mShared;
   bool mValid;
 
+  RefPtr<TextureReadbackSink> mReadbackSink;
+
   friend class TextureChild;
   friend class RemoveTextureFromCompositableTracker;
   friend void TestTextureClientSurface(TextureClient*, gfxImageSurface*);
@@ -433,7 +476,7 @@ protected:
 class TextureClientReleaseTask : public Task
 {
 public:
-    TextureClientReleaseTask(TextureClient* aClient)
+    explicit TextureClientReleaseTask(TextureClient* aClient)
         : mTextureClient(aClient) {
     }
 
@@ -471,6 +514,8 @@ public:
   virtual void Unlock() MOZ_OVERRIDE;
 
   virtual bool IsLocked() const MOZ_OVERRIDE { return mLocked; }
+
+  uint8_t* GetLockedData() const;
 
   virtual bool CanExposeDrawTarget() const MOZ_OVERRIDE { return true; }
 
@@ -583,53 +628,61 @@ protected:
 };
 
 /**
- * A TextureClient implementation to share SurfaceStream.
+ * A TextureClient implementation to share SharedSurfaces.
  */
-class StreamTextureClient : public TextureClient
+class SharedSurfaceTextureClient : public TextureClient
 {
 public:
-  StreamTextureClient(TextureFlags aFlags);
+  SharedSurfaceTextureClient(TextureFlags aFlags, gl::SharedSurface* surf);
 
 protected:
-  ~StreamTextureClient();
+  ~SharedSurfaceTextureClient();
 
 public:
-  virtual bool IsAllocated() const MOZ_OVERRIDE;
+  // Boilerplate start
+  virtual bool IsAllocated() const MOZ_OVERRIDE { return true; }
 
-  virtual bool Lock(OpenMode mode) MOZ_OVERRIDE;
+  virtual bool Lock(OpenMode) MOZ_OVERRIDE {
+    MOZ_ASSERT(!mIsLocked);
+    mIsLocked = true;
+    return true;
+  }
 
-  virtual void Unlock() MOZ_OVERRIDE;
+  virtual void Unlock() MOZ_OVERRIDE {
+    MOZ_ASSERT(mIsLocked);
+    mIsLocked = false;
+  }
 
   virtual bool IsLocked() const MOZ_OVERRIDE { return mIsLocked; }
 
-  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor) MOZ_OVERRIDE;
-
   virtual bool HasInternalBuffer() const MOZ_OVERRIDE { return false; }
 
-  void InitWith(gl::SurfaceStream* aStream);
-
-  virtual gfx::IntSize GetSize() const { return gfx::IntSize(); }
-
-  virtual gfx::SurfaceFormat GetFormat() const MOZ_OVERRIDE
-  {
+  virtual gfx::SurfaceFormat GetFormat() const MOZ_OVERRIDE {
     return gfx::SurfaceFormat::UNKNOWN;
   }
+
+  virtual gfx::IntSize GetSize() const MOZ_OVERRIDE { return gfx::IntSize(); }
 
   // This TextureClient should not be used in a context where we use CreateSimilar
   // (ex. component alpha) because the underlying texture data is always created by
   // an external producer.
   virtual TemporaryRef<TextureClient>
-  CreateSimilar(TextureFlags, TextureAllocationFlags) const MOZ_OVERRIDE { return nullptr; }
+  CreateSimilar(TextureFlags, TextureAllocationFlags) const MOZ_OVERRIDE {
+    return nullptr;
+  }
 
-  virtual bool AllocateForSurface(gfx::IntSize aSize, TextureAllocationFlags aFlags) MOZ_OVERRIDE
-  {
+  virtual bool AllocateForSurface(gfx::IntSize,
+                                  TextureAllocationFlags) MOZ_OVERRIDE {
     MOZ_CRASH("Should never hit this.");
     return false;
   }
+  // Boilerplate end
+
+  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor) MOZ_OVERRIDE;
 
 protected:
   bool mIsLocked;
-  RefPtr<gl::SurfaceStream> mStream;
+  gl::SharedSurface* const mSurf;
   RefPtr<gl::GLContext> mGL; // Just for reference holding.
 };
 
@@ -637,7 +690,7 @@ struct TextureClientAutoUnlock
 {
   TextureClient* mTexture;
 
-  TextureClientAutoUnlock(TextureClient* aTexture)
+  explicit TextureClientAutoUnlock(TextureClient* aTexture)
   : mTexture(aTexture) {}
 
   ~TextureClientAutoUnlock()
@@ -656,7 +709,7 @@ template<typename T>
 class TKeepAlive : public KeepAlive
 {
 public:
-  TKeepAlive(T* aData) : mData(aData) {}
+  explicit TKeepAlive(T* aData) : mData(aData) {}
 protected:
   RefPtr<T> mData;
 };

@@ -19,6 +19,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::layers;
+using namespace mozilla::gfx;
 
 class nsDisplayCanvas : public nsDisplayItem {
 public:
@@ -151,10 +152,15 @@ nsHTMLCanvasFrame::GetIntrinsicRatio()
                 nsPresContext::CSSPixelsToAppUnits(size.height));
 }
 
-/* virtual */ nsSize
+/* virtual */
+LogicalSize
 nsHTMLCanvasFrame::ComputeSize(nsRenderingContext *aRenderingContext,
-                               nsSize aCBSize, nscoord aAvailableWidth,
-                               nsSize aMargin, nsSize aBorder, nsSize aPadding,
+                               WritingMode aWM,
+                               const LogicalSize& aCBSize,
+                               nscoord aAvailableISize,
+                               const LogicalSize& aMargin,
+                               const LogicalSize& aBorder,
+                               const LogicalSize& aPadding,
                                uint32_t aFlags)
 {
   nsIntSize size = GetCanvasSize();
@@ -166,9 +172,13 @@ nsHTMLCanvasFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   nsSize intrinsicRatio = GetIntrinsicRatio(); // won't actually be used
 
   return nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
+                            aWM,
                             aRenderingContext, this,
-                            intrinsicSize, intrinsicRatio, aCBSize,
-                            aMargin, aBorder, aPadding);
+                            intrinsicSize, intrinsicRatio,
+                            aCBSize,
+                            aMargin,
+                            aBorder,
+                            aPadding);
 }
 
 void
@@ -231,6 +241,8 @@ nsHTMLCanvasFrame::Reflow(nsPresContext*           aPresContext,
 
 // FIXME taken from nsImageFrame, but then had splittable frame stuff
 // removed.  That needs to be fixed.
+// XXXdholbert As in nsImageFrame, this function's clients should probably
+// just be calling GetContentRectRelativeToSelf().
 nsRect 
 nsHTMLCanvasFrame::GetInnerArea() const
 {
@@ -249,7 +261,7 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
                               nsDisplayItem* aItem,
                               const ContainerLayerParameters& aContainerParameters)
 {
-  nsRect area = GetContentRect() - GetPosition() + aItem->ToReferenceFrame();
+  nsRect area = GetContentRectRelativeToSelf() + aItem->ToReferenceFrame();
   HTMLCanvasElement* element = static_cast<HTMLCanvasElement*>(GetContent());
   nsIntSize canvasSize = GetCanvasSize();
 
@@ -271,10 +283,10 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
                       presContext->AppUnitsToGfxUnits(area.height));
 
   // Transform the canvas into the right place
-  gfx::Matrix transform;
   gfxPoint p = r.TopLeft() + aContainerParameters.mOffset;
-  transform.Translate(p.x, p.y);
-  transform.Scale(r.Width()/canvasSize.width, r.Height()/canvasSize.height);
+  Matrix transform = Matrix::Translation(p.x, p.y);
+  transform.PreScale(r.Width() / canvasSize.width,
+                     r.Height() / canvasSize.height);
   layer->SetBaseTransform(gfx::Matrix4x4::From2D(transform));
   layer->SetFilter(nsLayoutUtils::GetGraphicsFilterForFrame(this));
 

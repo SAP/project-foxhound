@@ -5,7 +5,6 @@
 #include "nsISupports.idl"
 
 interface nsIDOMMozSmsMessage;
-interface nsIDOMMozSmsSegmentInfo;
 interface nsIMobileMessageCallback;
 
 %{C++
@@ -34,3 +33,10 @@ interface nsISmsService : nsISupports
   void getSmscAddress(in unsigned long serviceId,
                       in nsIMobileMessageCallback request);
 };
+
+%{C++
+template<typename T> struct already_AddRefed;
+
+already_AddRefed<nsISmsService>
+NS_CreateSmsService();
+%}

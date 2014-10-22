@@ -116,7 +116,7 @@ private:
     virtual void Clear() { mTarget = nullptr; }
     virtual ~Notification() {}
   protected:
-    Notification(nsReferencedElement* aTarget)
+    explicit Notification(nsReferencedElement* aTarget)
       : mTarget(aTarget)
     {
       NS_PRECONDITION(aTarget, "Must have a target");
@@ -184,5 +184,20 @@ private:
   nsRefPtr<Notification> mPendingNotification;
   bool                   mReferencingImage;
 };
+
+inline void
+ImplCycleCollectionUnlink(nsReferencedElement& aField)
+{
+  aField.Unlink();
+}
+
+inline void
+ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
+                            nsReferencedElement& aField,
+                            const char* aName,
+                            uint32_t aFlags = 0)
+{
+  aField.Traverse(&aCallback);
+}
 
 #endif /*NSREFERENCEDELEMENT_H_*/

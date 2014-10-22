@@ -32,7 +32,7 @@ LIRGeneratorShared::visitConstant(MConstant *ins)
       default:
         // Constants of special types (undefined, null) should never flow into
         // here directly. Operations blindly consuming them require a Box.
-        JS_ASSERT(!"unexpected constant type");
+        MOZ_ASSERT(!"unexpected constant type");
         return false;
     }
 }
@@ -136,10 +136,10 @@ LIRGeneratorShared::buildSnapshot(LInstruction *ins, MResumePoint *rp, BailoutKi
         // constants, including known types, we record a dummy placeholder,
         // since we can recover the same information, much cleaner, from MIR.
         if (ins->isConstant() || ins->isUnused()) {
-            *type = LConstantIndex::Bogus();
-            *payload = LConstantIndex::Bogus();
+            *type = LAllocation();
+            *payload = LAllocation();
         } else if (ins->type() != MIRType_Value) {
-            *type = LConstantIndex::Bogus();
+            *type = LAllocation();
             *payload = use(ins, LUse(LUse::KEEPALIVE));
         } else {
             *type = useType(ins, LUse::KEEPALIVE);
@@ -187,7 +187,7 @@ LIRGeneratorShared::buildSnapshot(LInstruction *ins, MResumePoint *rp, BailoutKi
         LAllocation *a = snapshot->getEntry(index++);
 
         if (def->isUnused()) {
-            *a = LConstantIndex::Bogus();
+            *a = LAllocation();
             continue;
         }
 
@@ -203,7 +203,7 @@ LIRGeneratorShared::assignSnapshot(LInstruction *ins, BailoutKind kind)
 {
     // assignSnapshot must be called before define/add, since
     // it may add new instructions for emitted-at-use operands.
-    JS_ASSERT(ins->id() == 0);
+    MOZ_ASSERT(ins->id() == 0);
 
     LSnapshot *snapshot = buildSnapshot(ins, lastResumePoint_, kind);
     if (!snapshot)
@@ -216,8 +216,8 @@ LIRGeneratorShared::assignSnapshot(LInstruction *ins, BailoutKind kind)
 bool
 LIRGeneratorShared::assignSafepoint(LInstruction *ins, MInstruction *mir, BailoutKind kind)
 {
-    JS_ASSERT(!osiPoint_);
-    JS_ASSERT(!ins->safepoint());
+    MOZ_ASSERT(!osiPoint_);
+    MOZ_ASSERT(!ins->safepoint());
 
     ins->initSafepoint(alloc());
 

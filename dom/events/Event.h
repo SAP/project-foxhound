@@ -30,6 +30,7 @@ namespace dom {
 class EventTarget;
 class ErrorEvent;
 class ProgressEvent;
+class WantsPopupControlCheck;
 
 // Dummy class so we can cast through it to get from nsISupports to
 // Event subclasses with only two non-ambiguous static casts.
@@ -44,7 +45,7 @@ public:
   Event(EventTarget* aOwner,
         nsPresContext* aPresContext,
         WidgetEvent* aEvent);
-  Event(nsPIDOMWindow* aWindow);
+  explicit Event(nsPIDOMWindow* aWindow);
 
 protected:
   virtual ~Event();
@@ -90,10 +91,9 @@ public:
     return mOwner;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE
-  {
-    return EventBinding::Wrap(aCx, this);
-  }
+  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE MOZ_FINAL;
+
+  virtual JSObject* WrapObjectInternal(JSContext* aCx);
 
   virtual ErrorEvent* AsErrorEvent()
   {
@@ -113,7 +113,8 @@ public:
   // Returns true if the event should be trusted.
   bool Init(EventTarget* aGlobal);
 
-  static PopupControlState GetEventPopupControlState(WidgetEvent* aEvent);
+  static PopupControlState GetEventPopupControlState(WidgetEvent* aEvent,
+                                                     nsIDOMEvent* aDOMEvent = nullptr);
 
   static void PopupAllowedEventsChanged();
 
@@ -221,11 +222,30 @@ public:
     return mIsMainThreadEvent;
   }
 
+  /**
+   * For a given current target, returns the related target adjusted with
+   * shadow DOM retargeting rules. Returns nullptr if related target
+   * is not adjusted.
+   */
+  static nsIContent* GetShadowRelatedTarget(nsIContent* aCurrentTarget,
+                                            nsIContent* aRelatedTarget);
+
 protected:
 
   // Internal helper functions
   void SetEventType(const nsAString& aEventTypeArg);
   already_AddRefed<nsIContent> GetTargetFromFrame();
+
+  friend class WantsPopupControlCheck;
+  void SetWantsPopupControlCheck(bool aCheck)
+  {
+    mWantsPopupControlCheck = aCheck;
+  }
+
+  bool GetWantsPopupControlCheck()
+  {
+    return IsTrusted() && mWantsPopupControlCheck;
+  }
 
   /**
    * IsChrome() returns true if aCx is chrome context or the event is created
@@ -240,6 +260,28 @@ protected:
   bool                        mEventIsInternal;
   bool                        mPrivateDataDuplicated;
   bool                        mIsMainThreadEvent;
+  // True when popup control check should rely on event.type, not
+  // WidgetEvent.message.
+  bool                        mWantsPopupControlCheck;
+};
+
+class MOZ_STACK_CLASS WantsPopupControlCheck
+{
+public:
+  WantsPopupControlCheck(nsIDOMEvent* aEvent) : mEvent(aEvent->InternalDOMEvent())
+  {
+    mOriginalWantsPopupControlCheck = mEvent->GetWantsPopupControlCheck();
+    mEvent->SetWantsPopupControlCheck(mEvent->IsTrusted());
+  }
+
+  ~WantsPopupControlCheck()
+  {
+    mEvent->SetWantsPopupControlCheck(mOriginalWantsPopupControlCheck);
+  }
+
+private:
+  Event* mEvent;
+  bool mOriginalWantsPopupControlCheck;
 };
 
 } // namespace dom

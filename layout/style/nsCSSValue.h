@@ -200,6 +200,41 @@ private:
   operator=(const GridTemplateAreasValue& aOther) MOZ_DELETE;
 };
 
+class FontFamilyListRefCnt MOZ_FINAL : public FontFamilyList {
+public:
+    FontFamilyListRefCnt()
+        : FontFamilyList()
+    {
+        MOZ_COUNT_CTOR(FontFamilyListRefCnt);
+    }
+
+    explicit FontFamilyListRefCnt(FontFamilyType aGenericType)
+        : FontFamilyList(aGenericType)
+    {
+        MOZ_COUNT_CTOR(FontFamilyListRefCnt);
+    }
+
+    FontFamilyListRefCnt(const nsAString& aFamilyName,
+                         QuotedName aQuoted)
+        : FontFamilyList(aFamilyName, aQuoted)
+    {
+        MOZ_COUNT_CTOR(FontFamilyListRefCnt);
+    }
+
+    FontFamilyListRefCnt(const FontFamilyListRefCnt& aOther)
+        : FontFamilyList(aOther)
+    {
+        MOZ_COUNT_CTOR(FontFamilyListRefCnt);
+    }
+
+    NS_INLINE_DECL_REFCOUNTING(FontFamilyListRefCnt);
+
+private:
+    ~FontFamilyListRefCnt() {
+        MOZ_COUNT_DTOR(FontFamilyListRefCnt);
+    }
+};
+
 }
 }
 
@@ -230,7 +265,8 @@ enum nsCSSUnit {
   eCSSUnit_Counters     = 22,     // (nsCSSValue::Array*) a counters(string,string[,string]) value
   eCSSUnit_Cubic_Bezier = 23,     // (nsCSSValue::Array*) a list of float values
   eCSSUnit_Steps        = 24,     // (nsCSSValue::Array*) a list of (integer, enumerated)
-  eCSSUnit_Function     = 25,     // (nsCSSValue::Array*) a function with
+  eCSSUnit_Symbols      = 25,     // (nsCSSValue::Array*) a symbols(enumerated, symbols) value
+  eCSSUnit_Function     = 26,     // (nsCSSValue::Array*) a function with
                                   //  parameters.  First elem of array is name,
                                   //  an nsCSSKeyword as eCSSUnit_Enumerated,
                                   //  the rest of the values are arguments.
@@ -371,7 +407,7 @@ public:
   explicit nsCSSValue(nsCSSValueGradient* aValue);
   explicit nsCSSValue(nsCSSValueTokenStream* aValue);
   explicit nsCSSValue(mozilla::css::GridTemplateAreasValue* aValue);
-  explicit nsCSSValue(mozilla::FontFamilyList* aValue);
+  explicit nsCSSValue(mozilla::css::FontFamilyListRefCnt* aValue);
   nsCSSValue(const nsCSSValue& aCopy);
   ~nsCSSValue() { Reset(); }
 
@@ -639,7 +675,7 @@ public:
   void SetGradientValue(nsCSSValueGradient* aGradient);
   void SetTokenStreamValue(nsCSSValueTokenStream* aTokenStream);
   void SetGridTemplateAreas(mozilla::css::GridTemplateAreasValue* aValue);
-  void SetFontFamilyListValue(mozilla::FontFamilyList* aFontListValue);
+  void SetFontFamilyListValue(mozilla::css::FontFamilyListRefCnt* aFontListValue);
   void SetPairValue(const nsCSSValuePair* aPair);
   void SetPairValue(const nsCSSValue& xValue, const nsCSSValue& yValue);
   void SetSharedListValue(nsCSSValueSharedList* aList);
@@ -683,6 +719,16 @@ private:
     return static_cast<char16_t*>(aBuffer->Data());
   }
 
+  void AppendPolygonToString(nsCSSProperty aProperty, nsAString& aResult,
+                             Serialization aValueSerialization) const;
+  void AppendPositionCoordinateToString(const nsCSSValue& aValue,
+                                        nsCSSProperty aProperty,
+                                        nsAString& aResult,
+                                        Serialization aSerialization) const;
+  void AppendCircleOrEllipseToString(
+           nsCSSKeyword aFunctionId,
+           nsCSSProperty aProperty, nsAString& aResult,
+           Serialization aValueSerialization) const;
 protected:
   nsCSSUnit mUnit;
   union {
@@ -707,7 +753,7 @@ protected:
     nsCSSValuePairList_heap* mPairList;
     nsCSSValuePairList* mPairListDependent;
     nsCSSValueFloatColor* mFloatColor;
-    mozilla::FontFamilyList* mFontFamilyList;
+    mozilla::css::FontFamilyListRefCnt* mFontFamilyList;
   } mValue;
 };
 
@@ -788,7 +834,7 @@ private:
   for (nsCSSValue *var = First() + 1, *var##_end = First() + mCount;          \
        var != var##_end; ++var)
 
-  Array(size_t aItemCount)
+  explicit Array(size_t aItemCount)
     : mRefCnt(0)
     , mCount(aItemCount)
   {
@@ -820,14 +866,13 @@ struct nsCSSValueList {
   nsCSSValueList() : mNext(nullptr) { MOZ_COUNT_CTOR(nsCSSValueList); }
   ~nsCSSValueList();
 
-  nsCSSValueList* Clone() const;  // makes a deep copy
+  nsCSSValueList* Clone() const;  // makes a deep copy. Infallible.
   void CloneInto(nsCSSValueList* aList) const; // makes a deep copy into aList
   void AppendToString(nsCSSProperty aProperty, nsAString& aResult,
                       nsCSSValue::Serialization aValueSerialization) const;
 
-  bool operator==(nsCSSValueList const& aOther) const;
-  bool operator!=(const nsCSSValueList& aOther) const
-  { return !(*this == aOther); }
+  static bool Equal(const nsCSSValueList* aList1,
+                    const nsCSSValueList* aList2);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
@@ -840,6 +885,12 @@ private:
   {
     MOZ_COUNT_CTOR(nsCSSValueList);
   }
+
+  // We don't want operator== or operator!= because they wouldn't be
+  // null-safe, which is generally what we need.  Use |Equal| method
+  // above instead.
+  bool operator==(nsCSSValueList const& aOther) const MOZ_DELETE;
+  bool operator!=(const nsCSSValueList& aOther) const MOZ_DELETE;
 };
 
 // nsCSSValueList_heap differs from nsCSSValueList only in being
@@ -869,7 +920,7 @@ struct nsCSSValueSharedList MOZ_FINAL {
   }
 
   // Takes ownership of aList.
-  nsCSSValueSharedList(nsCSSValueList* aList)
+  explicit nsCSSValueSharedList(nsCSSValueList* aList)
     : mHead(aList)
   {
     MOZ_COUNT_CTOR(nsCSSValueSharedList);
@@ -1009,7 +1060,7 @@ struct nsCSSValuePair {
   {
     MOZ_COUNT_CTOR(nsCSSValuePair);
   }
-  nsCSSValuePair(nsCSSUnit aUnit)
+  explicit nsCSSValuePair(nsCSSUnit aUnit)
     : mXValue(aUnit), mYValue(aUnit)
   {
     MOZ_COUNT_CTOR(nsCSSValuePair);
@@ -1093,7 +1144,7 @@ struct nsCSSValueTriplet {
     {
         MOZ_COUNT_CTOR(nsCSSValueTriplet);
     }
-    nsCSSValueTriplet(nsCSSUnit aUnit)
+    explicit nsCSSValueTriplet(nsCSSUnit aUnit)
         : mXValue(aUnit), mYValue(aUnit), mZValue(aUnit)
     {
         MOZ_COUNT_CTOR(nsCSSValueTriplet);
@@ -1214,13 +1265,12 @@ struct nsCSSValuePairList {
   nsCSSValuePairList() : mNext(nullptr) { MOZ_COUNT_CTOR(nsCSSValuePairList); }
   ~nsCSSValuePairList();
 
-  nsCSSValuePairList* Clone() const; // makes a deep copy
+  nsCSSValuePairList* Clone() const; // makes a deep copy. Infallible.
   void AppendToString(nsCSSProperty aProperty, nsAString& aResult,
                       nsCSSValue::Serialization aValueSerialization) const;
 
-  bool operator==(const nsCSSValuePairList& aOther) const;
-  bool operator!=(const nsCSSValuePairList& aOther) const
-  { return !(*this == aOther); }
+  static bool Equal(const nsCSSValuePairList* aList1,
+                    const nsCSSValuePairList* aList2);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
@@ -1234,6 +1284,12 @@ private:
   {
     MOZ_COUNT_CTOR(nsCSSValuePairList);
   }
+
+  // We don't want operator== or operator!= because they wouldn't be
+  // null-safe, which is generally what we need.  Use |Equal| method
+  // above instead.
+  bool operator==(const nsCSSValuePairList& aOther) const MOZ_DELETE;
+  bool operator!=(const nsCSSValuePairList& aOther) const MOZ_DELETE;
 };
 
 // nsCSSValuePairList_heap differs from nsCSSValuePairList only in being

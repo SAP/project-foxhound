@@ -28,7 +28,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(StorageEvent, Event)
 
-  StorageEvent(EventTarget* aOwner);
+  explicit StorageEvent(EventTarget* aOwner);
 
 protected:
   virtual ~StorageEvent();
@@ -42,7 +42,7 @@ protected:
 public:
   virtual StorageEvent* AsStorageEvent();
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObjectInternal(JSContext* aCx) MOZ_OVERRIDE;
 
   static already_AddRefed<StorageEvent>
   Constructor(EventTarget* aOwner, const nsAString& aType,

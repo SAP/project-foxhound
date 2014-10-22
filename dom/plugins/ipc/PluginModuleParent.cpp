@@ -28,7 +28,6 @@
 #include "nsIObserverService.h"
 #include "nsNPAPIPlugin.h"
 #include "nsPrintfCString.h"
-#include "PluginIdentifierParent.h"
 #include "prsystem.h"
 #include "GeckoProfiler.h"
 
@@ -103,6 +102,11 @@ PluginModuleParent::LoadModule(const char* aFilePath)
     parent->Open(parent->mSubprocess->GetChannel(),
                  parent->mSubprocess->GetChildProcessHandle());
 
+    // Request Windows message deferral behavior on our channel. This
+    // applies to the top level and all sub plugin protocols since they
+    // all share the same channel.
+    parent->GetIPCChannel()->SetChannelFlags(MessageChannel::REQUIRE_DEFERRED_MESSAGE_PROTECTION);
+
     TimeoutChanged(CHILD_TIMEOUT_PREF, parent);
 
 #ifdef MOZ_CRASHREPORTER
@@ -129,6 +133,7 @@ PluginModuleParent::PluginModuleParent(const char* aFilePath)
     , mNPNIface(nullptr)
     , mPlugin(nullptr)
     , mTaskFactory(MOZ_THIS_IN_INITIALIZER_LIST())
+    , mHangAnnotationFlags(0)
 #ifdef XP_WIN
     , mPluginCpuUsageOnHang()
     , mHangUIParent(nullptr)
@@ -156,6 +161,8 @@ PluginModuleParent::PluginModuleParent(const char* aFilePath)
 #ifdef MOZ_ENABLE_PROFILER_SPS
     InitPluginProfiling();
 #endif
+
+    mozilla::HangMonitor::RegisterAnnotator(*this);
 }
 
 PluginModuleParent::~PluginModuleParent()
@@ -199,6 +206,8 @@ PluginModuleParent::~PluginModuleParent()
         mHangUIParent = nullptr;
     }
 #endif
+
+    mozilla::HangMonitor::UnregisterAnnotator(*this);
 }
 
 #ifdef MOZ_CRASHREPORTER
@@ -220,20 +229,8 @@ PluginModuleParent::WriteExtraDataForMinidump(AnnotationTable& notes)
         filePos++;
     notes.Put(NS_LITERAL_CSTRING("PluginFilename"), CS(pluginFile.substr(filePos).c_str()));
 
-    nsCString pluginName;
-    nsCString pluginVersion;
-
-    nsRefPtr<nsPluginHost> ph = nsPluginHost::GetInst();
-    if (ph) {
-        nsPluginTag* tag = ph->TagForPlugin(mPlugin);
-        if (tag) {
-            pluginName = tag->mName;
-            pluginVersion = tag->mVersion;
-        }
-    }
-
-    notes.Put(NS_LITERAL_CSTRING("PluginName"), pluginName);
-    notes.Put(NS_LITERAL_CSTRING("PluginVersion"), pluginVersion);
+    notes.Put(NS_LITERAL_CSTRING("PluginName"), mPluginName);
+    notes.Put(NS_LITERAL_CSTRING("PluginVersion"), mPluginVersion);
 
     CrashReporterParent* crashReporter = CrashReporter();
     if (crashReporter) {
@@ -385,13 +382,52 @@ GetProcessCpuUsage(const InfallibleTArray<base::ProcessHandle>& processHandles, 
 
 } // anonymous namespace
 
+#endif // #ifdef XP_WIN
+
+void
+PluginModuleParent::EnteredCxxStack()
+{
+    mHangAnnotationFlags |= kInPluginCall;
+}
+
 void
 PluginModuleParent::ExitedCxxStack()
 {
+    mHangAnnotationFlags = 0;
+#ifdef XP_WIN
     FinishHangUI();
+#endif
 }
 
-#endif // #ifdef XP_WIN
+/**
+ * This function is always called by the HangMonitor thread.
+ */
+void
+PluginModuleParent::AnnotateHang(mozilla::HangMonitor::HangAnnotations& aAnnotations)
+{
+    uint32_t flags = mHangAnnotationFlags;
+    if (flags) {
+        /* We don't actually annotate anything specifically for kInPluginCall;
+           we use it to determine whether to annotate other things. It will
+           be pretty obvious from the ChromeHang stack that we're in a plugin
+           call when the hang occurred. */
+        if (flags & kHangUIShown) {
+            aAnnotations.AddAnnotation(NS_LITERAL_STRING("HangUIShown"),
+                                       true);
+        }
+        if (flags & kHangUIContinued) {
+            aAnnotations.AddAnnotation(NS_LITERAL_STRING("HangUIContinued"),
+                                       true);
+        }
+        if (flags & kHangUIDontShow) {
+            aAnnotations.AddAnnotation(NS_LITERAL_STRING("HangUIDontShow"),
+                                       true);
+        }
+        aAnnotations.AddAnnotation(NS_LITERAL_STRING("pluginName"), mPluginName);
+        aAnnotations.AddAnnotation(NS_LITERAL_STRING("pluginVersion"),
+                                   mPluginVersion);
+    }
+}
 
 #ifdef MOZ_CRASHREPORTER_INJECTOR
 static bool
@@ -527,6 +563,23 @@ PluginModuleParent::TerminateChildProcess(MessageLoop* aMsgLoop)
         NS_WARNING("failed to kill subprocess!");
 }
 
+bool
+PluginModuleParent::GetPluginDetails(nsACString& aPluginName,
+                                     nsACString& aPluginVersion)
+{
+    nsRefPtr<nsPluginHost> host = nsPluginHost::GetInst();
+    if (!host) {
+        return false;
+    }
+    nsPluginTag* pluginTag = host->TagForPlugin(mPlugin);
+    if (!pluginTag) {
+        return false;
+    }
+    aPluginName = pluginTag->mName;
+    aPluginVersion = pluginTag->mVersion;
+    return true;
+}
+
 #ifdef XP_WIN
 void
 PluginModuleParent::EvaluateHangUIState(const bool aReset)
@@ -563,21 +616,6 @@ PluginModuleParent::EvaluateHangUIState(const bool aReset)
 }
 
 bool
-PluginModuleParent::GetPluginName(nsAString& aPluginName)
-{
-    nsRefPtr<nsPluginHost> host = nsPluginHost::GetInst();
-    if (!host) {
-        return false;
-    }
-    nsPluginTag* pluginTag = host->TagForPlugin(mPlugin);
-    if (!pluginTag) {
-        return false;
-    }
-    CopyUTF8toUTF16(pluginTag->mName, aPluginName);
-    return true;
-}
-
-bool
 PluginModuleParent::LaunchHangUI()
 {
     if (!mHangUIEnabled) {
@@ -589,7 +627,12 @@ PluginModuleParent::LaunchHangUI()
             return false;
         }
         if (mHangUIParent->DontShowAgain()) {
-            return !mHangUIParent->WasLastHangStopped();
+            mHangAnnotationFlags |= kHangUIDontShow;
+            bool wasLastHangStopped = mHangUIParent->WasLastHangStopped();
+            if (!wasLastHangStopped) {
+                mHangAnnotationFlags |= kHangUIContinued;
+            }
+            return !wasLastHangStopped;
         }
         delete mHangUIParent;
         mHangUIParent = nullptr;
@@ -597,12 +640,9 @@ PluginModuleParent::LaunchHangUI()
     mHangUIParent = new PluginHangUIParent(this, 
             Preferences::GetInt(kHangUITimeoutPref, 0),
             Preferences::GetInt(kChildTimeoutPref, 0));
-    nsAutoString pluginName;
-    if (!GetPluginName(pluginName)) {
-        return false;
-    }
-    bool retval = mHangUIParent->Init(pluginName);
+    bool retval = mHangUIParent->Init(NS_ConvertUTF8toUTF16(mPluginName));
     if (retval) {
+        mHangAnnotationFlags |= kHangUIShown;
         /* Once the UI is shown we switch the timeout over to use 
            kChildTimeoutPref, allowing us to terminate a hung plugin 
            after kChildTimeoutPref seconds if the user doesn't respond to 
@@ -631,6 +671,12 @@ PluginModuleParent::FinishHangUI()
             EvaluateHangUIState(true);
         }
     }
+}
+
+void
+PluginModuleParent::OnHangUIContinue()
+{
+    mHangAnnotationFlags |= kHangUIContinued;
 }
 #endif // XP_WIN
 
@@ -772,37 +818,6 @@ PluginModuleParent::NotifyPluginCrashed()
 
     if (mPlugin)
         mPlugin->PluginCrashed(mPluginDumpID, mBrowserDumpID);
-}
-
-PPluginIdentifierParent*
-PluginModuleParent::AllocPPluginIdentifierParent(const nsCString& aString,
-                                                 const int32_t& aInt,
-                                                 const bool& aTemporary)
-{
-    if (aTemporary) {
-        NS_ERROR("Plugins don't create temporary identifiers.");
-        return nullptr; // should abort the plugin
-    }
-
-    NPIdentifier npident = aString.IsVoid() ?
-        mozilla::plugins::parent::_getintidentifier(aInt) :
-        mozilla::plugins::parent::_getstringidentifier(aString.get());
-
-    if (!npident) {
-        NS_WARNING("Failed to get identifier!");
-        return nullptr;
-    }
-
-    PluginIdentifierParent* ident = new PluginIdentifierParent(npident, false);
-    mIdentifiers.Put(npident, ident);
-    return ident;
-}
-
-bool
-PluginModuleParent::DeallocPPluginIdentifierParent(PPluginIdentifierParent* aActor)
-{
-    delete aActor;
-    return true;
 }
 
 PPluginInstanceParent*
@@ -1046,44 +1061,6 @@ PluginModuleParent::AnswerNPN_UserAgent(nsCString* userAgent)
     return true;
 }
 
-PluginIdentifierParent*
-PluginModuleParent::GetIdentifierForNPIdentifier(NPP npp, NPIdentifier aIdentifier)
-{
-    PluginIdentifierParent* ident;
-    if (mIdentifiers.Get(aIdentifier, &ident)) {
-        if (ident->IsTemporary()) {
-            ident->AddTemporaryRef();
-        }
-        return ident;
-    }
-
-    nsCString string;
-    int32_t intval = -1;
-    bool temporary = false;
-    if (mozilla::plugins::parent::_identifierisstring(aIdentifier)) {
-        NPUTF8* chars =
-            mozilla::plugins::parent::_utf8fromidentifier(aIdentifier);
-        if (!chars) {
-            return nullptr;
-        }
-        string.Adopt(chars);
-        temporary = !NPStringIdentifierIsPermanent(npp, aIdentifier);
-    }
-    else {
-        intval = mozilla::plugins::parent::_intfromidentifier(aIdentifier);
-        string.SetIsVoid(true);
-    }
-
-    ident = new PluginIdentifierParent(aIdentifier, temporary);
-    if (!SendPPluginIdentifierConstructor(ident, string, intval, temporary))
-        return nullptr;
-
-    if (!temporary) {
-        mIdentifiers.Put(aIdentifier, ident);
-    }
-    return ident;
-}
-
 PluginInstanceParent*
 PluginModuleParent::InstCast(NPP instance)
 {
@@ -1196,9 +1173,7 @@ PluginModuleParent::NP_Initialize(NPNetscapeFuncs* bFuncs, NPPluginFuncs* pFuncs
         return NS_ERROR_FAILURE;
     }
 
-    uint32_t flags = 0;
-
-    if (!CallNP_Initialize(flags, error)) {
+    if (!CallNP_Initialize(error)) {
         Close();
         return NS_ERROR_FAILURE;
     }
@@ -1224,12 +1199,7 @@ PluginModuleParent::NP_Initialize(NPNetscapeFuncs* bFuncs, NPError* error)
         return NS_ERROR_FAILURE;
     }
 
-    uint32_t flags = 0;
-#ifdef XP_WIN
-    flags |= kAllowAsyncDrawing;
-#endif
-
-    if (!CallNP_Initialize(flags, error)) {
+    if (!CallNP_Initialize(error)) {
         Close();
         return NS_ERROR_FAILURE;
     }
@@ -1333,6 +1303,10 @@ PluginModuleParent::NPP_New(NPMIMEType pluginType, NPP instance,
     if (mShutdown) {
         *error = NPERR_GENERIC_ERROR;
         return NS_ERROR_FAILURE;
+    }
+
+    if (mPluginName.IsEmpty()) {
+        GetPluginDetails(mPluginName, mPluginVersion);
     }
 
     // create the instance on the other side

@@ -8,20 +8,16 @@ XPIDL_MODULE = 'content_webrtc'
 
 EXPORTS += [
     'MediaEngine.h',
+    'MediaEngineCameraVideoSource.h',
     'MediaEngineDefault.h',
     'MediaTrackConstraints.h',
 ]
 
 if CONFIG['MOZ_WEBRTC']:
     EXPORTS += ['AudioOutputObserver.h',
-                'LoadManager.h',
-                'LoadManagerFactory.h',
-                'LoadMonitor.h',
                 'MediaEngineWebRTC.h']
     UNIFIED_SOURCES += [
-        'LoadManager.cpp',
-        'LoadManagerFactory.cpp',
-        'LoadMonitor.cpp',
+        'MediaEngineCameraVideoSource.cpp',
         'MediaEngineTabVideoSource.cpp',
         'MediaEngineWebRTCAudio.cpp',
         'MediaEngineWebRTCVideo.cpp',
@@ -38,6 +34,12 @@ if CONFIG['MOZ_WEBRTC']:
         '/media/webrtc/signaling/src/common/browser_logging',
         '/media/webrtc/trunk',
     ]
+    # Gonk camera source.
+    if CONFIG['MOZ_B2G_CAMERA']:
+        EXPORTS += ['MediaEngineGonkVideoSource.h']
+        UNIFIED_SOURCES += [
+            'MediaEngineGonkVideoSource.cpp',
+        ]
 
 XPIDL_SOURCES += [
     'nsITabSource.idl'

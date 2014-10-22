@@ -120,15 +120,15 @@ exports.testWaitUntilTimeoutInCallback = function(test) {
 
   let expected = [];
   let message = 0;
-  if (require("@test/options").parseable) {
+  if (require("sdk/test/options").parseable) {
     expected.push(["print", "TEST-START | wait4ever\n"]);
-    expected.push(["error", "fail:", "Timed out"]);
+    expected.push(["error", "fail:", "Timed out (after: START)"]);
     expected.push(["error", "test assertion never became true:\n", "assertion failed, value is false\n"]);
     expected.push(["print", "TEST-END | wait4ever\n"]);
   }
   else {
     expected.push(["info",  "executing 'wait4ever'"]);
-    expected.push(["error", "fail:", "Timed out"]);
+    expected.push(["error", "fail:", "Timed out (after: START)"]);
     expected.push(["error", "test assertion never became true:\n", "assertion failed, value is false\n"]);
   }
 

@@ -38,9 +38,14 @@
 #include "PrivateBrowsingChannel.h"
 #include "mozilla/net/DNS.h"
 #include "nsITimedChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsISecurityConsoleMessage.h"
+#include "nsCOMArray.h"
 
 extern PRLogModuleInfo *gHttpLog;
+class nsPerformance;
+class nsISecurityConsoleMessage;
+class nsIPrincipal;
 
 namespace mozilla {
 namespace net {
@@ -176,6 +181,7 @@ public:
   NS_IMETHOD AddRedirect(nsIPrincipal *aRedirect);
   NS_IMETHOD ForcePending(bool aForcePending);
   NS_IMETHOD GetLastModifiedTime(PRTime* lastModifiedTime);
+  NS_IMETHOD ForceNoIntercept();
 
   inline void CleanRedirectCacheChainIfNecessary()
   {
@@ -240,7 +246,11 @@ protected:
   // drop reference to listener, its callbacks, and the progress sink
   void ReleaseListeners();
 
-  nsresult ApplyContentConversions();
+  nsPerformance* GetPerformance();
+
+  NS_IMETHOD DoApplyContentConversions(nsIStreamListener *aNextListener,
+                                     nsIStreamListener **aNewNextListener,
+                                     nsISupports *aCtxt);
 
   void AddCookiesToRequest();
   virtual nsresult SetupReplacementChannel(nsIURI *,
@@ -270,6 +280,10 @@ protected:
   // Returns the channel principal. If requireAppId is true, then returns
   // null if the principal has unknown appId.
   nsIPrincipal *GetPrincipal(bool requireAppId);
+
+  // Returns true if this channel should intercept the network request and prepare
+  // for a possible synthesized response instead.
+  bool ShouldIntercept();
 
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
 
@@ -339,6 +353,13 @@ protected:
   // A flag that should be false only if a cross-domain redirect occurred
   uint32_t                          mAllRedirectsSameOrigin     : 1;
 
+  // Is 1 if no redirects have occured or if all redirects
+  // pass the Resource Timing timing-allow-check
+  uint32_t                          mAllRedirectsPassTimingAllowCheck : 1;
+
+  // True if this channel should skip any interception checks
+  uint32_t                          mForceNoIntercept           : 1;
+
   // Current suspension depth for this channel object
   uint32_t                          mSuspendCount;
 
@@ -393,7 +414,7 @@ template <class T>
 class HttpAsyncAborter
 {
 public:
-  HttpAsyncAborter(T *derived) : mThis(derived), mCallOnResume(0) {}
+  explicit HttpAsyncAborter(T *derived) : mThis(derived), mCallOnResume(0) {}
 
   // Aborts channel: calls OnStart/Stop with provided status, removes channel
   // from loadGroup.

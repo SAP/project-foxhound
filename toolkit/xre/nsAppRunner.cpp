@@ -14,6 +14,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ChaosMode.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Poison.h"
@@ -82,6 +83,7 @@
 #include "nsIDocShell.h"
 #include "nsAppShellCID.h"
 #include "mozilla/scache/StartupCache.h"
+#include "nsIGfxInfo.h"
 
 #include "mozilla/unused.h"
 
@@ -97,6 +99,10 @@
 #ifndef PROCESS_DEP_ENABLE
 #define PROCESS_DEP_ENABLE 0x1
 #endif
+#endif
+
+#ifdef ACCESSIBILITY
+#include "nsAccessibilityService.h"
 #endif
 
 #include "nsCRT.h"
@@ -145,6 +151,7 @@
 #ifdef XP_MACOSX
 #include "nsILocalFileMac.h"
 #include "nsCommandLineServiceMac.h"
+#include "nsCocoaFeatures.h"
 #endif
 
 // for X remote support
@@ -178,11 +185,16 @@
 #include "nsICrashReporter.h"
 #define NS_CRASHREPORTER_CONTRACTID "@mozilla.org/toolkit/crash-reporter;1"
 #include "nsIPrefService.h"
+#include "nsIMemoryInfoDumper.h"
 #endif
 
 #include "base/command_line.h"
 #ifdef MOZ_ENABLE_TESTS
 #include "GTestRunner.h"
+#endif
+
+#ifdef MOZ_B2G_LOADER
+#include "ProcessUtils.h"
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -573,6 +585,28 @@ CanShowProfileManager()
 #endif
 }
 
+static bool
+KeyboardMayHaveIME()
+{
+#ifdef XP_WIN
+  // http://msdn.microsoft.com/en-us/library/windows/desktop/dd318693%28v=vs.85%29.aspx
+  HKL locales[10];
+  int result = GetKeyboardLayoutList(10, locales);
+  for (int i = 0; i < result; i++) {
+    int kb = (uintptr_t)locales[i] & 0xFFFF;
+    if (kb == 0x0411 ||  // japanese
+        kb == 0x0412 ||  // korean
+        kb == 0x0C04 ||  // HK Chinese
+        kb == 0x0804 || kb == 0x0004 || // Hans Chinese
+        kb == 0x7C04 || kb ==  0x0404)  { //Hant Chinese
+
+      return true;
+    }
+  }
+#endif
+
+  return false;
+}
 
 bool gSafeMode = false;
 
@@ -586,6 +620,7 @@ class nsXULAppInfo : public nsIXULAppInfo,
 #endif
 #ifdef MOZ_CRASHREPORTER
                      public nsICrashReporter,
+                     public nsIFinishDumpingCallback,
 #endif
                      public nsIXULRuntime
 
@@ -597,6 +632,7 @@ public:
   NS_DECL_NSIXULRUNTIME
 #ifdef MOZ_CRASHREPORTER
   NS_DECL_NSICRASHREPORTER
+  NS_DECL_NSIFINISHDUMPINGCALLBACK
 #endif
 #ifdef XP_WIN
   NS_DECL_NSIWINAPPHELPER
@@ -611,6 +647,7 @@ NS_INTERFACE_MAP_BEGIN(nsXULAppInfo)
 #endif
 #ifdef MOZ_CRASHREPORTER
   NS_INTERFACE_MAP_ENTRY(nsICrashReporter)
+  NS_INTERFACE_MAP_ENTRY(nsIFinishDumpingCallback)
 #endif
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIXULAppInfo, gAppData || 
                                      XRE_GetProcessType() == GeckoProcessType_Content)
@@ -632,7 +669,9 @@ NS_IMETHODIMP
 nsXULAppInfo::GetVendor(nsACString& aResult)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    return NS_ERROR_NOT_AVAILABLE;
+    ContentChild* cc = ContentChild::GetSingleton();
+    aResult = cc->GetAppInfo().vendor;
+    return NS_OK;
   }
   aResult.Assign(gAppData->vendor);
 
@@ -656,7 +695,9 @@ NS_IMETHODIMP
 nsXULAppInfo::GetID(nsACString& aResult)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    return NS_ERROR_NOT_AVAILABLE;
+    ContentChild* cc = ContentChild::GetSingleton();
+    aResult = cc->GetAppInfo().ID;
+    return NS_OK;
   }
   aResult.Assign(gAppData->ID);
 
@@ -800,13 +841,31 @@ nsXULAppInfo::GetProcessID(uint32_t* aResult)
   return NS_OK;
 }
 
-static bool gBrowserTabsRemote = false;
-static bool gBrowserTabsRemoteInitialized = false;
+static bool gBrowserTabsRemoteAutostart = false;
+static bool gBrowserTabsRemoteAutostartInitialized = false;
 
 NS_IMETHODIMP
-nsXULAppInfo::GetBrowserTabsRemote(bool* aResult)
+nsXULAppInfo::GetBrowserTabsRemoteAutostart(bool* aResult)
 {
-  *aResult = BrowserTabsRemote();
+  *aResult = BrowserTabsRemoteAutostart();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::GetAccessibilityEnabled(bool* aResult)
+{
+#ifdef ACCESSIBILITY
+  *aResult = GetAccService() != nullptr;
+#else
+  *aResult = false;
+#endif
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::GetKeyboardMayHaveIME(bool* aResult)
+{
+  *aResult = KeyboardMayHaveIME();
   return NS_OK;
 }
 
@@ -816,7 +875,7 @@ nsXULAppInfo::EnsureContentProcess()
   if (XRE_GetProcessType() != GeckoProcessType_Default)
     return NS_ERROR_NOT_AVAILABLE;
 
-  nsRefPtr<ContentParent> unused = ContentParent::GetNewOrUsed();
+  nsRefPtr<ContentParent> unused = ContentParent::GetNewOrUsedBrowserProcess();
   return NS_OK;
 }
 
@@ -914,6 +973,17 @@ nsXULAppInfo::GetDistributionID(nsACString& aResult)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsXULAppInfo::GetIsOfficial(bool* aResult)
+{
+#ifdef MOZILLA_OFFICIAL
+  *aResult = true;
+#else
+  *aResult = false;
+#endif
+  return NS_OK;
+}
+
 #ifdef XP_WIN
 // Matches the enum in WinNT.h for the Vista SDK but renamed so that we can
 // safely build with the Vista SDK and without it.
@@ -973,31 +1043,29 @@ NS_IMETHODIMP
 nsXULAppInfo::SetEnabled(bool aEnabled)
 {
   if (aEnabled) {
-    if (CrashReporter::GetEnabled())
+    if (CrashReporter::GetEnabled()) {
       // no point in erroring for double-enabling
       return NS_OK;
-
-    nsCOMPtr<nsIFile> xreDirectory;
-    if (gAppData) {
-      xreDirectory = gAppData->xreDirectory;
     }
-    else {
-      // We didn't get started through XRE_Main, probably
-      nsCOMPtr<nsIFile> greDir;
-      NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(greDir));
-      if (!greDir)
-        return NS_ERROR_FAILURE;
 
-      xreDirectory = do_QueryInterface(greDir);
-      if (!xreDirectory)
-        return NS_ERROR_FAILURE;
+    nsCOMPtr<nsIFile> greBinDir;
+    NS_GetSpecialDirectory(NS_GRE_BIN_DIR, getter_AddRefs(greBinDir));
+    if (!greBinDir) {
+      return NS_ERROR_FAILURE;
     }
-    return CrashReporter::SetExceptionHandler(xreDirectory, true);
+
+    nsCOMPtr<nsIFile> xreBinDirectory = do_QueryInterface(greBinDir);
+    if (!xreBinDirectory) {
+      return NS_ERROR_FAILURE;
+    }
+
+    return CrashReporter::SetExceptionHandler(xreBinDirectory, true);
   }
   else {
-    if (!CrashReporter::GetEnabled())
+    if (!CrashReporter::GetEnabled()) {
       // no point in erroring for double-disabling
       return NS_OK;
+    }
 
     return CrashReporter::UnsetExceptionHandler();
   }
@@ -1129,6 +1197,45 @@ nsXULAppInfo::UpdateCrashEventsDir()
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsXULAppInfo::SaveMemoryReport()
+{
+  if (!CrashReporter::GetEnabled()) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+  nsCOMPtr<nsIFile> file;
+  nsresult rv = NS_GetSpecialDirectory(NS_APP_PROFILE_DIR_STARTUP,
+                                       getter_AddRefs(file));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  file->AppendNative(NS_LITERAL_CSTRING("memory-report.json.gz"));
+
+  nsString path;
+  file->GetPath(path);
+
+  nsCOMPtr<nsIMemoryInfoDumper> dumper =
+    do_GetService("@mozilla.org/memory-info-dumper;1");
+  if (NS_WARN_IF(!dumper)) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  rv = dumper->DumpMemoryReportsToNamedFile(path, this, file, true /* anonymize */);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::Callback(nsISupports* aData)
+{
+  nsCOMPtr<nsIFile> file = do_QueryInterface(aData);
+  MOZ_ASSERT(file);
+
+  CrashReporter::SetMemoryReportFile(file);
+  return NS_OK;
+}
 #endif
 
 static const nsXULAppInfo kAppInfo;
@@ -1283,7 +1390,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIFACTORY
 
-  nsSingletonFactory(nsISupports* aSingleton);
+  explicit nsSingletonFactory(nsISupports* aSingleton);
 
 private:
   ~nsSingletonFactory() { }
@@ -1409,6 +1516,7 @@ DumpHelp()
   printf("  -h or -help        Print this message.\n"
          "  -v or -version     Print %s version.\n"
          "  -P <profile>       Start with <profile>.\n"
+         "  -profile <path>    Start with profile at <path>.\n"
          "  -migration         Start with migration wizard.\n"
          "  -ProfileManager    Start with ProfileManager.\n"
          "  -no-remote         Do not accept or send remote commands; implies -new-instance.\n"
@@ -1480,66 +1588,6 @@ DumpVersion()
 }
 
 #ifdef MOZ_ENABLE_XREMOTE
-// use int here instead of a PR type since it will be returned
-// from main - just to keep types consistent
-static int
-HandleRemoteArgument(const char* remote, const char* aDesktopStartupID)
-{
-  nsresult rv;
-  ArgResult ar;
-
-  const char *profile = 0;
-  nsAutoCString program(gAppData->name);
-  ToLowerCase(program);
-  const char *username = getenv("LOGNAME");
-
-  ar = CheckArg("p", false, &profile);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR, "Error: argument -p requires a profile name\n");
-    return 1;
-  }
-
-  const char *temp = nullptr;
-  ar = CheckArg("a", false, &temp);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR, "Error: argument -a requires an application name\n");
-    return 1;
-  } else if (ar == ARG_FOUND) {
-    program.Assign(temp);
-  }
-
-  ar = CheckArg("u", false, &username);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR, "Error: argument -u requires a username\n");
-    return 1;
-  }
-
-  XRemoteClient client;
-  rv = client.Init();
-  if (NS_FAILED(rv)) {
-    PR_fprintf(PR_STDERR, "Error: Failed to connect to X server.\n");
-    return 1;
-  }
-
-  nsXPIDLCString response;
-  bool success = false;
-  rv = client.SendCommand(program.get(), username, profile, remote,
-                          aDesktopStartupID, getter_Copies(response), &success);
-  // did the command fail?
-  if (NS_FAILED(rv)) {
-    PR_fprintf(PR_STDERR, "Error: Failed to send command: %s\n",
-               response ? response.get() : "No response included");
-    return 1;
-  }
-
-  if (!success) {
-    PR_fprintf(PR_STDERR, "Error: No running window found\n");
-    return 2;
-  }
-
-  return 0;
-}
-
 static RemoteResult
 RemoteCommandLine(const char* aDesktopStartupID)
 {
@@ -1683,7 +1731,41 @@ static nsresult LaunchChild(nsINativeAppSupport* aNative,
 static const char kProfileProperties[] =
   "chrome://mozapps/locale/profile/profileSelection.properties";
 
-static nsresult
+namespace {
+
+/**
+ * This class, instead of a raw nsresult, should be the return type of any
+ * function called by SelectProfile that initializes XPCOM.
+ */
+class ReturnAbortOnError
+{
+public:
+  MOZ_IMPLICIT ReturnAbortOnError(nsresult aRv)
+  {
+    mRv = ConvertRv(aRv);
+  }
+
+  operator nsresult()
+  {
+    return mRv;
+  }
+
+private:
+  inline nsresult
+  ConvertRv(nsresult aRv)
+  {
+    if (NS_SUCCEEDED(aRv) || aRv == NS_ERROR_LAUNCHED_CHILD_PROCESS) {
+      return aRv;
+    }
+    return NS_ERROR_ABORT;
+  }
+
+  nsresult mRv;
+};
+
+} // anonymous namespace
+
+static ReturnAbortOnError
 ProfileLockedDialog(nsIFile* aProfileDir, nsIFile* aProfileLocalDir,
                     nsIProfileUnlocker* aUnlocker,
                     nsINativeAppSupport* aNative, nsIProfileLock* *aResult)
@@ -1713,15 +1795,14 @@ ProfileLockedDialog(nsIFile* aProfileDir, nsIFile* aProfileLocalDir,
 
     nsXPIDLString killMessage;
 #ifndef XP_MACOSX
-    static const char16_t kRestartNoUnlocker[] = {'r','e','s','t','a','r','t','M','e','s','s','a','g','e','N','o','U','n','l','o','c','k','e','r','\0'}; // "restartMessageNoUnlocker"
-    static const char16_t kRestartUnlocker[] = {'r','e','s','t','a','r','t','M','e','s','s','a','g','e','U','n','l','o','c','k','e','r','\0'}; // "restartMessageUnlocker"
-#else
-    static const char16_t kRestartNoUnlocker[] = {'r','e','s','t','a','r','t','M','e','s','s','a','g','e','N','o','U','n','l','o','c','k','e','r','M','a','c','\0'}; // "restartMessageNoUnlockerMac"
-    static const char16_t kRestartUnlocker[] = {'r','e','s','t','a','r','t','M','e','s','s','a','g','e','U','n','l','o','c','k','e','r','M','a','c','\0'}; // "restartMessageUnlockerMac"
-#endif
-
-    sb->FormatStringFromName(aUnlocker ? kRestartUnlocker : kRestartNoUnlocker,
+    sb->FormatStringFromName(aUnlocker ? MOZ_UTF16("restartMessageUnlocker")
+                                       : MOZ_UTF16("restartMessageNoUnlocker"),
                              params, 2, getter_Copies(killMessage));
+#else
+    sb->FormatStringFromName(aUnlocker ? MOZ_UTF16("restartMessageUnlockerMac")
+                                       : MOZ_UTF16("restartMessageNoUnlockerMac"),
+                             params, 2, getter_Copies(killMessage));
+#endif
 
     nsXPIDLString killTitle;
     sb->FormatStringFromName(MOZ_UTF16("restartTitle"),
@@ -1738,29 +1819,31 @@ ProfileLockedDialog(nsIFile* aProfileDir, nsIFile* aProfileLocalDir,
       int32_t button;
 #ifdef MOZ_WIDGET_ANDROID
       mozilla::widget::android::GeckoAppShell::KillAnyZombies();
-      button = 1;
+      button = 0;
 #else
       const uint32_t flags =
-        (nsIPromptService::BUTTON_TITLE_CANCEL * 
+        (nsIPromptService::BUTTON_TITLE_IS_STRING *
          nsIPromptService::BUTTON_POS_0) +
-        (nsIPromptService::BUTTON_TITLE_IS_STRING * 
-         nsIPromptService::BUTTON_POS_1) +
-        nsIPromptService::BUTTON_POS_1_DEFAULT;
+        (nsIPromptService::BUTTON_TITLE_CANCEL *
+         nsIPromptService::BUTTON_POS_1);
 
       bool checkState = false;
       rv = ps->ConfirmEx(nullptr, killTitle, killMessage, flags,
-                         killTitle, nullptr, nullptr, nullptr, 
+                         killTitle, nullptr, nullptr, nullptr,
                          &checkState, &button);
       NS_ENSURE_SUCCESS_LOG(rv, rv);
 #endif
 
-      if (button == 1) {
+      if (button == 0) {
         rv = aUnlocker->Unlock(nsIProfileUnlocker::FORCE_QUIT);
-        if (NS_FAILED(rv)) 
+        if (NS_FAILED(rv)) {
           return rv;
+        }
 
-        return NS_LockProfilePath(aProfileDir, aProfileLocalDir, 
-                                  nullptr, aResult);
+        SaveFileToEnv("XRE_PROFILE_PATH", aProfileDir);
+        SaveFileToEnv("XRE_PROFILE_LOCAL_PATH", aProfileLocalDir);
+
+        return LaunchChild(aNative);
       }
     } else {
 #ifdef MOZ_WIDGET_ANDROID
@@ -1806,8 +1889,7 @@ ProfileMissingDialog(nsINativeAppSupport* aNative)
     nsXPIDLString missingMessage;
   
     // profileMissing  
-    static const char16_t kMissing[] = {'p','r','o','f','i','l','e','M','i','s','s','i','n','g','\0'};
-    sb->FormatStringFromName(kMissing, params, 2, getter_Copies(missingMessage));
+    sb->FormatStringFromName(MOZ_UTF16("profileMissing"), params, 2, getter_Copies(missingMessage));
   
     nsXPIDLString missingTitle;
     sb->FormatStringFromName(MOZ_UTF16("profileMissingTitle"),
@@ -1850,7 +1932,7 @@ ProfileLockedDialog(nsIToolkitProfile* aProfile, nsIProfileUnlocker* aUnlocker,
 static const char kProfileManagerURL[] =
   "chrome://mozapps/content/profile/profileSelection.xul";
 
-static nsresult
+static ReturnAbortOnError
 ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
                    nsINativeAppSupport* aNative)
 {
@@ -2711,7 +2793,7 @@ static void LogRegistryEvent(const wchar_t *msg)
 
 #endif
 
-static DWORD InitDwriteBG(LPVOID lpdwThreadParam)
+static DWORD WINAPI InitDwriteBG(LPVOID lpdwThreadParam)
 {
   SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
   LOGREGISTRY(L"loading dwrite.dll");
@@ -2783,7 +2865,7 @@ class XREMain
 {
 public:
   XREMain() :
-    mScopedXPCom(nullptr)
+    mScopedXPCOM(nullptr)
     , mAppData(nullptr)
     , mStartOffline(false)
     , mShuttingDown(false)
@@ -2799,9 +2881,9 @@ public:
     if (mAppData) {
       delete mAppData;
     }
-    if (mScopedXPCom) {
+    if (mScopedXPCOM) {
       NS_WARNING("Scoped xpcom should have been deleted!");
-      delete mScopedXPCom;
+      delete mScopedXPCOM;
     }
   }
 
@@ -2819,7 +2901,7 @@ public:
   nsCOMPtr<nsIRemoteService> mRemoteService;
 #endif
 
-  ScopedXPCOMStartup* mScopedXPCom;
+  ScopedXPCOMStartup* mScopedXPCOM;
   ScopedAppData* mAppData;
   nsXREDirProvider mDirProvider;
   nsAutoCString mProfileName;
@@ -2849,6 +2931,10 @@ XREMain::XRE_mainInit(bool* aExitFlag)
   *aExitFlag = false;
 
   StartupTimeline::Record(StartupTimeline::MAIN);
+
+  if (ChaosMode::isActive()) {
+    printf_stderr("*** You are running in chaos test mode. See ChaosMode.h. ***\n");
+  }
 
   nsresult rv;
   ArgResult ar;
@@ -2897,8 +2983,7 @@ XREMain::XRE_mainInit(bool* aExitFlag)
     // FntCache service is ready by the time it's needed.
 
     if (IsVistaOrLater()) {
-      CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)&InitDwriteBG,
-                   nullptr, 0, nullptr);
+      CreateThread(nullptr, 0, &InitDwriteBG, nullptr, 0, nullptr);
     }
   }
 #endif
@@ -3006,9 +3091,12 @@ XREMain::XRE_mainInit(bool* aExitFlag)
     mAppData->flags |= NS_XRE_ENABLE_CRASH_REPORTER;
   }
 
+  nsCOMPtr<nsIFile> xreBinDirectory;
+  xreBinDirectory = mDirProvider.GetGREBinDir();
+
   if ((mAppData->flags & NS_XRE_ENABLE_CRASH_REPORTER) &&
       NS_SUCCEEDED(
-         CrashReporter::SetExceptionHandler(mAppData->xreDirectory))) {
+        CrashReporter::SetExceptionHandler(xreBinDirectory))) {
     nsCOMPtr<nsIFile> file;
     rv = mDirProvider.GetUserAppDataDirectory(getter_AddRefs(file));
     if (NS_SUCCEEDED(rv)) {
@@ -3462,21 +3550,11 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
     }
   }
 
-  const char* xremotearg;
-  ArgResult ar = CheckArg("remote", true, &xremotearg);
-  if (ar == ARG_BAD) {
-    PR_fprintf(PR_STDERR, "Error: -remote requires an argument\n");
-    return 1;
-  }
-  const char* desktopStartupIDPtr =
-    mDesktopStartupID.IsEmpty() ? nullptr : mDesktopStartupID.get();
-  if (ar) {
-    *aExitFlag = true;
-    return HandleRemoteArgument(xremotearg, desktopStartupIDPtr);
-  }
-
   if (!newInstance) {
     // Try to remote the entire command line. If this fails, start up normally.
+    const char* desktopStartupIDPtr =
+      mDesktopStartupID.IsEmpty() ? nullptr : mDesktopStartupID.get();
+
     RemoteResult rr = RemoteCommandLine(desktopStartupIDPtr);
     if (rr == REMOTE_FOUND) {
       *aExitFlag = true;
@@ -3770,7 +3848,11 @@ nsresult
 XREMain::XRE_mainRun()
 {
   nsresult rv = NS_OK;
-  NS_ASSERTION(mScopedXPCom, "Scoped xpcom not initialized.");
+  NS_ASSERTION(mScopedXPCOM, "Scoped xpcom not initialized.");
+
+#ifdef MOZ_B2G_LOADER
+  mozilla::ipc::ProcLoaderClientGeckoInit();
+#endif
 
 #ifdef NS_FUNCTION_TIMER
   // initialize some common services, so we don't pay the cost for these at odd times later on;
@@ -3792,7 +3874,7 @@ XREMain::XRE_mainRun()
   }
 #endif
 
-  rv = mScopedXPCom->SetWindowCreator(mNativeApp);
+  rv = mScopedXPCOM->SetWindowCreator(mNativeApp);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
 #ifdef MOZ_CRASHREPORTER
@@ -4022,6 +4104,8 @@ XREMain::XRE_mainRun()
 
 /*
  * XRE_main - A class based main entry point used by most platforms.
+ *            Note that on OSX, aAppData->xreDirectory will point to
+ *            .app/Contents/Resources.
  */
 int
 XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
@@ -4073,11 +4157,11 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   bool appInitiatedRestart = false;
 
   // Start the real application
-  mScopedXPCom = new ScopedXPCOMStartup();
-  if (!mScopedXPCom)
+  mScopedXPCOM = new ScopedXPCOMStartup();
+  if (!mScopedXPCOM)
     return 1;
 
-  rv = mScopedXPCom->Initialize();
+  rv = mScopedXPCOM->Initialize();
   NS_ENSURE_SUCCESS(rv, 1);
 
   // run!
@@ -4106,8 +4190,8 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 #endif /* MOZ_ENABLE_XREMOTE */
   }
 
-  delete mScopedXPCom;
-  mScopedXPCom = nullptr;
+  delete mScopedXPCOM;
+  mScopedXPCOM = nullptr;
 
   // unlock the profile after ScopedXPCOMStartup object (xpcom) 
   // has gone out of scope.  see bug #386739 for more details
@@ -4174,16 +4258,20 @@ XRE_metroStartup(bool runXREMain)
 {
   nsresult rv;
 
+  // XXX This call, odly enough, will set this thread as
+  // the main thread. (see bug 1033358)
+  ScopedLogging log;
+
   bool exit = false;
   if (xreMainPtr->XRE_mainStartup(&exit) != 0 || exit)
     return NS_ERROR_FAILURE;
 
   // Start the real application
-  xreMainPtr->mScopedXPCom = new ScopedXPCOMStartup();
-  if (!xreMainPtr->mScopedXPCom)
+  xreMainPtr->mScopedXPCOM = new ScopedXPCOMStartup();
+  if (!xreMainPtr->mScopedXPCOM)
     return NS_ERROR_FAILURE;
 
-  rv = xreMainPtr->mScopedXPCom->Initialize();
+  rv = xreMainPtr->mScopedXPCOM->Initialize();
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (runXREMain) {
@@ -4196,8 +4284,8 @@ XRE_metroStartup(bool runXREMain)
 void
 XRE_metroShutdown()
 {
-  delete xreMainPtr->mScopedXPCom;
-  xreMainPtr->mScopedXPCom = nullptr;
+  delete xreMainPtr->mScopedXPCOM;
+  xreMainPtr->mScopedXPCOM = nullptr;
 
 #ifdef MOZ_INSTRUMENT_EVENT_LOOP
   mozilla::ShutdownEventTracing();
@@ -4262,8 +4350,6 @@ XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
   // used throughout this file
   gAppData = xreMainPtr->mAppData;
 
-  ScopedLogging log;
-
   // init
   bool exit = false;
   if (xreMainPtr->XRE_mainInit(&exit) != 0 || exit)
@@ -4277,7 +4363,7 @@ XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
 
   // XRE_metroShutdown should have already been called on the worker
   // thread that called XRE_metroStartup.
-  NS_ASSERTION(!xreMainPtr->mScopedXPCom,
+  NS_ASSERTION(!xreMainPtr->mScopedXPCOM,
                "XPCOM Shutdown hasn't occured, and we are exiting.");
   return 0;
 }
@@ -4414,15 +4500,120 @@ XRE_GetProcessType()
   return mozilla::startup::sChildProcessType;
 }
 
-bool
-mozilla::BrowserTabsRemote()
-{
-  if (!gBrowserTabsRemoteInitialized) {
-    gBrowserTabsRemote = Preferences::GetBool("browser.tabs.remote", false);
-    gBrowserTabsRemoteInitialized = true;
+static void
+LogE10sBlockedReason(const char *reason) {
+  nsAutoString msg(NS_LITERAL_STRING("==================\nE10s has been blocked from running because:\n"));
+  msg.Append(NS_ConvertASCIItoUTF16(reason));
+  msg.AppendLiteral("\n==================\n");
+  nsCOMPtr<nsIConsoleService> console(do_GetService("@mozilla.org/consoleservice;1"));
+  if (console) {
+    console->LogStringMessage(msg.get());
   }
+}
 
-  return gBrowserTabsRemote;
+bool
+mozilla::BrowserTabsRemoteAutostart()
+{
+  if (gBrowserTabsRemoteAutostartInitialized) {
+    return gBrowserTabsRemoteAutostart;
+  }
+  gBrowserTabsRemoteAutostartInitialized = true;
+  bool optInPref = Preferences::GetBool("browser.tabs.remote.autostart", false);
+  bool trialPref = Preferences::GetBool("browser.tabs.remote.autostart.1", false);
+  bool prefEnabled = optInPref || trialPref;
+#if !defined(NIGHTLY_BUILD)
+  // When running tests with 'layers.offmainthreadcomposition.testing.enabled' and
+  // autostart set to true, return enabled.  These tests must be allowed to run
+  // remotely. Otherwise remote isn't allowed in non-nightly builds.
+  bool testPref = Preferences::GetBool("layers.offmainthreadcomposition.testing.enabled", false);
+  if (testPref && optInPref) {
+    gBrowserTabsRemoteAutostart = true;
+  }
+#else
+  // Nightly builds, update gBrowserTabsRemoteAutostart based on all the
+  // e10s remote relayed prefs we watch.
+  bool disabledForA11y = Preferences::GetBool("browser.tabs.remote.autostart.disabled-because-using-a11y", false);
+  // Only disable for IME for the automatic pref, not the opt-in one.
+  bool disabledForIME = trialPref && KeyboardMayHaveIME();
+
+  if (prefEnabled) {
+    if (gSafeMode) {
+      LogE10sBlockedReason("Firefox is in safe mode.");
+    } else if (disabledForA11y) {
+      LogE10sBlockedReason("An accessibility tool is active.");
+    } else if (disabledForIME) {
+      LogE10sBlockedReason("The keyboard being used has activated IME.");
+    } else {
+      gBrowserTabsRemoteAutostart = true;
+    }
+  }
+#endif
+
+#if defined(XP_WIN) || defined(XP_MACOSX)
+  // If for any reason we suspect acceleration will be disabled, disabled
+  // e10s auto start. (bug 1068199) THIS IS A TEMPORARY WORKAROUND.
+  if (gBrowserTabsRemoteAutostart) {
+    // Check prefs
+    bool accelDisabled = Preferences::GetBool("layers.acceleration.disabled", false) &&
+                         !Preferences::GetBool("layers.acceleration.force-enabled", false);
+
+#if defined(XP_MACOSX)
+    accelDisabled = !nsCocoaFeatures::AccelerateByDefault();
+#endif
+
+    // Check for blocked drivers
+    if (!accelDisabled) {
+      nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
+      if (gfxInfo) {
+        int32_t status;
+#if defined(XP_WIN)
+        long flagsToCheck[4] = {
+          nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS,
+          nsIGfxInfo::FEATURE_DIRECT3D_10_LAYERS,
+          nsIGfxInfo::FEATURE_DIRECT3D_10_1_LAYERS,
+          nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS
+        };
+#elif defined(XP_MACOSX)
+        long flagsToCheck[1] = {
+          nsIGfxInfo::FEATURE_OPENGL_LAYERS
+        };
+#endif
+        for (unsigned int idx = 0; idx < ArrayLength(flagsToCheck); idx++) {
+          if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(flagsToCheck[idx], &status))) {
+            if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+              accelDisabled = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Check env flags
+    if (accelDisabled) {
+      const char *acceleratedEnv = PR_GetEnv("MOZ_ACCELERATED");
+      if (acceleratedEnv && (*acceleratedEnv != '0')) {
+        accelDisabled = false;
+      }
+    }
+
+    if (accelDisabled) {
+      gBrowserTabsRemoteAutostart = false;
+      LogE10sBlockedReason("Hardware acceleration is disabled.");
+    }
+  }
+#endif
+
+  mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_AUTOSTART, gBrowserTabsRemoteAutostart);
+  if (Preferences::GetBool("browser.enabledE10SFromPrompt", false)) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_STILL_ACCEPTED_FROM_PROMPT,
+                                    gBrowserTabsRemoteAutostart);
+  }
+  if (prefEnabled) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_BLOCKED_FROM_RUNNING,
+                                    !gBrowserTabsRemoteAutostart);
+  }
+  return gBrowserTabsRemoteAutostart;
 }
 
 void

@@ -45,7 +45,7 @@
     </style>
 
     <style name="Widget.ListView" parent="Widget.BaseListView">
-        <item name="android:divider">#D1D5DA</item>
+        <item name="android:divider">@color/divider_light</item>
         <item name="android:dividerHeight">1dp</item>
         <item name="android:cacheColorHint">@android:color/transparent</item>
         <item name="android:listSelector">@drawable/action_bar_button</item>
@@ -60,6 +60,10 @@
         <item name="android:horizontalSpacing">0dip</item>
         <item name="android:cacheColorHint">@android:color/transparent</item>
         <item name="android:listSelector">@drawable/action_bar_button</item>
+    </style>
+
+    <style name="Widget.Home.HomeList">
+        <item name="android:scrollbarStyle">outsideOverlay</item>
     </style>
 
     <style name="Widget.ListItem">
@@ -114,8 +118,6 @@
 
     <style name="Widget.TwoLinePageRow.Title">
         <item name="android:textAppearance">@style/TextAppearance.Widget.Home.ItemTitle</item>
-        <item name="android:singleLine">true</item>
-        <item name="android:ellipsize">none</item>
     </style>
 
     <style name="Widget.TwoLinePageRow.Url">
@@ -125,7 +127,28 @@
         <item name="android:ellipsize">middle</item>
     </style>
 
+    <style name="Widget.ReadingListRow" />
+
+    <style name="Widget.ReadingListRow.Title">
+        <item name="android:textAppearance">@style/TextAppearance.Widget.Home.ItemTitle</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.ReadingListRow.Description">
+        <item name="android:textAppearance">@style/TextAppearance.Widget.Home.ItemDescription</item>
+        <item name="android:maxLines">4</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Widget.ReadingListRow.ReadTime">
+        <item name="android:textStyle">italic</item>
+        <item name="android:textColor">@color/text_color_highlight</item>
+    </style>
+
     <style name="Widget.BookmarkFolderView" parent="Widget.TwoLinePageRow.Title">
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">none</item>
         <item name="android:paddingLeft">10dip</item>
         <item name="android:drawablePadding">10dip</item>
         <item name="android:drawableLeft">@drawable/bookmark_folder</item>
@@ -171,6 +194,18 @@
         <item name="android:drawSelectorOnTop">true</item>
     </style>
 
+    <style name="Widget.TabsGridLayout" parent="Widget.GridView">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:stretchMode">columnWidth</item>
+        <item name="android:numColumns">auto_fit</item>
+        <item name="android:columnWidth">@dimen/tabs_grid_view_column_width</item>
+        <item name="android:horizontalSpacing">2dp</item>
+        <item name="android:verticalSpacing">2dp</item>
+        <item name="android:drawSelectorOnTop">true</item>
+    </style>
+
     <style name="Widget.BookmarkItemView" parent="Widget.TwoLinePageRow"/>
 
     <style name="Widget.BookmarksListView" parent="Widget.HomeListView"/>
@@ -189,8 +224,6 @@
     <style name="Widget.TopSitesGridItemTitle">
       <item name="android:textColor">@color/top_sites_grid_item_title</item>
       <item name="android:textSize">12sp</item>
-      <item name="android:singleLine">true</item>
-      <item name="android:ellipsize">none</item>
       <item name="android:paddingTop">5dip</item>
       <item name="android:gravity">left</item>
     </style>
@@ -211,7 +244,7 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">32dp</item>
         <item name="android:textAppearance">@style/TextAppearance.Widget.Home.Header</item>
-        <item name="android:background">#fff5f7f9</item>
+        <item name="android:background">@color/background_light</item>
         <item name="android:focusable">false</item>
         <item name="android:gravity">center|left</item>
         <item name="android:paddingLeft">10dip</item>
@@ -240,18 +273,16 @@
         <item name="android:gravity">center</item>
     </style>
 
-    <style name="Widget.Home.HistoryTabIndicator">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">32dp</item>
-        <item name="android:textAppearance">@style/TextAppearance.Widget.Home.PageTitle</item>
-        <item name="android:background">@drawable/home_panel_title_background</item>
-        <item name="android:focusable">false</item>
-        <item name="android:gravity">center|left</item>
-        <item name="android:paddingLeft">10dip</item>
-        <item name="android:paddingRight">10dip</item>
+    <style name="Widget.Onboard.Start.Button" parent="Widget.BaseButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:paddingTop">15dp</item>
+        <item name="android:paddingBottom">15dp</item>
+        <item name="android:background">@drawable/onboard_start_button</item>
+        <item name="android:textColor">#4A90E2</item>
+        <item name="android:textSize">16sp</item>
     </style>
-
-    <style name="Widget.Home.HistoryPanelTitle" parent="Widget.Home.HistoryTabIndicator"/>
 
     <!--
         TextAppearance
@@ -378,6 +409,20 @@
         <item name="android:textColor">?android:attr/textColorHint</item>
     </style>
 
+    <style name="TextAppearance.Widget.DoorHanger.Medium" parent="TextAppearance.Medium">
+        <item name="android:textColor">@color/doorhanger_text</item>
+        <item name="android:textColorLink">@color/doorhanger_link</item>
+    </style>
+
+    <style name="TextAppearance.Widget.DoorHanger.Small" parent="TextAppearance.Small">
+        <item name="android:textColor">@color/doorhanger_text</item>
+        <item name="android:textColorLink">@color/doorhanger_link</item>
+    </style>
+
+    <style name="TextAppearance.UrlBar.Title" parent="TextAppearance.Small">
+        <item name="android:textSize">15sp</item>
+    </style>
+
     <!-- BrowserToolbar -->
     <style name="BrowserToolbar">
         <item name="android:layout_width">match_parent</item>
@@ -402,22 +447,30 @@
     <!-- URL bar - Button -->
     <style name="UrlBar.Button">
         <item name="android:layout_height">match_parent</item>
-        <item name="android:textSize">16sp</item>
         <item name="android:background">@android:color/transparent</item>
+    </style>
+
+    <!-- URL bar - Button -->
+    <style name="UrlBar.Title" parent="UrlBar.Button">
+        <item name="android:textAppearance">@style/TextAppearance.UrlBar.Title</item>
+        <item name="android:textColor">@color/url_bar_title</item>
+        <item name="android:textColorHint">@color/url_bar_title_hint</item>
+        <item name="android:textColorHighlight">@color/url_bar_text_highlight</item>
+        <item name="android:textSelectHandle">@drawable/handle_middle</item>
+        <item name="android:textSelectHandleLeft">@drawable/handle_start</item>
+        <item name="android:textSelectHandleRight">@drawable/handle_end</item>
+        <item name="android:textCursorDrawable">@null</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:gravity">center_vertical|left</item>
+        <item name="android:hint">@string/url_bar_default_text</item>
     </style>
 
     <!-- URL bar - Image Button -->
     <style name="UrlBar.ImageButton" parent="UrlBar.Button">
+        <item name="android:layout_width">@dimen/browser_toolbar_height</item>
         <item name="android:scaleType">center</item>
         <item name="android:layout_gravity">center_vertical</item>
         <item name="android:background">@android:color/transparent</item>
-    </style>
-
-    <!-- URL bar - Image Button - Unused -->
-    <style name="UrlBar.ImageButton.Unused">
-        <item name="android:layout_width">0dip</item>
-        <item name="android:layout_height">0dip</item>
-        <item name="android:visibility">gone</item>
     </style>
 
     <!-- URL bar - Image Button - Icon -->
@@ -427,13 +480,13 @@
          <item name="android:layout_weight">0.0</item>
     </style>
 
-    <!-- TabsTray List -->
-    <style name="TabsListBase">
+    <!-- TabsLayout -->
+    <style name="TabsLayoutBase">
          <item name="android:background">@android:color/transparent</item>
          <item name="android:listSelector">@android:color/transparent</item>
     </style>
 
-    <style name="TabsList" parent="TabsListBase">
+    <style name="TabsLayout" parent="TabsLayoutBase">
          <item name="android:orientation">vertical</item>
          <item name="android:scrollbars">vertical</item>
     </style>
@@ -551,15 +604,26 @@
         <item name="android:layout_height">wrap_content</item>
     </style>
 
-    <!-- TabsTray Row -->
-    <style name="TabRowTextAppearance">
+    <style name="Widget.RemoteTabsItemView" parent="Widget.TwoLinePageRow"/>
+
+    <style name="Widget.RemoteTabsClientView" parent="Widget.TwoLinePageRow">
+        <item name="android:background">#fff5f7f9</item>
+    </style>
+
+    <style name="Widget.RemoteTabsListView" parent="Widget.HomeListView">
+        <item name="android:childDivider">#E7ECF0</item>
+        <item name="android:drawSelectorOnTop">true</item>
+    </style>
+
+    <!-- TabsLayout Row -->
+    <style name="TabLayoutItemTextAppearance">
         <item name="android:textColor">#FFFFFFFF</item>
         <item name="android:singleLine">true</item>
         <item name="android:ellipsize">middle</item>
     </style>
 
-    <!-- TabsTray RemoteTabs Row Url -->
-    <style name="TabRowTextAppearance.Url">
+    <!-- TabsLayout RemoteTabs Row Url -->
+    <style name="TabLayoutItemTextAppearance.Url">
         <item name="android:textColor">#FFA4A7A9</item>
     </style>
 
@@ -648,7 +712,7 @@
     </style>
 
     <style name="ToastDividerBase">
-        <item name="android:background">@color/toast_button_divider</item>
+        <item name="android:background">@color/divider_light</item>
         <item name="android:layout_width">1dp</item>
         <item name="android:layout_height">match_parent</item>
     </style>
@@ -723,6 +787,26 @@
         <item name="android:gravity">right</item>
     </style>
 
+    <style name="ShareOverlayButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">60dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingLeft">15dp</item>
+        <item name="android:paddingRight">15dp</item>
+        <item name="android:paddingTop">17dp</item>
+        <item name="android:paddingBottom">17dp</item>
+        <item name="android:focusableInTouchMode">false</item>
+        <item name="android:layout_margin">0dp</item>
+    </style>
+
+    <style name="ShareOverlayButton.Text">
+        <item name="android:drawablePadding">15dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/overlay_btn_text</item>
+    </style>
+
     <style name="TabInput"></style>
 
     <style name="TabInput.TabWidget">
@@ -738,6 +822,75 @@
 
     <style name="FloatingHintEditText" parent="android:style/Widget.EditText">
         <item name="android:paddingTop">0dp</item>
+    </style>
+
+    <!-- Make the share overlay activity appear like an overlay. -->
+    <style name="ShareOverlayActivity">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
+    <style name="OnboardStartLayout">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">match_parent</item>
+    </style>
+
+    <style name="OnboardStartTextAppearance">
+        <item name="android:textColor">#5F636B</item>
+    </style>
+
+    <style name="OnboardStartTextAppearance.Subtext">
+        <item name="android:textSize">18sp</item>
+    </style>
+
+    <!-- Remote Tabs home panel -->
+    <style name="RemoteTabsPanelFrame">
+        <item name="android:paddingLeft">32dp</item>
+        <item name="android:paddingRight">32dp</item>
+        <item name="android:paddingTop">@dimen/home_remote_tabs_top_padding</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:layout_gravity">center_horizontal</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="RemoteTabsPanelItem">
+        <item name="android:layout_gravity">center</item>
+        <item name="android:gravity">center</item>
+        <item name="android:layout_marginBottom">16dp</item>
+        <item name="android:maxWidth">320dp</item>
+    </style>
+
+    <style name="RemoteTabsPanelItem.TextAppearance">
+        <item name="android:textColor">#777777</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:lineSpacingMultiplier">1.25</item>
+        <item name="android:layout_marginLeft">8dp</item>
+        <item name="android:layout_marginRight">8dp</item>
+    </style>
+
+    <style name="RemoteTabsPanelItem.TextAppearance.Header">
+        <item name="android:textColor">#222222</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:layout_marginBottom">8dp</item>
+    </style>
+
+    <style name="RemoteTabsPanelItem.TextAppearance.Linkified">
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:textColor">#0092DB</item>
+    </style>
+
+    <style name="RemoteTabsPanelItem.Button">
+        <item name="android:background">@drawable/remote_tabs_setup_button_background</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">16dp</item>
+        <item name="android:paddingLeft">8dp</item>
+        <item name="android:paddingRight">8dp</item>
     </style>
 
 </resources>

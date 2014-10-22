@@ -26,6 +26,10 @@
 #include "nsIWebNavigation.h"
 #include "nsLoadGroup.h"
 #include "nsIScriptError.h"
+#include "nsIURI.h"
+#include "nsIChannelEventSink.h"
+#include "nsAsyncRedirectVerifyHelper.h"
+#include "mozilla/LoadInfo.h"
 
 #include "prlog.h"
 
@@ -150,7 +154,7 @@ nsMixedContentBlocker::~nsMixedContentBlocker()
 {
 }
 
-NS_IMPL_ISUPPORTS(nsMixedContentBlocker, nsIContentPolicy)
+NS_IMPL_ISUPPORTS(nsMixedContentBlocker, nsIContentPolicy, nsIChannelEventSink)
 
 static void
 LogMixedContentMessage(MixedContentTypes aClassification,
@@ -190,6 +194,87 @@ LogMixedContentMessage(MixedContentTypes aClassification,
                                   messageLookupKey.get(), strings, ArrayLength(strings));
 }
 
+
+
+/* nsIChannelEventSink implementation
+ * This code is called when a request is redirected.
+ * We check the channel associated with the new uri is allowed to load
+ * in the current context
+ */
+NS_IMETHODIMP
+nsMixedContentBlocker::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
+                                              nsIChannel* aNewChannel,
+                                              uint32_t aFlags,
+                                              nsIAsyncVerifyRedirectCallback* aCallback)
+{
+  nsAsyncRedirectAutoCallback autoCallback(aCallback);
+
+  if (!aOldChannel) {
+    NS_ERROR("No channel when evaluating mixed content!");
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv;
+  nsCOMPtr<nsIURI> oldUri;
+  rv = aOldChannel->GetURI(getter_AddRefs(oldUri));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> newUri;
+  rv = aNewChannel->GetURI(getter_AddRefs(newUri));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Get the loading Info from the old channel
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  rv = aOldChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!loadInfo) {
+    // XXX: We want to have a loadInfo on all channels, but we don't yet.
+    // If an addon creates a channel, they may not set loadinfo. If that
+    // channel redirects from one page to another page, we would get caught
+    // in this code path. Hence, we have to return NS_OK. Once we have more
+    // confidence that all channels have loadinfo, we can change this to
+    // a failure. See bug 1077201.
+    return NS_OK;
+  }
+
+  uint32_t contentPolicyType = loadInfo->GetContentPolicyType();
+  nsCOMPtr<nsIPrincipal> requestingPrincipal = loadInfo->LoadingPrincipal();
+
+  // Since we are calling shouldLoad() directly on redirects, we don't go through the code
+  // in nsContentPolicyUtils::NS_CheckContentLoadPolicy(). Hence, we have to
+  // duplicate parts of it here.
+  nsCOMPtr<nsIURI> requestingLocation;
+  if (requestingPrincipal) {
+    // We check to see if the loadingPrincipal is systemPrincipal and return
+    // early if it is
+    if (nsContentUtils::IsSystemPrincipal(requestingPrincipal)) {
+      return NS_OK;
+    }
+    // We set the requestingLocation from the RequestingPrincipal.
+    rv = requestingPrincipal->GetURI(getter_AddRefs(requestingLocation));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  int16_t decision = REJECT_REQUEST;
+  rv = ShouldLoad(contentPolicyType,
+                  newUri,
+                  requestingLocation,
+                  loadInfo->LoadingNode(),
+                  EmptyCString(),       // aMimeGuess
+                  nullptr,              // aExtra
+                  requestingPrincipal,
+                  &decision);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // If the channel is about to load mixed content, abort the channel
+  if (!NS_CP_ACCEPTED(decision)) {
+    autoCallback.DontCallback();
+    return NS_BINDING_FAILED;
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsMixedContentBlocker::ShouldLoad(uint32_t aContentType,
                                   nsIURI* aContentLocation,
@@ -207,6 +292,8 @@ nsMixedContentBlocker::ShouldLoad(uint32_t aContentType,
 
   // Assume active (high risk) content and blocked by default
   MixedContentTypes classification = eMixedScript;
+  // Make decision to block/reject by default
+  *aDecision = REJECT_REQUEST;
 
 
   // Notes on non-obvious decisions:
@@ -296,6 +383,7 @@ nsMixedContentBlocker::ShouldLoad(uint32_t aContentType,
     // purposes and to avoid the assertion and warning for the default case.
     case TYPE_CSP_REPORT:
     case TYPE_DTD:
+    case TYPE_FETCH:
     case TYPE_FONT:
     case TYPE_OBJECT:
     case TYPE_SCRIPT:
@@ -339,10 +427,12 @@ nsMixedContentBlocker::ShouldLoad(uint32_t aContentType,
       NS_FAILED(NS_URIChainHasFlags(aContentLocation, nsIProtocolHandler::URI_DOES_NOT_RETURN_DATA, &schemeNoReturnData)) ||
       NS_FAILED(NS_URIChainHasFlags(aContentLocation, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT, &schemeInherits)) ||
       NS_FAILED(NS_URIChainHasFlags(aContentLocation, nsIProtocolHandler::URI_SAFE_TO_LOAD_IN_SECURE_CONTEXT, &schemeSecure))) {
+    *aDecision = REJECT_REQUEST;
     return NS_ERROR_FAILURE;
   }
 
   if (schemeLocal || schemeNoReturnData || schemeInherits || schemeSecure) {
+    *aDecision = ACCEPT;
      return NS_OK;
   }
 
@@ -441,6 +531,7 @@ nsMixedContentBlocker::ShouldLoad(uint32_t aContentType,
   bool isRootDocShell = false;
   rv = docShell->GetAllowMixedContentAndConnectionData(&rootHasSecureConnection, &allowMixedContent, &isRootDocShell);
   if (NS_FAILED(rv)) {
+    *aDecision = REJECT_REQUEST;
      return rv;
   }
 
@@ -590,6 +681,7 @@ nsMixedContentBlocker::ShouldLoad(uint32_t aContentType,
     // from within ShouldLoad
     nsContentUtils::AddScriptRunner(
       new nsMixedContentEvent(aRequestingContext, classification));
+    *aDecision = ACCEPT;
     return NS_OK;
   }
 
@@ -610,8 +702,10 @@ nsMixedContentBlocker::ShouldProcess(uint32_t aContentType,
   if (!aContentLocation) {
     // aContentLocation may be null when a plugin is loading without an associated URI resource
     if (aContentType == TYPE_OBJECT) {
+       *aDecision = ACCEPT;
        return NS_OK;
     } else {
+       *aDecision = REJECT_REQUEST;
        return NS_ERROR_FAILURE;
     }
   }

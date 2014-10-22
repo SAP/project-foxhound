@@ -6,6 +6,10 @@
   -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-tabbox");
 }
 
+.tabbrowser-tabpanels {
+  -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-tabpanels");
+}
+
 .tabbrowser-arrowscrollbox {
   -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-arrowscrollbox");
 }
@@ -40,6 +44,13 @@ tabpanels {
   z-index: 2;
 }
 
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  .tab-icon-image {
+    image-rendering: -moz-crisp-edges;
+  }
+}
+
 .tab-icon-image:not([src]):not([pinned]),
 .tab-throbber:not([busy]),
 .tab-throbber[busy] + .tab-icon-image {
@@ -62,4 +73,14 @@ tabpanels {
  */
 browser[pending] {
   display: none;
+}
+
+browser[pendingpaint] {
+  opacity: 0;
+}
+
+tabbrowser[pendingpaint] {
+  background-image: url(chrome://global/skin/spinner.png);
+  background-repeat: no-repeat;
+  background-position: center center;
 }

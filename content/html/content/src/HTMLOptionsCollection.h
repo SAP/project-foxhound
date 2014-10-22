@@ -11,7 +11,6 @@
 #include "nsWrapperCache.h"
 
 #include "mozilla/dom/HTMLOptionElement.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
@@ -23,19 +22,21 @@ class nsIDOMHTMLOptionElement;
 namespace mozilla {
 namespace dom {
 
+class HTMLElementOrLong;
+class HTMLOptionElementOrHTMLOptGroupElement;
 class HTMLSelectElement;
 
 /**
  * The collection of options in the select (what you get back when you do
  * select.options in DOM)
  */
-class HTMLOptionsCollection : public nsIHTMLCollection
-                            , public nsIDOMHTMLOptionsCollection
-                            , public nsWrapperCache
+class HTMLOptionsCollection MOZ_FINAL : public nsIHTMLCollection
+                                      , public nsIDOMHTMLOptionsCollection
+                                      , public nsWrapperCache
 {
   typedef HTMLOptionElementOrHTMLOptGroupElement HTMLOptionOrOptGroupElement;
 public:
-  HTMLOptionsCollection(HTMLSelectElement* aSelect);
+  explicit HTMLOptionsCollection(HTMLSelectElement* aSelect);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 

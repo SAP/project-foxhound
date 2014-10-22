@@ -20,7 +20,7 @@ class nsSVGAFrame : public nsSVGAFrameBase
   friend nsIFrame*
   NS_NewSVGAFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 protected:
-  nsSVGAFrame(nsStyleContext* aContext) :
+  explicit nsSVGAFrame(nsStyleContext* aContext) :
     nsSVGAFrameBase(aContext) {}
 
 public:
@@ -54,8 +54,7 @@ public:
   virtual void NotifySVGChanged(uint32_t aFlags) MOZ_OVERRIDE;
   
   // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM(uint32_t aFor,
-                                nsIFrame* aTransformRoot = nullptr) MOZ_OVERRIDE;
+  virtual gfxMatrix GetCanvasTM() MOZ_OVERRIDE;
 
 private:
   nsAutoPtr<gfxMatrix> mCanvasTM;
@@ -132,25 +131,15 @@ nsSVGAFrame::NotifySVGChanged(uint32_t aFlags)
 // nsSVGContainerFrame methods:
 
 gfxMatrix
-nsSVGAFrame::GetCanvasTM(uint32_t aFor, nsIFrame* aTransformRoot)
+nsSVGAFrame::GetCanvasTM()
 {
-  if (!(GetStateBits() & NS_FRAME_IS_NONDISPLAY) && !aTransformRoot) {
-    if (aFor == FOR_PAINTING && NS_SVGDisplayListPaintingEnabled()) {
-      return nsSVGIntegrationUtils::GetCSSPxToDevPxMatrix(this);
-    }
-    if (aFor == FOR_HIT_TESTING && NS_SVGDisplayListHitTestingEnabled()) {
-      return gfxMatrix();
-    }
-  }
   if (!mCanvasTM) {
     NS_ASSERTION(GetParent(), "null parent");
 
     nsSVGContainerFrame *parent = static_cast<nsSVGContainerFrame*>(GetParent());
     dom::SVGAElement *content = static_cast<dom::SVGAElement*>(mContent);
 
-    gfxMatrix tm = content->PrependLocalTransformsTo(
-        this == aTransformRoot ? gfxMatrix() :
-                                 parent->GetCanvasTM(aFor, aTransformRoot));
+    gfxMatrix tm = content->PrependLocalTransformsTo(parent->GetCanvasTM());
 
     mCanvasTM = new gfxMatrix(tm);
   }

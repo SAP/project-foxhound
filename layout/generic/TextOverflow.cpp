@@ -22,6 +22,7 @@
 #include "nsIFrameInlines.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Likely.h"
+#include "nsISelection.h"
 
 namespace mozilla {
 namespace css {
@@ -29,7 +30,7 @@ namespace css {
 class LazyReferenceRenderingContextGetterFromFrame MOZ_FINAL :
     public gfxFontGroup::LazyReferenceContextGetter {
 public:
-  LazyReferenceRenderingContextGetterFromFrame(nsIFrame* aFrame)
+  explicit LazyReferenceRenderingContextGetterFromFrame(nsIFrame* aFrame)
     : mFrame(aFrame) {}
   virtual already_AddRefed<gfxContext> GetRefContext() MOZ_OVERRIDE
   {
@@ -211,7 +212,7 @@ nsDisplayTextOverflowMarker::Paint(nsDisplayListBuilder* aBuilder,
   nsLayoutUtils::PaintTextShadow(mFrame, aCtx, mRect, mVisibleRect,
                                  foregroundColor, PaintTextShadowCallback,
                                  (void*)this);
-  aCtx->SetColor(foregroundColor);
+  aCtx->ThebesContext()->SetColor(foregroundColor);
   PaintTextToContext(aCtx, nsPoint(0, 0));
 }
 
@@ -573,8 +574,8 @@ TextOverflow::ProcessLine(const nsDisplayListSet& aLists,
   mLeft.mActive = mLeft.mStyle->mType != NS_STYLE_TEXT_OVERFLOW_CLIP;
   mRight.Reset();
   mRight.mActive = mRight.mStyle->mType != NS_STYLE_TEXT_OVERFLOW_CLIP;
-  
-  FrameHashtable framesToHide(100);
+
+  FrameHashtable framesToHide(64);
   AlignmentEdges alignmentEdges;
   ExamineLineFrames(aLine, &framesToHide, &alignmentEdges);
   bool needLeft = mLeft.IsNeeded();
@@ -689,9 +690,8 @@ TextOverflow::CanHaveTextOverflow(nsDisplayListBuilder* aBuilder,
 
   // Inhibit the markers if a descendant content owns the caret.
   nsRefPtr<nsCaret> caret = aBlockFrame->PresContext()->PresShell()->GetCaret();
-  bool visible = false;
-  if (caret && NS_SUCCEEDED(caret->GetCaretVisible(&visible)) && visible) {
-    nsCOMPtr<nsISelection> domSelection = caret->GetCaretDOMSelection();
+  if (caret && caret->IsVisible()) {
+    nsCOMPtr<nsISelection> domSelection = caret->GetSelection();
     if (domSelection) {
       nsCOMPtr<nsIDOMNode> node;
       domSelection->GetFocusNode(getter_AddRefs(node));

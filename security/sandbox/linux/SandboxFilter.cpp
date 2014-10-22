@@ -14,49 +14,27 @@
 #include "mozilla/NullPtr.h"
 
 #include <errno.h>
-#include <unistd.h>
-#include <linux/net.h>
 #include <linux/ipc.h>
+#include <linux/net.h>
+#include <linux/prctl.h>
+#include <linux/sched.h>
+#include <sys/mman.h>
+#include <time.h>
+#include <unistd.h>
 
 namespace mozilla {
 
 class SandboxFilterImpl : public SandboxAssembler
 {
-  void Build();
 public:
-  SandboxFilterImpl() {
-    Build();
-    Finish();
-  }
+  virtual void Build() = 0;
+  virtual ~SandboxFilterImpl() { }
+  void AllowThreadClone();
 };
 
-SandboxFilter::SandboxFilter(const sock_fprog** aStored, bool aVerbose)
-  : mStored(aStored)
-{
-  MOZ_ASSERT(*mStored == nullptr);
-  std::vector<struct sock_filter> filterVec;
-  {
-    SandboxFilterImpl impl;
-    impl.Compile(&filterVec, aVerbose);
-  }
-  mProg = new sock_fprog;
-  mProg->len = filterVec.size();
-  mProg->filter = mFilter = new sock_filter[mProg->len];
-  for (size_t i = 0; i < mProg->len; ++i) {
-    mFilter[i] = filterVec[i];
-  }
-  *mStored = mProg;
-}
+// Some helper macros to make the code that builds the filter more
+// readable, and to help deal with differences among architectures.
 
-SandboxFilter::~SandboxFilter()
-{
-  *mStored = nullptr;
-  delete[] mFilter;
-  delete mProg;
-}
-
-void
-SandboxFilterImpl::Build() {
 #define SYSCALL_EXISTS(name) (defined(__NR_##name))
 
 #define SYSCALL(name) (Condition(__NR_##name))
@@ -69,32 +47,60 @@ SandboxFilterImpl::Build() {
   Condition(__NR_##name, arg, argValues);         \
 })
 
-  // Some architectures went through a transition from 32-bit to
-  // 64-bit off_t and had to version all the syscalls that referenced
-  // it; others (newer and/or 64-bit ones) didn't.  Adjust the
-  // conditional as needed.
+// Some architectures went through a transition from 32-bit to
+// 64-bit off_t and had to version all the syscalls that referenced
+// it; others (newer and/or 64-bit ones) didn't.  Adjust the
+// conditional as needed.
 #if SYSCALL_EXISTS(stat64)
 #define SYSCALL_LARGEFILE(plain, versioned) SYSCALL(versioned)
 #else
 #define SYSCALL_LARGEFILE(plain, versioned) SYSCALL(plain)
 #endif
 
-  // i386 multiplexes all the socket-related interfaces into a single
-  // syscall.
+// i386 multiplexes all the socket-related interfaces into a single
+// syscall.
 #if SYSCALL_EXISTS(socketcall)
 #define SOCKETCALL(name, NAME) SYSCALL_WITH_ARG(socketcall, 0, SYS_##NAME)
 #else
 #define SOCKETCALL(name, NAME) SYSCALL(name)
 #endif
 
-  // i386 multiplexes all the SysV-IPC-related interfaces into a single
-  // syscall.
+// i386 multiplexes all the SysV-IPC-related interfaces into a single
+// syscall.
 #if SYSCALL_EXISTS(ipc)
 #define SYSVIPCCALL(name, NAME) SYSCALL_WITH_ARG(ipc, 0, NAME)
 #else
 #define SYSVIPCCALL(name, NAME) SYSCALL(name)
 #endif
 
+void SandboxFilterImpl::AllowThreadClone() {
+  // WARNING: s390 and cris pass the flags in a different arg -- see
+  // CLONE_BACKWARDS2 in arch/Kconfig in the kernel source -- but we
+  // don't support seccomp-bpf on those archs yet.
+  //
+  // The glibc source hasn't changed the thread creation clone flags
+  // since 2004, so this *should* be safe to hard-code.  Bionic's
+  // value has changed a few times, and has converged on the same one
+  // as glibc; allow any of them.
+  static const int flags_common = CLONE_VM | CLONE_FS | CLONE_FILES |
+    CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM;
+  Allow(SYSCALL_WITH_ARG(clone, 0,
+#ifdef ANDROID
+                         flags_common | CLONE_DETACHED, // <= JB 4.2
+                         flags_common, // JB 4.3 or KK 4.4
+#endif
+                         flags_common | CLONE_SETTLS // Android L or glibc
+                         | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID));
+}
+
+#ifdef MOZ_CONTENT_SANDBOX
+class SandboxFilterImplContent : public SandboxFilterImpl {
+protected:
+  virtual void Build() MOZ_OVERRIDE;
+};
+
+void
+SandboxFilterImplContent::Build() {
   /* Most used system calls should be at the top of the whitelist
    * for performance reasons. The whitelist BPF filter exits after
    * processing any ALLOW_SYSCALL macro.
@@ -102,7 +108,7 @@ SandboxFilterImpl::Build() {
    * How are those syscalls found?
    * 1) via strace -p <child pid> or/and
    * 2) the child will report which system call has been denied by seccomp-bpf,
-   *    just before exiting, via NSPR or Android logging.
+   *    just before exiting
    * System call number to name mapping is found in:
    * bionic/libc/kernel/arch-arm/asm/unistd.h
    * or your libc's unistd.h/kernel headers.
@@ -149,7 +155,7 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(munmap));
   Allow(SYSCALL(mprotect));
   Allow(SYSCALL(writev));
-  Allow(SYSCALL(clone));
+  AllowThreadClone();
   Allow(SYSCALL(brk));
 #if SYSCALL_EXISTS(set_thread_area)
   Allow(SYSCALL(set_thread_area));
@@ -173,9 +179,13 @@ SandboxFilterImpl::Build() {
 #if SYSCALL_EXISTS(getuid32)
   Allow(SYSCALL(getuid32));
   Allow(SYSCALL(geteuid32));
+  Allow(SYSCALL(getgid32));
+  Allow(SYSCALL(getegid32));
 #else
   Allow(SYSCALL(getuid));
   Allow(SYSCALL(geteuid));
+  Allow(SYSCALL(getgid));
+  Allow(SYSCALL(getegid));
 #endif
   // Some newer archs (e.g., x64 and x32) have only rt_sigreturn, but
   // ARM has and uses both syscalls -- rt_sigreturn for SA_SIGINFO
@@ -202,6 +212,11 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(fsync));
   Allow(SYSCALL(msync));
 
+#if defined(ANDROID) && !defined(MOZ_MEMORY)
+  // Android's libc's realloc uses mremap.
+  Allow(SYSCALL(mremap));
+#endif
+
   /* Should remove all of the following in the future, if possible */
   Allow(SYSCALL(getpriority));
   Allow(SYSCALL(sched_get_priority_min));
@@ -225,7 +240,10 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(sched_yield));
   Allow(SYSCALL(sched_getscheduler));
   Allow(SYSCALL(sched_setscheduler));
+  Allow(SYSCALL(sched_getparam));
+  Allow(SYSCALL(sched_setparam));
   Allow(SYSCALL(sigaltstack));
+  Allow(SYSCALL(pipe));
 
   /* Always last and always OK calls */
   /* Architecture-specific very infrequently used syscalls */
@@ -267,7 +285,6 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(readahead));
   Allow(SYSCALL(pread64));
   Allow(SYSCALL(statfs));
-  Allow(SYSCALL(pipe));
 #if SYSCALL_EXISTS(ugetrlimit)
   Allow(SYSCALL(ugetrlimit));
 #else
@@ -282,7 +299,6 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(umask));
   Allow(SYSCALL(getresgid));
   Allow(SYSCALL(poll));
-  Allow(SYSCALL(getegid));
   Allow(SYSCALL(inotify_init1));
   Allow(SYSCALL(wait4));
   Allow(SYSVIPCCALL(shmctl, SHMCTL));
@@ -297,7 +313,6 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(inotify_add_watch));
   Allow(SYSCALL(rt_sigprocmask));
   Allow(SYSVIPCCALL(shmget, SHMGET));
-  Allow(SYSCALL(getgid));
 #if SYSCALL_EXISTS(utimes)
   Allow(SYSCALL(utimes));
 #else
@@ -324,6 +339,147 @@ SandboxFilterImpl::Build() {
   Allow(SYSCALL(uname));
   Allow(SYSCALL(exit_group));
   Allow(SYSCALL(exit));
+}
+#endif // MOZ_CONTENT_SANDBOX
+
+#ifdef MOZ_GMP_SANDBOX
+class SandboxFilterImplGMP : public SandboxFilterImpl {
+protected:
+  virtual void Build() MOZ_OVERRIDE;
+};
+
+void SandboxFilterImplGMP::Build() {
+  // As for content processes, check the most common syscalls first.
+
+  Allow(SYSCALL_WITH_ARG(clock_gettime, 0, CLOCK_MONOTONIC, CLOCK_REALTIME));
+  Allow(SYSCALL(futex));
+  Allow(SYSCALL(gettimeofday));
+  Allow(SYSCALL(poll));
+  Allow(SYSCALL(write));
+  Allow(SYSCALL(read));
+  Allow(SYSCALL(epoll_wait));
+  Allow(SOCKETCALL(recvmsg, RECVMSG));
+  Allow(SOCKETCALL(sendmsg, SENDMSG));
+  Allow(SYSCALL(time));
+
+  // Nothing after this line is performance-critical.
+
+#if SYSCALL_EXISTS(mmap2)
+  Allow(SYSCALL(mmap2));
+#else
+  Allow(SYSCALL(mmap));
+#endif
+  Allow(SYSCALL_LARGEFILE(fstat, fstat64));
+  Allow(SYSCALL(munmap));
+
+  Allow(SYSCALL(getpid));
+  Allow(SYSCALL(gettid));
+
+  AllowThreadClone();
+
+  Allow(SYSCALL_WITH_ARG(prctl, 0, PR_GET_SECCOMP, PR_SET_NAME));
+
+#if SYSCALL_EXISTS(set_robust_list)
+  Allow(SYSCALL(set_robust_list));
+#endif
+
+  // NSPR can call this when creating a thread, but it will accept a
+  // polite "no".
+  Deny(EACCES, SYSCALL(getpriority));
+  // But if thread creation races with sandbox startup, that call
+  // could succeed, and then we get one of these:
+  Deny(EACCES, SYSCALL(setpriority));
+
+  // Stack bounds are obtained via pthread_getattr_np, which calls
+  // this but doesn't actually need it:
+  Deny(ENOSYS, SYSCALL(sched_getaffinity));
+
+#ifdef MOZ_ASAN
+  Allow(SYSCALL(sigaltstack));
+#endif
+
+  Allow(SYSCALL(mprotect));
+  Allow(SYSCALL_WITH_ARG(madvise, 2, MADV_DONTNEED));
+
+#if SYSCALL_EXISTS(sigreturn)
+  Allow(SYSCALL(sigreturn));
+#endif
+  Allow(SYSCALL(rt_sigreturn));
+
+  Allow(SYSCALL(restart_syscall));
+  Allow(SYSCALL(close));
+
+  // "Sleeping for 300 seconds" in debug crashes; possibly other uses.
+  Allow(SYSCALL(nanosleep));
+
+  // For the crash reporter:
+#if SYSCALL_EXISTS(sigprocmask)
+  Allow(SYSCALL(sigprocmask));
+#endif
+  Allow(SYSCALL(rt_sigprocmask));
+#if SYSCALL_EXISTS(sigaction)
+  Allow(SYSCALL(sigaction));
+#endif
+  Allow(SYSCALL(rt_sigaction));
+  Allow(SYSCALL(pipe));
+  Allow(SYSCALL_WITH_ARG(tgkill, 0, uint32_t(getpid())));
+  Allow(SYSCALL_WITH_ARG(prctl, 0, PR_SET_DUMPABLE));
+
+  // Note for when GMP is supported on an ARM platform: Add whichever
+  // of the ARM-specific syscalls are needed for this type of process.
+
+  Allow(SYSCALL(epoll_ctl));
+  Allow(SYSCALL(exit));
+  Allow(SYSCALL(exit_group));
+}
+#endif // MOZ_GMP_SANDBOX
+
+SandboxFilter::SandboxFilter(const sock_fprog** aStored, SandboxType aType,
+                             bool aVerbose)
+  : mStored(aStored)
+{
+  MOZ_ASSERT(*mStored == nullptr);
+  std::vector<struct sock_filter> filterVec;
+  SandboxFilterImpl *impl;
+
+  switch (aType) {
+  case kSandboxContentProcess:
+#ifdef MOZ_CONTENT_SANDBOX
+    impl = new SandboxFilterImplContent();
+#else
+    MOZ_CRASH("Content process sandboxing not supported in this build!");
+#endif
+    break;
+  case kSandboxMediaPlugin:
+#ifdef MOZ_GMP_SANDBOX
+    impl = new SandboxFilterImplGMP();
+#else
+    MOZ_CRASH("Gecko Media Plugin process sandboxing not supported in this"
+              " build!");
+#endif
+    break;
+  default:
+    MOZ_CRASH("Nonexistent sandbox type!");
+  }
+  impl->Build();
+  impl->Finish();
+  impl->Compile(&filterVec, aVerbose);
+  delete impl;
+
+  mProg = new sock_fprog;
+  mProg->len = filterVec.size();
+  mProg->filter = mFilter = new sock_filter[mProg->len];
+  for (size_t i = 0; i < mProg->len; ++i) {
+    mFilter[i] = filterVec[i];
+  }
+  *mStored = mProg;
+}
+
+SandboxFilter::~SandboxFilter()
+{
+  *mStored = nullptr;
+  delete[] mFilter;
+  delete mProg;
 }
 
 }

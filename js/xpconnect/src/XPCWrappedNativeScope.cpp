@@ -14,6 +14,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "nsIAddonInterposition.h"
+#include "nsIXULRuntime.h"
 
 #include "mozilla/dom/BindingUtils.h"
 
@@ -52,13 +53,11 @@ RemoteXULForbidsXBLScope(nsIPrincipal *aPrincipal, HandleObject aGlobal)
 {
   MOZ_ASSERT(aPrincipal);
 
-  // The SafeJSContext is lazily created, and tends to be created at really
-  // weird times, at least for xpcshell (often very early in startup or late
-  // in shutdown). Its scope isn't system principal, so if we proceeded we'd
-  // end up calling into AllowXULXBLForPrincipal, which depends on all kinds
-  // of persistent storage and permission machinery that may or not be running.
-  // We know the answer to the question here, so just short-circuit.
-  if (JS_GetClass(aGlobal) == &SafeJSContextGlobalClass)
+  // Certain singleton sandoxes are created very early in startup - too early
+  // to call into AllowXULXBLForPrincipal. We never create XBL scopes for
+  // sandboxes anway, and certainly not for these singleton scopes. So we just
+  // short-circuit here.
+  if (IsSandbox(aGlobal))
       return false;
 
   // AllowXULXBLForPrincipal will return true for system principal, but we
@@ -77,8 +76,8 @@ RemoteXULForbidsXBLScope(nsIPrincipal *aPrincipal, HandleObject aGlobal)
 
 XPCWrappedNativeScope::XPCWrappedNativeScope(JSContext *cx,
                                              JS::HandleObject aGlobal)
-      : mWrappedNativeMap(Native2WrappedNativeMap::newMap(XPC_NATIVE_MAP_SIZE)),
-        mWrappedNativeProtoMap(ClassInfo2WrappedNativeProtoMap::newMap(XPC_NATIVE_PROTO_MAP_SIZE)),
+      : mWrappedNativeMap(Native2WrappedNativeMap::newMap(XPC_NATIVE_MAP_LENGTH)),
+        mWrappedNativeProtoMap(ClassInfo2WrappedNativeProtoMap::newMap(XPC_NATIVE_PROTO_MAP_LENGTH)),
         mComponents(nullptr),
         mNext(nullptr),
         mGlobalJSObject(aGlobal),
@@ -122,9 +121,7 @@ XPCWrappedNativeScope::XPCWrappedNativeScope(JSContext *cx,
     mUseContentXBLScope = mAllowContentXBLScope;
     if (mUseContentXBLScope) {
       const js::Class *clasp = js::GetObjectClass(mGlobalJSObject);
-      mUseContentXBLScope = !strcmp(clasp->name, "Window") ||
-                            !strcmp(clasp->name, "ChromeWindow") ||
-                            !strcmp(clasp->name, "ModalContentWindow");
+      mUseContentXBLScope = !strcmp(clasp->name, "Window");
     }
     if (mUseContentXBLScope) {
       mUseContentXBLScope = principal && !nsContentUtils::IsSystemPrincipal(principal);
@@ -211,7 +208,7 @@ CompartmentPerAddon()
 
     if (!initialized) {
         pref = Preferences::GetBool("dom.compartment_per_addon", false) ||
-               Preferences::GetBool("browser.tabs.remote.autostart", false);
+               BrowserTabsRemoteAutostart();
         initialized = true;
     }
 
@@ -382,6 +379,12 @@ xpc::GetAddonScope(JSContext *cx, JS::HandleObject contentScope, JSAddonId *addo
 
     JSAutoCompartment ac(cx, contentScope);
     XPCWrappedNativeScope *nativeScope = CompartmentPrivate::Get(contentScope)->scope;
+    if (nativeScope->GetPrincipal() != nsXPConnect::SystemPrincipal()) {
+        // This can happen if, for example, Jetpack loads an unprivileged HTML
+        // page from the add-on. It's not clear what to do there, so we just use
+        // the normal global.
+        return js::GetGlobalForObjectCrossCompartment(contentScope);
+    }
     JSObject *scope = nativeScope->EnsureAddonScope(cx, addonId);
     NS_ENSURE_TRUE(scope, nullptr);
 
@@ -490,10 +493,11 @@ XPCWrappedNativeScope::SuspectAllWrappers(XPCJSRuntime* rt,
 
 // static
 void
-XPCWrappedNativeScope::StartFinalizationPhaseOfGC(JSFreeOp *fop, XPCJSRuntime* rt)
+XPCWrappedNativeScope::UpdateWeakPointersAfterGC(XPCJSRuntime* rt)
 {
-    // We are in JSGC_MARK_END and JSGC_FINALIZE_END must always follow it
-    // calling FinishedFinalizationPhaseOfGC and clearing gDyingScopes in
+    // If this is called from the finalization callback in JSGC_MARK_END then
+    // JSGC_FINALIZE_END must always follow it calling
+    // FinishedFinalizationPhaseOfGC and clearing gDyingScopes in
     // KillDyingScopes.
     MOZ_ASSERT(!gDyingScopes, "JSGC_MARK_END without JSGC_FINALIZE_END");
 
@@ -507,28 +511,31 @@ XPCWrappedNativeScope::StartFinalizationPhaseOfGC(JSFreeOp *fop, XPCJSRuntime* r
 
         XPCWrappedNativeScope* next = cur->mNext;
 
-        if (cur->mGlobalJSObject && cur->mGlobalJSObject.isAboutToBeFinalized()) {
-            cur->mGlobalJSObject.finalize(fop->runtime());
-            // Move this scope from the live list to the dying list.
-            if (prev)
-                prev->mNext = next;
-            else
-                gScopes = next;
-            cur->mNext = gDyingScopes;
-            gDyingScopes = cur;
-            cur = nullptr;
+        if (cur->mContentXBLScope)
+            cur->mContentXBLScope.updateWeakPointerAfterGC();
+        for (size_t i = 0; i < cur->mAddonScopes.Length(); i++)
+            cur->mAddonScopes[i].updateWeakPointerAfterGC();
+
+        // Check for finalization of the global object or update our pointer if
+        // it was moved.
+        if (cur->mGlobalJSObject) {
+            cur->mGlobalJSObject.updateWeakPointerAfterGC();
+            if (!cur->mGlobalJSObject) {
+                // Move this scope from the live list to the dying list.
+                if (prev)
+                    prev->mNext = next;
+                else
+                    gScopes = next;
+                cur->mNext = gDyingScopes;
+                gDyingScopes = cur;
+                cur = nullptr;
+            }
         }
+
         if (cur)
             prev = cur;
         cur = next;
     }
-}
-
-// static
-void
-XPCWrappedNativeScope::FinishedFinalizationPhaseOfGC()
-{
-    KillDyingScopes();
 }
 
 static PLDHashOperator
@@ -610,6 +617,8 @@ XPCWrappedNativeScope::KillDyingScopes()
     XPCWrappedNativeScope* cur = gDyingScopes;
     while (cur) {
         XPCWrappedNativeScope* next = cur->mNext;
+        if (cur->mGlobalJSObject)
+            CompartmentPrivate::Get(cur->mGlobalJSObject)->scope = nullptr;
         delete cur;
         cur = next;
     }

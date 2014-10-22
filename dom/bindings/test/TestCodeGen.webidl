@@ -33,6 +33,27 @@ callback interface TestCallbackInterface {
   sequence<TestCallbackInterface?>? getNullableSequenceOfNullableCallbackInterfaces();
   MozMap<long> getMozMapOfLong();
   Dict? getDictionary();
+  void passArrayBuffer(ArrayBuffer arg);
+  void passNullableArrayBuffer(ArrayBuffer? arg);
+  void passOptionalArrayBuffer(optional ArrayBuffer arg);
+  void passOptionalNullableArrayBuffer(optional ArrayBuffer? arg);
+  void passOptionalNullableArrayBufferWithDefaultValue(optional ArrayBuffer? arg= null);
+  void passArrayBufferView(ArrayBufferView arg);
+  void passInt8Array(Int8Array arg);
+  void passInt16Array(Int16Array arg);
+  void passInt32Array(Int32Array arg);
+  void passUint8Array(Uint8Array arg);
+  void passUint16Array(Uint16Array arg);
+  void passUint32Array(Uint32Array arg);
+  void passUint8ClampedArray(Uint8ClampedArray arg);
+  void passFloat32Array(Float32Array arg);
+  void passFloat64Array(Float64Array arg);
+  void passSequenceOfArrayBuffers(sequence<ArrayBuffer> arg);
+  void passSequenceOfNullableArrayBuffers(sequence<ArrayBuffer?> arg);
+  void passVariadicTypedArray(Float32Array... arg);
+  void passVariadicNullableTypedArray(Float32Array?... arg);
+  Uint8Array receiveUint8Array();
+  attribute Uint8Array uint8ArrayAttr;
 };
 
 callback interface TestSingleOperationCallbackInterface {
@@ -137,6 +158,12 @@ interface TestInterface {
   [StoreInSlot, Pure]
   attribute byte cachedWritableByte;
 
+  [UnsafeInPrerendering]
+  void unsafePrerenderMethod();
+  [UnsafeInPrerendering]
+  attribute long unsafePrerenderWritable;
+  [UnsafeInPrerendering]
+  readonly attribute long unsafePrerenderReadonly;
   readonly attribute short readonlyShort;
   attribute short writableShort;
   void passShort(short arg);
@@ -414,6 +441,7 @@ interface TestInterface {
   void passVariadicTypedArray(Float32Array... arg);
   void passVariadicNullableTypedArray(Float32Array?... arg);
   Uint8Array receiveUint8Array();
+  attribute Uint8Array uint8ArrayAttr;
 
   // DOMString types
   void passString(DOMString arg);
@@ -423,6 +451,7 @@ interface TestInterface {
   void passOptionalNullableString(optional DOMString? arg);
   void passOptionalNullableStringWithDefaultValue(optional DOMString? arg = null);
   void passVariadicString(DOMString... arg);
+  DOMString receiveString();
 
   // ByteString types
   void passByteString(ByteString arg);
@@ -430,6 +459,16 @@ interface TestInterface {
   void passOptionalByteString(optional ByteString arg);
   void passOptionalNullableByteString(optional ByteString? arg);
   void passVariadicByteString(ByteString... arg);
+
+  // ScalarValueString types
+  void passSVS(ScalarValueString arg);
+  void passNullableSVS(ScalarValueString? arg);
+  void passOptionalSVS(optional ScalarValueString arg);
+  void passOptionalSVSWithDefaultValue(optional ScalarValueString arg = "abc");
+  void passOptionalNullableSVS(optional ScalarValueString? arg);
+  void passOptionalNullableSVSWithDefaultValue(optional ScalarValueString? arg = null);
+  void passVariadicSVS(ScalarValueString... arg);
+  ScalarValueString receiveSVS();
 
   // Enumerated types
   void passEnum(TestEnum arg);
@@ -528,11 +567,18 @@ interface TestInterface {
   void passUnion20(optional (sequence<object> or long) arg = []);
   void passUnion21((MozMap<long> or long) arg);
   void passUnion22((MozMap<object> or long) arg);
+  void passUnion23((sequence<ImageData> or long) arg);
+  void passUnion24((sequence<ImageData?> or long) arg);
+  void passUnion25((sequence<sequence<ImageData>> or long) arg);
+  void passUnion26((sequence<sequence<ImageData?>> or long) arg);
+  void passUnion27(optional (sequence<DOMString> or EventInit) arg);
+  void passUnion28(optional (EventInit or sequence<DOMString>) arg);
   void passUnionWithCallback((EventHandler or long) arg);
   void passUnionWithByteString((ByteString or long) arg);
   void passUnionWithMozMap((MozMap<DOMString> or DOMString) arg);
   void passUnionWithMozMapAndSequence((MozMap<DOMString> or sequence<DOMString>) arg);
   void passUnionWithSequenceAndMozMap((sequence<DOMString> or MozMap<DOMString>) arg);
+  void passUnionWithSVS((ScalarValueString or long) arg);
 #endif
   void passUnionWithNullable((object? or long) arg);
   void passNullableUnion((object or long)? arg);
@@ -612,9 +658,13 @@ interface TestInterface {
 
   // binaryNames tests
   void methodRenamedFrom();
+  [BinaryName="otherMethodRenamedTo"]
+  void otherMethodRenamedFrom();
   void methodRenamedFrom(byte argument);
   readonly attribute byte attributeGetterRenamedFrom;
   attribute byte attributeRenamedFrom;
+  [BinaryName="otherAttributeRenamedTo"]
+  attribute byte otherAttributeRenamedFrom;
 
   void passDictionary(optional Dict x);
   [Cached, Pure]
@@ -642,6 +692,7 @@ interface TestInterface {
   void passDictContainingDict(optional DictContainingDict arg);
   void passDictContainingSequence(optional DictContainingSequence arg);
   DictContainingSequence receiveDictContainingSequence();
+  void passVariadicDictionary(Dict... arg);
 
   // EnforceRange/Clamp tests
   void dontEnforceRangeOrClamp(byte arg);
@@ -705,6 +756,10 @@ interface TestInterface {
   void overload17(MozMap<long> arg);
   void overload18(MozMap<DOMString> arg);
   void overload18(sequence<DOMString> arg);
+  void overload19(sequence<long> arg);
+  void overload19(optional Dict arg);
+  void overload20(optional Dict arg);
+  void overload20(sequence<long> arg);
 
   // Variadic handling
   void passVariadicThirdArg(DOMString arg1, long arg2, TestInterface... arg3);
@@ -784,6 +839,9 @@ interface TestInterface {
   attribute TestParentInterface jsonifierShouldSkipThis2;
   attribute TestCallbackInterface jsonifierShouldSkipThis3;
   jsonifier;
+
+  attribute byte dashed-attribute;
+  void dashed-method();
 
   // If you add things here, add them to TestExampleGen and TestJSImplGen as well
 };
@@ -888,7 +946,7 @@ dictionary Dict : ParentDict {
 #ifdef DEBUG
   (EventInit or long) eventInitOrLong;
   (EventInit or long)? nullableEventInitOrLong;
-  (Node or long)? nullableNodeOrLong;
+  (HTMLElement or long)? nullableHTMLElementOrLong;
   // CustomEventInit is useful to test because it needs rooting.
   (CustomEventInit or long) eventInitOrLong2;
   (CustomEventInit or long)? nullableEventInitOrLong2;
@@ -909,6 +967,11 @@ dictionary Dict : ParentDict {
   sequence<long>? seq3;
   sequence<long>? seq4 = null;
   sequence<long>? seq5 = [];
+
+  long dashed-name;
+
+  required long requiredLong;
+  required object requiredObject;
 };
 
 dictionary ParentDict : GrandparentDict {

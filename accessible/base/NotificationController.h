@@ -26,7 +26,7 @@ class DocAccessible;
 class Notification
 {
 public:
-  NS_INLINE_DECL_REFCOUNTING(Notification)
+  NS_INLINE_DECL_REFCOUNTING(mozilla::a11y::Notification)
 
   /**
    * Process notification.
@@ -85,8 +85,8 @@ private:
 /**
  * Used to process notifications from core for the document accessible.
  */
-class NotificationController : public EventQueue,
-                               public nsARefreshObserver
+class NotificationController MOZ_FINAL : public EventQueue,
+                                         public nsARefreshObserver
 {
 public:
   NotificationController(DocAccessible* aDocument, nsIPresShell* aPresShell);
@@ -275,8 +275,8 @@ private:
     typedef T* KeyType;
     typedef const T* KeyTypePointer;
 
-    nsCOMPtrHashKey(const T* aKey) : mKey(const_cast<T*>(aKey)) {}
-    nsCOMPtrHashKey(const nsPtrHashKey<T> &aToCopy) : mKey(aToCopy.mKey) {}
+    explicit nsCOMPtrHashKey(const T* aKey) : mKey(const_cast<T*>(aKey)) {}
+    explicit nsCOMPtrHashKey(const nsPtrHashKey<T> &aToCopy) : mKey(aToCopy.mKey) {}
     ~nsCOMPtrHashKey() { }
 
     KeyType GetKey() const { return mKey; }

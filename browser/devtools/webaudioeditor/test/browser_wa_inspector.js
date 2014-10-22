@@ -7,10 +7,10 @@
  */
 
 function spawnTest() {
-  let [target, debuggee, panel] = yield initWebAudioEditor(SIMPLE_CONTEXT_URL);
+  let { target, panel } = yield initWebAudioEditor(SIMPLE_CONTEXT_URL);
   let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, WebAudioInspectorView } = panelWin;
-  let gVars = WebAudioInspectorView._propsView;
+  let { gFront, $, $$, EVENTS, InspectorView } = panelWin;
+  let gVars = InspectorView._propsView;
 
   let started = once(gFront, "start-context");
 
@@ -22,7 +22,7 @@ function spawnTest() {
   ]);
   let nodeIds = actors.map(actor => actor.actorID);
 
-  ok(!WebAudioInspectorView.isVisible(), "InspectorView hidden on start.");
+  ok(!InspectorView.isVisible(), "InspectorView hidden on start.");
   ok(isVisible($("#web-audio-editor-details-pane-empty")),
     "InspectorView empty message should show when no node's selected.");
   ok(!isVisible($("#web-audio-editor-tabs")),
@@ -37,13 +37,13 @@ function spawnTest() {
     once(panelWin, EVENTS.UI_INSPECTOR_TOGGLED)
   ]);
 
-  ok(WebAudioInspectorView.isVisible(), "InspectorView shown once node selected.");
+  ok(InspectorView.isVisible(), "InspectorView shown once node selected.");
   ok(!isVisible($("#web-audio-editor-details-pane-empty")),
     "InspectorView empty message hidden when node selected.");
   ok(isVisible($("#web-audio-editor-tabs")),
     "InspectorView tabs view visible when node selected.");
 
-  is($("#web-audio-inspector-title").value, "OscillatorNode (" + nodeIds[1] + ")",
+  is($("#web-audio-inspector-title").value, "Oscillator",
     "Inspector should have the node title when a node is selected.");
 
   is($("#web-audio-editor-tabs").selectedIndex, 0,
@@ -52,7 +52,7 @@ function spawnTest() {
   click(panelWin, findGraphNode(panelWin, nodeIds[2]));
   yield once(panelWin, EVENTS.UI_INSPECTOR_NODE_SET);
 
-  is($("#web-audio-inspector-title").value, "GainNode (" + nodeIds[2] + ")",
+  is($("#web-audio-inspector-title").value, "Gain",
     "Inspector title updates when a new node is selected.");
 
   yield teardown(panel);

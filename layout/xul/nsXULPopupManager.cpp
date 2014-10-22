@@ -8,7 +8,6 @@
 #include "nsMenuFrame.h"
 #include "nsMenuPopupFrame.h"
 #include "nsMenuBarFrame.h"
-#include "nsIPopupBoxObject.h"
 #include "nsMenuBarListener.h"
 #include "nsContentUtils.h"
 #include "nsIDOMDocument.h"
@@ -546,9 +545,9 @@ nsXULPopupManager::InitTriggerEvent(nsIDOMEvent* aEvent, nsIContent* aPopup,
             return;
           nsIFrame* rootDocumentRootFrame = rootDocPresContext->
               PresShell()->FrameManager()->GetRootFrame();
-          if ((event->eventStructType == NS_MOUSE_EVENT || 
-               event->eventStructType == NS_MOUSE_SCROLL_EVENT ||
-               event->eventStructType == NS_WHEEL_EVENT) &&
+          if ((event->mClass == eMouseEventClass || 
+               event->mClass == eMouseScrollEventClass ||
+               event->mClass == eWheelEventClass) &&
                !event->AsGUIEvent()->widget) {
             // no widget, so just use the client point if available
             nsCOMPtr<nsIDOMMouseEvent> mouseEvent = do_QueryInterface(aEvent);
@@ -745,8 +744,8 @@ nsXULPopupManager::ShowPopupWithAnchorAlign(nsIContent* aPopup,
 }
 
 static void
-CheckCaretDrawingState() {
-
+CheckCaretDrawingState()
+{
   // There is 1 caret per document, we need to find the focused
   // document and erase its caret.
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
@@ -770,7 +769,7 @@ CheckCaretDrawingState() {
     nsRefPtr<nsCaret> caret = presShell->GetCaret();
     if (!caret)
       return;
-    caret->CheckCaretDrawingState();
+    caret->SchedulePaint();
   }
 }
 
@@ -844,7 +843,7 @@ nsXULPopupManager::HidePopup(nsIContent* aPopup,
                              bool aHideChain,
                              bool aDeselectMenu,
                              bool aAsynchronous,
-                             bool aIsRollup,
+                             bool aIsCancel,
                              nsIContent* aLastPopup)
 {
   // if the popup is on the nohide panels list, remove it but don't close any
@@ -937,12 +936,12 @@ nsXULPopupManager::HidePopup(nsIContent* aPopup,
     if (aAsynchronous) {
       nsCOMPtr<nsIRunnable> event =
         new nsXULPopupHidingEvent(popupToHide, nextPopup, lastPopup,
-                                  type, deselectMenu, aIsRollup);
+                                  type, deselectMenu, aIsCancel);
         NS_DispatchToCurrentThread(event);
     }
     else {
       FirePopupHidingEvent(popupToHide, nextPopup, lastPopup,
-                           popupFrame->PresContext(), type, deselectMenu, aIsRollup);
+                           popupFrame->PresContext(), type, deselectMenu, aIsCancel);
     }
   }
 }
@@ -1354,7 +1353,7 @@ nsXULPopupManager::FirePopupHidingEvent(nsIContent* aPopup,
                                         nsPresContext *aPresContext,
                                         nsPopupType aPopupType,
                                         bool aDeselectMenu,
-                                        bool aIsRollup)
+                                        bool aIsCancel)
 {
   nsCOMPtr<nsIPresShell> presShell = aPresContext->PresShell();
 
@@ -1413,7 +1412,7 @@ nsXULPopupManager::FirePopupHidingEvent(nsIContent* aPopup,
         aPopup->GetAttr(kNameSpaceID_None, nsGkAtoms::animate, animate);
 
         if (!animate.EqualsLiteral("false") &&
-            (!animate.EqualsLiteral("cancel") || aIsRollup)) {
+            (!animate.EqualsLiteral("cancel") || aIsCancel)) {
           presShell->FlushPendingNotifications(Flush_Layout);
 
           // Get the frame again in case the flush caused it to go away
@@ -1421,7 +1420,8 @@ nsXULPopupManager::FirePopupHidingEvent(nsIContent* aPopup,
           if (!popupFrame)
             return;
 
-          if (nsLayoutUtils::HasCurrentAnimations(aPopup, nsGkAtoms::transitionsProperty, aPresContext)) {
+          if (nsLayoutUtils::HasCurrentAnimations(aPopup,
+                nsGkAtoms::transitionsProperty)) {
             nsRefPtr<TransitionEnder> ender = new TransitionEnder(aPopup, aDeselectMenu);
             aPopup->AddSystemEventListener(NS_LITERAL_STRING("transitionend"),
                                            ender, false, false);
@@ -1752,11 +1752,11 @@ nsXULPopupManager::UpdateKeyboardListeners()
   nsMenuChainItem* item = GetTopVisibleMenu();
   if (item) {
     if (!item->IgnoreKeys())
-      newTarget = item->Content()->GetDocument();
+      newTarget = item->Content()->GetComposedDoc();
     isForMenu = item->PopupType() == ePopupTypeMenu;
   }
   else if (mActiveMenuBar) {
-    newTarget = mActiveMenuBar->GetContent()->GetDocument();
+    newTarget = mActiveMenuBar->GetContent()->GetComposedDoc();
     isForMenu = true;
   }
 

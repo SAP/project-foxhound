@@ -12,6 +12,8 @@ const nsIAccessibleTextChangeEvent =
   Components.interfaces.nsIAccessibleTextChangeEvent;
 const nsIAccessibleVirtualCursorChangeEvent =
   Components.interfaces.nsIAccessibleVirtualCursorChangeEvent;
+const nsIAccessibleObjectAttributeChangedEvent =
+  Components.interfaces.nsIAccessibleObjectAttributeChangedEvent;
 
 const nsIAccessibleStates = Components.interfaces.nsIAccessibleStates;
 const nsIAccessibleRole = Components.interfaces.nsIAccessibleRole;
@@ -237,7 +239,7 @@ function getAccessible(aAccOrElmOrID, aInterfaces, aElmObj, aDoNotFailIf)
 
     if (!acc) {
       if (!(aDoNotFailIf & DONOTFAIL_IF_NO_ACC))
-        ok(false, "Can't get accessible for " + aAccOrElmOrID);
+        ok(false, "Can't get accessible for " + prettyName(aAccOrElmOrID));
 
       return null;
     }

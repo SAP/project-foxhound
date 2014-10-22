@@ -408,7 +408,7 @@ public:
     NS_DECL_NSIRDFLITERAL
 
 protected:
-    LiteralImpl(const char16_t* s);
+    explicit LiteralImpl(const char16_t* s);
     virtual ~LiteralImpl();
 
     const char16_t* GetValue() const {
@@ -521,7 +521,7 @@ LiteralImpl::GetValueConst(const char16_t** aValue)
 
 class DateImpl : public nsIRDFDate {
 public:
-    DateImpl(const PRTime s);
+    explicit DateImpl(const PRTime s);
 
     // nsISupports
     NS_DECL_ISUPPORTS
@@ -628,7 +628,7 @@ DateImpl::EqualsDate(nsIRDFDate* date, bool* result)
 
 class IntImpl : public nsIRDFInt {
 public:
-    IntImpl(int32_t s);
+    explicit IntImpl(int32_t s);
 
     // nsISupports
     NS_DECL_ISUPPORTS
@@ -761,19 +761,19 @@ RDFServiceImpl::Init()
         return NS_ERROR_OUT_OF_MEMORY;
 
     PL_DHashTableInit(&mResources, &gResourceTableOps, nullptr,
-                      sizeof(ResourceHashEntry), PL_DHASH_MIN_SIZE);
+                      sizeof(ResourceHashEntry));
 
     PL_DHashTableInit(&mLiterals, &gLiteralTableOps, nullptr,
-                      sizeof(LiteralHashEntry), PL_DHASH_MIN_SIZE);
+                      sizeof(LiteralHashEntry));
 
     PL_DHashTableInit(&mInts, &gIntTableOps, nullptr,
-                      sizeof(IntHashEntry), PL_DHASH_MIN_SIZE);
+                      sizeof(IntHashEntry));
 
     PL_DHashTableInit(&mDates, &gDateTableOps, nullptr,
-                      sizeof(DateHashEntry), PL_DHASH_MIN_SIZE);
+                      sizeof(DateHashEntry));
 
     PL_DHashTableInit(&mBlobs, &gBlobTableOps, nullptr,
-                      sizeof(BlobHashEntry), PL_DHASH_MIN_SIZE);
+                      sizeof(BlobHashEntry));
 
     mDefaultResourceFactory = do_GetClassObject(kRDFDefaultResourceCID, &rv);
     NS_ASSERTION(NS_SUCCEEDED(rv), "unable to get default resource factory");

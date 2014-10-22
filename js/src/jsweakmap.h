@@ -49,6 +49,9 @@ class WeakMapBase {
     // Unmark all weak maps in a compartment.
     static void unmarkCompartment(JSCompartment *c);
 
+    // Mark all the weakmaps in a compartment.
+    static void markAll(JSCompartment *c, JSTracer *tracer);
+
     // Check all weak maps in a compartment that have been marked as live in this garbage
     // collection, and mark the values of all entries that have become strong references
     // to them. Return true if we marked any new values, indicating that we need to make
@@ -88,7 +91,7 @@ class WeakMapBase {
     virtual void finish() = 0;
 
     // Object that this weak map is part of, if any.
-    JSObject *memberOf;
+    HeapPtrObject memberOf;
 
     // Compartment that this weak map is part of.
     JSCompartment *compartment;
@@ -111,6 +114,8 @@ class WeakMap : public HashMap<Key, Value, HashPolicy, RuntimeAllocPolicy>, publ
     typedef typename Base::Enum Enum;
     typedef typename Base::Lookup Lookup;
     typedef typename Base::Range Range;
+    typedef typename Base::Ptr Ptr;
+    typedef typename Base::AddPtr AddPtr;
 
     explicit WeakMap(JSContext *cx, JSObject *memOf = nullptr)
         : Base(cx->runtime()), WeakMapBase(memOf, cx->compartment()) { }
@@ -124,12 +129,39 @@ class WeakMap : public HashMap<Key, Value, HashPolicy, RuntimeAllocPolicy>, publ
         return true;
     }
 
+    // Overwritten to add a read barrier to prevent an incorrectly gray value
+    // from escaping the weak map. See the comment before UnmarkGrayChildren in
+    // gc/Marking.cpp
+    Ptr lookup(const Lookup &l) const {
+        Ptr p = Base::lookup(l);
+        if (p)
+            exposeGCThingToActiveJS(p->value());
+        return p;
+    }
+
+    AddPtr lookupForAdd(const Lookup &l) const {
+        AddPtr p = Base::lookupForAdd(l);
+        if (p)
+            exposeGCThingToActiveJS(p->value());
+        return p;
+    }
+
+    Ptr lookupWithDefault(const Key &k, const Value &defaultValue) {
+        Ptr p = Base::lookupWithDefault(k, defaultValue);
+        if (p)
+            exposeGCThingToActiveJS(p->value());
+        return p;
+    }
+
   private:
+    void exposeGCThingToActiveJS(const JS::Value &v) const { JS::ExposeValueToActiveJS(v); }
+    void exposeGCThingToActiveJS(JSObject *obj) const { JS::ExposeObjectToActiveJS(obj); }
+
     bool markValue(JSTracer *trc, Value *x) {
         if (gc::IsMarked(x))
             return false;
         gc::Mark(trc, x, "WeakMap entry value");
-        JS_ASSERT(gc::IsMarked(x));
+        MOZ_ASSERT(gc::IsMarked(x));
         return true;
     }
 
@@ -239,13 +271,33 @@ protected:
 #if DEBUG
         for (Range r = Base::all(); !r.empty(); r.popFront()) {
             Key k(r.front().key());
-            JS_ASSERT(!gc::IsAboutToBeFinalized(&k));
-            JS_ASSERT(!gc::IsAboutToBeFinalized(&r.front().value()));
-            JS_ASSERT(k == r.front().key());
+            MOZ_ASSERT(!gc::IsAboutToBeFinalized(&k));
+            MOZ_ASSERT(!gc::IsAboutToBeFinalized(&r.front().value()));
+            MOZ_ASSERT(k == r.front().key());
         }
 #endif
     }
 };
+
+/* WeakMap methods exposed so they can be installed in the self-hosting global. */
+
+extern JSObject *
+InitBareWeakMapCtor(JSContext *cx, js::HandleObject obj);
+
+extern bool
+WeakMap_has(JSContext *cx, unsigned argc, Value *vp);
+
+extern bool
+WeakMap_get(JSContext *cx, unsigned argc, Value *vp);
+
+extern bool
+WeakMap_set(JSContext *cx, unsigned argc, Value *vp);
+
+extern bool
+WeakMap_delete(JSContext *cx, unsigned argc, Value *vp);
+
+extern bool
+WeakMap_clear(JSContext *cx, unsigned argc, Value *vp);
 
 } /* namespace js */
 

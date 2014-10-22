@@ -15,8 +15,6 @@ namespace dom {
 MediaStreamTrack::MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID)
   : mStream(aStream), mTrackID(aTrackID), mEnded(false), mEnabled(true)
 {
-  SetIsDOMBinding();
-
   memset(&mID, 0, sizeof(mID));
 
   nsresult rv;
@@ -52,6 +50,12 @@ MediaStreamTrack::SetEnabled(bool aEnabled)
 {
   mEnabled = aEnabled;
   mStream->SetTrackEnabled(mTrackID, aEnabled);
+}
+
+void
+MediaStreamTrack::Stop()
+{
+  mStream->StopTrack(mTrackID);
 }
 
 }

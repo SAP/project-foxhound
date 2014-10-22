@@ -68,6 +68,8 @@ this.BrowserElementParentBuilder = {
 function BrowserElementParent(frameLoader, hasRemoteFrame, isPendingFrame) {
   debug("Creating new BrowserElementParent object for " + frameLoader);
   this._domRequestCounter = 0;
+  this._domRequestReady = false;
+  this._pendingAPICalls = [];
   this._pendingDOMRequests = {};
   this._pendingSetInputMethodActive = [];
   this._hasRemoteFrame = hasRemoteFrame;
@@ -83,18 +85,19 @@ function BrowserElementParent(frameLoader, hasRemoteFrame, isPendingFrame) {
 
   Services.obs.addObserver(this, 'ask-children-to-exit-fullscreen', /* ownsWeak = */ true);
   Services.obs.addObserver(this, 'oop-frameloader-crashed', /* ownsWeak = */ true);
+  Services.obs.addObserver(this, 'copypaste-docommand', /* ownsWeak = */ true);
 
   let defineMethod = function(name, fn) {
-    XPCNativeWrapper.unwrap(self._frameElement)[name] = function() {
+    XPCNativeWrapper.unwrap(self._frameElement)[name] = Cu.exportFunction(function() {
       if (self._isAlive()) {
         return fn.apply(self, arguments);
       }
-    };
+    }, self._frameElement);
   }
 
   let defineNoReturnMethod = function(name, fn) {
-    XPCNativeWrapper.unwrap(self._frameElement)[name] = function method() {
-      if (!self._mm) {
+    XPCNativeWrapper.unwrap(self._frameElement)[name] = Cu.exportFunction(function method() {
+      if (!self._domRequestReady) {
         // Remote browser haven't been created, we just queue the API call.
         let args = Array.slice(arguments);
         args.unshift(self);
@@ -104,35 +107,45 @@ function BrowserElementParent(frameLoader, hasRemoteFrame, isPendingFrame) {
       if (self._isAlive()) {
         fn.apply(self, arguments);
       }
-    };
+    }, self._frameElement);
   };
 
   let defineDOMRequestMethod = function(domName, msgName) {
-    XPCNativeWrapper.unwrap(self._frameElement)[domName] = function() {
+    XPCNativeWrapper.unwrap(self._frameElement)[domName] = Cu.exportFunction(function() {
       return self._sendDOMRequest(msgName);
-    };
+    }, self._frameElement);
   }
 
   // Define methods on the frame element.
   defineNoReturnMethod('setVisible', this._setVisible);
   defineDOMRequestMethod('getVisible', 'get-visible');
-  defineNoReturnMethod('sendMouseEvent', this._sendMouseEvent);
 
-  // 0 = disabled, 1 = enabled, 2 - auto detect
-  if (getIntPref(TOUCH_EVENTS_ENABLED_PREF, 0) != 0) {
-    defineNoReturnMethod('sendTouchEvent', this._sendTouchEvent);
+  // Not expose security sensitive browser API for widgets
+  if (!this._frameLoader.QueryInterface(Ci.nsIFrameLoader).ownerIsWidget) {
+    defineNoReturnMethod('sendMouseEvent', this._sendMouseEvent);
+
+    // 0 = disabled, 1 = enabled, 2 - auto detect
+    if (getIntPref(TOUCH_EVENTS_ENABLED_PREF, 0) != 0) {
+      defineNoReturnMethod('sendTouchEvent', this._sendTouchEvent);
+    }
+    defineNoReturnMethod('goBack', this._goBack);
+    defineNoReturnMethod('goForward', this._goForward);
+    defineNoReturnMethod('reload', this._reload);
+    defineNoReturnMethod('stop', this._stop);
+    defineMethod('download', this._download);
+    defineDOMRequestMethod('purgeHistory', 'purge-history');
+    defineMethod('getScreenshot', this._getScreenshot);
+    defineNoReturnMethod('zoom', this._zoom);
+
+    defineDOMRequestMethod('getCanGoBack', 'get-can-go-back');
+    defineDOMRequestMethod('getCanGoForward', 'get-can-go-forward');
+    defineDOMRequestMethod('getContentDimensions', 'get-contentdimensions');
   }
-  defineNoReturnMethod('goBack', this._goBack);
-  defineNoReturnMethod('goForward', this._goForward);
-  defineNoReturnMethod('reload', this._reload);
-  defineNoReturnMethod('stop', this._stop);
-  defineMethod('download', this._download);
-  defineDOMRequestMethod('purgeHistory', 'purge-history');
-  defineMethod('getScreenshot', this._getScreenshot);
+
   defineMethod('addNextPaintListener', this._addNextPaintListener);
   defineMethod('removeNextPaintListener', this._removeNextPaintListener);
-  defineDOMRequestMethod('getCanGoBack', 'get-can-go-back');
-  defineDOMRequestMethod('getCanGoForward', 'get-can-go-forward');
+  defineNoReturnMethod('setActive', this._setActive);
+  defineMethod('getActive', 'this._getActive');
 
   let principal = this._frameElement.ownerDocument.nodePrincipal;
   let perm = Services.perms
@@ -169,7 +182,6 @@ function BrowserElementParent(frameLoader, hasRemoteFrame, isPendingFrame) {
   } else {
     // if we are a pending frame, we setup message manager after
     // observing remote-browser-frame-shown
-    this._pendingAPICalls = [];
     Services.obs.addObserver(this, 'remote-browser-frame-shown', /* ownsWeak = */ true);
   }
 }
@@ -200,10 +212,15 @@ BrowserElementParent.prototype = {
     let appManifestURL =
           this._frameElement.QueryInterface(Ci.nsIMozBrowserFrame).appManifestURL;
     if (appManifestURL) {
-      let appId =
-            DOMApplicationRegistry.getAppLocalIdByManifestURL(appManifestURL);
-      if (appId != Ci.nsIScriptSecurityManager.NO_APP_ID) {
-        DOMApplicationRegistry.registerBrowserElementParentForApp(this, appId);
+      let inParent = Cc["@mozilla.org/xre/app-info;1"]
+                       .getService(Ci.nsIXULRuntime)
+                       .processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+      if (inParent) {
+        DOMApplicationRegistry.registerBrowserElementParentForApp(
+          { manifestURL: appManifestURL }, this._mm);
+      } else {
+        this._mm.sendAsyncMessage("Webapps:RegisterBEP",
+                                  { manifestURL: appManifestURL });
       }
     }
   },
@@ -211,6 +228,9 @@ BrowserElementParent.prototype = {
   _setupMessageListener: function() {
     this._mm = this._frameLoader.messageManager;
     let self = this;
+    let isWidget = this._frameLoader
+                       .QueryInterface(Ci.nsIFrameLoader)
+                       .ownerIsWidget;
 
     // Messages we receive are handed to functions which take a (data) argument,
     // where |data| is the message manager's data object.
@@ -218,28 +238,17 @@ BrowserElementParent.prototype = {
     // on data.msg_name
     let mmCalls = {
       "hello": this._recvHello,
-      "contextmenu": this._fireCtxMenuEvent,
-      "locationchange": this._fireEventFromMsg,
       "loadstart": this._fireProfiledEventFromMsg,
       "loadend": this._fireProfiledEventFromMsg,
-      "titlechange": this._fireProfiledEventFromMsg,
-      "iconchange": this._fireEventFromMsg,
-      "manifestchange": this._fireEventFromMsg,
-      "metachange": this._fireEventFromMsg,
       "close": this._fireEventFromMsg,
-      "resize": this._fireEventFromMsg,
-      "activitydone": this._fireEventFromMsg,
-      "opensearch": this._fireEventFromMsg,
-      "securitychange": this._fireEventFromMsg,
       "error": this._fireEventFromMsg,
-      "scroll": this._fireEventFromMsg,
       "firstpaint": this._fireProfiledEventFromMsg,
       "documentfirstpaint": this._fireProfiledEventFromMsg,
       "nextpaint": this._recvNextPaint,
       "keyevent": this._fireKeyEvent,
-      "showmodalprompt": this._handleShowModalPrompt,
       "got-purge-history": this._gotDOMRequestResult,
       "got-screenshot": this._gotDOMRequestResult,
+      "got-contentdimensions": this._gotDOMRequestResult,
       "got-can-go-back": this._gotDOMRequestResult,
       "got-can-go-forward": this._gotDOMRequestResult,
       "fullscreen-origin-change": this._remoteFullscreenOriginChange,
@@ -247,12 +256,38 @@ BrowserElementParent.prototype = {
       "exit-fullscreen": this._exitFullscreen,
       "got-visible": this._gotDOMRequestResult,
       "visibilitychange": this._childVisibilityChange,
-      "got-set-input-method-active": this._gotDOMRequestResult
+      "got-set-input-method-active": this._gotDOMRequestResult,
+      "selectionchange": this._handleSelectionChange,
+      "scrollviewchange": this._handleScrollViewChange,
+      "touchcarettap": this._handleTouchCaretTap
+    };
+
+    let mmSecuritySensitiveCalls = {
+      "showmodalprompt": this._handleShowModalPrompt,
+      "contextmenu": this._fireCtxMenuEvent,
+      "securitychange": this._fireEventFromMsg,
+      "locationchange": this._fireEventFromMsg,
+      "iconchange": this._fireEventFromMsg,
+      "scrollareachanged": this._fireEventFromMsg,
+      "titlechange": this._fireProfiledEventFromMsg,
+      "opensearch": this._fireEventFromMsg,
+      "manifestchange": this._fireEventFromMsg,
+      "metachange": this._fireEventFromMsg,
+      "resize": this._fireEventFromMsg,
+      "activitydone": this._fireEventFromMsg,
+      "scroll": this._fireEventFromMsg
     };
 
     this._mm.addMessageListener('browser-element-api:call', function(aMsg) {
-      if (self._isAlive() && (aMsg.data.msg_name in mmCalls)) {
+      if (!self._isAlive()) {
+        return;
+      }
+
+      if (aMsg.data.msg_name in mmCalls) {
         return mmCalls[aMsg.data.msg_name].apply(self, arguments);
+      } else if (!isWidget && aMsg.data.msg_name in mmSecuritySensitiveCalls) {
+        return mmSecuritySensitiveCalls[aMsg.data.msg_name]
+                 .apply(self, arguments);
       }
     });
   },
@@ -287,25 +322,28 @@ BrowserElementParent.prototype = {
       }
     };
 
-    if (authDetail.isOnlyPassword) {
-      // We don't handle password-only prompts, so just cancel it.
+    // 1. We don't handle password-only prompts.
+    // 2. We don't handle for widget case because of security concern.
+    if (authDetail.isOnlyPassword ||
+        this._frameLoader.QueryInterface(Ci.nsIFrameLoader).ownerIsWidget) {
       cancelCallback();
       return;
-    } else { /* username and password */
-      let detail = {
-        host:     authDetail.host,
-        realm:    authDetail.realm
-      };
-
-      evt = this._createEvent('usernameandpasswordrequired', detail,
-                              /* cancelable */ true);
-      Cu.exportFunction(function(username, password) {
-        if (callbackCalled)
-          return;
-        callbackCalled = true;
-        callback(true, username, password);
-      }, evt.detail, { defineAs: 'authenticate' });
     }
+
+    /* username and password */
+    let detail = {
+      host:     authDetail.host,
+      realm:    authDetail.realm
+    };
+
+    evt = this._createEvent('usernameandpasswordrequired', detail,
+                            /* cancelable */ true);
+    Cu.exportFunction(function(username, password) {
+      if (callbackCalled)
+        return;
+      callbackCalled = true;
+      callback(true, username, password);
+    }, evt.detail, { defineAs: 'authenticate' });
 
     Cu.exportFunction(cancelCallback, evt.detail, { defineAs: 'cancel' });
 
@@ -341,11 +379,19 @@ BrowserElementParent.prototype = {
       this._ownerVisibilityChange();
     }
 
+    if (!this._domRequestReady) {
+      // At least, one message listener such as for hello is registered.
+      // So we can use sendAsyncMessage now.
+      this._domRequestReady = true;
+      this._runPendingAPICall();
+    }
+
     return {
       name: this._frameElement.getAttribute('name'),
       fullscreenAllowed:
         this._frameElement.hasAttribute('allowfullscreen') ||
-        this._frameElement.hasAttribute('mozallowfullscreen')
+        this._frameElement.hasAttribute('mozallowfullscreen'),
+      isPrivate: this._frameElement.hasAttribute('mozprivatebrowsing')
     };
   },
 
@@ -449,6 +495,24 @@ BrowserElementParent.prototype = {
     }
   },
 
+  _handleSelectionChange: function(data) {
+    let evt = this._createEvent('selectionchange', data.json,
+                                /* cancelable = */ false);
+    this._frameElement.dispatchEvent(evt);
+  },
+
+  _handleScrollViewChange: function(data) {
+    let evt = this._createEvent("scrollviewchange", data.json,
+                                /* cancelable = */ false);
+    this._frameElement.dispatchEvent(evt);
+  },
+
+  _handleTouchCaretTap: function(data) {
+    let evt = this._createEvent("touchcarettap", data.json,
+                                /* cancelable = */ false);
+    this._frameElement.dispatchEvent(evt);
+  },
+
   _createEvent: function(evtName, detail, cancelable) {
     // This will have to change if we ever want to send a CustomEvent with null
     // detail.  For now, it's OK.
@@ -491,7 +555,7 @@ BrowserElementParent.prototype = {
         Services.DOMRequest.fireErrorAsync(req, "fail");
       }
     };
-    if (this._mm) {
+    if (this._domRequestReady) {
       send();
     } else {
       // Child haven't been loaded.
@@ -519,17 +583,27 @@ BrowserElementParent.prototype = {
 
     if ('successRv' in data.json) {
       debug("Successful gotDOMRequestResult.");
-      Services.DOMRequest.fireSuccess(req, data.json.successRv);
+      let clientObj = Cu.cloneInto(data.json.successRv, this._window);
+      Services.DOMRequest.fireSuccess(req, clientObj);
     }
     else {
       debug("Got error in gotDOMRequestResult.");
-      Services.DOMRequest.fireErrorAsync(req, data.json.errorMsg);
+      Services.DOMRequest.fireErrorAsync(req,
+        Cu.cloneInto(data.json.errorMsg, this._window));
     }
   },
 
   _setVisible: function(visible) {
     this._sendAsyncMsg('set-visible', {visible: visible});
     this._frameLoader.visible = visible;
+  },
+
+  _setActive: function(active) {
+    this._frameLoader.visible = active;
+  },
+
+  _getActive: function() {
+    return this._frameLoader.visible;
   },
 
   _sendMouseEvent: function(type, x, y, button, clickCount, modifiers) {
@@ -589,6 +663,16 @@ BrowserElementParent.prototype = {
 
   _stop: function() {
     this._sendAsyncMsg('stop');
+  },
+
+  /*
+   * The valid range of zoom scale is defined in preference "zoom.maxPercent" and "zoom.minPercent".
+   */
+  _zoom: function(zoom) {
+    zoom *= 100;
+    zoom = Math.min(getIntPref("zoom.maxPercent", 300), zoom);
+    zoom = Math.max(getIntPref("zoom.minPercent", 50), zoom);
+    this._sendAsyncMsg('zoom', {zoom: zoom / 100.0});
   },
 
   _download: function(_url, _options) {
@@ -747,7 +831,7 @@ BrowserElementParent.prototype = {
       if (self._nextPaintListeners.push(listener) == 1)
         self._sendAsyncMsg('activate-next-paint-listener');
     };
-    if (!this._mm) {
+    if (!this._domRequestReady) {
       this._pendingAPICalls.push(run);
     } else {
       run();
@@ -770,7 +854,7 @@ BrowserElementParent.prototype = {
       if (self._nextPaintListeners.length == 0)
         self._sendAsyncMsg('deactivate-next-paint-listener');
     };
-    if (!this._mm) {
+    if (!this._domRequestReady) {
       this._pendingAPICalls.push(run);
     } else {
       run();
@@ -858,10 +942,14 @@ BrowserElementParent.prototype = {
         if (!this._mm) {
           this._setupMessageListener();
           this._registerAppManifest();
-          this._runPendingAPICall();
         }
         Services.obs.removeObserver(this, 'remote-browser-frame-shown');
       }
+    case 'copypaste-docommand':
+      if (this._isAlive() && this._frameElement.isEqualNode(subject.wrappedJSObject)) {
+        this._sendAsyncMsg('do-command', { command: data });
+      }
+      break;
     default:
       debug('Unknown topic: ' + topic);
       break;

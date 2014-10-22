@@ -4,6 +4,7 @@
 
 import base64
 import json
+import logging
 import math
 import os
 import re
@@ -16,20 +17,15 @@ sys.path.insert(0, os.path.abspath(os.path.realpath(os.path.dirname(__file__))))
 
 from automation import Automation
 from remoteautomation import RemoteAutomation, fennecLogcatFilters
-from runtests import Mochitest, MessageLogger, MochitestFormatter
+from runtests import Mochitest, MessageLogger
 from mochitest_options import MochitestOptions
+from mozlog import structured
 
 import devicemanager
 import droid
 import manifestparser
 import mozinfo
 import moznetwork
-from mozlog.structured.handlers import StreamHandler
-from mozlog.structured.structuredlog import StructuredLogger
-
-log = StructuredLogger('Mochi-Remote')
-stream_handler = StreamHandler(stream=sys.stdout, formatter=MochitestFormatter())
-log.add_handler(stream_handler)
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
 
@@ -49,6 +45,11 @@ class RemoteOptions(MochitestOptions):
                     type = "string", dest = "deviceIP",
                     help = "ip address of remote device to test")
         defaults["deviceIP"] = None
+
+        self.add_option("--deviceSerial", action="store",
+                    type = "string", dest = "deviceSerial",
+                    help = "ip address of remote device to test")
+        defaults["deviceSerial"] = None
 
         self.add_option("--dm_trans", action="store",
                     type = "string", dest = "dm_trans",
@@ -125,6 +126,8 @@ class RemoteOptions(MochitestOptions):
         self.set_defaults(**defaults)
 
     def verifyRemoteOptions(self, options, automation):
+        options_logger = logging.getLogger('MochitestRemote')
+
         if not options.remoteTestRoot:
             options.remoteTestRoot = automation._devicemanager.deviceRoot
 
@@ -132,13 +135,13 @@ class RemoteOptions(MochitestOptions):
             if os.name != "nt":
                 options.remoteWebServer = moznetwork.get_ip()
             else:
-                log.error("you must specify a --remote-webserver=<ip address>")
+                options_logger.error("you must specify a --remote-webserver=<ip address>")
                 return None
 
         options.webServer = options.remoteWebServer
 
-        if (options.deviceIP == None):
-            log.error("you must provide a device IP")
+        if (options.dm_trans == 'sut' and options.deviceIP == None):
+            options_logger.error("If --dm_trans = sut, you must provide a device IP")
             return None
 
         if (options.remoteLogFile == None):
@@ -149,13 +152,13 @@ class RemoteOptions(MochitestOptions):
 
         # remoteAppPath or app must be specified to find the product to launch
         if (options.remoteAppPath and options.app):
-            log.error("You cannot specify both the remoteAppPath and the app setting")
+            options_logger.error("You cannot specify both the remoteAppPath and the app setting")
             return None
         elif (options.remoteAppPath):
             options.app = options.remoteTestRoot + "/" + options.remoteAppPath
         elif (options.app == None):
             # Neither remoteAppPath nor app are set -- error
-            log.error("You must specify either appPath or app")
+            options_logger.error("You must specify either appPath or app")
             return None
 
         # Only reset the xrePath if it wasn't provided
@@ -170,14 +173,14 @@ class RemoteOptions(MochitestOptions):
         # Robocop specific deprecated options.
         if options.robocop:
             if options.robocopIni:
-                log.error("can not use deprecated --robocop and replacement --robocop-ini together")
+                options_logger.error("can not use deprecated --robocop and replacement --robocop-ini together")
                 return None
             options.robocopIni = options.robocop
             del options.robocop
 
         if options.robocopPath:
             if options.robocopApk:
-                log.error("can not use deprecated --robocop-path and replacement --robocop-apk together")
+                options_logger.error("can not use deprecated --robocop-path and replacement --robocop-apk together")
                 return None
             options.robocopApk = os.path.join(options.robocopPath, 'robocop.apk')
             del options.robocopPath
@@ -185,19 +188,19 @@ class RemoteOptions(MochitestOptions):
         # Robocop specific options
         if options.robocopIni != "":
             if not os.path.exists(options.robocopIni):
-                log.error("Unable to find specified robocop .ini manifest '%s'" % options.robocopIni)
+                options_logger.error("Unable to find specified robocop .ini manifest '%s'" % options.robocopIni)
                 return None
             options.robocopIni = os.path.abspath(options.robocopIni)
 
         if options.robocopApk != "":
             if not os.path.exists(options.robocopApk):
-                log.error("Unable to find robocop APK '%s'" % options.robocopApk)
+                options_logger.error("Unable to find robocop APK '%s'" % options.robocopApk)
                 return None
             options.robocopApk = os.path.abspath(options.robocopApk)
 
         if options.robocopIds != "":
             if not os.path.exists(options.robocopIds):
-                log.error("Unable to find specified robocop IDs file '%s'" % options.robocopIds)
+                options_logger.error("Unable to find specified robocop IDs file '%s'" % options.robocopIds)
                 return None
             options.robocopIds = os.path.abspath(options.robocopIds)
 
@@ -230,9 +233,10 @@ class MochiRemote(Mochitest):
     localProfile = None
     logMessages = []
 
-    def __init__(self, automation, devmgr, options, message_logger=None):
+    def __init__(self, automation, devmgr, options):
+        Mochitest.__init__(self, options)
+
         self._automation = automation
-        Mochitest.__init__(self)
         self._dm = devmgr
         self.environment = self._automation.environment
         self.remoteProfile = options.remoteTestRoot + "/profile"
@@ -240,18 +244,26 @@ class MochiRemote(Mochitest):
         self.remoteLog = options.remoteLogFile
         self.localLog = options.logFile
         self._automation.deleteANRs()
+        self._automation.deleteTombstones()
         self.certdbNew = True
-
-        # structured logging
-        self.message_logger = message_logger or MessageLogger(logger=log)
+        self.remoteNSPR = os.path.join(options.remoteTestRoot, "nspr")
+        self._dm.removeDir(self.remoteNSPR);
+        self._dm.mkDir(self.remoteNSPR);
 
     def cleanup(self, options):
         if self._dm.fileExists(self.remoteLog):
             self._dm.getFile(self.remoteLog, self.localLog)
             self._dm.removeFile(self.remoteLog)
         else:
-            log.warning("Unable to retrieve log file (%s) from remote device" % self.remoteLog)
+            self.log.warning("Unable to retrieve log file (%s) from remote device" % self.remoteLog)
         self._dm.removeDir(self.remoteProfile)
+        # Don't leave an old robotium.config hanging around; the
+        # profile it references was just deleted!
+        deviceRoot = self._dm.getDeviceRoot()
+        self._dm.removeFile(os.path.join(deviceRoot, "robotium.config"))
+        blobberUploadDir = os.environ.get('MOZ_UPLOAD_DIR', None)
+        if blobberUploadDir:
+            self._dm.getDirectory(self.remoteNSPR, blobberUploadDir)
         Mochitest.cleanup(self, options)
 
     def findPath(self, paths, filename = None):
@@ -300,7 +312,7 @@ class MochiRemote(Mochitest):
         ]
         options.xrePath = self.findPath(paths)
         if options.xrePath == None:
-            log.error("unable to find xulrunner path for %s, please specify with --xre-path" % os.name)
+            self.log.error("unable to find xulrunner path for %s, please specify with --xre-path" % os.name)
             sys.exit(1)
 
         xpcshell = "xpcshell"
@@ -314,12 +326,12 @@ class MochiRemote(Mochitest):
         options.utilityPath = self.findPath(paths, xpcshell)
 
         if options.utilityPath == None:
-            log.error("unable to find utility path for %s, please specify with --utility-path" % os.name)
+            self.log.error("unable to find utility path for %s, please specify with --utility-path" % os.name)
             sys.exit(1)
 
         xpcshell_path = os.path.join(options.utilityPath, xpcshell)
         if localAutomation.elf_arm(xpcshell_path):
-            log.error('xpcshell at %s is an ARM binary; please use '
+            self.log.error('xpcshell at %s is an ARM binary; please use '
                       'the --utility-path argument to specify the path '
                       'to a desktop version.' % xpcshell_path)
             sys.exit(1)
@@ -359,7 +371,7 @@ class MochiRemote(Mochitest):
         try:
             self._dm.pushDir(options.profilePath, self.remoteProfile)
         except devicemanager.DMError:
-            log.error("Automation Error: Unable to copy profile to device.")
+            self.log.error("Automation Error: Unable to copy profile to device.")
             raise
 
         restoreRemotePaths()
@@ -369,6 +381,7 @@ class MochiRemote(Mochitest):
     def buildURLOptions(self, options, env):
         self.localLog = options.logFile
         options.logFile = self.remoteLog
+        options.fileLevel = 'INFO'
         options.profilePath = self.localProfile
         env["MOZ_HIDE_RESULTS_TABLE"] = "1"
         retVal = Mochitest.buildURLOptions(self, options, env)
@@ -378,7 +391,7 @@ class MochiRemote(Mochitest):
             try:
                 self._dm.pushDir(options.profilePath, self.remoteProfile)
             except devicemanager.DMError:
-                log.error("Automation Error: Unable to copy profile to device.")
+                self.log.error("Automation Error: Unable to copy profile to device.")
                 raise
 
         options.profilePath = self.remoteProfile
@@ -409,7 +422,7 @@ class MochiRemote(Mochitest):
         try:
             self._dm.pushFile(filename, manifest)
         except devicemanager.DMError:
-            log.error("Automation Error: Unable to install Chrome files on device.")
+            self.log.error("Automation Error: Unable to install Chrome files on device.")
             raise
 
         return manifest
@@ -448,7 +461,7 @@ class MochiRemote(Mochitest):
         if fail_found:
             result = 1
         if not end_found:
-            log.error("Automation Error: Missing end of test marker (process crashed?)")
+            self.log.info("PROCESS-CRASH | Automation Error: Missing end of test marker (process crashed?)")
             result = 1
         return result
 
@@ -493,33 +506,33 @@ class MochiRemote(Mochitest):
     def printScreenshots(self, screenShotDir):
         # TODO: This can be re-written after completion of bug 749421
         if not self._dm.dirExists(screenShotDir):
-            log.info("SCREENSHOT: No ScreenShots directory available: " + screenShotDir)
+            self.log.info("SCREENSHOT: No ScreenShots directory available: " + screenShotDir)
             return
 
         printed = 0
         for name in self._dm.listFiles(screenShotDir):
             fullName = screenShotDir + "/" + name
-            log.info("SCREENSHOT: FOUND: [%s]" % fullName)
+            self.log.info("SCREENSHOT: FOUND: [%s]" % fullName)
             try:
                 image = self._dm.pullFile(fullName)
                 encoded = base64.b64encode(image)
-                log.info("SCREENSHOT: data:image/jpg;base64,%s" % encoded)
+                self.log.info("SCREENSHOT: data:image/jpg;base64,%s" % encoded)
                 printed += 1
             except:
-                log.info("SCREENSHOT: Could not be parsed")
+                self.log.info("SCREENSHOT: Could not be parsed")
                 pass
 
-        log.info("SCREENSHOT: TOTAL PRINTED: [%s]" % printed)
+        self.log.info("SCREENSHOT: TOTAL PRINTED: [%s]" % printed)
 
     def printDeviceInfo(self, printLogcat=False):
         try:
             if printLogcat:
                 logcat = self._dm.getLogcat(filterOutRegexps=fennecLogcatFilters)
-                log.info('\n' + ''.join(logcat).decode('utf-8', 'replace'))
-            log.info("Device info: %s" % self._dm.getInfo())
-            log.info("Test root: %s" % self._dm.deviceRoot)
+                self.log.info('\n' + ''.join(logcat).decode('utf-8', 'replace'))
+            self.log.info("Device info: %s" % self._dm.getInfo())
+            self.log.info("Test root: %s" % self._dm.deviceRoot)
         except devicemanager.DMError:
-            log.warn("Error getting device information")
+            self.log.warning("Error getting device information")
 
     def buildRobotiumConfig(self, options, browserEnv):
         deviceRoot = self._dm.deviceRoot
@@ -538,8 +551,8 @@ class MochiRemote(Mochitest):
             for key, value in browserEnv.items():
                 try:
                     value.index(',')
-                    log.error("buildRobotiumConfig: browserEnv - Found a ',' in our value, unable to process value. key=%s,value=%s" % (key, value))
-                    log.error("browserEnv=%s" % browserEnv)
+                    self.log.error("buildRobotiumConfig: browserEnv - Found a ',' in our value, unable to process value. key=%s,value=%s" % (key, value))
+                    self.log.error("browserEnv=%s" % browserEnv)
                 except ValueError:
                     envstr += "%s%s=%s" % (delim, key, value)
                     delim = ","
@@ -557,6 +570,9 @@ class MochiRemote(Mochitest):
 
     def buildBrowserEnv(self, options, debugger=False):
         browserEnv = Mochitest.buildBrowserEnv(self, options, debugger=debugger)
+        # override nsprLogs to avoid processing in Mochitest base class
+        self.nsprLogs = None
+        browserEnv["NSPR_LOG_FILE"] = os.path.join(self.remoteNSPR, self.nsprLogName)
         self.buildRobotiumConfig(options, browserEnv)
         return browserEnv
 
@@ -577,95 +593,36 @@ class MochiRemote(Mochitest):
 
         return self._automation.runApp(*args, **kwargs)
 
-class RobocopMochiRemote(MochiRemote):
-    """This class maintains compatibility with the robocop logging system
-    that is still unstructured."""
-
-    def addLogData(self):
-        with open(self.localLog) as currentLog:
-            data = currentLog.readlines()
-
-        restart = re.compile('SimpleTest START.*')
-        reend = re.compile('TEST-START . Shutdown.*')
-        refail = re.compile('TEST-UNEXPECTED-FAIL.*')
-        start_found = False
-        end_found = False
-        fail_found = False
-        for line in data:
-            if reend.match(line):
-                end_found = True
-                start_found = False
-                break
-
-            if start_found and not end_found:
-                self.logMessages.append(line)
-
-            if restart.match(line):
-                start_found = True
-            if refail.match(line):
-                fail_found = True
-        result = 0
-        if fail_found:
-            result = 1
-        if not end_found:
-            log.error("Automation Error: Missing end of test marker (process crashed?)")
-            result = 1
-        return result
-
-    def printLog(self):
-        passed = 0
-        failed = 0
-        todo = 0
-        incr = 1
-        logFile = []
-        logFile.append("0 INFO SimpleTest START")
-        for line in self.logMessages:
-            if line.startswith("TEST-PASS"):
-                passed += 1
-            elif line.startswith("TEST-UNEXPECTED"):
-                failed += 1
-            elif line.startswith("TEST-KNOWN"):
-                todo += 1
-            incr += 1
-
-        logFile.append("%s INFO TEST-START | Shutdown" % incr)
-        incr += 1
-        logFile.append("%s INFO Passed: %s" % (incr, passed))
-        incr += 1
-        logFile.append("%s INFO Failed: %s" % (incr, failed))
-        incr += 1
-        logFile.append("%s INFO Todo: %s" % (incr, todo))
-        incr += 1
-        logFile.append("%s INFO SimpleTest FINISHED" % incr)
-
-        # TODO: Consider not printing to stdout because we might be duplicating output
-        print '\n'.join(logFile)
-        with open(self.localLog, 'w') as localLog:
-            localLog.write('\n'.join(logFile))
-
-        if failed > 0:
-            return 1
-        return 0
-
-def main():
-    message_logger = MessageLogger(logger=log)
+def main(args):
+    message_logger = MessageLogger(logger=None)
     process_args = {'messageLogger': message_logger}
     auto = RemoteAutomation(None, "fennec", processArgs=process_args)
+
     parser = RemoteOptions(auto)
-    options, args = parser.parse_args()
+    structured.commandline.add_logging_group(parser)
+    options, args = parser.parse_args(args)
 
     if (options.dm_trans == "adb"):
         if (options.deviceIP):
             dm = droid.DroidADB(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
+        elif (options.deviceSerial):
+            dm = droid.DroidADB(None, None, deviceSerial=options.deviceSerial, deviceRoot=options.remoteTestRoot)
         else:
             dm = droid.DroidADB(deviceRoot=options.remoteTestRoot)
     else:
          dm = droid.DroidSUT(options.deviceIP, options.devicePort, deviceRoot=options.remoteTestRoot)
     auto.setDeviceManager(dm)
     options = parser.verifyRemoteOptions(options, auto)
+
+    mochitest = MochiRemote(auto, dm, options)
+
+    log = mochitest.log
+    message_logger.logger = log
+    mochitest.message_logger = message_logger
+
     if (options == None):
         log.error("Invalid options specified, use --help for a list of valid options")
-        sys.exit(1)
+        return 1
 
     productPieces = options.remoteProductName.split('.')
     if (productPieces != None):
@@ -674,12 +631,9 @@ def main():
         auto.setProduct(options.remoteProductName)
     auto.setAppName(options.remoteappname)
 
-    mochitest_cls = RobocopMochiRemote if options.robocopIni != "" else MochiRemote
-    mochitest = mochitest_cls(auto, dm, options, message_logger)
-
     options = parser.verifyOptions(options, mochitest)
     if (options == None):
-        sys.exit(1)
+        return 1
 
     logParent = os.path.dirname(options.remoteLogFile)
     dm.mkDir(logParent);
@@ -708,6 +662,9 @@ def main():
     dm.killProcess(procName)
 
     if options.robocopIni != "":
+        # turning buffering off as it's not used in robocop
+        message_logger.buffering = False
+
         # sut may wait up to 300 s for a robocop am process before returning
         dm.default_timeout = 320
         mp = manifestparser.TestManifest(strict=False)
@@ -718,8 +675,6 @@ def main():
         my_tests = tests
         for test in robocop_tests:
             tests.append(test['name'])
-        # suite_start message when running robocop tests
-        log.suite_start(tests)
 
         if options.totalChunks:
             tests_per_chunk = math.ceil(len(tests) / (options.totalChunks * 1.0))
@@ -730,21 +685,19 @@ def main():
             my_tests = tests[start:end]
             log.info("Running tests %d-%d/%d" % (start+1, end, len(tests)))
 
-        dm.removeFile(os.path.join(deviceRoot, "fennec_ids.txt"))
-        fennec_ids = os.path.abspath(os.path.join(SCRIPT_DIR, "fennec_ids.txt"))
-        if not os.path.exists(fennec_ids) and options.robocopIds:
-            fennec_ids = options.robocopIds
-        dm.pushFile(fennec_ids, os.path.join(deviceRoot, "fennec_ids.txt"))
         options.extraPrefs.append('browser.search.suggest.enabled=true')
         options.extraPrefs.append('browser.search.suggest.prompted=true')
         options.extraPrefs.append('layout.css.devPixelsPerPx=1.0')
         options.extraPrefs.append('browser.chrome.dynamictoolbar=false')
         options.extraPrefs.append('browser.snippets.enabled=false')
+        options.extraPrefs.append('browser.casting.enabled=true')
 
         if (options.dm_trans == 'adb' and options.robocopApk):
             dm._checkCmd(["install", "-r", options.robocopApk])
 
         retVal = None
+        # Filtering tests
+        active_tests = []
         for test in robocop_tests:
             if options.testPath and options.testPath != test['name']:
                 continue
@@ -756,6 +709,11 @@ def main():
                 log.info('TEST-INFO | skipping %s | %s' % (test['name'], test['disabled']))
                 continue
 
+            active_tests.append(test)
+
+        log.suite_start([t['name'] for t in active_tests])
+
+        for test in active_tests:
             # When running in a loop, we need to create a fresh profile for each cycle
             if mochitest.localProfile:
                 options.profilePath = mochitest.localProfile
@@ -767,6 +725,7 @@ def main():
             options.browserArgs = ["instrument", "-w", "-e", "deviceroot", deviceRoot, "-e", "class"]
             options.browserArgs.append("org.mozilla.gecko.tests.%s" % test['name'])
             options.browserArgs.append("org.mozilla.roboexample.test/org.mozilla.gecko.FennecInstrumentationTestRunner")
+            mochitest.nsprLogName = "nspr-%s.log" % test['name']
 
             # If the test is for checking the import from bookmarks then make sure there is data to import
             if test['name'] == "testImportFromAndroid":
@@ -837,6 +796,7 @@ def main():
             if retVal == 0:
                 retVal = overallResult
     else:
+        mochitest.nsprLogName = "nspr.log"
         try:
             dm.recordLogcat()
             retVal = mochitest.runTests(options)
@@ -851,9 +811,12 @@ def main():
                 pass
             retVal = 1
 
-    mochitest.printDeviceInfo(printLogcat=True)
+        mochitest.printDeviceInfo(printLogcat=True)
 
-    sys.exit(retVal)
+    message_logger.finish()
+
+    return retVal
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv[1:]))

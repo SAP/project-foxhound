@@ -40,7 +40,7 @@ class ChannelEventQueue MOZ_FINAL
   NS_INLINE_DECL_REFCOUNTING(ChannelEventQueue)
 
  public:
-  ChannelEventQueue(nsISupports *owner)
+  explicit ChannelEventQueue(nsISupports *owner)
     : mSuspendCount(0)
     , mSuspended(false)
     , mForced(false)
@@ -94,8 +94,8 @@ class ChannelEventQueue MOZ_FINAL
   // Keep ptr to avoid refcount cycle: only grab ref during flushing.
   nsISupports *mOwner;
 
-  // Target thread for delivery of events.
-  nsCOMPtr<nsIThread> mTargetThread;
+  // EventTarget for delivery of events to the correct thread.
+  nsCOMPtr<nsIEventTarget> mTargetThread;
 
   friend class AutoEventEnqueuer;
 };
@@ -165,7 +165,7 @@ ChannelEventQueue::MaybeFlushQueue()
 class AutoEventEnqueuer
 {
  public:
-  AutoEventEnqueuer(ChannelEventQueue *queue) : mEventQueue(queue) {
+  explicit AutoEventEnqueuer(ChannelEventQueue *queue) : mEventQueue(queue) {
     mEventQueue->StartForcedQueueing();
   }
   ~AutoEventEnqueuer() {

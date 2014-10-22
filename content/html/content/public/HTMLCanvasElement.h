@@ -16,7 +16,6 @@
 #include "mozilla/gfx/Rect.h"
 
 class nsICanvasRenderingContextInternal;
-class nsIDOMFile;
 class nsITimerCallback;
 
 namespace mozilla {
@@ -31,6 +30,7 @@ class SourceSurface;
 
 namespace dom {
 
+class File;
 class FileCallback;
 class HTMLCanvasPrintState;
 class PrintCallback;
@@ -47,7 +47,7 @@ class HTMLCanvasElement MOZ_FINAL : public nsGenericHTMLElement,
   typedef layers::LayerManager LayerManager;
 
 public:
-  HTMLCanvasElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLCanvasElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
 
   NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLCanvasElement, canvas)
 
@@ -102,9 +102,9 @@ public:
   {
     SetHTMLBoolAttr(nsGkAtoms::moz_opaque, aValue, aRv);
   }
-  already_AddRefed<nsIDOMFile> MozGetAsFile(const nsAString& aName,
-                                            const nsAString& aType,
-                                            ErrorResult& aRv);
+  already_AddRefed<File> MozGetAsFile(const nsAString& aName,
+                                      const nsAString& aType,
+                                      ErrorResult& aRv);
   already_AddRefed<nsISupports> MozGetIPCContext(const nsAString& aContextId,
                                                  ErrorResult& aRv)
   {

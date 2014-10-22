@@ -34,7 +34,7 @@ class nsSVGMarkerFrame : public nsSVGMarkerFrameBase
   friend nsContainerFrame*
   NS_NewSVGMarkerFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 protected:
-  nsSVGMarkerFrame(nsStyleContext* aContext)
+  explicit nsSVGMarkerFrame(nsStyleContext* aContext)
     : nsSVGMarkerFrameBase(aContext)
     , mMarkedFrame(nullptr)
     , mInUse(false)
@@ -85,6 +85,7 @@ public:
 
   // nsSVGMarkerFrame methods:
   nsresult PaintMark(nsRenderingContext *aContext,
+                     const gfxMatrix& aToMarkedFrameUserSpace,
                      nsSVGPathGeometryFrame *aMarkedFrame,
                      nsSVGMark *aMark,
                      float aStrokeWidth);
@@ -102,8 +103,7 @@ private:
   bool mIsStart;  // whether the callback is for a marker-start marker
 
   // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM(uint32_t aFor,
-                                nsIFrame* aTransformRoot = nullptr) MOZ_OVERRIDE;
+  virtual gfxMatrix GetCanvasTM() MOZ_OVERRIDE;
 
   // A helper class to allow us to paint markers safely. The helper
   // automatically sets and clears the mInUse flag on the marker frame (to
@@ -146,7 +146,7 @@ class nsSVGMarkerAnonChildFrame
   NS_NewSVGMarkerAnonChildFrame(nsIPresShell* aPresShell,
                                 nsStyleContext* aContext);
 
-  nsSVGMarkerAnonChildFrame(nsStyleContext* aContext)
+  explicit nsSVGMarkerAnonChildFrame(nsStyleContext* aContext)
     : nsSVGMarkerAnonChildFrameBase(aContext)
   {}
 
@@ -173,11 +173,9 @@ public:
   virtual nsIAtom* GetType() const MOZ_OVERRIDE;
 
   // nsSVGContainerFrame methods:
-  virtual gfxMatrix GetCanvasTM(uint32_t aFor,
-                                nsIFrame* aTransformRoot = nullptr) MOZ_OVERRIDE
+  virtual gfxMatrix GetCanvasTM() MOZ_OVERRIDE
   {
-    nsSVGMarkerFrame* marker = static_cast<nsSVGMarkerFrame*>(GetParent());
-    return marker->GetCanvasTM(aFor, aTransformRoot);
+    return static_cast<nsSVGMarkerFrame*>(GetParent())->GetCanvasTM();
   }
 };
 #endif

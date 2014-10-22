@@ -57,19 +57,20 @@ public:
   // essentially, this is a sentinel used to represent an invalid or blank
   // tile.
   TileHost()
-    : mSharedLock(nullptr)
-    , mTextureHost(nullptr)
   {}
 
   // Constructs a TileHost from a gfxSharedReadLock and TextureHost.
   TileHost(gfxSharedReadLock* aSharedLock,
-               TextureHost* aTextureHost)
+               TextureHost* aTextureHost,
+               TextureHost* aTextureHostOnWhite)
     : mSharedLock(aSharedLock)
     , mTextureHost(aTextureHost)
+    , mTextureHostOnWhite(aTextureHostOnWhite)
   {}
 
   TileHost(const TileHost& o) {
     mTextureHost = o.mTextureHost;
+    mTextureHostOnWhite = o.mTextureHostOnWhite;
     mSharedLock = o.mSharedLock;
   }
   TileHost& operator=(const TileHost& o) {
@@ -77,6 +78,7 @@ public:
       return *this;
     }
     mTextureHost = o.mTextureHost;
+    mTextureHostOnWhite = o.mTextureHostOnWhite;
     mSharedLock = o.mSharedLock;
     return *this;
   }
@@ -98,6 +100,7 @@ public:
 
   RefPtr<gfxSharedReadLock> mSharedLock;
   RefPtr<TextureHost> mTextureHost;
+  RefPtr<TextureHost> mTextureHostOnWhite;
 };
 
 class TiledLayerBufferComposite
@@ -134,7 +137,7 @@ public:
 
   bool HasDoubleBufferedTiles() { return mHasDoubleBufferedTiles; }
 
-  bool IsValid() const { return !mUninitialized; }
+  bool IsValid() const { return mIsValid; }
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
   virtual void SetReleaseFence(const android::sp<android::Fence>& aReleaseFence);
@@ -154,14 +157,16 @@ protected:
 
   void SwapTiles(TileHost& aTileA, TileHost& aTileB) { std::swap(aTileA, aTileB); }
 
+  void UnlockTile(TileHost aTile) {}
+  void PostValidate(const nsIntRegion& aPaintRegion) {}
 private:
   CSSToParentLayerScale mFrameResolution;
   bool mHasDoubleBufferedTiles;
-  bool mUninitialized;
+  bool mIsValid;
 };
 
 /**
- * ContentHost for tiled Thebes layers. Since tiled layers are special snow
+ * ContentHost for tiled PaintedLayers. Since tiled layers are special snow
  * flakes, we have a unique update process. All the textures that back the
  * tiles are added in the usual way, but Updated is called on the host side
  * in response to a message that describes the transaction for every tile.
@@ -184,7 +189,7 @@ class TiledContentHost : public ContentHost,
                          public TiledLayerComposer
 {
 public:
-  TiledContentHost(const TextureInfo& aTextureInfo);
+  explicit TiledContentHost(const TextureInfo& aTextureInfo);
 
 protected:
   ~TiledContentHost();
@@ -210,16 +215,24 @@ public:
     return mLowPrecisionTiledBuffer.GetValidRegion();
   }
 
-  void UseTiledLayerBuffer(ISurfaceAllocator* aAllocator,
-                           const SurfaceDescriptorTiles& aTiledDescriptor);
+  virtual void SetCompositor(Compositor* aCompositor)
+  {
+    CompositableHost::SetCompositor(aCompositor);
+    mTiledBuffer.SetCompositor(aCompositor);
+    mLowPrecisionTiledBuffer.SetCompositor(aCompositor);
+    mOldTiledBuffer.SetCompositor(aCompositor);
+    mOldLowPrecisionTiledBuffer.SetCompositor(aCompositor);
+  }
+
+  virtual bool UseTiledLayerBuffer(ISurfaceAllocator* aAllocator,
+                                   const SurfaceDescriptorTiles& aTiledDescriptor) MOZ_OVERRIDE;
 
   void Composite(EffectChain& aEffectChain,
                  float aOpacity,
                  const gfx::Matrix4x4& aTransform,
                  const gfx::Filter& aFilter,
                  const gfx::Rect& aClipRect,
-                 const nsIntRegion* aVisibleRegion = nullptr,
-                 TiledLayerProperties* aLayerProperties = nullptr);
+                 const nsIntRegion* aVisibleRegion = nullptr);
 
   virtual CompositableType GetType() { return CompositableType::BUFFER_TILED; }
 

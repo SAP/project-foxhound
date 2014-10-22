@@ -22,9 +22,6 @@ const Cu = Components.utils;
 Cu.import('resource://gre/modules/Services.jsm');
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 
-// Preloading the CSP jsm in this process early on.
-Cu.import("resource://gre/modules/CSPUtils.jsm");
-
 function debug(msg) {
   log(msg);
 }
@@ -33,7 +30,41 @@ function log(msg) {
   //dump('ProcessGlobal: ' + msg + '\n');
 }
 
-const gFactoryResetFile = "/persist/__post_reset_cmd__";
+function formatStackFrame(aFrame) {
+  let functionName = aFrame.functionName || '<anonymous>';
+  return '    at ' + functionName +
+         ' (' + aFrame.filename + ':' + aFrame.lineNumber +
+         ':' + aFrame.columnNumber + ')';
+}
+
+function ConsoleMessage(aMsg, aLevel) {
+  this.timeStamp = Date.now();
+  this.msg = aMsg;
+
+  switch (aLevel) {
+    case 'error':
+    case 'assert':
+      this.logLevel = Ci.nsIConsoleMessage.error;
+      break;
+    case 'warn':
+      this.logLevel = Ci.nsIConsoleMessage.warn;
+      break;
+    case 'log':
+    case 'info':
+      this.logLevel = Ci.nsIConsoleMessage.info;
+      break;
+    default:
+      this.logLevel = Ci.nsIConsoleMessage.debug;
+      break;
+  }
+}
+
+ConsoleMessage.prototype = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIConsoleMessage]),
+  toString: function() { return this.msg; }
+};
+
+const gFactoryResetFile = "__post_reset_cmd__";
 
 function ProcessGlobal() {}
 ProcessGlobal.prototype = {
@@ -73,20 +104,28 @@ ProcessGlobal.prototype = {
   cleanupAfterFactoryReset: function() {
     log("cleanupAfterWipe start");
 
+    Cu.import("resource://gre/modules/osfile.jsm");
+    let dir = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+    dir.initWithPath("/persist");
+    var postResetFile = dir.exists() ?
+                        OS.Path.join("/persist", gFactoryResetFile):
+                        OS.Path.join("/cache", gFactoryResetFile);
     let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
-    file.initWithPath(gFactoryResetFile);
+    file.initWithPath(postResetFile);
     if (!file.exists()) {
       debug("Nothing to wipe.")
       return;
     }
 
-    Cu.import("resource://gre/modules/osfile.jsm");
-    let promise = OS.File.read(gFactoryResetFile);
+    let promise = OS.File.read(postResetFile);
     promise.then(
       (array) => {
         file.remove(false);
         let decoder = new TextDecoder();
         this.processWipeFile(decoder.decode(array));
+      },
+      function onError(error) {
+        debug("Error: " + error);
       }
     );
 
@@ -115,11 +154,21 @@ ProcessGlobal.prototype = {
       // Pipe `console` log messages to the nsIConsoleService which
       // writes them to logcat on Gonk.
       let message = subject.wrappedJSObject;
-      let prefix = ('Content JS ' + message.level.toUpperCase() +
-                    ' at ' + message.filename + ':' + message.lineNumber +
-                    ' in ' + (message.functionName || 'anonymous') + ': ');
-      Services.console.logStringMessage(prefix + Array.join(message.arguments,
-                                                            ' '));
+      let args = message.arguments;
+      let stackTrace = '';
+
+      if (message.level == 'assert' || message.level == 'error' || message.level == 'trace') {
+        stackTrace = Array.map(message.stacktrace, formatStackFrame).join('\n');
+      } else {
+        stackTrace = formatStackFrame(message);
+      }
+
+      if (stackTrace) {
+        args.push('\n' + stackTrace);
+      }
+
+      let msg = 'Content JS ' + message.level.toUpperCase() + ': ' + Array.join(args, ' ');
+      Services.console.logMessage(new ConsoleMessage(msg, message.level));
       break;
     }
     }

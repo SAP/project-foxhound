@@ -9,11 +9,13 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/WeakPtr.h"
 #include "nsWrapperCache.h"
 #include "nsAutoPtr.h"
 #include "js/TypeDecls.h"
@@ -39,7 +41,7 @@ class PromiseReportRejectFeature : public workers::WorkerFeature
   Promise* mPromise;
 
 public:
-  PromiseReportRejectFeature(Promise* aPromise)
+  explicit PromiseReportRejectFeature(Promise* aPromise)
     : mPromise(aPromise)
   {
     MOZ_ASSERT(mPromise);
@@ -49,11 +51,11 @@ public:
   Notify(JSContext* aCx, workers::Status aStatus) MOZ_OVERRIDE;
 };
 
-class Promise MOZ_FINAL : public nsISupports,
-                          public nsWrapperCache
+class Promise : public nsISupports,
+                public nsWrapperCache,
+                public SupportsWeakPtr<Promise>
 {
   friend class NativePromiseCallback;
-  friend class PromiseResolverMixin;
   friend class PromiseResolverTask;
   friend class PromiseTask;
   friend class PromiseReportRejectFeature;
@@ -61,16 +63,13 @@ class Promise MOZ_FINAL : public nsISupports,
   friend class PromiseWorkerProxyRunnable;
   friend class RejectPromiseCallback;
   friend class ResolvePromiseCallback;
-  friend class ThenableResolverMixin;
-  friend class WorkerPromiseResolverTask;
-  friend class WorkerPromiseTask;
+  friend class ThenableResolverTask;
   friend class WrapperPromiseCallback;
-
-  ~Promise();
 
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Promise)
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(Promise)
 
   // Promise creation tries to create a JS reflector for the Promise, so is
   // fallible.  Furthermore, we don't want to do JS-wrapping on a 0-refcount
@@ -159,11 +158,34 @@ public:
 
   void AppendNativeHandler(PromiseNativeHandler* aRunnable);
 
-private:
+protected:
   // Do NOT call this unless you're Promise::Create.  I wish we could enforce
   // that from inside this class too, somehow.
-  Promise(nsIGlobalObject* aGlobal);
+  explicit Promise(nsIGlobalObject* aGlobal);
 
+  virtual ~Promise();
+
+  // Queue an async task to current main or worker thread.
+  static void
+  DispatchToMainOrWorkerThread(nsIRunnable* aRunnable);
+
+  // Do JS-wrapping after Promise creation.
+  void CreateWrapper(ErrorResult& aRv);
+
+  // Create the JS resolving functions of resolve() and reject(). And provide
+  // references to the two functions by calling PromiseInit passed from Promise
+  // constructor.
+  void CallInitFunction(const GlobalObject& aGlobal, PromiseInit& aInit,
+                        ErrorResult& aRv);
+
+  bool IsPending()
+  {
+    return mResolvePending;
+  }
+
+  void GetDependentPromises(nsTArray<nsRefPtr<Promise>>& aPromises);
+
+private:
   friend class PromiseDebugging;
 
   enum PromiseState {
@@ -267,12 +289,29 @@ private:
 
   void RemoveFeature();
 
+  // Capture the current stack and store it in aTarget.  If false is
+  // returned, an exception is presumably pending on aCx.
+  bool CaptureStack(JSContext* aCx, JS::Heap<JSObject*>& aTarget);
+
   nsRefPtr<nsIGlobalObject> mGlobal;
 
   nsTArray<nsRefPtr<PromiseCallback> > mResolveCallbacks;
   nsTArray<nsRefPtr<PromiseCallback> > mRejectCallbacks;
 
   JS::Heap<JS::Value> mResult;
+  // A stack that shows where this promise was allocated, if there was
+  // JS running at the time.  Otherwise null.
+  JS::Heap<JSObject*> mAllocationStack;
+  // mRejectionStack is only set when the promise is rejected directly from
+  // script, by calling Promise.reject() or the rejection callback we pass to
+  // the PromiseInit function.  Promises that are rejected internally do not
+  // have a rejection stack.
+  JS::Heap<JSObject*> mRejectionStack;
+  // mFullfillmentStack is only set when the promise is fulfilled directly from
+  // script, by calling Promise.resolve() or the fulfillment callback we pass to
+  // the PromiseInit function.  Promises that are fulfilled internally do not
+  // have a fulfillment stack.
+  JS::Heap<JSObject*> mFullfillmentStack;
   PromiseState mState;
   bool mTaskPending;
   bool mHadRejectCallback;
@@ -284,6 +323,12 @@ private:
   // console before the worker's context is deleted. This feature is used for
   // that purpose.
   nsAutoPtr<PromiseReportRejectFeature> mFeature;
+
+  // The time when this promise was created.
+  TimeStamp mCreationTimestamp;
+
+  // The time when this promise transitioned out of the pending state.
+  TimeStamp mSettlementTimestamp;
 };
 
 } // namespace dom

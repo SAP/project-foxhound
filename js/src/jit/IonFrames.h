@@ -7,8 +7,6 @@
 #ifndef jit_IonFrames_h
 #define jit_IonFrames_h
 
-#ifdef JS_ION
-
 #include <stdint.h>
 
 #include "jscntxt.h"
@@ -24,20 +22,24 @@ typedef void * CalleeToken;
 enum CalleeTokenTag
 {
     CalleeToken_Function = 0x0, // untagged
-    CalleeToken_Script = 0x1
+    CalleeToken_FunctionConstructing = 0x1,
+    CalleeToken_Script = 0x2
 };
+
+static const uintptr_t CalleeTokenMask = ~uintptr_t(0x3);
 
 static inline CalleeTokenTag
 GetCalleeTokenTag(CalleeToken token)
 {
     CalleeTokenTag tag = CalleeTokenTag(uintptr_t(token) & 0x3);
-    JS_ASSERT(tag <= CalleeToken_Script);
+    MOZ_ASSERT(tag <= CalleeToken_Script);
     return tag;
 }
 static inline CalleeToken
-CalleeToToken(JSFunction *fun)
+CalleeToToken(JSFunction *fun, bool constructing)
 {
-    return CalleeToken(uintptr_t(fun) | uintptr_t(CalleeToken_Function));
+    CalleeTokenTag tag = constructing ? CalleeToken_FunctionConstructing : CalleeToken_Function;
+    return CalleeToken(uintptr_t(fun) | uintptr_t(tag));
 }
 static inline CalleeToken
 CalleeToToken(JSScript *script)
@@ -47,19 +49,25 @@ CalleeToToken(JSScript *script)
 static inline bool
 CalleeTokenIsFunction(CalleeToken token)
 {
-    return GetCalleeTokenTag(token) == CalleeToken_Function;
+    CalleeTokenTag tag = GetCalleeTokenTag(token);
+    return tag == CalleeToken_Function || tag == CalleeToken_FunctionConstructing;
+}
+static inline bool
+CalleeTokenIsConstructing(CalleeToken token)
+{
+    return GetCalleeTokenTag(token) == CalleeToken_FunctionConstructing;
 }
 static inline JSFunction *
 CalleeTokenToFunction(CalleeToken token)
 {
-    JS_ASSERT(CalleeTokenIsFunction(token));
-    return (JSFunction *)token;
+    MOZ_ASSERT(CalleeTokenIsFunction(token));
+    return (JSFunction *)(uintptr_t(token) & CalleeTokenMask);
 }
 static inline JSScript *
 CalleeTokenToScript(CalleeToken token)
 {
-    JS_ASSERT(GetCalleeTokenTag(token) == CalleeToken_Script);
-    return (JSScript *)(uintptr_t(token) & ~uintptr_t(0x3));
+    MOZ_ASSERT(GetCalleeTokenTag(token) == CalleeToken_Script);
+    return (JSScript *)(uintptr_t(token) & CalleeTokenMask);
 }
 
 static inline JSScript *
@@ -69,9 +77,10 @@ ScriptFromCalleeToken(CalleeToken token)
       case CalleeToken_Script:
         return CalleeTokenToScript(token);
       case CalleeToken_Function:
+      case CalleeToken_FunctionConstructing:
         return CalleeTokenToFunction(token)->nonLazyScript();
     }
-    MOZ_ASSUME_UNREACHABLE("invalid callee token tag");
+    MOZ_CRASH("invalid callee token tag");
 }
 
 // In between every two frames lies a small header describing both frames. This
@@ -119,7 +128,7 @@ class SafepointIndex
     void resolve();
 
     LSafepoint *safepoint() {
-        JS_ASSERT(!resolved);
+        MOZ_ASSERT(!resolved);
         return safepoint_;
     }
     uint32_t displacement() const {
@@ -129,7 +138,7 @@ class SafepointIndex
         return safepointOffset_;
     }
     void adjustDisplacement(uint32_t offset) {
-        JS_ASSERT(offset >= displacement_);
+        MOZ_ASSERT(offset >= displacement_);
         displacement_ = offset;
     }
     inline SnapshotOffset snapshotOffset() const;
@@ -225,7 +234,7 @@ class FrameSizeClass
     uint32_t frameSize() const;
 
     uint32_t classId() const {
-        JS_ASSERT(class_ != NO_FRAME_SIZE_CLASS_ID);
+        MOZ_ASSERT(class_ != NO_FRAME_SIZE_CLASS_ID);
         return class_;
     }
 
@@ -283,22 +292,22 @@ MakeFrameDescriptor(uint32_t frameSize, FrameType type)
 
 // Returns the JSScript associated with the topmost Ion frame.
 inline JSScript *
-GetTopIonJSScript(uint8_t *jitTop, void **returnAddrOut, ExecutionMode mode)
+GetTopIonJSScript(ThreadSafeContext *cx, void **returnAddrOut = nullptr)
 {
-    JitFrameIterator iter(jitTop, mode);
-    JS_ASSERT(iter.type() == JitFrame_Exit);
+    JitFrameIterator iter(cx);
+    MOZ_ASSERT(iter.type() == JitFrame_Exit);
     ++iter;
 
-    JS_ASSERT(iter.returnAddressToFp() != nullptr);
+    MOZ_ASSERT(iter.returnAddressToFp() != nullptr);
     if (returnAddrOut)
         *returnAddrOut = (void *) iter.returnAddressToFp();
 
     if (iter.isBaselineStub()) {
         ++iter;
-        JS_ASSERT(iter.isBaselineJS());
+        MOZ_ASSERT(iter.isBaselineJS());
     }
 
-    JS_ASSERT(iter.isScripted());
+    MOZ_ASSERT(iter.isScripted());
     return iter.script();
 }
 
@@ -495,7 +504,7 @@ class IonExitFrameLayout : public IonCommonFrameLayout
     // each wrapper are pushed before the exit frame.  This correspond exactly
     // to the value of the argBase register of the generateVMWrapper function.
     inline uint8_t *argBase() {
-        JS_ASSERT(footer()->jitCode() != nullptr);
+        MOZ_ASSERT(footer()->jitCode() != nullptr);
         return top();
     }
 
@@ -511,7 +520,7 @@ class IonExitFrameLayout : public IonCommonFrameLayout
         return footer()->jitCode() == T::Token();
     }
     template <typename T> inline T *as() {
-        MOZ_ASSERT(is<T>());
+        MOZ_ASSERT(this->is<T>());
         return reinterpret_cast<T *>(footer());
     }
 };
@@ -869,7 +878,5 @@ MarkCalleeToken(JSTracer *trc, CalleeToken token);
 
 } /* namespace jit */
 } /* namespace js */
-
-#endif // JS_ION
 
 #endif /* jit_IonFrames_h */

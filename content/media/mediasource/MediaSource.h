@@ -13,7 +13,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/MediaSourceBinding.h"
-#include "mozilla/Monitor.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
@@ -75,6 +74,8 @@ public:
   bool Attach(MediaSourceDecoder* aDecoder);
   void Detach();
 
+  void GetBuffered(TimeRanges* aBuffered);
+
   // Set mReadyState to aState and fire the required events at the MediaSource.
   void SetReadyState(MediaSourceReadyState aState);
 
@@ -84,18 +85,35 @@ public:
     return mDecoder;
   }
 
+  nsIPrincipal* GetPrincipal()
+  {
+    return mPrincipal;
+  }
+
   // Called by SourceBuffers to notify this MediaSource that data has
   // been evicted from the buffered data. The start and end times
   // that were evicted are provided.
   void NotifyEvicted(double aStart, double aEnd);
 
-  // Block thread waiting for data to be appended to a SourceBuffer.
-  void WaitForData();
+  // Queue InitializationEvent to run on the main thread.  Called when a
+  // SourceBuffer has an initialization segment appended, but only
+  // dispatched the first time (using mFirstSourceBufferInitialized).
+  // Demarcates the point in time at which only currently registered
+  // TrackBuffers are treated as essential by the MediaSourceReader for
+  // initialization.
+  void QueueInitializationEvent();
 
-  // Unblock threads waiting for data to be appended to a SourceBuffer.
-  void NotifyGotData();
+#if defined(DEBUG)
+  // Dump the contents of each SourceBuffer to a series of files under aPath.
+  // aPath must exist.  Debug only, invoke from your favourite debugger.
+  void Dump(const char* aPath);
+#endif
 
 private:
+  // MediaSourceDecoder uses DurationChange to set the duration
+  // without hitting the checks in SetDuration.
+  friend class mozilla::MediaSourceDecoder;
+
   ~MediaSource();
 
   explicit MediaSource(nsPIDOMWindow* aWindow);
@@ -106,6 +124,8 @@ private:
 
   void DurationChange(double aNewDuration, ErrorResult& aRv);
 
+  void InitializationEvent();
+
   double mDuration;
 
   nsRefPtr<SourceBufferList> mSourceBuffers;
@@ -113,11 +133,11 @@ private:
 
   nsRefPtr<MediaSourceDecoder> mDecoder;
 
+  nsRefPtr<nsIPrincipal> mPrincipal;
+
   MediaSourceReadyState mReadyState;
 
-  // Monitor for waiting for when new data is appended to
-  // a Source Buffer.
-  Monitor mWaitForDataMonitor;
+  bool mFirstSourceBufferInitialized;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(MediaSource, MOZILLA_DOM_MEDIASOURCE_IMPLEMENTATION_IID)

@@ -49,6 +49,7 @@
 #include "TextOverflow.h"
 #include "nsIFrameInlines.h"
 #include "CounterStyleManager.h"
+#include "nsISelection.h"
 
 #include "nsBidiPresUtils.h"
 
@@ -1049,9 +1050,9 @@ nsBlockFrame::Reflow(nsPresContext*           aPresContext,
 
     if (effectiveComputedBSize + blockDirExtras.BStartEnd(wm) <=
         aReflowState.AvailableBSize()) {
-      mutableReflowState.construct(aReflowState);
-      mutableReflowState.ref().AvailableBSize() = NS_UNCONSTRAINEDSIZE;
-      reflowState = mutableReflowState.addr();
+      mutableReflowState.emplace(aReflowState);
+      mutableReflowState->AvailableBSize() = NS_UNCONSTRAINEDSIZE;
+      reflowState = mutableReflowState.ptr();
     }
   }
 
@@ -6299,6 +6300,7 @@ nsBlockFrame::AccessibleType()
   }
 
   if (!HasBullet() || !PresContext()) {
+    //XXXsmaug What if we're in the shadow dom?
     if (!mContent->GetParent()) {
       // Don't create accessible objects for the root content node, they are redundant with
       // the nsDocAccessible object created with the document node
@@ -6306,7 +6308,7 @@ nsBlockFrame::AccessibleType()
     }
     
     nsCOMPtr<nsIDOMHTMLDocument> htmlDoc =
-      do_QueryInterface(mContent->GetDocument());
+      do_QueryInterface(mContent->GetComposedDoc());
     if (htmlDoc) {
       nsCOMPtr<nsIDOMHTMLElement> body;
       htmlDoc->GetBody(getter_AddRefs(body));

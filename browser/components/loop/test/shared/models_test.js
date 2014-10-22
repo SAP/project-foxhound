@@ -22,9 +22,14 @@ describe("loop.shared.models", function() {
       requests.push(xhr);
     };
     fakeSessionData = {
-      sessionId:    "sessionId",
-      sessionToken: "sessionToken",
-      apiKey:       "apiKey"
+      sessionId:      "sessionId",
+      sessionToken:   "sessionToken",
+      apiKey:         "apiKey",
+      callType:       "callType",
+      websocketToken: 123,
+      callToken:      "callToken",
+      callUrl:        "http://invalid/callToken",
+      callerId:       "mrssmith"
     };
     fakeSession = _.extend({
       connect: function () {},
@@ -50,190 +55,101 @@ describe("loop.shared.models", function() {
           new sharedModels.ConversationModel({}, {});
         }).to.Throw(Error, /missing required sdk/);
       });
-
-      it("should accept a pendingCallTimeout option", function() {
-        expect(new sharedModels.ConversationModel({}, {
-          sdk: {},
-          pendingCallTimeout: 1000
-        }).pendingCallTimeout).eql(1000);
-      });
     });
 
     describe("constructed", function() {
-      var conversation, fakeClient, fakeBaseServerUrl,
-          requestCallInfoStub, requestCallsInfoStub;
+      var conversation;
 
       beforeEach(function() {
         conversation = new sharedModels.ConversationModel({}, {
-          sdk: fakeSDK,
-          pendingCallTimeout: 1000
+          sdk: fakeSDK
         });
         conversation.set("loopToken", "fakeToken");
-        fakeBaseServerUrl = "http://fakeBaseServerUrl";
-        fakeClient = {
-          requestCallInfo: sandbox.stub(),
-          requestCallsInfo: sandbox.stub()
-        };
-        requestCallInfoStub = fakeClient.requestCallInfo;
-        requestCallsInfoStub = fakeClient.requestCallsInfo;
       });
 
-      describe("#initiate", function() {
+      describe("#accepted", function() {
+        it("should trigger a `call:accepted` event", function(done) {
+          conversation.once("call:accepted", function() {
+            done();
+          });
+
+          conversation.accepted();
+        });
+      });
+
+      describe("#setupOutgoingCall", function() {
+        it("should set the a custom selected call type", function() {
+          conversation.setupOutgoingCall("audio");
+
+          expect(conversation.get("selectedCallType")).eql("audio");
+        });
+
+        it("should respect the default selected call type when none is passed",
+          function() {
+            conversation.setupOutgoingCall();
+
+            expect(conversation.get("selectedCallType")).eql("audio-video");
+          });
+
+        it("should trigger a `call:outgoing:setup` event", function(done) {
+          conversation.once("call:outgoing:setup", function() {
+            done();
+          });
+
+          conversation.setupOutgoingCall();
+        });
+      });
+
+      describe("#outgoing", function() {
         beforeEach(function() {
           sandbox.stub(conversation, "endSession");
+          sandbox.stub(conversation, "setOutgoingSessionData");
+          sandbox.stub(conversation, "setIncomingSessionData");
         });
 
-        it("call requestCallInfo on the client for outgoing calls",
-          function() {
-            conversation.initiate({
-              client: fakeClient,
-              outgoing: true,
-              callType: "audio"
-            });
+        it("should save the outgoing sessionData", function() {
+          conversation.outgoing(fakeSessionData);
 
-            sinon.assert.calledOnce(requestCallInfoStub);
-            sinon.assert.calledWith(requestCallInfoStub, "fakeToken", "audio");
-          });
-
-        it("should not call requestCallsInfo on the client for outgoing calls",
-          function() {
-            conversation.initiate({
-              client: fakeClient,
-              outgoing: true,
-              callType: "audio"
-            });
-
-            sinon.assert.notCalled(requestCallsInfoStub);
-          });
-
-        it("call requestCallsInfo on the client for incoming calls",
-          function() {
-            conversation.set("loopVersion", 42);
-            conversation.initiate({
-              client: fakeClient,
-              outgoing: false
-            });
-
-            sinon.assert.calledOnce(requestCallsInfoStub);
-            sinon.assert.calledWith(requestCallsInfoStub, 42);
-          });
-
-        it("should not call requestCallInfo on the client for incoming calls",
-          function() {
-            conversation.initiate({
-              client: fakeClient,
-              outgoing: false
-            });
-
-            sinon.assert.notCalled(requestCallInfoStub);
-          });
-
-        it("should update conversation session information from server data",
-          function() {
-            sandbox.stub(conversation, "setReady");
-            requestCallInfoStub.callsArgWith(2, null, fakeSessionData);
-
-            conversation.initiate({
-              client: fakeClient,
-              outgoing: true
-            });
-
-            sinon.assert.calledOnce(conversation.setReady);
-            sinon.assert.calledWith(conversation.setReady, fakeSessionData);
-          });
-
-        it("should trigger a `session:error` event errno is undefined",
-          function(done) {
-            var errMsg = "HTTP 500 Server Error; fake";
-            var err = new Error(errMsg);
-            requestCallInfoStub.callsArgWith(2, err);
-
-            conversation.on("session:error", function(err) {
-              expect(err.message).eql(errMsg);
-              done();
-            }).initiate({ client: fakeClient, outgoing: true });
-          });
-
-        it("should trigger a `session:error` event when errno is not 105",
-          function(done) {
-            var errMsg = "HTTP 400 Bad Request; fake";
-            var err = new Error(errMsg);
-            err.errno = 101;
-            requestCallInfoStub.callsArgWith(2, err);
-
-            conversation.on("session:error", function(err) {
-              expect(err.message).eql(errMsg);
-              done();
-            }).initiate({ client: fakeClient, outgoing: true });
-          });
-
-        it("should trigger a `session:expired` event when errno is 105",
-          function(done) {
-            var err = new Error("HTTP 404 Not Found; fake");
-            err.errno = 105;
-            requestCallInfoStub.callsArgWith(2, err);
-
-            conversation.on("session:expired", function(err2) {
-              expect(err2).eql(err);
-              done();
-            }).initiate({ client: fakeClient, outgoing: true });
-          });
-
-        it("should end the session on outgoing call timeout", function() {
-          requestCallInfoStub.callsArgWith(2, null, fakeSessionData);
-
-          conversation.initiate({
-            client: fakeClient,
-            outgoing: true
-          });
-
-          sandbox.clock.tick(1001);
-
-          sinon.assert.calledOnce(conversation.endSession);
+          sinon.assert.calledOnce(conversation.setOutgoingSessionData);
         });
 
-        it("should trigger a `timeout` event on outgoing call timeout",
-          function(done) {
-            requestCallInfoStub.callsArgWith(2, null, fakeSessionData);
-
-            conversation.once("timeout", function() {
-              done();
-            });
-
-            conversation.initiate({
-              client: fakeClient,
-              outgoing: true
-            });
-
-            sandbox.clock.tick(1001);
+        it("should trigger a `call:outgoing` event", function(done) {
+          conversation.once("call:outgoing", function() {
+            done();
           });
+
+          conversation.outgoing();
+        });
       });
 
-      describe("#setReady", function() {
-        it("should update conversation session information", function() {
-          conversation.setReady(fakeSessionData);
+      describe("#setSessionData", function() {
+        it("should update outgoing conversation session information",
+           function() {
+             conversation.setOutgoingSessionData(fakeSessionData);
 
-          expect(conversation.get("sessionId")).eql("sessionId");
-          expect(conversation.get("sessionToken")).eql("sessionToken");
-          expect(conversation.get("apiKey")).eql("apiKey");
-        });
+             expect(conversation.get("sessionId")).eql("sessionId");
+             expect(conversation.get("sessionToken")).eql("sessionToken");
+             expect(conversation.get("apiKey")).eql("apiKey");
+           });
 
-        it("should trigger a `session:ready` event", function(done) {
-          conversation.on("session:ready", function() {
-            done();
-          }).setReady(fakeSessionData);
-        });
+        it("should update incoming conversation session information",
+           function() {
+             conversation.setIncomingSessionData(fakeSessionData);
+
+             expect(conversation.get("sessionId")).eql("sessionId");
+             expect(conversation.get("sessionToken")).eql("sessionToken");
+             expect(conversation.get("apiKey")).eql("apiKey");
+             expect(conversation.get("callType")).eql("callType");
+             expect(conversation.get("callToken")).eql("callToken");
+           });
       });
 
       describe("#startSession", function() {
         var model;
 
         beforeEach(function() {
-          sandbox.stub(sharedModels.ConversationModel.prototype,
-                       "_clearPendingCallTimer");
           model = new sharedModels.ConversationModel(fakeSessionData, {
-            sdk: fakeSDK,
-            pendingCallTimeout: 1000
+            sdk: fakeSDK
           });
           model.startSession();
         });
@@ -342,18 +258,6 @@ describe("loop.shared.models", function() {
               expect(model.get("ongoing")).eql(false);
             });
 
-          it("should clear a pending timer on session:ended", function() {
-            model.trigger("session:ended");
-
-            sinon.assert.calledOnce(model._clearPendingCallTimer);
-          });
-
-          it("should clear a pending timer on session:error", function() {
-            model.trigger("session:error");
-
-            sinon.assert.calledOnce(model._clearPendingCallTimer);
-          });
-
           describe("connectionDestroyed event received", function() {
             var fakeEvent = {reason: "ko", connection: {connectionId: 42}};
 
@@ -402,8 +306,7 @@ describe("loop.shared.models", function() {
 
         beforeEach(function() {
           model = new sharedModels.ConversationModel(fakeSessionData, {
-            sdk: fakeSDK,
-            pendingCallTimeout: 1000
+            sdk: fakeSDK
           });
           model.startSession();
         });
@@ -436,6 +339,124 @@ describe("loop.shared.models", function() {
             sinon.assert.calledOnce(model.stopListening);
           });
       });
+
+      describe("#hasVideoStream", function() {
+        var model;
+
+        beforeEach(function() {
+          model = new sharedModels.ConversationModel(fakeSessionData, {
+            sdk: fakeSDK
+          });
+          model.startSession();
+        });
+
+        it("should return true for incoming callType", function() {
+          model.set("callType", "audio-video");
+
+          expect(model.hasVideoStream("incoming")).to.eql(true);
+        });
+
+        it("should return true for outgoing callType", function() {
+          model.set("selectedCallType", "audio-video");
+
+          expect(model.hasVideoStream("outgoing")).to.eql(true);
+        });
+      });
+
+      describe("#getCallIdentifier", function() {
+        var model;
+
+        beforeEach(function() {
+          model = new sharedModels.ConversationModel(fakeSessionData, {
+            sdk: fakeSDK
+          });
+          model.startSession();
+        });
+
+        it("should return the callerId", function() {
+          expect(model.getCallIdentifier()).eql("mrssmith");
+        });
+
+        it("should return the shorted callUrl if the callerId does not exist",
+          function() {
+            model.set({callerId: ""});
+
+            expect(model.getCallIdentifier()).eql("invalid/callToken");
+          });
+
+        it("should return an empty string if neither callerId nor callUrl exist",
+          function() {
+            model.set({
+              callerId: undefined,
+              callUrl: undefined
+            });
+
+            expect(model.getCallIdentifier()).eql("");
+          });
+      });
     });
+  });
+
+  describe("NotificationCollection", function() {
+    var collection, notifData, testNotif;
+
+    beforeEach(function() {
+      collection = new sharedModels.NotificationCollection();
+      sandbox.stub(l10n, "get", function(x, y) {
+        return "translated:" + x + (y ? ':' + y : '');
+      });
+      notifData = {level: "error", message: "plop"};
+      testNotif = new sharedModels.NotificationModel(notifData);
+    });
+
+    describe("#warn", function() {
+      it("should add a warning notification to the stack", function() {
+        collection.warn("watch out");
+
+        expect(collection).to.have.length.of(1);
+        expect(collection.at(0).get("level")).eql("warning");
+        expect(collection.at(0).get("message")).eql("watch out");
+      });
+    });
+
+    describe("#warnL10n", function() {
+      it("should warn using a l10n string id", function() {
+        collection.warnL10n("fakeId");
+
+        expect(collection).to.have.length.of(1);
+        expect(collection.at(0).get("level")).eql("warning");
+        expect(collection.at(0).get("message")).eql("translated:fakeId");
+      });
+    });
+
+    describe("#error", function() {
+      it("should add an error notification to the stack", function() {
+        collection.error("wrong");
+
+        expect(collection).to.have.length.of(1);
+        expect(collection.at(0).get("level")).eql("error");
+        expect(collection.at(0).get("message")).eql("wrong");
+      });
+    });
+
+    describe("#errorL10n", function() {
+      it("should notify an error using a l10n string id", function() {
+        collection.errorL10n("fakeId");
+
+        expect(collection).to.have.length.of(1);
+        expect(collection.at(0).get("level")).eql("error");
+        expect(collection.at(0).get("message")).eql("translated:fakeId");
+      });
+
+      it("should notify an error using a l10n string id + l10n properties",
+        function() {
+          collection.errorL10n("fakeId", "fakeProp");
+
+          expect(collection).to.have.length.of(1);
+          expect(collection.at(0).get("level")).eql("error");
+          expect(collection.at(0).get("message")).eql("translated:fakeId:fakeProp");
+      });
+    });
+
   });
 });

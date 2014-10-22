@@ -1,5 +1,11 @@
 package org.mozilla.gecko.db;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import org.mozilla.gecko.db.BrowserContract.Bookmarks;
+import org.mozilla.gecko.db.BrowserContract.TopSites;
+
 import android.content.ContentResolver;
 import android.database.CharArrayBuffer;
 import android.database.ContentObserver;
@@ -9,15 +15,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.util.SparseBooleanArray;
 import android.util.SparseIntArray;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.mozilla.gecko.db.BrowserContract.Bookmarks;
-import org.mozilla.gecko.db.BrowserContract.TopSites;
-import org.mozilla.gecko.db.BrowserDB.URLColumns;
 
 /**
  * {@TopSitesCursorWrapper} is a cursor wrapper that merges
@@ -40,7 +37,7 @@ public class TopSitesCursorWrapper implements Cursor {
         TopSites.TITLE,
         TopSites.BOOKMARK_ID,
         TopSites.HISTORY_ID,
-        TopSites.TYPE
+        TopSites.TYPE,
     };
 
     private static final Map<String, Integer> columnIndexes =
@@ -69,7 +66,7 @@ public class TopSitesCursorWrapper implements Cursor {
     // The cursor for the pinned sites query
     private final Cursor pinnedCursor;
 
-    // The cursor for the sugested sites query
+    // The cursor for the suggested sites query
     private final Cursor suggestedCursor;
 
     // Associates pinned sites and their respective positions
@@ -79,7 +76,7 @@ public class TopSitesCursorWrapper implements Cursor {
     private int currentPosition = -1;
 
     // Number of pinned sites before the current position
-    private int pinnedBefore = 0;
+    private int pinnedBefore;
 
     // The size of the cursor wrapper
     private int count;
@@ -479,6 +476,7 @@ public class TopSitesCursorWrapper implements Cursor {
         return false;
     }
 
+    @Override
     public Uri getNotificationUri() {
         // There's no single notification URI for the wrapper
         return null;

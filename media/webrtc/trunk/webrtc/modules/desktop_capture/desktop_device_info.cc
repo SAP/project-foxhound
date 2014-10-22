@@ -4,6 +4,7 @@
 
 #include "webrtc/modules/desktop_capture/desktop_device_info.h"
 #include "webrtc/modules/desktop_capture/window_capturer.h"
+#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 #include <cstddef>
 #include <cstdlib>
@@ -84,10 +85,11 @@ DesktopDisplayDevice& DesktopDisplayDevice::operator= (DesktopDisplayDevice& oth
 
 
 DesktopApplication::DesktopApplication() {
-  processId_ =0;
+  processId_ = 0;
   processPathNameUTF8_= NULL;
   applicationNameUTF8_= NULL;
   processUniqueIdUTF8_= NULL;
+  windowCount_ = 0;
 }
 
 DesktopApplication::~DesktopApplication() {
@@ -102,11 +104,15 @@ void DesktopApplication::setProcessPathName(const char *appPathNameUTF8) {
 }
 
 void DesktopApplication::setUniqueIdName(const char *appUniqueIdUTF8) {
-  SetStringMember(&processPathNameUTF8_, appUniqueIdUTF8);
+  SetStringMember(&processUniqueIdUTF8_, appUniqueIdUTF8);
 }
 
 void DesktopApplication::setProcessAppName(const char *appNameUTF8) {
   SetStringMember(&applicationNameUTF8_, appNameUTF8);
+}
+
+void DesktopApplication::setWindowCount(const uint32_t count) {
+  windowCount_ = count;
 }
 
 ProcessId DesktopApplication::getProcessId() {
@@ -118,11 +124,15 @@ const char *DesktopApplication::getProcessPathName() {
 }
 
 const char *DesktopApplication::getUniqueIdName() {
-  return applicationNameUTF8_;
+  return processUniqueIdUTF8_;
 }
 
 const char *DesktopApplication::getProcessAppName() {
   return applicationNameUTF8_;
+}
+
+uint32_t DesktopApplication::getWindowCount() {
+  return windowCount_;
 }
 
 DesktopApplication& DesktopApplication::operator= (DesktopApplication& other) {
@@ -138,29 +148,7 @@ DesktopDeviceInfoImpl::DesktopDeviceInfoImpl() {
 }
 
 DesktopDeviceInfoImpl::~DesktopDeviceInfoImpl() {
-  std::map<intptr_t,DesktopDisplayDevice*>::iterator iterDevice;
-  for (iterDevice=desktop_display_list_.begin(); iterDevice!=desktop_display_list_.end(); iterDevice++){
-    DesktopDisplayDevice * pDesktopDisplayDevice = iterDevice->second;
-    delete pDesktopDisplayDevice;
-    iterDevice->second = NULL;
-  }
-  desktop_display_list_.clear();
-
-  std::map<intptr_t, DesktopDisplayDevice *>::iterator itrWindow;
-  for (itrWindow = desktop_window_list_.begin(); itrWindow != desktop_window_list_.end(); itrWindow++) {
-    DesktopDisplayDevice *pWindow = itrWindow->second;
-    delete pWindow;
-    itrWindow->second = NULL;
-  }
-  desktop_window_list_.clear();
-
-  std::map<intptr_t,DesktopApplication*>::iterator iterApp;
-  for (iterApp=desktop_application_list_.begin(); iterApp!=desktop_application_list_.end(); iterApp++){
-    DesktopApplication * pDesktopApplication = iterApp->second;
-    delete pDesktopApplication;
-    iterApp->second = NULL;
-  }
-  desktop_application_list_.clear();
+  CleanUp();
 }
 
 int32_t DesktopDeviceInfoImpl::getDisplayDeviceCount() {
@@ -194,7 +182,7 @@ int32_t DesktopDeviceInfoImpl::getWindowInfo(int32_t nIndex,
 
   std::map<intptr_t, DesktopDisplayDevice *>::iterator itr = desktop_window_list_.begin();
   std::advance(itr, nIndex);
-  DesktopDisplayDevice *pWindow = itr->second;
+  DesktopDisplayDevice * pWindow = itr->second;
   if (!pWindow) {
     return -1;
   }
@@ -223,8 +211,37 @@ int32_t DesktopDeviceInfoImpl::getApplicationInfo(int32_t nIndex,
   return 0;
 }
 
-int32_t DesktopDeviceInfoImpl::initializeWindowList() {
-  WindowCapturer *pWinCap = WindowCapturer::Create();
+void DesktopDeviceInfoImpl::CleanUp() {
+  CleanUpScreenList();
+  CleanUpWindowList();
+  CleanUpApplicationList();
+}
+int32_t DesktopDeviceInfoImpl::Init() {
+  InitializeScreenList();
+  InitializeWindowList();
+  InitializeApplicationList();
+
+  return 0;
+}
+int32_t DesktopDeviceInfoImpl::Refresh() {
+  RefreshScreenList();
+  RefreshWindowList();
+  RefreshApplicationList();
+
+  return 0;
+}
+
+void DesktopDeviceInfoImpl::CleanUpWindowList() {
+  std::map<intptr_t, DesktopDisplayDevice *>::iterator iterWindow;
+  for (iterWindow = desktop_window_list_.begin(); iterWindow != desktop_window_list_.end(); iterWindow++) {
+    DesktopDisplayDevice *pWindow = iterWindow->second;
+    delete pWindow;
+    iterWindow->second = NULL;
+  }
+  desktop_window_list_.clear();
+}
+void DesktopDeviceInfoImpl::InitializeWindowList() {
+  scoped_ptr<WindowCapturer> pWinCap(WindowCapturer::Create());
   WindowCapturer::WindowList list;
   if (pWinCap && pWinCap->GetWindowList(&list)) {
     WindowCapturer::WindowList::iterator itr;
@@ -237,18 +254,47 @@ int32_t DesktopDeviceInfoImpl::initializeWindowList() {
       pWinDevice->setScreenId(itr->id);
       pWinDevice->setDeviceName(itr->title.c_str());
 
-      char idStr[64];
+      char idStr[BUFSIZ];
 #if XP_WIN
-      _snprintf_s(idStr, sizeof(idStr), sizeof(idStr) - 1, "\\win\\%ld", pWinDevice->getScreenId());
+      _snprintf_s(idStr, sizeof(idStr), sizeof(idStr) - 1, "%ld", pWinDevice->getScreenId());
 #else
-      snprintf(idStr, BUFSIZ, "\\win\\%ld", pWinDevice->getScreenId());
+      snprintf(idStr, sizeof(idStr), "%ld", pWinDevice->getScreenId());
 #endif
       pWinDevice->setUniqueIdName(idStr);
       desktop_window_list_[pWinDevice->getScreenId()] = pWinDevice;
     }
   }
-
-  return 0;
+}
+void DesktopDeviceInfoImpl::RefreshWindowList() {
+  CleanUpWindowList();
+  InitializeWindowList();
 }
 
+void DesktopDeviceInfoImpl::CleanUpApplicationList() {
+  std::map<intptr_t,DesktopApplication*>::iterator iterApp;
+  for (iterApp = desktop_application_list_.begin(); iterApp != desktop_application_list_.end(); iterApp++){
+    DesktopApplication *pDesktopApplication = iterApp->second;
+    delete pDesktopApplication;
+    iterApp->second = NULL;
+  }
+  desktop_application_list_.clear();
+}
+void DesktopDeviceInfoImpl::RefreshApplicationList() {
+  CleanUpApplicationList();
+  InitializeApplicationList();
+}
+
+void DesktopDeviceInfoImpl::CleanUpScreenList() {
+  std::map<intptr_t,DesktopDisplayDevice*>::iterator iterDevice;
+  for (iterDevice=desktop_display_list_.begin(); iterDevice != desktop_display_list_.end(); iterDevice++){
+    DesktopDisplayDevice *pDesktopDisplayDevice = iterDevice->second;
+    delete pDesktopDisplayDevice;
+    iterDevice->second = NULL;
+  }
+  desktop_display_list_.clear();
+ }
+void DesktopDeviceInfoImpl::RefreshScreenList() {
+  CleanUpScreenList();
+  InitializeScreenList();
+}
 }

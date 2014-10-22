@@ -37,6 +37,7 @@
 #include "nsThreadUtils.h"
 #include "ScrollbarStyles.h"
 #include "nsIMessageManager.h"
+#include "mozilla/RestyleLogging.h"
 
 class nsBidiPresUtils;
 class nsAString;
@@ -57,9 +58,8 @@ struct nsStyleBorder;
 class nsIRunnable;
 class gfxUserFontSet;
 class gfxTextPerfMetrics;
-class nsUserFontSet;
 struct nsFontFaceRuleContainer;
-class nsObjectFrame;
+class nsPluginFrame;
 class nsTransitionManager;
 class nsAnimationManager;
 class nsRefreshDriver;
@@ -71,6 +71,7 @@ class EventStateManager;
 class RestyleManager;
 class CounterStyleManager;
 namespace dom {
+class FontFaceSet;
 class MediaQueryList;
 }
 namespace layers {
@@ -137,6 +138,7 @@ class nsRootPresContext;
 class nsPresContext : public nsIObserver {
 public:
   typedef mozilla::FramePropertyTable FramePropertyTable;
+  typedef mozilla::ScrollbarStyles ScrollbarStyles;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -148,12 +150,6 @@ public:
     eContext_PrintPreview, // paginated screen presentation
     eContext_Print,        // paginated printer presentation
     eContext_PageLayout    // paginated & editable.
-  };
-
-  // Policies for rebuilding style data.
-  enum StyleRebuildType {
-    eRebuildStyleIfNeeded,
-    eAlwaysRebuildStyle
   };
 
   nsPresContext(nsIDocument* aDocument, nsPresContextType aType);
@@ -253,22 +249,44 @@ public:
    * Rebuilds all style data by throwing out the old rule tree and
    * building a new one, and additionally applying aExtraHint (which
    * must not contain nsChangeHint_ReconstructFrame) to the root frame.
+   * For aRestyleHint, see RestyleManager::RebuildAllStyleData.
    * Also rebuild the user font set and counter style manager.
    */
-  void RebuildAllStyleData(nsChangeHint aExtraHint);
+  void RebuildAllStyleData(nsChangeHint aExtraHint, nsRestyleHint aRestyleHint);
   /**
    * Just like RebuildAllStyleData, except (1) asynchronous and (2) it
    * doesn't rebuild the user font set.
    */
-  void PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint);
+  void PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
+                                    nsRestyleHint aRestyleHint);
 
-  void MediaFeatureValuesChanged(StyleRebuildType aShouldRebuild,
+  /**
+   * Handle changes in the values of media features (used in media
+   * queries).
+   *
+   * There are three sensible values to use for aRestyleHint:
+   *  * nsRestyleHint(0) to rebuild style data, with rerunning of
+   *    selector matching, only if media features have changed
+   *  * eRestyle_ForceDescendants to force rebuilding of style data (but
+   *    still only rerun selector matching if media query results have
+   *    changed).  (RebuildAllStyleData always adds
+   *    eRestyle_ForceDescendants internally, so here we're only using
+   *    it to distinguish from nsRestyleHint(0) whether we need to call
+   *    RebuildAllStyleData at all.)
+   *  * eRestyle_Subtree to force rebuilding of style data with
+   *    rerunning of selector matching
+   *
+   * For aChangeHint, see RestyleManager::RebuildAllStyleData.  (Passing
+   * a nonzero aChangeHint forces rebuilding style data even if
+   * nsRestyleHint(0) is passed.)
+   */
+  void MediaFeatureValuesChanged(nsRestyleHint aRestyleHint,
                                  nsChangeHint aChangeHint = nsChangeHint(0));
   void PostMediaFeatureValuesChangedEvent();
   void HandleMediaFeatureValuesChangedEvent();
   void FlushPendingMediaFeatureValuesChanged() {
     if (mPendingMediaFeatureValuesChanged)
-      MediaFeatureValuesChanged(eRebuildStyleIfNeeded);
+      MediaFeatureValuesChanged(nsRestyleHint(0));
   }
 
   /**
@@ -532,7 +550,8 @@ public:
     if (HasCachedStyleData()) {
       // Media queries could have changed, since we changed the meaning
       // of 'em' units in them.
-      MediaFeatureValuesChanged(eAlwaysRebuildStyle, NS_STYLE_HINT_REFLOW);
+      MediaFeatureValuesChanged(eRestyle_ForceDescendants,
+                                NS_STYLE_HINT_REFLOW);
     }
   }
 
@@ -567,7 +586,8 @@ public:
     if (HasCachedStyleData()) {
       // Media queries could have changed, since we changed the meaning
       // of 'em' units in them.
-      MediaFeatureValuesChanged(eAlwaysRebuildStyle, NS_STYLE_HINT_REFLOW);
+      MediaFeatureValuesChanged(eRestyle_ForceDescendants,
+                                NS_STYLE_HINT_REFLOW);
     }
   }
 
@@ -660,14 +680,13 @@ public:
   nscoord RoundAppUnitsToNearestDevPixels(nscoord aAppUnits) const
   { return DevPixelsToAppUnits(AppUnitsToDevPixels(aAppUnits)); }
 
-  void SetViewportOverflowOverride(uint8_t aX, uint8_t aY)
+  void SetViewportScrollbarStylesOverride(const ScrollbarStyles& aScrollbarStyle)
   {
-    mViewportStyleOverflow.mHorizontal = aX;
-    mViewportStyleOverflow.mVertical = aY;
+    mViewportStyleScrollbar = aScrollbarStyle;
   }
-  mozilla::ScrollbarStyles GetViewportOverflowOverride()
+  ScrollbarStyles GetViewportScrollbarStylesOverride()
   {
-    return mViewportStyleOverflow;
+    return mViewportStyleScrollbar;
   }
 
   /**
@@ -870,6 +889,8 @@ public:
   // user font set is changed and fonts become unavailable).
   void UserFontSetUpdated();
 
+  mozilla::dom::FontFaceSet* Fonts();
+
   void FlushCounterStyles();
   void RebuildCounterStyles(); // asynchronously
 
@@ -899,25 +920,16 @@ public:
     mAllInvalidated = false;
   }
 
-  bool IsProcessingRestyles() const {
-    return mProcessingRestyles;
-  }
+  /**
+   * Returns whether there are any pending restyles or reflows.
+   */
+  bool HasPendingRestyleOrReflow();
 
-  void SetProcessingRestyles(bool aProcessing) {
-    NS_ASSERTION(aProcessing != bool(mProcessingRestyles),
-                 "should never nest");
-    mProcessingRestyles = aProcessing;
-  }
-
-  bool IsProcessingAnimationStyleChange() const {
-    return mProcessingAnimationStyleChange;
-  }
-
-  void SetProcessingAnimationStyleChange(bool aProcessing) {
-    NS_ASSERTION(aProcessing != bool(mProcessingAnimationStyleChange),
-                 "should never nest");
-    mProcessingAnimationStyleChange = aProcessing;
-  }
+  /**
+   * Informs the document's FontFaceSet that the refresh driver ticked,
+   * flushing style and layout.
+   */
+  void NotifyFontFaceSetOnRefresh();
 
   /**
    * Notify the prescontext that the presshell is about to reflow a reflow root.
@@ -937,7 +949,7 @@ public:
   friend class InterruptPreventer;
   class MOZ_STACK_CLASS InterruptPreventer {
   public:
-    InterruptPreventer(nsPresContext* aCtx) :
+    explicit InterruptPreventer(nsPresContext* aCtx) :
       mCtx(aCtx),
       mInterruptsEnabled(aCtx->mInterruptsEnabled),
       mHasPendingInterrupt(aCtx->mHasPendingInterrupt)
@@ -1069,28 +1081,26 @@ protected:
       : mLangGroup(nullptr)
       , mMinimumFontSize(0)
       , mDefaultVariableFont(mozilla::eFamily_serif, NS_FONT_STYLE_NORMAL,
-                             NS_FONT_VARIANT_NORMAL,
                              NS_FONT_WEIGHT_NORMAL,
                              NS_FONT_STRETCH_NORMAL, 0, 0)
       , mDefaultFixedFont(mozilla::eFamily_monospace, NS_FONT_STYLE_NORMAL,
-                          NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
+                          NS_FONT_WEIGHT_NORMAL,
                           NS_FONT_STRETCH_NORMAL, 0, 0)
       , mDefaultSerifFont(mozilla::eFamily_serif, NS_FONT_STYLE_NORMAL,
-                          NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
+                          NS_FONT_WEIGHT_NORMAL,
                           NS_FONT_STRETCH_NORMAL, 0, 0)
       , mDefaultSansSerifFont(mozilla::eFamily_sans_serif,
                               NS_FONT_STYLE_NORMAL,
-                              NS_FONT_VARIANT_NORMAL,
                               NS_FONT_WEIGHT_NORMAL,
                               NS_FONT_STRETCH_NORMAL, 0, 0)
       , mDefaultMonospaceFont(mozilla::eFamily_monospace, NS_FONT_STYLE_NORMAL,
-                              NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
+                              NS_FONT_WEIGHT_NORMAL,
                               NS_FONT_STRETCH_NORMAL, 0, 0)
       , mDefaultCursiveFont(mozilla::eFamily_cursive, NS_FONT_STYLE_NORMAL,
-                            NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
+                            NS_FONT_WEIGHT_NORMAL,
                             NS_FONT_STRETCH_NORMAL, 0, 0)
       , mDefaultFantasyFont(mozilla::eFamily_fantasy, NS_FONT_STYLE_NORMAL,
-                            NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
+                            NS_FONT_WEIGHT_NORMAL,
                             NS_FONT_STRETCH_NORMAL, 0, 0)
     {}
 
@@ -1153,8 +1163,16 @@ public:
    */
   bool MayHavePaintEventListenerInSubDocument();
 
+#ifdef RESTYLE_LOGGING
+  // Controls for whether debug information about restyling in this
+  // document should be output.
+  bool RestyleLoggingEnabled() const { return mRestyleLoggingEnabled; }
+  void StartRestyleLogging() { mRestyleLoggingEnabled = true; }
+  void StopRestyleLogging() { mRestyleLoggingEnabled = false; }
+#endif
+
 protected:
-  void InvalidateThebesLayers();
+  void InvalidatePaintedLayers();
   void AppUnitsPerDevPixelChanged();
 
   void HandleRebuildUserFontSet() {
@@ -1240,7 +1258,7 @@ protected:
   nsInvalidateRequestList mUndeliveredInvalidateRequestsBeforeLastPaint;
 
   // container for per-context fonts (downloadable, SVG, etc.)
-  nsUserFontSet*        mUserFontSet;
+  nsRefPtr<mozilla::dom::FontFaceSet> mFontFaceSet;
 
   // text performance metrics
   nsAutoPtr<gfxTextPerfMetrics>   mTextPerf;
@@ -1262,7 +1280,7 @@ protected:
 
   nscolor               mBodyTextColor;
 
-  mozilla::ScrollbarStyles mViewportStyleOverflow;
+  ScrollbarStyles       mViewportStyleScrollbar;
   uint8_t               mFocusRingWidth;
 
   bool mExistThrottledUpdates;
@@ -1321,8 +1339,8 @@ protected:
   // Has there been a change to the viewport's dimensions?
   unsigned              mPendingViewportChange : 1;
 
-  // Is the current mUserFontSet valid?
-  unsigned              mUserFontSetDirty : 1;
+  // Is the current mFontFaceSet valid?
+  unsigned              mFontFaceSetDirty : 1;
   // Has GetUserFontSet() been called?
   unsigned              mGetUserFontSetCalled : 1;
   // Do we currently have an event posted to call FlushUserFontSet?
@@ -1339,9 +1357,6 @@ protected:
 
   unsigned              mIsVisual : 1;
 
-  unsigned              mProcessingRestyles : 1;
-  unsigned              mProcessingAnimationStyleChange : 1;
-
   unsigned              mFireAfterPaintEvents : 1;
 
   unsigned              mIsChrome : 1;
@@ -1353,6 +1368,11 @@ protected:
   mutable unsigned mPaintFlashingInitialized : 1;
 
   unsigned mHasWarnedAboutPositionedTableParts : 1;
+
+#ifdef RESTYLE_LOGGING
+  // Should we output debug information about restyling for this document?
+  bool                  mRestyleLoggingEnabled;
+#endif
 
 #ifdef DEBUG
   bool                  mInitialized;
@@ -1433,7 +1453,7 @@ public:
    * Compute geometry updates for each plugin given that aList is the display
    * list for aFrame. The updates are not yet applied;
    * ApplyPluginGeometryUpdates is responsible for that. In the meantime they
-   * are stored on each nsObjectFrame.
+   * are stored on each nsPluginFrame.
    * This needs to be called even when aFrame is a popup, since although
    * windowed plugins aren't allowed in popups, windowless plugins are
    * and ComputePluginGeometryUpdates needs to be called for them.
@@ -1492,7 +1512,7 @@ protected:
 
   class RunWillPaintObservers : public nsRunnable {
   public:
-    RunWillPaintObservers(nsRootPresContext* aPresContext) : mPresContext(aPresContext) {}
+    explicit RunWillPaintObservers(nsRootPresContext* aPresContext) : mPresContext(aPresContext) {}
     void Revoke() { mPresContext = nullptr; }
     NS_IMETHOD Run() MOZ_OVERRIDE
     {

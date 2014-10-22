@@ -439,7 +439,13 @@ function test()
     checkThrows(function() new Float32Array(null));
 
     a = new Uint8Array(0x100);
-    checkThrows(function() Uint32Array.prototype.subarray.apply(a, [0, 0x100]));
+    b = Uint32Array.prototype.subarray.apply(a, [0, 0x100]);
+    check(() => Object.prototype.toString.call(b) === "[object Uint8Array]");
+    check(() => b.buffer === a.buffer);
+    check(() => b.length === a.length);
+    check(() => b.byteLength === a.byteLength);
+    check(() => b.byteOffset === a.byteOffset);
+    check(() => b.BYTES_PER_ELEMENT === a.BYTES_PER_ELEMENT);
 
     // webidl section 4.4.6, getter bullet point 2.2: prototypes are not
     // platform objects, and calling the getter of any attribute defined on the
@@ -567,9 +573,14 @@ function test()
     check(function () Object.getPrototypeOf(view) == Object.getPrototypeOf(simple));
     check(function () Object.getPrototypeOf(view) == Int8Array.prototype);
 
-    // named properties are defined on the prototype
-    check(function () !Object.getOwnPropertyDescriptor(simple, 'byteLength'));
-    check(function () Object.getOwnPropertyDescriptor(Int8Array.prototype, 'byteLength'));
+    // Most named properties are defined on %TypedArray%.prototype.
+    check(() => !simple.hasOwnProperty('byteLength'));
+    check(() => !Int8Array.prototype.hasOwnProperty('byteLength'));
+    check(() => Object.getPrototypeOf(Int8Array.prototype).hasOwnProperty('byteLength'));
+
+    check(() => !simple.hasOwnProperty("BYTES_PER_ELEMENT"));
+    check(() => Int8Array.prototype.hasOwnProperty("BYTES_PER_ELEMENT"));
+    check(() => !Object.getPrototypeOf(Int8Array.prototype).hasOwnProperty("BYTES_PER_ELEMENT"));
 
     // crazy as it sounds, the named properties are configurable per WebIDL.
     // But we are currently discussing the situation, and typed arrays may be
@@ -581,17 +592,17 @@ function test()
         check(function () simple.byteLength == 13);
     }
 
-    // test move()
+    // test copyWithin()
     var numbers = [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ];
 
     function tastring(tarray) {
         return [ x for (x of tarray) ].toString();
     }
 
-    function checkMove(offset, start, end, dest, want) {
+    function checkCopyWithin(offset, start, end, dest, want) {
         var numbers_buffer = new Uint8Array(numbers).buffer;
         var view = new Int8Array(numbers_buffer, offset);
-        view.move(start, end, dest);
+        view.copyWithin(dest, start, end);
         check(function () tastring(view) == want.toString());
         if (tastring(view) != want.toString()) {
             print("Wanted: " + want.toString());
@@ -599,33 +610,33 @@ function test()
         }
     }
 
-    // basic move [2,5) -> 4
-    checkMove(0, 2, 5, 4, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
+    // basic copyWithin [2,5) -> 4
+    checkCopyWithin(0, 2, 5, 4, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
 
     // negative values should count from end
-    checkMove(0, -7,  5,  4, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
-    checkMove(0,  2, -4,  4, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
-    checkMove(0,  2,  5, -5, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
-    checkMove(0, -7, -4, -5, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
+    checkCopyWithin(0, -7,  5,  4, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
+    checkCopyWithin(0,  2, -4,  4, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
+    checkCopyWithin(0,  2,  5, -5, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
+    checkCopyWithin(0, -7, -4, -5, [ 0, 1, 2, 3, 2, 3, 4, 7, 8 ]);
 
     // offset
-    checkMove(2, 0, 3, 4, [ 2, 3, 4, 5, 2, 3, 4 ]);
+    checkCopyWithin(2, 0, 3, 4, [ 2, 3, 4, 5, 2, 3, 4 ]);
 
     // clipping
-    checkMove(0,  5000,  6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(0, -5000, -6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(0, -5000,  6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(0,  5000,  6000, 1, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(0, -5000, -6000, 1, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(0,  5000,  6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(2, -5000, -6000, 0, [ 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(2, -5000,  6000, 0, [ 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(2,  5000,  6000, 1, [ 2, 3, 4, 5, 6, 7, 8 ]);
-    checkMove(2, -5000, -6000, 1, [ 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(0,  5000,  6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(0, -5000, -6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(0, -5000,  6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(0,  5000,  6000, 1, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(0, -5000, -6000, 1, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(0,  5000,  6000, 0, [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(2, -5000, -6000, 0, [ 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(2, -5000,  6000, 0, [ 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(2,  5000,  6000, 1, [ 2, 3, 4, 5, 6, 7, 8 ]);
+    checkCopyWithin(2, -5000, -6000, 1, [ 2, 3, 4, 5, 6, 7, 8 ]);
 
-    checkMove(2, -5000,    3, 1,     [ 2, 2, 3, 4, 6, 7, 8 ]);
-    checkMove(2,     1, 6000, 0,     [ 3, 4, 5, 6, 7, 8, 8 ]);
-    checkMove(2,     1, 6000, -4000, [ 3, 4, 5, 6, 7, 8, 8 ]);
+    checkCopyWithin(2, -5000,    3, 1,     [ 2, 2, 3, 4, 6, 7, 8 ]);
+    checkCopyWithin(2,     1, 6000, 0,     [ 3, 4, 5, 6, 7, 8, 8 ]);
+    checkCopyWithin(2,     1, 6000, -4000, [ 3, 4, 5, 6, 7, 8, 8 ]);
 
     testBufferManagement();
 

@@ -10,12 +10,14 @@
 #include "nsFrame.h"
 #include "nsSplittableFrame.h"
 #include "nsLineBox.h"
-#include "gfxFont.h"
 #include "gfxSkipChars.h"
+#include "gfxTextRun.h"
 #include "nsDisplayList.h"
 
 class nsTextPaintStyle;
 class PropertyProvider;
+struct SelectionDetails;
+class nsTextFragment;
 
 typedef nsFrame nsTextFrameBase;
 
@@ -37,7 +39,7 @@ public:
   friend class nsDisplayTextGeometry;
   friend class nsDisplayText;
 
-  nsTextFrame(nsStyleContext* aContext)
+  explicit nsTextFrame(nsStyleContext* aContext)
     : nsTextFrameBase(aContext)
   {
     NS_ASSERTION(mContentOffset == 0, "Bogus content offset");
@@ -207,10 +209,15 @@ public:
                                  InlineMinISizeData *aData) MOZ_OVERRIDE;
   virtual void AddInlinePrefISize(nsRenderingContext *aRenderingContext,
                                   InlinePrefISizeData *aData) MOZ_OVERRIDE;
-  virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
-                             nsSize aCBSize, nscoord aAvailableWidth,
-                             nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                             uint32_t aFlags) MOZ_OVERRIDE;
+  virtual mozilla::LogicalSize
+  ComputeSize(nsRenderingContext *aRenderingContext,
+              mozilla::WritingMode aWritingMode,
+              const mozilla::LogicalSize& aCBSize,
+              nscoord aAvailableISize,
+              const mozilla::LogicalSize& aMargin,
+              const mozilla::LogicalSize& aBorder,
+              const mozilla::LogicalSize& aPadding,
+              uint32_t aFlags) MOZ_OVERRIDE;
   virtual nsRect ComputeTightBounds(gfxContext* aContext) const MOZ_OVERRIDE;
   virtual nsresult GetPrefWidthTightBounds(nsRenderingContext* aContext,
                                            nscoord* aX,
@@ -311,7 +318,7 @@ public:
     /**
      * @param aShouldPaintSVGGlyphs Whether SVG glyphs should be painted.
      */
-    DrawPathCallbacks(bool aShouldPaintSVGGlyphs = false)
+    explicit DrawPathCallbacks(bool aShouldPaintSVGGlyphs = false)
       : gfxTextRunDrawCallbacks(aShouldPaintSVGGlyphs)
     {
     }

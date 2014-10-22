@@ -14,6 +14,7 @@ import mozpack.path as mozpath
 
 from mach.decorators import (
     CommandArgument,
+    CommandArgumentGroup,
     CommandProvider,
     Command,
 )
@@ -285,6 +286,7 @@ class Build(MachCommandBase):
         warnings_path = self._get_state_filename('warnings.json')
         monitor = self._spawn(BuildMonitor)
         monitor.init(warnings_path)
+        ccache_start = monitor.ccache_stats()
 
         with BuildOutputManager(self.log_manager, monitor) as output:
             monitor.start()
@@ -392,31 +394,60 @@ class Build(MachCommandBase):
         if high_finder:
             print(FINDER_SLOW_MESSAGE % finder_percent)
 
-        if monitor.elapsed > 300:
+        ccache_end = monitor.ccache_stats()
+
+        if ccache_start and ccache_end:
+            ccache_diff = ccache_end - ccache_start
+            if ccache_diff:
+                self.log(logging.INFO, 'ccache',
+                         {'msg': ccache_diff.hit_rate_message()}, "{msg}")
+
+        moz_nospam = os.environ.get('MOZ_NOSPAM')
+        if monitor.elapsed > 300 and not moz_nospam:
             # Display a notification when the build completes.
             # This could probably be uplifted into the mach core or at least
             # into a helper API. It is here as an experimentation to see how it
             # is received.
             try:
                 if sys.platform.startswith('darwin'):
-                    notifier = which.which('terminal-notifier')
+                    try:
+                        notifier = which.which('terminal-notifier')
+                    except which.WhichError:
+                        raise Exception('Install terminal-notifier to get '
+                            'a notification when the build finishes.')
                     self.run_process([notifier, '-title',
                         'Mozilla Build System', '-group', 'mozbuild',
                         '-message', 'Build complete'], ensure_exit_code=False)
                 elif sys.platform.startswith('linux'):
                     try:
                         import dbus
-                        bus = dbus.SessionBus()
-                        notify = bus.get_object('org.freedesktop.Notifications',
-                                                '/org/freedesktop/Notifications')
-                        method = notify.get_dbus_method('Notify',
-                                                        'org.freedesktop.Notifications')
-                        method('Mozilla Build System', 0, '', 'Build complete', '', [], [], -1)
-                    except (dbus.exceptions.DBusException, ImportError):
-                        pass
-
-            except (which.WhichError, ImportError):
-                pass
+                    except ImportError:
+                        raise Exception('Install the python dbus module to '
+                            'get a notification when the build finishes.')
+                    bus = dbus.SessionBus()
+                    notify = bus.get_object('org.freedesktop.Notifications',
+                                            '/org/freedesktop/Notifications')
+                    method = notify.get_dbus_method('Notify',
+                                                    'org.freedesktop.Notifications')
+                    method('Mozilla Build System', 0, '', 'Build complete', '', [], [], -1)
+                elif sys.platform.startswith('win'):
+                    from ctypes import Structure, windll, POINTER, sizeof
+                    from ctypes.wintypes import DWORD, HANDLE, WINFUNCTYPE, BOOL, UINT
+                    class FLASHWINDOW(Structure):
+                        _fields_ = [("cbSize", UINT),
+                                    ("hwnd", HANDLE),
+                                    ("dwFlags", DWORD),
+                                    ("uCount", UINT),
+                                    ("dwTimeout", DWORD)]
+                    FlashWindowExProto = WINFUNCTYPE(BOOL, POINTER(FLASHWINDOW))
+                    FlashWindowEx = FlashWindowExProto(("FlashWindowEx", windll.user32))
+                    FLASHW_CAPTION = 0x01
+                    FLASHW_TRAY = 0x02
+                    FLASHW_TIMERNOFG = 0x0C
+                    params = FLASHWINDOW(sizeof(FLASHWINDOW),
+                                        windll.kernel32.GetConsoleWindow(),
+                                        FLASHW_CAPTION | FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0)
+                    FlashWindowEx(params)
             except Exception as e:
                 self.log(logging.WARNING, 'notifier-failed', {'error':
                     e.message}, 'Notification center failed: {error}')
@@ -427,9 +458,9 @@ class Build(MachCommandBase):
         long_build = monitor.elapsed > 600
 
         if long_build:
-            print('We know it took a while, but your build finally finished successfully!')
+            output.on_line('We know it took a while, but your build finally finished successfully!')
         else:
-            print('Your build was successful!')
+            output.on_line('Your build was successful!')
 
         if monitor.have_resource_usage:
             excessive, swap_in, swap_out = monitor.have_excessive_swapping()
@@ -607,7 +638,7 @@ class Warnings(MachCommandBase):
 @CommandProvider
 class GTestCommands(MachCommandBase):
     @Command('gtest', category='testing',
-        description='Run GTest unit tests.')
+        description='Run GTest unit tests (C++ tests).')
     @CommandArgument('gtest_filter', default=b"*", nargs='?', metavar='gtest_filter',
         help="test_filter is a ':'-separated list of wildcard patterns (called the positive patterns),"
              "optionally followed by a '-' and another ':'-separated pattern list (called the negative patterns).")
@@ -623,11 +654,19 @@ class GTestCommands(MachCommandBase):
         self._run_make(directory="testing/gtest", target='gtest', ensure_exit_code=True)
 
         app_path = self.get_binary_path('app')
+        cwd = os.path.join(self.topobjdir, '_tests', 'gtest')
+
+        if not os.path.isdir(cwd):
+            os.makedirs(cwd)
 
         # Use GTest environment variable to control test execution
         # For details see:
         # https://code.google.com/p/googletest/wiki/AdvancedGuide#Running_Test_Programs:_Advanced_Options
         gtest_env = {b'GTEST_FILTER': gtest_filter}
+
+        xre_path = os.path.join(self.topobjdir, "dist", "bin")
+        gtest_env["MOZ_XRE_DIR"] = xre_path
+        gtest_env["MOZ_GMP_PATH"] = os.path.join(xre_path, "gmp-fake", "1.0")
 
         gtest_env[b"MOZ_RUN_GTEST"] = b"True"
 
@@ -640,6 +679,7 @@ class GTestCommands(MachCommandBase):
         if jobs == 1:
             return self.run_process([app_path, "-unittest"],
                                     append_env=gtest_env,
+                                    cwd=cwd,
                                     ensure_exit_code=False,
                                     pass_thru=True)
 
@@ -655,6 +695,7 @@ class GTestCommands(MachCommandBase):
         for i in range(0, jobs):
             gtest_env["GTEST_SHARD_INDEX"] = str(i)
             processes[i] = ProcessHandlerMixin([app_path, "-unittest"],
+                             cwd=cwd,
                              env=gtest_env,
                              processOutputLine=[functools.partial(handle_line, i)],
                              universal_newlines=True)
@@ -746,97 +787,52 @@ class Install(MachCommandBase):
 
 @CommandProvider
 class RunProgram(MachCommandBase):
-    """Launch the compiled binary"""
+    """Run the compiled program."""
 
-    @Command('run', category='post-build', allow_all_args=True,
-        description='Run the compiled program.')
-    @CommandArgument('params', default=None, nargs='...',
-        help='Command-line arguments to pass to the program.')
-    @CommandArgument('+remote', '+r', action='store_true',
+    prog_group = 'the compiled program'
+
+    @Command('run', category='post-build',
+        description='Run the compiled program, possibly under a debugger or DMD.')
+    @CommandArgument('params', nargs='...', group=prog_group,
+        help='Command-line arguments to be passed through to the program. Not specifying a -profile or -P option will result in a temporary profile being used.')
+    @CommandArgumentGroup(prog_group)
+    @CommandArgument('-remote', '-r', action='store_true', group=prog_group,
         help='Do not pass the -no-remote argument by default.')
-    @CommandArgument('+background', '+b', action='store_true',
-        help='Do not pass the -foreground argument by default on Mac')
-    @CommandArgument('+profile', '+P', action='store_true',
-        help='Specify the profile to use')
-    def run(self, params, remote, background, profile):
-        try:
-            args = [self.get_binary_path('app')]
-        except Exception as e:
-            print("It looks like your program isn't built.",
-                "You can run |mach build| to build it.")
-            print(e)
-            return 1
-        if not remote:
-            args.append('-no-remote')
-        if not background and sys.platform == 'darwin':
-            args.append('-foreground')
-        if '-profile' not in params and '-P' not in params:
-            path = os.path.join(self.topobjdir, 'tmp', 'scratch_user')
-            if not os.path.isdir(path):
-                os.makedirs(path)
-            args.append('-profile')
-            args.append(path)
-        if params:
-            args.extend(params)
-        return self.run_process(args=args, ensure_exit_code=False,
-            pass_thru=True)
+    @CommandArgument('-background', '-b', action='store_true', group=prog_group,
+        help='Do not pass the -foreground argument by default on Mac.')
+    @CommandArgument('-noprofile', '-n', action='store_true', group=prog_group,
+        help='Do not pass the -profile argument by default.')
 
-@CommandProvider
-class DebugProgram(MachCommandBase):
-    """Debug the compiled binary"""
-
-    @Command('debug', category='post-build', allow_all_args=True,
-        description='Debug the compiled program.')
-    @CommandArgument('params', default=None, nargs='...',
-        help='Command-line arguments to pass to the program.')
-    @CommandArgument('+remote', '+r', action='store_true',
-        help='Do not pass the -no-remote argument by default')
-    @CommandArgument('+background', '+b', action='store_true',
-        help='Do not pass the -foreground argument by default on Mac')
-    @CommandArgument('+debugger', default=None, type=str,
-        help='Name of debugger to launch')
-    @CommandArgument('+debugparams', default=None, metavar='params', type=str,
-        help='Command-line arguments to pass to GDB or LLDB itself; split as the Bourne shell would.')
-    @CommandArgument('+profile', '+P', action='store_true',
-        help='Specifiy thr profile to use')
+    @CommandArgumentGroup('debugging')
+    @CommandArgument('--debug', action='store_true', group='debugging',
+        help='Enable the debugger. Not specifying a --debugger option will result in the default debugger being used. The following arguments have no effect without this.')
+    @CommandArgument('--debugger', default=None, type=str, group='debugging',
+        help='Name of debugger to use.')
+    @CommandArgument('--debugparams', default=None, metavar='params', type=str,
+        group='debugging',
+        help='Command-line arguments to pass to the debugger itself; split as the Bourne shell would.')
     # Bug 933807 introduced JS_DISABLE_SLOW_SCRIPT_SIGNALS to avoid clever
     # segfaults induced by the slow-script-detecting logic for Ion/Odin JITted
     # code.  If we don't pass this, the user will need to periodically type
     # "continue" to (safely) resume execution.  There are ways to implement
     # automatic resuming; see the bug.
-    @CommandArgument('+slowscript', action='store_true',
-        help='Do not set the JS_DISABLE_SLOW_SCRIPT_SIGNALS env variable; when not set, recoverable but misleading SIGSEGV instances may occur in Ion/Odin JIT code')
-    def debug(self, params, remote, background, profile, debugger, debugparams, slowscript):
-        import which
-        if debugger:
-            try:
-                debugger = which.which(debugger)
-            except Exception as e:
-                print("You don't have %s in your PATH" % (debugger))
-                print(e)
-                return 1
-        else:
-            try:
-                debugger = which.which('gdb')
-            except Exception:
-                try:
-                    debugger = which.which('lldb')
-                except Exception as e:
-                    print("You don't have gdb or lldb in your PATH")
-                    print(e)
-                    return 1
-        args = [debugger]
-        extra_env = { 'MOZ_CRASHREPORTER_DISABLE' : '1' }
-        if debugparams:
-            import pymake.process
-            argv, badchar = pymake.process.clinetoargv(debugparams, os.getcwd())
-            if badchar:
-                print("The +debugparams you passed require a real shell to parse them.")
-                print("(We can't handle the %r character.)" % (badchar,))
-                return 1
-            args.extend(argv)
+    @CommandArgument('--slowscript', action='store_true', group='debugging',
+        help='Do not set the JS_DISABLE_SLOW_SCRIPT_SIGNALS env variable; when not set, recoverable but misleading SIGSEGV instances may occur in Ion/Odin JIT code.')
 
-        binpath = None
+    @CommandArgumentGroup('DMD')
+    @CommandArgument('--dmd', action='store_true', group='DMD',
+        help='Enable DMD. The following arguments have no effect without this.')
+    @CommandArgument('--sample-below', default=None, type=str, group='DMD',
+        help='Sample blocks smaller than this. Use 1 for no sampling. The default is 4093.')
+    @CommandArgument('--max-frames', default=None, type=str, group='DMD',
+        help='The maximum depth of stack traces. The default and maximum is 24.')
+    @CommandArgument('--show-dump-stats', action='store_true', group='DMD',
+        help='Show stats when doing dumps.')
+    @CommandArgument('--mode', choices=['normal', 'test'], group='DMD',
+        help='Mode of operation. The default is normal.')
+    def run(self, params, remote, background, noprofile, debug, debugger,
+        debugparams, slowscript, dmd, sample_below, max_frames,
+        show_dump_stats, mode):
 
         try:
             binpath = self.get_binary_path('app')
@@ -846,35 +842,101 @@ class DebugProgram(MachCommandBase):
             print(e)
             return 1
 
-        # args added to separate the debugger and process arguments.
-        args_separator = {
-            'gdb': '--args',
-            'ddd': '--args',
-            'cgdb': '--args',
-            'lldb': '--'
-        }
+        args = [binpath]
 
-        debugger_name = os.path.basename(debugger)
-        if debugger_name in args_separator:
-            args.append(args_separator[debugger_name])
-        args.append(binpath)
+        if params:
+            args.extend(params)
 
         if not remote:
             args.append('-no-remote')
+
         if not background and sys.platform == 'darwin':
             args.append('-foreground')
-        if params:
-            args.extend(params)
-        if '-profile' not in params and '-P' not in params:
+
+        if '-profile' not in params and '-P' not in params and not noprofile:
             path = os.path.join(self.topobjdir, 'tmp', 'scratch_user')
             if not os.path.isdir(path):
                 os.makedirs(path)
             args.append('-profile')
             args.append(path)
-        if not slowscript:
-            extra_env['JS_DISABLE_SLOW_SCRIPT_SIGNALS'] = '1'
-        return self.run_process(args=args, append_env=extra_env,
-            ensure_exit_code=False, pass_thru=True)
+
+        extra_env = {}
+
+        if debug:
+            import mozdebug
+            if not debugger:
+                # No debugger name was provided. Look for the default ones on
+                # current OS.
+                debugger = mozdebug.get_default_debugger_name(mozdebug.DebuggerSearch.KeepLooking)
+
+            self.debuggerInfo = mozdebug.get_debugger_info(debugger, debugparams)
+            if not self.debuggerInfo:
+                print("Could not find a suitable debugger in your PATH.")
+                return 1
+
+            # Parameters come from the CLI. We need to convert them before
+            # their use.
+            if debugparams:
+                import pymake.process
+                argv, badchar = pymake.process.clinetoargv(debugparams, os.getcwd())
+                if badchar:
+                    print("The --debugparams you passed require a real shell to parse them.")
+                    print("(We can't handle the %r character.)" % (badchar,))
+                    return 1
+                debugparams = argv;
+
+            if not slowscript:
+                extra_env['JS_DISABLE_SLOW_SCRIPT_SIGNALS'] = '1'
+
+            extra_env['MOZ_CRASHREPORTER_DISABLE'] = '1'
+
+            # Prepend the debugger args.
+            args = [self.debuggerInfo.path] + self.debuggerInfo.args + args
+
+        if dmd:
+            dmd_params = []
+
+            if sample_below:
+                dmd_params.append('--sample-below=' + sample_below)
+            if max_frames:
+                dmd_params.append('--max-frames=' + max_frames)
+            if show_dump_stats:
+                dmd_params.append('--show-dump-stats=yes')
+            if mode:
+                dmd_params.append('--mode=' + mode)
+
+            if dmd_params:
+                dmd_env_var = " ".join(dmd_params)
+            else:
+                dmd_env_var = "1"
+
+            bin_dir = os.path.dirname(binpath)
+            lib_name = self.substs['DLL_PREFIX'] + 'dmd' + self.substs['DLL_SUFFIX']
+            dmd_lib = os.path.join(bin_dir, lib_name)
+            if not os.path.exists(dmd_lib):
+                print("Please build with |--enable-dmd| to use DMD.")
+                return 1
+
+            env_vars = {
+                "Darwin": {
+                    "DYLD_INSERT_LIBRARIES": dmd_lib,
+                    "LD_LIBRARY_PATH": bin_dir,
+                    "DMD": dmd_env_var,
+                },
+                "Linux": {
+                    "LD_PRELOAD": dmd_lib,
+                    "LD_LIBRARY_PATH": bin_dir,
+                    "DMD": dmd_env_var,
+                },
+                "WINNT": {
+                    "MOZ_REPLACE_MALLOC_LIB": dmd_lib,
+                    "DMD": dmd_env_var,
+                },
+            }
+            extra_env.update(env_vars.get(self.substs['OS_ARCH'], {}))
+
+        return self.run_process(args=args, ensure_exit_code=False,
+            pass_thru=True, append_env=extra_env)
 
 @CommandProvider
 class Buildsymbols(MachCommandBase):
@@ -1018,6 +1080,8 @@ class MachDebug(MachCommandBase):
         if self.mozconfig['make_extra']:
             for arg in self.mozconfig['make_extra']:
                 print(arg, file=out)
+        if self.mozconfig['make_flags']:
+            print('MOZ_MAKE_FLAGS=%s' % ' '.join(self.mozconfig['make_flags']))
         objdir = mozpath.normsep(self.topobjdir)
         print('MOZ_OBJDIR=%s' % objdir, file=out)
         if 'MOZ_CURRENT_PROJECT' in os.environ:

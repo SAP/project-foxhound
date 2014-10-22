@@ -5,9 +5,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG['OS_TARGET'] != 'WINNT' and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
-    CPP_UNIT_TESTS += [
+    CppUnitTests([
         'buffered_stun_socket_unittest',
-        'ice_unittest',
         'nrappkit_unittest',
         'rlogringbuffer_unittest',
         'runnable_utils_unittest',
@@ -16,14 +15,18 @@ if CONFIG['OS_TARGET'] != 'WINNT' and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
         'TestSyncRunnable',
         'transport_unittests',
         'turn_unittest',
-    ]
+    ])
+
+    # Bug 1037618 - Cross-tree (network related?) failures on OSX
+    if CONFIG['OS_TARGET'] != 'Darwin':
+        CppUnitTests([
+            'ice_unittest',
+        ])
 
     if CONFIG['MOZ_SCTP']:
-        CPP_UNIT_TESTS += [
+        CppUnitTests([
             'sctp_unittest',
-        ]
-
-    SOURCES += sorted('%s.cpp' % t for t in CPP_UNIT_TESTS)
+        ])
 
 FAIL_ON_WARNINGS = True
 
@@ -89,9 +92,17 @@ USE_LIBS += [
     'mtransport_s',
     'nicer',
     'nrappkit',
+    'nspr',
+    'nss',
     'xpcomglue_s',
     'xul',
 ]
+
+if not CONFIG['MOZ_NATIVE_NSS'] and not CONFIG['MOZ_FOLD_LIBS']:
+    USE_LIBS += [
+        # Statically linking NSS libssl ensures that we can debug NSS too
+        'static:/security/nss/lib/ssl/ssl',
+    ]
 
 if CONFIG['MOZ_SCTP']:
     USE_LIBS += [

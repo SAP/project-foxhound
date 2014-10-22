@@ -100,7 +100,7 @@ GetProcSelfSmapsPrivate(int64_t* aN)
     char* ptr = buffer;
     end[carryOver] = '\0';
     // We are looking for lines like "Private_{Clean,Dirty}: 4 kB".
-    while (ptr = strstr(ptr, "Private")) {
+    while ((ptr = strstr(ptr, "Private"))) {
       if (ptr >= end) {
         break;
       }
@@ -864,13 +864,52 @@ public:
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
                            nsISupports* aData, bool aAnonymize)
   {
-    return MOZ_COLLECT_REPORT(
-      "explicit/atom-tables", KIND_HEAP, UNITS_BYTES,
-      NS_SizeOfAtomTablesIncludingThis(MallocSizeOf),
-      "Memory used by the dynamic and static atoms tables.");
+    size_t Main, Static;
+    NS_SizeOfAtomTablesIncludingThis(MallocSizeOf, &Main, &Static);
+
+    nsresult rv;
+    rv = MOZ_COLLECT_REPORT(
+      "explicit/atom-tables/main", KIND_HEAP, UNITS_BYTES, Main,
+      "Memory used by the main atoms table.");
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = MOZ_COLLECT_REPORT(
+      "explicit/atom-tables/static", KIND_HEAP, UNITS_BYTES, Static,
+      "Memory used by the static atoms table.");
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return NS_OK;
   }
 };
 NS_IMPL_ISUPPORTS(AtomTablesReporter, nsIMemoryReporter)
+
+#ifdef DEBUG
+
+// Ideally, this would be implemented in BlockingResourceBase.cpp.
+// However, this ends up breaking the linking step of various unit tests due
+// to adding a new dependency to libdmd for a commonly used feature (mutexes)
+// in  DMD  builds. So instead we do it here.
+class DeadlockDetectorReporter MOZ_FINAL : public nsIMemoryReporter
+{
+  MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
+
+  ~DeadlockDetectorReporter() {}
+
+public:
+  NS_DECL_ISUPPORTS
+
+  NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
+                           nsISupports* aData, bool aAnonymize)
+  {
+    return MOZ_COLLECT_REPORT(
+      "explicit/deadlock-detector", KIND_HEAP, UNITS_BYTES,
+      BlockingResourceBase::SizeOfDeadlockDetector(MallocSizeOf),
+      "Memory used by the deadlock detector.");
+  }
+};
+NS_IMPL_ISUPPORTS(DeadlockDetectorReporter, nsIMemoryReporter)
+
+#endif
 
 #ifdef MOZ_DMD
 
@@ -975,6 +1014,10 @@ nsMemoryReporterManager::Init()
 
   RegisterStrongReporter(new AtomTablesReporter());
 
+#ifdef DEBUG
+  RegisterStrongReporter(new DeadlockDetectorReporter());
+#endif
+
 #ifdef MOZ_DMD
   RegisterStrongReporter(new mozilla::dmd::DMDReporter());
 #endif
@@ -1051,7 +1094,7 @@ nsMemoryReporterManager::GetReports(
                             aFinishReporting, aFinishReportingData,
                             aAnonymize,
                             /* minimize = */ false,
-                            /* DMDident = */ nsString());
+                            /* DMDident = */ EmptyString());
 }
 
 NS_IMETHODIMP
@@ -1130,7 +1173,8 @@ nsMemoryReporterManager::GetReportsExtended(
   }
 
   if (aMinimize) {
-    rv = MinimizeMemoryUsage(NS_NewRunnableMethod(this, &nsMemoryReporterManager::StartGettingReports));
+    rv = MinimizeMemoryUsage(NS_NewRunnableMethod(
+      this, &nsMemoryReporterManager::StartGettingReports));
   } else {
     rv = StartGettingReports();
   }
@@ -1143,13 +1187,15 @@ nsMemoryReporterManager::StartGettingReports()
   GetReportsState* s = mGetReportsState;
 
   // Get reports for this process.
-  FILE *parentDMDFile = nullptr;
+  FILE* parentDMDFile = nullptr;
 #ifdef MOZ_DMD
-  nsresult rv = nsMemoryInfoDumper::OpenDMDFile(s->mDMDDumpIdent, getpid(),
-                                                &parentDMDFile);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // Proceed with the memory report as if DMD were disabled.
-    parentDMDFile = nullptr;
+  if (!s->mDMDDumpIdent.IsEmpty()) {
+    nsresult rv = nsMemoryInfoDumper::OpenDMDFile(s->mDMDDumpIdent, getpid(),
+                                                  &parentDMDFile);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      // Proceed with the memory report as if DMD were disabled.
+      parentDMDFile = nullptr;
+    }
   }
 #endif
   GetReportsForThisProcessExtended(s->mHandleReport, s->mHandleReportData,
@@ -1157,9 +1203,8 @@ nsMemoryReporterManager::StartGettingReports()
   s->mParentDone = true;
 
   // If there are no remaining child processes, we can finish up immediately.
-  return (s->mNumChildProcessesCompleted >= s->mNumChildProcesses)
-    ? FinishReporting()
-    : NS_OK;
+  return (s->mNumChildProcessesCompleted >= s->mNumChildProcesses) ?
+    FinishReporting() : NS_OK;
 }
 
 typedef nsCOMArray<nsIMemoryReporter> MemoryReporterArray;
@@ -1818,7 +1863,7 @@ namespace {
 class MinimizeMemoryUsageRunnable : public nsRunnable
 {
 public:
-  MinimizeMemoryUsageRunnable(nsIRunnable* aCallback)
+  explicit MinimizeMemoryUsageRunnable(nsIRunnable* aCallback)
     : mCallback(aCallback)
     , mRemainingIters(sNumIters)
   {

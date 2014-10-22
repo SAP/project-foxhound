@@ -10,25 +10,25 @@
 #include "nsISelectionListener.h"
 #include "nsIScrollObserver.h"
 #include "nsIWeakReferenceUtils.h"
-#include "nsFrameSelection.h"
 #include "nsITimer.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/TouchEvents.h"
 #include "Units.h"
 
+class nsCanvasFrame;
+class nsIFrame;
+class nsIPresShell;
+
 namespace mozilla {
 
 /**
- * The TouchCaret places a touch caret according to caret postion when the
+ * The TouchCaret places a touch caret according to caret position when the
  * caret is shown.
  * TouchCaret is also responsible for touch caret visibility. Touch caret
  * won't be shown when timer expires or while key event causes selection change.
  */
 class TouchCaret MOZ_FINAL : public nsISelectionListener
 {
-private:
-  ~TouchCaret();
-
 public:
   explicit TouchCaret(nsIPresShell* aPresShell);
 
@@ -48,18 +48,9 @@ public:
    */
   nsEventStatus HandleEvent(WidgetEvent* aEvent);
 
-  /**
-   * By calling this function, touch caret recalculate touch frame position and
-   * update accordingly.
-   */
-  void UpdateTouchCaret(bool aVisible);
+  void SyncVisibilityWithCaret();
 
-  /**
-   * SetVisibility will set the visibility of the touch caret.
-   * SetVisibility performs an attribute-changed notification which could, in
-   * theory, destroy frames.
-   */
-  void SetVisibility(bool aVisible);
+  void UpdatePositionIfNeeded();
 
   /**
    * GetVisibility will get the visibility of the touch caret.
@@ -73,10 +64,28 @@ private:
   // Hide default constructor.
   TouchCaret() MOZ_DELETE;
 
+  ~TouchCaret();
+
+  bool IsDisplayable();
+
+  void UpdatePosition();
+
+  /**
+   * SetVisibility will set the visibility of the touch caret.
+   * SetVisibility performs an attribute-changed notification which could, in
+   * theory, destroy frames.
+   */
+  void SetVisibility(bool aVisible);
+
+  /**
+   * Helper function to get caret's focus frame and caret's bounding rect.
+   */
+  nsIFrame* GetCaretFocusFrame(nsRect* aOutRect = nullptr);
+
   /**
    * Find the nsCanvasFrame which holds the touch caret.
    */
-  nsIFrame* GetCanvasFrame();
+  nsCanvasFrame* GetCanvasFrame();
 
   /**
    * Retrieve the bounding rectangle of the touch caret.
@@ -101,6 +110,24 @@ private:
    * The returned point is relative to the canvas frame.
    */
   nscoord GetCaretYCenterPosition();
+
+  /**
+   * Retrieve the position of the touch caret.
+   * The returned point is relative to the canvas frame.
+   */
+  nsPoint GetTouchCaretPosition();
+
+  /**
+   * Check whether nsCaret shows in the scroll frame boundary, i.e. its rect
+   * intersects scroll frame's rect.
+   */
+  bool IsCaretShowingInScrollFrame();
+
+  /**
+   * Clamp the position of the touch caret to the scroll frame boundary.
+   * The returned point is relative to the canvas frame.
+   */
+  nsPoint ClampPositionToScrollFrame(const nsPoint& aPosition);
 
   /**
    * Set the position of the touch caret.
@@ -149,6 +176,15 @@ private:
   nsPoint GetEventPosition(WidgetTouchEvent* aEvent, int32_t aIdentifier);
 
   /**
+   * Set mouse down state in nsFrameSelection, we'll set state to true when
+   * user start dragging caret and set state to false when user release the
+   * caret. The reason for setting this state is it will fire drag reason
+   * when moving caret and fire mouseup reason when releasing caret. So that
+   * the display behavior of copy/paste menu becomes more reasonable.
+   */
+  void SetSelectionDragState(bool aState);
+
+  /**
    * Get the coordinates of a given mouse event, relative to canvas frame.
    * @param aEvent the event
    * @return the point, or (NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE) if
@@ -193,6 +229,11 @@ private:
   void SetState(TouchCaretState aState);
 
   /**
+   * Dispatch touch caret tap event to chrome.
+   */
+  void DispatchTapEvent();
+
+  /**
    * Current state we're dealing with.
    */
   TouchCaretState mState;
@@ -216,26 +257,29 @@ private:
    */
   nscoord mCaretCenterToDownPointOffsetY;
 
-  static int32_t TouchCaretMaxDistance()
-  {
-    return sTouchCaretMaxDistance;
-  }
+  /**
+   * Get from pref "touchcaret.inflatesize.threshold". This will inflate the
+   * size of the touch caret frame when checking if user clicks on the caret
+   * or not. In app units.
+   */
+  static int32_t TouchCaretInflateSize() { return sTouchCaretInflateSize; }
 
   static int32_t TouchCaretExpirationTime()
   {
     return sTouchCaretExpirationTime;
   }
 
-protected:
   nsWeakPtr mPresShell;
 
   // Touch caret visibility
   bool mVisible;
+  // Use for detecting single tap on touch caret.
+  bool mIsValidTap;
   // Touch caret timer
   nsCOMPtr<nsITimer> mTouchCaretExpirationTimer;
 
   // Preference
-  static int32_t sTouchCaretMaxDistance;
+  static int32_t sTouchCaretInflateSize;
   static int32_t sTouchCaretExpirationTime;
 
   // The auto scroll timer's interval in miliseconds.

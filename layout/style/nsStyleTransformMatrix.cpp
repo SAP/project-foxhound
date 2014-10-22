@@ -16,6 +16,7 @@
 #include "gfxMatrix.h"
 
 using namespace mozilla;
+using namespace mozilla::gfx;
 
 namespace nsStyleTransformMatrix {
 
@@ -196,7 +197,7 @@ ProcessTranslateX(gfx3DMatrix& aMatrix,
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
 
-  gfxPoint3D temp;
+  Point3D temp;
 
   temp.x = ProcessTranslatePart(aData->Item(1),
                                 aContext, aPresContext, aCanStoreInRuleTree,
@@ -215,7 +216,7 @@ ProcessTranslateY(gfx3DMatrix& aMatrix,
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
 
-  gfxPoint3D temp;
+  Point3D temp;
 
   temp.y = ProcessTranslatePart(aData->Item(1),
                                 aContext, aPresContext, aCanStoreInRuleTree,
@@ -232,7 +233,7 @@ ProcessTranslateZ(gfx3DMatrix& aMatrix,
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
 
-  gfxPoint3D temp;
+  Point3D temp;
 
   temp.z = ProcessTranslatePart(aData->Item(1), aContext,
                                 aPresContext, aCanStoreInRuleTree, 0);
@@ -250,7 +251,7 @@ ProcessTranslate(gfx3DMatrix& aMatrix,
 {
   NS_PRECONDITION(aData->Count() == 2 || aData->Count() == 3, "Invalid array!");
 
-  gfxPoint3D temp;
+  Point3D temp;
 
   temp.x = ProcessTranslatePart(aData->Item(1),
                                 aContext, aPresContext, aCanStoreInRuleTree,
@@ -275,7 +276,7 @@ ProcessTranslate3D(gfx3DMatrix& aMatrix,
 {
   NS_PRECONDITION(aData->Count() == 4, "Invalid array!");
 
-  gfxPoint3D temp;
+  Point3D temp;
 
   temp.x = ProcessTranslatePart(aData->Item(1),
                                 aContext, aPresContext, aCanStoreInRuleTree,
@@ -437,33 +438,29 @@ ProcessRotate3D(gfx3DMatrix& aMatrix, const nsCSSValue::Array* aData)
   float cosTheta = FlushToZero(cos(theta));
   float sinTheta = FlushToZero(sin(theta));
 
-  float x = aData->Item(1).GetFloatValue();
-  float y = aData->Item(2).GetFloatValue();
-  float z = aData->Item(3).GetFloatValue();
+  Point3D vector(aData->Item(1).GetFloatValue(),
+                 aData->Item(2).GetFloatValue(),
+                 aData->Item(3).GetFloatValue());
 
-  /* Normalize [x,y,z] */
-  float length = sqrt(x*x + y*y + z*z);
-  if (length == 0.0) {
+  if (!vector.Length()) {
     return;
   }
-  x /= length;
-  y /= length;
-  z /= length;
+  vector.Normalize();
 
   gfx3DMatrix temp;
 
   /* Create our matrix */
-  temp._11 = 1 + (1 - cosTheta) * (x * x - 1);
-  temp._12 = -z * sinTheta + (1 - cosTheta) * x * y;
-  temp._13 = y * sinTheta + (1 - cosTheta) * x * z;
+  temp._11 = 1 + (1 - cosTheta) * (vector.x * vector.x - 1);
+  temp._12 = -vector.z * sinTheta + (1 - cosTheta) * vector.x * vector.y;
+  temp._13 = vector.y * sinTheta + (1 - cosTheta) * vector.x * vector.z;
   temp._14 = 0.0f;
-  temp._21 = z * sinTheta + (1 - cosTheta) * x * y;
-  temp._22 = 1 + (1 - cosTheta) * (y * y - 1);
-  temp._23 = -x * sinTheta + (1 - cosTheta) * y * z;
+  temp._21 = vector.z * sinTheta + (1 - cosTheta) * vector.x * vector.y;
+  temp._22 = 1 + (1 - cosTheta) * (vector.y * vector.y - 1);
+  temp._23 = -vector.x * sinTheta + (1 - cosTheta) * vector.y * vector.z;
   temp._24 = 0.0f;
-  temp._31 = -y * sinTheta + (1 - cosTheta) * x * z;
-  temp._32 = x * sinTheta + (1 - cosTheta) * y * z;
-  temp._33 = 1 + (1 - cosTheta) * (z * z - 1);
+  temp._31 = -vector.y * sinTheta + (1 - cosTheta) * vector.x * vector.z;
+  temp._32 = vector.x * sinTheta + (1 - cosTheta) * vector.y * vector.z;
+  temp._33 = 1 + (1 - cosTheta) * (vector.z * vector.z - 1);
   temp._34 = 0.0f;
   temp._41 = 0.0f;
   temp._42 = 0.0f;

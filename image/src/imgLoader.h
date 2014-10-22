@@ -8,6 +8,7 @@
 #define imgLoader_h__
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Mutex.h"
 
 #include "imgILoader.h"
 #include "imgICache.h"
@@ -28,7 +29,6 @@ class imgINotificationObserver;
 class nsILoadGroup;
 class imgCacheExpirationTracker;
 class imgMemoryReporter;
-class nsIChannelPolicy;
 
 namespace mozilla {
 namespace image {
@@ -170,11 +170,11 @@ private: // data
 #include <vector>
 
 #define NS_IMGLOADER_CID \
-{ /* 9f6a0d2e-1dd1-11b2-a5b8-951f13c846f7 */         \
-     0x9f6a0d2e,                                     \
-     0x1dd1,                                         \
-     0x11b2,                                         \
-    {0xa5, 0xb8, 0x95, 0x1f, 0x13, 0xc8, 0x46, 0xf7} \
+{ /* c1354898-e3fe-4602-88a7-c4520c21cb4e */         \
+     0xc1354898,                                     \
+     0xe3fe,                                         \
+     0x4602,                                         \
+    {0x88, 0xa7, 0xc4, 0x52, 0x0c, 0x21, 0xcb, 0x4e} \
 }
 
 class imgCacheQueue
@@ -205,17 +205,19 @@ private:
   uint32_t mSize;
 };
 
-class imgLoader : public imgILoader,
-                  public nsIContentSniffer,
-                  public imgICache,
-                  public nsSupportsWeakReference,
-                  public nsIObserver
+class imgLoader MOZ_FINAL : public imgILoader,
+                            public nsIContentSniffer,
+                            public imgICache,
+                            public nsSupportsWeakReference,
+                            public nsIObserver
 {
   virtual ~imgLoader();
 
 public:
   typedef mozilla::image::ImageURL ImageURL;
   typedef nsRefPtrHashtable<nsCStringHashKey, imgCacheEntry> imgCacheTable;
+  typedef nsTHashtable<nsPtrHashKey<imgRequest>> imgSet;
+  typedef mozilla::Mutex Mutex;
 
   NS_DECL_ISUPPORTS
   NS_DECL_IMGILOADER
@@ -255,7 +257,6 @@ public:
                      nsISupports *aCX,
                      nsLoadFlags aLoadFlags,
                      nsISupports *aCacheKey,
-                     nsIChannelPolicy *aPolicy,
                      const nsAString& initiatorType,
                      imgRequestProxy **_retval);
   nsresult LoadImageWithChannel(nsIChannel *channel,
@@ -285,6 +286,9 @@ public:
   bool RemoveFromCache(imgCacheEntry *entry);
 
   bool PutIntoCache(nsIURI *key, imgCacheEntry *entry);
+
+  void AddToUncachedImages(imgRequest* aRequest);
+  void RemoveFromUncachedImages(imgRequest* aRequest);
 
   // Returns true if we should prefer evicting cache entry |two| over cache
   // entry |one|.
@@ -323,8 +327,8 @@ public:
   // HasObservers(). The request's cache entry will be re-set before this
   // happens, by calling imgRequest::SetCacheEntry() when an entry with no
   // observers is re-requested.
-  bool SetHasNoProxies(ImageURL *key, imgCacheEntry *entry);
-  bool SetHasProxies(ImageURL *key);
+  bool SetHasNoProxies(imgRequest *aRequest, imgCacheEntry *aEntry);
+  bool SetHasProxies(imgRequest *aRequest);
 
 private: // methods
 
@@ -334,7 +338,6 @@ private: // methods
                        imgINotificationObserver *aObserver, nsISupports *aCX,
                        nsLoadFlags aLoadFlags, bool aCanMakeNewChannel,
                        imgRequestProxy **aProxyRequest,
-                       nsIChannelPolicy *aPolicy,
                        nsIPrincipal* aLoadingPrincipal,
                        int32_t aCORSMode);
 
@@ -345,7 +348,6 @@ private: // methods
                                        imgINotificationObserver *aObserver,
                                        nsISupports *aCX, nsLoadFlags aLoadFlags,
                                        imgRequestProxy **aProxyRequest,
-                                       nsIChannelPolicy *aPolicy,
                                        nsIPrincipal* aLoadingPrincipal,
                                        int32_t aCORSMode);
 
@@ -375,6 +377,16 @@ private: // data
   imgCacheTable mChromeCache;
   imgCacheQueue mChromeCacheQueue;
 
+  // Hash set of every imgRequest for this loader that isn't in mCache or
+  // mChromeCache. The union over all imgLoader's of mCache, mChromeCache, and
+  // mUncachedImages should be every imgRequest that is alive. These are weak
+  // pointers so we rely on the imgRequest destructor to remove itself.
+  imgSet mUncachedImages;
+  // The imgRequest can have refs to them held on non-main thread, so we need
+  // a mutex because we modify the uncached images set from the imgRequest
+  // destructor.
+  Mutex mUncachedImagesMutex;
+
   static double sCacheTimeWeight;
   static uint32_t sCacheMaxSize;
   static imgMemoryReporter* sMemReporter;
@@ -399,7 +411,7 @@ class ProxyListener : public nsIStreamListener
                     , public nsIThreadRetargetableStreamListener
 {
 public:
-  ProxyListener(nsIStreamListener *dest);
+  explicit ProxyListener(nsIStreamListener *dest);
 
   /* additional members */
   NS_DECL_ISUPPORTS

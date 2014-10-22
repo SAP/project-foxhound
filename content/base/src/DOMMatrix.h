@@ -25,10 +25,9 @@ class DOMMatrix;
 class DOMMatrixReadOnly : public nsWrapperCache
 {
 public:
-  DOMMatrixReadOnly(nsISupports* aParent)
+  explicit DOMMatrixReadOnly(nsISupports* aParent)
     : mParent(aParent), mMatrix2D(new gfx::Matrix())
   {
-    SetIsDOMBinding();
   }
 
   DOMMatrixReadOnly(nsISupports* aParent, const DOMMatrixReadOnly& other)
@@ -39,8 +38,6 @@ public:
     } else {
       mMatrix3D = new gfx::Matrix4x4(*other.mMatrix3D);
     }
-
-    SetIsDOMBinding();
   }
 
 #define GetMatrixMember(entry2D, entry3D, default) \
@@ -127,6 +124,7 @@ public:
   void                        ToFloat64Array(JSContext* aCx,
                                              JS::MutableHandle<JSObject*> aResult,
                                              ErrorResult& aRv) const;
+  void                        Stringify(nsAString& aResult);
 protected:
   nsCOMPtr<nsISupports>     mParent;
   nsAutoPtr<gfx::Matrix>    mMatrix2D;
@@ -144,7 +142,7 @@ private:
 class DOMMatrix MOZ_FINAL : public DOMMatrixReadOnly
 {
 public:
-  DOMMatrix(nsISupports* aParent)
+  explicit DOMMatrix(nsISupports* aParent)
     : DOMMatrixReadOnly(aParent)
   {}
 

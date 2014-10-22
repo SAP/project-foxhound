@@ -21,25 +21,29 @@ class nsPIDOMWindow;
 
 namespace mozilla {
 namespace dom {
+namespace telephony {
+
+class TelephonyDialCallback;
+
+} // namespace telephony
 
 class OwningTelephonyCallOrTelephonyCallGroup;
 
-class Telephony MOZ_FINAL : public DOMEventTargetHelper
+class Telephony MOZ_FINAL : public DOMEventTargetHelper,
+                            private nsITelephonyListener
 {
   /**
-   * Class Telephony doesn't actually inherit nsITelephonyListener.
+   * Class Telephony doesn't actually expose nsITelephonyListener.
    * Instead, it owns an nsITelephonyListener derived instance mListener
    * and passes it to nsITelephonyService. The onreceived events are first
    * delivered to mListener and then forwarded to its owner, Telephony. See
    * also bug 775997 comment #51.
    */
   class Listener;
-
-  class Callback;
-  friend class Callback;
-
   class EnumerationAck;
+
   friend class EnumerationAck;
+  friend class telephony::TelephonyDialCallback;
 
   nsCOMPtr<nsITelephonyService> mService;
   nsRefPtr<Listener> mListener;
@@ -105,6 +109,7 @@ public:
   already_AddRefed<TelephonyCallGroup>
   ConferenceGroup() const;
 
+  IMPL_EVENT_HANDLER(ready)
   IMPL_EVENT_HANDLER(incoming)
   IMPL_EVENT_HANDLER(callschanged)
   IMPL_EVENT_HANDLER(remoteheld)
@@ -144,7 +149,7 @@ public:
   virtual void EventListenerAdded(nsIAtom* aType) MOZ_OVERRIDE;
 
 private:
-  Telephony(nsPIDOMWindow* aOwner);
+  explicit Telephony(nsPIDOMWindow* aOwner);
   ~Telephony();
 
   void
@@ -185,13 +190,16 @@ private:
              bool aSwitchable = true, bool aMergeable = true);
 
   nsresult
+  NotifyEvent(const nsAString& aType);
+
+  nsresult
   NotifyCallsChanged(TelephonyCall* aCall);
 
   nsresult
   DispatchCallEvent(const nsAString& aType, TelephonyCall* aCall);
 
   void
-  EnqueueEnumerationAck();
+  EnqueueEnumerationAck(const nsAString& aType);
 
   already_AddRefed<TelephonyCall>
   GetCall(uint32_t aServiceId, uint32_t aCallIndex);

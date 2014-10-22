@@ -20,7 +20,6 @@
 #include "nsIDocument.h"
 #include "nsContentUtils.h"
 #include "ChildIterator.h"
-#include "nsCxPusher.h"
 #ifdef MOZ_XUL
 #include "nsIXULDocument.h"
 #endif
@@ -58,6 +57,7 @@
 #include "nsDOMClassInfo.h"
 
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ShadowRoot.h"
 
 using namespace mozilla;
@@ -106,6 +106,7 @@ static const JSClass gPrototypeJSClass = {
 nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
   : mMarkedForDeath(false)
   , mUsingContentXBLScope(false)
+  , mIsShadowRootBinding(false)
   , mPrototypeBinding(aBinding)
 {
   NS_ASSERTION(mPrototypeBinding, "Must have a prototype binding!");
@@ -117,6 +118,7 @@ nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
 nsXBLBinding::nsXBLBinding(ShadowRoot* aShadowRoot, nsXBLPrototypeBinding* aBinding)
   : mMarkedForDeath(false),
     mUsingContentXBLScope(false),
+    mIsShadowRootBinding(true),
     mPrototypeBinding(aBinding),
     mContent(aShadowRoot)
 {
@@ -127,7 +129,10 @@ nsXBLBinding::nsXBLBinding(ShadowRoot* aShadowRoot, nsXBLPrototypeBinding* aBind
 
 nsXBLBinding::~nsXBLBinding(void)
 {
-  if (mContent) {
+  if (mContent && !mIsShadowRootBinding) {
+    // It is unnecessary to uninstall anonymous content in a shadow tree
+    // because the ShadowRoot itself is a DocumentFragment and does not
+    // need any additional cleanup.
     nsXBLBinding::UninstallAnonymousContent(mContent->OwnerDoc(), mContent);
   }
   nsXBLDocumentInfo* info = mPrototypeBinding->XBLDocumentInfo();
@@ -139,7 +144,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXBLBinding)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXBLBinding)
   // XXX Probably can't unlink mPrototypeBinding->XBLDocumentInfo(), because
   //     mPrototypeBinding is weak.
-  if (tmp->mContent) {
+  if (tmp->mContent && !tmp->mIsShadowRootBinding) {
     nsXBLBinding::UninstallAnonymousContent(tmp->mContent->OwnerDoc(),
                                             tmp->mContent);
   }
@@ -234,13 +239,6 @@ void
 nsXBLBinding::UninstallAnonymousContent(nsIDocument* aDocument,
                                         nsIContent* aAnonParent)
 {
-  if (aAnonParent->HasFlag(NODE_IS_IN_SHADOW_TREE)) {
-    // It is unnecessary to uninstall anonymous content in a shadow tree
-    // because the ShadowRoot itself is a DocumentFragment and does not
-    // need any additional cleanup.
-    return;
-  }
-
   nsAutoScriptBlocker scriptBlocker;
   // Hold a strong ref while doing this, just in case.
   nsCOMPtr<nsIContent> anonParent = aAnonParent;
@@ -730,78 +728,69 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
 
   // Now the binding dies.  Unhook our prototypes.
   if (mPrototypeBinding->HasImplementation()) {
-    nsCOMPtr<nsIScriptGlobalObject> global =  do_QueryInterface(
-                                                                aOldDocument->GetScopeObject());
-    if (global) {
-      nsCOMPtr<nsIScriptContext> context = global->GetContext();
-      if (context) {
-        JSContext *cx = context->GetNativeContext();
+    AutoJSAPI jsapi;
+    // Init might fail here if we've cycle-collected the global object, since
+    // the Unlink phase of cycle collection happens after JS GC finalization.
+    // But in that case, we don't care about fixing the prototype chain, since
+    // everything's going away immediately.
+    if (jsapi.Init(aOldDocument->GetScopeObject())) {
+      JSContext* cx = jsapi.cx();
 
-        nsCxPusher pusher;
-        pusher.Push(cx);
+      JS::Rooted<JSObject*> scriptObject(cx, mBoundElement->GetWrapper());
+      if (scriptObject) {
+        // XXX Stay in sync! What if a layered binding has an
+        // <interface>?!
+        // XXXbz what does that comment mean, really?  It seems to date
+        // back to when there was such a thing as an <interface>, whever
+        // that was...
 
-        // scope might be null if we've cycle-collected the global
-        // object, since the Unlink phase of cycle collection happens
-        // after JS GC finalization.  But in that case, we don't care
-        // about fixing the prototype chain, since everything's going
-        // away immediately.
-        JS::Rooted<JSObject*> scope(cx, global->GetGlobalJSObject());
-        JS::Rooted<JSObject*> scriptObject(cx, mBoundElement->GetWrapper());
-        if (scope && scriptObject) {
-          // XXX Stay in sync! What if a layered binding has an
-          // <interface>?!
-          // XXXbz what does that comment mean, really?  It seems to date
-          // back to when there was such a thing as an <interface>, whever
-          // that was...
+        // Find the right prototype.
+        JSAutoCompartment ac(cx, scriptObject);
 
-          // Find the right prototype.
-          JSAutoCompartment ac(cx, scriptObject);
-
-          JS::Rooted<JSObject*> base(cx, scriptObject);
-          JS::Rooted<JSObject*> proto(cx);
-          for ( ; true; base = proto) { // Will break out on null proto
-            if (!JS_GetPrototype(cx, base, &proto)) {
-              return;
-            }
-            if (!proto) {
-              break;
-            }
-
-            if (JS_GetClass(proto) != &gPrototypeJSClass) {
-              // Clearly not the right class
-              continue;
-            }
-
-            nsRefPtr<nsXBLDocumentInfo> docInfo =
-              static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(proto));
-            if (!docInfo) {
-              // Not the proto we seek
-              continue;
-            }
-
-            JS::Value protoBinding = ::JS_GetReservedSlot(proto, 0);
-
-            if (protoBinding.toPrivate() != mPrototypeBinding) {
-              // Not the right binding
-              continue;
-            }
-
-            // Alright!  This is the right prototype.  Pull it out of the
-            // proto chain.
-            JS::Rooted<JSObject*> grandProto(cx);
-            if (!JS_GetPrototype(cx, proto, &grandProto)) {
-              return;
-            }
-            ::JS_SetPrototype(cx, base, grandProto);
+        JS::Rooted<JSObject*> base(cx, scriptObject);
+        JS::Rooted<JSObject*> proto(cx);
+        for ( ; true; base = proto) { // Will break out on null proto
+          if (!JS_GetPrototype(cx, base, &proto)) {
+            return;
+          }
+          if (!proto) {
             break;
           }
 
-          mPrototypeBinding->UndefineFields(cx, scriptObject);
+          if (JS_GetClass(proto) != &gPrototypeJSClass) {
+            // Clearly not the right class
+            continue;
+          }
 
-          // Don't remove the reference from the document to the
-          // wrapper here since it'll be removed by the element
-          // itself when that's taken out of the document.
+          nsRefPtr<nsXBLDocumentInfo> docInfo =
+            static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(proto));
+          if (!docInfo) {
+            // Not the proto we seek
+            continue;
+          }
+
+          JS::Value protoBinding = ::JS_GetReservedSlot(proto, 0);
+
+          if (protoBinding.toPrivate() != mPrototypeBinding) {
+            // Not the right binding
+            continue;
+          }
+
+          // Alright!  This is the right prototype.  Pull it out of the
+          // proto chain.
+          JS::Rooted<JSObject*> grandProto(cx);
+          if (!JS_GetPrototype(cx, proto, &grandProto)) {
+            return;
+          }
+          ::JS_SetPrototype(cx, base, grandProto);
+          break;
         }
+
+        mPrototypeBinding->UndefineFields(cx, scriptObject);
+
+        // Don't remove the reference from the document to the
+        // wrapper here since it'll be removed by the element
+        // itself when that's taken out of the document.
       }
     }
   }
@@ -820,7 +809,7 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
 
     // Update the anonymous content.
     // XXXbz why not only for style bindings?
-    if (mContent) {
+    if (mContent && !mIsShadowRootBinding) {
       nsXBLBinding::UninstallAnonymousContent(aOldDocument, mContent);
     }
 
@@ -928,6 +917,7 @@ GetOrCreateMapEntryForPrototype(JSContext *cx, JS::Handle<JSObject*> proto)
   // the proto accordingly. We hang the map off of the content XBL scope for
   // content, and the Window for chrome (whether add-ons are involved or not).
   JS::Rooted<JSObject*> scope(cx, xpc::GetXBLScopeOrGlobal(cx, proto));
+  NS_ENSURE_TRUE(scope, nullptr);
   JS::Rooted<JSObject*> wrappedProto(cx, proto);
   JSAutoCompartment ac(cx, scope);
   if (!JS_WrapObject(cx, &wrappedProto)) {
@@ -985,6 +975,7 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
 
   // We never store class objects in add-on scopes.
   JS::Rooted<JSObject*> xblScope(cx, xpc::GetXBLScopeOrGlobal(cx, global));
+  NS_ENSURE_TRUE(xblScope, NS_ERROR_UNEXPECTED);
 
   JS::Rooted<JSObject*> parent_proto(cx);
   if (!JS_GetPrototype(cx, obj, &parent_proto)) {

@@ -8,30 +8,54 @@ const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 const OPENH264_PLUGIN_ID       = "gmp-gmpopenh264";
 const OPENH264_PREF_BRANCH     = "media." + OPENH264_PLUGIN_ID + ".";
 const OPENH264_PREF_ENABLED    = OPENH264_PREF_BRANCH + "enabled";
-const OPENH264_PREF_PATH       = OPENH264_PREF_BRANCH + "path";
 const OPENH264_PREF_VERSION    = OPENH264_PREF_BRANCH + "version";
 const OPENH264_PREF_LASTUPDATE = OPENH264_PREF_BRANCH + "lastUpdate";
 const OPENH264_PREF_AUTOUPDATE = OPENH264_PREF_BRANCH + "autoupdate";
 const PREF_LOGGING             = OPENH264_PREF_BRANCH + "provider.logging";
 const PREF_LOGGING_LEVEL       = PREF_LOGGING + ".level";
 const PREF_LOGGING_DUMP        = PREF_LOGGING + ".dump";
+const GMP_PREF_LASTCHECK       = "media.gmp-manager.lastCheck";
+const GMP_PREF_LOG             = "media.gmp-manager.log";
+const SEC_IN_A_DAY             = 24 * 60 * 60;
 
 XPCOMUtils.defineLazyGetter(this, "pluginsBundle",
   () => Services.strings.createBundle("chrome://global/locale/plugins.properties"));
 
-let gProfileDir = null;
+let MockGMPAddon = Object.freeze({
+  id: OPENH264_PLUGIN_ID,
+  isOpenH264: true,
+  isInstalled: false,
+});
+
+let gInstalledAddonId = "";
+
+function MockGMPInstallManager() {
+}
+
+MockGMPInstallManager.prototype = {
+  checkForAddons: () => Promise.resolve([MockGMPAddon]),
+
+  installAddon: addon => {
+    gInstalledAddonId = addon.id;
+    return Promise.resolve();
+  },
+};
+
 
 function run_test() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
   startupManager();
+
+  Services.prefs.setBoolPref(PREF_LOGGING_DUMP, true);
+  Services.prefs.setIntPref(PREF_LOGGING_LEVEL, 0);
+  Services.prefs.setBoolPref(GMP_PREF_LOG, true);
+
   run_next_test();
 }
 
 add_task(function* test_notInstalled() {
-  Services.prefs.setCharPref(OPENH264_PREF_PATH, "");
+  Services.prefs.setCharPref(OPENH264_PREF_VERSION, "");
   Services.prefs.setBoolPref(OPENH264_PREF_ENABLED, false);
-  Services.prefs.setBoolPref(PREF_LOGGING_DUMP, true);
-  Services.prefs.setIntPref(PREF_LOGGING_LEVEL, 0);
 
   let addons = yield promiseAddonsByIDs([OPENH264_PLUGIN_ID]);
   Assert.equal(addons.length, 1);
@@ -81,13 +105,12 @@ add_task(function* test_installed() {
   const TEST_TIME_SEC = Math.round(TEST_DATE.getTime() / 1000);
 
   let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
-  file.append("openh264");
-  file.append("testDir");
+  file.append(OPENH264_PLUGIN_ID);
+  file.append(TEST_VERSION);
 
   Services.prefs.setBoolPref(OPENH264_PREF_ENABLED, false);
   Services.prefs.setCharPref(OPENH264_PREF_LASTUPDATE, "" + TEST_TIME_SEC);
   Services.prefs.setCharPref(OPENH264_PREF_VERSION, TEST_VERSION);
-  Services.prefs.setCharPref(OPENH264_PREF_PATH, file.path);
 
   let addons = yield promiseAddonsByIDs([OPENH264_PLUGIN_ID]);
   Assert.equal(addons.length, 1);
@@ -114,7 +137,7 @@ add_task(function* test_installed() {
   let libraries = addon.pluginLibraries;
   Assert.ok(libraries);
   Assert.equal(libraries.length, 1);
-  Assert.equal(libraries[0], "testDir");
+  Assert.equal(libraries[0], TEST_VERSION);
   let fullpath = addon.pluginFullpath;
   Assert.equal(fullpath.length, 1);
   Assert.equal(fullpath[0], file.path);
@@ -154,9 +177,11 @@ add_task(function* test_autoUpdatePrefPersistance() {
 });
 
 add_task(function* test_pluginRegistration() {
+  const TEST_VERSION = "1.2.3.4";
+
   let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
-  file.append("openh264");
-  file.append("testDir");
+  file.append(OPENH264_PLUGIN_ID);
+  file.append(TEST_VERSION);
 
   let addedPath = null
   let removedPath = null;
@@ -172,35 +197,37 @@ add_task(function* test_pluginRegistration() {
   Services.prefs.setBoolPref(OPENH264_PREF_ENABLED, true);
 
   // Check that the OpenH264 plugin gets registered after startup.
-  Services.prefs.setCharPref(OPENH264_PREF_PATH, file.path);
+  Services.prefs.setCharPref(OPENH264_PREF_VERSION, TEST_VERSION);
   clearPaths();
   yield promiseRestartManager();
   Assert.equal(addedPath, file.path);
   Assert.equal(removedPath, null);
 
-  // Check that clearing the path doesn't trigger registration.
+  // Check that clearing the version doesn't trigger registration.
   clearPaths();
-  Services.prefs.clearUserPref(OPENH264_PREF_PATH);
+  Services.prefs.clearUserPref(OPENH264_PREF_VERSION);
   Assert.equal(addedPath, null);
   Assert.equal(removedPath, file.path);
 
-  // Restarting with no path set should not trigger registration.
+  // Restarting with no version set should not trigger registration.
   clearPaths();
   yield promiseRestartManager();
   Assert.equal(addedPath, null);
   Assert.equal(removedPath, null);
 
   // Changing the pref mid-session should cause unregistration and registration.
-  Services.prefs.setCharPref(OPENH264_PREF_PATH, file.path);
+  Services.prefs.setCharPref(OPENH264_PREF_VERSION, TEST_VERSION);
   clearPaths();
-  let file2 = file.clone();
-  file2.append("foo");
-  Services.prefs.setCharPref(OPENH264_PREF_PATH, file2.path);
+  const TEST_VERSION_2 = "5.6.7.8";
+  let file2 = Services.dirsvc.get("ProfD", Ci.nsIFile);
+  file2.append(OPENH264_PLUGIN_ID);
+  file2.append(TEST_VERSION_2);
+  Services.prefs.setCharPref(OPENH264_PREF_VERSION, TEST_VERSION_2);
   Assert.equal(addedPath, file2.path);
   Assert.equal(removedPath, file.path);
 
   // Disabling OpenH264 should cause unregistration.
-  Services.prefs.setCharPref(OPENH264_PREF_PATH, file.path);
+  Services.prefs.setCharPref(OPENH264_PREF_VERSION, TEST_VERSION);
   clearPaths();
   Services.prefs.setBoolPref(OPENH264_PREF_ENABLED, false);
   Assert.equal(addedPath, null);
@@ -217,4 +244,36 @@ add_task(function* test_pluginRegistration() {
   Services.prefs.setBoolPref(OPENH264_PREF_ENABLED, true);
   Assert.equal(addedPath, file.path);
   Assert.equal(removedPath, null);
+});
+
+add_task(function* test_periodicUpdate() {
+  let OpenH264Scope = Cu.import("resource://gre/modules/addons/OpenH264Provider.jsm");
+  Object.defineProperty(OpenH264Scope, "GMPInstallManager", {
+    value: MockGMPInstallManager,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
+
+  Services.prefs.clearUserPref(OPENH264_PREF_AUTOUPDATE);
+  let addons = yield promiseAddonsByIDs([OPENH264_PLUGIN_ID]);
+  let prefs = Services.prefs;
+  Assert.equal(addons.length, 1);
+  let addon = addons[0];
+
+  addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
+  Services.prefs.setIntPref(GMP_PREF_LASTCHECK, 0);
+  let result = yield addon.findUpdates({}, AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
+  Assert.strictEqual(result, false);
+
+  addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_ENABLE;
+  Services.prefs.setIntPref(GMP_PREF_LASTCHECK, Date.now() / 1000 - 60);
+  result = yield addon.findUpdates({}, AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
+  Assert.strictEqual(result, false);
+
+  Services.prefs.setIntPref(GMP_PREF_LASTCHECK, Date.now() / 1000 - 2 * SEC_IN_A_DAY);
+  gInstalledAddonId = "";
+  result = yield addon.findUpdates({}, AddonManager.UPDATE_WHEN_PERIODIC_UPDATE);
+  Assert.strictEqual(result, true);
+  Assert.equal(gInstalledAddonId, OPENH264_PLUGIN_ID);
 });

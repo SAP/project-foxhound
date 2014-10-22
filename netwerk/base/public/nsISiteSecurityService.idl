@@ -7,24 +7,44 @@
 interface nsIURI;
 interface nsIObserver;
 interface nsIHttpChannel;
+interface nsISSLStatus;
 
-[scriptable, uuid(b20a9242-5732-45bc-9fa0-a178154f2721)]
+%{C++
+template<class T> class nsTArray;
+class nsCString;
+namespace mozilla
+{
+  namespace pkix
+  {
+    class Time;
+  }
+}
+%}
+[ref] native nsCStringTArrayRef(nsTArray<nsCString>);
+[ref] native mozillaPkixTime(mozilla::pkix::Time);
+
+[scriptable, uuid(46555f70-3ab5-11e4-8613-180373d97f23)]
 interface nsISiteSecurityService : nsISupports
 {
     const uint32_t HEADER_HSTS = 0;
-    const uint32_t HEADER_HKPK = 1;
+    const uint32_t HEADER_HPKP = 1;
     const uint32_t HEADER_OMS = 2;
 
     /**
      * Parses a given HTTP header and records the results internally.
-     * Currently the only header type supported is HSTS (aka STS).
+     * Currently two header types are supported: HSTS (aka STS) and HPKP
      * The format of the HSTS header is defined by the HSTS specification:
      * https://tools.ietf.org/html/rfc6797
      * and allows a host to specify that future HTTP requests should be
      * upgraded to HTTPS.
+     * The Format of the HPKP header is currently defined by:
+     * https://tools.ietf.org/html/draft-ietf-websec-key-pinning-20
+     * and allows a host to speficy a subset of trusted anchors to be used
+     * in future HTTPS connections.
      *
      * @param aType the type of security header in question.
      * @param aSourceURI the URI of the resource with the HTTP header.
+     * @param aSSLStatus the SSLStatus of the current channel
      * @param aHeader the HTTP response header specifying security data.
      * @param aFlags  options for this request as defined in nsISocketProvider:
      *                  NO_PERMANENT_STORAGE
@@ -38,9 +58,21 @@ interface nsISiteSecurityService : nsISupports
     void processHeader(in uint32_t aType,
                        in nsIURI aSourceURI,
                        in string aHeader,
+                       in nsISSLStatus aSSLStatus,
                        in uint32_t aFlags,
                        [optional] out unsigned long long aMaxAge,
                        [optional] out boolean aIncludeSubdomains);
+
+    /**
+     * Same as processHeader but without checking for the security properties
+     * of the connection. Use ONLY for testing.
+     */
+    void unsafeProcessHeader(in uint32_t aType,
+                             in nsIURI aSourceURI,
+                             in string aHeader,
+                             in uint32_t aFlags,
+                             [optional] out unsigned long long aMaxAge,
+                             [optional] out boolean aIncludeSubdomains);
 
     /**
      * Given a header type, removes state relating to that header of a host,
@@ -90,11 +122,46 @@ interface nsISiteSecurityService : nsISupports
      */
     boolean isSecureURI(in uint32_t aType, in nsIURI aURI, in uint32_t aFlags);
 
+    /**
+     * Removes all security state by resetting to factory-original settings.
+     */
+    void clearAll();
+
+    /**
+     * Returns an array of sha256-hashed key pins for the given domain, if any.
+     * If these pins also apply to subdomains of the given domain,
+     * aIncludeSubdomains will be true. Pins returned are only for non-built-in
+     * pin entries.
+     *
+     * @param aHostname the hosname (punycode) to be queried about
+     * @param the time at which the pins should be valid. This is in
+              mozilla::pkix::Time which uses internally seconds since 0 AD.
+     * @param aPinArray the set of sha256-hashed key pins for the given domain
+     * @param aIncludeSubdomains true if the pins apply to subdomains of the
+     *        given domain
+     */
+    [noscript] boolean getKeyPinsForHostname(in string aHostname,
+                                             in mozillaPkixTime evalTime,
+                                             out nsCStringTArrayRef aPinArray,
+                                             out boolean aIncludeSubdomains);
+
+    /**
+     * Set public-key pins for a host. The resulting pins will be permanent
+     * and visible from private and non-private contexts. These pins replace
+     * any already set by this mechanism or those built-in to Gecko.
+     *
+     * @param aHost the hostname (punycode) that pins will apply to
+     * @param aIncludeSubdomains whether these pins also apply to subdomains
+     * @param aMaxAge lifetime (in seconds) of this pin set
+     * @param aPinCount number of keys being pinnned
+     * @param aSha256Pins array of hashed key fingerprints (SHA-256, base64)
+     */
+     boolean setKeyPins(in string aHost, in boolean aIncludeSubdomains,
+                        in unsigned long aMaxAge, in unsigned long aPinCount,
+                        [array, size_is(aPinCount)] in string aSha256Pins);
+
 };
 
 %{C++
 #define NS_SSSERVICE_CONTRACTID "@mozilla.org/ssservice;1"
-
-#define STS_PERMISSION "sts/use"
-#define STS_SUBDOMAIN_PERMISSION "sts/subd"
 %}

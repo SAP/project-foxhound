@@ -253,12 +253,39 @@ other kinds of objects.
     If this debugger is [tracking allocation sites][tracking-allocs] and cannot
     track allocation sites for <i>global</i>, this method throws an `Error`.
 
+`addAllGlobalsAsDebuggees()`
+:   This method is like [`addDebuggee`][add], but adds all the global
+    objects from all compartments to this `Debugger` instance's set of
+    debuggees. Note that it skips this debugger's compartment.
+
+    If this debugger is [tracking allocation sites][tracking-allocs] and cannot
+    track allocation sites for some global, this method throws an `Error`.
+    Otherwise this method returns `undefined`.
+
+    This method is only available to debuggers running in privileged
+    code ("chrome", in Firefox). Most functions provided by this `Debugger`
+    API observe activity in only those globals that are reachable by the
+    API's user, thus imposing capability-based restrictions on a
+    `Debugger`'s reach. However, the `addAllGlobalsAsDebuggees` method
+    allows the API user to monitor all global object creation that
+    occurs anywhere within the JavaScript system (the "JSRuntime", in
+    SpiderMonkey terms), thereby escaping the capability-based
+    limits. For this reason, `addAllGlobalsAsDebuggees` is only
+    available to privileged code.
+
 <code>removeDebuggee(<i>global</i>)</code>
 :   Remove the global object designated by <i>global</i> from this
     `Debugger` instance's set of debuggees. Return `undefined`.
 
     This method interprets <i>global</i> using the same rules that
     [`addDebuggee`][add] does.
+
+    Removing a global as a debuggee from this `Debugger` clears all breakpoints
+    that belong to that `Debugger` in that global.
+
+`removeAllDebuggees()`
+:   Remove all the global objects from this `Debugger` instance's set
+    of debuggees.  Return `undefined`.
 
 <code>hasDebuggee(<i>global</i>)</code>
 :   Return `true` if the global object designated by <i>global</i> is a
@@ -350,6 +377,32 @@ other kinds of objects.
     eval code that has finished running, or unreachable functions. Whether
     such scripts appear can be affected by the garbage collector's
     behavior, so this function's behavior is not entirely deterministic.
+
+<code>findObjects([<i>query</i>])</code>
+:   Return an array of [`Debugger.Object`][object] instances referring to each
+    live object allocated in the scope of the debuggee globals that matches
+    *query*. Each instance appears only once in the array. *Query* is an object
+    whose properties restrict which objects are returned; an object must meet
+    all the criteria given by *query* to be returned. If *query* is omitted, we
+    return the [`Debugger.Object`][object] instances for all objects allocated
+    in the scope of debuggee globals.
+
+    The *query* object may have the following properties:
+
+    `class`
+    :   If present, only return objects whose internal `[[Class]]`'s name
+        matches the given string. Note that in some cases, the prototype object
+        for a given constructor has the same `[[Class]]` as the instances that
+        refer to it, but cannot itself be used as a valid instance of the
+        class. Code gathering objects by class name may need to examine them
+        further before trying to use them.
+
+    All properties of *query* are optional. Passing an empty object returns all
+    objects in debuggee globals.
+
+    Unlike `findScripts`, this function is deterministic and will never return
+    [`Debugger.Object`s][object] referring to previously unreachable objects
+    that had not been collected yet.
 
 <code>clearBreakpoint(<i>handler</i>)</code>
 :   Remove all breakpoints set in this `Debugger` instance that use

@@ -20,7 +20,6 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(SpeechSynthesisUtterance,
                                    DOMEventTargetHelper, mVoice);
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(SpeechSynthesisUtterance)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 NS_IMPL_ADDREF_INHERITED(SpeechSynthesisUtterance, DOMEventTargetHelper)
@@ -36,7 +35,6 @@ SpeechSynthesisUtterance::SpeechSynthesisUtterance(nsPIDOMWindow* aOwnerWindow,
   , mState(STATE_NONE)
   , mPaused(false)
 {
-  SetIsDOMBinding();
 }
 
 SpeechSynthesisUtterance::~SpeechSynthesisUtterance() {}

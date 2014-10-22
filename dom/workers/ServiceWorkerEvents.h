@@ -28,7 +28,7 @@ class InstallPhaseEvent : public Event
   nsRefPtr<Promise> mPromise;
 
 protected:
-  InstallPhaseEvent(mozilla::dom::EventTarget* aOwner);
+  explicit InstallPhaseEvent(mozilla::dom::EventTarget* aOwner);
   ~InstallPhaseEvent() {}
 
 public:
@@ -36,7 +36,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(InstallPhaseEvent, Event)
   NS_FORWARD_TO_EVENT
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE
+  virtual JSObject* WrapObjectInternal(JSContext* aCx) MOZ_OVERRIDE
   {
     return mozilla::dom::InstallPhaseEventBinding_workers::Wrap(aCx, this);
   }
@@ -80,7 +80,7 @@ class InstallEvent MOZ_FINAL : public InstallPhaseEvent
   nsRefPtr<ServiceWorker> mActiveWorker;
 
 protected:
-  InstallEvent(mozilla::dom::EventTarget* aOwner);
+  explicit InstallEvent(mozilla::dom::EventTarget* aOwner);
   ~InstallEvent() {}
 
 public:
@@ -88,7 +88,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(InstallEvent, InstallPhaseEvent)
   NS_FORWARD_TO_EVENT
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE
+  virtual JSObject* WrapObjectInternal(JSContext* aCx) MOZ_OVERRIDE
   {
     return mozilla::dom::InstallEventBinding_workers::Wrap(aCx, this);
   }

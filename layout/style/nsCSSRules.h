@@ -14,6 +14,7 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/css/GroupRule.h"
+#include "mozilla/dom/FontFace.h"
 #include "nsIDOMCSSConditionRule.h"
 #include "nsIDOMCSSCounterStyleRule.h"
 #include "nsIDOMCSSFontFaceRule.h"
@@ -180,11 +181,25 @@ protected:
 };
 
 } // namespace css
+
+struct CSSFontFaceDescriptors
+{
+#define CSS_FONT_DESC(name_, method_) nsCSSValue m##method_;
+#include "nsCSSFontDescList.h"
+#undef CSS_FONT_DESC
+
+  const nsCSSValue& Get(nsCSSFontDesc aFontDescID) const;
+  nsCSSValue& Get(nsCSSFontDesc aFontDescID);
+
+private:
+  static nsCSSValue CSSFontFaceDescriptors::* const Fields[];
+};
+
 } // namespace mozilla
 
 // A nsCSSFontFaceStyleDecl is always embedded in a nsCSSFontFaceRule.
 class nsCSSFontFaceRule;
-class nsCSSFontFaceStyleDecl : public nsICSSDeclaration
+class nsCSSFontFaceStyleDecl MOZ_FINAL : public nsICSSDeclaration
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -194,11 +209,6 @@ public:
   GetPropertyCSSValue(const nsAString& aProp, mozilla::ErrorResult& aRv)
     MOZ_OVERRIDE;
   using nsICSSDeclaration::GetPropertyCSSValue;
-
-  nsCSSFontFaceStyleDecl()
-  {
-    SetIsDOMBinding();
-  }
 
   virtual nsINode *GetParentObject() MOZ_OVERRIDE;
   virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName) MOZ_OVERRIDE;
@@ -212,13 +222,11 @@ protected:
   ~nsCSSFontFaceStyleDecl() {}
 
   friend class nsCSSFontFaceRule;
-#define CSS_FONT_DESC(name_, method_) nsCSSValue m##method_;
-#include "nsCSSFontDescList.h"
-#undef CSS_FONT_DESC
 
-  static nsCSSValue nsCSSFontFaceStyleDecl::* const Fields[];
   inline nsCSSFontFaceRule* ContainingRule();
   inline const nsCSSFontFaceRule* ContainingRule() const;
+
+  mozilla::CSSFontFaceDescriptors mDescriptors;
 
 private:
   // NOT TO BE IMPLEMENTED
@@ -263,6 +271,9 @@ public:
   void GetDesc(nsCSSFontDesc aDescID, nsCSSValue & aValue);
 
   virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
+
+  void GetDescriptors(mozilla::CSSFontFaceDescriptors& aDescriptors) const
+    { aDescriptors = mDecl.mDescriptors; }
 
 protected:
   ~nsCSSFontFaceRule() {}
@@ -338,15 +349,6 @@ public:
 
   virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
 
-  static bool PrefEnabled()
-  {
-    // font-variant-alternates enabled ==> layout.css.font-features.enabled is true
-    bool fontFeaturesEnabled =
-      nsCSSProps::IsEnabled(eCSSProperty_font_variant_alternates);
-
-    return fontFeaturesEnabled;
-  }
-
 protected:
   ~nsCSSFontFeatureValuesRule() {}
 
@@ -403,7 +405,7 @@ class nsCSSKeyframeRule;
 class nsCSSKeyframeStyleDeclaration MOZ_FINAL : public nsDOMCSSDeclaration
 {
 public:
-  nsCSSKeyframeStyleDeclaration(nsCSSKeyframeRule *aRule);
+  explicit nsCSSKeyframeStyleDeclaration(nsCSSKeyframeRule *aRule);
 
   NS_IMETHOD GetParentRule(nsIDOMCSSRule **aParent) MOZ_OVERRIDE;
   void DropReference() { mRule = nullptr; }
@@ -536,7 +538,7 @@ class nsCSSPageRule;
 class nsCSSPageStyleDeclaration MOZ_FINAL : public nsDOMCSSDeclaration
 {
 public:
-  nsCSSPageStyleDeclaration(nsCSSPageRule *aRule);
+  explicit nsCSSPageStyleDeclaration(nsCSSPageRule *aRule);
 
   NS_IMETHOD GetParentRule(nsIDOMCSSRule **aParent) MOZ_OVERRIDE;
   void DropReference() { mRule = nullptr; }

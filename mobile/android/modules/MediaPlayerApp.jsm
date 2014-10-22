@@ -13,7 +13,7 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Messaging.jsm");
 let log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.d.bind(null, "MediaPlayerApp");
 
-// Helper function for sending commands to Java. 
+// Helper function for sending commands to Java.
 function send(type, data, callback) {
   let msg = {
     type: type
@@ -23,7 +23,9 @@ function send(type, data, callback) {
     msg[i] = data[i];
   }
 
-  sendMessageToJava(msg, callback);
+  Messaging.sendRequestForResult(msg)
+    .then(result => callback(result, null),
+          error => callback(null, error));
 }
 
 /* These apps represent players supported natively by the platform. This class will proxy commands
@@ -36,14 +38,18 @@ function MediaPlayerApp(service) {
 
 MediaPlayerApp.prototype = {
   start: function start(callback) {
-    send("MediaPlayer:Start", { id: this.id }, (result) => {
-      if (callback) callback(true);
+    send("MediaPlayer:Start", { id: this.id }, (result, err) => {
+      if (callback) {
+        callback(err == null);
+      }
     });
   },
 
   stop: function stop(callback) {
-    send("MediaPlayer:Stop", { id: this.id }, (result) => {
-      if (callback) callback(true);
+    send("MediaPlayer:Stop", { id: this.id }, (result, err) => {
+      if (callback) {
+        callback(err == null);
+      }
     });
   },
 
@@ -52,6 +58,14 @@ MediaPlayerApp.prototype = {
       callback(new RemoteMedia(this.id, listener));
     }
   },
+
+  mirror: function mirror(callback) {
+    send("MediaPlayer:Mirror", { id: this.id }, (result, err) => {
+      if (callback) {
+        callback(err == null);
+      }
+    });
+  }
 }
 
 /* RemoteMedia provides a proxy to a native media player session.
@@ -69,7 +83,7 @@ function RemoteMedia(id, listener) {
 
 RemoteMedia.prototype = {
   shutdown: function shutdown() {
-    this._send("MediaPlayer:End", {}, (result) => {
+    this._send("MediaPlayer:End", {}, (result, err) => {
       this._status = "shutdown";
       if ("onRemoteMediaStop" in this._listener) {
         this._listener.onRemoteMediaStop(this);
@@ -78,19 +92,37 @@ RemoteMedia.prototype = {
   },
 
   play: function play() {
-    this._send("MediaPlayer:Play", {}, (result) => {
+    this._send("MediaPlayer:Play", {}, (result, err) => {
+      if (err) {
+        Cu.reportError("Can't play " + err);
+        this.shutdown();
+        return;
+      }
+
       this._status = "started";
     });
   },
 
   pause: function pause() {
-    this._send("MediaPlayer:Pause", {}, (result) => {
+    this._send("MediaPlayer:Pause", {}, (result, err) => {
+      if (err) {
+        Cu.reportError("Can't pause " + err);
+        this.shutdown();
+        return;
+      }
+
       this._status = "paused";
     });
   },
 
   load: function load(aData) {
-    this._send("MediaPlayer:Load", aData, (result) => {
+    this._send("MediaPlayer:Load", aData, (result, err) => {
+      if (err) {
+        Cu.reportError("Can't load " + err);
+        this.shutdown();
+        return;
+      }
+
       this._status = "started";
     })
   },

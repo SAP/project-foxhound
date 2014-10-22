@@ -7,6 +7,7 @@
 #ifndef jit_IonTypes_h
 #define jit_IonTypes_h
 
+#include "mozilla/HashFunctions.h"
 #include "mozilla/TypedEnum.h"
 
 #include "jstypes.h"
@@ -221,7 +222,7 @@ BailoutKindString(BailoutKind kind)
       case Bailout_IonExceptionDebugMode:
         return "Bailout_IonExceptionDebugMode";
       default:
-        MOZ_ASSUME_UNREACHABLE("Invalid BailoutKind");
+        MOZ_CRASH("Invalid BailoutKind");
     }
 }
 
@@ -231,6 +232,122 @@ static const uint32_t ELEMENT_TYPE_MASK = (1 << ELEMENT_TYPE_BITS) - 1;
 static const uint32_t VECTOR_SCALE_BITS = 2;
 static const uint32_t VECTOR_SCALE_SHIFT = ELEMENT_TYPE_BITS + ELEMENT_TYPE_SHIFT;
 static const uint32_t VECTOR_SCALE_MASK = (1 << VECTOR_SCALE_BITS) - 1;
+
+class SimdConstant {
+  public:
+    enum Type {
+        Int32x4,
+        Float32x4,
+        Undefined = -1
+    };
+
+  private:
+    Type type_;
+    union {
+        int32_t i32x4[4];
+        float f32x4[4];
+    } u;
+
+    bool defined() const {
+        return type_ != Undefined;
+    }
+
+    void fillInt32x4(int32_t x, int32_t y, int32_t z, int32_t w)
+    {
+        type_ = Int32x4;
+        u.i32x4[0] = x;
+        u.i32x4[1] = y;
+        u.i32x4[2] = z;
+        u.i32x4[3] = w;
+    }
+
+    void fillFloat32x4(float x, float y, float z, float w)
+    {
+        type_ = Float32x4;
+        u.f32x4[0] = x;
+        u.f32x4[1] = y;
+        u.f32x4[2] = z;
+        u.f32x4[3] = w;
+    }
+
+  public:
+    // Doesn't have a default constructor, as it would prevent it from being
+    // included in unions.
+
+    static SimdConstant CreateX4(int32_t x, int32_t y, int32_t z, int32_t w) {
+        SimdConstant cst;
+        cst.fillInt32x4(x, y, z, w);
+        return cst;
+    }
+    static SimdConstant CreateX4(int32_t *array) {
+        SimdConstant cst;
+        cst.fillInt32x4(array[0], array[1], array[2], array[3]);
+        return cst;
+    }
+    static SimdConstant SplatX4(int32_t v) {
+        SimdConstant cst;
+        cst.fillInt32x4(v, v, v, v);
+        return cst;
+    }
+    static SimdConstant CreateX4(float x, float y, float z, float w) {
+        SimdConstant cst;
+        cst.fillFloat32x4(x, y, z, w);
+        return cst;
+    }
+    static SimdConstant CreateX4(float *array) {
+        SimdConstant cst;
+        cst.fillFloat32x4(array[0], array[1], array[2], array[3]);
+        return cst;
+    }
+    static SimdConstant SplatX4(float v) {
+        SimdConstant cst;
+        cst.fillFloat32x4(v, v, v, v);
+        return cst;
+    }
+
+    uint32_t length() const {
+        MOZ_ASSERT(defined());
+        switch(type_) {
+          case Int32x4:
+          case Float32x4:
+            return 4;
+          case Undefined:
+            break;
+        }
+        MOZ_CRASH("Unexpected SIMD kind");
+    }
+
+    Type type() const {
+        MOZ_ASSERT(defined());
+        return type_;
+    }
+
+    const int32_t *asInt32x4() const {
+        MOZ_ASSERT(defined() && type_ == Int32x4);
+        return u.i32x4;
+    }
+    const float *asFloat32x4() const {
+        MOZ_ASSERT(defined() && type_ == Float32x4);
+        return u.f32x4;
+    }
+
+    bool operator==(const SimdConstant &rhs) const {
+        MOZ_ASSERT(defined() && rhs.defined());
+        if (type() != rhs.type())
+            return false;
+        return memcmp(&u, &rhs.u, sizeof(u)) == 0;
+    }
+
+    // SimdConstant is a HashPolicy
+    typedef SimdConstant Lookup;
+    static HashNumber hash(const SimdConstant &val) {
+        uint32_t hash = mozilla::HashBytes(&val.u, sizeof(val.u));
+        return mozilla::AddToHash(hash, val.type_);
+    }
+    static bool match(const SimdConstant &lhs, const SimdConstant &rhs) {
+        return lhs == rhs;
+    }
+};
 
 // The ordering of this enumeration is important: Anything < Value is a
 // specialized type. Furthermore, anything < String has trivial conversion to
@@ -246,17 +363,19 @@ enum MIRType
     MIRType_String,
     MIRType_Symbol,
     MIRType_Object,
-    MIRType_MagicOptimizedArguments, // JS_OPTIMIZED_ARGUMENTS magic value.
-    MIRType_MagicOptimizedOut,       // JS_OPTIMIZED_OUT magic value.
-    MIRType_MagicHole,               // JS_ELEMENTS_HOLE magic value.
-    MIRType_MagicIsConstructing,     // JS_IS_CONSTRUCTING magic value.
+    MIRType_MagicOptimizedArguments,   // JS_OPTIMIZED_ARGUMENTS magic value.
+    MIRType_MagicOptimizedOut,         // JS_OPTIMIZED_OUT magic value.
+    MIRType_MagicHole,                 // JS_ELEMENTS_HOLE magic value.
+    MIRType_MagicIsConstructing,       // JS_IS_CONSTRUCTING magic value.
+    MIRType_MagicUninitializedLexical, // JS_UNINITIALIZED_LEXICAL magic value.
     MIRType_Value,
-    MIRType_None,                    // Invalid, used as a placeholder.
-    MIRType_Slots,                   // A slots vector
-    MIRType_Elements,                // An elements vector
-    MIRType_Pointer,                 // An opaque pointer that receives no special treatment
-    MIRType_Shape,                   // A Shape pointer.
-    MIRType_ForkJoinContext,         // js::ForkJoinContext*
+    MIRType_None,                      // Invalid, used as a placeholder.
+    MIRType_Slots,                     // A slots vector
+    MIRType_Elements,                  // An elements vector
+    MIRType_Pointer,                   // An opaque pointer that receives no special treatment
+    MIRType_Shape,                     // A Shape pointer.
+    MIRType_TypeObject,                // A TypeObject pointer.
+    MIRType_ForkJoinContext,           // js::ForkJoinContext*
     MIRType_Last = MIRType_ForkJoinContext,
     MIRType_Float32x4 = MIRType_Float32 | (2 << VECTOR_SCALE_SHIFT),
     MIRType_Int32x4   = MIRType_Int32   | (2 << VECTOR_SCALE_SHIFT),
@@ -301,7 +420,7 @@ MIRTypeFromValueType(JSValueType type)
       case JSVAL_TYPE_UNKNOWN:
         return MIRType_Value;
       default:
-        MOZ_ASSUME_UNREACHABLE("unexpected jsval type");
+        MOZ_CRASH("unexpected jsval type");
     }
 }
 
@@ -328,9 +447,10 @@ ValueTypeFromMIRType(MIRType type)
     case MIRType_MagicOptimizedOut:
     case MIRType_MagicHole:
     case MIRType_MagicIsConstructing:
+    case MIRType_MagicUninitializedLexical:
       return JSVAL_TYPE_MAGIC;
     default:
-      JS_ASSERT(type == MIRType_Object);
+      MOZ_ASSERT(type == MIRType_Object);
       return JSVAL_TYPE_OBJECT;
   }
 }
@@ -371,6 +491,8 @@ StringFromMIRType(MIRType type)
       return "MagicHole";
     case MIRType_MagicIsConstructing:
       return "MagicIsConstructing";
+    case MIRType_MagicUninitializedLexical:
+      return "MagicUninitializedLexical";
     case MIRType_Value:
       return "Value";
     case MIRType_None:
@@ -383,8 +505,12 @@ StringFromMIRType(MIRType type)
       return "Pointer";
     case MIRType_ForkJoinContext:
       return "ForkJoinContext";
+    case MIRType_Int32x4:
+      return "Int32x4";
+    case MIRType_Float32x4:
+      return "Float32x4";
     default:
-      MOZ_ASSUME_UNREACHABLE("Unknown MIRType.");
+      MOZ_CRASH("Unknown MIRType.");
   }
 }
 
@@ -412,16 +538,70 @@ IsNullOrUndefined(MIRType type)
     return type == MIRType_Null || type == MIRType_Undefined;
 }
 
+static inline bool
+IsSimdType(MIRType type)
+{
+    return type == MIRType_Int32x4 || type == MIRType_Float32x4;
+};
+
+static inline bool
+IsMagicType(MIRType type)
+{
+    return type == MIRType_MagicHole ||
+           type == MIRType_MagicOptimizedOut ||
+           type == MIRType_MagicIsConstructing ||
+           type == MIRType_MagicOptimizedArguments ||
+           type == MIRType_MagicUninitializedLexical;
+}
+
+// Returns the number of vector elements (hereby called "length") for a given
+// SIMD kind. It is the Y part of the name "Foo x Y".
+static inline unsigned
+SimdTypeToLength(MIRType type)
+{
+    MOZ_ASSERT(IsSimdType(type));
+    switch (type) {
+      case MIRType_Int32x4:
+      case MIRType_Float32x4:
+        return 4;
+      default: break;
+    }
+    MOZ_CRASH("unexpected SIMD kind");
+}
+
+static inline MIRType
+SimdTypeToScalarType(MIRType type)
+{
+    MOZ_ASSERT(IsSimdType(type));
+    switch (type) {
+      case MIRType_Int32x4:
+        return MIRType_Int32;
+      case MIRType_Float32x4:
+        return MIRType_Float32;
+      default: break;
+    }
+    MOZ_CRASH("unexpected SIMD kind");
+}
+
+// Indicates a lane in a SIMD register: X for the first lane, Y for the second,
+// Z for the third (if any), W for the fourth (if any).
+enum SimdLane {
+    LaneX = 0x0,
+    LaneY = 0x1,
+    LaneZ = 0x2,
+    LaneW = 0x3
+};
+
 #ifdef DEBUG
+
 // Track the pipeline of opcodes which has produced a snapshot.
 #define TRACK_SNAPSHOTS 1
 
 // Make sure registers are not modified between an instruction and
 // its OsiPoint.
-#  if defined(JS_ION)
-#    define CHECK_OSIPOINT_REGISTERS 1
-#  endif
-#endif
+#define CHECK_OSIPOINT_REGISTERS 1
+
+#endif // DEBUG
 
 enum {
     ArgType_General = 0x1,

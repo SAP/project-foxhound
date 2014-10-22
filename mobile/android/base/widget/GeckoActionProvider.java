@@ -27,7 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 public class GeckoActionProvider {
-    private static int MAX_HISTORY_SIZE = 2;
+    private static final int MAX_HISTORY_SIZE = 2;
 
     /**
      * A listener to know when a target was selected.
@@ -38,20 +38,20 @@ public class GeckoActionProvider {
         public void onTargetSelected();
     }
 
-    private final Context mContext;
+    final Context mContext;
 
     public final static String DEFAULT_MIME_TYPE = "text/plain";
 
     public static final String DEFAULT_HISTORY_FILE_NAME = "history.xml";
 
     //  History file.
-    private String mHistoryFileName = DEFAULT_HISTORY_FILE_NAME;
+    String mHistoryFileName = DEFAULT_HISTORY_FILE_NAME;
 
-    private OnTargetSelectedListener mOnTargetListener;
+    OnTargetSelectedListener mOnTargetListener;
 
     private final Callbacks mCallbacks = new Callbacks();
 
-    private static HashMap<String, GeckoActionProvider> mProviders = new HashMap<String, GeckoActionProvider>();
+    private static final HashMap<String, GeckoActionProvider> mProviders = new HashMap<String, GeckoActionProvider>();
 
     private static String getFilenameFromMimeType(String mimeType) {
         String[] mime = mimeType.split("/");
@@ -105,7 +105,8 @@ public class GeckoActionProvider {
         }
 
         for (int i = 0; i < historySize; i++) {
-            view.addActionButton(dataModel.getActivity(i).loadIcon(packageManager));
+            view.addActionButton(dataModel.getActivity(i).loadIcon(packageManager), 
+                                 dataModel.getActivity(i).loadLabel(packageManager));
         }
 
         return view;
@@ -159,17 +160,17 @@ public class GeckoActionProvider {
         mOnTargetListener = listener;
     }
 
-    public ArrayList<ResolveInfo> getSortedActivites() {
+    public ArrayList<ResolveInfo> getSortedActivities() {
         ArrayList<ResolveInfo> infos = new ArrayList<ResolveInfo>();
 
         ActivityChooserModel dataModel = ActivityChooserModel.get(mContext, mHistoryFileName);
-        PackageManager packageManager = mContext.getPackageManager();
 
         // Populate the sub-menu with a sub set of the activities.
         final int count = dataModel.getActivityCount();
         for (int i = 0; i < count; i++) {
             infos.add(dataModel.getActivity(i));
         }
+
         return infos;
     }
 
@@ -182,7 +183,7 @@ public class GeckoActionProvider {
      */
     private class Callbacks implements OnMenuItemClickListener,
                                        OnClickListener {
-        private void chooseActivity(int index) { 
+        void chooseActivity(int index) {
             final ActivityChooserModel dataModel = ActivityChooserModel.get(mContext, mHistoryFileName);
             final Intent launchIntent = dataModel.chooseActivity(index);
             if (launchIntent != null) {

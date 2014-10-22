@@ -17,6 +17,7 @@
 #include "nsPIDOMWindow.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/ScriptSettings.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -24,7 +25,6 @@ using namespace mozilla::dom;
 DOMParser::DOMParser()
   : mAttemptedInit(false)
 {
-  SetIsDOMBinding();
 }
 
 DOMParser::~DOMParser()
@@ -238,15 +238,14 @@ DOMParser::ParseFromStream(nsIInputStream *stream,
 
   // Create a fake channel 
   nsCOMPtr<nsIChannel> parserChannel;
-  NS_NewInputStreamChannel(getter_AddRefs(parserChannel), mDocumentURI, nullptr,
-                           nsDependentCString(contentType), nullptr);
+  NS_NewInputStreamChannel(getter_AddRefs(parserChannel),
+                           mDocumentURI,
+                           nullptr, // aStream
+                           mOriginalPrincipal,
+                           nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
+                           nsIContentPolicy::TYPE_OTHER,
+                           nsDependentCString(contentType));
   NS_ENSURE_STATE(parserChannel);
-
-  // More principal-faking here
-  nsCOMPtr<nsILoadInfo> loadInfo =
-    new LoadInfo(mOriginalPrincipal, LoadInfo::eInheritPrincipal,
-                 LoadInfo::eNotSandboxed);
-  parserChannel->SetLoadInfo(loadInfo);
 
   if (charset) {
     parserChannel->SetContentCharset(nsDependentCString(charset));
@@ -315,7 +314,7 @@ DOMParser::ParseFromStream(nsIInputStream *stream,
 
 NS_IMETHODIMP
 DOMParser::Init(nsIPrincipal* principal, nsIURI* documentURI,
-                nsIURI* baseURI, nsIScriptGlobalObject* aScriptObject)
+                nsIURI* baseURI, nsIGlobalObject* aScriptObject)
 {
   NS_ENSURE_STATE(!mAttemptedInit);
   mAttemptedInit = true;
@@ -432,7 +431,7 @@ DOMParser::InitInternal(nsISupports* aOwner, nsIPrincipal* prin,
     }
   }
 
-  nsCOMPtr<nsIScriptGlobalObject> scriptglobal = do_QueryInterface(aOwner);
+  nsCOMPtr<nsIGlobalObject> scriptglobal = do_QueryInterface(aOwner);
   return Init(prin, documentURI, baseURI, scriptglobal);
 }
 
@@ -442,26 +441,22 @@ DOMParser::Init(nsIPrincipal* aPrincipal, nsIURI* aDocumentURI,
 {
   AttemptedInitMarker marker(&mAttemptedInit);
 
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
-  if (!cx) {
-    rv.Throw(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  nsIScriptContext* scriptContext = GetScriptContextFromJSContext(cx);
-
   nsCOMPtr<nsIPrincipal> principal = aPrincipal;
   if (!principal && !aDocumentURI) {
     principal = nsContentUtils::SubjectPrincipal();
   }
 
-  rv = Init(principal, aDocumentURI, aBaseURI,
-            scriptContext ? scriptContext->GetGlobalObject() : nullptr);
+  rv = Init(principal, aDocumentURI, aBaseURI, GetEntryGlobal());
 }
 
 nsresult
 DOMParser::SetUpDocument(DocumentFlavor aFlavor, nsIDOMDocument** aResult)
 {
+  // We should really QI to nsIGlobalObject here, but nsDocument gets confused
+  // if we pass it a scriptHandlingObject that doesn't QI to
+  // nsIScriptGlobalObject, and test_isequalnode.js (an xpcshell test without
+  // a window global) breaks. The correct solution is just to wean nsDocument
+  // off of nsIScriptGlobalObject, but that's a yak to shave another day.
   nsCOMPtr<nsIScriptGlobalObject> scriptHandlingObject =
     do_QueryReferent(mScriptHandlingObject);
   nsresult rv;

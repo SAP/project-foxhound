@@ -2,15 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import glob
 import time
 import re
 import os
 import tempfile
 import shutil
 import subprocess
+import sys
 
 from automation import Automation
 from devicemanager import DMError
+from mozlog.structured import get_default_logger
 import mozcrash
 
 # signatures for logcat messages that we don't care about much
@@ -72,8 +75,11 @@ class RemoteAutomation(Automation):
         else:
             env['MOZ_CRASHREPORTER_DISABLE'] = '1'
 
-        # Crash on non-local network connections.
-        env['MOZ_DISABLE_NONLOCAL_CONNECTIONS'] = '1'
+        # Crash on non-local network connections by default.
+        # MOZ_DISABLE_NONLOCAL_CONNECTIONS can be set to "0" to temporarily
+        # enable non-local connections for the purposes of local testing.
+        # Don't override the user's choice here.  See bug 1049688.
+        env.setdefault('MOZ_DISABLE_NONLOCAL_CONNECTIONS', '1')
 
         return env
 
@@ -124,12 +130,56 @@ class RemoteAutomation(Automation):
                 self.deleteANRs()
             except DMError:
                 print "Error pulling %s" % traces
-                pass
+            except IOError:
+                print "Error pulling %s" % traces
         else:
             print "%s not found" % traces
 
+    def deleteTombstones(self):
+        # delete any existing tombstone files from device
+        remoteDir = "/data/tombstones"
+        try:
+            self._devicemanager.shellCheckOutput(['rm', '-r', remoteDir], root=True)
+        except DMError:
+            # This may just indicate that the tombstone directory is missing
+            pass
+
+    def checkForTombstones(self):
+        # pull any tombstones from device and move to MOZ_UPLOAD_DIR
+        remoteDir = "/data/tombstones"
+        blobberUploadDir = os.environ.get('MOZ_UPLOAD_DIR', None)
+        if blobberUploadDir:
+            if not os.path.exists(blobberUploadDir):
+                os.mkdir(blobberUploadDir)
+            if self._devicemanager.dirExists(remoteDir):
+                # copy tombstone files from device to local blobber upload directory
+                try:
+                    self._devicemanager.shellCheckOutput(['chmod', '777', remoteDir], root=True)
+                    self._devicemanager.shellCheckOutput(['chmod', '666', os.path.join(remoteDir, '*')], root=True)
+                    self._devicemanager.getDirectory(remoteDir, blobberUploadDir, False)
+                except DMError:
+                    # This may just indicate that no tombstone files are present
+                    pass
+                self.deleteTombstones()
+                # add a .txt file extension to each tombstone file name, so
+                # that blobber will upload it
+                for f in glob.glob(os.path.join(blobberUploadDir, "tombstone_??")):
+                    # add a unique integer to the file name, in case there are
+                    # multiple tombstones generated with the same name, for
+                    # instance, after multiple robocop tests
+                    for i in xrange(1, sys.maxint):
+                        newname = "%s.%d.txt" % (f, i)
+                        if not os.path.exists(newname):
+                            os.rename(f, newname)
+                            break
+            else:
+                print "%s does not exist; tombstone check skipped" % remoteDir
+        else:
+            print "MOZ_UPLOAD_DIR not defined; tombstone check skipped"
+
     def checkForCrashes(self, directory, symbolsPath):
         self.checkForANRs()
+        self.checkForTombstones()
 
         logcat = self._devicemanager.getLogcat(filterOutRegexps=fennecLogcatFilters)
         javaException = mozcrash.check_for_java_exception(logcat)
@@ -153,7 +203,12 @@ class RemoteAutomation(Automation):
                 # Whilst no crash was found, the run should still display as a failure
                 return True
             self._devicemanager.getDirectory(remoteCrashDir, dumpDir)
-            crashed = Automation.checkForCrashes(self, dumpDir, symbolsPath)
+
+            logger = get_default_logger()
+            if logger is not None:
+                crashed = mozcrash.log_crashes(logger, dumpDir, symbolsPath, test=self.lastTestSeen)
+            else:
+                crashed = Automation.checkForCrashes(self, dumpDir, symbolsPath)
 
         finally:
             try:
@@ -266,7 +321,7 @@ class RemoteAutomation(Automation):
             messages = []
             for line in lines:
                 # This passes the line to the logger (to be logged or buffered)
-                # and returns a list of structured messages (dict) or None, depending on the log
+                # and returns a list of structured messages (dict)
                 parsed_messages = self.messageLogger.write(line)
                 for message in parsed_messages:
                     if message['action'] == 'test_start':

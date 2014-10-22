@@ -53,6 +53,12 @@ label.small {
   margin: 6px;
 }
 
+/* General Pane */
+
+#isNotDefaultLabel {
+  font-weight: bold;
+}
+
 /* Content Pane */
 #translationAttributionImage {
   width: 70px;
@@ -66,18 +72,6 @@ label.small {
 
 #BrowserPreferences[animated="false"] #handlersView {
   -moz-box-flex: 1;
-}
-
-/* Privacy Pane */
-
-/* styles for the link elements copied from .text-link in global.css */
-.inline-link {
-  color: -moz-nativehyperlinktext;
-  text-decoration: none;
-}
-
-.inline-link:hover {
-  text-decoration: underline;
 }
 
 /* Modeless Window Dialogs */
@@ -159,14 +153,6 @@ label.small {
 
 #noFxaAccount > label:first-child {
   margin-bottom: 0.6em;
-}
-
-#fxa-pweng-help-link > label {
-  margin: 0;
-}
-
-#fxa-pweng-help-link > image {
-  list-style-image: url("chrome://global/skin/icons/question-16.png");
 }
 
 %endif

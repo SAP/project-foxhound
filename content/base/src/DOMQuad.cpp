@@ -23,7 +23,6 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMQuad, Release)
 DOMQuad::DOMQuad(nsISupports* aParent, CSSPoint aPoints[4])
   : mParent(aParent)
 {
-  SetIsDOMBinding();
   for (uint32_t i = 0; i < 4; ++i) {
     mPoints[i] = new DOMPoint(aParent, aPoints[i].x, aPoints[i].y);
   }
@@ -32,7 +31,6 @@ DOMQuad::DOMQuad(nsISupports* aParent, CSSPoint aPoints[4])
 DOMQuad::DOMQuad(nsISupports* aParent)
   : mParent(aParent)
 {
-  SetIsDOMBinding();
 }
 
 DOMQuad::~DOMQuad()
@@ -78,7 +76,7 @@ DOMQuad::Constructor(const GlobalObject& aGlobal, const DOMRectReadOnly& aRect,
 class DOMQuad::QuadBounds MOZ_FINAL : public DOMRectReadOnly
 {
 public:
-  QuadBounds(DOMQuad* aQuad)
+  explicit QuadBounds(DOMQuad* aQuad)
     : DOMRectReadOnly(aQuad->GetParentObject())
     , mQuad(aQuad)
   {}

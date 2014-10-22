@@ -45,10 +45,10 @@ public:
   inline void TraceSelf(JSTracer* trc)
   {
     if (mTypedObj) {
-      JS_CallObjectTracer(trc, &mTypedObj, "TypedArray.mTypedObj");
+      JS_CallUnbarrieredObjectTracer(trc, &mTypedObj, "TypedArray.mTypedObj");
     }
     if (mWrappedObj) {
-      JS_CallObjectTracer(trc, &mTypedObj, "TypedArray.mWrappedObj");
+      JS_CallUnbarrieredObjectTracer(trc, &mTypedObj, "TypedArray.mWrappedObj");
     }
   }
 
@@ -139,7 +139,7 @@ private:
 
 template<typename T,
          JSObject* UnwrapArray(JSObject*),
-         T* GetData(JSObject*),
+         T* GetData(JSObject*, const JS::AutoCheckCannotGC&),
          void GetLengthAndData(JSObject*, uint32_t*, T**),
          JSObject* CreateNew(JSContext*, uint32_t)>
 struct TypedArray : public TypedArray_base<T, UnwrapArray, GetLengthAndData> {
@@ -162,7 +162,7 @@ public:
     JS::Rooted<JSObject*> creatorWrapper(cx);
     Maybe<JSAutoCompartment> ac;
     if (creator && (creatorWrapper = creator->GetWrapperPreserveColor())) {
-      ac.construct(cx, creatorWrapper);
+      ac.emplace(cx, creatorWrapper);
     }
 
     return CreateCommon(cx, length, data);
@@ -181,7 +181,8 @@ private:
       return nullptr;
     }
     if (data) {
-      T* buf = static_cast<T*>(GetData(obj));
+      JS::AutoCheckCannotGC nogc;
+      T* buf = static_cast<T*>(GetData(obj, nogc));
       memcpy(buf, data, length*sizeof(T));
     }
     return obj;
@@ -233,7 +234,7 @@ class TypedArrayCreator
   typedef nsTArray<typename TypedArrayType::element_type> ArrayType;
 
   public:
-    TypedArrayCreator(const ArrayType& aArray)
+    explicit TypedArrayCreator(const ArrayType& aArray)
       : mArray(aArray)
     {}
 
@@ -298,7 +299,7 @@ class MOZ_STACK_CLASS RootedTypedArray : public ArrayType,
                                          private TypedArrayRooter<ArrayType>
 {
 public:
-  RootedTypedArray(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
+  explicit RootedTypedArray(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
     ArrayType(),
     TypedArrayRooter<ArrayType>(cx,
                                 MOZ_THIS_IN_INITIALIZER_LIST()

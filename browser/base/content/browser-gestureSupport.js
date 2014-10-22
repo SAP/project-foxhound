@@ -189,12 +189,12 @@ let gGestureSupport = {
 
     let isVerticalSwipe = false;
     if (aEvent.direction == aEvent.DIRECTION_UP) {
-      if (content.pageYOffset > 0) {
+      if (gMultiProcessBrowser || content.pageYOffset > 0) {
         return false;
       }
       isVerticalSwipe = true;
     } else if (aEvent.direction == aEvent.DIRECTION_DOWN) {
-      if (content.pageYOffset < content.scrollMaxY) {
+      if (gMultiProcessBrowser || content.pageYOffset < content.scrollMaxY) {
         return false;
       }
       isVerticalSwipe = true;
@@ -571,8 +571,7 @@ let gHistorySwipeAnimation = {
       return;
 
     this.active = false;
-    this.isLTR = document.documentElement.mozMatchesSelector(
-                                            ":-moz-locale-dir(ltr)");
+    this.isLTR = document.documentElement.matches(":-moz-locale-dir(ltr)");
     this._trackedSnapshots = [];
     this._startingIndex = -1;
     this._historyIndex = -1;

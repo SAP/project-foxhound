@@ -59,16 +59,18 @@ if CONFIG['MOZ_PLACES']:
         '../build',
     ]
 
-    EXTRA_JS_MODULES = [
+    EXTRA_JS_MODULES += [
         'BookmarkHTMLUtils.jsm',
         'BookmarkJSONUtils.jsm',
+        'Bookmarks.jsm',
         'ClusterLib.js',
         'ColorAnalyzer_worker.js',
         'ColorConversion.js',
+        'History.jsm',
         'PlacesBackups.jsm',
         'PlacesDBUtils.jsm',
+        'PlacesSearchAutocompleteProvider.jsm',
         'PlacesTransactions.jsm',
-        'PriorityUrlProvider.jsm'
     ]
 
     EXTRA_PP_JS_MODULES += [
@@ -90,6 +92,9 @@ if CONFIG['MOZ_PLACES']:
             'UnifiedComplete.js',
             'UnifiedComplete.manifest',
         ]
+
+    FAIL_ON_WARNINGS = True
+
     FINAL_LIBRARY = 'xul'
 
 include('/ipc/chromium/chromium-config.mozbuild')

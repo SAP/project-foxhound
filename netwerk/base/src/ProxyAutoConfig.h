@@ -31,6 +31,7 @@ public:
 
   nsresult Init(const nsCString &aPACURI,
                 const nsCString &aPACScript);
+  void     SetThreadLocalIndex(uint32_t index);
   void     Shutdown();
   void     GC();
   bool     MyIPAddress(const JS::CallArgs &aArgs);
@@ -76,7 +77,8 @@ public:
                           nsACString &result);
 
 private:
-  const static unsigned int kTimeout = 1000; // ms to allow for myipaddress dns queries
+  // allow 665ms for myipaddress dns queries. That's 95th percentile.
+  const static unsigned int kTimeout = 665;
 
   // used to compile the PAC file and setup the execution context
   nsresult SetupJS();

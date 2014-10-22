@@ -379,10 +379,10 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS
         mov(ImmWord(uintptr_t(imm.value)), dest);
     }
     void mov(Register src, Address dest) {
-        MOZ_ASSUME_UNREACHABLE("NYI-IC");
+        MOZ_CRASH("NYI-IC");
     }
     void mov(Address src, Register dest) {
-        MOZ_ASSUME_UNREACHABLE("NYI-IC");
+        MOZ_CRASH("NYI-IC");
     }
 
     void call(const Register reg) {
@@ -485,7 +485,7 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS
     // this instruction.
     CodeOffsetLabel toggledCall(JitCode *target, bool enabled);
 
-    static size_t ToggledCallSize() {
+    static size_t ToggledCallSize(uint8_t *code) {
         // Four instructions used in: MacroAssemblerMIPSCompat::toggledCall
         return 4 * sizeof(uint32_t);
     }
@@ -629,6 +629,10 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS
         ma_lw(SecondScratchReg, lhs);
         ma_b(SecondScratchReg, rhs, label, cond);
     }
+    void branch32(Condition cond, const BaseIndex &lhs, Imm32 rhs, Label *label) {
+        load32(lhs, SecondScratchReg);
+        ma_b(SecondScratchReg, rhs, label, cond);
+    }
     void branchPtr(Condition cond, const Address &lhs, Register rhs, Label *label) {
         branch32(cond, lhs, rhs, label);
     }
@@ -757,6 +761,7 @@ protected:
 public:
     void moveValue(const Value &val, Register type, Register data);
 
+    CodeOffsetJump backedgeJump(RepatchLabel *label);
     CodeOffsetJump jumpWithPatch(RepatchLabel *label);
 
     template <typename T>
@@ -794,6 +799,10 @@ public:
     void branchPtr(Condition cond, AbsoluteAddress addr, Register ptr, Label *label) {
         loadPtr(addr, ScratchRegister);
         ma_b(ScratchRegister, ptr, label, cond);
+    }
+    void branchPtr(Condition cond, AbsoluteAddress addr, ImmWord ptr, Label *label) {
+        loadPtr(addr, ScratchRegister);
+        ma_b(ScratchRegister, Imm32(ptr.value), label, cond);
     }
     void branchPtr(Condition cond, AsmJSAbsoluteAddress addr, Register ptr,
                    Label *label) {
@@ -838,8 +847,8 @@ public:
         if (s1 == d0) {
             if (s0 == d1) {
                 // If both are, this is just a swap of two registers.
-                JS_ASSERT(d1 != ScratchRegister);
-                JS_ASSERT(d0 != ScratchRegister);
+                MOZ_ASSERT(d1 != ScratchRegister);
+                MOZ_ASSERT(d0 != ScratchRegister);
                 move32(d1, ScratchRegister);
                 move32(d0, d1);
                 move32(ScratchRegister, d0);
@@ -997,7 +1006,7 @@ public:
             ma_addTestOverflow(dest, dest, src, overflow);
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("NYI");
+            MOZ_CRASH("NYI");
         }
     }
     template <typename T>
@@ -1012,7 +1021,7 @@ public:
             ma_b(dest, dest, overflow, cond);
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("NYI");
+            MOZ_CRASH("NYI");
         }
     }
 
@@ -1066,6 +1075,16 @@ public:
 
     void loadPrivate(const Address &address, Register dest);
 
+    void loadAlignedInt32x4(const Address &addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void storeAlignedInt32x4(FloatRegister src, Address addr) { MOZ_CRASH("NYI"); }
+    void loadUnalignedInt32x4(const Address &addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void storeUnalignedInt32x4(FloatRegister src, Address addr) { MOZ_CRASH("NYI"); }
+
+    void loadAlignedFloat32x4(const Address &addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void storeAlignedFloat32x4(FloatRegister src, Address addr) { MOZ_CRASH("NYI"); }
+    void loadUnalignedFloat32x4(const Address &addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void storeUnalignedFloat32x4(FloatRegister src, Address addr) { MOZ_CRASH("NYI"); }
+
     void loadDouble(const Address &addr, FloatRegister dest);
     void loadDouble(const BaseIndex &src, FloatRegister dest);
 
@@ -1091,6 +1110,12 @@ public:
     void store32(Register src, const BaseIndex &address);
     void store32(Imm32 src, const Address &address);
     void store32(Imm32 src, const BaseIndex &address);
+
+    // NOTE: This will use second scratch on MIPS. Only ARM needs the
+    // implementation without second scratch.
+    void store32_NoSecondScratch(Imm32 src, const Address &address) {
+        store32(src, address);
+    }
 
     void storePtr(ImmWord imm, const Address &address);
     void storePtr(ImmPtr imm, const Address &address);
@@ -1236,6 +1261,7 @@ public:
     void callWithABI(void *fun, MoveOp::Type result = MoveOp::GENERAL);
     void callWithABI(AsmJSImmPtr imm, MoveOp::Type result = MoveOp::GENERAL);
     void callWithABI(const Address &fun, MoveOp::Type result = MoveOp::GENERAL);
+    void callWithABI(Register fun, MoveOp::Type result = MoveOp::GENERAL);
 
     CodeOffsetLabel labelForPatch() {
         return CodeOffsetLabel(nextOffset().getOffset());
@@ -1276,7 +1302,11 @@ public:
 #endif
 
     void loadAsmJSActivation(Register dest) {
-        loadPtr(Address(GlobalReg, AsmJSActivationGlobalDataOffset), dest);
+        loadPtr(Address(GlobalReg, AsmJSActivationGlobalDataOffset - AsmJSGlobalRegBias), dest);
+    }
+    void loadAsmJSHeapRegisterFromGlobalData() {
+        MOZ_ASSERT(Imm16::IsInSignedRange(AsmJSHeapGlobalDataOffset - AsmJSGlobalRegBias));
+        loadPtr(Address(GlobalReg, AsmJSHeapGlobalDataOffset - AsmJSGlobalRegBias), HeapReg);
     }
 };
 

@@ -20,7 +20,7 @@ typedef nsSVGPathGeometryElement SVGEllipseElementBase;
 class SVGEllipseElement MOZ_FINAL : public SVGEllipseElementBase
 {
 protected:
-  SVGEllipseElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGEllipseElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   virtual JSObject* WrapNode(JSContext *cx) MOZ_OVERRIDE;
   friend nsresult (::NS_NewSVGEllipseElement(nsIContent **aResult,
                                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
@@ -30,8 +30,7 @@ public:
   virtual bool HasValidDimensions() const MOZ_OVERRIDE;
 
   // nsSVGPathGeometryElement methods:
-  virtual void ConstructPath(gfxContext *aCtx) MOZ_OVERRIDE;
-  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder = nullptr) MOZ_OVERRIDE;
+  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder) MOZ_OVERRIDE;
 
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE;
 

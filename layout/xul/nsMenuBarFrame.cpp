@@ -72,19 +72,19 @@ nsMenuBarFrame::Init(nsIContent*       aContent,
 
   // Hook up the menu bar as a key listener on the whole document.  It will see every
   // key press that occurs, but after everyone else does.
-  mTarget = aContent->GetDocument();
+  mTarget = aContent->GetComposedDoc();
 
   // Also hook up the listener to the window listening for focus events. This is so we can keep proper
   // state as the user alt-tabs through processes.
 
-  mTarget->AddEventListener(NS_LITERAL_STRING("keypress"), mMenuBarListener, false);
-  mTarget->AddEventListener(NS_LITERAL_STRING("keydown"), mMenuBarListener, false);
-  mTarget->AddEventListener(NS_LITERAL_STRING("keyup"), mMenuBarListener, false);
+  mTarget->AddSystemEventListener(NS_LITERAL_STRING("keypress"), mMenuBarListener, false);
+  mTarget->AddSystemEventListener(NS_LITERAL_STRING("keydown"), mMenuBarListener, false);
+  mTarget->AddSystemEventListener(NS_LITERAL_STRING("keyup"), mMenuBarListener, false);
 
   // mousedown event should be handled in all phase
-  mTarget->AddEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, true);
-  mTarget->AddEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, false);
-  mTarget->AddEventListener(NS_LITERAL_STRING("blur"), mMenuBarListener, true);
+  mTarget->AddSystemEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, true);
+  mTarget->AddSystemEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, false);
+  mTarget->AddSystemEventListener(NS_LITERAL_STRING("blur"), mMenuBarListener, true);
 }
 
 NS_IMETHODIMP
@@ -328,7 +328,8 @@ nsMenuBarFrame::ChangeMenuItem(nsMenuFrame* aMenuItem,
   if (pm && pm->HasContextMenu(nullptr))
     return NS_OK;
 
-  nsIContent* aOldMenu = nullptr, *aNewMenu = nullptr;
+  nsIContent* aOldMenu = nullptr;
+  nsIContent* aNewMenu = nullptr;
   
   // Unset the current child.
   bool wasOpen = false;
@@ -410,13 +411,13 @@ nsMenuBarFrame::DestroyFrom(nsIFrame* aDestructRoot)
   if (pm)
     pm->SetActiveMenuBar(this, false);
 
-  mTarget->RemoveEventListener(NS_LITERAL_STRING("keypress"), mMenuBarListener, false); 
-  mTarget->RemoveEventListener(NS_LITERAL_STRING("keydown"), mMenuBarListener, false);  
-  mTarget->RemoveEventListener(NS_LITERAL_STRING("keyup"), mMenuBarListener, false);
+  mTarget->RemoveSystemEventListener(NS_LITERAL_STRING("keypress"), mMenuBarListener, false);
+  mTarget->RemoveSystemEventListener(NS_LITERAL_STRING("keydown"), mMenuBarListener, false);
+  mTarget->RemoveSystemEventListener(NS_LITERAL_STRING("keyup"), mMenuBarListener, false);
 
-  mTarget->RemoveEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, true);
-  mTarget->RemoveEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, false);
-  mTarget->RemoveEventListener(NS_LITERAL_STRING("blur"), mMenuBarListener, true);
+  mTarget->RemoveSystemEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, true);
+  mTarget->RemoveSystemEventListener(NS_LITERAL_STRING("mousedown"), mMenuBarListener, false);
+  mTarget->RemoveSystemEventListener(NS_LITERAL_STRING("blur"), mMenuBarListener, true);
 
   NS_IF_RELEASE(mMenuBarListener);
 

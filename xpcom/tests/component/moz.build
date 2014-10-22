@@ -10,9 +10,7 @@ SOURCES += [
     'TestComponent.cpp',
 ]
 
-LIBRARY_NAME = 'testcomponent'
-
-IS_COMPONENT = True
+XPCOMBinaryComponent('testcomponent')
 
 DEFINES['LIBRARY_FILENAME'] = '%s%s%s' % (
     CONFIG['DLL_PREFIX'],
@@ -20,8 +18,6 @@ DEFINES['LIBRARY_FILENAME'] = '%s%s%s' % (
     CONFIG['DLL_SUFFIX']
 )
 
-USE_LIBS += [
-    'mozalloc',
-    'xpcomglue_s',
-    'xul',
-]
+# Need to link with CoreFoundation on Mac
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    OS_LIBS += CONFIG['TK_LIBS']

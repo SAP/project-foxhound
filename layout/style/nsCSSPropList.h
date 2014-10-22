@@ -1657,7 +1657,7 @@ CSS_PROP_POSITION(
     // its own code to parse each subproperty. It does not depend on the
     // longhand parsing defined here.
     VARIANT_AHKLP | VARIANT_CALC,
-    kWidthKTable,
+    kFlexBasisKTable,
     offsetof(nsStylePosition, mFlexBasis),
     eStyleAnimType_Coord)
 CSS_PROP_POSITION(
@@ -1775,9 +1775,9 @@ CSS_PROP_FONT(
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
 CSS_PROP_FONT(
-    -moz-font-feature-settings,
+    font-feature-settings,
     font_feature_settings,
-    CSS_PROP_DOMPROP_PREFIXED(FontFeatureSettings),
+    FontFeatureSettings,
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
@@ -1794,15 +1794,15 @@ CSS_PROP_FONT(
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     VARIANT_HK,
     kFontKerningKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
 CSS_PROP_FONT(
-    -moz-font-language-override,
+    font-language-override,
     font_language_override,
-    CSS_PROP_DOMPROP_PREFIXED(FontLanguageOverride),
+    FontLanguageOverride,
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
@@ -1884,23 +1884,17 @@ CSS_PROP_FONT(
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     0,
     kFontSynthesisKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
-CSS_PROP_FONT(
+CSS_PROP_SHORTHAND(
     font-variant,
     font_variant,
     FontVariant,
-    CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
-        CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "",
-    VARIANT_HK | VARIANT_SYSFONT,
-    kFontVariantKTable,
-    offsetof(nsStyleFont, mFont.variant),
-    eStyleAnimType_EnumU8)
+    CSS_PROPERTY_PARSE_FUNCTION,
+    "")
 CSS_PROP_FONT(
     font-variant-alternates,
     font_variant_alternates,
@@ -1909,8 +1903,8 @@ CSS_PROP_FONT(
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
-    VARIANT_HK,
+    "",
+    0,
     kFontVariantAlternatesKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
@@ -1921,7 +1915,7 @@ CSS_PROP_FONT(
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     VARIANT_HMK,
     kFontVariantCapsKTable,
     CSS_PROP_NO_OFFSET,
@@ -1934,7 +1928,7 @@ CSS_PROP_FONT(
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     0,
     kFontVariantEastAsianKTable,
     CSS_PROP_NO_OFFSET,
@@ -1947,7 +1941,7 @@ CSS_PROP_FONT(
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     0,
     kFontVariantLigaturesKTable,
     CSS_PROP_NO_OFFSET,
@@ -1960,7 +1954,7 @@ CSS_PROP_FONT(
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     0,
     kFontVariantNumericKTable,
     CSS_PROP_NO_OFFSET,
@@ -1972,7 +1966,7 @@ CSS_PROP_FONT(
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_APPLIES_TO_PLACEHOLDER,
-    "layout.css.font-features.enabled",
+    "",
     VARIANT_HMK,
     kFontVariantPositionKTable,
     CSS_PROP_NO_OFFSET,
@@ -2528,6 +2522,38 @@ CSS_PROP_DISPLAY(
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
 CSS_PROP_DISPLAY(
+    isolation,
+    isolation,
+    Isolation,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_CREATES_STACKING_CONTEXT,
+    "layout.css.isolation.enabled",
+    VARIANT_HK,
+    kIsolationKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_POSITION(
+    object-fit,
+    object_fit,
+    ObjectFit,
+    CSS_PROPERTY_PARSE_VALUE,
+    "layout.css.object-fit-and-position.enabled",
+    VARIANT_HK,
+    kObjectFitKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_POSITION(
+    object-position,
+    object_position,
+    ObjectPosition,
+    CSS_PROPERTY_PARSE_FUNCTION |
+        CSS_PROPERTY_STORES_CALC,
+    "layout.css.object-fit-and-position.enabled",
+    0,
+    kBackgroundPositionKTable,
+    offsetof(nsStylePosition, mObjectPosition),
+    eStyleAnimType_Custom)
+CSS_PROP_DISPLAY(
     opacity,
     opacity,
     Opacity,
@@ -2948,6 +2974,16 @@ CSS_PROP_POSITION(
     nullptr,
     offsetof(nsStylePosition, mOffset),
     eStyleAnimType_Sides_Right)
+CSS_PROP_DISPLAY(
+    scroll-behavior,
+    scroll_behavior,
+    ScrollBehavior,
+    CSS_PROPERTY_PARSE_VALUE,
+    "layout.css.scroll-behavior.property-enabled",
+    VARIANT_HK,
+    kScrollBehaviorKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_BACKENDONLY(
     size,
     size,
@@ -3371,6 +3407,16 @@ CSS_PROP_POSITION(
     kWidthKTable,
     offsetof(nsStylePosition, mWidth),
     eStyleAnimType_Coord)
+CSS_PROP_USERINTERFACE(
+    -moz-window-dragging,
+    _moz_window_dragging,
+    CSS_PROP_DOMPROP_PREFIXED(WindowDragging),
+    CSS_PROPERTY_PARSE_VALUE,
+    "",
+    VARIANT_HK,
+    kWindowDraggingKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_UIRESET(
     -moz-window-shadow,
     _moz_window_shadow,
@@ -3587,10 +3633,10 @@ CSS_PROP_SVGRESET(
     clip-path,
     clip_path,
     ClipPath,
-    CSS_PROPERTY_PARSE_VALUE |
+    CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_CREATES_STACKING_CONTEXT,
     "",
-    VARIANT_HUO,
+    0,
     nullptr,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)

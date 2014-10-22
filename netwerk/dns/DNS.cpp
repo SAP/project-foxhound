@@ -204,6 +204,22 @@ bool IsIPAddrLocal(const NetAddr *addr)
   return false;
 }
 
+nsresult
+GetPort(const NetAddr *aAddr, uint16_t *aResult)
+{
+  uint16_t port;
+  if (aAddr->raw.family == PR_AF_INET) {
+    port = aAddr->inet.port;
+  } else if (aAddr->raw.family == PR_AF_INET6) {
+    port = aAddr->inet6.port;
+  } else {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
+  *aResult = ntohs(port);
+  return NS_OK;
+}
+
 bool
 NetAddr::operator == (const NetAddr& other) const
 {
@@ -280,6 +296,7 @@ AddrInfo::Init(const char *host, const char *cname)
 {
   MOZ_ASSERT(host, "Cannot initialize AddrInfo with a null host pointer!");
 
+  ttl = NO_TTL_DATA;
   size_t hostlen = strlen(host);
   mHostName = static_cast<char*>(moz_xmalloc(hostlen + 1));
   memcpy(mHostName, host, hostlen + 1);

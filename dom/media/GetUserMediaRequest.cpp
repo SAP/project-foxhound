@@ -8,7 +8,6 @@
 #include "mozilla/dom/GetUserMediaRequestBinding.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
-#include "nsCxPusher.h"
 
 namespace mozilla {
 namespace dom {
@@ -24,7 +23,6 @@ GetUserMediaRequest::GetUserMediaRequest(
   , mConstraints(new MediaStreamConstraints(aConstraints))
   , mIsSecure(aIsSecure)
 {
-  SetIsDOMBinding();
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(GetUserMediaRequest)

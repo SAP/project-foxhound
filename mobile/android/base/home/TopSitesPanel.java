@@ -5,6 +5,9 @@
 
 package org.mozilla.gecko.home;
 
+import static org.mozilla.gecko.db.URLMetadataTable.TILE_COLOR_COLUMN;
+import static org.mozilla.gecko.db.URLMetadataTable.TILE_IMAGE_URL_COLUMN;
+
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -19,10 +22,10 @@ import org.mozilla.gecko.db.BrowserContract.Thumbnails;
 import org.mozilla.gecko.db.BrowserContract.TopSites;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.URLMetadata;
-import org.mozilla.gecko.db.URLMetadataTable;
 import org.mozilla.gecko.favicons.Favicons;
 import org.mozilla.gecko.favicons.OnFaviconLoadedListener;
 import org.mozilla.gecko.gfx.BitmapUtils;
+import org.mozilla.gecko.home.HomeContextMenuInfo.RemoveItemType;
 import org.mozilla.gecko.home.HomePager.OnUrlOpenListener;
 import org.mozilla.gecko.home.PinSiteDialog.OnSiteSelectedListener;
 import org.mozilla.gecko.home.TopSitesGridView.OnEditPinnedSiteListener;
@@ -30,17 +33,12 @@ import org.mozilla.gecko.home.TopSitesGridView.TopSitesGridContextMenuInfo;
 import org.mozilla.gecko.util.StringUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
-import static org.mozilla.gecko.db.URLMetadataTable.TILE_IMAGE_URL_COLUMN;
-import static org.mozilla.gecko.db.URLMetadataTable.TILE_COLOR_COLUMN;
-
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.support.v4.app.FragmentManager;
@@ -97,25 +95,15 @@ public class TopSitesPanel extends HomeFragment {
     // Listener for editing pinned sites.
     private EditPinnedSiteListener mEditPinnedSiteListener;
 
-    // On URL open listener
-    private OnUrlOpenListener mUrlOpenListener;
-
     // Max number of entries shown in the grid from the cursor.
     private int mMaxGridEntries;
-
-    // Time in ms until the Gecko thread is reset to normal priority.
-    private static final long PRIORITY_RESET_TIMEOUT = 10000;
 
     public static TopSitesPanel newInstance() {
         return new TopSitesPanel();
     }
 
-    public TopSitesPanel() {
-        mUrlOpenListener = null;
-    }
-
-    private static boolean logDebug = Log.isLoggable(LOGTAG, Log.DEBUG);
-    private static boolean logVerbose = Log.isLoggable(LOGTAG, Log.VERBOSE);
+    private static final boolean logDebug = Log.isLoggable(LOGTAG, Log.DEBUG);
+    private static final boolean logVerbose = Log.isLoggable(LOGTAG, Log.VERBOSE);
 
     private static void debug(final String message) {
         if (logDebug) {
@@ -134,20 +122,6 @@ public class TopSitesPanel extends HomeFragment {
         super.onAttach(activity);
 
         mMaxGridEntries = activity.getResources().getInteger(R.integer.number_of_top_sites);
-
-        try {
-            mUrlOpenListener = (OnUrlOpenListener) activity;
-        } catch (ClassCastException e) {
-            throw new ClassCastException(activity.toString()
-                    + " must implement HomePager.OnUrlOpenListener");
-        }
-    }
-
-    @Override
-    public void onDetach() {
-        super.onDetach();
-
-        mUrlOpenListener = null;
     }
 
     @Override
@@ -203,6 +177,7 @@ public class TopSitesPanel extends HomeFragment {
                 info.url = cursor.getString(cursor.getColumnIndexOrThrow(TopSites.URL));
                 info.title = cursor.getString(cursor.getColumnIndexOrThrow(TopSites.TITLE));
                 info.historyId = cursor.getInt(cursor.getColumnIndexOrThrow(TopSites.HISTORY_ID));
+                info.itemType = RemoveItemType.HISTORY;
                 final int bookmarkIdCol = cursor.getColumnIndexOrThrow(TopSites.BOOKMARK_ID);
                 if (cursor.isNull(bookmarkIdCol)) {
                     // If this is a combined cursor, we may get a history item without a
@@ -234,19 +209,6 @@ public class TopSitesPanel extends HomeFragment {
         mGrid = null;
         mListAdapter = null;
         mGridAdapter = null;
-    }
-
-    @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-
-        // Detach and reattach the fragment as the layout changes.
-        if (isVisible()) {
-            getFragmentManager().beginTransaction()
-                                .detach(this)
-                                .attach(this)
-                                .commitAllowingStateLoss();
-        }
     }
 
     @Override
@@ -319,7 +281,7 @@ public class TopSitesPanel extends HomeFragment {
 
         ContextMenuInfo menuInfo = item.getMenuInfo();
 
-        if (menuInfo == null || !(menuInfo instanceof TopSitesGridContextMenuInfo)) {
+        if (!(menuInfo instanceof TopSitesGridContextMenuInfo)) {
             return false;
         }
 
@@ -382,7 +344,7 @@ public class TopSitesPanel extends HomeFragment {
         // appear, especially during startup (bug 897162). By minimizing the
         // Gecko thread priority, we ensure that the UI appears quickly. The
         // priority is reset to normal once thumbnails are loaded.
-        ThreadUtils.reduceGeckoPriority(PRIORITY_RESET_TIMEOUT);
+        ThreadUtils.reduceGeckoPriority();
     }
 
     /**
@@ -398,17 +360,16 @@ public class TopSitesPanel extends HomeFragment {
 
         @Override
         public void onEditPinnedSite(int position, String searchTerm) {
-            mPosition = position;
-
             final FragmentManager manager = getChildFragmentManager();
             PinSiteDialog dialog = (PinSiteDialog) manager.findFragmentByTag(TAG_PIN_SITE);
             if (dialog == null) {
-                dialog = PinSiteDialog.newInstance();
-            }
+                mPosition = position;
 
-            dialog.setOnSiteSelectedListener(this);
-            dialog.setSearchTerm(searchTerm);
-            dialog.show(manager, TAG_PIN_SITE);
+                dialog = PinSiteDialog.newInstance();
+                dialog.setOnSiteSelectedListener(this);
+                dialog.setSearchTerm(searchTerm);
+                dialog.show(manager, TAG_PIN_SITE);
+            }
         }
 
         @Override
@@ -442,7 +403,7 @@ public class TopSitesPanel extends HomeFragment {
         // Max number of search results.
         private static final int SEARCH_LIMIT = 30;
         private static final String TELEMETRY_HISTOGRAM_LOAD_CURSOR = "FENNEC_TOPSITES_LOADER_TIME_MS";
-        private int mMaxGridEntries;
+        private final int mMaxGridEntries;
 
         public TopSitesLoader(Context context) {
             super(context);
@@ -581,7 +542,7 @@ public class TopSitesPanel extends HomeFragment {
 
             // If we have no thumbnail, attempt to show a Favicon instead.
             LoadIDAwareFaviconLoadedListener listener = new LoadIDAwareFaviconLoadedListener(view);
-            final int loadId = Favicons.getSizedFaviconForPageFromLocal(url, listener);
+            final int loadId = Favicons.getSizedFaviconForPageFromLocal(context, url, listener);
             if (loadId == Favicons.LOADED) {
                 // Great!
                 return;
@@ -711,6 +672,10 @@ public class TopSitesPanel extends HomeFragment {
         }
 
         public static ThumbnailInfo fromMetadata(final Map<String, Object> data) {
+            if (data == null) {
+                return null;
+            }
+
             final String imageUrl = (String) data.get(TILE_IMAGE_URL_COLUMN);
             if (imageUrl == null) {
                 return null;
@@ -733,7 +698,7 @@ public class TopSitesPanel extends HomeFragment {
     @SuppressWarnings("serial")
     static class ThumbnailsLoader extends AsyncTaskLoader<Map<String, ThumbnailInfo>> {
         private Map<String, ThumbnailInfo> mThumbnailInfos;
-        private ArrayList<String> mUrls;
+        private final ArrayList<String> mUrls;
 
         private static final ArrayList<String> COLUMNS = new ArrayList<String>() {{
             add(TILE_IMAGE_URL_COLUMN);
@@ -757,22 +722,16 @@ public class TopSitesPanel extends HomeFragment {
             final Map<String, Map<String, Object>> metadata = URLMetadata.getForUrls(cr, mUrls, COLUMNS);
 
             // Keep a list of urls that don't have tiles images. We'll use thumbnails for them instead.
-            final List<String> thumbnailUrls;
-            if (metadata != null) {
-                thumbnailUrls = new ArrayList<String>();
-
-                for (String url : metadata.keySet()) {
-                    ThumbnailInfo info = ThumbnailInfo.fromMetadata(metadata.get(url));
-                    if (info == null) {
-                        // If we didn't find metadata, we'll look for a thumbnail for this url.
-                        thumbnailUrls.add(url);
-                        continue;
-                    }
-
-                    thumbnails.put(url, info);
+            final List<String> thumbnailUrls = new ArrayList<String>();
+            for (String url : mUrls) {
+                ThumbnailInfo info = ThumbnailInfo.fromMetadata(metadata.get(url));
+                if (info == null) {
+                    // If we didn't find metadata, we'll look for a thumbnail for this url.
+                    thumbnailUrls.add(url);
+                    continue;
                 }
-            } else {
-                thumbnailUrls = new ArrayList<String>(mUrls);
+
+                thumbnails.put(url, info);
             }
 
             if (thumbnailUrls.size() == 0) {

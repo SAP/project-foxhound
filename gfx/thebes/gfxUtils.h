@@ -12,6 +12,7 @@
 #include "imgIContainer.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/RefPtr.h"
+#include "nsColor.h"
 #include "nsPrintfCString.h"
 
 class gfxASurface;
@@ -25,6 +26,9 @@ namespace mozilla {
 namespace layers {
 struct PlanarYCbCrData;
 }
+namespace image {
+class ImageRegion;
+}
 }
 
 class gfxUtils {
@@ -35,6 +39,7 @@ public:
     typedef mozilla::gfx::Matrix Matrix;
     typedef mozilla::gfx::SourceSurface SourceSurface;
     typedef mozilla::gfx::SurfaceFormat SurfaceFormat;
+    typedef mozilla::image::ImageRegion ImageRegion;
 
     /*
      * Premultiply or Unpremultiply aSourceSurface, writing the result
@@ -71,16 +76,14 @@ public:
      * will tweak the rects and transforms that it gets from the pixel snapping
      * algorithm before passing them on to this method.
      */
-    static void DrawPixelSnapped(gfxContext*      aContext,
-                                 gfxDrawable*     aDrawable,
-                                 const gfxMatrix& aUserSpaceToImageSpace,
-                                 const gfxRect&   aSubimage,
-                                 const gfxRect&   aSourceRect,
-                                 const gfxRect&   aImageRect,
-                                 const gfxRect&   aFill,
+    static void DrawPixelSnapped(gfxContext*        aContext,
+                                 gfxDrawable*       aDrawable,
+                                 const gfxSize&     aImageSize,
+                                 const ImageRegion& aRegion,
                                  const mozilla::gfx::SurfaceFormat aFormat,
-                                 GraphicsFilter aFilter,
-                                 uint32_t         aImageFlags = imgIContainer::FLAG_NONE);
+                                 GraphicsFilter     aFilter,
+                                 uint32_t           aImageFlags = imgIContainer::FLAG_NONE,
+                                 gfxFloat           aOpacity = 1.0);
 
     /**
      * Clip aContext to the region aRegion.
@@ -96,11 +99,6 @@ public:
      * Clip aContext to the region aRegion, snapping the rectangles.
      */
     static void ClipToRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion);
-
-    /**
-     * Clip aTarget to the region aRegion, snapping the rectangles.
-     */
-    static void ClipToRegionSnapped(mozilla::gfx::DrawTarget* aTarget, const nsIntRegion& aRegion);
 
     /**
      * Create a path consisting of rectangles in |aRegion|.
@@ -312,6 +310,16 @@ public:
 namespace mozilla {
 namespace gfx {
 
+/**
+ * If the CMS mode is eCMSMode_All, these functions transform the passed
+ * color to a device color using the transform returened by gfxPlatform::
+ * GetCMSRGBTransform().  If the CMS mode is some other value, the color is
+ * returned unchanged (other than a type change to Moz2D Color, if
+ * applicable).
+ */
+Color ToDeviceColor(Color aColor);
+Color ToDeviceColor(nscolor aColor);
+Color ToDeviceColor(const gfxRGBA& aColor);
 
 /* These techniques are suggested by "Bit Twiddling Hacks"
  */

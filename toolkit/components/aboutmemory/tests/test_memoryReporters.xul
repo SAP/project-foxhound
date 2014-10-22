@@ -97,8 +97,8 @@
       present.images = true;
     } else if (aPath.search(/^explicit\/xpti-working-set$/) >= 0) {
       present.xptiWorkingSet = true;
-    } else if (aPath.search(/^explicit\/atom-tables$/) >= 0) {
-      present.atomTable = true;
+    } else if (aPath.search(/^explicit\/atom-tables\/main$/) >= 0) {
+      present.atomTablesMain = true;
     } else if (/\[System Principal\].*this-is-a-sandbox-name/.test(aPath)) {
       // A system compartment with a location (such as a sandbox) should
       // show that location.
@@ -113,7 +113,7 @@
 
     // Shouldn't get any anonymized paths.
     if (aPath.contains('<anonymized')) {
-        present.anonymizedWhenUnnecessary = true;
+        present.anonymizedWhenUnnecessary = aPath;
     }
   }
 
@@ -122,12 +122,12 @@
   {
     // Shouldn't get http: or https: in any paths.
     if (aPath.contains('http:')) {
-        present.httpWhenAnonymized = true;
+        present.httpWhenAnonymized = aPath;
     }
 
     // file: URLs should have their path anonymized.
     if (aPath.search('file:..[^<]') !== -1) {
-        present.unanonymizedFilePathWhenAnonymized = true;
+        present.unanonymizedFilePathWhenAnonymized = aPath;
     }
   }
 
@@ -224,16 +224,21 @@
   ok(present.places,                      "places is present");
   ok(present.images,                      "images is present");
   ok(present.xptiWorkingSet,              "xpti-working-set is present");
-  ok(present.atomTable,                   "atom-table is present");
+  ok(present.atomTablesMain,              "atom-tables/main is present");
   ok(present.sandboxLocation,             "sandbox locations are present");
   ok(present.bigString,                   "large string is present");
   ok(present.smallString1,                "small string 1 is present");
   ok(present.smallString2,                "small string 2 is present");
 
-  ok(!present.anonymizedWhenUnnecessary,  "anonymized paths are not present when unnecessary");
-  ok(!present.httpWhenAnonymized,         "http URLs are anonymized when necessary");
+  ok(!present.anonymizedWhenUnnecessary,
+     "anonymized paths are not present when unnecessary. Failed case: " +
+     present.anonymizedWhenUnnecessary);
+  ok(!present.httpWhenAnonymized,
+     "http URLs are anonymized when necessary. Failed case: " +
+     present.httpWhenAnonymized);
   ok(!present.unanonymizedFilePathWhenAnonymized,
-                                          "file URLs are anonymized when necessary");
+     "file URLs are anonymized when necessary. Failed case: " +
+     present.unanonymizedFilePathWhenAnonymized);
 
   // Reporter registration tests
 

@@ -5,24 +5,23 @@
 
 package org.mozilla.gecko;
 
-import org.mozilla.gecko.util.GeckoEventListener;
-import org.mozilla.gecko.util.ThreadUtils;
-import org.mozilla.gecko.widget.ArrowPopup;
-import org.mozilla.gecko.widget.DoorHanger;
-import org.mozilla.gecko.prompts.PromptInput;
+import java.util.HashSet;
+import java.util.List;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.mozilla.gecko.AppConstants.Versions;
+import org.mozilla.gecko.prompts.PromptInput;
+import org.mozilla.gecko.util.GeckoEventListener;
+import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.widget.ArrowPopup;
+import org.mozilla.gecko.widget.DoorHanger;
 
 import android.content.Context;
-import android.os.Build;
 import android.util.Log;
 import android.view.View;
 import android.widget.CheckBox;
-
-import java.util.HashSet;
-import java.util.List;
 
 public class DoorHangerPopup extends ArrowPopup
                              implements GeckoEventListener,
@@ -32,7 +31,7 @@ public class DoorHangerPopup extends ArrowPopup
 
     // Stores a set of all active DoorHanger notifications. A DoorHanger is
     // uniquely identified by its tabId and value.
-    private HashSet<DoorHanger> mDoorHangers;
+    private final HashSet<DoorHanger> mDoorHangers;
 
     // Whether or not the doorhanger popup is disabled.
     private boolean mDisabled;
@@ -185,7 +184,7 @@ public class DoorHangerPopup extends ArrowPopup
         mDoorHangers.add(newDoorHanger);
         mContent.addView(newDoorHanger);
 
-        // Only update the popup if we're adding a notifcation to the selected tab
+        // Only update the popup if we're adding a notification to the selected tab
         if (tabId == Tabs.getInstance().getSelectedTab().getId())
             updatePopup();
     }
@@ -311,13 +310,13 @@ public class DoorHangerPopup extends ArrowPopup
         // Make the popup focusable for accessibility. This gets done here
         // so the node can be accessibility focused, but on pre-ICS devices this
         // causes crashes, so it is done after the popup is shown.
-        if (Build.VERSION.SDK_INT >= 14) {
+        if (Versions.feature14Plus) {
             setFocusable(true);
         }
 
         show();
 
-        if (Build.VERSION.SDK_INT < 14) {
+        if (Versions.preICS) {
             // Make the popup focusable for keyboard accessibility.
             setFocusable(true);
         }

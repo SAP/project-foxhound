@@ -5,7 +5,7 @@
 
 #include "DeviceManagerD3D9.h"
 #include "LayerManagerD3D9Shaders.h"
-#include "ThebesLayerD3D9.h"
+#include "PaintedLayerD3D9.h"
 #include "nsIServiceManager.h"
 #include "nsIConsoleService.h"
 #include "nsPrintfCString.h"
@@ -17,6 +17,7 @@
 #include "gfxWindowsPlatform.h"
 #include "TextureD3D9.h"
 #include "mozilla/gfx/Point.h"
+#include "gfxPrefs.h"
 
 namespace mozilla {
 namespace layers {
@@ -201,18 +202,20 @@ DeviceManagerD3D9::Init()
     return false;
   }
 
-  /* Create an Nv3DVUtils instance */ 
-  if (!mNv3DVUtils) { 
-    mNv3DVUtils = new Nv3DVUtils(); 
-    if (!mNv3DVUtils) { 
-      NS_WARNING("Could not create a new instance of Nv3DVUtils.\n"); 
-    } 
-  } 
+  if (gfxPrefs::StereoVideoEnabled()) {
+    /* Create an Nv3DVUtils instance */
+    if (!mNv3DVUtils) {
+      mNv3DVUtils = new Nv3DVUtils();
+      if (!mNv3DVUtils) {
+        NS_WARNING("Could not create a new instance of Nv3DVUtils.\n");
+      }
+    }
 
-  /* Initialize the Nv3DVUtils object */ 
-  if (mNv3DVUtils) { 
-    mNv3DVUtils->Initialize(); 
-  } 
+    /* Initialize the Nv3DVUtils object */
+    if (mNv3DVUtils) {
+      mNv3DVUtils->Initialize();
+    }
+  }
 
   HMODULE d3d9 = LoadLibraryW(L"d3d9.dll");
   decltype(Direct3DCreate9)* d3d9Create = (decltype(Direct3DCreate9)*)

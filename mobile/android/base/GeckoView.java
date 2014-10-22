@@ -12,6 +12,9 @@ import org.mozilla.gecko.util.Clipboard;
 import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.util.EventCallback;
+import org.mozilla.gecko.util.NativeEventListener;
+import org.mozilla.gecko.util.NativeJSObject;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -21,21 +24,88 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
+import android.os.Bundle;
 import android.os.Handler;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.View;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 public class GeckoView extends LayerView
-    implements GeckoEventListener, ContextGetter {
+    implements ContextGetter {
 
     private static final String DEFAULT_SHARED_PREFERENCES_FILE = "GeckoView";
     private static final String LOGTAG = "GeckoView";
 
     private ChromeDelegate mChromeDelegate;
     private ContentDelegate mContentDelegate;
+
+    private final GeckoEventListener mGeckoEventListener = new GeckoEventListener() {
+        @Override
+        public void handleMessage(final String event, final JSONObject message) {
+            ThreadUtils.postToUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (event.equals("Gecko:Ready")) {
+                            handleReady(message);
+                        } else if (event.equals("Content:StateChange")) {
+                            handleStateChange(message);
+                        } else if (event.equals("Content:LoadError")) {
+                            handleLoadError(message);
+                        } else if (event.equals("Content:PageShow")) {
+                            handlePageShow(message);
+                        } else if (event.equals("DOMTitleChanged")) {
+                            handleTitleChanged(message);
+                        } else if (event.equals("Link:Favicon")) {
+                            handleLinkFavicon(message);
+                        } else if (event.equals("Prompt:Show") || event.equals("Prompt:ShowTop")) {
+                            handlePrompt(message);
+                        } else if (event.equals("Accessibility:Event")) {
+                            int mode = getImportantForAccessibility();
+                            if (mode == View.IMPORTANT_FOR_ACCESSIBILITY_YES ||
+                                mode == View.IMPORTANT_FOR_ACCESSIBILITY_AUTO) {
+                                GeckoAccessibility.sendAccessibilityEvent(message);
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.e(LOGTAG, "handleMessage threw for " + event, e);
+                    }
+                }
+            });
+        }
+    };
+
+    private final NativeEventListener mNativeEventListener = new NativeEventListener() {
+        @Override
+        public void handleMessage(final String event, final NativeJSObject message, final EventCallback callback) {
+            try {
+                if ("Accessibility:Ready".equals(event)) {
+                    GeckoAccessibility.updateAccessibilitySettings(getContext());
+                } else if ("GeckoView:Message".equals(event)) {
+                    // We need to pull out the bundle while on the Gecko thread.
+                    NativeJSObject json = message.optObject("data", null);
+                    if (json == null) {
+                        // Must have payload to call the message handler.
+                        return;
+                    }
+                    final Bundle data = json.toBundle();
+                    ThreadUtils.postToUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            handleScriptMessage(data, callback);
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                Log.w(LOGTAG, "handleMessage threw for " + event, e);
+            }
+        }
+    };
 
     public GeckoView(Context context) {
         super(context);
@@ -93,8 +163,9 @@ public class GeckoView extends LayerView
             tabs.attachToContext(context);
         }
 
-        EventDispatcher.getInstance().registerGeckoThreadListener(this,
+        EventDispatcher.getInstance().registerGeckoThreadListener(mGeckoEventListener,
             "Gecko:Ready",
+            "Accessibility:Event",
             "Content:StateChange",
             "Content:LoadError",
             "Content:PageShow",
@@ -103,7 +174,10 @@ public class GeckoView extends LayerView
             "Prompt:Show",
             "Prompt:ShowTop");
 
-        ThreadUtils.setUiThread(Thread.currentThread(), new Handler());
+        EventDispatcher.getInstance().registerGeckoThreadListener(mNativeEventListener,
+            "Accessibility:Ready",
+            "GeckoView:Message");
+
         initializeView(EventDispatcher.getInstance());
 
         if (GeckoThread.checkAndSetLaunchState(GeckoThread.LaunchState.Launching, GeckoThread.LaunchState.Launched)) {
@@ -112,6 +186,8 @@ public class GeckoView extends LayerView
             BrowserDB.initialize(profile.getName());
 
             GeckoAppShell.setLayerView(this);
+            GeckoAppShell.sendEventToGecko(GeckoEvent.createObjectEvent(
+                GeckoEvent.ACTION_OBJECT_LAYER_CLIENT, getLayerClientObject()));
             GeckoThread.createAndStart();
         } else if(GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning)) {
             // If Gecko is already running, that means the Activity was
@@ -179,34 +255,13 @@ public class GeckoView extends LayerView
         return Collections.unmodifiableList(browsers);
     }
 
-    /**
-    * Not part of the public API. Ignore.
-    */
-    public void handleMessage(final String event, final JSONObject message) {
-        ThreadUtils.postToUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (event.equals("Gecko:Ready")) {
-                        GeckoView.this.handleReady(message);
-                    } else if (event.equals("Content:StateChange")) {
-                        GeckoView.this.handleStateChange(message);
-                    } else if (event.equals("Content:LoadError")) {
-                        GeckoView.this.handleLoadError(message);
-                    } else if (event.equals("Content:PageShow")) {
-                        GeckoView.this.handlePageShow(message);
-                    } else if (event.equals("DOMTitleChanged")) {
-                        GeckoView.this.handleTitleChanged(message);
-                    } else if (event.equals("Link:Favicon")) {
-                        GeckoView.this.handleLinkFavicon(message);
-                    } else if (event.equals("Prompt:Show") || event.equals("Prompt:ShowTop")) {
-                        GeckoView.this.handlePrompt(message);
-                    }
-                } catch (Exception e) {
-                    Log.w(LOGTAG, "handleMessage threw for " + event, e);
-                }
-            }
-        });
+    public void importScript(final String url) {
+        if (url.startsWith("resource://android/assets/")) {
+            GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("GeckoView:ImportScript", url));
+            return;
+        }
+
+        throw new IllegalArgumentException("Must import script from 'resources://android/assets/' location.");
     }
 
     private void connectToGecko() {
@@ -215,7 +270,6 @@ public class GeckoView extends LayerView
         if (selectedTab != null)
             Tabs.getInstance().notifyListeners(selectedTab, Tabs.TabEvents.SELECTED);
         geckoConnected();
-        GeckoAppShell.setLayerClient(getLayerClientObject());
         GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Viewport:Flush", null));
     }
 
@@ -291,6 +345,16 @@ public class GeckoView extends LayerView
         }
     }
 
+    private void handleScriptMessage(final Bundle data, final EventCallback callback) {
+        if (mChromeDelegate != null) {
+            MessageResult result = null;
+            if (callback != null) {
+                result = new MessageResult(callback);
+            }
+            mChromeDelegate.onScriptMessage(GeckoView.this, data, result);
+        }
+    }
+
     /**
     * Set the chrome callback handler.
     * This will replace the current handler.
@@ -321,6 +385,7 @@ public class GeckoView extends LayerView
         return DEFAULT_SHARED_PREFERENCES_FILE;
     }
 
+    @Override
     public SharedPreferences getSharedPreferences() {
         return getContext().getSharedPreferences(getSharedPreferencesFile(), 0);
     }
@@ -482,6 +547,51 @@ public class GeckoView extends LayerView
         }
     }
 
+    /* Provides a means for the client to respond to a script message with some data.
+     * An instance of this class is passed to GeckoViewChrome.onScriptMessage.
+     */
+    public class MessageResult {
+        private final EventCallback mCallback;
+
+        public MessageResult(EventCallback callback) {
+            if (callback == null) {
+                throw new IllegalArgumentException("EventCallback should not be null.");
+            }
+            mCallback = callback;
+        }
+
+        private JSONObject bundleToJSON(Bundle data) {
+            JSONObject result = new JSONObject();
+            if (data == null) {
+                return result;
+            }
+
+            final Set<String> keys = data.keySet();
+            for (String key : keys) {
+                try {
+                    result.put(key, data.get(key));
+                } catch (JSONException e) {
+                }
+            }
+            return result;
+        }
+
+        /**
+        * Handle a successful response to a script message.
+        * @param value Bundle value to return to the script context.
+        */
+        public void success(Bundle data) {
+            mCallback.sendSuccess(bundleToJSON(data));
+        }
+
+        /**
+        * Handle a failure response to a script message.
+        */
+        public void failure(Bundle data) {
+            mCallback.sendError(bundleToJSON(data));
+        }
+    }
+
     public interface ChromeDelegate {
         /**
         * Tell the host application that Gecko is ready to handle requests.
@@ -527,6 +637,15 @@ public class GeckoView extends LayerView
         * Defaults to cancel requests.
         */
         public void onDebugRequest(GeckoView view, GeckoView.PromptResult result);
+
+        /**
+        * Receive a message from an imported script.
+        * @param view The GeckoView that initiated the callback.
+        * @param data Bundle of data sent with the message. Never null.
+        * @param result A MessageResult used to send back a response without blocking. Can be null.
+        * Defaults to do nothing.
+        */
+        public void onScriptMessage(GeckoView view, Bundle data, GeckoView.MessageResult result);
     }
 
     public interface ContentDelegate {
@@ -542,10 +661,10 @@ public class GeckoView extends LayerView
         * A Browser has finished loading content from the network.
         * @param view The GeckoView that initiated the callback.
         * @param browser The Browser that was loading the content.
-        * @param success Whether the page loaded successfully or an error occured.
+        * @param success Whether the page loaded successfully or an error occurred.
         */
         public void onPageStop(GeckoView view, GeckoView.Browser browser, boolean success);
-    
+
         /**
         * A Browser is displaying content. This page could have been loaded via
         * network or from the session history.
@@ -553,7 +672,7 @@ public class GeckoView extends LayerView
         * @param browser The Browser that is showing the content.
         */
         public void onPageShow(GeckoView view, GeckoView.Browser browser);
-    
+
         /**
         * A page title was discovered in the content or updated after the content
         * loaded.
@@ -562,7 +681,7 @@ public class GeckoView extends LayerView
         * @param title The title sent from the content.
         */
         public void onReceivedTitle(GeckoView view, GeckoView.Browser browser, String title);
-    
+
         /**
         * A link element was discovered in the content or updated after the content
         * loaded that specifies a favicon.

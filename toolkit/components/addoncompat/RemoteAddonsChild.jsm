@@ -42,45 +42,52 @@ let NotificationTracker = {
   init: function() {
     let cpmm = Cc["@mozilla.org/childprocessmessagemanager;1"]
                .getService(Ci.nsISyncMessageSender);
-    cpmm.addMessageListener("Addons:AddNotification", this);
-    cpmm.addMessageListener("Addons:RemoveNotification", this);
+    cpmm.addMessageListener("Addons:ChangeNotification", this);
     let [paths] = cpmm.sendSyncMessage("Addons:GetNotifications");
     this._paths = paths;
+    this._registered = new Map();
     this._watchers = {};
   },
 
   receiveMessage: function(msg) {
-    let path = msg.data;
+    let path = msg.data.path;
+    let count = msg.data.count;
 
     let tracked = this._paths;
     for (let component of path) {
       tracked = setDefault(tracked, component, {});
     }
-    let count = tracked._count || 0;
-
-    switch (msg.name) {
-    case "Addons:AddNotification":
-      count++;
-      break;
-    case "Addons:RemoveNotification":
-      count--;
-      break;
-    }
 
     tracked._count = count;
 
-    for (let cb of this._watchers[path[0]]) {
-      cb(path, count);
+    if (this._watchers[path[0]]) {
+      for (let watcher of this._watchers[path[0]]) {
+        this.runCallback(watcher, path, count);
+      }
     }
   },
 
-  watch: function(component1, callback) {
-    setDefault(this._watchers, component1, []).push(callback);
+  runCallback: function(watcher, path, count) {
+    let pathString = path.join("/");
+    let registeredSet = this._registered.get(watcher);
+    let registered = registeredSet.has(pathString);
+    if (count && !registered) {
+      watcher.track(path, true);
+      registeredSet.add(pathString);
+    } else if (!count && registered) {
+      watcher.track(path, false);
+      registeredSet.delete(pathString);
+    }
+  },
 
-    function enumerate(tracked, curPath) {
+  watch: function(component1, watcher) {
+    setDefault(this._watchers, component1, []).push(watcher);
+    this._registered.set(watcher, new Set());
+
+    let enumerate = (tracked, curPath) => {
       for (let component in tracked) {
         if (component == "_count") {
-          callback(curPath, tracked._count);
+          this.runCallback(watcher, curPath, tracked._count);
         } else {
           let path = curPath.slice();
           if (component === "true") {
@@ -94,7 +101,17 @@ let NotificationTracker = {
       }
     }
     enumerate(this._paths[component1] || {}, [component1]);
-  }
+  },
+
+  unwatch: function(component1, watcher) {
+    let watchers = this._watchers[component1];
+    let index = watchers.lastIndexOf(watcher);
+    if (index > -1) {
+      watchers.splice(index, 1);
+    }
+
+    this._registered.delete(watcher);
+  },
 };
 
 // This code registers an nsIContentPolicy in the child process. When
@@ -110,18 +127,18 @@ let ContentPolicyChild = {
     let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
     registrar.registerFactory(this._classID, this._classDescription, this._contractID, this);
 
-    NotificationTracker.watch("content-policy", (path, count) => this.track(path, count));
+    NotificationTracker.watch("content-policy", this);
   },
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPolicy, Ci.nsIObserver,
                                          Ci.nsIChannelEventSink, Ci.nsIFactory,
                                          Ci.nsISupportsWeakReference]),
 
-  track: function(path, count) {
+  track: function(path, register) {
     let catMan = Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
-    if (count == 1) {
+    if (register) {
       catMan.addCategoryEntry("content-policy", this._contractID, this._contractID, false, true);
-    } else if (count == 0) {
+    } else {
       catMan.deleteCategoryEntry("content-policy", this._contractID, false);
     }
   },
@@ -129,7 +146,7 @@ let ContentPolicyChild = {
   shouldLoad: function(contentType, contentLocation, requestOrigin, node, mimeTypeGuess, extra) {
     let cpmm = Cc["@mozilla.org/childprocessmessagemanager;1"]
                .getService(Ci.nsISyncMessageSender);
-    var rval = cpmm.sendRpcMessage("Addons:ContentPolicy:Run", {}, {
+    let rval = cpmm.sendRpcMessage("Addons:ContentPolicy:Run", {}, {
       contentType: contentType,
       mimeTypeGuess: mimeTypeGuess,
       contentLocation: contentLocation,
@@ -157,15 +174,11 @@ let ContentPolicyChild = {
 
 // This is a shim channel whose only purpose is to return some string
 // data from an about: protocol handler.
-function AboutProtocolChannel(data, uri, originalURI, contentType)
+function AboutProtocolChannel(uri, contractID)
 {
-  let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(Ci.nsIStringInputStream);
-  stream.setData(data, data.length);
-  this._stream = stream;
-
-  this.URI = BrowserUtils.makeURI(uri);
-  this.originalURI = BrowserUtils.makeURI(originalURI);
-  this.contentType = contentType;
+  this.URI = uri;
+  this.originalURI = uri;
+  this._contractID = contractID;
 }
 
 AboutProtocolChannel.prototype = {
@@ -180,13 +193,35 @@ AboutProtocolChannel.prototype = {
   status: Cr.NS_OK,
 
   asyncOpen: function(listener, context) {
+    // Ask the parent to synchronously read all the data from the channel.
+    let cpmm = Cc["@mozilla.org/childprocessmessagemanager;1"]
+               .getService(Ci.nsISyncMessageSender);
+    let rval = cpmm.sendRpcMessage("Addons:AboutProtocol:OpenChannel", {
+      uri: this.URI.spec,
+      contractID: this._contractID
+    }, {
+      notificationCallbacks: this.notificationCallbacks,
+      loadGroupNotificationCallbacks: this.loadGroup.notificationCallbacks
+    });
+
+    if (rval.length != 1) {
+      throw Cr.NS_ERROR_FAILURE;
+    }
+
+    let {data, contentType} = rval[0];
+    this.contentType = contentType;
+
+    // Return the data via an nsIStringInputStream.
+    let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(Ci.nsIStringInputStream);
+    stream.setData(data, data.length);
+
     let runnable = {
       run: () => {
         try {
           listener.onStartRequest(this, context);
         } catch(e) {}
         try {
-          listener.onDataAvailable(this, context, this._stream, 0, this._stream.available());
+          listener.onDataAvailable(this, context, stream, 0, stream.available());
         } catch(e) {}
         try {
           listener.onStopRequest(this, context, Cr.NS_OK);
@@ -244,7 +279,7 @@ AboutProtocolInstance.prototype = {
     let cpmm = Cc["@mozilla.org/childprocessmessagemanager;1"]
                .getService(Ci.nsISyncMessageSender);
 
-    var rval = cpmm.sendRpcMessage("Addons:AboutProtocol:GetURIFlags", {
+    let rval = cpmm.sendRpcMessage("Addons:AboutProtocol:GetURIFlags", {
       uri: uri.spec,
       contractID: this._contractID
     });
@@ -260,25 +295,11 @@ AboutProtocolInstance.prototype = {
   // We take some shortcuts here. Ideally, we would return a CPOW that
   // wraps the add-on's nsIChannel. However, many of the methods
   // related to nsIChannel are marked [noscript], so they're not
-  // available to CPOWs. Consequently, the parent simply reads all the
-  // data out of the add-on's channel and returns that as a string. We
-  // create a new AboutProtocolChannel whose only purpose is to return
-  // the string data via an nsIStringInputStream.
+  // available to CPOWs. Consequently, we return a shim channel that,
+  // when opened, asks the parent to open the channel and read out all
+  // the data.
   newChannel: function(uri) {
-    let cpmm = Cc["@mozilla.org/childprocessmessagemanager;1"]
-               .getService(Ci.nsISyncMessageSender);
-
-    var rval = cpmm.sendRpcMessage("Addons:AboutProtocol:NewChannel", {
-      uri: uri.spec,
-      contractID: this._contractID
-    });
-
-    if (rval.length != 1) {
-      throw Cr.NS_ERROR_FAILURE;
-    }
-
-    let {data, uri, originalURI, contentType} = rval[0];
-    return new AboutProtocolChannel(data, uri, originalURI, contentType);
+    return new AboutProtocolChannel(uri, this._contractID);
   },
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory, Ci.nsIAboutModule])
@@ -290,17 +311,17 @@ let AboutProtocolChild = {
 
   init: function() {
     this._instances = {};
-    NotificationTracker.watch("about-protocol", (path, count) => this.track(path, count));
+    NotificationTracker.watch("about-protocol", this);
   },
 
-  track: function(path, count) {
+  track: function(path, register) {
     let contractID = path[1];
     let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-    if (count == 1) {
+    if (register) {
       let instance = new AboutProtocolInstance(contractID);
       this._instances[contractID] = instance;
       registrar.registerFactory(this._classID, this._classDescription, contractID, instance);
-    } else if (count == 0) {
+    } else {
       delete this._instances[contractID];
       registerFactory.unregisterFactory(this._classID, this);
     }
@@ -311,14 +332,14 @@ let AboutProtocolChild = {
 // the parent asks for notifications on the given topic.
 let ObserverChild = {
   init: function() {
-    NotificationTracker.watch("observer", (path, count) => this.track(path, count));
+    NotificationTracker.watch("observer", this);
   },
 
-  track: function(path, count) {
+  track: function(path, register) {
     let topic = path[1];
-    if (count == 1) {
+    if (register) {
       Services.obs.addObserver(this, topic, false);
-    } else if (count == 0) {
+    } else {
       Services.obs.removeObserver(this, topic);
     }
   },
@@ -340,23 +361,32 @@ let ObserverChild = {
 function EventTargetChild(childGlobal)
 {
   this._childGlobal = childGlobal;
-  NotificationTracker.watch("event", (path, count) => this.track(path, count));
+  this.capturingHandler = (event) => this.handleEvent(true, event);
+  this.nonCapturingHandler = (event) => this.handleEvent(false, event);
+  NotificationTracker.watch("event", this);
 }
 
 EventTargetChild.prototype = {
-  track: function(path, count) {
+  uninit: function() {
+    NotificationTracker.unwatch("event", this);
+  },
+
+  track: function(path, register) {
     let eventType = path[1];
     let useCapture = path[2];
-    if (count == 1) {
-      this._childGlobal.addEventListener(eventType, this, useCapture, true);
-    } else if (count == 0) {
-      this._childGlobal.removeEventListener(eventType, this, useCapture);
+    let listener = useCapture ? this.capturingHandler : this.nonCapturingHandler;
+    if (register) {
+      this._childGlobal.addEventListener(eventType, listener, useCapture, true);
+    } else {
+      this._childGlobal.removeEventListener(eventType, listener, useCapture);
     }
   },
 
-  handleEvent: function(event) {
+  handleEvent: function(capturing, event) {
     this._childGlobal.sendRpcMessage("Addons:Event:Run",
-                                     {type: event.type, isTrusted: event.isTrusted},
+                                     {type: event.type,
+                                      capturing: capturing,
+                                      isTrusted: event.isTrusted},
                                      {event: event});
   }
 };
@@ -376,6 +406,10 @@ function SandboxChild(chromeGlobal)
 }
 
 SandboxChild.prototype = {
+  uninit: function() {
+    this.clearSandboxes();
+  },
+
   addListener: function() {
     let webProgress = this.chromeGlobal.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
       .getInterface(Ci.nsIWebProgress);
@@ -389,10 +423,7 @@ SandboxChild.prototype = {
   },
 
   onLocationChange: function(webProgress, request, location, flags) {
-    if (this.sandboxes.length) {
-      this.removeListener();
-    }
-    this.sandboxes = [];
+    this.clearSandboxes();
   },
 
   addSandbox: function(sandbox) {
@@ -400,6 +431,13 @@ SandboxChild.prototype = {
       this.addListener();
     }
     this.sandboxes.push(sandbox);
+  },
+
+  clearSandboxes: function() {
+    if (this.sandboxes.length) {
+      this.removeListener();
+    }
+    this.sandboxes = [];
   },
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
@@ -429,5 +467,11 @@ let RemoteAddonsChild = {
 
     // Return this so it gets rooted in the content script.
     return [new EventTargetChild(global), sandboxChild];
+  },
+
+  uninit: function(perTabShims) {
+    for (let shim of perTabShims) {
+      shim.uninit();
+    }
   },
 };

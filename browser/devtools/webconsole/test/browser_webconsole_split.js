@@ -67,7 +67,7 @@ function test()
   {
     let win = toolbox.doc.defaultView;
     let deck = toolbox.doc.querySelector("#toolbox-deck");
-    let webconsolePanel = toolbox.doc.querySelector("#toolbox-panel-webconsole");
+    let webconsolePanel = toolbox.webconsolePanel;
     let splitter = toolbox.doc.querySelector("#toolbox-console-splitter");
 
     let containerHeight = parseFloat(win.getComputedStyle(deck.parentNode).getPropertyValue("height"));
@@ -117,7 +117,7 @@ function test()
       // Make sure splitting console does nothing while webconsole is opened
       toolbox.toggleSplitConsole();
 
-      let currentUIState = getCurrentUIState();
+      currentUIState = getCurrentUIState();
 
       ok (!currentUIState.splitterVisibility, "Splitter is hidden when console is opened.");
       is (currentUIState.deckHeight, 0, "Deck has a height == 0 when console is opened.");
@@ -176,12 +176,12 @@ function test()
 
     toolbox.toggleSplitConsole();
 
-    let currentUIState = getCurrentUIState();
+    currentUIState = getCurrentUIState();
 
     ok (currentUIState.splitterVisibility, "Splitter is visible when console is split");
     ok (currentUIState.deckHeight > 0, "Deck has a height > 0 when console is split");
     ok (currentUIState.webconsoleHeight > 0, "Web console has a height > 0 when console is split");
-    is (currentUIState.deckHeight + currentUIState.webconsoleHeight,
+    is (Math.round(currentUIState.deckHeight + currentUIState.webconsoleHeight),
           currentUIState.containerHeight,
         "Everything adds up to container height");
     ok (!currentUIState.openedConsolePanel, "The console panel is not the current tool");
@@ -189,7 +189,7 @@ function test()
 
     toolbox.toggleSplitConsole();
 
-    let currentUIState = getCurrentUIState();
+    currentUIState = getCurrentUIState();
 
     ok (!currentUIState.splitterVisibility, "Splitter is hidden after toggling");
     is (currentUIState.deckHeight, currentUIState.containerHeight, "Deck has a height > 0 after toggling");

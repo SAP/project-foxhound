@@ -4,14 +4,32 @@
 
 #include "nsChannelClassifier.h"
 
-#include "nsNetUtil.h"
-#include "nsIChannel.h"
-#include "nsIProtocolHandler.h"
-#include "nsICachingChannel.h"
-#include "nsICacheEntryDescriptor.h"
-#include "prlog.h"
-#include "nsIScriptSecurityManager.h"
 #include "mozIThirdPartyUtil.h"
+#include "nsContentUtils.h"
+#include "nsNetUtil.h"
+#include "nsICacheEntry.h"
+#include "nsICachingChannel.h"
+#include "nsIChannel.h"
+#include "nsIDocShell.h"
+#include "nsIDocument.h"
+#include "nsIDOMDocument.h"
+#include "nsIDOMWindow.h"
+#include "nsIIOService.h"
+#include "nsIPermissionManager.h"
+#include "nsIProtocolHandler.h"
+#include "nsIScriptError.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsISecureBrowserUI.h"
+#include "nsISecurityEventSink.h"
+#include "nsIWebProgressListener.h"
+#include "nsPIDOMWindow.h"
+
+#include "mozilla/Preferences.h"
+
+#include "prlog.h"
+
+using mozilla::ArrayLength;
+using mozilla::Preferences;
 
 #if defined(PR_LOGGING)
 //
@@ -26,6 +44,7 @@ NS_IMPL_ISUPPORTS(nsChannelClassifier,
                   nsIURIClassifierCallback)
 
 nsChannelClassifier::nsChannelClassifier()
+  : mIsAllowListed(false)
 {
 #if defined(PR_LOGGING)
     if (!gChannelClassifierLog)
@@ -33,22 +52,121 @@ nsChannelClassifier::nsChannelClassifier()
 #endif
 }
 
-bool
-nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel* aChannel)
+nsresult
+nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
+                                                    bool *result)
 {
-    nsresult rv;
+    NS_ENSURE_ARG(result);
+    *result = false;
 
-    nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
-        do_GetService(THIRDPARTYUTIL_CONTRACTID, &rv);
-    if (NS_FAILED(rv)) {
-      return false;
+    if (!Preferences::GetBool("privacy.trackingprotection.enabled", false)) {
+      return NS_OK;
     }
 
+    nsresult rv;
+    nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+        do_GetService(THIRDPARTYUTIL_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
     // Third party checks don't work for chrome:// URIs in mochitests, so just
     // default to isThirdParty = true
     bool isThirdParty = true;
     (void)thirdPartyUtil->IsThirdPartyChannel(aChannel, nullptr, &isThirdParty);
-    return isThirdParty;
+    if (!isThirdParty) {
+        *result = false;
+        return NS_OK;
+    }
+
+    nsCOMPtr<nsIDOMWindow> win;
+    rv = thirdPartyUtil->GetTopWindowForChannel(aChannel, getter_AddRefs(win));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIURI> uri;
+    rv = thirdPartyUtil->GetURIFromWindow(win, getter_AddRefs(uri));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIIOService> ios = do_GetService(NS_IOSERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    const char ALLOWLIST_EXAMPLE_PREF[] = "channelclassifier.allowlist_example";
+    if (!uri && Preferences::GetBool(ALLOWLIST_EXAMPLE_PREF, false)) {
+      LOG(("nsChannelClassifier[%p]: Allowlisting test domain", this));
+      rv = ios->NewURI(NS_LITERAL_CSTRING("http://allowlisted.example.com"),
+                       nullptr, nullptr, getter_AddRefs(uri));
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    // Take the host/port portion so we can allowlist by site. Also ignore the
+    // scheme, since users who put sites on the allowlist probably don't expect
+    // allowlisting to depend on scheme.
+    nsCOMPtr<nsIURL> url = do_QueryInterface(uri, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCString escaped(NS_LITERAL_CSTRING("https://"));
+    nsAutoCString temp;
+    rv = url->GetHostPort(temp);
+    NS_ENSURE_SUCCESS(rv, rv);
+    escaped.Append(temp);
+
+    // Stuff the whole thing back into a URI for the permission manager.
+    rv = ios->NewURI(escaped, nullptr, nullptr, getter_AddRefs(uri));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIPermissionManager> permMgr =
+        do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    uint32_t permissions = nsIPermissionManager::UNKNOWN_ACTION;
+    rv = permMgr->TestPermission(uri, "trackingprotection", &permissions);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+#ifdef DEBUG
+    if (permissions == nsIPermissionManager::ALLOW_ACTION) {
+        LOG(("nsChannelClassifier[%p]: Allowlisting channel[%p] for %s", this,
+             aChannel, escaped.get()));
+    }
+#endif
+
+    if (permissions == nsIPermissionManager::ALLOW_ACTION) {
+      mIsAllowListed = true;
+      *result = false;
+    } else {
+      *result = true;
+    }
+
+    // Tracking protection will be enabled so return without updating
+    // the security state. If any channels are subsequently cancelled
+    // (page elements blocked) the state will be then updated.
+    if (*result) {
+      return NS_OK;
+    }
+
+    // Tracking protection will be disabled so update the security state
+    // of the document and fire a secure change event.
+    nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(win, &rv);
+    NS_ENSURE_SUCCESS(rv, NS_OK);
+    nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
+    if (!docShell) {
+      return NS_OK;
+    }
+    nsCOMPtr<nsIDocument> doc = do_GetInterface(docShell, &rv);
+    NS_ENSURE_SUCCESS(rv, NS_OK);
+
+    // Notify nsIWebProgressListeners of this security event.
+    // Can be used to change the UI state.
+    nsCOMPtr<nsISecurityEventSink> eventSink = do_QueryInterface(docShell, &rv);
+    NS_ENSURE_SUCCESS(rv, NS_OK);
+    uint32_t state = 0;
+    nsCOMPtr<nsISecureBrowserUI> securityUI;
+    docShell->GetSecurityUI(getter_AddRefs(securityUI));
+    if (!securityUI) {
+      return NS_OK;
+    }
+    doc->SetHasTrackingContentLoaded(true);
+    securityUI->GetState(&state);
+    state |= nsIWebProgressListener::STATE_LOADED_TRACKING_CONTENT;
+    eventSink->OnSecurityChange(nullptr, state);
+
+    return NS_OK;
 }
 
 nsresult
@@ -111,12 +229,14 @@ nsChannelClassifier::Start(nsIChannel *aChannel)
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIPrincipal> principal;
-    rv = securityManager->GetChannelPrincipal(aChannel,
-                                              getter_AddRefs(principal));
+    rv = securityManager->GetChannelResultPrincipal(aChannel,
+                                                    getter_AddRefs(principal));
     NS_ENSURE_SUCCESS(rv, rv);
 
     bool expectCallback;
-    bool trackingProtectionEnabled = ShouldEnableTrackingProtection(aChannel);
+    bool trackingProtectionEnabled = false;
+    (void)ShouldEnableTrackingProtection(aChannel, &trackingProtectionEnabled);
+
     rv = uriClassifier->Classify(principal, trackingProtectionEnabled, this,
                                  &expectCallback);
     if (NS_FAILED(rv)) return rv;
@@ -147,6 +267,11 @@ nsChannelClassifier::Start(nsIChannel *aChannel)
 void
 nsChannelClassifier::MarkEntryClassified(nsresult status)
 {
+    // Don't cache tracking classifications because we support allowlisting.
+    if (status == NS_ERROR_TRACKING_URI || mIsAllowListed) {
+        return;
+    }
+
     nsCOMPtr<nsICachingChannel> cachingChannel =
         do_QueryInterface(mSuspendedChannel);
     if (!cachingChannel) {
@@ -159,7 +284,7 @@ nsChannelClassifier::MarkEntryClassified(nsresult status)
         return;
     }
 
-    nsCOMPtr<nsICacheEntryDescriptor> cacheEntry =
+    nsCOMPtr<nsICacheEntry> cacheEntry =
         do_QueryInterface(cacheToken);
     if (!cacheEntry) {
         return;
@@ -191,7 +316,7 @@ nsChannelClassifier::HasBeenClassified(nsIChannel *aChannel)
         return false;
     }
 
-    nsCOMPtr<nsICacheEntryDescriptor> cacheEntry =
+    nsCOMPtr<nsICacheEntry> cacheEntry =
         do_QueryInterface(cacheToken);
     if (!cacheEntry) {
         return false;
@@ -202,6 +327,58 @@ nsChannelClassifier::HasBeenClassified(nsIChannel *aChannel)
     return tag.EqualsLiteral("1");
 }
 
+nsresult
+nsChannelClassifier::SetBlockedTrackingContent(nsIChannel *channel)
+{
+  nsresult rv;
+  nsCOMPtr<nsIDOMWindow> win;
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+    do_GetService(THIRDPARTYUTIL_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+  rv = thirdPartyUtil->GetTopWindowForChannel(
+    mSuspendedChannel, getter_AddRefs(win));
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+  nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(win, &rv);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+  nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
+  if (!docShell) {
+    return NS_OK;
+  }
+  nsCOMPtr<nsIDocument> doc = do_GetInterface(docShell, &rv);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+
+  // Notify nsIWebProgressListeners of this security event.
+  // Can be used to change the UI state.
+  nsCOMPtr<nsISecurityEventSink> eventSink = do_QueryInterface(docShell, &rv);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+  uint32_t state = 0;
+  nsCOMPtr<nsISecureBrowserUI> securityUI;
+  docShell->GetSecurityUI(getter_AddRefs(securityUI));
+  if (!securityUI) {
+    return NS_OK;
+  }
+  doc->SetHasTrackingContentBlocked(true);
+  securityUI->GetState(&state);
+  state |= nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT;
+  eventSink->OnSecurityChange(nullptr, state);
+
+  // Log a warning to the web console.
+  nsCOMPtr<nsIURI> uri;
+  channel->GetURI(getter_AddRefs(uri));
+  nsCString utf8spec;
+  uri->GetSpec(utf8spec);
+  NS_ConvertUTF8toUTF16 spec(utf8spec);
+  const char16_t* params[] = { spec.get() };
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  NS_LITERAL_CSTRING("Tracking Protection"),
+                                  doc,
+                                  nsContentUtils::eNECKO_PROPERTIES,
+                                  "TrackingUriBlocked",
+                                  params, ArrayLength(params));
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsChannelClassifier::OnClassifyComplete(nsresult aErrorCode)
 {
@@ -210,11 +387,24 @@ nsChannelClassifier::OnClassifyComplete(nsresult aErrorCode)
 
         if (NS_FAILED(aErrorCode)) {
 #ifdef DEBUG
-            LOG(("nsChannelClassifier[%p]: cancelling channel %p with error "
-                 "code: %x", this, mSuspendedChannel.get(), aErrorCode));
+            nsCOMPtr<nsIURI> uri;
+            mSuspendedChannel->GetURI(getter_AddRefs(uri));
+            nsCString spec;
+            uri->GetSpec(spec);
+            LOG(("nsChannelClassifier[%p]: cancelling channel %p for %s "
+                 "with error code: %x", this, mSuspendedChannel.get(),
+                 spec.get(), aErrorCode));
 #endif
+
+            // Channel will be cancelled (page element blocked) due to tracking.
+            // Do update the security state of the document and fire a security
+            // change event.
+            if (aErrorCode == NS_ERROR_TRACKING_URI) {
+              SetBlockedTrackingContent(mSuspendedChannel);
+            }
+
             mSuspendedChannel->Cancel(aErrorCode);
-        }
+          }
 #ifdef DEBUG
         LOG(("nsChannelClassifier[%p]: resuming channel %p from "
              "OnClassifyComplete", this, mSuspendedChannel.get()));

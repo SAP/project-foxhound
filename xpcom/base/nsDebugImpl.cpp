@@ -15,6 +15,7 @@
 # include "nsExceptionHandler.h"
 #endif
 #include "nsString.h"
+#include "nsXULAppAPI.h"
 #include "prprf.h"
 #include "prlog.h"
 #include "nsError.h"
@@ -229,7 +230,8 @@ InitLog()
   }
 }
 
-enum nsAssertBehavior {
+enum nsAssertBehavior
+{
   NS_ASSERT_UNINITIALIZED,
   NS_ASSERT_WARN,
   NS_ASSERT_SUSPEND,
@@ -247,17 +249,7 @@ GetAssertBehavior()
     return gAssertBehavior;
   }
 
-#if defined(XP_WIN) && defined(MOZ_METRO)
-  if (IsRunningInWindowsMetro()) {
-    gAssertBehavior = NS_ASSERT_WARN;
-  } else {
-    gAssertBehavior = NS_ASSERT_TRAP;
-  }
-#elif defined(XP_WIN)
-  gAssertBehavior = NS_ASSERT_TRAP;
-#else
   gAssertBehavior = NS_ASSERT_WARN;
-#endif
 
   const char* assertString = PR_GetEnv("XPCOM_DEBUG_BREAK");
   if (!assertString || !*assertString) {
@@ -412,12 +404,17 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
 
     case NS_DEBUG_ABORT: {
 #if defined(MOZ_CRASHREPORTER)
-      nsCString note("xpcom_runtime_abort(");
-      note += buf.buffer;
-      note += ")";
-      CrashReporter::AppendAppNotesToCrashReport(note);
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AbortMessage"),
-                                         nsDependentCString(buf.buffer));
+      // Updating crash annotations in the child causes us to do IPC. This can
+      // really cause trouble if we're asserting from within IPC code. So we
+      // have to do without the annotations in that case.
+      if (XRE_GetProcessType() == GeckoProcessType_Default) {
+        nsCString note("xpcom_runtime_abort(");
+        note += buf.buffer;
+        note += ")";
+        CrashReporter::AppendAppNotesToCrashReport(note);
+        CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AbortMessage"),
+                                           nsDependentCString(buf.buffer));
+      }
 #endif  // MOZ_CRASHREPORTER
 
 #if defined(DEBUG) && defined(_WIN32)
@@ -511,7 +508,8 @@ Break(const char* aMsg)
   static int ignoreDebugger;
   if (!ignoreDebugger) {
     const char* shouldIgnoreDebugger = getenv("XPCOM_DEBUG_DLG");
-    ignoreDebugger = 1 + (shouldIgnoreDebugger && !strcmp(shouldIgnoreDebugger, "1"));
+    ignoreDebugger =
+      1 + (shouldIgnoreDebugger && !strcmp(shouldIgnoreDebugger, "1"));
   }
   if ((ignoreDebugger == 2) || !::IsDebuggerPresent()) {
     DWORD code = IDRETRY;
@@ -587,8 +585,7 @@ nsDebugImpl::Create(nsISupports* aOuter, const nsIID& aIID, void** aInstancePtr)
     return NS_ERROR_NO_AGGREGATION;
   }
 
-  return const_cast<nsDebugImpl*>(&kImpl)->
-    QueryInterface(aIID, aInstancePtr);
+  return const_cast<nsDebugImpl*>(&kImpl)->QueryInterface(aIID, aInstancePtr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

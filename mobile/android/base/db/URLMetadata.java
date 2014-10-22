@@ -5,6 +5,8 @@
  */
 package org.mozilla.gecko.db;
 
+import org.mozilla.gecko.db.BrowserContract.Bookmarks;
+import org.mozilla.gecko.db.BrowserContract.History;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.Telemetry;
 
@@ -17,6 +19,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.support.v4.util.LruCache;
+import android.text.TextUtils;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -186,5 +189,26 @@ public class URLMetadata {
         } catch (Exception ex) {
             Log.e(LOGTAG, "error saving", ex);
         }
+    }
+
+    public static int deleteUnused(final ContentResolver cr, final String profile) {
+        final String selection = URLMetadataTable.URL_COLUMN + " NOT IN "
+                + "(SELECT " + History.URL
+                + " FROM " + History.TABLE_NAME
+                + " WHERE " + History.IS_DELETED + " = 0"
+                + " UNION "
+                + " SELECT " + Bookmarks.URL
+                + " FROM " + Bookmarks.TABLE_NAME
+                + " WHERE " + Bookmarks.IS_DELETED + " = 0 "
+                + " AND " + Bookmarks.URL + " IS NOT NULL)";
+
+        Uri uri = URLMetadataTable.CONTENT_URI;
+        if (!TextUtils.isEmpty(profile)) {
+            uri = uri.buildUpon()
+                     .appendQueryParameter(BrowserContract.PARAM_PROFILE, profile)
+                     .build();
+        }
+
+        return cr.delete(uri, selection, null);
     }
 }

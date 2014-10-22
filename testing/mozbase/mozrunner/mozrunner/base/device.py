@@ -11,6 +11,8 @@ import sys
 import tempfile
 import time
 
+import mozfile
+
 from .runner import BaseRunner
 from ..devices import Emulator
 
@@ -19,36 +21,34 @@ class DeviceRunner(BaseRunner):
     The base runner class used for running gecko on
     remote devices (or emulators), such as B2G.
     """
+    env = { 'MOZ_CRASHREPORTER': '1',
+            'MOZ_CRASHREPORTER_NO_REPORT': '1',
+            'MOZ_CRASHREPORTER_SHUTDOWN': '1',
+            'MOZ_HIDE_RESULTS_TABLE': '1',
+            'NSPR_LOG_MODULES': 'signaling:5,mtransport:5,datachannel:5',
+            'R_LOG_LEVEL': '6',
+            'R_LOG_DESTINATION': 'stderr',
+            'R_LOG_VERBOSE': '1',
+            'NO_EM_RESTART': '1', }
+
     def __init__(self, device_class, device_args=None, **kwargs):
+        process_log = tempfile.NamedTemporaryFile(suffix='pidlog')
+        self._env = dict(self.env)
+        self._env['MOZ_PROCESS_LOG'] = process_log.name
+        self._env.update(kwargs.pop('env', {}) or {})
+
         process_args = {'stream': sys.stdout,
                         'processOutputLine': self.on_output,
+                        'onFinish': self.on_finish,
                         'onTimeout': self.on_timeout }
         process_args.update(kwargs.get('process_args') or {})
 
         kwargs['process_args'] = process_args
+        kwargs['env'] = {}
         BaseRunner.__init__(self, **kwargs)
 
         device_args = device_args or {}
         self.device = device_class(**device_args)
-
-        process_log = tempfile.NamedTemporaryFile(suffix='pidlog')
-        self._env =  { 'MOZ_CRASHREPORTER': '1',
-                       'MOZ_CRASHREPORTER_NO_REPORT': '1',
-                       'MOZ_CRASHREPORTER_SHUTDOWN': '1',
-                       'MOZ_HIDE_RESULTS_TABLE': '1',
-                       'MOZ_PROCESS_LOG': process_log.name,
-                       'NSPR_LOG_MODULES': 'signaling:5,mtransport:5,datachannel:5',
-                       'R_LOG_LEVEL': '6',
-                       'R_LOG_DESTINATION': 'stderr',
-                       'R_LOG_VERBOSE': '1',
-                       'NO_EM_RESTART': '1', }
-        if kwargs.get('env'):
-            self._env.update(kwargs['env'])
-
-        # In this case we need to pass in env as part of the command.
-        # Make this empty so runner doesn't pass anything into the
-        # process class.
-        self.env = None
 
     @property
     def command(self):
@@ -72,19 +72,21 @@ class DeviceRunner(BaseRunner):
         # to see if we have the homescreen running, or something, before waiting here
         self.device.wait_for_net()
 
-        if not isinstance(self.device, Emulator):
-            self.device.reboot()
-
         if not self.device.wait_for_net():
             raise Exception("Network did not come up when starting device")
-        self.app_ctx.stop_application()
 
+        # In this case we need to pass in env as part of the command.
+        # Make this empty so BaseRunner doesn't pass anything into the
+        # process class.
+        self._env = self.env
+        self.env = None
         BaseRunner.start(self, *args, **kwargs)
+        self.env = self._env
 
         timeout = 10 # seconds
         starttime = datetime.datetime.now()
         while datetime.datetime.now() - starttime < datetime.timedelta(seconds=timeout):
-            if self.app_ctx.dm.processExist(self.app_ctx.remote_process):
+            if self.is_running():
                 break
             time.sleep(1)
         else:
@@ -93,22 +95,33 @@ class DeviceRunner(BaseRunner):
         if not self.device.wait_for_net():
             raise Exception("Failed to get a network connection")
 
+    def stop(self, sig=None):
+        remote_pid = self.is_running()
+        if remote_pid:
+            self.app_ctx.stop_application()
+            self.app_ctx.dm.killProcess(
+                self.app_ctx.remote_process, sig=sig)
+            timeout = 10  # seconds
+            start_time = datetime.datetime.now()
+            end_time = datetime.timedelta(seconds=timeout)
+            while datetime.datetime.now() - start_time < end_time:
+                if not self.is_running() == remote_pid:
+                    break
+                time.sleep(1)
+            else:
+                print("timed out waiting for '%s' process to exit" %
+                      self.app_ctx.remote_process)
+
+    def is_running(self):
+        return self.app_ctx.dm.processExist(self.app_ctx.remote_process)
+
     def on_output(self, line):
         match = re.findall(r"TEST-START \| ([^\s]*)", line)
         if match:
             self.last_test = match[-1]
 
     def on_timeout(self):
-        self.app_ctx.dm.killProcess(self.app_ctx.remote_process, sig=signal.SIGABRT)
-        timeout = 10 # seconds
-        starttime = datetime.datetime.now()
-        while datetime.datetime.now() - starttime < datetime.timedelta(seconds=timeout):
-            if not self.app_ctx.dm.processExist(self.app_ctx.remote_process):
-                break
-            time.sleep(1)
-        else:
-            print("timed out waiting for '%s' process to exit" % self.app_ctx.remote_process)
-
+        self.stop(sig=signal.SIGABRT)
         msg = "DeviceRunner TEST-UNEXPECTED-FAIL | %s | application timed out after %s seconds"
         if self.timeout:
             timeout = self.timeout
@@ -119,9 +132,19 @@ class DeviceRunner(BaseRunner):
         print(msg % (self.last_test, timeout))
         self.check_for_crashes()
 
-    def check_for_crashes(self):
+    def on_finish(self):
+        self.check_for_crashes()
+
+    def check_for_crashes(self, dump_save_path=None, test_name=None):
+        test_name = test_name or self.last_test
         dump_dir = self.device.pull_minidumps()
-        BaseRunner.check_for_crashes(self, dump_directory=dump_dir, test_name=self.last_test)
+        crashed = BaseRunner.check_for_crashes(
+            self,
+            dump_directory=dump_dir,
+            dump_save_path=dump_save_path,
+            test_name=test_name)
+        mozfile.remove(dump_dir)
+        return crashed
 
     def cleanup(self, *args, **kwargs):
         BaseRunner.cleanup(self, *args, **kwargs)

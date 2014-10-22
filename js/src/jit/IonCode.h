@@ -14,14 +14,11 @@
 #include "jsinfer.h"
 #include "jstypes.h"
 
-#include "assembler/jit/ExecutableAllocator.h"
 #include "gc/Heap.h"
+#include "jit/ExecutableAllocator.h"
 #include "jit/IonOptimizationLevels.h"
 #include "jit/IonTypes.h"
-
-namespace JSC {
-    class ExecutablePool;
-}
+#include "js/UbiNode.h"
 
 namespace js {
 
@@ -32,12 +29,13 @@ namespace jit {
 class MacroAssembler;
 class CodeOffsetLabel;
 class PatchableBackedge;
+class IonBuilder;
 
-class JitCode : public gc::BarrieredCell<JitCode>
+class JitCode : public gc::TenuredCell
 {
   protected:
     uint8_t *code_;
-    JSC::ExecutablePool *pool_;
+    ExecutablePool *pool_;
     uint32_t bufferSize_;             // Total buffer size. Does not include headerSize_.
     uint32_t insnSize_;               // Instruction stream size.
     uint32_t dataSize_;               // Size of the read-only data area.
@@ -45,9 +43,11 @@ class JitCode : public gc::BarrieredCell<JitCode>
     uint32_t dataRelocTableBytes_;    // Size of the data relocation table.
     uint32_t preBarrierTableBytes_;   // Size of the prebarrier table.
     uint8_t headerSize_ : 5;          // Number of bytes allocated before codeStart.
-    uint8_t kind_ : 3;                // JSC::CodeKind, for the memory reporters.
+    uint8_t kind_ : 3;                // jit::CodeKind, for the memory reporters.
     bool invalidated_ : 1;            // Whether the code object has been invalidated.
                                       // This is necessary to prevent GC tracing.
+    bool hasBytecodeMap_ : 1;         // Whether the code object has been registered with
+                                      // native=>bytecode mapping tables.
 
 #if JS_BITS_PER_WORD == 32
     // Ensure JitCode is gc::Cell aligned.
@@ -58,8 +58,8 @@ class JitCode : public gc::BarrieredCell<JitCode>
       : code_(nullptr),
         pool_(nullptr)
     { }
-    JitCode(uint8_t *code, uint32_t bufferSize, uint32_t headerSize, JSC::ExecutablePool *pool,
-            JSC::CodeKind kind)
+    JitCode(uint8_t *code, uint32_t bufferSize, uint32_t headerSize, ExecutablePool *pool,
+            CodeKind kind)
       : code_(code),
         pool_(pool),
         bufferSize_(bufferSize),
@@ -70,9 +70,10 @@ class JitCode : public gc::BarrieredCell<JitCode>
         preBarrierTableBytes_(0),
         headerSize_(headerSize),
         kind_(kind),
-        invalidated_(false)
+        invalidated_(false),
+        hasBytecodeMap_(false)
     {
-        MOZ_ASSERT(JSC::CodeKind(kind_) == kind);
+        MOZ_ASSERT(CodeKind(kind_) == kind);
         MOZ_ASSERT(headerSize_ == headerSize);
     }
 
@@ -93,6 +94,9 @@ class JitCode : public gc::BarrieredCell<JitCode>
     uint8_t *raw() const {
         return code_;
     }
+    uint8_t *rawEnd() const {
+        return code_ + insnSize_;
+    }
     size_t instructionsSize() const {
         return insnSize_;
     }
@@ -100,6 +104,10 @@ class JitCode : public gc::BarrieredCell<JitCode>
     void finalize(FreeOp *fop);
     void setInvalidated() {
         invalidated_ = true;
+    }
+
+    void setHasBytecodeMap() {
+        hasBytecodeMap_ = true;
     }
 
     void togglePreBarriers(bool enabled);
@@ -119,7 +127,7 @@ class JitCode : public gc::BarrieredCell<JitCode>
 
     static JitCode *FromExecutable(uint8_t *buffer) {
         JitCode *code = *(JitCode **)(buffer - sizeof(JitCode *));
-        JS_ASSERT(code->raw() == buffer);
+        MOZ_ASSERT(code->raw() == buffer);
         return code;
     }
 
@@ -136,7 +144,7 @@ class JitCode : public gc::BarrieredCell<JitCode>
     // automatically released, so the code may be freed.
     template <AllowGC allowGC>
     static JitCode *New(JSContext *cx, uint8_t *code, uint32_t bufferSize, uint32_t headerSize,
-                        JSC::ExecutablePool *pool, JSC::CodeKind kind);
+                        ExecutablePool *pool, CodeKind kind);
 
   public:
     static inline ThingRootKind rootKind() { return THING_ROOT_JIT_CODE; }
@@ -293,6 +301,8 @@ struct IonScript
     // that contain an optimized call directly into this IonScript.
     Vector<DependentAsmJSModuleExit> *dependentAsmJSModules;
 
+    IonBuilder *pendingBuilder_;
+
   private:
     inline uint8_t *bottomBuffer() {
         return reinterpret_cast<uint8_t *>(this);
@@ -302,6 +312,15 @@ struct IonScript
     }
 
   public:
+
+    // SHOULD ONLY BE CALLED FROM JSScript
+    void setPendingBuilderPrivate(IonBuilder *builder) {
+        pendingBuilder_ = builder;
+    }
+    IonBuilder *pendingBuilder() const {
+        return pendingBuilder_;
+    }
+
     SnapshotOffset *bailoutTable() {
         return (SnapshotOffset *) &bottomBuffer()[bailoutTable_];
     }
@@ -386,7 +405,7 @@ struct IonScript
         return method_;
     }
     void setMethod(JitCode *code) {
-        JS_ASSERT(!invalidated());
+        MOZ_ASSERT(!invalidated());
         method_ = code;
     }
     void setDeoptTable(JitCode *code) {
@@ -399,14 +418,14 @@ struct IonScript
         return osrPc_;
     }
     void setOsrEntryOffset(uint32_t offset) {
-        JS_ASSERT(!osrEntryOffset_);
+        MOZ_ASSERT(!osrEntryOffset_);
         osrEntryOffset_ = offset;
     }
     uint32_t osrEntryOffset() const {
         return osrEntryOffset_;
     }
     void setSkipArgCheckEntryOffset(uint32_t offset) {
-        JS_ASSERT(!skipArgCheckEntryOffset_);
+        MOZ_ASSERT(!skipArgCheckEntryOffset_);
         skipArgCheckEntryOffset_ = offset;
     }
     uint32_t getSkipArgCheckEntryOffset() const {
@@ -421,19 +440,19 @@ struct IonScript
         return method()->raw() <= addr && addr <= method()->raw() + method()->instructionsSize();
     }
     void setInvalidationEpilogueOffset(uint32_t offset) {
-        JS_ASSERT(!invalidateEpilogueOffset_);
+        MOZ_ASSERT(!invalidateEpilogueOffset_);
         invalidateEpilogueOffset_ = offset;
     }
     uint32_t invalidateEpilogueOffset() const {
-        JS_ASSERT(invalidateEpilogueOffset_);
+        MOZ_ASSERT(invalidateEpilogueOffset_);
         return invalidateEpilogueOffset_;
     }
     void setInvalidationEpilogueDataOffset(uint32_t offset) {
-        JS_ASSERT(!invalidateEpilogueDataOffset_);
+        MOZ_ASSERT(!invalidateEpilogueDataOffset_);
         invalidateEpilogueDataOffset_ = offset;
     }
     uint32_t invalidateEpilogueDataOffset() const {
-        JS_ASSERT(invalidateEpilogueDataOffset_);
+        MOZ_ASSERT(invalidateEpilogueDataOffset_);
         return invalidateEpilogueDataOffset_;
     }
     void incNumBailouts() {
@@ -500,7 +519,7 @@ struct IonScript
         return mallocSizeOf(this);
     }
     PreBarrieredValue &getConstant(size_t index) {
-        JS_ASSERT(index < numConstants());
+        MOZ_ASSERT(index < numConstants());
         return constants()[index];
     }
     size_t numConstants() const {
@@ -513,23 +532,23 @@ struct IonScript
         return frameSize_;
     }
     SnapshotOffset bailoutToSnapshot(uint32_t bailoutId) {
-        JS_ASSERT(bailoutId < bailoutEntries_);
+        MOZ_ASSERT(bailoutId < bailoutEntries_);
         return bailoutTable()[bailoutId];
     }
     const SafepointIndex *getSafepointIndex(uint32_t disp) const;
     const SafepointIndex *getSafepointIndex(uint8_t *retAddr) const {
-        JS_ASSERT(containsCodeAddress(retAddr));
+        MOZ_ASSERT(containsCodeAddress(retAddr));
         return getSafepointIndex(retAddr - method()->raw());
     }
     const OsiIndex *getOsiIndex(uint32_t disp) const;
     const OsiIndex *getOsiIndex(uint8_t *retAddr) const;
     inline IonCache &getCacheFromIndex(uint32_t index) {
-        JS_ASSERT(index < cacheEntries_);
+        MOZ_ASSERT(index < cacheEntries_);
         uint32_t offset = cacheIndex()[index];
         return getCache(offset);
     }
     inline IonCache &getCache(uint32_t offset) {
-        JS_ASSERT(offset < runtimeSize_);
+        MOZ_ASSERT(offset < runtimeSize_);
         return *(IonCache *) &runtimeData()[offset];
     }
     size_t numCaches() const {
@@ -539,7 +558,7 @@ struct IonScript
         return runtimeSize_;
     }
     CacheLocation *getCacheLocs(uint32_t locIndex) {
-        JS_ASSERT(locIndex < runtimeSize_);
+        MOZ_ASSERT(locIndex < runtimeSize_);
         return (CacheLocation *) &runtimeData()[locIndex];
     }
     void toggleBarriers(bool enabled);
@@ -563,6 +582,10 @@ struct IonScript
     bool invalidated() const {
         return refcount_ != 0;
     }
+
+    // Invalidate the current compilation.
+    bool invalidate(JSContext *cx, bool resetUses, const char *reason);
+
     size_t refcount() const {
         return refcount_;
     }
@@ -570,7 +593,7 @@ struct IonScript
         refcount_++;
     }
     void decref(FreeOp *fop) {
-        JS_ASSERT(refcount_);
+        MOZ_ASSERT(refcount_);
         refcount_--;
         if (!refcount_)
             Destroy(fop, this);
@@ -636,6 +659,9 @@ struct IonBlockCounts
     // was generated from.
     uint32_t offset_;
 
+    // File and line of the inner script this block was generated from.
+    char *description_;
+
     // ids for successors of this block.
     uint32_t numSuccessors_;
     uint32_t *successors_;
@@ -648,9 +674,10 @@ struct IonBlockCounts
 
   public:
 
-    bool init(uint32_t id, uint32_t offset, uint32_t numSuccessors) {
+    bool init(uint32_t id, uint32_t offset, char *description, uint32_t numSuccessors) {
         id_ = id;
         offset_ = offset;
+        description_ = description;
         numSuccessors_ = numSuccessors;
         if (numSuccessors) {
             successors_ = js_pod_calloc<uint32_t>(numSuccessors);
@@ -661,6 +688,7 @@ struct IonBlockCounts
     }
 
     void destroy() {
+        js_free(description_);
         js_free(successors_);
         js_free(code_);
     }
@@ -673,17 +701,21 @@ struct IonBlockCounts
         return offset_;
     }
 
+    const char *description() const {
+        return description_;
+    }
+
     size_t numSuccessors() const {
         return numSuccessors_;
     }
 
     void setSuccessor(size_t i, uint32_t id) {
-        JS_ASSERT(i < numSuccessors_);
+        MOZ_ASSERT(i < numSuccessors_);
         successors_[i] = id;
     }
 
     uint32_t successor(size_t i) const {
-        JS_ASSERT(i < numSuccessors_);
+        MOZ_ASSERT(i < numSuccessors_);
         return successors_[i];
     }
 
@@ -744,7 +776,7 @@ struct IonScriptCounts
     }
 
     IonBlockCounts &block(size_t i) {
-        JS_ASSERT(i < numBlocks_);
+        MOZ_ASSERT(i < numBlocks_);
         return blocks_[i];
     }
 
@@ -796,5 +828,13 @@ IsMarked(const jit::VMFunction *)
 } // namespace gc
 
 } // namespace js
+
+// JS::ubi::Nodes can point to js::jit::JitCode instances; they're js::gc::Cell
+// instances with no associated compartment.
+namespace JS {
+namespace ubi {
+template<> struct Concrete<js::jit::JitCode> : TracerConcrete<js::jit::JitCode> { };
+}
+}
 
 #endif /* jit_IonCode_h */

@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-PROGRAM = 'metrotestharness'
+Program('metrotestharness')
 
 SOURCES += [
     'metrotestharness.cpp',
@@ -20,3 +20,12 @@ NO_PGO = True
 
 # static win runtime linking
 USE_STATIC_LIBS = True
+
+OS_LIBS += [
+    'kernel32',
+    'user32',
+    'ole32',
+    'shlwapi',
+    'propsys',
+    'advapi32',
+]

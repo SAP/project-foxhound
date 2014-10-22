@@ -27,6 +27,7 @@
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
+#include "nsIContent.h"
 #include "nsQueryFrame.h"
 #include "nsCoord.h"
 #include "nsColor.h"
@@ -43,7 +44,6 @@
 #include "nsMargin.h"
 #include "nsFrameState.h"
 
-class nsIContent;
 class nsDocShell;
 class nsIDocument;
 class nsIFrame;
@@ -95,6 +95,7 @@ class DocAccessible;
 #endif
 class nsIWidget;
 struct nsArenaMemoryStats;
+class nsITimer;
 
 typedef short SelectionType;
 
@@ -137,10 +138,9 @@ typedef struct CapturingContentInfo {
   nsIContent* mContent;
 } CapturingContentInfo;
 
-//a4e5ff3a-dc5c-4b3a-a625-d164a9e50619
 #define NS_IPRESSHELL_IID \
-{ 0xa4e5ff3a, 0xdc5c, 0x4b3a, \
-  {0xa6, 0x25, 0xd1, 0x64, 0xa9, 0xe5, 0x06, 0x19}}
+		{ 0x42e9a352, 0x76f3, 0x4ba3, \
+		  { 0x94, 0x0b, 0x78, 0x9e, 0x58, 0x38, 0x73, 0x4f } }
 
 // debug VerifyReflow flags
 #define VERIFY_REFLOW_ON                    0x01
@@ -496,9 +496,13 @@ public:
   /**
    * Tell the pres shell that a frame needs to be marked dirty and needs
    * Reflow.  It's OK if this is an ancestor of the frame needing reflow as
-   * long as the ancestor chain between them doesn't cross a reflow root.  The
-   * bit to add should be either NS_FRAME_IS_DIRTY or
-   * NS_FRAME_HAS_DIRTY_CHILDREN (but not both!).
+   * long as the ancestor chain between them doesn't cross a reflow root.
+   *
+   * The bit to add should be NS_FRAME_IS_DIRTY, NS_FRAME_HAS_DIRTY_CHILDREN
+   * or nsFrameState(0); passing 0 means that dirty bits won't be set on the
+   * frame or its ancestors/descendants, but that intrinsic widths will still
+   * be marked dirty.  Passing aIntrinsicDirty = eResize and aBitToAdd = 0
+   * would result in no work being done, so don't do that.
    */
   enum IntrinsicDirty {
     // XXXldb eResize should be renamed
@@ -507,8 +511,8 @@ public:
     eStyleChange // Do eTreeChange, plus all of aFrame's descendants
   };
   virtual void FrameNeedsReflow(nsIFrame *aFrame,
-                                            IntrinsicDirty aIntrinsicDirty,
-                                            nsFrameState aBitToAdd) = 0;
+                                IntrinsicDirty aIntrinsicDirty,
+                                nsFrameState aBitToAdd) = 0;
 
   /**
    * Calls FrameNeedsReflow on all fixed position children of the root frame.
@@ -587,9 +591,11 @@ public:
    * document so that the anchor with the specified name is displayed at
    * the top of the window.  If |aAnchorName| is empty, then this informs
    * the pres shell that there is no current target, and |aScroll| must
-   * be false.
+   * be false.  If |aAdditionalScrollFlags| is nsIPresShell::SCROLL_SMOOTH_AUTO
+   * and |aScroll| is true, the scrolling may be performed with an animation.
    */
-  virtual nsresult GoToAnchor(const nsAString& aAnchorName, bool aScroll) = 0;
+  virtual nsresult GoToAnchor(const nsAString& aAnchorName, bool aScroll,
+                              uint32_t aAdditionalScrollFlags = 0) = 0;
 
   /**
    * Tells the presshell to scroll again to the last anchor scrolled to by
@@ -654,9 +660,9 @@ public:
    *                no scrollbar showing and less than one device pixel of
    *                scrollable distance), don't scroll. Defaults to false.
    */
-    ScrollAxis(int16_t aWhere = SCROLL_MINIMUM,
-               WhenToScroll aWhen = SCROLL_IF_NOT_FULLY_VISIBLE,
-               bool aOnlyIfPerceivedScrollableDirection = false) :
+    explicit ScrollAxis(int16_t aWhere = SCROLL_MINIMUM,
+                        WhenToScroll aWhen = SCROLL_IF_NOT_FULLY_VISIBLE,
+                        bool aOnlyIfPerceivedScrollableDirection = false) :
       mWhereToScroll(aWhere), mWhenToScroll(aWhen),
       mOnlyIfPerceivedScrollableDirection(aOnlyIfPerceivedScrollableDirection)
     {}
@@ -681,6 +687,16 @@ public:
    *                  If SCROLL_NO_PARENT_FRAMES is set then we only scroll
    *                  nodes in this document, not in any parent documents which
    *                  contain this document in a iframe or the like.
+   *                  If SCROLL_SMOOTH is set and CSSOM-VIEW scroll-behavior
+   *                  is enabled, we will scroll smoothly using
+   *                  nsIScrollableFrame::ScrollMode::SMOOTH_MSD; otherwise,
+   *                  nsIScrollableFrame::ScrollMode::INSTANT will be used.
+   *                  If SCROLL_SMOOTH_AUTO is set, the CSSOM-View
+   *                  scroll-behavior attribute is set to 'smooth' on the
+   *                  scroll frame, and CSSOM-VIEW scroll-behavior is enabled,
+   *                  we will scroll smoothly using
+   *                  nsIScrollableFrame::ScrollMode::SMOOTH_MSD; otherwise,
+   *                  nsIScrollableFrame::ScrollMode::INSTANT will be used.
    */
   virtual nsresult ScrollContentIntoView(nsIContent* aContent,
                                                      ScrollAxis  aVertical,
@@ -690,7 +706,9 @@ public:
   enum {
     SCROLL_FIRST_ANCESTOR_ONLY = 0x01,
     SCROLL_OVERFLOW_HIDDEN = 0x02,
-    SCROLL_NO_PARENT_FRAMES = 0x04
+    SCROLL_NO_PARENT_FRAMES = 0x04,
+    SCROLL_SMOOTH = 0x08,
+    SCROLL_SMOOTH_AUTO = 0x10
   };
   /**
    * Scrolls the view of the document so that the given area of a frame
@@ -788,13 +806,6 @@ public:
    * Get the caret, if it exists. AddRefs it.
    */
   virtual already_AddRefed<nsCaret> GetCaret() const = 0;
-
-  /**
-   * Invalidate the caret's current position if it's outside of its frame's
-   * boundaries. This function is useful if you're batching selection
-   * notifications and might remove the caret's frame out from under it.
-   */
-  virtual void MaybeInvalidateCaretPosition() = 0;
 
   /**
    * Set the current caret to a new caret. To undo this, call RestoreCaret.
@@ -1212,10 +1223,32 @@ public:
   static nsRefPtrHashtable<nsUint32HashKey, mozilla::dom::Touch>* gCaptureTouchList;
   static bool gPreventMouseEvents;
 
+  struct PointerCaptureInfo
+  {
+    nsCOMPtr<nsIContent> mPendingContent;
+    nsCOMPtr<nsIContent> mOverrideContent;
+    bool                 mReleaseContent;
+    
+    explicit PointerCaptureInfo(nsIContent* aPendingContent) :
+      mPendingContent(aPendingContent), mReleaseContent(false)
+    {
+      MOZ_COUNT_CTOR(PointerCaptureInfo);
+    }
+    ~PointerCaptureInfo()
+    {
+      MOZ_COUNT_DTOR(PointerCaptureInfo);
+    }
+
+    bool Empty()
+    {
+      return !(mPendingContent || mOverrideContent);
+    }
+  };
+
   // Keeps a map between pointerId and element that currently capturing pointer
   // with such pointerId. If pointerId is absent in this map then nobody is
-  // capturing it.
-  static nsRefPtrHashtable<nsUint32HashKey, nsIContent>* gPointerCaptureList;
+  // capturing it. Additionally keep information about pending capturing content.
+  static nsClassHashtable<nsUint32HashKey, PointerCaptureInfo>* gPointerCaptureList;
 
   struct PointerInfo
   {
@@ -1228,11 +1261,15 @@ public:
   static nsClassHashtable<nsUint32HashKey, PointerInfo>* gActivePointersIds;
 
   static void DispatchGotOrLostPointerCaptureEvent(bool aIsGotCapture,
-                                                    uint32_t aPointerId,
-                                                    nsIContent* aCaptureTarget);
+                                                   uint32_t aPointerId,
+                                                   nsIContent* aCaptureTarget);
   static void SetPointerCapturingContent(uint32_t aPointerId, nsIContent* aContent);
   static void ReleasePointerCapturingContent(uint32_t aPointerId, nsIContent* aContent);
   static nsIContent* GetPointerCapturingContent(uint32_t aPointerId);
+  
+  // CheckPointerCaptureState checks cases, when got/lostpointercapture events should be fired.
+  // Function returns true, if any of events was fired; false, if no one event was fired.
+  static bool CheckPointerCaptureState(uint32_t aPointerId);
 
   // GetPointerInfo returns true if pointer with aPointerId is situated in device, false otherwise.
   // aActiveState is additional information, which shows state of pointer like button state for mouse.
@@ -1356,8 +1393,8 @@ public:
   virtual void SynthesizeMouseMove(bool aFromScroll) = 0;
 
   enum PaintFlags {
-    /* Update the layer tree and paint ThebesLayers. If this is not specified,
-     * we may still have to do it if the layer tree lost ThebesLayer contents
+    /* Update the layer tree and paint PaintedLayers. If this is not specified,
+     * we may still have to do it if the layer tree lost PaintedLayer contents
      * we need for compositing. */
     PAINT_LAYERS = 0x01,
     /* Composite layers to the window. */
@@ -1587,6 +1624,9 @@ public:
     mIsNeverPainting = aNeverPainting;
   }
 
+  bool HasPendingReflow() const
+    { return mReflowScheduled || mReflowContinueTimer; }
+
 protected:
   friend class nsRefreshDriver;
 
@@ -1611,6 +1651,12 @@ protected:
 #ifdef ACCESSIBILITY
   mozilla::a11y::DocAccessible* mDocAccessible;
 #endif
+
+  // At least on Win32 and Mac after interupting a reflow we need to post
+  // the resume reflow event off a timer to avoid event starvation because
+  // posted messages are processed before other messages when the modal
+  // moving/sizing loop is running, see bug 491700 for details.
+  nsCOMPtr<nsITimer>        mReflowContinueTimer;
 
 #ifdef DEBUG
   nsIFrame*                 mDrawEventTargetFrame;

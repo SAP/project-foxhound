@@ -73,14 +73,14 @@ protected:
 
 private:
     enum {
-        kWhatNotify               = 'noti',
-        kWhatDisconnect           = 'disc',
-        kWhatPerformSeek          = 'seek',
-        kWhatPerformPlay          = 'play',
-        kWhatPerformPause         = 'paus',
-        kWhatPerformResume        = 'resu',
-        kWhatPerformSuspend       = 'susp',
-        kWhatPerformPlaybackEnded = 'ende',
+        kWhatNotify = 1,
+        kWhatDisconnect,
+        kWhatPerformSeek,
+        kWhatPerformPlay,
+        kWhatPerformPause,
+        kWhatPerformResume,
+        kWhatPerformSuspend,
+        kWhatPerformPlaybackEnded,
     };
 
     enum State {
@@ -89,6 +89,7 @@ private:
         CONNECTED,
         SEEKING,
         PAUSING,
+        PAUSED,
         PLAYING,
     };
 
@@ -117,6 +118,7 @@ private:
     status_t mFinalResult;
     uint32_t mDisconnectReplyID;
     uint64_t mLatestPausedUnit;
+    bool mPlayPending;
 
     sp<ALooper> mLooper;
     sp<AHandlerReflector<RTSPSource> > mReflector;

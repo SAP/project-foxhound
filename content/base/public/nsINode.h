@@ -37,7 +37,6 @@ class nsIContent;
 class nsIDocument;
 class nsIDOMElement;
 class nsIDOMNodeList;
-class nsIDOMUserDataHandler;
 class nsIEditor;
 class nsIFrame;
 class nsIMutationObserver;
@@ -74,6 +73,7 @@ class Element;
 class EventHandlerNonNull;
 class OnErrorEventHandlerNonNull;
 template<typename T> class Optional;
+class Text;
 class TextOrElementOrDocument;
 struct DOMPointInit;
 } // namespace dom
@@ -192,44 +192,29 @@ ASSERT_NODE_FLAGS_SPACE(NODE_TYPE_SPECIFIC_BITS_OFFSET);
  * nsMutationGuard on the stack before unexpected mutations could occur.
  * You can then at any time call Mutated to check if any unexpected mutations
  * have occurred.
- *
- * When a guard is instantiated sMutationCount is set to 300. It is then
- * decremented by every mutation (capped at 0). This means that we can only
- * detect 300 mutations during the lifetime of a single guard, however that
- * should be more then we ever care about as we usually only care if more then
- * one mutation has occurred.
- *
- * When the guard goes out of scope it will adjust sMutationCount so that over
- * the lifetime of the guard the guard itself has not affected sMutationCount,
- * while mutations that happened while the guard was alive still will. This
- * allows a guard to be instantiated even if there is another guard higher up
- * on the callstack watching for mutations.
- *
- * The only thing that has to be avoided is for an outer guard to be used
- * while an inner guard is alive. This can be avoided by only ever
- * instantiating a single guard per scope and only using the guard in the
- * current scope.
  */
 class nsMutationGuard {
 public:
   nsMutationGuard()
   {
-    mDelta = eMaxMutations - sMutationCount;
-    sMutationCount = eMaxMutations;
-  }
-  ~nsMutationGuard()
-  {
-    sMutationCount =
-      mDelta > sMutationCount ? 0 : sMutationCount - mDelta;
+    mStartingGeneration = sGeneration;
   }
 
   /**
    * Returns true if any unexpected mutations have occurred. You can pass in
    * an 8-bit ignore count to ignore a number of expected mutations.
+   *
+   * We don't need to care about overflow because subtraction of uint64_t's is
+   * finding the difference between two elements of the group Z < 2^64.  Once
+   * we know the difference between two elements we only need to check that is
+   * less than the given number of mutations to know less than that many
+   * mutations occured.  Assuming constant 1ns mutations it would take 584
+   * years for sGeneration to fully wrap around so we can ignore a guard living
+   * through a full wrap around.
    */
   bool Mutated(uint8_t aIgnoreCount)
   {
-    return sMutationCount < static_cast<uint32_t>(eMaxMutations - aIgnoreCount);
+    return (sGeneration - mStartingGeneration) > aIgnoreCount;
   }
 
   // This function should be called whenever a mutation that we want to keep
@@ -237,26 +222,15 @@ public:
   // removed, but we might do it for attribute changes too in the future.
   static void DidMutate()
   {
-    if (sMutationCount) {
-      --sMutationCount;
-    }
+    sGeneration++;
   }
 
 private:
-  // mDelta is the amount sMutationCount was adjusted when the guard was
-  // initialized. It is needed so that we can undo that adjustment once
-  // the guard dies.
-  uint32_t mDelta;
+  // This is the value sGeneration had when the guard was constructed.
+  uint64_t mStartingGeneration;
 
-  // The value 300 is not important, as long as it is bigger then anything
-  // ever passed to Mutated().
-  enum { eMaxMutations = 300 };
-
-
-  // sMutationCount is a global mutation counter which is decreased by one at
-  // every mutation. It is capped at 0 to avoid wrapping.
-  // Its value is always between 0 and 300, inclusive.
-  static uint32_t sMutationCount;
+  // This value is incremented on every mutation, for the life of the process.
+  static uint64_t sGeneration;
 };
 
 // This should be used for any nsINode sub-class that has fields of its own
@@ -270,13 +244,12 @@ private:
 // Categories of node properties
 // 0 is global.
 #define DOM_USER_DATA         1
-#define DOM_USER_DATA_HANDLER 2
-#define SMIL_MAPPED_ATTR_ANIMVAL 3
+#define SMIL_MAPPED_ATTR_ANIMVAL 2
 
 // IID for the nsINode interface
 #define NS_INODE_IID \
-{ 0x3bd80589, 0xa6f4, 0x4a57, \
-  { 0xab, 0x38, 0xa0, 0x5b, 0x77, 0x4c, 0x3e, 0xa8 } }
+{ 0x8deda3f4, 0x0f45, 0x497a, \
+  { 0x89, 0x7c, 0xe6, 0x09, 0x12, 0x8a, 0xad, 0xd8 } }
 
 /**
  * An internal interface that abstracts some DOMNode-related parts that both
@@ -337,7 +310,7 @@ public:
   friend class nsAttrAndChildArray;
 
 #ifdef MOZILLA_INTERNAL_API
-  nsINode(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
+  explicit nsINode(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
   : mNodeInfo(aNodeInfo),
     mParent(nullptr),
     mBoolFlags(0),
@@ -347,7 +320,6 @@ public:
     mSubtreeRoot(MOZ_THIS_IN_INITIALIZER_LIST()),
     mSlots(nullptr)
   {
-    SetIsDOMBinding();
   }
 #endif
 
@@ -408,11 +380,7 @@ protected:
    * does some additional checks and fix-up that's common to all nodes. WrapNode
    * should just call the DOM binding's Wrap function.
    */
-  virtual JSObject* WrapNode(JSContext *aCx)
-  {
-    MOZ_ASSERT(!IsDOMBinding(), "Someone forgot to override WrapNode");
-    return nullptr;
-  }
+  virtual JSObject* WrapNode(JSContext *aCx) = 0;
 
   // Subclasses that wish to override the parent behavior should return the
   // result of GetParentObjectIntenral, which handles the XBL scope stuff.
@@ -451,6 +419,13 @@ public:
   {
     return const_cast<nsINode*>(this)->AsContent();
   }
+
+  /**
+   * Return this node as Text if it is one, otherwise null.  This is defined
+   * inline in Text.h.
+   */
+  mozilla::dom::Text* GetAsText();
+  const mozilla::dom::Text* GetAsText() const;
 
   virtual nsIDOMNode* AsDOMNode() = 0;
 
@@ -1136,9 +1111,10 @@ protected:
   }
   
 public:
-  void GetTextContent(nsAString& aTextContent)
+  void GetTextContent(nsAString& aTextContent,
+                      mozilla::ErrorResult& aError)
   {
-    GetTextContentInternal(aTextContent);
+    GetTextContentInternal(aTextContent, aError);
   }
   void SetTextContent(const nsAString& aTextContent,
                       mozilla::ErrorResult& aError)
@@ -1162,20 +1138,18 @@ protected:
 public:
   /**
    * Associate an object aData to aKey on this node. If aData is null any
-   * previously registered object and UserDataHandler associated to aKey on
-   * this node will be removed.
+   * previously registered object associated to aKey on this node will
+   * be removed.
    * Should only be used to implement the DOM Level 3 UserData API.
    *
    * @param aKey the key to associate the object to
    * @param aData the object to associate to aKey on this node (may be null)
-   * @param aHandler the UserDataHandler to call when the node is
-   *                 cloned/deleted/imported/renamed (may be null)
    * @param aResult [out] the previously registered object for aKey on this
    *                      node, if any
-   * @return whether adding the object and UserDataHandler succeeded
+   * @return whether adding the object succeeded
    */
   nsresult SetUserData(const nsAString& aKey, nsIVariant* aData,
-                       nsIDOMUserDataHandler* aHandler, nsIVariant** aResult);
+                       nsIVariant** aResult);
 
   /**
    * Get the UserData object registered for a Key on this node, if any.
@@ -1661,12 +1635,10 @@ public:
                                  localName.Length());
     }
   }
-  // HasAttributes is defined inline in Element.h.
-  bool HasAttributes() const;
+
   nsDOMAttributeMap* GetAttributes();
   void SetUserData(JSContext* aCx, const nsAString& aKey,
                    JS::Handle<JS::Value> aData,
-                   nsIDOMUserDataHandler* aHandler,
                    JS::MutableHandle<JS::Value> aRetval,
                    mozilla::ErrorResult& aError);
   void GetUserData(JSContext* aCx, const nsAString& aKey,
@@ -1749,7 +1721,8 @@ protected:
     return IsEditableInternal();
   }
 
-  virtual void GetTextContentInternal(nsAString& aTextContent);
+  virtual void GetTextContentInternal(nsAString& aTextContent,
+                                      mozilla::ErrorResult& aError);
   virtual void SetTextContentInternal(const nsAString& aTextContent,
                                       mozilla::ErrorResult& aError)
   {
@@ -2015,12 +1988,6 @@ ToCanonicalSupports(nsINode* aPointer)
     aLocalName = nsINode::LocalName(); \
     return NS_OK; \
   } \
-  using nsINode::HasAttributes; \
-  NS_IMETHOD HasAttributes(bool* aResult) __VA_ARGS__ \
-  { \
-    *aResult = nsINode::HasAttributes(); \
-    return NS_OK; \
-  } \
   NS_IMETHOD GetDOMBaseURI(nsAString& aBaseURI) __VA_ARGS__ \
   { \
     nsINode::GetBaseURI(aBaseURI); \
@@ -2032,8 +1999,9 @@ ToCanonicalSupports(nsINode* aPointer)
   } \
   NS_IMETHOD GetTextContent(nsAString& aTextContent) __VA_ARGS__ \
   { \
-    nsINode::GetTextContent(aTextContent); \
-    return NS_OK; \
+    mozilla::ErrorResult rv; \
+    nsINode::GetTextContent(aTextContent, rv); \
+    return rv.ErrorCode(); \
   } \
   NS_IMETHOD SetTextContent(const nsAString& aTextContent) __VA_ARGS__ \
   { \
@@ -2060,9 +2028,9 @@ ToCanonicalSupports(nsINode* aPointer)
   { \
     return nsINode::IsEqualNode(aArg, aResult); \
   } \
-  NS_IMETHOD SetUserData(const nsAString& aKey, nsIVariant* aData, nsIDOMUserDataHandler* aHandler, nsIVariant** aResult) __VA_ARGS__ \
+  NS_IMETHOD SetUserData(const nsAString& aKey, nsIVariant* aData, nsIVariant** aResult) __VA_ARGS__ \
   { \
-    return nsINode::SetUserData(aKey, aData, aHandler, aResult); \
+    return nsINode::SetUserData(aKey, aData, aResult); \
   } \
   NS_IMETHOD GetUserData(const nsAString& aKey, nsIVariant** aResult) __VA_ARGS__ \
   { \

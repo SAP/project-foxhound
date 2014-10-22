@@ -55,7 +55,7 @@ NS_INTERFACE_MAP_END
 class MOZ_STACK_CLASS AutoChangeNumberNotifier
 {
 public:
-  AutoChangeNumberNotifier(DOMSVGNumber* aNumber MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoChangeNumberNotifier(DOMSVGNumber* aNumber MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     : mNumber(aNumber)
   {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
@@ -98,8 +98,6 @@ DOMSVGNumber::DOMSVGNumber(DOMSVGNumberList *aList,
                     aListIndex <= MaxListIndex(), "bad arg");
 
   NS_ABORT_IF_FALSE(IndexIsValid(), "Bad index for DOMSVGNumber!");
-
-  SetIsDOMBinding();
 }
 
 DOMSVGNumber::DOMSVGNumber(nsISupports* aParent)
@@ -110,7 +108,6 @@ DOMSVGNumber::DOMSVGNumber(nsISupports* aParent)
   , mIsAnimValItem(false)
   , mValue(0.0f)
 {
-  SetIsDOMBinding();
 }
 
 /* static */ already_AddRefed<DOMSVGNumber>

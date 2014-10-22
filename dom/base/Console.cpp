@@ -191,7 +191,7 @@ public:
 class ClearException
 {
 public:
-  ClearException(JSContext* aCx)
+  explicit ClearException(JSContext* aCx)
     : mCx(aCx)
   {
   }
@@ -278,7 +278,7 @@ private:
 class ConsoleCallDataRunnable MOZ_FINAL : public ConsoleRunnable
 {
 public:
-  ConsoleCallDataRunnable(ConsoleCallData* aCallData)
+  explicit ConsoleCallDataRunnable(ConsoleCallData* aCallData)
     : mCallData(aCallData)
   {
   }
@@ -560,7 +560,6 @@ Console::Console(nsPIDOMWindow* aWindow)
     }
   }
 
-  SetIsDOMBinding();
   mozilla::HoldJSObjects(this);
 }
 
@@ -624,6 +623,7 @@ METHOD(Warn, "warn")
 METHOD(Error, "error")
 METHOD(Exception, "exception")
 METHOD(Debug, "debug")
+METHOD(Table, "table")
 
 void
 Console::Trace(JSContext* aCx)
@@ -763,6 +763,12 @@ StackFrameToStackEntry(nsIStackFrame* aStackFrame,
 
   aStackEntry.mLineNumber = lineNumber;
 
+  int32_t columnNumber;
+  rv = aStackFrame->GetColumnNumber(&columnNumber);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  aStackEntry.mColumnNumber = columnNumber;
+
   rv = aStackFrame->GetName(aStackEntry.mFunctionName);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -808,7 +814,7 @@ Console::Method(JSContext* aCx, MethodName aMethodName,
   // goes wrong.
   class RAII {
   public:
-    RAII(LinkedList<ConsoleCallData>& aList)
+    explicit RAII(LinkedList<ConsoleCallData>& aList)
       : mList(aList)
       , mUnfinished(true)
     {
@@ -854,7 +860,7 @@ Console::Method(JSContext* aCx, MethodName aMethodName,
     loadContext->GetUsePrivateBrowsing(&callData->mPrivate);
   }
 
-  uint32_t maxDepth = ShouldIncludeStackrace(aMethodName) ?
+  uint32_t maxDepth = ShouldIncludeStackTrace(aMethodName) ?
                       DEFAULT_MAX_STACKTRACE_DEPTH : 1;
   nsCOMPtr<nsIStackFrame> stack = CreateStack(aCx, maxDepth);
 
@@ -872,9 +878,9 @@ Console::Method(JSContext* aCx, MethodName aMethodName,
 
     if (language == nsIProgrammingLanguage::JAVASCRIPT ||
         language == nsIProgrammingLanguage::JAVASCRIPT2) {
-      callData->mTopStackFrame.construct();
+      callData->mTopStackFrame.emplace();
       nsresult rv = StackFrameToStackEntry(stack,
-                                           callData->mTopStackFrame.ref(),
+                                           *callData->mTopStackFrame,
                                            language);
       if (NS_FAILED(rv)) {
         return;
@@ -897,8 +903,8 @@ Console::Method(JSContext* aCx, MethodName aMethodName,
   } else {
     // nsIStackFrame is not threadsafe, so we need to snapshot it now,
     // before we post our runnable to the main thread.
-    callData->mReifiedStack.construct();
-    nsresult rv = ReifyStack(stack, callData->mReifiedStack.ref());
+    callData->mReifiedStack.emplace();
+    nsresult rv = ReifyStack(stack, *callData->mReifiedStack);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }
@@ -910,9 +916,8 @@ Console::Method(JSContext* aCx, MethodName aMethodName,
       nsGlobalWindow *win = static_cast<nsGlobalWindow*>(mWindow.get());
       MOZ_ASSERT(win);
 
-      ErrorResult rv;
-      nsRefPtr<nsPerformance> performance = win->GetPerformance(rv);
-      if (rv.Failed() || !performance) {
+      nsRefPtr<nsPerformance> performance = win->GetPerformance();
+      if (!performance) {
         return;
       }
 
@@ -1038,8 +1043,8 @@ Console::ProcessCallData(ConsoleCallData* aData)
   MOZ_ASSERT(NS_IsMainThread());
 
   ConsoleStackEntry frame;
-  if (!aData->mTopStackFrame.empty()) {
-    frame = aData->mTopStackFrame.ref();
+  if (aData->mTopStackFrame) {
+    frame = *aData->mTopStackFrame;
   }
 
   AutoSafeJSContext cx;
@@ -1062,6 +1067,7 @@ Console::ProcessCallData(ConsoleCallData* aData)
   event.mLevel = aData->mMethodString;
   event.mFilename = frame.mFilename;
   event.mLineNumber = frame.mLineNumber;
+  event.mColumnNumber = frame.mColumnNumber;
   event.mFunctionName = frame.mFunctionName;
   event.mTimeStamp = aData->mTimeStamp;
   event.mPrivate = aData->mPrivate;
@@ -1113,7 +1119,7 @@ Console::ProcessCallData(ConsoleCallData* aData)
   // mStorage, but that's a bit fragile.  Instead, we just use the junk scope,
   // with explicit permission from the XPConnect module owner.  If you're
   // tempted to do that anywhere else, talk to said module owner first.
-  JSAutoCompartment ac2(cx, xpc::GetJunkScope());
+  JSAutoCompartment ac2(cx, xpc::PrivilegedJunkScope());
 
   JS::Rooted<JS::Value> eventValue(cx);
   if (!ToJSValue(cx, event, &eventValue)) {
@@ -1127,13 +1133,13 @@ Console::ProcessCallData(ConsoleCallData* aData)
     return;
   }
 
-  if (ShouldIncludeStackrace(aData->mMethodName)) {
+  if (ShouldIncludeStackTrace(aData->mMethodName)) {
     // Now define the "stacktrace" property on eventObj.  There are two cases
     // here.  Either we came from a worker and have a reified stack, or we want
     // to define a getter that will lazily reify the stack.
-    if (!aData->mReifiedStack.empty()) {
+    if (aData->mReifiedStack) {
       JS::Rooted<JS::Value> stacktrace(cx);
-      if (!ToJSValue(cx, aData->mReifiedStack.ref(), &stacktrace) ||
+      if (!ToJSValue(cx, *aData->mReifiedStack, &stacktrace) ||
           !JS_DefineProperty(cx, eventObj, "stacktrace", stacktrace,
                              JSPROP_ENUMERATE)) {
         return;
@@ -1636,7 +1642,7 @@ Console::ClearConsoleData()
 }
 
 bool
-Console::ShouldIncludeStackrace(MethodName aMethodName)
+Console::ShouldIncludeStackTrace(MethodName aMethodName)
 {
   switch (aMethodName) {
     case MethodError:

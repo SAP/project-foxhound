@@ -135,6 +135,7 @@ public:
 
   // Enumeration for the valid decoding states
   enum State {
+    DECODER_STATE_DECODING_NONE,
     DECODER_STATE_DECODING_METADATA,
     DECODER_STATE_WAIT_FOR_RESOURCES,
     DECODER_STATE_DORMANT,
@@ -274,11 +275,6 @@ public:
 
   void NotifyDataArrived(const char* aBuffer, uint32_t aLength, int64_t aOffset);
 
-  int64_t GetEndMediaTime() const {
-    AssertCurrentThreadInMonitor();
-    return mEndTime;
-  }
-
   // Returns the shared state machine thread.
   nsIEventTarget* GetStateMachineThread() const;
 
@@ -331,9 +327,9 @@ public:
   // be held.
   bool IsPlaying();
 
+  // Dispatch DoNotifyWaitingForResourcesStatusChanged task to mDecodeTaskQueue.
   // Called when the reader may have acquired the hardware resources required
-  // to begin decoding. The state machine may move into DECODING_METADATA if
-  // appropriate. The decoder monitor must be held while calling this.
+  // to begin decoding. The decoder monitor must be held while calling this.
   void NotifyWaitingForResourcesStatusChanged();
 
   // Notifies the state machine that should minimize the number of samples
@@ -354,6 +350,8 @@ protected:
 
   void AssertCurrentThreadInMonitor() const { mDecoder->GetReentrantMonitor().AssertCurrentThreadIn(); }
 
+  void SetState(State aState);
+
   // Inserts MediaData* samples into their respective MediaQueues.
   // aSample must not be null.
   void Push(AudioData* aSample);
@@ -361,7 +359,7 @@ protected:
 
   class WakeDecoderRunnable : public nsRunnable {
   public:
-    WakeDecoderRunnable(MediaDecoderStateMachine* aSM)
+    explicit WakeDecoderRunnable(MediaDecoderStateMachine* aSM)
       : mMutex("WakeDecoderRunnable"), mStateMachine(aSM) {}
     NS_IMETHOD Run() MOZ_OVERRIDE
     {
@@ -638,6 +636,13 @@ protected:
   // and the sink is shutting down.
   void OnAudioSinkComplete();
 
+  // Called by the AudioSink to signal errors.
+  void OnAudioSinkError();
+
+  // The state machine may move into DECODING_METADATA if we are in
+  // DECODER_STATE_WAIT_FOR_RESOURCES.
+  void DoNotifyWaitingForResourcesStatusChanged();
+
   // The decoder object that created this state machine. The state machine
   // holds a strong reference to the decoder to ensure that the decoder stays
   // alive once media element has started the decoder shutdown process, and has
@@ -829,14 +834,6 @@ protected:
   bool mIsAudioPrerolling;
   bool mIsVideoPrerolling;
 
-  // True when we have an audio stream that we're decoding, and we have not
-  // yet decoded to end of stream.
-  bool mIsAudioDecoding;
-
-  // True when we have a video stream that we're decoding, and we have not
-  // yet decoded to end of stream.
-  bool mIsVideoDecoding;
-
   // True when we have dispatched a task to the decode task queue to request
   // decoded audio/video, and/or we are waiting for the requested sample to be
   // returned by callback from the Reader.
@@ -900,11 +897,6 @@ protected:
   // waiting to be awakened before it continues decoding. Synchronized
   // by the decoder monitor.
   bool mDecodeThreadWaiting;
-
-  // True if we've dispatched a task to the decode task queue to call
-  // ReadMetadata on the reader. We maintain a flag to ensure that we don't
-  // dispatch multiple tasks to re-do the metadata loading.
-  bool mDispatchedDecodeMetadataTask;
 
   // These two flags are true when we need to drop decoded samples that
   // we receive up to the next discontinuity. We do this when we seek;

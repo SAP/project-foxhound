@@ -28,21 +28,24 @@ BasicCanvasLayer::Paint(DrawTarget* aDT,
   if (IsHidden())
     return;
 
-  FirePreTransactionCallback();
-  UpdateTarget();
-  FireDidTransactionCallback();
+  if (IsDirty()) {
+    Painted();
+
+    FirePreTransactionCallback();
+    UpdateTarget();
+    FireDidTransactionCallback();
+  }
 
   if (!mSurface) {
     return;
   }
 
-  Matrix m;
+  Matrix oldTM;
   if (mNeedsYFlip) {
-    m = aDT->GetTransform();
-    Matrix newTransform = m;
-    newTransform.Translate(0.0f, mBounds.height);
-    newTransform.Scale(1.0f, -1.0f);
-    aDT->SetTransform(newTransform);
+    oldTM = aDT->GetTransform();
+    aDT->SetTransform(Matrix(oldTM).
+                        PreTranslate(0.0f, mBounds.height).
+                        PreScale(1.0f, -1.0f));
   }
 
   FillRectWithMask(aDT, aDeviceOffset,
@@ -52,7 +55,7 @@ BasicCanvasLayer::Paint(DrawTarget* aDT,
                    aMaskLayer);
 
   if (mNeedsYFlip) {
-    aDT->SetTransform(m);
+    aDT->SetTransform(oldTM);
   }
 }
 

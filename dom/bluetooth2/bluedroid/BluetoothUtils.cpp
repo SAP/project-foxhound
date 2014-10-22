@@ -12,9 +12,9 @@
 #include "BluetoothUtils.h"
 #include "jsapi.h"
 #include "mozilla/Scoped.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 #include "nsIScriptContext.h"
 #include "nsISystemMessagesInternal.h"
 #include "nsString.h"
@@ -24,44 +24,18 @@
 BEGIN_BLUETOOTH_NAMESPACE
 
 void
-StringToBdAddressType(const nsAString& aBdAddress,
-                      bt_bdaddr_t *aRetBdAddressType)
+UuidToString(const BluetoothUuid& aUuid, nsAString& aString)
 {
-  NS_ConvertUTF16toUTF8 bdAddressUTF8(aBdAddress);
-  const char* str = bdAddressUTF8.get();
-
-  for (int i = 0; i < 6; i++) {
-    aRetBdAddressType->address[i] = (uint8_t) strtoul(str, (char **)&str, 16);
-    str++;
-  }
-}
-
-void
-BdAddressTypeToString(bt_bdaddr_t* aBdAddressType, nsAString& aRetBdAddress)
-{
-  uint8_t* addr = aBdAddressType->address;
-  char bdstr[18];
-
-  sprintf(bdstr, "%02x:%02x:%02x:%02x:%02x:%02x",
-          (int)addr[0],(int)addr[1],(int)addr[2],
-          (int)addr[3],(int)addr[4],(int)addr[5]);
-
-  aRetBdAddress = NS_ConvertUTF8toUTF16(bdstr);
-}
-
-void
-UuidToString(bt_uuid_t* aUuid, nsAString& aString) {
   char uuidStr[37];
-
   uint32_t uuid0, uuid4;
   uint16_t uuid1, uuid2, uuid3, uuid5;
 
-  memcpy(&uuid0, &(aUuid->uu[0]), sizeof(uint32_t));
-  memcpy(&uuid1, &(aUuid->uu[4]), sizeof(uint16_t));
-  memcpy(&uuid2, &(aUuid->uu[6]), sizeof(uint16_t));
-  memcpy(&uuid3, &(aUuid->uu[8]), sizeof(uint16_t));
-  memcpy(&uuid4, &(aUuid->uu[10]), sizeof(uint32_t));
-  memcpy(&uuid5, &(aUuid->uu[14]), sizeof(uint16_t));
+  memcpy(&uuid0, &aUuid.mUuid[0], sizeof(uint32_t));
+  memcpy(&uuid1, &aUuid.mUuid[4], sizeof(uint16_t));
+  memcpy(&uuid2, &aUuid.mUuid[6], sizeof(uint16_t));
+  memcpy(&uuid3, &aUuid.mUuid[8], sizeof(uint16_t));
+  memcpy(&uuid4, &aUuid.mUuid[10], sizeof(uint32_t));
+  memcpy(&uuid5, &aUuid.mUuid[14], sizeof(uint16_t));
 
   sprintf(uuidStr, "%.8x-%.4x-%.4x-%.4x-%.8x%.4x",
           ntohl(uuid0), ntohs(uuid1),
@@ -173,7 +147,27 @@ DispatchBluetoothReply(BluetoothReplyRunnable* aRunnable,
   BluetoothReply* reply;
   if (!aErrorStr.IsEmpty()) {
     nsString err(aErrorStr);
-    reply = new BluetoothReply(BluetoothReplyError(err));
+    reply = new BluetoothReply(BluetoothReplyError(STATUS_FAIL, err));
+  } else {
+    MOZ_ASSERT(aValue.type() != BluetoothValue::T__None);
+    reply = new BluetoothReply(BluetoothReplySuccess(aValue));
+  }
+
+  aRunnable->SetReply(reply);
+  if (NS_FAILED(NS_DispatchToMainThread(aRunnable))) {
+    BT_WARNING("Failed to dispatch to main thread!");
+  }
+}
+
+void
+DispatchBluetoothReply(BluetoothReplyRunnable* aRunnable,
+                       const BluetoothValue& aValue,
+                       const enum BluetoothStatus aStatusCode)
+{
+  // Reply will be deleted by the runnable after running on main thread
+  BluetoothReply* reply;
+  if (aStatusCode != STATUS_SUCCESS) {
+    reply = new BluetoothReply(BluetoothReplyError(aStatusCode, EmptyString()));
   } else {
     MOZ_ASSERT(aValue.type() != BluetoothValue::T__None);
     reply = new BluetoothReply(BluetoothReplySuccess(aValue));

@@ -59,7 +59,7 @@ class MacroAssemblerX86Shared : public Assembler
             return;
         }
 
-        JS_ASSERT(!(cond & DoubleConditionBitSpecial));
+        MOZ_ASSERT(!(cond & DoubleConditionBitSpecial));
         j(ConditionFromDoubleCondition(cond), label);
     }
 
@@ -86,11 +86,11 @@ class MacroAssemblerX86Shared : public Assembler
             return;
         }
 
-        JS_ASSERT(!(cond & DoubleConditionBitSpecial));
+        MOZ_ASSERT(!(cond & DoubleConditionBitSpecial));
         j(ConditionFromDoubleCondition(cond), label);
     }
 
-    void branchNegativeZero(FloatRegister reg, Register scratch, Label *label);
+    void branchNegativeZero(FloatRegister reg, Register scratch, Label *label, bool  maybeNonZero = true);
     void branchNegativeZeroFloat32(FloatRegister reg, Register scratch, Label *label);
 
     void move32(Imm32 imm, Register dest) {
@@ -195,7 +195,7 @@ class MacroAssemblerX86Shared : public Assembler
     }
     void atomic_cmpxchg32(Register src, const Operand &addr, Register dest) {
         // %eax must be explicitly provided for calling clarity.
-        MOZ_ASSERT(dest.code() == JSC::X86Registers::eax);
+        MOZ_ASSERT(dest.code() == X86Registers::eax);
         lock_cmpxchg32(src, addr);
     }
 
@@ -219,6 +219,14 @@ class MacroAssemblerX86Shared : public Assembler
         cmpl(Operand(lhs), imm);
         j(cond, label);
     }
+    void branch32(Condition cond, const BaseIndex &lhs, Register rhs, Label *label) {
+        cmpl(Operand(lhs), rhs);
+        j(cond, label);
+    }
+    void branch32(Condition cond, const BaseIndex &lhs, Imm32 imm, Label *label) {
+        cmpl(Operand(lhs), imm);
+        j(cond, label);
+    }
     void branch32(Condition cond, Register lhs, Imm32 imm, Label *label) {
         cmpl(lhs, imm);
         j(cond, label);
@@ -232,17 +240,17 @@ class MacroAssemblerX86Shared : public Assembler
         j(cond, label);
     }
     void branchTest32(Condition cond, Register lhs, Register rhs, Label *label) {
-        JS_ASSERT(cond == Zero || cond == NonZero || cond == Signed || cond == NotSigned);
+        MOZ_ASSERT(cond == Zero || cond == NonZero || cond == Signed || cond == NotSigned);
         testl(lhs, rhs);
         j(cond, label);
     }
     void branchTest32(Condition cond, Register lhs, Imm32 imm, Label *label) {
-        JS_ASSERT(cond == Zero || cond == NonZero || cond == Signed || cond == NotSigned);
+        MOZ_ASSERT(cond == Zero || cond == NonZero || cond == Signed || cond == NotSigned);
         testl(lhs, imm);
         j(cond, label);
     }
     void branchTest32(Condition cond, const Address &address, Imm32 imm, Label *label) {
-        JS_ASSERT(cond == Zero || cond == NonZero || cond == Signed || cond == NotSigned);
+        MOZ_ASSERT(cond == Zero || cond == NonZero || cond == Signed || cond == NotSigned);
         testl(Operand(address), imm);
         j(cond, label);
     }
@@ -275,7 +283,7 @@ class MacroAssemblerX86Shared : public Assembler
         framePushed_ -= sizeof(double);
     }
     void implicitPop(uint32_t args) {
-        JS_ASSERT(args % sizeof(intptr_t) == 0);
+        MOZ_ASSERT(args % sizeof(intptr_t) == 0);
         framePushed_ -= args;
     }
     uint32_t framePushed() const {
@@ -383,6 +391,10 @@ class MacroAssemblerX86Shared : public Assembler
     void store32(const S &src, const T &dest) {
         movl(src, Operand(dest));
     }
+    template <typename S, typename T>
+    void store32_NoSecondScratch(const S &src, const T &dest) {
+        store32(src, dest);
+    }
     void loadDouble(const Address &src, FloatRegister dest) {
         movsd(src, dest);
     }
@@ -398,7 +410,7 @@ class MacroAssemblerX86Shared : public Assembler
             loadDouble(src.toBaseIndex(), dest);
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("unexpected operand kind");
+            MOZ_CRASH("unexpected operand kind");
         }
     }
     void storeDouble(FloatRegister src, const Address &dest) {
@@ -416,7 +428,7 @@ class MacroAssemblerX86Shared : public Assembler
             storeDouble(src, dest.toBaseIndex());
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("unexpected operand kind");
+            MOZ_CRASH("unexpected operand kind");
         }
     }
     void moveDouble(FloatRegister src, FloatRegister dest) {
@@ -462,6 +474,163 @@ class MacroAssemblerX86Shared : public Assembler
     void convertDoubleToFloat32(FloatRegister src, FloatRegister dest) {
         cvtsd2ss(src, dest);
     }
+
+    void convertFloat32x4ToInt32x4(FloatRegister src, FloatRegister dest) {
+        // TODO: Note that if the conversion failed (because the converted
+        // result is larger than the maximum signed int32, or less than the
+        // least signed int32, or NaN), this will return the undefined integer
+        // value (0x8000000). Spec should define what to do in such cases. See
+        // also bug 1068020.
+        cvttps2dq(src, dest);
+    }
+    void convertInt32x4ToFloat32x4(FloatRegister src, FloatRegister dest) {
+        cvtdq2ps(src, dest);
+    }
+
+    void bitwiseAndX4(const Operand &src, FloatRegister dest) {
+        // TODO Using the "ps" variant for all types incurs a domain crossing
+        // penalty for integer types and double.
+        andps(src, dest);
+    }
+    void bitwiseAndNotX4(const Operand &src, FloatRegister dest) {
+        andnps(src, dest);
+    }
+    void bitwiseOrX4(const Operand &src, FloatRegister dest) {
+        orps(src, dest);
+    }
+    void bitwiseXorX4(const Operand &src, FloatRegister dest) {
+        xorps(src, dest);
+    }
+
+    void loadAlignedInt32x4(const Address &src, FloatRegister dest) {
+        movdqa(Operand(src), dest);
+    }
+    void loadAlignedInt32x4(const Operand &src, FloatRegister dest) {
+        movdqa(src, dest);
+    }
+    void storeAlignedInt32x4(FloatRegister src, const Address &dest) {
+        movdqa(src, Operand(dest));
+    }
+    void moveAlignedInt32x4(FloatRegister src, FloatRegister dest) {
+        movdqa(src, dest);
+    }
+    void loadUnalignedInt32x4(const Address &src, FloatRegister dest) {
+        movdqu(Operand(src), dest);
+    }
+    void storeUnalignedInt32x4(FloatRegister src, const Address &dest) {
+        movdqu(src, Operand(dest));
+    }
+    void packedEqualInt32x4(const Operand &src, FloatRegister dest) {
+        pcmpeqd(src, dest);
+    }
+    void packedGreaterThanInt32x4(const Operand &src, FloatRegister dest) {
+        pcmpgtd(src, dest);
+    }
+    void packedAddInt32(const Operand &src, FloatRegister dest) {
+        paddd(src, dest);
+    }
+    void packedSubInt32(const Operand &src, FloatRegister dest) {
+        psubd(src, dest);
+    }
+    void packedReciprocalFloat32x4(const Operand &src, FloatRegister dest) {
+        // This function is an approximation of the result, this might need
+        // fix up if the spec requires a given precision for this operation.
+        // TODO See also bug 1068028.
+        rcpps(src, dest);
+    }
+    void packedReciprocalSqrtFloat32x4(const Operand &src, FloatRegister dest) {
+        // TODO See comment above. See also bug 1068028.
+        rsqrtps(src, dest);
+    }
+    void packedSqrtFloat32x4(const Operand &src, FloatRegister dest) {
+        sqrtps(src, dest);
+    }
+
+    void packedLeftShiftByScalar(FloatRegister src, FloatRegister dest) {
+        pslld(src, dest);
+    }
+    void packedLeftShiftByScalar(Imm32 count, FloatRegister dest) {
+        pslld(count, dest);
+    }
+    void packedRightShiftByScalar(FloatRegister src, FloatRegister dest) {
+        psrad(src, dest);
+    }
+    void packedRightShiftByScalar(Imm32 count, FloatRegister dest) {
+        psrad(count, dest);
+    }
+    void packedUnsignedRightShiftByScalar(FloatRegister src, FloatRegister dest) {
+        psrld(src, dest);
+    }
+    void packedUnsignedRightShiftByScalar(Imm32 count, FloatRegister dest) {
+        psrld(count, dest);
+    }
+
+    void loadAlignedFloat32x4(const Address &src, FloatRegister dest) {
+        movaps(Operand(src), dest);
+    }
+    void loadAlignedFloat32x4(const Operand &src, FloatRegister dest) {
+        movaps(src, dest);
+    }
+    void storeAlignedFloat32x4(FloatRegister src, const Address &dest) {
+        movaps(src, Operand(dest));
+    }
+    void moveAlignedFloat32x4(FloatRegister src, FloatRegister dest) {
+        movaps(src, dest);
+    }
+    void loadUnalignedFloat32x4(const Address &src, FloatRegister dest) {
+        movups(Operand(src), dest);
+    }
+    void storeUnalignedFloat32x4(FloatRegister src, const Address &dest) {
+        movups(src, Operand(dest));
+    }
+    void packedAddFloat32(const Operand &src, FloatRegister dest) {
+        addps(src, dest);
+    }
+    void packedSubFloat32(const Operand &src, FloatRegister dest) {
+        subps(src, dest);
+    }
+    void packedMulFloat32(const Operand &src, FloatRegister dest) {
+        mulps(src, dest);
+    }
+    void packedDivFloat32(const Operand &src, FloatRegister dest) {
+        divps(src, dest);
+    }
+
+    static uint32_t ComputeShuffleMask(uint32_t x = LaneX, uint32_t y = LaneY,
+                                       uint32_t z = LaneZ, uint32_t w = LaneW)
+    {
+        MOZ_ASSERT(x < 4 && y < 4 && z < 4 && w < 4);
+        uint32_t r = (w << 6) | (z << 4) | (y << 2) | (x << 0);
+        MOZ_ASSERT(r < 256);
+        return r;
+    }
+
+    void shuffleInt32(uint32_t mask, FloatRegister src, FloatRegister dest) {
+        pshufd(mask, src, dest);
+    }
+    void moveLowInt32(FloatRegister src, Register dest) {
+        movd(src, dest);
+    }
+
+    void moveHighPairToLowPairFloat32(FloatRegister src, FloatRegister dest) {
+        movhlps(src, dest);
+    }
+    void shuffleFloat32(uint32_t mask, FloatRegister src, FloatRegister dest) {
+        // The shuffle instruction on x86 is such that it moves 2 words from
+        // the dest and 2 words from the src operands. To simplify things, just
+        // clobber the output with the input and apply the instruction
+        // afterwards.
+        // Note: this is useAtStart-safe because src isn't read afterwards.
+        if (src != dest)
+            moveAlignedFloat32x4(src, dest);
+        shufps(mask, dest, dest);
+    }
+    void shuffleMix(uint32_t mask, const Operand &src, FloatRegister dest) {
+        // Note this uses shufps, which is a cross-domain penaly on CPU where it
+        // applies, but that's the way clang and gcc do it.
+        shufps(mask, src, dest);
+    }
+
     void moveFloatAsDouble(Register src, FloatRegister dest) {
         movd(src, dest);
         cvtss2sd(dest, dest);
@@ -493,7 +662,7 @@ class MacroAssemblerX86Shared : public Assembler
             loadFloat32(src.toBaseIndex(), dest);
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("unexpected operand kind");
+            MOZ_CRASH("unexpected operand kind");
         }
     }
     void storeFloat32(FloatRegister src, const Address &dest) {
@@ -511,7 +680,7 @@ class MacroAssemblerX86Shared : public Assembler
             storeFloat32(src, dest.toBaseIndex());
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("unexpected operand kind");
+            MOZ_CRASH("unexpected operand kind");
         }
     }
     void moveFloat32(FloatRegister src, FloatRegister dest) {
@@ -590,6 +759,30 @@ class MacroAssemblerX86Shared : public Assembler
 
         // See comment above
         if (u == 0) {
+            xorps(dest, dest);
+            return true;
+        }
+        return false;
+    }
+
+    bool maybeInlineInt32x4(const SimdConstant &v, const FloatRegister &dest) {
+        static const SimdConstant zero = SimdConstant::CreateX4(0, 0, 0, 0);
+        static const SimdConstant minusOne = SimdConstant::CreateX4(-1, -1, -1, -1);
+        if (v == zero) {
+            pxor(dest, dest);
+            return true;
+        }
+        if (v == minusOne) {
+            pcmpeqw(dest, dest);
+            return true;
+        }
+        return false;
+    }
+    bool maybeInlineFloat32x4(const SimdConstant &v, const FloatRegister &dest) {
+        static const SimdConstant zero = SimdConstant::CreateX4(0.f, 0.f, 0.f, 0.f);
+        if (v == zero) {
+            // This won't get inlined if the SimdConstant v contains -0 in any
+            // lane, as operator== here does a memcmp.
             xorps(dest, dest);
             return true;
         }

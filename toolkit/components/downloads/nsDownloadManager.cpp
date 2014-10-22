@@ -22,6 +22,7 @@
 #include "nsILocalFileWin.h"
 #include "nsILoadContext.h"
 #include "nsIXULAppInfo.h"
+#include "nsContentUtils.h"
 
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsArrayEnumerator.h"
@@ -945,31 +946,13 @@ nsDownloadManager::Init()
   // When MOZ_JSDOWNLOADS is undefined, we still check the preference that can
   // be used to enable the JavaScript API during the migration process.
   mUseJSTransfer = Preferences::GetBool(PREF_BD_USEJSTRANSFER, false);
-#else
-
-  nsAutoCString appID;
-  nsCOMPtr<nsIXULAppInfo> info = do_GetService("@mozilla.org/xre/app-info;1");
-  if (info) {
-    rv = info->GetID(appID);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  // The webapp runtime doesn't use the new JS downloads API yet.
-  // The conversion of the webapp runtime to use the JavaScript API for
-  // downloads is tracked in bug 911636.
-  if (appID.EqualsLiteral("webapprt@mozilla.org")) {
-    mUseJSTransfer = false;
-  } else {
-#if !defined(XP_WIN)
-    mUseJSTransfer = true;
-#else
+#elif defined(XP_WIN)
     // When MOZ_JSDOWNLOADS is defined on Windows, this component is disabled
     // unless we are running in Windows Metro.  The conversion of Windows Metro
     // to use the JavaScript API for downloads is tracked in bug 906042.
     mUseJSTransfer = !IsRunningInWindowsMetro();
-#endif
-  }
-
+#else
+    mUseJSTransfer = true;
 #endif
 
   if (mUseJSTransfer)
@@ -2768,7 +2751,7 @@ nsDownload::SetState(DownloadState aState)
                   message, !removeWhenDone,
                   mPrivate ? NS_LITERAL_STRING("private") : NS_LITERAL_STRING("non-private"),
                   mDownloadManager, EmptyString(), NS_LITERAL_STRING("auto"),
-                  EmptyString(), nullptr);
+                  EmptyString(), EmptyString(), nullptr);
             }
         }
       }
@@ -2783,14 +2766,25 @@ nsDownload::SetState(DownloadState aState)
           file &&
           NS_SUCCEEDED(file->GetPath(path))) {
 
-#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK) || defined(MOZ_WIDGET_ANDROID)
         // On Windows and Gtk, add the download to the system's "recent documents"
         // list, with a pref to disable.
         {
           bool addToRecentDocs = true;
           if (pref)
             pref->GetBoolPref(PREF_BDM_ADDTORECENTDOCS, &addToRecentDocs);
+#ifdef MOZ_WIDGET_ANDROID
+          if (addToRecentDocs) {
+            nsCOMPtr<nsIMIMEInfo> mimeInfo;
+            nsAutoCString contentType;
+            GetMIMEInfo(getter_AddRefs(mimeInfo));
 
+            if (mimeInfo)
+              mimeInfo->GetMIMEType(contentType);
+
+            mozilla::widget::android::DownloadsIntegration::ScanMedia(path, NS_ConvertUTF8toUTF16(contentType));
+          }
+#else
           if (addToRecentDocs && !mPrivate) {
 #ifdef XP_WIN
             ::SHAddToRecentDocs(SHARD_PATHW, path.get());
@@ -2805,6 +2799,7 @@ nsDownload::SetState(DownloadState aState)
             }
 #endif
           }
+#endif
 #ifdef MOZ_ENABLE_GIO
           // Use GIO to store the source URI for later display in the file manager.
           GFile* gio_file = g_file_new_for_path(NS_ConvertUTF16toUTF8(path).get());
@@ -2822,6 +2817,7 @@ nsDownload::SetState(DownloadState aState)
 #endif
         }
 #endif
+
 #ifdef XP_MACOSX
         // On OS X, make the downloads stack bounce.
         CFStringRef observedObject = ::CFStringCreateWithCString(kCFAllocatorDefault,
@@ -2831,16 +2827,6 @@ nsDownload::SetState(DownloadState aState)
         ::CFNotificationCenterPostNotification(center, CFSTR("com.apple.DownloadFileFinished"),
                                                observedObject, nullptr, TRUE);
         ::CFRelease(observedObject);
-#endif
-#ifdef MOZ_WIDGET_ANDROID
-        nsCOMPtr<nsIMIMEInfo> mimeInfo;
-        nsAutoCString contentType;
-        GetMIMEInfo(getter_AddRefs(mimeInfo));
-
-        if (mimeInfo)
-          mimeInfo->GetMIMEType(contentType);
-
-        mozilla::widget::android::GeckoAppShell::ScanMedia(path, NS_ConvertUTF8toUTF16(contentType));
 #endif
       }
 
@@ -3547,7 +3533,14 @@ nsDownload::Resume()
   // Create a new channel for the source URI
   nsCOMPtr<nsIChannel> channel;
   nsCOMPtr<nsIInterfaceRequestor> ir(do_QueryInterface(wbp));
-  rv = NS_NewChannel(getter_AddRefs(channel), mSource, nullptr, nullptr, ir);
+  rv = NS_NewChannel(getter_AddRefs(channel),
+                     mSource,
+                     nsContentUtils::GetSystemPrincipal(),
+                     nsILoadInfo::SEC_NORMAL,
+                     nsIContentPolicy::TYPE_OTHER,
+                     nullptr,  // aLoadGroup
+                     ir);
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(channel);

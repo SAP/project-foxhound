@@ -25,12 +25,12 @@ class nsRenderingContext;
  * It only supports having a single child frame which must be an area
  * frame
  */
-class nsCanvasFrame : public nsContainerFrame,
-                      public nsIScrollPositionListener,
-                      public nsIAnonymousContentCreator
+class nsCanvasFrame MOZ_FINAL : public nsContainerFrame,
+                                public nsIScrollPositionListener,
+                                public nsIAnonymousContentCreator
 {
 public:
-  nsCanvasFrame(nsStyleContext* aContext)
+  explicit nsCanvasFrame(nsStyleContext* aContext)
   : nsContainerFrame(aContext),
     mDoPaintFocus(false),
     mAddedScrollPositionListener(false) {}
@@ -68,7 +68,7 @@ public:
 
   // nsIAnonymousContentCreator
   virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) MOZ_OVERRIDE;
-  virtual void AppendAnonymousContentTo(nsBaseContentList& aElements, uint32_t aFilter) MOZ_OVERRIDE;
+  virtual void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements, uint32_t aFilter) MOZ_OVERRIDE;
 
   // Touch caret handle function
   mozilla::dom::Element* GetTouchCaretElement() const
@@ -230,7 +230,7 @@ public:
     mFrame->Properties().Delete(nsIFrame::CachedBackgroundImageDT());
   }
 
-  virtual bool ShouldFixToViewport(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE
+  virtual bool ShouldFixToViewport(LayerManager* aManager) MOZ_OVERRIDE
   {
     // Put background-attachment:fixed canvas background images in their own
     // compositing layer. Since we know their background painting area can't

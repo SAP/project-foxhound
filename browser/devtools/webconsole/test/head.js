@@ -348,19 +348,19 @@ function finishTest()
     return;
   }
 
-  let hud = HUDService.getHudByWindow(content);
-  if (!hud) {
+  let contentHud = HUDService.getHudByWindow(content);
+  if (!contentHud) {
     finish();
     return;
   }
 
-  if (hud.jsterm) {
-    hud.jsterm.clearOutput(true);
+  if (contentHud.jsterm) {
+    contentHud.jsterm.clearOutput(true);
   }
 
-  closeConsole(hud.target.tab, finish);
+  closeConsole(contentHud.target.tab, finish);
 
-  hud = null;
+  contentHud = null;
 }
 
 function tearDown()
@@ -912,6 +912,8 @@ function openDebugger(aOptions = {})
  *            message.
  *            - consoleGroup: boolean, set to |true| to match a console.group()
  *            message.
+ *            - consoleTable: boolean, set to |true| to match a console.table()
+ *            message.
  *            - longString: boolean, set to |true} to match long strings in the
  *            message.
  *            - collapsible: boolean, set to |true| to match messages that can
@@ -968,6 +970,22 @@ function waitForMessages(aOptions)
       result = aRule == aText;
     }
     return result;
+  }
+
+  function checkConsoleTable(aRule, aElement)
+  {
+    let elemText = aElement.textContent;
+    let table = aRule.consoleTable;
+
+    if (!checkText("console.table():", elemText)) {
+      return false;
+    }
+
+    aRule.category = CATEGORY_WEBDEV;
+    aRule.severity = SEVERITY_LOG;
+    aRule.type = Messages.ConsoleTable;
+
+    return true;
   }
 
   function checkConsoleTrace(aRule, aElement)
@@ -1146,6 +1164,10 @@ function waitForMessages(aOptions)
       return false;
     }
 
+    if (aRule.consoleTable && !checkConsoleTable(aRule, aElement)) {
+      return false;
+    }
+
     if (aRule.consoleTrace && !checkConsoleTrace(aRule, aElement)) {
       return false;
     }
@@ -1280,9 +1302,10 @@ function waitForMessages(aOptions)
     return aRule.matched.size == count;
   }
 
-  function onMessagesAdded(aEvent, aNewElements)
+  function onMessagesAdded(aEvent, aNewMessages)
   {
-    for (let elem of aNewElements) {
+    for (let msg of aNewMessages) {
+      let elem = msg.node;
       let location = elem.querySelector(".message-location");
       if (location) {
         let url = location.title;
@@ -1321,8 +1344,7 @@ function waitForMessages(aOptions)
   {
     if (allRulesMatched()) {
       if (listenerAdded) {
-        webconsole.ui.off("messages-added", onMessagesAdded);
-        webconsole.ui.off("messages-updated", onMessagesAdded);
+        webconsole.ui.off("new-messages", onMessagesAdded);
       }
       gPendingOutputTest--;
       deferred.resolve(rules);
@@ -1337,7 +1359,7 @@ function waitForMessages(aOptions)
     }
 
     if (webconsole.ui) {
-      webconsole.ui.off("messages-added", onMessagesAdded);
+      webconsole.ui.off("new-messages", onMessagesAdded);
     }
 
     for (let rule of rules) {
@@ -1360,12 +1382,21 @@ function waitForMessages(aOptions)
   }
 
   executeSoon(() => {
-    onMessagesAdded("messages-added", webconsole.outputNode.childNodes);
+
+    let messages = [];
+    for (let elem of webconsole.outputNode.childNodes) {
+      messages.push({
+        node: elem,
+        update: false,
+      });
+    }
+
+    onMessagesAdded("new-messages", messages);
+
     if (!allRulesMatched()) {
       listenerAdded = true;
       registerCleanupFunction(testCleanup);
-      webconsole.ui.on("messages-added", onMessagesAdded);
-      webconsole.ui.on("messages-updated", onMessagesAdded);
+      webconsole.ui.on("new-messages", onMessagesAdded);
     }
   });
 
@@ -1593,3 +1624,34 @@ function checkOutputForInputs(hud, inputTests)
 
   return Task.spawn(runner);
 }
+
+/**
+ * Wait for eventName on target.
+ * @param {Object} target An observable object that either supports on/off or
+ * addEventListener/removeEventListener
+ * @param {String} eventName
+ * @param {Boolean} useCapture Optional, for addEventListener/removeEventListener
+ * @return A promise that resolves when the event has been handled
+ */
+function once(target, eventName, useCapture=false) {
+  info("Waiting for event: '" + eventName + "' on " + target + ".");
+
+  let deferred = promise.defer();
+
+  for (let [add, remove] of [
+    ["addEventListener", "removeEventListener"],
+    ["addListener", "removeListener"],
+    ["on", "off"]
+  ]) {
+    if ((add in target) && (remove in target)) {
+      target[add](eventName, function onEvent(...aArgs) {
+        target[remove](eventName, onEvent, useCapture);
+        deferred.resolve.apply(deferred, aArgs);
+      }, useCapture);
+      break;
+    }
+  }
+
+  return deferred.promise;
+}
+

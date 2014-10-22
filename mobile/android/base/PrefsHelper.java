@@ -22,9 +22,9 @@ import java.util.ArrayList;
 public final class PrefsHelper {
     private static final String LOGTAG = "GeckoPrefsHelper";
 
-    private static boolean sRegistered = false;
+    private static boolean sRegistered;
     private static int sUniqueRequestId = 1;
-    /* inner-access */ static final SparseArray<PrefHandler> sCallbacks = new SparseArray<PrefHandler>();
+    static final SparseArray<PrefHandler> sCallbacks = new SparseArray<PrefHandler>();
 
     public static int getPref(String prefName, PrefHandler callback) {
         return getPrefsInternal(new String[] { prefName }, callback);

@@ -19,7 +19,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsVariant.h"
 #include "mozilla/dom/BrowserElementDictionariesBinding.h"
-#include "nsCxPusher.h"
 #include "mozilla/dom/CustomEvent.h"
 
 using namespace mozilla;
@@ -76,6 +75,14 @@ CreateIframe(Element* aOpenerFrameElement, const nsAString& aName, bool aRemote)
                              aRemote ? NS_LITERAL_STRING("true") :
                                        NS_LITERAL_STRING("false"),
                              /* aNotify = */ false);
+
+  // Copy the opener frame's mozprivatebrowsing attribute to the popup frame.
+  nsAutoString mozprivatebrowsing;
+  if (aOpenerFrameElement->GetAttr(kNameSpaceID_None, nsGkAtoms::mozprivatebrowsing,
+                                   mozprivatebrowsing)) {
+    popupFrameElement->SetAttr(kNameSpaceID_None, nsGkAtoms::mozprivatebrowsing,
+                               mozprivatebrowsing, /* aNotify = */ false);
+  }
 
   return popupFrameElement.forget();
 }
@@ -163,6 +170,13 @@ BrowserElementParent::DispatchOpenWindowEvent(Element* aOpenerFrameElement,
   if (!ToJSValue(cx, detail, &val)) {
     MOZ_CRASH("Failed to convert dictionary to JS::Value due to OOM.");
     return BrowserElementParent::OPEN_WINDOW_IGNORED;
+  }
+
+  // Do not dispatch a mozbrowseropenwindow event of a widget to its embedder
+  nsCOMPtr<nsIMozBrowserFrame> browserFrame =
+    do_QueryInterface(aOpenerFrameElement);
+  if (browserFrame && browserFrame->GetReallyIsWidget()) {
+    return BrowserElementParent::OPEN_WINDOW_CANCELLED;
   }
 
   nsEventStatus status;
@@ -350,6 +364,14 @@ BrowserElementParent::DispatchAsyncScrollEvent(TabParent* aTabParent,
                                                const CSSRect& aContentRect,
                                                const CSSSize& aContentSize)
 {
+  // Do not dispatch a mozbrowserasyncscroll event of a widget to its embedder
+  nsCOMPtr<Element> frameElement = aTabParent->GetOwnerElement();
+  NS_ENSURE_TRUE(frameElement, false);
+  nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(frameElement);
+  if (browserFrame && browserFrame->GetReallyIsWidget()) {
+    return true;
+  }
+
   nsRefPtr<DispatchAsyncScrollEventRunnable> runnable =
     new DispatchAsyncScrollEventRunnable(aTabParent, aContentRect,
                                          aContentSize);

@@ -138,11 +138,11 @@ static const size_t UINT32_CHAR_BUFFER_LENGTH = sizeof("4294967295") - 1;
  * at least X (e.g., ensureLinear will change a JSRope to be a JSFlatString).
  */
 
-class JSString : public js::gc::BarrieredCell<JSString>
+class JSString : public js::gc::TenuredCell
 {
   protected:
     static const size_t NUM_INLINE_CHARS_LATIN1 = 2 * sizeof(void *) / sizeof(char);
-    static const size_t NUM_INLINE_CHARS_TWO_BYTE = 2 * sizeof(void *) / sizeof(jschar);
+    static const size_t NUM_INLINE_CHARS_TWO_BYTE = 2 * sizeof(void *) / sizeof(char16_t);
 
     /* Fields only apply to string types commented on the right. */
     struct Data
@@ -164,12 +164,12 @@ class JSString : public js::gc::BarrieredCell<JSString>
             union {
                 /* JS(Fat)InlineString */
                 JS::Latin1Char     inlineStorageLatin1[NUM_INLINE_CHARS_LATIN1];
-                jschar             inlineStorageTwoByte[NUM_INLINE_CHARS_TWO_BYTE];
+                char16_t           inlineStorageTwoByte[NUM_INLINE_CHARS_TWO_BYTE];
             };
             struct {
                 union {
                     const JS::Latin1Char *nonInlineCharsLatin1; /* JSLinearString, except JS(Fat)InlineString */
-                    const jschar   *nonInlineCharsTwoByte;/* JSLinearString, except JS(Fat)InlineString */
+                    const char16_t *nonInlineCharsTwoByte;/* JSLinearString, except JS(Fat)InlineString */
                     JSString       *left;               /* JSRope */
                 } u2;
                 union {
@@ -283,7 +283,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
                       "Inline chars must fit in a JSString");
         static_assert(sizeof(JSString) ==
                       (offsetof(JSString, d.inlineStorageTwoByte) +
-                       NUM_INLINE_CHARS_TWO_BYTE * sizeof(jschar)),
+                       NUM_INLINE_CHARS_TWO_BYTE * sizeof(char16_t)),
                       "Inline chars must fit in a JSString");
 
         /* Ensure js::shadow::String has the same layout. */
@@ -342,7 +342,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
         return d.u1.length == 0;
     }
 
-    inline bool getChar(js::ExclusiveContext *cx, size_t index, jschar *code);
+    inline bool getChar(js::ExclusiveContext *cx, size_t index, char16_t *code);
 
     /* Strings have either Latin1 or TwoByte chars. */
     bool hasLatin1Chars() const {
@@ -370,7 +370,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSRope &asRope() const {
-        JS_ASSERT(isRope());
+        MOZ_ASSERT(isRope());
         return *(JSRope *)this;
     }
 
@@ -381,7 +381,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSLinearString &asLinear() const {
-        JS_ASSERT(JSString::isLinear());
+        MOZ_ASSERT(JSString::isLinear());
         return *(JSLinearString *)this;
     }
 
@@ -392,7 +392,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSDependentString &asDependent() const {
-        JS_ASSERT(isDependent());
+        MOZ_ASSERT(isDependent());
         return *(JSDependentString *)this;
     }
 
@@ -403,7 +403,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSFlatString &asFlat() const {
-        JS_ASSERT(isFlat());
+        MOZ_ASSERT(isFlat());
         return *(JSFlatString *)this;
     }
 
@@ -414,7 +414,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSExtensibleString &asExtensible() const {
-        JS_ASSERT(isExtensible());
+        MOZ_ASSERT(isExtensible());
         return *(JSExtensibleString *)this;
     }
 
@@ -425,7 +425,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSInlineString &asInline() const {
-        JS_ASSERT(isInline());
+        MOZ_ASSERT(isInline());
         return *(JSInlineString *)this;
     }
 
@@ -441,7 +441,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSExternalString &asExternal() const {
-        JS_ASSERT(isExternal());
+        MOZ_ASSERT(isExternal());
         return *(JSExternalString *)this;
     }
 
@@ -462,7 +462,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     MOZ_ALWAYS_INLINE
     JSAtom &asAtom() const {
-        JS_ASSERT(isAtom());
+        MOZ_ASSERT(isAtom());
         return *(JSAtom *)this;
     }
 
@@ -506,8 +506,6 @@ class JSString : public js::gc::BarrieredCell<JSString>
         return offsetof(JSString, d.s.u2.nonInlineCharsTwoByte);
     }
 
-    js::gc::AllocKind getAllocKind() const { return tenuredGetAllocKind(); }
-
     static inline js::ThingRootKind rootKind() { return js::THING_ROOT_STRING; }
 
 #ifdef DEBUG
@@ -525,7 +523,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
         if (thing->isPermanentAtom())
             return;
 
-        js::gc::BarrieredCell<JSString>::readBarrier(thing);
+        TenuredCell::readBarrier(thing);
 #endif
     }
 
@@ -534,7 +532,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
         if (isNullLike(thing) || thing->isPermanentAtom())
             return;
 
-        js::gc::BarrieredCell<JSString>::writeBarrierPre(thing);
+        TenuredCell::writeBarrierPre(thing);
 #endif
     }
 
@@ -572,22 +570,22 @@ class JSRope : public JSString
 
     bool copyLatin1Chars(js::ThreadSafeContext *cx,
                          js::ScopedJSFreePtr<JS::Latin1Char> &out) const;
-    bool copyTwoByteChars(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<jschar> &out) const;
+    bool copyTwoByteChars(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<char16_t> &out) const;
 
     bool copyLatin1CharsZ(js::ThreadSafeContext *cx,
                           js::ScopedJSFreePtr<JS::Latin1Char> &out) const;
-    bool copyTwoByteCharsZ(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<jschar> &out) const;
+    bool copyTwoByteCharsZ(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<char16_t> &out) const;
 
     template <typename CharT>
     bool copyChars(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<CharT> &out) const;
 
     inline JSString *leftChild() const {
-        JS_ASSERT(isRope());
+        MOZ_ASSERT(isRope());
         return d.s.u2.left;
     }
 
     inline JSString *rightChild() const {
-        JS_ASSERT(isRope());
+        MOZ_ASSERT(isRope());
         return d.s.u3.right;
     }
 
@@ -617,7 +615,7 @@ class JSLinearString : public JSString
     /* Returns void pointer to latin1/twoByte chars, for finalizers. */
     MOZ_ALWAYS_INLINE
     void *nonInlineCharsRaw() const {
-        JS_ASSERT(!isInline());
+        MOZ_ASSERT(!isInline());
         static_assert(offsetof(JSLinearString, d.s.u2.nonInlineCharsTwoByte) ==
                       offsetof(JSLinearString, d.s.u2.nonInlineCharsLatin1),
                       "nonInlineCharsTwoByte and nonInlineCharsLatin1 must have same offset");
@@ -625,7 +623,7 @@ class JSLinearString : public JSString
     }
 
     MOZ_ALWAYS_INLINE const JS::Latin1Char *rawLatin1Chars() const;
-    MOZ_ALWAYS_INLINE const jschar *rawTwoByteChars() const;
+    MOZ_ALWAYS_INLINE const char16_t *rawTwoByteChars() const;
 
   public:
     template<typename CharT>
@@ -634,15 +632,15 @@ class JSLinearString : public JSString
 
     MOZ_ALWAYS_INLINE
     const JS::Latin1Char *nonInlineLatin1Chars(const JS::AutoCheckCannotGC &nogc) const {
-        JS_ASSERT(!isInline());
-        JS_ASSERT(hasLatin1Chars());
+        MOZ_ASSERT(!isInline());
+        MOZ_ASSERT(hasLatin1Chars());
         return d.s.u2.nonInlineCharsLatin1;
     }
 
     MOZ_ALWAYS_INLINE
-    const jschar *nonInlineTwoByteChars(const JS::AutoCheckCannotGC &nogc) const {
-        JS_ASSERT(!isInline());
-        JS_ASSERT(hasTwoByteChars());
+    const char16_t *nonInlineTwoByteChars(const JS::AutoCheckCannotGC &nogc) const {
+        MOZ_ASSERT(!isInline());
+        MOZ_ASSERT(hasTwoByteChars());
         return d.s.u2.nonInlineCharsTwoByte;
     }
 
@@ -656,22 +654,22 @@ class JSLinearString : public JSString
     }
 
     MOZ_ALWAYS_INLINE
-    const jschar *twoByteChars(const JS::AutoCheckCannotGC &nogc) const {
+    const char16_t *twoByteChars(const JS::AutoCheckCannotGC &nogc) const {
         return rawTwoByteChars();
     }
 
     mozilla::Range<const JS::Latin1Char> latin1Range(const JS::AutoCheckCannotGC &nogc) const {
-        JS_ASSERT(JSString::isLinear());
+        MOZ_ASSERT(JSString::isLinear());
         return mozilla::Range<const JS::Latin1Char>(latin1Chars(nogc), length());
     }
 
-    mozilla::Range<const jschar> twoByteRange(const JS::AutoCheckCannotGC &nogc) const {
-        JS_ASSERT(JSString::isLinear());
-        return mozilla::Range<const jschar>(twoByteChars(nogc), length());
+    mozilla::Range<const char16_t> twoByteRange(const JS::AutoCheckCannotGC &nogc) const {
+        MOZ_ASSERT(JSString::isLinear());
+        return mozilla::Range<const char16_t>(twoByteChars(nogc), length());
     }
 
     MOZ_ALWAYS_INLINE
-    jschar latin1OrTwoByteChar(size_t index) const {
+    char16_t latin1OrTwoByteChar(size_t index) const {
         MOZ_ASSERT(JSString::isLinear());
         MOZ_ASSERT(index < length());
         JS::AutoCheckCannotGC nogc;
@@ -712,6 +710,10 @@ class JSDependentString : public JSLinearString
   public:
     static inline JSLinearString *new_(js::ExclusiveContext *cx, JSLinearString *base,
                                        size_t start, size_t length);
+
+    inline static size_t offsetOfBase() {
+        return offsetof(JSDependentString, d.s.u3.base);
+    }
 };
 
 JS_STATIC_ASSERT(sizeof(JSDependentString) == sizeof(JSString));
@@ -726,7 +728,7 @@ class JSFlatString : public JSLinearString
     template <typename CharT>
     static bool isIndexSlow(const CharT *s, size_t length, uint32_t *indexp);
 
-    void init(const jschar *chars, size_t length);
+    void init(const char16_t *chars, size_t length);
     void init(const JS::Latin1Char *chars, size_t length);
 
   public:
@@ -741,13 +743,13 @@ class JSFlatString : public JSLinearString
      * string equal to this string.)
      */
     inline bool isIndex(uint32_t *indexp) const {
-        JS_ASSERT(JSString::isFlat());
+        MOZ_ASSERT(JSString::isFlat());
         JS::AutoCheckCannotGC nogc;
         if (hasLatin1Chars()) {
             const JS::Latin1Char *s = latin1Chars(nogc);
             return JS7_ISDEC(*s) && isIndexSlow(s, length(), indexp);
         }
-        const jschar *s = twoByteChars(nogc);
+        const char16_t *s = twoByteChars(nogc);
         return JS7_ISDEC(*s) && isIndexSlow(s, length(), indexp);
     }
 
@@ -785,7 +787,7 @@ class JSExtensibleString : public JSFlatString
   public:
     MOZ_ALWAYS_INLINE
     size_t capacity() const {
-        JS_ASSERT(JSString::isExtensible());
+        MOZ_ASSERT(JSString::isExtensible());
         return d.s.u3.capacity;
     }
 };
@@ -799,14 +801,14 @@ JS_STATIC_ASSERT(sizeof(JSExtensibleString) == sizeof(JSString));
  */
 class JSInlineString : public JSFlatString
 {
+  public:
     static const size_t MAX_LENGTH_LATIN1 = NUM_INLINE_CHARS_LATIN1 - 1;
     static const size_t MAX_LENGTH_TWO_BYTE = NUM_INLINE_CHARS_TWO_BYTE - 1;
 
-  public:
     template <js::AllowGC allowGC>
     static inline JSInlineString *new_(js::ThreadSafeContext *cx);
 
-    inline jschar *initTwoByte(size_t length);
+    inline char16_t *initTwoByte(size_t length);
     inline JS::Latin1Char *initLatin1(size_t length);
 
     template <typename CharT>
@@ -816,15 +818,15 @@ class JSInlineString : public JSFlatString
 
     MOZ_ALWAYS_INLINE
     const JS::Latin1Char *latin1Chars(const JS::AutoCheckCannotGC &nogc) const {
-        JS_ASSERT(JSString::isInline());
-        JS_ASSERT(hasLatin1Chars());
+        MOZ_ASSERT(JSString::isInline());
+        MOZ_ASSERT(hasLatin1Chars());
         return d.inlineStorageLatin1;
     }
 
     MOZ_ALWAYS_INLINE
-    const jschar *twoByteChars(const JS::AutoCheckCannotGC &nogc) const {
-        JS_ASSERT(JSString::isInline());
-        JS_ASSERT(hasTwoByteChars());
+    const char16_t *twoByteChars(const JS::AutoCheckCannotGC &nogc) const {
+        MOZ_ASSERT(JSString::isInline());
+        MOZ_ASSERT(hasTwoByteChars());
         return d.inlineStorageTwoByte;
     }
 
@@ -864,10 +866,10 @@ class JSFatInlineString : public JSInlineString
 
     static void staticAsserts() {
         JS_STATIC_ASSERT((INLINE_EXTENSION_CHARS_LATIN1 * sizeof(char)) % js::gc::CellSize == 0);
-        JS_STATIC_ASSERT((INLINE_EXTENSION_CHARS_TWO_BYTE * sizeof(jschar)) % js::gc::CellSize == 0);
+        JS_STATIC_ASSERT((INLINE_EXTENSION_CHARS_TWO_BYTE * sizeof(char16_t)) % js::gc::CellSize == 0);
         JS_STATIC_ASSERT(MAX_LENGTH_TWO_BYTE + 1 ==
                          (sizeof(JSFatInlineString) -
-                          offsetof(JSFatInlineString, d.inlineStorageTwoByte)) / sizeof(jschar));
+                          offsetof(JSFatInlineString, d.inlineStorageTwoByte)) / sizeof(char16_t));
         JS_STATIC_ASSERT(MAX_LENGTH_LATIN1 + 1 ==
                          (sizeof(JSFatInlineString) -
                           offsetof(JSFatInlineString, d.inlineStorageLatin1)) / sizeof(char));
@@ -876,7 +878,7 @@ class JSFatInlineString : public JSInlineString
   protected: /* to fool clang into not warning this is unused */
     union {
         char   inlineStorageExtensionLatin1[INLINE_EXTENSION_CHARS_LATIN1];
-        jschar inlineStorageExtensionTwoByte[INLINE_EXTENSION_CHARS_TWO_BYTE];
+        char16_t inlineStorageExtensionTwoByte[INLINE_EXTENSION_CHARS_TWO_BYTE];
     };
 
   public:
@@ -891,7 +893,7 @@ class JSFatInlineString : public JSInlineString
                                               INLINE_EXTENSION_CHARS_TWO_BYTE
                                               -1 /* null terminator */;
 
-    inline jschar *initTwoByte(size_t length);
+    inline char16_t *initTwoByte(size_t length);
     inline JS::Latin1Char *initLatin1(size_t length);
 
     template <typename CharT>
@@ -916,18 +918,18 @@ JS_STATIC_ASSERT(sizeof(JSFatInlineString) % js::gc::CellSize == 0);
 
 class JSExternalString : public JSFlatString
 {
-    void init(const jschar *chars, size_t length, const JSStringFinalizer *fin);
+    void init(const char16_t *chars, size_t length, const JSStringFinalizer *fin);
 
     /* Vacuous and therefore unimplemented. */
     bool isExternal() const MOZ_DELETE;
     JSExternalString &asExternal() const MOZ_DELETE;
 
   public:
-    static inline JSExternalString *new_(JSContext *cx, const jschar *chars, size_t length,
+    static inline JSExternalString *new_(JSContext *cx, const char16_t *chars, size_t length,
                                          const JSStringFinalizer *fin);
 
     const JSStringFinalizer *externalFinalizer() const {
-        JS_ASSERT(JSString::isExternal());
+        MOZ_ASSERT(JSString::isExternal());
         return d.s.u3.externalFinalizer;
     }
 
@@ -935,7 +937,7 @@ class JSExternalString : public JSFlatString
      * External chars are never allocated inline or in the nursery, so we can
      * safely expose this without requiring an AutoCheckCannotGC argument.
      */
-    const jschar *twoByteChars() const {
+    const char16_t *twoByteChars() const {
         return rawTwoByteChars();
     }
 
@@ -1006,7 +1008,7 @@ class ScopedThreadSafeStringInspector
     JSString *str_;
     ScopedJSFreePtr<void> scopedChars_;
     union {
-        const jschar *twoByteChars_;
+        const char16_t *twoByteChars_;
         const JS::Latin1Char *latin1Chars_;
     };
     enum State { Uninitialized, Latin1, TwoByte };
@@ -1023,7 +1025,7 @@ class ScopedThreadSafeStringInspector
     bool hasTwoByteChars() const { return state_ == TwoByte; }
     bool hasLatin1Chars() const { return state_ == Latin1; }
 
-    const jschar *twoByteChars() const {
+    const char16_t *twoByteChars() const {
         MOZ_ASSERT(state_ == TwoByte);
         return twoByteChars_;
     }
@@ -1036,9 +1038,9 @@ class ScopedThreadSafeStringInspector
         MOZ_ASSERT(state_ == Latin1);
         return mozilla::Range<const Latin1Char>(latin1Chars_, str_->length());
     }
-    mozilla::Range<const jschar> twoByteRange() const {
+    mozilla::Range<const char16_t> twoByteRange() const {
         MOZ_ASSERT(state_ == TwoByte);
-        return mozilla::Range<const jschar>(twoByteChars_, str_->length());
+        return mozilla::Range<const char16_t>(twoByteChars_, str_->length());
     }
 };
 
@@ -1071,7 +1073,7 @@ class StaticStrings
     }
 
     JSAtom *getUint(uint32_t u) {
-        JS_ASSERT(hasUint(u));
+        MOZ_ASSERT(hasUint(u));
         return intStaticTable[u];
     }
 
@@ -1080,20 +1082,20 @@ class StaticStrings
     }
 
     JSAtom *getInt(int32_t i) {
-        JS_ASSERT(hasInt(i));
+        MOZ_ASSERT(hasInt(i));
         return getUint(uint32_t(i));
     }
 
-    static bool hasUnit(jschar c) {
+    static bool hasUnit(char16_t c) {
 #if _TAINT_ON_
         return false;
 #endif
         return c < UNIT_STATIC_LIMIT;
     }
 
-    JSAtom *getUnit(jschar c) {
+    JSAtom *getUnit(char16_t c) {
 #ifndef _TAINT_ON_
-        JS_ASSERT(hasUnit(c));
+        MOZ_ASSERT(hasUnit(c));
 #endif
         return unitStaticTable[c];
     }
@@ -1113,7 +1115,7 @@ class StaticStrings
 #endif
         switch (length) {
           case 1: {
-            jschar c = chars[0];
+            char16_t c = chars[0];
             if (c < UNIT_STATIC_LIMIT)
                 return getUnit(c);
             return nullptr;
@@ -1150,15 +1152,15 @@ class StaticStrings
     typedef uint8_t SmallChar;
     static const SmallChar INVALID_SMALL_CHAR = -1;
 
-    static bool fitsInSmallChar(jschar c) {
+    static bool fitsInSmallChar(char16_t c) {
         return c < SMALL_CHAR_LIMIT && toSmallChar[c] != INVALID_SMALL_CHAR;
     }
 
     static const SmallChar toSmallChar[];
 
-    JSAtom *getLength2(jschar c1, jschar c2);
+    JSAtom *getLength2(char16_t c1, char16_t c2);
     JSAtom *getLength2(uint32_t u) {
-        JS_ASSERT(u < 100);
+        MOZ_ASSERT(u < 100);
         return getLength2('0' + u / 10, '0' + u % 10);
     }
 };
@@ -1244,7 +1246,7 @@ NewStringCopyNDontDeflate(js::ThreadSafeContext *cx, const CharT *s, size_t n);
 /* Copy a C string and GC-allocate a descriptor for it. */
 template <js::AllowGC allowGC>
 inline JSFlatString *
-NewStringCopyZ(js::ExclusiveContext *cx, const jschar *s)
+NewStringCopyZ(js::ExclusiveContext *cx, const char16_t *s)
 {
     return NewStringCopyN<allowGC>(cx, s, js_strlen(s));
 }
@@ -1264,9 +1266,9 @@ class JSAddonId : public JSAtom
 {};
 
 MOZ_ALWAYS_INLINE bool
-JSString::getChar(js::ExclusiveContext *cx, size_t index, jschar *code)
+JSString::getChar(js::ExclusiveContext *cx, size_t index, char16_t *code)
 {
-    JS_ASSERT(index < length());
+    MOZ_ASSERT(index < length());
 
     /*
      * Optimization for one level deep ropes.
@@ -1318,13 +1320,13 @@ JSString::ensureFlat(js::ExclusiveContext *cx)
 inline JSLinearString *
 JSString::base() const
 {
-    JS_ASSERT(hasBase());
-    JS_ASSERT(!d.s.u3.base->isInline());
+    MOZ_ASSERT(hasBase());
+    MOZ_ASSERT(!d.s.u3.base->isInline());
     return d.s.u3.base;
 }
 
 template<>
-MOZ_ALWAYS_INLINE const jschar *
+MOZ_ALWAYS_INLINE const char16_t *
 JSLinearString::nonInlineChars(const JS::AutoCheckCannotGC &nogc) const
 {
     return nonInlineTwoByteChars(nogc);
@@ -1338,7 +1340,7 @@ JSLinearString::nonInlineChars(const JS::AutoCheckCannotGC &nogc) const
 }
 
 template<>
-MOZ_ALWAYS_INLINE const jschar *
+MOZ_ALWAYS_INLINE const char16_t *
 JSLinearString::chars(const JS::AutoCheckCannotGC &nogc) const
 {
     return rawTwoByteChars();
@@ -1361,7 +1363,7 @@ JSRope::copyChars<JS::Latin1Char>(js::ThreadSafeContext *cx,
 
 template <>
 MOZ_ALWAYS_INLINE bool
-JSRope::copyChars<jschar>(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<jschar> &out) const
+JSRope::copyChars<char16_t>(js::ThreadSafeContext *cx, js::ScopedJSFreePtr<char16_t> &out) const
 {
     return copyTwoByteChars(cx, out);
 }
@@ -1375,7 +1377,7 @@ JSInlineString::lengthFits<JS::Latin1Char>(size_t length)
 
 template<>
 MOZ_ALWAYS_INLINE bool
-JSInlineString::lengthFits<jschar>(size_t length)
+JSInlineString::lengthFits<char16_t>(size_t length)
 {
     return twoByteLengthFits(length);
 }
@@ -1389,14 +1391,14 @@ JSFatInlineString::lengthFits<JS::Latin1Char>(size_t length)
 
 template<>
 MOZ_ALWAYS_INLINE bool
-JSFatInlineString::lengthFits<jschar>(size_t length)
+JSFatInlineString::lengthFits<char16_t>(size_t length)
 {
     return twoByteLengthFits(length);
 }
 
 template<>
 MOZ_ALWAYS_INLINE void
-JSString::setNonInlineChars(const jschar *chars)
+JSString::setNonInlineChars(const char16_t *chars)
 {
     d.s.u2.nonInlineCharsTwoByte = chars;
 }
@@ -1411,16 +1413,16 @@ JSString::setNonInlineChars(const JS::Latin1Char *chars)
 MOZ_ALWAYS_INLINE const JS::Latin1Char *
 JSLinearString::rawLatin1Chars() const
 {
-    JS_ASSERT(JSString::isLinear());
-    JS_ASSERT(hasLatin1Chars());
+    MOZ_ASSERT(JSString::isLinear());
+    MOZ_ASSERT(hasLatin1Chars());
     return isInline() ? d.inlineStorageLatin1 : d.s.u2.nonInlineCharsLatin1;
 }
 
-MOZ_ALWAYS_INLINE const jschar *
+MOZ_ALWAYS_INLINE const char16_t *
 JSLinearString::rawTwoByteChars() const
 {
-    JS_ASSERT(JSString::isLinear());
-    JS_ASSERT(hasTwoByteChars());
+    MOZ_ASSERT(JSString::isLinear());
+    MOZ_ASSERT(hasTwoByteChars());
     return isInline() ? d.inlineStorageTwoByte : d.s.u2.nonInlineCharsTwoByte;
 }
 
@@ -1429,7 +1431,7 @@ JSAtom::asPropertyName()
 {
 #ifdef DEBUG
     uint32_t dummy;
-    JS_ASSERT(!isIndex(&dummy));
+    MOZ_ASSERT(!isIndex(&dummy));
 #endif
     return static_cast<js::PropertyName *>(this);
 }

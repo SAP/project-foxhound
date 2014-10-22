@@ -95,12 +95,11 @@ struct JSSettings
   // Settings that change based on chrome/content context.
   struct JSContentChromeSettings
   {
-    JS::ContextOptions contextOptions;
     JS::CompartmentOptions compartmentOptions;
     int32_t maxScriptRuntime;
 
     JSContentChromeSettings()
-    : contextOptions(), compartmentOptions(), maxScriptRuntime(0)
+    : compartmentOptions(), maxScriptRuntime(0)
     { }
   };
 
@@ -166,16 +165,11 @@ struct JSSettings
 enum WorkerPreference
 {
   WORKERPREF_DUMP = 0, // browser.dom.window.dump.enabled
+  WORKERPREF_DOM_FETCH,// dom.fetch.enabled
   WORKERPREF_COUNT
 };
 
 // All of these are implemented in RuntimeService.cpp
-
-// Resolves all of the worker classes onto |aObjp| if one of them matches |aId|
-// or if |aId| is JSID_VOID.
-bool
-ResolveWorkerClasses(JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
-                     JS::MutableHandle<JSObject*> aObjp);
 
 void
 CancelWorkersForWindow(nsPIDOMWindow* aWindow);
@@ -213,7 +207,7 @@ class WorkerCrossThreadDispatcher
 
 private:
   // Only created by WorkerPrivate.
-  WorkerCrossThreadDispatcher(WorkerPrivate* aWorkerPrivate);
+  explicit WorkerCrossThreadDispatcher(WorkerPrivate* aWorkerPrivate);
 
   // Only called by WorkerPrivate.
   void

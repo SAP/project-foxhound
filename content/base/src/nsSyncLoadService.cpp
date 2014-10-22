@@ -68,7 +68,7 @@ class nsForceXMLListener : public nsIStreamListener
     virtual ~nsForceXMLListener();
 
 public:
-    nsForceXMLListener(nsIStreamListener* aListener);
+    explicit nsForceXMLListener(nsIStreamListener* aListener);
 
     NS_DECL_ISUPPORTS
     NS_FORWARD_NSISTREAMLISTENER(mListener->)
@@ -310,7 +310,11 @@ nsSyncLoadService::LoadDocument(nsIURI *aURI, nsIPrincipal *aLoaderPrincipal,
                                 nsIDOMDocument** aResult)
 {
     nsCOMPtr<nsIChannel> channel;
-    nsresult rv = NS_NewChannel(getter_AddRefs(channel), aURI, nullptr,
+    nsresult rv = NS_NewChannel(getter_AddRefs(channel),
+                                aURI,
+                                aLoaderPrincipal,
+                                nsILoadInfo::SEC_NORMAL,
+                                nsIContentPolicy::TYPE_OTHER,
                                 aLoadGroup);
     NS_ENSURE_SUCCESS(rv, rv);
 

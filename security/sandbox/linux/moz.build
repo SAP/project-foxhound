@@ -6,20 +6,42 @@
 
 FAIL_ON_WARNINGS = True
 
+SharedLibrary('mozsandbox')
+
 EXPORTS.mozilla += [
     'Sandbox.h',
 ]
 
 SOURCES += [
+    '../chromium/base/shim/base/logging.cpp',
     '../chromium/sandbox/linux/seccomp-bpf/basicblock.cc',
     '../chromium/sandbox/linux/seccomp-bpf/codegen.cc',
+    '../chromium/sandbox/linux/seccomp-bpf/die.cc',
+    '../chromium/sandbox/linux/seccomp-bpf/syscall.cc',
     'Sandbox.cpp',
     'SandboxAssembler.cpp',
     'SandboxFilter.cpp',
 ]
 
+# gcc lto likes to put the top level asm in syscall.cc in a different partition
+# from the function using it which breaks the build.  Work around that by
+# forcing there to be only one partition.
+if '-flto' in CONFIG['OS_CXXFLAGS'] and not CONFIG['CLANG_CXX']:
+    LDFLAGS += ['--param lto-partitions=1']
+
+DEFINES['NS_NO_XPCOM'] = True
+DISABLE_STL_WRAPPING = True
+
+LOCAL_INCLUDES += ['/security/sandbox/chromium/base/shim']
 LOCAL_INCLUDES += ['/security/sandbox/chromium']
+LOCAL_INCLUDES += ['/security/sandbox']
 
-include('/ipc/chromium/chromium-config.mozbuild')
+if CONFIG['OS_TARGET'] != 'Android':
+    # Needed for clock_gettime with glibc < 2.17:
+    OS_LIBS += [
+        'rt',
+    ]
 
-FINAL_LIBRARY = 'xul'
+DIRS += [
+    'glue',
+]

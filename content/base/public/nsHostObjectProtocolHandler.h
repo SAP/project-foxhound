@@ -18,11 +18,12 @@
 #define RTSPURI_SCHEME "rtsp"
 
 class nsIDOMBlob;
-class nsIDOMMediaStream;
 class nsIPrincipal;
 
 namespace mozilla {
+class DOMMediaStream;
 namespace dom {
+class FileImpl;
 class MediaSource;
 }
 }
@@ -41,7 +42,9 @@ public:
   NS_IMETHOD NewChannel(nsIURI *aURI, nsIChannel * *_retval) MOZ_OVERRIDE;
   NS_IMETHOD AllowPort(int32_t port, const char * scheme, bool *_retval) MOZ_OVERRIDE;
 
+  // If principal is not null, its origin will be used to generate the URI.
   static nsresult GenerateURIString(const nsACString &aScheme,
+                                    nsIPrincipal* aPrincipal,
                                     nsACString &aUri);
 
   // Methods for managing uri->object mapping
@@ -117,10 +120,13 @@ inline bool IsFontTableURI(nsIURI* aUri)
 }
 
 extern nsresult
+NS_GetBlobForBlobURI(nsIURI* aURI, mozilla::dom::FileImpl** aBlob);
+
+extern nsresult
 NS_GetStreamForBlobURI(nsIURI* aURI, nsIInputStream** aStream);
 
 extern nsresult
-NS_GetStreamForMediaStreamURI(nsIURI* aURI, nsIDOMMediaStream** aStream);
+NS_GetStreamForMediaStreamURI(nsIURI* aURI, mozilla::DOMMediaStream** aStream);
 
 extern nsresult
 NS_GetSourceForMediaSourceURI(nsIURI* aURI, mozilla::dom::MediaSource** aSource);

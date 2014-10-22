@@ -23,8 +23,8 @@ class nsGridCell;
 /**
  * The nsBoxLayout implementation for a grid.
  */
-class nsGridLayout2 : public nsStackLayout, 
-                      public nsIGridPart
+class nsGridLayout2 MOZ_FINAL : public nsStackLayout, 
+                                public nsIGridPart
 {
 public:
 
@@ -65,7 +65,7 @@ public:
 
 protected:
 
-  nsGridLayout2(nsIPresShell* aShell);
+  explicit nsGridLayout2(nsIPresShell* aShell);
   virtual ~nsGridLayout2();
   nsGrid mGrid;
 

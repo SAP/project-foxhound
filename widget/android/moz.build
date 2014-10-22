@@ -15,6 +15,7 @@ EXPORTS += [
     'AndroidJavaWrappers.h',
     'AndroidJNIWrapper.h',
     'GeneratedJNIWrappers.h',
+    'GeneratedSDKWrappers.h',
 ]
 
 SOURCES += [
@@ -24,7 +25,9 @@ SOURCES += [
     'AndroidJavaWrappers.cpp',
     'AndroidJNI.cpp',
     'AndroidJNIWrapper.cpp',
+    'APZCCallbackHandler.cpp',
     'GeneratedJNIWrappers.cpp',
+    'GeneratedSDKWrappers.cpp',
     'GfxInfo.cpp',
     'NativeJSContainer.cpp',
     'nsAndroidProtocolHandler.cpp',

@@ -19,7 +19,7 @@ namespace layers {
 
 class BasicContainerLayer : public ContainerLayer, public BasicImplData {
 public:
-  BasicContainerLayer(BasicLayerManager* aManager) :
+  explicit BasicContainerLayer(BasicLayerManager* aManager) :
     ContainerLayer(aManager,
                    static_cast<BasicImplData*>(MOZ_THIS_IN_INITIALIZER_LIST()))
   {
@@ -84,7 +84,7 @@ public:
 
   void SetSupportsComponentAlphaChildren(bool aSupports) { mSupportsComponentAlphaChildren = aSupports; }
 
-  virtual void Validate(LayerManager::DrawThebesLayerCallback aCallback,
+  virtual void Validate(LayerManager::DrawPaintedLayerCallback aCallback,
                         void* aCallbackData,
                         ReadbackProcessor* aReadback) MOZ_OVERRIDE;
 

@@ -85,7 +85,7 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 // QueryInterface implementation for nsBaseContentList
 NS_INTERFACE_TABLE_HEAD(nsBaseContentList)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
   NS_INTERFACE_TABLE(nsBaseContentList, nsINodeList, nsIDOMNodeList)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(nsBaseContentList)
 NS_INTERFACE_MAP_END
@@ -219,10 +219,8 @@ NS_GetContentList(nsINode* aRootNode,
 
   // Initialize the hashtable if needed.
   if (!gContentListHashTable.ops) {
-    PL_DHashTableInit(&gContentListHashTable,
-                      &hash_table_ops, nullptr,
-                      sizeof(ContentListHashEntry),
-                      16);
+    PL_DHashTableInit(&gContentListHashTable, &hash_table_ops, nullptr,
+                      sizeof(ContentListHashEntry));
   }
 
   ContentListHashEntry *entry = nullptr;
@@ -336,10 +334,8 @@ GetFuncStringContentList(nsINode* aRootNode,
 
   // Initialize the hashtable if needed.
   if (!gFuncStringContentListHashTable.ops) {
-    PL_DHashTableInit(&gFuncStringContentListHashTable,
-                      &hash_table_ops, nullptr,
-                      sizeof(FuncStringContentListHashEntry),
-                      16);
+    PL_DHashTableInit(&gFuncStringContentListHashTable, &hash_table_ops,
+                      nullptr, sizeof(FuncStringContentListHashEntry));
   }
 
   FuncStringContentListHashEntry *entry = nullptr;
@@ -435,10 +431,10 @@ nsContentList::nsContentList(nsINode* aRootNode,
 
   // We only need to flush if we're in an non-HTML document, since the
   // HTML5 parser doesn't need flushing.  Further, if we're not in a
-  // document at all right now (in the GetCurrentDoc() sense), we're
+  // document at all right now (in the GetUncomposedDoc() sense), we're
   // not parser-created and don't need to be flushing stuff under us
   // to get our kids right.
-  nsIDocument* doc = mRootNode->GetCurrentDoc();
+  nsIDocument* doc = mRootNode->GetUncomposedDoc();
   mFlushesNeeded = doc && !doc->IsHTML();
 }
 
@@ -468,10 +464,10 @@ nsContentList::nsContentList(nsINode* aRootNode,
 
   // We only need to flush if we're in an non-HTML document, since the
   // HTML5 parser doesn't need flushing.  Further, if we're not in a
-  // document at all right now (in the GetCurrentDoc() sense), we're
+  // document at all right now (in the GetUncomposedDoc() sense), we're
   // not parser-created and don't need to be flushing stuff under us
   // to get our kids right.
-  nsIDocument* doc = mRootNode->GetCurrentDoc();
+  nsIDocument* doc = mRootNode->GetUncomposedDoc();
   mFlushesNeeded = doc && !doc->IsHTML();
 }
 
@@ -511,7 +507,7 @@ nsContentList::Item(uint32_t aIndex, bool aDoFlush)
 {
   if (mRootNode && aDoFlush && mFlushesNeeded) {
     // XXX sXBL/XBL2 issue
-    nsIDocument* doc = mRootNode->GetCurrentDoc();
+    nsIDocument* doc = mRootNode->GetUncomposedDoc();
     if (doc) {
       // Flush pending content changes Bug 4891.
       doc->FlushPendingNotifications(Flush_ContentAndNotify);
@@ -997,7 +993,7 @@ nsContentList::RemoveFromHashtable()
                        &key,
                        PL_DHASH_REMOVE);
 
-  if (gContentListHashTable.entryCount == 0) {
+  if (gContentListHashTable.EntryCount() == 0) {
     PL_DHashTableFinish(&gContentListHashTable);
     gContentListHashTable.ops = nullptr;
   }
@@ -1008,7 +1004,7 @@ nsContentList::BringSelfUpToDate(bool aDoFlush)
 {
   if (mRootNode && aDoFlush && mFlushesNeeded) {
     // XXX sXBL/XBL2 issue
-    nsIDocument* doc = mRootNode->GetCurrentDoc();
+    nsIDocument* doc = mRootNode->GetUncomposedDoc();
     if (doc) {
       // Flush pending content changes Bug 4891.
       doc->FlushPendingNotifications(Flush_ContentAndNotify);
@@ -1040,7 +1036,7 @@ nsCacheableFuncStringContentList::RemoveFromFuncStringHashtable()
                        &key,
                        PL_DHASH_REMOVE);
 
-  if (gFuncStringContentListHashTable.entryCount == 0) {
+  if (gFuncStringContentListHashTable.EntryCount() == 0) {
     PL_DHashTableFinish(&gFuncStringContentListHashTable);
     gFuncStringContentListHashTable.ops = nullptr;
   }

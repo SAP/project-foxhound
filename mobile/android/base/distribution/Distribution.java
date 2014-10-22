@@ -122,7 +122,7 @@ public class Distribution {
     private final String prefsBranch;
 
     private volatile int state = STATE_UNKNOWN;
-    private File distributionDir = null;
+    private File distributionDir;
 
     private final Queue<Runnable> onDistributionReady = new ConcurrentLinkedQueue<Runnable>();
 
@@ -371,7 +371,7 @@ public class Distribution {
                 checkSystemDistribution();
 
         this.state = distributionSet ? STATE_SET : STATE_NONE;
-        settings.edit().putInt(keyName, this.state).commit();
+        settings.edit().putInt(keyName, this.state).apply();
 
         runReadyQueue();
         return distributionSet;

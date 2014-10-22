@@ -30,20 +30,25 @@
 #include "nsIDivertableChannel.h"
 #include "mozilla/net/DNS.h"
 
+class nsInputStreamPump;
+
 namespace mozilla {
 namespace net {
 
-class HttpChannelChild : public PHttpChannelChild
-                       , public HttpBaseChannel
-                       , public HttpAsyncAborter<HttpChannelChild>
-                       , public nsICacheInfoChannel
-                       , public nsIProxiedChannel
-                       , public nsIApplicationCacheChannel
-                       , public nsIAsyncVerifyRedirectCallback
-                       , public nsIAssociatedContentSecurity
-                       , public nsIChildChannel
-                       , public nsIHttpChannelChild
-                       , public nsIDivertableChannel
+class InterceptedChannelContent;
+class InterceptStreamListener;
+
+class HttpChannelChild MOZ_FINAL : public PHttpChannelChild
+                                 , public HttpBaseChannel
+                                 , public HttpAsyncAborter<HttpChannelChild>
+                                 , public nsICacheInfoChannel
+                                 , public nsIProxiedChannel
+                                 , public nsIApplicationCacheChannel
+                                 , public nsIAsyncVerifyRedirectCallback
+                                 , public nsIAssociatedContentSecurity
+                                 , public nsIChildChannel
+                                 , public nsIHttpChannelChild
+                                 , public nsIDivertableChannel
 {
   virtual ~HttpChannelChild();
 public:
@@ -115,7 +120,7 @@ protected:
                               const nsCString& data,
                               const uint64_t& offset,
                               const uint32_t& count) MOZ_OVERRIDE;
-  bool RecvOnStopRequest(const nsresult& statusCode);
+  bool RecvOnStopRequest(const nsresult& statusCode, const ResourceTimingStruct& timing);
   bool RecvOnProgress(const uint64_t& progress, const uint64_t& progressMax) MOZ_OVERRIDE;
   bool RecvOnStatus(const nsresult& status) MOZ_OVERRIDE;
   bool RecvFailedAsyncOpen(const nsresult& status) MOZ_OVERRIDE;
@@ -134,9 +139,28 @@ protected:
   virtual void DoNotifyListenerCleanup();
 
 private:
+  nsresult ContinueAsyncOpen();
+
+  void DoOnStartRequest(nsIRequest* aRequest, nsISupports* aContext);
+  void DoOnStatus(nsIRequest* aRequest, nsresult status);
+  void DoOnProgress(nsIRequest* aRequest, uint64_t progress, uint64_t progressMax);
+  void DoOnDataAvailable(nsIRequest* aRequest, nsISupports* aContext, nsIInputStream* aStream,
+                         uint64_t offset, uint32_t count);
+  void DoPreOnStopRequest(nsresult aStatus);
+  void DoOnStopRequest(nsIRequest* aRequest, nsISupports* aContext);
+
+  // Discard the prior interception and continue with the original network request.
+  void ResetInterception();
+
+  // Override this channel's pending response with a synthesized one. The content will be
+  // asynchronously read from the pump.
+  void OverrideWithSynthesizedResponse(nsHttpResponseHead* aResponseHead, nsInputStreamPump* aPump);
+
   RequestHeaderTuples mClientSetRequestHeaders;
   nsCOMPtr<nsIChildChannel> mRedirectChannelChild;
   nsCOMPtr<nsISupports> mSecurityInfo;
+  nsRefPtr<InterceptStreamListener> mInterceptListener;
+  nsRefPtr<nsInputStreamPump> mSynthesizedResponsePump;
 
   bool mIsFromCache;
   bool mCacheEntryAvailable;
@@ -182,7 +206,7 @@ private:
                           const nsCString& data,
                           const uint64_t& offset,
                           const uint32_t& count);
-  void OnStopRequest(const nsresult& channelStatus);
+  void OnStopRequest(const nsresult& channelStatus, const ResourceTimingStruct& timing);
   void OnProgress(const uint64_t& progress, const uint64_t& progressMax);
   void OnStatus(const nsresult& status);
   void FailedAsyncOpen(const nsresult& status);
@@ -205,6 +229,8 @@ private:
   friend class Redirect3Event;
   friend class DeleteSelfEvent;
   friend class HttpAsyncAborter<HttpChannelChild>;
+  friend class InterceptStreamListener;
+  friend class InterceptedChannelContent;
 };
 
 //-----------------------------------------------------------------------------

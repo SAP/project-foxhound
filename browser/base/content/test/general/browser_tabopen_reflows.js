@@ -14,7 +14,8 @@ const EXPECTED_REFLOWS = [
     "onxbltransitionend@chrome://browser/content/tabbrowser.xml|",
 
   // switching focus in updateCurrentBrowser() causes reflows
-  "updateCurrentBrowser@chrome://browser/content/tabbrowser.xml|" +
+  "_adjustFocusAfterTabSwitch@chrome://browser/content/tabbrowser.xml|" +
+    "updateCurrentBrowser@chrome://browser/content/tabbrowser.xml|" +
     "onselect@chrome://browser/content/browser.xul|",
 
   // switching focus in openLinkIn() causes reflows
@@ -45,14 +46,6 @@ const EXPECTED_REFLOWS = [
     "ssi_updateWindowFeatures/<@resource:///modules/sessionstore/SessionStore.jsm|" +
     "ssi_updateWindowFeatures@resource:///modules/sessionstore/SessionStore.jsm|" +
     "ssi_collectWindowData@resource:///modules/sessionstore/SessionStore.jsm|",
-
-  // tabPreviews.capture()
-  "tabPreviews_capture@chrome://browser/content/browser.js|" +
-    "tabPreviews_handleEvent/<@chrome://browser/content/browser.js|",
-
-  // tabPreviews.capture()
-  "tabPreviews_capture@chrome://browser/content/browser.js|" +
-    "@chrome://browser/content/browser.js|"
 ];
 
 const PREF_PRELOAD = "browser.newtab.preload";
@@ -64,7 +57,7 @@ const PREF_NEWTAB_DIRECTORYSOURCE = "browser.newtabpage.directory.source";
  */
 function test() {
   waitForExplicitFinish();
-  let DirectoryLinksProvider = Cu.import("resource://gre/modules/DirectoryLinksProvider.jsm", {}).DirectoryLinksProvider;
+  let DirectoryLinksProvider = Cu.import("resource:///modules/DirectoryLinksProvider.jsm", {}).DirectoryLinksProvider;
   let NewTabUtils = Cu.import("resource://gre/modules/NewTabUtils.jsm", {}).NewTabUtils;
   let Promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
 
@@ -85,9 +78,10 @@ function test() {
     return deferred.promise;
   };
 
+  let gOrigDirectorySource = Services.prefs.getCharPref(PREF_NEWTAB_DIRECTORYSOURCE);
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref(PREF_PRELOAD);
-    Services.prefs.clearUserPref(PREF_NEWTAB_DIRECTORYSOURCE);
+    Services.prefs.setCharPref(PREF_NEWTAB_DIRECTORYSOURCE, gOrigDirectorySource);
     return watchLinksChangeOnce();
   });
 

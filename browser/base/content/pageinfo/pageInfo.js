@@ -323,7 +323,7 @@ function onLoadPageInfo()
              window.arguments[0];
 
   if (!args || !args.doc) {
-    gWindow = window.opener.content;
+    gWindow = window.opener.gBrowser.selectedBrowser.contentWindowAsCPOW;
     gDocument = gWindow.document;
   }
 
@@ -508,7 +508,7 @@ function makeGeneralTab()
     else
       metaTagsCaption.label = gBundle.getFormattedString("generalMetaTags", [length]);
     var metaTree = document.getElementById("metatree");
-    metaTree.treeBoxObject.view = gMetaView;
+    metaTree.view = gMetaView;
 
     for (var i = 0; i < length; i++)
       gMetaView.addRow([metaNodes[i].name || metaNodes[i].httpEquiv, metaNodes[i].content]);

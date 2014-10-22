@@ -25,7 +25,6 @@
 
 // forward declarations
 class   nsFontMetrics;
-class   nsRenderingContext;
 class   nsDeviceContext;
 struct  nsFont;
 class   nsIRollupListener;
@@ -226,6 +225,12 @@ struct nsIMEUpdatePreference {
     NOTIFY_SELECTION_CHANGE              = 1 << 0,
     NOTIFY_TEXT_CHANGE                   = 1 << 1,
     NOTIFY_POSITION_CHANGE               = 1 << 2,
+    // NOTIFY_MOUSE_BUTTON_EVENT_ON_CHAR is used when mouse button is pressed
+    // or released on a character in the focused editor.  The notification is
+    // notified to IME as a mouse event.  If it's consumed by IME, NotifyIME()
+    // returns NS_SUCCESS_EVENT_CONSUMED.  Otherwise, it returns NS_OK if it's
+    // handled without any error.
+    NOTIFY_MOUSE_BUTTON_EVENT_ON_CHAR    = 1 << 3,
     // Following values indicate when widget needs or doesn't need notification.
     NOTIFY_CHANGES_CAUSED_BY_COMPOSITION = 1 << 6,
     // NOTE: NOTIFY_DURING_DEACTIVE isn't supported in environments where two
@@ -244,7 +249,7 @@ struct nsIMEUpdatePreference {
   {
   }
 
-  nsIMEUpdatePreference(Notifications aWantUpdates)
+  explicit nsIMEUpdatePreference(Notifications aWantUpdates)
     : mWantUpdates(aWantUpdates | DEFAULT_CONDITIONS_OF_NOTIFYING_CHANGES)
   {
   }
@@ -272,6 +277,11 @@ struct nsIMEUpdatePreference {
   bool WantChanges() const
   {
     return WantSelectionChange() || WantTextChange();
+  }
+
+  bool WantMouseButtonEventOnChar() const
+  {
+    return !!(mWantUpdates & NOTIFY_MOUSE_BUTTON_EVENT_ON_CHAR);
   }
 
   bool WantChangesCausedByComposition() const
@@ -369,9 +379,14 @@ struct IMEState {
 
   IMEState() : mEnabled(ENABLED), mOpen(DONT_CHANGE_OPEN_STATE) { }
 
-  IMEState(Enabled aEnabled, Open aOpen = DONT_CHANGE_OPEN_STATE) :
+  explicit IMEState(Enabled aEnabled, Open aOpen = DONT_CHANGE_OPEN_STATE) :
     mEnabled(aEnabled), mOpen(aOpen)
   {
+  }
+
+  bool IsEditable() const
+  {
+    return mEnabled == ENABLED || mEnabled == PASSWORD;
   }
 };
 
@@ -452,8 +467,8 @@ struct InputContextAction {
   {
   }
 
-  InputContextAction(Cause aCause,
-                     FocusChange aFocusChange = FOCUS_NOT_CHANGED) :
+  explicit InputContextAction(Cause aCause,
+                              FocusChange aFocusChange = FOCUS_NOT_CHANGED) :
     mCause(aCause), mFocusChange(aFocusChange)
   {
   }
@@ -483,13 +498,11 @@ struct SizeConstraints {
 // IMEMessage is shared by IMEStateManager and TextComposition.
 // Update values in GeckoEditable.java if you make changes here.
 // XXX Negative values are used in Android...
-enum IMEMessage MOZ_ENUM_TYPE(int8_t)
+typedef int8_t IMEMessageType;
+enum IMEMessage MOZ_ENUM_TYPE(IMEMessageType)
 {
-  // XXX We should replace NOTIFY_IME_OF_CURSOR_POS_CHANGED with
-  //     NOTIFY_IME_OF_SELECTION_CHANGE later.
-  NOTIFY_IME_OF_CURSOR_POS_CHANGED,
   // An editable content is getting focus
-  NOTIFY_IME_OF_FOCUS,
+  NOTIFY_IME_OF_FOCUS = 1,
   // An editable content is losing focus
   NOTIFY_IME_OF_BLUR,
   // Selection in the focused editable content is changed
@@ -500,6 +513,8 @@ enum IMEMessage MOZ_ENUM_TYPE(int8_t)
   NOTIFY_IME_OF_COMPOSITION_UPDATE,
   // Position or size of focused element may be changed.
   NOTIFY_IME_OF_POSITION_CHANGE,
+  // Mouse button event is fired on a character in focused editor
+  NOTIFY_IME_OF_MOUSE_BUTTON_EVENT,
   // Request to commit current composition to IME
   // (some platforms may not support)
   REQUEST_TO_COMMIT_COMPOSITION,
@@ -510,7 +525,11 @@ enum IMEMessage MOZ_ENUM_TYPE(int8_t)
 
 struct IMENotification
 {
-  IMENotification(IMEMessage aMessage)
+  IMENotification()
+    : mMessage(static_cast<IMEMessage>(-1))
+  {}
+
+  MOZ_IMPLICIT IMENotification(IMEMessage aMessage)
     : mMessage(aMessage)
   {
     switch (aMessage) {
@@ -523,6 +542,14 @@ struct IMENotification
         mTextChangeData.mNewEndOffset = 0;
         mTextChangeData.mCausedByComposition = false;
         break;
+      case NOTIFY_IME_OF_MOUSE_BUTTON_EVENT:
+        mMouseButtonEventData.mEventMessage = 0;
+        mMouseButtonEventData.mOffset = UINT32_MAX;
+        mMouseButtonEventData.mCursorPos.Set(nsIntPoint(0, 0));
+        mMouseButtonEventData.mCharRect.Set(nsIntRect(0, 0, 0, 0));
+        mMouseButtonEventData.mButton = -1;
+        mMouseButtonEventData.mButtons = 0;
+        mMouseButtonEventData.mModifiers = 0;
       default:
         break;
     }
@@ -560,6 +587,56 @@ struct IMENotification
                mNewEndOffset <= INT32_MAX;
       }
     } mTextChangeData;
+
+    // NOTIFY_IME_OF_MOUSE_BUTTON_EVENT specific data
+    struct
+    {
+      // The value of WidgetEvent::message
+      uint32_t mEventMessage;
+      // Character offset from the start of the focused editor under the cursor
+      uint32_t mOffset;
+      // Cursor position in pixels relative to the widget
+      struct
+      {
+        int32_t mX;
+        int32_t mY;
+
+        void Set(const nsIntPoint& aPoint)
+        {
+          mX = aPoint.x;
+          mY = aPoint.y;
+        }
+        nsIntPoint AsIntPoint() const
+        {
+          return nsIntPoint(mX, mY);
+        }
+      } mCursorPos;
+      // Character rect in pixels under the cursor relative to the widget
+      struct
+      {
+        int32_t mX;
+        int32_t mY;
+        int32_t mWidth;
+        int32_t mHeight;
+
+        void Set(const nsIntRect& aRect)
+        {
+          mX = aRect.x;
+          mY = aRect.y;
+          mWidth = aRect.width;
+          mHeight = aRect.height;
+        }
+        nsIntRect AsIntRect() const
+        {
+          return nsIntRect(mX, mY, mWidth, mHeight);
+        }
+      } mCharRect;
+      // The value of WidgetMouseEventBase::button and buttons
+      int16_t mButton;
+      int16_t mButtons;
+      // The value of WidgetInputEvent::modifiers
+      Modifiers mModifiers;
+    } mMouseButtonEventData;
   };
 
   bool IsCausedByComposition() const
@@ -573,9 +650,6 @@ struct IMENotification
         return false;
     }
   }
-
-private:
-  IMENotification();
 };
 
 } // namespace widget
@@ -1440,6 +1514,11 @@ class nsIWidget : public nsISupports {
      */
     virtual void UpdateOpaqueRegion(const nsIntRegion &aOpaqueRegion) {}
 
+    /**
+     * Informs the widget about the region of the window that is draggable.
+     */
+    virtual void UpdateWindowDraggingRegion(const nsIntRegion& aRegion) {}
+
     /** 
      * Internal methods
      */
@@ -1812,6 +1891,9 @@ public:
 
     /**
      * Notify IME of the specified notification.
+     *
+     * @return If the notification is mouse button event and it's consumed by
+     *         IME, this returns NS_SUCCESS_EVENT_CONSUMED.
      */
     NS_IMETHOD NotifyIME(const IMENotification& aIMENotification) = 0;
 

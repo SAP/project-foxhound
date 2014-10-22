@@ -55,6 +55,9 @@
       <menuitem id="node-menu-copyimagedatauri"
         label="&inspectorCopyImageDataUri.label;"
         oncommand="inspector.copyImageDataUri()"/>
+      <menuitem id="node-menu-showdomproperties"
+        label="&inspectorShowDOMProperties.label;"
+        oncommand="inspector.showDOMProperties()"/>
       <menuseparator/>
       <menuitem id="node-menu-pasteouterhtml"
         label="&inspectorHTMLPasteOuter.label;"
@@ -79,7 +82,7 @@
   </popupset>
 
   <box flex="1" class="devtools-responsive-container theme-body">
-    <vbox flex="1">
+    <vbox flex="1" class="devtools-main-content">
       <toolbar id="inspector-toolbar"
         class="devtools-toolbar"
         nowindowdrag="true">

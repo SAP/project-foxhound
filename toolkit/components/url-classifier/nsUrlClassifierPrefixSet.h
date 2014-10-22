@@ -19,8 +19,9 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/Atomics.h"
 
-class nsUrlClassifierPrefixSet
+class nsUrlClassifierPrefixSet MOZ_FINAL
   : public nsIUrlClassifierPrefixSet
   , public nsIMemoryReporter
 {
@@ -35,16 +36,15 @@ public:
   NS_IMETHOD LoadFromFile(nsIFile* aFile);
   NS_IMETHOD StoreToFile(nsIFile* aFile);
 
+  size_t SizeInMemory() { return mMemoryInUse; };
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTER
-
-  // Return the estimated size of the set on disk and in memory, in bytes.
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
 protected:
   virtual ~nsUrlClassifierPrefixSet();
 
-  static const uint32_t DELTAS_LIMIT = 100;
+  static const uint32_t DELTAS_LIMIT = 120;
   static const uint32_t MAX_INDEX_DIFF = (1 << 16);
   static const uint32_t PREFIXSET_VERSION_MAGIC = 1;
 
@@ -53,17 +53,23 @@ protected:
   nsresult LoadFromFd(mozilla::AutoFDClose& fileFd);
   nsresult StoreToFd(mozilla::AutoFDClose& fileFd);
 
-  // boolean indicating whether |setPrefixes| has been
-  // called with a non-empty array.
-  bool mHasPrefixes;
-  // the prefix for each index.
-  FallibleTArray<uint32_t> mIndexPrefixes;
-  // the value corresponds to the beginning of the run
-  // (an index in |_deltas|) for the index
-  FallibleTArray<uint32_t> mIndexStarts;
-  // array containing deltas from indices.
-  FallibleTArray<uint16_t> mDeltas;
+  // Return the estimated size of the set on disk and in memory, in bytes.
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
+  // list of fully stored prefixes, that also form the
+  // start of a run of deltas in mIndexDeltas.
+  nsTArray<uint32_t> mIndexPrefixes;
+  // array containing arrays of deltas from indices.
+  // Index to the place that matches the closest lower
+  // prefix from mIndexPrefix. Then every "delta" corresponds
+  // to a prefix in the PrefixSet.
+  nsTArray<nsTArray<uint16_t> > mIndexDeltas;
+  // how many prefixes we have.
+  uint32_t mTotalPrefixes;
+
+  // memory report collection might happen while we're updating the prefixset
+  // on another thread, so pre-compute and remember the size (bug 1050108).
+  mozilla::Atomic<size_t> mMemoryInUse;
   nsCString mMemoryReportPath;
 };
 

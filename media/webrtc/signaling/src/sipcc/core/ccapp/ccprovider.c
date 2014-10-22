@@ -53,7 +53,6 @@
 #include "prlog.h"
 #include "prlock.h"
 #include "prcvar.h"
-#include "thread_monitor.h"
 
 /*---------------------------------------------------------
  *
@@ -176,7 +175,7 @@ extern void cc_media_update_video_txcap(boolean val);
 session_data_t * getDeepCopyOfSessionData(session_data_t *data);
 static void ccappUpdateSessionData(session_update_t *sessUpd);
 static void ccappFeatureUpdated (feature_update_t *featUpd);
-void destroy_ccapp_thread();
+void ccapp_shutdown();
 void ccpro_handleserviceControlNotify();
 /* Sets up mutex needed for protecting state variables. */
 static cc_int32_t InitInternal();
@@ -662,61 +661,6 @@ processSessionEvent (line_t line_id, callid_t call_id, unsigned int event, sdp_d
          case CC_FEATURE_BKSPACE:
              dp_int_update_keypress(line_id, call_id, BKSP_KEY);
              break;
-         case CC_FEATURE_CREATEOFFER:
-             STAMP_TIMECARD(timecard, "Processing create offer event");
-             featdata.session.options = ccData.options;
-             cc_createoffer (CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_CREATEOFFER, &featdata, timecard);
-             break;
-         case CC_FEATURE_CREATEANSWER:
-             STAMP_TIMECARD(timecard, "Processing create answer event");
-             featdata.session.options = ccData.options;
-             cc_createanswer (CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_CREATEANSWER, data, &featdata, timecard);
-             break;
-         case CC_FEATURE_SETLOCALDESC:
-             STAMP_TIMECARD(timecard, "Processing set local event");
-             cc_setlocaldesc (CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_SETLOCALDESC, ccData.action, data, &featdata, timecard);
-             break;
-         case CC_FEATURE_SETREMOTEDESC:
-             STAMP_TIMECARD(timecard, "Processing set remote event");
-             cc_setremotedesc (CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_SETREMOTEDESC, ccData.action, data, &featdata, timecard);
-             break;
-         case CC_FEATURE_SETPEERCONNECTION:
-           PR_ASSERT(strlen(data) < PC_HANDLE_SIZE);
-           if (strlen(data) >= PC_HANDLE_SIZE)
-             return;
-
-           sstrncpy(featdata.pc.pc_handle, data, sizeof(featdata.pc.pc_handle));
-
-           cc_int_feature2(CC_MSG_SETPEERCONNECTION, CC_SRC_UI, CC_SRC_GSM,
-             call_id, (line_t)instance,
-             CC_FEATURE_SETPEERCONNECTION, &featdata, NULL);
-           break;
-         case CC_FEATURE_ADDSTREAM:
-           featdata.track.stream_id = ccData.stream_id;
-           featdata.track.track_id = ccData.track_id;
-           featdata.track.media_type = ccData.media_type;
-           cc_int_feature2(CC_MSG_ADDSTREAM, CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_ADDSTREAM, &featdata, timecard);
-           break;
-         case CC_FEATURE_REMOVESTREAM:
-           featdata.track.stream_id = ccData.stream_id;
-           featdata.track.track_id = ccData.track_id;
-           featdata.track.media_type = ccData.media_type;
-           cc_int_feature2(CC_MSG_REMOVESTREAM, CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_REMOVESTREAM, &featdata, timecard);
-           break;
-         case CC_FEATURE_ADDICECANDIDATE:
-           STAMP_TIMECARD(timecard, "Processing add candidate event");
-           featdata.candidate.level = ccData.level;
-           sstrncpy(featdata.candidate.candidate, data, sizeof(featdata.candidate.candidate)-1);
-           sstrncpy(featdata.candidate.mid, data1, sizeof(featdata.candidate.mid)-1);
-           cc_int_feature2(CC_MSG_ADDCANDIDATE, CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_ADDICECANDIDATE, &featdata, timecard);
-           break;
-         case CC_FEATURE_FOUNDICECANDIDATE:
-           STAMP_TIMECARD(timecard, "Processing found candidate event");
-           featdata.candidate.level = ccData.level;
-           sstrncpy(featdata.candidate.candidate, data, sizeof(featdata.candidate.candidate)-1);
-           sstrncpy(featdata.candidate.mid, data1, sizeof(featdata.candidate.mid)-1);
-           cc_int_feature2(CC_MSG_FOUNDCANDIDATE, CC_SRC_UI, CC_SRC_GSM, call_id, (line_t)instance, CC_FEATURE_FOUNDICECANDIDATE, &featdata, timecard);
-           break;
          case CC_FEATURE_DIALSTR:
              if (CheckAndGetAvailableLine(&line_id, &call_id) == TRUE) {
                  getDigits(data, digits, sizeof(digits));
@@ -1020,6 +964,8 @@ void CCApp_processCmds(unsigned int cmd, unsigned int reason, string_t reasonStr
          case CMD_UNREGISTER_ALL_LINES:
             /* send a shutdown message to the SIP Task */
             SIPTaskPostShutdown(SIP_EXTERNAL, reason, reasonStr);
+            ccsnap_line_free();
+            ccsnap_device_free();
             break;
          case CMD_RESTART:
             SIPTaskPostRestart(TRUE);
@@ -1067,12 +1013,6 @@ session_data_t * getDeepCopyOfSessionData(session_data_t *data)
            newData->plcd_name =  strlib_copy(data->plcd_name);
            newData->plcd_number =  strlib_copy(data->plcd_number);
            newData->status =  strlib_copy(data->status);
-           newData->sdp = strlib_copy(data->sdp);
-	   newData->candidate = data->candidate ?
-	       strlib_copy(data->candidate) : strlib_empty();
-           /* The timecard can have only one owner */
-           newData->timecard = data->timecard;
-           data->timecard = NULL;
 
            calllogger_copy_call_log(&newData->call_log, &data->call_log);
        } else {
@@ -1092,9 +1032,6 @@ session_data_t * getDeepCopyOfSessionData(session_data_t *data)
            newData->plcd_name =  strlib_empty();
            newData->plcd_number =  strlib_empty();
            newData->status = strlib_empty();
-           newData->sdp = strlib_empty();
-	   newData->candidate = strlib_empty();
-           newData->timecard = NULL;
            calllogger_init_call_log(&newData->call_log);
        }
 
@@ -1139,12 +1076,6 @@ void cleanSessionData(session_data_t *data)
         data->plcd_number = strlib_empty();
         strlib_free(data->status);
         data->status = strlib_empty();
-        strlib_free(data->sdp);
-        data->sdp = strlib_empty();
-	if (data->candidate)
-	    strlib_free(data->candidate);
-	data->candidate = strlib_empty();
-        data->timecard = NULL;
         calllogger_free_call_log(&data->call_log);
     }
 }
@@ -1409,15 +1340,7 @@ static void ccappUpdateSessionData (session_update_t *sessUpd)
 
         if ( sessUpd->eventID == CALL_INFORMATION ||
              sessUpd->eventID == CALL_STATE ||
-             sessUpd->eventID == CALL_NEWCALL ||
-             sessUpd->eventID == CREATE_OFFER ||
-             sessUpd->eventID == CREATE_ANSWER ||
-             sessUpd->eventID == SET_LOCAL_DESC  ||
-             sessUpd->eventID == SET_REMOTE_DESC ||
-             sessUpd->eventID == UPDATE_LOCAL_DESC  ||
-             sessUpd->eventID == UPDATE_REMOTE_DESC ||
-             sessUpd->eventID == ICE_CANDIDATE_ADD ||
-             sessUpd->eventID == REMOTE_STREAM_ADD ) {
+             sessUpd->eventID == CALL_NEWCALL ) {
 
             CCAPP_DEBUG(DEB_F_PREFIX"CALL_SESSION_CREATED for session id 0x%x event is 0x%x",
                     DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname), sessUpd->sessionID,
@@ -1454,16 +1377,7 @@ static void ccappUpdateSessionData (session_update_t *sessUpd)
         data->fsm_state =
             sessUpd->update.ccSessionUpd.data.state_data.fsm_state;
         data->line = sessUpd->update.ccSessionUpd.data.state_data.line_id;
-        if (sessUpd->eventID == CALL_NEWCALL ||
-            sessUpd->eventID == CREATE_OFFER ||
-            sessUpd->eventID == CREATE_ANSWER ||
-            sessUpd->eventID == SET_LOCAL_DESC ||
-            sessUpd->eventID == SET_REMOTE_DESC ||
-            sessUpd->eventID == UPDATE_LOCAL_DESC ||
-            sessUpd->eventID == UPDATE_REMOTE_DESC ||
-            sessUpd->eventID == ICE_CANDIDATE_ADD ||
-            sessUpd->eventID == ICE_CANDIDATE_FOUND ||
-            sessUpd->eventID == REMOTE_STREAM_ADD ) {
+        if (sessUpd->eventID == CALL_NEWCALL ) {
             data->attr = sessUpd->update.ccSessionUpd.data.state_data.attr;
             data->inst = sessUpd->update.ccSessionUpd.data.state_data.inst;
         }
@@ -1483,35 +1397,7 @@ static void ccappUpdateSessionData (session_update_t *sessUpd)
         data->gci[0] = 0;
 	data->vid_dir = SDP_DIRECTION_INACTIVE;
         data->callref = 0;
-        data->sdp = strlib_empty();
-        data->timecard = NULL;
         calllogger_init_call_log(&data->call_log);
-
-        switch (sessUpd->eventID) {
-            case CREATE_OFFER:
-            case CREATE_ANSWER:
-            case SET_LOCAL_DESC:
-            case SET_REMOTE_DESC:
-            case UPDATE_LOCAL_DESC:
-            case UPDATE_REMOTE_DESC:
-            case ICE_CANDIDATE_ADD:
-                data->sdp = sessUpd->update.ccSessionUpd.data.state_data.sdp;
-                data->timecard =
-                    sessUpd->update.ccSessionUpd.data.state_data.timecard;
-                /* Fall through to the next case... */
-            case REMOTE_STREAM_ADD:
-                data->cause =
-                    sessUpd->update.ccSessionUpd.data.state_data.cause;
-                data->media_stream_track_id = sessUpd->update.ccSessionUpd.data.
-                    state_data.media_stream_track_id;
-                data->media_stream_id = sessUpd->update.ccSessionUpd.data.
-                    state_data.media_stream_id;
-                data->status =
-                  sessUpd->update.ccSessionUpd.data.state_data.reason_text;
-                break;
-            default:
-                break;
-        }
 
         /*
          * If phone was idle, we not going to active state
@@ -1762,6 +1648,7 @@ static void ccappUpdateSessionData (session_update_t *sessUpd)
 	data->status = ccsnap_EscapeStrToLocaleStr(data->status, sessUpd->update.ccSessionUpd.data.status.status, LEN_UNKNOWN);
         if (data->status != NULL) {
             if(strncmp(data->status, UNKNOWN_PHRASE_STR, UNKNOWN_PHRASE_STR_SIZE) == 0){
+                    strlib_free(data->status);
                     data->status = strlib_empty();
             }
             if(strcmp(data->status, strlib_empty()) != 0){
@@ -1837,34 +1724,6 @@ static void ccappUpdateSessionData (session_update_t *sessUpd)
     case MEDIA_INTERFACE_UPDATE_FAIL:
         ccsnap_gen_callEvent(CCAPI_CALL_EV_MEDIA_INTERFACE_UPDATE_FAIL,
             CREATE_CALL_HANDLE_FROM_SESSION_ID(sessUpd->sessionID));
-        break;
-    case CREATE_OFFER:
-    case CREATE_ANSWER:
-    case SET_LOCAL_DESC:
-    case SET_REMOTE_DESC:
-    case UPDATE_LOCAL_DESC:
-    case UPDATE_REMOTE_DESC:
-    case ICE_CANDIDATE_ADD:
-    case ICE_CANDIDATE_FOUND:
-	if (sessUpd->update.ccSessionUpd.data.state_data.extra) {
-	    if (sessUpd->eventID == ICE_CANDIDATE_FOUND) {
-		data->candidate = sessUpd->update.ccSessionUpd.data.state_data.extra;
-	    }
-	}
-        data->sdp = sessUpd->update.ccSessionUpd.data.state_data.sdp;
-        /* Fall through to the next case... */
-    case REMOTE_STREAM_ADD:
-        data->timecard = sessUpd->update.ccSessionUpd.data.state_data.timecard;
-        data->cause = sessUpd->update.ccSessionUpd.data.state_data.cause;
-        data->state = sessUpd->update.ccSessionUpd.data.state_data.state;
-        data->fsm_state =
-            sessUpd->update.ccSessionUpd.data.state_data.fsm_state;
-        data->media_stream_track_id = sessUpd->update.ccSessionUpd.data.state_data.media_stream_track_id;
-        data->media_stream_id = sessUpd->update.ccSessionUpd.data.state_data.media_stream_id;
-        strlib_free(data->status);
-        data->status = sessUpd->update.ccSessionUpd.data.state_data.reason_text;
-        capset_get_allowed_features(gCCApp.mode, data->state, data->allowed_features);
-        ccsnap_gen_callEvent(CCAPI_CALL_EV_STATE, CREATE_CALL_HANDLE_FROM_SESSION_ID(data->sess_id));
         break;
     default:
         DEF_DEBUG(DEB_F_PREFIX"Unknown event, id = %d",
@@ -2051,7 +1910,7 @@ void ccp_handler(void* msg, int type) {
             cc_uint32_t major_ver=0, minor_ver=0,addtnl_ver=0;
             char name[CC_MAX_LEN_REQ_SUPP_PARAM_CISCO_SISTAG]={0};
             platGetSISProtocolVer( &major_ver, &minor_ver, &addtnl_ver, name);
-            CCAPP_DEBUG(DEB_F_PREFIX"The SIS verion is: %s, sis ver: %d.%d.%d", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname), name, major_ver, minor_ver, addtnl_ver);
+            CCAPP_DEBUG(DEB_F_PREFIX"The SIS version is: %s, sis ver: %d.%d.%d", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname), name, major_ver, minor_ver, addtnl_ver);
             if(!strncmp(name, REQ_SUPP_PARAM_CISCO_CME_SISTAG, strlen(REQ_SUPP_PARAM_CISCO_CME_SISTAG))){
                 CCAPP_DEBUG(DEB_F_PREFIX"This is CUCME mode.", DEB_F_PREFIX_ARGS(SIP_CC_PROV, fname));
             } else if(!strncmp(name, REQ_SUPP_PARAM_CISCO_SISTAG, strlen(REQ_SUPP_PARAM_CISCO_SISTAG))){
@@ -2147,8 +2006,7 @@ void ccp_handler(void* msg, int type) {
         break;
 
     case CCAPP_THREAD_UNLOAD:
-        thread_ended(THREADMON_CCAPP);
-        destroy_ccapp_thread();
+        ccapp_shutdown();
         break;
     default:
         APP_ERR_MSG("CCApp_Task: Error: Unknown message %d msg =%p",
@@ -2158,19 +2016,18 @@ void ccp_handler(void* msg, int type) {
 }
 
 /*
- *  Function: destroy_ccapp_thread
- *  Description:  shutdown and kill ccapp thread
+ *  Function: ccapp_shutdown
+ *  Description:  shutdown ccapp
  *  Parameters:   none
  *  Returns: none
  */
-void destroy_ccapp_thread()
+void ccapp_shutdown()
 {
-    static const char fname[] = "destroy_ccapp_thread";
-    TNP_DEBUG(DEB_F_PREFIX"Unloading ccapp and destroying ccapp thread",
+    static const char fname[] = "ccapp_shutdown";
+    TNP_DEBUG(DEB_F_PREFIX"Unloading ccapp",
         DEB_F_PREFIX_ARGS(SIP_CC_INIT, fname));
     platform_initialized = FALSE;
     CCAppShutdown();
-    (void)cprDestroyThread(ccapp_thread);
 }
 
 /**

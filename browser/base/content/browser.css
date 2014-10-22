@@ -252,6 +252,11 @@ toolbar[customizing] > .overflow-button {
 
 %endif
 
+#main-window[inFullscreen] #global-notificationbox,
+#main-window[inFullscreen] #high-priority-global-notificationbox {
+  visibility: collapse;
+}
+
 /* Rules to help integrate SDK widgets */
 toolbaritem[sdkstylewidget="true"] > toolbarbutton,
 toolbarpaletteitem > toolbaritem[sdkstylewidget="true"] > iframe,
@@ -290,6 +295,7 @@ toolbarpaletteitem > #personal-bookmarks > #bookmarks-toolbar-placeholder,
   display: -moz-box;
 }
 
+#nav-bar-customization-target > #personal-bookmarks,
 toolbar:not(#TabsToolbar) > #wrapper-personal-bookmarks,
 toolbar:not(#TabsToolbar) > #personal-bookmarks {
   -moz-box-flex: 1;
@@ -318,6 +324,14 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 #search-container {
   min-width: 25ch;
+}
+
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  .searchbar-engine-image,
+  .searchbar-engine-menuitem > .menu-iconic-left > .menu-iconic-icon {
+    image-rendering: -moz-crisp-edges;
+  }
 }
 
 #urlbar,
@@ -384,7 +398,7 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
   visibility: visible;
 }
 
-#urlbar:not([actiontype]) > #urlbar-display-box {
+#urlbar:not([actiontype="switchtab"]) > #urlbar-display-box {
   display: none;
 }
 
@@ -470,6 +484,20 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
 
 toolbarbutton.bookmark-item {
   max-width: 13em;
+}
+
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  .alltabs-popup > .menuitem-iconic > .menu-iconic-left > .menu-iconic-icon,
+  .menuitem-with-favicon > .menu-iconic-left > .menu-iconic-icon {
+    image-rendering: -moz-crisp-edges;
+  }
+
+  .bookmark-item > .toolbarbutton-icon,
+  .bookmark-item > .menu-iconic-left > .menu-iconic-icon,
+  #personal-bookmarks[cui-areatype="toolbar"] > #bookmarks-toolbar-placeholder > .toolbarbutton-icon {
+    image-rendering: -moz-crisp-edges;
+  }
 }
 
 #editBMPanel_tagsSelector {
@@ -629,6 +657,13 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   height: 16px;
 }
 
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  .ctrlTab-favicon {
+    image-rendering: -moz-crisp-edges;
+  }
+}
+
 .ctrlTab-preview {
   -moz-binding: url("chrome://browser/content/browser-tabPreviews.xml#ctrlTab-preview");
 }
@@ -653,12 +688,23 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
   max-width: 280px;
 }
 
+.form-validation-anchor {
+  /* should occupy space but not be visible */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 #addon-progress-notification {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#addon-progress-notification");
 }
 
 #identity-request-notification {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#identity-request-notification");
+}
+
+#bad-content-notification {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#bad-content-notification");
 }
 
 #click-to-play-plugins-notification {
@@ -782,23 +828,15 @@ html|*#gcli-output-frame,
   transition: none;
 }
 
-.toolbarbutton-badge[badge]:not([badge=""])::after {
-  content: attr(badge);
-}
-
-toolbarbutton[type="badged"] {
-  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#toolbarbutton-badged");
-}
-
 toolbarbutton[type="socialmark"] {
   -moz-binding: url("chrome://browser/content/socialmarks.xml#toolbarbutton-marks");
 }
 
-toolbarbutton[type="badged"] > .toolbarbutton-badge-container > .toolbarbutton-icon,
+toolbarbutton.badged-button > .toolbarbutton-badge-container > .toolbarbutton-icon,
 toolbarbutton[type="socialmark"] > .toolbarbutton-icon {
   max-width: 16px;
 }
-toolbarpaletteitem[place="palette"] > toolbarbutton[type="badged"] > .toolbarbutton-badge-container > .toolbarbutton-icon {
+toolbarpaletteitem[place="palette"] > toolbarbutton.badged-button > .toolbarbutton-badge-container > .toolbarbutton-icon {
   max-width: 32px;
 }
 
@@ -830,6 +868,15 @@ chatbar {
   -moz-binding: url("chrome://browser/content/socialchat.xml#chatbar");
   height: 0;
   max-height: 0;
+}
+
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  #social-sidebar-favico,
+  .social-status-button,
+  .chat-status-icon {
+    image-rendering: -moz-crisp-edges;
+  }
 }
 
 /** See bug 872317 for why the following rule is necessary. */
@@ -1000,6 +1047,15 @@ chatbox:-moz-full-screen-ancestor > .chat-titlebar {
   list-style-image: none;
 }
 
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  #PanelUI-recentlyClosedWindows > toolbarbutton > .toolbarbutton-icon,
+  #PanelUI-recentlyClosedTabs > toolbarbutton > .toolbarbutton-icon,
+  #PanelUI-historyItems > toolbarbutton > .toolbarbutton-icon {
+    image-rendering: -moz-crisp-edges;
+  }
+}
+
 #customization-panelHolder {
   overflow-y: hidden;
 }
@@ -1046,14 +1102,14 @@ toolbarpaletteitem[dragover] {
 
 #customization-palette:not([hidden]) {
   display: block;
-  flex: 1 1 auto;
+  flex: 1 1 main-size;
   overflow: auto;
   min-height: 3em;
 }
 
 #customization-footer-spacer,
 #customization-spacer {
-  flex: 1 1 auto;
+  flex: 1 1 main-size;
 }
 
 #customization-footer {
@@ -1154,4 +1210,14 @@ toolbarpaletteitem[place="palette"][hidden] {
 #context-navigation > .menuitem-iconic > .menu-iconic-text,
 #context-navigation > .menuitem-iconic > .menu-accel-container {
   display: none;
+}
+
+/* Tracking protection doorhanger */
+.popup-notification-footer[popupid="bad-content"] {
+  display: none;
+}
+
+.popup-notification-footer[popupid="bad-content"][mixedblockdisabled],
+.popup-notification-footer[popupid="bad-content"][trackingblockdisabled] {
+  display: block;
 }

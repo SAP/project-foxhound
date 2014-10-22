@@ -244,7 +244,7 @@ nsTextControlFrame::EnsureEditorInitialized()
   if (mEditorHasBeenInitialized)
     return NS_OK;
 
-  nsIDocument* doc = mContent->GetCurrentDoc();
+  nsIDocument* doc = mContent->GetComposedDoc();
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
   nsWeakFrame weakFrame(this);
@@ -394,15 +394,20 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 }
 
 void
-nsTextControlFrame::AppendAnonymousContentTo(nsBaseContentList& aElements,
+nsTextControlFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                              uint32_t aFilter)
 {
   nsCOMPtr<nsITextControlElement> txtCtrl = do_QueryInterface(GetContent());
   NS_ASSERTION(txtCtrl, "Content not a text control element");
 
-  aElements.MaybeAppendElement(txtCtrl->GetRootEditorNode());
-  if (!(aFilter & nsIContent::eSkipPlaceholderContent))
-    aElements.MaybeAppendElement(txtCtrl->GetPlaceholderNode());
+  nsIContent* root = txtCtrl->GetRootEditorNode();
+  if (root) {
+    aElements.AppendElement(root);
+  }
+
+  nsIContent* placeholder = txtCtrl->GetPlaceholderNode();
+  if (placeholder && !(aFilter & nsIContent::eSkipPlaceholderContent))
+    aElements.AppendElement(placeholder);
   
 }
 
@@ -431,13 +436,18 @@ nsTextControlFrame::GetMinISize(nsRenderingContext* aRenderingContext)
   return result;
 }
 
-nsSize
+LogicalSize
 nsTextControlFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
-                                    nsSize aCBSize, nscoord aAvailableWidth,
-                                    nsSize aMargin, nsSize aBorder,
-                                    nsSize aPadding, bool aShrinkWrap)
+                                    WritingMode aWM,
+                                    const LogicalSize& aCBSize,
+                                    nscoord aAvailableISize,
+                                    const LogicalSize& aMargin,
+                                    const LogicalSize& aBorder,
+                                    const LogicalSize& aPadding,
+                                    bool aShrinkWrap)
 {
   float inflation = nsLayoutUtils::FontSizeInflationFor(this);
+  // XXX CalcIntrinsicSize needs to be updated to use a LogicalSize
   nsSize autoSize;
   nsresult rv = CalcIntrinsicSize(aRenderingContext, autoSize, inflation);
   if (NS_FAILED(rv)) {
@@ -447,18 +457,19 @@ nsTextControlFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
 #ifdef DEBUG
   // Note: Ancestor ComputeAutoSize only computes a width if we're auto-width
   else if (StylePosition()->mWidth.GetUnit() == eStyleUnit_Auto) {
-    nsSize ancestorAutoSize =
-      nsContainerFrame::ComputeAutoSize(aRenderingContext,
-                                        aCBSize, aAvailableWidth,
+    LogicalSize ancestorAutoSize =
+      nsContainerFrame::ComputeAutoSize(aRenderingContext, aWM,
+                                        aCBSize, aAvailableISize,
                                         aMargin, aBorder,
                                         aPadding, aShrinkWrap);
     // Disabled when there's inflation; see comment in GetPrefSize.
-    NS_ASSERTION(inflation != 1.0f || ancestorAutoSize.width == autoSize.width,
+    NS_ASSERTION(inflation != 1.0f ||
+                 ancestorAutoSize.Width(aWM) == autoSize.width,
                  "Incorrect size computed by ComputeAutoSize?");
   }
 #endif
 
-  return autoSize;
+  return LogicalSize(aWM, autoSize);
 }
 
 void
@@ -627,12 +638,12 @@ void nsTextControlFrame::SetFocus(bool aOn, bool aRepaint)
   if (!caret) return;
 
   // Scroll the current selection into view
-  nsISelection *caretSelection = caret->GetCaretDOMSelection();
+  nsISelection *caretSelection = caret->GetSelection();
   const bool isFocusedRightNow = ourSel == caretSelection;
   if (!isFocusedRightNow) {
     // Don't scroll the current selection if we've been focused using the mouse.
     uint32_t lastFocusMethod = 0;
-    nsIDocument* doc = GetContent()->GetCurrentDoc();
+    nsIDocument* doc = GetContent()->GetComposedDoc();
     if (doc) {
       nsIFocusManager* fm = nsFocusManager::GetFocusManager();
       if (fm) {
@@ -649,7 +660,7 @@ void nsTextControlFrame::SetFocus(bool aOn, bool aRepaint)
   }
 
   // tell the caret to use our selection
-  caret->SetCaretDOMSelection(ourSel);
+  caret->SetSelection(ourSel);
 
   // mutual-exclusion: the selection is either controlled by the
   // document or by the text input/area. Clear any selection in the

@@ -7,8 +7,6 @@
 #ifndef jit_BaselineJIT_h
 #define jit_BaselineJIT_h
 
-#ifdef JS_ION
-
 #include "mozilla/MemoryReporting.h"
 
 #include "jscntxt.h"
@@ -54,13 +52,13 @@ class PCMappingSlotInfo
     inline static PCMappingSlotInfo MakeSlotInfo() { return PCMappingSlotInfo(0); }
 
     inline static PCMappingSlotInfo MakeSlotInfo(SlotLocation topSlotLoc) {
-        JS_ASSERT(ValidSlotLocation(topSlotLoc));
+        MOZ_ASSERT(ValidSlotLocation(topSlotLoc));
         return PCMappingSlotInfo(1 | (topSlotLoc << 2));
     }
 
     inline static PCMappingSlotInfo MakeSlotInfo(SlotLocation topSlotLoc, SlotLocation nextSlotLoc) {
-        JS_ASSERT(ValidSlotLocation(topSlotLoc));
-        JS_ASSERT(ValidSlotLocation(nextSlotLoc));
+        MOZ_ASSERT(ValidSlotLocation(topSlotLoc));
+        MOZ_ASSERT(ValidSlotLocation(nextSlotLoc));
         return PCMappingSlotInfo(2 | (topSlotLoc << 2) | (nextSlotLoc) << 4);
     }
 
@@ -153,7 +151,12 @@ struct BaselineScript
 
         // Flag set when compiled for use for debug mode. Handles various
         // Debugger hooks and compiles toggled calls for traps.
-        DEBUG_MODE = 1 << 3
+        DEBUG_MODE = 1 << 3,
+
+        // Flag set if this script has ever been Ion compiled, either directly
+        // or inlined into another script. This is cleared when the script's
+        // type information or caches are cleared.
+        ION_COMPILED_OR_INLINED = 1 << 4
     };
 
   private:
@@ -180,7 +183,7 @@ struct BaselineScript
     BaselineScript(uint32_t prologueOffset, uint32_t epilogueOffset,
                    uint32_t spsPushToggleOffset, uint32_t postDebugPrologueOffset);
 
-    static BaselineScript *New(JSContext *cx, uint32_t prologueOffset,
+    static BaselineScript *New(JSScript *jsscript, uint32_t prologueOffset,
                                uint32_t epilogueOffset, uint32_t postDebugPrologueOffset,
                                uint32_t spsPushToggleOffset, size_t icEntries,
                                size_t pcMappingIndexEntries, size_t pcMappingSize,
@@ -231,6 +234,16 @@ struct BaselineScript
         return flags_ & DEBUG_MODE;
     }
 
+    void setIonCompiledOrInlined() {
+        flags_ |= ION_COMPILED_OR_INLINED;
+    }
+    void clearIonCompiledOrInlined() {
+        flags_ &= ~ION_COMPILED_OR_INLINED;
+    }
+    bool ionCompiledOrInlined() const {
+        return flags_ & ION_COMPILED_OR_INLINED;
+    }
+
     uint32_t prologueOffset() const {
         return prologueOffset_;
     }
@@ -269,7 +282,7 @@ struct BaselineScript
         return method_;
     }
     void setMethod(JitCode *code) {
-        JS_ASSERT(!method_);
+        MOZ_ASSERT(!method_);
         method_ = code;
     }
 
@@ -277,7 +290,7 @@ struct BaselineScript
         return templateScope_;
     }
     void setTemplateScope(JSObject *templateScope) {
-        JS_ASSERT(!templateScope_);
+        MOZ_ASSERT(!templateScope_);
         templateScope_ = templateScope;
     }
 
@@ -317,9 +330,17 @@ struct BaselineScript
 
     void copyPCMappingEntries(const CompactBufferWriter &entries);
     uint8_t *nativeCodeForPC(JSScript *script, jsbytecode *pc, PCMappingSlotInfo *slotInfo = nullptr);
+
     jsbytecode *pcForReturnOffset(JSScript *script, uint32_t nativeOffset);
     jsbytecode *pcForReturnAddress(JSScript *script, uint8_t *nativeAddress);
 
+    jsbytecode *pcForNativeAddress(JSScript *script, uint8_t *nativeAddress);
+    jsbytecode *pcForNativeOffset(JSScript *script, uint32_t nativeOffset);
+
+  private:
+    jsbytecode *pcForNativeOffset(JSScript *script, uint32_t nativeOffset, bool isReturn);
+
+  public:
     // Toggle debug traps (used for breakpoints and step mode) in the script.
     // If |pc| is nullptr, toggle traps for all ops in the script. Else, only
     // toggle traps at |pc|.
@@ -337,15 +358,21 @@ struct BaselineScript
     static void writeBarrierPre(Zone *zone, BaselineScript *script);
 
     uint32_t *bytecodeTypeMap() {
-        JS_ASSERT(bytecodeTypeMapOffset_);
+        MOZ_ASSERT(bytecodeTypeMapOffset_);
         return reinterpret_cast<uint32_t *>(reinterpret_cast<uint8_t *>(this) + bytecodeTypeMapOffset_);
     }
 };
+static_assert(sizeof(BaselineScript) % sizeof(uintptr_t) == 0,
+              "The data attached to the script must be aligned for fast JIT access.");
 
 inline bool
 IsBaselineEnabled(JSContext *cx)
 {
+#ifdef JS_CODEGEN_NONE
+    return false;
+#else
     return cx->runtime()->options().baseline();
+#endif
 }
 
 MethodStatus
@@ -410,9 +437,10 @@ struct BaselineBailoutInfo
 };
 
 uint32_t
-BailoutIonToBaseline(JSContext *cx, JitActivation *activation, IonBailoutIterator &iter,
+BailoutIonToBaseline(JSContext *cx, JitActivation *activation, JitFrameIterator &iter,
                      bool invalidate, BaselineBailoutInfo **bailoutInfo,
-                     const ExceptionBailoutInfo *exceptionInfo = nullptr);
+                     const ExceptionBailoutInfo *exceptionInfo,
+                     bool *poppedLastSPSFrame);
 
 // Mark baseline scripts on the stack as active, so that they are not discarded
 // during GC.
@@ -424,7 +452,5 @@ BaselineCompile(JSContext *cx, JSScript *script);
 
 } // namespace jit
 } // namespace js
-
-#endif // JS_ION
 
 #endif /* jit_BaselineJIT_h */

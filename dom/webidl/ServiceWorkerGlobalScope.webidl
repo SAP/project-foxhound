@@ -10,10 +10,8 @@
  * this document.
  */
 
-// The Pref controls exposure in general, the Func restricts it to inside the
-// ServiceWorkerGlobalScope (itself).
-[Global, Func="mozilla::dom::workers::ServiceWorkerGlobalScope::Visible",
- Pref="dom.serviceWorkers.enabled"]
+[Global=(Worker,ServiceWorker),
+ Exposed=ServiceWorker]
 interface ServiceWorkerGlobalScope : WorkerGlobalScope {
   // FIXME(nsm): Bug 982725
   // readonly attribute CacheList caches;
@@ -29,7 +27,9 @@ interface ServiceWorkerGlobalScope : WorkerGlobalScope {
   // ResponsePromise<any> fetch((Request or [EnsureUTF16] DOMString) request);
 
   void update();
-  void unregister();
+
+  [Throws]
+  Promise<boolean> unregister();
 
   attribute EventHandler oninstall;
   attribute EventHandler onactivate;

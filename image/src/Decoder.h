@@ -17,23 +17,12 @@
 namespace mozilla {
 
 namespace image {
-class Decoder;
-}
-
-template<>
-struct HasDangerousPublicDestructor<image::Decoder>
-{
-  static const bool value = true;
-};
-
-namespace image {
 
 class Decoder
 {
 public:
 
-  Decoder(RasterImage& aImage);
-  virtual ~Decoder();
+  explicit Decoder(RasterImage& aImage);
 
   /**
    * Initialize an image decoder. Decoders may not be re-initialized.
@@ -112,6 +101,8 @@ public:
     mObserver = aObserver;
   }
 
+  size_t BytesDecoded() const { return mBytesDecoded; }
+
   // The number of frames we have, including anything in-progress. Thus, this
   // is only 0 if we haven't begun any frames.
   uint32_t GetFrameCount() { return mFrameCount; }
@@ -171,9 +162,14 @@ public:
   // status code from that attempt. Clears mNewFrameData.
   virtual nsresult AllocateFrame();
 
-  imgFrame* GetCurrentFrame() const { return mCurrentFrame; }
+  already_AddRefed<imgFrame> GetCurrentFrame() const
+  {
+    nsRefPtr<imgFrame> frame = mCurrentFrame;
+    return frame.forget();
+  }
 
 protected:
+  virtual ~Decoder();
 
   /*
    * Internal hooks. Decoder implementations may override these and
@@ -230,7 +226,7 @@ protected:
    *
    */
   RasterImage &mImage;
-  imgFrame* mCurrentFrame;
+  nsRefPtr<imgFrame> mCurrentFrame;
   RefPtr<imgDecoderObserver> mObserver;
   ImageMetadata mImageMetadata;
 
@@ -240,6 +236,7 @@ protected:
   uint32_t mColormapSize;
 
   uint32_t mDecodeFlags;
+  size_t mBytesDecoded;
   bool mDecodeDone;
   bool mDataError;
 

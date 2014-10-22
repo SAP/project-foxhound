@@ -4,16 +4,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += ['tests']
-
 EXPORTS.mozilla.dom += [
+    'AbortablePromise.h',
     'Promise.h',
     'PromiseDebugging.h',
+    'PromiseNativeAbortCallback.h',
     'PromiseNativeHandler.h',
     'PromiseWorkerProxy.h',
 ]
 
 UNIFIED_SOURCES += [
+    'AbortablePromise.cpp',
     'Promise.cpp',
     'PromiseCallback.cpp',
     'PromiseDebugging.cpp'
@@ -27,3 +28,7 @@ LOCAL_INCLUDES += [
 ]
 
 FINAL_LIBRARY = 'xul'
+
+MOCHITEST_MANIFESTS += ['tests/mochitest.ini']
+
+MOCHITEST_CHROME_MANIFESTS += ['tests/chrome.ini']

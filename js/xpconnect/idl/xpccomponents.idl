@@ -122,7 +122,7 @@ interface ScheduledGCCallback : nsISupports
 /**
 * interface of Components.utils
 */
-[scriptable, uuid(1a6c4db7-4b90-4919-9cd8-161ac14a7189)]
+[scriptable, uuid(ad41689c-ed0e-4a92-8f19-a53c2dba5711)]
 interface nsIXPCComponents_Utils : nsISupports
 {
 
@@ -382,16 +382,6 @@ interface nsIXPCComponents_Utils : nsISupports
     boolean isProxy(in jsval vobject);
 
     /*
-     * Similar to evalInSandbox except this one is used to eval a script in the
-     * scope of a window. Also note, that the return value and the possible exceptions
-     * in the script are structured cloned, unless they are natives (then they are just
-     * wrapped).
-     * Principal of the caller must subsume the target's.
-     */
-    [implicit_jscontext]
-    jsval evalInWindow(in AString source, in jsval window);
-
-    /*
      * To be called from JS only.
      *
      * Instead of simply wrapping a function into another compartment,
@@ -473,6 +463,16 @@ interface nsIXPCComponents_Utils : nsISupports
      */
     [implicit_jscontext]
     void forcePermissiveCOWs();
+
+    /*
+     * Disables the XPConnect security checks that deny access to callables and
+     * accessor descriptors on COWs. Do not use this unless you are bholley.
+     *
+     * For the benefit of his magesty TCPSocket while he takes his sweet time
+     * converting to WebIDL. See bug 885982.
+     */
+    [implicit_jscontext]
+    void skipCOWCallableChecks();
 
     /*
      * Forces the usage of a privileged |Components| object for a potentially-
@@ -650,8 +650,26 @@ interface nsIXPCComponents_Utils : nsISupports
     [implicit_jscontext]
     nsIPrincipal getObjectPrincipal(in jsval obj);
 
+    /*
+     * Gets the URI or identifier string associated with an object's
+     * compartment (the same one used by the memory reporter machinery).
+     *
+     * Unwraps cross-compartment wrappers first.
+     *
+     * The string formats and values may change at any time. Do not depend on
+     * this from addon code.
+     */
+    [implicit_jscontext]
+    ACString getCompartmentLocation(in jsval obj);
+
     [implicit_jscontext]
     void setAddonInterposition(in ACString addonId, in nsIAddonInterposition interposition);
+
+    /*
+     * Return a fractional number of milliseconds from process
+     * startup, measured with a monotonic clock.
+     */
+    double now();
 };
 
 /**

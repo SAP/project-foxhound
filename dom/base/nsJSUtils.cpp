@@ -13,7 +13,6 @@
 
 #include "nsJSUtils.h"
 #include "jsapi.h"
-#include "js/OldDebugAPI.h"
 #include "jsfriendapi.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptGlobalObject.h"
@@ -27,6 +26,10 @@
 #include "xpcpublic.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
+
+#include "mozilla/dom/ScriptSettings.h"
+
+using namespace mozilla::dom;
 
 bool
 nsJSUtils::GetCallingLocation(JSContext* aContext, const char* *aFilename,
@@ -61,21 +64,6 @@ nsJSUtils::GetStaticScriptContext(JSObject* aObj)
     return nullptr;
 
   return nativeGlobal->GetScriptContext();
-}
-
-nsIScriptGlobalObject *
-nsJSUtils::GetDynamicScriptGlobal(JSContext* aContext)
-{
-  nsIScriptContext *scriptCX = GetDynamicScriptContext(aContext);
-  if (!scriptCX)
-    return nullptr;
-  return scriptCX->GetGlobalObject();
-}
-
-nsIScriptContext *
-nsJSUtils::GetDynamicScriptContext(JSContext *aContext)
-{
-  return GetScriptContextFromJSContext(aContext);
 }
 
 uint64_t
@@ -118,13 +106,12 @@ nsJSUtils::ReportPendingException(JSContext *aContext)
       // otherwise default global) of aContext, so use that here.
       nsIScriptContext* scx = GetScriptContextFromJSContext(aContext);
       JS::Rooted<JSObject*> scope(aContext);
-      scope = scx ? scx->GetWindowProxy()
-                  : js::DefaultObjectForContextOrNull(aContext);
+      scope = scx ? scx->GetWindowProxy() : nullptr;
       if (!scope) {
         // The SafeJSContext has no default object associated with it.
         MOZ_ASSERT(NS_IsMainThread());
         MOZ_ASSERT(aContext == nsContentUtils::GetSafeJSContext());
-        scope = xpc::GetSafeJSContextGlobal();
+        scope = xpc::UnprivilegedJunkScope(); // Usage approved by bholley
       }
       JSAutoCompartment ac(aContext, scope);
       JS_ReportPendingException(aContext);
@@ -136,7 +123,7 @@ nsJSUtils::ReportPendingException(JSContext *aContext)
 }
 
 nsresult
-nsJSUtils::CompileFunction(JSContext* aCx,
+nsJSUtils::CompileFunction(AutoJSAPI& jsapi,
                            JS::Handle<JSObject*> aTarget,
                            JS::CompileOptions& aOptions,
                            const nsACString& aName,
@@ -145,10 +132,12 @@ nsJSUtils::CompileFunction(JSContext* aCx,
                            const nsAString& aBody,
                            JSObject** aFunctionObject)
 {
-  MOZ_ASSERT(js::GetEnterCompartmentDepth(aCx) > 0);
-  MOZ_ASSERT_IF(aTarget, js::IsObjectInContextCompartment(aTarget, aCx));
+  MOZ_ASSERT(jsapi.OwnsErrorReporting());
+  JSContext* cx = jsapi.cx();
+  MOZ_ASSERT(js::GetEnterCompartmentDepth(cx) > 0);
+  MOZ_ASSERT_IF(aTarget, js::IsObjectInContextCompartment(aTarget, cx));
   MOZ_ASSERT_IF(aOptions.versionSet, aOptions.version != JSVERSION_UNKNOWN);
-  mozilla::DebugOnly<nsIScriptContext*> ctx = GetScriptContextFromJSContext(aCx);
+  mozilla::DebugOnly<nsIScriptContext*> ctx = GetScriptContextFromJSContext(cx);
   MOZ_ASSERT_IF(ctx, ctx->IsContextInitialized());
 
   // Do the junk Gecko is supposed to do before calling into JSAPI.
@@ -157,14 +146,13 @@ nsJSUtils::CompileFunction(JSContext* aCx,
   }
 
   // Compile.
-  JS::Rooted<JSFunction*> fun(aCx);
-  if (!JS::CompileFunction(aCx, aTarget, aOptions,
+  JS::Rooted<JSFunction*> fun(cx);
+  if (!JS::CompileFunction(cx, aTarget, aOptions,
                            PromiseFlatCString(aName).get(),
                            aArgCount, aArgArray,
                            PromiseFlatString(aBody).get(),
                            aBody.Length(), &fun))
   {
-    ReportPendingException(aCx);
     return NS_ERROR_FAILURE;
   }
 
@@ -227,7 +215,7 @@ nsJSUtils::EvaluateString(JSContext* aCx,
   if (!aEvaluateOptions.reportUncaught) {
     // We need to prevent AutoLastFrameCheck from reporting and clearing
     // any pending exceptions.
-    dontReport.construct(aCx);
+    dontReport.emplace(aCx);
   }
 
   // Scope the JSAutoCompartment so that we can later wrap the return value
@@ -334,8 +322,5 @@ JSObject* GetDefaultScopeFromJSContext(JSContext *cx)
   // the cx, so in those cases we need to fetch it via the scx
   // instead.
   nsIScriptContext *scx = GetScriptContextFromJSContext(cx);
-  if (scx) {
-    return scx->GetWindowProxy();
-  }
-  return js::DefaultObjectForContextOrNull(cx);
+  return  scx ? scx->GetWindowProxy() : nullptr;
 }

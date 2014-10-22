@@ -213,11 +213,17 @@ let DebuggerView = {
     bindKey("_doGlobalSearch", "globalSearchKey", { alt: true });
     bindKey("_doFunctionSearch", "functionSearchKey");
     extraKeys[Editor.keyFor("jumpToLine")] = false;
+    extraKeys["Esc"] = false;
 
     function bindKey(func, key, modifiers = {}) {
-      let key = document.getElementById(key).getAttribute("key");
+      key = document.getElementById(key).getAttribute("key");
       let shortcut = Editor.accel(key, modifiers);
       extraKeys[shortcut] = () => DebuggerView.Filtering[func]();
+    }
+
+    let gutters = ["breakpoints"];
+    if (Services.prefs.getBoolPref("devtools.debugger.tracer")) {
+      gutters.unshift("hit-counts");
     }
 
     this.editor = new Editor({
@@ -225,9 +231,10 @@ let DebuggerView = {
       readOnly: true,
       lineNumbers: true,
       showAnnotationRuler: true,
-      gutters: [ "breakpoints" ],
+      gutters: gutters,
       extraKeys: extraKeys,
-      contextMenu: "sourceEditorContextMenu"
+      contextMenu: "sourceEditorContextMenu",
+      enableCodeFolding: false
     });
 
     this.editor.appendTo(document.getElementById("editor")).then(() => {
@@ -409,6 +416,7 @@ let DebuggerView = {
       // Synchronize any other components with the currently displayed source.
       DebuggerView.Sources.selectedValue = aSource.url;
       DebuggerController.Breakpoints.updateEditorBreakpoints();
+      DebuggerController.HitCounts.updateEditorHitCounts();
 
       histogram.add(Date.now() - startTime);
 

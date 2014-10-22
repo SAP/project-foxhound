@@ -70,7 +70,7 @@ endif
 
 SH := /bin/sh
 PERL ?= perl
-PYTHON ?= python
+PYTHON ?= $(shell which python2.7 > /dev/null 2>&1 && echo python2.7 || echo python)
 
 CONFIG_GUESS_SCRIPT := $(wildcard $(TOPSRCDIR)/build/autoconf/config.guess)
 ifdef CONFIG_GUESS_SCRIPT
@@ -91,6 +91,9 @@ convert it to Unix-style line endings, check \
 "https://developer.mozilla.org/en-US/docs/Developer_Guide/Mozilla_build_FAQ\#Win32-specific_questions" \
 for a workaround of this issue.)
 endif
+
+# Set this for baseconfig.mk
+HOST_OS_ARCH=WINNT
 endif
 
 ####################################
@@ -167,6 +170,9 @@ OBJDIR_TARGETS = install export libs clean realclean distclean maybe_clobber_pro
 build::
 	$(MAKE) -f $(TOPSRCDIR)/client.mk $(if $(MOZ_PGO),profiledbuild,realbuild) CREATE_MOZCONFIG_JSON=
 
+# Include baseconfig.mk for its $(MAKE) validation.
+include $(TOPSRCDIR)/config/baseconfig.mk
+
 # Define mkdir
 include $(TOPSRCDIR)/config/makefiles/makeutils.mk
 include $(TOPSRCDIR)/config/makefiles/autotargets.mk
@@ -194,6 +200,12 @@ $(OBJDIR)/.mozconfig.mk: $(FOUND_MOZCONFIG) $(call mkdir_deps,$(OBJDIR)) $(OBJDI
 # from, has already been eval'ed.
 include $(OBJDIR)/.mozconfig.mk
 endif
+
+# UPLOAD_EXTRA_FILES is appended to and exported from mozconfig, which makes
+# submakes as well as configure add even more to that, so just unexport it
+# for submakes to pick it from .mozconfig.mk and for configure to pick it
+# from mach environment.
+unexport UPLOAD_EXTRA_FILES
 
 # Print out any options loaded from mozconfig.
 all realbuild clean distclean export libs install realclean::

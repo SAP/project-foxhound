@@ -61,19 +61,19 @@ public:
     Clear();
   }
 
-  TISInputSourceWrapper(const char* aID)
+  explicit TISInputSourceWrapper(const char* aID)
   {
     mInputSourceList = nullptr;
     InitByInputSourceID(aID);
   }
 
-  TISInputSourceWrapper(SInt32 aLayoutID)
+  explicit TISInputSourceWrapper(SInt32 aLayoutID)
   {
     mInputSourceList = nullptr;
     InitByLayoutID(aLayoutID);
   }
 
-  TISInputSourceWrapper(TISInputSourceRef aInputSource)
+  explicit TISInputSourceWrapper(TISInputSourceRef aInputSource)
   {
     mInputSourceList = nullptr;
     InitByTISInputSourceRef(aInputSource);
@@ -496,7 +496,7 @@ protected:
       Clear();
     }    
 
-    KeyEventState(NSEvent* aNativeKeyEvent) : mKeyEvent(nullptr)
+    explicit KeyEventState(NSEvent* aNativeKeyEvent) : mKeyEvent(nullptr)
     {
       Clear();
       Set(aNativeKeyEvent);
@@ -555,7 +555,7 @@ protected:
   class AutoKeyEventStateCleaner
   {
   public:
-    AutoKeyEventStateCleaner(TextInputHandlerBase* aHandler) :
+    explicit AutoKeyEventStateCleaner(TextInputHandlerBase* aHandler) :
       mHandler(aHandler)
     {
     }
@@ -846,7 +846,8 @@ public:
   void OnSelectionChange() { mSelectedRange.location = NSNotFound; }
 
   /**
-   * DispatchTextEvent() dispatches a text event on mWidget.
+   * DispatchCompositionChangeEvent() dispatches a compositionchange event on
+   * mWidget.
    *
    * @param aText                 User text input.
    * @param aAttrString           An NSAttributedString instance which indicates
@@ -855,10 +856,10 @@ public:
    * @param aDoCommit             TRUE if the composition string should be
    *                              committed.  Otherwise, FALSE.
    */
-  bool DispatchTextEvent(const nsString& aText,
-                           NSAttributedString* aAttrString,
-                           NSRange& aSelectedRange,
-                           bool aDoCommit);
+  bool DispatchCompositionChangeEvent(const nsString& aText,
+                                      NSAttributedString* aAttrString,
+                                      NSRange& aSelectedRange,
+                                      bool aDoCommit);
 
   /**
    * SetMarkedText() is a handler of setMarkedText of NSTextInput.

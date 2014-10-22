@@ -24,14 +24,14 @@ interface nsIDOMCrypto;
 typedef any Transferable;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
-[Global, NeedNewResolve]
+[PrimaryGlobal, NeedNewResolve]
 /*sealed*/ interface Window : EventTarget {
   // the current browsing context
   [Unforgeable, Throws,
    CrossOriginReadable] readonly attribute WindowProxy window;
   [Replaceable, Throws,
    CrossOriginReadable] readonly attribute WindowProxy self;
-  [Unforgeable, StoreInSlot, Pure, Func="nsGlobalWindow::WindowOnWebIDL"] readonly attribute Document? document;
+  [Unforgeable, StoreInSlot, Pure] readonly attribute Document? document;
   [Throws] attribute DOMString name; 
   [PutForwards=href, Unforgeable, Throws,
    CrossOriginReadable, CrossOriginWritable] readonly attribute Location? location;
@@ -63,7 +63,7 @@ typedef any Transferable;
   // We think the indexed getter is a bug in the spec, it actually needs to live
   // on the WindowProxy
   //getter WindowProxy (unsigned long index);
-  //getter object (DOMString name);
+  getter object (DOMString name);
 
   // the user agent
   [Throws] readonly attribute Navigator navigator; 
@@ -79,7 +79,8 @@ typedef any Transferable;
   [Throws] DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
   [Throws] void print();
   //[Throws] any showModalDialog(DOMString url, optional any argument);
-  [Throws] any showModalDialog(DOMString url, optional any argument, optional DOMString options = "");
+  [Throws, Func="nsGlobalWindow::IsShowModalDialogEnabled"]
+  any showModalDialog(DOMString url, optional any argument, optional DOMString options = "");
 
   [Throws, CrossOriginCallable] void postMessage(any message, DOMString targetOrigin, optional sequence<Transferable> transfer);
 
@@ -89,7 +90,7 @@ Window implements GlobalEventHandlers;
 Window implements WindowEventHandlers;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
-[NoInterfaceObject]
+[NoInterfaceObject, Exposed=(Window,Worker)]
 interface WindowTimers {
   [Throws] long setTimeout(Function handler, optional long timeout = 0, any... arguments);
   [Throws] long setTimeout(DOMString handler, optional long timeout = 0, any... unused);
@@ -101,7 +102,7 @@ interface WindowTimers {
 Window implements WindowTimers;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
-[NoInterfaceObject]
+[NoInterfaceObject, Exposed=(Window,Worker)]
 interface WindowBase64 {
   [Throws] DOMString btoa(DOMString btoa);
   [Throws] DOMString atob(DOMString atob);
@@ -151,6 +152,11 @@ dictionary ScrollOptions {
   ScrollBehavior behavior = "auto";
 };
 
+dictionary ScrollToOptions : ScrollOptions {
+  unrestricted double left;
+  unrestricted double top;
+};
+
 partial interface Window {
   //[Throws,NewObject] MediaQueryList matchMedia(DOMString query);
   [Throws,NewObject] MediaQueryList? matchMedia(DOMString query);
@@ -178,16 +184,16 @@ partial interface Window {
   //[Throws] readonly attribute double pageXOffset;
   //[Throws] readonly attribute double scrollY;
   //[Throws] readonly attribute double pageYOffset;
-  //void scroll(double x, double y, optional ScrollOptions options);
-  //void scrollTo(double x, double y, optional ScrollOptions options);
-  //void scrollBy(double x, double y, optional ScrollOptions options);
+  void scroll(unrestricted double x, unrestricted double y);
+  void scroll(optional ScrollToOptions options);
+  void scrollTo(unrestricted double x, unrestricted double y);
+  void scrollTo(optional ScrollToOptions options);
+  void scrollBy(unrestricted double x, unrestricted double y);
+  void scrollBy(optional ScrollToOptions options);
   [Replaceable, Throws] readonly attribute long scrollX;
   [Throws] readonly attribute long pageXOffset;
   [Replaceable, Throws] readonly attribute long scrollY;
   [Throws] readonly attribute long pageYOffset;
-  void scroll(long x, long y);
-  void scrollTo(long x, long y);
-  void scrollBy(long x, long y);
 
   // client
   //[Throws] readonly attribute double screenX;
@@ -220,7 +226,7 @@ callback FrameRequestCallback = void (DOMHighResTimeStamp time);
 
 // https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/NavigationTiming/Overview.html
 partial interface Window {
-  [Replaceable, Throws] readonly attribute Performance? performance;
+  [Replaceable, Pure, StoreInSlot] readonly attribute Performance? performance;
 };
 
 // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html
@@ -270,12 +276,12 @@ partial interface Window {
   /**
    * Method for scrolling this window by a number of lines.
    */
-  void                      scrollByLines(long numLines);
+  void                      scrollByLines(long numLines, optional ScrollOptions options);
 
   /**
    * Method for scrolling this window by a number of pages.
    */
-  void                      scrollByPages(long numPages);
+  void                      scrollByPages(long numPages, optional ScrollOptions options);
 
   /**
    * Method for sizing this window to the content in the window.
@@ -303,7 +309,9 @@ partial interface Window {
   [Throws, ChromeOnly] void             home();
 
   // XXX Should this be in nsIDOMChromeWindow?
-  void                      updateCommands(DOMString action);
+  void                      updateCommands(DOMString action,
+                                           optional Selection? sel = null,
+                                           optional short reason = 0);
 
   /* Find in page.
    * @param str: the search pattern
@@ -327,6 +335,14 @@ partial interface Window {
    * been painted to the screen.
    */
   [Throws] readonly attribute unsigned long long mozPaintCount;
+
+  /**
+   * This property exists because static attributes don't yet work for
+   * JS-implemented WebIDL (see bugs 1058606 and 863952). With this hack, we
+   * can use `MozSelfSupport.something(...)`, which will continue to work
+   * after we ditch this property and switch to static attributes. See 
+   */
+  [ChromeOnly, Throws] readonly attribute MozSelfSupport MozSelfSupport;
 
   [Pure]
            attribute EventHandler onwheel;
@@ -457,3 +473,4 @@ interface ChromeWindow {
 };
 
 Window implements ChromeWindow;
+Window implements GlobalFetch;

@@ -11,6 +11,9 @@ Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import("resource://gre/modules/RemoteAddonsChild.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "PageThumbUtils",
+  "resource://gre/modules/PageThumbUtils.jsm");
+
 #ifdef MOZ_CRASHREPORTER
 XPCOMUtils.defineLazyServiceGetter(this, "CrashReporter",
                                    "@mozilla.org/xre/app-info;1",
@@ -40,17 +43,18 @@ let WebProgressListener = {
     webProgress.addProgressListener(this, Ci.nsIWebProgress.NOTIFY_ALL);
   },
 
-  _requestSpec: function (aRequest) {
+  _requestSpec: function (aRequest, aPropertyName) {
     if (!aRequest || !(aRequest instanceof Ci.nsIChannel))
       return null;
-    return aRequest.QueryInterface(Ci.nsIChannel).URI.spec;
+    return aRequest.QueryInterface(Ci.nsIChannel)[aPropertyName].spec;
   },
 
   _setupJSON: function setupJSON(aWebProgress, aRequest) {
     return {
       isTopLevel: aWebProgress.isTopLevel,
       isLoadingDocument: aWebProgress.isLoadingDocument,
-      requestURI: this._requestSpec(aRequest),
+      requestURI: this._requestSpec(aRequest, "URI"),
+      originalRequestURI: this._requestSpec(aRequest, "originalURI"),
       loadType: aWebProgress.loadType,
       documentContentType: content.document && content.document.contentType
     };
@@ -84,11 +88,15 @@ let WebProgressListener = {
     json.location = aLocationURI ? aLocationURI.spec : "";
     json.flags = aFlags;
 
+    // These properties can change even for a sub-frame navigation.
+    json.canGoBack = docShell.canGoBack;
+    json.canGoForward = docShell.canGoForward;
+
     if (json.isTopLevel) {
-      json.canGoBack = docShell.canGoBack;
-      json.canGoForward = docShell.canGoForward;
       json.documentURI = content.document.documentURIObject.spec;
       json.charset = content.document.characterSet;
+      json.mayEnableCharacterEncodingMenu = docShell.mayEnableCharacterEncodingMenu;
+      json.principal = content.document.nodePrincipal;
     }
 
     sendAsyncMessage("Content:LocationChange", json, objects);
@@ -170,8 +178,9 @@ let WebNavigation =  {
   },
 
   goBack: function() {
-    if (this._webNavigation.canGoBack)
+    if (this._webNavigation.canGoBack) {
       this._webNavigation.goBack();
+    }
   },
 
   goForward: function() {
@@ -353,13 +362,57 @@ addEventListener("TextZoomChange", function (aEvent) {
   }
 }, false);
 
+addEventListener("ZoomChangeUsingMouseWheel", function () {
+  sendAsyncMessage("ZoomChangeUsingMouseWheel", {});
+}, false);
+
+addMessageListener("UpdateCharacterSet", function (aMessage) {
+  docShell.charset = aMessage.data.value;
+  docShell.gatherCharsetMenuTelemetry();
+});
+
+/**
+ * Remote thumbnail request handler for PageThumbs thumbnails.
+ */
+addMessageListener("Browser:Thumbnail:Request", function (aMessage) {
+  let thumbnail = content.document.createElementNS(PageThumbUtils.HTML_NAMESPACE,
+                                                   "canvas");
+  thumbnail.mozOpaque = true;
+  thumbnail.mozImageSmoothingEnabled = true;
+
+  thumbnail.width = aMessage.data.canvasWidth;
+  thumbnail.height = aMessage.data.canvasHeight;
+
+  let [width, height, scale] =
+    PageThumbUtils.determineCropSize(content, thumbnail);
+
+  let ctx = thumbnail.getContext("2d");
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.drawWindow(content, 0, 0, width, height,
+                 aMessage.data.background,
+                 ctx.DRAWWINDOW_DO_NOT_FLUSH);
+  ctx.restore();
+
+  thumbnail.toBlob(function (aBlob) {
+    sendAsyncMessage("Browser:Thumbnail:Response", {
+      thumbnail: aBlob,
+      id: aMessage.data.id
+    });
+  });
+});
+
 // The AddonsChild needs to be rooted so that it stays alive as long as
 // the tab.
 let AddonsChild;
-if (Services.prefs.getBoolPref("browser.tabs.remote.autostart")) {
+if (Services.appinfo.browserTabsRemoteAutostart) {
   // Currently, the addon shims are only supported when autostarting
   // with remote tabs.
   AddonsChild = RemoteAddonsChild.init(this);
+
+  addEventListener("unload", () => {
+    RemoteAddonsChild.uninit(AddonsChild);
+  });
 }
 
 addMessageListener("NetworkPrioritizer:AdjustPriority", (msg) => {
@@ -368,6 +421,48 @@ addMessageListener("NetworkPrioritizer:AdjustPriority", (msg) => {
                         .loadGroup.QueryInterface(Ci.nsISupportsPriority);
   loadGroup.adjustPriority(msg.data.adjustment);
 });
+
+let DOMFullscreenManager = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
+                                         Ci.nsISupportsWeakReference]),
+
+  init: function() {
+    Services.obs.addObserver(this, "ask-parent-to-exit-fullscreen", false);
+    Services.obs.addObserver(this, "ask-parent-to-rollback-fullscreen", false);
+    addMessageListener("DOMFullscreen:ChildrenMustExit", () => {
+      let utils = content.QueryInterface(Ci.nsIInterfaceRequestor)
+                         .getInterface(Ci.nsIDOMWindowUtils);
+      utils.exitFullscreen();
+    });
+    addEventListener("unload", () => {
+      Services.obs.removeObserver(this, "ask-parent-to-exit-fullscreen");
+      Services.obs.removeObserver(this, "ask-parent-to-rollback-fullscreen");
+    });
+  },
+
+  observe: function(aSubject, aTopic, aData) {
+    // Observer notifications are global, which means that these notifications
+    // might be coming from elements that are not actually children within this
+    // windows' content. We should ignore those. This will not be necessary once
+    // we fix bug 1053413 and stop using observer notifications for this stuff.
+    if (aSubject.defaultView.top !== content) {
+      return;
+    }
+
+    switch (aTopic) {
+      case "ask-parent-to-exit-fullscreen": {
+        sendAsyncMessage("DOMFullscreen:RequestExit");
+        break;
+      }
+      case "ask-parent-to-rollback-fullscreen": {
+        sendAsyncMessage("DOMFullscreen:RequestRollback");
+        break;
+      }
+    }
+  },
+};
+
+DOMFullscreenManager.init();
 
 let AutoCompletePopup = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompletePopup]),
@@ -428,8 +523,12 @@ let AutoCompletePopup = {
   }
 }
 
-let [initData] = sendSyncMessage("Browser:Init");
-docShell.useGlobalHistory = initData.useGlobalHistory;
-if (initData.initPopup) {
-  setTimeout(function() AutoCompletePopup.init(), 0);
+// We may not get any responses to Browser:Init if the browser element
+// is torn down too quickly.
+let initData = sendSyncMessage("Browser:Init");
+if (initData.length) {
+  docShell.useGlobalHistory = initData[0].useGlobalHistory;
+  if (initData[0].initPopup) {
+    setTimeout(() => AutoCompletePopup.init(), 0);
+  }
 }

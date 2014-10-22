@@ -56,10 +56,9 @@ public:
 private:
   virtual ~nsDOMSerializer();
 
-  nsDOMSerializer(nsISupports* aOwner) : mOwner(aOwner)
+  explicit nsDOMSerializer(nsISupports* aOwner) : mOwner(aOwner)
   {
     MOZ_ASSERT(aOwner);
-    SetIsDOMBinding();
   }
 
   nsCOMPtr<nsISupports> mOwner;

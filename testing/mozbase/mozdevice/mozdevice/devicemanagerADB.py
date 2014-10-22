@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import time
+import traceback
 
 from devicemanager import DeviceManager, DMError
 from mozprocess import ProcessHandler
@@ -34,7 +35,7 @@ class DeviceManagerADB(DeviceManager):
 
     def __init__(self, host=None, port=5555, retryLimit=5, packageName='fennec',
                  adbPath='adb', deviceSerial=None, deviceRoot=None,
-                 logLevel=mozlog.ERROR, autoconnect=True, **kwargs):
+                 logLevel=mozlog.ERROR, autoconnect=True, runAdbAsRoot=False, **kwargs):
         DeviceManager.__init__(self, logLevel=logLevel,
                                deviceRoot=deviceRoot)
         self.host = host
@@ -47,6 +48,10 @@ class DeviceManagerADB(DeviceManager):
         # The serial number of the device to use with adb, used in cases
         # where multiple devices are being managed by the same adb instance.
         self._deviceSerial = deviceSerial
+
+        # Some devices do no start adb as root, if allowed you can use
+        # this to reboot adbd on the device as root automatically
+        self._runAdbAsRoot = runAdbAsRoot
 
         if packageName == 'fennec':
             if os.getenv('USER'):
@@ -197,8 +202,10 @@ class DeviceManagerADB(DeviceManager):
         if not os.access(localname, os.F_OK):
             raise DMError("File not found: %s" % localname)
 
-        self._checkCmd(["push", os.path.realpath(localname), destname],
-                       retryLimit=retryLimit)
+        proc = self._runCmd(["push", os.path.realpath(localname), destname],
+                retryLimit=retryLimit)
+        if proc.returncode != 0:
+            raise DMError("Error pushing file %s -> %s; output: %s" % (localname, destname, proc.output))
 
     def mkDir(self, name):
         result = self._runCmd(["shell", "mkdir", name]).output
@@ -217,8 +224,10 @@ class DeviceManagerADB(DeviceManager):
             try:
                 localZip = tempfile.mktemp() + ".zip"
                 remoteZip = remoteDir + "/adbdmtmp.zip"
-                ProcessHandler(["zip", "-r", localZip, '.'], cwd=localDir,
-                        processOutputLine=self._log).run().wait()
+                proc = ProcessHandler(["zip", "-r", localZip, '.'], cwd=localDir,
+                              processOutputLine=self._log)
+                proc.run()
+                proc.wait()
                 self.pushFile(localZip, remoteZip, retryLimit=retryLimit, createDir=False)
                 mozfile.remove(localZip)
                 data = self._runCmd(["shell", "unzip", "-o", remoteZip,
@@ -228,7 +237,8 @@ class DeviceManagerADB(DeviceManager):
                 if re.search("unzip: exiting", data) or re.search("Operation not permitted", data):
                     raise Exception("unzip failed, or permissions error")
             except:
-                self._logger.info("zip/unzip failure: falling back to normal push")
+                self._logger.warning(traceback.format_exc())
+                self._logger.warning("zip/unzip failure: falling back to normal push")
                 self._useZip = False
                 self.pushDir(localDir, remoteDir, retryLimit=retryLimit)
         else:
@@ -472,7 +482,10 @@ class DeviceManagerADB(DeviceManager):
     def reboot(self, wait = False, **kwargs):
         self._checkCmd(["reboot"])
         if wait:
-            self._checkCmd(["wait-for-device", "shell", "ls", "/sbin"])
+            self._checkCmd(["wait-for-device"])
+            if self._runAdbAsRoot:
+                self._adb_root()
+            self._checkCmd(["shell", "ls", "/sbin"])
 
     def updateApp(self, appBundlePath, **kwargs):
         return self._runCmd(["install", "-r", appBundlePath]).output
@@ -484,27 +497,32 @@ class DeviceManagerADB(DeviceManager):
         return int(timestr)*1000
 
     def getInfo(self, directive=None):
+        directive = directive or "all"
         ret = {}
-        if (directive == "id" or directive == "all"):
+        if directive == "id" or directive == "all":
             ret["id"] = self._runCmd(["get-serialno"]).output[0]
-        if (directive == "os" or directive == "all"):
-            ret["os"] = self._runCmd(["shell", "getprop", "ro.build.display.id"]).output[0]
-        if (directive == "uptime" or directive == "all"):
-            utime = self._runCmd(["shell", "uptime"]).output[0]
-            if (not utime):
+        if directive == "os" or directive == "all":
+            ret["os"] = self.shellCheckOutput(["getprop", "ro.build.display.id"])
+        if directive == "uptime" or directive == "all":
+            uptime = self.shellCheckOutput(["uptime"])
+            if not uptime:
                 raise DMError("error getting uptime")
-            utime = utime[9:]
-            hours = utime[0:utime.find(":")]
-            utime = utime[utime[1:].find(":") + 2:]
-            minutes = utime[0:utime.find(":")]
-            utime = utime[utime[1:].find(":") +  2:]
-            seconds = utime[0:utime.find(",")]
-            ret["uptime"] = ["0 days " + hours + " hours " + minutes + " minutes " + seconds + " seconds"]
-        if (directive == "process" or directive == "all"):
-            ret["process"] = self._runCmd(["shell", "ps"]).output
-        if (directive == "systime" or directive == "all"):
-            ret["systime"] = self._runCmd(["shell", "date"]).output[0]
-        self._logger.info(ret)
+            m = re.match("up time: ((\d+) days, )*(\d{2}):(\d{2}):(\d{2})", uptime)
+            if m:
+                uptime = "%d days %d hours %d minutes %d seconds" % tuple(
+                    [int(g or 0) for g in m.groups()[1:]])
+            ret["uptime"] = uptime
+        if directive == "process" or directive == "all":
+            ret["process"] = self.shellCheckOutput(["ps"])
+        if directive == "systime" or directive == "all":
+            ret["systime"] = self.shellCheckOutput(["date"])
+        if directive == "memtotal" or directive == "all":
+            meminfo = {}
+            for line in self.pullFile("/proc/meminfo").splitlines():
+                key, value = line.split(":")
+                meminfo[key] = value.strip()
+            ret["memtotal"] = meminfo["MemTotal"]
+        self._logger.debug("getInfo: %s" % ret)
         return ret
 
     def uninstallApp(self, appName, installPath=None):
@@ -516,22 +534,29 @@ class DeviceManagerADB(DeviceManager):
         self.uninstallApp(appName)
         self.reboot()
 
-    def _runCmd(self, args):
+    def _runCmd(self, args, retryLimit=None):
         """
         Runs a command using adb
 
         returns: instance of ProcessHandler
         """
+        retryLimit = retryLimit or self.retryLimit
         finalArgs = [self._adbPath]
         if self._deviceSerial:
             finalArgs.extend(['-s', self._deviceSerial])
         finalArgs.extend(args)
         self._logger.debug("_runCmd - command: %s" % ' '.join(finalArgs))
-        proc = ProcessHandler(finalArgs, storeOutput=True,
-                processOutputLine=self._log)
-        proc.run()
-        proc.returncode = proc.wait()
-        return proc
+        retries = 0
+        while retries < retryLimit:
+            proc = ProcessHandler(finalArgs, storeOutput=True,
+                    processOutputLine=self._log)
+            proc.run()
+            proc.returncode = proc.wait()
+            if proc.returncode == None:
+                proc.kill()
+                retries += 1
+            else:
+                return proc
 
     # timeout is specified in seconds, and if no timeout is given,
     # we will run until we hit the default_timeout specified in the __init__
@@ -618,8 +643,8 @@ class DeviceManagerADB(DeviceManager):
         # Check whether we _are_ root by default (some development boards work
         # this way, this is also the result of some relatively rare rooting
         # techniques)
-        data = self._runCmd(["shell", "id"]).output[0]
-        if data.find('uid=0(root)') >= 0:
+        proc = self._runCmd(["shell", "id"])
+        if proc.output and 'uid=0(root)' in proc.output[0]:
             self._haveRootShell = True
             # if this returns true, we don't care about su
             return
@@ -637,9 +662,11 @@ class DeviceManagerADB(DeviceManager):
         if retcode is None: # still not terminated, kill
             proc.kill()
 
-        data = proc.output[0]
-        if data.find('uid=0(root)') >= 0:
+        if proc.output and 'uid=0(root)' in proc.output[0]:
             self._haveSu = True
+
+        if self._runAdbAsRoot:
+            self._adb_root()
 
     def _isUnzipAvailable(self):
         data = self._runCmd(["shell", "unzip"]).output
@@ -665,3 +692,13 @@ class DeviceManagerADB(DeviceManager):
             self._useZip = True
         else:
             raise DMError("zip not available")
+
+    def _adb_root(self):
+        """ Some devices require us to reboot adbd as root.
+            This function takes care of it.
+        """
+        if self.processInfo("adbd")[2] != "root":
+            self._checkCmd(["root"])
+            self._checkCmd(["wait-for-device"])
+            if self.processInfo("adbd")[2] != "root":
+                raise DMError("We tried rebooting adbd as root, however, it failed.")

@@ -200,7 +200,7 @@ protected:
 class SinkContext
 {
 public:
-  SinkContext(HTMLContentSink* aSink);
+  explicit SinkContext(HTMLContentSink* aSink);
   ~SinkContext();
 
   nsresult Begin(nsHTMLTag aNodeType, nsGenericHTMLElement* aRoot,
@@ -1056,7 +1056,7 @@ HTMLContentSink::NotifyInsert(nsIContent* aContent,
                               nsIContent* aChildContent,
                               int32_t aIndexInContainer)
 {
-  if (aContent && aContent->GetCurrentDoc() != mDocument) {
+  if (aContent && aContent->GetUncomposedDoc() != mDocument) {
     // aContent is not actually in our document anymore.... Just bail out of
     // here; notifying on our document for this insert would be wrong.
     return;

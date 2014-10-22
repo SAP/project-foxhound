@@ -5,6 +5,7 @@
 from __future__ import unicode_literals
 
 import argparse
+import difflib
 import sys
 
 from operator import itemgetter
@@ -85,7 +86,7 @@ class CommandAction(argparse.Action):
         """
         if namespace.help:
             # -h or --help is in the global arguments.
-            self._handle_main_help(parser)
+            self._handle_main_help(parser, namespace.verbose)
             sys.exit(0)
         elif values:
             command = values[0].lower()
@@ -96,7 +97,7 @@ class CommandAction(argparse.Action):
                     # Make sure args[0] is indeed a command.
                     self._handle_subcommand_help(parser, args[0])
                 else:
-                    self._handle_main_help(parser)
+                    self._handle_main_help(parser, namespace.verbose)
                 sys.exit(0)
             elif '-h' in args or '--help' in args:
                 # -h or --help is in the command arguments.
@@ -105,12 +106,21 @@ class CommandAction(argparse.Action):
         else:
             raise NoCommandError()
 
-        handler = self._mach_registrar.command_handlers.get(command)
+        # Command suggestion
+        if command not in self._mach_registrar.command_handlers:
+            # We first try to look for a valid command that is very similar to the given command.
+            suggested_commands = difflib.get_close_matches(command, self._mach_registrar.command_handlers.keys(), cutoff=0.8)
+            # If we find more than one matching command, or no command at all, we give command suggestions instead
+            # (with a lower matching threshold). All commands that start with the given command (for instance: 'mochitest-plain',
+            # 'mochitest-chrome', etc. for 'mochitest-') are also included.
+            if len(suggested_commands) != 1:
+                suggested_commands = set(difflib.get_close_matches(command, self._mach_registrar.command_handlers.keys(), cutoff=0.5))
+                suggested_commands |= {cmd for cmd in self._mach_registrar.command_handlers if cmd.startswith(command)}
+                raise UnknownCommandError(command, 'run', suggested_commands)
+            sys.stderr.write("We're assuming the '%s' command is '%s' and we're executing it for you.\n\n" % (command, suggested_commands[0]))
+            command = suggested_commands[0]
 
-        # FUTURE consider looking for commands with similar names and
-        # suggest or run them.
-        if not handler:
-            raise UnknownCommandError(command, 'run')
+        handler = self._mach_registrar.command_handlers.get(command)
 
         # FUTURE
         # If we wanted to conditionally enable commands based on whether
@@ -125,19 +135,32 @@ class CommandAction(argparse.Action):
         parser_args = {
             'add_help': False,
             'usage': '%(prog)s [global arguments] ' + command +
-                ' command arguments]',
+                ' [command arguments]',
         }
-
-        if handler.allow_all_arguments:
-            parser_args['prefix_chars'] = '+'
 
         if handler.parser:
             subparser = handler.parser
         else:
             subparser = argparse.ArgumentParser(**parser_args)
 
+        remainder = None
+
         for arg in handler.arguments:
-            subparser.add_argument(*arg[0], **arg[1])
+            # Remove our group keyword; it's not needed here.
+            group_name = arg[1].get('group')
+            if group_name:
+                del arg[1]['group']
+
+            if arg[1].get('nargs') == argparse.REMAINDER:
+                # parse_known_args expects all argparse.REMAINDER ('...')
+                # arguments to be all stuck together. Instead, we want them to
+                # pick any extra argument, wherever they are.
+                # Assume a limited CommandArgument for those arguments.
+                assert len(arg[0]) == 1
+                assert all(k in ('default', 'nargs', 'help') for k in arg[1])
+                remainder = arg
+            else:
+                subparser.add_argument(*arg[0], **arg[1])
 
         # We define the command information on the main parser result so as to
         # not interfere with arguments passed to the command.
@@ -146,11 +169,35 @@ class CommandAction(argparse.Action):
 
         command_namespace, extra = subparser.parse_known_args(args)
         setattr(namespace, 'command_args', command_namespace)
+        if remainder:
+            (name,), options = remainder
+            # parse_known_args usefully puts all arguments after '--' in
+            # extra, but also puts '--' there. We don't want to pass it down
+            # to the command handler. Note that if multiple '--' are on the
+            # command line, only the first one is removed, so that subsequent
+            # ones are passed down.
+            if '--' in extra:
+                extra.remove('--')
 
-        if extra:
+            # Commands with argparse.REMAINDER arguments used to force the
+            # other arguments to be '+' prefixed. If a user now passes such
+            # an argument, if will silently end up in extra. So, check if any
+            # of the allowed arguments appear in a '+' prefixed form, and error
+            # out if that's the case.
+            for args, _ in handler.arguments:
+                for arg in args:
+                    arg = arg.replace('-', '+', 1)
+                    if arg in extra:
+                        raise UnrecognizedArgumentError(command, [arg])
+
+            if extra:
+                setattr(command_namespace, name, extra)
+            else:
+                setattr(command_namespace, name, options.get('default', []))
+        elif extra:
             raise UnrecognizedArgumentError(command, extra)
 
-    def _handle_main_help(self, parser):
+    def _handle_main_help(self, parser, verbose):
         # Since we don't need full sub-parser support for the main help output,
         # we create groups in the ArgumentParser and populate each group with
         # arguments corresponding to command names. This has the side-effect
@@ -197,9 +244,10 @@ class CommandAction(argparse.Action):
         if disabled_commands and 'disabled' in r.categories:
             title, description, _priority = r.categories['disabled']
             group = parser.add_argument_group(title, description)
-            for c in disabled_commands:
-                group.add_argument(c['command'], help=c['description'],
-                    action='store_true')
+            if verbose == True:
+                for c in disabled_commands:
+                    group.add_argument(c['command'], help=c['description'],
+                                       action='store_true')
 
         parser.print_help()
 
@@ -224,9 +272,6 @@ class CommandAction(argparse.Action):
             'add_help': False,
         }
 
-        if handler.allow_all_arguments:
-            parser_args['prefix_chars'] = '+'
-
         if handler.parser:
             c_parser = handler.parser
             c_parser.formatter_class = NoUsageFormatter
@@ -248,7 +293,18 @@ class CommandAction(argparse.Action):
             c_parser = argparse.ArgumentParser(**parser_args)
             group = c_parser.add_argument_group('Command Arguments')
 
+        extra_groups = {}
+        for group_name in handler.argument_group_names:
+            group_full_name = 'Command Arguments for ' + group_name
+            extra_groups[group_name] = \
+                c_parser.add_argument_group(group_full_name)
+
         for arg in handler.arguments:
+            # Apply our group keyword.
+            group_name = arg[1].get('group')
+            if group_name:
+                del arg[1]['group']
+                group = extra_groups[group_name]
             group.add_argument(*arg[0], **arg[1])
 
         # This will print the description of the command below the usage.

@@ -32,13 +32,15 @@ nsParentalControlsService::GetParentalControlsEnabled(bool *aResult)
 NS_IMETHODIMP
 nsParentalControlsService::GetBlockFileDownloadsEnabled(bool *aResult)
 {
-  return NS_ERROR_NOT_AVAILABLE;
+  *aResult = false;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsParentalControlsService::GetLoggingEnabled(bool *aResult)
 {
-  return NS_ERROR_NOT_AVAILABLE;
+  *aResult = false;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -47,7 +49,8 @@ nsParentalControlsService::Log(int16_t aEntryType,
                                nsIURI *aSource,
                                nsIFile *aTarget)
 {
-  return NS_ERROR_NOT_AVAILABLE;
+  // silently drop on the floor
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -65,3 +68,12 @@ nsParentalControlsService::RequestURIOverrides(nsIArray *aTargets,
 {
   return NS_ERROR_NOT_AVAILABLE;
 }
+
+NS_IMETHODIMP
+nsParentalControlsService::IsAllowed(int16_t aAction,
+                                     nsIURI *aUri,
+                                     bool *_retval)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+

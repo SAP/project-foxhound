@@ -47,9 +47,9 @@ class CacheFileOutputStream;
 class CacheOutputCloseListener;
 class CacheEntryHandle;
 
-class CacheEntry : public nsICacheEntry
-                 , public nsIRunnable
-                 , public CacheFileListener
+class CacheEntry MOZ_FINAL : public nsICacheEntry
+                           , public nsIRunnable
+                           , public CacheFileListener
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -137,7 +137,7 @@ private:
   public:
     Callback(CacheEntry* aEntry,
              nsICacheEntryOpenCallback *aCallback,
-             bool aReadOnly, bool aCheckOnAnyThread);
+             bool aReadOnly, bool aCheckOnAnyThread, bool aSecret);
     Callback(Callback const &aThat);
     ~Callback();
 
@@ -155,6 +155,7 @@ private:
     bool mCheckOnAnyThread : 1;
     bool mRecheckAfterWrite : 1;
     bool mNotWanted : 1;
+    bool mSecret : 1;
 
     nsresult OnCheckThread(bool *aOnCheckThread) const;
     nsresult OnAvailThread(bool *aOnAvailThread) const;
@@ -354,7 +355,7 @@ private:
 class CacheEntryHandle : public nsICacheEntry
 {
 public:
-  CacheEntryHandle(CacheEntry* aEntry);
+  explicit CacheEntryHandle(CacheEntry* aEntry);
   CacheEntry* Entry() const { return mEntry; }
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -376,7 +377,7 @@ private:
   virtual ~CacheOutputCloseListener();
 
   NS_DECL_NSIRUNNABLE
-  CacheOutputCloseListener(CacheEntry* aEntry);
+  explicit CacheOutputCloseListener(CacheEntry* aEntry);
 
 private:
   nsRefPtr<CacheEntry> mEntry;

@@ -8,20 +8,20 @@
 #include "jsapi.h"
 #include "nsIContent.h"
 #include "nsIDocument.h"
-#include "nsIScriptGlobalObject.h"
+#include "nsIGlobalObject.h"
 #include "nsUnicharUtils.h"
 #include "nsReadableUtils.h"
 #include "nsXBLProtoImplMethod.h"
-#include "nsIScriptContext.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
 #include "xpcpublic.h"
 #include "nsXBLPrototypeBinding.h"
+#include "mozilla/dom/ScriptSettings.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 nsXBLProtoImplMethod::nsXBLProtoImplMethod(const char16_t* aName) :
   nsXBLProtoImplMember(aName),
@@ -116,7 +116,7 @@ nsXBLProtoImplMethod::InstallMember(JSContext* aCx,
     NS_ENSURE_TRUE(method, NS_ERROR_OUT_OF_MEMORY);
 
     if (!::JS_DefineUCProperty(aCx, aTargetClassObject,
-                               static_cast<const jschar*>(mName),
+                               static_cast<const char16_t*>(mName),
                                name.Length(), method,
                                JSPROP_ENUMERATE)) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -126,7 +126,7 @@ nsXBLProtoImplMethod::InstallMember(JSContext* aCx,
 }
 
 nsresult
-nsXBLProtoImplMethod::CompileMember(const nsCString& aClassStr,
+nsXBLProtoImplMethod::CompileMember(AutoJSAPI& jsapi, const nsCString& aClassStr,
                                     JS::Handle<JSObject*> aClassObject)
 {
   AssertInCompilationScope();
@@ -189,14 +189,14 @@ nsXBLProtoImplMethod::CompileMember(const nsCString& aClassStr,
     functionUri.Truncate(hash);
   }
 
-  AutoJSContext cx;
+  JSContext *cx = jsapi.cx();
   JSAutoCompartment ac(cx, aClassObject);
   JS::CompileOptions options(cx);
   options.setFileAndLine(functionUri.get(),
                          uncompiledMethod->mBodyText.GetLineNumber())
          .setVersion(JSVERSION_LATEST);
   JS::Rooted<JSObject*> methodObject(cx);
-  nsresult rv = nsJSUtils::CompileFunction(cx, JS::NullPtr(), options, cname,
+  nsresult rv = nsJSUtils::CompileFunction(jsapi, JS::NullPtr(), options, cname,
                                            paramCount,
                                            const_cast<const char**>(args),
                                            body, methodObject.address());
@@ -278,35 +278,24 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement, JSAddonId* aAd
   // nsXBLProtoImpl::InstallImplementation does.
   nsIDocument* document = aBoundElement->OwnerDoc();
 
-  nsCOMPtr<nsIScriptGlobalObject> global =
-    do_QueryInterface(document->GetWindow());
+  nsCOMPtr<nsIGlobalObject> global =
+    do_QueryInterface(document->GetInnerWindow());
   if (!global) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIScriptContext> context = global->GetContext();
-  if (!context) {
     return NS_OK;
   }
 
   nsAutoMicroTask mt;
 
-  AutoPushJSContext cx(context->GetNativeContext());
+  // We are going to run script via JS::Call, so we need a script entry point,
+  // but as this is XBL related it does not appear in the HTML spec.
+  dom::AutoEntryScript aes(global);
+  JSContext* cx = aes.cx();
 
   JS::Rooted<JSObject*> globalObject(cx, global->GetGlobalJSObject());
 
   JS::Rooted<JS::Value> v(cx);
   nsresult rv = nsContentUtils::WrapNative(cx, aBoundElement, &v);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  // Use nsCxPusher to make sure we call ScriptEvaluated when we're done.
-  //
-  // Make sure to do this before entering the compartment, since pushing Push()
-  // may call JS_SaveFrameChain(), which puts us back in an unentered state.
-  nsCxPusher pusher;
-  if (!pusher.Push(aBoundElement))
-    return NS_ERROR_UNEXPECTED;
-  MOZ_ASSERT(cx == nsContentUtils::GetCurrentJSContext());
 
   JS::Rooted<JSObject*> thisObject(cx, &v.toObject());
   JS::Rooted<JSObject*> scopeObject(cx, xpc::GetScopeForXBLExecution(cx, globalObject, aAddonId));

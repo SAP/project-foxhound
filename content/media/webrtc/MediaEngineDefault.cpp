@@ -5,7 +5,7 @@
 #include "MediaEngineDefault.h"
 
 #include "nsCOMPtr.h"
-#include "nsDOMFile.h"
+#include "mozilla/dom/File.h"
 #include "nsILocalFile.h"
 #include "Layers.h"
 #include "ImageContainer.h"
@@ -39,10 +39,12 @@ NS_IMPL_ISUPPORTS(MediaEngineDefaultVideoSource, nsITimerCallback)
  */
 
 MediaEngineDefaultVideoSource::MediaEngineDefaultVideoSource()
-  : mTimer(nullptr), mMonitor("Fake video")
+  : MediaEngineVideoSource(kReleased)
+  , mTimer(nullptr)
+  , mMonitor("Fake video")
+  , mCb(16), mCr(16)
 {
   mImageContainer = layers::LayerManager::CreateImageContainer();
-  mState = kReleased;
 }
 
 MediaEngineDefaultVideoSource::~MediaEngineDefaultVideoSource()
@@ -170,50 +172,6 @@ MediaEngineDefaultVideoSource::Stop(SourceMediaStream *aSource, TrackID aID)
   return NS_OK;
 }
 
-nsresult
-MediaEngineDefaultVideoSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
-{
-  *aFile = nullptr;
-
-#ifndef MOZ_WIDGET_ANDROID
-  return NS_ERROR_NOT_IMPLEMENTED;
-#else
-  nsAutoString filePath;
-  nsCOMPtr<nsIFilePicker> filePicker = do_CreateInstance("@mozilla.org/filepicker;1");
-  if (!filePicker)
-    return NS_ERROR_FAILURE;
-
-  nsXPIDLString title;
-  nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES, "Browse", title);
-  int16_t mode = static_cast<int16_t>(nsIFilePicker::modeOpen);
-
-  nsresult rv = filePicker->Init(nullptr, title, mode);
-  NS_ENSURE_SUCCESS(rv, rv);
-  filePicker->AppendFilters(nsIFilePicker::filterImages);
-
-  // XXX - This API should be made async
-  PRInt16 dialogReturn;
-  rv = filePicker->Show(&dialogReturn);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (dialogReturn == nsIFilePicker::returnCancel) {
-    *aFile = nullptr;
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIFile> localFile;
-  filePicker->GetFile(getter_AddRefs(localFile));
-
-  if (!localFile) {
-    *aFile = nullptr;
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIDOMFile> domFile = dom::DOMFile::CreateFromFile(localFile);
-  domFile.forget(aFile);
-  return NS_OK;
-#endif
-}
-
 NS_IMETHODIMP
 MediaEngineDefaultVideoSource::Notify(nsITimer* aTimer)
 {
@@ -306,7 +264,7 @@ public:
   static const int millisecondsPerSecond = 1000;
   static const int frequency = 1000;
 
-  SineWaveGenerator(int aSampleRate) :
+  explicit SineWaveGenerator(int aSampleRate) :
     mTotalLength(aSampleRate / frequency),
     mReadLength(0) {
     MOZ_ASSERT(mTotalLength * frequency == aSampleRate);
@@ -351,9 +309,9 @@ private:
 NS_IMPL_ISUPPORTS(MediaEngineDefaultAudioSource, nsITimerCallback)
 
 MediaEngineDefaultAudioSource::MediaEngineDefaultAudioSource()
-  : mTimer(nullptr)
+  : MediaEngineAudioSource(kReleased)
+  , mTimer(nullptr)
 {
-  mState = kReleased;
 }
 
 MediaEngineDefaultAudioSource::~MediaEngineDefaultAudioSource()
@@ -453,12 +411,6 @@ MediaEngineDefaultAudioSource::Stop(SourceMediaStream *aSource, TrackID aID)
 
   mState = kStopped;
   return NS_OK;
-}
-
-nsresult
-MediaEngineDefaultAudioSource::Snapshot(uint32_t aDuration, nsIDOMFile** aFile)
-{
-   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP

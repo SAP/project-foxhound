@@ -677,9 +677,10 @@ nsCSSSelector::AppendToStringWithoutCombinatorsOrNegations
         // XXXldb Why?
         aString.Append(char16_t('*'));
       }
-      if (!nsCSSPseudoElements::IsCSS2PseudoElement(mLowercaseTag)) {
-        aString.Append(char16_t(':'));
-      }
+      // While our atoms use one colon, most pseudo-elements require two
+      // colons (those not in CSS level 2) and all pseudo-elements allow
+      // two colons. So serialize to the non-deprecated two colon syntax.
+      aString.Append(char16_t(':'));
       // This should not be escaped since (a) the pseudo-element string
       // has a ":" that can't be escaped and (b) all pseudo-elements at
       // this point are known, and therefore we know they don't need
@@ -1001,7 +1002,7 @@ protected:
   virtual ~DOMCSSDeclarationImpl(void);
 
 public:
-  DOMCSSDeclarationImpl(css::StyleRule *aRule);
+  explicit DOMCSSDeclarationImpl(css::StyleRule *aRule);
 
   NS_IMETHOD GetParentRule(nsIDOMCSSRule **aParent) MOZ_OVERRIDE;
   void DropReference(void);
@@ -1042,7 +1043,7 @@ namespace css {
 class DOMCSSStyleRule : public nsICSSStyleRuleDOMWrapper
 {
 public:
-  DOMCSSStyleRule(StyleRule *aRule);
+  explicit DOMCSSStyleRule(StyleRule *aRule);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMCSSStyleRule)

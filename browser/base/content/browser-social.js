@@ -48,6 +48,12 @@ XPCOMUtils.defineLazyGetter(this, "CreateSocialMarkWidget", function() {
   return tmp.CreateSocialMarkWidget;
 });
 
+XPCOMUtils.defineLazyGetter(this, "hookWindowCloseForPanelClose", function() {
+  let tmp = {};
+  Cu.import("resource://gre/modules/MozSocialAPI.jsm", tmp);
+  return tmp.hookWindowCloseForPanelClose;
+});
+
 SocialUI = {
   _initialized: false,
 
@@ -68,7 +74,7 @@ SocialUI = {
     Services.prefs.addObserver("social.toast-notifications.enabled", this, false);
 
     gBrowser.addEventListener("ActivateSocialFeature", this._activationEventHandler.bind(this), true, true);
-    PanelUI.panel.addEventListener("popupshown", SocialUI.updateState, true);
+    CustomizableUI.addListener(this);
 
     // menupopups that list social providers. we only populate them when shown,
     // and if it has not been done already.
@@ -101,8 +107,8 @@ SocialUI = {
     Services.obs.removeObserver(this, "social:provider-disabled");
 
     Services.prefs.removeObserver("social.toast-notifications.enabled", this);
+    CustomizableUI.removeListener(this);
 
-    PanelUI.panel.removeEventListener("popupshown", SocialUI.updateState, true);
     document.getElementById("viewSidebarMenu").removeEventListener("popupshowing", SocialSidebar.populateSidebarMenu, true);
     document.getElementById("social-statusarea-popup").removeEventListener("popupshowing", SocialSidebar.populateSidebarMenu, true);
 
@@ -110,62 +116,53 @@ SocialUI = {
   },
 
   observe: function SocialUI_observe(subject, topic, data) {
-    // Exceptions here sometimes don't get reported properly, report them
-    // manually :(
-    try {
-      switch (topic) {
-        case "social:provider-enabled":
-          SocialMarks.populateToolbarPalette();
-          SocialStatus.populateToolbarPalette();
-          break;
-        case "social:provider-disabled":
-          SocialMarks.removeProvider(data);
-          SocialStatus.removeProvider(data);
-          SocialSidebar.disableProvider(data);
-          break;
-        case "social:provider-reload":
-          SocialStatus.reloadProvider(data);
-          // if the reloaded provider is our current provider, fall through
-          // to social:providers-changed so the ui will be reset
-          if (!SocialSidebar.provider || SocialSidebar.provider.origin != data)
-            return;
-          // currently only the sidebar and flyout have a selected provider.
-          // sidebar provider has changed (possibly to null), ensure the content
-          // is unloaded and the frames are reset, they will be loaded in
-          // providers-changed below if necessary.
-          SocialSidebar.unloadSidebar();
-          SocialFlyout.unload();
-          // fall through to providers-changed to ensure the reloaded provider
-          // is correctly reflected in any UI and the multi-provider menu
-        case "social:providers-changed":
-          this._providersChanged();
-          break;
-
-        // Provider-specific notifications
-        case "social:ambient-notification-changed":
-          SocialStatus.updateButton(data);
-          break;
-        case "social:profile-changed":
-          // make sure anything that happens here only affects the provider for
-          // which the profile is changing, and that anything we call actually
-          // needs to change based on profile data.
-          SocialStatus.updateButton(data);
-          break;
-        case "social:frameworker-error":
-          if (this.enabled && SocialSidebar.provider && SocialSidebar.provider.origin == data) {
-            SocialSidebar.setSidebarErrorMessage();
-          }
-          break;
-
-        case "nsPref:changed":
-          if (data == "social.toast-notifications.enabled") {
-            SocialSidebar.updateToggleNotifications();
-          }
-          break;
-      }
-    } catch (e) {
-      Components.utils.reportError(e + "\n" + e.stack);
-      throw e;
+    switch (topic) {
+      case "social:provider-enabled":
+        SocialMarks.populateToolbarPalette();
+        SocialStatus.populateToolbarPalette();
+        break;
+      case "social:provider-disabled":
+        SocialMarks.removeProvider(data);
+        SocialStatus.removeProvider(data);
+        SocialSidebar.disableProvider(data);
+        break;
+      case "social:provider-reload":
+        SocialStatus.reloadProvider(data);
+        // if the reloaded provider is our current provider, fall through
+        // to social:providers-changed so the ui will be reset
+        if (!SocialSidebar.provider || SocialSidebar.provider.origin != data)
+          return;
+        // currently only the sidebar and flyout have a selected provider.
+        // sidebar provider has changed (possibly to null), ensure the content
+        // is unloaded and the frames are reset, they will be loaded in
+        // providers-changed below if necessary.
+        SocialSidebar.unloadSidebar();
+        SocialFlyout.unload();
+        // fall through to providers-changed to ensure the reloaded provider
+        // is correctly reflected in any UI and the multi-provider menu
+      case "social:providers-changed":
+        this._providersChanged();
+        break;
+      // Provider-specific notifications
+      case "social:ambient-notification-changed":
+        SocialStatus.updateButton(data);
+        break;
+      case "social:profile-changed":
+        // make sure anything that happens here only affects the provider for
+        // which the profile is changing, and that anything we call actually
+        // needs to change based on profile data.
+        SocialStatus.updateButton(data);
+        break;
+      case "social:frameworker-error":
+        if (this.enabled && SocialSidebar.provider && SocialSidebar.provider.origin == data) {
+          SocialSidebar.setSidebarErrorMessage();
+        }
+        break;
+      case "nsPref:changed":
+        if (data == "social.toast-notifications.enabled") {
+          SocialSidebar.updateToggleNotifications();
+        }
+        break;
     }
   },
 
@@ -175,7 +172,6 @@ SocialUI = {
     SocialShare.populateProviderMenu();
     SocialStatus.populateToolbarPalette();
     SocialMarks.populateToolbarPalette();
-    SocialShare.update();
   },
 
   // This handles "ActivateSocialFeature" events fired against content documents
@@ -183,7 +179,7 @@ SocialUI = {
   // about:home or the share panel, we bypass the enable prompt. Any website
   // activation, such as from the activations directory or a providers website
   // will still get the prompt.
-  _activationEventHandler: function SocialUI_activationHandler(e, aBypassUserEnable=false) {
+  _activationEventHandler: function SocialUI_activationHandler(e, options={}) {
     let targetDoc;
     let node;
     if (e.target instanceof HTMLDocument) {
@@ -197,7 +193,9 @@ SocialUI = {
     if (!(targetDoc instanceof HTMLDocument))
       return;
 
-    if (!aBypassUserEnable && targetDoc.defaultView != content)
+    // The share panel iframe will not match "content" so it passes a bypass
+    // flag
+    if (!options.bypassContentCheck && targetDoc.defaultView != content)
       return;
 
     // If we are in PB mode, we silently do nothing (bug 829404 exists to
@@ -233,11 +231,36 @@ SocialUI = {
         if (provider.sidebarURL) {
           SocialSidebar.show(provider.origin);
         }
+        if (provider.shareURL) {
+          // Ensure that the share button is somewhere usable.
+          // SocialShare.shareButton may return null if it is in the menu-panel
+          // and has never been visible, so we check the widget directly. If
+          // there is no area for the widget we move it into the toolbar.
+          let widget = CustomizableUI.getWidget("social-share-button");
+          if (!widget.areaType) {
+            CustomizableUI.addWidgetToArea("social-share-button", CustomizableUI.AREA_NAVBAR);
+            // ensure correct state
+            SocialUI.onCustomizeEnd(window);
+          }
+
+          // make this new provider the selected provider. If the panel hasn't
+          // been opened, we need to make the frame first.
+          SocialShare._createFrame();
+          SocialShare.iframe.setAttribute('src', 'data:text/plain;charset=utf8,');
+          SocialShare.iframe.setAttribute('origin', provider.origin);
+          // get the right button selected
+          SocialShare.populateProviderMenu();
+          if (SocialShare.panel.state == "open") {
+            SocialShare.sharePage(provider.origin);
+          }
+        }
         if (provider.postActivationURL) {
-          openUILinkIn(provider.postActivationURL, "tab");
+          // if activated from an open share panel, we load the landing page in
+          // a background tab
+          gBrowser.loadOneTab(provider.postActivationURL, {inBackground: SocialShare.panel.state == "open"});
         }
       });
-    }, aBypassUserEnable);
+    }, options);
   },
 
   showLearnMore: function() {
@@ -287,13 +310,49 @@ SocialUI = {
     return Social.providers.length > 0;
   },
 
+  canShareOrMarkPage: function(aURI) {
+    // Bug 898706 we do not enable social in private sessions since frameworker
+    // would be shared between private and non-private windows
+    if (PrivateBrowsingUtils.isWindowPrivate(window))
+      return false;
+
+    return (aURI && (aURI.schemeIs('http') || aURI.schemeIs('https')));
+  },
+
+  onCustomizeEnd: function(aWindow) {
+    if (aWindow != window)
+      return;
+    // customization mode gets buttons out of sync with command updating, fix
+    // the disabled state
+    let canShare = this.canShareOrMarkPage(gBrowser.currentURI);
+    let shareButton = SocialShare.shareButton;
+    if (shareButton) {
+      if (canShare) {
+        shareButton.removeAttribute("disabled")
+      } else {
+        shareButton.setAttribute("disabled", "true")
+      }
+    }
+    // update the disabled state of the button based on the command
+    for (let node of SocialMarks.nodes) {
+      if (canShare) {
+        node.removeAttribute("disabled")
+      } else {
+        node.setAttribute("disabled", "true")
+      }
+    }
+  },
+
   // called on tab/urlbar/location changes and after customization. Update
   // anything that is tab specific.
   updateState: function() {
+    if (location == "about:customizing")
+      return;
+    goSetCommandEnabled("Social:PageShareOrMark", this.canShareOrMarkPage(gBrowser.currentURI));
     if (!SocialUI.enabled)
       return;
+    // larger update that may change button icons
     SocialMarks.update();
-    SocialShare.update();
   }
 }
 
@@ -434,6 +493,12 @@ SocialFlyout = {
 }
 
 SocialShare = {
+  get _dynamicResizer() {
+    delete this._dynamicResizer;
+    this._dynamicResizer = new DynamicResizeWatcher();
+    return this._dynamicResizer;
+  },
+
   // Share panel may be attached to the overflow or menu button depending on
   // customization, we need to manage open state of the anchor.
   get anchor() {
@@ -452,25 +517,34 @@ SocialShare = {
       return this.panel.lastChild;
   },
 
+  _activationHandler: function(event) {
+    if (!Services.prefs.getBoolPref("social.share.activationPanelEnabled"))
+      return;
+    SocialUI._activationEventHandler(event, { bypassContentCheck: true, bypassInstallPanel: true });
+  },
+
   uninit: function () {
     if (this.iframe) {
+      this.iframe.removeEventListener("ActivateSocialFeature", this._activationHandler, true, true);
       this.iframe.remove();
     }
   },
 
   _createFrame: function() {
     let panel = this.panel;
-    if (!SocialUI.enabled || this.iframe)
+    if (this.iframe)
       return;
     this.panel.hidden = false;
     // create and initialize the panel for this window
-    let iframe = document.createElement("iframe");
+    let iframe = document.createElement("browser");
     iframe.setAttribute("type", "content");
     iframe.setAttribute("class", "social-share-frame");
     iframe.setAttribute("context", "contentAreaContextMenu");
     iframe.setAttribute("tooltip", "aHTMLTooltip");
+    iframe.setAttribute("disableglobalhistory", "true");
     iframe.setAttribute("flex", "1");
     panel.appendChild(iframe);
+    this.iframe.addEventListener("ActivateSocialFeature", this._activationHandler, true, true);
     this.populateProviderMenu();
   },
 
@@ -480,16 +554,14 @@ SocialShare = {
     if (lastProviderOrigin) {
       provider = Social._getProviderFromOrigin(lastProviderOrigin);
     }
-    // if they have a provider selected in the sidebar use that for the initial
-    // default in share
-    if (!provider)
-      provider = SocialSidebar.provider;
-    // if our provider has no shareURL, select the first one that does
-    if (!provider || !provider.shareURL) {
-      let providers = [p for (p of Social.providers) if (p.shareURL)];
-      provider = providers.length > 0  && providers[0];
-    }
     return provider;
+  },
+
+  createTooltip: function(event) {
+    let tt = event.target;
+    let provider = Social._getProviderFromOrigin(tt.triggerNode.getAttribute("origin"));
+    tt.firstChild.setAttribute("value", provider.name);
+    tt.lastChild.setAttribute("value", provider.origin);
   },
 
   populateProviderMenu: function() {
@@ -497,16 +569,11 @@ SocialShare = {
       return;
     let providers = [p for (p of Social.providers) if (p.shareURL)];
     let hbox = document.getElementById("social-share-provider-buttons");
-    // selectable providers are inserted before the provider-menu seperator,
-    // remove any menuitems in that area
-    while (hbox.firstChild) {
+    // remove everything before the add-share-provider button (which should also
+    // be lastChild if any share providers were added)
+    let addButton = document.getElementById("add-share-provider");
+    while (hbox.firstChild != addButton) {
       hbox.removeChild(hbox.firstChild);
-    }
-    // reset our share toolbar
-    // only show a selection if there is more than one
-    if (!SocialUI.enabled || providers.length < 2) {
-      this.panel.firstChild.hidden = true;
-      return;
     }
     let selectedProvider = this.getSelectedProvider();
     for (let provider of providers) {
@@ -515,19 +582,18 @@ SocialShare = {
       button.setAttribute("type", "radio");
       button.setAttribute("group", "share-providers");
       button.setAttribute("image", provider.iconURL);
-      button.setAttribute("tooltiptext", provider.name);
+      button.setAttribute("tooltip", "share-button-tooltip");
       button.setAttribute("origin", provider.origin);
-      button.setAttribute("oncommand", "SocialShare.sharePage(this.getAttribute('origin')); this.checked=true;");
+      button.setAttribute("oncommand", "SocialShare.sharePage(this.getAttribute('origin'));");
       if (provider == selectedProvider) {
         this.defaultButton = button;
       }
-      hbox.appendChild(button);
+      hbox.insertBefore(button, addButton);
     }
     if (!this.defaultButton) {
-      this.defaultButton = hbox.firstChild
+      this.defaultButton = addButton;
     }
     this.defaultButton.setAttribute("checked", "true");
-    this.panel.firstChild.hidden = false;
   },
 
   get shareButton() {
@@ -540,42 +606,6 @@ SocialShare = {
     if (!widget || !widget.areaType)
       return null;
     return widget.forWindow(window).node;
-  },
-
-  canSharePage: function(aURI) {
-    // we do not enable sharing from private sessions
-    if (PrivateBrowsingUtils.isWindowPrivate(window))
-      return false;
-
-    if (!aURI || !(aURI.schemeIs('http') || aURI.schemeIs('https')))
-      return false;
-    return true;
-  },
-
-  update: function() {
-    let widget = CustomizableUI.getWidget("social-share-button");
-    if (!widget)
-      return;
-    let shareButton = widget.forWindow(window).node;
-    // hidden state is based on available share providers and location of
-    // button. It's always visible and disabled in the customization palette.
-    shareButton.hidden = !SocialUI.enabled || (widget.areaType &&
-                         [p for (p of Social.providers) if (p.shareURL)].length == 0);
-    let disabled = !widget.areaType || shareButton.hidden || !this.canSharePage(gBrowser.currentURI);
-
-    // 1. update the relevent command's disabled state so the keyboard
-    // shortcut only works when available.
-    // 2. If the button has been relocated to a place that is not visible by
-    // default (e.g. menu panel) then the disabled attribute will not update
-    // correctly based on the command, so we update the attribute directly as.
-    let cmd = document.getElementById("Social:SharePage");
-    if (disabled) {
-      cmd.setAttribute("disabled", "true");
-      shareButton.setAttribute("disabled", "true");
-    } else {
-      cmd.removeAttribute("disabled");
-      shareButton.removeAttribute("disabled");
-    }
   },
 
   _onclick: function() {
@@ -591,7 +621,15 @@ SocialShare = {
     this.anchor.removeAttribute("open");
     this.iframe.removeEventListener("click", this._onclick, true);
     this.iframe.setAttribute("src", "data:text/plain;charset=utf8,");
+    // make sure that the frame is unloaded after it is hidden
+    this.iframe.docShell.createAboutBlankContentViewer(null);
     this.currentShare = null;
+    // share panel use is over, purge any history
+    if (this.iframe.sessionHistory) {
+      let purge = this.iframe.sessionHistory.count;
+      if (purge > 0)
+        this.iframe.sessionHistory.PurgeHistory(purge);
+    }
   },
 
   setErrorMessage: function() {
@@ -599,10 +637,15 @@ SocialShare = {
     if (!iframe)
       return;
 
-    iframe.removeAttribute("src");
-    iframe.webNavigation.loadURI("about:socialerror?mode=compactInfo&origin=" +
-                                 encodeURIComponent(iframe.getAttribute("origin")),
-                                 null, null, null, null);
+    let url;
+    let origin = iframe.getAttribute("origin");
+    if (!origin) {
+      // directory site is down
+      url = "about:socialerror?mode=tryAgainOnly&directory=1&url=" + encodeURIComponent(iframe.getAttribute("src"));
+    } else {
+      url = "about:socialerror?mode=compactInfo&origin=" + encodeURIComponent(origin);
+    }
+    iframe.webNavigation.loadURI(url, null, null, null, null);
     sizeSocialPanelToContent(this.panel, iframe);
   },
 
@@ -612,13 +655,6 @@ SocialShare = {
     // will call sharePage with an origin for us to switch to.
     this._createFrame();
     let iframe = this.iframe;
-    let provider;
-    if (providerOrigin)
-      provider = Social._getProviderFromOrigin(providerOrigin);
-    else
-      provider = this.getSelectedProvider();
-    if (!provider || !provider.shareURL)
-      return;
 
     // graphData is an optional param that either defines the full set of data
     // to be shared, or partial data about the current page. It is set by a call
@@ -628,7 +664,7 @@ SocialShare = {
     let pageData = graphData ? graphData : this.currentShare;
     let sharedURI = pageData ? Services.io.newURI(pageData.url, null, null) :
                                 gBrowser.currentURI;
-    if (!this.canSharePage(sharedURI))
+    if (!SocialUI.canShareOrMarkPage(sharedURI))
       return;
 
     // the point of this action type is that we can use existing share
@@ -650,20 +686,26 @@ SocialShare = {
     }
     this.currentShare = pageData;
 
+    let provider;
+    if (providerOrigin)
+      provider = Social._getProviderFromOrigin(providerOrigin);
+    else
+      provider = this.getSelectedProvider();
+    if (!provider || !provider.shareURL) {
+      this.showDirectory();
+      return;
+    }
+    // check the menu button
+    let hbox = document.getElementById("social-share-provider-buttons");
+    let btn = hbox.querySelector("[origin='" + provider.origin + "']");
+    if (btn)
+      btn.checked = true;
+
     let shareEndpoint = OpenGraphBuilder.generateEndpointURL(provider.shareURL, pageData);
 
     let size = provider.getPageSize("share");
     if (size) {
-      if (this._dynamicResizer) {
-        this._dynamicResizer.stop();
-        this._dynamicResizer = null;
-      }
-      let {width, height} = size;
-      width += this.panel.boxObject.width - iframe.boxObject.width;
-      height += this.panel.boxObject.height - iframe.boxObject.height;
-      this.panel.sizeTo(width, height);
-    } else {
-      this._dynamicResizer = new DynamicResizeWatcher();
+      this._dynamicResizer.stop();
     }
 
     // if we've already loaded this provider/page share endpoint, we don't want
@@ -675,7 +717,7 @@ SocialShare = {
       reload = shareEndpoint != iframe.contentDocument.location.spec;
     }
     if (!reload) {
-      if (this._dynamicResizer)
+      if (!size)
         this._dynamicResizer.start(this.panel, iframe);
       iframe.docShell.isActive = true;
       iframe.docShell.isAppTab = true;
@@ -693,7 +735,13 @@ SocialShare = {
         // should close the window when done.
         iframe.contentWindow.opener = iframe.contentWindow;
         setTimeout(function() {
-          if (SocialShare._dynamicResizer) { // may go null if hidden quickly
+          if (size) {
+            let panel = SocialShare.panel;
+            let {width, height} = size;
+            width += panel.boxObject.width - iframe.boxObject.width;
+            height += panel.boxObject.height - iframe.boxObject.height;
+            panel.sizeTo(width, height);
+          } else {
             SocialShare._dynamicResizer.start(iframe.parentNode, iframe);
           }
         }, 0);
@@ -702,14 +750,43 @@ SocialShare = {
         iframe.contentDocument.documentElement.dispatchEvent(evt);
       }, true);
     }
+    // if the user switched between share providers we do not want that history
+    // available.
+    if (iframe.sessionHistory) {
+      let purge = iframe.sessionHistory.count;
+      if (purge > 0)
+        iframe.sessionHistory.PurgeHistory(purge);
+    }
+
     // always ensure that origin belongs to the endpoint
     let uri = Services.io.newURI(shareEndpoint, null, null);
     iframe.setAttribute("origin", provider.origin);
     iframe.setAttribute("src", shareEndpoint);
+    this._openPanel();
+  },
 
+  showDirectory: function() {
+    this._createFrame();
+    let iframe = this.iframe;
+    iframe.removeAttribute("origin");
+    iframe.addEventListener("load", function panelBrowserOnload(e) {
+      iframe.removeEventListener("load", panelBrowserOnload, true);
+      hookWindowCloseForPanelClose(iframe.contentWindow);
+      SocialShare._dynamicResizer.start(iframe.parentNode, iframe);
+
+      iframe.addEventListener("unload", function panelBrowserOnload(e) {
+        iframe.removeEventListener("unload", panelBrowserOnload, true);
+        SocialShare._dynamicResizer.stop();
+      }, true);
+    }, true);
+    iframe.setAttribute("src", "about:providerdirectory");
+    this._openPanel();
+  },
+
+  _openPanel: function() {
     let anchor = document.getAnonymousElementByAttribute(this.anchor, "class", "toolbarbutton-icon");
     this.panel.openPopup(anchor, "bottomcenter topright", 0, 0, false, false);
-    Social.setErrorListener(iframe, this.setErrorMessage.bind(this));
+    Social.setErrorListener(this.iframe, this.setErrorMessage.bind(this));
     Services.telemetry.getHistogramById("SOCIAL_TOOLBAR_BUTTONS").add(0);
   }
 };
@@ -1257,7 +1334,7 @@ SocialStatus = {
     let origin = aToolbarButton.getAttribute("origin");
     let provider = Social._getProviderFromOrigin(origin);
 
-    PanelFrame.showPopup(window, PanelUI, aToolbarButton, "social", origin,
+    PanelFrame.showPopup(window, aToolbarButton, "social", origin,
                          provider.statusURL, provider.getPageSize("status"),
                          (frame) => {
                           frame.addEventListener("close", this._onclose, true);
@@ -1290,31 +1367,27 @@ SocialStatus = {
  * Handles updates to toolbox and signals all buttons to update when necessary.
  */
 SocialMarks = {
-  update: function() {
-    // signal each button to update itself
-    let currentButtons = document.querySelectorAll('toolbarbutton[type="socialmark"]');
-    for (let elt of currentButtons) {
-      // make sure we can call update since the xbl is not completely bound if
-      // the button is in overflow, until the button becomes visible.
-      if (elt.update)
-        elt.update();
-    }
-  },
-
-  updatePanelButtons: function() {
-    // querySelectorAll does not work on the menu panel the panel, so we have to
-    // do this the hard way.
-    let providers = SocialMarks.getProviders();
+  get nodes() {
+    let providers = [p for (p of Social.providers) if (p.markURL)];
     for (let p of providers) {
       let widgetId = SocialMarks._toolbarHelper.idFromOrigin(p.origin);
       let widget = CustomizableUI.getWidget(widgetId);
       if (!widget)
         continue;
       let node = widget.forWindow(window).node;
+      if (node)
+        yield node;
+    }
+  },
+  update: function() {
+    // querySelectorAll does not work on the menu panel, so we have to do this
+    // the hard way.
+    for (let node of this.nodes) {
       // xbl binding is not complete on startup when buttons are not in toolbar,
       // verify update is available
-      if (node && node.update)
+      if (node.update) {
         node.update();
+      }
     }
   },
 
@@ -1351,7 +1424,7 @@ SocialMarks = {
     for (let cfg of contextMenus) {
       this._populateContextPopup(cfg, providers);
     }
-    this.updatePanelButtons();
+    this.update();
   },
 
   MENU_LIMIT: 3, // adjustable for testing

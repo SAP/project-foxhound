@@ -10,7 +10,6 @@
 #include "mozilla/dom/PContentParent.h"
 #include "mozilla/dom/nsIContentParent.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/dom/ipc/Blob.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/HalTypes.h"
@@ -40,12 +39,13 @@ class PRemoteSpellcheckEngineParent;
 
 namespace ipc {
 class OptionalURIParams;
+class PFileDescriptorSetParent;
 class URIParams;
 class TestShellParent;
 } // namespace ipc
 
 namespace jsipc {
-class JavaScriptParent;
+class JavaScriptShared;
 class PJavaScriptParent;
 }
 
@@ -62,21 +62,31 @@ class PStorageParent;
 class ClonedMessageData;
 class MemoryReport;
 class TabContext;
-class PFileDescriptorSetParent;
+class ContentBridgeParent;
 
-class ContentParent : public PContentParent
-                    , public nsIContentParent
-                    , public nsIObserver
-                    , public nsIDOMGeoPositionCallback
-                    , public mozilla::LinkedListElement<ContentParent>
+class ContentParent MOZ_FINAL : public PContentParent
+                              , public nsIContentParent
+                              , public nsIObserver
+                              , public nsIDOMGeoPositionCallback
+                              , public mozilla::LinkedListElement<ContentParent>
 {
     typedef mozilla::ipc::GeckoChildProcessHost GeckoChildProcessHost;
     typedef mozilla::ipc::OptionalURIParams OptionalURIParams;
+    typedef mozilla::ipc::PFileDescriptorSetParent PFileDescriptorSetParent;
     typedef mozilla::ipc::TestShellParent TestShellParent;
     typedef mozilla::ipc::URIParams URIParams;
     typedef mozilla::dom::ClonedMessageData ClonedMessageData;
 
 public:
+#ifdef MOZ_NUWA_PROCESS
+    static int32_t NuwaPid() {
+        return sNuwaPid;
+    }
+
+    static bool IsNuwaReady() {
+        return sNuwaReady;
+    }
+#endif
     virtual bool IsContentParent() MOZ_OVERRIDE { return true; }
     /**
      * Start up the content-process machinery.  This might include
@@ -94,13 +104,18 @@ public:
     static void JoinAllSubprocesses();
 
     static bool PreallocatedProcessReady();
-    static void RunAfterPreallocatedProcessReady(nsIRunnable* aRequest);
 
+    /**
+     * Get or create a content process for:
+     * 1. browser iframe
+     * 2. remote xul <browser>
+     * 3. normal iframe
+     */
     static already_AddRefed<ContentParent>
-    GetNewOrUsed(bool aForBrowserElement = false,
-                 hal::ProcessPriority aPriority =
-                   hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
-                 ContentParent* aOpener = nullptr);
+    GetNewOrUsedBrowserProcess(bool aForBrowserElement = false,
+                               hal::ProcessPriority aPriority =
+                               hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND,
+                               ContentParent* aOpener = nullptr);
 
     /**
      * Create a subprocess suitable for use as a preallocated app process.
@@ -123,6 +138,8 @@ public:
     static void GetAllEvenIfDead(nsTArray<ContentParent*>& aArray);
 
     static bool IgnoreIPCPrincipal();
+
+    static void NotifyUpdatedDictionaries();
 
     virtual bool RecvCreateChildProcess(const IPCTabContext& aContext,
                                         const hal::ProcessPriority& aPriority,
@@ -149,6 +166,7 @@ public:
     virtual bool CheckManifestURL(const nsAString& aManifestURL) MOZ_OVERRIDE;
     virtual bool CheckAppHasPermission(const nsAString& aPermission) MOZ_OVERRIDE;
     virtual bool CheckAppHasStatus(unsigned short aStatus) MOZ_OVERRIDE;
+    virtual bool KillChild() MOZ_OVERRIDE;
 
     /** Notify that a tab is beginning its destruction sequence. */
     void NotifyTabDestroying(PBrowserParent* aTab);
@@ -159,7 +177,7 @@ public:
     TestShellParent* CreateTestShell();
     bool DestroyTestShell(TestShellParent* aTestShell);
     TestShellParent* GetTestShellSingleton();
-    jsipc::JavaScriptParent *GetCPOWManager();
+    jsipc::JavaScriptShared* GetCPOWManager() MOZ_OVERRIDE;
 
     void ReportChildAlreadyBlocked();
     bool RequestRunToCompletion();
@@ -213,10 +231,6 @@ public:
     void FriendlyName(nsAString& aName, bool aAnonymize = false);
 
     virtual void OnChannelError() MOZ_OVERRIDE;
-
-    virtual PIndexedDBParent* AllocPIndexedDBParent() MOZ_OVERRIDE;
-    virtual bool
-    RecvPIndexedDBConstructor(PIndexedDBParent* aActor) MOZ_OVERRIDE;
 
     virtual PCrashReporterParent*
     AllocPCrashReporterParent(const NativeThreadId& tid,
@@ -286,12 +300,17 @@ private:
 
     // Take the preallocated process and transform it into a "real" app process,
     // for the specified manifest URL.  If there is no preallocated process (or
-    // if it's dead), this returns false.
+    // if it's dead), create a new one and set aTookPreAllocated to false.
     static already_AddRefed<ContentParent>
-    MaybeTakePreallocatedAppProcess(const nsAString& aAppManifestURL,
-                                    hal::ProcessPriority aInitialPriority);
+    GetNewOrPreallocatedAppProcess(mozIApplication* aApp,
+                                   hal::ProcessPriority aInitialPriority,
+                                   ContentParent* aOpener,
+                                   /*out*/ bool* aTookPreAllocated = nullptr);
 
     static hal::ProcessPriority GetInitialProcessPriority(Element* aFrameElement);
+
+    static ContentBridgeParent* CreateContentBridgeParent(const TabContext& aContext,
+                                                          const hal::ProcessPriority& aPriority);
 
     // Hide the raw constructor methods since we don't want client code
     // using them.
@@ -346,11 +365,12 @@ private:
 
     // Transform a pre-allocated app process into a "real" app
     // process, for the specified manifest URL.
-    void TransformPreallocatedIntoApp(const nsAString& aAppManifestURL);
+    void TransformPreallocatedIntoApp(ContentParent* aOpener,
+                                      const nsAString& aAppManifestURL);
 
     // Transform a pre-allocated app process into a browser process. If this
     // returns false, the child process has died.
-    void TransformPreallocatedIntoBrowser();
+    void TransformPreallocatedIntoBrowser(ContentParent* aOpener);
 
     /**
      * Mark this ContentParent as dead for the purposes of Get*().
@@ -392,7 +412,9 @@ private:
     virtual bool RecvGetProcessAttributes(uint64_t* aId,
                                           bool* aIsForApp,
                                           bool* aIsForBrowser) MOZ_OVERRIDE;
-    virtual bool RecvGetXPCOMProcessAttributes(bool* aIsOffline) MOZ_OVERRIDE;
+    virtual bool RecvGetXPCOMProcessAttributes(bool* aIsOffline,
+                                               InfallibleTArray<nsString>* dictionaries)
+        MOZ_OVERRIDE;
 
     virtual bool DeallocPJavaScriptParent(mozilla::jsipc::PJavaScriptParent*) MOZ_OVERRIDE;
 
@@ -414,8 +436,9 @@ private:
     virtual bool
     DeallocPFileSystemRequestParent(PFileSystemRequestParent*) MOZ_OVERRIDE;
 
-    virtual PBlobParent* AllocPBlobParent(const BlobConstructorParams& aParams) MOZ_OVERRIDE;
-    virtual bool DeallocPBlobParent(PBlobParent*) MOZ_OVERRIDE;
+    virtual PBlobParent* AllocPBlobParent(const BlobConstructorParams& aParams)
+                                          MOZ_OVERRIDE;
+    virtual bool DeallocPBlobParent(PBlobParent* aActor) MOZ_OVERRIDE;
 
     virtual bool DeallocPCrashReporterParent(PCrashReporterParent* crashreporter) MOZ_OVERRIDE;
 
@@ -427,13 +450,11 @@ private:
 
     virtual bool DeallocPHalParent(PHalParent*) MOZ_OVERRIDE;
 
-    virtual bool DeallocPIndexedDBParent(PIndexedDBParent* aActor) MOZ_OVERRIDE;
-
     virtual PMemoryReportRequestParent*
     AllocPMemoryReportRequestParent(const uint32_t& aGeneration,
                                     const bool &aAnonymize,
                                     const bool &aMinimizeMemoryUsage,
-                                    const FileDescriptor &aDMDFile) MOZ_OVERRIDE;
+                                    const MaybeFileDesc &aDMDFile) MOZ_OVERRIDE;
     virtual bool DeallocPMemoryReportRequestParent(PMemoryReportRequestParent* actor) MOZ_OVERRIDE;
 
     virtual PCycleCollectWithLogsParent*
@@ -446,6 +467,9 @@ private:
     virtual PTestShellParent* AllocPTestShellParent() MOZ_OVERRIDE;
     virtual bool DeallocPTestShellParent(PTestShellParent* shell) MOZ_OVERRIDE;
 
+    virtual PMobileConnectionParent* AllocPMobileConnectionParent(const uint32_t& aClientId) MOZ_OVERRIDE;
+    virtual bool DeallocPMobileConnectionParent(PMobileConnectionParent* aActor) MOZ_OVERRIDE;
+
     virtual bool DeallocPNeckoParent(PNeckoParent* necko) MOZ_OVERRIDE;
 
     virtual PExternalHelperAppParent* AllocPExternalHelperAppParent(
@@ -453,18 +477,26 @@ private:
             const nsCString& aMimeContentType,
             const nsCString& aContentDisposition,
             const uint32_t& aContentDispositionHint,
-            const nsString& aContentDispositionFilename, 
+            const nsString& aContentDispositionFilename,
             const bool& aForceSave,
             const int64_t& aContentLength,
             const OptionalURIParams& aReferrer,
             PBrowserParent* aBrowser) MOZ_OVERRIDE;
     virtual bool DeallocPExternalHelperAppParent(PExternalHelperAppParent* aService) MOZ_OVERRIDE;
 
+    virtual PCellBroadcastParent* AllocPCellBroadcastParent() MOZ_OVERRIDE;
+    virtual bool DeallocPCellBroadcastParent(PCellBroadcastParent*) MOZ_OVERRIDE;
+    virtual bool RecvPCellBroadcastConstructor(PCellBroadcastParent* aActor) MOZ_OVERRIDE;
+
     virtual PSmsParent* AllocPSmsParent() MOZ_OVERRIDE;
     virtual bool DeallocPSmsParent(PSmsParent*) MOZ_OVERRIDE;
 
     virtual PTelephonyParent* AllocPTelephonyParent() MOZ_OVERRIDE;
     virtual bool DeallocPTelephonyParent(PTelephonyParent*) MOZ_OVERRIDE;
+
+    virtual PVoicemailParent* AllocPVoicemailParent() MOZ_OVERRIDE;
+    virtual bool RecvPVoicemailConstructor(PVoicemailParent* aActor) MOZ_OVERRIDE;
+    virtual bool DeallocPVoicemailParent(PVoicemailParent* aActor) MOZ_OVERRIDE;
 
     virtual bool DeallocPStorageParent(PStorageParent* aActor) MOZ_OVERRIDE;
 
@@ -518,6 +550,7 @@ private:
                                            const nsString& aText, const bool& aTextClickable,
                                            const nsString& aCookie, const nsString& aName,
                                            const nsString& aBidi, const nsString& aLang,
+                                           const nsString& aData,
                                            const IPC::Principal& aPrincipal) MOZ_OVERRIDE;
 
     virtual bool RecvCloseAlert(const nsString& aName,
@@ -530,11 +563,11 @@ private:
                                  const InfallibleTArray<CpowEntry>& aCpows,
                                  const IPC::Principal& aPrincipal,
                                  InfallibleTArray<nsString>* aRetvals) MOZ_OVERRIDE;
-    virtual bool AnswerRpcMessage(const nsString& aMsg,
-                                  const ClonedMessageData& aData,
-                                  const InfallibleTArray<CpowEntry>& aCpows,
-                                  const IPC::Principal& aPrincipal,
-                                  InfallibleTArray<nsString>* aRetvals) MOZ_OVERRIDE;
+    virtual bool RecvRpcMessage(const nsString& aMsg,
+                                const ClonedMessageData& aData,
+                                const InfallibleTArray<CpowEntry>& aCpows,
+                                const IPC::Principal& aPrincipal,
+                                InfallibleTArray<nsString>* aRetvals) MOZ_OVERRIDE;
     virtual bool RecvAsyncMessage(const nsString& aMsg,
                                   const ClonedMessageData& aData,
                                   const InfallibleTArray<CpowEntry>& aCpows,
@@ -579,10 +612,11 @@ private:
     virtual bool RecvAudioChannelChangeDefVolChannel(const int32_t& aChannel,
                                                      const bool& aHidden) MOZ_OVERRIDE;
     virtual bool RecvGetSystemMemory(const uint64_t& getterId) MOZ_OVERRIDE;
-    virtual bool RecvBroadcastVolume(const nsString& aVolumeName) MOZ_OVERRIDE;
+    virtual bool RecvGetVolumes(InfallibleTArray<VolumeInfo>* aResult) MOZ_OVERRIDE;
 
     virtual bool RecvDataStoreGetStores(
                        const nsString& aName,
+                       const nsString& aOwner,
                        const IPC::Principal& aPrincipal,
                        InfallibleTArray<DataStoreSetting>* aValue) MOZ_OVERRIDE;
 
@@ -601,8 +635,13 @@ private:
 
     virtual bool RecvSetFakeVolumeState(const nsString& fsName, const int32_t& fsState) MOZ_OVERRIDE;
 
-    virtual bool RecvKeywordToURI(const nsCString& aKeyword, OptionalInputStreamParams* aPostData,
+    virtual bool RecvKeywordToURI(const nsCString& aKeyword,
+                                  nsString* aProviderName,
+                                  OptionalInputStreamParams* aPostData,
                                   OptionalURIParams* aURI) MOZ_OVERRIDE;
+
+    virtual bool RecvNotifyKeywordSearchLoading(const nsString &aProvider,
+                                                const nsString &aKeyword) MOZ_OVERRIDE; 
 
     virtual void ProcessingError(Result what) MOZ_OVERRIDE;
 
@@ -629,6 +668,21 @@ private:
 
     virtual bool
     DeallocPFileDescriptorSetParent(PFileDescriptorSetParent*) MOZ_OVERRIDE;
+
+    virtual bool
+    RecvGetFileReferences(const PersistenceType& aPersistenceType,
+                          const nsCString& aOrigin,
+                          const nsString& aDatabaseName,
+                          const int64_t& aFileId,
+                          int32_t* aRefCnt,
+                          int32_t* aDBRefCnt,
+                          int32_t* aSliceRefCnt,
+                          bool* aResult) MOZ_OVERRIDE;
+
+    virtual PDocAccessibleParent* AllocPDocAccessibleParent(PDocAccessibleParent*, const uint64_t&) MOZ_OVERRIDE;
+    virtual bool DeallocPDocAccessibleParent(PDocAccessibleParent*) MOZ_OVERRIDE;
+    virtual bool RecvPDocAccessibleConstructor(PDocAccessibleParent* aDoc,
+                                               PDocAccessibleParent* aParentDoc, const uint64_t& aParentID) MOZ_OVERRIDE;
 
     // If you add strong pointers to cycle collected objects here, be sure to
     // release these objects in ShutDownProcess.  See the comment there for more
@@ -686,6 +740,11 @@ private:
     // Dup of child's X socket, used to scope its resources to this
     // object instead of the child process's lifetime.
     ScopedClose mChildXSocketFdDup;
+#endif
+
+#ifdef MOZ_NUWA_PROCESS
+    static int32_t sNuwaPid;
+    static bool sNuwaReady;
 #endif
 };
 

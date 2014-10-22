@@ -28,7 +28,7 @@
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "Layers.h"
-#include "SharedTextureImage.h"
+#include "ImageContainer.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
 
@@ -108,13 +108,6 @@ PluginInstanceParent::~PluginInstanceParent()
     if (mShColorSpace)
         ::CGColorSpaceRelease(mShColorSpace);
 #endif
-    if (mRemoteImageDataShmem.IsWritable()) {
-        if (mImageContainer) {
-            mImageContainer->SetRemoteImageData(nullptr, nullptr);
-            mImageContainer->SetCompositionNotifySink(nullptr);
-        }
-        DeallocShmem(mRemoteImageDataShmem);
-    }
 }
 
 bool
@@ -254,12 +247,6 @@ PluginInstanceParent::InternalGetValueForNPObject(
 }
 
 bool
-PluginInstanceParent::IsAsyncDrawing()
-{
-  return IsDrawingModelAsync(mDrawingModel);
-}
-
-bool
 PluginInstanceParent::AnswerNPN_GetValue_NPNVWindowNPObject(
                                          PPluginScriptableObjectParent** aValue,
                                          NPError* aResult)
@@ -290,17 +277,6 @@ bool
 PluginInstanceParent::AnswerNPN_GetValue_DrawingModelSupport(const NPNVariable& model, bool* value)
 {
     *value = false;
-
-#ifdef XP_WIN
-    switch (model) {
-        case NPNVsupportsAsyncWindowsDXGISurfaceBool: {
-            if (gfxWindowsPlatform::GetPlatform()->GetRenderMode() == gfxWindowsPlatform::RENDER_DIRECT2D) {
-                *value = true;
-            }
-        }
-    }
-#endif
-
     return true;
 }
 
@@ -349,7 +325,7 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginUsesDOMForCursor(
 class NotificationSink : public CompositionNotifySink
 {
 public:
-  NotificationSink(PluginInstanceParent *aInstance) : mInstance(aInstance)
+  explicit NotificationSink(PluginInstanceParent* aInstance) : mInstance(aInstance)
   { }
 
   virtual void DidComposite() { mInstance->DidComposite(); }
@@ -359,62 +335,20 @@ private:
 
 bool
 PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
-    const int& drawingModel, OptionalShmem *shmem, CrossProcessMutexHandle *mutex, NPError* result)
+    const int& drawingModel, NPError* result)
 {
-    *shmem = null_t();
-
 #ifdef XP_MACOSX
     if (drawingModel == NPDrawingModelCoreAnimation ||
         drawingModel == NPDrawingModelInvalidatingCoreAnimation) {
         // We need to request CoreGraphics otherwise
-        // the nsObjectFrame will try to draw a CALayer
+        // the nsPluginFrame will try to draw a CALayer
         // that can not be shared across process.
         mDrawingModel = drawingModel;
         *result = mNPNIface->setvalue(mNPP, NPPVpluginDrawingModel,
                                   (void*)NPDrawingModelCoreGraphics);
     } else
 #endif
-    if (drawingModel == NPDrawingModelAsyncBitmapSurface
-#ifdef XP_WIN
-        || drawingModel == NPDrawingModelAsyncWindowsDXGISurface
-#endif
-        ) {
-        ImageContainer *container = GetImageContainer();
-        if (!container) {
-            *result = NPERR_GENERIC_ERROR;
-            return true;
-        }
-
-#ifdef XP_WIN
-        if (drawingModel == NPDrawingModelAsyncWindowsDXGISurface &&
-            gfxWindowsPlatform::GetPlatform()->GetRenderMode() != gfxWindowsPlatform::RENDER_DIRECT2D) {
-            *result = NPERR_GENERIC_ERROR;
-            return true;
-        }
-#endif
-
-        mDrawingModel = drawingModel;
-        *result = mNPNIface->setvalue(mNPP, NPPVpluginDrawingModel,
-                                      reinterpret_cast<void*>(static_cast<uintptr_t>(drawingModel)));
-
-
-        if (*result != NPERR_NO_ERROR) {
-            return true;
-        }
-
-        AllocUnsafeShmem(sizeof(RemoteImageData), SharedMemory::TYPE_BASIC, &mRemoteImageDataShmem);
-
-        *shmem = mRemoteImageDataShmem;
-
-        mRemoteImageDataMutex = new CrossProcessMutex("PluginInstanceParent.mRemoteImageDataMutex");
-
-        *mutex = mRemoteImageDataMutex->ShareToProcess(OtherProcess());
-        container->SetRemoteImageData(mRemoteImageDataShmem.get<RemoteImageData>(), mRemoteImageDataMutex);
-
-        mNotifySink = new NotificationSink(this);
-
-        container->SetCompositionNotifySink(mNotifySink);
-    } else if (
+    if (
 #if defined(XP_WIN)
                drawingModel == NPDrawingModelSyncWin
 #elif defined(XP_MACOSX)
@@ -426,20 +360,9 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
                false
 #endif
                ) {
-        *shmem = null_t();
-
         mDrawingModel = drawingModel;
         *result = mNPNIface->setvalue(mNPP, NPPVpluginDrawingModel,
                                       (void*)(intptr_t)drawingModel);
-
-        if (mRemoteImageDataShmem.IsWritable()) {
-            if (mImageContainer) {
-                mImageContainer->SetRemoteImageData(nullptr, nullptr);
-                mImageContainer->SetCompositionNotifySink(nullptr);
-            }
-            DeallocShmem(mRemoteImageDataShmem);
-            mRemoteImageDataMutex = nullptr;
-        }
     } else {
         *result = NPERR_GENERIC_ERROR;
     }
@@ -714,12 +637,6 @@ PluginInstanceParent::GetImageContainer(ImageContainer** aContainer)
 
     if (!container) {
         return NS_ERROR_FAILURE;
-    }
-
-    if (IsAsyncDrawing()) {
-      NS_IF_ADDREF(container);
-      *aContainer = container;
-      return NS_OK;
     }
 
 #ifdef XP_MACOSX
@@ -1187,12 +1104,6 @@ PluginInstanceParent::NPP_HandleEvent(void* event)
 
 #if defined(OS_WIN)
     if (mWindowType == NPWindowTypeDrawable) {
-        if (IsAsyncDrawing()) {
-            if (npevent->event == WM_PAINT || npevent->event == DoublePassRenderingEvent()) {
-                // This plugin maintains its own async drawing.
-                return handled;
-            }
-        }
         if (DoublePassRenderingEvent() == npevent->event) {
             return CallPaint(npremoteevent, &handled) && handled;
         }
@@ -1231,7 +1142,7 @@ PluginInstanceParent::NPP_HandleEvent(void* event)
 
             case WM_WINDOWPOSCHANGED:
             {
-                // We send this in nsObjectFrame just before painting
+                // We send this in nsPluginFrame just before painting
                 return SendWindowPosChanged(npremoteevent);
             }
             break;
@@ -1692,73 +1603,6 @@ PluginInstanceParent::AnswerNPN_ConvertPoint(const double& sourceX,
 }
 
 bool
-PluginInstanceParent::AnswerNPN_InitAsyncSurface(const gfxIntSize& size,
-                                                 const NPImageFormat& format,
-                                                 NPRemoteAsyncSurface* surfData,
-                                                 bool* result)
-{
-    if (!IsAsyncDrawing()) {
-        *result = false;
-        return true;
-    }
-
-    switch (mDrawingModel) {
-    case NPDrawingModelAsyncBitmapSurface: {
-            Shmem sharedMem;
-            if (!AllocUnsafeShmem(size.width * size.height * 4, SharedMemory::TYPE_BASIC, &sharedMem)) {
-                *result = false;
-                return true;
-            }
-
-            surfData->size() = size;
-            surfData->hostPtr() = (uintptr_t)sharedMem.get<unsigned char>();
-            surfData->stride() = size.width * 4;
-            surfData->format() = format;
-            surfData->data() = sharedMem;
-            *result = true;
-            return true;
-        }
-#ifdef XP_WIN
-    case NPDrawingModelAsyncWindowsDXGISurface: {
-            ID3D10Device1 *device = gfxWindowsPlatform::GetPlatform()->GetD3D10Device();
-
-            nsRefPtr<ID3D10Texture2D> texture;
-
-            CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, size.width, size.height, 1, 1);
-            desc.MiscFlags = D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-            desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
-            if (FAILED(device->CreateTexture2D(&desc, nullptr, getter_AddRefs(texture)))) {
-                *result = false;
-                return true;
-            }
-
-            nsRefPtr<IDXGIResource> resource;
-            if (FAILED(texture->QueryInterface(IID_IDXGIResource, getter_AddRefs(resource)))) {
-                *result = false;
-                return true;
-            }
-
-            HANDLE sharedHandle;
-
-            if (FAILED(resource->GetSharedHandle(&sharedHandle))) {
-                *result = false;
-                return true;
-            }
-
-            surfData->size() = size;
-            surfData->data() = sharedHandle;
-            surfData->format() = format;
-
-            mTextureMap.Put(sharedHandle, texture);
-            *result = true;
-        }
-#endif
-    }
-
-    return true;
-}
-
-bool
 PluginInstanceParent::RecvRedrawPlugin()
 {
     nsNPAPIPluginInstance *inst = static_cast<nsNPAPIPluginInstance*>(mNPP->ndata);
@@ -1778,15 +1622,6 @@ PluginInstanceParent::RecvNegotiatedCarbon()
         return false;
     }
     inst->CarbonNPAPIFailure();
-    return true;
-}
-
-bool
-PluginInstanceParent::RecvReleaseDXGISharedSurface(const DXGISharedSurfaceHandle &aHandle)
-{
-#ifdef XP_WIN
-    mTextureMap.Remove(aHandle);
-#endif
     return true;
 }
 

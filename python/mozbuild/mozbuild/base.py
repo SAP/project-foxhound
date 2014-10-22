@@ -274,6 +274,9 @@ class MozbuildObject(ProcessExecutionMixin):
 
     @property
     def bindir(self):
+        import mozinfo
+        if mozinfo.os == "mac":
+            return os.path.join(self.topobjdir, 'dist', self.substs['MOZ_MACBUNDLE_NAME'], 'Contents', 'Resources')
         return os.path.join(self.topobjdir, 'dist', 'bin')
 
     @property
@@ -420,6 +423,26 @@ class MozbuildObject(ProcessExecutionMixin):
 
         if filename:
             args.extend(['-f', filename])
+
+        if num_jobs == 0 and self.mozconfig['make_flags']:
+            flags = iter(self.mozconfig['make_flags'])
+            for flag in flags:
+                if flag == '-j':
+                    try:
+                        flag = flags.next()
+                    except StopIteration:
+                        break
+                    try:
+                        num_jobs = int(flag)
+                    except ValueError:
+                        args.append(flag)
+                elif flag.startswith('-j'):
+                    try:
+                        num_jobs = int(flag[2:])
+                    except (ValueError, IndexError):
+                        break
+                else:
+                    args.append(flag)
 
         if allow_parallel:
             if num_jobs > 0:
@@ -572,6 +595,19 @@ class MachCommandBase(MozbuildObject):
                     e.objdir2))
             sys.exit(1)
 
+        except MozconfigLoadException as e:
+            print('Error loading mozconfig: ' + e.path)
+            print('')
+            print(e.message)
+            if e.output:
+                print('')
+                print('mozconfig output:')
+                print('')
+                for line in e.output:
+                    print(line)
+
+            sys.exit(1)
+
         MozbuildObject.__init__(self, topsrcdir, context.settings,
             context.log_manager, topobjdir=topobjdir)
 
@@ -621,7 +657,7 @@ class MachCommandConditions(object):
 
     @staticmethod
     def is_firefox_or_mulet(cls):
-        """Must have a Mulet build."""
+        """Must have a Firefox or Mulet build."""
         return (MachCommandConditions.is_firefox(cls) or
                 MachCommandConditions.is_mulet(cls))
 

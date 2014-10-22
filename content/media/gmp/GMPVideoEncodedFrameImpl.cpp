@@ -7,6 +7,7 @@
 #include "GMPVideoHost.h"
 #include "mozilla/gmp/GMPTypes.h"
 #include "GMPSharedMemManager.h"
+#include "GMPEncryptedBufferDataImpl.h"
 
 namespace mozilla {
 namespace gmp {
@@ -40,6 +41,9 @@ GMPVideoEncodedFrameImpl::GMPVideoEncodedFrameImpl(const GMPVideoEncodedFrameDat
   mBufferType(aFrameData.mBufferType())
 {
   MOZ_ASSERT(aHost);
+  if (aFrameData.mDecryptionData().mKeyId().Length() > 0) {
+    mCrypto = new GMPEncryptedBufferDataImpl(aFrameData.mDecryptionData());
+  }
   aHost->EncodedFrameCreated(this);
 }
 
@@ -51,10 +55,16 @@ GMPVideoEncodedFrameImpl::~GMPVideoEncodedFrameImpl()
   }
 }
 
+void
+GMPVideoEncodedFrameImpl::InitCrypto(const mp4_demuxer::CryptoSample& aCrypto)
+{
+  mCrypto = new GMPEncryptedBufferDataImpl(aCrypto);
+}
+
 const GMPEncryptedBufferMetadata*
 GMPVideoEncodedFrameImpl::GetDecryptionData() const
 {
-  return nullptr;
+  return mCrypto;
 }
 
 GMPVideoFrameFormat
@@ -95,6 +105,9 @@ GMPVideoEncodedFrameImpl::RelinquishFrameData(GMPVideoEncodedFrameData& aFrameDa
   aFrameData.mCompleteFrame() = mCompleteFrame;
   aFrameData.mBuffer() = mBuffer;
   aFrameData.mBufferType() = mBufferType;
+  if (mCrypto) {
+    mCrypto->RelinquishData(aFrameData.mDecryptionData());
+  }
 
   // This method is called right before Shmem is sent to another process.
   // We need to effectively zero out our member copy so that we don't
@@ -108,7 +121,7 @@ void
 GMPVideoEncodedFrameImpl::DestroyBuffer()
 {
   if (mHost && mBuffer.IsWritable()) {
-    mHost->SharedMemMgr()->MgrDeallocShmem(GMPSharedMemManager::kGMPEncodedData, mBuffer);
+    mHost->SharedMemMgr()->MgrDeallocShmem(GMPSharedMem::kGMPEncodedData, mBuffer);
   }
   mBuffer = ipc::Shmem();
 }
@@ -120,7 +133,7 @@ GMPVideoEncodedFrameImpl::CreateEmptyFrame(uint32_t aSize)
     DestroyBuffer();
   } else if (aSize > AllocatedSize()) {
     DestroyBuffer();
-    if (!mHost->SharedMemMgr()->MgrAllocShmem(GMPSharedMemManager::kGMPEncodedData, aSize,
+    if (!mHost->SharedMemMgr()->MgrAllocShmem(GMPSharedMem::kGMPEncodedData, aSize,
                                               ipc::SharedMemory::TYPE_BASIC, &mBuffer) ||
         !Buffer()) {
       return GMPAllocErr;
@@ -151,6 +164,7 @@ GMPVideoEncodedFrameImpl::CopyFrame(const GMPVideoEncodedFrame& aFrame)
   mSize = f.mSize; // already set...
   mCompleteFrame = f.mCompleteFrame;
   mBufferType = f.mBufferType;
+  mCrypto = new GMPEncryptedBufferDataImpl(*(f.mCrypto));
   // Don't copy host, that should have been set properly on object creation via host.
 
   return GMPNoErr;
@@ -228,7 +242,7 @@ GMPVideoEncodedFrameImpl::SetAllocatedSize(uint32_t aNewSize)
   }
 
   ipc::Shmem new_mem;
-  if (!mHost->SharedMemMgr()->MgrAllocShmem(GMPSharedMemManager::kGMPEncodedData, aNewSize,
+  if (!mHost->SharedMemMgr()->MgrAllocShmem(GMPSharedMem::kGMPEncodedData, aNewSize,
                                             ipc::SharedMemory::TYPE_BASIC, &new_mem) ||
       !new_mem.get<uint8_t>()) {
     return;

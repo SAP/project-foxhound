@@ -49,7 +49,7 @@ public class Tabs implements GeckoEventListener {
     private final HashMap<Integer, Tab> mTabs = new HashMap<Integer, Tab>();
 
     private AccountManager mAccountManager;
-    private OnAccountsUpdateListener mAccountListener = null;
+    private OnAccountsUpdateListener mAccountListener;
 
     public static final int LOADURL_NONE         = 0;
     public static final int LOADURL_NEW_TAB      = 1 << 0;
@@ -63,7 +63,9 @@ public class Tabs implements GeckoEventListener {
 
     private static final long PERSIST_TABS_AFTER_MILLISECONDS = 1000 * 5;
 
-    private static AtomicInteger sTabId = new AtomicInteger(0);
+    public static final int INVALID_TAB_ID = -1;
+
+    private static final AtomicInteger sTabId = new AtomicInteger(0);
     private volatile boolean mInitialTabsAdded;
 
     private Context mAppContext;
@@ -108,7 +110,9 @@ public class Tabs implements GeckoEventListener {
             "DesktopMode:Changed",
             "Tab:ViewportMetadata",
             "Tab:StreamStart",
-            "Tab:StreamStop");
+            "Tab:StreamStop",
+            "Reader:Click",
+            "Reader:LongClick");
 
     }
 
@@ -486,6 +490,7 @@ public class Tabs implements GeckoEventListener {
                 notifyListeners(tab, Tabs.TabEvents.LOAD_ERROR);
             } else if (event.equals("Content:PageShow")) {
                 notifyListeners(tab, TabEvents.PAGE_SHOW);
+                tab.updateUserRequested(message.getString("userRequested"));
             } else if (event.equals("DOMContentLoaded")) {
                 tab.handleContentLoaded();
                 String backgroundColor = message.getString("bgColor");
@@ -522,6 +527,10 @@ public class Tabs implements GeckoEventListener {
             } else if (event.equals("Tab:StreamStop")) {
                 tab.setRecording(false);
                 notifyListeners(tab, TabEvents.RECORDING_CHANGE);
+            } else if (event.equals("Reader:Click")) {
+                tab.toggleReaderMode();
+            } else if (event.equals("Reader:LongClick")) {
+                tab.addToReadingList();
             }
 
         } catch (Exception e) {
@@ -595,7 +604,9 @@ public class Tabs implements GeckoEventListener {
         READER_ENABLED,
         DESKTOP_MODE_CHANGE,
         VIEWPORT_CHANGE,
-        RECORDING_CHANGE
+        RECORDING_CHANGE,
+        BOOKMARK_ADDED,
+        BOOKMARK_REMOVED
     }
 
     public void notifyListeners(Tab tab, TabEvents msg) {
@@ -829,12 +840,20 @@ public class Tabs implements GeckoEventListener {
         }
 
         // TODO: surely we could just fetch *any* cached icon?
-        if (AboutPages.isDefaultIconPage(url)) {
+        if (AboutPages.isBuiltinIconPage(url)) {
             Log.d(LOGTAG, "Setting about: tab favicon inline.");
             added.updateFavicon(getAboutPageFavicon(url));
         }
 
         return added;
+    }
+
+    public Tab addTab() {
+        return loadUrl(AboutPages.HOME, Tabs.LOADURL_NEW_TAB);
+    }
+
+    public Tab addPrivateTab() {
+        return loadUrl(AboutPages.PRIVATEBROWSING, Tabs.LOADURL_NEW_TAB | Tabs.LOADURL_PRIVATE);
     }
 
     /**

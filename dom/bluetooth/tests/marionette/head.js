@@ -43,8 +43,15 @@ const BT_PAIRING_REQ = "bluetooth-pairing-request";
 const BT_PAIRING_PASSKEY = 123456;
 const BT_PAIRING_PINCODE = "ABCDEFG";
 
-let Promise =
-  SpecialPowers.Cu.import("resource://gre/modules/Promise.jsm").Promise;
+// Emulate Promise.jsm semantics.
+Promise.defer = function() { return new Deferred(); }
+function Deferred()  {
+  this.promise = new Promise(function(resolve, reject) {
+    this.resolve = resolve;
+    this.reject = reject;
+  }.bind(this));
+  Object.freeze(this);
+}
 
 let bluetoothManager;
 
@@ -81,33 +88,6 @@ function runEmulatorCmdSafe(aCommand) {
       deferred.reject(aResult);
     }
   });
-
-  return deferred.promise;
-}
-
-/**
- * Wrap DOMRequest onsuccess/onerror events to Promise resolve/reject.
- *
- * Fulfill params: A DOMEvent.
- * Reject params: A DOMEvent.
- *
- * @param aRequest
- *        A DOMRequest instance.
- *
- * @return A deferred promise.
- */
-function wrapDomRequestAsPromise(aRequest) {
-  let deferred = Promise.defer();
-
-  ok(aRequest instanceof DOMRequest,
-     "aRequest is instanceof " + aRequest.constructor);
-
-  aRequest.onsuccess = function(aEvent) {
-    deferred.resolve(aEvent);
-  };
-  aRequest.onerror = function(aEvent) {
-    deferred.reject(aEvent);
-  };
 
   return deferred.promise;
 }
@@ -239,16 +219,15 @@ function getEmulatorDeviceProperty(aAddress, aPropertyName) {
 function startDiscovery(aAdapter) {
   let request = aAdapter.startDiscovery();
 
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve() {
+  return request.then(function resolve() {
       // TODO (bug 892207): Make Bluetooth APIs available for 3rd party apps.
       //     Currently, discovering state wouldn't change immediately here.
       //     We would turn on this check when the redesigned API are landed.
       // is(aAdapter.discovering, false, "BluetoothAdapter.discovering");
       log("  Start discovery - Success");
-    }, function reject(aEvent) {
+    }, function reject(aError) {
       ok(false, "Start discovery - Fail");
-      throw aEvent.target.error;
+      throw aError;
     });
 }
 
@@ -268,16 +247,15 @@ function startDiscovery(aAdapter) {
 function stopDiscovery(aAdapter) {
   let request = aAdapter.stopDiscovery();
 
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve() {
+  return request.then(function resolve() {
       // TODO (bug 892207): Make Bluetooth APIs available for 3rd party apps.
       //     Currently, discovering state wouldn't change immediately here.
       //     We would turn on this check when the redesigned API are landed.
       // is(aAdapter.discovering, false, "BluetoothAdapter.discovering");
       log("  Stop discovery - Success");
-    }, function reject(aEvent) {
+    }, function reject(aError) {
       ok(false, "Stop discovery - Fail");
-      throw aEvent.target.error;
+      throw aError;
     });
 }
 
@@ -356,12 +334,11 @@ function startDiscoveryAndWaitDevicesFound(aAdapter, aRemoteAddresses) {
 function pair(aAdapter, aDeviceAddress) {
   let request = aAdapter.pair(aDeviceAddress);
 
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve() {
+  return request.then(function resolve() {
       log("  Pair - Success");
-    }, function reject(aEvent) {
+    }, function reject(aError) {
       ok(false, "Pair - Fail");
-      throw aEvent.target.error;
+      throw aError;
     });
 }
 
@@ -383,12 +360,11 @@ function pair(aAdapter, aDeviceAddress) {
 function unpair(aAdapter, aDeviceAddress) {
   let request = aAdapter.unpair(aDeviceAddress);
 
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve() {
+  return request.then(function resolve() {
       log("  Unpair - Success");
-    }, function reject(aEvent) {
+    }, function reject(aError) {
       ok(false, "Unpair - Fail");
-      throw aEvent.target.error;
+      throw aError;
     });
 }
 
@@ -433,14 +409,13 @@ function pairDeviceAndWait(aAdapter, aDeviceAddress) {
 function getPairedDevices(aAdapter) {
   let request = aAdapter.getPairedDevices();
 
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve() {
+  return request.then(function resolve() {
       log("  getPairedDevices - Success");
       let pairedDevices = request.result.slice();
       return pairedDevices;
-    }, function reject(aEvent) {
+    }, function reject(aError) {
       ok(false, "getPairedDevices - Fail");
-      throw aEvent.target.error;
+      throw aError;
     });
 }
 
@@ -462,13 +437,12 @@ function getPairedDevices(aAdapter) {
 function getSettings(aKey) {
   let request = navigator.mozSettings.createLock().get(aKey);
 
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve(aEvent) {
+  return request.then(function resolve(aValue) {
       ok(true, "getSettings(" + aKey + ")");
-      return aEvent.target.result[aKey];
-    }, function reject(aEvent) {
+      return aValue[aKey];
+    }, function reject(aError) {
       ok(false, "getSettings(" + aKey + ")");
-      throw aEvent.target.error;
+      throw aError;
     });
 }
 
@@ -486,15 +460,18 @@ function getSettings(aKey) {
  * @return A deferred promise.
  */
 function setSettings(aSettings) {
-  let request = navigator.mozSettings.createLock().set(aSettings);
-
-  return wrapDomRequestAsPromise(request)
-    .then(function resolve() {
+  let lock = window.navigator.mozSettings.createLock();
+  let request = lock.set(aSettings);
+  let deferred = Promise.defer();
+  lock.onsettingstransactionsuccess = function () {
       ok(true, "setSettings(" + JSON.stringify(aSettings) + ")");
-    }, function reject(aEvent) {
+    deferred.resolve();
+  };
+  lock.onsettingstransactionfailure = function (aEvent) {
       ok(false, "setSettings(" + JSON.stringify(aSettings) + ")");
-      throw aEvent.target.error;
-    });
+    deferred.reject();
+  };
+  return deferred.promise;
 }
 
 /**
@@ -705,17 +682,13 @@ function getDefaultAdapter() {
 }
 
 /**
- * Flush permission settings and call |finish()|.
+ * Wait for pending emulator transactions and call |finish()|.
  */
 function cleanUp() {
-  waitFor(function() {
-    SpecialPowers.flushPermissions(function() {
-      // Use ok here so that we have at least one test run.
-      ok(true, "permissions flushed");
+  // Use ok here so that we have at least one test run.
+  ok(true, ":: CLEANING UP ::");
 
-      finish();
-    });
-  }, function() {
+  waitFor(finish, function() {
     return pendingEmulatorCmdCount === 0;
   });
 }
@@ -730,7 +703,7 @@ function startBluetoothTestBase(aPermissions, aTestCaseMain) {
 }
 
 function startBluetoothTest(aReenable, aTestCaseMain) {
-  startBluetoothTestBase(["settings-read", "settings-write"], function() {
+  startBluetoothTestBase(["settings-read", "settings-write", "settings-api-read", "settings-api-write"], function() {
     let origEnabled, needEnable;
 
     return getBluetoothEnabled()

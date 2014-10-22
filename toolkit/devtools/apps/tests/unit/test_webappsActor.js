@@ -1,10 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-const {require} = devtools;
-const AppActorFront = require("devtools/app-actor-front");
-const {installHosted, installPackaged} = AppActorFront;
 const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
 
 let gAppId = "actor-test";
@@ -50,6 +46,7 @@ add_test(function testGetAll() {
         do_check_eq(app.origin, APP_ORIGIN);
         do_check_eq(app.installOrigin, app.origin);
         do_check_eq(app.manifestURL, app.origin + "/manifest.webapp");
+        do_check_eq(app.csp, "script-src: http://foo.com");
         run_next_test();
         return;
       }
@@ -182,15 +179,15 @@ add_test(function testFileUploadInstall() {
 
   let progressDeferred = promise.defer();
   // Ensure we get at least one progress event at the end
-  AppActorFront.on("install-progress", function onProgress(e, progress) {
+  gActorFront.on("install-progress", function onProgress(e, progress) {
     if (progress.bytesSent == progress.totalBytes) {
-      AppActorFront.off("install-progress", onProgress);
+      gActorFront.off("install-progress", onProgress);
       progressDeferred.resolve();
     }
   });
 
   let installed =
-    installPackaged(gClient, gActor, packageFile.path, gAppId)
+    gActorFront.installPackaged(packageFile.path, gAppId)
     .then(function ({ appId }) {
       do_check_eq(appId, gAppId);
     }, function (e) {
@@ -211,15 +208,15 @@ add_test(function testBulkUploadInstall() {
 
   let progressDeferred = promise.defer();
   // Ensure we get at least one progress event at the end
-  AppActorFront.on("install-progress", function onProgress(e, progress) {
+  gActorFront.on("install-progress", function onProgress(e, progress) {
     if (progress.bytesSent == progress.totalBytes) {
-      AppActorFront.off("install-progress", onProgress);
+      gActorFront.off("install-progress", onProgress);
       progressDeferred.resolve();
     }
   });
 
   let installed =
-    installPackaged(gClient, gActor, packageFile.path, gAppId)
+    gActorFront.installPackaged(packageFile.path, gAppId)
     .then(function ({ appId }) {
       do_check_eq(appId, gAppId);
     }, function (e) {
@@ -238,17 +235,17 @@ add_test(function testInstallHosted() {
     manifestURL: "http://foo.com/metadata/manifest.webapp"
   };
   let manifest = {
-    name: "My hosted app"
+    name: "My hosted app",
+    csp: "script-src: http://foo.com"
   };
-  installHosted(gClient, gActor, gAppId, metadata, manifest).then(
-    function ({ appId }) {
-      do_check_eq(appId, gAppId);
-      run_next_test();
-    },
-    function (e) {
-      do_throw("Failed installing hosted app: " + e.error + ": " + e.message);
-    }
-  );
+  gActorFront.installHosted(gAppId, metadata, manifest)
+  .then(function ({ appId }) {
+    do_check_eq(appId, gAppId);
+    run_next_test();
+  },
+  function (e) {
+    do_throw("Failed installing hosted app: " + e.error + ": " + e.message);
+  });
 });
 
 add_test(function testCheckHostedApp() {
@@ -264,6 +261,7 @@ add_test(function testCheckHostedApp() {
         do_check_eq(app.origin, "http://foo.com");
         do_check_eq(app.installOrigin, "http://metadata.foo.com");
         do_check_eq(app.manifestURL, "http://foo.com/metadata/manifest.webapp");
+        do_check_eq(app.csp, "script-src: http://foo.com");
         run_next_test();
         return;
       }

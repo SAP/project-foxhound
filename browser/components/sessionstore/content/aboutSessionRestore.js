@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+
+Cu.import("resource://gre/modules/Services.jsm");
 
 var gStateObject;
 var gTreeData;
@@ -12,6 +12,14 @@ var gTreeData;
 // Page initialization
 
 window.onload = function() {
+  // pages used by this script may have a link that needs to be updated to
+  // the in-product link.
+  let anchor = document.getElementById("linkMoreTroubleshooting");
+  if (anchor) {
+    let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
+    anchor.setAttribute("href", baseURL + "troubleshooting");
+  }
+
   // the crashed session state is kept inside a textbox so that SessionStore picks it up
   // (for when the tab is closed or the session crashes right again)
   var sessionData = document.getElementById("sessionData");
@@ -20,19 +28,7 @@ window.onload = function() {
     return;
   }
 
-  // remove unneeded braces (added for compatibility with Firefox 2.0 and 3.0)
-  if (sessionData.value.charAt(0) == '(')
-    sessionData.value = sessionData.value.slice(1, -1);
-  try {
-    gStateObject = JSON.parse(sessionData.value);
-  }
-  catch (exJSON) {
-    var s = new Cu.Sandbox("about:blank", {sandboxName: 'aboutSessionRestore'});
-    gStateObject = Cu.evalInSandbox("(" + sessionData.value + ")", s);
-    // If we couldn't parse the string with JSON.parse originally, make sure
-    // that the value in the textbox will be parsable.
-    sessionData.value = JSON.stringify(gStateObject);
-  }
+  gStateObject = JSON.parse(sessionData.value);
 
   // make sure the data is tracked to be restored in case of a subsequent crash
   var event = document.createEvent("UIEvents");
@@ -82,6 +78,14 @@ function initTreeView() {
 
 function restoreSession() {
   document.getElementById("errorTryAgain").disabled = true;
+
+  if (!gTreeData.some(aItem => aItem.checked)) {
+    // This should only be possible when we have no "cancel" button, and thus
+    // the "Restore session" button always remains enabled.  In that case and
+    // when nothing is selected, we just want a new session.
+    startNewSession();
+    return;
+  }
 
   // remove all unselected tabs from the state before restoring it
   var ix = gStateObject.windows.length - 1;
@@ -140,9 +144,8 @@ function onListClick(aEvent) {
   if (aEvent.button == 2)
     return;
 
-  var row = {}, col = {};
-  treeView.treeBox.getCellAt(aEvent.clientX, aEvent.clientY, row, col, {});
-  if (col.value) {
+  var cell = treeView.treeBox.getCellAt(aEvent.clientX, aEvent.clientY);
+  if (cell.col) {
     // Restore this specific tab in the same window for middle/double/accel clicking
     // on a tab's title.
 #ifdef XP_MACOSX
@@ -151,13 +154,13 @@ function onListClick(aEvent) {
     let accelKey = aEvent.ctrlKey;
 #endif
     if ((aEvent.button == 1 || aEvent.button == 0 && aEvent.detail == 2 || accelKey) &&
-        col.value.id == "title" &&
-        !treeView.isContainer(row.value)) {
-      restoreSingleTab(row.value, aEvent.shiftKey);
+        cell.col.id == "title" &&
+        !treeView.isContainer(cell.row)) {
+      restoreSingleTab(cell.row, aEvent.shiftKey);
       aEvent.stopPropagation();
     }
-    else if (col.value.id == "restore")
-      toggleRowChecked(row.value);
+    else if (cell.col.id == "restore")
+      toggleRowChecked(cell.row);
   }
 }
 
@@ -204,7 +207,10 @@ function toggleRowChecked(aIx) {
     treeView.treeBox.invalidateRow(gTreeData.indexOf(item.parent));
   }
 
-  document.getElementById("errorTryAgain").disabled = !gTreeData.some(isChecked);
+  // we only disable the button when there's no cancel button.
+  if (document.getElementById("errorCancel")) {
+    document.getElementById("errorTryAgain").disabled = !gTreeData.some(isChecked);
+  }
 }
 
 function restoreSingleTab(aIx, aShifted) {

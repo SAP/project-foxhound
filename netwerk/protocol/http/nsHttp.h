@@ -12,6 +12,7 @@
 #include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsError.h"
+#include "nsTArray.h"
 
 // http version codes
 #define NS_HTTP_VERSION_UNKNOWN  0
@@ -29,6 +30,7 @@ namespace net {
         SPDY_VERSION_2_REMOVED = 2,
         SPDY_VERSION_3 = 3,
         SPDY_VERSION_31 = 4,
+        HTTP_VERSION_2 = 5,
 
         // leave room for official versions. telem goes to 48
         // 24 was a internal spdy/3.1
@@ -36,13 +38,14 @@ namespace net {
         // 26 was http/2-draft08 and http/2-draft07 (they were the same)
         // 27 was http/2-draft09, h2-10, and h2-11
         // 28 was http/2-draft12
-        HTTP2_VERSION_DRAFT13 = 29
+        // 29 was http/2-draft13
+        HTTP2_VERSION_DRAFT14 = 30
     };
 
 typedef uint8_t nsHttpVersion;
 
-#define NS_HTTP2_DRAFT_VERSION HTTP2_VERSION_DRAFT13
-#define NS_HTTP2_DRAFT_TOKEN "h2-13"
+#define NS_HTTP2_DRAFT_VERSION HTTP2_VERSION_DRAFT14
+#define NS_HTTP2_DRAFT_TOKEN "h2-14"
 
 //-----------------------------------------------------------------------------
 // http connection capabilities
@@ -200,6 +203,56 @@ void EnsureBuffer(nsAutoArrayPtr<char> &buf, uint32_t newSize,
                   uint32_t preserve, uint32_t &objSize);
 void EnsureBuffer(nsAutoArrayPtr<uint8_t> &buf, uint32_t newSize,
                   uint32_t preserve, uint32_t &objSize);
+
+// h2=":443"; ma=60; single
+// results in 3 mValues = {{h2, :443}, {ma, 60}, {single}}
+
+class ParsedHeaderPair
+{
+public:
+    ParsedHeaderPair(const char *name, int32_t nameLen,
+                     const char *val, int32_t valLen)
+    {
+        if (nameLen > 0) {
+            mName.Rebind(name, name + nameLen);
+        }
+        if (valLen > 0) {
+            mValue.Rebind(val, val + valLen);
+        }
+    }
+
+    ParsedHeaderPair(ParsedHeaderPair const &copy)
+        : mName(copy.mName)
+        , mValue(copy.mValue)
+    {
+    }
+
+    nsDependentCSubstring mName;
+    nsDependentCSubstring mValue;
+};
+
+class ParsedHeaderValueList
+{
+public:
+    ParsedHeaderValueList(char *t, uint32_t len);
+    nsTArray<ParsedHeaderPair> mValues;
+
+private:
+    void ParsePair(char *t, uint32_t len);
+    void Tokenize(char *input, uint32_t inputLen, char **token,
+                  uint32_t *tokenLen, bool *foundEquals, char **next);
+};
+
+class ParsedHeaderValueListList
+{
+public:
+    explicit ParsedHeaderValueListList(const nsCString &txt);
+    nsTArray<ParsedHeaderValueList> mValues;
+
+private:
+    nsCString mFull;
+};
+
 
 } // namespace mozilla::net
 } // namespace mozilla

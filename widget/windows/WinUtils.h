@@ -72,6 +72,13 @@ struct nsIntRect;
 namespace mozilla {
 namespace widget {
 
+// Windows message debugging data
+typedef struct {
+  const char * mStr;
+  UINT         mId;
+} EventMsgInfo;
+extern EventMsgInfo gAllEvents[];
+
 // More complete QS definitions for MsgWaitForMultipleObjects() and
 // GetQueueStatus() that include newer win8 specific defines.
 
@@ -146,8 +153,9 @@ public:
    * not aware of (e.g., from a different thread).
    * Note that this method may cause sync dispatch of sent (as opposed to
    * posted) messages.
+   * @param aTimeoutMs Timeout for waiting in ms, defaults to INFINITE
    */
-  static void WaitForMessage();
+  static void WaitForMessage(DWORD aTimeoutMs = INFINITE);
 
   /**
    * Gets the value of a string-typed registry value.

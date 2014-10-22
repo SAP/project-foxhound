@@ -7,13 +7,18 @@
 
 #include "nsFrameSetFrame.h"
 
+#include "gfxContext.h"
+#include "gfxUtils.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Helpers.h"
 #include "mozilla/Likely.h"
 
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsLeafFrame.h"
 #include "nsContainerFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsGkAtoms.h"
@@ -38,6 +43,7 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::gfx;
 
 // masks for mEdgeVisibility
 #define LEFT_VIS   0x0001
@@ -106,7 +112,7 @@ public:
   void SetVisibility(bool aVisibility);
   void SetColor(nscolor aColor);
 
-  void PaintBorder(nsRenderingContext& aRenderingContext, nsPoint aPt);
+  void PaintBorder(DrawTarget* aDrawTarget, nsPoint aPt);
 
 protected:
   nsHTMLFramesetBorderFrame(nsStyleContext* aContext, int32_t aWidth, bool aVertical, bool aVisible);
@@ -153,7 +159,7 @@ public:
                           nsReflowStatus&          aStatus) MOZ_OVERRIDE;
 
 protected:
-  nsHTMLFramesetBlankFrame(nsStyleContext* aContext) : nsLeafFrame(aContext) {}
+  explicit nsHTMLFramesetBlankFrame(nsStyleContext* aContext) : nsLeafFrame(aContext) {}
   virtual ~nsHTMLFramesetBlankFrame();
   virtual nscoord GetIntrinsicISize() MOZ_OVERRIDE;
   virtual nscoord GetIntrinsicBSize() MOZ_OVERRIDE;
@@ -219,7 +225,7 @@ nsHTMLFramesetFrame::FrameResizePrefCallback(const char* aPref, void* aClosure)
   nsHTMLFramesetFrame *frame =
     reinterpret_cast<nsHTMLFramesetFrame *>(aClosure);
 
-  nsIDocument* doc = frame->mContent->GetDocument();
+  nsIDocument* doc = frame->mContent->GetComposedDoc();
   mozAutoDocUpdate updateBatch(doc, UPDATE_CONTENT_MODEL, true);
   if (doc) {
     nsNodeUtils::AttributeWillChange(frame->GetContent()->AsElement(),
@@ -1486,7 +1492,7 @@ void nsDisplayFramesetBorder::Paint(nsDisplayListBuilder* aBuilder,
                                     nsRenderingContext* aCtx)
 {
   static_cast<nsHTMLFramesetBorderFrame*>(mFrame)->
-    PaintBorder(*aCtx, ToReferenceFrame());
+    PaintBorder(aCtx->GetDrawTarget(), ToReferenceFrame());
 }
 
 void
@@ -1498,44 +1504,52 @@ nsHTMLFramesetBorderFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     new (aBuilder) nsDisplayFramesetBorder(aBuilder, this));
 }
 
-void nsHTMLFramesetBorderFrame::PaintBorder(nsRenderingContext& aRenderingContext,
+void nsHTMLFramesetBorderFrame::PaintBorder(DrawTarget* aDrawTarget,
                                             nsPoint aPt)
 {
-  nscolor WHITE    = NS_RGB(255, 255, 255);
-
-  nscolor bgColor =
-    LookAndFeel::GetColor(LookAndFeel::eColorID_WidgetBackground,
-                          NS_RGB(200,200,200));
-  nscolor fgColor =
-    LookAndFeel::GetColor(LookAndFeel::eColorID_WidgetForeground,
-                          NS_RGB(0,0,0));
-  nscolor hltColor =
-    LookAndFeel::GetColor(LookAndFeel::eColorID_Widget3DHighlight,
-                          NS_RGB(255,255,255));
-  nscolor sdwColor =
-    LookAndFeel::GetColor(LookAndFeel::eColorID_Widget3DShadow,
-                          NS_RGB(128,128,128));
-
-  nsRenderingContext::AutoPushTranslation
-    translate(&aRenderingContext, aPt);
-
   nscoord widthInPixels = nsPresContext::AppUnitsToIntCSSPixels(mWidth);
   nscoord pixelWidth    = nsPresContext::CSSPixelsToAppUnits(1);
 
   if (widthInPixels <= 0)
     return;
 
-  nsPoint start(0,0);
-  nsPoint end((mVertical) ? 0 : mRect.width, (mVertical) ? mRect.height : 0);
+  ColorPattern bgColor(ToDeviceColor(
+                 LookAndFeel::GetColor(LookAndFeel::eColorID_WidgetBackground,
+                                       NS_RGB(200, 200, 200))));
 
-  nscolor color = WHITE;
+  ColorPattern fgColor(ToDeviceColor(
+                 LookAndFeel::GetColor(LookAndFeel::eColorID_WidgetForeground,
+                                       NS_RGB(0, 0, 0))));
+
+  ColorPattern hltColor(ToDeviceColor(
+                 LookAndFeel::GetColor(LookAndFeel::eColorID_Widget3DHighlight,
+                                       NS_RGB(255, 255, 255))));
+
+  ColorPattern sdwColor(ToDeviceColor(
+                 LookAndFeel::GetColor(LookAndFeel::eColorID_Widget3DShadow,
+                                       NS_RGB(128, 128, 128))));
+
+  ColorPattern color(ToDeviceColor(NS_RGB(255, 255, 255))); // default to white
   if (mVisibility || mVisibilityOverride) {
-    color = (NO_COLOR == mColor) ? bgColor : mColor;
+    color = (NO_COLOR == mColor) ? bgColor :
+                                   ColorPattern(ToDeviceColor(mColor));
   }
-  aRenderingContext.SetColor(color);
+
+  int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
+
+  Point toRefFrame = NSPointToPoint(aPt, appUnitsPerDevPixel);
+
+  AutoRestoreTransform autoRestoreTransform(aDrawTarget);
+  aDrawTarget->SetTransform(
+    aDrawTarget->GetTransform().PreTranslate(toRefFrame));
+
+  nsPoint start(0, 0);
+  nsPoint end = mVertical ? nsPoint(0, mRect.height) : nsPoint(mRect.width, 0);
+
   // draw grey or white first
   for (int i = 0; i < widthInPixels; i++) {
-    aRenderingContext.DrawLine (start, end);
+    StrokeLineWithSnapping(start, end, appUnitsPerDevPixel, *aDrawTarget,
+                           color);
     if (mVertical) {
       start.x += pixelWidth;
       end.x =  start.x;
@@ -1549,30 +1563,30 @@ void nsHTMLFramesetBorderFrame::PaintBorder(nsRenderingContext& aRenderingContex
     return;
 
   if (widthInPixels >= 5) {
-    aRenderingContext.SetColor(hltColor);
     start.x = (mVertical) ? pixelWidth : 0;
     start.y = (mVertical) ? 0 : pixelWidth;
     end.x   = (mVertical) ? start.x : mRect.width;
     end.y   = (mVertical) ? mRect.height : start.y;
-    aRenderingContext.DrawLine(start, end);
+    StrokeLineWithSnapping(start, end, appUnitsPerDevPixel, *aDrawTarget,
+                           hltColor);
   }
 
   if (widthInPixels >= 2) {
-    aRenderingContext.SetColor(sdwColor);
     start.x = (mVertical) ? mRect.width - (2 * pixelWidth) : 0;
     start.y = (mVertical) ? 0 : mRect.height - (2 * pixelWidth);
     end.x   = (mVertical) ? start.x : mRect.width;
     end.y   = (mVertical) ? mRect.height : start.y;
-    aRenderingContext.DrawLine(start, end);
+    StrokeLineWithSnapping(start, end, appUnitsPerDevPixel, *aDrawTarget,
+                           sdwColor);
   }
 
   if (widthInPixels >= 1) {
-    aRenderingContext.SetColor(fgColor);
     start.x = (mVertical) ? mRect.width - pixelWidth : 0;
     start.y = (mVertical) ? 0 : mRect.height - pixelWidth;
     end.x   = (mVertical) ? start.x : mRect.width;
     end.y   = (mVertical) ? mRect.height : start.y;
-    aRenderingContext.DrawLine(start, end);
+    StrokeLineWithSnapping(start, end, appUnitsPerDevPixel, *aDrawTarget,
+                           fgColor);
   }
 }
 
@@ -1684,9 +1698,11 @@ public:
 void nsDisplayFramesetBlank::Paint(nsDisplayListBuilder* aBuilder,
                                    nsRenderingContext* aCtx)
 {
-  nscolor white = NS_RGB(255,255,255);
-  aCtx->SetColor(white);
-  aCtx->FillRect(mVisibleRect);
+  DrawTarget* drawTarget = aCtx->GetDrawTarget();
+  int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
+  Rect rect = NSRectToRect(mVisibleRect, appUnitsPerDevPixel, *drawTarget);
+  ColorPattern white(ToDeviceColor(Color(1.f, 1.f, 1.f, 1.f)));
+  drawTarget->FillRect(rect, white);
 }
 
 void

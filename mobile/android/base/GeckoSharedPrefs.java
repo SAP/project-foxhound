@@ -64,7 +64,7 @@ public final class GeckoSharedPrefs {
     };
 
     // For optimizing the migration check in subsequent get() calls
-    private static volatile boolean migrationDone = false;
+    private static volatile boolean migrationDone;
 
     public enum Flags {
         DISABLE_MIGRATIONS
@@ -204,10 +204,10 @@ public final class GeckoSharedPrefs {
         // Update prefs version accordingly.
         appEditor.putInt(PREFS_VERSION_KEY, PREFS_VERSION);
 
-        appEditor.commit();
-        profileEditor.commit();
+        appEditor.apply();
+        profileEditor.apply();
         if (pmEditor != null) {
-            pmEditor.commit();
+            pmEditor.apply();
         }
 
         Log.d(LOGTAG, "All keys have been migrated");

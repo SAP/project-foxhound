@@ -29,7 +29,7 @@ class SVGImageElement : public SVGImageElementBase,
   friend class ::nsSVGImageFrame;
 
 protected:
-  SVGImageElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit SVGImageElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   virtual ~SVGImageElement();
   virtual JSObject* WrapNode(JSContext *aCx) MOZ_OVERRIDE;
   friend nsresult (::NS_NewSVGImageElement(nsIContent **aResult,
@@ -53,8 +53,7 @@ public:
   NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* name) const MOZ_OVERRIDE;
 
   // nsSVGPathGeometryElement methods:
-  virtual void ConstructPath(gfxContext *aCtx) MOZ_OVERRIDE;
-  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder = nullptr) MOZ_OVERRIDE;
+  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder) MOZ_OVERRIDE;
 
   // nsSVGSVGElement methods:
   virtual bool HasValidDimensions() const MOZ_OVERRIDE;

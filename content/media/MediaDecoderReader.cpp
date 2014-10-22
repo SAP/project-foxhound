@@ -125,59 +125,6 @@ VideoData* MediaDecoderReader::DecodeToFirstVideoData()
   return (d = VideoQueue().PeekFront()) ? d : nullptr;
 }
 
-AudioData* MediaDecoderReader::DecodeToFirstAudioData()
-{
-  bool eof = false;
-  while (!eof && AudioQueue().GetSize() == 0) {
-    {
-      ReentrantMonitorAutoEnter decoderMon(mDecoder->GetReentrantMonitor());
-      if (mDecoder->IsShutdown()) {
-        return nullptr;
-      }
-    }
-    eof = !DecodeAudioData();
-  }
-  if (eof) {
-    AudioQueue().Finish();
-  }
-  AudioData* d = nullptr;
-  return (d = AudioQueue().PeekFront()) ? d : nullptr;
-}
-
-VideoData* MediaDecoderReader::FindStartTime(int64_t& aOutStartTime)
-{
-  NS_ASSERTION(mDecoder->OnStateMachineThread() || mDecoder->OnDecodeThread(),
-               "Should be on state machine or decode thread.");
-
-  // Extract the start times of the bitstreams in order to calculate
-  // the duration.
-  int64_t videoStartTime = INT64_MAX;
-  int64_t audioStartTime = INT64_MAX;
-  VideoData* videoData = nullptr;
-
-  if (HasVideo()) {
-    videoData = DecodeToFirstVideoData();
-    if (videoData) {
-      videoStartTime = videoData->mTime;
-      DECODER_LOG(PR_LOG_DEBUG, ("MediaDecoderReader::FindStartTime() video=%lld", videoStartTime));
-    }
-  }
-  if (HasAudio()) {
-    AudioData* audioData = DecodeToFirstAudioData();
-    if (audioData) {
-      audioStartTime = audioData->mTime;
-      DECODER_LOG(PR_LOG_DEBUG, ("MediaDecoderReader::FindStartTime() audio=%lld", audioStartTime));
-    }
-  }
-
-  int64_t startTime = std::min(videoStartTime, audioStartTime);
-  if (startTime != INT64_MAX) {
-    aOutStartTime = startTime;
-  }
-
-  return videoData;
-}
-
 nsresult
 MediaDecoderReader::GetBuffered(mozilla::dom::TimeRanges* aBuffered,
                                 int64_t aStartTime)
@@ -248,6 +195,17 @@ MediaDecoderReader::RequestAudioData()
          !AudioQueue().IsFinished()) {
     if (!DecodeAudioData()) {
       AudioQueue().Finish();
+      break;
+    }
+    // AudioQueue size is still zero, post a task to try again. Don't spin
+    // waiting in this while loop since it somehow prevents audio EOS from
+    // coming in gstreamer 1.x when there is still video buffer waiting to be
+    // consumed. (|mVideoSinkBufferCount| > 0)
+    if (AudioQueue().GetSize() == 0 && mTaskQueue) {
+      RefPtr<nsIRunnable> task(NS_NewRunnableMethod(
+          this, &MediaDecoderReader::RequestAudioData));
+      mTaskQueue->Dispatch(task.forget());
+      return;
     }
   }
   if (AudioQueue().GetSize() > 0) {

@@ -488,9 +488,15 @@ PopupNotifications.prototype = {
    * Hides the notification popup.
    */
   _hidePanel: function PopupNotifications_hide() {
+    // We need to disable the closing animation when setting _ignoreDismissal
+    // to true, otherwise the popuphidden event will fire after we have set
+    // _ignoreDismissal back to false.
+    let transitionsEnabled = this.transitionsEnabled;
+    this.transitionsEnabled = false;
     this._ignoreDismissal = true;
     this.panel.hidePopup();
     this._ignoreDismissal = false;
+    this.transitionsEnabled = transitionsEnabled;
   },
 
   /**
@@ -551,6 +557,7 @@ PopupNotifications.prototype = {
       popupnotification.setAttribute("id", popupnotificationID);
       popupnotification.setAttribute("popupid", n.id);
       popupnotification.setAttribute("closebuttoncommand", "PopupNotifications._dismiss();");
+      popupnotification.setAttribute("noautofocus", "true");
       if (n.mainAction) {
         popupnotification.setAttribute("buttonlabel", n.mainAction.label);
         popupnotification.setAttribute("buttonaccesskey", n.mainAction.accessKey);
@@ -616,8 +623,12 @@ PopupNotifications.prototype = {
 
     this._refreshPanel(notificationsToShow);
 
-    if (this.isPanelOpen && this._currentAnchorElement == anchorElement)
+    if (this.isPanelOpen && this._currentAnchorElement == anchorElement) {
+      notificationsToShow.forEach(function (n) {
+        this._fireCallback(n, NOTIFICATION_EVENT_SHOWN);
+      }, this);
       return;
+    }
 
     // If the panel is already open but we're changing anchors, we need to hide
     // it first.  Otherwise it can appear in the wrong spot.  (_hidePanel is
@@ -676,10 +687,15 @@ PopupNotifications.prototype = {
       notifications = this._currentNotifications;
     let haveNotifications = notifications.length > 0;
     if (haveNotifications) {
-      // Only show the notifications that have the passed-in anchor (or the
-      // first notification's anchor, if none was passed in). Other
-      // notifications will be shown once these are dismissed.
-      anchorElement = anchor || notifications[0].anchorElement;
+      // Filter out notifications that have been dismissed.
+      notificationsToShow = notifications.filter(function (n) {
+        return !n.dismissed && !n.options.neverShow;
+      });
+
+      // If no anchor has been passed in, use the anchor of the first
+      // showable notification.
+      if (!anchorElement && notificationsToShow.length)
+        anchorElement = notificationsToShow[0].anchorElement;
 
       if (useIconBox) {
         this._showIcons(notifications);
@@ -688,10 +704,9 @@ PopupNotifications.prototype = {
         this._updateAnchorIcon(notifications, anchorElement);
       }
 
-      // Also filter out notifications that have been dismissed.
-      notificationsToShow = notifications.filter(function (n) {
-        return !n.dismissed && n.anchorElement == anchorElement &&
-               !n.options.neverShow;
+      // Also filter out notifications that are for a different anchor.
+      notificationsToShow = notificationsToShow.filter(function (n) {
+        return n.anchorElement == anchorElement;
       });
     }
 

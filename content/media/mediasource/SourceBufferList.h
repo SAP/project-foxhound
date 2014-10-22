@@ -76,8 +76,12 @@ public:
   // Evicts data for the given time range from each SourceBuffer in the list.
   void Evict(double aStart, double aEnd);
 
-  // Returns true if all SourceBuffers in the list contain data for the given time.
-  bool AllContainsTime(double aTime);
+  // Returns the highest end time of any of the Sourcebuffers.
+  double GetHighestBufferedEndTime();
+
+#if defined(DEBUG)
+  void Dump(const char* aPath);
+#endif
 
 private:
   ~SourceBufferList();

@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=4 ts=8 et ft=cpp: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -359,8 +359,14 @@ KeyStoreConnector::GetSocketAddr(const sockaddr_any& aAddr,
 
 KeyStore::KeyStore()
 {
+  MOZ_COUNT_CTOR(KeyStore);
   ::startKeyStoreService();
   Listen();
+}
+
+KeyStore::~KeyStore()
+{
+  MOZ_COUNT_DTOR(KeyStore);
 }
 
 void
@@ -394,8 +400,7 @@ KeyStore::ResetHandlerInfo()
 bool
 KeyStore::CheckSize(UnixSocketRawData *aMessage, size_t aExpectSize)
 {
-  return (aMessage->mSize - aMessage->mCurrentWriteOffset >= aExpectSize) ?
-         true : false;
+  return (aMessage->GetSize() >= aExpectSize);
 }
 
 ResponseCode
@@ -411,8 +416,8 @@ KeyStore::ReadCommand(UnixSocketRawData *aMessage)
     return PROTOCOL_ERROR;
   }
 
-  mHandlerInfo.command = aMessage->mData[aMessage->mCurrentWriteOffset];
-  aMessage->mCurrentWriteOffset++;
+  mHandlerInfo.command = *aMessage->GetData();
+  aMessage->Consume(1);
 
   // Find corrsponding command pattern
   const struct ProtocolCommand *command = commands;
@@ -451,9 +456,10 @@ KeyStore::ReadLength(UnixSocketRawData *aMessage)
   }
 
   // Read length of command parameter.
+  // FIXME: Depends on endianess and (sizeof(unsigned short) == 2)
   unsigned short dataLength;
-  memcpy(&dataLength, &aMessage->mData[aMessage->mCurrentWriteOffset], 2);
-  aMessage->mCurrentWriteOffset += 2;
+  memcpy(&dataLength, aMessage->GetData(), 2);
+  aMessage->Consume(2);
   mHandlerInfo.param[mHandlerInfo.paramCount].length = ntohs(dataLength);
 
   mHandlerInfo.state = STATE_READ_PARAM_DATA;
@@ -476,9 +482,9 @@ KeyStore::ReadData(UnixSocketRawData *aMessage)
 
   // Read command parameter.
   memcpy(mHandlerInfo.param[mHandlerInfo.paramCount].data,
-         &aMessage->mData[aMessage->mCurrentWriteOffset],
+         aMessage->GetData(),
          mHandlerInfo.param[mHandlerInfo.paramCount].length);
-  aMessage->mCurrentWriteOffset += mHandlerInfo.param[mHandlerInfo.paramCount].length;
+  aMessage->Consume(mHandlerInfo.param[mHandlerInfo.paramCount].length);
   mHandlerInfo.paramCount++;
 
   if (mHandlerInfo.paramCount == mHandlerInfo.commandPattern->paramNum) {
@@ -522,7 +528,7 @@ KeyStore::ReceiveSocketData(nsAutoPtr<UnixSocketRawData>& aMessage)
 
   // Handle request.
   ResponseCode result = SUCCESS;
-  while (aMessage->mCurrentWriteOffset < aMessage->mSize ||
+  while (aMessage->GetSize() ||
          mHandlerInfo.state == STATE_PROCESSING) {
     switch (mHandlerInfo.state) {
       case STATE_IDLE:

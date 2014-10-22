@@ -798,7 +798,7 @@ GetSubmitCharset(nsGenericHTMLElement* aForm,
   }
   // if there are no accept-charset or all the charset are not supported
   // Get the charset from document
-  nsIDocument* doc = aForm->GetDocument();
+  nsIDocument* doc = aForm->GetComposedDoc();
   if (doc) {
     oCharset = doc->GetDocumentCharacterSet();
   }
@@ -820,7 +820,7 @@ GetSubmissionFromForm(nsGenericHTMLElement* aForm,
                       nsFormSubmission** aFormSubmission)
 {
   // Get all the information necessary to encode the form data
-  NS_ASSERTION(aForm->GetCurrentDoc(),
+  NS_ASSERTION(aForm->GetComposedDoc(),
                "Should have doc if we're building submission!");
 
   // Get encoding type (default: urlencoded)

@@ -51,12 +51,13 @@ pref("layers.componentalpha.enabled", false);
 pref("apz.touch_start_tolerance", "0.1"); // dpi * tolerance = pixel threshold
 pref("apz.pan_repaint_interval", 50);   // prefer 20 fps
 pref("apz.fling_repaint_interval", 50); // prefer 20 fps
+pref("apz.smooth_scroll_repaint_interval", 50); // prefer 20 fps
 pref("apz.fling_stopped_threshold", "0.2");
 pref("apz.x_skate_size_multiplier", "2.5");
 pref("apz.y_skate_size_multiplier", "2.5");
 pref("apz.min_skate_speed", "10.0");
 // 0 = free, 1 = standard, 2 = sticky
-pref("apz.axis_lock_mode", 2);
+pref("apz.axis_lock.mode", 2);
 pref("apz.cross_slide.enabled", true);
 pref("apz.subframe.enabled", true);
 
@@ -92,8 +93,6 @@ pref("toolkit.browser.contentViewExpire", 3000);
 
 pref("toolkit.defaultChromeURI", "chrome://browser/content/browser.xul");
 pref("browser.chromeURL", "chrome://browser/content/");
-
-pref("browser.tabs.remote", false);
 
 // Telemetry
 #ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
@@ -237,7 +236,7 @@ pref("extensions.update.enabled", false);
 /* blocklist preferences */
 pref("extensions.blocklist.enabled", true);
 pref("extensions.blocklist.interval", 86400);
-pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
+pref("extensions.blocklist.url", "https://blocklist.addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
 pref("extensions.blocklist.detailsURL", "https://www.mozilla.org/%LOCALE%/blocklist/");
 pref("extensions.showMismatchUI", false);
 
@@ -625,6 +624,9 @@ pref("urlclassifier.alternate_error_page", "blocked");
 // The number of random entries to send with a gethash request.
 pref("urlclassifier.gethashnoise", 4);
 
+// Gethash timeout for Safebrowsing.
+pref("urlclassifier.gethash.timeout_ms", 5000);
+
 // If an urlclassifier table has not been updated in this number of seconds,
 // a gethash request will be forced to check that the result is still in
 // the database.
@@ -669,7 +671,6 @@ pref("full-screen-api.ignore-widgets", true);
 // image visibility prefs.
 // image visibility tries to only keep images near the viewport decoded instead
 // of keeping all images decoded.
-pref("layout.imagevisibility.enabled", true);
 pref("layout.imagevisibility.numscrollportwidths", 1);
 pref("layout.imagevisibility.numscrollportheights", 1);
 

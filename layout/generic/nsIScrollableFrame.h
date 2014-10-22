@@ -13,8 +13,9 @@
 #include "nsCoord.h"
 #include "ScrollbarStyles.h"
 #include "mozilla/gfx/Point.h"
-#include "nsIScrollbarOwner.h"
+#include "nsIScrollbarMediator.h"
 #include "Units.h"
+#include "FrameMetrics.h"
 
 #define NS_DEFAULT_VERTICAL_SCROLL_DISTANCE   3
 #define NS_DEFAULT_HORIZONTAL_SCROLL_DISTANCE 5
@@ -27,14 +28,23 @@ class nsIContent;
 class nsRenderingContext;
 class nsIAtom;
 
+namespace mozilla {
+struct ContainerLayerParameters;
+namespace layers {
+class Layer;
+}
+}
+
 /**
  * Interface for frames that are scrollable. This interface exposes
  * APIs for examining scroll state, observing changes to scroll state,
  * and triggering scrolling.
  */
-class nsIScrollableFrame : public nsIScrollbarOwner {
+class nsIScrollableFrame : public nsIScrollbarMediator {
 public:
   typedef mozilla::CSSIntPoint CSSIntPoint;
+  typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
+  typedef mozilla::layers::FrameMetrics FrameMetrics;
 
   NS_DECL_QUERYFRAME_TARGET(nsIScrollableFrame)
 
@@ -154,14 +164,33 @@ public:
   virtual nsSize GetPageScrollAmount() const = 0;
 
   /**
-   * When a scroll operation is requested, we ask for instant, smooth or normal
-   * scrolling. SMOOTH will only be smooth if smooth scrolling is actually
-   * enabled. INSTANT is always synchronous, NORMAL can be asynchronous.
-   * If an INSTANT request happens while a smooth or async scroll is already in
-   * progress, the async scroll is interrupted and we instantly scroll to the
-   * destination.
+   * When a scroll operation is requested, we ask for instant, smooth,
+   * smooth msd, or normal scrolling.
+   *
+   * SMOOTH scrolls have a symmetrical acceleration and deceleration curve
+   * modeled with a set of splines that guarantee that the destination will be 
+   * reached over a fixed time interval.  SMOOTH will only be smooth if smooth
+   * scrolling is actually enabled.  This behavior is utilized by keyboard and
+   * mouse wheel scrolling events.
+   *
+   * SMOOTH_MSD implements a physically based model that approximates the
+   * behavior of a mass-spring-damper system.  SMOOTH_MSD scrolls have a
+   * non-symmetrical acceleration and deceleration curve, can potentially
+   * overshoot the destination on intermediate frames, and complete over a
+   * variable time interval.  SMOOTH_MSD will only be smooth if cssom-view
+   * smooth-scrolling is enabled.
+   *
+   * INSTANT is always synchronous, NORMAL can be asynchronous.
+   *
+   * If an INSTANT scroll request happens while a SMOOTH or async scroll is
+   * already in progress, the async scroll is interrupted and we instantly
+   * scroll to the destination.
+   *
+   * If an INSTANT or SMOOTH scroll request happens while a SMOOTH_MSD scroll
+   * is already in progress, the SMOOTH_MSD scroll is interrupted without
+   * first scrolling to the destination.
    */
-  enum ScrollMode { INSTANT, SMOOTH, NORMAL };
+  enum ScrollMode { INSTANT, SMOOTH, SMOOTH_MSD, NORMAL };
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Clamps aScrollPosition to GetScrollRange and sets the scroll position
@@ -180,11 +209,19 @@ public:
    * position, rounded to CSS pixels, matches aScrollPosition. If
    * aScrollPosition.x/y is different from the current CSS pixel position,
    * makes sure we only move in the direction given by the difference.
-   * Ensures that GetScrollPositionCSSPixels (the scroll position after
-   * rounding to CSS pixels) will be exactly aScrollPosition.
-   * The scroll mode is INSTANT.
+   *
+   * When aMode is SMOOTH, INSTANT, or NORMAL, GetScrollPositionCSSPixels (the
+   * scroll position after rounding to CSS pixels) will be exactly
+   * aScrollPosition at the end of the scroll animation.
+   *
+   * When aMode is SMOOTH_MSD, intermediate animation frames may be outside the
+   * range and / or moving in any direction; GetScrollPositionCSSPixels will be
+   * exactly aScrollPosition at the end of the scroll animation unless the
+   * SMOOTH_MSD animation is interrupted.
    */
-  virtual void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition) = 0;
+  virtual void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
+                                 nsIScrollableFrame::ScrollMode aMode
+                                   = nsIScrollableFrame::INSTANT) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Scrolls to a particular position in float CSS pixels.
@@ -192,7 +229,6 @@ public:
    * aScrollPosition afterward. It tries to scroll as close to
    * aScrollPosition as possible while scrolling by an integer
    * number of layer pixels (so the operation is fast and looks clean).
-   * The scroll mode is INSTANT.
    */
   virtual void ScrollToCSSPixelsApproximate(const mozilla::CSSPoint& aScrollPosition,
                                             nsIAtom *aOrigin = nullptr) = 0;
@@ -217,7 +253,9 @@ public:
    * values are in device pixels.
    */
   virtual void ScrollBy(nsIntPoint aDelta, ScrollUnit aUnit, ScrollMode aMode,
-                        nsIntPoint* aOverflow = nullptr, nsIAtom *aOrigin = nullptr) = 0;
+                        nsIntPoint* aOverflow = nullptr,
+                        nsIAtom* aOrigin = nullptr,
+                        bool aIsMomentum = false) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * This tells the scroll frame to try scrolling to the scroll
@@ -292,26 +330,66 @@ public:
   */
   virtual nsRect ExpandRectToNearlyVisible(const nsRect& aRect) const = 0;
   /**
-   * Returns the origin passed in to the last ScrollToImpl call that took
-   * effect.
+   * Returns the origin that triggered the last instant scroll. Will equal
+   * nsGkAtoms::apz when the compositor's replica frame metrics includes the
+   * latest instant scroll.
    */
-  virtual nsIAtom* OriginOfLastScroll() = 0;
+  virtual nsIAtom* LastScrollOrigin() = 0;
+  /**
+   * Returns the origin that triggered the last smooth scroll.
+   * Will equal nsGkAtoms::apz when the compositor's replica frame
+   * metrics includes the latest smooth scroll.  The compositor will always
+   * perform an instant scroll prior to instantiating any smooth scrolls
+   * if LastScrollOrigin and LastSmoothScrollOrigin indicate that
+   * an instant scroll and a smooth scroll have occurred since the last
+   * replication of the frame metrics.
+   *
+   * This is set to nullptr to when the compositor thread acknowledges that
+   * the smooth scroll has been started.  If the smooth scroll has been stomped
+   * by an instant scroll before the smooth scroll could be started by the
+   * compositor, this is set to nullptr to clear the smooth scroll.
+   */
+  virtual nsIAtom* LastSmoothScrollOrigin() = 0;
   /**
    * Returns the current generation counter for the scroll. This counter
    * increments every time the scroll position is set.
    */
   virtual uint32_t CurrentScrollGeneration() = 0;
   /**
+   * LastScrollDestination returns the destination of the most recently
+   * requested smooth scroll animation.
+   */
+  virtual nsPoint LastScrollDestination() = 0;
+  /**
    * Clears the "origin of last scroll" property stored in this frame, if
    * the generation counter passed in matches the current scroll generation
    * counter.
    */
-  virtual void ResetOriginIfScrollAtGeneration(uint32_t aGeneration) = 0;
+  virtual void ResetScrollInfoIfGeneration(uint32_t aGeneration) = 0;
   /**
    * Determine whether it is desirable to be able to asynchronously scroll this
    * scroll frame.
    */
   virtual bool WantAsyncScroll() const = 0;
+  /**
+   * aLayer's animated geometry root is this frame. If there needs to be a
+   * FrameMetrics contributed by this frame, append it to aOutput.
+   */
+  virtual void ComputeFrameMetrics(mozilla::layers::Layer* aLayer,
+                                   nsIFrame* aContainerReferenceFrame,
+                                   const ContainerLayerParameters& aParameters,
+                                   nsRect* aOutClipRect,
+                                   nsTArray<FrameMetrics>* aOutput) const = 0;
+
+  /**
+   * If this scroll frame is ignoring viewporting clipping
+   */
+  virtual bool IsIgnoringViewportClipping() const = 0;
+
+  /**
+   * Mark the scrollbar frames for reflow.
+   */
+  virtual void MarkScrollbarsDirtyForReflow() const = 0;
 };
 
 #endif

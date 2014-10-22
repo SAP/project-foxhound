@@ -11,7 +11,6 @@
 #include "nsString.h"
 #include "nsPrintfCString.h"
 #include "jsfriendapi.h"
-#include "js/OldDebugAPI.h"
 
 namespace mozilla {
 namespace jsipc {
@@ -34,19 +33,25 @@ namespace jsipc {
 struct ReceiverObj
 {
     ObjectId id;
-    ReceiverObj(ObjectId id) : id(id) {}
+    explicit ReceiverObj(ObjectId id) : id(id) {}
 };
 
 struct InVariant
 {
     JSVariant variant;
-    InVariant(const JSVariant &variant) : variant(variant) {}
+    explicit InVariant(const JSVariant &variant) : variant(variant) {}
 };
 
 struct OutVariant
 {
     JSVariant variant;
-    OutVariant(const JSVariant &variant) : variant(variant) {}
+    explicit OutVariant(const JSVariant &variant) : variant(variant) {}
+};
+
+struct Identifier
+{
+    JSIDVariant variant;
+    explicit Identifier(const JSIDVariant &variant) : variant(variant) {}
 };
 
 class Logging
@@ -96,7 +101,7 @@ class Logging
 
         if (local == incoming) {
             JS::RootedObject obj(cx);
-            obj = shared->findObjectById(id);
+            obj = shared->objects_.find(id);
             if (obj) {
                 JSAutoCompartment ac(cx, obj);
                 objDesc = js_ObjectClassName(cx, obj);
@@ -160,9 +165,13 @@ class Logging
           case JSVariant::TObjectVariant: {
               const ObjectVariant &ovar = value.get_ObjectVariant();
               if (ovar.type() == ObjectVariant::TLocalObject)
-                  formatObject(incoming, true, ovar.get_LocalObject().id(), out);
+                  formatObject(incoming, true, ObjectId::deserialize(ovar.get_LocalObject().serializedId()), out);
               else
-                  formatObject(incoming, false, ovar.get_RemoteObject().id(), out);
+                  formatObject(incoming, false, ObjectId::deserialize(ovar.get_RemoteObject().serializedId()), out);
+              break;
+          }
+          case JSVariant::TSymbolVariant: {
+              out = "<Symbol>";
               break;
           }
           case JSVariant::Tdouble: {
@@ -182,6 +191,29 @@ class Logging
               break;
           }
         }
+    }
+
+    void format(const Identifier &id, nsCString &out) {
+        switch (id.variant.type()) {
+          case JSIDVariant::TSymbolVariant: {
+              out = "<Symbol>";
+              break;
+          }
+          case JSIDVariant::TnsString: {
+              nsAutoCString tmp;
+              format(id.variant.get_nsString(), tmp);
+              out = nsPrintfCString("\"%s\"", tmp.get());
+              break;
+          }
+          case JSIDVariant::Tint32_t: {
+              out = nsPrintfCString("%d", id.variant.get_int32_t());
+              break;
+          }
+          default: {
+              out = "Unknown";
+              break;
+          }
+      }
     }
 
   private:

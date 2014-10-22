@@ -3,6 +3,13 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+///////////////////
+//
+// Whitelisting this test.
+// As part of bug 1077403, the leaking uncaught rejection should be fixed. 
+//
+thisTestLeaksUncaughtRejectionsAndShouldBeFixed("Protocol error (unknownError): TypeError: this.conn.getActor(...) is null");
+
 // Test the webconsole output for various types of objects.
 
 const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/test/test-console-output-03.html";
@@ -73,10 +80,10 @@ let inputTests = [
   // 7
   {
     input: "document.body.attributes",
-    output: "MozNamedAttrMap [  ]",
-    printOutput: "[object MozNamedAttrMap]",
+    output: "NamedNodeMap [  ]",
+    printOutput: "[object NamedNodeMap]",
     inspectable: true,
-    variablesViewLabel: "MozNamedAttrMap[0]",
+    variablesViewLabel: "NamedNodeMap[0]",
   },
 
   // 8
@@ -137,11 +144,11 @@ let inputTests = [
   // 14
   {
     input: "document.body.attributes",
-    output: 'MozNamedAttrMap [ class="test1 tezt2", id="foobarid", ' +
+    output: 'NamedNodeMap [ class="test1 tezt2", id="foobarid", ' +
             'data-preview="zuzu&quot;&lt;a&gt;foo" ]',
-    printOutput: "[object MozNamedAttrMap]",
+    printOutput: "[object NamedNodeMap]",
     inspectable: true,
-    variablesViewLabel: "MozNamedAttrMap[3]",
+    variablesViewLabel: "NamedNodeMap[3]",
   },
 
   // 15

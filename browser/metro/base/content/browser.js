@@ -1087,10 +1087,6 @@ nsBrowserAccess.prototype = {
   isTabContentWindow: function(aWindow) {
     return Browser.browsers.some(function (browser) browser.contentWindow == aWindow);
   },
-
-  get contentWindow() {
-    return Browser.selectedBrowser.contentWindow;
-  }
 };
 
 /**
@@ -1455,7 +1451,7 @@ Tab.prototype = {
 
     browser.setAttribute("type", "content-targetable");
 
-    let useRemote = Services.appinfo.browserTabsRemote;
+    let useRemote = Services.appinfo.browserTabsRemoteAutostart;
     let useLocal = Util.isLocalScheme(aURI);
     browser.setAttribute("remote", (!useLocal && useRemote) ? "true" : "false");
 

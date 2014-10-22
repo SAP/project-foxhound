@@ -409,10 +409,10 @@ ShortcutResolver::SetShortcut(bool aUpdateExisting,
 
     // Since we reuse our IPersistFile, we have to clear out any values that
     // may be left over from previous calls to SetShortcut.
-    if (FAILED(mShellLink->SetWorkingDirectory(L""))
-        || FAILED(mShellLink->SetArguments(L""))
-        || FAILED(mShellLink->SetDescription(L""))
-        || FAILED(mShellLink->SetIconLocation(L"", 0))) {
+    if (FAILED(mShellLink->SetWorkingDirectory(L"")) ||
+        FAILED(mShellLink->SetArguments(L"")) ||
+        FAILED(mShellLink->SetDescription(L"")) ||
+        FAILED(mShellLink->SetIconLocation(L"", 0))) {
       return NS_ERROR_FAILURE;
     }
   }
@@ -569,7 +569,8 @@ IsShortcutPath(const nsAString& aPath)
 // workaround last beyond the switch, |PRFilePrivate| and |_MDFileDesc|
 // need to be changed to match the definitions for WinNT.
 //-----------------------------------------------------------------------------
-typedef enum {
+typedef enum
+{
   _PR_TRI_TRUE = 1,
   _PR_TRI_FALSE = 0,
   _PR_TRI_UNKNOWN = -1
@@ -604,12 +605,21 @@ struct PRFilePrivate
 // copied from nsprpub/pr/src/{io/prfile.c | md/windows/w95io.c} :
 // PR_Open and _PR_MD_OPEN
 nsresult
-OpenFile(const nsAFlatString& aName, int aOsflags, int aMode, PRFileDesc** aFd)
+OpenFile(const nsAFlatString& aName,
+         int aOsflags,
+         int aMode,
+         bool aShareDelete,
+         PRFileDesc** aFd)
 {
   int32_t access = 0;
 
+  int32_t shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
   int32_t disposition = 0;
   int32_t attributes = 0;
+
+  if (aShareDelete) {
+    shareMode |= FILE_SHARE_DELETE;
+  }
 
   if (aOsflags & PR_SYNC) {
     attributes = FILE_FLAG_WRITE_THROUGH;
@@ -653,8 +663,7 @@ OpenFile(const nsAFlatString& aName, int aOsflags, int aMode, PRFileDesc** aFd)
     attributes |= FILE_ATTRIBUTE_READONLY;
   }
 
-  HANDLE file = ::CreateFileW(aName.get(), access,
-                              FILE_SHARE_READ | FILE_SHARE_WRITE,
+  HANDLE file = ::CreateFileW(aName.get(), access, shareMode,
                               nullptr, disposition, attributes, nullptr);
 
   if (file == INVALID_HANDLE_VALUE) {
@@ -1006,8 +1015,9 @@ nsLocalFile::nsLocalFileConstructor(nsISupports* aOuter, const nsIID& aIID,
   }
 
   nsLocalFile* inst = new nsLocalFile();
-  if (inst == nullptr)
+  if (!inst) {
     return NS_ERROR_OUT_OF_MEMORY;
+  }
 
   nsresult rv = inst->QueryInterface(aIID, aInstancePtr);
   if (NS_FAILED(rv)) {
@@ -1255,12 +1265,12 @@ NS_IMETHODIMP
 nsLocalFile::OpenNSPRFileDesc(int32_t aFlags, int32_t aMode,
                               PRFileDesc** aResult)
 {
-  nsresult rv = Resolve();
+  nsresult rv = OpenNSPRFileDescMaybeShareDelete(aFlags, aMode, false, aResult);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  return OpenFile(mResolvedPath, aFlags, aMode, aResult);
+  return NS_OK;
 }
 
 
@@ -1357,7 +1367,7 @@ nsLocalFile::Create(uint32_t aType, uint32_t aAttributes)
     PRFileDesc* file;
     rv = OpenFile(mResolvedPath,
                   PR_RDONLY | PR_CREATE_FILE | PR_APPEND | PR_EXCL,
-                  aAttributes, &file);
+                  aAttributes, false, &file);
     if (file) {
       PR_Close(file);
     }
@@ -1417,9 +1427,9 @@ nsLocalFile::AppendInternal(const nsAFlatString& aNode,
   }
 
   // check the relative path for validity
-  if (aNode.First() == L'\\'                  // can't start with an '\'
-      || aNode.FindChar(L'/') != kNotFound    // can't contain /
-      || aNode.EqualsASCII("..")) {           // can't be ..
+  if (aNode.First() == L'\\' ||               // can't start with an '\'
+      aNode.FindChar(L'/') != kNotFound ||    // can't contain /
+      aNode.EqualsASCII("..")) {              // can't be ..
     return NS_ERROR_FILE_UNRECOGNIZED_PATH;
   }
 
@@ -1457,6 +1467,20 @@ nsLocalFile::AppendInternal(const nsAFlatString& aNode,
   mWorkingPath.Append(aNode);
 
   return NS_OK;
+}
+
+nsresult
+nsLocalFile::OpenNSPRFileDescMaybeShareDelete(int32_t aFlags,
+                                              int32_t aMode,
+                                              bool aShareDelete,
+                                              PRFileDesc** aResult)
+{
+  nsresult rv = Resolve();
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  return OpenFile(mResolvedPath, aFlags, aMode, aShareDelete, aResult);
 }
 
 #define TOUPPER(u) (((u) >= L'a' && (u) <= L'z') ? \
@@ -1696,8 +1720,8 @@ nsLocalFile::GetVersionInfoField(const char* aField, nsAString& aResult)
 
   rv = NS_ERROR_FAILURE;
 
-  const WCHAR* path = mFollowSymlinks ? mResolvedPath.get()
-                                      : mWorkingPath.get();
+  const WCHAR* path =
+    mFollowSymlinks ? mResolvedPath.get() : mWorkingPath.get();
 
   DWORD dummy;
   DWORD size = ::GetFileVersionInfoSizeW(path, &dummy);
@@ -1720,8 +1744,7 @@ nsLocalFile::GetVersionInfoField(const char* aField, nsAString& aResult)
         wchar_t subBlock[MAX_PATH];
         _snwprintf(subBlock, MAX_PATH,
                    L"\\StringFileInfo\\%04x%04x\\%s",
-                   (i == 0 ? translate[0].wLanguage
-                           : ::GetUserDefaultLangID()),
+                   (i == 0 ? translate[0].wLanguage : ::GetUserDefaultLangID()),
                    translate[0].wCodePage,
                    NS_ConvertASCIItoUTF16(
                      nsDependentCString(aField)).get());
@@ -1802,6 +1825,19 @@ nsLocalFile::SetShortcut(nsIFile* aTargetFile,
   }
 
   return rv;
+}
+
+NS_IMETHODIMP
+nsLocalFile::OpenNSPRFileDescShareDelete(int32_t aFlags,
+                                         int32_t aMode,
+                                         PRFileDesc** aResult)
+{
+  nsresult rv = OpenNSPRFileDescMaybeShareDelete(aFlags, aMode, true, aResult);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  return NS_OK;
 }
 
 /**
@@ -1995,8 +2031,9 @@ nsLocalFile::CopyMove(nsIFile* aParentDir, const nsAString& aNewName,
           newParentDir->GetTarget(target);
 
           nsCOMPtr<nsIFile> realDest = new nsLocalFile();
-          if (realDest == nullptr)
+          if (!realDest) {
             return NS_ERROR_OUT_OF_MEMORY;
+          }
 
           rv = realDest->InitWithPath(target);
 
@@ -2268,7 +2305,7 @@ nsLocalFile::Load(PRLibrary** aResult)
     return rv;
   }
 
-  if (! isFile) {
+  if (!isFile) {
     return NS_ERROR_FILE_IS_DIRECTORY;
   }
 
@@ -2755,7 +2792,8 @@ nsLocalFile::GetParent(nsIFile** aParent)
   }
 
   nsCOMPtr<nsIFile> localFile;
-  nsresult rv = NS_NewLocalFile(parentPath, mFollowSymlinks, getter_AddRefs(localFile));
+  nsresult rv = NS_NewLocalFile(parentPath, mFollowSymlinks,
+                                getter_AddRefs(localFile));
 
   if (NS_FAILED(rv)) {
     return rv;
@@ -2822,7 +2860,7 @@ nsLocalFile::IsWritable(bool* aIsWritable)
   // we can open the file with write access.
   if (*aIsWritable) {
     PRFileDesc* file;
-    rv = OpenFile(mResolvedPath, PR_WRONLY, 0, &file);
+    rv = OpenFile(mResolvedPath, PR_WRONLY, 0, false, &file);
     if (NS_SUCCEEDED(rv)) {
       PR_Close(file);
     } else if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
@@ -3340,8 +3378,9 @@ nsresult
 NS_NewLocalFile(const nsAString& aPath, bool aFollowLinks, nsIFile** aResult)
 {
   nsLocalFile* file = new nsLocalFile();
-  if (file == nullptr)
+  if (!file) {
     return NS_ERROR_OUT_OF_MEMORY;
+  }
   NS_ADDREF(file);
 
   file->SetFollowLinks(aFollowLinks);

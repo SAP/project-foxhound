@@ -34,8 +34,6 @@ public:
     cairo_scaled_font_t *CairoScaledFont() { return mScaledFont; }
 
     /* overrides for the pure virtual methods in gfxFont */
-    virtual const gfxFont::Metrics& GetMetrics();
-
     virtual uint32_t GetSpaceGlyph();
 
     virtual bool SetupCairoFont(gfxContext *aContext);
@@ -45,7 +43,8 @@ public:
                                uint32_t aStart, uint32_t aEnd,
                                BoundingBoxType aBoundingBoxType,
                                gfxContext *aContextForTightBoundingBox,
-                               Spacing *aSpacing);
+                               Spacing *aSpacing,
+                               uint16_t aOrientation);
 
     /* required for MathML to suppress effects of ClearType "padding" */
     virtual gfxFont* CopyWithAntialiasOption(AntialiasOption anAAOption);
@@ -71,12 +70,15 @@ public:
     virtual FontType GetType() const { return FONT_TYPE_GDI; }
 
 protected:
+    virtual const Metrics& GetHorizontalMetrics();
+
     /* override to ensure the cairo font is set up properly */
     virtual bool ShapeText(gfxContext     *aContext,
                            const char16_t *aText,
                            uint32_t        aOffset,
                            uint32_t        aLength,
                            int32_t         aScript,
+                           bool            aVertical,
                            gfxShapedText  *aShapedText);
 
     void Initialize(); // creates metrics and Cairo fonts

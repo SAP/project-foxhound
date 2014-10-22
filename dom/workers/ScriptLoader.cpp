@@ -6,7 +6,6 @@
 #include "ScriptLoader.h"
 
 #include "nsIChannel.h"
-#include "nsIChannelPolicy.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIHttpChannel.h"
@@ -17,7 +16,6 @@
 #include "nsIURI.h"
 
 #include "jsapi.h"
-#include "nsChannelPolicy.h"
 #include "nsError.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
@@ -104,28 +102,38 @@ ChannelFromScriptURL(nsIPrincipal* principal,
     NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_SECURITY_ERR);
   }
 
-  // Get Content Security Policy from parent document to pass into channel.
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = principal->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIChannelPolicy> channelPolicy;
-  if (csp) {
-    channelPolicy = do_CreateInstance(NSCHANNELPOLICY_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = channelPolicy->SetContentSecurityPolicy(csp);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = channelPolicy->SetLoadType(nsIContentPolicy::TYPE_SCRIPT);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
   uint32_t flags = nsIRequest::LOAD_NORMAL | nsIChannel::LOAD_CLASSIFY_URI;
 
   nsCOMPtr<nsIChannel> channel;
-  rv = NS_NewChannel(getter_AddRefs(channel), uri, ios, loadGroup, nullptr,
-                     flags, channelPolicy);
+  // If we have the document, use it
+  if (parentDoc) {
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       uri,
+                       parentDoc,
+                       nsILoadInfo::SEC_NORMAL,
+                       nsIContentPolicy::TYPE_SCRIPT,
+                       loadGroup,
+                       nullptr, // aCallbacks
+                       flags,
+                       ios);
+  } else {
+    // we should use 'principal' here; needs to be fixed before
+    // we move security checks to AsyncOpen. We use nullPrincipal
+    // for now, because the loadGroup is null and hence causes
+    // GetChannelUriPrincipal to return the wrong principal.
+    nsCOMPtr<nsIPrincipal> nullPrincipal =
+      do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       uri,
+                       nullPrincipal,
+                       nsILoadInfo::SEC_NORMAL,
+                       nsIContentPolicy::TYPE_SCRIPT,
+                       loadGroup,
+                       nullptr, // aCallbacks
+                       flags,
+                       ios);
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   channel.forget(aChannel);
@@ -156,7 +164,7 @@ struct ScriptLoadInfo
 
   nsString mURL;
   nsCOMPtr<nsIChannel> mChannel;
-  jschar* mScriptTextBuf;
+  char16_t* mScriptTextBuf;
   size_t mScriptTextLength;
 
   nsresult mLoadResult;
@@ -426,10 +434,6 @@ private:
       return aStatus;
     }
 
-    if (!aStringLen) {
-      return NS_OK;
-    }
-
     NS_ASSERTION(aString, "This should never be null!");
 
     // Make sure we're not seeing the result of a 404 or something by checking
@@ -506,7 +510,7 @@ private:
       NS_ASSERTION(ssm, "Should never be null!");
 
       nsCOMPtr<nsIPrincipal> channelPrincipal;
-      rv = ssm->GetChannelPrincipal(channel, getter_AddRefs(channelPrincipal));
+      rv = ssm->GetChannelResultPrincipal(channel, getter_AddRefs(channelPrincipal));
       NS_ENSURE_SUCCESS(rv, rv);
 
       // See if this is a resource URI. Since JSMs usually come from resource://
@@ -724,6 +728,11 @@ ScriptExecutorRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
     JS::CompartmentOptionsRef(global).setDiscardSource(discard);
   }
 
+  // Similar to the above.
+  if (xpc::ExtraWarningsForSystemJS() && aWorkerPrivate->UsesSystemPrincipal()) {
+      JS::CompartmentOptionsRef(global).extraWarningsOverride().set(true);
+  }
+
   for (uint32_t index = mFirstIndex; index <= mLastIndex; index++) {
     ScriptLoadInfo& loadInfo = loadInfos.ElementAt(index);
 
@@ -740,7 +749,8 @@ ScriptExecutorRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
     NS_ConvertUTF16toUTF8 filename(loadInfo.mURL);
 
     JS::CompileOptions options(aCx);
-    options.setFileAndLine(filename.get(), 1);
+    options.setFileAndLine(filename.get(), 1)
+           .setNoScriptRval(true);
 
     JS::SourceBufferHolder srcBuf(loadInfo.mScriptTextBuf,
                                   loadInfo.mScriptTextLength,

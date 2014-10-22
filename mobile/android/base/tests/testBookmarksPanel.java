@@ -81,8 +81,8 @@ public class testBookmarksPanel extends AboutHomeTest {
 
         // Test that "Remove" works
         openBookmarkContextMenu(editedBookmarkValues[1]);
-        mSolo.clickOnText(StringHelper.BOOKMARK_CONTEXT_MENU_ITEMS[3]);
-        waitForText("Bookmark removed");
+        mSolo.clickOnText(StringHelper.BOOKMARK_CONTEXT_MENU_ITEMS[5]);
+        waitForText(StringHelper.BOOKMARK_REMOVED_LABEL);
         mAsserter.ok(!mDatabaseHelper.isBookmark(editedBookmarkValues[1]), "Checking that the bookmark was removed", "The bookmark was removed");
     }
 
@@ -120,6 +120,12 @@ public class testBookmarksPanel extends AboutHomeTest {
                     contextMenuOption + " is present");
         }
 
+        // The use of Solo.searchText is potentially fragile as It will only
+        // scroll the most recently drawn view. Works fine for now though.
+        mAsserter.ok(!mSolo.searchText("Share"),
+                "Checking that the Share option is not present",
+                "Share option is not present");
+
         // Close the menu.
         mActions.sendSpecialKey(Actions.SpecialKey.BACK);
     }
@@ -130,8 +136,8 @@ public class testBookmarksPanel extends AboutHomeTest {
     */
     private void editBookmark(String bookmarkUrl, String[] values) {
         openBookmarkContextMenu(bookmarkUrl);
-        mSolo.clickOnText("Edit");
-        waitForText("Edit Bookmark");
+        mSolo.clickOnText(StringHelper.CONTEXT_MENU_EDIT);
+        waitForText(StringHelper.EDIT_BOOKMARK);
 
         // Update the fields with the new values
         for (int i = 0; i < values.length; i++) {
@@ -140,8 +146,8 @@ public class testBookmarksPanel extends AboutHomeTest {
             mActions.sendKeys(values[i]);
         }
 
-        mSolo.clickOnButton("OK");
-        waitForText("Bookmark updated");
+        mSolo.clickOnButton(StringHelper.OK);
+        waitForText(StringHelper.BOOKMARK_UPDATED_LABEL);
     }
 
    /**
@@ -150,8 +156,8 @@ public class testBookmarksPanel extends AboutHomeTest {
     */
     private void checkBookmarkEdit(String bookmarkUrl, String[] values) {
         openBookmarkContextMenu(bookmarkUrl);
-        mSolo.clickOnText("Edit");
-        waitForText("Edit Bookmark");
+        mSolo.clickOnText(StringHelper.CONTEXT_MENU_EDIT);
+        waitForText(StringHelper.EDIT_BOOKMARK);
 
         // Check the values of the fields
         for (String value : values) {
@@ -159,6 +165,6 @@ public class testBookmarksPanel extends AboutHomeTest {
         }
 
         mSolo.clickOnButton("Cancel");
-        waitForText("BOOKMARKS");
+        waitForText(StringHelper.BOOKMARKS_LABEL);
     }
 }

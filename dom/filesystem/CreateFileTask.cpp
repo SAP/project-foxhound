@@ -10,10 +10,12 @@
 
 #include "DOMError.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/FileSystemBase.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/Promise.h"
-#include "nsDOMFile.h"
+#include "mozilla/dom/ipc/BlobChild.h"
+#include "mozilla/dom/ipc/BlobParent.h"
 #include "nsIFile.h"
 #include "nsNetUtil.h"
 #include "nsStringGlue.h"
@@ -25,21 +27,24 @@ uint32_t CreateFileTask::sOutputBufferSize = 0;
 
 CreateFileTask::CreateFileTask(FileSystemBase* aFileSystem,
                                const nsAString& aPath,
-                               nsIDOMBlob* aBlobData,
+                               File* aBlobData,
                                InfallibleTArray<uint8_t>& aArrayData,
                                bool replace,
                                ErrorResult& aRv)
   : FileSystemTaskBase(aFileSystem)
   , mTargetRealPath(aPath)
-  , mBlobData(aBlobData)
   , mReplace(replace)
 {
   MOZ_ASSERT(NS_IsMainThread(), "Only call on main thread!");
   MOZ_ASSERT(aFileSystem);
   GetOutputBufferSize();
-  if (mBlobData) {
-    nsresult rv = mBlobData->GetInternalStream(getter_AddRefs(mBlobStream));
-    NS_WARN_IF(NS_FAILED(rv));
+  if (aBlobData) {
+    if (FileSystemUtils::IsParentProcess()) {
+      nsresult rv = aBlobData->GetInternalStream(getter_AddRefs(mBlobStream));
+      NS_WARN_IF(NS_FAILED(rv));
+    } else {
+      mBlobData = aBlobData;
+    }
   }
   mArrayData.SwapElements(aArrayData);
   nsCOMPtr<nsIGlobalObject> globalObject =
@@ -74,16 +79,18 @@ CreateFileTask::CreateFileTask(FileSystemBase* aFileSystem,
   }
 
   BlobParent* bp = static_cast<BlobParent*>(static_cast<PBlobParent*>(data));
-  mBlobData = bp->GetBlob();
-  MOZ_ASSERT(mBlobData, "mBlobData should not be null.");
-  nsresult rv = mBlobData->GetInternalStream(getter_AddRefs(mBlobStream));
+  nsRefPtr<FileImpl> blobImpl = bp->GetBlobImpl();
+  MOZ_ASSERT(blobImpl, "blobData should not be null.");
+
+  nsresult rv = blobImpl->GetInternalStream(getter_AddRefs(mBlobStream));
   NS_WARN_IF(NS_FAILED(rv));
 }
 
 CreateFileTask::~CreateFileTask()
 {
-  MOZ_ASSERT(!mPromise || NS_IsMainThread(),
-             "mPromise should be released on main thread!");
+  MOZ_ASSERT((!mPromise && !mBlobData) || NS_IsMainThread(),
+             "mPromise and mBlobData should be released on main thread!");
+
   if (mBlobStream) {
     mBlobStream->Close();
   }
@@ -120,7 +127,8 @@ FileSystemResponseValue
 CreateFileTask::GetSuccessRequestResult() const
 {
   MOZ_ASSERT(NS_IsMainThread(), "Only call on main thread!");
-  nsRefPtr<DOMFile> file = new DOMFile(mTargetFileImpl);
+  nsRefPtr<File> file = new File(mFileSystem->GetWindow(),
+                                       mTargetFileImpl);
   BlobParent* actor = GetBlobParent(file);
   if (!actor) {
     return FileSystemErrorResponse(NS_ERROR_DOM_FILESYSTEM_UNKNOWN_ERR);
@@ -136,8 +144,7 @@ CreateFileTask::SetSuccessRequestResult(const FileSystemResponseValue& aValue)
   MOZ_ASSERT(NS_IsMainThread(), "Only call on main thread!");
   FileSystemFileResponse r = aValue;
   BlobChild* actor = static_cast<BlobChild*>(r.blobChild());
-  nsCOMPtr<nsIDOMBlob> blob = actor->GetBlob();
-  mTargetFileImpl = static_cast<DOMFile*>(blob.get())->Impl();
+  mTargetFileImpl = actor->GetBlobImpl();
 }
 
 nsresult
@@ -146,7 +153,7 @@ CreateFileTask::Work()
   class AutoClose
   {
   public:
-    AutoClose(nsIOutputStream* aStream)
+    explicit AutoClose(nsIOutputStream* aStream)
       : mStream(aStream)
     {
       MOZ_ASSERT(aStream);
@@ -254,7 +261,7 @@ CreateFileTask::Work()
       return NS_ERROR_FAILURE;
     }
 
-    mTargetFileImpl = new DOMFileImplFile(file);
+    mTargetFileImpl = new FileImplFile(file);
     return NS_OK;
   }
 
@@ -273,7 +280,7 @@ CreateFileTask::Work()
     return NS_ERROR_DOM_FILESYSTEM_UNKNOWN_ERR;
   }
 
-  mTargetFileImpl = new DOMFileImplFile(file);
+  mTargetFileImpl = new FileImplFile(file);
   return NS_OK;
 }
 
@@ -283,6 +290,7 @@ CreateFileTask::HandlerCallback()
   MOZ_ASSERT(NS_IsMainThread(), "Only call on main thread!");
   if (mFileSystem->IsShutdown()) {
     mPromise = nullptr;
+    mBlobData = nullptr;
     return;
   }
 
@@ -291,12 +299,14 @@ CreateFileTask::HandlerCallback()
       mErrorValue);
     mPromise->MaybeRejectBrokenly(domError);
     mPromise = nullptr;
+    mBlobData = nullptr;
     return;
   }
 
-  nsCOMPtr<nsIDOMFile> file = new DOMFile(mTargetFileImpl);
+  nsCOMPtr<nsIDOMFile> file = new File(mFileSystem->GetWindow(), mTargetFileImpl);
   mPromise->MaybeResolve(file);
   mPromise = nullptr;
+  mBlobData = nullptr;
 }
 
 void

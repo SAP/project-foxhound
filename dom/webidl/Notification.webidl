@@ -21,7 +21,7 @@ interface Notification : EventTarget {
   static void requestPermission(optional NotificationPermissionCallback permissionCallback);
 
   [Throws]
-  static Promise get(optional GetNotificationOptions filter);
+  static Promise<sequence<Notification>> get(optional GetNotificationOptions filter);
 
   attribute EventHandler onclick;
 
@@ -49,6 +49,9 @@ interface Notification : EventTarget {
   [Pure]
   readonly attribute DOMString? icon;
 
+  [Constant]
+  readonly attribute any data;
+
   void close();
 };
 
@@ -58,10 +61,19 @@ dictionary NotificationOptions {
   DOMString body = "";
   DOMString tag = "";
   DOMString icon = "";
+  any data = null;
+  NotificationBehavior mozbehavior = null;
 };
 
 dictionary GetNotificationOptions {
   DOMString tag;
+};
+
+dictionary NotificationBehavior {
+  boolean noscreen = false;
+  boolean noclear = false;
+  DOMString soundFile = "";
+  sequence<unsigned long> vibrationPattern;
 };
 
 enum NotificationPermission {

@@ -13,8 +13,11 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/URLSearchParams.h"
 
+class nsIPrincipal;
+
 namespace mozilla {
 namespace dom {
+class File;
 struct objectURLOptions;
 }
 }
@@ -47,10 +50,10 @@ public:
 
   // Methods for WebIDL
 
-  static URL*
+  static already_AddRefed<URL>
   Constructor(const GlobalObject& aGlobal, const nsAString& aUrl,
               URL& aBase, ErrorResult& aRv);
-  static URL*
+  static already_AddRefed<URL>
   Constructor(const GlobalObject& aGlobal, const nsAString& aUrl,
               const nsAString& aBase, ErrorResult& aRv);
 
@@ -61,7 +64,7 @@ public:
 
   static void
   CreateObjectURL(const GlobalObject& aGlobal,
-                  JSObject& aArg, const objectURLOptions& aOptions,
+                  File& aArg, const objectURLOptions& aOptions,
                   nsString& aResult, ErrorResult& aRv);
 
   static void
@@ -119,7 +122,7 @@ public:
   }
 
   // IURLSearchParamsObserver
-  void URLSearchParamsUpdated() MOZ_OVERRIDE;
+  void URLSearchParamsUpdated(URLSearchParams* aSearchParams) MOZ_OVERRIDE;
 
 private:
   URLProxy* GetURLProxy() const

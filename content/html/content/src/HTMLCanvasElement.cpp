@@ -12,8 +12,8 @@
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/gfx/Rect.h"
@@ -23,7 +23,6 @@
 #include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
-#include "nsDOMFile.h"
 #include "nsDOMJSUtils.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsITimer.h"
@@ -35,10 +34,7 @@
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "ActiveLayerTracker.h"
-
-#ifdef MOZ_WEBGL
-#include "../canvas/src/WebGL2Context.h"
-#endif
+#include "WebGL2Context.h"
 
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
@@ -67,7 +63,6 @@ HTMLCanvasPrintState::HTMLCanvasPrintState(HTMLCanvasElement* aCanvas,
   : mIsDone(false), mPendingNotify(false), mCanvas(aCanvas),
     mContext(aContext), mCallback(aCallback)
 {
-  SetIsDOMBinding();
 }
 
 HTMLCanvasPrintState::~HTMLCanvasPrintState()
@@ -293,7 +288,7 @@ HTMLCanvasElement::CopyInnerTo(Element* aDest)
 
 nsresult HTMLCanvasElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
 {
-  if (aVisitor.mEvent->eventStructType == NS_MOUSE_EVENT) {
+  if (aVisitor.mEvent->mClass == eMouseEventClass) {
     WidgetMouseEventBase* evt = (WidgetMouseEventBase*)aVisitor.mEvent;
     if (mCurrentContext) {
       nsIFrame *frame = GetPrimaryFrame();
@@ -470,14 +465,12 @@ HTMLCanvasElement::ToDataURLImpl(JSContext* aCx,
   }
 
   nsAutoString type;
-  nsresult rv = nsContentUtils::ASCIIToLower(aMimeType, type);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsContentUtils::ASCIIToLower(aMimeType, type);
 
   nsAutoString params;
   bool usingCustomParseOptions;
-  rv = ParseParams(aCx, type, aEncoderOptions, params, &usingCustomParseOptions);
+  nsresult rv =
+    ParseParams(aCx, type, aEncoderOptions, params, &usingCustomParseOptions);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -518,10 +511,7 @@ HTMLCanvasElement::ToBlob(JSContext* aCx,
   }
 
   nsAutoString type;
-  aRv = nsContentUtils::ASCIIToLower(aType, type);
-  if (aRv.Failed()) {
-    return;
-  }
+  nsContentUtils::ASCIIToLower(aType, type);
 
   nsAutoString params;
   bool usingCustomParseOptions;
@@ -549,27 +539,62 @@ HTMLCanvasElement::ToBlob(JSContext* aCx,
     mCurrentContext->GetImageBuffer(&imageBuffer, &format);
   }
 
+  // Encoder callback when encoding is complete.
+  class EncodeCallback : public EncodeCompleteCallback
+  {
+  public:
+    EncodeCallback(nsIGlobalObject* aGlobal, FileCallback* aCallback)
+      : mGlobal(aGlobal)
+      , mFileCallback(aCallback) {}
+
+    // This is called on main thread.
+    nsresult ReceiveBlob(already_AddRefed<File> aBlob)
+    {
+      nsRefPtr<File> blob = aBlob;
+      uint64_t size;
+      nsresult rv = blob->GetSize(&size);
+      if (NS_SUCCEEDED(rv)) {
+        AutoJSAPI jsapi;
+        jsapi.Init(mGlobal);
+        JS_updateMallocCounter(jsapi.cx(), size);
+      }
+
+      nsRefPtr<File> newBlob = new File(mGlobal, blob->Impl());
+
+      mozilla::ErrorResult error;
+      mFileCallback->Call(*newBlob, error);
+
+      mGlobal = nullptr;
+      mFileCallback = nullptr;
+
+      return error.ErrorCode();
+    }
+
+    nsCOMPtr<nsIGlobalObject> mGlobal;
+    nsRefPtr<FileCallback> mFileCallback;
+  };
+
   nsCOMPtr<nsIGlobalObject> global = OwnerDoc()->GetScopeObject();
   MOZ_ASSERT(global);
+  nsRefPtr<EncodeCompleteCallback> callback = new EncodeCallback(global, &aCallback);
   aRv = ImageEncoder::ExtractDataAsync(type,
                                        params,
                                        usingCustomParseOptions,
                                        imageBuffer,
                                        format,
                                        GetSize(),
-                                       mCurrentContext,
-                                       global,
-                                       aCallback);
+                                       callback);
 }
 
-already_AddRefed<nsIDOMFile>
+already_AddRefed<File>
 HTMLCanvasElement::MozGetAsFile(const nsAString& aName,
                                 const nsAString& aType,
                                 ErrorResult& aRv)
 {
   nsCOMPtr<nsIDOMFile> file;
   aRv = MozGetAsFile(aName, aType, getter_AddRefs(file));
-  return file.forget();
+  nsRefPtr<File> tmp = static_cast<File*>(file.get());
+  return tmp.forget();
 }
 
 NS_IMETHODIMP
@@ -612,10 +637,12 @@ HTMLCanvasElement::MozGetAsFileImpl(const nsAString& aName,
     JS_updateMallocCounter(cx, imgSize);
   }
 
-  // The DOMFile takes ownership of the buffer
-  nsRefPtr<DOMFile> file =
-    DOMFile::CreateMemoryFile(imgData, (uint32_t)imgSize, aName, type,
-                              PR_Now());
+  nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(OwnerDoc()->GetScopeObject());
+
+  // The File takes ownership of the buffer
+  nsRefPtr<File> file =
+    File::CreateMemoryFile(win, imgData, (uint32_t)imgSize, aName, type,
+                           PR_Now());
 
   file.forget(aResult);
   return NS_OK;
@@ -636,7 +663,7 @@ HTMLCanvasElement::GetContextHelper(const nsAString& aContextId,
     ctx.forget(aContext);
     return NS_OK;
   }
-#ifdef MOZ_WEBGL
+
   if (WebGL2Context::IsSupported() &&
       aContextId.EqualsLiteral("experimental-webgl2"))
   {
@@ -651,7 +678,6 @@ HTMLCanvasElement::GetContextHelper(const nsAString& aContextId,
     ctx.forget(aContext);
     return NS_OK;
   }
-#endif
 
   NS_ConvertUTF16toUTF8 ctxId(aContextId);
 

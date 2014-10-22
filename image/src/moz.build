@@ -6,6 +6,7 @@
 
 EXPORTS += [
     'ImageOps.h',
+    'ImageRegion.h',
     'imgLoader.h',
     'imgRequest.h',
     'imgRequestProxy.h',
@@ -31,6 +32,7 @@ UNIFIED_SOURCES += [
     'imgTools.cpp',
     'OrientedImage.cpp',
     'ScriptedNotificationObserver.cpp',
+    'ShutdownTracker.cpp',
     'SurfaceCache.cpp',
     'SVGDocumentWrapper.cpp',
     'VectorImage.cpp',
@@ -62,3 +64,6 @@ LOCAL_INCLUDES += [
     # For URI-related functionality
     '/netwerk/base/src',
 ]
+
+# Because imgFrame.cpp includes "cairo.h"
+CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']

@@ -45,13 +45,8 @@
     function (done) {
       info("Test adding a notification, and making sure get returns it");
       NotificationTest.allowNotifications();
-      var options = {
-        dir: "auto",
-        lang: "",
-        body: "This is a notification body",
-        tag: "sometag",
-        icon: "icon.png"
-      };
+      var options = NotificationTest.payload;
+
       var notification = new Notification("This is a title", options);
       var promise = Notification.get();
       promise.then(function (notifications) {
@@ -61,6 +56,11 @@
           if (notification.tag === options.tag) {
             ok(true, "should contain newly created notification");
             for (var key in options) {
+              if (key === "data") {
+                ok(NotificationTest.customDataMatches(notification.data),
+                   "data property should match");
+                continue;
+              }
               is(notification[key], options[key], key + " property should match");
             }
             notification.close();
@@ -119,10 +119,27 @@
       promise.then(function (notifications) {
         is(notifications.length, 3, "should return 3 notifications");
         done();
+        n1.close();
+        n2.close();
+        n3.close();
       });
     },
 
-    deleteAllNotifications
+    deleteAllNotifications,
+
+    function (done) {
+      info("Testing 'alertfinished' removes the notification from DB");
+      var n = new Notification("test-title" + Math.random());
+      n.onclose = function() {
+        Notification.get().then(function(notifications) {
+            is(notifications.length, 0, "should return 0 notifications");
+            done();
+        });
+      }
+      window.setTimeout(function() {
+          NotificationTest.fireCloseEvent(n.title);
+      }, 100);
+    }
   ];
 
   MockServices.register();

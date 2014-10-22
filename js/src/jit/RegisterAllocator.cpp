@@ -27,7 +27,7 @@ AllocationIntegrityState::record()
     for (size_t i = 0; i < graph.numBlocks(); i++) {
         blocks.infallibleAppend(BlockInfo());
         LBlock *block = graph.getBlock(i);
-        JS_ASSERT(block->mir()->id() == i);
+        MOZ_ASSERT(block->mir()->id() == i);
 
         BlockInfo &blockInfo = blocks[i];
         if (!blockInfo.phis.reserve(block->numPhis()))
@@ -37,7 +37,7 @@ AllocationIntegrityState::record()
             blockInfo.phis.infallibleAppend(InstructionInfo());
             InstructionInfo &info = blockInfo.phis[j];
             LPhi *phi = block->getPhi(j);
-            JS_ASSERT(phi->numDefs() == 1);
+            MOZ_ASSERT(phi->numDefs() == 1);
             uint32_t vreg = phi->getDef(0)->virtualRegister();
             virtualRegisters[vreg] = phi->getDef(0);
             if (!info.outputs.append(*phi->getDef(0)))
@@ -53,14 +53,18 @@ AllocationIntegrityState::record()
             InstructionInfo &info = instructions[ins->id()];
 
             for (size_t k = 0; k < ins->numTemps(); k++) {
-                uint32_t vreg = ins->getTemp(k)->virtualRegister();
-                virtualRegisters[vreg] = ins->getTemp(k);
+                if (!ins->getTemp(k)->isBogusTemp()) {
+                    uint32_t vreg = ins->getTemp(k)->virtualRegister();
+                    virtualRegisters[vreg] = ins->getTemp(k);
+                }
                 if (!info.temps.append(*ins->getTemp(k)))
                     return false;
             }
             for (size_t k = 0; k < ins->numDefs(); k++) {
-                uint32_t vreg = ins->getDef(k)->virtualRegister();
-                virtualRegisters[vreg] = ins->getDef(k);
+                if (!ins->getDef(k)->isBogusTemp()) {
+                    uint32_t vreg = ins->getDef(k)->virtualRegister();
+                    virtualRegisters[vreg] = ins->getDef(k);
+                }
                 if (!info.outputs.append(*ins->getDef(k)))
                     return false;
             }
@@ -77,10 +81,10 @@ AllocationIntegrityState::record()
 bool
 AllocationIntegrityState::check(bool populateSafepoints)
 {
-    JS_ASSERT(!instructions.empty());
+    MOZ_ASSERT(!instructions.empty());
 
 #ifdef DEBUG
-    if (IonSpewEnabled(IonSpew_RegAlloc))
+    if (JitSpewEnabled(JitSpew_RegAlloc))
         dump();
 
     for (size_t blockIndex = 0; blockIndex < graph.numBlocks(); blockIndex++) {
@@ -91,24 +95,24 @@ AllocationIntegrityState::check(bool populateSafepoints)
             LInstruction *ins = *iter;
 
             for (LInstruction::InputIterator alloc(*ins); alloc.more(); alloc.next())
-                JS_ASSERT(!alloc->isUse());
+                MOZ_ASSERT(!alloc->isUse());
 
             for (size_t i = 0; i < ins->numDefs(); i++) {
                 LDefinition *def = ins->getDef(i);
-                JS_ASSERT_IF(def->policy() != LDefinition::PASSTHROUGH, !def->output()->isUse());
+                MOZ_ASSERT(!def->output()->isUse());
 
                 LDefinition oldDef = instructions[ins->id()].outputs[i];
-                JS_ASSERT_IF(oldDef.policy() == LDefinition::MUST_REUSE_INPUT,
-                             *def->output() == *ins->getOperand(oldDef.getReusedInput()));
+                MOZ_ASSERT_IF(oldDef.policy() == LDefinition::MUST_REUSE_INPUT,
+                              *def->output() == *ins->getOperand(oldDef.getReusedInput()));
             }
 
             for (size_t i = 0; i < ins->numTemps(); i++) {
                 LDefinition *temp = ins->getTemp(i);
-                JS_ASSERT_IF(!temp->isBogusTemp(), temp->output()->isRegister());
+                MOZ_ASSERT_IF(!temp->isBogusTemp(), temp->output()->isRegister());
 
                 LDefinition oldTemp = instructions[ins->id()].temps[i];
-                JS_ASSERT_IF(oldTemp.policy() == LDefinition::MUST_REUSE_INPUT,
-                             *temp->output() == *ins->getOperand(oldTemp.getReusedInput()));
+                MOZ_ASSERT_IF(oldTemp.policy() == LDefinition::MUST_REUSE_INPUT,
+                              *temp->output() == *ins->getOperand(oldTemp.getReusedInput()));
             }
         }
     }
@@ -132,14 +136,16 @@ AllocationIntegrityState::check(bool populateSafepoints)
             LSafepoint *safepoint = ins->safepoint();
             if (safepoint) {
                 for (size_t i = 0; i < ins->numTemps(); i++) {
+                    if (ins->getTemp(i)->isBogusTemp())
+                        continue;
                     uint32_t vreg = info.temps[i].virtualRegister();
                     LAllocation *alloc = ins->getTemp(i)->output();
                     if (!checkSafepointAllocation(ins, vreg, *alloc, populateSafepoints))
                         return false;
                 }
-                JS_ASSERT_IF(ins->isCall() && !populateSafepoints,
-                             safepoint->liveRegs().empty(true) &&
-                             safepoint->liveRegs().empty(false));
+                MOZ_ASSERT_IF(ins->isCall() && !populateSafepoints,
+                              safepoint->liveRegs().empty(true) &&
+                              safepoint->liveRegs().empty(false));
             }
 
             size_t inputIndex = 0;
@@ -200,22 +206,22 @@ AllocationIntegrityState::checkIntegrity(LBlock *block, LInstruction *ins,
 
         for (size_t i = 0; i < ins->numDefs(); i++) {
             LDefinition *def = ins->getDef(i);
-            if (def->policy() == LDefinition::PASSTHROUGH)
+            if (def->isBogusTemp())
                 continue;
             if (info.outputs[i].virtualRegister() == vreg) {
-                JS_ASSERT(*def->output() == alloc);
+                MOZ_ASSERT(*def->output() == alloc);
 
                 // Found the original definition, done scanning.
                 return true;
             } else {
-                JS_ASSERT(*def->output() != alloc);
+                MOZ_ASSERT(*def->output() != alloc);
             }
         }
 
         for (size_t i = 0; i < ins->numTemps(); i++) {
             LDefinition *temp = ins->getTemp(i);
             if (!temp->isBogusTemp())
-                JS_ASSERT(*temp->output() != alloc);
+                MOZ_ASSERT(*temp->output() != alloc);
         }
 
         if (ins->safepoint()) {
@@ -259,7 +265,7 @@ AllocationIntegrityState::checkSafepointAllocation(LInstruction *ins,
                                                    bool populateSafepoints)
 {
     LSafepoint *safepoint = ins->safepoint();
-    JS_ASSERT(safepoint);
+    MOZ_ASSERT(safepoint);
 
     if (ins->isCall() && alloc.isRegister())
         return true;
@@ -269,7 +275,7 @@ AllocationIntegrityState::checkSafepointAllocation(LInstruction *ins,
         if (populateSafepoints)
             safepoint->addLiveRegister(reg);
 
-        JS_ASSERT(safepoint->liveRegs().has(reg));
+        MOZ_ASSERT(safepoint->liveRegs().has(reg));
     }
 
     LDefinition::Type type = virtualRegisters[vreg]
@@ -279,21 +285,21 @@ AllocationIntegrityState::checkSafepointAllocation(LInstruction *ins,
     switch (type) {
       case LDefinition::OBJECT:
         if (populateSafepoints) {
-            IonSpew(IonSpew_RegAlloc, "Safepoint object v%u i%u %s",
+            JitSpew(JitSpew_RegAlloc, "Safepoint object v%u i%u %s",
                     vreg, ins->id(), alloc.toString());
             if (!safepoint->addGcPointer(alloc))
                 return false;
         }
-        JS_ASSERT(safepoint->hasGcPointer(alloc));
+        MOZ_ASSERT(safepoint->hasGcPointer(alloc));
         break;
       case LDefinition::SLOTS:
         if (populateSafepoints) {
-            IonSpew(IonSpew_RegAlloc, "Safepoint slots v%u i%u %s",
+            JitSpew(JitSpew_RegAlloc, "Safepoint slots v%u i%u %s",
                     vreg, ins->id(), alloc.toString());
             if (!safepoint->addSlotsOrElementsPointer(alloc))
                 return false;
         }
-        JS_ASSERT(safepoint->hasSlotsOrElementsPointer(alloc));
+        MOZ_ASSERT(safepoint->hasSlotsOrElementsPointer(alloc));
         break;
 #ifdef JS_NUNBOX32
       // Do not assert that safepoint information for nunbox types is complete,
@@ -302,7 +308,7 @@ AllocationIntegrityState::checkSafepointAllocation(LInstruction *ins,
       // of payloads must be reflected, however, for generational GC.
       case LDefinition::TYPE:
         if (populateSafepoints) {
-            IonSpew(IonSpew_RegAlloc, "Safepoint type v%u i%u %s",
+            JitSpew(JitSpew_RegAlloc, "Safepoint type v%u i%u %s",
                     vreg, ins->id(), alloc.toString());
             if (!safepoint->addNunboxType(vreg, alloc))
                 return false;
@@ -310,22 +316,22 @@ AllocationIntegrityState::checkSafepointAllocation(LInstruction *ins,
         break;
       case LDefinition::PAYLOAD:
         if (populateSafepoints) {
-            IonSpew(IonSpew_RegAlloc, "Safepoint payload v%u i%u %s",
+            JitSpew(JitSpew_RegAlloc, "Safepoint payload v%u i%u %s",
                     vreg, ins->id(), alloc.toString());
             if (!safepoint->addNunboxPayload(vreg, alloc))
                 return false;
         }
-        JS_ASSERT(safepoint->hasNunboxPayload(alloc));
+        MOZ_ASSERT(safepoint->hasNunboxPayload(alloc));
         break;
 #else
       case LDefinition::BOX:
         if (populateSafepoints) {
-            IonSpew(IonSpew_RegAlloc, "Safepoint boxed value v%u i%u %s",
+            JitSpew(JitSpew_RegAlloc, "Safepoint boxed value v%u i%u %s",
                     vreg, ins->id(), alloc.toString());
             if (!safepoint->addBoxedValue(alloc))
                 return false;
         }
-        JS_ASSERT(safepoint->hasBoxedValue(alloc));
+        MOZ_ASSERT(safepoint->hasBoxedValue(alloc));
         break;
 #endif
       default:
@@ -401,7 +407,7 @@ AllocationIntegrityState::dump()
             if (ins->isMoveGroup()) {
                 LMoveGroup *group = ins->toMoveGroup();
                 for (int i = group->numMoves() - 1; i >= 0; i--) {
-                    // Use two printfs, as LAllocation::toString is not reentant.
+                    // Use two printfs, as LAllocation::toString is not reentrant.
                     fprintf(stderr, " [%s", group->getMove(i).from()->toString());
                     fprintf(stderr, " -> %s]", group->getMove(i).to()->toString());
                 }
@@ -468,10 +474,10 @@ RegisterAllocator::init()
     for (size_t i = 0; i < graph.numBlocks(); i++) {
         LBlock *block = graph.getBlock(i);
         for (LInstructionIterator ins = block->begin(); ins != block->end(); ins++)
-            insData[*ins].init(*ins, block);
+            insData[ins->id()] = *ins;
         for (size_t j = 0; j < block->numPhis(); j++) {
             LPhi *phi = block->getPhi(j);
-            insData[phi].init(phi, block);
+            insData[phi->id()] = phi;
         }
     }
 
@@ -479,38 +485,33 @@ RegisterAllocator::init()
 }
 
 LMoveGroup *
-RegisterAllocator::getInputMoveGroup(uint32_t ins)
+RegisterAllocator::getInputMoveGroup(LInstruction *ins)
 {
-    InstructionData *data = &insData[ins];
-    JS_ASSERT(!data->ins()->isPhi());
-    JS_ASSERT(!data->ins()->isLabel());
+    MOZ_ASSERT(!ins->isLabel());
 
-    if (data->inputMoves())
-        return data->inputMoves();
+    if (ins->inputMoves())
+        return ins->inputMoves();
 
     LMoveGroup *moves = LMoveGroup::New(alloc());
-    data->setInputMoves(moves);
-    data->block()->insertBefore(data->ins(), moves);
+    ins->setInputMoves(moves);
+    ins->block()->insertBefore(ins, moves);
 
     return moves;
 }
 
 LMoveGroup *
-RegisterAllocator::getMoveGroupAfter(uint32_t ins)
+RegisterAllocator::getMoveGroupAfter(LInstruction *ins)
 {
-    InstructionData *data = &insData[ins];
-    JS_ASSERT(!data->ins()->isPhi());
-
-    if (data->movesAfter())
-        return data->movesAfter();
+    if (ins->movesAfter())
+        return ins->movesAfter();
 
     LMoveGroup *moves = LMoveGroup::New(alloc());
-    data->setMovesAfter(moves);
+    ins->setMovesAfter(moves);
 
-    if (data->ins()->isLabel())
-        data->block()->insertAfter(data->block()->getEntryMoveGroup(alloc()), moves);
+    if (ins->isLabel())
+        ins->block()->insertAfter(ins->block()->getEntryMoveGroup(alloc()), moves);
     else
-        data->block()->insertAfter(data->ins(), moves);
+        ins->block()->insertAfter(ins, moves);
     return moves;
 }
 
@@ -569,8 +570,10 @@ RegisterAllocator::dumpInstructions()
                     fprintf(stderr, " [temp %s]", temp->toString());
             }
 
-            for (LInstruction::InputIterator alloc(*ins); alloc.more(); alloc.next())
-                fprintf(stderr, " [use %s]", alloc->toString());
+            for (LInstruction::InputIterator alloc(*ins); alloc.more(); alloc.next()) {
+                if (!alloc->isBogus())
+                    fprintf(stderr, " [use %s]", alloc->toString());
+            }
 
             fprintf(stderr, "\n");
         }

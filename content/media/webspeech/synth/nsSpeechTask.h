@@ -28,7 +28,7 @@ public:
 
   NS_DECL_NSISPEECHTASK
 
-  nsSpeechTask(SpeechSynthesisUtterance* aUtterance);
+  explicit nsSpeechTask(SpeechSynthesisUtterance* aUtterance);
   nsSpeechTask(float aVolume, const nsAString& aText);
 
   virtual void Pause();
@@ -74,7 +74,7 @@ protected:
 private:
   void End();
 
-  void SendAudioImpl(int16_t* aData, uint32_t aDataLen);
+  void SendAudioImpl(nsRefPtr<mozilla::SharedBuffer>& aSamples, uint32_t aDataLen);
 
   nsRefPtr<SourceMediaStream> mStream;
 

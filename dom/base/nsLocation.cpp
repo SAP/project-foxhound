@@ -28,6 +28,7 @@
 #include "nsITextToSubURI.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindow.h"
 #include "mozilla/Likely.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsNullPrincipal.h"
@@ -42,15 +43,8 @@ GetDocumentCharacterSetForURI(const nsAString& aHref, nsACString& aCharset)
 {
   aCharset.Truncate();
 
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
-  if (cx) {
-    nsCOMPtr<nsPIDOMWindow> window =
-      do_QueryInterface(nsJSUtils::GetDynamicScriptGlobal(cx));
-    NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
-
-    if (nsIDocument* doc = window->GetDoc()) {
-      aCharset = doc->GetDocumentCharacterSet();
-    }
+  if (nsIDocument* doc = GetEntryDocument()) {
+    aCharset = doc->GetDocumentCharacterSet();
   }
 
   return NS_OK;
@@ -61,26 +55,39 @@ nsLocation::nsLocation(nsPIDOMWindow* aWindow, nsIDocShell *aDocShell)
 {
   MOZ_ASSERT(aDocShell);
   MOZ_ASSERT(mInnerWindow->IsInnerWindow());
-  SetIsDOMBinding();
 
   mDocShell = do_GetWeakReference(aDocShell);
 }
 
 nsLocation::~nsLocation()
 {
+  RemoveURLSearchParams();
 }
-
-DOMCI_DATA(Location, nsLocation)
 
 // QueryInterface implementation for nsLocation
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsLocation)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsIDOMLocation)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Location)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMLocation)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsLocation, mInnerWindow)
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsLocation)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsLocation)
+  tmp->RemoveURLSearchParams();
+
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mInnerWindow);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsLocation)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSearchParams)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInnerWindow)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(nsLocation)
+
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsLocation)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsLocation)
 
@@ -400,18 +407,9 @@ nsLocation::GetHostname(nsAString& aHostname)
   aHostname.Truncate();
 
   nsCOMPtr<nsIURI> uri;
-  nsresult result;
-
-  result = GetURI(getter_AddRefs(uri), true);
-
+  GetURI(getter_AddRefs(uri), true);
   if (uri) {
-    nsAutoCString host;
-
-    result = uri->GetHost(host);
-
-    if (NS_SUCCEEDED(result)) {
-      AppendUTF8toUTF16(host, aHostname);
-    }
+    nsContentUtils::GetHostOrIPv6WithBrackets(uri, aHostname);
   }
 
   return NS_OK;
@@ -531,23 +529,23 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
      * anywhere else. This is part of solution for bug # 39938, 72197
      * 
      */
-    bool inScriptTag=false;
-    JSContext *cx = nsContentUtils::GetCurrentJSContext();
-    if (cx) {
-      nsIScriptContext *scriptContext =
-        nsJSUtils::GetDynamicScriptContext(cx);
+    bool inScriptTag = false;
+    nsIScriptContext* scriptContext = nullptr;
+    nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(GetEntryGlobal());
+    if (win) {
+      scriptContext = static_cast<nsGlobalWindow*>(win.get())->GetContextInternal();
+    }
 
-      if (scriptContext) {
-        if (scriptContext->GetProcessingScriptTag()) {
-          // Now check to make sure that the script is running in our window,
-          // since we only want to replace if the location is set by a
-          // <script> tag in the same window.  See bug 178729.
-          nsCOMPtr<nsIScriptGlobalObject> ourGlobal =
-            docShell ? docShell->GetScriptGlobalObject() : nullptr;
-          inScriptTag = (ourGlobal == scriptContext->GetGlobalObject());
-        }
-      }  
-    } //cx
+    if (scriptContext) {
+      if (scriptContext->GetProcessingScriptTag()) {
+        // Now check to make sure that the script is running in our window,
+        // since we only want to replace if the location is set by a
+        // <script> tag in the same window.  See bug 178729.
+        nsCOMPtr<nsIScriptGlobalObject> ourGlobal =
+          docShell ? docShell->GetScriptGlobalObject() : nullptr;
+        inScriptTag = (ourGlobal == scriptContext->GetGlobalObject());
+      }
+    }
 
     return SetURI(newUri, aReplace || inScriptTag);
   }
@@ -862,6 +860,17 @@ nsLocation::GetSearch(nsAString& aSearch)
 NS_IMETHODIMP
 nsLocation::SetSearch(const nsAString& aSearch)
 {
+  nsresult rv = SetSearchInternal(aSearch);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+nsresult
+nsLocation::SetSearchInternal(const nsAString& aSearch)
+{
   if (!CallerSubsumes())
     return NS_ERROR_DOM_SECURITY_ERR;
 
@@ -905,7 +914,7 @@ nsLocation::Reload(bool aForceget)
     nsIPresShell *shell;
     nsPresContext *pcx;
     if (doc && (shell = doc->GetShell()) && (pcx = shell->GetPresContext())) {
-      pcx->RebuildAllStyleData(NS_STYLE_HINT_REFLOW);
+      pcx->RebuildAllStyleData(NS_STYLE_HINT_REFLOW, eRestyle_Subtree);
     }
 
     return NS_OK;
@@ -995,22 +1004,20 @@ nsLocation::ValueOf(nsIDOMLocation** aReturn)
 nsresult
 nsLocation::GetSourceBaseURL(JSContext* cx, nsIURI** sourceURL)
 {
-
   *sourceURL = nullptr;
-  nsCOMPtr<nsIScriptGlobalObject> sgo = nsJSUtils::GetDynamicScriptGlobal(cx);
-  // If this JS context doesn't have an associated DOM window, we effectively
-  // have no script entry point stack. This doesn't generally happen with the DOM,
+  nsIDocument* doc = GetEntryDocument();
+  // If there's no entry document, we either have no Script Entry Point or one
+  // that isn't a DOM Window.  This doesn't generally happen with the DOM,
   // but can sometimes happen with extension code in certain IPC configurations.
   // If this happens, try falling back on the current document associated with
   // the docshell. If that fails, just return null and hope that the caller passed
   // an absolute URI.
-  if (!sgo && GetDocShell()) {
-    sgo = GetDocShell()->GetScriptGlobalObject();
+  if (!doc && GetDocShell()) {
+    nsCOMPtr<nsPIDOMWindow> docShellWin = do_QueryInterface(GetDocShell()->GetScriptGlobalObject());
+    if (docShellWin) {
+      doc = docShellWin->GetDoc();
+    }
   }
-  NS_ENSURE_TRUE(sgo, NS_OK);
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(sgo);
-  NS_ENSURE_TRUE(window, NS_ERROR_UNEXPECTED);
-  nsIDocument* doc = window->GetDoc();
   NS_ENSURE_TRUE(doc, NS_OK);
   *sourceURL = doc->GetBaseURI().take();
   return NS_OK;
@@ -1038,4 +1045,120 @@ JSObject*
 nsLocation::WrapObject(JSContext* aCx)
 {
   return LocationBinding::Wrap(aCx, this);
+}
+
+URLSearchParams*
+nsLocation::GetDocShellSearchParams()
+{
+  nsCOMPtr<nsIDocShell> docShell = GetDocShell();
+  if (!docShell) {
+    return nullptr;
+  }
+
+  return docShell->GetURLSearchParams();
+}
+
+URLSearchParams*
+nsLocation::SearchParams()
+{
+  if (!mSearchParams) {
+    // We must register this object to the URLSearchParams of the docshell in
+    // order to receive updates.
+    nsRefPtr<URLSearchParams> searchParams = GetDocShellSearchParams();
+    if (searchParams) {
+      searchParams->AddObserver(this);
+    }
+
+    mSearchParams = new URLSearchParams();
+    mSearchParams->AddObserver(this);
+    UpdateURLSearchParams();
+  }
+
+  return mSearchParams;
+}
+
+void
+nsLocation::SetSearchParams(URLSearchParams& aSearchParams)
+{
+  if (mSearchParams) {
+    mSearchParams->RemoveObserver(this);
+  }
+
+  // the observer will be cleared using the cycle collector.
+  mSearchParams = &aSearchParams;
+  mSearchParams->AddObserver(this);
+
+  nsAutoString search;
+  mSearchParams->Serialize(search);
+  SetSearchInternal(search);
+
+  // We don't need to inform the docShell about this new SearchParams because
+  // setting the new value the docShell will refresh its value automatically.
+}
+
+void
+nsLocation::URLSearchParamsUpdated(URLSearchParams* aSearchParams)
+{
+  MOZ_ASSERT(mSearchParams);
+
+  // This change comes from content.
+  if (aSearchParams == mSearchParams) {
+    nsAutoString search;
+    mSearchParams->Serialize(search);
+    SetSearchInternal(search);
+    return;
+  }
+
+  // This change comes from the docShell.
+#ifdef DEBUG
+  {
+    nsRefPtr<URLSearchParams> searchParams = GetDocShellSearchParams();
+    MOZ_ASSERT(searchParams);
+    MOZ_ASSERT(aSearchParams == searchParams);
+  }
+#endif
+
+  nsAutoString search;
+  aSearchParams->Serialize(search);
+  mSearchParams->ParseInput(NS_ConvertUTF16toUTF8(search), this);
+}
+
+void
+nsLocation::UpdateURLSearchParams()
+{
+  if (!mSearchParams) {
+    return;
+  }
+
+  nsAutoCString search;
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(NS_FAILED(rv)) || NS_WARN_IF(!uri)) {
+    return;
+  }
+
+  nsCOMPtr<nsIURL> url(do_QueryInterface(uri));
+  if (url) {
+    nsresult rv = url->GetQuery(search);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Failed to get the query from a nsIURL.");
+    }
+  }
+
+  mSearchParams->ParseInput(search, this);
+}
+
+void
+nsLocation::RemoveURLSearchParams()
+{
+  if (mSearchParams) {
+    mSearchParams->RemoveObserver(this);
+    mSearchParams = nullptr;
+
+    nsRefPtr<URLSearchParams> docShellSearchParams = GetDocShellSearchParams();
+    if (docShellSearchParams) {
+      docShellSearchParams->RemoveObserver(this);
+    }
+  }
 }

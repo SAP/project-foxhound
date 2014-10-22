@@ -6,10 +6,10 @@
 /* Implementation of xptiInterfaceEntry and xptiInterfaceInfo. */
 
 #include "xptiprivate.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/XPTInterfaceInfoManager.h"
 #include "mozilla/PodOperations.h"
-#include "nsCxPusher.h"
 #include "jsapi.h"
 
 using namespace mozilla;
@@ -107,6 +107,19 @@ xptiInterfaceEntry::ResolveLocked()
         }
 
         mParent = parent;
+        if (parent->GetHasNotXPCOMFlag()) {
+            SetHasNotXPCOMFlag();
+        } else {
+            for (uint16_t idx = 0; idx < mDescriptor->num_methods; ++idx) {
+                nsXPTMethodInfo* method = reinterpret_cast<nsXPTMethodInfo*>(
+                    mDescriptor->method_descriptors + idx);
+                if (method->IsNotXPCOM()) {
+                    SetHasNotXPCOMFlag();
+                    break;
+                }
+            }
+        }
+
 
         mMethodBaseIndex =
             parent->mMethodBaseIndex + 

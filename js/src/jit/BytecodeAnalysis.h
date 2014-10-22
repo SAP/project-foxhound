@@ -21,15 +21,13 @@ struct BytecodeInfo
     uint16_t stackDepth;
     bool initialized : 1;
     bool jumpTarget : 1;
-    bool jumpFallthrough : 1;
-    bool fallthrough : 1;
 
     // If true, this is a JSOP_LOOPENTRY op inside a catch or finally block.
     bool loopEntryInCatchOrFinally : 1;
 
     void init(unsigned depth) {
-        JS_ASSERT(depth <= MAX_STACK_DEPTH);
-        JS_ASSERT_IF(initialized, stackDepth == depth);
+        MOZ_ASSERT(depth <= MAX_STACK_DEPTH);
+        MOZ_ASSERT_IF(initialized, stackDepth == depth);
         initialized = true;
         stackDepth = depth;
     }
@@ -50,7 +48,7 @@ class BytecodeAnalysis
     bool init(TempAllocator &alloc, GSNCache &gsn);
 
     BytecodeInfo &info(jsbytecode *pc) {
-        JS_ASSERT(infos_[script_->pcToOffset(pc)].initialized);
+        MOZ_ASSERT(infos_[script_->pcToOffset(pc)].initialized);
         return infos_[script_->pcToOffset(pc)];
     }
 

@@ -13,7 +13,6 @@
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/ScriptSettings.h"
 
-#include "js/OldDebugAPI.h"
 #include "nsNetUtil.h"
 #include "nsMimeTypes.h"
 #include "nsIPromptFactory.h"
@@ -28,7 +27,6 @@
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIScriptError.h"
 #include "mozilla/dom/EncodingUtils.h"
-#include "nsIChannelPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
@@ -370,18 +368,6 @@ EventSource::OnStartRequest(nsIRequest *aRequest,
     return NS_ERROR_ABORT;
   }
 
-  nsCOMPtr<nsIPrincipal> principal = mPrincipal;
-  if (nsContentUtils::IsSystemPrincipal(principal)) {
-    // Don't give this channel the system principal.
-    principal = do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-  nsCOMPtr<nsILoadInfo> loadInfo =
-    new LoadInfo(principal, LoadInfo::eInheritPrincipal,
-                 LoadInfo::eNotSandboxed);
-  rv = httpChannel->SetLoadInfo(loadInfo);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsCOMPtr<nsIRunnable> event =
     NS_NewRunnableMethod(this, &EventSource::AnnounceConnection);
   NS_ENSURE_STATE(event);
@@ -501,7 +487,7 @@ EventSource::OnStopRequest(nsIRequest *aRequest,
 class AsyncVerifyRedirectCallbackFwr MOZ_FINAL : public nsIAsyncVerifyRedirectCallback
 {
 public:
-  AsyncVerifyRedirectCallbackFwr(EventSource* aEventsource)
+  explicit AsyncVerifyRedirectCallbackFwr(EventSource* aEventsource)
     : mEventSource(aEventsource)
   {
   }
@@ -750,20 +736,34 @@ EventSource::InitChannelAndRequestEventSource()
   nsLoadFlags loadFlags;
   loadFlags = nsIRequest::LOAD_BACKGROUND | nsIRequest::LOAD_BYPASS_CACHE;
 
-  // get Content Security Policy from principal to pass into channel
-  nsCOMPtr<nsIChannelPolicy> channelPolicy;
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  nsresult rv = mPrincipal->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (csp) {
-    channelPolicy = do_CreateInstance("@mozilla.org/nschannelpolicy;1");
-    channelPolicy->SetContentSecurityPolicy(csp);
-    channelPolicy->SetLoadType(nsIContentPolicy::TYPE_DATAREQUEST);
-  }
+  nsresult rv;
+  nsIScriptContext* sc = GetContextForEventHandlers(&rv);
+  nsCOMPtr<nsIDocument> doc =
+    nsContentUtils::GetDocumentFromScriptContext(sc);
 
   nsCOMPtr<nsIChannel> channel;
-  rv = NS_NewChannel(getter_AddRefs(channel), mSrc, nullptr, mLoadGroup,
-                     nullptr, loadFlags, channelPolicy);
+  // If we have the document, use it
+  if (doc) {
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       mSrc,
+                       doc,
+                       nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
+                       nsIContentPolicy::TYPE_DATAREQUEST,
+                       mLoadGroup,       // loadGroup
+                       nullptr,          // aCallbacks
+                       loadFlags);       // aLoadFlags
+  } else {
+    // otherwise use the principal
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       mSrc,
+                       mPrincipal,
+                       nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
+                       nsIContentPolicy::TYPE_DATAREQUEST,
+                       mLoadGroup,       // loadGroup
+                       nullptr,          // aCallbacks
+                       loadFlags);       // aLoadFlags
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   mHttpChannel = do_QueryInterface(channel);

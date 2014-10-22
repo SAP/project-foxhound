@@ -12,7 +12,9 @@ sync protocol PRemoteSpellcheckEngine {
 parent:
   __delete__();
 
-  sync CheckForMisspelling(nsString aWord) returns (bool isMisspelled);
+  sync Check(nsString aWord) returns (bool aIsMisspelled);
+
+  sync CheckAndSuggest(nsString aWord) returns (bool aIsMisspelled, nsString[] aSuggestions);
 
   sync SetDictionary(nsString aDictionary) returns (bool success);
 };

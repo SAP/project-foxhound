@@ -21,6 +21,7 @@
 #include "mozilla/EventForwards.h"
 #include "InputData.h"
 #include "Units.h"
+#include "FrameMetrics.h"
 
 //#define FORCE_ALOG 1
 
@@ -408,6 +409,11 @@ public:
         SAMPLE_PRESSURE = 2,
         SAMPLE_SIZE = 3,
         NUM_SAMPLE_DATA = 4,
+        TOOL_TYPE_UNKNOWN = 0,
+        TOOL_TYPE_FINGER = 1,
+        TOOL_TYPE_STYLUS = 2,
+        TOOL_TYPE_MOUSE = 3,
+        TOOL_TYPE_ERASER = 4,
         dummy_java_enum_list_end
     };
 };
@@ -481,6 +487,14 @@ public:
         return event;
     }
 
+    static AndroidGeckoEvent* MakeApzInputEvent(const MultiTouchInput& aInput, const mozilla::layers::ScrollableLayerGuid& aGuid) {
+        AndroidGeckoEvent* event = new AndroidGeckoEvent();
+        event->Init(APZ_INPUT_EVENT);
+        event->mApzInput = aInput;
+        event->mApzGuid = aGuid;
+        return event;
+    }
+
     int Action() { return mAction; }
     int Type() { return mType; }
     bool AckNeeded() { return mAckNeeded; }
@@ -488,6 +502,7 @@ public:
     const nsTArray<nsIntPoint>& Points() { return mPoints; }
     const nsTArray<int>& PointIndicies() { return mPointIndicies; }
     const nsTArray<float>& Pressures() { return mPressures; }
+    const nsTArray<int>& ToolTypes() { return mToolTypes; }
     const nsTArray<float>& Orientations() { return mOrientations; }
     const nsTArray<nsIntPoint>& PointRadii() { return mPointRadii; }
     const nsTArray<nsString>& PrefNames() { return mPrefNames; }
@@ -537,11 +552,14 @@ public:
     float GamepadButtonValue() { return mGamepadButtonValue; }
     const nsTArray<float>& GamepadValues() { return mGamepadValues; }
     int RequestId() { return mCount; } // for convenience
+    const AutoGlobalWrappedJavaObject& Object() { return mObject; }
+    bool CanCoalesceWith(AndroidGeckoEvent* ae);
     WidgetTouchEvent MakeTouchEvent(nsIWidget* widget);
     MultiTouchInput MakeMultiTouchInput(nsIWidget* widget);
     WidgetMouseEvent MakeMouseEvent(nsIWidget* widget);
     void UnionRect(nsIntRect const& aRect);
     nsIObserver *Observer() { return mObserver; }
+    mozilla::layers::ScrollableLayerGuid ApzGuid();
 
 protected:
     int mAction;
@@ -553,6 +571,7 @@ protected:
     nsTArray<int> mPointIndicies;
     nsTArray<float> mOrientations;
     nsTArray<float> mPressures;
+    nsTArray<int> mToolTypes;
     nsIntRect mRect;
     int mFlags, mMetaState;
     uint32_t mDomKeyLocation;
@@ -581,6 +600,9 @@ protected:
     nsTArray<float> mGamepadValues;
     nsCOMPtr<nsIObserver> mObserver;
     nsTArray<nsString> mPrefNames;
+    MultiTouchInput mApzInput;
+    mozilla::layers::ScrollableLayerGuid mApzGuid;
+    AutoGlobalWrappedJavaObject mObject;
 
     void ReadIntArray(nsTArray<int> &aVals,
                       JNIEnv *jenv,
@@ -614,6 +636,7 @@ protected:
     static jfieldID jPointIndicies;
     static jfieldID jOrientations;
     static jfieldID jPressures;
+    static jfieldID jToolTypes;
     static jfieldID jPointRadii;
     static jfieldID jXField;
     static jfieldID jYField;
@@ -664,6 +687,8 @@ protected:
     static jfieldID jGamepadButtonValueField;
     static jfieldID jGamepadValuesField;
 
+    static jfieldID jObjectField;
+
     static jclass jDomKeyLocationClass;
     static jfieldID jDomKeyLocationValueField;
 
@@ -673,6 +698,7 @@ public:
         KEY_EVENT = 1,
         MOTION_EVENT = 2,
         SENSOR_EVENT = 3,
+        PROCESS_OBJECT = 4,
         LOCATION_EVENT = 5,
         IME_EVENT = 6,
         SIZE_CHANGED = 8,
@@ -681,6 +707,7 @@ public:
         LOAD_URI = 12,
         NOOP = 15,
         FORCED_RESIZE = 16, // used internally in nsAppShell/nsWindow
+        APZ_INPUT_EVENT = 17, // used internally in AndroidJNI/nsAppShell/nsWindow
         BROADCAST = 19,
         VIEWPORT = 20,
         VISITED = 21,
@@ -706,6 +733,7 @@ public:
         TELEMETRY_UI_EVENT = 44,
         GAMEPAD_ADDREMOVE = 45,
         GAMEPAD_DATA = 46,
+        LONG_PRESS = 47,
         dummy_java_enum_list_end
     };
 
@@ -730,6 +758,7 @@ public:
         IME_UPDATE_COMPOSITION = 4,
         IME_REMOVE_COMPOSITION = 5,
         IME_ACKNOWLEDGE_FOCUS = 6,
+        IME_COMPOSE_TEXT = 7,
         dummy_ime_enum_list_end
     };
 
@@ -741,6 +770,11 @@ public:
     enum {
         ACTION_GAMEPAD_BUTTON = 1,
         ACTION_GAMEPAD_AXES = 2
+    };
+
+    enum {
+        ACTION_OBJECT_LAYER_CLIENT = 1,
+        dummy_object_enum_list_end
     };
 };
 

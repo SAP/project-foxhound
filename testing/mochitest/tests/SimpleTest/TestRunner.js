@@ -139,9 +139,14 @@ function StructuredLogger(name) {
     };
 
     this.testStatus = function(test, subtest, status, expected="PASS", message=null) {
+        // Bugfix for assertions not passing an assertion name
+        if (subtest === null || subtest === undefined) {
+            subtest = "undefined assertion name";
+        }
+
         var data = {test: test, subtest: subtest, status: status};
 
-        if (message !== null) {
+        if (message) {
             data.message = String(message);
         }
         if (expected != status && status != 'SKIP') {
@@ -162,12 +167,6 @@ function StructuredLogger(name) {
         }
         if (extra !== null) {
             data.extra = extra;
-        }
-
-        if (!this.testsStarted.pop(test)) {
-            this.error("Test '" + test + "' was ended more than once or never started. " +
-                       "Ended with this data: " + JSON.stringify(data));
-            return;
         }
 
         this._logData("test_end", data);
@@ -243,7 +242,11 @@ function StructuredLogger(name) {
 
         var allData = {action: action,
                        time: new Date().getTime(),
-                       thread: null,
+                       thread: "",
+                       // This is a directive to python to format these messages
+                       // for compatibility with mozharness. This can be removed
+                       // with the MochitestFormatter (see bug 1045525).
+                       js_source: "TestRunner",
                        pid: null,
                        source: this.name};
 
@@ -266,6 +269,11 @@ function StructuredLogger(name) {
             LogController.log(str);
         } else {
             dump('\n' + str + '\n');
+        }
+
+        // Checking for error messages
+        if (message.expected || message.level === "ERROR") {
+            TestRunner.failureHandler();
         }
     };
 
@@ -431,8 +439,11 @@ TestRunner.error = function(msg) {
         TestRunner.structuredLogger.error(msg);
     } else {
         dump(msg + "\n");
+        TestRunner.failureHandler();
     }
+};
 
+TestRunner.failureHandler = function() {
     if (TestRunner.runUntilFailure) {
       TestRunner._haltTests = true;
     }
@@ -475,7 +486,7 @@ TestRunner._makeIframe = function (url, retry) {
             return;
         }
 
-        TestRunner.structuredLogger.error("Unable to restore focus, expect failures and timeouts.");
+        TestRunner.structuredLogger.info("Error: Unable to restore focus, expect failures and timeouts.");
     }
     window.scrollTo(0, $('indicator').offsetTop);
     iframe.src = url;
@@ -498,6 +509,14 @@ TestRunner.getLoadedTestURL = function () {
     return prefix + $('testframe').contentWindow.location.pathname;
 };
 
+TestRunner.setParameterInfo = function (params) {
+    this._params = params;
+};
+
+TestRunner.getParameterInfo = function() {
+    return this._params;
+};
+
 /**
  * TestRunner entry point.
  *
@@ -512,7 +531,16 @@ TestRunner.runTests = function (/*url...*/) {
 
     TestRunner._urls = flattenArguments(arguments);
 
-    $('testframe').src="";
+    var singleTestRun = this._urls.length <= 1 && TestRunner.repeat <= 1;
+    TestRunner.showTestReport = singleTestRun;
+    var frame = $('testframe');
+    frame.src = "";
+    if (singleTestRun) {
+        // Can't use document.body because this runs in a XUL doc as well...
+        var body = document.getElementsByTagName("body")[0];
+        body.setAttribute("singletest", "true");
+        frame.removeAttribute("scrolling");
+    }
     TestRunner._checkForHangs();
     TestRunner.runNextTest();
 };
@@ -534,6 +562,19 @@ TestRunner.resetTests = function(listURLs) {
   TestRunner.runNextTest();
 }
 
+TestRunner.getNextUrl = function() {
+    var url = "";
+    // sometimes we have a subtest/harness which doesn't use a manifest
+    if ((TestRunner._urls[TestRunner._currentTest] instanceof Object) && ('test' in TestRunner._urls[TestRunner._currentTest])) {
+        url = TestRunner._urls[TestRunner._currentTest]['test']['url'];
+        TestRunner.expected = TestRunner._urls[TestRunner._currentTest]['test']['expected'];
+    } else {
+        url = TestRunner._urls[TestRunner._currentTest];
+        TestRunner.expected = 'pass';
+    }
+    return url;
+}
+
 /**
  * Run the next test. If no test remains, calls onComplete().
  **/
@@ -542,7 +583,7 @@ TestRunner.runNextTest = function() {
     if (TestRunner._currentTest < TestRunner._urls.length &&
         !TestRunner._haltTests)
     {
-        var url = TestRunner._urls[TestRunner._currentTest];
+        var url = TestRunner.getNextUrl();
         TestRunner.currentTestURL = url;
 
         $("current-test-path").innerHTML = url;
@@ -557,7 +598,10 @@ TestRunner.runNextTest = function() {
         TestRunner._makeIframe(url, 0);
     } else {
         $("current-test").innerHTML = "<b>Finished</b>";
-        TestRunner._makeIframe("about:blank", 0);
+        // Only unload the last test to run if we're running more than one test.
+        if (TestRunner._urls.length > 1) {
+            TestRunner._makeIframe("about:blank", 0);
+        }
 
         var passCount = parseInt($("pass-count").innerHTML, 10);
         var failCount = parseInt($("fail-count").innerHTML, 10);
@@ -676,8 +720,8 @@ TestRunner.testFinished = function(tests) {
         if (TestRunner.currentTestURL != TestRunner.getLoadedTestURL()) {
             TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL,
                                                    TestRunner.getLoadedTestURL(),
-                                                   "ERROR",
-                                                   "OK",
+                                                   "FAIL",
+                                                   "PASS",
                                                    "finished in a non-clean fashion, probably" +
                                                    " because it didn't call SimpleTest.finish()",
                                                    {loaded_test_url: TestRunner.getLoadedTestURL()});
@@ -700,12 +744,31 @@ TestRunner.testFinished = function(tests) {
 
         TestRunner.updateUI(tests);
 
+        // Don't show the interstitial if we just run one test with no repeats:
+        if (TestRunner._urls.length == 1 && TestRunner.repeat <= 1) {
+            TestRunner.testUnloaded();
+            return;
+        }
+
         var interstitialURL;
         if ($('testframe').contentWindow.location.protocol == "chrome:") {
             interstitialURL = "tests/SimpleTest/iframe-between-tests.html";
         } else {
             interstitialURL = "/tests/SimpleTest/iframe-between-tests.html";
         }
+        // check if there were test run after SimpleTest.finish, which should never happen
+        $('testframe').contentWindow.addEventListener('unload', function() {
+           var testwin = $('testframe').contentWindow;
+           if (testwin.SimpleTest && testwin.SimpleTest._tests.length != testwin.SimpleTest.testsLength) {
+             var wrongtestlength = testwin.SimpleTest._tests.length - testwin.SimpleTest.testsLength;
+             var wrongtestname = '';
+             for (var i = 0; i < wrongtestlength; i++) {
+               wrongtestname = testwin.SimpleTest._tests[testwin.SimpleTest.testsLength + i].name;
+               TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL, wrongtestname, 'FAIL', 'PASS', "Result logged after SimpleTest.finish()");
+             }
+             TestRunner.updateUI([{ result: false }]);
+           }
+        } , false);
         TestRunner._makeIframe(interstitialURL, 0);
     }
 
@@ -725,7 +788,7 @@ TestRunner.testUnloaded = function() {
         var numAsserts = newAssertionCount - TestRunner._lastAssertionCount;
         TestRunner._lastAssertionCount = newAssertionCount;
 
-        var url = TestRunner._urls[TestRunner._currentTest];
+        var url = TestRunner.getNextUrl();
         var max = TestRunner._expectedMaxAsserts;
         var min = TestRunner._expectedMinAsserts;
         if (numAsserts > max) {

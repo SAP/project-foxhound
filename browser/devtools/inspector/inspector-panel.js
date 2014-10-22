@@ -106,6 +106,10 @@ InspectorPanel.prototype = {
     return this._target.client.traits.urlToImageDataResolver;
   },
 
+  get canGetUniqueSelector() {
+    return this._target.client.traits.getUniqueSelector;
+  },
+
   _deferredOpen: function(defaultSelection) {
     let deferred = promise.defer();
 
@@ -219,7 +223,9 @@ InspectorPanel.prototype = {
       }
 
       rootNode = aRootNode;
-      return walker.querySelector(rootNode, this.selectionCssSelector);
+      if (this.selectionCssSelector) {
+        return walker.querySelector(rootNode, this.selectionCssSelector);
+      }
     }).then(front => {
       if (hasNavigated()) {
         return promise.reject("navigated; resolution of _defaultNode aborted");
@@ -582,7 +588,10 @@ InspectorPanel.prototype = {
    * Disable the delete item if needed. Update the pseudo classes.
    */
   _setupNodeMenu: function InspectorPanel_setupNodeMenu() {
-    let isSelectionElement = this.selection.isElementNode();
+    let isSelectionElement = this.selection.isElementNode() &&
+                             !this.selection.isPseudoElementNode();
+    let isEditableElement = isSelectionElement &&
+                            !this.selection.isAnonymousNode();
 
     // Set the pseudo classes
     for (let name of ["hover", "active", "focus"]) {
@@ -599,10 +608,10 @@ InspectorPanel.prototype = {
 
     // Disable delete item if needed
     let deleteNode = this.panelDoc.getElementById("node-menu-delete");
-    if (this.selection.isRoot() || this.selection.isDocumentTypeNode()) {
-      deleteNode.setAttribute("disabled", "true");
-    } else {
+    if (isEditableElement) {
       deleteNode.removeAttribute("disabled");
+    } else {
+      deleteNode.setAttribute("disabled", "true");
     }
 
     // Disable / enable "Copy Unique Selector", "Copy inner HTML" &
@@ -619,11 +628,14 @@ InspectorPanel.prototype = {
       copyInnerHTML.setAttribute("disabled", "true");
       copyOuterHTML.setAttribute("disabled", "true");
     }
+    if (!this.canGetUniqueSelector) {
+      unique.hidden = true;
+    }
 
     // Enable the "edit HTML" item if the selection is an element and the root
     // actor has the appropriate trait (isOuterHTMLEditable)
     let editHTML = this.panelDoc.getElementById("node-menu-edithtml");
-    if (this.isOuterHTMLEditable && isSelectionElement) {
+    if (isEditableElement && this.isOuterHTMLEditable) {
       editHTML.removeAttribute("disabled");
     } else {
       editHTML.setAttribute("disabled", "true");
@@ -633,7 +645,7 @@ InspectorPanel.prototype = {
     // the root actor has the appropriate trait (isOuterHTMLEditable) and if
     // the clipbard content is appropriate.
     let pasteOuterHTML = this.panelDoc.getElementById("node-menu-pasteouterhtml");
-    if (this.isOuterHTMLEditable && isSelectionElement &&
+    if (isEditableElement && this.isOuterHTMLEditable &&
         this._getClipboardContentForOuterHTML()) {
       pasteOuterHTML.removeAttribute("disabled");
     } else {
@@ -644,7 +656,7 @@ InspectorPanel.prototype = {
     // which essentially checks if it's an image or canvas tag
     let copyImageData = this.panelDoc.getElementById("node-menu-copyimagedatauri");
     let markupContainer = this.markup.getContainer(this.selection.nodeFront);
-    if (markupContainer && markupContainer.isPreviewable()) {
+    if (isSelectionElement && markupContainer && markupContainer.isPreviewable()) {
       copyImageData.removeAttribute("disabled");
     } else {
       copyImageData.setAttribute("disabled", "true");
@@ -732,6 +744,19 @@ InspectorPanel.prototype = {
       let hierarchical = aPseudo == ":hover" || aPseudo == ":active";
       return this.walker.addPseudoClassLock(node, aPseudo, {parents: hierarchical});
     }
+  },
+
+  /**
+   * Show DOM properties
+   */
+  showDOMProperties: function InspectorPanel_showDOMProperties() {
+    this._toolbox.openSplitConsole().then(() => {
+      let panel = this._toolbox.getPanel("webconsole");
+      let jsterm = panel.hud.jsterm;
+
+      jsterm.execute("inspect($0)");
+      jsterm.focusInput();
+    });
   },
 
   /**
@@ -824,10 +849,9 @@ InspectorPanel.prototype = {
       return;
     }
 
-    let toCopy = CssLogic.findCssSelector(this.selection.node);
-    if (toCopy) {
-      clipboardHelper.copyString(toCopy);
-    }
+    this.selection.nodeFront.getUniqueSelector().then((selector) => {
+      clipboardHelper.copyString(selector);
+    }).then(null, console.error);
   },
 
   /**

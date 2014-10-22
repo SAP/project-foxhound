@@ -3,10 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if defined(MOZ_LOGGING)
-#define FORCE_PR_LOG
-#endif
-
 #include "OfflineCacheUpdateChild.h"
 #include "OfflineCacheUpdateParent.h"
 #include "nsXULAppAPI.h"
@@ -31,7 +27,6 @@
 #include "nsIWebProgress.h"
 #include "nsIWebNavigation.h"
 #include "nsICryptoHash.h"
-#include "nsICacheEntryDescriptor.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"

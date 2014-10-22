@@ -59,47 +59,6 @@ function sendSyncMsg(msg, data) {
 
 let CERTIFICATE_ERROR_PAGE_PREF = 'security.alternate_certificate_error_page';
 
-let NS_ERROR_MODULE_BASE_OFFSET = 0x45;
-let NS_ERROR_MODULE_SECURITY= 21;
-function NS_ERROR_GET_MODULE(err) {
-  return ((((err) >> 16) - NS_ERROR_MODULE_BASE_OFFSET) & 0x1fff);
-}
-
-function NS_ERROR_GET_CODE(err) {
-  return ((err) & 0xffff);
-}
-
-let SEC_ERROR_BASE = Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE;
-let SEC_ERROR_UNKNOWN_ISSUER = (SEC_ERROR_BASE + 13);
-let SEC_ERROR_CA_CERT_INVALID =   (SEC_ERROR_BASE + 36);
-let SEC_ERROR_UNTRUSTED_ISSUER = (SEC_ERROR_BASE + 20);
-let SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE = (SEC_ERROR_BASE + 30);
-let SEC_ERROR_UNTRUSTED_CERT = (SEC_ERROR_BASE + 21);
-let SEC_ERROR_EXPIRED_CERTIFICATE = (SEC_ERROR_BASE + 11);
-let SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED = (SEC_ERROR_BASE + 176);
-
-let SSL_ERROR_BASE = Ci.nsINSSErrorsService.NSS_SSL_ERROR_BASE;
-let SSL_ERROR_BAD_CERT_DOMAIN = (SSL_ERROR_BASE + 12);
-
-function getErrorClass(errorCode) {
-  let NSPRCode = -1 * NS_ERROR_GET_CODE(errorCode);
-
-  switch (NSPRCode) {
-    case SEC_ERROR_UNKNOWN_ISSUER:
-    case SEC_ERROR_UNTRUSTED_ISSUER:
-    case SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE:
-    case SEC_ERROR_UNTRUSTED_CERT:
-    case SSL_ERROR_BAD_CERT_DOMAIN:
-    case SEC_ERROR_EXPIRED_CERTIFICATE:
-    case SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED:
-      return Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT;
-    default:
-      return Ci.nsINSSErrorsService.ERROR_CLASS_SSL_PROTOCOL;
-  }
-
-  return null;
-}
-
 const OBSERVED_EVENTS = [
   'fullscreen-origin-change',
   'ask-parent-to-exit-fullscreen',
@@ -107,6 +66,13 @@ const OBSERVED_EVENTS = [
   'xpcom-shutdown',
   'activity-done'
 ];
+
+const COMMAND_MAP = {
+  'cut': 'cmd_cut',
+  'copy': 'cmd_copy',
+  'paste': 'cmd_paste',
+  'selectall': 'cmd_selectAll'
+};
 
 /**
  * The BrowserElementChild implements one half of <iframe mozbrowser>.
@@ -185,6 +151,11 @@ BrowserElementChild.prototype = {
                      /* useCapture = */ true,
                      /* wantsUntrusted = */ false);
 
+    addEventListener('MozScrolledAreaChanged',
+                     this._mozScrollAreaChanged.bind(this),
+                     /* useCapture = */ true,
+                     /* wantsUntrusted = */ false);
+
     addEventListener('DOMMetaAdded',
                      this._metaChangedHandler.bind(this),
                      /* useCapture = */ true,
@@ -198,6 +169,21 @@ BrowserElementChild.prototype = {
     addEventListener('DOMMetaRemoved',
                      this._metaChangedHandler.bind(this),
                      /* useCapture = */ true,
+                     /* wantsUntrusted = */ false);
+
+    addEventListener('mozselectionchange',
+                     this._selectionChangeHandler.bind(this),
+                     /* useCapture = */ false,
+                     /* wantsUntrusted = */ false);
+
+    addEventListener('scrollviewchange',
+                     this._ScrollViewChangeHandler.bind(this),
+                     /* useCapture = */ false,
+                     /* wantsUntrusted = */ false);
+
+    addEventListener('touchcarettap',
+                     this._touchCaretTapHandler.bind(this),
+                     /* useCapture = */ false,
                      /* wantsUntrusted = */ false);
 
 
@@ -221,6 +207,7 @@ BrowserElementChild.prototype = {
     let mmCalls = {
       "purge-history": this._recvPurgeHistory,
       "get-screenshot": this._recvGetScreenshot,
+      "get-contentdimensions": this._recvGetContentDimensions,
       "set-visible": this._recvSetVisible,
       "get-visible": this._recvVisible,
       "send-mouse-event": this._recvSendMouseEvent,
@@ -231,13 +218,15 @@ BrowserElementChild.prototype = {
       "go-forward": this._recvGoForward,
       "reload": this._recvReload,
       "stop": this._recvStop,
+      "zoom": this._recvZoom,
       "unblock-modal-prompt": this._recvStopWaiting,
       "fire-ctx-callback": this._recvFireCtxCallback,
       "owner-visibility-change": this._recvOwnerVisibilityChange,
       "exit-fullscreen": this._recvExitFullscreen.bind(this),
       "activate-next-paint-listener": this._activateNextPaintListener.bind(this),
       "set-input-method-active": this._recvSetInputMethodActive.bind(this),
-      "deactivate-next-paint-listener": this._deactivateNextPaintListener.bind(this)
+      "deactivate-next-paint-listener": this._deactivateNextPaintListener.bind(this),
+      "do-command": this._recvDoCommand
     }
 
     addMessageListener("browser-element-api:call", function(aMessage) {
@@ -349,6 +338,15 @@ BrowserElementChild.prototype = {
         args.promptType == 'custom-prompt') {
       return returnValue;
     }
+  },
+
+  _isCommandEnabled: function(cmd) {
+    let command = COMMAND_MAP[cmd];
+    if (!command) {
+      return false;
+    }
+
+    return docShell.isCommandEnabled(command);
   },
 
   /**
@@ -470,13 +468,17 @@ BrowserElementChild.prototype = {
     }
   },
 
+  _maybeCopyAttribute: function(src, target, attribute) {
+    if (src.getAttribute(attribute)) {
+      target[attribute] = src.getAttribute(attribute);
+    }
+  },
+
   _iconChangedHandler: function(e) {
     debug('Got iconchanged: (' + e.target.href + ')');
     let icon = { href: e.target.href };
-    if (e.target.getAttribute('sizes')) {
-      icon.sizes = e.target.getAttribute('sizes');
-    }
-
+    this._maybeCopyAttribute(e.target, icon, 'sizes');
+    this._maybeCopyAttribute(e.target, icon, 'rel');
     sendAsyncMsg('iconchange', icon);
   },
 
@@ -510,7 +512,8 @@ BrowserElementChild.prototype = {
     }
 
     let handlers = {
-      'icon': this._iconChangedHandler,
+      'icon': this._iconChangedHandler.bind(this),
+      'apple-touch-icon': this._iconChangedHandler.bind(this),
       'search': this._openSearchHandler,
       'manifest': this._manifestChangedHandler
     };
@@ -587,6 +590,64 @@ BrowserElementChild.prototype = {
     }
 
     sendAsyncMsg('metachange', meta);
+  },
+
+  _touchCaretTapHandler: function(e) {
+    e.stopPropagation();
+    sendAsyncMsg('touchcarettap');
+  },
+
+  _ScrollViewChangeHandler: function(e) {
+    e.stopPropagation();
+    let detail = {
+      state: e.state,
+      scrollX: e.scrollX,
+      scrollY: e.scrollY,
+    };
+    sendAsyncMsg('scrollviewchange', detail);
+  },
+
+  _selectionChangeHandler: function(e) {
+    e.stopPropagation();
+    let boundingClientRect = e.boundingClientRect;
+    if (!boundingClientRect) {
+      return;
+    }
+
+    let zoomFactor = content.screen.width / content.innerWidth;
+
+    let detail = {
+      rect: {
+        width: boundingClientRect.width,
+        height: boundingClientRect.height,
+        top: boundingClientRect.top,
+        bottom: boundingClientRect.bottom,
+        left: boundingClientRect.left,
+        right: boundingClientRect.right,
+      },
+      commands: {
+        canSelectAll: this._isCommandEnabled("selectall"),
+        canCut: this._isCommandEnabled("cut"),
+        canCopy: this._isCommandEnabled("copy"),
+        canPaste: this._isCommandEnabled("paste"),
+      },
+      zoomFactor: zoomFactor,
+      reasons: e.reasons,
+      isCollapsed: (e.selectedText.length == 0),
+    };
+
+    // Get correct geometry information if we have nested iframe.
+    let currentWindow = e.target.defaultView;
+    while (currentWindow.top != currentWindow) {
+      let currentRect = currentWindow.frameElement.getBoundingClientRect();
+      detail.rect.top += currentRect.top;
+      detail.rect.bottom += currentRect.top;
+      detail.rect.left += currentRect.left;
+      detail.rect.right += currentRect.left;
+      currentWindow = currentWindow.parent;
+    }
+
+    sendAsyncMsg('selectionchange', detail);
   },
 
   _themeColorChangedHandler: function(eventType, target) {
@@ -801,6 +862,29 @@ BrowserElementChild.prototype = {
       takeScreenshotClosure, maxDelayMS);
   },
 
+  _recvGetContentDimensions: function(data) {
+    debug("Received getContentDimensions message: (" + data.json.id + ")");
+    sendAsyncMsg('got-contentdimensions', {
+      id: data.json.id,
+      successRv: this._getContentDimensions()
+    });
+  },
+
+  _mozScrollAreaChanged: function(e) {
+    let dimensions = this._getContentDimensions();
+    sendAsyncMsg('scrollareachanged', {
+      width: dimensions.width,
+      height: dimensions.height
+    });
+  },
+
+  _getContentDimensions: function() {
+    return {
+      width: content.document.body.scrollWidth,
+      height: content.document.body.scrollHeight
+    }
+  },
+
   /**
    * Actually take a screenshot and foward the result up to our parent, given
    * the desired maxWidth and maxHeight (in CSS pixels), and given the
@@ -905,14 +989,8 @@ BrowserElementChild.prototype = {
   },
 
   _buildMenuObj: function(menu, idPrefix) {
-    function maybeCopyAttribute(src, target, attribute) {
-      if (src.getAttribute(attribute)) {
-        target[attribute] = src.getAttribute(attribute);
-      }
-    }
-
     var menuObj = {type: 'menu', items: []};
-    maybeCopyAttribute(menu, menuObj, 'label');
+    this._maybeCopyAttribute(menu, menuObj, 'label');
 
     for (var i = 0, child; child = menu.children[i++];) {
       if (child.nodeName === 'MENU') {
@@ -920,8 +998,8 @@ BrowserElementChild.prototype = {
       } else if (child.nodeName === 'MENUITEM') {
         var id = this._ctxCounter + '_' + idPrefix + i;
         var menuitem = {id: id, type: 'menuitem'};
-        maybeCopyAttribute(child, menuitem, 'label');
-        maybeCopyAttribute(child, menuitem, 'icon');
+        this._maybeCopyAttribute(child, menuitem, 'label');
+        this._maybeCopyAttribute(child, menuitem, 'icon');
         this._ctxHandlers[id] = child;
         menuObj.items.push(menuitem);
       }
@@ -1031,6 +1109,16 @@ BrowserElementChild.prototype = {
     webNav.stop(webNav.STOP_NETWORK);
   },
 
+  _recvZoom: function(data) {
+    docShell.contentViewer.fullZoom = data.json.zoom;
+  },
+
+  _recvDoCommand: function(data) {
+    if (this._isCommandEnabled(data.json.command)) {
+      docShell.doCommand(COMMAND_MAP[data.json.command]);
+    }
+  },
+
   _recvSetInputMethodActive: function(data) {
     let msgData = { id: data.json.id };
     if (!this._isContentWindowCreated) {
@@ -1117,23 +1205,28 @@ BrowserElementChild.prototype = {
           return;
         }
 
-        if (NS_ERROR_GET_MODULE(status) == NS_ERROR_MODULE_SECURITY &&
-            getErrorClass(status) == Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
+        // getErrorClass() will throw if the error code passed in is not a NSS
+        // error code.
+        try {
+          let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1']
+                                   .getService(Ci.nsINSSErrorsService);
+          if (nssErrorsService.getErrorClass(status)
+                == Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
+            // XXX Is there a point firing the event if the error page is not
+            // certerror? If yes, maybe we should add a property to the
+            // event to to indicate whether there is a custom page. That would
+            // let the embedder have more control over the desired behavior.
+            let errorPage = null;
+            try {
+              errorPage = Services.prefs.getCharPref(CERTIFICATE_ERROR_PAGE_PREF);
+            } catch (e) {}
 
-          // XXX Is there a point firing the event if the error page is not
-          // certerror? If yes, maybe we should add a property to the
-          // event to to indicate whether there is a custom page. That would
-          // let the embedder have more control over the desired behavior.
-          var errorPage = null;
-          try {
-            errorPage = Services.prefs.getCharPref(CERTIFICATE_ERROR_PAGE_PREF);
-          } catch(e) {}
-
-          if (errorPage == 'certerror') {
-            sendAsyncMsg('error', { type: 'certerror' });
-            return;
+            if (errorPage == 'certerror') {
+              sendAsyncMsg('error', { type: 'certerror' });
+              return;
+            }
           }
-        }
+        } catch (e) {}
 
         // TODO See nsDocShell::DisplayLoadError for a list of all the error
         // codes (the status param) we should eventually handle here.

@@ -15,7 +15,6 @@
 #include "XrayWrapper.h"
 
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 
 #include <stdint.h>
 #include "mozilla/Likely.h"
@@ -356,9 +355,6 @@ XPCWrappedNative::GetNewOrUsed(xpcObjectHelper& helper,
     mozilla::Maybe<JSAutoCompartment> ac;
 
     if (sciWrapper.GetFlags().WantPreCreate()) {
-        // PreCreate may touch dead compartments.
-        js::AutoMaybeTouchDeadZones agc(parent);
-
         RootedObject plannedParent(cx, parent);
         nsresult rv = sciWrapper.GetCallback()->PreCreate(identity, cx,
                                                           parent, parent.address());
@@ -369,7 +365,7 @@ XPCWrappedNative::GetNewOrUsed(xpcObjectHelper& helper,
         MOZ_ASSERT(!xpc::WrapperFactory::IsXrayWrapper(parent),
                    "Xray wrapper being used to parent XPCWrappedNative?");
 
-        ac.construct(static_cast<JSContext*>(cx), parent);
+        ac.emplace(static_cast<JSContext*>(cx), parent);
 
         if (parent != plannedParent) {
             XPCWrappedNativeScope* betterScope = ObjectScope(parent);
@@ -400,7 +396,7 @@ XPCWrappedNative::GetNewOrUsed(xpcObjectHelper& helper,
             return NS_OK;
         }
     } else {
-        ac.construct(static_cast<JSContext*>(cx), parent);
+        ac.emplace(static_cast<JSContext*>(cx), parent);
     }
 
     AutoMarkingWrappedNativeProtoPtr proto(cx);
@@ -684,7 +680,7 @@ XPCWrappedNative::GatherProtoScriptableCreateInfo(nsIClassInfo* classInfo,
           dont_AddRef(static_cast<nsIXPCScriptable*>(classInfoHelper));
         uint32_t flags = classInfoHelper->GetScriptableFlags();
         sciProto.SetCallback(helper.forget());
-        sciProto.SetFlags(flags);
+        sciProto.SetFlags(XPCNativeScriptableFlags(flags));
         sciProto.SetInterfacesBitmap(classInfoHelper->GetInterfacesBitmap());
 
         return;
@@ -698,7 +694,7 @@ XPCWrappedNative::GatherProtoScriptableCreateInfo(nsIClassInfo* classInfo,
         if (helper) {
             uint32_t flags = helper->GetScriptableFlags();
             sciProto.SetCallback(helper.forget());
-            sciProto.SetFlags(flags);
+            sciProto.SetFlags(XPCNativeScriptableFlags(flags));
         }
     }
 }
@@ -725,7 +721,7 @@ XPCWrappedNative::GatherScriptableCreateInfo(nsISupports* obj,
     if (helper) {
         uint32_t flags = helper->GetScriptableFlags();
         sciWrapper.SetCallback(helper.forget());
-        sciWrapper.SetFlags(flags);
+        sciWrapper.SetFlags(XPCNativeScriptableFlags(flags));
 
         // A whole series of assertions to catch bad uses of scriptable flags on
         // the siWrapper...
@@ -944,8 +940,11 @@ XPCWrappedNative::FlatJSObjectFinalized()
         for (int i = XPC_WRAPPED_NATIVE_TEAROFFS_PER_CHUNK-1; i >= 0; i--, to++) {
             JSObject* jso = to->GetJSObjectPreserveColor();
             if (jso) {
-                MOZ_ASSERT(JS_IsAboutToBeFinalizedUnbarriered(&jso));
                 JS_SetPrivate(jso, nullptr);
+#ifdef DEBUG
+                JS_UpdateWeakPointerAfterGCUnbarriered(&jso);
+                MOZ_ASSERT(!jso);
+#endif
                 to->JSObjectFinalized();
             }
 
@@ -993,6 +992,20 @@ XPCWrappedNative::FlatJSObjectFinalized()
     // likely that it has already been finalized.
 
     Release();
+}
+
+void
+XPCWrappedNative::FlatJSObjectMoved(JSObject *obj, const JSObject *old)
+{
+    JS::AutoAssertGCCallback inCallback(obj);
+    MOZ_ASSERT(mFlatJSObject == old);
+
+    nsWrapperCache *cache = nullptr;
+    CallQueryInterface(mIdentity, &cache);
+    if (cache)
+        cache->UpdateWrapper(obj, old);
+
+    mFlatJSObject = obj;
 }
 
 void
@@ -1077,9 +1090,10 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCWrappedNativeScope* aOldScope,
                                          nsISupports* aCOMObj)
 {
     // Check if we're near the stack limit before we get anywhere near the
-    // transplanting code.
+    // transplanting code. We use a conservative check since we'll use a little
+    // more space before we actually hit the critical "can't fail" path.
     AutoJSContext cx;
-    JS_CHECK_RECURSION(cx, return NS_ERROR_FAILURE);
+    JS_CHECK_RECURSION_CONSERVATIVE(cx, return NS_ERROR_FAILURE);
 
     XPCNativeInterface* iface = XPCNativeInterface::GetISupports();
     if (!iface)
@@ -1284,9 +1298,6 @@ RescueOrphans(HandleObject obj)
     if (!parentObj)
         return NS_OK; // Global object. We're done.
     parentObj = js::UncheckedUnwrap(parentObj, /* stopAtOuter = */ false);
-
-    // PreCreate may touch dead compartments.
-    js::AutoMaybeTouchDeadZones agc(parentObj);
 
     // Recursively fix up orphans on the parent chain.
     rv = RescueOrphans(parentObj);
@@ -1663,7 +1674,7 @@ class MOZ_STACK_CLASS CallMethodHelper
 
 public:
 
-    CallMethodHelper(XPCCallContext& ccx)
+    explicit CallMethodHelper(XPCCallContext& ccx)
         : mCallContext(ccx)
         , mInvokeResult(NS_ERROR_UNEXPECTED)
         , mIFaceInfo(ccx.GetInterface()->GetInterfaceInfo())
@@ -1851,8 +1862,8 @@ CallMethodHelper::GetOutParamSource(uint8_t paramIndex, MutableHandleValue srcp)
 {
     const nsXPTParamInfo& paramInfo = mMethodInfo->GetParam(paramIndex);
 
-    if ((paramInfo.IsOut() || paramInfo.IsDipper()) &&
-        !paramInfo.IsRetval()) {
+    MOZ_ASSERT(!paramInfo.IsDipper(), "Dipper params are handled separately");
+    if (paramInfo.IsOut() && !paramInfo.IsRetval()) {
         MOZ_ASSERT(paramIndex < mArgc || paramInfo.IsOptional(),
                    "Expected either enough arguments or an optional argument");
         jsval arg = paramIndex < mArgc ? mArgv[paramIndex] : JSVAL_NULL;
@@ -2105,8 +2116,17 @@ CallMethodHelper::ConvertIndependentParam(uint8_t i)
     if (paramInfo.IsStringClass()) {
         if (!AllocateStringClass(dp, paramInfo))
             return false;
-        if (paramInfo.IsDipper())
+        if (paramInfo.IsDipper()) {
+            // We've allocated our string class explicitly, so we don't need
+            // to do any conversions on the incoming argument. However, we still
+            // need to verify that it's an object, so that we don't get surprised
+            // later on when trying to assign the result to .value.
+            if (i < mArgc && !mArgv[i].isObject()) {
+                ThrowBadParam(NS_ERROR_XPC_NEED_OUT_OBJECT, i, mCallContext);
+                return false;
+            }
             return true;
+        }
     }
 
     // Specify the correct storage/calling semantics.
@@ -2661,7 +2681,7 @@ void
 XPCJSObjectHolder::TraceJS(JSTracer *trc)
 {
     trc->setTracingDetails(GetTraceName, this, 0);
-    JS_CallHeapObjectTracer(trc, &mJSObj, "XPCJSObjectHolder::mJSObj");
+    JS_CallObjectTracer(trc, &mJSObj, "XPCJSObjectHolder::mJSObj");
 }
 
 // static

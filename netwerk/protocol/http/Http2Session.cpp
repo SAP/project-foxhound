@@ -98,6 +98,7 @@ Http2Session::Http2Session(nsISocketTransport *aSocketTransport)
   , mOutputQueueSent(0)
   , mLastReadEpoch(PR_IntervalNow())
   , mPingSentEpoch(0)
+  , mPreviousUsed(false)
   , mWaitingForSettingsAck(false)
   , mGoAwayOnPush(false)
 {
@@ -121,6 +122,8 @@ Http2Session::Http2Session(nsISocketTransport *aSocketTransport)
   mLastDataReadEpoch = mLastReadEpoch;
 
   mPingThreshold = gHttpHandler->SpdyPingThreshold();
+
+  mNegotiatedToken.AssignLiteral(NS_HTTP2_DRAFT_TOKEN);
 }
 
 // Copy the 32 bit number into the destination, using network byte order
@@ -255,7 +258,8 @@ static Http2ControlFx sControlFunctions[] = {
   Http2Session::RecvPing,
   Http2Session::RecvGoAway,
   Http2Session::RecvWindowUpdate,
-  Http2Session::RecvContinuation
+  Http2Session::RecvContinuation,
+  Http2Session::RecvAltSvc // extension for type 0x0A
 };
 
 bool
@@ -293,8 +297,14 @@ Http2Session::ReadTimeoutTick(PRIntervalTime now)
 
   if ((now - mLastReadEpoch) < mPingThreshold) {
     // recent activity means ping is not an issue
-    if (mPingSentEpoch)
+    if (mPingSentEpoch) {
       mPingSentEpoch = 0;
+      if (mPreviousUsed) {
+        // restore the former value
+        mPingThreshold = mPreviousPingThreshold;
+        mPreviousUsed = false;
+      }
+    }
 
     return PR_IntervalToSeconds(mPingThreshold) -
       PR_IntervalToSeconds(now - mLastReadEpoch);
@@ -314,8 +324,9 @@ Http2Session::ReadTimeoutTick(PRIntervalTime now)
   LOG3(("Http2Session::ReadTimeoutTick %p generating ping\n", this));
 
   mPingSentEpoch = PR_IntervalNow();
-  if (!mPingSentEpoch)
+  if (!mPingSentEpoch) {
     mPingSentEpoch = 1; // avoid the 0 sentinel value
+  }
   GeneratePing(false);
   ResumeRecv(); // read the ping reply
 
@@ -432,7 +443,8 @@ Http2Session::AddStream(nsAHttpTransaction *aHttpTransaction,
     mQueuedStreams.Push(stream);
   }
 
-  if (!(aHttpTransaction->Caps() & NS_HTTP_ALLOW_KEEPALIVE)) {
+  if (!(aHttpTransaction->Caps() & NS_HTTP_ALLOW_KEEPALIVE) &&
+      !aHttpTransaction->IsNullTransaction()) {
     LOG3(("Http2Session::AddStream %p transaction %p forces keep-alive off.\n",
           this, aHttpTransaction));
     DontReuse();
@@ -600,8 +612,8 @@ Http2Session::ResetDownstreamState()
   mInputFrameDataStream = nullptr;
 }
 
-// call with data length (i.e. 0 for 0 data bytes - ignore 8 byte header)
-// dest must have 8 bytes of allocated space
+// call with data length (i.e. 0 for 0 data bytes - ignore 9 byte header)
+// dest must have 9 bytes of allocated space
 template<typename charType> void
 Http2Session::CreateFrameHeader(charType dest, uint16_t frameLength,
                                 uint8_t frameType, uint8_t frameFlags,
@@ -610,10 +622,11 @@ Http2Session::CreateFrameHeader(charType dest, uint16_t frameLength,
   MOZ_ASSERT(frameLength <= kMaxFrameData, "framelength too large");
   MOZ_ASSERT(!(streamID & 0x80000000));
 
-  CopyAsNetwork16(dest, frameLength);
-  dest[2] = frameType;
-  dest[3] = frameFlags;
-  CopyAsNetwork32(dest + 4, streamID);
+  dest[0] = 0x00;
+  CopyAsNetwork16(dest + 1, frameLength);
+  dest[3] = frameType;
+  dest[4] = frameFlags;
+  CopyAsNetwork32(dest + 5, streamID);
 }
 
 char *
@@ -660,7 +673,7 @@ Http2Session::UncompressAndDiscard()
   nsAutoCString trash;
 
   rv = mDecompressor.DecodeHeaderBlock(reinterpret_cast<const uint8_t *>(mDecompressBuffer.BeginReading()),
-                                       mDecompressBuffer.Length(), trash);
+                                       mDecompressBuffer.Length(), trash, false);
   mDecompressBuffer.Truncate();
   if (NS_FAILED(rv)) {
     LOG3(("Http2Session::UncompressAndDiscard %p Compression Error\n",
@@ -677,18 +690,19 @@ Http2Session::GeneratePing(bool isAck)
   MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
   LOG3(("Http2Session::GeneratePing %p isAck=%d\n", this, isAck));
 
-  char *packet = EnsureOutputBuffer(16);
-  mOutputQueueUsed += 16;
+  char *packet = EnsureOutputBuffer(kFrameHeaderBytes + 8);
+  mOutputQueueUsed += kFrameHeaderBytes + 8;
 
   if (isAck) {
     CreateFrameHeader(packet, 8, FRAME_TYPE_PING, kFlag_ACK, 0);
-    memcpy(packet + 8, mInputFrameBuffer.get() + 8, 8);
+    memcpy(packet + kFrameHeaderBytes,
+           mInputFrameBuffer.get() + kFrameHeaderBytes, 8);
   } else {
     CreateFrameHeader(packet, 8, FRAME_TYPE_PING, 0, 0);
-    memset(packet + 8, 0, 8);
+    memset(packet + kFrameHeaderBytes, 0, 8);
   }
 
-  LogIO(this, nullptr, "Generate Ping", packet, 16);
+  LogIO(this, nullptr, "Generate Ping", packet, kFrameHeaderBytes + 8);
   FlushOutputQueue();
 }
 
@@ -699,10 +713,10 @@ Http2Session::GenerateSettingsAck()
   MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
   LOG3(("Http2Session::GenerateSettingsAck %p\n", this));
 
-  char *packet = EnsureOutputBuffer(8);
-  mOutputQueueUsed += 8;
+  char *packet = EnsureOutputBuffer(kFrameHeaderBytes);
+  mOutputQueueUsed += kFrameHeaderBytes;
   CreateFrameHeader(packet, 0, FRAME_TYPE_SETTINGS, kFlag_ACK, 0);
-  LogIO(this, nullptr, "Generate Settings ACK", packet, 8);
+  LogIO(this, nullptr, "Generate Settings ACK", packet, kFrameHeaderBytes);
   FlushOutputQueue();
 }
 
@@ -713,13 +727,14 @@ Http2Session::GeneratePriority(uint32_t aID, uint8_t aPriorityWeight)
   LOG3(("Http2Session::GeneratePriority %p %X %X\n",
         this, aID, aPriorityWeight));
 
-  char *packet = EnsureOutputBuffer(13);
-  mOutputQueueUsed += 13;
+  uint32_t frameSize = kFrameHeaderBytes + 5;
+  char *packet = EnsureOutputBuffer(frameSize);
+  mOutputQueueUsed += frameSize;
 
   CreateFrameHeader(packet, 5, FRAME_TYPE_PRIORITY, 0, aID);
-  CopyAsNetwork32(packet + 8, 0);
-  memcpy(packet + 12, &aPriorityWeight, 1);
-  LogIO(this, nullptr, "Generate Priority", packet, 13);
+  CopyAsNetwork32(packet + kFrameHeaderBytes, 0);
+  memcpy(packet + frameSize - 1, &aPriorityWeight, 1);
+  LogIO(this, nullptr, "Generate Priority", packet, frameSize);
   FlushOutputQueue();
 }
 
@@ -739,13 +754,14 @@ Http2Session::GenerateRstStream(uint32_t aStatusCode, uint32_t aID)
 
   LOG3(("Http2Session::GenerateRst %p 0x%X %d\n", this, aID, aStatusCode));
 
-  char *packet = EnsureOutputBuffer(12);
-  mOutputQueueUsed += 12;
+  uint32_t frameSize = kFrameHeaderBytes + 4;
+  char *packet = EnsureOutputBuffer(frameSize);
+  mOutputQueueUsed += frameSize;
   CreateFrameHeader(packet, 4, FRAME_TYPE_RST_STREAM, 0, aID);
 
-  CopyAsNetwork32(packet + 8, aStatusCode);
+  CopyAsNetwork32(packet + kFrameHeaderBytes, aStatusCode);
 
-  LogIO(this, nullptr, "Generate Reset", packet, 12);
+  LogIO(this, nullptr, "Generate Reset", packet, frameSize);
   FlushOutputQueue();
 }
 
@@ -755,18 +771,19 @@ Http2Session::GenerateGoAway(uint32_t aStatusCode)
   MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
   LOG3(("Http2Session::GenerateGoAway %p code=%X\n", this, aStatusCode));
 
-  char *packet = EnsureOutputBuffer(16);
-  mOutputQueueUsed += 16;
+  uint32_t frameSize = kFrameHeaderBytes + 8;
+  char *packet = EnsureOutputBuffer(frameSize);
+  mOutputQueueUsed += frameSize;
 
   CreateFrameHeader(packet, 8, FRAME_TYPE_GOAWAY, 0, 0);
 
-  // last-good-stream-id are bytes 8-11 reflecting pushes
-  CopyAsNetwork32(packet + 8, mOutgoingGoAwayID);
+  // last-good-stream-id are bytes 9-12 reflecting pushes
+  CopyAsNetwork32(packet + kFrameHeaderBytes, mOutgoingGoAwayID);
 
-  // bytes 12-15 are the status code.
-  CopyAsNetwork32(packet + 12, aStatusCode);
+  // bytes 13-16 are the status code.
+  CopyAsNetwork32(packet + frameSize - 4, aStatusCode);
 
-  LogIO(this, nullptr, "Generate GoAway", packet, 16);
+  LogIO(this, nullptr, "Generate GoAway", packet, frameSize);
   FlushOutputQueue();
 }
 
@@ -780,10 +797,10 @@ Http2Session::SendHello()
   MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
   LOG3(("Http2Session::SendHello %p\n", this));
 
-  // sized for magic + 3 settings and a session window update to follow
-  // 24 magic, 26 for settings (8 header + 3 settings @6), 12 for window update
-  static const uint32_t maxSettings = 3;
-  static const uint32_t maxDataLen = 24 + 8 + maxSettings * 6 + 12;
+  // sized for magic + 4 settings and a session window update to follow
+  // 24 magic, 33 for settings (9 header + 4 settings @6), 13 for window update
+  static const uint32_t maxSettings = 4;
+  static const uint32_t maxDataLen = 24 + kFrameHeaderBytes + maxSettings * 6 + 13;
   char *packet = EnsureOutputBuffer(maxDataLen);
   memcpy(packet, kMagicHello, 24);
   mOutputQueueUsed += 24;
@@ -796,18 +813,19 @@ Http2Session::SendHello()
   uint8_t numberOfEntries = 0;
 
   // entries need to be listed in order by ID
-  // 1st entry is bytes 8 to 13
-  // 2nd entry is bytes 14 to 19
-  // 3rd entry is bytes 20 to 25
+  // 1st entry is bytes 9 to 14
+  // 2nd entry is bytes 15 to 20
+  // 3rd entry is bytes 21 to 26
+  // 4th entry is bytes 27 to 32
 
   if (!gHttpHandler->AllowPush()) {
     // If we don't support push then set MAX_CONCURRENT to 0 and also
     // set ENABLE_PUSH to 0
-    CopyAsNetwork16(packet + 8 + (6 * numberOfEntries), SETTINGS_TYPE_ENABLE_PUSH);
+    CopyAsNetwork16(packet + kFrameHeaderBytes + (6 * numberOfEntries), SETTINGS_TYPE_ENABLE_PUSH);
     // The value portion of the setting pair is already initialized to 0
     numberOfEntries++;
 
-    CopyAsNetwork16(packet + 8 + (6 * numberOfEntries), SETTINGS_TYPE_MAX_CONCURRENT);
+    CopyAsNetwork16(packet + kFrameHeaderBytes + (6 * numberOfEntries), SETTINGS_TYPE_MAX_CONCURRENT);
     // The value portion of the setting pair is already initialized to 0
     numberOfEntries++;
 
@@ -816,16 +834,22 @@ Http2Session::SendHello()
 
   // Advertise the Push RWIN for the session, and on each new pull stream
   // send a window update with END_FLOW_CONTROL
-  CopyAsNetwork16(packet + 8 + (6 * numberOfEntries), SETTINGS_TYPE_INITIAL_WINDOW);
-  CopyAsNetwork32(packet + 8 + (6 * numberOfEntries) + 2, mPushAllowance);
+  CopyAsNetwork16(packet + kFrameHeaderBytes + (6 * numberOfEntries), SETTINGS_TYPE_INITIAL_WINDOW);
+  CopyAsNetwork32(packet + kFrameHeaderBytes + (6 * numberOfEntries) + 2, mPushAllowance);
+  numberOfEntries++;
+
+  // Make sure the other endpoint knows that we're sticking to the default max
+  // frame size
+  CopyAsNetwork16(packet + kFrameHeaderBytes + (6 * numberOfEntries), SETTINGS_TYPE_MAX_FRAME_SIZE);
+  CopyAsNetwork32(packet + kFrameHeaderBytes + (6 * numberOfEntries) + 2, kMaxFrameData);
   numberOfEntries++;
 
   MOZ_ASSERT(numberOfEntries <= maxSettings);
   uint32_t dataLen = 6 * numberOfEntries;
   CreateFrameHeader(packet, dataLen, FRAME_TYPE_SETTINGS, 0, 0);
-  mOutputQueueUsed += 8 + dataLen;
+  mOutputQueueUsed += kFrameHeaderBytes + dataLen;
 
-  LogIO(this, nullptr, "Generate Settings", packet, 8 + dataLen);
+  LogIO(this, nullptr, "Generate Settings", packet, kFrameHeaderBytes + dataLen);
 
   // now bump the local session window from 64KB
   uint32_t sessionWindowBump = ASpdySession::kInitialRwin - kDefaultRwin;
@@ -837,12 +861,12 @@ Http2Session::SendHello()
 
   packet = mOutputQueueBuffer.get() + mOutputQueueUsed;
   CreateFrameHeader(packet, 4, FRAME_TYPE_WINDOW_UPDATE, 0, 0);
-  mOutputQueueUsed += 12;
-  CopyAsNetwork32(packet + 8, sessionWindowBump);
+  mOutputQueueUsed += kFrameHeaderBytes + 4;
+  CopyAsNetwork32(packet + kFrameHeaderBytes, sessionWindowBump);
 
   LOG3(("Session Window increase at start of session %p %u\n",
         this, sessionWindowBump));
-  LogIO(this, nullptr, "Session Window Bump ", packet, 12);
+  LogIO(this, nullptr, "Session Window Bump ", packet, kFrameHeaderBytes + 4);
 
 sendHello_complete:
   FlushOutputQueue();
@@ -979,6 +1003,19 @@ Http2Session::CleanupStream(Http2Stream *aStream, nsresult aResult,
   }
 }
 
+void
+Http2Session::CleanupStream(uint32_t aID, nsresult aResult, errorType aResetCode)
+{
+  MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
+  Http2Stream *stream = mStreamIDHash.Get(aID);
+  LOG3(("Http2Session::CleanupStream %p by ID 0x%X to stream %p\n",
+        this, aID, stream));
+  if (!stream) {
+    return;
+  }
+  CleanupStream(stream, aResult, aResetCode);
+}
+
 static void RemoveStreamFromQueue(Http2Stream *aStream, nsDeque &queue)
 {
   uint32_t size = queue.GetSize();
@@ -1040,7 +1077,7 @@ nsresult
 Http2Session::ParsePadding(uint8_t &paddingControlBytes, uint16_t &paddingLength)
 {
   if (mInputFrameFlags & kFlag_PADDED) {
-    paddingLength = *reinterpret_cast<uint8_t *>(mInputFrameBuffer + 8);
+    paddingLength = *reinterpret_cast<uint8_t *>(mInputFrameBuffer + kFrameHeaderBytes);
     paddingControlBytes = 1;
   }
 
@@ -1112,7 +1149,7 @@ Http2Session::RecvHeaders(Http2Session *self)
     if (self->mInputFrameID >= self->mNextStreamID)
       self->GenerateRstStream(PROTOCOL_ERROR, self->mInputFrameID);
 
-    self->mDecompressBuffer.Append(self->mInputFrameBuffer + 8 + paddingControlBytes + priorityLen,
+    self->mDecompressBuffer.Append(self->mInputFrameBuffer + kFrameHeaderBytes + paddingControlBytes + priorityLen,
                                    self->mInputFrameDataSize - paddingControlBytes - priorityLen - paddingLength);
 
     if (self->mInputFrameFlags & kFlag_END_HEADERS) {
@@ -1129,8 +1166,17 @@ Http2Session::RecvHeaders(Http2Session *self)
     return NS_OK;
   }
 
+  // make sure this is either the first headers or a trailer
+  if (self->mInputFrameDataStream->AllHeadersReceived() &&
+      !(self->mInputFrameFlags & kFlag_END_STREAM)) {
+    // Any header block after the first that does *not* end the stream is
+    // illegal.
+    LOG3(("Http2Session::Illegal Extra HeaderBlock %p 0x%X\n", self, self->mInputFrameID));
+    RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+  }
+
   // queue up any compression bytes
-  self->mDecompressBuffer.Append(self->mInputFrameBuffer + 8 + paddingControlBytes + priorityLen,
+  self->mDecompressBuffer.Append(self->mInputFrameBuffer + kFrameHeaderBytes + paddingControlBytes + priorityLen,
                                  self->mInputFrameDataSize - paddingControlBytes - priorityLen - paddingLength);
 
   self->mInputFrameDataStream->UpdateTransportReadEvents(self->mInputFrameDataSize);
@@ -1161,9 +1207,10 @@ Http2Session::ResponseHeadersComplete()
   LOG3(("Http2Session::ResponseHeadersComplete %p for 0x%X fin=%d",
         this, mInputFrameDataStream->StreamID(), mInputFrameFinal));
 
-  // only interpret headers once, afterwards ignore trailers
+  // only interpret headers once, afterwards ignore as trailers
   if (mInputFrameDataStream->AllHeadersReceived()) {
     LOG3(("Http2Session::ResponseHeadersComplete extra headers"));
+    MOZ_ASSERT(mInputFrameFlags & kFlag_END_STREAM);
     nsresult rv = UncompressAndDiscard();
     if (NS_FAILED(rv)) {
       LOG3(("Http2Session::ResponseHeadersComplete extra uncompress failed\n"));
@@ -1180,6 +1227,10 @@ Http2Session::ResponseHeadersComplete()
 
     return NS_OK;
   }
+
+  // if this turns out to be a 1xx response code we have to
+  // undo the headers received bit that we are setting here.
+  bool didFirstSetAllRecvd = !mInputFrameDataStream->AllHeadersReceived();
   mInputFrameDataStream->SetAllHeadersReceived();
 
   // The stream needs to see flattened http headers
@@ -1188,10 +1239,12 @@ Http2Session::ResponseHeadersComplete()
   // mFlatHTTPResponseHeaders via ConvertHeaders()
 
   nsresult rv;
+  int32_t httpResponseCode; // out param to ConvertResponseHeaders
   mFlatHTTPResponseHeadersOut = 0;
   rv = mInputFrameDataStream->ConvertResponseHeaders(&mDecompressor,
                                                      mDecompressBuffer,
-                                                     mFlatHTTPResponseHeaders);
+                                                     mFlatHTTPResponseHeaders,
+                                                     httpResponseCode);
   if (rv == NS_ERROR_ABORT) {
     LOG(("Http2Session::ResponseHeadersComplete ConvertResponseHeaders aborted\n"));
     if (mInputFrameDataStream->IsTunnel()) {
@@ -1204,6 +1257,11 @@ Http2Session::ResponseHeadersComplete()
     return NS_OK;
   } else if (NS_FAILED(rv)) {
     return rv;
+  }
+
+  // allow more headers in the case of 1xx
+  if (((httpResponseCode / 100) == 1) && didFirstSetAllRecvd) {
+    mInputFrameDataStream->UnsetAllHeadersReceived();
   }
 
   ChangeDownstreamState(PROCESSING_COMPLETE_HEADERS);
@@ -1231,10 +1289,10 @@ Http2Session::RecvPriority(Http2Session *self)
     return rv;
 
   uint32_t newPriorityDependency =
-    PR_ntohl(reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get())[2]);
+    PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes));
   bool exclusive = !!(newPriorityDependency & 0x80000000);
   newPriorityDependency &= 0x7fffffff;
-  uint8_t newPriorityWeight = *(self->mInputFrameBuffer.get() + 12);
+  uint8_t newPriorityWeight = *(self->mInputFrameBuffer.get() + kFrameHeaderBytes + 4);
   if (self->mInputFrameDataStream) {
     self->mInputFrameDataStream->SetPriorityDependency(newPriorityDependency,
                                                        newPriorityWeight,
@@ -1262,7 +1320,7 @@ Http2Session::RecvRstStream(Http2Session *self)
   }
 
   self->mDownstreamRstReason =
-    PR_ntohl(reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get())[2]);
+    PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes));
 
   LOG3(("Http2Session::RecvRstStream %p RST_STREAM Reason Code %u ID %x\n",
         self, self->mDownstreamRstReason, self->mInputFrameID));
@@ -1321,7 +1379,7 @@ Http2Session::RecvSettings(Http2Session *self)
 
   for (uint32_t index = 0; index < numEntries; ++index) {
     uint8_t *setting = reinterpret_cast<uint8_t *>
-      (self->mInputFrameBuffer.get()) + 8 + index * 6;
+      (self->mInputFrameBuffer.get()) + kFrameHeaderBytes + index * 6;
 
     uint16_t id = PR_ntohs(*reinterpret_cast<uint16_t *>(setting));
     uint32_t value = PR_ntohl(*reinterpret_cast<uint32_t *>(setting + 2));
@@ -1354,6 +1412,16 @@ Http2Session::RecvSettings(Http2Session *self)
         // we need to add the delta to all open streams (delta can be negative)
         self->mStreamTransactionHash.Enumerate(UpdateServerRwinEnumerator,
                                                &delta);
+      }
+      break;
+
+    case SETTINGS_TYPE_MAX_FRAME_SIZE:
+      {
+        if ((value < kMaxFrameData) || (value >= 0x01000000)) {
+          LOG3(("Received invalid max frame size 0x%X", value));
+          RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+        }
+        // We stick to the default for simplicity's sake, so nothing to change
       }
       break;
 
@@ -1399,7 +1467,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
     }
     promiseLen = 4;
     promisedID =
-      PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + 8 + paddingControlBytes));
+      PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes + paddingControlBytes));
     promisedID &= 0x7fffffff;
   }
 
@@ -1490,7 +1558,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
   if (resetStream) {
     // Need to decompress the headers even though we aren't using them yet in
     // order to keep the compression context consistent for other frames
-    self->mDecompressBuffer.Append(self->mInputFrameBuffer + 8 + paddingControlBytes + promiseLen,
+    self->mDecompressBuffer.Append(self->mInputFrameBuffer + kFrameHeaderBytes + paddingControlBytes + promiseLen,
                                    self->mInputFrameDataSize - paddingControlBytes - promiseLen - paddingLength);
     if (self->mInputFrameFlags & kFlag_END_PUSH_PROMISE) {
       rv = self->UncompressAndDiscard();
@@ -1519,7 +1587,7 @@ Http2Session::RecvPushPromise(Http2Session *self)
   self->mStreamTransactionHash.Put(transactionBuffer, pushedStream);
   self->mPushedStreams.AppendElement(pushedStream);
 
-  self->mDecompressBuffer.Append(self->mInputFrameBuffer + 8 + paddingControlBytes + promiseLen,
+  self->mDecompressBuffer.Append(self->mInputFrameBuffer + kFrameHeaderBytes + paddingControlBytes + promiseLen,
                                  self->mInputFrameDataSize - paddingControlBytes - promiseLen - paddingLength);
 
   nsAutoCString requestHeaders;
@@ -1634,11 +1702,11 @@ Http2Session::RecvGoAway(Http2Session *self)
 
   self->mShouldGoAway = true;
   self->mGoAwayID =
-    PR_ntohl(reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get())[2]);
+    PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes));
   self->mGoAwayID &= 0x7fffffff;
   self->mCleanShutdown = true;
   uint32_t statusCode =
-    PR_ntohl(reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get())[3]);
+    PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes + 4));
 
   // Find streams greater than the last-good ID and mark them for deletion
   // in the mGoAwayStreamsToRestart queue with the GoAwayEnumerator. The
@@ -1704,7 +1772,7 @@ Http2Session::RecvWindowUpdate(Http2Session *self)
   }
 
   uint32_t delta =
-    PR_ntohl(reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get())[2]);
+    PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes));
   delta &= 0x7fffffff;
 
   LOG3(("Http2Session::RecvWindowUpdate %p len=%d Stream 0x%X.\n",
@@ -1721,6 +1789,15 @@ Http2Session::RecvWindowUpdate(Http2Session *self)
       // only resest the session if the ID is one we haven't ever opened
       if (self->mInputFrameID >= self->mNextStreamID)
         self->GenerateRstStream(PROTOCOL_ERROR, self->mInputFrameID);
+      self->ResetDownstreamState();
+      return NS_OK;
+    }
+
+    if (delta == 0) {
+      LOG3(("Http2Session::RecvWindowUpdate %p received 0 stream window update",
+            self));
+      self->CleanupStream(self->mInputFrameDataStream, NS_ERROR_ILLEGAL_VALUE,
+                          PROTOCOL_ERROR);
       self->ResetDownstreamState();
       return NS_OK;
     }
@@ -1743,6 +1820,12 @@ Http2Session::RecvWindowUpdate(Http2Session *self)
           oldRemoteWindow, delta, oldRemoteWindow + delta));
 
   } else { // session window update
+    if (delta == 0) {
+      LOG3(("Http2Session::RecvWindowUpdate %p received 0 session window update",
+            self));
+      RETURN_SESSION_ERROR(self, PROTOCOL_ERROR);
+    }
+
     int64_t oldRemoteWindow = self->mServerSessionWindow;
     self->mServerSessionWindow += delta;
 
@@ -1801,6 +1884,208 @@ Http2Session::RecvContinuation(Http2Session *self)
     self->mInputFrameFlags |= kFlag_END_PUSH_PROMISE;
   }
   return RecvPushPromise(self);
+}
+
+class UpdateAltSvcEvent : public nsRunnable
+{
+public:
+  UpdateAltSvcEvent(const nsCString &host, const uint16_t port,
+                    const nsCString &npnToken, const uint32_t expires,
+                    const nsCString &aOrigin,
+                    nsHttpConnectionInfo *aCI,
+                    nsIInterfaceRequestor *callbacks)
+    : mHost(host)
+    , mPort(port)
+    , mNPNToken(npnToken)
+    , mExpires(expires)
+    , mOrigin(aOrigin)
+    , mCI(aCI)
+    , mCallbacks(callbacks)
+  {
+  }
+
+  NS_IMETHOD Run() MOZ_OVERRIDE
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsCString originScheme;
+    nsCString originHost;
+    int32_t originPort = -1;
+
+    nsCOMPtr<nsIURI> uri;
+    if (NS_FAILED(NS_NewURI(getter_AddRefs(uri), mOrigin))) {
+      LOG(("UpdateAltSvcEvent origin does not parse %s\n",
+           mOrigin.get()));
+      return NS_OK;
+    }
+    uri->GetScheme(originScheme);
+    uri->GetHost(originHost);
+    uri->GetPort(&originPort);
+
+    const char *username = mCI->Username();
+    const bool privateBrowsing = mCI->GetPrivate();
+
+    LOG(("UpdateAltSvcEvent location=%s:%u protocol=%s expires=%u "
+         "origin=%s://%s:%u user=%s private=%d", mHost.get(), mPort,
+         mNPNToken.get(), mExpires, originScheme.get(), originHost.get(),
+         originPort, username, privateBrowsing));
+    nsRefPtr<AltSvcMapping> mapping = new AltSvcMapping(
+      nsDependentCString(originScheme.get()),
+      nsDependentCString(originHost.get()),
+      originPort, nsDependentCString(username), privateBrowsing, mExpires,
+      mHost, mPort, mNPNToken);
+
+    nsProxyInfo *proxyInfo = mCI->ProxyInfo();
+    gHttpHandler->UpdateAltServiceMapping(mapping, proxyInfo, mCallbacks, 0);
+    return NS_OK;
+  }
+
+private:
+  nsCString mHost;
+  uint16_t mPort;
+  nsCString mNPNToken;
+  uint32_t mExpires;
+  nsCString mOrigin;
+  nsRefPtr<nsHttpConnectionInfo> mCI;
+  nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
+};
+
+// defined as an http2 extension - alt-svc
+// defines receipt of frame type 0x0A.. See AlternateSevices.h
+nsresult
+Http2Session::RecvAltSvc(Http2Session *self)
+{
+  MOZ_ASSERT(self->mInputFrameType == FRAME_TYPE_ALTSVC);
+  LOG3(("Http2Session::RecvAltSvc %p Flags 0x%X id 0x%X\n", self,
+        self->mInputFrameFlags, self->mInputFrameID));
+
+  if (self->mInputFrameDataSize < 8) {
+    LOG3(("Http2Session::RecvAltSvc %p frame too small", self));
+    RETURN_SESSION_ERROR(self, FRAME_SIZE_ERROR);
+  }
+
+  uint32_t maxAge =
+    PR_ntohl(*reinterpret_cast<uint32_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes));
+  uint16_t portRoute =
+    PR_ntohs(*reinterpret_cast<uint16_t *>(self->mInputFrameBuffer.get() + kFrameHeaderBytes + 4));
+  uint8_t protoLen = self->mInputFrameBuffer.get()[kFrameHeaderBytes + 6];
+  LOG3(("Http2Session::RecvAltSvc %p maxAge=%d port=%d protoLen=%d", self,
+        maxAge, portRoute, protoLen));
+
+  if (self->mInputFrameDataSize < (8U + protoLen)) {
+    LOG3(("Http2Session::RecvAltSvc %p frame too small for protocol", self));
+    RETURN_SESSION_ERROR(self, FRAME_SIZE_ERROR);
+  }
+  nsAutoCString protocol;
+  protocol.Assign(self->mInputFrameBuffer.get() + kFrameHeaderBytes + 7, protoLen);
+
+  uint32_t spdyIndex;
+  SpdyInformation *spdyInfo = gHttpHandler->SpdyInfo();
+  if (!(NS_SUCCEEDED(spdyInfo->GetNPNIndex(protocol, &spdyIndex)) &&
+        spdyInfo->ProtocolEnabled(spdyIndex))) {
+    LOG3(("Http2Session::RecvAltSvc %p unknown protocol %s, ignoring", self,
+          protocol.BeginReading()));
+    self->ResetDownstreamState();
+    return NS_OK;
+  }
+
+  uint8_t hostLen = self->mInputFrameBuffer.get()[kFrameHeaderBytes + 7 + protoLen];
+  if (self->mInputFrameDataSize < (8U + protoLen + hostLen)) {
+    LOG3(("Http2Session::RecvAltSvc %p frame too small for host", self));
+    RETURN_SESSION_ERROR(self, FRAME_SIZE_ERROR);
+  }
+
+  nsRefPtr<nsHttpConnectionInfo> ci(self->ConnectionInfo());
+  if (!self->mConnection || !ci) {
+    LOG3(("Http2Session::RecvAltSvc %p no connection or conninfo for %d", self,
+          self->mInputFrameID));
+    self->ResetDownstreamState();
+    return NS_OK;
+  }
+
+  nsAutoCString hostRoute;
+  hostRoute.Assign(self->mInputFrameBuffer.get() + kFrameHeaderBytes + 8 + protoLen, hostLen);
+
+  uint32_t originLen = self->mInputFrameDataSize - 8 - protoLen - hostLen;
+  nsAutoCString specifiedOrigin;
+  if (originLen) {
+    if (self->mInputFrameID) {
+      LOG3(("Http2Session::RecvAltSvc %p got frame w/origin on non zero stream", self));
+      self->ResetDownstreamState();
+      return NS_OK;
+    }
+    specifiedOrigin.Assign(
+      self->mInputFrameBuffer.get() + kFrameHeaderBytes + 8 + protoLen + hostLen,
+      originLen);
+
+    bool okToReroute = true;
+    nsCOMPtr<nsISupports> securityInfo;
+    self->mConnection->GetSecurityInfo(getter_AddRefs(securityInfo));
+    nsCOMPtr<nsISSLSocketControl> ssl = do_QueryInterface(securityInfo);
+    if (!ssl) {
+      okToReroute = false;
+    }
+
+    // a little off main thread origin parser. This is a non critical function because
+    // any alternate route created has to be verified anyhow
+    nsAutoCString specifiedOriginHost;
+    if (specifiedOrigin.EqualsIgnoreCase("https://", 8)) {
+      specifiedOriginHost.Assign(specifiedOrigin.get() + 8,
+                                 specifiedOrigin.Length() - 8);
+      if (ci->GetRelaxed()) {
+        // technically this is ok because it will still be confirmed before being used
+        // but let's not support it.
+        okToReroute = false;
+      }
+    } else if (specifiedOrigin.EqualsIgnoreCase("http://", 7)) {
+      specifiedOriginHost.Assign(specifiedOrigin.get() + 7,
+                                 specifiedOrigin.Length() - 7);
+    }
+
+    int32_t colonOffset = specifiedOriginHost.FindCharInSet(":", 0);
+    if (colonOffset != kNotFound) {
+      specifiedOriginHost.Truncate(colonOffset);
+    }
+
+    if (okToReroute) {
+      ssl->IsAcceptableForHost(specifiedOriginHost, &okToReroute);
+    }
+    if (!okToReroute) {
+      LOG3(("Http2Session::RecvAltSvc %p can't reroute non-authoritative origin %s",
+            self, specifiedOrigin.BeginReading()));
+      self->ResetDownstreamState();
+      return NS_OK;
+    }
+  } else {
+    // no origin specified in frame. We need to have an active pull stream to match
+    // this up to as if it were a response header.
+    if (!(self->mInputFrameID & 0x1) ||
+        NS_FAILED(self->SetInputFrameDataStream(self->mInputFrameID)) ||
+        !self->mInputFrameDataStream->Transaction() ||
+        !self->mInputFrameDataStream->Transaction()->RequestHead()) {
+      LOG3(("Http2Session::RecvAltSvc %p got frame w/o origin on invalid stream", self));
+      self->ResetDownstreamState();
+      return NS_OK;
+    }
+
+    specifiedOrigin.Assign(
+      self->mInputFrameDataStream->Transaction()->RequestHead()->Origin());
+  }
+
+  nsCOMPtr<nsISupports> callbacks;
+  self->mConnection->GetSecurityInfo(getter_AddRefs(callbacks));
+  nsCOMPtr<nsIInterfaceRequestor> irCallbacks = do_QueryInterface(callbacks);
+
+  nsRefPtr<UpdateAltSvcEvent> event = new UpdateAltSvcEvent(
+    hostRoute, portRoute, protocol, NowInSeconds() + maxAge,
+    specifiedOrigin, ci, irCallbacks);
+  NS_DispatchToMainThread(event);
+
+  LOG3(("Http2Session::RecvAltSvc %p processed location=%s:%u protocol=%s "
+        "maxAge=%u origin=%s", self, hostRoute.get(), portRoute,
+        protocol.get(), maxAge, specifiedOrigin.get()));
+  self->ResetDownstreamState();
+  return NS_OK;
 }
 
 //-----------------------------------------------------------------------------
@@ -1928,10 +2213,17 @@ Http2Session::ReadSegments(nsAHttpSegmentReader *reader,
   }
 
   if (NS_FAILED(rv)) {
-    LOG3(("Http2Session::ReadSegments %p returning FAIL code %X",
+    LOG3(("Http2Session::ReadSegments %p may return FAIL code %X",
           this, rv));
-    if (rv != NS_BASE_STREAM_WOULD_BLOCK)
-      CleanupStream(stream, rv, CANCEL_ERROR);
+    if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
+      return rv;
+    }
+
+    CleanupStream(stream, rv, CANCEL_ERROR);
+    if (SoftStreamError(rv)) {
+      LOG3(("Http2Session::ReadSegments %p soft error override\n", this));
+      rv = NS_OK;
+    }
     return rv;
   }
 
@@ -2090,15 +2382,15 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
 
   if (mDownstreamState == BUFFERING_OPENING_SETTINGS ||
       mDownstreamState == BUFFERING_FRAME_HEADER) {
-    // The first 8 bytes of every frame is header information that
+    // The first 9 bytes of every frame is header information that
     // we are going to want to strip before passing to http. That is
     // true of both control and data packets.
 
-    MOZ_ASSERT(mInputFrameBufferUsed < 8,
+    MOZ_ASSERT(mInputFrameBufferUsed < kFrameHeaderBytes,
                "Frame Buffer Used Too Large for State");
 
     rv = NetworkRead(writer, mInputFrameBuffer + mInputFrameBufferUsed,
-                     8 - mInputFrameBufferUsed, countWritten);
+                     kFrameHeaderBytes - mInputFrameBufferUsed, countWritten);
 
     if (NS_FAILED(rv)) {
       LOG3(("Http2Session %p buffering frame header read failure %x\n",
@@ -2114,7 +2406,7 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
 
     mInputFrameBufferUsed += *countWritten;
 
-    if (mInputFrameBufferUsed < 8)
+    if (mInputFrameBufferUsed < kFrameHeaderBytes)
     {
       LOG3(("Http2Session::WriteSegments %p "
             "BUFFERING FRAME HEADER incomplete size=%d",
@@ -2122,13 +2414,17 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
       return rv;
     }
 
-    // 2 bytes of length, 1 type byte, 1 flag byte, 1 unused bit, 31 bits of ID
-    mInputFrameDataSize =
-      PR_ntohs(reinterpret_cast<uint16_t *>(mInputFrameBuffer.get())[0]);
-    mInputFrameType = reinterpret_cast<uint8_t *>(mInputFrameBuffer.get())[2];
-    mInputFrameFlags = reinterpret_cast<uint8_t *>(mInputFrameBuffer.get())[3];
+    // 3 bytes of length, 1 type byte, 1 flag byte, 1 unused bit, 31 bits of ID
+    uint8_t totallyWastedByte = mInputFrameBuffer.get()[0];
+    mInputFrameDataSize = PR_ntohs(*reinterpret_cast<uint16_t *>(mInputFrameBuffer.get() + 1));
+    if (totallyWastedByte || (mInputFrameDataSize > kMaxFrameData)) {
+      LOG3(("Got frame too large 0x%02X%04X", totallyWastedByte, mInputFrameDataSize));
+      RETURN_SESSION_ERROR(this, PROTOCOL_ERROR);
+    }
+    mInputFrameType = *reinterpret_cast<uint8_t *>(mInputFrameBuffer.get() + kFrameLengthBytes);
+    mInputFrameFlags = *reinterpret_cast<uint8_t *>(mInputFrameBuffer.get() + kFrameLengthBytes + kFrameTypeBytes);
     mInputFrameID =
-      PR_ntohl(reinterpret_cast<uint32_t *>(mInputFrameBuffer.get())[1]);
+      PR_ntohl(*reinterpret_cast<uint32_t *>(mInputFrameBuffer.get() + kFrameLengthBytes + kFrameTypeBytes + kFrameFlagBytes));
     mInputFrameID &= 0x7fffffff;
     mInputFrameDataRead = 0;
 
@@ -2139,14 +2435,6 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
     }
 
     mPaddingLength = 0;
-
-    if (mInputFrameDataSize >= 0x4000) {
-      // Section 9.1 HTTP frames cannot exceed 2^14 - 1 but receviers must ignore
-      // those bits
-      LOG3(("Http2Session::WriteSegments %p WARNING Frame Length bits past 14 are not 0 %08X\n",
-            this, mInputFrameDataSize));
-      mInputFrameDataSize &= 0x3fff;
-    }
 
     LOG3(("Http2Session::WriteSegments[%p::%x] Frame Header Read "
           "type %X data len %u flags %x id 0x%X",
@@ -2179,8 +2467,8 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
     }
 
     if (mInputFrameType != FRAME_TYPE_DATA) { // control frame
-      EnsureBuffer(mInputFrameBuffer, mInputFrameDataSize + 8, 8,
-                   mInputFrameBufferSize);
+      EnsureBuffer(mInputFrameBuffer, mInputFrameDataSize + kFrameHeaderBytes,
+                   kFrameHeaderBytes, mInputFrameBufferSize);
       ChangeDownstreamState(BUFFERING_CONTROL_FRAME);
     } else if (mInputFrameFlags & kFlag_PADDED) {
       ChangeDownstreamState(PROCESSING_DATA_FRAME_PADDING_CONTROL);
@@ -2196,11 +2484,11 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
     MOZ_ASSERT(mInputFrameFlags & kFlag_PADDED,
                "Processing padding control on unpadded frame");
 
-    MOZ_ASSERT(mInputFrameBufferUsed < (8 + 1),
+    MOZ_ASSERT(mInputFrameBufferUsed < (kFrameHeaderBytes + 1),
                "Frame buffer used too large for state");
 
     rv = NetworkRead(writer, mInputFrameBuffer + mInputFrameBufferUsed,
-                     (8 + 1) - mInputFrameBufferUsed,
+                     (kFrameHeaderBytes + 1) - mInputFrameBufferUsed,
                      countWritten);
 
     if (NS_FAILED(rv)) {
@@ -2217,7 +2505,7 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
 
     mInputFrameBufferUsed += *countWritten;
 
-    if (mInputFrameBufferUsed - 8 < 1) {
+    if (mInputFrameBufferUsed - kFrameHeaderBytes < 1) {
       LOG3(("Http2Session::WriteSegments %p "
             "BUFFERING DATA FRAME CONTROL PADDING incomplete size=%d",
             this, mInputFrameBufferUsed - 8));
@@ -2226,7 +2514,7 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
 
     ++mInputFrameDataRead;
 
-    char *control = mInputFrameBuffer + 8;
+    char *control = mInputFrameBuffer + kFrameHeaderBytes;
     mPaddingLength = static_cast<uint8_t>(*control);
 
     LOG3(("Http2Session::WriteSegments %p stream 0x%X mPaddingLength=%d", this,
@@ -2285,7 +2573,7 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
     MOZ_ASSERT(!mNeedsCleanup, "cleanup stream set unexpectedly");
     mNeedsCleanup = nullptr;                     /* just in case */
 
-    Http2Stream *stream = mInputFrameDataStream;
+    uint32_t streamID = mInputFrameDataStream->StreamID();
     mSegmentWriter = writer;
     rv = mInputFrameDataStream->WriteSegments(this, count, countWritten);
     mSegmentWriter = nullptr;
@@ -2303,13 +2591,12 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
 
       if (mInputFrameDataRead == mInputFrameDataSize)
         ResetDownstreamState();
-      LOG3(("Http2Session::WriteSegments session=%p stream=%p 0x%X "
+      LOG3(("Http2Session::WriteSegments session=%p id 0x%X "
             "needscleanup=%p. cleanup stream based on "
             "stream->writeSegments returning code %x\n",
-            this, stream, stream ? stream->StreamID() : 0,
-            mNeedsCleanup, rv));
-      CleanupStream(stream, NS_OK, CANCEL_ERROR);
-      MOZ_ASSERT(!mNeedsCleanup || mNeedsCleanup == stream);
+            this, streamID, mNeedsCleanup, rv));
+      CleanupStream(streamID, NS_OK, CANCEL_ERROR);
+      MOZ_ASSERT(!mNeedsCleanup || mNeedsCleanup->StreamID() == streamID);
       mNeedsCleanup = nullptr;
       return NS_OK;
     }
@@ -2379,11 +2666,11 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
     return NS_ERROR_UNEXPECTED;
   }
 
-  MOZ_ASSERT(mInputFrameBufferUsed == 8, "Frame Buffer Header Not Present");
-  MOZ_ASSERT(mInputFrameDataSize + 8 <= mInputFrameBufferSize,
+  MOZ_ASSERT(mInputFrameBufferUsed == kFrameHeaderBytes, "Frame Buffer Header Not Present");
+  MOZ_ASSERT(mInputFrameDataSize + kFrameHeaderBytes <= mInputFrameBufferSize,
              "allocation for control frame insufficient");
 
-  rv = NetworkRead(writer, mInputFrameBuffer + 8 + mInputFrameDataRead,
+  rv = NetworkRead(writer, mInputFrameBuffer + kFrameHeaderBytes + mInputFrameDataRead,
                    mInputFrameDataSize - mInputFrameDataRead, countWritten);
 
   if (NS_FAILED(rv)) {
@@ -2396,7 +2683,7 @@ Http2Session::WriteSegments(nsAHttpSegmentWriter *writer,
   }
 
   LogIO(this, nullptr, "Reading Control Frame",
-        mInputFrameBuffer + 8 + mInputFrameDataRead, *countWritten);
+        mInputFrameBuffer + kFrameHeaderBytes + mInputFrameDataRead, *countWritten);
 
   mInputFrameDataRead += *countWritten;
 
@@ -2467,16 +2754,20 @@ Http2Session::UpdateLocalStreamWindow(Http2Stream *stream, uint32_t bytes)
   LOG3(("Http2Session::UpdateLocalStreamWindow Ack this=%p id=0x%X acksize=%d\n",
         this, stream->StreamID(), toack));
   stream->IncrementClientReceiveWindow(toack);
+  if (toack == 0) {
+    // Ensure we never send an illegal 0 window update
+    return;
+  }
 
   // room for this packet needs to be ensured before calling this function
   char *packet = mOutputQueueBuffer.get() + mOutputQueueUsed;
-  mOutputQueueUsed += 12;
+  mOutputQueueUsed += kFrameHeaderBytes + 4;
   MOZ_ASSERT(mOutputQueueUsed <= mOutputQueueSize);
 
   CreateFrameHeader(packet, 4, FRAME_TYPE_WINDOW_UPDATE, 0, stream->StreamID());
-  CopyAsNetwork32(packet + 8, toack);
+  CopyAsNetwork32(packet + kFrameHeaderBytes, toack);
 
-  LogIO(this, stream, "Stream Window Update", packet, 12);
+  LogIO(this, stream, "Stream Window Update", packet, kFrameHeaderBytes + 4);
   // dont flush here, this write can commonly be coalesced with a
   // session window update to immediately follow.
 }
@@ -2506,15 +2797,20 @@ Http2Session::UpdateLocalSessionWindow(uint32_t bytes)
         this, toack));
   mLocalSessionWindow += toack;
 
+  if (toack == 0) {
+    // Ensure we never send an illegal 0 window update
+    return;
+  }
+
   // room for this packet needs to be ensured before calling this function
   char *packet = mOutputQueueBuffer.get() + mOutputQueueUsed;
-  mOutputQueueUsed += 12;
+  mOutputQueueUsed += kFrameHeaderBytes + 4;
   MOZ_ASSERT(mOutputQueueUsed <= mOutputQueueSize);
 
   CreateFrameHeader(packet, 4, FRAME_TYPE_WINDOW_UPDATE, 0, 0);
-  CopyAsNetwork32(packet + 8, toack);
+  CopyAsNetwork32(packet + kFrameHeaderBytes, toack);
 
-  LogIO(this, nullptr, "Session Window Update", packet, 12);
+  LogIO(this, nullptr, "Session Window Update", packet, kFrameHeaderBytes + 4);
   // dont flush here, this write can commonly be coalesced with others
 }
 
@@ -2523,7 +2819,7 @@ Http2Session::UpdateLocalRwin(Http2Stream *stream, uint32_t bytes)
 {
   // make sure there is room for 2 window updates even though
   // we may not generate any.
-  EnsureOutputBuffer(16 * 2);
+  EnsureOutputBuffer(2 * (kFrameHeaderBytes + 4));
 
   UpdateLocalStreamWindow(stream, bytes);
   UpdateLocalSessionWindow(bytes);
@@ -2586,7 +2882,7 @@ Http2Session::CloseTransaction(nsAHttpTransaction *aTransaction,
           this, aTransaction, aResult));
     return;
   }
-  LOG3(("Http2Session::CloseTranscation probably a cancel. "
+  LOG3(("Http2Session::CloseTransaction probably a cancel. "
         "this=%p, trans=%p, result=%x, streamID=0x%X stream=%p",
         this, aTransaction, aResult, stream->StreamID(), stream));
   CleanupStream(stream, aResult, CANCEL_ERROR);
@@ -2897,6 +3193,21 @@ Http2Session::BufferOutput(const char *buf,
   return rv;
 }
 
+bool // static
+Http2Session::ALPNCallback(nsISupports *securityInfo)
+{
+  nsCOMPtr<nsISSLSocketControl> ssl = do_QueryInterface(securityInfo);
+  LOG3(("Http2Session::ALPNCallback sslsocketcontrol=%p\n", ssl.get()));
+  if (ssl) {
+    int16_t version = ssl->GetSSLVersionOffered();
+    LOG3(("Http2Session::ALPNCallback version=%x\n", version));
+    if (version >= nsISSLSocketControl::TLS_VERSION_1_2) {
+      return true;
+    }
+  }
+  return false;
+}
+
 nsresult
 Http2Session::ConfirmTLSProfile()
 {
@@ -2947,6 +3258,14 @@ Http2Session::ConfirmTLSProfile()
     RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
   }
 
+  int16_t macAlgorithm = ssl->GetMACAlgorithmUsed();
+  LOG3(("Http2Session::ConfirmTLSProfile %p MAC Algortihm (aead==6) %d\n",
+        this, macAlgorithm));
+  if (macAlgorithm != nsISSLSocketControl::SSL_MAC_AEAD) {
+    LOG3(("Http2Session::ConfirmTLSProfile %p FAILED due to lack of AEAD\n", this));
+    RETURN_SESSION_ERROR(this, INADEQUATE_SECURITY);
+  }
+
   /* We are required to send SNI. We do that already, so no check is done
    * here to make sure we did. */
 
@@ -2954,6 +3273,14 @@ Http2Session::ConfirmTLSProfile()
    * this connection. However, we never enable TLS compression on our end,
    * anyway, so it'll never be on. All the same, see https://bugzil.la/965881
    * for the possibility for an interface to ensure it never gets turned on. */
+
+  nsresult rv = ssl->GetNegotiatedNPN(mNegotiatedToken);
+  if (NS_FAILED(rv)) {
+    // Fallback to showing the draft version, just in case
+    LOG3(("Http2Session::ConfirmTLSProfile %p could not get negotiated token. "
+          "Falling back to draft token.", this));
+    mNegotiatedToken.AssignLiteral(NS_HTTP2_DRAFT_TOKEN);
+  }
 
   mTLSProfileConfirmed = true;
   return NS_OK;
@@ -3218,6 +3545,30 @@ nsresult
 Http2Session::PushBack(const char *buf, uint32_t len)
 {
   return mConnection->PushBack(buf, len);
+}
+
+void
+Http2Session::SendPing()
+{
+  MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
+
+  if (mPreviousUsed) {
+    // alredy in progress, get out
+    return;
+  }
+
+  mPingSentEpoch = PR_IntervalNow();
+  if (!mPingSentEpoch) {
+    mPingSentEpoch = 1; // avoid the 0 sentinel value
+  }
+  if (!mPingThreshold ||
+      (mPingThreshold > gHttpHandler->NetworkChangedTimeout())) {
+    mPreviousPingThreshold = mPingThreshold;
+    mPreviousUsed = true;
+    mPingThreshold = gHttpHandler->NetworkChangedTimeout();
+  }
+  GeneratePing(false);
+  ResumeRecv();
 }
 
 } // namespace mozilla::net

@@ -9,6 +9,7 @@
 #include "nsIDocument.h"
 #include "nsIServiceWorkerManager.h"
 #include "nsPIDOMWindow.h"
+#include "mozilla/Services.h"
 
 #include "nsCycleCollectionParticipant.h"
 #include "nsServiceManagerUtils.h"
@@ -21,7 +22,6 @@
 
 namespace mozilla {
 namespace dom {
-namespace workers {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(ServiceWorkerContainer)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
@@ -30,21 +30,36 @@ NS_IMPL_ADDREF_INHERITED(ServiceWorkerContainer, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(ServiceWorkerContainer, DOMEventTargetHelper)
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ServiceWorkerContainer, DOMEventTargetHelper,
-                                   mInstallingWorker,
-                                   mWaitingWorker,
-                                   mActiveWorker,
-                                   mControllerWorker)
+                                   mControllerWorker, mReadyPromise)
 
 ServiceWorkerContainer::ServiceWorkerContainer(nsPIDOMWindow* aWindow)
-  : mWindow(aWindow)
+  : DOMEventTargetHelper(aWindow)
 {
-  SetIsDOMBinding();
-  StartListeningForEvents();
 }
 
 ServiceWorkerContainer::~ServiceWorkerContainer()
 {
-  StopListeningForEvents();
+  RemoveReadyPromise();
+}
+
+void
+ServiceWorkerContainer::DisconnectFromOwner()
+{
+  RemoveReadyPromise();
+  DOMEventTargetHelper::DisconnectFromOwner();
+}
+
+void
+ServiceWorkerContainer::RemoveReadyPromise()
+{
+  nsCOMPtr<nsPIDOMWindow> window = GetOwner();
+  if (window) {
+    nsCOMPtr<nsIServiceWorkerManager> swm =
+      mozilla::services::GetServiceWorkerManager();
+    MOZ_ASSERT(swm);
+
+    swm->RemoveReadyPromise(window);
+  }
 }
 
 JSObject*
@@ -60,76 +75,19 @@ ServiceWorkerContainer::Register(const nsAString& aScriptURL,
 {
   nsCOMPtr<nsISupports> promise;
 
-  nsresult rv;
-  nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.Throw(rv);
+  nsCOMPtr<nsIServiceWorkerManager> swm = mozilla::services::GetServiceWorkerManager();
+  if (!swm) {
+    aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  aRv = swm->Register(mWindow, aOptions.mScope, aScriptURL, getter_AddRefs(promise));
+  aRv = swm->Register(aOptions.mScope, aScriptURL, getter_AddRefs(promise));
   if (aRv.Failed()) {
     return nullptr;
   }
 
   nsRefPtr<Promise> ret = static_cast<Promise*>(promise.get());
   MOZ_ASSERT(ret);
-  return ret.forget();
-}
-
-already_AddRefed<Promise>
-ServiceWorkerContainer::Unregister(const nsAString& aScope,
-                                   ErrorResult& aRv)
-{
-  nsCOMPtr<nsISupports> promise;
-
-  nsresult rv;
-  nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.Throw(rv);
-    return nullptr;
-  }
-
-  aRv = swm->Unregister(mWindow, aScope, getter_AddRefs(promise));
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-
-  nsRefPtr<Promise> ret = static_cast<Promise*>(promise.get());
-  MOZ_ASSERT(ret);
-  return ret.forget();
-}
-
-already_AddRefed<workers::ServiceWorker>
-ServiceWorkerContainer::GetInstalling()
-{
-  if (!mInstallingWorker) {
-    mInstallingWorker = GetWorkerReference(WhichServiceWorker::INSTALLING_WORKER);
-  }
-
-  nsRefPtr<ServiceWorker> ret = mInstallingWorker;
-  return ret.forget();
-}
-
-already_AddRefed<workers::ServiceWorker>
-ServiceWorkerContainer::GetWaiting()
-{
-  if (!mWaitingWorker) {
-    mWaitingWorker = GetWorkerReference(WhichServiceWorker::WAITING_WORKER);
-  }
-
-  nsRefPtr<ServiceWorker> ret = mWaitingWorker;
-  return ret.forget();
-}
-
-already_AddRefed<workers::ServiceWorker>
-ServiceWorkerContainer::GetActive()
-{
-  if (!mActiveWorker) {
-    mActiveWorker = GetWorkerReference(WhichServiceWorker::ACTIVE_WORKER);
-  }
-
-  nsRefPtr<ServiceWorker> ret = mActiveWorker;
   return ret.forget();
 }
 
@@ -138,106 +96,86 @@ ServiceWorkerContainer::GetController()
 {
   if (!mControllerWorker) {
     nsresult rv;
-    nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
+    nsCOMPtr<nsIServiceWorkerManager> swm = mozilla::services::GetServiceWorkerManager();
+    if (!swm) {
       return nullptr;
     }
 
     nsCOMPtr<nsISupports> serviceWorker;
-    rv = swm->GetDocumentController(mWindow, getter_AddRefs(serviceWorker));
+    rv = swm->GetDocumentController(GetOwner(), getter_AddRefs(serviceWorker));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return nullptr;
     }
 
-    mControllerWorker = static_cast<ServiceWorker*>(serviceWorker.get());
+    mControllerWorker =
+      static_cast<workers::ServiceWorker*>(serviceWorker.get());
   }
 
-  nsRefPtr<ServiceWorker> ref = mControllerWorker;
+  nsRefPtr<workers::ServiceWorker> ref = mControllerWorker;
   return ref.forget();
 }
 
 already_AddRefed<Promise>
-ServiceWorkerContainer::GetAll(ErrorResult& aRv)
-{
-  // FIXME(nsm): Bug 1002571
-  aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-  return nullptr;
-}
-
-already_AddRefed<Promise>
-ServiceWorkerContainer::GetReady(ErrorResult& aRv)
-{
-  // FIXME(nsm): Bug 1025077
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
-  return Promise::Create(global, aRv);
-}
-
-// XXXnsm, maybe this can be optimized to only add when a event handler is
-// registered.
-void
-ServiceWorkerContainer::StartListeningForEvents()
-{
-  nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID);
-  if (swm) {
-    swm->AddContainerEventListener(mWindow->GetDocumentURI(), this);
-  }
-}
-
-void
-ServiceWorkerContainer::StopListeningForEvents()
-{
-  nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID);
-  if (swm) {
-    swm->RemoveContainerEventListener(mWindow->GetDocumentURI(), this);
-  }
-}
-
-void
-ServiceWorkerContainer::InvalidateWorkerReference(WhichServiceWorker aWhichOnes)
-{
-  if (aWhichOnes & WhichServiceWorker::INSTALLING_WORKER) {
-    mInstallingWorker = nullptr;
-  }
-
-  if (aWhichOnes & WhichServiceWorker::WAITING_WORKER) {
-    mWaitingWorker = nullptr;
-  }
-
-  if (aWhichOnes & WhichServiceWorker::ACTIVE_WORKER) {
-    mActiveWorker = nullptr;
-  }
-}
-
-already_AddRefed<workers::ServiceWorker>
-ServiceWorkerContainer::GetWorkerReference(WhichServiceWorker aWhichOne)
+ServiceWorkerContainer::GetRegistrations(ErrorResult& aRv)
 {
   nsresult rv;
   nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
     return nullptr;
   }
 
-  nsCOMPtr<nsISupports> serviceWorker;
-  switch(aWhichOne) {
-    case WhichServiceWorker::INSTALLING_WORKER:
-      rv = swm->GetInstalling(mWindow, getter_AddRefs(serviceWorker));
-      break;
-    case WhichServiceWorker::WAITING_WORKER:
-      rv = swm->GetWaiting(mWindow, getter_AddRefs(serviceWorker));
-      break;
-    case WhichServiceWorker::ACTIVE_WORKER:
-      rv = swm->GetActive(mWindow, getter_AddRefs(serviceWorker));
-      break;
-    default:
-      MOZ_CRASH("Invalid enum value");
+  nsCOMPtr<nsISupports> promise;
+  aRv = swm->GetRegistrations(GetOwner(), getter_AddRefs(promise));
+  if (aRv.Failed()) {
+    return nullptr;
   }
 
+  nsRefPtr<Promise> ret = static_cast<Promise*>(promise.get());
+  MOZ_ASSERT(ret);
+  return ret.forget();
+}
+
+already_AddRefed<Promise>
+ServiceWorkerContainer::GetRegistration(const nsAString& aDocumentURL,
+                                        ErrorResult& aRv)
+{
+  nsresult rv;
+  nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
     return nullptr;
   }
 
-  nsRefPtr<ServiceWorker> ref = static_cast<ServiceWorker*>(serviceWorker.get());
-  return ref.forget();
+  nsCOMPtr<nsISupports> promise;
+  aRv = swm->GetRegistration(GetOwner(), aDocumentURL, getter_AddRefs(promise));
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  nsRefPtr<Promise> ret = static_cast<Promise*>(promise.get());
+  MOZ_ASSERT(ret);
+  return ret.forget();
+}
+
+Promise*
+ServiceWorkerContainer::GetReady(ErrorResult& aRv)
+{
+  if (mReadyPromise) {
+    return mReadyPromise;
+  }
+
+  nsCOMPtr<nsIServiceWorkerManager> swm = mozilla::services::GetServiceWorkerManager();
+  if (!swm) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  nsCOMPtr<nsISupports> promise;
+  aRv = swm->GetReadyPromise(GetOwner(), getter_AddRefs(promise));
+
+  mReadyPromise = static_cast<Promise*>(promise.get());
+  return mReadyPromise;
 }
 
 // Testing only.
@@ -254,10 +192,9 @@ ServiceWorkerContainer::GetScopeForUrl(const nsAString& aUrl,
                                        nsString& aScope,
                                        ErrorResult& aRv)
 {
-  nsresult rv;
-  nsCOMPtr<nsIServiceWorkerManager> swm = do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.Throw(rv);
+  nsCOMPtr<nsIServiceWorkerManager> swm = mozilla::services::GetServiceWorkerManager();
+  if (!swm) {
+    aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
 
@@ -273,6 +210,5 @@ ServiceWorkerContainer::GetControllingWorkerScriptURLForPath(
 {
   aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
 }
-} // namespace workers
 } // namespace dom
 } // namespace mozilla

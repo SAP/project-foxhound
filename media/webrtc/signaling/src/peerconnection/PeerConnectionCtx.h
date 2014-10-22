@@ -21,6 +21,8 @@
 
 #include "StaticPtr.h"
 #include "PeerConnectionImpl.h"
+#include "mozIGeckoMediaPluginService.h"
+#include "nsIRunnable.h"
 
 namespace mozilla {
 class PeerConnectionCtxShutdown;
@@ -34,7 +36,7 @@ class WebrtcGlobalInformation;
 class SipccOfferOptions {
 public:
   SipccOfferOptions();
-  SipccOfferOptions(const dom::RTCOfferOptions &aOther);
+  explicit SipccOfferOptions(const dom::RTCOfferOptions &aOther);
   cc_media_options_t* build() const;
 protected:
   cc_media_options_t mOptions;
@@ -68,12 +70,23 @@ class PeerConnectionCtx : public CSF::CC_Observer {
   virtual void onDeviceEvent(ccapi_device_event_e deviceEvent, CSF::CC_DevicePtr device, CSF::CC_DeviceInfoPtr info);
   virtual void onFeatureEvent(ccapi_device_event_e deviceEvent, CSF::CC_DevicePtr device, CSF::CC_FeatureInfoPtr feature_info) {}
   virtual void onLineEvent(ccapi_line_event_e lineEvent, CSF::CC_LinePtr line, CSF::CC_LineInfoPtr info) {}
-  virtual void onCallEvent(ccapi_call_event_e callEvent, CSF::CC_CallPtr call, CSF::CC_CallInfoPtr info);
+  virtual void onCallEvent(ccapi_call_event_e callEvent, CSF::CC_CallPtr call, CSF::CC_CallInfoPtr info) {}
 
   // Create a SIPCC Call
   CSF::CC_CallPtr createCall();
 
   mozilla::dom::PCImplSipccState sipcc_state() { return mSipccState; }
+
+  bool isReady() {
+    // If mGMPService is not set, we aren't using GMP.
+    if (mGMPService) {
+      return mGMPReady;
+    }
+    return true;
+  }
+
+  void queueJSEPOperation(nsRefPtr<nsIRunnable> aJSEPOperation);
+  void onGMPReady();
 
   // Make these classes friend so that they can access mPeerconnections.
   friend class PeerConnectionImpl;
@@ -92,7 +105,7 @@ class PeerConnectionCtx : public CSF::CC_Observer {
   std::map<const std::string, PeerConnectionImpl *> mPeerConnections;
 
   PeerConnectionCtx() :  mSipccState(mozilla::dom::PCImplSipccState::Idle),
-                         mCCM(nullptr), mDevice(nullptr) {}
+                         mCCM(nullptr), mDevice(nullptr), mGMPReady(false) {}
   // This is a singleton, so don't copy construct it, etc.
   PeerConnectionCtx(const PeerConnectionCtx& other) MOZ_DELETE;
   void operator=(const PeerConnectionCtx& other) MOZ_DELETE;
@@ -105,6 +118,8 @@ class PeerConnectionCtx : public CSF::CC_Observer {
     mSipccState = aState;
   }
 
+  void initGMP();
+
   static void
   EverySecondTelemetryCallback_m(nsITimer* timer, void *);
 
@@ -113,6 +128,7 @@ class PeerConnectionCtx : public CSF::CC_Observer {
   int mConnectionCounter;
 
   nsCOMPtr<nsITimer> mTelemetryTimer;
+
 public:
   // TODO(jib): If we ever enable move semantics on std::map...
   //std::map<nsString,nsAutoPtr<mozilla::dom::RTCStatsReportInternal>> mLastReports;
@@ -124,6 +140,15 @@ private:
   mozilla::dom::PCImplSipccState mSipccState;  // TODO(ekr@rtfm.com): refactor this out? What does it do?
   CSF::CallControlManagerPtr mCCM;
   CSF::CC_DevicePtr mDevice;
+
+  // We cannot form offers/answers properly until the Gecko Media Plugin stuff
+  // has been initted, which is a complicated mess of thread dispatches,
+  // including sync dispatches to main. So, we need to be able to queue up
+  // offer creation (or SetRemote, when we're the answerer) until all of this is
+  // ready to go, since blocking on this init is just begging for deadlock.
+  nsCOMPtr<mozIGeckoMediaPluginService> mGMPService;
+  bool mGMPReady;
+  nsTArray<nsRefPtr<nsIRunnable>> mQueuedJSEPOperations;
 
   static PeerConnectionCtx *gInstance;
 public:

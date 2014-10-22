@@ -24,8 +24,9 @@ loader.lazyGetter(this, "CssLogic", () => require("devtools/styleinspector/css-l
 let TRANSITION_CLASS = "moz-styleeditor-transitioning";
 let TRANSITION_DURATION_MS = 500;
 let TRANSITION_BUFFER_MS = 1000;
-let TRANSITION_RULE = "\
-:root.moz-styleeditor-transitioning, :root.moz-styleeditor-transitioning * {\
+let TRANSITION_RULE_SELECTOR =
+".moz-styleeditor-transitioning:root, .moz-styleeditor-transitioning:root *";
+let TRANSITION_RULE = TRANSITION_RULE_SELECTOR + " {\
 transition-duration: " + TRANSITION_DURATION_MS + "ms !important; \
 transition-delay: 0ms !important;\
 transition-timing-function: ease-out !important;\
@@ -34,16 +35,6 @@ transition-property: all !important;\
 
 let LOAD_ERROR = "error-load";
 
-exports.register = function(handle) {
-  handle.addTabActor(StyleSheetsActor, "styleSheetsActor");
-  handle.addGlobalActor(StyleSheetsActor, "styleSheetsActor");
-};
-
-exports.unregister = function(handle) {
-  handle.removeTabActor(StyleSheetsActor);
-  handle.removeGlobalActor(StyleSheetsActor);
-};
-
 types.addActorType("stylesheet");
 types.addActorType("originalsource");
 
@@ -51,7 +42,7 @@ types.addActorType("originalsource");
  * Creates a StyleSheetsActor. StyleSheetsActor provides remote access to the
  * stylesheets of a document.
  */
-let StyleSheetsActor = protocol.ActorClass({
+let StyleSheetsActor = exports.StyleSheetsActor = protocol.ActorClass({
   typeName: "stylesheets",
 
   /**
@@ -73,17 +64,6 @@ let StyleSheetsActor = protocol.ActorClass({
     protocol.Actor.prototype.initialize.call(this, null);
 
     this.parentActor = tabActor;
-
-    // keep a map of sheets-to-actors so we don't create two actors for one sheet
-    this._sheets = new Map();
-  },
-
-  /**
-   * Destroy the current StyleSheetsActor instance.
-   */
-  destroy: function()
-  {
-    this._sheets.clear();
   },
 
   /**
@@ -155,7 +135,7 @@ let StyleSheetsActor = protocol.ActorClass({
     return Task.spawn(function() {
       let actors = [];
       for (let i = 0; i < styleSheets.length; i++) {
-        let actor = this._createStyleSheetActor(styleSheets[i]);
+        let actor = this.parentActor.createStyleSheetActor(styleSheets[i]);
         actors.push(actor);
 
         // Get all sheets, including imported ones
@@ -187,7 +167,7 @@ let StyleSheetsActor = protocol.ActorClass({
           if (!rule.styleSheet) {
             continue;
           }
-          let actor = this._createStyleSheetActor(rule.styleSheet);
+          let actor = this.parentActor.createStyleSheetActor(rule.styleSheet);
           imported.push(actor);
 
           // recurse imports in this stylesheet as well
@@ -204,36 +184,6 @@ let StyleSheetsActor = protocol.ActorClass({
     }.bind(this));
   },
 
-  /**
-   * Create a new actor for a style sheet, if it hasn't already been created.
-   *
-   * @param  {DOMStyleSheet} styleSheet
-   *         The style sheet to create an actor for.
-   * @return {StyleSheetActor}
-   *         The actor for this style sheet
-   */
-  _createStyleSheetActor: function(styleSheet)
-  {
-    if (this._sheets.has(styleSheet)) {
-      return this._sheets.get(styleSheet);
-    }
-    let actor = new StyleSheetActor(styleSheet, this);
-
-    this.manage(actor);
-    this._sheets.set(styleSheet, actor);
-
-    return actor;
-  },
-
-  /**
-   * Clear all the current stylesheet actors in map.
-   */
-  _clearStyleSheetActors: function() {
-    for (let actor in this._sheets) {
-      this.unmanage(this._sheets[actor]);
-    }
-    this._sheets.clear();
-  },
 
   /**
    * Create a new style sheet in the document with the given text.
@@ -254,7 +204,7 @@ let StyleSheetsActor = protocol.ActorClass({
     }
     parent.appendChild(style);
 
-    let actor = this._createStyleSheetActor(style.sheet);
+    let actor = this.parentActor.createStyleSheetActor(style.sheet);
     return actor;
   }, {
     request: { text: Arg(0, "string") },
@@ -322,6 +272,8 @@ let MediaRuleActor = protocol.ActorClass({
     if (this.mql) {
       this.mql.removeListener(this._matchesChange);
     }
+
+    protocol.Actor.prototype.destroy.call(this);
   },
 
   form: function(detail) {
@@ -419,15 +371,7 @@ let StyleSheetActor = protocol.ActorClass({
    */
   get document() this.window.document,
 
-  /**
-   * Browser for the target.
-   */
-  get browser() {
-    if (this.parentActor.parentActor) {
-      return this.parentActor.parentActor.browser;
-    }
-    return null;
-  },
+  get ownerNode() this.rawSheet.ownerNode,
 
   /**
    * URL of underlying stylesheet.
@@ -487,8 +431,7 @@ let StyleSheetActor = protocol.ActorClass({
       return promise.resolve(rules);
     }
 
-    let ownerNode = this.rawSheet.ownerNode;
-    if (!ownerNode) {
+    if (!this.ownerNode) {
       return promise.resolve([]);
     }
 
@@ -499,12 +442,12 @@ let StyleSheetActor = protocol.ActorClass({
     let deferred = promise.defer();
 
     let onSheetLoaded = (event) => {
-      ownerNode.removeEventListener("load", onSheetLoaded, false);
+      this.ownerNode.removeEventListener("load", onSheetLoaded, false);
 
       deferred.resolve(this.rawSheet.cssRules);
     };
 
-    ownerNode.addEventListener("load", onSheetLoaded, false);
+    this.ownerNode.addEventListener("load", onSheetLoaded, false);
 
     // cache so we don't add many listeners if this is called multiple times.
     this._cssRules = deferred.promise;
@@ -525,13 +468,12 @@ let StyleSheetActor = protocol.ActorClass({
     }
 
     let docHref;
-    let ownerNode = this.rawSheet.ownerNode;
-    if (ownerNode) {
-      if (ownerNode instanceof Ci.nsIDOMHTMLDocument) {
-        docHref = ownerNode.location.href;
+    if (this.ownerNode) {
+      if (this.ownerNode instanceof Ci.nsIDOMHTMLDocument) {
+        docHref = this.ownerNode.location.href;
       }
-      else if (ownerNode.ownerDocument && ownerNode.ownerDocument.location) {
-        docHref = ownerNode.ownerDocument.location.href;
+      else if (this.ownerNode.ownerDocument && this.ownerNode.ownerDocument.location) {
+        docHref = this.ownerNode.ownerDocument.location.href;
       }
     }
 
@@ -610,13 +552,14 @@ let StyleSheetActor = protocol.ActorClass({
 
     if (!this.href) {
       // this is an inline <style> sheet
-      let content = this.rawSheet.ownerNode.textContent;
+      let content = this.ownerNode.textContent;
       this.text = content;
       return promise.resolve(content);
     }
 
     let options = {
       window: this.window,
+      loadFromCache: true,
       charset: this._getCSSCharset()
     };
 
@@ -766,6 +709,7 @@ let StyleSheetActor = protocol.ActorClass({
         return sourceMap.originalPositionFor({ line: line, column: column });
       }
       return {
+        fromSourceMap: false,
         source: this.href,
         line: line,
         column: column
@@ -906,20 +850,16 @@ let StyleSheetActor = protocol.ActorClass({
    * to remove the rule after a certain time.
    */
   _insertTransistionRule: function() {
-    // Insert the global transition rule
-    // Use a ref count to make sure we do not add it multiple times.. and remove
-    // it only when all pending StyleSheets-generated transitions ended.
-    if (this._transitionRefCount == 0) {
-      this.rawSheet.insertRule(TRANSITION_RULE, this.rawSheet.cssRules.length);
-      this.document.documentElement.classList.add(TRANSITION_CLASS);
-    }
+    this.document.documentElement.classList.add(TRANSITION_CLASS);
 
-    this._transitionRefCount++;
+    // We always add the rule since we've just reset all the rules
+    this.rawSheet.insertRule(TRANSITION_RULE, this.rawSheet.cssRules.length);
 
     // Set up clean up and commit after transition duration (+buffer)
     // @see _onTransitionEnd
-    this.window.setTimeout(this._onTransitionEnd.bind(this),
-                           TRANSITION_DURATION_MS + TRANSITION_BUFFER_MS);
+    this.window.clearTimeout(this._transitionTimeout);
+    this._transitionTimeout = this.window.setTimeout(this._onTransitionEnd.bind(this),
+                              TRANSITION_DURATION_MS + TRANSITION_BUFFER_MS);
   },
 
   /**
@@ -928,9 +868,12 @@ let StyleSheetActor = protocol.ActorClass({
    */
   _onTransitionEnd: function()
   {
-    if (--this._transitionRefCount == 0) {
-      this.document.documentElement.classList.remove(TRANSITION_CLASS);
-      this.rawSheet.deleteRule(this.rawSheet.cssRules.length - 1);
+    this.document.documentElement.classList.remove(TRANSITION_CLASS);
+
+    let index = this.rawSheet.cssRules.length - 1;
+    let rule = this.rawSheet.cssRules[index];
+    if (rule.selectorText == TRANSITION_RULE_SELECTOR) {
+      this.rawSheet.deleteRule(index);
     }
 
     events.emit(this, "style-applied");
@@ -997,7 +940,6 @@ var StyleSheetFront = protocol.FrontClass(StyleSheetActor, {
 
   destroy: function() {
     events.off(this, "property-change", this._onPropertyChange);
-
     protocol.Front.prototype.destroy.call(this);
   },
 

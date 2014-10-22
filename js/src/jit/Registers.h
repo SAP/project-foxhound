@@ -18,6 +18,8 @@
 # include "jit/arm/Architecture-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/Architecture-mips.h"
+#elif defined(JS_CODEGEN_NONE)
+# include "jit/none/Architecture-none.h"
 #else
 # error "Unknown architecture!"
 #endif
@@ -31,7 +33,7 @@ struct Register {
     typedef Codes::SetType SetType;
     Code code_;
     static Register FromCode(uint32_t i) {
-        JS_ASSERT(i < Registers::Total);
+        MOZ_ASSERT(i < Registers::Total);
         Register r = { (Registers::Code)i };
         return r;
     }
@@ -41,7 +43,7 @@ struct Register {
         return r;
     }
     Code code() const {
-        JS_ASSERT((uint32_t)code_ < Registers::Total);
+        MOZ_ASSERT((uint32_t)code_ < Registers::Total);
         return code_;
     }
     const char *name() const {
@@ -67,7 +69,7 @@ struct Register {
     // miscompiled it on win64 when the value was simply returned.  This
     // now has an explicit outparam for compatability.
     void aliased(uint32_t aliasIdx, Register *ret) const {
-        JS_ASSERT(aliasIdx == 0);
+        MOZ_ASSERT(aliasIdx == 0);
         *ret = *this;
     }
     static uint32_t SetSize(SetType x) {

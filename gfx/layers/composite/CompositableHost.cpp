@@ -24,6 +24,14 @@ namespace layers {
 
 class Compositor;
 
+CompositableBackendSpecificData::CompositableBackendSpecificData()
+  : mAllowSharingTextureHost(false)
+{
+  static uint64_t sNextID = 1;
+  ++sNextID;
+  mId = sNextID;
+}
+
 /**
  * IPDL actor used by CompositableHost to match with its corresponding
  * CompositableClient on the content side.
@@ -131,7 +139,7 @@ void
 CompositableHost::RemoveTextureHost(TextureHost* aTexture)
 {
   // Clear strong refrence to CompositableBackendSpecificData
-  aTexture->SetCompositableBackendSpecificData(nullptr);
+  aTexture->UnsetCompositableBackendSpecificData(GetCompositableBackendSpecificData());
 }
 
 void
@@ -147,12 +155,23 @@ CompositableHost::AddMaskEffect(EffectChain& aEffects,
 {
   RefPtr<TextureSource> source;
   RefPtr<TextureHost> host = GetAsTextureHost();
-  if (host && host->Lock()) {
-    source = host->GetTextureSources();
+
+  if (!host) {
+    NS_WARNING("Using compositable with no valid TextureHost as mask");
+    return false;
   }
 
+  if (!host->Lock()) {
+    NS_WARNING("Failed to lock the mask texture");
+    return false;
+  }
+
+  source = host->GetTextureSources();
+  MOZ_ASSERT(source);
+
   if (!source) {
-    NS_WARNING("Using compositable with no texture host as mask layer");
+    NS_WARNING("The TextureHost was successfully locked but can't provide a TextureSource");
+    host->Unlock();
     return false;
   }
 
@@ -194,6 +213,11 @@ CompositableHost::Create(const TextureInfo& aTextureInfo)
   case CompositableType::IMAGE:
     result = new ImageHost(aTextureInfo);
     break;
+#ifdef MOZ_WIDGET_GONK
+  case CompositableType::IMAGE_OVERLAY:
+    result = new ImageHostOverlay(aTextureInfo);
+    break;
+#endif
   case CompositableType::CONTENT_SINGLE:
     result = new ContentHostSingleBuffered(aTextureInfo);
     break;

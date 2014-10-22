@@ -48,7 +48,6 @@
 @BINPATH@/@DLL_PREFIX@omxplugingb235@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@omxpluginhc@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@omxpluginkk@DLL_SUFFIX@
-@BINPATH@/@DLL_PREFIX@omxpluginfroyo@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@xul@DLL_SUFFIX@
 
 @BINPATH@/@DLL_PREFIX@nssckbi@DLL_SUFFIX@
@@ -75,10 +74,13 @@
 @BINPATH@/@DLL_PREFIX@mozsqlite3@DLL_SUFFIX@
 #endif
 
+[lib destdir="lib/@ANDROID_CPU_ARCH@"]
+@BINPATH@/@DLL_PREFIX@mozglue@DLL_SUFFIX@
+# This should be MOZ_CHILD_PROCESS_NAME, but that has a "lib/" prefix.
+@BINPATH@/@DLL_PREFIX@plugin-container@DLL_SUFFIX@
+
 [xpcom]
 @BINPATH@/dependentlibs.list
-@BINPATH@/@DLL_PREFIX@mozglue@DLL_SUFFIX@
-@BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 
 @BINPATH@/AndroidManifest.xml
 @BINPATH@/resources.arsc
@@ -102,7 +104,6 @@
 @BINPATH@/blocklist.xml
 #ifdef XP_UNIX
 @BINPATH@/run-mozilla.sh
-@BINPATH@/mozilla-xremote-client
 #endif
 
 ; [Components]
@@ -246,9 +247,12 @@
 @BINPATH@/components/spellchecker.xpt
 @BINPATH@/components/storage.xpt
 @BINPATH@/components/telemetry.xpt
+@BINPATH@/components/toolkit_asyncshutdown.xpt
+@BINPATH@/components/toolkit_filewatcher.xpt
 @BINPATH@/components/toolkit_finalizationwitness.xpt
 @BINPATH@/components/toolkit_formautofill.xpt
 @BINPATH@/components/toolkit_osfile.xpt
+@BINPATH@/components/toolkit_xulstore.xpt
 @BINPATH@/components/toolkitprofile.xpt
 #ifdef MOZ_ENABLE_XREMOTE
 @BINPATH@/components/toolkitremote.xpt
@@ -355,6 +359,9 @@
 @BINPATH@/components/nsUpdateTimerManager.manifest
 @BINPATH@/components/nsUpdateTimerManager.js
 @BINPATH@/components/pluginGlue.manifest
+@BINPATH@/components/ProcessSingleton.manifest
+@BINPATH@/components/MainProcessSingleton.js
+@BINPATH@/components/ContentProcessSingleton.js
 @BINPATH@/components/nsSessionStore.manifest
 @BINPATH@/components/nsSessionStartup.js
 @BINPATH@/components/nsSessionStore.js
@@ -380,8 +387,7 @@
 @BINPATH@/components/nsInputListAutoComplete.js
 @BINPATH@/components/formautofill.manifest
 @BINPATH@/components/FormAutofillContentService.js
-@BINPATH@/components/contentSecurityPolicy.manifest
-@BINPATH@/components/contentSecurityPolicy.js
+@BINPATH@/components/FormAutofillStartup.js
 @BINPATH@/components/contentAreaDropListener.manifest
 @BINPATH@/components/contentAreaDropListener.js
 @BINPATH@/components/messageWakeupService.js
@@ -396,17 +402,12 @@
 @BINPATH@/components/servicesComponents.manifest
 @BINPATH@/components/TelemetryStartup.js
 @BINPATH@/components/TelemetryStartup.manifest
+@BINPATH@/components/XULStore.js
+@BINPATH@/components/XULStore.manifest
 @BINPATH@/components/Webapps.js
 @BINPATH@/components/Webapps.manifest
 @BINPATH@/components/AppsService.js
 @BINPATH@/components/AppsService.manifest
-
-@BINPATH@/components/Push.js
-@BINPATH@/components/Push.manifest
-
-@BINPATH@/components/SystemMessageInternal.js
-@BINPATH@/components/SystemMessageManager.js
-@BINPATH@/components/SystemMessageManager.manifest
 
 @BINPATH@/components/Activities.manifest
 @BINPATH@/components/ActivitiesGlue.js
@@ -443,6 +444,9 @@
 @BINPATH@/components/TestInterfaceJS.js
 @BINPATH@/components/TestInterfaceJS.manifest
 #endif
+
+@BINPATH@/components/nsAsyncShutdown.manifest
+@BINPATH@/components/nsAsyncShutdown.js
 
 ; Modules
 @BINPATH@/modules/*
@@ -522,12 +526,15 @@
 @BINPATH@/res/table-remove-row-hover.gif
 @BINPATH@/res/table-remove-row.gif
 @BINPATH@/res/grabber.gif
-@BINPATH@/res/fonts/*
 @BINPATH@/res/dtd/*
 @BINPATH@/res/html/*
 @BINPATH@/res/langGroups.properties
 @BINPATH@/res/language.properties
 @BINPATH@/res/entityTables/*
+
+#ifndef MOZ_ANDROID_EXCLUDE_FONTS
+@BINPATH@/res/fonts/*
+#endif
 
 ; svg
 @BINPATH@/res/svg.css
@@ -541,6 +548,11 @@
 @BINPATH@/components/pippki.xpt
 @BINPATH@/chrome/pippki@JAREXT@
 @BINPATH@/chrome/pippki.manifest
+
+; For process sandboxing
+#if defined(MOZ_SANDBOX)
+@BINPATH@/@DLL_PREFIX@mozsandbox@DLL_SUFFIX@
+#endif
 
 ; for Solaris SPARC
 #ifdef SOLARIS

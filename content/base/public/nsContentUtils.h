@@ -28,6 +28,8 @@
 #include "nsTArrayForwardDeclare.h"
 #include "Units.h"
 #include "mozilla/dom/AutocompleteInfoBinding.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/FloatingPoint.h"
 
 #if defined(XP_WIN)
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -75,6 +77,7 @@ class nsIParser;
 class nsIParserService;
 class nsIPresShell;
 class nsIPrincipal;
+class nsIRequest;
 class nsIRunnable;
 class nsIScriptContext;
 class nsIScriptGlobalObject;
@@ -151,7 +154,7 @@ struct EventNameMapping
   nsIAtom* mAtom;
   uint32_t mId;
   int32_t  mType;
-  uint32_t mStructType;
+  mozilla::EventClassID mEventClassID;
 };
 
 struct nsShortcutCandidate {
@@ -172,11 +175,6 @@ class nsContentUtils
 public:
   static nsresult Init();
 
-  /**
-   * Get a JSContext from the document's scope object.
-   */
-  static JSContext* GetContextFromDocument(nsIDocument *aDocument);
-
   static bool     IsCallerChrome();
   static bool     ThreadsafeIsCallerChrome();
   static bool     IsCallerContentXBL();
@@ -189,6 +187,7 @@ public:
 
   /**
    * Returns the parent node of aChild crossing document boundaries.
+   * Uses the parent node in the composed document.
    */
   static nsINode* GetCrossDocParentNode(nsINode* aChild);
 
@@ -218,7 +217,9 @@ public:
     const nsINode* aPossibleDescendant, const nsINode* aPossibleAncestor);
 
   /**
-   * Similar to ContentIsDescendantOf except it crosses document boundaries.
+   * Similar to ContentIsDescendantOf except it crosses document boundaries,
+   * this function uses ancestor/descendant relations in the composed document
+   * (see shadow DOM spec).
    */
   static bool ContentIsCrossDocDescendantOf(nsINode* aPossibleDescendant,
                                               nsINode* aPossibleAncestor);
@@ -409,15 +410,6 @@ public:
   static bool CanCallerAccess(nsPIDOMWindow* aWindow);
 
   /**
-   * Get the window through the JS context that's currently on the stack.
-   * If there's no JS context currently on the stack, returns null.
-   */
-  static nsPIDOMWindow *GetWindowFromCaller();
-
-  /**
-   * The two GetDocumentFrom* functions below allow a caller to get at a
-   * document that is relevant to the currently executing script.
-   *
    * GetDocumentFromCaller gets its document by looking at the last called
    * function and finding the document that the function itself relates to.
    * For example, consider two windows A and B in the same origin. B has a
@@ -425,27 +417,9 @@ public:
    * If a script in window A were to call B's function, GetDocumentFromCaller
    * would find that function (in B) and return B's document.
    *
-   * GetDocumentFromContext gets its document by looking at the currently
-   * executing context's global object and returning its document. Thus,
-   * given the example above, GetDocumentFromCaller would see that the
-   * currently executing script was in window A, and return A's document.
-   */
-  /**
-   * Get the document from the currently executing function. This will return
-   * the document that the currently executing function is in/from.
-   *
    * @return The document or null if no JS Context.
    */
   static nsIDocument* GetDocumentFromCaller();
-
-  /**
-   * Get the document through the JS context that's currently on the stack.
-   * If there's no JS context currently on the stack it will return null.
-   * This will return the document of the calling script.
-   *
-   * @return The document or null if no JS context
-   */
-  static nsIDocument* GetDocumentFromContext();
 
   // Check if a node is in the document prolog, i.e. before the document
   // element.
@@ -721,6 +695,11 @@ public:
                                uint32_t *aArgCount, const char*** aArgNames);
 
   /**
+   * Returns true if this document is in a Private Browsing window.
+   */
+  static bool IsInPrivateBrowsing(nsIDocument* aDoc);
+
+  /**
    * If aNode is not an element, return true exactly when aContent's binding
    * parent is null.
    *
@@ -810,6 +789,7 @@ public:
     eCOMMON_DIALOG_PROPERTIES,
     eMATHML_PROPERTIES,
     eSECURITY_PROPERTIES,
+    eNECKO_PROPERTIES,
     PropertiesFile_COUNT
   };
   static nsresult ReportToConsole(uint32_t aErrorFlags,
@@ -1033,13 +1013,13 @@ public:
   static uint32_t GetEventId(nsIAtom* aName);
 
   /**
-   * Return the category for the event with the given name. The name is the
-   * event name *without* the 'on' prefix. Returns NS_EVENT if the event
-   * is not known to be in any particular category.
+   * Return the EventClassID for the event with the given name. The name is the
+   * event name *without* the 'on' prefix. Returns eBasicEventClass if the event
+   * is not known to be of any particular event class.
    *
    * @param aName the event name to look up
    */
-  static uint32_t GetEventCategory(const nsAString& aName);
+  static mozilla::EventClassID GetEventClassID(const nsAString& aName);
 
   /**
    * Return the event id and atom for the event with the given name.
@@ -1048,10 +1028,10 @@ public:
    * event doesn't match a known event name in the category.
    *
    * @param aName the event name to look up
-   * @param aEventStruct only return event id in aEventStruct category
+   * @param aEventClassID only return event id for aEventClassID
    */
   static nsIAtom* GetEventIdAndAtom(const nsAString& aName,
-                                    uint32_t aEventStruct,
+                                    mozilla::EventClassID aEventClassID,
                                     uint32_t* aEventID);
 
   /**
@@ -1521,6 +1501,13 @@ public:
   }
 
   /**
+   * Call this function if !IsSafeToRunScript() and we fail to run the script
+   * (rather than using AddScriptRunner as we usually do). |aDocument| is
+   * optional as it is only used for showing the URL in the console.
+   */
+  static void WarnScriptWasIgnored(nsIDocument* aDocument);
+
+  /**
    * Retrieve information about the viewport as a data structure.
    * This will return information in the viewport META data section
    * of the document. This can be used in lieu of ProcessViewportInfo(),
@@ -1576,16 +1563,16 @@ public:
    * @return NS_OK on success, or NS_ERROR_OUT_OF_MEMORY if making the string
    * writable needs to allocate memory and that allocation fails.
    */
-  static nsresult ASCIIToLower(nsAString& aStr);
-  static nsresult ASCIIToLower(const nsAString& aSource, nsAString& aDest);
+  static void ASCIIToLower(nsAString& aStr);
+  static void ASCIIToLower(const nsAString& aSource, nsAString& aDest);
 
   /**
    * Convert ASCII a-z to A-Z.
    * @return NS_OK on success, or NS_ERROR_OUT_OF_MEMORY if making the string
    * writable needs to allocate memory and that allocation fails.
    */
-  static nsresult ASCIIToUpper(nsAString& aStr);
-  static nsresult ASCIIToUpper(const nsAString& aSource, nsAString& aDest);
+  static void ASCIIToUpper(nsAString& aStr);
+  static void ASCIIToUpper(const nsAString& aSource, nsAString& aDest);
 
   /**
    * Return whether aStr contains an ASCII uppercase character.
@@ -1595,10 +1582,6 @@ public:
   // Returns NS_OK for same origin, error (NS_ERROR_DOM_BAD_URI) if not.
   static nsresult CheckSameOrigin(nsIChannel *aOldChannel, nsIChannel *aNewChannel);
   static nsIInterfaceRequestor* GetSameOriginChecker();
-
-  // Trace the safe JS context.
-  static void TraceSafeJSContext(JSTracer* aTrc);
-
 
   /**
    * Get the Origin of the passed in nsIPrincipal or nsIURI. If the passed in
@@ -1619,7 +1602,6 @@ public:
   static nsresult GetUTFOrigin(nsIPrincipal* aPrincipal,
                                nsString& aOrigin);
   static nsresult GetUTFOrigin(nsIURI* aURI, nsString& aOrigin);
-  static void GetUTFNonNullOrigin(nsIURI* aURI, nsString& aOrigin);
 
   /**
    * This method creates and dispatches "command" event, which implements
@@ -1688,6 +1670,7 @@ public:
                                     JSObject** aResult);
 
   static nsresult CreateBlobBuffer(JSContext* aCx,
+                                   nsISupports* aParent,
                                    const nsACString& aData,
                                    JS::MutableHandle<JS::Value> aBlob);
 
@@ -1993,27 +1976,22 @@ public:
   static nsresult URIInheritsSecurityContext(nsIURI *aURI, bool *aResult);
 
   /**
-   * Set the given principal as the principal on the nsILoadInfo of the given
-   * channel, and tell the channel to inherit it if needed.  aPrincipal may be
-   * null, in which case this method is a no-op.
-   *
-   * If aLoadingPrincipal is not null, aURI must be the URI of aChannel.  If
-   * aInheritForAboutBlank is true, then about:blank will be told to inherit the
-   * principal. If aForceInherit is true, the channel will be told to inherit
-   * the principal no matter what, as long as the principal is not null.
-   *
-   * If aIsSandboxed is true, then aLoadingPrincipal must not be null.  In this
-   * case, the owner on the channel, if any, will be reset to null and the
-   * nsILoadInfo will say the channel should be sandboxed.
-   *
-   * The return value is whether the channel was told to inherit the principal.
-   */
-  static bool SetUpChannelOwner(nsIPrincipal* aLoadingPrincipal,
-                                nsIChannel* aChannel,
-                                nsIURI* aURI,
-                                bool aInheritForAboutBlank,
-                                bool aIsSandboxed,
-                                bool aForceInherit);
+    * Called before a channel is created to query whether the new
+    * channel should inherit the principal.
+    *
+    * The argument aLoadingPrincipal must not be null. The argument
+    * aURI must be the URI of the new channel. If aInheritForAboutBlank
+    * is true, then about:blank will be told to inherit the principal.
+    * If aForceInherit is true, the new channel will be told to inherit
+    * the principal no matter what.
+    *
+    * The return value is whether the new channel should inherit
+    * the principal.
+    */
+  static bool ChannelShouldInheritPrincipal(nsIPrincipal* aLoadingPrincipal,
+                                            nsIURI* aURI,
+                                            bool aInheritForAboutBlank,
+                                            bool aForceInherit);
 
   static nsresult Btoa(const nsAString& aBinaryData,
                        nsAString& aAsciiBase64String);
@@ -2170,6 +2148,13 @@ public:
    */
   static bool IsContentInsertionPoint(const nsIContent* aContent);
 
+
+  /**
+   * Returns whether the children of the provided content are
+   * nodes that are distributed to Shadow DOM insertion points.
+   */
+  static bool HasDistributedChildren(nsIContent* aContent);
+
   /**
    * Returns whether a given header is forbidden for an XHR or fetch
    * request.
@@ -2193,6 +2178,17 @@ public:
    * response.
    */
   static bool IsForbiddenResponseHeader(const nsACString& aHeader);
+
+  /**
+   * Returns the inner window ID for the window associated with a request,
+   */
+  static uint64_t GetInnerWindowID(nsIRequest* aRequest);
+
+  /**
+   * If the hostname for aURI is an IPv6 it encloses it in brackets,
+   * otherwise it just outputs the hostname in aHost.
+   */
+  static void GetHostOrIPv6WithBrackets(nsIURI* aURI, nsAString& aHost);
 
 private:
   static bool InitializeEventTable();
@@ -2269,9 +2265,7 @@ private:
 
   static bool sInitialized;
   static uint32_t sScriptBlockerCount;
-#ifdef DEBUG
   static uint32_t sDOMNodeRemovedSuppressCount;
-#endif
   static uint32_t sMicroTaskLevel;
   // Not an nsCOMArray because removing elements from those is slower
   static nsTArray< nsCOMPtr<nsIRunnable> >* sBlockedScriptRunners;
@@ -2313,7 +2307,7 @@ private:
 
 class MOZ_STACK_CLASS nsAutoScriptBlocker {
 public:
-  nsAutoScriptBlocker(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
+  explicit nsAutoScriptBlocker(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     nsContentUtils::AddScriptBlocker();
   }
@@ -2328,14 +2322,10 @@ class MOZ_STACK_CLASS nsAutoScriptBlockerSuppressNodeRemoved :
                           public nsAutoScriptBlocker {
 public:
   nsAutoScriptBlockerSuppressNodeRemoved() {
-#ifdef DEBUG
     ++nsContentUtils::sDOMNodeRemovedSuppressCount;
-#endif
   }
   ~nsAutoScriptBlockerSuppressNodeRemoved() {
-#ifdef DEBUG
     --nsContentUtils::sDOMNodeRemovedSuppressCount;
-#endif
   }
 };
 
@@ -2372,7 +2362,7 @@ public:
   if (aIID.Equals(NS_GET_IID(_interface))) {                                  \
     foundInterface = static_cast<_interface *>(_allocator);                   \
     if (!foundInterface) {                                                    \
-      *aInstancePtr = nullptr;                                                 \
+      *aInstancePtr = nullptr;                                                \
       return NS_ERROR_OUT_OF_MEMORY;                                          \
     }                                                                         \
   } else
@@ -2383,27 +2373,27 @@ public:
  * series is not finite.
  */
 #define NS_ENSURE_FINITE(f, rv)                                               \
-  if (!NS_finite(f)) {                                                        \
+  if (!mozilla::IsFinite(f)) {                                                \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE2(f1, f2, rv)                                         \
-  if (!NS_finite((f1)+(f2))) {                                                \
+  if (!mozilla::IsFinite((f1)+(f2))) {                                        \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE4(f1, f2, f3, f4, rv)                                 \
-  if (!NS_finite((f1)+(f2)+(f3)+(f4))) {                                      \
+  if (!mozilla::IsFinite((f1)+(f2)+(f3)+(f4))) {                              \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE5(f1, f2, f3, f4, f5, rv)                             \
-  if (!NS_finite((f1)+(f2)+(f3)+(f4)+(f5))) {                                 \
+  if (!mozilla::IsFinite((f1)+(f2)+(f3)+(f4)+(f5))) {                         \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE6(f1, f2, f3, f4, f5, f6, rv)                         \
-  if (!NS_finite((f1)+(f2)+(f3)+(f4)+(f5)+(f6))) {                            \
+  if (!mozilla::IsFinite((f1)+(f2)+(f3)+(f4)+(f5)+(f6))) {                    \
     return (rv);                                                              \
   }
 

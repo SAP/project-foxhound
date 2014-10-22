@@ -11,20 +11,57 @@ var gMainPane = {
    */
   init: function ()
   {
+    function setEventListener(aId, aEventType, aCallback)
+    {
+      document.getElementById(aId)
+              .addEventListener(aEventType, aCallback.bind(gMainPane));
+    }
+
+#ifdef HAVE_SHELL_SERVICE
+    this.updateSetDefaultBrowser();
+#ifdef XP_WIN
+    // In Windows 8 we launch the control panel since it's the only
+    // way to get all file type association prefs. So we don't know
+    // when the user will select the default.  We refresh here periodically
+    // in case the default changes.  On other Windows OS's defaults can also
+    // be set while the prefs are open.
+    window.setInterval(this.updateSetDefaultBrowser, 1000);
+
+#ifdef MOZ_METRO
+    // Pre Windows 8, we should hide the update related settings
+    // for the Metro browser
+    let version = Components.classes["@mozilla.org/system-info;1"].
+                  getService(Components.interfaces.nsIPropertyBag2).
+                  getProperty("version");
+    let preWin8 = parseFloat(version) < 6.2;
+    this._showingWin8Prefs = !preWin8;
+    if (preWin8) {
+      ["autoMetro", "autoMetroIndent"].forEach(
+        function(id) document.getElementById(id).collapsed = true
+      );
+    } else {
+      let brandShortName =
+        document.getElementById("bundleBrand").getString("brandShortName");
+      let bundlePrefs = document.getElementById("bundlePreferences");
+      let autoDesktop = document.getElementById("autoDesktop");
+      autoDesktop.label =
+        bundlePrefs.getFormattedString("updateAutoDesktop.label",
+                                       [brandShortName]);
+      autoDesktop.accessKey =
+        bundlePrefs.getString("updateAutoDesktop.accessKey");
+    }
+#endif
+#endif
+#endif
+
     // set up the "use current page" label-changing listener
     this._updateUseCurrentButton();
     window.addEventListener("focus", this._updateUseCurrentButton.bind(this), false);
 
     this.updateBrowserStartupLastSession();
 
-    // Notify observers that the UI is now ready
-    Components.classes["@mozilla.org/observer-service;1"]
-              .getService(Components.interfaces.nsIObserverService)
-              .notifyObservers(window, "main-pane-loaded", null);
-
 #ifdef XP_WIN
     // Functionality for "Show tabs in taskbar" on Windows 7 and up.
-
     try {
       let sysInfo = Cc["@mozilla.org/system-info;1"].
                     getService(Ci.nsIPropertyBag2);
@@ -32,10 +69,90 @@ var gMainPane = {
       let showTabsInTaskbar = document.getElementById("showTabsInTaskbar");
       showTabsInTaskbar.hidden = ver < 6.1;
     } catch (ex) {}
-
 #endif
 
+    setEventListener("browser.privatebrowsing.autostart", "change",
+                     gMainPane.updateBrowserStartupLastSession);
+    setEventListener("browser.download.dir", "change",
+                     gMainPane.displayDownloadDirPref);
+#ifdef HAVE_SHELL_SERVICE
+    setEventListener("setDefaultButton", "command",
+                     gMainPane.setDefaultBrowser);
+#endif
+    setEventListener("useCurrent", "command",
+                     gMainPane.setHomePageToCurrent);
+    setEventListener("useBookmark", "command",
+                     gMainPane.setHomePageToBookmark);
+    setEventListener("restoreDefaultHomePage", "command",
+                     gMainPane.restoreDefaultHomePage);
+    setEventListener("chooseFolder", "command",
+                     gMainPane.chooseFolder);
+
+#ifdef E10S_TESTING_ONLY
+    setEventListener("e10sAutoStart", "command",
+                     gMainPane.enableE10SChange);
+    let e10sCheckbox = document.getElementById("e10sAutoStart");
+    let e10sPref = document.getElementById("browser.tabs.remote.autostart");
+    let e10sTempPref = document.getElementById("e10sTempPref");
+    e10sCheckbox.checked = e10sPref.value || e10sTempPref.value;
+#endif
+
+    // Notify observers that the UI is now ready
+    Components.classes["@mozilla.org/observer-service;1"]
+              .getService(Components.interfaces.nsIObserverService)
+              .notifyObservers(window, "main-pane-loaded", null);
   },
+
+#ifdef E10S_TESTING_ONLY
+  enableE10SChange: function ()
+  {
+    let e10sCheckbox = document.getElementById("e10sAutoStart");
+    let e10sPref = document.getElementById("browser.tabs.remote.autostart");
+    let e10sTempPref = document.getElementById("e10sTempPref");
+
+    let prefsToChange;
+    if (e10sCheckbox.checked) {
+      // Enabling e10s autostart
+      prefsToChange = [e10sPref];
+    } else {
+      // Disabling e10s autostart
+      prefsToChange = [e10sPref];
+      if (e10sTempPref.value) {
+       prefsToChange.push(e10sTempPref);
+      }
+    }
+
+    const Cc = Components.classes, Ci = Components.interfaces;
+    let brandName = document.getElementById("bundleBrand").getString("brandShortName");
+    let bundle = document.getElementById("bundlePreferences");
+    let msg = bundle.getFormattedString(e10sCheckbox.checked ?
+                                        "featureEnableRequiresRestart" : "featureDisableRequiresRestart",
+                                        [brandName]);
+    let title = bundle.getFormattedString("shouldRestartTitle", [brandName]);
+    let shouldProceed = Services.prompt.confirm(window, title, msg)
+    if (shouldProceed) {
+      let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
+                         .createInstance(Ci.nsISupportsPRBool);
+      Services.obs.notifyObservers(cancelQuit, "quit-application-requested",
+                                   "restart");
+      shouldProceed = !cancelQuit.data;
+
+      if (shouldProceed) {
+        for (let prefToChange of prefsToChange) {
+          prefToChange.value = e10sCheckbox.checked;
+        }
+        if (!e10sCheckbox.checked) {
+          Services.prefs.setBoolPref("browser.requestE10sFeedback", true);
+          Services.prompt.alert(window, brandName, "After restart, a tab will open to input.mozilla.org where you can provide us feedback about your e10s experience.");
+        }
+        Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit |  Ci.nsIAppStartup.eRestart);
+      }
+    }
+
+    // Revert the checkbox in case we didn't quit
+    e10sCheckbox.checked = e10sPref.value || e10sTempPref.value;
+  },
+#endif
 
   // HOME PAGE
 
@@ -495,4 +612,51 @@ var gMainPane = {
     var linkTargeting = document.getElementById("linkTargeting");
     return linkTargeting.checked ? 3 : 2;
   }
+
+#ifdef HAVE_SHELL_SERVICE
+  ,
+  /*
+   * Preferences:
+   *
+   * browser.shell.checkDefault
+   * - true if a default-browser check (and prompt to make it so if necessary)
+   *   occurs at startup, false otherwise
+   */
+
+  /**
+   * Show button for setting browser as default browser or information that
+   * browser is already the default browser.
+   */
+  updateSetDefaultBrowser: function()
+  {
+    let shellSvc = getShellService();
+    let defaultBrowserBox = document.getElementById("defaultBrowserBox");
+    if (!shellSvc) {
+      defaultBrowserBox.hidden = true;
+      return;
+    }
+    let setDefaultPane = document.getElementById("setDefaultPane");
+    let selectedIndex = shellSvc.isDefaultBrowser(false, true) ? 1 : 0;
+    setDefaultPane.selectedIndex = selectedIndex;
+  },
+
+  /**
+   * Set browser as the operating system default browser.
+   */
+  setDefaultBrowser: function()
+  {
+    let shellSvc = getShellService();
+    if (!shellSvc)
+      return;
+    try {
+      shellSvc.setDefaultBrowser(true, false);
+    } catch (ex) {
+      Cu.reportError(ex);
+      return;
+    }
+    let selectedIndex =
+      shellSvc.isDefaultBrowser(false, true) ? 1 : 0;
+    document.getElementById("setDefaultPane").selectedIndex = selectedIndex;
+  }
+#endif
 };

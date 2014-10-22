@@ -64,7 +64,7 @@ namespace places {
   class BookmarkKeyClass : public nsTrimInt64HashKey
   {
     public:
-    BookmarkKeyClass(const int64_t* aItemId)
+    explicit BookmarkKeyClass(const int64_t* aItemId)
     : nsTrimInt64HashKey(aItemId)
     , creationTime(PR_Now())
     {
@@ -235,6 +235,15 @@ private:
   ~nsNavBookmarks();
 
   /**
+   * Checks whether or not aFolderId points to a live bookmark.
+   *
+   * @param aFolderId
+   *        the item-id of the folder to check.
+   * @return true if aFolderId points to live bookmarks, false otherwise.
+   */
+  bool IsLivemark(int64_t aFolderId);
+
+  /**
    * Locates the root items in the bookmarks folder hierarchy assigning folder
    * ids to the root properties that are exposed through the service interface.
    */
@@ -373,7 +382,7 @@ private:
 
   class RemoveFolderTransaction MOZ_FINAL : public nsITransaction {
   public:
-    RemoveFolderTransaction(int64_t aID) : mID(aID) {}
+    explicit RemoveFolderTransaction(int64_t aID) : mID(aID) {}
 
     NS_DECL_ISUPPORTS
 

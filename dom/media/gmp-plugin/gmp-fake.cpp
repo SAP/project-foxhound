@@ -49,6 +49,10 @@
 #include "gmp-video-decode.h"
 #include "gmp-video-frame-i420.h"
 #include "gmp-video-frame-encoded.h"
+#include "gmp-decryption.h"
+
+#include "gmp-test-decryptor.h"
+#include "gmp-test-storage.h"
 
 #if defined(_MSC_VER)
 #define PUBLIC_FUNC __declspec(dllexport)
@@ -81,7 +85,7 @@ const char* kLogStrings[] = {
 };
 
 
-static GMPPlatformAPI* g_platform_api = NULL;
+GMPPlatformAPI* g_platform_api = NULL;
 
 class FakeVideoEncoder;
 class FakeVideoDecoder;
@@ -108,7 +112,7 @@ class FakeEncoderTask : public GMPTask {
       : encoder_(encoder), frame_(frame), type_(type) {}
 
   virtual void Run();
-  virtual void Destroy() {}
+  virtual void Destroy() { delete this; }
 
   FakeVideoEncoder* encoder_;
   GMPVideoi420Frame* frame_;
@@ -117,7 +121,7 @@ class FakeEncoderTask : public GMPTask {
 
 class FakeVideoEncoder : public GMPVideoEncoder {
  public:
-  FakeVideoEncoder (GMPVideoHost* hostAPI) :
+  explicit FakeVideoEncoder (GMPVideoHost* hostAPI) :
     host_ (hostAPI),
     callback_ (NULL) {}
 
@@ -170,10 +174,12 @@ class FakeVideoEncoder : public GMPVideoEncoder {
 
     GMPVideoEncodedFrame* f = static_cast<GMPVideoEncodedFrame*> (ftmp);
 
+    // Encode this in a frame that looks a little bit like H.264.
+    // Note that we don't do PPS or SPS.
     // Copy the data. This really should convert this to network byte order.
     EncodedFrame eframe;
     eframe.length_ = sizeof(eframe) - sizeof(uint32_t);
-    eframe.h264_compat_ = 'g';
+    eframe.h264_compat_ = 5; // Emulate a H.264 IDR NAL.
     eframe.magic_ = ENCODED_FRAME_MAGIC;
     eframe.width_ = inputImage->Width();
     eframe.height_ = inputImage->Height();
@@ -260,7 +266,7 @@ class FakeDecoderTask : public GMPTask {
       : decoder_(decoder), frame_(frame), time_(time) {}
 
   virtual void Run();
-  virtual void Destroy() {}
+  virtual void Destroy() { delete this; }
 
   FakeVideoDecoder* decoder_;
   GMPVideoEncodedFrame* frame_;
@@ -269,7 +275,7 @@ class FakeDecoderTask : public GMPTask {
 
 class FakeVideoDecoder : public GMPVideoDecoder {
  public:
-  FakeVideoDecoder (GMPVideoHost* hostAPI) :
+  explicit FakeVideoDecoder (GMPVideoHost* hostAPI) :
     host_ (hostAPI),
     callback_ (NULL) {}
 
@@ -394,6 +400,9 @@ extern "C" {
       return GMPNoErr;
     } else if (!strcmp (aApiName, "encode-video")) {
       *aPluginApi = new FakeVideoEncoder (static_cast<GMPVideoHost*> (aHostAPI));
+      return GMPNoErr;
+    } else if (!strcmp (aApiName, "eme-decrypt")) {
+      *aPluginApi = new FakeDecryptor(static_cast<GMPDecryptorHost*> (aHostAPI));
       return GMPNoErr;
     }
     return GMPGenericErr;

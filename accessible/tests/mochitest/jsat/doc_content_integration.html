@@ -24,6 +24,22 @@
       document.getElementById('alert').hidden = true;
     }
 
+    function ariaShowBack() {
+      document.getElementById('back').setAttribute('aria-hidden', false);
+    }
+
+    function ariaHideBack() {
+      document.getElementById('back').setAttribute('aria-hidden', true);
+    }
+
+    function ariaShowIframe() {
+      document.getElementById('iframe').setAttribute('aria-hidden', false);
+    }
+
+    function ariaHideIframe() {
+      document.getElementById('iframe').setAttribute('aria-hidden', true);
+    }
+
   </script>
   <style>
     #windows {
@@ -58,13 +74,14 @@
 <body>
   <div>Phone status bar</div>
   <div id="windows">
-    <div id="appframe"></div>
+    <button id="back">Back</button>
     <div role="dialog" id="alert" hidden>
       <h1>This is an alert!</h1>
       <p>Do you agree?</p>
-      <button onclick="hideAlert()">Yes</button>
+      <button onclick="setTimeout(hideAlert, 500)">Yes</button>
       <button onclick="hideAlert()">No</button>
     </div>
+    <div id="appframe"></div>
   </div>
   <button id="home">Home</button>
 </body>

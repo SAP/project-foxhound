@@ -23,7 +23,7 @@ var _profileInitialized = false;
 // modules.
 _register_modules_protocol_handler();
 
-let _Promise = Components.utils.import("resource://gre/modules/Promise.jsm", this).Promise;
+let _Promise = Components.utils.import("resource://gre/modules/Promise.jsm", {}).Promise;
 
 // Support a common assertion library, Assert.jsm.
 let AssertCls = Components.utils.import("resource://testing-common/Assert.jsm", null).Assert;
@@ -1073,7 +1073,7 @@ function do_get_profile() {
           prop == "ProfLDS" || prop == "TmpD") {
         return file.clone();
       }
-      throw Components.results.NS_ERROR_FAILURE;
+      return null;
     },
     QueryInterface: function(iid) {
       if (iid.equals(Components.interfaces.nsIDirectoryServiceProvider) ||
@@ -1340,5 +1340,15 @@ try {
       .getService(Components.interfaces.nsIPrefBranch);
 
     prefs.setBoolPref("geo.provider.testing", true);
+  }
+} catch (e) { }
+
+// We need to avoid hitting the network with certain components.
+try {
+  if (runningInParent) {
+    let prefs = Components.classes["@mozilla.org/preferences-service;1"]
+      .getService(Components.interfaces.nsIPrefBranch);
+
+    prefs.setCharPref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
   }
 } catch (e) { }

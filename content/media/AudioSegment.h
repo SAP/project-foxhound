@@ -19,7 +19,7 @@ namespace mozilla {
 template<typename T>
 class SharedChannelArrayBuffer : public ThreadSharedObject {
 public:
-  SharedChannelArrayBuffer(nsTArray<nsTArray<T> >* aBuffers)
+  explicit SharedChannelArrayBuffer(nsTArray<nsTArray<T> >* aBuffers)
   {
     mBuffers.SwapElements(*aBuffers);
   }
@@ -86,8 +86,8 @@ struct AudioChunk {
   // Generic methods
   void SliceTo(TrackTicks aStart, TrackTicks aEnd)
   {
-    NS_ASSERTION(aStart >= 0 && aStart < aEnd && aEnd <= mDuration,
-                 "Slice out of bounds");
+    MOZ_ASSERT(aStart >= 0 && aStart < aEnd && aEnd <= mDuration,
+               "Slice out of bounds");
     if (mBuffer) {
       MOZ_ASSERT(aStart < INT32_MAX, "Can't slice beyond 32-bit sample lengths");
       for (uint32_t channel = 0; channel < mChannelData.Length(); ++channel) {
@@ -274,7 +274,7 @@ public:
     return chunk;
   }
   void ApplyVolume(float aVolume);
-  void WriteTo(uint64_t aID, AudioStream* aOutput, AudioMixer* aMixer = nullptr);
+  void WriteTo(uint64_t aID, AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
 
   int ChannelCount() {
     NS_WARN_IF_FALSE(!mChunks.IsEmpty(),

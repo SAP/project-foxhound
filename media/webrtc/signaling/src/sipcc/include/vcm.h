@@ -598,6 +598,13 @@ int vcmRxStart(cc_mcapid_t mcap_id,
         vcm_mediaAttrs_t *attrs);
 
 
+struct cc_media_remote_track_table_t_;
+typedef struct cc_media_remote_track_table_t_ vcm_media_remote_track_table_t;
+
+void vcmOnRemoteStreamAdded(cc_call_handle_t call_handle,
+                            const char* peer_connection_handle,
+                            vcm_media_remote_track_table_t *media_tracks);
+
 /**
  *  start rx stream
  *  Same concept as vcmRxStart but for ICE/PeerConnection-based flows
@@ -1083,9 +1090,12 @@ int vcmOnSdpParseError(const char *peercconnection, const char *message);
  */
 int vcmDisableRtcpComponent(const char *peerconnection, int level);
 
+short vcmGetVideoLevel(uint16_t codec, int32_t *level);
 short vcmGetVideoMaxFs(uint16_t codec, int32_t *max_fs);
-
-short vcmGetVideoMaxFr(uint16_t codec, int32_t *max_fs);
+short vcmGetVideoMaxFr(uint16_t codec, int32_t *max_fr);
+short vcmGetVideoMaxBr(uint16_t codec, int32_t *max_br);
+short vcmGetVideoMaxMbps(uint16_t codec, int32_t *max_mbps);
+short vcmGetVideoPreferredCodec(int32_t *preferred_codec);
 
 //Using C++ for gips. This is the end of extern "C" above.
 #ifdef __cplusplus

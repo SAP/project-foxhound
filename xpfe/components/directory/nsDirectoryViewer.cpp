@@ -25,8 +25,6 @@
 #include "nsIRDFService.h"
 #include "nsRDFCID.h"
 #include "rdf.h"
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
 #include "nsIServiceManager.h"
 #include "nsISupportsArray.h"
 #include "nsIXPConnect.h"
@@ -50,7 +48,8 @@
 #include "nsXPCOMCID.h"
 #include "nsIDocument.h"
 #include "mozilla/Preferences.h"
-#include "nsCxPusher.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 
@@ -150,14 +149,13 @@ nsHTTPIndex::OnFTPControlLog(bool server, const char *msg)
 {
     NS_ENSURE_TRUE(mRequestor, NS_OK);
 
-    nsCOMPtr<nsIScriptGlobalObject> scriptGlobal(do_GetInterface(mRequestor));
-    NS_ENSURE_TRUE(scriptGlobal, NS_OK);
+    nsCOMPtr<nsIGlobalObject> globalObject = do_GetInterface(mRequestor);
+    NS_ENSURE_TRUE(globalObject, NS_OK);
 
-    nsIScriptContext *context = scriptGlobal->GetContext();
-    NS_ENSURE_TRUE(context, NS_OK);
-
-    AutoPushJSContext cx(context->GetNativeContext());
-    NS_ENSURE_TRUE(cx, NS_OK);
+    // We're going to run script via JS_CallFunctionName, so we need an
+    // AutoEntryScript. This is Gecko specific and not in any spec.
+    dom::AutoEntryScript aes(globalObject);
+    JSContext* cx = aes.cx();
 
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
     NS_ENSURE_TRUE(global, NS_OK);
@@ -224,14 +222,14 @@ nsHTTPIndex::OnStartRequest(nsIRequest *request, nsISupports* aContext)
   if (mBindToGlobalObject && mRequestor) {
     mBindToGlobalObject = false;
 
-    // Now get the content viewer container's script object.
-    nsCOMPtr<nsIScriptGlobalObject> scriptGlobal(do_GetInterface(mRequestor));
-    NS_ENSURE_TRUE(scriptGlobal, NS_ERROR_FAILURE);
+    nsCOMPtr<nsIGlobalObject> globalObject = do_GetInterface(mRequestor);
+    NS_ENSURE_TRUE(globalObject, NS_ERROR_FAILURE);
 
-    nsIScriptContext *context = scriptGlobal->GetContext();
-    NS_ENSURE_TRUE(context, NS_ERROR_FAILURE);
+    // We might run script via JS_SetProperty, so we need an AutoEntryScript.
+    // This is Gecko specific and not in any spec.
+    dom::AutoEntryScript aes(globalObject);
+    JSContext* cx = aes.cx();
 
-    AutoPushJSContext cx(context->GetNativeContext());
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
 
     // Using XPConnect, wrap the HTTP index object...
@@ -945,7 +943,11 @@ nsHTTPIndex::FireTimer(nsITimer* aTimer, void* aClosure)
           rv = NS_NewURI(getter_AddRefs(url), uri.get());
           nsCOMPtr<nsIChannel>	channel;
           if (NS_SUCCEEDED(rv) && (url)) {
-            rv = NS_NewChannel(getter_AddRefs(channel), url, nullptr, nullptr);
+            rv = NS_NewChannel(getter_AddRefs(channel),
+                               url,
+                               nsContentUtils::GetSystemPrincipal(),
+                               nsILoadInfo::SEC_NORMAL,
+                               nsIContentPolicy::TYPE_OTHER);
           }
           if (NS_SUCCEEDED(rv) && (channel)) {
             channel->SetNotificationCallbacks(httpIndex);
@@ -1298,7 +1300,12 @@ nsDirectoryViewerFactory::CreateInstance(const char *aCommand,
     if (NS_FAILED(rv)) return rv;
     
     nsCOMPtr<nsIChannel> channel;
-    rv = NS_NewChannel(getter_AddRefs(channel), uri, nullptr, aLoadGroup);
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       uri,
+                       nsContentUtils::GetSystemPrincipal(),
+                       nsILoadInfo::SEC_NORMAL,
+                       nsIContentPolicy::TYPE_OTHER,
+                       aLoadGroup);
     if (NS_FAILED(rv)) return rv;
     
     nsCOMPtr<nsIStreamListener> listener;

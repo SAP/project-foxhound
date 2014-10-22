@@ -17,21 +17,14 @@ enum SessionType { "temporary", "persistent" };
 interface MediaKeys {
   readonly attribute DOMString keySystem;
 
-  // Promise<MediaKeySession>
   [NewObject, Throws]
-  Promise createSession(DOMString initDataType, Uint8Array initData, optional SessionType sessionType = "temporary");
+  MediaKeySession createSession(optional SessionType sessionType = "temporary");
 
-  // Promise<MediaKeySession>
   [NewObject, Throws]
-  Promise loadSession(DOMString sessionId);
+  Promise<void> setServerCertificate((ArrayBufferView or ArrayBuffer) serverCertificate);
 
-  // Promise<any>
-  [NewObject, Throws]
-  Promise setServerCertificate(Uint8Array serverCertificate);
-
-  // Promise<MediaKeys>
   [Throws,NewObject]
-  static Promise create(DOMString keySystem);
+  static Promise<MediaKeys> create(DOMString keySystem);
   static IsTypeSupportedResult isTypeSupported(DOMString keySystem, optional DOMString initDataType, optional DOMString contentType, optional DOMString capability);
 
 };

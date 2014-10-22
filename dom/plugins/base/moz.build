@@ -43,20 +43,19 @@ EXPORTS.mozilla += [
 
 UNIFIED_SOURCES += [
     'nsJSNPRuntime.cpp',
+    'nsNPAPIPluginInstance.cpp',
+    'nsNPAPIPluginStreamListener.cpp',
     'nsPluginInstanceOwner.cpp',
     'nsPluginModule.cpp',
     'nsPluginPlayPreviewInfo.cpp',
+    'nsPluginStreamListenerPeer.cpp',
+    'nsPluginTags.cpp',
     'PluginPRLibrary.cpp',
 ]
 
-# These files cannot be built in unified mode because they force NSPR logging.
 SOURCES += [
-    'nsNPAPIPlugin.cpp',
-    'nsNPAPIPluginInstance.cpp',
-    'nsNPAPIPluginStreamListener.cpp',
-    'nsPluginHost.cpp',
-    'nsPluginStreamListenerPeer.cpp',
-    'nsPluginTags.cpp',
+    'nsNPAPIPlugin.cpp', # Conflict with X11 headers
+    'nsPluginHost.cpp',  # Conflict with NS_NPAPIPLUGIN_CALLBACK
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -99,8 +98,6 @@ MSVC_ENABLE_PGO = True
 LOCAL_INCLUDES += [
     '/content/base/src',
     '/dom/base',
-    '/gfx/skia/include/config',
-    '/gfx/skia/include/core',
     '/layout/generic',
     '/layout/xul',
     '/widget/android',
@@ -123,3 +120,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 DEFINES['SK_BUILD_FOR_ANDROID_NDK'] = True
 
 FINAL_LIBRARY = 'xul'
+
+CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
+CXXFLAGS += CONFIG['TK_CFLAGS']

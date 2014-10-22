@@ -25,10 +25,8 @@ var MemoryObserver = {
     for (let i = 0; i < tabs.length; i++) {
       if (tabs[i] != selected) {
         this.zombify(tabs[i]);
-        Telemetry.addData("FENNEC_TAB_ZOMBIFIED", (Date.now() - tabs[i].lastTouchedAt) / 1000);
       }
     }
-    Telemetry.addData("FENNEC_LOWMEM_TAB_COUNT", tabs.length);
 
     // Change some preferences temporarily for only this session
     let defaults = Services.prefs.getDefaultBranch(null);
@@ -46,7 +44,7 @@ var MemoryObserver = {
     // If this browser is already a zombie, fallback to the session data
     let currentURL = browser.__SS_restore ? data.entries[0].url : browser.currentURI.spec;
     let sibling = browser.nextSibling;
-    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(browser.contentWindow);
+    let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(browser);
 
     tab.destroy();
     tab.create(currentURL, { sibling: sibling, zombifying: true, delayLoad: true, isPrivate: isPrivate });

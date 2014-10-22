@@ -29,7 +29,6 @@ this.EXPORTED_SYMBOLS = ["DebuggerTransport",
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
 
 let promise = Cu.import("resource://gre/modules/devtools/deprecated-sync-thenables.js").Promise;
 const { defer, resolve, reject } = promise;
@@ -85,6 +84,8 @@ let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
 loader.loadSubScript("resource://gre/modules/devtools/transport/transport.js", this);
 
 /**
+ * TODO: Get rid of this API in favor of EventTarget (bug 1042642)
+ *
  * Add simple event notification to a prototype object. Any object that has
  * some use for event notifications or the observer pattern in general can be
  * augmented with the necessary facilities by passing its prototype to this
@@ -175,7 +176,7 @@ function eventSource(aProto) {
    *        All arguments will be passed along to the listeners,
    *        including the name argument.
    */
-  aProto.notify = function () {
+  aProto.emit = function () {
     if (!this._listeners) {
       return;
     }
@@ -224,6 +225,7 @@ const UnsolicitedNotifications = {
   "reflowActivity": "reflowActivity",
   "addonListChanged": "addonListChanged",
   "tabNavigated": "tabNavigated",
+  "frameUpdate": "frameUpdate",
   "pageError": "pageError",
   "documentLoad": "documentLoad",
   "enteredFrame": "enteredFrame",
@@ -277,7 +279,7 @@ this.DebuggerClient = function (aTransport)
   this.mainRoot = null;
   this.expectReply("root", (aPacket) => {
     this.mainRoot = new RootClient(this, aPacket);
-    this.notify("connected", aPacket.applicationType, aPacket.traits);
+    this.emit("connected", aPacket.applicationType, aPacket.traits);
   });
 }
 
@@ -419,7 +421,11 @@ DebuggerClient.prototype = {
         this._transport = null;
         return;
       }
-      client.detach(detachClients);
+      if (client.detach) {
+        client.detach(detachClients);
+        return;
+      }
+      detachClients();
     };
     detachClients();
   },
@@ -453,7 +459,7 @@ DebuggerClient.prototype = {
         javascriptEnabled: cachedTab.javascriptEnabled,
         traits: cachedTab.traits,
       };
-      setTimeout(() => aOnResponse(cachedResponse, cachedTab), 0);
+      DevToolsUtils.executeSoon(() => aOnResponse(cachedResponse, cachedTab));
       return;
     }
 
@@ -543,7 +549,7 @@ DebuggerClient.prototype = {
    */
   attachThread: function (aThreadActor, aOnResponse = noop, aOptions={}) {
     if (this._clients.has(aThreadActor)) {
-      setTimeout(() => aOnResponse({}, this._clients.get(aThreadActor)), 0);
+      DevToolsUtils.executeSoon(() => aOnResponse({}, this._clients.get(aThreadActor)));
       return;
     }
 
@@ -572,7 +578,7 @@ DebuggerClient.prototype = {
    */
   attachTracer: function (aTraceActor, aOnResponse = noop) {
     if (this._clients.has(aTraceActor)) {
-      setTimeout(() => aOnResponse({}, this._clients.get(aTraceActor)), 0);
+      DevToolsUtils.executeSoon(() => aOnResponse({}, this._clients.get(aTraceActor)));
       return;
     }
 
@@ -784,7 +790,7 @@ DebuggerClient.prototype = {
       throw Error("'" + request.type + "' bulk packet has no length.");
     }
 
-    let request = new Request(request);
+    request = new Request(request);
     request.format = "bulk";
 
     this._pendingRequests.push(request);
@@ -918,7 +924,7 @@ DebuggerClient.prototype = {
       // Only try to notify listeners on events, not responses to requests
       // that lack a packet type.
       if (aPacket.type) {
-        this.notify(aPacket.type, aPacket);
+        this.emit(aPacket.type, aPacket);
       }
 
       if (activeRequest) {
@@ -991,7 +997,7 @@ DebuggerClient.prototype = {
    *        the stream.
    */
   onClosed: function (aStatus) {
-    this.notify("closed");
+    this.emit("closed");
   },
 
   registerClient: function (client) {
@@ -1007,12 +1013,8 @@ DebuggerClient.prototype = {
     }
     if (client.events.length > 0 && typeof(client.emit) != "function") {
       throw new Error("DebuggerServer.registerClient expects " +
-                      "client instances with non-empty `events` array to" +
+                      "a client instance with non-empty `events` array to" +
                       "have an `emit` function.");
-    }
-    if (typeof(client.detach) != "function") {
-      throw new Error("DebuggerServer.registerClient expects " +
-                      "a client instance with a `detach` function.");
     }
     if (this._clients.has(actorID)) {
       throw new Error("DebuggerServer.registerClient already registered " +
@@ -1282,7 +1284,7 @@ TabClient.prototype = {
    */
   attachThread: function(aOptions={}, aOnResponse = noop) {
     if (this.thread) {
-      setTimeout(() => aOnResponse({}, this.thread), 0);
+      DevToolsUtils.executeSoon(() => aOnResponse({}, this.thread));
       return;
     }
 
@@ -1670,7 +1672,7 @@ ThreadClient.prototype = {
     // the next resumption. Otherwise we have to force a pause in order to send
     // the array.
     if (this.paused) {
-      setTimeout(() => onResponse({}), 0);
+      DevToolsUtils.executeSoon(() => onResponse({}));
       return;
     }
     this.interrupt(response => {
@@ -1790,7 +1792,13 @@ ThreadClient.prototype = {
         aOnResponse(aResponse);
         return;
       }
-      doSetBreakpoint(this.resume.bind(this));
+
+      const { type, why } = aResponse;
+      const cleanUp = type == "paused" && why.type == "interrupted"
+        ? () => this.resume()
+        : noop;
+
+      doSetBreakpoint(cleanUp);
     });
   },
 
@@ -1853,7 +1861,7 @@ ThreadClient.prototype = {
   _clearScripts: function () {
     if (Object.keys(this._scriptCache).length > 0) {
       this._scriptCache = {}
-      this.notify("scriptscleared");
+      this.emit("scriptscleared");
     }
   },
 
@@ -1923,7 +1931,7 @@ ThreadClient.prototype = {
 
       // If we got as many frames as we asked for, there might be more
       // frames available.
-      this.notify("framesadded");
+      this.emit("framesadded");
 
       aCallback(aResponse);
     });
@@ -1938,7 +1946,7 @@ ThreadClient.prototype = {
   _clearFrames: function () {
     if (this._frameCache.length > 0) {
       this._frameCache = [];
-      this.notify("framescleared");
+      this.emit("framescleared");
     }
   },
 
@@ -2038,7 +2046,7 @@ ThreadClient.prototype = {
     this._clearFrames();
     this._clearPauseGrips();
     aPacket.type === ThreadStateTypes.detached && this._clearThreadGrips();
-    this.client._eventsEnabled && this.notify(aPacket.type, aPacket);
+    this.client._eventsEnabled && this.emit(aPacket.type, aPacket);
   },
 
   /**
@@ -2389,7 +2397,7 @@ SourceClient.prototype = {
       if (!aResponse.error) {
         this._isBlackBoxed = true;
         if (this._activeThread) {
-          this._activeThread.notify("blackboxchange", this);
+          this._activeThread.emit("blackboxchange", this);
         }
       }
       return aResponse;
@@ -2410,12 +2418,29 @@ SourceClient.prototype = {
       if (!aResponse.error) {
         this._isBlackBoxed = false;
         if (this._activeThread) {
-          this._activeThread.notify("blackboxchange", this);
+          this._activeThread.emit("blackboxchange", this);
         }
       }
       return aResponse;
     }
   }),
+
+  /**
+   * Get Executable Lines from a source
+   *
+   * @param aCallback Function
+   *        The callback function called when we receive the response from the server.
+   */
+  getExecutableLines: function(cb){
+    let packet = {
+      to: this._form.actor,
+      type: "getExecutableLines"
+    };
+
+    this._client.request(packet, res => {
+      cb(res.lines);
+    });
+  },
 
   /**
    * Get a long string grip for this SourceClient's source.
@@ -2443,7 +2468,7 @@ SourceClient.prototype = {
       if (!aResponse.error) {
         this._isPrettyPrinted = true;
         this._activeThread._clearFrames();
-        this._activeThread.notify("prettyprintchange", this);
+        this._activeThread.emit("prettyprintchange", this);
       }
       this._onSourceResponse(aResponse, aCallback);
     });
@@ -2461,7 +2486,7 @@ SourceClient.prototype = {
       if (!aResponse.error) {
         this._isPrettyPrinted = false;
         this._activeThread._clearFrames();
-        this._activeThread.notify("prettyprintchange", this);
+        this._activeThread.emit("prettyprintchange", this);
       }
       this._onSourceResponse(aResponse, aCallback);
     });

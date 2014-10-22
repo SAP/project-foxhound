@@ -25,111 +25,177 @@
 #ifndef mozilla_pkix_test__pkixtestutils_h
 #define mozilla_pkix_test__pkixtestutils_h
 
-#include <stdint.h>
-#include <stdio.h>
+#include <ctime>
+#include <stdint.h> // Some Mozilla-supported compilers lack <cstdint>
+#include <string>
 
-#include "cert.h"
-#include "keyhi.h"
 #include "pkix/enumclass.h"
 #include "pkix/pkixtypes.h"
 #include "pkix/ScopedPtr.h"
-#include "seccomon.h"
+
+static const unsigned int MINIMUM_TEST_KEY_BITS = 1024;
 
 namespace mozilla { namespace pkix { namespace test {
 
-namespace {
+typedef std::basic_string<uint8_t> ByteString;
 
-inline void
-fclose_void(FILE* file) {
-  (void) fclose(file);
-}
+inline bool ENCODING_FAILED(const ByteString& bs) { return bs.empty(); }
 
-inline void
-SECITEM_FreeItem_true(SECItem* item)
+// XXX: Ideally, we should define this instead:
+//
+//   template <typename T, std::size_t N>
+//   constexpr inline std::size_t
+//   ArrayLength(T (&)[N])
+//   {
+//     return N;
+//   }
+//
+// However, we don't because not all supported compilers support constexpr,
+// and we need to calculate array lengths in static_assert sometimes.
+//
+// XXX: Evaluates its argument twice
+#define MOZILLA_PKIX_ARRAY_LENGTH(x) (sizeof(x) / sizeof((x)[0]))
+
+class TestInput : public Input
 {
-  SECITEM_FreeItem(item, true);
-}
+public:
+  template <size_t N>
+  explicit TestInput(const char (&valueString)[N])
+    : Input(reinterpret_cast<const uint8_t(&)[N-1]>(valueString))
+  {
+  }
+};
 
-} // unnamed namespace
+// python DottedOIDToCode.py --tlv id-kp-OCSPSigning 1.3.6.1.5.5.7.3.9
+static const uint8_t tlv_id_kp_OCSPSigning[] = {
+  0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x09
+};
 
-typedef ScopedPtr<CERTCertificate, CERT_DestroyCertificate> ScopedCERTCertificate;
-typedef ScopedPtr<CERTCertList, CERT_DestroyCertList> ScopedCERTCertList;
-typedef mozilla::pkix::ScopedPtr<FILE, fclose_void> ScopedFILE;
-typedef mozilla::pkix::ScopedPtr<SECItem, SECITEM_FreeItem_true> ScopedSECItem;
-typedef mozilla::pkix::ScopedPtr<SECKEYPublicKey, SECKEY_DestroyPublicKey>
-  ScopedSECKEYPublicKey;
-typedef mozilla::pkix::ScopedPtr<SECKEYPrivateKey, SECKEY_DestroyPrivateKey>
-  ScopedSECKEYPrivateKey;
+// python DottedOIDToCode.py --tlv id-kp-serverAuth 1.3.6.1.5.5.7.3.1
+static const uint8_t tlv_id_kp_serverAuth[] = {
+  0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01
+};
 
-FILE* OpenFile(const char* dir, const char* filename, const char* mode);
+// python DottedOIDToCode.py --alg sha256WithRSAEncryption 1.2.840.113549.1.1.11
+const uint8_t alg_sha256WithRSAEncryption[] = {
+  0x30, 0x0b, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b
+};
 
-extern const PRTime ONE_DAY;
+const ByteString sha256WithRSAEncryption(alg_sha256WithRSAEncryption,
+  MOZILLA_PKIX_ARRAY_LENGTH(alg_sha256WithRSAEncryption));
+
+// python DottedOIDToCode.py --alg md5WithRSAEncryption 1.2.840.113549.1.1.4
+const uint8_t alg_md5WithRSAEncryption[] = {
+  0x30, 0x0b, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x04
+};
+
+const ByteString md5WithRSAEncryption(alg_md5WithRSAEncryption,
+  MOZILLA_PKIX_ARRAY_LENGTH(alg_md5WithRSAEncryption));
+
+// python DottedOIDToCode.py --alg md2WithRSAEncryption 1.2.840.113549.1.1.2
+const uint8_t alg_md2WithRSAEncryption[] = {
+  0x30, 0x0b, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x02
+};
+
+const ByteString md2WithRSAEncryption(alg_md2WithRSAEncryption,
+  MOZILLA_PKIX_ARRAY_LENGTH(alg_md2WithRSAEncryption));
 
 // e.g. YMDHMS(2016, 12, 31, 1, 23, 45) => 2016-12-31:01:23:45 (GMT)
-PRTime YMDHMS(int16_t year, int16_t month, int16_t day,
-              int16_t hour, int16_t minutes, int16_t seconds);
+mozilla::pkix::Time YMDHMS(int16_t year, int16_t month, int16_t day,
+                           int16_t hour, int16_t minutes, int16_t seconds);
 
-SECStatus GenerateKeyPair(/*out*/ ScopedSECKEYPublicKey& publicKey,
-                          /*out*/ ScopedSECKEYPrivateKey& privateKey);
+ByteString CNToDERName(const char* cn);
+bool InputEqualsByteString(Input input, const ByteString& bs);
 
-// The result will be owned by the arena
-const SECItem* ASCIIToDERName(PLArenaPool* arena, const char* cn);
+class TestKeyPair
+{
+public:
+  virtual ~TestKeyPair() { }
+
+  // The DER encoding of the entire SubjectPublicKeyInfo structure. This is
+  // what is encoded in certificates.
+  const ByteString subjectPublicKeyInfo;
+
+  // The DER encoding of subjectPublicKeyInfo.subjectPublicKey. This is what is
+  // hashed to create CertIDs for OCSP.
+  const ByteString subjectPublicKey;
+
+  virtual Result SignData(const ByteString& tbs,
+                          const ByteString& signatureAlgorithm,
+                          /*out*/ ByteString& signature) const = 0;
+
+  virtual TestKeyPair* Clone() const = 0;
+protected:
+  TestKeyPair(const ByteString& spki, const ByteString& spk)
+    : subjectPublicKeyInfo(spki)
+    , subjectPublicKey(spk)
+  {
+  }
+
+  TestKeyPair(const TestKeyPair&) /*= delete*/;
+  void operator=(const TestKeyPair&) /*= delete*/;
+};
+
+TestKeyPair* CloneReusedKeyPair();
+TestKeyPair* GenerateKeyPair();
+inline void DeleteTestKeyPair(TestKeyPair* keyPair) { delete keyPair; }
+typedef ScopedPtr<TestKeyPair, DeleteTestKeyPair> ScopedTestKeyPair;
+
+ByteString SHA1(const ByteString& toHash);
+
+Result TestCheckPublicKey(Input subjectPublicKeyInfo);
+Result TestVerifySignedData(const SignedDataWithSignature& signedData,
+                            Input subjectPublicKeyInfo);
+Result TestDigestBuf(Input item, /*out*/ uint8_t* digestBuf,
+                     size_t digestBufLen);
 
 // Replace one substring in item with another of the same length, but only if
-// the substring was found exactly once. The "only once" restriction is helpful
-// for avoiding making multiple changes at once.
+// the substring was found exactly once. The "same length" restriction is
+// useful for avoiding invalidating lengths encoded within the item. The
+// "only once" restriction is helpful for avoiding making accidental changes.
 //
 // The string to search for must be 8 or more bytes long so that it is
 // extremely unlikely that there will ever be any false positive matches
 // in digital signatures, keys, hashes, etc.
-SECStatus TamperOnce(SECItem& item, const uint8_t* from, size_t fromLen,
-                     const uint8_t* to, size_t toLen);
+Result TamperOnce(/*in/out*/ ByteString& item, const ByteString& from,
+                  const ByteString& to);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Encode Certificates
 
 enum Version { v1 = 0, v2 = 1, v3 = 2 };
 
+// signature is assumed to be the DER encoding of an AlgorithmIdentifer. It is
+// put into the signature field of the TBSCertificate. In most cases, it will
+// be the same as signatureAlgorithm, which is the algorithm actually used
+// to sign the certificate.
 // serialNumber is assumed to be the DER encoding of an INTEGER.
 //
 // If extensions is null, then no extensions will be encoded. Otherwise,
-// extensions must point to a null-terminated array of SECItem*. If the first
-// item of the array is null then an empty Extensions sequence will be encoded.
-//
-// If issuerPrivateKey is null, then the certificate will be self-signed.
-// Parameter order is based on the order of the attributes of the certificate
-// in RFC 5280.
-//
-// The return value, if non-null, is owned by the arena in the context and
-// MUST NOT be freed.
-SECItem* CreateEncodedCertificate(PLArenaPool* arena, long version,
-                                  SECOidTag signature,
-                                  const SECItem* serialNumber,
-                                  const SECItem* issuerNameDER,
-                                  PRTime notBefore, PRTime notAfter,
-                                  const SECItem* subjectNameDER,
-                     /*optional*/ SECItem const* const* extensions,
-                     /*optional*/ SECKEYPrivateKey* issuerPrivateKey,
-                                  SECOidTag signatureHashAlg,
-                          /*out*/ ScopedSECKEYPrivateKey& privateKey);
+// extensions must point to an array of ByteStrings, terminated with an empty
+// ByteString. (If the first item of the array is empty then an empty
+// Extensions sequence will be encoded.)
+ByteString CreateEncodedCertificate(long version, const ByteString& signature,
+                                    const ByteString& serialNumber,
+                                    const ByteString& issuerNameDER,
+                                    time_t notBefore, time_t notAfter,
+                                    const ByteString& subjectNameDER,
+                                    const TestKeyPair& subjectKeyPair,
+                                    /*optional*/ const ByteString* extensions,
+                                    const TestKeyPair& issuerKeyPair,
+                                    const ByteString& signatureAlgorithm);
 
-SECItem* CreateEncodedSerialNumber(PLArenaPool* arena, long value);
+ByteString CreateEncodedSerialNumber(long value);
 
 MOZILLA_PKIX_ENUM_CLASS ExtensionCriticality { NotCritical = 0, Critical = 1 };
 
-// The return value, if non-null, is owned by the arena and MUST NOT be freed.
-SECItem* CreateEncodedBasicConstraints(PLArenaPool* arena, bool isCA,
-                                       /*optional*/ long* pathLenConstraint,
-                                       ExtensionCriticality criticality);
+ByteString CreateEncodedBasicConstraints(bool isCA,
+                                         /*optional*/ long* pathLenConstraint,
+                                         ExtensionCriticality criticality);
 
-// ekus must be non-null and must must point to a SEC_OID_UNKNOWN-terminated
-// array of SECOidTags. If the first item of the array is SEC_OID_UNKNOWN then
-// an empty EKU extension will be encoded.
-//
-// The return value, if non-null, is owned by the arena and MUST NOT be freed.
-SECItem* CreateEncodedEKUExtension(PLArenaPool* arena,
-                                   const SECOidTag* ekus, size_t ekusCount,
-                                   ExtensionCriticality criticality);
+// Creates a DER-encoded extKeyUsage extension with one EKU OID.
+ByteString CreateEncodedEKUExtension(Input eku,
+                                     ExtensionCriticality criticality);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Encode OCSP responses
@@ -137,33 +203,21 @@ SECItem* CreateEncodedEKUExtension(PLArenaPool* arena,
 class OCSPResponseExtension
 {
 public:
-  SECItem id;
+  ByteString id;
   bool critical;
-  SECItem value;
+  ByteString value;
   OCSPResponseExtension* next;
 };
 
 class OCSPResponseContext
 {
 public:
-  OCSPResponseContext(PLArenaPool* arena, const CertID& certID, PRTime time);
+  OCSPResponseContext(const CertID& certID, std::time_t time);
 
-  PLArenaPool* arena;
   const CertID& certID;
   // TODO(bug 980538): add a way to specify what certificates are included.
 
   // The fields below are in the order that they appear in an OCSP response.
-
-  // By directly using the issuer name & SPKI and signer name & private key,
-  // instead of extracting those things out of CERTCertificate objects, we
-  // avoid poor interactions with the NSS CERTCertificate caches. In
-  // particular, there are some tests in which it is important that we know
-  // that the issuer and/or signer certificates are NOT in the NSS caches
-  // because we ant to make sure that our path building logic will find them
-  // or we want to test what happens when those certificates cannot be found.
-  // This concern doesn't apply to |cert| above because our verification code
-  // for certificate chains and for OCSP responses take the end-entity cert
-  // as a CERTCertificate anyway.
 
   enum OCSPResponseStatus {
     successful = 0,
@@ -178,41 +232,36 @@ public:
   bool skipResponseBytes; // If true, don't include responseBytes
 
   // responderID
-  const SECItem* signerNameDER; // If set, responderID will use the byName
-                                // form; otherwise responderID will use the
-                                // byKeyHash form.
+  ByteString signerNameDER; // If set, responderID will use the byName
+                            // form; otherwise responderID will use the
+                            // byKeyHash form.
 
-  PRTime producedAt;
+  std::time_t producedAt;
 
   OCSPResponseExtension* extensions;
   bool includeEmptyExtensions; // If true, include the extension wrapper
                                // regardless of if there are any actual
                                // extensions.
-  ScopedSECKEYPrivateKey signerPrivateKey;
+  ScopedTestKeyPair signerKeyPair;
+  ByteString signatureAlgorithm; // DER encoding of signature algorithm to use.
   bool badSignature; // If true, alter the signature to fail verification
-  SECItem const* const* certs; // non-owning pointer to certs to embed
+  const ByteString* certs; // optional; array terminated by an empty string
 
   // The following fields are on a per-SingleResponse basis. In the future we
   // may support including multiple SingleResponses per response.
-  SECOidTag certIDHashAlg;
   enum CertStatus {
     good = 0,
     revoked = 1,
     unknown = 2,
   };
   uint8_t certStatus; // CertStatus or an invalid value
-  PRTime revocationTime; // For certStatus == revoked
-  PRTime thisUpdate;
-  PRTime nextUpdate;
+  std::time_t revocationTime; // For certStatus == revoked
+  std::time_t thisUpdate;
+  std::time_t nextUpdate;
   bool includeNextUpdate;
 };
 
-// The return value, if non-null, is owned by the arena in the context
-// and MUST NOT be freed.
-// This function does its best to respect the NSPR error code convention
-// (that is, if it returns null, calling PR_GetError() will return the
-// error of the failed operation). However, this is not guaranteed.
-SECItem* CreateEncodedOCSPResponse(OCSPResponseContext& context);
+ByteString CreateEncodedOCSPResponse(OCSPResponseContext& context);
 
 } } } // namespace mozilla::pkix::test
 

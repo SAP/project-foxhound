@@ -57,7 +57,7 @@ class ImageListener : public MediaDocumentStreamListener
 public:
   NS_DECL_NSIREQUESTOBSERVER
 
-  ImageListener(ImageDocument* aDocument);
+  explicit ImageListener(ImageDocument* aDocument);
   virtual ~ImageListener();
 };
 
@@ -94,7 +94,7 @@ ImageListener::OnStartRequest(nsIRequest* request, nsISupports *ctxt)
   nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
   nsCOMPtr<nsIPrincipal> channelPrincipal;
   if (secMan) {
-    secMan->GetChannelPrincipal(channel, getter_AddRefs(channelPrincipal));
+    secMan->GetChannelResultPrincipal(channel, getter_AddRefs(channelPrincipal));
   }
 
   int16_t decision = nsIContentPolicy::ACCEPT;
@@ -113,12 +113,14 @@ ImageListener::OnStartRequest(nsIRequest* request, nsISupports *ctxt)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(imgDoc->mImageContent);
-  NS_ENSURE_TRUE(imageLoader, NS_ERROR_UNEXPECTED);
+  if (!imgDoc->mObservingImageLoader) {
+    nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(imgDoc->mImageContent);
+    NS_ENSURE_TRUE(imageLoader, NS_ERROR_UNEXPECTED);
 
-  imageLoader->AddObserver(imgDoc);
-  imgDoc->mObservingImageLoader = true;
-  imageLoader->LoadImageWithChannel(channel, getter_AddRefs(mNextStream));
+    imageLoader->AddObserver(imgDoc);
+    imgDoc->mObservingImageLoader = true;
+    imageLoader->LoadImageWithChannel(channel, getter_AddRefs(mNextStream));
+  }
 
   return MediaDocumentStreamListener::OnStartRequest(request, ctxt);
 }
@@ -384,12 +386,14 @@ ImageDocument::ScrollImageTo(int32_t aX, int32_t aY, bool restoreImage)
   }
 
   nsCOMPtr<nsIPresShell> shell = GetShell();
-  if (!shell)
+  if (!shell) {
     return;
+  }
 
   nsIScrollableFrame* sf = shell->GetRootScrollFrameAsScrollable();
-  if (!sf)
+  if (!sf) {
     return;
+  }
 
   nsRect portRect = sf->GetScrollPortRect();
   sf->ScrollTo(nsPoint(nsPresContext::CSSPixelsToAppUnits(aX/ratio) - portRect.width/2,
@@ -458,25 +462,18 @@ ImageDocument::Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect* aDa
     return OnStartContainer(aRequest, image);
   }
 
-  nsDOMTokenList* classList = mImageContent->AsElement()->ClassList();
-  mozilla::ErrorResult rv;
+  // Do these two off a script runner because decode complete notifications often
+  // come during painting and these will trigger invalidation.
   if (aType == imgINotificationObserver::DECODE_COMPLETE) {
-    if (mImageContent && !nsContentUtils::IsChildOfSameType(this)) {
-      // Update the background-color of the image only after the
-      // image has been decoded to prevent flashes of just the
-      // background-color.
-      classList->Add(NS_LITERAL_STRING("decoded"), rv);
-      NS_ENSURE_SUCCESS(rv.ErrorCode(), rv.ErrorCode());
-    }
+    nsCOMPtr<nsIRunnable> runnable =
+      NS_NewRunnableMethod(this, &ImageDocument::AddDecodedClass);
+    nsContentUtils::AddScriptRunner(runnable);
   }
 
   if (aType == imgINotificationObserver::DISCARD) {
-    // mImageContent can be null if the document is already destroyed
-    if (mImageContent && !nsContentUtils::IsChildOfSameType(this)) {
-      // Remove any decoded-related styling when the image is unloaded.
-      classList->Remove(NS_LITERAL_STRING("decoded"), rv);
-      NS_ENSURE_SUCCESS(rv.ErrorCode(), rv.ErrorCode());
-    }
+    nsCOMPtr<nsIRunnable> runnable =
+      NS_NewRunnableMethod(this, &ImageDocument::RemoveDecodedClass);
+    nsContentUtils::AddScriptRunner(runnable);
   }
 
   if (aType == imgINotificationObserver::LOAD_COMPLETE) {
@@ -488,6 +485,34 @@ ImageDocument::Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect* aDa
   }
 
   return NS_OK;
+}
+
+void
+ImageDocument::AddDecodedClass()
+{
+  if (!mImageContent || nsContentUtils::IsChildOfSameType(this)) {
+    return;
+  }
+
+  nsDOMTokenList* classList = mImageContent->AsElement()->ClassList();
+  mozilla::ErrorResult rv;
+  // Update the background-color of the image only after the
+  // image has been decoded to prevent flashes of just the
+  // background-color.
+  classList->Add(NS_LITERAL_STRING("decoded"), rv);
+}
+
+void
+ImageDocument::RemoveDecodedClass()
+{
+  if (!mImageContent || nsContentUtils::IsChildOfSameType(this)) {
+    return;
+  }
+
+  nsDOMTokenList* classList = mImageContent->AsElement()->ClassList();
+  mozilla::ErrorResult rv;
+  // Remove any decoded-related styling when the image is unloaded.
+  classList->Remove(NS_LITERAL_STRING("decoded"), rv);
 }
 
 void

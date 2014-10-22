@@ -26,16 +26,16 @@ public class SQLiteBridge {
     private static final String LOGTAG = "SQLiteBridge";
 
     // Path to the database. If this database was not opened with openDatabase, we reopen it every query.
-    private String mDb;
+    private final String mDb;
 
     // Pointer to the database if it was opened with openDatabase. 0 implies closed.
-    protected volatile long mDbPointer = 0L;
+    protected volatile long mDbPointer;
 
     // Values remembered after a query.
     private long[] mQueryResults;
 
-    private boolean mTransactionSuccess = false;
-    private boolean mInTransaction = false;
+    private boolean mTransactionSuccess;
+    private boolean mInTransaction;
 
     private static final int RESULT_INSERT_ROW_ID = 0;
     private static final int RESULT_ROWS_CHANGED = 1;

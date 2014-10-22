@@ -18,7 +18,6 @@
 #include "js-config.h"
 #include "jstypes.h"
 
-#include "js/Anchor.h"
 #include "js/GCAPI.h"
 #include "js/RootingAPI.h"
 #include "js/Utility.h"
@@ -243,6 +242,8 @@ typedef enum JSWhyMagic
     JS_ION_ERROR,                /* error while running Ion code */
     JS_ION_BAILOUT,              /* missing recover instruction result */
     JS_OPTIMIZED_OUT,            /* optimized out slot */
+    JS_UNINITIALIZED_LEXICAL,    /* uninitialized lexical bindings that produce ReferenceError
+                                  * on touch. */
     JS_GENERIC_MAGIC             /* for local use */
 } JSWhyMagic;
 
@@ -1340,18 +1341,6 @@ class Value
 };
 
 inline bool
-IsPoisonedValue(const Value &v)
-{
-    if (v.isString())
-        return IsPoisonedPtr(v.toString());
-    if (v.isSymbol())
-        return IsPoisonedPtr(v.toSymbol());
-    if (v.isObject())
-        return IsPoisonedPtr(&v.toObject());
-    return false;
-}
-
-inline bool
 IsOptimizedPlaceholderMagicValue(const Value &v)
 {
     if (v.isMagic()) {
@@ -1365,7 +1354,7 @@ static MOZ_ALWAYS_INLINE void
 ExposeValueToActiveJS(const Value &v)
 {
     if (v.isMarkable())
-        ExposeGCThingToActiveJS(v.toGCThing(), v.gcKind());
+        js::gc::ExposeGCThingToActiveJS(v.toGCThing(), v.gcKind());
 }
 
 /************************************************************************/
@@ -1638,13 +1627,20 @@ namespace js {
 template <> struct GCMethods<const JS::Value>
 {
     static JS::Value initial() { return JS::UndefinedValue(); }
-    static bool poisoned(const JS::Value &v) { return JS::IsPoisonedValue(v); }
+    static bool poisoned(const JS::Value &v) {
+        return v.isMarkable() && JS::IsPoisonedPtr(v.toGCThing());
+    }
 };
 
 template <> struct GCMethods<JS::Value>
 {
     static JS::Value initial() { return JS::UndefinedValue(); }
-    static bool poisoned(const JS::Value &v) { return JS::IsPoisonedValue(v); }
+    static bool poisoned(const JS::Value &v) {
+        return v.isMarkable() && JS::IsPoisonedPtr(v.toGCThing());
+    }
+    static gc::Cell *asGCThingOrNull(const JS::Value &v) {
+        return v.isMarkable() ? v.toGCThing() : nullptr;
+    }
     static bool needsPostBarrier(const JS::Value &v) {
         return v.isObject() && gc::IsInsideNursery(reinterpret_cast<gc::Cell*>(&v.toObject()));
     }
@@ -1698,7 +1694,7 @@ class ValueOperations
     JS::Symbol *toSymbol() const { return value()->toSymbol(); }
     JSObject &toObject() const { return value()->toObject(); }
     JSObject *toObjectOrNull() const { return value()->toObjectOrNull(); }
-    void *toGCThing() const { return value()->toGCThing(); }
+    gc::Cell *toGCThing() const { return value()->toGCThing(); }
     uint64_t asRawBits() const { return value()->asRawBits(); }
 
     JSValueType extractNonDoubleType() const { return value()->extractNonDoubleType(); }
@@ -1864,25 +1860,11 @@ IMPL_TO_JSVAL(jsval_layout l)
 
 namespace JS {
 
-#ifndef __GNUC__
-/*
- * The default assignment operator for |struct C| has the signature:
- *
- *   C& C::operator=(const C&)
- *
- * And in particular requires implicit conversion of |this| to type |C| for the
- * return value. But |volatile C| cannot thus be converted to |C|, so just
- * doing |sink = hold| as in the non-specialized version would fail to compile.
- * Do the assignment on asBits instead, since I don't think we want to give
- * jsval_layout an assignment operator returning |volatile jsval_layout|.
- */
-template<>
-inline Anchor<Value>::~Anchor()
+inline bool
+IsPoisonedValue(const Value &v)
 {
-    volatile uint64_t bits;
-    bits = JSVAL_TO_IMPL(hold).asBits;
+    return js::GCMethods<Value>::poisoned(v);
 }
-#endif
 
 #ifdef JS_DEBUG
 namespace detail {
@@ -1944,9 +1926,9 @@ DOUBLE_TO_JSVAL(double d)
 static inline JS_VALUE_CONSTEXPR jsval
 UINT_TO_JSVAL(uint32_t i)
 {
-    return (i <= JSVAL_INT_MAX
-            ? INT_TO_JSVAL((int32_t)i)
-            : DOUBLE_TO_JSVAL((double)i));
+    return i <= JSVAL_INT_MAX
+           ? INT_TO_JSVAL((int32_t)i)
+           : DOUBLE_TO_JSVAL((double)i);
 }
 
 static inline jsval

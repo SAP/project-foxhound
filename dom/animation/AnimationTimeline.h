@@ -21,10 +21,9 @@ namespace dom {
 class AnimationTimeline MOZ_FINAL : public nsWrapperCache
 {
 public:
-  AnimationTimeline(nsIDocument* aDocument)
+  explicit AnimationTimeline(nsIDocument* aDocument)
     : mDocument(aDocument)
   {
-    SetIsDOMBinding();
   }
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(AnimationTimeline)
@@ -33,12 +32,19 @@ public:
   nsISupports* GetParentObject() const { return mDocument; }
   virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
 
-  Nullable<double> GetCurrentTime() const;
-  mozilla::TimeStamp GetCurrentTimeStamp() const;
+  // AnimationTimeline methods
+  Nullable<TimeDuration> GetCurrentTime() const;
 
-  Nullable<double> ToTimelineTime(const mozilla::TimeStamp& aTimeStamp) const;
+  // Wrapper functions for AnimationTimeline DOM methods when called from
+  // script.
+  Nullable<double> GetCurrentTimeAsDouble() const;
+
+  Nullable<TimeDuration> ToTimelineTime(const TimeStamp& aTimeStamp) const;
+  TimeStamp ToTimeStamp(const TimeDuration& aTimelineTime) const;
 
 protected:
+  TimeStamp GetCurrentTimeStamp() const;
+
   virtual ~AnimationTimeline() { }
 
   nsCOMPtr<nsIDocument> mDocument;
@@ -46,7 +52,7 @@ protected:
   // Store the most recently returned value of current time. This is used
   // in cases where we don't have a refresh driver (e.g. because we are in
   // a display:none iframe).
-  mutable mozilla::TimeStamp mLastCurrentTime;
+  mutable TimeStamp mLastCurrentTime;
 };
 
 } // namespace dom

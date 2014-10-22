@@ -10,7 +10,6 @@
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMHTMLOptionElement.h"
-#include "nsIJSNativeInitializer.h"
 #include "mozilla/dom/HTMLFormElement.h"
 
 namespace mozilla {
@@ -22,7 +21,7 @@ class HTMLOptionElement MOZ_FINAL : public nsGenericHTMLElement,
                                     public nsIDOMHTMLOptionElement
 {
 public:
-  HTMLOptionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit HTMLOptionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
 
   static already_AddRefed<HTMLOptionElement>
     Option(const GlobalObject& aGlobal,

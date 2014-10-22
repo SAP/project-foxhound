@@ -48,11 +48,11 @@
 #include "nsComputedDOMStyle.h"
 #include "nsIPresShell.h"
 #include "nsCSSProps.h"
-#include "nsDOMFile.h"
 #include "nsTArrayHelpers.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
 #include "mozilla/StyleAnimationValue.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/DOMRect.h"
 #include <algorithm>
 
@@ -74,7 +74,6 @@
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/QuotaManager.h"
-#include "nsDOMBlobBuilder.h"
 #include "nsPrintfCString.h"
 #include "nsViewportInfo.h"
 #include "nsIFormControl.h"
@@ -100,6 +99,7 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::ipc;
 using namespace mozilla::layers;
 using namespace mozilla::widget;
 using namespace mozilla::gfx;
@@ -359,7 +359,7 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
                        new DisplayPortPropertyData(displayport, aPriority),
                        nsINode::DeleteProperty<DisplayPortPropertyData>);
 
-  if (gfxPrefs::AsyncPanZoomEnabled()) {
+  if (nsLayoutUtils::UsesAsyncScrolling()) {
     nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
     if (rootScrollFrame && content == rootScrollFrame->GetContent()) {
       // We are setting a root displayport for a document.
@@ -1612,7 +1612,7 @@ nsDOMWindowUtils::GetTranslationNodes(nsIDOMNode* aRoot,
     return NS_ERROR_DOM_WRONG_DOCUMENT_ERR;
   }
 
-  nsTHashtable<nsPtrHashKey<nsIContent>> translationNodesHash(1000);
+  nsTHashtable<nsPtrHashKey<nsIContent>> translationNodesHash(500);
   nsRefPtr<nsTranslationNodeList> list = new nsTranslationNodeList;
 
   uint32_t limit = 15000;
@@ -2116,7 +2116,14 @@ nsDOMWindowUtils::SendCompositionEvent(const nsAString& aType,
   } else if (aType.EqualsLiteral("compositionend")) {
     msg = NS_COMPOSITION_END;
   } else if (aType.EqualsLiteral("compositionupdate")) {
-    msg = NS_COMPOSITION_UPDATE;
+    // Now we don't support manually dispatching composition update with this
+    // API.  A compositionupdate is dispatched when a DOM text event modifies
+    // composition string automatically.  For backward compatibility, this
+    // shouldn't return error in this case.
+    NS_WARNING("Don't call nsIDOMWindowUtils.sendCompositionEvent() for "
+               "compositionupdate since it's ignored and the event is "
+               "fired automatically when it's necessary");
+    return NS_OK;
   } else {
     return NS_ERROR_FAILURE;
   }
@@ -2124,7 +2131,7 @@ nsDOMWindowUtils::SendCompositionEvent(const nsAString& aType,
   WidgetCompositionEvent compositionEvent(true, msg, widget);
   InitEvent(compositionEvent);
   if (msg != NS_COMPOSITION_START) {
-    compositionEvent.data = aData;
+    compositionEvent.mData = aData;
   }
 
   compositionEvent.mFlags.mIsSynthesizedForTests = true;
@@ -2670,44 +2677,23 @@ nsDOMWindowUtils::SetAsyncScrollOffset(nsIDOMNode* aNode,
   if (!element) {
     return NS_ERROR_INVALID_ARG;
   }
-  nsIFrame* frame = element->GetPrimaryFrame();
-  if (!frame) {
+  FrameMetrics::ViewID viewId;
+  if (!nsLayoutUtils::FindIDFor(element, &viewId)) {
     return NS_ERROR_UNEXPECTED;
   }
-  nsIScrollableFrame* scrollable = do_QueryFrame(frame);
-  nsPresContext* presContext = frame->PresContext();
-  nsIFrame* rootScrollFrame = presContext->PresShell()->GetRootScrollFrame();
-  if (!scrollable) {
-    if (rootScrollFrame && rootScrollFrame->GetContent() == element) {
-      frame = rootScrollFrame;
-      scrollable = do_QueryFrame(frame);
-    }
+  nsIWidget* widget = GetWidget();
+  if (!widget) {
+    return NS_ERROR_FAILURE;
   }
-  if (!scrollable) {
-    return NS_ERROR_UNEXPECTED;
+  LayerManager* manager = widget->GetLayerManager();
+  if (!manager) {
+    return NS_ERROR_FAILURE;
   }
-  Layer* layer = FrameLayerBuilder::GetDedicatedLayer(scrollable->GetScrolledFrame(),
-    nsDisplayItem::TYPE_SCROLL_LAYER);
-  if (!layer) {
-    if (rootScrollFrame == frame && !presContext->GetParentPresContext()) {
-      nsIWidget* widget = GetWidget();
-      if (widget) {
-        LayerManager* manager = widget->GetLayerManager();
-        if (manager) {
-          layer = manager->GetRoot();
-        }
-      }
-    }
-    if (!layer) {
-      return NS_ERROR_UNEXPECTED;
-    }
-  }
-  ShadowLayerForwarder* forwarder = layer->Manager()->AsShadowForwarder();
+  ShadowLayerForwarder* forwarder = manager->AsShadowForwarder();
   if (!forwarder || !forwarder->HasShadowManager()) {
     return NS_ERROR_UNEXPECTED;
   }
-  forwarder->GetShadowManager()->SendSetAsyncScrollOffset(
-    layer->AsShadowableLayer()->GetShadow(), aX, aY);
+  forwarder->GetShadowManager()->SendSetAsyncScrollOffset(viewId, aX, aY);
   return NS_OK;
 }
 
@@ -2866,7 +2852,15 @@ nsDOMWindowUtils::WrapDOMFile(nsIFile *aFile,
     return NS_ERROR_FAILURE;
   }
 
-  nsRefPtr<DOMFile> file = DOMFile::CreateFromFile(aFile);
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+  NS_ENSURE_STATE(window);
+
+  nsPIDOMWindow* innerWindow = window->GetCurrentInnerWindow();
+  if (!innerWindow) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsRefPtr<File> file = File::CreateFromFile(innerWindow, aFile);
   file.forget(aDOMFile);
   return NS_OK;
 }
@@ -3025,30 +3019,65 @@ nsDOMWindowUtils::AreDialogsEnabled(bool* aResult)
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetFileId(JS::Handle<JS::Value> aFile, JSContext* aCx,
-                            int64_t* aResult)
+                            int64_t* _retval)
 {
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
 
-  if (!aFile.isPrimitive()) {
-    JSObject* obj = aFile.toObjectOrNull();
-
-    indexedDB::IDBMutableFile* mutableFile = nullptr;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(IDBMutableFile, obj, mutableFile))) {
-      *aResult = mutableFile->GetFileId();
-      return NS_OK;
-    }
-
-    nsISupports* nativeObj =
-      nsContentUtils::XPConnect()->GetNativeOfWrapper(aCx, obj);
-
-    nsCOMPtr<nsIDOMBlob> blob = do_QueryInterface(nativeObj);
-    if (blob) {
-      *aResult = blob->GetFileId();
-      return NS_OK;
-    }
+  if (aFile.isPrimitive()) {
+    *_retval = -1;
+    return NS_OK;
   }
 
-  *aResult = -1;
+  JSObject* obj = aFile.toObjectOrNull();
+
+  indexedDB::IDBMutableFile* mutableFile = nullptr;
+  if (NS_SUCCEEDED(UNWRAP_OBJECT(IDBMutableFile, obj, mutableFile))) {
+    *_retval = mutableFile->GetFileId();
+    return NS_OK;
+  }
+
+  nsISupports* nativeObj =
+    nsContentUtils::XPConnect()->GetNativeOfWrapper(aCx, obj);
+
+  nsCOMPtr<nsIDOMBlob> blob = do_QueryInterface(nativeObj);
+  if (blob) {
+    *_retval = blob->GetFileId();
+    return NS_OK;
+  }
+
+  *_retval = -1;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetFilePath(JS::HandleValue aFile, JSContext* aCx,
+                              nsAString& _retval)
+{
+  MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
+
+  if (aFile.isPrimitive()) {
+    _retval.Truncate();
+    return NS_OK;
+  }
+
+  JSObject* obj = aFile.toObjectOrNull();
+
+  nsISupports* nativeObj =
+    nsContentUtils::XPConnect()->GetNativeOfWrapper(aCx, obj);
+
+  nsCOMPtr<nsIDOMFile> file = do_QueryInterface(nativeObj);
+  if (file) {
+    nsString filePath;
+    nsresult rv = file->GetMozFullPathInternal(filePath);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    _retval = filePath;
+    return NS_OK;
+  }
+
+  _retval.Truncate();
   return NS_OK;
 }
 
@@ -3634,6 +3663,23 @@ nsDOMWindowUtils::RunBeforeNextEvent(nsIRunnable *runnable)
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::RequestCompositorProperty(const nsAString& property,
+                                            float* aResult)
+{
+  MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
+
+  if (nsIWidget* widget = GetWidget()) {
+    mozilla::layers::LayerManager* manager = widget->GetLayerManager();
+    if (manager) {
+      *aResult = manager->RequestProperty(property);
+      return NS_OK;
+    }
+  }
+
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::GetOMTAStyle(nsIDOMElement* aElement,
                                const nsAString& aProperty,
                                nsAString& aResult)
@@ -3672,9 +3718,9 @@ nsDOMWindowUtils::GetOMTAStyle(nsIDOMElement* aElement,
           MaybeTransform transform;
           forwarder->GetShadowManager()->SendGetAnimationTransform(
             layer->AsShadowableLayer()->GetShadow(), &transform);
-          if (transform.type() == MaybeTransform::Tgfx3DMatrix) {
-            cssValue =
-              nsComputedDOMStyle::MatrixToCSSValue(transform.get_gfx3DMatrix());
+          if (transform.type() == MaybeTransform::TMatrix4x4) {
+            gfx3DMatrix matrix = To3DMatrix(transform.get_Matrix4x4());
+            cssValue = nsComputedDOMStyle::MatrixToCSSValue(matrix);
           }
         }
       }
@@ -3699,7 +3745,7 @@ namespace {
 class HandlingUserInputHelper MOZ_FINAL : public nsIJSRAIIHelper
 {
 public:
-  HandlingUserInputHelper(bool aHandlingUserInput);
+  explicit HandlingUserInputHelper(bool aHandlingUserInput);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIJSRAIIHELPER
@@ -3856,43 +3902,7 @@ NS_IMETHODIMP
 nsDOMWindowUtils::AskPermission(nsIContentPermissionRequest* aRequest)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
-  nsRefPtr<RemotePermissionRequest> req =
-    new RemotePermissionRequest(aRequest, window->GetCurrentInnerWindow());
-
-    // for content process
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
-    MOZ_ASSERT(NS_IsMainThread()); // IPC can only be execute on main thread.
-
-    dom::TabChild* child = dom::TabChild::GetFrom(window->GetDocShell());
-    NS_ENSURE_TRUE(child, NS_ERROR_FAILURE);
-
-    nsCOMPtr<nsIArray> typeArray;
-    nsresult rv = req->GetTypes(getter_AddRefs(typeArray));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsTArray<PermissionRequest> permArray;
-    RemotePermissionRequest::ConvertArrayToPermissionRequest(typeArray, permArray);
-
-    nsCOMPtr<nsIPrincipal> principal;
-    rv = req->GetPrincipal(getter_AddRefs(principal));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    req->AddRef();
-    child->SendPContentPermissionRequestConstructor(req,
-                                                    permArray,
-                                                    IPC::Principal(principal));
-
-    req->Sendprompt();
-    return NS_OK;
-  }
-
-  // for chrome process
-  nsCOMPtr<nsIContentPermissionPrompt> prompt =
-    do_GetService(NS_CONTENT_PERMISSION_PROMPT_CONTRACTID);
-  if (prompt) {
-    prompt->Prompt(req);
-  }
-  return NS_OK;
+  return nsContentPermissionUtils::AskPermission(aRequest, window->GetCurrentInnerWindow());
 }
 
 NS_INTERFACE_MAP_BEGIN(nsTranslationNodeList)

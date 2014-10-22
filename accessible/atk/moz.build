@@ -35,9 +35,17 @@ LOCAL_INCLUDES += [
     '/accessible/base',
     '/accessible/generic',
     '/accessible/html',
+    '/accessible/ipc',
     '/accessible/xpcom',
     '/accessible/xul',
     '/other-licenses/atk-1.0',
 ]
 
 FINAL_LIBRARY = 'xul'
+
+if CONFIG['MOZ_ENABLE_GTK']:
+    CFLAGS += CONFIG['TK_CFLAGS']
+    CXXFLAGS += CONFIG['TK_CFLAGS']
+
+if CONFIG['MOZ_ENABLE_DBUS']:
+    CXXFLAGS += CONFIG['MOZ_DBUS_CFLAGS']

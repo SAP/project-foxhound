@@ -7,6 +7,7 @@
 #include "DecoderTraits.h"
 #include "MediaDecoder.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsMimeTypes.h"
 #include "mozilla/Preferences.h"
 
 #ifdef MOZ_ANDROID_OMX
@@ -48,6 +49,10 @@
 #endif
 #endif
 #ifdef NECKO_PROTOCOL_rtsp
+#if ANDROID_VERSION >= 18
+#include "RtspMediaCodecDecoder.h"
+#include "RtspMediaCodecReader.h"
+#endif
 #include "RtspOmxDecoder.h"
 #include "RtspOmxReader.h"
 #endif
@@ -215,6 +220,7 @@ static const char* const gOmxTypes[] = {
   "audio/mpeg",
   "audio/mp4",
   "audio/amr",
+  "audio/3gpp",
   "video/mp4",
   "video/3gpp",
   "video/3gpp2",
@@ -320,10 +326,18 @@ IsDirectShowSupportedType(const nsACString& aType)
 
 #ifdef MOZ_FMP4
 static bool
-IsMP4SupportedType(const nsACString& aType)
+IsMP4SupportedType(const nsACString& aType,
+                   const nsAString& aCodecs = EmptyString())
 {
+// Currently on B2G, FMP4 is only working for MSE playback.
+// For other normal MP4, it still uses current omx decoder.
+// Bug 1061034 is a follow-up bug to enable all MP4s with MOZ_FMP4
+#ifdef MOZ_OMX_DECODER
+  return false;
+#else
   return Preferences::GetBool("media.fragmented-mp4.exposed", false) &&
-         MP4Decoder::GetSupportedCodecs(aType, nullptr);
+         MP4Decoder::CanHandleMediaType(aType, aCodecs);
+#endif
 }
 #endif
 
@@ -406,8 +420,9 @@ DecoderTraits::CanHandleMediaType(const char* aMIMEType,
   }
 #endif
 #ifdef MOZ_FMP4
-  if (IsMP4SupportedType(nsDependentCString(aMIMEType))) {
-    result = aHaveRequestedCodecs ? CANPLAY_YES : CANPLAY_MAYBE;
+  if (IsMP4SupportedType(nsDependentCString(aMIMEType),
+                                     aRequestedCodecs)) {
+    return aHaveRequestedCodecs ? CANPLAY_YES : CANPLAY_MAYBE;
   }
 #endif
 #ifdef MOZ_GSTREAMER
@@ -441,7 +456,8 @@ DecoderTraits::CanHandleMediaType(const char* aMIMEType,
   }
 #endif
 #ifdef MOZ_WMF
-  if (IsWMFSupportedType(nsDependentCString(aMIMEType))) {
+  if (!Preferences::GetBool("media.fragmented-mp4.exposed", false) &&
+      IsWMFSupportedType(nsDependentCString(aMIMEType))) {
     if (!aHaveRequestedCodecs) {
       return CANPLAY_MAYBE;
     }
@@ -528,7 +544,7 @@ InstantiateDecoder(const nsACString& aType, MediaDecoderOwner* aOwner)
   if (IsOmxSupportedType(aType)) {
     // AMR audio is enabled for MMS, but we are discouraging Web and App
     // developers from using AMR, thus we only allow AMR to be played on WebApps.
-    if (aType.EqualsASCII("audio/amr")) {
+    if (aType.EqualsLiteral(AUDIO_AMR) || aType.EqualsLiteral(AUDIO_3GPP)) {
       dom::HTMLMediaElement* element = aOwner->GetMediaElement();
       if (!element) {
         return nullptr;
@@ -553,7 +569,13 @@ InstantiateDecoder(const nsACString& aType, MediaDecoderOwner* aOwner)
 #endif
 #ifdef NECKO_PROTOCOL_rtsp
   if (IsRtspSupportedType(aType)) {
+#if ANDROID_VERSION >= 18
+    decoder = MediaDecoder::IsOmxAsyncEnabled()
+      ? static_cast<MediaDecoder*>(new RtspMediaCodecDecoder())
+      : static_cast<MediaDecoder*>(new RtspOmxDecoder());
+#else
     decoder = new RtspOmxDecoder();
+#endif
     return decoder.forget();
   }
 #endif
@@ -682,12 +704,21 @@ MediaDecoderReader* DecoderTraits::CreateReader(const nsACString& aType, Abstrac
 /* static */
 bool DecoderTraits::IsSupportedInVideoDocument(const nsACString& aType)
 {
+  // Forbid playing media in video documents if the user has opted
+  // not to, using either the legacy WMF specific pref, or the newer
+  // catch-all pref.
+  if (!Preferences::GetBool("media.windows-media-foundation.play-stand-alone", true) ||
+      !Preferences::GetBool("media.play-stand-alone", true)) {
+    return false;
+  }
+
   return
     IsOggType(aType) ||
 #ifdef MOZ_OMX_DECODER
     // We support amr inside WebApps on firefoxOS but not in general web content.
     // Ensure we dont create a VideoDocument when accessing amr URLs directly.
-    (IsOmxSupportedType(aType) && !aType.EqualsASCII("audio/amr")) ||
+    (IsOmxSupportedType(aType) &&
+     (!aType.EqualsLiteral(AUDIO_AMR) && !aType.EqualsLiteral(AUDIO_3GPP))) ||
 #endif
 #ifdef MOZ_WEBM
     IsWebMType(aType) ||
@@ -702,8 +733,7 @@ bool DecoderTraits::IsSupportedInVideoDocument(const nsACString& aType)
     IsMP4SupportedType(aType) ||
 #endif
 #ifdef MOZ_WMF
-    (IsWMFSupportedType(aType) &&
-     Preferences::GetBool("media.windows-media-foundation.play-stand-alone", true)) ||
+    IsWMFSupportedType(aType) ||
 #endif
 #ifdef MOZ_DIRECTSHOW
     IsDirectShowSupportedType(aType) ||

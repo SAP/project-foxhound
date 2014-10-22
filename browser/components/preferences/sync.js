@@ -154,17 +154,6 @@ let gSyncPane = {
         for (let checkbox of engines.querySelectorAll("checkbox")) {
           checkbox.disabled = enginesListDisabled;
         }
-
-        let checkbox = document.getElementById("fxa-pweng-chk");
-        let help = document.getElementById("fxa-pweng-help");
-        let allowPasswordsEngine = service.allowPasswordsEngine;
-
-        if (!allowPasswordsEngine) {
-          checkbox.checked = false;
-        }
-
-        checkbox.disabled = !allowPasswordsEngine || enginesListDisabled;
-        help.hidden = allowPasswordsEngine || enginesListDisabled;
       });
     // If fxAccountEnabled is false and we are in a "not configured" state,
     // then fxAccounts is probably fully disabled rather than just unconfigured,
@@ -182,7 +171,7 @@ let gSyncPane = {
       this.page = PAGE_HAS_ACCOUNT;
       document.getElementById("accountName").value = Weave.Service.identity.account;
       document.getElementById("syncComputerName").value = Weave.Service.clientsEngine.localName;
-      document.getElementById("tosPP").hidden = this._usingCustomServer;
+      document.getElementById("tosPP-normal").hidden = this._usingCustomServer;
     }
   },
 
@@ -240,7 +229,9 @@ let gSyncPane = {
                   .wrappedJSObject;
 
     if (service.fxAccountsEnabled) {
-      this.openContentInBrowser("about:accounts");
+      this.openContentInBrowser("about:accounts?entrypoint=preferences", {
+        replaceQueryString: true
+      });
     } else {
       let win = Services.wm.getMostRecentWindow("Weave:AccountSetup");
       if (win) {
@@ -253,7 +244,7 @@ let gSyncPane = {
     }
   },
 
-  openContentInBrowser: function(url) {
+  openContentInBrowser: function(url, options) {
     let win = Services.wm.getMostRecentWindow("navigator:browser");
     if (!win) {
       // no window to use, so use _openLink to create a new one.  We don't
@@ -262,21 +253,27 @@ let gSyncPane = {
       gSyncUtils._openLink(url);
       return;
     }
-    win.switchToTabHavingURI(url, true);
+    win.switchToTabHavingURI(url, true, options);
     // seeing as we are doing this in a tab we close the prefs dialog.
     window.close();
   },
 
   signUp: function() {
-    this.openContentInBrowser("about:accounts?action=signup");
+    this.openContentInBrowser("about:accounts?action=signup&entrypoint=preferences", {
+      replaceQueryString: true
+    });
   },
 
   signIn: function() {
-    this.openContentInBrowser("about:accounts?action=signin");
+    this.openContentInBrowser("about:accounts?action=signin&entrypoint=preferences", {
+      replaceQueryString: true
+    });
   },
 
   reSignIn: function() {
-    this.openContentInBrowser("about:accounts?action=reauth");
+    this.openContentInBrowser("about:accounts?action=reauth&entrypoint=preferences", {
+      replaceQueryString: true
+    });
   },
 
   manageFirefoxAccount: function() {

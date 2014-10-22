@@ -8,9 +8,9 @@
 
 #include "mozilla/ArrayUtils.h"
 
-#include "js/OldDebugAPI.h"
 #include "xpcprivate.h"
 #include "XPCWrapper.h"
+#include "nsIAppsService.h"
 #include "nsILoadContext.h"
 #include "nsIServiceManager.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -32,6 +32,7 @@
 #include "nsTextFormatter.h"
 #include "nsIStringBundle.h"
 #include "nsNetUtil.h"
+#include "nsIEffectiveTLDService.h"
 #include "nsIProperties.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
@@ -56,13 +57,14 @@
 #include "nsIChromeRegistry.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "mozIApplication.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BindingUtils.h"
 #include <stdint.h>
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 #include "nsJSUtils.h"
 #include "nsILoadInfo.h"
 
@@ -252,9 +254,60 @@ nsScriptSecurityManager::SecurityHashURI(nsIURI* aURI)
     return NS_SecurityHashURI(aURI);
 }
 
+uint16_t
+nsScriptSecurityManager::AppStatusForPrincipal(nsIPrincipal *aPrin)
+{
+    uint32_t appId = aPrin->GetAppId();
+    bool inMozBrowser = aPrin->GetIsInBrowserElement();
+    NS_WARN_IF_FALSE(appId != nsIScriptSecurityManager::UNKNOWN_APP_ID,
+                     "Asking for app status on a principal with an unknown app id");
+    // Installed apps have a valid app id (not NO_APP_ID or UNKNOWN_APP_ID)
+    // and they are not inside a mozbrowser.
+    if (appId == nsIScriptSecurityManager::NO_APP_ID ||
+        appId == nsIScriptSecurityManager::UNKNOWN_APP_ID || inMozBrowser)
+    {
+        return nsIPrincipal::APP_STATUS_NOT_INSTALLED;
+    }
+
+    nsCOMPtr<nsIAppsService> appsService = do_GetService(APPS_SERVICE_CONTRACTID);
+    NS_ENSURE_TRUE(appsService, nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+
+    nsCOMPtr<mozIApplication> app;
+    appsService->GetAppByLocalId(appId, getter_AddRefs(app));
+    NS_ENSURE_TRUE(app, nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+
+    uint16_t status = nsIPrincipal::APP_STATUS_INSTALLED;
+    NS_ENSURE_SUCCESS(app->GetAppStatus(&status),
+                      nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+
+    nsAutoCString origin;
+    NS_ENSURE_SUCCESS(aPrin->GetOrigin(getter_Copies(origin)),
+                      nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+    nsString appOrigin;
+    NS_ENSURE_SUCCESS(app->GetOrigin(appOrigin),
+                      nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+
+    // We go from string -> nsIURI -> origin to be sure we
+    // compare two punny-encoded origins.
+    nsCOMPtr<nsIURI> appURI;
+    NS_ENSURE_SUCCESS(NS_NewURI(getter_AddRefs(appURI), appOrigin),
+                      nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+
+    nsAutoCString appOriginPunned;
+    NS_ENSURE_SUCCESS(nsPrincipal::GetOriginForURI(appURI, getter_Copies(appOriginPunned)),
+                      nsIPrincipal::APP_STATUS_NOT_INSTALLED);
+
+    if (!appOriginPunned.Equals(origin)) {
+        return nsIPrincipal::APP_STATUS_NOT_INSTALLED;
+    }
+
+    return status;
+
+}
+
 NS_IMETHODIMP
-nsScriptSecurityManager::GetChannelPrincipal(nsIChannel* aChannel,
-                                             nsIPrincipal** aPrincipal)
+nsScriptSecurityManager::GetChannelResultPrincipal(nsIChannel* aChannel,
+                                                   nsIPrincipal** aPrincipal)
 {
     NS_PRECONDITION(aChannel, "Must have channel!");
     nsCOMPtr<nsISupports> owner;
@@ -271,7 +324,11 @@ nsScriptSecurityManager::GetChannelPrincipal(nsIChannel* aChannel,
     aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
     if (loadInfo) {
         if (loadInfo->GetLoadingSandboxed()) {
-            return CallCreateInstance(NS_NULLPRINCIPAL_CONTRACTID, aPrincipal);
+            nsRefPtr<nsNullPrincipal> prin =
+              nsNullPrincipal::CreateWithInheritedAttributes(loadInfo->LoadingPrincipal());
+            NS_ENSURE_TRUE(prin, NS_ERROR_FAILURE);
+            prin.forget(aPrincipal);
+            return NS_OK;
         }
 
         if (loadInfo->GetForceInheritPrincipal()) {
@@ -279,13 +336,20 @@ nsScriptSecurityManager::GetChannelPrincipal(nsIChannel* aChannel,
             return NS_OK;
         }
     }
+    return GetChannelURIPrincipal(aChannel, aPrincipal);
+}
 
-    // OK, get the principal from the URI.  Make sure this does the same thing
+NS_IMETHODIMP
+nsScriptSecurityManager::GetChannelURIPrincipal(nsIChannel* aChannel,
+                                                nsIPrincipal** aPrincipal)
+{
+    NS_PRECONDITION(aChannel, "Must have channel!");
+
+    // Get the principal from the URI.  Make sure this does the same thing
     // as nsDocument::Reset and XULDocument::StartDocumentLoad.
     nsCOMPtr<nsIURI> uri;
     nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
     NS_ENSURE_SUCCESS(rv, rv);
-
 
     nsCOMPtr<nsILoadContext> loadContext;
     NS_QueryNotificationCallbacks(aChannel, loadContext);
@@ -516,6 +580,35 @@ DenyAccessIfURIHasFlags(nsIURI* aURI, uint32_t aURIFlags)
     return NS_OK;
 }
 
+static bool
+EqualOrSubdomain(nsIURI* aProbeArg, nsIURI* aBase)
+{
+    // Make a clone of the incoming URI, because we're going to mutate it.
+    nsCOMPtr<nsIURI> probe;
+    nsresult rv = aProbeArg->Clone(getter_AddRefs(probe));
+    NS_ENSURE_SUCCESS(rv, false);
+
+    nsCOMPtr<nsIEffectiveTLDService> tldService = do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
+    NS_ENSURE_TRUE(tldService, false);
+    while (true) {
+        if (nsScriptSecurityManager::SecurityCompareURIs(probe, aBase)) {
+            return true;
+        }
+
+        nsAutoCString host, newHost;
+        nsresult rv = probe->GetHost(host);
+        NS_ENSURE_SUCCESS(rv, false);
+
+        rv = tldService->GetNextSubDomain(host, newHost);
+        if (rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
+            return false;
+        }
+        NS_ENSURE_SUCCESS(rv, false);
+        rv = probe->SetHost(newHost);
+        NS_ENSURE_SUCCESS(rv, false);
+    }
+}
+
 NS_IMETHODIMP
 nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
                                                    nsIURI *aTargetURI,
@@ -637,11 +730,27 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
         NS_ENSURE_SUCCESS(rv, rv);
 
         if (hasFlags) {
+            // Let apps load the whitelisted theme resources even if they don't
+            // have the webapps-manage permission but have the themeable one.
+            // Resources from the theme origin are also allowed to load from
+            // the theme origin (eg. stylesheets using images from the theme).
+            auto themeOrigin = Preferences::GetCString("b2g.theme.origin");
+            if (themeOrigin) {
+                nsAutoCString targetOrigin;
+                nsPrincipal::GetOriginForURI(targetBaseURI, getter_Copies(targetOrigin));
+                if (targetOrigin.Equals(themeOrigin)) {
+                    nsAutoCString pOrigin;
+                    aPrincipal->GetOrigin(getter_Copies(pOrigin));
+                    return nsContentUtils::IsExactSitePermAllow(aPrincipal, "themeable") ||
+                           pOrigin.Equals(themeOrigin)
+                        ? NS_OK : NS_ERROR_DOM_BAD_URI;
+                }
+            }
             // In this case, we allow opening only if the source and target URIS
             // are on the same domain, or the opening URI has the webapps
             // permision granted
-            if (!SecurityCompareURIs(sourceBaseURI,targetBaseURI) &&
-                !nsContentUtils::IsExactSitePermAllow(aPrincipal,WEBAPPS_PERM_NAME)){
+            if (!SecurityCompareURIs(sourceBaseURI, targetBaseURI) &&
+                !nsContentUtils::IsExactSitePermAllow(aPrincipal, WEBAPPS_PERM_NAME)) {
                 return NS_ERROR_DOM_BAD_URI;
             }
         }
@@ -716,7 +825,7 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
         // Allow domains that were whitelisted in the prefs. In 99.9% of cases,
         // this array is empty.
         for (size_t i = 0; i < mFileURIWhitelist.Length(); ++i) {
-            if (SecurityCompareURIs(mFileURIWhitelist[i], sourceURI)) {
+            if (EqualOrSubdomain(sourceURI, mFileURIWhitelist[i])) {
                 return NS_OK;
             }
         }
@@ -1116,7 +1225,7 @@ nsScriptSecurityManager::AsyncOnChannelRedirect(nsIChannel* oldChannel,
                                                 nsIAsyncVerifyRedirectCallback *cb)
 {
     nsCOMPtr<nsIPrincipal> oldPrincipal;
-    GetChannelPrincipal(oldChannel, getter_AddRefs(oldPrincipal));
+    GetChannelResultPrincipal(oldChannel, getter_AddRefs(oldPrincipal));
 
     nsCOMPtr<nsIURI> newURI;
     newChannel->GetURI(getter_AddRefs(newURI));
@@ -1178,10 +1287,10 @@ nsScriptSecurityManager::nsScriptSecurityManager(void)
 
 nsresult nsScriptSecurityManager::Init()
 {
-    InitPrefs();
-
     nsresult rv = CallGetService(NS_IOSERVICE_CONTRACTID, &sIOService);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    InitPrefs();
 
     nsCOMPtr<nsIStringBundleService> bundleService =
         mozilla::services::GetStringBundleService();
@@ -1346,7 +1455,15 @@ nsScriptSecurityManager::AddSitesToFileURIWhitelist(const nsCString& aSiteList)
     {
         // Grab the current site.
         bound = SkipUntil<IsWhitespace>(aSiteList, base);
-        auto site = Substring(aSiteList, base, bound - base);
+        nsAutoCString site(Substring(aSiteList, base, bound - base));
+
+        // Check if the URI is schemeless. If so, add both http and https.
+        nsAutoCString unused;
+        if (NS_FAILED(sIOService->ExtractScheme(site, unused))) {
+            AddSitesToFileURIWhitelist(NS_LITERAL_CSTRING("http://") + site);
+            AddSitesToFileURIWhitelist(NS_LITERAL_CSTRING("https://") + site);
+            continue;
+        }
 
         // Convert it to a URI and add it to our list.
         nsCOMPtr<nsIURI> uri;

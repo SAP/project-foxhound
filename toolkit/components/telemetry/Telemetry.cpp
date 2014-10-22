@@ -63,6 +63,7 @@
 #include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/StartupTimeline.h"
 #if defined(MOZ_ENABLE_PROFILER_SPS)
+#include "mozilla/HangMonitor.h"
 #include "shared-libraries.h"
 #endif
 
@@ -72,12 +73,13 @@ namespace {
 
 using namespace base;
 using namespace mozilla;
+using namespace mozilla::HangMonitor;
 
 template<class EntryType>
 class AutoHashtable : public nsTHashtable<EntryType>
 {
 public:
-  AutoHashtable(uint32_t initSize = PL_DHASH_MIN_SIZE);
+  explicit AutoHashtable(uint32_t initLength = PL_DHASH_DEFAULT_INITIAL_LENGTH);
   typedef bool (*ReflectEntryFunc)(EntryType *entry, JSContext *cx, JS::Handle<JSObject*> obj);
   bool ReflectIntoJS(ReflectEntryFunc entryFunc, JSContext *cx, JS::Handle<JSObject*> obj);
 private:
@@ -90,8 +92,8 @@ private:
 };
 
 template<class EntryType>
-AutoHashtable<EntryType>::AutoHashtable(uint32_t initSize)
-  : nsTHashtable<EntryType>(initSize)
+AutoHashtable<EntryType>::AutoHashtable(uint32_t initLength)
+  : nsTHashtable<EntryType>(initLength)
 {
 }
 
@@ -208,14 +210,38 @@ CombinedStacks::SizeOfExcludingThis() const {
 
 class HangReports {
 public:
-  size_t SizeOfExcludingThis() const;
+  /**
+   * This struct encapsulates information for an individual ChromeHang annotation.
+   * mHangIndex is the index of the corresponding ChromeHang.
+   */
+  struct AnnotationInfo {
+    AnnotationInfo(uint32_t aHangIndex,
+                   HangAnnotations* aAnnotations)
+      : mHangIndex(aHangIndex)
+      , mAnnotations(aAnnotations)
+    {}
+    AnnotationInfo(const AnnotationInfo& aOther)
+      : mHangIndex(aOther.mHangIndex)
+      , mAnnotations(aOther.mAnnotations)
+    {}
+    ~AnnotationInfo() {}
+    uint32_t mHangIndex;
+    mutable nsAutoPtr<HangAnnotations> mAnnotations;
+  };
+  size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
   void AddHang(const Telemetry::ProcessedStack& aStack, uint32_t aDuration,
-               int32_t aSystemUptime, int32_t aFirefoxUptime);
+               int32_t aSystemUptime, int32_t aFirefoxUptime,
+               HangAnnotations* aAnnotations);
   uint32_t GetDuration(unsigned aIndex) const;
   int32_t GetSystemUptime(unsigned aIndex) const;
   int32_t GetFirefoxUptime(unsigned aIndex) const;
+  const std::vector<AnnotationInfo>& GetAnnotationInfo() const;
   const CombinedStacks& GetStacks() const;
 private:
+  /**
+   * This struct encapsulates the data for an individual ChromeHang, excluding
+   * annotations.
+   */
   struct HangInfo {
     // Hang duration (in seconds)
     uint32_t mDuration;
@@ -225,6 +251,7 @@ private:
     int32_t mFirefoxUptime;
   };
   std::vector<HangInfo> mHangInfo;
+  std::vector<AnnotationInfo> mAnnotationInfo;
   CombinedStacks mStacks;
 };
 
@@ -232,19 +259,30 @@ void
 HangReports::AddHang(const Telemetry::ProcessedStack& aStack,
                      uint32_t aDuration,
                      int32_t aSystemUptime,
-                     int32_t aFirefoxUptime) {
+                     int32_t aFirefoxUptime,
+                     HangAnnotations* aAnnotations) {
   HangInfo info = { aDuration, aSystemUptime, aFirefoxUptime };
   mHangInfo.push_back(info);
+  if (aAnnotations) {
+    AnnotationInfo ainfo(static_cast<uint32_t>(mHangInfo.size() - 1),
+                         aAnnotations);
+    mAnnotationInfo.push_back(ainfo);
+  }
   mStacks.AddStack(aStack);
 }
 
 size_t
-HangReports::SizeOfExcludingThis() const {
+HangReports::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
   size_t n = 0;
   n += mStacks.SizeOfExcludingThis();
   // This is a crude approximation. See comment on
   // CombinedStacks::SizeOfExcludingThis.
   n += mHangInfo.capacity() * sizeof(HangInfo);
+  n += mAnnotationInfo.capacity() * sizeof(AnnotationInfo);
+  for (std::vector<AnnotationInfo>::const_iterator i = mAnnotationInfo.begin(),
+       e = mAnnotationInfo.end(); i != e; ++i) {
+    n += i->mAnnotations->SizeOfIncludingThis(aMallocSizeOf);
+  }
   return n;
 }
 
@@ -266,6 +304,11 @@ HangReports::GetSystemUptime(unsigned aIndex) const {
 int32_t
 HangReports::GetFirefoxUptime(unsigned aIndex) const {
   return mHangInfo[aIndex].mFirefoxUptime;
+}
+
+const std::vector<HangReports::AnnotationInfo>&
+HangReports::GetAnnotationInfo() const {
+  return mAnnotationInfo;
 }
 
 /**
@@ -306,7 +349,7 @@ class TelemetryIOInterposeObserver : public IOInterposeObserver
   };
 
 public:
-  TelemetryIOInterposeObserver(nsIFile* aXreDir);
+  explicit TelemetryIOInterposeObserver(nsIFile* aXreDir);
 
   /**
    * An implementation of Observe that records statistics of all
@@ -410,7 +453,10 @@ void TelemetryIOInterposeObserver::AddPath(const nsAString& aPath,
 {
   mSafeDirs.AppendElement(SafeDir(aPath, aSubstName));
 }
- 
+
+// Threshold for reporting slow main-thread I/O (50 milliseconds).
+const TimeDuration kTelemetryReportThreshold = TimeDuration::FromMilliseconds(50);
+
 void TelemetryIOInterposeObserver::Observe(Observation& aOb)
 {
   // We only report main-thread I/O
@@ -421,6 +467,10 @@ void TelemetryIOInterposeObserver::Observe(Observation& aOb)
   if (aOb.ObservedOperation() == OpNextStage) {
     mCurStage = NextStage(mCurStage);
     MOZ_ASSERT(mCurStage < NUM_STAGES);
+    return;
+  }
+
+  if (aOb.Duration() < kTelemetryReportThreshold) {
     return;
   }
 
@@ -568,7 +618,8 @@ public:
   static void RecordChromeHang(uint32_t aDuration,
                                Telemetry::ProcessedStack &aStack,
                                int32_t aSystemUptime,
-                               int32_t aFirefoxUptime);
+                               int32_t aFirefoxUptime,
+                               HangAnnotations* aAnnotations);
 #endif
   static void RecordThreadHangStats(Telemetry::ThreadHangStats& aStats);
   static nsresult GetHistogramEnumId(const char *name, Telemetry::ID *id);
@@ -632,7 +683,7 @@ private:
   AddonMapType mAddonMap;
 
   // This is used for speedy string->Telemetry::ID conversions
-  typedef nsBaseHashtableET<nsCharPtrHashKey, Telemetry::ID> CharPtrEntryType;
+  typedef nsBaseHashtableET<nsDepCharHashKey, Telemetry::ID> CharPtrEntryType;
   typedef AutoHashtable<CharPtrEntryType> HistogramMapType;
   HistogramMapType mHistogramMap;
   bool mCanRecord;
@@ -707,7 +758,8 @@ bool
 IsExpired(const char *expiration){
   static Version current_version = Version(MOZ_APP_VERSION);
   MOZ_ASSERT(expiration);
-  return strcmp(expiration, "never") && (mozilla::Version(expiration) <= current_version);
+  return strcmp(expiration, "never") && strcmp(expiration, "default") &&
+    (mozilla::Version(expiration) <= current_version);
 }
 
 bool
@@ -720,7 +772,8 @@ HistogramGet(const char *name, const char *expiration, uint32_t min, uint32_t ma
              uint32_t bucketCount, uint32_t histogramType, Histogram **result)
 {
   if (histogramType != nsITelemetry::HISTOGRAM_BOOLEAN
-      && histogramType != nsITelemetry::HISTOGRAM_FLAG) {
+      && histogramType != nsITelemetry::HISTOGRAM_FLAG
+      && histogramType != nsITelemetry::HISTOGRAM_COUNT) {
     // Sanity checks for histogram parameters.
     if (min >= max)
       return NS_ERROR_ILLEGAL_VALUE;
@@ -752,6 +805,9 @@ HistogramGet(const char *name, const char *expiration, uint32_t min, uint32_t ma
     break;
   case nsITelemetry::HISTOGRAM_FLAG:
     *result = FlagHistogram::FactoryGet(name, Histogram::kUmaTargetedHistogramFlag);
+    break;
+  case nsITelemetry::HISTOGRAM_COUNT:
+    *result = CountHistogram::FactoryGet(name, Histogram::kUmaTargetedHistogramFlag);
     break;
   default:
     return NS_ERROR_INVALID_ARG;
@@ -896,33 +952,37 @@ IsEmpty(const Histogram *h)
 bool
 JSHistogram_Add(JSContext *cx, unsigned argc, JS::Value *vp)
 {
-  JS::CallArgs args = CallArgsFromVp(argc, vp);
-  if (!args.length()) {
-    JS_ReportError(cx, "Expected one argument");
+  JSObject *obj = JS_THIS_OBJECT(cx, vp);
+  if (!obj) {
     return false;
   }
 
-  if (!(args[0].isNumber() || args[0].isBoolean())) {
-    JS_ReportError(cx, "Not a number");
-    return false;
-  }
+  Histogram *h = static_cast<Histogram*>(JS_GetPrivate(obj));
+  Histogram::ClassType type = h->histogram_type();
 
-  int32_t value;
-  if (!JS::ToInt32(cx, args[0], &value)) {
-    return false;
-  }
-
-  if (TelemetryImpl::CanRecord()) {
-    JSObject *obj = JS_THIS_OBJECT(cx, vp);
-    if (!obj) {
+  int32_t value = 1;
+  if (type != base::CountHistogram::COUNT_HISTOGRAM) {
+    JS::CallArgs args = CallArgsFromVp(argc, vp);
+    if (!args.length()) {
+      JS_ReportError(cx, "Expected one argument");
       return false;
     }
 
-    Histogram *h = static_cast<Histogram*>(JS_GetPrivate(obj));
+    if (!(args[0].isNumber() || args[0].isBoolean())) {
+      JS_ReportError(cx, "Not a number");
+      return false;
+    }
+
+    if (!JS::ToInt32(cx, args[0], &value)) {
+      return false;
+    }
+  }
+
+  if (TelemetryImpl::CanRecord()) {
     h->Add(value);
   }
-  return true;
 
+  return true;
 }
 
 bool
@@ -1575,10 +1635,12 @@ TelemetryImpl::GetHistogramSnapshots(JSContext *cx, JS::MutableHandle<JS::Value>
     return NS_ERROR_FAILURE;
   ret.setObject(*root_obj);
 
-  // Ensure that all the HISTOGRAM_FLAG histograms have been created, so
-  // that their values are snapshotted.
+  // Ensure that all the HISTOGRAM_FLAG & HISTOGRAM_COUNT histograms have
+  // been created, so that their values are snapshotted.
   for (size_t i = 0; i < Telemetry::HistogramCount; ++i) {
-    if (gHistograms[i].histogramType == nsITelemetry::HISTOGRAM_FLAG) {
+    const uint32_t type = gHistograms[i].histogramType;
+    if (type == nsITelemetry::HISTOGRAM_FLAG ||
+        type == nsITelemetry::HISTOGRAM_COUNT) {
       Histogram *h;
       DebugOnly<nsresult> rv = GetHistogramByEnumId(Telemetry::ID(i), &h);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -1780,7 +1842,9 @@ TelemetryImpl::GetChromeHangs(JSContext *cx, JS::MutableHandle<JS::Value> ret)
   JS::Rooted<JSObject*> durationArray(cx, JS_NewArrayObject(cx, 0));
   JS::Rooted<JSObject*> systemUptimeArray(cx, JS_NewArrayObject(cx, 0));
   JS::Rooted<JSObject*> firefoxUptimeArray(cx, JS_NewArrayObject(cx, 0));
-  if (!durationArray || !systemUptimeArray || !firefoxUptimeArray) {
+  JS::Rooted<JSObject*> annotationsArray(cx, JS_NewArrayObject(cx, 0));
+  if (!durationArray || !systemUptimeArray || !firefoxUptimeArray ||
+      !annotationsArray) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1802,6 +1866,13 @@ TelemetryImpl::GetChromeHangs(JSContext *cx, JS::MutableHandle<JS::Value> ret)
     return NS_ERROR_FAILURE;
   }
 
+  ok = JS_DefineProperty(cx, fullReportObj, "annotations", annotationsArray,
+                         JSPROP_ENUMERATE);
+  if (!ok) {
+    return NS_ERROR_FAILURE;
+  }
+
+
   const size_t length = stacks.GetStackCount();
   for (size_t i = 0; i < length; ++i) {
     if (!JS_SetElement(cx, durationArray, i, mHangReports.GetDuration(i))) {
@@ -1812,6 +1883,49 @@ TelemetryImpl::GetChromeHangs(JSContext *cx, JS::MutableHandle<JS::Value> ret)
     }
     if (!JS_SetElement(cx, firefoxUptimeArray, i, mHangReports.GetFirefoxUptime(i))) {
       return NS_ERROR_FAILURE;
+    }
+    const std::vector<HangReports::AnnotationInfo>& annotationInfo =
+                                                mHangReports.GetAnnotationInfo();
+    uint32_t annotationsArrayIndex = 0;
+    for (std::vector<HangReports::AnnotationInfo>::const_iterator
+         ai = annotationInfo.begin(), e = annotationInfo.end(); ai != e;
+         ++ai, ++annotationsArrayIndex) {
+      JS::Rooted<JSObject*> keyValueArray(cx, JS_NewArrayObject(cx, 0));
+      if (!keyValueArray) {
+        return NS_ERROR_FAILURE;
+      }
+      JS::RootedValue indexValue(cx);
+      indexValue.setNumber(ai->mHangIndex);
+      if (!JS_SetElement(cx, keyValueArray, 0, indexValue)) {
+        return NS_ERROR_FAILURE;
+      }
+      JS::Rooted<JSObject*> jsAnnotation(cx, JS_NewObject(cx, nullptr,
+                                                          JS::NullPtr(),
+                                                          JS::NullPtr()));
+      if (!jsAnnotation) {
+        return NS_ERROR_FAILURE;
+      }
+      nsAutoPtr<HangAnnotations::Enumerator> annotationsEnum;
+      if (!ai->mAnnotations->GetEnumerator(annotationsEnum.StartAssignment())) {
+        return NS_ERROR_FAILURE;
+      }
+      nsAutoString  key;
+      nsAutoString  value;
+      while (annotationsEnum->Next(key, value)) {
+        JS::RootedValue jsValue(cx);
+        jsValue.setString(JS_NewUCStringCopyN(cx, value.get(), value.Length()));
+        if (!JS_DefineUCProperty(cx, jsAnnotation, key.get(), key.Length(),
+                                 jsValue, JSPROP_ENUMERATE)) {
+          return NS_ERROR_FAILURE;
+        }
+      }
+      if (!JS_SetElement(cx, keyValueArray, 1, jsAnnotation)) {
+        return NS_ERROR_FAILURE;
+      }
+      if (!JS_SetElement(cx, annotationsArray, annotationsArrayIndex,
+                         keyValueArray)) {
+        return NS_ERROR_FAILURE;
+      }
     }
   }
 
@@ -2058,31 +2172,46 @@ CreateJSTimeHistogram(JSContext* cx, const Telemetry::TimeHistogram& time)
 }
 
 static JSObject*
-CreateJSHangHistogram(JSContext* cx, const Telemetry::HangHistogram& hang)
+CreateJSHangStack(JSContext* cx, const Telemetry::HangStack& stack)
 {
-  JS::RootedObject ret(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+  JS::RootedObject ret(cx, JS_NewArrayObject(cx, stack.length()));
   if (!ret) {
     return nullptr;
   }
-
-  const Telemetry::HangStack& hangStack = hang.GetStack();
-  JS::RootedObject stack(cx,
-    JS_NewArrayObject(cx, hangStack.length()));
-  if (!ret) {
-    return nullptr;
-  }
-  for (size_t i = 0; i < hangStack.length(); i++) {
-    JS::RootedString string(cx, JS_NewStringCopyZ(cx, hangStack[i]));
-    if (!JS_SetElement(cx, stack, i, string)) {
+  for (size_t i = 0; i < stack.length(); i++) {
+    JS::RootedString string(cx, JS_NewStringCopyZ(cx, stack[i]));
+    if (!JS_SetElement(cx, ret, i, string)) {
       return nullptr;
     }
   }
+  return ret;
+}
 
+static JSObject*
+CreateJSHangHistogram(JSContext* cx, const Telemetry::HangHistogram& hang)
+{
+  JS::RootedObject ret(cx,
+    JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+  if (!ret) {
+    return nullptr;
+  }
+
+  JS::RootedObject stack(cx, CreateJSHangStack(cx, hang.GetStack()));
   JS::RootedObject time(cx, CreateJSTimeHistogram(cx, hang));
-  if (!time ||
+
+  if (!stack ||
+      !time ||
       !JS_DefineProperty(cx, ret, "stack", stack, JSPROP_ENUMERATE) ||
       !JS_DefineProperty(cx, ret, "histogram", time, JSPROP_ENUMERATE)) {
     return nullptr;
+  }
+
+  if (!hang.GetNativeStack().empty()) {
+    JS::RootedObject native(cx, CreateJSHangStack(cx, hang.GetNativeStack()));
+    if (!native ||
+        !JS_DefineProperty(cx, ret, "nativeStack", native, JSPROP_ENUMERATE)) {
+      return nullptr;
+    }
   }
   return ret;
 }
@@ -2510,7 +2639,8 @@ void
 TelemetryImpl::RecordChromeHang(uint32_t aDuration,
                                 Telemetry::ProcessedStack &aStack,
                                 int32_t aSystemUptime,
-                                int32_t aFirefoxUptime)
+                                int32_t aFirefoxUptime,
+                                HangAnnotations* aAnnotations)
 {
   if (!sTelemetry || !sTelemetry->mCanRecord)
     return;
@@ -2518,7 +2648,8 @@ TelemetryImpl::RecordChromeHang(uint32_t aDuration,
   MutexAutoLock hangReportMutex(sTelemetry->mHangReportsMutex);
 
   sTelemetry->mHangReports.AddHang(aStack, aDuration,
-                                   aSystemUptime, aFirefoxUptime);
+                                   aSystemUptime, aFirefoxUptime,
+                                   aAnnotations);
 }
 #endif
 
@@ -2596,18 +2727,19 @@ size_t
 TelemetryImpl::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
 {
   size_t n = aMallocSizeOf(this);
+
   // Ignore the hashtables in mAddonMap; they are not significant.
   n += mAddonMap.SizeOfExcludingThis(nullptr, aMallocSizeOf);
   n += mHistogramMap.SizeOfExcludingThis(nullptr, aMallocSizeOf);
   { // Scope for mHashMutex lock
     MutexAutoLock lock(mHashMutex);
-    n += mPrivateSQL.SizeOfExcludingThis(nullptr, aMallocSizeOf);
-    n += mSanitizedSQL.SizeOfExcludingThis(nullptr, aMallocSizeOf);
+    n += mPrivateSQL.SizeOfExcludingThis(aMallocSizeOf);
+    n += mSanitizedSQL.SizeOfExcludingThis(aMallocSizeOf);
   }
-  n += mTrackedDBs.SizeOfExcludingThis(nullptr, aMallocSizeOf);
+  n += mTrackedDBs.SizeOfExcludingThis(aMallocSizeOf);
   { // Scope for mHangReportsMutex lock
     MutexAutoLock lock(mHangReportsMutex);
-    n += mHangReports.SizeOfExcludingThis();
+    n += mHangReports.SizeOfExcludingThis(aMallocSizeOf);
   }
   { // Scope for mThreadHangStatsMutex lock
     MutexAutoLock lock(mThreadHangStatsMutex);
@@ -2763,10 +2895,11 @@ void Init()
 void RecordChromeHang(uint32_t duration,
                       ProcessedStack &aStack,
                       int32_t aSystemUptime,
-                      int32_t aFirefoxUptime)
+                      int32_t aFirefoxUptime,
+                      HangAnnotations* aAnnotations)
 {
   TelemetryImpl::RecordChromeHang(duration, aStack,
-                                  aSystemUptime, aFirefoxUptime);
+                                  aSystemUptime, aFirefoxUptime, aAnnotations);
 }
 #endif
 

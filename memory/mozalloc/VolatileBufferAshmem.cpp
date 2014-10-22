@@ -15,11 +15,7 @@
 #include <unistd.h>
 
 #ifdef MOZ_MEMORY
-#ifdef MOZ_WIDGET_ANDROID
-extern "C" int __wrap_posix_memalign(void** memptr, size_t alignment, size_t size);
-#else
 extern "C" int posix_memalign(void** memptr, size_t alignment, size_t size);
-#endif
 #endif
 
 #define MIN_VOLATILE_ALLOC_SIZE 8192
@@ -52,8 +48,6 @@ VolatileBuffer::Init(size_t aSize, size_t aAlignment)
   }
 
   if (ioctl(mFd, ASHMEM_SET_SIZE, mSize) < 0) {
-    close(mFd);
-    mFd = -1;
     goto heap_alloc;
   }
 
@@ -63,12 +57,14 @@ VolatileBuffer::Init(size_t aSize, size_t aAlignment)
   }
 
 heap_alloc:
+  mBuf = nullptr;
+  if (mFd >= 0) {
+    close(mFd);
+    mFd = -1;
+  }
+
 #ifdef MOZ_MEMORY
-#ifdef MOZ_WIDGET_ANDROID
-  __wrap_posix_memalign(&mBuf, aAlignment, aSize);
-#else
   posix_memalign(&mBuf, aAlignment, aSize);
-#endif
 #else
   mBuf = memalign(aAlignment, aSize);
 #endif

@@ -52,6 +52,30 @@ def _relpath(path, start=None):
         return os.curdir
     return os.path.join(*rel_list)
 
+# Mapping of Python chars to their javascript string representation.
+QUOTE_MAP = {
+    '\\': '\\\\',
+    '\b': '\\b',
+    '\f': '\\f',
+    '\n': '\\n',
+    '\r': '\\r',
+    '\t': '\\t',
+    '\v': '\\v'
+}
+
+# Quote the string S, javascript style.
+def js_quote(quote, s):
+    result = quote
+    for c in s:
+        if c == quote:
+            result += '\\' + quote
+        elif c in QUOTE_MAP:
+            result += QUOTE_MAP[c]
+        else:
+            result += c
+    result += quote
+    return result
+
 os.path.relpath = _relpath
 
 class Test:
@@ -137,7 +161,7 @@ class Test:
                         except ValueError:
                             print("warning: couldn't parse thread-count %s" % value)
                     else:
-                        print('warning: unrecognized |jit-test| attribute %s' % part)
+                        print('%s: warning: unrecognized |jit-test| attribute %s' % (path, part))
                 else:
                     if name == 'slow':
                         test.slow = True
@@ -151,8 +175,6 @@ class Test:
                         test.valgrind = options.valgrind
                     elif name == 'tz-pacific':
                         test.tz_pacific = True
-                    elif name == 'debug':
-                        test.jitflags.append('--debugjit')
                     elif name == 'ion-eager':
                         test.jitflags.append('--ion-eager')
                     elif name == 'no-ion':
@@ -160,7 +182,7 @@ class Test:
                     elif name == 'dump-bytecode':
                         test.jitflags.append('--dump-bytecode')
                     else:
-                        print('warning: unrecognized |jit-test| attribute %s' % part)
+                        print('%s: warning: unrecognized |jit-test| attribute %s' % (path, part))
 
         if options.valgrind_all:
             test.valgrind = True
@@ -180,12 +202,14 @@ class Test:
         # whether we use double or single quotes. On windows and when using
         # a remote device, however, we have to be careful to use the quote
         # style that is the opposite of what the exec wrapper uses.
-        # This uses %r to get single quotes on windows and special cases
-        # the remote device.
-        fmt = 'const platform=%r; const libdir=%r; const scriptdir=%r'
         if remote_prefix:
-            fmt = 'const platform="%s"; const libdir="%s"; const scriptdir="%s"'
-        expr = fmt % (sys.platform, libdir, scriptdir_var)
+            quotechar = '"'
+        else:
+            quotechar = "'"
+        expr = ("const platform=%s; const libdir=%s; const scriptdir=%s"
+                % (js_quote(quotechar, sys.platform),
+                   js_quote(quotechar, libdir),
+                   js_quote(quotechar, scriptdir_var)))
 
         # We may have specified '-a' or '-d' twice: once via --jitflags, once
         # via the "|jit-test|" line.  Remove dups because they are toggles.
@@ -349,8 +373,11 @@ def run_test_remote(test, device, prefix, options):
     # the same buffer to both.
     return TestOutput(test, cmd, out, out, returncode, None, False)
 
-def check_output(out, err, rc, timed_out, test):
+def check_output(out, err, rc, timed_out, test, options):
     if timed_out:
+        if test.relpath_tests in options.ignore_timeouts:
+            return True
+
         # The shell sometimes hangs on shutdown on Windows 7 and Windows
         # Server 2008. See bug 970063 comment 7 for a description of the
         # problem. Until bug 956899 is fixed, ignore timeouts on these
@@ -628,7 +655,7 @@ def process_test_results(results, num_tests, options):
             if res.test.valgrind:
                 sys.stdout.write(res.err)
 
-            ok = check_output(res.out, res.err, res.rc, res.timed_out, res.test)
+            ok = check_output(res.out, res.err, res.rc, res.timed_out, res.test, options)
             doing = 'after %s' % res.test.relpath_tests
             if not ok:
                 failures.append(res)
@@ -674,7 +701,7 @@ def get_remote_results(tests, device, prefix, options):
 def push_libs(options, device):
     # This saves considerable time in pushing unnecessary libraries
     # to the device but needs to be updated if the dependencies change.
-    required_libs = ['libnss3.so', 'libmozglue.so']
+    required_libs = ['libnss3.so', 'libmozglue.so', 'libnspr4.so', 'libplc4.so', 'libplds4.so']
 
     for file in os.listdir(options.local_lib):
         if file in required_libs:

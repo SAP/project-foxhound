@@ -29,86 +29,22 @@ endif
 
 -include $(DEPTH)/.mozconfig.mk
 
-# Integrate with mozbuild-generated make files. We first verify that no
-# variables provided by the automatically generated .mk files are
-# present. If they are, this is a violation of the separation of
-# responsibility between Makefile.in and mozbuild files.
-_MOZBUILD_EXTERNAL_VARIABLES := \
-  ANDROID_GENERATED_RESFILES \
-  ANDROID_RES_DIRS \
-  CMSRCS \
-  CMMSRCS \
-  CPP_UNIT_TESTS \
-  DIRS \
-  EXTRA_DSO_LDOPTS \
-  EXTRA_PP_COMPONENTS \
-  EXTRA_PP_JS_MODULES \
-  FORCE_SHARED_LIB \
-  FORCE_STATIC_LIB \
-  FINAL_LIBRARY \
-  HOST_CSRCS \
-  HOST_CMMSRCS \
-  HOST_LIBRARY_NAME \
-  HOST_PROGRAM \
-  HOST_SIMPLE_PROGRAMS \
-  IS_COMPONENT \
-  JAR_MANIFEST \
-  JAVA_JAR_TARGETS \
-  JS_MODULES_PATH \
-  LD_VERSION_SCRIPT \
-  LIBRARY_NAME \
-  LIBS \
-  MAKE_FRAMEWORK \
-  MODULE \
-  MSVC_ENABLE_PGO \
-  NO_DIST_INSTALL \
-  PARALLEL_DIRS \
-  PROGRAM \
-  RESOURCE_FILES \
-  SDK_HEADERS \
-  SDK_LIBRARY \
-  SHARED_LIBRARY_LIBS \
-  SHARED_LIBRARY_NAME \
-  SIMPLE_PROGRAMS \
-  SONAME \
-  STATIC_LIBRARY_NAME \
-  TEST_DIRS \
-  TIERS \
-  TOOL_DIRS \
-  XPCSHELL_TESTS \
-  XPIDL_MODULE \
-  $(NULL)
-
-_DEPRECATED_VARIABLES := \
-  ANDROID_RESFILES \
-  EXPORT_LIBRARY \
-  HOST_LIBS \
-  LIBXUL_LIBRARY \
-  MOCHITEST_A11Y_FILES \
-  MOCHITEST_BROWSER_FILES \
-  MOCHITEST_BROWSER_FILES_PARTS \
-  MOCHITEST_CHROME_FILES \
-  MOCHITEST_FILES \
-  MOCHITEST_FILES_PARTS \
-  MOCHITEST_METRO_FILES \
-  MOCHITEST_ROBOCOP_FILES \
-  SHORT_LIBNAME \
-  TESTING_JS_MODULES \
-  TESTING_JS_MODULE_DIR \
-  $(NULL)
-
 ifndef EXTERNALLY_MANAGED_MAKE_FILE
 # Using $(firstword) may not be perfect. But it should be good enough for most
 # scenarios.
 _current_makefile = $(CURDIR)/$(firstword $(MAKEFILE_LIST))
 
-$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(if $(filter file override,$(subst $(NULL) ,_,$(origin $(var)))),\
-    $(error Variable $(var) is defined in $(_current_makefile). It should only be defined in moz.build files),\
+CHECK_MOZBUILD_VARIABLES = $(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES), \
+  $(if $(subst $($(var)_FROZEN),,'$($(var))'), \
+	  $(error Variable $(var) is defined in $(_current_makefile). It should only be defined in moz.build files),\
+  )) $(foreach var,$(_DEPRECATED_VARIABLES), \
+	$(if $(subst $($(var)_FROZEN),,'$($(var))'), \
+    $(error Variable $(var) is defined in $(_current_makefile). This variable has been deprecated. It does nothing. It must be removed in order to build),\
     ))
 
-$(foreach var,$(_DEPRECATED_VARIABLES),$(if $(filter file override,$(subst $(NULL) ,_,$(origin $(var)))),\
-    $(error Variable $(var) is defined in $(_current_makefile). This variable has been deprecated. It does nothing. It must be removed in order to build)\
-    ))
+# Check variables set after autoconf.mk (included at the top of Makefiles) is
+# included and before config.mk is included.
+_eval_for_side_effects := $(CHECK_MOZBUILD_VARIABLES)
 
 # Import the automatically generated backend file. If this file doesn't exist,
 # the backend hasn't been properly configured. We want this to be a fatal
@@ -119,18 +55,7 @@ include backend.mk
 endif
 
 # Freeze the values specified by moz.build to catch them if they fail.
-
-$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(eval $(var)_FROZEN := '$($(var))'))
-$(foreach var,$(_DEPRECATED_VARIABLES),$(eval $(var)_FROZEN := '$($(var))'))
-
-CHECK_MOZBUILD_VARIABLES = $(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES), \
-  $(if $(subst $($(var)_FROZEN),,'$($(var))'), \
-	  $(error Variable $(var) is defined in $(_current_makefile). It should only be defined in moz.build files),\
-  )) $(foreach var,$(_DEPRECATED_VARIABLES), \
-	$(if $(subst $($(var)_FROZEN),,'$($(var))'), \
-    $(error Variable $(var) is defined in $(_current_makefile). This variable has been deprecated. It does nothing. It must be removed in order to build),\
-    ))
-
+$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES) $(_DEPRECATED_VARIABLES),$(eval $(var)_FROZEN := '$($(var))'))
 endif
 
 space = $(NULL) $(NULL)
@@ -330,19 +255,6 @@ endif
 #
 _ENABLE_PIC=1
 
-# Determine if module being compiled is destined
-# to be merged into libxul
-
-ifneq (,$(filter xul xul-%,$(FINAL_LIBRARY) $(LIBRARY_NAME)))
-  LIBXUL_LIBRARY := 1
-endif
-
-ifdef LIBXUL_LIBRARY
-ifdef IS_COMPONENT
-$(error IS_COMPONENT is set, but is not compatible with LIBXUL_LIBRARY)
-endif
-endif
-
 # PGO on MSVC is opt-in
 ifdef _MSC_VER
 ifndef MSVC_ENABLE_PGO
@@ -391,22 +303,6 @@ ifdef _MSC_VER
 OS_LDFLAGS += $(DELAYLOAD_LDFLAGS)
 endif # _MSC_VER
 
-ifneq (,$(LIBXUL_LIBRARY))
-DEFINES += -DMOZILLA_INTERNAL_API
-endif
-
-# Force XPCOM/widget/gfx methods to be _declspec(dllexport) when we're
-# building libxul libraries
-ifdef LIBXUL_LIBRARY
-DEFINES += \
-	  -DIMPL_LIBXUL \
-		$(NULL)
-
-ifndef JS_SHARED_LIBRARY
-DEFINES += -DSTATIC_EXPORTABLE_JS_API
-endif
-endif
-
 MAKE_JARS_FLAGS = \
 	-t $(topsrcdir) \
 	-f $(MOZ_CHROME_FILE_FORMAT) \
@@ -434,19 +330,25 @@ JAVA_GEN_DIR  = _javagen
 JAVA_DIST_DIR = $(DEPTH)/$(JAVA_GEN_DIR)
 JAVA_IFACES_PKG_NAME = org/mozilla/interfaces
 
-OS_INCLUDES += $(MOZ_JPEG_CFLAGS) $(MOZ_PNG_CFLAGS) $(MOZ_ZLIB_CFLAGS) $(MOZ_PIXMAN_CFLAGS)
-
-# NSPR_CFLAGS and NSS_CFLAGS must appear ahead of OS_INCLUDES to avoid Linux
-# builds wrongly picking up system NSPR/NSS header files.
 INCLUDES = \
   -I$(srcdir) \
   -I. \
   $(LOCAL_INCLUDES) \
   -I$(DIST)/include \
+  $(NULL)
+
+ifndef IS_GYP_DIR
+# NSPR_CFLAGS and NSS_CFLAGS must appear ahead of the other flags to avoid Linux
+# builds wrongly picking up system NSPR/NSS header files.
+OS_INCLUDES := \
   $(if $(LIBXUL_SDK),-I$(LIBXUL_SDK)/include) \
   $(NSPR_CFLAGS) $(NSS_CFLAGS) \
-  $(OS_INCLUDES) \
+  $(MOZ_JPEG_CFLAGS) \
+  $(MOZ_PNG_CFLAGS) \
+  $(MOZ_ZLIB_CFLAGS) \
+  $(MOZ_PIXMAN_CFLAGS) \
   $(NULL)
+endif
 
 include $(topsrcdir)/config/static-checking-config.mk
 
@@ -558,8 +460,8 @@ OS_COMPILE_CMMFLAGS += -fobjc-abi-version=2 -fobjc-legacy-dispatch
 endif
 endif
 
-COMPILE_CFLAGS	= $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(RTL_FLAGS) $(OS_CPPFLAGS) $(OS_COMPILE_CFLAGS) $(CFLAGS) $(MOZBUILD_CFLAGS) $(EXTRA_COMPILE_FLAGS)
-COMPILE_CXXFLAGS = $(if $(DISABLE_STL_WRAPPING),,$(STL_FLAGS)) $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(RTL_FLAGS) $(OS_CPPFLAGS) $(OS_COMPILE_CXXFLAGS) $(CXXFLAGS) $(MOZBUILD_CXXFLAGS) $(EXTRA_COMPILE_FLAGS)
+COMPILE_CFLAGS	= $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(OS_INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(RTL_FLAGS) $(OS_CPPFLAGS) $(OS_COMPILE_CFLAGS) $(CFLAGS) $(MOZBUILD_CFLAGS) $(EXTRA_COMPILE_FLAGS)
+COMPILE_CXXFLAGS = $(if $(DISABLE_STL_WRAPPING),,$(STL_FLAGS)) $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(OS_INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(RTL_FLAGS) $(OS_CPPFLAGS) $(OS_COMPILE_CXXFLAGS) $(CXXFLAGS) $(MOZBUILD_CXXFLAGS) $(EXTRA_COMPILE_FLAGS)
 COMPILE_CMFLAGS = $(OS_COMPILE_CMFLAGS) $(MOZBUILD_CMFLAGS) $(EXTRA_COMPILE_FLAGS)
 COMPILE_CMMFLAGS = $(OS_COMPILE_CMMFLAGS) $(MOZBUILD_CMMFLAGS) $(EXTRA_COMPILE_FLAGS)
 ASFLAGS += $(EXTRA_ASSEMBLER_FLAGS)
@@ -598,25 +500,18 @@ endif
 endif
 
 # Set link flags according to whether we want a console.
+ifeq ($(OS_ARCH),WINNT)
 ifdef MOZ_WINCONSOLE
 ifeq ($(MOZ_WINCONSOLE),1)
-ifeq ($(OS_ARCH),WINNT)
-ifdef GNU_CC
-WIN32_EXE_LDFLAGS	+= -mconsole
-else
-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:CONSOLE
-endif
-endif
+WIN32_EXE_LDFLAGS	+= $(WIN32_CONSOLE_EXE_LDFLAGS)
 else # MOZ_WINCONSOLE
-ifeq ($(OS_ARCH),WINNT)
-ifdef GNU_CC
-WIN32_EXE_LDFLAGS	+= -mwindows
+WIN32_EXE_LDFLAGS	+= $(WIN32_GUI_EXE_LDFLAGS)
+endif
 else
-WIN32_EXE_LDFLAGS	+= -SUBSYSTEM:WINDOWS
+# For setting subsystem version
+WIN32_EXE_LDFLAGS	+= $(WIN32_CONSOLE_EXE_LDFLAGS)
 endif
-endif
-endif
-endif
+endif # WINNT
 
 ifdef _MSC_VER
 ifeq ($(CPU_ARCH),x86_64)
@@ -665,7 +560,7 @@ else
 ifeq ($(HOST_OS_ARCH),WINNT)
 NSINSTALL = $(NSINSTALL_PY)
 else
-NSINSTALL = $(DIST)/bin/nsinstall$(HOST_BIN_SUFFIX)
+NSINSTALL = $(DEPTH)/config/nsinstall$(HOST_BIN_SUFFIX)
 endif # WINNT
 endif # NSINSTALL_BIN
 
@@ -697,6 +592,8 @@ sysinstall_cmd = install_cmd
 # MOZ_UI_LOCALE directly, but use an intermediate variable that can be
 # overridden by the command line. (Besides, AB_CD is prettier).
 AB_CD = $(MOZ_UI_LOCALE)
+# Many locales directories want this definition.
+DEFINES += -DAB_CD=$(AB_CD)
 
 ifndef L10NBASEDIR
   L10NBASEDIR = $(error L10NBASEDIR not defined by configure)
@@ -756,8 +653,8 @@ CREATE_PRECOMPLETE_CMD = $(PYTHON) $(abspath $(topsrcdir)/config/createprecomple
 # MDDEPDIR is the subdirectory where dependency files are stored
 MDDEPDIR := .deps
 
-EXPAND_LIBS_EXEC = $(PYTHON) $(topsrcdir)/config/expandlibs_exec.py $(if $@,--depend $(MDDEPDIR)/$@.pp --target $@)
-EXPAND_LIBS_GEN = $(PYTHON) $(topsrcdir)/config/expandlibs_gen.py $(if $@,--depend $(MDDEPDIR)/$@.pp)
+EXPAND_LIBS_EXEC = $(PYTHON) $(topsrcdir)/config/expandlibs_exec.py
+EXPAND_LIBS_GEN = $(PYTHON) $(topsrcdir)/config/expandlibs_gen.py
 EXPAND_AR = $(EXPAND_LIBS_EXEC) --extract -- $(AR)
 EXPAND_CC = $(EXPAND_LIBS_EXEC) --uselist -- $(CC)
 EXPAND_CCC = $(EXPAND_LIBS_EXEC) --uselist -- $(CCC)
@@ -770,7 +667,7 @@ EXPAND_MKSHLIB = $(EXPAND_LIBS_EXEC) $(EXPAND_MKSHLIB_ARGS) -- $(MKSHLIB)
 
 ifneq (,$(MOZ_LIBSTDCXX_TARGET_VERSION)$(MOZ_LIBSTDCXX_HOST_VERSION))
 ifneq ($(OS_ARCH),Darwin)
-CHECK_STDCXX = @$(TOOLCHAIN_PREFIX)objdump -p $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' > /dev/null && echo 'TEST-UNEXPECTED-FAIL | check_stdcxx | We do not want these libstdc++ symbols to be used:' && $(TOOLCHAIN_PREFIX)objdump -T $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' && false || true
+CHECK_STDCXX = @$(TOOLCHAIN_PREFIX)objdump -p $(1) | grep -v -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' > /dev/null || ( echo 'TEST-UNEXPECTED-FAIL | check_stdcxx | We do not want these libstdc++ symbols to be used:' && $(TOOLCHAIN_PREFIX)objdump -T $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' && false)
 endif
 endif
 
@@ -778,10 +675,19 @@ ifeq (,$(filter $(OS_TARGET),WINNT Darwin))
 CHECK_TEXTREL = @$(TOOLCHAIN_PREFIX)readelf -d $(1) | grep TEXTREL > /dev/null && echo 'TEST-UNEXPECTED-FAIL | check_textrel | We do not want text relocations in libraries and programs' || true
 endif
 
+ifeq ($(MOZ_WIDGET_TOOLKIT),android)
+# While this is very unlikely (libc being added by the compiler at the end
+# of the linker command line), if libmozglue.so ends up after libc.so, all
+# hell breaks loose, so better safe than sorry, and check it's actually the
+# case.
+CHECK_MOZGLUE_ORDER = @$(TOOLCHAIN_PREFIX)readelf -d $(1) | grep NEEDED | awk '{ libs[$$NF] = ++n } END { if (libs["[libmozglue.so]"] && libs["[libc.so]"] < libs["[libmozglue.so]"]) { print "libmozglue.so must be linked before libc.so"; exit 1 } }'
+endif
+
 define CHECK_BINARY
 $(call CHECK_STDCXX,$(1))
 $(call CHECK_TEXTREL,$(1))
 $(call LOCAL_CHECKS,$(1))
+$(call CHECK_MOZGLUE_ORDER,$(1))
 endef
 
 # autoconf.mk sets OBJ_SUFFIX to an error to avoid use before including
@@ -828,28 +734,7 @@ export CL_INCLUDES_PREFIX
 # non-English systems.
 export NONASCII
 
-ifdef MOZ_GTK2_CFLAGS
-MOZ_GTK2_CFLAGS := -I$(topsrcdir)/widget/gtk/compat $(MOZ_GTK2_CFLAGS)
-endif
-ifdef MOZ_GTK3_CFLAGS
-MOZ_GTK3_CFLAGS := -I$(topsrcdir)/widget/gtk/compat-gtk3 $(MOZ_GTK3_CFLAGS)
-endif
-
 DEFINES += -DNO_NSPR_10_SUPPORT
 
-ifdef IS_GYP_DIR
-LOCAL_INCLUDES += \
-  -I$(topsrcdir)/ipc/chromium/src \
-  -I$(topsrcdir)/ipc/glue \
-  -I$(DEPTH)/ipc/ipdl/_ipdlheaders \
-  $(NULL)
-
-ifeq (WINNT,$(OS_TARGET))
-# These get set via VC project file settings for normal GYP builds.
-DEFINES += -DUNICODE -D_UNICODE
-endif
-
-DISABLE_STL_WRAPPING := 1
-# Skip most Mozilla-specific include locations.
-INCLUDES = -I. $(LOCAL_INCLUDES) -I$(DEPTH)/dist/include
-endif
+# Freeze the values specified by moz.build to catch them if they fail.
+$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES) $(_DEPRECATED_VARIABLES),$(eval $(var)_FROZEN := '$($(var))'))

@@ -73,6 +73,9 @@ interface CanvasRenderingContext2D {
            attribute double shadowBlur; // (default 0)
            attribute DOMString shadowColor; // (default transparent black)
 
+  [Pref="canvas.filters.enabled", SetterThrows]
+  attribute DOMString filter; // (default empty string = no filter)
+
   // rects
   [LenientFloat]
   void clearRect(double x, double y, double w, double h);
@@ -323,5 +326,7 @@ interface TextMetrics {
  Constructor(Path2D other),
  Constructor(DOMString pathString)]
 interface Path2D
-{};
+{
+  void addPath(Path2D path, optional SVGMatrix transformation);
+};
 Path2D implements CanvasPathMethods;

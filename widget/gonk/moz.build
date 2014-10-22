@@ -44,6 +44,7 @@ SOURCES += ['libui/' + src for src in [
 ]]
 
 SOURCES += [
+    'GeckoTouchDispatcher.cpp',
     'GfxInfo.cpp',
     'GonkMemoryPressureMonitoring.cpp',
     'GonkPermission.cpp',
@@ -76,6 +77,9 @@ LOCAL_INCLUDES += [
 
 DEFINES['HAVE_OFF64_T'] = True
 DEFINES['SK_BUILD_FOR_ANDROID_NDK'] = True
+
+if CONFIG['ANDROID_VERSION'] != '15':
+    DEFINES['HAVE_POSIX_CLOCKS'] = True
 
 if CONFIG['MOZ_OMX_DECODER']:
     DEFINES['MOZ_OMX_DECODER'] = True

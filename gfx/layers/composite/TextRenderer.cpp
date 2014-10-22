@@ -85,7 +85,7 @@ TextRenderer::RenderText(const string& aText, const IntPoint& aOrigin,
   // Create a surface to draw our glyphs to.
   RefPtr<DataSourceSurface> textSurf =
     Factory::CreateDataSourceSurface(IntSize(maxWidth, numLines * sCellHeight), sTextureFormat);
-  if (!textSurf) {
+  if (NS_WARN_IF(!textSurf)) {
     return;
   }
 
@@ -134,7 +134,7 @@ TextRenderer::RenderText(const string& aText, const IntPoint& aOrigin,
   chain.mPrimaryEffect = effect;
 
   Matrix4x4 transform = aTransform;
-  transform.Scale(scaleFactor, scaleFactor, 1.0f);
+  transform.PreScale(scaleFactor, scaleFactor, 1.0f);
   mCompositor->DrawQuad(Rect(aOrigin.x, aOrigin.y, maxWidth, numLines * 16),
                         Rect(-10000, -10000, 20000, 20000), chain, 1.0f, transform);
 }
@@ -147,8 +147,7 @@ TextRenderer::EnsureInitialized()
   }
 
   mGlyphBitmaps = Factory::CreateDataSourceSurface(IntSize(sTextureWidth, sTextureHeight), sTextureFormat);
-  if (!mGlyphBitmaps) {
-    NS_WARNING("Failed to create SourceSurface.");
+  if (NS_WARN_IF(!mGlyphBitmaps)) {
     return;
   }
 

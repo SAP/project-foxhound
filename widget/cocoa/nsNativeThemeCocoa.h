@@ -62,11 +62,15 @@ public:
   bool ThemeDrawsFocusForWidget(uint8_t aWidgetType) MOZ_OVERRIDE;
   bool ThemeNeedsComboboxDropmarker();
   virtual bool WidgetAppearanceDependsOnWindowFocus(uint8_t aWidgetType) MOZ_OVERRIDE;
+  virtual bool NeedToClearBackgroundBehindWidget(uint8_t aWidgetType) MOZ_OVERRIDE;
   virtual Transparency GetWidgetTransparency(nsIFrame* aFrame, uint8_t aWidgetType);
 
   void DrawProgress(CGContextRef context, const HIRect& inBoxRect,
                     bool inIsIndeterminate, bool inIsHorizontal,
                     double inValue, double inMaxValue, nsIFrame* aFrame);
+
+  static void DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
+                                 CGFloat aUnifiedHeight, BOOL aIsMain, BOOL aIsFlipped);
 
 protected:
   virtual ~nsNativeThemeCocoa();
@@ -100,7 +104,8 @@ protected:
                       nsIFrame* aFrame);
   void DrawMenuIcon(CGContextRef cgContext, const CGRect& aRect,
                     mozilla::EventStates inState, nsIFrame* aFrame,
-                    const NSSize& aIconSize, const NSString* aImageName);
+                    const NSSize& aIconSize, const NSString* aImageName,
+                    bool aCenterHorizontally);
   void DrawButton(CGContextRef context, ThemeButtonKind inKind,
                   const HIRect& inBoxRect, bool inIsDefault, 
                   ThemeButtonValue inValue, ThemeButtonAdornment inAdornment,
@@ -124,8 +129,6 @@ protected:
                           NSWindow* aWindow);
   void DrawStatusBar(CGContextRef cgContext, const HIRect& inBoxRect,
                      nsIFrame *aFrame);
-  void DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
-                          CGFloat aUnifiedHeight, BOOL aIsMain);
   void DrawResizer(CGContextRef cgContext, const HIRect& aRect, nsIFrame *aFrame);
 
   // Scrollbars

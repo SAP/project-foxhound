@@ -14,14 +14,8 @@ UNIFIED_SOURCES += [
     'jsctypes-test.cpp',
 ]
 
-LIBRARY_NAME = 'jsctypes-test'
-
-FORCE_SHARED_LIB = True
+SharedLibrary('jsctypes-test')
 
 LOCAL_INCLUDES += [
     '/js/src/ctypes',
-]
-
-USE_LIBS += [
-    'mozalloc',
 ]

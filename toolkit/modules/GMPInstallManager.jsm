@@ -27,9 +27,23 @@ Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/ctypes.jsm");
 
 this.EXPORTED_SYMBOLS = ["GMPInstallManager", "GMPExtractor", "GMPDownloader",
-                         "GMPAddon", "GMPPrefs"];
+                         "GMPAddon", "GMPPrefs", "OPEN_H264_ID"];
 
 var gLocale = null;
+const PARENT_LOGGER_ID = "GMPInstallManager";
+
+// Used to determine if logging should be enabled
+XPCOMUtils.defineLazyGetter(this, "gLogEnabled", function() {
+  return Preferences.get("media.gmp-manager.log", false);
+});
+
+// Setup the parent logger with dump logging. It'll only be used if logging is
+// enabled though.  We don't actually have any fatal logging errors, so setting
+// the log level to fatal effectively disables it.
+let parentLogger = Log.repository.getLogger(PARENT_LOGGER_ID);
+parentLogger.level = gLogEnabled ? Log.Level.Debug : Log.Level.Fatal;
+let appender = new Log.DumpAppender();
+parentLogger.addAppender(appender);
 
 // Shared code for suppressing bad cert dialogs
 XPCOMUtils.defineLazyGetter(this, "gCertUtils", function() {
@@ -41,22 +55,11 @@ XPCOMUtils.defineLazyGetter(this, "gCertUtils", function() {
 XPCOMUtils.defineLazyModuleGetter(this, "UpdateChannel",
                                   "resource://gre/modules/UpdateChannel.jsm");
 
-// Used to determine if logging should be enabled
-XPCOMUtils.defineLazyGetter(this, "gLogEnabled", function() {
-  return GMPPrefs.get(GMPPrefs.KEY_LOG_ENABLED);
-});
-
-
 function getScopedLogger(prefix) {
-  let logger = Log.repository.getLogger(prefix);
-  if (gLogEnabled) {
-    logger.level = Log.Level.Debug;
-    let appender = new Log.DumpAppender();
-    logger.addAppender(appender);
-  }
-  return logger;
+  // `PARENT_LOGGER_ID.` being passed here effectively links this logger
+  // to the parentLogger.
+  return Log.repository.getLogger(PARENT_LOGGER_ID + "." + prefix);
 }
-
 
 /**
  * Manages preferences for GMP addons
@@ -104,8 +107,8 @@ let GMPPrefs = {
    */
   KEY_LOG_ENABLED: "media.gmp-manager.log",
   KEY_ADDON_LAST_UPDATE: "media.{0}.lastUpdate",
-  KEY_ADDON_PATH: "media.{0}.path",
   KEY_ADDON_VERSION: "media.{0}.version",
+  KEY_ADDON_AUTOUPDATE: "media.{0}.autoupdate",
   KEY_URL: "media.gmp-manager.url",
   KEY_URL_OVERRIDE: "media.gmp-manager.url.override",
   KEY_CERT_CHECKATTRS: "media.gmp-manager.cert.checkAttributes",
@@ -137,7 +140,7 @@ XPCOMUtils.defineLazyGetter(this, "gOSVersion", function aus_gOSVersion() {
     const BYTE = ctypes.uint8_t;
     const WORD = ctypes.uint16_t;
     const DWORD = ctypes.uint32_t;
-    const WCHAR = ctypes.jschar;
+    const WCHAR = ctypes.char16_t;
     const BOOL = ctypes.int;
 
     // This structure is described at:
@@ -291,7 +294,7 @@ GMPInstallManager.prototype = {
    * Obtains a URL with replacement of vars
    */
   _getURL: function() {
-    let log = getScopedLogger("GMPInstallManager._getURL");
+    let log = getScopedLogger("_getURL");
     // Use the override URL if it is specified.  The override URL is just like
     // the normal URL but it does not check the cert.
     let url = GMPPrefs.get(GMPPrefs.KEY_URL_OVERRIDE);
@@ -333,7 +336,7 @@ GMPInstallManager.prototype = {
    *           type: Sometimes specifies type of rejection
    */
   checkForAddons: function() {
-    let log = getScopedLogger("GMPInstallManager.checkForAddons");
+    let log = getScopedLogger("checkForAddons");
     if (this._deferred) {
         log.error("checkForAddons already called");
         return Promise.reject({type: "alreadycalled"});
@@ -411,11 +414,20 @@ GMPInstallManager.prototype = {
     GMPPrefs.set(GMPPrefs.KEY_UPDATE_LAST_CHECK, now);
   },
   /**
-   * Wrapper for checkForAddons and installaddon.
+   * Wrapper for checkForAddons and installAddon.
    * Will only install if not already installed and will log the results.
+   * This will only install/update the OpenH264 plugin
    */
   simpleCheckAndInstall: function() {
-    let log = getScopedLogger("GMPInstallManager.simpleCheckAndInstall");
+    let log = getScopedLogger("simpleCheckAndInstall");
+
+    let autoUpdate = GMPPrefs.get(GMPPrefs.KEY_ADDON_AUTOUPDATE,
+                                  OPEN_H264_ID, true);
+    if (!autoUpdate) {
+        log.info("Auto-update is off for openh264, aborting check.");
+        return Promise.resolve({status: "check-disabled"});
+    }
+
     let secondsBetweenChecks =
       GMPPrefs.get(GMPPrefs.KEY_UPDATE_SECONDS_BETWEEN_CHECKS, undefined,
                    DEFAULT_SECONDS_BETWEEN_CHECKS)
@@ -424,9 +436,10 @@ GMPInstallManager.prototype = {
              " seconds ago, minimum seconds: " + secondsBetweenChecks);
     if (secondsBetweenChecks > secondsSinceLast) {
       log.info("Will not check for updates.");
-      return Promise.resolve();
+      return Promise.resolve({status: "too-frequent-no-check"});
     }
 
+    let deferred = Promise.defer();
     let promise = this.checkForAddons();
     promise.then(gmpAddons => {
       this._updateLastCheck();
@@ -438,22 +451,31 @@ GMPInstallManager.prototype = {
       });
       if (!addonsToInstall.length) {
         log.info("No new addons to install, returning");
-        return;
+        return deferred.resolve({status: "nothing-new-to-install"});
       }
+      // Only 1 addon will be returned because of the gmpAddon.isOpenH264
+      // check above.
       addonsToInstall.forEach(gmpAddon => {
         promise = this.installAddon(gmpAddon);
         promise.then(extractedPaths => {
           // installed!
           log.info("Addon installed successfully: " + gmpAddon.toString());
+          return deferred.resolve({status: "addon-install"});
         }, () => {
           if (!GMPPrefs.get(GMPPrefs.KEY_LOG_ENABLED)) {
-            Cu.reportError(gmpAddon.toString() + " could not be installed. Enable " +
+            Cu.reportError(gmpAddon.toString() +
+                           " could not be installed. Enable " +
                            GMPPrefs.KEY_LOG_ENABLED + " for details!");
           }
           log.error("Could not install addon: " + gmpAddon.toString());
+          deferred.reject();
         });
       });
+    }, () => {
+        log.error("Could not check for addons");
+        deferred.reject();
     });
+    return deferred.promise;
   },
 
   /**
@@ -483,7 +505,7 @@ GMPInstallManager.prototype = {
    * @param event The nsIDOMEvent for the load
   */
   onLoadXML: function(event) {
-    let log = getScopedLogger("GMPInstallManager.onLoadXML");
+    let log = getScopedLogger("onLoadXML");
     log.info("request completed downloading document");
 
     let certs = null;
@@ -504,7 +526,7 @@ GMPInstallManager.prototype = {
    * Returns the status code for the XMLHttpRequest
    */
   _getChannelStatus: function(request) {
-    let log = getScopedLogger("GMPInstallManager._getChannelStatus");
+    let log = getScopedLogger("_getChannelStatus");
     let status = 0;
     try {
       status = request.status;
@@ -524,7 +546,7 @@ GMPInstallManager.prototype = {
    * @param event The nsIDOMEvent for the error
   */
   onErrorXML: function(event) {
-    let log = getScopedLogger("GMPInstallManager.onErrorXML");
+    let log = getScopedLogger("onErrorXML");
     let request = event.target;
     let status = this._getChannelStatus(request);
     let message = "request.status: " + status;
@@ -544,7 +566,7 @@ GMPInstallManager.prototype = {
    */
   parseResponseXML: function() {
     try {
-      let log = getScopedLogger("GMPInstallManager.parseResponseXML");
+      let log = getScopedLogger("parseResponseXML");
       let updatesElement = this._request.responseXML.documentElement;
       if (!updatesElement) {
         let message = "empty updates document";
@@ -866,7 +888,9 @@ GMPDownloader.prototype = {
       let gmpAddon = this._gmpAddon;
       let installToDirPath = Cc["@mozilla.org/file/local;1"].
                           createInstance(Ci.nsIFile);
-      let path = OS.Path.join(OS.Constants.Path.profileDir, gmpAddon.id);
+      let path = OS.Path.join(OS.Constants.Path.profileDir,
+                              gmpAddon.id,
+                              gmpAddon.version);
       installToDirPath.initWithPath(path);
       log.info("install to directory path: " + installToDirPath.path);
       let gmpInstaller = new GMPExtractor(zipPath, installToDirPath.path);
@@ -875,12 +899,10 @@ GMPDownloader.prototype = {
         // Success, set the prefs
         let now = Math.round(Date.now() / 1000);
         GMPPrefs.set(GMPPrefs.KEY_ADDON_LAST_UPDATE, now, gmpAddon.id);
-        // Setting the path pref signals installation completion to consumers,
-        // so set the version and potential other information they use first.
+        // Setting the version pref signals installation completion to consumers,
+        // if you need to set other prefs etc. do it before this.
         GMPPrefs.set(GMPPrefs.KEY_ADDON_VERSION, gmpAddon.version,
                      gmpAddon.id);
-        GMPPrefs.set(GMPPrefs.KEY_ADDON_PATH,
-                     installToDirPath.path, gmpAddon.id);
         this._deferred.resolve(extractedPaths);
       }, err => {
         this._deferred.reject(err);

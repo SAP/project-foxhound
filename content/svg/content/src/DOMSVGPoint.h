@@ -13,6 +13,7 @@
 #include "nsISVGPoint.h"
 #include "SVGPoint.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/FloatingPoint.h"
 
 class nsSVGElement;
 
@@ -82,7 +83,7 @@ public:
   {
     mPt.mX = aPt.x;
     mPt.mY = aPt.y;
-    NS_ASSERTION(NS_finite(mPt.mX) && NS_finite(mPt.mX),
+    NS_ASSERTION(IsFinite(mPt.mX) && IsFinite(mPt.mX),
                  "DOMSVGPoint coords are not finite");
   }
 
@@ -97,7 +98,7 @@ public:
     return mList;
   }
 
-  nsISVGPoint* Clone() {
+  virtual DOMSVGPoint* Copy() MOZ_OVERRIDE {
     return new DOMSVGPoint(this);
   }
 

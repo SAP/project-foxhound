@@ -190,6 +190,12 @@ using namespace mozilla::gfx;
 using namespace mozilla::layers;
 using namespace mozilla::widget;
 
+namespace mozilla {
+namespace widget {
+  extern int32_t IsTouchDeviceSupportPresent();
+}
+}
+
 /**************************************************************
  **************************************************************
  **
@@ -1538,7 +1544,7 @@ nsWindow::BeginResizeDrag(WidgetGUIEvent* aEvent,
 {
   NS_ENSURE_ARG_POINTER(aEvent);
 
-  if (aEvent->eventStructType != NS_MOUSE_EVENT) {
+  if (aEvent->mClass != eMouseEventClass) {
     // you can only begin a resize drag with a mouse event
     return NS_ERROR_INVALID_ARG;
   }
@@ -2859,7 +2865,7 @@ nsWindow::MakeFullScreen(bool aFullScreen)
   UpdateNonClientMargins();
 
   bool visible = mIsVisible;
-  if (mOldSizeMode == nsSizeMode_Normal)
+  if (mOldSizeMode == nsSizeMode_Normal || mOldSizeMode == nsSizeMode_Maximized)
     Show(false);
   
   // Will call hide chrome, reposition window. Note this will
@@ -3126,19 +3132,20 @@ NS_METHOD nsWindow::EnableDragDrop(bool aEnable)
 
 NS_METHOD nsWindow::CaptureMouse(bool aCapture)
 {
-  if (!nsToolkit::gMouseTrailer) {
-    NS_ERROR("nsWindow::CaptureMouse called after nsToolkit destroyed");
-    return NS_OK;
-  }
-
+  TRACKMOUSEEVENT mTrack;
+  mTrack.cbSize = sizeof(TRACKMOUSEEVENT);
+  mTrack.dwFlags = TME_LEAVE;
+  mTrack.dwHoverTime = 0;
   if (aCapture) {
-    nsToolkit::gMouseTrailer->SetCaptureWindow(mWnd);
+    mTrack.hwndTrack = mWnd;
     ::SetCapture(mWnd);
   } else {
-    nsToolkit::gMouseTrailer->SetCaptureWindow(nullptr);
+    mTrack.hwndTrack = nullptr;
     ::ReleaseCapture();
   }
   sIsInMouseCapture = aCapture;
+  // Requests WM_MOUSELEAVE events for this window.
+  TrackMouseEvent(&mTrack);
   return NS_OK;
 }
 
@@ -3610,7 +3617,7 @@ nsWindow::UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries)
 uint32_t
 nsWindow::GetMaxTouchPoints() const
 {
-  if (IsWin7OrLater()) {
+  if (IsWin7OrLater() && IsTouchDeviceSupportPresent()) {
     return GetSystemMetrics(SM_MAXIMUMTOUCHES);
   }
   return 0;
@@ -4004,12 +4011,7 @@ bool nsWindow::DispatchMouseEvent(uint32_t aEventType, WPARAM wParam,
 
   // call the event callback
   if (mWidgetListener) {
-    if (nsToolkit::gMouseTrailer)
-      nsToolkit::gMouseTrailer->Disable();
     if (aEventType == NS_MOUSE_MOVE) {
-      if (nsToolkit::gMouseTrailer && !sIsInMouseCapture) {
-        nsToolkit::gMouseTrailer->SetMouseTrailerWindow(mWnd);
-      }
       nsIntRect rect;
       GetBounds(rect);
       rect.x = 0;
@@ -4039,9 +4041,6 @@ bool nsWindow::DispatchMouseEvent(uint32_t aEventType, WPARAM wParam,
     }
 
     result = DispatchWindowEvent(&event);
-
-    if (nsToolkit::gMouseTrailer)
-      nsToolkit::gMouseTrailer->Enable();
 
     // Release the widget with NS_IF_RELEASE() just in case
     // the context menu key code in EventListenerManager::HandleEvent()
@@ -4294,7 +4293,6 @@ DisplaySystemMenu(HWND hWnd, nsSizeMode sizeMode, bool isRtl, int32_t x, int32_t
     mii.fState = MF_GRAYED;
     switch(sizeMode) {
       case nsSizeMode_Fullscreen:
-        SetMenuItemInfo(hMenu, SC_RESTORE, FALSE, &mii);
         // intentional fall through
       case nsSizeMode_Maximized:
         SetMenuItemInfo(hMenu, SC_SIZE, FALSE, &mii);
@@ -4341,7 +4339,7 @@ inline static mozilla::HangMonitor::ActivityType ActivityTypeForMessage(UINT msg
 // and http://msdn.microsoft.com/en-us/library/ms633573%28VS.85%29.aspx
 LRESULT CALLBACK nsWindow::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-  MOZ_RELEASE_ASSERT(!ipc::ProcessingUrgentMessages());
+  MOZ_RELEASE_ASSERT(!ipc::ParentProcessIsBlocked());
 
   HangMonitor::NotifyActivity(ActivityTypeForMessage(msg));
 
@@ -5243,6 +5241,11 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       // prevent Windows from trimming the working set. bug 76831
       if (!sTrimOnMinimize && filteredWParam == SC_MINIMIZE) {
         ::ShowWindow(mWnd, SW_SHOWMINIMIZED);
+        result = true;
+      }
+	  
+      if (mSizeMode == nsSizeMode_Fullscreen && filteredWParam == SC_RESTORE) {
+        MakeFullScreen(false);
         result = true;
       }
 
@@ -6603,16 +6606,6 @@ void nsWindow::OnDestroy()
   }
 
   IMEHandler::OnDestroyWindow(this);
-
-  // Turn off mouse trails if enabled.
-  MouseTrailer* mtrailer = nsToolkit::gMouseTrailer;
-  if (mtrailer) {
-    if (mtrailer->GetMouseTrailerWindow() == mWnd)
-      mtrailer->DestroyTimer();
-
-    if (mtrailer->GetCaptureWindow() == mWnd)
-      mtrailer->SetCaptureWindow(nullptr);
-  }
 
   // Free GDI window class objects
   if (mBrush) {

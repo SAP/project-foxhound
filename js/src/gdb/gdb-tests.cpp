@@ -67,7 +67,7 @@ main (int argc, const char **argv)
     JS_SetNativeStackQuota(runtime, 5000000);
 
     JSContext *cx = checkPtr(JS_NewContext(runtime, 8192));
-    JS_SetErrorReporter(cx, reportError);
+    JS_SetErrorReporter(runtime, reportError);
 
     JSAutoRequest ar(cx);
 
@@ -76,8 +76,6 @@ main (int argc, const char **argv)
     options.setVersion(JSVERSION_LATEST);
     RootedObject global(cx, checkPtr(JS_NewGlobalObject(cx, &global_class,
                         nullptr, JS::FireOnNewGlobalHook, options)));
-    js::SetDefaultObjectForContext(cx, global);
-
     JSAutoCompartment ac(cx, global);
 
     /* Populate the global object with the standard globals,

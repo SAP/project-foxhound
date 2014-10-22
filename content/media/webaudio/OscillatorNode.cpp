@@ -30,7 +30,7 @@ class DCBlocker
 {
 public:
   // These are sane defauts when the initial mPhase is zero
-  DCBlocker(float aLastInput = 0.0f,
+  explicit DCBlocker(float aLastInput = 0.0f,
             float aLastOutput = 0.0f,
             float aPole = 0.995)
     :mLastInput(aLastInput),
@@ -373,33 +373,44 @@ public:
     MOZ_ASSERT(mPeriodicWave, "No custom waveform data");
 
     uint32_t periodicWaveSize = mPeriodicWave->periodicWaveSize();
+    // Mask to wrap wave data indices into the range [0,periodicWaveSize).
+    uint32_t indexMask = periodicWaveSize - 1;
+    MOZ_ASSERT(periodicWaveSize && (periodicWaveSize & indexMask) == 0,
+               "periodicWaveSize must be power of 2");
     float* higherWaveData = nullptr;
     float* lowerWaveData = nullptr;
     float tableInterpolationFactor;
-    float rate = 1.0 / mSource->SampleRate();
- 
+    // Phase increment at frequency of 1 Hz.
+    // mPhase runs [0,periodicWaveSize) here instead of [0,2*M_PI).
+    float basePhaseIncrement =
+      static_cast<float>(periodicWaveSize) / mSource->SampleRate();
+
     for (uint32_t i = aStart; i < aEnd; ++i) {
       UpdateParametersIfNeeded(ticks, i);
       mPeriodicWave->waveDataForFundamentalFrequency(mFinalFrequency,
                                                      lowerWaveData,
                                                      higherWaveData,
                                                      tableInterpolationFactor);
-      // mPhase runs 0..periodicWaveSize here instead of 0..2*M_PI.
-      mPhase += periodicWaveSize * mFinalFrequency * rate;
-      mPhase = fmod(mPhase, periodicWaveSize);
       // Bilinear interpolation between adjacent samples in each table.
-      uint32_t j1 = floor(mPhase);
+      float floorPhase = floorf(mPhase);
+      uint32_t j1 = floorPhase;
+      j1 &= indexMask;
       uint32_t j2 = j1 + 1;
-      if (j2 >= periodicWaveSize) {
-        j2 -= periodicWaveSize;
-      }
-      float sampleInterpolationFactor = mPhase - j1;
-      float lower = sampleInterpolationFactor * lowerWaveData[j1] +
-                    (1 - sampleInterpolationFactor) * lowerWaveData[j2];
-      float higher = sampleInterpolationFactor * higherWaveData[j1] +
-                    (1 - sampleInterpolationFactor) * higherWaveData[j2];
-      aOutput[i] = tableInterpolationFactor * lower +
-                   (1 - tableInterpolationFactor) * higher;
+      j2 &= indexMask;
+
+      float sampleInterpolationFactor = mPhase - floorPhase;
+
+      float lower = (1.0f - sampleInterpolationFactor) * lowerWaveData[j1] +
+                    sampleInterpolationFactor * lowerWaveData[j2];
+      float higher = (1.0f - sampleInterpolationFactor) * higherWaveData[j1] +
+                    sampleInterpolationFactor * higherWaveData[j2];
+      aOutput[i] = (1.0f - tableInterpolationFactor) * lower +
+                   tableInterpolationFactor * higher;
+
+      // Calculate next phase position from wrapped value j1 to avoid loss of
+      // precision at large values.
+      mPhase =
+        j1 + sampleInterpolationFactor + basePhaseIncrement * mFinalFrequency;
     }
   }
 
@@ -542,7 +553,9 @@ OscillatorNode::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
   size_t amount = AudioNode::SizeOfExcludingThis(aMallocSizeOf);
 
   // For now only report if we know for sure that it's not shared.
-  amount += mPeriodicWave->SizeOfIncludingThisIfNotShared(aMallocSizeOf);
+  if (mPeriodicWave) {
+    amount += mPeriodicWave->SizeOfIncludingThisIfNotShared(aMallocSizeOf);
+  }
   amount += mFrequency->SizeOfIncludingThis(aMallocSizeOf);
   amount += mDetune->SizeOfIncludingThis(aMallocSizeOf);
   return amount;

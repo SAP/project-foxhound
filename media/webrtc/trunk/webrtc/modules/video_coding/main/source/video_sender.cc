@@ -107,6 +107,7 @@ int32_t VideoSender::InitializeSender() {
   _codecDataBase.ResetSender();
   _encoder = NULL;
   _encodedFrameCallback.SetTransportCallback(NULL);
+  _encodedFrameCallback.SetCritSect(_sendCritSect);
   _mediaOpt.Reset();  // Resetting frame dropper
   return VCM_OK;
 }
@@ -160,6 +161,7 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
                             sendCodec->startBitrate * 1000,
                             sendCodec->width,
                             sendCodec->height,
+                            sendCodec->resolution_divisor,
                             numLayers,
                             maxPayloadSize);
   return VCM_OK;

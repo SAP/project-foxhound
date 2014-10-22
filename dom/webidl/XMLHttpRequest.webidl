@@ -10,7 +10,6 @@
  * liability, trademark and document use rules apply.
  */
 
-interface Blob;
 interface InputStream;
 interface MozChannel;
 interface IID;
@@ -54,7 +53,8 @@ dictionary MozXMLHttpRequestParameters
  // things like this:
  //   c = new(window.ActiveXObject || XMLHttpRequest)("Microsoft.XMLHTTP")
  // To handle that, we need a constructor that takes a string.
- Constructor(DOMString ignored)]
+ Constructor(DOMString ignored),
+ Exposed=(Window,Worker)]
 interface XMLHttpRequest : XMLHttpRequestEventTarget {
   // event handler
   attribute EventHandler onreadystatechange;
@@ -129,7 +129,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   [Throws]
   readonly attribute DOMString? responseText;
 
-  [Throws=MainThread]
+  [Throws, Exposed=Window]
   readonly attribute Document? responseXML;
 
   // Mozilla-specific stuff
@@ -137,7 +137,7 @@ interface XMLHttpRequest : XMLHttpRequestEventTarget {
   [ChromeOnly, SetterThrows=Workers]
   attribute boolean mozBackgroundRequest;
 
-  [ChromeOnly]
+  [ChromeOnly, Exposed=Window]
   readonly attribute MozChannel? channel;
 
   [Throws]

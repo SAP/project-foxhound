@@ -46,6 +46,7 @@
 namespace mozilla {
 namespace layers {
 class DeviceManagerD3D9;
+class ReadbackManagerD3D11;
 }
 }
 struct IDirect3DDevice9;
@@ -185,7 +186,7 @@ public:
 
     nsresult UpdateFontList();
 
-    virtual void GetCommonFallbackFonts(const uint32_t aCh,
+    virtual void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
                                         int32_t aRunScript,
                                         nsTArray<const char*>& aFontList);
 
@@ -198,20 +199,27 @@ public:
     /**
      * Look up a local platform font using the full font face name (needed to support @font-face src local() )
      */
-    virtual gfxFontEntry* LookupLocalFont(const gfxProxyFontEntry *aProxyEntry,
-                                          const nsAString& aFontName);
+    virtual gfxFontEntry* LookupLocalFont(const nsAString& aFontName,
+                                          uint16_t aWeight,
+                                          int16_t aStretch,
+                                          bool aItalic);
 
     /**
      * Activate a platform font (needed to support @font-face src url() )
      */
-    virtual gfxFontEntry* MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
-                                           const uint8_t *aFontData,
+    virtual gfxFontEntry* MakePlatformFont(const nsAString& aFontName,
+                                           uint16_t aWeight,
+                                           int16_t aStretch,
+                                           bool aItalic,
+                                           const uint8_t* aFontData,
                                            uint32_t aLength);
 
     /**
      * Check whether format is supported on a platform or not (if unclear, returns true)
      */
     virtual bool IsFontFormatSupported(nsIURI *aFontURI, uint32_t aFormatFlags);
+
+    virtual bool DidRenderingDeviceReset();
 
     /* Find a FontFamily/FontEntry object that represents a font on your system given a name */
     gfxFontFamily *FindFontFamily(const nsAString& aName);
@@ -255,6 +263,9 @@ public:
     ID3D10Device1 *GetD3D10Device() { return mD2DDevice ? cairo_d2d_device_get_device(mD2DDevice) : nullptr; }
 #endif
     ID3D11Device *GetD3D11Device();
+    ID3D11Device *GetD3D11ContentDevice();
+
+    mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
 
     static bool IsOptimus();
 
@@ -266,6 +277,7 @@ protected:
 
 private:
     void Init();
+    void InitD3D11Devices();
     IDXGIAdapter1 *GetDXGIAdapter();
 
     bool mUseDirectWrite;
@@ -283,7 +295,9 @@ private:
     mozilla::RefPtr<IDXGIAdapter1> mAdapter;
     nsRefPtr<mozilla::layers::DeviceManagerD3D9> mDeviceManager;
     mozilla::RefPtr<ID3D11Device> mD3D11Device;
+    mozilla::RefPtr<ID3D11Device> mD3D11ContentDevice;
     bool mD3D11DeviceInitialized;
+    mozilla::RefPtr<mozilla::layers::ReadbackManagerD3D11> mD3D11ReadbackManager;
 
     virtual void GetPlatformCMSOutputProfile(void* &mem, size_t &size);
 

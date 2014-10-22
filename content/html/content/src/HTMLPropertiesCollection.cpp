@@ -43,10 +43,9 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 HTMLPropertiesCollection::HTMLPropertiesCollection(nsGenericHTMLElement* aRoot)
   : mRoot(aRoot)
-  , mDoc(aRoot->GetCurrentDoc())
+  , mDoc(aRoot->GetUncomposedDoc())
   , mIsDirty(true)
 {
-  SetIsDOMBinding();
   mNames = new PropertyStringList(this);
   if (mDoc) {
     mDoc->AddMutationObserver(this);
@@ -61,7 +60,7 @@ HTMLPropertiesCollection::~HTMLPropertiesCollection()
 }
 
 NS_INTERFACE_TABLE_HEAD(HTMLPropertiesCollection)
-    NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+    NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
     NS_INTERFACE_TABLE(HTMLPropertiesCollection,
                        nsIDOMHTMLCollection,
                        nsIHTMLCollection,
@@ -248,7 +247,7 @@ GetElementByIdForConnectedSubtree(nsIContent* aContent, const nsIAtom* aId)
 void
 HTMLPropertiesCollection::CrawlProperties()
 {
-  nsIDocument* doc = mRoot->GetCurrentDoc();
+  nsIDocument* doc = mRoot->GetUncomposedDoc();
 
   const nsAttrValue* attr = mRoot->GetParsedAttr(nsGkAtoms::itemref);
   if (attr) {
@@ -306,12 +305,11 @@ HTMLPropertiesCollection::GetSupportedNames(unsigned, nsTArray<nsString>& aNames
 PropertyNodeList::PropertyNodeList(HTMLPropertiesCollection* aCollection,
                                    nsIContent* aParent, const nsAString& aName)
   : mName(aName),
-    mDoc(aParent->GetCurrentDoc()),
+    mDoc(aParent->GetUncomposedDoc()),
     mCollection(aCollection),
     mParent(aParent),
     mIsDirty(true)
 {
-  SetIsDOMBinding();
   if (mDoc) {
     mDoc->AddMutationObserver(this);
   }
@@ -408,7 +406,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(PropertyNodeList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PropertyNodeList)
 
 NS_INTERFACE_TABLE_HEAD(PropertyNodeList)
-    NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+    NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
     NS_INTERFACE_TABLE(PropertyNodeList,
                        nsIDOMNodeList,
                        nsINodeList,

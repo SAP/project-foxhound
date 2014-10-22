@@ -3,6 +3,13 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+///////////////////
+//
+// Whitelisting this test.
+// As part of bug 1077403, the leaking uncaught rejection should be fixed.
+//
+thisTestLeaksUncaughtRejectionsAndShouldBeFixed("null");
+
 // Test the webconsole output for various types of objects.
 
 const TEST_URI = "data:text/html;charset=utf8,test for console output - 01";
@@ -76,6 +83,27 @@ let inputTests = [
     inspectable: true,
   },
 ];
+
+if (typeof Symbol !== "undefined") {
+  inputTests.push(
+    // 9
+    {
+      input: "Symbol()",
+      output: "Symbol()"
+    },
+
+    // 10
+    {
+      input: "Symbol('foo')",
+      output: "Symbol(foo)"
+    },
+
+    // 11
+    {
+      input: "Symbol.iterator",
+      output: "Symbol(Symbol.iterator)"
+    });
+}
 
 longString = initialString = null;
 

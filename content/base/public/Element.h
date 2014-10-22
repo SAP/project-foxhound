@@ -35,6 +35,7 @@
 #include "nsAttrValue.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/WindowBinding.h"
 #include "Units.h"
 
 class nsIDOMEventListener;
@@ -55,6 +56,14 @@ class nsFocusManager;
 class nsGlobalWindow;
 class nsICSSDeclaration;
 class nsISMILAttr;
+
+namespace mozilla {
+namespace dom {
+  struct ScrollIntoViewOptions;
+  struct ScrollToOptions;
+} // namespace dom
+} // namespace mozilla
+
 
 already_AddRefed<nsContentList>
 NS_GetContentList(nsINode* aRootNode,
@@ -115,7 +124,6 @@ enum {
 ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET);
 
 namespace mozilla {
-class ElementAnimation;
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 class EventChainVisitor;
@@ -124,6 +132,7 @@ class EventStateManager;
 
 namespace dom {
 
+class AnimationPlayer;
 class Link;
 class UndoManager;
 class DOMRect;
@@ -132,14 +141,14 @@ class DestinationInsertionPointList;
 
 // IID for the dom::Element interface
 #define NS_ELEMENT_IID \
-{ 0xd123f791, 0x124a, 0x43f3, \
-  { 0x84, 0xe3, 0x55, 0x81, 0x0b, 0x6c, 0xf3, 0x08 } }
+{ 0xaa79cb98, 0xc785, 0x44c5, \
+  { 0x80, 0x80, 0x2e, 0x5f, 0x0c, 0xa5, 0xbd, 0x63 } }
 
 class Element : public FragmentOrElement
 {
 public:
 #ifdef MOZILLA_INTERNAL_API
-  Element(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo) :
+  explicit Element(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo) :
     FragmentOrElement(aNodeInfo),
     mState(NS_EVENT_STATE_MOZ_READONLY)
   {
@@ -645,6 +654,14 @@ public:
   }
   bool HasAttributeNS(const nsAString& aNamespaceURI,
                       const nsAString& aLocalName) const;
+  bool HasAttributes() const
+  {
+    return HasAttrs();
+  }
+  Element* Closest(const nsAString& aSelector,
+                   ErrorResult& aResult);
+  bool Matches(const nsAString& aSelector,
+               ErrorResult& aError);
   already_AddRefed<nsIHTMLCollection>
     GetElementsByTagName(const nsAString& aQualifiedName);
   already_AddRefed<nsIHTMLCollection>
@@ -654,12 +671,19 @@ public:
   already_AddRefed<nsIHTMLCollection>
     GetElementsByClassName(const nsAString& aClassNames);
   bool MozMatchesSelector(const nsAString& aSelector,
-                          ErrorResult& aError);
+                          ErrorResult& aError)
+  {
+    return Matches(aSelector, aError);
+  }
   void SetPointerCapture(int32_t aPointerId, ErrorResult& aError)
   {
     bool activeState = false;
     if (!nsIPresShell::GetPointerInfo(aPointerId, activeState)) {
       aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
+      return;
+    }
+    if (!IsInDoc()) {
+      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
       return;
     }
     if (!activeState) {
@@ -674,11 +698,16 @@ public:
       aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
       return;
     }
-
-    // Ignoring ReleasePointerCapture call on incorrect element (on element
-    // that didn't have capture before).
-    if (nsIPresShell::GetPointerCapturingContent(aPointerId) == this) {
-      nsIPresShell::ReleasePointerCapturingContent(aPointerId, this);
+    nsIPresShell::PointerCaptureInfo* pointerCaptureInfo = nullptr;
+    if (nsIPresShell::gPointerCaptureList->Get(aPointerId, &pointerCaptureInfo) && pointerCaptureInfo) {
+      // Call ReleasePointerCapture only on correct element
+      // (on element that have status pointer capture override
+      // or on element that have status pending pointer capture)
+      if (pointerCaptureInfo->mOverrideContent == this) {
+        nsIPresShell::ReleasePointerCapturingContent(aPointerId, this);
+      } else if (pointerCaptureInfo->mPendingContent == this) {
+        nsIPresShell::ReleasePointerCapturingContent(aPointerId, this);
+      }
     }
   }
   void SetCapture(bool aRetargetToElement)
@@ -715,42 +744,24 @@ public:
   already_AddRefed<ShadowRoot> CreateShadowRoot(ErrorResult& aError);
   already_AddRefed<DestinationInsertionPointList> GetDestinationInsertionPoints();
 
-  void ScrollIntoView()
-  {
-    ScrollIntoView(true);
-  }
+  void ScrollIntoView();
   void ScrollIntoView(bool aTop);
-  int32_t ScrollTop()
-  {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    return sf ? sf->GetScrollPositionCSSPixels().y : 0;
-  }
-  void SetScrollTop(int32_t aScrollTop)
-  {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (sf) {
-      sf->ScrollToCSSPixels(CSSIntPoint(sf->GetScrollPositionCSSPixels().x,
-                                        aScrollTop));
-    }
-  }
-  int32_t ScrollLeft()
-  {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    return sf ? sf->GetScrollPositionCSSPixels().x : 0;
-  }
-  void SetScrollLeft(int32_t aScrollLeft)
-  {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (sf) {
-      sf->ScrollToCSSPixels(CSSIntPoint(aScrollLeft,
-                                        sf->GetScrollPositionCSSPixels().y));
-    }
-  }
+  void ScrollIntoView(const ScrollIntoViewOptions &aOptions);
+  void Scroll(double aXScroll, double aYScroll);
+  void Scroll(const ScrollToOptions& aOptions);
+  void ScrollTo(double aXScroll, double aYScroll);
+  void ScrollTo(const ScrollToOptions& aOptions);
+  void ScrollBy(double aXScrollDif, double aYScrollDif);
+  void ScrollBy(const ScrollToOptions& aOptions);
   /* Scrolls without flushing the layout.
    * aDx is the x offset, aDy the y offset in CSS pixels.
    * Returns true if we actually scrolled.
    */
   bool ScrollByNoFlush(int32_t aDx, int32_t aDy);
+  int32_t ScrollTop();
+  void SetScrollTop(int32_t aScrollTop);
+  int32_t ScrollLeft();
+  void SetScrollLeft(int32_t aScrollLeft);
   int32_t ScrollWidth();
   int32_t ScrollHeight();
   int32_t ClientTop()
@@ -798,7 +809,7 @@ public:
   {
   }
 
-  void GetAnimationPlayers(nsTArray<nsRefPtr<ElementAnimation> >& aPlayers);
+  void GetAnimationPlayers(nsTArray<nsRefPtr<AnimationPlayer> >& aPlayers);
 
   NS_IMETHOD GetInnerHTML(nsAString& aInnerHTML);
   virtual void SetInnerHTML(const nsAString& aInnerHTML, ErrorResult& aError);
@@ -981,6 +992,62 @@ public:
   nsresult SetBoolAttr(nsIAtom* aAttr, bool aValue);
 
   /**
+   * Helper method for NS_IMPL_ENUM_ATTR_DEFAULT_VALUE.
+   * Gets the enum value string of an attribute and using a default value if
+   * the attribute is missing or the string is an invalid enum value.
+   *
+   * @param aType     the name of the attribute.
+   * @param aDefault  the default value if the attribute is missing or invalid.
+   * @param aResult   string corresponding to the value [out].
+   */
+  void GetEnumAttr(nsIAtom* aAttr,
+                   const char* aDefault,
+                   nsAString& aResult) const;
+
+  /**
+   * Helper method for NS_IMPL_ENUM_ATTR_DEFAULT_MISSING_INVALID_VALUES.
+   * Gets the enum value string of an attribute and using the default missing
+   * value if the attribute is missing or the default invalid value if the
+   * string is an invalid enum value.
+   *
+   * @param aType            the name of the attribute.
+   * @param aDefaultMissing  the default value if the attribute is missing.  If
+                             null and the attribute is missing, aResult will be
+                             set to the null DOMString; this only matters for
+                             cases in which we're reflecting a nullable string.
+   * @param aDefaultInvalid  the default value if the attribute is invalid.
+   * @param aResult          string corresponding to the value [out].
+   */
+  void GetEnumAttr(nsIAtom* aAttr,
+                   const char* aDefaultMissing,
+                   const char* aDefaultInvalid,
+                   nsAString& aResult) const;
+
+  /**
+   * Unset an attribute.
+   */
+  void UnsetAttr(nsIAtom* aAttr, ErrorResult& aError)
+  {
+    aError = UnsetAttr(kNameSpaceID_None, aAttr, true);
+  }
+
+  /**
+   * Set an attribute in the simplest way possible.
+   */
+  void SetAttr(nsIAtom* aAttr, const nsAString& aValue, ErrorResult& aError)
+  {
+    aError = SetAttr(kNameSpaceID_None, aAttr, aValue, true);
+  }
+
+  /**
+   * Set a content attribute via a reflecting nullable string IDL
+   * attribute (e.g. a CORS attribute).  If DOMStringIsNull(aValue),
+   * this will actually remove the content attribute.
+   */
+  void SetOrRemoveNullableStringAttr(nsIAtom* aName, const nsAString& aValue,
+                                     ErrorResult& aError);
+
+  /**
    * Retrieve the ratio of font-size-inflated text font size to computed font
    * size for this element. This will query the element for its primary frame,
    * and then use this to get font size inflation information about the frame.
@@ -1040,6 +1107,17 @@ protected:
                             bool aFireMutation,
                             bool aNotify,
                             bool aCallAfterSetAttr);
+
+  /**
+   * Scroll to a new position using behavior evaluated from CSS and
+   * a CSSOM-View DOM method ScrollOptions dictionary.  The scrolling may
+   * be performed asynchronously or synchronously depending on the resolved
+   * scroll-behavior.
+   *
+   * @param aScroll       Destination of scroll, in CSS pixels
+   * @param aOptions      Dictionary of options to be evaluated
+   */
+  void Scroll(const CSSIntPoint& aScroll, const ScrollOptions& aOptions);
 
   /**
    * Convert an attribute string value to attribute type based on the type of
@@ -1205,10 +1283,25 @@ private:
   EventStates mState;
 };
 
+class RemoveFromBindingManagerRunnable : public nsRunnable
+{
+public:
+  RemoveFromBindingManagerRunnable(nsBindingManager* aManager,
+                                   nsIContent* aContent,
+                                   nsIDocument* aDoc);
+
+  NS_IMETHOD Run();
+private:
+  virtual ~RemoveFromBindingManagerRunnable();
+  nsRefPtr<nsBindingManager> mManager;
+  nsRefPtr<nsIContent> mContent;
+  nsCOMPtr<nsIDocument> mDoc;
+};
+
 class DestinationInsertionPointList : public nsINodeList
 {
 public:
-  DestinationInsertionPointList(Element* aElement);
+  explicit DestinationInsertionPointList(Element* aElement);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(DestinationInsertionPointList)
@@ -1281,11 +1374,6 @@ inline const mozilla::dom::Element* nsINode::AsElement() const
 {
   MOZ_ASSERT(IsElement());
   return static_cast<const mozilla::dom::Element*>(this);
-}
-
-inline bool nsINode::HasAttributes() const
-{
-  return IsElement() && AsElement()->HasAttrs();
 }
 
 /**
@@ -1469,6 +1557,11 @@ NS_IMETHOD HasAttributeNS(const nsAString& namespaceURI,                      \
                           bool* _retval) MOZ_FINAL                            \
 {                                                                             \
   *_retval = Element::HasAttributeNS(namespaceURI, localName);                \
+  return NS_OK;                                                               \
+}                                                                             \
+NS_IMETHOD HasAttributes(bool* _retval) MOZ_FINAL                             \
+{                                                                             \
+  *_retval = Element::HasAttributes();                                        \
   return NS_OK;                                                               \
 }                                                                             \
 NS_IMETHOD GetAttributeNode(const nsAString& name,                            \

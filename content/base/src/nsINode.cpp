@@ -58,7 +58,6 @@
 #include "nsIDOMEventListener.h"
 #include "nsIDOMMutationEvent.h"
 #include "nsIDOMNodeList.h"
-#include "nsIDOMUserDataHandler.h"
 #include "nsIEditor.h"
 #include "nsIEditorIMESupport.h"
 #include "nsILinkHandler.h"
@@ -200,7 +199,7 @@ nsINode::IsEditableInternal() const
     return true;
   }
 
-  nsIDocument *doc = GetCurrentDoc();
+  nsIDocument *doc = GetUncomposedDoc();
 
   // Check if the node is in a document and the document is in designMode.
   return doc && doc->HasFlag(NODE_IS_EDITABLE);
@@ -380,7 +379,7 @@ nsINode::ChildNodes()
 }
 
 void
-nsINode::GetTextContentInternal(nsAString& aTextContent)
+nsINode::GetTextContentInternal(nsAString& aTextContent, ErrorResult& aError)
 {
   SetDOMStringToNull(aTextContent);
 }
@@ -393,7 +392,15 @@ nsINode::GetComposedDocInternal() const
 
   // Cross ShadowRoot boundary.
   ShadowRoot* containingShadow = AsContent()->GetContainingShadow();
-  return containingShadow->GetHost()->GetCrossShadowCurrentDoc();
+
+  nsIContent* poolHost = containingShadow->GetPoolHost();
+  if (!poolHost) {
+    // This node is in an older shadow root that does not get projected into
+    // an insertion point, thus this node can not be in the composed document.
+    return nullptr;
+  }
+
+  return poolHost->GetComposedDoc();
 }
 
 #ifdef DEBUG
@@ -737,8 +744,7 @@ SetUserDataProperty(uint16_t aCategory, nsINode *aNode, nsIAtom *aKey,
 }
 
 nsresult
-nsINode::SetUserData(const nsAString &aKey, nsIVariant *aData,
-                     nsIDOMUserDataHandler *aHandler, nsIVariant **aResult)
+nsINode::SetUserData(const nsAString &aKey, nsIVariant *aData, nsIVariant **aResult)
 {
   OwnerDoc()->WarnOnceAbout(nsIDocument::eGetSetUserData);
   *aResult = nullptr;
@@ -760,31 +766,13 @@ nsINode::SetUserData(const nsAString &aKey, nsIVariant *aData,
 
   // Take over ownership of the old data from the property table.
   nsCOMPtr<nsIVariant> oldData = dont_AddRef(static_cast<nsIVariant*>(data));
-
-  if (aData && aHandler) {
-    nsCOMPtr<nsIDOMUserDataHandler> oldHandler;
-    rv = SetUserDataProperty(DOM_USER_DATA_HANDLER, this, key, aHandler,
-                             getter_AddRefs(oldHandler));
-    if (NS_FAILED(rv)) {
-      // We failed to set the handler, remove the data.
-      DeleteProperty(DOM_USER_DATA, key);
-
-      return rv;
-    }
-  }
-  else {
-    DeleteProperty(DOM_USER_DATA_HANDLER, key);
-  }
-
   oldData.swap(*aResult);
-
   return NS_OK;
 }
 
 void
 nsINode::SetUserData(JSContext* aCx, const nsAString& aKey,
                      JS::Handle<JS::Value> aData,
-                     nsIDOMUserDataHandler* aHandler,
                      JS::MutableHandle<JS::Value> aRetval,
                      ErrorResult& aError)
 {
@@ -795,7 +783,7 @@ nsINode::SetUserData(JSContext* aCx, const nsAString& aKey,
   }
 
   nsCOMPtr<nsIVariant> oldData;
-  aError = SetUserData(aKey, data, aHandler, getter_AddRefs(oldData));
+  aError = SetUserData(aKey, data, getter_AddRefs(oldData));
   if (aError.Failed()) {
     return;
   }
@@ -1348,7 +1336,7 @@ bool
 nsINode::Traverse(nsINode *tmp, nsCycleCollectionTraversalCallback &cb)
 {
   if (MOZ_LIKELY(!cb.WantAllTraces())) {
-    nsIDocument *currentDoc = tmp->GetCurrentDoc();
+    nsIDocument *currentDoc = tmp->GetUncomposedDoc();
     if (currentDoc &&
         nsCCUncollectableMarker::InGeneration(currentDoc->GetMarkedCCGeneration())) {
       return false;
@@ -1510,7 +1498,7 @@ nsINode::doInsertChildAt(nsIContent* aKid, uint32_t aIndex,
   nsMutationGuard::DidMutate();
 
   // Do this before checking the child-count since this could cause mutations
-  nsIDocument* doc = GetCurrentDoc();
+  nsIDocument* doc = GetUncomposedDoc();
   mozAutoDocUpdate updateBatch(GetCrossShadowCurrentDoc(), UPDATE_CONTENT_MODEL, aNotify);
 
   if (OwnerDoc() != aKid->OwnerDoc()) {
@@ -1940,7 +1928,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
     // Scope for the mutation batch and scriptblocker, so they go away
     // while kungFuDeathGrip is still alive.
     {
-      mozAutoDocUpdate batch(newContent->GetCurrentDoc(),
+      mozAutoDocUpdate batch(newContent->GetComposedDoc(),
                              UPDATE_CONTENT_MODEL, true);
       nsAutoMutationBatch mb(oldParent, true, true);
       oldParent->RemoveChildAt(removeIndex, true);
@@ -1997,17 +1985,17 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
     // into the DOM.
     uint32_t count = newContent->GetChildCount();
 
-    fragChildren.construct();
+    fragChildren.emplace();
 
     // Copy the children into a separate array to avoid having to deal with
     // mutations to the fragment later on here.
-    fragChildren.ref().SetCapacity(count);
+    fragChildren->SetCapacity(count);
     for (nsIContent* child = newContent->GetFirstChild();
          child;
          child = child->GetNextSibling()) {
-      NS_ASSERTION(child->GetCurrentDoc() == nullptr,
+      NS_ASSERTION(child->GetComposedDoc() == nullptr,
                    "How did we get a child with a current doc?");
-      fragChildren.ref().AppendElement(child);
+      fragChildren->AppendElement(child);
     }
 
     // Hold a strong ref to nodeToInsertBefore across the removals
@@ -2018,7 +2006,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
     // Scope for the mutation batch and scriptblocker, so they go away
     // while kungFuDeathGrip is still alive.
     {
-      mozAutoDocUpdate batch(newContent->GetCurrentDoc(),
+      mozAutoDocUpdate batch(newContent->GetComposedDoc(),
                              UPDATE_CONTENT_MODEL, true);
       nsAutoMutationBatch mb(newContent, false, true);
 
@@ -2040,7 +2028,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
 
       // Verify that all the things in fragChildren have no parent.
       for (uint32_t i = 0; i < count; ++i) {
-        if (fragChildren.ref().ElementAt(i)->GetParentNode()) {
+        if (fragChildren->ElementAt(i)->GetParentNode()) {
           aError.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
           return nullptr;
         }
@@ -2071,7 +2059,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
       if (IsNodeOfType(nsINode::eDOCUMENT)) {
         bool sawElement = false;
         for (uint32_t i = 0; i < count; ++i) {
-          nsIContent* child = fragChildren.ref().ElementAt(i);
+          nsIContent* child = fragChildren->ElementAt(i);
           if (child->IsElement()) {
             if (sawElement) {
               // No good
@@ -2159,7 +2147,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
       mutationBatch->SetNextSibling(GetChildAt(insPos));
     }
 
-    uint32_t count = fragChildren.ref().Length();
+    uint32_t count = fragChildren->Length();
     if (!count) {
       return result;
     }
@@ -2167,14 +2155,14 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
     bool appending =
       !IsNodeOfType(eDOCUMENT) && uint32_t(insPos) == GetChildCount();
     int32_t firstInsPos = insPos;
-    nsIContent* firstInsertedContent = fragChildren.ref().ElementAt(0);
+    nsIContent* firstInsertedContent = fragChildren->ElementAt(0);
 
     // Iterate through the fragment's children, and insert them in the new
     // parent
     for (uint32_t i = 0; i < count; ++i, ++insPos) {
       // XXXbz how come no reparenting here?  That seems odd...
       // Insert the child.
-      aError = InsertChildAt(fragChildren.ref().ElementAt(i), insPos,
+      aError = InsertChildAt(fragChildren->ElementAt(i), insPos,
                              !appending);
       if (aError.Failed()) {
         // Make sure to notify on any children that we did succeed to insert
@@ -2201,7 +2189,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
       // Optimize for the case when there are no listeners
       if (nsContentUtils::
             HasMutationListeners(doc, NS_EVENT_BITS_MUTATION_NODEINSERTED)) {
-        Element::FireNodeInserted(doc, this, fragChildren.ref());
+        Element::FireNodeInserted(doc, this, *fragChildren);
       }
     }
   }
@@ -2303,7 +2291,7 @@ nsINode::GetBoundMutationObservers(nsTArray<nsRefPtr<nsDOMMutationObserver> >& a
       nsCOMPtr<nsDOMMutationObserver> mo = do_QueryInterface(objects->ObjectAt(i));
       if (mo) {
         MOZ_ASSERT(!aResult.Contains(mo));
-        aResult.AppendElement(mo);
+        aResult.AppendElement(mo.forget());
       }
     }
   }
@@ -2686,8 +2674,6 @@ nsINode::GetElementById(const nsAString& aId)
 JSObject*
 nsINode::WrapObject(JSContext *aCx)
 {
-  MOZ_ASSERT(IsDOMBinding());
-
   // Make sure one of these is true
   // (1) our owner document has a script handling object,
   // (2) Our owner document has had a script handling object, or has been marked
@@ -2714,12 +2700,8 @@ nsINode::WrapObject(JSContext *aCx)
 already_AddRefed<nsINode>
 nsINode::CloneNode(bool aDeep, ErrorResult& aError)
 {
-  bool callUserDataHandlers = NodeType() != nsIDOMNode::DOCUMENT_NODE ||
-                              !static_cast<nsIDocument*>(this)->CreatingStaticClone();
-
   nsCOMPtr<nsINode> result;
-  aError = nsNodeUtils::CloneNodeImpl(this, aDeep, callUserDataHandlers,
-                                      getter_AddRefs(result));
+  aError = nsNodeUtils::CloneNodeImpl(this, aDeep, getter_AddRefs(result));
   return result.forget();
 }
 

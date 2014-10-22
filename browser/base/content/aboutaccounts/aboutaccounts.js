@@ -12,6 +12,9 @@ Cu.import("resource://gre/modules/FxAccounts.jsm");
 let fxAccountsCommon = {};
 Cu.import("resource://gre/modules/FxAccountsCommon.js", fxAccountsCommon);
 
+// for master-password utilities
+Cu.import("resource://services-sync/util.js");
+
 const PREF_LAST_FXA_USER = "identity.fxaccounts.lastSignedInUserHash";
 const PREF_SYNC_SHOW_CUSTOMIZATION = "services.sync.ui.showCustomizationDialog";
 
@@ -93,7 +96,7 @@ function shouldAllowRelink(acctName) {
 let wrapper = {
   iframe: null,
 
-  init: function (url=null) {
+  init: function (url, entryPoint) {
     let weave = Cc["@mozilla.org/weave/service;1"]
                   .getService(Ci.nsISupports)
                   .wrappedJSObject;
@@ -104,12 +107,20 @@ let wrapper = {
       return;
     }
 
+    // If a master-password is enabled, we want to encourage the user to
+    // unlock it.  Things still work if not, but the user will probably need
+    // to re-auth next startup (in which case we will get here again and
+    // re-prompt)
+    Utils.ensureMPUnlocked();
+
     let iframe = document.getElementById("remote");
     this.iframe = iframe;
     iframe.addEventListener("load", this);
-
     try {
-      iframe.src = url || fxAccounts.getAccountsSignUpURI();
+      if (entryPoint) {
+        url += (url.indexOf("?") >= 0 ? "&" : "?") + entryPoint;
+      }
+      iframe.src = url;
     } catch (e) {
       error("Couldn't init Firefox Account wrapper: " + e.message);
     }
@@ -284,13 +295,24 @@ function init() {
     if (window.closed) {
       return;
     }
+    // If the url contains an entrypoint query parameter, extract it into a variable
+    // to append it to the accounts URI resource.
+    // Works for the following cases:
+    // - about:accounts?entrypoint="abouthome"
+    // - about:accounts?entrypoint=abouthome&action=signup
+    let entryPointQParam = "entrypoint=";
+    let entryPointPos = window.location.href.indexOf(entryPointQParam);
+    let entryPoint = "";
+    if (entryPointPos >= 0) {
+      entryPoint = window.location.href.substring(entryPointPos).split("&")[0];
+    }
     if (window.location.href.contains("action=signin")) {
       if (user) {
         // asking to sign-in when already signed in just shows manage.
         show("stage", "manage");
       } else {
         show("remote");
-        wrapper.init(fxAccounts.getAccountsSignInURI());
+        wrapper.init(fxAccounts.getAccountsSignInURI(), entryPoint);
       }
     } else if (window.location.href.contains("action=signup")) {
       if (user) {
@@ -298,7 +320,7 @@ function init() {
         show("stage", "manage");
       } else {
         show("remote");
-        wrapper.init();
+        wrapper.init(fxAccounts.getAccountsSignUpURI(), entryPoint);
       }
     } else if (window.location.href.contains("action=reauth")) {
       // ideally we would only show this when we know the user is in a
@@ -307,7 +329,7 @@ function init() {
       // promiseAccountsForceSigninURI, just always show it.
       fxAccounts.promiseAccountsForceSigninURI().then(url => {
         show("remote");
-        wrapper.init(url);
+        wrapper.init(url, entryPoint);
       });
     } else {
       // No action specified
@@ -318,7 +340,7 @@ function init() {
       } else {
         show("stage", "intro");
         // load the remote frame in the background
-        wrapper.init();
+        wrapper.init(fxAccounts.getAccountsSignUpURI(), entryPoint);
       }
     }
   });

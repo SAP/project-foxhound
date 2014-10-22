@@ -130,7 +130,7 @@ public class testImportFromAndroid extends AboutHomeTest {
     }
 
     private void importDataFromAndroid() {
-        waitForText("Enter Search or Address");
+        waitForText(StringHelper.TITLE_PLACE_HOLDER);
         selectSettingsItem(StringHelper.CUSTOMIZE_SECTION_LABEL, StringHelper.IMPORT_FROM_ANDROID_LABEL);
 
         // Wait for the Import form Android pop-up to be opened. It has the same title as the option so waiting for the "Cancel" button
@@ -139,6 +139,7 @@ public class testImportFromAndroid extends AboutHomeTest {
 
         // Wait until the import pop-up is dismissed. This depending on the number of items in the android history can take up to a few seconds
         boolean importComplete = waitForTest(new BooleanTest() {
+            @Override
             public boolean test() {
                 return !mSolo.searchText("Please wait...");
             }
@@ -152,10 +153,10 @@ public class testImportFromAndroid extends AboutHomeTest {
             waitForText(StringHelper.IMPORT_FROM_ANDROID_LABEL);
             mActions.sendSpecialKey(Actions.SpecialKey.BACK);
         }
-        waitForText("Privacy"); // Settings is a header for the settings menu page. Waiting for Privacy ensures we are back in the top Settings view
+        waitForText(StringHelper.PRIVACY_SECTION_LABEL); // Settings is a header for the settings menu page. Waiting for Privacy ensures we are back in the top Settings view
         mActions.sendSpecialKey(Actions.SpecialKey.BACK); // Exit Settings
         // Make sure the settings menu has been closed.
-        mAsserter.ok(mSolo.waitForText("Enter Search or Address"), "Waiting for search bar", "Search bar found");
+        mAsserter.ok(mSolo.waitForText(StringHelper.TITLE_PLACE_HOLDER), "Waiting for search bar", "Search bar found");
 
     }
 
@@ -163,13 +164,12 @@ public class testImportFromAndroid extends AboutHomeTest {
         // Return bookmarks or history depending on what the user asks for
         ArrayList<String> urls = new ArrayList<String>();
         ContentResolver resolver = getActivity().getContentResolver();
-        Browser mBrowser = new Browser();
         Cursor cursor = null;
         try {
             if (data.equals("history")) {
-                cursor = mBrowser.getAllVisitedUrls(resolver);
+                cursor = Browser.getAllVisitedUrls(resolver);
             } else if (data.equals("bookmarks")) {
-                cursor = mBrowser.getAllBookmarks(resolver);
+                cursor = Browser.getAllBookmarks(resolver);
             }
             if (cursor != null) {
                 cursor.moveToFirst();
@@ -200,6 +200,7 @@ public class testImportFromAndroid extends AboutHomeTest {
         }
     }
 
+    @Override
     public void tearDown() throws Exception {
         deleteImportedData();
         super.tearDown();

@@ -17,7 +17,7 @@
 
 #include "nsSize.h"
 
-class gfxXlibSurface : public gfxASurface {
+class gfxXlibSurface MOZ_FINAL : public gfxASurface {
 public:
     // construct a wrapper around the specified drawable with dpy/visual.
     // Will use XGetGeometry to query the window/pixmap size.
@@ -32,7 +32,7 @@ public:
     gfxXlibSurface(Screen *screen, Drawable drawable, XRenderPictFormat *format,
                    const gfxIntSize& size);
 
-    gfxXlibSurface(cairo_surface_t *csurf);
+    explicit gfxXlibSurface(cairo_surface_t *csurf);
 
     // create a new Pixmap and wrapper surface.
     // |relatedDrawable| provides a hint to the server for determining whether

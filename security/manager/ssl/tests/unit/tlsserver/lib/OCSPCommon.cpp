@@ -12,10 +12,36 @@
 #include "secder.h"
 #include "secerr.h"
 
+namespace mozilla { namespace pkix { namespace test {
+
+// Ownership of privateKey is transfered.
+TestKeyPair* CreateTestKeyPair(const ByteString& spki,
+                               const ByteString& spk,
+                               SECKEYPrivateKey* privateKey);
+
+} } } // namespace mozilla::pkix::test
+
 using namespace mozilla;
 using namespace mozilla::pkix;
 using namespace mozilla::pkix::test;
 using namespace mozilla::test;
+
+static TestKeyPair*
+CreateTestKeyPairFromCert(CERTCertificate& cert)
+{
+  ScopedSECKEYPrivateKey privateKey(PK11_FindKeyByAnyCert(&cert, nullptr));
+  if (!privateKey) {
+    return nullptr;
+  }
+  ByteString subjectPublicKeyInfo(cert.derPublicKey.data,
+                                  cert.derPublicKey.len);
+  SECItem subjectPublicKeyItem = cert.subjectPublicKeyInfo.subjectPublicKey;
+  DER_ConvertBitString(&subjectPublicKeyItem); // bits to bytes
+  ByteString subjectPublicKey(subjectPublicKeyItem.data,
+                              subjectPublicKeyItem.len);
+  return CreateTestKeyPair(subjectPublicKeyInfo, subjectPublicKey,
+                           privateKey.forget());
+}
 
 SECItemArray *
 GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
@@ -36,9 +62,8 @@ GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
     return arr;
   }
 
-  PRTime now = PR_Now();
-  PRTime oneDay = 60*60*24 * (PRTime)PR_USEC_PER_SEC;
-  PRTime oldNow = now - (8 * oneDay);
+  time_t now = time(nullptr);
+  time_t oldNow = now - (8 * Time::ONE_DAY_IN_SECONDS);
 
   mozilla::ScopedCERTCertificate cert(CERT_DupCertificate(aCert));
 
@@ -51,13 +76,27 @@ GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
   }
   // XXX CERT_FindCertIssuer uses the old, deprecated path-building logic
   mozilla::ScopedCERTCertificate
-    issuerCert(CERT_FindCertIssuer(aCert, now, certUsageSSLCA));
+    issuerCert(CERT_FindCertIssuer(aCert, PR_Now(), certUsageSSLCA));
   if (!issuerCert) {
     PrintPRError("CERT_FindCertIssuer failed");
     return nullptr;
   }
-  CertID certID(cert->derIssuer, issuerCert->derPublicKey, cert->serialNumber);
-  OCSPResponseContext context(aArena, certID, now);
+  Input issuer;
+  if (issuer.Init(cert->derIssuer.data, cert->derIssuer.len) != Success) {
+    return nullptr;
+  }
+  Input issuerPublicKey;
+  if (issuerPublicKey.Init(issuerCert->derPublicKey.data,
+                           issuerCert->derPublicKey.len) != Success) {
+    return nullptr;
+  }
+  Input serialNumber;
+  if (serialNumber.Init(cert->serialNumber.data,
+                        cert->serialNumber.len) != Success) {
+    return nullptr;
+  }
+  CertID certID(issuer, issuerPublicKey, serialNumber);
+  OCSPResponseContext context(certID, now);
 
   mozilla::ScopedCERTCertificate signerCert;
   if (aORT == ORTGoodOtherCA || aORT == ORTDelegatedIncluded ||
@@ -70,18 +109,18 @@ GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
     }
   }
 
-  const SECItem* certs[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
+  ByteString certs[5];
 
   if (aORT == ORTDelegatedIncluded) {
-    certs[0] = &signerCert->derCert;
+    certs[0].assign(signerCert->derCert.data, signerCert->derCert.len);
     context.certs = certs;
   }
   if (aORT == ORTDelegatedIncludedLast || aORT == ORTDelegatedMissingMultiple) {
-    certs[0] = &issuerCert->derCert;
-    certs[1] = &cert->derCert;
-    certs[2] = &issuerCert->derCert;
+    certs[0].assign(issuerCert->derCert.data, issuerCert->derCert.len);
+    certs[1].assign(cert->derCert.data, cert->derCert.len);
+    certs[2].assign(issuerCert->derCert.data, issuerCert->derCert.len);
     if (aORT != ORTDelegatedMissingMultiple) {
-      certs[3] = &signerCert->derCert;
+      certs[3].assign(signerCert->derCert.data, signerCert->derCert.len);
     }
     context.certs = certs;
   }
@@ -113,13 +152,13 @@ GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
   if (aORT == ORTExpired || aORT == ORTExpiredFreshCA ||
       aORT == ORTRevokedOld || aORT == ORTUnknownOld) {
     context.thisUpdate = oldNow;
-    context.nextUpdate = oldNow + 10 * PR_USEC_PER_SEC;
+    context.nextUpdate = oldNow + Time::ONE_DAY_IN_SECONDS;
   }
   if (aORT == ORTLongValidityAlmostExpired) {
-    context.thisUpdate = now - (320 * oneDay);
+    context.thisUpdate = now - (320 * Time::ONE_DAY_IN_SECONDS);
   }
   if (aORT == ORTAncientAlmostExpired) {
-    context.thisUpdate = now - (640 * oneDay);
+    context.thisUpdate = now - (640 * Time::ONE_DAY_IN_SECONDS);
   }
   if (aORT == ORTRevoked || aORT == ORTRevokedOld) {
     context.certStatus = 1;
@@ -132,28 +171,17 @@ GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
   }
   OCSPResponseExtension extension;
   if (aORT == ORTCriticalExtension || aORT == ORTNoncriticalExtension) {
-    SECItem oidItem = {
-      siBuffer,
-      nullptr,
-      0
+    // python DottedOIDToCode.py --tlv some-Mozilla-OID \
+    //        1.3.6.1.4.1.13769.666.666.666.1.500.9.2
+    static const uint8_t tlv_some_Mozilla_OID[] = {
+      0x06, 0x12, 0x2b, 0x06, 0x01, 0x04, 0x01, 0xeb, 0x49, 0x85, 0x1a, 0x85,
+      0x1a, 0x85, 0x1a, 0x01, 0x83, 0x74, 0x09, 0x02
     };
-    // 1.3.6.1.4.1.13769.666.666.666 is the root of Mozilla's testing OID space
-    static const char* testExtensionOID = "1.3.6.1.4.1.13769.666.666.666.1.500.9.2";
-    if (SEC_StringToOID(aArena, &oidItem, testExtensionOID,
-                        PL_strlen(testExtensionOID)) != SECSuccess) {
-      return nullptr;
-    }
-    DERTemplate oidTemplate[2] = { { DER_OBJECT_ID, 0 }, { 0 } };
-    extension.id.data = nullptr;
-    extension.id.len = 0;
-    if (DER_Encode(aArena, &extension.id, oidTemplate, &oidItem)
-          != SECSuccess) {
-      return nullptr;
-    }
+
+    extension.id.assign(tlv_some_Mozilla_OID, sizeof(tlv_some_Mozilla_OID));
     extension.critical = (aORT == ORTCriticalExtension);
-    static const uint8_t value[2] = { 0x05, 0x00 };
-    extension.value.data = const_cast<uint8_t*>(value);
-    extension.value.len = PR_ARRAY_SIZE(value);
+    extension.value.push_back(0x05); // tag: NULL
+    extension.value.push_back(0x00); // length: 0
     extension.next = nullptr;
     context.extensions = &extension;
   }
@@ -164,25 +192,23 @@ GetOCSPResponseForType(OCSPResponseType aORT, CERTCertificate *aCert,
   if (!signerCert) {
     signerCert = CERT_DupCertificate(issuerCert.get());
   }
-  context.signerPrivateKey = PK11_FindKeyByAnyCert(signerCert.get(), nullptr);
-  if (!context.signerPrivateKey) {
+  context.signerKeyPair = CreateTestKeyPairFromCert(*signerCert);
+  if (!context.signerKeyPair) {
     PrintPRError("PK11_FindKeyByAnyCert failed");
     return nullptr;
   }
 
-  SECItem* response = CreateEncodedOCSPResponse(context);
-  if (!response) {
+  ByteString response(CreateEncodedOCSPResponse(context));
+  if (ENCODING_FAILED(response)) {
     PrintPRError("CreateEncodedOCSPResponse failed");
     return nullptr;
   }
 
-  SECItemArray* arr = SECITEM_AllocArray(aArena, nullptr, 1);
-  if (!arr) {
-    PrintPRError("SECITEM_AllocArray failed");
-    return nullptr;
-  }
-  arr->items[0].data = response->data;
-  arr->items[0].len = response->len;
-
-  return arr;
+  SECItem item = {
+    siBuffer,
+    const_cast<uint8_t*>(response.data()),
+    static_cast<unsigned int>(response.length())
+  };
+  SECItemArray arr = { &item, 1 };
+  return SECITEM_DupArray(aArena, &arr);
 }

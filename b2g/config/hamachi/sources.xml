@@ -13,16 +13,16 @@
   <remote fetch="https://git.mozilla.org/external/apitrace" name="apitrace"/>
   <default remote="caf" revision="b2g/ics_strawberry" sync-j="4"/>
   <!-- Gonk specific things and forks -->
-  <project name="platform_build" path="build" remote="b2g" revision="0d616942c300d9fb142483210f1dda9096c9a9fc">
+  <project name="platform_build" path="build" remote="b2g" revision="70eb0cb0977d6295e7da8896f9efb9f3ca1c13ea">
     <copyfile dest="Makefile" src="core/root.mk"/>
   </project>
   <project name="fake-dalvik" path="dalvik" remote="b2g" revision="ca1f327d5acc198bb4be62fa51db2c039032c9ce"/>
-  <project name="gaia.git" path="gaia" remote="mozillaorg" revision="dd42afb7d6d66a6c2bd999692fec6b6d553d23de"/>
-  <project name="gonk-misc" path="gonk-misc" remote="b2g" revision="7f792d756385bb894fba7645da59c67fe2c804bf"/>
+  <project name="gaia.git" path="gaia" remote="mozillaorg" revision="4d7f051cede6544f4c83580253c743c22b0cb279"/>
+  <project name="gonk-misc" path="gonk-misc" remote="b2g" revision="314f305d3163cc094e6fe7701d95a98fc180b639"/>
   <project name="rilproxy" path="rilproxy" remote="b2g" revision="827214fcf38d6569aeb5c6d6f31cb296d1f09272"/>
   <project name="librecovery" path="librecovery" remote="b2g" revision="891e5069c0ad330d8191bf8c7b879c814258c89f"/>
-  <project name="moztt" path="external/moztt" remote="b2g" revision="dc5ca96695cab87b4c2fcd7c9f046ae3415a70a5"/>
-  <project name="apitrace" path="external/apitrace" remote="apitrace" revision="11f01789444d4ebe97581c31d8756d773e18356f"/>
+  <project name="moztt" path="external/moztt" remote="b2g" revision="562d357b72279a9e35d4af5aeecc8e1ffa2f44f1"/>
+  <project name="apitrace" path="external/apitrace" remote="apitrace" revision="a7631963e5f702a0c6027f5575e5e0deeededea6"/>
   <!-- Stock Android things -->
   <project name="platform/abi/cpp" path="abi/cpp" revision="6426040f1be4a844082c9769171ce7f5341a5528"/>
   <project name="platform/bionic" path="bionic" revision="d2eb6c7b6e1bc7643c17df2d9d9bcb1704d0b9ab"/>

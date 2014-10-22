@@ -91,15 +91,23 @@ typedef int64_t GMPTimestamp;
 #define GMP_EME_CAP_DECRYPT_AND_DECODE_AUDIO (uint64_t(1) << 2)
 #define GMP_EME_CAP_DECRYPT_AND_DECODE_VIDEO (uint64_t(1) << 3)
 
+// Callbacks to be called from the CDM. Threadsafe.
 class GMPDecryptorCallback {
 public:
-  // Resolves a promise for a session created or loaded.
+  // Resolves a promise for a session created.
   // Passes the session id to be exposed to JavaScript.
   // Must be called before SessionMessage().
   // aSessionId must be null terminated.
   virtual void ResolveNewSessionPromise(uint32_t aPromiseId,
                                         const char* aSessionId,
                                         uint32_t aSessionIdLength) = 0;
+
+  // Resolves a promise for a session loaded.
+  // Resolves to false if we don't have any session data stored for the given
+  // session ID.
+  // Must be called before SessionMessage().
+  virtual void ResolveLoadSessionPromise(uint32_t aPromiseId,
+                                         bool aSuccess) = 0;
 
   // Called to resolve a specified promise with "undefined".
   virtual void ResolvePromise(uint32_t aPromiseId) = 0;
@@ -257,6 +265,9 @@ public:
   // same GMPBuffer object and return it to Gecko by calling Decrypted(),
   // with the GMPNoErr successcode. If decryption fails, call Decrypted()
   // with a failure code, and an error event will fire on the media element.
+  // Note: When Decrypted() is called and aBuffer is passed back, aBuffer
+  // is deleted. Don't forget to call Decrypted(), as otherwise aBuffer's
+  // memory will leak!
   virtual void Decrypt(GMPBuffer* aBuffer,
                        GMPEncryptedBufferMetadata* aMetadata) = 0;
 

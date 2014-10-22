@@ -4,15 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += ['tests']
-
 EXPORTS += [
     'nsICachedFileDescriptorListener.h',
-    'PCOMContentPermissionRequestChild.h',
 ]
 
 EXPORTS.mozilla.dom.ipc += [
-    'Blob.h',
+    'BlobChild.h',
+    'BlobParent.h',
     'nsIRemoteBlob.h',
 ]
 
@@ -22,10 +20,9 @@ EXPORTS.mozilla.dom += [
     'ContentChild.h',
     'ContentParent.h',
     'ContentProcess.h',
+    'CPOWManagerGetter.h',
     'CrashReporterChild.h',
     'CrashReporterParent.h',
-    'FileDescriptorSetChild.h',
-    'FileDescriptorSetParent.h',
     'FilePickerParent.h',
     'nsIContentChild.h',
     'nsIContentParent.h',
@@ -51,8 +48,6 @@ UNIFIED_SOURCES += [
     'ContentParent.cpp',
     'ContentProcess.cpp',
     'CrashReporterParent.cpp',
-    'FileDescriptorSetChild.cpp',
-    'FileDescriptorSetParent.cpp',
     'FilePickerParent.cpp',
     'nsIContentChild.cpp',
     'nsIContentParent.cpp',
@@ -68,9 +63,9 @@ UNIFIED_SOURCES += [
 ]
 
 # Blob.cpp cannot be compiled in unified mode because it triggers a fatal gcc warning.
-# ContentChild.cpp cannot be compiled in unified mode because it forces NSPR logging.
 # CrashReporterChild.cpp cannot be compiled in unified mode because of name clashes
 # in OS X headers.
+# ContentChild.cpp cannot be compiled in unified mode on  linux due to Time conflict
 SOURCES += [
     'Blob.cpp',
     'ContentChild.cpp',
@@ -90,7 +85,6 @@ IPDL_SOURCES += [
     'PCrashReporter.ipdl',
     'PCycleCollectWithLogs.ipdl',
     'PDocumentRenderer.ipdl',
-    'PFileDescriptorSet.ipdl',
     'PFilePicker.ipdl',
     'PMemoryReportRequest.ipdl',
     'PScreenManager.ipdl',
@@ -103,9 +97,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
-    '../src/base',
-    '../src/geolocation',
-    '../src/storage',
     '/chrome',
     '/content/base/src',
     '/content/media/webspeech/synth/ipc',
@@ -116,10 +107,12 @@ LOCAL_INCLUDES += [
     '/dom/devicestorage',
     '/dom/filesystem',
     '/dom/fmradio/ipc',
-    '/dom/indexedDB',
-    '/dom/indexedDB/ipc',
-    '/dom/mobilemessage/src/ipc',
+    '/dom/geolocation',
+    '/dom/mobilemessage/ipc',
+    '/dom/storage',
+    '/editor/libeditor',
     '/extensions/cookie',
+    '/extensions/spellcheck/src',
     '/hal/sandbox',
     '/js/ipc',
     '/layout/base',
@@ -136,14 +129,16 @@ DEFINES['BIN_SUFFIX'] = '"%s"' % CONFIG['BIN_SUFFIX']
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk2', 'gonk', 'qt'):
     DEFINES['MOZ_ENABLE_FREETYPE'] = True
 
+if CONFIG['MOZ_TOOLKIT_SEARCH']:
+    DEFINES['MOZ_TOOLKIT_SEARCH'] = True
+
 for var in ('MOZ_PERMISSIONS', 'MOZ_CHILD_PERMISSIONS'):
     if CONFIG[var]:
         DEFINES[var] = True
 
-if CONFIG['ENABLE_TESTS']:
-    LOCAL_INCLUDES += [
-      'ipc/glue',
-    ]
-
 JAR_MANIFESTS += ['jar.mn']
 
+MOCHITEST_CHROME_MANIFESTS += ['tests/chrome.ini']
+MOCHITEST_MANIFESTS += ['tests/mochitest.ini']
+
+CXXFLAGS += CONFIG['TK_CFLAGS']

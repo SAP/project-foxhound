@@ -39,10 +39,10 @@ class nsHttpResponseHead;
 // intended to run on the socket thread.
 //-----------------------------------------------------------------------------
 
-class nsHttpTransaction : public nsAHttpTransaction
-                        , public ATokenBucketEvent
-                        , public nsIInputStreamCallback
-                        , public nsIOutputStreamCallback
+class nsHttpTransaction MOZ_FINAL : public nsAHttpTransaction
+                                  , public ATokenBucketEvent
+                                  , public nsIInputStreamCallback
+                                  , public nsIOutputStreamCallback
 {
 public:
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -95,6 +95,10 @@ public:
     // Called to take ownership of the response headers; the transaction
     // will drop any reference to the response headers after this call.
     nsHttpResponseHead *TakeResponseHead();
+
+    // Provides a thread safe reference of the connection
+    // nsHttpTransaction::Connection should only be used on the socket thread
+    already_AddRefed<nsAHttpConnection> GetConnectionReference();
 
     // Called to find out if the transaction generated a complete response.
     bool ResponseIsComplete() { return mResponseIsComplete; }
@@ -181,7 +185,7 @@ private:
         nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
     };
 
-    Mutex mCallbacksLock;
+    Mutex mLock;
 
     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
     nsCOMPtr<nsITransportEventSink> mTransportSink;
@@ -198,10 +202,10 @@ private:
     nsCOMPtr<nsIInputStream>        mRequestStream;
     uint64_t                        mRequestSize;
 
-    nsAHttpConnection              *mConnection;      // hard ref
-    nsHttpConnectionInfo           *mConnInfo;        // hard ref
+    nsRefPtr<nsAHttpConnection>     mConnection;
+    nsRefPtr<nsHttpConnectionInfo>  mConnInfo;
     nsHttpRequestHead              *mRequestHead;     // weak ref
-    nsHttpResponseHead             *mResponseHead;    // hard ref
+    nsHttpResponseHead             *mResponseHead;    // owning pointer
 
     nsAHttpSegmentReader           *mReader;
     nsAHttpSegmentWriter           *mWriter;
@@ -260,6 +264,7 @@ private:
     bool                            mDispatchedAsBlocking;
     bool                            mResponseTimeoutEnabled;
     bool                            mDontRouteViaWildCard;
+    bool                            mForceRestart;
 
     // mClosed           := transaction has been explicitly closed
     // mTransactionDone  := transaction ran to completion or was interrupted

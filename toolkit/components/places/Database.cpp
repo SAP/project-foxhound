@@ -49,6 +49,9 @@
 
 #define BYTES_PER_KIBIBYTE 1024
 
+// How much time Sqlite can wait before returning a SQLITE_BUSY error.
+#define DATABASE_BUSY_TIMEOUT_MS 100
+
 // Old Sync GUID annotation.
 #define SYNCGUID_ANNO NS_LITERAL_CSTRING("sync/guid")
 
@@ -597,6 +600,10 @@ Database::InitSchema(bool* aDatabaseMigrated)
     (void)mMainConn->SetGrowthIncrement(growthIncrementKiB * BYTES_PER_KIBIBYTE, EmptyCString());
   }
 
+  nsAutoCString busyTimeoutPragma("PRAGMA busy_timeout = ");
+  busyTimeoutPragma.AppendInt(DATABASE_BUSY_TIMEOUT_MS);
+  (void)mMainConn->ExecuteSimpleSQL(busyTimeoutPragma);
+
   // We use our functions during migration, so initialize them now.
   rv = InitFunctions();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -738,6 +745,12 @@ Database::InitSchema(bool* aDatabaseMigrated)
       }
 
       // Firefox 24 uses schema version 23.
+
+      if (currentSchemaVersion < 24) {
+        rv = MigrateV24Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+      // Firefox 34 uses schema version 24.
 
       // Schema Upgrades must add migration code here.
 
@@ -959,6 +972,13 @@ Database::InitTempTriggers()
   rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_AFTERUPDATE_FRECENCY_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_AFTERUPDATE_TYPED_TRIGGER);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_FOREIGNCOUNT_AFTERDELETE_TRIGGER);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_FOREIGNCOUNT_AFTERINSERT_TRIGGER);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_FOREIGNCOUNT_AFTERUPDATE_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1197,8 +1217,6 @@ Database::MigrateV7Up()
     return NS_ERROR_FILE_CORRUPTED;
   }
 
-  mozStorageTransaction transaction(mMainConn, false);
-
   // We need an index on lastModified to catch quickly last modified bookmark
   // title for tag container's children. This will be useful for Sync, too.
   bool lastModIndexExists = false;
@@ -1378,7 +1396,7 @@ Database::MigrateV7Up()
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  return transaction.Commit();
+  return NS_OK;
 }
 
 
@@ -1386,7 +1404,6 @@ nsresult
 Database::MigrateV8Up()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  mozStorageTransaction transaction(mMainConn, false);
 
   nsresult rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
       "DROP TRIGGER IF EXISTS moz_historyvisits_afterinsert_v1_trigger"));
@@ -1432,7 +1449,7 @@ Database::MigrateV8Up()
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  return transaction.Commit();
+  return NS_OK;
 }
 
 
@@ -1440,7 +1457,6 @@ nsresult
 Database::MigrateV9Up()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  mozStorageTransaction transaction(mMainConn, false);
   // Added in Bug 488966.  The last_visit_date column caches the last
   // visit date, this enhances SELECT performances when we
   // need to sort visits by visit date.
@@ -1472,7 +1488,7 @@ Database::MigrateV9Up()
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  return transaction.Commit();
+  return NS_OK;
 }
 
 
@@ -1910,6 +1926,36 @@ Database::MigrateV23Up()
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
   rv = updatePrefixesStmt->ExecuteAsync(nullptr, getter_AddRefs(ps));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+Database::MigrateV24Up()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+ // Add a foreign_count column to moz_places
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "SELECT foreign_count FROM moz_places"
+  ), getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "ALTER TABLE moz_places ADD COLUMN foreign_count INTEGER DEFAULT 0 NOT NULL"));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Adjust counts for all the rows
+  nsCOMPtr<mozIStorageStatement> updateStmt;
+  rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "UPDATE moz_places SET foreign_count = "
+    "(SELECT count(*) FROM moz_bookmarks WHERE fk = moz_places.id) "
+  ), getter_AddRefs(updateStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+  mozStorageStatementScoper updateScoper(updateStmt);
+  rv = updateStmt->Execute();
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

@@ -10,14 +10,8 @@ include $(topsrcdir)/config/config.mk
 
 MOZ_GLUE_LDFLAGS = # Don't link against ourselves
 
-ifneq (,$(ZLIB_IN_MOZGLUE)$(MOZ_LINKER))
-ifdef MOZ_NATIVE_ZLIB
-EXTRA_LIBS += $(MOZ_ZLIB_LIBS)
-endif
-endif
-
 ifeq (WINNT,$(OS_TARGET))
-mozglue.def: mozglue.def.in
+mozglue.def: mozglue.def.in $(GLOBAL_DEPS)
 	$(call py_action,preprocessor,$(if $(MOZ_REPLACE_MALLOC),-DMOZ_REPLACE_MALLOC) $(ACDEFINES) $< -o $@)
 
 GARBAGE += mozglue.def
@@ -26,11 +20,6 @@ ifneq (,$(filter -DEFAULTLIB:mozcrt,$(MOZ_GLUE_LDFLAGS)))
 # Don't install the import library if we use mozcrt
 NO_INSTALL_IMPORT_LIBRARY = 1
 endif
-
-
-OS_LIBS += \
-	$(call EXPAND_LIBNAME,version) \
-	$(NULL)
 
 endif
 
@@ -58,11 +47,6 @@ endif
 ifeq ($(MOZ_REPLACE_MALLOC_LINKAGE),dummy library)
 OS_LDFLAGS += -Wl,-weak_library,$(DEPTH)/memory/replace/dummy/$(DLL_PREFIX)replace_malloc$(DLL_SUFFIX)
 endif
-endif
-
-ifeq (android, $(MOZ_WIDGET_TOOLKIT))
-# To properly wrap jemalloc's pthread_atfork call.
-OS_LDFLAGS += -Wl,--wrap=pthread_atfork
 endif
 
 ifdef MOZ_LINKER

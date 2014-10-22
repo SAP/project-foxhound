@@ -40,11 +40,9 @@ xpcom_glue_src_cppsrcs = [
 
 xpcom_gluens_src_lcppsrcs = [
     'BlockingResourceBase.cpp',
-    'DeadlockDetector.cpp',
     'GenericFactory.cpp',
     'nsProxyRelease.cpp',
     'nsTextFormatter.cpp',
-    'unused.cpp',
 ]
 
 xpcom_gluens_src_cppsrcs = [

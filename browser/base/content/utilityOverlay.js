@@ -13,11 +13,11 @@ XPCOMUtils.defineLazyGetter(this, "BROWSER_NEW_TAB_URL", function () {
   const PREF = "browser.newtab.url";
 
   function getNewTabPageURL() {
-    if (!Services.prefs.prefHasUserValue(PREF)) {
-      if (PrivateBrowsingUtils.isWindowPrivate(window) &&
-          !PrivateBrowsingUtils.permanentPrivateBrowsing)
-        return "about:privatebrowsing";
+    if (PrivateBrowsingUtils.isWindowPrivate(window) &&
+        !PrivateBrowsingUtils.permanentPrivateBrowsing) {
+      return "about:privatebrowsing";
     }
+
     let url = Services.prefs.getComplexValue(PREF, Ci.nsISupportsString).data;
     return url || "about:blank";
   }
@@ -185,6 +185,7 @@ function whereToOpenLink( e, ignoreButton, ignoreAlt )
  *   referrerURI          (nsIURI)
  *   relatedToCurrent     (boolean)
  *   skipTabAnimation     (boolean)
+ *   allowPinnedTabHostChange (boolean)
  */
 function openUILinkIn(url, where, aAllowThirdPartyFixup, aPostData, aReferrerURI) {
   var params;
@@ -220,6 +221,7 @@ function openLinkIn(url, where, params) {
   var aInitiatingDoc        = params.initiatingDoc;
   var aIsPrivate            = params.private;
   var aSkipTabAnimation     = params.skipTabAnimation;
+  var aAllowPinnedTabHostChange = !!params.allowPinnedTabHostChange;
 
   if (where == "save") {
     if (!aInitiatingDoc) {
@@ -288,7 +290,8 @@ function openLinkIn(url, where, params) {
     } catch (e) {}
   }
 
-  if (where == "current" && w.gBrowser.selectedTab.pinned) {
+  if (where == "current" && w.gBrowser.selectedTab.pinned &&
+      !aAllowPinnedTabHostChange) {
     try {
       // nsIURI.host can throw for non-nsStandardURL nsIURIs.
       if (!uriObj || (!uriObj.schemeIs("javascript") &&
@@ -305,6 +308,8 @@ function openLinkIn(url, where, params) {
   // Raise the target window before loading the URI, since loading it may
   // result in a new frontmost window (e.g. "javascript:window.open('');").
   w.focus();
+
+  let newTab;
 
   switch (where) {
   case "current":
@@ -328,23 +333,30 @@ function openLinkIn(url, where, params) {
     loadInBackground = !loadInBackground;
     // fall through
   case "tab":
-    let browser = w.gBrowser;
-    browser.loadOneTab(url, {
-                       referrerURI: aReferrerURI,
-                       charset: aCharset,
-                       postData: aPostData,
-                       inBackground: loadInBackground,
-                       allowThirdPartyFixup: aAllowThirdPartyFixup,
-                       relatedToCurrent: aRelatedToCurrent,
-                       skipAnimation: aSkipTabAnimation,
-                       allowMixedContent: aAllowMixedContent });
+    newTab = w.gBrowser.loadOneTab(url, {
+      referrerURI: aReferrerURI,
+      charset: aCharset,
+      postData: aPostData,
+      inBackground: loadInBackground,
+      allowThirdPartyFixup: aAllowThirdPartyFixup,
+      relatedToCurrent: aRelatedToCurrent,
+      skipAnimation: aSkipTabAnimation,
+      allowMixedContent: aAllowMixedContent
+    });
     break;
   }
 
   w.gBrowser.selectedBrowser.focus();
 
-  if (!loadInBackground && w.isBlankPageURL(url))
+  if (!loadInBackground && w.isBlankPageURL(url)) {
+    if (newTab && gMultiProcessBrowser) {
+      // Remote browsers are switched to asynchronously, and we need to
+      // ensure that the location bar remains focused in that case rather
+      // than the content area being focused.
+      newTab._skipContentFocus = true;
+    }
     w.focusAndSelectUrlBar();
+  }
 }
 
 // Used as an onclick handler for UI elements with link-like behavior.

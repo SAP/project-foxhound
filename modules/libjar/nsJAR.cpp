@@ -6,7 +6,7 @@
 #include "nsJARInputStream.h"
 #include "nsJAR.h"
 #include "nsIFile.h"
-#include "nsICertificatePrincipal.h"
+#include "nsIX509Cert.h"
 #include "nsIConsoleService.h"
 #include "nsICryptoHash.h"
 #include "nsIDataSignatureVerifier.h"
@@ -77,7 +77,7 @@ nsJARManifestItem::~nsJARManifestItem()
 
 // The following initialization makes a guess of 10 entries per jarfile.
 nsJAR::nsJAR(): mZip(new nsZipArchive()),
-                mManifestData(10),
+                mManifestData(8),
                 mParsedManifest(false),
                 mGlobalStatus(JAR_MANIFEST_NOT_PARSED),
                 mReleaseTime(PR_INTERVAL_NO_TIMEOUT),
@@ -323,12 +323,13 @@ nsJAR::GetInputStreamWithSpec(const nsACString& aJarDirSpec,
 }
 
 NS_IMETHODIMP
-nsJAR::GetCertificatePrincipal(const nsACString &aFilename, nsICertificatePrincipal** aPrincipal)
+nsJAR::GetSigningCert(const nsACString& aFilename, nsIX509Cert** aSigningCert)
 {
   //-- Parameter check
-  if (!aPrincipal)
+  if (!aSigningCert) {
     return NS_ERROR_NULL_POINTER;
-  *aPrincipal = nullptr;
+  }
+  *aSigningCert = nullptr;
 
   // Don't check signatures in the omnijar - this is only
   // interesting for extensions/XPIs.
@@ -366,12 +367,11 @@ nsJAR::GetCertificatePrincipal(const nsACString &aFilename, nsICertificatePrinci
   else // User wants identity of signer w/o verifying any entries
     requestedStatus = mGlobalStatus;
 
-  if (requestedStatus != JAR_VALID_MANIFEST)
+  if (requestedStatus != JAR_VALID_MANIFEST) {
     ReportError(aFilename, requestedStatus);
-  else // Valid signature
-  {
-    *aPrincipal = mPrincipal;
-    NS_IF_ADDREF(*aPrincipal);
+  } else { // Valid signature
+    *aSigningCert = mSigningCert;
+    NS_IF_ADDREF(*aSigningCert);
   }
   return NS_OK;
 }
@@ -589,14 +589,15 @@ nsJAR::ParseManifest()
   //-- Verify that the signature file is a valid signature of the SF file
   int32_t verifyError;
   rv = verifier->VerifySignature(sigBuffer, sigLen, manifestBuffer, manifestLen,
-                                 &verifyError, getter_AddRefs(mPrincipal));
+                                 &verifyError, getter_AddRefs(mSigningCert));
   if (NS_FAILED(rv)) return rv;
-  if (mPrincipal && verifyError == nsIDataSignatureVerifier::VERIFY_OK)
+  if (mSigningCert && verifyError == nsIDataSignatureVerifier::VERIFY_OK) {
     mGlobalStatus = JAR_VALID_MANIFEST;
-  else if (verifyError == nsIDataSignatureVerifier::VERIFY_ERROR_UNKNOWN_ISSUER)
+  } else if (verifyError == nsIDataSignatureVerifier::VERIFY_ERROR_UNKNOWN_ISSUER) {
     mGlobalStatus = JAR_INVALID_UNKNOWN_CA;
-  else
+  } else {
     mGlobalStatus = JAR_INVALID_SIG;
+  }
 
   //-- Parse the SF file. If the verification above failed, principal
   // is null, and ParseOneFile will mark the relevant entries as invalid.
@@ -1028,7 +1029,7 @@ NS_IMPL_ISUPPORTS(nsZipReaderCache, nsIZipReaderCache, nsIObserver, nsISupportsW
 
 nsZipReaderCache::nsZipReaderCache()
   : mLock("nsZipReaderCache.mLock")
-  , mZips(16)
+  , mZips()
   , mMustCacheFd(false)
 #ifdef ZIP_CACHE_HIT_RATE
     ,
@@ -1147,6 +1148,8 @@ nsZipReaderCache::GetInnerZip(nsIFile* zipFile, const nsACString &entry,
   nsresult rv = GetZip(zipFile, getter_AddRefs(outerZipReader));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  MutexAutoLock lock(mLock);
+
 #ifdef ZIP_CACHE_HIT_RATE
   mZipCacheLookups++;
 #endif
@@ -1189,7 +1192,6 @@ nsZipReaderCache::SetMustCacheFd(nsIFile* zipFile, bool aMustCacheFd)
   MOZ_CRASH("Not implemented");
   return NS_ERROR_NOT_IMPLEMENTED;
 #else
-  mMustCacheFd = aMustCacheFd;
 
   if (!aMustCacheFd) {
     return NS_OK;
@@ -1208,6 +1210,9 @@ nsZipReaderCache::SetMustCacheFd(nsIFile* zipFile, bool aMustCacheFd)
   uri.Insert(NS_LITERAL_CSTRING("file:"), 0);
 
   MutexAutoLock lock(mLock);
+
+  mMustCacheFd = aMustCacheFd;
+
   nsRefPtr<nsJAR> zip;
   mZips.Get(uri, getter_AddRefs(zip));
   if (!zip) {
@@ -1388,6 +1393,7 @@ nsZipReaderCache::Observe(nsISupports *aSubject,
     mZips.Enumerate(FindFlushableZip, nullptr);
   }
   else if (strcmp(aTopic, "chrome-flush-caches") == 0) {
+    MutexAutoLock lock(mLock);
     mZips.EnumerateRead(DropZipReaderCache, nullptr);
     mZips.Clear();
   }

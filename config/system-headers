@@ -200,6 +200,8 @@ atlwin.cpp
 ATSTypes.h
 ATSUnicode.h
 #ifdef ANDROID
+audio_effects/effect_aec.h
+audio_effects/effect_ns.h
 AudioParameter.h
 AudioSystem.h
 AudioTrack.h
@@ -508,9 +510,7 @@ gssapi/gssapi.h
 gssapi.h
 gtk/gtk.h
 gtk/gtkx.h
-gtk/gtkprinter.h
-gtk/gtkprintjob.h
-gtk/gtkprintunixdialog.h
+gtk/gtkunixprint.h
 #ifdef ANDROID
 gui/BufferQueue.h
 gui/ConsumerBase.h
@@ -731,6 +731,8 @@ Math64.h
 math.h
 mbstring.h
 #ifdef ANDROID
+media/AudioEffect.h
+media/AudioSystem.h
 media/ICrypto.h
 media/IOMX.h
 media/MediaProfiles.h
@@ -1263,7 +1265,6 @@ X11/Xlocale.h
 X11/Xos.h
 X11/Xutil.h
 zmouse.h
-speex/speex_resampler.h
 soundtouch/SoundTouch.h
 #if MOZ_NATIVE_PNG==1
 png.h
@@ -1325,6 +1326,7 @@ vpx_mem/vpx_mem.h
 vorbis/codec.h
 theora/theoradec.h
 tremor/ivorbiscodec.h
+speex/speex_resampler.h
 ogg/ogg.h
 ogg/os_types.h
 nestegg/nestegg.h

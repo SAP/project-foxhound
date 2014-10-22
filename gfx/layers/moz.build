@@ -9,17 +9,19 @@ EXPORTS += [
     'basic/BasicImplData.h',
     'basic/BasicLayers.h',
     'basic/BasicLayersImpl.h',
-    'basic/BasicThebesLayer.h',
+    'basic/BasicPaintedLayer.h',
     'client/ClientCanvasLayer.h',
     'client/ClientContainerLayer.h',
     'client/ClientLayerManager.h',
-    'client/ClientThebesLayer.h',
-    'client/ClientTiledThebesLayer.h',
+    'client/ClientPaintedLayer.h',
+    'client/ClientTiledPaintedLayer.h',
     'composite/CompositableHost.h',
     'composite/ImageHost.h',
+    'CompositorTypes.h',
     'CopyableCanvasLayer.h',
     'D3D9SurfaceImage.h',
     'FrameMetrics.h',
+    'GLImages.h',
     'GrallocImages.h',
     'ImageContainer.h',
     'ImageLayers.h',
@@ -32,12 +34,13 @@ EXPORTS += [
     'LayerScope.h',
     'LayersLogging.h',
     'LayerSorter.h',
+    'LayersTypes.h',
     'LayerTreeInvalidation.h',
     'opengl/Composer2D.h',
     'opengl/OGLShaderProgram.h',
     'opengl/TexturePoolOGL.h',
+    'protobuf/LayerScopePacket.pb.h',
     'ReadbackLayer.h',
-    'SharedTextureImage.h',
     'TiledLayerBuffer.h',
 ]
 
@@ -64,8 +67,8 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
             'd3d9/ContainerLayerD3D9.cpp',
             'd3d9/ImageLayerD3D9.cpp',
             'd3d9/LayerManagerD3D9.cpp',
+            'd3d9/PaintedLayerD3D9.cpp',
             'd3d9/TextureD3D9.cpp',
-            'd3d9/ThebesLayerD3D9.cpp',
         ]
         SOURCES += [
             'd3d9/CompositorD3D9.cpp',
@@ -79,6 +82,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         ]
         EXPORTS.mozilla.layers += [
             'd3d11/CompositorD3D11.h',
+            'd3d11/ReadbackManagerD3D11.h',
             'd3d11/TextureD3D11.h',
             'ipc/ShadowLayerUtilsD3D10.h',
         ]
@@ -88,14 +92,17 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
             'd3d10/ContainerLayerD3D10.cpp',
             'd3d10/ImageLayerD3D10.cpp',
             'd3d10/LayerManagerD3D10.cpp',
+            'd3d10/PaintedLayerD3D10.cpp',
             'd3d10/ReadbackManagerD3D10.cpp',
-            'd3d10/ThebesLayerD3D10.cpp',
             'd3d11/TextureD3D11.cpp',
             'ipc/ShadowLayerUtilsD3D10.cpp',
         ]
         SOURCES += [
             'd3d11/CompositorD3D11.cpp',
+            'd3d11/ReadbackManagerD3D11.cpp',
         ]
+        if CONFIG['MOZ_ENABLE_DIRECT2D1_1']:
+            DEFINES['USE_D2D1_1'] = True
 
 EXPORTS.gfxipc += [
     'ipc/ShadowLayerUtils.h',
@@ -106,14 +113,12 @@ EXPORTS.mozilla.layers += [
     # exporting things from apz/src is temporary until we extract a
     # proper interface for the code there
     'apz/src/APZCTreeManager.h',
-    'apz/src/AsyncPanZoomController.h',
-    'apz/src/Axis.h',
-    'apz/src/GestureEventListener.h',
-    'apz/src/TaskThrottler.h',
     'apz/testutil/APZTestData.h',
     'apz/util/ActiveElementManager.h',
     'apz/util/APZCCallbackHelper.h',
     'AtomicRefCountedWithFinalize.h',
+    'AxisPhysicsModel.h',
+    'AxisPhysicsMSDModel.h',
     'basic/BasicCompositor.h',
     'basic/MacIOSurfaceTextureHostBasic.h',
     'basic/TextureHostBasic.h',
@@ -121,8 +126,6 @@ EXPORTS.mozilla.layers += [
     'client/CompositableClient.h',
     'client/ContentClient.h',
     'client/ImageClient.h',
-    'client/SimpleTextureClientPool.h',
-    'client/SimpleTiledContentClient.h',
     'client/TextureClient.h',
     'client/TextureClientPool.h',
     'client/TiledContentClient.h',
@@ -134,8 +137,8 @@ EXPORTS.mozilla.layers += [
     'composite/ImageHost.h',
     'composite/ImageLayerComposite.h',
     'composite/LayerManagerComposite.h',
+    'composite/PaintedLayerComposite.h',
     'composite/TextureHost.h',
-    'composite/ThebesLayerComposite.h',
     'Compositor.h',
     'CompositorTypes.h',
     'D3D9SurfaceImage.h',
@@ -158,6 +161,7 @@ EXPORTS.mozilla.layers += [
     'ipc/SharedBufferManagerParent.h',
     'ipc/SharedPlanarYCbCrImage.h',
     'ipc/SharedRGBImage.h',
+    'LayerMetricsWrapper.h',
     'LayersTypes.h',
     'opengl/CompositingRenderTargetOGL.h',
     'opengl/CompositorOGL.h',
@@ -235,11 +239,14 @@ UNIFIED_SOURCES += [
     'apz/src/AsyncPanZoomController.cpp',
     'apz/src/Axis.cpp',
     'apz/src/GestureEventListener.cpp',
+    'apz/src/InputBlockState.cpp',
+    'apz/src/OverscrollHandoffState.cpp',
     'apz/src/TaskThrottler.cpp',
-    'apz/src/TouchBlockState.cpp',
     'apz/testutil/APZTestData.cpp',
     'apz/util/ActiveElementManager.cpp',
     'apz/util/APZCCallbackHelper.cpp',
+    'AxisPhysicsModel.cpp',
+    'AxisPhysicsMSDModel.cpp',
     'basic/BasicCanvasLayer.cpp',
     'basic/BasicColorLayer.cpp',
     'basic/BasicCompositor.cpp',
@@ -247,7 +254,7 @@ UNIFIED_SOURCES += [
     'basic/BasicImages.cpp',
     'basic/BasicLayerManager.cpp',
     'basic/BasicLayersImpl.cpp',
-    'basic/BasicThebesLayer.cpp',
+    'basic/BasicPaintedLayer.cpp',
     'basic/TextureHostBasic.cpp',
     'BufferUnrotate.cpp',
     'client/CanvasClient.cpp',
@@ -256,13 +263,11 @@ UNIFIED_SOURCES += [
     'client/ClientContainerLayer.cpp',
     'client/ClientImageLayer.cpp',
     'client/ClientLayerManager.cpp',
-    'client/ClientThebesLayer.cpp',
-    'client/ClientTiledThebesLayer.cpp',
+    'client/ClientPaintedLayer.cpp',
+    'client/ClientTiledPaintedLayer.cpp',
     'client/CompositableClient.cpp',
     'client/ContentClient.cpp',
     'client/ImageClient.cpp',
-    'client/SimpleTextureClientPool.cpp',
-    'client/SimpleTiledContentClient.cpp',
     'client/TextureClient.cpp',
     'client/TextureClientPool.cpp',
     'client/TiledContentClient.cpp',
@@ -276,13 +281,14 @@ UNIFIED_SOURCES += [
     'composite/ImageHost.cpp',
     'composite/ImageLayerComposite.cpp',
     'composite/LayerManagerComposite.cpp',
+    'composite/PaintedLayerComposite.cpp',
     'composite/TextRenderer.cpp',
     'composite/TextureHost.cpp',
-    'composite/ThebesLayerComposite.cpp',
     'composite/TiledContentHost.cpp',
     'Compositor.cpp',
     'CopyableCanvasLayer.cpp',
     'Effects.cpp',
+    'GLImages.cpp',
     'ImageDataSerializer.cpp',
     'ImageLayers.cpp',
     'ipc/AsyncTransactionTracker.cpp',
@@ -383,3 +389,6 @@ CXXFLAGS += [
 ]
 
 MOCHITEST_MANIFESTS += ['apz/test/mochitest.ini']
+
+CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
+CXXFLAGS += CONFIG['TK_CFLAGS']

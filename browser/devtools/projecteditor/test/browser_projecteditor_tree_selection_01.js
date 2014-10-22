@@ -17,7 +17,7 @@ let test = asyncTest(function*() {
 
   is (
     resources.map(r=>r.basename).join("|"),
-    "ProjectEditor|css|styles.css|data|img|icons|128x128.png|16x16.png|32x32.png|vector.svg|fake.png|js|script.js|index.html|LICENSE|README.md",
+    TEMP_FOLDER_NAME + "|css|styles.css|data|img|icons|128x128.png|16x16.png|32x32.png|vector.svg|fake.png|js|script.js|index.html|LICENSE|README.md",
     "Resources came through in proper order"
   );
 
@@ -35,8 +35,20 @@ let test = asyncTest(function*() {
 function selectFileFirstLoad(projecteditor, resource) {
   ok (resource && resource.path, "A valid resource has been passed in for selection " + (resource && resource.path));
   projecteditor.projectTree.selectResource(resource);
+  let container = projecteditor.projectTree.getViewContainer(resource);
 
+  if (resource.isRoot) {
+    ok (container.expanded, "The root directory is expanded by default.");
+    container.line.click();
+    ok (container.expanded, "Clicking on the line does not toggles expansion.");
+    return;
+  }
   if (resource.isDir) {
+    ok (!container.expanded, "A directory is not expanded by default.");
+    container.line.click();
+    ok (container.expanded, "Clicking on the line toggles expansion.");
+    container.line.click();
+    ok (!container.expanded, "Clicking on the line toggles expansion.");
     return;
   }
 

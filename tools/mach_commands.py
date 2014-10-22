@@ -294,7 +294,7 @@ class PastebinProvider(object):
 
 @CommandProvider
 class ReviewboardToolsProvider(MachCommandBase):
-    @Command('rbt', category='devenv', allow_all_args=True,
+    @Command('rbt', category='devenv',
         description='Run Reviewboard Tools')
     @CommandArgument('args', nargs='...', help='Arguments to rbt tool')
     def rbt(self, args):
@@ -322,7 +322,7 @@ class FormatProvider(MachCommandBase):
         fmt = plat.lower() + "/clang-format-3.5"
         fmt_diff = "clang-format-diff-3.5"
 
-        # We are currently using a modified verion of clang-format hosted on people.mozilla.org.
+        # We are currently using a modified version of clang-format hosted on people.mozilla.org.
         # This is a temporary work around until we upstream the necessary changes and we can use
         # a system version of clang-format. See bug 961541.
         if plat == "Windows":

@@ -10,13 +10,13 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/CryptoKey.h"
 #include "js/TypeDecls.h"
 
 namespace mozilla {
 namespace dom {
 
+class ObjectOrString;
 class Promise;
 
 typedef ArrayBufferViewOrArrayBuffer CryptoOperationData;
@@ -31,7 +31,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SubtleCrypto)
 
 public:
-  SubtleCrypto(nsPIDOMWindow* aWindow);
+  explicit SubtleCrypto(nsPIDOMWindow* aWindow);
 
   nsPIDOMWindow* GetParentObject() const
   {

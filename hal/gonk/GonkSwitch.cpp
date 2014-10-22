@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#include <android/log.h>
 #include <fcntl.h>
 #include <sysutils/NetlinkEvent.h>
 
 #include "base/message_loop.h"
 
 #include "Hal.h"
+#include "HalLog.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Monitor.h"
@@ -30,8 +30,6 @@
 #include "UeventPoller.h"
 
 using namespace mozilla::hal;
-
-#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "GonkSwitch" , ## args) 
 
 #define SWITCH_HEADSET_DEVPATH "/devices/virtual/switch/h2w"
 #define SWITCH_USB_DEVPATH_GB  "/devices/virtual/switch/usb_configuration"
@@ -110,7 +108,7 @@ protected:
     char state[16];
     ssize_t bytesRead = read(fd, state, sizeof(state));
     if (bytesRead < 0) {
-      LOG("Read data from %s fails", statePath.get());
+      HAL_ERR("Read data from %s fails", statePath.get());
       return;
     }
 
@@ -334,6 +332,8 @@ private:
   SwitchHandlerArray mHandler;
   bool mHeadphonesFromInputDev;
 
+  // This function might also get called on the main thread
+  // (from IsHeadphoneEventFromInputDev)
   void Init()
   {
     RefPtr<SwitchHandlerHeadphone> switchHeadPhone =
@@ -458,12 +458,12 @@ GetCurrentSwitchState(SwitchDevice aDevice)
 static void
 NotifySwitchStateIOThread(SwitchDevice aDevice, SwitchState aState)
 {
+  InitializeResourceIfNeed();
   sSwitchObserver->Notify(aDevice, aState);
 }
 
 void NotifySwitchStateFromInputDevice(SwitchDevice aDevice, SwitchState aState)
 {
-  InitializeResourceIfNeed();
   XRE_GetIOMessageLoop()->PostTask(
       FROM_HERE,
       NewRunnableFunction(NotifySwitchStateIOThread, aDevice, aState));
@@ -471,8 +471,10 @@ void NotifySwitchStateFromInputDevice(SwitchDevice aDevice, SwitchState aState)
 
 bool IsHeadphoneEventFromInputDev()
 {
-  InitializeResourceIfNeed();
-  return sSwitchObserver->GetHeadphonesFromInputDev();
+  // Instead of calling InitializeResourceIfNeed, create new SwitchEventObserver
+  // to prevent calling RegisterUeventListener in main thread.
+  RefPtr<SwitchEventObserver> switchObserver = new SwitchEventObserver();
+  return switchObserver->GetHeadphonesFromInputDev();
 }
 
 } // hal_impl

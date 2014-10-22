@@ -52,15 +52,17 @@ function check_telemetry() {
                     .getHistogramById("SSL_CERT_ERROR_OVERRIDES")
                     .snapshot();
   do_check_eq(histogram.counts[ 0], 0);
-  do_check_eq(histogram.counts[ 2], 8); // SEC_ERROR_UNKNOWN_ISSUER
+  do_check_eq(histogram.counts[ 2], 7); // SEC_ERROR_UNKNOWN_ISSUER
   do_check_eq(histogram.counts[ 3], 0); // SEC_ERROR_CA_CERT_INVALID
   do_check_eq(histogram.counts[ 4], 0); // SEC_ERROR_UNTRUSTED_ISSUER
-  do_check_eq(histogram.counts[ 5], 0); // SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE
+  do_check_eq(histogram.counts[ 5], 1); // SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE
   do_check_eq(histogram.counts[ 6], 0); // SEC_ERROR_UNTRUSTED_CERT
   do_check_eq(histogram.counts[ 7], 0); // SEC_ERROR_INADEQUATE_KEY_USAGE
   do_check_eq(histogram.counts[ 8], 2); // SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED
-  do_check_eq(histogram.counts[ 9], 4); // SSL_ERROR_BAD_CERT_DOMAIN
+  do_check_eq(histogram.counts[ 9], 5); // SSL_ERROR_BAD_CERT_DOMAIN
   do_check_eq(histogram.counts[10], 5); // SEC_ERROR_EXPIRED_CERTIFICATE
+  do_check_eq(histogram.counts[11], 2); // MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY
+  do_check_eq(histogram.counts[12], 1); // MOZILLA_PKIX_ERROR_V1_CERT_USED_AS_CA
   run_next_test();
 }
 
@@ -96,7 +98,7 @@ function add_simple_tests() {
                          getXPCOMStatusFromNSS(SEC_ERROR_UNKNOWN_ISSUER));
   add_cert_override_test("expiredissuer.example.com",
                          Ci.nsICertOverrideService.ERROR_UNTRUSTED,
-                         getXPCOMStatusFromNSS(SEC_ERROR_UNKNOWN_ISSUER));
+                         getXPCOMStatusFromNSS(SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE));
   add_cert_override_test("md5signature.example.com",
                          Ci.nsICertOverrideService.ERROR_UNTRUSTED,
                          getXPCOMStatusFromNSS(
@@ -121,6 +123,32 @@ function add_simple_tests() {
   add_cert_override_test("self-signed-end-entity-with-cA-true.example.com",
                          Ci.nsICertOverrideService.ERROR_UNTRUSTED,
                          getXPCOMStatusFromNSS(SEC_ERROR_UNKNOWN_ISSUER));
+
+  add_cert_override_test("ca-used-as-end-entity.example.com",
+                         Ci.nsICertOverrideService.ERROR_UNTRUSTED,
+                         getXPCOMStatusFromNSS(MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY));
+
+  // If an X.509 version 1 certificate is not a trust anchor, we will
+  // encounter an overridable error.
+  add_cert_override_test("end-entity-issued-by-v1-cert.example.com",
+                         Ci.nsICertOverrideService.ERROR_UNTRUSTED,
+                         getXPCOMStatusFromNSS(MOZILLA_PKIX_ERROR_V1_CERT_USED_AS_CA));
+  // If we make that certificate a trust anchor, the connection will succeed.
+  add_test(function() {
+    certOverrideService.clearValidityOverride("end-entity-issued-by-v1-cert.example.com", 8443);
+    let v1Cert = constructCertFromFile("tlsserver/v1Cert.der");
+    setCertTrust(v1Cert, "CTu,,");
+    clearSessionCache();
+    run_next_test();
+  });
+  add_connection_test("end-entity-issued-by-v1-cert.example.com", Cr.NS_OK);
+  // Reset the trust for that certificate.
+  add_test(function() {
+    let v1Cert = constructCertFromFile("tlsserver/v1Cert.der");
+    setCertTrust(v1Cert, ",,");
+    clearSessionCache();
+    run_next_test();
+  });
 }
 
 function add_combo_tests() {
@@ -147,6 +175,11 @@ function add_combo_tests() {
                          Ci.nsICertOverrideService.ERROR_TIME,
                          getXPCOMStatusFromNSS(
                             SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED));
+
+  add_cert_override_test("ca-used-as-end-entity-name-mismatch.example.com",
+                         Ci.nsICertOverrideService.ERROR_MISMATCH |
+                         Ci.nsICertOverrideService.ERROR_UNTRUSTED,
+                         getXPCOMStatusFromNSS(MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY));
 }
 
 function add_distrust_tests() {
@@ -159,6 +192,10 @@ function add_distrust_tests() {
 
   add_distrust_override_test("tlsserver/other-test-ca.der",
                              "untrustedissuer.example.com",
+                             getXPCOMStatusFromNSS(SEC_ERROR_UNTRUSTED_ISSUER));
+
+  add_distrust_override_test("tlsserver/test-ca.der",
+                             "ca-used-as-end-entity.example.com",
                              getXPCOMStatusFromNSS(SEC_ERROR_UNTRUSTED_ISSUER));
 }
 

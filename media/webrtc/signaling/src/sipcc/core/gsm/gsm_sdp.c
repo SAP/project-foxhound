@@ -449,6 +449,13 @@ gsmsdp_free_media (fsmdef_media_t *media)
         media->payloads = NULL;
         media->num_payloads = 0;
     }
+
+    if (media->previous_sdp.payloads != NULL) {
+        cpr_free(media->previous_sdp.payloads);
+        media->previous_sdp.payloads = NULL;
+        media->previous_sdp.num_payloads = 0;
+    }
+
     /*
      * Check to see if the element is part of the
      * free chunk space.
@@ -1141,6 +1148,8 @@ gsmsdp_set_video_media_attributes (uint32_t media_type, void *cc_sdp_p, uint16_t
     void *sdp_p = ((cc_sdp_t*)cc_sdp_p)->src_sdp;
     int max_fs = 0;
     int max_fr = 0;
+    int max_br = 0;
+    int max_mbps = 0;
 
     switch (media_type) {
         case RTP_H263:
@@ -1211,11 +1220,14 @@ gsmsdp_set_video_media_attributes (uint32_t media_type, void *cc_sdp_p, uint16_t
         switch (media_type) {
         case RTP_H264_P0:
         case RTP_H264_P1:
+            max_br = config_get_video_max_br((rtp_ptype) media_type); // H264 only
+            max_mbps = config_get_video_max_mbps((rtp_ptype) media_type); // H264 only
+            // fall through
         case RTP_VP8:
             max_fs = config_get_video_max_fs((rtp_ptype) media_type);
             max_fr = config_get_video_max_fr((rtp_ptype) media_type);
 
-            if (max_fs || max_fr) {
+            if (max_fs || max_fr || max_br || max_mbps) {
                 if (!added_fmtp) {
                     if (sdp_add_new_attr(sdp_p, level, 0, SDP_ATTR_FMTP, &a_inst)
                         != SDP_SUCCESS) {
@@ -1232,10 +1244,17 @@ gsmsdp_set_video_media_attributes (uint32_t media_type, void *cc_sdp_p, uint16_t
                     (void) sdp_attr_set_fmtp_max_fs(sdp_p, level, 0, a_inst,
                                                     max_fs);
                 }
-
                 if (max_fr) {
                     (void) sdp_attr_set_fmtp_max_fr(sdp_p, level, 0, a_inst,
                                                     max_fr);
+                }
+                if (max_br) {
+                    (void) sdp_attr_set_fmtp_max_br(sdp_p, level, 0, a_inst,
+                                                    max_br);
+                }
+                if (max_mbps) {
+                    (void) sdp_attr_set_fmtp_max_mbps(sdp_p, level, 0, a_inst,
+                                                      max_mbps);
                 }
             }
             break;
@@ -3473,6 +3492,27 @@ gsmsdp_negotiate_codec (fsmdef_dcb_t *dcb_p, cc_sdp_t *sdp_p,
                             payload_info->audio.bitrate = 32000;
                             break;
 
+                        case RTP_G722:
+                            /* RFC 3551
+
+   G722 is specified in ITU-T Recommendation G.722, "7 kHz audio-coding
+   within 64 kbit/s".  The G.722 encoder produces a stream of octets,
+   each of which SHALL be octet-aligned in an RTP packet.  The first bit
+   transmitted in the G.722 octet, which is the most significant bit of
+   the higher sub-band sample, SHALL correspond to the most significant
+   bit of the octet in the RTP packet.
+
+   Even though the actual sampling rate for G.722 audio is 16,000 Hz,
+   the RTP clock rate for the G722 payload format is 8,000 Hz because
+   that value was erroneously assigned in RFC 1890 and must remain
+   unchanged for backward compatibility.  The octet rate or sample-pair
+   rate is 8,000 Hz.
+                            */
+                            payload_info->audio.frequency = 16000;
+                            payload_info->audio.packet_size = 320;
+                            payload_info->audio.bitrate = 64000;
+                            break;
+
                         case RTP_ILBC:
                             payload_info->ilbc.mode =
                               (uint16_t)sdp_attr_get_fmtp_mode_for_payload_type(
@@ -3499,6 +3539,7 @@ gsmsdp_negotiate_codec (fsmdef_dcb_t *dcb_p, cc_sdp_t *sdp_p,
                                   dcb_p->call_id, fname), codec);
                             payload_info->audio.packet_size = -1;
                             payload_info->audio.bitrate = -1;
+                            MOZ_ASSERT(0);
                         } /* end switch */
 
 
@@ -5397,10 +5438,10 @@ gsmsdp_negotiate_media_lines (fsm_fcb_t *fcb_p, cc_sdp_t *sdp_p, boolean initial
                            changes from 0 -> !0 (i.e. on creation).
                            TODO(adam@nostrum.com): Figure out how to notify
                            when streams gain tracks */
-                        ui_on_remote_stream_added(evOnRemoteStreamAdd,
-                            fcb_p->state, dcb_p->line, dcb_p->call_id,
-                            dcb_p->caller_id.call_instance_id,
-                            dcb_p->remote_media_stream_tbl->streams[j]);
+                        vcmOnRemoteStreamAdded(
+                            CREATE_CALL_HANDLE(dcb_p->line, dcb_p->call_id),
+                            dcb_p->peerconnection,
+                            &dcb_p->remote_media_stream_tbl->streams[j]);
 
                         dcb_p->remote_media_stream_tbl->streams[j].num_tracks_notified =
                             dcb_p->remote_media_stream_tbl->streams[j].num_tracks;
@@ -7330,9 +7371,26 @@ gsmsdp_configure_dtls_data_attributes(fsm_fcb_t *fcb_p)
 void
 gsmsdp_free (fsmdef_dcb_t *dcb_p)
 {
-    if ((dcb_p != NULL) && (dcb_p->sdp != NULL)) {
-        sipsdp_free(&dcb_p->sdp);
-        dcb_p->sdp = NULL;
+    if (dcb_p != NULL) {
+        if (dcb_p->sdp != NULL) {
+            sipsdp_free(&dcb_p->sdp);
+            dcb_p->sdp = NULL;
+        }
+
+        if (dcb_p->media_cap_tbl) {
+            cpr_free(dcb_p->media_cap_tbl);
+            dcb_p->media_cap_tbl = NULL;
+        }
+
+        if (dcb_p->remote_media_stream_tbl) {
+            cpr_free(dcb_p->remote_media_stream_tbl);
+            dcb_p->remote_media_stream_tbl = NULL;
+        }
+
+        if (dcb_p->local_media_track_tbl) {
+            cpr_free(dcb_p->local_media_track_tbl);
+            dcb_p->local_media_track_tbl = NULL;
+        }
     }
 }
 
@@ -7548,30 +7606,4 @@ gsmsdp_find_level_from_mid(fsmdef_dcb_t * dcb_p, const char * mid, uint16_t *lev
     return CC_CAUSE_VALUE_NOT_FOUND;
 }
 
-/**
- * The function performs cleaning candidate list of a given call. It walks
- * through the list and deallocates each candidate entry.
- *
- * @param[in]dcb   - pointer to fsmdef_def_t for the dcb whose
- *                   media list to be cleaned.
- *
- * @return  none
- *
- * @pre     (dcb not_eq NULL)
- */
-void gsmsdp_clean_candidate_list (fsmdef_dcb_t *dcb_p)
-{
-    fsmdef_candidate_t *candidate = NULL;
-
-    while (TRUE) {
-        /* unlink head and free the media */
-        candidate = (fsmdef_candidate_t *)sll_lite_unlink_head(&dcb_p->candidate_list);
-        if (candidate) {
-            strlib_free(candidate->candidate);
-            free(candidate);
-        } else {
-            break;
-        }
-    }
-}
 

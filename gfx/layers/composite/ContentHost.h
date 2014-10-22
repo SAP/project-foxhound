@@ -23,7 +23,7 @@
 #include "mozilla/layers/LayersTypes.h"  // for etc
 #include "mozilla/layers/TextureHost.h"  // for TextureHost
 #include "mozilla/mozalloc.h"           // for operator delete
-#include "nsAutoPtr.h"                  // for nsAutoPtr
+#include "mozilla/UniquePtr.h"          // for UniquePtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_RUNTIMEABORT
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
@@ -47,7 +47,7 @@ class TextureImageTextureSourceOGL;
 struct TexturedEffect;
 
 /**
- * ContentHosts are used for compositing Thebes layers, always matched by a
+ * ContentHosts are used for compositing Painted layers, always matched by a
  * ContentClient of the same type.
  *
  * ContentHosts support only UpdateThebes(), not Update().
@@ -64,12 +64,16 @@ public:
                             const nsIntRegion& aOldValidRegionBack,
                             nsIntRegion* aUpdatedRegionBack) = 0;
 
-  virtual void SetPaintWillResample(bool aResample) { }
+  virtual void SetPaintWillResample(bool aResample) { mPaintWillResample = aResample; }
+  bool PaintWillResample() { return mPaintWillResample; }
 
 protected:
-  ContentHost(const TextureInfo& aTextureInfo)
+  explicit ContentHost(const TextureInfo& aTextureInfo)
     : CompositableHost(aTextureInfo)
+    , mPaintWillResample(false)
   {}
+
+  bool mPaintWillResample;
 };
 
 /**
@@ -89,7 +93,7 @@ public:
   typedef RotatedContentBuffer::ContentType ContentType;
   typedef RotatedContentBuffer::PaintState PaintState;
 
-  ContentHostBase(const TextureInfo& aTextureInfo);
+  explicit ContentHostBase(const TextureInfo& aTextureInfo);
   virtual ~ContentHostBase();
 
   virtual void Composite(EffectChain& aEffectChain,
@@ -97,13 +101,10 @@ public:
                          const gfx::Matrix4x4& aTransform,
                          const gfx::Filter& aFilter,
                          const gfx::Rect& aClipRect,
-                         const nsIntRegion* aVisibleRegion = nullptr,
-                         TiledLayerProperties* aLayerProperties = nullptr);
+                         const nsIntRegion* aVisibleRegion = nullptr);
 
-  virtual void SetPaintWillResample(bool aResample) { mPaintWillResample = aResample; }
-
-  virtual NewTextureSource* GetTextureSource() = 0;
-  virtual NewTextureSource* GetTextureSourceOnWhite() = 0;
+  virtual TextureSource* GetTextureSource() = 0;
+  virtual TextureSource* GetTextureSourceOnWhite() = 0;
 
   virtual TemporaryRef<TexturedEffect> GenEffect(const gfx::Filter& aFilter) MOZ_OVERRIDE;
 
@@ -113,11 +114,9 @@ protected:
     return mBufferRect.TopLeft() - mBufferRotation;
   }
 
-  bool PaintWillResample() { return mPaintWillResample; }
 
   nsIntRect mBufferRect;
   nsIntPoint mBufferRotation;
-  bool mPaintWillResample;
   bool mInitialised;
 };
 
@@ -128,7 +127,7 @@ protected:
 class ContentHostTexture : public ContentHostBase
 {
 public:
-  ContentHostTexture(const TextureInfo& aTextureInfo)
+  explicit ContentHostTexture(const TextureInfo& aTextureInfo)
     : ContentHostBase(aTextureInfo)
     , mLocked(false)
   { }
@@ -174,11 +173,11 @@ public:
     mLocked = false;
   }
 
-  virtual NewTextureSource* GetTextureSource() MOZ_OVERRIDE {
+  virtual TextureSource* GetTextureSource() MOZ_OVERRIDE {
     MOZ_ASSERT(mLocked);
     return mTextureHost->GetTextureSources();
   }
-  virtual NewTextureSource* GetTextureSourceOnWhite() MOZ_OVERRIDE {
+  virtual TextureSource* GetTextureSourceOnWhite() MOZ_OVERRIDE {
     MOZ_ASSERT(mLocked);
     if (mTextureHostOnWhite) {
       return mTextureHostOnWhite->GetTextureSources();
@@ -202,7 +201,7 @@ protected:
 class ContentHostDoubleBuffered : public ContentHostTexture
 {
 public:
-  ContentHostDoubleBuffered(const TextureInfo& aTextureInfo)
+  explicit ContentHostDoubleBuffered(const TextureInfo& aTextureInfo)
     : ContentHostTexture(aTextureInfo)
   {}
 
@@ -226,7 +225,7 @@ protected:
 class ContentHostSingleBuffered : public ContentHostTexture
 {
 public:
-  ContentHostSingleBuffered(const TextureInfo& aTextureInfo)
+  explicit ContentHostSingleBuffered(const TextureInfo& aTextureInfo)
     : ContentHostTexture(aTextureInfo)
   {}
   virtual ~ContentHostSingleBuffered() {}
@@ -252,7 +251,7 @@ public:
 class ContentHostIncremental : public ContentHostBase
 {
 public:
-  ContentHostIncremental(const TextureInfo& aTextureInfo);
+  explicit ContentHostIncremental(const TextureInfo& aTextureInfo);
   ~ContentHostIncremental();
 
   virtual CompositableType GetType() { return CompositableType::BUFFER_CONTENT_INC; }
@@ -292,8 +291,8 @@ public:
     mLocked = false;
   }
 
-  virtual NewTextureSource* GetTextureSource() MOZ_OVERRIDE;
-  virtual NewTextureSource* GetTextureSourceOnWhite() MOZ_OVERRIDE;
+  virtual TextureSource* GetTextureSource() MOZ_OVERRIDE;
+  virtual TextureSource* GetTextureSourceOnWhite() MOZ_OVERRIDE;
 
 private:
 
@@ -375,7 +374,7 @@ private:
     nsIntPoint mBufferRotation;
   };
 
-  nsTArray<nsAutoPtr<Request> > mUpdateList;
+  nsTArray<UniquePtr<Request> > mUpdateList;
 
   // Specific to OGL to avoid exposing methods on TextureSource that only
   // have one implementation.

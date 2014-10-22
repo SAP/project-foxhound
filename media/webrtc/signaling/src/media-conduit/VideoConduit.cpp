@@ -597,6 +597,15 @@ WebrtcVideoConduit::ConfigureSendMediaCodec(const VideoCodecConfig* codecConfig)
     // width/height will be overridden on the first frame
     video_codec.width = 320;
     video_codec.height = 240;
+#ifdef MOZ_WEBRTC_OMX
+    if (codecConfig->mType == webrtc::kVideoCodecH264) {
+      video_codec.resolution_divisor = 16;
+    } else {
+      video_codec.resolution_divisor = 1; // We could try using it to handle odd resolutions
+    }
+#else
+    video_codec.resolution_divisor = 1; // We could try using it to handle odd resolutions
+#endif
     video_codec.qpMax = 56;
     video_codec.numberOfSimulcastStreams = 1;
     video_codec.mode = webrtc::kRealtimeVideo;
@@ -1071,10 +1080,6 @@ WebrtcVideoConduit::SendVideoFrame(unsigned char* video_frame,
     return kMediaConduitSessionNotInited;
   }
 
-  // enforce even width/height (paranoia)
-  MOZ_ASSERT(!(width & 1));
-  MOZ_ASSERT(!(height & 1));
-
   if (!SelectSendResolution(width, height))
   {
     return kMediaConduitCaptureError;
@@ -1133,21 +1138,15 @@ WebrtcVideoConduit::ReceivedRTCPPacket(const void *data, int len)
   CSFLogDebug(logTag, " %s Channel %d, Len %d ", __FUNCTION__, mChannel, len);
 
   //Media Engine should be receiving already
-  if(mEngineTransmitting)
+  if(mPtrViENetwork->ReceivedRTCPPacket(mChannel,data,len) == -1)
   {
-    if(mPtrViENetwork->ReceivedRTCPPacket(mChannel,data,len) == -1)
+    int error = mPtrViEBase->LastError();
+    CSFLogError(logTag, "%s RTP Processing Failed %d", __FUNCTION__, error);
+    if(error >= kViERtpRtcpInvalidChannelId && error <= kViERtpRtcpRtcpDisabled)
     {
-      int error = mPtrViEBase->LastError();
-      CSFLogError(logTag, "%s RTP Processing Failed %d", __FUNCTION__, error);
-      if(error >= kViERtpRtcpInvalidChannelId && error <= kViERtpRtcpRtcpDisabled)
-      {
-        return kMediaConduitRTPProcessingFailed;
-      }
-      return kMediaConduitRTPRTCPModuleError;
+      return kMediaConduitRTPProcessingFailed;
     }
-  } else {
-    CSFLogError(logTag, "Error: %s when not receiving", __FUNCTION__);
-    return kMediaConduitSessionNotInited;
+    return kMediaConduitRTPRTCPModuleError;
   }
   return kMediaConduitNoError;
 }
@@ -1307,6 +1306,9 @@ WebrtcVideoConduit::CodecConfigToWebRTCCodec(const VideoCodecConfig* codecInfo,
 
   if (cinst.codecType == webrtc::kVideoCodecH264)
   {
+#ifdef MOZ_WEBRTC_OMX
+    cinst.resolution_divisor = 16;
+#endif
     cinst.codecSpecific.H264.profile = codecInfo->mProfile;
     cinst.codecSpecific.H264.constraints = codecInfo->mConstraints;
     cinst.codecSpecific.H264.level = codecInfo->mLevel;

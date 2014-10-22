@@ -28,7 +28,7 @@ JSONSpewer::indent()
 {
     if (!fp_)
         return;
-    JS_ASSERT(indentLevel_ >= 0);
+    MOZ_ASSERT(indentLevel_ >= 0);
     fprintf(fp_, "\n");
     for (int i = 0; i < indentLevel_; i++)
         fprintf(fp_, "  ");
@@ -335,7 +335,7 @@ JSONSpewer::spewMIR(MIRGraph *mir)
 }
 
 void
-JSONSpewer::spewLIns(LInstruction *ins)
+JSONSpewer::spewLIns(LNode *ins)
 {
     if (!fp_)
         return;
@@ -456,7 +456,7 @@ JSONSpewer::endPass()
 void
 JSONSpewer::endFunction()
 {
-    JS_ASSERT(inFunction_);
+    MOZ_ASSERT(inFunction_);
     endList();
     endObject();
     fflush(fp_);

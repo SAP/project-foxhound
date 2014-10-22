@@ -20,19 +20,22 @@
 #include "BluetoothUtils.h"
 
 #include "jsapi.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/unused.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
+#include "mozilla/dom/ipc/BlobChild.h"
+#include "mozilla/dom/ipc/BlobParent.h"
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 #include "nsIObserverService.h"
 #include "nsISettingsService.h"
 #include "nsISystemMessagesInternal.h"
 #include "nsITimer.h"
 #include "nsServiceManagerUtils.h"
 #include "nsXPCOM.h"
+#include "mozilla/dom/SettingChangeNotificationBinding.h"
 
 #if defined(MOZ_WIDGET_GONK)
 #include "cutils/properties.h"
@@ -344,20 +347,13 @@ BluetoothService::DistributeSignal(const BluetoothSignal& aSignal)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (aSignal.path().EqualsLiteral(KEY_LOCAL_AGENT)) {
-    Notify(aSignal);
-    return;
-  } else if (aSignal.path().EqualsLiteral(KEY_REMOTE_AGENT)) {
-    Notify(aSignal);
-    return;
-  }
-
   BluetoothSignalObserverList* ol;
   if (!mBluetoothSignalObserverTable.Get(aSignal.path(), &ol)) {
     BT_WARNING("No observer registered for path %s",
                NS_ConvertUTF16toUTF8(aSignal.path()).get());
     return;
   }
+
   MOZ_ASSERT(ol->Length());
   ol->Broadcast(aSignal);
 }
@@ -529,60 +525,29 @@ BluetoothService::HandleStartupSettingsCheck(bool aEnable)
 }
 
 nsresult
-BluetoothService::HandleSettingsChanged(const nsAString& aData)
+BluetoothService::HandleSettingsChanged(nsISupports* aSubject)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
   // The string that we're interested in will be a JSON string that looks like:
   //  {"key":"bluetooth.enabled","value":true}
 
-  AutoSafeJSContext cx;
-  if (!cx) {
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  JSContext* cx = jsapi.cx();
+  RootedDictionary<SettingChangeNotification> setting(cx);
+  if (!WrappedJSToDictionary(cx, aSubject, setting)) {
     return NS_OK;
   }
-
-  JS::Rooted<JS::Value> val(cx);
-  if (!JS_ParseJSON(cx, aData.BeginReading(), aData.Length(), &val)) {
-    return JS_ReportPendingException(cx) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  if (!val.isObject()) {
+  if (!setting.mKey.EqualsASCII(BLUETOOTH_DEBUGGING_SETTING)) {
     return NS_OK;
   }
-
-  JS::Rooted<JSObject*> obj(cx, &val.toObject());
-
-  JS::Rooted<JS::Value> key(cx);
-  if (!JS_GetProperty(cx, obj, "key", &key)) {
-    MOZ_ASSERT(!JS_IsExceptionPending(cx));
-    return NS_ERROR_OUT_OF_MEMORY;
+  if (!setting.mValue.isBoolean()) {
+    MOZ_ASSERT(false, "Expecting a boolean for 'bluetooth.debugging.enabled'!");
+    return NS_ERROR_UNEXPECTED;
   }
 
-  if (!key.isString()) {
-    return NS_OK;
-  }
-
-  // Check whether the string is BLUETOOTH_DEBUGGING_SETTING
-  bool match;
-  if (!JS_StringEqualsAscii(cx, key.toString(), BLUETOOTH_DEBUGGING_SETTING, &match)) {
-    MOZ_ASSERT(!JS_IsExceptionPending(cx));
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  if (match) {
-    JS::Rooted<JS::Value> value(cx);
-    if (!JS_GetProperty(cx, obj, "value", &value)) {
-      MOZ_ASSERT(!JS_IsExceptionPending(cx));
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    if (!value.isBoolean()) {
-      MOZ_ASSERT(false, "Expecting a boolean for 'bluetooth.debugging.enabled'!");
-      return NS_ERROR_UNEXPECTED;
-    }
-
-    SWITCH_BT_DEBUG(value.toBoolean());
-  }
+  SWITCH_BT_DEBUG(setting.mValue.toBoolean());
 
   return NS_OK;
 }
@@ -670,15 +635,15 @@ BluetoothService::Get()
   }
 
   // Create new instance, register, return
-  nsRefPtr<BluetoothService> service = BluetoothService::Create();
-  NS_ENSURE_TRUE(service, nullptr);
+  sBluetoothService = BluetoothService::Create();
+  NS_ENSURE_TRUE(sBluetoothService, nullptr);
 
-  if (!service->Init()) {
-    service->Cleanup();
+  if (!sBluetoothService->Init()) {
+    sBluetoothService->Cleanup();
     return nullptr;
   }
 
-  sBluetoothService = service;
+  ClearOnShutdown(&sBluetoothService);
   return sBluetoothService;
 }
 
@@ -693,7 +658,7 @@ BluetoothService::Observe(nsISupports* aSubject, const char* aTopic,
   }
 
   if (!strcmp(aTopic, MOZSETTINGS_CHANGED_ID)) {
-    return HandleSettingsChanged(nsDependentString(aData));
+    return HandleSettingsChanged(aSubject);
   }
 
   if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
@@ -734,53 +699,4 @@ BluetoothService::FireAdapterStateChanged(bool aEnable)
   BluetoothSignal signal(NS_LITERAL_STRING("PropertyChanged"),
                          NS_LITERAL_STRING(KEY_ADAPTER), value);
   DistributeSignal(signal);
-}
-
-void
-BluetoothService::Notify(const BluetoothSignal& aData)
-{
-  nsString type = NS_LITERAL_STRING("bluetooth-pairing-request");
-
-  AutoSafeJSContext cx;
-  JS::Rooted<JSObject*> obj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(),
-                                             JS::NullPtr()));
-  NS_ENSURE_TRUE_VOID(obj);
-
-  if (!SetJsObject(cx, aData.value(), obj)) {
-    BT_WARNING("Failed to set properties of system message!");
-    return;
-  }
-
-  BT_LOGD("[S] %s: %s", __FUNCTION__, NS_ConvertUTF16toUTF8(aData.name()).get());
-
-  if (aData.name().EqualsLiteral("RequestConfirmation")) {
-    MOZ_ASSERT(aData.value().get_ArrayOfBluetoothNamedValue().Length() == 4,
-      "RequestConfirmation: Wrong length of parameters");
-  } else if (aData.name().EqualsLiteral("RequestPinCode")) {
-    MOZ_ASSERT(aData.value().get_ArrayOfBluetoothNamedValue().Length() == 3,
-      "RequestPinCode: Wrong length of parameters");
-  } else if (aData.name().EqualsLiteral("RequestPasskey")) {
-    MOZ_ASSERT(aData.value().get_ArrayOfBluetoothNamedValue().Length() == 3,
-      "RequestPinCode: Wrong length of parameters");
-  } else if (aData.name().EqualsLiteral("Cancel")) {
-    MOZ_ASSERT(aData.value().get_ArrayOfBluetoothNamedValue().Length() == 0,
-      "Cancel: Wrong length of parameters");
-    type.AssignLiteral("bluetooth-cancel");
-  } else if (aData.name().EqualsLiteral(PAIRED_STATUS_CHANGED_ID)) {
-    MOZ_ASSERT(aData.value().get_ArrayOfBluetoothNamedValue().Length() == 1,
-      "pairedstatuschanged: Wrong length of parameters");
-    type.AssignLiteral("bluetooth-pairedstatuschanged");
-  } else {
-    BT_WARNING("Not handling service signal: %s",
-               NS_ConvertUTF16toUTF8(aData.name()).get());
-    return;
-  }
-
-  nsCOMPtr<nsISystemMessagesInternal> systemMessenger =
-    do_GetService("@mozilla.org/system-message-internal;1");
-  NS_ENSURE_TRUE_VOID(systemMessenger);
-
-  JS::Rooted<JS::Value> value(cx, JS::ObjectValue(*obj));
-  systemMessenger->BroadcastMessage(type, value,
-                                    JS::UndefinedHandleValue);
 }

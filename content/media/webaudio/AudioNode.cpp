@@ -65,13 +65,13 @@ AudioNode::AudioNode(AudioContext* aContext,
   , mChannelCountMode(aChannelCountMode)
   , mChannelInterpretation(aChannelInterpretation)
   , mId(gId++)
+  , mPassThrough(false)
 #ifdef DEBUG
   , mDemiseNotified(false)
 #endif
 {
   MOZ_ASSERT(aContext);
   DOMEventTargetHelper::BindToOwner(aContext->GetParentObject());
-  SetIsDOMBinding();
   aContext->UpdateNodeCount(1);
 }
 
@@ -414,6 +414,23 @@ void
 AudioNode::RemoveOutputParam(AudioParam* aParam)
 {
   mOutputParams.RemoveElement(aParam);
+}
+
+bool
+AudioNode::PassThrough() const
+{
+  MOZ_ASSERT(NumberOfInputs() <= 1 && NumberOfOutputs() == 1);
+  return mPassThrough;
+}
+
+void
+AudioNode::SetPassThrough(bool aPassThrough)
+{
+  MOZ_ASSERT(NumberOfInputs() <= 1 && NumberOfOutputs() == 1);
+  mPassThrough = aPassThrough;
+  AudioNodeStream* ns = static_cast<AudioNodeStream*>(mStream.get());
+  MOZ_ASSERT(ns, "How come we don't have a stream here?");
+  ns->SetPassThrough(mPassThrough);
 }
 
 }

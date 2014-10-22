@@ -40,11 +40,11 @@ class SVGAnimationElement;
 // a compound document. These time containers can be paused individually or
 // here, at the document level.
 //
-class nsSMILAnimationController : public nsSMILTimeContainer,
-                                  public nsARefreshObserver
+class nsSMILAnimationController MOZ_FINAL : public nsSMILTimeContainer,
+                                            public nsARefreshObserver
 {
 public:
-  nsSMILAnimationController(nsIDocument* aDoc);
+  explicit nsSMILAnimationController(nsIDocument* aDoc);
 
   // Clears mDocument pointer. (Called by our nsIDocument when it's going away)
   void Disconnect();

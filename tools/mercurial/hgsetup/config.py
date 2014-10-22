@@ -5,6 +5,7 @@
 from __future__ import unicode_literals
 
 from configobj import ConfigObj
+import codecs
 import re
 import os
 
@@ -14,6 +15,10 @@ HOST_FINGERPRINTS = {
     'bugzilla.mozilla.org': '47:13:a2:14:0c:46:45:53:12:0d:e5:36:16:a5:60:26:3e:da:3a:60',
     'hg.mozilla.org': 'af:27:b9:34:47:4e:e5:98:01:f6:83:2b:51:c9:aa:d8:df:fb:1a:27',
 }
+
+
+class HgIncludeException(Exception):
+    pass
 
 
 class MercurialConfig(object):
@@ -34,6 +39,16 @@ class MercurialConfig(object):
             self.config_path = infile
         else:
             infile = None
+
+        # Mercurial configuration files allow an %include directive to include
+        # other files, this is not supported by ConfigObj, so throw a useful
+        # error saying this.
+        if os.path.exists(infile):
+            with codecs.open(infile, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.startswith('%include'):
+                        raise HgIncludeException(
+                            '%include directive is not supported by MercurialConfig')
 
         # write_empty_values is necessary to prevent built-in extensions (which
         # have no value) from being dropped on write.

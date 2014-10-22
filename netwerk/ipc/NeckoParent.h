@@ -7,6 +7,7 @@
 
 #include "mozilla/net/PNeckoParent.h"
 #include "mozilla/net/NeckoCommon.h"
+#include "mozilla/net/OfflineObserver.h"
 
 #ifndef mozilla_net_NeckoParent_h
 #define mozilla_net_NeckoParent_h
@@ -22,8 +23,9 @@ enum PBOverrideStatus {
 };
 
 // Header file contents
-class NeckoParent :
-  public PNeckoParent
+class NeckoParent
+  : public PNeckoParent
+  , public DisconnectableParent
 {
 public:
   NeckoParent();
@@ -51,7 +53,8 @@ public:
                            nsCOMPtr<nsILoadContext> &aResult);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
-
+  virtual nsresult OfflineNotification(nsISupports *) MOZ_OVERRIDE;
+  virtual uint32_t GetAppId() MOZ_OVERRIDE { return NECKO_UNKNOWN_APP_ID; }
   virtual void
   CloneManagees(ProtocolBase* aSource,
               mozilla::ipc::ProtocolCloneContext* aCtx) MOZ_OVERRIDE;
@@ -153,13 +156,8 @@ protected:
                                                const uint16_t& aBacklog,
                                                const nsString& aBinaryType) MOZ_OVERRIDE;
   virtual bool DeallocPTCPServerSocketParent(PTCPServerSocketParent*) MOZ_OVERRIDE;
-  virtual PUDPSocketParent* AllocPUDPSocketParent(const nsCString& aHost,
-                                                  const uint16_t& aPort,
-                                                  const nsCString& aFilter) MOZ_OVERRIDE;
-  virtual bool RecvPUDPSocketConstructor(PUDPSocketParent*,
-                                         const nsCString& aHost,
-                                         const uint16_t& aPort,
-                                         const nsCString& aFilter) MOZ_OVERRIDE;
+  virtual PUDPSocketParent* AllocPUDPSocketParent(const nsCString& aFilter) MOZ_OVERRIDE;
+  virtual bool RecvPUDPSocketConstructor(PUDPSocketParent*, const nsCString& aFilter) MOZ_OVERRIDE;
   virtual bool DeallocPUDPSocketParent(PUDPSocketParent*) MOZ_OVERRIDE;
   virtual PDNSRequestParent* AllocPDNSRequestParent(const nsCString& aHost,
                                                     const uint32_t& aFlags) MOZ_OVERRIDE;
@@ -206,6 +204,7 @@ protected:
 private:
   nsCString mCoreAppsBasePath;
   nsCString mWebAppsBasePath;
+  nsRefPtr<OfflineObserver> mObserver;
 };
 
 } // namespace net

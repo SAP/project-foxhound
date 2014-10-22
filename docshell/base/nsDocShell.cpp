@@ -15,6 +15,8 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -23,11 +25,6 @@
 #include "mozilla/unused.h"
 #include "mozilla/VisualEventTracer.h"
 #include "URIUtils.h"
-
-#ifdef MOZ_LOGGING
-// so we can get logging even in release builds (but only for some things)
-#define FORCE_PR_LOG 1
-#endif
 
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
@@ -44,6 +41,7 @@
 #include "nsRect.h"
 #include "prenv.h"
 #include "nsIDOMWindow.h"
+#include "nsIGlobalObject.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsPoint.h"
 #include "nsIObserverService.h"
@@ -87,6 +85,10 @@
 #include "nsDocShellEnumerator.h"
 #include "nsSHistory.h"
 #include "nsDocShellEditorData.h"
+#include "GeckoProfiler.h"
+#ifdef MOZ_ENABLE_PROFILER_SPS
+#include "ProfilerMarkers.h"
+#endif
 
 // Helper Classes
 #include "nsError.h"
@@ -105,6 +107,7 @@
 #include "nsIWindowWatcher.h"
 #include "nsIPromptFactory.h"
 #include "nsITransportSecurityInfo.h"
+#include "nsINode.h"
 #include "nsINSSErrorsService.h"
 #include "nsIApplicationCacheChannel.h"
 #include "nsIApplicationCacheContainer.h"
@@ -165,8 +168,6 @@
 #endif
 
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
-#include "nsIChannelPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsILoadInfo.h"
 #include "nsSandboxFlags.h"
@@ -191,6 +192,12 @@
 #include "nsIWebBrowserFind.h"
 #include "nsIWidget.h"
 #include "mozilla/dom/EncodingUtils.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/URLSearchParams.h"
+
+#ifdef MOZ_TOOLKIT_SEARCH
+#include "nsIBrowserSearchService.h"
+#endif
 
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
@@ -843,6 +850,7 @@ nsDocShell::nsDocShell():
 #endif
     mAffectPrivateSessionLifetime(true),
     mInvisible(false),
+    mHasLoadedNonBlankURI(false),
     mDefaultLoadFlags(nsIRequest::LOAD_NORMAL),
     mFrameType(eFrameTypeRegular),
     mOwnOrContainingAppId(nsIScriptSecurityManager::UNKNOWN_APP_ID),
@@ -875,7 +883,7 @@ nsDocShell::nsDocShell():
                     (void*) this,
                     gNumberOfDocShells,
                     getpid(),
-                    SafeCast<unsigned long long>(mHistoryID));
+                    AssertedCast<unsigned long long>(mHistoryID));
   }
 #endif
 }
@@ -907,7 +915,7 @@ nsDocShell::~nsDocShell()
                       (void*) this,
                       gNumberOfDocShells,
                       getpid(),
-                      SafeCast<unsigned long long>(mHistoryID));
+                      AssertedCast<unsigned long long>(mHistoryID));
     }
 #endif
 }
@@ -1008,6 +1016,7 @@ NS_IMETHODIMP nsDocShell::GetInterface(const nsIID & aIID, void **aSink)
         *aSink = mContentListener;
     }
     else if ((aIID.Equals(NS_GET_IID(nsIScriptGlobalObject)) ||
+              aIID.Equals(NS_GET_IID(nsIGlobalObject)) ||
               aIID.Equals(NS_GET_IID(nsPIDOMWindow)) ||
               aIID.Equals(NS_GET_IID(nsIDOMWindow)) ||
               aIID.Equals(NS_GET_IID(nsIDOMWindowInternal))) &&
@@ -1319,8 +1328,12 @@ nsDocShell::LoadURI(nsIURI * aURI,
     NS_PRECONDITION((aLoadFlags & 0xf) == 0, "Should not have these flags set");
     
     // Note: we allow loads to get through here even if mFiredUnloadEvent is
-    // true; that case will get handled in LoadInternal or LoadHistoryEntry.
-    if (IsPrintingOrPP()) {
+    // true; that case will get handled in LoadInternal or LoadHistoryEntry,
+    // so we pass false as the second parameter to IsNavigationAllowed.
+    // However, we don't allow the page to change location *in the middle of*
+    // firing beforeunload, so we do need to check if *beforeunload* is currently
+    // firing, so we call IsNavigationAllowed rather than just IsPrintingOrPP.
+    if (!IsNavigationAllowed(true, false)) {
       return NS_OK; // JS may not handle returning of an error code
     }
     nsCOMPtr<nsIURI> referrer;
@@ -1642,12 +1655,25 @@ nsDocShell::LoadStream(nsIInputStream *aStream, nsIURI * aURI,
 
     mLoadType = loadType;
 
+    nsCOMPtr<nsISupports> owner;
+    aLoadInfo->GetOwner(getter_AddRefs(owner));
+    nsCOMPtr<nsIPrincipal> requestingPrincipal = do_QueryInterface(owner);
+    if (!requestingPrincipal) {
+      requestingPrincipal = nsContentUtils::GetSystemPrincipal();
+    }
+
     // build up a channel for this stream.
     nsCOMPtr<nsIChannel> channel;
-    NS_ENSURE_SUCCESS(NS_NewInputStreamChannel
-                      (getter_AddRefs(channel), uri, aStream,
-                       aContentType, aContentCharset),
-                      NS_ERROR_FAILURE);
+    nsresult rv =
+      NS_NewInputStreamChannel(getter_AddRefs(channel),
+                               uri,
+                               aStream,
+                               requestingPrincipal,
+                               nsILoadInfo::SEC_NORMAL,
+                               nsIContentPolicy::TYPE_OTHER,
+                               aContentType,
+                               aContentCharset);
+    NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
     nsCOMPtr<nsIURILoader>
         uriLoader(do_GetService(NS_URI_LOADER_CONTRACTID));
@@ -1915,6 +1941,10 @@ nsDocShell::SetCurrentURI(nsIURI *aURI, nsIRequest *aRequest,
 
     mCurrentURI = NS_TryToMakeImmutable(aURI);
     
+    if (!NS_IsAboutBlank(mCurrentURI)) {
+      mHasLoadedNonBlankURI = true;
+    }
+
     bool isRoot = false;   // Is this the root docshell
     bool isSubFrame = false;  // Is this a subframe navigation?
 
@@ -1929,6 +1959,24 @@ nsDocShell::SetCurrentURI(nsIURI *aURI, nsIRequest *aRequest,
     if (mLSHE) {
         mLSHE->GetIsSubFrame(&isSubFrame);
     }
+
+    // nsDocShell owns a URLSearchParams that is used by
+    // window.location.searchParams to be in sync with the current location.
+    if (!mURLSearchParams) {
+      mURLSearchParams = new URLSearchParams();
+    }
+
+    nsAutoCString search;
+
+    nsCOMPtr<nsIURL> url(do_QueryInterface(mCurrentURI));
+    if (url) {
+      nsresult rv = url->GetQuery(search);
+      if (NS_FAILED(rv)) {
+        NS_WARNING("Failed to get the query from a nsIURL.");
+      }
+    }
+
+    mURLSearchParams->ParseInput(search, nullptr);
 
     if (!isSubFrame && !isRoot) {
       /* 
@@ -2132,6 +2180,22 @@ nsDocShell::GetHasMixedDisplayContentBlocked(bool* aHasMixedDisplayContentBlocke
 }
 
 NS_IMETHODIMP
+nsDocShell::GetHasTrackingContentBlocked(bool* aHasTrackingContentBlocked)
+{
+    nsCOMPtr<nsIDocument> doc(GetDocument());
+    *aHasTrackingContentBlocked = doc && doc->GetHasTrackingContentBlocked();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocShell::GetHasTrackingContentLoaded(bool* aHasTrackingContentLoaded)
+{
+    nsCOMPtr<nsIDocument> doc(GetDocument());
+    *aHasTrackingContentLoaded = doc && doc->GetHasTrackingContentLoaded();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::GetAllowPlugins(bool * aAllowPlugins)
 {
     NS_ENSURE_ARG_POINTER(aAllowPlugins);
@@ -2227,6 +2291,15 @@ nsDocShell::SetPrivateBrowsing(bool aUsePrivateBrowsing)
             }
         }
     }
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocShell::GetHasLoadedNonBlankURI(bool* aResult)
+{
+    NS_ENSURE_ARG_POINTER(aResult);
+
+    *aResult = mHasLoadedNonBlankURI;
     return NS_OK;
 }
 
@@ -2750,6 +2823,175 @@ nsDocShell::HistoryTransactionRemoved(int32_t aIndex)
     return NS_OK;
 }
 
+unsigned long nsDocShell::gProfileTimelineRecordingsCount = 0;
+
+NS_IMETHODIMP
+nsDocShell::SetRecordProfileTimelineMarkers(bool aValue)
+{
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  bool currentValue;
+  GetRecordProfileTimelineMarkers(&currentValue);
+  if (currentValue != aValue) {
+    if (aValue) {
+      ++gProfileTimelineRecordingsCount;
+      mProfileTimelineRecording = true;
+    } else {
+      --gProfileTimelineRecordingsCount;
+      mProfileTimelineRecording = false;
+      ClearProfileTimelineMarkers();
+    }
+  }
+
+  return NS_OK;
+#else
+  return NS_ERROR_FAILURE;
+#endif
+}
+
+NS_IMETHODIMP
+nsDocShell::GetRecordProfileTimelineMarkers(bool* aValue)
+{
+  *aValue = mProfileTimelineRecording;
+  return NS_OK;
+}
+
+nsresult
+nsDocShell::PopProfileTimelineMarkers(JSContext* aCx,
+                          JS::MutableHandle<JS::Value> aProfileTimelineMarkers)
+{
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  // Looping over all markers gathered so far at the docShell level, whenever a
+  // START marker is found, look for the corresponding END marker and build a
+  // {name,start,end} JS object.
+  // Paint markers are different because paint is handled at root docShell level
+  // in the information that a paint was done is then stored at each sub
+  // docShell level but we can only be sure that a paint did happen in a
+  // docShell if an Layer marker type was recorded too.
+
+  nsTArray<mozilla::dom::ProfileTimelineMarker> profileTimelineMarkers;
+
+  // If we see an unpaired START, we keep it around for the next call
+  // to PopProfileTimelineMarkers.  We store the kept START objects in
+  // this array.
+  decltype(mProfileTimelineMarkers) keptMarkers;
+
+  for (uint32_t i = 0; i < mProfileTimelineMarkers.Length(); ++i) {
+    ProfilerMarkerTracing* startPayload = static_cast<ProfilerMarkerTracing*>(
+      mProfileTimelineMarkers[i]->mPayload);
+    const char* startMarkerName = mProfileTimelineMarkers[i]->mName;
+
+    bool hasSeenPaintedLayer = false;
+
+    if (startPayload->GetMetaData() == TRACING_INTERVAL_START) {
+      bool hasSeenEnd = false;
+
+      // The assumption is that the devtools timeline flushes markers frequently
+      // enough for the amount of markers to always be small enough that the
+      // nested for loop isn't going to be a performance problem.
+      for (uint32_t j = i + 1; j < mProfileTimelineMarkers.Length(); ++j) {
+        ProfilerMarkerTracing* endPayload = static_cast<ProfilerMarkerTracing*>(
+          mProfileTimelineMarkers[j]->mPayload);
+        const char* endMarkerName = mProfileTimelineMarkers[j]->mName;
+
+        // Look for Layer markers to stream out paint markers.
+        if (strcmp(endMarkerName, "Layer") == 0) {
+          hasSeenPaintedLayer = true;
+        }
+
+        bool isSameMarkerType = strcmp(startMarkerName, endMarkerName) == 0;
+        bool isPaint = strcmp(startMarkerName, "Paint") == 0;
+
+        // Pair start and end markers.
+        if (endPayload->GetMetaData() == TRACING_INTERVAL_END && isSameMarkerType) {
+          // But ignore paint start/end if no layer has been painted.
+          if (!isPaint || (isPaint && hasSeenPaintedLayer)) {
+            mozilla::dom::ProfileTimelineMarker marker;
+            marker.mName = NS_ConvertUTF8toUTF16(startMarkerName);
+            marker.mStart = mProfileTimelineMarkers[i]->mTime;
+            marker.mEnd = mProfileTimelineMarkers[j]->mTime;
+            profileTimelineMarkers.AppendElement(marker);
+          }
+
+          // We want the start to be dropped either way.
+          hasSeenEnd = true;
+
+          break;
+        }
+      }
+
+      // If we did not see the corresponding END, keep the START.
+      if (!hasSeenEnd) {
+        keptMarkers.AppendElement(mProfileTimelineMarkers[i]);
+        mProfileTimelineMarkers.RemoveElementAt(i);
+        --i;
+      }
+    }
+  }
+
+  ToJSValue(aCx, profileTimelineMarkers, aProfileTimelineMarkers);
+
+  ClearProfileTimelineMarkers();
+  mProfileTimelineMarkers.SwapElements(keptMarkers);
+
+  return NS_OK;
+#else
+  return NS_ERROR_FAILURE;
+#endif
+}
+
+nsresult
+nsDocShell::Now(DOMHighResTimeStamp* aWhen)
+{
+  bool ignore;
+  *aWhen = (TimeStamp::Now() - TimeStamp::ProcessCreation(ignore)).ToMilliseconds();
+  return NS_OK;
+}
+
+void
+nsDocShell::AddProfileTimelineMarker(const char* aName,
+                                     TracingMetadata aMetaData)
+{
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  if (mProfileTimelineRecording) {
+    DOMHighResTimeStamp delta;
+    Now(&delta);
+    ProfilerMarkerTracing* payload = new ProfilerMarkerTracing("Timeline",
+                                                               aMetaData);
+    mProfileTimelineMarkers.AppendElement(
+      new InternalProfileTimelineMarker(aName, payload, delta));
+  }
+#endif
+}
+
+void
+nsDocShell::AddProfileTimelineMarker(const char* aName,
+                                     ProfilerBacktrace* aCause,
+                                     TracingMetadata aMetaData)
+{
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  if (mProfileTimelineRecording) {
+    DOMHighResTimeStamp delta;
+    Now(&delta);
+    ProfilerMarkerTracing* payload = new ProfilerMarkerTracing("Timeline",
+                                                               aMetaData,
+                                                               aCause);
+    mProfileTimelineMarkers.AppendElement(
+      new InternalProfileTimelineMarker(aName, payload, delta));
+  }
+#endif
+}
+
+void
+nsDocShell::ClearProfileTimelineMarkers()
+{
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  for (uint32_t i = 0; i < mProfileTimelineMarkers.Length(); ++i) {
+    delete mProfileTimelineMarkers[i];
+  }
+  mProfileTimelineMarkers.Clear();
+#endif
+}
+
 nsIDOMStorageManager*
 nsDocShell::TopSessionStorageManager()
 {
@@ -2857,6 +3099,36 @@ nsDocShell::RemoveWeakScrollObserver(nsIScrollObserver* aObserver)
 {
     nsWeakPtr obs = do_GetWeakReference(aObserver);
     return mScrollObservers.RemoveElement(obs) ? NS_OK : NS_ERROR_FAILURE;
+}
+
+void
+nsDocShell::NotifyAsyncPanZoomStarted(const mozilla::CSSIntPoint aScrollPos)
+{
+    nsTObserverArray<nsWeakPtr>::ForwardIterator iter(mScrollObservers);
+    while (iter.HasMore()) {
+        nsWeakPtr ref = iter.GetNext();
+        nsCOMPtr<nsIScrollObserver> obs = do_QueryReferent(ref);
+        if (obs) {
+            obs->AsyncPanZoomStarted(aScrollPos);
+        } else {
+            mScrollObservers.RemoveElement(ref);
+        }
+    }
+}
+
+void
+nsDocShell::NotifyAsyncPanZoomStopped(const mozilla::CSSIntPoint aScrollPos)
+{
+    nsTObserverArray<nsWeakPtr>::ForwardIterator iter(mScrollObservers);
+    while (iter.HasMore()) {
+        nsWeakPtr ref = iter.GetNext();
+        nsCOMPtr<nsIScrollObserver> obs = do_QueryReferent(ref);
+        if (obs) {
+            obs->AsyncPanZoomStopped(aScrollPos);
+        } else {
+            mScrollObservers.RemoveElement(ref);
+        }
+    }
 }
 
 NS_IMETHODIMP
@@ -3939,7 +4211,7 @@ nsDocShell::AddChildSHEntry(nsISHEntry * aCloneRef, nsISHEntry * aNewEntry,
 {
     nsresult rv;
 
-    if (mLSHE && loadType != LOAD_PUSHSTATE) {
+    if (mLSHE && loadType != LOAD_PUSHSTATE && !aCloneRef) {
         /* You get here if you are currently building a 
          * hierarchy ie.,you just visited a frameset page
          */
@@ -4152,22 +4424,22 @@ nsDocShell::GetWindow()
 NS_IMETHODIMP
 nsDocShell::SetDeviceSizeIsPageSize(bool aValue)
 {
-    if (mDeviceSizeIsPageSize != aValue) {
-      mDeviceSizeIsPageSize = aValue;
-      nsRefPtr<nsPresContext> presContext;
-      GetPresContext(getter_AddRefs(presContext));
-      if (presContext) {
-          presContext->MediaFeatureValuesChanged(presContext->eAlwaysRebuildStyle);
-      }
+  if (mDeviceSizeIsPageSize != aValue) {
+    mDeviceSizeIsPageSize = aValue;
+    nsRefPtr<nsPresContext> presContext;
+    GetPresContext(getter_AddRefs(presContext));
+    if (presContext) {
+      presContext->MediaFeatureValuesChanged(nsRestyleHint(0));
     }
-    return NS_OK;
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDocShell::GetDeviceSizeIsPageSize(bool* aValue)
 {
-    *aValue = mDeviceSizeIsPageSize;
-    return NS_OK;
+  *aValue = mDeviceSizeIsPageSize;
+  return NS_OK;
 }
 
 void
@@ -4212,9 +4484,11 @@ nsDocShell::IsPrintingOrPP(bool aDisplayErrorDialog)
 }
 
 bool
-nsDocShell::IsNavigationAllowed(bool aDisplayPrintErrorDialog)
+nsDocShell::IsNavigationAllowed(bool aDisplayPrintErrorDialog,
+                                bool aCheckIfUnloadFired)
 {
-  bool isAllowed = !IsPrintingOrPP(aDisplayPrintErrorDialog) && !mFiredUnloadEvent;
+  bool isAllowed = !IsPrintingOrPP(aDisplayPrintErrorDialog) &&
+                   (!aCheckIfUnloadFired || !mFiredUnloadEvent);
   if (!isAllowed) {
     return false;
   }
@@ -4355,6 +4629,7 @@ nsDocShell::LoadURIWithBase(const char16_t * aURI,
         aLoadFlags &= ~LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
     }
     
+    nsCOMPtr<nsIURIFixupInfo> fixupInfo;
     if (sURIFixup) {
         // Call the fixup object.  This will clobber the rv from NS_NewURI
         // above, but that's fine with us.  Note that we need to do this even
@@ -4368,7 +4643,6 @@ nsDocShell::LoadURIWithBase(const char16_t * aURI,
           fixupFlags |= nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS;
         }
         nsCOMPtr<nsIInputStream> fixupStream;
-        nsCOMPtr<nsIURIFixupInfo> fixupInfo;
         rv = sURIFixup->GetFixupURIInfo(uriString, fixupFlags,
                                         getter_AddRefs(fixupStream),
                                         getter_AddRefs(fixupInfo));
@@ -4379,7 +4653,7 @@ nsDocShell::LoadURIWithBase(const char16_t * aURI,
         }
 
         if (fixupStream) {
-            // CreateFixupURI only returns a post data stream if it succeeded
+            // GetFixupURIInfo only returns a post data stream if it succeeded
             // and changed the URI, in which case we should override the
             // passed-in post data.
             postStream = fixupStream;
@@ -4437,6 +4711,13 @@ nsDocShell::LoadURIWithBase(const char16_t * aURI,
     loadInfo->SetReferrer(aReferringURI);
     loadInfo->SetHeadersStream(aHeaderStream);
     loadInfo->SetBaseURI(aBaseURI);
+
+    if (fixupInfo) {
+        nsAutoString searchProvider, keyword;
+        fixupInfo->GetKeywordProviderName(searchProvider);
+        fixupInfo->GetKeywordAsSent(keyword);
+        MaybeNotifyKeywordSearchLoading(searchProvider, keyword);
+    }
 
     rv = LoadURI(uri, loadInfo, extraFlags, true);
 
@@ -4584,6 +4865,13 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
                   cc->SendIsSecureURI(type, uri, flags, &isStsHost);
                 }
 
+                if (Preferences::GetBool(
+                        "browser.xul.error_pages.expert_bad_cert", false)) {
+                    cssClass.AssignLiteral("expertBadCert");
+                }
+
+                // HSTS takes precedence over the expert bad cert pref. We
+                // never want to show the "Add Exception" button for HSTS sites.
                 uint32_t bucketId;
                 if (isStsHost) {
                   cssClass.AssignLiteral("badStsCert");
@@ -4592,12 +4880,6 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
                   bucketId = nsISecurityUITelemetry::WARNING_BAD_CERT_TOP_STS;
                 } else {
                   bucketId = nsISecurityUITelemetry::WARNING_BAD_CERT_TOP;
-                }
-
-
-                if (Preferences::GetBool(
-                        "browser.xul.error_pages.expert_bad_cert", false)) {
-                    cssClass.AssignLiteral("expertBadCert");
                 }
 
                 // See if an alternate cert error page is registered
@@ -5286,6 +5568,9 @@ nsDocShell::Destroy()
     
     mIsBeingDestroyed = true;
 
+    // Make sure we don't record profile timeline markers anymore
+    SetRecordProfileTimelineMarkers(false);
+
     // Remove our pref observers
     if (mObserveErrorPages) {
         mObserveErrorPages = false;
@@ -5345,6 +5630,11 @@ nsDocShell::Destroy()
     
     mParentWidget = nullptr;
     mCurrentURI = nullptr;
+
+    if (mURLSearchParams) {
+      mURLSearchParams->RemoveObservers();
+      mURLSearchParams = nullptr;
+    }
 
     if (mScriptGlobal) {
         mScriptGlobal->DetachFromDocShell();
@@ -6160,6 +6450,35 @@ nsDocShell::ForceRefreshURIFromTimer(nsIURI * aURI,
     return ForceRefreshURI(aURI, aDelay, aMetaRefresh);
 }
 
+bool
+nsDocShell::DoAppRedirectIfNeeded(nsIURI * aURI,
+                                  nsIDocShellLoadInfo * aLoadInfo,
+                                  bool aFirstParty)
+{
+  uint32_t appId;
+  nsresult rv = GetAppId(&appId);
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  if (appId != nsIScriptSecurityManager::NO_APP_ID &&
+      appId != nsIScriptSecurityManager::UNKNOWN_APP_ID) {
+    nsCOMPtr<nsIAppsService> appsService =
+      do_GetService(APPS_SERVICE_CONTRACTID);
+    NS_ASSERTION(appsService, "No AppsService available");
+    nsCOMPtr<nsIURI> redirect;
+    rv = appsService->GetRedirect(appId, aURI, getter_AddRefs(redirect));
+    if (NS_SUCCEEDED(rv) && redirect) {
+      rv = LoadURI(redirect, aLoadInfo, nsIWebNavigation::LOAD_FLAGS_NONE, aFirstParty);
+      if (NS_SUCCEEDED(rv)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 NS_IMETHODIMP
 nsDocShell::ForceRefreshURI(nsIURI * aURI,
                             int32_t aDelay, 
@@ -6211,6 +6530,10 @@ nsDocShell::ForceRefreshURI(nsIURI * aURI,
     }
     else {
         loadInfo->SetLoadType(nsIDocShellLoadInfo::loadRefresh);
+    }
+
+    if (DoAppRedirectIfNeeded(aURI, loadInfo, true)) {
+      return NS_OK;
     }
 
     /*
@@ -6474,7 +6797,7 @@ NS_IMETHODIMP nsDocShell::SetupRefreshURI(nsIChannel * aChannel)
             NS_ENSURE_SUCCESS(rv, rv);
 
             nsCOMPtr<nsIPrincipal> principal;
-            rv = secMan->GetChannelPrincipal(aChannel, getter_AddRefs(principal));
+            rv = secMan->GetChannelResultPrincipal(aChannel, getter_AddRefs(principal));
             NS_ENSURE_SUCCESS(rv, rv);
 
             SetupReferrerFromChannel(aChannel);
@@ -6630,6 +6953,7 @@ nsDocShell::Embed(nsIContentViewer * aContentViewer,
     PersistLayoutHistoryState();
 
     nsresult rv = SetupNewViewer(aContentViewer);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     // If we are loading a wyciwyg url from history, change the base URI for 
     // the document to the original http url that created the document.write().
@@ -6845,27 +7169,8 @@ nsDocShell::OnRedirectStateChange(nsIChannel* aOldChannel,
         return;
     }
 
-    // Check if we have a redirect registered for this url.
-    uint32_t appId;
-    nsresult rv = GetAppId(&appId);
-    if (NS_FAILED(rv)) {
+    if (DoAppRedirectIfNeeded(newURI, nullptr, false)) {
       return;
-    }
-
-    if (appId != nsIScriptSecurityManager::NO_APP_ID &&
-        appId != nsIScriptSecurityManager::UNKNOWN_APP_ID) {
-      nsCOMPtr<nsIAppsService> appsService =
-        do_GetService(APPS_SERVICE_CONTRACTID);
-      NS_ASSERTION(appsService, "No AppsService available");
-      nsCOMPtr<nsIURI> redirect;
-      rv = appsService->GetRedirect(appId, newURI, getter_AddRefs(redirect));
-      if (NS_SUCCEEDED(rv) && redirect) {
-        aNewChannel->Cancel(NS_BINDING_ABORTED);
-        rv = LoadURI(redirect, nullptr, 0, false);
-        if (NS_SUCCEEDED(rv)) {
-          return;
-        }
-      }
     }
 
     // Below a URI visit is saved (see AddURIVisit method doc).
@@ -7082,10 +7387,9 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
         }
 
         // Handle iframe document not loading error because source was
-        // a tracking URL. (Safebrowsing) We make a note of this iframe
-        // node by including it in a dedicated array of blocked tracking
-        // nodes under its parent document. (document of parent window of
-        // blocked document)
+        // a tracking URL. We make a note of this iframe node by including
+        // it in a dedicated array of blocked tracking nodes under its parent
+        // document. (document of parent window of blocked document)
         if (isTopFrame == false && aStatus == NS_ERROR_TRACKING_URI) {
             // frameElement is our nsIContent to be annotated
             nsCOMPtr<nsIDOMElement> frameElement;
@@ -7131,6 +7435,7 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
             //
             // First try keyword fixup
             //
+            nsAutoString keywordProviderName, keywordAsSent;
             if (aStatus == NS_ERROR_UNKNOWN_HOST && mAllowKeywordFixup) {
                 bool keywordsEnabled =
                     Preferences::GetBool("keyword.enabled", false);
@@ -7161,11 +7466,12 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
                 }
 
                 if (keywordsEnabled && (kNotFound == dotLoc)) {
+                    nsCOMPtr<nsIURIFixupInfo> info;
                     // only send non-qualified hosts to the keyword server
                     if (!mOriginalUriString.IsEmpty()) {
                         sURIFixup->KeywordToURI(mOriginalUriString,
                                                 getter_AddRefs(newPostData),
-                                                getter_AddRefs(newURI));
+                                                getter_AddRefs(info));
                     }
                     else {
                         //
@@ -7187,12 +7493,18 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
                             NS_SUCCEEDED(idnSrv->ConvertACEtoUTF8(host, utf8Host))) {
                             sURIFixup->KeywordToURI(utf8Host,
                                                     getter_AddRefs(newPostData),
-                                                    getter_AddRefs(newURI));
+                                                    getter_AddRefs(info));
                         } else {
                             sURIFixup->KeywordToURI(host,
                                                     getter_AddRefs(newPostData),
-                                                    getter_AddRefs(newURI));
+                                                    getter_AddRefs(info));
                         }
+                    }
+
+                    info->GetPreferredURI(getter_AddRefs(newURI));
+                    if (newURI) {
+                        info->GetKeywordAsSent(keywordAsSent);
+                        info->GetKeywordProviderName(keywordProviderName);
                     }
                 } // end keywordsEnabled
             }
@@ -7226,6 +7538,8 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
                 if (doCreateAlternate) {
                     newURI = nullptr;
                     newPostData = nullptr;
+                    keywordProviderName.Truncate();
+                    keywordAsSent.Truncate();
                     sURIFixup->CreateFixupURI(oldSpec,
                       nsIURIFixup::FIXUP_FLAGS_MAKE_ALTERNATE_URI,
                                               getter_AddRefs(newPostData),
@@ -7245,6 +7559,10 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
                     nsAutoCString newSpec;
                     newURI->GetSpec(newSpec);
                     NS_ConvertUTF8toUTF16 newSpecW(newSpec);
+
+                    // This notification is meant for Firefox Health Report so it
+                    // can increment counts from the search engine
+                    MaybeNotifyKeywordSearchLoading(keywordProviderName, keywordAsSent);
 
                     return LoadURI(newSpecW.get(),  // URI string
                                    LOAD_FLAGS_NONE, // Load flags
@@ -7327,6 +7645,8 @@ nsDocShell::EnsureContentViewer()
 
     nsresult rv = CreateAboutBlankContentViewer(principal, baseURI);
 
+    NS_ENSURE_STATE(mContentViewer);
+
     if (NS_SUCCEEDED(rv)) {
         nsCOMPtr<nsIDocument> doc(GetDocument());
         NS_ASSERTION(doc,
@@ -7355,20 +7675,24 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
   if (mCreatingDocument)
     return NS_ERROR_FAILURE;
 
+  AutoRestore<bool> creatingDocument(mCreatingDocument);
   mCreatingDocument = true;
 
   // mContentViewer->PermitUnload may release |this| docshell.
   nsCOMPtr<nsIDocShell> kungFuDeathGrip(this);
   
+  // Make sure timing is created.  But first record whether we had it
+  // already, so we don't clobber the timing for an in-progress load.
+  bool hadTiming = mTiming;
+  MaybeInitTiming();
   if (mContentViewer) {
     // We've got a content viewer already. Make sure the user
     // permits us to discard the current document and replace it
     // with about:blank. And also ensure we fire the unload events
     // in the current document.
 
-    // Make sure timing is created. Unload gets fired first for
+    // Unload gets fired first for
     // document loaded from the session history.
-    MaybeInitTiming();
     mTiming->NotifyBeforeUnload();
 
     bool okToUnload;
@@ -7415,7 +7739,8 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
   if (docFactory) {
     nsCOMPtr<nsIPrincipal> principal;
     if (mSandboxFlags & SANDBOXED_ORIGIN) {
-      principal = do_CreateInstance("@mozilla.org/nullprincipal;1");
+      principal = nsNullPrincipal::CreateWithInheritedAttributes(aPrincipal);
+      NS_ENSURE_TRUE(principal, NS_ERROR_FAILURE);
     } else {
       principal = aPrincipal;
     }
@@ -7440,17 +7765,23 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
       // hook 'em up
       if (viewer) {
         viewer->SetContainer(this);
-        Embed(viewer, "", 0);
+        rv = Embed(viewer, "", 0);
+        NS_ENSURE_SUCCESS(rv, rv);
 
         SetCurrentURI(blankDoc->GetDocumentURI(), nullptr, true, 0);
         rv = mIsBeingDestroyed ? NS_ERROR_NOT_AVAILABLE : NS_OK;
       }
     }
   }
-  mCreatingDocument = false;
 
   // The transient about:blank viewer doesn't have a session history entry.
   SetHistoryEntry(&mOSHE, nullptr);
+
+  // Clear out our mTiming like we would in EndPageLoad, if we didn't
+  // have one before entering this function.
+  if (!hadTiming) {
+    mTiming = nullptr;
+  }
 
   return rv;
 }
@@ -8657,7 +8988,7 @@ nsDocShell::SetupNewViewer(nsIContentViewer * aNewViewer)
 
     if (NS_FAILED(mContentViewer->Init(widget, bounds))) {
         mContentViewer = nullptr;
-        NS_ERROR("ContentViewer Initialization failed");
+        NS_WARNING("ContentViewer Initialization failed");
         return NS_ERROR_FAILURE;
     }
 
@@ -8703,6 +9034,7 @@ nsDocShell::SetupNewViewer(nsIContentViewer * aNewViewer)
 nsresult
 nsDocShell::SetDocCurrentStateObj(nsISHEntry *shEntry)
 {
+    NS_ENSURE_STATE(mContentViewer);
     nsCOMPtr<nsIDocument> document = GetDocument();
     NS_ENSURE_TRUE(document, NS_ERROR_FAILURE);
 
@@ -8916,6 +9248,29 @@ nsDocShell::JustStartedNetworkLoad()
            mDocumentRequest != GetCurrentDocChannel();
 }
 
+nsresult
+nsDocShell::CreatePrincipalFromReferrer(nsIURI*        aReferrer,
+                                        nsIPrincipal** outPrincipal)
+{
+  nsresult rv;
+  nsCOMPtr<nsIScriptSecurityManager> secMan =
+    do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  uint32_t appId;
+  rv = GetAppId(&appId);
+  NS_ENSURE_SUCCESS(rv, rv);
+  bool isInBrowserElement;
+  rv = GetIsInBrowserElement(&isInBrowserElement);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = secMan->GetAppCodebasePrincipal(aReferrer,
+                                       appId,
+                                       isInBrowserElement,
+                                       outPrincipal);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsDocShell::InternalLoad(nsIURI * aURI,
                          nsIURI * aReferrer,
@@ -9034,12 +9389,8 @@ nsDocShell::InternalLoad(nsIURI * aURI,
     // XXXbz would be nice to know the loading principal here... but we don't
     nsCOMPtr<nsIPrincipal> loadingPrincipal = do_QueryInterface(aOwner);
     if (!loadingPrincipal && aReferrer) {
-        nsCOMPtr<nsIScriptSecurityManager> secMan =
-            do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        rv = secMan->GetSimpleCodebasePrincipal(aReferrer,
-                                                getter_AddRefs(loadingPrincipal));
+      rv = CreatePrincipalFromReferrer(aReferrer, getter_AddRefs(loadingPrincipal));
+      NS_ENSURE_SUCCESS(rv, rv);
     }
 
     rv = NS_CheckContentLoadPolicy(contentType,
@@ -9087,7 +9438,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
     {
         bool willInherit;
         // This condition needs to match the one in
-        // nsContentUtils::SetUpChannelOwner.
+        // nsContentUtils::ChannelShouldInheritPrincipal.
         // Except we reverse the rv check to be safe in case
         // nsContentUtils::URIInheritsSecurityContext fails here and
         // succeeds there.
@@ -9315,14 +9666,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         aLoadType == LOAD_HISTORY ||
         aLoadType == LOAD_LINK) {
 
-        nsCOMPtr<nsIURI> currentURI;
-        if (sURIFixup && mCurrentURI) {
-            rv = sURIFixup->CreateExposableURI(mCurrentURI,
-                                               getter_AddRefs(currentURI));
-            NS_ENSURE_SUCCESS(rv, rv);
-        } else {
-            currentURI = mCurrentURI;
-        }
+        nsCOMPtr<nsIURI> currentURI = mCurrentURI;
         // Split currentURI and aURI on the '#' character.  Make sure we read
         // the return values of SplitURIAtHash; if it fails, we don't want to
         // allow a short-circuited navigation.
@@ -9337,6 +9681,19 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         bool sameExceptHashes = NS_SUCCEEDED(splitRv1) &&
                                   NS_SUCCEEDED(splitRv2) &&
                                   curBeforeHash.Equals(newBeforeHash);
+
+        if (!sameExceptHashes && sURIFixup && currentURI &&
+            NS_SUCCEEDED(splitRv2)) {
+          // Maybe aURI came from the exposable form of currentURI?
+          nsCOMPtr<nsIURI> currentExposableURI;
+          rv = sURIFixup->CreateExposableURI(currentURI,
+                                             getter_AddRefs(currentExposableURI));
+          NS_ENSURE_SUCCESS(rv, rv);
+          splitRv1 = nsContentUtils::SplitURIAtHash(currentExposableURI,
+                                                    curBeforeHash, curHash);
+          sameExceptHashes = NS_SUCCEEDED(splitRv1) &&
+            curBeforeHash.Equals(newBeforeHash);
+        }
 
         bool historyNavBetweenSameDoc = false;
         if (mOSHE && aSHEntry) {
@@ -9548,7 +9905,18 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             return NS_OK;
         }
     }
-    
+
+    // Check if the webbrowser chrome wants the load to proceed; this can be
+    // used to cancel attempts to load URIs in the wrong process.
+    nsCOMPtr<nsIWebBrowserChrome3> browserChrome3 = do_GetInterface(mTreeOwner);
+    if (browserChrome3) {
+        bool shouldLoad;
+        rv = browserChrome3->ShouldLoadURI(this, aURI, aReferrer, &shouldLoad);
+        if (NS_SUCCEEDED(rv) && !shouldLoad) {
+            return NS_OK;
+        }
+    }
+
     // mContentViewer->PermitUnload can destroy |this| docShell, which
     // causes the next call of CanSavePresentation to crash. 
     // Hold onto |this| until we return, to prevent a crash from happening. 
@@ -9699,7 +10067,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                    (aFlags & INTERNAL_LOAD_FLAGS_FIRST_LOAD) != 0,
                    (aFlags & INTERNAL_LOAD_FLAGS_BYPASS_CLASSIFIER) != 0,
                    (aFlags & INTERNAL_LOAD_FLAGS_FORCE_ALLOW_COOKIES) != 0,
-                   srcdoc, aBaseURI);
+                   srcdoc, aBaseURI, contentType);
     if (req && aRequest)
         NS_ADDREF(*aRequest = req);
 
@@ -9779,7 +10147,8 @@ nsDocShell::DoURILoad(nsIURI * aURI,
                       bool aBypassClassifier,
                       bool aForceAllowCookies,
                       const nsAString &aSrcdoc,
-                      nsIURI * aBaseURI)
+                      nsIURI * aBaseURI,
+                      nsContentPolicyType aContentPolicyType)
 {
 #ifdef MOZ_VISUAL_EVENT_TRACER
     nsAutoCString urlSpec;
@@ -9805,27 +10174,7 @@ nsDocShell::DoURILoad(nsIURI * aURI,
         loadFlags |= nsIChannel::LOAD_BACKGROUND;
     }
 
-    // check for Content Security Policy to pass along with the
-    // new channel we are creating
-    nsCOMPtr<nsIChannelPolicy> channelPolicy;
     if (IsFrame()) {
-        // check the parent docshell for a CSP
-        nsCOMPtr<nsIContentSecurityPolicy> csp;
-        nsCOMPtr<nsIDocShellTreeItem> parentItem;
-        GetSameTypeParent(getter_AddRefs(parentItem));
-        if (parentItem) {
-          nsCOMPtr<nsIDocument> doc = parentItem->GetDocument();
-          if (doc) {
-            rv = doc->NodePrincipal()->GetCsp(getter_AddRefs(csp));
-            NS_ENSURE_SUCCESS(rv, rv);
-            if (csp) {
-              channelPolicy = do_CreateInstance("@mozilla.org/nschannelpolicy;1");
-              channelPolicy->SetContentSecurityPolicy(csp);
-              channelPolicy->SetLoadType(nsIContentPolicy::TYPE_SUBDOCUMENT);
-            }
-          }
-        }
-
         // Only allow view-source scheme in top-level docshells. view-source is
         // the only scheme to which this applies at the moment due to potential
         // timing attacks to read data from cross-origin iframes. If this widens
@@ -9850,14 +10199,54 @@ nsDocShell::DoURILoad(nsIURI * aURI,
     nsCOMPtr<nsIChannel> channel;
 
     bool isSrcdoc = !aSrcdoc.IsVoid();
+
+    nsCOMPtr<nsINode> requestingNode;
+    if (mScriptGlobal) {
+      requestingNode = mScriptGlobal->GetFrameElementInternal();
+      if (!requestingNode) {
+        requestingNode = mScriptGlobal->GetExtantDoc();
+      }
+    }
+
+    bool isSandBoxed = mSandboxFlags & SANDBOXED_ORIGIN;
+    // only inherit if we have a requestingPrincipal
+    bool inherit = false;
+
+    nsCOMPtr<nsIPrincipal> requestingPrincipal = do_QueryInterface(aOwner);
+    if (requestingPrincipal) {
+      inherit = nsContentUtils::ChannelShouldInheritPrincipal(requestingPrincipal,
+                                                              aURI,
+                                                              true, // aInheritForAboutBlank
+                                                              isSrcdoc);
+    }
+    else if (!requestingPrincipal && aReferrerURI) {
+      rv = CreatePrincipalFromReferrer(aReferrerURI,
+                                       getter_AddRefs(requestingPrincipal));
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+    else {
+      requestingPrincipal = nsContentUtils::GetSystemPrincipal();
+    }
+
+    nsSecurityFlags securityFlags = nsILoadInfo::SEC_NORMAL;
+    if (inherit) {
+      securityFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
+    }
+    if (isSandBoxed) {
+      securityFlags |= nsILoadInfo::SEC_SANDBOXED;
+    }
+
     if (!isSrcdoc) {
-        rv = NS_NewChannel(getter_AddRefs(channel),
-                           aURI,
-                           nullptr,
-                           nullptr,
-                           static_cast<nsIInterfaceRequestor *>(this),
-                           loadFlags,
-                           channelPolicy);
+        rv = NS_NewChannelInternal(getter_AddRefs(channel),
+                                   aURI,
+                                   requestingNode,
+                                   requestingPrincipal,
+                                   securityFlags,
+                                   aContentPolicyType,
+                                   nullptr,   // loadGroup
+                                   static_cast<nsIInterfaceRequestor*>(this),
+                                   loadFlags);
+
         if (NS_FAILED(rv)) {
             if (rv == NS_ERROR_UNKNOWN_PROTOCOL) {
                 // This is a uri with a protocol scheme we don't know how
@@ -9894,12 +10283,23 @@ nsDocShell::DoURILoad(nsIURI * aURI,
             rv = vsh->NewSrcdocChannel(aURI, aSrcdoc, aBaseURI,
                                        getter_AddRefs(channel));
             NS_ENSURE_SUCCESS(rv, rv);
+            nsCOMPtr<nsILoadInfo> loadInfo =
+              new LoadInfo(requestingPrincipal,
+                           requestingNode,
+                           securityFlags,
+                           aContentPolicyType);
+            channel->SetLoadInfo(loadInfo);
         }
         else {
-            rv = NS_NewInputStreamChannel(getter_AddRefs(channel),aURI,
-                                          aSrcdoc,
-                                          NS_LITERAL_CSTRING("text/html"),
-                                          true);
+            rv = NS_NewInputStreamChannelInternal(getter_AddRefs(channel),
+                                                  aURI,
+                                                  aSrcdoc,
+                                                  NS_LITERAL_CSTRING("text/html"),
+                                                  requestingNode,
+                                                  requestingPrincipal,
+                                                  securityFlags,
+                                                  aContentPolicyType,
+                                                  true);
             NS_ENSURE_SUCCESS(rv, rv);
             nsCOMPtr<nsIInputStreamChannel> isc = do_QueryInterface(channel);
             MOZ_ASSERT(isc);
@@ -10066,11 +10466,6 @@ nsDocShell::DoURILoad(nsIURI * aURI,
             httpChannel->SetReferrer(aReferrerURI);
         }
     }
-
-    nsCOMPtr<nsIPrincipal> ownerPrincipal = do_QueryInterface(aOwner);
-    nsContentUtils::SetUpChannelOwner(ownerPrincipal, channel, aURI, true,
-                                      mSandboxFlags & SANDBOXED_ORIGIN,
-                                      isSrcdoc);
 
     nsCOMPtr<nsIScriptChannel> scriptChannel = do_QueryInterface(channel);
     if (scriptChannel) {
@@ -10335,7 +10730,8 @@ nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
         nsresult rv = NS_ERROR_FAILURE;
         NS_ConvertUTF8toUTF16 uStr(str);
         if (!uStr.IsEmpty()) {
-            rv = shell->GoToAnchor(NS_ConvertUTF8toUTF16(str), scroll);
+            rv = shell->GoToAnchor(NS_ConvertUTF8toUTF16(str), scroll,
+                                   nsIPresShell::SCROLL_SMOOTH_AUTO);
         }
         nsMemory::Free(str);
 
@@ -10369,7 +10765,8 @@ nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
             //
             // When newHashName contains "%00", unescaped string may be empty.
             // And GoToAnchor asserts if we ask it to scroll to an empty ref.
-            shell->GoToAnchor(uStr, scroll && !uStr.IsEmpty());
+            shell->GoToAnchor(uStr, scroll && !uStr.IsEmpty(),
+                              nsIPresShell::SCROLL_SMOOTH_AUTO);
         }
     }
     else {
@@ -10741,19 +11138,7 @@ nsDocShell::AddState(JS::Handle<JS::Value> aData, const nsAString& aTitle,
         nsCOMPtr<nsIPrincipal> origPrincipal = origDocument->NodePrincipal();
 
         scContainer = new nsStructuredCloneContainer();
-        JSContext *cx = aCx;
-        nsCxPusher pusher;
-        if (!cx) {
-            cx = nsContentUtils::GetContextFromDocument(document);
-            pusher.Push(cx);
-        }
-        rv = scContainer->InitFromJSVal(aData, cx);
-
-        // If we're running in the document's context and the structured clone
-        // failed, clear the context's pending exception.  See bug 637116.
-        if (NS_FAILED(rv) && !aCx) {
-            JS_ClearPendingException(aCx);
-        }
+        rv = scContainer->InitFromJSVal(aData);
         NS_ENSURE_SUCCESS(rv, rv);
 
         nsCOMPtr<nsIDocument> newDocument = GetDocument();
@@ -11146,10 +11531,8 @@ nsDocShell::AddToSessionHistory(nsIURI * aURI, nsIChannel * aChannel,
             if (loadInfo) {
                 // For now keep storing just the principal in the SHEntry.
                 if (loadInfo->GetLoadingSandboxed()) {
-                    owner = do_CreateInstance(NS_NULLPRINCIPAL_CONTRACTID, &rv);
-                    if (NS_WARN_IF(NS_FAILED(rv))) {
-                        return rv;
-                    }
+                    owner = nsNullPrincipal::CreateWithInheritedAttributes(loadInfo->LoadingPrincipal());
+                    NS_ENSURE_TRUE(owner, NS_ERROR_FAILURE);
                 } else if (loadInfo->GetForceInheritPrincipal()) {
                     owner = loadInfo->LoadingPrincipal();
                 }
@@ -12573,8 +12956,8 @@ public:
   NS_IMETHOD Run() {
     nsAutoPopupStatePusher popupStatePusher(mPopupState);
 
-    nsCxPusher pusher;
-    if (mIsTrusted || pusher.Push(mContent)) {
+    AutoJSAPI jsapi;
+    if (mIsTrusted || jsapi.Init(mContent->OwnerDoc()->GetScopeObject())) {
       mHandler->OnLinkClickSync(mContent, mURI,
                                 mTargetSpec.get(), mFileName,
                                 mPostDataStream, mHeadersDataStream,
@@ -13169,4 +13552,43 @@ nsDocShell::GetOpenedRemote()
 {
   nsCOMPtr<nsITabParent> openedRemote(do_QueryReferent(mOpenedRemote));
   return openedRemote;
+}
+
+URLSearchParams*
+nsDocShell::GetURLSearchParams()
+{
+  return mURLSearchParams;
+}
+
+void
+nsDocShell::MaybeNotifyKeywordSearchLoading(const nsString &aProvider,
+                                            const nsString &aKeyword) {
+
+  if (aProvider.IsEmpty()) {
+    return;
+  }
+
+  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    dom::ContentChild* contentChild = dom::ContentChild::GetSingleton();
+    if (contentChild) {
+      contentChild->SendNotifyKeywordSearchLoading(aProvider, aKeyword);
+    }
+    return;
+  }
+
+#ifdef MOZ_TOOLKIT_SEARCH
+  nsCOMPtr<nsIBrowserSearchService> searchSvc = do_GetService("@mozilla.org/browser/search-service;1");
+  if (searchSvc) {
+    nsCOMPtr<nsISearchEngine> searchEngine;
+    searchSvc->GetEngineByName(aProvider, getter_AddRefs(searchEngine));
+    if (searchEngine) {
+      nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+      if (obsSvc) {
+        // Note that "keyword-search" refers to a search via the url
+        // bar, not a bookmarks keyword search.
+        obsSvc->NotifyObservers(searchEngine, "keyword-search", aKeyword.get());
+      }
+    }
+  }
+#endif
 }

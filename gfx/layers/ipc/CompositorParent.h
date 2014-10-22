@@ -87,15 +87,15 @@ private:
   friend class CompositorParent;
 };
 
-class CompositorParent : public PCompositorParent,
-                         public ShadowLayersManager
+class CompositorParent MOZ_FINAL : public PCompositorParent,
+                                   public ShadowLayersManager
 {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION(CompositorParent)
 
 public:
-  CompositorParent(nsIWidget* aWidget,
-                   bool aUseExternalSurfaceSize = false,
-                   int aSurfaceWidth = -1, int aSurfaceHeight = -1);
+  explicit CompositorParent(nsIWidget* aWidget,
+                            bool aUseExternalSurfaceSize = false,
+                            int aSurfaceWidth = -1, int aSurfaceHeight = -1);
 
   // IToplevelProtocol::CloneToplevel()
   virtual IToplevelProtocol*
@@ -109,6 +109,7 @@ public:
   virtual bool RecvPause() MOZ_OVERRIDE;
   virtual bool RecvResume() MOZ_OVERRIDE;
   virtual bool RecvNotifyChildCreated(const uint64_t& child) MOZ_OVERRIDE;
+  virtual bool RecvAdoptChild(const uint64_t& child) MOZ_OVERRIDE;
   virtual bool RecvMakeSnapshot(const SurfaceDescriptor& aInSnapshot,
                                 const nsIntRect& aRect) MOZ_OVERRIDE;
   virtual bool RecvFlushRendering() MOZ_OVERRIDE;
@@ -116,6 +117,10 @@ public:
   virtual bool RecvNotifyRegionInvalidated(const nsIntRegion& aRegion) MOZ_OVERRIDE;
   virtual bool RecvStartFrameTimeRecording(const int32_t& aBufferSize, uint32_t* aOutStartIndex) MOZ_OVERRIDE;
   virtual bool RecvStopFrameTimeRecording(const uint32_t& aStartIndex, InfallibleTArray<float>* intervals) MOZ_OVERRIDE;
+
+  // Unused for chrome <-> compositor communication (which this class does).
+  // @see CrossProcessCompositorParent::RecvRequestNotifyAfterRemotePaint
+  virtual bool RecvRequestNotifyAfterRemotePaint() MOZ_OVERRIDE { return true; };
 
   virtual void ActorDestroy(ActorDestroyReason why) MOZ_OVERRIDE;
 
@@ -256,6 +261,11 @@ public:
    * the compositor thread.
    */
   static LayerTreeState* GetIndirectShadowTree(uint64_t aId);
+
+  /**
+   * Used by the profiler to denote when a vsync occured
+   */
+  static void PostInsertVsyncProfilerMarker(mozilla::TimeStamp aVsyncTimestamp);
 
   float ComputeRenderIntegrity();
 

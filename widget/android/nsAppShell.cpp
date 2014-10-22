@@ -51,7 +51,6 @@
 #endif
 
 #ifdef MOZ_LOGGING
-#define FORCE_PR_LOG
 #include "prlog.h"
 #endif
 
@@ -111,7 +110,10 @@ private:
 };
 
 class WakeLockListener MOZ_FINAL : public nsIDOMMozWakeLockListener {
- public:
+private:
+  ~WakeLockListener() {}
+
+public:
   NS_DECL_ISUPPORTS;
 
   nsresult Callback(const nsAString& topic, const nsAString& state) {
@@ -308,6 +310,20 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
         hal::NotifySensorChange(sdata);
       }
       break;
+
+    case AndroidGeckoEvent::PROCESS_OBJECT: {
+      JNIEnv* const env = AndroidBridge::Bridge()->GetJNIEnv();
+      AutoLocalJNIFrame frame(env, 1);
+
+      switch (curEvent->Action()) {
+      case AndroidGeckoEvent::ACTION_OBJECT_LAYER_CLIENT:
+        // SetLayerClient expects a local reference
+        const jobject obj = env->NewLocalRef(curEvent->Object().wrappedObject());
+        AndroidBridge::Bridge()->SetLayerClient(env, obj);
+        break;
+      }
+      break;
+    }
 
     case AndroidGeckoEvent::LOCATION_EVENT: {
         if (!gLocationCallback)
@@ -741,16 +757,15 @@ nsAppShell::PostEvent(AndroidGeckoEvent *ae)
             break;
 
         case AndroidGeckoEvent::MOTION_EVENT:
-            if (ae->Action() == AndroidMotionEvent::ACTION_MOVE && mAllowCoalescingTouches) {
+        case AndroidGeckoEvent::APZ_INPUT_EVENT:
+            if (mAllowCoalescingTouches && mEventQueue.Length() > 0) {
                 int len = mEventQueue.Length();
-                if (len > 0) {
-                    AndroidGeckoEvent* event = mEventQueue[len - 1];
-                    if (event->Type() == AndroidGeckoEvent::MOTION_EVENT && event->Action() == AndroidMotionEvent::ACTION_MOVE) {
-                        // consecutive motion-move events; drop the last one before adding the new one
-                        EVLOG("nsAppShell: Dropping old move event at %p in favour of new move event %p", event, ae);
-                        mEventQueue.RemoveElementAt(len - 1);
-                        delete event;
-                    }
+                AndroidGeckoEvent* event = mEventQueue[len - 1];
+                if (ae->CanCoalesceWith(event)) {
+                    // consecutive motion-move events; drop the last one before adding the new one
+                    EVLOG("nsAppShell: Dropping old move event at %p in favour of new move event %p", event, ae);
+                    mEventQueue.RemoveElementAt(len - 1);
+                    delete event;
                 }
             }
             mEventQueue.AppendElement(ae);

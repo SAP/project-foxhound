@@ -313,8 +313,8 @@ nsLineLayout::UpdateBand(const nsRect& aNewAvailSpace,
 #ifdef NOISY_REFLOW
   nsFrame::ListTag(stdout, mBlockReflowState->frame);
   printf(": UpdateBand: %d,%d,%d,%d deltaISize=%d deltaICoord=%d\n",
-         aNewAvailSpace.x, aNewAvailSpace.y,
-         aNewAvailSpace.width, aNewAvailSpace.height, deltaISize, deltaICoord);
+         aNewAvailSpace.IStart(lineWM), aNewAvailSpace.BStart(lineWM),
+         aNewAvailSpace.ISize(lineWM), aNewAvailSpace.BSize(lineWM), deltaISize, deltaICoord);
 #endif
 
   // Update the root span position
@@ -360,9 +360,10 @@ nsLineLayout::NewPerSpanData()
   PerSpanData* psd = mSpanFreeList;
   if (!psd) {
     void *mem;
-    PL_ARENA_ALLOCATE(mem, &mArena, sizeof(PerSpanData));
+    size_t sz = sizeof(PerSpanData);
+    PL_ARENA_ALLOCATE(mem, &mArena, sz);
     if (!mem) {
-      NS_RUNTIMEABORT("OOM");
+      NS_ABORT_OOM(sz);
     }
     psd = reinterpret_cast<PerSpanData*>(mem);
   }
@@ -583,9 +584,10 @@ nsLineLayout::NewPerFrameData(nsIFrame* aFrame)
   PerFrameData* pfd = mFrameFreeList;
   if (!pfd) {
     void *mem;
-    PL_ARENA_ALLOCATE(mem, &mArena, sizeof(PerFrameData));
+    size_t sz = sizeof(PerFrameData);
+    PL_ARENA_ALLOCATE(mem, &mArena, sz);
     if (!mem) {
-      NS_RUNTIMEABORT("OOM");
+      NS_ABORT_OOM(sz);
     }
     pfd = reinterpret_cast<PerFrameData*>(mem);
   }
@@ -790,13 +792,14 @@ nsLineLayout::ReflowFrame(nsIFrame* aFrame,
     // For now, set the available block-size to unconstrained always.
     LogicalSize availSize = mBlockReflowState->ComputedSize(frameWM);
     availSize.BSize(frameWM) = NS_UNCONSTRAINEDSIZE;
-    reflowStateHolder.construct(mPresContext, *psd->mReflowState,
-                                aFrame, availSize);
-    nsHTMLReflowState& reflowState = reflowStateHolder.ref();
+    reflowStateHolder.emplace(mPresContext, *psd->mReflowState,
+                              aFrame, availSize);
+    nsHTMLReflowState& reflowState = *reflowStateHolder;
     reflowState.mLineLayout = this;
     reflowState.mFlags.mIsTopOfPage = mIsTopOfPage;
-    if (reflowState.ComputedWidth() == NS_UNCONSTRAINEDSIZE)
-      reflowState.AvailableWidth() = availableSpaceOnLine;
+    if (reflowState.ComputedISize() == NS_UNCONSTRAINEDSIZE) {
+      reflowState.AvailableISize() = availableSpaceOnLine;
+    }
     WritingMode stateWM = reflowState.GetWritingMode();
     pfd->mMargin =
       reflowState.ComputedLogicalMargin().ConvertTo(frameWM, stateWM);
@@ -852,8 +855,7 @@ nsLineLayout::ReflowFrame(nsIFrame* aFrame,
                                  &savedOptionalBreakPriority);
 
   if (!isText) {
-    aFrame->Reflow(mPresContext, metrics, reflowStateHolder.ref(),
-                   aReflowStatus);
+    aFrame->Reflow(mPresContext, metrics, *reflowStateHolder, aReflowStatus);
   } else {
     static_cast<nsTextFrame*>(aFrame)->
       ReflowText(*this, availableSpaceOnLine, psd->mReflowState->rendContext,
@@ -974,7 +976,7 @@ nsLineLayout::ReflowFrame(nsIFrame* aFrame,
 
   // Tell the frame that we're done reflowing it
   aFrame->DidReflow(mPresContext,
-                    isText ? nullptr : reflowStateHolder.addr(),
+                    isText ? nullptr : reflowStateHolder.ptr(),
                     nsDidReflowStatus::FINISHED);
 
   if (aMetrics) {
@@ -1010,7 +1012,7 @@ nsLineLayout::ReflowFrame(nsIFrame* aFrame,
     // return now.
     bool optionalBreakAfterFits;
     NS_ASSERTION(isText ||
-                 !reflowStateHolder.ref().IsFloating(),
+                 !reflowStateHolder->IsFloating(),
                  "How'd we get a floated inline frame? "
                  "The frame ctor should've dealt with this.");
     if (CanPlaceFrame(pfd, notSafeToBreak, continuingTextRun,
@@ -1658,8 +1660,8 @@ nsLineLayout::VerticalAlignFrames(PerSpanData* psd)
   if ((emptyContinuation ||
        mPresContext->CompatibilityMode() != eCompatibility_FullStandards) &&
       ((psd == mRootSpan) ||
-       (spanFramePFD->mBorderPadding.IsEmpty() &&
-        spanFramePFD->mMargin.IsEmpty()))) {
+       (spanFramePFD->mBorderPadding.IsAllZero() &&
+        spanFramePFD->mMargin.IsAllZero()))) {
     // This code handles an issue with compatibility with non-css
     // conformant browsers. In particular, there are some cases
     // where the font-size and line-height for a span must be
@@ -2599,19 +2601,21 @@ nsLineLayout::TextAlignLine(nsLineBox* aLine,
     }
   }
 
-  if (dx) {
+  if (mPresContext->BidiEnabled() &&
+      (!mPresContext->IsVisualMode() || !lineWM.IsBidiLTR())) {
+    nsBidiPresUtils::ReorderFrames(psd->mFirstFrame->mFrame,
+                                   aLine->GetChildCount(),
+                                   lineWM, mContainerWidth,
+                                   psd->mIStart + mTextIndent + dx);
+    if (dx) {
+      aLine->IndentBy(dx, mContainerWidth);
+    }
+  } else if (dx) {
     for (PerFrameData* pfd = psd->mFirstFrame; pfd; pfd = pfd->mNext) {
       pfd->mBounds.IStart(lineWM) += dx;
       pfd->mFrame->SetRect(lineWM, pfd->mBounds, mContainerWidth);
     }
     aLine->IndentBy(dx, mContainerWidth);
-  }
-
-  if (mPresContext->BidiEnabled() &&
-      (!mPresContext->IsVisualMode() || !lineWM.IsBidiLTR())) {
-    nsBidiPresUtils::ReorderFrames(psd->mFirstFrame->mFrame,
-                                   aLine->GetChildCount(),
-                                   lineWM, mContainerWidth);
   }
 }
 
@@ -2734,4 +2738,22 @@ nsLineLayout::RelativePositionFrames(PerSpanData* psd, nsOverflowAreas& aOverflo
     frame->FinishAndStoreOverflow(overflowAreas, frame->GetSize());
   }
   aOverflowAreas = overflowAreas;
+}
+
+void
+nsLineLayout::AdvanceICoord(nscoord aAmount)
+{
+  mCurrentSpan->mICoord += aAmount;
+}
+
+WritingMode
+nsLineLayout::GetWritingMode()
+{
+  return mRootSpan->mWritingMode;
+}
+
+nscoord
+nsLineLayout::GetCurrentICoord()
+{
+  return mCurrentSpan->mICoord;
 }

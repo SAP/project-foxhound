@@ -38,14 +38,14 @@ void ImageLayer::ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSu
         sourceRect.width != 0.0 && sourceRect.height != 0.0) {
       NS_ASSERTION(mScaleMode == ScaleMode::STRETCH,
                    "No other scalemodes than stretch and none supported yet.");
-      local.Scale(mScaleToSize.width / sourceRect.width,
-                  mScaleToSize.height / sourceRect.height, 1.0);
+      local.PreScale(mScaleToSize.width / sourceRect.width,
+                     mScaleToSize.height / sourceRect.height, 1.0);
     }
   }
   // Snap our local transform first, and snap the inherited transform as well.
   // This makes our snapping equivalent to what would happen if our content
-  // was drawn into a ThebesLayer (gfxContext would snap using the local
-  // transform, then we'd snap again when compositing the ThebesLayer).
+  // was drawn into a PaintedLayer (gfxContext would snap using the local
+  // transform, then we'd snap again when compositing the PaintedLayer).
   mEffectiveTransform =
       SnapTransform(local, sourceRect, nullptr) *
       SnapTransformTranslation(aTransformToSurface, nullptr);

@@ -24,6 +24,7 @@ const StreamTime STREAM_TIME_MAX = MEDIA_TIME_MAX;
  */
 typedef int32_t TrackID;
 const TrackID TRACK_NONE = 0;
+const TrackID TRACK_INVALID = -1;
 
 inline TrackTicks RateConvertTicksRoundDown(TrackRate aOutRate,
                                             TrackRate aInRate,
@@ -283,7 +284,7 @@ public:
     /**
      * Iterate through the tracks of aBuffer in order of ID.
      */
-    TrackIter(const StreamBuffer& aBuffer) :
+    explicit TrackIter(const StreamBuffer& aBuffer) :
       mBuffer(&aBuffer.mTracks), mIndex(0), mMatchType(false) {}
     /**
      * Iterate through the tracks of aBuffer with type aType, in order of ID.

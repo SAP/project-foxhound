@@ -16,7 +16,6 @@
 
 #include <queue>
 
-// Forwards:
 namespace mozilla {
     namespace gl {
         class GLContext;
@@ -34,10 +33,10 @@ class SharedSurface_Basic
     : public SharedSurface
 {
 public:
-    static SharedSurface_Basic* Create(GLContext* gl,
-                                       const GLFormats& formats,
-                                       const gfx::IntSize& size,
-                                       bool hasAlpha);
+    static UniquePtr<SharedSurface_Basic> Create(GLContext* gl,
+                                                 const GLFormats& formats,
+                                                 const gfx::IntSize& size,
+                                                 bool hasAlpha);
 
     static SharedSurface_Basic* Cast(SharedSurface* surf) {
         MOZ_ASSERT(surf->mType == SharedSurfaceType::Basic);
@@ -48,8 +47,6 @@ public:
 protected:
     const GLuint mTex;
     GLuint mFB;
-
-    RefPtr<gfx::DataSourceSurface> mData;
 
     SharedSurface_Basic(GLContext* gl,
                         const gfx::IntSize& size,
@@ -63,21 +60,12 @@ public:
     virtual void LockProdImpl() MOZ_OVERRIDE {}
     virtual void UnlockProdImpl() MOZ_OVERRIDE {}
 
-
-    virtual void Fence() MOZ_OVERRIDE;
-
-    virtual bool WaitSync() MOZ_OVERRIDE {
-        // Since we already store the data in Fence, we're always done already.
-        return true;
-    }
+    virtual void Fence() MOZ_OVERRIDE {}
+    virtual bool WaitSync() MOZ_OVERRIDE { return true; }
+    virtual bool PollSync() MOZ_OVERRIDE { return true; }
 
     virtual GLuint ProdTexture() MOZ_OVERRIDE {
         return mTex;
-    }
-
-    // Implementation-specific functions below:
-    gfx::DataSourceSurface* GetData() {
-        return mData;
     }
 };
 
@@ -89,7 +77,7 @@ public:
         : SurfaceFactory(gl, SharedSurfaceType::Basic, caps)
     {}
 
-    virtual SharedSurface* CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
+    virtual UniquePtr<SharedSurface> CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
         bool hasAlpha = mReadCaps.alpha;
         return SharedSurface_Basic::Create(mGL, mFormats, size, hasAlpha);
     }
@@ -101,12 +89,12 @@ class SharedSurface_GLTexture
     : public SharedSurface
 {
 public:
-    static SharedSurface_GLTexture* Create(GLContext* prodGL,
-                                           GLContext* consGL,
-                                           const GLFormats& formats,
-                                           const gfx::IntSize& size,
-                                           bool hasAlpha,
-                                           GLuint texture = 0);
+    static UniquePtr<SharedSurface_GLTexture> Create(GLContext* prodGL,
+                                                     GLContext* consGL,
+                                                     const GLFormats& formats,
+                                                     const gfx::IntSize& size,
+                                                     bool hasAlpha,
+                                                     GLuint texture = 0);
 
     static SharedSurface_GLTexture* Cast(SharedSurface* surf) {
         MOZ_ASSERT(surf->mType == SharedSurfaceType::GLTextureShare);
@@ -146,10 +134,9 @@ public:
     virtual void LockProdImpl() MOZ_OVERRIDE {}
     virtual void UnlockProdImpl() MOZ_OVERRIDE {}
 
-
     virtual void Fence() MOZ_OVERRIDE;
     virtual bool WaitSync() MOZ_OVERRIDE;
-
+    virtual bool PollSync() MOZ_OVERRIDE;
 
     virtual GLuint ProdTexture() MOZ_OVERRIDE {
         return mTex;
@@ -183,7 +170,7 @@ public:
         MOZ_ASSERT(consGL != prodGL);
     }
 
-    virtual SharedSurface* CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
+    virtual UniquePtr<SharedSurface> CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
         bool hasAlpha = mReadCaps.alpha;
         return SharedSurface_GLTexture::Create(mGL, mConsGL, mFormats, size, hasAlpha);
     }

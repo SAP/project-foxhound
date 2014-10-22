@@ -106,6 +106,11 @@ public:
   virtual void UpdatePictureRect(CompositableClient* aCompositable,
                                  const nsIntRect& aRect) = 0;
 
+#ifdef MOZ_WIDGET_GONK
+  virtual void UseOverlaySource(CompositableClient* aCompositabl,
+                                const OverlaySource& aOverlay) = 0;
+#endif
+
   /**
    * Tell the CompositableHost on the compositor side to remove the texture
    * from the CompositableHost.
@@ -188,6 +193,8 @@ public:
   virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
                                PTextureChild* aTexture,
                                const FenceHandle& aFence) = 0;
+
+  virtual void SendPendingAsyncMessges() = 0;
 
   void IdentifyTextureHost(const TextureFactoryIdentifier& aIdentifier);
 

@@ -10,6 +10,7 @@
 #include <stdint.h>                     // for uint32_t, uint64_t
 #include <sys/types.h>                  // for int32_t
 #include "gfxCore.h"                    // for NS_GFX
+#include "mozilla/ToString.h"           // for mozilla::ToString
 #include "nsCoord.h"                    // for nscoord
 #include "nsError.h"                    // for nsresult
 #include "nsPoint.h"                    // for nsIntPoint, nsPoint
@@ -54,11 +55,11 @@ class nsRegion
 
 public:
   nsRegion () { pixman_region32_init(&mImpl); }
-  nsRegion (const nsRect& aRect) { pixman_region32_init_rect(&mImpl,
-                                                                    aRect.x,
-                                                                    aRect.y,
-                                                                    aRect.width,
-                                                                    aRect.height); }
+  MOZ_IMPLICIT nsRegion (const nsRect& aRect) { pixman_region32_init_rect(&mImpl,
+                                                                          aRect.x,
+                                                                          aRect.y,
+                                                                          aRect.width,
+                                                                          aRect.height); }
   nsRegion (const nsRegion& aRegion) { pixman_region32_init(&mImpl); pixman_region32_copy(&mImpl,aRegion.Impl()); }
  ~nsRegion () { pixman_region32_fini(&mImpl); }
   nsRegion& operator = (const nsRect& aRect) { Copy (aRect); return *this; }
@@ -67,6 +68,12 @@ public:
   {
     return IsEqual(aRgn);
   }
+  bool operator!=(const nsRegion& aRgn) const
+  {
+    return !(*this == aRgn);
+  }
+
+  friend std::ostream& operator<<(std::ostream& stream, const nsRegion& m);
 
   void Swap(nsRegion* aOther)
   {
@@ -404,7 +411,7 @@ class NS_GFX nsRegionRectIterator
   pixman_box32_t *boxes;
 
 public:
-  nsRegionRectIterator (const nsRegion& aRegion)
+  explicit nsRegionRectIterator (const nsRegion& aRegion)
   {
     mRegion = &aRegion;
     i = 0;
@@ -452,7 +459,7 @@ class NS_GFX nsIntRegion
 
 public:
   nsIntRegion () {}
-  nsIntRegion (const nsIntRect& aRect) : mImpl (ToRect(aRect)) {}
+  MOZ_IMPLICIT nsIntRegion (const nsIntRect& aRect) : mImpl (ToRect(aRect)) {}
   nsIntRegion (const nsIntRegion& aRegion) : mImpl (aRegion.mImpl) {}
   nsIntRegion& operator = (const nsIntRect& aRect) { mImpl = ToRect (aRect); return *this; }
   nsIntRegion& operator = (const nsIntRegion& aRegion) { mImpl = aRegion.mImpl; return *this; }
@@ -460,6 +467,14 @@ public:
   bool operator==(const nsIntRegion& aRgn) const
   {
     return IsEqual(aRgn);
+  }
+  bool operator!=(const nsIntRegion& aRgn) const
+  {
+    return !(*this == aRgn);
+  }
+
+  friend std::ostream& operator<<(std::ostream& stream, const nsIntRegion& m) {
+    return stream << m.mImpl;
   }
 
   void Swap(nsIntRegion* aOther)
@@ -724,7 +739,7 @@ class NS_GFX nsIntRegionRectIterator
   nsIntRect mTmp;
 
 public:
-  nsIntRegionRectIterator (const nsIntRegion& aRegion) : mImpl (aRegion.mImpl) {}
+  explicit nsIntRegionRectIterator (const nsIntRegion& aRegion) : mImpl (aRegion.mImpl) {}
 
   const nsIntRect* Next ()
   {

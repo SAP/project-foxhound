@@ -13,6 +13,14 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "FormHistory",
+  "resource://gre/modules/FormHistory.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "SearchSuggestionController",
+  "resource://gre/modules/SearchSuggestionController.jsm");
 
 const INBOUND_MESSAGE = "ContentSearch";
 const OUTBOUND_MESSAGE = INBOUND_MESSAGE;
@@ -26,30 +34,45 @@ const OUTBOUND_MESSAGE = INBOUND_MESSAGE;
  *
  * Inbound messages have the following types:
  *
+ *   AddFormHistoryEntry
+ *     Adds an entry to the search form history.
+ *     data: the entry, a string
+ *   GetSuggestions
+ *     Retrieves an array of search suggestions given a search string.
+ *     data: { engineName, searchString, [remoteTimeout] }
  *   GetState
- *      Retrieves the current search engine state.
- *      data: null
+ *     Retrieves the current search engine state.
+ *     data: null
  *   ManageEngines
- *      Opens the search engine management window.
- *      data: null
+ *     Opens the search engine management window.
+ *     data: null
+ *   RemoveFormHistoryEntry
+ *     Removes an entry from the search form history.
+ *     data: the entry, a string
  *   Search
- *      Performs a search.
- *      data: an object { engineName, searchString, whence }
+ *     Performs a search.
+ *     data: { engineName, searchString, whence }
  *   SetCurrentEngine
- *      Sets the current engine.
- *      data: the name of the engine
+ *     Sets the current engine.
+ *     data: the name of the engine
+ *   SpeculativeConnect
+ *     Speculatively connects to an engine.
+ *     data: the name of the engine
  *
  * Outbound messages have the following types:
  *
  *   CurrentEngine
- *     Sent when the current engine changes.
+ *     Broadcast when the current engine changes.
  *     data: see _currentEngineObj
  *   CurrentState
- *     Sent when the current search state changes.
+ *     Broadcast when the current search state changes.
  *     data: see _currentStateObj
  *   State
  *     Sent in reply to GetState.
  *     data: see _currentStateObj
+ *   Suggestions
+ *     Sent in reply to GetSuggestions.
+ *     data: see _onMessageGetSuggestions
  */
 
 this.ContentSearch = {
@@ -58,13 +81,47 @@ this.ContentSearch = {
   // them immediately, which would result in non-FIFO responses due to the
   // asynchrononicity added by converting image data URIs to ArrayBuffers.
   _eventQueue: [],
-  _currentEvent: null,
+  _currentEventPromise: null,
+
+  // This is used to handle search suggestions.  It maps xul:browsers to objects
+  // { controller, previousFormHistoryResult }.  See _onMessageGetSuggestions.
+  _suggestionMap: new WeakMap(),
+
+  // Resolved when we finish shutting down.
+  _destroyedPromise: null,
 
   init: function () {
     Cc["@mozilla.org/globalmessagemanager;1"].
       getService(Ci.nsIMessageListenerManager).
       addMessageListener(INBOUND_MESSAGE, this);
     Services.obs.addObserver(this, "browser-search-engine-modified", false);
+    Services.obs.addObserver(this, "shutdown-leaks-before-check", false);
+  },
+
+  destroy: function () {
+    if (this._destroyedPromise) {
+      return this._destroyedPromise;
+    }
+
+    Cc["@mozilla.org/globalmessagemanager;1"].
+      getService(Ci.nsIMessageListenerManager).
+      removeMessageListener(INBOUND_MESSAGE, this);
+    Services.obs.removeObserver(this, "browser-search-engine-modified");
+    Services.obs.removeObserver(this, "shutdown-leaks-before-check");
+
+    this._eventQueue.length = 0;
+    return this._destroyedPromise = Promise.resolve(this._currentEventPromise);
+  },
+
+  /**
+   * Focuses the search input in the page with the given message manager.
+   * @param  messageManager
+   *         The MessageManager object of the selected browser.
+   */
+  focusInput: function (messageManager) {
+    messageManager.sendAsyncMessage(OUTBOUND_MESSAGE, {
+      type: "FocusInput"
+    });
   },
 
   receiveMessage: function (msg) {
@@ -72,10 +129,15 @@ this.ContentSearch = {
     // the event queue.  If the message's source docshell changes browsers in
     // the meantime, then we need to update msg.target.  event.detail will be
     // the docshell's new parent <xul:browser> element.
-    msg.handleEvent = function (event) {
-      this.target.removeEventListener("SwapDocShells", this, true);
-      this.target = event.detail;
-      this.target.addEventListener("SwapDocShells", this, true);
+    msg.handleEvent = event => {
+      let browserData = this._suggestionMap.get(msg.target);
+      if (browserData) {
+        this._suggestionMap.delete(msg.target);
+        this._suggestionMap.set(event.detail, browserData);
+      }
+      msg.target.removeEventListener("SwapDocShells", msg, true);
+      msg.target = event.detail;
+      msg.target.addEventListener("SwapDocShells", msg, true);
     };
     msg.target.addEventListener("SwapDocShells", msg, true);
 
@@ -95,22 +157,31 @@ this.ContentSearch = {
       });
       this._processEventQueue();
       break;
+    case "shutdown-leaks-before-check":
+      subj.wrappedJSObject.client.addBlocker(
+        "ContentSearch: Wait until the service is destroyed", () => this.destroy());
+      break;
     }
   },
 
-  _processEventQueue: Task.async(function* () {
-    if (this._currentEvent || !this._eventQueue.length) {
+  _processEventQueue: function () {
+    if (this._currentEventPromise || !this._eventQueue.length) {
       return;
     }
-    this._currentEvent = this._eventQueue.shift();
-    try {
-      yield this["_on" + this._currentEvent.type](this._currentEvent.data);
-    }
-    finally {
-      this._currentEvent = null;
-      this._processEventQueue();
-    }
-  }),
+
+    let event = this._eventQueue.shift();
+
+    return this._currentEventPromise = Task.spawn(function* () {
+      try {
+        yield this["_on" + event.type](event.data);
+      } catch (err) {
+        Cu.reportError(err);
+      } finally {
+        this._currentEventPromise = null;
+        this._processEventQueue();
+      }
+    }.bind(this));
+  },
 
   _onMessage: Task.async(function* (msg) {
     let methodName = "_onMessage" + msg.data.type;
@@ -128,20 +199,14 @@ this.ContentSearch = {
   },
 
   _onMessageSearch: function (msg, data) {
-    let expectedDataProps = [
+    this._ensureDataHasProperties(data, [
       "engineName",
       "searchString",
       "whence",
-    ];
-    for (let prop of expectedDataProps) {
-      if (!(prop in data)) {
-        Cu.reportError("Message data missing required property: " + prop);
-        return Promise.resolve();
-      }
-    }
+    ]);
     let browserWin = msg.target.ownerDocument.defaultView;
     let engine = Services.search.getEngineByName(data.engineName);
-    browserWin.BrowserSearch.recordSearchInHealthReport(engine, data.whence);
+    browserWin.BrowserSearch.recordSearchInHealthReport(engine, data.whence, data.selection);
     let submission = engine.getSubmission(data.searchString, "", data.whence);
     browserWin.loadURI(submission.uri.spec, null, submission.postData);
     return Promise.resolve();
@@ -154,8 +219,106 @@ this.ContentSearch = {
 
   _onMessageManageEngines: function (msg, data) {
     let browserWin = msg.target.ownerDocument.defaultView;
-    browserWin.BrowserSearch.searchBar.openManager(null);
+    let wm = Components.classes["@mozilla.org/appshell/window-mediator;1"].
+             getService(Components.interfaces.nsIWindowMediator);
+    let window = wm.getMostRecentWindow("Browser:SearchManager");
+
+    if (window) {
+      window.focus()
+    }
+    else {
+      browserWin.setTimeout(function () {
+        browserWin.openDialog("chrome://browser/content/search/engineManager.xul",
+          "_blank", "chrome,dialog,modal,centerscreen,resizable");
+      }, 0);
+    }
     return Promise.resolve();
+  },
+
+  _onMessageGetSuggestions: Task.async(function* (msg, data) {
+    this._ensureDataHasProperties(data, [
+      "engineName",
+      "searchString",
+    ]);
+
+    let engine = Services.search.getEngineByName(data.engineName);
+    if (!engine) {
+      throw new Error("Unknown engine name: " + data.engineName);
+    }
+
+    let browserData = this._suggestionDataForBrowser(msg.target, true);
+    let { controller } = browserData;
+    let ok = SearchSuggestionController.engineOffersSuggestions(engine);
+    controller.maxLocalResults = ok ? 2 : 6;
+    controller.maxRemoteResults = ok ? 6 : 0;
+    controller.remoteTimeout = data.remoteTimeout || undefined;
+    let priv = PrivateBrowsingUtils.isBrowserPrivate(msg.target);
+    // fetch() rejects its promise if there's a pending request, but since we
+    // process our event queue serially, there's never a pending request.
+    let suggestions = yield controller.fetch(data.searchString, priv, engine);
+
+    // Keep the form history result so RemoveFormHistoryEntry can remove entries
+    // from it.  Keeping only one result isn't foolproof because the client may
+    // try to remove an entry from one set of suggestions after it has requested
+    // more but before it's received them.  In that case, the entry may not
+    // appear in the new suggestions.  But that should happen rarely.
+    browserData.previousFormHistoryResult = suggestions.formHistoryResult;
+
+    this._reply(msg, "Suggestions", {
+      engineName: data.engineName,
+      searchString: suggestions.term,
+      formHistory: suggestions.local,
+      remote: suggestions.remote,
+    });
+  }),
+
+  _onMessageAddFormHistoryEntry: function (msg, entry) {
+    // There are some tests that use about:home and newtab that trigger a search
+    // and then immediately close the tab.  In those cases, the browser may have
+    // been destroyed by the time we receive this message, and as a result
+    // contentWindow is undefined.
+    if (!msg.target.contentWindow ||
+        PrivateBrowsingUtils.isBrowserPrivate(msg.target)) {
+      return Promise.resolve();
+    }
+    let browserData = this._suggestionDataForBrowser(msg.target, true);
+    FormHistory.update({
+      op: "bump",
+      fieldname: browserData.controller.formHistoryParam,
+      value: entry,
+    }, {
+      handleCompletion: () => {},
+      handleError: err => {
+        Cu.reportError("Error adding form history entry: " + err);
+      },
+    });
+    return Promise.resolve();
+  },
+
+  _onMessageRemoveFormHistoryEntry: function (msg, entry) {
+    let browserData = this._suggestionDataForBrowser(msg.target);
+    if (browserData && browserData.previousFormHistoryResult) {
+      let { previousFormHistoryResult } = browserData;
+      for (let i = 0; i < previousFormHistoryResult.matchCount; i++) {
+        if (previousFormHistoryResult.getValueAt(i) == entry) {
+          previousFormHistoryResult.removeValueAt(i, true);
+          break;
+        }
+      }
+    }
+    return Promise.resolve();
+  },
+
+  _onMessageSpeculativeConnect: function (msg, engineName) {
+    let engine = Services.search.getEngineByName(engineName);
+    if (!engine) {
+      throw new Error("Unknown engine name: " + engineName);
+    }
+    if (msg.target.contentWindow) {
+      engine.speculativeConnect({
+        window: msg.target.contentWindow,
+      });
+    }
   },
 
   _onObserve: Task.async(function* (data) {
@@ -170,6 +333,20 @@ this.ContentSearch = {
       this._broadcast("CurrentState", state);
     }
   }),
+
+  _suggestionDataForBrowser: function (browser, create=false) {
+    let data = this._suggestionMap.get(browser);
+    if (!data && create) {
+      // Since one SearchSuggestionController instance is meant to be used per
+      // autocomplete widget, this means that we assume each xul:browser has at
+      // most one such widget.
+      data = {
+        controller: new SearchSuggestionController(),
+      };
+      this._suggestionMap.set(browser, data);
+    }
+    return data;
+  },
 
   _reply: function (msg, type, data) {
     // We reply asyncly to messages, and by the time we reply the browser we're
@@ -209,10 +386,12 @@ this.ContentSearch = {
 
   _currentEngineObj: Task.async(function* () {
     let engine = Services.search.currentEngine;
+    let favicon = engine.getIconURLBySize(16, 16);
     let uri1x = engine.getIconURLBySize(65, 26);
     let uri2x = engine.getIconURLBySize(130, 52);
     let obj = {
       name: engine.name,
+      iconBuffer: yield this._arrayBufferFromDataURI(favicon),
       logoBuffer: yield this._arrayBufferFromDataURI(uri1x),
       logo2xBuffer: yield this._arrayBufferFromDataURI(uri2x),
     };
@@ -239,6 +418,14 @@ this.ContentSearch = {
       return Promise.resolve(null);
     }
     return deferred.promise;
+  },
+
+  _ensureDataHasProperties: function (data, requiredProperties) {
+    for (let prop of requiredProperties) {
+      if (!(prop in data)) {
+        throw new Error("Message data missing required property: " + prop);
+      }
+    }
   },
 
   _initService: function () {

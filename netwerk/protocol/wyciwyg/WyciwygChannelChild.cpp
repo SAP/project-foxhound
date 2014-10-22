@@ -18,6 +18,8 @@
 #include "nsIProgressEventSink.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "SerializedLoadContext.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "nsProxyRelease.h"
 
 using namespace mozilla::ipc;
 
@@ -49,6 +51,14 @@ WyciwygChannelChild::WyciwygChannelChild()
 WyciwygChannelChild::~WyciwygChannelChild()
 {
   LOG(("Destroying WyciwygChannelChild @%x\n", this));
+  if (mLoadInfo) {
+    nsCOMPtr<nsIThread> mainThread;
+    NS_GetMainThread(getter_AddRefs(mainThread));
+
+    nsILoadInfo *forgetableLoadInfo;
+    mLoadInfo.forget(&forgetableLoadInfo);
+    NS_ProxyRelease(mainThread, forgetableLoadInfo, false);
+  }
 }
 
 void
@@ -80,7 +90,28 @@ WyciwygChannelChild::Init(nsIURI* uri)
   URIParams serializedUri;
   SerializeURI(uri, serializedUri);
 
-  SendInit(serializedUri);
+  // propagate loadInfo
+  mozilla::ipc::PrincipalInfo principalInfo;
+  uint32_t securityFlags;
+  uint32_t policyType;
+  if (mLoadInfo) {
+    mozilla::ipc::PrincipalToPrincipalInfo(mLoadInfo->LoadingPrincipal(),
+                                           &principalInfo);
+    securityFlags = mLoadInfo->GetSecurityFlags();
+    policyType = mLoadInfo->GetContentPolicyType();
+  }
+  else {
+    // use default values if no loadInfo is provided
+    mozilla::ipc::PrincipalToPrincipalInfo(nsContentUtils::GetSystemPrincipal(),
+                                           &principalInfo);
+    securityFlags = nsILoadInfo::SEC_NORMAL;
+    policyType = nsIContentPolicy::TYPE_OTHER;
+  }
+
+  SendInit(serializedUri,
+           principalInfo,
+           securityFlags,
+           policyType);
   return NS_OK;
 }
 
@@ -213,9 +244,10 @@ WyciwygChannelChild::OnDataAvailable(const nsCString& data,
   if (NS_FAILED(rv))
     Cancel(rv);
 
-  if (mProgressSink && NS_SUCCEEDED(rv) && !(mLoadFlags & LOAD_BACKGROUND))
+  if (mProgressSink && NS_SUCCEEDED(rv)) {
     mProgressSink->OnProgress(this, nullptr, offset + data.Length(),
                               uint64_t(mContentLength));
+  }
 }
 
 class WyciwygStopRequestEvent : public ChannelEvent

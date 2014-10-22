@@ -31,7 +31,6 @@
 #include "nsApplicationCache.h"
 #include "nsApplicationCacheService.h"
 #include "nsMimeTypes.h"
-#include "nsNetStrings.h"
 #include "nsDNSPrefetch.h"
 #include "nsAboutProtocolHandler.h"
 #include "nsXULAppAPI.h"
@@ -74,6 +73,10 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsSocketTransportService, Init)
 
 #include "nsServerSocket.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsServerSocket)
+
+#include "TLSServerSocket.h"
+typedef mozilla::net::TLSServerSocket TLSServerSocket;
+NS_GENERIC_FACTORY_CONSTRUCTOR(TLSServerSocket)
 
 #include "nsUDPSocket.h"
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsUDPSocket)
@@ -626,10 +629,8 @@ CreateNewBinaryDetectorFactory(nsISupports *aOuter, REFNSIID aIID, void **aResul
 // Net module startup hook
 static nsresult nsNetStartup()
 {
-    gNetStrings = new nsNetStrings();
-    return gNetStrings ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+    return NS_OK;
 }
-
 
 // Net module shutdown hook
 static void nsNetShutdown()
@@ -642,10 +643,6 @@ static void nsNetShutdown()
 #ifdef XP_MACOSX
     net_ShutdownURLHelperOSX();
 #endif
-    
-    // Release necko strings
-    delete gNetStrings;
-    gNetStrings = nullptr;
     
     // Release DNS service reference.
     nsDNSPrefetch::Shutdown();
@@ -665,6 +662,7 @@ NS_DEFINE_NAMED_CID(NS_IOSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_STREAMTRANSPORTSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SOCKETTRANSPORTSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SERVERSOCKET_CID);
+NS_DEFINE_NAMED_CID(NS_TLSSERVERSOCKET_CID);
 NS_DEFINE_NAMED_CID(NS_UDPSOCKET_CID);
 NS_DEFINE_NAMED_CID(NS_SOCKETPROVIDERSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_DNSSERVICE_CID);
@@ -804,6 +802,7 @@ static const mozilla::Module::CIDEntry kNeckoCIDs[] = {
     { &kNS_STREAMTRANSPORTSERVICE_CID, false, nullptr, nsStreamTransportServiceConstructor },
     { &kNS_SOCKETTRANSPORTSERVICE_CID, false, nullptr, nsSocketTransportServiceConstructor },
     { &kNS_SERVERSOCKET_CID, false, nullptr, nsServerSocketConstructor },
+    { &kNS_TLSSERVERSOCKET_CID, false, nullptr, TLSServerSocketConstructor },
     { &kNS_UDPSOCKET_CID, false, nullptr, nsUDPSocketConstructor },
     { &kNS_SOCKETPROVIDERSERVICE_CID, false, nullptr, nsSocketProviderService::Create },
     { &kNS_DNSSERVICE_CID, false, nullptr, nsIDNSServiceConstructor },
@@ -950,6 +949,7 @@ static const mozilla::Module::ContractIDEntry kNeckoContracts[] = {
     { NS_STREAMTRANSPORTSERVICE_CONTRACTID, &kNS_STREAMTRANSPORTSERVICE_CID },
     { NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &kNS_SOCKETTRANSPORTSERVICE_CID },
     { NS_SERVERSOCKET_CONTRACTID, &kNS_SERVERSOCKET_CID },
+    { NS_TLSSERVERSOCKET_CONTRACTID, &kNS_TLSSERVERSOCKET_CID },
     { NS_UDPSOCKET_CONTRACTID, &kNS_UDPSOCKET_CID },
     { NS_SOCKETPROVIDERSERVICE_CONTRACTID, &kNS_SOCKETPROVIDERSERVICE_CID },
     { NS_DNSSERVICE_CONTRACTID, &kNS_DNSSERVICE_CID },

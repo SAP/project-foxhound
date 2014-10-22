@@ -48,7 +48,7 @@ struct ReciprocalMulConstants {
     int32_t shiftAmount;
 };
 
-class CodeGeneratorShared : public LInstructionVisitor
+class CodeGeneratorShared : public LElementVisitor
 {
     js::Vector<OutOfLineCode *, 0, SystemAllocPolicy> outOfLineCode_;
     OutOfLineCode *oolIns;
@@ -97,10 +97,31 @@ class CodeGeneratorShared : public LInstructionVisitor
     js::Vector<CodeOffsetLabel, 0, SystemAllocPolicy> patchableTLScripts_;
 #endif
 
+  public:
+    struct NativeToBytecode {
+        CodeOffsetLabel nativeOffset;
+        InlineScriptTree *tree;
+        jsbytecode *pc;
+    };
+
+  protected:
+    js::Vector<NativeToBytecode, 0, SystemAllocPolicy> nativeToBytecodeList_;
+    uint8_t *nativeToBytecodeMap_;
+    uint32_t nativeToBytecodeMapSize_;
+    uint32_t nativeToBytecodeTableOffset_;
+    uint32_t nativeToBytecodeNumRegions_;
+
+    JSScript **nativeToBytecodeScriptList_;
+    uint32_t nativeToBytecodeScriptListLength_;
+
     // When profiling is enabled, this is the instrumentation manager which
     // maintains state of what script is currently being generated (for inline
     // scripts) and when instrumentation needs to be emitted or skipped.
     IonInstrumentation sps_;
+
+    bool isNativeToBytecodeMapEnabled() {
+        return gen->isNativeToBytecodeMapEnabled();
+    }
 
   protected:
     // The offset of the first instruction of the OSR entry block from the
@@ -112,7 +133,7 @@ class CodeGeneratorShared : public LInstructionVisitor
     }
 
     inline void setOsrEntryOffset(size_t offset) {
-        JS_ASSERT(osrEntryOffset_ == 0);
+        MOZ_ASSERT(osrEntryOffset_ == 0);
         osrEntryOffset_ = offset;
     }
     inline size_t getOsrEntryOffset() const {
@@ -124,7 +145,7 @@ class CodeGeneratorShared : public LInstructionVisitor
     size_t skipArgCheckEntryOffset_;
 
     inline void setSkipArgCheckEntryOffset(size_t offset) {
-        JS_ASSERT(skipArgCheckEntryOffset_ == 0);
+        MOZ_ASSERT(skipArgCheckEntryOffset_ == 0);
         skipArgCheckEntryOffset_ = offset;
     }
     inline size_t getSkipArgCheckEntryOffset() const {
@@ -137,6 +158,13 @@ class CodeGeneratorShared : public LInstructionVisitor
     void dropArguments(unsigned argc);
 
   protected:
+#ifdef CHECK_OSIPOINT_REGISTERS
+    // See js_JitOptions.checkOsiPointRegisters. We set this here to avoid
+    // races when enableOsiPointRegisterChecks is called while we're generating
+    // code off-thread.
+    bool checkOsiPointRegisters;
+#endif
+
     // The initial size of the frame in bytes. These are bytes beyond the
     // constant header present for every Ion frame, used for pre-determined
     // spills.
@@ -163,9 +191,9 @@ class CodeGeneratorShared : public LInstructionVisitor
     }
 
     inline int32_t SlotToStackOffset(int32_t slot) const {
-        JS_ASSERT(slot > 0 && slot <= int32_t(graph.localSlotCount()));
+        MOZ_ASSERT(slot > 0 && slot <= int32_t(graph.localSlotCount()));
         int32_t offset = masm.framePushed() - frameInitialAdjustment_ - slot;
-        JS_ASSERT(offset >= 0);
+        MOZ_ASSERT(offset >= 0);
         return offset;
     }
     inline int32_t StackOffsetToSlot(int32_t offset) const {
@@ -181,7 +209,7 @@ class CodeGeneratorShared : public LInstructionVisitor
     // For argument construction for calls. Argslots are Value-sized.
     inline int32_t StackOffsetOfPassedArg(int32_t slot) const {
         // A slot of 0 is permitted only to calculate %esp offset for calls.
-        JS_ASSERT(slot >= 0 && slot <= int32_t(graph.argumentSlotCount()));
+        MOZ_ASSERT(slot >= 0 && slot <= int32_t(graph.argumentSlotCount()));
         int32_t offset = masm.framePushed() -
                        graph.paddedLocalSlotsSize() -
                        (slot * sizeof(Value));
@@ -192,8 +220,8 @@ class CodeGeneratorShared : public LInstructionVisitor
         // by sizeof(Value) is desirable since everything on the stack is a Value.
         // Note that paddedLocalSlotCount() aligns to at least a Value boundary
         // specifically to support this.
-        JS_ASSERT(offset >= 0);
-        JS_ASSERT(offset % sizeof(Value) == 0);
+        MOZ_ASSERT(offset >= 0);
+        MOZ_ASSERT(offset % sizeof(Value) == 0);
         return offset;
     }
 
@@ -222,6 +250,10 @@ class CodeGeneratorShared : public LInstructionVisitor
     bool shouldVerifyOsiPointRegs(LSafepoint *safepoint);
     void verifyOsiPointRegs(LSafepoint *safepoint);
 #endif
+
+    bool addNativeToBytecodeEntry(const BytecodeSite &site);
+    void dumpNativeToBytecodeEntries();
+    void dumpNativeToBytecodeEntry(uint32_t idx);
 
   public:
     MIRGenerator &mirGen() const {
@@ -256,7 +288,7 @@ class CodeGeneratorShared : public LInstructionVisitor
   protected:
 
     size_t allocateData(size_t size) {
-        JS_ASSERT(size % sizeof(void *) == 0);
+        MOZ_ASSERT(size % sizeof(void *) == 0);
         size_t dataOffset = runtimeData_.length();
         masm.propagateOOM(runtimeData_.appendN(0, size));
         return dataOffset;
@@ -268,7 +300,7 @@ class CodeGeneratorShared : public LInstructionVisitor
         if (masm.oom())
             return SIZE_MAX;
         // Use the copy constructor on the allocated space.
-        JS_ASSERT(index == cacheList_.back());
+        MOZ_ASSERT(index == cacheList_.back());
         new (&runtimeData_[index]) T(cache);
         return index;
     }
@@ -289,6 +321,11 @@ class CodeGeneratorShared : public LInstructionVisitor
     // safepoint offsets.
     void encodeSafepoints();
 
+    // Fixup offsets of native-to-bytecode map.
+    bool createNativeToBytecodeScriptList(JSContext *cx);
+    bool generateCompactNativeToBytecodeMap(JSContext *cx, JitCode *code);
+    void verifyCompactNativeToBytecodeMap(JitCode *code);
+
     // Mark the safepoint on |ins| as corresponding to the current assembler location.
     // The location should be just after a call.
     bool markSafepoint(LInstruction *ins);
@@ -307,19 +344,21 @@ class CodeGeneratorShared : public LInstructionVisitor
     //      an invalidation marker.
     void ensureOsiSpace();
 
-    OutOfLineCode *oolTruncateDouble(FloatRegister src, Register dest);
-    bool emitTruncateDouble(FloatRegister src, Register dest);
-    bool emitTruncateFloat32(FloatRegister src, Register dest);
+    OutOfLineCode *oolTruncateDouble(FloatRegister src, Register dest, MInstruction *mir);
+    bool emitTruncateDouble(FloatRegister src, Register dest, MInstruction *mir);
+    bool emitTruncateFloat32(FloatRegister src, Register dest, MInstruction *mir);
 
-    void emitPreBarrier(Register base, const LAllocation *index, MIRType type);
-    void emitPreBarrier(Address address, MIRType type);
+    void emitAsmJSCall(LAsmJSCall *ins);
+
+    void emitPreBarrier(Register base, const LAllocation *index);
+    void emitPreBarrier(Address address);
 
     // We don't emit code for trivial blocks, so if we want to branch to the
     // given block, and it's trivial, return the ultimate block we should
     // actually branch directly to.
     MBasicBlock *skipTrivialBlocks(MBasicBlock *block) {
         while (block->lir()->isTrivial()) {
-            JS_ASSERT(block->lir()->rbegin()->numSuccessors() == 1);
+            MOZ_ASSERT(block->lir()->rbegin()->numSuccessors() == 1);
             block = block->lir()->rbegin()->getSuccessor(0);
         }
         return block;
@@ -438,7 +477,8 @@ class CodeGeneratorShared : public LInstructionVisitor
     ReciprocalMulConstants computeDivisionConstants(int d);
 
   protected:
-    bool addOutOfLineCode(OutOfLineCode *code);
+    bool addOutOfLineCode(OutOfLineCode *code, const MInstruction *mir);
+    bool addOutOfLineCode(OutOfLineCode *code, const BytecodeSite &site);
     bool hasOutOfLineCode() { return !outOfLineCode_.empty(); }
     bool generateOutOfLineCode();
 
@@ -496,14 +536,12 @@ class OutOfLineCode : public TempObject
     Label entry_;
     Label rejoin_;
     uint32_t framePushed_;
-    jsbytecode *pc_;
-    JSScript *script_;
+    BytecodeSite site_;
 
   public:
     OutOfLineCode()
       : framePushed_(0),
-        pc_(nullptr),
-        script_(nullptr)
+        site_()
     { }
 
     virtual bool generate(CodeGeneratorShared *codegen) = 0;
@@ -523,15 +561,17 @@ class OutOfLineCode : public TempObject
     uint32_t framePushed() const {
         return framePushed_;
     }
-    void setSource(JSScript *script, jsbytecode *pc) {
-        script_ = script;
-        pc_ = pc;
+    void setBytecodeSite(const BytecodeSite &site) {
+        site_ = site;
     }
-    jsbytecode *pc() {
-        return pc_;
+    const BytecodeSite &bytecodeSite() const {
+        return site_;
     }
-    JSScript *script() {
-        return script_;
+    jsbytecode *pc() const {
+        return site_.pc();
+    }
+    JSScript *script() const {
+        return site_.script();
     }
 };
 
@@ -727,8 +767,11 @@ inline OutOfLineCode *
 CodeGeneratorShared::oolCallVM(const VMFunction &fun, LInstruction *lir, const ArgSeq &args,
                                const StoreOutputTo &out)
 {
+    MOZ_ASSERT(lir->mirRaw());
+    MOZ_ASSERT(lir->mirRaw()->isInstruction());
+
     OutOfLineCode *ool = new(alloc()) OutOfLineCallVM<ArgSeq, StoreOutputTo>(lir, fun, args, out);
-    if (!addOutOfLineCode(ool))
+    if (!addOutOfLineCode(ool, lir->mirRaw()->toInstruction()))
         return nullptr;
     return ool;
 }

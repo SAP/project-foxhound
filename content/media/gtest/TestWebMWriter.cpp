@@ -45,7 +45,7 @@ const uint32_t FIXED_FRAMESIZE = 500;
 class TestWebMWriter: public WebMWriter
 {
 public:
-  TestWebMWriter(int aTrackTypes)
+  explicit TestWebMWriter(int aTrackTypes)
   : WebMWriter(aTrackTypes),
     mTimestamp(0)
   {}
@@ -240,8 +240,7 @@ static int webm_read(void* aBuffer, size_t aLength, void* aUserData)
 
   // Check the read length.
   if (aLength > ioData->data.Length()) {
-    NS_ERROR("Invalid read length");
-    return -1;
+    return 0;
   }
 
   // Check eos.
@@ -292,7 +291,7 @@ static int webm_seek(int64_t aOffset, int aWhence, void* aUserData)
     return -1;
   }
 
-  return 1;
+  return 0;
 }
 
 static int64_t webm_tell(void* aUserData)

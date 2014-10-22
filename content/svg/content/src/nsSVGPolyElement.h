@@ -12,8 +12,6 @@
 
 typedef nsSVGPathGeometryElement nsSVGPolyElementBase;
 
-class gfxContext;
-
 namespace mozilla {
 class DOMSVGPointList;
 }
@@ -21,7 +19,7 @@ class DOMSVGPointList;
 class nsSVGPolyElement : public nsSVGPolyElementBase
 {
 protected:
-  nsSVGPolyElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  explicit nsSVGPolyElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
 
   virtual ~nsSVGPolyElement();
 
@@ -47,8 +45,7 @@ public:
   virtual bool AttributeDefinesGeometry(const nsIAtom *aName) MOZ_OVERRIDE;
   virtual bool IsMarkable() MOZ_OVERRIDE { return true; }
   virtual void GetMarkPoints(nsTArray<nsSVGMark> *aMarks) MOZ_OVERRIDE;
-  virtual void ConstructPath(gfxContext *aCtx) MOZ_OVERRIDE;
-  virtual mozilla::TemporaryRef<Path> BuildPath(PathBuilder* aBuilder = nullptr) MOZ_OVERRIDE;
+  virtual mozilla::TemporaryRef<Path> BuildPath(PathBuilder* aBuilder) MOZ_OVERRIDE;
 
   // WebIDL
   already_AddRefed<mozilla::DOMSVGPointList> Points();

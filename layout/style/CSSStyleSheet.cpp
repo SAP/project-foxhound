@@ -50,10 +50,10 @@ using namespace mozilla::dom;
 // -------------------------------
 // Style Rule List for the DOM
 //
-class CSSRuleListImpl : public CSSRuleList
+class CSSRuleListImpl MOZ_FINAL : public CSSRuleList
 {
 public:
-  CSSRuleListImpl(CSSStyleSheet *aStyleSheet);
+  explicit CSSRuleListImpl(CSSStyleSheet *aStyleSheet);
 
   virtual CSSStyleSheet* GetParentObject() MOZ_OVERRIDE;
 
@@ -94,7 +94,7 @@ CSSRuleListImpl::Length()
     return 0;
   }
 
-  return SafeCast<uint32_t>(mStyleSheet->StyleRuleCount());
+  return AssertedCast<uint32_t>(mStyleSheet->StyleRuleCount());
 }
 
 nsIDOMCSSRule*    
@@ -490,7 +490,6 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsMediaList)
 nsMediaList::nsMediaList()
   : mStyleSheet(nullptr)
 {
-  SetIsDOMBinding();
 }
 
 nsMediaList::~nsMediaList()
@@ -984,8 +983,6 @@ CSSStyleSheet::CSSStyleSheet(CORSMode aCORSMode)
     mRuleProcessors(nullptr)
 {
   mInner = new CSSStyleSheetInner(this, aCORSMode);
-
-  SetIsDOMBinding();
 }
 
 CSSStyleSheet::CSSStyleSheet(const CSSStyleSheet& aCopy,
@@ -1018,8 +1015,6 @@ CSSStyleSheet::CSSStyleSheet(const CSSStyleSheet& aCopy,
     // sheets in sync!
     mMedia = aCopy.mMedia->Clone();
   }
-
-  SetIsDOMBinding();
 }
 
 CSSStyleSheet::~CSSStyleSheet()

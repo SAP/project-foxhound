@@ -159,7 +159,7 @@ let AboutHome = {
             if (userData) {
               window.openPreferences("paneSync");
             } else {
-              window.loadURI("about:accounts");
+              window.loadURI("about:accounts?entrypoint=abouthome");
             }
           });
         } else {
@@ -191,7 +191,7 @@ let AboutHome = {
 
           let engine = Services.search.currentEngine;
 #ifdef MOZ_SERVICES_HEALTHREPORT
-          window.BrowserSearch.recordSearchInHealthReport(engine, "abouthome");
+          window.BrowserSearch.recordSearchInHealthReport(engine, "abouthome", data.selection);
 #endif
           // Trigger a search through nsISearchEngine.getSubmission()
           let submission = engine.getSubmission(data.searchTerms, null, "homepage");
@@ -251,4 +251,13 @@ let AboutHome = {
       Cu.reportError("Error in AboutHome.sendAboutHomeData: " + x);
     });
   },
+
+  /**
+   * Focuses the search input in the page with the given message manager.
+   * @param  messageManager
+   *         The MessageManager object of the selected browser.
+   */
+  focusInput: function (messageManager) {
+    messageManager.sendAsyncMessage("AboutHome:FocusInput");
+  }
 };

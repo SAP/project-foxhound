@@ -14,6 +14,7 @@
 #include "gfxFontUtils.h"
 #include "gfxMacPlatformFontList.h"
 #include "gfxFontConstants.h"
+#include "gfxTextRun.h"
 
 #include "cairo-quartz.h"
 
@@ -123,6 +124,7 @@ gfxMacFont::ShapeText(gfxContext     *aContext,
                       uint32_t        aOffset,
                       uint32_t        aLength,
                       int32_t         aScript,
+                      bool            aVertical,
                       gfxShapedText  *aShapedText)
 {
     if (!mIsValid) {
@@ -130,19 +132,22 @@ gfxMacFont::ShapeText(gfxContext     *aContext,
         return false;
     }
 
-    if (static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout()) {
+    // Currently, we don't support vertical shaping via CoreText,
+    // so we ignore RequiresAATLayout if vertical is requested.
+    if (static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout() &&
+        !aVertical) {
         if (!mCoreTextShaper) {
             mCoreTextShaper = new gfxCoreTextShaper(this);
         }
         if (mCoreTextShaper->ShapeText(aContext, aText, aOffset, aLength,
-                                       aScript, aShapedText)) {
+                                       aScript, aVertical, aShapedText)) {
             PostShapingFixup(aContext, aText, aOffset, aLength, aShapedText);
             return true;
         }
     }
 
     return gfxFont::ShapeText(aContext, aText, aOffset, aLength, aScript,
-                              aShapedText);
+                              aVertical, aShapedText);
 }
 
 bool
@@ -162,11 +167,13 @@ gfxMacFont::Measure(gfxTextRun *aTextRun,
                     uint32_t aStart, uint32_t aEnd,
                     BoundingBoxType aBoundingBoxType,
                     gfxContext *aRefContext,
-                    Spacing *aSpacing)
+                    Spacing *aSpacing,
+                    uint16_t aOrientation)
 {
     gfxFont::RunMetrics metrics =
         gfxFont::Measure(aTextRun, aStart, aEnd,
-                         aBoundingBoxType, aRefContext, aSpacing);
+                         aBoundingBoxType, aRefContext, aSpacing,
+                         aOrientation);
 
     // if aBoundingBoxType is not TIGHT_HINTED_OUTLINE_EXTENTS then we need to add
     // a pixel column each side of the bounding box in case of antialiasing "bleed"

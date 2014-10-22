@@ -14,7 +14,6 @@
 #include "nsIURI.h"
 #include "nsIHttpChannel.h"
 #include "nsIDocument.h"
-#include "nsIContent.h"
 #include "nsIStreamListener.h"
 #include "nsWeakReference.h"
 #include "nsIChannelEventSink.h"
@@ -42,8 +41,6 @@
 #endif
 
 class AsyncVerifyRedirectCallbackForwarder;
-class BlobSet;
-class nsDOMFile;
 class nsFormData;
 class nsIJARChannel;
 class nsILoadGroup;
@@ -53,7 +50,8 @@ class nsIJSID;
 namespace mozilla {
 
 namespace dom {
-class DOMFile;
+class BlobSet;
+class File;
 }
 
 // A helper for building up an ArrayBuffer object's data
@@ -113,7 +111,7 @@ class nsXHREventTarget : public mozilla::DOMEventTargetHelper,
                          public nsIXMLHttpRequestEventTarget
 {
 protected:
-  nsXHREventTarget(mozilla::DOMEventTargetHelper* aOwner)
+  explicit nsXHREventTarget(mozilla::DOMEventTargetHelper* aOwner)
     : mozilla::DOMEventTargetHelper(aOwner)
   {
   }
@@ -151,7 +149,7 @@ class nsXMLHttpRequestUpload MOZ_FINAL : public nsXHREventTarget,
                                          public nsIXMLHttpRequestUpload
 {
 public:
-  nsXMLHttpRequestUpload(mozilla::DOMEventTargetHelper* aOwner)
+  explicit nsXMLHttpRequestUpload(mozilla::DOMEventTargetHelper* aOwner)
     : nsXHREventTarget(aOwner)
   {
   }
@@ -180,16 +178,16 @@ class nsXMLHttpRequestXPCOMifier;
 
 // Make sure that any non-DOM interfaces added here are also added to
 // nsXMLHttpRequestXPCOMifier.
-class nsXMLHttpRequest : public nsXHREventTarget,
-                         public nsIXMLHttpRequest,
-                         public nsIJSXMLHttpRequest,
-                         public nsIStreamListener,
-                         public nsIChannelEventSink,
-                         public nsIProgressEventSink,
-                         public nsIInterfaceRequestor,
-                         public nsSupportsWeakReference,
-                         public nsITimerCallback,
-                         public nsISizeOfEventTarget
+class nsXMLHttpRequest MOZ_FINAL : public nsXHREventTarget,
+                                   public nsIXMLHttpRequest,
+                                   public nsIJSXMLHttpRequest,
+                                   public nsIStreamListener,
+                                   public nsIChannelEventSink,
+                                   public nsIProgressEventSink,
+                                   public nsIInterfaceRequestor,
+                                   public nsSupportsWeakReference,
+                                   public nsITimerCallback,
+                                   public nsISizeOfEventTarget
 {
   friend class nsXHRParseEndListener;
   friend class nsXMLHttpRequestXPCOMifier;
@@ -343,31 +341,31 @@ private:
     RequestBody() : mType(Uninitialized)
     {
     }
-    RequestBody(const mozilla::dom::ArrayBuffer* aArrayBuffer) : mType(ArrayBuffer)
+    explicit RequestBody(const mozilla::dom::ArrayBuffer* aArrayBuffer) : mType(ArrayBuffer)
     {
       mValue.mArrayBuffer = aArrayBuffer;
     }
-    RequestBody(const mozilla::dom::ArrayBufferView* aArrayBufferView) : mType(ArrayBufferView)
+    explicit RequestBody(const mozilla::dom::ArrayBufferView* aArrayBufferView) : mType(ArrayBufferView)
     {
       mValue.mArrayBufferView = aArrayBufferView;
     }
-    RequestBody(nsIDOMBlob* aBlob) : mType(Blob)
+    explicit RequestBody(mozilla::dom::File& aBlob) : mType(Blob)
     {
-      mValue.mBlob = aBlob;
+      mValue.mBlob = &aBlob;
     }
-    RequestBody(nsIDocument* aDocument) : mType(Document)
+    explicit RequestBody(nsIDocument* aDocument) : mType(Document)
     {
       mValue.mDocument = aDocument;
     }
-    RequestBody(const nsAString& aString) : mType(DOMString)
+    explicit RequestBody(const nsAString& aString) : mType(DOMString)
     {
       mValue.mString = &aString;
     }
-    RequestBody(nsFormData& aFormData) : mType(FormData)
+    explicit RequestBody(nsFormData& aFormData) : mType(FormData)
     {
       mValue.mFormData = &aFormData;
     }
-    RequestBody(nsIInputStream* aStream) : mType(InputStream)
+    explicit RequestBody(nsIInputStream* aStream) : mType(InputStream)
     {
       mValue.mStream = aStream;
     }
@@ -385,7 +383,7 @@ private:
     union Value {
       const mozilla::dom::ArrayBuffer* mArrayBuffer;
       const mozilla::dom::ArrayBufferView* mArrayBufferView;
-      nsIDOMBlob* mBlob;
+      mozilla::dom::File* mBlob;
       nsIDocument* mDocument;
       const nsAString* mString;
       nsFormData* mFormData;
@@ -441,9 +439,8 @@ public:
   {
     aRv = Send(RequestBody(&aArrayBufferView));
   }
-  void Send(nsIDOMBlob* aBlob, ErrorResult& aRv)
+  void Send(mozilla::dom::File& aBlob, ErrorResult& aRv)
   {
-    NS_ASSERTION(aBlob, "Null should go to string version");
     aRv = Send(RequestBody(aBlob));
   }
   void Send(nsIDocument& aDoc, ErrorResult& aRv)
@@ -673,13 +670,13 @@ protected:
 
   // It is either a cached blob-response from the last call to GetResponse,
   // but is also explicitly set in OnStopRequest.
-  nsCOMPtr<nsIDOMBlob> mResponseBlob;
+  nsRefPtr<mozilla::dom::File> mResponseBlob;
   // Non-null only when we are able to get a os-file representation of the
   // response, i.e. when loading from a file.
-  nsRefPtr<mozilla::dom::DOMFile> mDOMFile;
+  nsRefPtr<mozilla::dom::File> mDOMFile;
   // We stream data to mBlobSet when response type is "blob" or "moz-blob"
   // and mDOMFile is null.
-  nsAutoPtr<BlobSet> mBlobSet;
+  nsAutoPtr<mozilla::dom::BlobSet> mBlobSet;
 
   nsString mOverrideMimeType;
 
@@ -724,6 +721,16 @@ protected:
   bool mWarnAboutSyncHtml;
   bool mLoadLengthComputable;
   uint64_t mLoadTotal; // 0 if not known.
+  // Amount of script-exposed (i.e. after undoing gzip compresion) data
+  // received.
+  uint64_t mDataAvailable;
+  // Number of HTTP message body bytes received so far. This quantity is
+  // in the same units as Content-Length and mLoadTotal, and hence counts
+  // compressed bytes when the channel has gzip Content-Encoding. If the
+  // channel does not have Content-Encoding, this will be the same as
+  // mDataReceived except between the OnProgress that changes mLoadTransferred
+  // and the corresponding OnDataAvailable (which changes mDataReceived).
+  // Ordering of OnProgress and OnDataAvailable is undefined.
   uint64_t mLoadTransferred;
   nsCOMPtr<nsITimer> mProgressNotifier;
   void HandleProgressTimerCallback();
@@ -799,7 +806,7 @@ class nsXMLHttpRequestXPCOMifier MOZ_FINAL : public nsIStreamListener,
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXMLHttpRequestXPCOMifier,
                                            nsIStreamListener)
 
-  nsXMLHttpRequestXPCOMifier(nsXMLHttpRequest* aXHR) :
+  explicit nsXMLHttpRequestXPCOMifier(nsXMLHttpRequest* aXHR) :
     mXHR(aXHR)
   {
   }
@@ -837,7 +844,7 @@ public:
     mXHR = nullptr;
     return NS_OK;
   }
-  nsXHRParseEndListener(nsIXMLHttpRequest* aXHR)
+  explicit nsXHRParseEndListener(nsIXMLHttpRequest* aXHR)
     : mXHR(do_GetWeakReference(aXHR)) {}
 private:
   virtual ~nsXHRParseEndListener() {}

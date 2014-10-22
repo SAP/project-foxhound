@@ -124,7 +124,7 @@ struct VectorImpl
   {
     MOZ_ASSERT(!aV.usingInlineStorage());
     MOZ_ASSERT(!CapacityHasExcessSpace<T>(aNewCap));
-    T* newbuf = reinterpret_cast<T*>(aV.malloc_(aNewCap * sizeof(T)));
+    T* newbuf = aV.template pod_malloc<T>(aNewCap);
     if (!newbuf) {
       return false;
     }
@@ -204,9 +204,7 @@ struct VectorImpl<T, N, AP, ThisVector, true>
   {
     MOZ_ASSERT(!aV.usingInlineStorage());
     MOZ_ASSERT(!CapacityHasExcessSpace<T>(aNewCap));
-    size_t oldSize = sizeof(T) * aV.mCapacity;
-    size_t newSize = sizeof(T) * aNewCap;
-    T* newbuf = reinterpret_cast<T*>(aV.realloc_(aV.mBegin, oldSize, newSize));
+    T* newbuf = aV.template pod_realloc<T>(aV.mBegin, aV.mCapacity, aNewCap);
     if (!newbuf) {
       return false;
     }
@@ -474,6 +472,7 @@ public:
    * -- leave them as uninitialized memory.
    */
   bool growByUninitialized(size_t aIncr);
+  void infallibleGrowByUninitialized(size_t aIncr);
   bool resizeUninitialized(size_t aNewLength);
 
   /** Shorthand for shrinkBy(length()). */
@@ -704,7 +703,7 @@ VectorBase<T, N, AP, TV>::convertToHeapStorage(size_t aNewCap)
 
   /* Allocate buffer. */
   MOZ_ASSERT(!detail::CapacityHasExcessSpace<T>(aNewCap));
-  T* newBuf = reinterpret_cast<T*>(this->malloc_(aNewCap * sizeof(T)));
+  T* newBuf = this->template pod_malloc<T>(aNewCap);
   if (!newBuf) {
     return false;
   }
@@ -813,7 +812,7 @@ VectorBase<T, N, AP, TV>::initCapacity(size_t aRequest)
   if (aRequest == 0) {
     return true;
   }
-  T* newbuf = reinterpret_cast<T*>(this->malloc_(aRequest * sizeof(T)));
+  T* newbuf = this->template pod_malloc<T>(aRequest);
   if (!newbuf) {
     return false;
   }
@@ -881,6 +880,14 @@ VectorBase<T, N, AP, TV>::growByUninitialized(size_t aIncr)
   if (aIncr > mCapacity - mLength && !growStorageBy(aIncr)) {
     return false;
   }
+  infallibleGrowByUninitialized(aIncr);
+  return true;
+}
+
+template<typename T, size_t N, class AP, class TV>
+MOZ_ALWAYS_INLINE void
+VectorBase<T, N, AP, TV>::infallibleGrowByUninitialized(size_t aIncr)
+{
   MOZ_ASSERT(mLength + aIncr <= mCapacity);
   mLength += aIncr;
 #ifdef DEBUG
@@ -888,7 +895,6 @@ VectorBase<T, N, AP, TV>::growByUninitialized(size_t aIncr)
     mReserved = mLength;
   }
 #endif
-  return true;
 }
 
 template<typename T, size_t N, class AP, class TV>
@@ -1137,7 +1143,7 @@ VectorBase<T, N, AP, TV>::extractRawBuffer()
 {
   T* ret;
   if (usingInlineStorage()) {
-    ret = reinterpret_cast<T*>(this->malloc_(mLength * sizeof(T)));
+    ret = this->template pod_malloc<T>(mLength);
     if (!ret) {
       return nullptr;
     }

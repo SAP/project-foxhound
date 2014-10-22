@@ -9,7 +9,6 @@
 #include <ui/GraphicBuffer.h>
 #include "GrallocImages.h"  // for GrallocImage
 #include "mozilla/layers/GrallocTextureHost.h"
-#include "mozilla/layers/CompositorOGL.h"
 #include "mozilla/layers/SharedBufferManagerParent.h"
 #include "EGLImageHelpers.h"
 #include "GLReadTexImageHelper.h"
@@ -39,6 +38,9 @@ SurfaceFormatForAndroidPixelFormat(android::PixelFormat aFormat,
   case GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_SP_TILED:
   case GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS:
   case HAL_PIXEL_FORMAT_YV12:
+#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
+  case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+#endif
     return gfx::SurfaceFormat::R8G8B8A8; // yup, use SurfaceFormat::R8G8B8A8 even though it's a YUV texture. This is an external texture.
   default:
     if (aFormat >= 0x100 && aFormat <= 0x1FF) {
@@ -67,6 +69,9 @@ TextureTargetForAndroidPixelFormat(android::PixelFormat aFormat)
   case GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_SP_TILED:
   case GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS:
   case HAL_PIXEL_FORMAT_YV12:
+#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
+  case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+#endif
     return LOCAL_GL_TEXTURE_EXTERNAL;
   case android::PIXEL_FORMAT_BGRA_8888:
   case android::PIXEL_FORMAT_RGBA_8888:
@@ -121,10 +126,9 @@ GrallocTextureSourceOGL::BindTexture(GLenum aTextureUnit, gfx::Filter aFilter)
    * texture using fEGLImageTargetTexture2D.
    */
   MOZ_ASSERT(gl());
-  if (!IsValid()) {
+  if (!IsValid() || !gl()->MakeCurrent()) {
     return;
   }
-  gl()->MakeCurrent();
 
   GLuint tex = GetGLTexture();
   GLuint textureTarget = GetTextureTarget();
@@ -132,8 +136,8 @@ GrallocTextureSourceOGL::BindTexture(GLenum aTextureUnit, gfx::Filter aFilter)
   gl()->fActiveTexture(aTextureUnit);
   gl()->fBindTexture(textureTarget, tex);
 
-  if (mCompositableBackendData) {
-    // There are two paths for locking/unlocking - if mCompositableBackendData is
+  if (mTextureBackendSpecificData) {
+    // There are two paths for locking/unlocking - if mTextureBackendSpecificData is
     // set, we use the texture on there, otherwise we use
     // CompositorBackendSpecificData from the compositor and bind the EGLImage
     // only in Lock().
@@ -153,29 +157,38 @@ GrallocTextureSourceOGL::BindTexture(GLenum aTextureUnit, gfx::Filter aFilter)
 #endif
 }
 
-void GrallocTextureSourceOGL::Lock()
+bool GrallocTextureSourceOGL::Lock()
 {
-  if (mCompositableBackendData) return;
+  if (mTextureBackendSpecificData) {
+    return true;
+  }
 
   MOZ_ASSERT(IsValid());
+  if (!IsValid()) {
+    return false;
+  }
+  if (!gl()->MakeCurrent()) {
+    NS_WARNING("Failed to make the gl context current");
+    return false;
+  }
 
   mTexture = mCompositor->GetTemporaryTexture(GetTextureTarget(), LOCAL_GL_TEXTURE0);
 
   GLuint textureTarget = GetTextureTarget();
 
-  gl()->MakeCurrent();
   gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
   gl()->fBindTexture(textureTarget, mTexture);
   if (!mEGLImage) {
     mEGLImage = EGLImageCreateFromNativeBuffer(gl(), mGraphicBuffer->getNativeBuffer());
   }
   gl()->fEGLImageTargetTexture2D(textureTarget, mEGLImage);
+  return true;
 }
 
 bool
 GrallocTextureSourceOGL::IsValid() const
 {
-  return !!gl() && !!mGraphicBuffer.get() && (!!mCompositor || !!mCompositableBackendData);
+  return !!gl() && !!mGraphicBuffer.get() && (!!mCompositor || !!mTextureBackendSpecificData);
 }
 
 gl::GLContext*
@@ -218,22 +231,26 @@ GrallocTextureSourceOGL::GetTextureTarget() const
 }
 
 void
-GrallocTextureSourceOGL::SetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData)
+GrallocTextureSourceOGL::SetTextureBackendSpecificData(TextureSharedDataGonkOGL* aBackendData)
 {
   if (!aBackendData) {
     DeallocateDeviceData();
-    // Update mCompositableBackendData after calling DeallocateDeviceData().
-    mCompositableBackendData = nullptr;
+    // Update mTextureBackendSpecificData after calling DeallocateDeviceData().
+    mTextureBackendSpecificData = nullptr;
     return;
   }
 
-  if (mCompositableBackendData != aBackendData) {
+  if (mTextureBackendSpecificData != aBackendData) {
     mNeedsReset = true;
+  }
+
+  if (!gl() || !gl()->MakeCurrent()) {
+    NS_WARNING("Failed to make the context current");
+    return;
   }
 
   if (!mNeedsReset) {
     // Update binding to the EGLImage
-    gl()->MakeCurrent();
     GLuint tex = GetGLTexture();
     GLuint textureTarget = GetTextureTarget();
     gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
@@ -243,17 +260,16 @@ GrallocTextureSourceOGL::SetCompositableBackendSpecificData(CompositableBackendS
   }
 
   if (!mCompositor) {
-    mCompositableBackendData = aBackendData;
+    mTextureBackendSpecificData = aBackendData;
     return;
   }
 
   // delete old EGLImage
   DeallocateDeviceData();
 
-  // Update mCompositableBackendData after calling DeallocateDeviceData().
-  mCompositableBackendData = aBackendData;
+  // Update mTextureBackendSpecificData after calling DeallocateDeviceData().
+  mTextureBackendSpecificData = aBackendData;
 
-  gl()->MakeCurrent();
   GLuint tex = GetGLTexture();
   GLuint textureTarget = GetTextureTarget();
 
@@ -284,11 +300,12 @@ void
 GrallocTextureSourceOGL::DeallocateDeviceData()
 {
   if (mEGLImage) {
-    MOZ_ASSERT(gl());
-    gl()->MakeCurrent();
-    if (mCompositableBackendData) {
-      CompositableDataGonkOGL* backend = static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get());
-      backend->ClearBoundEGLImage(mEGLImage);
+    MOZ_ASSERT(mCompositor);
+    if (!gl() || !gl()->MakeCurrent()) {
+      return;
+    }
+    if (mTextureBackendSpecificData) {
+      mTextureBackendSpecificData->ClearBoundEGLImage(mEGLImage);
     }
     EGLImageDestroy(gl(), mEGLImage);
     mEGLImage = EGL_NO_IMAGE;
@@ -321,7 +338,8 @@ GrallocTextureHostOGL::GrallocTextureHostOGL(TextureFlags aFlags,
 
 GrallocTextureHostOGL::~GrallocTextureHostOGL()
 {
-  mTextureSource = nullptr;
+  MOZ_ASSERT(!mTextureSource || (mFlags & TextureFlags::DEALLOCATE_CLIENT),
+             "Leaking our buffer");
 }
 
 void
@@ -432,10 +450,9 @@ GrallocTextureHostOGL::GetAsSurface() {
 
 TemporaryRef<gfx::DataSourceSurface>
 GrallocTextureSourceOGL::GetAsSurface() {
-  if (!IsValid()) {
+  if (!IsValid() || !gl()->MakeCurrent()) {
     return nullptr;
   }
-  gl()->MakeCurrent();
 
   GLuint tex = GetGLTexture();
   gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
@@ -456,9 +473,9 @@ GrallocTextureSourceOGL::GetAsSurface() {
 GLuint
 GrallocTextureSourceOGL::GetGLTexture()
 {
-  if (mCompositableBackendData) {
-    mCompositableBackendData->SetCompositor(mCompositor);
-    return static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get())->GetTexture();
+  if (mTextureBackendSpecificData) {
+    mTextureBackendSpecificData->SetCompositor(mCompositor);
+    return mTextureBackendSpecificData->GetTexture();
   }
 
   return mTexture;
@@ -467,9 +484,8 @@ GrallocTextureSourceOGL::GetGLTexture()
 void
 GrallocTextureSourceOGL::BindEGLImage()
 {
-  if (mCompositableBackendData) {
-    CompositableDataGonkOGL* backend = static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get());
-    backend->BindEGLImage(GetTextureTarget(), mEGLImage);
+  if (mTextureBackendSpecificData) {
+    mTextureBackendSpecificData->BindEGLImage(GetTextureTarget(), mEGLImage);
   } else {
     gl()->fEGLImageTargetTexture2D(GetTextureTarget(), mEGLImage);
   }
@@ -478,9 +494,81 @@ GrallocTextureSourceOGL::BindEGLImage()
 void
 GrallocTextureHostOGL::SetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData)
 {
-  mCompositableBackendData = aBackendData;
+  if(!aBackendData) {
+    return;
+  }
+
+  // Update mTextureBackendSpecificData if it is not set yet.
+  if (!mTextureBackendSpecificData) {
+    MOZ_ASSERT(!mCompositableBackendData);
+    mCompositableBackendData = aBackendData;
+    CompositableDataGonkOGL* backend = static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get());
+    mTextureBackendSpecificData = backend->GetTextureBackendSpecificData();
+  }
+
+  // If TextureHost sharing by multiple CompositableHosts are detected,
+  // enable mBackendDatas usage.
+  if (!mBackendDatas &&
+      mCompositableBackendData &&
+      mCompositableBackendData != aBackendData &&
+      mTextureBackendSpecificData->IsAllowingSharingTextureHost())
+  {
+    mBackendDatas = MakeUnique<std::map<uint64_t, RefPtr<CompositableBackendSpecificData> > >();
+    (*mBackendDatas)[mCompositableBackendData->GetId()] = mCompositableBackendData;
+    mCompositableBackendData = nullptr;
+
+    // Get new mTextureBackendSpecificData
+    mTextureBackendSpecificData =
+      mTextureBackendSpecificData->GetNewTextureBackendSpecificData(mTextureSource->GetEGLImage());
+    mTextureBackendSpecificData->SetOwnedByTextureHost();
+  }
+
+  // Update mCompositableBackendData.
+  if (mBackendDatas)
+  {
+    // Handle a case that TextureHost has ownership of TextureSharedDataGonkOGL.
+    MOZ_ASSERT(aBackendData->IsAllowingSharingTextureHost());
+    (*mBackendDatas)[aBackendData->GetId()] = aBackendData;
+    if (mBackendDatas->size() > 200) {
+      NS_WARNING("Too many CompositableBackends");
+    }
+  } else {
+    // Handle a case that CompositableHost has ownership of TextureSharedDataGonkOGL.
+    mCompositableBackendData = aBackendData;
+    CompositableDataGonkOGL* backend = static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get());
+    mTextureBackendSpecificData = backend->GetTextureBackendSpecificData();
+  }
+
   if (mTextureSource) {
-    mTextureSource->SetCompositableBackendSpecificData(aBackendData);
+    mTextureSource->SetTextureBackendSpecificData(mTextureBackendSpecificData);
+  }
+
+}
+
+void
+GrallocTextureHostOGL::UnsetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData)
+{
+  if(!aBackendData ||
+     !mTextureBackendSpecificData) {
+    return;
+  }
+
+  if (mBackendDatas)
+  {
+    // Handle a case that TextureHost has ownership of TextureSharedDataGonkOGL.
+    mBackendDatas->erase(aBackendData->GetId());
+    if (mBackendDatas->size() == 0) {
+      mCompositableBackendData = nullptr;
+      mTextureBackendSpecificData = nullptr;
+    }
+  } else {
+    // Handle a case that CompositableHost has ownership of TextureSharedDataGonkOGL.
+    mCompositableBackendData = nullptr;
+    mTextureBackendSpecificData = nullptr;
+  }
+
+  if (mTextureSource) {
+    mTextureSource->SetTextureBackendSpecificData(mTextureBackendSpecificData);
   }
 }
 

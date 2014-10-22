@@ -269,6 +269,10 @@ nsNativeThemeGTK::GetGtkWidgetAndState(uint8_t aWidgetType, nsIFrame* aFrame,
 
           aState->curpos = CheckIntAttr(tmpFrame, nsGkAtoms::curpos, 0);
           aState->maxpos = CheckIntAttr(tmpFrame, nsGkAtoms::maxpos, 100);
+
+          if (CheckBooleanAttr(aFrame, nsGkAtoms::active)) {
+            aState->active = TRUE;
+          }
         }
 
         if (aWidgetType == NS_THEME_SCROLLBAR_BUTTON_UP ||
@@ -834,11 +838,12 @@ nsNativeThemeGTK::DrawWidgetBackground(nsRenderingContext* aContext,
 
   // translate everything so (0,0) is the top left of the drawingRect
   gfxContextAutoSaveRestore autoSR(ctx);
-  if (snapXY) {
-    // Rects are in device coords.
-    ctx->IdentityMatrix(); 
+  gfxMatrix tm;
+  if (!snapXY) { // else rects are in device coords
+    tm = ctx->CurrentMatrix();
   }
-  ctx->Translate(rect.TopLeft() + gfxPoint(drawingRect.x, drawingRect.y));
+  tm.Translate(rect.TopLeft() + gfxPoint(drawingRect.x, drawingRect.y));
+  ctx->SetMatrix(tm);
 
   NS_ASSERTION(!IsWidgetTypeDisabled(mDisabledWidgetTypes, aWidgetType),
                "Trying to render an unsafe widget!");
@@ -936,14 +941,18 @@ nsNativeThemeGTK::GetWidgetBorder(nsDeviceContext* aContext, nsIFrame* aFrame,
     // but don't reserve any space for it.
     break;
   case NS_THEME_TAB:
-    // Top tabs have no bottom border, bottom tabs have no top border
-    moz_gtk_get_widget_border(MOZ_GTK_TAB, &aResult->left, &aResult->top,
-                              &aResult->right, &aResult->bottom, direction,
-                              FALSE);
-    if (IsBottomTab(aFrame))
-        aResult->top = 0;
-    else
-        aResult->bottom = 0;
+    {
+      GtkThemeWidgetType gtkWidgetType;
+      gint flags;
+
+      if (!GetGtkWidgetAndState(aWidgetType, aFrame, gtkWidgetType, nullptr,
+                                &flags))
+        return NS_OK;
+
+      moz_gtk_get_tab_border(&aResult->left, &aResult->top,
+                             &aResult->right, &aResult->bottom, direction,
+                             (GtkTabFlags)flags);
+    }
     break;
   case NS_THEME_MENUITEM:
   case NS_THEME_CHECKMENUITEM:
@@ -1303,6 +1312,13 @@ nsNativeThemeGTK::WidgetStateChanged(nsIFrame* aFrame, uint8_t aWidgetType,
       aWidgetType == NS_THEME_WINDOW ||
       aWidgetType == NS_THEME_DIALOG) {
     *aShouldRepaint = false;
+    return NS_OK;
+  }
+
+  if ((aWidgetType == NS_THEME_SCROLLBAR_THUMB_VERTICAL ||
+       aWidgetType == NS_THEME_SCROLLBAR_THUMB_HORIZONTAL) &&
+       aAttribute == nsGkAtoms::active) {
+    *aShouldRepaint = true;
     return NS_OK;
   }
 

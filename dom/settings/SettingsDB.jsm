@@ -8,6 +8,7 @@ let Cc = Components.classes;
 let Ci = Components.interfaces;
 let Cu = Components.utils;
 
+Cu.importGlobalProperties(['Blob']);
 Cu.import("resource://gre/modules/Services.jsm");
 
 this.EXPORTED_SYMBOLS = ["SettingsDB", "SETTINGSDB_NAME", "SETTINGSSTORE_NAME"];
@@ -30,7 +31,7 @@ const TYPED_ARRAY_THINGS = new Set([
 ]);
 
 this.SETTINGSDB_NAME = "settings";
-this.SETTINGSDB_VERSION = 4;
+this.SETTINGSDB_VERSION = 5;
 this.SETTINGSSTORE_NAME = "settings";
 
 Cu.import("resource://gre/modules/IndexedDBHelper.jsm");

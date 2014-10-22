@@ -103,12 +103,6 @@ typedef struct cc_call_info_t_{
     cc_boolean    audio_mute;
     cc_boolean    video_mute;
     cc_call_conference_Info_t call_conference;
-    cc_string_t   sdp;
-    unsigned int  media_stream_track_id;
-    unsigned int  media_stream_id;
-    cc_media_options_t* cc_options;
-    string_t      candidate;
-    Timecard *    timecard;
 } session_data_t;
 
 typedef enum {
@@ -141,7 +135,8 @@ typedef enum {
 
 extern cpr_status_e ccappTaskPostMsg(unsigned int msgId, void * data, uint16_t len, int appId);
 extern void ccappSyncSessionMgmt(session_mgmt_t *sessMgmt);
-extern void CCApp_task(void * arg);
+extern void CCApp_prepare_task();
+extern void GSM_prepare_task();
 extern void *findhash(unsigned int key);
 extern session_id_t createSessionId(line_t line, callid_t call);
 extern void getLineIdAndCallId (line_t *line_id, callid_t *call_id);

@@ -195,8 +195,6 @@ public:
   PicoVoice(const nsAString& aLanguage)
     : mLanguage(aLanguage) {}
 
-  ~PicoVoice() {}
-
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PicoVoice)
 
   // Voice language, in BCB-47 syntax
@@ -207,6 +205,9 @@ public:
 
   // Speaker resource file
   nsCString mSgFile;
+
+private:
+    ~PicoVoice() {}
 };
 
 class PicoCallbackRunnable : public nsRunnable,
@@ -226,8 +227,6 @@ public:
     , mVoice(aVoice)
     , mService(aService) { }
 
-  ~PicoCallbackRunnable() { }
-
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSISPEECHTASKCALLBACK
 
@@ -236,6 +235,8 @@ public:
   bool IsCurrentTask() { return mService->mCurrentTask == mTask; }
 
 private:
+  ~PicoCallbackRunnable() { }
+
   void DispatchSynthDataRunnable(already_AddRefed<SharedBuffer>&& aBuffer,
                                  size_t aBufferSize);
 
@@ -304,7 +305,7 @@ PicoCallbackRunnable::Run()
     } else {
       // If we already fed all the text to the engine, send a zero length buffer
       // and quit.
-      DispatchSynthDataRunnable(already_AddRefed<SharedBuffer>(nullptr), 0);
+      DispatchSynthDataRunnable(already_AddRefed<SharedBuffer>(), 0);
       break;
     }
 
@@ -410,7 +411,8 @@ PicoCallbackRunnable::OnCancel()
 
 NS_INTERFACE_MAP_BEGIN(nsPicoService)
   NS_INTERFACE_MAP_ENTRY(nsISpeechService)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsISpeechService)
+  NS_INTERFACE_MAP_ENTRY(nsIObserver)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIObserver)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF(nsPicoService)
@@ -426,10 +428,6 @@ nsPicoService::nsPicoService()
   , mTaResource(nullptr)
   , mPicoMemArea(nullptr)
 {
-  DebugOnly<nsresult> rv = NS_NewNamedThread("Pico Worker", getter_AddRefs(mThread));
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-  rv = mThread->Dispatch(NS_NewRunnableMethod(this, &nsPicoService::Init), NS_DISPATCH_NORMAL);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
 }
 
 nsPicoService::~nsPicoService()
@@ -446,6 +444,20 @@ nsPicoService::~nsPicoService()
   UnloadEngine();
 }
 
+// nsIObserver
+
+NS_IMETHODIMP
+nsPicoService::Observe(nsISupports* aSubject, const char* aTopic,
+                       const char16_t* aData)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  NS_ENSURE_TRUE(!strcmp(aTopic, "profile-after-change"), NS_ERROR_UNEXPECTED);
+
+  DebugOnly<nsresult> rv = NS_NewNamedThread("Pico Worker", getter_AddRefs(mThread));
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  return mThread->Dispatch(
+    NS_NewRunnableMethod(this, &nsPicoService::Init), NS_DISPATCH_NORMAL);
+}
 // nsISpeechService
 
 NS_IMETHODIMP

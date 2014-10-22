@@ -202,9 +202,15 @@
         </body>
       </method>
 
-      <property name="currentURI"
-                onget="return this.webNavigation.currentURI;"
-                readonly="true"/>
+      <property name="currentURI" readonly="true">
+       <getter><![CDATA[
+          if (this.webNavigation) {
+            return this.webNavigation.currentURI;
+          }
+          return null;
+       ]]>
+       </getter>
+      </property>
 
       <!--
         Used by session restore to ensure that currentURI is set so
@@ -316,8 +322,12 @@
                 readonly="true">
         <getter>
         <![CDATA[
-          if (!this._webNavigation)
+          if (!this._webNavigation) {
+            if (!this.docShell) {
+              return null;
+            }
             this._webNavigation = this.docShell.QueryInterface(Components.interfaces.nsIWebNavigation);
+          }
           return this._webNavigation;
         ]]>
         </getter>
@@ -386,8 +396,9 @@
 
       <field name="_permanentKey">({})</field>
 
-      <property name="permanentKey" readonly="true"
-                onget="return this._permanentKey;"/>
+      <property name="permanentKey"
+                onget="return this._permanentKey;"
+                onset="this._permanentKey = val;"/>
 
       <field name="_lastSearchString">null</field>
       <field name="_lastSearchHighlight">false</field>
@@ -401,6 +412,10 @@
       <property name="contentWindow"
                 readonly="true"
                 onget="return this._contentWindow || (this._contentWindow = this.docShell.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindow));"/>
+
+      <property name="contentWindowAsCPOW"
+                readonly="true"
+                onget="return this.contentWindow;"/>
 
       <property name="sessionHistory"
                 onget="return this.webNavigation.sessionHistory;"
@@ -422,12 +437,24 @@
                 onget="return this.webNavigation.document;"
                 readonly="true"/>
 
+      <property name="contentDocumentAsCPOW"
+                onget="return this.contentDocument;"
+                readonly="true"/>
+
       <property name="contentTitle"
                 onget="return this.contentDocument.title;"
                 readonly="true"/>
 
       <property name="characterSet"
-                onget="return this.contentDocument.characterSet;"
+                onget="return this.docShell.charset;">
+        <setter><![CDATA[
+          this.docShell.charset = val;
+          this.docShell.gatherCharsetMenuTelemetry();
+        ]]></setter>
+      </property>
+
+      <property name="mayEnableCharacterEncodingMenu"
+                onget="return this.docShell.mayEnableCharacterEncodingMenu;"
                 readonly="true"/>
 
       <property name="contentPrincipal"
@@ -773,7 +800,6 @@
             this.messageManager.addMessageListener("PopupBlocking:UpdateBlockedPopups", this);
             this.messageManager.addMessageListener("Autoscroll:Start", this);
             this.messageManager.addMessageListener("Autoscroll:Cancel", this);
-            this.messageManager.loadFrameScript("chrome://global/content/browser-content.js", true);
           }
         ]]>
       </constructor>
@@ -837,13 +863,15 @@
           switch (aMessage.name) {
             case "PopupBlocking:UpdateBlockedPopups": {
               this.blockedPopups = data.blockedPopups;
-              for (let i = 0; i < this.blockedPopups.length; i++) {
-                let scope = Components.utils.import("resource://gre/modules/BrowserUtils.jsm", {});
-                let uri = scope.BrowserUtils.makeURI(this.blockedPopups[i].popupWindowURI);
-                this.blockedPopups[i].popupWindowURI = uri;
-              }
-              if (data.freshPopup) {
-                this.blockedPopups.reported = false;
+              if (this.blockedPopups) {
+                for (let i = 0; i < this.blockedPopups.length; i++) {
+                  let scope = Components.utils.import("resource://gre/modules/BrowserUtils.jsm", {});
+                  let uri = scope.BrowserUtils.makeURI(this.blockedPopups[i].popupWindowURI);
+                  this.blockedPopups[i].popupWindowURI = uri;
+                }
+                if (data.freshPopup) {
+                  this.blockedPopups.reported = false;
+                }
               }
               this.updateBlockedPopups();
               break;
@@ -1095,8 +1123,12 @@
           }
 
           // Re-attach the docShells to the form fill controller.
-          this.attachFormFill();
-          aOtherBrowser.attachFormFill();
+          if (!this.isRemoteBrowser) {
+            this.attachFormFill();
+          }
+          if (!aOtherBrowser.isRemoteBrowser) {
+            aOtherBrowser.attachFormFill();
+          }
 
           // Null the current nsITypeAheadFind instances so that they're
           // lazily re-created on access. We need to do this because they

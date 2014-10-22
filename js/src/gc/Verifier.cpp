@@ -119,7 +119,7 @@ AccumulateEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
 {
     VerifyPreTracer *trc = (VerifyPreTracer *)jstrc;
 
-    JS_ASSERT(!IsInsideNursery(*reinterpret_cast<Cell **>(thingp)));
+    MOZ_ASSERT(!IsInsideNursery(*reinterpret_cast<Cell **>(thingp)));
 
     trc->edgeptr += sizeof(EdgeValue);
     if (trc->edgeptr >= trc->term) {
@@ -182,7 +182,7 @@ gc::GCRuntime::startVerifyPreBarriers()
     if (verifyPostData)
         return;
 
-    MinorGC(rt, JS::gcreason::EVICT_NURSERY);
+    evictNursery();
 
     AutoPrepareForTracing prep(rt, WithAtoms);
 
@@ -248,10 +248,10 @@ gc::GCRuntime::startVerifyPreBarriers()
     incrementalState = MARK;
     marker.start();
 
-    rt->setNeedsBarrier(true);
+    rt->setNeedsIncrementalBarrier(true);
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next()) {
         PurgeJITCaches(zone);
-        zone->setNeedsBarrier(true, Zone::UpdateJit);
+        zone->setNeedsIncrementalBarrier(true, Zone::UpdateJit);
         zone->allocator.arenas.purge();
     }
 
@@ -264,7 +264,7 @@ oom:
 }
 
 static bool
-IsMarkedOrAllocated(Cell *cell)
+IsMarkedOrAllocated(TenuredCell *cell)
 {
     return cell->isMarked() || cell->arenaHeader()->allocatedDuringIncremental;
 }
@@ -290,7 +290,7 @@ CheckEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
 
     for (uint32_t i = 0; i < node->count; i++) {
         if (node->edges[i].thing == *thingp) {
-            JS_ASSERT(node->edges[i].kind == kind);
+            MOZ_ASSERT(node->edges[i].kind == kind);
             node->edges[i].thing = nullptr;
             return;
         }
@@ -300,7 +300,7 @@ CheckEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
 static void
 AssertMarkedOrAllocated(const EdgeValue &edge)
 {
-    if (!edge.thing || IsMarkedOrAllocated(static_cast<Cell *>(edge.thing)))
+    if (!edge.thing || IsMarkedOrAllocated(TenuredCell::fromPointer(edge.thing)))
         return;
 
     // Permanent atoms and well-known symbols aren't marked during graph traversal.
@@ -325,7 +325,7 @@ gc::GCRuntime::endVerifyPreBarriers()
     if (!trc)
         return false;
 
-    JS_ASSERT(!JS::IsGenerationalGCEnabled(rt));
+    MOZ_ASSERT(!JS::IsGenerationalGCEnabled(rt));
 
     AutoPrepareForTracing prep(rt, SkipAtoms);
 
@@ -333,19 +333,19 @@ gc::GCRuntime::endVerifyPreBarriers()
 
     /* We need to disable barriers before tracing, which may invoke barriers. */
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next()) {
-        if (!zone->needsBarrier())
+        if (!zone->needsIncrementalBarrier())
             compartmentCreated = true;
 
-        zone->setNeedsBarrier(false, Zone::UpdateJit);
+        zone->setNeedsIncrementalBarrier(false, Zone::UpdateJit);
         PurgeJITCaches(zone);
     }
-    rt->setNeedsBarrier(false);
+    rt->setNeedsIncrementalBarrier(false);
 
     /*
      * We need to bump gcNumber so that the methodjit knows that jitcode has
      * been discarded.
      */
-    JS_ASSERT(trc->number == number);
+    MOZ_ASSERT(trc->number == number);
     number++;
 
     verifyPreData = nullptr;
@@ -410,7 +410,7 @@ gc::GCRuntime::startVerifyPostBarriers()
         return;
     }
 
-    MinorGC(rt, JS::gcreason::EVICT_NURSERY);
+    evictNursery();
 
     number++;
 
@@ -470,7 +470,7 @@ PostVerifierVisitEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
         return;
 
     /* Filter out non cross-generational edges. */
-    JS_ASSERT(!trc->runtime()->gc.nursery.isInside(thingp));
+    MOZ_ASSERT(!trc->runtime()->gc.nursery.isInside(thingp));
     JSObject *dst = *reinterpret_cast<JSObject **>(thingp);
     if (!IsInsideNursery(dst))
         return;
@@ -478,7 +478,7 @@ PostVerifierVisitEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
     /*
      * Values will be unpacked to the stack before getting here. However, the
      * only things that enter this callback are marked by the JS_TraceChildren
-     * below. Since ObjectImpl::markChildren handles this, the real trace
+     * below. Since JSObject::markChildren handles this, the real trace
      * location will be set correctly in these cases.
      */
     void **loc = trc->tracingLocation(thingp);

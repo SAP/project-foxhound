@@ -10,19 +10,20 @@
 #include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-#include "nsClassHashtable.h"
-#include "nsHashKeys.h"
 #include "nsISupports.h"
+#include "nsIUnicodeDecoder.h"
 
 namespace mozilla {
 namespace dom {
+
+class URLSearchParams;
 
 class URLSearchParamsObserver : public nsISupports
 {
 public:
   virtual ~URLSearchParamsObserver() {}
 
-  virtual void URLSearchParamsUpdated() = 0;
+  virtual void URLSearchParamsUpdated(URLSearchParams* aFromThis) = 0;
 };
 
 class URLSearchParams MOZ_FINAL : public nsISupports,
@@ -58,6 +59,7 @@ public:
 
   void AddObserver(URLSearchParamsObserver* aObserver);
   void RemoveObserver(URLSearchParamsObserver* aObserver);
+  void RemoveObservers();
 
   void Serialize(nsAString& aValue) const;
 
@@ -73,7 +75,7 @@ public:
 
   void Delete(const nsAString& aName);
 
-  void Stringify(nsString& aRetval)
+  void Stringify(nsString& aRetval) const
   {
     Serialize(aRetval);
   }
@@ -83,21 +85,21 @@ private:
 
   void DeleteAll();
 
-  void DecodeString(const nsACString& aInput, nsACString& aOutput);
+  void DecodeString(const nsACString& aInput, nsAString& aOutput);
+  void ConvertString(const nsACString& aInput, nsAString& aOutput);
 
   void NotifyObservers(URLSearchParamsObserver* aExceptObserver);
 
-  static PLDHashOperator
-  CopyEnumerator(const nsAString& aName, nsTArray<nsString>* aArray,
-                 void *userData);
+  struct Param
+  {
+    nsString mKey;
+    nsString mValue;
+  };
 
-  static PLDHashOperator
-  SerializeEnumerator(const nsAString& aName, nsTArray<nsString>* aArray,
-                      void *userData);
-
-  nsClassHashtable<nsStringHashKey, nsTArray<nsString>> mSearchParams;
+  nsTArray<Param> mSearchParams;
 
   nsTArray<nsRefPtr<URLSearchParamsObserver>> mObservers;
+  nsCOMPtr<nsIUnicodeDecoder> mDecoder;
 };
 
 } // namespace dom

@@ -1,7 +1,15 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let Promise = SpecialPowers.Cu.import('resource://gre/modules/Promise.jsm').Promise;
+// Emulate Promise.jsm semantics.
+Promise.defer = function() { return new Deferred(); }
+function Deferred()  {
+  this.promise = new Promise(function(resolve, reject) {
+    this.resolve = resolve;
+    this.reject = reject;
+  }.bind(this));
+  Object.freeze(this);
+}
 
 const STOCK_HOSTAPD_NAME = 'goldfish-hostapd';
 const HOSTAPD_CONFIG_PATH = '/data/misc/wifi/remote-hostapd/';
@@ -209,6 +217,8 @@ let gTestSuite = (function() {
     let permissions = [{ 'type': 'wifi-manage', 'allow': 1, 'context': window.document },
                        { 'type': 'settings-write', 'allow': 1, 'context': window.document },
                        { 'type': 'settings-read', 'allow': 1, 'context': window.document },
+                       { 'type': 'settings-api-write', 'allow': 1, 'context': window.document },
+                       { 'type': 'settings-api-read', 'allow': 1, 'context': window.document },
                        { 'type': 'mobileconnection', 'allow': 1, 'context': window.document }];
 
     SpecialPowers.pushPermissions(permissions, function() {
@@ -258,29 +268,39 @@ let gTestSuite = (function() {
    *
    * @return a resolved promise or deferred promise.
    */
-  function ensureWifiEnabled(aEnabled) {
+  function ensureWifiEnabled(aEnabled, useAPI) {
     if (wifiManager.enabled === aEnabled) {
       log('Already ' + (aEnabled ? 'enabled' : 'disabled'));
       return Promise.resolve();
     }
-    return requestWifiEnabled(aEnabled);
+    return requestWifiEnabled(aEnabled, useAPI);
   }
 
   /**
    * Issue a request to enable/disable wifi.
    *
-   * For current design, this function will attempt to enable/disable wifi by
-   * writing 'wifi.enabled' regardless of the wifi state.
+   * This function will attempt to enable/disable wifi, by calling API or by
+   * writing settings 'wifi.enabled' regardless of the wifi state, based on the
+   * value of |userAPI| parameter.
+   * Default is using settings.
+   *
+   * Note there's a limitation of co-existance of both method, per bug 930355,
+   * that once enable/disable wifi by API, the settings method won't work until
+   * reboot. So the test of wifi enable API should be executed last.
+   * TODO: Remove settings method after enable/disable wifi by settings is
+   *       removed after bug 1050147.
    *
    * Fulfill params: (none)
    * Reject params: (none)
    *
    * @return A deferred promise.
    */
-  function requestWifiEnabled(aEnabled) {
+  function requestWifiEnabled(aEnabled, useAPI) {
     return Promise.all([
       waitForWifiManagerEventOnce(aEnabled ? 'enabled' : 'disabled'),
-      setSettings({ 'wifi.enabled': aEnabled }),
+      useAPI ?
+        wrapDomRequestAsPromise(wifiManager.setWifiEnabled(aEnabled)) :
+        setSettings({ 'wifi.enabled': aEnabled }),
     ]);
   }
 
@@ -572,14 +592,20 @@ let gTestSuite = (function() {
    *
    * @return A deferred promise.
    */
-  function setSettings(aSettings, aAllowError) {
-    let request = window.navigator.mozSettings.createLock().set(aSettings);
-    return wrapDomRequestAsPromise(request)
-      .then(function resolve() {
+  function setSettings(aSettings) {
+    let lock = window.navigator.mozSettings.createLock();
+    let request = lock.set(aSettings);
+    let deferred = Promise.defer();
+    lock.onsettingstransactionsuccess = function () {
         ok(true, "setSettings(" + JSON.stringify(aSettings) + ")");
-      }, function reject() {
-        ok(aAllowError, "setSettings(" + JSON.stringify(aSettings) + ")");
-      });
+      deferred.resolve();
+    };
+    lock.onsettingstransactionfailure = function (aEvent) {
+      ok(false, "setSettings(" + JSON.stringify(aSettings) + ")");
+      deferred.reject();
+      throw aEvent.target.error;
+    };
+    return deferred.promise;
   }
 
   /**

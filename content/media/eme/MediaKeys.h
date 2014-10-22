@@ -17,6 +17,7 @@
 #include "nsRefPtrHashtable.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/MediaKeysBinding.h"
+#include "mozIGeckoMediaPluginService.h"
 
 namespace mozilla {
 
@@ -24,12 +25,20 @@ class CDMProxy;
 
 namespace dom {
 
+class ArrayBufferViewOrArrayBuffer;
 class MediaKeySession;
+class HTMLMediaElement;
 
 typedef nsRefPtrHashtable<nsStringHashKey, MediaKeySession> KeySessionHashMap;
 typedef nsRefPtrHashtable<nsUint32HashKey, dom::Promise> PromiseHashMap;
 typedef nsRefPtrHashtable<nsUint32HashKey, MediaKeySession> PendingKeySessionsHashMap;
 typedef uint32_t PromiseId;
+
+// Helper function to extract data coming in from JS in an
+// (ArrayBuffer or ArrayBufferView) IDL typed function argument.
+bool
+CopyArrayBufferViewOrArrayBufferData(const ArrayBufferViewOrArrayBuffer& aBufferOrView,
+                                     nsTArray<uint8_t>& aOutData);
 
 // This class is used on the main thread only.
 // Note: it's addref/release is not (and can't be) thread safe!
@@ -48,21 +57,17 @@ public:
 
   virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
 
+  nsresult Bind(HTMLMediaElement* aElement);
+
   // Javascript: readonly attribute DOMString keySystem;
   void GetKeySystem(nsString& retval) const;
 
   // JavaScript: MediaKeys.createSession()
-  already_AddRefed<Promise> CreateSession(const nsAString& aInitDataType,
-                                          const Uint8Array& aInitData,
-                                          SessionType aSessionType,
-                                          ErrorResult& aRv);
-
-  // JavaScript: MediaKeys.loadSession()
-  already_AddRefed<Promise> LoadSession(const nsAString& aSessionId,
-                                        ErrorResult& aRv);
+  already_AddRefed<MediaKeySession> CreateSession(SessionType aSessionType,
+                                                  ErrorResult& aRv);
 
   // JavaScript: MediaKeys.SetServerCertificate()
-  already_AddRefed<Promise> SetServerCertificate(const Uint8Array& aServerCertificate,
+  already_AddRefed<Promise> SetServerCertificate(const ArrayBufferViewOrArrayBuffer& aServerCertificate,
                                                  ErrorResult& aRv);
 
   // JavaScript: MediaKeys.create()
@@ -81,9 +86,14 @@ public:
   already_AddRefed<MediaKeySession> GetSession(const nsAString& aSessionId);
 
   // Called once a Create() operation succeeds.
-  void OnCDMCreated(PromiseId aId);
-  // Called once a CreateSession or LoadSession succeeds.
-  void OnSessionActivated(PromiseId aId, const nsAString& aSessionId);
+  void OnCDMCreated(PromiseId aId, const nsACString& aNodeId);
+  // Called when GenerateRequest or Load have been called on a MediaKeySession
+  // and we are waiting for its initialisation to finish.
+  void OnSessionPending(PromiseId aId, MediaKeySession* aSession);
+  // Called once a CreateSession succeeds.
+  void OnSessionCreated(PromiseId aId, const nsAString& aSessionId);
+  // Called once a LoadSession succeeds.
+  void OnSessionLoaded(PromiseId aId, bool aSuccess);
   // Called once a session has closed.
   void OnSessionClosed(MediaKeySession* aSession);
 
@@ -101,7 +111,29 @@ public:
   // Resolves promise with "undefined".
   void ResolvePromise(PromiseId aId);
 
+  const nsCString& GetNodeId() const;
+
+  void Shutdown();
+
+  // Returns true if this MediaKeys has been bound to a media element.
+  bool IsBoundToMediaElement() const;
+
+  // Return NS_OK if the principals are the same as when the MediaKeys
+  // was created, failure otherwise.
+  nsresult CheckPrincipals();
+
+  // Returns a pointer to the bound media element's owner doc.
+  // If we're not bound, this returns null.
+  nsIDocument* GetOwnerDoc() const;
+
 private:
+
+  static bool IsTypeSupported(const nsAString& aKeySystem,
+                              const Optional<nsAString>& aInitDataType = Optional<nsAString>(),
+                              const Optional<nsAString>& aContentType = Optional<nsAString>());
+
+  bool IsInPrivateBrowsing();
+  already_AddRefed<Promise> Init(ErrorResult& aRv);
 
   // Removes promise from mPromises, and returns it.
   already_AddRefed<Promise> RetrievePromise(PromiseId aId);
@@ -110,11 +142,19 @@ private:
   // and the MediaKeys destructor clears the proxy's reference to the MediaKeys.
   nsRefPtr<CDMProxy> mProxy;
 
+  nsRefPtr<HTMLMediaElement> mElement;
+
   nsCOMPtr<nsPIDOMWindow> mParent;
   nsString mKeySystem;
+  nsCString mNodeId;
   KeySessionHashMap mKeySessions;
   PromiseHashMap mPromises;
   PendingKeySessionsHashMap mPendingSessions;
+  PromiseId mCreatePromiseId;
+
+  nsRefPtr<nsIPrincipal> mPrincipal;
+  nsRefPtr<nsIPrincipal> mTopLevelPrincipal;
+
 };
 
 } // namespace dom

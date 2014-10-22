@@ -15,6 +15,8 @@
 #include "nsAttrName.h"
 #include "nsWhitespaceTokenizer.h"
 
+#include "mozilla/BinarySearch.h"
+
 using namespace mozilla;
 using namespace mozilla::a11y;
 using namespace mozilla::a11y::aria;
@@ -122,9 +124,10 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eOpenCloseAction,
     eNoLiveAttr,
     kGenericAccType,
-    states::COLLAPSED | states::HASPOPUP,
+    states::COLLAPSED | states::HASPOPUP | states::VERTICAL,
     eARIAAutoComplete,
-    eARIAReadonly
+    eARIAReadonly,
+    eARIAOrientation
   },
   { // dialog
     &nsGkAtoms::dialog,
@@ -261,10 +264,11 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     eListControl | eSelect,
-    kNoReqStates,
+    states::VERTICAL,
     eARIAMultiSelectable,
     eARIAReadonly,
-    eFocusableUntilDisabled
+    eFocusableUntilDisabled,
+    eARIAOrientation
   },
   { // listitem
     &nsGkAtoms::listitem,
@@ -315,7 +319,8 @@ static nsRoleMapEntry sWAIRoleMaps[] =
                // any action, but menu can be open or close.
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates
+    states::VERTICAL,
+    eARIAOrientation
   },
   { // menubar
     &nsGkAtoms::menubar,
@@ -325,7 +330,8 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates
+    states::HORIZONTAL,
+    eARIAOrientation
   },
   { // menuitem
     &nsGkAtoms::menuitem,
@@ -422,7 +428,8 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates
+    kNoReqStates,
+    eARIAOrientation
   },
   { // region
     &nsGkAtoms::region,
@@ -475,7 +482,7 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates,
+    states::VERTICAL,
     eARIAOrientation,
     eARIAReadonly
   },
@@ -487,7 +494,7 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates,
+    states::HORIZONTAL,
     eARIAOrientation
   },
   { // slider
@@ -498,7 +505,7 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates,
+    states::HORIZONTAL,
     eARIAOrientation,
     eARIAReadonly
   },
@@ -542,7 +549,8 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     eSelect,
-    kNoReqStates
+    states::HORIZONTAL,
+    eARIAOrientation
   },
   { // tabpanel
     &nsGkAtoms::tabpanel,
@@ -584,7 +592,8 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     kGenericAccType,
-    kNoReqStates
+    states::HORIZONTAL,
+    eARIAOrientation
   },
   { // tooltip
     &nsGkAtoms::tooltip,
@@ -604,10 +613,11 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     eSelect,
-    kNoReqStates,
+    states::VERTICAL,
     eARIAReadonly,
     eARIAMultiSelectable,
-    eFocusableUntilDisabled
+    eFocusableUntilDisabled,
+    eARIAOrientation
   },
   { // treegrid
     &nsGkAtoms::treegrid,
@@ -617,10 +627,11 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoAction,
     eNoLiveAttr,
     eSelect | eTable,
-    kNoReqStates,
+    states::VERTICAL,
     eARIAReadonlyOrEditable,
     eARIAMultiSelectable,
-    eFocusableUntilDisabled
+    eFocusableUntilDisabled,
+    eARIAOrientation
   },
   { // treeitem
     &nsGkAtoms::treeitem,
@@ -723,6 +734,19 @@ static const AttrCharacteristics gWAIUnivAttrMap[] = {
   {&nsGkAtoms::aria_valuetext,         ATTR_BYPASSOBJ                               }
 };
 
+namespace {
+
+struct RoleComparator
+{
+  const nsDependentSubstring& mRole;
+  explicit RoleComparator(const nsDependentSubstring& aRole) : mRole(aRole) {}
+  int operator()(const nsRoleMapEntry& aEntry) const {
+    return Compare(mRole, aEntry.ARIARoleString());
+  }
+};
+
+}
+
 nsRoleMapEntry*
 aria::GetRoleMap(nsINode* aNode)
 {
@@ -739,18 +763,10 @@ aria::GetRoleMap(nsINode* aNode)
   while (tokenizer.hasMoreTokens()) {
     // Do a binary search through table for the next role in role list
     const nsDependentSubstring role = tokenizer.nextToken();
-    uint32_t low = 0;
-    uint32_t high = ArrayLength(sWAIRoleMaps);
-    while (low < high) {
-      uint32_t idx = (low + high) / 2;
-      int32_t compare = Compare(role, sWAIRoleMaps[idx].ARIARoleString());
-      if (compare == 0)
-        return sWAIRoleMaps + idx;
-
-      if (compare < 0)
-        high = idx;
-      else
-        low = idx + 1;
+    size_t idx;
+    if (BinarySearchIf(sWAIRoleMaps, 0, ArrayLength(sWAIRoleMaps),
+                       RoleComparator(role), &idx)) {
+      return sWAIRoleMaps + idx;
     }
   }
 

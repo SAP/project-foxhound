@@ -29,9 +29,8 @@ ParseContext<ParseHandler>::~ParseContext()
 {
     // |*parserPC| pointed to this object.  Now that this object is about to
     // die, make |*parserPC| point to this object's parent.
-    JS_ASSERT(*parserPC == this);
+    MOZ_ASSERT(*parserPC == this);
     *parserPC = this->oldpc;
-    js_delete(funcStmts);
 }
 
 } // namespace frontend

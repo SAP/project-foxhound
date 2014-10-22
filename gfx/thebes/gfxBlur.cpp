@@ -52,15 +52,18 @@ gfxAlphaBoxBlur::Init(const gfxRect& aRect,
     }
 
     mBlur = MakeUnique<AlphaBoxBlur>(rect, spreadRadius, blurRadius, dirtyRect.get(), skipRect.get());
-    int32_t blurDataSize = mBlur->GetSurfaceAllocationSize();
-    if (blurDataSize <= 0)
+    size_t blurDataSize = mBlur->GetSurfaceAllocationSize();
+    if (blurDataSize == 0)
         return nullptr;
 
     IntSize size = mBlur->GetSize();
 
     // Make an alpha-only surface to draw on. We will play with the data after
     // everything is drawn to create a blur effect.
-    mData = new unsigned char[blurDataSize];
+    mData = new (std::nothrow) unsigned char[blurDataSize];
+    if (!mData) {
+        return nullptr;
+    }
     memset(mData, 0, blurDataSize);
 
     mozilla::RefPtr<DrawTarget> dt =
@@ -75,7 +78,7 @@ gfxAlphaBoxBlur::Init(const gfxRect& aRect,
     gfxPoint topleft(irect.TopLeft().x, irect.TopLeft().y);
 
     mContext = new gfxContext(dt);
-    mContext->Translate(-topleft);
+    mContext->SetMatrix(gfxMatrix::Translation(-topleft));
 
     return mContext;
 }
@@ -93,7 +96,7 @@ DrawBlur(gfxContext* aDestinationCtx,
 
     Matrix oldTransform = dest->GetTransform();
     Matrix newTransform = oldTransform;
-    newTransform.Translate(aTopLeft.x, aTopLeft.y);
+    newTransform.PreTranslate(aTopLeft.x, aTopLeft.y);
 
     // Avoid a semi-expensive clip operation if we can, otherwise
     // clip to the dirty rect
@@ -171,7 +174,7 @@ struct BlurCacheKey : public PLDHashEntryHdr {
     , mBackend(aBackend)
   { }
 
-  BlurCacheKey(const BlurCacheKey* aOther)
+  explicit BlurCacheKey(const BlurCacheKey* aOther)
     : mRect(aOther->mRect)
     , mBlurRadius(aOther->mBlurRadius)
     , mSkipRect(aOther->mSkipRect)

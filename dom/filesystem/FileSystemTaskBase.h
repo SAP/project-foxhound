@@ -10,13 +10,13 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemRequestParent.h"
 #include "mozilla/dom/PFileSystemRequestChild.h"
-#include "mozilla/dom/ipc/Blob.h"
 
 class nsIDOMFile;
 
 namespace mozilla {
 namespace dom {
 
+class BlobParent;
 class FileSystemBase;
 class FileSystemParams;
 class Promise;
@@ -142,7 +142,7 @@ protected:
   /*
    * To create a task to handle the page content request.
    */
-  FileSystemTaskBase(FileSystemBase* aFileSystem);
+  explicit FileSystemTaskBase(FileSystemBase* aFileSystem);
 
   /*
    * To create a parent process task delivered from the child process through

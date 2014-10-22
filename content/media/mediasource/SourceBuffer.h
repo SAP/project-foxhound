@@ -7,21 +7,20 @@
 #ifndef mozilla_dom_SourceBuffer_h_
 #define mozilla_dom_SourceBuffer_h_
 
-#include "MediaDecoderReader.h"
 #include "MediaSource.h"
 #include "js/RootingAPI.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/SourceBufferBinding.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/mozalloc.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
-#include "nsStringGlue.h"
+#include "nsString.h"
 #include "nscore.h"
 
 class JSObject;
@@ -29,10 +28,8 @@ struct JSContext;
 
 namespace mozilla {
 
-class ContainerParser;
 class ErrorResult;
-class SourceBufferResource;
-class SubBufferDecoder;
+class TrackBuffer;
 template <typename T> class AsyncEventRunner;
 
 namespace dom {
@@ -89,7 +86,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SourceBuffer, DOMEventTargetHelper)
 
-  static already_AddRefed<SourceBuffer> Create(MediaSource* aMediaSource, const nsACString& aType);
+  SourceBuffer(MediaSource* aMediaSource, const nsACString& aType);
 
   MediaSource* GetParentObject() const;
 
@@ -108,24 +105,19 @@ public:
   // Evict data in the source buffer in the given time range.
   void Evict(double aStart, double aEnd);
 
-  // Returns true if the data in the source buffer contains the given time.
-  bool ContainsTime(double aTime);
+  double GetBufferedStart();
+  double GetBufferedEnd();
+
+#if defined(DEBUG)
+  void Dump(const char* aPath);
+#endif
 
 private:
   ~SourceBuffer();
 
-  SourceBuffer(MediaSource* aMediaSource, const nsACString& aType);
-
   friend class AsyncEventRunner<SourceBuffer>;
   void DispatchSimpleEvent(const char* aName);
   void QueueAsyncSimpleEvent(const char* aName);
-
-  // Create a new decoder for mType, and store the result in mDecoder.
-  // Returns true if mDecoder was set.
-  bool InitNewDecoder();
-
-  // Set mDecoder to null and reset mDecoderInitialized.
-  void DiscardDecoder();
 
   // Update mUpdating and fire the appropriate events.
   void StartUpdating();
@@ -135,17 +127,15 @@ private:
   // Shared implementation of AppendBuffer overloads.
   void AppendData(const uint8_t* aData, uint32_t aLength, ErrorResult& aRv);
 
-  // Provide the minimum start time and maximum end time that is available
-  // in the data buffered by this SourceBuffer.
-  void GetBufferedStartEndTime(double* aStart, double* aEnd);
+  // Implements the "Prepare Append Algorithm".  Returns true if the append
+  // may continue, or false (with aRv set) on error.
+  bool PrepareAppend(ErrorResult& aRv);
 
   nsRefPtr<MediaSource> mMediaSource;
 
-  const nsCString mType;
+  uint32_t mEvictionThreshold;
 
-  nsAutoPtr<ContainerParser> mParser;
-
-  nsRefPtr<SubBufferDecoder> mDecoder;
+  nsRefPtr<TrackBuffer> mTrackBuffer;
 
   double mAppendWindowStart;
   double mAppendWindowEnd;
@@ -154,8 +144,6 @@ private:
 
   SourceBufferAppendMode mAppendMode;
   bool mUpdating;
-
-  bool mDecoderInitialized;
 };
 
 } // namespace dom

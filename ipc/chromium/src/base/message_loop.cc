@@ -8,7 +8,6 @@
 
 #include "mozilla/Atomics.h"
 #include "base/compiler_specific.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_pump_default.h"
 #include "base/string_util.h"
@@ -41,10 +40,10 @@ using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
 
-// A lazily created thread local storage for quick access to a thread's message
-// loop, if one exists.  This should be safe and free of static constructors.
-static base::LazyInstance<base::ThreadLocalPointer<MessageLoop> > lazy_tls_ptr(
-    base::LINKER_INITIALIZED);
+static base::ThreadLocalPointer<MessageLoop>& get_tls_ptr() {
+  static base::ThreadLocalPointer<MessageLoop> tls_ptr;
+  return tls_ptr;
+}
 
 //------------------------------------------------------------------------------
 
@@ -84,10 +83,7 @@ static LPTOP_LEVEL_EXCEPTION_FILTER GetTopSEHFilter() {
 
 // static
 MessageLoop* MessageLoop::current() {
-  // TODO(darin): sadly, we cannot enable this yet since people call us even
-  // when they have no intention of using us.
-  //DCHECK(loop) << "Ouch, did you forget to initialize me?";
-  return lazy_tls_ptr.Pointer()->Get();
+  return get_tls_ptr().Get();
 }
 
 static mozilla::Atomic<int32_t> message_loop_id_seq(0);
@@ -106,12 +102,13 @@ MessageLoop::MessageLoop(Type type)
       permanent_hang_timeout_(0),
       next_sequence_num_(0) {
   DCHECK(!current()) << "should only have one message loop per thread";
-  lazy_tls_ptr.Pointer()->Set(this);
-  if (type_ == TYPE_MOZILLA_UI) {
+  get_tls_ptr().Set(this);
+
+  switch (type_) {
+  case TYPE_MOZILLA_UI:
     pump_ = new mozilla::ipc::MessagePump();
     return;
-  }
-  if (type_ == TYPE_MOZILLA_CHILD) {
+  case TYPE_MOZILLA_CHILD:
     pump_ = new mozilla::ipc::MessagePumpForChildProcess();
     // There is a MessageLoop Run call from XRE_InitChildProcess
     // and another one from MessagePumpForChildProcess. The one
@@ -120,10 +117,17 @@ MessageLoop::MessageLoop(Type type)
     // Idle tasks.
     run_depth_base_ = 2;
     return;
-  }
-  if (type_ == TYPE_MOZILLA_NONMAINTHREAD) {
+  case TYPE_MOZILLA_NONMAINTHREAD:
     pump_ = new mozilla::ipc::MessagePumpForNonMainThreads();
     return;
+#if defined(OS_WIN)
+  case TYPE_MOZILLA_NONMAINUITHREAD:
+    pump_ = new mozilla::ipc::MessagePumpForNonMainUIThreads();
+    return;
+#endif
+  default:
+    // Create one of Chromium's standard MessageLoop types below.
+    break;
   }
 
 #if defined(OS_WIN)
@@ -178,7 +182,7 @@ MessageLoop::~MessageLoop() {
   DCHECK(!did_work);
 
   // OK, now make it so that no one can find us.
-  lazy_tls_ptr.Pointer()->Set(NULL);
+  get_tls_ptr().Set(NULL);
 }
 
 void MessageLoop::AddDestructionObserver(DestructionObserver *obs) {
@@ -314,7 +318,7 @@ void MessageLoop::PostTask_Helper(
   // directly, as it could starve handling of foreign threads.  Put every task
   // into this queue.
 
-  scoped_refptr<base::MessagePump> pump;
+  nsRefPtr<base::MessagePump> pump;
   {
     AutoLock locked(incoming_queue_lock_);
     incoming_queue_.push(pending_task);

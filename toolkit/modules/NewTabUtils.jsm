@@ -632,8 +632,7 @@ let PlacesProvider = {
             i++;
         }
         for (let link of outOfOrder) {
-          i = BinarySearch.insertionIndexOf(links, link,
-                                            Links.compareLinks.bind(Links));
+          i = BinarySearch.insertionIndexOf(Links.compareLinks, links, link);
           links.splice(i, 0, link);
         }
 
@@ -829,8 +828,19 @@ let Links = {
     let pinnedLinks = Array.slice(PinnedLinks.links);
     let links = this._getMergedProviderLinks();
 
-    // Filter blocked and pinned links.
+    let sites = new Set();
+    for (let link of pinnedLinks) {
+      if (link)
+        sites.add(NewTabUtils.extractSite(link.url));
+    }
+
+    // Filter blocked and pinned links and duplicate base domains.
     links = links.filter(function (link) {
+      let site = NewTabUtils.extractSite(link.url);
+      if (site == null || sites.has(site))
+        return false;
+      sites.add(site);
+
       return !BlockedLinks.isBlocked(link) && !PinnedLinks.isPinned(link);
     });
 
@@ -860,6 +870,8 @@ let Links = {
    * @return A negative number if aLink1 is ordered before aLink2, zero if
    *         aLink1 and aLink2 have the same ordering, or a positive number if
    *         aLink1 is ordered after aLink2.
+   *
+   * @note compareLinks's this object is bound to Links below.
    */
   compareLinks: function Links_compareLinks(aLink1, aLink2) {
     for (let prop of this._sortProperties) {
@@ -1026,7 +1038,7 @@ let Links = {
   },
 
   _binsearch: function Links__binsearch(aArray, aLink, aMethod) {
-    return BinarySearch[aMethod](aArray, aLink, this.compareLinks.bind(this));
+    return BinarySearch[aMethod](this.compareLinks, aArray, aLink);
   },
 
   /**
@@ -1054,6 +1066,8 @@ let Links = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
                                          Ci.nsISupportsWeakReference])
 };
+
+Links.compareLinks = Links.compareLinks.bind(Links);
 
 /**
  * Singleton used to collect telemetry data.
@@ -1157,6 +1171,24 @@ let ExpirationFilter = {
  */
 this.NewTabUtils = {
   _initialized: false,
+
+  /**
+   * Extract a "site" from a url in a way that multiple urls of a "site" returns
+   * the same "site."
+   * @param aUrl Url spec string
+   * @return The "site" string or null
+   */
+  extractSite: function Links_extractSite(url) {
+    let uri;
+    try {
+      uri = Services.io.newURI(url, null, null);
+    } catch (ex) {
+      return null;
+    }
+
+    // Strip off common subdomains of the same site (e.g., www, load balancer)
+    return uri.asciiHost.replace(/^(m|mobile|www\d*)\./, "");
+  },
 
   init: function NewTabUtils_init() {
     if (this.initWithoutProviders()) {

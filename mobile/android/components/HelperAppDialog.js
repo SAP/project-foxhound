@@ -11,7 +11,6 @@ const URI_GENERIC_ICON_DOWNLOAD = "drawable://alert_download";
 
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/HelperApps.jsm");
-Cu.import("resource://gre/modules/Prompt.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -73,6 +72,10 @@ HelperAppLauncherDialog.prototype = {
       // file to another application.
       let file = url.QueryInterface(Ci.nsIFileURL).file;
 
+      // Normalize the nsILocalFile in-place. This will ensure that paths
+      // can be correctly compared via `contains`, below.
+      file.normalize();
+
       // TODO: pref blacklist?
 
       let appRoot = FileUtils.getFile("XREExeF", []);
@@ -116,7 +119,7 @@ HelperAppLauncherDialog.prototype = {
 
       Services.console.logStringMessage("Refusing download of non-downloadable file.");
       let bundle = Services.strings.createBundle("chrome://browser/locale/handling.properties");
-      let failedText = bundle.GetStringFromName("protocol.failed");
+      let failedText = bundle.GetStringFromName("download.blocked");
       win.toast.show(failedText, "long");
 
       return;

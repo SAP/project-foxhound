@@ -28,7 +28,8 @@ CG_EXTERN void CGContextSetCTM(CGContextRef, CGAffineTransform);
 namespace mozilla {
 namespace gfx {
 
-static CGRect RectToCGRect(Rect r)
+template <typename T>
+static CGRect RectToCGRect(const T& r)
 {
   return CGRectMake(r.x, r.y, r.width, r.height);
 }
@@ -135,7 +136,7 @@ InterpolationQualityFromFilter(Filter aFilter)
     case Filter::POINT:
       return kCGInterpolationNone;
     case Filter::GOOD:
-      return kCGInterpolationDefault;
+      return kCGInterpolationLow;
   }
 }
 
@@ -215,6 +216,11 @@ DrawTargetCG::CreateSourceSurfaceFromData(unsigned char *aData,
   return newSurf.forget();
 }
 
+static void releaseDataSurface(void* info, const void *data, size_t size)
+{
+  static_cast<DataSourceSurface*>(info)->Release();
+}
+
 // This function returns a retained CGImage that needs to be released after
 // use. The reason for this is that we want to either reuse an existing CGImage
 // or create a new one.
@@ -234,7 +240,9 @@ GetRetainedImageFromSourceSurface(SourceSurface *aSurface)
       if (!data) {
         MOZ_CRASH("unsupported source surface");
       }
-      return CreateCGImage(nullptr, data->GetData(), data->GetSize(),
+      data->AddRef();
+      return CreateCGImage(releaseDataSurface, data.get(),
+                           data->GetData(), data->GetSize(),
                            data->Stride(), data->GetFormat());
     }
   }
@@ -243,11 +251,7 @@ GetRetainedImageFromSourceSurface(SourceSurface *aSurface)
 TemporaryRef<SourceSurface>
 DrawTargetCG::OptimizeSourceSurface(SourceSurface *aSurface) const
 {
-  if (aSurface->GetType() == SurfaceType::COREGRAPHICS_IMAGE ||
-      aSurface->GetType() == SurfaceType::COREGRAPHICS_CGCONTEXT) {
-    return aSurface;
-  }
-  return aSurface->GetDataSurface();
+  return aSurface;
 }
 
 class UnboundnessFixer
@@ -653,7 +657,9 @@ DrawGradient(CGColorSpaceRef aColorSpace,
   if (aPattern.GetType() == PatternType::LINEAR_GRADIENT) {
     const LinearGradientPattern& pat = static_cast<const LinearGradientPattern&>(aPattern);
     GradientStopsCG *stops = static_cast<GradientStopsCG*>(pat.mStops.get());
-    CGContextConcatCTM(cg, GfxMatrixToCGAffineTransform(pat.mMatrix));
+    CGAffineTransform patternMatrix = GfxMatrixToCGAffineTransform(pat.mMatrix);
+    CGContextConcatCTM(cg, patternMatrix);
+    CGRect extents = CGRectApplyAffineTransform(aExtents, CGAffineTransformInvert(patternMatrix));
     if (stops->mExtend == ExtendMode::CLAMP) {
 
       // XXX: we should take the m out of the properties of LinearGradientPatterns
@@ -667,11 +673,13 @@ DrawGradient(CGColorSpaceRef aColorSpace,
       CGContextDrawLinearGradient(cg, stops->mGradient, startPoint, endPoint,
                                   kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
     } else if (stops->mExtend == ExtendMode::REPEAT || stops->mExtend == ExtendMode::REFLECT) {
-      DrawLinearRepeatingGradient(aColorSpace, cg, pat, aExtents, stops->mExtend == ExtendMode::REFLECT);
+      DrawLinearRepeatingGradient(aColorSpace, cg, pat, extents, stops->mExtend == ExtendMode::REFLECT);
     }
   } else if (aPattern.GetType() == PatternType::RADIAL_GRADIENT) {
     const RadialGradientPattern& pat = static_cast<const RadialGradientPattern&>(aPattern);
-    CGContextConcatCTM(cg, GfxMatrixToCGAffineTransform(pat.mMatrix));
+    CGAffineTransform patternMatrix = GfxMatrixToCGAffineTransform(pat.mMatrix);
+    CGContextConcatCTM(cg, patternMatrix);
+    CGRect extents = CGRectApplyAffineTransform(aExtents, CGAffineTransformInvert(patternMatrix));
     GradientStopsCG *stops = static_cast<GradientStopsCG*>(pat.mStops.get());
     if (stops->mExtend == ExtendMode::CLAMP) {
 
@@ -685,7 +693,7 @@ DrawGradient(CGColorSpaceRef aColorSpace,
       CGContextDrawRadialGradient(cg, stops->mGradient, startCenter, startRadius, endCenter, endRadius,
                                   kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
     } else if (stops->mExtend == ExtendMode::REPEAT || stops->mExtend == ExtendMode::REFLECT) {
-      DrawRadialRepeatingGradient(aColorSpace, cg, pat, aExtents, stops->mExtend == ExtendMode::REFLECT);
+      DrawRadialRepeatingGradient(aColorSpace, cg, pat, extents, stops->mExtend == ExtendMode::REFLECT);
     }
   } else {
     assert(0);
@@ -737,6 +745,13 @@ CreateCGPattern(const Pattern &aPattern, CGAffineTransform aUserSpace)
   const SurfacePattern& pat = static_cast<const SurfacePattern&>(aPattern);
   // XXX: is .get correct here?
   CGImageRef image = GetRetainedImageFromSourceSurface(pat.mSurface.get());
+  Matrix patTransform = pat.mMatrix;
+  if (!pat.mSamplingRect.IsEmpty()) {
+    CGImageRef temp = CGImageCreateWithImageInRect(image, RectToCGRect(pat.mSamplingRect));
+    CGImageRelease(image);
+    image = temp;
+    patTransform.PreTranslate(pat.mSamplingRect.x, pat.mSamplingRect.y);
+  }
   CGFloat xStep, yStep;
   switch (pat.mExtendMode) {
     case ExtendMode::CLAMP:
@@ -770,7 +785,7 @@ CreateCGPattern(const Pattern &aPattern, CGAffineTransform aUserSpace)
   CGAffineTransform transform =
       CGAffineTransformConcat(CGAffineTransformConcat(CGAffineTransformMakeScale(1,
                                                                                  -1),
-                                                      GfxMatrixToCGAffineTransform(pat.mMatrix)),
+                                                      GfxMatrixToCGAffineTransform(patTransform)),
                               aUserSpace);
   transform = CGAffineTransformTranslate(transform, 0, -static_cast<float>(CGImageGetHeight(image)));
   return CGPatternCreate(image, bounds, transform, xStep, yStep, kCGPatternTilingConstantSpacing,
@@ -902,8 +917,15 @@ DrawTargetCG::FillRect(const Rect &aRect,
     // matches what cairo does.
     const SurfacePattern& pat = static_cast<const SurfacePattern&>(aPattern);
     CGImageRef image = GetRetainedImageFromSourceSurface(pat.mSurface.get());
+    Matrix transform = pat.mMatrix;
+    if (!pat.mSamplingRect.IsEmpty()) {
+      CGImageRef temp = CGImageCreateWithImageInRect(image, RectToCGRect(pat.mSamplingRect));
+      CGImageRelease(image);
+      image = temp;
+      transform.PreTranslate(pat.mSamplingRect.x, pat.mSamplingRect.y);
+    }
     CGContextClipToRect(cg, RectToCGRect(aRect));
-    CGContextConcatCTM(cg, GfxMatrixToCGAffineTransform(pat.mMatrix));
+    CGContextConcatCTM(cg, GfxMatrixToCGAffineTransform(transform));
     CGContextTranslateCTM(cg, 0, CGImageGetHeight(image));
     CGContextScaleCTM(cg, 1, -1);
 
@@ -1342,9 +1364,8 @@ DrawTargetCG::Init(BackendType aType,
     }
     static_assert(sizeof(decltype(mData[0])) == 1,
                   "mData.Realloc() takes an object count, so its objects must be 1-byte sized if we use bufLen");
-    mData.Realloc(/* actually an object count */ bufLen);
+    mData.Realloc(/* actually an object count */ bufLen, true);
     aData = static_cast<unsigned char*>(mData);
-    memset(aData, 0, bufLen);
   }
 
   mSize = aSize;
@@ -1515,6 +1536,7 @@ DrawTargetCG::Mask(const Pattern &aSource,
     } else if (aMask.GetType() == PatternType::SURFACE) {
       const SurfacePattern& pat = static_cast<const SurfacePattern&>(aMask);
       CGImageRef mask = GetRetainedImageFromSourceSurface(pat.mSurface.get());
+      MOZ_ASSERT(pat.mSamplingRect.IsEmpty(), "Sampling rect not supported with masks!");
       Rect rect(0,0, CGImageGetWidth(mask), CGImageGetHeight(mask));
       // XXX: probably we need to do some flipping of the image or something
       CGContextClipToMask(mCg, RectToCGRect(rect), mask);
@@ -1594,8 +1616,9 @@ DrawTargetCG::MarkChanged()
 CGContextRef
 BorrowedCGContext::BorrowCGContextFromDrawTarget(DrawTarget *aDT)
 {
-  if (aDT->GetBackendType() == BackendType::COREGRAPHICS ||
-      aDT->GetBackendType() == BackendType::COREGRAPHICS_ACCELERATED) {
+  if ((aDT->GetBackendType() == BackendType::COREGRAPHICS ||
+       aDT->GetBackendType() == BackendType::COREGRAPHICS_ACCELERATED) &&
+      !aDT->IsTiledDrawTarget() && !aDT->IsDualDrawTarget()) {
     DrawTargetCG* cgDT = static_cast<DrawTargetCG*>(aDT);
     cgDT->MarkChanged();
 

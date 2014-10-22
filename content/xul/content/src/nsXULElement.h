@@ -26,7 +26,6 @@
 #include "nsIRDFResource.h"
 #include "nsIURI.h"
 #include "nsIXULTemplateBuilder.h"
-#include "nsIBoxObject.h"
 #include "nsLayoutCID.h"
 #include "nsAttrAndChildArray.h"
 #include "nsGkAtoms.h"
@@ -53,6 +52,9 @@ class EventChainPreVisitor;
 class EventListenerManager;
 namespace css {
 class StyleRule;
+}
+namespace dom {
+class BoxObject;
 }
 }
 
@@ -142,7 +144,7 @@ public:
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(nsXULPrototypeNode)
 
 protected:
-    nsXULPrototypeNode(Type aType)
+    explicit nsXULPrototypeNode(Type aType)
         : mType(aType) {}
     virtual ~nsXULPrototypeNode() {}
 };
@@ -264,7 +266,7 @@ public:
     void TraceScriptObject(JSTracer* aTrc)
     {
         if (mScriptObject) {
-            JS_CallHeapScriptTracer(aTrc, &mScriptObject, "active window XUL prototype script");
+            JS_CallScriptTracer(aTrc, &mScriptObject, "active window XUL prototype script");
         }
     }
 
@@ -369,7 +371,7 @@ class nsXULElement MOZ_FINAL : public nsStyledElement,
                                public nsIDOMXULElement
 {
 public:
-    nsXULElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
+    explicit nsXULElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
     static nsresult
     Create(nsXULPrototypeElement* aPrototype, nsIDocument* aDocument,
@@ -587,7 +589,7 @@ public:
     already_AddRefed<nsIXULTemplateBuilder> GetBuilder();
     already_AddRefed<nsIRDFResource> GetResource(mozilla::ErrorResult& rv);
     nsIControllers* GetControllers(mozilla::ErrorResult& rv);
-    already_AddRefed<nsIBoxObject> GetBoxObject(mozilla::ErrorResult& rv);
+    already_AddRefed<mozilla::dom::BoxObject> GetBoxObject(mozilla::ErrorResult& rv);
     void Focus(mozilla::ErrorResult& rv);
     void Blur(mozilla::ErrorResult& rv);
     void Click(mozilla::ErrorResult& rv);

@@ -31,6 +31,7 @@
 #include "nsIServiceManager.h"
 #include "nsITextControlElement.h"
 #include "nsTextFragment.h"
+#include "mozilla/BinarySearch.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/Selection.h"
@@ -316,6 +317,8 @@ HyperTextAccessible::DOMPointToOffset(nsINode* aNode, int32_t aNodeOffset,
         TreeWalker walker(container, findNode->AsContent(),
                           TreeWalker::eWalkContextTree);
         descendant = walker.NextChild();
+        if (!descendant)
+          descendant = container;
       }
     }
   }
@@ -439,9 +442,14 @@ HyperTextAccessible::FindOffset(uint32_t aOffset, nsDirection aDirection,
 
   do {
     int32_t childIdx = text->GetChildIndexAtOffset(innerOffset);
-    NS_ASSERTION(childIdx != -1, "Bad in offset!");
-    if (childIdx == -1)
-      return 0;
+
+    // We can have an empty text leaf as our only child. Since empty text
+    // leaves are not accessible we then have no children, but 0 is a valid
+    // innerOffset.
+    if (childIdx == -1) {
+      NS_ASSERTION(innerOffset == 0 && !text->ChildCount(), "No childIdx?");
+      return DOMPointToOffset(text->GetNode(), 0, aDirection == eDirNext);
+    }
 
     child = text->GetChildAt(childIdx);
 
@@ -1262,7 +1270,7 @@ HyperTextAccessible::CaretLineNumber()
 
   int32_t returnOffsetUnused;
   uint32_t caretOffset = domSel->FocusOffset();
-  nsFrameSelection::HINT hint = frameSelection->GetHint();
+  CaretAssociationHint hint = frameSelection->GetHint();
   nsIFrame *caretFrame = frameSelection->GetFrameForNodeOffset(caretContent, caretOffset,
                                                                hint, &returnOffsetUnused);
   NS_ENSURE_TRUE(caretFrame, -1);
@@ -1315,16 +1323,12 @@ HyperTextAccessible::GetCaretRect(nsIWidget** aWidget)
   nsRefPtr<nsCaret> caret = mDoc->PresShell()->GetCaret();
   NS_ENSURE_TRUE(caret, nsIntRect());
 
-  nsISelection* caretSelection = caret->GetCaretDOMSelection();
-  NS_ENSURE_TRUE(caretSelection, nsIntRect());
-
-  bool isVisible = false;
-  caret->GetCaretVisible(&isVisible);
+  bool isVisible = caret->IsVisible();
   if (!isVisible)
     return nsIntRect();
 
   nsRect rect;
-  nsIFrame* frame = caret->GetGeometry(caretSelection, &rect);
+  nsIFrame* frame = caret->GetGeometry(&rect);
   if (!frame || rect.IsEmpty())
     return nsIntRect();
 
@@ -1437,8 +1441,15 @@ HyperTextAccessible::SelectionBoundsAt(int32_t aSelectionNum,
     endOffset = tempOffset;
   }
 
-  *aStartOffset = DOMPointToOffset(startNode, startOffset);
-  *aEndOffset = DOMPointToOffset(endNode, endOffset, true);
+  if (!nsContentUtils::ContentIsDescendantOf(startNode, mContent))
+    *aStartOffset = 0;
+  else
+    *aStartOffset = DOMPointToOffset(startNode, startOffset);
+
+  if (!nsContentUtils::ContentIsDescendantOf(endNode, mContent))
+    *aEndOffset = CharacterCount();
+  else
+    *aEndOffset = DOMPointToOffset(endNode, endOffset, true);
   return true;
 }
 
@@ -1546,7 +1557,9 @@ HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
         int16_t hPercent = offsetPointX * 100 / size.width;
         int16_t vPercent = offsetPointY * 100 / size.height;
 
-        nsresult rv = nsCoreUtils::ScrollSubstringTo(frame, range, vPercent, hPercent);
+        nsresult rv = nsCoreUtils::ScrollSubstringTo(frame, range,
+                                                     nsIPresShell::ScrollAxis(vPercent),
+                                                     nsIPresShell::ScrollAxis(hPercent));
         if (NS_FAILED(rv))
           return;
 
@@ -1839,25 +1852,17 @@ int32_t
 HyperTextAccessible::GetChildIndexAtOffset(uint32_t aOffset) const
 {
   uint32_t lastOffset = 0;
-  uint32_t offsetCount = mOffsets.Length();
+  const uint32_t offsetCount = mOffsets.Length();
+
   if (offsetCount > 0) {
     lastOffset = mOffsets[offsetCount - 1];
     if (aOffset < lastOffset) {
-      uint32_t low = 0, high = offsetCount;
-      while (high > low) {
-        uint32_t mid = (high + low) >> 1;
-        if (mOffsets[mid] == aOffset)
-          return mid < offsetCount - 1 ? mid + 1 : mid;
-
-        if (mOffsets[mid] < aOffset)
-          low = mid + 1;
-        else
-          high = mid;
+      size_t index;
+      if (BinarySearch(mOffsets, 0, offsetCount, aOffset, &index)) {
+        return (index < (offsetCount - 1)) ? index + 1 : index;
       }
-      if (high == offsetCount)
-        return -1;
 
-      return low;
+      return (index == offsetCount) ? -1 : index;
     }
   }
 

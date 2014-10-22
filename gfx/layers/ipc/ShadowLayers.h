@@ -50,7 +50,7 @@ class ShadowableLayer;
 class ShmemTextureClient;
 class SurfaceDescriptor;
 class TextureClient;
-class ThebesLayerComposite;
+class PaintedLayerComposite;
 class ThebesBuffer;
 class ThebesBufferData;
 class TiledLayerComposer;
@@ -176,7 +176,6 @@ public:
    */
   void BeginTransaction(const nsIntRect& aTargetBounds,
                         ScreenRotation aRotation,
-                        const nsIntRect& aClientBounds,
                         mozilla::dom::ScreenOrientation aOrientation);
 
   /**
@@ -190,7 +189,7 @@ public:
    * created, and a corresponding shadow layer should be created in
    * the compositing process.
    */
-  void CreatedThebesLayer(ShadowableLayer* aThebes);
+  void CreatedPaintedLayer(ShadowableLayer* aThebes);
   void CreatedContainerLayer(ShadowableLayer* aContainer);
   void CreatedImageLayer(ShadowableLayer* aImage);
   void CreatedColorLayer(ShadowableLayer* aColor);
@@ -287,7 +286,10 @@ public:
   virtual void UseComponentAlphaTextures(CompositableClient* aCompositable,
                                          TextureClient* aClientOnBlack,
                                          TextureClient* aClientOnWhite) MOZ_OVERRIDE;
-
+#ifdef MOZ_WIDGET_GONK
+  virtual void UseOverlaySource(CompositableClient* aCompositable,
+                                const OverlaySource& aOverlay) MOZ_OVERRIDE;
+#endif
   virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
                                PTextureChild* aTexture,
                                const FenceHandle& aFence) MOZ_OVERRIDE;
@@ -303,6 +305,7 @@ public:
                       bool aScheduleComposite,
                       uint32_t aPaintSequenceNumber,
                       bool aIsRepeatTransaction,
+                      const mozilla::TimeStamp& aTransactionStart,
                       bool* aSent);
 
   /**
@@ -316,7 +319,7 @@ public:
 
   void Composite();
 
-  void SendPendingAsyncMessge();
+  virtual void SendPendingAsyncMessges();
 
   /**
    * True if this is forwarding to a LayerManagerComposite.
@@ -393,11 +396,14 @@ protected:
   void CheckSurfaceDescriptor(const SurfaceDescriptor* aDescriptor) const {}
 #endif
 
+  bool InWorkerThread();
+
   RefPtr<LayerTransactionChild> mShadowManager;
 
 private:
 
   Transaction* mTxn;
+  std::vector<AsyncChildMessageData> mPendingAsyncMessages;
   DiagnosticTypes mDiagnosticTypes;
   bool mIsFirstPaint;
   bool mWindowOverlayChanged;

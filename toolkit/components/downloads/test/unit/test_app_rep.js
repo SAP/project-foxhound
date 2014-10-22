@@ -64,8 +64,10 @@ function run_test() {
   // Ensure safebrowsing is enabled for this test, even if the app
   // doesn't have it enabled.
   Services.prefs.setBoolPref("browser.safebrowsing.malware.enabled", true);
+  Services.prefs.setBoolPref("browser.safebrowsing.downloads.enabled", true);
   do_register_cleanup(function() {
     Services.prefs.clearUserPref("browser.safebrowsing.malware.enabled");
+    Services.prefs.clearUserPref("browser.safebrowsing.downloads.enabled");
   });
 
   // Set block and allow tables explicitly, since the allowlist is normally
@@ -162,21 +164,6 @@ add_test(function test_nullCallback() {
     check_telemetry(counts.total, counts.shouldBlock, counts.listCounts);
     run_next_test();
   }
-});
-
-add_test(function test_disabled() {
-  let counts = get_telemetry_counts();
-  Services.prefs.setCharPref("browser.safebrowsing.appRepURL", "");
-  gAppRep.queryReputation({
-    sourceURI: createURI("http://example.com"),
-    fileSize: 12,
-  }, function onComplete(aShouldBlock, aStatus) {
-    // We should be getting NS_ERROR_NOT_AVAILABLE if the service is disabled
-    do_check_eq(Cr.NS_ERROR_NOT_AVAILABLE, aStatus);
-    do_check_false(aShouldBlock);
-    check_telemetry(counts.total + 1, counts.shouldBlock, counts.listCounts);
-    run_next_test();
-  });
 });
 
 // Set up the local whitelist.

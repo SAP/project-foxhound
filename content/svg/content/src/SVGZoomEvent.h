@@ -28,12 +28,12 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   SVGZoomEvent(EventTarget* aOwner, nsPresContext* aPresContext,
-               WidgetGUIEvent* aEvent);
+               InternalSVGZoomEvent* aEvent);
 
   // Forward to base class
   NS_FORWARD_TO_UIEVENT
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE
+  virtual JSObject* WrapObjectInternal(JSContext* aCx) MOZ_OVERRIDE
   {
     return SVGZoomEventBinding::Wrap(aCx, this);
   }

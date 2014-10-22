@@ -12,7 +12,9 @@ const {Arg, Option, method, RetVal, types} = protocol;
 const events = require("sdk/event/core");
 const object = require("sdk/util/object");
 const { Class } = require("sdk/core/heritage");
-const { StyleSheetActor } = require("devtools/server/actors/stylesheets");
+
+// This will add the "stylesheet" actor type for protocol.js to recognize
+require("devtools/server/actors/stylesheets");
 
 loader.lazyGetter(this, "CssLogic", () => require("devtools/styleinspector/css-logic").CssLogic);
 loader.lazyGetter(this, "DOMUtils", () => Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils));
@@ -25,6 +27,12 @@ exports.ELEMENT_STYLE = ELEMENT_STYLE;
 
 const PSEUDO_ELEMENTS = [":first-line", ":first-letter", ":before", ":after", ":-moz-selection"];
 exports.PSEUDO_ELEMENTS = PSEUDO_ELEMENTS;
+
+// When gathering rules to read for pseudo elements, we will skip
+// :before and :after, which are handled as a special case.
+const PSEUDO_ELEMENTS_TO_READ = PSEUDO_ELEMENTS.filter(pseudo => {
+  return pseudo !== ":before" && pseudo !== ":after";
+});
 
 // Predeclare the domnode actor type for use in requests.
 types.addActorType("domnode");
@@ -112,17 +120,15 @@ var PageStyleActor = protocol.ActorClass({
   },
 
   /**
-   * Return or create a StyleSheetActor for the given
-   * nsIDOMCSSStyleSheet
+   * Return or create a StyleSheetActor for the given nsIDOMCSSStyleSheet.
+   * @param  {DOMStyleSheet} sheet
+   *         The style sheet to create an actor for.
+   * @return {StyleSheetActor}
+   *         The actor for this style sheet
    */
   _sheetRef: function(sheet) {
-    if (this.refMap.has(sheet)) {
-      return this.refMap.get(sheet);
-    }
-    let actor = new StyleSheetActor(sheet, this, this.walker.rootWin);
-    this.manage(actor);
-    this.refMap.set(sheet, actor);
-
+    let tabActor = this.inspector.tabActor;
+    let actor = tabActor.createStyleSheetActor(sheet);
     return actor;
   },
 
@@ -303,7 +309,7 @@ var PageStyleActor = protocol.ActorClass({
    */
   getApplied: method(function(node, options) {
     let entries = [];
-    this.addElementRules(node.rawNode, undefined, options, entries);
+    entries = entries.concat(this._getAllElementRules(node, undefined, options));
     return this.getAppliedProps(node, entries, options);
   }, {
     request: {
@@ -322,65 +328,121 @@ var PageStyleActor = protocol.ActorClass({
   },
 
   /**
-   * Helper function for getApplied, adds all the rules from a given
-   * element.
+   * Helper function for getApplied, gets all the rules from a given
+   * element. See getApplied for documentation on parameters.
+   * @param NodeActor node
+   * @param bool inherited
+   * @param object options
+
+   * @return Array The rules for a given element. Each item in the
+   *               array has the following signature:
+   *                - rule RuleActor
+   *                - isSystem Boolean
+   *                - inherited Boolean
+   *                - pseudoElement String
    */
-  addElementRules: function(element, inherited, options, rules) {
-    if (!element.style) {
-      return;
+  _getAllElementRules: function(node, inherited, options) {
+    let {bindingElement, pseudo} = CssLogic.getBindingElementAndPseudo(node.rawNode);
+    let rules = [];
+
+    if (!bindingElement || !bindingElement.style) {
+      return rules;
     }
 
-    let elementStyle = this._styleRef(element);
+    let elementStyle = this._styleRef(bindingElement);
+    let showElementStyles = !inherited && !pseudo;
+    let showInheritedStyles = inherited && this._hasInheritedProps(bindingElement.style);
 
-    if (!inherited || this._hasInheritedProps(element.style)) {
+    // First any inline styles
+    if (showElementStyles) {
       rules.push({
         rule: elementStyle,
-        inherited: inherited,
       });
     }
 
-    let pseudoElements = inherited ? [null] : [null, ...PSEUDO_ELEMENTS];
-    for (let pseudo of pseudoElements) {
+    // Now any inherited styles
+    if (showInheritedStyles) {
+      rules.push({
+        rule: elementStyle,
+        inherited: inherited
+      });
+    }
 
-      // Get the styles that apply to the element.
-      let domRules = DOMUtils.getCSSStyleRules(element, pseudo);
+    // Add normal rules.  Typically this is passing in the node passed into the
+    // function, unless if that node was ::before/::after.  In which case,
+    // it will pass in the parentNode along with "::before"/"::after".
+    this._getElementRules(bindingElement, pseudo, inherited, options).forEach((rule) => {
+      // The only case when there would be a pseudo here is ::before/::after,
+      // and in this case we want to tell the view that it belongs to the
+      // element (which is a _moz_generated_content native anonymous element).
+      rule.pseudoElement = null;
+      rules.push(rule);
+    });
 
-      if (!domRules) {
-        continue;
-      }
-
-      // getCSSStyleRules returns ordered from least-specific to
-      // most-specific.
-      for (let i = domRules.Count() - 1; i >= 0; i--) {
-        let domRule = domRules.GetElementAt(i);
-
-        let isSystem = !CssLogic.isContentStylesheet(domRule.parentStyleSheet);
-
-        if (isSystem && options.filter != CssLogic.FILTER.UA) {
-          continue;
-        }
-
-        if (inherited) {
-          // Don't include inherited rules if none of its properties
-          // are inheritable.
-          let hasInherited = Array.prototype.some.call(domRule.style, prop => {
-            return DOMUtils.isInheritedProperty(prop);
-          });
-          if (!hasInherited) {
-            continue;
-          }
-        }
-
-        let ruleActor = this._styleRef(domRule);
-        rules.push({
-          rule: ruleActor,
-          inherited: inherited,
-          pseudoElement: pseudo,
-          isSystem: isSystem
+    // Now any pseudos (except for ::before / ::after, which was handled as
+    // a 'normal rule' above.
+    if (showElementStyles) {
+      for (let pseudo of PSEUDO_ELEMENTS_TO_READ) {
+        this._getElementRules(bindingElement, pseudo, inherited, options).forEach((rule) => {
+          rules.push(rule);
         });
       }
     }
+
+    return rules;
   },
+
+  /**
+   * Helper function for _getAllElementRules, returns the rules from a given
+   * element. See getApplied for documentation on parameters.
+   * @param DOMNode node
+   * @param string pseudo
+   * @param DOMNode inherited
+   * @param object options
+   *
+   * @returns Array
+   */
+  _getElementRules: function (node, pseudo, inherited, options) {
+    let domRules = DOMUtils.getCSSStyleRules(node, pseudo);
+    if (!domRules) {
+      return [];
+    }
+
+    let rules = [];
+
+    // getCSSStyleRules returns ordered from least-specific to
+    // most-specific.
+    for (let i = domRules.Count() - 1; i >= 0; i--) {
+      let domRule = domRules.GetElementAt(i);
+
+      let isSystem = !CssLogic.isContentStylesheet(domRule.parentStyleSheet);
+
+      if (isSystem && options.filter != CssLogic.FILTER.UA) {
+        continue;
+      }
+
+      if (inherited) {
+        // Don't include inherited rules if none of its properties
+        // are inheritable.
+        let hasInherited = [...domRule.style].some(
+          prop => DOMUtils.isInheritedProperty(prop)
+        );
+        if (!hasInherited) {
+          continue;
+        }
+      }
+
+      let ruleActor = this._styleRef(domRule);
+      rules.push({
+        rule: ruleActor,
+        inherited: inherited,
+        isSystem: isSystem,
+        pseudoElement: pseudo
+      });
+    }
+    return rules;
+  },
+
 
   /**
    * Helper function for getApplied and addNewRule that fetches a set of
@@ -407,7 +469,7 @@ var PageStyleActor = protocol.ActorClass({
     if (options.inherited) {
       let parent = this.walker.parentNode(node);
       while (parent && parent.rawNode.nodeType != Ci.nsIDOMNode.DOCUMENT_NODE) {
-        this.addElementRules(parent.rawNode, parent, options, entries);
+        entries = entries.concat(this._getAllElementRules(parent, parent, options));
         parent = this.walker.parentNode(parent);
       }
     }
@@ -421,9 +483,11 @@ var PageStyleActor = protocol.ActorClass({
         let domRule = entry.rule.rawRule;
         let selectors = CssLogic.getSelectors(domRule);
         let element = entry.inherited ? entry.inherited.rawNode : node.rawNode;
+
+        let {bindingElement,pseudo} = CssLogic.getBindingElementAndPseudo(element);
         entry.matchedSelectors = [];
         for (let i = 0; i < selectors.length; i++) {
-          if (DOMUtils.selectorMatchesElement(element, domRule, i)) {
+          if (DOMUtils.selectorMatchesElement(bindingElement, domRule, i, pseudo)) {
             entry.matchedSelectors.push(selectors[i]);
           }
         }
@@ -507,7 +571,7 @@ var PageStyleActor = protocol.ActorClass({
     layout.height = Math.round(clientRect.height);
 
     // We compute and update the values of margins & co.
-    let style = node.rawNode.ownerDocument.defaultView.getComputedStyle(node.rawNode);
+    let style = CssLogic.getComputedStyle(node.rawNode);
     for (let prop of [
       "position",
       "margin-top",
@@ -603,7 +667,7 @@ var PageStyleActor = protocol.ActorClass({
     if (rawNode.id) {
       selector = "#" + rawNode.id;
     } else if (rawNode.className) {
-      selector = "." + rawNode.className;
+      selector = "." + rawNode.className.split(" ")[0];
     } else {
       selector = rawNode.tagName.toLowerCase();
     }
@@ -975,6 +1039,7 @@ var StyleRuleFront = protocol.FrontClass(StyleRuleActor, {
   get location()
   {
     return {
+      source: this.parentStyleSheet,
       href: this.href,
       line: this.line,
       column: this.column
@@ -992,11 +1057,14 @@ var StyleRuleFront = protocol.FrontClass(StyleRuleActor, {
       return promise.resolve(this.location);
     }
     return parentSheet.getOriginalLocation(this.line, this.column)
-      .then(({ source, line, column }) => {
+      .then(({ fromSourceMap, source, line, column }) => {
         let location = {
           href: source,
           line: line,
           column: column
+        }
+        if (fromSourceMap === false) {
+          location.source = this.parentStyleSheet;
         }
         if (!source) {
           location.href = this.href;
@@ -1004,19 +1072,6 @@ var StyleRuleFront = protocol.FrontClass(StyleRuleActor, {
         this._originalLocation = location;
         return location;
       })
-  },
-
-  // Only used for testing, please keep it that way.
-  _rawStyle: function() {
-    if (!this.conn._transport._serverConnection) {
-      console.warn("Tried to use rawNode on a remote connection.");
-      return null;
-    }
-    let actor = this.conn._transport._serverConnection.getActor(this.actorID);
-    if (!actor) {
-      return null;
-    }
-    return actor.rawStyle;
   }
 });
 

@@ -404,6 +404,12 @@ TemporaryRef<CompositingRenderTarget>
 CompositorD3D11::CreateRenderTarget(const gfx::IntRect& aRect,
                                     SurfaceInitMode aInit)
 {
+  MOZ_ASSERT(aRect.width != 0 && aRect.height != 0);
+
+  if (aRect.width * aRect.height == 0) {
+    return nullptr;
+  }
+
   CD3D11_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, aRect.width, aRect.height, 1, 1,
                              D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
 
@@ -430,6 +436,12 @@ CompositorD3D11::CreateRenderTargetFromSource(const gfx::IntRect &aRect,
                                               const CompositingRenderTarget* aSource,
                                               const gfx::IntPoint &aSourcePoint)
 {
+  MOZ_ASSERT(aRect.width != 0 && aRect.height != 0);
+
+  if (aRect.width * aRect.height == 0) {
+    return nullptr;
+  }
+
   CD3D11_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM,
                              aRect.width, aRect.height, 1, 1,
                              D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET);
@@ -451,7 +463,7 @@ CompositorD3D11::CreateRenderTargetFromSource(const gfx::IntRect &aRect,
     srcBox.front = 0;
     srcBox.right = aSourcePoint.x + aRect.width;
     srcBox.bottom = aSourcePoint.y + aRect.height;
-    srcBox.back = 0;
+    srcBox.back = 1;
 
     const IntSize& srcSize = sourceD3D11->GetSize();
     MOZ_ASSERT(srcSize.width >= 0 && srcSize.height >= 0,
@@ -483,7 +495,7 @@ CompositorD3D11::SetRenderTarget(CompositingRenderTarget* aRenderTarget)
   ID3D11RenderTargetView* view = newRT->mRTView;
   mCurrentRT = newRT;
   mContext->OMSetRenderTargets(1, &view, nullptr);
-  PrepareViewport(newRT->GetSize(), gfx::Matrix());
+  PrepareViewport(newRT->GetSize());
 }
 
 void
@@ -541,7 +553,10 @@ CompositorD3D11::ClearRect(const gfx::Rect& aRect)
   mPSConstants.layerColor[2] = 0;
   mPSConstants.layerColor[3] = 0;
 
-  UpdateConstantBuffers();
+  if (!UpdateConstantBuffers()) {
+    NS_WARNING("Failed to update shader constant buffers");
+    return;
+  }
 
   mContext->Draw(4, 0);
 
@@ -727,7 +742,10 @@ CompositorD3D11::DrawQuad(const gfx::Rect& aRect,
     NS_WARNING("Unknown shader type");
     return;
   }
-  UpdateConstantBuffers();
+  if (!UpdateConstantBuffers()) {
+    NS_WARNING("Failed to update shader constant buffers");
+    return;
+  }
 
   mContext->Draw(4, 0);
   if (restoreBlendMode) {
@@ -738,7 +756,6 @@ CompositorD3D11::DrawQuad(const gfx::Rect& aRect,
 void
 CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
                             const Rect* aClipRectIn,
-                            const gfx::Matrix& aTransform,
                             const Rect& aRenderBounds,
                             Rect* aClipRectOut,
                             Rect* aRenderBoundsOut)
@@ -816,8 +833,7 @@ CompositorD3D11::EndFrame()
 }
 
 void
-CompositorD3D11::PrepareViewport(const gfx::IntSize& aSize,
-                                 const gfx::Matrix& aWorldTransform)
+CompositorD3D11::PrepareViewport(const gfx::IntSize& aSize)
 {
   D3D11_VIEWPORT viewport;
   viewport.MaxDepth = 1.0f;
@@ -829,12 +845,9 @@ CompositorD3D11::PrepareViewport(const gfx::IntSize& aSize,
 
   mContext->RSSetViewports(1, &viewport);
 
-  Matrix viewMatrix;
-  viewMatrix.Translate(-1.0, 1.0);
-  viewMatrix.Scale(2.0f / float(aSize.width), 2.0f / float(aSize.height));
-  viewMatrix.Scale(1.0f, -1.0f);
-
-  viewMatrix = aWorldTransform * viewMatrix;
+  Matrix viewMatrix = Matrix::Translation(-1.0, 1.0);
+  viewMatrix.PreScale(2.0f / float(aSize.width), 2.0f / float(aSize.height));
+  viewMatrix.PreScale(1.0f, -1.0f);
 
   Matrix4x4 projection = Matrix4x4::From2D(viewMatrix);
   projection._33 = 0.0f;
@@ -959,14 +972,52 @@ CompositorD3D11::CreateShaders()
   return true;
 }
 
-void
+static
+bool ShouldRecoverFromMapFailure(HRESULT hr, ID3D11Device* device)
+{
+  // XXX - it would be nice to use gfxCriticalError, but it needs to
+  // be made to work off the main thread first.
+  if (SUCCEEDED(hr)) {
+    return true;
+  }
+  if (hr == DXGI_ERROR_DEVICE_REMOVED) {
+    switch (device->GetDeviceRemovedReason()) {
+      case DXGI_ERROR_DEVICE_HUNG:
+      case DXGI_ERROR_DEVICE_REMOVED:
+      case DXGI_ERROR_DEVICE_RESET:
+      case DXGI_ERROR_DRIVER_INTERNAL_ERROR:
+        return true;
+      case DXGI_ERROR_INVALID_CALL:
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
+bool
 CompositorD3D11::UpdateConstantBuffers()
 {
+  HRESULT hr;
   D3D11_MAPPED_SUBRESOURCE resource;
-  mContext->Map(mAttachments->mVSConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource);
+
+  hr = mContext->Map(mAttachments->mVSConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource);
+  if (FAILED(hr)) {
+    if (ShouldRecoverFromMapFailure(hr, GetDevice())) {
+      return false;
+    }
+    MOZ_CRASH();
+  }
   *(VertexShaderConstants*)resource.pData = mVSConstants;
   mContext->Unmap(mAttachments->mVSConstantBuffer, 0);
-  mContext->Map(mAttachments->mPSConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource);
+
+  hr = mContext->Map(mAttachments->mPSConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource);
+  if (FAILED(hr)) {
+    if (ShouldRecoverFromMapFailure(hr, GetDevice())) {
+      return false;
+    }
+    MOZ_CRASH();
+  }
   *(PixelShaderConstants*)resource.pData = mPSConstants;
   mContext->Unmap(mAttachments->mPSConstantBuffer, 0);
 
@@ -976,6 +1027,7 @@ CompositorD3D11::UpdateConstantBuffers()
 
   buffer = mAttachments->mPSConstantBuffer;
   mContext->PSSetConstantBuffers(0, 1, &buffer);
+  return true;
 }
 
 void

@@ -88,6 +88,8 @@ HTMLBreadcrumbs.prototype = {
 
     this.container.addEventListener("mousedown", this, true);
     this.container.addEventListener("keypress", this, true);
+    this.container.addEventListener("mouseover", this, true);
+    this.container.addEventListener("mouseleave", this, true);
 
     // We will save a list of already displayed nodes in this array.
     this.nodeHierarchy = [];
@@ -154,6 +156,10 @@ HTMLBreadcrumbs.prototype = {
   prettyPrintNodeAsText: function BC_prettyPrintNodeText(aNode)
   {
     let text = aNode.tagName.toLowerCase();
+    if (aNode.isPseudoElement) {
+      text = aNode.isBeforePseudoElement ? "::before" : "::after";
+    }
+
     if (aNode.id) {
       text += "#" + aNode.id;
     }
@@ -199,6 +205,9 @@ HTMLBreadcrumbs.prototype = {
     pseudosLabel.className = "breadcrumbs-widget-item-pseudo-classes plain";
 
     let tagText = aNode.tagName.toLowerCase();
+    if (aNode.isPseudoElement) {
+      tagText = aNode.isBeforePseudoElement ? "::before" : "::after";
+    }
     let idText = aNode.id ? ("#" + aNode.id) : "";
     let classesText = "";
 
@@ -373,6 +382,17 @@ HTMLBreadcrumbs.prototype = {
       event.preventDefault();
       event.stopPropagation();
     }
+
+    if (event.type == "mouseover") {
+      let target = event.originalTarget;
+      if (target.tagName == "button") {
+        target.onBreadcrumbsHover();
+      }
+    }
+
+    if (event.type == "mouseleave") {
+      this.inspector.toolbox.highlighterUtils.unhighlight();
+    }
   },
 
   /**
@@ -392,6 +412,8 @@ HTMLBreadcrumbs.prototype = {
     this.empty();
     this.container.removeEventListener("mousedown", this, true);
     this.container.removeEventListener("keypress", this, true);
+    this.container.removeEventListener("mouseover", this, true);
+    this.container.removeEventListener("mouseleave", this, true);
     this.container = null;
 
     this.separators.remove();
@@ -484,6 +506,10 @@ HTMLBreadcrumbs.prototype = {
 
     button.onBreadcrumbsClick = () => {
       this.selection.setNodeFront(aNode, "breadcrumbs");
+    };
+
+    button.onBreadcrumbsHover = () => {
+      this.inspector.toolbox.highlighterUtils.highlightNodeFront(aNode);
     };
 
     button.onclick = (function _onBreadcrumbsRightClick(event) {

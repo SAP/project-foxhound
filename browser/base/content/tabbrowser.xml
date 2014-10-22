@@ -9,11 +9,6 @@
 %tabBrowserDTD;
 ]>
 
-# MAKE_E10S_WORK surrounds code needed to have the front-end try to be smart
-# about using non-remote browsers for loading certain URIs when remote tabs
-# (browser.tabs.remote) are enabled.
-#define MAKE_E10S_WORK 1
-
 <bindings id="tabBrowserBindings"
           xmlns="http://www.mozilla.org/xbl"
           xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -85,6 +80,9 @@
          Components.classes["@mozilla.org/autocomplete/search;1?name=unifiedcomplete"]
                    .getService(Components.interfaces.mozIPlacesAutoComplete);
       </field>
+      <field name="PlacesUtils" readonly="true">
+        (Components.utils.import("resource://gre/modules/PlacesUtils.jsm", {})).PlacesUtils;
+      </field>
       <field name="mTabBox" readonly="true">
         document.getAnonymousElementByAttribute(this, "anonid", "tabbox");
       </field>
@@ -138,6 +136,10 @@
         ""
       </field>
 
+      <field name="_contentWaitingCount">
+        0
+      </field>
+
       <property name="_numPinnedTabs" readonly="true">
         <getter><![CDATA[
           for (var i = 0; i < this.tabs.length; i++) {
@@ -145,6 +147,22 @@
               break;
           }
           return i;
+        ]]></getter>
+      </property>
+
+      <property name="formValidationAnchor" readonly="true">
+        <getter><![CDATA[
+        if (this.mCurrentTab._formValidationAnchor) {
+          return this.mCurrentTab._formValidationAnchor;
+        }
+        let stack = this.mCurrentBrowser.parentNode;
+        // Create an anchor for the form validation popup
+        const NS_XUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+        let formValidationAnchor = document.createElementNS(NS_XUL, "hbox");
+        formValidationAnchor.className = "form-validation-anchor";
+        formValidationAnchor.hidden = true;
+        stack.appendChild(formValidationAnchor);
+        return this.mCurrentTab._formValidationAnchor = formValidationAnchor;
         ]]></getter>
       </property>
 
@@ -270,9 +288,7 @@
           this.tabContainer._positionPinnedTabs();
           this.tabContainer.adjustTabstrip();
 
-          // Bug 961867 - [e10s] Implement the logic for app tabs
-          if (!gMultiProcessBrowser)
-            this.getBrowserForTab(aTab).docShell.isAppTab = true;
+          this.getBrowserForTab(aTab).messageManager.sendAsyncMessage("Browser:AppTab", { isAppTab: true })
 
           if (aTab.selected)
             this._setCloseKeyState(false);
@@ -296,9 +312,7 @@
           this.tabContainer._positionPinnedTabs();
           this.tabContainer.adjustTabstrip();
 
-          // Bug 961867 - [e10s] Implement the logic for app tabs
-          if (!gMultiProcessBrowser)
-            this.getBrowserForTab(aTab).docShell.isAppTab = false;
+          this.getBrowserForTab(aTab).messageManager.sendAsyncMessage("Browser:AppTab", { isAppTab: false })
 
           if (aTab.selected)
             this._setCloseKeyState(true);
@@ -357,12 +371,35 @@
         </body>
       </method>
 
+      <method name="getBrowserForContentWindow">
+        <parameter name="aWindow"/>
+        <body>
+          <![CDATA[
+            var tab = this._getTabForContentWindow(aWindow);
+            return tab ? tab.linkedBrowser : null;
+          ]]>
+        </body>
+      </method>
+
       <method name="_getTabForContentWindow">
         <parameter name="aWindow"/>
         <body>
         <![CDATA[
+          // When not using remote browsers, we can take a fast path by getting
+          // directly from the content window to the browser without looping
+          // over all browsers.
+          if (!gMultiProcessBrowser) {
+            let browser = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+                                 .getInterface(Ci.nsIWebNavigation)
+                                 .QueryInterface(Ci.nsIDocShell)
+                                 .chromeEventHandler;
+            return this.getTabForBrowser(browser);
+          }
+
           for (let i = 0; i < this.browsers.length; i++) {
-            if (this.browsers[i].contentWindow == aWindow)
+            // NB: We use contentWindowAsCPOW so that this code works both
+            // for remote browsers as well. aWindow may be a CPOW.
+            if (this.browsers[i].contentWindowAsCPOW == aWindow)
               return this.tabs[i];
           }
           return null;
@@ -370,15 +407,31 @@
         </body>
       </method>
 
+      <!-- Binding from browser to tab -->
+      <field name="_tabForBrowser" readonly="true">
+      <![CDATA[
+        new WeakMap();
+      ]]>
+      </field>
+
       <method name="_getTabForBrowser">
+        <parameter name="aBrowser" />
+        <body>
+        <![CDATA[
+          let Deprecated = Components.utils.import("resource://gre/modules/Deprecated.jsm", {}).Deprecated;
+          let text = "_getTabForBrowser` is now deprecated, please use `getTabForBrowser";
+          let url = "https://developer.mozilla.org/docs/Mozilla/Tech/XUL/Method/getTabForBrowser";
+          Deprecated.warning(text, url);
+          return this.getTabForBrowser(aBrowser);
+        ]]>
+        </body>
+      </method>
+
+      <method name="getTabForBrowser">
         <parameter name="aBrowser"/>
         <body>
         <![CDATA[
-          for (let i = 0; i < this.tabs.length; i++) {
-            if (this.tabs[i].linkedBrowser == aBrowser)
-              return this.tabs[i];
-          }
-          return null;
+          return this._tabForBrowser.get(aBrowser);
         ]]>
         </body>
       </method>
@@ -427,7 +480,7 @@
 
                 newPrompt.clientTop; // style flush to assure binding is attached
 
-                let tab = self._getTabForBrowser(browser);
+                let tab = self.getTabForBrowser(browser);
                 newPrompt.init(args, tab, onCloseCallback);
                 return newPrompt;
               },
@@ -541,9 +594,6 @@
             _shouldShowProgress: function (aRequest) {
               if (this.mBlank)
                 return false;
-
-              if (gMultiProcessBrowser)
-                return true;
 
               // Don't show progress indicators in tabs for about: URIs
               // pointing to local resources.
@@ -724,10 +774,6 @@
                      aLocation.spec != "about:blank"))
                   this.mBrowser.userTypedValue = null;
 
-                // Clear out the missing plugins list since it's related to the
-                // previous location.
-                this.mBrowser.missingPlugins = null;
-
                 if (this.mTabBrowser.isFindBarInitialized(this.mTab)) {
                   let findBar = this.mTabBrowser.getFindBar(this.mTab);
 
@@ -829,9 +875,7 @@
 
             let sizedIconUrl = browser.mIconURL || "";
             if (sizedIconUrl) {
-              let size = Math.round(16 * window.devicePixelRatio);
-              sizedIconUrl += (sizedIconUrl.contains("#") ? "&" : "#") +
-                              "-moz-resolution=" + size + "," + size;
+              sizedIconUrl = this.PlacesUtils.getImageURLForResolution(window, sizedIconUrl);
             }
             if (sizedIconUrl != aTab.getAttribute("image")) {
               if (sizedIconUrl)
@@ -885,9 +929,10 @@
                 }
               }
             }
+
             // Use documentURIObject in the check for shouldLoadFavIcon so that we
             // do the right thing with about:-style error pages.  Bug 453442
-            else if (this.shouldLoadFavIcon(documentURI)) {
+            if (!icon && this.shouldLoadFavIcon(documentURI)) {
               let url = documentURI.prePath + "/favicon.ico";
               if (!this.isFailedIcon(url))
                 icon = url;
@@ -997,17 +1042,20 @@
             }
 
             var oldBrowser = this.mCurrentBrowser;
-            oldBrowser.setAttribute("type", "content-targetable");
-            oldBrowser.docShellIsActive = false;
+
+            if (!gMultiProcessBrowser) {
+              oldBrowser.setAttribute("type", "content-targetable");
+              oldBrowser.docShellIsActive = false;
+              newBrowser.setAttribute("type", "content-primary");
+              newBrowser.docShellIsActive =
+                (window.windowState != window.STATE_MINIMIZED);
+            }
 
             var updateBlockedPopups = false;
             if ((oldBrowser.blockedPopups && !newBrowser.blockedPopups) ||
                 (!oldBrowser.blockedPopups && newBrowser.blockedPopups))
               updateBlockedPopups = true;
 
-            newBrowser.setAttribute("type", "content-primary");
-            newBrowser.docShellIsActive =
-              (window.windowState != window.STATE_MINIMIZED);
             this.mCurrentBrowser = newBrowser;
             this.mCurrentTab = this.tabContainer.selectedItem;
             this.showTab(this.mCurrentTab);
@@ -1118,76 +1166,33 @@
                 //   3. User returns to tab, presses "Leave page"
                 let promptBox = this.getTabModalPromptBox(oldBrowser);
                 let prompts = promptBox.listPrompts();
-                // NB: This code assumes that the beforeunload prompt
-                //     is the top-most prompt on the tab.
-                promptBox.removePrompt(prompts[prompts.length - 1]);
+                // There might not be any prompts here if the tab was closed
+                // while in an onbeforeunload prompt, which will have
+                // destroyed aforementioned prompt already, so check there's
+                // something to remove, first:
+                if (prompts.length) {
+                  // NB: This code assumes that the beforeunload prompt
+                  //     is the top-most prompt on the tab.
+                  promptBox.removePrompt(prompts[prompts.length - 1]);
+                }
               }
 
-              // Adjust focus
               oldBrowser._urlbarFocused = (gURLBar && gURLBar.focused);
               if (this.isFindBarInitialized(oldTab)) {
                 let findBar = this.getFindBar(oldTab);
                 oldTab._findBarFocused = (!findBar.hidden &&
                   findBar._findField.getAttribute("focused") == "true");
               }
-              do {
-                // When focus is in the tab bar, retain it there.
-                if (document.activeElement == oldTab) {
-                  // We need to explicitly focus the new tab, because
-                  // tabbox.xml does this only in some cases.
-                  this.mCurrentTab.focus();
-                  break;
-                }
 
-                // If there's a tabmodal prompt showing, focus it.
-                if (newBrowser.hasAttribute("tabmodalPromptShowing")) {
-                  let XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-                  let prompts = newBrowser.parentNode.getElementsByTagNameNS(XUL_NS, "tabmodalprompt");
-                  let prompt = prompts[prompts.length - 1];
-                  prompt.Dialog.setDefaultFocus();
-                  break;
-                }
+              // If focus is in the tab bar, retain it there.
+              if (document.activeElement == oldTab) {
+                // We need to explicitly focus the new tab, because
+                // tabbox.xml does this only in some cases.
+                this.mCurrentTab.focus();
+              }
 
-                // Focus the location bar if it was previously focused for that tab.
-                // In full screen mode, only bother making the location bar visible
-                // if the tab is a blank one.
-                if (newBrowser._urlbarFocused && gURLBar) {
-
-                  // Explicitly close the popup if the URL bar retains focus
-                  gURLBar.closePopup();
-
-                  if (!window.fullScreen) {
-                    gURLBar.focus();
-                    break;
-                  } else if (isTabEmpty(this.mCurrentTab)) {
-                    focusAndSelectUrlBar();
-                    break;
-                  }
-                }
-
-                // Focus the find bar if it was previously focused for that tab.
-                if (gFindBarInitialized && !gFindBar.hidden &&
-                    this.selectedTab._findBarFocused) {
-                  gFindBar._findField.focus();
-                  break;
-                }
-
-                // Otherwise, focus the content area.
-                let fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
-                let focusFlags = fm.FLAG_NOSCROLL;
-
-                if (!gMultiProcessBrowser) {
-                  let newFocusedElement = fm.getFocusedElementForWindow(window.content, true, {});
-
-                  // for anchors, use FLAG_SHOWRING so that it is clear what link was
-                  // last clicked when switching back to that tab
-                  if (newFocusedElement &&
-                      (newFocusedElement instanceof HTMLAnchorElement ||
-                       newFocusedElement.getAttributeNS("http://www.w3.org/1999/xlink", "type") == "simple"))
-                    focusFlags |= fm.FLAG_SHOWRING;
-                }
-                fm.setFocus(newBrowser, focusFlags);
-              } while (false);
+              if (!gMultiProcessBrowser)
+                this._adjustFocusAfterTabSwitch(this.mCurrentTab);
             }
 
             this.tabContainer._setPositionalAttributes();
@@ -1196,6 +1201,82 @@
               TelemetryStopwatch.finish("FX_TAB_SWITCH_UPDATE_MS");
           ]]>
         </body>
+      </method>
+
+      <method name="_adjustFocusAfterTabSwitch">
+        <parameter name="newTab"/>
+        <body><![CDATA[
+        let newBrowser = this.getBrowserForTab(newTab);
+
+        // Don't steal focus from the tab bar.
+        if (document.activeElement == newTab)
+          return;
+
+        // If there's a tabmodal prompt showing, focus it.
+        if (newBrowser.hasAttribute("tabmodalPromptShowing")) {
+          let XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+          let prompts = newBrowser.parentNode.getElementsByTagNameNS(XUL_NS, "tabmodalprompt");
+          let prompt = prompts[prompts.length - 1];
+          prompt.Dialog.setDefaultFocus();
+          return;
+        }
+
+        // Focus the location bar if it was previously focused for that tab.
+        // In full screen mode, only bother making the location bar visible
+        // if the tab is a blank one.
+        if (newBrowser._urlbarFocused && gURLBar) {
+
+          // Explicitly close the popup if the URL bar retains focus
+          gURLBar.closePopup();
+
+          if (!window.fullScreen) {
+            gURLBar.focus();
+            return;
+          }
+
+          if (isTabEmpty(this.mCurrentTab)) {
+            focusAndSelectUrlBar();
+            return;
+          }
+        }
+
+        // Focus the find bar if it was previously focused for that tab.
+        if (gFindBarInitialized && !gFindBar.hidden &&
+            this.selectedTab._findBarFocused) {
+          gFindBar._findField.focus();
+          return;
+        }
+
+        // Otherwise, focus the content area. If we're not using remote tabs, we
+        // can focus the content area right away, since tab switching is synchronous.
+        // If we're using remote tabs, we have to wait until after we've finalized
+        // switching the tabs.
+
+        if (newTab._skipContentFocus) {
+          // It's possible the tab we're switching to is ready to focus asynchronously,
+          // when we've already focused something else. In that case, this
+          // _skipContentFocus property can be set so that we skip focusing the
+          // content after we switch tabs.
+          delete newTab._skipContentFocus;
+          return;
+        }
+
+        let fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
+        let focusFlags = fm.FLAG_NOSCROLL;
+
+        if (!gMultiProcessBrowser) {
+          let newFocusedElement = fm.getFocusedElementForWindow(window.content, true, {});
+
+          // for anchors, use FLAG_SHOWRING so that it is clear what link was
+          // last clicked when switching back to that tab
+          if (newFocusedElement &&
+              (newFocusedElement instanceof HTMLAnchorElement ||
+               newFocusedElement.getAttributeNS("http://www.w3.org/1999/xlink", "type") == "simple"))
+            focusFlags |= fm.FLAG_SHOWRING;
+        }
+
+        fm.setFocus(newBrowser, focusFlags);
+        ]]></body>
       </method>
 
       <method name="_tabAttrModified">
@@ -1386,15 +1467,19 @@
             let wasActive = document.activeElement == aBrowser;
 
             // Unhook our progress listener.
-            let tab = this._getTabForBrowser(aBrowser);
+            let tab = this.getTabForBrowser(aBrowser);
             let index = tab._tPos;
             let filter = this.mTabFilters[index];
             aBrowser.webProgress.removeProgressListener(filter);
 
             // Change the "remote" attribute.
             let parent = aBrowser.parentNode;
+            let permanentKey = aBrowser.permanentKey;
             parent.removeChild(aBrowser);
             aBrowser.setAttribute("remote", aShouldBeRemote ? "true" : "false");
+            // Tearing down the browser gives a new permanentKey but we want to
+            // keep the old one. Re-set it explicitly after unbinding from DOM.
+            aBrowser.permanentKey = permanentKey;
             parent.appendChild(aBrowser);
 
             // Restore the progress listener.
@@ -1413,51 +1498,17 @@
         </body>
       </method>
 
-#ifdef MAKE_E10S_WORK
       <method name="updateBrowserRemotenessByURL">
         <parameter name="aBrowser"/>
         <parameter name="aURL"/>
         <body>
           <![CDATA[
-            let shouldBeRemote = this._shouldBrowserBeRemote(aURL);
+            let shouldBeRemote = gMultiProcessBrowser &&
+                                 E10SUtils.shouldBrowserBeRemote(aURL);
             return this.updateBrowserRemoteness(aBrowser, shouldBeRemote);
           ]]>
         </body>
       </method>
-
-      <!--
-        Returns true if we want to load the content for this URL in a
-        remote process. Eventually this should just check whether aURL
-        is unprivileged. Right now, though, we would like to load
-        some unprivileged URLs (like about:neterror) in the main
-        process since they interact with chrome code through
-        BrowserOnClick.
-      -->
-      <method name="_shouldBrowserBeRemote">
-        <parameter name="aURL"/>
-        <body>
-          <![CDATA[
-            if (!gMultiProcessBrowser)
-              return false;
-
-            // loadURI in browser.xml treats null as about:blank
-            if (!aURL)
-              aURL = "about:blank";
-
-            if (aURL.startsWith("about:") &&
-                aURL.toLowerCase() != "about:home" &&
-                aURL.toLowerCase() != "about:blank") {
-              return false;
-            }
-
-            if (aURL.startsWith("chrome:"))
-              return false;
-
-            return true;
-          ]]>
-        </body>
-      </method>
-#endif
 
       <method name="addTab">
         <parameter name="aURI"/>
@@ -1500,11 +1551,7 @@
             t.setAttribute("onerror", "this.removeAttribute('image');");
             t.className = "tabbrowser-tab";
 
-#ifdef MAKE_E10S_WORK
-            let remote = this._shouldBrowserBeRemote(aURI);
-#else
-            let remote = gMultiProcessBrowser;
-#endif
+            let remote = gMultiProcessBrowser && E10SUtils.shouldBrowserBeRemote(aURI);
             if (remote)
               t.setAttribute("remote", "true");
 
@@ -1587,6 +1634,7 @@
             notificationbox.id = uniqueId;
             t.linkedPanel = uniqueId;
             t.linkedBrowser = b;
+            this._tabForBrowser.set(b, t);
             t._tPos = position;
             this.tabContainer._setPositionalAttributes();
 
@@ -1906,13 +1954,23 @@
               return false;
 
             var browser = this.getBrowserForTab(aTab);
-
-            if (!aTabWillBeMoved) {
+            if (!aTab._pendingPermitUnload && !aTabWillBeMoved) {
               let ds = browser.docShell;
-              if (ds &&
-                  ds.contentViewer &&
-                  !ds.contentViewer.permitUnload()) {
-                return false;
+              if (ds && ds.contentViewer) {
+                // We need to block while calling permitUnload() because it
+                // processes the event queue and may lead to another removeTab()
+                // call before permitUnload() even returned.
+                aTab._pendingPermitUnload = true;
+                let permitUnload = ds.contentViewer.permitUnload();
+                delete aTab._pendingPermitUnload;
+                // If we were closed during onbeforeunload, we return false now
+                // so we don't (try to) close the same tab again. Of course, we
+                // also stop if the unload was cancelled by the user:
+                if (aTab.closing || !permitUnload) {
+                  // NB: deliberately keep the _closedDuringPermitUnload set to
+                  // true so we keep exiting early in case of multiple calls.
+                  return false;
+                }
               }
             }
 
@@ -2094,21 +2152,14 @@
 
             // Release the browser in case something is erroneously holding a
             // reference to the tab after its removal.
+            this._tabForBrowser.delete(aTab.linkedBrowser);
             aTab.linkedBrowser = null;
 
             // As the browser is removed, the removal of a dependent document can
             // cause the whole window to close. So at this point, it's possible
             // that the binding is destructed.
             if (this.mTabBox) {
-              let selectedPanel = this.mTabBox.selectedPanel;
-
               this.mPanelContainer.removeChild(panel);
-
-              // Under the hood, a selectedIndex attribute controls which panel
-              // is displayed. Removing a panel A which precedes the selected
-              // panel B makes selectedIndex point to the panel next to B. We
-              // need to explicitly preserve B as the selected panel.
-              this.mTabBox.selectedPanel = selectedPanel;
             }
 
             if (aCloseWindow)
@@ -2541,7 +2592,6 @@
           ]]>
         </body>
       </method>
-#endif
 
       <method name="moveTabTo">
         <parameter name="aTab"/>
@@ -2732,18 +2782,7 @@
         <parameter name="aCharset"/>
         <body>
           <![CDATA[
-#ifdef MAKE_E10S_WORK
-            this.updateBrowserRemotenessByURL(this.mCurrentBrowser, aURI);
-            try {
-#endif
             return this.mCurrentBrowser.loadURI(aURI, aReferrerURI, aCharset);
-#ifdef MAKE_E10S_WORK
-            } catch (e) {
-              let url = this.mCurrentBrowser.currentURI.spec;
-              this.updateBrowserRemotenessByURL(this.mCurrentBrowser, url);
-              throw e;
-            }
-#endif
           ]]>
         </body>
       </method>
@@ -2757,18 +2796,7 @@
         <parameter name="aPostData"/>
         <body>
           <![CDATA[
-#ifdef MAKE_E10S_WORK
-            this.updateBrowserRemotenessByURL(this.mCurrentBrowser, aURI);
-            try {
-#endif
             return this.mCurrentBrowser.loadURIWithFlags(aURI, aFlags, aReferrerURI, aCharset, aPostData);
-#ifdef MAKE_E10S_WORK
-            } catch (e) {
-              let url = this.mCurrentBrowser.currentURI.spec;
-              this.updateBrowserRemotenessByURL(this.mCurrentBrowser, url);
-              throw e;
-            }
-#endif
           ]]>
         </body>
       </method>
@@ -3029,7 +3057,7 @@
 
           switch (aMessage.name) {
             case "DOMTitleChanged": {
-              let tab = this._getTabForBrowser(browser);
+              let tab = this.getTabForBrowser(browser);
               if (!tab || tab.hasAttribute("pending"))
                 return;
               let titleChanged = this.setTabTitle(tab);
@@ -3043,15 +3071,20 @@
                 return;
               }
 
-              let tab = this._getTabForBrowser(browser);
+              let tab = this.getTabForBrowser(browser);
               if (tab) {
                 this.removeTab(tab);
               }
               break;
             }
             case "contextmenu": {
+              let spellInfo = aMessage.data.spellInfo;
+              if (spellInfo)
+                spellInfo.target = aMessage.target.messageManager;
               gContextMenuContentData = { event: aMessage.objects.event,
-                                          browser: browser };
+                                          browser: browser,
+                                          editFlags: aMessage.data.editFlags,
+                                          spellInfo: spellInfo };
               let popup = browser.ownerDocument.getElementById("contentAreaContextMenu");
               let event = gContextMenuContentData.event;
               let pos = browser.mapScreenCoordinatesFromContent(event.screenX, event.screenY);
@@ -3059,7 +3092,7 @@
               break;
             }
             case "DOMWebNotificationClicked": {
-              let tab = this._getTabForBrowser(browser);
+              let tab = this.getTabForBrowser(browser);
               if (!tab)
                 return;
               this.selectedTab = tab;
@@ -3090,6 +3123,7 @@
           this.mCurrentTab._tPos = 0;
           this.mCurrentTab._fullyOpen = true;
           this.mCurrentTab.linkedBrowser = this.mCurrentBrowser;
+          this._tabForBrowser.set(this.mCurrentBrowser, this.mCurrentTab);
 
           // set up the shared autoscroll popup
           this._autoScrollPopup = this.mCurrentBrowser._createAutoScrollPopup();
@@ -3122,6 +3156,10 @@
             messageManager.addMessageListener("DOMTitleChanged", this);
             messageManager.addMessageListener("DOMWindowClose", this);
             messageManager.addMessageListener("contextmenu", this);
+
+            // If this window has remote tabs, switch to our tabpanels fork
+            // which does asynchronous tab switching.
+            this.mPanelContainer.classList.add("tabbrowser-tabpanels");
           }
           messageManager.addMessageListener("DOMWebNotificationClicked", this);
         ]]>
@@ -3193,6 +3231,151 @@
           return this.tabContainer.visible;
         </body>
       </method>
+
+      <method name="_showBusySpinnerRemoteBrowser">
+        <parameter name="aBrowser"/>
+        <body><![CDATA[
+          aBrowser.setAttribute("pendingpaint", "true");
+          if (this._contentWaitingCount <= 0) {
+            // We are not currently spinning
+            this.setAttribute("pendingpaint", "true");
+            this._contentWaitingCount = 1;
+          } else {
+            this._contentWaitingCount++;
+          }
+        ]]></body>
+      </method>
+
+      <method name="_hideBusySpinnerRemoteBrowser">
+        <parameter name="aBrowser"/>
+        <body><![CDATA[
+          aBrowser.removeAttribute("pendingpaint");
+          this._contentWaitingCount--;
+          if (this._contentWaitingCount <= 0) {
+            this.removeAttribute("pendingpaint");
+          }
+        ]]></body>
+      </method>
+
+      <method name="_prepareForTabSwitch">
+        <parameter name="toTab"/>
+        <parameter name="fromTab"/>
+        <body><![CDATA[
+          const kTabSwitchTimeout = 300;
+          let toBrowser = this.getBrowserForTab(toTab);
+          let fromBrowser = fromTab ? this.getBrowserForTab(fromTab)
+                                    : null;
+
+          // We only want to wait for the MozAfterRemotePaint event if
+          // the tab we're switching to is a remote tab, and if the tab
+          // we're switching to isn't the one we've already got. The latter
+          // case can occur when closing tabs before the currently selected
+          // one.
+          let shouldWait = toBrowser.getAttribute("remote") == "true" &&
+                           toBrowser != fromBrowser;
+
+          let switchPromise;
+
+          if (shouldWait) {
+            let timeoutId;
+            let panels = this.mPanelContainer;
+
+            // Both the timeout and MozAfterPaint promises use this same
+            // logic to determine whether they should carry out the tab
+            // switch, or reject it outright.
+            let attemptTabSwitch = (aResolve, aReject) => {
+              if (this.selectedBrowser == toBrowser) {
+                aResolve();
+              } else {
+                // We switched away or closed the browser before we timed
+                // out. We reject, which will cancel the tab switch.
+                aReject();
+              }
+            };
+
+            let timeoutPromise = new Promise((aResolve, aReject) => {
+              timeoutId = setTimeout(() => {
+                this._showBusySpinnerRemoteBrowser(toBrowser);
+                attemptTabSwitch(aResolve, aReject);
+              }, kTabSwitchTimeout);
+            });
+
+            let paintPromise = new Promise((aResolve, aReject) => {
+              let onRemotePaint = () => {
+                toBrowser.removeEventListener("MozAfterRemotePaint", onRemotePaint);
+                this._hideBusySpinnerRemoteBrowser(toBrowser);
+                clearTimeout(timeoutId);
+                attemptTabSwitch(aResolve, aReject);
+              };
+              toBrowser.addEventListener("MozAfterRemotePaint", onRemotePaint);
+              toBrowser.QueryInterface(Ci.nsIFrameLoaderOwner)
+                       .frameLoader
+                       .requestNotifyAfterRemotePaint();
+               // We need to activate the docShell on the tab we're switching
+               // to - otherwise, we won't initiate a remote paint request and
+               // therefore we won't get the MozAfterRemotePaint event that we're
+               // waiting for.
+               // Note that this happens, as we require, even if the timeout in the
+               // timeoutPromise triggers before the paintPromise even runs.
+               toBrowser.docShellIsActive = true;
+            });
+
+            switchPromise = Promise.race([paintPromise, timeoutPromise]);
+          } else {
+            // Activate the docShell on the tab we're switching to.
+            toBrowser.docShellIsActive = true;
+
+            // No need to wait - just resolve immediately to do the switch ASAP.
+            switchPromise = Promise.resolve();
+          }
+
+          return switchPromise;
+        ]]></body>
+      </method>
+
+      <method name="_deactivateContent">
+        <parameter name="tab"/>
+        <body><![CDATA[
+          // It's unlikely, yet possible, that while we were waiting
+          // to deactivate this tab, that something closed it and wiped
+          // out the browser. For example, during a tab switch, while waiting
+          // for the MozAfterRemotePaint event to fire, something closes the
+          // original tab that the user had selected. If that's the case, then
+          // there's nothing to deactivate.
+          let browser = this.getBrowserForTab(tab);
+          if (browser && this.selectedBrowser != browser) {
+            browser.docShellIsActive = false;
+          }
+        ]]></body>
+      </method>
+
+      <method name="_finalizeTabSwitch">
+        <parameter name="toTab"/>
+        <parameter name="fromTab"/>
+        <body><![CDATA[
+          this._adjustFocusAfterTabSwitch(toTab);
+          this._deactivateContent(fromTab);
+
+          let toBrowser = this.getBrowserForTab(toTab);
+          toBrowser.setAttribute("type", "content-primary");
+
+          let fromBrowser = this.getBrowserForTab(fromTab);
+          // It's possible that the tab we're switching from closed
+          // before we were able to finalize, in which case, fromBrowser
+          // doesn't exist.
+          if (fromBrowser) {
+            fromBrowser.setAttribute("type", "content-targetable");
+          }
+        ]]></body>
+      </method>
+
+      <method name="_cancelTabSwitch">
+        <parameter name="toTab"/>
+        <body><![CDATA[
+          this._deactivateContent(toTab);
+        ]]></body>
+      </method>
+
       <property name="mContextTab" readonly="true"
                 onget="return TabContextMenu.contextTab;"/>
       <property name="mPrefs" readonly="true"
@@ -3257,7 +3440,7 @@
           // XXX Why originalTarget for the browser?
           this.selectedTab = (event.target instanceof Window) ?
                                this._getTabForContentWindow(event.target.top) :
-                               this._getTabForBrowser(event.originalTarget);
+                               this.getTabForBrowser(event.originalTarget);
         ]]>
       </handler>
       <handler event="DOMTitleChanged">
@@ -3293,7 +3476,7 @@
           browser.setAttribute("crashedPageTitle", title);
           browser.docShell.displayLoadError(Cr.NS_ERROR_CONTENT_CRASHED, uri, null);
           browser.removeAttribute("crashedPageTitle");
-          let tab = this._getTabForBrowser(browser);
+          let tab = this.getTabForBrowser(browser);
           this.setIcon(tab, icon);
         ]]>
       </handler>
@@ -4345,7 +4528,10 @@
         canvas.mozOpaque = true;
         canvas.width = 160 * scale;
         canvas.height = 90 * scale;
-        PageThumbs.captureToCanvas(browser.contentWindow, canvas);
+        if (!gMultiProcessBrowser) {
+          // Bug 863512 - Make page thumbnails work in e10s
+          PageThumbs.captureToCanvas(browser, canvas);
+        }
         dt.setDragImage(canvas, -16 * scale, -16 * scale);
 
         // _dragData.offsetX/Y give the coordinates that the mouse should be
@@ -4687,7 +4873,8 @@
                   class="tab-content" align="center">
           <xul:image xbl:inherits="fadein,pinned,busy,progress,selected"
                      class="tab-throbber"
-                     role="presentation"/>
+                     role="presentation"
+                     layer="true" />
           <xul:image xbl:inherits="src=image,fadein,pinned,selected"
                      anonid="tab-icon-image"
                      class="tab-icon-image"
@@ -5119,6 +5306,64 @@
           }
         </body>
       </method>
+    </implementation>
+  </binding>
+
+  <binding id="tabbrowser-tabpanels"
+           extends="chrome://global/content/bindings/tabbox.xml#tabpanels">
+    <implementation>
+      <field name="_selectedIndex">0</field>
+
+      <property name="selectedIndex">
+        <getter>
+        <![CDATA[
+          return this._selectedIndex;
+        ]]>
+        </getter>
+
+        <setter>
+        <![CDATA[
+          if (val < 0 || val >= this.childNodes.length)
+            return val;
+
+          let toTab = this.getRelatedElement(this.childNodes[val]);
+          let fromTab = this._selectedPanel ? this.getRelatedElement(this._selectedPanel)
+                                            : null;
+
+          let switchPromise = gBrowser._prepareForTabSwitch(toTab, fromTab);
+
+          var panel = this._selectedPanel;
+          var newPanel = this.childNodes[val];
+          this._selectedPanel = newPanel;
+          if (this._selectedPanel != panel) {
+            var event = document.createEvent("Events");
+            event.initEvent("select", true, true);
+            this.dispatchEvent(event);
+          }
+
+          this._selectedIndex = val;
+
+          switchPromise.then(() => {
+            // If we cannot find the tabpanel that we were trying to switch to, then
+            // it must have been removed before our Promise could be resolved. In
+            // that case, we just cancel the tab switch.
+            var updatedTabIndex = Array.indexOf(this.childNodes, newPanel);
+            if (updatedTabIndex == -1) {
+              gBrowser._cancelTabSwitch(toTab);
+            } else {
+              this.setAttribute("selectedIndex", updatedTabIndex);
+              gBrowser._finalizeTabSwitch(toTab, fromTab);
+            }
+          }, () => {
+            // If the promise rejected, that means we don't want to actually
+            // flip the deck, so we cancel the tab switch.
+            gBrowser._cancelTabSwitch(toTab);
+          });
+
+          return val;
+        ]]>
+        </setter>
+      </property>
     </implementation>
   </binding>
 

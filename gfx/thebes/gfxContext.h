@@ -37,7 +37,10 @@ template <typename T> class FallibleTArray;
  * as opposed to app units.
  */
 class gfxContext MOZ_FINAL {
+    typedef mozilla::gfx::FillRule FillRule;
     typedef mozilla::gfx::Path Path;
+    typedef mozilla::gfx::Pattern Pattern;
+    typedef mozilla::gfx::Rect Rect;
 
     NS_INLINE_DECL_REFCOUNTING(gfxContext)
 
@@ -48,8 +51,8 @@ public:
      * Strips any transform from aTarget.
      * aTarget will be flushed in the gfxContext's destructor.
      */
-    gfxContext(mozilla::gfx::DrawTarget *aTarget,
-               const mozilla::gfx::Point& aDeviceOffset = mozilla::gfx::Point());
+    explicit gfxContext(mozilla::gfx::DrawTarget *aTarget,
+                        const mozilla::gfx::Point& aDeviceOffset = mozilla::gfx::Point());
 
     /**
      * Create a new gfxContext wrapping aTarget and preserving aTarget's
@@ -57,11 +60,6 @@ public:
      * gfxContext, aTarget will no longer have its transform.
      */
     static already_AddRefed<gfxContext> ContextForDrawTarget(mozilla::gfx::DrawTarget* aTarget);
-
-    /**
-     * Return the surface that this gfxContext was created with
-     */
-    gfxASurface *OriginalSurface();
 
     /**
      * Return the current transparency group target, if any, along
@@ -83,11 +81,6 @@ public:
     mozilla::gfx::DrawTarget *GetDrawTarget() { return mDT; }
 
     /**
-     * Returns true if the cairo context is in an error state.
-     */
-    bool HasError();
-
-    /**
      ** State
      **/
     // XXX document exactly what bits are saved
@@ -106,12 +99,14 @@ public:
      * Does not consume the current path.
      */
     void Stroke();
+    void Stroke(const Pattern& aPattern);
     /**
      * Fill the current path according to the current settings.
      *
      * Does not consume the current path.
      */
     void Fill();
+    void Fill(const Pattern& aPattern);
 
     /**
      * Fill the current path according to the current settings and
@@ -120,6 +115,7 @@ public:
      * Does not consume the current path.
      */
     void FillWithOpacity(gfxFloat aOpacity);
+    void FillWithOpacity(const Pattern& aPattern, gfxFloat aOpacity);
 
     /**
      * Forgets the current path.
@@ -211,14 +207,6 @@ public:
     void SnappedRectangle(const gfxRect& rect) { return Rectangle(rect, true); }
 
     /**
-     * Draw an ellipse at the center corner with the given dimensions.
-     * It extends dimensions.width / 2.0 in the horizontal direction
-     * from the center, and dimensions.height / 2.0 in the vertical
-     * direction.
-     */
-    void Ellipse(const gfxPoint& center, const gfxSize& dimensions);
-
-    /**
      * Draw a polygon from the given points
      */
     void Polygon(const gfxPoint *points, uint32_t numPoints);
@@ -240,37 +228,11 @@ public:
      **/
 
     /**
-     * Adds a translation to the current matrix. This translation takes place
-     * before the previously set transformations.
-     */
-    void Translate(const gfxPoint& pt);
-
-    /**
-     * Adds a scale to the current matrix. This scaling takes place before the
-     * previously set transformations.
-     */
-    void Scale(gfxFloat x, gfxFloat y);
-
-    /**
-     * Adds a rotation around the origin to the current matrix. This rotation
-     * takes place before the previously set transformations.
-     *
-     * @param angle The angle in radians.
-     */
-    void Rotate(gfxFloat angle);
-
-    /**
      * Post-multiplies 'other' onto the current CTM, i.e. this
      * matrix's transformation will take place before the previously set
      * transformations.
      */
     void Multiply(const gfxMatrix& other);
-    /**
-     * As "Multiply", but also nudges any entries in the resulting matrix that
-     * are close to an integer to that integer, to correct for
-     * compounded rounding errors.
-     */
-    void MultiplyAndNudgeToIntegers(const gfxMatrix& other);
 
     /**
      * Replaces the current transformation matrix with matrix.
@@ -278,21 +240,9 @@ public:
     void SetMatrix(const gfxMatrix& matrix);
 
     /**
-     * Sets the transformation matrix to the identity matrix.
-     */
-    void IdentityMatrix();
-
-    /**
      * Returns the current transformation matrix.
      */
     gfxMatrix CurrentMatrix() const;
-
-    /**
-     * Snap components of the current matrix that are close to integers
-     * to integers. In particular, components that are integral when
-     * converted to single precision are set to those integers.
-     */
-    void NudgeCurrentMatrixToIntegers();
 
     /**
      * Converts a point from device to user coordinates using the inverse
@@ -426,7 +376,7 @@ public:
      * Like Paint, except that it only draws the source where pattern is
      * non-transparent.
      */
-    void Mask(gfxPattern *pattern);
+    void Mask(mozilla::gfx::SourceSurface *aSurface, const mozilla::gfx::Matrix& aTransform);
 
     /**
      * Shorthand for creating a pattern and calling the pattern-taking
@@ -507,10 +457,6 @@ public:
      ** Fill Properties
      **/
 
-    enum FillRule {
-        FILL_RULE_WINDING,
-        FILL_RULE_EVEN_ODD
-    };
     void SetFillRule(FillRule rule);
     FillRule CurrentFillRule() const;
 
@@ -559,25 +505,12 @@ public:
      * how drawing something will modify the destination. For example, the
      * OVER operator will do alpha blending of source and destination, while
      * SOURCE will replace the destination with the source.
-     *
-     * Note that if the flag FLAG_SIMPLIFY_OPERATORS is set on this
-     * gfxContext, the actual operator set might change for optimization
-     * purposes.  Check the comments below around that flag.
      */
     void SetOperator(GraphicsOperator op);
     GraphicsOperator CurrentOperator() const;
 
-    /**
-     * MODE_ALIASED means that only pixels whose centers are in the drawn area
-     * should be modified, and they should be modified to take the value drawn
-     * at the pixel center.
-     */
-    enum AntialiasMode {
-        MODE_ALIASED,
-        MODE_COVERAGE
-    };
-    void SetAntialiasMode(AntialiasMode mode);
-    AntialiasMode CurrentAntialiasMode() const;
+    void SetAntialiasMode(mozilla::gfx::AntialiasMode mode);
+    mozilla::gfx::AntialiasMode CurrentAntialiasMode() const;
 
     /**
      ** Clipping
@@ -599,6 +532,7 @@ public:
      * Helper functions that will create a rect path and call Clip().
      * Any current path will be destroyed by these functions!
      */
+    void Clip(const Rect& rect);
     void Clip(const gfxRect& rect); // will clip to a rect
 
     /**
@@ -639,52 +573,10 @@ public:
     already_AddRefed<gfxPattern> PopGroup();
     void PopGroupToSource();
 
-    /**
-     ** Hit Testing - check if given point is in the current path
-     **/
-    bool PointInFill(const gfxPoint& pt);
-    bool PointInStroke(const gfxPoint& pt);
-
-    /**
-     ** Extents - returns user space extent of current path
-     **/
-    gfxRect GetUserPathExtent();
-    gfxRect GetUserFillExtent();
-    gfxRect GetUserStrokeExtent();
+    mozilla::TemporaryRef<mozilla::gfx::SourceSurface>
+    PopGroupToSurface(mozilla::gfx::Matrix* aMatrix);
 
     mozilla::gfx::Point GetDeviceOffset() const;
-
-    /**
-     ** Flags
-     **/
-
-    enum {
-        /* If this flag is set, operators other than CLEAR, SOURCE, or
-         * OVER will be converted to OVER before being sent to cairo.
-         *
-         * This is most useful with a printing surface, where
-         * operators such as ADD are used to avoid seams for on-screen
-         * display, but where such errors aren't noticeable in print.
-         * This approach is currently used in border rendering.
-         *
-         * However, when printing complex renderings such as SVG,
-         * care should be taken to clear this flag.
-         */
-        FLAG_SIMPLIFY_OPERATORS = (1 << 0),
-        /**
-         * When this flag is set, snapping to device pixels is disabled.
-         * It simply never does anything.
-         */
-        FLAG_DISABLE_SNAPPING = (1 << 1),
-        /**
-         * Disable copying of backgrounds in PushGroupAndCopyBackground.
-         */
-        FLAG_DISABLE_COPY_BACKGROUND = (1 << 2)
-    };
-
-    void SetFlag(int32_t aFlag) { mFlags |= aFlag; }
-    void ClearFlag(int32_t aFlag) { mFlags &= ~aFlag; }
-    int32_t GetFlags() const { return mFlags; }
 
     // Work out whether cairo will snap inter-glyph spacing to pixels.
     void GetRoundOffsetsToPixels(bool *aRoundX, bool *aRoundY);
@@ -715,7 +607,7 @@ public:
 private:
     ~gfxContext();
 
-  friend class GeneralPattern;
+  friend class PatternFromState;
   friend class GlyphBufferAzure;
 
   typedef mozilla::gfx::Matrix Matrix;
@@ -723,7 +615,6 @@ private:
   typedef mozilla::gfx::Color Color;
   typedef mozilla::gfx::StrokeOptions StrokeOptions;
   typedef mozilla::gfx::Float Float;
-  typedef mozilla::gfx::Rect Rect;
   typedef mozilla::gfx::CompositionOp CompositionOp;
   typedef mozilla::gfx::PathBuilder PathBuilder;
   typedef mozilla::gfx::SourceSurface SourceSurface;
@@ -771,7 +662,7 @@ private:
   void EnsurePath();
   // This ensures mPathBuilder contains a valid PathBuilder (in user space!)
   void EnsurePathBuilder();
-  void FillAzure(mozilla::gfx::Float aOpacity);
+  void FillAzure(const Pattern& aPattern, mozilla::gfx::Float aOpacity);
   void PushClipsToDT(mozilla::gfx::DrawTarget *aDT);
   CompositionOp GetOp();
   void ChangeTransform(const mozilla::gfx::Matrix &aNewMatrix, bool aUpdatePatternTransform = true);
@@ -793,8 +684,6 @@ private:
   const AzureState &CurrentState() const { return mStateStack[mStateStack.Length() - 1]; }
 
   cairo_t *mRefCairo;
-  nsRefPtr<gfxASurface> mSurface;
-  int32_t mFlags;
 
   mozilla::RefPtr<DrawTarget> mDT;
   mozilla::RefPtr<DrawTarget> mOriginalDT;
@@ -810,7 +699,7 @@ class gfxContextAutoSaveRestore
 public:
   gfxContextAutoSaveRestore() : mContext(nullptr) {}
 
-  gfxContextAutoSaveRestore(gfxContext *aContext) : mContext(aContext) {
+  explicit gfxContextAutoSaveRestore(gfxContext *aContext) : mContext(aContext) {
     mContext->Save();
   }
 
@@ -857,7 +746,7 @@ class gfxContextPathAutoSaveRestore
 public:
     gfxContextPathAutoSaveRestore() : mContext(nullptr) {}
 
-    gfxContextPathAutoSaveRestore(gfxContext *aContext, bool aSave = true) : mContext(aContext)
+    explicit gfxContextPathAutoSaveRestore(gfxContext *aContext, bool aSave = true) : mContext(aContext)
     {
         if (aSave)
             Save();       
@@ -917,7 +806,7 @@ public:
     {
     }
 
-    gfxContextMatrixAutoSaveRestore(gfxContext *aContext) :
+    explicit gfxContextMatrixAutoSaveRestore(gfxContext *aContext) :
         mContext(aContext), mMatrix(aContext->CurrentMatrix())
     {
     }
@@ -967,15 +856,12 @@ public:
     }
     ~gfxContextAutoDisableSubpixelAntialiasing()
     {
-        if (mSurface) {
-            mSurface->SetSubpixelAntialiasingEnabled(mSubpixelAntialiasingEnabled);
-        } else if (mDT) {
+        if (mDT) {
             mDT->SetPermitSubpixelAA(mSubpixelAntialiasingEnabled);
         }
     }
 
 private:
-    nsRefPtr<gfxASurface> mSurface;
     mozilla::RefPtr<mozilla::gfx::DrawTarget> mDT;
     bool mSubpixelAntialiasingEnabled;
 };

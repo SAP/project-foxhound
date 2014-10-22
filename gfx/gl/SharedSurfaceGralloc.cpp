@@ -37,48 +37,47 @@ using namespace android;
 
 SurfaceFactory_Gralloc::SurfaceFactory_Gralloc(GLContext* prodGL,
                                                const SurfaceCaps& caps,
+                                               layers::TextureFlags flags,
                                                layers::ISurfaceAllocator* allocator)
     : SurfaceFactory(prodGL, SharedSurfaceType::Gralloc, caps)
+    , mFlags(flags)
+    , mAllocator(allocator)
 {
-    if (caps.surfaceAllocator) {
-        allocator = caps.surfaceAllocator;
-    }
-
-    MOZ_ASSERT(allocator);
-
-    mAllocator = allocator;
+    MOZ_ASSERT(mAllocator);
 }
 
-SharedSurface_Gralloc*
+/*static*/ UniquePtr<SharedSurface_Gralloc>
 SharedSurface_Gralloc::Create(GLContext* prodGL,
                               const GLFormats& formats,
                               const gfx::IntSize& size,
                               bool hasAlpha,
+                              layers::TextureFlags flags,
                               ISurfaceAllocator* allocator)
 {
     GLLibraryEGL* egl = &sEGLLibrary;
     MOZ_ASSERT(egl);
 
+    UniquePtr<SharedSurface_Gralloc> ret;
+
     DEBUG_PRINT("SharedSurface_Gralloc::Create -------\n");
 
     if (!HasExtensions(egl, prodGL))
-        return nullptr;
+        return Move(ret);
 
     gfxContentType type = hasAlpha ? gfxContentType::COLOR_ALPHA
                                    : gfxContentType::COLOR;
 
-    gfxImageFormat format
-      = gfxPlatform::GetPlatform()->OptimalFormatForContent(type);
+    auto platform = gfxPlatform::GetPlatform();
+    gfxImageFormat format = platform->OptimalFormatForContent(type);
 
-    RefPtr<GrallocTextureClientOGL> grallocTC =
-      new GrallocTextureClientOGL(
-          allocator,
-          gfx::ImageFormatToSurfaceFormat(format),
-          gfx::BackendType::NONE, // we don't need to use it with a DrawTarget
-          layers::TextureFlags::DEFAULT);
+    typedef GrallocTextureClientOGL ptrT;
+    RefPtr<ptrT> grallocTC = new ptrT(allocator,
+                                      gfx::ImageFormatToSurfaceFormat(format),
+                                      gfx::BackendType::NONE, // we don't need to use it with a DrawTarget
+                                      flags);
 
     if (!grallocTC->AllocateForGLRendering(size)) {
-      return nullptr;
+        return Move(ret);
     }
 
     sp<GraphicBuffer> buffer = grallocTC->GetGraphicBuffer();
@@ -93,7 +92,7 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
                                        LOCAL_EGL_NATIVE_BUFFER_ANDROID,
                                        clientBuffer, attrs);
     if (!image) {
-        return nullptr;
+        return Move(ret);
     }
 
     prodGL->MakeCurrent();
@@ -110,11 +109,15 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
 
     egl->fDestroyImage(display, image);
 
-    SharedSurface_Gralloc *surf = new SharedSurface_Gralloc(prodGL, size, hasAlpha, egl, allocator, grallocTC, prodTex);
+    ret.reset( new SharedSurface_Gralloc(prodGL, size, hasAlpha, egl,
+                                         allocator, grallocTC,
+                                         prodTex) );
 
-    DEBUG_PRINT("SharedSurface_Gralloc::Create: success -- surface %p, GraphicBuffer %p.\n", surf, buffer.get());
+    DEBUG_PRINT("SharedSurface_Gralloc::Create: success -- surface %p,"
+                " GraphicBuffer %p.\n",
+                ret.get(), buffer.get());
 
-    return surf;
+    return Move(ret);
 }
 
 
@@ -242,6 +245,30 @@ SharedSurface_Gralloc::WaitSync()
                                           LOCAL_EGL_FOREVER);
 
     if (status != LOCAL_EGL_CONDITION_SATISFIED) {
+        return false;
+    }
+
+    MOZ_ALWAYS_TRUE( mEGL->fDestroySync(mEGL->Display(), mSync) );
+    mSync = 0;
+
+    return true;
+}
+
+bool
+SharedSurface_Gralloc::PollSync()
+{
+    if (!mSync) {
+        // We must not be needed.
+        return true;
+    }
+    MOZ_ASSERT(mEGL->IsExtensionSupported(GLLibraryEGL::KHR_fence_sync));
+
+    EGLint status = 0;
+    MOZ_ALWAYS_TRUE( mEGL->fGetSyncAttrib(mEGL->Display(),
+                                         mSync,
+                                         LOCAL_EGL_SYNC_STATUS_KHR,
+                                         &status) );
+    if (status != LOCAL_EGL_SIGNALED_KHR) {
         return false;
     }
 

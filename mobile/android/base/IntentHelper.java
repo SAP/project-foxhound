@@ -16,7 +16,6 @@ import org.json.JSONObject;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.net.Uri;
 import android.util.Log;
 
 import java.util.Arrays;
@@ -32,7 +31,7 @@ public final class IntentHelper implements GeckoEventListener {
     };
     private static IntentHelper instance;
 
-    private Activity activity;
+    private final Activity activity;
 
     private IntentHelper(Activity activity) {
         this.activity = activity;

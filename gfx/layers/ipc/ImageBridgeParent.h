@@ -37,8 +37,8 @@ namespace layers {
  * It's purpose is mainly to setup the IPDL connection. Most of the
  * interesting stuff is in ImageContainerParent.
  */
-class ImageBridgeParent : public PImageBridgeParent,
-                          public CompositableParentManager
+class ImageBridgeParent MOZ_FINAL : public PImageBridgeParent,
+                                    public CompositableParentManager
 {
 public:
   typedef InfallibleTArray<CompositableOperation> EditArray;
@@ -56,6 +56,9 @@ public:
   Create(Transport* aTransport, ProcessId aChildProcessId);
 
   // CompositableParentManager
+  virtual void SendFenceHandleIfPresent(PTextureParent* aTexture,
+                                        CompositableHost* aCompositableHost) MOZ_OVERRIDE;
+
   virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
                                PTextureParent* aTexture,
                                const FenceHandle& aFence) MOZ_OVERRIDE;
@@ -98,14 +101,14 @@ public:
                   ipc::SharedMemory::SharedMemoryType aType,
                   ipc::Shmem* aShmem) MOZ_OVERRIDE
   {
-    return AllocShmem(aSize, aType, aShmem);
+    return PImageBridgeParent::AllocShmem(aSize, aType, aShmem);
   }
 
   bool AllocUnsafeShmem(size_t aSize,
                         ipc::SharedMemory::SharedMemoryType aType,
                         ipc::Shmem* aShmem) MOZ_OVERRIDE
   {
-    return AllocUnsafeShmem(aSize, aType, aShmem);
+    return PImageBridgeParent::AllocUnsafeShmem(aSize, aType, aShmem);
   }
 
   void DeallocShmem(ipc::Shmem& aShmem) MOZ_OVERRIDE
@@ -122,12 +125,17 @@ public:
 
   void SendFenceHandleToTrackerIfPresent(uint64_t aDestHolderId,
                                          uint64_t aTransactionId,
-                                         PTextureParent* aTexture);
+                                         PTextureParent* aTexture,
+                                         CompositableHost* aCompositableHost);
 
   static void SendFenceHandleToTrackerIfPresent(base::ProcessId aChildProcessId,
                                                 uint64_t aDestHolderId,
                                                 uint64_t aTransactionId,
-                                                PTextureParent* aTexture);
+                                                PTextureParent* aTexture,
+                                                CompositableHost* aCompositableHost);
+
+  using CompositableParentManager::SendPendingAsyncMessges;
+  static void SendPendingAsyncMessges(base::ProcessId aChildProcessId);
 
   static ImageBridgeParent* GetInstance(ProcessId aId);
 

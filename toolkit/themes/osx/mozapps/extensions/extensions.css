@@ -466,7 +466,7 @@
 }
 
 .addon[active="false"] .icon {
-  filter: url("chrome://mozapps/skin/extensions/extensions.svg#greyscale");
+  filter: grayscale(1);
 }
 
 .addon-view[type="theme"] .icon {
@@ -1104,8 +1104,16 @@ setting[type="radio"] > radiogroup {
 
 /*** buttons ***/
 
-.addon-control[disabled="true"] {
+.addon-control[disabled="true"]:not(.no-auto-hide) {
   display: none;
+}
+
+.no-auto-hide .addon-control {
+  display: block !important;
+}
+
+.no-auto-hide > .menulist-dropmarker {
+  -moz-padding-start: 0px !important;
 }
 
 button.button-link {

@@ -26,8 +26,8 @@ class  SVGRootRenderingObserver;
 class  SVGLoadEventListener;
 class  SVGParseCompleteListener;
 
-class VectorImage : public ImageResource,
-                    public nsIStreamListener
+class VectorImage MOZ_FINAL : public ImageResource,
+                              public nsIStreamListener
 {
 public:
   NS_DECL_ISUPPORTS
@@ -78,15 +78,15 @@ public:
   void OnSVGDocumentError();
 
 protected:
-  VectorImage(imgStatusTracker* aStatusTracker = nullptr,
-              ImageURL* aURI = nullptr);
+  explicit VectorImage(imgStatusTracker* aStatusTracker = nullptr,
+                       ImageURL* aURI = nullptr);
   virtual ~VectorImage();
 
   virtual nsresult StartAnimation();
   virtual nsresult StopAnimation();
   virtual bool     ShouldAnimate();
 
-  void CreateDrawableAndShow(const SVGDrawingParameters& aParams);
+  void CreateSurfaceAndShow(const SVGDrawingParameters& aParams);
   void Show(gfxDrawable* aDrawable, const SVGDrawingParameters& aParams);
 
 private:

@@ -26,10 +26,10 @@ import com.jayway.android.robotium.solo.Condition;
  */
 public class testShareLink extends AboutHomeTest {
     String url;
-    String urlTitle = "Big Link";
+    String urlTitle = StringHelper.ROBOCOP_BIG_LINK_TITLE;
 
     public void testShareLink() {
-        url = getAbsoluteUrl("/robocop/robocop_big_link.html");
+        url = getAbsoluteUrl(StringHelper.ROBOCOP_BIG_LINK_URL);
         ArrayList<String> shareOptions;
         blockForGeckoReady();
 
@@ -37,9 +37,9 @@ public class testShareLink extends AboutHomeTest {
         openAboutHomeTab(AboutHomeTabs.READING_LIST);
 
         inputAndLoadUrl(url);
-        verifyPageTitle(urlTitle); // Waiting for page title to ensure the page is loaded
+        verifyPageTitle(urlTitle, url); // Waiting for page title to ensure the page is loaded
 
-        selectMenuItem("Share");
+        selectMenuItem(StringHelper.SHARE_LABEL);
         if (Build.VERSION.SDK_INT >= 14) {
             // Check for our own sync in the submenu.
             waitForText("Sync$");
@@ -47,7 +47,7 @@ public class testShareLink extends AboutHomeTest {
             waitForText("Share via");
         }
 
-        // Get list of current avaliable share activities and verify them
+        // Get list of current available share activities and verify them
         shareOptions = getShareOptions();
         ArrayList<String> displayedOptions = getShareOptionsList();
         for (String option:shareOptions) {
@@ -94,16 +94,16 @@ public class testShareLink extends AboutHomeTest {
 
         // Prepopulate top sites with history items to overflow tiles.
         // We are trying to move away from using reflection and doing more black-box testing.
-        inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_blank_01.html"));
-        inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_blank_02.html"));
-        inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_blank_03.html"));
-        inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_blank_04.html"));
+        inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_01_URL));
+        inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_02_URL));
+        inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_03_URL));
+        inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_04_URL));
         if (mDevice.type.equals("tablet")) {
             // Tablets have more tile spaces to fill.
-            inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_blank_05.html"));
-            inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_boxes.html"));
-            inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_search.html"));
-            inputAndLoadUrl(getAbsoluteUrl("/robocop/robocop_text_page.html"));
+            inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_05_URL));
+            inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_BOXES_URL));
+            inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_SEARCH_URL));
+            inputAndLoadUrl(getAbsoluteUrl(StringHelper.ROBOCOP_TEXT_PAGE_URL));
         }
 
         // Test the share popup in Top Sites.
@@ -149,15 +149,15 @@ public class testShareLink extends AboutHomeTest {
         /**
          * Adding a wait for the page title to make sure the Awesomebar will be dismissed
          * Because of Bug 712370 the Awesomescreen will be dismissed when the Share Menu is closed
-         * so there is no need for handeling this different depending on where the share menu was invoced from
+         * so there is no need for handling this different depending on where the share menu was invoked from
          * TODO: Look more into why the delay is needed here now and it was working before
          */
         waitForText(urlTitle);
     }
 
     // Create a SEND intent and get the possible activities offered
-    public ArrayList getShareOptions() {
-        ArrayList<String> shareOptions = new ArrayList();
+    public ArrayList<String> getShareOptions() {
+        ArrayList<String> shareOptions = new ArrayList<>();
         Activity currentActivity = getActivity();
         final Intent shareIntent = new Intent(Intent.ACTION_SEND);
         shareIntent.putExtra(Intent.EXTRA_TEXT, url);
@@ -209,14 +209,14 @@ public class testShareLink extends AboutHomeTest {
     }
 
     public ArrayList<String> getSharePopupOption() {
-        ArrayList<String> displayedOptions = new ArrayList();
+        ArrayList<String> displayedOptions = new ArrayList<>();
         AbsListView shareMenu = getDisplayedShareList();
         getGroupTextViews(shareMenu, displayedOptions);
         return displayedOptions;
     }
 
     public ArrayList<String> getShareSubMenuOption() {
-        ArrayList<String> displayedOptions = new ArrayList();
+        ArrayList<String> displayedOptions = new ArrayList<>();
         AbsListView shareMenu = getDisplayedShareList();
         getGroupTextViews(shareMenu, displayedOptions);
         return displayedOptions;
@@ -248,7 +248,7 @@ public class testShareLink extends AboutHomeTest {
             public boolean test() {
                 ArrayList<View> views = mSolo.getCurrentViews();
                 for (View view : views) {
-                    // List may be displayed in different view formats. 
+                    // List may be displayed in different view formats.
                     // On JB, GridView is common; on ICS-, ListView is common.
                     if (view instanceof ListView ||
                         view instanceof GridView) {

@@ -9,11 +9,22 @@
 #include "AccessibleWrap.h"
 #include "nsIAccessibleTypes.h"
 #include "xpcAccessibleHyperText.h"
+#include "nsDirection.h"
+#include "WordMovementType.h"
+#include "nsIFrame.h"
 
-#include "nsFrameSelection.h"
 #include "nsISelectionController.h"
 
+class nsFrameSelection;
+class nsRange;
+class nsIWidget;
+
 namespace mozilla {
+
+namespace dom {
+class Selection;
+}
+
 namespace a11y {
 
 class TextRange;
@@ -46,8 +57,8 @@ public:
   // Accessible
   virtual int32_t GetLevelInternal();
   virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() MOZ_OVERRIDE;
-  virtual mozilla::a11y::role NativeRole();
-  virtual uint64_t NativeState();
+  virtual mozilla::a11y::role NativeRole() MOZ_OVERRIDE;
+  virtual uint64_t NativeState() MOZ_OVERRIDE;
 
   virtual void InvalidateChildren();
   virtual bool RemoveChild(Accessible* aAccessible);

@@ -6,8 +6,8 @@
 #include "URL.h"
 
 #include "nsGlobalWindow.h"
-#include "nsDOMFile.h"
 #include "DOMMediaStream.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/MediaSource.h"
 #include "mozilla/dom/URLBinding.h"
 #include "nsHostObjectProtocolHandler.h"
@@ -111,15 +111,12 @@ URL::Constructor(const GlobalObject& aGlobal, const nsAString& aUrl,
 
 void
 URL::CreateObjectURL(const GlobalObject& aGlobal,
-                     nsIDOMBlob* aBlob,
+                     File& aBlob,
                      const objectURLOptions& aOptions,
                      nsString& aResult,
                      ErrorResult& aError)
 {
-  DOMFile* blob = static_cast<DOMFile*>(aBlob);
-  MOZ_ASSERT(blob);
-
-  CreateObjectURLInternal(aGlobal, blob->Impl(),
+  CreateObjectURLInternal(aGlobal, aBlob.Impl(),
                           NS_LITERAL_CSTRING(BLOBURI_SCHEME), aOptions, aResult,
                           aError);
 }
@@ -242,7 +239,18 @@ URL::SetHref(const nsAString& aHref, ErrorResult& aRv)
 void
 URL::GetOrigin(nsString& aOrigin, ErrorResult& aRv) const
 {
-  nsContentUtils::GetUTFNonNullOrigin(mURI, aOrigin);
+  nsCOMPtr<nsIURIWithPrincipal> uriWithPrincipal = do_QueryInterface(mURI);
+  if (uriWithPrincipal) {
+    nsCOMPtr<nsIPrincipal> principal;
+    uriWithPrincipal->GetPrincipal(getter_AddRefs(principal));
+
+    if (principal) {
+      nsContentUtils::GetUTFOrigin(principal, aOrigin);
+      return;
+    }
+  }
+
+  nsContentUtils::GetUTFOrigin(mURI, aOrigin);
 }
 
 void
@@ -341,9 +349,10 @@ URL::SetHost(const nsAString& aHost, ErrorResult& aRv)
 }
 
 void
-URL::URLSearchParamsUpdated()
+URL::URLSearchParamsUpdated(URLSearchParams* aSearchParams)
 {
   MOZ_ASSERT(mSearchParams);
+  MOZ_ASSERT(mSearchParams == aSearchParams);
 
   nsAutoString search;
   mSearchParams->Serialize(search);
@@ -373,17 +382,7 @@ void
 URL::GetHostname(nsString& aHostname, ErrorResult& aRv) const
 {
   aHostname.Truncate();
-  nsAutoCString tmp;
-  nsresult rv = mURI->GetHost(tmp);
-  if (NS_SUCCEEDED(rv)) {
-    if (tmp.FindChar(':') != -1) { // Escape IPv6 address
-      MOZ_ASSERT(!tmp.Length() ||
-        (tmp[0] !='[' && tmp[tmp.Length() - 1] != ']'));
-      tmp.Insert('[', 0);
-      tmp.Append(']');
-    }
-    CopyUTF8toUTF16(tmp, aHostname);
-  }
+  nsContentUtils::GetHostOrIPv6WithBrackets(mURI, aHostname);
 }
 
 void

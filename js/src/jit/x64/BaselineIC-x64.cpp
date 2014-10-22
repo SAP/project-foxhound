@@ -79,9 +79,9 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
         break;
       case JSOP_DIV:
       {
-        JS_ASSERT(R2.scratchReg() == rax);
-        JS_ASSERT(R0.valueReg() != rdx);
-        JS_ASSERT(R1.valueReg() != rdx);
+        MOZ_ASSERT(R2.scratchReg() == rax);
+        MOZ_ASSERT(R0.valueReg() != rdx);
+        MOZ_ASSERT(R1.valueReg() != rdx);
         masm.unboxInt32(R0, eax);
         masm.unboxInt32(R1, ExtractTemp0);
 
@@ -108,9 +108,9 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
       }
       case JSOP_MOD:
       {
-        JS_ASSERT(R2.scratchReg() == rax);
-        JS_ASSERT(R0.valueReg() != rdx);
-        JS_ASSERT(R1.valueReg() != rdx);
+        MOZ_ASSERT(R2.scratchReg() == rax);
+        MOZ_ASSERT(R0.valueReg() != rdx);
+        MOZ_ASSERT(R1.valueReg() != rdx);
         masm.unboxInt32(R0, eax);
         masm.unboxInt32(R1, ExtractTemp0);
 
@@ -184,7 +184,7 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
         }
         break;
       default:
-        MOZ_ASSUME_UNREACHABLE("Unhandled op in BinaryArith_Int32");
+        MOZ_CRASH("Unhandled op in BinaryArith_Int32");
     }
 
     // Return from stub.
@@ -233,7 +233,7 @@ ICUnaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
         masm.negl(R0.valueReg());
         break;
       default:
-        MOZ_ASSUME_UNREACHABLE("Unexpected op");
+        MOZ_CRASH("Unexpected op");
     }
 
     masm.tagValue(JSVAL_TYPE_INT32, R0.valueReg(), R0);

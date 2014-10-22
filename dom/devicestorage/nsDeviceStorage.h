@@ -7,7 +7,7 @@
 
 class nsPIDOMWindow;
 #include "mozilla/Attributes.h"
-#include "PCOMContentPermissionRequestChild.h"
+#include "mozilla/dom/devicestorage/DeviceStorageRequestChild.h"
 
 #include "DOMRequest.h"
 #include "DOMCursor.h"
@@ -28,7 +28,6 @@ class nsPIDOMWindow;
 #include "mozilla/Mutex.h"
 #include "prtime.h"
 #include "DeviceStorage.h"
-#include "mozilla/dom/devicestorage/DeviceStorageRequestChild.h"
 #include "mozilla/StaticPtr.h"
 
 namespace mozilla {
@@ -159,12 +158,14 @@ public:
 
   bool Check(const nsAString& aType, nsIDOMBlob* aBlob);
   bool Check(const nsAString& aType, nsIFile* aFile);
+  bool Check(const nsAString& aType, const nsString& aPath);
   void GetTypeFromFile(nsIFile* aFile, nsAString& aType);
   void GetTypeFromFileName(const nsAString& aFileName, nsAString& aType);
 
   static nsresult GetPermissionForType(const nsAString& aType, nsACString& aPermissionResult);
   static nsresult GetAccessForRequest(const DeviceStorageRequestType aRequestType, nsACString& aAccessResult);
   static bool IsVolumeBased(const nsAString& aType);
+  static bool IsSharedMediaRoot(const nsAString& aType);
 
 private:
   nsString mPicturesExtensions;
@@ -177,8 +178,8 @@ private:
 class ContinueCursorEvent MOZ_FINAL : public nsRunnable
 {
 public:
-  ContinueCursorEvent(already_AddRefed<mozilla::dom::DOMRequest> aRequest);
-  ContinueCursorEvent(mozilla::dom::DOMRequest* aRequest);
+  explicit ContinueCursorEvent(already_AddRefed<mozilla::dom::DOMRequest> aRequest);
+  explicit ContinueCursorEvent(mozilla::dom::DOMRequest* aRequest);
   ~ContinueCursorEvent();
   void Continue();
 
@@ -191,7 +192,6 @@ private:
 class nsDOMDeviceStorageCursor MOZ_FINAL
   : public mozilla::dom::DOMCursor
   , public nsIContentPermissionRequest
-  , public PCOMContentPermissionRequestChild
   , public mozilla::dom::devicestorage::DeviceStorageRequestChildCallback
 {
 public:
@@ -211,10 +211,6 @@ public:
   nsTArray<nsRefPtr<DeviceStorageFile> > mFiles;
   bool mOkToCallContinue;
   PRTime mSince;
-
-  virtual bool Recv__delete__(const bool& allow,
-                              const InfallibleTArray<PermissionChoice>& choices) MOZ_OVERRIDE;
-  virtual void IPDLRelease() MOZ_OVERRIDE;
 
   void GetStorageType(nsAString & aType);
 

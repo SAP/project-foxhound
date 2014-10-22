@@ -7,7 +7,7 @@ package org.mozilla.gecko;
 
 import org.mozilla.gecko.gfx.BitmapUtils;
 import org.mozilla.gecko.util.GeckoEventListener;
-
+import org.mozilla.gecko.util.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -64,13 +64,13 @@ public final class NotificationHelper implements GeckoEventListener {
     private static final String CLEARED_EVENT = "notification-cleared";
     private static final String CLOSED_EVENT = "notification-closed";
 
-    private Context mContext;
+    private final Context mContext;
 
     // Holds a list of notifications that should be cleared if the Fennec Activity is shut down.
     // Will not include ongoing or persistent notifications that are tied to Gecko's lifecycle.
     private HashMap<String, String> mClearableNotifications;
 
-    private boolean mInitialized = false;
+    private boolean mInitialized;
     private static NotificationHelper sInstance;
 
     private NotificationHelper(Context context) {
@@ -135,9 +135,9 @@ public final class NotificationHelper implements GeckoEventListener {
 
         JSONObject args = new JSONObject();
 
-        // The handler and cookie parameters are optional
+        // The handler and cookie parameters are optional.
         final String handler = data.getQueryParameter(HANDLER_ATTR);
-        final String cookie = i.getStringExtra(COOKIE_ATTR);
+        final String cookie = StringUtils.getStringExtra(i, COOKIE_ATTR);
 
         try {
             args.put(ID_ATTR, id);
@@ -195,6 +195,7 @@ public final class NotificationHelper implements GeckoEventListener {
         notificationIntent.setData(dataUri);
         notificationIntent.putExtra(HELPER_NOTIFICATION, true);
         notificationIntent.putExtra(COOKIE_ATTR, message.optString(COOKIE_ATTR));
+        notificationIntent.setClass(mContext, GeckoAppShell.getGeckoInterface().getActivity().getClass());
         return notificationIntent;
     }
 

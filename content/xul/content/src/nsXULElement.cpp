@@ -73,7 +73,7 @@
 #include "nsRuleWalker.h"
 #include "nsIDOMCSSStyleDeclaration.h"
 #include "nsCSSParser.h"
-#include "nsIListBoxObject.h"
+#include "ListBoxObject.h"
 #include "nsContentUtils.h"
 #include "nsContentList.h"
 #include "mozilla/InternalMutationEvent.h"
@@ -109,6 +109,7 @@
 #include "nsICSSDeclaration.h"
 
 #include "mozilla/dom/XULElementBinding.h"
+#include "mozilla/dom/BoxObject.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -132,7 +133,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXULElementTearoff,
                                            nsIDOMElementCSSInlineStyle)
 
-  nsXULElementTearoff(nsXULElement *aElement)
+  explicit nsXULElementTearoff(nsXULElement* aElement)
     : mElement(aElement)
   {
   }
@@ -500,7 +501,7 @@ nsXULElement::GetElementsByAttributeNS(const nsAString& aNamespaceURI,
 EventListenerManager*
 nsXULElement::GetEventListenerManagerForAttr(nsIAtom* aAttrName, bool* aDefer)
 {
-    // XXXbz sXBL/XBL2 issue: should we instead use GetCurrentDoc()
+    // XXXbz sXBL/XBL2 issue: should we instead use GetComposedDoc()
     // here, override BindToTree for those classes and munge event
     // listeners there?
     nsIDocument* doc = OwnerDoc();
@@ -637,8 +638,10 @@ nsXULElement::PerformAccesskey(bool aKeyCausesActivation,
         nsAutoString control;
         GetAttr(kNameSpaceID_None, nsGkAtoms::control, control);
         if (!control.IsEmpty()) {
+            //XXXsmaug Should we use ShadowRoot::GetElementById in case
+            //         content is in Shadow DOM?
             nsCOMPtr<nsIDOMDocument> domDocument =
-                do_QueryInterface(content->GetCurrentDoc());
+                do_QueryInterface(content->GetUncomposedDoc());
             if (domDocument)
                 domDocument->GetElementById(control, getter_AddRefs(element));
         }
@@ -808,7 +811,7 @@ IsInFeedSubscribeLine(nsXULElement* aElement)
 class XULInContentErrorReporter : public nsRunnable
 {
 public:
-  XULInContentErrorReporter(nsIDocument* aDocument) : mDocument(aDocument) {}
+  explicit XULInContentErrorReporter(nsIDocument* aDocument) : mDocument(aDocument) {}
 
   NS_IMETHOD Run()
   {
@@ -828,6 +831,7 @@ nsXULElement::BindToTree(nsIDocument* aDocument,
 {
   if (!aBindingParent &&
       aDocument &&
+      !aDocument->IsLoadedAsInteractiveData() &&
       !aDocument->AllowXULXBL() &&
       !aDocument->HasWarnedAbout(nsIDocument::eImportXULIntoContent)) {
     nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(aDocument));
@@ -838,9 +842,10 @@ nsXULElement::BindToTree(nsIDocument* aDocument,
                                             aCompileEventHandlers);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aDocument &&
-      !aDocument->LoadsFullXULStyleSheetUpFront() &&
-      !aDocument->IsUnstyledDocument()) {
+  nsIDocument* doc = GetComposedDoc();
+  if (doc &&
+      !doc->LoadsFullXULStyleSheetUpFront() &&
+      !doc->IsUnstyledDocument()) {
 
     // To save CPU cycles and memory, non-XUL documents only load the user
     // agent style sheet rules for a minimal set of XUL elements such as
@@ -853,7 +858,7 @@ nsXULElement::BindToTree(nsIDocument* aDocument,
     // can be moved from the document that creates them to another document.
 
     if (!XULElementsRulesInMinimalXULSheet(Tag())) {
-      aDocument->EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::XULSheet());
+      doc->EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::XULSheet());
       // To keep memory usage down it is important that we try and avoid
       // pulling xul.css into non-XUL documents. That should be very rare, and
       // for HTML we currently should only pull it in if the document contains
@@ -1001,7 +1006,7 @@ nsXULElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
     }
 
     nsIDocument* doc;
-    if (fireSelectionHandler && (doc = GetCurrentDoc())) {
+    if (fireSelectionHandler && (doc = GetComposedDoc())) {
       nsContentUtils::DispatchTrustedEvent(doc,
                                            static_cast<nsIContent*>(this),
                                            NS_LITERAL_STRING("select"),
@@ -1015,7 +1020,7 @@ nsXULElement::UnregisterAccessKey(const nsAString& aOldValue)
 {
     // If someone changes the accesskey, unregister the old one
     //
-    nsIDocument* doc = GetCurrentDoc();
+    nsIDocument* doc = GetComposedDoc();
     if (doc && !aOldValue.IsEmpty()) {
         nsIPresShell *shell = doc->GetShell();
 
@@ -1096,7 +1101,7 @@ nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                 }
             }
     
-            nsIDocument *document = GetCurrentDoc();
+            nsIDocument* document = GetUncomposedDoc();
 
             // Hide chrome if needed
             if (mNodeInfo->Equals(nsGkAtoms::window)) {
@@ -1171,7 +1176,7 @@ nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
                 }
             }
     
-            nsIDocument* doc = GetCurrentDoc();
+            nsIDocument* doc = GetUncomposedDoc();
             if (doc && doc->GetRootElement() == this) {
                 if ((aName == nsGkAtoms::activetitlebarcolor ||
                      aName == nsGkAtoms::inactivetitlebarcolor)) {
@@ -1289,7 +1294,7 @@ nsXULElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
         return NS_OK;
     }
     if (aVisitor.mEvent->message == NS_XUL_COMMAND &&
-        aVisitor.mEvent->eventStructType == NS_INPUT_EVENT &&
+        aVisitor.mEvent->mClass == eInputEventClass &&
         aVisitor.mEvent->originalTarget == static_cast<nsIContent*>(this) &&
         tag != nsGkAtoms::command) {
         // Check that we really have an xul command event. That will be handled
@@ -1307,7 +1312,7 @@ nsXULElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
             aVisitor.mAutomaticChromeDispatch = false;
 
             // XXX sXBL/XBL2 issue! Owner or current document?
-            nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(GetCurrentDoc()));
+            nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(GetUncomposedDoc()));
             NS_ENSURE_STATE(domDoc);
             nsCOMPtr<nsIDOMElement> commandElt;
             domDoc->GetElementById(command, getter_AddRefs(commandElt));
@@ -1411,7 +1416,7 @@ already_AddRefed<nsIXULTemplateBuilder>
 nsXULElement::GetBuilder()
 {
     // XXX sXBL/XBL2 issue! Owner or current document?
-    nsCOMPtr<nsIXULDocument> xuldoc = do_QueryInterface(GetCurrentDoc());
+    nsCOMPtr<nsIXULDocument> xuldoc = do_QueryInterface(GetUncomposedDoc());
     if (!xuldoc) {
         return nullptr;
     }
@@ -1501,7 +1506,7 @@ nsXULElement::GetBoxObject(nsIBoxObject** aResult)
     return rv.ErrorCode();
 }
 
-already_AddRefed<nsIBoxObject>
+already_AddRefed<BoxObject>
 nsXULElement::GetBoxObject(ErrorResult& rv)
 {
     // XXX sXBL/XBL2 issue! Owner or current document?
@@ -1701,7 +1706,7 @@ nsXULElement::Blur(ErrorResult& rv)
     if (!ShouldBlur(this))
       return;
 
-    nsIDocument* doc = GetCurrentDoc();
+    nsIDocument* doc = GetComposedDoc();
     if (!doc)
       return;
 
@@ -1730,7 +1735,7 @@ nsXULElement::ClickWithInputSource(uint16_t aInputSource)
     if (BoolAttrIsTrue(nsGkAtoms::disabled))
         return NS_OK;
 
-    nsCOMPtr<nsIDocument> doc = GetCurrentDoc(); // Strong just in case
+    nsCOMPtr<nsIDocument> doc = GetComposedDoc(); // Strong just in case
     if (doc) {
         nsCOMPtr<nsIPresShell> shell = doc->GetShell();
         if (shell) {
@@ -1772,7 +1777,7 @@ nsXULElement::ClickWithInputSource(uint16_t aInputSource)
 NS_IMETHODIMP
 nsXULElement::DoCommand()
 {
-    nsCOMPtr<nsIDocument> doc = GetCurrentDoc(); // strong just in case
+    nsCOMPtr<nsIDocument> doc = GetComposedDoc(); // strong just in case
     if (doc) {
         nsContentUtils::DispatchXULCommand(this, true);
     }
@@ -1884,7 +1889,7 @@ nsXULElement::MakeHeavyweight(nsXULPrototypeElement* aPrototype)
 nsresult
 nsXULElement::HideWindowChrome(bool aShouldHide)
 {
-    nsIDocument* doc = GetCurrentDoc();
+    nsIDocument* doc = GetUncomposedDoc();
     if (!doc || doc->GetRootElement() != this)
       return NS_ERROR_UNEXPECTED;
 
@@ -1916,7 +1921,7 @@ nsXULElement::HideWindowChrome(bool aShouldHide)
 nsIWidget*
 nsXULElement::GetWindowWidget()
 {
-    nsIDocument* doc = GetCurrentDoc();
+    nsIDocument* doc = GetComposedDoc();
 
     // only top level chrome documents can set the titlebar color
     if (doc && doc->IsRootDisplayDocument()) {
@@ -1983,7 +1988,7 @@ nsXULElement::SetDrawsTitle(bool aState)
 class MarginSetter : public nsRunnable
 {
 public:
-    MarginSetter(nsIWidget* aWidget) :
+    explicit MarginSetter(nsIWidget* aWidget) :
         mWidget(aWidget), mMargin(-1, -1, -1, -1)
     {}
     MarginSetter(nsIWidget *aWidget, const nsIntMargin& aMargin) :
@@ -2531,7 +2536,7 @@ nsXULPrototypeScript::Serialize(nsIObjectOutputStream* aStream,
 {
     NS_ENSURE_TRUE(aProtoDoc, NS_ERROR_UNEXPECTED);
     AutoSafeJSContext cx;
-    JS::Rooted<JSObject*> global(cx, xpc::GetCompilationScope());
+    JS::Rooted<JSObject*> global(cx, xpc::CompilationScope());
     NS_ENSURE_TRUE(global, NS_ERROR_UNEXPECTED);
     JSAutoCompartment ac(cx, global);
 
@@ -2553,8 +2558,7 @@ nsXULPrototypeScript::Serialize(nsIObjectOutputStream* aStream,
     // been set.
     JS::Handle<JSScript*> script =
         JS::Handle<JSScript*>::fromMarkedLocation(mScriptObject.address());
-    // Note - Inverting the order of these operands is a rooting hazard.
-    MOZ_ASSERT(xpc::GetCompilationScope() == JS::CurrentGlobalOrNull(cx));
+    MOZ_ASSERT(xpc::CompilationScope() == JS::CurrentGlobalOrNull(cx));
     return nsContentUtils::XPConnect()->WriteScript(aStream, cx,
                                                     xpc_UnmarkGrayScript(script));
 }
@@ -2621,7 +2625,7 @@ nsXULPrototypeScript::Deserialize(nsIObjectInputStream* aStream,
     aStream->Read32(&mLangVersion);
 
     AutoSafeJSContext cx;
-    JS::Rooted<JSObject*> global(cx, xpc::GetCompilationScope());
+    JS::Rooted<JSObject*> global(cx, xpc::CompilationScope());
     NS_ENSURE_TRUE(global, NS_ERROR_UNEXPECTED);
     JSAutoCompartment ac(cx, global);
 
@@ -2731,7 +2735,7 @@ NotifyOffThreadScriptCompletedRunnable::Run()
     JSScript *script;
     {
         AutoSafeJSContext cx;
-        JSAutoCompartment ac(cx, xpc::GetCompilationScope());
+        JSAutoCompartment ac(cx, xpc::CompilationScope());
         script = JS::FinishOffThreadScript(cx, JS_GetRuntime(cx), mToken);
     }
 
@@ -2757,9 +2761,8 @@ nsXULPrototypeScript::Compile(JS::SourceBufferHolder& aSrcBuf,
                               nsIOffThreadScriptReceiver *aOffThreadReceiver /* = nullptr */)
 {
     // We'll compile the script in the compilation scope.
-    NS_ENSURE_TRUE(xpc::GetCompilationScope(), NS_ERROR_UNEXPECTED);
     AutoSafeJSContext cx;
-    JSAutoCompartment ac(cx, xpc::GetCompilationScope());
+    JSAutoCompartment ac(cx, xpc::CompilationScope());
 
     nsAutoCString urlspec;
     nsContentUtils::GetWrapperSafeScriptFilename(aDocument, aURI, urlspec);

@@ -27,7 +27,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(BluetoothDevice, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(BluetoothDevice, DOMEventTargetHelper)
 
-class FetchUuidsTask : public BluetoothReplyRunnable
+class FetchUuidsTask MOZ_FINAL : public BluetoothReplyRunnable
 {
 public:
   FetchUuidsTask(Promise* aPromise,
@@ -74,9 +74,10 @@ private:
 BluetoothDevice::BluetoothDevice(nsPIDOMWindow* aWindow,
                                  const BluetoothValue& aValue)
   : DOMEventTargetHelper(aWindow)
+  , mPaired(false)
+  , mType(BluetoothDeviceType::Unknown)
 {
   MOZ_ASSERT(aWindow);
-  MOZ_ASSERT(IsDOMBinding());
 
   mCod = BluetoothClassOfDevice::Create(aWindow);
 
@@ -109,6 +110,22 @@ BluetoothDevice::DisconnectFromOwner()
   bs->UnregisterBluetoothSignalHandler(mAddress, this);
 }
 
+BluetoothDeviceType
+BluetoothDevice::ConvertUint32ToDeviceType(const uint32_t aValue)
+{
+  static const BluetoothDeviceType sDeviceType[] = {
+    CONVERT(TYPE_OF_DEVICE_BREDR, BluetoothDeviceType::Classic),
+    CONVERT(TYPE_OF_DEVICE_BLE, BluetoothDeviceType::Le),
+    CONVERT(TYPE_OF_DEVICE_DUAL, BluetoothDeviceType::Dual),
+  };
+
+  BluetoothTypeOfDevice type = static_cast<BluetoothTypeOfDevice>(aValue);
+  if (type >= MOZ_ARRAY_LENGTH(sDeviceType)) {
+    return BluetoothDeviceType::Unknown;
+  }
+  return sDeviceType[type];
+}
+
 void
 BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
 {
@@ -128,6 +145,8 @@ BluetoothDevice::SetPropertyByValue(const BluetoothNamedValue& aValue)
     // directly.
     mUuids = value.get_ArrayOfnsString();
     BluetoothDeviceBinding::ClearCachedUuidsValue(this);
+  } else if (name.EqualsLiteral("Type")) {
+    mType = ConvertUint32ToDeviceType(value.get_uint32_t());
   } else {
     BT_WARNING("Not handling device property: %s",
                NS_ConvertUTF16toUTF8(name).get());
@@ -144,9 +163,7 @@ BluetoothDevice::FetchUuids(ErrorResult& aRv)
   }
 
   nsRefPtr<Promise> promise = Promise::Create(global, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
+  NS_ENSURE_TRUE(!aRv.Failed(), nullptr);
 
   BluetoothService* bs = BluetoothService::Get();
   BT_ENSURE_TRUE_REJECT(bs, NS_ERROR_NOT_AVAILABLE);

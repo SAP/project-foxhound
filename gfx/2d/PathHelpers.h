@@ -8,6 +8,7 @@
 
 #include "2D.h"
 #include "mozilla/Constants.h"
+#include "UserData.h"
 
 namespace mozilla {
 namespace gfx {
@@ -16,8 +17,8 @@ template <typename T>
 void ArcToBezier(T* aSink, const Point &aOrigin, const Size &aRadius,
                  float aStartAngle, float aEndAngle, bool aAntiClockwise)
 {
-  Point startPoint(aOrigin.x + cos(aStartAngle) * aRadius.width,
-                   aOrigin.y + sin(aStartAngle) * aRadius.height);
+  Point startPoint(aOrigin.x + cosf(aStartAngle) * aRadius.width,
+                   aOrigin.y + sinf(aStartAngle) * aRadius.height);
 
   aSink->LineTo(startPoint);
 
@@ -56,10 +57,10 @@ void ArcToBezier(T* aSink, const Point &aOrigin, const Size &aRadius,
       currentEndAngle = currentStartAngle + arcSweepLeft * sweepDirection;
     }
 
-    Point currentStartPoint(aOrigin.x + cos(currentStartAngle) * aRadius.width,
-                            aOrigin.y + sin(currentStartAngle) * aRadius.height);
-    Point currentEndPoint(aOrigin.x + cos(currentEndAngle) * aRadius.width,
-                          aOrigin.y + sin(currentEndAngle) * aRadius.height);
+    Point currentStartPoint(aOrigin.x + cosf(currentStartAngle) * aRadius.width,
+                            aOrigin.y + sinf(currentStartAngle) * aRadius.height);
+    Point currentEndPoint(aOrigin.x + cosf(currentEndAngle) * aRadius.width,
+                          aOrigin.y + sinf(currentEndAngle) * aRadius.height);
 
     // Calculate kappa constant for partial curve. The sign of angle in the
     // tangent will actually ensure this is negative for a counter clockwise
@@ -156,12 +157,68 @@ GFX2D_API void AppendEllipseToPath(PathBuilder* aPathBuilder,
                                    const Point& aCenter,
                                    const Size& aDimensions);
 
-static inline bool
-UserToDevicePixelSnapped(Rect& aRect, const Matrix& aTransform)
+/**
+ * If aDrawTarget's transform only contains a translation, and if this line is
+ * a horizontal or vertical line, this function will snap the line's vertices
+ * to align with the device pixel grid so that stroking the line with a one
+ * pixel wide stroke will result in a crisp line that is not antialiased over
+ * two pixels across its width.
+ *
+ * @return Returns true if this function snaps aRect's vertices, else returns
+ *   false.
+ */
+GFX2D_API bool SnapLineToDevicePixelsForStroking(Point& aP1, Point& aP2,
+                                                 const DrawTarget& aDrawTarget);
+
+/**
+ * This function paints each edge of aRect separately, snapping the edges using
+ * SnapLineToDevicePixelsForStroking. Stroking the edges as separate paths
+ * helps ensure not only that the stroke spans a single row of device pixels if
+ * possible, but also that the ends of stroke dashes start and end on device
+ * pixels too.
+ */
+GFX2D_API void StrokeSnappedEdgesOfRect(const Rect& aRect,
+                                        DrawTarget& aDrawTarget,
+                                        const ColorPattern& aColor,
+                                        const StrokeOptions& aStrokeOptions);
+
+extern UserDataKey sDisablePixelSnapping;
+
+/**
+ * If aDrawTarget's transform only contains a translation or, if
+ * aAllowScaleOr90DegreeRotate is true, and/or a scale/90 degree rotation, this
+ * function will convert aRect to device space and snap it to device pixels.
+ * This function returns true if aRect is modified, otherwise it returns false.
+ *
+ * Note that the snapping is such that filling the rect using a DrawTarget
+ * which has the identity matrix as its transform will result in crisp edges.
+ * (That is, aRect will have integer values, aligning its edges between pixel
+ * boundaries.)  If on the other hand you stroking the rect with an odd valued
+ * stroke width then the edges of the stroke will be antialiased (assuming an
+ * AntialiasMode that does antialiasing).
+ */
+inline bool UserToDevicePixelSnapped(Rect& aRect, const DrawTarget& aDrawTarget,
+                                     bool aAllowScaleOr90DegreeRotate = false)
 {
-  Point p1 = aTransform * aRect.TopLeft();
-  Point p2 = aTransform * aRect.TopRight();
-  Point p3 = aTransform * aRect.BottomRight();
+  if (aDrawTarget.GetUserData(&sDisablePixelSnapping)) {
+    return false;
+  }
+
+  Matrix mat = aDrawTarget.GetTransform();
+
+  const Float epsilon = 0.0000001f;
+#define WITHIN_E(a,b) (fabs((a)-(b)) < epsilon)
+  if (!aAllowScaleOr90DegreeRotate &&
+      (!WITHIN_E(mat._11, 1.f) || !WITHIN_E(mat._22, 1.f) ||
+       !WITHIN_E(mat._12, 0.f) || !WITHIN_E(mat._21, 0.f))) {
+    // We have non-translation, but only translation is allowed.
+    return false;
+  }
+#undef WITHIN_E
+
+  Point p1 = mat * aRect.TopLeft();
+  Point p2 = mat * aRect.TopRight();
+  Point p3 = mat * aRect.BottomRight();
 
   // Check that the rectangle is axis-aligned. For an axis-aligned rectangle,
   // two opposite corners define the entire rectangle. So check if
@@ -180,6 +237,22 @@ UserToDevicePixelSnapped(Rect& aRect, const Matrix& aTransform)
   }
 
   return false;
+}
+
+/**
+ * This function has the same behavior as UserToDevicePixelSnapped except that
+ * aRect is not transformed to device space.
+ */
+inline void MaybeSnapToDevicePixels(Rect& aRect, const DrawTarget& aDrawTarget,
+                                    bool aIgnoreScale = false)
+{
+  if (UserToDevicePixelSnapped(aRect, aDrawTarget, aIgnoreScale)) {
+    // Since UserToDevicePixelSnapped returned true we know there is no
+    // rotation/skew in 'mat', so we can just use TransformBounds() here.
+    Matrix mat = aDrawTarget.GetTransform();
+    mat.Invert();
+    aRect = mat.TransformBounds(aRect);
+  }
 }
 
 } // namespace gfx

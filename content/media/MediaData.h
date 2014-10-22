@@ -71,10 +71,12 @@ public:
             int64_t aDuration,
             uint32_t aFrames,
             AudioDataValue* aData,
-            uint32_t aChannels)
+            uint32_t aChannels,
+            uint32_t aRate)
     : MediaData(AUDIO_SAMPLES, aOffset, aTime, aDuration)
     , mFrames(aFrames)
     , mChannels(aChannels)
+    , mRate(aRate)
     , mAudioData(aData)
   {
     MOZ_COUNT_CTOR(AudioData);
@@ -92,6 +94,7 @@ public:
 
   const uint32_t mFrames;
   const uint32_t mChannels;
+  const uint32_t mRate;
   // At least one of mAudioBuffer/mAudioData must be non-null.
   // mChannels channels, each with mFrames frames
   nsRefPtr<SharedBuffer> mAudioBuffer;
@@ -208,6 +211,13 @@ public:
   // VideoData, as ShallowCopyUpdateDuration() does.
   static VideoData* ShallowCopyUpdateTimestamp(VideoData* aOther,
                                                int64_t aTimestamp);
+
+  // Creates a new VideoData identical to aOther, but with a different
+  // specified timestamp and duration. All data from aOther is copied
+  // into the new VideoData, as ShallowCopyUpdateDuration() does.
+  static VideoData* ShallowCopyUpdateTimestampAndDuration(VideoData* aOther,
+                                                          int64_t aTimestamp,
+                                                          int64_t aDuration);
 
   // Initialize PlanarYCbCrImage. Only When aCopyData is true,
   // video data is copied to PlanarYCbCrImage.

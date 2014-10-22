@@ -13,11 +13,13 @@
 #include "nsNavHistory.h"
 #include "nsFaviconService.h"
 #include "mozilla/storage.h"
+#include "mozilla/Telemetry.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 #include "nsStreamUtils.h"
 #include "nsIPrivateBrowsingChannel.h"
 #include "nsISupportsPriority.h"
+#include "nsContentUtils.h"
 #include <algorithm>
 
 using namespace mozilla::places;
@@ -540,7 +542,12 @@ AsyncFetchAndSetIconFromNetwork::Run()
   nsresult rv = NS_NewURI(getter_AddRefs(iconURI), mIcon.spec);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIChannel> channel;
-  rv = NS_NewChannel(getter_AddRefs(channel), iconURI);
+  rv = NS_NewChannel(getter_AddRefs(channel),
+                     iconURI,
+                     nsContentUtils::GetSystemPrincipal(),
+                     nsILoadInfo::SEC_NORMAL,
+                     nsIContentPolicy::TYPE_IMAGE);
+
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIInterfaceRequestor> listenerRequestor =
     do_QueryInterface(reinterpret_cast<nsISupports*>(this));
@@ -647,6 +654,33 @@ AsyncFetchAndSetIconFromNetwork::OnStopRequest(nsIRequest* aRequest,
   // See AsyncFetchAndSetIconFromNetwork::Run()
   MOZ_ASSERT(channel);
   mIcon.expiration = GetExpirationTimeFromChannel(channel);
+
+  // Telemetry probes to measure the favicon file sizes for each different file type.
+  // This allow us to measure common file sizes while also observing each type popularity.
+  if (mIcon.mimeType.EqualsLiteral("image/png")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_PNG_SIZES, mIcon.data.Length());
+  }
+  else if (mIcon.mimeType.EqualsLiteral("image/x-icon") ||
+           mIcon.mimeType.EqualsLiteral("image/vnd.microsoft.icon")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_ICO_SIZES, mIcon.data.Length());
+  }
+  else if (mIcon.mimeType.EqualsLiteral("image/jpeg") ||
+           mIcon.mimeType.EqualsLiteral("image/pjpeg")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_JPEG_SIZES, mIcon.data.Length());
+  }
+  else if (mIcon.mimeType.EqualsLiteral("image/gif")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_GIF_SIZES, mIcon.data.Length());
+  }
+  else if (mIcon.mimeType.EqualsLiteral("image/bmp") ||
+           mIcon.mimeType.EqualsLiteral("image/x-windows-bmp")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_BMP_SIZES, mIcon.data.Length());
+  }
+  else if (mIcon.mimeType.EqualsLiteral("image/svg+xml")) {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_SVG_SIZES, mIcon.data.Length());
+  }
+  else {
+    mozilla::Telemetry::Accumulate(mozilla::Telemetry::PLACES_FAVICON_OTHER_SIZES, mIcon.data.Length());
+  }
 
   rv = OptimizeIconSize(mIcon, favicons);
   NS_ENSURE_SUCCESS(rv, rv);

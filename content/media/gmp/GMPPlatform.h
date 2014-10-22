@@ -9,13 +9,16 @@
 #include "mozilla/Mutex.h"
 #include "gmp-platform.h"
 #include "base/thread.h"
+#include "mozilla/ReentrantMonitor.h"
 
 namespace mozilla {
 namespace gmp {
 
 class GMPChild;
 
-void InitPlatformAPI(GMPPlatformAPI& aPlatformAPI);
+void InitPlatformAPI(GMPPlatformAPI& aPlatformAPI, GMPChild* aChild);
+
+GMPErr RunOnMainThread(GMPTask* aTask);
 
 class GMPThreadImpl : public GMPThread
 {
@@ -41,9 +44,10 @@ public:
   // GMPMutex
   virtual void Acquire() MOZ_OVERRIDE;
   virtual void Release() MOZ_OVERRIDE;
+  virtual void Destroy() MOZ_OVERRIDE;
 
 private:
-  Mutex mMutex;
+  ReentrantMonitor mMonitor;
 };
 
 } // namespace gmp

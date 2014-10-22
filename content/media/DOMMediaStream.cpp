@@ -15,38 +15,25 @@
 #include "MediaStreamGraph.h"
 #include "AudioStreamTrack.h"
 #include "VideoStreamTrack.h"
+#include "MediaEngine.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMMediaStream)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMMediaStream)
-NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED(DOMMediaStream,
+                                   DOMEventTargetHelper,
+                                   mWindow,
+                                   mTracks,
+                                   mConsumersToKeepAlive);
 
-NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMMediaStream)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMMediaStream)
+NS_IMPL_ADDREF_INHERITED(DOMMediaStream, DOMEventTargetHelper)
+NS_IMPL_RELEASE_INHERITED(DOMMediaStream, DOMEventTargetHelper)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(DOMMediaStream)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(DOMMediaStream)
+  NS_INTERFACE_MAP_ENTRY(DOMMediaStream)
+NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMMediaStream)
-  tmp->Destroy();
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTracks)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mConsumersToKeepAlive)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DOMMediaStream)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTracks)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConsumersToKeepAlive)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(DOMMediaStream)
-
-NS_IMPL_ISUPPORTS_INHERITED(DOMLocalMediaStream, DOMMediaStream,
-                            nsIDOMLocalMediaStream)
+NS_IMPL_ISUPPORTS_INHERITED0(DOMLocalMediaStream, DOMMediaStream)
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(DOMAudioNodeMediaStream, DOMMediaStream,
                                    mStreamNode)
@@ -59,7 +46,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMMediaStream)
 
 class DOMMediaStream::StreamListener : public MediaStreamListener {
 public:
-  StreamListener(DOMMediaStream* aStream)
+  explicit StreamListener(DOMMediaStream* aStream)
     : mStream(aStream)
   {}
 
@@ -87,14 +74,22 @@ public:
 
       nsRefPtr<MediaStreamTrack> track;
       if (mEvents & MediaStreamListener::TRACK_EVENT_CREATED) {
-        track = stream->CreateDOMTrack(mID, mType);
-        stream->NotifyMediaStreamTrackCreated(track);
+        track = stream->BindDOMTrack(mID, mType);
+        if (!track) {
+          stream->CreateDOMTrack(mID, mType);
+          track = stream->BindDOMTrack(mID, mType);
+          stream->NotifyMediaStreamTrackCreated(track);
+        }
       } else {
         track = stream->GetDOMTrackFor(mID);
       }
       if (mEvents & MediaStreamListener::TRACK_EVENT_ENDED) {
-        track->NotifyEnded();
-        stream->NotifyMediaStreamTrackEnded(track);
+        if (track) {
+          track->NotifyEnded();
+          stream->NotifyMediaStreamTrackEnded(track);
+        } else {
+          NS_ERROR("track ended but not found");
+        }
       }
       return NS_OK;
     }
@@ -137,7 +132,6 @@ DOMMediaStream::DOMMediaStream()
     mStream(nullptr), mHintContents(0), mTrackTypesAvailable(0),
     mNotifiedOfMediaStreamGraphShutdown(false)
 {
-  SetIsDOMBinding();
 }
 
 DOMMediaStream::~DOMMediaStream()
@@ -196,6 +190,18 @@ DOMMediaStream::GetVideoTracks(nsTArray<nsRefPtr<VideoStreamTrack> >& aTracks)
   }
 }
 
+void
+DOMMediaStream::GetTracks(nsTArray<nsRefPtr<MediaStreamTrack> >& aTracks)
+{
+  aTracks.AppendElements(mTracks);
+}
+
+bool
+DOMMediaStream::HasTrack(const MediaStreamTrack& aTrack) const
+{
+  return mTracks.Contains(&aTrack);
+}
+
 bool
 DOMMediaStream::IsFinished()
 {
@@ -207,7 +213,7 @@ DOMMediaStream::InitSourceStream(nsIDOMWindow* aWindow, TrackTypeHints aHintCont
 {
   mWindow = aWindow;
   SetHintContents(aHintContents);
-  MediaStreamGraph* gm = MediaStreamGraph::GetInstance();
+  MediaStreamGraph* gm = MediaStreamGraph::GetInstance(aHintContents);
   InitStreamCommon(gm->CreateSourceStream(this));
 }
 
@@ -216,7 +222,7 @@ DOMMediaStream::InitTrackUnionStream(nsIDOMWindow* aWindow, TrackTypeHints aHint
 {
   mWindow = aWindow;
   SetHintContents(aHintContents);
-  MediaStreamGraph* gm = MediaStreamGraph::GetInstance();
+  MediaStreamGraph* gm = MediaStreamGraph::GetInstance(aHintContents);
   InitStreamCommon(gm->CreateTrackUnionStream(this));
 }
 
@@ -251,6 +257,14 @@ DOMMediaStream::SetTrackEnabled(TrackID aTrackID, bool aEnabled)
 {
   if (mStream) {
     mStream->SetTrackEnabled(aTrackID, aEnabled);
+  }
+}
+
+void
+DOMMediaStream::StopTrack(TrackID aTrackID)
+{
+  if (mStream && mStream->AsSourceStream()) {
+    mStream->AsSourceStream()->EndTrack(aTrackID);
   }
 }
 
@@ -293,6 +307,18 @@ DOMMediaStream::RemovePrincipalChangeObserver(PrincipalChangeObserver* aObserver
   return mPrincipalChangeObservers.RemoveElement(aObserver);
 }
 
+void
+DOMMediaStream::SetHintContents(TrackTypeHints aHintContents)
+{
+  mHintContents = aHintContents;
+  if (aHintContents & HINT_CONTENTS_AUDIO) {
+    CreateDOMTrack(kAudioTrack, MediaSegment::AUDIO);
+  }
+  if (aHintContents & HINT_CONTENTS_VIDEO) {
+    CreateDOMTrack(kVideoTrack, MediaSegment::VIDEO);
+  }
+}
+
 MediaStreamTrack*
 DOMMediaStream::CreateDOMTrack(TrackID aTrackID, MediaSegment::Type aType)
 {
@@ -311,8 +337,42 @@ DOMMediaStream::CreateDOMTrack(TrackID aTrackID, MediaSegment::Type aType)
   }
   mTracks.AppendElement(track);
 
-  CheckTracksAvailable();
+  return track;
+}
 
+MediaStreamTrack*
+DOMMediaStream::BindDOMTrack(TrackID aTrackID, MediaSegment::Type aType)
+{
+  MediaStreamTrack* track = nullptr;
+  switch (aType) {
+  case MediaSegment::AUDIO: {
+    for (size_t i = 0; i < mTracks.Length(); ++i) {
+      track = mTracks[i]->AsAudioStreamTrack();
+      if (track) {
+        track->BindTrackID(aTrackID);
+        MOZ_ASSERT(mTrackTypesAvailable & HINT_CONTENTS_AUDIO);
+        break;
+      }
+    }
+    break;
+  }
+  case MediaSegment::VIDEO: {
+    for (size_t i = 0; i < mTracks.Length(); ++i) {
+      track = mTracks[i]->AsVideoStreamTrack();
+      if (track) {
+        track->BindTrackID(aTrackID);
+        MOZ_ASSERT(mTrackTypesAvailable & HINT_CONTENTS_VIDEO);
+        break;
+      }
+    }
+    break;
+  }
+  default:
+    MOZ_CRASH("Unhandled track type");
+  }
+  if (track) {
+    CheckTracksAvailable();
+  }
   return track;
 }
 
@@ -439,6 +499,19 @@ DOMMediaStream::ConstructMediaTracks(AudioTrackList* aAudioTrackList,
     // must be selected.
     int index = firstEnabledVideo >= 0 ? firstEnabledVideo : 0;
     (*aVideoTrackList)[index]->SetEnabledInternal(true, MediaTrack::FIRE_NO_EVENTS);
+  }
+}
+
+void
+DOMMediaStream::DisconnectTrackListListeners(const AudioTrackList* aAudioTrackList,
+                                             const VideoTrackList* aVideoTrackList)
+{
+  for (auto i = mMediaTrackListListeners.Length(); i > 0; ) { // unsigned!
+    --i; // 0 ... Length()-1 range
+    if (mMediaTrackListListeners[i].mMediaTrackList == aAudioTrackList ||
+        mMediaTrackListListeners[i].mMediaTrackList == aVideoTrackList) {
+      mMediaTrackListListeners.RemoveElementAt(i);
+    }
   }
 }
 

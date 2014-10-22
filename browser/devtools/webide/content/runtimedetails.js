@@ -9,7 +9,7 @@ const {AppManager} = require("devtools/webide/app-manager");
 const {Connection} = require("devtools/client/connection-manager");
 const {Devices} = Cu.import("resource://gre/modules/devtools/Devices.jsm");
 const {USBRuntime} = require("devtools/webide/runtimes");
-const Strings = Services.strings.createBundle("chrome://webide/content/webide.properties");
+const Strings = Services.strings.createBundle("chrome://browser/locale/devtools/webide.properties");
 
 window.addEventListener("load", function onLoad() {
   window.removeEventListener("load", onLoad);
@@ -83,13 +83,12 @@ function CheckLockState() {
   certCheckResult.textContent = sUnknown;
 
   if (AppManager.connection &&
-      AppManager.connection.status == Connection.Status.CONNECTED &&
-      AppManager.deviceFront) {
+      AppManager.connection.status == Connection.Status.CONNECTED) {
 
     // ADB check
     if (AppManager.selectedRuntime instanceof USBRuntime) {
       let device = Devices.getByName(AppManager.selectedRuntime.id);
-      if (device.summonRoot) {
+      if (device && device.summonRoot) {
         device.isRoot().then(isRoot => {
           if (isRoot) {
             adbCheckResult.textContent = sYes;

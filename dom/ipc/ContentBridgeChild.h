@@ -17,7 +17,7 @@ class ContentBridgeChild MOZ_FINAL : public PContentBridgeChild
                                    , public nsIContentChild
 {
 public:
-  ContentBridgeChild(Transport* aTransport);
+  explicit ContentBridgeChild(Transport* aTransport);
 
   NS_DECL_ISUPPORTS
 
@@ -36,7 +36,7 @@ public:
   SendPBlobConstructor(PBlobChild* actor,
                        const BlobConstructorParams& params);
 
-  jsipc::JavaScriptChild* GetCPOWManager();
+  jsipc::JavaScriptShared* GetCPOWManager() MOZ_OVERRIDE;
 
   virtual bool SendPBrowserConstructor(PBrowserChild* aActor,
                                        const IPCTabContext& aContext,

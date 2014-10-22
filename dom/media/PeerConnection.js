@@ -22,6 +22,8 @@ const PC_MANAGER_CONTRACT = "@mozilla.org/dom/peerconnectionmanager;1";
 const PC_STATS_CONTRACT = "@mozilla.org/dom/rtcstatsreport;1";
 const PC_IDENTITY_CONTRACT = "@mozilla.org/dom/rtcidentityassertion;1";
 const PC_STATIC_CONTRACT = "@mozilla.org/dom/peerconnectionstatic;1";
+const PC_SENDER_CONTRACT = "@mozilla.org/dom/rtpsender;1";
+const PC_RECEIVER_CONTRACT = "@mozilla.org/dom/rtpreceiver;1";
 
 const PC_CID = Components.ID("{00e0e20d-1494-4776-8e0e-0f0acbea3c79}");
 const PC_OBS_CID = Components.ID("{d1748d4c-7f6a-4dc5-add6-d55b7678537e}");
@@ -31,6 +33,8 @@ const PC_MANAGER_CID = Components.ID("{7293e901-2be3-4c02-b4bd-cbef6fc24f78}");
 const PC_STATS_CID = Components.ID("{7fe6e18b-0da3-4056-bf3b-440ef3809e06}");
 const PC_IDENTITY_CID = Components.ID("{1abc7499-3c54-43e0-bd60-686e2703f072}");
 const PC_STATIC_CID = Components.ID("{0fb47c47-a205-4583-a9fc-cbadf8c95880}");
+const PC_SENDER_CID = Components.ID("{4fff5d46-d827-4cd4-a970-8fd53977440e}");
+const PC_RECEIVER_CID = Components.ID("{d974b814-8fde-411c-8c45-b86791b81030}");
 
 // Global list of PeerConnection objects, so they can be cleaned up when
 // a page is torn down. (Maps inner window ID to an array of PC objects).
@@ -108,22 +112,12 @@ GlobalPCList.prototype = {
       }
     };
 
-    let hasPluginId = function(list, winID, pluginID, name, crashReport) {
+    let broadcastPluginCrash = function(list, winID, pluginID, name, crashReportID) {
       if (list.hasOwnProperty(winID)) {
         list[winID].forEach(function(pcref) {
           let pc = pcref.get();
           if (pc) {
-            if (pc._pc.pluginCrash(pluginID)) {
-              // Notify DOM window of the crash
-              let event = new CustomEvent("PluginCrashed",
-                { bubbles: false, cancelable: false,
-                  detail: {
-                    pluginName: name, 
-                    pluginDumpId: crashReport,
-                    submittedCrashReport: false }
-                });
-              pc._win.dispatchEvent(event);
-            }
+            pc._pc.pluginCrash(pluginID, name, crashReportID);
           }
         });
       }
@@ -156,6 +150,15 @@ GlobalPCList.prototype = {
       } else if (data == "online") {
         this._networkdown = false;
       }
+    } else if (topic == "network:app-offline-status-changed") {
+      // App just went offline. The subject also contains the appId,
+      // but navigator.onLine checks that for us
+      if (!this._networkdown && !this._win.navigator.onLine) {
+        for (let winId in this._list) {
+          cleanupWinId(this._list, winId);
+        }
+      }
+      this._networkdown = !this._win.navigator.onLine;
     } else if (topic == "gmp-plugin-crash") {
       // a plugin crashed; if it's associated with any of our PCs, fire an
       // event to the DOM window
@@ -167,8 +170,8 @@ GlobalPCList.prototype = {
       let name = rest.slice(0, sep);
       let crashId = rest.slice(sep+1);
       for (let winId in this._list) {
-        hasPluginId(this._list, winId, pluginId, name, crashId);
-      }      
+        broadcastPluginCrash(this._list, winId, pluginId, name, crashId);
+      }
     }
   },
 
@@ -216,12 +219,6 @@ RTCSessionDescription.prototype = {
 };
 
 function RTCStatsReport(win, dict) {
-  function appendStats(stats, report) {
-    stats.forEach(function(stat) {
-        report[stat.id] = stat;
-      });
-  }
-
   this._win = win;
   this._pcid = dict.pcid;
   this._report = convertToRTCStatsReport(dict);
@@ -293,6 +290,8 @@ RTCIdentityAssertion.prototype = {
 
 function RTCPeerConnection() {
   this._queue = [];
+  this._senders = [];
+  this._receivers = [];
 
   this._pc = null;
   this._observer = null;
@@ -304,11 +303,13 @@ function RTCPeerConnection() {
   this._onCreateAnswerFailure = null;
   this._onGetStatsSuccess = null;
   this._onGetStatsFailure = null;
+  this._onReplaceTrackSender = null;
+  this._onReplaceTrackWithTrack = null;
+  this._onReplaceTrackSuccess = null;
+  this._onReplaceTrackFailure = null;
 
-  this._pendingType = null;
   this._localType = null;
   this._remoteType = null;
-  this._trickleIce = false;
   this._peerIdentity = null;
 
   /**
@@ -333,7 +334,6 @@ RTCPeerConnection.prototype = {
   init: function(win) { this._win = win; },
 
   __init: function(rtcConfig) {
-    this._trickleIce = Services.prefs.getBoolPref("media.peerconnection.trickle_ice");
     if (!rtcConfig.iceServers ||
         !Services.prefs.getBoolPref("media.peerconnection.use_document_iceservers")) {
       rtcConfig.iceServers =
@@ -341,12 +341,13 @@ RTCPeerConnection.prototype = {
     }
     this._mustValidateRTCConfiguration(rtcConfig,
         "RTCPeerConnection constructor passed invalid RTCConfiguration");
-    if (_globalPCList._networkdown) {
+    if (_globalPCList._networkdown || !this._win.navigator.onLine) {
       throw new this._win.DOMError("",
           "Can't create RTCPeerConnections when the network is down");
     }
 
     this.makeGetterSetterEH("onaddstream");
+    this.makeGetterSetterEH("onaddtrack");
     this.makeGetterSetterEH("onicecandidate");
     this.makeGetterSetterEH("onnegotiationneeded");
     this.makeGetterSetterEH("onsignalingstatechange");
@@ -371,8 +372,7 @@ RTCPeerConnection.prototype = {
     this._queueOrRun({
       func: this._initialize,
       args: [rtcConfig],
-      // If not trickling, suppress start.
-      wait: !this._trickleIce
+      wait: false
     });
   },
 
@@ -424,32 +424,27 @@ RTCPeerConnection.prototype = {
    */
   _queueOrRun: function(obj) {
     this._checkClosed();
-    if (!this._pending) {
-      if (obj.type !== undefined) {
-        this._pendingType = obj.type;
-      }
-      obj.func.apply(this, obj.args);
-      if (obj.wait) {
-        this._pending = true;
-      }
-    } else {
+
+    if (this._pending) {
+      // We are waiting for a callback before doing any more work.
       this._queue.push(obj);
+    } else {
+      this._pending = obj.wait;
+      obj.func.apply(this, obj.args);
     }
   },
 
   // Pick the next item from the queue and run it.
   _executeNext: function() {
-    if (this._queue.length) {
+
+    // Maybe _pending should be a string, and we should
+    // take a string arg and make sure they match to detect errors?
+    this._pending = false;
+
+    while (this._queue.length && !this._pending) {
       let obj = this._queue.shift();
-      if (obj.type !== undefined) {
-        this._pendingType = obj.type;
-      }
-      obj.func.apply(this, obj.args);
-      if (!obj.wait) {
-        this._executeNext();
-      }
-    } else {
-      this._pending = false;
+      // Doesn't re-queue since _pending is false
+      this._queueOrRun(obj);
     }
   },
 
@@ -511,7 +506,11 @@ RTCPeerConnection.prototype = {
   },
 
   dispatchEvent: function(event) {
-    this.__DOM_IMPL__.dispatchEvent(event);
+    // PC can close while events are firing if there is an async dispatch
+    // in c++ land
+    if (!this._closed) {
+      this.__DOM_IMPL__.dispatchEvent(event);
+    }
   },
 
   // Log error message to web console and window.onerror, if present.
@@ -566,7 +565,47 @@ RTCPeerConnection.prototype = {
   },
 
   createOffer: function(onSuccess, onError, options) {
-    options = options || {};
+
+    // TODO: Remove old constraint-like RTCOptions support soon (Bug 1064223).
+    // Note that webidl bindings make o.mandatory implicit but not o.optional.
+    function convertLegacyOptions(o) {
+      if (!(Object.keys(o.mandatory).length || o.optional) ||
+          Object.keys(o).length != (o.optional? 2 : 1)) {
+        return false;
+      }
+      let old = o.mandatory || {};
+      if (o.mandatory) {
+        delete o.mandatory;
+      }
+      if (o.optional) {
+        o.optional.forEach(one => {
+          // The old spec had optional as an array of objects w/1 attribute each.
+          // Assumes our JS-webidl bindings only populate passed-in properties.
+          let key = Object.keys(one)[0];
+          if (key && old[key] === undefined) {
+            old[key] = one[key];
+          }
+        });
+        delete o.optional;
+      }
+      o.offerToReceiveAudio = old.OfferToReceiveAudio;
+      o.offerToReceiveVideo = old.OfferToReceiveVideo;
+      o.mozDontOfferDataChannel = old.MozDontOfferDataChannel;
+      o.mozBundleOnly = old.MozBundleOnly;
+      Object.keys(o).forEach(k => {
+        if (o[k] === undefined) {
+          delete o[k];
+        }
+      });
+      return true;
+    }
+
+    if (options && convertLegacyOptions(options)) {
+      this.logWarning(
+          "Mandatory/optional in createOffer options is deprecated! Use " +
+          JSON.stringify(options) + " instead (note the case difference)!",
+          null, 0);
+    }
     this._queueOrRun({
       func: this._createOffer,
       args: [onSuccess, onError, options],
@@ -609,6 +648,14 @@ RTCPeerConnection.prototype = {
   },
 
   setLocalDescription: function(desc, onSuccess, onError) {
+    if (!onSuccess || !onError) {
+      this.logWarning(
+          "setLocalDescription called without success/failure callbacks. This is deprecated, and will be an error in the future.",
+          null, 0);
+    }
+
+    this._localType = desc.type;
+
     let type;
     switch (desc.type) {
       case "offer":
@@ -627,8 +674,7 @@ RTCPeerConnection.prototype = {
     this._queueOrRun({
       func: this._setLocalDescription,
       args: [type, desc.sdp, onSuccess, onError],
-      wait: true,
-      type: desc.type
+      wait: true
     });
   },
 
@@ -639,6 +685,13 @@ RTCPeerConnection.prototype = {
   },
 
   setRemoteDescription: function(desc, onSuccess, onError) {
+    if (!onSuccess || !onError) {
+      this.logWarning(
+          "setRemoteDescription called without success/failure callbacks. This is deprecated, and will be an error in the future.",
+          null, 0);
+    }
+    this._remoteType = desc.type;
+
     let type;
     switch (desc.type) {
       case "offer":
@@ -657,8 +710,7 @@ RTCPeerConnection.prototype = {
     this._queueOrRun({
       func: this._setRemoteDescription,
       args: [type, desc.sdp, onSuccess, onError],
-      wait: true,
-      type: desc.type
+      wait: true
     });
   },
 
@@ -688,18 +740,19 @@ RTCPeerConnection.prototype = {
     let idpComplete = false;
     let setRemoteComplete = false;
     let idpError = null;
+    let isDone = false;
 
     // we can run the IdP validation in parallel with setRemoteDescription this
     // complicates much more than would be ideal, but it ensures that the IdP
     // doesn't hold things up too much when it's not on the critical path
     let allDone = () => {
-      if (!setRemoteComplete || !idpComplete || !onSuccess) {
+      if (!setRemoteComplete || !idpComplete || isDone) {
         return;
       }
-      this._remoteType = this._pendingType;
-      this._pendingType = null;
+      // May be null if the user didn't supply success/failure callbacks.
+      // Violation of spec, but we allow it for now
       this.callCB(onSuccess);
-      onSuccess = null;
+      isDone = true;
       this._executeNext();
     };
 
@@ -773,6 +826,11 @@ RTCPeerConnection.prototype = {
   },
 
   addIceCandidate: function(cand, onSuccess, onError) {
+    if (!onSuccess || !onError) {
+      this.logWarning(
+          "addIceCandidate called without success/failure callbacks. This is deprecated, and will be an error in the future.",
+          null, 0);
+    }
     if (!cand.candidate && !cand.sdpMLineIndex) {
       throw new this._win.DOMError("",
           "Invalid candidate passed to addIceCandidate!");
@@ -780,7 +838,7 @@ RTCPeerConnection.prototype = {
     this._onAddIceCandidateSuccess = onSuccess || null;
     this._onAddIceCandidateError = onError || null;
 
-    this._queueOrRun({ func: this._addIceCandidate, args: [cand], wait: true });
+    this._queueOrRun({ func: this._addIceCandidate, args: [cand], wait: false });
   },
 
   _addIceCandidate: function(cand) {
@@ -790,16 +848,7 @@ RTCPeerConnection.prototype = {
   },
 
   addStream: function(stream) {
-    if (stream.currentTime === undefined) {
-      throw new this._win.DOMError("", "Invalid stream passed to addStream!");
-    }
-    this._queueOrRun({ func: this._addStream,
-                       args: [stream],
-                       wait: false });
-  },
-
-  _addStream: function(stream) {
-    this._impl.addStream(stream);
+    stream.getTracks().forEach(track => this.addTrack(track, stream));
   },
 
   removeStream: function(stream) {
@@ -809,6 +858,46 @@ RTCPeerConnection.prototype = {
 
   getStreamById: function(id) {
     throw new this._win.DOMError("", "getStreamById not yet implemented");
+  },
+
+  addTrack: function(track, stream) {
+    if (stream.currentTime === undefined) {
+      throw new this._win.DOMError("", "invalid stream.");
+    }
+    if (stream.getTracks().indexOf(track) == -1) {
+      throw new this._win.DOMError("", "track is not in stream.");
+    }
+    this._checkClosed();
+    this._impl.addTrack(track, stream);
+    let sender = this._win.RTCRtpSender._create(this._win,
+                                                new RTCRtpSender(this, track,
+                                                                 stream));
+    this._senders.push({ sender: sender, stream: stream });
+    return sender;
+  },
+
+  removeTrack: function(sender) {
+     // Bug 844295: Not implementing this functionality.
+     throw new this._win.DOMError("", "removeTrack not yet implemented");
+  },
+
+  _replaceTrack: function(sender, withTrack, onSuccess, onError) {
+    // TODO: Do a (sender._stream.getTracks().indexOf(track) == -1) check
+    //       on both track args someday.
+    //
+    // The proposed API will be that both tracks must already be in the same
+    // stream. However, since our MediaStreams currently are limited to one
+    // track per type, we allow replacement with an outside track not already
+    // in the same stream.
+    //
+    // Since a track may be replaced more than once, the track being replaced
+    // may not be in the stream either, so we check neither arg right now.
+
+    this._onReplaceTrackSender = sender;
+    this._onReplaceTrackWithTrack = withTrack;
+    this._onReplaceTrackSuccess = onSuccess;
+    this._onReplaceTrackFailure = onError;
+    this._impl.replaceTrack(sender.track, withTrack, sender._stream);
   },
 
   close: function() {
@@ -834,6 +923,36 @@ RTCPeerConnection.prototype = {
   getRemoteStreams: function() {
     this._checkClosed();
     return this._impl.getRemoteStreams();
+  },
+
+  getSenders: function() {
+    this._checkClosed();
+    let streams = this._impl.getLocalStreams();
+    let senders = [];
+    // prune senders in case any streams have disappeared down below
+    for (let i = this._senders.length - 1; i >= 0; i--) {
+      if (streams.indexOf(this._senders[i].stream) != -1) {
+        senders.push(this._senders[i].sender);
+      } else {
+        this._senders.splice(i,1);
+      }
+    }
+    return senders;
+  },
+
+  getReceivers: function() {
+    this._checkClosed();
+    let streams = this._impl.getRemoteStreams();
+    let receivers = [];
+    // prune receivers in case any streams have disappeared down below
+    for (let i = this._receivers.length - 1; i >= 0; i--) {
+      if (streams.indexOf(this._receivers[i].stream) != -1) {
+        receivers.push(this._receivers[i].receiver);
+      } else {
+        this._receivers.splice(i,1);
+      }
+    }
+    return receivers;
   },
 
   get localDescription() {
@@ -895,7 +1014,7 @@ RTCPeerConnection.prototype = {
     this._queueOrRun({
       func: this._getStats,
       args: [selector, onSuccess, onError],
-      wait: true
+      wait: false
     });
   },
 
@@ -1057,58 +1176,52 @@ PeerConnectionObserver.prototype = {
   },
 
   onSetLocalDescriptionSuccess: function() {
-    this._dompc._localType = this._dompc._pendingType;
-    this._dompc._pendingType = null;
     this._dompc.callCB(this._dompc._onSetLocalDescriptionSuccess);
-
-    if (this._dompc._iceGatheringState == "complete") {
-        // If we are not trickling or we completed gathering prior
-        // to setLocal, then trigger a call of onicecandidate here.
-        this.foundIceCandidate(null);
-    }
-
     this._dompc._executeNext();
   },
 
   onSetRemoteDescriptionSuccess: function() {
+    // This function calls _executeNext() for us
     this._dompc._onSetRemoteDescriptionSuccess();
   },
 
   onSetLocalDescriptionError: function(code, message) {
-    this._dompc._pendingType = null;
+    this._localType = null;
     this._dompc.callCB(this._dompc._onSetLocalDescriptionFailure,
                        new RTCError(code, message));
     this._dompc._executeNext();
   },
 
   onSetRemoteDescriptionError: function(code, message) {
-    this._dompc._pendingType = null;
+    this._remoteType = null;
     this._dompc.callCB(this._dompc._onSetRemoteDescriptionFailure,
                        new RTCError(code, message));
     this._dompc._executeNext();
   },
 
   onAddIceCandidateSuccess: function() {
-    this._dompc._pendingType = null;
     this._dompc.callCB(this._dompc._onAddIceCandidateSuccess);
     this._dompc._executeNext();
   },
 
   onAddIceCandidateError: function(code, message) {
-    this._dompc._pendingType = null;
     this._dompc.callCB(this._dompc._onAddIceCandidateError,
                        new RTCError(code, message));
     this._dompc._executeNext();
   },
 
   onIceCandidate: function(level, mid, candidate) {
-    this.foundIceCandidate(new this._dompc._win.mozRTCIceCandidate(
-        {
-            candidate: candidate,
-            sdpMid: mid,
-            sdpMLineIndex: level - 1
-        }
-    ));
+    if (candidate == "") {
+      this.foundIceCandidate(null);
+    } else {
+      this.foundIceCandidate(new this._dompc._win.mozRTCIceCandidate(
+          {
+              candidate: candidate,
+              sdpMid: mid,
+              sdpMLineIndex: level - 1
+          }
+      ));
+    }
   },
 
 
@@ -1179,20 +1292,6 @@ PeerConnectionObserver.prototype = {
   //
   handleIceGatheringStateChange: function(gatheringState) {
     this._dompc.changeIceGatheringState(gatheringState);
-
-    if (gatheringState === "complete") {
-      if (!this._dompc._trickleIce) {
-        // If we are not trickling, then the queue is in a pending state
-        // waiting for ICE gathering and executeNext frees it
-        this._dompc._executeNext();
-      }
-      else if (this._dompc.localDescription) {
-        // If we are trickling but we have already done setLocal,
-        // then we need to send a final foundIceCandidate(null) to indicate
-        // that we are done gathering.
-        this.foundIceCandidate(null);
-      }
-    }
   },
 
   onStateChange: function(state) {
@@ -1254,6 +1353,32 @@ PeerConnectionObserver.prototype = {
                                                              { stream: stream }));
   },
 
+  onAddTrack: function(track) {
+    let ev = new this._dompc._win.MediaStreamTrackEvent("addtrack",
+                                                        { track: track });
+    this._dompc.dispatchEvent(ev);
+  },
+
+  onRemoveTrack: function(track, type) {
+    this.dispatchEvent(new this._dompc._win.MediaStreamTrackEvent("removetrack",
+                                                                  { track: track }));
+  },
+
+  onReplaceTrackSuccess: function() {
+    var pc = this._dompc;
+    pc._onReplaceTrackSender.track = pc._onReplaceTrackWithTrack;
+    pc._onReplaceTrackWithTrack = null;
+    pc._onReplaceTrackSender = null;
+    pc.callCB(pc._onReplaceTrackSuccess);
+  },
+
+  onReplaceTrackError: function(code, message) {
+    var pc = this._dompc;
+    pc._onReplaceTrackWithTrack = null;
+    pc._onReplaceTrackSender = null;
+    pc.callCB(pc._onReplaceTrackError, new RTCError(code, message));
+  },
+
   foundIceCandidate: function(cand) {
     this.dispatchEvent(new this._dompc._win.RTCPeerConnectionIceEvent("icecandidate",
                                                                       { candidate: cand } ));
@@ -1285,12 +1410,46 @@ RTCPeerConnectionStatic.prototype = {
   },
 };
 
+function RTCRtpSender(pc, track, stream) {
+  this._pc = pc;
+  this.track = track;
+  this._stream = stream;
+}
+RTCRtpSender.prototype = {
+  classDescription: "RTCRtpSender",
+  classID: PC_SENDER_CID,
+  contractID: PC_SENDER_CONTRACT,
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsISupports]),
+
+  replaceTrack: function(withTrack, onSuccess, onError) {
+    this._pc._checkClosed();
+    this._pc._queueOrRun({
+      func: this._pc._replaceTrack,
+      args: [this, withTrack, onSuccess, onError],
+      wait: false
+    });
+  }
+};
+
+function RTCRtpReceiver(pc, track) {
+  this.pc = pc;
+  this.track = track;
+}
+RTCRtpReceiver.prototype = {
+  classDescription: "RTCRtpReceiver",
+  classID: PC_RECEIVER_CID,
+  contractID: PC_RECEIVER_CONTRACT,
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsISupports]),
+};
+
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory(
   [GlobalPCList,
    RTCIceCandidate,
    RTCSessionDescription,
    RTCPeerConnection,
    RTCPeerConnectionStatic,
+   RTCRtpReceiver,
+   RTCRtpSender,
    RTCStatsReport,
    RTCIdentityAssertion,
    PeerConnectionObserver]

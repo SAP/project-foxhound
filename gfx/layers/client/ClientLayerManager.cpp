@@ -6,7 +6,7 @@
 #include "ClientLayerManager.h"
 #include "CompositorChild.h"            // for CompositorChild
 #include "GeckoProfiler.h"              // for PROFILER_LABEL
-#include "gfxPrefs.h"                   // for gfxPrefs::LayersTileWidth/Height
+#include "gfxPrefs.h"                   // for gfxPrefs::LayersTile...
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/Hal.h"
 #include "mozilla/dom/ScreenOrientation.h"  // for ScreenOrientation
@@ -20,7 +20,7 @@
 #include "mozilla/layers/PLayerChild.h"  // for PLayerChild
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "mozilla/layers/TextureClientPool.h" // for TextureClientPool
-#include "mozilla/layers/SimpleTextureClientPool.h" // for SimpleTextureClientPool
+#include "ClientReadbackLayer.h"        // for ClientReadbackLayer
 #include "nsAString.h"
 #include "nsIWidget.h"                  // for nsIWidget
 #include "nsIWidgetListener.h"
@@ -28,15 +28,63 @@
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType, etc
 #include "TiledLayerBuffer.h"
 #include "mozilla/dom/WindowBinding.h"  // for Overfill Callback
+#include "FrameLayerBuilder.h"          // for FrameLayerbuilder
 #include "gfxPrefs.h"
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
+#include "LayerMetricsWrapper.h"
 #endif
 
 namespace mozilla {
 namespace layers {
 
 using namespace mozilla::gfx;
+
+void
+ClientLayerManager::MemoryPressureObserver::Destroy()
+{
+  UnregisterMemoryPressureEvent();
+  mClientLayerManager = nullptr;
+}
+
+NS_IMETHODIMP
+ClientLayerManager::MemoryPressureObserver::Observe(nsISupports* aSubject,
+                                                    const char* aTopic,
+                                                    const char16_t* aSomeData)
+{
+  if (!mClientLayerManager || strcmp(aTopic, "memory-pressure")) {
+    return NS_OK;
+  }
+
+  mClientLayerManager->HandleMemoryPressure();
+  return NS_OK;
+}
+
+void
+ClientLayerManager::MemoryPressureObserver::RegisterMemoryPressureEvent()
+{
+  nsCOMPtr<nsIObserverService> observerService =
+    mozilla::services::GetObserverService();
+
+  MOZ_ASSERT(observerService);
+
+  if (observerService) {
+    observerService->AddObserver(this, "memory-pressure", false);
+  }
+}
+
+void
+ClientLayerManager::MemoryPressureObserver::UnregisterMemoryPressureEvent()
+{
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  if (observerService) {
+      observerService->RemoveObserver(this, "memory-pressure");
+  }
+}
+
+NS_IMPL_ISUPPORTS(ClientLayerManager::MemoryPressureObserver, nsIObserver)
 
 ClientLayerManager::ClientLayerManager(nsIWidget* aWidget)
   : mPhase(PHASE_NONE)
@@ -52,6 +100,7 @@ ClientLayerManager::ClientLayerManager(nsIWidget* aWidget)
   , mForwarder(new ShadowLayerForwarder)
 {
   MOZ_COUNT_CTOR(ClientLayerManager);
+  mMemoryPressureObserver = new MemoryPressureObserver(this);
 }
 
 ClientLayerManager::~ClientLayerManager()
@@ -59,6 +108,7 @@ ClientLayerManager::~ClientLayerManager()
   if (mTransactionIdAllocator) {
     DidComposite(mLatestTransactionId);
   }
+  mMemoryPressureObserver->Destroy();
   ClearCachedResources();
   // Stop receiveing AsyncParentMessage at Forwarder.
   // After the call, the message is directly handled by LayerTransactionChild. 
@@ -83,9 +133,6 @@ ClientLayerManager::SetDefaultTargetConfiguration(BufferMode aDoubleBuffering,
                                                   ScreenRotation aRotation)
 {
   mTargetRotation = aRotation;
-  if (mWidget) {
-    mTargetBounds = mWidget->GetNaturalBounds();
-   }
  }
 
 void
@@ -116,10 +163,18 @@ ClientLayerManager::Mutated(Layer* aLayer)
   mForwarder->Mutated(Hold(aLayer));
 }
 
+already_AddRefed<ReadbackLayer>
+ClientLayerManager::CreateReadbackLayer()
+{
+  nsRefPtr<ReadbackLayer> layer = new ClientReadbackLayer(this);
+  return layer.forget();
+}
+
 void
 ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
 {
   mInTransaction = true;
+  mTransactionStart = TimeStamp::Now();
 
 #ifdef MOZ_LAYERS_HAVE_LOG
   MOZ_LAYERS_LOG(("[----- BeginTransaction"));
@@ -143,13 +198,12 @@ ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
     hal::GetCurrentScreenConfiguration(&currentConfig);
     orientation = currentConfig.orientation();
   }
-  nsIntRect clientBounds;
-  mWidget->GetClientBounds(clientBounds);
-  clientBounds.x = clientBounds.y = 0;
-  mForwarder->BeginTransaction(mTargetBounds, mTargetRotation, clientBounds, orientation);
+  nsIntRect targetBounds = mWidget->GetNaturalBounds();
+  targetBounds.x = targetBounds.y = 0;
+  mForwarder->BeginTransaction(targetBounds, mTargetRotation, orientation);
 
   // If we're drawing on behalf of a context with async pan/zoom
-  // enabled, then the entire buffer of thebes layers might be
+  // enabled, then the entire buffer of painted layers might be
   // composited (including resampling) asynchronously before we get
   // a chance to repaint, so we have to ensure that it's all valid
   // and not rotated.
@@ -175,12 +229,11 @@ ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
 void
 ClientLayerManager::BeginTransaction()
 {
-  mInTransaction = true;
   BeginTransactionWithTarget(nullptr);
 }
 
 bool
-ClientLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
+ClientLayerManager::EndTransactionInternal(DrawPaintedLayerCallback aCallback,
                                            void* aCallbackData,
                                            EndTransactionFlags)
 {
@@ -204,8 +257,8 @@ ClientLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
   // properties.
   GetRoot()->ApplyPendingUpdatesToSubtree();
     
-  mThebesLayerCallback = aCallback;
-  mThebesLayerCallbackData = aCallbackData;
+  mPaintedLayerCallback = aCallback;
+  mPaintedLayerCallbackData = aCallbackData;
 
   GetRoot()->ComputeEffectiveTransforms(Matrix4x4());
 
@@ -214,8 +267,8 @@ ClientLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
     GetRoot()->Mutated();
   }
   
-  mThebesLayerCallback = nullptr;
-  mThebesLayerCallbackData = nullptr;
+  mPaintedLayerCallback = nullptr;
+  mPaintedLayerCallbackData = nullptr;
 
   // Go back to the construction phase if the transaction isn't complete.
   // Layout will update the layer tree and call EndTransaction().
@@ -224,11 +277,15 @@ ClientLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
   NS_ASSERTION(!aCallback || !mTransactionIncomplete,
                "If callback is not null, transaction must be complete");
 
+  if (gfxPlatform::GetPlatform()->DidRenderingDeviceReset()) {
+    FrameLayerBuilder::InvalidateAllLayers(this);
+  }
+
   return !mTransactionIncomplete;
 }
 
 void
-ClientLayerManager::EndTransaction(DrawThebesLayerCallback aCallback,
+ClientLayerManager::EndTransaction(DrawPaintedLayerCallback aCallback,
                                    void* aCallbackData,
                                    EndTransactionFlags aFlags)
 {
@@ -251,6 +308,9 @@ ClientLayerManager::EndTransaction(DrawThebesLayerCallback aCallback,
   for (size_t i = 0; i < mTexturePools.Length(); i++) {
     mTexturePools[i]->ReturnDeferredClients();
   }
+
+  mInTransaction = false;
+  mTransactionStart = TimeStamp();
 }
 
 bool
@@ -325,6 +385,19 @@ ClientLayerManager::GetCompositorSideAPZTestData(APZTestData* aData) const
   }
 }
 
+float
+ClientLayerManager::RequestProperty(const nsAString& aProperty)
+{
+  if (mForwarder->HasShadowManager()) {
+    float value;
+    if (!mForwarder->GetShadowManager()->SendRequestProperty(nsString(aProperty), &value)) {
+      NS_WARNING("Call to PLayerTransactionChild::SendGetAPZTestData() failed");
+    }
+    return value;
+  }
+  return -1;
+}
+
 void
 ClientLayerManager::StartNewRepaintRequest(SequenceNumber aSequenceNumber)
 {
@@ -362,14 +435,6 @@ ClientLayerManager::RunOverfillCallback(const uint32_t aOverfill)
   mOverfillCallbacks.Clear();
 }
 
-static nsIntRect
-ToOutsideIntRect(const gfxRect &aRect)
-{
-  gfxRect r = aRect;
-  r.RoundOut();
-  return nsIntRect(r.X(), r.Y(), r.Width(), r.Height());
-}
-
 void
 ClientLayerManager::MakeSnapshotIfRequired()
 {
@@ -378,7 +443,17 @@ ClientLayerManager::MakeSnapshotIfRequired()
   }
   if (mWidget) {
     if (CompositorChild* remoteRenderer = GetRemoteRenderer()) {
+      // The compositor doesn't draw to a different sized surface
+      // when there's a rotation. Instead we rotate the result
+      // when drawing into dt
+      nsIntRect outerBounds;
+      mWidget->GetBounds(outerBounds);
+
       nsIntRect bounds = ToOutsideIntRect(mShadowTarget->GetClipExtents());
+      if (mTargetRotation) {
+        bounds = RotateRect(bounds, outerBounds, mTargetRotation);
+      }
+
       SurfaceDescriptor inSnapshot;
       if (!bounds.IsEmpty() &&
           mForwarder->AllocSurfaceDescriptor(bounds.Size().ToIntSize(),
@@ -387,11 +462,18 @@ ClientLayerManager::MakeSnapshotIfRequired()
           remoteRenderer->SendMakeSnapshot(inSnapshot, bounds)) {
         RefPtr<DataSourceSurface> surf = GetSurfaceForDescriptor(inSnapshot);
         DrawTarget* dt = mShadowTarget->GetDrawTarget();
+
         Rect dstRect(bounds.x, bounds.y, bounds.width, bounds.height);
         Rect srcRect(0, 0, bounds.width, bounds.height);
+
+        gfx::Matrix rotate = ComputeTransformForUnRotation(outerBounds, mTargetRotation);
+
+        gfx::Matrix oldMatrix = dt->GetTransform();
+        dt->SetTransform(oldMatrix * rotate);
         dt->DrawSurface(surf, dstRect, srcRect,
                         DrawSurfaceOptions(),
                         DrawOptions(1.0f, CompositionOp::OP_OVER));
+        dt->SetTransform(oldMatrix);
       }
       mForwarder->DestroySharedSurface(&inSnapshot);
     }
@@ -447,13 +529,19 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
   mPhase = PHASE_FORWARD;
 
   mLatestTransactionId = mTransactionIdAllocator->GetTransactionId();
+  TimeStamp transactionStart;
+  if (!mTransactionIdAllocator->GetTransactionStart().IsNull()) {
+    transactionStart = mTransactionIdAllocator->GetTransactionStart();
+  } else {
+    transactionStart = mTransactionStart;
+  }
 
   // forward this transaction's changeset to our LayerManagerComposite
   bool sent;
   AutoInfallibleTArray<EditReply, 10> replies;
-  if (HasShadowManager() && mForwarder->EndTransaction(&replies, mRegionToClear,
+  if (mForwarder->EndTransaction(&replies, mRegionToClear,
         mLatestTransactionId, aScheduleComposite, mPaintSequenceNumber,
-        mIsRepeatTransaction, &sent)) {
+        mIsRepeatTransaction, transactionStart, &sent)) {
     for (nsTArray<EditReply>::size_type i = 0; i < replies.Length(); ++i) {
       const EditReply& reply = replies[i];
 
@@ -507,18 +595,19 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
     if (sent) {
       mNeedsComposite = false;
     }
-    if (!sent || mForwarder->GetShadowManager()->HasNoCompositor()) {
-      // Clear the transaction id so that it doesn't get returned
-      // unless we forwarded to somewhere that doesn't actually
-      // have a compositor.
-      mTransactionIdAllocator->RevokeTransactionId(mLatestTransactionId);
-    }
   } else if (HasShadowManager()) {
     NS_WARNING("failed to forward Layers transaction");
   }
 
+  if (!sent) {
+    // Clear the transaction id so that it doesn't get returned
+    // unless we forwarded to somewhere that doesn't actually
+    // have a compositor.
+    mTransactionIdAllocator->RevokeTransactionId(mLatestTransactionId);
+  }
+
   mForwarder->RemoveTexturesIfNecessary();
-  mForwarder->SendPendingAsyncMessge();
+  mForwarder->SendPendingAsyncMessges();
   mPhase = PHASE_NONE;
 
   // this may result in Layers being deleted, which results in
@@ -572,24 +661,26 @@ ClientLayerManager::GetTexturePool(SurfaceFormat aFormat)
   mTexturePools.AppendElement(
       new TextureClientPool(aFormat, IntSize(gfxPrefs::LayersTileWidth(),
                                              gfxPrefs::LayersTileHeight()),
+                            gfxPrefs::LayersTileMaxPoolSize(),
+                            gfxPrefs::LayersTileShrinkPoolTimeout(),
                             mForwarder));
 
   return mTexturePools.LastElement();
 }
 
-SimpleTextureClientPool*
-ClientLayerManager::GetSimpleTileTexturePool(SurfaceFormat aFormat)
-{
-  int index = (int) aFormat;
-  mSimpleTilePools.EnsureLengthAtLeast(index+1);
+void
+ClientLayerManager::ReturnTextureClientDeferred(TextureClient& aClient) {
+  GetTexturePool(aClient.GetFormat())->ReturnTextureClientDeferred(&aClient);
+}
 
-  if (mSimpleTilePools[index].get() == nullptr) {
-    mSimpleTilePools[index] = new SimpleTextureClientPool(aFormat, IntSize(gfxPrefs::LayersTileWidth(),
-                                                                           gfxPrefs::LayersTileHeight()),
-                                                          mForwarder);
-  }
+void
+ClientLayerManager::ReturnTextureClient(TextureClient& aClient) {
+  GetTexturePool(aClient.GetFormat())->ReturnTextureClient(&aClient);
+}
 
-  return mSimpleTilePools[index];
+void
+ClientLayerManager::ReportClientLost(TextureClient& aClient) {
+  GetTexturePool(aClient.GetFormat())->ReportClientLost();
 }
 
 void
@@ -604,6 +695,14 @@ ClientLayerManager::ClearCachedResources(Layer* aSubtree)
   }
   for (size_t i = 0; i < mTexturePools.Length(); i++) {
     mTexturePools[i]->Clear();
+  }
+}
+
+void
+ClientLayerManager::HandleMemoryPressure()
+{
+  for (size_t i = 0; i < mTexturePools.Length(); i++) {
+    mTexturePools[i]->ShrinkToMinimumSize();
   }
 }
 
@@ -636,30 +735,26 @@ ClientLayerManager::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
                                               bool aDrawingCritical)
 {
 #ifdef MOZ_WIDGET_ANDROID
-  Layer* primaryScrollable = GetPrimaryScrollableLayer();
-  if (primaryScrollable) {
-    const FrameMetrics& metrics = primaryScrollable->AsContainerLayer()->GetFrameMetrics();
+  MOZ_ASSERT(aMetrics.IsScrollable());
+  // This is derived from the code in
+  // gfx/layers/ipc/CompositorParent.cpp::TransformShadowTree.
+  CSSToLayerScale paintScale = aMetrics.LayersPixelsPerCSSPixel();
+  const CSSRect& metricsDisplayPort =
+    (aDrawingCritical && !aMetrics.mCriticalDisplayPort.IsEmpty()) ?
+      aMetrics.mCriticalDisplayPort : aMetrics.mDisplayPort;
+  LayerRect displayPort = (metricsDisplayPort + aMetrics.GetScrollOffset()) * paintScale;
 
-    // This is derived from the code in
-    // gfx/layers/ipc/CompositorParent.cpp::TransformShadowTree.
-    CSSToLayerScale paintScale = metrics.LayersPixelsPerCSSPixel();
-    const CSSRect& metricsDisplayPort =
-      (aDrawingCritical && !metrics.mCriticalDisplayPort.IsEmpty()) ?
-        metrics.mCriticalDisplayPort : metrics.mDisplayPort;
-    LayerRect displayPort = (metricsDisplayPort + metrics.GetScrollOffset()) * paintScale;
-
-    ScreenPoint scrollOffset;
-    CSSToScreenScale zoom;
-    bool ret = AndroidBridge::Bridge()->ProgressiveUpdateCallback(
-      aHasPendingNewThebesContent, displayPort, paintScale.scale, aDrawingCritical,
-      scrollOffset, zoom);
-    aMetrics.SetScrollOffset(scrollOffset / zoom);
-    aMetrics.SetZoom(zoom);
-    return ret;
-  }
-#endif
-
+  ScreenPoint scrollOffset;
+  CSSToScreenScale zoom;
+  bool ret = AndroidBridge::Bridge()->ProgressiveUpdateCallback(
+    aHasPendingNewThebesContent, displayPort, paintScale.scale, aDrawingCritical,
+    scrollOffset, zoom);
+  aMetrics.SetScrollOffset(scrollOffset / zoom);
+  aMetrics.SetZoom(zoom);
+  return ret;
+#else
   return false;
+#endif
 }
 
 ClientLayer::~ClientLayer()

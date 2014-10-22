@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-PROGRAM = 'maintenanceservice'
+Program('maintenanceservice')
 
 SOURCES += [
     'certificatecheck.cpp',
@@ -45,3 +45,9 @@ if CONFIG['_MSC_VER']:
 RCINCLUDE = 'maintenanceservice.rc'
 
 DISABLE_STL_WRAPPING = True
+
+OS_LIBS += [
+    'comctl32',
+    'ws2_32',
+    'shell32',
+]

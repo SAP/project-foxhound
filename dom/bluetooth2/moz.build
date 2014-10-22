@@ -11,7 +11,10 @@ if CONFIG['MOZ_B2G_BT']:
         'BluetoothDevice.cpp',
         'BluetoothDiscoveryHandle.cpp',
         'BluetoothHidManager.cpp',
+        'BluetoothInterface.cpp',
         'BluetoothManager.cpp',
+        'BluetoothPairingHandle.cpp',
+        'BluetoothPairingListener.cpp',
         'BluetoothProfileController.cpp',
         'BluetoothReplyRunnable.cpp',
         'BluetoothService.cpp',
@@ -29,6 +32,7 @@ if CONFIG['MOZ_B2G_BT']:
 
     if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
         if CONFIG['MOZ_B2G_BT_BLUEZ']:
+            CXXFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
             SOURCES += [
                 'bluez/BluetoothA2dpManager.cpp',
                 'bluez/BluetoothDBusService.cpp',
@@ -44,11 +48,18 @@ if CONFIG['MOZ_B2G_BT']:
             DEFINES['MOZ_B2G_BT_BLUEZ'] = True
         elif CONFIG['MOZ_B2G_BT_BLUEDROID']:
             SOURCES += [
+                'bluedroid/BluetoothA2dpHALInterface.cpp',
                 'bluedroid/BluetoothA2dpManager.cpp',
-                'bluedroid/BluetoothInterface.cpp',
+                'bluedroid/BluetoothAvrcpHALInterface.cpp',
+                'bluedroid/BluetoothGattHALInterface.cpp',
+                'bluedroid/BluetoothGattManager.cpp',
+                'bluedroid/BluetoothHALHelpers.cpp',
+                'bluedroid/BluetoothHALInterface.cpp',
+                'bluedroid/BluetoothHandsfreeHALInterface.cpp',
                 'bluedroid/BluetoothOppManager.cpp',
                 'bluedroid/BluetoothServiceBluedroid.cpp',
                 'bluedroid/BluetoothSocket.cpp',
+                'bluedroid/BluetoothSocketHALInterface.cpp',
                 'bluedroid/BluetoothUtils.cpp',
             ]
             LOCAL_INCLUDES += [
@@ -72,6 +83,10 @@ if CONFIG['MOZ_B2G_BT']:
 
             DEFINES['MOZ_B2G_BT_BLUEDROID'] = True
     elif CONFIG['MOZ_ENABLE_DBUS']:
+        CFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
+        CFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
+        CXXFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
+        CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
         SOURCES += [
             'bluez/BluetoothDBusService.cpp',
             'bluez/BluetoothHfpManager.cpp',
@@ -99,6 +114,8 @@ EXPORTS.mozilla.dom.bluetooth += [
     'BluetoothDevice.h',
     'BluetoothDiscoveryHandle.h',
     'BluetoothManager.h',
+    'BluetoothPairingHandle.h',
+    'BluetoothPairingListener.h',
 ]
 
 IPDL_SOURCES += [
@@ -111,7 +128,7 @@ FAIL_ON_WARNINGS = True
 
 LOCAL_INCLUDES += [
     '../base',
-    '../network/src',
+    '../network',
     '../system/gonk',
 ]
 

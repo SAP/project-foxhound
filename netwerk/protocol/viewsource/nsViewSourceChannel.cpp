@@ -8,6 +8,7 @@
 #include "nsIIOService.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
+#include "nsContentUtils.h"
 #include "nsIHttpHeaderVisitor.h"
 
 NS_IMPL_ADDREF(nsViewSourceChannel)
@@ -85,8 +86,13 @@ nsViewSourceChannel::InitSrcdoc(nsIURI* aURI, const nsAString &aSrcdoc,
                    NS_LITERAL_STRING("about:srcdoc"));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = NS_NewInputStreamChannel(getter_AddRefs(mChannel), inStreamURI,
-                                  aSrcdoc, NS_LITERAL_CSTRING("text/html"),
+    rv = NS_NewInputStreamChannel(getter_AddRefs(mChannel),
+                                  inStreamURI,
+                                  aSrcdoc,
+                                  NS_LITERAL_CSTRING("text/html"),
+                                  nsContentUtils::GetSystemPrincipal(),
+                                  nsILoadInfo::SEC_NORMAL,
+                                  nsIContentPolicy::TYPE_OTHER,
                                   true);
 
     NS_ENSURE_SUCCESS(rv, rv);
@@ -721,10 +727,6 @@ nsViewSourceChannel::GetResponseHeader(const nsACString & aHeader,
         return NS_ERROR_NULL_POINTER;
 
     if (!aHeader.Equals(NS_LITERAL_CSTRING("Content-Type"),
-                        nsCaseInsensitiveCStringComparator()) &&
-        !aHeader.Equals(NS_LITERAL_CSTRING("X-Content-Security-Policy"),
-                        nsCaseInsensitiveCStringComparator()) &&
-        !aHeader.Equals(NS_LITERAL_CSTRING("X-Content-Security-Policy-Report-Only"),
                         nsCaseInsensitiveCStringComparator()) &&
         !aHeader.Equals(NS_LITERAL_CSTRING("Content-Security-Policy"),
                         nsCaseInsensitiveCStringComparator()) &&

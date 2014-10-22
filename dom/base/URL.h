@@ -12,6 +12,7 @@
 #include "nsString.h"
 
 class nsIDOMBlob;
+class nsIPrincipal;
 class nsISupports;
 class nsIURI;
 
@@ -22,6 +23,7 @@ class DOMMediaStream;
 
 namespace dom {
 
+class File;
 class MediaSource;
 class GlobalObject;
 struct objectURLOptions;
@@ -38,7 +40,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(URL)
 
-  URL(nsIURI* aURI);
+  explicit URL(nsIURI* aURI);
 
   // WebIDL methods
   JSObject*
@@ -52,7 +54,7 @@ public:
               const nsAString& aBase, ErrorResult& aRv);
 
   static void CreateObjectURL(const GlobalObject& aGlobal,
-                              nsIDOMBlob* aBlob,
+                              File& aBlob,
                               const objectURLOptions& aOptions,
                               nsString& aResult,
                               ErrorResult& aError);
@@ -121,7 +123,7 @@ public:
   }
 
   // URLSearchParamsObserver
-  void URLSearchParamsUpdated() MOZ_OVERRIDE;
+  void URLSearchParamsUpdated(URLSearchParams* aSearchParams) MOZ_OVERRIDE;
 
 private:
   nsIURI* GetURI() const

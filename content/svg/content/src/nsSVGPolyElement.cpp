@@ -5,7 +5,6 @@
 
 #include "nsSVGPolyElement.h"
 #include "DOMSVGPointList.h"
-#include "gfxContext.h"
 #include "mozilla/gfx/2D.h"
 #include "SVGContentUtils.h"
 
@@ -121,20 +120,6 @@ nsSVGPolyElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks)
   aMarks->LastElement().type = nsSVGMark::eEnd;
 }
 
-void
-nsSVGPolyElement::ConstructPath(gfxContext *aCtx)
-{
-  const SVGPointList &points = mPoints.GetAnimValue();
-
-  if (!points.Length())
-    return;
-
-  aCtx->MoveTo(points[0]);
-  for (uint32_t i = 1; i < points.Length(); ++i) {
-    aCtx->LineTo(points[i]);
-  }
-}
-
 TemporaryRef<Path>
 nsSVGPolyElement::BuildPath(PathBuilder* aBuilder)
 {
@@ -144,12 +129,10 @@ nsSVGPolyElement::BuildPath(PathBuilder* aBuilder)
     return nullptr;
   }
 
-  RefPtr<PathBuilder> pathBuilder = aBuilder ? aBuilder : CreatePathBuilder();
-
-  pathBuilder->MoveTo(points[0]);
+  aBuilder->MoveTo(points[0]);
   for (uint32_t i = 1; i < points.Length(); ++i) {
-    pathBuilder->LineTo(points[i]);
+    aBuilder->LineTo(points[i]);
   }
 
-  return pathBuilder->Finish();
+  return aBuilder->Finish();
 }

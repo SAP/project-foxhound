@@ -26,7 +26,6 @@ AudioListener::AudioListener(AudioContext* aContext)
   , mSpeedOfSound(343.3) // meters/second
 {
   MOZ_ASSERT(aContext);
-  SetIsDOMBinding();
 }
 
 JSObject*
@@ -72,7 +71,7 @@ AudioListener::SetOrientation(double aX, double aY, double aZ,
 void
 AudioListener::RegisterPannerNode(PannerNode* aPannerNode)
 {
-  mPanners.AppendElement(aPannerNode->asWeakPtr());
+  mPanners.AppendElement(aPannerNode);
 
   // Let the panner node know about our parameters
   aPannerNode->SendThreeDPointParameterToStream(PannerNode::LISTENER_POSITION, mPosition);

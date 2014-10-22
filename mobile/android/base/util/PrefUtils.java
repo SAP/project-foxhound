@@ -5,15 +5,15 @@
 
 package org.mozilla.gecko.util;
 
-import android.content.SharedPreferences;
-import android.os.Build;
-import android.util.Log;
-
 import java.util.HashSet;
 import java.util.Set;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.mozilla.gecko.AppConstants.Versions;
+
+import android.content.SharedPreferences;
+import android.util.Log;
 
 
 public class PrefUtils {
@@ -27,7 +27,7 @@ public class PrefUtils {
             return defaultVal;
         }
 
-        if (Build.VERSION.SDK_INT < 11) {
+        if (Versions.preHC) {
             return getFromJSON(prefs, key);
         }
 
@@ -54,19 +54,27 @@ public class PrefUtils {
         return new HashSet<String>();
     }
 
-    // Cross version compatible way to save a string set to a pref.
-    // NOTE: The editor that is passed in will not commit the transaction for you. It is up to callers to commit
-    //       when they are done with any other changes to the database.
-    public static SharedPreferences.Editor putStringSet(final SharedPreferences.Editor edit,
+    /**
+     * Cross version compatible way to save a set of strings.
+     * <p>
+     * This method <b>does not commit</b> any transaction. It is up to callers
+     * to commit.
+     *
+     * @param editor to write to.
+     * @param key to write.
+     * @param vals comprising string set.
+     * @return
+     */
+    public static SharedPreferences.Editor putStringSet(final SharedPreferences.Editor editor,
                                     final String key,
                                     final Set<String> vals) {
-        if (Build.VERSION.SDK_INT < 11) {
+        if (Versions.preHC) {
             final JSONArray json = new JSONArray(vals);
-            edit.putString(key, json.toString()).apply();
+            editor.putString(key, json.toString());
         } else {
-            edit.putStringSet(key, vals).apply();
+            editor.putStringSet(key, vals);
         }
 
-        return edit;
+        return editor;
     }
 }

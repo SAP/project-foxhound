@@ -17,9 +17,11 @@
 #include "nsPresContext.h"
 #include "nsRenderingContext.h"
 #include "nsStyleContext.h"
+#include "nsStyleUtil.h"
 #include "prlog.h"
 #include <algorithm>
 #include "mozilla/LinkedList.h"
+#include "mozilla/FloatingPoint.h"
 
 using namespace mozilla;
 using namespace mozilla::layout;
@@ -171,7 +173,7 @@ PhysicalPosFromLogicalPos(nscoord aLogicalPosn,
 // Encapsulates our flex container's main & cross axes.
 class MOZ_STACK_CLASS nsFlexContainerFrame::FlexboxAxisTracker {
 public:
-  FlexboxAxisTracker(nsFlexContainerFrame* aFlexContainerFrame);
+  explicit FlexboxAxisTracker(nsFlexContainerFrame* aFlexContainerFrame);
 
   // Accessors:
   AxisOrientationType GetMainAxis() const  { return mMainAxis;  }
@@ -571,7 +573,8 @@ protected:
 
   // These are non-const so that we can lazily update them with the item's
   // intrinsic size (obtained via a "measuring" reflow), when necessary.
-  // (e.g. for "flex-basis:auto;height:auto" & "min-height:auto")
+  // (e.g. if we have a vertical flex item with "flex-basis:auto",
+  // "flex-basis:main-size;height:auto", or "min-height:auto")
   nscoord mFlexBaseSize;
   nscoord mMainMinSize;
   nscoord mMainMaxSize;
@@ -1123,10 +1126,6 @@ CrossSizeToUseWithRatio(const FlexItem& aFlexItem,
   return NS_AUTOHEIGHT;
 }
 
-// XXX This macro shamelessly stolen from nsLayoutUtils.cpp.
-// (Maybe it should be exposed via a nsLayoutUtils method?)
-#define MULDIV(a,b,c) (nscoord(int64_t(a) * int64_t(b) / int64_t(c)))
-
 // Convenience function; returns a main-size, given a cross-size and an
 // intrinsic ratio. The intrinsic ratio must not have 0 in its cross-axis
 // component (or else we'll divide by 0).
@@ -1140,10 +1139,10 @@ MainSizeFromAspectRatio(nscoord aCrossSize,
 
   if (IsAxisHorizontal(aAxisTracker.GetCrossAxis())) {
     // cross axis horiz --> aCrossSize is a width. Converting to height.
-    return MULDIV(aCrossSize, aIntrinsicRatio.height, aIntrinsicRatio.width);
+    return NSCoordMulDiv(aCrossSize, aIntrinsicRatio.height, aIntrinsicRatio.width);
   }
   // cross axis vert --> aCrossSize is a height. Converting to width.
-  return MULDIV(aCrossSize, aIntrinsicRatio.width, aIntrinsicRatio.height);
+  return NSCoordMulDiv(aCrossSize, aIntrinsicRatio.width, aIntrinsicRatio.height);
 }
 
 // Partially resolves "min-[width|height]:auto" and returns the resulting value.
@@ -1166,10 +1165,10 @@ PartiallyResolveAutoMinSize(const FlexItem& aFlexItem,
                                      // from here, w/ std::min().
 
   // We need the smallest of:
-  // * the used flex-basis, if the computed flex-basis was 'auto':
-  // XXXdholbert ('auto' might be renamed to 'main-size'; see bug 1032922)
-  if (eStyleUnit_Auto ==
-      aItemReflowState.mStylePosition->mFlexBasis.GetUnit() &&
+  // * the used flex-basis, if the computed flex-basis was 'main-size':
+  const nsStyleCoord& flexBasis = aItemReflowState.mStylePosition->mFlexBasis;
+  const bool isHorizontal = IsAxisHorizontal(aAxisTracker.GetMainAxis());
+  if (nsStyleUtil::IsFlexBasisMainSize(flexBasis, isHorizontal) &&
       aFlexItem.GetFlexBaseSize() != NS_AUTOHEIGHT) {
     // NOTE: We skip this if the flex base size depends on content & isn't yet
     // resolved. This is OK, because the caller is responsible for computing
@@ -1223,7 +1222,7 @@ ResolveAutoFlexBasisFromRatio(FlexItem& aFlexItem,
              "Should only be called to resolve an 'auto' flex-basis");
   // If the flex item has ...
   //  - an intrinsic aspect ratio,
-  //  - a [used] flex-basis of 'main-size' [auto?] [We have this, if we're here.]
+  //  - a [used] flex-basis of 'main-size' [We have this, if we're here.]
   //  - a definite cross size
   // then the flex base size is calculated from its inner cross size and the
   // flex item’s intrinsic aspect ratio.
@@ -1661,7 +1660,7 @@ public:
 
 protected:
   // Protected constructor, to be sure we're only instantiated via a subclass.
-  PositionTracker(AxisOrientationType aAxis)
+  explicit PositionTracker(AxisOrientationType aAxis)
     : mPosition(0),
       mAxis(aAxis)
   {}
@@ -1748,7 +1747,7 @@ private:
 // single flex line.
 class MOZ_STACK_CLASS SingleLineCrossAxisPositionTracker : public PositionTracker {
 public:
-  SingleLineCrossAxisPositionTracker(const FlexboxAxisTracker& aAxisTracker);
+  explicit SingleLineCrossAxisPositionTracker(const FlexboxAxisTracker& aAxisTracker);
 
   void ResolveAutoMarginsInCrossAxis(const FlexLine& aLine,
                                      FlexItem& aItem);
@@ -1839,7 +1838,13 @@ nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                        const nsRect&           aDirtyRect,
                                        const nsDisplayListSet& aLists)
 {
+  // XXXdholbert hacky temporary band-aid for bug 1059138: Trivially pass this
+  // assertion (skip it, basically) if the first child is part of a shadow DOM.
+  // (IsOrderLEQWithDOMFallback doesn't know how to compare tree-position of a
+  // shadow-DOM element vs. a non-shadow-DOM element.)
   NS_ASSERTION(
+    (!mFrames.IsEmpty() &&
+     mFrames.FirstChild()->GetContent()->GetContainingShadow()) ||
     nsIFrame::IsFrameListSorted<IsOrderLEQWithDOMFallback>(mFrames),
     "Child frames aren't sorted correctly");
 
@@ -2124,7 +2129,7 @@ FlexLine::ResolveFlexibleLengths(nscoord aFlexContainerMainSize)
           weightSum += curWeight;
           flexFactorSum += curFlexFactor;
 
-          if (NS_finite(weightSum)) {
+          if (IsFinite(weightSum)) {
             if (curWeight == 0.0f) {
               item->SetShareOfWeightSoFar(0.0f);
             } else {
@@ -2195,7 +2200,7 @@ FlexLine::ResolveFlexibleLengths(nscoord aFlexContainerMainSize)
             // To avoid rounding issues, we compute the change in size for this
             // item, and then subtract it from the remaining available space.
             nscoord sizeDelta = 0;
-            if (NS_finite(weightSum)) {
+            if (IsFinite(weightSum)) {
               float myShareOfRemainingSpace =
                 item->GetShareOfWeightSoFar();
 
@@ -3439,8 +3444,8 @@ nsFlexContainerFrame::Reflow(nsPresContext*           aPresContext,
 class MOZ_STACK_CLASS AutoFlexLineListClearer
 {
 public:
-  AutoFlexLineListClearer(LinkedList<FlexLine>& aLines
-                          MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoFlexLineListClearer(LinkedList<FlexLine>& aLines
+                                   MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
   : mLines(aLines)
   {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;

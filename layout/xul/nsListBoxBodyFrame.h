@@ -9,7 +9,6 @@
 #include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsBoxFrame.h"
-#include "nsIListBoxObject.h"
 #include "nsIScrollbarMediator.h"
 #include "nsIReflowCallback.h"
 #include "nsBoxLayoutState.h"
@@ -21,9 +20,9 @@ class nsListScrollSmoother;
 nsIFrame* NS_NewListBoxBodyFrame(nsIPresShell* aPresShell,
                                  nsStyleContext* aContext);
 
-class nsListBoxBodyFrame : public nsBoxFrame,
-                           public nsIScrollbarMediator,
-                           public nsIReflowCallback
+class nsListBoxBodyFrame MOZ_FINAL : public nsBoxFrame,
+                                     public nsIScrollbarMediator,
+                                     public nsIReflowCallback
 {
   nsListBoxBodyFrame(nsIPresShell* aPresShell, nsStyleContext* aContext,
                      nsBoxLayout* aLayoutManager);
@@ -34,10 +33,9 @@ public:
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS
 
-  // non-virtual nsIListBoxObject
-  nsresult GetRowCount(int32_t *aResult);
-  nsresult GetNumberOfVisibleRows(int32_t *aResult);
-  nsresult GetIndexOfFirstVisibleRow(int32_t *aResult);
+  // non-virtual ListBoxObject
+  int32_t GetNumberOfVisibleRows();
+  int32_t GetIndexOfFirstVisibleRow();
   nsresult EnsureIndexIsVisible(int32_t aRowIndex);
   nsresult ScrollToIndex(int32_t aRowIndex);
   nsresult ScrollByLines(int32_t aNumLines);
@@ -56,9 +54,18 @@ public:
   virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsIAtom* aAttribute, int32_t aModType) MOZ_OVERRIDE;
 
   // nsIScrollbarMediator
-  NS_IMETHOD PositionChanged(nsScrollbarFrame* aScrollbar, int32_t aOldIndex, int32_t& aNewIndex) MOZ_OVERRIDE;
-  NS_IMETHOD ScrollbarButtonPressed(nsScrollbarFrame* aScrollbar, int32_t aOldIndex, int32_t aNewIndex) MOZ_OVERRIDE;
-  NS_IMETHOD VisibilityChanged(bool aVisible) MOZ_OVERRIDE;
+  virtual void ScrollByPage(nsScrollbarFrame* aScrollbar, int32_t aDirection) MOZ_OVERRIDE;
+  virtual void ScrollByWhole(nsScrollbarFrame* aScrollbar, int32_t aDirection) MOZ_OVERRIDE;
+  virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection) MOZ_OVERRIDE;
+  virtual void RepeatButtonScroll(nsScrollbarFrame* aScrollbar) MOZ_OVERRIDE;
+  virtual void ThumbMoved(nsScrollbarFrame* aScrollbar,
+                          int32_t aOldPos,
+                          int32_t aNewPos) MOZ_OVERRIDE;
+  virtual void VisibilityChanged(bool aVisible) MOZ_OVERRIDE;
+  virtual nsIFrame* GetScrollbarBox(bool aVertical) MOZ_OVERRIDE;
+  virtual void ScrollbarActivityStarted() const MOZ_OVERRIDE {}
+  virtual void ScrollbarActivityStopped() const MOZ_OVERRIDE {}
+
 
   // nsIReflowCallback
   virtual bool ReflowFinished() MOZ_OVERRIDE;
@@ -89,6 +96,8 @@ public:
   nsresult DoInternalPositionChanged(bool aUp, int32_t aDelta);
   nsListScrollSmoother* GetSmoother();
   void VerticalScroll(int32_t aDelta);
+  // Update the scroll index given a position, in CSS pixels
+  void UpdateIndex(int32_t aNewPos);
 
   // frames
   nsIFrame* GetFirstFrame();
@@ -156,6 +165,7 @@ protected:
   };
 
   void ComputeTotalRowCount();
+  int32_t ToRowIndex(nscoord aPos) const;
   void RemoveChildFrame(nsBoxLayoutState &aState, nsIFrame *aChild);
 
   nsTArray< nsRefPtr<nsPositionChangedEvent> > mPendingPositionChangeEvents;

@@ -12,7 +12,6 @@
 #include "nsContentUtils.h"
 #include "xpcprivate.h"
 #include "jsfriendapi.h"
-#include "nsCxPusher.h"
 #include "AccessCheck.h"
 
 using namespace JS;
@@ -21,37 +20,21 @@ using namespace mozilla::jsipc;
 
 using mozilla::AutoSafeJSContext;
 
-#ifdef NIGHTLY_BUILD
 static void
-UrgentMessageCheck(JSContext *cx, HandleScript script)
+UpdateChildWeakPointersAfterGC(JSRuntime *rt, void *data)
 {
-    // We're only allowed to enter chrome JS code while processing urgent
-    // messages.
-    if (ipc::ProcessingUrgentMessages())
-        MOZ_RELEASE_ASSERT(xpc::AccessCheck::isChrome(js::GetContextCompartment(cx)));
-}
-#endif
-
-static void
-FinalizeChild(JSFreeOp *fop, JSFinalizeStatus status, bool isCompartment, void *data)
-{
-    if (status == JSFINALIZE_GROUP_START) {
-        static_cast<JavaScriptChild *>(data)->finalize(fop);
-    }
+    static_cast<JavaScriptChild *>(data)->updateWeakPointers();
 }
 
 JavaScriptChild::JavaScriptChild(JSRuntime *rt)
   : JavaScriptShared(rt),
     JavaScriptBase<PJavaScriptChild>(rt)
 {
-#ifdef NIGHTLY_BUILD
-    js::SetAssertOnScriptEntryHook(rt, UrgentMessageCheck);
-#endif
 }
 
 JavaScriptChild::~JavaScriptChild()
 {
-    JS_RemoveFinalizeCallback(rt_, FinalizeChild);
+    JS_RemoveWeakPointerCallback(rt_, UpdateChildWeakPointersAfterGC);
 }
 
 bool
@@ -62,13 +45,22 @@ JavaScriptChild::init()
     if (!WrapperAnswer::init())
         return false;
 
-    JS_AddFinalizeCallback(rt_, FinalizeChild, this);
+    JS_AddWeakPointerCallback(rt_, UpdateChildWeakPointersAfterGC, this);
     return true;
 }
 
 void
-JavaScriptChild::finalize(JSFreeOp *fop)
+JavaScriptChild::updateWeakPointers()
 {
-    objects_.finalize(fop);
-    objectIds_.finalize(fop);
+    objects_.sweep();
+    unwaivedObjectIds_.sweep();
+    waivedObjectIds_.sweep();
+}
+
+JSObject *
+JavaScriptChild::scopeForTargetObjects()
+{
+    // CPOWs from the parent need to point into the child's privileged junk
+    // scope so that they can benefit from XrayWrappers in the child.
+    return xpc::PrivilegedJunkScope();
 }

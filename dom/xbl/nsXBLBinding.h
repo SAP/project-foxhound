@@ -40,7 +40,7 @@ class nsAnonymousContentList;
 class nsXBLBinding MOZ_FINAL
 {
 public:
-  nsXBLBinding(nsXBLPrototypeBinding* aProtoBinding);
+  explicit nsXBLBinding(nsXBLPrototypeBinding* aProtoBinding);
   nsXBLBinding(mozilla::dom::ShadowRoot* aShadowRoot, nsXBLPrototypeBinding* aProtoBinding);
 
   /**
@@ -162,6 +162,7 @@ protected:
 
   bool mMarkedForDeath;
   bool mUsingContentXBLScope;
+  bool mIsShadowRootBinding;
 
   nsXBLPrototypeBinding* mPrototypeBinding; // Weak, but we're holding a ref to the docinfo
   nsCOMPtr<nsIContent> mContent; // Strong. Our anonymous content stays around with us.

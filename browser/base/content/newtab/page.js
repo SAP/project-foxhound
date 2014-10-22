@@ -24,17 +24,6 @@ let gPage = {
     // listen from the xul window and filter then delegate
     addEventListener("click", this, false);
 
-    // Initialize sponsored panel
-    this._sponsoredPanel = document.getElementById("sponsored-panel");
-    let link = this._sponsoredPanel.querySelector(".text-link");
-    link.addEventListener("click", () => this._sponsoredPanel.hidePopup());
-    if (UpdateChannel.get().startsWith("release")) {
-      document.getElementById("sponsored-panel-trial-descr").style.display = "none";
-    }
-    else {
-      document.getElementById("sponsored-panel-release-descr").style.display = "none";
-    }
-
     // Check if the new tab feature is enabled.
     let enabled = gAllPages.enabled;
     if (enabled)
@@ -44,6 +33,9 @@ let gPage = {
 
     // Initialize customize controls.
     gCustomize.init();
+
+    // Initialize intro panel.
+    gIntro.init();
   },
 
   /**
@@ -90,21 +82,6 @@ let gPage = {
   },
 
   /**
-   * Shows sponsored panel
-   */
-  showSponsoredPanel: function Page_showSponsoredPanel(aTarget) {
-    if (this._sponsoredPanel.state == "closed") {
-      let self = this;
-      this._sponsoredPanel.addEventListener("popuphidden", function onPopupHidden(aEvent) {
-        self._sponsoredPanel.removeEventListener("popuphidden", onPopupHidden, false);
-        aTarget.removeAttribute("panelShown");
-      });
-    }
-    aTarget.setAttribute("panelShown", "true");
-    this._sponsoredPanel.openPopup(aTarget);
-  },
-
-  /**
    * Internally initializes the page. This runs only when/if the feature
    * is/gets enabled.
    */
@@ -120,7 +97,7 @@ let gPage = {
     if (document.hidden) {
       addEventListener("visibilitychange", this);
     } else {
-      this.onPageFirstVisible();
+      setTimeout(_ => this.onPageFirstVisible());
     }
 
     // Initialize and render the grid.
@@ -165,6 +142,9 @@ let gPage = {
    */
   handleEvent: function Page_handleEvent(aEvent) {
     switch (aEvent.type) {
+      case "load":
+        this.onPageVisibleAndLoaded();
+        break;
       case "unload":
         gAllPages.unregister(this);
         break;
@@ -200,42 +180,47 @@ let gPage = {
     // Record another page impression.
     Services.telemetry.getHistogramById("NEWTAB_PAGE_SHOWN").add(true);
 
-    // Initialize type counting with the types we want to count
-    let directoryCount = {};
-    for (let type of DirectoryLinksProvider.linkTypes) {
-      directoryCount[type] = 0;
-    }
-
     for (let site of gGrid.sites) {
       if (site) {
         site.captureIfMissing();
+      }
+    }
 
-        // Record which tile index a directory link was shown
-        let {directoryIndex, type} = site.link;
-        if (directoryIndex !== undefined) {
-          let tileIndex = site.cell.index;
-          // For telemetry, only handle the first 9 links in the first 9 cells
-          if (directoryIndex < 9) {
-            let shownId = "NEWTAB_PAGE_DIRECTORY_LINK" + directoryIndex + "_SHOWN";
-            Services.telemetry.getHistogramById(shownId).add(Math.min(9, tileIndex));
-          }
-        }
+    if (document.readyState == "complete") {
+      this.onPageVisibleAndLoaded();
+    } else {
+      addEventListener("load", this);
+    }
+  },
 
-        // Aggregate tile impression counts into directory types
-        if (type in directoryCount) {
-          directoryCount[type]++;
+  onPageVisibleAndLoaded() {
+    // Send the index of the last visible tile.
+    this.reportLastVisibleTileIndex();
+
+    // Show the panel now that anchors are sized
+    gIntro.showIfNecessary();
+  },
+
+  reportLastVisibleTileIndex() {
+    let cwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                    .getInterface(Ci.nsIDOMWindowUtils);
+
+    let rect = cwu.getBoundsWithoutFlushing(gGrid.node);
+    let nodes = cwu.nodesFromRect(rect.left, rect.top, 0, rect.width,
+                                  rect.height, 0, true, false);
+
+    let i = -1;
+    let lastIndex = -1;
+    let sites = gGrid.sites;
+
+    for (let node of nodes) {
+      if (node.classList && node.classList.contains("newtab-cell")) {
+        if (sites[++i]) {
+          lastIndex = i;
         }
       }
     }
 
-    DirectoryLinksProvider.reportShownCount(directoryCount);
-    // Record how many directory sites were shown, but place counts over the
-    // default 9 in the same bucket
-    for (let type of Object.keys(directoryCount)) {
-      let count = directoryCount[type];
-      let shownId = "NEWTAB_PAGE_DIRECTORY_" + type.toUpperCase() + "_SHOWN";
-      let shownCount = Math.min(10, count);
-      Services.telemetry.getHistogramById(shownId).add(shownCount);
-    }
+    DirectoryLinksProvider.reportSitesAction(sites, "view", lastIndex);
   }
 };

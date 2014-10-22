@@ -50,10 +50,10 @@ class AFakePCObserver;
 
 #ifdef USE_FAKE_MEDIA_STREAMS
 class Fake_DOMMediaStream;
+class Fake_MediaStreamTrack;
 #endif
 
 class nsGlobalWindow;
-class nsIDOMMediaStream;
 class nsDOMDataChannel;
 
 namespace mozilla {
@@ -74,7 +74,11 @@ class DOMMediaStream;
 namespace dom {
 struct RTCConfiguration;
 struct RTCOfferOptions;
+#ifdef USE_FAKE_MEDIA_STREAMS
+typedef Fake_MediaStreamTrack MediaStreamTrack;
+#else
 class MediaStreamTrack;
+#endif
 
 #ifdef USE_FAKE_PCOBSERVER
 typedef test::AFakePCObserver PeerConnectionObserver;
@@ -104,6 +108,8 @@ void func (__VA_ARGS__, rv)
 NS_IMETHODIMP func(__VA_ARGS__, resulttype **result);                  \
 already_AddRefed<resulttype> func (__VA_ARGS__, rv)
 
+struct MediaStreamTable;
+
 namespace sipcc {
 
 using mozilla::dom::PeerConnectionObserver;
@@ -123,7 +129,6 @@ using mozilla::PeerIdentity;
 class PeerConnectionWrapper;
 class PeerConnectionMedia;
 class RemoteSourceStreamInfo;
-class OnCallEventArgs;
 
 class IceConfiguration
 {
@@ -135,6 +140,7 @@ public:
       return false;
     }
     addStunServer(*server);
+    delete server;
     return true;
   }
   bool addTurnServer(const std::string& addr, uint16_t port,
@@ -152,6 +158,7 @@ public:
       return false;
     }
     addTurnServer(*server);
+    delete server;
     return true;
   }
   void addStunServer(const NrIceStunServer& server) { mStunServers.push_back (server); }
@@ -196,6 +203,12 @@ class RTCStatsQuery {
       nsresult res = CheckApiState(assert_ice_ready);             \
       if (NS_FAILED(res)) return res; \
     } while(0)
+#define PC_AUTO_ENTER_API_CALL_VOID_RETURN(assert_ice_ready) \
+    do { \
+      /* do/while prevents res from conflicting with locals */    \
+      nsresult res = CheckApiState(assert_ice_ready);             \
+      if (NS_FAILED(res)) return; \
+    } while(0)
 #define PC_AUTO_ENTER_API_CALL_NO_CHECK() CheckThread()
 
 class PeerConnectionImpl MOZ_FINAL : public nsISupports,
@@ -209,7 +222,7 @@ class PeerConnectionImpl MOZ_FINAL : public nsISupports,
   struct Internal; // Avoid exposing c includes to bindings
 
 public:
-  PeerConnectionImpl(const mozilla::dom::GlobalObject* aGlobal = nullptr);
+  explicit PeerConnectionImpl(const mozilla::dom::GlobalObject* aGlobal = nullptr);
 
   enum Error {
     kNoError                          = 0,
@@ -237,9 +250,6 @@ public:
 
   nsresult CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>* aInfo);
 
-  // Implementation of the only observer we need
-  void onCallEvent(const OnCallEventArgs &args);
-
   // DataConnection observers
   void NotifyDataChannel(already_AddRefed<mozilla::DataChannel> aChannel);
 
@@ -248,6 +258,9 @@ public:
     PC_AUTO_ENTER_API_CALL_NO_CHECK();
     return mMedia;
   }
+
+  // Configure the ability to use localhost.
+  void SetAllowIceLoopback(bool val) { mAllowIceLoopback = val; }
 
   // Handle system to allow weak references to be passed through C code
   virtual const std::string& GetHandle();
@@ -284,7 +297,7 @@ public:
   std::string GetFingerprintHexValue() const;
 
   // Create a fake media stream
-  nsresult CreateFakeMediaStream(uint32_t hint, nsIDOMMediaStream** retval);
+  nsresult CreateFakeMediaStream(uint32_t hint, mozilla::DOMMediaStream** retval);
 
   nsPIDOMWindow* GetWindow() const {
     PC_AUTO_ENTER_API_CALL_NO_CHECK();
@@ -356,6 +369,8 @@ public:
                          NS_ConvertUTF16toUTF8(aMid).get(), aLevel);
   }
 
+  void OnRemoteStreamAdded(const MediaStreamTable& aStream);
+
   NS_IMETHODIMP CloseStreams();
 
   void CloseStreams(ErrorResult &rv)
@@ -363,18 +378,29 @@ public:
     rv = CloseStreams();
   }
 
-  NS_IMETHODIMP_TO_ERRORRESULT(AddStream, ErrorResult &rv,
-                               DOMMediaStream& aMediaStream)
+  NS_IMETHODIMP_TO_ERRORRESULT(AddTrack, ErrorResult &rv,
+      mozilla::dom::MediaStreamTrack& aTrack,
+      const mozilla::dom::Sequence<mozilla::dom::OwningNonNull<DOMMediaStream>>& aStreams)
   {
-    rv = AddStream(aMediaStream);
+    rv = AddTrack(aTrack, aStreams);
   }
 
-  NS_IMETHODIMP_TO_ERRORRESULT(RemoveStream, ErrorResult &rv,
-                               DOMMediaStream& aMediaStream)
+  NS_IMETHODIMP_TO_ERRORRESULT(RemoveTrack, ErrorResult &rv,
+                               mozilla::dom::MediaStreamTrack& aTrack)
   {
-    rv = RemoveStream(aMediaStream);
+    rv = RemoveTrack(aTrack);
   }
 
+  nsresult
+  AddTrack(mozilla::dom::MediaStreamTrack& aTrack, DOMMediaStream& aStream);
+
+  NS_IMETHODIMP_TO_ERRORRESULT(ReplaceTrack, ErrorResult &rv,
+                               mozilla::dom::MediaStreamTrack& aThisTrack,
+                               mozilla::dom::MediaStreamTrack& aWithTrack,
+                               DOMMediaStream& aStream)
+  {
+    rv = ReplaceTrack(aThisTrack, aWithTrack, aStream);
+  }
 
   nsresult GetPeerIdentity(nsAString& peerIdentity)
   {
@@ -424,7 +450,7 @@ public:
     char *tmp;
     GetLocalDescription(&tmp);
     aSDP.AssignASCII(tmp);
-    delete tmp;
+    delete[] tmp;
   }
 
   NS_IMETHODIMP GetRemoteDescription(char** aSDP);
@@ -434,7 +460,7 @@ public:
     char *tmp;
     GetRemoteDescription(&tmp);
     aSDP.AssignASCII(tmp);
-    delete tmp;
+    delete[] tmp;
   }
 
   NS_IMETHODIMP SignalingState(mozilla::dom::PCImplSignalingState* aState);
@@ -482,7 +508,9 @@ public:
     rv = Close();
   }
 
-  bool PluginCrash(uint64_t aPluginID);
+  bool PluginCrash(uint64_t aPluginID,
+                   const nsAString& aPluginName,
+                   const nsAString& aPluginDumpID);
 
   nsresult InitializeDataChannel(int track_id, uint16_t aLocalport,
                                  uint16_t aRemoteport, uint16_t aNumstreams);
@@ -527,6 +555,16 @@ public:
   // is called to start the list over.
   void ClearSdpParseErrorMessages();
 
+  void StartTrickle();
+
+  // Called by VcmSIPCCBinding::vcmRxAllocICE; this is how sipcc tells us about
+  // each m-line it has put in the sdp.
+  void OnNewMline(uint16_t level) {
+    if (level > mNumMlines) {
+      mNumMlines = level;
+    }
+  }
+
   void OnAddIceCandidateError() {
     ++mAddCandidateErrorCount;
   }
@@ -536,6 +574,9 @@ public:
 
   // Sets the RTC Signaling State
   void SetSignalingState_m(mozilla::dom::PCImplSignalingState aSignalingState);
+
+  // Updates the RTC signaling state based on the sipcc state
+  void UpdateSignalingState();
 
   bool IsClosed() const;
   // called when DTLS connects; we only need this once
@@ -596,11 +637,11 @@ private:
   // Shut down media - called on main thread only
   void ShutdownMedia();
 
-  // ICE callbacks run on the right thread.
-  nsresult IceConnectionStateChange_m(
-      mozilla::dom::PCImplIceConnectionState aState);
-  nsresult IceGatheringStateChange_m(
-      mozilla::dom::PCImplIceGatheringState aState);
+  void CandidateReady(const std::string& candidate, uint16_t level);
+  void SendLocalIceCandidateToContent(uint16_t level,
+                                      const std::string& mid,
+                                      const std::string& candidate);
+  void FoundIceCandidate(const std::string& candidate, uint16_t level);
 
   NS_IMETHOD FingerprintSplitHelper(
       std::string& fingerprint, size_t& spaceIdx) const;
@@ -655,6 +696,9 @@ private:
   std::string mLocalSDP;
   std::string mRemoteSDP;
 
+  // Holding tank for trickle candidates that arrive before setLocal is done.
+  std::vector<std::pair<std::string, uint16_t>> mCandidateBuffer;
+
   // DTLS fingerprint
   std::string mFingerprint;
   std::string mRemoteFingerprint;
@@ -688,6 +732,7 @@ private:
   nsRefPtr<mozilla::DataChannelConnection> mDataConnection;
 #endif
 
+  bool mAllowIceLoopback;
   nsRefPtr<PeerConnectionMedia> mMedia;
 
 #ifdef MOZILLA_INTERNAL_API
@@ -706,6 +751,8 @@ private:
 
   bool mHaveDataStream;
 
+  uint16_t mNumMlines;
+
   // Holder for error messages from parsing SDP
   std::vector<std::string> mSDPParseErrorMessages;
   unsigned int mAddCandidateErrorCount;
@@ -723,7 +770,7 @@ public:
 class PeerConnectionWrapper
 {
  public:
-  PeerConnectionWrapper(const std::string& handle);
+  explicit PeerConnectionWrapper(const std::string& handle);
 
   PeerConnectionImpl *impl() { return impl_; }
 

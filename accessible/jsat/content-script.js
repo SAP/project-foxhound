@@ -20,6 +20,8 @@ XPCOMUtils.defineLazyModuleGetter(this, 'ContentControl',
   'resource://gre/modules/accessibility/ContentControl.jsm');
 XPCOMUtils.defineLazyModuleGetter(this, 'Roles',
   'resource://gre/modules/accessibility/Constants.jsm');
+XPCOMUtils.defineLazyModuleGetter(this, 'States',
+  'resource://gre/modules/accessibility/Constants.jsm');
 
 Logger.debug('content-script.js');
 
@@ -65,14 +67,10 @@ function forwardToChild(aMessage, aListener, aVCPosition) {
 }
 
 function activateContextMenu(aMessage) {
-  function sendContextMenuCoordinates(aAccessible) {
-    let bounds = Utils.getBounds(aAccessible);
-    sendAsyncMessage('AccessFu:ActivateContextMenu', {bounds: bounds});
-  }
-
   let position = Utils.getVirtualCursor(content.document).position;
   if (!forwardToChild(aMessage, activateContextMenu, position)) {
-    sendContextMenuCoordinates(position);
+    sendAsyncMessage('AccessFu:ActivateContextMenu',
+      { bounds: Utils.getBounds(position, true) });
   }
 }
 
@@ -85,46 +83,15 @@ function presentCaretChange(aText, aOldOffset, aNewOffset) {
 }
 
 function scroll(aMessage) {
-  function sendScrollCoordinates(aAccessible) {
-    let bounds = Utils.getBounds(aAccessible);
+  let position = Utils.getVirtualCursor(content.document).position;
+  if (!forwardToChild(aMessage, scroll, position)) {
     sendAsyncMessage('AccessFu:DoScroll',
-                     { bounds: bounds,
+                     { bounds: Utils.getBounds(position, true),
                        page: aMessage.json.page,
                        horizontal: aMessage.json.horizontal });
   }
-
-  let position = Utils.getVirtualCursor(content.document).position;
-  if (!forwardToChild(aMessage, scroll, position)) {
-    sendScrollCoordinates(position);
-  }
 }
 
-function adjustRange(aMessage) {
-  function sendUpDownKey(aAccessible) {
-    let acc = Utils.getEmbeddedControl(aAccessible) || aAccessible;
-    let elem = acc.DOMNode;
-    if (elem) {
-      if (elem.tagName === 'INPUT' && elem.type === 'range') {
-        elem[aMessage.json.direction === 'forward' ? 'stepDown' : 'stepUp']();
-        let changeEvent = content.document.createEvent('UIEvent');
-        changeEvent.initEvent('change', true, true);
-        elem.dispatchEvent(changeEvent);
-      } else {
-        let evt = content.document.createEvent('KeyboardEvent');
-        let keycode = aMessage.json.direction == 'forward' ?
-              content.KeyEvent.DOM_VK_DOWN : content.KeyEvent.DOM_VK_UP;
-        evt.initKeyEvent(
-          "keypress", false, true, null, false, false, false, false, keycode, 0);
-        elem.dispatchEvent(evt);
-      }
-    }
-  }
-
-  let position = Utils.getVirtualCursor(content.document).position;
-  if (!forwardToChild(aMessage, adjustRange, position)) {
-    sendUpDownKey(position);
-  }
-}
 addMessageListener(
   'AccessFu:Start',
   function(m) {
@@ -138,7 +105,6 @@ addMessageListener(
 
     addMessageListener('AccessFu:ContextMenu', activateContextMenu);
     addMessageListener('AccessFu:Scroll', scroll);
-    addMessageListener('AccessFu:AdjustRange', adjustRange);
 
     if (!contentControl) {
       contentControl = new ContentControl(this);
@@ -148,9 +114,23 @@ addMessageListener(
     if (!eventManager) {
       eventManager = new EventManager(this, contentControl);
     }
+    eventManager.inTest = m.json.inTest;
     eventManager.start();
 
-    sendAsyncMessage('AccessFu:ContentStarted');
+    function contentStarted() {
+      let accDoc = Utils.AccRetrieval.getAccessibleFor(content.document);
+      if (accDoc && !Utils.getState(accDoc).contains(States.BUSY)) {
+        sendAsyncMessage('AccessFu:ContentStarted');
+      } else {
+        content.setTimeout(contentStarted, 0);
+      }
+    }
+
+    if (m.json.inTest) {
+      // During a test we want to wait for the document to finish loading for
+      // consistency.
+      contentStarted();
+    }
   });
 
 addMessageListener(

@@ -6,9 +6,9 @@ package org.mozilla.gecko.favicons;
 
 
 import android.content.ContentResolver;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.net.http.AndroidHttpClient;
-import android.os.Handler;
 import android.text.TextUtils;
 import android.util.Log;
 import org.apache.http.Header;
@@ -20,9 +20,8 @@ import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.favicons.decoders.FaviconDecoder;
 import org.mozilla.gecko.favicons.decoders.LoadFaviconResult;
 import org.mozilla.gecko.util.GeckoJarReader;
+import org.mozilla.gecko.util.IOUtils;
 import org.mozilla.gecko.util.ThreadUtils;
-import org.mozilla.gecko.util.UiAsyncTask;
-import static org.mozilla.gecko.favicons.Favicons.context;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,7 +30,10 @@ import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.mozilla.gecko.util.IOUtils.ConsumedInputStream;
 
 /**
  * Class representing the asynchronous task to load a Favicon which is not currently in the in-memory
@@ -39,28 +41,29 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The implementation initially tries to get the Favicon from the database. Upon failure, the icon
  * is loaded from the internet.
  */
-public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
+public class LoadFaviconTask {
     private static final String LOGTAG = "LoadFaviconTask";
 
     // Access to this map needs to be synchronized prevent multiple jobs loading the same favicon
     // from executing concurrently.
-    private static final HashMap<String, LoadFaviconTask> loadsInFlight = new HashMap<String, LoadFaviconTask>();
+    private static final HashMap<String, LoadFaviconTask> loadsInFlight = new HashMap<>();
 
     public static final int FLAG_PERSIST = 1;
-    public static final int FLAG_SCALE = 2;
     private static final int MAX_REDIRECTS_TO_FOLLOW = 5;
     // The default size of the buffer to use for downloading Favicons in the event no size is given
     // by the server.
-    private static final int DEFAULT_FAVICON_BUFFER_SIZE = 25000;
+    public static final int DEFAULT_FAVICON_BUFFER_SIZE = 25000;
 
-    private static AtomicInteger nextFaviconLoadId = new AtomicInteger(0);
-    private int id;
-    private String pageUrl;
+    private static final AtomicInteger nextFaviconLoadId = new AtomicInteger(0);
+    private final Context context;
+    private final int id;
+    private final String pageUrl;
     private String faviconURL;
-    private OnFaviconLoadedListener listener;
-    private int flags;
+    private final OnFaviconLoadedListener listener;
+    private final int flags;
 
     private final boolean onlyFromLocal;
+    volatile boolean mCancelled;
 
     // Assuming square favicons, judging by width only is acceptable.
     protected int targetWidth;
@@ -69,20 +72,17 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
 
     static AndroidHttpClient httpClient = AndroidHttpClient.newInstance(GeckoAppShell.getGeckoInterface().getDefaultUAString());
 
-    public LoadFaviconTask(Handler backgroundThreadHandler,
-                           String pageUrl, String faviconUrl, int flags,
-                           OnFaviconLoadedListener listener) {
-        this(backgroundThreadHandler, pageUrl, faviconUrl, flags, listener, -1, false);
+    public LoadFaviconTask(Context context, String pageURL, String faviconURL, int flags, OnFaviconLoadedListener listener) {
+        this(context, pageURL, faviconURL, flags, listener, -1, false);
     }
-    public LoadFaviconTask(Handler backgroundThreadHandler,
-                           String pageUrl, String faviconUrl, int flags,
-                           OnFaviconLoadedListener listener, int targetWidth, boolean onlyFromLocal) {
-        super(backgroundThreadHandler);
 
+    public LoadFaviconTask(Context context, String pageURL, String faviconURL, int flags, OnFaviconLoadedListener listener,
+                           int targetWidth, boolean onlyFromLocal) {
         id = nextFaviconLoadId.incrementAndGet();
 
-        this.pageUrl = pageUrl;
-        this.faviconURL = faviconUrl;
+        this.context = context;
+        this.pageUrl = pageURL;
+        this.faviconURL = faviconURL;
         this.listener = listener;
         this.flags = flags;
         this.targetWidth = targetWidth;
@@ -115,7 +115,7 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
      * @return The HttpResponse containing the downloaded Favicon if successful, null otherwise.
      */
     private HttpResponse tryDownload(URI faviconURI) throws URISyntaxException, IOException {
-        HashSet<String> visitedLinkSet = new HashSet<String>();
+        HashSet<String> visitedLinkSet = new HashSet<>();
         visitedLinkSet.add(faviconURI.toString());
         return tryDownloadRecurse(faviconURI, visitedLinkSet);
     }
@@ -140,25 +140,42 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
                 Header header = response.getFirstHeader("Location");
 
                 // Handle mad webservers.
-                if (header == null) {
-                    return null;
+                final String newURI;
+                try {
+                    if (header == null) {
+                        return null;
+                    }
+
+                    newURI = header.getValue();
+                    if (newURI == null || newURI.equals(faviconURI.toString())) {
+                        return null;
+                    }
+
+                    if (visited.contains(newURI)) {
+                        // Already been redirected here - abort.
+                        return null;
+                    }
+
+                    visited.add(newURI);
+                } finally {
+                    // Consume the entity before recurse or exit.
+                    try {
+                        response.getEntity().consumeContent();
+                    } catch (Exception e) {
+                        // Doesn't matter.
+                    }
                 }
 
-                String newURI = header.getValue();
-                if (newURI == null || newURI.equals(faviconURI.toString())) {
-                    return null;
-                }
-
-                if (visited.contains(newURI)) {
-                    // Already been redirected here - abort.
-                    return null;
-                }
-
-                visited.add(newURI);
                 return tryDownloadRecurse(new URI(newURI), visited);
             }
 
             if (status >= 400) {
+                // Consume the entity and exit.
+                try {
+                    response.getEntity().consumeContent();
+                } catch (Exception e) {
+                    // Doesn't matter.
+                }
                 return null;
             }
         }
@@ -169,7 +186,7 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
      * Retrieve the specified favicon from the JAR, returning null if it's not
      * a JAR URI.
      */
-    private static Bitmap fetchJARFavicon(String uri) {
+    private Bitmap fetchJARFavicon(String uri) {
         if (uri == null) {
             return null;
         }
@@ -205,6 +222,8 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
             result = downloadAndDecodeImage(targetFaviconURI);
         } catch (Exception e) {
             Log.e(LOGTAG, "Error reading favicon", e);
+        } catch (OutOfMemoryError e) {
+            Log.e(LOGTAG, "Insufficient memory to process favicon");
         }
 
         return result;
@@ -233,6 +252,26 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
             return null;
         }
 
+        // Decode the image from the fetched response.
+        try {
+            return decodeImageFromResponse(entity);
+        } finally {
+            // Close the stream and free related resources.
+            entity.consumeContent();
+        }
+    }
+
+    /**
+     * Copies the favicon stream to a buffer and decodes downloaded content  into bitmaps using the
+     * FaviconDecoder.
+     *
+     * @param entity HttpEntity containing the favicon stream to decode.
+     * @return A LoadFaviconResult containing the bitmap(s) extracted from the downloaded file, or
+     *         null if no or corrupt data were received.
+     * @throws IOException If attempts to fully read the stream result in such an exception, such as
+     *                     in the event of a transient connection failure.
+     */
+    private LoadFaviconResult decodeImageFromResponse(HttpEntity entity) throws IOException {
         // This may not be provided, but if it is, it's useful.
         final long entityReportedLength = entity.getContentLength();
         int bufferSize;
@@ -245,45 +284,63 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
             bufferSize = DEFAULT_FAVICON_BUFFER_SIZE;
         }
 
-        // Allocate a buffer to hold the raw favicon data downloaded.
-        byte[] buffer = new byte[bufferSize];
-
-        // The offset of the start of the buffer's free space.
-        int bPointer = 0;
-
-        // The quantity of bytes the last call to read yielded.
-        int lastRead = 0;
-        InputStream contentStream = entity.getContent();
-        try {
-            // Fully read the entity into the buffer - decoding of streams is not supported
-            // (and questionably pointful - what would one do with a half-decoded Favicon?)
-            while (lastRead != -1) {
-                // Read as many bytes as are currently available into the buffer.
-                lastRead = contentStream.read(buffer, bPointer, buffer.length - bPointer);
-                bPointer += lastRead;
-
-                // If buffer has overflowed, double its size and carry on.
-                if (bPointer == buffer.length) {
-                    bufferSize *= 2;
-                    byte[] newBuffer = new byte[bufferSize];
-
-                    // Copy the contents of the old buffer into the new buffer.
-                    System.arraycopy(buffer, 0, newBuffer, 0, buffer.length);
-                    buffer = newBuffer;
-                }
-            }
-        } finally {
-            contentStream.close();
+        // Read the InputStream into a byte[].
+        ConsumedInputStream result = IOUtils.readFully(entity.getContent(), bufferSize);
+        if (result == null) {
+            return null;
         }
 
         // Having downloaded the image, decode it.
-        return FaviconDecoder.decodeFavicon(buffer, 0, bPointer + 1);
+        return FaviconDecoder.decodeFavicon(result.getData(), 0, result.consumedLength);
     }
 
-    @Override
-    protected Bitmap doInBackground(Void... unused) {
+    // LoadFaviconTasks are performed on a unique background executor thread
+    // to avoid network blocking.
+    public final void execute() {
+        try {
+            Favicons.longRunningExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    final Bitmap result = doInBackground();
+
+                    ThreadUtils.getUiHandler().post(new Runnable() {
+                       @Override
+                        public void run() {
+                            if (mCancelled) {
+                                onCancelled();
+                            } else {
+                                onPostExecute(result);
+                            }
+                        }
+                    });
+                }
+            });
+          } catch (RejectedExecutionException e) {
+              // If our executor is unavailable.
+              onCancelled();
+          }
+    }
+
+    public final boolean cancel() {
+        mCancelled = true;
+        return true;
+    }
+
+    public final boolean isCancelled() {
+        return mCancelled;
+    }
+
+    Bitmap doInBackground() {
         if (isCancelled()) {
             return null;
+        }
+
+        // Attempt to decode the favicon URL as a data URL. We don't bother storing such URIs in
+        // the database: the cost of decoding them here probably doesn't exceed the cost of mucking
+        // about with the DB.
+        LoadFaviconResult uriBitmaps = FaviconDecoder.decodeDataURI(faviconURL);
+        if (uriBitmaps != null) {
+            return pushToCacheAndGetResult(uriBitmaps);
         }
 
         String storedFaviconUrl;
@@ -297,7 +354,7 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
 
             // If that failed, try to get the URL from the database.
             if (storedFaviconUrl == null) {
-                storedFaviconUrl = Favicons.getFaviconURLForPageURL(pageUrl);
+                storedFaviconUrl = Favicons.getFaviconURLForPageURL(context, pageUrl);
                 if (storedFaviconUrl != null) {
                     // If that succeeded, cache the URL loaded from the database in memory.
                     Favicons.putFaviconURLForPageURLInCache(pageUrl, storedFaviconUrl);
@@ -446,8 +503,7 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
                image.getHeight() > 0;
     }
 
-    @Override
-    protected void onPostExecute(Bitmap image) {
+    void onPostExecute(Bitmap image) {
         if (isChaining) {
             return;
         }
@@ -491,8 +547,7 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
         Favicons.dispatchResult(pageUrl, faviconURL, scaled, listener);
     }
 
-    @Override
-    protected void onCancelled() {
+    void onCancelled() {
         Favicons.removeLoadTask(id);
 
         synchronized(loadsInFlight) {
@@ -526,7 +581,7 @@ public class LoadFaviconTask extends UiAsyncTask<Void, Void, Bitmap> {
      */
     private void chainTasks(LoadFaviconTask aChainee) {
         if (chainees == null) {
-            chainees = new LinkedList<LoadFaviconTask>();
+            chainees = new LinkedList<>();
         }
 
         chainees.add(aChainee);
