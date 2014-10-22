@@ -167,14 +167,14 @@ taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last,
 ({ \
     bool bres = str; \
     RootedValue patVal(cx, StringValue(g.regExp().getSource())); \
-    JSObject *obj = (JSObject*)args.rval().get().toObjectOrNull(); \
-    if(!obj) \
-        return bres; \
-    for(uint32_t ki = 0; ki < obj->getDenseInitializedLength(); ki++) { \
-        RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-        Value vstr = obj->getDenseElement(ki); \
-        if(vstr.isString()) \
-            taint_add_op(vstr.toString()->getTopTaintRef(), "match", patVal, resultIdx); \
+    NativeObject *obj = js::MaybeNativeObject(args.rval().get().toObjectOrNull()); \
+    if(obj) { \
+        for(uint32_t ki = 0; ki < obj->getDenseInitializedLength(); ki++) { \
+            RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
+            Value vstr = obj->getDenseElement(ki); \
+            if(vstr.isString()) \
+                taint_add_op(vstr.toString()->getTopTaintRef(), "match", patVal, resultIdx); \
+        } \
     } \
     bres; \
 })
@@ -196,9 +196,12 @@ taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last,
 })
 #define TAINT_MARK_SPLIT \
     RootedValue splitVal(cx, args[0]); \
-    for(uint32_t ki = 0; ki < aobj->getDenseInitializedLength(); ki++) { \
-        RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-        taint_add_op(aobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", splitVal, resultIdx); \
+    NativeObject *nobj = js::MaybeNativeObject(aobj); \
+    if(nobj) { \
+        for(uint32_t ki = 0; ki < nobj->getDenseInitializedLength(); ki++) { \
+            RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
+            taint_add_op(nobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", splitVal, resultIdx); \
+        } \
     }
 
 

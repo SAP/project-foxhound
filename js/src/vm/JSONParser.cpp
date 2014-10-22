@@ -113,6 +113,10 @@ JSONParser<CharT>::readString()
     MOZ_ASSERT(current < end);
     MOZ_ASSERT(*current == '"');
 
+#if _TAINT_ON_
+    TAINT_JSON_PARSE_PRE
+#endif
+
     /*
      * JSONString:
      *   /^"([^\u0000-\u001F"\\]|\\(["/\\bfnrt]|u[0-9a-fA-F]{4}))*"$/
@@ -129,6 +133,9 @@ JSONParser<CharT>::readString()
      */
     CharPtr start = current;
     for (; current < end; current++) {
+#if _TAINT_ON_
+        TAINT_JSON_PARSE_OPT
+#endif
         if (*current == '"') {
             size_t length = current - start;
             current++;
@@ -137,6 +144,10 @@ JSONParser<CharT>::readString()
                                 : NewStringCopyN<CanGC>(cx, start.get(), length);
             if (!str)
                 return token(OOM);
+#if _TAINT_ON_
+            TAINT_JSON_PARSE_OPT
+            TAINT_JSON_PARSE_APPLY
+#endif
             return stringToken(str);
         }
 
@@ -148,6 +159,10 @@ JSONParser<CharT>::readString()
             return token(Error);
         }
     }
+
+#if _TAINT_ON_
+    TAINT_JSON_PARSE_OPT
+#endif
 
     /*
      * Slow case: string contains escaped characters.  Copy a maximal sequence
@@ -169,6 +184,9 @@ JSONParser<CharT>::readString()
                                 : buffer.finishString();
             if (!str)
                 return token(OOM);
+#if _TAINT_ON_
+            TAINT_JSON_PARSE_APPLY
+#endif
             return stringToken(str);
         }
 
@@ -231,6 +249,9 @@ JSONParser<CharT>::readString()
 
         start = current;
         for (; current < end; current++) {
+#if _TAINT_ON_
+            TAINT_JSON_PARSE_MATCH
+#endif
             if (*current == '"' || *current == '\\' || *current <= 0x001F)
                 break;
         }

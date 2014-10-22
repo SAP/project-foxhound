@@ -674,8 +674,8 @@ DoSubstr(JSContext *cx, JSString *str, size_t begin, size_t len)
         //but is covered by tests, so no problem :)
         TAINT_ITER_TAINTREF(rhs)
         {
-            JS_ASSERT(tsr->thisTaint->param1.isInt32());
-            JS_ASSERT(tsr->thisTaint->param2.isInt32());
+            MOZ_ASSERT(tsr->thisTaint->param1.isInt32());
+            MOZ_ASSERT(tsr->thisTaint->param2.isInt32());
             tsr->thisTaint->param1 = INT_TO_JSVAL(tsr->thisTaint->param1.toInt32() + ropeRoot->leftChild()->length());
             tsr->thisTaint->param2 = INT_TO_JSVAL(tsr->thisTaint->param2.toInt32() + ropeRoot->leftChild()->length());
         }

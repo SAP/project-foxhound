@@ -144,7 +144,7 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
 
     RootedString taintedStr(cx);
     {
-        AutoCheckCannotGC nogc;
+        JS::AutoCheckCannotGC nogc;
         JSLinearString *linear = str->ensureLinear(cx);
         if(linear->hasLatin1Chars()) {
             taintedStr = NewStringCopyN<NoGC>(cx, 
@@ -244,7 +244,7 @@ template <typename TaintedT>
 TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
-    JS_ASSERT(dst && src);
+    MOZ_ASSERT(dst && src);
 
     TaintStringRef *newchainlast = nullptr;
 
@@ -325,7 +325,7 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
     //we are in the same TSR, still
     if(sidx > source->begin) {
         //if we were called ever idx a new tsr should be created in *target
-        JS_ASSERT(*target);
+        MOZ_ASSERT(*target);
         
         if(sidx <= source->end) { //this will trigger len(str) times //<=
             (*target)->end = tidx;
@@ -409,7 +409,7 @@ taint_str_taintref_build()
 void
 taint_remove_all(TaintStringRef **start, TaintStringRef **end)
 {
-    JS_ASSERT(end && start);
+    MOZ_ASSERT(end && start);
 
 #if DEBUG
     bool found_end = false;
@@ -427,7 +427,7 @@ taint_remove_all(TaintStringRef **start, TaintStringRef **end)
     }
 
 #if DEBUG
-    JS_ASSERT(!(*end) || found_end);
+    MOZ_ASSERT(!(*end) || found_end);
 #endif
     *start = nullptr;
     if(end)
