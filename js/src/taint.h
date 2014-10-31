@@ -104,6 +104,8 @@ template <typename TaintedT>
 TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
+void taint_str_addref(JSString *str, TaintStringRef* ref);
+
 #define TAINT_ITER_TAINTREF(str) \
     for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
 

@@ -276,6 +276,12 @@ taint_inject_substring_op(ExclusiveContext *cx, TaintStringRef *last,
         }
 }
 
+void
+taint_str_addref(JSString *str, TaintStringRef *ref)
+{
+    str->addTaintRef(ref);
+}
+
 //duplicate all taintstringrefs form a string to another
 //and point to the same nodes (shallow copy)
 template <typename TaintedT>
