@@ -10,6 +10,8 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 
+#include "taint.h"
+
 template<class T> struct already_AddRefed;
 
 /**
@@ -28,8 +30,55 @@ private:
 
   mozilla::Atomic<int32_t> mRefCount;
   uint32_t mStorageSize;
+#if _TAINT_ON_
+  TaintStringRef *startTaint;
+  TaintStringRef *endTaint;
+  uintptr_t ownTaint;
+#endif
 
 public:
+
+#if _TAINT_ON_
+    
+    bool isTainted() const {
+        /*MOZ_ASSERT(!!startTaint == !!endTaint);*/
+        return startTaint;
+    }
+    
+    TaintStringRef *getTopTaintRef() const {
+        return startTaint;
+    }
+
+    
+    TaintStringRef *getBottomTaintRef() const {
+        return endTaint;
+    }
+
+    
+    void addTaintRef(TaintStringRef *tsr)  {
+        MOZ_ASSERT(!isTainted() || ownTaint == 1,
+          "StringBuffer only allows taint modification if not externally tainted before");
+        //or else we can't decide what to delete
+        startTaint = endTaint = tsr;
+        ownTaint = 1;
+
+        ffTaint();
+    }
+
+    
+    void ffTaint() {
+        if(endTaint)
+            for(; endTaint->next != nullptr; endTaint = endTaint->next);
+    }
+
+    
+    void removeAllTaint() {
+      if(!isTainted())
+        return;
+      MOZ_ASSERT(ownTaint == 1, "Do not delete foreign taint.");
+      taint_remove_all(&startTaint, &endTaint);
+    }
+#endif
 
   /**
    * Allocates a new string buffer, with given size in bytes and a

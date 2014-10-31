@@ -7,13 +7,12 @@
 #include "jsarray.h"
 #include "taint-private.h"
 
+#include <algorithm>
+
 using namespace js;
 
 //------------------------------------
 // Local helpers
-
-#define MAX(x,y) ((x) >= (y) ? x : y)
-#define MIN(x,y) ((x) <= (y) ? x : y)
 
 inline void*
 taint_new_tainref_mem()
@@ -32,6 +31,9 @@ taint_str_add_source_node(const char *fn)
 void taint_tag_source_internal(JSString * str, const char* name, 
     uint32_t begin = 0, uint32_t end = 0)
 {
+    if(str->length() == 0)
+        return;
+
     if(end == 0)
         end = str->length();
 
@@ -162,6 +164,42 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
+TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end,
+    uint32_t frombegin, int32_t offset, uint32_t fromend)
+{
+    MOZ_ASSERT(src);
+
+    TaintStringRef *start = nullptr;
+    TaintStringRef *last = nullptr;
+    
+    for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
+    {
+        if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
+            continue;
+
+        uint32_t begin = std::max(frombegin, tsr->begin);
+        uint32_t end   = (fromend > 0 ? std::min(tsr->end, fromend) : tsr->end);
+        
+        TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
+        newtsr->begin = begin - frombegin + offset;
+        newtsr->end   = end - frombegin + offset;
+
+        //add the first element directly to the string
+        //all others will be appended to it
+        if(!start)
+            start = newtsr;
+        if(last)
+            last->next = newtsr;
+
+        last = newtsr;
+    }
+
+    if(taint_end)
+        *taint_end = last;
+
+    return start;
+}
+
 //----------------------------------
 // Taint reporter
 
@@ -245,41 +283,7 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
     MOZ_ASSERT(dst && src);
-
-    TaintStringRef *newchainlast = nullptr;
-
-/*
-    //look for the currect insertion point in dst
-    for(TaintStringRef *itr = dst->getTopTaintRef(); 
-        itr != nullptr && itr->end <= offset;
-        itr = itr->next) {
-
-        newchainlast = itr;
-    } */
-    
-    for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
-    {
-        if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
-            continue;
-
-        uint32_t begin = MAX(frombegin, tsr->begin);
-        uint32_t end   = (fromend > 0 ? MIN(tsr->end, fromend) : tsr->end);
-        
-        TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
-        newtsr->begin = begin - frombegin + offset;
-        newtsr->end   = end - frombegin + offset;
-
-        //add the first element directly to the string
-        //all others will be appended to it
-        if(!newchainlast)
-            dst->addTaintRef(newtsr);
-        else
-            newchainlast->next = newtsr;
-
-        newchainlast = newtsr;
-    }
-    if(newchainlast)
-        dst->ffTaint();
+    dst->addTaintRef(taint_duplicate_range(src, NULL, frombegin, offset, fromend));
 
     return dst;
 }

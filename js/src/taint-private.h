@@ -107,8 +107,6 @@ taint_copy_exact(TaintStringRef **target,
         taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); \
     res; \
 })
-#define TAINT_ITER_TAINTREF(str) \
-    for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
 
 //other shortcut
 JSString*

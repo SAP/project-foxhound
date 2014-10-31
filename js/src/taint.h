@@ -77,6 +77,9 @@ template <typename TaintedT>
 void taint_tag_source(TaintedT * str, const char* name, 
     uint32_t begin = 0, uint32_t end = 0)
 {
+    if(str->Length() == 0)
+        return;
+
     if(end == 0)
         end = str->Length();
 
@@ -89,6 +92,10 @@ void taint_tag_source(TaintedT * str, const char* name,
     str->addTaintRef(newtsr);
 }
 
+TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end,
+    uint32_t frombegin, int32_t offset, uint32_t fromend);
+
+
 //partial taint copy
 // - copy taint from source from frombegin until fromend
 // - insert at offset into dst
@@ -97,6 +104,8 @@ template <typename TaintedT>
 TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
+#define TAINT_ITER_TAINTREF(str) \
+    for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
 
 #define TAINT_STRING_HOOKS(startTaint, endTaint)        \
     MOZ_ALWAYS_INLINE                                   \
@@ -141,7 +150,7 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     MOZ_ALWAYS_INLINE                                   \
     void removeAllTaint() {                             \
         taint_remove_all(&startTaint, &endTaint);       \
-    }                                                   
+    }
 
 #endif
 

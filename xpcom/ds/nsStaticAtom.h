@@ -10,10 +10,16 @@
 #include "nsStringBuffer.h"
 #include "prlog.h"
 
+#include "taint.h"
+
 typedef char16_t nsStaticAtomStringType;
 
 #define NS_STATIC_ATOM(buffer_name, atom_ptr)  { (nsStringBuffer*) &buffer_name, atom_ptr }
-#define NS_STATIC_ATOM_BUFFER(buffer_name, str_data) static nsFakeStringBuffer< sizeof(str_data) > buffer_name = { 1, sizeof(str_data) * sizeof(nsStaticAtomStringType), MOZ_UTF16(str_data) };
+#if _TAINT_ON_
+	#define NS_STATIC_ATOM_BUFFER(buffer_name, str_data) static nsFakeStringBuffer< sizeof(str_data) > buffer_name = { 1, sizeof(str_data) * sizeof(nsStaticAtomStringType), nullptr, nullptr, 0, MOZ_UTF16(str_data) };
+#else
+	#define NS_STATIC_ATOM_BUFFER(buffer_name, str_data) static nsFakeStringBuffer< sizeof(str_data) > buffer_name = { 1, sizeof(str_data) * sizeof(nsStaticAtomStringType), MOZ_UTF16(str_data) };
+#endif
 
 /**
  * Holds data used to initialize large number of atoms during startup. Use
@@ -34,6 +40,11 @@ struct nsFakeStringBuffer
 {
   int32_t mRefCnt;
   uint32_t mSize;
+#if _TAINT_ON_
+  TaintStringRef *startTaint;
+  TaintStringRef *endTaint;
+  uintptr_t ownTaint;
+#endif
   nsStaticAtomStringType mStringData[size];
 };
 

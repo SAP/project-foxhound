@@ -200,6 +200,10 @@ nsStringBuffer::Release()
   NS_LOG_RELEASE(this, count, "nsStringBuffer");
   if (count == 0) {
     STRING_STAT_INCREMENT(Free);
+    if(ownTaint == 1) {
+      removeAllTaint();
+      ownTaint = 0;
+    }
     free(this); // we were allocated with |malloc|
   }
 }
@@ -222,6 +226,11 @@ nsStringBuffer::Alloc(size_t aSize)
 
     hdr->mRefCount = 1;
     hdr->mStorageSize = aSize;
+#if _TAINT_ON_
+    hdr->startTaint = nullptr;
+    hdr->endTaint = nullptr;
+    hdr->ownTaint = 0;
+#endif
     NS_LOG_ADDREF(hdr, 1, "nsStringBuffer", sizeof(*hdr));
   }
   return dont_AddRef(hdr);
@@ -264,7 +273,30 @@ nsStringBuffer::FromString(const nsAString& aStr)
     return nullptr;
   }
 
-  return FromData(accessor->data());
+  nsStringBuffer *buf = FromData(accessor->data());
+
+#if _TAINT_ON_
+  //as we are using the same buffer for
+  //both the StringBuffer and the string,
+  //we assume the taint to be the same
+  //and thus just copy the refs on first access
+  if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
+    if(buf->isTainted() && buf->ownTaint == 1) {
+      buf->removeAllTaint();
+      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint, 0, 0, 0);
+    }
+    else {
+      //overwrite if not tainted or taint originates another FromString
+      buf->startTaint = aStr.getTopTaintRef();
+      buf->endTaint = aStr.getBottomTaintRef();
+    }
+
+    buf->ownTaint = 0;
+  }
+
+#endif
+
+  return buf;
 }
 
 nsStringBuffer*
@@ -277,7 +309,26 @@ nsStringBuffer::FromString(const nsACString& aStr)
     return nullptr;
   }
 
-  return FromData(accessor->data());
+  nsStringBuffer *buf = FromData(accessor->data());
+
+#if _TAINT_ON_
+  if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
+    if(buf->isTainted() && buf->ownTaint == 1) {
+      buf->removeAllTaint();
+      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint, 0, 0, 0);
+    }
+    else {
+      buf->startTaint = aStr.getTopTaintRef();
+      buf->endTaint = aStr.getBottomTaintRef();
+    }
+
+    buf->ownTaint = 0;
+
+  }
+
+#endif
+
+  return buf;
 }
 
 void
@@ -297,6 +348,9 @@ nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
     AddRef();
   }
   accessor->set(data, aLen, flags);
+#if _TAINT_ON_
+  aStr.addTaintRef(startTaint);
+#endif
 }
 
 void
@@ -316,6 +370,9 @@ nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
     AddRef();
   }
   accessor->set(data, aLen, flags);
+#if _TAINT_ON_
+  aStr.addTaintRef(startTaint);
+#endif
 }
 
 size_t

@@ -24,6 +24,8 @@
 #include "prlog.h"
 #include "nsTArray.h"
 
+#include "taint.h"
+
 /**
  * Comparison function for use with nsACString::Equals
  */
@@ -456,6 +458,32 @@ public:
                                   uint32_t aRadix = 10) const;
 #endif // XPCOM_GLUE_AVOID_NSPR
 
+#if _TAINT_ON_
+  bool isTainted() const {
+    return TAINT_NS_StringTainted(*this);
+  }
+
+  TaintStringRef *getTopTaintRef() {
+    return TAINT_NS_StringTopTaint(*this);
+  }
+
+  TaintStringRef *getBottomTaintRef() {
+    return TAINT_NS_StringBottomTaint(*this);
+  }
+
+  void addTaintRef(TaintStringRef *tsr)  {
+    TAINT_NS_StringAddTaintRef(*this, tsr);
+  }
+
+  void ffTaint() {
+    TAINT_NS_StringFfTaint(*this);
+  };
+
+  void removeAllTaint() {
+    TAINT_NS_StringRemoveAll(*this);
+  }
+#endif
+
 protected:
   // Prevent people from allocating a nsAString directly.
   ~nsAString() {}
@@ -868,6 +896,32 @@ public:
   NS_HIDDEN_(int64_t) ToInteger64(nsresult* aErrorCode,
                                   uint32_t aRadix = 10) const;
 #endif // XPCOM_GLUE_AVOID_NSPR
+
+#if _TAINT_ON_
+  bool isTainted() const {
+    return TAINT_NS_CStringTainted(*this);
+  }
+
+  TaintStringRef *getTopTaintRef() {
+    return TAINT_NS_CStringTopTaint(*this);
+  }
+
+  TaintStringRef *getBottomTaintRef() {
+    return TAINT_NS_CStringBottomTaint(*this);
+  }
+
+  void addTaintRef(TaintStringRef *tsr)  {
+    TAINT_NS_CStringAddTaintRef(*this, tsr);
+  }
+
+  void ffTaint() {
+    TAINT_NS_CStringFfTaint(*this);
+  };
+
+  void removeAllTaint() {
+    TAINT_NS_CStringRemoveAll(*this);
+  }
+#endif
 
 protected:
   // Prevent people from allocating a nsAString directly.

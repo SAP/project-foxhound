@@ -21,6 +21,8 @@
 
 #include "nscore.h"
 
+#include "taint.h"
+
 /* The base string types */
 class nsAString;
 class nsACString;
@@ -747,5 +749,38 @@ XPCOM_API(nsresult) NS_CStringToUTF16(const nsACString& aSource,
 XPCOM_API(nsresult) NS_UTF16ToCString(const nsAString& aSource,
                                       nsCStringEncoding aDestEncoding,
                                       nsACString& aDest);
+
+
+/* ------------------------------------------------------------------------- */
+
+#if _TAINT_ON_
+
+XPCOM_API(bool) TAINT_NS_StringTainted(const nsAString& aString);
+
+XPCOM_API(TaintStringRef*) TAINT_NS_StringTopTaint(nsAString& aString);
+
+XPCOM_API(TaintStringRef*) TAINT_NS_StringBottomTaint(nsAString& aString);
+
+XPCOM_API(void) TAINT_NS_StringAddTaintRef(nsAString& aString, TaintStringRef *ref);
+
+XPCOM_API(void) TAINT_NS_StringFfTaint(nsAString& aString);
+
+XPCOM_API(void) TAINT_NS_StringRemoveAll(nsAString& aString);
+
+
+
+XPCOM_API(bool) TAINT_NS_CStringTainted(const nsACString& aString);
+
+XPCOM_API(TaintStringRef*) TAINT_NS_CStringTopTaint(nsACString& aString);
+
+XPCOM_API(TaintStringRef*) TAINT_NS_CStringBottomTaint(nsACString& aString);
+
+XPCOM_API(void) TAINT_NS_CStringAddTaintRef(nsACString& aString, TaintStringRef *ref);
+
+XPCOM_API(void) TAINT_NS_CStringFfTaint(nsACString& aString);
+
+XPCOM_API(void) TAINT_NS_CStringRemoveAll(nsACString& aString);
+
+#endif
 
 #endif // nsXPCOMStrings_h__
