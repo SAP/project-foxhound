@@ -167,7 +167,8 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
 TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
-    MOZ_ASSERT(src);
+    if(!src)
+        return nullptr;
 
     TaintStringRef *start = nullptr;
     TaintStringRef *last = nullptr;
@@ -276,10 +277,20 @@ taint_inject_substring_op(ExclusiveContext *cx, TaintStringRef *last,
         }
 }
 
+// This looks outright stupid. Maybe it even is...
+// I is used when the full JSString* declaration is not yet
+// available but as a mere forward declaration, which prevents
+// us from adding the ref directly. A call bypasses this.
 void
 taint_str_addref(JSString *str, TaintStringRef *ref)
 {
     str->addTaintRef(ref);
+}
+
+TaintStringRef *
+taint_get_top(JSString *str)
+{
+    return str->getTopTaintRef();
 }
 
 //duplicate all taintstringrefs form a string to another

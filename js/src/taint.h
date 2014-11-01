@@ -68,7 +68,7 @@ TaintStringRef *taint_str_taintref_build();
 TaintStringRef *taint_str_taintref_build(const TaintStringRef &ref);
 TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
 
-//remove taint from start to end
+//wipe out the taint completely (this can free TaintNodes, too)
 void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
 
 //set a (new) source, this includes resetting all previous taint
@@ -92,8 +92,8 @@ void taint_tag_source(TaintedT * str, const char* name,
     str->addTaintRef(newtsr);
 }
 
-TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end,
-    uint32_t frombegin, int32_t offset, uint32_t fromend);
+TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end = NULL,
+    uint32_t frombegin = 0, int32_t offset = 0, uint32_t fromend = 0);
 
 
 //partial taint copy
@@ -104,7 +104,11 @@ template <typename TaintedT>
 TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
+//this are helper functions for gecko code, because
+//direct JSString calls are not yet available (JSString is only
+//a forward declaration)
 void taint_str_addref(JSString *str, TaintStringRef* ref);
+TaintStringRef *taint_get_top(JSString *str);
 
 #define TAINT_ITER_TAINTREF(str) \
     for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
@@ -112,17 +116,17 @@ void taint_str_addref(JSString *str, TaintStringRef* ref);
 #define TAINT_STRING_HOOKS(startTaint, endTaint)        \
     MOZ_ALWAYS_INLINE                                   \
     bool isTainted() const {                            \
-        /*MOZ_ASSERT(!!startTaint == !!endTaint);*/     \
+        MOZ_ASSERT(!!startTaint == !!endTaint);         \
         return startTaint;                              \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
-    TaintStringRef *getTopTaintRef() const {      \
+    TaintStringRef *getTopTaintRef() const {            \
         return startTaint;                              \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
-    TaintStringRef *getBottomTaintRef() const {   \
+    TaintStringRef *getBottomTaintRef() const {         \
         return endTaint;                                \
     }                                                   \
                                                         \

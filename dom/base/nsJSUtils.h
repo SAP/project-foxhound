@@ -151,6 +151,9 @@ AssignJSString(JSContext *cx, T &dest, JSString *s)
     JS_ReportOutOfMemory(cx);
     return false;
   }
+#if _TAINT_ON_
+  dest.addTaintRef(taint_duplicate_range(taint_get_top(s)));
+#endif
   return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
 }
 

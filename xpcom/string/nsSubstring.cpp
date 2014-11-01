@@ -283,7 +283,7 @@ nsStringBuffer::FromString(const nsAString& aStr)
   if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
     if(buf->isTainted() && buf->ownTaint == 1) {
       buf->removeAllTaint();
-      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint, 0, 0, 0);
+      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
     }
     else {
       //overwrite if not tainted or taint originates another FromString
@@ -315,7 +315,7 @@ nsStringBuffer::FromString(const nsACString& aStr)
   if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
     if(buf->isTainted() && buf->ownTaint == 1) {
       buf->removeAllTaint();
-      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint, 0, 0, 0);
+      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
     }
     else {
       buf->startTaint = aStr.getTopTaintRef();
