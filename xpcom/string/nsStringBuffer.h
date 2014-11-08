@@ -39,9 +39,9 @@ private:
 public:
 
 #if _TAINT_ON_
-    
+  TAINT_STRING_HOOKS(startTaint, endTaint);
+    /*
     bool isTainted() const {
-        /*MOZ_ASSERT(!!startTaint == !!endTaint);*/
         return startTaint;
     }
     
@@ -77,7 +77,7 @@ public:
         return;
       MOZ_ASSERT(ownTaint == 1, "Do not delete foreign taint.");
       taint_remove_all(&startTaint, &endTaint);
-    }
+    }*/
 #endif
 
   /**

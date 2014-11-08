@@ -119,6 +119,11 @@ AppendASCIItoUTF16(const nsACString& aSource, nsAString& aDest,
   // right now, this won't work on multi-fragment destinations
   LossyConvertEncoding8to16 converter(dest.get());
 
+#if _TAINT_ON_
+  if(aSource.isTainted())
+    aDest.addTaintRef(taint_duplicate_range(aSource.getTopTaintRef()));
+#endif
+
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
   return true;

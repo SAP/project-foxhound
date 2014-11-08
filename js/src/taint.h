@@ -104,6 +104,28 @@ template <typename TaintedT>
 TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
+
+//create "space" at an offset
+//e.g. move all taints behind that offset
+//and split up crossing taints
+//returns the last TaintStringRef /before/ the insertion point
+TaintStringRef* taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset);
+
+//remove a range of taint
+void taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin, uint32_t end_offset);
+
+//find the TaintStringRef after which tsr is to append
+//TaintStringRef* taint_find_insert_position(TaintStringRef *start, TaintStringRef *tsr);
+
+#define TAINT_COPY_TAINT(dst, src)  \
+({                                  \
+    auto taint_r = (dst);           \
+    if(src) {                       \
+        taint_r.addTaintRef(taint_duplicate_range(src));      \
+    }                               \
+    taint_r;                        \
+})
+
 //this are helper functions for gecko code, because
 //direct JSString calls are not yet available (JSString is only
 //a forward declaration)
@@ -147,16 +169,26 @@ TaintStringRef *taint_get_top(JSString *str);
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
+    void removeRangeTaint(uint32_t start, uint32_t end) { \
+        taint_remove_range(&startTaint, &endTaint,      \
+            start, end);                                \
+    }                                                   \
+                                                        \
+    MOZ_ALWAYS_INLINE                                   \
     void ffTaint() {                                    \
-        /*fastforward endTaint*/                        \
         if(endTaint)                                    \
             for(; endTaint->next != nullptr; endTaint = endTaint->next); \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
     void removeAllTaint() {                             \
-        taint_remove_all(&startTaint, &endTaint);       \
+        if(isTainted())                                 \
+            taint_remove_all(&startTaint, &endTaint);   \
     }
+
+#else
+
+#define TAINT_COPY_TAINT(dst, src)  (dst)
 
 #endif
 

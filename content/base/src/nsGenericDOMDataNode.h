@@ -22,6 +22,8 @@
 #include "nsISMILAttr.h"
 #include "mozilla/dom/ShadowRoot.h"
 
+#include "taint.h"
+
 class nsIDocument;
 class nsIDOMAttr;
 class nsIDOMEventListener;
@@ -135,7 +137,15 @@ public:
   // Need to implement this here too to avoid hiding.
   nsresult SetText(const nsAString& aStr, bool aNotify)
   {
-    return SetText(aStr.BeginReading(), aStr.Length(), aNotify);
+    nsresult res = SetText(aStr.BeginReading(), aStr.Length(), aNotify);
+#if _TAINT_ON_
+    //this is quite ugly, but the last chance to grab the value's taint
+    if(aStr.isTainted()) {
+      mText.removeAllTaint();
+      mText.addTaintRef(taint_duplicate_range(aStr.getTopTaintRef()));
+    }
+#endif
+    return res;
   }
   virtual nsresult AppendText(const char16_t* aBuffer, uint32_t aLength,
                               bool aNotify) MOZ_OVERRIDE;

@@ -153,6 +153,12 @@ void
 nsGenericDOMDataNode::SetNodeValueInternal(const nsAString& aNodeValue,
                                            ErrorResult& aError)
 {
+#if _TAINT_ON_
+    if(aNodeValue.isTainted()) {
+      mText.removeAllTaint();
+      mText.addTaintRef(taint_duplicate_range(aNodeValue.getTopTaintRef()));
+    }
+#endif
   aError = SetTextInternal(0, mText.GetLength(), aNodeValue.BeginReading(),
                            aNodeValue.Length(), true);
 }
@@ -179,12 +185,26 @@ nsGenericDOMDataNode::GetData(nsAString& aData) const
     }
   }
 
+#if _TAINT_ON_
+    if(mText.isTainted()) {
+      aData.removeAllTaint();
+      aData.addTaintRef(taint_duplicate_range(mText.getTopTaintRef()));
+    }
+#endif
+
   return NS_OK;
 }
 
 nsresult
 nsGenericDOMDataNode::SetData(const nsAString& aData)
 {
+#if _TAINT_ON_
+    //this is quite ugly, but the last chance to grab the value's taint
+    if(aData.isTainted()) {
+      mText.removeAllTaint();
+      mText.addTaintRef(taint_duplicate_range(aData.getTopTaintRef()));
+    }
+#endif
   return SetTextInternal(0, mText.GetLength(), aData.BeginReading(),
                          aData.Length(), true);
 }
@@ -231,6 +251,13 @@ nsGenericDOMDataNode::SubstringData(uint32_t aStart, uint32_t aCount,
     const char *data = mText.Get1b() + aStart;
     CopyASCIItoUTF16(Substring(data, data + amount), aReturn);
   }
+
+#if _TAINT_ON_
+    if(mText.isTainted()) {
+      aReturn.removeAllTaint();
+      aReturn.addTaintRef(taint_duplicate_range(mText.getTopTaintRef(), NULL, aStart, 0, aStart + aCount));
+    }
+#endif
 }
 
 NS_IMETHODIMP
@@ -245,6 +272,11 @@ nsGenericDOMDataNode::MozRemove()
 nsresult
 nsGenericDOMDataNode::AppendData(const nsAString& aData)
 {
+#if _TAINT_ON_
+    if(aData.isTainted()) {
+      mText.addTaintRef(taint_duplicate_range(aData.getTopTaintRef(), nullptr, 0, mText.GetLength(), 0));
+    }
+#endif
   return SetTextInternal(mText.GetLength(), 0, aData.BeginReading(),
                          aData.Length(), true);
 }
@@ -253,6 +285,29 @@ nsresult
 nsGenericDOMDataNode::InsertData(uint32_t aOffset,
                                  const nsAString& aData)
 {
+#if _TAINT_ON_
+  /*
+  TaintStringRef *last = nullptr;
+  if(mText.isTainted()) {
+    last = taint_insert_offset(mText.getTopTaintRef(), aOffset, aData.Length());
+  }
+  
+  if(aData.isTainted()) {
+    TaintStringRef *end = nullptr;
+    TaintStringRef *cpy = taint_duplicate_range(aData.getTopTaintRef(), &end, 0, aData.Length(), 0);
+    if(cpy) {
+      if(last) {
+        end->next = last->next;
+        last->next = cpy;
+      } else {
+        mText.addTaintRef(cpy);
+      }
+    }
+  }
+
+  if(last)
+    mText.ffTaint();*/
+#endif
   return SetTextInternal(aOffset, 0, aData.BeginReading(),
                          aData.Length(), true);
 }
@@ -260,6 +315,15 @@ nsGenericDOMDataNode::InsertData(uint32_t aOffset,
 nsresult
 nsGenericDOMDataNode::DeleteData(uint32_t aOffset, uint32_t aCount)
 {
+#if _TAINT_ON_
+  /*if(mText.isTainted()) {
+    uint32_t rcount = aCount;
+    if (rcount > mText.GetLength() - aOffset) {
+      rcount = mText.GetLength() - aOffset;
+    }
+    mText.removeRangeTaint(aOffset, aOffset + rcount);
+  }*/
+#endif
   return SetTextInternal(aOffset, aCount, nullptr, 0, true);
 }
 
@@ -267,6 +331,34 @@ nsresult
 nsGenericDOMDataNode::ReplaceData(uint32_t aOffset, uint32_t aCount,
                                   const nsAString& aData)
 {
+#if _TAINT_ON_
+/*  //TAINT TODO: This can actually be optimized into one operation.
+  TaintStringRef *last = nullptr;
+  if(mText.isTainted()) {
+    uint32_t rcount = aCount;
+    if (rcount > mText.GetLength() - aOffset) {
+      rcount = mText.GetLength() - aOffset;
+    }
+    mText.removeRangeTaint(aOffset, aOffset + rcount);
+    last = taint_insert_offset(mText.getTopTaintRef(), aOffset, aData.Length());
+  }
+
+  if(aData.isTainted()) {
+    TaintStringRef *end = nullptr;
+    TaintStringRef *cpy = taint_duplicate_range(aData.getTopTaintRef(), &end, 0, aData.Length(), 0);
+    if(cpy) {
+      if(last) {
+        end->next = last->next;
+        last->next = cpy;
+      } else {
+        mText.addTaintRef(cpy);
+      }
+    }
+  }
+
+  if(last)
+    mText.ffTaint();*/
+#endif
   return SetTextInternal(aOffset, aCount, aData.BeginReading(),
                          aData.Length(), true);
 }

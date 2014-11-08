@@ -3266,6 +3266,10 @@ nsIDocument::GetReferrer(nsAString& aReferrer) const
       mParentDocument->GetReferrer(aReferrer);
   else
     CopyUTF8toUTF16(mReferrer, aReferrer);
+#if _TAINT_ON_
+    if(!aReferrer.isTainted())
+      taint_tag_source(&aReferrer, "document.referrer");
+#endif
 }
 
 nsresult

@@ -18,6 +18,8 @@
 #include "nsReadableUtils.h"
 #include "nsISupportsImpl.h"
 
+#include "taint.h"
+
 class nsString;
 class nsCString;
 
@@ -43,7 +45,12 @@ public:
    * Default constructor. Initialize the fragment to be empty.
    */
   nsTextFragment()
-    : m1b(nullptr), mAllBits(0)
+    :
+#if _TAINT_ON_
+    startTaint(nullptr), endTaint(nullptr),
+#endif
+    m1b(nullptr), mAllBits(0)
+
   {
     MOZ_COUNT_CTOR(nsTextFragment);
     NS_ASSERTION(sizeof(FragmentBits) == 4, "Bad field packing!");
@@ -142,9 +149,19 @@ public:
         return false;
       }
 
+#if _TAINT_ON_
+      if(isTainted())
+        aString.addTaintRef(taint_duplicate_range(startTaint));
+#endif
+
       return true;
     } else {
-      return AppendASCIItoUTF16(Substring(m1b, mState.mLength), aString,
+      nsDependentCSubstring sub = Substring(m1b, mState.mLength);
+#if _TAINT_ON_
+      if(startTaint)
+        sub.addTaintRef(taint_duplicate_range(startTaint));
+#endif
+      return AppendASCIItoUTF16(sub, aString,
                                 mozilla::fallible_t());
     }
   }
@@ -176,9 +193,14 @@ public:
         return false;
       }
 
+#if _TAINT_ON_
+      if(isTainted())
+        aString.addTaintRef(taint_duplicate_range(startTaint));
+#endif
+
       return true;
     } else {
-      return AppendASCIItoUTF16(Substring(m1b + aOffset, aLength), aString,
+      return AppendASCIItoUTF16(TAINT_COPY_TAINT(Substring(m1b + aOffset, aLength), startTaint), aString,
                                 mozilla::fallible_t());
     }
   }
@@ -215,6 +237,10 @@ public:
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
+#if _TAINT_ON_
+  TAINT_STRING_HOOKS(startTaint, endTaint)
+#endif
+
 private:
   void ReleaseText();
 
@@ -224,6 +250,11 @@ private:
    */
   void UpdateBidiFlag(const char16_t* aBuffer, uint32_t aLength);
  
+#if _TAINT_ON_
+  TaintStringRef* startTaint;
+  TaintStringRef* endTaint;
+#endif
+
   union {
     char16_t *m2b;
     const char *m1b; // This is const since it can point to shared data
@@ -233,6 +264,7 @@ private:
     uint32_t mAllBits;
     FragmentBits mState;
   };
+
 };
 
 #endif /* nsTextFragment_h___ */

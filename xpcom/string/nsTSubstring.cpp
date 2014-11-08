@@ -385,6 +385,11 @@ nsTSubstring_CharT::Assign(const self_type& aStr, const fallible_t&)
     return true;
   }
 
+#if _TAINT_ON_
+    removeAllTaint();
+    addTaintRef(taint_duplicate_range(aStr.startTaint));
+#endif
+
   if (aStr.mFlags & F_SHARED) {
     // nice! we can avoid a string copy :-)
 
@@ -620,6 +625,9 @@ nsTSubstring_CharT::SetCapacity(size_type aCapacity, const fallible_t&)
     mData = char_traits::sEmptyBuffer;
     mLength = 0;
     SetDataFlags(F_TERMINATED);
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
     return true;
   }
 
@@ -643,6 +651,11 @@ nsTSubstring_CharT::SetCapacity(size_type aCapacity, const fallible_t&)
 
   // adjust mLength if our buffer shrunk down in size
   if (newLen < mLength) {
+#if _TAINT_ON_
+    if(isTainted()) {
+      taint_remove_range(&startTaint, &endTaint, newLen, mLength);
+    }
+#endif
     mLength = newLen;
   }
 

@@ -14,6 +14,13 @@ using namespace js;
 //------------------------------------
 // Local helpers
 
+inline void
+taint_delete_taintref(TaintStringRef *tsr)
+{
+    tsr->~TaintStringRef();
+    js_free(tsr);
+}
+
 inline void*
 taint_new_tainref_mem()
 {
@@ -278,9 +285,9 @@ taint_inject_substring_op(ExclusiveContext *cx, TaintStringRef *last,
 }
 
 // This looks outright stupid. Maybe it even is...
-// I is used when the full JSString* declaration is not yet
+// It is used when the full JSString* declaration is not yet
 // available but as a mere forward declaration, which prevents
-// us from adding the ref directly. A call bypasses this.
+// us from issueing a direct call.
 void
 taint_str_addref(JSString *str, TaintStringRef *ref)
 {
@@ -378,6 +385,100 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
     return source;
 }
 
+TaintStringRef *taint_split_ref(TaintStringRef* tsr, uint32_t idx)
+{
+    TaintStringRef *split = taint_str_taintref_build(
+        tsr->begin + idx, tsr->end, tsr->thisTaint);
+    //there should be an extra substring operator, but we have no JS context here :-(
+
+    split->next = tsr->next;
+    tsr->next = split;
+    tsr->end = tsr->begin + idx;
+    return split;
+}
+
+TaintStringRef* taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
+{
+    TaintStringRef *mod = nullptr;
+    TaintStringRef *last_before = nullptr;
+    //find the first affected TaintStringRef
+    for(TaintStringRef *tsr = start; tsr != nullptr; tsr = tsr->next) {
+        if(position >= tsr->end) {
+            last_before = mod;
+            mod = tsr;
+        } else {
+            break;
+        }
+    }
+
+    //nothing affected, alright then
+    if(!mod)
+        return last_before;
+
+    //at this point mod can either be behind or overlapping position
+    if(position > mod->begin) {
+        //so we have to split
+        last_before = mod;
+        mod = taint_split_ref(mod, position - mod->begin);
+    }
+
+    for(TaintStringRef *tsr = mod; tsr != nullptr; tsr = tsr->next) {
+        tsr->begin += offset;
+        tsr->end   += offset;
+    }
+
+    return last_before;
+}
+
+//remove a range of taint
+void taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin, uint32_t end_offset)
+{
+    //what can happen
+    //nothing (no in range of any TSR - before/behind)
+    //modify 0-n TSRs (begin OR end in range of any TSR)
+    //delete 0-n TSRs (begin <= tsr->begin && end >= tsr->end)
+    MOZ_ASSERT(start && end && *start && *end);
+    MOZ_ASSERT(end_offset > begin);
+
+
+    //OPTIMIZE
+    if(*start && *end && begin <= (*start)->begin && end_offset >= (*end)->end) {
+        taint_remove_all(start, end);
+        return;
+    }
+
+    uint32_t del_len = end_offset -begin;
+
+    //process all affected elements
+    for(TaintStringRef *tsr = *start, *before = nullptr; tsr != nullptr; before = tsr, tsr = tsr->next) {
+        if(begin >= tsr->end)
+            continue;
+
+        //check for full deletion
+        if(begin <= tsr->begin && end_offset >= tsr->end) {
+            if(before) {
+                before->next = tsr->next;
+            }
+
+            if(*start == tsr) {
+                *start = tsr->next;
+            }
+            if(*end == tsr) {
+                *end = before;
+            }
+
+            taint_delete_taintref(tsr);
+        }
+        else {
+            if(begin < tsr->end)
+                tsr->end -= del_len;
+            if(end_offset >= tsr->begin)
+                tsr->begin -= del_len;
+        }
+    }
+}
+
+
 JSString *
 taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     uint32_t start, uint32_t length)
@@ -442,8 +543,7 @@ taint_remove_all(TaintStringRef **start, TaintStringRef **end)
             found_end = true;
 #endif
         TaintStringRef *next = tsr->next;
-        tsr->~TaintStringRef();
-        js_free(tsr);
+        taint_delete_taintref(tsr);
         tsr = next;
     }
 

@@ -92,6 +92,11 @@ nsTextFragment::ReleaseText()
 
   // Set mState.mIs2b, mState.mInHeap, and mState.mLength = 0 with mAllBits;
   mAllBits = 0;
+
+#if _TAINT_ON_
+  if(isTainted())
+    removeAllTaint();
+#endif
 }
 
 nsTextFragment&
@@ -102,6 +107,9 @@ nsTextFragment::operator=(const nsTextFragment& aOther)
   if (aOther.mState.mLength) {
     if (!aOther.mState.mInHeap) {
       m1b = aOther.m1b; // This will work even if aOther is using m2b
+#if _TAINT_ON_
+    if(aOther.isTainted()) { startTaint = aOther.startTaint; endTaint = aOther.endTaint;}
+#endif
     }
     else {
       size_t m2bSize = aOther.mState.mLength *
@@ -109,6 +117,11 @@ nsTextFragment::operator=(const nsTextFragment& aOther)
 
       m2b = static_cast<char16_t*>(moz_malloc(m2bSize));
       if (m2b) {
+#if _TAINT_ON_
+    if(aOther.isTainted()) {
+      addTaintRef(taint_duplicate_range(aOther.startTaint));
+    }
+#endif
         memcpy(m2b, aOther.m2b, m2bSize);
       } else {
         // allocate a buffer for a single REPLACEMENT CHARACTER

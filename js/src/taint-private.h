@@ -103,7 +103,7 @@ taint_copy_exact(TaintStringRef **target,
 ({ \
     JSAtom *res = (str); \
     res->removeAllTaint(); \
-    if(base->isTainted() && !res->isTainted()) \
+    if(base->isTainted()) \
         taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); \
     res; \
 })
