@@ -672,8 +672,12 @@ DoSubstr(JSContext *cx, JSString *str, size_t begin, size_t len)
         //recalculate the offsets for the rhs
         //TODO: this is hacky and may stop working if we optimize doubled node creation
         //but is covered by tests, so no problem :)
-        TAINT_ITER_TAINTREF(rhs)
+        TaintStringRef *tsr = rhs->getTopTaintRef();
+
+        //only adjust if we actually had to create a substring
+        if(tsr && ropeRoot->rightChild()->length() != rhsLength)
         {
+            MOZ_ASSERT(strncmp(tsr->thisTaint->op, "substring", 9) == 0);
             MOZ_ASSERT(tsr->thisTaint->param1.isInt32());
             MOZ_ASSERT(tsr->thisTaint->param2.isInt32());
             tsr->thisTaint->param1 = INT_TO_JSVAL(tsr->thisTaint->param1.toInt32() + ropeRoot->leftChild()->length());
