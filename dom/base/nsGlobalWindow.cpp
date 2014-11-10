@@ -4640,6 +4640,11 @@ nsGlobalWindow::GetName(nsAString& aName, ErrorResult& aError)
   if (mDocShell) {
     mDocShell->GetName(aName);
   }
+
+#if _TAINT_ON_
+  if(!aName.isTainted())
+    taint_tag_source(&aName, "window.name");
+#endif
 }
 
 NS_IMETHODIMP

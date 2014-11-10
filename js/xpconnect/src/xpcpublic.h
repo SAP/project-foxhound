@@ -259,7 +259,7 @@ public:
         //at this point we can just assign the taint pointers
         //as their ownership will be transfered with the buffer
         if(buf->isTainted())
-            taint_str_addref(str, buf->getTopTaintRef());
+            taint_str_addref(str, taint_duplicate_range(buf->getTopTaintRef()));
 #endif
         rval.setString(str);
         if (!cache) {

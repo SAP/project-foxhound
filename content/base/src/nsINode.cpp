@@ -681,6 +681,9 @@ nsINode::GetBaseURIFromJS(nsAString& aURI) const
     baseURI->GetSpec(spec);
   }
   CopyUTF8toUTF16(spec, aURI);
+#if _TAINT_ON_
+  taint_tag_source(&aURI, "document.baseURI");
+#endif
 }
 
 already_AddRefed<nsIURI>

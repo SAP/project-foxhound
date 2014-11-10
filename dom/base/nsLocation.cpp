@@ -317,6 +317,9 @@ nsLocation::GetHash(nsAString& aHash)
   if (NS_SUCCEEDED(rv) && !unicodeRef.IsEmpty()) {
     aHash.Assign(char16_t('#'));
     aHash.Append(unicodeRef);
+#if _TAINT_ON_
+      taint_tag_source(&aHash, "location.hash");
+#endif
   }
 
   if (aHash == mCachedHash) {
@@ -372,6 +375,9 @@ nsLocation::GetHost(nsAString& aHost)
 
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(hostport, aHost);
+#if _TAINT_ON_
+      taint_tag_source(&aHost, "location.host");
+#endif
     }
   }
 
@@ -410,6 +416,9 @@ nsLocation::GetHostname(nsAString& aHostname)
   GetURI(getter_AddRefs(uri), true);
   if (uri) {
     nsContentUtils::GetHostOrIPv6WithBrackets(uri, aHostname);
+#if _TAINT_ON_
+    taint_tag_source(&aHostname, "location.hostname");
+#endif
   }
 
   return NS_OK;
@@ -455,6 +464,9 @@ nsLocation::GetHref(nsAString& aHref)
 
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(uriString, aHref);
+#if _TAINT_ON_
+      taint_tag_source(&aHref, "location.href");
+#endif
     }
   }
 
@@ -571,6 +583,9 @@ nsLocation::GetOrigin(nsAString& aOrigin)
   NS_ENSURE_SUCCESS(rv, rv);
 
   aOrigin = origin;
+#if _TAINT_ON_
+      taint_tag_source(&aOrigin, "location.origin");
+#endif
   return NS_OK;
 }
 
@@ -595,6 +610,9 @@ nsLocation::GetPathname(nsAString& aPathname)
 
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(file, aPathname);
+#if _TAINT_ON_
+      taint_tag_source(&aPathname, "location.pathname");
+#endif
     }
   }
 
@@ -851,6 +869,9 @@ nsLocation::GetSearch(nsAString& aSearch)
     if (NS_SUCCEEDED(result) && !search.IsEmpty()) {
       aSearch.Assign(char16_t('?'));
       AppendUTF8toUTF16(search, aSearch);
+#if _TAINT_ON_
+      taint_tag_source(&aSearch, "location.search");
+#endif
     }
   }
 

@@ -3267,8 +3267,7 @@ nsIDocument::GetReferrer(nsAString& aReferrer) const
   else
     CopyUTF8toUTF16(mReferrer, aReferrer);
 #if _TAINT_ON_
-    if(!aReferrer.isTainted())
-      taint_tag_source(&aReferrer, "document.referrer");
+  taint_tag_source(&aReferrer, "document.referrer");
 #endif
 }
 
@@ -7287,6 +7286,9 @@ nsIDocument::GetDocumentURI(nsString& aDocumentURI) const
     nsAutoCString uri;
     mDocumentURI->GetSpec(uri);
     CopyUTF8toUTF16(uri, aDocumentURI);
+#if _TAINT_ON_
+  taint_tag_source(&aDocumentURI, "document.documentURI");
+#endif
   } else {
     aDocumentURI.Truncate();
   }
@@ -7315,6 +7317,9 @@ nsIDocument::GetDocumentURIFromJS(nsString& aDocumentURI) const
   nsAutoCString uri;
   mChromeXHRDocURI->GetSpec(uri);
   CopyUTF8toUTF16(uri, aDocumentURI);
+#if _TAINT_ON_
+  taint_tag_source(&aDocumentURI, "document.documentURI");
+#endif
 }
 
 nsIURI*
