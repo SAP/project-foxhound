@@ -8,6 +8,11 @@
 #include "taint-private.h"
 
 #include <algorithm>
+#include <map>
+#include <set>
+#include <string>
+#include <sstream>
+#include <iostream>
 
 using namespace js;
 
@@ -28,14 +33,14 @@ taint_new_tainref_mem()
 }
 
 TaintNode*
-taint_str_add_source_node(const char *fn)
+taint_str_add_source_node(JSContext *cx, const char *fn)
 {
     void *p = js_malloc(sizeof(TaintNode));
-    TaintNode *node = new (p) TaintNode(fn);
+    TaintNode *node = new (p) TaintNode(cx, fn);
     return node;
 }
 
-void taint_tag_source_internal(JSString * str, const char* name, 
+void taint_tag_source_internal(JSString * str, const char* name, JSContext *cx = nullptr,
     uint32_t begin = 0, uint32_t end = 0)
 {
     if(str->length() == 0)
@@ -48,13 +53,48 @@ void taint_tag_source_internal(JSString * str, const char* name,
         str->removeAllTaint();
     }
     
-    TaintNode *taint_node = taint_str_add_source_node(name);
+    TaintNode *taint_node = taint_str_add_source_node(cx, name);
     TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
     str->addTaintRef(newtsr);
 }
 
 //----------------------------------
 // Reference Node
+
+static void
+TraceTaintNode(JSTracer *trc, void* data)
+{
+    reinterpret_cast<TaintNode*>(data)->traceMember(trc);
+}
+
+TaintNode::TaintNode(JSContext *cx, const char* opname) :
+    op(opname),
+    refCount(0),
+    param1(),
+    param2(),
+    prev(nullptr),
+    mRt(nullptr)
+{
+    if(cx) {
+        mRt = js::GetRuntime(cx);
+        JS_AddExtraGCRootsTracer(mRt, TraceTaintNode, this);
+    }
+}
+
+void
+TaintNode::traceMember(JSTracer *trc)
+{
+    JS_CallValueTracer(trc, &param1, "param1");
+    JS_CallValueTracer(trc, &param2, "param1");
+}
+
+TaintNode::~TaintNode()
+{
+    if(mRt) {
+        JS_RemoveExtraGCRootsTracer(mRt, TraceTaintNode, this);
+        mRt = nullptr;
+    }
+}
 
 void
 TaintNode::decrease()
@@ -66,7 +106,9 @@ TaintNode::decrease()
         if(old->refCount > 0)
             break;
         
+        old->~TaintNode();
         js_free(old);
+
         old = prev;
     }
 }
@@ -122,8 +164,22 @@ taint_str_testop(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter")));
-    taint_add_op(str->getTopTaintRef(), "Mutation with params", param, param);
+    taint_add_op(str->getTopTaintRef(), "Mutation with params", cx, param, param);
     taint_add_op(str->getTopTaintRef(), "Mutation w/o param");
+
+    args.rval().setUndefined();
+    return true;
+}
+
+bool taint_str_report(JSContext *cx, unsigned argc, JS::Value *vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+    if(!str)
+        return false;
+
+    if(str->isTainted())
+        taint_report_sink(cx, str->getTopTaintRef(), "manual sink");
 
     args.rval().setUndefined();
     return true;
@@ -233,8 +289,7 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
         AutoValueVector taintchain(cx);
         for(TaintNode* curnode = cur->thisTaint; curnode != nullptr; curnode = curnode->prev) {
             RootedObject taintobj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
-            RootedString opnamestr(cx, NewStringCopyZ<CanGC>(cx, curnode->op));
-            RootedValue opname(cx, StringValue(opnamestr));
+            RootedValue opname(cx, StringValue(NewStringCopyZ<CanGC>(cx, curnode->op)));
             RootedValue param1val(cx, curnode->param1);
             RootedValue param2val(cx, curnode->param2);
 
@@ -270,17 +325,17 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 // Tagging functions
 
 void
-taint_inject_substring_op(ExclusiveContext *cx, TaintStringRef *last, 
+taint_inject_substring_op(JSContext *cx, TaintStringRef *last, 
     uint32_t offset, uint32_t begin)
 {
         //add an artificial substring operator, as there is no adequate call.
         //one taint_copy_range call can add multiple TaintRefs, we can find them
         //as they follow the "last" var captured _before_ the call
-        for(TaintStringRef *tsr = last; tsr; tsr = tsr->next)
+        for(TaintStringRef *tsr = last; tsr != nullptr; tsr = tsr->next)
         {
             RootedValue startval(cx, INT_TO_JSVAL(tsr->begin - offset + begin));
             RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
-            taint_add_op_single(tsr, "substring", startval, endval);
+            taint_add_op_single(tsr, "substring", cx->asJSContext(), startval, endval);
         }
 }
 
@@ -320,9 +375,11 @@ template JSInlineString* taint_copy_range<JSInlineString>(JSInlineString *dst, T
 template StringBuffer* taint_copy_range<StringBuffer>(StringBuffer *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
-void taint_add_op_single(TaintStringRef *dst, const char* name, HandleValue param1, HandleValue param2)
+void taint_add_op_single(TaintStringRef *dst, const char* name, JSContext *cx, HandleValue param1, HandleValue param2)
 {
-    TaintNode *taint_node = taint_str_add_source_node(name);
+    MOZ_ASSERT(!(!param1.isUndefined() || !param2.isUndefined()) || cx);
+
+    TaintNode *taint_node = taint_str_add_source_node(cx, name);
     //attach new node before changing the string ref as this would delete the old node
     taint_node->setPrev(dst->thisTaint);
     taint_node->param1 = param1;
@@ -332,15 +389,14 @@ void taint_add_op_single(TaintStringRef *dst, const char* name, HandleValue para
 
 //add a new node to all taintstringrefs on a string
 void
-taint_add_op(TaintStringRef *dst, const char* name, HandleValue param1, HandleValue param2)
+taint_add_op(TaintStringRef *dst, const char* name, JSContext *cx, HandleValue param1, HandleValue param2)
 {
     if(!dst)
         return;
 
-    //TODO: this might install duplicates if multiple parts of the string derive from the same tree
-    for(TaintStringRef *tsr = dst; tsr != nullptr; tsr = tsr->next)
-    {
-        taint_add_op_single(tsr, name, param1, param2);
+    //TAINT TODO: this might install duplicates if multiple parts of the string derive from the same tree
+    for(TaintStringRef *tsr = dst; tsr != nullptr; tsr = tsr->next) {
+        taint_add_op_single(tsr, name, cx, param1, param2);
     }
 }
 
@@ -480,7 +536,7 @@ void taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t b
 
 
 JSString *
-taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
+taint_str_substr(JSString *str, JSContext *cx, JSString *base,
     uint32_t start, uint32_t length)
 {
     if(!str)
@@ -492,14 +548,151 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
     uint32_t end = start + length;
 
     taint_copy_range(str, base->getTopTaintRef(), start, 0, end);
-    TAINT_ITER_TAINTREF(str)
+    for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
         js::RootedValue startval(cx, INT_TO_JSVAL(tsr->begin + start));
         js::RootedValue endval(cx, INT_TO_JSVAL(tsr->end + start));
-        taint_add_op_single(tsr, "substring", startval, endval);
+        taint_add_op_single(tsr, "substring", cx->asJSContext(), startval, endval);
     }
         
     return str;
+}
+
+struct NodeGraph
+{
+    std::multimap<TaintNode*,TaintNode*> same_map;
+    std::set<TaintNode*> nodes;
+};
+
+static bool
+taint_jsval_writecallback(const char16_t *buf, uint32_t len, void *data)
+{
+  std::string *writer = static_cast<std::string*>(data);
+  writer->append((char*)buf, len);
+  return true;
+}
+
+void jsvalue_to_string(JSContext *cx, JS::Handle<JS::Value> value, std::string *strval) {
+    mozilla::Maybe<JSAutoCompartment> ac;
+    if (value.isObject()) {
+        JS::Rooted<JSObject*> obj(cx, &value.toObject());
+        ac.emplace(cx, obj);
+    }
+
+    JS::Rooted<JS::Value> vp(cx, value);
+    JS_Stringify(cx, &vp, JS::NullPtr(), JS::NullHandleValue, taint_jsval_writecallback, strval);
+    //value = vp;
+}
+
+
+void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
+{
+
+    std::set<TaintNode*> visited_nodes;
+    std::set<TaintStringRef*> visited_refs;
+    std::map<TaintNode*,NodeGraph*> node_graphs;
+    for(TaintStringRef *tsr = src; tsr != nullptr; tsr = tsr->next) {
+        //process the node
+        TaintNode *n = tsr->thisTaint;
+        // find the head
+        TaintNode *process_stop = nullptr;
+        TaintNode *node_head = n;
+        for(; node_head->prev != nullptr; node_head = node_head->prev) {
+            //do not create a new graph if already found
+            if(!process_stop && !visited_nodes.insert(node_head).second) {
+                process_stop = node_head;
+            }
+        }
+        //if we found a value which was already inserted
+        std::map<TaintNode*,NodeGraph*>::const_iterator finder = node_graphs.find(node_head);
+        NodeGraph *head_graph = nullptr;
+        if(finder == node_graphs.end()) {
+            head_graph = new NodeGraph();
+            node_graphs.insert(std::pair<TaintNode*,NodeGraph*>(node_head, head_graph));
+        } else {
+            head_graph = finder->second;
+        }
+
+        for(TaintNode *add_n = n; add_n != nullptr && add_n != process_stop;
+              add_n = add_n->prev) {
+            head_graph->nodes.insert(add_n);
+            if(add_n->prev != nullptr) {
+                head_graph->same_map.insert(
+                    std::pair<TaintNode*,TaintNode*>(add_n->prev, add_n)
+                );
+            }
+        }
+        //------
+
+        visited_refs.insert(tsr);
+    }
+
+    char report_name[] = "/tmp/taint-0xXXXXXXXX.dot";
+    snprintf(report_name+11, 11, "%p", (void*)src);
+    report_name[21]='.';
+    FILE *h = fopen(report_name, "w+");
+    fputs("digraph G {\n", h);
+    for(std::map<TaintNode*,NodeGraph*>::const_iterator itr=node_graphs.begin();
+          itr!=node_graphs.end(); ++itr) {
+        NodeGraph *graph = itr->second;
+        fprintf(h, "    subgraph nodes%p {\n", itr->first);
+        for(std::set<TaintNode*>::const_iterator nitr = graph->nodes.begin();
+              nitr != graph->nodes.end(); ++nitr) {
+            TaintNode *node = *nitr;
+            std::string param1, param2;
+            if(!node->param1.isUndefined()) {
+                RootedValue convertValue(cx, node->param1);
+                jsvalue_to_string(cx, convertValue, &param1);
+            }
+            if(!node->param2.isUndefined()) {
+                RootedValue convertValue(cx, node->param2);
+                jsvalue_to_string(cx, convertValue, &param2);
+            }
+
+            fprintf(h, "        n%p[label=\"%s\\n%s\\n%s\"];\n", node, node->op, param1.c_str(), param2.c_str());
+            if(node->prev)
+                fprintf(h, "        n%p -> n%p;\n", node, node->prev);
+        }
+        TaintNode* last_target = nullptr;
+        for(std::multimap<TaintNode*,TaintNode*>::const_iterator itr=graph->same_map.begin();
+          itr!=graph->same_map.end(); ++itr) {
+            if(itr->first != last_target) {
+                if(last_target != nullptr) {
+                    fputs("; }\n", h);
+                }
+                fprintf(h, "        {rank=same;");
+                last_target = itr->first;
+            }
+            fprintf(h, " n%p", itr->second);
+        }
+        if(last_target)
+            fputs("; }\n", h);
+        fputs("    }\n",h);
+        delete itr->second;
+    }
+
+    fputs("\n    subgraph tsr {\n", h);
+    fputs("        node[style=filled];\n", h);
+    for(std::set<TaintStringRef*>::const_iterator itr = visited_refs.begin();
+              itr != visited_refs.end(); ++itr) {
+        fprintf(h, "        ref%p [label=\"%u - %u\"];\n", (*itr), (*itr)->begin, (*itr)->end);
+        fprintf(h, "        ref%p -> n%p;\n", (*itr), (*itr)->thisTaint);
+        if((*itr)->next) {
+            fprintf(h, "        ref%p -> ref%p;\n", (*itr), (*itr)->next);
+        }
+    }
+    fprintf(h, "        {rank=same;");
+    for(std::set<TaintStringRef*>::const_iterator itr = visited_refs.begin();
+              itr != visited_refs.end(); ++itr) {
+        fprintf(h, " ref%p", (*itr));
+    }
+    fputs("; }\n", h);
+    fputs("    }\n",h);
+    //fprintf(h, "    start -> ref%p;\n", src);
+    fprintf(h, "    start [label=\"%s\",shape=Mdiamond];\n", name);
+
+    fputs("}\n",h);
+    fclose(h);
 }
 
 
@@ -556,7 +749,7 @@ taint_remove_all(TaintStringRef **start, TaintStringRef **end)
 }
 
 JSString*
-taint_copy_and_op(JSString * dststr, JSString * srcstr,
+taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
     const char *name, JS::HandleValue param1,
     JS::HandleValue param2)
 {
@@ -565,7 +758,7 @@ taint_copy_and_op(JSString * dststr, JSString * srcstr,
         return dststr;
 
     taint_copy_range(dststr, srcstr->getTopTaintRef(), 0, 0, 0);
-    taint_add_op(dststr->getTopTaintRef(), name, param1, param2);
+    taint_add_op(dststr->getTopTaintRef(), name, cx, param1, param2);
 
     return dststr;
 }

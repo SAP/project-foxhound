@@ -88,7 +88,7 @@ XPCStringConvert::ReadableToJSVal(JSContext *cx,
 #if _TAINT_ON_
         //TODO: Optimize: Do not copy the taints, this probably involves ownership management
         if(readable.isTainted())
-            taint_copy_range(str, readable.getTopTaintRef(), 0, 0, 0);
+            taint_str_addref(str, taint_duplicate_range(readable.getTopTaintRef()));
 #endif
         vp.setString(str);
         return true;
@@ -110,7 +110,7 @@ XPCStringConvert::ReadableToJSVal(JSContext *cx,
         return false;
 #if _TAINT_ON_
     if(readable.isTainted())
-        taint_copy_range(str, readable.getTopTaintRef(), 0, 0, 0);
+        taint_str_addref(str, taint_duplicate_range(readable.getTopTaintRef()));
 #endif
     vp.setString(str);
     return true;

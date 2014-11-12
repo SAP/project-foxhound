@@ -11,7 +11,8 @@
 //
 #define TAINT_ADD_JSSTR_METHODS \
 JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
-JS_FN("mutateTaint",            taint_str_testop,          0,JSFUN_GENERIC_NATIVE),
+JS_FN("mutateTaint",            taint_str_testop,               0,JSFUN_GENERIC_NATIVE),\
+JS_FN("reportTaint",            taint_str_report,               0,JSFUN_GENERIC_NATIVE),
 
 #define TAINT_ADD_JSSTR_STATIC_METHODS \
 JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
@@ -55,13 +56,15 @@ bool taint_str_prop(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
 //JavaScript mutator for testing purposes
 bool taint_str_testop(JSContext *cx, unsigned argc, JS::Value *vp);
+//JavaScript taint reporter for testing
+bool taint_str_report(JSContext *cx, unsigned argc, JS::Value *vp);
 
 //concat taint of two strings into a third
 void
 taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
 //range copy for a substring operation
 JSString *
-taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
+taint_str_substr(JSString *str, JSContext *cx, JSString *base,
     uint32_t start, uint32_t length);
 
 //------------------------------
@@ -71,6 +74,7 @@ taint_str_substr(JSString *str, js::ExclusiveContext *cx, JSString *base,
 //add a new operator to a single TaintStringRef
 void
 taint_add_op_single(TaintStringRef *dst, const char* name,
+    JSContext *cx = nullptr,
     JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
@@ -78,6 +82,7 @@ taint_add_op_single(TaintStringRef *dst, const char* name,
 //add a new operator to all TaintStringRefs following dst
 void
 taint_add_op(TaintStringRef *dst, const char* name,
+    JSContext *cx = nullptr,
     JS::HandleValue param1 = JS::UndefinedHandleValue, 
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
@@ -108,9 +113,17 @@ taint_copy_exact(TaintStringRef **target,
     res; \
 })
 
+//partial taint copy
+// - copy taint from source from frombegin until fromend
+// - insert at offset into dst
+// fromend = 0 -> copy all
+template <typename TaintedT>
+TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
+    uint32_t frombegin, int32_t offset, uint32_t fromend);
+
 //other shortcut
 JSString*
-taint_copy_and_op(JSString * dststr, JSString * srcstr,
+taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
     const char *name, JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
@@ -118,7 +131,7 @@ taint_copy_and_op(JSString * dststr, JSString * srcstr,
 //last is the last TaintRef before taint was copied
 //offset/begin are the values passed into taint_copy_range
 void
-taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last, 
+taint_inject_substring_op(JSContext *cx, TaintStringRef *last, 
     uint32_t offset, uint32_t begin);
 
 //-----------------------------------
@@ -171,7 +184,7 @@ taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last,
             RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
             Value vstr = obj->getDenseElement(ki); \
             if(vstr.isString()) \
-                taint_add_op(vstr.toString()->getTopTaintRef(), "match", patVal, resultIdx); \
+                taint_add_op(vstr.toString()->getTopTaintRef(), "match", cx, patVal, resultIdx); \
         } \
     } \
     bres; \
@@ -181,7 +194,7 @@ taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last,
     bool bres = str; \
     RootedValue regexVal(cx, args[0]); \
     RootedValue replaceVal(cx, args[1]); \
-    taint_add_op(args.rval().get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
+    taint_add_op(args.rval().get().toString()->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
     bres; \
 })
 #define TAINT_MARK_REPLACE_RAW(str, re) \
@@ -189,7 +202,7 @@ taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last,
     bool bres = str; \
     RootedValue regexVal(cx, re); \
     RootedValue replaceVal(cx, StringValue(replacement)); \
-    taint_add_op(rval.get().toString()->getTopTaintRef(), "replace", regexVal, replaceVal); \
+    taint_add_op(rval.get().toString()->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
     bres; \
 })
 #define TAINT_MARK_SPLIT \
@@ -198,7 +211,7 @@ taint_inject_substring_op(js::ExclusiveContext *cx, TaintStringRef *last,
     if(nobj) { \
         for(uint32_t ki = 0; ki < nobj->getDenseInitializedLength(); ki++) { \
             RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-            taint_add_op(nobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", splitVal, resultIdx); \
+            taint_add_op(nobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", cx, splitVal, resultIdx); \
         } \
     }
 

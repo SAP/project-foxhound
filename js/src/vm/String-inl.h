@@ -74,7 +74,7 @@ NewFatInlineString(ExclusiveContext *cx, HandleLinearString base, size_t start, 
 
 #if _TAINT_ON_
     if(base->isTainted())
-        taint_str_substr(s, cx, base, start, length);
+        taint_str_substr(s, cx->asJSContext(), base, start, length);
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -168,7 +168,7 @@ JSDependentString::init(js::ThreadSafeContext *cx, JSLinearString *base, size_t 
 #if _TAINT_ON_
     TAINT_STR_INIT;
     if(base->isTainted())
-        taint_str_substr(this, cx->asExclusiveContext(), base, start, length);
+        taint_str_substr(this, cx->asExclusiveContext()->asJSContext(), base, start, length);
 #endif
 
     js::StringWriteBarrierPost(cx, reinterpret_cast<JSString **>(&d.s.u3.base));

@@ -794,7 +794,7 @@ ToLowerCase(JSContext *cx, JSLinearString *str)
         return nullptr;
 
 #if _TAINT_ON_
-    taint_copy_and_op(res, str, "toLowerCase");
+    taint_copy_and_op(cx, res, str, "toLowerCase");
 #endif
 
     newChars.release();
@@ -950,7 +950,7 @@ ToUpperCase(JSContext *cx, JSLinearString *str)
     }
     
 #if _TAINT_ON_
-    taint_copy_and_op(res, str, "toUpperCase");
+    taint_copy_and_op(cx, res, str, "toUpperCase");
 #endif
 
     return res;
@@ -1115,7 +1115,7 @@ str_normalize(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
 #if _TAINT_ON_
-    taint_copy_and_op(ns, str, "normalize");
+    taint_copy_and_op(cx, ns, str, "normalize");
 #endif
 
     // Step 9.
@@ -2074,7 +2074,7 @@ TrimString(JSContext *cx, Value *vp, bool trimLeft, bool trimRight)
     { 
         RootedValue leftp(cx, BOOLEAN_TO_JSVAL(trimLeft));
         RootedValue rightp(cx, BOOLEAN_TO_JSVAL(trimRight));
-        taint_add_op(str->getTopTaintRef(), "trim", leftp, rightp);
+        taint_add_op(str->getTopTaintRef(), "trim", cx, leftp, rightp);
     }
 #endif
 
@@ -2518,7 +2518,7 @@ BuildFlatMatchArray(JSContext *cx, HandleString textstr, const FlatMatch &fm, Ca
     RootedValue taintidx(cx, INT_TO_JSVAL(0));
     RootedValue taintpat(cx, StringValue(patcpy));
 
-    taint_add_op(taintpattern->getTopTaintRef(), "match", taintpat, taintidx);
+    taint_add_op(taintpattern->getTopTaintRef(), "match", cx, taintpat, taintidx);
     patcpy = taintpattern;
 #endif
 
