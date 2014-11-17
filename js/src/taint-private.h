@@ -91,11 +91,13 @@ taint_add_op(TaintStringRef *dst, const char* name,
 // - needs to be called for every "token" in source
 // - *target starts out with nullptr and continues to hold the
 //   last taintref of the new chain
+// - soff: offset of sidx to the start of the string (and with that,
+//   taint reference indices)
 // - return value has to be fed back into source, starts with
 //   the top taintref of the source (and has to be ordered!)
 TaintStringRef *
 taint_copy_exact(TaintStringRef **target, 
-    TaintStringRef *source, size_t sidx, size_t tidx);
+    TaintStringRef *source, size_t sidx, size_t tidx, size_t soff = 0);
 
 //defs for in place use of primitives
 #define TAINT_STR_COPY(str, base) \
@@ -154,8 +156,10 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_QUOTE_STRING_VAR \
     TaintStringRef *targetref = nullptr;
 #define TAINT_QUOTE_STRING_APPLY \
-    res->addTaintRef(targetref); \
-    taint_add_op(res->getTopTaintRef(), "quote");
+    if(targetref) { \
+        res->addTaintRef(targetref); \
+        taint_add_op(res->getTopTaintRef(), "quote"); \
+    }
 
 
 #define TAINT_ESCAPE_CALL(a,b,c,d) Escape(a,b,c,d,&targetref,str->getTopTaintRef())
@@ -170,8 +174,10 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
         *targetref = target_last_tsr;
 #define TAINT_ESCAPE_VAR TAINT_QUOTE_STRING_VAR
 #define TAINT_ESCAPE_APPLY \
-    res->addTaintRef(targetref); \
-    taint_add_op(res->getTopTaintRef(), "escape");
+    if(targetref) { \
+        res->addTaintRef(targetref); \
+        taint_add_op(res->getTopTaintRef(), "quote"); \
+    }
 
 
 #define TAINT_MARK_MATCH(str, regex) \
@@ -220,23 +226,6 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_JSON_PARSE_CALL_NULL(a,b,c,d) ParseJSONWithReviver(a,b,c,d, nullptr);
 #define TAINT_JSON_PARSE_DEF(a,b,c,d) ParseJSONWithReviver(a,b,c,d,TaintStringRef *ref)
 #define TAINT_JSON_EVAL_CALL(a,b,c) ParseEvalStringAsJSON(a,b,c, str->getTopTaintRef())
-#define TAINT_JSON_PARSE_PRE \
-    TaintStringRef *current_tsr = sourceRef; \
-    TaintStringRef *target_first_tsr = nullptr; \
-    TaintStringRef *target_last_tsr = nullptr; \
-    const CharPtr s_start = current;
-#define TAINT_JSON_PARSE_OPT \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - s_start, current - start); \
-    if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
-        target_first_tsr = target_last_tsr;
-#define TAINT_JSON_PARSE_MATCH \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - s_start, buffer.length() + (size_t)(current - start)); \
-    if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
-        target_first_tsr = target_last_tsr;
-#define TAINT_JSON_PARSE_APPLY \
-    str->addTaintRef(target_first_tsr); \
-    taint_add_op(str->getTopTaintRef(), "JSON.parse");
-    
 
 #define TAINT_SB_APPEND_DECL(a) append(a,bool taint = true)
 #define TAINT_SB_APPEND_DEF(a) append(a,bool taint)

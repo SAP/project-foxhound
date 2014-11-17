@@ -12250,6 +12250,12 @@ nsGlobalWindow::SetTimeoutOrInterval(JSContext* aCx, const nsAString& aHandler,
                                        aError);
   }
 
+#if _TAINT_ON_
+  if(aHandler.isTainted()) {
+    taint_report_sink(aCx, aHandler.getTopTaintRef(), aIsInterval ? "setInterval" : "setTimeout");
+  }
+#endif
+
   nsCOMPtr<nsIScriptTimeoutHandler> handler =
     NS_CreateJSTimeoutHandler(aCx, this, aHandler, aError);
   if (!handler) {

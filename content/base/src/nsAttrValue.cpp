@@ -1883,6 +1883,11 @@ nsAttrValue::GetStringBuffer(const nsAString& aValue) const
   char16_t *data = static_cast<char16_t*>(buf->Data());
   CopyUnicodeTo(aValue, 0, data, len);
   data[len] = char16_t(0);
+#if _TAINT_ON_
+  if(aValue.isTainted()) {
+    buf->addTaintRef(taint_duplicate_range(aValue.getTopTaintRef()));
+  }
+#endif
   return buf.forget();
 }
 

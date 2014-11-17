@@ -328,15 +328,17 @@ void
 taint_inject_substring_op(JSContext *cx, TaintStringRef *last, 
     uint32_t offset, uint32_t begin)
 {
-        //add an artificial substring operator, as there is no adequate call.
-        //one taint_copy_range call can add multiple TaintRefs, we can find them
-        //as they follow the "last" var captured _before_ the call
-        for(TaintStringRef *tsr = last; tsr != nullptr; tsr = tsr->next)
-        {
-            RootedValue startval(cx, INT_TO_JSVAL(tsr->begin - offset + begin));
-            RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
-            taint_add_op_single(tsr, "substring", cx->asJSContext(), startval, endval);
-        }
+    MOZ_ASSERT(cx && last);
+
+    //add an artificial substring operator, as there is no adequate call.
+    //one taint_copy_range call can add multiple TaintRefs, we can find them
+    //as they follow the "last" var captured _before_ the call
+    for(TaintStringRef *tsr = last; tsr != nullptr; tsr = tsr->next)
+    {
+        RootedValue startval(cx, INT_TO_JSVAL(tsr->begin - offset + begin));
+        RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
+        taint_add_op_single(tsr, "substring", cx->asJSContext(), startval, endval);
+    }
 }
 
 // This looks outright stupid. Maybe it even is...
@@ -362,7 +364,9 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
     MOZ_ASSERT(dst && src);
-    dst->addTaintRef(taint_duplicate_range(src, NULL, frombegin, offset, fromend));
+    TaintStringRef *tsr = taint_duplicate_range(src, NULL, frombegin, offset, fromend);
+    if(tsr) //do not overwrite
+        dst->addTaintRef(tsr);
 
     return dst;
 }
@@ -401,17 +405,19 @@ taint_add_op(TaintStringRef *dst, const char* name, JSContext *cx, HandleValue p
 }
 
 TaintStringRef *
-taint_copy_exact(TaintStringRef **target, TaintStringRef *source, size_t sidx, size_t tidx)
+taint_copy_exact(TaintStringRef **target, TaintStringRef *source, 
+    size_t sidx, size_t tidx, size_t soff)
 {
     if(!source || !target)
         return nullptr;
 
     //we are in the same TSR, still
-    if(sidx > source->begin) {
-        //if we were called ever idx a new tsr should be created in *target
+    if(sidx > (source->begin + soff)) {
         MOZ_ASSERT(*target);
+        //if we were called ever idx a new tsr should be created in *target
         
-        if(sidx <= source->end) { //this will trigger len(str) times //<=
+        if(sidx <= (source->end + soff)) { //this will trigger len(str) times //<=
+            
             (*target)->end = tidx;
             //if(sidx < source->end)
             //drop out if we updated the end, there is no new source ref for sure
@@ -423,7 +429,7 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source, size_t sidx, s
     }
 
     //no new TSR currently pending or end of tsr chain -> no more taint to copy
-    if(!source || sidx < source->begin)
+    if(!source || sidx < (source->begin + soff))
         return source;
 
     //as we are called for every index
@@ -524,6 +530,7 @@ void taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t b
             }
 
             taint_delete_taintref(tsr);
+            tsr = before;
         }
         else {
             if(begin < tsr->end)
@@ -567,9 +574,19 @@ struct NodeGraph
 static bool
 taint_jsval_writecallback(const char16_t *buf, uint32_t len, void *data)
 {
-  std::string *writer = static_cast<std::string*>(data);
-  writer->append((char*)buf, len);
-  return true;
+    std::string *writer = static_cast<std::string*>(data);
+    for(char *c = (char*)buf; c < (char*)(buf+len); c += 2) {
+        switch(*c) {
+            case '\"':
+                writer->append("\\\"");
+                break;
+            default:
+                writer->append(c, 1);
+                break;
+        }            
+    }
+    
+    return true;
 }
 
 void jsvalue_to_string(JSContext *cx, JS::Handle<JS::Value> value, std::string *strval) {
@@ -627,10 +644,15 @@ void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
         visited_refs.insert(tsr);
     }
 
-    char report_name[] = "/tmp/taint-0xXXXXXXXX.dot";
-    snprintf(report_name+11, 11, "%p", (void*)src);
-    report_name[21]='.';
-    FILE *h = fopen(report_name, "w+");
+    printf("[---TAINT---] Found taint flow %p into sink %s.\n", src, name);
+
+    std::ostringstream report_string;
+    report_string << "/tmp/taint/" << src << ".dot";
+
+    /*char report_name[] = "0xXXXXXXXX.dot";
+    snprintf(report_name+11, 11, "%p", src);
+    report_name[21]='.';*/
+    FILE *h = fopen(report_string.str().c_str(), "w+");
     fputs("digraph G {\n", h);
     for(std::map<TaintNode*,NodeGraph*>::const_iterator itr=node_graphs.begin();
           itr!=node_graphs.end(); ++itr) {
@@ -642,16 +664,18 @@ void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
             std::string param1, param2;
             if(!node->param1.isUndefined()) {
                 RootedValue convertValue(cx, node->param1);
+                param1.append("\\n");
                 jsvalue_to_string(cx, convertValue, &param1);
             }
             if(!node->param2.isUndefined()) {
                 RootedValue convertValue(cx, node->param2);
+                param2.append("\\n");
                 jsvalue_to_string(cx, convertValue, &param2);
             }
 
-            fprintf(h, "        n%p[label=\"%s\\n%s\\n%s\"];\n", node, node->op, param1.c_str(), param2.c_str());
+            fprintf(h, "        n%p[label=\"%s%s%s\"];\n", node, node->op, param1.c_str(), param2.c_str());
             if(node->prev)
-                fprintf(h, "        n%p -> n%p;\n", node, node->prev);
+                fprintf(h, "        n%p -> n%p;\n", node->prev, node);
         }
         TaintNode* last_target = nullptr;
         for(std::multimap<TaintNode*,TaintNode*>::const_iterator itr=graph->same_map.begin();
@@ -676,9 +700,11 @@ void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
     for(std::set<TaintStringRef*>::const_iterator itr = visited_refs.begin();
               itr != visited_refs.end(); ++itr) {
         fprintf(h, "        ref%p [label=\"%u - %u\"];\n", (*itr), (*itr)->begin, (*itr)->end);
-        fprintf(h, "        ref%p -> n%p;\n", (*itr), (*itr)->thisTaint);
+        fprintf(h, "        n%p -> ref%p;\n", (*itr)->thisTaint, (*itr));
         if((*itr)->next) {
             fprintf(h, "        ref%p -> ref%p;\n", (*itr), (*itr)->next);
+        } else {
+            fprintf(h, "        ref%p -> start;\n", (*itr));
         }
     }
     fprintf(h, "        {rank=same;");

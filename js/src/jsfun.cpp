@@ -1892,6 +1892,12 @@ FunctionConstructor(JSContext *cx, unsigned argc, Value *vp, GeneratorKind gener
     if (!stableChars.initTwoByte(cx, str))
         return false;
 
+#if _TAINT_ON_
+    if(str->isTainted()) {
+    taint_report_sink(cx, str->getTopTaintRef(), "Function.ctor");
+    }
+#endif
+
     mozilla::Range<const char16_t> chars = stableChars.twoByteRange();
     SourceBufferHolder::Ownership ownership = stableChars.maybeGiveOwnershipToCaller()
                                               ? SourceBufferHolder::GiveOwnership

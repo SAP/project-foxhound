@@ -1980,6 +1980,15 @@ Element::SetEventHandler(nsIAtom* aEventName,
     return NS_OK;
   }
 
+#if _TAINT_ON_
+  if(aValue.isTainted()) {
+    nsCString taintEventName;
+    aEventName->ToUTF8String(taintEventName);
+    taint_report_sink(nsContentUtils::GetCurrentJSContext(),
+      aValue.getTopTaintRef(), taintEventName.get());
+  }
+#endif
+
   defer = defer && aDefer; // only defer if everyone agrees...
   manager->SetEventHandler(aEventName, aValue,
                            defer, !nsContentUtils::IsChromeDoc(ownerDoc),

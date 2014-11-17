@@ -286,9 +286,12 @@ StringBuffer::TAINT_SB_INFAPPENDSUBSTRING_DEF(JSLinearString *base, size_t off, 
 #if _TAINT_ON_
     if(taint && base->isTainted() && len > 0) {
         TaintStringRef *last = getBottomTaintRef();
+        TaintStringRef *next = nullptr;
 
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
-        taint_inject_substring_op(cx->asJSContext(), (last ? last->next : getTopTaintRef()), length(), off);
+        next = (last ? last->next : getTopTaintRef());
+        if(next)
+            taint_inject_substring_op(cx->asJSContext(), next, length(), off);
     }
 #endif
 
@@ -307,9 +310,12 @@ StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSLinearString *base, size_t off, siz
 #if _TAINT_ON_
     if(taint && base->isTainted() && len > 0) {
         TaintStringRef *last = getBottomTaintRef();
-        
+        TaintStringRef *next = nullptr;
+
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
-        taint_inject_substring_op(cx->asJSContext(), (last ? last->next : getTopTaintRef()), length(), off);
+        next = (last ? last->next : getTopTaintRef());
+        if(next)
+            taint_inject_substring_op(cx->asJSContext(), next, length(), off);
     }
 #endif
 

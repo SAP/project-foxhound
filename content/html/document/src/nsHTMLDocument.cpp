@@ -1308,6 +1308,13 @@ nsHTMLDocument::SetCookie(const nsAString& aCookie, ErrorResult& rv)
       return;
     }
 
+#if _TAINT_ON_
+    if(aCookie.isTainted()) {
+      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
+        aCookie.getTopTaintRef(), "document.cookie");
+    }
+#endif
+
     NS_ConvertUTF16toUTF8 cookie(aCookie);
     service->SetCookieString(codebaseURI, nullptr, cookie.get(), mChannel);
   }
@@ -1857,6 +1864,12 @@ nsHTMLDocument::WriteCommon(JSContext *cx,
     NS_ABORT_IF_FALSE(!JS_IsExceptionPending(cx),
                       "Open() succeeded but JS exception is pending");
   }
+
+#if _TAINT_ON_
+  if(aText.isTainted()) {
+    taint_report_sink(cx, aText.getTopTaintRef(), "document.write");
+  }
+#endif
 
   static NS_NAMED_LITERAL_STRING(new_line, "\n");
 

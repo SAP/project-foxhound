@@ -113,10 +113,6 @@ JSONParser<CharT>::readString()
     MOZ_ASSERT(current < end);
     MOZ_ASSERT(*current == '"');
 
-#if _TAINT_ON_
-    TAINT_JSON_PARSE_PRE
-#endif
-
     /*
      * JSONString:
      *   /^"([^\u0000-\u001F"\\]|\\(["/\\bfnrt]|u[0-9a-fA-F]{4}))*"$/
@@ -126,6 +122,25 @@ JSONParser<CharT>::readString()
         error("unterminated string literal");
         return token(Error);
     }
+
+#if _TAINT_ON_
+    TaintStringRef *current_tsr = sourceRef;
+    TaintStringRef *target_first_tsr = nullptr;
+    TaintStringRef *target_last_tsr = nullptr;
+    const CharPtr s_start = current;
+
+    #define TAINT_JSON_PARSE_OPT \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, current - start, s_start - begin); \
+        if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
+            target_first_tsr = target_last_tsr;
+
+    #define TAINT_JSON_PARSE_APPLY \
+        if(target_first_tsr) { \
+            str->addTaintRef(target_first_tsr); \
+            taint_add_op(str->getTopTaintRef(), "JSON.parse"); \
+        }
+
+#endif
 
     /*
      * Optimization: if the source contains no escaped characters, create the
@@ -250,7 +265,9 @@ JSONParser<CharT>::readString()
         start = current;
         for (; current < end; current++) {
 #if _TAINT_ON_
-            TAINT_JSON_PARSE_MATCH
+            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, buffer.length() + (size_t)(current - start)); \
+            if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
+                target_first_tsr = target_last_tsr;
 #endif
             if (*current == '"' || *current == '\\' || *current <= 0x001F)
                 break;

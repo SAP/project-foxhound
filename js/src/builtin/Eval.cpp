@@ -305,6 +305,12 @@ EvalKernel(JSContext *cx, const CallArgs &args, EvalType evalType, AbstractFrame
     if (ejr != EvalJSON_NotJSON)
         return ejr == EvalJSON_Success;
 
+#if _TAINT_ON_
+    if(str->isTainted()) {
+        taint_report_sink(cx, str->getTopTaintRef(), "eval");
+    }
+#endif
+
     EvalScriptGuard esg(cx);
 
     if (evalType == DIRECT_EVAL && caller.isNonEvalFunctionFrame())
@@ -381,6 +387,12 @@ js::DirectEvalStringFromIon(JSContext *cx,
     EvalJSONResult ejr = TryEvalJSON(cx, callerScript, flatStr, vp);
     if (ejr != EvalJSON_NotJSON)
         return ejr == EvalJSON_Success;
+
+#if _TAINT_ON_
+    if(str->isTainted()) {
+        taint_report_sink(cx, str->getTopTaintRef(), "eval");
+    }
+#endif
 
     EvalScriptGuard esg(cx);
 

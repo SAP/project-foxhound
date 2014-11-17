@@ -75,6 +75,14 @@ nsScriptElement::CharacterDataChanged(nsIDocument *aDocument,
                                       CharacterDataChangeInfo* aInfo)
 {
   MaybeProcessScript();
+#if _TAINT_ON_
+  nsString aCont;
+  nsContentUtils::GetNodeTextContent(aContent, false, aCont);
+  if(aCont.isTainted()) {
+    taint_report_sink(nsContentUtils::GetCurrentJSContext(),
+      aCont.getTopTaintRef(), "script.text");
+  }
+#endif
 }
 
 void
@@ -85,6 +93,16 @@ nsScriptElement::AttributeChanged(nsIDocument* aDocument,
                                   int32_t aModType)
 {
   MaybeProcessScript();
+#if _TAINT_ON_
+  if(aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::src) {
+    nsString aContentText;
+    aElement->GetAttr(aNameSpaceID, aAttribute, aContentText);
+    if(aContentText.isTainted()) {
+      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
+        aContentText.getTopTaintRef(), "script.src");
+    }
+  }
+#endif
 }
 
 void
@@ -94,6 +112,14 @@ nsScriptElement::ContentAppended(nsIDocument* aDocument,
                                  int32_t aNewIndexInContainer)
 {
   MaybeProcessScript();
+#if _TAINT_ON_
+    nsString aContentText;
+    nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
+    if(aContentText.isTainted()) {
+      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
+        aContentText.getTopTaintRef(), "script.text");
+    }
+#endif
 }
 
 void
@@ -103,6 +129,14 @@ nsScriptElement::ContentInserted(nsIDocument *aDocument,
                                  int32_t aIndexInContainer)
 {
   MaybeProcessScript();
+#if _TAINT_ON_
+    nsString aContentText;
+    nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
+    if(aContentText.isTainted()) {
+      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
+        aContentText.getTopTaintRef(), "script.text");
+    }
+#endif
 }
 
 bool
