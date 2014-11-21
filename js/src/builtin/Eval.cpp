@@ -307,7 +307,7 @@ EvalKernel(JSContext *cx, const CallArgs &args, EvalType evalType, AbstractFrame
 
 #if _TAINT_ON_
     if(str->isTainted()) {
-        taint_report_sink(cx, str->getTopTaintRef(), "eval");
+        taint_report_sink_js(cx, str, "eval");
     }
 #endif
 
@@ -390,7 +390,7 @@ js::DirectEvalStringFromIon(JSContext *cx,
 
 #if _TAINT_ON_
     if(str->isTainted()) {
-        taint_report_sink(cx, str->getTopTaintRef(), "eval");
+        taint_report_sink_js(cx, str, "eval");
     }
 #endif
 

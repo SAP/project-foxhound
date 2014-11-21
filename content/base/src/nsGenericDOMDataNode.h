@@ -22,7 +22,7 @@
 #include "nsISMILAttr.h"
 #include "mozilla/dom/ShadowRoot.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 class nsIDocument;
 class nsIDOMAttr;

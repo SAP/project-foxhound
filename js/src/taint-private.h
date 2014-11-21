@@ -33,13 +33,14 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     masm.jump(target);
 
 //merge references after initializing the taint pointer
-#define TAINT_STR_ASM_CONCAT(masm, out, lhs, rhs) \
+#define TAINT_STR_ASM_CONCAT(masm, cx, out, lhs, rhs) \
 { \
     RegisterSet taintSaveRegs = RegisterSet::Volatile(); \
     masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfStartTaint())); \
     masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfEndTaint())); \
     masm.PushRegsInMask(taintSaveRegs); \
-    masm.setupUnalignedABICall(3, temp1); \
+    masm.setupUnalignedABICall(4, temp1); \
+    masm.passABIArg(cx);\
     masm.passABIArg(out); \
     masm.passABIArg(lhs);\
     masm.passABIArg(rhs); \
@@ -61,7 +62,7 @@ bool taint_str_report(JSContext *cx, unsigned argc, JS::Value *vp);
 
 //concat taint of two strings into a third
 void
-taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs);
+taint_str_concat(JSContext *cx, JSString *dst, JSString *lhs, JSString *rhs);
 //range copy for a substring operation
 JSString *
 taint_str_substr(JSString *str, JSContext *cx, JSString *base,
@@ -78,6 +79,8 @@ taint_add_op_single(TaintStringRef *dst, const char* name,
     JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
+void
+taint_report_sink_js(JSContext *cx, JS::HandleString str, const char* name);
 
 //add a new operator to all TaintStringRefs following dst
 void

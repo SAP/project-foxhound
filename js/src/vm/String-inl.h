@@ -118,7 +118,7 @@ JSRope::init(js::ThreadSafeContext *cx, JSString *left, JSString *right, size_t 
 
 #if _TAINT_ON_
     TAINT_STR_INIT;
-    taint_str_concat(this, left, right);
+    taint_str_concat(cx->maybeJSContext(), this, left, right);
 #endif
 
     js::StringWriteBarrierPost(cx, &d.s.u2.left);

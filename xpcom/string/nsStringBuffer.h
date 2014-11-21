@@ -10,7 +10,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 template<class T> struct already_AddRefed;
 

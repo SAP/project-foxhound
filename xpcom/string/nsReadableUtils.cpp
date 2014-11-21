@@ -181,6 +181,12 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
     NS_ASSERTION(converter.Size() == count,
                  "Unexpected disparity between CalculateUTF8Size and "
                  "ConvertUTF16toUTF8");
+
+#if _TAINT_ON_
+    if(aSource.isTainted())
+      aDest.addTaintRef(taint_duplicate_range(aSource.getTopTaintRef()));
+#endif
+
   }
 
   return true;
@@ -228,6 +234,11 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
       NS_ERROR("Input wasn't UTF8 or incorrect length was calculated");
       aDest.SetLength(old_dest_length);
     }
+
+#if _TAINT_ON_
+    if(aSource.isTainted())
+      aDest.addTaintRef(taint_duplicate_range(aSource.getTopTaintRef()));
+#endif
   }
 
   return true;

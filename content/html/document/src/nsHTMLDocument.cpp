@@ -111,6 +111,8 @@
 #include "nsIStringBundle.h"
 #include "nsDOMClassInfo.h"
 
+#include "mozilla/dom/ToJSValue.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 
@@ -1266,8 +1268,13 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
     nsContentUtils::ConvertStringFromEncoding(NS_LITERAL_CSTRING("UTF-8"),
                                               cookie, aCookie);
 #if _TAINT_ON_
-    if(!aCookie.isTainted())
-      taint_tag_source(&aCookie, "document.cookie");
+    if(!aCookie.isTainted() && aCookie.Length() > 0) {
+      JSContext *cx = nsContentUtils::GetCurrentJSContext();
+      JS::RootedValue stringval(cx);
+      taint_tag_source(&aCookie, "document.cookie", cx);
+      if(mozilla::dom::ToJSValue(cx, aCookie, &stringval))//cx, aCookie, stringval);
+        aCookie.getTopTaintRef()->thisTaint->param1 = stringval;
+    }
 #endif
   }
 }
@@ -1310,8 +1317,7 @@ nsHTMLDocument::SetCookie(const nsAString& aCookie, ErrorResult& rv)
 
 #if _TAINT_ON_
     if(aCookie.isTainted()) {
-      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
-        aCookie.getTopTaintRef(), "document.cookie");
+      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aCookie, "document.cookie");
     }
 #endif
 
@@ -1867,7 +1873,7 @@ nsHTMLDocument::WriteCommon(JSContext *cx,
 
 #if _TAINT_ON_
   if(aText.isTainted()) {
-    taint_report_sink(cx, aText.getTopTaintRef(), "document.write");
+    taint_report_sink_gecko(cx, &aText, "document.write");
   }
 #endif
 

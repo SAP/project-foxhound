@@ -14,7 +14,7 @@
 #include "nsDOMString.h"
 #include "nsIAtom.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 namespace mozilla {
 namespace dom {

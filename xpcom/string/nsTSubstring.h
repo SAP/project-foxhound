@@ -7,7 +7,7 @@
 
 #include "mozilla/Casting.h"
 #include "mozilla/MemoryReporting.h"
-#include "taint.h"
+#include "taint-gecko.h"
 
 #ifndef MOZILLA_INTERNAL_API
 #error Cannot use internal string classes without MOZILLA_INTERNAL_API defined. Use the frozen header nsStringAPI.h instead.

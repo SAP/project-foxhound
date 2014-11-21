@@ -518,7 +518,7 @@ js::ConcatStrings(ThreadSafeContext *cx,
         }
 
 #if _TAINT_ON_
-        taint_str_concat(str, left, right);
+        taint_str_concat(cx->asJSContext(), str, left, right);
 #endif
 
         return str;

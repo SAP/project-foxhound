@@ -12252,7 +12252,7 @@ nsGlobalWindow::SetTimeoutOrInterval(JSContext* aCx, const nsAString& aHandler,
 
 #if _TAINT_ON_
   if(aHandler.isTainted()) {
-    taint_report_sink(aCx, aHandler.getTopTaintRef(), aIsInterval ? "setInterval" : "setTimeout");
+    taint_report_sink_gecko(aCx, &aHandler, aIsInterval ? "setInterval" : "setTimeout");
   }
 #endif
 

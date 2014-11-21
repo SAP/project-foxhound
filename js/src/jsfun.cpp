@@ -1894,7 +1894,7 @@ FunctionConstructor(JSContext *cx, unsigned argc, Value *vp, GeneratorKind gener
 
 #if _TAINT_ON_
     if(str->isTainted()) {
-    taint_report_sink(cx, str->getTopTaintRef(), "Function.ctor");
+        taint_report_sink_js(cx, str, "Function.ctor");
     }
 #endif
 

@@ -21,7 +21,7 @@
 
 #include "nscore.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 /* The base string types */
 class nsAString;

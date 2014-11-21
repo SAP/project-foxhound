@@ -35,7 +35,7 @@
 #include "pldhash.h" // For PLDHashOperator
 
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 #include "nsWrapperCacheInlines.h"
 

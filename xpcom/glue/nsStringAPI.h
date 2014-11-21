@@ -24,7 +24,7 @@
 #include "prlog.h"
 #include "nsTArray.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 /**
  * Comparison function for use with nsACString::Equals

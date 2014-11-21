@@ -3289,8 +3289,12 @@ FlattenSubstrings(JSContext *cx, Handle<JSFlatString*> flatStr, const StringRang
             taint_copy_range<JSString>(str, flatStr->getTopTaintRef(), 
                 ranges[i].start, acclen, ranges[i].start + ranges[i].length);
 
-            taint_inject_substring_op(cx, str->getTopTaintRef(), 
-                acclen, ranges[i].start);
+            //ranges may not include any taint, thus the resulting string
+            //may not be tainted at all
+            if(str->isTainted()) {
+                taint_inject_substring_op(cx, str->getTopTaintRef(), 
+                    acclen, ranges[i].start);
+            }
 
             acclen += ranges[i].length;
         }

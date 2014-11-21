@@ -79,8 +79,7 @@ nsScriptElement::CharacterDataChanged(nsIDocument *aDocument,
   nsString aCont;
   nsContentUtils::GetNodeTextContent(aContent, false, aCont);
   if(aCont.isTainted()) {
-    taint_report_sink(nsContentUtils::GetCurrentJSContext(),
-      aCont.getTopTaintRef(), "script.text");
+    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aCont, "script.text");
   }
 #endif
 }
@@ -98,8 +97,7 @@ nsScriptElement::AttributeChanged(nsIDocument* aDocument,
     nsString aContentText;
     aElement->GetAttr(aNameSpaceID, aAttribute, aContentText);
     if(aContentText.isTainted()) {
-      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
-        aContentText.getTopTaintRef(), "script.src");
+      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aContentText, "script.src");
     }
   }
 #endif
@@ -116,8 +114,7 @@ nsScriptElement::ContentAppended(nsIDocument* aDocument,
     nsString aContentText;
     nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
     if(aContentText.isTainted()) {
-      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
-        aContentText.getTopTaintRef(), "script.text");
+      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aContentText, "script.text");
     }
 #endif
 }
@@ -133,8 +130,7 @@ nsScriptElement::ContentInserted(nsIDocument *aDocument,
     nsString aContentText;
     nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
     if(aContentText.isTainted()) {
-      taint_report_sink(nsContentUtils::GetCurrentJSContext(),
-        aContentText.getTopTaintRef(), "script.text");
+      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aContentText, "script.text");
     }
 #endif
 }

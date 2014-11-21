@@ -179,7 +179,7 @@ bool taint_str_report(JSContext *cx, unsigned argc, JS::Value *vp)
         return false;
 
     if(str->isTainted())
-        taint_report_sink(cx, str->getTopTaintRef(), "manual sink");
+        taint_report_sink_js(cx, str, "manual sink");
 
     args.rval().setUndefined();
     return true;
@@ -571,38 +571,101 @@ struct NodeGraph
     std::set<TaintNode*> nodes;
 };
 
+template <typename T>
+void
+taint_write_string_buffer(const T *s, size_t n, std::string *writer)
+{
+    writer->reserve(writer->length()+n);
+
+    if (n == SIZE_MAX) {
+        n = 0;
+        while (s[n])
+            n++;
+    }
+
+    char buf[5] = "0000";
+    for (size_t i = 0; i < n; i++) {
+        char16_t c = s[i];
+        if(c == '|')
+            writer->append("\\|");
+        else if(c == '&')
+            writer->append("&amp;");
+        else if(c == '"')
+            writer->append("&quot;");
+        else if(c == '<')
+            writer->append("&lt;");
+        else if(c == '>')
+            writer->append("&gt;");
+        else if (c == '\n')
+            writer->append("\\n");
+        else if (c == '\t')
+            writer->append("\\t");
+        else if (c >= 32 && c < 127)
+            writer->push_back((char)s[i]);
+        else if (c <= 255) {
+            snprintf(buf, 3, "%02x", unsigned(c));
+            writer->append("\\x");
+            writer->append(buf);
+        }
+        else {
+            snprintf(buf, 5, "%04x", unsigned(c));
+            writer->append("\\u");
+            writer->append(buf);
+        }
+    }
+}
+
+template void
+taint_write_string_buffer(const Latin1Char *s, size_t n, std::string *writer);
+
+template void
+taint_write_string_buffer(const char16_t *s, size_t n, std::string *writer);
+
 static bool
 taint_jsval_writecallback(const char16_t *buf, uint32_t len, void *data)
 {
     std::string *writer = static_cast<std::string*>(data);
-    for(char *c = (char*)buf; c < (char*)(buf+len); c += 2) {
-        switch(*c) {
-            case '\"':
-                writer->append("\\\"");
-                break;
-            default:
-                writer->append(c, 1);
-                break;
-        }            
-    }
+    taint_write_string_buffer(buf, len, writer);
     
     return true;
 }
 
-void jsvalue_to_string(JSContext *cx, JS::Handle<JS::Value> value, std::string *strval) {
-    mozilla::Maybe<JSAutoCompartment> ac;
+void
+taint_report_sink_js(JSContext *cx, HandleString str, const char* name)
+{
+    JSLinearString *linear = str->ensureLinear(nullptr);
+    if(!linear)
+        return;
+    
+    JS::AutoCheckCannotGC nogc;
+    if(str->hasLatin1Chars())
+        taint_report_sink_internal(cx, linear->latin1Chars(nogc), linear->length(), linear->getTopTaintRef(), name);
+    else
+        taint_report_sink_internal(cx, linear->twoByteChars(nogc), linear->length(), linear->getTopTaintRef(), name);
+} 
+
+void
+jsvalue_to_string(JSContext *cx, HandleValue value, std::string *strval) {
+    /*mozilla::Maybe<JSAutoCompartment> ac;
     if (value.isObject()) {
         JS::Rooted<JSObject*> obj(cx, &value.toObject());
         ac.emplace(cx, obj);
+    }*/
+    RootedValue val(cx);
+
+    if(value.isObject()) {
+        val = StringValue(JS::ToString(cx, value));
+    } else {
+        val = value;
     }
 
-    JS::Rooted<JS::Value> vp(cx, value);
-    JS_Stringify(cx, &vp, JS::NullPtr(), JS::NullHandleValue, taint_jsval_writecallback, strval);
+    JS_Stringify(cx, &val, JS::NullPtr(), JS::NullHandleValue, taint_jsval_writecallback, strval);
     //value = vp;
 }
 
-
-void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
+template <typename T>
+void
+taint_report_sink_internal(JSContext *cx, const T* str, size_t len, TaintStringRef *src, const char* name)
 {
 
     std::set<TaintNode*> visited_nodes;
@@ -654,6 +717,26 @@ void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
     report_name[21]='.';*/
     FILE *h = fopen(report_string.str().c_str(), "w+");
     fputs("digraph G {\n", h);
+    fprintf(h, "    start [label=\"%s\",shape=Mdiamond];\n", name);
+    fputs("    content [shape=record, label=<",h);
+    size_t last = 0;
+    for(TaintStringRef *tsr = src; tsr != nullptr; tsr = tsr->next)
+    {
+        size_t part_len = tsr->begin - last;
+        std::string contentstr;
+        if(part_len > 0) {
+            taint_write_string_buffer(str + last, part_len, &contentstr);
+            fputs(contentstr.c_str(), h);
+        }
+
+        contentstr.clear();
+        taint_write_string_buffer(str + tsr->begin, tsr->end - tsr->begin, &contentstr);
+        fputs("<b>",h);
+        fputs(contentstr.c_str(), h);
+        fputs("</b>",h);
+        last = tsr->end;
+    }
+    fputs(">];\n",h);
     for(std::map<TaintNode*,NodeGraph*>::const_iterator itr=node_graphs.begin();
           itr!=node_graphs.end(); ++itr) {
         NodeGraph *graph = itr->second;
@@ -701,6 +784,7 @@ void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
               itr != visited_refs.end(); ++itr) {
         fprintf(h, "        ref%p [label=\"%u - %u\"];\n", (*itr), (*itr)->begin, (*itr)->end);
         fprintf(h, "        n%p -> ref%p;\n", (*itr)->thisTaint, (*itr));
+        fprintf(h, "        ref%p -> content;\n", (*itr));
         if((*itr)->next) {
             fprintf(h, "        ref%p -> ref%p;\n", (*itr), (*itr)->next);
         } else {
@@ -712,14 +796,17 @@ void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name)
               itr != visited_refs.end(); ++itr) {
         fprintf(h, " ref%p", (*itr));
     }
-    fputs("; }\n", h);
+    fputs(" start; }\n", h);
     fputs("    }\n",h);
-    //fprintf(h, "    start -> ref%p;\n", src);
-    fprintf(h, "    start [label=\"%s\",shape=Mdiamond];\n", name);
-
     fputs("}\n",h);
     fclose(h);
 }
+
+template void
+taint_report_sink_internal(JSContext *cx, const char16_t* str, size_t len, TaintStringRef *src, const char* name);
+
+template void
+taint_report_sink_internal(JSContext *cx, const Latin1Char* str, size_t len, TaintStringRef *src, const char* name);
 
 
 //create a new taintstringref
@@ -792,7 +879,7 @@ taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
 //handle taint propagation for tainted strings
 //TODO optimize for lhs == rhs
 void
-taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs)
+taint_str_concat(JSContext *cx, JSString *dst, JSString *lhs, JSString *rhs)
 {
     if(lhs->isTainted())
         taint_copy_range(dst, lhs->getTopTaintRef(), 0, 0, 0);
@@ -802,7 +889,11 @@ taint_str_concat(JSString *dst, JSString *lhs, JSString *rhs)
 
     //no need to add a taint node for concat as this does not
     //add any valuable information
-    //taint_str_add_all_node(dstroot, "concat");
+    if(cx) {
+        RootedValue lhsval(cx, StringValue(lhs));
+        RootedValue rhsval(cx, StringValue(rhs));
+        taint_add_op(dst->getTopTaintRef(), "concat", cx, lhsval, rhsval);
+    }
 }
 
 #endif

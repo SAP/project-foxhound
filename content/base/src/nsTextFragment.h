@@ -18,7 +18,7 @@
 #include "nsReadableUtils.h"
 #include "nsISupportsImpl.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 class nsString;
 class nsCString;

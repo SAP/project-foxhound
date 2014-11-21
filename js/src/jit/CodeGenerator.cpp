@@ -5909,7 +5909,10 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
     }
 
 #if _TAINT_ON_
-    TAINT_STR_ASM_CONCAT(masm, output, lhs, rhs)
+    masm.push(temp2);
+    masm.loadJSContext(temp2);
+    TAINT_STR_ASM_CONCAT(masm, temp2, output, lhs, rhs)
+    masm.pop(temp2);
 #endif
 
     // Store length and flags.
@@ -6034,7 +6037,10 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
     }
 
 #if _TAINT_ON_
-    TAINT_STR_ASM_CONCAT(masm, output, lhs, rhs)
+    masm.push(temp2);
+    masm.loadJSContext(temp2);
+    TAINT_STR_ASM_CONCAT(masm, temp2, output, lhs, rhs)
+    masm.pop(temp2);
 #endif
 
     // Store rope length and flags. temp1 still holds the result of AND'ing the

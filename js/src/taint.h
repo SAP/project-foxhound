@@ -94,8 +94,9 @@ void taint_tag_source(TaintedT * str, const char* name, JSContext *cx = nullptr,
     str->addTaintRef(newtsr);
 }
 
-void taint_report_sink(JSContext *cx, TaintStringRef *src, const char* name);
-
+template <typename T>
+void
+taint_report_sink_internal(JSContext *cx, const T* str, size_t len, TaintStringRef *src, const char* name);
 
 //partial taint copy
 // - copy taint from source from frombegin until fromend
