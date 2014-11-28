@@ -12,6 +12,7 @@ nsTPromiseFlatString_CharT::Init(const substring_type& str)
     mLength = str.Length();
     mFlags = str.mFlags & (F_TERMINATED | F_LITERAL);
     // does not promote F_VOIDED
+    TAINT_APPEND_TAINT(*this, str.startTaint);
   } else {
     Assign(str);
   }

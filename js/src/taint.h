@@ -12,10 +12,15 @@ typedef struct TaintNode
     JS::Heap<JS::Value> param1;
     JS::Heap<JS::Value> param2;
     struct TaintNode *prev;
+private:
+    JSRuntime* mRt;
+    TaintNode(const TaintNode& that);
 
+public:
     //context can be nullptr, then parameters won't be traced
     TaintNode(JSContext *cx, const char* opname);
     ~TaintNode();
+
 
     void decrease();
     inline void increase() {
@@ -24,17 +29,8 @@ typedef struct TaintNode
 
     void traceMember(JSTracer *trc);
 
-    inline void setPrev(TaintNode *other) {
-        if(prev) {
-            prev->decrease();
-        }
-        if(other) {
-            other->increase();
-        }
-        prev = other;
-    }
-private:
-    JSRuntime* mRt;
+    void setPrev(TaintNode *other);
+
 } TaintNode;
 
 typedef struct TaintStringRef
@@ -71,12 +67,14 @@ TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode
 //wipe out the taint completely (this can free TaintNodes, too)
 void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
 
-//set a (new) source, this includes resetting all previous taint
-// use for all sources
+//set a (new) source
+//str is assumed to not be tainted
 template <typename TaintedT>
 void taint_tag_source(TaintedT * str, const char* name, JSContext *cx = nullptr,
     uint32_t begin = 0, uint32_t end = 0)
 {
+    MOZ_ASSERT(!str->isTainted());
+
     if(str->Length() == 0) {
         return;
     }
@@ -84,48 +82,71 @@ void taint_tag_source(TaintedT * str, const char* name, JSContext *cx = nullptr,
     if(end == 0) {
         end = str->Length();
     }
-
-    if(str->isTainted()) {
-        str->removeAllTaint();
-    }
     
     TaintNode *taint_node = taint_str_add_source_node(cx, name);
     TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
     str->addTaintRef(newtsr);
 }
 
-template <typename T>
 void
-taint_report_sink_internal(JSContext *cx, const T* str, size_t len, TaintStringRef *src, const char* name);
+taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *src, const char* name);
 
 //partial taint copy
 // - copy taint from source from frombegin until fromend
 // - insert with offset
 // - returns the start of the copied chain
-// - optionally set *taint_end to the end of the chain, if provided
+// - optionally sets *taint_end to the end of the chain, if provided
 // fromend = 0 -> copy all
 TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end = NULL,
     uint32_t frombegin = 0, int32_t offset = 0, uint32_t fromend = 0);
 
-
 //create "space" at an offset
-//e.g. push all taints behind, by offset
-//and split up crossing taints
+//e.g. push all taints after position behind by offset and split up crossing taints
 //returns the last TaintStringRef /before/ the insertion point
 TaintStringRef* taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset);
 
+//copy & merge src in correct order into dst_{start,end}
+//we assume no ranges are overlapping
+void taint_copy_merge(TaintStringRef **dst_start, TaintStringRef **dst_end,
+    TaintStringRef *src_start, uint32_t offset);
+
 //remove a range of taint
-void taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin, uint32_t end_offset);
+TaintStringRef * taint_remove_range(TaintStringRef **start, TaintStringRef **end,
+    uint32_t begin, uint32_t end_offset);
+
+//exact taint copy when length of in/out do not match
+// - needs to be called for every "token" in source
+// - *target starts out with nullptr and continues to hold the
+//   last taintref of the new chain
+// - soff: offset of sidx to the start of the string (and with that,
+//   taint reference indices)
+// - return value has to be fed back into source, starts with
+//   the top taintref of the source (and has to be ordered!)
+TaintStringRef *
+taint_copy_exact(TaintStringRef **target, 
+    TaintStringRef *source, size_t sidx, size_t tidx, size_t soff = 0);
 
 //---------------------------------
 //these are helper functions for gecko code, because
-//direct JSString calls are not yet available (JSString is only
-//a forward declaration)
+//direct JSString calls are not yet available sometimes
+//(JSString is only a forward declaration)
 
 void taint_str_addref(JSString *str, TaintStringRef* ref);
-TaintStringRef *taint_get_top(JSString *str);
+
+//implemented for JSString, JSFlatString
+template <typename T>
+TaintStringRef *taint_get_top(T *str);
 
 //----------------------------------
+
+inline void
+taint_ff_end(TaintStringRef **end) {
+    MOZ_ASSERT(end);
+
+    if(*end) {
+        for(; (*end)->next != nullptr; (*end) = (*end)->next);
+    }
+} 
 
 //typical functions included to add taint functionality to string-like
 //classes. additionally two TaintStringRef members are required.
@@ -170,8 +191,7 @@ TaintStringRef *taint_get_top(JSString *str);
                                                         \
     MOZ_ALWAYS_INLINE                                   \
     void ffTaint() {                                    \
-        if(endTaint)                                    \
-            for(; endTaint->next != nullptr; endTaint = endTaint->next); \
+        taint_ff_end(&endTaint);                        \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
@@ -179,10 +199,6 @@ TaintStringRef *taint_get_top(JSString *str);
         if(isTainted())                                 \
             taint_remove_all(&startTaint, &endTaint);   \
     }
-
-//find the TaintStringRef after which tsr is to append
-//TaintStringRef* taint_find_insert_position(TaintStringRef *start, TaintStringRef *tsr);
-
 
 //--------------------------------------------
 
@@ -195,17 +211,27 @@ TaintStringRef *taint_get_top(JSString *str);
 //in place operations and corresponding NOPs
 #if _TAINT_ON_
 //evaluate dst and copy taint to it.
-#define TAINT_COPY_TAINT(dst, src)  \
-({                                  \
-    auto taint_r = (dst);           \
-    if(src) {                       \
-        if(taint_r.isTainted())    \
-            taint_r.addTaintRef(taint_duplicate_range(src));      \
-    }                               \
-    taint_r;                        \
-})
+#define TAINT_APPEND_TAINT(dst, src)                    \
+[](decltype(dst) &taint_r, TaintStringRef* sourceref) -> decltype(dst)& {\
+    if(sourceref /*&& taint_r.isTainted()*/) {          \
+        taint_r.addTaintRef(taint_duplicate_range(sourceref));      \
+    }                                                   \
+    return taint_r;                                     \
+}(dst, src)
+
+//evaluate dst, clear, and copy taint
+#define TAINT_ASSIGN_TAINT(dst, src)                    \
+[](decltype(dst) &taint_r, TaintStringRef* sourceref) -> decltype(dst)& {\
+    taint_r.removeAllTaint();                           \
+    if(sourceref) {                                     \
+        taint_r.addTaintRef(taint_duplicate_range(sourceref));      \
+    }                                                   \
+    return taint_r;                                     \
+}(dst, src)
+
 #else
-#define TAINT_COPY_TAINT(dst, src)  (dst)
+#define TAINT_APPEND_TAINT(dst, src)  (dst)
+#define TAINT_ASSIGN_TAINT(dst, src)  (dst)
 #endif
 
 //--------------------------------------------

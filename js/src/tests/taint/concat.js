@@ -24,14 +24,16 @@ assertEq(notTainted.taint.length, 0);
 // left is tainted: should be the same representation
 var leftTainted = tainted + isit;
 assertEq(leftTainted.taint.length, 1)
-assertEq(JSON.stringify(leftTainted.taint), JSON.stringify(tainted.taint));
+// the following no longer holds, as leftTainted should also contain the concat op
+//assertEq(JSON.stringify(leftTainted.taint), JSON.stringify(tainted.taint));
+assertEq(leftTainted.taint[0].operators.length, 2);
 // right is tainted: offsets should be changed
 var lenLeft = isit.length;
 var rightTainted = isit + tainted;
 assertEq(rightTainted.taint.length, 1);
 assertEq(rightTainted.taint[0].begin, isit.length);
 assertEq(rightTainted.taint[0].end, isit.length + tainted.length);
-assertEq(JSON.stringify(rightTainted.taint[0].operators), JSON.stringify(tainted.taint[0].operators));
+//assertEq(JSON.stringify(rightTainted.taint[0].operators), JSON.stringify(tainted.taint[0].operators));
 
 //explicit operator
 var explicitConcat = tainted.concat(isit);

@@ -90,18 +90,6 @@ taint_add_op(TaintStringRef *dst, const char* name,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
 
-//exact taint copy when length of in/out do not match
-// - needs to be called for every "token" in source
-// - *target starts out with nullptr and continues to hold the
-//   last taintref of the new chain
-// - soff: offset of sidx to the start of the string (and with that,
-//   taint reference indices)
-// - return value has to be fed back into source, starts with
-//   the top taintref of the source (and has to be ordered!)
-TaintStringRef *
-taint_copy_exact(TaintStringRef **target, 
-    TaintStringRef *source, size_t sidx, size_t tidx, size_t soff = 0);
-
 //defs for in place use of primitives
 #define TAINT_STR_COPY(str, base) \
     base->isTainted() ? taint_copy_range((str), base->getTopTaintRef(), 0, 0, 0) : (str)
@@ -109,14 +97,13 @@ taint_copy_exact(TaintStringRef **target,
     ref ? taint_copy_range((str), ref, 0, 0, 0) : (str)
 //do not copy taint for atoms for now
 //until we figured out how to handle this problem
-#define TAINT_ATOM_CLEARCOPY(str, base) \
-({ \
-    JSAtom *res = (str); \
+#define TAINT_ATOM_CLEARCOPY(scope_str, scope_base) \
+[](decltype(scope_str) res, decltype(scope_base) base) -> decltype(scope_str) {\
     res->removeAllTaint(); \
     if(base->isTainted()) \
         taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); \
-    res; \
-})
+    return res; \
+}(scope_str, scope_base)
 
 //partial taint copy
 // - copy taint from source from frombegin until fromend
@@ -126,7 +113,7 @@ template <typename TaintedT>
 TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend);
 
-//other shortcut
+//other shortcuts
 JSString*
 taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
     const char *name, JS::HandleValue param1 = JS::UndefinedHandleValue,
@@ -153,9 +140,11 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     if(targetref) \
         target_last_tsr = *targetref;
 #define TAINT_QUOTE_STRING_MATCH \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
-    if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
-        *targetref = target_last_tsr;
+    if(current_tsr) {               \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
+        if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
+            *targetref = target_last_tsr; \
+    }
 #define TAINT_QUOTE_STRING_VAR \
     TaintStringRef *targetref = nullptr;
 #define TAINT_QUOTE_STRING_APPLY \
@@ -172,20 +161,21 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     if(targetref) \
         target_last_tsr = *targetref; //TODO maybe this is wrong? not the last but first tsr?
 #define TAINT_ESCAPE_MATCH \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, i, ni); \
-    if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
-        *targetref = target_last_tsr;
+    if(current_tsr) { \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, i, ni); \
+        if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
+            *targetref = target_last_tsr; \
+    }
 #define TAINT_ESCAPE_VAR TAINT_QUOTE_STRING_VAR
 #define TAINT_ESCAPE_APPLY \
     if(targetref) { \
         res->addTaintRef(targetref); \
-        taint_add_op(res->getTopTaintRef(), "quote"); \
+        taint_add_op(res->getTopTaintRef(), "escape"); \
     }
 
 
-#define TAINT_MARK_MATCH(str, regex) \
-({ \
-    bool bres = str; \
+#define TAINT_MARK_MATCH(scope_str) \
+[&](decltype(scope_str) bres) -> decltype(scope_str) {\
     RootedValue patVal(cx, StringValue(g.regExp().getSource())); \
     NativeObject *obj = js::MaybeNativeObject(args.rval().get().toObjectOrNull()); \
     if(obj) { \
@@ -196,24 +186,22 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
                 taint_add_op(vstr.toString()->getTopTaintRef(), "match", cx, patVal, resultIdx); \
         } \
     } \
-    bres; \
-})
-#define TAINT_MARK_REPLACE(str) \
-({ \
-    bool bres = str; \
+    return bres; \
+}(scope_str)
+#define TAINT_MARK_REPLACE(scope_str) \
+[&](decltype(scope_str) bres) -> decltype(scope_str) {\
     RootedValue regexVal(cx, args[0]); \
     RootedValue replaceVal(cx, args[1]); \
     taint_add_op(args.rval().get().toString()->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
-    bres; \
-})
-#define TAINT_MARK_REPLACE_RAW(str, re) \
-({ \
-    bool bres = str; \
-    RootedValue regexVal(cx, re); \
+    return bres; \
+}(scope_str)
+#define TAINT_MARK_REPLACE_RAW(scope_str, scope_re) \
+[&](decltype(scope_str) bres, decltype(scope_re) re_val) -> decltype(scope_str) {\
+    RootedValue regexVal(cx, re_val); \
     RootedValue replaceVal(cx, StringValue(replacement)); \
     taint_add_op(rval.get().toString()->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
-    bres; \
-})
+    return bres; \
+}(scope_str, scope_re)
 #define TAINT_MARK_SPLIT \
     RootedValue splitVal(cx, args[0]); \
     NativeObject *nobj = js::MaybeNativeObject(aobj); \
@@ -241,22 +229,25 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c,false)
 
 
+
 #define TAINT_JSON_QUOTE_PRE \
     TaintStringRef *current_tsr = str->getTopTaintRef(); \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_JSON_QUOTE_MATCH(k, off) \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length() + off); \
-    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
-        sb.addTaintRef(target_last_tsr);
-
+    if(current_tsr) { \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length() + off); \
+        if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+            sb.addTaintRef(target_last_tsr); \
+    }
 
 #define TAINT_UNESCAPE_DEF(a,b) Unescape(a,b,TaintStringRef *source)
 #define TAINT_UNESCAPE_CALL(a,b) Unescape(a,b,str->getTopTaintRef())
 #define TAINT_UNESCAPE_MATCH(k) \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
-    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
-        sb.addTaintRef(target_last_tsr);
-
+    if(building && current_tsr) { \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
+        if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+            sb.addTaintRef(target_last_tsr); \
+    }
 
 #define TAINT_ENCODE_CALL(a,b,c,d,e) Encode(a,b,c,d,e,str->getTopTaintRef())
 #define TAINT_ENCODE_DEF(a,b,c,d,e) Encode(a,b,c,d,e,TaintStringRef *source)
@@ -264,10 +255,11 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     TaintStringRef *current_tsr = source; \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_ENCODE_MATCH(k) \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
-    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
-        sb.addTaintRef(target_last_tsr);
-
+    if(current_tsr) { \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
+        if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+            sb.addTaintRef(target_last_tsr); \
+    }
 
 #define TAINT_DECODE_CALL(a,b,c,d) Decode(a,b,c,d,str->getTopTaintRef())
 #define TAINT_DECODE_DEF(a,b,c,d) Decode(a,b,c,d,TaintStringRef *source)
@@ -275,9 +267,11 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     TaintStringRef *current_tsr = source; \
     TaintStringRef *target_last_tsr = nullptr;
 #define TAINT_DECODE_MATCH(k) \
-    current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
-    if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
-        sb.addTaintRef(target_last_tsr);
+    if(current_tsr) { \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, k, sb.length()); \
+        if(sb.getTopTaintRef() == nullptr && target_last_tsr != nullptr) \
+            sb.addTaintRef(target_last_tsr); \
+    }
 
 #else
 

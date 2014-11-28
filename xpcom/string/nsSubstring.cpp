@@ -231,7 +231,7 @@ nsStringBuffer::Alloc(size_t aSize)
 #if _TAINT_ON_
     hdr->startTaint = nullptr;
     hdr->endTaint = nullptr;
-    hdr->ownTaint = 0;
+//    hdr->ownTaint = 0;
 #endif
     NS_LOG_ADDREF(hdr, 1, "nsStringBuffer", sizeof(*hdr));
   }
@@ -296,13 +296,14 @@ nsStringBuffer::FromString(const nsAString& aStr)
 
     buf->ownTaint = 0;
   } */
+
+  //optimize: do not use TAINT_ASSIGN_TAINT to set the endTaint pointer
   if(buf->isTainted()) {
     buf->removeAllTaint();
   }
   if(aStr.isTainted()) {
     buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
   }
-
 #endif
 
   return buf;
@@ -336,6 +337,7 @@ nsStringBuffer::FromString(const nsACString& aStr)
 
   } */
 
+  //optimize: do not use TAINT_ASSIGN_TAINT to set the endTaint pointer
   if(buf->isTainted()) {
     buf->removeAllTaint();
   }
@@ -366,7 +368,7 @@ nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
   }
   accessor->set(data, aLen, flags);
 #if _TAINT_ON_
-  aStr.addTaintRef(taint_duplicate_range(startTaint));
+  TAINT_ASSIGN_TAINT(aStr, startTaint);
 #endif
 }
 
@@ -388,7 +390,7 @@ nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
   }
   accessor->set(data, aLen, flags);
 #if _TAINT_ON_
-  aStr.addTaintRef(taint_duplicate_range(startTaint));
+  TAINT_ASSIGN_TAINT(aStr, startTaint);
 #endif
 }
 

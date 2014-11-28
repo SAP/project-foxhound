@@ -388,6 +388,11 @@ nsTString_CharT::SetCharAt( char16_t aChar, uint32_t aIndex )
   if (!EnsureMutable())
     NS_ABORT_OOM(mLength);
 
+#if _TAINT_ON_
+  if(isTainted())
+    taint_remove_range(&startTaint, &endTaint, aIndex, aIndex + 1);
+#endif
+
   mData[aIndex] = CharT(aChar);
   return true;
 }
@@ -425,8 +430,13 @@ nsTString_CharT::ReplaceChar( char_type aOldChar, char_type aNewChar )
 
   for (uint32_t i=0; i<mLength; ++i)
   {
-    if (mData[i] == aOldChar)
+    if (mData[i] == aOldChar) {
       mData[i] = aNewChar;
+#if _TAINT_ON_
+      if(isTainted())
+        taint_remove_range(&startTaint, &endTaint, i, i + 1);
+#endif
+    }
   }
 }
 
@@ -444,6 +454,11 @@ nsTString_CharT::ReplaceChar( const char* aSet, char_type aNewChar )
     int32_t i = ::FindCharInSet(data, lenRemaining, aSet);
     if (i == kNotFound)
       break;
+
+#if _TAINT_ON_
+    if(isTainted())
+      taint_remove_range(&startTaint, &endTaint, i, i + 1);
+#endif
 
     data[i++] = aNewChar;
     data += i;

@@ -1317,7 +1317,7 @@ nsHTMLDocument::SetCookie(const nsAString& aCookie, ErrorResult& rv)
 
 #if _TAINT_ON_
     if(aCookie.isTainted()) {
-      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aCookie, "document.cookie");
+      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aCookie, "document.cookie");
     }
 #endif
 
@@ -1873,7 +1873,7 @@ nsHTMLDocument::WriteCommon(JSContext *cx,
 
 #if _TAINT_ON_
   if(aText.isTainted()) {
-    taint_report_sink_gecko(cx, &aText, "document.write");
+    taint_report_sink_gecko(cx, aText, "document.write");
   }
 #endif
 

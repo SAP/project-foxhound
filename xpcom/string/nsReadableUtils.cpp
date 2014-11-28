@@ -89,6 +89,9 @@ LossyAppendUTF16toASCII(const nsAString& aSource, nsACString& aDest)
 
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
+
+  //Lossy does not need any special handling
+  TAINT_APPEND_TAINT(aDest, aSource.getTopTaintRef());
 }
 
 void
@@ -119,13 +122,12 @@ AppendASCIItoUTF16(const nsACString& aSource, nsAString& aDest,
   // right now, this won't work on multi-fragment destinations
   LossyConvertEncoding8to16 converter(dest.get());
 
-#if _TAINT_ON_
-  if(aSource.isTainted())
-    aDest.addTaintRef(taint_duplicate_range(aSource.getTopTaintRef()));
-#endif
-
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
+
+  //Lossy does not need any special handling
+  TAINT_APPEND_TAINT(aDest, aSource.getTopTaintRef());
+
   return true;
 }
 
@@ -174,7 +176,13 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
 
     // All ready? Time to convert
 
+#if _TAINT_ON_
     ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length);
+#else
+    ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length,
+      aSource.getTopTaintRef());
+#endif
+
     copy_string(aSource.BeginReading(source_start),
                 aSource.EndReading(source_end), converter);
 
@@ -184,7 +192,7 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
 
 #if _TAINT_ON_
     if(aSource.isTainted())
-      aDest.addTaintRef(taint_duplicate_range(aSource.getTopTaintRef()));
+      TAINT_APPEND_TAINT(aDest, converter.getTaintResult());
 #endif
 
   }
@@ -222,7 +230,12 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
 
     // All ready? Time to convert
 
+#if _TAINT_ON_
     ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length);
+#else
+    ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length,
+      aSource.getTopTaintRef());
+#endif
     copy_string(aSource.BeginReading(source_start),
                 aSource.EndReading(source_end), converter);
 
@@ -233,12 +246,12 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
     if (converter.ErrorEncountered()) {
       NS_ERROR("Input wasn't UTF8 or incorrect length was calculated");
       aDest.SetLength(old_dest_length);
-    }
-
+    } else {
 #if _TAINT_ON_
     if(aSource.isTainted())
-      aDest.addTaintRef(taint_duplicate_range(aSource.getTopTaintRef()));
+      TAINT_APPEND_TAINT(aDest, converter.getTaintResult());
 #endif
+    }
   }
 
   return true;
@@ -667,6 +680,8 @@ ToUpperCase(const nsACString& aSource, nsACString& aDest)
   CopyToUpperCase converter(aDest.BeginWriting(toBegin));
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
+
+  TAINT_ASSIGN_TAINT(aDest, aSource.getTopTaintRef());
 }
 
 /**
@@ -748,6 +763,8 @@ ToLowerCase(const nsACString& aSource, nsACString& aDest)
   CopyToLowerCase converter(aDest.BeginWriting(toBegin));
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
+
+  TAINT_ASSIGN_TAINT(aDest, aSource.getTopTaintRef());
 }
 
 bool

@@ -127,10 +127,14 @@ JSONParser<CharT>::readString()
     TaintStringRef *current_tsr = sourceRef;
     TaintStringRef *target_first_tsr = nullptr;
     TaintStringRef *target_last_tsr = nullptr;
-    const CharPtr s_start = current;
+    //offset of the beginning of the string literal from
+    //the whole string-to-parse
+    size_t s_off = current - begin;
+    //beginning of the string literal
+    //const CharPtr s_start = current;
 
     #define TAINT_JSON_PARSE_OPT \
-        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, current - start, s_start - begin); \
+        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, current - start, s_off); \
         if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
             target_first_tsr = target_last_tsr;
 
@@ -160,7 +164,6 @@ JSONParser<CharT>::readString()
             if (!str)
                 return token(OOM);
 #if _TAINT_ON_
-            TAINT_JSON_PARSE_OPT
             TAINT_JSON_PARSE_APPLY
 #endif
             return stringToken(str);

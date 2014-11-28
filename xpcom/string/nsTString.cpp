@@ -22,6 +22,8 @@ nsTAdoptingString_CharT::operator=(const self_type& str)
     mLength = str.mLength;
     SetDataFlags(F_TERMINATED | F_OWNED);
 
+    TAINT_APPEND_TAINT(*this, str.startTaint);
+
     // Make str forget the buffer we just took ownership of.
     new (mutable_str) self_type();
   } else {

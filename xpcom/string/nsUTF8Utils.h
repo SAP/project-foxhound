@@ -16,6 +16,8 @@
 
 #include "nsCharTraits.h"
 
+#include "taint.h"
+
 class UTF8traits
 {
 public:
@@ -280,8 +282,15 @@ public:
   typedef char value_type;
   typedef char16_t buffer_type;
 
+#if _TAINT_ON_
+  explicit ConvertUTF8toUTF16(buffer_type* aBuffer, TaintStringRef *source = nullptr)
+#else
   explicit ConvertUTF8toUTF16(buffer_type* aBuffer)
+#endif
     : mStart(aBuffer), mBuffer(aBuffer), mErrorEncountered(false)
+#if _TAINT_ON_
+    , mDestRef(nullptr), mCurrentRef(source)
+#endif
   {
   }
 
@@ -316,6 +325,13 @@ public:
         return;
       }
 
+#if _TAINT_ON_
+    if(mCurrentRef) {
+      mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
+        size_t(p - aStart), size_t(out-mBuffer));
+    }
+#endif
+
       if (ucs4 >= PLANE1_BASE) {
         *out++ = (buffer_type)H_SURROGATE(ucs4);
         *out++ = (buffer_type)L_SURROGATE(ucs4);
@@ -323,6 +339,14 @@ public:
         *out++ = ucs4;
       }
     }
+
+#if _TAINT_ON_
+    if(mCurrentRef) {
+      mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
+        size_t(p - aStart), size_t(out-mBuffer));
+    }
+#endif
+
     mBuffer = out;
   }
 
@@ -331,10 +355,20 @@ public:
     *mBuffer = buffer_type(0);
   }
 
+#if _TAINT_ON_
+  TaintStringRef *getTaintResult() {
+    return mDestRef;
+  }
+#endif
+
 private:
   buffer_type* const mStart;
   buffer_type* mBuffer;
   bool mErrorEncountered;
+#if _TAINT_ON_
+  TaintStringRef *mDestRef;
+  TaintStringRef *mCurrentRef;
+#endif
 };
 
 /**
@@ -453,8 +487,15 @@ public:
   // |ConvertUTF8toUTF16|, but it's that way for backwards
   // compatibility.
 
+#if _TAINT_ON_
+  explicit ConvertUTF16toUTF8(buffer_type* aBuffer, TaintStringRef *source = nullptr)
+#else
   explicit ConvertUTF16toUTF8(buffer_type* aBuffer)
+#endif
     : mStart(aBuffer), mBuffer(aBuffer)
+#if _TAINT_ON_
+    , mDestRef(nullptr), mCurrentRef(source)
+#endif
   {
   }
 
@@ -468,6 +509,12 @@ public:
     buffer_type* out = mBuffer; // gcc isn't smart enough to do this!
 
     for (const value_type* p = aStart, *end = aStart + aN; p < end; ++p) {
+#if _TAINT_ON_
+      if(mCurrentRef) {
+        mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
+          size_t(p - aStart), size_t(out-mBuffer));
+      }
+#endif
       value_type c = *p;
       if (!(c & 0xFF80)) { // U+0000 - U+007F
         *out++ = (char)c;
@@ -538,6 +585,13 @@ public:
       }
     }
 
+#if _TAINT_ON_
+    if(mCurrentRef) {
+      mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
+        size_t(aN), size_t(out-mBuffer));
+    }
+#endif
+
     mBuffer = out;
   }
 
@@ -546,9 +600,19 @@ public:
     *mBuffer = buffer_type(0);
   }
 
+#if _TAINT_ON_
+  TaintStringRef *getTaintResult() {
+    return mDestRef;
+  }
+#endif
+
 private:
   buffer_type* const mStart;
   buffer_type* mBuffer;
+#if _TAINT_ON_
+  TaintStringRef *mDestRef;
+  TaintStringRef *mCurrentRef;
+#endif
 };
 
 /**

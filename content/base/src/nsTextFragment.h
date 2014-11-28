@@ -149,18 +149,14 @@ public:
         return false;
       }
 
-#if _TAINT_ON_
-      if(isTainted())
-        aString.addTaintRef(taint_duplicate_range(startTaint));
-#endif
+      TAINT_APPEND_TAINT(aString, startTaint);
 
       return true;
     } else {
       nsDependentCSubstring sub = Substring(m1b, mState.mLength);
-#if _TAINT_ON_
-      if(startTaint)
-        sub.addTaintRef(taint_duplicate_range(startTaint));
-#endif
+
+      TAINT_APPEND_TAINT(sub, startTaint);
+
       return AppendASCIItoUTF16(sub, aString,
                                 mozilla::fallible_t());
     }
@@ -193,15 +189,12 @@ public:
         return false;
       }
 
-#if _TAINT_ON_
-      if(isTainted())
-        aString.addTaintRef(taint_duplicate_range(startTaint));
-#endif
+      TAINT_APPEND_TAINT(aString, startTaint);
 
       return true;
     } else {
-      return AppendASCIItoUTF16(TAINT_COPY_TAINT(Substring(m1b + aOffset, aLength), startTaint), aString,
-                                mozilla::fallible_t());
+      auto substr = Substring(m1b + aOffset, aLength);
+      return AppendASCIItoUTF16(TAINT_APPEND_TAINT(substr, startTaint), aString, mozilla::fallible_t());
     }
   }
 

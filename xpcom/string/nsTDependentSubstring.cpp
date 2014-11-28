@@ -21,6 +21,9 @@ nsTDependentSubstring_CharT::Rebind(const substring_type& str,
   mLength = XPCOM_MIN(length, strLength - startPos);
 
   SetDataFlags(F_NONE);
+
+  //present taint will be removed by Finalize above
+  TAINT_APPEND_TAINT(*this, str.getTopTaintRef());
 }
 
 void

@@ -151,9 +151,9 @@ AssignJSString(JSContext *cx, T &dest, JSString *s)
     JS_ReportOutOfMemory(cx);
     return false;
   }
-#if _TAINT_ON_
-  dest.addTaintRef(taint_duplicate_range(taint_get_top(s)));
-#endif
+
+  TAINT_ASSIGN_TAINT(dest, taint_get_top(s));
+
   return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
 }
 
@@ -164,6 +164,9 @@ AssignJSFlatString(nsAString &dest, JSFlatString *s)
   static_assert(js::MaxStringLength < (1 << 28),
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
+
+  TAINT_ASSIGN_TAINT(dest, taint_get_top(s));
+
   js::CopyFlatStringChars(dest.BeginWriting(), s, len);
 }
 

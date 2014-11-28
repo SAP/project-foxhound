@@ -930,6 +930,11 @@ nsString::ReplaceChar( const char16_t* aSet, char16_t aNewChar )
     if (i == kNotFound)
       break;
 
+#if _TAINT_ON_
+    if(isTainted())
+      taint_remove_range(&startTaint, &endTaint, i, i + 1);
+#endif
+
     data[i++] = aNewChar;
     data += i;
     lenRemaining -= i;

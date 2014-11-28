@@ -160,6 +160,9 @@ nsTSubstring_CharT::MutatePrep(size_type aCapacity, char_type** aOldData,
 void
 nsTSubstring_CharT::Finalize()
 {
+#if _TAINT_ON_
+  removeAllTaint();
+#endif
   ::ReleaseData(mData, mFlags);
   // mData, mLength, and mFlags are purposefully left dangling
 }
@@ -204,6 +207,20 @@ nsTSubstring_CharT::ReplacePrepInternal(index_type aCutStart, size_type aCutLen,
       char_traits::move(mData + to, mData + from, fromLen);
     }
   }
+
+#if _TAINT_ON_
+  if(isTainted()) {
+    if(aCutStart == 0 && aCutLen == mLength) {
+      removeAllTaint(); //optimize a full remove-cut
+    } else if(aCutLen > 0) {
+      taint_remove_range(&startTaint, &endTaint, aCutStart, aCutStart + aCutLen);
+    }
+    if(aFragLen > 0) {
+      taint_insert_offset(startTaint, aCutStart, aFragLen);
+      ffTaint();
+    }
+  }
+#endif
 
   // add null terminator (mutable mData always has room for the null-
   // terminator).
@@ -355,6 +372,9 @@ nsTSubstring_CharT::AssignASCII(const char* aData, size_type aLength,
 void
 nsTSubstring_CharT::AssignLiteral(const char_type* aData, size_type aLength)
 {
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
   ::ReleaseData(mData, mFlags);
   mData = const_cast<char_type*>(aData);
   mLength = aLength;
@@ -385,11 +405,6 @@ nsTSubstring_CharT::Assign(const self_type& aStr, const fallible_t&)
     return true;
   }
 
-#if _TAINT_ON_
-    removeAllTaint();
-    addTaintRef(taint_duplicate_range(aStr.startTaint));
-#endif
-
   if (aStr.mFlags & F_SHARED) {
     // nice! we can avoid a string copy :-)
 
@@ -404,16 +419,21 @@ nsTSubstring_CharT::Assign(const self_type& aStr, const fallible_t&)
 
     // get an owning reference to the mData
     nsStringBuffer::FromData(mData)->AddRef();
+    TAINT_ASSIGN_TAINT(*this, aStr.startTaint);
     return true;
   } else if (aStr.mFlags & F_LITERAL) {
     NS_ABORT_IF_FALSE(aStr.mFlags & F_TERMINATED, "Unterminated literal");
 
     AssignLiteral(aStr.mData, aStr.mLength);
+    TAINT_ASSIGN_TAINT(*this, aStr.startTaint);
+    
     return true;
   }
 
   // else, treat this like an ordinary assignment.
-  return Assign(aStr.Data(), aStr.Length(), fallible_t());
+  bool ok = Assign(aStr.Data(), aStr.Length(), fallible_t());
+  TAINT_APPEND_TAINT(*this, aStr.startTaint);
+  return ok;
 }
 
 void
@@ -449,6 +469,11 @@ nsTSubstring_CharT::Assign(const substring_tuple_type& aTuple,
   aTuple.WriteTo(mData, length);
   mData[length] = 0;
   mLength = length;
+
+#if _TAINT_ON_
+  TAINT_ASSIGN_TAINT(*this, aTuple.getTopTaintRef());
+#endif
+
   return true;
 }
 
@@ -457,6 +482,10 @@ nsTSubstring_CharT::Adopt(char_type* aData, size_type aLength)
 {
   if (aData) {
     ::ReleaseData(mData, mFlags);
+
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
 
     if (aLength == size_type(-1)) {
       aLength = char_traits::length(aData);
@@ -590,6 +619,10 @@ nsTSubstring_CharT::Replace(index_type aCutStart, size_type aCutLength,
 
   if (ReplacePrep(aCutStart, aCutLength, length) && length > 0) {
     aTuple.WriteTo(mData + aCutStart, length);
+#if _TAINT_ON_
+    if(aTuple.isTainted())
+      taint_copy_merge(&startTaint, &endTaint, aTuple.getTopTaintRef(), aCutStart);
+#endif
   }
 }
 
@@ -808,10 +841,23 @@ nsTSubstring_CharT::StripChar(char_type aChar, int32_t aOffset)
   char_type* from = mData + aOffset;
   char_type* end  = mData + mLength;
 
+#if _TAINT_ON_
+  TaintStringRef **current = &startTaint;
+#endif
+
   while (from < end) {
     char_type theChar = *from++;
     if (aChar != theChar) {
       *to++ = theChar;
+    } else {
+#if _TAINT_ON_
+      uint32_t cur_offset = from - mData - aOffset;
+      TaintStringRef *last = taint_remove_range(current, &endTaint, cur_offset, cur_offset + 1);
+      //if not start being removed, speed-up next time & update pointer accordingly
+      if(last) {
+        current = &last->next;
+      }
+#endif
     }
   }
   *to = char_type(0); // add the null
@@ -835,6 +881,10 @@ nsTSubstring_CharT::StripChars(const char_type* aChars, uint32_t aOffset)
   char_type* from = mData + aOffset;
   char_type* end  = mData + mLength;
 
+#if _TAINT_ON_
+  TaintStringRef **current = &startTaint;
+#endif
+
   while (from < end) {
     char_type theChar = *from++;
     const char_type* test = aChars;
@@ -844,6 +894,15 @@ nsTSubstring_CharT::StripChars(const char_type* aChars, uint32_t aOffset)
     if (!*test) {
       // Not stripped, copy this char.
       *to++ = theChar;
+    } else {
+#if _TAINT_ON_
+      uint32_t offset = from - mData - aOffset;
+      TaintStringRef *last = taint_remove_range(current, &endTaint, offset, offset + 1);
+      //if not start being removed, speed-up next time & update pointer accordingly
+      if(last) {
+        current = &last->next;
+      }
+#endif
     }
   }
   *to = char_type(0); // add the null

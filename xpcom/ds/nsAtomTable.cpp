@@ -592,8 +592,6 @@ class CheckStaticAtomSizes
                    offsetof(nsStringBuffer, startTaint)), "5");
     static_assert((offsetof(nsFakeStringBuffer<1>, endTaint) ==
                    offsetof(nsStringBuffer, endTaint)), "6");
-    static_assert((offsetof(nsFakeStringBuffer<1>, ownTaint) ==
-                   offsetof(nsStringBuffer, ownTaint)), "7");
     static_assert((offsetof(nsFakeStringBuffer<1>, mStringData) ==
                    sizeof(nsStringBuffer)),
                   "mocked-up strings' representations should be compatible");

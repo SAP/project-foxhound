@@ -33,7 +33,7 @@ private:
 #if _TAINT_ON_
   TaintStringRef *startTaint;
   TaintStringRef *endTaint;
-  uintptr_t ownTaint;
+//  uintptr_t ownTaint;
 #endif
 
 public:

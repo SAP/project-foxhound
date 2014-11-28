@@ -93,9 +93,7 @@ public:
   // this acts like a virtual destructor
   ~nsTSubstring_CharT()
   {
-#if _TAINT_ON_
-        removeAllTaint();
-#endif
+    //Finalize handles taint removal
     Finalize();
   }
 

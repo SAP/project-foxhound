@@ -4642,7 +4642,7 @@ nsGlobalWindow::GetName(nsAString& aName, ErrorResult& aError)
   }
 
 #if _TAINT_ON_
-  if(!aName.isTainted())
+  if(!aName.isTainted() && aName.Length() > 0)
     taint_tag_source(&aName, "window.name");
 #endif
 }
@@ -12252,7 +12252,7 @@ nsGlobalWindow::SetTimeoutOrInterval(JSContext* aCx, const nsAString& aHandler,
 
 #if _TAINT_ON_
   if(aHandler.isTainted()) {
-    taint_report_sink_gecko(aCx, &aHandler, aIsInterval ? "setInterval" : "setTimeout");
+    taint_report_sink_gecko(aCx, aHandler, aIsInterval ? "setInterval" : "setTimeout");
   }
 #endif
 

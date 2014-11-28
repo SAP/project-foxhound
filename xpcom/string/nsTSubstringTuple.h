@@ -14,6 +14,9 @@
  * NOTE: This class is a private implementation detail and should never be
  * referenced outside the string code.
  */
+
+#include "taint.h"
+
 class nsTSubstringTuple_CharT
 {
 public:
@@ -33,6 +36,9 @@ public:
     : mHead(nullptr)
     , mFragA(aStrA)
     , mFragB(aStrB)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 
@@ -41,6 +47,9 @@ public:
     : mHead(&aHead)
     , mFragA(nullptr) // this fragment is ignored when aHead != nullptr
     , mFragB(aStrB)
+#if _TAINT_ON_
+    , startTaint(nullptr), endTaint(nullptr)
+#endif
   {
   }
 
@@ -62,11 +71,19 @@ public:
    */
   bool IsDependentOn(const char_type* aStart, const char_type* aEnd) const;
 
+#if _TAINT_ON_
+  TAINT_STRING_HOOKS(startTaint, endTaint)
+#endif
+
 private:
 
   const self_type*        mHead;
   const base_string_type* mFragA;
   const base_string_type* mFragB;
+#if _TAINT_ON_
+  TaintStringRef *startTaint;
+  TaintStringRef *endTaint;
+#endif
 };
 
 inline const nsTSubstringTuple_CharT

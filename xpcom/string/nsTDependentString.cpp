@@ -22,4 +22,6 @@ nsTDependentString_CharT::Rebind(const string_type& str, uint32_t startPos)
   mLength = strLength - startPos;
 
   SetDataFlags(str.Flags() & (F_TERMINATED | F_LITERAL));
+
+  TAINT_APPEND_TAINT(*this, str.getTopTaintRef());
 }

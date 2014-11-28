@@ -1984,7 +1984,7 @@ Element::SetEventHandler(nsIAtom* aEventName,
   if(aValue.isTainted()) {
     nsCString taintEventName;
     aEventName->ToUTF8String(taintEventName);
-    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), &aValue, taintEventName.get());
+    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aValue, taintEventName.get());
   }
 #endif
 

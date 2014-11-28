@@ -287,8 +287,11 @@ TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
     while (k < length) {
         /* Step 6. */
         char16_t c = chars[k];
+
 #if _TAINT_ON_
-        TAINT_UNESCAPE_MATCH(k)
+        //we need to get the correct offset in source
+        //after building is determined
+        int k_taint_start = k;
 #endif
 
         /* Step 7. */
@@ -310,9 +313,9 @@ TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
                 if (!sb.reserve(length))                     \
                     return false;                            \
                 for(int i = 0; i < k; i++) {                 \
+                    TAINT_UNESCAPE_MATCH(i)                  \
                     sb.infallibleAppend(chars.start().get() + i, 1); \
                 }                                            \
-                TAINT_UNESCAPE_MATCH(k)                      \
             }                                                \
         } while(false);
 
@@ -335,6 +338,9 @@ TAINT_UNESCAPE_DEF(StringBuffer &sb, const mozilla::Range<const CharT> chars)
         }
 
       step_18:
+#if _TAINT_ON_
+        TAINT_UNESCAPE_MATCH(k_taint_start)
+#endif
         if (building && !sb.append(c))
             return false;
 
@@ -2575,10 +2581,10 @@ js::str_match(JSContext *cx, unsigned argc, Value *vp)
 
     /* Steps 5-6, 7. */
     if (!g.regExp().global())
-        return TAINT_MARK_MATCH(DoMatchLocal(cx, args, res, linearStr, g.regExp()), linearStr);
+        return TAINT_MARK_MATCH(DoMatchLocal(cx, args, res, linearStr, g.regExp()));
 
     /* Steps 6, 8. */
-    return TAINT_MARK_MATCH(DoMatchGlobal(cx, args, res, linearStr, g), linearStr);
+    return TAINT_MARK_MATCH(DoMatchGlobal(cx, args, res, linearStr, g));
 }
 
 bool
@@ -3284,16 +3290,17 @@ FlattenSubstrings(JSContext *cx, Handle<JSFlatString*> flatStr, const StringRang
     if(flatStr->isTainted()) {
         size_t acclen = 0;
         for(size_t i = 0; i < rangesLen; i++) {
-            //TaintStringRef *last = str->getBottomTaintRef();
+            TaintStringRef *last = str->getBottomTaintRef();
+            TaintStringRef *next = nullptr;
 
             taint_copy_range<JSString>(str, flatStr->getTopTaintRef(), 
                 ranges[i].start, acclen, ranges[i].start + ranges[i].length);
 
             //ranges may not include any taint, thus the resulting string
             //may not be tainted at all
-            if(str->isTainted()) {
-                taint_inject_substring_op(cx, str->getTopTaintRef(), 
-                    acclen, ranges[i].start);
+            next = (last ? last->next : str->getTopTaintRef());
+            if(next) {
+                taint_inject_substring_op(cx, next, acclen, ranges[i].start);
             }
 
             acclen += ranges[i].length;
