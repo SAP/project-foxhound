@@ -459,29 +459,19 @@ public:
 #endif // XPCOM_GLUE_AVOID_NSPR
 
 #if _TAINT_ON_
-  bool isTainted() const {
-    return TAINT_NS_StringTainted(*this);
-  }
+  NS_HIDDEN_(bool) isTainted() const;
 
-  TaintStringRef *getTopTaintRef() {
-    return TAINT_NS_StringTopTaint(*this);
-  }
+  NS_HIDDEN_(TaintStringRef*) getTopTaintRef();
 
-  TaintStringRef *getBottomTaintRef() {
-    return TAINT_NS_StringBottomTaint(*this);
-  }
+  NS_HIDDEN_(TaintStringRef*) getBottomTaintRef();
 
-  void addTaintRef(TaintStringRef *tsr)  {
-    TAINT_NS_StringAddTaintRef(*this, tsr);
-  }
+  NS_HIDDEN_(void) addTaintRef(TaintStringRef *tsr);
 
-  void ffTaint() {
-    TAINT_NS_StringFfTaint(*this);
-  };
+  NS_HIDDEN_(void) removeRangeTaint(uint32_t start, uint32_t end);
 
-  void removeAllTaint() {
-    TAINT_NS_StringRemoveAll(*this);
-  }
+  NS_HIDDEN_(void) ffTaint();
+
+  NS_HIDDEN_(void) removeAllTaint();
 #endif
 
 protected:
@@ -898,29 +888,19 @@ public:
 #endif // XPCOM_GLUE_AVOID_NSPR
 
 #if _TAINT_ON_
-  bool isTainted() const {
-    return TAINT_NS_CStringTainted(*this);
-  }
+  NS_HIDDEN_(bool) isTainted() const;
 
-  TaintStringRef *getTopTaintRef() {
-    return TAINT_NS_CStringTopTaint(*this);
-  }
+  NS_HIDDEN_(TaintStringRef*) getTopTaintRef();
 
-  TaintStringRef *getBottomTaintRef() {
-    return TAINT_NS_CStringBottomTaint(*this);
-  }
+  NS_HIDDEN_(TaintStringRef*) getBottomTaintRef();
 
-  void addTaintRef(TaintStringRef *tsr)  {
-    TAINT_NS_CStringAddTaintRef(*this, tsr);
-  }
+  NS_HIDDEN_(void) addTaintRef(TaintStringRef *tsr);
 
-  void ffTaint() {
-    TAINT_NS_CStringFfTaint(*this);
-  };
+  NS_HIDDEN_(void) ffTaint();
 
-  void removeAllTaint() {
-    TAINT_NS_CStringRemoveAll(*this);
-  }
+  NS_HIDDEN_(void) removeAllTaint();
+
+  NS_HIDDEN_(void) removeRangeTaint(uint32_t start, uint32_t end);
 #endif
 
 protected:

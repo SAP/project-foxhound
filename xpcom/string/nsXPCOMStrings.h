@@ -767,6 +767,7 @@ XPCOM_API(void) TAINT_NS_StringFfTaint(nsAString& aString);
 
 XPCOM_API(void) TAINT_NS_StringRemoveAll(nsAString& aString);
 
+XPCOM_API(void) TAINT_NS_StringRemoveRangeTaint(nsAString &aString, uint32_t start, uint32_t end);
 
 
 XPCOM_API(bool) TAINT_NS_CStringTainted(const nsACString& aString);
@@ -780,6 +781,11 @@ XPCOM_API(void) TAINT_NS_CStringAddTaintRef(nsACString& aString, TaintStringRef 
 XPCOM_API(void) TAINT_NS_CStringFfTaint(nsACString& aString);
 
 XPCOM_API(void) TAINT_NS_CStringRemoveAll(nsACString& aString);
+
+XPCOM_API(void) TAINT_NS_CStringRemoveRangeTaint(nsACString &aString, uint32_t start, uint32_t end);
+
+
+XPCOM_API(TaintStringRef*) TAINT_NS_DUPLICATE_RANGE(TaintStringRef *src, TaintStringRef **taint_end, uint32_t frombegin, int32_t offset, uint32_t fromend);
 
 #endif
 

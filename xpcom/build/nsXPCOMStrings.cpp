@@ -412,6 +412,12 @@ TAINT_NS_StringRemoveAll(nsAString& aString)
   aString.removeAllTaint();
 }
 
+XPCOM_API(void)
+TAINT_NS_StringRemoveRangeTaint(nsAString &aString, uint32_t start, uint32_t end)
+{
+  aString.removeRangeTaint(start, end);
+}
+
 
 
 XPCOM_API(bool)
@@ -448,6 +454,18 @@ XPCOM_API(void)
 TAINT_NS_CStringRemoveAll(nsACString& aString)
 {
   aString.removeAllTaint();
+}
+
+XPCOM_API(void)
+TAINT_NS_CStringRemoveRangeTaint(nsACString &aString, uint32_t start, uint32_t end)
+{
+  aString.removeRangeTaint(start, end);
+}
+
+XPCOM_API(TaintStringRef*)
+TAINT_NS_DUPLICATE_RANGE(TaintStringRef *src, TaintStringRef **taint_end, uint32_t frombegin, int32_t offset, uint32_t fromend)
+{
+  return taint_duplicate_range(src, taint_end, frombegin, offset, fromend);
 }
 
 #endif
