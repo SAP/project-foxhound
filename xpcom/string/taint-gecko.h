@@ -7,7 +7,7 @@
 
 class nsAString;
 
-void
+nsresult
 taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name);
 
 #endif

@@ -54,7 +54,7 @@ assertEq(taintStrUntaint.taint.length, 0);
 //mirror mutator is not tested here, see concat operator test
 //[{begin:0, end:14, operators:[{op:"Mutation w/o param", param:(void 0)}, {op:"Mutation with param", param:"String parameter"}, {op:"Manual Taint", param:(void 0)}]}]
 var taintStrMutator = String.newAllTainted("is it tainted?");
-taintStrMutator.mutateTaint();
+taintStrMutator.taintTestMutate();
 assertEq(taintStrMutator.taint.length, 1); // one taintref
 assertEq(taintStrMutator.taint[0].begin, 0); 
 assertEq(taintStrMutator.taint[0].end, taintStrMutator.length); //spans the whole string

@@ -120,9 +120,6 @@ Quote(StringBuffer &sb, JSLinearString *str)
                 return false;
             }
         }
-#if _TAINT_ON_
-        TAINT_JSON_QUOTE_MATCH(i, 0)
-#endif
     }
 
 #if _TAINT_ON_

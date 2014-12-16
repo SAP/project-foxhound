@@ -11,8 +11,9 @@
 //
 #define TAINT_ADD_JSSTR_METHODS \
 JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
-JS_FN("mutateTaint",            taint_str_testop,               0,JSFUN_GENERIC_NATIVE),\
-JS_FN("reportTaint",            taint_str_report,               0,JSFUN_GENERIC_NATIVE),
+JS_FN("taintTestMutate",        taint_str_testop,               0,JSFUN_GENERIC_NATIVE),\
+JS_FN("taintTestReport",        taint_str_report,               0,JSFUN_GENERIC_NATIVE),\
+JS_FN("reportTaint",            taint_js_report_flow,           1,JSFUN_GENERIC_NATIVE),
 
 #define TAINT_ADD_JSSTR_STATIC_METHODS \
 JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
@@ -59,6 +60,8 @@ bool taint_str_untaint(JSContext *cx, unsigned argc, JS::Value *vp);
 bool taint_str_testop(JSContext *cx, unsigned argc, JS::Value *vp);
 //JavaScript taint reporter for testing
 bool taint_str_report(JSContext *cx, unsigned argc, JS::Value *vp);
+
+bool taint_js_report_flow(JSContext *cx, unsigned argc, JS::Value *vp);
 
 //concat taint of two strings into a third
 void
