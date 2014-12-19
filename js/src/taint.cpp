@@ -106,9 +106,10 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
     prev(nullptr),
     mRt(nullptr)
 {
+    /*
     if(cx && (mRt = js::GetRuntime(cx))) {
         JS_AddExtraGCRootsTracer(mRt, TraceTaintNode, this);
-    }
+    }*/
 }
 
 void
@@ -120,10 +121,12 @@ TaintNode::traceMember(JSTracer *trc)
 
 TaintNode::~TaintNode()
 {
+
+    /*
     if(mRt) {
         JS_RemoveExtraGCRootsTracer(mRt, TraceTaintNode, this);
         mRt = nullptr;
-    }
+    }*/
 
 }
 
@@ -300,6 +303,8 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             RootedValue opname(cx, StringValue(NewStringCopyZ<CanGC>(cx, curnode->op)));
             RootedValue param1val(cx, curnode->param1);
             RootedValue param2val(cx, curnode->param2);
+            JS_WrapValue(cx, &param1val);
+            JS_WrapValue(cx, &param2val);
 
             if(!taintobj)
                 return false;
@@ -308,6 +313,7 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
                 return false;
 
             //param is optional
+
             JS_DefineProperty(cx, taintobj, "param1", param1val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
             JS_DefineProperty(cx, taintobj, "param2", param2val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
 
@@ -980,12 +986,14 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
             std::string param1, param2;
             if(!node->param1.isUndefined()) {
                 RootedValue convertValue(cx, node->param1);
-                param1.append("\\n");
+                param1.append("<br/>");
+                JS_WrapValue(cx, &convertValue);
                 jsvalue_to_stdstring(cx, convertValue, &param1);
             }
             if(!node->param2.isUndefined()) {
                 RootedValue convertValue(cx, node->param2);
-                param2.append("\\n");
+                param2.append("<br/>");
+                JS_WrapValue(cx, &convertValue);
                 jsvalue_to_stdstring(cx, convertValue, &param2);
             }
 
