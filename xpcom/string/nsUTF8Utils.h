@@ -325,7 +325,7 @@ public:
         return;
       }
 
-#if _TAINT_ON_
+#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(p - aStart), size_t(out-mBuffer));
@@ -340,7 +340,7 @@ public:
       }
     }
 
-#if _TAINT_ON_
+#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(p - aStart), size_t(out-mBuffer));
@@ -509,7 +509,7 @@ public:
     buffer_type* out = mBuffer; // gcc isn't smart enough to do this!
 
     for (const value_type* p = aStart, *end = aStart + aN; p < end; ++p) {
-#if _TAINT_ON_
+#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
       if(mCurrentRef) {
         mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
           size_t(p - aStart), size_t(out-mBuffer));
@@ -585,7 +585,7 @@ public:
       }
     }
 
-#if _TAINT_ON_
+#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(aN), size_t(out-mBuffer));
