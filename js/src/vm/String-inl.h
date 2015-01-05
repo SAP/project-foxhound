@@ -155,23 +155,25 @@ JSDependentString::init(js::ThreadSafeContext *cx, JSLinearString *base, size_t 
     MOZ_ASSERT(!js::IsPoisonedPtr(base));
     MOZ_ASSERT(start + length <= base->length());
     d.u1.length = length;
-    JS::AutoCheckCannotGC nogc;
-    if (base->hasLatin1Chars()) {
-        d.u1.flags = DEPENDENT_FLAGS | LATIN1_CHARS_BIT;
-        d.s.u2.nonInlineCharsLatin1 = base->latin1Chars(nogc) + start;
-    } else {
-        d.u1.flags = DEPENDENT_FLAGS;
-        d.s.u2.nonInlineCharsTwoByte = base->twoByteChars(nogc) + start;
+    {
+        JS::AutoCheckCannotGC nogc;
+        if (base->hasLatin1Chars()) {
+            d.u1.flags = DEPENDENT_FLAGS | LATIN1_CHARS_BIT;
+            d.s.u2.nonInlineCharsLatin1 = base->latin1Chars(nogc) + start;
+        } else {
+            d.u1.flags = DEPENDENT_FLAGS;
+            d.s.u2.nonInlineCharsTwoByte = base->twoByteChars(nogc) + start;
+        }
+        d.s.u3.base = base;
+
+        js::StringWriteBarrierPost(cx, reinterpret_cast<JSString **>(&d.s.u3.base));
     }
-    d.s.u3.base = base;
 
 #if _TAINT_ON_
     TAINT_STR_INIT;
     if(base->isTainted())
-        taint_str_substr(this, cx->asExclusiveContext()->asJSContext(), base, start, length);
+        taint_str_substr(this, cx->asJSContext(), base, start, length);
 #endif
-
-    js::StringWriteBarrierPost(cx, reinterpret_cast<JSString **>(&d.s.u3.base));
 }
 
 MOZ_ALWAYS_INLINE JSLinearString *

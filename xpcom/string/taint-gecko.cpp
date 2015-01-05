@@ -10,16 +10,17 @@ taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name)
 	JS::RootedObject strobj(cx);
 	JS::RootedValue  strval(cx);
     JS::RootedValue  rval(cx);
+    JS::RootedObject stack(cx);
     //JS::RootedId id(cx);
     //bool ok = false;
 
-    
+    JS::CaptureCurrentStack(cx, &stack);
     mozilla::dom::ToJSValue(cx, str, &strval);
-
-    JS::AutoValueArray<1> params(cx);
-    params[0].setString(JS_NewStringCopyZ(cx, name));
-
     JS_ValueToObject(cx, strval, &strobj);
+
+    JS::AutoValueArray<2> params(cx);
+    params[0].setString(JS_NewStringCopyZ(cx, name));
+    params[1].setObject(*stack);
 
     if(!JS_CallFunctionName(cx, strobj, "reportTaint", params, &rval)) {
     	return NS_ERROR_FAILURE;

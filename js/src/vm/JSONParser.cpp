@@ -141,7 +141,7 @@ JSONParser<CharT>::readString()
     #define TAINT_JSON_PARSE_APPLY \
         if(target_first_tsr) { \
             str->addTaintRef(target_first_tsr); \
-            taint_add_op(str->getTopTaintRef(), "JSON.parse"); \
+            taint_add_op(str->getTopTaintRef(), "JSON.parse", cx); \
         }
 
 #endif

@@ -6,6 +6,8 @@
 
 #include "jsarray.h"
 #include "taint-private.h"
+#include "vm/SavedStacks.h"
+#include "vm/StringObject-inl.h"
 
 #include <algorithm>
 #include <map>
@@ -91,12 +93,12 @@ taint_tag_source_internal(JSString * str, const char* name,
 
 //----------------------------------
 // Reference Node
-
+/*
 static void
 TraceTaintNode(JSTracer *trc, void* data)
 {
     reinterpret_cast<TaintNode*>(data)->traceMember(trc);
-}
+} */
 
 TaintNode::TaintNode(JSContext *cx, const char* opname) :
     op(opname),
@@ -104,8 +106,25 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
     param1(),
     param2(),
     prev(nullptr),
+    stack(),
     mRt(nullptr)
 {
+    
+    if(cx) {
+        RootedObject stackobj(cx);
+        JS::CaptureCurrentStack(cx, &stackobj);
+        stack = stackobj;
+    }
+    /*
+    if(cx) {
+        SavedStacks &stacks = cx->compartment()->savedStacks();
+        RootedSavedFrame frame(cx, nullptr);
+        NonBuiltinScriptFrameIter iter(cx, FrameIter::ALL_CONTEXTS, FrameIter::GO_THROUGH_SAVED);
+        MOZ_ASSERT(stacks.initialized());
+        stacks.insertFrames(cx, iter, &frame, 0);
+        stack = frame;
+    }*/
+
     /*
     if(cx && (mRt = js::GetRuntime(cx))) {
         JS_AddExtraGCRootsTracer(mRt, TraceTaintNode, this);
@@ -213,7 +232,7 @@ taint_str_testop(JSContext *cx, unsigned argc, Value *vp)
 
     RootedValue param(cx, StringValue(NewStringCopyZ<CanGC>(cx, "String parameter")));
     taint_add_op(str->getTopTaintRef(), "Mutation with params", cx, param, param);
-    taint_add_op(str->getTopTaintRef(), "Mutation w/o param");
+    taint_add_op(str->getTopTaintRef(), "Mutation w/o param", cx);
 
     args.rval().setUndefined();
     return true;
@@ -269,7 +288,7 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
         }
     }
 
-    taint_tag_source_internal(taintedStr, "Manual taint source");
+    taint_tag_source_internal(taintedStr, "Manual taint source", cx);
 
     args.rval().setString(taintedStr);
     return true;
@@ -303,8 +322,11 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             RootedValue opname(cx, StringValue(NewStringCopyZ<CanGC>(cx, curnode->op)));
             RootedValue param1val(cx, curnode->param1);
             RootedValue param2val(cx, curnode->param2);
+            RootedObject stackobj(cx, curnode->stack);
             JS_WrapValue(cx, &param1val);
             JS_WrapValue(cx, &param2val);
+            if(!!stackobj)
+                JS_WrapObject(cx, &stackobj);
 
             if(!taintobj)
                 return false;
@@ -316,6 +338,8 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 
             JS_DefineProperty(cx, taintobj, "param1", param1val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
             JS_DefineProperty(cx, taintobj, "param2", param2val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
+            if(!!stackobj)
+                JS_DefineProperty(cx, taintobj, "stack", stackobj, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
 
             if(!taintchain.append(ObjectValue(*taintobj)))
                 return false;
@@ -832,6 +856,12 @@ taint_write_string_buffer(const T *s, size_t n, std::string *writer)
             writer->append("<br/>");
         else if (c == '\t')
             writer->append("\\t");
+        else if(c == '\\' && i+1 < n) {
+            if((char16_t)s[i+1] == 'n') {
+                writer->append("<br/>");
+                i++;
+            }
+        }
         else if (c >= 32 && c < 127)
             writer->push_back((char)s[i]);
         else if (c <= 255) {
@@ -872,7 +902,6 @@ jsvalue_to_stdstring(JSContext *cx, HandleValue value, std::string *strval) {
     }*/
 
     MOZ_ASSERT(cx && strval);
-    strval->clear();
 
     RootedValue val(cx);
 
@@ -886,8 +915,8 @@ jsvalue_to_stdstring(JSContext *cx, HandleValue value, std::string *strval) {
     //value = vp;
 }
 
-void
-taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *src, const char* name)
+static void
+taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *src, const char* name, const char* stack)
 {
 
     std::set<TaintNode*> visited_nodes;
@@ -944,7 +973,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
     }
 
     fputs("digraph G {\n", h);
-    fprintf(h, "    start [label=<%s>,shape=Mdiamond];\n", name);
+    fprintf(h, "    start [label=<%s<br/>%s>,shape=Mdiamond];\n", name, stack);
     fputs("    content [shape=record, label=<",h);
     {
         size_t last = 0;
@@ -983,7 +1012,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
         for(std::set<TaintNode*>::const_iterator nitr = graph->nodes.begin();
               nitr != graph->nodes.end(); ++nitr) {
             TaintNode *node = *nitr;
-            std::string param1, param2;
+            std::string param1, param2, stack;
             if(!node->param1.isUndefined()) {
                 RootedValue convertValue(cx, node->param1);
                 param1.append("<br/>");
@@ -996,8 +1025,14 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
                 JS_WrapValue(cx, &convertValue);
                 jsvalue_to_stdstring(cx, convertValue, &param2);
             }
+            if(!!node->stack) {
+                RootedValue stackValue(cx, ObjectValue(*node->stack));
+                stack.append("<br/>");
+                JS_WrapValue(cx, &stackValue);
+                jsvalue_to_stdstring(cx, stackValue, &stack);
+            }
 
-            fprintf(h, "        n%p[label=<%s%s%s>];\n", node, node->op, param1.c_str(), param2.c_str());
+            fprintf(h, "        n%p[label=<%s%s%s%s>];\n", node, node->op, param1.c_str(), param2.c_str(), stack.c_str());
             if(node->prev)
                 fprintf(h, "        n%p -> n%p;\n", node->prev, node);
         }
@@ -1048,7 +1083,7 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     args.rval().setUndefined();
-    if(args.length() < 1)
+    if(args.length() < 2)
         return true;
 
     RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
@@ -1059,10 +1094,11 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
     if(str->length() == 0 || !str->isTainted())
         return true;
 
-    std::string sink_str;
+    std::string sink_str, stack_str;
     jsvalue_to_stdstring(cx, args[0], &sink_str);
+    jsvalue_to_stdstring(cx, args[1], &stack_str);
 
-    taint_report_sink_internal(cx, args.thisv(), str->getTopTaintRef(), sink_str.c_str());
+    taint_report_sink_internal(cx, args.thisv(), str->getTopTaintRef(), sink_str.c_str(), stack_str.c_str());
 
     return true;
 }
@@ -1072,8 +1108,14 @@ taint_report_sink_js(JSContext *cx, HandleString str, const char* name)
 {
     RootedValue rval(cx);
     RootedObject strobj(cx);
-    JS::AutoValueArray<1> params(cx);
-    params[0].setString(JS_NewStringCopyZ(cx, name));
+    RootedObject stack(cx);
+    JS::AutoValueArray<2> params(cx);
+    
+    params[0].setString(NewStringCopyZ<CanGC>(cx, name));
+    
+    JS::CaptureCurrentStack(cx, &stack);
+    params[1].setObject(*stack);
+    
     strobj = StringObject::create(cx, str);
 
     JS_CallFunctionName(cx, strobj, "reportTaint", params, &rval);

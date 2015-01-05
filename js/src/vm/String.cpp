@@ -493,32 +493,36 @@ js::ConcatStrings(ThreadSafeContext *cx,
         if (!str)
             return nullptr;
 
-        AutoCheckCannotGC nogc;
-        ScopedThreadSafeStringInspector leftInspector(left);
-        ScopedThreadSafeStringInspector rightInspector(right);
-        if (!leftInspector.ensureChars(cx, nogc) || !rightInspector.ensureChars(cx, nogc))
-            return nullptr;
+        {
+            AutoCheckCannotGC nogc;
+            ScopedThreadSafeStringInspector leftInspector(left);
+            ScopedThreadSafeStringInspector rightInspector(right);
+            if (!leftInspector.ensureChars(cx, nogc) || !rightInspector.ensureChars(cx, nogc))
+                return nullptr;
 
-        if (isLatin1) {
-            Latin1Char *buf = str->initLatin1(wholeLength);
-            PodCopy(buf, leftInspector.latin1Chars(), leftLen);
-            PodCopy(buf + leftLen, rightInspector.latin1Chars(), rightLen);
-            buf[wholeLength] = 0;
-        } else {
-            char16_t *buf = str->initTwoByte(wholeLength);
-            if (leftInspector.hasTwoByteChars())
-                PodCopy(buf, leftInspector.twoByteChars(), leftLen);
-            else
-                CopyAndInflateChars(buf, leftInspector.latin1Chars(), leftLen);
-            if (rightInspector.hasTwoByteChars())
-                PodCopy(buf + leftLen, rightInspector.twoByteChars(), rightLen);
-            else
-                CopyAndInflateChars(buf + leftLen, rightInspector.latin1Chars(), rightLen);
-            buf[wholeLength] = 0;
+            if (isLatin1) {
+                Latin1Char *buf = str->initLatin1(wholeLength);
+                PodCopy(buf, leftInspector.latin1Chars(), leftLen);
+                PodCopy(buf + leftLen, rightInspector.latin1Chars(), rightLen);
+                buf[wholeLength] = 0;
+            } else {
+                char16_t *buf = str->initTwoByte(wholeLength);
+                if (leftInspector.hasTwoByteChars())
+                    PodCopy(buf, leftInspector.twoByteChars(), leftLen);
+                else
+                    CopyAndInflateChars(buf, leftInspector.latin1Chars(), leftLen);
+                if (rightInspector.hasTwoByteChars())
+                    PodCopy(buf + leftLen, rightInspector.twoByteChars(), rightLen);
+                else
+                    CopyAndInflateChars(buf + leftLen, rightInspector.latin1Chars(), rightLen);
+                buf[wholeLength] = 0;
+            }
         }
 
 #if _TAINT_ON_
+        Rooted<JSFatInlineString*> rootstr(cx, str);
         taint_str_concat(cx->asJSContext(), str, left, right);
+        str = rootstr;
 #endif
 
         return str;

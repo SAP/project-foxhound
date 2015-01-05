@@ -5,6 +5,7 @@
 
 #include "jsapi.h"
 
+
 typedef struct TaintNode
 {
     const char *op;
@@ -12,6 +13,7 @@ typedef struct TaintNode
     JS::Heap<JS::Value> param1;
     JS::Heap<JS::Value> param2;
     struct TaintNode *prev;
+    JS::Heap<JSObject*> stack;
 private:
     JSRuntime* mRt;
     TaintNode(const TaintNode& that);
@@ -87,9 +89,6 @@ void taint_tag_source(TaintedT * str, const char* name, JSContext *cx = nullptr,
     TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
     str->addTaintRef(newtsr);
 }
-
-void
-taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *src, const char* name);
 
 //partial taint copy
 // - copy taint from source from frombegin until fromend

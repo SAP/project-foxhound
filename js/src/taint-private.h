@@ -153,7 +153,7 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_QUOTE_STRING_APPLY \
     if(targetref) { \
         res->addTaintRef(targetref); \
-        taint_add_op(res->getTopTaintRef(), "quote"); \
+        taint_add_op(res->getTopTaintRef(), "quote", cx->asJSContext()); \
     }
 
 
@@ -173,7 +173,7 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_ESCAPE_APPLY \
     if(targetref) { \
         res->addTaintRef(targetref); \
-        taint_add_op(res->getTopTaintRef(), "escape"); \
+        taint_add_op(res->getTopTaintRef(), "escape", cx); \
     }
 
 

@@ -392,7 +392,7 @@ str_unescape(JSContext *cx, unsigned argc, Value *vp)
     }
 
 #if _TAINT_ON_
-    taint_add_op(result->getTopTaintRef(), "unescape");
+    taint_add_op(result->getTopTaintRef(), "unescape", cx);
 #endif
 
     args.rval().setString(result);
@@ -5156,9 +5156,9 @@ Encode(JSContext *cx, HandleLinearString str, const bool *unescapedSet,
 
 #if _TAINT_ON_
     if(unescapedSet2 == js_isUriReservedPlusPound)
-        taint_add_op(sb.getTopTaintRef(), "encodeURI");
+        taint_add_op(sb.getTopTaintRef(), "encodeURI", cx);
     else
-        taint_add_op(sb.getTopTaintRef(), "encodeURIComponent");
+        taint_add_op(sb.getTopTaintRef(), "encodeURIComponent", cx);
 #endif
 
     MOZ_ASSERT(res == Encode_Success);
@@ -5285,9 +5285,9 @@ Decode(JSContext *cx, HandleLinearString str, const bool *reservedSet, MutableHa
 
 #if _TAINT_ON_
     if(reservedSet == js_isUriReservedPlusPound)
-        taint_add_op(sb.getTopTaintRef(), "decodeURI");
+        taint_add_op(sb.getTopTaintRef(), "decodeURI", cx);
     else
-        taint_add_op(sb.getTopTaintRef(), "decodeURIComponent");
+        taint_add_op(sb.getTopTaintRef(), "decodeURIComponent", cx);
 #endif
 
     MOZ_ASSERT(res == Decode_Success);
