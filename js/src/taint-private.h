@@ -28,25 +28,11 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
         d.u0.endTaint = nullptr; \
     } while(false)
 
-//skip "statictable" optimization, that reads short
-//strings from a pre-calculated table instead of creating new
-#define TAINT_GETELEM_SKIPSTATIC_ASM(target) \
-    masm.jump(target);
-
 //merge references after initializing the taint pointer
-#define TAINT_STR_ASM_CONCAT(masm, cx, out, lhs, rhs) \
+#define TAINT_STR_ASM_INIT(dst) \
 { \
-    RegisterSet taintSaveRegs = RegisterSet::Volatile(); \
-    masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfStartTaint())); \
-    masm.storePtr(ImmPtr(nullptr), Address(out, JSString::offsetOfEndTaint())); \
-    masm.PushRegsInMask(taintSaveRegs); \
-    masm.setupUnalignedABICall(4, temp1); \
-    masm.passABIArg(cx);\
-    masm.passABIArg(out); \
-    masm.passABIArg(lhs);\
-    masm.passABIArg(rhs); \
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, taint_str_concat)); \
-    masm.PopRegsInMask(taintSaveRegs); \
+    masm.storePtr(ImmPtr(nullptr), Address(dst, JSString::offsetOfStartTaint())); \
+    masm.storePtr(ImmPtr(nullptr), Address(dst, JSString::offsetOfEndTaint())); \
 }
 
 //JavaScript functions

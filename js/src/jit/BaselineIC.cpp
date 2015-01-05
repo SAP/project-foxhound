@@ -4453,6 +4453,9 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler &masm)
     // Unbox string in R0.
     Register str = masm.extractString(R0, ExtractTemp0);
 
+#if _TAINT_ON_
+    masm.jump(&failure);
+#else
     // Check for non-linear strings.
     masm.branchIfRope(str, &failure);
 
@@ -4466,10 +4469,6 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler &masm)
     // Get char code.
     masm.loadStringChar(str, key, scratchReg);
 
-#if _TAINT_ON_
-    TAINT_GETELEM_SKIPSTATIC_ASM(&failure);
-#endif
-
     // Check if char code >= UNIT_STATIC_LIMIT.
     masm.branch32(Assembler::AboveOrEqual, scratchReg, Imm32(StaticStrings::UNIT_STATIC_LIMIT),
                   &failure);
@@ -4481,6 +4480,7 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler &masm)
     // Return.
     masm.tagValue(JSVAL_TYPE_STRING, str, R0);
     EmitReturnFromIC(masm);
+#endif
 
     // Failure case - jump to next stub
     masm.bind(&failure);

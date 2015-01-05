@@ -847,14 +847,15 @@ void
 CodeGenerator::emitIntToString(Register input, Register output, Label *ool)
 {
 #if _TAINT_ON_
-    TAINT_GETELEM_SKIPSTATIC_ASM(ool);
-#endif
-
+    //skip static lookup
+    masm.jump(ool);
+#else
     masm.branch32(Assembler::AboveOrEqual, input, Imm32(StaticStrings::INT_STATIC_LIMIT), ool);
 
     // Fast path for small integers.
     masm.movePtr(ImmPtr(&GetIonContext()->runtime->staticStrings().intStaticTable), output);
     masm.loadPtr(BaseIndex(output, input, ScalePointer), output);
+#endif
 }
 
 typedef JSFlatString *(*IntToStringFn)(ThreadSafeContext *, int);
@@ -5909,10 +5910,7 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
     }
 
 #if _TAINT_ON_
-    masm.push(temp2);
-    masm.loadJSContext(temp2);
-    TAINT_STR_ASM_CONCAT(masm, temp2, output, lhs, rhs)
-    masm.pop(temp2);
+    TAINT_STR_ASM_INIT(output);
 #endif
 
     // Store length and flags.
@@ -5995,6 +5993,15 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
 
     masm.add32(temp1, temp2);
 
+#if _TAINT_ON_
+    //do the slow walk if lhs or rhs are tainted
+    //"isTainted"
+    masm.loadPtr(Address(lhs, JSString::offsetOfStartTaint()), temp1);
+    masm.branchTest32(Assembler::NonZero, temp1, temp1, &failure);
+    masm.loadPtr(Address(rhs, JSString::offsetOfStartTaint()), temp1);
+    masm.branchTest32(Assembler::NonZero, temp1, temp1, &failure);
+#endif
+
     // Check if we can use a JSFatInlineString. The result is a Latin1 string if
     // lhs and rhs are both Latin1, so we AND the flags.
     Label isFatInlineTwoByte, isFatInlineLatin1;
@@ -6037,10 +6044,7 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
     }
 
 #if _TAINT_ON_
-    masm.push(temp2);
-    masm.loadJSContext(temp2);
-    TAINT_STR_ASM_CONCAT(masm, temp2, output, lhs, rhs)
-    masm.pop(temp2);
+    TAINT_STR_ASM_INIT(output);
 #endif
 
     // Store rope length and flags. temp1 still holds the result of AND'ing the
@@ -6232,15 +6236,17 @@ CodeGenerator::visitFromCharCode(LFromCharCode *lir)
         return false;
 
 #if _TAINT_ON_
-    TAINT_GETELEM_SKIPSTATIC_ASM(ool->entry());
-#endif
-
+    //skip static lookup
+    masm.jump(ool->entry());
+#else
     // OOL path if code >= UNIT_STATIC_LIMIT.
     masm.branch32(Assembler::AboveOrEqual, code, Imm32(StaticStrings::UNIT_STATIC_LIMIT),
                   ool->entry());
 
     masm.movePtr(ImmPtr(&GetIonContext()->runtime->staticStrings().unitStaticTable), output);
     masm.loadPtr(BaseIndex(output, code, ScalePointer), output);
+    
+#endif
 
     masm.bind(ool->rejoin());
     return true;
