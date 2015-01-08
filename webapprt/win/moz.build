@@ -10,6 +10,8 @@ SOURCES += [
     'webapprt.cpp',
 ]
 
+DEFINES['_TAINT_NO_TRACK_'] = True
+
 DEFINES['XPCOM_GLUE'] = True
 if CONFIG['DEBUG']:
     DEFINES['DEBUG'] = True

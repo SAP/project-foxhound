@@ -294,6 +294,16 @@ public:
   {
   }
 
+  ~ConvertUTF8toUTF16()
+  {
+#if _TAINT_ON_
+    if(mDestRef) {
+        NS_WARNING("Leaking Taint ref chain in UTF8 conversion.");
+        mDestRef = nullptr;
+    }
+#endif
+  }
+
   size_t Length() const
   {
     return mBuffer - mStart;
@@ -325,7 +335,7 @@ public:
         return;
       }
 
-#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
+#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(p - aStart), size_t(out-mBuffer));
@@ -340,7 +350,7 @@ public:
       }
     }
 
-#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
+#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(p - aStart), size_t(out-mBuffer));
@@ -356,8 +366,10 @@ public:
   }
 
 #if _TAINT_ON_
-  TaintStringRef *getTaintResult() {
-    return mDestRef;
+  TaintStringRef *takeTaintResult() {
+    TaintStringRef *r = mDestRef;
+    mDestRef = nullptr;
+    return r;
   }
 #endif
 
@@ -499,6 +511,16 @@ public:
   {
   }
 
+  ~ConvertUTF16toUTF8()
+  {
+#if _TAINT_ON_
+    if(mDestRef) {
+        NS_WARNING("Leaking Taint ref chain in UTF8 conversion.");
+        mDestRef = nullptr;
+    }
+#endif
+  }
+
   size_t Size() const
   {
     return mBuffer - mStart;
@@ -509,7 +531,7 @@ public:
     buffer_type* out = mBuffer; // gcc isn't smart enough to do this!
 
     for (const value_type* p = aStart, *end = aStart + aN; p < end; ++p) {
-#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
+#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
       if(mCurrentRef) {
         mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
           size_t(p - aStart), size_t(out-mBuffer));
@@ -585,7 +607,7 @@ public:
       }
     }
 
-#if defined(_TAINT_ON_) && !defined(NS_NO_XPCOM)
+#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(aN), size_t(out-mBuffer));
@@ -601,8 +623,10 @@ public:
   }
 
 #if _TAINT_ON_
-  TaintStringRef *getTaintResult() {
-    return mDestRef;
+  TaintStringRef *takeTaintResult() {
+    TaintStringRef *r = mDestRef;
+    mDestRef = nullptr;
+    return r;
   }
 #endif
 

@@ -89,6 +89,7 @@ if have_progressui == 0:
     ]
 
 DEFINES['NS_NO_XPCOM'] = True
+DEFINES['_TAINT_NO_TRACK_'] = True
 DISABLE_STL_WRAPPING = True
 for var in ('MAR_CHANNEL_ID', 'MOZ_APP_VERSION'):
     DEFINES[var] = '"%s"' % CONFIG[var]

@@ -192,7 +192,7 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
 
 #if _TAINT_ON_
     if(aSource.isTainted())
-      TAINT_APPEND_TAINT(aDest, converter.getTaintResult());
+      TAINT_APPEND_TAINT(aDest, converter.takeTaintResult());
 #endif
 
   }
@@ -249,7 +249,7 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
     } else {
 #if _TAINT_ON_
     if(aSource.isTainted())
-      TAINT_APPEND_TAINT(aDest, converter.getTaintResult());
+      TAINT_APPEND_TAINT(aDest, converter.takeTaintResult());
 #endif
     }
   }
