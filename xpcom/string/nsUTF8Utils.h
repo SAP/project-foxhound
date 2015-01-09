@@ -16,7 +16,10 @@
 
 #include "nsCharTraits.h"
 
+#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_) && !defined(NS_NO_XPCOM)
+#define TAINT_OVERRIDE_ENABLE
 #include "taint.h"
+#endif
 
 class UTF8traits
 {
@@ -282,13 +285,13 @@ public:
   typedef char value_type;
   typedef char16_t buffer_type;
 
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
   explicit ConvertUTF8toUTF16(buffer_type* aBuffer, TaintStringRef *source = nullptr)
 #else
   explicit ConvertUTF8toUTF16(buffer_type* aBuffer)
 #endif
     : mStart(aBuffer), mBuffer(aBuffer), mErrorEncountered(false)
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
     , mDestRef(nullptr), mCurrentRef(source)
 #endif
   {
@@ -296,9 +299,9 @@ public:
 
   ~ConvertUTF8toUTF16()
   {
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
     if(mDestRef) {
-        NS_WARNING("Leaking Taint ref chain in UTF8 conversion.");
+        taint_remove_all(&mDestRef, nullptr);
         mDestRef = nullptr;
     }
 #endif
@@ -335,7 +338,7 @@ public:
         return;
       }
 
-#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
+#if defined(TAINT_OVERRIDE_ENABLE)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(p - aStart), size_t(out-mBuffer));
@@ -350,7 +353,7 @@ public:
       }
     }
 
-#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
+#if defined(TAINT_OVERRIDE_ENABLE)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(p - aStart), size_t(out-mBuffer));
@@ -365,7 +368,7 @@ public:
     *mBuffer = buffer_type(0);
   }
 
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
   TaintStringRef *takeTaintResult() {
     TaintStringRef *r = mDestRef;
     mDestRef = nullptr;
@@ -377,7 +380,7 @@ private:
   buffer_type* const mStart;
   buffer_type* mBuffer;
   bool mErrorEncountered;
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
   TaintStringRef *mDestRef;
   TaintStringRef *mCurrentRef;
 #endif
@@ -499,13 +502,13 @@ public:
   // |ConvertUTF8toUTF16|, but it's that way for backwards
   // compatibility.
 
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
   explicit ConvertUTF16toUTF8(buffer_type* aBuffer, TaintStringRef *source = nullptr)
 #else
   explicit ConvertUTF16toUTF8(buffer_type* aBuffer)
 #endif
     : mStart(aBuffer), mBuffer(aBuffer)
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
     , mDestRef(nullptr), mCurrentRef(source)
 #endif
   {
@@ -513,9 +516,9 @@ public:
 
   ~ConvertUTF16toUTF8()
   {
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
     if(mDestRef) {
-        NS_WARNING("Leaking Taint ref chain in UTF8 conversion.");
+        taint_remove_all(&mDestRef, nullptr);
         mDestRef = nullptr;
     }
 #endif
@@ -531,7 +534,7 @@ public:
     buffer_type* out = mBuffer; // gcc isn't smart enough to do this!
 
     for (const value_type* p = aStart, *end = aStart + aN; p < end; ++p) {
-#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
+#if defined(TAINT_OVERRIDE_ENABLE)
       if(mCurrentRef) {
         mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
           size_t(p - aStart), size_t(out-mBuffer));
@@ -607,7 +610,7 @@ public:
       }
     }
 
-#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_)
+#if defined(TAINT_OVERRIDE_ENABLE)
     if(mCurrentRef) {
       mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
         size_t(aN), size_t(out-mBuffer));
@@ -622,7 +625,7 @@ public:
     *mBuffer = buffer_type(0);
   }
 
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
   TaintStringRef *takeTaintResult() {
     TaintStringRef *r = mDestRef;
     mDestRef = nullptr;
@@ -633,7 +636,7 @@ public:
 private:
   buffer_type* const mStart;
   buffer_type* mBuffer;
-#if _TAINT_ON_
+#if defined(TAINT_OVERRIDE_ENABLE)
   TaintStringRef *mDestRef;
   TaintStringRef *mCurrentRef;
 #endif
