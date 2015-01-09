@@ -231,10 +231,10 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
     // All ready? Time to convert
 
 #if _TAINT_ON_
-    ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length);
-#else
     ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length,
       aSource.getTopTaintRef());
+#else
+    ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length);
 #endif
     copy_string(aSource.BeginReading(source_start),
                 aSource.EndReading(source_end), converter);
