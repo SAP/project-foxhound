@@ -166,7 +166,7 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_MARK_MATCH(scope_str) \
 [&](decltype(scope_str) bres) -> decltype(scope_str) {\
     RootedValue patVal(cx, StringValue(g.regExp().getSource())); \
-    NativeObject *obj = js::MaybeNativeObject(args.rval().get().toObjectOrNull()); \
+    Rooted<NativeObject *>obj(cx, js::MaybeNativeObject(args.rval().get().toObjectOrNull())); \
     if(obj) { \
         for(uint32_t ki = 0; ki < obj->getDenseInitializedLength(); ki++) { \
             RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
@@ -177,23 +177,17 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     } \
     return bres; \
 }(scope_str)
-#define TAINT_MARK_REPLACE(scope_str) \
-[&](decltype(scope_str) bres) -> decltype(scope_str) {\
-    RootedValue regexVal(cx, args[0]); \
-    RootedValue replaceVal(cx, args[1]); \
-    taint_add_op(args.rval().get().toString()->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
-    return bres; \
-}(scope_str)
 #define TAINT_MARK_REPLACE_RAW(scope_str, scope_re) \
 [&](decltype(scope_str) bres, decltype(scope_re) re_val) -> decltype(scope_str) {\
     RootedValue regexVal(cx, re_val); \
     RootedValue replaceVal(cx, StringValue(replacement)); \
-    taint_add_op(rval.get().toString()->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
+    RootedString resultStr(cx, rval.get().toString()); \
+    taint_add_op(resultStr->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
     return bres; \
 }(scope_str, scope_re)
 #define TAINT_MARK_SPLIT \
     RootedValue splitVal(cx, args[0]); \
-    NativeObject *nobj = js::MaybeNativeObject(aobj); \
+    Rooted<NativeObject *>nobj(cx, js::MaybeNativeObject(aobj)); \
     if(nobj) { \
         for(uint32_t ki = 0; ki < nobj->getDenseInitializedLength(); ki++) { \
             RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \

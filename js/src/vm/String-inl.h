@@ -430,14 +430,14 @@ JSString::finalize(js::FreeOp *fop)
     /* FatInline strings are in a different arena. */
     MOZ_ASSERT(getAllocKind() != js::gc::FINALIZE_FAT_INLINE_STRING);
 
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
-
     if (isFlat())
         asFlat().finalize(fop);
     else
         MOZ_ASSERT(isDependent() || isRope());
+
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
 }
 
 inline void
@@ -445,12 +445,12 @@ JSFlatString::finalize(js::FreeOp *fop)
 {
     MOZ_ASSERT(getAllocKind() != js::gc::FINALIZE_FAT_INLINE_STRING);
 
+    if (!isInline())
+        fop->free_(nonInlineCharsRaw());
+
 #if _TAINT_ON_
     removeAllTaint();
 #endif
-
-    if (!isInline())
-        fop->free_(nonInlineCharsRaw());
 }
 
 inline void
@@ -458,12 +458,12 @@ JSFatInlineString::finalize(js::FreeOp *fop)
 {
     MOZ_ASSERT(getAllocKind() == js::gc::FINALIZE_FAT_INLINE_STRING);
 
+    if (!isInline())
+        fop->free_(nonInlineCharsRaw());
+
 #if _TAINT_ON_
     removeAllTaint();
 #endif
-
-    if (!isInline())
-        fop->free_(nonInlineCharsRaw());
 }
 
 inline void
@@ -472,23 +472,22 @@ JSAtom::finalize(js::FreeOp *fop)
     MOZ_ASSERT(JSString::isAtom());
     MOZ_ASSERT(JSString::isFlat());
 
+    if (!isInline())
+        fop->free_(nonInlineCharsRaw());
+
 #if _TAINT_ON_
     removeAllTaint();
 #endif
-
-    if (!isInline())
-        fop->free_(nonInlineCharsRaw());
 }
 
 inline void
 JSExternalString::finalize(js::FreeOp *fop)
 {
+    const JSStringFinalizer *fin = externalFinalizer();
+    fin->finalize(fin, const_cast<char16_t *>(rawTwoByteChars()));
 #if _TAINT_ON_
     removeAllTaint();
 #endif
-
-    const JSStringFinalizer *fin = externalFinalizer();
-    fin->finalize(fin, const_cast<char16_t *>(rawTwoByteChars()));
 }
 
 #endif /* vm_String_inl_h */

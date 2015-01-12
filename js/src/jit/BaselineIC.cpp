@@ -4447,15 +4447,15 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler &masm)
     masm.branchTestString(Assembler::NotEqual, R0, &failure);
     masm.branchTestInt32(Assembler::NotEqual, R1, &failure);
 
+#if _TAINT_ON_
+    masm.jump(&failure);
+#else
     GeneralRegisterSet regs(availableGeneralRegs(2));
     Register scratchReg = regs.takeAny();
 
     // Unbox string in R0.
     Register str = masm.extractString(R0, ExtractTemp0);
 
-#if _TAINT_ON_
-    masm.jump(&failure);
-#else
     // Check for non-linear strings.
     masm.branchIfRope(str, &failure);
 

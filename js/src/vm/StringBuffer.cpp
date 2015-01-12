@@ -142,7 +142,8 @@ StringBuffer::finishAtom()
 
     JSAtom *atom = AtomizeChars(cx, twoByteChars().begin(), len);
     twoByteChars().clear();
-    return TAINT_REF_COPY(atom, startTaint);
+    //TAINT FIXME: we lose taint here. TAINT_REF_COPY
+    return atom;
 }
 
 bool

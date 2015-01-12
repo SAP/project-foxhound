@@ -20,11 +20,11 @@ using namespace js;
 
 #define VALIDATE_NODE(validate_tsr) \
     MOZ_ASSERT((validate_tsr)->end > (validate_tsr)->begin); \
-    MOZ_ASSERT((validate_tsr)->begin >= 0);
+    MOZ_ASSERT((validate_tsr)->begin >= 0); \
+    MOZ_ASSERT((uintptr_t)(validate_tsr) != (uintptr_t)0x4b4b4b4b4b4b4b4b);
 
 //------------------------------------
 // Local helpers
-
 inline void
 taint_delete_taintref(TaintStringRef *tsr)
 {
@@ -93,18 +93,12 @@ taint_tag_source_internal(JSString * str, const char* name,
 
 //----------------------------------
 // Reference Node
-/*
-static void
-TraceTaintNode(JSTracer *trc, void* data)
-{
-    reinterpret_cast<TaintNode*>(data)->traceMember(trc);
-} */
 
 TaintNode::TaintNode(JSContext *cx, const char* opname) :
     op(opname),
     refCount(0),
-    param1(),
-    param2(),
+    param1(JSVAL_NULL),
+    param2(JSVAL_NULL),
     prev(nullptr),
     stack(),
     mRt(nullptr)
@@ -114,6 +108,11 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
         RootedObject stackobj(cx);
         JS::CaptureCurrentStack(cx, &stackobj);
         stack = stackobj;
+
+        mRt = cx->runtime();/*
+        AddObjectRoot(mRt, stack.unsafeGet(), "TaintNode::stack");
+        AddValueRootRT(mRt, param1.unsafeGet(), "TaintNode::param1");
+        AddValueRootRT(mRt, param2.unsafeGet(), "TaintNode::param2");*/
     }
     /*
     if(cx) {
@@ -124,29 +123,17 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
         stacks.insertFrames(cx, iter, &frame, 0);
         stack = frame;
     }*/
-
-    /*
-    if(cx && (mRt = js::GetRuntime(cx))) {
-        JS_AddExtraGCRootsTracer(mRt, TraceTaintNode, this);
-    }*/
-}
-
-void
-TaintNode::traceMember(JSTracer *trc)
-{
-    JS_CallValueTracer(trc, &param1, "param1");
-    JS_CallValueTracer(trc, &param2, "param2");
 }
 
 TaintNode::~TaintNode()
 {
-
-    /*
     if(mRt) {
-        JS_RemoveExtraGCRootsTracer(mRt, TraceTaintNode, this);
+        /*
+        RemoveRoot(mRt, (void *)&stack);
+        RemoveRoot(mRt, (void *)&param1);
+        RemoveRoot(mRt, (void *)&param2);*/
         mRt = nullptr;
-    }*/
-
+    }
 }
 
 void
@@ -172,6 +159,7 @@ TaintNode::setPrev(TaintNode *other)
     MOZ_ASSERT(other != this);
     if(prev) {
         prev->decrease();
+        prev = nullptr;
     }
     if(other) {
         other->increase();
@@ -197,7 +185,6 @@ TaintStringRef::TaintStringRef(uint32_t s, uint32_t e, TaintNode* node) :
 
     if(node)
         attachTo(node);
-    
 }
 
 TaintStringRef::TaintStringRef(const TaintStringRef &ref) :
@@ -443,7 +430,7 @@ taint_remove_all(TaintStringRef **start, TaintStringRef **end)
     }
 
 #if DEBUG
-    MOZ_ASSERT(!(*end) || found_end);
+    MOZ_ASSERT(!end || !(*end) || found_end);
 #endif
     *start = nullptr;
     if(end)
@@ -496,9 +483,12 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
     MOZ_ASSERT(dst && src);
+    VALIDATE_NODE(src);
     TaintStringRef *tsr = taint_duplicate_range(src, NULL, frombegin, offset, fromend);
-    if(tsr) //do not overwrite
+    if(tsr) { //do not overwrite
+        VALIDATE_NODE(tsr);
         dst->addTaintRef(tsr);
+    }
 
     return dst;
 }
@@ -548,6 +538,7 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
     
     for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
     {
+        VALIDATE_NODE(tsr);
         if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
             continue;
 
@@ -584,6 +575,9 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
 
     if(!source)
         return nullptr;
+
+
+    VALIDATE_NODE(source);
 
     //skip taint before sidx
     for(;source && sidx > source->end; source = source->next);
@@ -1028,7 +1022,6 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
             if(!!node->stack) {
                 RootedValue stackValue(cx, ObjectValue(*node->stack));
                 stack.append("<br/>");
-                JS_WrapValue(cx, &stackValue);
                 jsvalue_to_stdstring(cx, stackValue, &stack);
             }
 

@@ -395,10 +395,11 @@ js::AtomizeString(ExclusiveContext *cx, JSString *str,
     if (!linear)
         return nullptr;
 
+//TAINT FIXME: TAINT_ATOM_CLEARCOPY(
     JS::AutoCheckCannotGC nogc;
     return linear->hasLatin1Chars()
-           ? TAINT_ATOM_CLEARCOPY(AtomizeAndCopyChars(cx, linear->latin1Chars(nogc), linear->length(), ib), linear)
-           : TAINT_ATOM_CLEARCOPY(AtomizeAndCopyChars(cx, linear->twoByteChars(nogc), linear->length(), ib), linear);
+           ? AtomizeAndCopyChars(cx, linear->latin1Chars(nogc), linear->length(), ib)
+           : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc), linear->length(), ib);
 }
 
 JSAtom *

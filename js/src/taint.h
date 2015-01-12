@@ -29,8 +29,6 @@ public:
         refCount++;
     }
 
-    void traceMember(JSTracer *trc);
-
     void setPrev(TaintNode *other);
 
 } TaintNode;

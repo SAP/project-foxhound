@@ -3736,12 +3736,27 @@ js::str_replace(JSContext *cx, unsigned argc, Value *vp)
      * |RegExp| statics.
      */
 
+#if _TAINT_ON_
+    auto marker = [&](bool bres) {
+        RootedValue regexVal(cx, args[0]);
+        RootedValue replaceVal(cx, args[1]);
+        RootedString resultStr(cx, args.rval().get().toString());
+        if(resultStr->isTainted())
+            taint_add_op(resultStr->getTopTaintRef(), "replace", cx, regexVal, replaceVal);
+        return bres;
+    };
+#else
+    auto marker = [](bool bres) {
+        return bres;
+    };
+#endif
+
     const FlatMatch *fm = rdata.g.tryFlatMatch(cx, rdata.str, ReplaceOptArg, args.length(), false);
 
     if (!fm) {
         if (cx->isExceptionPending())  /* oom in RopeMatch in tryFlatMatch */
             return false;
-        return TAINT_MARK_REPLACE(str_replace_regexp(cx, args, rdata));
+        return marker(str_replace_regexp(cx, args, rdata));
     }
 
     if (fm->match() < 0) {
@@ -3750,8 +3765,8 @@ js::str_replace(JSContext *cx, unsigned argc, Value *vp)
     }
 
     if (rdata.lambda)
-        return TAINT_MARK_REPLACE(str_replace_flat_lambda(cx, args, rdata, *fm));
-    return TAINT_MARK_REPLACE(StrReplaceString(cx, rdata, *fm, args.rval()));
+        return marker(str_replace_flat_lambda(cx, args, rdata, *fm));
+    return marker(StrReplaceString(cx, rdata, *fm, args.rval()));
 }
 
 namespace {

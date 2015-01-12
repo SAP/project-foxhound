@@ -846,16 +846,11 @@ CodeGenerator::visitBooleanToString(LBooleanToString *lir)
 void
 CodeGenerator::emitIntToString(Register input, Register output, Label *ool)
 {
-#if _TAINT_ON_
-    //skip static lookup
-    masm.jump(ool);
-#else
     masm.branch32(Assembler::AboveOrEqual, input, Imm32(StaticStrings::INT_STATIC_LIMIT), ool);
 
     // Fast path for small integers.
     masm.movePtr(ImmPtr(&GetIonContext()->runtime->staticStrings().intStaticTable), output);
     masm.loadPtr(BaseIndex(output, input, ScalePointer), output);
-#endif
 }
 
 typedef JSFlatString *(*IntToStringFn)(ThreadSafeContext *, int);
@@ -1200,7 +1195,7 @@ CopyStringChars(MacroAssembler &masm, Register to, Register from, Register len, 
 static void
 CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
                       bool latin1, Register string,
-                      Register base, Register temp1, Register temp2,
+                      Register base, Register temp1, Register temp2, Register temp3,
                       BaseIndex startIndexAddress, BaseIndex limitIndexAddress,
                       Label *failure)
 {
@@ -1247,7 +1242,24 @@ CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
 
         masm.bind(&stringAllocated);
         masm.store32(temp1, Address(string, JSString::offsetOfLength()));
-
+#if _TAINT_ON_
+        //init with nullptrs
+        TAINT_STR_ASM_INIT(string);
+        //call taint_str_substr
+        RegisterSet regs = RegisterSet::Volatile();
+        regs.takeUnchecked(temp3);
+        masm.PushRegsInMask(regs);
+        masm.load32(startIndexAddress, temp3);
+        masm.setupUnalignedABICall(5, temp2);
+        masm.loadJSContext(temp2);
+        masm.passABIArg(string); //string
+        masm.passABIArg(temp2);  //js cx
+        masm.passABIArg(base);   //base
+        masm.passABIArg(temp3);  //start
+        masm.passABIArg(temp1);  //len
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, taint_str_substr));
+        masm.PopRegsInMask(regs);
+#endif
         masm.push(string);
         masm.push(base);
 
@@ -1290,6 +1302,27 @@ CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
         masm.store32(Imm32(flags), Address(string, JSString::offsetOfFlags()));
         masm.store32(temp1, Address(string, JSString::offsetOfLength()));
 
+#if _TAINT_ON_
+        //init with nullptrs
+        TAINT_STR_ASM_INIT(string);
+        //call taint_str_substr
+        RegisterSet regs = RegisterSet::Volatile();
+        regs.takeUnchecked(temp1);
+        regs.takeUnchecked(temp2);
+        regs.takeUnchecked(temp3);
+        masm.PushRegsInMask(regs);
+        masm.load32(startIndexAddress, temp3);
+        masm.setupUnalignedABICall(5, temp2);
+        masm.loadJSContext(temp2);
+        masm.passABIArg(string); //string
+        masm.passABIArg(temp2);  //js cx
+        masm.passABIArg(base);   //base
+        masm.passABIArg(temp3);  //start
+        masm.passABIArg(temp1);  //len
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, taint_str_substr));
+        masm.PopRegsInMask(regs);
+#endif
+
         masm.loadPtr(Address(base, JSString::offsetOfNonInlineChars()), temp1);
         masm.load32(startIndexAddress, temp2);
         if (latin1)
@@ -1298,7 +1331,6 @@ CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
             masm.computeEffectiveAddress(BaseIndex(temp1, temp2, TimesTwo), temp1);
         masm.storePtr(temp1, Address(string, JSString::offsetOfNonInlineChars()));
         masm.storePtr(base, Address(string, JSDependentString::offsetOfBase()));
-
         // Follow any base pointer if the input is itself a dependent string.
         // Watch for undepended strings, which have a base pointer but don't
         // actually share their characters with it.
@@ -1403,7 +1435,7 @@ JitCompartment::generateRegExpExecStub(JSContext *cx)
             Label isUndefined, storeDone;
             masm.branch32(Assembler::LessThan, stringIndexAddress, Imm32(0), &isUndefined);
 
-            CreateDependentString(masm, cx->names(), isLatin, temp3, input, temp4, temp5,
+            CreateDependentString(masm, cx->names(), isLatin, temp3, input, temp4, temp5, temp1,
                                   stringIndexAddress, stringLimitAddress, &oolEntry);
             masm.storeValue(JSVAL_TYPE_STRING, temp3, stringAddress);
 
@@ -5909,16 +5941,16 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
         MOZ_CRASH("No such execution mode");
     }
 
-#if _TAINT_ON_
-    TAINT_STR_ASM_INIT(output);
-#endif
-
     // Store length and flags.
     uint32_t flags = JSString::INIT_FAT_INLINE_FLAGS;
     if (!isTwoByte)
         flags |= JSString::LATIN1_CHARS_BIT;
     masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
     masm.store32(temp2, Address(output, JSString::offsetOfLength()));
+
+#if _TAINT_ON_
+    TAINT_STR_ASM_INIT(output);
+#endif
 
     // Load chars pointer in temp2.
     masm.computeEffectiveAddress(Address(output, JSInlineString::offsetOfInlineStorage()), temp2);
@@ -5997,9 +6029,9 @@ JitCompartment::generateStringConcatStub(JSContext *cx, ExecutionMode mode)
     //do the slow walk if lhs or rhs are tainted
     //"isTainted"
     masm.loadPtr(Address(lhs, JSString::offsetOfStartTaint()), temp1);
-    masm.branchTest32(Assembler::NonZero, temp1, temp1, &failure);
-    masm.loadPtr(Address(rhs, JSString::offsetOfStartTaint()), temp1);
-    masm.branchTest32(Assembler::NonZero, temp1, temp1, &failure);
+    masm.loadPtr(Address(rhs, JSString::offsetOfStartTaint()), output);
+    masm.orPtr(output, temp1);
+    masm.branchTestPtr(Assembler::NonZero, temp1, temp1, &failure);
 #endif
 
     // Check if we can use a JSFatInlineString. The result is a Latin1 string if
@@ -6235,18 +6267,12 @@ CodeGenerator::visitFromCharCode(LFromCharCode *lir)
     if (!ool)
         return false;
 
-#if _TAINT_ON_
-    //skip static lookup
-    masm.jump(ool->entry());
-#else
     // OOL path if code >= UNIT_STATIC_LIMIT.
     masm.branch32(Assembler::AboveOrEqual, code, Imm32(StaticStrings::UNIT_STATIC_LIMIT),
                   ool->entry());
 
     masm.movePtr(ImmPtr(&GetIonContext()->runtime->staticStrings().unitStaticTable), output);
     masm.loadPtr(BaseIndex(output, code, ScalePointer), output);
-    
-#endif
 
     masm.bind(ool->rejoin());
     return true;
