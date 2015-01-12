@@ -961,7 +961,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
     printf("[---TAINT---] Found taint flow %p into sink %s.\n", src, name);
 
     std::ostringstream report_string;
-    report_string << "/tmp/taint/" << src << ".dot";
+    report_string << "./taint/" << src << ".dot";
 
     /*char report_name[] = "0xXXXXXXXX.dot";
     snprintf(report_name+11, 11, "%p", src);
