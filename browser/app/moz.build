@@ -19,6 +19,7 @@ for var in ('MOZILLA_OFFICIAL', 'LIBXUL_SDK'):
         DEFINES[var] = True
 
 DEFINES['XPCOM_GLUE'] = True
+DEFINES['_TAINT_NO_TRACK_'] = True
 
 GENERATED_INCLUDES += [
     '/build',

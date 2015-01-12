@@ -16,6 +16,10 @@
 #include <sstream>
 #include <iostream>
 
+#ifdef XP_WIN
+#define snprintf _snprintf
+#endif
+
 using namespace js;
 
 #define VALIDATE_NODE(validate_tsr) \
@@ -543,7 +547,9 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
             continue;
 
         uint32_t begin = std::max(frombegin, tsr->begin);
-        uint32_t end   = (fromend > 0 ? std::min(tsr->end, fromend) : tsr->end);
+        uint32_t end   = tsr->end;
+        if(fromend > 0 && fromend < end)
+            end = fromend;
         
         TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
         newtsr->begin = begin - frombegin + offset;
@@ -1030,16 +1036,16 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
                 fprintf(h, "        n%p -> n%p;\n", node->prev, node);
         }
         TaintNode* last_target = nullptr;
-        for(std::multimap<TaintNode*,TaintNode*>::const_iterator itr=graph->same_map.begin();
-          itr!=graph->same_map.end(); ++itr) {
-            if(itr->first != last_target) {
+        for(std::multimap<TaintNode*,TaintNode*>::const_iterator itrn=graph->same_map.begin();
+          itrn!=graph->same_map.end(); ++itrn) {
+            if(itrn->first != last_target) {
                 if(last_target != nullptr) {
                     fputs("; }\n", h);
                 }
                 fprintf(h, "        {rank=same;");
-                last_target = itr->first;
+                last_target = itrn->first;
             }
-            fprintf(h, " n%p", itr->second);
+            fprintf(h, " n%p", itrn->second);
         }
         if(last_target)
             fputs("; }\n", h);
