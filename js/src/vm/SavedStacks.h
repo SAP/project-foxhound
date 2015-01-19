@@ -170,6 +170,7 @@ class SavedStacks {
         uint32_t         column;
     };
 
+public:
     class MOZ_STACK_CLASS AutoLocationValueRooter : public JS::CustomAutoRooter
     {
       public:
@@ -202,6 +203,7 @@ class SavedStacks {
         AutoLocationValueRooter *location;
     };
 
+private:
     struct PCLocationHasher : public DefaultHasher<PCKey> {
         typedef PointerHasher<JSScript *, 3>   ScriptPtrHasher;
         typedef PointerHasher<jsbytecode *, 3> BytecodePtrHasher;
@@ -221,6 +223,8 @@ class SavedStacks {
     PCLocationMap pcLocationMap;
 
     void sweepPCLocationMap();
+
+public:
     bool getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLocationValue locationp);
 
     struct FrameState
@@ -240,6 +244,8 @@ class SavedStacks {
         JSAtom        *name;
         LocationValue location;
     };
+
+    void buildSavedFrame(JSContext *cx, MutableHandleSavedFrame frame, FrameState &state);
 
     class MOZ_STACK_CLASS AutoFrameStateVector : public JS::CustomAutoRooter {
       public:

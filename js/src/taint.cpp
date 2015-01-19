@@ -74,7 +74,7 @@ taint_str_taintref_build()
 }
 
 void
-taint_tag_source_internal(JSString * str, const char* name,
+taint_tag_source_internal(HandleString str, const char* name,
     JSContext *cx = nullptr, uint32_t begin = 0, uint32_t end = 0)
 {
     if(str->length() == 0)
@@ -98,22 +98,56 @@ taint_tag_source_internal(JSString * str, const char* name,
 //----------------------------------
 // Reference Node
 
+struct TaintNode::FrameStateElement
+{
+    FrameStateElement(const FrameIter &iter):
+        state(iter), frame(nullptr), next(nullptr) {}
+
+    //state is compiled into frame on first access
+    SavedStacks::FrameState state;
+    JS::Heap<SavedFrame*> frame;
+    struct FrameStateElement *next;
+};
+
 TaintNode::TaintNode(JSContext *cx, const char* opname) :
     op(opname),
     refCount(0),
+    prev(nullptr),
     param1(JSVAL_NULL),
     param2(JSVAL_NULL),
-    prev(nullptr),
-    stack(),
-    mRt(nullptr)
+    stack(nullptr)
 {
     
     if(cx) {
-        RootedObject stackobj(cx);
-        JS::CaptureCurrentStack(cx, &stackobj);
-        stack = stackobj;
+        JS::AutoCheckCannotGC nogc;
 
-        mRt = cx->runtime();/*
+        //this is in parts taken from SavedStacks.cpp
+        //we need to split up their algorithm to fetch the stack WITHOUT causing GC
+        //because we cannot guarantee that all pointer are marked for all calling locations
+        //they will be compiled into GCthings later
+        FrameIter iter(cx, FrameIter::ALL_CONTEXTS, FrameIter::GO_THROUGH_SAVED);
+        while(!iter.done()) {
+            SavedStacks::AutoLocationValueRooter location(cx);
+            {
+                AutoCompartment ac(cx, iter.compartment());
+                if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location))
+                    break;
+            }
+
+            FrameStateElement *e;
+            {
+                void *p = js_malloc(sizeof(FrameStateElement));
+                e = new (p) FrameStateElement(iter);
+            }
+            e->state.location = location.get();
+            e->next = stack;
+            stack = e;
+
+            ++iter;
+        }
+
+        /*
+        mRt = cx->runtime();
         AddObjectRoot(mRt, stack.unsafeGet(), "TaintNode::stack");
         AddValueRootRT(mRt, param1.unsafeGet(), "TaintNode::param1");
         AddValueRootRT(mRt, param2.unsafeGet(), "TaintNode::param2");*/
@@ -128,16 +162,33 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
         stack = frame;
     }*/
 }
+    
+void
+TaintNode::compileFrame(JSContext *cx)
+{
+    //first compiled? all compiled!
+    if(!stack || stack->frame)
+        return;
+
+    SavedStacks &sstack = cx->compartment()->savedStacks();
+    for(FrameStateElement *itr = stack; itr != nullptr; itr = itr->next) {
+        MOZ_ASSERT(!itr->frame);
+        RootedSavedFrame frame(cx, nullptr);
+        sstack.buildSavedFrame(cx, &frame, itr->state);
+        MOZ_ASSERT(!!frame);
+        itr->frame = frame;
+    }
+}
 
 TaintNode::~TaintNode()
 {
+    /*
     if(mRt) {
-        /*
         RemoveRoot(mRt, (void *)&stack);
         RemoveRoot(mRt, (void *)&param1);
-        RemoveRoot(mRt, (void *)&param2);*/
+        RemoveRoot(mRt, (void *)&param2);
         mRt = nullptr;
-    }
+    }*/
 }
 
 void
@@ -207,6 +258,31 @@ TaintStringRef::~TaintStringRef()
     if(thisTaint) {
         thisTaint->decrease();
         thisTaint = nullptr;
+    }
+}
+
+void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringRef **end) {
+    MOZ_ASSERT(start && end);
+
+    if(taint_istainted(start, end)) {
+        if(!tsr) {
+            taint_remove_all(start, end);
+            return;
+        }
+
+        (*end)->next = tsr;
+        (*end) = tsr;
+    } else
+        (*start) = (*end) = tsr;
+
+    taint_ff_end(end);
+}
+
+void taint_ff_end(TaintStringRef **end) {
+    MOZ_ASSERT(end);
+
+    if(*end) {
+        for(; (*end)->next != nullptr; (*end) = (*end)->next);
     }
 }
 
@@ -313,7 +389,13 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             RootedValue opname(cx, StringValue(NewStringCopyZ<CanGC>(cx, curnode->op)));
             RootedValue param1val(cx, curnode->param1);
             RootedValue param2val(cx, curnode->param2);
-            RootedObject stackobj(cx, curnode->stack);
+            RootedObject stackobj(cx, nullptr);
+            
+            if(curnode->stack) {
+                curnode->compileFrame(cx);
+                stackobj = curnode->stack->frame;
+            }
+            
             JS_WrapValue(cx, &param1val);
             JS_WrapValue(cx, &param2val);
             if(!!stackobj)
@@ -384,6 +466,7 @@ taint_str_concat(JSContext *cx, JSString *dst, JSString *lhs, JSString *rhs)
 
     //add operator only if possible (we might concat without any JSContext)
     if(cx) {
+        JS::AutoCheckCannotGC nogc;
         RootedValue lhsval(cx, StringValue(lhs));
         RootedValue rhsval(cx, StringValue(rhs));
         taint_add_op(dst->getTopTaintRef(), "concat", cx, lhsval, rhsval);
@@ -402,12 +485,17 @@ taint_str_substr(JSString *str, JSContext *cx, JSString *base,
 
     uint32_t end = start + length;
 
+    RootedValue startval(cx);
+    RootedValue endval(cx);
+
+    JS::AutoCheckCannotGC nogc;
+
     taint_copy_range(str, base->getTopTaintRef(), start, 0, end);
     for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
-        js::RootedValue startval(cx, INT_TO_JSVAL(tsr->begin + start));
-        js::RootedValue endval(cx, INT_TO_JSVAL(tsr->end + start));
-        taint_add_op_single(tsr, "substring", cx->asJSContext(), startval, endval);
+        startval = INT_TO_JSVAL(tsr->begin + start);
+        endval = INT_TO_JSVAL(tsr->end + start);
+        taint_add_op_single(tsr, "substring", cx, startval, endval);
     }
         
     return str;
@@ -450,6 +538,8 @@ taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
     if(!srcstr->isTainted())
         return dststr;
 
+    JS::AutoCheckCannotGC nogc;
+
     taint_copy_range(dststr, srcstr->getTopTaintRef(), 0, 0, 0);
     taint_add_op(dststr->getTopTaintRef(), name, cx, param1, param2);
 
@@ -463,6 +553,7 @@ void
 taint_str_addref(JSString *str, TaintStringRef *ref)
 {
     MOZ_ASSERT(str);
+    JS::AutoCheckCannotGC nogc;
     str->addTaintRef(ref);
 }
 
@@ -471,6 +562,7 @@ TaintStringRef *
 taint_get_top(T *str)
 {
     MOZ_ASSERT(str);
+    JS::AutoCheckCannotGC nogc;
     return str->getTopTaintRef();
 }
 
@@ -1026,7 +1118,9 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
                 jsvalue_to_stdstring(cx, convertValue, &param2);
             }
             if(!!node->stack) {
-                RootedValue stackValue(cx, ObjectValue(*node->stack));
+                node->compileFrame(cx);
+
+                RootedValue stackValue(cx, ObjectValue(*node->stack->frame));
                 stack.append("<br/>");
                 jsvalue_to_stdstring(cx, stackValue, &stack);
             }

@@ -4,22 +4,9 @@
 #ifdef _TAINT_ON_
 
 #include "jsapi.h"
-
-
 typedef struct TaintNode
 {
-    const char *op;
-    uint32_t refCount;
-    JS::Heap<JS::Value> param1;
-    JS::Heap<JS::Value> param2;
-    struct TaintNode *prev;
-    JS::Heap<JSObject*> stack;
-private:
-    JSRuntime* mRt;
-    TaintNode(const TaintNode& that);
 
-public:
-    //context can be nullptr, then parameters won't be traced
     TaintNode(JSContext *cx, const char* opname);
     ~TaintNode();
 
@@ -30,6 +17,18 @@ public:
     }
 
     void setPrev(TaintNode *other);
+    void compileFrame(JSContext *cx);
+
+    struct FrameStateElement;
+
+    const char *op;
+    uint32_t refCount;
+    struct TaintNode *prev;
+    JS::Heap<JS::Value> param1;
+    JS::Heap<JS::Value> param2;
+    FrameStateElement *stack;
+private:
+    TaintNode(const TaintNode& that);
 
 } TaintNode;
 
@@ -136,22 +135,23 @@ TaintStringRef *taint_get_top(T *str);
 
 //----------------------------------
 
-inline void
-taint_ff_end(TaintStringRef **end) {
-    MOZ_ASSERT(end);
+inline bool taint_istainted(TaintStringRef *const *start, TaintStringRef *const *end)
+{
+    MOZ_ASSERT(start && end);
+    MOZ_ASSERT(!start == !end);
+    return *start;
+}
 
-    if(*end) {
-        for(; (*end)->next != nullptr; (*end) = (*end)->next);
-    }
-} 
+void taint_ff_end(TaintStringRef **end);
+
+void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringRef **end);
 
 //typical functions included to add taint functionality to string-like
 //classes. additionally two TaintStringRef members are required.
 #define TAINT_STRING_HOOKS(startTaint, endTaint)        \
     MOZ_ALWAYS_INLINE                                   \
     bool isTainted() const {                            \
-        MOZ_ASSERT(!!startTaint == !!endTaint);         \
-        return startTaint;                              \
+        return taint_istainted(&startTaint, &endTaint); \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
@@ -166,18 +166,7 @@ taint_ff_end(TaintStringRef **end) {
                                                         \
     MOZ_ALWAYS_INLINE                                   \
     void addTaintRef(TaintStringRef *tsr)  {            \
-        if(isTainted()) {                               \
-            if(!tsr) {                                  \
-                removeAllTaint();                       \
-                return;                                 \
-            }                                           \
-                                                        \
-            endTaint->next = tsr;                       \
-            endTaint = tsr;                             \
-        } else                                          \
-            startTaint = endTaint = tsr;                \
-                                                        \
-        ffTaint();                                      \
+        taint_addtaintref(tsr, &startTaint, &endTaint); \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
