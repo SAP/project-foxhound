@@ -3517,6 +3517,19 @@ str_replace_regexp(JSContext *cx, CallArgs args, ReplaceData &rdata)
     return StrReplaceRegExp(cx, rdata, args.rval());
 }
 
+#if _TAINT_ON_
+#define TAINT_MARK_REPLACE_RAW(scope_str, scope_re) \
+[&](decltype(scope_str) bres, decltype(scope_re) re_val) -> decltype(scope_str) {\
+    auto str = rval.get().toString(); \
+    if(!str) \
+        return bres; \
+    RootedValue regexVal(cx, re_val); \
+    RootedValue replaceVal(cx, StringValue(replacement)); \
+    taint_add_op(str->getBottomTaintRef(), "replace", cx, regexVal, replaceVal); \
+    return bres; \
+}(scope_str, scope_re)
+#endif
+
 bool
 js::str_replace_regexp_raw(JSContext *cx, HandleString string, HandleObject regexp,
                        HandleString replacement, MutableHandleValue rval)

@@ -61,13 +61,6 @@ taint_str_substr(JSString *str, JSContext *cx, JSString *base,
 //common core taint tracking logic
 //
 
-//add a new operator to a single TaintStringRef
-void
-taint_add_op_single(TaintStringRef *dst, const char* name,
-    JSContext *cx = nullptr,
-    JS::HandleValue param1 = JS::UndefinedHandleValue,
-    JS::HandleValue param2 = JS::UndefinedHandleValue);
-
 void
 taint_report_sink_js(JSContext *cx, JS::HandleString str, const char* name);
 
@@ -165,33 +158,29 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 
 #define TAINT_MARK_MATCH(scope_str) \
 [&](decltype(scope_str) bres) -> decltype(scope_str) {\
-    RootedValue patVal(cx, StringValue(g.regExp().getSource())); \
-    Rooted<NativeObject *>obj(cx, js::MaybeNativeObject(args.rval().get().toObjectOrNull())); \
+    NativeObject* obj = js::MaybeNativeObject(args.rval().get().toObjectOrNull()); \
     if(obj) { \
+        RootedValue patVal(cx, StringValue(g.regExp().getSource())); \
         for(uint32_t ki = 0; ki < obj->getDenseInitializedLength(); ki++) { \
             RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
             Value vstr = obj->getDenseElement(ki); \
-            if(vstr.isString()) \
+            if(vstr.isString()) {\
                 taint_add_op(vstr.toString()->getTopTaintRef(), "match", cx, patVal, resultIdx); \
+            } \
         } \
     } \
     return bres; \
 }(scope_str)
-#define TAINT_MARK_REPLACE_RAW(scope_str, scope_re) \
-[&](decltype(scope_str) bres, decltype(scope_re) re_val) -> decltype(scope_str) {\
-    RootedValue regexVal(cx, re_val); \
-    RootedValue replaceVal(cx, StringValue(replacement)); \
-    RootedString resultStr(cx, rval.get().toString()); \
-    taint_add_op(resultStr->getTopTaintRef(), "replace", cx, regexVal, replaceVal); \
-    return bres; \
-}(scope_str, scope_re)
 #define TAINT_MARK_SPLIT \
-    RootedValue splitVal(cx, args[0]); \
-    Rooted<NativeObject *>nobj(cx, js::MaybeNativeObject(aobj)); \
+    NativeObject * nobj = js::MaybeNativeObject(aobj); \
     if(nobj) { \
+        RootedValue splitVal(cx, args[0]); \
         for(uint32_t ki = 0; ki < nobj->getDenseInitializedLength(); ki++) { \
             RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
-            taint_add_op(nobj->getDenseElement(ki).toString()->getTopTaintRef(), "split", cx, splitVal, resultIdx); \
+            Value vstr = nobj->getDenseElement(ki); \
+            if(vstr.isString()) { \
+                taint_add_op(vstr.toString()->getTopTaintRef(), "split", cx, splitVal, resultIdx); \
+            } \
         } \
     }
 

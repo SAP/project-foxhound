@@ -477,6 +477,25 @@ js::Invoke(JSContext *cx, CallArgs args, MaybeConstruct construct)
 
     /* Invoke native functions. */
     JSFunction *fun = &args.callee().as<JSFunction>();
+#if _TAINT_ON_
+    //scan for tainted args
+    RootedValue funnamearg(cx);
+    if(fun->displayAtom())
+        funnamearg = StringValue(fun->displayAtom());
+    for(unsigned i = 0; i < args.length(); i++) {
+        Value checktaint(args.get(i));
+        JSString *strtaint = nullptr;
+        if(checktaint.isString() &&
+            (strtaint = checktaint.toString()) &&
+            strtaint->isTainted())
+        {
+            taint_add_op(strtaint->getTopTaintRef(), "function call", cx, funnamearg);
+        }
+    }
+
+
+#endif
+
     MOZ_ASSERT_IF(construct, !fun->isNativeConstructor());
     if (fun->isNative())
         return CallJSNative(cx, fun->native(), args);

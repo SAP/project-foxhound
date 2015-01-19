@@ -6,10 +6,10 @@
 #include "jsapi.h"
 typedef struct TaintNode
 {
-
     TaintNode(JSContext *cx, const char* opname);
     ~TaintNode();
 
+    void markRefs(JSTracer *trc);
 
     void decrease();
     inline void increase() {
@@ -44,6 +44,12 @@ typedef struct TaintStringRef
     TaintStringRef(const TaintStringRef &ref);
     ~TaintStringRef();
 
+    void markNodeChain(JSTracer *trc);
+
+    /*
+        WARNING: If you attach from a TaintStringRef of a JSString
+        you should have a barrier call somewhere afterwards.
+    */
     inline void attachTo(TaintNode *node) {
         if(thisTaint) {
             thisTaint->decrease();

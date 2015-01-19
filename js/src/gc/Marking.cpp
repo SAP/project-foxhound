@@ -1384,6 +1384,14 @@ gc::MarkChildren(JSTracer *trc, JSObject *obj)
 static void
 gc::MarkChildren(JSTracer *trc, JSString *str)
 {
+#if _TAINT_ON_
+    if(str->isTainted()) {
+        for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
+        {
+            tsr->markNodeChain(trc);
+        }
+    }
+#endif
     if (str->hasBase())
         str->markBase(trc);
     else if (str->isRope())
