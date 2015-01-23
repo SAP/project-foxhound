@@ -552,7 +552,14 @@ SavedStacks::insertFrames(JSContext *cx, FrameIter &iter, MutableHandleSavedFram
     // actual SavedFrame instances.
     RootedSavedFrame parentFrame(cx, nullptr);
     for (size_t i = stackState->length(); i != 0; i--) {
-        buildSavedFrame(cx, &parentFrame, stackState[i-1]);
+        SavedFrame::AutoLookupRooter lookup(cx,
+                                            stackState[i-1].location.source,
+                                            stackState[i-1].location.line,
+                                            stackState[i-1].location.column,
+                                            stackState[i-1].name,
+                                            parentFrame,
+                                            stackState[i-1].principals);
+        parentFrame.set(getOrCreateSavedFrame(cx, lookup));
         if (!parentFrame)
             return false;
     }
@@ -571,7 +578,7 @@ SavedStacks::buildSavedFrame(JSContext *cx, MutableHandleSavedFrame frame, Frame
                                         state.name,
                                         frame,
                                         state.principals);
-    frame.set(getOrCreateSavedFrame(cx, lookup));
+    frame.set(createFrameFromLookup(cx, lookup));
 }
 
 SavedFrame *

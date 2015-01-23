@@ -101,11 +101,11 @@ taint_tag_source_internal(HandleString str, const char* name,
 struct TaintNode::FrameStateElement
 {
     FrameStateElement(const FrameIter &iter):
-        state(iter), frame(UndefinedHandleValue), next(nullptr), prev(nullptr) {}
+        state(iter), frame(nullptr), next(nullptr), prev(nullptr) {}
 
     //state is compiled into frame on first access
     SavedStacks::FrameState state;
-    JS::Heap<Value> frame;
+    JS::Heap<JSObject*> frame;
     struct FrameStateElement *next;
     struct FrameStateElement *prev;
 };
@@ -160,7 +160,7 @@ void
 TaintNode::compileFrame(JSContext *cx)
 {
     //first compiled? all compiled!
-    if(!stack || !stack->frame.isUndefined())
+    if(!stack || stack->frame)
         return;
 
     SavedStacks &sstack = cx->compartment()->savedStacks();
@@ -171,13 +171,11 @@ TaintNode::compileFrame(JSContext *cx)
     MOZ_ASSERT(last);
 
     RootedSavedFrame frame(cx, nullptr);
-    RootedValue frameval(cx);
     for(FrameStateElement *itr = last; itr != nullptr; itr = itr->next) {
-        MOZ_ASSERT(itr->frame.isUndefined());
+        MOZ_ASSERT(!itr->frame);
         sstack.buildSavedFrame(cx, &frame, itr->state);
-        MOZ_ASSERT(!!frame);
-        frameval = ObjectValue(*frame);
-        itr->frame = frameval;
+        MOZ_ASSERT(frame);
+        itr->frame = frame;
     }
 }
 
@@ -201,9 +199,7 @@ void TaintNode::markRefs(JSTracer *trc)
     if(stack) {
         for(FrameStateElement *itr = stack; itr != nullptr; itr = itr->prev) {
             itr->state.trace(trc);
-            if(!stack->frame.isUndefined()) {
-                gc::MarkValueUnbarriered(trc, itr->frame.unsafeGet(), "TaintNode::stack");
-            }
+            gc::MarkObjectUnbarriered(trc, itr->frame.unsafeGet(), "TaintNode::stack");
         }  
     }
 }
@@ -413,17 +409,17 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             RootedValue opname(cx, StringValue(NewStringCopyZ<CanGC>(cx, curnode->op)));
             RootedValue param1val(cx, curnode->param1);
             RootedValue param2val(cx, curnode->param2);
-            RootedValue stackval(cx, UndefinedHandleValue);
+            RootedObject stackobj(cx);
             
             if(curnode->stack) {
                 curnode->compileFrame(cx);
-                stackval = curnode->stack->frame;
+                stackobj = curnode->stack->frame;
             }
             
             JS_WrapValue(cx, &param1val);
             JS_WrapValue(cx, &param2val);
-            if(!stackval.isUndefined())
-                JS_WrapValue(cx, &stackval);
+            if(stackobj)
+                JS_WrapObject(cx, &stackobj);
 
             if(!taintobj)
                 return false;
@@ -435,8 +431,8 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 
             JS_DefineProperty(cx, taintobj, "param1", param1val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
             JS_DefineProperty(cx, taintobj, "param2", param2val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
-            if(!stackval.isUndefined())
-                JS_DefineProperty(cx, taintobj, "stack", stackval, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
+            if(stackobj)
+                JS_DefineProperty(cx, taintobj, "stack", stackobj, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
 
             if(!taintchain.append(ObjectValue(*taintobj)))
                 return false;
@@ -561,6 +557,7 @@ taint_remove_all(TaintStringRef **start, TaintStringRef **end)
             found_end = true;
 #endif
         TaintStringRef *next = tsr->next;
+        tsr->next = nullptr;
         taint_delete_taintref(tsr);
         tsr = next;
     }
@@ -1149,7 +1146,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
             if(!!node->stack) {
                 node->compileFrame(cx);
 
-                RootedValue stackValue(cx, node->stack->frame);
+                RootedValue stackValue(cx, ObjectValue(*node->stack->frame));
                 stack.append("<br/>");
                 jsvalue_to_stdstring(cx, stackValue, &stack);
             }
