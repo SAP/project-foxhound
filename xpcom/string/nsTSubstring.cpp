@@ -215,7 +215,7 @@ nsTSubstring_CharT::ReplacePrepInternal(index_type aCutStart, size_type aCutLen,
     } else if(aCutLen > 0) {
       taint_remove_range(&startTaint, &endTaint, aCutStart, aCutStart + aCutLen);
     }
-    if(aFragLen > 0) {
+    if(isTainted() && aFragLen > 0) {
       taint_insert_offset(startTaint, aCutStart, aFragLen);
       ffTaint();
     }
