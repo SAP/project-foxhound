@@ -1148,6 +1148,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
 
                 RootedValue stackValue(cx, ObjectValue(*node->stack->frame));
                 stack.append("<br/>");
+                JS_WrapValue(cx, &stackValue);
                 jsvalue_to_stdstring(cx, stackValue, &stack);
             }
 

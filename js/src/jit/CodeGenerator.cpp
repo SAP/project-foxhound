@@ -1247,7 +1247,6 @@ CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
         TAINT_STR_ASM_INIT(string);
         //call taint_str_substr
         RegisterSet regs = RegisterSet::Volatile();
-        regs.takeUnchecked(temp3);
         masm.PushRegsInMask(regs);
         masm.load32(startIndexAddress, temp3);
         masm.setupUnalignedABICall(5, temp2);
@@ -1307,9 +1306,6 @@ CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
         TAINT_STR_ASM_INIT(string);
         //call taint_str_substr
         RegisterSet regs = RegisterSet::Volatile();
-        regs.takeUnchecked(temp1);
-        regs.takeUnchecked(temp2);
-        regs.takeUnchecked(temp3);
         masm.PushRegsInMask(regs);
         masm.load32(startIndexAddress, temp3);
         masm.setupUnalignedABICall(5, temp2);
