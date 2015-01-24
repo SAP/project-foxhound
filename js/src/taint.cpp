@@ -27,6 +27,24 @@ using namespace js;
     MOZ_ASSERT((validate_tsr)->begin >= 0); \
     MOZ_ASSERT((uintptr_t)(validate_tsr) != (uintptr_t)0x4b4b4b4b4b4b4b4b);
 
+#if DEBUG
+    #define VALIDATE_CHAIN(validate_tsr) \
+        do { \
+            TaintStringRef *vl = validate_tsr; \
+            if(!vl) \
+                break; \
+            VALIDATE_NODE(vl); \
+            TaintStringRef *ve = vl->next; \
+            for(;ve != nullptr; vl = ve, ve = ve->next) \
+            { \
+                VALIDATE_NODE(ve); \
+                MOZ_ASSERT(ve->begin >= vl->end); \
+            } \
+        } while(false)
+#else
+    #define VALIDATE_CHAIN(validate_tsr) ;
+#endif
+
 //------------------------------------
 // Local helpers
 inline void
@@ -277,6 +295,8 @@ TaintStringRef::~TaintStringRef()
 void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringRef **end) {
     MOZ_ASSERT(start && end);
 
+    VALIDATE_CHAIN(tsr);
+
     if(taint_istainted(start, end)) {
         if(!tsr) {
             taint_remove_all(start, end);
@@ -289,6 +309,8 @@ void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringR
         (*start) = (*end) = tsr;
 
     taint_ff_end(end);
+
+    VALIDATE_CHAIN(*start);
 }
 
 void taint_ff_end(TaintStringRef **end) {
@@ -458,8 +480,10 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 static void
 taint_add_op_single(TaintStringRef *dst, const char* name, JSContext *cx, HandleValue param1, HandleValue param2)
 {
-    MOZ_ASSERT(!(!param1.isUndefined() || !param2.isUndefined()) || cx,
+    MOZ_ASSERT((param1.isUndefined() && param2.isUndefined()) || cx,
         "JSContext is required when providing arguments to keep them alive.");
+
+    VALIDATE_CHAIN(dst);
 
     JS::AutoCheckCannotGC nogc;
 
@@ -473,7 +497,8 @@ taint_add_op_single(TaintStringRef *dst, const char* name, JSContext *cx, Handle
     taint_node->param1 = param1;
     taint_node->param2 = param2;
     dst->attachTo(taint_node);
-    
+
+    VALIDATE_CHAIN(dst);
 }
 
 void
@@ -491,6 +516,8 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
         RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
         taint_add_op_single(tsr, "substring", cx, startval, endval);
     }
+
+    VALIDATE_CHAIN(last);
 }
 
 //TODO optimize for lhs == rhs
@@ -546,6 +573,8 @@ void
 taint_remove_all(TaintStringRef **start, TaintStringRef **end)
 {
     MOZ_ASSERT(end && start);
+
+    VALIDATE_CHAIN(*start);
 
 #if DEBUG
     bool found_end = false;
@@ -620,10 +649,8 @@ TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
     uint32_t frombegin, int32_t offset, uint32_t fromend)
 {
     MOZ_ASSERT(dst && src);
-    VALIDATE_NODE(src);
     TaintStringRef *tsr = taint_duplicate_range(src, NULL, frombegin, offset, fromend);
     if(tsr) { //do not overwrite
-        VALIDATE_NODE(tsr);
         dst->addTaintRef(tsr);
     }
 
@@ -655,12 +682,13 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
 {
     MOZ_ASSERT(src);
 
+    VALIDATE_CHAIN(src);
+
     TaintStringRef *start = nullptr;
     TaintStringRef *last = nullptr;
     
     for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
     {
-        VALIDATE_NODE(tsr);
         if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
             continue;
 
@@ -685,6 +713,8 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
         last = newtsr;
     }
 
+    VALIDATE_CHAIN(start);
+
     if(taint_end)
         *taint_end = last;
 
@@ -700,8 +730,8 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
     if(!source)
         return nullptr;
 
-
-    VALIDATE_NODE(source);
+    VALIDATE_CHAIN(source);
+    VALIDATE_CHAIN(*target);
 
     //skip taint before sidx
     for(;source && sidx > source->end; source = source->next);
@@ -738,7 +768,9 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
     VALIDATE_NODE(tsr);
 
     if(*target) {
+        MOZ_ASSERT(!(*target)->next); //memleak
         (*target)->next = tsr;
+        VALIDATE_CHAIN(*target);
     }
     *target = tsr;
 
@@ -749,6 +781,7 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
 TaintStringRef *taint_split_ref(TaintStringRef* tsr, uint32_t idx)
 {
     MOZ_ASSERT(tsr);
+    VALIDATE_CHAIN(tsr);
 
     TaintStringRef *split = taint_str_taintref_build(
         tsr->begin + idx, tsr->end, tsr->thisTaint);
@@ -758,30 +791,19 @@ TaintStringRef *taint_split_ref(TaintStringRef* tsr, uint32_t idx)
     tsr->next = split;
     tsr->end = tsr->begin + idx;
 
-    VALIDATE_NODE(split);
-    VALIDATE_NODE(tsr);
+    VALIDATE_CHAIN(tsr);
 
     return split;
 }
-
-/*
-TaintStringRef*
-taint_find_insert_position(TaintStringRef *start, TaintStringRef *val)
-{
-    MOZ_ASSERT(val);
-
-    for(TaintStringRef *tsr = start; tsr != nullptr; tsr = tsr->next) {
-        if(val->begin >= tsr->end)
-            return tsr;
-    }
-    return nullptr;
-}*/
 
 void
 taint_copy_merge(TaintStringRef **dst_start, TaintStringRef **dst_end,
     TaintStringRef *src_start, uint32_t offset)
 {
     MOZ_ASSERT(dst_start && dst_end && src_start);
+
+    VALIDATE_CHAIN(src_start);
+    VALIDATE_CHAIN(*dst_start);
 
     //optimize for non-tainted dst
     if(*dst_start == nullptr) {
@@ -812,9 +834,6 @@ taint_copy_merge(TaintStringRef **dst_start, TaintStringRef **dst_end,
             continue;
         }
 
-
-        
-
         //completely before
         if(insert->end <= current_dst->begin) {
             insert->next = current_dst;
@@ -839,6 +858,8 @@ taint_copy_merge(TaintStringRef **dst_start, TaintStringRef **dst_end,
             MOZ_ASSERT(false, "Overlapping refs not allowed.");
         }
     }
+    VALIDATE_CHAIN(*dst_start);
+
     taint_ff_end(dst_end);
 }
 
@@ -846,6 +867,8 @@ TaintStringRef*
 taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
 {
     MOZ_ASSERT(start);
+
+    VALIDATE_CHAIN(start);
 
     TaintStringRef *mod = nullptr;
     TaintStringRef *last_before = nullptr;
@@ -859,7 +882,7 @@ taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
         }
     }
 
-    //nothing affected, alright then
+    //nothing affected, end
     if(!mod)
         return last_before;
 
@@ -877,6 +900,8 @@ taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
         VALIDATE_NODE(tsr);
     }
 
+    VALIDATE_CHAIN(start);
+
     return last_before;
 }
 
@@ -891,6 +916,7 @@ taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin,
     MOZ_ASSERT(start && end && *start && *end);
     MOZ_ASSERT(end_offset > begin);
 
+    VALIDATE_CHAIN(*start);
 
     //OPTIMIZE
     if(*start && *end && begin <= (*start)->begin && end_offset >= (*end)->end) {
@@ -932,6 +958,8 @@ taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin,
             VALIDATE_NODE(tsr);
         }
     }
+
+    VALIDATE_CHAIN(*start);
 
     return before;
 }

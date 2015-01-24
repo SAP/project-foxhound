@@ -130,18 +130,21 @@ JSONParser<CharT>::readString()
     //offset of the beginning of the string literal from
     //the whole string-to-parse
     size_t s_off = current - begin;
-    //beginning of the string literal
-    //const CharPtr s_start = current;
 
+    //TAINT TODO: Losing taint here due to atomization
     #define TAINT_JSON_PARSE_OPT \
-        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, current - start, s_off); \
-        if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
-            target_first_tsr = target_last_tsr;
+        if(ST != JSONParser::PropertyName) { \
+            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, current - start, s_off); \
+            if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
+                target_first_tsr = target_last_tsr; \
+        }
 
     #define TAINT_JSON_PARSE_APPLY \
-        if(target_first_tsr) { \
-            str->addTaintRef(target_first_tsr); \
-            taint_add_op(str->getTopTaintRef(), "JSON.parse", cx); \
+        if(ST != JSONParser::PropertyName) { \
+            if(target_first_tsr) { \
+                str->addTaintRef(target_first_tsr); \
+                taint_add_op(str->getTopTaintRef(), "JSON.parse", cx); \
+            } \
         }
 
 #endif
@@ -268,9 +271,11 @@ JSONParser<CharT>::readString()
         start = current;
         for (; current < end; current++) {
 #if _TAINT_ON_
-            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, buffer.length() + (size_t)(current - start)); \
-            if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
-                target_first_tsr = target_last_tsr;
+            if(ST != JSONParser::PropertyName) {
+                current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, buffer.length() + (size_t)(current - start));
+                if(target_first_tsr == nullptr && target_last_tsr != nullptr)
+                    target_first_tsr = target_last_tsr;
+            }
 #endif
             if (*current == '"' || *current == '\\' || *current <= 0x001F)
                 break;
