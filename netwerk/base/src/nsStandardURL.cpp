@@ -557,6 +557,17 @@ nsStandardURL::BuildNormalizedSpec(const char *spec)
             approxLen += 1 + encoder.EncodeSegmentCount(spec, mRef,       esc_Ref,           encRef,       useEncRef);
     }
 
+#if _TAINT_ON_
+    useEncUsername = false;
+    useEncPassword = false;
+    useEncHost = false;
+    useEncDirectory = false;
+    useEncBasename = false;
+    useEncExtension = false;
+    useEncQuery = false;
+    useEncRef = false;
+#endif
+
     // do not escape the hostname, if IPv6 address literal, mHost will
     // already point to a [ ] delimited IPv6 address literal.
     // However, perform Unicode normalization on it, as IDN does.

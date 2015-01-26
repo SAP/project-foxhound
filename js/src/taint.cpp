@@ -440,7 +440,7 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             
             JS_WrapValue(cx, &param1val);
             JS_WrapValue(cx, &param2val);
-            if(stackobj)
+            if(!!stackobj)
                 JS_WrapObject(cx, &stackobj);
 
             if(!taintobj)
@@ -453,7 +453,7 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 
             JS_DefineProperty(cx, taintobj, "param1", param1val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
             JS_DefineProperty(cx, taintobj, "param2", param2val, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
-            if(stackobj)
+            if(!!stackobj)
                 JS_DefineProperty(cx, taintobj, "stack", stackobj, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT);
 
             if(!taintchain.append(ObjectValue(*taintobj)))
