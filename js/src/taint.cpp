@@ -1125,7 +1125,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
     }
 
     fputs("digraph G {\n", h);
-    fprintf(h, "    start [label=<%s<br/>%s>,shape=Mdiamond];\n", name, stack);
+    fprintf(h, "    start [shape=record, label=<%s<br/>%s>];\n", name, stack);
     fputs("    content [shape=record, label=<",h);
     {
         size_t last = 0;

@@ -114,6 +114,34 @@ bool taint_threadbit_set(uint8_t v);
 //-----------------------------------
 //call manipulation and augmentation
 
+#define TAINT_CALL_MARK_ARG(v, argn, funname) \
+    do { \
+        Value checktaint(v); \
+        JSString *strtaint = nullptr; \
+        if(checktaint.isString() && \
+            (strtaint = checktaint.toString()) && \
+            strtaint->isTainted()) \
+        { \
+            taint_add_op(strtaint->getTopTaintRef(), "function call", cx, funname); \
+        } \
+    } while(false)
+
+#define TAINT_CALL_MARK_ALL(fun, args) \
+    do { \
+        if(!fun) \
+            break; \
+        RootedValue funnamearg(cx); \
+        if(fun->displayAtom()) \
+            funnamearg = StringValue(fun->displayAtom()); \
+        for(unsigned i = 0; i < args.length(); i++) { \
+            RootedValue argn(cx, INT_TO_JSVAL(i)); \
+            TAINT_CALL_MARK_ARG(args.get(i), argn, funnamearg); \
+        } \
+        RootedValue thisn(cx, INT_TO_JSVAL(-1)); \
+        TAINT_CALL_MARK_ARG(args.thisv(), thisn, funnamearg); \
+    } while(false)
+
+
 //quote special call manipulation
 #define TAINT_QUOTE_STRING_CALL(a,b,c) QuoteString(a,b,c,&targetref)
 #define TAINT_QUOTE_STRING_CALL_NULL(a,b,c) QuoteString(a,b,c,nullptr)

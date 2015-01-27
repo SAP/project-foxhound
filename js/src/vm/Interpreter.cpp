@@ -479,21 +479,7 @@ js::Invoke(JSContext *cx, CallArgs args, MaybeConstruct construct)
     JSFunction *fun = &args.callee().as<JSFunction>();
 #if _TAINT_ON_
     //scan for tainted args
-    RootedValue funnamearg(cx);
-    if(fun->displayAtom())
-        funnamearg = StringValue(fun->displayAtom());
-    for(unsigned i = 0; i < args.length(); i++) {
-        Value checktaint(args.get(i));
-        JSString *strtaint = nullptr;
-        if(checktaint.isString() &&
-            (strtaint = checktaint.toString()) &&
-            strtaint->isTainted())
-        {
-            taint_add_op(strtaint->getTopTaintRef(), "function call", cx, funnamearg);
-        }
-    }
-
-
+    TAINT_CALL_MARK_ALL(fun, args);
 #endif
 
     MOZ_ASSERT_IF(construct, !fun->isNativeConstructor());
@@ -2561,6 +2547,11 @@ CASE(JSOP_FUNCALL)
         REGS.sp = newsp;
         ADVANCE_AND_DISPATCH(JSOP_CALL_LENGTH);
     }
+
+#if _TAINT_ON_
+    //scan for tainted args
+    TAINT_CALL_MARK_ALL(fun, args);
+#endif
 
     InitialFrameFlags initial = construct ? INITIAL_CONSTRUCT : INITIAL_NONE;
     bool newType = UseNewType(cx, script, REGS.pc);
