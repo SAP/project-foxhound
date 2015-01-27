@@ -127,6 +127,32 @@ StringBuffer::finishString()
         : FinishStringFlat<char16_t>(cx, *this, twoByteChars()), startTaint);
 }
 
+template <typename CharT, class Buffer>
+static void
+ReassignChars(ExclusiveContext *cx, Buffer &cb, JSFlatString *str)
+{
+    cb.resize(str->length());
+    ScopedJSFreePtr<CharT> buf(cb.begin());
+    {
+        JS::AutoCheckCannotGC nogc;
+        PodCopy(buf.get(), str->chars<CharT>(nogc), str->length());
+    }
+
+    buf.forget();
+}
+
+JSFlatString *
+StringBuffer::finishCurrentString()
+{
+    JSFlatString *str = finishString();
+    if(isLatin1())
+        ReassignChars<Latin1Char>(cx, latin1Chars(), str);
+    else
+        ReassignChars<char16_t>(cx, twoByteChars(), str);
+
+    return str;
+}
+
 JSAtom *
 StringBuffer::finishAtom()
 {

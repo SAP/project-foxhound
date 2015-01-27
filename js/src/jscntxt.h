@@ -1042,6 +1042,69 @@ class AutoLockForExclusiveAccess
 
 } /* namespace js */
 
+#if _TAINT_ON_
+template <js::TaintMarker mark>
+class TaintAutoMark
+{
+    js::PerThreadData *pt;
+    bool old;
+
+public:
+    TaintAutoMark()
+        : pt(nullptr), old(false)
+    {
+        pt = js::TlsPerThreadData.get();
+        if (pt) {
+            old = !!(pt->taintStackOptions & mark);
+            pt->taintStackOptions |= mark;
+        }
+    }
+
+    ~TaintAutoMark()
+    {
+        if (pt && !old) {
+            pt->taintStackOptions &= ~mark;
+        }
+        //resetting to ON not needed, as we set it anyways
+    }
+};
+
+template <js::TaintMarker mark>
+class TaintAutoDisableMark
+{
+    js::PerThreadData *pt;
+    bool old;
+
+public:
+    TaintAutoDisableMark()
+        : pt(nullptr), old(false)
+    {
+        pt = js::TlsPerThreadData.get();
+        if (pt) {
+            old = !!(pt->taintStackOptions & mark);
+            pt->taintStackOptions &= ~mark;
+        }
+    }
+
+    ~TaintAutoDisableMark()
+    {
+        if (pt && old) {
+            pt->taintStackOptions |= mark;
+        }
+        //resetting to ON not needed, as we set it anyways
+    }
+};
+
+class TaintAutoMarkSBAppend : public TaintAutoMark<js::TAINT_OPT_MARK_SB_APPEND>
+{
+};
+
+class TaintAutoDisableMarkSB : public TaintAutoDisableMark<js::TAINT_OPT_MARK_SB>
+{
+};
+
+#endif
+
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif

@@ -90,6 +90,13 @@ class SimulatorRuntime;
 struct AutoFlushICache;
 }
 
+#if _TAINT_ON_
+enum TaintMarker {
+    TAINT_OPT_MARK_SB = 1,
+    TAINT_OPT_MARK_SB_APPEND = 2
+};
+#endif
+
 /*
  * GetSrcNote cache to avoid O(n^2) growth in finding a source note for a
  * given pc in a script. We use the script->code pointer to tag the cache,
@@ -524,6 +531,11 @@ class PerThreadData : public PerThreadDataFriendFields
 
     // Information about the heap allocated backtrack stack used by RegExp JIT code.
     irregexp::RegExpStack regexpStack;
+
+#if _TAINT_ON_
+    uint8_t             taintStackOptions;
+#endif
+
 
 #ifdef JS_TRACE_LOGGING
     TraceLogger         *traceLogger;

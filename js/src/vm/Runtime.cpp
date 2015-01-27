@@ -74,6 +74,9 @@ PerThreadData::PerThreadData(JSRuntime *runtime)
     jitTop(nullptr),
     jitJSContext(nullptr),
     jitStackLimit(0),
+#if _TAINT_ON_
+    taintStackOptions(TAINT_OPT_MARK_SB),
+#endif
 #ifdef JS_TRACE_LOGGING
     traceLogger(nullptr),
 #endif

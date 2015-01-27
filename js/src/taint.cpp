@@ -331,6 +331,12 @@ void TaintStringRef::markNodeChain(JSTracer *trc)
 //------------------------------------------------
 // Library Test/Debug functions
 
+bool taint_threadbit_set(uint8_t v)
+{
+    js::PerThreadData *pt = js::TlsPerThreadData.get();
+    return pt && !!(pt->taintStackOptions & v);
+}
+
 bool
 taint_str_testop(JSContext *cx, unsigned argc, Value *vp)
 {
@@ -533,7 +539,7 @@ taint_str_concat(JSContext *cx, JSString *dst, JSString *lhs, JSString *rhs)
         taint_copy_range(dst, rhs->getTopTaintRef(), 0, lhs->length(), 0);
 
     //add operator only if possible (we might concat without any JSContext)
-    if(cx) {
+    if(cx && dst->isTainted()) {
         RootedValue lhsval(cx, StringValue(lhs));
         RootedValue rhsval(cx, StringValue(rhs));
         taint_add_op(dst->getTopTaintRef(), "concat", cx, lhsval, rhsval);

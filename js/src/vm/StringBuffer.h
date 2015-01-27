@@ -158,10 +158,10 @@ class StringBuffer
         return isLatin1() ? latin1Chars().appendN(c, n) : twoByteChars().appendN(c, n);
     }
 
-    inline bool TAINT_SB_APPEND_DECL(JSString *str);
-    inline bool TAINT_SB_APPEND_DECL(JSLinearString *str);
-    inline bool TAINT_SB_APPENDSUBSTRING_DECL(JSString *base, size_t off, size_t len);
-    inline bool TAINT_SB_APPENDSUBSTRING_DECL(JSLinearString *base, size_t off, size_t len);
+    inline bool append(JSString *str);
+    inline bool append(JSLinearString *str);
+    inline bool appendSubstring(JSString *base, size_t off, size_t len);
+    inline bool appendSubstring(JSLinearString *base, size_t off, size_t len);
 
     inline bool append(const char *chars, size_t len) {
         return append(reinterpret_cast<const Latin1Char *>(chars), len);
@@ -192,7 +192,7 @@ class StringBuffer
         infallibleAppend(reinterpret_cast<const Latin1Char *>(chars), len);
     }
 
-    void TAINT_SB_INFAPPENDSUBSTRING_DECL(JSLinearString *base, size_t off, size_t len);
+    void infallibleAppendSubstring(JSLinearString *base, size_t off, size_t len);
 
     /*
      * Because inflation is fallible, these methods should only be used after
@@ -224,6 +224,8 @@ class StringBuffer
      * whether string creation succeeded or failed) empties the buffer.
      */
     JSFlatString *finishString();
+    //does not empty the buffer
+    JSFlatString *finishCurrentString();
 
     /* Identical to finishString() except that an atom is created. */
     JSAtom *finishAtom();
@@ -257,12 +259,21 @@ StringBuffer::append(const char16_t *begin, const char16_t *end)
 }
 
 inline bool
-StringBuffer::TAINT_SB_APPEND_DEF(JSLinearString *str)
+StringBuffer::append(JSLinearString *str)
 {
 
 #if _TAINT_ON_
-    if(taint && str->isTainted())
+    if(str->isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB)) {
         taint_copy_range(this, str->getTopTaintRef(), 0, length(), 0);
+        MOZ_ASSERT(isTainted());
+
+        JSContext *jscx = cx->maybeJSContext();
+        if(jscx && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
+            RootedValue lhsval(cx, StringValue(finishCurrentString()));
+            RootedValue rhsval(cx, StringValue(str));
+            taint_add_op(getTopTaintRef(), "concat", jscx, lhsval, rhsval);
+        }
+    }
 #endif
 
     JS::AutoCheckCannotGC nogc;
@@ -278,20 +289,34 @@ StringBuffer::TAINT_SB_APPEND_DEF(JSLinearString *str)
 }
 
 inline void
-StringBuffer::TAINT_SB_INFAPPENDSUBSTRING_DEF(JSLinearString *base, size_t off, size_t len)
+StringBuffer::infallibleAppendSubstring(JSLinearString *base, size_t off, size_t len)
 {
     MOZ_ASSERT(off + len <= base->length());
     MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
 #if _TAINT_ON_
-    if(taint && base->isTainted() && len > 0) {
+    if(base->isTainted() && len > 0 && taint_threadbit_set(TAINT_OPT_MARK_SB)) {
         TaintStringRef *last = getBottomTaintRef();
         TaintStringRef *next = nullptr;
-
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
+
+        JSContext *jscx = cx->maybeJSContext();
+        
         next = (last ? last->next : getTopTaintRef());
-        if(next)
-            taint_inject_substring_op(cx->asJSContext(), next, length(), off);
+        if(jscx) {
+            if(next)
+                taint_inject_substring_op(jscx, next, length(), off);
+        
+            if(isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
+                RootedValue lhsval(cx, StringValue(finishCurrentString()));
+                RootedValue rhsval(cx, StringValue(base));
+                taint_add_op(getTopTaintRef(), "concat", jscx, lhsval, rhsval);
+            }
+        }
+
+
+        
+
     }
 #endif
 
@@ -303,19 +328,28 @@ StringBuffer::TAINT_SB_INFAPPENDSUBSTRING_DEF(JSLinearString *base, size_t off, 
 }
 
 inline bool
-StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSLinearString *base, size_t off, size_t len)
+StringBuffer::appendSubstring(JSLinearString *base, size_t off, size_t len)
 {
     MOZ_ASSERT(off + len <= base->length());
 
 #if _TAINT_ON_
-    if(taint && base->isTainted() && len > 0) {
+    if(base->isTainted() && len > 0 && taint_threadbit_set(TAINT_OPT_MARK_SB)) {
         TaintStringRef *last = getBottomTaintRef();
         TaintStringRef *next = nullptr;
 
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
+        JSContext *jscx = cx->maybeJSContext();
         next = (last ? last->next : getTopTaintRef());
-        if(next)
-            taint_inject_substring_op(cx->asJSContext(), next, length(), off);
+        if(jscx) {
+            if(next)
+                taint_inject_substring_op(jscx, next, length(), off);
+            
+            if(isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
+                RootedValue lhsval(cx, StringValue(finishCurrentString()));
+                RootedValue rhsval(cx, StringValue(base));
+                taint_add_op(getTopTaintRef(), "concat", jscx, lhsval, rhsval);
+            }
+        }
     }
 #endif
 
@@ -333,23 +367,23 @@ StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSLinearString *base, size_t off, siz
 }
 
 inline bool
-StringBuffer::TAINT_SB_APPENDSUBSTRING_DEF(JSString *base, size_t off, size_t len)
+StringBuffer::appendSubstring(JSString *base, size_t off, size_t len)
 {
     JSLinearString *linear = base->ensureLinear(cx);
     if (!linear)
         return false;
 
-    return TAINT_SB_APPENDSUBSTRING_CALL(linear, off, len);
+    return appendSubstring(linear, off, len);
 }
 
 inline bool
-StringBuffer::TAINT_SB_APPEND_DEF(JSString *str)
+StringBuffer::append(JSString *str)
 {
     JSLinearString *linear = str->ensureLinear(cx);
     if (!linear)
         return false;
 
-    return TAINT_SB_APPEND_CALL(linear);
+    return append(linear);
 }
 
 /* ES5 9.8 ToString, appending the result to the string buffer. */

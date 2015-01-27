@@ -987,6 +987,10 @@ ArrayJoinKernel(JSContext *cx, SeparatorOp sepOp, HandleObject obj, uint32_t len
 {
     uint32_t i = 0;
 
+#if _TAINT_ON_
+    TaintAutoMarkSBAppend sbmark;
+#endif
+
     if (!Locale && obj->is<ArrayObject>() && !ObjectMayHaveExtraIndexedProperties(obj)) {
         // This loop handles all elements up to initializedLength. If
         // length > initLength we rely on the second loop to add the

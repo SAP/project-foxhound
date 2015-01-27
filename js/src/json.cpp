@@ -70,6 +70,7 @@ Quote(StringBuffer &sb, JSLinearString *str)
 
 #if _TAINT_ON_
     TAINT_JSON_QUOTE_PRE
+    TaintAutoDisableMarkSB sbmarker;
 #endif
 
     /* Step 2. */
@@ -86,7 +87,7 @@ Quote(StringBuffer &sb, JSLinearString *str)
                 break;
         } while (++i < len);
         if (i > mark) {
-            if (!TAINT_SB_APPENDSUBSTRING_ARG(str, mark, i - mark))
+            if (!sb.appendSubstring(str, mark, i - mark))
                 return false;
             if (i == len)
                 break;

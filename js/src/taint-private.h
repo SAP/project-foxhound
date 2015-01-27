@@ -108,6 +108,9 @@ void
 taint_inject_substring_op(JSContext *cx, TaintStringRef *last, 
     uint32_t offset, uint32_t begin);
 
+bool taint_threadbit_set(uint8_t v);
+
+
 //-----------------------------------
 //call manipulation and augmentation
 
@@ -190,17 +193,6 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_JSON_PARSE_DEF(a,b,c,d) ParseJSONWithReviver(a,b,c,d,TaintStringRef *ref)
 #define TAINT_JSON_EVAL_CALL(a,b,c) ParseEvalStringAsJSON(a,b,c, str->getTopTaintRef())
 
-#define TAINT_SB_APPEND_DECL(a) append(a,bool taint = true)
-#define TAINT_SB_APPEND_DEF(a) append(a,bool taint)
-#define TAINT_SB_APPEND_CALL(a) append(a,taint)
-#define TAINT_SB_INFAPPENDSUBSTRING_DECL(a,b,c) infallibleAppendSubstring(a,b,c, bool taint = true)
-#define TAINT_SB_INFAPPENDSUBSTRING_DEF(a,b,c) infallibleAppendSubstring(a,b,c, bool taint)
-#define TAINT_SB_APPENDSUBSTRING_DECL(a,b,c) appendSubstring(a,b,c, bool taint = true)
-#define TAINT_SB_APPENDSUBSTRING_DEF(a,b,c) appendSubstring(a,b,c, bool taint)
-#define TAINT_SB_APPENDSUBSTRING_CALL(a,b,c) appendSubstring(a,b,c,taint)
-#define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c,false)
-
-
 
 #define TAINT_JSON_QUOTE_PRE \
     TaintStringRef *current_tsr = str->getTopTaintRef(); \
@@ -267,16 +259,6 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 #define TAINT_MARK_MATCH(str, regex) (str)
 #define TAINT_MARK_REPLACE_RAW(str, re) (str)
 #define TAINT_MARK_REPLACE(str) (str)
-
-#define TAINT_SB_APPENDSUBSTRING_DECL(a,b,c) appendSubstring(a,b,c)
-#define TAINT_SB_INFAPPENDSUBSTRING_DECL(a,b,c) infallibleAppendSubstring(a,b,c)
-#define TAINT_SB_APPENDSUBSTRING_DEF(a,b,c) appendSubstring(a,b,c)
-#define TAINT_SB_INFAPPENDSUBSTRING_DEF(a,b,c) infallibleAppendSubstring(a,b,c)
-#define TAINT_SB_APPENDSUBSTRING_CALL(a,b,c) appendSubstring(a,b,c)
-#define TAINT_SB_APPEND_DECL(a) append(a)
-#define TAINT_SB_APPEND_DEF(a) append(a)
-#define TAINT_SB_APPEND_CALL(a) append(a)
-#define TAINT_SB_APPENDSUBSTRING_ARG(a,b,c) sb.appendSubstring(a,b,c)
 
 #define TAINT_UNESCAPE_DEF(a,b) Unescape(a,b)
 #define TAINT_UNESCAPE_CALL(a,b) Unescape(a,b)
