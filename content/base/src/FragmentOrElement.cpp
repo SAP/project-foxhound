@@ -2821,6 +2821,10 @@ FragmentOrElement::SetInnerHTMLInternal(const nsAString& aInnerHTML, ErrorResult
     return;
   }
 
+#if _TAINT_ON_
+  taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aInnerHTML, "innerHTML");
+#endif
+
   nsIDocument* doc = target->OwnerDoc();
 
   // Batch possible DOMSubtreeModified events.
