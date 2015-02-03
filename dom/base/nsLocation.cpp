@@ -318,7 +318,7 @@ nsLocation::GetHash(nsAString& aHash)
     aHash.Assign(char16_t('#'));
     aHash.Append(unicodeRef);
 #if _TAINT_ON_
-      taint_tag_source(&aHash, "location.hash");
+      taint_tag_source(&aHash, "location.hash", nsContentUtils::GetCurrentJSContext());
 #endif
   }
 
@@ -376,7 +376,7 @@ nsLocation::GetHost(nsAString& aHost)
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(hostport, aHost);
 #if _TAINT_ON_
-      taint_tag_source(&aHost, "location.host");
+      taint_tag_source(&aHost, "location.host", nsContentUtils::GetCurrentJSContext());
 #endif
     }
   }
@@ -417,7 +417,7 @@ nsLocation::GetHostname(nsAString& aHostname)
   if (uri) {
     nsContentUtils::GetHostOrIPv6WithBrackets(uri, aHostname);
 #if _TAINT_ON_
-    taint_tag_source(&aHostname, "location.hostname");
+    taint_tag_source(&aHostname, "location.hostname", nsContentUtils::GetCurrentJSContext());
 #endif
   }
 
@@ -465,7 +465,7 @@ nsLocation::GetHref(nsAString& aHref)
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(uriString, aHref);
 #if _TAINT_ON_
-      taint_tag_source(&aHref, "location.href");
+      taint_tag_source(&aHref, "location.href", nsContentUtils::GetCurrentJSContext());
 #endif
     }
   }
@@ -584,7 +584,7 @@ nsLocation::GetOrigin(nsAString& aOrigin)
 
   aOrigin = origin;
 #if _TAINT_ON_
-      taint_tag_source(&aOrigin, "location.origin");
+      taint_tag_source(&aOrigin, "location.origin", nsContentUtils::GetCurrentJSContext());
 #endif
   return NS_OK;
 }
@@ -611,7 +611,7 @@ nsLocation::GetPathname(nsAString& aPathname)
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(file, aPathname);
 #if _TAINT_ON_
-      taint_tag_source(&aPathname, "location.pathname");
+      taint_tag_source(&aPathname, "location.pathname", nsContentUtils::GetCurrentJSContext());
 #endif
     }
   }
@@ -870,7 +870,7 @@ nsLocation::GetSearch(nsAString& aSearch)
       aSearch.Assign(char16_t('?'));
       AppendUTF8toUTF16(search, aSearch);
 #if _TAINT_ON_
-      taint_tag_source(&aSearch, "location.search");
+      taint_tag_source(&aSearch, "location.search", nsContentUtils::GetCurrentJSContext());
 #endif
     }
   }
