@@ -34,9 +34,17 @@ using mozilla::HashString;
 namespace js {
 
 struct SavedFrame::Lookup {
+#if _TAINT_ON_
+    Lookup(JSAtom *source, JSAtom *linesource, uint32_t line, uint32_t column, JSAtom *functionDisplayName,
+           SavedFrame *parent, JSPrincipals *principals)
+#else
     Lookup(JSAtom *source, uint32_t line, uint32_t column, JSAtom *functionDisplayName,
            SavedFrame *parent, JSPrincipals *principals)
+#endif
       : source(source),
+#if _TAINT_ON_
+        linesource(linesource),
+#endif
         line(line),
         column(column),
         functionDisplayName(functionDisplayName),
@@ -47,6 +55,9 @@ struct SavedFrame::Lookup {
     }
 
     JSAtom       *source;
+#if _TAINT_ON_
+    JSAtom       *linesource;
+#endif
     uint32_t     line;
     uint32_t     column;
     JSAtom       *functionDisplayName;
@@ -57,16 +68,26 @@ struct SavedFrame::Lookup {
 class SavedFrame::AutoLookupRooter : public JS::CustomAutoRooter
 {
   public:
+#if _TAINT_ON_
+    AutoLookupRooter(JSContext *cx, JSAtom *source, JSAtom *linesource, uint32_t line, uint32_t column,
+                     JSAtom *functionDisplayName, SavedFrame *parent, JSPrincipals *principals)
+      : JS::CustomAutoRooter(cx),
+        value(source, linesource, line, column, functionDisplayName, parent, principals) {}
+#else
     AutoLookupRooter(JSContext *cx, JSAtom *source, uint32_t line, uint32_t column,
                      JSAtom *functionDisplayName, SavedFrame *parent, JSPrincipals *principals)
       : JS::CustomAutoRooter(cx),
         value(source, line, column, functionDisplayName, parent, principals) {}
+#endif
 
     operator const SavedFrame::Lookup&() const { return value; }
     SavedFrame::Lookup &get() { return value; }
 
   private:
     virtual void trace(JSTracer *trc) {
+#if _TAINT_ON_
+        gc::MarkStringUnbarriered(trc, &value.linesource, "SavedFrame::Lookup::linesource");
+#endif
         gc::MarkStringUnbarriered(trc, &value.source, "SavedFrame::Lookup::source");
         if (value.functionDisplayName) {
             gc::MarkStringUnbarriered(trc, &value.functionDisplayName,
@@ -194,6 +215,18 @@ SavedFrame::getFunctionDisplayName()
     return &s->asAtom();
 }
 
+#if _TAINT_ON_
+JSAtom *
+SavedFrame::getLineSource()
+{
+    const Value &v = getReservedSlot(SavedFrame::JSSLOT_LINESOURCE);
+    if (v.isNull())
+        return nullptr;
+    JSString *s = v.toString();
+    return &s->asAtom();
+}
+#endif
+
 SavedFrame *
 SavedFrame::getParent()
 {
@@ -230,6 +263,12 @@ SavedFrame::initFromLookup(SavedFrame::HandleLookup lookup)
     if (lookup->principals)
         JS_HoldPrincipals(lookup->principals);
     setReservedSlot(JSSLOT_PRINCIPALS, PrivateValue(lookup->principals));
+#if _TAINT_ON_
+    if(lookup->linesource)
+        setReservedSlot(JSSLOT_LINESOURCE, StringValue(lookup->linesource));
+    else
+        setReservedSlot(JSSLOT_LINESOURCE, NullValue());
+#endif
 }
 
 bool
@@ -345,6 +384,20 @@ SavedFrame::functionDisplayNameProperty(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
+#if _TAINT_ON_
+bool
+SavedFrame::lineSourceProperty(JSContext *cx, unsigned argc, Value *vp)
+{
+    THIS_SAVEDFRAME(cx, argc, vp, "(get linesource)", args, frame);
+    RootedAtom src(cx, frame->getLineSource());
+    if (src)
+        args.rval().setString(src);
+    else
+        args.rval().setNull();
+    return true;
+}
+#endif
+
 /* static */ bool
 SavedFrame::parentProperty(JSContext *cx, unsigned argc, Value *vp)
 {
@@ -367,6 +420,9 @@ SavedFrame::parentProperty(JSContext *cx, unsigned argc, Value *vp)
     JS_PSG("column", SavedFrame::columnProperty, 0),
     JS_PSG("functionDisplayName", SavedFrame::functionDisplayNameProperty, 0),
     JS_PSG("parent", SavedFrame::parentProperty, 0),
+#if _TAINT_ON_
+    JS_PSG("lineSource", SavedFrame::lineSourceProperty, 0),
+#endif
     JS_PS_END
 };
 
@@ -446,7 +502,10 @@ SavedStacks::sweep(JSRuntime *rt)
 
                 if (obj != temp || parentMoved) {
                     e.rekeyFront(SavedFrame::Lookup(frame->getSource(),
-                                                    frame->getLine(),
+#if _TAINT_ON_
+                                                    frame->getLineSource(),
+#endif  
+                                                    frame->getLine(),                                                  
                                                     frame->getColumn(),
                                                     frame->getFunctionDisplayName(),
                                                     frame->getParent(),
@@ -554,6 +613,9 @@ SavedStacks::insertFrames(JSContext *cx, FrameIter &iter, MutableHandleSavedFram
     for (size_t i = stackState->length(); i != 0; i--) {
         SavedFrame::AutoLookupRooter lookup(cx,
                                             stackState[i-1].location.source,
+#if _TAINT_ON_
+                                            stackState[i-1].location.linesource,
+#endif
                                             stackState[i-1].location.line,
                                             stackState[i-1].location.column,
                                             stackState[i-1].name,
@@ -573,6 +635,9 @@ SavedStacks::buildSavedFrame(JSContext *cx, MutableHandleSavedFrame frame, Frame
 {
     SavedFrame::AutoLookupRooter lookup(cx,
                                         state.location.source,
+#if _TAINT_ON_
+                                        state.location.linesource,
+#endif
                                         state.location.line,
                                         state.location.column,
                                         state.name,
@@ -722,7 +787,36 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
         uint32_t column;
         uint32_t line = PCToLineNumber(script, pc, &column);
 
+#if _TAINT_ON_
+        RootedAtom linesource(cx);
+        ScriptSource *sc = iter.scriptSource();
+        if(sc && sc->hasSourceData()) {
+            UncompressedSourceCache::AutoHoldEntry holder;
+            size_t scriptlen = sc->length();
+            const char16_t *srcstart = sc->chars(cx, holder);
+            const char16_t *srcend = srcstart + scriptlen;
+
+            if(srcstart) {
+                size_t searchidx = 0;
+                const char16_t *ls = nullptr;
+                const char16_t *le = srcstart;
+
+                do {
+                    ls = le + 1;
+                    le = js_strchr_limit(ls, u'\n', srcend);
+                    searchidx++;
+                } while(le && searchidx < line);
+
+                if(le) {
+                    linesource = AtomizeChars(cx, ls, le - ls);
+                }
+            }
+        }
+
+        LocationValue value(source, linesource, line, column);
+#else
         LocationValue value(source, line, column);
+#endif
         if (!pcLocationMap.add(p, key, value))
             return false;
     }

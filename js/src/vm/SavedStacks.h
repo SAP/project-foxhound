@@ -30,6 +30,9 @@ class SavedFrame : public NativeObject {
     static bool columnProperty(JSContext *cx, unsigned argc, Value *vp);
     static bool functionDisplayNameProperty(JSContext *cx, unsigned argc, Value *vp);
     static bool parentProperty(JSContext *cx, unsigned argc, Value *vp);
+#if _TAINT_ON_
+    static bool lineSourceProperty(JSContext *cx, unsigned argc, Value *vp);
+#endif
     static bool toStringMethod(JSContext *cx, unsigned argc, Value *vp);
 
     // Convenient getters for SavedFrame's reserved slots for use from C++.
@@ -39,6 +42,9 @@ class SavedFrame : public NativeObject {
     JSAtom       *getFunctionDisplayName();
     SavedFrame   *getParent();
     JSPrincipals *getPrincipals();
+#if _TAINT_ON_
+    JSAtom       *getLineSource();
+#endif
 
     bool         isSelfHosted();
 
@@ -64,6 +70,10 @@ class SavedFrame : public NativeObject {
         JSSLOT_PARENT,
         JSSLOT_PRINCIPALS,
         JSSLOT_PRIVATE_PARENT,
+#if _TAINT_ON_
+        JSSLOT_LINESOURCE,
+#endif
+
 
         // The total number of reserved slots in the SavedFrame class.
         JSSLOT_COUNT
@@ -153,9 +163,24 @@ class SavedStacks {
     };
 
     struct LocationValue {
-        LocationValue() : source(nullptr), line(0), column(0) { }
+        LocationValue()
+            : source(nullptr),
+#if _TAINT_ON_
+              linesource(nullptr),
+#endif
+              line(0),
+              column(0)
+        { }
+
+#if _TAINT_ON_
+        LocationValue(JSAtom *source, JSAtom *linesource, size_t line, uint32_t column)
+#else
         LocationValue(JSAtom *source, size_t line, uint32_t column)
+#endif
             : source(source),
+#if _TAINT_ON_
+              linesource(linesource),
+#endif
               line(line),
               column(column)
         { }
@@ -163,9 +188,16 @@ class SavedStacks {
         void trace(JSTracer *trc) {
             if (source)
                 gc::MarkString(trc, &source, "SavedStacks::LocationValue::source");
+#if _TAINT_ON_
+            if (linesource)
+                gc::MarkString(trc, &linesource, "SavedStacks::LocationValue::linesource");
+#endif
         }
 
         PreBarrieredAtom source;
+#if _TAINT_ON_
+        PreBarrieredAtom linesource;
+#endif
         size_t           line;
         uint32_t         column;
     };
