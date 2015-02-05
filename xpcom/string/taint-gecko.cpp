@@ -8,6 +8,8 @@ nsresult
 taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name)
 {
     MOZ_ASSERT(cx);
+    MOZ_ASSERT(str.isTainted());
+
     if(JS_IsExceptionPending(cx))
         return NS_ERROR_FAILURE;
 

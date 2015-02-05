@@ -1262,6 +1262,8 @@ void
 taint_report_sink_js(JSContext *cx, HandleString str, const char* name)
 {
     MOZ_ASSERT(cx);
+    MOZ_ASSERT(str->isTainted());
+
     if(cx->isExceptionPending())
         return;
 

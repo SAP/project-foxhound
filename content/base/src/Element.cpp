@@ -3148,6 +3148,11 @@ Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError)
     return;
   }
 
+#if _TAINT_ON_
+  if(aOuterHTML.isTainted())
+    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
+#endif
+
   if (OwnerDoc()->IsHTML()) {
     nsIAtom* localName;
     int32_t namespaceID;
@@ -3195,9 +3200,6 @@ Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError)
   if (aError.Failed()) {
     return;
   }
-#if _TAINT_ON_
-  taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
-#endif
   nsCOMPtr<nsINode> fragment = do_QueryInterface(df);
   parent->ReplaceChild(*fragment, *this, aError);
 }
