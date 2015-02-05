@@ -1261,7 +1261,7 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 void
 taint_report_sink_js(JSContext *cx, HandleString str, const char* name)
 {
-    MOZ_ASSERT(cx);
+    MOZ_ASSERT(cx && str && name);
     MOZ_ASSERT(str->isTainted());
 
     if(cx->isExceptionPending())
