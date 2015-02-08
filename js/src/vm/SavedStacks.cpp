@@ -86,7 +86,9 @@ class SavedFrame::AutoLookupRooter : public JS::CustomAutoRooter
   private:
     virtual void trace(JSTracer *trc) {
 #if _TAINT_ON_
-        gc::MarkStringUnbarriered(trc, &value.linesource, "SavedFrame::Lookup::linesource");
+        if(value.linesource) {
+            gc::MarkStringUnbarriered(trc, &value.linesource, "SavedFrame::Lookup::linesource");
+        }
 #endif
         gc::MarkStringUnbarriered(trc, &value.source, "SavedFrame::Lookup::source");
         if (value.functionDisplayName) {
@@ -219,7 +221,7 @@ SavedFrame::getFunctionDisplayName()
 JSAtom *
 SavedFrame::getLineSource()
 {
-    const Value &v = getReservedSlot(SavedFrame::JSSLOT_LINESOURCE);
+    const Value &v = getReservedSlot(JSSLOT_LINESOURCE);
     if (v.isNull())
         return nullptr;
     JSString *s = v.toString();
@@ -534,6 +536,10 @@ SavedStacks::trace(JSTracer *trc)
     // Mark each of the source strings in our pc to location cache.
     for (PCLocationMap::Enum e(pcLocationMap); !e.empty(); e.popFront()) {
         LocationValue &loc = e.front().value();
+#if _TAINT_ON_
+        if(loc.linesource)
+            MarkString(trc, &loc.linesource, "SavedStacks::PCLocationMap's memoized script line source");
+#endif
         MarkString(trc, &loc.source, "SavedStacks::PCLocationMap's memoized script source name");
     }
 }
@@ -611,17 +617,8 @@ SavedStacks::insertFrames(JSContext *cx, FrameIter &iter, MutableHandleSavedFram
     // actual SavedFrame instances.
     RootedSavedFrame parentFrame(cx, nullptr);
     for (size_t i = stackState->length(); i != 0; i--) {
-        SavedFrame::AutoLookupRooter lookup(cx,
-                                            stackState[i-1].location.source,
-#if _TAINT_ON_
-                                            stackState[i-1].location.linesource,
-#endif
-                                            stackState[i-1].location.line,
-                                            stackState[i-1].location.column,
-                                            stackState[i-1].name,
-                                            parentFrame,
-                                            stackState[i-1].principals);
-        parentFrame.set(getOrCreateSavedFrame(cx, lookup));
+        buildSavedFrame(cx, &parentFrame, stackState[i-1]);
+        //parentFrame.set(getOrCreateSavedFrame(cx, lookup));
         if (!parentFrame)
             return false;
     }
@@ -643,7 +640,7 @@ SavedStacks::buildSavedFrame(JSContext *cx, MutableHandleSavedFrame frame, Frame
                                         state.name,
                                         frame,
                                         state.principals);
-    frame.set(createFrameFromLookup(cx, lookup));
+    frame.set(getOrCreateSavedFrame(cx, lookup));
 }
 
 SavedFrame *
@@ -788,7 +785,7 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
         uint32_t line = PCToLineNumber(script, pc, &column);
 
 #if _TAINT_ON_
-        RootedAtom linesource(cx);
+        RootedAtom linesource(cx, nullptr);
         ScriptSource *sc = iter.scriptSource();
         if(sc && sc->hasSourceData()) {
             UncompressedSourceCache::AutoHoldEntry holder;

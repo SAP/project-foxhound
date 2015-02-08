@@ -18,7 +18,7 @@
 
 #if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_) && !defined(NS_NO_XPCOM)
 #define TAINT_OVERRIDE_ENABLE
-#include "taint.h"
+#include "taint-gecko.h"
 #endif
 
 class UTF8traits

@@ -1,7 +1,7 @@
 #ifndef taint_gecko_h
 #define taint_gecko_h
 
-#ifdef _TAINT_ON_
+#if _TAINT_ON_
 
 #include "taint.h"
 

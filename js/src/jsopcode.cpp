@@ -853,7 +853,7 @@ ToDisassemblySource(JSContext *cx, HandleValue v, JSAutoByteString *bytes)
         Sprinter sprinter(cx);
         if (!sprinter.init())
             return false;
-        char *nbytes = TAINT_QUOTE_STRING_CALL_NULL(&sprinter, v.toString(), '"');
+        char *nbytes = QuoteString(&sprinter, v.toString(), '"', nullptr);
         if (!nbytes)
             return false;
         nbytes = JS_sprintf_append(nullptr, "%s", nbytes);
@@ -1339,6 +1339,15 @@ const char js_EscapeMap[] = {
     '\0'
 };
 
+#if _TAINT_ON_
+    #define TAINT_QUOTE_STRING_MATCH \
+        if(current_tsr) {               \
+            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
+            if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
+                *targetref = target_last_tsr; \
+        }
+#endif
+
 template <typename CharT>
 static char *
 #if _TAINT_ON_
@@ -1357,7 +1366,11 @@ QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote)
     const CharT *end = s + length;
 
 #if _TAINT_ON_
-    TAINT_QUOTE_STRING_PRE
+    TaintStringRef *current_tsr = sourceref;
+    TaintStringRef *target_last_tsr = nullptr;
+    const CharT *s_start = s;
+    if(targetref)
+        target_last_tsr = *targetref;
 #endif
 
     /* Loop control variables: end points at end of string sentinel. */
@@ -1433,9 +1446,15 @@ QuoteString(Sprinter *sp, JSString *str, char16_t quote)
         return nullptr;
 
     AutoCheckCannotGC nogc;
+#if _TAINT_ON_
     return linear->hasLatin1Chars()
-           ? TAINT_QUOTE_STRING_CALL_PASS(sp, linear->latin1Chars(nogc), linear->length(), quote)
-           : TAINT_QUOTE_STRING_CALL_PASS(sp, linear->twoByteChars(nogc), linear->length(), quote);
+           ? QuoteString(sp, linear->latin1Chars(nogc), linear->length(), quote, targetref, linear->getTopTaintRef())
+           : QuoteString(sp, linear->twoByteChars(nogc), linear->length(), quote, targetref, linear->getTopTaintRef());
+#else
+    return linear->hasLatin1Chars()
+           ? QuoteString(sp, linear->latin1Chars(nogc), linear->length(), quote)
+           : QuoteString(sp, linear->twoByteChars(nogc), linear->length(), quote);
+#endif
 }
 
 JSString *
@@ -1445,15 +1464,18 @@ js_QuoteString(ExclusiveContext *cx, JSString *str, char16_t quote)
     if (!sprinter.init())
         return nullptr;
 #if _TAINT_ON_
-    TAINT_QUOTE_STRING_VAR
+    TaintStringRef *targetref = nullptr;
 #endif
-    char *bytes = TAINT_QUOTE_STRING_CALL(&sprinter, str, quote);
+    char *bytes = QuoteString(&sprinter, str, quote, &targetref);
     if (!bytes)
         return nullptr;
 
     JSString *res = NewStringCopyZ<CanGC>(cx, bytes);
 #if _TAINT_ON_
-    TAINT_QUOTE_STRING_APPLY
+    if(targetref) {
+        res->addTaintRef(targetref);
+        taint_add_op(res->getTopTaintRef(), "quote", cx->asJSContext());
+    }
 #endif
     return res;
 }
@@ -1694,7 +1716,7 @@ ExpressionDecompiler::write(JSString *str)
 bool
 ExpressionDecompiler::quote(JSString *s, uint32_t quote)
 {
-    return TAINT_QUOTE_STRING_CALL_NULL(&sprinter, s, quote) != nullptr;
+    return QuoteString(&sprinter, s, quote, nullptr) != nullptr;
 }
 
 JSAtom *

@@ -59,6 +59,7 @@ public:
         MOZ_ASSERT(!isTainted() || ownTaint == 1,
           "StringBuffer only allows taint modification if not externally tainted before");
         //or else we can't decide what to delete
+        //!!! GC
         startTaint = endTaint = tsr;
         ownTaint = 1;
 

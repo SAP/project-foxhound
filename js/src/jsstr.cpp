@@ -108,6 +108,15 @@ str_encodeURI_Component(JSContext *cx, unsigned argc, Value *vp);
 
 
 /* ES5 B.2.1 */
+#if _TAINT_ON_
+    #define TAINT_ESCAPE_MATCH \
+        if(current_tsr) { \
+            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, i, ni); \
+            if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
+                *targetref = target_last_tsr; \
+        }
+#endif
+
 template <typename CharT>
 static Latin1Char *
 #if _TAINT_ON_
@@ -153,7 +162,10 @@ static Latin1Char *
     static const char digits[] = "0123456789ABCDEF";
 
 #if _TAINT_ON_
-    TAINT_ESCAPE_PRE
+    TaintStringRef *current_tsr = sourceref;
+    TaintStringRef *target_last_tsr = nullptr;
+    if(targetref)
+        target_last_tsr = *targetref;
 #endif
 
 
@@ -199,17 +211,25 @@ str_escape(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
 #if _TAINT_ON_
-    TAINT_ESCAPE_VAR
+    TaintStringRef *targetref = nullptr;
 #endif
 
     ScopedJSFreePtr<Latin1Char> newChars;
     uint32_t newLength;
     if (str->hasLatin1Chars()) {
         AutoCheckCannotGC nogc;
-        newChars = TAINT_ESCAPE_CALL(cx, str->latin1Chars(nogc), str->length(), &newLength);
+#if _TAINT_ON_
+        newChars = Escape(cx, str->latin1Chars(nogc), str->length(), &newLength, &targetref, str->getTopTaintRef());
+#else
+        newChars = Escape(cx, str->latin1Chars(nogc), str->length(), &newLength);
+#endif
     } else {
         AutoCheckCannotGC nogc;
-        newChars = TAINT_ESCAPE_CALL(cx, str->twoByteChars(nogc), str->length(), &newLength);
+#if _TAINT_ON_
+        newChars = Escape(cx, str->twoByteChars(nogc), str->length(), &newLength, &targetref, str->getTopTaintRef());
+#else
+        newChars = Escape(cx, str->twoByteChars(nogc), str->length(), &newLength);
+#endif
     }
 
     if (!newChars)
@@ -220,7 +240,10 @@ str_escape(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
 #if _TAINT_ON_
-    TAINT_ESCAPE_APPLY
+    if(targetref) {
+        res->addTaintRef(targetref);
+        taint_add_op(res->getTopTaintRef(), "escape", cx);
+    }
 #endif
 
     newChars.forget();
@@ -673,23 +696,6 @@ DoSubstr(JSContext *cx, JSString *str, size_t begin, size_t len)
         RootedString rhs(cx, NewDependentString(cx, ropeRoot->rightChild(), 0, rhsLength));
         if (!rhs)
             return nullptr;
-
-#if _TAINT_ON_
-        //recalculate the offsets for the rhs
-        //TODO: this is hacky and may stop working if we optimize doubled node creation
-        //but is covered by tests, so no problem :)
-        TaintStringRef *tsr = rhs->getTopTaintRef();
-
-        //only adjust if we actually had to create a substring
-        if(tsr && ropeRoot->rightChild()->length() != rhsLength)
-        {
-            MOZ_ASSERT(strncmp(tsr->thisTaint->op, "substring", 9) == 0);
-            MOZ_ASSERT(tsr->thisTaint->param1.isInt32());
-            MOZ_ASSERT(tsr->thisTaint->param2.isInt32());
-            tsr->thisTaint->param1 = INT_TO_JSVAL(tsr->thisTaint->param1.toInt32() + ropeRoot->leftChild()->length());
-            tsr->thisTaint->param2 = INT_TO_JSVAL(tsr->thisTaint->param2.toInt32() + ropeRoot->leftChild()->length());
-        }
-#endif
 
         return JSRope::new_<CanGC>(cx, lhs, rhs, len);
     }

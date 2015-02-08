@@ -10,7 +10,7 @@
 #include "nsStringBuffer.h"
 #include "prlog.h"
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 typedef char16_t nsStaticAtomStringType;
 

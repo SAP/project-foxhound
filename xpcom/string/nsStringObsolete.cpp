@@ -931,8 +931,9 @@ nsString::ReplaceChar( const char16_t* aSet, char16_t aNewChar )
       break;
 
 #if _TAINT_ON_
-    if(isTainted())
+    if(isTainted()) {
       taint_remove_range(&startTaint, &endTaint, i, i + 1);
+    }
 #endif
 
     data[i++] = aNewChar;

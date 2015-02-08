@@ -71,21 +71,23 @@ taint_add_op(TaintStringRef *dst, const char* name,
     JS::HandleValue param1 = JS::UndefinedHandleValue, 
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
-
 //defs for in place use of primitives
 #define TAINT_STR_COPY(str, base) \
     base->isTainted() ? taint_copy_range((str), base->getTopTaintRef(), 0, 0, 0) : (str)
 #define TAINT_REF_COPY(str, ref) \
     ref ? taint_copy_range((str), ref, 0, 0, 0) : (str)
+
 //do not copy taint for atoms for now
 //until we figured out how to handle this problem
+//!!! GC
+/*
 #define TAINT_ATOM_CLEARCOPY(scope_str, scope_base) \
 [](decltype(scope_str) res, decltype(scope_base) base) -> decltype(scope_str) {\
     res->removeAllTaint(); \
     if(base->isTainted()) \
         taint_copy_range(res, base->getTopTaintRef(), 0, 0, 0); \
     return res; \
-}(scope_str, scope_base)
+}(scope_str, scope_base) */
 
 //partial taint copy
 // - copy taint from source from frombegin until fromend
@@ -122,7 +124,7 @@ bool taint_threadbit_set(uint8_t v);
             (strtaint = checktaint.toString()) && \
             strtaint->isTainted()) \
         { \
-            taint_add_op(strtaint->getTopTaintRef(), "function call", cx, funname); \
+            taint_add_op(strtaint->getTopTaintRef(), "function call", cx, funname, argn); \
         } \
     } while(false)
 
@@ -143,50 +145,6 @@ bool taint_threadbit_set(uint8_t v);
 
 
 //quote special call manipulation
-#define TAINT_QUOTE_STRING_CALL(a,b,c) QuoteString(a,b,c,&targetref)
-#define TAINT_QUOTE_STRING_CALL_NULL(a,b,c) QuoteString(a,b,c,nullptr)
-#define TAINT_QUOTE_STRING_CALL_PASS(a,b,c,d) QuoteString(a,b,c,d,targetref,linear->getTopTaintRef())
-#define TAINT_QUOTE_STRING_PRE \
-    TaintStringRef *current_tsr = sourceref; \
-    TaintStringRef *target_last_tsr = nullptr; \
-    const CharT *s_start = s; \
-    if(targetref) \
-        target_last_tsr = *targetref;
-#define TAINT_QUOTE_STRING_MATCH \
-    if(current_tsr) {               \
-        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
-        if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
-            *targetref = target_last_tsr; \
-    }
-#define TAINT_QUOTE_STRING_VAR \
-    TaintStringRef *targetref = nullptr;
-#define TAINT_QUOTE_STRING_APPLY \
-    if(targetref) { \
-        res->addTaintRef(targetref); \
-        taint_add_op(res->getTopTaintRef(), "quote", cx->asJSContext()); \
-    }
-
-
-#define TAINT_ESCAPE_CALL(a,b,c,d) Escape(a,b,c,d,&targetref,str->getTopTaintRef())
-#define TAINT_ESCAPE_PRE \
-    TaintStringRef *current_tsr = sourceref; \
-    TaintStringRef *target_last_tsr = nullptr; \
-    if(targetref) \
-        target_last_tsr = *targetref; //TODO maybe this is wrong? not the last but first tsr?
-#define TAINT_ESCAPE_MATCH \
-    if(current_tsr) { \
-        current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, i, ni); \
-        if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
-            *targetref = target_last_tsr; \
-    }
-#define TAINT_ESCAPE_VAR TAINT_QUOTE_STRING_VAR
-#define TAINT_ESCAPE_APPLY \
-    if(targetref) { \
-        res->addTaintRef(targetref); \
-        taint_add_op(res->getTopTaintRef(), "escape", cx); \
-    }
-
-
 #define TAINT_MARK_MATCH(scope_str) \
 [&](decltype(scope_str) bres) -> decltype(scope_str) {\
     NativeObject* obj = js::MaybeNativeObject(args.rval().get().toObjectOrNull()); \
@@ -269,15 +227,8 @@ bool taint_threadbit_set(uint8_t v);
 
 #define TAINT_STR_COPY(str, base) (str)
 #define TAINT_REF_COPY(str, ref) (str)
-#define TAINT_REF_TAINT_ATOM_CLEARCOPY(str, base) (str)
 #define TAINT_REF_COPYCLEAR(str, base) (str)
-#define TAINT_ATOM_CLEARCOPY(str, base) (str)
-
-#define TAINT_QUOTE_STRING_CALL(a,b,c) QuoteString(a,b,c)
-#define TAINT_QUOTE_STRING_CALL_NULL(a,b,c) QuoteString(a,b,c)
-#define TAINT_QUOTE_STRING_CALL_PASS(a,b,c,d) QuoteString(a,b,c,d)
-
-#define TAINT_ESCAPE_CALL(a,b,c,d) Escape(a,b,c,d)
+//#define TAINT_ATOM_CLEARCOPY(str, base) (str)
 
 #define TAINT_JSON_PARSE_CALL(a,b,c,d,str) ParseJSONWithReviver(a,b,c,d)
 #define TAINT_JSON_PARSE_CALL_NULL(a,b,c,d) ParseJSONWithReviver(a,b,c,d);

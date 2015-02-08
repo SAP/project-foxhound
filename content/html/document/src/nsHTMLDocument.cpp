@@ -1272,8 +1272,6 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
       JSContext *cx = nsContentUtils::GetCurrentJSContext();
       JS::RootedValue stringval(cx);
       taint_tag_source(&aCookie, "document.cookie", cx);
-      if(mozilla::dom::ToJSValue(cx, aCookie, &stringval))//cx, aCookie, stringval);
-        aCookie.getTopTaintRef()->thisTaint->param1 = stringval;
     }
 #endif
   }

@@ -814,8 +814,7 @@ public:
       mLength = 0;
       mFlags = F_TERMINATED;
 #if _TAINT_ON_
-      startTaint = nullptr;
-      endTaint = nullptr;
+      removeAllTaint();
 #endif
     }
   }

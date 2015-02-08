@@ -15,7 +15,7 @@
  * referenced outside the string code.
  */
 
-#include "taint.h"
+#include "taint-gecko.h"
 
 class nsTSubstringTuple_CharT
 {
@@ -51,6 +51,13 @@ public:
     , startTaint(nullptr), endTaint(nullptr)
 #endif
   {
+  }
+
+  ~nsTSubstringTuple_CharT()
+  {
+    if(isTainted()) {
+      removeAllTaint();
+    }
   }
 
   /**

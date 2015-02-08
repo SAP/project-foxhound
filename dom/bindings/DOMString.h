@@ -63,8 +63,8 @@ public:
     if(!mString.isNothing())            \
       return mString.ref().fn();        \
                                         \
-    /*TODO: implement taint tracking*/  \
-    /*for stringbuffer*/                \
+    if(mStringBuffer)                   \
+      return mStringBuffer->fn();       \
                                         \
     return def;                         
 

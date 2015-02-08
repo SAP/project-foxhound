@@ -9,23 +9,23 @@ typedef struct TaintNode
     TaintNode(JSContext *cx, const char* opname);
     ~TaintNode();
 
-    void markRefs(JSTracer *trc);
-
     void decrease();
     inline void increase() {
         refCount++;
     }
 
     void setPrev(TaintNode *other);
-    void compileFrame(JSContext *cx);
+    void compileFrame(JSContext *cx, JS::MutableHandleObject obj);
 
     struct FrameStateElement;
 
     const char *op;
     uint32_t refCount;
     struct TaintNode *prev;
-    JS::Heap<JS::Value> param1;
-    JS::Heap<JS::Value> param2;
+    char16_t *param1;
+    size_t param1len;
+    char16_t *param2;
+    size_t param2len;
     FrameStateElement *stack;
 private:
     TaintNode(const TaintNode& that);
@@ -43,8 +43,6 @@ typedef struct TaintStringRef
     TaintStringRef(uint32_t s, uint32_t e, TaintNode* node = nullptr);
     TaintStringRef(const TaintStringRef &ref);
     ~TaintStringRef();
-
-    void markNodeChain(JSTracer *trc);
 
     /*
         WARNING: If you attach from a TaintStringRef of a JSString

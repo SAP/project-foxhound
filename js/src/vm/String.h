@@ -327,7 +327,7 @@ class JSString : public js::gc::TenuredCell
   public:
 
 #if _TAINT_ON_
-  TAINT_STRING_HOOKS(d.u0.startTaint, d.u0.endTaint)
+    TAINT_STRING_HOOKS(d.u0.startTaint, d.u0.endTaint)
 #endif
 
     /* All strings have length. */

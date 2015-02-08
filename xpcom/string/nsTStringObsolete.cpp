@@ -389,8 +389,9 @@ nsTString_CharT::SetCharAt( char16_t aChar, uint32_t aIndex )
     NS_ABORT_OOM(mLength);
 
 #if _TAINT_ON_
-  if(isTainted())
+  if(isTainted()) {
     taint_remove_range(&startTaint, &endTaint, aIndex, aIndex + 1);
+  }
 #endif
 
   mData[aIndex] = CharT(aChar);
@@ -433,8 +434,9 @@ nsTString_CharT::ReplaceChar( char_type aOldChar, char_type aNewChar )
     if (mData[i] == aOldChar) {
       mData[i] = aNewChar;
 #if _TAINT_ON_
-      if(isTainted())
+      if(isTainted()) {
         taint_remove_range(&startTaint, &endTaint, i, i + 1);
+      }
 #endif
     }
   }
@@ -456,8 +458,9 @@ nsTString_CharT::ReplaceChar( const char* aSet, char_type aNewChar )
       break;
 
 #if _TAINT_ON_
-    if(isTainted())
+    if(isTainted()) {
       taint_remove_range(&startTaint, &endTaint, i, i + 1);
+    }
 #endif
 
     data[i++] = aNewChar;

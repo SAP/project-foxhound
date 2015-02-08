@@ -1787,12 +1787,18 @@ struct FakeString {
     MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
     mData = const_cast<nsString::char_type*>(aData);
     mLength = aLength;
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
   }
 
   void Truncate() {
     MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
     mData = nsString::char_traits::sEmptyBuffer;
     mLength = 0;
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
   }
 
   void SetIsVoid(bool aValue) {
@@ -1831,6 +1837,14 @@ struct FakeString {
       SetData(static_cast<nsString::char_type*>(buf->Data()));
       mFlags = nsString::F_SHARED | nsString::F_TERMINATED;
     }
+#if _TAINT_ON_
+    if(isTainted()) {
+      if(aLength < mLength) {
+        removeRangeTaint(aLength, mLength);
+      } else
+        removeAllTaint();
+    }
+#endif
     mLength = aLength;
     mData[mLength] = char16_t(0);
     return true;
@@ -1872,7 +1886,13 @@ private:
 
   void SetData(nsString::char_type* aData) {
     MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
+    if (mData && mFlags & nsString::F_SHARED) {
+      nsStringBuffer::FromData(mData)->Release();
+    }
     mData = const_cast<nsString::char_type*>(aData);
+#if _TAINT_ON_
+    removeAllTaint();
+#endif
   }
 
   // A class to use for our static asserts to ensure our object layout

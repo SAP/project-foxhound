@@ -201,10 +201,7 @@ nsStringBuffer::Release()
   if (count == 0) {
     STRING_STAT_INCREMENT(Free);
 #if _TAINT_ON_
-    /*if(ownTaint == 1) {*/
-      removeAllTaint();
-      /*ownTaint = 0;
-    }*/
+    removeAllTaint();
 #endif
     free(this); // we were allocated with |malloc|
   }
@@ -231,7 +228,6 @@ nsStringBuffer::Alloc(size_t aSize)
 #if _TAINT_ON_
     hdr->startTaint = nullptr;
     hdr->endTaint = nullptr;
-//    hdr->ownTaint = 0;
 #endif
     NS_LOG_ADDREF(hdr, 1, "nsStringBuffer", sizeof(*hdr));
   }
@@ -286,12 +282,12 @@ nsStringBuffer::FromString(const nsAString& aStr)
   if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
     if(buf->isTainted() && buf->ownTaint == 1) {
       buf->removeAllTaint();
-      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
+      !!! ROOTING buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
     }
     else {
       //overwrite if not tainted or taint originates another FromString
       buf->startTaint = aStr.getTopTaintRef();
-      buf->endTaint = aStr.getBottomTaintRef();
+      !!! ROOTING buf->endTaint = aStr.getBottomTaintRef();
     }
 
     buf->ownTaint = 0;
@@ -302,7 +298,7 @@ nsStringBuffer::FromString(const nsAString& aStr)
     buf->removeAllTaint();
   }
   if(aStr.isTainted()) {
-    buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
+    buf->addTaintRef(taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint));
   }
 #endif
 
@@ -342,8 +338,9 @@ nsStringBuffer::FromString(const nsACString& aStr)
     buf->removeAllTaint();
   }
   if(aStr.isTainted()) {
-    buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
+    buf->addTaintRef(taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint));
   }
+
 
 #endif
 

@@ -162,6 +162,7 @@ class SavedStacks {
         jsbytecode         *pc;
     };
 
+public:
     struct LocationValue {
         LocationValue()
             : source(nullptr),
@@ -202,7 +203,6 @@ class SavedStacks {
         uint32_t         column;
     };
 
-public:
     class MOZ_STACK_CLASS AutoLocationValueRooter : public JS::CustomAutoRooter
     {
       public:
