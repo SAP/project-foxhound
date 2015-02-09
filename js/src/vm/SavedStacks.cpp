@@ -617,8 +617,17 @@ SavedStacks::insertFrames(JSContext *cx, FrameIter &iter, MutableHandleSavedFram
     // actual SavedFrame instances.
     RootedSavedFrame parentFrame(cx, nullptr);
     for (size_t i = stackState->length(); i != 0; i--) {
-        buildSavedFrame(cx, &parentFrame, stackState[i-1]);
-        //parentFrame.set(getOrCreateSavedFrame(cx, lookup));
+        SavedFrame::AutoLookupRooter lookup(cx,
+                                            stackState[i-1].location.source,
+#if _TAINT_ON_
+                                            stackState[i-1].location.linesource,
+#endif
+                                            stackState[i-1].location.line,
+                                            stackState[i-1].location.column,
+                                            stackState[i-1].name,
+                                            parentFrame,
+                                            stackState[i-1].principals);
+        parentFrame.set(getOrCreateSavedFrame(cx, lookup));
         if (!parentFrame)
             return false;
     }
@@ -640,7 +649,7 @@ SavedStacks::buildSavedFrame(JSContext *cx, MutableHandleSavedFrame frame, Frame
                                         state.name,
                                         frame,
                                         state.principals);
-    frame.set(getOrCreateSavedFrame(cx, lookup));
+    frame.set(createFrameFromLookup(cx, lookup));
 }
 
 SavedFrame *
@@ -737,7 +746,12 @@ SavedStacks::sweepPCLocationMap()
 }
 
 bool
+#if _TAINT_ON_
+SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLocationValue locationp,
+    bool capturesource)
+#else
 SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLocationValue locationp)
+#endif
 {
     // We should only ever be caching location values for scripts in this
     // compartment. Otherwise, we would get dead cross-compartment scripts in
@@ -787,7 +801,7 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
 #if _TAINT_ON_
         RootedAtom linesource(cx, nullptr);
         ScriptSource *sc = iter.scriptSource();
-        if(sc && sc->hasSourceData()) {
+        if(capturesource && sc && sc->hasSourceData()) {
             UncompressedSourceCache::AutoHoldEntry holder;
             size_t scriptlen = sc->length();
             const char16_t *srcstart = sc->chars(cx, holder);

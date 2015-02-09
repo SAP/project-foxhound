@@ -257,7 +257,12 @@ private:
     void sweepPCLocationMap();
 
 public:
+#if _TAINT_ON_
+    bool getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLocationValue locationp,
+        bool capturesource = false);
+#else
     bool getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLocationValue locationp);
+#endif
 
     struct FrameState
     {

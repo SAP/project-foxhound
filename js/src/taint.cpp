@@ -23,9 +23,7 @@
 using namespace js;
 
 #define VALIDATE_NODE(validate_tsr) \
-    MOZ_ASSERT((validate_tsr)->end > (validate_tsr)->begin); \
-    MOZ_ASSERT((validate_tsr)->begin >= 0); \
-    MOZ_ASSERT((uintptr_t)(validate_tsr) != (uintptr_t)0x4b4b4b4b4b4b4b4b);
+    MOZ_ASSERT((validate_tsr)->end > (validate_tsr)->begin);
 
 #if DEBUG
     #define VALIDATE_CHAIN(validate_tsr) \
@@ -120,6 +118,9 @@ static char16_t*
 taint_node_stringchars(JSContext *cx, JSString *str, size_t *plength)
 {
     MOZ_ASSERT(cx);
+    if(plength)
+        *plength = 0;
+
     if(!str)
         return nullptr;
 
@@ -234,7 +235,7 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
             SavedStacks::AutoLocationValueRooter location(cx);
             {
                 AutoCompartment ac(cx, iter.compartment());
-                if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location))
+                if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location, true))
                     break;
             }
 
@@ -310,11 +311,13 @@ TaintNode::~TaintNode()
     if(param1) {
         js_free(param1);
         param1 = nullptr;
+        param1len = 0;
     }
 
     if(param2) {
         js_free(param2);
         param2 = nullptr;
+        param2len = 0;
     }
 }
 
@@ -598,19 +601,26 @@ taint_add_op_new_int(ThreadSafeContext *cx, uint32_t v, size_t *l)
     MOZ_ASSERT(l);
 
     char buf[11] = {0};
-    *l = snprintf(buf, sizeof(buf), "%u", v);
-    char16_t *ptr = InflateString(cx, buf, l);
-    
-    return ptr;
+    int ret = 0;
+    ret = snprintf(buf, 11, "%u", v);
+    if(ret < 0)
+        return nullptr;
+    *l = (size_t)ret;
+    return InflateString(cx, buf, l);
 }
 
 static void
 taint_add_op_single(TaintStringRef *dst, const char* name, JSContext *cx, HandleValue param1, HandleValue param2)
 {
-    size_t param1len, param2len;
-    taint_add_op_single_str(dst, name, cx, 
-        taint_node_stringify(cx, param1, &param1len),
-        taint_node_stringify(cx, param2, &param2len),
+    size_t param1len = 0;
+    size_t param2len = 0;
+    char16_t *p1 = taint_node_stringify(cx, param1, &param1len);
+    char16_t *p2 = taint_node_stringify(cx, param2, &param2len);
+    MOZ_ASSERT(!(((!p1 || param1len == 0) && param1.isUndefined()) || ((!p2 || param2len == 0) && param2.isUndefined())));
+
+    taint_add_op_single_str(dst, name, cx,
+        p1,
+        p2,
         param1len,
         param2len
     );
@@ -633,12 +643,17 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     {
         //RootedValue startval(cx, INT_TO_JSVAL(tsr->begin - offset + begin));
         //RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
-        size_t len1, len2;
+        size_t param1len = 0;
+        size_t param2len = 0;
+        char16_t *p1 = taint_add_op_new_int(cx, tsr->begin - offset + begin, &param1len);
+        char16_t *p2 = taint_add_op_new_int(cx, tsr->end - offset + begin, &param2len);
+        MOZ_ASSERT(!(!p1 || !p2 || param1len == 0 || param2len == 0));
+
         taint_add_op_single_str(tsr, "substring", cx,
-            taint_add_op_new_int(cx, tsr->begin - offset + begin, &len1),
-            taint_add_op_new_int(cx, tsr->end - offset + begin, &len2),
-            len1,
-            len2
+            p1,
+            p2,
+            param1len,
+            param2len
         );
     }
 
@@ -691,12 +706,17 @@ taint_str_substr(JSString *str, JSContext *cx, JSString *base,
     taint_copy_range(str, base->getTopTaintRef(), start, 0, end);
     for(TaintStringRef *tsr = str->getTopTaintRef(); tsr != nullptr; tsr = tsr->next)
     {
-        size_t len1, len2;
+        size_t param1len = 0;
+        size_t param2len = 0;
+        char16_t *p1 = taint_add_op_new_int(cx, tsr->begin + start, &param1len);
+        char16_t *p2 = taint_add_op_new_int(cx, tsr->end + start, &param2len);
+        MOZ_ASSERT(!(!p1 || !p2 || param1len == 0 || param2len == 0));
+
         taint_add_op_single_str(tsr, "substring", cx,
-            taint_add_op_new_int(cx, tsr->begin + start, &len1),
-            taint_add_op_new_int(cx, tsr->end + start, &len2),
-            len1,
-            len2
+            p1,
+            p2,
+            param1len,
+            param2len
         );
     }
         
