@@ -1136,12 +1136,6 @@ taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin,
 //----------------------------------------------
 // Reporting
 
-struct NodeGraph
-{
-    std::multimap<TaintNode*,TaintNode*> same_map;
-    std::set<TaintNode*> nodes;
-};
-
 template <typename T>
 static void
 taint_write_string_buffer(const T *s, size_t n, std::string *writer)
@@ -1192,12 +1186,6 @@ taint_write_string_buffer(const T *s, size_t n, std::string *writer)
     }
 }
 
-/*
-template void
-taint_write_string_buffer(const Latin1Char *s, size_t n, std::string *writer);
-
-template void
-taint_write_string_buffer(const char16_t *s, size_t n, std::string *writer);*/
 
 static bool
 taint_jsval_writecallback(const char16_t *buf, uint32_t len, void *data)
@@ -1210,11 +1198,7 @@ taint_jsval_writecallback(const char16_t *buf, uint32_t len, void *data)
 
 static void
 jsvalue_to_stdstring(JSContext *cx, HandleValue value, std::string *strval) {
-    /*mozilla::Maybe<JSAutoCompartment> ac;
-    if (value.isObject()) {
-        JS::Rooted<JSObject*> obj(cx, &value.toObject());
-        ac.emplace(cx, obj);
-    }*/
+
 
     MOZ_ASSERT(cx && strval);
 
@@ -1229,6 +1213,13 @@ jsvalue_to_stdstring(JSContext *cx, HandleValue value, std::string *strval) {
     JS_Stringify(cx, &val, JS::NullPtr(), JS::NullHandleValue, taint_jsval_writecallback, strval);
     //value = vp;
 }
+
+/*
+struct NodeGraph
+{
+    std::multimap<TaintNode*,TaintNode*> same_map;
+    std::set<TaintNode*> nodes;
+};
 
 static void
 taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *src, const char* name, const char* stack)
@@ -1393,11 +1384,14 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
     fputs("    }\n",h);
     fputs("}\n",h);
     fclose(h);
-}
+} */
+
 
 bool
 taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 {
+    MOZ_ASSERT(cx);
+
     CallArgs args = CallArgsFromVp(argc, vp);
     args.rval().setUndefined();
     if(args.length() < 2)
@@ -1411,11 +1405,60 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
     if(str->length() == 0 || !str->isTainted())
         return true;
 
-    std::string sink_str, stack_str;
+    std::string sink_str;
+    jsvalue_to_stdstring(cx, args[0], &sink_str);
+    printf("[---TAINT---] Flow into %s. setting timeout.\n", sink_str.c_str());
+        
+
+    //Try to call window.setTimeout with ourselves in a loop until
+    //the "real" reportTaint is placed by the extension
+    RootedObject global(cx, cx->global());
+    if(!global)
+        return true;
+
+    RootedValue  timeoutvalue(cx, UndefinedValue());
+    RootedFunction tofun(cx, nullptr);
+    if(!JS_GetProperty(cx, global, "taint_report_timeout", &timeoutvalue) ||
+        !IsCallable(timeoutvalue))
+    {
+        printf("  No global timeout object. Compiling.\n");
+
+        const char* argnames[3] = {"str", "sink", "stack"};
+        const char* funbody = "if(window){window.setTimeout(function() {str.reportTaint(sink, stack)}, 100);}";
+        JS::CompileOptions options(cx);
+        options.setFile("taint.cpp")
+               .setCanLazilyParse(false)
+               .setForEval(false)
+               .setCompileAndGo(false)
+               .setNoScriptRval(false);
+        if(!JS_CompileFunction(cx, global, "taint_report_timeout", 3, argnames,
+            funbody, strlen(funbody), options, &tofun) || !tofun)
+        {
+            printf("  Could not compile.\n");
+            return true;
+        }
+    } else {
+        tofun = &timeoutvalue.toObject().as<JSFunction>();
+    }
+
+    RootedValue  rval(cx);
+
+    JS::AutoValueArray<3> timeoutparams(cx);
+    timeoutparams[0].setString(str);
+    timeoutparams[1].set(args[0]);
+    timeoutparams[2].set(args[1]);
+    if(!JS_CallFunction(cx, global, tofun, timeoutparams, &rval))
+    {
+        printf("  Could not call setTimeout.\n");
+        return true;
+    }
+
+    /*std::string sink_str, stack_str;
     jsvalue_to_stdstring(cx, args[0], &sink_str);
     jsvalue_to_stdstring(cx, args[1], &stack_str);
 
     taint_report_sink_internal(cx, args.thisv(), str->getTopTaintRef(), sink_str.c_str(), stack_str.c_str());
+    */
 
     return true;
 }

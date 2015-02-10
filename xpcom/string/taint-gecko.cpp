@@ -17,8 +17,6 @@ taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name)
 	JS::RootedValue  strval(cx);
     JS::RootedValue  rval(cx);
     JS::RootedObject stack(cx);
-    //JS::RootedId id(cx);
-    //bool ok = false;
 
     JS::CaptureCurrentStack(cx, &stack);
     mozilla::dom::ToJSValue(cx, str, &strval);
