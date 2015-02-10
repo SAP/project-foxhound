@@ -801,6 +801,7 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
 #if _TAINT_ON_
         RootedAtom linesource(cx, nullptr);
         ScriptSource *sc = iter.scriptSource();
+        uint32_t scriptline = line - iter.script()->lineno();
         if(capturesource && sc && sc->hasSourceData()) {
             UncompressedSourceCache::AutoHoldEntry holder;
             size_t scriptlen = sc->length();
@@ -816,7 +817,7 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
                     ls = le + 1;
                     le = js_strchr_limit(ls, u'\n', srcend);
                     searchidx++;
-                } while(le && searchidx < line);
+                } while(le && searchidx < scriptline);
 
                 if(le) {
                     linesource = AtomizeChars(cx, ls, le - ls);

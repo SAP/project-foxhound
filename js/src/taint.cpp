@@ -614,9 +614,9 @@ taint_add_op_single(TaintStringRef *dst, const char* name, JSContext *cx, Handle
 {
     size_t param1len = 0;
     size_t param2len = 0;
-    char16_t *p1 = taint_node_stringify(cx, param1, &param1len);
-    char16_t *p2 = taint_node_stringify(cx, param2, &param2len);
-    MOZ_ASSERT(!(((!p1 || param1len == 0) && param1.isUndefined()) || ((!p2 || param2len == 0) && param2.isUndefined())));
+    char16_t *p1 = param1.isUndefined() ? nullptr : taint_node_stringify(cx, param1, &param1len);
+    char16_t *p2 = param2.isUndefined() ? nullptr : taint_node_stringify(cx, param2, &param2len);
+    MOZ_ASSERT((param1.isUndefined() || p1) && (param2.isUndefined() || p2));
 
     taint_add_op_single_str(dst, name, cx,
         p1,
@@ -647,7 +647,7 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
         size_t param2len = 0;
         char16_t *p1 = taint_add_op_new_int(cx, tsr->begin - offset + begin, &param1len);
         char16_t *p2 = taint_add_op_new_int(cx, tsr->end - offset + begin, &param2len);
-        MOZ_ASSERT(!(!p1 || !p2 || param1len == 0 || param2len == 0));
+        MOZ_ASSERT(p1 && p2);
 
         taint_add_op_single_str(tsr, "substring", cx,
             p1,
@@ -710,7 +710,7 @@ taint_str_substr(JSString *str, JSContext *cx, JSString *base,
         size_t param2len = 0;
         char16_t *p1 = taint_add_op_new_int(cx, tsr->begin + start, &param1len);
         char16_t *p2 = taint_add_op_new_int(cx, tsr->end + start, &param2len);
-        MOZ_ASSERT(!(!p1 || !p2 || param1len == 0 || param2len == 0));
+        MOZ_ASSERT(p1 && p2);
 
         taint_add_op_single_str(tsr, "substring", cx,
             p1,
