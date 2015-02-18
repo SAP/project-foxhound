@@ -801,17 +801,18 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
 #if _TAINT_ON_
         RootedAtom linesource(cx, nullptr);
         ScriptSource *sc = iter.scriptSource();
-        uint32_t scriptline = line - iter.script()->lineno();
+        uint32_t scriptline = line - iter.script()->lineno() + 1;
         if(capturesource && sc && sc->hasSourceData()) {
             UncompressedSourceCache::AutoHoldEntry holder;
             size_t scriptlen = sc->length();
-            const char16_t *srcstart = sc->chars(cx, holder);
-            const char16_t *srcend = srcstart + scriptlen;
+            const char16_t *srcbase = sc->chars(cx, holder);
+            const char16_t *srcstart = srcbase + iter.script()->sourceStart();
+            const char16_t *srcend = srcbase + iter.script()->sourceEnd();
 
             if(srcstart) {
                 size_t searchidx = 0;
                 const char16_t *ls = nullptr;
-                const char16_t *le = srcstart;
+                const char16_t *le = srcstart - 1;
 
                 do {
                     ls = le + 1;
@@ -819,8 +820,9 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
                     searchidx++;
                 } while(le && searchidx < scriptline);
 
-                if(le) {
-                    linesource = AtomizeChars(cx, ls, le - ls);
+                if(searchidx >= scriptline) {
+                    //no line feed at end of file
+                    linesource = AtomizeChars(cx, ls, (le ? le : srcend) - ls);
                 }
             }
         }
