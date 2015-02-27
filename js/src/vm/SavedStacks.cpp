@@ -816,7 +816,7 @@ SavedStacks::getLocation(JSContext *cx, const FrameIter &iter, MutableHandleLoca
 
                 do {
                     ls = le + 1;
-                    le = js_strchr_limit(ls, u'\n', srcend);
+                    le = js_strchr_limit(ls, '\n', srcend);
                     searchidx++;
                 } while(le && searchidx < scriptline);
 
