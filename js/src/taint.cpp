@@ -1440,7 +1440,7 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 
     std::string sink_str;
     jsvalue_to_stdstring(cx, args[0], &sink_str);
-    printf("[---TAINT---] Flow into %s. setting timeout.\n", sink_str.c_str());
+    printf("[---TAINT---] Flow into %s. Calling event handler.\n", sink_str.c_str());
         
 
     //Try to call window.setTimeout with ourselves in a loop until
@@ -1451,20 +1451,21 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 
     RootedValue  timeoutvalue(cx, UndefinedValue());
     RootedFunction tofun(cx, nullptr);
-    if(!JS_GetProperty(cx, global, "taint_report_timeout", &timeoutvalue) ||
+    if(!JS_GetProperty(cx, global, "taint_dispatch_event", &timeoutvalue) ||
         !IsCallable(timeoutvalue))
     {
-        printf("  No global timeout object. Compiling.\n");
+        printf("  Event dispatcher not installed. Compiling.\n");
 
         const char* argnames[3] = {"str", "sink", "stack"};
-        const char* funbody = "if(window){window.setTimeout(function() {str.reportTaint(sink, stack)}, 100);}";
+        const char* funbody = "if(window){var t=window; if(location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:'){t=parent.window}" \
+"var pl; try {pl=parent.location.href;} catch(e) {pl='different origin';} var e=new CustomEvent('__taintreport',{bubbles: false, cancelable: false, detail: {subframe: t != window, loc: location.href, parentloc: pl, str: str, sink: sink, stack: stack}}); t.dispatchEvent(e); }";
         JS::CompileOptions options(cx);
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
                .setForEval(false)
                .setCompileAndGo(false)
                .setNoScriptRval(false);
-        if(!JS_CompileFunction(cx, global, "taint_report_timeout", 3, argnames,
+        if(!JS_CompileFunction(cx, global, "taint_dispatch_event", 3, argnames,
             funbody, strlen(funbody), options, &tofun) || !tofun)
         {
             printf("  Could not compile.\n");
