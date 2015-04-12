@@ -15,6 +15,12 @@ class nsIAtom;
 class nsIDOMKeyEvent;
 class nsXBLPrototypeHandler;
 
+namespace mozilla {
+namespace dom {
+struct IgnoreModifierState;
+} // namespace dom
+} // namespace mozilla
+
 class nsXBLEventHandler : public nsIDOMEventListener
 {
 public:
@@ -43,11 +49,13 @@ public:
   virtual ~nsXBLMouseEventHandler();
 
 private:
-  bool EventMatched(nsIDOMEvent* aEvent) MOZ_OVERRIDE;
+  bool EventMatched(nsIDOMEvent* aEvent) override;
 };
 
 class nsXBLKeyEventHandler : public nsIDOMEventListener
 {
+  typedef mozilla::dom::IgnoreModifierState IgnoreModifierState;
+
 public:
   nsXBLKeyEventHandler(nsIAtom* aEventType, uint8_t aPhase, uint8_t aType);
 
@@ -95,7 +103,7 @@ private:
   virtual ~nsXBLKeyEventHandler();
 
   bool ExecuteMatchedHandlers(nsIDOMKeyEvent* aEvent, uint32_t aCharCode,
-                                bool aIgnoreShiftKey);
+                              const IgnoreModifierState& aIgnoreModifierState);
 
   nsTArray<nsXBLPrototypeHandler*> mProtoHandlers;
   nsCOMPtr<nsIAtom> mEventType;
@@ -105,13 +113,8 @@ private:
   bool mUsingContentXBLScope;
 };
 
-nsresult
+already_AddRefed<nsXBLEventHandler>
 NS_NewXBLEventHandler(nsXBLPrototypeHandler* aHandler,
-                      nsIAtom* aEventType,
-                      nsXBLEventHandler** aResult);
-
-nsresult
-NS_NewXBLKeyEventHandler(nsIAtom* aEventType, uint8_t aPhase,
-                         uint8_t aType, nsXBLKeyEventHandler** aResult);
+                      nsIAtom* aEventType);
 
 #endif

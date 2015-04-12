@@ -218,11 +218,12 @@ class Test(MachCommandBase):
                 if res:
                     status = res
 
-        flavors = {}
+        buckets = {}
         for test in run_tests:
-            flavors.setdefault(test['flavor'], []).append(test)
+            key = (test['flavor'], test['subsuite'])
+            buckets.setdefault(key, []).append(test)
 
-        for flavor, tests in sorted(flavors.items()):
+        for (flavor, subsuite), tests in sorted(buckets.items()):
             if flavor not in TEST_FLAVORS:
                 print(UNKNOWN_FLAVOR % flavor)
                 status = 1
@@ -234,9 +235,12 @@ class Test(MachCommandBase):
                 status = 1
                 continue
 
+            kwargs = dict(m['kwargs'])
+            kwargs['subsuite'] = subsuite
+
             res = self._mach_context.commands.dispatch(
                     m['mach_command'], self._mach_context,
-                    test_objects=tests, **m['kwargs'])
+                    test_objects=tests, **kwargs)
             if res:
                 status = res
 
@@ -253,6 +257,7 @@ class MachCommands(MachCommandBase):
             'executed.')
 
     def run_cppunit_test(self, **params):
+        import mozinfo
         from mozlog.structured import commandline
         import runcppunittests as cppunittests
 
@@ -262,9 +267,9 @@ class MachCommands(MachCommandBase):
 
         if len(params['test_files']) == 0:
             testdir = os.path.join(self.distdir, 'cppunittests')
-            progs = cppunittests.extract_unittests_from_args([testdir], None)
+            tests = cppunittests.extract_unittests_from_args([testdir], mozinfo.info)
         else:
-            progs = cppunittests.extract_unittests_from_args(params['test_files'], None)
+            tests = cppunittests.extract_unittests_from_args(params['test_files'], mozinfo.info)
 
         # See if we have crash symbols
         symbols_path = os.path.join(self.distdir, 'crashreporter-symbols')
@@ -273,7 +278,7 @@ class MachCommands(MachCommandBase):
 
         tester = cppunittests.CPPUnitTests()
         try:
-            result = tester.run_tests(progs, self.bindir, symbols_path, interactive=True)
+            result = tester.run_tests(tests, self.bindir, symbols_path, interactive=True)
         except Exception as e:
             log.error("Caught exception running cpp unit tests: %s" % str(e))
             result = False

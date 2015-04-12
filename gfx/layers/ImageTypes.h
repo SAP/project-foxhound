@@ -6,11 +6,9 @@
 #ifndef GFX_IMAGETYPES_H
 #define GFX_IMAGETYPES_H
 
-#include "mozilla/TypedEnum.h"
-
 namespace mozilla {
 
-MOZ_BEGIN_ENUM_CLASS(ImageFormat)
+enum class ImageFormat {
   /**
    * The PLANAR_YCBCR format creates a PlanarYCbCrImage. All backends should
    * support this format, because the Ogg video decoder depends on it.
@@ -24,6 +22,16 @@ MOZ_BEGIN_ENUM_CLASS(ImageFormat)
    * data and can be used as a texture by Gonk backend directly.
    */
   GRALLOC_PLANAR_YCBCR,
+
+  /**
+   * The GONK_CAMERA_IMAGE format creates a GonkCameraImage, which contains two
+   * parts. One is GrallocImage image for preview image. Another one is
+   * MediaBuffer from Gonk recording image. The preview image can be rendered in
+   * a layer for display. And the MediaBuffer will be used in component like OMX
+   * encoder. It is for GUM to support preview and recording image on Gonk
+   * camera.
+   */
+  GONK_CAMERA_IMAGE,
 
   /**
    * The SHARED_RGB format creates a SharedRGBImage, which stores RGB data in
@@ -74,15 +82,15 @@ MOZ_BEGIN_ENUM_CLASS(ImageFormat)
    * The opaque handle would be a platform specific identifier.
    */
   OVERLAY_IMAGE
-MOZ_END_ENUM_CLASS(ImageFormat)
+};
 
-MOZ_BEGIN_ENUM_CLASS(StereoMode)
+enum class StereoMode {
   MONO,
   LEFT_RIGHT,
   RIGHT_LEFT,
   BOTTOM_TOP,
   TOP_BOTTOM
-MOZ_END_ENUM_CLASS(StereoMode)
+};
 
 } // namespace
 

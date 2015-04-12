@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"            // for DISALLOW_EVIL_CONSTRUCTORS
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/PCompositorChild.h"
 #include "nsAutoPtr.h"                  // for nsRefPtr
@@ -36,7 +36,7 @@ class ClientLayerManager;
 class CompositorParent;
 struct FrameMetrics;
 
-class CompositorChild MOZ_FINAL : public PCompositorChild
+class CompositorChild final : public PCompositorChild
 {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION(CompositorChild)
 
@@ -64,11 +64,21 @@ public:
 
   static bool ChildProcessHasCompositor() { return sCompositor != nullptr; }
 
-  virtual bool RecvInvalidateAll() MOZ_OVERRIDE;
-  virtual bool RecvOverfill(const uint32_t &aOverfill) MOZ_OVERRIDE;
   void AddOverfillObserver(ClientLayerManager* aLayerManager);
 
-  virtual bool RecvDidComposite(const uint64_t& aId, const uint64_t& aTransactionId) MOZ_OVERRIDE;
+  virtual bool
+  RecvDidComposite(const uint64_t& aId, const uint64_t& aTransactionId) override;
+
+  virtual bool
+  RecvInvalidateAll() override;
+
+  virtual bool
+  RecvOverfill(const uint32_t &aOverfill) override;
+
+  virtual bool
+  RecvUpdatePluginConfigurations(const nsIntPoint& aContentOffset,
+                                 const nsIntRegion& aVisibleRegion,
+                                 nsTArray<PluginWindowData>&& aPlugins) override;
 
   /**
    * Request that the parent tell us when graphics are ready on GPU.
@@ -80,6 +90,25 @@ public:
 
   void CancelNotifyAfterRemotePaint(TabChild* aTabChild);
 
+  // Beware that these methods don't override their super-class equivalent (which
+  // are not virtual), they just overload them.
+  // All of these Send* methods just add a sanity check (that it is not too late
+  // send a message) and forward the call to the super-class's equivalent method.
+  // This means that it is correct to call directly the super-class methods, but
+  // you won't get the extra safety provided here.
+  bool SendWillStop();
+  bool SendPause();
+  bool SendResume();
+  bool SendNotifyChildCreated(const uint64_t& id);
+  bool SendAdoptChild(const uint64_t& id);
+  bool SendMakeSnapshot(const SurfaceDescriptor& inSnapshot, const nsIntRect& dirtyRect);
+  bool SendFlushRendering();
+  bool SendGetTileSize(int32_t* tileWidth, int32_t* tileHeight);
+  bool SendStartFrameTimeRecording(const int32_t& bufferSize, uint32_t* startIndex);
+  bool SendStopFrameTimeRecording(const uint32_t& startIndex, nsTArray<float>* intervals);
+  bool SendNotifyRegionInvalidated(const nsIntRegion& region);
+  bool SendRequestNotifyAfterRemotePaint();
+
 private:
   // Private destructor, to discourage deletion outside of Release():
   virtual ~CompositorChild();
@@ -88,21 +117,21 @@ private:
     AllocPLayerTransactionChild(const nsTArray<LayersBackend>& aBackendHints,
                                 const uint64_t& aId,
                                 TextureFactoryIdentifier* aTextureFactoryIdentifier,
-                                bool* aSuccess) MOZ_OVERRIDE;
+                                bool* aSuccess) override;
 
-  virtual bool DeallocPLayerTransactionChild(PLayerTransactionChild *aChild) MOZ_OVERRIDE;
+  virtual bool DeallocPLayerTransactionChild(PLayerTransactionChild *aChild) override;
 
-  virtual void ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
+  virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   virtual bool RecvSharedCompositorFrameMetrics(const mozilla::ipc::SharedMemoryBasic::Handle& metrics,
                                                 const CrossProcessMutexHandle& handle,
-                                                const uint32_t& aAPZCId) MOZ_OVERRIDE;
+                                                const uint32_t& aAPZCId) override;
 
   virtual bool RecvReleaseSharedCompositorFrameMetrics(const ViewID& aId,
-                                                       const uint32_t& aAPZCId) MOZ_OVERRIDE;
+                                                       const uint32_t& aAPZCId) override;
 
   virtual bool
-  RecvRemotePaintIsReady() MOZ_OVERRIDE;
+  RecvRemotePaintIsReady() override;
 
   // Class used to store the shared FrameMetrics, mutex, and APZCId  in a hash table
   class SharedFrameMetricsData {
@@ -146,6 +175,9 @@ private:
 
   // When we receive overfill numbers, notify these client layer managers
   nsAutoTArray<ClientLayerManager*,0> mOverfillObservers;
+
+  // True until the beginning of the two-step shutdown sequence of this actor.
+  bool mCanSend;
 };
 
 } // layers

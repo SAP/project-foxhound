@@ -30,11 +30,11 @@ class nsISupportsArray;
 // back/forward cache.
 //
 // nsSHEntryShared is the vehicle for this sharing.
-class nsSHEntryShared MOZ_FINAL : public nsIBFCacheEntry,
+class nsSHEntryShared final : public nsIBFCacheEntry,
                                   public nsIMutationObserver
 {
   public:
-    static void Startup();
+    static void EnsureHistoryTracker();
     static void Shutdown();
 
     nsSHEntryShared();

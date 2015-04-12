@@ -3,16 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-///////////////////
-//
-// Whitelisting this test.
-// As part of bug 1077403, the leaking uncaught rejection should be fixed. 
-//
-thisTestLeaksUncaughtRejectionsAndShouldBeFixed("Protocol error (unknownError): TypeError: this.conn.getActor(...) is null");
-
 // Tests that the $0 console helper works as intended.
 
-let inspector, h1;
+let inspector, h1, outputNode;
 
 function createDocument() {
   let doc = content.document;
@@ -50,25 +43,29 @@ function createDocument() {
 
 function setupHighlighterTests() {
   ok(h1, "we have the header node");
-  openInspector(runSelectionTests);
+  openInspector().then(runSelectionTests);
 }
 
-function runSelectionTests(aInspector) {
+let runSelectionTests = Task.async(function*(aInspector) {
   inspector = aInspector;
 
+  let onPickerStarted = inspector.toolbox.once("picker-started");
   inspector.toolbox.highlighterUtils.startPicker();
-  inspector.toolbox.once("picker-started", () => {
-    info("Picker mode started, now clicking on H1 to select that node");
-    executeSoon(() => {
-      h1.scrollIntoView();
-      EventUtils.synthesizeMouseAtCenter(h1, {}, content);
-      inspector.toolbox.once("picker-stopped", () => {
-        info("Picker mode stopped, H1 selected, now switching to the console");
-        openConsole(gBrowser.selectedTab).then(performWebConsoleTests);
-      });
-    });
-  });
-}
+  yield onPickerStarted;
+
+  info("Picker mode started, now clicking on H1 to select that node");
+  h1.scrollIntoView();
+  let onPickerStopped = inspector.toolbox.once("picker-stopped");
+  let onInspectorUpdated = inspector.once("inspector-updated");
+  EventUtils.synthesizeMouseAtCenter(h1, {}, content);
+  yield onPickerStopped;
+  yield onInspectorUpdated;
+
+  info("Picker mode stopped, H1 selected, now switching to the console");
+  let hud = yield openConsole(gBrowser.selectedTab);
+
+  performWebConsoleTests(hud);
+});
 
 function performWebConsoleTests(hud) {
   let target = TargetFactory.forTab(gBrowser.selectedTab);
@@ -91,7 +88,7 @@ function performWebConsoleTests(hud) {
     is(inspector.selection.node.textContent, "bug653531",
        "node successfully updated");
 
-    inspector = h1 = null;
+    inspector = h1 = outputNode = null;
     gBrowser.removeCurrentTab();
     finishTest();
   }

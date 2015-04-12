@@ -446,7 +446,11 @@ To see more help for a specific command, run:
         fn = getattr(instance, handler.method)
 
         try:
-            result = fn(**vars(args.command_args))
+            if args.debug_command:
+                import pdb
+                result = pdb.runcall(fn, **vars(args.command_args))
+            else:
+                result = fn(**vars(args.command_args))
 
             if not result:
                 result = 0
@@ -603,6 +607,8 @@ To see more help for a specific command, run:
         global_group.add_argument('-h', '--help', dest='help',
             action='store_true', default=False,
             help='Show this help message.')
+        global_group.add_argument('--debug-command', action='store_true',
+            help='Start a Python debugger when command is dispatched.')
 
         for args, kwargs in self.global_arguments:
             global_group.add_argument(*args, **kwargs)

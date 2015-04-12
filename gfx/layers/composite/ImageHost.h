@@ -8,7 +8,7 @@
 
 #include <stdio.h>                      // for FILE
 #include "CompositableHost.h"           // for CompositableHost
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/gfx/Point.h"          // for Point
 #include "mozilla/gfx/Rect.h"           // for Rect
@@ -43,54 +43,51 @@ public:
   explicit ImageHost(const TextureInfo& aTextureInfo);
   ~ImageHost();
 
-  virtual CompositableType GetType() { return mTextureInfo.mCompositableType; }
-
-  virtual void SetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData) MOZ_OVERRIDE;
+  virtual CompositableType GetType() override { return mTextureInfo.mCompositableType; }
 
   virtual void Composite(EffectChain& aEffectChain,
                          float aOpacity,
                          const gfx::Matrix4x4& aTransform,
                          const gfx::Filter& aFilter,
                          const gfx::Rect& aClipRect,
-                         const nsIntRegion* aVisibleRegion = nullptr) MOZ_OVERRIDE;
+                         const nsIntRegion* aVisibleRegion = nullptr) override;
 
-  virtual void UseTextureHost(TextureHost* aTexture) MOZ_OVERRIDE;
+  virtual void UseTextureHost(TextureHost* aTexture) override;
 
-  virtual void RemoveTextureHost(TextureHost* aTexture) MOZ_OVERRIDE;
+  virtual void RemoveTextureHost(TextureHost* aTexture) override;
 
-  virtual TextureHost* GetAsTextureHost() MOZ_OVERRIDE;
+  virtual TextureHost* GetAsTextureHost() override;
 
-  virtual void SetCompositor(Compositor* aCompositor) MOZ_OVERRIDE;
+  virtual void SetCompositor(Compositor* aCompositor) override;
 
-  virtual void SetPictureRect(const nsIntRect& aPictureRect) MOZ_OVERRIDE
+  virtual void SetPictureRect(const nsIntRect& aPictureRect) override
   {
     mPictureRect = aPictureRect;
     mHasPictureRect = true;
   }
 
-  virtual LayerRenderState GetRenderState() MOZ_OVERRIDE;
+  gfx::IntSize GetImageSize() const override;
 
-  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+  virtual LayerRenderState GetRenderState() override;
 
-#ifdef MOZ_DUMP_PAINTING
+  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
+
   virtual void Dump(std::stringstream& aStream,
                     const char* aPrefix = "",
-                    bool aDumpHtml = false) MOZ_OVERRIDE;
+                    bool aDumpHtml = false) override;
 
-  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() MOZ_OVERRIDE;
-#endif
+  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() override;
 
-  virtual bool Lock() MOZ_OVERRIDE;
+  virtual bool Lock() override;
 
-  virtual void Unlock() MOZ_OVERRIDE;
+  virtual void Unlock() override;
 
-  virtual TemporaryRef<TextureSource> GetTextureSource();
-
-  virtual TemporaryRef<TexturedEffect> GenEffect(const gfx::Filter& aFilter) MOZ_OVERRIDE;
+  virtual TemporaryRef<TexturedEffect> GenEffect(const gfx::Filter& aFilter) override;
 
 protected:
 
-  RefPtr<TextureHost> mFrontBuffer;
+  CompositableTextureHostRef mFrontBuffer;
+  CompositableTextureSourceRef mTextureSource;
   nsIntRect mPictureRect;
   bool mHasPictureRect;
   bool mLocked;
@@ -113,10 +110,10 @@ public:
                          const gfx::Matrix4x4& aTransform,
                          const gfx::Filter& aFilter,
                          const gfx::Rect& aClipRect,
-                         const nsIntRegion* aVisibleRegion = nullptr) MOZ_OVERRIDE;
-  virtual LayerRenderState GetRenderState() MOZ_OVERRIDE;
-  virtual void UseOverlaySource(OverlaySource aOverlay) MOZ_OVERRIDE;
-  virtual void SetPictureRect(const nsIntRect& aPictureRect) MOZ_OVERRIDE
+                         const nsIntRegion* aVisibleRegion = nullptr) override;
+  virtual LayerRenderState GetRenderState() override;
+  virtual void UseOverlaySource(OverlaySource aOverlay) override;
+  virtual void SetPictureRect(const nsIntRect& aPictureRect) override
   {
     mPictureRect = aPictureRect;
     mHasPictureRect = true;

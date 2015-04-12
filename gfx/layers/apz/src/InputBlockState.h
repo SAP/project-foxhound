@@ -7,27 +7,170 @@
 #ifndef mozilla_layers_InputBlockState_h
 #define mozilla_layers_InputBlockState_h
 
-#include "nsTArray.h"                       // for nsTArray
 #include "InputData.h"                      // for MultiTouchInput
-#include "nsAutoPtr.h"
+#include "mozilla/gfx/Matrix.h"             // for Matrix4x4
+#include "nsAutoPtr.h"                      // for nsRefPtr
+#include "nsTArray.h"                       // for nsTArray
 
 namespace mozilla {
 namespace layers {
 
+class AsyncPanZoomController;
 class OverscrollHandoffChain;
+class CancelableBlockState;
+class TouchBlockState;
+class WheelBlockState;
 
 /**
  * A base class that stores state common to various input blocks.
  * Currently, it just stores the overscroll handoff chain.
+ * Note that the InputBlockState constructor acquires the tree lock, so callers
+ * from inside AsyncPanZoomController should ensure that the APZC lock is not
+ * held.
  */
 class InputBlockState
 {
 public:
-  explicit InputBlockState(const nsRefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain);
+  static const uint64_t NO_BLOCK_ID = 0;
 
+  explicit InputBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                           bool aTargetConfirmed);
+  virtual ~InputBlockState()
+  {}
+
+  bool SetConfirmedTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc);
+  const nsRefPtr<AsyncPanZoomController>& GetTargetApzc() const;
   const nsRefPtr<const OverscrollHandoffChain>& GetOverscrollHandoffChain() const;
+  uint64_t GetBlockId() const;
+
+  bool IsTargetConfirmed() const;
+
 private:
+  nsRefPtr<AsyncPanZoomController> mTargetApzc;
   nsRefPtr<const OverscrollHandoffChain> mOverscrollHandoffChain;
+  bool mTargetConfirmed;
+  const uint64_t mBlockId;
+protected:
+  // Used to transform events from global screen space to |mTargetApzc|'s
+  // screen space. It's cached at the beginning of the input block so that
+  // all events in the block are in the same coordinate space.
+  gfx::Matrix4x4 mTransformToApzc;
+};
+
+/**
+ * This class represents a set of events that can be cancelled by web content
+ * via event listeners.
+ *
+ * Each cancelable input block can be cancelled by web content, and
+ * this information is stored in the mPreventDefault flag. Because web
+ * content runs on the Gecko main thread, we cannot always wait for web content's
+ * response. Instead, there is a timeout that sets this flag in the case
+ * where web content doesn't respond in time. The mContentResponded
+ * and mContentResponseTimerExpired flags indicate which of these scenarios
+ * occurred.
+ */
+class CancelableBlockState : public InputBlockState
+{
+public:
+  CancelableBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                       bool aTargetConfirmed);
+
+  virtual TouchBlockState *AsTouchBlock() {
+    return nullptr;
+  }
+  virtual WheelBlockState *AsWheelBlock() {
+    return nullptr;
+  }
+
+  /**
+   * Record whether or not content cancelled this block of events.
+   * @param aPreventDefault true iff the block is cancelled.
+   * @return false if this block has already received a response from
+   *         web content, true if not.
+   */
+  bool SetContentResponse(bool aPreventDefault);
+
+  /**
+   * Record that content didn't respond in time.
+   * @return false if this block already timed out, true if not.
+   */
+  bool TimeoutContentResponse();
+
+  /**
+   * @return true iff web content cancelled this block of events.
+   */
+  bool IsDefaultPrevented() const;
+
+  /**
+   * Process the given event using this input block's target apzc.
+   * This input block must not have pending events, and its apzc must not be
+   * nullptr.
+   */
+  void DispatchImmediate(const InputData& aEvent) const;
+
+  /**
+   * @return true iff this block has received all the information needed
+   *         to properly dispatch the events in the block.
+   */
+  virtual bool IsReadyForHandling() const;
+
+  /**
+   * Returns whether or not this block has pending events.
+   */
+  virtual bool HasEvents() const = 0;
+
+  /**
+   * Throw away all the events in this input block.
+   */
+  virtual void DropEvents() = 0;
+
+  /**
+   * Process all events using this input block's target apzc, leaving this
+   * block depleted. This input block's apzc must not be nullptr.
+   */
+  virtual void HandleEvents() = 0;
+
+  /**
+   * Return true if this input block must stay active if it would otherwise
+   * be removed as the last item in the pending queue.
+   */
+  virtual bool MustStayActive() = 0;
+
+  /**
+   * Return a descriptive name for the block kind.
+   */
+  virtual const char* Type() = 0;
+
+private:
+  bool mPreventDefault;
+  bool mContentResponded;
+  bool mContentResponseTimerExpired;
+};
+
+/**
+ * A single block of wheel events.
+ */
+class WheelBlockState : public CancelableBlockState
+{
+public:
+  WheelBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                  bool aTargetConfirmed);
+
+  bool IsReadyForHandling() const override;
+  bool HasEvents() const override;
+  void DropEvents() override;
+  void HandleEvents() override;
+  bool MustStayActive() override;
+  const char* Type() override;
+
+  void AddEvent(const ScrollWheelInput& aEvent);
+
+  WheelBlockState *AsWheelBlock() override {
+    return this;
+  }
+
+private:
+  nsTArray<ScrollWheelInput> mEvents;
 };
 
 /**
@@ -47,91 +190,66 @@ private:
  * dispatched to web content, a new touch block is started to hold the remaining
  * touch events, up to but not including the next touch start (or long-tap).
  *
- * Conceptually, each touch block can be cancelled by web content, and
- * this information is stored in the mPreventDefault flag. Because web
- * content runs on the Gecko main thread, we cannot always wait for web content's
- * response. Instead, there is a timeout that sets this flag in the case
- * where web content doesn't respond in time. The mContentResponded
- * and mContentResponseTimerExpired flags indicate which of these scenarios
- * occurred.
- *
  * Additionally, if touch-action is enabled, each touch block should
  * have a set of allowed touch behavior flags; one for each touch point.
  * This also requires running code on the Gecko main thread, and so may
  * be populated with some latency. The mAllowedTouchBehaviorSet and
  * mAllowedTouchBehaviors variables track this information.
  */
-class TouchBlockState : public InputBlockState
+class TouchBlockState : public CancelableBlockState
 {
 public:
   typedef uint32_t TouchBehaviorFlags;
 
-  explicit TouchBlockState(const nsRefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain);
+  explicit TouchBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                           bool aTargetConfirmed);
 
-  /**
-   * Record whether or not content cancelled this block of events.
-   * @param aPreventDefault true iff the block is cancelled.
-   * @return false if this block has already received a response from
-   *         web content, true if not.
-   */
-  bool SetContentResponse(bool aPreventDefault);
-  /**
-   * Record that content didn't respond in time.
-   * @return false if this block already timed out, true if not.
-   */
-  bool TimeoutContentResponse();
+  TouchBlockState *AsTouchBlock() override {
+    return this;
+  }
+
   /**
    * Set the allowed touch behavior flags for this block.
    * @return false if this block already has these flags set, true if not.
    */
   bool SetAllowedTouchBehaviors(const nsTArray<TouchBehaviorFlags>& aBehaviors);
   /**
-   * Copy the allowed touch behavior flags from another block.
-   * @return false if this block already has these flags set, true if not.
+   * Copy various properties from another block.
    */
-  bool CopyAllowedTouchBehaviorsFrom(const TouchBlockState& aOther);
+  void CopyPropertiesFrom(const TouchBlockState& aOther);
 
   /**
    * @return true iff this block has received all the information needed
    *         to properly dispatch the events in the block.
    */
-  bool IsReadyForHandling() const;
-  /**
-   * @return true iff web content cancelled this block of events.
-   */
-  bool IsDefaultPrevented() const;
+  bool IsReadyForHandling() const override;
 
   /**
-   * Set a flag that disables setting the single-tap flag on this block.
+   * Sets a flag that indicates this input block occurred while the APZ was
+   * in a state of fast motion. This affects gestures that may be produced
+   * from input events in this block.
    */
-  void DisallowSingleTap();
+  void SetDuringFastMotion();
   /**
-   * Set a flag that indicates that this touch block triggered a single tap event.
-   * @return true iff DisallowSingleTap was not previously called.
+   * @return true iff SetDuringFastMotion was called on this block.
+   */
+  bool IsDuringFastMotion() const;
+  /**
+   * Set the single-tap-occurred flag that indicates that this touch block
+   * triggered a single tap event.
+   * @return true if the flag was set. This may not happen if, for example,
+   *         SetDuringFastMotion was previously called.
    */
   bool SetSingleTapOccurred();
   /**
-   * @return true iff SetSingleTapOccurred was previously called on this block.
+   * @return true iff the single-tap-occurred flag is set on this block.
    */
   bool SingleTapOccurred() const;
 
   /**
-   * @return true iff there are pending events in this touch block.
-   */
-  bool HasEvents() const;
-  /**
    * Add a new touch event to the queue of events in this input block.
    */
   void AddEvent(const MultiTouchInput& aEvent);
-  /**
-   * Throw away all the events in this input block.
-   */
-  void DropEvents();
-  /**
-   * @return the first event in the queue. The event is removed from the queue
-   *         before it is returned.
-   */
-  MultiTouchInput RemoveFirstEvent();
 
   /**
    * @return false iff touch-action is enabled and the allowed touch behaviors for
@@ -151,13 +269,16 @@ public:
   bool TouchActionAllowsPanningY() const;
   bool TouchActionAllowsPanningXY() const;
 
+  bool HasEvents() const override;
+  void DropEvents() override;
+  void HandleEvents() override;
+  bool MustStayActive() override;
+  const char* Type() override;
+
 private:
   nsTArray<TouchBehaviorFlags> mAllowedTouchBehaviors;
   bool mAllowedTouchBehaviorSet;
-  bool mPreventDefault;
-  bool mContentResponded;
-  bool mContentResponseTimerExpired;
-  bool mSingleTapDisallowed;
+  bool mDuringFastMotion;
   bool mSingleTapOccurred;
   nsTArray<MultiTouchInput> mEvents;
 };

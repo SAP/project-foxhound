@@ -23,7 +23,7 @@ struct JSContext;
 namespace mozilla {
 namespace dom {
 
-class USSDSession MOZ_FINAL : public nsISupports,
+class USSDSession final : public nsISupports,
                               public nsWrapperCache
 {
 public:
@@ -37,7 +37,7 @@ public:
   GetParentObject() const;
 
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   // WebIDL
   static already_AddRefed<USSDSession>
@@ -47,8 +47,14 @@ public:
   already_AddRefed<Promise>
   Send(const nsAString& aUssd, ErrorResult& aRv);
 
+  already_AddRefed<Promise>
+  Cancel(ErrorResult& aRv);
+
 private:
   ~USSDSession();
+
+  already_AddRefed<Promise>
+  CreatePromise(ErrorResult& aRv);
 
   nsCOMPtr<nsPIDOMWindow> mWindow;
   nsCOMPtr<nsITelephonyService> mService;

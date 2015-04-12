@@ -37,6 +37,8 @@
 #include "nsEmbedCID.h"
 #include "nsToolkitCompsCID.h"
 
+#include "mozilla/net/ReferrerPolicy.h"
+
 #include "SQLFunctions.h"
 
 #include "mozilla/Preferences.h"
@@ -55,7 +57,6 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
-using namespace mozilla::widget::android;
 #endif
 
 #ifdef MOZ_WIDGET_GTK
@@ -1859,7 +1860,10 @@ nsDownloadManager::RetryDownload(nsDownload* dl)
   dl->mCancelable = wbp;
   (void)wbp->SetProgressListener(dl);
 
-  rv = wbp->SavePrivacyAwareURI(dl->mSource, nullptr, nullptr, nullptr, nullptr,
+  // referrer policy can be anything since referrer is nullptr
+  rv = wbp->SavePrivacyAwareURI(dl->mSource, nullptr,
+                                nullptr, mozilla::net::RP_Default,
+                                nullptr, nullptr,
                                 dl->mTarget, dl->mPrivate);
   if (NS_FAILED(rv)) {
     dl->mCancelable = nullptr;
@@ -2520,9 +2524,9 @@ nsDownloadManager::Observe(nsISupports *aSubject,
 
     ConfirmCancelDownloads(mCurrentPrivateDownloads.Count(), cancelDownloads,
                            MOZ_UTF16("leavePrivateBrowsingCancelDownloadsAlertTitle"),
-                           MOZ_UTF16("leavePrivateBrowsingWindowsCancelDownloadsAlertMsgMultiple"),
-                           MOZ_UTF16("leavePrivateBrowsingWindowsCancelDownloadsAlertMsg"),
-                           MOZ_UTF16("dontLeavePrivateBrowsingButton"));
+                           MOZ_UTF16("leavePrivateBrowsingWindowsCancelDownloadsAlertMsgMultiple2"),
+                           MOZ_UTF16("leavePrivateBrowsingWindowsCancelDownloadsAlertMsg2"),
+                           MOZ_UTF16("dontLeavePrivateBrowsingButton2"));
   }
 
   return NS_OK;
@@ -2751,7 +2755,7 @@ nsDownload::SetState(DownloadState aState)
                   message, !removeWhenDone,
                   mPrivate ? NS_LITERAL_STRING("private") : NS_LITERAL_STRING("non-private"),
                   mDownloadManager, EmptyString(), NS_LITERAL_STRING("auto"),
-                  EmptyString(), EmptyString(), nullptr);
+                  EmptyString(), EmptyString(), nullptr, mPrivate);
             }
         }
       }
@@ -2782,7 +2786,7 @@ nsDownload::SetState(DownloadState aState)
             if (mimeInfo)
               mimeInfo->GetMIMEType(contentType);
 
-            mozilla::widget::android::DownloadsIntegration::ScanMedia(path, NS_ConvertUTF8toUTF16(contentType));
+            mozilla::widget::DownloadsIntegration::ScanMedia(path, NS_ConvertUTF8toUTF16(contentType));
           }
 #else
           if (addToRecentDocs && !mPrivate) {
@@ -3326,23 +3330,45 @@ nsDownload::ExecuteDesiredAction()
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  nsresult retVal = NS_OK;
+  nsresult rv = NS_OK;
   switch (action) {
     case nsIMIMEInfo::saveToDisk:
       // Move the file to the proper location
-      retVal = MoveTempToTarget();
+      rv = MoveTempToTarget();
+      if (NS_SUCCEEDED(rv)) {
+        rv = FixTargetPermissions();
+      }
       break;
     case nsIMIMEInfo::useHelperApp:
     case nsIMIMEInfo::useSystemDefault:
       // For these cases we have to move the file to the target location and
       // open with the appropriate application
-      retVal = OpenWithApplication();
+      rv = OpenWithApplication();
       break;
     default:
       break;
   }
 
-  return retVal;
+  return rv;
+}
+
+nsresult
+nsDownload::FixTargetPermissions()
+{
+  nsCOMPtr<nsIFile> target;
+  nsresult rv = GetTargetFile(getter_AddRefs(target));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Set perms according to umask.
+  nsCOMPtr<nsIPropertyBag2> infoService =
+      do_GetService("@mozilla.org/system-info;1");
+  uint32_t gUserUmask = 0;
+  rv = infoService->GetPropertyAsUint32(NS_LITERAL_STRING("umask"),
+                                        &gUserUmask);
+  if (NS_SUCCEEDED(rv)) {
+    (void)target->SetPermissions(0666 & ~gUserUmask);
+  }
+  return NS_OK;
 }
 
 nsresult
@@ -3368,9 +3394,7 @@ nsDownload::MoveTempToTarget()
   rv = target->GetParent(getter_AddRefs(dir));
   NS_ENSURE_SUCCESS(rv, rv);
   rv = mTempFile->MoveTo(dir, fileName);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
+  return rv;
 }
 
 nsresult
@@ -3384,12 +3408,6 @@ nsDownload::OpenWithApplication()
   // Move the temporary file to the target location
   rv = MoveTempToTarget();
   NS_ENSURE_SUCCESS(rv, rv);
-
-  // We do not verify the return value here because, irrespective of success
-  // or failure of the method, the deletion of temp file has to take place, as
-  // per the corresponding preference. But we store this separately as this is
-  // what we ultimately return from this function.
-  nsresult retVal = mMIMEInfo->LaunchWithFile(target);
 
   bool deleteTempFileOnExit;
   nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
@@ -3409,6 +3427,10 @@ nsDownload::OpenWithApplication()
   // Always schedule files to be deleted at the end of the private browsing
   // mode, regardless of the value of the pref.
   if (deleteTempFileOnExit || mPrivate) {
+
+    // Make the tmp file readonly so users won't lose changes.
+    target->SetPermissions(0400);
+
     // Use the ExternalHelperAppService to push the temporary file to the list
     // of files to be deleted on exit.
     nsCOMPtr<nsPIExternalAppLauncher> appLauncher(do_GetService
@@ -3425,7 +3447,7 @@ nsDownload::OpenWithApplication()
     }
   }
 
-  return retVal;
+  return mMIMEInfo->LaunchWithFile(target);
 }
 
 void

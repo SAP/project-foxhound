@@ -30,13 +30,13 @@ public:
                      const nsAString& aContentType,
                      uint64_t aLength,
                      ZipCentral& aCentral,
-                     ArchiveReader* aReader)
+                     FileImpl* aFileImpl)
   : FileImplBase(aName, aContentType, aLength),
     mCentral(aCentral),
-    mArchiveReader(aReader),
+    mFileImpl(aFileImpl),
     mFilename(aName)
   {
-    NS_ASSERTION(mArchiveReader, "must have a reader");
+    MOZ_ASSERT(mFileImpl);
     MOZ_COUNT_CTOR(ArchiveZipFileImpl);
   }
 
@@ -45,27 +45,18 @@ public:
                      uint64_t aStart,
                      uint64_t aLength,
                      ZipCentral& aCentral,
-                     ArchiveReader* aReader)
+                     FileImpl* aFileImpl)
   : FileImplBase(aContentType, aStart, aLength),
     mCentral(aCentral),
-    mArchiveReader(aReader),
+    mFileImpl(aFileImpl),
     mFilename(aName)
   {
-    NS_ASSERTION(mArchiveReader, "must have a reader");
+    MOZ_ASSERT(mFileImpl);
     MOZ_COUNT_CTOR(ArchiveZipFileImpl);
   }
 
   // Overrides:
-  virtual nsresult GetInternalStream(nsIInputStream**) MOZ_OVERRIDE;
-
-  virtual void Unlink() MOZ_OVERRIDE;
-  virtual void Traverse(nsCycleCollectionTraversalCallback &aCb) MOZ_OVERRIDE;
-
-  virtual bool IsCCed() const MOZ_OVERRIDE
-  {
-    return true;
-  }
-
+  virtual nsresult GetInternalStream(nsIInputStream**) override;
 protected:
   virtual ~ArchiveZipFileImpl()
   {
@@ -74,11 +65,11 @@ protected:
 
   virtual already_AddRefed<FileImpl>
   CreateSlice(uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
-              mozilla::ErrorResult& aRv) MOZ_OVERRIDE;
+              mozilla::ErrorResult& aRv) override;
 
 private: // Data
   ZipCentral mCentral;
-  nsRefPtr<ArchiveReader> mArchiveReader;
+  nsRefPtr<FileImpl> mFileImpl;
 
   nsString mFilename;
 };

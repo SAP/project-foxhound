@@ -15,6 +15,7 @@
 # limitations under the License.
 
 EXPORTS += [
+    'GeckoTouchDispatcher.h',
     'GonkPermission.h',
     'OrientationObserver.h',
 ]
@@ -36,6 +37,7 @@ SOURCES += ['libui/' + src for src in [
     'KeyCharacterMap.cpp',
     'KeyLayoutMap.cpp',
     'PointerController.cpp',
+    'sha1.c',
     'SpriteController.cpp',
     'Tokenizer.cpp',
     'VelocityControl.cpp',
@@ -57,7 +59,6 @@ SOURCES += [
     'nsWidgetFactory.cpp',
     'nsWindow.cpp',
     'OrientationObserver.cpp',
-    'ParentProcessController.cpp',
     'ProcessOrientation.cpp',
     'WidgetTraceEvent.cpp'
 ]
@@ -67,12 +68,11 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
-    '/content/media/omx/mediaresourcemanager',
+    '/dom/media/omx/mediaresourcemanager',
     '/dom/system/android',
     '/gfx/skia/trunk/include/config',
     '/gfx/skia/trunk/include/core',
-    '/widget/shared',
-    '/widget/xpwidgets',
+    '/widget',
 ]
 
 DEFINES['HAVE_OFF64_T'] = True

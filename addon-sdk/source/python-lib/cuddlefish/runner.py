@@ -418,6 +418,10 @@ def run_app(harness_root_dir, manifest_rdf, harness_options,
 
     if enable_e10s:
         preferences['browser.tabs.remote.autostart'] = True
+    else:
+        preferences['browser.tabs.remote.autostart'] = False
+        preferences['browser.tabs.remote.autostart.1'] = False
+        preferences['browser.tabs.remote.autostart.2'] = False
 
     # For now, only allow running on Mobile with --force-mobile argument
     if app_type in ["fennec-on-device"] and not enable_mobile:
@@ -492,7 +496,6 @@ def run_app(harness_root_dir, manifest_rdf, harness_options,
       env['MOZ_DISABLE_NONLOCAL_CONNECTIONS'] = '1'
     env['MOZ_NO_REMOTE'] = '1'
     env['XPCOM_DEBUG_BREAK'] = 'stack'
-    env['NS_TRACE_MALLOC_DISABLE_STACKS'] = '1'
     env.update(extra_environment)
     if norun:
         cmdargs.append("-no-remote")

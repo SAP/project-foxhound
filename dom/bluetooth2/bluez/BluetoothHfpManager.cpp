@@ -166,7 +166,8 @@ static CINDItem sCINDItems[] = {
 #endif
 };
 
-class BluetoothHfpManager::GetVolumeTask : public nsISettingsServiceCallback
+class BluetoothHfpManager::GetVolumeTask final
+  : public nsISettingsServiceCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -234,7 +235,7 @@ BluetoothHfpManager::Notify(const hal::BatteryInformation& aBatteryInfo)
 class BluetoothHfpManager::RespondToBLDNTask : public Task
 {
 private:
-  void Run() MOZ_OVERRIDE
+  void Run() override
   {
     MOZ_ASSERT(sBluetoothHfpManager);
 
@@ -255,7 +256,7 @@ public:
     MOZ_ASSERT(NS_IsMainThread());
   }
 
-  void Run() MOZ_OVERRIDE
+  void Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -295,7 +296,7 @@ private:
 class BluetoothHfpManager::CloseScoTask : public Task
 {
 private:
-  void Run() MOZ_OVERRIDE
+  void Run() override
   {
     MOZ_ASSERT(sBluetoothHfpManager);
 
@@ -416,6 +417,8 @@ BluetoothHfpManager::Reset()
 bool
 BluetoothHfpManager::Init()
 {
+  // The function must run at b2g process since it would access SettingsService.
+  MOZ_ASSERT(IsMainProcess());
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
@@ -565,11 +568,8 @@ BluetoothHfpManager::HandleVolumeChanged(nsISupports* aSubject)
   //  {"key":"volumeup", "value":10}
   //  {"key":"volumedown", "value":2}
 
-  AutoJSAPI jsapi;
-  jsapi.Init();
-  JSContext* cx = jsapi.cx();
-  RootedDictionary<dom::SettingChangeNotification> setting(cx);
-  if (!WrappedJSToDictionary(cx, aSubject, setting)) {
+  RootedDictionary<dom::SettingChangeNotification> setting(nsContentUtils::RootingCx());
+  if (!WrappedJSToDictionary(aSubject, setting)) {
     return;
   }
   if (!setting.mKey.EqualsASCII(AUDIO_VOLUME_BT_SCO_ID)) {
@@ -626,9 +626,7 @@ BluetoothHfpManager::HandleVoiceConnectionChanged(uint32_t aClientId)
   }
   UpdateCIND(CINDType::SERVICE, service);
 
-  JSContext* cx = nsContentUtils::GetSafeJSContext();
-  NS_ENSURE_TRUE_VOID(cx);
-  JS::Rooted<JS::Value> value(cx);
+  JS::Rooted<JS::Value> value(nsContentUtils::RootingCxForThread());
   voiceInfo->GetRelSignalStrength(&value);
   NS_ENSURE_TRUE_VOID(value.isNumber());
   uint8_t signal = ceil(value.toNumber() / 20.0);
@@ -688,6 +686,28 @@ BluetoothHfpManager::HandleShutdown()
   Disconnect(nullptr);
   DisconnectSco();
   sBluetoothHfpManager = nullptr;
+}
+
+void
+BluetoothHfpManager::ParseAtCommand(const nsACString& aAtCommand,
+                                    const int aStart,
+                                    nsTArray<nsCString>& aRetValues)
+{
+  int length = aAtCommand.Length();
+  int begin = aStart;
+
+  for (int i = aStart; i < length; ++i) {
+    // Use ',' as separator
+    if (aAtCommand[i] == ',') {
+      nsCString tmp(nsDependentCSubstring(aAtCommand, begin, i - begin));
+      aRetValues.AppendElement(tmp);
+
+      begin = i + 1;
+    }
+  }
+
+  nsCString tmp(nsDependentCSubstring(aAtCommand, begin));
+  aRetValues.AppendElement(tmp);
 }
 
 // Virtual function of class SocketConsumer

@@ -156,7 +156,7 @@ inDOMUtils::GetParentForNode(nsIDOMNode* aNode,
   } else if (aShowingAnonymousContent) {
     nsCOMPtr<nsIContent> content = do_QueryInterface(aNode);
     if (content) {
-      nsIContent* bparent = content->GetXBLInsertionParent();
+      nsIContent* bparent = content->GetFlattenedTreeParent();
       parent = do_QueryInterface(bparent);
     }
   }
@@ -522,7 +522,7 @@ static void GetKeywordsForProperty(const nsCSSProperty aProperty,
   }
   const nsCSSProps::KTableValue *keywordTable =
     nsCSSProps::kKeywordTableTable[aProperty];
-  if (keywordTable && keywordTable != nsCSSProps::kBoxPropSourceKTable) {
+  if (keywordTable) {
     size_t i = 0;
     while (nsCSSKeyword(keywordTable[i]) != eCSSKeyword_UNKNOWN) {
       nsCSSKeyword word = nsCSSKeyword(keywordTable[i]);
@@ -748,7 +748,8 @@ inDOMUtils::GetCSSValuesForProperty(const nsAString& aProperty,
     GetOtherValuesForProperty(propertyParserVariant, array);
   } else {
     // Property is shorthand.
-    CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subproperty, propertyID) {
+    CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subproperty, propertyID,
+                                         nsCSSProps::eEnabledForAllContent) {
       // Get colors (once) first.
       uint32_t propertyParserVariant = nsCSSProps::ParserVariant(*subproperty);
       if (propertyParserVariant & VARIANT_COLOR) {
@@ -756,7 +757,8 @@ inDOMUtils::GetCSSValuesForProperty(const nsAString& aProperty,
         break;
       }
     }
-    CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subproperty, propertyID) {
+    CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subproperty, propertyID,
+                                         nsCSSProps::eEnabledForAllContent) {
       uint32_t propertyParserVariant = nsCSSProps::ParserVariant(*subproperty);
       if (propertyParserVariant & VARIANT_KEYWORD) {
         GetKeywordsForProperty(*subproperty, array);
@@ -864,6 +866,11 @@ inDOMUtils::CssPropertyIsValid(const nsAString& aPropertyName,
 
   if (propertyID == eCSSProperty_UNKNOWN) {
     *_retval = false;
+    return NS_OK;
+  }
+
+  if (propertyID == eCSSPropertyExtra_variable) {
+    *_retval = true;
     return NS_OK;
   }
 
@@ -976,9 +983,9 @@ GetStatesForPseudoClass(const nsAString& aStatePseudo)
   // An array of the states that are relevant for various pseudoclasses.
   // XXXbz this duplicates code in nsCSSRuleProcessor
   static const EventStates sPseudoClassStates[] = {
-#define CSS_PSEUDO_CLASS(_name, _value, _pref)	\
+#define CSS_PSEUDO_CLASS(_name, _value, _flags, _pref) \
     EventStates(),
-#define CSS_STATE_PSEUDO_CLASS(_name, _value, _pref, _states)	\
+#define CSS_STATE_PSEUDO_CLASS(_name, _value, _flags, _pref, _states) \
     _states,
 #include "nsCSSPseudoClassList.h"
 #undef CSS_STATE_PSEUDO_CLASS

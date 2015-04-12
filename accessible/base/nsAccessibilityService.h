@@ -11,6 +11,7 @@
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/a11y/FocusManager.h"
 #include "mozilla/a11y/SelectionManager.h"
+#include "mozilla/Preferences.h"
 
 #include "nsIObserver.h"
 
@@ -22,6 +23,7 @@ namespace mozilla {
 namespace a11y {
 
 class ApplicationAccessible;
+class xpcAccessibleApplication;
 
 /**
  * Return focus manager.
@@ -37,11 +39,12 @@ SelectionManager* SelectionMgr();
  * Returns the application accessible.
  */
 ApplicationAccessible* ApplicationAcc();
+xpcAccessibleApplication* XPCApplicationAcc();
 
 } // namespace a11y
 } // namespace mozilla
 
-class nsAccessibilityService MOZ_FINAL : public mozilla::a11y::DocManager,
+class nsAccessibilityService final : public mozilla::a11y::DocManager,
                                          public mozilla::a11y::FocusManager,
                                          public mozilla::a11y::SelectionManager,
                                          public nsIAccessibilityService,
@@ -61,7 +64,7 @@ public:
 
   // nsIAccessibilityService
   virtual Accessible* GetRootDocumentAccessible(nsIPresShell* aPresShell,
-                                                bool aCanCreate);
+                                                bool aCanCreate) override;
   already_AddRefed<Accessible>
     CreatePluginAccessible(nsPluginFrame* aFrame, nsIContent* aContent,
                            Accessible* aContext);
@@ -70,9 +73,12 @@ public:
    * Adds/remove ATK root accessible for gtk+ native window to/from children
    * of the application accessible.
    */
-  virtual Accessible* AddNativeRootAccessible(void* aAtkAccessible);
-  virtual void RemoveNativeRootAccessible(Accessible* aRootAccessible);
+  virtual Accessible* AddNativeRootAccessible(void* aAtkAccessible) override;
+  virtual void RemoveNativeRootAccessible(Accessible* aRootAccessible) override;
 
+  virtual bool HasAccessible(nsIDOMNode* aDOMNode) override;
+
+  // nsAccesibilityService
   /**
    * Notification used to update the accessible tree when deck panel is
    * switched.
@@ -139,7 +145,7 @@ public:
    */
   void RecreateAccessible(nsIPresShell* aPresShell, nsIContent* aContent);
 
-  virtual void FireAccessibleEvent(uint32_t aEvent, Accessible* aTarget);
+  virtual void FireAccessibleEvent(uint32_t aEvent, Accessible* aTarget) override;
 
   // nsAccessibiltiyService
 
@@ -215,6 +221,7 @@ private:
    * Reference for application accessible instance.
    */
   static mozilla::a11y::ApplicationAccessible* gApplicationAccessible;
+  static mozilla::a11y::xpcAccessibleApplication* gXPCApplicationAccessible;
 
   /**
    * Indicates whether accessibility service was shutdown.
@@ -225,6 +232,7 @@ private:
   friend mozilla::a11y::FocusManager* mozilla::a11y::FocusMgr();
   friend mozilla::a11y::SelectionManager* mozilla::a11y::SelectionMgr();
   friend mozilla::a11y::ApplicationAccessible* mozilla::a11y::ApplicationAcc();
+  friend mozilla::a11y::xpcAccessibleApplication* mozilla::a11y::XPCApplicationAcc();
 
   friend nsresult NS_GetAccessibilityService(nsIAccessibilityService** aResult);
 };
@@ -244,10 +252,13 @@ GetAccService()
 inline bool
 IPCAccessibilityActive()
 {
+	// XXX disable ipc accessibility for firefox 38
+	return false;
 #ifdef MOZ_B2G
   return false;
 #else
-  return XRE_GetProcessType() != GeckoProcessType_Default;
+  return XRE_GetProcessType() == GeckoProcessType_Content &&
+    mozilla::Preferences::GetBool("accessibility.ipc_architecture.enabled", true);
 #endif
 }
 

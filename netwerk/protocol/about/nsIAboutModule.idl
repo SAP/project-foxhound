@@ -7,16 +7,20 @@
 
 interface nsIURI;
 interface nsIChannel;
+interface nsILoadInfo;
 
-[scriptable, uuid(1d5992c3-28b0-4ec1-9dbb-f5fde7f72199)]
+[scriptable, uuid(f94311ed-732d-44ba-a569-a93d3aaf77d5)]
 interface nsIAboutModule : nsISupports 
 {
+
     /**
      * Constructs a new channel for the about protocol module. 
      *
      * @param aURI the uri of the new channel
+     * @param aLoadInfo the loadinfo of the new channel
      */
-    nsIChannel newChannel(in nsIURI aURI);
+    nsIChannel newChannel(in nsIURI aURI,
+                          in nsILoadInfo aLoadInfo);
 
     /**
      * A flag that indicates whether a URI is safe for untrusted
@@ -45,6 +49,16 @@ interface nsIAboutModule : nsISupports
      * A flag that indicates whether this about: URI wants Indexed DB enabled.
      */
     const unsigned long ENABLE_INDEXED_DB = (1 << 3);
+
+    /**
+     * A flag that indicates that this URI can be loaded in a child process
+     */
+    const unsigned long URI_CAN_LOAD_IN_CHILD = (1 << 4);
+
+    /**
+     * A flag that indicates that this URI must be loaded in a child process
+     */
+    const unsigned long URI_MUST_LOAD_IN_CHILD = (1 << 5);
 
     /**
      * A method to get the flags that apply to a given about: URI.  The URI

@@ -7,9 +7,9 @@
 using namespace JS;
 
 static void
-ScriptCallback(JSRuntime *rt, void *data, JSScript *script)
+ScriptCallback(JSRuntime* rt, void* data, JSScript* script)
 {
-    unsigned &count = *static_cast<unsigned *>(data);
+    unsigned& count = *static_cast<unsigned*>(data);
     if (script->hasIonScript())
         ++count;
 }
@@ -22,7 +22,7 @@ BEGIN_TEST(test_PreserveJitCode)
 }
 
 unsigned
-countIonScripts(JSObject *global)
+countIonScripts(JSObject* global)
 {
     unsigned count = 0;
     js::IterateScripts(rt, global->compartment(), &count, ScriptCallback);
@@ -42,7 +42,7 @@ testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts)
 
     CHECK_EQUAL(countIonScripts(global), 0u);
 
-    const char *source =
+    const char* source =
         "var i = 0;\n"
         "var sum = 0;\n"
         "while (i < 10) {\n"
@@ -55,7 +55,9 @@ testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts)
     JS::RootedFunction fun(cx);
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, 1);
-    CHECK(JS_CompileFunction(cx, global, "f", 0, nullptr, source, length, options, &fun));
+    JS::AutoObjectVector emptyScopeChain(cx);
+    CHECK(JS::CompileFunction(cx, emptyScopeChain, options, "f", 0, nullptr,
+			      source, length, &fun));
 
     RootedValue value(cx);
     for (unsigned i = 0; i < 1500; ++i)
@@ -63,16 +65,16 @@ testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts)
     CHECK_EQUAL(value.toInt32(), 45);
     CHECK_EQUAL(countIonScripts(global), 1u);
 
-    GCForReason(rt, gcreason::API);
+    GCForReason(rt, GC_NORMAL, gcreason::API);
     CHECK_EQUAL(countIonScripts(global), remainingIonScripts);
 
-    ShrinkingGC(rt, gcreason::API);
+    GCForReason(rt, GC_SHRINK, gcreason::API);
     CHECK_EQUAL(countIonScripts(global), 0u);
 
     return true;
 }
 
-JSObject *
+JSObject*
 createTestGlobal(bool preserveJitCode)
 {
     JS::CompartmentOptions options;

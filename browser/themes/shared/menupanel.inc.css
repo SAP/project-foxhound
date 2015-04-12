@@ -1,10 +1,15 @@
 /* Menu panel and palette styles */
 /* Note that this file isn't used for HiDPI on OS X. */
 
+:root {
+  --menupanel-list-style-image: url(chrome://browser/skin/menuPanel.png);
+  --menupanel-small-list-style-image: url(chrome://browser/skin/menuPanel-small.png);
+}
+
 toolbaritem[sdkstylewidget="true"] > toolbarbutton,
 :-moz-any(@primaryToolbarButtons@)[cui-areatype="menu-panel"],
 toolbarpaletteitem[place="palette"] > :-moz-any(@primaryToolbarButtons@) {
-  list-style-image: url(chrome://browser/skin/menuPanel.png);
+  list-style-image: var(--menupanel-list-style-image);
 }
 
 #home-button[cui-areatype="menu-panel"],
@@ -161,43 +166,48 @@ toolbarpaletteitem[place="palette"] > #web-apps-button {
   -moz-image-region: rect(0, 928px, 32px, 896px);
 }
 
+#webide-button[cui-areatype="menu-panel"],
+toolbarpaletteitem[place="palette"] > #webide-button {
+  -moz-image-region: rect(0px, 960px, 32px, 928px);
+}
+
 toolbaritem[sdkstylewidget="true"] > toolbarbutton {
   -moz-image-region: rect(0, 832px, 32px, 800px);
 }
 
-#loop-call-button[cui-areatype="menu-panel"] > .toolbarbutton-badge-container,
-toolbarpaletteitem[place="palette"] > #loop-call-button > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"] > .toolbarbutton-badge-container,
+toolbarpaletteitem[place="palette"] > #loop-button > .toolbarbutton-badge-container {
   list-style-image: url(chrome://browser/skin/loop/menuPanel.png);
   -moz-image-region: rect(0, 32px, 32px, 0);
 }
 
 /* Make sure that the state icons are not shown in the customization palette. */
-toolbarpaletteitem[place="palette"] > #loop-call-button > .toolbarbutton-badge-container {
+toolbarpaletteitem[place="palette"] > #loop-button > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 32px, 32px, 0) !important;
 }
 
-#loop-call-button[cui-areatype="menu-panel"][state="disabled"] > .toolbarbutton-badge-container,
-#loop-call-button[cui-areatype="menu-panel"][disabled="true"] > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"][state="disabled"] > .toolbarbutton-badge-container,
+#loop-button[cui-areatype="menu-panel"][disabled="true"] > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 64px, 32px, 32px);
 }
 
-#loop-call-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="error"] > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="error"] > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 96px, 32px, 64px);
 }
 
-#loop-call-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="action"] > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="action"] > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 128px, 32px, 96px);
 }
 
-#loop-call-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="action"]:-moz-any(:hover,:hover:active,[open]) > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="action"]:-moz-any(:hover,:hover:active,[open]) > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 160px, 32px, 128px);
 }
 
-#loop-call-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="active"] > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="active"] > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 192px, 32px, 160px);
 }
 
-#loop-call-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="active"]:-moz-any(:hover,:hover:active,[open]) > .toolbarbutton-badge-container {
+#loop-button[cui-areatype="menu-panel"]:not([disabled="true"])[state="active"]:-moz-any(:hover,:hover:active,[open]) > .toolbarbutton-badge-container {
   -moz-image-region: rect(0, 224px, 32px, 192px);
 }
 
@@ -207,7 +217,7 @@ toolbarpaletteitem[place="palette"] > #loop-call-button > .toolbarbutton-badge-c
 #zoom-controls@inAnyPanel@ > toolbarbutton,
 toolbarpaletteitem[place="palette"] > #edit-controls > toolbarbutton,
 toolbarpaletteitem[place="palette"] > #zoom-controls > toolbarbutton {
-  list-style-image: url(chrome://browser/skin/menuPanel-small.png);
+  list-style-image: var(--menupanel-small-list-style-image);
 }
 
 #edit-controls@inAnyPanel@ > #cut-button,

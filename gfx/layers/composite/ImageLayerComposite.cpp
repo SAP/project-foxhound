@@ -51,8 +51,6 @@ bool
 ImageLayerComposite::SetCompositableHost(CompositableHost* aHost)
 {
   switch (aHost->GetType()) {
-    case CompositableType::BUFFER_IMAGE_SINGLE:
-    case CompositableType::BUFFER_IMAGE_BUFFERED:
     case CompositableType::IMAGE:
     case CompositableType::IMAGE_OVERLAY:
       mImageHost = aHost;
@@ -107,7 +105,7 @@ ImageLayerComposite::RenderLayer(const nsIntRect& aClipRect)
   mImageHost->SetCompositor(mCompositor);
   mImageHost->Composite(effectChain,
                         GetEffectiveOpacity(),
-                        GetEffectiveTransform(),
+                        GetEffectiveTransformForBuffer(),
                         GetEffectFilter(),
                         clipRect);
   mImageHost->BumpFlashCounter();
@@ -121,17 +119,9 @@ ImageLayerComposite::ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransform
   // Snap image edges to pixel boundaries
   gfxRect sourceRect(0, 0, 0, 0);
   if (mImageHost &&
-      mImageHost->IsAttached() &&
-      mImageHost->GetAsTextureHost()) {
-    IntSize size = mImageHost->GetAsTextureHost()->GetSize();
+      mImageHost->IsAttached()) {
+    IntSize size = mImageHost->GetImageSize();
     sourceRect.SizeTo(size.width, size.height);
-    if (mScaleMode != ScaleMode::SCALE_NONE &&
-        sourceRect.width != 0.0 && sourceRect.height != 0.0) {
-      NS_ASSERTION(mScaleMode == ScaleMode::STRETCH,
-                   "No other scalemodes than stretch and none supported yet.");
-      local.PreScale(mScaleToSize.width / sourceRect.width,
-                     mScaleToSize.height / sourceRect.height, 1.0);
-    }
   }
   // Snap our local transform first, and snap the inherited transform as well.
   // This makes our snapping equivalent to what would happen if our content
@@ -140,6 +130,21 @@ ImageLayerComposite::ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransform
   mEffectiveTransform =
       SnapTransform(local, sourceRect, nullptr) *
       SnapTransformTranslation(aTransformToSurface, nullptr);
+
+  if (mScaleMode != ScaleMode::SCALE_NONE &&
+      sourceRect.width != 0.0 && sourceRect.height != 0.0) {
+    NS_ASSERTION(mScaleMode == ScaleMode::STRETCH,
+                 "No other scalemodes than stretch and none supported yet.");
+    local.PreScale(mScaleToSize.width / sourceRect.width,
+                   mScaleToSize.height / sourceRect.height, 1.0);
+
+    mEffectiveTransformForBuffer =
+        SnapTransform(local, sourceRect, nullptr) *
+        SnapTransformTranslation(aTransformToSurface, nullptr);
+  } else {
+    mEffectiveTransformForBuffer = mEffectiveTransform;
+  }
+
   ComputeEffectiveTransformForMaskLayer(aTransformToSurface);
 }
 

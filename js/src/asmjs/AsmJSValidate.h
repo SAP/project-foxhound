@@ -47,17 +47,19 @@ typedef frontend::ParseContext<frontend::FullParseHandler> AsmJSParseContext;
 // In this case, the parser.tokenStream has been advanced an indeterminate
 // amount and the entire function should be reparsed from the beginning.
 extern bool
-ValidateAsmJS(ExclusiveContext *cx, AsmJSParser &parser, frontend::ParseNode *stmtList,
-             bool *validated);
+ValidateAsmJS(ExclusiveContext* cx, AsmJSParser& parser, frontend::ParseNode* stmtList,
+             bool* validated);
 
 // The assumed page size; dynamically checked in ValidateAsmJS.
 const size_t AsmJSPageSize = 4096;
 
-#ifdef JS_CODEGEN_X64
+#ifdef JS_CPU_X64
 // On x64, the internal ArrayBuffer data array is inflated to 4GiB (only the
 // byteLength portion of which is accessible) so that out-of-bounds accesses
 // (made using a uint32 index) are guaranteed to raise a SIGSEGV.
-static const size_t AsmJSMappedSize = 4 * 1024ULL * 1024ULL * 1024ULL;
+// Unaligned accesses and mask optimizations might also try to access a few
+// bytes after this limit, so just inflate it by AsmJSPageSize.
+static const size_t AsmJSMappedSize = 4 * 1024ULL * 1024ULL * 1024ULL + AsmJSPageSize;
 #endif
 
 // From the asm.js spec Linking section:
@@ -103,7 +105,7 @@ IsDeprecatedAsmJSHeapLength(uint32_t length)
 // Return whether asm.js optimization is inhibited by the platform or
 // dynamically disabled:
 extern bool
-IsAsmJSCompilationAvailable(JSContext *cx, unsigned argc, JS::Value *vp);
+IsAsmJSCompilationAvailable(JSContext* cx, unsigned argc, JS::Value* vp);
 
 } // namespace js
 

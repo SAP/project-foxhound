@@ -52,10 +52,10 @@ public:
 
   virtual nsresult
   GetSuccessResult(JSContext* aCx,
-                   JS::MutableHandle<JS::Value> aVal) MOZ_OVERRIDE;
+                   JS::MutableHandle<JS::Value> aVal) override;
 
   virtual void
-  ReleaseObjects() MOZ_OVERRIDE
+  ReleaseObjects() override
   {
     mMutableFile = nullptr;
     MetadataHelper::ReleaseObjects();
@@ -162,7 +162,6 @@ IDBMutableFile::Create(IDBDatabase* aDatabase,
   if (NS_WARN_IF(NS_FAILED(QuotaManager::GetInfoFromPrincipal(principal,
                                                               &group,
                                                               &origin,
-                                                              nullptr,
                                                               nullptr)))) {
     return nullptr;
   }
@@ -320,6 +319,13 @@ IDBMutableFile::Open(FileMode aMode, ErrorResult& aError)
     return nullptr;
   }
 
+  if (mDatabase->IsClosed()) {
+    aError.Throw(NS_ERROR_DOM_FILEHANDLE_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
+
+  MOZ_ASSERT(GetOwner());
+
   nsRefPtr<IDBFileHandle> fileHandle =
     IDBFileHandle::Create(aMode, FileHandleBase::NORMAL, this);
   if (!fileHandle) {
@@ -360,10 +366,17 @@ IDBMutableFile::GetFile(ErrorResult& aError)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  // Do nothing if the window is closed
-  if (!GetOwner()) {
+  if (QuotaManager::IsShuttingDown() || FileService::IsShuttingDown()) {
+    aError.Throw(NS_ERROR_DOM_FILEHANDLE_UNKNOWN_ERR);
     return nullptr;
   }
+
+  if (mDatabase->IsClosed()) {
+    aError.Throw(NS_ERROR_DOM_FILEHANDLE_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
+
+  MOZ_ASSERT(GetOwner());
 
   nsRefPtr<IDBFileHandle> fileHandle =
     IDBFileHandle::Create(FileMode::Readonly, FileHandleBase::PARALLEL, this);

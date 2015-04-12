@@ -374,6 +374,14 @@ function rfloor_object(i) {
     return i;
 }
 
+var uceFault_ceil_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_ceil_number'));
+function rceil_number(i){
+    var x = Math.ceil(-i - 0.12010799100);
+    if (uceFault_ceil_number(i) ||uceFault_ceil_number(i))
+        assertEq(x, - i);
+    return i;
+}
+
 var uceFault_round_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_round'));
 function rround_number(i) {
     var x = Math.round(i + 1.4);
@@ -927,6 +935,48 @@ function rregexp_m_literal_replace(i) {
     return i;
 }
 
+var uceFault_string_replace = eval(uneval(uceFault).replace('uceFault', 'uceFault_string_replace'))
+function rstring_replace(i) {
+    var re = /str\d+9/;
+
+    assertEq(re.lastIndex == 0, true);
+    var res = "str00123456789".replace(re, "abc");
+    if (uceFault_string_replace(i) || uceFault_string_replace(i)) {
+        assertEq(res, "abc");
+    }
+    assertEq(re.lastIndex == 0, true);
+
+    return i;
+}
+
+var uceFault_string_replace_y = eval(uneval(uceFault).replace('uceFault', 'uceFault_string_replace_y'))
+function rstring_replace_y(i) {
+    var re = /str\d+9/y;
+
+    assertEq(re.lastIndex == 0, true);
+    var res = "str00123456789".replace(re, "abc");
+    if (uceFault_string_replace_y(i) || uceFault_string_replace_y(i)) {
+        assertEq(res, "abc");
+    }
+    assertEq(re.lastIndex == 0, true);
+
+    return i;
+}
+
+var uceFault_string_replace_g = eval(uneval(uceFault).replace('uceFault', 'uceFault_string_replace_g'))
+function rstring_replace_g(i) {
+    var re = /str\d+9/g;
+
+    assertEq(re.lastIndex == 0, true);
+    var res = "str00123456789str00123456789".replace(re, "abc");
+    if (uceFault_string_replace_g(i) || uceFault_string_replace_g(i)) {
+        assertEq(res, "abcabc");
+    }
+    assertEq(re.lastIndex == 0, true);
+
+    return i;
+}
+
 var uceFault_typeof = eval(uneval(uceFault).replace('uceFault', 'uceFault_typeof'))
 function rtypeof(i) {
     var inputs = [ {}, [], 1, true, undefined, function(){}, null ];
@@ -942,6 +992,28 @@ function rtypeof(i) {
         assertEq(x, y);
     }
 
+    return i;
+}
+
+var uceFault_todouble_value = eval(uneval(uceFault).replace('uceFault', 'uceFault_todouble_value'))
+function rtodouble_value(i) {
+    var a = 1;
+    if (i == 1000) a = "1";
+
+    var x = a < 8.1;
+
+    if (uceFault_todouble_value(i) || uceFault_todouble_value(i)) {
+        assertEq(x, true);
+    }
+
+    return i;
+}
+
+var uceFault_todouble_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_todouble_number'));
+function rtodouble_number(i) {
+    var x = Math.fround(Math.fround(i) + Math.fround(i)) + 1;
+    if (uceFault_todouble_number(i) || uceFault_todouble_number(i))
+        assertEq(2 * i + 1, x);
     return i;
 }
 
@@ -961,6 +1033,145 @@ function rtofloat32_object(i) {
     t = 1000.1111111111;
     if (uceFault_tofloat32_object(i) || uceFault_tofloat32_object(i))
         assertEq(x, Math.fround(99.1111111111));
+    return i;
+}
+
+var uceFault_trunc_to_int32_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_trunc_to_int32_number'));
+function rtrunc_to_int32_number(i) {
+    var x = (i + 0.12) | 0;
+    if (uceFault_trunc_to_int32_number(i) || uceFault_trunc_to_int32_number(i))
+        assertEq(x, (i + 0.12) | 0);
+    return i;
+}
+
+var uceFault_trunc_to_int32_object = eval(uneval(uceFault).replace('uceFault', 'uceFault_trunc_to_int32_object'));
+function rtrunc_to_int32_object(i) {
+    var t1 = i + 0.12;
+    var o1 = { valueOf: function() { return t1; } };
+    var x = o1 | 0;
+    t1 = 777.12;
+    if (uceFault_trunc_to_int32_object(i) || uceFault_trunc_to_int32_object(i))
+        assertEq(x, (i + 0.12) | 0);
+}
+
+var uceFault_trunc_to_int32_string = eval(uneval(uceFault).replace('uceFault', 'uceFault_trunc_to_int32_string'));
+function rtrunc_to_int32_string(i) {
+    var x = (i + "0") | 0;
+    if (uceFault_trunc_to_int32_string(i) || uceFault_trunc_to_int32_string(i))
+        assertEq(x, (i + "0") | 0);
+    return i;
+}
+
+var uceFault_hypot_number_2args = eval(uneval(uceFault).replace('uceFault', 'uceFault_hypot_number_2args'));
+function rhypot_number_2args(i) {
+    var x = Math.hypot(i, i + 1);
+    if (uceFault_hypot_number_2args(i) || uceFault_hypot_number_2args(i))
+        assertEq(x, Math.sqrt(i * i + (i + 1) * (i + 1)));
+    return i;
+}
+
+var uceFault_hypot_number_3args = eval(uneval(uceFault).replace('uceFault', 'uceFault_hypot_number_3args'));
+function rhypot_number_3args(i) {
+    var x = Math.hypot(i, i + 1, i + 2);
+    if (uceFault_hypot_number_3args(i) || uceFault_hypot_number_3args(i))
+        assertEq(x, Math.sqrt(i * i + (i + 1) * (i + 1) + (i + 2) * (i + 2)));
+    return i;
+}
+
+var uceFault_hypot_number_4args = eval(uneval(uceFault).replace('uceFault', 'uceFault_hypot_number_4args'));
+function rhypot_number_4args(i) {
+    var x = Math.hypot(i, i + 1, i + 2, i + 3);
+    if (uceFault_hypot_number_4args(i) || uceFault_hypot_number_4args(i))
+        assertEq(x, Math.sqrt(i * i + (i + 1) * (i + 1) + (i + 2) * (i + 2) + (i + 3) * (i + 3)));
+    return i;
+}
+
+var uceFault_hypot_object_2args = eval(uneval(uceFault).replace('uceFault', 'uceFault_hypot_object_2args'));
+function rhypot_object_2args(i) {
+    var t0 = i;
+    var t1 = i + 1;
+    var o0 = { valueOf: function () { return t0; } };
+    var o1 = { valueOf: function () { return t1; } };
+    var x = Math.hypot(o0, o1);
+    t0 = 1000;
+    t1 = 2000;
+    if (uceFault_hypot_object_2args(i) || uceFault_hypot_object_2args(i) )
+        assertEq(x, Math.sqrt(i * i + (i + 1) * (i + 1)));
+    return i;
+}
+
+var uceFault_hypot_object_3args = eval(uneval(uceFault).replace('uceFault', 'uceFault_hypot_object_3args'));
+function rhypot_object_3args(i) {
+    var t0 = i;
+    var t1 = i + 1;
+    var t2 = i + 2;
+    var o0 = { valueOf: function () { return t0; } };
+    var o1 = { valueOf: function () { return t1; } };
+    var o2 = { valueOf: function () { return t2; } };
+    var x = Math.hypot(o0, o1, o2);
+    t0 = 1000;
+    t1 = 2000;
+    t2 = 3000;
+    if (uceFault_hypot_object_3args(i) || uceFault_hypot_object_3args(i) )
+        assertEq(x, Math.sqrt(i * i + (i + 1) * (i + 1) + (i + 2) * (i + 2)));
+    return i;
+}
+
+var uceFault_hypot_object_4args = eval(uneval(uceFault).replace('uceFault', 'uceFault_hypot_object_4args'));
+function rhypot_object_4args(i) {
+    var t0 = i;
+    var t1 = i + 1;
+    var t2 = i + 2;
+    var t3 = i + 3;
+    var o0 = { valueOf: function () { return t0; } };
+    var o1 = { valueOf: function () { return t1; } };
+    var o2 = { valueOf: function () { return t2; } };
+    var o3 = { valueOf: function () { return t3; } };
+    var x = Math.hypot(o0, o1, o2, o3);
+    t0 = 1000;
+    t1 = 2000;
+    t2 = 3000;
+    t3 = 4000;
+    if (uceFault_hypot_object_4args(i) || uceFault_hypot_object_4args(i) )
+        assertEq(x, Math.sqrt(i * i + (i + 1) * (i + 1) + (i + 2) * (i + 2) + (i + 3) * (i + 3)));
+    return i;
+}
+
+var uceFault_sin_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_sin_number'));
+function rsin_number(i) {
+    var x = Math.sin(i);
+    if (uceFault_sin_number(i) || uceFault_sin_number(i))
+        assertEq(x, Math.sin(i));
+    return i;
+}
+
+var uceFault_sin_object = eval(uneval(uceFault).replace('uceFault', 'uceFault_sin_object'));
+function rsin_object(i) {
+    var t = i;
+    var o = { valueOf: function() { return t; } };
+    var x = Math.sin(o);
+    t = 777;
+    if (uceFault_sin_object(i) || uceFault_sin_object(i))
+        assertEq(x, Math.sin(i));
+    return i;
+}
+
+var uceFault_log_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_log_number'));
+function rlog_number(i) {
+    var x = Math.log(i);
+    if (uceFault_log_number(i) || uceFault_log_number(i))
+        assertEq(x, Math.log(99) /* log(99) */);
+    return i;
+}
+
+var uceFault_log_object = eval(uneval(uceFault).replace('uceFault', 'uceFault_log_object'));
+function rlog_object(i) {
+    var t = i;
+    var o = { valueOf: function() { return t; } };
+    var x = Math.log(o); /* Evaluated with t == i, not t == 1000 */
+    t = 1000;
+    if (uceFault_log_object(i) || uceFault_log_object(i))
+        assertEq(x, Math.log(99) /* log(99) */);
     return i;
 }
 
@@ -1004,6 +1215,7 @@ for (i = 0; i < 100; i++) {
     rinline_arguments_length_3(i, 0, 1);
     rfloor_number(i);
     rfloor_object(i);
+    rceil_number(i);
     rround_number(i);
     rround_double(i);
     rcharCodeAt(i);
@@ -1054,9 +1266,27 @@ for (i = 0; i < 100; i++) {
     rregexp_i_literal_replace(i);
     rregexp_m_replace(i);
     rregexp_m_literal_replace(i);
+    rstring_replace(i);
+    rstring_replace_y(i);
+    rstring_replace_g(i);
     rtypeof(i);
+    rtodouble_value(i);
+    rtodouble_number(i);
     rtofloat32_number(i);
     rtofloat32_object(i);
+    rtrunc_to_int32_number(i);
+    rtrunc_to_int32_object(i);
+    rtrunc_to_int32_string(i);
+    rhypot_number_2args(i);
+    rhypot_number_3args(i);
+    rhypot_number_4args(i);
+    rhypot_object_2args(i);
+    rhypot_object_3args(i);
+    rhypot_object_4args(i);
+    rsin_number(i);
+    rsin_object(i);
+    rlog_number(i);
+    rlog_object(i);
 }
 
 // Test that we can refer multiple time to the same recover instruction, as well

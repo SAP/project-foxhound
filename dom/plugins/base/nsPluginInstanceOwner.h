@@ -33,7 +33,12 @@ namespace mozilla {
 namespace dom {
 struct MozPluginParameter;
 }
+namespace widget {
+class PuppetWidget;
 }
+}
+
+using mozilla::widget::PuppetWidget;
 
 #ifdef MOZ_X11
 class gfxXlibSurface;
@@ -44,7 +49,7 @@ class gfxXlibSurface;
 #endif
 #endif
 
-class nsPluginInstanceOwner MOZ_FINAL : public nsIPluginInstanceOwner,
+class nsPluginInstanceOwner final : public nsIPluginInstanceOwner,
                                         public nsIDOMEventListener,
                                         public nsIPrivacyTransitionObserver,
                                         public nsSupportsWeakReference
@@ -58,14 +63,15 @@ public:
   
   NS_IMETHOD GetURL(const char *aURL, const char *aTarget,
                     nsIInputStream *aPostStream, 
-                    void *aHeadersData, uint32_t aHeadersDataLen) MOZ_OVERRIDE;
+                    void *aHeadersData, uint32_t aHeadersDataLen) override;
   
-  NS_IMETHOD ShowStatus(const char16_t *aStatusMsg) MOZ_OVERRIDE;
+  NS_IMETHOD ShowStatus(const char16_t *aStatusMsg) override;
   
-  NPError    ShowNativeContextMenu(NPMenu* menu, void* event) MOZ_OVERRIDE;
+  // This can go away, just leaving it here to avoid changing the interface.
+  NPError    ShowNativeContextMenu(NPMenu* menu, void* event) override;
   
   NPBool     ConvertPoint(double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
-                          double *destX, double *destY, NPCoordinateSpace destSpace) MOZ_OVERRIDE;
+                          double *destX, double *destY, NPCoordinateSpace destSpace) override;
   
   /**
    * Get the type of the HTML tag that was used ot instantiate this
@@ -108,14 +114,19 @@ public:
   
   nsresult Init(nsIContent* aContent);
   
-  void* GetPluginPortFromWidget();
+  void* GetPluginPort();
   void ReleasePluginPort(void* pluginPort);
 
   nsEventStatus ProcessEvent(const mozilla::WidgetGUIEvent& anEvent);
   
 #ifdef XP_MACOSX
   enum { ePluginPaintEnable, ePluginPaintDisable };
-  
+
+  void WindowFocusMayHaveChanged();
+  void ResolutionMayHaveChanged();
+
+  bool WindowIsActive();
+  void SendWindowFocusChanged(bool aIsActive);
   NPDrawingModel GetDrawingModel();
   bool IsRemoteDrawingCoreAnimation();
   nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
@@ -124,19 +135,14 @@ public:
   void AddToCARefreshTimer();
   void RemoveFromCARefreshTimer();
   // This calls into the plugin (NPP_SetWindow) and can run script.
-  void* FixUpPluginWindow(int32_t inPaintState);
+  void FixUpPluginWindow(int32_t inPaintState);
   void HidePluginWindow();
-  // Set a flag that (if true) indicates the plugin port info has changed and
-  // SetWindow() needs to be called.
-  void SetPluginPortChanged(bool aState) { mPluginPortChanged = aState; }
   // Return a pointer to the internal nsPluginPort structure that's used to
   // store a copy of plugin port info and to detect when it's been changed.
   void* GetPluginPortCopy();
   // Set plugin port info in the plugin (in the 'window' member of the
-  // NPWindow structure passed to the plugin by SetWindow()) and set a
-  // flag (mPluginPortChanged) to indicate whether or not this info has
-  // changed, and SetWindow() needs to be called again.
-  void* SetPluginPortAndDetectChange();
+  // NPWindow structure passed to the plugin by SetWindow()).
+  void SetPluginPort();
   // Flag when we've set up a Thebes (and CoreGraphics) context in
   // nsPluginFrame::PaintPlugin().  We need to know this in
   // FixUpPluginWindow() (i.e. we need to know when FixUpPluginWindow() has
@@ -147,8 +153,9 @@ public:
 #else // XP_MACOSX
   void UpdateWindowPositionAndClipRect(bool aSetWindow);
   void UpdateWindowVisibility(bool aVisible);
-  void UpdateDocumentActiveState(bool aIsActive);
 #endif // XP_MACOSX
+
+  void UpdateDocumentActiveState(bool aIsActive);
 
   void SetFrame(nsPluginFrame *aFrame);
   nsPluginFrame* GetFrame();
@@ -248,7 +255,11 @@ public:
   // Called from AndroidJNI when we removed the fullscreen view.
   static void ExitFullScreen(jobject view);
 #endif
-  
+
+  void NotifyHostAsyncInitFailed();
+  void NotifyHostCreateWidget();
+  void NotifyDestroyPending();
+
 private:
   virtual ~nsPluginInstanceOwner();
 
@@ -272,7 +283,7 @@ private:
   nsPluginNativeWindow       *mPluginWindow;
   nsRefPtr<nsNPAPIPluginInstance> mInstance;
   nsPluginFrame              *mPluginFrame;
-  nsIContent                 *mContent; // WEAK, content owns us
+  nsWeakPtr                   mContent; // WEAK, content owns us
   nsCString                   mDocumentBase;
   bool                        mWidgetCreationComplete;
   nsCOMPtr<nsIWidget>         mWidget;
@@ -287,6 +298,11 @@ private:
   static nsCOMPtr<nsITimer>                *sCATimer;
   static nsTArray<nsPluginInstanceOwner*>  *sCARefreshListeners;
   bool                                      mSentInitialTopLevelWindowEvent;
+  bool                                      mLastWindowIsActive;
+  bool                                      mLastContentFocused;
+  double                                    mLastScaleFactor;
+  // True if, the next time the window is activated, we should blur ourselves.
+  bool                                      mShouldBlurOnActivate;
 #endif
 
   // Initially, the event loop nesting level we were created on, it's updated
@@ -295,9 +311,6 @@ private:
   uint32_t                    mLastEventloopNestingLevel;
   bool                        mContentFocused;
   bool                        mWidgetVisible;    // used on Mac to store our widget's visible state
-#ifdef XP_MACOSX
-  bool                        mPluginPortChanged;
-#endif
 #ifdef MOZ_X11
   // Used with windowless plugins only, initialized in CreateWidget().
   bool                        mFlash10Quirks;
@@ -322,6 +335,16 @@ private:
                                  bool aAllowPropagate = false);
   nsresult DispatchFocusToPlugin(nsIDOMEvent* aFocusEvent);
 
+#ifdef XP_MACOSX
+  static NPBool ConvertPointPuppet(PuppetWidget *widget, nsPluginFrame* pluginFrame,
+                            double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
+                            double *destX, double *destY, NPCoordinateSpace destSpace);
+  static NPBool ConvertPointNoPuppet(nsIWidget *widget, nsPluginFrame* pluginFrame,
+                            double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
+                            double *destX, double *destY, NPCoordinateSpace destSpace);
+  void PerformDelayedBlurs();
+#endif    // XP_MACOSX
+
   int mLastMouseDownButtonType;
 
 #ifdef MOZ_X11
@@ -340,7 +363,7 @@ private:
     {}
     virtual nsresult DrawWithXlib(cairo_surface_t* surface,
                                   nsIntPoint offset,
-                                  nsIntRect* clipRects, uint32_t numClipRects) MOZ_OVERRIDE;
+                                  nsIntRect* clipRects, uint32_t numClipRects) override;
   private:
     NPWindow* mWindow;
     nsPluginInstanceOwner* mInstanceOwner;

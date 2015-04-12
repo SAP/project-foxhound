@@ -183,7 +183,13 @@ GonkCameraHardware::Init()
 
 #if defined(MOZ_WIDGET_GONK)
 
-#if ANDROID_VERSION >= 19
+#if ANDROID_VERSION >= 21
+  sp<IGraphicBufferProducer> producer;
+  sp<IGonkGraphicBufferConsumer> consumer;
+  GonkBufferQueue::createBufferQueue(&producer, &consumer);
+  mNativeWindow = new GonkNativeWindow(consumer, GonkCameraHardware::MIN_UNDEQUEUED_BUFFERS);
+  mCamera->setPreviewTarget(producer);
+#elif ANDROID_VERSION >= 19
   mNativeWindow = new GonkNativeWindow(GonkCameraHardware::MIN_UNDEQUEUED_BUFFERS);
   sp<GonkBufferQueue> bq = mNativeWindow->getBufferQueue();
   bq->setSynchronousMode(false);
@@ -268,18 +274,6 @@ GonkCameraHardware::~GonkCameraHardware()
   DOM_CAMERA_LOGT("%s:%d : this=%p\n", __func__, __LINE__, (void*)this);
   mCamera.clear();
   mNativeWindow.clear();
-
-  if (mClosing) {
-    return;
-  }
-
-  /**
-   * Trigger the OnClosed event; the upper layers can't do anything
-   * with the hardware layer once they receive this event.
-   */
-  if (mTarget) {
-    OnClosed(mTarget);
-  }
 }
 
 int

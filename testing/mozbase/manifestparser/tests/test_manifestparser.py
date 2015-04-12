@@ -60,6 +60,10 @@ class TestManifestParser(unittest.TestCase):
         self.assertEqual([(test['name'], os.path.basename(test['manifest'])) for test in parser.tests],
                          [('crash-handling', 'bar.ini'), ('fleem', 'include-example.ini'), ('flowers', 'foo.ini')])
 
+        # The including manifest is always reported as a part of the generated test object.
+        self.assertTrue(all([t['ancestor-manifest'] == include_example
+                             for t in parser.tests if t['name'] != 'fleem']))
+
 
         # The manifests should be there too:
         self.assertEqual(len(parser.manifests()), 3)
@@ -162,6 +166,20 @@ class TestManifestParser(unittest.TestCase):
         parser.write(fp=buffer, global_kwargs={'x': 'level_3'})
         self.assertEqual(buffer.getvalue().strip(),
                          '[DEFAULT]\nx = level_3\n\n[test_3]\nsubsuite =')
+
+    def test_parent_defaults_include(self):
+        parent_example = os.path.join(here, 'parent', 'include', 'manifest.ini')
+        parser = ManifestParser(manifests=(parent_example,))
+
+        # global defaults should inherit all includes
+        self.assertEqual(parser.get('name', top='data'),
+                         ['testFirst.js', 'testSecond.js'])
+
+        # include specific defaults should only inherit the actual include
+        self.assertEqual(parser.get('name', disabled='YES'),
+                         ['testFirst.js'])
+        self.assertEqual(parser.get('name', disabled='NO'),
+                         ['testSecond.js'])
 
     def test_server_root(self):
         """

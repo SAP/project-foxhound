@@ -61,6 +61,7 @@ load font-face-truncated-src.html
 load 536789-1.html
 load 565248-1.html
 load 558943-1.xhtml
+load 559491.html
 load 571105-1.xhtml
 load 573127-1.html
 load 580685.html
@@ -109,5 +110,7 @@ pref(dom.webcomponents.enabled,true) load 1017798-1.html
 load 1028514-1.html
 load 1066089-1.html
 load 1074651-1.html
+pref(dom.webcomponents.enabled,true) load 1089463-1.html
+load 1136010-1.html
 load large_border_image_width.html
 load border-image-visited-link.html

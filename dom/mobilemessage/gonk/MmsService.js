@@ -13,8 +13,8 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/PhoneNumberUtils.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
 
-const RIL_MMSSERVICE_CONTRACTID = "@mozilla.org/mms/rilmmsservice;1";
-const RIL_MMSSERVICE_CID = Components.ID("{217ddd76-75db-4210-955d-8806cd8d87f9}");
+const GONK_MMSSERVICE_CONTRACTID = "@mozilla.org/mms/gonkmmsservice;1";
+const GONK_MMSSERVICE_CID = Components.ID("{9b069b8c-8697-11e4-a406-474f5190272b}");
 
 let DEBUG = false;
 function debug(s) {
@@ -144,8 +144,8 @@ XPCOMUtils.defineLazyServiceGetter(this, "gUUIDGenerator",
                                    "nsIUUIDGenerator");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gMobileMessageDatabaseService",
-                                   "@mozilla.org/mobilemessage/rilmobilemessagedatabaseservice;1",
-                                   "nsIRilMobileMessageDatabaseService");
+                                   "@mozilla.org/mobilemessage/gonkmobilemessagedatabaseservice;1",
+                                   "nsIGonkMobileMessageDatabaseService");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gMobileMessageService",
                                    "@mozilla.org/mobilemessage/mobilemessageservice;1",
@@ -226,8 +226,7 @@ MmsConnection.prototype = {
 
   setApnSetting: function(network) {
     this.mmsc = network.mmsc;
-    // Workaround an xpconnect issue with undefined string objects. See bug 808220.
-    this.mmsProxy = (network === "undefined") ? undefined : network.mmsProxy;
+    this.mmsProxy = network.mmsProxy;
     this.mmsPort = network.mmsPort;
   },
 
@@ -303,7 +302,7 @@ MmsConnection.prototype = {
       this.hostsToRoute = [];
       this.networkInterface = null;
 
-      this.radioInterface.deactivateDataCallByType("mms");
+      this.radioInterface.deactivateDataCallByType(Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS);
     };
 
     let promises =
@@ -364,12 +363,6 @@ MmsConnection.prototype = {
       return null;
     }
 
-    // Workaround an xpconnect issue with undefined string objects.
-    // See bug 808220
-    if (number === undefined || number === "undefined") {
-      return null;
-    }
-
     return number;
   },
 
@@ -383,15 +376,7 @@ MmsConnection.prototype = {
       return null;
     }
 
-    let iccId = iccInfo.iccid;
-
-    // Workaround an xpconnect issue with undefined string objects.
-    // See bug 808220
-    if (iccId === undefined || iccId === "undefined") {
-      return null;
-    }
-
-    return iccId;
+    return iccInfo.iccid;
   },
 
   /**
@@ -439,7 +424,7 @@ MmsConnection.prototype = {
 
       // Bug 1059110: Ensure all the initialization are done before setup data call.
       if (DEBUG) debug("acquire: buffer the MMS request and setup the MMS data call.");
-      this.radioInterface.setupDataCallByType("mms");
+      this.radioInterface.setupDataCallByType(Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS);
 
       return false;
     }
@@ -1213,12 +1198,6 @@ function SendTransaction(mmsConnection, cancellableId, msg, requestDeliveryRepor
   msg.headers["x-mms-message-class"] = "personal";
   msg.headers["x-mms-expiry"] = 7 * 24 * 60 * 60;
   msg.headers["x-mms-priority"] = 129;
-  try {
-    msg.headers["x-mms-read-report"] =
-      Services.prefs.getBoolPref("dom.mms.requestReadReport");
-  } catch (e) {
-    msg.headers["x-mms-read-report"] = true;
-  }
   msg.headers["x-mms-delivery-report"] = requestDeliveryReport;
 
   if (!gMmsTransactionHelper.checkMaxValuesParameters(msg)) {
@@ -1540,7 +1519,7 @@ function MmsService() {
 }
 MmsService.prototype = {
 
-  classID:   RIL_MMSSERVICE_CID,
+  classID:   GONK_MMSSERVICE_CID,
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIMmsService,
                                          Ci.nsIWapPushApplication,
                                          Ci.nsIObserver]),
@@ -2185,6 +2164,12 @@ MmsService.prototype = {
         Services.prefs.getBoolPref("dom.mms.requestStatusReport");
     } catch (e) {
       aMessage["deliveryStatusRequested"] = false;
+    }
+    try {
+      headers["x-mms-read-report"] =
+        Services.prefs.getBoolPref("dom.mms.requestReadReport");
+    } catch (e) {
+      headers["x-mms-read-report"] = false;
     }
 
     if (DEBUG) debug("createSavableFromParams: aMessage: " +

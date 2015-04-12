@@ -34,11 +34,11 @@ class DOMStringList;
 } // namespace dom
 } // namespace mozilla
 
-class nsDOMOfflineResourceList : public mozilla::DOMEventTargetHelper,
-                                 public nsIDOMOfflineResourceList,
-                                 public nsIObserver,
-                                 public nsIOfflineCacheUpdateObserver,
-                                 public nsSupportsWeakReference
+class nsDOMOfflineResourceList final : public mozilla::DOMEventTargetHelper,
+                                           public nsIDOMOfflineResourceList,
+                                           public nsIObserver,
+                                           public nsIOfflineCacheUpdateObserver,
+                                           public nsSupportsWeakReference
 {
   typedef mozilla::ErrorResult ErrorResult;
 
@@ -65,7 +65,7 @@ public:
     return GetOwner();
   }
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   uint16_t GetStatus(ErrorResult& aRv)
   {

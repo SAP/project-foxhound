@@ -8,6 +8,8 @@ var ignoreIndirectCalls = {
     "aMallocSizeOf" : true,
     "_malloc_message" : true,
     "je_malloc_message" : true,
+    "chunk_dalloc" : true,
+    "chunk_alloc" : true,
     "__conv" : true,
     "__convf" : true,
     "prerrortable.c:callback_newtable" : true,
@@ -64,6 +66,7 @@ var ignoreClasses = {
     "PRIOMethods": true,
     "XPCOMFunctions" : true, // I'm a little unsure of this one
     "_MD_IOVector" : true,
+    "malloc_table_t": true, // replace_malloc
 };
 
 // Ignore calls through TYPE.FIELD, where TYPE is the class or struct name containing
@@ -197,7 +200,7 @@ function isRootedTypeName(name)
     return false;
 }
 
-function isRootedPointerTypeName(name)
+function stripUCSAndNamespace(name)
 {
     if (name.startsWith('struct '))
         name = name.substr(7);
@@ -213,11 +216,26 @@ function isRootedPointerTypeName(name)
         name = name.substr(4);
     if (name.startsWith('mozilla::dom::'))
         name = name.substr(14);
+    if (name.startsWith('mozilla::'))
+        name = name.substr(9);
+
+    return name;
+}
+
+function isRootedPointerTypeName(name)
+{
+    name = stripUCSAndNamespace(name);
 
     if (name.startsWith('MaybeRooted<'))
         return /\(js::AllowGC\)1u>::RootType/.test(name);
 
     return name.startsWith('Rooted') || name.startsWith('PersistentRooted');
+}
+
+function isUnsafeStorage(typeName)
+{
+    typeName = stripUCSAndNamespace(typeName);
+    return typeName.startsWith('UniquePtr<');
 }
 
 function isSuppressConstructor(name)

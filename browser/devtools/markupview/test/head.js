@@ -6,7 +6,7 @@ const Cu = Components.utils;
 let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 let TargetFactory = devtools.TargetFactory;
 let {console} = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
-let promise = devtools.require("devtools/toolkit/deprecated-sync-thenables");
+let promise = devtools.require("resource://gre/modules/Promise.jsm").Promise;
 let {getInplaceEditorForSpan: inplaceEditor} = devtools.require("devtools/shared/inplace-editor");
 let clipboard = devtools.require("sdk/clipboard");
 
@@ -32,6 +32,7 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.dump.emit");
   Services.prefs.clearUserPref("devtools.markup.pagesize");
   Services.prefs.clearUserPref("dom.webcomponents.enabled");
+  Services.prefs.clearUserPref("devtools.inspector.showAllAnonymousContent");
 });
 
 // Auto close the toolbox and close the test tabs when the test ends
@@ -46,13 +47,6 @@ registerCleanupFunction(function*() {
 
 const TEST_URL_ROOT = "http://mochi.test:8888/browser/browser/devtools/markupview/test/";
 const CHROME_BASE = "chrome://mochitests/content/browser/browser/devtools/markupview/test/";
-
-/**
- * Define an async test based on a generator function
- */
-function asyncTest(generator) {
-  return () => Task.spawn(generator).then(null, ok.bind(null, false)).then(finish);
-}
 
 /**
  * Add a new test tab in the browser and load the given url.
@@ -239,27 +233,6 @@ function waitForChildrenUpdated({markup}) {
 }
 
 /**
- * Simulate a mouse-over on the markup-container (a line in the markup-view)
- * that corresponds to the selector passed.
- * @param {String|NodeFront} selector
- * @param {InspectorPanel} inspector The instance of InspectorPanel currently
- * loaded in the toolbox
- * @return {Promise} Resolves when the container is hovered and the higlighter
- * is shown on the corresponding node
- */
-let hoverContainer = Task.async(function*(selector, inspector) {
-  info("Hovering over the markup-container for node " + selector);
-
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
-
-  let highlit = inspector.toolbox.once("node-highlight");
-  EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mousemove"},
-    inspector.markup.doc.defaultView);
-  return highlit;
-});
-
-/**
  * Simulate a click on the markup-container (a line in the markup-view)
  * that corresponds to the selector passed.
  * @param {String|NodeFront} selector
@@ -273,7 +246,7 @@ let clickContainer = Task.async(function*(selector, inspector) {
   let nodeFront = yield getNodeFront(selector, inspector);
   let container = getContainerForNodeFront(nodeFront, inspector);
 
-  let updated = inspector.once("inspector-updated");
+  let updated = container.selected ? promise.resolve() : inspector.once("inspector-updated");
   EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mousedown"},
     inspector.markup.doc.defaultView);
   EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mouseup"},
@@ -289,25 +262,6 @@ function isHighlighterVisible() {
   let highlighter = gBrowser.selectedBrowser.parentNode
                             .querySelector(".highlighter-container .box-model-root");
   return highlighter && !highlighter.hasAttribute("hidden");
-}
-
-/**
- * Simulate the mouse leaving the markup-view area
- * @param {InspectorPanel} inspector The instance of InspectorPanel currently loaded in the toolbox
- * @return a promise when done
- */
-function mouseLeaveMarkupView(inspector) {
-  info("Leaving the markup-view area");
-  let def = promise.defer();
-
-  // Find another element to mouseover over in order to leave the markup-view
-  let btn = inspector.toolbox.doc.querySelector(".toolbox-dock-button");
-
-  EventUtils.synthesizeMouseAtCenter(btn, {type: "mousemove"},
-    inspector.toolbox.doc.defaultView);
-  executeSoon(def.resolve);
-
-  return def.promise;
 }
 
 /**
@@ -571,4 +525,39 @@ function promiseNextTick() {
   let deferred = promise.defer();
   executeSoon(deferred.resolve);
   return deferred.promise;
+}
+
+/**
+ * Collapses the current text selection in an input field and tabs to the next
+ * field.
+ */
+function collapseSelectionAndTab(inspector) {
+  EventUtils.sendKey("tab", inspector.panelWin); // collapse selection and move caret to end
+  EventUtils.sendKey("tab", inspector.panelWin); // next element
+}
+
+/**
+ * Collapses the current text selection in an input field and tabs to the
+ * previous field.
+ */
+function collapseSelectionAndShiftTab(inspector) {
+  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true },
+    inspector.panelWin); // collapse selection and move caret to end
+  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true },
+    inspector.panelWin); // previous element
+}
+
+/**
+ * Check that the current focused element is an attribute element in the markup
+ * view.
+ * @param {String} attrName The attribute name expected to be found
+ * @param {Boolean} editMode Whether or not the attribute should be in edit mode
+ */
+function checkFocusedAttribute(attrName, editMode) {
+  let focusedAttr = Services.focus.focusedElement;
+  is(focusedAttr ? focusedAttr.parentNode.dataset.attr : undefined,
+    attrName, attrName + " attribute editor is currently focused.");
+  is(focusedAttr ? focusedAttr.tagName : undefined,
+    editMode ? "input": "span",
+    editMode ? attrName + " is in edit mode" : attrName + " is not in edit mode");
 }

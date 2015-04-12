@@ -311,7 +311,7 @@ FileInfoComparator(gconstpointer a, gconstpointer b)
 
 //-----------------------------------------------------------------------------
 
-class nsGnomeVFSInputStream MOZ_FINAL : public nsIInputStream
+class nsGnomeVFSInputStream final : public nsIInputStream
 {
   public:
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -738,7 +738,7 @@ nsGnomeVFSInputStream::IsNonBlocking(bool *aResult)
 
 //-----------------------------------------------------------------------------
 
-class nsGnomeVFSProtocolHandler MOZ_FINAL : public nsIProtocolHandler
+class nsGnomeVFSProtocolHandler final : public nsIProtocolHandler
                                           , public nsIObserver
 {
   public:
@@ -899,7 +899,9 @@ nsGnomeVFSProtocolHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsGnomeVFSProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
+nsGnomeVFSProtocolHandler::NewChannel2(nsIURI* aURI,
+                                       nsILoadInfo* aLoadInfo,
+                                       nsIChannel** aResult)
 {
   NS_ENSURE_ARG_POINTER(aURI);
   nsresult rv;
@@ -924,6 +926,12 @@ nsGnomeVFSProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
       stream->SetChannel(*aResult);
   }
   return rv;
+}
+
+NS_IMETHODIMP
+nsGnomeVFSProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
+{
+    return NewChannel2(aURI, nullptr, aResult);
 }
 
 NS_IMETHODIMP

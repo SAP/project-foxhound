@@ -28,8 +28,11 @@ function* cleanup() {
   Services.prefs.clearUserPref("browser.urlbar.autoFill");
   Services.prefs.clearUserPref("browser.urlbar.autoFill.typed");
   Services.prefs.clearUserPref("browser.urlbar.autoFill.searchEngines");
+  for (let type of ["history", "bookmark", "history.onlyTyped", "openpage"]) {
+    Services.prefs.clearUserPref("browser.urlbar.suggest." + type);
+  }
   remove_all_bookmarks();
-  yield promiseClearHistory();
+  yield PlacesTestUtils.clearHistory();
 }
 do_register_cleanup(cleanup);
 
@@ -98,7 +101,7 @@ function* check_autocomplete(test) {
   // updates.
   // This is not a problem in real life, but autocomplete tests should
   // return reliable resultsets, thus we have to wait.
-  yield promiseAsyncUpdates();
+  yield PlacesTestUtils.promiseAsyncUpdates();
 
   // Make an AutoCompleteInput that uses our searches and confirms results.
   let input = new AutoCompleteInput(["unifiedcomplete"]);
@@ -119,12 +122,12 @@ function* check_autocomplete(test) {
 
   let numSearchesStarted = 0;
   input.onSearchBegin = () => {
-    do_log_info("onSearchBegin received");
+    do_print("onSearchBegin received");
     numSearchesStarted++;
   };
   let deferred = Promise.defer();
   input.onSearchComplete = () => {
-    do_log_info("onSearchComplete received");
+    do_print("onSearchComplete received");
     deferred.resolve();
   }
 
@@ -133,7 +136,7 @@ function* check_autocomplete(test) {
     controller.startSearch(test.incompleteSearch);
     expectedSearches++;
   }
-  do_log_info("Searching for: '" + test.search + "'");
+  do_print("Searching for: '" + test.search + "'");
   controller.startSearch(test.search);
   yield deferred.promise;
 
@@ -147,28 +150,35 @@ function* check_autocomplete(test) {
     for (let i = 0; i < controller.matchCount; i++) {
       let value = controller.getValueAt(i);
       let comment = controller.getCommentAt(i);
-      do_log_info("Looking for '" + value + "', '" + comment + "' in expected results...");
+      do_print("Looking for '" + value + "', '" + comment + "' in expected results...");
       let j;
       for (j = 0; j < matches.length; j++) {
         // Skip processed expected results
         if (matches[j] == undefined)
           continue;
 
-        let { uri, title, tags, searchEngine } = matches[j];
+        let { uri, title, tags, searchEngine, style } = matches[j];
         if (tags)
           title += " \u2013 " + tags.sort().join(", ");
         if (searchEngine)
           title += TITLE_SEARCH_ENGINE_SEPARATOR + searchEngine;
+        if (style)
+          style = style.sort();
+        else
+          style = ["favicon"];
 
-        do_log_info("Checking against expected '" + uri.spec + "', '" + title + "'...");
+        do_print("Checking against expected '" + uri.spec + "', '" + title + "'...");
         // Got a match on both uri and title?
         if (stripPrefix(uri.spec) == stripPrefix(value) && title == comment) {
-          do_log_info("Got a match at index " + j + "!");
+          do_print("Got a match at index " + j + "!");
+          let actualStyle = controller.getStyleAt(i).split(/\s+/).sort();
+          if (style)
+            Assert.equal(actualStyle.toString(), style.toString(), "Match should have expected style");
+
           // Make it undefined so we don't process it again
           matches[j] = undefined;
           if (uri.spec.startsWith("moz-action:")) {
-            let style = controller.getStyleAt(i);
-            Assert.ok(style.contains("action"));
+            Assert.ok(actualStyle.indexOf("action") != -1, "moz-action results should always have 'action' in their style");
           }
           break;
         }
@@ -244,7 +254,7 @@ function changeRestrict(aType, aChar) {
   else
     branch += "restrict.";
 
-  do_log_info("changing restrict for " + aType + " to '" + aChar + "'");
+  do_print("changing restrict for " + aType + " to '" + aChar + "'");
   Services.prefs.setCharPref(branch + aType, aChar);
 }
 
@@ -286,3 +296,12 @@ function makeActionURI(action, params) {
   let url = "moz-action:" + action + "," + JSON.stringify(params);
   return NetUtil.newURI(url);
 }
+
+// Hide all the search engines so they don't influence tests results.
+add_task(function ensure_no_search_engines() {
+  let count = {};
+  let engines = Services.search.getEngines(count);
+  for (let i = 0; i < count.value; i++) {
+    engines[i].hidden = true;
+  }
+});

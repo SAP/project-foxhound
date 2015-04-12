@@ -59,22 +59,22 @@ public:
                 bool aPriority,
                 CacheFileListener *aCallback);
 
-  NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk);
-  NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk);
+  NS_IMETHOD OnChunkRead(nsresult aResult, CacheFileChunk *aChunk) override;
+  NS_IMETHOD OnChunkWritten(nsresult aResult, CacheFileChunk *aChunk) override;
   NS_IMETHOD OnChunkAvailable(nsresult aResult, uint32_t aChunkIdx,
-                              CacheFileChunk *aChunk);
-  NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk);
+                              CacheFileChunk *aChunk) override;
+  NS_IMETHOD OnChunkUpdated(CacheFileChunk *aChunk) override;
 
-  NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult);
+  NS_IMETHOD OnFileOpened(CacheFileHandle *aHandle, nsresult aResult) override;
   NS_IMETHOD OnDataWritten(CacheFileHandle *aHandle, const char *aBuf,
-                           nsresult aResult);
-  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult);
-  NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult);
-  NS_IMETHOD OnFileRenamed(CacheFileHandle *aHandle, nsresult aResult);
+                           nsresult aResult) override;
+  NS_IMETHOD OnDataRead(CacheFileHandle *aHandle, char *aBuf, nsresult aResult) override;
+  NS_IMETHOD OnFileDoomed(CacheFileHandle *aHandle, nsresult aResult) override;
+  NS_IMETHOD OnEOFSet(CacheFileHandle *aHandle, nsresult aResult) override;
+  NS_IMETHOD OnFileRenamed(CacheFileHandle *aHandle, nsresult aResult) override;
 
-  NS_IMETHOD OnMetadataRead(nsresult aResult);
-  NS_IMETHOD OnMetadataWritten(nsresult aResult);
+  NS_IMETHOD OnMetadataRead(nsresult aResult) override;
+  NS_IMETHOD OnMetadataWritten(nsresult aResult) override;
 
   NS_IMETHOD OpenInputStream(nsIInputStream **_retval);
   NS_IMETHOD OpenOutputStream(CacheOutputCloseListener *aCloseListener, nsIOutputStream **_retval);
@@ -121,7 +121,7 @@ private:
   void     Lock();
   void     Unlock();
   void     AssertOwnsLock() const;
-  void     ReleaseOutsideLock(nsISupports *aObject);
+  void     ReleaseOutsideLock(nsRefPtr<nsISupports> aObject);
 
   enum ECallerType {
     READER    = 0,
@@ -216,7 +216,7 @@ private:
   nsTArray<CacheFileInputStream*> mInputs;
   CacheFileOutputStream          *mOutput;
 
-  nsTArray<nsISupports*>          mObjsToRelease;
+  nsTArray<nsRefPtr<nsISupports>> mObjsToRelease;
 };
 
 class CacheFileAutoLock {

@@ -52,13 +52,15 @@ nsMathMLContainerFrame::ReflowError(nsRenderingContext& aRenderingContext,
   ///////////////
   // Set font
   nsRefPtr<nsFontMetrics> fm;
-  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
-  aRenderingContext.SetFont(fm);
+  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
+                                        nsLayoutUtils::
+                                        FontSizeInflationFor(this));
 
   // bounding metrics
   nsAutoString errorMsg; errorMsg.AssignLiteral("invalid-markup");
   mBoundingMetrics =
-    aRenderingContext.GetBoundingMetrics(errorMsg.get(), errorMsg.Length());
+    nsLayoutUtils::AppUnitBoundsOfString(errorMsg.get(), errorMsg.Length(),
+                                         *fm, aRenderingContext);
 
   // reflow metrics
   WritingMode wm = aDesiredSize.GetWritingMode();
@@ -86,7 +88,7 @@ public:
 #endif
 
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsRenderingContext* aCtx) MOZ_OVERRIDE;
+                     nsRenderingContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLError", TYPE_MATHML_ERROR)
 };
 
@@ -96,21 +98,21 @@ void nsDisplayMathMLError::Paint(nsDisplayListBuilder* aBuilder,
   // Set color and font ...
   nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(mFrame, getter_AddRefs(fm));
-  aCtx->SetFont(fm);
 
   nsPoint pt = ToReferenceFrame();
   int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
   DrawTarget* drawTarget = aCtx->GetDrawTarget();
-  Rect rect = NSRectToRect(nsRect(pt, mFrame->GetSize()), appUnitsPerDevPixel,
-                           *drawTarget);
+  Rect rect = NSRectToSnappedRect(nsRect(pt, mFrame->GetSize()),
+                                  appUnitsPerDevPixel,
+                                  *drawTarget);
   ColorPattern red(ToDeviceColor(Color(1.f, 0.f, 0.f, 1.f)));
   drawTarget->FillRect(rect, red);
 
   aCtx->ThebesContext()->SetColor(NS_RGB(255,255,255));
-  nscoord ascent = aCtx->FontMetrics()->MaxAscent();
+  nscoord ascent = fm->MaxAscent();
   NS_NAMED_LITERAL_STRING(errorMsg, "invalid-markup");
-  aCtx->DrawString(errorMsg.get(), uint32_t(errorMsg.Length()),
-                   pt.x, pt.y+ascent);
+  nsLayoutUtils::DrawUniDirString(errorMsg.get(), uint32_t(errorMsg.Length()),
+                                  nsPoint(pt.x, pt.y + ascent), *fm, *aCtx);
 }
 
 /* /////////////
@@ -127,13 +129,8 @@ IsForeignChild(const nsIFrame* aFrame)
     aFrame->GetType() == nsGkAtoms::blockFrame;
 }
 
-static void
-DestroyHTMLReflowMetrics(void *aPropertyValue)
-{
-  delete static_cast<nsHTMLReflowMetrics*>(aPropertyValue);
-}
-
-NS_DECLARE_FRAME_PROPERTY(HTMLReflowMetricsProperty, DestroyHTMLReflowMetrics)
+NS_DECLARE_FRAME_PROPERTY(HTMLReflowMetricsProperty,
+                          DeleteValue<nsHTMLReflowMetrics>)
 
 /* static */ void
 nsMathMLContainerFrame::SaveReflowAndBoundingMetricsFor(nsIFrame*                  aFrame,
@@ -1329,10 +1326,10 @@ nsMathMLContainerFrame::PositionRowChildFrames(nscoord aOffsetX,
 
 class ForceReflow : public nsIReflowCallback {
 public:
-  virtual bool ReflowFinished() MOZ_OVERRIDE {
+  virtual bool ReflowFinished() override {
     return true;
   }
-  virtual void ReflowCallbackCanceled() MOZ_OVERRIDE {}
+  virtual void ReflowCallbackCanceled() override {}
 };
 
 // We only need one of these so we just make it a static global, no need

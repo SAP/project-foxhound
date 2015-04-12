@@ -26,6 +26,7 @@
 #include "nsIThreadRetargetableRequest.h"
 #include "nsPrintfCString.h"
 #include "nsNetUtil.h"
+#include "nsXULAppAPI.h"
 
 #include "mozilla/dom/EncodingUtils.h"
 
@@ -770,8 +771,7 @@ nsHtml5StreamParser::SniffStreamBytes(const uint8_t* aFromSegment,
   }
 
   if (!mSniffingBuffer) {
-    const mozilla::fallible_t fallible = mozilla::fallible_t();
-    mSniffingBuffer = new (fallible)
+    mSniffingBuffer = new (mozilla::fallible)
       uint8_t[NS_HTML5_STREAM_PARSER_SNIFFING_BUFFER_SIZE];
     if (!mSniffingBuffer) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -793,7 +793,7 @@ nsHtml5StreamParser::WriteStreamBytes(const uint8_t* aFromSegment,
   // NS_HTML5_STREAM_PARSER_READ_BUFFER_SIZE.
   if (!mLastBuffer) {
     NS_WARNING("mLastBuffer should not be null!");
-    MarkAsBroken();
+    MarkAsBroken(NS_ERROR_NULL_POINTER);
     return NS_ERROR_NULL_POINTER;
   }
   if (mLastBuffer->getEnd() == NS_HTML5_STREAM_PARSER_READ_BUFFER_SIZE) {
@@ -899,7 +899,8 @@ nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext)
    * WillBuildModel to be called before the document has had its 
    * script global object set.
    */
-  mExecutor->WillBuildModel(eDTDMode_unknown);
+  rv = mExecutor->WillBuildModel(eDTDMode_unknown);
+  NS_ENSURE_SUCCESS(rv, rv);
   
   nsRefPtr<nsHtml5OwningUTF16Buffer> newBuf =
     nsHtml5OwningUTF16Buffer::FalliblyCreate(
@@ -944,7 +945,11 @@ nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext)
   }
 
   if (NS_FAILED(rv)) {
-    NS_WARNING("Failed to retarget HTML data delivery to the parser thread.");
+    // for now skip warning if we're on child process, since we don't support
+    // off-main thread delivery there yet.  This will change with bug 1015466
+    if (XRE_GetProcessType() != GeckoProcessType_Content) {
+      NS_WARNING("Failed to retarget HTML data delivery to the parser thread.");
+    }
   }
 
   if (mCharsetSource == kCharsetFromParentFrame) {
@@ -1004,8 +1009,9 @@ nsHtml5StreamParser::DoStopRequest()
 
   if (!mUnicodeDecoder) {
     uint32_t writeCount;
-    if (NS_FAILED(FinalizeSniffing(nullptr, 0, &writeCount, 0))) {
-      MarkAsBroken();
+    nsresult rv;
+    if (NS_FAILED(rv = FinalizeSniffing(nullptr, 0, &writeCount, 0))) {
+      MarkAsBroken(rv);
       return;
     }
   } else if (mFeedChardet) {
@@ -1077,7 +1083,7 @@ nsHtml5StreamParser::DoDataAvailable(const uint8_t* aBuffer, uint32_t aLength)
     rv = SniffStreamBytes(aBuffer, aLength, &writeCount);
   }
   if (NS_FAILED(rv)) {
-    MarkAsBroken();
+    MarkAsBroken(rv);
     return;
   }
   NS_ASSERTION(writeCount == aLength, "Wrong number of stream bytes written/sniffed.");
@@ -1139,8 +1145,7 @@ nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
   uint32_t totalRead;
   // Main thread to parser thread dispatch requires copying to buffer first.
   if (NS_IsMainThread()) {
-    const mozilla::fallible_t fallible = mozilla::fallible_t();
-    nsAutoArrayPtr<uint8_t> data(new (fallible) uint8_t[aLength]);
+    nsAutoArrayPtr<uint8_t> data(new (mozilla::fallible) uint8_t[aLength]);
     if (!data) {
       return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
     }
@@ -1663,13 +1668,13 @@ nsHtml5StreamParser::TimerFlush()
 }
 
 void
-nsHtml5StreamParser::MarkAsBroken()
+nsHtml5StreamParser::MarkAsBroken(nsresult aRv)
 {
   NS_ASSERTION(IsParserThread(), "Wrong thread!");
   mTokenizerMutex.AssertCurrentThreadOwns();
 
   Terminate();
-  mTreeBuilder->MarkAsBroken();
+  mTreeBuilder->MarkAsBroken(aRv);
   mozilla::DebugOnly<bool> hadOps = mTreeBuilder->Flush(false);
   NS_ASSERTION(hadOps, "Should have had the markAsBroken op!");
   if (NS_FAILED(NS_DispatchToMainThread(mExecutorFlusher))) {

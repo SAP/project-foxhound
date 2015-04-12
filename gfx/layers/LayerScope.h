@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* vim:set ts=4 sw=4 sts=4 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,8 +25,6 @@ class LayerComposite;
 
 class LayerScope {
 public:
-    static void Init();
-    static void DeInit();
     static void SendEffectChain(gl::GLContext* aGLContext,
                                 const EffectChain& aEffectChain,
                                 int aWidth,
@@ -36,6 +35,10 @@ public:
     static void SendLayerDump(UniquePtr<layerscope::Packet> aPacket);
     static bool CheckSendable();
     static void CleanLayer();
+    static void SetHWComposed();
+
+private:
+    static void Init();
 };
 
 // Perform BeginFrame and EndFrame automatically

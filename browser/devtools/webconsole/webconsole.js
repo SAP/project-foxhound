@@ -44,13 +44,15 @@ const INSECURE_PASSWORDS_LEARN_MORE = "https://developer.mozilla.org/docs/Securi
 
 const STRICT_TRANSPORT_SECURITY_LEARN_MORE = "https://developer.mozilla.org/docs/Security/HTTP_Strict_Transport_Security";
 
+const WEAK_SIGNATURE_ALGORITHM_LEARN_MORE = "https://developer.mozilla.org/docs/Security/Weak_Signature_Algorithm";
+
 const HELP_URL = "https://developer.mozilla.org/docs/Tools/Web_Console/Helpers";
 
 const VARIABLES_VIEW_URL = "chrome://browser/content/devtools/widgets/VariablesView.xul";
 
 const CONSOLE_DIR_VIEW_HEIGHT = 0.6;
 
-const IGNORED_SOURCE_URLS = ["debugger eval code", "self-hosted"];
+const IGNORED_SOURCE_URLS = ["debugger eval code"];
 
 // The amount of time in milliseconds that we wait before performing a live
 // search.
@@ -103,14 +105,14 @@ const SEVERITY_CLASS_FRAGMENTS = [
 // Most of these rather idiosyncratic names are historical and predate the
 // division of message type into "category" and "severity".
 const MESSAGE_PREFERENCE_KEYS = [
-//  Error         Warning       Info      Log
-  [ "network",    "netwarn",    null,     "networkinfo", ],  // Network
-  [ "csserror",   "cssparser",  null,     "csslog",      ],  // CSS
-  [ "exception",  "jswarn",     null,     "jslog",       ],  // JS
-  [ "error",      "warn",       "info",   "log",         ],  // Web Developer
-  [ null,         null,         null,     null,          ],  // Input
-  [ null,         null,         null,     null,          ],  // Output
-  [ "secerror",   "secwarn",    null,     null,          ],  // Security
+//  Error         Warning       Info       Log
+  [ "network",    "netwarn",    "netxhr",  "networkinfo", ],  // Network
+  [ "csserror",   "cssparser",  null,      "csslog",      ],  // CSS
+  [ "exception",  "jswarn",     null,      "jslog",       ],  // JS
+  [ "error",      "warn",       "info",    "log",         ],  // Web Developer
+  [ null,         null,         null,      null,          ],  // Input
+  [ null,         null,         null,      null,          ],  // Output
+  [ "secerror",   "secwarn",    null,      null,          ],  // Security
 ];
 
 // A mapping from the console API log event levels to the Web Console
@@ -545,25 +547,29 @@ WebConsoleFrame.prototype = {
       });
     }
 
+    let saveBodiesDisabled = !this.getFilterState("networkinfo") &&
+                             !this.getFilterState("netxhr") &&
+                             !this.getFilterState("network");
+
     let saveBodies = doc.getElementById("saveBodies");
     saveBodies.addEventListener("command", reverseSaveBodiesPref);
-    saveBodies.disabled = !this.getFilterState("networkinfo") &&
-                          !this.getFilterState("network");
+    saveBodies.disabled = saveBodiesDisabled;
 
     let saveBodiesContextMenu = doc.getElementById("saveBodiesContextMenu");
     saveBodiesContextMenu.addEventListener("command", reverseSaveBodiesPref);
-    saveBodiesContextMenu.disabled = !this.getFilterState("networkinfo") &&
-                                     !this.getFilterState("network");
+    saveBodiesContextMenu.disabled = saveBodiesDisabled;
 
     saveBodies.parentNode.addEventListener("popupshowing", () => {
       updateSaveBodiesPrefUI(saveBodies);
       saveBodies.disabled = !this.getFilterState("networkinfo") &&
+                            !this.getFilterState("netxhr") &&
                             !this.getFilterState("network");
     });
 
     saveBodiesContextMenu.parentNode.addEventListener("popupshowing", () => {
       updateSaveBodiesPrefUI(saveBodiesContextMenu);
       saveBodiesContextMenu.disabled = !this.getFilterState("networkinfo") &&
+                                       !this.getFilterState("netxhr") &&
                                        !this.getFilterState("network");
     });
 
@@ -622,7 +628,7 @@ WebConsoleFrame.prototype = {
   {
     let prefs = ["network", "networkinfo", "csserror", "cssparser", "csslog",
                  "exception", "jswarn", "jslog", "error", "info", "warn", "log",
-                 "secerror", "secwarn", "netwarn"];
+                 "secerror", "secwarn", "netwarn", "netxhr"];
     for (let pref of prefs) {
       this.filterPrefs[pref] = Services.prefs
                                .getBoolPref(this._filterPrefsPrefix + pref);
@@ -688,6 +694,9 @@ WebConsoleFrame.prototype = {
     let categories = this.document
                      .querySelectorAll(".webconsole-filter-button[category]");
     Array.forEach(categories, function(aButton) {
+      aButton.addEventListener("contextmenu", (aEvent) => {
+        aButton.open = true;
+      }, false);
       aButton.addEventListener("click", this._toggleFilter, false);
 
       let someChecked = false;
@@ -809,7 +818,9 @@ WebConsoleFrame.prototype = {
   {
     let target = aEvent.target;
     let tagName = target.tagName;
-    if (tagName != aEvent.currentTarget.tagName) {
+    // Prevent toggle if generated from a contextmenu event (right click)
+    let isRightClick = (aEvent.button === 2); // right click is button 2;
+    if (tagName != aEvent.currentTarget.tagName || isRightClick) {
       return;
     }
 
@@ -876,8 +887,9 @@ WebConsoleFrame.prototype = {
         this.setFilterState(prefKey, state);
 
         // Disable the log response and request body if network logging is off.
-        if (prefKey == "networkinfo" || prefKey == "network") {
+        if (prefKey == "networkinfo" || prefKey == "netxhr" || prefKey == "network") {
           let checkState = !this.getFilterState("networkinfo") &&
+                           !this.getFilterState("netxhr") &&
                            !this.getFilterState("network");
           this.document.getElementById("saveBodies").disabled = checkState;
           this.document.getElementById("saveBodiesContextMenu").disabled = checkState;
@@ -1359,9 +1371,19 @@ WebConsoleFrame.prototype = {
   {
     // Warnings and legacy strict errors become warnings; other types become
     // errors.
-    let severity = SEVERITY_ERROR;
+    let severity = 'error';
     if (aScriptError.warning || aScriptError.strict) {
-      severity = SEVERITY_WARNING;
+      severity = 'warning';
+    }
+
+    let category = 'js';
+    switch(aCategory) {
+      case CATEGORY_CSS:
+        category = 'css';
+        break;
+      case CATEGORY_SECURITY:
+        category = 'security';
+        break;
     }
 
     let objectActors = new Set();
@@ -1379,20 +1401,26 @@ WebConsoleFrame.prototype = {
       errorMessage = errorMessage.initial;
     }
 
-    let node = this.createMessageNode(aCategory, severity,
-                                      errorMessage,
-                                      aScriptError.sourceName,
-                                      aScriptError.lineNumber, null, null,
-                                      aScriptError.timeStamp);
+    // Create a new message
+    let msg = new Messages.Simple(errorMessage, {
+      location: {
+        url: aScriptError.sourceName,
+        line: aScriptError.lineNumber,
+        column: aScriptError.columnNumber
+      },
+      category: category,
+      severity: severity,
+      timestamp: aScriptError.timeStamp,
+      private: aScriptError.private,
+      filterDuplicates: true
+    });
+
+    let node = msg.init(this.output).render().element;
 
     // Select the body of the message node that is displayed in the console
     let msgBody = node.getElementsByClassName("message-body")[0];
     // Add the more info link node to messages that belong to certain categories
     this.addMoreInfoLink(msgBody, aScriptError);
-
-    if (aScriptError.private) {
-      node.setAttribute("private", true);
-    }
 
     if (objectActors.size > 0) {
       node._objectActors = objectActors;
@@ -1470,6 +1498,10 @@ WebConsoleFrame.prototype = {
     let request = networkInfo.request;
     let clipboardText = request.method + " " + request.url;
     let severity = SEVERITY_LOG;
+    if (networkInfo.isXHR) {
+      clipboardText = request.method + " XHR " + request.url;
+      severity = SEVERITY_INFO;
+    }
     let mixedRequest =
       WebConsoleUtils.isMixedHTTPSRequest(request.url, this.contentLocation);
     if (mixedRequest) {
@@ -1491,6 +1523,14 @@ WebConsoleFrame.prototype = {
 
     let body = methodNode.parentNode;
     body.setAttribute("aria-haspopup", true);
+
+    if (networkInfo.isXHR) {
+      let xhrNode = this.document.createElementNS(XHTML_NS, "span");
+      xhrNode.className = "xhr";
+      xhrNode.textContent = l10n.getStr("webConsoleXhrIndicator");
+      body.appendChild(xhrNode);
+      body.appendChild(this.document.createTextNode(" "));
+    }
 
     let displayUrl = request.url;
     let pos = displayUrl.indexOf("?");
@@ -1580,6 +1620,9 @@ WebConsoleFrame.prototype = {
      break;
      case "Invalid HSTS Headers":
       url = STRICT_TRANSPORT_SECURITY_LEARN_MORE;
+     break;
+     case "SHA-1 Signature":
+      url = WEAK_SIGNATURE_ALGORITHM_LEARN_MORE;
      break;
      default:
       // Unknown category. Return without adding more info node.
@@ -1724,6 +1767,7 @@ WebConsoleFrame.prototype = {
         url: aActor.url,
         method: aActor.method,
       },
+      isXHR: aActor.isXHR,
       response: {},
       timings: {},
       updates: [], // track the list of network event updates
@@ -1820,6 +1864,7 @@ WebConsoleFrame.prototype = {
     let hasEventTimings = updates.indexOf("eventTimings") > -1;
     let hasResponseStart = updates.indexOf("responseStart") > -1;
     let request = networkInfo.request;
+    let methodText = (networkInfo.isXHR)? request.method + ' XHR' : request.method;
     let response = networkInfo.response;
     let updated = false;
 
@@ -1837,7 +1882,7 @@ WebConsoleFrame.prototype = {
       let statusNode = messageNode.getElementsByClassName("status")[0];
       statusNode.textContent = statusText;
 
-      messageNode.clipboardText = [request.method, request.url, statusText]
+      messageNode.clipboardText = [methodText, request.url, statusText]
                                   .join(" ");
 
       if (hasResponseStart && response.status >= MIN_HTTP_ERROR_CODE &&
@@ -2561,7 +2606,8 @@ WebConsoleFrame.prototype = {
     // right side of the message, if applicable.
     let locationNode;
     if (aSourceURL && IGNORED_SOURCE_URLS.indexOf(aSourceURL) == -1) {
-      locationNode = this.createLocationNode(aSourceURL, aSourceLine);
+      locationNode = this.createLocationNode({url: aSourceURL,
+                                              line: aSourceLine});
     }
 
     node.appendChild(timestampNode);
@@ -2604,11 +2650,8 @@ WebConsoleFrame.prototype = {
    * Creates the anchor that displays the textual location of an incoming
    * message.
    *
-   * @param string aSourceURL
-   *        The URL of the source file responsible for the error.
-   * @param number aSourceLine [optional]
-   *        The line number on which the error occurred. If zero or omitted,
-   *        there is no line number associated with this message.
+   * @param object aLocation
+   *        An object containing url, line and column number of the message source (destructured).
    * @param string aTarget [optional]
    *        Tells which tool to open the link with, on click. Supported tools:
    *        jsdebugger, styleeditor, scratchpad.
@@ -2616,10 +2659,10 @@ WebConsoleFrame.prototype = {
    *         The new anchor element, ready to be added to the message node.
    */
   createLocationNode:
-  function WCF_createLocationNode(aSourceURL, aSourceLine, aTarget)
+  function WCF_createLocationNode({url, line, column}, aTarget)
   {
-    if (!aSourceURL) {
-      aSourceURL = "";
+    if (!url) {
+      url = "";
     }
     let locationNode = this.document.createElementNS(XHTML_NS, "a");
     let filenameNode = this.document.createElementNS(XHTML_NS, "span");
@@ -2630,13 +2673,13 @@ WebConsoleFrame.prototype = {
     let fullURL;
     let isScratchpad = false;
 
-    if (/^Scratchpad\/\d+$/.test(aSourceURL)) {
-      filename = aSourceURL;
-      fullURL = aSourceURL;
+    if (/^Scratchpad\/\d+$/.test(url)) {
+      filename = url;
+      fullURL = url;
       isScratchpad = true;
     }
     else {
-      fullURL = aSourceURL.split(" -> ").pop();
+      fullURL = url.split(" -> ").pop();
       filename = WebConsoleUtils.abbreviateSourceURL(fullURL);
     }
 
@@ -2649,27 +2692,27 @@ WebConsoleFrame.prototype = {
     if (aTarget) {
       locationNode.target = aTarget;
     }
-    locationNode.setAttribute("title", aSourceURL);
+    locationNode.setAttribute("title", url);
     locationNode.className = "message-location theme-link devtools-monospace";
 
     // Make the location clickable.
     let onClick = () => {
       let target = locationNode.target;
       if (target == "scratchpad" || isScratchpad) {
-        this.owner.viewSourceInScratchpad(aSourceURL);
+        this.owner.viewSourceInScratchpad(url);
         return;
       }
 
       let category = locationNode.parentNode.category;
       if (target == "styleeditor" || category == CATEGORY_CSS) {
-        this.owner.viewSourceInStyleEditor(fullURL, aSourceLine);
+        this.owner.viewSourceInStyleEditor(fullURL, line);
       }
       else if (target == "jsdebugger" ||
                category == CATEGORY_JS || category == CATEGORY_WEBDEV) {
-        this.owner.viewSourceInDebugger(fullURL, aSourceLine);
+        this.owner.viewSourceInDebugger(fullURL, line);
       }
       else {
-        this.owner.viewSource(fullURL, aSourceLine);
+        this.owner.viewSource(fullURL, line);
       }
     };
 
@@ -2677,12 +2720,12 @@ WebConsoleFrame.prototype = {
       this._addMessageLinkCallback(locationNode, onClick);
     }
 
-    if (aSourceLine) {
+    if (line) {
       let lineNumberNode = this.document.createElementNS(XHTML_NS, "span");
       lineNumberNode.className = "line-number";
-      lineNumberNode.textContent = ":" + aSourceLine;
+      lineNumberNode.textContent = ":" + line + (column >= 0 ? ":" + column : "");
       locationNode.appendChild(lineNumberNode);
-      locationNode.sourceLine = aSourceLine;
+      locationNode.sourceLine = line;
     }
 
     return locationNode;
@@ -2818,6 +2861,9 @@ WebConsoleFrame.prototype = {
    *        - linkOnly:
    *        An optional flag to copy only URL without timestamp and
    *        other meta-information. Default is false.
+   *        - contextmenu:
+   *        An optional flag to copy the last clicked item which brought
+   *        up the context menu if nothing is selected. Default is false.
    */
   copySelectedItems: function WCF_copySelectedItems(aOptions)
   {
@@ -2840,7 +2886,7 @@ WebConsoleFrame.prototype = {
           strings.push(item.url);
         }
         else {
-          strings.push("[" + timestampString + "] " + item.clipboardText);
+          strings.push(item.clipboardText);
         }
       }
     }
@@ -3246,6 +3292,9 @@ JSTerm.prototype = {
         case "help":
           this.hud.owner.openLink(HELP_URL);
           break;
+        case "copyValueToClipboard":
+          clipboardHelper.copyString(helperResult.value);
+          break;
       }
     }
 
@@ -3294,9 +3343,20 @@ JSTerm.prototype = {
    *        user input is used - taken from |this.inputNode.value|.
    * @param function [aCallback]
    *        Optional function to invoke when the result is displayed.
+   *        This is deprecated - please use the promise return value instead.
+   * @returns Promise
+   *          Resolves with the message once the result is displayed.
    */
   execute: function JST_execute(aExecuteString, aCallback)
   {
+    let deferred = promise.defer();
+    let callback = function(msg) {
+      deferred.resolve(msg);
+      if (aCallback) {
+        aCallback(msg);
+      }
+    }
+
     // attempt to execute the content of the inputNode
     aExecuteString = aExecuteString || this.inputNode.value;
     if (!aExecuteString) {
@@ -3314,7 +3374,7 @@ JSTerm.prototype = {
       severity: "log",
     });
     this.hud.output.addMessage(message);
-    let onResult = this._executeResultCallback.bind(this, message, aCallback);
+    let onResult = this._executeResultCallback.bind(this, message, callback);
 
     let options = {
       frame: this.SELECTED_FRAME,
@@ -3331,6 +3391,7 @@ JSTerm.prototype = {
     WebConsoleUtils.usageCount++;
     this.setInputValue("");
     this.clearCompletion();
+    return deferred.promise;
   },
 
   /**
@@ -3381,7 +3442,7 @@ JSTerm.prototype = {
       selectedNodeActor: aOptions.selectedNodeActor,
     };
 
-    this.webConsoleClient.evaluateJS(aString, onResult, evalOptions);
+    this.webConsoleClient.evaluateJSAsync(aString, onResult, evalOptions);
     return deferred.promise;
   },
 
@@ -3516,8 +3577,8 @@ JSTerm.prototype = {
       deferred.resolve(window);
     };
 
-    let tab = this.sidebar.getTab("variablesview");
-    if (tab) {
+    let tabPanel = this.sidebar.getTabPanel("variablesview");
+    if (tabPanel) {
       if (this.sidebar.getCurrentTabID() == "variablesview") {
         onTabReady();
       }
@@ -4675,6 +4736,7 @@ var Utils = {
       case "CSP":
       case "Invalid HSTS Headers":
       case "Invalid HPKP Headers":
+      case "SHA-1 Signature":
       case "Insecure Password Field":
       case "SSL":
       case "CORS":
@@ -4746,6 +4808,14 @@ CommandController.prototype = {
     this.owner.copySelectedItems({ linkOnly: true, contextmenu: true });
   },
 
+  /**
+   * Copies the last clicked message.
+   */
+  copyLastClicked: function CommandController_copy()
+  {
+    this.owner.copySelectedItems({ linkOnly: false, contextmenu: true });
+  },
+
   supportsCommand: function CommandController_supportsCommand(aCommand)
   {
     if (!this.owner || !this.owner.output) {
@@ -4763,6 +4833,12 @@ CommandController.prototype = {
         let selectedItem = this.owner.output.getSelectedMessages(1)[0] ||
                            this.owner._contextMenuHandler.lastClickedMessage;
         return selectedItem && "url" in selectedItem;
+      }
+      case "cmd_copy": {
+        // Only copy if we right-clicked the console and there's no selected text.
+        // With text selected, we want to fall back onto the default copy behavior.
+        return this.owner._contextMenuHandler.lastClickedMessage &&
+              !this.owner.output.getSelectedMessages(1)[0];
       }
       case "consoleCmd_clearOutput":
       case "cmd_selectAll":
@@ -4788,6 +4864,9 @@ CommandController.prototype = {
         break;
       case "consoleCmd_clearOutput":
         this.owner.jsterm.clearOutput(true);
+        break;
+      case "cmd_copy":
+        this.copyLastClicked();
         break;
       case "cmd_find":
         this.owner.filterBox.focus();
@@ -5375,4 +5454,3 @@ ConsoleContextMenu.prototype = {
     this.lastClickedMessage = null;
   },
 };
-

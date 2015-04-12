@@ -22,6 +22,7 @@
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsRect.h"
+#include "PluginDataResolver.h"
 
 #ifdef MOZ_X11
 class gfxXlibSurface;
@@ -30,6 +31,7 @@ class gfxXlibSurface;
 
 class gfxASurface;
 class gfxContext;
+class nsPluginInstanceOwner;
 
 namespace mozilla {
 namespace layers {
@@ -42,11 +44,21 @@ class PBrowserStreamParent;
 class PluginModuleParent;
 
 class PluginInstanceParent : public PPluginInstanceParent
+                           , public PluginDataResolver
 {
     friend class PluginModuleParent;
     friend class BrowserStreamParent;
     friend class PluginStreamParent;
     friend class StreamNotifyParent;
+
+#if defined(XP_WIN)
+public:
+    /**
+     * Helper method for looking up instances based on a supplied id.
+     */
+    static PluginInstanceParent*
+    LookupPluginInstanceByID(uintptr_t aId);
+#endif // defined(XP_WIN)
 
 public:
     PluginInstanceParent(PluginModuleParent* parent,
@@ -59,85 +71,81 @@ public:
     bool Init();
     NPError Destroy();
 
-    virtual void ActorDestroy(ActorDestroyReason why) MOZ_OVERRIDE;
+    virtual void ActorDestroy(ActorDestroyReason why) override;
 
     virtual PPluginScriptableObjectParent*
-    AllocPPluginScriptableObjectParent() MOZ_OVERRIDE;
+    AllocPPluginScriptableObjectParent() override;
 
     virtual bool
-    RecvPPluginScriptableObjectConstructor(PPluginScriptableObjectParent* aActor) MOZ_OVERRIDE;
+    RecvPPluginScriptableObjectConstructor(PPluginScriptableObjectParent* aActor) override;
 
     virtual bool
-    DeallocPPluginScriptableObjectParent(PPluginScriptableObjectParent* aObject) MOZ_OVERRIDE;
+    DeallocPPluginScriptableObjectParent(PPluginScriptableObjectParent* aObject) override;
     virtual PBrowserStreamParent*
     AllocPBrowserStreamParent(const nsCString& url,
                               const uint32_t& length,
                               const uint32_t& lastmodified,
                               PStreamNotifyParent* notifyData,
-                              const nsCString& headers,
-                              const nsCString& mimeType,
-                              const bool& seekable,
-                              NPError* rv,
-                              uint16_t *stype) MOZ_OVERRIDE;
+                              const nsCString& headers) override;
     virtual bool
-    DeallocPBrowserStreamParent(PBrowserStreamParent* stream) MOZ_OVERRIDE;
+    DeallocPBrowserStreamParent(PBrowserStreamParent* stream) override;
 
     virtual PPluginStreamParent*
     AllocPPluginStreamParent(const nsCString& mimeType,
                              const nsCString& target,
-                             NPError* result) MOZ_OVERRIDE;
+                             NPError* result) override;
     virtual bool
-    DeallocPPluginStreamParent(PPluginStreamParent* stream) MOZ_OVERRIDE;
+    DeallocPPluginStreamParent(PPluginStreamParent* stream) override;
 
     virtual bool
     AnswerNPN_GetValue_NPNVnetscapeWindow(NativeWindowHandle* value,
-                                          NPError* result) MOZ_OVERRIDE;
+                                          NPError* result) override;
     virtual bool
     AnswerNPN_GetValue_NPNVWindowNPObject(
                                        PPluginScriptableObjectParent** value,
-                                       NPError* result) MOZ_OVERRIDE;
+                                       NPError* result) override;
     virtual bool
     AnswerNPN_GetValue_NPNVPluginElementNPObject(
                                        PPluginScriptableObjectParent** value,
-                                       NPError* result) MOZ_OVERRIDE;
+                                       NPError* result) override;
     virtual bool
-    AnswerNPN_GetValue_NPNVprivateModeBool(bool* value, NPError* result) MOZ_OVERRIDE;
+    AnswerNPN_GetValue_NPNVprivateModeBool(bool* value, NPError* result) override;
 
     virtual bool
-    AnswerNPN_GetValue_DrawingModelSupport(const NPNVariable& model, bool* value) MOZ_OVERRIDE;
+    AnswerNPN_GetValue_DrawingModelSupport(const NPNVariable& model, bool* value) override;
   
     virtual bool
-    AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value, NPError* result) MOZ_OVERRIDE;
+    AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value, NPError* result) override;
 
     virtual bool
-    AnswerNPN_SetValue_NPPVpluginWindow(const bool& windowed, NPError* result) MOZ_OVERRIDE;
+    AnswerNPN_SetValue_NPPVpluginWindow(const bool& windowed, NPError* result) override;
     virtual bool
     AnswerNPN_SetValue_NPPVpluginTransparent(const bool& transparent,
-                                             NPError* result) MOZ_OVERRIDE;
+                                             NPError* result) override;
     virtual bool
     AnswerNPN_SetValue_NPPVpluginUsesDOMForCursor(const bool& useDOMForCursor,
-                                                  NPError* result) MOZ_OVERRIDE;
+                                                  NPError* result) override;
     virtual bool
     AnswerNPN_SetValue_NPPVpluginDrawingModel(const int& drawingModel,
-                                              NPError* result) MOZ_OVERRIDE;
+                                              NPError* result) override;
     virtual bool
     AnswerNPN_SetValue_NPPVpluginEventModel(const int& eventModel,
-                                             NPError* result) MOZ_OVERRIDE;
+                                             NPError* result) override;
 
     virtual bool
     AnswerNPN_GetURL(const nsCString& url, const nsCString& target,
-                     NPError *result) MOZ_OVERRIDE;
+                     NPError *result) override;
 
     virtual bool
     AnswerNPN_PostURL(const nsCString& url, const nsCString& target,
                       const nsCString& buffer, const bool& file,
-                      NPError* result) MOZ_OVERRIDE;
+                      NPError* result) override;
 
     virtual PStreamNotifyParent*
     AllocPStreamNotifyParent(const nsCString& url, const nsCString& target,
                              const bool& post, const nsCString& buffer,
                              const bool& file,
-                             NPError* result) MOZ_OVERRIDE;
+                             NPError* result) override;
 
     virtual bool
     AnswerPStreamNotifyConstructor(PStreamNotifyParent* actor,
@@ -145,43 +153,43 @@ public:
                                    const nsCString& target,
                                    const bool& post, const nsCString& buffer,
                                    const bool& file,
-                                   NPError* result) MOZ_OVERRIDE;
+                                   NPError* result) override;
 
     virtual bool
-    DeallocPStreamNotifyParent(PStreamNotifyParent* notifyData) MOZ_OVERRIDE;
+    DeallocPStreamNotifyParent(PStreamNotifyParent* notifyData) override;
 
     virtual bool
-    RecvNPN_InvalidateRect(const NPRect& rect) MOZ_OVERRIDE;
+    RecvNPN_InvalidateRect(const NPRect& rect) override;
 
     // Async rendering
     virtual bool
     RecvShow(const NPRect& updatedRect,
              const SurfaceDescriptor& newSurface,
-             SurfaceDescriptor* prevSurface) MOZ_OVERRIDE;
+             SurfaceDescriptor* prevSurface) override;
 
     virtual PPluginSurfaceParent*
     AllocPPluginSurfaceParent(const WindowsSharedMemoryHandle& handle,
                               const gfxIntSize& size,
-                              const bool& transparent) MOZ_OVERRIDE;
+                              const bool& transparent) override;
 
     virtual bool
-    DeallocPPluginSurfaceParent(PPluginSurfaceParent* s) MOZ_OVERRIDE;
+    DeallocPPluginSurfaceParent(PPluginSurfaceParent* s) override;
 
     virtual bool
-    AnswerNPN_PushPopupsEnabledState(const bool& aState) MOZ_OVERRIDE;
+    AnswerNPN_PushPopupsEnabledState(const bool& aState) override;
 
     virtual bool
-    AnswerNPN_PopPopupsEnabledState() MOZ_OVERRIDE;
+    AnswerNPN_PopPopupsEnabledState() override;
 
     virtual bool
     AnswerNPN_GetValueForURL(const NPNURLVariable& variable,
                              const nsCString& url,
-                             nsCString* value, NPError* result) MOZ_OVERRIDE;
+                             nsCString* value, NPError* result) override;
 
     virtual bool
     AnswerNPN_SetValueForURL(const NPNURLVariable& variable,
                              const nsCString& url,
-                             const nsCString& value, NPError* result) MOZ_OVERRIDE;
+                             const nsCString& value, NPError* result) override;
 
     virtual bool
     AnswerNPN_GetAuthenticationInfo(const nsCString& protocol,
@@ -191,7 +199,7 @@ public:
                                     const nsCString& realm,
                                     nsCString* username,
                                     nsCString* password,
-                                    NPError* result) MOZ_OVERRIDE;
+                                    NPError* result) override;
 
     virtual bool
     AnswerNPN_ConvertPoint(const double& sourceX,
@@ -202,13 +210,16 @@ public:
                            const NPCoordinateSpace& destSpace,
                            double *destX,
                            double *destY,
-                           bool *result) MOZ_OVERRIDE;
+                           bool *result) override;
 
     virtual bool
-    RecvRedrawPlugin() MOZ_OVERRIDE;
+    RecvRedrawPlugin() override;
 
     virtual bool
-    RecvNegotiatedCarbon() MOZ_OVERRIDE;
+    RecvNegotiatedCarbon() override;
+
+    virtual bool
+    RecvAsyncNPP_NewResult(const NPError& aResult) override;
 
     NPError NPP_SetWindow(const NPWindow* aWindow);
 
@@ -254,8 +265,14 @@ public:
       return mNPP;
     }
 
+    bool
+    UseSurrogate() const
+    {
+        return mUseSurrogate;
+    }
+
     virtual bool
-    AnswerPluginFocusChange(const bool& gotFocus) MOZ_OVERRIDE;
+    AnswerPluginFocusChange(const bool& gotFocus) override;
 
     nsresult AsyncSetWindow(NPWindow* window);
     nsresult GetImageContainer(mozilla::layers::ImageContainer** aContainer);
@@ -271,6 +288,13 @@ public:
                                  const nsIntRect& aRect);
     void DidComposite() { unused << SendNPP_DidComposite(); }
 
+    virtual PluginAsyncSurrogate* GetAsyncSurrogate() override;
+
+    virtual PluginInstanceParent* GetInstance() override { return this; }
+
+    static PluginInstanceParent* Cast(NPP instance,
+                                      PluginAsyncSurrogate** aSurrogate = nullptr);
+
 private:
     // Create an appropriate platform surface for a background of size
     // |aSize|.  Return true if successful.
@@ -282,17 +306,21 @@ private:
     ImageContainer *GetImageContainer();
 
     virtual PPluginBackgroundDestroyerParent*
-    AllocPPluginBackgroundDestroyerParent() MOZ_OVERRIDE;
+    AllocPPluginBackgroundDestroyerParent() override;
 
     virtual bool
-    DeallocPPluginBackgroundDestroyerParent(PPluginBackgroundDestroyerParent* aActor) MOZ_OVERRIDE;
+    DeallocPPluginBackgroundDestroyerParent(PPluginBackgroundDestroyerParent* aActor) override;
 
     bool InternalGetValueForNPObject(NPNVariable aVariable,
                                      PPluginScriptableObjectParent** aValue,
                                      NPError* aResult);
 
+    nsPluginInstanceOwner* GetOwner();
+
 private:
     PluginModuleParent* mParent;
+    nsRefPtr<PluginAsyncSurrogate> mSurrogate;
+    bool mUseSurrogate;
     NPP mNPP;
     const NPNetscapeFuncs* mNPNIface;
     NPWindowType mWindowType;

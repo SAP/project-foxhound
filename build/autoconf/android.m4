@@ -39,7 +39,7 @@ if test $android_version -lt MIN_ANDROID_VERSION ; then
 fi
 
 case "$target" in
-arm-linux*-android*|*-linuxandroid*)
+arm-*linux*-android*|*-linuxandroid*)
     android_tool_prefix="arm-linux-androideabi"
     ;;
 i?86-*android*)
@@ -240,7 +240,6 @@ if test "$OS_TARGET" = "Android" -a -z "$gonkdir"; then
             fi
         else
             STLPORT_CPPFLAGS="-isystem $_topsrcdir/build/stlport/stlport -isystem $_topsrcdir/build/stlport/overrides -isystem $android_ndk/sources/cxx-stl/system/include"
-            STLPORT_LIBS="$_objdir/build/stlport/libstlport_static.a -static-libstdc++"
         fi
     fi
     CXXFLAGS="$CXXFLAGS $STLPORT_CPPFLAGS"
@@ -354,6 +353,13 @@ case "$target" in
     if test -z "$android_build_tools" ; then
         android_build_tools="$android_platform_tools" # SDK Tools < r22
     fi
+    all_android_build_tools=""
+    for suffix in `ls "$android_sdk_root/build-tools" | sed -e "s,android-,999.," | sort -t. -k 1,1nr -k 2,2nr -k 3,3nr -k 4,4nr -k 5,5nr`; do
+        tools_directory=`echo "$android_sdk_root/build-tools/$suffix" | sed -e "s,999.,android-,"`
+        if test -d "$tools_directory" -a -f "$tools_directory/aapt"; then
+            all_android_build_tools="$all_android_build_tools:$tools_directory"
+        fi
+    done
 
     if test -d "$android_build_tools" -a -f "$android_build_tools/aapt"; then
         AC_MSG_RESULT([$android_build_tools])
@@ -377,6 +383,9 @@ case "$target" in
     ANDROID_BUILD_TOOLS="${android_build_tools}"
     AC_SUBST(ANDROID_SDK_ROOT)
     AC_SUBST(ANDROID_SDK)
+    AC_SUBST(ANDROID_TOOLS)
+    AC_SUBST(ANDROID_PLATFORM_TOOLS)
+    AC_SUBST(ANDROID_BUILD_TOOLS)
 
     ANDROID_COMPAT_LIB=$ANDROID_COMPAT_DIR_BASE/v4/android-support-v4.jar
     AC_MSG_CHECKING([for v4 compat library])
@@ -388,7 +397,7 @@ case "$target" in
 
     dnl Google has a history of moving the Android tools around.  We don't
     dnl care where they are, so let's try to find them anywhere we can.
-    ALL_ANDROID_TOOLS_PATHS="$ANDROID_TOOLS:$ANDROID_BUILD_TOOLS:$ANDROID_PLATFORM_TOOLS"
+    ALL_ANDROID_TOOLS_PATHS="$ANDROID_TOOLS$all_android_build_tools:$ANDROID_PLATFORM_TOOLS"
     MOZ_PATH_PROG(ZIPALIGN, zipalign, :, [$ALL_ANDROID_TOOLS_PATHS])
     MOZ_PATH_PROG(DX, dx, :, [$ALL_ANDROID_TOOLS_PATHS])
     MOZ_PATH_PROG(AAPT, aapt, :, [$ALL_ANDROID_TOOLS_PATHS])
@@ -412,26 +421,6 @@ case "$target" in
     fi
     ;;
 esac
-
-MOZ_ARG_DISABLE_BOOL(android-include-fonts,
-[  --disable-android-include-fonts
-                          disable the inclusion of fonts into the final APK],
-    MOZ_ANDROID_EXCLUDE_FONTS=1)
-
-if test -n "$MOZ_ANDROID_EXCLUDE_FONTS"; then
-    AC_DEFINE(MOZ_ANDROID_EXCLUDE_FONTS, $MOZ_ANDROID_EXCLUDE_FONTS)
-    AC_SUBST(MOZ_ANDROID_EXCLUDE_FONTS)
-fi
-
-MOZ_ARG_ENABLE_BOOL(android-resource-constrained,
-[  --enable-android-resource-constrained
-                          exclude hi-res images and similar from the final APK],
-    MOZ_ANDROID_RESOURCE_CONSTRAINED=1)
-
-if test -n "$MOZ_ANDROID_RESOURCE_CONSTRAINED"; then
-    AC_DEFINE(MOZ_ANDROID_RESOURCE_CONSTRAINED, $MOZ_ANDROID_RESOURCE_CONSTRAINED)
-    AC_SUBST(MOZ_ANDROID_RESOURCE_CONSTRAINED)
-fi
 
 MOZ_ARG_WITH_STRING(android-min-sdk,
 [  --with-android-min-sdk=[VER]     Impose a minimum Firefox for Android SDK version],

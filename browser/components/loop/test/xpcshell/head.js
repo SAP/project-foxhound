@@ -9,6 +9,8 @@ Cu.import("resource://gre/modules/Http.jsm");
 Cu.import("resource://testing-common/httpd.js");
 Cu.import("resource:///modules/loop/MozLoopService.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
+Cu.import("resource:///modules/loop/LoopCalls.jsm");
+Cu.import("resource:///modules/loop/LoopRooms.jsm");
 const { MozLoopServiceInternal } = Cu.import("resource:///modules/loop/MozLoopService.jsm", {});
 
 XPCOMUtils.defineLazyModuleGetter(this, "MozLoopPushHandler",
@@ -17,7 +19,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "MozLoopPushHandler",
 const kMockWebSocketChannelName = "Mock WebSocket Channel";
 const kWebSocketChannelContractID = "@mozilla.org/network/protocol;1?name=wss";
 
-const kServerPushUrl = "http://localhost:3456";
+const kServerPushUrl = "ws://localhost";
+const kLoopServerUrl = "http://localhost:3465";
 const kEndPointUrl = "http://example.com/fake";
 const kUAID = "f47ac11b-58ca-4372-9567-0e02b2c3d479";
 
@@ -26,19 +29,24 @@ var loopServer;
 
 // Ensure loop is always enabled for tests
 Services.prefs.setBoolPref("loop.enabled", true);
-Services.prefs.setBoolPref("loop.throttled", false);
+
+// Cleanup function for all tests
+do_register_cleanup(() => {
+  MozLoopService.errors.clear();
+});
 
 function setupFakeLoopServer() {
   loopServer = new HttpServer();
   loopServer.start(-1);
 
-  Services.prefs.setCharPref("services.push.serverURL", kServerPushUrl);
-
   Services.prefs.setCharPref("loop.server",
     "http://localhost:" + loopServer.identity.primaryPort);
 
+  MozLoopServiceInternal.mocks.pushHandler = mockPushHandler;
+
   do_register_cleanup(function() {
     loopServer.stop(function() {});
+    MozLoopServiceInternal.mocks.pushHandler = undefined;
   });
 }
 
@@ -63,7 +71,7 @@ function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
 }
 
 function getLoopString(stringID) {
-  return MozLoopServiceInternal.localizedStrings[stringID].textContent;
+  return MozLoopServiceInternal.localizedStrings.get(stringID);
 }
 
 /**
@@ -75,21 +83,34 @@ let mockPushHandler = {
   // This sets the registration result to be returned when initialize
   // is called. By default, it is equivalent to success.
   registrationResult: null,
-  registrationPushURL: undefined,
+  registrationPushURL: null,
+  notificationCallback: {},
+  registeredChannels: {},
 
   /**
    * MozLoopPushHandler API
    */
-  initialize: function(registerCallback, notificationCallback) {
-    registerCallback(this.registrationResult, this.registrationPushURL);
-    this._notificationCallback = notificationCallback;
+  initialize: function(options = {}) {
+    if ("mockWebSocket" in options) {
+      this._mockWebSocket = options.mockWebSocket;
+    }
+  },
+
+  register: function(channelId, registerCallback, notificationCallback) {
+    this.notificationCallback[channelId] = notificationCallback;
+    this.registeredChannels[channelId] = this.registrationPushURL;
+    registerCallback(this.registrationResult, this.registrationPushURL, channelId);
+  },
+
+  unregister: function(channelID) {
+    return;
   },
 
   /**
    * Test-only API to simplify notifying a push notification result.
    */
-  notify: function(version) {
-    this._notificationCallback(version);
+  notify: function(version, chanId) {
+    this.notificationCallback[chanId](version, chanId);
   }
 };
 
@@ -98,13 +119,19 @@ let mockPushHandler = {
  * enables us to check parameters and return messages similar to the push
  * server.
  */
-let MockWebSocketChannel = function(options) {
-  let _options = options || {};
-  this.defaultMsgHandler = _options.defaultMsgHandler;
-};
+function MockWebSocketChannel() {};
 
 MockWebSocketChannel.prototype = {
   QueryInterface: XPCOMUtils.generateQI(Ci.nsIWebSocketChannel),
+
+  initRegStatus: 0,
+
+  defaultMsgHandler: function(msg) {
+    // Treat as a ping
+    this.listener.onMessageAvailable(this.context,
+                                     JSON.stringify({}));
+    return;
+  },
 
   /**
    * nsIWebSocketChannel implementations.
@@ -144,6 +171,10 @@ MockWebSocketChannel.prototype = {
       default:
         this.defaultMsgHandler && this.defaultMsgHandler(message);
     }
+  },
+
+  close: function(aCode, aReason) {
+    this.stop(aCode);
   },
 
   notify: function(version) {

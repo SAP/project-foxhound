@@ -96,8 +96,13 @@ public:
                                        { mHashKey.SetCharAt(relaxed ? 'R' : '.', 4); }
     bool          GetRelaxed() const   { return mHashKey.CharAt(4) == 'R'; }
 
+    void          SetNoSpdy(bool aNoSpdy)
+                                       { mHashKey.SetCharAt(aNoSpdy ? 'X' : '.', 5); }
+    bool          GetNoSpdy() const    { return mHashKey.CharAt(5) == 'X'; }
+
     const nsCString &GetHost() { return mHost; }
     const nsCString &GetNPNToken() { return mNPNToken; }
+    const nsCString &GetUsername() { return mUsername; }
 
     // Returns true for any kind of proxy (http, socks, https, etc..)
     bool UsingProxy();

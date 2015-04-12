@@ -35,9 +35,9 @@
 #include "nsIWinTaskbar.h"
 #define NS_TASKBAR_CONTRACTID "@mozilla.org/windows-taskbar;1"
 
-#if defined(MOZ_CONTENT_SANDBOX)
+#if defined(MOZ_SANDBOX)
 #include "mozilla/Preferences.h"
-#include "mozilla/warnonlysandbox/warnOnlySandbox.h"
+#include "mozilla/sandboxing/sandboxLogging.h"
 #endif
 #endif
 
@@ -95,9 +95,10 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
     mMonitor("mozilla.ipc.GeckChildProcessHost.mMonitor"),
     mProcessState(CREATING_CHANNEL),
     mDelegate(nullptr),
-#if defined(MOZ_CONTENT_SANDBOX) && defined(XP_WIN)
-    mEnableContentSandbox(false),
-    mWarnOnlyContentSandbox(false),
+#if defined(MOZ_SANDBOX) && defined(XP_WIN)
+    mEnableSandboxLogging(false),
+    mSandboxLevel(0),
+    mMoreStrictSandbox(false),
 #endif
     mChildProcessHandle(0)
 #if defined(MOZ_WIDGET_COCOA)
@@ -270,15 +271,19 @@ GeckoChildProcessHost::PrepareLaunch()
 #if defined(MOZ_CONTENT_SANDBOX)
   // We need to get the pref here as the process is launched off main thread.
   if (mProcessType == GeckoProcessType_Content) {
-    nsAdoptingString contentSandboxPref =
-      Preferences::GetString("browser.tabs.remote.sandbox");
-    if (contentSandboxPref.EqualsLiteral("on")) {
-      mEnableContentSandbox = true;
-    } else if (contentSandboxPref.EqualsLiteral("warn")) {
-      mEnableContentSandbox = true;
-      mWarnOnlyContentSandbox = true;
-    }
+    mMoreStrictSandbox =
+      Preferences::GetBool("security.sandbox.windows.content.moreStrict");
+    mEnableSandboxLogging =
+      Preferences::GetBool("security.sandbox.windows.log");
   }
+#endif
+
+#if defined(MOZ_SANDBOX)
+  // For other process types we can't rely on them being launched on main
+  // thread and they may not have access to prefs in the child process, so allow
+  // them to turn on logging via an environment variable.
+  mEnableSandboxLogging = mEnableSandboxLogging
+                          || !!PR_GetEnv("MOZ_WIN_SANDBOX_LOGGING");
 #endif
 #endif
 }
@@ -309,8 +314,6 @@ GeckoChildProcessHost::SyncLaunch(std::vector<std::string> aExtraOpts, int aTime
 {
   PrepareLaunch();
 
-  PRIntervalTime timeoutTicks = (aTimeoutMs > 0) ? 
-    PR_MillisecondsToInterval(aTimeoutMs) : PR_INTERVAL_NO_TIMEOUT;
   MessageLoop* ioLoop = XRE_GetIOMessageLoop();
   NS_ASSERTION(MessageLoop::current() != ioLoop, "sync launch from the IO thread NYI");
 
@@ -318,8 +321,40 @@ GeckoChildProcessHost::SyncLaunch(std::vector<std::string> aExtraOpts, int aTime
                    NewRunnableMethod(this,
                                      &GeckoChildProcessHost::RunPerformAsyncLaunch,
                                      aExtraOpts, arch));
+
+  return WaitUntilConnected(aTimeoutMs);
+}
+
+bool
+GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts,
+                                   base::ProcessArchitecture arch)
+{
+  PrepareLaunch();
+
+  MessageLoop* ioLoop = XRE_GetIOMessageLoop();
+  ioLoop->PostTask(FROM_HERE,
+                   NewRunnableMethod(this,
+                                     &GeckoChildProcessHost::RunPerformAsyncLaunch,
+                                     aExtraOpts, arch));
+
+  // This may look like the sync launch wait, but we only delay as
+  // long as it takes to create the channel.
+  MonitorAutoLock lock(mMonitor);
+  while (mProcessState < CHANNEL_INITIALIZED) {
+    lock.Wait();
+  }
+
+  return true;
+}
+
+bool
+GeckoChildProcessHost::WaitUntilConnected(int32_t aTimeoutMs)
+{
   // NB: this uses a different mechanism than the chromium parent
   // class.
+  PRIntervalTime timeoutTicks = (aTimeoutMs > 0) ? 
+    PR_MillisecondsToInterval(aTimeoutMs) : PR_INTERVAL_NO_TIMEOUT;
+
   MonitorAutoLock lock(mMonitor);
   PRIntervalTime waitStart = PR_IntervalNow();
   PRIntervalTime current;
@@ -346,27 +381,6 @@ GeckoChildProcessHost::SyncLaunch(std::vector<std::string> aExtraOpts, int aTime
   }
 
   return mProcessState == PROCESS_CONNECTED;
-}
-
-bool
-GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts)
-{
-  PrepareLaunch();
-
-  MessageLoop* ioLoop = XRE_GetIOMessageLoop();
-  ioLoop->PostTask(FROM_HERE,
-                   NewRunnableMethod(this,
-                                     &GeckoChildProcessHost::RunPerformAsyncLaunch,
-                                     aExtraOpts, base::GetCurrentProcessArchitecture()));
-
-  // This may look like the sync launch wait, but we only delay as
-  // long as it takes to create the channel.
-  MonitorAutoLock lock(mMonitor);
-  while (mProcessState < CHANNEL_INITIALIZED) {
-    lock.Wait();
-  }
-
-  return true;
 }
 
 bool
@@ -785,26 +799,29 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
     }
   }
 
-#if defined(XP_WIN)
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
   bool shouldSandboxCurrentProcess = false;
+
+  // XXX: Bug 1124167: We should get rid of the process specific logic for
+  // sandboxing in this class at some point. Unfortunately it will take a bit
+  // of reorganizing so I don't think this patch is the right time.
   switch (mProcessType) {
     case GeckoProcessType_Content:
 #if defined(MOZ_CONTENT_SANDBOX)
-      if (!mEnableContentSandbox) {
-        break;
-      }
       if (!PR_GetEnv("MOZ_DISABLE_CONTENT_SANDBOX")) {
-        mSandboxBroker.SetSecurityLevelForContentProcess(mWarnOnlyContentSandbox);
+        mSandboxBroker.SetSecurityLevelForContentProcess(mMoreStrictSandbox);
         cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
         shouldSandboxCurrentProcess = true;
       }
 #endif // MOZ_CONTENT_SANDBOX
       break;
     case GeckoProcessType_Plugin:
-      // XXX: We don't sandbox this process type yet
-      // mSandboxBroker.SetSecurityLevelForPluginProcess();
-      // cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
-      // shouldSandboxCurrentProcess = true;
+      if (mSandboxLevel > 0 &&
+          !PR_GetEnv("MOZ_DISABLE_NPAPI_SANDBOX")) {
+        mSandboxBroker.SetSecurityLevelForPluginProcess(mSandboxLevel);
+        cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
+        shouldSandboxCurrentProcess = true;
+      }
       break;
     case GeckoProcessType_IPDLUnitTest:
       // XXX: We don't sandbox this process type yet
@@ -813,13 +830,11 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
       // shouldSandboxCurrentProcess = true;
       break;
     case GeckoProcessType_GMPlugin:
-#ifdef MOZ_SANDBOX
       if (!PR_GetEnv("MOZ_DISABLE_GMP_SANDBOX")) {
         mSandboxBroker.SetSecurityLevelForGMPlugin();
         cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
         shouldSandboxCurrentProcess = true;
       }
-#endif
       break;
     case GeckoProcessType_Default:
     default:
@@ -827,17 +842,20 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
       break;
   };
 
-#ifdef MOZ_SANDBOX
   if (shouldSandboxCurrentProcess) {
     for (auto it = mAllowedFilesRead.begin();
          it != mAllowedFilesRead.end();
          ++it) {
       mSandboxBroker.AllowReadFile(it->c_str());
     }
-  }
-#endif
 
-#endif // XP_WIN
+    for (auto it = mAllowedFilesReadWrite.begin();
+         it != mAllowedFilesReadWrite.end();
+         ++it) {
+      mSandboxBroker.AllowReadWriteFile(it->c_str());
+    }
+  }
+#endif // XP_WIN && MOZ_SANDBOX
 
   // Add the application directory path (-appdir path)
   AddAppDirToCommandLine(cmdLine);
@@ -864,6 +882,7 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
   if (shouldSandboxCurrentProcess) {
     mSandboxBroker.LaunchApp(cmdLine.program().c_str(),
                              cmdLine.command_line_string().c_str(),
+                             mEnableSandboxLogging,
                              &process);
   } else
 #endif

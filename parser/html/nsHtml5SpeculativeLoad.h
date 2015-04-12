@@ -6,6 +6,7 @@
 #define nsHtml5SpeculativeLoad_h
 
 #include "nsString.h"
+#include "nsContentUtils.h"
 
 class nsHtml5TreeOpExecutor;
 
@@ -14,7 +15,11 @@ enum eHtml5SpeculativeLoad {
   eSpeculativeLoadUninitialized,
 #endif
   eSpeculativeLoadBase,
+  eSpeculativeLoadMetaReferrer,
   eSpeculativeLoadImage,
+  eSpeculativeLoadOpenPicture,
+  eSpeculativeLoadEndPicture,
+  eSpeculativeLoadPictureSource,
   eSpeculativeLoadScript,
   eSpeculativeLoadScriptFromHead,
   eSpeculativeLoadStyle,
@@ -26,7 +31,7 @@ class nsHtml5SpeculativeLoad {
   public:
     nsHtml5SpeculativeLoad();
     ~nsHtml5SpeculativeLoad();
-    
+
     inline void InitBase(const nsAString& aUrl)
     {
       NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
@@ -35,14 +40,61 @@ class nsHtml5SpeculativeLoad {
       mUrl.Assign(aUrl);
     }
 
+    inline void InitMetaReferrerPolicy(const nsAString& aReferrerPolicy) {
+      NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
+                      "Trying to reinitialize a speculative load!");
+      mOpCode = eSpeculativeLoadMetaReferrer;
+      mMetaReferrerPolicy.Assign(
+        nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(aReferrerPolicy));
+    }
+
     inline void InitImage(const nsAString& aUrl,
-                          const nsAString& aCrossOrigin)
+                          const nsAString& aCrossOrigin,
+                          const nsAString& aSrcset,
+                          const nsAString& aSizes)
     {
       NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
                       "Trying to reinitialize a speculative load!");
       mOpCode = eSpeculativeLoadImage;
       mUrl.Assign(aUrl);
       mCrossOrigin.Assign(aCrossOrigin);
+      mSrcset.Assign(aSrcset);
+      mSizes.Assign(aSizes);
+    }
+
+    // <picture> elements have multiple <source> nodes followed by an <img>,
+    // where we use the first valid source, which may be the img. Because we
+    // can't determine validity at this point without parsing CSS and getting
+    // main thread state, we push preload operations for picture pushed and
+    // popped, so that the target of the preload ops can determine what picture
+    // and nesting level each source/img from the main preloading code exists
+    // at.
+    inline void InitOpenPicture()
+    {
+      NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
+                      "Trying to reinitialize a speculative load!");
+      mOpCode = eSpeculativeLoadOpenPicture;
+    }
+
+    inline void InitEndPicture()
+    {
+      NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
+                      "Trying to reinitialize a speculative load!");
+      mOpCode = eSpeculativeLoadEndPicture;
+    }
+
+    inline void InitPictureSource(const nsAString& aSrcset,
+                                  const nsAString& aSizes,
+                                  const nsAString& aType,
+                                  const nsAString& aMedia)
+    {
+      NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
+                      "Trying to reinitialize a speculative load!");
+      mOpCode = eSpeculativeLoadPictureSource;
+      mSrcset.Assign(aSrcset);
+      mSizes.Assign(aSizes);
+      mTypeOrCharsetSource.Assign(aType);
+      mMedia.Assign(aMedia);
     }
 
     inline void InitScript(const nsAString& aUrl,
@@ -60,9 +112,9 @@ class nsHtml5SpeculativeLoad {
       mTypeOrCharsetSource.Assign(aType);
       mCrossOrigin.Assign(aCrossOrigin);
     }
-    
+
     inline void InitStyle(const nsAString& aUrl, const nsAString& aCharset,
-			  const nsAString& aCrossOrigin)
+                          const nsAString& aCrossOrigin)
     {
       NS_PRECONDITION(mOpCode == eSpeculativeLoadUninitialized,
                       "Trying to reinitialize a speculative load!");
@@ -112,10 +164,11 @@ class nsHtml5SpeculativeLoad {
     }
 
     void Perform(nsHtml5TreeOpExecutor* aExecutor);
-    
+
   private:
     eHtml5SpeculativeLoad mOpCode;
     nsString mUrl;
+    nsString mMetaReferrerPolicy;
     /**
      * If mOpCode is eSpeculativeLoadStyle or eSpeculativeLoadScript[FromHead]
      * then this is the value of the "charset" attribute. For
@@ -136,6 +189,22 @@ class nsHtml5SpeculativeLoad {
      * attribute is not set, this will be a void string.
      */
     nsString mCrossOrigin;
+    /**
+     * If mOpCode is eSpeculativeLoadImage or eSpeculativeLoadPictureSource,
+     * this is the value of "srcset" attribute.  If the attribute is not set,
+     * this will be a void string.
+     */
+    nsString mSrcset;
+    /**
+     * If mOpCode is eSpeculativeLoadPictureSource, this is the value of "sizes"
+     * attribute.  If the attribute is not set, this will be a void string.
+     */
+    nsString mSizes;
+    /**
+     * If mOpCode is eSpeculativeLoadPictureSource, this is the value of "media"
+     * attribute.  If the attribute is not set, this will be a void string.
+     */
+    nsString mMedia;
 };
 
 #endif // nsHtml5SpeculativeLoad_h

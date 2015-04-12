@@ -20,6 +20,9 @@ namespace mozilla {
 namespace css {
 class Declaration;
 } /* namespace css */
+namespace dom {
+class Promise;
+} /* namespace dom */
 
 struct AnimationEventInfo {
   nsRefPtr<mozilla::dom::Element> mElement;
@@ -49,7 +52,7 @@ struct AnimationEventInfo {
 
 typedef InfallibleTArray<AnimationEventInfo> EventArray;
 
-class CSSAnimationPlayer MOZ_FINAL : public dom::AnimationPlayer
+class CSSAnimationPlayer final : public dom::AnimationPlayer
 {
 public:
  explicit CSSAnimationPlayer(dom::AnimationTimeline* aTimeline)
@@ -61,10 +64,14 @@ public:
   }
 
   virtual CSSAnimationPlayer*
-  AsCSSAnimationPlayer() MOZ_OVERRIDE { return this; }
+  AsCSSAnimationPlayer() override { return this; }
 
-  virtual void Play(UpdateFlags aUpdateFlags) MOZ_OVERRIDE;
-  virtual void Pause(UpdateFlags aUpdateFlags) MOZ_OVERRIDE;
+  virtual dom::Promise* GetReady(ErrorResult& aRv) override;
+  virtual void Play() override;
+  virtual void Pause() override;
+
+  virtual dom::AnimationPlayState PlayStateFromJS() const override;
+  virtual void PlayFromJS() override;
 
   void PlayFromStyle();
   void PauseFromStyle();
@@ -75,6 +82,7 @@ public:
 
 protected:
   virtual ~CSSAnimationPlayer() { }
+  virtual css::CommonAnimationManager* GetAnimationManager() const override;
 
   static nsString PseudoTypeAsString(nsCSSPseudoElements::Type aPseudoType);
 
@@ -141,13 +149,12 @@ protected:
 
 } /* namespace mozilla */
 
-class nsAnimationManager MOZ_FINAL
+class nsAnimationManager final
   : public mozilla::css::CommonAnimationManager
 {
 public:
   explicit nsAnimationManager(nsPresContext *aPresContext)
     : mozilla::css::CommonAnimationManager(aPresContext)
-    , mObservingRefreshDriver(false)
   {
   }
 
@@ -158,17 +165,6 @@ public:
       aContent, nsGkAtoms::animationsProperty, aProperty);
   }
 
-  // Returns true if aContent or any of its ancestors has an animation.
-  static bool ContentOrAncestorHasAnimation(nsIContent* aContent) {
-    do {
-      if (aContent->GetProperty(nsGkAtoms::animationsProperty)) {
-        return true;
-      }
-    } while ((aContent = aContent->GetParent()));
-
-    return false;
-  }
-
   void UpdateStyleAndEvents(mozilla::AnimationPlayerCollection* aEA,
                             mozilla::TimeStamp aRefreshTime,
                             mozilla::EnsureStyleRuleFlags aFlags);
@@ -176,19 +172,13 @@ public:
                    mozilla::EventArray &aEventsToDispatch);
 
   // nsIStyleRuleProcessor (parts)
-  virtual void RulesMatching(ElementRuleProcessorData* aData) MOZ_OVERRIDE;
-  virtual void RulesMatching(PseudoElementRuleProcessorData* aData) MOZ_OVERRIDE;
-  virtual void RulesMatching(AnonBoxRuleProcessorData* aData) MOZ_OVERRIDE;
-#ifdef MOZ_XUL
-  virtual void RulesMatching(XULTreeRuleProcessorData* aData) MOZ_OVERRIDE;
-#endif
   virtual size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf)
-    const MOZ_MUST_OVERRIDE MOZ_OVERRIDE;
+    const MOZ_MUST_OVERRIDE override;
   virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
-    const MOZ_MUST_OVERRIDE MOZ_OVERRIDE;
+    const MOZ_MUST_OVERRIDE override;
 
   // nsARefreshObserver
-  virtual void WillRefresh(mozilla::TimeStamp aTime) MOZ_OVERRIDE;
+  virtual void WillRefresh(mozilla::TimeStamp aTime) override;
 
   void FlushAnimations(FlushFlags aFlags);
 
@@ -220,23 +210,19 @@ public:
     }
   }
 
-  mozilla::AnimationPlayerCollection*
-  GetAnimationPlayers(mozilla::dom::Element *aElement,
-                      nsCSSPseudoElements::Type aPseudoType,
-                      bool aCreateIfNeeded);
-
 protected:
-  virtual void ElementCollectionRemoved() MOZ_OVERRIDE
-  {
-    CheckNeedsRefresh();
+  virtual nsIAtom* GetAnimationsAtom() override {
+    return nsGkAtoms::animationsProperty;
   }
-  virtual void
-  AddElementCollection(mozilla::AnimationPlayerCollection* aData) MOZ_OVERRIDE;
-
-  /**
-   * Check to see if we should stop or start observing the refresh driver
-   */
-  void CheckNeedsRefresh();
+  virtual nsIAtom* GetAnimationsBeforeAtom() override {
+    return nsGkAtoms::animationsOfBeforeProperty;
+  }
+  virtual nsIAtom* GetAnimationsAfterAtom() override {
+    return nsGkAtoms::animationsOfAfterProperty;
+  }
+  virtual bool IsAnimationManager() override {
+    return true;
+  }
 
 private:
   void BuildAnimations(nsStyleContext* aStyleContext,
@@ -250,15 +236,11 @@ private:
                     float aFromKey, nsStyleContext* aFromContext,
                     mozilla::css::Declaration* aFromDeclaration,
                     float aToKey, nsStyleContext* aToContext);
-  nsIStyleRule* GetAnimationRule(mozilla::dom::Element* aElement,
-                                 nsCSSPseudoElements::Type aPseudoType);
 
   // The guts of DispatchEvents
   void DoDispatchEvents();
 
   mozilla::EventArray mPendingEvents;
-
-  bool mObservingRefreshDriver;
 };
 
 #endif /* !defined(nsAnimationManager_h_) */

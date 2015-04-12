@@ -34,7 +34,10 @@ var security = {
 
     var isBroken =
       (ui.state & Components.interfaces.nsIWebProgressListener.STATE_IS_BROKEN);
-    var isInsecure = 
+    var isMixed =
+      (ui.state & (Components.interfaces.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT |
+                   Components.interfaces.nsIWebProgressListener.STATE_LOADED_MIXED_DISPLAY_CONTENT));
+    var isInsecure =
       (ui.state & Components.interfaces.nsIWebProgressListener.STATE_IS_INSECURE);
     var isEV =
       (ui.state & Components.interfaces.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL);
@@ -52,17 +55,36 @@ var security = {
         cAName : issuerName,
         encryptionAlgorithm : undefined,
         encryptionStrength : undefined,
+        version: undefined,
         isBroken : isBroken,
+        isMixed : isMixed,
         isEV : isEV,
         cert : cert,
         fullLocation : gWindow.location
       };
 
+      var version;
       try {
         retval.encryptionAlgorithm = status.cipherName;
         retval.encryptionStrength = status.secretKeyLength;
+        version = status.protocolVersion;
       }
       catch (e) {
+      }
+
+      switch (version) {
+        case nsISSLStatus.SSL_VERSION_3:
+          retval.version = "SSL 3";
+          break;
+        case nsISSLStatus.TLS_VERSION_1:
+          retval.version = "TLS 1.0";
+          break;
+        case nsISSLStatus.TLS_VERSION_1_1:
+          retval.version = "TLS 1.1";
+          break;
+        case nsISSLStatus.TLS_VERSION_1_2:
+          retval.version = "TLS 1.2"
+          break;
       }
 
       return retval;
@@ -72,10 +94,12 @@ var security = {
         cAName : "",
         encryptionAlgorithm : "",
         encryptionStrength : 0,
+        version: "",
         isBroken : isBroken,
+        isMixed : isMixed,
         isEV : isEV,
         cert : null,
-        fullLocation : gWindow.location        
+        fullLocation : gWindow.location
       };
     }
   },
@@ -234,22 +258,25 @@ function securityOnLoad() {
   var msg2;
 
   if (info.isBroken) {
-    hdr = pkiBundle.getString("pageInfo_MixedContent");
-    msg1 = pkiBundle.getString("pageInfo_Privacy_Mixed1");
+    if (info.isMixed) {
+      hdr = pkiBundle.getString("pageInfo_MixedContent");
+    } else {
+      hdr = pkiBundle.getFormattedString("pageInfo_BrokenEncryption",
+                                         [info.encryptionAlgorithm,
+                                          info.encryptionStrength + "",
+                                          info.version]);
+    }
+    msg1 = pkiBundle.getString("pageInfo_Privacy_Broken1");
     msg2 = pkiBundle.getString("pageInfo_Privacy_None2");
   }
-  else if (info.encryptionStrength >= 90) {
-    hdr = pkiBundle.getFormattedString("pageInfo_StrongEncryptionWithBits",
-                                       [info.encryptionAlgorithm, info.encryptionStrength + ""]);
-    msg1 = pkiBundle.getString("pageInfo_Privacy_Strong1");
-    msg2 = pkiBundle.getString("pageInfo_Privacy_Strong2");
-    security._cert = info.cert;
-  }
   else if (info.encryptionStrength > 0) {
-    hdr  = pkiBundle.getFormattedString("pageInfo_WeakEncryptionWithBits",
-                                        [info.encryptionAlgorithm, info.encryptionStrength + ""]);
-    msg1 = pkiBundle.getFormattedString("pageInfo_Privacy_Weak1", [info.hostName]);
-    msg2 = pkiBundle.getString("pageInfo_Privacy_Weak2");
+    hdr = pkiBundle.getFormattedString("pageInfo_EncryptionWithBitsAndProtocol",
+                                       [info.encryptionAlgorithm,
+                                        info.encryptionStrength + "",
+                                        info.version]);
+    msg1 = pkiBundle.getString("pageInfo_Privacy_Encrypted1");
+    msg2 = pkiBundle.getString("pageInfo_Privacy_Encrypted2");
+    security._cert = info.cert;
   }
   else {
     hdr = pkiBundle.getString("pageInfo_NoEncryption");

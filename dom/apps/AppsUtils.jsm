@@ -22,6 +22,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "WebappOSUtils",
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
 
+XPCOMUtils.defineLazyServiceGetter(this, "appsService",
+                                   "@mozilla.org/AppsService;1",
+                                   "nsIAppsService");
+
 // Shared code for AppsServiceChild.jsm, TrustedHostedAppsUtils.jsm,
 // Webapps.jsm and Webapps.js
 
@@ -107,6 +111,8 @@ function _setAppProperties(aObj, aApp) {
   aObj.redirects = aApp.redirects;
   aObj.widgetPages = aApp.widgetPages || [];
   aObj.kind = aApp.kind;
+  aObj.enabled = aApp.enabled !== undefined ? aApp.enabled : true;
+  aObj.sideloaded = aApp.sideloaded;
 }
 
 this.AppsUtils = {
@@ -470,20 +476,38 @@ this.AppsUtils = {
     let netutil = Cc["@mozilla.org/network/util;1"].getService(Ci.nsINetUtil);
     let contentType = netutil.parseContentType(aContentType, charset, hadCharset);
     if (aInstallOrigin != aWebappOrigin &&
-        contentType != "application/x-web-app-manifest+json") {
+        !(contentType == "application/x-web-app-manifest+json" ||
+          contentType == "application/manifest+json")) {
       return false;
     }
     return true;
   },
 
+  allowUnsignedAddons: false, // for testing purposes.
+
   /**
-   * Checks if the app role is allowed.
+   * Checks if the app role is allowed:
    * Only certified apps can be themes.
+   * Only privileged or certified apps can be addons.
+   * Langpacks need to be privileged.
    * @param aRole   : the role assigned to this app.
    * @param aStatus : the APP_STATUS_* for this app.
    */
   checkAppRole: function(aRole, aStatus) {
     if (aRole == "theme" && aStatus !== Ci.nsIPrincipal.APP_STATUS_CERTIFIED) {
+      return false;
+    }
+    if (aRole == "langpack" && aStatus !== Ci.nsIPrincipal.APP_STATUS_PRIVILEGED) {
+      let allow = false;
+      try  {
+        allow = Services.prefs.getBoolPref("dom.apps.allow_unsigned_langpacks");
+      } catch(e) {}
+      return allow;
+    }
+    if (!this.allowUnsignedAddons &&
+        (aRole == "addon" &&
+         aStatus !== Ci.nsIPrincipal.APP_STATUS_CERTIFIED &&
+         aStatus !== Ci.nsIPrincipal.APP_STATUS_PRIVILEGED)) {
       return false;
     }
     return true;
@@ -649,10 +673,17 @@ this.AppsUtils = {
       let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
       file.initWithPath(aPath);
 
-      let channel = NetUtil.newChannel(file);
+      let channel = NetUtil.newChannel2(file,
+                                        null,
+                                        null,
+                                        null,      // aLoadingNode
+                                        Services.scriptSecurityManager.getSystemPrincipal(),
+                                        null,      // aTriggeringPrincipal
+                                        Ci.nsILoadInfo.SEC_NORMAL,
+                                        Ci.nsIContentPolicy.TYPE_OTHER);
       channel.contentType = "application/json";
 
-      NetUtil.asyncFetch(channel, function(aStream, aResult) {
+      NetUtil.asyncFetch2(channel, function(aStream, aResult) {
         if (!Components.isSuccessCode(aResult)) {
           deferred.resolve(null);
 
@@ -715,7 +746,21 @@ this.AppsUtils = {
 
     // Convert the binary hash data to a hex string.
     return [toHexString(hash.charCodeAt(i)) for (i in hash)].join("");
-  }
+  },
+
+  // Returns the hash for a JS object.
+  computeObjectHash: function(aObject) {
+    return this.computeHash(JSON.stringify(aObject));
+  },
+
+  getAppManifestURLFromWindow: function(aWindow) {
+    let appId = aWindow.document.nodePrincipal.appId;
+    if (appId === Ci.nsIScriptSecurityManager.NO_APP_ID) {
+      return null;
+    }
+
+    return appsService.getManifestURLByLocalId(appId);
+  },
 }
 
 /**

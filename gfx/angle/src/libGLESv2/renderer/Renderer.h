@@ -30,6 +30,7 @@
 namespace egl
 {
 class Display;
+class Surface;
 }
 
 namespace gl
@@ -50,7 +51,8 @@ class TextureStorage;
 class VertexBuffer;
 class IndexBuffer;
 class QueryImpl;
-class FenceImpl;
+class FenceNVImpl;
+class FenceSyncImpl;
 class BufferImpl;
 class VertexArrayImpl;
 class BufferStorage;
@@ -107,12 +109,12 @@ class Renderer
     virtual int generateConfigs(ConfigDesc **configDescList) = 0;
     virtual void deleteConfigs(ConfigDesc *configDescList) = 0;
 
-    virtual void sync(bool block) = 0;
+    virtual gl::Error sync(bool block) = 0;
 
     virtual SwapChain *createSwapChain(rx::NativeWindow nativeWindow, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat) = 0;
 
     virtual gl::Error generateSwizzle(gl::Texture *texture) = 0;
-    virtual gl::Error setSamplerState(gl::SamplerType type, int index, const gl::SamplerState &sampler) = 0;
+    virtual gl::Error setSamplerState(gl::SamplerType type, int index, gl::Texture *texture, const gl::SamplerState &sampler) = 0;
     virtual gl::Error setTexture(gl::SamplerType type, int index, gl::Texture *texture) = 0;
 
     virtual gl::Error setUniformBuffers(const gl::Buffer *vertexUniformBuffers[], const gl::Buffer *fragmentUniformBuffers[]) = 0;
@@ -132,10 +134,9 @@ class Renderer
                                    bool rasterizerDiscard, bool transformFeedbackActive) = 0;
     virtual gl::Error applyUniforms(const ProgramImpl &program, const std::vector<gl::LinkedUniform*> &uniformArray) = 0;
     virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount) = 0;
-    virtual gl::Error applyVertexBuffer(gl::ProgramBinary *programBinary, const gl::VertexAttribute vertexAttributes[], const gl::VertexAttribCurrentValueData currentValues[],
-                                        GLint first, GLsizei count, GLsizei instances) = 0;
+    virtual gl::Error applyVertexBuffer(const gl::State &state, GLint first, GLsizei count, GLsizei instances) = 0;
     virtual gl::Error applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo) = 0;
-    virtual void applyTransformFeedbackBuffers(gl::Buffer *transformFeedbackBuffers[], GLintptr offsets[]) = 0;
+    virtual void applyTransformFeedbackBuffers(const gl::State& state) = 0;
 
     virtual gl::Error drawArrays(GLenum mode, GLsizei count, GLsizei instances, bool transformFeedbackActive) = 0;
     virtual gl::Error drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
@@ -188,7 +189,7 @@ class Renderer
                                  GLenum type, GLuint outputPitch, const gl::PixelPackState &pack, uint8_t *pixels) = 0;
 
     // RenderTarget creation
-    virtual RenderTarget *createRenderTarget(SwapChain *swapChain, bool depth) = 0;
+    virtual RenderTarget *createRenderTarget(egl::Surface *eglSurface, bool depth) = 0;
     virtual RenderTarget *createRenderTarget(int width, int height, GLenum format, GLsizei samples) = 0;
 
     // Shader creation
@@ -197,17 +198,18 @@ class Renderer
 
     // Shader operations
     virtual void releaseShaderCompiler() = 0;
-    virtual ShaderExecutable *loadExecutable(const void *function, size_t length, rx::ShaderType type,
-                                             const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
-                                             bool separatedOutputBuffers) = 0;
-    virtual ShaderExecutable *compileToExecutable(gl::InfoLog &infoLog, const std::string &shaderHLSL, rx::ShaderType type,
-                                                  const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
-                                                  bool separatedOutputBuffers, D3DWorkaroundType workaround) = 0;
+    virtual gl::Error loadExecutable(const void *function, size_t length, rx::ShaderType type,
+                                     const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
+                                     bool separatedOutputBuffers, ShaderExecutable **outExecutable) = 0;
+    virtual gl::Error compileToExecutable(gl::InfoLog &infoLog, const std::string &shaderHLSL, rx::ShaderType type,
+                                          const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
+                                          bool separatedOutputBuffers, D3DWorkaroundType workaround,
+                                          ShaderExecutable **outExectuable) = 0;
     virtual UniformStorage *createUniformStorage(size_t storageSize) = 0;
 
     // Image operations
     virtual Image *createImage() = 0;
-    virtual void generateMipmap(Image *dest, Image *source) = 0;
+    virtual gl::Error generateMipmap(Image *dest, Image *source) = 0;
     virtual TextureStorage *createTextureStorage2D(SwapChain *swapChain) = 0;
     virtual TextureStorage *createTextureStorage2D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, int levels) = 0;
     virtual TextureStorage *createTextureStorageCube(GLenum internalformat, bool renderTarget, int size, int levels) = 0;
@@ -227,7 +229,8 @@ class Renderer
 
     // Query and Fence creation
     virtual QueryImpl *createQuery(GLenum type) = 0;
-    virtual FenceImpl *createFence() = 0;
+    virtual FenceNVImpl *createFenceNV() = 0;
+    virtual FenceSyncImpl *createFenceSync() = 0;
 
     // Transform Feedback creation
     virtual TransformFeedbackImpl* createTransformFeedback() = 0;

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import org.mozilla.gecko.home.HomePager;
@@ -51,8 +55,7 @@ public class testBookmarkFolders extends AboutHomeTest {
 
         // Open the bookmark from a bookmark folder hierarchy
         loadBookmark(DESKTOP_BOOKMARK_URL);
-        waitForText(StringHelper.ROBOCOP_BLANK_PAGE_02_TITLE);
-        verifyPageTitle(StringHelper.ROBOCOP_BLANK_PAGE_02_TITLE, DESKTOP_BOOKMARK_URL);
+        verifyUrlBarTitle(DESKTOP_BOOKMARK_URL);
         openAboutHomeTab(AboutHomeTabs.BOOKMARKS);
 
         // Check that folders don't have a context menu

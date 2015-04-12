@@ -38,6 +38,8 @@ class SwapChain11 : public SwapChain
 
     EGLint getWidth() const { return mWidth; }
     EGLint getHeight() const { return mHeight; }
+    virtual void* getKeyedMutex() { return mKeyedMutex; };
+    virtual void releaseSync();
 
     static SwapChain11 *makeSwapChain11(SwapChain *swapChain);
 
@@ -56,7 +58,8 @@ class SwapChain11 : public SwapChain
     unsigned int mSwapInterval;
     bool mPassThroughResourcesInit;
 
-    IDXGISwapChain *mSwapChain;
+    DXGISwapChain *mSwapChain;
+    IDXGIKeyedMutex *mKeyedMutex;
 
     ID3D11Texture2D *mBackBufferTexture;
     ID3D11RenderTargetView *mBackBufferRTView;

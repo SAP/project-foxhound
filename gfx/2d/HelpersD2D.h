@@ -6,11 +6,7 @@
 #ifndef MOZILLA_GFX_HELPERSD2D_H_
 #define MOZILLA_GFX_HELPERSD2D_H_
 
-#ifndef USE_D2D1_1
-#include "moz-d2d1-1.h"
-#else
 #include <d2d1_1.h>
-#endif
 
 #include <vector>
 
@@ -30,9 +26,7 @@ namespace gfx {
 
 ID2D1Factory* D2DFactory();
 
-#ifdef USE_D2D1_1
 ID2D1Factory1* D2DFactory1();
-#endif
 
 static inline D2D1_POINT_2F D2DPoint(const Point &aPoint)
 {
@@ -77,7 +71,6 @@ static inline D2D1_BITMAP_INTERPOLATION_MODE D2DFilter(const Filter &aFilter)
   }
 }
 
-#ifdef USE_D2D1_1
 static inline D2D1_INTERPOLATION_MODE D2DInterpolationMode(const Filter &aFilter)
 {
   switch (aFilter) {
@@ -101,8 +94,6 @@ static inline D2D1_VECTOR_3F D2DVector3D(const Point3D &aPoint)
 {
   return D2D1::Vector3F(aPoint.x, aPoint.y, aPoint.z);
 }
-
-#endif
 
 static inline D2D1_ANTIALIAS_MODE D2DAAMode(AntialiasMode aMode)
 {
@@ -193,7 +184,6 @@ static inline D2D1_PIXEL_FORMAT D2DPixelFormat(SurfaceFormat aFormat)
   return D2D1::PixelFormat(DXGIFormat(aFormat), D2DAlphaModeForFormat(aFormat));
 }
 
-#ifdef USE_D2D1_1
 static inline bool D2DSupportsCompositeMode(CompositionOp aOp)
 {
   switch(aOp) {
@@ -281,7 +271,6 @@ static inline D2D1_BLEND_MODE D2DBlendMode(CompositionOp aOp)
     return D2D1_BLEND_MODE_MULTIPLY;
   }
 }
-#endif
 
 static inline bool IsPatternSupportedByD2D(const Pattern &aPattern)
 {
@@ -396,7 +385,7 @@ DWriteGlyphRunFromGlyphs(const GlyphBuffer &aGlyphs, ScaledFontDWrite *aFont, Au
   run->isSideways = FALSE;
 }
 
-static TemporaryRef<ID2D1Geometry>
+static inline TemporaryRef<ID2D1Geometry>
 ConvertRectToGeometry(const D2D1_RECT_F& aRect)
 {
   RefPtr<ID2D1RectangleGeometry> rectGeom;
@@ -404,7 +393,7 @@ ConvertRectToGeometry(const D2D1_RECT_F& aRect)
   return rectGeom.forget();
 }
 
-static TemporaryRef<ID2D1Geometry>
+static inline TemporaryRef<ID2D1Geometry>
 GetTransformedGeometry(ID2D1Geometry *aGeometry, const D2D1_MATRIX_3X2_F &aTransform)
 {
   RefPtr<ID2D1PathGeometry> tmpGeometry;
@@ -417,7 +406,7 @@ GetTransformedGeometry(ID2D1Geometry *aGeometry, const D2D1_MATRIX_3X2_F &aTrans
   return tmpGeometry.forget();
 }
 
-static TemporaryRef<ID2D1Geometry>
+static inline TemporaryRef<ID2D1Geometry>
 IntersectGeometry(ID2D1Geometry *aGeometryA, ID2D1Geometry *aGeometryB)
 {
   RefPtr<ID2D1PathGeometry> pathGeom;
@@ -430,7 +419,7 @@ IntersectGeometry(ID2D1Geometry *aGeometryA, ID2D1Geometry *aGeometryB)
   return pathGeom.forget();
 }
 
-static TemporaryRef<ID2D1StrokeStyle>
+static inline TemporaryRef<ID2D1StrokeStyle>
 CreateStrokeStyleForOptions(const StrokeOptions &aStrokeOptions)
 {
   RefPtr<ID2D1StrokeStyle> style;
@@ -510,7 +499,7 @@ CreateStrokeStyleForOptions(const StrokeOptions &aStrokeOptions)
 // This creates a (partially) uploaded bitmap for a DataSourceSurface. It
 // uploads the minimum requirement and possibly downscales. It adjusts the
 // input Matrix to compensate.
-static TemporaryRef<ID2D1Bitmap>
+static inline TemporaryRef<ID2D1Bitmap>
 CreatePartialBitmapForSurface(DataSourceSurface *aSurface, const Matrix &aDestinationTransform,
                               const IntSize &aDestinationSize, ExtendMode aExtendMode,
                               Matrix &aSourceTransform, ID2D1RenderTarget *aRT,
@@ -629,14 +618,18 @@ CreatePartialBitmapForSurface(DataSourceSurface *aSurface, const Matrix &aDestin
     scaler.ScaleForSize(scaleSize);
 
     IntSize newSize = scaler.GetSize();
+
+    if (newSize.IsEmpty()) {
+      return nullptr;
+    }
     
     aRT->CreateBitmap(D2D1::SizeU(newSize.width, newSize.height),
                       scaler.GetScaledData(), scaler.GetStride(),
                       D2D1::BitmapProperties(D2DPixelFormat(aSurface->GetFormat())),
                       byRef(bitmap));
 
-    aSourceTransform.PreScale(Float(size.width / newSize.width),
-                              Float(size.height / newSize.height));
+    aSourceTransform.PreScale(Float(size.width) / newSize.width,
+                              Float(size.height) / newSize.height);
     return bitmap.forget();
   }
 }

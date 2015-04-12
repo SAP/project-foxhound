@@ -4,8 +4,9 @@
 
 #include "TelephonyDialCallback.h"
 
-#include "mozilla/dom/DOMMMIError.h"
-#include "nsServiceManagerUtils.h"
+#include "mozilla/dom/MozMobileConnectionBinding.h"
+#include "nsIMobileCallForwardingOptions.h"
+#include "nsIMobileConnectionService.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::telephony;
@@ -15,44 +16,10 @@ NS_IMPL_ISUPPORTS_INHERITED(TelephonyDialCallback, TelephonyCallback,
 
 TelephonyDialCallback::TelephonyDialCallback(nsPIDOMWindow* aWindow,
                                              Telephony* aTelephony,
-                                             Promise* aPromise,
-                                             uint32_t aServiceId)
-  : TelephonyCallback(aPromise), mWindow(aWindow), mTelephony(aTelephony),
-    mServiceId(aServiceId)
+                                             Promise* aPromise)
+  : TelephonyCallback(aPromise), mWindow(aWindow), mTelephony(aTelephony)
 {
   MOZ_ASSERT(mTelephony);
-}
-
-nsresult
-TelephonyDialCallback::NotifyDialMMISuccess(const nsAString& aStatusMessage)
-{
-  AutoJSAPI jsapi;
-  if (!NS_WARN_IF(jsapi.Init(mWindow))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  JSContext* cx = jsapi.cx();
-
-  MozMMIResult result;
-
-  result.mServiceCode.Assign(mServiceCode);
-  result.mStatusMessage.Assign(aStatusMessage);
-
-  return NotifyDialMMISuccess(cx, result);
-}
-
-nsresult
-TelephonyDialCallback::NotifyDialMMISuccess(JSContext* aCx,
-                                            const nsAString& aStatusMessage,
-                                            JS::Handle<JS::Value> aInfo)
-{
-  RootedDictionary<MozMMIResult> result(aCx);
-
-  result.mServiceCode.Assign(mServiceCode);
-  result.mStatusMessage.Assign(aStatusMessage);
-  result.mAdditionalInformation.Construct().SetAsObject() = &aInfo.toObject();
-
-  return NotifyDialMMISuccess(aCx, result);
 }
 
 nsresult
@@ -66,7 +33,8 @@ TelephonyDialCallback::NotifyDialMMISuccess(JSContext* aCx,
     return NS_ERROR_TYPE_ERR;
   }
 
-  return NotifyDialMMISuccess(jsResult);
+  mMMICall->NotifyResult(jsResult);
+  return NS_OK;
 }
 
 // nsITelephonyDialCallback
@@ -74,20 +42,21 @@ TelephonyDialCallback::NotifyDialMMISuccess(JSContext* aCx,
 NS_IMETHODIMP
 TelephonyDialCallback::NotifyDialMMI(const nsAString& aServiceCode)
 {
-  mMMIRequest = new DOMRequest(mWindow);
   mServiceCode.Assign(aServiceCode);
 
-  mPromise->MaybeResolve(mMMIRequest);
+  mMMICall = new MMICall(mWindow, aServiceCode);
+  mPromise->MaybeResolve(mMMICall);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TelephonyDialCallback::NotifyDialCallSuccess(uint32_t aCallIndex,
+TelephonyDialCallback::NotifyDialCallSuccess(uint32_t aClientId,
+                                             uint32_t aCallIndex,
                                              const nsAString& aNumber)
 {
   nsRefPtr<TelephonyCallId> id = mTelephony->CreateCallId(aNumber);
   nsRefPtr<TelephonyCall> call =
-      mTelephony->CreateCall(id, mServiceId, aCallIndex,
+      mTelephony->CreateCall(id, aClientId, aCallIndex,
                              nsITelephonyService::CALL_STATE_DIALING);
 
   mPromise->MaybeResolve(call);
@@ -95,39 +64,179 @@ TelephonyDialCallback::NotifyDialCallSuccess(uint32_t aCallIndex,
 }
 
 NS_IMETHODIMP
-TelephonyDialCallback::NotifyDialMMISuccess(JS::Handle<JS::Value> aResult)
+TelephonyDialCallback::NotifyDialMMISuccess(const nsAString& aStatusMessage)
 {
-  nsCOMPtr<nsIDOMRequestService> rs = do_GetService(DOMREQUEST_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(rs, NS_ERROR_FAILURE);
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(mWindow))) {
+    return NS_ERROR_FAILURE;
+  }
 
-  return rs->FireSuccessAsync(mMMIRequest, aResult);
+  JSContext* cx = jsapi.cx();
+
+  MozMMIResult result;
+  result.mSuccess = true;
+  result.mServiceCode.Assign(mServiceCode);
+  result.mStatusMessage.Assign(aStatusMessage);
+
+  return NotifyDialMMISuccess(cx, result);
+}
+
+NS_IMETHODIMP
+TelephonyDialCallback::NotifyDialMMISuccessWithInteger(const nsAString& aStatusMessage,
+                                                       uint16_t aAdditionalInformation)
+{
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(mWindow))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JSContext* cx = jsapi.cx();
+
+  MozMMIResult result;
+  result.mSuccess = true;
+  result.mServiceCode.Assign(mServiceCode);
+  result.mStatusMessage.Assign(aStatusMessage);
+  result.mAdditionalInformation.Construct().SetAsUnsignedShort() = aAdditionalInformation;
+
+  return NotifyDialMMISuccess(cx, result);
+}
+
+NS_IMETHODIMP
+TelephonyDialCallback::NotifyDialMMISuccessWithStrings(const nsAString& aStatusMessage,
+                                                       uint32_t aCount,
+                                                       const char16_t** aAdditionalInformation)
+{
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(mWindow))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JSContext* cx = jsapi.cx();
+
+  RootedDictionary<MozMMIResult> result(cx);
+  result.mSuccess = true;
+  result.mServiceCode.Assign(mServiceCode);
+  result.mStatusMessage.Assign(aStatusMessage);
+
+  nsTArray<nsString> additionalInformation;
+  for (uint32_t i = 0; i < aCount; i++) {
+    additionalInformation.AppendElement(nsDependentString(aAdditionalInformation[i]));
+  }
+
+  JS::Rooted<JS::Value> jsAdditionalInformation(cx);
+  if (!ToJSValue(cx, additionalInformation, &jsAdditionalInformation)) {
+    JS_ClearPendingException(cx);
+    return NS_ERROR_TYPE_ERR;
+  }
+
+  result.mAdditionalInformation.Construct().SetAsObject() =
+    &jsAdditionalInformation.toObject();
+
+  return NotifyDialMMISuccess(cx, result);
+}
+
+NS_IMETHODIMP
+TelephonyDialCallback::NotifyDialMMISuccessWithCallForwardingOptions(const nsAString& aStatusMessage,
+                                                                     uint32_t aCount,
+                                                                     nsIMobileCallForwardingOptions** aResults)
+{
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(mWindow))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JSContext* cx = jsapi.cx();
+
+  RootedDictionary<MozMMIResult> result(cx);
+  result.mSuccess = true;
+  result.mServiceCode.Assign(mServiceCode);
+  result.mStatusMessage.Assign(aStatusMessage);
+
+  nsTArray<MozCallForwardingOptions> additionalInformation;
+  for (uint32_t i = 0; i < aCount; i++) {
+    MozCallForwardingOptions options;
+
+    bool active = false;
+    aResults[i]->GetActive(&active);
+    options.mActive.Construct(active);
+
+    int16_t action = nsIMobileConnection::CALL_FORWARD_ACTION_UNKNOWN;
+    aResults[i]->GetAction(&action);
+    if (action != nsIMobileConnection::CALL_FORWARD_ACTION_UNKNOWN) {
+      options.mAction.Construct(action);
+    }
+
+    int16_t reason = nsIMobileConnection::CALL_FORWARD_REASON_UNKNOWN;
+    aResults[i]->GetReason(&reason);
+    if (reason != nsIMobileConnection::CALL_FORWARD_REASON_UNKNOWN) {
+      options.mReason.Construct(reason);
+    }
+
+    nsAutoString number;
+    aResults[i]->GetNumber(number);
+    options.mNumber.Construct(number.get());
+
+    int16_t timeSeconds = -1;
+    aResults[i]->GetTimeSeconds(&timeSeconds);
+    if (timeSeconds >= 0) {
+      options.mTimeSeconds.Construct(timeSeconds);
+    }
+
+    int16_t serviceClass = nsIMobileConnection::ICC_SERVICE_CLASS_NONE;
+    aResults[i]->GetServiceClass(&serviceClass);
+    if (serviceClass != nsIMobileConnection::ICC_SERVICE_CLASS_NONE) {
+      options.mServiceClass.Construct(serviceClass);
+    }
+
+    additionalInformation.AppendElement(options);
+  }
+
+  JS::Rooted<JS::Value> jsAdditionalInformation(cx);
+  if (!ToJSValue(cx, additionalInformation, &jsAdditionalInformation)) {
+    JS_ClearPendingException(cx);
+    return NS_ERROR_TYPE_ERR;
+  }
+
+  result.mAdditionalInformation.Construct().SetAsObject() =
+    &jsAdditionalInformation.toObject();
+
+  return NotifyDialMMISuccess(cx, result);
 }
 
 NS_IMETHODIMP
 TelephonyDialCallback::NotifyDialMMIError(const nsAString& aError)
 {
-  Nullable<int16_t> info;
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(mWindow))) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsRefPtr<DOMError> error =
-      new DOMMMIError(mWindow, aError, EmptyString(), mServiceCode, info);
+  JSContext* cx = jsapi.cx();
 
-  nsCOMPtr<nsIDOMRequestService> rs = do_GetService(DOMREQUEST_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(rs, NS_ERROR_FAILURE);
+  MozMMIResult result;
+  result.mSuccess = false;
+  result.mServiceCode.Assign(mServiceCode);
+  result.mStatusMessage.Assign(aError);
 
-  return rs->FireDetailedError(mMMIRequest, error);
+  return NotifyDialMMISuccess(cx, result);
 }
 
 NS_IMETHODIMP
 TelephonyDialCallback::NotifyDialMMIErrorWithInfo(const nsAString& aError,
                                                   uint16_t aInfo)
 {
-  Nullable<int16_t> info(aInfo);
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(mWindow))) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsRefPtr<DOMError> error =
-      new DOMMMIError(mWindow, aError, EmptyString(), mServiceCode, info);
+  JSContext* cx = jsapi.cx();
 
-  nsCOMPtr<nsIDOMRequestService> rs = do_GetService(DOMREQUEST_SERVICE_CONTRACTID);
-  NS_ENSURE_TRUE(rs, NS_ERROR_FAILURE);
+  MozMMIResult result;
+  result.mSuccess = false;
+  result.mServiceCode.Assign(mServiceCode);
+  result.mStatusMessage.Assign(aError);
+  result.mAdditionalInformation.Construct().SetAsUnsignedShort() = aInfo;
 
-  return rs->FireDetailedError(mMMIRequest, error);
+  return NotifyDialMMISuccess(cx, result);
 }

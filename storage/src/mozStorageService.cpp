@@ -347,22 +347,32 @@ Service::minimizeMemory()
 
   for (uint32_t i = 0; i < connections.Length(); i++) {
     nsRefPtr<Connection> conn = connections[i];
-    if (conn->connectionReady()) {
-      NS_NAMED_LITERAL_CSTRING(shrinkPragma, "PRAGMA shrink_memory");
-      nsCOMPtr<mozIStorageConnection> syncConn = do_QueryInterface(
-        NS_ISUPPORTS_CAST(mozIStorageAsyncConnection*, conn));
-      DebugOnly<nsresult> rv;
+    if (!conn->connectionReady())
+      continue;
 
-      if (!syncConn) {
-        nsCOMPtr<mozIStoragePendingStatement> ps;
-        rv = connections[i]->ExecuteSimpleSQLAsync(shrinkPragma, nullptr,
-          getter_AddRefs(ps));
-      } else {
-        rv = connections[i]->ExecuteSimpleSQL(shrinkPragma);
-      }
+    NS_NAMED_LITERAL_CSTRING(shrinkPragma, "PRAGMA shrink_memory");
+    nsCOMPtr<mozIStorageConnection> syncConn = do_QueryInterface(
+      NS_ISUPPORTS_CAST(mozIStorageAsyncConnection*, conn));
+    bool onOpenedThread = false;
 
-      MOZ_ASSERT(NS_SUCCEEDED(rv),
-        "Should have been able to purge sqlite caches");
+    if (!syncConn) {
+      // This is a mozIStorageAsyncConnection, it can only be used on the main
+      // thread, so we can do a straight API call.
+      nsCOMPtr<mozIStoragePendingStatement> ps;
+      DebugOnly<nsresult> rv =
+        conn->ExecuteSimpleSQLAsync(shrinkPragma, nullptr, getter_AddRefs(ps));
+      MOZ_ASSERT(NS_SUCCEEDED(rv), "Should have purged sqlite caches");
+    } else if (NS_SUCCEEDED(conn->threadOpenedOn->IsOnCurrentThread(&onOpenedThread)) &&
+               onOpenedThread) {
+      // We are on the opener thread, so we can just proceed.
+      conn->ExecuteSimpleSQL(shrinkPragma);
+    } else {
+      // We are on the wrong thread, the query should be executed on the
+      // opener thread, so we must dispatch to it.
+      nsCOMPtr<nsIRunnable> event =
+        NS_NewRunnableMethodWithArg<const nsCString>(
+          conn, &Connection::ExecuteSimpleSQL, shrinkPragma);
+      conn->threadOpenedOn->Dispatch(event, NS_DISPATCH_NORMAL);
     }
   }
 }
@@ -653,7 +663,7 @@ Service::OpenSpecialDatabase(const char *aStorageKey,
 
 namespace {
 
-class AsyncInitDatabase MOZ_FINAL : public nsRunnable
+class AsyncInitDatabase final : public nsRunnable
 {
 public:
   AsyncInitDatabase(Connection* aConnection,
@@ -674,6 +684,14 @@ public:
     nsresult rv = mStorageFile ? mConnection->initialize(mStorageFile)
                                : mConnection->initialize();
     if (NS_FAILED(rv)) {
+      nsCOMPtr<nsIRunnable> closeRunnable =
+        NS_NewRunnableMethodWithArg<mozIStorageCompletionCallback*>(
+          mConnection.get(),
+          &Connection::AsyncClose,
+          nullptr);
+      MOZ_ASSERT(closeRunnable);
+      MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(closeRunnable)));
+
       return DispatchResult(rv, nullptr);
     }
 

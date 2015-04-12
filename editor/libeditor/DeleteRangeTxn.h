@@ -37,13 +37,13 @@ public:
   DeleteRangeTxn();
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DeleteRangeTxn, EditAggregateTxn)
-  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
 
   NS_DECL_EDITTXN
 
-  NS_IMETHOD RedoTransaction();
+  NS_IMETHOD RedoTransaction() override;
 
-  virtual void LastRelease()
+  virtual void LastRelease() override
   {
     mRange = nullptr;
     EditAggregateTxn::LastRelease();

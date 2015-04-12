@@ -22,8 +22,8 @@
  * limitations under the License.
  */
 
-#ifndef mozilla_pkix__pkixder_h
-#define mozilla_pkix__pkixder_h
+#ifndef mozilla_pkix_pkixder_h
+#define mozilla_pkix_pkixder_h
 
 // Expect* functions advance the input mark and return Success if the input
 // matches the given criteria; they fail with the input mark in an undefined
@@ -42,7 +42,7 @@
 
 namespace mozilla { namespace pkix { namespace der {
 
-enum Class
+enum Class : uint8_t
 {
    UNIVERSAL = 0 << 6,
 // APPLICATION = 1 << 6, // unused
@@ -55,7 +55,7 @@ enum Constructed
   CONSTRUCTED = 1 << 5
 };
 
-enum Tag
+enum Tag : uint8_t
 {
   BOOLEAN = UNIVERSAL | 0x01,
   INTEGER = UNIVERSAL | 0x02,
@@ -67,11 +67,14 @@ enum Tag
   UTF8String = UNIVERSAL | 0x0c,
   SEQUENCE = UNIVERSAL | CONSTRUCTED | 0x10, // 0x30
   SET = UNIVERSAL | CONSTRUCTED | 0x11, // 0x31
+  PrintableString = UNIVERSAL | 0x13,
+  TeletexString = UNIVERSAL | 0x14,
+  IA5String = UNIVERSAL | 0x16,
   UTCTime = UNIVERSAL | 0x17,
   GENERALIZED_TIME = UNIVERSAL | 0x18,
 };
 
-MOZILLA_PKIX_ENUM_CLASS EmptyAllowed { No = 0, Yes = 1 };
+enum class EmptyAllowed { No = 0, Yes = 1 };
 
 Result ReadTagAndGetValue(Reader& input, /*out*/ uint8_t& tag,
                           /*out*/ Input& value);
@@ -163,9 +166,6 @@ template <typename Decoder>
 inline Result
 Nested(Reader& input, uint8_t outerTag, uint8_t innerTag, Decoder decoder)
 {
-  // XXX: This doesn't work (in VS2010):
-  // return Nested(input, outerTag, bind(Nested, _1, innerTag, decoder));
-
   Reader nestedInput;
   Result rv = ExpectTagAndGetValue(input, outerTag, nestedInput);
   if (rv != Success) {
@@ -186,14 +186,24 @@ Nested(Reader& input, uint8_t outerTag, uint8_t innerTag, Decoder decoder)
 //     Foo ::= SEQUENCE {
 //     }
 //
-// using a call like this:
+// using code like this:
 //
-//    rv = NestedOf(input, SEQEUENCE, SEQUENCE, bind(_1, Foo));
+//    Result Foo(Reader& r) { /*...*/ }
 //
-//    Result Foo(Reader& input) {
-//    }
+//    rv = der::NestedOf(input, der::SEQEUENCE, der::SEQUENCE, Foo);
 //
-// In this example, Foo will get called once for each element of foos.
+// or:
+//
+//    Result Bar(Reader& r, int value) { /*...*/ }
+//
+//    int value = /*...*/;
+//
+//    rv = der::NestedOf(input, der::SEQUENCE, [value](Reader& r) {
+//      return Bar(r, value);
+//    });
+//
+// In these examples the function will get called once for each element of
+// foos.
 //
 template <typename Decoder>
 inline Result
@@ -223,9 +233,45 @@ NestedOf(Reader& input, uint8_t outerTag, uint8_t innerTag,
   return Success;
 }
 
+// Often, a function will need to decode an Input or Reader that contains
+// DER-encoded data wrapped in a SEQUENCE (or similar) with nothing after it.
+// This function reduces the boilerplate necessary for stripping the outermost
+// SEQUENCE (or similar) and ensuring that nothing follows it.
+inline Result
+ExpectTagAndGetValueAtEnd(Reader& outer, uint8_t expectedTag,
+                          /*out*/ Reader& inner)
+{
+  Result rv = der::ExpectTagAndGetValue(outer, expectedTag, inner);
+  if (rv != Success) {
+    return rv;
+  }
+  return der::End(outer);
+}
+
+// Similar to the above, but takes an Input instead of a Reader&.
+inline Result
+ExpectTagAndGetValueAtEnd(Input outer, uint8_t expectedTag,
+                          /*out*/ Reader& inner)
+{
+  Reader outerReader(outer);
+  return ExpectTagAndGetValueAtEnd(outerReader, expectedTag, inner);
+}
+
 // Universal types
 
 namespace internal {
+
+enum class IntegralValueRestriction
+{
+  NoRestriction,
+  MustBePositive,
+  MustBe0To127,
+};
+
+Result IntegralBytes(Reader& input, uint8_t tag,
+                     IntegralValueRestriction valueRestriction,
+             /*out*/ Input& value,
+    /*optional out*/ Input::size_type* significantBytes = nullptr);
 
 // This parser will only parse values between 0..127. If this range is
 // increased then callers will need to be changed.
@@ -235,21 +281,22 @@ IntegralValue(Reader& input, uint8_t tag, T& value)
   // Conveniently, all the Integers that we actually have to be able to parse
   // are positive and very small. Consequently, this parser is *much* simpler
   // than a general Integer parser would need to be.
-  Reader valueReader;
-  Result rv = ExpectTagAndGetValue(input, tag, valueReader);
+  Input valueBytes;
+  Result rv = IntegralBytes(input, tag, IntegralValueRestriction::MustBe0To127,
+                            valueBytes, nullptr);
   if (rv != Success) {
     return rv;
   }
+  Reader valueReader(valueBytes);
   uint8_t valueByte;
   rv = valueReader.Read(valueByte);
   if (rv != Success) {
-    return rv;
-  }
-  if (valueByte & 0x80) { // negative
-    return Result::ERROR_BAD_DER;
+    return NotReached("IntegralBytes already validated the value.", rv);
   }
   value = valueByte;
-  return End(valueReader);
+  rv = End(valueReader);
+  assert(rv == Success); // guaranteed by IntegralBytes's range checks.
+  return rv;
 }
 
 } // namespace internal
@@ -341,6 +388,19 @@ TimeChoice(Reader& input, /*out*/ Time& time)
   return internal::TimeChoice(input, expectedTag, time);
 }
 
+// Parse a DER integer value into value. Empty values, negative values, and
+// zero are rejected. If significantBytes is not null, then it will be set to
+// the number of significant bytes in the value (the length of the value, less
+// the length of any leading padding), which is useful for key size checks.
+inline Result
+PositiveInteger(Reader& input, /*out*/ Input& value,
+                /*optional out*/ Input::size_type* significantBytes = nullptr)
+{
+  return internal::IntegralBytes(
+           input, INTEGER, internal::IntegralValueRestriction::MustBePositive,
+           value, significantBytes);
+}
+
 // This parser will only parse values between 0..127. If this range is
 // increased then callers will need to be changed.
 inline Result
@@ -412,45 +472,14 @@ CertificateSerialNumber(Reader& input, /*out*/ Input& value)
   // * "Note: Non-conforming CAs may issue certificates with serial numbers
   //   that are negative or zero.  Certificate users SHOULD be prepared to
   //   gracefully handle such certificates."
-
-  Result rv = ExpectTagAndGetValue(input, INTEGER, value);
-  if (rv != Success) {
-    return rv;
-  }
-
-  if (value.GetLength() == 0) {
-    return Result::ERROR_BAD_DER;
-  }
-
-  // Check for overly-long encodings. If the first byte is 0x00 then the high
-  // bit on the second byte must be 1; otherwise the same *positive* value
-  // could be encoded without the leading 0x00 byte. If the first byte is 0xFF
-  // then the second byte must NOT have its high bit set; otherwise the same
-  // *negative* value could be encoded without the leading 0xFF byte.
-  if (value.GetLength() > 1) {
-    Reader valueInput(value);
-    uint8_t firstByte;
-    rv = valueInput.Read(firstByte);
-    if (rv != Success) {
-      return rv;
-    }
-    uint8_t secondByte;
-    rv = valueInput.Read(secondByte);
-    if (rv != Success) {
-      return rv;
-    }
-    if ((firstByte == 0x00 && (secondByte & 0x80) == 0) ||
-        (firstByte == 0xff && (secondByte & 0x80) != 0)) {
-      return Result::ERROR_BAD_DER;
-    }
-  }
-
-  return Success;
+  return internal::IntegralBytes(
+           input, INTEGER, internal::IntegralValueRestriction::NoRestriction,
+           value);
 }
 
 // x.509 and OCSP both use this same version numbering scheme, though OCSP
 // only supports v1.
-MOZILLA_PKIX_ENUM_CLASS Version { v1 = 0, v2 = 1, v3 = 2, v4 = 3 };
+enum class Version { v1 = 0, v2 = 1, v3 = 2, v4 = 3 };
 
 // X.509 Certificate and OCSP ResponseData both use this
 // "[0] EXPLICIT Version DEFAULT <defaultVersion>" construct, but with
@@ -571,14 +600,34 @@ OptionalExtensions(Reader& input, uint8_t tag,
 Result DigestAlgorithmIdentifier(Reader& input,
                                  /*out*/ DigestAlgorithm& algorithm);
 
-Result SignatureAlgorithmIdentifier(Reader& input,
-                                    /*out*/ SignatureAlgorithm& algorithm);
+enum class PublicKeyAlgorithm
+{
+  RSA_PKCS1,
+  ECDSA,
+};
+
+Result SignatureAlgorithmIdentifierValue(
+         Reader& input,
+         /*out*/ PublicKeyAlgorithm& publicKeyAlgorithm,
+         /*out*/ DigestAlgorithm& digestAlgorithm);
+
+struct SignedDataWithSignature final
+{
+public:
+  Input data;
+  Input algorithm;
+  Input signature;
+
+  void operator=(const SignedDataWithSignature&) = delete;
+};
 
 // Parses a SEQUENCE into tbs and then parses an AlgorithmIdentifier followed
 // by a BIT STRING into signedData. This handles the commonality between
 // parsing the signed/signature fields of certificates and OCSP responses. In
 // the case of an OCSP response, the caller needs to parse the certs
 // separately.
+//
+// Note that signatureAlgorithm is NOT parsed or validated.
 //
 // Certificate  ::=  SEQUENCE  {
 //        tbsCertificate       TBSCertificate,
@@ -595,4 +644,4 @@ Result SignedData(Reader& input, /*out*/ Reader& tbs,
 
 } } } // namespace mozilla::pkix::der
 
-#endif // mozilla_pkix__pkixder_h
+#endif // mozilla_pkix_pkixder_h

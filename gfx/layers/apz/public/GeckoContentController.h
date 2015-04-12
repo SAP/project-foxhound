@@ -62,7 +62,8 @@ public:
    */
   virtual void HandleLongTap(const CSSPoint& aPoint,
                              int32_t aModifiers,
-                             const ScrollableLayerGuid& aGuid) = 0;
+                             const ScrollableLayerGuid& aGuid,
+                             uint64_t aInputBlockId) = 0;
 
   /**
    * Requests handling of releasing a long tap. |aPoint| is in CSS pixels,
@@ -156,6 +157,7 @@ public:
                                     int aArg = 0) {}
 
   GeckoContentController() {}
+  virtual void Destroy() {}
 
 protected:
   // Protected destructor, to discourage deletion outside of Release():

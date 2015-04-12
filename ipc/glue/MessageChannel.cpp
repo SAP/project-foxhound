@@ -8,9 +8,12 @@
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 
+#include "mozilla/dom/ScriptSettings.h"
+
 #include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Move.h"
+#include "mozilla/SizePrintfMacros.h"
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
 #include "nsContentUtils.h"
@@ -79,6 +82,8 @@
 using namespace mozilla;
 using namespace std;
 
+using mozilla::dom::AutoNoJSAPI;
+using mozilla::dom::ScriptSettingsInitialized;
 using mozilla::MonitorAutoLock;
 using mozilla::MonitorAutoUnlock;
 
@@ -110,7 +115,6 @@ enum Direction
     IN_MESSAGE,
     OUT_MESSAGE
 };
-
 
 class MessageChannel::InterruptFrame
 {
@@ -173,6 +177,11 @@ public:
         return INTR_SEMS == mMesageSemantics && OUT_MESSAGE == mDirection;
     }
 
+    bool IsOutgoingSync() const {
+        return (mMesageSemantics == INTR_SEMS || mMesageSemantics == SYNC_SEMS) &&
+               mDirection == OUT_MESSAGE;
+    }
+
     void Describe(int32_t* id, const char** dir, const char** sems,
                   const char** name) const
     {
@@ -192,8 +201,8 @@ private:
     DebugOnly<bool> mMoved;
 
     // Disable harmful methods.
-    InterruptFrame(const InterruptFrame& aOther) MOZ_DELETE;
-    InterruptFrame& operator=(const InterruptFrame&) MOZ_DELETE;
+    InterruptFrame(const InterruptFrame& aOther) = delete;
+    InterruptFrame& operator=(const InterruptFrame&) = delete;
 };
 
 class MOZ_STACK_CLASS MessageChannel::CxxStackFrame
@@ -214,6 +223,9 @@ public:
         if (frame.IsInterruptIncall())
             mThat.EnteredCall();
 
+        if (frame.IsOutgoingSync())
+            mThat.EnteredSyncSend();
+
         mThat.mSawInterruptOutMsg |= frame.IsInterruptOutcall();
     }
 
@@ -222,7 +234,9 @@ public:
 
         MOZ_ASSERT(!mThat.mCxxStackFrames.empty());
 
-        bool exitingCall = mThat.mCxxStackFrames.back().IsInterruptIncall();
+        const InterruptFrame& frame = mThat.mCxxStackFrames.back();
+        bool exitingSync = frame.IsOutgoingSync();
+        bool exitingCall = frame.IsInterruptIncall();
         mThat.mCxxStackFrames.shrinkBy(1);
 
         bool exitingStack = mThat.mCxxStackFrames.empty();
@@ -235,6 +249,9 @@ public:
         if (exitingCall)
             mThat.ExitedCall();
 
+        if (exitingSync)
+            mThat.ExitedSyncSend();
+
         if (exitingStack)
             mThat.ExitedCxxStack();
     }
@@ -242,9 +259,9 @@ private:
     MessageChannel& mThat;
 
     // Disable harmful methods.
-    CxxStackFrame() MOZ_DELETE;
-    CxxStackFrame(const CxxStackFrame&) MOZ_DELETE;
-    CxxStackFrame& operator=(const CxxStackFrame&) MOZ_DELETE;
+    CxxStackFrame() = delete;
+    CxxStackFrame(const CxxStackFrame&) = delete;
+    CxxStackFrame& operator=(const CxxStackFrame&) = delete;
 };
 
 namespace {
@@ -287,9 +304,14 @@ MessageChannel::MessageChannel(MessageListener *aListener)
     mAwaitingSyncReplyPriority(0),
     mDispatchingSyncMessage(false),
     mDispatchingSyncMessagePriority(0),
+    mDispatchingAsyncMessage(false),
+    mDispatchingAsyncMessagePriority(0),
     mCurrentTransaction(0),
+    mTimedOutMessageSeqno(0),
+    mRecvdErrors(0),
     mRemoteStackDepthGuess(false),
     mSawInterruptOutMsg(false),
+    mIsWaitingForIncoming(false),
     mAbortOnError(false),
     mBlockScripts(false),
     mFlags(REQUIRE_DEFAULT),
@@ -350,6 +372,9 @@ MessageChannel::Connected() const
 bool
 MessageChannel::CanSend() const
 {
+    if (!mMonitor) {
+        return false;
+    }
     MonitorAutoLock lock(*mMonitor);
     return Connected();
 }
@@ -548,10 +573,8 @@ MessageChannel::ShouldDeferMessage(const Message& aMsg)
     // Never defer messages that have the highest priority, even async
     // ones. This is safe because only the child can send these messages, so
     // they can never nest.
-    if (aMsg.priority() == IPC::Message::PRIORITY_URGENT) {
-        MOZ_ASSERT(mSide == ParentSide);
+    if (aMsg.priority() == IPC::Message::PRIORITY_URGENT)
         return false;
-    }
 
     // Unless they're urgent, we always defer async messages.
     if (!aMsg.is_sync()) {
@@ -594,8 +617,30 @@ MessageChannel::OnMessageReceivedFromLink(const Message& aMsg)
 
     // Regardless of the Interrupt stack, if we're awaiting a sync reply,
     // we know that it needs to be immediately handled to unblock us.
-    if (AwaitingSyncReply() && aMsg.is_sync() && aMsg.is_reply()) {
+    if (aMsg.is_sync() && aMsg.is_reply()) {
+        if (aMsg.seqno() == mTimedOutMessageSeqno) {
+            // Drop the message, but allow future sync messages to be sent.
+            mTimedOutMessageSeqno = 0;
+            return;
+        }
+
+        MOZ_ASSERT(AwaitingSyncReply());
         MOZ_ASSERT(!mRecvd);
+
+        // Rather than storing errors in mRecvd, we mark them in
+        // mRecvdErrors. We need a counter because multiple replies can arrive
+        // when a timeout happens, as in the following example. Imagine the
+        // child is running slowly. The parent sends a sync message P1. It times
+        // out. The child eventually sends a sync message C1. While waiting for
+        // the C1 response, the child dispatches P1. In doing so, it sends sync
+        // message C2. At that point, it's valid for the parent to send error
+        // responses for both C1 and C2.
+        if (aMsg.is_reply_error()) {
+            mRecvdErrors++;
+            NotifyWorkerThread();
+            return;
+        }
+
         mRecvd = new Message(aMsg);
         NotifyWorkerThread();
         return;
@@ -616,7 +661,8 @@ MessageChannel::OnMessageReceivedFromLink(const Message& aMsg)
     }
 
     bool shouldWakeUp = AwaitingInterruptReply() ||
-                        (AwaitingSyncReply() && !ShouldDeferMessage(aMsg));
+                        (AwaitingSyncReply() && !ShouldDeferMessage(aMsg)) ||
+                        AwaitingIncomingMessage();
 
     // There are three cases we're concerned about, relating to the state of the
     // main thread:
@@ -659,12 +705,15 @@ MessageChannel::OnMessageReceivedFromLink(const Message& aMsg)
 bool
 MessageChannel::Send(Message* aMsg, Message* aReply)
 {
-    // See comment in DispatchUrgentMessage.
+    // See comment in DispatchSyncMessage.
     MaybeScriptBlocker scriptBlocker(this, true);
 
     // Sanity checks.
     AssertWorkerThread();
     mMonitor->AssertNotCurrentThreadOwns();
+
+    if (mCurrentTransaction == 0)
+        mListener->OnBeginSyncTransaction();
 
 #ifdef OS_WIN
     SyncStackFrame frame(this, false);
@@ -674,45 +723,24 @@ MessageChannel::Send(Message* aMsg, Message* aReply)
 
     MonitorAutoLock lock(*mMonitor);
 
+    if (mTimedOutMessageSeqno) {
+        // Don't bother sending another sync message if a previous one timed out
+        // and we haven't received a reply for it. Once the original timed-out
+        // message receives a reply, we'll be able to send more sync messages
+        // again.
+        return false;
+    }
+
     IPC_ASSERT(aMsg->is_sync(), "can only Send() sync messages here");
     IPC_ASSERT(aMsg->priority() >= DispatchingSyncMessagePriority(),
                "can't send sync message of a lesser priority than what's being dispatched");
     IPC_ASSERT(mAwaitingSyncReplyPriority <= aMsg->priority(),
                "nested sync message sends must be of increasing priority");
 
-    AutoSetValue<bool> replies(mAwaitingSyncReply, true);
-    AutoSetValue<int> prio(mAwaitingSyncReplyPriority, aMsg->priority());
-    AutoEnterTransaction transact(this);
-    aMsg->set_transaction_id(mCurrentTransaction);
-
-    if (!SendAndWait(aMsg, aReply))
-        return false;
-
-    NS_ABORT_IF_FALSE(aReply->is_sync(), "reply is not sync");
-    return true;
-}
-
-struct AutoDeferMessages
-{
-    typedef IPC::Message Message;
-
-    std::deque<Message>& mQueue;
-    mozilla::Vector<Message> mDeferred;
-
-    AutoDeferMessages(std::deque<Message>& queue) : mQueue(queue) {}
-    ~AutoDeferMessages() {
-        mQueue.insert(mQueue.begin(), mDeferred.begin(), mDeferred.end());
-    }
-
-    void Defer(Message aMsg) {
-        mDeferred.append(aMsg);
-    }
-};
-
-bool
-MessageChannel::SendAndWait(Message* aMsg, Message* aReply)
-{
-    mMonitor->AssertCurrentThreadOwns();
+    IPC_ASSERT(DispatchingSyncMessagePriority() != IPC::Message::PRIORITY_URGENT,
+               "not allowed to send messages while dispatching urgent messages");
+    IPC_ASSERT(DispatchingAsyncMessagePriority() != IPC::Message::PRIORITY_URGENT,
+               "not allowed to send messages while dispatching urgent messages");
 
     nsAutoPtr<Message> msg(aMsg);
 
@@ -723,39 +751,61 @@ MessageChannel::SendAndWait(Message* aMsg, Message* aReply)
 
     msg->set_seqno(NextSeqno());
 
-    DebugOnly<int32_t> replySeqno = msg->seqno();
+    int32_t seqno = msg->seqno();
     DebugOnly<msgid_t> replyType = msg->type() + 1;
+
+    AutoSetValue<bool> replies(mAwaitingSyncReply, true);
+    AutoSetValue<int> prio(mAwaitingSyncReplyPriority, msg->priority());
+    AutoEnterTransaction transact(this, seqno);
+
+    int32_t transaction = mCurrentTransaction;
+    msg->set_transaction_id(transaction);
 
     mLink->SendMessage(msg.forget());
 
-    AutoDeferMessages defer(mPending);
-
     while (true) {
-        while (!mPending.empty()) {
-            Message msg = mPending.front();
-            mPending.pop_front();
-            if (ShouldDeferMessage(msg))
-                defer.Defer(msg);
-            else
-                ProcessPendingRequest(msg);
+        // Loop until there aren't any more priority messages to process.
+        for (;;) {
+            mozilla::Vector<Message> toProcess;
+
+            for (MessageQueue::iterator it = mPending.begin(); it != mPending.end(); ) {
+                Message &msg = *it;
+                if (!ShouldDeferMessage(msg)) {
+                    toProcess.append(Move(msg));
+                    it = mPending.erase(it);
+                    continue;
+                }
+                it++;
+            }
+
+            if (toProcess.empty())
+                break;
+
+            // Processing these messages could result in more messages, so we
+            // loop around to check for more afterwards.
+            for (auto it = toProcess.begin(); it != toProcess.end(); it++)
+                ProcessPendingRequest(*it);
         }
 
         // See if we've received a reply.
+        if (mRecvdErrors) {
+            mRecvdErrors--;
+            return false;
+        }
+
         if (mRecvd) {
             MOZ_ASSERT(mRecvd->is_reply(), "expected reply");
-
-            if (mRecvd->is_reply_error()) {
-                mRecvd = nullptr;
-                return false;
-            }
-
+            MOZ_ASSERT(!mRecvd->is_reply_error());
             MOZ_ASSERT(mRecvd->type() == replyType, "wrong reply type");
-            MOZ_ASSERT(mRecvd->seqno() == replySeqno);
+            MOZ_ASSERT(mRecvd->seqno() == seqno);
+            MOZ_ASSERT(mRecvd->is_sync());
 
-            *aReply = *mRecvd;
+            *aReply = Move(*mRecvd);
             mRecvd = nullptr;
             return true;
         }
+
+        MOZ_ASSERT(!mTimedOutMessageSeqno);
 
         bool maybeTimedOut = !WaitForSyncNotify();
 
@@ -764,8 +814,13 @@ MessageChannel::SendAndWait(Message* aMsg, Message* aReply)
             return false;
         }
 
-        if (maybeTimedOut && !ShouldContinueFromTimeout())
+        // We only time out a message if it initiated a new transaction (i.e.,
+        // if neither side has any other message Sends on the stack).
+        bool canTimeOut = transaction == seqno;
+        if (maybeTimedOut && canTimeOut && !ShouldContinueFromTimeout()) {
+            mTimedOutMessageSeqno = seqno;
             return false;
+        }
     }
 
     return true;
@@ -843,10 +898,10 @@ MessageChannel::Call(Message* aMsg, Message* aReply)
         if ((it = mOutOfTurnReplies.find(mInterruptStack.top().seqno()))
             != mOutOfTurnReplies.end())
         {
-            recvd = it->second;
+            recvd = Move(it->second);
             mOutOfTurnReplies.erase(it);
         } else if (!mPending.empty()) {
-            recvd = mPending.front();
+            recvd = Move(mPending.front());
             mPending.pop_front();
         } else {
             // because of subtleties with nested event loops, it's possible
@@ -860,7 +915,7 @@ MessageChannel::Call(Message* aMsg, Message* aReply)
         // If the message is not Interrupt, we can dispatch it as normal.
         if (!recvd.is_interrupt()) {
             {
-                AutoEnterTransaction transaction(this, &recvd);
+                AutoEnterTransaction transaction(this, recvd);
                 MonitorAutoUnlock unlock(*mMonitor);
                 CxxStackFrame frame(*this, IN_MESSAGE, &recvd);
                 DispatchMessage(recvd);
@@ -887,7 +942,7 @@ MessageChannel::Call(Message* aMsg, Message* aReply)
                 if ((mSide == ChildSide && recvd.seqno() > outcall.seqno()) ||
                     (mSide != ChildSide && recvd.seqno() < outcall.seqno()))
                 {
-                    mOutOfTurnReplies[recvd.seqno()] = recvd;
+                    mOutOfTurnReplies[recvd.seqno()] = Move(recvd);
                     continue;
                 }
 
@@ -901,8 +956,9 @@ MessageChannel::Call(Message* aMsg, Message* aReply)
             // this frame and return the reply.
             mInterruptStack.pop();
 
-            if (!recvd.is_reply_error()) {
-                *aReply = recvd;
+            bool is_reply_error = recvd.is_reply_error();
+            if (!is_reply_error) {
+                *aReply = Move(recvd);
             }
 
             // If we have no more pending out calls waiting on replies, then
@@ -911,7 +967,7 @@ MessageChannel::Call(Message* aMsg, Message* aReply)
                        "still have pending replies with no pending out-calls",
                        true);
 
-            return !recvd.is_reply_error();
+            return !is_reply_error;
         }
 
         // Dispatch an Interrupt in-call. Snapshot the current stack depth while we
@@ -933,6 +989,35 @@ MessageChannel::Call(Message* aMsg, Message* aReply)
 }
 
 bool
+MessageChannel::WaitForIncomingMessage()
+{
+#ifdef OS_WIN
+    SyncStackFrame frame(this, true);
+#endif
+
+    { // Scope for lock
+        MonitorAutoLock lock(*mMonitor);
+        AutoEnterWaitForIncoming waitingForIncoming(*this);
+        if (mChannelState != ChannelConnected) {
+            return false;
+        }
+        if (!HasPendingEvents()) {
+            return WaitForInterruptNotify();
+        }
+    }
+
+    return OnMaybeDequeueOne();
+}
+
+bool
+MessageChannel::HasPendingEvents()
+{
+    AssertWorkerThread();
+    mMonitor->AssertCurrentThreadOwns();
+    return Connected() && !mPending.empty();
+}
+
+bool
 MessageChannel::InterruptEventOccurred()
 {
     AssertWorkerThread();
@@ -947,7 +1032,7 @@ MessageChannel::InterruptEventOccurred()
 }
 
 bool
-MessageChannel::ProcessPendingRequest(Message aUrgent)
+MessageChannel::ProcessPendingRequest(const Message &aUrgent)
 {
     AssertWorkerThread();
     mMonitor->AssertCurrentThreadOwns();
@@ -965,7 +1050,7 @@ MessageChannel::ProcessPendingRequest(Message aUrgent)
     {
         // In order to send the parent RPC messages and guarantee it will
         // wake up, we must re-use its transaction.
-        AutoEnterTransaction transaction(this, &aUrgent);
+        AutoEnterTransaction transaction(this, aUrgent);
 
         MonitorAutoUnlock unlock(*mMonitor);
         DispatchMessage(aUrgent);
@@ -1002,7 +1087,7 @@ MessageChannel::DequeueOne(Message *recvd)
     if (mPending.empty())
         return false;
 
-    *recvd = mPending.front();
+    *recvd = Move(mPending.front());
     mPending.pop_front();
     return true;
 }
@@ -1022,14 +1107,14 @@ MessageChannel::OnMaybeDequeueOne()
     if (IsOnCxxStack() && recvd.is_interrupt() && recvd.is_reply()) {
         // We probably just received a reply in a nested loop for an
         // Interrupt call sent before entering that loop.
-        mOutOfTurnReplies[recvd.seqno()] = recvd;
+        mOutOfTurnReplies[recvd.seqno()] = Move(recvd);
         return false;
     }
 
     {
         // We should not be in a transaction yet if we're not blocked.
         MOZ_ASSERT(mCurrentTransaction == 0);
-        AutoEnterTransaction transaction(this, &recvd);
+        AutoEnterTransaction transaction(this, recvd);
 
         MonitorAutoUnlock unlock(*mMonitor);
 
@@ -1042,6 +1127,9 @@ MessageChannel::OnMaybeDequeueOne()
 void
 MessageChannel::DispatchMessage(const Message &aMsg)
 {
+    Maybe<AutoNoJSAPI> nojsapi;
+    if (ScriptSettingsInitialized() && NS_IsMainThread())
+        nojsapi.emplace();
     if (aMsg.is_sync())
         DispatchSyncMessage(aMsg);
     else if (aMsg.is_interrupt())
@@ -1055,7 +1143,7 @@ MessageChannel::DispatchSyncMessage(const Message& aMsg)
 {
     AssertWorkerThread();
 
-    Message *reply = nullptr;
+    nsAutoPtr<Message> reply;
 
     int prio = aMsg.priority();
 
@@ -1075,15 +1163,21 @@ MessageChannel::DispatchSyncMessage(const Message& aMsg)
     bool& blockingVar = ShouldBlockScripts() ? gParentIsBlocked : dummy;
 
     Result rv;
-    {
+    if (mTimedOutMessageSeqno) {
+        // If the other side sends a message in response to one of our messages
+        // that we've timed out, then we reply with an error.
+        //
+        // We even reject messages that were sent before the other side even got
+        // to our timed out message.
+        rv = MsgNotAllowed;
+    } else {
         AutoSetValue<bool> blocked(blockingVar, true);
         AutoSetValue<bool> sync(mDispatchingSyncMessage, true);
         AutoSetValue<int> prioSet(mDispatchingSyncMessagePriority, prio);
-        rv = mListener->OnMessageReceived(aMsg, reply);
+        rv = mListener->OnMessageReceived(aMsg, *getter_Transfers(reply));
     }
 
     if (!MaybeHandleError(rv, aMsg, "DispatchSyncMessage")) {
-        delete reply;
         reply = new Message();
         reply->set_sync();
         reply->set_priority(aMsg.priority());
@@ -1091,10 +1185,12 @@ MessageChannel::DispatchSyncMessage(const Message& aMsg)
         reply->set_reply_error();
     }
     reply->set_seqno(aMsg.seqno());
+    reply->set_transaction_id(aMsg.transaction_id());
 
     MonitorAutoLock lock(*mMonitor);
-    if (ChannelConnected == mChannelState)
-        mLink->SendMessage(reply);
+    if (ChannelConnected == mChannelState) {
+        mLink->SendMessage(reply.forget());
+    }
 }
 
 void
@@ -1107,7 +1203,14 @@ MessageChannel::DispatchAsyncMessage(const Message& aMsg)
         NS_RUNTIMEABORT("unhandled special message!");
     }
 
-    MaybeHandleError(mListener->OnMessageReceived(aMsg), aMsg, "DispatchAsyncMessage");
+    Result rv;
+    {
+        int prio = aMsg.priority();
+        AutoSetValue<bool> async(mDispatchingAsyncMessage, true);
+        AutoSetValue<int> prioSet(mDispatchingAsyncMessagePriority, prio);
+        rv = mListener->OnMessageReceived(aMsg);
+    }
+    MaybeHandleError(rv, aMsg, "DispatchAsyncMessage");
 }
 
 void
@@ -1169,14 +1272,13 @@ MessageChannel::DispatchInterruptMessage(const Message& aMsg, size_t stackDepth)
     SyncStackFrame frame(this, true);
 #endif
 
-    Message* reply = nullptr;
+    nsAutoPtr<Message> reply;
 
     ++mRemoteStackDepthGuess;
-    Result rv = mListener->OnCallReceived(aMsg, reply);
+    Result rv = mListener->OnCallReceived(aMsg, *getter_Transfers(reply));
     --mRemoteStackDepthGuess;
 
     if (!MaybeHandleError(rv, aMsg, "DispatchInterruptMessage")) {
-        delete reply;
         reply = new Message();
         reply->set_interrupt();
         reply->set_reply();
@@ -1185,8 +1287,9 @@ MessageChannel::DispatchInterruptMessage(const Message& aMsg, size_t stackDepth)
     reply->set_seqno(aMsg.seqno());
 
     MonitorAutoLock lock(*mMonitor);
-    if (ChannelConnected == mChannelState)
-        mLink->SendMessage(reply);
+    if (ChannelConnected == mChannelState) {
+        mLink->SendMessage(reply.forget());
+    }
 }
 
 void
@@ -1347,21 +1450,6 @@ MessageChannel::ShouldContinueFromTimeout()
         return true;
     }
 
-    if (!cont) {
-        // NB: there's a sublety here.  If parents were allowed to send sync
-        // messages to children, then it would be possible for this
-        // synchronous close-on-timeout to race with async |OnMessageReceived|
-        // tasks arriving from the child, posted to the worker thread's event
-        // loop.  This would complicate cleanup of the *Channel.  But since
-        // IPDL forbids this (and since it doesn't support children timing out
-        // on parents), the parent can only block on interrupt messages to the child,
-        // and in that case arriving async messages are enqueued to the interrupt 
-        // channel's special queue.  They're then ignored because the channel
-        // state changes to ChannelTimeout (i.e. !Connected).
-        SynchronouslyClose();
-        mChannelState = ChannelTimeout;
-    }
-
     return cont;
 }
 
@@ -1398,7 +1486,7 @@ void
 MessageChannel::ReportMessageRouteError(const char* channelName) const
 {
     PrintErrorMessage(mSide, channelName, "Need a route");
-    mListener->OnProcessingError(MsgRouteError);
+    mListener->OnProcessingError(MsgRouteError, "MsgRouteError");
 }
 
 void
@@ -1432,7 +1520,7 @@ MessageChannel::ReportConnectionError(const char* aChannelName) const
     PrintErrorMessage(mSide, aChannelName, errorMsg);
 
     MonitorAutoUnlock unlock(*mMonitor);
-    mListener->OnProcessingError(MsgDropped);
+    mListener->OnProcessingError(MsgDropped, errorMsg);
 }
 
 bool
@@ -1467,14 +1555,14 @@ MessageChannel::MaybeHandleError(Result code, const Message& aMsg, const char* c
         return false;
     }
 
-    char printedMsg[512];
-    PR_snprintf(printedMsg, sizeof(printedMsg),
+    char reason[512];
+    PR_snprintf(reason, sizeof(reason),
                 "(msgtype=0x%lX,name=%s) %s",
                 aMsg.type(), aMsg.name(), errorMsg);
 
-    PrintErrorMessage(mSide, channelName, printedMsg);
+    PrintErrorMessage(mSide, channelName, reason);
 
-    mListener->OnProcessingError(code);
+    mListener->OnProcessingError(code, reason);
 
     return false;
 }
@@ -1488,7 +1576,7 @@ MessageChannel::OnChannelErrorFromLink()
     if (InterruptStackDepth() > 0)
         NotifyWorkerThread();
 
-    if (AwaitingSyncReply())
+    if (AwaitingSyncReply() || AwaitingIncomingMessage())
         NotifyWorkerThread();
 
     if (ChannelClosing != mChannelState) {
@@ -1602,6 +1690,19 @@ MessageChannel::CloseWithError()
     SynchronouslyClose();
     mChannelState = ChannelError;
     PostErrorNotifyTask();
+}
+
+void
+MessageChannel::CloseWithTimeout()
+{
+    AssertWorkerThread();
+
+    MonitorAutoLock lock(*mMonitor);
+    if (ChannelConnected != mChannelState) {
+        return;
+    }
+    SynchronouslyClose();
+    mChannelState = ChannelTimeout;
 }
 
 void

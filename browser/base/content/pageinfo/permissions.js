@@ -206,7 +206,7 @@ function onIndexedDBClear()
             .getService(nsIQuotaManager)
             .clearStoragesForURI(gPermURI);
 
-  SitePermissions.remove(gPermURI, "indexedDB-unlimited");
+  SitePermissions.remove(gPermURI, "indexedDB");
   initIndexedDBRow();
 }
 
@@ -266,7 +266,7 @@ function initPluginsRow() {
   let vulnerableLabel = document.getElementById("browserBundle").getString("pluginActivateVulnerable.label");
   let pluginHost = Components.classes["@mozilla.org/plugin/host;1"].getService(Components.interfaces.nsIPluginHost);
 
-  let permissionMap = Map();
+  let permissionMap = new Map();
 
   for (let plugin of pluginHost.getPluginTags()) {
     if (plugin.disabled) {

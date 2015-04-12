@@ -117,7 +117,7 @@ Tools.inspector = {
   },
 
   isTargetSupported: function(target) {
-    return !target.isAddon;
+    return target.hasActor("inspector");
   },
 
   build: function(iframeWindow, toolbox) {
@@ -199,7 +199,7 @@ Tools.styleEditor = {
   commands: "devtools/styleeditor/styleeditor-commands",
 
   isTargetSupported: function(target) {
-    return !target.isAddon;
+    return target.hasActor("styleEditor") || target.hasActor("styleSheets");
   },
 
   build: function(iframeWindow, toolbox) {
@@ -219,7 +219,7 @@ Tools.shaderEditor = {
   tooltip: l10n("ToolboxShaderEditor.tooltip", shaderEditorStrings),
 
   isTargetSupported: function(target) {
-    return !target.isAddon;
+    return target.hasActor("webgl") && !target.chrome;
   },
 
   build: function(iframeWindow, toolbox) {
@@ -241,7 +241,7 @@ Tools.canvasDebugger = {
   // Hide the Canvas Debugger in the Add-on Debugger and Browser Toolbox
   // (bug 1047520).
   isTargetSupported: function(target) {
-    return !target.isAddon && !target.chrome;
+    return target.hasActor("canvas") && !target.chrome;
   },
 
   build: function (iframeWindow, toolbox) {
@@ -267,7 +267,7 @@ Tools.jsprofiler = {
   isTargetSupported: function (target) {
     // Hide the profiler when debugging devices pre bug 1046394,
     // that don't expose profiler actor in content processes.
-    return !target.isAddon && (!target.isApp || target.form.profilerActor);
+    return target.hasActor("profiler");
   },
 
   build: function (frame, target) {
@@ -291,9 +291,7 @@ Tools.performance = {
   inMenu: true,
 
   isTargetSupported: function (target) {
-    // Hide the profiler when debugging devices pre bug 1046394,
-    // that don't expose profiler actor in content processes.
-    return !target.isAddon && (!target.isApp || target.form.profilerActor);
+    return target.hasActor("profiler");
   },
 
   build: function (frame, target) {
@@ -313,7 +311,7 @@ Tools.timeline = {
   tooltip: l10n("timeline.tooltip", timelineStrings),
 
   isTargetSupported: function(target) {
-    return !target.isAddon;
+    return target.hasActor("timeline");
   },
 
   build: function (iframeWindow, toolbox) {
@@ -338,8 +336,7 @@ Tools.netMonitor = {
   inMenu: true,
 
   isTargetSupported: function(target) {
-    let root = target.client.mainRoot;
-    return !target.isAddon && (root.traits.networkMonitor || !target.isApp);
+    return target.getTrait("networkMonitor");
   },
 
   build: function(iframeWindow, toolbox) {
@@ -365,7 +362,8 @@ Tools.storage = {
 
   isTargetSupported: function(target) {
     return target.isLocalTab ||
-           (target.client.traits.storageInspector && !target.isAddon);
+           ( target.hasActor("storage") &&
+             target.getTrait("storageInspector") );
   },
 
   build: function(iframeWindow, toolbox) {
@@ -385,7 +383,7 @@ Tools.webAudioEditor = {
   tooltip: l10n("ToolboxWebAudioEditor1.tooltip", webAudioEditorStrings),
 
   isTargetSupported: function(target) {
-    return !target.isAddon && !target.chrome;
+    return !target.chrome && target.hasActor("webaudio");
   },
 
   build: function(iframeWindow, toolbox) {

@@ -33,8 +33,7 @@ static JSObject*
 MmsAttachmentDataToJSObject(JSContext* aContext,
                             const MmsAttachmentData& aAttachment)
 {
-  JS::Rooted<JSObject*> obj(aContext, JS_NewObject(aContext, nullptr, JS::NullPtr(),
-                                                   JS::NullPtr()));
+  JS::Rooted<JSObject*> obj(aContext, JS_NewPlainObject(aContext));
   NS_ENSURE_TRUE(obj, nullptr);
 
   JS::Rooted<JSString*> idStr(aContext, JS_NewUCStringCopyN(aContext,
@@ -66,7 +65,7 @@ MmsAttachmentDataToJSObject(JSContext* aContext,
     MOZ_ASSERT(global);
 
     nsRefPtr<File> blob = new File(global, blobImpl);
-    if (!WrapNewBindingObject(aContext, blob, &content)) {
+    if (!GetOrCreateDOMReflector(aContext, blob, &content)) {
       return nullptr;
     }
   }
@@ -83,7 +82,7 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
                                    const SendMmsMessageRequest& aRequest,
                                    JS::Value* aParam)
 {
-  JS::Rooted<JSObject*> paramsObj(aCx, JS_NewObject(aCx, nullptr, JS::NullPtr(), JS::NullPtr()));
+  JS::Rooted<JSObject*> paramsObj(aCx, JS_NewPlainObject(aCx));
   NS_ENSURE_TRUE(paramsObj, false);
 
   // smil

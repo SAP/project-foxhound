@@ -82,6 +82,7 @@ UNIFIED_SOURCES += [
     'nsPlaceholderFrame.cpp',
     'nsRubyBaseContainerFrame.cpp',
     'nsRubyBaseFrame.cpp',
+    'nsRubyContentFrame.cpp',
     'nsRubyFrame.cpp',
     'nsRubyTextContainerFrame.cpp',
     'nsRubyTextFrame.cpp',
@@ -94,6 +95,7 @@ UNIFIED_SOURCES += [
     'nsTextRunTransformations.cpp',
     'nsVideoFrame.cpp',
     'nsViewportFrame.cpp',
+    'RubyUtils.cpp',
     'ScrollbarActivity.cpp',
     'StickyScrollContainer.cpp',
     'TextOverflow.cpp',
@@ -106,11 +108,6 @@ SOURCES += [
     'nsPluginFrame.cpp',
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
-    UNIFIED_SOURCES += [
-        'nsPluginUtilsOSX.mm',
-    ]
-
 FAIL_ON_WARNINGS = not CONFIG['_MSC_VER']
 
 MSVC_ENABLE_PGO = True
@@ -120,10 +117,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
-    '../../content/base/src',
-    '../../content/html/content/src',
-    '../../content/xul/content/src',
-    '../../dom/base',
     '../../dom/plugins/base',
     '../base',
     '../forms',
@@ -131,6 +124,9 @@ LOCAL_INCLUDES += [
     '../svg',
     '../tables',
     '../xul',
+    '/dom/base',
+    '/dom/html',
+    '/dom/xul',
 ]
 
 JAR_MANIFESTS += ['jar.mn']

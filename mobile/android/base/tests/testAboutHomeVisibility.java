@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import org.mozilla.gecko.home.HomeConfig;
@@ -13,20 +17,18 @@ public class testAboutHomeVisibility extends UITest {
         GeckoHelper.blockForReady();
 
         // Check initial state on about:home.
-        mToolbar.assertTitle(StringHelper.ABOUT_HOME_TITLE, StringHelper.ABOUT_HOME_URL);
+        mToolbar.assertTitle(StringHelper.ABOUT_HOME_URL);
         mAboutHome.assertVisible()
                   .assertCurrentPanel(PanelType.TOP_SITES);
 
         // Go to blank 01.
         NavigationHelper.enterAndLoadUrl(StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
-        mToolbar.assertTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_TITLE,
-                StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
+        mToolbar.assertTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
         mAboutHome.assertNotVisible();
 
         // Go to blank 02.
         NavigationHelper.enterAndLoadUrl(StringHelper.ROBOCOP_BLANK_PAGE_02_URL);
-        mToolbar.assertTitle(StringHelper.ROBOCOP_BLANK_PAGE_02_TITLE,
-                StringHelper.ROBOCOP_BLANK_PAGE_02_URL);
+        mToolbar.assertTitle(StringHelper.ROBOCOP_BLANK_PAGE_02_URL);
         mAboutHome.assertNotVisible();
 
         // Enter editing mode, where the about:home UI should be visible.
@@ -40,7 +42,7 @@ public class testAboutHomeVisibility extends UITest {
 
         // Loading about:home should show about:home again.
         NavigationHelper.enterAndLoadUrl(StringHelper.ABOUT_HOME_URL);
-        mToolbar.assertTitle(StringHelper.ABOUT_HOME_TITLE, StringHelper.ABOUT_HOME_URL);
+        mToolbar.assertTitle(StringHelper.ABOUT_HOME_URL);
         mAboutHome.assertVisible()
                   .assertCurrentPanel(PanelType.TOP_SITES);
 

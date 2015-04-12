@@ -81,7 +81,6 @@ p {
 
 .btn {
   display: inline-block;
-  overflow: hidden;
   margin: 0;
   padding: 0;
   border: none;
@@ -89,10 +88,14 @@ p {
   color: #fff;
   text-align: center;
   text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: .9em;
   cursor: pointer;
+}
+
+.btn.btn-constrained {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-info {
@@ -260,9 +263,20 @@ p {
   border: 1px solid #fbeed5;
 }
 
+.alert-success {
+  background: #5BC0A4;
+  border: 1px solid #5BC0A4;
+  color: #fff;
+}
+
 .notificationContainer > .details-error {
   background: #fbebeb;
   color: #d74345
+}
+
+.notificationContainer > .details-error > .detailsButton {
+  float: right;
+  -moz-margin-start: 1em; /* Match .detailsBar padding */
 }
 
 .alert .close {
@@ -358,12 +372,6 @@ p {
   color: rgba(51, 51, 51, .5);
 }
 
-.mac p,
-.windows p,
-.linux p {
-  line-height: 16px;
-}
-
 /* Web panel */
 
 .info-panel {
@@ -385,7 +393,8 @@ p {
 .info-panel h4 {
   color: #aaa;
   text-align: center;
-  font-weight: 300;
+  font-weight: 500;
+  font-size: 1.2em;
   margin: 0;
 }
 

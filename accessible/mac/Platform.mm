@@ -34,12 +34,17 @@ PlatformShutdown()
 }
 
 void
-ProxyCreated(ProxyAccessible*)
+ProxyCreated(ProxyAccessible*, uint32_t)
 {
 }
 
 void
 ProxyDestroyed(ProxyAccessible*)
+{
+}
+
+void
+ProxyEvent(ProxyAccessible*, uint32_t)
 {
 }
 }

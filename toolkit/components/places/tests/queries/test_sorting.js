@@ -280,7 +280,7 @@ tests.push({
       // if URIs are equal, should fall back to date
       { isBookmark: true,
         isDetails: true,
-        lastVisit: timeInMicroseconds + 1,
+        lastVisit: timeInMicroseconds + 1000,
         uri: "http://example.com/c",
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 3,
@@ -297,7 +297,7 @@ tests.push({
       // if URIs and dates are equal, should fall back to bookmark index
       { isBookmark: true,
         isDetails: true,
-        lastVisit: timeInMicroseconds + 1,
+        lastVisit: timeInMicroseconds + 1000,
         uri: "http://example.com/c",
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 5,
@@ -387,7 +387,7 @@ tests.push({
       // if visitCounts are equal, should fall back to date
       { isBookmark: true,
         uri: "http://example.com/b2",
-        lastVisit: timeInMicroseconds + 1,
+        lastVisit: timeInMicroseconds + 1000,
         title: "y2a",
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 3,
@@ -396,7 +396,7 @@ tests.push({
       // if visitCounts and dates are equal, should fall back to bookmark index
       { isBookmark: true,
         uri: "http://example.com/b2",
-        lastVisit: timeInMicroseconds + 1,
+        lastVisit: timeInMicroseconds + 1000,
         title: "y2b",
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 4,
@@ -414,12 +414,12 @@ tests.push({
     // This function in head_queries.js creates our database with the above data
     yield task_populateDB(this._unsortedData);
     // add visits to increase visit count
-    yield promiseAddVisits([
+    yield PlacesTestUtils.addVisits([
       { uri: uri("http://example.com/a"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds },
       { uri: uri("http://example.com/b1"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds },
       { uri: uri("http://example.com/b1"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds },
-      { uri: uri("http://example.com/b2"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds + 1 },
-      { uri: uri("http://example.com/b2"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds + 1 },
+      { uri: uri("http://example.com/b2"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds + 1000 },
+      { uri: uri("http://example.com/b2"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds + 1000 },
       { uri: uri("http://example.com/c"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds },
       { uri: uri("http://example.com/c"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds },
       { uri: uri("http://example.com/c"), transition: TRANSITION_TYPED, visitDate: timeInMicroseconds },
@@ -565,7 +565,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 0,
         title: "y1",
-        dateAdded: timeInMicroseconds -1,
+        dateAdded: timeInMicroseconds - 1000,
         isInQuery: true },
 
       { isBookmark: true,
@@ -573,7 +573,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 1,
         title: "z",
-        dateAdded: timeInMicroseconds - 2,
+        dateAdded: timeInMicroseconds - 2000,
         isInQuery: true },
 
       { isBookmark: true,
@@ -590,7 +590,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 3,
         title: "y2",
-        dateAdded: timeInMicroseconds - 1,
+        dateAdded: timeInMicroseconds - 1000,
         isInQuery: true },
 
       // if dateAddeds and titles are equal, should fall back to bookmark index
@@ -599,7 +599,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 4,
         title: "y3",
-        dateAdded: timeInMicroseconds - 1,
+        dateAdded: timeInMicroseconds - 1000,
         isInQuery: true },
     ];
 
@@ -655,7 +655,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 0,
         title: "y1",
-        lastModified: timeInMicroseconds -1,
+        lastModified: timeInMicroseconds - 1000,
         isInQuery: true },
 
       { isBookmark: true,
@@ -663,7 +663,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 1,
         title: "z",
-        lastModified: timeInMicroseconds - 2,
+        lastModified: timeInMicroseconds - 2000,
         isInQuery: true },
 
       { isBookmark: true,
@@ -680,7 +680,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 3,
         title: "y2",
-        lastModified: timeInMicroseconds - 1,
+        lastModified: timeInMicroseconds - 1000,
         isInQuery: true },
 
       // if lastModifieds and titles are equal, should fall back to bookmark
@@ -690,7 +690,7 @@ tests.push({
         parentFolder: PlacesUtils.bookmarks.toolbarFolder,
         index: 4,
         title: "y3",
-        lastModified: timeInMicroseconds - 1,
+        lastModified: timeInMicroseconds - 1000,
         isInQuery: true },
     ];
 
@@ -1266,12 +1266,12 @@ add_task(function test_sorting()
 {
   for (let [, test] in Iterator(tests)) {
     yield test.setup();
-    yield promiseAsyncUpdates();
+    yield PlacesTestUtils.promiseAsyncUpdates();
     test.check();
     // sorting reversed, usually SORT_BY have ASC and DESC
     test.check_reverse();
     // Execute cleanup tasks
     remove_all_bookmarks();
-    yield promiseClearHistory();
+    yield PlacesTestUtils.clearHistory();
   }
 });

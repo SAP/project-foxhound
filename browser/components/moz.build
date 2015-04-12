@@ -11,17 +11,18 @@ DIRS += [
     'downloads',
     'feeds',
     'loop',
+    'migration',
     'places',
     'preferences',
     'privatebrowsing',
+    'readinglist',
     'search',
     'sessionstore',
     'shell',
     'selfsupport',
-    'sidebar',
     'tabview',
+    'uitour',
     'translation',
-    'migration',
 ]
 
 DIRS += ['build']
@@ -42,8 +43,6 @@ EXTRA_PP_COMPONENTS += [
 EXTRA_JS_MODULES += [
     'distribution.js',
 ]
-
-DEFINES['E10S_TESTING_ONLY'] = CONFIG['E10S_TESTING_ONLY']
 
 BROWSER_CHROME_MANIFESTS += [
     'test/browser.ini'

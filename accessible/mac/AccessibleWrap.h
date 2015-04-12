@@ -32,12 +32,12 @@ class AccessibleWrap : public Accessible
 public: // construction, destruction
   AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~AccessibleWrap();
-    
+
   /**
    * Get the native Obj-C object (mozAccessible).
    */
-  NS_IMETHOD GetNativeInterface (void** aOutAccessible);
-  
+  virtual void GetNativeInterface(void** aOutAccessible) override;
+
   /**
    * The objective-c |Class| type that this accessible's native object
    * should be instantied with.   used on runtime to determine the
@@ -45,13 +45,13 @@ public: // construction, destruction
    */
   virtual Class GetNativeType ();
 
-  virtual void Shutdown ();
-  virtual void InvalidateChildren();
+  virtual void Shutdown () override;
+  virtual void InvalidateChildren() override;
 
-  virtual bool InsertChildAt(uint32_t aIdx, Accessible* aChild) MOZ_OVERRIDE;
-  virtual bool RemoveChild(Accessible* aAccessible);
+  virtual bool InsertChildAt(uint32_t aIdx, Accessible* aChild) override;
+  virtual bool RemoveChild(Accessible* aAccessible) override;
 
-  virtual nsresult HandleAccEvent(AccEvent* aEvent);
+  virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
 
   /**
    * Ignored means that the accessible might still have children, but is not

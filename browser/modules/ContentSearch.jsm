@@ -24,6 +24,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "SearchSuggestionController",
 
 const INBOUND_MESSAGE = "ContentSearch";
 const OUTBOUND_MESSAGE = INBOUND_MESSAGE;
+const MAX_LOCAL_SUGGESTIONS = 3;
+const MAX_SUGGESTIONS = 6;
 
 /**
  * ContentSearch receives messages named INBOUND_MESSAGE and sends messages
@@ -96,6 +98,7 @@ this.ContentSearch = {
       addMessageListener(INBOUND_MESSAGE, this);
     Services.obs.addObserver(this, "browser-search-engine-modified", false);
     Services.obs.addObserver(this, "shutdown-leaks-before-check", false);
+    this._stringBundle = Services.strings.createBundle("chrome://global/locale/autocomplete.properties");
   },
 
   destroy: function () {
@@ -204,11 +207,31 @@ this.ContentSearch = {
       "searchString",
       "whence",
     ]);
-    let browserWin = msg.target.ownerDocument.defaultView;
     let engine = Services.search.getEngineByName(data.engineName);
-    browserWin.BrowserSearch.recordSearchInHealthReport(engine, data.whence, data.selection);
     let submission = engine.getSubmission(data.searchString, "", data.whence);
-    browserWin.loadURI(submission.uri.spec, null, submission.postData);
+    let browser = msg.target;
+    let newTab;
+    if (data.useNewTab) {
+      newTab = browser.getTabBrowser().addTab();
+      browser = newTab.linkedBrowser;
+    }
+    try {
+      browser.loadURIWithFlags(submission.uri.spec,
+                               Ci.nsIWebNavigation.LOAD_FLAGS_NONE, null, null,
+                               submission.postData);
+    }
+    catch (err) {
+      // The browser may have been closed between the time its content sent the
+      // message and the time we handle it.  In that case, trying to call any
+      // method on it will throw.
+      return Promise.resolve();
+    }
+    if (data.useNewTab) {
+      browser.getTabBrowser().selectedTab = newTab;
+    }
+    let win = browser.ownerDocument.defaultView;
+    win.BrowserSearch.recordSearchInHealthReport(engine, data.whence,
+                                                 data.selection || null);
     return Promise.resolve();
   },
 
@@ -219,6 +242,12 @@ this.ContentSearch = {
 
   _onMessageManageEngines: function (msg, data) {
     let browserWin = msg.target.ownerDocument.defaultView;
+
+    if (Services.prefs.getBoolPref("browser.search.showOneOffButtons")) {
+      browserWin.openPreferences("paneSearch");
+      return Promise.resolve();
+    }
+
     let wm = Components.classes["@mozilla.org/appshell/window-mediator;1"].
              getService(Components.interfaces.nsIWindowMediator);
     let window = wm.getMostRecentWindow("Browser:SearchManager");
@@ -249,8 +278,8 @@ this.ContentSearch = {
     let browserData = this._suggestionDataForBrowser(msg.target, true);
     let { controller } = browserData;
     let ok = SearchSuggestionController.engineOffersSuggestions(engine);
-    controller.maxLocalResults = ok ? 2 : 6;
-    controller.maxRemoteResults = ok ? 6 : 0;
+    controller.maxLocalResults = ok ? MAX_LOCAL_SUGGESTIONS : MAX_SUGGESTIONS;
+    controller.maxRemoteResults = ok ? MAX_SUGGESTIONS : 0;
     controller.remoteTimeout = data.remoteTimeout || undefined;
     let priv = PrivateBrowsingUtils.isBrowserPrivate(msg.target);
     // fetch() rejects its promise if there's a pending request, but since we
@@ -273,12 +302,14 @@ this.ContentSearch = {
   }),
 
   _onMessageAddFormHistoryEntry: function (msg, entry) {
-    // There are some tests that use about:home and newtab that trigger a search
-    // and then immediately close the tab.  In those cases, the browser may have
-    // been destroyed by the time we receive this message, and as a result
-    // contentWindow is undefined.
-    if (!msg.target.contentWindow ||
-        PrivateBrowsingUtils.isBrowserPrivate(msg.target)) {
+    let isPrivate = true;
+    try {
+      // isBrowserPrivate assumes that the passed-in browser has all the normal
+      // properties, which won't be true if the browser has been destroyed.
+      // That may be the case here due to the asynchronous nature of messaging.
+      isPrivate = PrivateBrowsingUtils.isBrowserPrivate(msg.target);
+    } catch (err) {}
+    if (isPrivate || entry === "") {
       return Promise.resolve();
     }
     let browserData = this._suggestionDataForBrowser(msg.target, true);
@@ -389,8 +420,11 @@ this.ContentSearch = {
     let favicon = engine.getIconURLBySize(16, 16);
     let uri1x = engine.getIconURLBySize(65, 26);
     let uri2x = engine.getIconURLBySize(130, 52);
+    let placeholder = this._stringBundle.formatStringFromName(
+      "searchWithEngine", [engine.name], 1);
     let obj = {
       name: engine.name,
+      placeholder: placeholder,
       iconBuffer: yield this._arrayBufferFromDataURI(favicon),
       logoBuffer: yield this._arrayBufferFromDataURI(uri1x),
       logo2xBuffer: yield this._arrayBufferFromDataURI(uri2x),

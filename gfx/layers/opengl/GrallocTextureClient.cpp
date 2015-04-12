@@ -20,19 +20,6 @@ namespace layers {
 using namespace mozilla::gfx;
 using namespace android;
 
-GrallocTextureClientOGL::GrallocTextureClientOGL(MaybeMagicGrallocBufferHandle buffer,
-                                                 gfx::IntSize aSize,
-                                                 gfx::BackendType aMoz2dBackend,
-                                                 TextureFlags aFlags)
-: BufferTextureClient(nullptr, gfx::SurfaceFormat::UNKNOWN, aMoz2dBackend, aFlags)
-, mGrallocHandle(buffer)
-, mMappedBuffer(nullptr)
-, mMediaBuffer(nullptr)
-{
-  InitWith(buffer, aSize);
-  MOZ_COUNT_CTOR(GrallocTextureClientOGL);
-}
-
 GrallocTextureClientOGL::GrallocTextureClientOGL(ISurfaceAllocator* aAllocator,
                                                  gfx::SurfaceFormat aFormat,
                                                  gfx::BackendType aMoz2dBackend,
@@ -41,6 +28,7 @@ GrallocTextureClientOGL::GrallocTextureClientOGL(ISurfaceAllocator* aAllocator,
 , mGrallocHandle(null_t())
 , mMappedBuffer(nullptr)
 , mMediaBuffer(nullptr)
+, mIsOpaque(gfx::IsOpaque(aFormat))
 {
   MOZ_COUNT_CTOR(GrallocTextureClientOGL);
 }
@@ -89,7 +77,7 @@ GrallocTextureClientOGL::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
     return false;
   }
 
-  aOutDescriptor = NewSurfaceDescriptorGralloc(mGrallocHandle, mSize);
+  aOutDescriptor = NewSurfaceDescriptorGralloc(mGrallocHandle, mSize, mIsOpaque);
   return true;
 }
 
@@ -100,11 +88,15 @@ GrallocTextureClientOGL::SetRemoveFromCompositableTracker(AsyncTransactionTracke
 }
 
 void
-GrallocTextureClientOGL::WaitForBufferOwnership()
+GrallocTextureClientOGL::WaitForBufferOwnership(bool aWaitReleaseFence)
 {
   if (mRemoveFromCompositableTracker) {
     mRemoveFromCompositableTracker->WaitComplete();
     mRemoveFromCompositableTracker = nullptr;
+  }
+
+  if (!aWaitReleaseFence) {
+    return;
   }
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
@@ -134,7 +126,11 @@ GrallocTextureClientOGL::Lock(OpenMode aMode)
     return true;
   }
 
+#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
+  WaitForBufferOwnership(false /* aWaitReleaseFence */);
+#else
   WaitForBufferOwnership();
+#endif
 
   uint32_t usage = 0;
   if (aMode & OpenMode::OPEN_READ) {
@@ -143,7 +139,19 @@ GrallocTextureClientOGL::Lock(OpenMode aMode)
   if (aMode & OpenMode::OPEN_WRITE) {
     usage |= GRALLOC_USAGE_SW_WRITE_OFTEN;
   }
-  int32_t rv = mGraphicBuffer->lock(usage, reinterpret_cast<void**>(&mMappedBuffer));
+#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
+  android::sp<Fence> fence = android::Fence::NO_FENCE;
+  if (mReleaseFenceHandle.IsValid()) {
+    fence = mReleaseFenceHandle.mFence;
+  }
+  mReleaseFenceHandle = FenceHandle();
+  int32_t rv = mGraphicBuffer->lockAsync(usage,
+                                         reinterpret_cast<void**>(&mMappedBuffer),
+                                         fence->dup());
+#else
+  int32_t rv = mGraphicBuffer->lock(usage,
+                                    reinterpret_cast<void**>(&mMappedBuffer));
+#endif
   if (rv) {
     mMappedBuffer = nullptr;
     NS_WARNING("Couldn't lock graphic buffer");
@@ -183,6 +191,8 @@ SurfaceFormatForPixelFormat(android::PixelFormat aFormat)
     return gfx::SurfaceFormat::R8G8B8X8;
   case PIXEL_FORMAT_RGB_565:
     return gfx::SurfaceFormat::R5G6B5;
+  case HAL_PIXEL_FORMAT_YV12:
+    return gfx::SurfaceFormat::YUV;
   default:
     MOZ_CRASH("Unknown gralloc pixel format");
   }
@@ -241,6 +251,9 @@ GrallocTextureClientOGL::AllocateForSurface(gfx::IntSize aSize,
     break;
   case gfx::SurfaceFormat::R5G6B5:
     format = android::PIXEL_FORMAT_RGB_565;
+    break;
+  case gfx::SurfaceFormat::YUV:
+    format = HAL_PIXEL_FORMAT_YV12;
     break;
   case gfx::SurfaceFormat::A8:
     NS_WARNING("gralloc does not support gfx::SurfaceFormat::A8");
@@ -355,7 +368,7 @@ GrallocTextureClientOGL::FromSharedSurface(gl::SharedSurface* abstractSurf,
 
   RefPtr<TextureClient> ret = surf->GetTextureClient();
 
-  TextureFlags mask = TextureFlags::NEEDS_Y_FLIP |
+  TextureFlags mask = TextureFlags::ORIGIN_BOTTOM_LEFT |
                       TextureFlags::RB_SWAPPED |
                       TextureFlags::NON_PREMULTIPLIED;
   TextureFlags required = flags & mask;

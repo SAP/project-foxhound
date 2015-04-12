@@ -17,7 +17,7 @@ class nsPIDOMWindow;
 namespace mozilla {
 namespace dom {
 
-class CellBroadcast MOZ_FINAL : public DOMEventTargetHelper,
+class CellBroadcast final : public DOMEventTargetHelper,
                                 private nsICellBroadcastListener
 {
   /**
@@ -29,7 +29,7 @@ class CellBroadcast MOZ_FINAL : public DOMEventTargetHelper,
    */
   class Listener;
 
-  // MOZ_FINAL suppresses -Werror,-Wdelete-non-virtual-dtor
+  // final suppresses -Werror,-Wdelete-non-virtual-dtor
   ~CellBroadcast();
 
 public:
@@ -41,7 +41,7 @@ public:
   static already_AddRefed<CellBroadcast>
   Create(nsPIDOMWindow* aOwner, ErrorResult& aRv);
 
-  CellBroadcast() MOZ_DELETE;
+  CellBroadcast() = delete;
   CellBroadcast(nsPIDOMWindow *aWindow,
                 nsICellBroadcastService* aService);
 
@@ -49,7 +49,7 @@ public:
   GetParentObject() const { return GetOwner(); }
 
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   IMPL_EVENT_HANDLER(received)
 

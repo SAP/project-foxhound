@@ -11,8 +11,14 @@
     "use strict";
 
     SimpleTest.waitForExplicitFinish();
+    SimpleTest.requestFlakyTimeout("untriaged");
 
+    // The crash observer registration functions are stubbed out here to
+    // prevent the iframe test runner from breaking later crash-related tests.
     function iframeScriptFirst() {
+      SpecialPowers.prototype.registerProcessCrashObservers = () => {};
+      SpecialPowers.prototype.unregisterProcessCrashObservers = () => {};
+
       content.wrappedJSObject.RunSet.reloadAndRunAll({
           preventDefault: function() { },
           __exposedProps__: { preventDefault: 'r' }

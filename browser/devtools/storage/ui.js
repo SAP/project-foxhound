@@ -21,6 +21,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "ViewHelpers",
 XPCOMUtils.defineLazyModuleGetter(this, "VariablesView",
   "resource:///modules/devtools/VariablesView.jsm");
 
+let Telemetry = require("devtools/shared/telemetry");
+
 /**
  * Localization convenience methods.
  */
@@ -79,12 +81,15 @@ this.StorageUI = function StorageUI(front, target, panelWin) {
 
   this.front.listStores().then(storageTypes => {
     this.populateStorageTree(storageTypes);
-  });
+  }).then(null, Cu.reportError);
   this.onUpdate = this.onUpdate.bind(this);
   this.front.on("stores-update", this.onUpdate);
 
   this.handleKeypress = this.handleKeypress.bind(this);
   this._panelDoc.addEventListener("keypress", this.handleKeypress);
+
+  this._telemetry = new Telemetry();
+  this._telemetry.toolOpened("storage");
 }
 
 exports.StorageUI = StorageUI;
@@ -97,6 +102,7 @@ StorageUI.prototype = {
   destroy: function() {
     this.front.off("stores-update", this.onUpdate);
     this._panelDoc.removeEventListener("keypress", this.handleKeypress);
+    this._telemetry.toolClosed("storage");
   },
 
   /**
@@ -269,7 +275,7 @@ StorageUI.prototype = {
       }
       this.populateTable(data, reason);
       this.emit("store-objects-updated");
-    });
+    }, Cu.reportError);
   },
 
   /**

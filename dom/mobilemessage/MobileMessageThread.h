@@ -14,7 +14,7 @@
 namespace mozilla {
 namespace dom {
 
-class MobileMessageThread MOZ_FINAL : public nsIDOMMozMobileMessageThread
+class MobileMessageThread final : public nsIDOMMozMobileMessageThread
 {
 private:
   typedef mobilemessage::ThreadData ThreadData;
@@ -49,7 +49,7 @@ private:
   ~MobileMessageThread() {}
 
   // Don't try to use the default constructor.
-  MobileMessageThread() MOZ_DELETE;
+  MobileMessageThread() = delete;
 
   ThreadData mData;
 };

@@ -862,6 +862,15 @@ var WifiManager = (function() {
     return true;
   }
 
+  function setPowerSavingMode(enabled) {
+    let mode = enabled ? "AUTO" : "ACTIVE";
+    // Some wifi drivers may not implement this command. Set power mode
+    // even if suspend optimization command failed.
+    manager.setSuspendOptimizations(enabled, function(ok) {
+      manager.setPowerMode(mode, function() {});
+    });
+  }
+
   function didConnectSupplicant(callback) {
     waitForEvent(manager.ifname);
 
@@ -874,7 +883,8 @@ var WifiManager = (function() {
       notify("supplicantconnection");
       callback();
     });
-
+    // WPA supplicant already connected.
+    manager.setPowerSavingMode(true);
     if (p2pSupported) {
       manager.enableP2p(function(success) {});
     }
@@ -1215,6 +1225,12 @@ var WifiManager = (function() {
         if (value !== null) {
           if (fieldType === "integer") {
             config[fieldName] = parseInt(value, 10);
+          } else if ( fieldName == "ssid" && value[0] != '"' ) {
+            // SET_NETWORK will set a quoted ssid to wpa_supplicant.
+            // But if ssid contains non-ascii char, it will be converted into utf-8.
+            // For example: "Test的wifi" --> 54657374e79a8477696669
+            // When GET_NETWORK receive a un-quoted utf-8 ssid, it must be decoded and quoted.
+            config[fieldName] = quote(decodeURIComponent(value.replace(/[0-9a-f]{2}/g, '%$&')));
           } else {
             // value is string type by default.
             config[fieldName] = value;
@@ -1360,6 +1376,7 @@ var WifiManager = (function() {
   manager.setPowerMode = (sdkVersion >= 16)
                          ? wifiCommand.setPowerModeJB
                          : wifiCommand.setPowerModeICS;
+  manager.setPowerSavingMode = setPowerSavingMode;
   manager.getHttpProxyNetwork = getHttpProxyNetwork;
   manager.setHttpProxy = setHttpProxy;
   manager.configureHttpProxy = configureHttpProxy;
@@ -1585,15 +1602,10 @@ function getNetworkKey(network)
 }
 
 function getMode(flags) {
-  if (!flags)
-    return -1;
-
-  if (/\[ESS/.test(flags))
-    return MODE_ESS;
   if (/\[IBSS/.test(flags))
     return MODE_IBSS;
 
-  return -1;
+  return MODE_ESS;
 }
 
 function getKeyManagement(flags) {
@@ -2117,12 +2129,13 @@ function WifiWorker() {
         self._fireEvent("onconnecting", { network: netToDOM(self.currentNetwork) });
         break;
       case "ASSOCIATED":
+        // set to full power mode when ready to do 4 way handsharke.
+        WifiManager.setPowerSavingMode(false);
         if (!self.currentNetwork) {
           self.currentNetwork =
             { bssid: WifiManager.connectionInfo.bssid,
               ssid: quote(WifiManager.connectionInfo.ssid) };
         }
-
         self.currentNetwork.netId = this.id;
         WifiManager.getNetworkConfiguration(self.currentNetwork, function (){
           // Notify again because we get complete network information.
@@ -2168,6 +2181,8 @@ function WifiWorker() {
         }
         break;
       case "CONNECTED":
+        // wifi connection complete, turn on the power saving mode.
+        WifiManager.setPowerSavingMode(true);
         // BSSID is read after connected, update it.
         self.currentNetwork.bssid = WifiManager.connectionInfo.bssid;
         break;
@@ -2181,6 +2196,8 @@ function WifiWorker() {
               this.prevState === "INTERFACE_DISABLED" ||
               this.prevState === "INACTIVE" ||
               this.prevState === "UNINITIALIZED")) {
+          // When in disconnected mode, need to turn on wifi power saving mode.
+          WifiManager.setPowerSavingMode(true);
           return;
         }
 

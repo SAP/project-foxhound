@@ -27,11 +27,7 @@ add_task(function () {
     });
   });
 
-  yield promiseClearHistory();
-
-  // History database should be empty
-  is(PlacesUtils.history.hasHistoryEntries, false,
-     "History database should be empty");
+  yield PlacesTestUtils.clearHistory();
 
    // Ensure we wait for the default bookmarks import.
   let bookmarksDeferred = Promise.defer();
@@ -42,7 +38,7 @@ add_task(function () {
   yield bookmarksDeferred.promise;
 
   // Create a handful of history items with various visit types
-  yield promiseAddVisits([
+  yield PlacesTestUtils.addVisits([
     { uri: visitedURIs[0], transition: TRANSITION_LINK },
     { uri: visitedURIs[1], transition: TRANSITION_TYPED },
     { uri: visitedURIs[2], transition: TRANSITION_BOOKMARK },
@@ -52,10 +48,6 @@ add_task(function () {
     { uri: visitedURIs[6], transition: TRANSITION_FRAMED_LINK },
     { uri: visitedURIs[7], transition: TRANSITION_DOWNLOAD }
   ]);
-
-  // History database should have entries
-  is(PlacesUtils.history.hasHistoryEntries, true,
-     "History database should have entries");
 
   placeItemsCount += 7;
   // We added 7 new items to history.
@@ -88,8 +80,6 @@ add_task(function () {
 
     ok(PlacesUtils.bookmarks.isBookmarked(bookmarkUri),
        "Bookmark should be bookmarked, data should be retrievable");
-    is(bookmarkKeyword, PlacesUtils.bookmarks.getKeywordForURI(bookmarkUri),
-       "Check bookmark uri keyword");
     is(getPlacesItemsCount(), count,
        "Check the new bookmark items count");
     is(isBookmarkAltered(), false, "Check if bookmark has been visited");

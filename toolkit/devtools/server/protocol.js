@@ -4,8 +4,10 @@
 
 "use strict";
 
+let { Cu } = require("chrome");
+let DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
 let Services = require("Services");
-let promise = require("devtools/toolkit/deprecated-sync-thenables");
+let promise = require("promise");
 let {Class} = require("sdk/core/heritage");
 let {EventTarget} = require("sdk/event/target");
 let events = require("sdk/event/core");
@@ -154,12 +156,25 @@ types.addType = function(name, typeObject={}, options={}) {
 
   registeredTypes.set(name, type);
 
-  if (!options.thawed) {
-    Object.freeze(type);
-  }
-
   return type;
 };
+
+/**
+ * Remove a type previously registered with the system.
+ * Primarily useful for types registered by addons.
+ */
+types.removeType = function(name) {
+  // This type may still be referenced by other types, make sure
+  // those references don't work.
+  let type = registeredTypes.get(name);
+
+  type.name = "DEFUNCT:" + name;
+  type.category = "defunct";
+  type.primitive = false;
+  type.read = type.write = function() { throw new Error("Using defunct type: " + name); };
+
+  registeredTypes.delete(name);
+}
 
 /**
  * Add an array type to the type system.
@@ -299,10 +314,6 @@ types.addActorType = function(name) {
 
       return type.actorSpec[formAttr];
     }
-  }, {
-    // We usually freeze types, but actor types are updated when clients are
-    // created, so don't freeze yet.
-    thawed: true
   });
   return type;
 }
@@ -367,6 +378,14 @@ types.addLifetime = function(name, prop) {
     throw Error("Lifetime '" + name + "' already registered.");
   }
   registeredLifetimes.set(name, prop);
+}
+
+/**
+ * Remove a previously-registered lifetime.  Useful for lifetimes registered
+ * in addons.
+ */
+types.removeLifetime = function(name) {
+  registeredLifetimes.delete(name);
 }
 
 /**
@@ -753,7 +772,7 @@ let Pool = Class({
    * Remove an actor as a child of this pool.
    */
   unmanage: function(actor) {
-    this.__poolMap.delete(actor.actorID);
+    this.__poolMap && this.__poolMap.delete(actor.actorID);
   },
 
   // true if the given actor ID exists in the pool.
@@ -980,7 +999,7 @@ let actorProto = function(actorProto) {
         try {
           args = spec.request.read(packet, this);
         } catch(ex) {
-          console.error("Error writing request: " + packet.type);
+          console.error("Error reading request: " + packet.type);
           throw ex;
         }
 
@@ -1092,8 +1111,9 @@ let Front = Class({
     // Reject all outstanding requests, they won't make sense after
     // the front is destroyed.
     while (this._requests && this._requests.length > 0) {
-      let deferred = this._requests.shift();
-      deferred.reject(new Error("Connection closed"));
+      let { deferred, to, type } = this._requests.shift();
+      deferred.reject(new Error("Connection closed, pending request to " + to +
+                                ", type " + type + " failed"));
     }
     Pool.prototype.destroy.call(this);
     this.actorID = null;
@@ -1131,7 +1151,7 @@ let Front = Class({
       this.actor().then(actorID => {
         packet.to = actorID;
         this.conn._transport.send(packet);
-      });
+      }).then(null, e => DevToolsUtils.reportException("Front.prototype.send", e));
     }
   },
 
@@ -1140,7 +1160,13 @@ let Front = Class({
    */
   request: function(packet) {
     let deferred = promise.defer();
-    this._requests.push(deferred);
+    // Save packet basics for debugging
+    let { to, type } = packet;
+    this._requests.push({
+      deferred,
+      to: to || this.actorID,
+      type
+    });
     this.send(packet);
     return deferred.promise;
   },
@@ -1176,7 +1202,7 @@ let Front = Class({
       throw err;
     }
 
-    let deferred = this._requests.shift();
+    let { deferred } = this._requests.shift();
     if (packet.error) {
       // "Protocol error" is here to avoid TBPL heuristics. See also
       // https://mxr.mozilla.org/webtools-central/source/tbpl/php/inc/GeneralErrorFilter.php

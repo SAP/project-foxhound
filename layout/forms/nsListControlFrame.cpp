@@ -59,7 +59,7 @@ DOMTimeStamp nsListControlFrame::gLastKeyTime = 0;
  * Frames are not refcounted so they can't be used as event listeners.
  *****************************************************************************/
 
-class nsListEventListener MOZ_FINAL : public nsIDOMEventListener
+class nsListEventListener final : public nsIDOMEventListener
 {
 public:
   explicit nsListEventListener(nsListControlFrame *aFrame)
@@ -81,7 +81,7 @@ nsContainerFrame*
 NS_NewListControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
   nsListControlFrame* it =
-    new (aPresShell) nsListControlFrame(aPresShell, aPresShell->GetDocument(), aContext);
+    new (aPresShell) nsListControlFrame(aContext);
 
   it->AddStateBits(NS_FRAME_INDEPENDENT_SELECTION);
 
@@ -91,12 +91,12 @@ NS_NewListControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 NS_IMPL_FRAMEARENA_HELPERS(nsListControlFrame)
 
 //---------------------------------------------------------
-nsListControlFrame::nsListControlFrame(
-  nsIPresShell* aShell, nsIDocument* aDocument, nsStyleContext* aContext)
-  : nsHTMLScrollFrame(aShell, aContext, false),
+nsListControlFrame::nsListControlFrame(nsStyleContext* aContext)
+  : nsHTMLScrollFrame(aContext, false),
     mMightNeedSecondPass(false),
     mHasPendingInterruptAtStartOfReflow(false),
     mDropdownCanGrow(false),
+    mForceSelection(false),
     mLastDropdownComputedHeight(NS_UNCONSTRAINEDSIZE)
 {
   mComboboxFrame      = nullptr;
@@ -739,9 +739,9 @@ nsListControlFrame::PerformSelection(int32_t aClickedIndex,
 {
   bool wasChanged = false;
 
-  if (aClickedIndex == kNothingSelected) {
-  }
-  else if (GetMultiple()) {
+  if (aClickedIndex == kNothingSelected && !mForceSelection) {
+    // Ignore kNothingSelected unless the selection is forced
+  } else if (GetMultiple()) {
     if (aIsShift) {
       // Make sure shift+click actually does something expected when
       // the user has never clicked on the select
@@ -1237,10 +1237,12 @@ nsListControlFrame::SetOptionsSelectedFromFrame(int32_t aStartIndex,
     dom::HTMLSelectElement::FromContent(mContent);
 
   uint32_t mask = dom::HTMLSelectElement::NOTIFY;
+  if (mForceSelection) {
+    mask |= dom::HTMLSelectElement::SET_DISABLED;
+  }
   if (aValue) {
     mask |= dom::HTMLSelectElement::IS_SELECTED;
   }
-
   if (aClearAll) {
     mask |= dom::HTMLSelectElement::CLEAR_ALL;
   }
@@ -1292,13 +1294,16 @@ nsListControlFrame::ComboboxFinish(int32_t aIndex)
   gLastKeyTime = 0;
 
   if (mComboboxFrame) {
+    int32_t displayIndex = mComboboxFrame->GetIndexOfDisplayArea();
+    // Make sure we can always reset to the displayed index
+    mForceSelection = displayIndex == aIndex;
+
     nsWeakFrame weakFrame(this);
     PerformSelection(aIndex, false, false);  // might destroy us
     if (!weakFrame.IsAlive() || !mComboboxFrame) {
       return;
     }
 
-    int32_t displayIndex = mComboboxFrame->GetIndexOfDisplayArea();
     if (displayIndex != aIndex) {
       mComboboxFrame->RedisplaySelectedText(); // might destroy us
     }
@@ -1415,6 +1420,7 @@ nsListControlFrame::AboutToDropDown()
 #endif
   }
   mItemSelectionStarted = false;
+  mForceSelection = false;
 }
 
 // We are about to be rolledup from the outside (ComboboxFrame)

@@ -37,7 +37,7 @@ class nsIWeakReference;
 // nsPrintEngine Class
 //
 //------------------------------------------------------------------------
-class nsPrintEngine MOZ_FINAL : public nsIObserver,
+class nsPrintEngine final : public nsIObserver,
                                 public nsIWebProgressListener,
                                 public nsSupportsWeakReference
 {
@@ -307,7 +307,7 @@ protected:
   nsresult InitPrintDocConstruction(bool aHandleError);
   void FirePrintPreviewUpdateEvent();
 private:
-  nsPrintEngine& operator=(const nsPrintEngine& aOther) MOZ_DELETE;
+  nsPrintEngine& operator=(const nsPrintEngine& aOther) = delete;
 };
 
 #endif /* nsPrintEngine_h___ */

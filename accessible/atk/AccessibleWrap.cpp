@@ -10,11 +10,9 @@
 #include "ApplicationAccessibleWrap.h"
 #include "InterfaceInitFuncs.h"
 #include "nsAccUtils.h"
-#include "nsIAccessibleRelation.h"
-#include "nsIAccessibleTable.h"
+#include "mozilla/a11y/PDocAccessible.h"
 #include "ProxyAccessible.h"
 #include "RootAccessible.h"
-#include "nsIAccessibleValue.h"
 #include "nsMai.h"
 #include "nsMaiHyperlink.h"
 #include "nsString.h"
@@ -305,32 +303,32 @@ AccessibleWrap::SetMaiHyperlink(MaiHyperlink* aMaiHyperlink)
     }
 }
 
-NS_IMETHODIMP
+void
 AccessibleWrap::GetNativeInterface(void** aOutAccessible)
 {
-    *aOutAccessible = nullptr;
+  *aOutAccessible = nullptr;
 
-    if (!mAtkObject) {
-        if (IsDefunct() || !nsAccUtils::IsEmbeddedObject(this)) {
-            // We don't create ATK objects for node which has been shutdown, or
-            // nsIAccessible plain text leaves
-            return NS_ERROR_FAILURE;
-        }
-
-        GType type = GetMaiAtkType(CreateMaiInterfaces());
-        NS_ENSURE_TRUE(type, NS_ERROR_FAILURE);
-        mAtkObject =
-            reinterpret_cast<AtkObject *>
-                            (g_object_new(type, nullptr));
-        NS_ENSURE_TRUE(mAtkObject, NS_ERROR_OUT_OF_MEMORY);
-
-        atk_object_initialize(mAtkObject, this);
-        mAtkObject->role = ATK_ROLE_INVALID;
-        mAtkObject->layer = ATK_LAYER_INVALID;
+  if (!mAtkObject) {
+    if (IsDefunct() || !nsAccUtils::IsEmbeddedObject(this)) {
+      // We don't create ATK objects for node which has been shutdown or
+      // plain text leaves
+      return;
     }
 
-    *aOutAccessible = mAtkObject;
-    return NS_OK;
+    GType type = GetMaiAtkType(CreateMaiInterfaces());
+    if (!type)
+      return;
+
+    mAtkObject = reinterpret_cast<AtkObject*>(g_object_new(type, nullptr));
+    if (!mAtkObject)
+      return;
+
+    atk_object_initialize(mAtkObject, this);
+    mAtkObject->role = ATK_ROLE_INVALID;
+    mAtkObject->layer = ATK_LAYER_INVALID;
+  }
+
+  *aOutAccessible = mAtkObject;
 }
 
 AtkObject *
@@ -341,10 +339,10 @@ AccessibleWrap::GetAtkObject(void)
     return static_cast<AtkObject *>(atkObj);
 }
 
-// Get AtkObject from nsIAccessible interface
+// Get AtkObject from Accessible interface
 /* static */
 AtkObject *
-AccessibleWrap::GetAtkObject(nsIAccessible* acc)
+AccessibleWrap::GetAtkObject(Accessible* acc)
 {
     void *atkObjPtr = nullptr;
     acc->GetNativeInterface(&atkObjPtr);
@@ -356,7 +354,7 @@ uint16_t
 AccessibleWrap::CreateMaiInterfaces(void)
 {
   uint16_t interfacesBits = 0;
-    
+
   // The Component interface is supported by all accessibles.
   interfacesBits |= 1 << MAI_INTERFACE_COMPONENT;
 
@@ -374,12 +372,8 @@ AccessibleWrap::CreateMaiInterfaces(void)
   }
 
   // Value interface.
-  nsCOMPtr<nsIAccessibleValue> accessInterfaceValue;
-  QueryInterface(NS_GET_IID(nsIAccessibleValue),
-                 getter_AddRefs(accessInterfaceValue));
-  if (accessInterfaceValue) {
-    interfacesBits |= 1 << MAI_INTERFACE_VALUE; 
-  }
+  if (HasNumericValue())
+    interfacesBits |= 1 << MAI_INTERFACE_VALUE;
 
   // Document interface.
   if (IsDoc())
@@ -607,12 +601,14 @@ finalizeCB(GObject *aObj)
 const gchar*
 getNameCB(AtkObject* aAtkObj)
 {
-  AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
-  if (!accWrap)
-    return nullptr;
-
   nsAutoString name;
-  accWrap->Name(name);
+  AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
+  if (accWrap)
+    accWrap->Name(name);
+  else if (ProxyAccessible* proxy = GetProxy(aAtkObj))
+    proxy->Name(name);
+  else
+    return nullptr;
 
   // XXX Firing an event from here does not seem right
   MaybeFireNameChange(aAtkObj, name);
@@ -649,13 +645,18 @@ MaybeFireNameChange(AtkObject* aAtkObj, const nsString& aNewName)
 const gchar *
 getDescriptionCB(AtkObject *aAtkObj)
 {
-    AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
-    if (!accWrap || accWrap->IsDefunct())
-        return nullptr;
+  nsAutoString uniDesc;
+  AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
+  if (accWrap) {
+    if (accWrap->IsDefunct())
+      return nullptr;
 
-    /* nsIAccessible is responsible for the nonnull description */
-    nsAutoString uniDesc;
     accWrap->Description(uniDesc);
+  } else if (ProxyAccessible* proxy = GetProxy(aAtkObj)) {
+    proxy->Description(uniDesc);
+  } else {
+    return nullptr;
+  }
 
     NS_ConvertUTF8toUTF16 objDesc(aAtkObj->description);
     if (!uniDesc.Equals(objDesc))
@@ -682,7 +683,7 @@ getRoleCB(AtkObject *aAtkObj)
   } else {
 #ifdef DEBUG
     NS_ASSERTION(nsAccUtils::IsTextInterfaceSupportCorrect(accWrap),
-                 "Does not support nsIAccessibleText when it should");
+                 "Does not support Text interface when it should");
 #endif
 
     role = accWrap->Role();
@@ -771,7 +772,27 @@ AtkAttributeSet *
 getAttributesCB(AtkObject *aAtkObj)
 {
   AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
-  return accWrap ? GetAttributeSet(accWrap) : nullptr;
+  if (accWrap)
+    return GetAttributeSet(accWrap);
+
+  ProxyAccessible* proxy = GetProxy(aAtkObj);
+  if (!proxy)
+    return nullptr;
+
+  nsAutoTArray<Attribute, 10> attrs;
+  proxy->Attributes(&attrs);
+  if (attrs.IsEmpty())
+    return nullptr;
+
+  AtkAttributeSet* objAttributeSet = nullptr;
+  for (uint32_t i = 0; i < attrs.Length(); i++) {
+    AtkAttribute *objAttr = (AtkAttribute *)g_malloc(sizeof(AtkAttribute));
+    objAttr->name = g_strdup(attrs[i].Name().get());
+    objAttr->value = g_strdup(NS_ConvertUTF16toUTF8(attrs[i].Value()).get());
+    objAttributeSet = g_slist_prepend(objAttributeSet, objAttr);
+  }
+
+  return objAttributeSet;
 }
 
 const gchar*
@@ -789,19 +810,21 @@ GetLocaleCB(AtkObject* aAtkObj)
 AtkObject *
 getParentCB(AtkObject *aAtkObj)
 {
-  if (!aAtkObj->accessible_parent) {
-    AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
-    if (!accWrap)
-      return nullptr;
+  if (aAtkObj->accessible_parent)
+    return aAtkObj->accessible_parent;
 
-    Accessible* accParent = accWrap->Parent();
-    if (!accParent)
-      return nullptr;
-
-    AtkObject* parent = AccessibleWrap::GetAtkObject(accParent);
-    if (parent)
-      atk_object_set_parent(aAtkObj, parent);
+  AtkObject* atkParent = nullptr;
+  if (AccessibleWrap* wrapper = GetAccessibleWrap(aAtkObj)) {
+    Accessible* parent = wrapper->Parent();
+    atkParent = parent ? AccessibleWrap::GetAtkObject(parent) : nullptr;
+  } else if (ProxyAccessible* proxy = GetProxy(aAtkObj)) {
+    ProxyAccessible* parent = proxy->Parent();
+    atkParent = parent ? GetWrapperFor(parent) : nullptr;
   }
+
+  if (atkParent)
+    atk_object_set_parent(aAtkObj, atkParent);
+
   return aAtkObj->accessible_parent;
 }
 
@@ -847,10 +870,10 @@ refChildCB(AtkObject *aAtkObj, gint aChildIndex)
 }
 
 gint
-getIndexInParentCB(AtkObject *aAtkObj)
+getIndexInParentCB(AtkObject* aAtkObj)
 {
-    // We don't use nsIAccessible::GetIndexInParent() because
-    // for ATK we don't want to include text leaf nodes as children
+  // We don't use Accessible::IndexInParent() because we don't include text
+  // leaf nodes as children in ATK.
     AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
     if (!accWrap) {
         return -1;
@@ -938,6 +961,40 @@ refRelationSetCB(AtkObject *aAtkObj)
   AtkRelationSet* relation_set =
     ATK_OBJECT_CLASS(parent_class)->ref_relation_set(aAtkObj);
 
+  const AtkRelationType typeMap[] = {
+#define RELATIONTYPE(gecko, s, atk, m, i) atk,
+#include "RelationTypeMap.h"
+#undef RELATIONTYPE
+  };
+
+  if (ProxyAccessible* proxy = GetProxy(aAtkObj)) {
+    nsTArray<RelationType> types;
+    nsTArray<nsTArray<ProxyAccessible*>> targetSets;
+    proxy->Relations(&types, &targetSets);
+
+    size_t relationCount = types.Length();
+    for (size_t i = 0; i < relationCount; i++) {
+      if (typeMap[static_cast<uint32_t>(types[i])] == ATK_RELATION_NULL)
+        continue;
+
+      size_t targetCount = targetSets[i].Length();
+      nsAutoTArray<AtkObject*, 5> wrappers;
+      for (size_t j = 0; j < targetCount; j++)
+        wrappers.AppendElement(GetWrapperFor(targetSets[i][j]));
+
+      AtkRelationType atkType = typeMap[static_cast<uint32_t>(types[i])];
+      AtkRelation* atkRelation =
+        atk_relation_set_get_relation_by_type(relation_set, atkType);
+      if (atkRelation)
+        atk_relation_set_remove(relation_set, atkRelation);
+
+      atkRelation = atk_relation_new(wrappers.Elements(), wrappers.Length(),
+                                     atkType);
+      atk_relation_set_add(relation_set, atkRelation);
+      g_object_unref(atkRelation);
+    }
+  }
+
   AccessibleWrap* accWrap = GetAccessibleWrap(aAtkObj);
   if (!accWrap)
     return relation_set;
@@ -989,16 +1046,27 @@ GetProxy(AtkObject* aObj)
       & ~IS_PROXY);
 }
 
-static uint16_t
-GetInterfacesForProxy(ProxyAccessible* aProxy)
+AtkObject*
+GetWrapperFor(ProxyAccessible* aProxy)
 {
-  return MAI_INTERFACE_COMPONENT;
+  return reinterpret_cast<AtkObject*>(aProxy->GetWrapper() & ~IS_PROXY);
+}
+
+static uint16_t
+GetInterfacesForProxy(ProxyAccessible* aProxy, uint32_t aInterfaces)
+{
+  uint16_t interfaces = 1 << MAI_INTERFACE_COMPONENT;
+  if (aInterfaces & Interfaces::HYPERTEXT)
+    interfaces |= (1 << MAI_INTERFACE_HYPERTEXT) | (1 << MAI_INTERFACE_TEXT)
+        | (1 << MAI_INTERFACE_EDITABLE_TEXT);
+
+  return interfaces;
 }
 
 void
-a11y::ProxyCreated(ProxyAccessible* aProxy)
+a11y::ProxyCreated(ProxyAccessible* aProxy, uint32_t aInterfaces)
 {
-  GType type = GetMaiAtkType(GetInterfacesForProxy(aProxy));
+  GType type = GetMaiAtkType(GetInterfacesForProxy(aProxy, aInterfaces));
   NS_ASSERTION(type, "why don't we have a type!");
 
   AtkObject* obj =
@@ -1041,8 +1109,8 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
 
     AtkObject* atkObj = AccessibleWrap::GetAtkObject(accessible);
 
-    // We don't create ATK objects for nsIAccessible plain text leaves,
-    // just return NS_OK in such case
+  // We don't create ATK objects for plain text leaves, just return NS_OK in
+  // such case.
     if (!atkObj) {
         NS_ASSERTION(type == nsIAccessibleEvent::EVENT_SHOW ||
                      type == nsIAccessibleEvent::EVENT_HIDE,
@@ -1083,15 +1151,14 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
 
         break;
       }
-    case nsIAccessibleEvent::EVENT_VALUE_CHANGE:
-      {
-        nsCOMPtr<nsIAccessibleValue> value(do_QueryObject(accessible));
-        if (value) {    // Make sure this is a numeric value
-            // Don't fire for MSAA string value changes (e.g. text editing)
-            // ATK values are always numeric
-            g_object_notify( (GObject*)atkObj, "accessible-value" );
-        }
-      } break;
+
+  case nsIAccessibleEvent::EVENT_VALUE_CHANGE:
+    if (accessible->HasNumericValue()) {
+      // Make sure this is a numeric value. Don't fire for string value changes
+      // (e.g. text editing) ATK values are always numeric.
+      g_object_notify((GObject*)atkObj, "accessible-value");
+    }
+    break;
 
     case nsIAccessibleEvent::EVENT_SELECTION:
     case nsIAccessibleEvent::EVENT_SELECTION_ADD:
@@ -1277,6 +1344,16 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
     }
 
     return NS_OK;
+}
+
+void
+a11y::ProxyEvent(ProxyAccessible* aTarget, uint32_t aEventType)
+{
+  AtkObject* wrapper = GetWrapperFor(aTarget);
+  if (aEventType == nsIAccessibleEvent::EVENT_FOCUS) {
+    atk_focus_tracker_notify(wrapper);
+    atk_object_notify_state_change(wrapper, ATK_STATE_FOCUSED, true);
+  }
 }
 
 nsresult

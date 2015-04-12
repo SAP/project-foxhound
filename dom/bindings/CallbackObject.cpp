@@ -8,6 +8,8 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMError.h"
 #include "mozilla/dom/DOMErrorBinding.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/DOMExceptionBinding.h"
 #include "jsfriendapi.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIXPConnect.h"
@@ -19,6 +21,8 @@
 #include "WorkerPrivate.h"
 #include "nsGlobalWindow.h"
 #include "WorkerScope.h"
+#include "jsapi.h"
+#include "nsJSPrincipals.h"
 
 namespace mozilla {
 namespace dom {
@@ -57,10 +61,6 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
   , mExceptionHandling(aExceptionHandling)
   , mIsMainThread(NS_IsMainThread())
 {
-  if (mIsMainThread) {
-    nsContentUtils::EnterMicroTask();
-  }
-
   // Compute the caller's subject principal (if necessary) early, before we
   // do anything that might perturb the relevant state.
   nsIPrincipal* webIDLCallerPrincipal = nullptr;
@@ -188,13 +188,35 @@ bool
 CallbackObject::CallSetup::ShouldRethrowException(JS::Handle<JS::Value> aException)
 {
   if (mExceptionHandling == eRethrowExceptions) {
-    return true;
+    if (!mCompartment) {
+      // Caller didn't ask us to filter for only exceptions we subsume.
+      return true;
+    }
+
+    // On workers, we don't have nsIPrincipals to work with.  But we also only
+    // have one compartment, so check whether mCompartment is the same as the
+    // current compartment of mCx.
+    if (mCompartment == js::GetContextCompartment(mCx)) {
+      return true;
+    }
+
+    MOZ_ASSERT(NS_IsMainThread());
+
+    // At this point mCx is in the compartment of our unwrapped callback, so
+    // just check whether the principal of mCompartment subsumes that of the
+    // current compartment/global of mCx.
+    nsIPrincipal* callerPrincipal =
+      nsJSPrincipals::get(JS_GetCompartmentPrincipals(mCompartment));
+    nsIPrincipal* calleePrincipal = nsContentUtils::SubjectPrincipal();
+    if (callerPrincipal->SubsumesConsideringDomain(calleePrincipal)) {
+      return true;
+    }
   }
 
-  MOZ_ASSERT(mExceptionHandling == eRethrowContentExceptions);
+  MOZ_ASSERT(mCompartment);
 
-  // For eRethrowContentExceptions we only want to throw an exception if the
-  // object that was thrown is a DOMError object in the caller compartment
+  // Now we only want to throw an exception to the caller if the object that was
+  // thrown is a DOMError or DOMException object in the caller compartment
   // (which we stored in mCompartment).
 
   if (!aException.isObject()) {
@@ -208,7 +230,9 @@ CallbackObject::CallSetup::ShouldRethrowException(JS::Handle<JS::Value> aExcepti
   }
 
   DOMError* domError;
-  return NS_SUCCEEDED(UNWRAP_OBJECT(DOMError, obj, domError));
+  DOMException* domException;
+  return NS_SUCCEEDED(UNWRAP_OBJECT(DOMError, obj, domError)) ||
+         NS_SUCCEEDED(UNWRAP_OBJECT(DOMException, obj, domException));
 }
 
 CallbackObject::CallSetup::~CallSetup()
@@ -274,12 +298,6 @@ CallbackObject::CallSetup::~CallSetup()
 
   mAutoIncumbentScript.reset();
   mAutoEntryScript.reset();
-
-  // It is important that this is the last thing we do, after leaving the
-  // compartment and undoing all our entry/incumbent script changes
-  if (mIsMainThread) {
-    nsContentUtils::LeaveMicroTask();
-  }
 }
 
 already_AddRefed<nsISupports>

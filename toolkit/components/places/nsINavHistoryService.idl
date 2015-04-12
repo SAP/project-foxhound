@@ -266,7 +266,7 @@ interface nsINavHistoryContainerResultNode : nsINavHistoryResultNode
  * generated this node, this item will report it has no children and never try
  * to populate itself.
  */
-[scriptable, uuid(91AC5E59-3F5C-4ACD-AB3B-325FC425A5A1)]
+[scriptable, uuid(62817759-4FEE-44A3-B58C-3E2F5AFC9D0A)]
 interface nsINavHistoryQueryResultNode : nsINavHistoryContainerResultNode
 {
   /**
@@ -283,10 +283,18 @@ interface nsINavHistoryQueryResultNode : nsINavHistoryContainerResultNode
   readonly attribute nsINavHistoryQueryOptions queryOptions;
 
   /**
-   * For both simple folder nodes and simple-folder-query nodes, this is set
-   * to the concrete itemId of the folder. Otherwise, this is set to -1.
+   * For both simple folder queries and folder shortcut queries, this is set to
+   * the concrete itemId of the folder (i.e. for folder shortcuts it's the
+   * target folder id).  Otherwise, this is set to -1.
    */
   readonly attribute long long folderItemId;
+
+  /**
+   * For both simple folder queries and folder shortcut queries, this is set to
+   * the concrete guid of the folder (i.e. for folder shortcuts it's the target
+   * folder guid). Otherwise, this is set to an empty string.
+   */
+  readonly attribute ACString targetFolderGuid;
 };
 
 
@@ -1176,7 +1184,7 @@ interface nsINavHistoryQueryOptions : nsISupports
   nsINavHistoryQueryOptions clone();
 };
 
-[scriptable, uuid(4b6963bf-763a-4f39-9fec-25670d354dd9)]
+[scriptable, uuid(8a1f527e-c9d7-4a51-bf0c-d86f0379b701)]
 interface nsINavHistoryService : nsISupports
 {
   /**
@@ -1374,6 +1382,12 @@ interface nsINavHistoryService : nsISupports
   void removeObserver(in nsINavHistoryObserver observer);
 
   /**
+   * Gets an array of registered nsINavHistoryObserver objects.
+   */
+  void getObservers([optional] out unsigned long count,
+                    [retval, array, size_is(count)] out nsINavHistoryObserver observers);
+
+  /**
    * Runs the passed callback in batch mode. Use this when a lot of things
    * are about to change. Calls can be nested, observers will only be
    * notified when all batches begin/end.
@@ -1391,6 +1405,11 @@ interface nsINavHistoryService : nsISupports
    * history is disabled if the places.history.enabled pref is false.
    */
   readonly attribute boolean historyDisabled;
+
+  /**
+   * Clear all TRANSITION_EMBED visits.
+   */
+  void clearEmbedVisits();
 };
 
 /**

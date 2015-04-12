@@ -17,11 +17,15 @@
 #ifdef XP_WIN
 #include <io.h>
 #include <windows.h>
+#include "mozilla/UniquePtr.h"
 #endif
 
 #ifdef ANDROID
 #include <android/log.h>
+#include <unistd.h>
 #endif
+
+using namespace mozilla;
 
 const char*
 NS_strspnp(const char* aDelims, const char* aStr)
@@ -293,6 +297,29 @@ set_stderr_callback(StderrCallback aCallback)
   sStderrCallback = aCallback;
 }
 
+#if defined(ANDROID) && !defined(RELEASE_BUILD)
+static FILE* sStderrCopy = nullptr;
+
+void
+stderr_to_file(const char* aFmt, va_list aArgs)
+{
+  vfprintf(sStderrCopy, aFmt, aArgs);
+}
+
+void
+copy_stderr_to_file(const char* aFile)
+{
+  if (sStderrCopy) {
+    return;
+  }
+  char* buf = (char*)malloc(strlen(aFile) + 16);
+  sprintf(buf, "%s.%u", aFile, (uint32_t)getpid());
+  sStderrCopy = fopen(buf, "w");
+  free(buf);
+  set_stderr_callback(stderr_to_file);
+}
+#endif
+
 #ifdef HAVE_VA_COPY
 #define VARARGS_ASSIGN(foo, bar)        VA_COPY(foo,bar)
 #elif defined(HAVE_VA_LIST_AS_ARRAY)
@@ -302,7 +329,6 @@ set_stderr_callback(StderrCallback aCallback)
 #endif
 
 #if defined(XP_WIN)
-
 void
 vprintf_stderr(const char* aFmt, va_list aArgs)
 {
@@ -314,13 +340,19 @@ vprintf_stderr(const char* aFmt, va_list aArgs)
   }
 
   if (IsDebuggerPresent()) {
-    char buf[2048];
-    va_list argsCpy;
-    VARARGS_ASSIGN(argsCpy, aArgs);
-    vsnprintf(buf, sizeof(buf), aFmt, argsCpy);
-    buf[sizeof(buf) - 1] = '\0';
-    va_end(argsCpy);
-    OutputDebugStringA(buf);
+    int lengthNeeded = _vscprintf(aFmt, aArgs);
+    if (lengthNeeded) {
+      lengthNeeded++;
+      auto buf = MakeUnique<char[]>(lengthNeeded);
+      if (buf) {
+        va_list argsCpy;
+        VARARGS_ASSIGN(argsCpy, aArgs);
+        vsnprintf(buf.get(), lengthNeeded, aFmt, argsCpy);
+        buf[lengthNeeded - 1] = '\0';
+        va_end(argsCpy);
+        OutputDebugStringA(buf.get());
+      }
+    }
   }
 
   FILE* fp = _fdopen(_dup(2), "a");

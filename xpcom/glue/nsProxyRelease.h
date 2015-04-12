@@ -104,7 +104,7 @@ NS_ProxyRelease(nsIEventTarget* aTarget, nsISupports* aDoomed,
  * an nsMainThreadPtrHandle<T> rather than an nsCOMPtr<T>.
  */
 template<class T>
-class nsMainThreadPtrHolder MOZ_FINAL
+class nsMainThreadPtrHolder final
 {
 public:
   // We can only acquire a pointer on the main thread. We to fail fast for
@@ -219,7 +219,7 @@ public:
   }
 
   operator T*() { return get(); }
-  T* operator->() { return get(); }
+  T* operator->() MOZ_NO_ADDREF_RELEASE_ON_RETURN { return get(); }
 
   // These are safe to call on other threads with appropriate external locking.
   bool operator==(const nsMainThreadPtrHandle<T>& aOther) const

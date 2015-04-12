@@ -19,12 +19,6 @@ var gData = [
              "indexedDB-chrome-settings-read",
              "indexedDB-chrome-settings-write"]
 },
-// test substitute
-{
-  permission: "storage",
-  expected: ["indexedDB-unlimited",
-             "default-persistent-storage"]
-},
 // test unknown access
 {
   permission: "contacts",

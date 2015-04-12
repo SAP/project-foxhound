@@ -30,8 +30,8 @@
 
 #include <arpa/inet.h>
 
-#include "mozilla/NullPtr.h"
 #include "mozilla/mozalloc.h"
+#include "nsTArray.h"
 #include "prnetdb.h"
 #include "prerr.h"
 #include "prerror.h"
@@ -283,8 +283,9 @@ void ARTPConnection::onPollStreams() {
     }
 
     uint32_t pollCount = mStreams.size() * 2;
-    PRPollDesc *pollList = (PRPollDesc *)
-        moz_xcalloc(pollCount, sizeof(PRPollDesc));
+    nsTArray<PRPollDesc> pollList;
+    pollList.AppendElements(pollCount);
+    memset(pollList.Elements(), 0, sizeof(PRPollDesc) * pollCount);
 
     // |pollIndex| is used to map different RTP & RTCP socket pairs.
     uint32_t numSocketsToPoll = 0, pollIndex = 0;
@@ -318,8 +319,9 @@ void ARTPConnection::onPollStreams() {
         return;
     }
 
-    int32_t numSocketsReadyToRead = PR_Poll(pollList, pollCount,
-        PR_MicrosecondsToInterval(kSocketPollTimeoutUs));
+    const int32_t numSocketsReadyToRead =
+        PR_Poll(pollList.Elements(), pollList.Length(),
+                PR_MicrosecondsToInterval(kSocketPollTimeoutUs));
 
     if (numSocketsReadyToRead > 0) {
         pollIndex = 0;
@@ -715,11 +717,10 @@ void ARTPConnection::onInjectPacket(const sp<AMessage> &msg) {
 
     StreamInfo *s = &*it;
 
-    status_t err;
     if (it->mInterleavedRTPIdx == index) {
-        err = parseRTP(s, buffer);
+        parseRTP(s, buffer);
     } else {
-        err = parseRTCP(s, buffer);
+        parseRTCP(s, buffer);
     }
 }
 

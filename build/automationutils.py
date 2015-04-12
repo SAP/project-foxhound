@@ -13,19 +13,11 @@ import signal
 import subprocess
 import sys
 import tempfile
-from urlparse import urlparse
-import zipfile
 import mozinfo
 
 __all__ = [
-  "ZipFileReader",
-  "addCommonOptions",
   "dumpLeakLog",
-  "isURL",
   "processLeakLog",
-  "replaceBackSlashes",
-  'KeyValueParseError',
-  'parseKeyValue',
   'systemMemory',
   'environment',
   'dumpScreen',
@@ -45,73 +37,6 @@ resetGlobalLog()
 def setAutomationLog(alt_logger):
   global log
   log = alt_logger
-
-class ZipFileReader(object):
-  """
-  Class to read zip files in Python 2.5 and later. Limited to only what we
-  actually use.
-  """
-
-  def __init__(self, filename):
-    self._zipfile = zipfile.ZipFile(filename, "r")
-
-  def __del__(self):
-    self._zipfile.close()
-
-  def _getnormalizedpath(self, path):
-    """
-    Gets a normalized path from 'path' (or the current working directory if
-    'path' is None). Also asserts that the path exists.
-    """
-    if path is None:
-      path = os.curdir
-    path = os.path.normpath(os.path.expanduser(path))
-    assert os.path.isdir(path)
-    return path
-
-  def _extractname(self, name, path):
-    """
-    Extracts a file with the given name from the zip file to the given path.
-    Also creates any directories needed along the way.
-    """
-    filename = os.path.normpath(os.path.join(path, name))
-    if name.endswith("/"):
-      os.makedirs(filename)
-    else:
-      path = os.path.split(filename)[0]
-      if not os.path.isdir(path):
-        os.makedirs(path)
-      with open(filename, "wb") as dest:
-        dest.write(self._zipfile.read(name))
-
-  def namelist(self):
-    return self._zipfile.namelist()
-
-  def read(self, name):
-    return self._zipfile.read(name)
-
-  def extract(self, name, path = None):
-    if hasattr(self._zipfile, "extract"):
-      return self._zipfile.extract(name, path)
-
-    # This will throw if name is not part of the zip file.
-    self._zipfile.getinfo(name)
-
-    self._extractname(name, self._getnormalizedpath(path))
-
-  def extractall(self, path = None):
-    if hasattr(self._zipfile, "extractall"):
-      return self._zipfile.extractall(path)
-
-    path = self._getnormalizedpath(path)
-
-    for name in self._zipfile.namelist():
-      self._extractname(name, path)
-
-def isURL(thing):
-  """Return True if |thing| looks like a URL."""
-  # We want to download URLs like http://... but not Windows paths like c:\...
-  return len(urlparse(thing).scheme) >= 2
 
 # Python does not provide strsignal() even in the very latest 3.x.
 # This is a reasonable fake.
@@ -149,30 +74,6 @@ def printstatus(status, name = ""):
   else:
     # This is probably a can't-happen condition on Unix, but let's be defensive
     print "TEST-INFO | %s: undecodable exit status %04x\n" % (name, status)
-
-def addCommonOptions(parser, defaults={}):
-  parser.add_option("--xre-path",
-                    action = "store", type = "string", dest = "xrePath",
-                    # individual scripts will set a sane default
-                    default = None,
-                    help = "absolute path to directory containing XRE (probably xulrunner)")
-  if 'SYMBOLS_PATH' not in defaults:
-    defaults['SYMBOLS_PATH'] = None
-  parser.add_option("--symbols-path",
-                    action = "store", type = "string", dest = "symbolsPath",
-                    default = defaults['SYMBOLS_PATH'],
-                    help = "absolute path to directory containing breakpad symbols, or the URL of a zip file containing symbols")
-  parser.add_option("--debugger",
-                    action = "store", dest = "debugger",
-                    help = "use the given debugger to launch the application")
-  parser.add_option("--debugger-args",
-                    action = "store", dest = "debuggerArgs",
-                    help = "pass the given args to the debugger _before_ "
-                           "the application on the command line")
-  parser.add_option("--debugger-interactive",
-                    action = "store_true", dest = "debuggerInteractive",
-                    help = "prevents the test harness from redirecting "
-                        "stdout and stderr for interactive debuggers")
 
 def dumpLeakLog(leakLogFile, filter = False):
   """Process the leak log, without parsing it.
@@ -379,30 +280,6 @@ def processLeakLog(leakLogFile, options):
       processSingleLeakFile(thisFile, processType, leakThreshold,
                             processType in ignoreMissingLeaks)
 
-def replaceBackSlashes(input):
-  return input.replace('\\', '/')
-
-class KeyValueParseError(Exception):
-  """error when parsing strings of serialized key-values"""
-  def __init__(self, msg, errors=()):
-    self.errors = errors
-    Exception.__init__(self, msg)
-
-def parseKeyValue(strings, separator='=', context='key, value: '):
-  """
-  parse string-serialized key-value pairs in the form of
-  `key = value`. Returns a list of 2-tuples.
-  Note that whitespace is not stripped.
-  """
-
-  # syntax check
-  missing = [string for string in strings if separator not in string]
-  if missing:
-    raise KeyValueParseError("Error: syntax error in %s" % (context,
-                                                            ','.join(missing)),
-                                                            errors=missing)
-  return [string.split(separator, 1) for string in strings]
-
 def systemMemory():
   """
   Returns total system memory in kilobytes.
@@ -448,13 +325,11 @@ def environment(xrePath, env=None, crashreporter=True, debugger=False, dmdPath=N
     env[envVar] = os.path.pathsep.join([path for path in envValue if path])
 
   if dmdPath and dmdLibrary and preloadEnvVar:
-    env['DMD'] = '1'
     env[preloadEnvVar] = os.path.join(dmdPath, dmdLibrary)
 
   # crashreporter
   env['GNOME_DISABLE_CRASH_DIALOG'] = '1'
   env['XRE_NO_WINDOWS_CRASH_DIALOG'] = '1'
-  env['NS_TRACE_MALLOC_DISABLE_STACKS'] = '1'
 
   if crashreporter and not debugger:
     env['MOZ_CRASHREPORTER_NO_REPORT'] = '1'
@@ -469,7 +344,7 @@ def environment(xrePath, env=None, crashreporter=True, debugger=False, dmdPath=N
   env.setdefault('MOZ_DISABLE_NONLOCAL_CONNECTIONS', '1')
 
   # Set WebRTC logging in case it is not set yet
-  env.setdefault('NSPR_LOG_MODULES', 'signaling:5,mtransport:5,datachannel:5')
+  env.setdefault('NSPR_LOG_MODULES', 'signaling:5,mtransport:5,datachannel:5,jsep:5,MediaPipelineFactory:5')
   env.setdefault('R_LOG_LEVEL', '6')
   env.setdefault('R_LOG_DESTINATION', 'stderr')
   env.setdefault('R_LOG_VERBOSE', '1')
@@ -598,8 +473,13 @@ class ShutdownLeaks(object):
       for url, count in self._zipLeakedWindows(test["leakedWindows"]):
         self.logger.warning("TEST-UNEXPECTED-FAIL | %s | leaked %d window(s) until shutdown [url = %s]" % (test["fileName"], count, url))
 
+      if test["leakedWindowsString"]:
+        self.logger.info("TEST-INFO | %s | windows(s) leaked: %s" % (test["fileName"], test["leakedWindowsString"]))
+
       if test["leakedDocShells"]:
         self.logger.warning("TEST-UNEXPECTED-FAIL | %s | leaked %d docShell(s) until shutdown" % (test["fileName"], len(test["leakedDocShells"])))
+        self.logger.info("TEST-INFO | %s | docShell(s) leaked: %s" % (test["fileName"],
+                                                                      ', '.join(["[pid = %s] [id = %s]" % x for x in test["leakedDocShells"]])))
 
   def _logWindow(self, line):
     created = line[:2] == "++"
@@ -611,7 +491,7 @@ class ShutdownLeaks(object):
       self.logger.warning("TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line <%s>" % line)
       return
 
-    key = pid + "." + serial
+    key = (pid, serial)
 
     if self.currentTest:
       windows = self.currentTest["windows"]
@@ -632,7 +512,7 @@ class ShutdownLeaks(object):
       self.logger.warning("TEST-UNEXPECTED-FAIL | ShutdownLeaks | failed to parse line <%s>" % line)
       return
 
-    key = pid + "." + id
+    key = (pid, id)
 
     if self.currentTest:
       docShells = self.currentTest["docShells"]
@@ -653,7 +533,9 @@ class ShutdownLeaks(object):
     leakingTests = []
 
     for test in self.tests:
-      test["leakedWindows"] = [self.leakedWindows[id] for id in test["windows"] if id in self.leakedWindows]
+      leakedWindows = [id for id in test["windows"] if id in self.leakedWindows]
+      test["leakedWindows"] = [self.leakedWindows[id] for id in leakedWindows]
+      test["leakedWindowsString"] = ', '.join(["[pid = %s] [serial = %s]" % x for x in leakedWindows])
       test["leakedDocShells"] = [id for id in test["docShells"] if id in self.leakedDocShells]
       test["leakCount"] = len(test["leakedWindows"]) + len(test["leakedDocShells"])
 

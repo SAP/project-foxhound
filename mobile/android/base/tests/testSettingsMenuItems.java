@@ -9,7 +9,6 @@ import java.util.Map.Entry;
 
 import org.mozilla.gecko.Actions;
 import org.mozilla.gecko.AppConstants;
-import org.mozilla.gecko.NewTabletUI;
 import org.mozilla.gecko.util.HardwareUtils;
 
 /** This patch tests the Sections present in the Settings Menu and the
@@ -46,7 +45,7 @@ public class testSettingsMenuItems extends PixelTest {
 
     // Display menu items.
     String[] PATH_DISPLAY = { StringHelper.DISPLAY_SECTION_LABEL };
-    final String[] TITLE_BAR_LABEL_ARR = { StringHelper.TITLE_BAR_LABEL, StringHelper.SHOW_PAGE_TITLE_LABEL,
+    final String[] TITLE_BAR_LABEL_ARR = { StringHelper.TITLE_BAR_LABEL, StringHelper.SHOW_PAGE_ADDRESS_LABEL,
         StringHelper.SHOW_PAGE_TITLE_LABEL, StringHelper.SHOW_PAGE_ADDRESS_LABEL };
     String[][] OPTIONS_DISPLAY = {
         { StringHelper.TEXT_SIZE_LABEL },
@@ -59,8 +58,10 @@ public class testSettingsMenuItems extends PixelTest {
 
     // Privacy menu items.
     String[] PATH_PRIVACY = { StringHelper.PRIVACY_SECTION_LABEL };
+    final String[] TRACKING_PROTECTION_LABEL_ARR = { StringHelper.TRACKING_PROTECTION_LABEL };
     String[][] OPTIONS_PRIVACY = {
-        { StringHelper.TRACKING_LABEL, "Do not tell sites anything about my tracking preferences", "Tell sites that I do not want to be tracked", "Tell sites that I want to be tracked", "Do not tell sites anything about my tracking preferences" },
+        TRACKING_PROTECTION_LABEL_ARR,
+        { StringHelper.DNT_LABEL },
         { StringHelper.COOKIES_LABEL, "Enabled", "Enabled, excluding 3rd party", "Disabled" },
         { StringHelper.REMEMBER_PASSWORDS_LABEL },
         { StringHelper.MASTER_PASSWORD_LABEL },
@@ -159,25 +160,18 @@ public class testSettingsMenuItems extends PixelTest {
             String[] textReflowUi = { StringHelper.TEXT_REFLOW_LABEL };
             settingsMap.get(PATH_DISPLAY).add(textReflowUi);
 
-            // New tablet UI can only be enabled on tablets in non-release builds.
-            if (HardwareUtils.isTablet()) {
-                String[] newTabletUi = { StringHelper.NEW_TABLET_UI };
-                settingsMap.get(PATH_DISPLAY).add(newTabletUi);
-            }
-
-            // New tablet UI: we don't allow a page title option.
-            if (NewTabletUI.isEnabled(getActivity())) {
-                settingsMap.get(PATH_DISPLAY).remove(TITLE_BAR_LABEL_ARR);
-            }
-
             if (AppConstants.MOZ_STUMBLER_BUILD_TIME_ENABLED) {
                 // Anonymous cell tower/wifi collection
-                String[] networkReportingUi = { "Mozilla Location Service", "Shares approximate Wi-Fi and cellular location of your device with Mozilla to improve our geolocation service" };
+                String[] networkReportingUi = { "Mozilla Location Service", "Help Mozilla map the world! Share approximate Wi-Fi and cellular location of your device to improve our geolocation service" };
                 settingsMap.get(PATH_MOZILLA).add(networkReportingUi);
 
                 String[] learnMoreUi = { "Learn more" };
                 settingsMap.get(PATH_MOZILLA).add(learnMoreUi);
             }
+        }
+
+        if (!AppConstants.NIGHTLY_BUILD) {
+            settingsMap.get(PATH_PRIVACY).remove(TRACKING_PROTECTION_LABEL_ARR);
         }
 
         // Automatic updates
@@ -196,6 +190,11 @@ public class testSettingsMenuItems extends PixelTest {
         if (AppConstants.MOZ_TELEMETRY_REPORTING) {
             String[] telemetryUi = { "Telemetry", "Shares performance, usage, hardware and customization data about your browser with Mozilla to help us make " + StringHelper.BRAND_NAME + " better" };
             settingsMap.get(PATH_MOZILLA).add(telemetryUi);
+        }
+
+        // Tablet: we don't allow a page title option.
+        if (HardwareUtils.isTablet()) {
+            settingsMap.get(PATH_DISPLAY).remove(TITLE_BAR_LABEL_ARR);
         }
     }
 

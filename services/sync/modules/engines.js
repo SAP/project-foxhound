@@ -54,6 +54,8 @@ this.Tracker = function Tracker(name, engine) {
 
   Svc.Obs.add("weave:engine:start-tracking", this);
   Svc.Obs.add("weave:engine:stop-tracking", this);
+
+  Svc.Prefs.observe("engine." + this.engine.prefName, this);
 };
 
 Tracker.prototype = {
@@ -222,6 +224,11 @@ Tracker.prototype = {
         if (this._isTracking) {
           this.stopTracking();
           this._isTracking = false;
+        }
+        return;
+      case "nsPref:changed":
+        if (data == PREFS_BRANCH + "engine." + this.engine.prefName) {
+          this.onEngineEnabledChanged(this.engine.enabled);
         }
         return;
     }
@@ -621,27 +628,31 @@ Engine.prototype = {
   // Signal to the engine that processing further records is pointless.
   eEngineAbortApplyIncoming: "error.engine.abort.applyincoming",
 
-  get prefName() this.name,
+  get prefName() {
+    return this.name;
+  },
+
   get enabled() {
     return Svc.Prefs.get("engine." + this.prefName, false);
   },
 
   set enabled(val) {
     Svc.Prefs.set("engine." + this.prefName, !!val);
-    this._tracker.onEngineEnabledChanged(val);
   },
 
-  get score() this._tracker.score,
+  get score() {
+    return this._tracker.score;
+  },
 
   get _store() {
     let store = new this._storeObj(this.Name, this);
-    this.__defineGetter__("_store", function() store);
+    this.__defineGetter__("_store", () => store);
     return store;
   },
 
   get _tracker() {
     let tracker = new this._trackerObj(this.Name, this);
-    this.__defineGetter__("_tracker", function() tracker);
+    this.__defineGetter__("_tracker", () => tracker);
     return tracker;
   },
 
@@ -702,6 +713,9 @@ SyncEngine.prototype = {
   _recordObj: CryptoWrapper,
   version: 1,
 
+  // Which sortindex to use when retrieving records for this engine.
+  _defaultSort: undefined,
+
   // A relative priority to use when computing an order
   // for engines to be synced. Higher-priority engines
   // (lower numbers) are synced first.
@@ -721,13 +735,21 @@ SyncEngine.prototype = {
   // How many records to process in a single batch.
   applyIncomingBatchSize: DEFAULT_STORE_BATCH_SIZE,
 
-  get storageURL() this.service.storageURL,
+  get storageURL() {
+    return this.service.storageURL;
+  },
 
-  get engineURL() this.storageURL + this.name,
+  get engineURL() {
+    return this.storageURL + this.name;
+  },
 
-  get cryptoKeysURL() this.storageURL + "crypto/keys",
+  get cryptoKeysURL() {
+    return this.storageURL + "crypto/keys";
+  },
 
-  get metaURL() this.storageURL + "meta/global",
+  get metaURL() {
+    return this.storageURL + "meta/global";
+  },
 
   get syncID() {
     // Generate a random syncID if we don't have one
@@ -757,7 +779,9 @@ SyncEngine.prototype = {
     this.lastSyncLocal = 0;
   },
 
-  get toFetch() this._toFetch,
+  get toFetch() {
+    return this._toFetch;
+  },
   set toFetch(val) {
     let cb = (error) => this._log.error(Utils.exceptionStr(error));
     // Coerce the array to a string for more efficient comparison.
@@ -780,7 +804,9 @@ SyncEngine.prototype = {
     });
   },
 
-  get previousFailed() this._previousFailed,
+  get previousFailed() {
+    return this._previousFailed;
+  },
   set previousFailed(val) {
     let cb = (error) => this._log.error(Utils.exceptionStr(error));
     // Coerce the array to a string for more efficient comparison.
@@ -927,6 +953,10 @@ SyncEngine.prototype = {
 
     if (!newitems) {
       newitems = this._itemSource();
+    }
+
+    if (this._defaultSort) {
+      newitems.sort = this._defaultSort;
     }
 
     if (isMobile) {

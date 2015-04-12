@@ -16,6 +16,7 @@
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/TabParent.h"
 
 #include "HTMLInputElement.h"
 #include "IMEContentObserver.h"
@@ -25,6 +26,7 @@
 #include "nsIContent.h"
 #include "nsIDocument.h"
 #include "nsIDOMMouseEvent.h"
+#include "nsIEditor.h"
 #include "nsIForm.h"
 #include "nsIFormControl.h"
 #include "nsINode.h"
@@ -142,6 +144,8 @@ GetEventMessageName(uint32_t aMessage)
       return "NS_COMPOSITION_UPDATE";
     case NS_COMPOSITION_CHANGE:
       return "NS_COMPOSITION_CHANGE";
+    case NS_COMPOSITION_COMMIT_AS_IS:
+      return "NS_COMPOSITION_COMMIT_AS_IS";
     default:
       return "unacceptable event message";
   }
@@ -385,6 +389,27 @@ IMEStateManager::OnChangeFocusInternal(nsPresContext* aPresContext,
   }
 
   IMEState newState = GetNewIMEState(aPresContext, aContent);
+
+  // In e10s, remote content may have IME focus.  The main process (i.e. this process)
+  // would attempt to set state to DISABLED if, for example, the user clicks
+  // some other remote content.  The content process would later re-ENABLE IME, meaning
+  // that all state-changes were unnecessary.
+  // Here we filter the common case where the main process knows that the remote
+  // process controls IME focus.  The DISABLED->re-ENABLED progression can
+  // still happen since remote content may be concurrently communicating its claim
+  // on focus to the main process... but this cannot cause bugs like missed keypresses.
+  // (It just means a lot of needless IPC.)
+  if ((newState.mEnabled == IMEState::DISABLED) && TabParent::GetIMETabParent()) {
+    PR_LOG(sISMLog, PR_LOG_DEBUG,
+      ("ISM:   IMEStateManager::OnChangeFocusInternal(), "
+       "Parent process cancels to set DISABLED state because the content process "
+       "has IME focus and has already sets IME state"));  
+    MOZ_ASSERT(XRE_IsParentProcess(),
+      "TabParent::GetIMETabParent() should never return non-null value "
+      "in the content process");
+    return NS_OK;
+  }
+
   if (!focusActuallyChanging) {
     // actual focus isn't changing, but if IME enabled state is changing,
     // we should do it.
@@ -559,12 +584,14 @@ IMEStateManager::OnClickInEditor(nsPresContext* aPresContext,
 // static
 void
 IMEStateManager::OnFocusInEditor(nsPresContext* aPresContext,
-                                 nsIContent* aContent)
+                                 nsIContent* aContent,
+                                 nsIEditor* aEditor)
 {
   PR_LOG(sISMLog, PR_LOG_ALWAYS,
-    ("ISM: IMEStateManager::OnFocusInEditor(aPresContext=0x%p, aContent=0x%p), "
-     "sPresContext=0x%p, sContent=0x%p, sActiveIMEContentObserver=0x%p",
-     aPresContext, aContent, sPresContext, sContent,
+    ("ISM: IMEStateManager::OnFocusInEditor(aPresContext=0x%p, aContent=0x%p, "
+     "aEditor=0x%p), sPresContext=0x%p, sContent=0x%p, "
+     "sActiveIMEContentObserver=0x%p",
+     aPresContext, aContent, aEditor, sPresContext, sContent,
      sActiveIMEContentObserver));
 
   if (sPresContext != aPresContext || sContent != aContent) {
@@ -586,21 +613,22 @@ IMEStateManager::OnFocusInEditor(nsPresContext* aPresContext,
     DestroyIMEContentObserver();
   }
 
-  CreateIMEContentObserver();
+  CreateIMEContentObserver(aEditor);
 }
 
 // static
 void
 IMEStateManager::UpdateIMEState(const IMEState& aNewIMEState,
-                                nsIContent* aContent)
+                                nsIContent* aContent,
+                                nsIEditor* aEditor)
 {
   PR_LOG(sISMLog, PR_LOG_ALWAYS,
     ("ISM: IMEStateManager::UpdateIMEState(aNewIMEState={ mEnabled=%s, "
-     "mOpen=%s }, aContent=0x%p), "
+     "mOpen=%s }, aContent=0x%p, aEditor=0x%p), "
      "sPresContext=0x%p, sContent=0x%p, sActiveIMEContentObserver=0x%p, "
      "sIsGettingNewIMEState=%s",
      GetIMEStateEnabledName(aNewIMEState.mEnabled),
-     GetIMEStateSetOpenName(aNewIMEState.mOpen), aContent,
+     GetIMEStateSetOpenName(aNewIMEState.mOpen), aContent, aEditor,
      sPresContext, sContent, sActiveIMEContentObserver,
      GetBoolName(sIsGettingNewIMEState)));
 
@@ -651,7 +679,7 @@ IMEStateManager::UpdateIMEState(const IMEState& aNewIMEState,
   }
 
   if (createTextStateManager) {
-    CreateIMEContentObserver();
+    CreateIMEContentObserver(aEditor);
   }
 }
 
@@ -939,7 +967,7 @@ IMEStateManager::DispatchCompositionEvent(
   //       destroy the TextComposition with synthesized compositionend event.
   if ((!aIsSynthesized ||
        composition->WasNativeCompositionEndEventDiscarded()) &&
-      aCompositionEvent->message == NS_COMPOSITION_END) {
+      aCompositionEvent->CausesDOMCompositionEndEvent()) {
     TextCompositionArray::index_type i =
       sTextCompositions->IndexOf(aCompositionEvent->widget);
     if (i != TextCompositionArray::NoIndex) {
@@ -1145,13 +1173,13 @@ IMEStateManager::DestroyIMEContentObserver()
 
 // static
 void
-IMEStateManager::CreateIMEContentObserver()
+IMEStateManager::CreateIMEContentObserver(nsIEditor* aEditor)
 {
   PR_LOG(sISMLog, PR_LOG_ALWAYS,
-    ("ISM: IMEStateManager::CreateIMEContentObserver(), "
+    ("ISM: IMEStateManager::CreateIMEContentObserver(aEditor=0x%p), "
      "sPresContext=0x%p, sContent=0x%p, sActiveIMEContentObserver=0x%p, "
      "sActiveIMEContentObserver->IsManaging(sPresContext, sContent)=%s",
-     sPresContext, sContent, sActiveIMEContentObserver,
+     aEditor, sPresContext, sContent, sActiveIMEContentObserver,
      GetBoolName(sActiveIMEContentObserver ?
        sActiveIMEContentObserver->IsManaging(sPresContext, sContent) : false)));
 
@@ -1195,7 +1223,7 @@ IMEStateManager::CreateIMEContentObserver()
   // instance.  So, sActiveIMEContentObserver would be replaced with new one.
   // We should hold the current instance here.
   nsRefPtr<IMEContentObserver> kungFuDeathGrip(sActiveIMEContentObserver);
-  sActiveIMEContentObserver->Init(widget, sPresContext, sContent);
+  sActiveIMEContentObserver->Init(widget, sPresContext, sContent, aEditor);
 }
 
 // static

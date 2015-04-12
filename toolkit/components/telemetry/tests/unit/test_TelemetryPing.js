@@ -18,9 +18,12 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/LightweightThemeManager.jsm", this);
 Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 Cu.import("resource://gre/modules/TelemetryPing.jsm", this);
+Cu.import("resource://gre/modules/TelemetrySession.jsm", this);
 Cu.import("resource://gre/modules/TelemetryFile.jsm", this);
 Cu.import("resource://gre/modules/Task.jsm", this);
 Cu.import("resource://gre/modules/Promise.jsm", this);
+Cu.import("resource://gre/modules/Preferences.jsm");
+Cu.import("resource://gre/modules/osfile.jsm", this);
 
 const IGNORE_HISTOGRAM = "test::ignore_me";
 const IGNORE_HISTOGRAM_TO_CLONE = "MEMORY_HEAP_ALLOCATED";
@@ -44,6 +47,11 @@ let gNumberOfThreadsLaunched = 0;
 const PREF_BRANCH = "toolkit.telemetry.";
 const PREF_ENABLED = PREF_BRANCH + "enabled";
 const PREF_FHR_UPLOAD_ENABLED = "datareporting.healthreport.uploadEnabled";
+const PREF_FHR_SERVICE_ENABLED = "datareporting.healthreport.service.enabled";
+
+const HAS_DATAREPORTINGSERVICE = "@mozilla.org/datareporting/service;1" in Cc;
+const SESSION_RECORDER_EXPECTED = HAS_DATAREPORTINGSERVICE &&
+                                  Preferences.get(PREF_FHR_SERVICE_ENABLED, true);
 
 const Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
 
@@ -58,11 +66,13 @@ XPCOMUtils.defineLazyGetter(this, "gDatareportingService",
           .wrappedJSObject);
 
 function sendPing () {
-  TelemetryPing.gatherStartup();
+  TelemetrySession.gatherStartup();
   if (gServerStarted) {
-    return TelemetryPing.testPing("http://localhost:" + gHttpServer.identity.primaryPort);
+    TelemetryPing.setServer("http://localhost:" + gHttpServer.identity.primaryPort);
+    return TelemetrySession.testPing();
   } else {
-    return TelemetryPing.testPing("http://doesnotexist");
+    TelemetryPing.setServer("http://doesnotexist");
+    return TelemetrySession.testPing();
   }
 }
 
@@ -85,15 +95,21 @@ function registerPingHandler(handler) {
 }
 
 function setupTestData() {
-  Telemetry.newHistogram(IGNORE_HISTOGRAM, "never", 1, 2, 3, Telemetry.HISTOGRAM_BOOLEAN);
+  Telemetry.newHistogram(IGNORE_HISTOGRAM, "never", Telemetry.HISTOGRAM_BOOLEAN);
   Telemetry.histogramFrom(IGNORE_CLONED_HISTOGRAM, IGNORE_HISTOGRAM_TO_CLONE);
   Services.startup.interrupted = true;
-  Telemetry.registerAddonHistogram(ADDON_NAME, ADDON_HISTOGRAM, 1, 5, 6,
-                                   Telemetry.HISTOGRAM_LINEAR);
+  Telemetry.registerAddonHistogram(ADDON_NAME, ADDON_HISTOGRAM,
+                                   Telemetry.HISTOGRAM_LINEAR,
+                                   1, 5, 6);
   let h1 = Telemetry.getAddonHistogram(ADDON_NAME, ADDON_HISTOGRAM);
   h1.add(1);
   let h2 = Telemetry.getHistogramById("TELEMETRY_TEST_COUNT");
   h2.add();
+
+  let k1 = Telemetry.getKeyedHistogramById("TELEMETRY_TEST_KEYED_COUNT");
+  k1.add("a");
+  k1.add("a");
+  k1.add("b");
 }
 
 function getSavedHistogramsFile(basename) {
@@ -198,8 +214,7 @@ function checkPayloadInfo(payload, reason) {
   }
 }
 
-function checkPayload(request, reason, successfulPings) {
-  let payload = decodeRequestPayload(request);
+function checkPayload(request, payload, reason, successfulPings) {
   // Take off ["","submit","telemetry"].
   let pathComponents = request.path.split("/").slice(3);
 
@@ -212,6 +227,9 @@ function checkPayload(request, reason, successfulPings) {
   do_check_eq(payload.simpleMeasurements.savedPings, 1);
   do_check_true("maximalNumberOfConcurrentThreads" in payload.simpleMeasurements);
   do_check_true(payload.simpleMeasurements.maximalNumberOfConcurrentThreads >= gNumberOfThreadsLaunched);
+
+  let activeTicks = payload.simpleMeasurements.activeTicks;
+  do_check_true(SESSION_RECORDER_EXPECTED ? activeTicks >= 0 : activeTicks == -1);
 
   do_check_eq(payload.simpleMeasurements.failedProfileLockCount,
               FAILED_PROFILE_LOCK_ATTEMPTS);
@@ -231,6 +249,8 @@ function checkPayload(request, reason, successfulPings) {
   const TELEMETRY_SUCCESS = "TELEMETRY_SUCCESS";
   const TELEMETRY_TEST_FLAG = "TELEMETRY_TEST_FLAG";
   const TELEMETRY_TEST_COUNT = "TELEMETRY_TEST_COUNT";
+  const TELEMETRY_TEST_KEYED_FLAG = "TELEMETRY_TEST_KEYED_FLAG";
+  const TELEMETRY_TEST_KEYED_COUNT = "TELEMETRY_TEST_KEYED_COUNT";
   const READ_SAVED_PING_SUCCESS = "READ_SAVED_PING_SUCCESS";
 
   do_check_true(TELEMETRY_PING in payload.histograms);
@@ -238,7 +258,7 @@ function checkPayload(request, reason, successfulPings) {
   do_check_true(TELEMETRY_TEST_FLAG in payload.histograms);
   do_check_true(TELEMETRY_TEST_COUNT in payload.histograms);
 
-  let rh = Telemetry.registeredHistograms([]);
+  let rh = Telemetry.registeredHistograms(Ci.nsITelemetry.DATASET_RELEASE_CHANNEL_OPTIN, []);
   for (let name of rh) {
     if (/SQLITE/.test(name) && name in payload.histograms) {
       do_check_true(("STARTUP_" + name) in payload.histograms); 
@@ -309,6 +329,37 @@ function checkPayload(request, reason, successfulPings) {
 
   do_check_true(("mainThread" in payload.slowSQL) &&
                 ("otherThreads" in payload.slowSQL));
+
+  // Check keyed histogram payload.
+
+  do_check_true("keyedHistograms" in payload);
+  let keyedHistograms = payload.keyedHistograms;
+  do_check_true(TELEMETRY_TEST_KEYED_FLAG in keyedHistograms);
+  do_check_true(TELEMETRY_TEST_KEYED_COUNT in keyedHistograms);
+
+  Assert.deepEqual({}, keyedHistograms[TELEMETRY_TEST_KEYED_FLAG]);
+
+  const expected_keyed_count = {
+    "a": {
+      range: [1, 2],
+      bucket_count: 3,
+      histogram_type: 4,
+      values: {0:2, 1:0},
+      sum: 2,
+      sum_squares_lo: 2,
+      sum_squares_hi: 0,
+    },
+    "b": {
+      range: [1, 2],
+      bucket_count: 3,
+      histogram_type: 4,
+      values: {0:1, 1:0},
+      sum: 1,
+      sum_squares_lo: 1,
+      sum_squares_hi: 0,
+    },
+  };
+  Assert.deepEqual(expected_keyed_count, keyedHistograms[TELEMETRY_TEST_KEYED_COUNT]);
 }
 
 function dummyTheme(id) {
@@ -401,7 +452,7 @@ function run_test() {
 
   // Send the needed startup notifications to the datareporting service
   // to ensure that it has been initialized.
-  if ("@mozilla.org/datareporting/service;1" in Cc) {
+  if (HAS_DATAREPORTINGSERVICE) {
     gDatareportingService.observe(null, "app-startup", null);
     gDatareportingService.observe(null, "profile-after-change", null);
   }
@@ -453,10 +504,28 @@ function actualTest() {
 }
 
 add_task(function* asyncSetup() {
+  yield TelemetrySession.setup();
   yield TelemetryPing.setup();
 
-  if ("@mozilla.org/datareporting/service;1" in Cc) {
+  if (HAS_DATAREPORTINGSERVICE) {
+    // force getSessionRecorder()==undefined to check the payload's activeTicks
+    gDatareportingService.simulateNoSessionRecorder();
+  }
+
+  // When no DRS or no DRS.getSessionRecorder(), activeTicks should be -1.
+  do_check_eq(TelemetrySession.getPayload().simpleMeasurements.activeTicks, -1);
+
+  if (HAS_DATAREPORTINGSERVICE) {
+    // Restore normal behavior for getSessionRecorder()
+    gDatareportingService.simulateRestoreSessionRecorder();
+
     gDataReportingClientID = yield gDatareportingService.getClientID();
+
+    // We should have cached the client id now. Lets confirm that by
+    // checking the client id before the async ping setup is finished.
+    let promisePingSetup = TelemetryPing.reset();
+    do_check_eq(TelemetryPing.clientID, gDataReportingClientID);
+    yield promisePingSetup;
   }
 });
 
@@ -471,12 +540,12 @@ add_task(function* test_overwritePing() {
 // Ensures that expired histograms are not part of the payload.
 add_task(function* test_expiredHistogram() {
   let histogram_id = "FOOBAR";
-  let dummy = Telemetry.newHistogram(histogram_id, "30", 1, 2, 3, Telemetry.HISTOGRAM_EXPONENTIAL);
+  let dummy = Telemetry.newHistogram(histogram_id, "30", Telemetry.HISTOGRAM_EXPONENTIAL, 1, 2, 3);
 
   dummy.add(1);
 
-  do_check_eq(TelemetryPing.getPayload()["histograms"][histogram_id], undefined);
-  do_check_eq(TelemetryPing.getPayload()["histograms"]["TELEMETRY_TEST_EXPIRED"], undefined);
+  do_check_eq(TelemetrySession.getPayload()["histograms"][histogram_id], undefined);
+  do_check_eq(TelemetrySession.getPayload()["histograms"]["TELEMETRY_TEST_EXPIRED"], undefined);
 });
 
 // Checks that an invalid histogram file is deleted if TelemetryFile fails to parse it.
@@ -486,7 +555,7 @@ add_task(function* test_runInvalidJSON() {
   writeStringToFile(histogramsFile, "this.is.invalid.JSON");
   do_check_true(histogramsFile.exists());
 
-  yield TelemetryPing.testLoadHistograms(histogramsFile);
+  yield TelemetrySession.testLoadHistograms(histogramsFile);
   do_check_false(histogramsFile.exists());
 });
 
@@ -515,21 +584,25 @@ add_task(function* test_saveLoadPing() {
   let histogramsFile = getSavedHistogramsFile("saved-histograms.dat");
 
   setupTestData();
-  yield TelemetryPing.testSaveHistograms(histogramsFile);
-  yield TelemetryPing.testLoadHistograms(histogramsFile);
+  yield TelemetrySession.testSaveHistograms(histogramsFile);
+  yield TelemetrySession.testLoadHistograms(histogramsFile);
   yield sendPing();
 
   // Get requests received by dummy server.
   let request1 = yield gRequestIterator.next();
   let request2 = yield gRequestIterator.next();
 
+  // We decode both requests to check for the |reason|.
+  let payload1 = decodeRequestPayload(request1);
+  let payload2 = decodeRequestPayload(request2);
+
   // Check we have the correct two requests. Ordering is not guaranteed.
-  if (request1.path.contains("test-ping")) {
-    checkPayload(request1, "test-ping", 1);
-    checkPayload(request2, "saved-session", 1);
+  if (payload1.info.reason === "test-ping") {
+    checkPayload(request1, payload1, "test-ping", 1);
+    checkPayload(request2, payload2, "saved-session", 1);
   } else {
-    checkPayload(request1, "saved-session", 1);
-    checkPayload(request2, "test-ping", 1);
+    checkPayload(request1, payload1, "saved-session", 1);
+    checkPayload(request2, payload2, "test-ping", 1);
   }
 });
 
@@ -537,13 +610,27 @@ add_task(function* test_saveLoadPing() {
 add_task(function* test_runOldPingFile() {
   let histogramsFile = getSavedHistogramsFile("old-histograms.dat");
 
-  yield TelemetryPing.testSaveHistograms(histogramsFile);
+  yield TelemetrySession.testSaveHistograms(histogramsFile);
   do_check_true(histogramsFile.exists());
   let mtime = histogramsFile.lastModifiedTime;
   histogramsFile.lastModifiedTime = mtime - (14 * 24 * 60 * 60 * 1000 + 60000); // 14 days, 1m
 
-  yield TelemetryPing.testLoadHistograms(histogramsFile);
+  yield TelemetrySession.testLoadHistograms(histogramsFile);
   do_check_false(histogramsFile.exists());
+});
+
+add_task(function* test_savedSessionClientID() {
+  // Assure that we store the ping properly when saving sessions on shutdown.
+  // We make the TelemetrySession shutdown to trigger a session save.
+  const dir = TelemetryFile.pingDirectoryPath;
+  yield OS.File.removeDir(dir, {ignoreAbsent: true});
+  yield OS.File.makeDir(dir);
+  yield TelemetrySession.shutdown();
+
+  yield TelemetryFile.loadSavedPings();
+  Assert.equal(TelemetryFile.pingsLoaded, 1);
+  let ping = TelemetryFile.popPendingPings().next();
+  Assert.equal(ping.value.payload.clientID, gDataReportingClientID);
 });
 
 add_task(function* stopServer(){

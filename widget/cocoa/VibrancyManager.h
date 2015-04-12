@@ -8,7 +8,6 @@
 #define VibrancyManager_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/TypedEnum.h"
 #include "nsClassHashtable.h"
 #include "nsRegion.h"
 #include "nsTArray.h"
@@ -22,10 +21,13 @@ class nsIntRegion;
 
 namespace mozilla {
 
-MOZ_BEGIN_ENUM_CLASS(VibrancyType)
+enum class VibrancyType {
   LIGHT,
-  DARK
-MOZ_END_ENUM_CLASS(VibrancyType)
+  DARK,
+  TOOLTIP,
+  MENU,
+  HIGHLIGHTED_MENUITEM
+};
 
 /**
  * VibrancyManager takes care of updating the vibrant regions of a window.
@@ -83,6 +85,12 @@ public:
    * preference is set.
    */
   NSColor* VibrancyFillColorForType(VibrancyType aType);
+
+  /**
+   * Return the font smoothing background color that should be used for text
+   * drawn on top of the vibrant window parts.
+   */
+  NSColor* VibrancyFontSmoothingBackgroundColorForType(VibrancyType aType);
 
   /**
    * Check whether the operating system supports vibrancy at all.

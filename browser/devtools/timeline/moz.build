@@ -5,9 +5,6 @@
 
 EXTRA_JS_MODULES.devtools.timeline += [
     'panel.js',
-    'widgets/global.js',
-    'widgets/overview.js',
-    'widgets/waterfall.js'
 ]
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']

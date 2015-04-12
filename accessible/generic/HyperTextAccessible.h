@@ -7,8 +7,8 @@
 #define mozilla_a11y_HyperTextAccessible_h__
 
 #include "AccessibleWrap.h"
+#include "nsIAccessibleText.h"
 #include "nsIAccessibleTypes.h"
-#include "xpcAccessibleHyperText.h"
 #include "nsDirection.h"
 #include "WordMovementType.h"
 #include "nsIFrame.h"
@@ -37,7 +37,7 @@ struct DOMPoint {
   int32_t idx;
 };
 
-// This character marks where in the text returned via nsIAccessibleText(),
+// This character marks where in the text returned via Text interface,
 // that embedded object characters exist
 const char16_t kEmbeddedObjectChar = 0xfffc;
 const char16_t kImaginaryEmbeddedObjectChar = ' ';
@@ -46,8 +46,7 @@ const char16_t kForcedNewLineChar = '\n';
 /**
   * Special Accessible that knows how contain both text and embedded objects
   */
-class HyperTextAccessible : public AccessibleWrap,
-                            public xpcAccessibleHyperText
+class HyperTextAccessible : public AccessibleWrap
 {
 public:
   HyperTextAccessible(nsIContent* aContent, DocAccessible* aDoc);
@@ -55,13 +54,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // Accessible
-  virtual int32_t GetLevelInternal();
-  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() MOZ_OVERRIDE;
-  virtual mozilla::a11y::role NativeRole() MOZ_OVERRIDE;
-  virtual uint64_t NativeState() MOZ_OVERRIDE;
+  virtual int32_t GetLevelInternal() override;
+  virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
+  virtual mozilla::a11y::role NativeRole() override;
+  virtual uint64_t NativeState() override;
 
-  virtual void InvalidateChildren();
-  virtual bool RemoveChild(Accessible* aAccessible);
+  virtual void InvalidateChildren() override;
+  virtual bool RemoveChild(Accessible* aAccessible) override;
 
   // HyperTextAccessible (static helper method)
 
@@ -429,8 +428,8 @@ protected:
   virtual ~HyperTextAccessible() { }
 
   // Accessible
-  virtual ENameValueFlag NativeName(nsString& aName) MOZ_OVERRIDE;
-  virtual void CacheChildren() MOZ_OVERRIDE;
+  virtual ENameValueFlag NativeName(nsString& aName) override;
+  virtual void CacheChildren() override;
 
   // HyperTextAccessible
 

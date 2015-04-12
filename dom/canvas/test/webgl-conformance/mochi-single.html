@@ -54,8 +54,9 @@ if (!window.todo) {
 }
 if (!window.SimpleTest) {
   window.SimpleTest = {
-    waitForExplicitFinish: function(){},
     finish: function(){},
+    requestLongerTimeout: function(){},
+    waitForExplicitFinish: function(){},
   };
 }
 
@@ -98,7 +99,6 @@ function GetExpectedTestFailSet() {
       break;
 
     case DriverInfo.OS.LINUX:
-      failSet['conformance/extensions/oes-texture-float.html'] = true;
       failSet['conformance/glsl/functions/glsl-function-sin.html'] = true;
       failSet['conformance/misc/type-conversion-test.html'] = true;
       failSet['conformance/textures/texture-mips.html'] = true;
@@ -106,8 +106,6 @@ function GetExpectedTestFailSet() {
       break;
 
     case DriverInfo.OS.ANDROID:
-      failSet['conformance/extensions/oes-texture-float.html'] = true;
-
       if (DriverInfo.getOSVersion() >= OS_VERSION_ANDROID_ICS) {
         // Android 4.0 slaves.
         failSet['conformance/extensions/oes-vertex-array-object.html'] = true;
@@ -124,14 +122,13 @@ function GetExpectedTestFailSet() {
         failSet['conformance/textures/tex-image-with-format-and-type.html'] = true;
         failSet['conformance/textures/tex-sub-image-2d.html'] = true;
         failSet['conformance/textures/texture-mips.html'] = true;
-        failSet['conformance/textures/texture-npot.html'] = true;
         failSet['conformance/textures/texture-size-cube-maps.html'] = true;
       } else {
         // Android 2.3 slaves.
+        failSet['conformance/extensions/oes-texture-float.html'] = true;
         failSet['conformance/glsl/functions/glsl-function-sin.html'] = true;
-        failSet['conformance/misc/error-reporting.html'] = true;
         failSet['conformance/misc/object-deletion-behaviour.html'] = true;
-        failSet['conformance/programs/get-active-test.html'] = true;
+        failSet['conformance/programs/program-test.html'] = true;
         failSet['conformance/textures/tex-image-and-sub-image-2d-with-video.html'] = true;
         failSet['conformance/textures/texture-mips.html'] = true;
         failSet['conformance/textures/texture-npot.html'] = true;
@@ -140,7 +137,6 @@ function GetExpectedTestFailSet() {
 
     case DriverInfo.OS.B2G:
       failSet['conformance/context/context-attributes-alpha-depth-stencil-antialias.html'] = true;
-      failSet['conformance/extensions/oes-texture-float.html'] = true;
       failSet['conformance/glsl/functions/glsl-function-sin.html'] = true;
       failSet['conformance/glsl/reserved/_webgl_function.vert.html'] = true;
       failSet['conformance/glsl/reserved/webgl_function.vert.html'] = true;
@@ -242,6 +238,13 @@ function OnTestComplete() {
 // Begin execution
 
 SimpleTest.waitForExplicitFinish();
+
+var isAndroid2_3 = (DriverInfo.getOS() == DriverInfo.OS.ANDROID &&
+                    DriverInfo.getOSVersion() < OS_VERSION_ANDROID_ICS);
+if (isAndroid2_3) {
+  var timeoutLengthMultiplier = 2.0;
+  SimpleTest.requestLongerTimeout(timeoutLengthMultiplier);
+}
 
 do {
   var arg = location.search.substr(1);

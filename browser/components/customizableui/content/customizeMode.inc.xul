@@ -9,8 +9,8 @@
     </label>
     <hbox id="customization-empty" hidden="true">
       <label>&customizeMode.menuAndToolbars.empty;</label>
-      <label onclick="BrowserOpenAddonsMgr('addons://discovery/');"
-             onkeypress="BrowserOpenAddonsMgr('addons://discovery/');"
+      <label onclick="BrowserOpenAddonsMgr('addons://discover/');"
+             onkeypress="BrowserOpenAddonsMgr('addons://discover/');"
              id="customization-more-tools"
              class="text-link">
         &customizeMode.menuAndToolbars.emptyLink;
@@ -56,8 +56,8 @@
       <button id="customization-devedition-theme-button"
               class="customizationmode-button"
               hidden="true"
-              label="&customizeMode.deveditionTheme.label;"
-              oncommand="gCustomizeMode.toggleDevEditionTheme()"
+              label="&customizeMode.deveditionTheme.label2;"
+              oncommand="gCustomizeMode.toggleDevEditionTheme(this.hasAttribute('checked'))"
               type="checkbox" />
 
       <spacer id="customization-footer-spacer"/>

@@ -38,6 +38,7 @@ function* addTestEngines(items) {
 
 
 add_task(function* test_searchEngine_autoFill() {
+  Services.prefs.setBoolPref("browser.urlbar.autoFill.searchEngines", true);
   Services.search.addEngineWithDetails("MySearchEngine", "", "", "",
                                        "GET", "http://my.search.com/");
   let engine = Services.search.getEngineByName("MySearchEngine");
@@ -49,11 +50,12 @@ add_task(function* test_searchEngine_autoFill() {
   for (let i = 0; i < 100; ++i) {
     visits.push({ uri , title: "Terms - SearchEngine Search" });
   }
-  yield promiseAddVisits(visits);
+  yield PlacesTestUtils.addVisits(visits);
   addBookmark({ uri: uri, title: "Example bookmark" });
-  ok(frecencyForUrl(uri) > 10000, "Adeded URI should have expected high frecency");
+  yield PlacesTestUtils.promiseAsyncUpdates();
+  ok(frecencyForUrl(uri) > 10000, "Added URI should have expected high frecency");
 
-  do_log_info("Check search domain is autoFilled even if there's an higher frecency match");
+  do_print("Check search domain is autoFilled even if there's an higher frecency match");
   yield check_autocomplete({
     search: "my",
     autofilled: "my.search.com",
@@ -70,7 +72,7 @@ add_task(function* test_searchEngine_noautoFill() {
   equal(engine.searchForm, "http://example.com/?search");
 
   Services.prefs.setBoolPref("browser.urlbar.autoFill.typed", false);
-  yield promiseAddVisits(NetUtil.newURI("http://example.com/my/"));
+  yield PlacesTestUtils.addVisits(NetUtil.newURI("http://example.com/my/"));
 
   do_print("Check search domain is not autoFilled if it matches a visited domain");
   yield check_autocomplete({

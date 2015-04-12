@@ -52,7 +52,7 @@ let TEST_DATA = [
   }
 ];
 
-let test = asyncTest(function* () {
+add_task(function* () {
   let { inspector } = yield openInspectorForURL(PAGE_1);
 
   for (let { url, nodeToSelect, selectedNode } of TEST_DATA) {
@@ -66,7 +66,8 @@ let test = asyncTest(function* () {
     info("Waiting for inspector to update after new-root event.");
     yield inspector.once("inspector-updated");
 
-    is(inspector.selection.node, getNode(selectedNode),
+    let nodeFront = yield getNodeFront(selectedNode, inspector);
+    is(inspector.selection.nodeFront, nodeFront,
        selectedNode + " is selected after navigation.");
   }
 

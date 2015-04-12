@@ -15,7 +15,7 @@ function test() {
     // Since we test the connections set below, destroy the server in case it
     // was left open.
     DebuggerServer.destroy();
-    DebuggerServer.init(function () { return true; });
+    DebuggerServer.init();
     DebuggerServer.addBrowserActors();
 
     let tab = yield addTab(TEST_URI);
@@ -43,7 +43,7 @@ function connectToLocal(win) {
   win.AppManager.connection.once(
       win.Connection.Events.CONNECTED,
       () => deferred.resolve());
-  win.document.querySelectorAll(".runtime-panel-item-custom")[1].click();
+  win.document.querySelectorAll(".runtime-panel-item-other")[1].click();
   return deferred.promise;
 }
 

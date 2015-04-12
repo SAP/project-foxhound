@@ -8,6 +8,7 @@
 
 #include "jsapi.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Console.h"
 #include "mozilla/dom/DedicatedWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/Fetch.h"
@@ -15,6 +16,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/SharedWorkerGlobalScopeBinding.h"
+#include "mozilla/dom/indexedDB/IDBFactory.h"
 #include "mozilla/Services.h"
 #include "nsServiceManagerUtils.h"
 
@@ -33,6 +35,7 @@
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 #include "Performance.h"
+#include "ServiceWorkerClients.h"
 
 #define UNWRAP_WORKER_OBJECT(Interface, obj, value)                           \
   UnwrapObject<prototypes::id::Interface##_workers,                           \
@@ -41,6 +44,9 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 USING_WORKERS_NAMESPACE
+
+using mozilla::dom::indexedDB::IDBFactory;
+using mozilla::ipc::PrincipalInfo;
 
 BEGIN_WORKERS_NAMESPACE
 
@@ -64,6 +70,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(WorkerGlobalScope,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPerformance)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNavigator)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIndexedDB)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WorkerGlobalScope,
@@ -73,6 +80,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WorkerGlobalScope,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPerformance)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocation)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mNavigator)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndexedDB)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(WorkerGlobalScope,
@@ -87,6 +95,7 @@ NS_IMPL_RELEASE_INHERITED(WorkerGlobalScope, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WorkerGlobalScope)
   NS_INTERFACE_MAP_ENTRY(nsIGlobalObject)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 JSObject*
@@ -224,10 +233,11 @@ WorkerGlobalScope::SetInterval(JSContext* aCx,
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
+  bool isInterval = aTimeout.WasPassed();
   int32_t timeout = aTimeout.WasPassed() ? aTimeout.Value() : 0;
 
   return mWorkerPrivate->SetTimeout(aCx, &aHandler, EmptyString(), timeout,
-                                    aArguments, !!timeout, aRv);
+                                    aArguments, isInterval, aRv);
 }
 
 int32_t
@@ -241,10 +251,11 @@ WorkerGlobalScope::SetInterval(JSContext* /* unused */,
 
   Sequence<JS::Value> dummy;
 
+  bool isInterval = aTimeout.WasPassed();
   int32_t timeout = aTimeout.WasPassed() ? aTimeout.Value() : 0;
 
   return mWorkerPrivate->SetTimeout(GetCurrentThreadJSContext(), nullptr,
-                                    aHandler, timeout, dummy, !!timeout, aRv);
+                                    aHandler, timeout, dummy, isInterval, aRv);
 }
 
 void
@@ -303,10 +314,48 @@ WorkerGlobalScope::GetPerformance()
 }
 
 already_AddRefed<Promise>
-WorkerGlobalScope::Fetch(const RequestOrScalarValueString& aInput,
+WorkerGlobalScope::Fetch(const RequestOrUSVString& aInput,
                          const RequestInit& aInit, ErrorResult& aRv)
 {
   return FetchRequest(this, aInput, aInit, aRv);
+}
+
+already_AddRefed<IDBFactory>
+WorkerGlobalScope::GetIndexedDB(ErrorResult& aErrorResult)
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+
+  nsRefPtr<IDBFactory> indexedDB = mIndexedDB;
+
+  if (!indexedDB) {
+    if (!mWorkerPrivate->IsIndexedDBAllowed()) {
+      NS_WARNING("IndexedDB is not allowed in this worker!");
+      return nullptr;
+    }
+
+    JSContext* cx = mWorkerPrivate->GetJSContext();
+    MOZ_ASSERT(cx);
+
+    JS::Rooted<JSObject*> owningObject(cx, GetGlobalJSObject());
+    MOZ_ASSERT(owningObject);
+
+    const PrincipalInfo& principalInfo = mWorkerPrivate->GetPrincipalInfo();
+
+    nsresult rv =
+      IDBFactory::CreateForWorker(cx,
+                                  owningObject,
+                                  principalInfo,
+                                  mWorkerPrivate->WindowID(),
+                                  getter_AddRefs(indexedDB));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      aErrorResult = rv;
+      return nullptr;
+    }
+
+    mIndexedDB = indexedDB;
+  }
+
+  return indexedDB.forget();
 }
 
 DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate)
@@ -314,8 +363,9 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(WorkerPrivate* aWorkerPri
 {
 }
 
-JSObject*
-DedicatedWorkerGlobalScope::WrapGlobalObject(JSContext* aCx)
+bool
+DedicatedWorkerGlobalScope::WrapGlobalObject(JSContext* aCx,
+                                             JS::MutableHandle<JSObject*> aReflector)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
   MOZ_ASSERT(!mWorkerPrivate->IsSharedWorker());
@@ -326,7 +376,7 @@ DedicatedWorkerGlobalScope::WrapGlobalObject(JSContext* aCx)
   return DedicatedWorkerGlobalScopeBinding_workers::Wrap(aCx, this, this,
                                                          options,
                                                          GetWorkerPrincipal(),
-                                                         true);
+                                                         true, aReflector);
 }
 
 void
@@ -345,8 +395,9 @@ SharedWorkerGlobalScope::SharedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate,
 {
 }
 
-JSObject*
-SharedWorkerGlobalScope::WrapGlobalObject(JSContext* aCx)
+bool
+SharedWorkerGlobalScope::WrapGlobalObject(JSContext* aCx,
+                                          JS::MutableHandle<JSObject*> aReflector)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
   MOZ_ASSERT(mWorkerPrivate->IsSharedWorker());
@@ -356,8 +407,16 @@ SharedWorkerGlobalScope::WrapGlobalObject(JSContext* aCx)
 
   return SharedWorkerGlobalScopeBinding_workers::Wrap(aCx, this, this, options,
                                                       GetWorkerPrincipal(),
-                                                      true);
+                                                      true, aReflector);
 }
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(ServiceWorkerGlobalScope, WorkerGlobalScope,
+                                   mClients)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(ServiceWorkerGlobalScope)
+NS_INTERFACE_MAP_END_INHERITING(WorkerGlobalScope)
+
+NS_IMPL_ADDREF_INHERITED(ServiceWorkerGlobalScope, WorkerGlobalScope)
+NS_IMPL_RELEASE_INHERITED(ServiceWorkerGlobalScope, WorkerGlobalScope)
 
 ServiceWorkerGlobalScope::ServiceWorkerGlobalScope(WorkerPrivate* aWorkerPrivate,
                                                    const nsACString& aScope)
@@ -366,8 +425,13 @@ ServiceWorkerGlobalScope::ServiceWorkerGlobalScope(WorkerPrivate* aWorkerPrivate
 {
 }
 
-JSObject*
-ServiceWorkerGlobalScope::WrapGlobalObject(JSContext* aCx)
+ServiceWorkerGlobalScope::~ServiceWorkerGlobalScope()
+{
+}
+
+bool
+ServiceWorkerGlobalScope::WrapGlobalObject(JSContext* aCx,
+                                           JS::MutableHandle<JSObject*> aReflector)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
   MOZ_ASSERT(mWorkerPrivate->IsServiceWorker());
@@ -377,7 +441,17 @@ ServiceWorkerGlobalScope::WrapGlobalObject(JSContext* aCx)
 
   return ServiceWorkerGlobalScopeBinding_workers::Wrap(aCx, this, this, options,
                                                        GetWorkerPrincipal(),
-                                                       true);
+                                                       true, aReflector);
+}
+
+ServiceWorkerClients*
+ServiceWorkerGlobalScope::Clients()
+{
+  if (!mClients) {
+    mClients = new ServiceWorkerClients(this);
+  }
+
+  return mClients;
 }
 
 bool
@@ -389,14 +463,14 @@ GetterOnlyJSNative(JSContext* aCx, unsigned aArgc, JS::Value* aVp)
 
 namespace {
 
-class UnregisterRunnable;
-class UnregisterResultRunnable MOZ_FINAL : public WorkerRunnable
+class WorkerScopeUnregisterRunnable;
+class UnregisterResultRunnable final : public WorkerRunnable
 {
 public:
   enum State { Succeeded, Failed };
 
   UnregisterResultRunnable(WorkerPrivate* aWorkerPrivate,
-                           UnregisterRunnable* aRunnable,
+                           WorkerScopeUnregisterRunnable* aRunnable,
                            State aState, bool aValue)
     : WorkerRunnable(aWorkerPrivate,
                      WorkerThreadUnchangedBusyCount)
@@ -407,32 +481,39 @@ public:
   }
 
   virtual bool
-  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) MOZ_OVERRIDE;
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override;
 
 private:
-  nsRefPtr<UnregisterRunnable> mRunnable;
+  nsRefPtr<WorkerScopeUnregisterRunnable> mRunnable;
   State mState;
   bool mValue;
 };
 
-class UnregisterRunnable MOZ_FINAL : public nsRunnable
-                                   , public nsIServiceWorkerUnregisterCallback
-                                   , public WorkerFeature
+class WorkerScopeUnregisterRunnable final : public nsRunnable
+                                              , public nsIServiceWorkerUnregisterCallback
+                                              , public WorkerFeature
 {
   WorkerPrivate* mWorkerPrivate;
-  nsRefPtr<Promise> mWorkerPromise;
   nsString mScope;
+
+  // Worker thread only.
+  nsRefPtr<Promise> mWorkerPromise;
   bool mCleanedUp;
+
+  ~WorkerScopeUnregisterRunnable()
+  {
+    MOZ_ASSERT(mCleanedUp);
+  }
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  UnregisterRunnable(WorkerPrivate* aWorkerPrivate,
-                     Promise* aWorkerPromise,
-                     const nsAString& aScope)
+  WorkerScopeUnregisterRunnable(WorkerPrivate* aWorkerPrivate,
+                                Promise* aWorkerPromise,
+                                const nsAString& aScope)
     : mWorkerPrivate(aWorkerPrivate)
-    , mWorkerPromise(aWorkerPromise)
     , mScope(aScope)
+    , mWorkerPromise(aWorkerPromise)
     , mCleanedUp(false)
   {
     MOZ_ASSERT(aWorkerPrivate);
@@ -441,6 +522,7 @@ public:
 
     if (!mWorkerPrivate->AddFeature(mWorkerPrivate->GetJSContext(), this)) {
       MOZ_ASSERT(false, "cannot add the worker feature!");
+      mWorkerPromise = nullptr;
       mCleanedUp = true;
       return;
     }
@@ -450,11 +532,12 @@ public:
   WorkerPromise() const
   {
     mWorkerPrivate->AssertIsOnWorkerThread();
+    MOZ_ASSERT(!mCleanedUp);
     return mWorkerPromise;
   }
 
   NS_IMETHODIMP
-  UnregisterSucceeded(bool aState) MOZ_OVERRIDE
+  UnregisterSucceeded(bool aState) override
   {
     AssertIsOnMainThread();
 
@@ -466,7 +549,7 @@ public:
   }
 
   NS_IMETHODIMP
-  UnregisterFailed() MOZ_OVERRIDE
+  UnregisterFailed() override
   {
     AssertIsOnMainThread();
 
@@ -487,17 +570,12 @@ public:
     }
 
     mWorkerPrivate->RemoveFeature(aCx, this);
+    mWorkerPromise = nullptr;
     mCleanedUp = true;
   }
 
-private:
-  ~UnregisterRunnable()
-  {
-    MOZ_ASSERT(mCleanedUp);
-  }
-
   NS_IMETHODIMP
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     AssertIsOnMainThread();
 
@@ -512,7 +590,7 @@ private:
     // We don't need to check if the principal can load this mScope because a
     // ServiceWorkerGlobalScope can always unregister itself.
 
-    rv = swm->Unregister(this, mScope);
+    rv = swm->Unregister(mWorkerPrivate->GetPrincipal(), this, mScope);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       UnregisterFailed();
       return NS_OK;
@@ -521,17 +599,16 @@ private:
     return NS_OK;
   }
 
-  virtual bool Notify(JSContext* aCx, workers::Status aStatus) MOZ_OVERRIDE
+  virtual bool Notify(JSContext* aCx, workers::Status aStatus) override
   {
     mWorkerPrivate->AssertIsOnWorkerThread();
     MOZ_ASSERT(aStatus > workers::Running);
-
-    mCleanedUp = true;
+    CleanUp(aCx);
     return true;
   }
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(UnregisterRunnable, nsRunnable,
+NS_IMPL_ISUPPORTS_INHERITED(WorkerScopeUnregisterRunnable, nsRunnable,
                             nsIServiceWorkerUnregisterCallback)
 
 bool
@@ -540,11 +617,10 @@ UnregisterResultRunnable::WorkerRun(JSContext* aCx,
 {
   if (mState == Failed) {
     mRunnable->WorkerPromise()->MaybeReject(aCx, JS::UndefinedHandleValue);
-    mRunnable->CleanUp(aCx);
-    return true;
+  } else {
+    mRunnable->WorkerPromise()->MaybeResolve(mValue);
   }
 
-  mRunnable->WorkerPromise()->MaybeResolve(mValue);
   mRunnable->CleanUp(aCx);
   return true;
 }
@@ -562,11 +638,58 @@ ServiceWorkerGlobalScope::Unregister(ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<UnregisterRunnable> runnable =
-    new UnregisterRunnable(mWorkerPrivate, promise, mScope);
-  NS_DispatchToMainThread(runnable);
+  nsRefPtr<WorkerScopeUnregisterRunnable> runnable =
+    new WorkerScopeUnregisterRunnable(mWorkerPrivate, promise, mScope);
+
+  // Ensure the AddFeature succeeded before dispatching.
+  // Otherwise we let the promise remain pending since script is going to stop
+  // soon anyway.
+  if (runnable->WorkerPromise()) {
+    NS_DispatchToMainThread(runnable);
+  }
 
   return promise.forget();
+}
+
+namespace {
+
+class UpdateRunnable final : public nsRunnable
+{
+  nsString mScope;
+
+public:
+  explicit UpdateRunnable(const nsAString& aScope)
+    : mScope(aScope)
+  { }
+
+  NS_IMETHODIMP
+  Run()
+  {
+    AssertIsOnMainThread();
+
+    nsresult rv;
+    nsCOMPtr<nsIServiceWorkerManager> swm =
+      do_GetService(SERVICEWORKERMANAGER_CONTRACTID, &rv);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return NS_OK;
+    }
+
+    swm->Update(mScope);
+    return NS_OK;
+  }
+};
+
+} //anonymous namespace
+
+void
+ServiceWorkerGlobalScope::Update()
+{
+  mWorkerPrivate->AssertIsOnWorkerThread();
+  MOZ_ASSERT(mWorkerPrivate->IsServiceWorker());
+
+  nsRefPtr<UpdateRunnable> runnable =
+    new UpdateRunnable(mScope);
+  NS_DispatchToMainThread(runnable);
 }
 
 END_WORKERS_NAMESPACE

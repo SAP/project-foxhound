@@ -149,8 +149,10 @@ add_task(function test_bookmarks() {
 
   // Workaround possible VM timers issues moving lastModified and dateAdded
   // to the past.
-  bs.setItemLastModified(newId, --lastModified);
-  bs.setItemDateAdded(newId, --dateAdded);
+  lastModified -= 1000;
+  bs.setItemLastModified(newId, lastModified);
+  dateAdded -= 1000;
+  bs.setItemDateAdded(newId, dateAdded);
 
   // set bookmark title
   bs.setItemTitle(newId, "Google");
@@ -327,8 +329,10 @@ add_task(function test_bookmarks() {
 
     // Workaround possible VM timers issues moving lastModified and dateAdded
     // to the past.
+    lastModified -= 1000;
     bs.setItemLastModified(kwTestItemId, --lastModified);
-    bs.setItemDateAdded(kwTestItemId, --dateAdded);
+    dateAdded -= 1000;
+    bs.setItemDateAdded(kwTestItemId, dateAdded);
 
     bs.setKeywordForBookmark(kwTestItemId, "bar");
 
@@ -346,10 +350,6 @@ add_task(function test_bookmarks() {
   let lastModified3 = bs.getItemLastModified(kwTestItemId);
   // test getKeywordForBookmark
   let k = bs.getKeywordForBookmark(kwTestItemId);
-  do_check_eq("bar", k);
-
-  // test getKeywordForURI
-  k = bs.getKeywordForURI(uri("http://keywordtest.com/"));
   do_check_eq("bar", k);
 
   // test getURIForKeyword
@@ -458,8 +458,10 @@ add_task(function test_bookmarks() {
 
   // Workaround possible VM timers issues moving lastModified and dateAdded
   // to the past.
-  bs.setItemLastModified(newId10, --lastModified);
-  bs.setItemDateAdded(newId10, --dateAdded);
+  lastModified -= 1000;
+  bs.setItemLastModified(newId10, lastModified);
+  dateAdded -= 1000;
+  bs.setItemDateAdded(newId10, dateAdded);
 
   bs.changeBookmarkURI(newId10, uri("http://foo11.com/"));
 
@@ -600,12 +602,12 @@ add_task(function test_bookmarks() {
   dateAdded = bs.getItemDateAdded(newId14);
   lastModified = bs.getItemLastModified(newId14);
   do_check_eq(lastModified, dateAdded);
-  bs.setItemLastModified(newId14, 1234);
+  bs.setItemLastModified(newId14, 1234000000000000);
   let fakeLastModified = bs.getItemLastModified(newId14);
-  do_check_eq(fakeLastModified, 1234);
-  bs.setItemDateAdded(newId14, 4321);
+  do_check_eq(fakeLastModified, 1234000000000000);
+  bs.setItemDateAdded(newId14, 4321000000000000);
   let fakeDateAdded = bs.getItemDateAdded(newId14);
-  do_check_eq(fakeDateAdded, 4321);
+  do_check_eq(fakeDateAdded, 4321000000000000);
   
   // ensure that removing an item removes its annotations
   do_check_true(anno.itemHasAnnotation(newId3, "test-annotation"));
@@ -615,7 +617,7 @@ add_task(function test_bookmarks() {
   // bug 378820
   let uri1 = uri("http://foo.tld/a");
   bs.insertBookmark(testRoot, uri1, bs.DEFAULT_INDEX, "");
-  yield promiseAddVisits(uri1);
+  yield PlacesTestUtils.addVisits(uri1);
 
   // bug 646993 - test bookmark titles longer than the maximum allowed length
   let title15 = Array(TITLE_LENGTH_MAX + 5).join("X");

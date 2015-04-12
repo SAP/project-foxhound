@@ -17,8 +17,13 @@
 #include <algorithm>
 #include "ImageContainer.h"
 #include "gfxPrefs.h"
+#ifdef MOZ_ENABLE_SKIA
+#include "skia/SkCanvas.h"              // for SkCanvas
+#include "skia/SkBitmapDevice.h"        // for SkBitmapDevice
+#else
 #define PIXMAN_DONT_DEFINE_STDINT
 #include "pixman.h"                     // for pixman_f_transform, etc
+#endif
 
 namespace mozilla {
 using namespace mozilla::gfx;
@@ -30,23 +35,23 @@ class DataTextureSourceBasic : public DataTextureSource
 {
 public:
 
-  virtual TextureSourceBasic* AsSourceBasic() MOZ_OVERRIDE { return this; }
+  virtual TextureSourceBasic* AsSourceBasic() override { return this; }
 
-  virtual gfx::SourceSurface* GetSurface(DrawTarget* aTarget) MOZ_OVERRIDE { return mSurface; }
+  virtual gfx::SourceSurface* GetSurface(DrawTarget* aTarget) override { return mSurface; }
 
-  SurfaceFormat GetFormat() const MOZ_OVERRIDE
+  SurfaceFormat GetFormat() const override
   {
     return mSurface->GetFormat();
   }
 
-  virtual IntSize GetSize() const MOZ_OVERRIDE
+  virtual IntSize GetSize() const override
   {
     return mSurface->GetSize();
   }
 
   virtual bool Update(gfx::DataSourceSurface* aSurface,
                       nsIntRegion* aDestRegion = nullptr,
-                      gfx::IntPoint* aSrcOffset = nullptr) MOZ_OVERRIDE
+                      gfx::IntPoint* aSrcOffset = nullptr) override
   {
     // XXX - For this to work with IncrementalContentHost we will need to support
     // the aDestRegion and aSrcOffset parameters properly;
@@ -54,7 +59,7 @@ public:
     return true;
   }
 
-  virtual void DeallocateDeviceData() MOZ_OVERRIDE
+  virtual void DeallocateDeviceData() override
   {
     mSurface = nullptr;
     SetUpdateSerial(0);
@@ -69,11 +74,29 @@ BasicCompositor::BasicCompositor(nsIWidget *aWidget)
 {
   MOZ_COUNT_CTOR(BasicCompositor);
   SetBackend(LayersBackend::LAYERS_BASIC);
+
+  mMaxTextureSize =
+    Factory::GetMaxSurfaceSize(gfxPlatform::GetPlatform()->GetContentBackend());
 }
 
 BasicCompositor::~BasicCompositor()
 {
   MOZ_COUNT_DTOR(BasicCompositor);
+}
+
+int32_t
+BasicCompositor::GetMaxTextureSize() const
+{
+  return mMaxTextureSize;
+}
+
+void
+BasicCompositingRenderTarget::BindRenderTarget()
+{
+  if (mClearOnBind) {
+    mDrawTarget->ClearRect(Rect(0, 0, mSize.width, mSize.height));
+    mClearOnBind = false;
+  }
 }
 
 void BasicCompositor::Destroy()
@@ -159,6 +182,65 @@ DrawSurfaceWithTextureCoords(DrawTarget *aDest,
                    mode, aMask, aMaskTransform, &matrix);
 }
 
+#ifdef MOZ_ENABLE_SKIA
+static SkMatrix
+Matrix3DToSkia(const gfx3DMatrix& aMatrix)
+{
+  SkMatrix transform;
+  transform.setAll(aMatrix._11,
+                   aMatrix._21,
+                   aMatrix._41,
+                   aMatrix._12,
+                   aMatrix._22,
+                   aMatrix._42,
+                   aMatrix._14,
+                   aMatrix._24,
+                   aMatrix._44);
+
+  return transform;
+}
+
+static void
+Transform(DataSourceSurface* aDest,
+          DataSourceSurface* aSource,
+          const gfx3DMatrix& aTransform,
+          const Point& aDestOffset)
+{
+  if (aTransform.IsSingular()) {
+    return;
+  }
+
+  IntSize destSize = aDest->GetSize();
+  SkImageInfo destInfo = SkImageInfo::Make(destSize.width,
+                                           destSize.height,
+                                           kBGRA_8888_SkColorType,
+                                           kPremul_SkAlphaType);
+  SkBitmap destBitmap;
+  destBitmap.setInfo(destInfo, aDest->Stride());
+  destBitmap.setPixels((uint32_t*)aDest->GetData());
+  SkCanvas destCanvas(destBitmap);
+
+  IntSize srcSize = aSource->GetSize();
+  SkImageInfo srcInfo = SkImageInfo::Make(srcSize.width,
+                                          srcSize.height,
+                                          kBGRA_8888_SkColorType,
+                                          kPremul_SkAlphaType);
+  SkBitmap src;
+  src.setInfo(srcInfo, aSource->Stride());
+  src.setPixels((uint32_t*)aSource->GetData());
+
+  gfx3DMatrix transform = aTransform;
+  transform.TranslatePost(Point3D(-aDestOffset.x, -aDestOffset.y, 0));
+  destCanvas.setMatrix(Matrix3DToSkia(transform));
+
+  SkPaint paint;
+  paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+  paint.setAntiAlias(true);
+  paint.setFilterLevel(SkPaint::kLow_FilterLevel);
+  SkRect destRect = SkRect::MakeXYWH(0, 0, srcSize.width, srcSize.height);
+  destCanvas.drawBitmapRectToRect(src, nullptr, destRect, &paint);
+}
+#else
 static pixman_transform
 Matrix3DToPixman(const gfx3DMatrix& aMatrix)
 {
@@ -181,10 +263,10 @@ Matrix3DToPixman(const gfx3DMatrix& aMatrix)
 }
 
 static void
-PixmanTransform(DataSourceSurface* aDest,
-                DataSourceSurface* aSource,
-                const gfx3DMatrix& aTransform,
-                const Point& aDestOffset)
+Transform(DataSourceSurface* aDest,
+          DataSourceSurface* aSource,
+          const gfx3DMatrix& aTransform,
+          const Point& aDestOffset)
 {
   IntSize destSize = aDest->GetSize();
   pixman_image_t* dest = pixman_image_create_bits(PIXMAN_a8r8g8b8,
@@ -229,6 +311,7 @@ PixmanTransform(DataSourceSurface* aDest,
   pixman_image_unref(dest);
   pixman_image_unref(src);
 }
+#endif
 
 static inline IntRect
 RoundOut(Rect r)
@@ -368,12 +451,16 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     RefPtr<SourceSurface> snapshot = dest->Snapshot();
     RefPtr<DataSourceSurface> source = snapshot->GetDataSurface();
     RefPtr<DataSourceSurface> temp =
-      Factory::CreateDataSourceSurface(RoundOut(transformBounds).Size(), SurfaceFormat::B8G8R8A8);
+      Factory::CreateDataSourceSurface(RoundOut(transformBounds).Size(), SurfaceFormat::B8G8R8A8
+#ifdef MOZ_ENABLE_SKIA
+        , true
+#endif
+        );
     if (NS_WARN_IF(!temp)) {
       return;
     }
 
-    PixmanTransform(temp, source, new3DTransform, transformBounds.TopLeft());
+    Transform(temp, source, new3DTransform, transformBounds.TopLeft());
 
     transformBounds.MoveTo(0, 0);
     buffer->DrawSurface(temp, transformBounds, transformBounds);
@@ -501,15 +588,6 @@ BasicCompositor::EndFrame()
     mWidget->EndRemoteDrawing();
   }
 
-  mDrawTarget = nullptr;
-  mRenderTarget = nullptr;
-}
-
-void
-BasicCompositor::AbortFrame()
-{
-  mRenderTarget->mDrawTarget->PopClip();
-  mRenderTarget->mDrawTarget->PopClip();
   mDrawTarget = nullptr;
   mRenderTarget = nullptr;
 }

@@ -32,6 +32,9 @@ class nsIRunnable;
 
 namespace mozilla {
 class RefreshDriverTimer;
+namespace layout {
+class VsyncChild;
+}
 }
 
 /**
@@ -63,7 +66,7 @@ public:
   virtual void DidRefresh() = 0;
 };
 
-class nsRefreshDriver MOZ_FINAL : public mozilla::layers::TransactionIdAllocator,
+class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
                                   public nsARefreshObserver {
 public:
   explicit nsRefreshDriver(nsPresContext *aPresContext);
@@ -159,7 +162,7 @@ public:
       mStyleCause = profiler_get_backtrace();
     }
     bool appended = mStyleFlushObservers.AppendElement(aShell) != nullptr;
-    EnsureTimerStarted(false);
+    EnsureTimerStarted();
 
     return appended;
   }
@@ -177,7 +180,7 @@ public:
       mReflowCause = profiler_get_backtrace();
     }
     bool appended = mLayoutFlushObservers.AppendElement(aShell) != nullptr;
-    EnsureTimerStarted(false);
+    EnsureTimerStarted();
     return appended;
   }
   void RemoveLayoutFlushObserver(nsIPresShell* aShell) {
@@ -190,7 +193,7 @@ public:
     NS_ASSERTION(!mPresShellsToInvalidateIfHidden.Contains(aShell),
 		 "Double-adding style flush observer");
     bool appended = mPresShellsToInvalidateIfHidden.AppendElement(aShell) != nullptr;
-    EnsureTimerStarted(false);
+    EnsureTimerStarted();
     return appended;
   }
   void RemovePresShellToInvalidateIfHidden(nsIPresShell* aShell) {
@@ -256,6 +259,14 @@ public:
    */
   nsPresContext* PresContext() const { return mPresContext; }
 
+  /**
+   * PBackgroundChild actor is created asynchronously in content process.
+   * We can't create vsync-based timers during PBackground startup. This
+   * function will be called when PBackgroundChild actor is created. Then we can
+   * do the pending vsync-based timer creation.
+   */
+  static void PVsyncActorCreated(mozilla::layout::VsyncChild* aVsyncChild);
+
 #ifdef DEBUG
   /**
    * Check whether the given observer is an observer for the given flush type
@@ -272,17 +283,17 @@ public:
   bool IsInRefresh() { return mInRefresh; }
 
   // mozilla::layers::TransactionIdAllocator
-  virtual uint64_t GetTransactionId() MOZ_OVERRIDE;
-  void NotifyTransactionCompleted(uint64_t aTransactionId) MOZ_OVERRIDE;
-  void RevokeTransactionId(uint64_t aTransactionId) MOZ_OVERRIDE;
-  mozilla::TimeStamp GetTransactionStart() MOZ_OVERRIDE;
+  virtual uint64_t GetTransactionId() override;
+  void NotifyTransactionCompleted(uint64_t aTransactionId) override;
+  void RevokeTransactionId(uint64_t aTransactionId) override;
+  mozilla::TimeStamp GetTransactionStart() override;
 
   bool IsWaitingForPaint(mozilla::TimeStamp aTime);
 
   // nsARefreshObserver
-  NS_IMETHOD_(MozExternalRefCountType) AddRef(void) { return TransactionIdAllocator::AddRef(); }
-  NS_IMETHOD_(MozExternalRefCountType) Release(void) { return TransactionIdAllocator::Release(); }
-  virtual void WillRefresh(mozilla::TimeStamp aTime);
+  NS_IMETHOD_(MozExternalRefCountType) AddRef(void) override { return TransactionIdAllocator::AddRef(); }
+  NS_IMETHOD_(MozExternalRefCountType) Release(void) override { return TransactionIdAllocator::Release(); }
+  virtual void WillRefresh(mozilla::TimeStamp aTime) override;
 private:
   typedef nsTObserverArray<nsARefreshObserver*> ObserverArray;
   typedef nsTHashtable<nsISupportsHashKey> RequestTable;
@@ -298,7 +309,12 @@ private:
 
   void Tick(int64_t aNowEpoch, mozilla::TimeStamp aNowTime);
 
-  void EnsureTimerStarted(bool aAdjustingTimer);
+  enum EnsureTimerStartedFlags {
+    eNone = 0,
+    eAdjustingTimer = 1 << 0,
+    eAllowTimeToGoBackwards = 1 << 1
+  };
+  void EnsureTimerStarted(EnsureTimerStartedFlags aFlags = eNone);
   void StopTimer();
 
   uint32_t ObserverCount() const;
@@ -328,7 +344,7 @@ private:
   void FinishedWaitingForTransaction();
 
   mozilla::RefreshDriverTimer* ChooseTimer() const;
-  mozilla::RefreshDriverTimer *mActiveTimer;
+  mozilla::RefreshDriverTimer* mActiveTimer;
 
   ProfilerBacktrace* mReflowCause;
   ProfilerBacktrace* mStyleCause;

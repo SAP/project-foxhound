@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Sandbox.h"
+#include "SandboxFilter.h"
 #include "SandboxInternal.h"
 #include "SandboxLogging.h"
 
@@ -24,22 +25,38 @@
 #include <fcntl.h>
 
 #include "mozilla/Atomics.h"
-#include "mozilla/NullPtr.h"
+#include "mozilla/SandboxInfo.h"
 #include "mozilla/unused.h"
-
+#include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
 #if defined(ANDROID)
-#include "android_ucontext.h"
+#include "sandbox/linux/services/android_ucontext.h"
 #endif
 
-#include "linux_seccomp.h"
-#include "SandboxFilter.h"
+#ifdef MOZ_ASAN
+// Copy libsanitizer declarations to avoid depending on ASAN headers.
+// See also bug 1081242 comment #4.
+extern "C" {
+namespace __sanitizer {
+// Win64 uses long long, but this is Linux.
+typedef signed long sptr;
+} // namespace __sanitizer
 
-// See definition of SandboxDie, below.
-#include "sandbox/linux/seccomp-bpf/die.h"
+typedef struct {
+  int coverage_sandboxed;
+  __sanitizer::sptr coverage_fd;
+  unsigned int coverage_max_block_size;
+} __sanitizer_sandbox_arguments;
+
+MOZ_IMPORT_API void
+__sanitizer_sandbox_on_notify(__sanitizer_sandbox_arguments *args);
+} // extern "C"
+#endif // MOZ_ASAN
 
 namespace mozilla {
 
+#ifdef ANDROID
 SandboxCrashFunc gSandboxCrashFunc;
+#endif
 
 #ifdef MOZ_GMP_SANDBOX
 // For media plugins, we can start the sandbox before we dlopen the
@@ -48,41 +65,6 @@ SandboxCrashFunc gSandboxCrashFunc;
 static int gMediaPluginFileDesc = -1;
 static const char *gMediaPluginFilePath;
 #endif
-
-struct SandboxFlags {
-  bool isSupported;
-#ifdef MOZ_CONTENT_SANDBOX
-  bool isDisabledForContent;
-#endif
-#ifdef MOZ_GMP_SANDBOX
-  bool isDisabledForGMP;
-#endif
-
-  SandboxFlags() {
-    // Allow simulating the absence of seccomp-bpf support, for testing.
-    if (getenv("MOZ_FAKE_NO_SANDBOX")) {
-      isSupported = false;
-    } else {
-      // Determine whether seccomp-bpf is supported by trying to
-      // enable it with an invalid pointer for the filter.  This will
-      // fail with EFAULT if supported and EINVAL if not, without
-      // changing the process's state.
-      if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr) != -1) {
-        MOZ_CRASH("prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr)"
-                  " didn't fail");
-      }
-      isSupported = errno == EFAULT;
-    }
-#ifdef MOZ_CONTENT_SANDBOX
-    isDisabledForContent = getenv("MOZ_DISABLE_CONTENT_SANDBOX");
-#endif
-#ifdef MOZ_GMP_SANDBOX
-    isDisabledForGMP = getenv("MOZ_DISABLE_GMP_SANDBOX");
-#endif
-  }
-};
-
-static const SandboxFlags gSandboxFlags;
 
 /**
  * This is the SIGSYS handler function. It is used to report to the user
@@ -117,6 +99,19 @@ Reporter(int nr, siginfo_t *info, void *void_context)
   args[3] = SECCOMP_PARM4(ctx);
   args[4] = SECCOMP_PARM5(ctx);
   args[5] = SECCOMP_PARM6(ctx);
+
+#if defined(ANDROID) && ANDROID_VERSION < 16
+  // Bug 1093893: Translate tkill to tgkill for pthread_kill; fixed in
+  // bionic commit 10c8ce59a (in JB and up; API level 16 = Android 4.1).
+  if (syscall_nr == __NR_tkill) {
+    intptr_t ret = syscall(__NR_tgkill, getpid(), args[0], args[1]);
+    if (ret < 0) {
+      ret = -errno;
+    }
+    SECCOMP_RESULT(ctx) = ret;
+    return;
+  }
+#endif
 
 #ifdef MOZ_GMP_SANDBOX
   if (syscall_nr == __NR_open && gMediaPluginFilePath) {
@@ -278,7 +273,7 @@ BroadcastSetThreadSandbox(SandboxType aType)
   DIR *taskdp;
   struct dirent *de;
   SandboxFilter filter(&sSetSandboxFilter, aType,
-                       getenv("MOZ_SANDBOX_VERBOSE"));
+                       SandboxInfo::Get().Test(SandboxInfo::kVerbose));
 
   static_assert(sizeof(mozilla::Atomic<int>) == sizeof(int),
                 "mozilla::Atomic<int> isn't represented by an int");
@@ -415,6 +410,14 @@ SetCurrentProcessSandbox(SandboxType aType)
     SANDBOX_LOG_ERROR("install_syscall_reporter() failed\n");
   }
 
+#ifdef MOZ_ASAN
+  __sanitizer_sandbox_arguments asanArgs;
+  asanArgs.coverage_sandboxed = 1;
+  asanArgs.coverage_fd = -1;
+  asanArgs.coverage_max_block_size = 0;
+  __sanitizer_sandbox_on_notify(&asanArgs);
+#endif
+
   BroadcastSetThreadSandbox(aType);
 }
 
@@ -428,17 +431,11 @@ SetCurrentProcessSandbox(SandboxType aType)
 void
 SetContentProcessSandbox()
 {
-  if (gSandboxFlags.isDisabledForContent) {
+  if (!SandboxInfo::Get().Test(SandboxInfo::kEnabledForContent)) {
     return;
   }
 
   SetCurrentProcessSandbox(kSandboxContentProcess);
-}
-
-bool
-CanSandboxContentProcess()
-{
-  return gSandboxFlags.isSupported || gSandboxFlags.isDisabledForContent;
 }
 #endif // MOZ_CONTENT_SANDBOX
 
@@ -457,7 +454,7 @@ CanSandboxContentProcess()
 void
 SetMediaPluginSandbox(const char *aFilePath)
 {
-  if (gSandboxFlags.isDisabledForGMP) {
+  if (!SandboxInfo::Get().Test(SandboxInfo::kEnabledForMedia)) {
     return;
   }
 
@@ -472,12 +469,6 @@ SetMediaPluginSandbox(const char *aFilePath)
   }
   // Finally, start the sandbox.
   SetCurrentProcessSandbox(kSandboxMediaPlugin);
-}
-
-bool
-CanSandboxMediaPlugin()
-{
-  return gSandboxFlags.isSupported || gSandboxFlags.isDisabledForGMP;
 }
 #endif // MOZ_GMP_SANDBOX
 

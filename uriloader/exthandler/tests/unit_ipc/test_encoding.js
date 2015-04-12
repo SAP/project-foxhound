@@ -61,9 +61,7 @@ HelperAppDlg.prototype = {
   show: function (launcher, ctx, reason, usePrivateUI) {
     launcher.MIMEInfo.preferredAction = Ci.nsIMIMEInfo.saveToFile;
     launcher.launchWithApplication(null, false);
-  },
-
-  promptForSaveToFile: function (launcher, ctx, defaultFile, suggestedExtension, forcePrompt) { }
+  }
 }
 
 // Stolen from XPCOMUtils, since this handy function is not public there
@@ -108,6 +106,8 @@ function initChildTestEnv()
     const Cc = Components.classes;                                             \
     const Ci = Components.interfaces;                                          \
     const Cr = Components.results;                                             \
+    const Cu = Components.utils;                                               \
+    Cu.import("resource://gre/modules/Services.jsm");                          \
     function WindowContext() { }                                               \
                                                                                \
     WindowContext.prototype = {                                                \
@@ -148,9 +148,14 @@ function runChildTestSet(set)
 {
   DownloadListener.onFinished = testFinisher(set[2]);
   sendCommand('\
-  let uri = ioservice.newURI("http://localhost:4444' + set[0] + '", null, null);\
-  let channel = ioservice.newChannelFromURI(uri);                              \
-  uriloader.openURI(channel, Ci.nsIURILoader.IS_CONTENT_PREFERRED, new WindowContext()); \
+  let uri = ioservice.newURI("http://localhost:4444' + set[0] + '", null, null);                  \
+  let channel = ioservice.newChannelFromURI2(uri,                                                 \
+                                             null, /* aLoadingNode */                             \
+                                             Services.scriptSecurityManager.getSystemPrincipal(), \
+                                             null, /* aTriggeringPrincipal */                     \
+                                             Ci.nsILoadInfo.SEC_NORMAL,                           \
+                                             Ci.nsIContentPolicy.TYPE_OTHER);                     \
+  uriloader.openURI(channel, Ci.nsIURILoader.IS_CONTENT_PREFERRED, new WindowContext());          \
   ');
 }
 

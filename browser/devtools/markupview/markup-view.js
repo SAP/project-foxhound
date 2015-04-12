@@ -19,10 +19,11 @@ const {UndoStack} = require("devtools/shared/undo");
 const {editableField, InplaceEditor} = require("devtools/shared/inplace-editor");
 const {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
 const {HTMLEditor} = require("devtools/markupview/html-editor");
-const promise = require("devtools/toolkit/deprecated-sync-thenables");
+const promise = require("resource://gre/modules/Promise.jsm").Promise;
 const {Tooltip} = require("devtools/shared/widgets/Tooltip");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const Heritage = require("sdk/core/heritage");
+const ELLIPSIS = Services.prefs.getComplexValue("intl.ellipsis", Ci.nsIPrefLocalizedString).data;
 
 Cu.import("resource://gre/modules/devtools/LayoutHelpers.jsm");
 Cu.import("resource://gre/modules/devtools/Templater.jsm");
@@ -33,7 +34,7 @@ loader.lazyGetter(this, "DOMParser", function() {
  return Cc["@mozilla.org/xmlextras/domparser;1"].createInstance(Ci.nsIDOMParser);
 });
 loader.lazyGetter(this, "AutocompletePopup", () => {
-  return require("devtools/shared/autocomplete-popup").AutocompletePopup
+  return require("devtools/shared/autocomplete-popup").AutocompletePopup;
 });
 
 /**
@@ -365,12 +366,21 @@ MarkupView.prototype = {
       }
 
       this.showNode(selection.nodeFront, true).then(() => {
+        if (this._destroyer) {
+          return promise.reject("markupview destroyed");
+        }
         if (selection.reason !== "treepanel") {
           this.markNodeAsSelected(selection.nodeFront);
         }
         done();
-      }, (e) => {
-        console.error(e);
+      }).then(null, e => {
+        if (!this._destroyer) {
+          console.error(e);
+        } else {
+          console.warn("Could not mark node as selected, the markup-view was " +
+            "destroyed while showing the node.");
+        }
+
         done();
       });
     } else {
@@ -426,8 +436,10 @@ MarkupView.prototype = {
         }
         break;
       case Ci.nsIDOMKeyEvent.DOM_VK_DELETE:
-      case Ci.nsIDOMKeyEvent.DOM_VK_BACK_SPACE:
         this.deleteNode(this._selectedContainer.node);
+        break;
+      case Ci.nsIDOMKeyEvent.DOM_VK_BACK_SPACE:
+        this.deleteNode(this._selectedContainer.node, true);
         break;
       case Ci.nsIDOMKeyEvent.DOM_VK_HOME:
         let rootContainer = this.getContainer(this._rootNode);
@@ -508,8 +520,12 @@ MarkupView.prototype = {
   /**
    * Delete a node from the DOM.
    * This is an undoable action.
+   *
+   * @param {NodeFront} aNode The node to remove.
+   * @param {boolean} moveBackward If set to true, focus the previous sibling,
+   *  otherwise the next one.
    */
-  deleteNode: function(aNode) {
+  deleteNode: function(aNode, moveBackward) {
     if (aNode.isDocumentElement ||
         aNode.nodeType == Ci.nsIDOMNode.DOCUMENT_TYPE_NODE ||
         aNode.isAnonymous) {
@@ -521,16 +537,24 @@ MarkupView.prototype = {
     // Retain the node so we can undo this...
     this.walker.retainNode(aNode).then(() => {
       let parent = aNode.parentNode();
-      let sibling = null;
+      let nextSibling = null;
       this.undo.do(() => {
-        if (container.selected) {
-          this.navigate(this.getContainer(parent));
-        }
-        this.walker.removeNode(aNode).then(nextSibling => {
-          sibling = nextSibling;
+        this.walker.removeNode(aNode).then(siblings => {
+          nextSibling = siblings.nextSibling;
+          let focusNode = moveBackward ? siblings.previousSibling : nextSibling;
+
+          // If we can't move as the user wants, we move to the other direction.
+          // If there is no sibling elements anymore, move to the parent node.
+          if (!focusNode) {
+            focusNode = nextSibling || siblings.previousSibling || parent;
+          }
+
+          if (container.selected) {
+            this.navigate(this.getContainer(focusNode));
+          }
         });
       }, () => {
-        this.walker.insertBefore(aNode, parent, sibling);
+        this.walker.insertBefore(aNode, parent, nextSibling);
       });
     }).then(null, console.error);
   },
@@ -701,16 +725,19 @@ MarkupView.prototype = {
             removedContainers.add(container);
           }
 
-          // If there has been additions, flash the nodes
+          // If there has been additions, flash the nodes if their associated
+          // container exist (so if their parent is expanded in the inspector).
           added.forEach(added => {
             let addedContainer = this.getContainer(added);
-            addedOrEditedContainers.add(addedContainer);
+            if (addedContainer) {
+              addedOrEditedContainers.add(addedContainer);
 
-            // The node may be added as a result of an append, in which case it
-            // it will have been removed from another container first, but in
-            // these cases we don't want to flash both the removal and the
-            // addition
-            removedContainers.delete(container);
+              // The node may be added as a result of an append, in which case
+              // it will have been removed from another container first, but in
+              // these cases we don't want to flash both the removal and the
+              // addition
+              removedContainers.delete(container);
+            }
           });
         }
       }
@@ -739,10 +766,22 @@ MarkupView.prototype = {
     }
 
     return this._waitForChildren().then(() => {
+      if (this._destroyer) {
+        return promise.reject("markupview destroyed");
+      }
       return this._ensureVisible(aNode);
     }).then(() => {
       // Why is this not working?
       this.layoutHelpers.scrollIntoViewIfNeeded(this.getContainer(aNode).editor.elt, centered);
+    }, e => {
+      // Only report this rejection as an error if the panel hasn't been
+      // destroyed in the meantime.
+      if (!this._destroyer) {
+        console.error(e);
+      } else {
+        console.warn("Could not show the node, the markup-view was destroyed " +
+          "while waiting for children");
+      }
     });
   },
 
@@ -800,19 +839,45 @@ MarkupView.prototype = {
   },
 
   /**
+   * Returns either the innerHTML or the outerHTML for a remote node.
+   * @param aNode The NodeFront to get the outerHTML / innerHTML for.
+   * @param isOuter A boolean that, if true, makes the function return the
+   *                outerHTML, otherwise the innerHTML.
+   * @returns A promise that will be resolved with the outerHTML / innerHTML.
+   */
+  _getNodeHTML: function(aNode, isOuter) {
+    let walkerPromise = null;
+
+    if (isOuter) {
+      walkerPromise = this.walker.outerHTML(aNode);
+    } else {
+      walkerPromise = this.walker.innerHTML(aNode);
+    }
+
+    return walkerPromise.then(longstr => {
+      return longstr.string().then(html => {
+        longstr.release().then(null, console.error);
+        return html;
+      });
+    });
+  },
+
+  /**
    * Retrieve the outerHTML for a remote node.
    * @param aNode The NodeFront to get the outerHTML for.
    * @returns A promise that will be resolved with the outerHTML.
    */
   getNodeOuterHTML: function(aNode) {
-    let def = promise.defer();
-    this.walker.outerHTML(aNode).then(longstr => {
-      longstr.string().then(outerHTML => {
-        longstr.release().then(null, console.error);
-        def.resolve(outerHTML);
-      });
-    });
-    return def.promise;
+    return this._getNodeHTML(aNode, true);
+  },
+
+  /**
+   * Retrieve the innerHTML for a remote node.
+   * @param aNode The NodeFront to get the innerHTML for.
+   * @returns A promise that will be resolved with the innerHTML.
+   */
+  getNodeInnerHTML: function(aNode) {
+    return this._getNodeHTML(aNode);
   },
 
   /**
@@ -885,23 +950,81 @@ MarkupView.prototype = {
   /**
    * Replace the outerHTML of any node displayed in the inspector with
    * some other HTML code
-   * @param aNode node which outerHTML will be replaced.
-   * @param newValue The new outerHTML to set on the node.
-   * @param oldValue The old outerHTML that will be used if the user undos the update.
+   * @param {NodeFront} node node which outerHTML will be replaced.
+   * @param {string} newValue The new outerHTML to set on the node.
+   * @param {string} oldValue The old outerHTML that will be used if the
+   *                          user undoes the update.
    * @returns A promise that will resolve when the outer HTML has been updated.
    */
-  updateNodeOuterHTML: function(aNode, newValue, oldValue) {
-    let container = this._containers.get(aNode);
+  updateNodeOuterHTML: function(node, newValue, oldValue) {
+    let container = this.getContainer(node);
     if (!container) {
       return promise.reject();
     }
 
     // Changing the outerHTML removes the node which outerHTML was changed.
     // Listen to this removal to reselect the right node afterwards.
-    this.reselectOnRemoved(aNode, "outerhtml");
-    return this.walker.setOuterHTML(aNode, newValue).then(null, () => {
+    this.reselectOnRemoved(node, "outerhtml");
+    return this.walker.setOuterHTML(node, newValue).then(null, () => {
       this.cancelReselectOnRemoved();
     });
+  },
+
+  /**
+   * Replace the innerHTML of any node displayed in the inspector with
+   * some other HTML code
+   * @param {Node} node node which innerHTML will be replaced.
+   * @param {string} newValue The new innerHTML to set on the node.
+   * @param {string} oldValue The old innerHTML that will be used if the user
+   *                 undoes the update.
+   * @returns A promise that will resolve when the inner HTML has been updated.
+   */
+  updateNodeInnerHTML: function(node, newValue, oldValue) {
+    let container = this.getContainer(node);
+    if (!container) {
+      return promise.reject();
+    }
+
+    let def = promise.defer();
+
+    container.undo.do(() => {
+      this.walker.setInnerHTML(node, newValue).then(def.resolve, def.reject);
+    }, () => {
+      this.walker.setInnerHTML(node, oldValue);
+    });
+
+    return def.promise;
+  },
+
+  /**
+   * Insert adjacent HTML to any node displayed in the inspector.
+   *
+   * @param {NodeFront} node The reference node.
+   * @param {string} position The position as specified for Element.insertAdjacentHTML
+   *        (i.e. "beforeBegin", "afterBegin", "beforeEnd", "afterEnd").
+   * @param {string} newValue The adjacent HTML.
+   * @returns A promise that will resolve when the adjacent HTML has
+   *          been inserted.
+   */
+  insertAdjacentHTMLToNode: function(node, position, value) {
+    let container = this.getContainer(node);
+    if (!container) {
+      return promise.reject();
+    }
+
+    let def = promise.defer();
+
+    let injectedNodes = [];
+    container.undo.do(() => {
+      this.walker.insertAdjacentHTML(node, position, value).then(nodeArray => {
+        injectedNodes = nodeArray.nodes;
+        return nodeArray;
+      }).then(def.resolve, def.reject);
+    }, () => {
+      this.walker.removeNodes(injectedNodes);
+    });
+
+    return def.promise;
   },
 
   /**
@@ -909,7 +1032,7 @@ MarkupView.prototype = {
    * @param aNode The NodeFront to edit.
    */
   beginEditingOuterHTML: function(aNode) {
-    this.getNodeOuterHTML(aNode).then((oldValue)=> {
+    this.getNodeOuterHTML(aNode).then(oldValue => {
       let container = this.getContainer(aNode);
       if (!container) {
         return;
@@ -1172,9 +1295,13 @@ MarkupView.prototype = {
       return this._destroyer;
     }
 
+    this._destroyer = promise.resolve();
+
     // Note that if the toolbox is closed, this will work fine, but will fail
     // in case the browser is closed and will trigger a noSuchActor message.
-    this._destroyer = this._hideBoxModel();
+    // We ignore the promise that |_hideBoxModel| returns, since we should still
+    // proceed with the rest of destruction if it fails.
+    this._hideBoxModel();
 
     this._elt.removeEventListener("click", this._onMouseClick, false);
 
@@ -1216,7 +1343,7 @@ MarkupView.prototype = {
     this._inspector.selection.off("new-node-front", this._boundOnNewSelection);
     this._boundOnNewSelection = null;
 
-    this.walker.off("mutations", this._boundMutationObserver)
+    this.walker.off("mutations", this._boundMutationObserver);
     this._boundMutationObserver = null;
 
     this.walker.off("display-change", this._boundOnDisplayChange);
@@ -1923,7 +2050,7 @@ function TextEditor(aContainer, aNode, aTemplate) {
           }, () => {
             this.node.setNodeValue(oldValue).then(() => {
               this.markup.nodeChanged(this.node);
-            })
+            });
           });
         });
       });
@@ -1946,9 +2073,8 @@ TextEditor.prototype = {
   update: function() {
     if (!this.selected || !this.node.incompleteValue) {
       let text = this.node.shortValue;
-      // XXX: internationalize the elliding
       if (this.node.incompleteValue) {
-        text += "…";
+        text += ELLIPSIS;
       }
       this.value.textContent = text;
     } else {
@@ -2007,7 +2133,7 @@ function ElementEditor(aContainer, aNode) {
   }
 
   // Make the new attribute space editable.
-  editableField({
+  this.newAttr.editMode = editableField({
     element: this.newAttr,
     trigger: "dblclick",
     stopOnReturn: true,
@@ -2113,7 +2239,7 @@ ElementEditor.prototype = {
     }
 
     // Make the attribute editable.
-    editableField({
+    attr.editMode = editableField({
       element: inner,
       trigger: "dblclick",
       stopOnReturn: true,
@@ -2135,7 +2261,7 @@ ElementEditor.prototype = {
           aEditor.input.select();
         }
       },
-      done: (aVal, aCommit) => {
+      done: (aVal, aCommit, direction) => {
         if (!aCommit || aVal === initial) {
           return;
         }
@@ -2147,6 +2273,7 @@ ElementEditor.prototype = {
         // parsed out of the input element. Restore original attribute if
         // parsing fails.
         try {
+          this.refocusOnEdit(aAttr.name, attr, direction);
           this._saveAttribute(aAttr.name, undoMods);
           doMods.removeAttribute(aAttr.name);
           this._applyAttributes(aVal, attr, doMods, undoMods);
@@ -2154,7 +2281,7 @@ ElementEditor.prototype = {
             doMods.apply();
           }, () => {
             undoMods.apply();
-          })
+          });
         } catch(ex) {
           console.error(ex);
         }
@@ -2226,10 +2353,101 @@ ElementEditor.prototype = {
   },
 
   /**
+   * Listen to mutations, and when the attribute list is regenerated
+   * try to focus on the attribute after the one that's being edited now.
+   * If the attribute order changes, go to the beginning of the attribute list.
+   */
+  refocusOnEdit: function(attrName, attrNode, direction) {
+    // Only allow one refocus on attribute change at a time, so when there's
+    // more than 1 request in parallel, the last one wins.
+    if (this._editedAttributeObserver) {
+      this.markup._inspector.off("markupmutation", this._editedAttributeObserver);
+      this._editedAttributeObserver = null;
+    }
+
+    let container = this.markup.getContainer(this.node);
+
+    let activeAttrs = [...this.attrList.childNodes].filter(el => el.style.display != "none");
+    let attributeIndex = activeAttrs.indexOf(attrNode);
+
+    let onMutations = this._editedAttributeObserver = (e, mutations) => {
+      let isDeletedAttribute = false;
+      let isNewAttribute = false;
+      for (let mutation of mutations) {
+        let inContainer = this.markup.getContainer(mutation.target) === container;
+        if (!inContainer) {
+          continue;
+        }
+
+        let isOriginalAttribute = mutation.attributeName === attrName;
+
+        isDeletedAttribute = isDeletedAttribute || isOriginalAttribute && mutation.newValue === null;
+        isNewAttribute = isNewAttribute || mutation.attributeName !== attrName;
+      }
+      let isModifiedOrder = isDeletedAttribute && isNewAttribute;
+      this._editedAttributeObserver = null;
+
+      // "Deleted" attributes are merely hidden, so filter them out.
+      let visibleAttrs = [...this.attrList.childNodes].filter(el => el.style.display != "none");
+      let activeEditor;
+      if (visibleAttrs.length > 0) {
+        if (!direction) {
+          // No direction was given; stay on current attribute.
+          activeEditor = visibleAttrs[attributeIndex];
+        } else if (isModifiedOrder) {
+          // The attribute was renamed, reordering the existing attributes.
+          // So let's go to the beginning of the attribute list for consistency.
+          activeEditor = visibleAttrs[0];
+        } else {
+          let newAttributeIndex;
+          if (isDeletedAttribute) {
+            newAttributeIndex = attributeIndex;
+          } else {
+            if (direction == Ci.nsIFocusManager.MOVEFOCUS_FORWARD) {
+              newAttributeIndex = attributeIndex + 1;
+            } else if (direction == Ci.nsIFocusManager.MOVEFOCUS_BACKWARD) {
+              newAttributeIndex = attributeIndex - 1;
+            }
+          }
+
+          // The number of attributes changed (deleted), or we moved through the array
+          // so check we're still within bounds.
+          if (newAttributeIndex >= 0 && newAttributeIndex <= visibleAttrs.length - 1) {
+            activeEditor = visibleAttrs[newAttributeIndex];
+          }
+        }
+      }
+
+      // Either we have no attributes left,
+      // or we just edited the last attribute and want to move on.
+      if (!activeEditor) {
+        activeEditor = this.newAttr;
+      }
+
+      // Refocus was triggered by tab or shift-tab.
+      // Continue in edit mode.
+      if (direction) {
+        activeEditor.editMode();
+      } else {
+        // Refocus was triggered by enter.
+        // Exit edit mode (but restore focus).
+        let editable = activeEditor === this.newAttr ? activeEditor : activeEditor.querySelector(".editable");
+        editable.focus();
+      }
+
+      this.markup.emit("refocusedonedit");
+    };
+
+    // Start listening for mutations until we find an attributes change
+    // that modifies this attribute.
+    this.markup._inspector.once("markupmutation", onMutations);
+  },
+
+  /**
    * Called when the tag name editor has is done editing.
    */
   onTagEdit: function(newTagName, isCommit) {
-    if (!isCommit || newTagName == this.node.tagName ||
+    if (!isCommit || newTagName.toLowerCase() === this.node.tagName.toLowerCase() ||
         !("editTagName" in this.markup.walker)) {
       return;
     }

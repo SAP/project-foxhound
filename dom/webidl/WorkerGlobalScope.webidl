@@ -39,6 +39,7 @@ partial interface WorkerGlobalScope {
 WorkerGlobalScope implements WindowTimers;
 WorkerGlobalScope implements WindowBase64;
 WorkerGlobalScope implements GlobalFetch;
+WorkerGlobalScope implements IDBEnvironment;
 
 // Not implemented yet: bug 1072107.
 // WorkerGlobalScope implements FontFaceSource;
@@ -50,5 +51,6 @@ partial interface WorkerGlobalScope {
   void dump(optional DOMString str);
 
   // XXXbz no spec for this yet, because the webperf WG is a bit dysfunctional
+  [Constant, Cached]
   readonly attribute Performance performance;
 };

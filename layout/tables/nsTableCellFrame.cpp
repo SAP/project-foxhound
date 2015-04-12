@@ -40,6 +40,7 @@
 
 using namespace mozilla;
 using namespace mozilla::gfx;
+using namespace mozilla::image;
 
 nsTableCellFrame::nsTableCellFrame(nsStyleContext* aContext) :
   nsContainerFrame(aContext)
@@ -348,7 +349,8 @@ nsTableCellFrame::DecorateForSelection(nsRenderingContext& aRenderingContext,
         //middle
         nsRect r(onePixel, onePixel,
                  mRect.width - onePixel, mRect.height - onePixel);
-        Rect devPixelRect = NSRectToRect(r, appUnitsPerDevPixel, *drawTarget);
+        Rect devPixelRect =
+          NSRectToSnappedRect(r, appUnitsPerDevPixel, *drawTarget);
         drawTarget->StrokeRect(devPixelRect, color);
         //shading
         StrokeLineWithSnapping(nsPoint(2*onePixel, mRect.height-2*onePixel),
@@ -362,27 +364,28 @@ nsTableCellFrame::DecorateForSelection(nsRenderingContext& aRenderingContext,
   }
 }
 
-void
+DrawResult
 nsTableCellFrame::PaintBackground(nsRenderingContext& aRenderingContext,
                                   const nsRect&        aDirtyRect,
                                   nsPoint              aPt,
                                   uint32_t             aFlags)
 {
   nsRect rect(aPt, GetSize());
-  nsCSSRendering::PaintBackground(PresContext(), aRenderingContext, this,
-                                  aDirtyRect, rect, aFlags);
+  return nsCSSRendering::PaintBackground(PresContext(), aRenderingContext, this,
+                                         aDirtyRect, rect, aFlags);
 }
 
 // Called by nsTablePainter
-void
+DrawResult
 nsTableCellFrame::PaintCellBackground(nsRenderingContext& aRenderingContext,
                                       const nsRect& aDirtyRect, nsPoint aPt,
                                       uint32_t aFlags)
 {
-  if (!StyleVisibility()->IsVisible())
-    return;
+  if (!StyleVisibility()->IsVisible()) {
+    return DrawResult::SUCCESS;
+  }
 
-  PaintBackground(aRenderingContext, aDirtyRect, aPt, aFlags);
+  return PaintBackground(aRenderingContext, aDirtyRect, aPt, aFlags);
 }
 
 nsresult
@@ -418,16 +421,17 @@ public:
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
-                       nsTArray<nsIFrame*> *aOutFrames) MOZ_OVERRIDE {
+                       nsTArray<nsIFrame*> *aOutFrames) override {
     aOutFrames->AppendElement(mFrame);
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsRenderingContext* aCtx) MOZ_OVERRIDE;
+                     nsRenderingContext* aCtx) override;
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
-                           bool* aSnap) MOZ_OVERRIDE;
+                           bool* aSnap) override;
+  virtual nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder* aBuilder) override;
   virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayItemGeometry* aGeometry,
-                                         nsRegion *aInvalidRegion) MOZ_OVERRIDE;
+                                         nsRegion *aInvalidRegion) override;
 
   NS_DISPLAY_DECL_NAME("TableCellBackground", TYPE_TABLE_CELL_BACKGROUND)
 };
@@ -435,9 +439,11 @@ public:
 void nsDisplayTableCellBackground::Paint(nsDisplayListBuilder* aBuilder,
                                          nsRenderingContext* aCtx)
 {
-  static_cast<nsTableCellFrame*>(mFrame)->
+  DrawResult result = static_cast<nsTableCellFrame*>(mFrame)->
     PaintBackground(*aCtx, mVisibleRect, ToReferenceFrame(),
                     aBuilder->GetBackgroundPaintFlags());
+
+  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
 }
 
 nsRect
@@ -449,16 +455,24 @@ nsDisplayTableCellBackground::GetBounds(nsDisplayListBuilder* aBuilder,
   return nsDisplayItem::GetBounds(aBuilder, aSnap);
 }
 
+nsDisplayItemGeometry*
+nsDisplayTableCellBackground::AllocateGeometry(nsDisplayListBuilder* aBuilder)
+{
+  return new nsDisplayItemGenericImageGeometry(this, aBuilder);
+}
+
 void
 nsDisplayTableCellBackground::ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                                         const nsDisplayItemGeometry* aGeometry,
                                                         nsRegion *aInvalidRegion)
 {
-  if (aBuilder->ShouldSyncDecodeImages()) {
-    if (!nsCSSRendering::AreAllBackgroundImagesDecodedForFrame(mFrame)) {
-      bool snap;
-      aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-    }
+  auto geometry =
+    static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
+
+  if (aBuilder->ShouldSyncDecodeImages() &&
+      geometry->ShouldInvalidateToSyncDecodeImages()) {
+    bool snap;
+    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
   }
 
   nsDisplayTableItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
@@ -954,7 +968,7 @@ nsTableCellFrame::Reflow(nsPresContext*           aPresContext,
     // We need to force the kid to have mVResize set if we've had a
     // special reflow in the past, since the non-special reflow needs to
     // resize back to what it was without the special height reflow.
-    kidReflowState.mFlags.mVResize = true;
+    kidReflowState.SetVResize(true);
   }
 
   nsPoint kidOrigin(leftInset, topInset);
@@ -1218,7 +1232,7 @@ nsBCTableCellFrame::GetBorderOverflow()
 }
 
 
-void
+DrawResult
 nsBCTableCellFrame::PaintBackground(nsRenderingContext& aRenderingContext,
                                     const nsRect&        aDirtyRect,
                                     nsPoint              aPt,
@@ -1238,8 +1252,8 @@ nsBCTableCellFrame::PaintBackground(nsRenderingContext& aRenderingContext,
   nsRect rect(aPt, GetSize());
   // bypassing nsCSSRendering::PaintBackground is safe because this kind
   // of frame cannot be used for the root element
-  nsCSSRendering::PaintBackgroundWithSC(PresContext(), aRenderingContext, this,
-                                        aDirtyRect, rect,
-                                        StyleContext(), myBorder,
-                                        aFlags, nullptr);
+  return nsCSSRendering::PaintBackgroundWithSC(PresContext(), aRenderingContext,
+                                               this, aDirtyRect, rect,
+                                               StyleContext(), myBorder,
+                                               aFlags, nullptr);
 }

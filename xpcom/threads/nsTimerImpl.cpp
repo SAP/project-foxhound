@@ -13,6 +13,9 @@
 #include "pratom.h"
 #include "GeckoProfiler.h"
 #include "mozilla/Atomics.h"
+#ifdef MOZ_NUWA_PROCESS
+#include "ipc/Nuwa.h"
+#endif
 
 using mozilla::Atomic;
 using mozilla::TimeDuration;
@@ -556,10 +559,20 @@ nsTimerImpl::Fire()
     return;
   }
 
+#ifdef MOZ_NUWA_PROCESS
+  if (IsNuwaProcess() && IsNuwaReady()) {
+    // A timer event fired after Nuwa frozen can freeze main thread.
+    return;
+  }
+#endif
+
   PROFILER_LABEL("Timer", "Fire",
                  js::ProfileEntry::Category::OTHER);
 
 #ifdef MOZ_TASK_TRACER
+  // mTracedTask is an instance of FakeTracedTask created by
+  // DispatchTracedTask(). AutoRunFakeTracedTask logs the begin/end time of the
+  // timer/FakeTracedTask instance in ctor/dtor.
   mozilla::tasktracer::AutoRunFakeTracedTask runTracedTask(mTracedTask);
 #endif
 

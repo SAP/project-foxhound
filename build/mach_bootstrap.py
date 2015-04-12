@@ -34,6 +34,8 @@ SEARCH_PATHS = [
     'python/jsmin',
     'python/psutil',
     'python/which',
+    'python/pystache',
+    'python/pyyaml/lib',
     'build/pymake',
     'config',
     'dom/bindings',
@@ -42,11 +44,14 @@ SEARCH_PATHS = [
     'other-licenses/ply',
     'xpcom/idl-parser',
     'testing',
+    'testing/taskcluster',
     'testing/xpcshell',
     'testing/web-platform',
     'testing/web-platform/harness',
+    'testing/marionette/client',
     'testing/marionette/client/marionette',
     'testing/marionette/transport',
+    'testing/marionette/driver',
     'testing/mozbase/mozcrash',
     'testing/mozbase/mozdebug',
     'testing/mozbase/mozdevice',
@@ -75,9 +80,11 @@ MACH_MODULES = [
     'python/mach/mach/commands/commandinfo.py',
     'python/mozboot/mozboot/mach_commands.py',
     'python/mozbuild/mozbuild/mach_commands.py',
+    'python/mozbuild/mozbuild/backend/mach_commands.py',
     'python/mozbuild/mozbuild/frontend/mach_commands.py',
     'services/common/tests/mach_commands.py',
     'testing/mach_commands.py',
+    'testing/taskcluster/mach_commands.py',
     'testing/marionette/mach_commands.py',
     'testing/mochitest/mach_commands.py',
     'testing/xpcshell/mach_commands.py',
@@ -87,6 +94,7 @@ MACH_MODULES = [
     'tools/docs/mach_commands.py',
     'tools/mercurial/mach_commands.py',
     'tools/mach_commands.py',
+    'mobile/android/mach_commands.py',
 ]
 
 
@@ -105,6 +113,11 @@ CATEGORIES = {
         'short': 'Testing',
         'long': 'Run tests.',
         'priority': 60,
+    },
+    'ci': {
+        'short': 'CI',
+        'long': 'Taskcluster commands',
+        'priority': 59
     },
     'devenv': {
         'short': 'Development Environment',

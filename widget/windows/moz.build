@@ -85,6 +85,8 @@ if CONFIG['NS_ENABLE_TSF']:
         'nsTextStore.cpp',
     ]
 
+FAIL_ON_WARNINGS = True
+
 MSVC_ENABLE_PGO = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -92,17 +94,16 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
-    '../shared',
-    '../xpwidgets',
     '/layout/generic',
     '/layout/xul',
     '/toolkit/xre',
+    '/widget',
     '/xpcom/base',
 ]
 
 DEFINES['MOZ_UNICODE'] = True
 
-for var in ('MOZ_ENABLE_D3D9_LAYER', 'MOZ_ENABLE_D3D10_LAYER'):
+for var in ('MOZ_ENABLE_D3D10_LAYER'):
     if CONFIG[var]:
         DEFINES[var] = True
 

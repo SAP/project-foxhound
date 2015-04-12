@@ -9,38 +9,46 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Scoped.h"
+#include "mozilla/UniquePtr.h"
 
 #include "jscntxt.h"
-#include "jsinfer.h"
 #include "jsobj.h"
 #include "jsscript.h"
+#include "jsstr.h"
 
 #include "jit/IonCode.h"
+#include "js/Debug.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
+#include "vm/GlobalObject.h"
 #include "vm/ScopeObject.h"
 #include "vm/Shape.h"
 #include "vm/String.h"
 #include "vm/Symbol.h"
 
 #include "jsobjinlines.h"
+#include "vm/Debugger-inl.h"
 
+using mozilla::Some;
 using JS::HandleValue;
 using JS::Value;
+using JS::ZoneSet;
 using JS::ubi::Concrete;
 using JS::ubi::Edge;
 using JS::ubi::EdgeRange;
 using JS::ubi::Node;
+using JS::ubi::SimpleEdge;
+using JS::ubi::SimpleEdgeVector;
 using JS::ubi::TracerConcrete;
 using JS::ubi::TracerConcreteWithCompartment;
 
 // All operations on null ubi::Nodes crash.
-const char16_t *Concrete<void>::typeName() const          { MOZ_CRASH("null ubi::Node"); }
-EdgeRange *Concrete<void>::edges(JSContext *, bool) const { MOZ_CRASH("null ubi::Node"); }
-JS::Zone *Concrete<void>::zone() const                    { MOZ_CRASH("null ubi::Node"); }
-JSCompartment *Concrete<void>::compartment() const        { MOZ_CRASH("null ubi::Node"); }
+const char16_t* Concrete<void>::typeName() const          { MOZ_CRASH("null ubi::Node"); }
+EdgeRange* Concrete<void>::edges(JSContext*, bool) const { MOZ_CRASH("null ubi::Node"); }
+JS::Zone* Concrete<void>::zone() const                    { MOZ_CRASH("null ubi::Node"); }
+JSCompartment* Concrete<void>::compartment() const        { MOZ_CRASH("null ubi::Node"); }
 
 size_t
 Concrete<void>::size(mozilla::MallocSizeOf mallocSizeof) const
@@ -48,18 +56,18 @@ Concrete<void>::size(mozilla::MallocSizeOf mallocSizeof) const
     MOZ_CRASH("null ubi::Node");
 }
 
-Node::Node(JSGCTraceKind kind, void *ptr)
+Node::Node(JSGCTraceKind kind, void* ptr)
 {
     switch (kind) {
-      case JSTRACE_OBJECT:      construct(static_cast<JSObject *>(ptr));              break;
-      case JSTRACE_STRING:      construct(static_cast<JSString *>(ptr));              break;
-      case JSTRACE_SYMBOL:      construct(static_cast<JS::Symbol *>(ptr));            break;
-      case JSTRACE_SCRIPT:      construct(static_cast<JSScript *>(ptr));              break;
-      case JSTRACE_LAZY_SCRIPT: construct(static_cast<js::LazyScript *>(ptr));        break;
-      case JSTRACE_JITCODE:     construct(static_cast<js::jit::JitCode *>(ptr));      break;
-      case JSTRACE_SHAPE:       construct(static_cast<js::Shape *>(ptr));             break;
-      case JSTRACE_BASE_SHAPE:  construct(static_cast<js::BaseShape *>(ptr));         break;
-      case JSTRACE_TYPE_OBJECT: construct(static_cast<js::types::TypeObject *>(ptr)); break;
+      case JSTRACE_OBJECT:       construct(static_cast<JSObject*>(ptr));         break;
+      case JSTRACE_SCRIPT:       construct(static_cast<JSScript*>(ptr));         break;
+      case JSTRACE_STRING:       construct(static_cast<JSString*>(ptr));         break;
+      case JSTRACE_SYMBOL:       construct(static_cast<JS::Symbol*>(ptr));       break;
+      case JSTRACE_BASE_SHAPE:   construct(static_cast<js::BaseShape*>(ptr));    break;
+      case JSTRACE_JITCODE:      construct(static_cast<js::jit::JitCode*>(ptr)); break;
+      case JSTRACE_LAZY_SCRIPT:  construct(static_cast<js::LazyScript*>(ptr));   break;
+      case JSTRACE_SHAPE:        construct(static_cast<js::Shape*>(ptr));        break;
+      case JSTRACE_OBJECT_GROUP: construct(static_cast<js::ObjectGroup*>(ptr));  break;
 
       default:
         MOZ_CRASH("bad JSGCTraceKind passed to JS::ubi::Node::Node");
@@ -84,7 +92,7 @@ Node::exposeToJS() const
     Value v;
 
     if (is<JSObject>()) {
-        JSObject &obj = *as<JSObject>();
+        JSObject& obj = *as<JSObject>();
         if (obj.is<js::ScopeObject>()) {
             v.setUndefined();
         } else if (obj.is<JSFunction>() && js::IsInternalFunctionObject(&obj)) {
@@ -103,65 +111,29 @@ Node::exposeToJS() const
     return v;
 }
 
-// A dumb Edge concrete class. All but the most essential members have the
-// default behavior.
-class SimpleEdge : public Edge {
-    SimpleEdge(SimpleEdge &) MOZ_DELETE;
-    SimpleEdge &operator=(const SimpleEdge &) MOZ_DELETE;
-
-  public:
-    SimpleEdge() : Edge() { }
-
-    // Construct an initialized SimpleEdge, taking ownership of |name|.
-    SimpleEdge(char16_t *name, const Node &referent) {
-        this->name = name;
-        this->referent = referent;
-    }
-    ~SimpleEdge() {
-        js_free(const_cast<char16_t *>(name));
-    }
-
-    // Move construction and assignment.
-    SimpleEdge(SimpleEdge &&rhs) {
-        name = rhs.name;
-        referent = rhs.referent;
-
-        rhs.name = nullptr;
-    }
-    SimpleEdge &operator=(SimpleEdge &&rhs) {
-        MOZ_ASSERT(&rhs != this);
-        this->~SimpleEdge();
-        new(this) SimpleEdge(mozilla::Move(rhs));
-        return *this;
-    }
-};
-
-
-typedef mozilla::Vector<SimpleEdge, 8, js::TempAllocPolicy> SimpleEdgeVector;
-
 
 // A JSTracer subclass that adds a SimpleEdge to a Vector for each edge on
 // which it is invoked.
 class SimpleEdgeVectorTracer : public JSTracer {
     // The vector to which we add SimpleEdges.
-    SimpleEdgeVector *vec;
+    SimpleEdgeVector* vec;
 
     // True if we should populate the edge's names.
     bool wantNames;
 
-    static void staticCallback(JSTracer *trc, void **thingp, JSGCTraceKind kind) {
-        static_cast<SimpleEdgeVectorTracer *>(trc)->callback(thingp, kind);
+    static void staticCallback(JSTracer* trc, void** thingp, JSGCTraceKind kind) {
+        static_cast<SimpleEdgeVectorTracer*>(trc)->callback(thingp, kind);
     }
 
-    void callback(void **thingp, JSGCTraceKind kind) {
+    void callback(void** thingp, JSGCTraceKind kind) {
         if (!okay)
             return;
 
-        char16_t *name16 = nullptr;
+        char16_t* name16 = nullptr;
         if (wantNames) {
             // Ask the tracer to compute an edge name for us.
             char buffer[1024];
-            const char *name = getTracingEdgeName(buffer, sizeof(buffer));
+            const char* name = getTracingEdgeName(buffer, sizeof(buffer));
 
             // Convert the name to char16_t characters.
             name16 = js_pod_malloc<char16_t>(strlen(name) + 1);
@@ -190,7 +162,7 @@ class SimpleEdgeVectorTracer : public JSTracer {
     // True if no errors (OOM, say) have yet occurred.
     bool okay;
 
-    SimpleEdgeVectorTracer(JSContext *cx, SimpleEdgeVector *vec, bool wantNames)
+    SimpleEdgeVectorTracer(JSContext* cx, SimpleEdgeVector* vec, bool wantNames)
       : JSTracer(JS_GetRuntime(cx), staticCallback),
         vec(vec),
         wantNames(wantNames),
@@ -210,29 +182,29 @@ class SimpleEdgeRange : public EdgeRange {
     }
 
   public:
-    explicit SimpleEdgeRange(JSContext *cx) : edges(cx), i(0) { }
+    explicit SimpleEdgeRange(JSContext* cx) : edges(cx), i(0) { }
 
-    bool init(JSContext *cx, void *thing, JSGCTraceKind kind, bool wantNames = true) {
+    bool init(JSContext* cx, void* thing, JSGCTraceKind kind, bool wantNames = true) {
         SimpleEdgeVectorTracer tracer(cx, &edges, wantNames);
         JS_TraceChildren(&tracer, thing, kind);
         settle();
         return tracer.okay;
     }
 
-    void popFront() MOZ_OVERRIDE { i++; settle(); }
+    void popFront() override { i++; settle(); }
 };
 
 
 template<typename Referent>
-JS::Zone *
+JS::Zone*
 TracerConcrete<Referent>::zone() const
 {
     return get().zone();
 }
 
 template<typename Referent>
-EdgeRange *
-TracerConcrete<Referent>::edges(JSContext *cx, bool wantNames) const {
+EdgeRange*
+TracerConcrete<Referent>::edges(JSContext* cx, bool wantNames) const {
     js::ScopedJSDeletePtr<SimpleEdgeRange> r(js_new<SimpleEdgeRange>(cx));
     if (!r)
         return nullptr;
@@ -244,7 +216,7 @@ TracerConcrete<Referent>::edges(JSContext *cx, bool wantNames) const {
 }
 
 template<typename Referent>
-JSCompartment *
+JSCompartment*
 TracerConcreteWithCompartment<Referent>::compartment() const
 {
     return TracerBase::get().compartment();
@@ -266,8 +238,8 @@ template<> const char16_t TracerConcrete<js::Shape>::concreteTypeName[] =
     MOZ_UTF16("js::Shape");
 template<> const char16_t TracerConcrete<js::BaseShape>::concreteTypeName[] =
     MOZ_UTF16("js::BaseShape");
-template<> const char16_t TracerConcrete<js::types::TypeObject>::concreteTypeName[] =
-    MOZ_UTF16("js::types::TypeObject");
+template<> const char16_t TracerConcrete<js::ObjectGroup>::concreteTypeName[] =
+    MOZ_UTF16("js::ObjectGroup");
 
 
 // Instantiate all the TracerConcrete and templates here, where
@@ -282,6 +254,132 @@ template class TracerConcrete<js::LazyScript>;
 template class TracerConcrete<js::jit::JitCode>;
 template class TracerConcreteWithCompartment<js::Shape>;
 template class TracerConcreteWithCompartment<js::BaseShape>;
-template class TracerConcrete<js::types::TypeObject>;
+template class TracerConcrete<js::ObjectGroup>;
 }
 }
+
+
+namespace JS {
+namespace ubi {
+
+RootList::RootList(JSContext* cx, Maybe<AutoCheckCannotGC>& noGC, bool wantNames /* = false */)
+  : noGC(noGC),
+    cx(cx),
+    edges(cx),
+    wantNames(wantNames)
+{ }
+
+
+bool
+RootList::init()
+{
+    SimpleEdgeVectorTracer tracer(cx, &edges, wantNames);
+    JS_TraceRuntime(&tracer);
+    if (!tracer.okay)
+        return false;
+    noGC.emplace(cx->runtime());
+    return true;
+}
+
+bool
+RootList::init(ZoneSet& debuggees)
+{
+    SimpleEdgeVector allRootEdges(cx);
+    SimpleEdgeVectorTracer tracer(cx, &allRootEdges, wantNames);
+
+    JS_TraceRuntime(&tracer);
+    if (!tracer.okay)
+        return false;
+    JS_TraceIncomingCCWs(&tracer, debuggees);
+    if (!tracer.okay)
+        return false;
+
+    for (SimpleEdgeVector::Range r = allRootEdges.all(); !r.empty(); r.popFront()) {
+        SimpleEdge& edge = r.front();
+        Zone* zone = edge.referent.zone();
+        if (zone && !debuggees.has(zone))
+            continue;
+        if (!edges.append(mozilla::Move(edge)))
+            return false;
+    }
+
+    noGC.emplace(cx->runtime());
+    return true;
+}
+
+bool
+RootList::init(HandleObject debuggees)
+{
+    MOZ_ASSERT(debuggees && JS::dbg::IsDebugger(ObjectValue(*debuggees)));
+    js::Debugger* dbg = js::Debugger::fromJSObject(debuggees);
+
+    ZoneSet debuggeeZones;
+    if (!debuggeeZones.init())
+        return false;
+
+    for (js::GlobalObjectSet::Range r = dbg->allDebuggees(); !r.empty(); r.popFront()) {
+        if (!debuggeeZones.put(r.front()->zone()))
+            return false;
+    }
+
+    if (!init(debuggeeZones))
+        return false;
+
+    // Ensure that each of our debuggee globals are in the root list.
+    for (js::GlobalObjectSet::Range r = dbg->allDebuggees(); !r.empty(); r.popFront()) {
+        if (!addRoot(JS::ubi::Node(static_cast<JSObject*>(r.front())),
+                     MOZ_UTF16("debuggee global")))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
+RootList::addRoot(Node node, const char16_t* edgeName)
+{
+    MOZ_ASSERT(noGC.isSome());
+    MOZ_ASSERT_IF(wantNames, edgeName);
+
+    mozilla::UniquePtr<char16_t[], JS::FreePolicy> name;
+    if (edgeName) {
+        name = DuplicateString(cx, edgeName);
+        if (!name)
+            return false;
+    }
+
+    return edges.append(mozilla::Move(SimpleEdge(name.release(), node)));
+}
+
+// An EdgeRange concrete class that holds a pre-existing vector of SimpleEdges.
+class PreComputedEdgeRange : public EdgeRange {
+    SimpleEdgeVector& edges;
+    size_t           i;
+
+    void settle() {
+        front_ = i < edges.length() ? &edges[i] : nullptr;
+    }
+
+  public:
+    explicit PreComputedEdgeRange(JSContext* cx, SimpleEdgeVector& edges)
+      : edges(edges),
+        i(0)
+    {
+        settle();
+    }
+
+    void popFront() override { i++; settle(); }
+};
+
+const char16_t Concrete<RootList>::concreteTypeName[] = MOZ_UTF16("RootList");
+
+EdgeRange*
+Concrete<RootList>::edges(JSContext* cx, bool wantNames) const {
+    MOZ_ASSERT_IF(wantNames, get().wantNames);
+    return js_new<PreComputedEdgeRange>(cx, get().edges);
+}
+
+} // namespace ubi
+} // namespace JS

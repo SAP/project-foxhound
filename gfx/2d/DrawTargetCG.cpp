@@ -2,6 +2,7 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "BorrowedContext.h"
 #include "DataSurfaceHelpers.h"
 #include "DrawTargetCG.h"
@@ -15,8 +16,9 @@
 #include "MacIOSurface.h"
 #include "FilterNodeSoftware.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Types.h" // for decltype
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Types.h" // for decltype
+#include "mozilla/Vector.h"
 
 using namespace std;
 
@@ -144,12 +146,19 @@ InterpolationQualityFromFilter(Filter aFilter)
 DrawTargetCG::DrawTargetCG()
   : mColorSpace(nullptr)
   , mCg(nullptr)
+  , mMayContainInvalidPremultipliedData(false)
 {
 }
 
 DrawTargetCG::~DrawTargetCG()
 {
-  MarkChanged();
+  if (mSnapshot) {
+    if (mSnapshot->refCount() > 1) {
+      // We only need to worry about snapshots that someone else knows about
+      mSnapshot->DrawTargetWillGoAway();
+    }
+    mSnapshot = nullptr;
+  }
 
   // Both of these are OK with nullptr arguments, so we do not
   // need to check (these could be nullptr if Init fails)
@@ -183,6 +192,7 @@ DrawTargetCG::Snapshot()
     if (GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE) {
       return new SourceSurfaceCGIOSurfaceContext(this);
     }
+    Flush();
     mSnapshot = new SourceSurfaceCGBitmapContext(this);
   }
 
@@ -258,12 +268,13 @@ class UnboundnessFixer
 {
     CGRect mClipBounds;
     CGLayerRef mLayer;
-    CGContextRef mCg;
+    CGContextRef mLayerCg;
   public:
-    UnboundnessFixer() : mCg(nullptr) {}
+    UnboundnessFixer() : mLayerCg(nullptr) {}
 
     CGContextRef Check(CGContextRef baseCg, CompositionOp blend, const Rect* maskBounds = nullptr)
     {
+      MOZ_ASSERT(baseCg);
       if (!IsOperatorBoundByMask(blend)) {
         mClipBounds = CGContextGetClipBoundingBox(baseCg);
         // If we're entirely clipped out or if the drawing operation covers the entire clip then
@@ -279,14 +290,17 @@ class UnboundnessFixer
         //XXX: The size here is in default user space units, of the layer relative to the graphics context.
         // is the clip bounds still correct if, for example, we have a scale applied to the context?
         mLayer = CGLayerCreateWithContext(baseCg, mClipBounds.size, nullptr);
-        mCg = CGLayerGetContext(mLayer);
+        mLayerCg = CGLayerGetContext(mLayer);
         // CGContext's default to have the origin at the bottom left
         // so flip it to the top left and adjust for the origin
         // of the layer
-        CGContextTranslateCTM(mCg, -mClipBounds.origin.x, mClipBounds.origin.y + mClipBounds.size.height);
-        CGContextScaleCTM(mCg, 1, -1);
+        if (MOZ2D_ERROR_IF(!mLayerCg)) {
+          return nullptr;
+        }
+        CGContextTranslateCTM(mLayerCg, -mClipBounds.origin.x, mClipBounds.origin.y + mClipBounds.size.height);
+        CGContextScaleCTM(mLayerCg, 1, -1);
 
-        return mCg;
+        return mLayerCg;
       } else {
         return baseCg;
       }
@@ -294,12 +308,14 @@ class UnboundnessFixer
 
     void Fix(CGContextRef baseCg)
     {
-        if (mCg) {
+        if (mLayerCg) {
+            // we pushed a layer so draw it to baseCg
+            MOZ_ASSERT(baseCg);
             CGContextTranslateCTM(baseCg, 0, mClipBounds.size.height);
             CGContextScaleCTM(baseCg, 1, -1);
             mClipBounds.origin.y *= -1;
             CGContextDrawLayerAtPoint(baseCg, mClipBounds.origin, mLayer);
-            CGContextRelease(mCg);
+            CGContextRelease(mLayerCg);
         }
     }
 };
@@ -311,6 +327,9 @@ DrawTargetCG::DrawSurface(SourceSurface *aSurface,
                            const DrawSurfaceOptions &aSurfOptions,
                            const DrawOptions &aDrawOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
   MarkChanged();
 
   CGContextSaveGState(mCg);
@@ -318,6 +337,9 @@ DrawTargetCG::DrawSurface(SourceSurface *aSurface,
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp, &aDest);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
   CGContextSetAlpha(cg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
 
@@ -650,6 +672,10 @@ static void
 DrawGradient(CGColorSpaceRef aColorSpace,
              CGContextRef cg, const Pattern &aPattern, const CGRect &aExtents)
 {
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   if (CGRectIsEmpty(aExtents)) {
     return;
   }
@@ -795,6 +821,10 @@ CreateCGPattern(const Pattern &aPattern, CGAffineTransform aUserSpace)
 static void
 SetFillFromPattern(CGContextRef cg, CGColorSpaceRef aColorSpace, const Pattern &aPattern)
 {
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   assert(!isGradient(aPattern));
   if (aPattern.GetType() == PatternType::COLOR) {
 
@@ -851,6 +881,10 @@ DrawTargetCG::MaskSurface(const Pattern &aSource,
                           Point aOffset,
                           const DrawOptions &aDrawOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   CGContextSaveGState(mCg);
@@ -858,6 +892,10 @@ DrawTargetCG::MaskSurface(const Pattern &aSource,
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   CGContextSetAlpha(cg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
 
@@ -895,12 +933,20 @@ DrawTargetCG::FillRect(const Rect &aRect,
                        const Pattern &aPattern,
                        const DrawOptions &aDrawOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   CGContextSaveGState(mCg);
 
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp, &aRect);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   CGContextSetAlpha(mCg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
@@ -954,12 +1000,19 @@ DrawTargetCG::StrokeLine(const Point &p1, const Point &p2, const Pattern &aPatte
     return;
   }
 
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   CGContextSaveGState(mCg);
 
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
   CGContextSetAlpha(mCg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
@@ -987,12 +1040,31 @@ DrawTargetCG::StrokeLine(const Point &p1, const Point &p2, const Pattern &aPatte
   CGContextRestoreGState(mCg);
 }
 
+static bool
+IsInteger(Float aValue)
+{
+  return floorf(aValue) == aValue;
+}
+
+static bool
+IsPixelAlignedStroke(const Rect& aRect, Float aLineWidth)
+{
+  Float halfWidth = aLineWidth/2;
+  return IsInteger(aLineWidth) &&
+         IsInteger(aRect.x - halfWidth) && IsInteger(aRect.y - halfWidth) &&
+         IsInteger(aRect.XMost() - halfWidth) && IsInteger(aRect.YMost() - halfWidth);
+}
+
 void
 DrawTargetCG::StrokeRect(const Rect &aRect,
                          const Pattern &aPattern,
                          const StrokeOptions &aStrokeOptions,
                          const DrawOptions &aDrawOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   if (!aRect.IsFinite()) {
     return;
   }
@@ -1003,9 +1075,23 @@ DrawTargetCG::StrokeRect(const Rect &aRect,
 
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
   CGContextSetAlpha(mCg, aDrawOptions.mAlpha);
-  CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
+
+  // Work around Quartz bug where antialiasing causes corner pixels to be off by
+  // 1 channel value (e.g. rgb(1,1,1) values appear at the corner of solid
+  // black stroke), by turning off antialiasing when the edges of the stroke
+  // are pixel-aligned. Note that when a transform's components are all
+  // integers, it maps integers coordinates to integer coordinates.
+  bool pixelAlignedStroke = mTransform.IsAllIntegers() &&
+    mTransform.PreservesAxisAlignedRectangles() &&
+    aPattern.GetType() == PatternType::COLOR &&
+    IsPixelAlignedStroke(aRect, aStrokeOptions.mLineWidth);
+  CGContextSetShouldAntialias(cg,
+    aDrawOptions.mAntialiasMode != AntialiasMode::NONE && !pixelAlignedStroke);
 
   CGContextConcatCTM(cg, GfxMatrixToCGAffineTransform(mTransform));
 
@@ -1022,7 +1108,19 @@ DrawTargetCG::StrokeRect(const Rect &aRect,
     DrawGradient(mColorSpace, cg, aPattern, extents);
   } else {
     SetStrokeFromPattern(cg, mColorSpace, aPattern);
-    CGContextStrokeRect(cg, RectToCGRect(aRect));
+    // We'd like to use CGContextStrokeRect(cg, RectToCGRect(aRect));
+    // Unfortunately, newer versions of OS X no longer start at the top-left
+    // corner and stroke clockwise as older OS X versions and all the other
+    // Moz2D backends do. (Newer versions start at the top right-hand corner
+    // and stroke counter-clockwise.) For consistency we draw the rect by hand.
+    CGRect rect = RectToCGRect(aRect);
+    CGContextBeginPath(cg);
+    CGContextMoveToPoint(cg, CGRectGetMinX(rect), CGRectGetMinY(rect));
+    CGContextAddLineToPoint(cg, CGRectGetMaxX(rect), CGRectGetMinY(rect));
+    CGContextAddLineToPoint(cg, CGRectGetMaxX(rect), CGRectGetMaxY(rect));
+    CGContextAddLineToPoint(cg, CGRectGetMinX(rect), CGRectGetMaxY(rect));
+    CGContextClosePath(cg);
+    CGContextStrokePath(cg);
   }
 
   fixer.Fix(mCg);
@@ -1033,6 +1131,10 @@ DrawTargetCG::StrokeRect(const Rect &aRect,
 void
 DrawTargetCG::ClearRect(const Rect &aRect)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   CGContextSaveGState(mCg);
@@ -1046,6 +1148,10 @@ DrawTargetCG::ClearRect(const Rect &aRect)
 void
 DrawTargetCG::Stroke(const Path *aPath, const Pattern &aPattern, const StrokeOptions &aStrokeOptions, const DrawOptions &aDrawOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   if (!aPath->GetBounds().IsFinite()) {
     return;
   }
@@ -1056,6 +1162,10 @@ DrawTargetCG::Stroke(const Path *aPath, const Pattern &aPattern, const StrokeOpt
 
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   CGContextSetAlpha(mCg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
@@ -1091,6 +1201,10 @@ DrawTargetCG::Stroke(const Path *aPath, const Pattern &aPattern, const StrokeOpt
 void
 DrawTargetCG::Fill(const Path *aPath, const Pattern &aPattern, const DrawOptions &aDrawOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   assert(aPath->GetBackendType() == BackendType::COREGRAPHICS);
@@ -1100,6 +1214,10 @@ DrawTargetCG::Fill(const Path *aPath, const Pattern &aPattern, const DrawOptions
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   CGContextSetAlpha(cg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
 
@@ -1165,19 +1283,70 @@ CGRect ComputeGlyphsExtents(CGRect *bboxes, CGPoint *positions, CFIndex count, f
   return extents;
 }
 
+typedef void (*CGContextSetFontSmoothingBackgroundColorFunc) (CGContextRef cgContext, CGColorRef color);
+
+static CGContextSetFontSmoothingBackgroundColorFunc
+GetCGContextSetFontSmoothingBackgroundColorFunc()
+{
+  static CGContextSetFontSmoothingBackgroundColorFunc func = nullptr;
+  static bool lookedUpFunc = false;
+  if (!lookedUpFunc) {
+    func = (CGContextSetFontSmoothingBackgroundColorFunc)dlsym(
+      RTLD_DEFAULT, "CGContextSetFontSmoothingBackgroundColor");
+    lookedUpFunc = true;
+  }
+  return func;
+}
 
 void
 DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pattern &aPattern, const DrawOptions &aDrawOptions,
-                         const GlyphRenderingOptions*)
+                         const GlyphRenderingOptions *aGlyphRenderingOptions)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   assert(aBuffer.mNumGlyphs);
   CGContextSaveGState(mCg);
 
+  if (aGlyphRenderingOptions && aGlyphRenderingOptions->GetType() == FontType::MAC) {
+    Color fontSmoothingBackgroundColor =
+      static_cast<const GlyphRenderingOptionsCG*>(aGlyphRenderingOptions)->FontSmoothingBackgroundColor();
+    if (fontSmoothingBackgroundColor.a > 0) {
+      CGContextSetFontSmoothingBackgroundColorFunc setFontSmoothingBGColorFunc =
+        GetCGContextSetFontSmoothingBackgroundColorFunc();
+      if (setFontSmoothingBGColorFunc) {
+        CGColorRef color = ColorToCGColor(mColorSpace, fontSmoothingBackgroundColor);
+        setFontSmoothingBGColorFunc(mCg, color);
+        CGColorRelease(color);
+
+        // Font rendering with a non-transparent font smoothing background color
+        // can leave pixels in our buffer where the rgb components exceed the alpha
+        // component. When this happens we need to clean up the data afterwards.
+        // The purpose of this is probably the following: Correct compositing of
+        // subpixel anti-aliased fonts on transparent backgrounds requires
+        // different alpha values per RGB component. Usually, premultiplied color
+        // values are derived by multiplying all components with the same per-pixel
+        // alpha value. However, if you multiply each component with a *different*
+        // alpha, and set the alpha component of the pixel to, say, the average
+        // of the alpha values that you used during the premultiplication of the
+        // RGB components, you can trick OVER compositing into doing a simplified
+        // form of component alpha compositing. (You just need to make sure to
+        // clamp the components of the result pixel to [0,255] afterwards.)
+        mMayContainInvalidPremultipliedData = true;
+      }
+    }
+  }
+
   CGContextSetBlendMode(mCg, ToBlendMode(aDrawOptions.mCompositionOp));
   UnboundnessFixer fixer;
   CGContextRef cg = fixer.Check(mCg, aDrawOptions.mCompositionOp);
+  if (MOZ2D_ERROR_IF(!cg)) {
+    return;
+  }
+
   CGContextSetAlpha(cg, aDrawOptions.mAlpha);
   CGContextSetShouldAntialias(cg, aDrawOptions.mAntialiasMode != AntialiasMode::NONE);
   if (aDrawOptions.mAntialiasMode != AntialiasMode::DEFAULT) {
@@ -1188,11 +1357,16 @@ DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pa
 
   ScaledFontMac* macFont = static_cast<ScaledFontMac*>(aFont);
 
-  //XXX: we should use a stack vector here when we have a class like that
-  std::vector<CGGlyph> glyphs;
-  std::vector<CGPoint> positions;
-  glyphs.resize(aBuffer.mNumGlyphs);
-  positions.resize(aBuffer.mNumGlyphs);
+  // This code can execute millions of times in short periods, so we want to
+  // avoid heap allocation whenever possible. So we use an inline vector
+  // capacity of 64 elements, which is enough to typically avoid heap
+  // allocation in ~99% of cases.
+  Vector<CGGlyph, 64> glyphs;
+  Vector<CGPoint, 64> positions;
+  if (!glyphs.resizeUninitialized(aBuffer.mNumGlyphs) ||
+      !positions.resizeUninitialized(aBuffer.mNumGlyphs)) {
+    MOZ_CRASH("glyphs/positions allocation failed");
+  }
 
   // Handle the flip
   CGContextScaleCTM(cg, 1, -1);
@@ -1215,21 +1389,21 @@ DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pa
     if (ScaledFontMac::CTFontDrawGlyphsPtr != nullptr) {
       CGRect *bboxes = new CGRect[aBuffer.mNumGlyphs];
       CTFontGetBoundingRectsForGlyphs(macFont->mCTFont, kCTFontDefaultOrientation,
-                                      &glyphs.front(), bboxes, aBuffer.mNumGlyphs);
-      extents = ComputeGlyphsExtents(bboxes, &positions.front(), aBuffer.mNumGlyphs, 1.0f);
-      ScaledFontMac::CTFontDrawGlyphsPtr(macFont->mCTFont, &glyphs.front(),
-                                         &positions.front(), aBuffer.mNumGlyphs, cg);
-      delete bboxes;
+                                      glyphs.begin(), bboxes, aBuffer.mNumGlyphs);
+      extents = ComputeGlyphsExtents(bboxes, positions.begin(), aBuffer.mNumGlyphs, 1.0f);
+      ScaledFontMac::CTFontDrawGlyphsPtr(macFont->mCTFont, glyphs.begin(),
+                                         positions.begin(), aBuffer.mNumGlyphs, cg);
+      delete[] bboxes;
     } else {
       CGRect *bboxes = new CGRect[aBuffer.mNumGlyphs];
-      CGFontGetGlyphBBoxes(macFont->mFont, &glyphs.front(), aBuffer.mNumGlyphs, bboxes);
-      extents = ComputeGlyphsExtents(bboxes, &positions.front(), aBuffer.mNumGlyphs, macFont->mSize);
+      CGFontGetGlyphBBoxes(macFont->mFont, glyphs.begin(), aBuffer.mNumGlyphs, bboxes);
+      extents = ComputeGlyphsExtents(bboxes, positions.begin(), aBuffer.mNumGlyphs, macFont->mSize);
 
       CGContextSetFont(cg, macFont->mFont);
       CGContextSetFontSize(cg, macFont->mSize);
-      CGContextShowGlyphsAtPositions(cg, &glyphs.front(), &positions.front(),
+      CGContextShowGlyphsAtPositions(cg, glyphs.begin(), positions.begin(),
                                      aBuffer.mNumGlyphs);
-      delete bboxes;
+      delete[] bboxes;
     }
     CGContextScaleCTM(cg, 1, -1);
     DrawGradient(mColorSpace, cg, aPattern, extents);
@@ -1239,13 +1413,13 @@ DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pa
     CGContextSetTextDrawingMode(cg, kCGTextFill);
     SetFillFromPattern(cg, mColorSpace, aPattern);
     if (ScaledFontMac::CTFontDrawGlyphsPtr != nullptr) {
-      ScaledFontMac::CTFontDrawGlyphsPtr(macFont->mCTFont, &glyphs.front(),
-                                         &positions.front(),
+      ScaledFontMac::CTFontDrawGlyphsPtr(macFont->mCTFont, glyphs.begin(),
+                                         positions.begin(),
                                          aBuffer.mNumGlyphs, cg);
     } else {
       CGContextSetFont(cg, macFont->mFont);
       CGContextSetFontSize(cg, macFont->mSize);
-      CGContextShowGlyphsAtPositions(cg, &glyphs.front(), &positions.front(),
+      CGContextShowGlyphsAtPositions(cg, glyphs.begin(), positions.begin(),
                                      aBuffer.mNumGlyphs);
     }
   }
@@ -1264,6 +1438,10 @@ DrawTargetCG::CopySurface(SourceSurface *aSurface,
                           const IntRect& aSourceRect,
                           const IntPoint &aDestination)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   if (aSurface->GetType() == SurfaceType::COREGRAPHICS_IMAGE ||
@@ -1303,6 +1481,10 @@ DrawTargetCG::CopySurface(SourceSurface *aSurface,
 void
 DrawTargetCG::DrawSurfaceWithShadow(SourceSurface *aSurface, const Point &aDest, const Color &aColor, const Point &aOffset, Float aSigma, CompositionOp aOperator)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   MarkChanged();
 
   CGImageRef image = GetRetainedImageFromSourceSurface(aSurface);
@@ -1339,10 +1521,11 @@ DrawTargetCG::Init(BackendType aType,
 {
   // XXX: we should come up with some consistent semantics for dealing
   // with zero area drawtargets
-  if (aSize.width <= 0 || aSize.height <= 0 ||
-      // 32767 is the maximum size supported by cairo
-      // we clamp to that to make it easier to interoperate
-      aSize.width > 32767 || aSize.height > 32767) {
+  if (aSize.width <= 0 ||
+      aSize.height <= 0 ||
+      size_t(aSize.width) > GetMaxSurfaceSize() ||
+      size_t(aSize.height) > GetMaxSurfaceSize())
+  {
     gfxWarning() << "Failed to Init() DrawTargetCG because of bad size.";
     mColorSpace = nullptr;
     mCg = nullptr;
@@ -1409,6 +1592,11 @@ DrawTargetCG::Init(BackendType aType,
   }
 
   assert(mCg);
+  if (!mCg) {
+    gfxCriticalError() << "Failed to create CG context";
+    return false;
+  }
+
   // CGContext's default to have the origin at the bottom left
   // so flip it to the top left
   CGContextTranslateCTM(mCg, 0, mSize.height);
@@ -1433,11 +1621,54 @@ DrawTargetCG::Init(BackendType aType,
   return true;
 }
 
+static void
+EnsureValidPremultipliedData(CGContextRef aContext)
+{
+  if (CGBitmapContextGetBitsPerPixel(aContext) != 32 ||
+      CGBitmapContextGetAlphaInfo(aContext) != kCGImageAlphaPremultipliedFirst) {
+    return;
+  }
+
+  uint8_t* bitmapData = (uint8_t*)CGBitmapContextGetData(aContext);
+  int w = CGBitmapContextGetWidth(aContext);
+  int h = CGBitmapContextGetHeight(aContext);
+  int stride = CGBitmapContextGetBytesPerRow(aContext);
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      int i = y * stride + x * 4;
+      uint8_t a = bitmapData[i + 3];
+
+      // Clamp rgb components to the alpha component.
+      if (bitmapData[i + 0] > a) {
+        bitmapData[i + 0] = a;
+      }
+      if (bitmapData[i + 1] > a) {
+        bitmapData[i + 1] = a;
+      }
+      if (bitmapData[i + 2] > a) {
+        bitmapData[i + 2] = a;
+      }
+    }
+  }
+}
+
 void
 DrawTargetCG::Flush()
 {
   if (GetContextType(mCg) == CG_CONTEXT_TYPE_IOSURFACE) {
     CGContextFlush(mCg);
+  } else if (GetContextType(mCg) == CG_CONTEXT_TYPE_BITMAP &&
+             mMayContainInvalidPremultipliedData) {
+    // We can't guarantee that all our users can handle pixel data where an RGB
+    // component value exceeds the pixel's alpha value. In particular, the
+    // color conversion that CG does when we draw a CGImage snapshot of this
+    // context into a context that has a different color space throws up on
+    // invalid premultiplied data and creates completely wrong colors.
+    // Sanitizing the data means that we lose some of the fake component alpha
+    // behavior that font rendering tries to give us, but the result still
+    // looks good enough to prefer it over grayscale font anti-aliasing.
+    EnsureValidPremultipliedData(mCg);
+    mMayContainInvalidPremultipliedData = false;
   }
 }
 
@@ -1463,6 +1694,10 @@ DrawTargetCG::Init(CGContextRef cgContext, const IntSize &aSize)
   CGContextRetain(mCg);
 
   assert(mCg);
+  if (!mCg) {
+    gfxCriticalError() << "Invalid CG context at Init";
+    return false;
+  }
 
   // CGContext's default to have the origin at the bottom left.
   // However, currently the only use of this function is to construct a
@@ -1551,6 +1786,10 @@ DrawTargetCG::Mask(const Pattern &aSource,
 void
 DrawTargetCG::PushClipRect(const Rect &aRect)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   CGContextSaveGState(mCg);
 
   /* We go through a bit of trouble to temporarilly set the transform
@@ -1565,6 +1804,10 @@ DrawTargetCG::PushClipRect(const Rect &aRect)
 void
 DrawTargetCG::PushClip(const Path *aPath)
 {
+  if (MOZ2D_ERROR_IF(!mCg)) {
+    return;
+  }
+
   CGContextSaveGState(mCg);
 
   CGContextBeginPath(mCg);
@@ -1620,10 +1863,14 @@ BorrowedCGContext::BorrowCGContextFromDrawTarget(DrawTarget *aDT)
        aDT->GetBackendType() == BackendType::COREGRAPHICS_ACCELERATED) &&
       !aDT->IsTiledDrawTarget() && !aDT->IsDualDrawTarget()) {
     DrawTargetCG* cgDT = static_cast<DrawTargetCG*>(aDT);
+    cgDT->Flush();
     cgDT->MarkChanged();
 
     // swap out the context
     CGContextRef cg = cgDT->mCg;
+    if (MOZ2D_ERROR_IF(!cg)) {
+      return nullptr;
+    }
     cgDT->mCg = nullptr;
 
     // save the state to make it easier for callers to avoid mucking with things

@@ -7,20 +7,24 @@
 #define GLCONTEXT_TYPES_H_
 
 #include "GLTypes.h"
-#include "mozilla/TypedEnum.h"
 
 namespace mozilla {
 namespace gl {
 
 class GLContext;
 
-MOZ_BEGIN_ENUM_CLASS(GLContextType)
+enum class GLContextType {
     Unknown,
     WGL,
     CGL,
     GLX,
     EGL
-MOZ_END_ENUM_CLASS(GLContextType)
+};
+
+enum class OriginPos : uint8_t {
+  TopLeft,
+  BottomLeft
+};
 
 struct GLFormats
 {
@@ -38,21 +42,6 @@ struct GLFormats
 
     GLsizei samples;
 };
-
-
-struct PixelBufferFormat
-{
-    // Constructs a zeroed object:
-    PixelBufferFormat();
-
-    int red, green, blue;
-    int alpha;
-    int depth, stencil;
-    int samples;
-
-    int ColorBits() const { return red + green + blue; }
-};
-
 
 } /* namespace gl */
 } /* namespace mozilla */

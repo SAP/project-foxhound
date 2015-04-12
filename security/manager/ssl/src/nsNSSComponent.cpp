@@ -9,11 +9,14 @@
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
 #include "mozilla/Telemetry.h"
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsCertVerificationThread.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsICertOverrideService.h"
+#include "NSSCertDBTrustDomain.h"
+#include "nsThreadUtils.h"
 #include "mozilla/Preferences.h"
 #include "nsThreadUtils.h"
 #include "mozilla/PublicSSL.h"
@@ -154,6 +157,7 @@ bool EnsureNSSInitialized(EnsureNSSOperator op)
     // call do_GetService for nss component to ensure it.
   case nssEnsure:
   case nssEnsureOnChromeOnly:
+  case nssEnsureChromeOrContent:
     // We are reentered during nss component creation or nss component is already up
     if (PR_AtomicAdd(&haveLoaded, 0) || loading)
       return true;
@@ -179,9 +183,9 @@ bool EnsureNSSInitialized(EnsureNSSOperator op)
 }
 
 static void
-GetOCSPBehaviorFromPrefs(/*out*/ CertVerifier::ocsp_download_config* odc,
-                         /*out*/ CertVerifier::ocsp_strict_config* osc,
-                         /*out*/ CertVerifier::ocsp_get_config* ogc,
+GetOCSPBehaviorFromPrefs(/*out*/ CertVerifier::OcspDownloadConfig* odc,
+                         /*out*/ CertVerifier::OcspStrictConfig* osc,
+                         /*out*/ CertVerifier::OcspGetConfig* ogc,
                          const MutexAutoLock& /*proofOfLock*/)
 {
   MOZ_ASSERT(NS_IsMainThread());
@@ -191,17 +195,17 @@ GetOCSPBehaviorFromPrefs(/*out*/ CertVerifier::ocsp_download_config* odc,
 
   // 0 = disabled, otherwise enabled
   *odc = Preferences::GetInt("security.OCSP.enabled", 1)
-       ? CertVerifier::ocsp_on
-       : CertVerifier::ocsp_off;
+       ? CertVerifier::ocspOn
+       : CertVerifier::ocspOff;
 
   *osc = Preferences::GetBool("security.OCSP.require", false)
-       ? CertVerifier::ocsp_strict
-       : CertVerifier::ocsp_relaxed;
+       ? CertVerifier::ocspStrict
+       : CertVerifier::ocspRelaxed;
 
   // XXX: Always use POST for OCSP; see bug 871954 for undoing this.
   *ogc = Preferences::GetBool("security.OCSP.GET.enabled", false)
-       ? CertVerifier::ocsp_get_enabled
-       : CertVerifier::ocsp_get_disabled;
+       ? CertVerifier::ocspGetEnabled
+       : CertVerifier::ocspGetDisabled;
 
   SSL_ClearSessionCache();
 }
@@ -624,6 +628,7 @@ typedef struct {
   const char* pref;
   long id;
   bool enabledByDefault;
+  bool weak;
 } CipherPref;
 
 // Update the switch statement in HandshakeCallback in nsNSSCallbacks.cpp when
@@ -643,58 +648,92 @@ static const CipherPref sCipherPrefs[] = {
  { "security.ssl3.ecdhe_ecdsa_aes_256_sha",
    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA, true },
 
- { "security.ssl3.ecdhe_rsa_des_ede3_sha",
-   TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA, false }, // deprecated (3DES)
-
  { "security.ssl3.dhe_rsa_aes_128_sha",
    TLS_DHE_RSA_WITH_AES_128_CBC_SHA, true },
-
- { "security.ssl3.dhe_rsa_camellia_128_sha",
-   TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA, false }, // deprecated (Camellia)
 
  { "security.ssl3.dhe_rsa_aes_256_sha",
    TLS_DHE_RSA_WITH_AES_256_CBC_SHA, true },
 
- { "security.ssl3.dhe_rsa_camellia_256_sha",
-   TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA, false }, // deprecated (Camellia)
-
- { "security.ssl3.dhe_rsa_des_ede3_sha",
-   TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA, false }, // deprecated (3DES)
-
- { "security.ssl3.dhe_dss_aes_128_sha",
-   TLS_DHE_DSS_WITH_AES_128_CBC_SHA, true }, // deprecated (DSS)
- { "security.ssl3.dhe_dss_aes_256_sha",
-   TLS_DHE_DSS_WITH_AES_256_CBC_SHA, false }, // deprecated (DSS)
-
  { "security.ssl3.ecdhe_rsa_rc4_128_sha",
-   TLS_ECDHE_RSA_WITH_RC4_128_SHA, true }, // deprecated (RC4)
+   TLS_ECDHE_RSA_WITH_RC4_128_SHA, true, true }, // deprecated (RC4)
  { "security.ssl3.ecdhe_ecdsa_rc4_128_sha",
-   TLS_ECDHE_ECDSA_WITH_RC4_128_SHA, true }, // deprecated (RC4)
+   TLS_ECDHE_ECDSA_WITH_RC4_128_SHA, true, true }, // deprecated (RC4)
 
  { "security.ssl3.rsa_aes_128_sha",
    TLS_RSA_WITH_AES_128_CBC_SHA, true }, // deprecated (RSA key exchange)
- { "security.ssl3.rsa_camellia_128_sha",
-   TLS_RSA_WITH_CAMELLIA_128_CBC_SHA, false }, // deprecated (RSA, Camellia)
  { "security.ssl3.rsa_aes_256_sha",
    TLS_RSA_WITH_AES_256_CBC_SHA, true }, // deprecated (RSA key exchange)
- { "security.ssl3.rsa_camellia_256_sha",
-   TLS_RSA_WITH_CAMELLIA_256_CBC_SHA, false }, // deprecated (RSA, Camellia)
  { "security.ssl3.rsa_des_ede3_sha",
    TLS_RSA_WITH_3DES_EDE_CBC_SHA, true }, // deprecated (RSA key exchange, 3DES)
 
  { "security.ssl3.rsa_rc4_128_sha",
-   TLS_RSA_WITH_RC4_128_SHA, true }, // deprecated (RSA key exchange, RC4)
+   TLS_RSA_WITH_RC4_128_SHA, true, true }, // deprecated (RSA key exchange, RC4)
  { "security.ssl3.rsa_rc4_128_md5",
-   TLS_RSA_WITH_RC4_128_MD5, true }, // deprecated (RSA key exchange, RC4, HMAC-MD5)
+   TLS_RSA_WITH_RC4_128_MD5, true, true }, // deprecated (RSA key exchange, RC4, HMAC-MD5)
 
  // All the rest are disabled by default
 
  { nullptr, 0 } // end marker
 };
 
+// Bit flags indicating what weak ciphers are enabled.
+// The bit index will correspond to the index in sCipherPrefs.
+// Wrtten by the main thread, read from any threads.
+static Atomic<uint32_t> sEnabledWeakCiphers;
+static_assert(MOZ_ARRAY_LENGTH(sCipherPrefs) - 1 <= sizeof(uint32_t) * CHAR_BIT,
+              "too many cipher suites");
+
+/*static*/ bool
+nsNSSComponent::AreAnyWeakCiphersEnabled()
+{
+  return !!sEnabledWeakCiphers;
+}
+
+/*static*/ void
+nsNSSComponent::UseWeakCiphersOnSocket(PRFileDesc* fd)
+{
+  const uint32_t enabledWeakCiphers = sEnabledWeakCiphers;
+  const CipherPref* const cp = sCipherPrefs;
+  for (size_t i = 0; cp[i].pref; ++i) {
+    if (enabledWeakCiphers & ((uint32_t)1 << i)) {
+      SSL_CipherPrefSet(fd, cp[i].id, true);
+    }
+  }
+}
+
+// This function will convert from pref values like 0, 1, ...
+// to the internal values of SSL_LIBRARY_VERSION_3_0,
+// SSL_LIBRARY_VERSION_TLS_1_0, ...
+/*static*/ void
+nsNSSComponent::FillTLSVersionRange(SSLVersionRange& rangeOut,
+                                    uint32_t minFromPrefs,
+                                    uint32_t maxFromPrefs,
+                                    SSLVersionRange defaults)
+{
+  rangeOut = defaults;
+  // determine what versions are supported
+  SSLVersionRange range;
+  if (SSL_VersionRangeGetSupported(ssl_variant_stream, &range)
+        != SECSuccess) {
+    return;
+  }
+
+  // convert min/maxFromPrefs to the internal representation
+  minFromPrefs += SSL_LIBRARY_VERSION_3_0;
+  maxFromPrefs += SSL_LIBRARY_VERSION_3_0;
+  // if min/maxFromPrefs are invalid, use defaults
+  if (minFromPrefs > maxFromPrefs ||
+      minFromPrefs < range.min || maxFromPrefs > range.max) {
+    return;
+  }
+
+  // fill out rangeOut
+  rangeOut.min = (uint16_t) minFromPrefs;
+  rangeOut.max = (uint16_t) maxFromPrefs;
+}
+
 static const int32_t OCSP_ENABLED_DEFAULT = 1;
 static const bool REQUIRE_SAFE_NEGOTIATION_DEFAULT = false;
-static const bool ALLOW_UNRESTRICTED_RENEGO_DEFAULT = false;
 static const bool FALSE_START_ENABLED_DEFAULT = true;
 static const bool NPN_ENABLED_DEFAULT = true;
 static const bool ALPN_ENABLED_DEFAULT = false;
@@ -773,12 +812,27 @@ CipherSuiteChangeObserver::Observe(nsISupports* aSubject,
   if (nsCRT::strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID) == 0) {
     NS_ConvertUTF16toUTF8  prefName(someData);
     // Look through the cipher table and set according to pref setting
-    for (const CipherPref* cp = sCipherPrefs; cp->pref; ++cp) {
-      if (prefName.Equals(cp->pref)) {
-        bool cipherEnabled = Preferences::GetBool(cp->pref,
-                                                  cp->enabledByDefault);
-        SSL_CipherPrefSetDefault(cp->id, cipherEnabled);
-        SSL_ClearSessionCache();
+    const CipherPref* const cp = sCipherPrefs;
+    for (size_t i = 0; cp[i].pref; ++i) {
+      if (prefName.Equals(cp[i].pref)) {
+        bool cipherEnabled = Preferences::GetBool(cp[i].pref,
+                                                  cp[i].enabledByDefault);
+        if (cp[i].weak) {
+          // Weak ciphers will not be used by default even if they
+          // are enabled in prefs. They are only used on specific
+          // sockets as a part of a fallback mechanism.
+          // Only the main thread will change sEnabledWeakCiphers.
+          uint32_t enabledWeakCiphers = sEnabledWeakCiphers;
+          if (cipherEnabled) {
+            enabledWeakCiphers |= ((uint32_t)1 << i);
+          } else {
+            enabledWeakCiphers &= ~((uint32_t)1 << i);
+          }
+          sEnabledWeakCiphers = enabledWeakCiphers;
+        } else {
+          SSL_CipherPrefSetDefault(cp[i].id, cipherEnabled);
+          SSL_ClearSessionCache();
+        }
         break;
       }
     }
@@ -821,9 +875,9 @@ void nsNSSComponent::setValidationOptions(bool isInitialSetting,
     pinningMode = CertVerifier::pinningDisabled;
   }
 
-  CertVerifier::ocsp_download_config odc;
-  CertVerifier::ocsp_strict_config osc;
-  CertVerifier::ocsp_get_config ogc;
+  CertVerifier::OcspDownloadConfig odc;
+  CertVerifier::OcspStrictConfig osc;
+  CertVerifier::OcspGetConfig ogc;
 
   GetOCSPBehaviorFromPrefs(&odc, &osc, &ogc, lock);
   mDefaultCertVerifier = new SharedCertVerifier(odc, osc, ogc, pinningMode);
@@ -835,29 +889,26 @@ nsresult
 nsNSSComponent::setEnabledTLSVersions()
 {
   // keep these values in sync with security-prefs.js
-  static const int32_t PSM_DEFAULT_MIN_TLS_VERSION = 1;
-  static const int32_t PSM_DEFAULT_MAX_TLS_VERSION = 3;
-
-  int32_t minVersion = Preferences::GetInt("security.tls.version.min",
-                                           PSM_DEFAULT_MIN_TLS_VERSION);
-  int32_t maxVersion = Preferences::GetInt("security.tls.version.max",
-                                           PSM_DEFAULT_MAX_TLS_VERSION);
-
   // 0 means SSL 3.0, 1 means TLS 1.0, 2 means TLS 1.1, etc.
-  minVersion += SSL_LIBRARY_VERSION_3_0;
-  maxVersion += SSL_LIBRARY_VERSION_3_0;
+  static const uint32_t PSM_DEFAULT_MIN_TLS_VERSION = 1;
+  static const uint32_t PSM_DEFAULT_MAX_TLS_VERSION = 3;
 
-  SSLVersionRange range = { (uint16_t) minVersion, (uint16_t) maxVersion };
+  uint32_t minFromPrefs = Preferences::GetUint("security.tls.version.min",
+                                               PSM_DEFAULT_MIN_TLS_VERSION);
+  uint32_t maxFromPrefs = Preferences::GetUint("security.tls.version.max",
+                                               PSM_DEFAULT_MAX_TLS_VERSION);
 
-  if (minVersion != (int32_t) range.min || // prevent truncation
-      maxVersion != (int32_t) range.max || // prevent truncation
-      SSL_VersionRangeSetDefault(ssl_variant_stream, &range) != SECSuccess) {
-    range.min = SSL_LIBRARY_VERSION_3_0 + PSM_DEFAULT_MIN_TLS_VERSION;
-    range.max = SSL_LIBRARY_VERSION_3_0 + PSM_DEFAULT_MAX_TLS_VERSION;
-    if (SSL_VersionRangeSetDefault(ssl_variant_stream, &range)
-          != SECSuccess) {
-      return NS_ERROR_UNEXPECTED;
-    }
+  SSLVersionRange defaults = {
+    SSL_LIBRARY_VERSION_3_0 + PSM_DEFAULT_MIN_TLS_VERSION,
+    SSL_LIBRARY_VERSION_3_0 + PSM_DEFAULT_MAX_TLS_VERSION
+  };
+  SSLVersionRange filledInRange;
+  FillTLSVersionRange(filledInRange, minFromPrefs, maxFromPrefs, defaults);
+
+  SECStatus srv =
+    SSL_VersionRangeSetDefault(ssl_variant_stream, &filledInRange);
+  if (srv != SECSuccess) {
+    return NS_ERROR_FAILURE;
   }
 
   return NS_OK;
@@ -1002,13 +1053,7 @@ nsNSSComponent::InitializeNSS()
                          REQUIRE_SAFE_NEGOTIATION_DEFAULT);
   SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION, requireSafeNegotiation);
 
-  bool allowUnrestrictedRenego =
-    Preferences::GetBool("security.ssl.allow_unrestricted_renego_everywhere__temporarily_available_pref",
-                         ALLOW_UNRESTRICTED_RENEGO_DEFAULT);
-  SSL_OptionSetDefault(SSL_ENABLE_RENEGOTIATION,
-                       allowUnrestrictedRenego ?
-                         SSL_RENEGOTIATE_UNRESTRICTED :
-                         SSL_RENEGOTIATE_REQUIRES_XTN);
+  SSL_OptionSetDefault(SSL_ENABLE_RENEGOTIATION, SSL_RENEGOTIATE_REQUIRES_XTN);
 
   SSL_OptionSetDefault(SSL_ENABLE_FALSE_START,
                        Preferences::GetBool("security.ssl.enable_false_start",
@@ -1027,6 +1072,12 @@ nsNSSComponent::InitializeNSS()
 
   if (NS_FAILED(InitializeCipherSuite())) {
     PR_LOG(gPIPNSSLog, PR_LOG_ERROR, ("Unable to initialize cipher suite settings\n"));
+    return NS_ERROR_FAILURE;
+  }
+
+  // ensure the CertBlocklist is initialised
+  nsCOMPtr<nsICertBlocklist> certList = do_GetService(NS_CERTBLOCKLIST_CONTRACTID);
+  if (!certList) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1094,8 +1145,6 @@ nsNSSComponent::ShutdownNSS()
   }
 }
 
-static const bool SEND_LM_DEFAULT = false;
-
 NS_IMETHODIMP
 nsNSSComponent::Init()
 {
@@ -1130,10 +1179,6 @@ nsNSSComponent::Init()
     mNSSErrorsBundle->GetStringFromName(dummy_name.get(),
                                         getter_Copies(result));
   }
-
-  bool sendLM = Preferences::GetBool("network.ntlm.send-lm-response",
-                                     SEND_LM_DEFAULT);
-  nsNTLMAuthModule::SetSendLM(sendLM);
 
   // Do that before NSS init, to make sure we won't get unloaded.
   RegisterObservers();
@@ -1285,14 +1330,6 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
         Preferences::GetBool("security.ssl.require_safe_negotiation",
                              REQUIRE_SAFE_NEGOTIATION_DEFAULT);
       SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION, requireSafeNegotiation);
-    } else if (prefName.EqualsLiteral("security.ssl.allow_unrestricted_renego_everywhere__temporarily_available_pref")) {
-      bool allowUnrestrictedRenego =
-        Preferences::GetBool("security.ssl.allow_unrestricted_renego_everywhere__temporarily_available_pref",
-                             ALLOW_UNRESTRICTED_RENEGO_DEFAULT);
-      SSL_OptionSetDefault(SSL_ENABLE_RENEGOTIATION,
-                           allowUnrestrictedRenego ?
-                             SSL_RENEGOTIATE_UNRESTRICTED :
-                             SSL_RENEGOTIATE_REQUIRES_XTN);
     } else if (prefName.EqualsLiteral("security.ssl.enable_false_start")) {
       SSL_OptionSetDefault(SSL_ENABLE_FALSE_START,
                            Preferences::GetBool("security.ssl.enable_false_start",
@@ -1314,11 +1351,6 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
                prefName.EqualsLiteral("security.cert_pinning.enforcement_level")) {
       MutexAutoLock lock(mutex);
       setValidationOptions(false, lock);
-    } else if (prefName.EqualsLiteral("network.ntlm.send-lm-response")) {
-      bool sendLM = Preferences::GetBool("network.ntlm.send-lm-response",
-                                         SEND_LM_DEFAULT);
-      nsNTLMAuthModule::SetSendLM(sendLM);
-      clearSessionCache = false;
     } else {
       clearSessionCache = false;
     }
@@ -1646,10 +1678,22 @@ InitializeCipherSuite()
   }
 
   // Now only set SSL/TLS ciphers we knew about at compile time
-  for (const CipherPref* cp = sCipherPrefs; cp->pref; ++cp) {
-    bool cipherEnabled = Preferences::GetBool(cp->pref, cp->enabledByDefault);
-    SSL_CipherPrefSetDefault(cp->id, cipherEnabled);
+  uint32_t enabledWeakCiphers = 0;
+  const CipherPref* const cp = sCipherPrefs;
+  for (size_t i = 0; cp[i].pref; ++i) {
+    bool cipherEnabled = Preferences::GetBool(cp[i].pref,
+                                              cp[i].enabledByDefault);
+    if (cp[i].weak) {
+      // Weak ciphers are not used by default. See the comment
+      // in CipherSuiteChangeObserver::Observe for details.
+      if (cipherEnabled) {
+        enabledWeakCiphers |= ((uint32_t)1 << i);
+      }
+    } else {
+      SSL_CipherPrefSetDefault(cp[i].id, cipherEnabled);
+    }
   }
+  sEnabledWeakCiphers = enabledWeakCiphers;
 
   // Enable ciphers for PKCS#12
   SEC_PKCS12EnableCipher(PKCS12_RC4_40, 1);

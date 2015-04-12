@@ -24,12 +24,12 @@ namespace css {
 class GroupRule;
 
 #define DECL_STYLE_RULE_INHERIT_NO_DOMRULE  \
-virtual void MapRuleInfoInto(nsRuleData* aRuleData);
+virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
 
-#define DECL_STYLE_RULE_INHERIT                   \
-  DECL_STYLE_RULE_INHERIT_NO_DOMRULE              \
-  virtual nsIDOMCSSRule* GetDOMRule();            \
-  virtual nsIDOMCSSRule* GetExistingDOMRule();
+#define DECL_STYLE_RULE_INHERIT                            \
+  DECL_STYLE_RULE_INHERIT_NO_DOMRULE                       \
+  virtual nsIDOMCSSRule* GetDOMRule() override;        \
+  virtual nsIDOMCSSRule* GetExistingDOMRule() override;
 
 class Rule : public nsIStyleRule {
 protected:

@@ -18,7 +18,6 @@ UNIFIED_SOURCES += [
     'nsMathMLmmultiscriptsFrame.cpp',
     'nsMathMLmoFrame.cpp',
     'nsMathMLmpaddedFrame.cpp',
-    'nsMathMLmphantomFrame.cpp',
     'nsMathMLmrootFrame.cpp',
     'nsMathMLmrowFrame.cpp',
     'nsMathMLmspaceFrame.cpp',
@@ -45,7 +44,7 @@ LOCAL_INCLUDES += [
     '../style',
     '../tables',
     '../xul',
-    '/content/base/src',
+    '/dom/base',
     '/dom/mathml',
 ]
 

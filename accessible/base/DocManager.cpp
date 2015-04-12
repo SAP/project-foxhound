@@ -9,8 +9,11 @@
 #include "ARIAMap.h"
 #include "DocAccessible-inl.h"
 #include "DocAccessibleChild.h"
+#include "DocAccessibleParent.h"
 #include "nsAccessibilityService.h"
+#include "Platform.h"
 #include "RootAccessibleWrap.h"
+#include "xpcAccessibleDocument.h"
 
 #ifdef A11Y_LOG
 #include "Logging.h"
@@ -35,12 +38,14 @@ using namespace mozilla;
 using namespace mozilla::a11y;
 using namespace mozilla::dom;
 
+StaticAutoPtr<nsTArray<DocAccessibleParent*>> DocManager::sRemoteDocuments;
+
 ////////////////////////////////////////////////////////////////////////////////
 // DocManager
 ////////////////////////////////////////////////////////////////////////////////
 
 DocManager::DocManager()
-  : mDocAccessibleCache(2)
+  : mDocAccessibleCache(2), mXPCDocumentCache(0)
 {
 }
 
@@ -73,6 +78,34 @@ DocManager::FindAccessibleInCache(nsINode* aNode) const
                                     static_cast<void*>(&arg));
 
   return arg.mAccessible;
+}
+
+void
+DocManager::NotifyOfDocumentShutdown(DocAccessible* aDocument,
+                                     nsIDocument* aDOMDocument)
+{
+  xpcAccessibleDocument* xpcDoc = mXPCDocumentCache.GetWeak(aDocument);
+  if (xpcDoc) {
+    xpcDoc->Shutdown();
+    mXPCDocumentCache.Remove(aDocument);
+  }
+
+  mDocAccessibleCache.Remove(aDOMDocument);
+  RemoveListeners(aDOMDocument);
+}
+
+xpcAccessibleDocument*
+DocManager::GetXPCDocument(DocAccessible* aDocument)
+{
+  if (!aDocument)
+    return nullptr;
+
+  xpcAccessibleDocument* xpcDoc = mXPCDocumentCache.GetWeak(aDocument);
+  if (!xpcDoc) {
+    xpcDoc = new xpcAccessibleDocument(aDocument);
+    mXPCDocumentCache.Put(aDocument, xpcDoc);
+  }
+  return xpcDoc;
 }
 
 #ifdef DEBUG
@@ -504,3 +537,17 @@ DocManager::SearchIfDocIsRefreshing(const nsIDocument* aKey,
   return PL_DHASH_NEXT;
 }
 #endif
+
+void
+DocManager::RemoteDocAdded(DocAccessibleParent* aDoc)
+{
+  if (!sRemoteDocuments) {
+    sRemoteDocuments = new nsTArray<DocAccessibleParent*>;
+    ClearOnShutdown(&sRemoteDocuments);
+  }
+
+  MOZ_ASSERT(!sRemoteDocuments->Contains(aDoc),
+      "How did we already have the doc!");
+  sRemoteDocuments->AppendElement(aDoc);
+  ProxyCreated(aDoc, 0);
+}

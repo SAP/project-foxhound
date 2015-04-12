@@ -7,7 +7,7 @@
 #define GFX_ContainerLayerComposite_H
 
 #include "Layers.h"                     // for Layer (ptr only), etc
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/UniquePtr.h"          // for UniquePtr
 #include "mozilla/layers/LayerManagerComposite.h"
 
@@ -48,7 +48,7 @@ class ContainerLayerComposite : public ContainerLayer,
                                              const RenderTargetIntRect& aClipRect);
   template<class ContainerT>
   friend RefPtr<CompositingRenderTarget>
-  CreateTemporaryTarget(ContainerT* aContainer,
+  CreateOrRecycleTarget(ContainerT* aContainer,
                         LayerManagerComposite* aManager,
                         const RenderTargetIntRect& aClipRect);
 
@@ -60,9 +60,9 @@ protected:
 
 public:
   // LayerComposite Implementation
-  virtual Layer* GetLayer() MOZ_OVERRIDE { return this; }
+  virtual Layer* GetLayer() override { return this; }
 
-  virtual void SetLayerManager(LayerManagerComposite* aManager) MOZ_OVERRIDE
+  virtual void SetLayerManager(LayerManagerComposite* aManager) override
   {
     LayerComposite::SetLayerManager(aManager);
     mManager = aManager;
@@ -73,27 +73,47 @@ public:
     }
   }
 
-  virtual void Destroy() MOZ_OVERRIDE;
+  virtual void Destroy() override;
 
-  LayerComposite* GetFirstChildComposite();
+  LayerComposite* GetFirstChildComposite() override;
 
-  virtual void RenderLayer(const nsIntRect& aClipRect) MOZ_OVERRIDE;
-  virtual void Prepare(const RenderTargetIntRect& aClipRect) MOZ_OVERRIDE;
+  virtual void RenderLayer(const nsIntRect& aClipRect) override;
+  virtual void Prepare(const RenderTargetIntRect& aClipRect) override;
 
-  virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) MOZ_OVERRIDE
+  virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) override
   {
     DefaultComputeEffectiveTransforms(aTransformToSurface);
   }
 
-  virtual void CleanupResources() MOZ_OVERRIDE;
+  virtual void CleanupResources() override;
 
-  virtual LayerComposite* AsLayerComposite() MOZ_OVERRIDE { return this; }
+  virtual LayerComposite* AsLayerComposite() override { return this; }
 
   // container layers don't use a compositable
-  CompositableHost* GetCompositableHost() MOZ_OVERRIDE { return nullptr; }
+  CompositableHost* GetCompositableHost() override { return nullptr; }
 
-  virtual const char* Name() const MOZ_OVERRIDE { return "ContainerLayerComposite"; }
+  // If the layer is marked as scale-to-resolution, add a post-scale
+  // to the layer's transform equal to the pres shell resolution we're
+  // scaling to. This cancels out the post scale of '1 / resolution'
+  // added by Layout. TODO: It would be nice to get rid of both of these
+  // post-scales.
+  virtual float GetPostXScale() const override {
+    if (mScaleToResolution) {
+      return mPostXScale * mPresShellResolution;
+    }
+    return mPostXScale;
+  }
+  virtual float GetPostYScale() const override {
+    if (mScaleToResolution) {
+      return mPostYScale * mPresShellResolution;
+    }
+    return mPostYScale;
+  }
+
+  virtual const char* Name() const override { return "ContainerLayerComposite"; }
   UniquePtr<PreparedData> mPrepared;
+
+  RefPtr<CompositingRenderTarget> mLastIntermediateSurface;
 };
 
 class RefLayerComposite : public RefLayer,
@@ -135,29 +155,30 @@ protected:
 
 public:
   /** LayerOGL implementation */
-  Layer* GetLayer() MOZ_OVERRIDE { return this; }
+  Layer* GetLayer() override { return this; }
 
-  void Destroy() MOZ_OVERRIDE;
+  void Destroy() override;
 
-  LayerComposite* GetFirstChildComposite();
+  LayerComposite* GetFirstChildComposite() override;
 
-  virtual void RenderLayer(const nsIntRect& aClipRect) MOZ_OVERRIDE;
-  virtual void Prepare(const RenderTargetIntRect& aClipRect) MOZ_OVERRIDE;
+  virtual void RenderLayer(const nsIntRect& aClipRect) override;
+  virtual void Prepare(const RenderTargetIntRect& aClipRect) override;
 
-  virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) MOZ_OVERRIDE
+  virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) override
   {
     DefaultComputeEffectiveTransforms(aTransformToSurface);
   }
 
-  virtual void CleanupResources() MOZ_OVERRIDE;
+  virtual void CleanupResources() override;
 
-  virtual LayerComposite* AsLayerComposite() MOZ_OVERRIDE { return this; }
+  virtual LayerComposite* AsLayerComposite() override { return this; }
 
   // ref layers don't use a compositable
-  CompositableHost* GetCompositableHost() MOZ_OVERRIDE { return nullptr; }
+  CompositableHost* GetCompositableHost() override { return nullptr; }
 
-  virtual const char* Name() const MOZ_OVERRIDE { return "RefLayerComposite"; }
+  virtual const char* Name() const override { return "RefLayerComposite"; }
   UniquePtr<PreparedData> mPrepared;
+  RefPtr<CompositingRenderTarget> mLastIntermediateSurface;
 };
 
 } /* layers */

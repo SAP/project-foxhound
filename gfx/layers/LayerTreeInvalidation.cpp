@@ -30,7 +30,7 @@ namespace mozilla {
 namespace layers {
 
 struct LayerPropertiesBase;
-UniquePtr<LayerPropertiesBase> CloneLayerTreePropertiesInternal(Layer* aRoot);
+UniquePtr<LayerPropertiesBase> CloneLayerTreePropertiesInternal(Layer* aRoot, bool aIsMask = false);
 
 static nsIntRect
 TransformRect(const nsIntRect& aRect, const Matrix4x4& aTransform)
@@ -109,7 +109,7 @@ struct LayerPropertiesBase : public LayerProperties
   {
     MOZ_COUNT_CTOR(LayerPropertiesBase);
     if (aLayer->GetMaskLayer()) {
-      mMaskLayer = CloneLayerTreePropertiesInternal(aLayer->GetMaskLayer());
+      mMaskLayer = CloneLayerTreePropertiesInternal(aLayer->GetMaskLayer(), true);
     }
     if (mUseClipRect) {
       mClipRect = *aLayer->GetClipRect();
@@ -151,13 +151,7 @@ struct LayerPropertiesBase : public LayerProperties
       result = OldTransformedBounds();
       AddRegion(result, NewTransformedBounds());
 
-      // If we don't have to generate invalidations separately for child
-      // layers then we can just stop here since we've already invalidated the entire
-      // old and new bounds.
-      if (!aCallback) {
-        ClearInvalidations(mLayer);
-        return result;
-      }
+      // We can't bail out early because we need to update mChildrenChanged.
     }
 
     AddRegion(result, ComputeChangeInternal(aCallback, aGeometryChanged));
@@ -227,19 +221,16 @@ struct ContainerLayerProperties : public LayerPropertiesBase
     ContainerLayer* container = mLayer->AsContainerLayer();
     nsIntRegion result;
 
+    bool childrenChanged = false;
+
     if (mPreXScale != container->GetPreXScale() ||
         mPreYScale != container->GetPreYScale()) {
       aGeometryChanged = true;
       result = OldTransformedBounds();
       AddRegion(result, NewTransformedBounds());
+      childrenChanged = true;
 
-      // If we don't have to generate invalidations separately for child
-      // layers then we can just stop here since we've already invalidated the entire
-      // old and new bounds.
-      if (!aCallback) {
-        ClearInvalidations(mLayer);
-        return result;
-      }
+      // Can't bail out early, we need to update the child container layers
     }
 
     // A low frame rate is especially visible to users when scrolling, so we
@@ -270,13 +261,18 @@ struct ContainerLayerProperties : public LayerPropertiesBase
             // encounter them in the new list):
             for (uint32_t j = i; j < childsOldIndex; ++j) {
               AddRegion(result, mChildren[j]->OldTransformedBounds());
+              childrenChanged |= true;
             }
-            // Invalidate any regions of the child that have changed: 
-            AddRegion(result, mChildren[childsOldIndex]->ComputeChange(aCallback, aGeometryChanged));
+            // Invalidate any regions of the child that have changed:
+            nsIntRegion region = mChildren[childsOldIndex]->ComputeChange(aCallback, aGeometryChanged);
             i = childsOldIndex + 1;
+            if (!region.IsEmpty()) {
+              AddRegion(result, region);
+              childrenChanged |= true;
+            }
           } else {
             // We've already seen this child in mChildren (which means it must
-            // have been reordered) and invalidated its old area. We need to 
+            // have been reordered) and invalidated its old area. We need to
             // invalidate its new area too:
             invalidateChildsCurrentArea = true;
           }
@@ -297,10 +293,12 @@ struct ContainerLayerProperties : public LayerPropertiesBase
           ClearInvalidations(child);
         }
       }
+      childrenChanged |= invalidateChildsCurrentArea;
     }
 
     // Process remaining removed children.
     while (i < mChildren.Length()) {
+      childrenChanged |= true;
       AddRegion(result, mChildren[i]->OldTransformedBounds());
       i++;
     }
@@ -309,7 +307,12 @@ struct ContainerLayerProperties : public LayerPropertiesBase
       aCallback(container, result);
     }
 
+    if (childrenChanged) {
+      container->SetChildrenChanged(true);
+    }
+
     result.Transform(gfx::To3DMatrix(mLayer->GetLocalTransform()));
+
     return result;
   }
 
@@ -352,12 +355,13 @@ struct ColorLayerProperties : public LayerPropertiesBase
 
 struct ImageLayerProperties : public LayerPropertiesBase
 {
-  explicit ImageLayerProperties(ImageLayer* aImage)
+  explicit ImageLayerProperties(ImageLayer* aImage, bool aIsMask)
     : LayerPropertiesBase(aImage)
     , mContainer(aImage->GetContainer())
     , mFilter(aImage->GetFilter())
     , mScaleToSize(aImage->GetScaleToSize())
     , mScaleMode(aImage->GetScaleMode())
+    , mIsMask(aIsMask)
   {
   }
 
@@ -373,12 +377,23 @@ struct ImageLayerProperties : public LayerPropertiesBase
       return result;
     }
 
-    if (mContainer != imageLayer->GetContainer() ||
+    ImageContainer* container = imageLayer->GetContainer();
+    if (mContainer != container ||
         mFilter != imageLayer->GetFilter() ||
         mScaleToSize != imageLayer->GetScaleToSize() ||
         mScaleMode != imageLayer->GetScaleMode()) {
       aGeometryChanged = true;
-      return NewTransformedBounds();
+
+      if (mIsMask) {
+        // Mask layers have an empty visible region, so we have to
+        // use the image size instead.
+        IntSize size = container->GetCurrentSize();
+        nsIntRect rect(0, 0, size.width, size.height);
+        return TransformRect(rect, mLayer->GetLocalTransform());
+
+      } else {
+        return NewTransformedBounds();
+      }
     }
 
     return nsIntRect();
@@ -388,14 +403,17 @@ struct ImageLayerProperties : public LayerPropertiesBase
   GraphicsFilter mFilter;
   gfx::IntSize mScaleToSize;
   ScaleMode mScaleMode;
+  bool mIsMask;
 };
 
 UniquePtr<LayerPropertiesBase>
-CloneLayerTreePropertiesInternal(Layer* aRoot)
+CloneLayerTreePropertiesInternal(Layer* aRoot, bool aIsMask /* = false */)
 {
   if (!aRoot) {
     return MakeUnique<LayerPropertiesBase>();
   }
+
+  MOZ_ASSERT(!aIsMask || aRoot->GetType() == Layer::TYPE_IMAGE);
 
   switch (aRoot->GetType()) {
     case Layer::TYPE_CONTAINER:
@@ -404,7 +422,7 @@ CloneLayerTreePropertiesInternal(Layer* aRoot)
     case Layer::TYPE_COLOR:
       return MakeUnique<ColorLayerProperties>(static_cast<ColorLayer*>(aRoot));
     case Layer::TYPE_IMAGE:
-      return MakeUnique<ImageLayerProperties>(static_cast<ImageLayer*>(aRoot));
+      return MakeUnique<ImageLayerProperties>(static_cast<ImageLayer*>(aRoot), aIsMask);
     default:
       return MakeUnique<LayerPropertiesBase>(aRoot);
   }

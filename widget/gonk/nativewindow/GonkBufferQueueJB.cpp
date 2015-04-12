@@ -424,6 +424,7 @@ status_t GonkBufferQueue::dequeueBuffer(int *outBuf, sp<Fence>* outFence,
                                         gfx::SurfaceFormat::UNKNOWN,
                                         gfx::BackendType::NONE,
                                         TextureFlags::DEALLOCATE_CLIENT);
+        textureClient->SetIsOpaque(true);
         usage |= GraphicBuffer::USAGE_HW_TEXTURE;
         bool result = textureClient->AllocateGralloc(IntSize(w, h), format, usage);
         sp<GraphicBuffer> graphicBuffer = textureClient->GetGraphicBuffer();
@@ -700,13 +701,13 @@ status_t GonkBufferQueue::disconnect(int api) {
     return err;
 }
 
-void GonkBufferQueue::dump(String8& result) const
+void GonkBufferQueue::dumpToString(String8& result) const
 {
     char buffer[1024];
-    GonkBufferQueue::dump(result, "", buffer, 1024);
+    GonkBufferQueue::dumpToString(result, "", buffer, 1024);
 }
 
-void GonkBufferQueue::dump(String8& result, const char* prefix,
+void GonkBufferQueue::dumpToString(String8& result, const char* prefix,
         char* buffer, size_t SIZE) const
 {
     Mutex::Autolock _l(mMutex);

@@ -51,7 +51,6 @@ EXPORTS += [
     'jsfriendapi.h',
     'jsprf.h',
     'jsprototypes.h',
-    'jsproxy.h',
     'jspubtd.h',
     'jstypes.h',
     'jsversion.h',
@@ -68,6 +67,7 @@ EXPORTS.js += [
     '../public/CallNonGenericMethod.h',
     '../public/CharacterEncoding.h',
     '../public/Class.h',
+    '../public/Conversions.h',
     '../public/Date.h',
     '../public/Debug.h',
     '../public/GCAPI.h',
@@ -79,12 +79,13 @@ EXPORTS.js += [
     '../public/Principals.h',
     '../public/ProfilingFrameIterator.h',
     '../public/ProfilingStack.h',
-    '../public/PropertyKey.h',
+    '../public/Proxy.h',
     '../public/RequiredDefines.h',
     '../public/RootingAPI.h',
     '../public/SliceBudget.h',
     '../public/StructuredClone.h',
     '../public/TracingAPI.h',
+    '../public/TrackedOptimizationInfo.h',
     '../public/TypeDecls.h',
     '../public/UbiNode.h',
     '../public/UbiNodeTraverse.h',
@@ -100,6 +101,7 @@ UNIFIED_SOURCES += [
     'asmjs/AsmJSModule.cpp',
     'asmjs/AsmJSSignalHandlers.cpp',
     'asmjs/AsmJSValidate.cpp',
+    'builtin/AtomicsObject.cpp',
     'builtin/Eval.cpp',
     'builtin/Intl.cpp',
     'builtin/MapObject.cpp',
@@ -120,7 +122,6 @@ UNIFIED_SOURCES += [
     'frontend/ParseNode.cpp',
     'frontend/TokenStream.cpp',
     'gc/Barrier.cpp',
-    'gc/ForkJoinNursery.cpp',
     'gc/GCTrace.cpp',
     'gc/Iteration.cpp',
     'gc/Marking.cpp',
@@ -155,6 +156,7 @@ UNIFIED_SOURCES += [
     'jit/C1Spewer.cpp',
     'jit/CodeGenerator.cpp',
     'jit/CompileWrappers.cpp',
+    'jit/Disassembler.cpp',
     'jit/EdgeCaseAnalysis.cpp',
     'jit/EffectiveAddressAnalysis.cpp',
     'jit/ExecutableAllocator.cpp',
@@ -162,10 +164,9 @@ UNIFIED_SOURCES += [
     'jit/IonAnalysis.cpp',
     'jit/IonBuilder.cpp',
     'jit/IonCaches.cpp',
-    'jit/IonFrames.cpp',
-    'jit/IonMacroAssembler.cpp',
     'jit/IonOptimizationLevels.cpp',
     'jit/JitcodeMap.cpp',
+    'jit/JitFrames.cpp',
     'jit/JitOptions.cpp',
     'jit/JitSpewer.cpp',
     'jit/JSONSpewer.cpp',
@@ -175,12 +176,12 @@ UNIFIED_SOURCES += [
     'jit/LiveRangeAllocator.cpp',
     'jit/LoopUnroller.cpp',
     'jit/Lowering.cpp',
+    'jit/MacroAssembler.cpp',
     'jit/MCallOptimize.cpp',
     'jit/MIR.cpp',
     'jit/MIRGraph.cpp',
     'jit/MoveResolver.cpp',
-    'jit/ParallelFunctions.cpp',
-    'jit/ParallelSafetyAnalysis.cpp',
+    'jit/OptimizationTracking.cpp',
     'jit/PerfSpewer.cpp',
     'jit/RangeAnalysis.cpp',
     'jit/Recover.cpp',
@@ -191,6 +192,7 @@ UNIFIED_SOURCES += [
     'jit/shared/BaselineCompiler-shared.cpp',
     'jit/shared/CodeGenerator-shared.cpp',
     'jit/shared/Lowering-shared.cpp',
+    'jit/Sink.cpp',
     'jit/Snapshots.cpp',
     'jit/StupidAllocator.cpp',
     'jit/TypedObjectPrediction.cpp',
@@ -202,14 +204,12 @@ UNIFIED_SOURCES += [
     'jsbool.cpp',
     'jscntxt.cpp',
     'jscompartment.cpp',
-    'jscrashreport.cpp',
     'jsdate.cpp',
     'jsdtoa.cpp',
     'jsexn.cpp',
     'jsfriendapi.cpp',
     'jsfun.cpp',
     'jsgc.cpp',
-    'jsinfer.cpp',
     'jsiter.cpp',
     'jsnativestack.cpp',
     'jsnum.cpp',
@@ -244,7 +244,7 @@ UNIFIED_SOURCES += [
     'vm/Debugger.cpp',
     'vm/DebuggerMemory.cpp',
     'vm/ErrorObject.cpp',
-    'vm/ForkJoin.cpp',
+    'vm/ForOfIterator.cpp',
     'vm/GeneratorObject.cpp',
     'vm/GlobalObject.cpp',
     'vm/HelperThreads.cpp',
@@ -254,9 +254,9 @@ UNIFIED_SOURCES += [
     'vm/MemoryMetrics.cpp',
     'vm/Monitor.cpp',
     'vm/NativeObject.cpp',
+    'vm/ObjectGroup.cpp',
     'vm/PIC.cpp',
     'vm/Probes.cpp',
-    'vm/PropertyKey.cpp',
     'vm/ProxyObject.cpp',
     'vm/RegExpObject.cpp',
     'vm/RegExpStatics.cpp',
@@ -273,9 +273,10 @@ UNIFIED_SOURCES += [
     'vm/StringBuffer.cpp',
     'vm/StructuredClone.cpp',
     'vm/Symbol.cpp',
-    'vm/ThreadPool.cpp',
     'vm/TypedArrayObject.cpp',
+    'vm/TypeInference.cpp',
     'vm/UbiNode.cpp',
+    'vm/UnboxedObject.cpp',
     'vm/Unicode.cpp',
     'vm/Value.cpp',
     'vm/WeakMapPtr.cpp',
@@ -314,6 +315,8 @@ if CONFIG['MOZ_INSTRUMENTS']:
 if CONFIG['ENABLE_TRACE_LOGGING']:
     SOURCES += [
         'vm/TraceLogging.cpp',
+        'vm/TraceLoggingGraph.cpp',
+        'vm/TraceLoggingTypes.cpp',
     ]
 
 if not CONFIG['ENABLE_ION']:
@@ -323,9 +326,11 @@ if not CONFIG['ENABLE_ION']:
 elif CONFIG['JS_CODEGEN_X86'] or CONFIG['JS_CODEGEN_X64']:
     UNIFIED_SOURCES += [
         'jit/shared/Assembler-x86-shared.cpp',
+        'jit/shared/AssemblerBuffer-x86-shared.cpp',
         'jit/shared/BaselineCompiler-x86-shared.cpp',
         'jit/shared/BaselineIC-x86-shared.cpp',
         'jit/shared/CodeGenerator-x86-shared.cpp',
+        'jit/shared/Disassembler-x86-shared.cpp',
         'jit/shared/Lowering-x86-shared.cpp',
         'jit/shared/MacroAssembler-x86-shared.cpp',
         'jit/shared/MoveEmitter-x86-shared.cpp',
@@ -423,10 +428,7 @@ else:
         'perf/pm_stub.cpp'
     ]
 
-# Disable PGO for MSVC 2010 due to unpredictable performance, see
-# bug 1030706.
-if CONFIG['_MSC_VER'] != '1600':
-    MSVC_ENABLE_PGO = True
+MSVC_ENABLE_PGO = True
 
 HostSimplePrograms([
     'host_jskwgen',
@@ -441,7 +443,7 @@ HostSimplePrograms([
 # JS shell would like to link to the static library.
 
 if CONFIG['JS_SHARED_LIBRARY']:
-    SharedLibrary('js')
+    GeckoSharedLibrary('js', linkage=None)
     SHARED_LIBRARY_NAME = CONFIG['JS_LIBRARY_NAME']
     SDK_LIBRARY = True
 else:
@@ -473,11 +475,8 @@ if CONFIG['MOZ_ETW']:
     RESFILE = 'ETWProvider.res'
 
 if CONFIG['NIGHTLY_BUILD']:
-    DEFINES['ENABLE_PARALLEL_JS'] = True
     DEFINES['ENABLE_BINARYDATA'] = True
     DEFINES['ENABLE_SHARED_ARRAY_BUFFER'] = True
-    if CONFIG['ENABLE_ION'] and CONFIG['JSGC_GENERATIONAL_CONFIGURED']:
-        DEFINES['JSGC_FJGENERATIONAL'] = True
 
 DEFINES['EXPORT_JS_API'] = True
 
@@ -520,3 +519,6 @@ if CONFIG['OS_ARCH'] == 'SunOS':
         'nsl',
         'socket',
     ]
+
+if CONFIG['GNU_CXX']:
+    FAIL_ON_WARNINGS = True

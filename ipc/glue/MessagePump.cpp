@@ -41,7 +41,7 @@ static mozilla::DebugOnly<MessagePump::Delegate*> gFirstDelegate;
 namespace mozilla {
 namespace ipc {
 
-class DoWorkRunnable MOZ_FINAL : public nsICancelableRunnable,
+class DoWorkRunnable final : public nsICancelableRunnable,
                                  public nsITimerCallback
 {
 public:
@@ -110,7 +110,7 @@ MessagePump::Run(MessagePump::Delegate* aDelegate)
     // get here if the normal Gecko event loop has been awoken above.
     // Bug 750713
     if (MOZ_LIKELY(AndroidBridge::HasEnv())) {
-        did_work |= mozilla::widget::android::GeckoAppShell::PumpMessageLoop();
+        did_work |= mozilla::widget::GeckoAppShell::PumpMessageLoop();
     }
 #endif
 

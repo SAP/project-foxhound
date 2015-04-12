@@ -28,7 +28,6 @@
 #include "nsISelectionController.h"
 #include "nsISelectionPrivate.h"
 #include "nsISupports.h"
-#include "nsITextControlElement.h"
 #include "nsIWidget.h"
 #include "nsPresContext.h"
 #include "nsThreadUtils.h"
@@ -99,8 +98,11 @@ IMEContentObserver::IMEContentObserver()
 void
 IMEContentObserver::Init(nsIWidget* aWidget,
                          nsPresContext* aPresContext,
-                         nsIContent* aContent)
+                         nsIContent* aContent,
+                         nsIEditor* aEditor)
 {
+  MOZ_ASSERT(aEditor, "aEditor must not be null");
+
   mESM = aPresContext->EventStateManager();
   mESM->OnStartToObserveContent(this);
 
@@ -110,27 +112,8 @@ IMEContentObserver::Init(nsIWidget* aWidget,
     return;
   }
 
-  nsCOMPtr<nsITextControlElement> textControlElement =
-    do_QueryInterface(mEditableNode);
-  if (textControlElement) {
-    // This may fail. For example, <input type="button" contenteditable>
-    mEditor = textControlElement->GetTextEditor();
-    if (!mEditor && mEditableNode->IsContent()) {
-      // The element must be an editing host.
-      nsIContent* editingHost = mEditableNode->AsContent()->GetEditingHost();
-      MOZ_ASSERT(editingHost == mEditableNode,
-                 "found editing host should be mEditableNode");
-      if (editingHost == mEditableNode) {
-        mEditor = nsContentUtils::GetHTMLEditor(aPresContext);
-      }
-    }
-  } else {
-    mEditor = nsContentUtils::GetHTMLEditor(aPresContext);
-  }
-  MOZ_ASSERT(mEditor, "Failed to get editor");
-  if (mEditor) {
-    mEditor->AddEditorObserver(this);
-  }
+  mEditor = aEditor;
+  mEditor->AddEditorObserver(this);
 
   nsIPresShell* presShell = aPresContext->PresShell();
 
@@ -383,7 +366,7 @@ IMEContentObserver::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
 }
 
 // Helper class, used for position change notification
-class PositionChangeEvent MOZ_FINAL : public nsRunnable
+class PositionChangeEvent final : public nsRunnable
 {
 public:
   explicit PositionChangeEvent(IMEContentObserver* aDispatcher)
@@ -447,9 +430,11 @@ IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
     default:
       return false;
   }
-  if (NS_WARN_IF(!mWidget)) {
+  if (NS_WARN_IF(!mWidget) || NS_WARN_IF(mWidget->Destroyed())) {
     return false;
   }
+
+  nsRefPtr<IMEContentObserver> kungFuDeathGrip(this);
 
   WidgetQueryContentEvent charAtPt(true, NS_QUERY_CHARACTER_AT_POINT,
                                    aMouseEvent->widget);
@@ -458,6 +443,12 @@ IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
   handler.OnQueryCharacterAtPoint(&charAtPt);
   if (NS_WARN_IF(!charAtPt.mSucceeded) ||
       charAtPt.mReply.mOffset == WidgetQueryContentEvent::NOT_FOUND) {
+    return false;
+  }
+
+  // The widget might be destroyed during querying the content since it
+  // causes flushing layout.
+  if (!mWidget || NS_WARN_IF(mWidget->Destroyed())) {
     return false;
   }
 
@@ -472,9 +463,8 @@ IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
   // The refPt is relative to its widget.
   // We should notify it with offset in the widget.
   if (aMouseEvent->widget != mWidget) {
-    charAtPt.refPoint += LayoutDeviceIntPoint::FromUntyped(
-      aMouseEvent->widget->WidgetToScreenOffset() -
-        mWidget->WidgetToScreenOffset());
+    charAtPt.refPoint += aMouseEvent->widget->WidgetToScreenOffset() -
+      mWidget->WidgetToScreenOffset();
   }
 
   IMENotification notification(NOTIFY_IME_OF_MOUSE_BUTTON_EVENT);
@@ -482,7 +472,8 @@ IMEContentObserver::OnMouseButtonEvent(nsPresContext* aPresContext,
   notification.mMouseButtonEventData.mOffset = charAtPt.mReply.mOffset;
   notification.mMouseButtonEventData.mCursorPos.Set(
     LayoutDeviceIntPoint::ToUntyped(charAtPt.refPoint));
-  notification.mMouseButtonEventData.mCharRect.Set(charAtPt.mReply.mRect);
+  notification.mMouseButtonEventData.mCharRect.Set(
+    LayoutDevicePixel::ToUntyped(charAtPt.mReply.mRect));
   notification.mMouseButtonEventData.mButton = aMouseEvent->button;
   notification.mMouseButtonEventData.mButtons = aMouseEvent->buttons;
   notification.mMouseButtonEventData.mModifiers = aMouseEvent->modifiers;

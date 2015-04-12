@@ -27,7 +27,7 @@ class Http2PushedStream;
 class Http2Stream;
 class nsHttpTransaction;
 
-class Http2Session MOZ_FINAL : public ASpdySession
+class Http2Session final : public ASpdySession
   , public nsAHttpConnection
   , public nsAHttpSegmentReader
   , public nsAHttpSegmentWriter
@@ -41,21 +41,21 @@ public:
   NS_DECL_NSAHTTPSEGMENTREADER
   NS_DECL_NSAHTTPSEGMENTWRITER
 
-  explicit Http2Session(nsISocketTransport *);
+ Http2Session(nsISocketTransport *, uint32_t version);
 
   bool AddStream(nsAHttpTransaction *, int32_t,
-                 bool, nsIInterfaceRequestor *);
-  bool CanReuse() { return !mShouldGoAway && !mClosed; }
-  bool RoomForMoreStreams();
+                 bool, nsIInterfaceRequestor *) override;
+  bool CanReuse() override { return !mShouldGoAway && !mClosed; }
+  bool RoomForMoreStreams() override;
 
   // When the connection is active this is called up to once every 1 second
   // return the interval (in seconds) that the connection next wants to
   // have this invoked. It might happen sooner depending on the needs of
   // other connections.
-  uint32_t  ReadTimeoutTick(PRIntervalTime now);
+  uint32_t  ReadTimeoutTick(PRIntervalTime now) override;
 
   // Idle time represents time since "goodput".. e.g. a data or header frame
-  PRIntervalTime IdleTime();
+  PRIntervalTime IdleTime() override;
 
   // Registering with a newID of 0 means pick the next available odd ID
   uint32_t RegisterStreamID(Http2Stream *, uint32_t aNewID = 0);
@@ -104,7 +104,8 @@ public:
     COMPRESSION_ERROR = 9,
     CONNECT_ERROR = 10,
     ENHANCE_YOUR_CALM = 11,
-    INADEQUATE_SECURITY = 12
+    INADEQUATE_SECURITY = 12,
+    HTTP_1_1_REQUIRED = 13
   };
 
   // These are frame flags. If they, or other undefined flags, are
@@ -134,7 +135,6 @@ public:
   const static uint32_t kQueueTailRoom    =  4096;
   const static uint32_t kQueueReserved    =  1024;
 
-  const static uint32_t kDefaultMaxConcurrent = 100;
   const static uint32_t kMaxStreamID = 0x7800000;
 
   // This is a sentinel for a deleted stream. It is not a valid
@@ -160,6 +160,14 @@ public:
   const static uint8_t kFrameHeaderBytes = kFrameLengthBytes + kFrameFlagBytes +
     kFrameTypeBytes + kFrameStreamIDBytes;
 
+  enum {
+    kLeaderGroupID =     0x3,
+    kOtherGroupID =       0x5,
+    kBackgroundGroupID =  0x7,
+    kSpeculativeGroupID = 0x9,
+    kFollowerGroupID =    0xB
+  };
+
   static nsresult RecvHeaders(Http2Session *);
   static nsresult RecvPriority(Http2Session *);
   static nsresult RecvRstStream(Http2Session *);
@@ -183,28 +191,28 @@ public:
                     const char *, uint32_t);
 
   // an overload of nsAHttpConnection
-  void TransactionHasDataToWrite(nsAHttpTransaction *);
+  void TransactionHasDataToWrite(nsAHttpTransaction *) override;
 
   // a similar version for Http2Stream
   void TransactionHasDataToWrite(Http2Stream *);
 
   // an overload of nsAHttpSegementReader
-  virtual nsresult CommitToSegmentSize(uint32_t size, bool forceCommitment);
+  virtual nsresult CommitToSegmentSize(uint32_t size, bool forceCommitment) override;
   nsresult BufferOutput(const char *, uint32_t, uint32_t *);
   void     FlushOutputQueue();
   uint32_t AmountOfOutputBuffered() { return mOutputQueueUsed - mOutputQueueSent; }
 
   uint32_t GetServerInitialStreamWindow() { return mServerInitialStreamWindow; }
 
+  bool TryToActivate(Http2Stream *stream);
   void ConnectPushedStream(Http2Stream *stream);
-  void MaybeDecrementConcurrent(Http2Stream *stream);
 
   nsresult ConfirmTLSProfile();
   static bool ALPNCallback(nsISupports *securityInfo);
 
   uint64_t Serial() { return mSerial; }
 
-  void PrintDiagnostics (nsCString &log);
+  void PrintDiagnostics (nsCString &log) override;
 
   // Streams need access to these
   uint32_t SendingChunkSize() { return mSendingChunkSize; }
@@ -215,7 +223,9 @@ public:
   void DecrementServerSessionWindow (uint32_t bytes) { mServerSessionWindow -= bytes; }
   void GetNegotiatedToken(nsACString &s) { s.Assign(mNegotiatedToken); }
 
-  void SendPing() MOZ_OVERRIDE;
+  void SendPing() override;
+  bool MaybeReTunnel(nsAHttpTransaction *) override;
+  bool UseH2Deps() { return mUseH2Deps; }
 
 private:
 
@@ -255,16 +265,20 @@ private:
   void        SetWriteCallbacks();
   void        RealignOutputQueue();
 
-  bool        RoomForMoreConcurrent();
-  void        ActivateStream(Http2Stream *);
   void        ProcessPending();
   nsresult    SetInputFrameDataStream(uint32_t);
+  void        CreatePriorityNode(uint32_t, uint32_t, uint8_t, const char *);
   bool        VerifyStream(Http2Stream *, uint32_t);
   void        SetNeedsCleanup();
 
   void        UpdateLocalRwin(Http2Stream *stream, uint32_t bytes);
   void        UpdateLocalStreamWindow(Http2Stream *stream, uint32_t bytes);
   void        UpdateLocalSessionWindow(uint32_t bytes);
+
+  void        MaybeDecrementConcurrent(Http2Stream *stream);
+  bool        RoomForMoreConcurrent();
+  void        IncrementConcurrent(Http2Stream *stream);
+  void        QueueStream(Http2Stream *stream);
 
   // a wrapper for all calls to the nshttpconnection level segment writer. Used
   // to track network I/O for timeout purposes
@@ -468,13 +482,16 @@ private:
   // For caching whether we negotiated "h2" or "h2-<draft>"
   nsCString mNegotiatedToken;
 
+  bool mUseH2Deps;
+  uint32_t mVersion; // HTTP2_VERSION_ from nsHttp.h remove when draft support removed
+
 private:
 /// connect tunnels
   void DispatchOnTunnel(nsAHttpTransaction *, nsIInterfaceRequestor *);
+  void CreateTunnel(nsHttpTransaction *, nsHttpConnectionInfo *, nsIInterfaceRequestor *);
   void RegisterTunnel(Http2Stream *);
   void UnRegisterTunnel(Http2Stream *);
   uint32_t FindTunnelCount(nsHttpConnectionInfo *);
-
   nsDataHashtable<nsCStringHashKey, uint32_t> mTunnelHash;
 };
 

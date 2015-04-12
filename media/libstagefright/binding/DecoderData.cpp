@@ -6,6 +6,7 @@
 #include "mp4_demuxer/AnnexB.h"
 #include "mp4_demuxer/ByteReader.h"
 #include "mp4_demuxer/DecoderData.h"
+#include <media/stagefright/foundation/ABitReader.h>
 #include "media/stagefright/MetaData.h"
 #include "media/stagefright/MediaBuffer.h"
 #include "media/stagefright/MediaDefs.h"
@@ -74,6 +75,12 @@ FindData(sp<MetaData>& aMetaData, uint32_t aKey, nsTArray<T>* aDest)
   return true;
 }
 
+static bool
+FindData(sp<MetaData>& aMetaData, uint32_t aKey, ByteBuffer* aDest)
+{
+  return FindData(aMetaData, aKey, static_cast<nsTArray<uint8_t>*>(aDest));
+}
+
 bool
 CryptoFile::DoUpdate(sp<MetaData>& aMetaData)
 {
@@ -127,9 +134,9 @@ CryptoSample::Update(sp<MetaData>& aMetaData)
 void
 TrackConfig::Update(sp<MetaData>& aMetaData, const char* aMimeType)
 {
-  // aMimeType points to a string from MediaDefs.cpp so we don't need to copy it
   mime_type = aMimeType;
   duration = FindInt64(aMetaData, kKeyDuration);
+  media_time = FindInt64(aMetaData, kKeyMediaTime);
   mTrackId = FindInt32(aMetaData, kKeyTrackID);
   crypto.Update(aMetaData);
 }
@@ -144,14 +151,22 @@ AudioDecoderConfig::Update(sp<MetaData>& aMetaData, const char* aMimeType)
   frequency_index = Adts::GetFrequencyIndex(samples_per_second);
   aac_profile = FindInt32(aMetaData, kKeyAACProfile);
 
-  if (FindData(aMetaData, kKeyESDS, &extra_data)) {
-    ESDS esds(&extra_data[0], extra_data.length());
+  if (FindData(aMetaData, kKeyESDS, extra_data)) {
+    ESDS esds(extra_data->Elements(), extra_data->Length());
 
     const void* data;
     size_t size;
     if (esds.getCodecSpecificInfo(&data, &size) == OK) {
-      audio_specific_config.append(reinterpret_cast<const uint8_t*>(data),
-                                   size);
+      const uint8_t* cdata = reinterpret_cast<const uint8_t*>(data);
+      audio_specific_config->AppendElements(cdata, size);
+      if (size > 1) {
+        ABitReader br(cdata, size);
+        extended_profile = br.getBits(5);
+
+        if (extended_profile == 31) {  // AAC-ELD => additional 6 bits
+          extended_profile = 32 + br.getBits(6);
+        }
+      }
     }
   }
 }
@@ -160,7 +175,8 @@ bool
 AudioDecoderConfig::IsValid()
 {
   return channel_count > 0 && samples_per_second > 0 && frequency_index > 0 &&
-         (mime_type != MEDIA_MIMETYPE_AUDIO_AAC || aac_profile > 0);
+         (!mime_type.Equals(MEDIA_MIMETYPE_AUDIO_AAC) ||
+          aac_profile > 0 || extended_profile > 0);
 }
 
 void
@@ -169,13 +185,10 @@ VideoDecoderConfig::Update(sp<MetaData>& aMetaData, const char* aMimeType)
   TrackConfig::Update(aMetaData, aMimeType);
   display_width = FindInt32(aMetaData, kKeyDisplayWidth);
   display_height = FindInt32(aMetaData, kKeyDisplayHeight);
+  image_width = FindInt32(aMetaData, kKeyWidth);
+  image_height = FindInt32(aMetaData, kKeyHeight);
 
-  if (FindData(aMetaData, kKeyAVCC, &extra_data) && extra_data.length() >= 7) {
-    // Set size of the NAL length to 4. The demuxer formats its output with
-    // this NAL length size.
-    extra_data[4] |= 3;
-    annex_b = AnnexB::ConvertExtraDataToAnnexB(extra_data);
-  }
+  FindData(aMetaData, kKeyAVCC, extra_data);
 }
 
 bool
@@ -193,7 +206,28 @@ MP4Sample::MP4Sample()
   , is_sync_point(0)
   , data(nullptr)
   , size(0)
+  , extra_data(nullptr)
 {
+}
+
+MP4Sample*
+MP4Sample::Clone() const
+{
+  nsAutoPtr<MP4Sample> s(new MP4Sample());
+  s->decode_timestamp = decode_timestamp;
+  s->composition_timestamp = composition_timestamp;
+  s->duration = duration;
+  s->byte_offset = byte_offset;
+  s->is_sync_point = is_sync_point;
+  s->size = size;
+  s->crypto = crypto;
+  s->extra_data = extra_data;
+  s->extra_buffer = s->data = new (fallible) uint8_t[size];
+  if (!s->extra_buffer) {
+    return nullptr;
+  }
+  memcpy(s->data, data, size);
+  return s.forget();
 }
 
 MP4Sample::~MP4Sample()
@@ -204,11 +238,13 @@ MP4Sample::~MP4Sample()
 }
 
 void
-MP4Sample::Update()
+MP4Sample::Update(int64_t& aMediaTime)
 {
   sp<MetaData> m = mMediaBuffer->meta_data();
+  // XXXbholley - Why don't we adjust decode_timestamp for aMediaTime?
+  // According to k17e, this code path is no longer used - we should probably remove it.
   decode_timestamp = FindInt64(m, kKeyDecodingTime);
-  composition_timestamp = FindInt64(m, kKeyTime);
+  composition_timestamp = FindInt64(m, kKeyTime) - aMediaTime;
   duration = FindInt64(m, kKeyDuration);
   byte_offset = FindInt64(m, kKey64BitFileOffset);
   is_sync_point = FindInt32(m, kKeyIsSyncFrame);
@@ -218,7 +254,7 @@ MP4Sample::Update()
   crypto.Update(m);
 }
 
-void
+bool
 MP4Sample::Pad(size_t aPaddingBytes)
 {
   size_t newSize = size + aPaddingBytes;
@@ -227,7 +263,10 @@ MP4Sample::Pad(size_t aPaddingBytes)
   // not then we copy to a new buffer.
   uint8_t* newData = mMediaBuffer && newSize <= mMediaBuffer->size()
                        ? data
-                       : new uint8_t[newSize];
+                       : new (fallible) uint8_t[newSize];
+  if (!newData) {
+    return false;
+  }
 
   memset(newData + size, 0, aPaddingBytes);
 
@@ -239,9 +278,11 @@ MP4Sample::Pad(size_t aPaddingBytes)
       mMediaBuffer = nullptr;
     }
   }
+
+  return true;
 }
 
-void
+bool
 MP4Sample::Prepend(const uint8_t* aData, size_t aSize)
 {
   size_t newSize = size + aSize;
@@ -250,7 +291,10 @@ MP4Sample::Prepend(const uint8_t* aData, size_t aSize)
   // not then we copy to a new buffer.
   uint8_t* newData = mMediaBuffer && newSize <= mMediaBuffer->size()
                        ? data
-                       : new uint8_t[newSize];
+                       : new (fallible) uint8_t[newSize];
+  if (!newData) {
+    return false;
+  }
 
   memmove(newData + aSize, data, size);
   memmove(newData, aData, aSize);
@@ -263,5 +307,33 @@ MP4Sample::Prepend(const uint8_t* aData, size_t aSize)
       mMediaBuffer = nullptr;
     }
   }
+
+  return true;
+}
+
+bool
+MP4Sample::Replace(const uint8_t* aData, size_t aSize)
+{
+  // If the existing MediaBuffer has enough space then we just recycle it. If
+  // not then we copy to a new buffer.
+  uint8_t* newData = mMediaBuffer && aSize <= mMediaBuffer->size()
+                       ? data
+                       : new (fallible) uint8_t[aSize];
+  if (!newData) {
+    return false;
+  }
+
+  memcpy(newData, aData, aSize);
+  size = aSize;
+
+  if (newData != data) {
+    extra_buffer = data = newData;
+    if (mMediaBuffer) {
+      mMediaBuffer->release();
+      mMediaBuffer = nullptr;
+    }
+  }
+
+  return true;
 }
 }

@@ -24,14 +24,6 @@ namespace layers {
 
 class Compositor;
 
-CompositableBackendSpecificData::CompositableBackendSpecificData()
-  : mAllowSharingTextureHost(false)
-{
-  static uint64_t sNextID = 1;
-  ++sNextID;
-  mId = sNextID;
-}
-
 /**
  * IPDL actor used by CompositableHost to match with its corresponding
  * CompositableClient on the content side.
@@ -61,7 +53,7 @@ public:
     CompositableMap::Erase(mHost->GetAsyncID());
   }
 
-  virtual void ActorDestroy(ActorDestroyReason why) MOZ_OVERRIDE
+  virtual void ActorDestroy(ActorDestroyReason why) override
   {
     if (mHost) {
       mHost->Detach(nullptr, CompositableHost::FORCE_DETACH);
@@ -87,9 +79,6 @@ CompositableHost::CompositableHost(const TextureInfo& aTextureInfo)
 CompositableHost::~CompositableHost()
 {
   MOZ_COUNT_DTOR(CompositableHost);
-  if (mBackendData) {
-    mBackendData->ClearData();
-  }
 }
 
 PCompositableParent*
@@ -121,7 +110,6 @@ CompositableHost::UseTextureHost(TextureHost* aTexture)
     return;
   }
   aTexture->SetCompositor(GetCompositor());
-  aTexture->SetCompositableBackendSpecificData(GetCompositableBackendSpecificData());
 }
 
 void
@@ -130,17 +118,12 @@ CompositableHost::UseComponentAlphaTextures(TextureHost* aTextureOnBlack,
 {
   MOZ_ASSERT(aTextureOnBlack && aTextureOnWhite);
   aTextureOnBlack->SetCompositor(GetCompositor());
-  aTextureOnBlack->SetCompositableBackendSpecificData(GetCompositableBackendSpecificData());
   aTextureOnWhite->SetCompositor(GetCompositor());
-  aTextureOnWhite->SetCompositableBackendSpecificData(GetCompositableBackendSpecificData());
 }
 
 void
 CompositableHost::RemoveTextureHost(TextureHost* aTexture)
-{
-  // Clear strong refrence to CompositableBackendSpecificData
-  aTexture->UnsetCompositableBackendSpecificData(GetCompositableBackendSpecificData());
-}
+{}
 
 void
 CompositableHost::SetCompositor(Compositor* aCompositor)
@@ -153,7 +136,7 @@ CompositableHost::AddMaskEffect(EffectChain& aEffects,
                                 const gfx::Matrix4x4& aTransform,
                                 bool aIs3D)
 {
-  RefPtr<TextureSource> source;
+  CompositableTextureSourceRef source;
   RefPtr<TextureHost> host = GetAsTextureHost();
 
   if (!host) {
@@ -166,14 +149,12 @@ CompositableHost::AddMaskEffect(EffectChain& aEffects,
     return false;
   }
 
-  source = host->GetTextureSources();
-  MOZ_ASSERT(source);
-
-  if (!source) {
+  if (!host->BindTextureSource(source)) {
     NS_WARNING("The TextureHost was successfully locked but can't provide a TextureSource");
     host->Unlock();
     return false;
   }
+  MOZ_ASSERT(source);
 
   RefPtr<EffectMask> effect = new EffectMask(source,
                                              source->GetSize(),
@@ -192,22 +173,18 @@ CompositableHost::RemoveMaskEffect()
   }
 }
 
-// implemented in TextureHostOGL.cpp
-TemporaryRef<CompositableBackendSpecificData> CreateCompositableBackendSpecificDataOGL();
-
 /* static */ TemporaryRef<CompositableHost>
 CompositableHost::Create(const TextureInfo& aTextureInfo)
 {
   RefPtr<CompositableHost> result;
   switch (aTextureInfo.mCompositableType) {
-  case CompositableType::BUFFER_BRIDGE:
+  case CompositableType::IMAGE_BRIDGE:
     NS_ERROR("Cannot create an image bridge compositable this way");
     break;
-  case CompositableType::BUFFER_CONTENT_INC:
+  case CompositableType::CONTENT_INC:
     result = new ContentHostIncremental(aTextureInfo);
     break;
-  case CompositableType::BUFFER_TILED:
-  case CompositableType::BUFFER_SIMPLE_TILED:
+  case CompositableType::CONTENT_TILED:
     result = new TiledContentHost(aTextureInfo);
     break;
   case CompositableType::IMAGE:
@@ -227,16 +204,9 @@ CompositableHost::Create(const TextureInfo& aTextureInfo)
   default:
     NS_ERROR("Unknown CompositableType");
   }
-  // We know that Tiled buffers don't use the compositable backend-specific
-  // data, so don't bother creating it.
-  if (result && aTextureInfo.mCompositableType != CompositableType::BUFFER_TILED) {
-    RefPtr<CompositableBackendSpecificData> data = CreateCompositableBackendSpecificDataOGL();
-    result->SetCompositableBackendSpecificData(data);
-  }
   return result;
 }
 
-#ifdef MOZ_DUMP_PAINTING
 void
 CompositableHost::DumpTextureHost(std::stringstream& aStream, TextureHost* aTexture)
 {
@@ -247,15 +217,8 @@ CompositableHost::DumpTextureHost(std::stringstream& aStream, TextureHost* aText
   if (!dSurf) {
     return;
   }
-  gfxPlatform *platform = gfxPlatform::GetPlatform();
-  RefPtr<gfx::DrawTarget> dt = platform->CreateDrawTargetForData(dSurf->GetData(),
-                                                                 dSurf->GetSize(),
-                                                                 dSurf->Stride(),
-                                                                 dSurf->GetFormat());
-  // TODO stream surface
-  gfxUtils::DumpAsDataURI(dt, stderr);
+  aStream << gfxUtils::GetAsLZ4Base64Str(dSurf).get();
 }
-#endif
 
 namespace CompositableMap {
 

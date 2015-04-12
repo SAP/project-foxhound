@@ -20,7 +20,7 @@ class RuleCache;
 /**
  * Class represents an accessible pivot.
  */
-class nsAccessiblePivot MOZ_FINAL : public nsIAccessiblePivot
+class nsAccessiblePivot final : public nsIAccessiblePivot
 {
 public:
   typedef mozilla::a11y::Accessible Accessible;
@@ -39,9 +39,9 @@ public:
 
 private:
   ~nsAccessiblePivot();
-  nsAccessiblePivot() MOZ_DELETE;
-  nsAccessiblePivot(const nsAccessiblePivot&) MOZ_DELETE;
-  void operator = (const nsAccessiblePivot&) MOZ_DELETE;
+  nsAccessiblePivot() = delete;
+  nsAccessiblePivot(const nsAccessiblePivot&) = delete;
+  void operator = (const nsAccessiblePivot&) = delete;
 
   /*
    * Notify all observers on a pivot change. Return true if it has changed and

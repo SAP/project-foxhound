@@ -23,7 +23,7 @@ XPCOMUtils.defineLazyModuleGetter(this, 'Roles',
 XPCOMUtils.defineLazyModuleGetter(this, 'States',
   'resource://gre/modules/accessibility/Constants.jsm');
 
-Logger.debug('content-script.js');
+Logger.info('content-script.js', content.document.location);
 
 let eventManager = null;
 let contentControl = null;
@@ -69,8 +69,13 @@ function forwardToChild(aMessage, aListener, aVCPosition) {
 function activateContextMenu(aMessage) {
   let position = Utils.getVirtualCursor(content.document).position;
   if (!forwardToChild(aMessage, activateContextMenu, position)) {
-    sendAsyncMessage('AccessFu:ActivateContextMenu',
-      { bounds: Utils.getBounds(position, true) });
+    let center = Utils.getBounds(position, true).center();
+
+    let evt = content.document.createEvent('HTMLEvents');
+    evt.initEvent('contextmenu', true, true);
+    evt.clientX = center.x;
+    evt.clientY = center.y;
+    position.DOMNode.dispatchEvent(evt);
   }
 }
 

@@ -15,11 +15,7 @@
 #include <vector>
 #include <sstream>
 
-#ifdef _MSC_VER
-#include <hash_set>
-#else
 #include <unordered_set>
-#endif
 
 struct IDWriteFactory;
 
@@ -39,7 +35,7 @@ public:
   DrawTargetD2D1();
   virtual ~DrawTargetD2D1();
 
-  virtual DrawTargetType GetType() const MOZ_OVERRIDE { return DrawTargetType::HARDWARE_RASTER; }
+  virtual DrawTargetType GetType() const override { return DrawTargetType::HARDWARE_RASTER; }
   virtual BackendType GetBackendType() const { return BackendType::DIRECT2D1_1; }
   virtual TemporaryRef<SourceSurface> Snapshot();
   virtual IntSize GetSize() { return mSize; }
@@ -122,6 +118,8 @@ public:
 
   virtual TemporaryRef<FilterNode> CreateFilter(FilterType aType);
 
+  virtual bool SupportsRegionClipping() const { return false; }
+
   virtual void *GetNativeSurface(NativeSurfaceType aType) { return nullptr; }
 
   bool Init(const IntSize &aSize, SurfaceFormat aFormat);
@@ -129,11 +127,11 @@ public:
   uint32_t GetByteSize() const;
 
   TemporaryRef<ID2D1Image> GetImageForSurface(SourceSurface *aSurface, Matrix &aSourceTransform,
-                                              ExtendMode aExtendMode);
+                                              ExtendMode aExtendMode, const IntRect* aSourceRect = nullptr);
 
   TemporaryRef<ID2D1Image> GetImageForSurface(SourceSurface *aSurface, ExtendMode aExtendMode) {
     Matrix mat;
-    return GetImageForSurface(aSurface, mat, aExtendMode);
+    return GetImageForSurface(aSurface, mat, aExtendMode, nullptr);
   }
 
   static ID2D1Factory1 *factory();
@@ -146,17 +144,17 @@ public:
     return stream.str();
   }
 
+  static uint32_t GetMaxSurfaceSize() {
+    return D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+  }
+
   static uint64_t mVRAMUsageDT;
   static uint64_t mVRAMUsageSS;
 
 private:
   friend class SourceSurfaceD2D1;
 
-#ifdef _MSC_VER
-  typedef stdext::hash_set<DrawTargetD2D1*> TargetSet;
-#else
   typedef std::unordered_set<DrawTargetD2D1*> TargetSet;
-#endif
 
   // This function will mark the surface as changing, and make sure any
   // copy-on-write snapshots are notified.

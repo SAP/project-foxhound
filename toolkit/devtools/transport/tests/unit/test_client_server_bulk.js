@@ -7,6 +7,7 @@ let { DebuggerClient } =
   Cu.import("resource://gre/modules/devtools/dbg-client.jsm", {});
 let { FileUtils } = Cu.import("resource://gre/modules/FileUtils.jsm", {});
 let { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm", {});
+let { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
 let Pipe = CC("@mozilla.org/pipe;1", "nsIPipe", "init");
 let { Promise: promise } = Cu.import("resource://gre/modules/Promise.jsm", {});
 
@@ -61,11 +62,18 @@ TestBulkActor.prototype = {
       type: type,
       length: really_long().length
     }).then(({copyFrom}) => {
-      NetUtil.asyncFetch(getTestTempFile("bulk-input"), input => {
-        copyFrom(input).then(() => {
-          input.close();
-        });
-      });
+      NetUtil.asyncFetch2(
+        getTestTempFile("bulk-input"),
+        input => {
+          copyFrom(input).then(() => {
+            input.close();
+          });
+        },
+        null,      // aLoadingNode
+        Services.scriptSecurityManager.getSystemPrincipal(),
+        null,      // aTriggeringPrincipal
+        Ci.nsILoadInfo.SEC_NORMAL,
+        Ci.nsIContentPolicy.TYPE_OTHER);
     });
   },
 
@@ -134,7 +142,7 @@ let replyHandlers = {
 
 /*** Tests ***/
 
-function test_bulk_request_cs(transportFactory, actorType, replyType) {
+let test_bulk_request_cs = Task.async(function*(transportFactory, actorType, replyType) {
   // Ensure test files are not present from a failed run
   cleanup_files();
   writeTestTempFile("bulk-input", really_long());
@@ -143,7 +151,7 @@ function test_bulk_request_cs(transportFactory, actorType, replyType) {
   let serverDeferred = promise.defer();
   let bulkCopyDeferred = promise.defer();
 
-  let transport = transportFactory();
+  let transport = yield transportFactory();
 
   let client = new DebuggerClient(transport);
   client.connect((app, traits) => {
@@ -160,12 +168,19 @@ function test_bulk_request_cs(transportFactory, actorType, replyType) {
 
     // Send bulk data to server
     request.on("bulk-send-ready", ({copyFrom}) => {
-      NetUtil.asyncFetch(getTestTempFile("bulk-input"), input => {
-        copyFrom(input).then(() => {
-          input.close();
-          bulkCopyDeferred.resolve();
-        });
-      });
+      NetUtil.asyncFetch2(
+        getTestTempFile("bulk-input"),
+        input => {
+          copyFrom(input).then(() => {
+            input.close();
+            bulkCopyDeferred.resolve();
+          });
+        },
+        null,      // aLoadingNode
+        Services.scriptSecurityManager.getSystemPrincipal(),
+        null,      // aTriggeringPrincipal
+        Ci.nsILoadInfo.SEC_NORMAL,
+        Ci.nsIContentPolicy.TYPE_OTHER);
     });
 
     // Set up reply handling for this type
@@ -186,9 +201,9 @@ function test_bulk_request_cs(transportFactory, actorType, replyType) {
     bulkCopyDeferred.promise,
     serverDeferred.promise
   ]);
-}
+});
 
-function test_json_request_cs(transportFactory, actorType, replyType) {
+let test_json_request_cs = Task.async(function*(transportFactory, actorType, replyType) {
   // Ensure test files are not present from a failed run
   cleanup_files();
   writeTestTempFile("bulk-input", really_long());
@@ -196,7 +211,7 @@ function test_json_request_cs(transportFactory, actorType, replyType) {
   let clientDeferred = promise.defer();
   let serverDeferred = promise.defer();
 
-  let transport = transportFactory();
+  let transport = yield transportFactory();
 
   let client = new DebuggerClient(transport);
   client.connect((app, traits) => {
@@ -227,7 +242,7 @@ function test_json_request_cs(transportFactory, actorType, replyType) {
     clientDeferred.promise,
     serverDeferred.promise
   ]);
-}
+});
 
 /*** Test Utils ***/
 
@@ -242,13 +257,20 @@ function verify_files() {
 
   // Ensure output file contents actually match
   let compareDeferred = promise.defer();
-  NetUtil.asyncFetch(getTestTempFile("bulk-output"), input => {
-    let outputData = NetUtil.readInputStreamToString(input, reallyLong.length);
-    // Avoid do_check_eq here so we don't log the contents
-    do_check_true(outputData === reallyLong);
-    input.close();
-    compareDeferred.resolve();
-  });
+  NetUtil.asyncFetch2(
+    getTestTempFile("bulk-output"),
+    input => {
+      let outputData = NetUtil.readInputStreamToString(input, reallyLong.length);
+      // Avoid do_check_eq here so we don't log the contents
+      do_check_true(outputData === reallyLong);
+      input.close();
+      compareDeferred.resolve();
+    },
+    null,      // aLoadingNode
+    Services.scriptSecurityManager.getSystemPrincipal(),
+    null,      // aTriggeringPrincipal
+    Ci.nsILoadInfo.SEC_NORMAL,
+    Ci.nsIContentPolicy.TYPE_OTHER);
 
   return compareDeferred.promise.then(cleanup_files);
 }

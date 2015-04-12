@@ -22,6 +22,7 @@ interfaces = [
     'xbl',
     'xpath',
     'xul',
+    'security',
     'storage',
     'json',
     'offline',
@@ -42,6 +43,7 @@ DIRS += [
     'base',
     'activities',
     'archivereader',
+    'requestsync',
     'bindings',
     'battery',
     'browser-element',
@@ -60,6 +62,7 @@ DIRS += [
     'filesystem',
     'fmradio',
     'geolocation',
+    'html',
     'json',
     'jsurl',
     'asmjscache',
@@ -72,8 +75,10 @@ DIRS += [
     'power',
     'push',
     'quota',
+    'security',
     'settings',
     'storage',
+    'svg',
     'mobilemessage',
     'time',
     'locales',
@@ -88,16 +93,21 @@ DIRS += [
     'workers',
     'camera',
     'audiochannel',
+    'broadcastchannel',
     'promise',
     'smil',
     'telephony',
+    'tv',
     'voicemail',
     'inputmethod',
     'webidl',
     'xbl',
     'xml',
     'xslt',
+    'xul',
     'resourcestats',
+    'manifest',
+    'vr',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -125,6 +135,9 @@ if CONFIG['MOZ_GAMEPAD']:
 if CONFIG['MOZ_NFC']:
     DIRS += ['nfc']
 
+if CONFIG['MOZ_SECUREELEMENT']:
+    DIRS += ['secureelement']
+
 if CONFIG['MOZ_B2G']:
     DIRS += [
         'downloads',
@@ -136,6 +149,8 @@ if CONFIG['MOZ_B2G_BT_API_V2']:
     DIRS += ['bluetooth2']
 else:
     DIRS += ['bluetooth']
+
+DIRS += ['presentation']
 
 TEST_DIRS += [
     'tests',

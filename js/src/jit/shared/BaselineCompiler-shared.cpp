@@ -9,16 +9,18 @@
 #include "jit/BaselineIC.h"
 #include "jit/VMFunctions.h"
 
+#include "jsscriptinlines.h"
+
 using namespace js;
 using namespace js::jit;
 
-BaselineCompilerShared::BaselineCompilerShared(JSContext *cx, TempAllocator &alloc, JSScript *script)
+BaselineCompilerShared::BaselineCompilerShared(JSContext* cx, TempAllocator& alloc, JSScript* script)
   : cx(cx),
     script(script),
     pc(script->code()),
     ionCompileable_(jit::IsIonEnabled(cx) && CanIonCompileScript(cx, script, false)),
     ionOSRCompileable_(jit::IsIonEnabled(cx) && CanIonCompileScript(cx, script, true)),
-    debugMode_(cx->compartment()->debugMode()),
+    compileDebugInstrumentation_(script->isDebuggee()),
     alloc_(alloc),
     analysis_(alloc, script),
     frame(script, masm),
@@ -28,13 +30,18 @@ BaselineCompilerShared::BaselineCompilerShared(JSContext *cx, TempAllocator &all
     icLoadLabels_(),
     pushedBeforeCall_(0),
     inCall_(false),
-    spsPushToggleOffset_()
+    spsPushToggleOffset_(),
+    profilerEnterFrameToggleOffset_(),
+    profilerExitFrameToggleOffset_(),
+    traceLoggerEnterToggleOffset_(),
+    traceLoggerExitToggleOffset_(),
+    traceLoggerScriptTextIdOffset_()
 { }
 
 bool
-BaselineCompilerShared::callVM(const VMFunction &fun, CallVMPhase phase)
+BaselineCompilerShared::callVM(const VMFunction& fun, CallVMPhase phase)
 {
-    JitCode *code = cx->runtime()->jitRuntime()->getVMWrapper(fun);
+    JitCode* code = cx->runtime()->jitRuntime()->getVMWrapper(fun);
     if (!code)
         return false;
 
@@ -44,9 +51,20 @@ BaselineCompilerShared::callVM(const VMFunction &fun, CallVMPhase phase)
     inCall_ = false;
 #endif
 
+#ifdef DEBUG
+    // Assert the frame does not have an override pc when we're executing JIT code.
+    {
+        Label ok;
+        masm.branchTest32(Assembler::Zero, frame.addressOfFlags(),
+                          Imm32(BaselineFrame::HAS_OVERRIDE_PC), &ok);
+        masm.assumeUnreachable("BaselineFrame shouldn't override pc when executing JIT code");
+        masm.bind(&ok);
+    }
+#endif
+
     // Compute argument size. Note that this include the size of the frame pointer
     // pushed by prepareVMCall.
-    uint32_t argSize = fun.explicitStackSlots() * sizeof(void *) + sizeof(void *);
+    uint32_t argSize = fun.explicitStackSlots() * sizeof(void*) + sizeof(void*);
 
     // Assert all arguments were pushed.
     MOZ_ASSERT(masm.framePushed() - pushedBeforeCall_ == argSize);
@@ -88,16 +106,24 @@ BaselineCompilerShared::callVM(const VMFunction &fun, CallVMPhase phase)
         masm.makeFrameDescriptor(BaselineTailCallReg, JitFrame_BaselineJS);
         masm.push(BaselineTailCallReg);
     }
-
+    MOZ_ASSERT(fun.expectTailCall == NonTailCall);
     // Perform the call.
     masm.call(code);
     uint32_t callOffset = masm.currentOffset();
     masm.pop(BaselineFrameReg);
 
+#ifdef DEBUG
+    // Assert the frame does not have an override pc when we're executing JIT code.
+    {
+        Label ok;
+        masm.branchTest32(Assembler::Zero, frame.addressOfFlags(),
+                          Imm32(BaselineFrame::HAS_OVERRIDE_PC), &ok);
+        masm.assumeUnreachable("BaselineFrame shouldn't override pc after VM call");
+        masm.bind(&ok);
+    }
+#endif
+
     // Add a fake ICEntry (without stubs), so that the return offset to
     // pc mapping works.
-    ICEntry entry(script->pcToOffset(pc), ICEntry::Kind_CallVM);
-    entry.setReturnOffset(CodeOffsetLabel(callOffset));
-
-    return icEntries_.append(entry);
+    return appendICEntry(ICEntry::Kind_CallVM, callOffset);
 }

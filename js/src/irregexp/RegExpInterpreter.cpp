@@ -43,15 +43,24 @@ static const size_t kBitsPerByteLog2 = 3;
 class MOZ_STACK_CLASS RegExpStackCursor
 {
   public:
-    explicit RegExpStackCursor(JSContext *cx)
-      : cx(cx), cursor(base())
+    explicit RegExpStackCursor(JSContext* cx)
+      : cx(cx), cursor(nullptr)
     {}
+
+    bool init() {
+        if (!stack.init()) {
+            js_ReportOutOfMemory(cx);
+            return false;
+        }
+        cursor = base();
+        return true;
+    }
 
     bool push(int32_t value) {
         *cursor++ = value;
-        if (cursor >= stack().limit()) {
+        if (cursor >= stack.limit()) {
             int32_t pos = position();
-            if (!stack().grow()) {
+            if (!stack.grow()) {
                 js_ReportOverRecursed(cx);
                 return false;
             }
@@ -71,49 +80,53 @@ class MOZ_STACK_CLASS RegExpStackCursor
     }
 
     int32_t position() {
+        MOZ_ASSERT(cursor >= base());
         return cursor - base();
     }
 
     void setPosition(int32_t position) {
         cursor = base() + position;
-        MOZ_ASSERT(cursor < stack().limit());
+        MOZ_ASSERT(cursor < stack.limit());
     }
 
   private:
-    JSContext *cx;
+    JSContext* cx;
+    RegExpStack stack;
 
-    int32_t *cursor;
+    int32_t* cursor;
 
-    RegExpStack &stack() { return cx->runtime()->mainThread.regexpStack; }
-    int32_t *base() { return (int32_t *) stack().base(); }
+    int32_t* base() { return (int32_t*) stack.base(); }
 };
 
 static int32_t
 Load32Aligned(const uint8_t* pc)
 {
     MOZ_ASSERT((reinterpret_cast<uintptr_t>(pc) & 3) == 0);
-    return *reinterpret_cast<const int32_t *>(pc);
+    return *reinterpret_cast<const int32_t*>(pc);
 }
 
 static int32_t
 Load16Aligned(const uint8_t* pc)
 {
     MOZ_ASSERT((reinterpret_cast<uintptr_t>(pc) & 1) == 0);
-    return *reinterpret_cast<const uint16_t *>(pc);
+    return *reinterpret_cast<const uint16_t*>(pc);
 }
 
 #define BYTECODE(name)  case BC_##name:
 
 template <typename CharT>
 RegExpRunStatus
-irregexp::InterpretCode(JSContext *cx, const uint8_t *byteCode, const CharT *chars, size_t current,
-                        size_t length, MatchPairs *matches)
+irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const CharT* chars, size_t current,
+                        size_t length, MatchPairs* matches)
 {
     const uint8_t* pc = byteCode;
 
     uint32_t current_char = current ? chars[current - 1] : '\n';
 
     RegExpStackCursor stack(cx);
+
+    if (!stack.init())
+        return RegExpRunStatus_Error;
 
     int32_t numRegisters = Load32Aligned(pc);
     pc += 4;
@@ -457,9 +470,9 @@ irregexp::InterpretCode(JSContext *cx, const uint8_t *byteCode, const CharT *cha
 }
 
 template RegExpRunStatus
-irregexp::InterpretCode(JSContext *cx, const uint8_t *byteCode, const Latin1Char *chars, size_t current,
-                        size_t length, MatchPairs *matches);
+irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const Latin1Char* chars, size_t current,
+                        size_t length, MatchPairs* matches);
 
 template RegExpRunStatus
-irregexp::InterpretCode(JSContext *cx, const uint8_t *byteCode, const char16_t *chars, size_t current,
-                        size_t length, MatchPairs *matches);
+irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const char16_t* chars, size_t current,
+                        size_t length, MatchPairs* matches);

@@ -23,15 +23,12 @@
 #include <sys/syscall.h>
 #include <vector>
 
+#include "mozilla/Alignment.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/TaggedAnonymousMemory.h"
 #include "Nuwa.h"
 
 using namespace mozilla;
-
-extern "C" MFBT_API int tgkill(pid_t tgid, pid_t tid, int signalno) {
-  return syscall(__NR_tgkill, tgid, tid, signalno);
-}
 
 /**
  * Provides the wrappers to a selected set of pthread and system-level functions
@@ -59,11 +56,8 @@ int __real_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mtx);
 int __real_pthread_cond_timedwait(pthread_cond_t *cond,
                                   pthread_mutex_t *mtx,
                                   const struct timespec *abstime);
-int __real___pthread_cond_timedwait(pthread_cond_t *cond,
-                                    pthread_mutex_t *mtx,
-                                    const struct timespec *abstime,
-                                    clockid_t clock);
 int __real_pthread_mutex_lock(pthread_mutex_t *mtx);
+int __real_pthread_mutex_trylock(pthread_mutex_t *mtx);
 int __real_poll(struct pollfd *fds, nfds_t nfds, int timeout);
 int __real_epoll_create(int size);
 int __real_socketpair(int domain, int type, int protocol, int sv[2]);
@@ -121,6 +115,22 @@ static size_t getPageSize(void) {
 
 #define NATIVE_THREAD_NAME_LENGTH 16
 
+typedef struct nuwa_construct {
+  typedef void(*construct_t)(void*);
+
+  construct_t construct;
+  void *arg;
+
+  nuwa_construct(construct_t aConstruct, void *aArg)
+    : construct(aConstruct)
+    , arg(aArg)
+  { }
+
+  nuwa_construct(const nuwa_construct&) = default;
+  nuwa_construct& operator=(const nuwa_construct&) = default;
+
+} nuwa_construct_t;
+
 struct thread_info : public mozilla::LinkedListElement<thread_info> {
   pthread_t origThreadID;
   pthread_t recreatedThreadID;
@@ -135,8 +145,15 @@ struct thread_info : public mozilla::LinkedListElement<thread_info> {
 
   // The thread specific function to recreate the new thread. It's executed
   // after the thread is recreated.
-  void (*recrFunc)(void *arg);
-  void *recrArg;
+
+  std::vector<nuwa_construct_t> *recrFunctions;
+  void addThreadConstructor(const nuwa_construct_t *construct) {
+    if (!recrFunctions) {
+      recrFunctions = new std::vector<nuwa_construct_t>();
+    }
+
+    recrFunctions->push_back(*construct);
+  }
 
   TLSInfoList tlsInfo;
 
@@ -173,8 +190,12 @@ static thread_info_t *sCurrentRecreatingThread = nullptr;
 static void
 RunCustomRecreation() {
   thread_info_t *tinfo = sCurrentRecreatingThread;
-  if (tinfo->recrFunc != nullptr) {
-    tinfo->recrFunc(tinfo->recrArg);
+  if (tinfo->recrFunctions) {
+    for (auto iter = tinfo->recrFunctions->begin();
+         iter != tinfo->recrFunctions->end();
+         iter++) {
+      iter->construct(iter->arg);
+    }
   }
 }
 
@@ -193,16 +214,44 @@ RunCustomRecreation() {
 #define TINFO_FLAG_NUWA_SKIP 0x2
 #define TINFO_FLAG_NUWA_EXPLICIT_CHECKPOINT 0x4
 
-typedef struct nuwa_construct {
-  void (*construct)(void *);
-  void *arg;
-} nuwa_construct_t;
-
 static std::vector<nuwa_construct_t> sConstructors;
 static std::vector<nuwa_construct_t> sFinalConstructors;
 
-typedef std::map<pthread_key_t, void (*)(void *)> TLSKeySet;
-static TLSKeySet sTLSKeys;
+class TLSKey
+: public std::pair<pthread_key_t, void (*)(void*)>
+, public LinkedListElement<TLSKey>
+{
+public:
+  TLSKey() {}
+
+  TLSKey(pthread_key_t aKey, void (*aDestructor)(void*))
+  : std::pair<pthread_key_t, void (*)(void*)>(aKey, aDestructor)
+  {}
+
+  static void* operator new(size_t size) {
+    if (sUsed)
+      return ::operator new(size);
+    sUsed = true;
+    return sFirstElement.addr();
+  }
+
+  static void operator delete(void* ptr) {
+    if (ptr == sFirstElement.addr()) {
+      sUsed = false;
+      return;
+    }
+    ::operator delete(ptr);
+  }
+
+private:
+  static bool sUsed;
+  static AlignedStorage2<TLSKey> sFirstElement;
+};
+
+bool TLSKey::sUsed = false;
+AlignedStorage2<TLSKey> TLSKey::sFirstElement;
+
+static AutoCleanLinkedList<TLSKey> sTLSKeys;
 
 /**
  * This mutex is used to block the running threads and freeze their contexts.
@@ -218,13 +267,13 @@ static int sThreadFreezeCount = 0;
 
 // Bug 1008254: LinkedList's destructor asserts that the list is empty.
 // But here, on exit, when the global sAllThreads list
-// is destroyed, it may or may be empty. Bug 1008254 comment 395 has a log
+// is destroyed, it may or may not be empty. Bug 1008254 comment 395 has a log
 // when there were 8 threads remaining on exit. So this assertion was
 // intermittently (almost every second time) failing.
 // As a work-around to avoid this intermittent failure, we clear the list on
 // exit just before it gets destroyed. This is the only purpose of that
 // AllThreadsListType subclass.
-struct AllThreadsListType : public LinkedList<thread_info_t>
+struct AllThreadsListType : public AutoCleanLinkedList<thread_info_t>
 {
   ~AllThreadsListType()
   {
@@ -249,7 +298,6 @@ struct AllThreadsListType : public LinkedList<thread_info_t>
                           sThreadCount,
                           sThreadFreezeCount);
     }
-    clear();
   }
 };
 static AllThreadsListType sAllThreads;
@@ -283,7 +331,7 @@ static bool sForkWaitCondChanged = false;
  * This mutex protects the access to sTLSKeys, which keeps track of existing
  * TLS Keys.
  */
-static pthread_mutex_t sTLSKeyLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t sTLSKeyLock = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER;
 static int sThreadSkipCount = 0;
 
 static thread_info_t *
@@ -314,32 +362,6 @@ GetThreadInfo(pthread_t threadID) {
     pthread_mutex_unlock(&sThreadCountLock);
   }
   return tinfo;
-}
-
-/**
- * Get thread info using the specified native thread ID.
- *
- * @return thread_info_t with nativeThreadID == specified threadID
- */
-static thread_info_t*
-GetThreadInfo(pid_t threadID) {
-  if (sIsNuwaProcess) {
-    REAL(pthread_mutex_lock)(&sThreadCountLock);
-  }
-  thread_info_t *thrinfo = nullptr;
-  for (thread_info_t *tinfo = sAllThreads.getFirst();
-       tinfo;
-       tinfo = tinfo->getNext()) {
-    if (tinfo->origNativeThreadID == threadID) {
-      thrinfo = tinfo;
-      break;
-    }
-  }
-  if (sIsNuwaProcess) {
-    pthread_mutex_unlock(&sThreadCountLock);
-  }
-
-  return thrinfo;
 }
 
 #if !defined(HAVE_THREAD_TLS_KEYWORD)
@@ -511,8 +533,7 @@ thread_info_new(void) {
   /* link tinfo to sAllThreads */
   thread_info_t *tinfo = new thread_info_t();
   tinfo->flags = 0;
-  tinfo->recrFunc = nullptr;
-  tinfo->recrArg = nullptr;
+  tinfo->recrFunctions = nullptr;
   tinfo->recreatedThreadID = 0;
   tinfo->recreatedNativeThreadID = 0;
   tinfo->condMutex = nullptr;
@@ -559,6 +580,10 @@ thread_info_cleanup(void *arg) {
   /* unlink tinfo from sAllThreads */
   tinfo->remove();
   pthread_mutex_unlock(&sThreadCountLock);
+
+  if (tinfo->recrFunctions) {
+    delete tinfo->recrFunctions;
+  }
 
   // while sThreadCountLock is held, since delete calls wrapped functions
   // which try to lock sThreadCountLock. This results in deadlock. And we
@@ -693,11 +718,9 @@ __wrap_pthread_create(pthread_t *thread,
  */
 static void
 SaveTLSInfo(thread_info_t *tinfo) {
-  REAL(pthread_mutex_lock)(&sTLSKeyLock);
+  MOZ_RELEASE_ASSERT(REAL(pthread_mutex_lock)(&sTLSKeyLock) == 0);
   tinfo->tlsInfo.clear();
-  for (TLSKeySet::const_iterator it = sTLSKeys.begin();
-       it != sTLSKeys.end();
-       it++) {
+  for (TLSKey *it = sTLSKeys.getFirst(); it != nullptr; it = it->getNext()) {
     void *value = pthread_getspecific(it->first);
     if (value == nullptr) {
       continue;
@@ -706,7 +729,7 @@ SaveTLSInfo(thread_info_t *tinfo) {
     pthread_key_t key = it->first;
     tinfo->tlsInfo.push_back(TLSInfoList::value_type(key, value));
   }
-  pthread_mutex_unlock(&sTLSKeyLock);
+  MOZ_RELEASE_ASSERT(pthread_mutex_unlock(&sTLSKeyLock) == 0);
 }
 
 /**
@@ -735,24 +758,26 @@ __wrap_pthread_key_create(pthread_key_t *key, void (*destructor)(void*)) {
   if (rv != 0) {
     return rv;
   }
-  REAL(pthread_mutex_lock)(&sTLSKeyLock);
-  sTLSKeys.insert(TLSKeySet::value_type(*key, destructor));
-  pthread_mutex_unlock(&sTLSKeyLock);
+  MOZ_RELEASE_ASSERT(REAL(pthread_mutex_lock)(&sTLSKeyLock) == 0);
+  sTLSKeys.insertBack(new TLSKey(*key, destructor));
+  MOZ_RELEASE_ASSERT(pthread_mutex_unlock(&sTLSKeyLock) == 0);
   return 0;
 }
 
 extern "C" MFBT_API int
 __wrap_pthread_key_delete(pthread_key_t key) {
-  if (!sIsNuwaProcess) {
-    return REAL(pthread_key_delete)(key);
-  }
   int rv = REAL(pthread_key_delete)(key);
   if (rv != 0) {
     return rv;
   }
-  REAL(pthread_mutex_lock)(&sTLSKeyLock);
-  sTLSKeys.erase(key);
-  pthread_mutex_unlock(&sTLSKeyLock);
+  MOZ_RELEASE_ASSERT(REAL(pthread_mutex_lock)(&sTLSKeyLock) == 0);
+  for (TLSKey *it = sTLSKeys.getFirst(); it != nullptr; it = it->getNext()) {
+    if (key == it->first) {
+      delete it;
+      break;
+    }
+  }
+  MOZ_RELEASE_ASSERT(pthread_mutex_unlock(&sTLSKeyLock) == 0);
   return 0;
 }
 
@@ -892,11 +917,16 @@ static int sRecreateGatePassed = 0;
  * 3) Freeze point 2: blocks the current thread by acquiring sThreadFreezeLock.
  *    If freezing is not enabled then revert the counter change in freeze
  *    point 1.
+ *
+ * Note: the purpose of the '(void) variable;' statements is to avoid
+ *       -Wunused-but-set-variable warnings.
  */
 #define THREAD_FREEZE_POINT1()                                 \
   bool freezeCountChg = false;                                 \
   bool recreated = false;                                      \
+  (void) recreated;                                            \
   volatile bool freezePoint2 = false;                          \
+  (void) freezePoint2;                                         \
   thread_info_t *tinfo;                                        \
   if (sIsNuwaProcess &&                                        \
       (tinfo = CUR_THREAD_INFO) &&                             \
@@ -1102,44 +1132,17 @@ __wrap_pthread_cond_timedwait(pthread_cond_t *cond,
   return rv;
 }
 
-extern "C" int __pthread_cond_timedwait(pthread_cond_t *cond,
-                                        pthread_mutex_t *mtx,
-                                        const struct timespec *abstime,
-                                        clockid_t clock);
 
 extern "C" MFBT_API int
-__wrap___pthread_cond_timedwait(pthread_cond_t *cond,
-                                pthread_mutex_t *mtx,
-                                const struct timespec *abstime,
-                                clockid_t clock) {
+__wrap_pthread_mutex_trylock(pthread_mutex_t *mtx) {
   int rv = 0;
 
-  THREAD_FREEZE_POINT1_VIP();
+  THREAD_FREEZE_POINT1();
   if (freezePoint2) {
-    RECREATE_CONTINUE();
-    RECREATE_PASS_VIP();
-    RECREATE_GATE_VIP();
     return rv;
   }
-  if (recreated && mtx) {
-    if (!freezePoint1) {
-      tinfo->condMutex = mtx;
-      if (!pthread_mutex_trylock(mtx)) {
-        tinfo->condMutexNeedsBalancing = true;
-      }
-    }
-    RECREATE_CONTINUE();
-    RECREATE_PASS_VIP();
-  }
-  rv = REAL(__pthread_cond_timedwait)(cond, mtx, abstime, clock);
-  if (recreated && mtx) {
-    if (tinfo->condMutex) {
-      tinfo->condMutexNeedsBalancing = false;
-      pthread_mutex_unlock(mtx);
-    }
-    RECREATE_GATE_VIP();
-  }
-  THREAD_FREEZE_POINT2_VIP();
+  rv = REAL(pthread_mutex_trylock)(mtx);
+  THREAD_FREEZE_POINT2();
 
   return rv;
 }
@@ -1348,27 +1351,6 @@ __wrap_close(int aFd) {
   }
 
   return rv;
-}
-
-extern "C" MFBT_API int
-__wrap_tgkill(pid_t tgid, pid_t tid, int signalno)
-{
-  if (sIsNuwaProcess) {
-    return tgkill(tgid, tid, signalno);
-  }
-
-  if (tid == sMainThread.origNativeThreadID) {
-    return tgkill(tgid, sMainThread.recreatedNativeThreadID, signalno);
-  }
-
-  thread_info_t *tinfo = (tid == sMainThread.origNativeThreadID ?
-      &sMainThread :
-      GetThreadInfo(tid));
-  if (!tinfo) {
-    return tgkill(tgid, tid, signalno);
-  }
-
-  return tgkill(tgid, tinfo->recreatedNativeThreadID, signalno);
 }
 
 static void *
@@ -1790,8 +1772,10 @@ NuwaMarkCurrentThread(void (*recreate)(void *), void *arg) {
   }
 
   tinfo->flags |= TINFO_FLAG_NUWA_SUPPORT;
-  tinfo->recrFunc = recreate;
-  tinfo->recrArg = arg;
+  if (recreate) {
+    nuwa_construct_t construct(recreate, arg);
+    tinfo->addThreadConstructor(&construct);
+  }
 
   // XXX Thread name might be set later than this call. If this is the case, we
   // might need to delay getting the thread name.
@@ -1898,9 +1882,7 @@ NuwaCheckpointCurrentThread2(int setjmpCond) {
  */
 MFBT_API void
 NuwaAddConstructor(void (*construct)(void *), void *arg) {
-  nuwa_construct_t ctr;
-  ctr.construct = construct;
-  ctr.arg = arg;
+  nuwa_construct_t ctr(construct, arg);
   sConstructors.push_back(ctr);
 }
 
@@ -1910,10 +1892,19 @@ NuwaAddConstructor(void (*construct)(void *), void *arg) {
  */
 MFBT_API void
 NuwaAddFinalConstructor(void (*construct)(void *), void *arg) {
-  nuwa_construct_t ctr;
-  ctr.construct = construct;
-  ctr.arg = arg;
+  nuwa_construct_t ctr(construct, arg);
   sFinalConstructors.push_back(ctr);
+}
+
+MFBT_API void
+NuwaAddThreadConstructor(void (*aConstruct)(void *), void *aArg) {
+  thread_info *tinfo = CUR_THREAD_INFO;
+  if (!tinfo || !aConstruct) {
+    return;
+  }
+
+  nuwa_construct_t construct(aConstruct, aArg);
+  tinfo->addThreadConstructor(&construct);
 }
 
 /**

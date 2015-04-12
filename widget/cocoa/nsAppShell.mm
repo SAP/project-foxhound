@@ -44,7 +44,7 @@ using namespace mozilla::widget;
 // Gecko. For example when we're playing video in a foreground tab we
 // don't want the screen saver to turn on.
 
-class MacWakeLockListener MOZ_FINAL : public nsIDOMMozWakeLockListener {
+class MacWakeLockListener final : public nsIDOMMozWakeLockListener {
 public:
   NS_DECL_ISUPPORTS;
 
@@ -53,7 +53,7 @@ private:
 
   IOPMAssertionID mAssertionID = kIOPMNullAssertionID;
 
-  NS_IMETHOD Callback(const nsAString& aTopic, const nsAString& aState) {
+  NS_IMETHOD Callback(const nsAString& aTopic, const nsAString& aState) override {
     if (!aTopic.EqualsASCII("screen")) {
       return NS_OK;
     }
@@ -87,7 +87,7 @@ private:
     }
     return NS_OK;
   }
-};
+}; // MacWakeLockListener
 
 // defined in nsCocoaWindow.mm
 extern int32_t             gXULModalLevel;
@@ -115,8 +115,12 @@ static bool gAppShellMethodsSwizzled = false;
   if (expiration) {
     mozilla::HangMonitor::Suspend();
   }
-  return [super nextEventMatchingMask:mask
-          untilDate:expiration inMode:mode dequeue:flag];
+  NSEvent* nextEvent = [super nextEventMatchingMask:mask
+                        untilDate:expiration inMode:mode dequeue:flag];
+  if (expiration) {
+    mozilla::HangMonitor::NotifyActivity();
+  }
+  return nextEvent;
 }
 
 @end
@@ -221,6 +225,11 @@ RemoveScreenWakeLockListener()
     sWakeLockListener = nullptr;
   }
 }
+
+// An undocumented CoreGraphics framework method, present in the same form
+// since at least OS X 10.5.
+extern "C" CGError CGSSetDebugOptions(int options);
+
 // Init
 //
 // Loads the nib (see bug 316076c21) and sets up the CFRunLoopSource used to
@@ -290,10 +299,6 @@ nsAppShell::Init()
 
   rv = nsBaseAppShell::Init();
 
-#ifndef __LP64__
-  TextInputHandler::InstallPluginKeyEventsHandler();
-#endif
-
   if (!gAppShellMethodsSwizzled) {
     // We should only replace the original terminate: method if we're not
     // running in a Cocoa embedder. See bug 604901.
@@ -302,6 +307,16 @@ nsAppShell::Init()
                                 @selector(nsAppShell_NSApplication_terminate:));
     }
     gAppShellMethodsSwizzled = true;
+  }
+
+  if (nsCocoaFeatures::OnYosemiteOrLater()) {
+    // Explicitly turn off CGEvent logging.  This works around bug 1092855.
+    // If there are already CGEvents in the log, turning off logging also
+    // causes those events to be written to disk.  But at this point no
+    // CGEvents have yet been processed.  CGEvents are events (usually
+    // input events) pulled from the WindowServer.  An option of 0x80000008
+    // turns on CGEvent logging.
+    CGSSetDebugOptions(0x80000007);
   }
 
   [localPool release];
@@ -563,14 +578,15 @@ nsAppShell::ProcessNextNativeEvent(bool aMayWait)
       UInt32 eventKind = GetEventKind(currentEvent);
       UInt32 eventClass = GetEventClass(currentEvent);
       bool osCocoaEvent =
-        ((eventClass == 'appl') ||
+        ((eventClass == 'appl') || (eventClass == kEventClassAppleEvent) ||
          ((eventClass == 'cgs ') && (eventKind != NSApplicationDefined)));
       // If attrs is kEventAttributeUserEvent or kEventAttributeMonitored
       // (i.e. a user input event), we shouldn't process it here while
       // aMayWait is false.  Likewise if currentEvent will eventually be
-      // turned into an OS-defined Cocoa event.  Doing otherwise risks
-      // doing too much work here, and preventing the event from being
-      // properly processed as a Cocoa event.
+      // turned into an OS-defined Cocoa event, or otherwise needs AppKit
+      // processing.  Doing otherwise risks doing too much work here, and
+      // preventing the event from being properly processed by the AppKit
+      // framework.
       if ((attrs != kEventAttributeNone) || osCocoaEvent) {
         // Since we can't process the next event here (while aMayWait is false),
         // we want moreEvents to be false on return.
@@ -655,10 +671,6 @@ nsAppShell::Exit(void)
   }
 
   mTerminated = true;
-
-#ifndef __LP64__
-  TextInputHandler::RemovePluginKeyEventsHandler();
-#endif
 
   // Quoting from Apple's doc on the [NSApplication stop:] method (from their
   // doc on the NSApplication class):  "If this method is invoked during a
@@ -842,7 +854,7 @@ nsAppShell::AfterProcessNextEvent(nsIThreadInternal *aThread,
     nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
     nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
     if (rollupWidget)
-      rollupListener->Rollup(0, nullptr, nullptr);
+      rollupListener->Rollup(0, true, nullptr, nullptr);
   }
 
   NS_OBJC_END_TRY_ABORT_BLOCK;

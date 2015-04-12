@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=4 ts=8 et ft=cpp: */
+/* vim: set sw=2 ts=2 et ft=cpp: tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,12 +10,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#undef CHROMIUM_LOG
 #if defined(MOZ_WIDGET_GONK)
 #include <android/log.h>
-#define CHROMIUM_LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Gonk", args)
+#define KEYSTORE_LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Gonk", args)
 #else
-#define CHROMIUM_LOG(args...)  printf(args);
+#define KEYSTORE_LOG(args...)  printf(args);
 #endif
 
 #include "KeyStore.h"
@@ -69,7 +68,13 @@ public:
   virtual int64_t getmtime(const String16& name) {return 0;}
   virtual int32_t duplicate(const String16& srcKey, int32_t srcUid, const String16& destKey, int32_t destUid) {return 0;}
   virtual int32_t clear_uid(int64_t uid) {return 0;}
-#if ANDROID_VERSION == 18
+#if ANDROID_VERSION >= 21
+  virtual int32_t generate(const String16& name, int32_t uid, int32_t keyType, int32_t keySize, int32_t flags, Vector<sp<KeystoreArg> >* args) {return 0;}
+  virtual int32_t is_hardware_backed(const String16& keyType) {return 0;}
+  virtual int32_t reset_uid(int32_t uid) {return 0;}
+  virtual int32_t sync_uid(int32_t sourceUid, int32_t targetUid) {return 0;}
+  virtual int32_t password_uid(const String16& password, int32_t uid) {return 0;}
+#elif ANDROID_VERSION == 18
   virtual int32_t generate(const String16& name, int uid, int32_t flags) {return 0;}
   virtual int32_t is_hardware_backed() {return 0;}
 #else
@@ -156,7 +161,13 @@ public:
   int64_t getmtime(const String16& name) {return ::UNDEFINED_ACTION;}
   int32_t duplicate(const String16& srcKey, int32_t srcUid, const String16& destKey, int32_t destUid) {return ::UNDEFINED_ACTION;}
   int32_t clear_uid(int64_t uid) {return ::UNDEFINED_ACTION;}
-#if ANDROID_VERSION == 18
+#if ANDROID_VERSION >= 21
+  virtual int32_t generate(const String16& name, int32_t uid, int32_t keyType, int32_t keySize, int32_t flags, Vector<sp<KeystoreArg> >* args) {return ::UNDEFINED_ACTION;}
+  virtual int32_t is_hardware_backed(const String16& keyType) {return ::UNDEFINED_ACTION;}
+  virtual int32_t reset_uid(int32_t uid) {return ::UNDEFINED_ACTION;;}
+  virtual int32_t sync_uid(int32_t sourceUid, int32_t targetUid) {return ::UNDEFINED_ACTION;}
+  virtual int32_t password_uid(const String16& password, int32_t uid) {return ::UNDEFINED_ACTION;}
+#elif ANDROID_VERSION == 18
   virtual int32_t generate(const String16& name, int uid, int32_t flags) {return ::UNDEFINED_ACTION;}
   virtual int32_t is_hardware_backed() {return ::UNDEFINED_ACTION;}
 #else
@@ -177,10 +188,13 @@ void startKeyStoreService()
 void startKeyStoreService() { return; }
 #endif
 
+static const char *CA_BEGIN = "-----BEGIN ",
+                  *CA_END   = "-----END ",
+                  *CA_TAILER = "-----\n";
+
 namespace mozilla {
 namespace ipc {
 
-static const char* KEYSTORE_SOCKET_NAME = "keystore";
 static const char* KEYSTORE_SOCKET_PATH = "/dev/socket/keystore";
 static const char* KEYSTORE_ALLOWED_USERS[] = {
   "root",
@@ -357,7 +371,92 @@ KeyStoreConnector::GetSocketAddr(const sockaddr_any& aAddr,
   MOZ_CRASH("This should never be called!");
 }
 
+//
+// KeyStore::ListenSocket
+//
+
+KeyStore::ListenSocket::ListenSocket(KeyStore* aKeyStore)
+: mKeyStore(aKeyStore)
+{
+  MOZ_ASSERT(mKeyStore);
+
+  MOZ_COUNT_CTOR(KeyStore::ListenSocket);
+}
+
+void
+KeyStore::ListenSocket::OnConnectSuccess()
+{
+  mKeyStore->OnConnectSuccess(LISTEN_SOCKET);
+
+  MOZ_COUNT_DTOR(KeyStore::ListenSocket);
+}
+
+void
+KeyStore::ListenSocket::OnConnectError()
+{
+  mKeyStore->OnConnectError(LISTEN_SOCKET);
+}
+
+void
+KeyStore::ListenSocket::OnDisconnect()
+{
+  mKeyStore->OnDisconnect(LISTEN_SOCKET);
+}
+
+//
+// KeyStore::StreamSocket
+//
+
+KeyStore::StreamSocket::StreamSocket(KeyStore* aKeyStore)
+: mKeyStore(aKeyStore)
+{
+  MOZ_ASSERT(mKeyStore);
+
+  MOZ_COUNT_CTOR(KeyStore::StreamSocket);
+}
+
+KeyStore::StreamSocket::~StreamSocket()
+{
+  MOZ_COUNT_DTOR(KeyStore::StreamSocket);
+}
+
+void
+KeyStore::StreamSocket::OnConnectSuccess()
+{
+  mKeyStore->OnConnectSuccess(STREAM_SOCKET);
+}
+
+void
+KeyStore::StreamSocket::OnConnectError()
+{
+  mKeyStore->OnConnectError(STREAM_SOCKET);
+}
+
+void
+KeyStore::StreamSocket::OnDisconnect()
+{
+  mKeyStore->OnDisconnect(STREAM_SOCKET);
+}
+
+void
+KeyStore::StreamSocket::ReceiveSocketData(
+  nsAutoPtr<UnixSocketRawData>& aMessage)
+{
+  mKeyStore->ReceiveSocketData(aMessage);
+}
+
+ConnectionOrientedSocketIO*
+KeyStore::StreamSocket::GetIO()
+{
+  return PrepareAccept(new KeyStoreConnector());
+}
+
+//
+// KeyStore
+//
+
 KeyStore::KeyStore()
+: mShutdown(false)
 {
   MOZ_COUNT_CTOR(KeyStore);
   ::startKeyStoreService();
@@ -367,19 +466,45 @@ KeyStore::KeyStore()
 KeyStore::~KeyStore()
 {
   MOZ_COUNT_DTOR(KeyStore);
+
+  MOZ_ASSERT(!mListenSocket);
+  MOZ_ASSERT(!mStreamSocket);
 }
 
 void
 KeyStore::Shutdown()
 {
+  // We set mShutdown first, so that |OnDisconnect| won't try to reconnect.
   mShutdown = true;
-  CloseSocket();
+
+  if (mStreamSocket) {
+    mStreamSocket->Close();
+    mStreamSocket = nullptr;
+  }
+  if (mListenSocket) {
+    mListenSocket->Close();
+    mListenSocket = nullptr;
+  }
 }
 
 void
 KeyStore::Listen()
 {
-  ListenSocket(new KeyStoreConnector());
+  // We only allocate one |StreamSocket|, but re-use it for every connection.
+  if (mStreamSocket) {
+    mStreamSocket->Close();
+  } else {
+    mStreamSocket = new StreamSocket(this);
+  }
+
+  if (!mListenSocket) {
+    // We only ever allocate one |ListenSocket|...
+    mListenSocket = new ListenSocket(this);
+    mListenSocket->Listen(new KeyStoreConnector(), mStreamSocket);
+  } else {
+    // ... but keep it open.
+    mListenSocket->Listen(mStreamSocket);
+  }
 
   ResetHandlerInfo();
 }
@@ -500,25 +625,29 @@ KeyStore::ReadData(UnixSocketRawData *aMessage)
 void
 KeyStore::SendResponse(ResponseCode aResponse)
 {
+  MOZ_ASSERT(mStreamSocket);
+
   if (aResponse == NO_RESPONSE)
     return;
 
   uint8_t response = (uint8_t)aResponse;
   UnixSocketRawData* data = new UnixSocketRawData((const void *)&response, 1);
-  SendSocketData(data);
+  mStreamSocket->SendSocketData(data);
 }
 
 // Data response
 void
 KeyStore::SendData(const uint8_t *aData, int aLength)
 {
+  MOZ_ASSERT(mStreamSocket);
+
   unsigned short dataLength = htons(aLength);
 
   UnixSocketRawData* length = new UnixSocketRawData((const void *)&dataLength, 2);
-  SendSocketData(length);
+  mStreamSocket->SendSocketData(length);
 
   UnixSocketRawData* data = new UnixSocketRawData((const void *)aData, aLength);
-  SendSocketData(data);
+  mStreamSocket->SendSocketData(data);
 }
 
 void
@@ -571,24 +700,43 @@ KeyStore::ReceiveSocketData(nsAutoPtr<UnixSocketRawData>& aMessage)
 }
 
 void
-KeyStore::OnConnectSuccess()
+KeyStore::OnConnectSuccess(SocketType aSocketType)
 {
-  mShutdown = false;
+  if (aSocketType == STREAM_SOCKET) {
+    mShutdown = false;
+  }
 }
 
 void
-KeyStore::OnConnectError()
+KeyStore::OnConnectError(SocketType aSocketType)
 {
-  if (!mShutdown) {
+  if (mShutdown) {
+    return;
+  }
+
+  if (aSocketType == STREAM_SOCKET) {
+    // Stream socket error; start listening again
     Listen();
   }
 }
 
 void
-KeyStore::OnDisconnect()
+KeyStore::OnDisconnect(SocketType aSocketType)
 {
-  if (!mShutdown) {
-    Listen();
+  if (mShutdown) {
+    return;
+  }
+
+  switch (aSocketType) {
+    case LISTEN_SOCKET:
+      // Listen socket disconnected; start anew.
+      mListenSocket = nullptr;
+      Listen();
+      break;
+    case STREAM_SOCKET:
+      // Stream socket disconnected; start listening again.
+      Listen();
+      break;
   }
 }
 

@@ -15,7 +15,6 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
-#include "mozilla/NullPtr.h"
 #include "mozilla/unused.h"
 #include "mozilla/dom/Exceptions.h"
 #include "nsContentUtils.h"
@@ -130,5 +129,9 @@ SandboxSetCrashFunc()
 {
   gSandboxCrashFunc = SandboxCrash;
 }
+
+#ifndef ANDROID
+SandboxCrashFunc gSandboxCrashFunc;
+#endif
 
 } // namespace mozilla

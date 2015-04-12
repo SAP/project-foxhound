@@ -43,6 +43,48 @@ using namespace mozilla::gfx;
 
 #include "DeprecatedPremultiplyTables.h"
 
+#undef compress
+#include "mozilla/Compression.h"
+
+using namespace mozilla::Compression;
+extern "C" {
+
+/**
+ * Dump a raw image to the default log.  This function is exported
+ * from libxul, so it can be called from any library in addition to
+ * (of course) from a debugger.
+ *
+ * Note: this helper currently assumes that all 2-bytepp images are
+ * r5g6b5, and that all 4-bytepp images are r8g8b8a8.
+ */
+NS_EXPORT
+void mozilla_dump_image(void* bytes, int width, int height, int bytepp,
+                        int strideBytes)
+{
+    if (0 == strideBytes) {
+        strideBytes = width * bytepp;
+    }
+    SurfaceFormat format;
+    // TODO more flexible; parse string?
+    switch (bytepp) {
+    case 2:
+        format = SurfaceFormat::R5G6B5;
+        break;
+    case 4:
+    default:
+        format = SurfaceFormat::R8G8B8A8;
+        break;
+    }
+
+    RefPtr<DataSourceSurface> surf =
+        Factory::CreateWrappingDataSourceSurface((uint8_t*)bytes, strideBytes,
+                                                 gfx::IntSize(width, height),
+                                                 format);
+    gfxUtils::DumpAsDataURI(surf);
+}
+
+}
+
 static const uint8_t PremultiplyValue(uint8_t a, uint8_t v) {
     return gfxUtils::sPremultiplyTable[a*256+v];
 }
@@ -644,22 +686,20 @@ gfxUtils::ImageFormatToDepth(gfxImageFormat aFormat)
 }
 
 static void
-PathFromRegionInternal(gfxContext* aContext, const nsIntRegion& aRegion,
-                       bool aSnap)
+PathFromRegionInternal(gfxContext* aContext, const nsIntRegion& aRegion)
 {
   aContext->NewPath();
   nsIntRegionRectIterator iter(aRegion);
   const nsIntRect* r;
   while ((r = iter.Next()) != nullptr) {
-    aContext->Rectangle(gfxRect(r->x, r->y, r->width, r->height), aSnap);
+    aContext->Rectangle(gfxRect(r->x, r->y, r->width, r->height));
   }
 }
 
 static void
-ClipToRegionInternal(gfxContext* aContext, const nsIntRegion& aRegion,
-                     bool aSnap)
+ClipToRegionInternal(gfxContext* aContext, const nsIntRegion& aRegion)
 {
-  PathFromRegionInternal(aContext, aRegion, aSnap);
+  PathFromRegionInternal(aContext, aRegion);
   aContext->Clip();
 }
 
@@ -697,19 +737,13 @@ ClipToRegionInternal(DrawTarget* aTarget, const nsIntRegion& aRegion)
 /*static*/ void
 gfxUtils::ClipToRegion(gfxContext* aContext, const nsIntRegion& aRegion)
 {
-  ClipToRegionInternal(aContext, aRegion, false);
+  ClipToRegionInternal(aContext, aRegion);
 }
 
 /*static*/ void
 gfxUtils::ClipToRegion(DrawTarget* aTarget, const nsIntRegion& aRegion)
 {
   ClipToRegionInternal(aTarget, aRegion);
-}
-
-/*static*/ void
-gfxUtils::ClipToRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion)
-{
-  ClipToRegionInternal(aContext, aRegion, true);
 }
 
 /*static*/ gfxFloat
@@ -758,13 +792,7 @@ gfxUtils::ClampToScaleFactor(gfxFloat aVal)
 /*static*/ void
 gfxUtils::PathFromRegion(gfxContext* aContext, const nsIntRegion& aRegion)
 {
-  PathFromRegionInternal(aContext, aRegion, false);
-}
-
-/*static*/ void
-gfxUtils::PathFromRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion)
-{
-  PathFromRegionInternal(aContext, aRegion, true);
+  PathFromRegionInternal(aContext, aRegion);
 }
 
 gfxMatrix
@@ -1086,14 +1114,15 @@ gfxUtils::GetColorForFrameNumber(uint64_t aFrameNumber)
     return colors[aFrameNumber % sNumFrameColors];
 }
 
-/* static */ nsresult
-gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
-                              const nsACString& aMimeType,
-                              const nsAString& aOutputOptions,
-                              BinaryOrData aBinaryOrData,
-                              FILE* aFile)
+static nsresult
+EncodeSourceSurfaceInternal(SourceSurface* aSurface,
+                           const nsACString& aMimeType,
+                           const nsAString& aOutputOptions,
+                           gfxUtils::BinaryOrData aBinaryOrData,
+                           FILE* aFile,
+                           nsCString* aStrOut)
 {
-  MOZ_ASSERT(aBinaryOrData == eDataURIEncode || aFile,
+  MOZ_ASSERT(aBinaryOrData == gfxUtils::eDataURIEncode || aFile || aStrOut,
              "Copying binary encoding to clipboard not currently supported");
 
   const IntSize size = aSurface->GetSize();
@@ -1106,8 +1135,8 @@ gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
   if (aSurface->GetFormat() != SurfaceFormat::B8G8R8A8) {
     // FIXME bug 995807 (B8G8R8X8), bug 831898 (R5G6B5)
     dataSurface =
-      CopySurfaceToDataSourceSurfaceWithFormat(aSurface,
-                                               SurfaceFormat::B8G8R8A8);
+      gfxUtils::CopySurfaceToDataSourceSurfaceWithFormat(aSurface,
+                                                         SurfaceFormat::B8G8R8A8);
   } else {
     dataSurface = aSurface->GetDataSurface();
   }
@@ -1175,6 +1204,9 @@ gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
                                bufSize - imgSize,
                                &numReadThisTime)) == NS_OK && numReadThisTime > 0)
   {
+    // Update the length of the vector without overwriting the new data.
+    imgData.growByUninitialized(numReadThisTime);
+
     imgSize += numReadThisTime;
     if (imgSize == bufSize) {
       // need a bigger buffer, just double
@@ -1184,8 +1216,10 @@ gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
       }
     }
   }
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(!imgData.empty(), NS_ERROR_FAILURE);
 
-  if (aBinaryOrData == eBinaryEncode) {
+  if (aBinaryOrData == gfxUtils::eBinaryEncode) {
     if (aFile) {
       fwrite(imgData.begin(), 1, imgSize, aFile);
     }
@@ -1218,6 +1252,8 @@ gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
     }
 #endif
     fprintf(aFile, "%s", string.BeginReading());
+  } else if (aStrOut) {
+    *aStrOut = string;
   } else {
     nsCOMPtr<nsIClipboardHelper> clipboard(do_GetService("@mozilla.org/widget/clipboardhelper;1", &rv));
     if (clipboard) {
@@ -1225,6 +1261,27 @@ gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
     }
   }
   return NS_OK;
+}
+
+static nsCString
+EncodeSourceSurfaceAsPNGURI(SourceSurface* aSurface)
+{
+  nsCString string;
+  EncodeSourceSurfaceInternal(aSurface, NS_LITERAL_CSTRING("image/png"),
+                              EmptyString(), gfxUtils::eDataURIEncode,
+                              nullptr, &string);
+  return string;
+}
+
+/* static */ nsresult
+gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
+                              const nsACString& aMimeType,
+                              const nsAString& aOutputOptions,
+                              BinaryOrData aBinaryOrData,
+                              FILE* aFile)
+{
+  return EncodeSourceSurfaceInternal(aSurface, aMimeType, aOutputOptions,
+                                     aBinaryOrData, aFile, nullptr);
 }
 
 /* static */ void
@@ -1308,6 +1365,12 @@ gfxUtils::DumpAsDataURI(SourceSurface* aSurface, FILE* aFile)
                       EmptyString(), eDataURIEncode, aFile);
 }
 
+/* static */ nsCString
+gfxUtils::GetAsDataURI(SourceSurface* aSurface)
+{
+  return EncodeSourceSurfaceAsPNGURI(aSurface);
+}
+
 /* static */ void
 gfxUtils::DumpAsDataURI(DrawTarget* aDT, FILE* aFile)
 {
@@ -1316,6 +1379,44 @@ gfxUtils::DumpAsDataURI(DrawTarget* aDT, FILE* aFile)
     DumpAsDataURI(surface, aFile);
   } else {
     NS_WARNING("Failed to get surface!");
+  }
+}
+
+/* static */ nsCString
+gfxUtils::GetAsLZ4Base64Str(DataSourceSurface* aSourceSurface)
+{
+  int32_t dataSize = aSourceSurface->GetSize().height * aSourceSurface->Stride();
+  auto compressedData = MakeUnique<char[]>(LZ4::maxCompressedSize(dataSize));
+  if (compressedData) {
+    int nDataSize = LZ4::compress((char*)aSourceSurface->GetData(),
+                                  dataSize,
+                                  compressedData.get());
+    if (nDataSize > 0) {
+      nsCString encodedImg;
+      nsresult rv = Base64Encode(Substring(compressedData.get(), nDataSize), encodedImg);
+      if (rv == NS_OK) {
+        nsCString string("");
+        string.AppendPrintf("data:image/lz4bgra;base64,%i,%i,%i,",
+                             aSourceSurface->GetSize().width,
+                             aSourceSurface->Stride(),
+                             aSourceSurface->GetSize().height);
+        string.Append(encodedImg);
+        return string;
+      }
+    }
+  }
+  return nsCString("");
+}
+
+/* static */ nsCString
+gfxUtils::GetAsDataURI(DrawTarget* aDT)
+{
+  RefPtr<SourceSurface> surface = aDT->Snapshot();
+  if (surface) {
+    return EncodeSourceSurfaceAsPNGURI(surface);
+  } else {
+    NS_WARNING("Failed to get surface!");
+    return nsCString("");
   }
 }
 
@@ -1337,17 +1438,19 @@ gfxUtils::CopyAsDataURI(DrawTarget* aDT)
   }
 }
 
-#ifdef MOZ_DUMP_PAINTING
-static bool sDumpPaintList = getenv("MOZ_DUMP_PAINT_LIST") != 0;
-
 /* static */ bool
-gfxUtils::DumpPaintList() {
-  return sDumpPaintList || gfxPrefs::LayoutDumpDisplayList();
+gfxUtils::DumpDisplayList() {
+  return gfxPrefs::LayoutDumpDisplayList();
 }
 
+FILE *gfxUtils::sDumpPaintFile = stderr;
+
+#ifdef MOZ_DUMP_PAINTING
 bool gfxUtils::sDumpPainting = getenv("MOZ_DUMP_PAINT") != 0;
 bool gfxUtils::sDumpPaintingToFile = getenv("MOZ_DUMP_PAINT_TO_FILE") != 0;
-FILE *gfxUtils::sDumpPaintFile = nullptr;
+#else
+bool gfxUtils::sDumpPainting = false;
+bool gfxUtils::sDumpPaintingToFile = false;
 #endif
 
 namespace mozilla {

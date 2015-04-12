@@ -469,7 +469,7 @@ XPCShellEnvironment::~XPCShellEnvironment()
             JSAutoCompartment ac(cx, global);
             JS_SetAllNonReservedSlotsToUndefined(cx, global);
         }
-        mGlobalHolder.Release();
+        mGlobalHolder.reset();
 
         JSRuntime *rt = JS_GetRuntime(cx);
         JS_GC(rt);
@@ -498,10 +498,7 @@ XPCShellEnvironment::Init()
         return false;
     }
 
-    if (!mGlobalHolder.Hold(rt)) {
-        NS_ERROR("Can't protect global object!");
-        return false;
-    }
+    mGlobalHolder.init(rt);
 
     AutoSafeJSContext cx;
 
@@ -558,8 +555,9 @@ XPCShellEnvironment::Init()
 
     JS::Rooted<Value> privateVal(cx, PrivateValue(this));
     if (!JS_DefineProperty(cx, globalObj, "__XPCShellEnvironment",
-                           privateVal, JSPROP_READONLY | JSPROP_PERMANENT,
-                           JS_PropertyStub, JS_StrictPropertyStub) ||
+                           privateVal,
+                           JSPROP_READONLY | JSPROP_PERMANENT,
+                           JS_STUBGETTER, JS_STUBSETTER) ||
         !JS_DefineFunctions(cx, globalObj, gGlobalFunctions) ||
         !JS_DefineProfilingFunctions(cx, globalObj))
     {

@@ -24,6 +24,8 @@
 <!ENTITY projectMenu_remove_accesskey "R">
 <!ENTITY projectMenu_showPrefs_label "Preferences">
 <!ENTITY projectMenu_showPrefs_accesskey "e">
+<!ENTITY projectMenu_manageComponents_label "Manage Extra Components">
+<!ENTITY projectMenu_manageComponents_accesskey "M">
 
 <!ENTITY runtimeMenu_label "Runtime">
 <!ENTITY runtimeMenu_accesskey "R">
@@ -37,13 +39,21 @@
 <!ENTITY runtimeMenu_showDetails_accesskey "E">
 <!ENTITY runtimeMenu_showMonitor_label "Monitor">
 <!ENTITY runtimeMenu_showMonitor_accesskey "M">
+<!ENTITY runtimeMenu_showDevicePrefs_label "Device Preferences">
+<!ENTITY runtimeMenu_showDevicePrefs_accesskey "D">
+<!ENTITY runtimeMenu_showSettings_label "Device Settings">
+<!ENTITY runtimeMenu_showSettings_accesskey "s">
 
 <!ENTITY viewMenu_label "View">
 <!ENTITY viewMenu_accesskey "V">
 <!ENTITY viewMenu_toggleEditor_label "Toggle Editor">
 <!ENTITY viewMenu_toggleEditor_accesskey "E">
-<!ENTITY viewMenu_showAddons_label "Manage Simulators">
-<!ENTITY viewMenu_showAddons_accesskey "M">
+<!ENTITY viewMenu_zoomin_label "Zoom In">
+<!ENTITY viewMenu_zoomin_accesskey "I">
+<!ENTITY viewMenu_zoomout_label "Zoom Out">
+<!ENTITY viewMenu_zoomout_accesskey "O">
+<!ENTITY viewMenu_resetzoom_label "Reset Zoom">
+<!ENTITY viewMenu_resetzoom_accesskey "R">
 
 <!ENTITY projectButton_label "Open App">
 <!ENTITY runtimeButton_label "Select Runtime">
@@ -59,14 +69,19 @@
 <!ENTITY key_toggleToolbox "VK_F12">
 <!-- toggle sidebar -->
 <!ENTITY key_toggleEditor "B">
+<!-- zoom -->
+<!ENTITY key_zoomin "+">
+<!ENTITY key_zoomin2 "=">
+<!ENTITY key_zoomout "-">
+<!ENTITY key_resetzoom "0">
 
 <!ENTITY projectPanel_myProjects "My Projects">
 <!ENTITY projectPanel_runtimeApps "Runtime Apps">
 <!ENTITY projectPanel_tabs "Tabs">
-<!ENTITY runtimePanel_USBDevices "USB Devices">
-<!ENTITY runtimePanel_WiFiDevices "Wi-Fi Devices">
-<!ENTITY runtimePanel_simulators "Simulators">
-<!ENTITY runtimePanel_custom "Custom">
+<!ENTITY runtimePanel_usb "USB Devices">
+<!ENTITY runtimePanel_wifi "Wi-Fi Devices">
+<!ENTITY runtimePanel_simulator "Simulators">
+<!ENTITY runtimePanel_other "Other">
 <!ENTITY runtimePanel_installsimulator "Install Simulator">
 <!ENTITY runtimePanel_noadbhelper "Install ADB Helper">
 <!ENTITY runtimePanel_nousbdevice "Can't see your device?">
@@ -79,6 +94,7 @@
 <!ENTITY details_location "Location">
 <!ENTITY details_manifestURL "App ID">
 <!ENTITY details_removeProject_button "Remove Project">
+<!ENTITY details_showPrepackageLog_button "Show Pre-package Log">
 
 <!-- New App -->
 <!ENTITY newAppWindowTitle "New App">
@@ -100,9 +116,9 @@
 <!ENTITY prefs_editor_title "Editor">
 <!ENTITY prefs_general_title "General">
 <!ENTITY prefs_restore "Restore Defaults">
-<!ENTITY prefs_simulators "Manage Simulators">
-<!ENTITY prefs_options_enablelocalruntime "Enable local runtime">
-<!ENTITY prefs_options_enablelocalruntime_tooltip "Allow WebIDE to connect to its own runtime (running browser instance)">
+<!ENTITY prefs_manage_components "Manage Extra Components">
+<!ENTITY prefs_options_autoconnectruntime "Reconnect to previous runtime">
+<!ENTITY prefs_options_autoconnectruntime_tooltip "Reconnect to previous runtime when WebIDE starts">
 <!ENTITY prefs_options_rememberlastproject "Remember last project">
 <!ENTITY prefs_options_rememberlastproject_tooltip "Restore previous project when WebIDE starts">
 <!ENTITY prefs_options_templatesurl "Templates URL">
@@ -130,10 +146,52 @@
 <!ENTITY runtimedetails_adbIsRoot "ADB is root: ">
 <!ENTITY runtimedetails_summonADBRoot "root device">
 <!ENTITY runtimedetails_ADBRootWarning "(requires unlocked bootloader)">
-<!ENTITY runtimedetails_restrictedPrivileges "DevTools restricted privileges: ">
+<!ENTITY runtimedetails_unrestrictedPrivileges "Unrestricted DevTools privileges: ">
 <!ENTITY runtimedetails_requestPrivileges "request higher privileges">
 <!ENTITY runtimedetails_privilegesWarning "(Will reboot device. Requires root access.)">
+
+<!-- Device Preferences and Settings -->
+<!ENTITY device_typeboolean "Boolean">
+<!ENTITY device_typenumber "Integer">
+<!ENTITY device_typestring "String">
+<!ENTITY device_typeobject "Object">
+<!ENTITY device_typenone "Select a type">
+
+<!-- Device Preferences -->
+<!ENTITY devicepreference_title "Device Preferences">
+<!ENTITY devicepreference_search "Search preferences">
+<!ENTITY devicepreference_newname "New preference name">
+<!ENTITY devicepreference_newtext "Preference value">
+<!ENTITY devicepreference_addnew "Add new preference">
+
+<!-- Device Settings -->
+<!ENTITY devicesetting_title "Device Settings">
+<!ENTITY devicesetting_search "Search settings">
+<!ENTITY devicesetting_newname "New setting name">
+<!ENTITY devicesetting_newtext "Setting value">
+<!ENTITY devicesetting_addnew "Add new setting">
 
 <!-- Monitor -->
 <!ENTITY monitor_title "Monitor">
 <!ENTITY monitor_help "Help">
+
+<!-- WiFi Authentication -->
+<!-- LOCALIZATION NOTE (wifi_auth_header): The header displayed on the dialog
+     that instructs the user to transfer an authentication token to the
+     server. -->
+<!ENTITY wifi_auth_header "Client Identification">
+<!-- LOCALIZATION NOTE (wifi_auth_scan_request): Instructions requesting the
+     user to transfer authentication info by scanning a QR code. -->
+<!ENTITY wifi_auth_scan_request "The endpoint you are connecting to needs more information to authenticate this connection.  Please scan the QR code below via the prompt on your other device.">
+<!-- LOCALIZATION NOTE (wifi_auth_no_scanner): Link text to assist users with
+     devices that can't scan a QR code. -->
+<!ENTITY wifi_auth_no_scanner "No QR scanner prompt?">
+<!-- LOCALIZATION NOTE (wifi_auth_yes_scanner): Link text to assist users with
+     devices that can scan a QR code. -->
+<!ENTITY wifi_auth_yes_scanner "Have a QR scanner prompt?">
+<!-- LOCALIZATION NOTE (wifi_auth_token_request): Instructions requesting the
+     user to transfer authentication info by transferring a token. -->
+<!ENTITY wifi_auth_token_request "If your other device asks for a token instead of scanning a QR code, please copy the value below to the other device:">
+
+<!-- Logs panel -->
+<!ENTITY logs_title "Pre-packaging Command Logs">

@@ -114,7 +114,7 @@ class ADBCommand(object):
        from mozdevice import ADBCommand
 
        try:
-           adbcommand = ADBCommand(...)
+           adbcommand = ADBCommand()
        except NotImplementedError:
            print "ADBCommand can not be instantiated."
 
@@ -145,6 +145,14 @@ class ADBCommand(object):
 
         self._logger.debug("%s: %s" % (self.__class__.__name__,
                                        self.__dict__))
+
+        # catch early a missing or non executable adb command
+        try:
+            subprocess.Popen([adb, 'help'],
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE).communicate()
+        except Exception, exc:
+            raise ADBError('%s: %s is not executable.' % (exc, adb))
 
     def _get_logger(self, logger_name):
         logger = None
@@ -280,7 +288,7 @@ class ADBHost(ADBCommand):
 
        from mozdevice import ADBHost
 
-       adbhost = ADBHost(...)
+       adbhost = ADBHost()
        adbhost.start_server()
 
     """
@@ -442,7 +450,7 @@ class ADBDevice(ADBCommand):
 
        from mozdevice import ADBDevice
 
-       adbdevice = ADBDevice(...)
+       adbdevice = ADBDevice()
        print adbdevice.list_files("/mnt/sdcard")
        if adbdevice.process_exist("org.mozilla.fennec"):
            print "Fennec is running"

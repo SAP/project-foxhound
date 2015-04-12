@@ -171,9 +171,29 @@ void
 MozMtpDatabase::RemoveEntry(MtpObjectHandle aHandle)
 {
   MutexAutoLock lock(mMutex);
+  if (!IsValidHandle(aHandle)) {
+    return;
+  }
 
-  if (aHandle > 0 && aHandle < mDb.Length()) {
-    mDb[aHandle] = nullptr;
+  RefPtr<DbEntry> removedEntry = mDb[aHandle];
+  mDb[aHandle] = nullptr;
+  MTP_DBG("0x%08x removed", aHandle);
+  // if the entry is not a folder, just return.
+  if (removedEntry->mObjectFormat != MTP_FORMAT_ASSOCIATION) {
+    return;
+  }
+
+  // Find out and remove the children of aHandle.
+  // Since the index for a directory will always be less than the index of any of its children,
+  // we can remove the entire subtree in one pass.
+  ProtectedDbArray::size_type numEntries = mDb.Length();
+  ProtectedDbArray::index_type entryIndex;
+  for (entryIndex = aHandle+1; entryIndex < numEntries; entryIndex++) {
+    RefPtr<DbEntry> entry = mDb[entryIndex];
+    if (entry && IsValidHandle(entry->mParent) && !mDb[entry->mParent]) {
+      mDb[entryIndex] = nullptr;
+      MTP_DBG("0x%08x removed", aHandle);
+    }
   }
 }
 
@@ -184,7 +204,31 @@ MozMtpDatabase::RemoveEntryAndNotify(MtpObjectHandle aHandle, RefCountedMtpServe
   aMtpServer->sendObjectRemoved(aHandle);
 }
 
-class FileWatcherNotifyRunnable MOZ_FINAL : public nsRunnable
+void
+MozMtpDatabase::UpdateEntryAndNotify(MtpObjectHandle aHandle, DeviceStorageFile* aFile, RefCountedMtpServer* aMtpServer)
+{
+  UpdateEntry(aHandle, aFile);
+  aMtpServer->sendObjectAdded(aHandle);
+}
+
+
+void
+MozMtpDatabase::UpdateEntry(MtpObjectHandle aHandle, DeviceStorageFile* aFile)
+{
+  MutexAutoLock lock(mMutex);
+
+  RefPtr<DbEntry> entry = mDb[aHandle];
+
+  int64_t fileSize = 0;
+  aFile->mFile->GetFileSize(&fileSize);
+  entry->mObjectSize = fileSize;
+  aFile->mFile->GetLastModifiedTime(&entry->mDateCreated);
+  entry->mDateModified = entry->mDateCreated;
+  MTP_DBG("UpdateEntry (0x%08x file %s)", entry->mHandle, entry->mPath.get());
+}
+
+
+class FileWatcherNotifyRunnable final : public nsRunnable
 {
 public:
   FileWatcherNotifyRunnable(nsACString& aStorageName,
@@ -284,13 +328,16 @@ MozMtpDatabase::FileWatcherUpdate(RefCountedMtpServer* aMtpServer,
   if (aEventType.EqualsLiteral("modified")) {
     // To update the file information to the newest, we remove the entry for
     // the existing file, then re-add the entry for the file.
-    if (entryHandle != 0) {
-      MTP_LOG("About to call sendObjectRemoved Handle 0x%08x file %s", entryHandle, filePath.get());
-      RemoveEntryAndNotify(entryHandle, aMtpServer);
-    }
 
-    // create entry for the file and tell MTP.
-    CreateEntryForFileAndNotify(filePath, aFile, aMtpServer);
+    if (entryHandle != 0) {
+      // Update entry for the file and tell MTP.
+      MTP_LOG("About to update handle 0x%08x file %s", entryHandle, filePath.get());
+      UpdateEntryAndNotify(entryHandle, aFile, aMtpServer);
+    }
+    else {
+      // Create entry for the file and tell MTP.
+      CreateEntryForFileAndNotify(filePath, aFile, aMtpServer);
+    }
     return;
   }
 
@@ -524,6 +571,9 @@ MozMtpDatabase::AddStorage(MtpStorageID aStorageID,
 {
   // This is called on the IOThread from MozMtpStorage::StorageAvailable
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
+
+  MTP_DBG("StorageID: 0x%08x aPath: '%s' aName: '%s'",
+          aStorageID, aPath, aName);
 
   PRFileInfo  fileInfo;
   if (PR_GetFileInfo(aPath, &fileInfo) != PR_SUCCESS) {

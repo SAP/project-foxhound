@@ -122,16 +122,12 @@ var AccessFuTest = {
   },
 
   nextTest: function AccessFuTest_nextTest() {
-    var testFunc;
-    try {
-      // Get the next test function from the iterator. If none left,
-      // StopIteration exception is thrown.
-      testFunc = gIterator.next()[1];
-    } catch (ex) {
-      // StopIteration exception.
+    var result = gIterator.next();
+    if (result.done) {
       this.finish();
       return;
     }
+    var testFunc = result.value;
     testFunc();
   },
 
@@ -143,7 +139,11 @@ var AccessFuTest = {
     }
 
     // Create an Iterator for gTestFuncs array.
-    gIterator = Iterator(gTestFuncs); // jshint ignore:line
+    gIterator = (function*() {
+      for (var testFunc of gTestFuncs) {
+        yield testFunc;
+      }
+    })();
 
     // Start AccessFu and put it in stand-by.
     Components.utils.import("resource://gre/modules/accessibility/AccessFu.jsm");
@@ -617,6 +617,15 @@ function ExpectedCheckAction(aChecked, aOptions) {
 
 ExpectedCheckAction.prototype = Object.create(ExpectedPresent.prototype);
 
+function ExpectedNameChange(aName, aOptions) {
+  ExpectedPresent.call(this, {
+    eventType: 'name-change',
+    data: aName
+  }, null, aOptions);
+}
+
+ExpectedNameChange.prototype = Object.create(ExpectedPresent.prototype);
+
 function ExpectedValueChange(aValue, aOptions) {
   ExpectedPresent.call(this, {
     eventType: 'value-change',
@@ -625,6 +634,15 @@ function ExpectedValueChange(aValue, aOptions) {
 }
 
 ExpectedValueChange.prototype = Object.create(ExpectedPresent.prototype);
+
+function ExpectedTextChanged(aValue, aOptions) {
+  ExpectedPresent.call(this, {
+    eventType: 'text-change',
+    data: aValue
+  }, null, aOptions);
+}
+
+ExpectedTextChanged.prototype = Object.create(ExpectedPresent.prototype);
 
 function ExpectedEditState(aEditState, aOptions) {
   ExpectedMessage.call(this, 'AccessFu:Input', aOptions);

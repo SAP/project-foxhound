@@ -11,8 +11,12 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/Transport.h"
 
-using namespace base;
 using namespace IPC;
+
+using base::GetCurrentProcessHandle;
+using base::GetProcId;
+using base::ProcessHandle;
+using base::ProcessId;
 
 namespace mozilla {
 namespace ipc {
@@ -79,10 +83,11 @@ class ChannelOpened : public IPC::Message
 public:
   ChannelOpened(TransportDescriptor aDescriptor,
                 ProcessId aOtherProcess,
-                ProtocolId aProtocol)
+                ProtocolId aProtocol,
+                PriorityValue aPriority = PRIORITY_NORMAL)
     : IPC::Message(MSG_ROUTING_CONTROL, // these only go to top-level actors
                    CHANNEL_OPENED_MESSAGE_TYPE,
-                   PRIORITY_NORMAL)
+                   aPriority)
   {
     IPC::WriteParam(this, aDescriptor);
     IPC::WriteParam(this, aOtherProcess);
@@ -125,10 +130,12 @@ Bridge(const PrivateIPDLInterface&,
 
   if (!aParentChannel->Send(new ChannelOpened(parentSide,
                                               childId,
-                                              aProtocol)) ||
+                                              aProtocol,
+                                              IPC::Message::PRIORITY_URGENT)) ||
       !aChildChannel->Send(new ChannelOpened(childSide,
                                              parentId,
-                                             aChildProtocol))) {
+                                             aChildProtocol,
+                                             IPC::Message::PRIORITY_URGENT))) {
     CloseDescriptor(parentSide);
     CloseDescriptor(childSide);
     return false;

@@ -31,7 +31,7 @@ GetMaskData(Layer* aMaskLayer,
       Matrix4x4 effectiveTransform = aMaskLayer->GetEffectiveTransform();
       DebugOnly<bool> maskIs2D = effectiveTransform.CanDraw2D(&transform);
       NS_ASSERTION(maskIs2D, "How did we end up with a 3D transform here?!");
-      transform.PreTranslate(-aDeviceOffset.x, -aDeviceOffset.y);
+      transform.PostTranslate(-aDeviceOffset.x, -aDeviceOffset.y);
       aMaskData->Construct(transform, surface);
       return true;
     }
@@ -183,8 +183,8 @@ bool
 ShouldShadow(Layer* aLayer)
 {
   if (!ToShadowable(aLayer)) {
-    NS_ABORT_IF_FALSE(aLayer->GetType() == Layer::TYPE_READBACK,
-                      "Only expect not to shadow ReadbackLayers");
+    MOZ_ASSERT(aLayer->GetType() == Layer::TYPE_READBACK,
+               "Only expect not to shadow ReadbackLayers");
     return false;
   }
   return true;

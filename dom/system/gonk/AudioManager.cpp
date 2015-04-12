@@ -15,6 +15,7 @@
 
 #include <android/log.h>
 #include <cutils/properties.h>
+#include <binder/IServiceManager.h>
 
 #include "AudioChannelService.h"
 #include "AudioManager.h"
@@ -50,6 +51,7 @@ using namespace mozilla::hal;
 using namespace mozilla;
 using namespace mozilla::dom::bluetooth;
 
+#undef LOG
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "AudioManager" , ## args)
 
 #define HEADPHONES_STATUS_HEADSET     MOZ_UTF16("headset")
@@ -59,6 +61,7 @@ using namespace mozilla::dom::bluetooth;
 #define HEADPHONES_STATUS_CHANGED     "headphones-status-changed"
 #define MOZ_SETTINGS_CHANGE_ID        "mozsettings-changed"
 #define AUDIO_CHANNEL_PROCESS_CHANGED "audio-channel-process-changed"
+#define AUDIO_POLICY_SERVICE_NAME     "media.audio_policy"
 
 static void BinderDeadCallback(status_t aErr);
 static void InternalSetAudioRoutes(SwitchState aState);
@@ -94,6 +97,19 @@ public:
     nsCOMPtr<nsIAudioManager> amService = do_GetService(NS_AUDIOMANAGER_CONTRACTID);
     NS_ENSURE_TRUE(amService, NS_OK);
     AudioManager *am = static_cast<AudioManager *>(amService.get());
+
+    int attempt;
+    for (attempt = 0; attempt < 50; attempt++) {
+      if (defaultServiceManager()->checkService(String16(AUDIO_POLICY_SERVICE_NAME)) != 0) {
+        break;
+      }
+
+      LOG("AudioPolicyService is dead! attempt=%d", attempt);
+      usleep(1000 * 200);
+    }
+
+    MOZ_RELEASE_ASSERT(attempt < 50);
+
     for (int loop = 0; loop < AUDIO_STREAM_CNT; loop++) {
       AudioSystem::initStreamVolume(static_cast<audio_stream_type_t>(loop), 0,
                                    sMaxStreamVolumeTbl[loop]);
@@ -122,7 +138,7 @@ public:
   }
 };
 
-class AudioChannelVolInitCallback MOZ_FINAL : public nsISettingsServiceCallback
+class AudioChannelVolInitCallback final : public nsISettingsServiceCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -227,8 +243,14 @@ InternalSetAudioRoutesICS(SwitchState aState)
                                           AUDIO_POLICY_DEVICE_STATE_AVAILABLE, "");
     sHeadsetState |= AUDIO_DEVICE_OUT_WIRED_HEADPHONE;
   } else if (aState == SWITCH_STATE_OFF) {
-    AudioSystem::setDeviceConnectionState(static_cast<audio_devices_t>(sHeadsetState),
-                                          AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
+    if (sHeadsetState & AUDIO_DEVICE_OUT_WIRED_HEADSET) {
+      AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_OUT_WIRED_HEADSET,
+                                            AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
+    }
+    if (sHeadsetState & AUDIO_DEVICE_OUT_WIRED_HEADPHONE) {
+      AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_OUT_WIRED_HEADPHONE,
+                                            AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
+    }
     sHeadsetState = 0;
   }
 }
@@ -359,11 +381,8 @@ AudioManager::Observe(nsISupports* aSubject,
   // To process the volume control on each audio channel according to
   // change of settings
   else if (!strcmp(aTopic, MOZ_SETTINGS_CHANGE_ID)) {
-    AutoJSAPI jsapi;
-    jsapi.Init();
-    JSContext* cx = jsapi.cx();
-    RootedDictionary<dom::SettingChangeNotification> setting(cx);
-    if (!WrappedJSToDictionary(cx, aSubject, setting)) {
+    RootedDictionary<dom::SettingChangeNotification> setting(nsContentUtils::RootingCxForThread());
+    if (!WrappedJSToDictionary(aSubject, setting)) {
       return NS_OK;
     }
     if (!setting.mKey.EqualsASCII("audio.volume.bt_sco")) {
@@ -671,23 +690,17 @@ AudioManager::GetFmRadioAudioEnabled(bool *aFmRadioAudioEnabled)
 NS_IMETHODIMP
 AudioManager::SetFmRadioAudioEnabled(bool aFmRadioAudioEnabled)
 {
-  if (static_cast<
-      status_t (*) (AudioSystem::audio_devices, AudioSystem::device_connection_state, const char *)
-      >(AudioSystem::setDeviceConnectionState)) {
-    AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_OUT_FM,
-      aFmRadioAudioEnabled ? AUDIO_POLICY_DEVICE_STATE_AVAILABLE :
-      AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
-    InternalSetAudioRoutes(GetCurrentSwitchState(SWITCH_HEADPHONES));
-    // sync volume with music after powering on fm radio
-    if (aFmRadioAudioEnabled) {
-      int32_t volIndex = mCurrentStreamVolumeTbl[AUDIO_STREAM_MUSIC];
-      SetStreamVolumeIndex(AUDIO_STREAM_FM, volIndex);
-      mCurrentStreamVolumeTbl[AUDIO_STREAM_FM] = volIndex;
-    }
-    return NS_OK;
-  } else {
-    return NS_ERROR_NOT_IMPLEMENTED;
+  AudioSystem::setDeviceConnectionState(AUDIO_DEVICE_OUT_FM,
+    aFmRadioAudioEnabled ? AUDIO_POLICY_DEVICE_STATE_AVAILABLE :
+    AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE, "");
+  InternalSetAudioRoutes(GetCurrentSwitchState(SWITCH_HEADPHONES));
+  // sync volume with music after powering on fm radio
+  if (aFmRadioAudioEnabled) {
+    int32_t volIndex = mCurrentStreamVolumeTbl[AUDIO_STREAM_MUSIC];
+    SetStreamVolumeIndex(AUDIO_STREAM_FM, volIndex);
+    mCurrentStreamVolumeTbl[AUDIO_STREAM_FM] = volIndex;
   }
+  return NS_OK;
 }
 
 NS_IMETHODIMP

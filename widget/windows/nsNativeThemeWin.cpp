@@ -1831,6 +1831,15 @@ RENDER_AGAIN:
     DrawThemeBGRTLAware(theme, hdc, part, state,
                         &widgetRect, &clipRect, IsFrameRTL(aFrame));
   }
+  else if (aWidgetType == NS_THEME_NUMBER_INPUT ||
+           aWidgetType == NS_THEME_TEXTFIELD ||
+           aWidgetType == NS_THEME_TEXTFIELD_MULTILINE) {
+    DrawThemeBackground(theme, hdc, part, state, &widgetRect, &clipRect);
+     if (state == TFS_EDITBORDER_DISABLED) {
+      InflateRect(&widgetRect, -1, -1);
+      ::FillRect(hdc, &widgetRect, reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1));
+    }
+  }
   else if (aWidgetType == NS_THEME_PROGRESSBAR ||
            aWidgetType == NS_THEME_PROGRESSBAR_VERTICAL) {
     // DrawThemeBackground renders each corner with a solid white pixel.
@@ -2652,6 +2661,19 @@ nsNativeThemeWin::WidgetAppearanceDependsOnWindowFocus(uint8_t aWidgetType)
       return true;
     default:
       return false;
+  }
+}
+
+nsITheme::ThemeGeometryType
+nsNativeThemeWin::ThemeGeometryTypeForWidget(nsIFrame* aFrame,
+                                             uint8_t aWidgetType)
+{
+  switch (aWidgetType) {
+    case NS_THEME_WINDOW_BUTTON_BOX:
+    case NS_THEME_WINDOW_BUTTON_BOX_MAXIMIZED:
+      return eThemeGeometryTypeWindowButtons;
+    default:
+      return eThemeGeometryTypeUnknown;
   }
 }
 

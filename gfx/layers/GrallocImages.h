@@ -44,10 +44,9 @@ class GrallocTextureClientOGL;
  * mPicSize, not mYSize or mCbCrSize.
  */
 class GrallocImage : public PlanarYCbCrImage
-                   , public ISharedImage
 {
   typedef PlanarYCbCrData Data;
-  static uint32_t sColorIdMap[];
+  static int32_t sColorIdMap[];
 public:
   struct GrallocData {
     nsRefPtr<TextureClient> mGraphicBuffer;
@@ -85,7 +84,7 @@ public:
     GRALLOC_SW_UAGE = android::GraphicBuffer::USAGE_SOFTWARE_MASK,
   };
 
-  virtual TemporaryRef<gfx::SourceSurface> GetAsSourceSurface() MOZ_OVERRIDE;
+  virtual TemporaryRef<gfx::SourceSurface> GetAsSourceSurface() override;
 
   android::sp<android::GraphicBuffer> GetGraphicBuffer() const;
 
@@ -93,9 +92,12 @@ public:
 
   virtual bool IsValid() { return !!mTextureClient; }
 
-  virtual ISharedImage* AsSharedImage() MOZ_OVERRIDE { return this; }
+  virtual TextureClient* GetTextureClient(CompositableClient* aClient) override;
 
-  virtual TextureClient* GetTextureClient(CompositableClient* aClient) MOZ_OVERRIDE;
+  virtual GrallocImage* AsGrallocImage() override
+  {
+    return this;
+  }
 
   virtual uint8_t* GetBuffer()
   {

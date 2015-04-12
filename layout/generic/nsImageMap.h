@@ -16,13 +16,12 @@
 #include "nsIDOMEventListener.h"
 
 class Area;
-class nsRenderingContext;
 class nsImageFrame;
 class nsIFrame;
 class nsIContent;
 struct nsRect;
 
-class nsImageMap MOZ_FINAL : public nsStubMutationObserver,
+class nsImageMap final : public nsStubMutationObserver,
                              public nsIDOMEventListener
 {
   typedef mozilla::gfx::DrawTarget DrawTarget;

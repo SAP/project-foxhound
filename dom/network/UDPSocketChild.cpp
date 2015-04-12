@@ -28,6 +28,7 @@ UDPSocketChildBase::ReleaseIPDLReference()
 {
   MOZ_ASSERT(mIPCOpen);
   mIPCOpen = false;
+  mSocket = nullptr;
   this->Release();
 }
 
@@ -234,7 +235,7 @@ UDPSocketChild::RecvCallbackClosed()
 
 bool
 UDPSocketChild::RecvCallbackReceivedData(const UDPAddressInfo& aAddressInfo,
-                                         const InfallibleTArray<uint8_t>& aData)
+                                         InfallibleTArray<uint8_t>&& aData)
 {
   nsresult rv = mSocket->CallListenerReceivedData(aAddressInfo.addr(), aAddressInfo.port(),
                                                   aData.Elements(), aData.Length());

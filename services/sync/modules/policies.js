@@ -13,8 +13,7 @@ Cu.import("resource://gre/modules/Log.jsm");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/util.js");
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+Cu.import("resource://services-common/logmanager.js");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Status",
                                   "resource://services-sync/status.js");
@@ -497,10 +496,47 @@ SyncScheduler.prototype = {
     if (this.syncTimer)
       this.syncTimer.clear();
   },
-};
 
-const LOG_PREFIX_SUCCESS = "success-";
-const LOG_PREFIX_ERROR   = "error-";
+  /**
+   * Prevent new syncs from starting.  This is used by the FxA migration code
+   * where we can't afford to have a sync start partway through the migration.
+   * To handle the edge-case of a sync starting and not stopping, we store
+   * this state in a pref, so on the next startup we remain blocked (and thus
+   * sync will never start) so the migration can complete.
+   *
+   * As a safety measure, we only block for some period of time, and after
+   * that it will automatically unblock.  This ensures that if things go
+   * really pear-shaped and we never end up calling unblockSync() we haven't
+   * completely broken the world.
+   */
+  blockSync: function(until = null) {
+    if (!until) {
+      until = Date.now() + DEFAULT_BLOCK_PERIOD;
+    }
+    // until is specified in ms, but Prefs can't hold that much
+    Svc.Prefs.set("scheduler.blocked-until", Math.floor(until / 1000));
+  },
+
+  unblockSync: function() {
+    Svc.Prefs.reset("scheduler.blocked-until");
+    // the migration code should be ready to roll, so resume normal operations.
+    this.checkSyncStatus();
+  },
+
+  get isBlocked() {
+    let until = Svc.Prefs.get("scheduler.blocked-until");
+    if (until === undefined) {
+      return false;
+    }
+    if (until <= Math.floor(Date.now() / 1000)) {
+      // we were previously blocked but the time has expired.
+      Svc.Prefs.reset("scheduler.blocked-until");
+      return false;
+    }
+    // we remain blocked.
+    return true;
+  },
+};
 
 this.ErrorHandler = function ErrorHandler(service) {
   this.service = service;
@@ -534,26 +570,14 @@ ErrorHandler.prototype = {
   initLogs: function initLogs() {
     this._log = Log.repository.getLogger("Sync.ErrorHandler");
     this._log.level = Log.Level[Svc.Prefs.get("log.logger.service.main")];
-    this._cleaningUpFileLogs = false;
 
     let root = Log.repository.getLogger("Sync");
     root.level = Log.Level[Svc.Prefs.get("log.rootLogger")];
 
-    let formatter = new Log.BasicFormatter();
-    let capp = new Log.ConsoleAppender(formatter);
-    capp.level = Log.Level[Svc.Prefs.get("log.appender.console")];
-    root.addAppender(capp);
+    let logs = ["Sync", "FirefoxAccounts", "Hawk", "Common.TokenServerClient",
+                "Sync.SyncMigration"];
 
-    let dapp = new Log.DumpAppender(formatter);
-    dapp.level = Log.Level[Svc.Prefs.get("log.appender.dump")];
-    root.addAppender(dapp);
-
-    let fapp = this._logAppender = new Log.StorageStreamAppender(formatter);
-    fapp.level = Log.Level[Svc.Prefs.get("log.appender.file.level")];
-    root.addAppender(fapp);
-
-    // Arrange for the FxA logs to also go to our file.
-    Log.repository.getLogger("FirefoxAccounts").addAppender(fapp);
+    this._logManager = new LogManager(Svc.Prefs, logs, "sync");
   },
 
   observe: function observe(subject, topic, data) {
@@ -578,8 +602,7 @@ ErrorHandler.prototype = {
         this._log.debug(engine_name + " failed: " + Utils.exceptionStr(exception));
         break;
       case "weave:service:login:error":
-        this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
-                          LOG_PREFIX_ERROR);
+        this.resetFileLog(this._logManager.REASON_ERROR);
 
         if (this.shouldReportError()) {
           this.notifyOnNextTick("weave:ui:login:error");
@@ -594,8 +617,7 @@ ErrorHandler.prototype = {
           this.service.logout();
         }
 
-        this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
-                          LOG_PREFIX_ERROR);
+        this.resetFileLog(this._logManager.REASON_ERROR);
 
         if (this.shouldReportError()) {
           this.notifyOnNextTick("weave:ui:sync:error");
@@ -621,8 +643,7 @@ ErrorHandler.prototype = {
 
         if (Status.service == SYNC_FAILED_PARTIAL) {
           this._log.debug("Some engines did not sync correctly.");
-          this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
-                            LOG_PREFIX_ERROR);
+          this.resetFileLog(this._logManager.REASON_ERROR);
 
           if (this.shouldReportError()) {
             this.dontIgnoreErrors = false;
@@ -630,8 +651,7 @@ ErrorHandler.prototype = {
             break;
           }
         } else {
-          this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnSuccess"),
-                            LOG_PREFIX_SUCCESS);
+          this.resetFileLog(this._logManager.REASON_SUCCESS);
         }
         this.dontIgnoreErrors = false;
         this.notifyOnNextTick("weave:ui:sync:finish");
@@ -659,94 +679,21 @@ ErrorHandler.prototype = {
   },
 
   /**
-   * Finds all logs older than maxErrorAge and deletes them without tying up I/O.
-   */
-  cleanupLogs: function cleanupLogs() {
-    let direntries = FileUtils.getDir("ProfD", ["weave", "logs"]).directoryEntries;
-    let oldLogs = [];
-    let index = 0;
-    let threshold = Date.now() - 1000 * Svc.Prefs.get("log.appender.file.maxErrorAge");
-
-    this._log.debug("Log cleanup threshold time: " + threshold);
-    while (direntries.hasMoreElements()) {
-      let logFile = direntries.getNext().QueryInterface(Ci.nsIFile);
-      if (logFile.lastModifiedTime < threshold) {
-        this._log.trace(" > Noting " + logFile.leafName +
-                        " for cleanup (" + logFile.lastModifiedTime + ")");
-        oldLogs.push(logFile);
-      }
-    }
-
-    // Deletes a file from oldLogs each tick until there are none left.
-    let errorHandler = this;
-    function deleteFile() {
-      if (index >= oldLogs.length) {
-        errorHandler._log.debug("Done deleting files.");
-        errorHandler._cleaningUpFileLogs = false;
-        Svc.Obs.notify("weave:service:cleanup-logs");
-        return;
-      }
-      try {
-        let file = oldLogs[index];
-        file.remove(false);
-        errorHandler._log.trace("Deleted " + file.leafName + ".");
-      } catch (ex) {
-        errorHandler._log._debug("Encountered error trying to clean up old log file '"
-                                 + oldLogs[index].leafName + "':"
-                                 + Utils.exceptionStr(ex));
-      }
-      index++;
-      Utils.nextTick(deleteFile);
-    }
-
-    if (oldLogs.length > 0) {
-      this._cleaningUpFileLogs = true;
-      Utils.nextTick(deleteFile);
-    } else {
-      this._log.debug("No logs to clean up.");
-    }
-  },
-
-  /**
    * Generate a log file for the sync that just completed
    * and refresh the input & output streams.
    *
-   * @param flushToFile
-   *        the log file to be flushed/reset
-   *
-   * @param filenamePrefix
-   *        a value of either LOG_PREFIX_SUCCESS or LOG_PREFIX_ERROR
-   *        to be used as the log filename prefix
+   * @param reason
+   *        A constant from the LogManager that indicates the reason for the
+   *        reset.
    */
-  resetFileLog: function resetFileLog(flushToFile, filenamePrefix) {
-    let inStream = this._logAppender.getInputStream();
-    this._logAppender.reset();
-    if (flushToFile && inStream) {
-      this._log.debug("Flushing file log.");
-      try {
-        let filename = filenamePrefix + Date.now() + ".txt";
-        let file = FileUtils.getFile("ProfD", ["weave", "logs", filename]);
-        let outStream = FileUtils.openFileOutputStream(file);
-
-        this._log.trace("Beginning stream copy to " + file.leafName + ": " +
-                        Date.now());
-        NetUtil.asyncCopy(inStream, outStream, function onCopyComplete() {
-          this._log.trace("onCopyComplete: " + Date.now());
-          this._log.trace("Output file timestamp: " + file.lastModifiedTime);
-          Svc.Obs.notify("weave:service:reset-file-log");
-          this._log.trace("Notified: " + Date.now());
-          if (filenamePrefix == LOG_PREFIX_ERROR &&
-              !this._cleaningUpFileLogs) {
-            this._log.trace("Scheduling cleanup.");
-            Utils.nextTick(this.cleanupLogs, this);
-          }
-        }.bind(this));
-      } catch (ex) {
-        Svc.Obs.notify("weave:service:reset-file-log");
-      }
-    } else {
+  resetFileLog: function resetFileLog(reason) {
+    let onComplete = () => {
       Svc.Obs.notify("weave:service:reset-file-log");
-    }
+      this._log.trace("Notified: " + Date.now());
+    };
+    // Note we do not return the promise here - the caller doesn't need to wait
+    // for this to complete.
+    this._logManager.resetFileLog(reason).then(onComplete, onComplete);
   },
 
   /**
@@ -787,6 +734,12 @@ ErrorHandler.prototype = {
     }
 
     if (this.dontIgnoreErrors) {
+      return true;
+    }
+
+    if (Status.login == LOGIN_FAILED_LOGIN_REJECTED) {
+      // An explicit LOGIN_REJECTED state is always reported (bug 1081158)
+      this._log.trace("shouldReportError: true (login was rejected)");
       return true;
     }
 

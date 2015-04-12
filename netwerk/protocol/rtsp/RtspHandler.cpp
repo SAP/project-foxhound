@@ -66,7 +66,9 @@ RtspHandler::NewURI(const nsACString & aSpec,
 }
 
 NS_IMETHODIMP
-RtspHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
+RtspHandler::NewChannel2(nsIURI* aURI,
+                         nsILoadInfo* aLoadInfo,
+                         nsIChannel** aResult)
 {
   bool isRtsp = false;
   nsRefPtr<nsBaseChannel> rtspChannel;
@@ -84,8 +86,18 @@ RtspHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
   rv = rtspChannel->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // set the loadInfo on the new channel
+  rv = rtspChannel->SetLoadInfo(aLoadInfo);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   rtspChannel.forget(aResult);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+RtspHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
+{
+  return NewChannel2(aURI, nullptr, aResult);
 }
 
 NS_IMETHODIMP

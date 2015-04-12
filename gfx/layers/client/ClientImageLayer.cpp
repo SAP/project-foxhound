@@ -6,7 +6,7 @@
 #include "ClientLayerManager.h"         // for ClientLayerManager, etc
 #include "ImageContainer.h"             // for AutoLockImage, etc
 #include "ImageLayers.h"                // for ImageLayer
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/ImageClient.h"  // for ImageClient, etc
@@ -23,13 +23,12 @@ namespace layers {
 
 using namespace mozilla::gfx;
 
-class ClientImageLayer : public ImageLayer, 
+class ClientImageLayer : public ImageLayer,
                          public ClientLayer {
 public:
   explicit ClientImageLayer(ClientLayerManager* aLayerManager)
-    : ImageLayer(aLayerManager,
-                 static_cast<ClientLayer*>(MOZ_THIS_IN_INITIALIZER_LIST()))
-    , mImageClientTypeContainer(CompositableType::BUFFER_UNKNOWN)
+    : ImageLayer(aLayerManager, static_cast<ClientLayer*>(this))
+    , mImageClientTypeContainer(CompositableType::UNKNOWN)
   {
     MOZ_COUNT_CTOR(ClientImageLayer);
   }
@@ -41,35 +40,35 @@ protected:
     MOZ_COUNT_DTOR(ClientImageLayer);
   }
 
-  virtual void SetContainer(ImageContainer* aContainer) MOZ_OVERRIDE
+  virtual void SetContainer(ImageContainer* aContainer) override
   {
     ImageLayer::SetContainer(aContainer);
-    mImageClientTypeContainer = CompositableType::BUFFER_UNKNOWN;
+    mImageClientTypeContainer = CompositableType::UNKNOWN;
   }
 
-  virtual void SetVisibleRegion(const nsIntRegion& aRegion)
+  virtual void SetVisibleRegion(const nsIntRegion& aRegion) override
   {
     NS_ASSERTION(ClientManager()->InConstruction(),
                  "Can only set properties in construction phase");
     ImageLayer::SetVisibleRegion(aRegion);
   }
 
-  virtual void RenderLayer();
+  virtual void RenderLayer() override;
   
-  virtual void ClearCachedResources() MOZ_OVERRIDE
+  virtual void ClearCachedResources() override
   {
     DestroyBackBuffer();
   }
 
-  virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
+  virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs) override
   {
     aAttrs = ImageLayerAttributes(mFilter, mScaleToSize, mScaleMode);
   }
 
-  virtual Layer* AsLayer() { return this; }
-  virtual ShadowableLayer* AsShadowableLayer() { return this; }
+  virtual Layer* AsLayer() override { return this; }
+  virtual ShadowableLayer* AsShadowableLayer() override { return this; }
 
-  virtual void Disconnect()
+  virtual void Disconnect() override
   {
     DestroyBackBuffer();
     ClientLayer::Disconnect();
@@ -83,7 +82,7 @@ protected:
     }
   }
 
-  virtual CompositableClient* GetCompositableClient() MOZ_OVERRIDE
+  virtual CompositableClient* GetCompositableClient() override
   {
     return mImageClient;
   }
@@ -96,38 +95,27 @@ protected:
 
   CompositableType GetImageClientType()
   {
-    if (mImageClientTypeContainer != CompositableType::BUFFER_UNKNOWN) {
+    if (mImageClientTypeContainer != CompositableType::UNKNOWN) {
       return mImageClientTypeContainer;
     }
 
     if (mContainer->IsAsync()) {
-      mImageClientTypeContainer = CompositableType::BUFFER_BRIDGE;
-      return mImageClientTypeContainer;
-    }
-
-    // Since D3D11 TextureClient doesn't have an internal buffer, modifying the
-    // front buffer directly may break the transactional property of layer updates.
-    if (ClientManager()->GetCompositorBackendType() == LayersBackend::LAYERS_D3D11) {
-      mImageClientTypeContainer = CompositableType::BUFFER_IMAGE_BUFFERED;
+      mImageClientTypeContainer = CompositableType::IMAGE_BRIDGE;
       return mImageClientTypeContainer;
     }
 
     AutoLockImage autoLock(mContainer);
 
 #ifdef MOZ_WIDGET_GONK
-    // gralloc buffer needs CompositableType::BUFFER_IMAGE_BUFFERED to prevent
-    // the buffer's usage conflict.
     if (autoLock.GetImage()->GetFormat() == ImageFormat::OVERLAY_IMAGE) {
       mImageClientTypeContainer = CompositableType::IMAGE_OVERLAY;
       return mImageClientTypeContainer;
     }
-
-    mImageClientTypeContainer = autoLock.GetImage() ?
-                                  CompositableType::BUFFER_IMAGE_BUFFERED : CompositableType::BUFFER_UNKNOWN;
-#else
-    mImageClientTypeContainer = autoLock.GetImage() ?
-                                  CompositableType::BUFFER_IMAGE_SINGLE : CompositableType::BUFFER_UNKNOWN;
 #endif
+
+  	mImageClientTypeContainer = autoLock.GetImage()
+							  ? CompositableType::IMAGE
+							  : CompositableType::UNKNOWN;
     return mImageClientTypeContainer;
   }
 
@@ -153,17 +141,17 @@ ClientImageLayer::RenderLayer()
   if (!mImageClient ||
       !mImageClient->UpdateImage(mContainer, GetContentFlags())) {
     CompositableType type = GetImageClientType();
-    if (type == CompositableType::BUFFER_UNKNOWN) {
+    if (type == CompositableType::UNKNOWN) {
       return;
     }
-    TextureFlags flags = TextureFlags::FRONT;
+    TextureFlags flags = TextureFlags::DEFAULT;
     if (mDisallowBigImage) {
       flags |= TextureFlags::DISALLOW_BIGIMAGE;
     }
     mImageClient = ImageClient::CreateImageClient(type,
                                                   ClientManager()->AsShadowForwarder(),
                                                   flags);
-    if (type == CompositableType::BUFFER_BRIDGE) {
+    if (type == CompositableType::IMAGE_BRIDGE) {
       static_cast<ImageClientBridge*>(mImageClient.get())->SetLayer(this);
     }
 
@@ -193,5 +181,6 @@ ClientLayerManager::CreateImageLayer()
   CREATE_SHADOW(Image);
   return layer.forget();
 }
+
 }
 }

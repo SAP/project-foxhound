@@ -22,6 +22,7 @@
 class nsIContent;
 class nsIDocShellTreeItem;
 class nsPIDOMWindow;
+class nsIMessageBroadcaster;
 
 struct nsDelayedBlurOrFocusEvent;
 
@@ -30,7 +31,7 @@ struct nsDelayedBlurOrFocusEvent;
  * which receives key events.
  */
 
-class nsFocusManager MOZ_FINAL : public nsIFocusManager,
+class nsFocusManager final : public nsIFocusManager,
                                  public nsIObserver,
                                  public nsSupportsWeakReference
 {
@@ -133,6 +134,17 @@ protected:
    * focused at the widget level.
    */
   void EnsureCurrentWidgetFocused();
+
+  /**
+   * Iterate over the children of the message broadcaster and notify them
+   * of the activation change.
+   */
+  void ActivateOrDeactivateChildren(nsIMessageBroadcaster* aManager, bool aActive);
+
+  /**
+   * Activate or deactivate the window and send the activate/deactivate events.
+   */
+  void ActivateOrDeactivate(nsPIDOMWindow* aWindow, bool aActive);
 
   /**
    * Blur whatever is currently focused and focus aNewContent. aFlags is a

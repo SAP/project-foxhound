@@ -417,43 +417,40 @@ CopyUpdaterIntoUpdateDir(nsIFile *greDir, nsIFile *appDir, nsIFile *updateDir,
  * staged.
  *
  * @param greDir the GRE dir
- * @param updateDir the update root dir
- * @param statusFile the update.status file
+ * @param updateDir the update dir where the mar file is located
  * @param appDir the app dir
  * @param appArgc the number of args to the application
  * @param appArgv the args to the application, used for restarting if needed
  */
 static void
-SwitchToUpdatedApp(nsIFile *greDir, nsIFile *updateDir, nsIFile *statusFile,
+SwitchToUpdatedApp(nsIFile *greDir, nsIFile *updateDir,
                    nsIFile *appDir, int appArgc, char **appArgv)
 {
   nsresult rv;
 
   // Steps:
-  //  - copy updater into temp dir
+  //  - copy updater into updates/0/MozUpdater/bgupdate/ dir
   //  - run updater with the correct arguments
 
-  nsCOMPtr<nsIFile> tmpDir;
-  GetSpecialSystemDirectory(OS_TemporaryDirectory,
-                            getter_AddRefs(tmpDir));
-  if (!tmpDir) {
-    LOG(("failed getting a temp dir\n"));
+  nsCOMPtr<nsIFile> mozUpdaterDir;
+  rv = updateDir->Clone(getter_AddRefs(mozUpdaterDir));
+  if (NS_FAILED(rv)) {
+    LOG(("failed cloning update dir\n"));
     return;
   }
 
-  // Try to create our own new temp directory in case there is already an
-  // updater binary in the OS temporary location which we cannot write to.
-  // Note that we don't check for errors here, as if this directory can't
-  // be created, the following CopyUpdaterIntoUpdateDir call will fail.
-  // We create the unique directory inside a subfolder of MozUpdater instead
-  // of directly in the temp directory so we can efficiently delete everything
-  // after updates.
-  tmpDir->Append(NS_LITERAL_STRING("MozUpdater"));
-  tmpDir->Append(NS_LITERAL_STRING("bgupdate"));
-  tmpDir->CreateUnique(nsIFile::DIRECTORY_TYPE, 0755);
+  // Create a new directory named MozUpdater in the updates/0 directory to copy
+  // the updater files to that will be used to replace the installation with the
+  // staged application that has been updated. Note that we don't check for
+  // directory creation errors since the call to CopyUpdaterIntoUpdateDir will
+  // fail if the creation of the directory fails. A unique directory is created
+  // in MozUpdater in case a previous attempt locked the directory or files.
+  mozUpdaterDir->Append(NS_LITERAL_STRING("MozUpdater"));
+  mozUpdaterDir->Append(NS_LITERAL_STRING("bgupdate"));
+  mozUpdaterDir->CreateUnique(nsIFile::DIRECTORY_TYPE, 0755);
 
   nsCOMPtr<nsIFile> updater;
-  if (!CopyUpdaterIntoUpdateDir(greDir, appDir, tmpDir, updater)) {
+  if (!CopyUpdaterIntoUpdateDir(greDir, appDir, mozUpdaterDir, updater)) {
     LOG(("failed copying updater\n"));
     return;
   }
@@ -1012,8 +1009,7 @@ ProcessUpdates(nsIFile *greDir, nsIFile *appDir, nsIFile *updRootDir,
   case eAppliedService:
     // An update was staged and needs to be switched so the updated application
     // is used.
-    SwitchToUpdatedApp(greDir, updatesDir, statusFile,
-                       appDir, argc, argv);
+    SwitchToUpdatedApp(greDir, updatesDir, appDir, argc, argv);
     break;
   case eNoUpdateAction:
     // We don't need to do any special processing here, we'll just continue to
@@ -1174,9 +1170,7 @@ nsUpdateProcessor::ProcessUpdate(nsIUpdate* aUpdate)
   }
 #endif
 
-  mUpdate = aUpdate;
-
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  MOZ_ASSERT(NS_IsMainThread(), "not main thread");
   return NS_NewThread(getter_AddRefs(mProcessWatcher),
                       NS_NewRunnableMethod(this, &nsUpdateProcessor::StartStagedUpdate));
 }
@@ -1186,7 +1180,7 @@ nsUpdateProcessor::ProcessUpdate(nsIUpdate* aUpdate)
 void
 nsUpdateProcessor::StartStagedUpdate()
 {
-  NS_ABORT_IF_FALSE(!NS_IsMainThread(), "main thread");
+  MOZ_ASSERT(!NS_IsMainThread(), "main thread");
 
   nsresult rv = ProcessUpdates(mInfo.mGREDir,
                                mInfo.mAppDir,
@@ -1216,16 +1210,15 @@ nsUpdateProcessor::StartStagedUpdate()
 void
 nsUpdateProcessor::ShutdownWatcherThread()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  MOZ_ASSERT(NS_IsMainThread(), "not main thread");
   mProcessWatcher->Shutdown();
   mProcessWatcher = nullptr;
-  mUpdate = nullptr;
 }
 
 void
 nsUpdateProcessor::WaitForProcess()
 {
-  NS_ABORT_IF_FALSE(!NS_IsMainThread(), "main thread");
+  MOZ_ASSERT(!NS_IsMainThread(), "main thread");
   ::WaitForProcess(mUpdaterPID);
   NS_DispatchToMainThread(NS_NewRunnableMethod(this, &nsUpdateProcessor::UpdateDone));
 }
@@ -1233,12 +1226,16 @@ nsUpdateProcessor::WaitForProcess()
 void
 nsUpdateProcessor::UpdateDone()
 {
-  NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
+  MOZ_ASSERT(NS_IsMainThread(), "not main thread");
 
   nsCOMPtr<nsIUpdateManager> um =
     do_GetService("@mozilla.org/updates/update-manager;1");
-  if (um && mUpdate) {
-    um->RefreshUpdateStatus(mUpdate);
+  if (um) {
+    nsCOMPtr<nsIUpdate> update;
+    um->GetActiveUpdate(getter_AddRefs(update));
+    if (update) {
+      um->RefreshUpdateStatus(update);
+    }
   }
 
   ShutdownWatcherThread();

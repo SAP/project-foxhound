@@ -32,6 +32,7 @@ CopyableCanvasLayer::CopyableCanvasLayer(LayerManager* aLayerManager, void *aImp
   CanvasLayer(aLayerManager, aImplData)
   , mGLFrontbuffer(nullptr)
   , mIsAlphaPremultiplied(true)
+  , mOriginPos(gl::OriginPos::TopLeft)
 {
   MOZ_COUNT_CTOR(CopyableCanvasLayer);
 }
@@ -49,7 +50,8 @@ CopyableCanvasLayer::Initialize(const Data& aData)
   if (aData.mGLContext) {
     mGLContext = aData.mGLContext;
     mIsAlphaPremultiplied = aData.mIsGLAlphaPremult;
-    mNeedsYFlip = true;
+    mOriginPos = gl::OriginPos::BottomLeft;
+
     MOZ_ASSERT(mGLContext->IsOffscreen(), "canvas gl context isn't offscreen");
 
     if (aData.mFrontbufferGLTex) {
@@ -63,9 +65,8 @@ CopyableCanvasLayer::Initialize(const Data& aData)
   } else if (aData.mDrawTarget) {
     mDrawTarget = aData.mDrawTarget;
     mSurface = mDrawTarget->Snapshot();
-    mNeedsYFlip = false;
   } else {
-    NS_ERROR("CanvasLayer created without mSurface, mDrawTarget or mGLContext?");
+    MOZ_CRASH("CanvasLayer created without mSurface, mDrawTarget or mGLContext?");
   }
 
   mBounds.SetRect(0, 0, aData.mSize.width, aData.mSize.height);
@@ -134,7 +135,7 @@ CopyableCanvasLayer::UpdateTarget(DrawTarget* aDestTarget)
       if (destSize == readSize && destFormat == format) {
         RefPtr<DataSourceSurface> data =
           Factory::CreateWrappingDataSourceSurface(destData, destStride, destSize, destFormat);
-        mGLContext->Screen()->Readback(frontbuffer, data);
+        mGLContext->Readback(frontbuffer, data);
         if (needsPremult) {
             gfxUtils::PremultiplyDataSurface(data, data);
         }
@@ -153,7 +154,7 @@ CopyableCanvasLayer::UpdateTarget(DrawTarget* aDestTarget)
   }
 
   // Readback handles Flush/MarkDirty.
-  mGLContext->Screen()->Readback(frontbuffer, resultSurf);
+  mGLContext->Readback(frontbuffer, resultSurf);
   if (needsPremult) {
     gfxUtils::PremultiplyDataSurface(resultSurf, resultSurf);
   }

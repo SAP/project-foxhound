@@ -22,18 +22,15 @@
  * limitations under the License.
  */
 
-#ifndef mozilla_pkix_test__pkixtestutils_h
-#define mozilla_pkix_test__pkixtestutils_h
+#ifndef mozilla_pkix_test_pkixtestutils_h
+#define mozilla_pkix_test_pkixtestutils_h
 
 #include <ctime>
 #include <stdint.h> // Some Mozilla-supported compilers lack <cstdint>
 #include <string>
 
-#include "pkix/enumclass.h"
 #include "pkix/pkixtypes.h"
 #include "pkix/ScopedPtr.h"
-
-static const unsigned int MINIMUM_TEST_KEY_BITS = 1024;
 
 namespace mozilla { namespace pkix { namespace test {
 
@@ -56,15 +53,8 @@ inline bool ENCODING_FAILED(const ByteString& bs) { return bs.empty(); }
 // XXX: Evaluates its argument twice
 #define MOZILLA_PKIX_ARRAY_LENGTH(x) (sizeof(x) / sizeof((x)[0]))
 
-class TestInput : public Input
-{
-public:
-  template <size_t N>
-  explicit TestInput(const char (&valueString)[N])
-    : Input(reinterpret_cast<const uint8_t(&)[N-1]>(valueString))
-  {
-  }
-};
+bool InputEqualsByteString(Input input, const ByteString& bs);
+ByteString InputToByteString(Input input);
 
 // python DottedOIDToCode.py --tlv id-kp-OCSPSigning 1.3.6.1.5.5.7.3.9
 static const uint8_t tlv_id_kp_OCSPSigning[] = {
@@ -101,11 +91,158 @@ const ByteString md2WithRSAEncryption(alg_md2WithRSAEncryption,
   MOZILLA_PKIX_ARRAY_LENGTH(alg_md2WithRSAEncryption));
 
 // e.g. YMDHMS(2016, 12, 31, 1, 23, 45) => 2016-12-31:01:23:45 (GMT)
-mozilla::pkix::Time YMDHMS(int16_t year, int16_t month, int16_t day,
-                           int16_t hour, int16_t minutes, int16_t seconds);
+mozilla::pkix::Time YMDHMS(uint16_t year, uint16_t month, uint16_t day,
+                           uint16_t hour, uint16_t minutes, uint16_t seconds);
 
-ByteString CNToDERName(const char* cn);
-bool InputEqualsByteString(Input input, const ByteString& bs);
+ByteString TLV(uint8_t tag, size_t length, const ByteString& value);
+
+inline ByteString
+TLV(uint8_t tag, const ByteString& value)
+{
+  return TLV(tag, value.length(), value);
+}
+
+// Although we can't enforce it without relying on Cuser-defined literals,
+// which aren't supported by all of our compilers yet, you should only pass
+// string literals as the last parameter to the following two functions.
+
+template <size_t N>
+inline ByteString
+TLV(uint8_t tag, const char(&value)[N])
+{
+  static_assert(N > 0, "cannot have string literal of size 0");
+  assert(value[N - 1] == 0);
+  return TLV(tag, ByteString(reinterpret_cast<const uint8_t*>(&value), N - 1));
+}
+
+template <size_t N>
+inline ByteString
+TLV(uint8_t tag, size_t length, const char(&value)[N])
+{
+  static_assert(N > 0, "cannot have string literal of size 0");
+  assert(value[N - 1] == 0);
+  return TLV(tag, length,
+             ByteString(reinterpret_cast<const uint8_t*>(&value), N - 1));
+}
+
+ByteString Boolean(bool value);
+ByteString Integer(long value);
+
+ByteString CN(const ByteString&, uint8_t encodingTag = 0x0c /*UTF8String*/);
+
+inline ByteString
+CN(const char* value, uint8_t encodingTag = 0x0c /*UTF8String*/)
+{
+  return CN(ByteString(reinterpret_cast<const uint8_t*>(value),
+                       std::strlen(value)), encodingTag);
+}
+
+ByteString OU(const ByteString&);
+
+inline ByteString
+OU(const char* value)
+{
+  return OU(ByteString(reinterpret_cast<const uint8_t*>(value),
+                       std::strlen(value)));
+}
+
+ByteString emailAddress(const ByteString&);
+
+inline ByteString
+emailAddress(const char* value)
+{
+  return emailAddress(ByteString(reinterpret_cast<const uint8_t*>(value),
+                                 std::strlen(value)));
+}
+
+// RelativeDistinguishedName ::=
+//   SET SIZE (1..MAX) OF AttributeTypeAndValue
+//
+ByteString RDN(const ByteString& avas);
+
+// Name ::= CHOICE { -- only one possibility for now --
+//   rdnSequence  RDNSequence }
+//
+// RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
+//
+ByteString Name(const ByteString& rdns);
+
+inline ByteString
+CNToDERName(const ByteString& cn)
+{
+  return Name(RDN(CN(cn)));
+}
+
+inline ByteString
+CNToDERName(const char* cn)
+{
+  return Name(RDN(CN(cn)));
+}
+
+// GeneralName ::= CHOICE {
+//      otherName                       [0]     OtherName,
+//      rfc822Name                      [1]     IA5String,
+//      dNSName                         [2]     IA5String,
+//      x400Address                     [3]     ORAddress,
+//      directoryName                   [4]     Name,
+//      ediPartyName                    [5]     EDIPartyName,
+//      uniformResourceIdentifier       [6]     IA5String,
+//      iPAddress                       [7]     OCTET STRING,
+//      registeredID                    [8]     OBJECT IDENTIFIER }
+
+inline ByteString
+RFC822Name(const ByteString& name)
+{
+  // (2 << 6) means "context-specific", 1 is the GeneralName tag.
+  return TLV((2 << 6) | 1, name);
+}
+
+template <size_t L>
+inline ByteString
+RFC822Name(const char (&bytes)[L])
+{
+  return RFC822Name(ByteString(reinterpret_cast<const uint8_t*>(&bytes),
+                               L - 1));
+}
+
+inline ByteString
+DNSName(const ByteString& name)
+{
+  // (2 << 6) means "context-specific", 2 is the GeneralName tag.
+  return TLV((2 << 6) | 2, name);
+}
+
+template <size_t L>
+inline ByteString
+DNSName(const char (&bytes)[L])
+{
+  return DNSName(ByteString(reinterpret_cast<const uint8_t*>(&bytes),
+                            L - 1));
+}
+
+inline ByteString
+IPAddress()
+{
+  // (2 << 6) means "context-specific", 7 is the GeneralName tag.
+  return TLV((2 << 6) | 7, ByteString());
+}
+
+template <size_t L>
+inline ByteString
+IPAddress(const uint8_t (&bytes)[L])
+{
+  // (2 << 6) means "context-specific", 7 is the GeneralName tag.
+  return TLV((2 << 6) | 7, ByteString(bytes, L));
+}
+
+// Names should be zero or more GeneralNames, like DNSName and IPAddress return,
+// concatenated together.
+//
+// CreatedEncodedSubjectAltName(ByteString()) results in a SAN with an empty
+// sequence. CreateEmptyEncodedSubjectName() results in a SAN without any
+// sequence.
+ByteString CreateEncodedSubjectAltName(const ByteString& names);
+ByteString CreateEncodedEmptySubjectAltName();
 
 class TestKeyPair
 {
@@ -132,22 +269,22 @@ protected:
   {
   }
 
-  TestKeyPair(const TestKeyPair&) /*= delete*/;
-  void operator=(const TestKeyPair&) /*= delete*/;
+  TestKeyPair(const TestKeyPair&) = delete;
+  void operator=(const TestKeyPair&) = delete;
 };
 
 TestKeyPair* CloneReusedKeyPair();
 TestKeyPair* GenerateKeyPair();
+TestKeyPair* GenerateDSSKeyPair();
 inline void DeleteTestKeyPair(TestKeyPair* keyPair) { delete keyPair; }
 typedef ScopedPtr<TestKeyPair, DeleteTestKeyPair> ScopedTestKeyPair;
 
-ByteString SHA1(const ByteString& toHash);
-
-Result TestCheckPublicKey(Input subjectPublicKeyInfo);
-Result TestVerifySignedData(const SignedDataWithSignature& signedData,
-                            Input subjectPublicKeyInfo);
-Result TestDigestBuf(Input item, /*out*/ uint8_t* digestBuf,
-                     size_t digestBufLen);
+Result TestVerifyECDSASignedDigest(const SignedDigest& signedDigest,
+                                   Input subjectPublicKeyInfo);
+Result TestVerifyRSAPKCS1SignedDigest(const SignedDigest& signedDigest,
+                                      Input subjectPublicKeyInfo);
+Result TestDigestBuf(Input item, DigestAlgorithm digestAlg,
+                     /*out*/ uint8_t* digestBuf, size_t digestBufLen);
 
 // Replace one substring in item with another of the same length, but only if
 // the substring was found exactly once. The "same length" restriction is
@@ -187,20 +324,19 @@ ByteString CreateEncodedCertificate(long version, const ByteString& signature,
 
 ByteString CreateEncodedSerialNumber(long value);
 
-MOZILLA_PKIX_ENUM_CLASS ExtensionCriticality { NotCritical = 0, Critical = 1 };
+enum class Critical { No = 0, Yes = 1 };
 
 ByteString CreateEncodedBasicConstraints(bool isCA,
                                          /*optional*/ long* pathLenConstraint,
-                                         ExtensionCriticality criticality);
+                                         Critical critical);
 
 // Creates a DER-encoded extKeyUsage extension with one EKU OID.
-ByteString CreateEncodedEKUExtension(Input eku,
-                                     ExtensionCriticality criticality);
+ByteString CreateEncodedEKUExtension(Input eku, Critical critical);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Encode OCSP responses
 
-class OCSPResponseExtension
+class OCSPResponseExtension final
 {
 public:
   ByteString id;
@@ -209,7 +345,7 @@ public:
   OCSPResponseExtension* next;
 };
 
-class OCSPResponseContext
+class OCSPResponseContext final
 {
 public:
   OCSPResponseContext(const CertID& certID, std::time_t time);
@@ -219,7 +355,8 @@ public:
 
   // The fields below are in the order that they appear in an OCSP response.
 
-  enum OCSPResponseStatus {
+  enum OCSPResponseStatus
+  {
     successful = 0,
     malformedRequest = 1,
     internalError = 2,
@@ -249,7 +386,8 @@ public:
 
   // The following fields are on a per-SingleResponse basis. In the future we
   // may support including multiple SingleResponses per response.
-  enum CertStatus {
+  enum CertStatus
+  {
     good = 0,
     revoked = 1,
     unknown = 2,
@@ -265,4 +403,4 @@ ByteString CreateEncodedOCSPResponse(OCSPResponseContext& context);
 
 } } } // namespace mozilla::pkix::test
 
-#endif // mozilla_pkix_test__pkixtestutils_h
+#endif // mozilla_pkix_test_pkixtestutils_h

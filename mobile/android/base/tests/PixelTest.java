@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import org.mozilla.gecko.Actions;
@@ -61,7 +65,6 @@ abstract class PixelTest extends BaseTest {
         loadAndPaint(url);
         tabEventExpecter.unregisterListener();
         contentEventExpecter.unregisterListener();
-        mAsserter.ok(waitForText(title), "Checking that the page has loaded", "The page has loaded");
     }
 
     protected final PaintedSurface waitForPaint(Actions.RepeatedEventExpecter expecter) {

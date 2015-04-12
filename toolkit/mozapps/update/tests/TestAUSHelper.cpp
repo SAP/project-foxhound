@@ -14,7 +14,9 @@
 # define F_OK 00
 # define W_OK 02
 # define R_OK 04
-# define stat _stat
+# if _MSC_VER < 1900
+#  define stat _stat
+# endif
 # define NS_T(str) L ## str
 # define NS_tsnprintf(dest, count, fmt, ...) \
   { \
@@ -50,7 +52,6 @@
 # define LOG_S "%s"
 #endif
 
-#include "mozilla/NullPtr.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

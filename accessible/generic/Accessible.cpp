@@ -94,14 +94,10 @@ NS_IMPL_CYCLE_COLLECTION(Accessible,
                          mContent, mParent, mChildren)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Accessible)
-  NS_INTERFACE_MAP_ENTRY(nsIAccessible)
   if (aIID.Equals(NS_GET_IID(Accessible)))
-    foundInterface = static_cast<nsIAccessible*>(this);
+    foundInterface = this;
   else
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIAccessibleSelectable, IsSelect())
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIAccessibleValue, HasNumericValue())
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIAccessibleHyperLink, IsLink())
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIAccessible)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, Accessible)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Accessible)
@@ -113,24 +109,7 @@ Accessible::Accessible(nsIContent* aContent, DocAccessible* aDoc) :
   mStateFlags(0), mContextFlags(0), mType(0), mGenericTypes(0),
   mIndexOfEmbeddedChild(-1), mRoleMapEntry(nullptr)
 {
-#ifdef NS_DEBUG_X
-   {
-     nsCOMPtr<nsIPresShell> shell(do_QueryReferent(aShell));
-     printf(">>> %p Created Acc - DOM: %p  PS: %p",
-            (void*)static_cast<nsIAccessible*>(this), (void*)aNode,
-            (void*)shell.get());
-    nsCOMPtr<nsIContent> content = do_QueryInterface(aNode);
-    if (content) {
-      printf(" Con: %s@%p",
-             NS_ConvertUTF16toUTF8(content->NodeInfo()->QualifiedName()).get(),
-             (void *)content.get());
-      nsAutoString buf;
-      Name(buf);
-      printf(" Name:[%s]", NS_ConvertUTF16toUTF8(buf).get());
-     }
-     printf("\n");
-   }
-#endif
+  mBits.groupInfo = nullptr;
 }
 
 Accessible::~Accessible()
@@ -529,11 +508,8 @@ Accessible::ChildAtPoint(int32_t aX, int32_t aY,
 {
   // If we can't find the point in a child, we will return the fallback answer:
   // we return |this| if the point is within it, otherwise nullptr.
-  nsIntRect rect = Bounds();
-  if (rect.IsEmpty())
-   return nullptr;
-
   Accessible* fallbackAnswer = nullptr;
+  nsIntRect rect = Bounds();
   if (aX >= rect.x && aX < rect.x + rect.width &&
       aY >= rect.y && aY < rect.y + rect.height)
     fallbackAnswer = this;
@@ -897,6 +873,11 @@ Accessible::Attributes()
   while(attribIter.Next(name, value))
     attributes->SetStringProperty(NS_ConvertUTF16toUTF8(name), value, unused);
 
+  if (IsARIAHidden()) {
+    nsAccUtils::SetAccAttr(attributes, nsGkAtoms::hidden,
+                           NS_LITERAL_STRING("true"));
+  }
+
   // If there is no aria-live attribute then expose default value of 'live'
   // object attribute used for ARIA role of this accessible.
   if (mRoleMapEntry) {
@@ -925,7 +906,7 @@ Accessible::NativeAttributes()
   // documents, or text in an input.
   if (HasNumericValue()) {
     nsAutoString valuetext;
-    GetValue(valuetext);
+    Value(valuetext);
     attributes->SetStringProperty(NS_LITERAL_CSTRING("valuetext"), valuetext,
                                   unused);
   }
@@ -1285,7 +1266,7 @@ Accessible::Value(nsString& aValue)
     Accessible* option = CurrentItem();
     if (!option) {
       Accessible* listbox = nullptr;
-      IDRefsIterator iter(mDoc, mContent, nsGkAtoms::aria_owns);
+      ARIAOwnsIterator iter(this);
       while ((listbox = iter.Next()) && !listbox->IsListControl());
 
       if (!listbox) {
@@ -1380,7 +1361,8 @@ Accessible::ARIATransformRole(role aRole)
     // mapping to menu.
     if (mParent && mParent->Role() == roles::COMBOBOX) {
       return roles::COMBOBOX_LIST;
-
+    } else {
+      // Listbox is owned by a combobox
       Relation rel = RelationByType(RelationType::NODE_CHILD_OF);
       Accessible* targetAcc = nullptr;
       while ((targetAcc = rel.Next()))
@@ -1562,8 +1544,7 @@ Accessible::RelationByType(RelationType aType)
     }
 
     case RelationType::NODE_CHILD_OF: {
-      Relation rel(new RelatedAccIterator(Document(), mContent,
-                                          nsGkAtoms::aria_owns));
+      Relation rel(new ARIAOwnedByIterator(this));
 
       // This is an ARIA tree or treegrid that doesn't use owns, so we need to
       // get the parent the hard way.
@@ -1593,7 +1574,7 @@ Accessible::RelationByType(RelationType aType)
     }
 
     case RelationType::NODE_PARENT_OF: {
-      Relation rel(new IDRefsIterator(mDoc, mContent, nsGkAtoms::aria_owns));
+      Relation rel(new ARIAOwnsIterator(this));
 
       // ARIA tree or treegrid can do the hierarchy by @aria-level, ARIA trees
       // also can be organized by groups.
@@ -1718,22 +1699,21 @@ Accessible::RelationByType(RelationType aType)
   }
 }
 
-/* [noscript] void getNativeInterface(out voidPtr aOutAccessible); */
-NS_IMETHODIMP Accessible::GetNativeInterface(void **aOutAccessible)
+void
+Accessible::GetNativeInterface(void** aNativeAccessible)
 {
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 void
 Accessible::DoCommand(nsIContent *aContent, uint32_t aActionIndex)
 {
-  class Runnable MOZ_FINAL : public nsRunnable
+  class Runnable final : public nsRunnable
   {
   public:
     Runnable(Accessible* aAcc, nsIContent* aContent, uint32_t aIdx) :
       mAcc(aAcc), mContent(aContent), mIdx(aIdx) { }
 
-    NS_IMETHOD Run()
+    NS_IMETHOD Run() override
     {
       if (mAcc)
         mAcc->DispatchClickEvent(mContent, mIdx);
@@ -1945,6 +1925,9 @@ Accessible::BindToParent(Accessible* aParent, uint32_t aIndexInParent)
     mContextFlags |= eHasNameDependentParent;
   else
     mContextFlags &= ~eHasNameDependentParent;
+
+  if (mParent->IsARIAHidden() || aria::HasDefinedARIAHidden(mContent))
+    SetARIAHidden(true);
 }
 
 // Accessible protected
@@ -1957,7 +1940,11 @@ Accessible::UnbindFromParent()
   mParent = nullptr;
   mIndexInParent = -1;
   mIndexOfEmbeddedChild = -1;
-  mGroupInfo = nullptr;
+  if (IsProxy())
+    MOZ_CRASH("this should never be called on proxy wrappers");
+
+  delete mBits.groupInfo;
+  mBits.groupInfo = nullptr;
   mContextFlags &= ~eHasNameDependentParent;
 }
 
@@ -2016,8 +2003,7 @@ Accessible::InvalidateChildren()
 {
   int32_t childCount = mChildren.Length();
   for (int32_t childIdx = 0; childIdx < childCount; childIdx++) {
-    Accessible* child = mChildren.ElementAt(childIdx);
-    child->UnbindFromParent();
+    mChildren.ElementAt(childIdx)->UnbindFromParent();
   }
 
   mEmbeddedObjCollector = nullptr;
@@ -2204,19 +2190,13 @@ Accessible::AnchorURIAt(uint32_t aAnchorIndex)
 ////////////////////////////////////////////////////////////////////////////////
 // SelectAccessible
 
-already_AddRefed<nsIArray>
-Accessible::SelectedItems()
+void
+Accessible::SelectedItems(nsTArray<Accessible*>* aItems)
 {
-  nsCOMPtr<nsIMutableArray> selectedItems = do_CreateInstance(NS_ARRAY_CONTRACTID);
-  if (!selectedItems)
-    return nullptr;
-
   AccIterator iter(this, filters::GetSelected);
-  nsIAccessible* selected = nullptr;
+  Accessible* selected = nullptr;
   while ((selected = iter.Next()))
-    selectedItems->AppendElement(selected, false);
-
-  return selectedItems.forget();
+    aItems->AppendElement(selected);
 }
 
 uint32_t
@@ -2405,6 +2385,20 @@ Accessible::ContainerWidget() const
   return nullptr;
 }
 
+void
+Accessible::SetARIAHidden(bool aIsDefined)
+{
+  if (aIsDefined)
+    mContextFlags |= eARIAHidden;
+  else
+    mContextFlags &= ~eARIAHidden;
+
+  uint32_t length = mChildren.Length();
+  for (uint32_t i = 0; i < length; i++) {
+    mChildren[i]->SetARIAHidden(aIsDefined);
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible protected methods
 
@@ -2456,23 +2450,17 @@ Accessible::TestChildCache(Accessible* aCachedChild) const
 #endif
 }
 
-// Accessible public
-bool
+void
 Accessible::EnsureChildren()
 {
-  if (IsDefunct()) {
-    SetChildrenFlag(eChildrenUninitialized);
-    return true;
-  }
+  NS_ASSERTION(!IsDefunct(), "Caching children for defunct accessible!");
 
   if (!IsChildrenFlag(eChildrenUninitialized))
-    return false;
+    return;
 
   // State is embedded children until text leaf accessible is appended.
   SetChildrenFlag(eEmbeddedChildren); // Prevent reentry
-
   CacheChildren();
-  return false;
 }
 
 Accessible*
@@ -2546,17 +2534,20 @@ Accessible::GetActionRule() const
 AccGroupInfo*
 Accessible::GetGroupInfo()
 {
-  if (mGroupInfo){
+  if (IsProxy())
+    MOZ_CRASH("This should never be called on proxy wrappers");
+
+  if (mBits.groupInfo){
     if (HasDirtyGroupInfo()) {
-      mGroupInfo->Update();
+      mBits.groupInfo->Update();
       SetDirtyGroupInfo(false);
     }
 
-    return mGroupInfo;
+    return mBits.groupInfo;
   }
 
-  mGroupInfo = AccGroupInfo::CreateGroupInfo(this);
-  return mGroupInfo;
+  mBits.groupInfo = AccGroupInfo::CreateGroupInfo(this);
+  return mBits.groupInfo;
 }
 
 void

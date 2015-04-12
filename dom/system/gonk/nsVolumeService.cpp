@@ -30,6 +30,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Services.h"
 
+#undef VOLUME_MANAGER_LOG_TAG
 #define VOLUME_MANAGER_LOG_TAG  "nsVolumeService"
 #include "VolumeManagerLog.h"
 
@@ -125,8 +126,6 @@ nsVolumeService::Callback(const nsAString& aTopic, const nsAString& aState)
 
 NS_IMETHODIMP nsVolumeService::GetVolumeByName(const nsAString& aVolName, nsIVolume **aResult)
 {
-  GetVolumesFromParent();
-
   MonitorAutoLock autoLock(mArrayMonitor);
 
   nsRefPtr<nsVolume> vol = FindVolumeByName(aVolName);
@@ -141,8 +140,6 @@ NS_IMETHODIMP nsVolumeService::GetVolumeByName(const nsAString& aVolName, nsIVol
 NS_IMETHODIMP
 nsVolumeService::GetVolumeByPath(const nsAString& aPath, nsIVolume **aResult)
 {
-  GetVolumesFromParent();
-
   NS_ConvertUTF16toUTF8 utf8Path(aPath);
   char realPathBuf[PATH_MAX];
 
@@ -193,8 +190,6 @@ nsVolumeService::GetVolumeByPath(const nsAString& aPath, nsIVolume **aResult)
 NS_IMETHODIMP
 nsVolumeService::CreateOrGetVolumeByPath(const nsAString& aPath, nsIVolume** aResult)
 {
-  GetVolumesFromParent();
-
   nsresult rv = GetVolumeByPath(aPath, aResult);
   if (rv == NS_OK) {
     return NS_OK;
@@ -209,7 +204,9 @@ nsVolumeService::CreateOrGetVolumeByPath(const nsAString& aPath, nsIVolume** aRe
                                          false /* isSharing */,
                                          false /* isFormatting */,
                                          true  /* isFake */,
-                                         false /* isUnmounting*/);
+                                         false /* isUnmounting */,
+                                         false /* isRemovable */,
+                                         false /* isHotSwappable*/);
   vol.forget(aResult);
   return NS_OK;
 }
@@ -217,8 +214,6 @@ nsVolumeService::CreateOrGetVolumeByPath(const nsAString& aPath, nsIVolume** aRe
 NS_IMETHODIMP
 nsVolumeService::GetVolumeNames(nsIArray** aVolNames)
 {
-  GetVolumesFromParent();
-
   NS_ENSURE_ARG_POINTER(aVolNames);
   MonitorAutoLock autoLock(mArrayMonitor);
 
@@ -271,11 +266,13 @@ nsVolumeService::GetVolumesForIPC(nsTArray<VolumeInfo>* aResult)
     volInfo->isFormatting()     = vol->mIsFormatting;
     volInfo->isFake()           = vol->mIsFake;
     volInfo->isUnmounting()     = vol->mIsUnmounting;
+    volInfo->isRemovable()      = vol->mIsRemovable;
+    volInfo->isHotSwappable()   = vol->mIsHotSwappable;
   }
 }
 
 void
-nsVolumeService::GetVolumesFromParent()
+nsVolumeService::RecvVolumesFromParent(const nsTArray<VolumeInfo>& aVolumes)
 {
   if (XRE_GetProcessType() == GeckoProcessType_Default) {
     // We are the parent. Therefore our volumes are already correct.
@@ -285,12 +282,8 @@ nsVolumeService::GetVolumesFromParent()
     // We've already done this, no need to do it again.
     return;
   }
-  mGotVolumesFromParent = true;
-
-  nsTArray<VolumeInfo> result;
-  ContentChild::GetSingleton()->SendGetVolumes(&result);
-  for (uint32_t i = 0; i < result.Length(); i++) {
-    const VolumeInfo& volInfo(result[i]);
+  for (uint32_t i = 0; i < aVolumes.Length(); i++) {
+    const VolumeInfo& volInfo(aVolumes[i]);
     nsRefPtr<nsVolume> vol = new nsVolume(volInfo.name(),
                                           volInfo.mountPoint(),
                                           volInfo.volState(),
@@ -299,7 +292,9 @@ nsVolumeService::GetVolumesFromParent()
                                           volInfo.isSharing(),
                                           volInfo.isFormatting(),
                                           volInfo.isFake(),
-                                          volInfo.isUnmounting());
+                                          volInfo.isUnmounting(),
+                                          volInfo.isRemovable(),
+                                          volInfo.isHotSwappable());
     UpdateVolume(vol, false);
   }
 }
@@ -424,7 +419,9 @@ nsVolumeService::CreateFakeVolume(const nsAString& name, const nsAString& path)
                                           false /* isSharing */,
                                           false /* isFormatting */,
                                           true  /* isFake */,
-                                          false /* isUnmounting */);
+                                          false /* isUnmounting */,
+                                          false /* isRemovable */,
+                                          false /* isHotSwappable */);
     vol->LogState();
     UpdateVolume(vol.get());
     return NS_OK;
@@ -474,11 +471,12 @@ public:
   {
     MOZ_ASSERT(NS_IsMainThread());
     DBG("UpdateVolumeRunnable::Run '%s' state %s gen %d locked %d "
-        "media %d sharing %d formatting %d unmounting %d",
+        "media %d sharing %d formatting %d unmounting %d removable %d hotswappable %d",
         mVolume->NameStr().get(), mVolume->StateStr(),
         mVolume->MountGeneration(), (int)mVolume->IsMountLocked(),
         (int)mVolume->IsMediaPresent(), mVolume->IsSharing(),
-        mVolume->IsFormatting(), mVolume->IsUnmounting());
+        mVolume->IsFormatting(), mVolume->IsUnmounting(),
+        (int)mVolume->IsRemovable(), (int)mVolume->IsHotSwappable());
 
     mVolumeService->UpdateVolume(mVolume);
     mVolumeService = nullptr;
@@ -495,11 +493,12 @@ void
 nsVolumeService::UpdateVolumeIOThread(const Volume* aVolume)
 {
   DBG("UpdateVolumeIOThread: Volume '%s' state %s mount '%s' gen %d locked %d "
-      "media %d sharing %d formatting %d unmounting %d",
+      "media %d sharing %d formatting %d unmounting %d removable %d hotswappable %d",
       aVolume->NameStr(), aVolume->StateStr(), aVolume->MountPoint().get(),
       aVolume->MountGeneration(), (int)aVolume->IsMountLocked(),
       (int)aVolume->MediaPresent(), (int)aVolume->IsSharing(),
-      (int)aVolume->IsFormatting(), (int)mVolume->IsUnmounting());
+      (int)aVolume->IsFormatting(), (int)aVolume->IsUnmounting(),
+      (int)aVolume->IsRemovable(), (int)aVolume->IsHotSwappable());
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
   NS_DispatchToMainThread(new UpdateVolumeRunnable(this, aVolume));
 }

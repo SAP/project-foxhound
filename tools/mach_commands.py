@@ -174,7 +174,7 @@ class UUIDProvider(object):
         import os
         import xpidl
         from mozpack.files import FileFinder
-        import mozpack.path
+        import mozpack.path as mozpath
         from tempfile import mkdtemp
 
         finder = FileFinder(path, find_executables=False)
@@ -184,7 +184,7 @@ class UUIDProvider(object):
             parser = xpidl.IDLParser(outputdir=tmpdir)
             registry = InterfaceRegistry()
             for p, f in finder.find('**/*.idl'):
-                p = mozpack.path.join(path, p)
+                p = mozpath.join(path, p)
                 try:
                     content = f.open().read()
                     idl = parser.parse(content, filename=p)
@@ -291,25 +291,6 @@ class PastebinProvider(object):
             return 1
         return 0
 
-
-@CommandProvider
-class ReviewboardToolsProvider(MachCommandBase):
-    @Command('rbt', category='devenv',
-        description='Run Reviewboard Tools')
-    @CommandArgument('args', nargs='...', help='Arguments to rbt tool')
-    def rbt(self, args):
-        if not args:
-            args = ['help']
-
-        self._activate_virtualenv()
-        self.virtualenv_manager.install_pip_package('RBTools==0.6')
-
-        from rbtools.commands.main import main
-
-        # main() doesn't accept arguments and instead reads from sys.argv. So,
-        # we fake it out.
-        sys.argv = ['rbt'] + args
-        return main()
 
 @CommandProvider
 class FormatProvider(MachCommandBase):

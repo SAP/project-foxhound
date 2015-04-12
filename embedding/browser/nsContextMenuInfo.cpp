@@ -275,7 +275,7 @@ nsContextMenuInfo::GetBackgroundImageRequestInternal(nsIDOMNode *aDOMNode, imgRe
     // bail for the parent node of the root element or null argument
     if (!domElement)
       break;
-    
+
     nsCOMPtr<nsIDOMCSSStyleDeclaration> computedStyle;
     window->GetComputedStyle(domElement, EmptyString(),
                              getter_AddRefs(computedStyle));
@@ -294,9 +294,11 @@ nsContextMenuInfo::GetBackgroundImageRequestInternal(nsIDOMNode *aDOMNode, imgRe
           nsRefPtr<imgLoader> il = imgLoader::GetInstance();
           NS_ENSURE_TRUE(il, NS_ERROR_FAILURE);
 
-          return il->LoadImage(bgUri, nullptr, nullptr, principal, nullptr,
+          return il->LoadImage(bgUri, nullptr, nullptr,
+                               doc->GetReferrerPolicy(), principal, nullptr,
                                nullptr, nullptr, nsIRequest::LOAD_NORMAL,
-                               nullptr, EmptyString(), aRequest);
+                               nullptr, nsIContentPolicy::TYPE_IMAGE,
+                               EmptyString(), aRequest);
         }
       }
 

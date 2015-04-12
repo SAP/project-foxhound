@@ -16,7 +16,6 @@
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsISVGChildFrame.h"
-#include "nsRenderingContext.h"
 #include "nsStyleContext.h"
 #include "nsSVGEffects.h"
 #include "nsSVGPathGeometryFrame.h"
@@ -43,7 +42,7 @@ public:
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     // Reference loops should normally be detected in advance and handled, so
     // we're not expecting to encounter them here
-    NS_ABORT_IF_FALSE(!mFrame->mLoopFlag, "Undetected reference loop!");
+    MOZ_ASSERT(!mFrame->mLoopFlag, "Undetected reference loop!");
     mFrame->mLoopFlag = true;
   }
   ~AutoPatternReferencer() {
@@ -377,15 +376,9 @@ nsSVGPatternFrame::PaintPattern(const DrawTarget* aDrawTarget,
   if (!dt) {
     return nullptr;
   }
+  dt->ClearRect(Rect(0, 0, surfaceSize.width, surfaceSize.height));
 
-  nsRefPtr<nsRenderingContext> context(new nsRenderingContext());
-  context->Init(dt);
-  gfxContext* gfx = context->ThebesContext();
-
-  // Fill with transparent black
-  gfx->SetOperator(gfxContext::OPERATOR_CLEAR);
-  gfx->Paint();
-  gfx->SetOperator(gfxContext::OPERATOR_OVER);
+  nsRefPtr<gfxContext> gfx = new gfxContext(dt);
 
   if (aGraphicOpacity != 1.0f) {
     gfx->Save();
@@ -417,7 +410,7 @@ nsSVGPatternFrame::PaintPattern(const DrawTarget* aDrawTarget,
         tm = static_cast<nsSVGElement*>(kid->GetContent())->
               PrependLocalTransformsTo(tm, nsSVGElement::eUserSpaceToParent);
       }
-      nsSVGUtils::PaintFrameWithEffects(kid, context, tm);
+      nsSVGUtils::PaintFrameWithEffects(kid, *gfx, tm);
     }
     patternWithChildren->RemoveStateBits(NS_FRAME_DRAWING_AS_PAINTSERVER);
   }

@@ -103,7 +103,10 @@ nsDataHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsDataHandler::NewChannel(nsIURI* uri, nsIChannel* *result) {
+nsDataHandler::NewChannel2(nsIURI* uri,
+                           nsILoadInfo* aLoadInfo,
+                           nsIChannel** result)
+{
     NS_ENSURE_ARG_POINTER(uri);
     nsDataChannel* channel = new nsDataChannel(uri);
     if (!channel)
@@ -116,8 +119,21 @@ nsDataHandler::NewChannel(nsIURI* uri, nsIChannel* *result) {
         return rv;
     }
 
+    // set the loadInfo on the new channel
+    rv = channel->SetLoadInfo(aLoadInfo);
+    if (NS_FAILED(rv)) {
+        NS_RELEASE(channel);
+        return rv;
+    }
+
     *result = channel;
     return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDataHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
+{
+    return NewChannel2(uri, nullptr, result);
 }
 
 NS_IMETHODIMP 

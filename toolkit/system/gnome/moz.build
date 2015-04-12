@@ -5,7 +5,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 SOURCES += [
+    'nsAlertsIconListener.cpp',
     'nsGnomeModule.cpp',
+    'nsSystemAlertsService.cpp',
 ]
 
 if CONFIG['MOZ_ENABLE_GCONF']:
@@ -22,6 +24,7 @@ if CONFIG['MOZ_ENABLE_GIO']:
     SOURCES += [
         'nsGIOService.cpp',
         'nsGSettingsService.cpp',
+        'nsPackageKitService.cpp'
     ]
 
 XPCOMBinaryComponent('mozgnome')

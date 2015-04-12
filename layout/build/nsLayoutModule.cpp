@@ -90,6 +90,7 @@
 #include "mozilla/dom/network/UDPSocketChild.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/workers/ServiceWorkerManager.h"
+#include "mozilla/dom/workers/WorkerDebuggerManager.h"
 #include "mozilla/OSFileConstants.h"
 #include "mozilla/Services.h"
 
@@ -188,7 +189,6 @@ class nsIDocumentLoaderFactory;
 #endif /* MOZ_XUL */
 
 #include "inDeepTreeWalker.h"
-#include "inFlasher.h"
 #include "inCSSValueSearch.h"
 #include "inDOMUtils.h"
 
@@ -210,8 +210,8 @@ static void Shutdown();
 #ifdef MOZ_GAMEPAD
 #include "mozilla/dom/GamepadService.h"
 #endif
-#include "nsCSPService.h"
-#include "nsCSPContext.h"
+#include "mozilla/dom/nsCSPService.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "nsICellBroadcastService.h"
 #include "nsISmsService.h"
 #include "nsIMmsService.h"
@@ -221,7 +221,7 @@ static void Shutdown();
 #include "nsIPowerManagerService.h"
 #include "nsIAlarmHalService.h"
 #include "nsIMediaManager.h"
-#include "nsMixedContentBlocker.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 
 #include "AudioChannelService.h"
 
@@ -235,6 +235,11 @@ static void Shutdown();
 #include "nsITelephonyService.h"
 #include "nsIVoicemailService.h"
 
+#include "mozilla/dom/FakeTVService.h"
+#include "mozilla/dom/TVServiceFactory.h"
+#include "mozilla/dom/TVTypes.h"
+#include "nsITVService.h"
+
 #ifdef MOZ_WIDGET_GONK
 #include "GonkGPSGeolocationProvider.h"
 #endif
@@ -242,12 +247,17 @@ static void Shutdown();
 
 #include "GMPService.h"
 
+#include "mozilla/dom/presentation/PresentationDeviceManager.h"
+
+#include "mozilla/TextInputProcessor.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 using mozilla::dom::alarm::AlarmHalService;
 using mozilla::dom::power::PowerManagerService;
 using mozilla::dom::quota::QuotaManager;
 using mozilla::dom::workers::ServiceWorkerManager;
+using mozilla::dom::workers::WorkerDebuggerManager;
 using mozilla::dom::TCPSocketChild;
 using mozilla::dom::TCPSocketParent;
 using mozilla::dom::TCPServerSocketChild;
@@ -263,6 +273,11 @@ using mozilla::gmp::GeckoMediaPluginService;
 
 #define TRANSFORMIIX_NODESET_CONTRACTID \
 "@mozilla.org/transformiix-nodeset;1"
+
+// PresentationDeviceManager
+/* e1e79dec-4085-4994-ac5b-744b016697e6 */
+#define PRESENTATION_DEVICE_MANAGER_CID \
+{ 0xe1e79dec, 0x4085, 0x4994, { 0xac, 0x5b, 0x74, 0x4b, 0x01, 0x66, 0x97, 0xe6 } }
 
 // Factory Constructor
 NS_GENERIC_FACTORY_CONSTRUCTOR(txMozillaXSLTProcessor)
@@ -287,6 +302,8 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(QuotaManager,
                                          QuotaManager::FactoryCreate)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(ServiceWorkerManager,
                                          ServiceWorkerManager::FactoryCreate)
+NS_GENERIC_FACTORY_CONSTRUCTOR(WorkerDebuggerManager)
+
 #ifdef MOZ_WIDGET_GONK
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(SystemWorkerManager,
                                          SystemWorkerManager::FactoryCreate)
@@ -355,6 +372,13 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsITelephonyService,
                                          NS_CreateTelephonyService)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIVoicemailService,
                                          NS_CreateVoicemailService)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(FakeTVService,
+                                         TVServiceFactory::CreateFakeTVService)
+NS_GENERIC_FACTORY_CONSTRUCTOR(TVTunerData)
+NS_GENERIC_FACTORY_CONSTRUCTOR(TVChannelData)
+NS_GENERIC_FACTORY_CONSTRUCTOR(TVProgramData)
+NS_GENERIC_FACTORY_CONSTRUCTOR(PresentationDeviceManager)
+NS_GENERIC_FACTORY_CONSTRUCTOR(TextInputProcessor)
 
 //-----------------------------------------------------------------------------
 
@@ -500,7 +524,6 @@ MAKE_CTOR(CreateNewContainerBoxObject,  nsIBoxObject,           NS_NewContainerB
 NS_GENERIC_FACTORY_CONSTRUCTOR(inDOMView)
 #endif
 NS_GENERIC_FACTORY_CONSTRUCTOR(inDeepTreeWalker)
-NS_GENERIC_FACTORY_CONSTRUCTOR(inFlasher)
 NS_GENERIC_FACTORY_CONSTRUCTOR(inCSSValueSearch)
 NS_GENERIC_FACTORY_CONSTRUCTOR(inDOMUtils)
 
@@ -654,7 +677,6 @@ NS_DEFINE_NAMED_CID(NS_TREEBOXOBJECT_CID);
 NS_DEFINE_NAMED_CID(IN_DOMVIEW_CID);
 #endif
 NS_DEFINE_NAMED_CID(IN_DEEPTREEWALKER_CID);
-NS_DEFINE_NAMED_CID(IN_FLASHER_CID);
 NS_DEFINE_NAMED_CID(IN_CSSVALUESEARCH_CID);
 NS_DEFINE_NAMED_CID(IN_DOMUTILS_CID);
 NS_DEFINE_NAMED_CID(NS_CONTENT_VIEWER_CID);
@@ -715,6 +737,7 @@ NS_DEFINE_NAMED_CID(NS_TEXTEDITOR_CID);
 NS_DEFINE_NAMED_CID(DOMREQUEST_SERVICE_CID);
 NS_DEFINE_NAMED_CID(QUOTA_MANAGER_CID);
 NS_DEFINE_NAMED_CID(SERVICEWORKERMANAGER_CID);
+NS_DEFINE_NAMED_CID(WORKERDEBUGGERMANAGER_CID);
 #ifdef MOZ_WIDGET_GONK
 NS_DEFINE_NAMED_CID(SYSTEMWORKERMANAGER_CID);
 #endif
@@ -790,10 +813,18 @@ NS_DEFINE_NAMED_CID(NS_ACCESSIBILITY_SERVICE_CID);
 #endif
 NS_DEFINE_NAMED_CID(TELEPHONY_SERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_VOICEMAIL_SERVICE_CID);
+NS_DEFINE_NAMED_CID(FAKE_TV_SERVICE_CID);
+NS_DEFINE_NAMED_CID(TV_TUNER_DATA_CID);
+NS_DEFINE_NAMED_CID(TV_CHANNEL_DATA_CID);
+NS_DEFINE_NAMED_CID(TV_PROGRAM_DATA_CID);
 
 NS_DEFINE_NAMED_CID(GECKO_MEDIA_PLUGIN_SERVICE_CID);
 
 NS_DEFINE_NAMED_CID(NS_MOBILE_CONNECTION_SERVICE_CID);
+
+NS_DEFINE_NAMED_CID(PRESENTATION_DEVICE_MANAGER_CID);
+
+NS_DEFINE_NAMED_CID(TEXT_INPUT_PROCESSOR_CID);
 
 static nsresult
 CreateWindowCommandTableConstructor(nsISupports *aOuter,
@@ -943,7 +974,6 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kIN_DOMVIEW_CID, false, nullptr, inDOMViewConstructor },
 #endif
   { &kIN_DEEPTREEWALKER_CID, false, nullptr, inDeepTreeWalkerConstructor },
-  { &kIN_FLASHER_CID, false, nullptr, inFlasherConstructor },
   { &kIN_CSSVALUESEARCH_CID, false, nullptr, inCSSValueSearchConstructor },
   { &kIN_DOMUTILS_CID, false, nullptr, inDOMUtilsConstructor },
   { &kNS_CONTENT_VIEWER_CID, false, nullptr, CreateContentViewer },
@@ -1005,6 +1035,7 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kDOMREQUEST_SERVICE_CID, false, nullptr, DOMRequestServiceConstructor },
   { &kQUOTA_MANAGER_CID, false, nullptr, QuotaManagerConstructor },
   { &kSERVICEWORKERMANAGER_CID, false, nullptr, ServiceWorkerManagerConstructor },
+  { &kWORKERDEBUGGERMANAGER_CID, true, nullptr, WorkerDebuggerManagerConstructor },
 #ifdef MOZ_WIDGET_GONK
   { &kSYSTEMWORKERMANAGER_CID, true, nullptr, SystemWorkerManagerConstructor },
 #endif
@@ -1078,6 +1109,12 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kTELEPHONY_SERVICE_CID, false, nullptr, nsITelephonyServiceConstructor },
   { &kNS_MOBILE_CONNECTION_SERVICE_CID, false, NULL, nsIMobileConnectionServiceConstructor },
   { &kNS_VOICEMAIL_SERVICE_CID, false, nullptr, nsIVoicemailServiceConstructor },
+  { &kFAKE_TV_SERVICE_CID, false, nullptr, FakeTVServiceConstructor },
+  { &kTV_TUNER_DATA_CID, false, nullptr, TVTunerDataConstructor },
+  { &kTV_CHANNEL_DATA_CID, false, nullptr, TVChannelDataConstructor },
+  { &kTV_PROGRAM_DATA_CID, false, nullptr, TVProgramDataConstructor },
+  { &kPRESENTATION_DEVICE_MANAGER_CID, false, nullptr, PresentationDeviceManagerConstructor },
+  { &kTEXT_INPUT_PROCESSOR_CID, false, nullptr, TextInputProcessorConstructor },
   { nullptr }
 };
 
@@ -1096,7 +1133,6 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/inspector/dom-view;1", &kIN_DOMVIEW_CID },
 #endif
   { "@mozilla.org/inspector/deep-tree-walker;1", &kIN_DEEPTREEWALKER_CID },
-  { "@mozilla.org/inspector/flasher;1", &kIN_FLASHER_CID },
   { "@mozilla.org/inspector/search;1?type=cssvalue", &kIN_CSSVALUESEARCH_CID },
   { IN_DOMUTILS_CONTRACTID, &kIN_DOMUTILS_CID },
   { "@mozilla.org/xml/xml-document;1", &kNS_XMLDOCUMENT_CID },
@@ -1105,10 +1141,7 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/content/post-content-iterator;1", &kNS_CONTENTITERATOR_CID },
   { "@mozilla.org/content/pre-content-iterator;1", &kNS_PRECONTENTITERATOR_CID },
   { "@mozilla.org/content/subtree-content-iterator;1", &kNS_SUBTREEITERATOR_CID },
-  { "@mozilla.org/content/canvas-rendering-context;1?id=experimental-webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
-#ifdef MOZ_WEBGL_CONFORMANT
   { "@mozilla.org/content/canvas-rendering-context;1?id=webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
-#endif
   { NS_DOC_ENCODER_CONTRACTID_BASE "text/xml", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "application/xml", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "application/xhtml+xml", &kNS_TEXT_ENCODER_CID },
@@ -1162,6 +1195,7 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { DOMREQUEST_SERVICE_CONTRACTID, &kDOMREQUEST_SERVICE_CID },
   { QUOTA_MANAGER_CONTRACTID, &kQUOTA_MANAGER_CID },
   { SERVICEWORKERMANAGER_CONTRACTID, &kSERVICEWORKERMANAGER_CID },
+  { WORKERDEBUGGERMANAGER_CONTRACTID, &kWORKERDEBUGGERMANAGER_CID },
 #ifdef MOZ_WIDGET_GONK
   { SYSTEMWORKERMANAGER_CONTRACTID, &kSYSTEMWORKERMANAGER_CID },
 #endif
@@ -1232,9 +1266,15 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/accessibleRetrieval;1", &kNS_ACCESSIBILITY_SERVICE_CID },
 #endif
   { TELEPHONY_SERVICE_CONTRACTID, &kTELEPHONY_SERVICE_CID },
+  { FAKE_TV_SERVICE_CONTRACTID, &kFAKE_TV_SERVICE_CID },
+  { TV_TUNER_DATA_CONTRACTID, &kTV_TUNER_DATA_CID },
+  { TV_CHANNEL_DATA_CONTRACTID, &kTV_CHANNEL_DATA_CID },
+  { TV_PROGRAM_DATA_CONTRACTID, &kTV_PROGRAM_DATA_CID },
   { "@mozilla.org/gecko-media-plugin-service;1",  &kGECKO_MEDIA_PLUGIN_SERVICE_CID },
   { NS_MOBILE_CONNECTION_SERVICE_CONTRACTID, &kNS_MOBILE_CONNECTION_SERVICE_CID },
   { NS_VOICEMAIL_SERVICE_CONTRACTID, &kNS_VOICEMAIL_SERVICE_CID },
+  { PRESENTATION_DEVICE_MANAGER_CONTRACTID, &kPRESENTATION_DEVICE_MANAGER_CID },
+  { "@mozilla.org/text-input-processor;1", &kTEXT_INPUT_PROCESSOR_CID },
   { nullptr }
 };
 
@@ -1258,6 +1298,7 @@ static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
 #ifdef MOZ_B2G_BT
   { "profile-after-change", "Bluetooth Service", BLUETOOTHSERVICE_CONTRACTID },
 #endif
+  { "profile-after-change", "PresentationDeviceManager", PRESENTATION_DEVICE_MANAGER_CONTRACTID },
   { nullptr }
 };
 

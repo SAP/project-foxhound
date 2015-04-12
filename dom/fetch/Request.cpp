@@ -33,6 +33,7 @@ Request::Request(nsIGlobalObject* aOwner, InternalRequest* aRequest)
   : FetchBody<Request>()
   , mOwner(aOwner)
   , mRequest(aRequest)
+  , mContext(RequestContext::Fetch)
 {
 }
 
@@ -49,7 +50,7 @@ Request::GetInternalRequest()
 
 /*static*/ already_AddRefed<Request>
 Request::Constructor(const GlobalObject& aGlobal,
-                     const RequestOrScalarValueString& aInput,
+                     const RequestOrUSVString& aInput,
                      const RequestInit& aInit, ErrorResult& aRv)
 {
   nsRefPtr<InternalRequest> request;
@@ -58,12 +59,17 @@ Request::Constructor(const GlobalObject& aGlobal,
 
   if (aInput.IsRequest()) {
     nsRefPtr<Request> inputReq = &aInput.GetAsRequest();
-    if (inputReq->BodyUsed()) {
-      aRv.ThrowTypeError(MSG_REQUEST_BODY_CONSUMED_ERROR);
-      return nullptr;
+    nsCOMPtr<nsIInputStream> body;
+    inputReq->GetBody(getter_AddRefs(body));
+    if (body) {
+      if (inputReq->BodyUsed()) {
+        aRv.ThrowTypeError(MSG_FETCH_BODY_CONSUMED_ERROR);
+        return nullptr;
+      } else {
+        inputReq->SetBodyUsed();
+      }
     }
 
-    inputReq->SetBodyUsed();
     request = inputReq->GetInternalRequest();
   } else {
     request = new InternalRequest();
@@ -76,9 +82,9 @@ Request::Constructor(const GlobalObject& aGlobal,
 
   RequestMode fallbackMode = RequestMode::EndGuard_;
   RequestCredentials fallbackCredentials = RequestCredentials::EndGuard_;
-  if (aInput.IsScalarValueString()) {
+  if (aInput.IsUSVString()) {
     nsString input;
-    input.Assign(aInput.GetAsScalarValueString());
+    input.Assign(aInput.GetAsUSVString());
 
     nsString requestURL;
     if (NS_IsMainThread()) {
@@ -123,6 +129,16 @@ Request::Constructor(const GlobalObject& aGlobal,
     fallbackCredentials = RequestCredentials::Omit;
   }
 
+  // CORS-with-forced-preflight is not publicly exposed and should not be
+  // considered a valid value.
+  if (aInit.mMode.WasPassed() &&
+      aInit.mMode.Value() == RequestMode::Cors_with_forced_preflight) {
+    NS_NAMED_LITERAL_STRING(sourceDescription, "'mode' member of RequestInit");
+    NS_NAMED_LITERAL_STRING(value, "cors-with-forced-preflight");
+    NS_NAMED_LITERAL_STRING(type, "RequestMode");
+    aRv.ThrowTypeError(MSG_INVALID_ENUM_VALUE, &sourceDescription, &value, &type);
+    return nullptr;
+  }
   RequestMode mode = aInit.mMode.WasPassed() ? aInit.mMode.Value() : fallbackMode;
   RequestCredentials credentials =
     aInit.mCredentials.WasPassed() ? aInit.mCredentials.Value()
@@ -136,23 +152,35 @@ Request::Constructor(const GlobalObject& aGlobal,
     request->SetCredentialsMode(credentials);
   }
 
+  // Request constructor step 14.
   if (aInit.mMethod.WasPassed()) {
-    nsCString method = aInit.mMethod.Value();
-    ToLowerCase(method);
+    nsAutoCString method(aInit.mMethod.Value());
+    nsAutoCString upperCaseMethod = method;
+    ToUpperCase(upperCaseMethod);
 
-    if (!method.EqualsASCII("options") &&
-        !method.EqualsASCII("get") &&
-        !method.EqualsASCII("head") &&
-        !method.EqualsASCII("post") &&
-        !method.EqualsASCII("put") &&
-        !method.EqualsASCII("delete")) {
+    // Step 14.1. Disallow forbidden methods, and anything that is not a HTTP
+    // token, since HTTP states that Method may be any of the defined values or
+    // a token (extension method).
+    if (upperCaseMethod.EqualsLiteral("CONNECT") ||
+        upperCaseMethod.EqualsLiteral("TRACE") ||
+        upperCaseMethod.EqualsLiteral("TRACK") ||
+        !NS_IsValidHTTPToken(method)) {
       NS_ConvertUTF8toUTF16 label(method);
       aRv.ThrowTypeError(MSG_INVALID_REQUEST_METHOD, &label);
       return nullptr;
     }
 
-    ToUpperCase(method);
-    request->SetMethod(method);
+    // Step 14.2
+    if (upperCaseMethod.EqualsLiteral("DELETE") ||
+        upperCaseMethod.EqualsLiteral("GET") ||
+        upperCaseMethod.EqualsLiteral("HEAD") ||
+        upperCaseMethod.EqualsLiteral("POST") ||
+        upperCaseMethod.EqualsLiteral("PUT") ||
+        upperCaseMethod.EqualsLiteral("OPTIONS")) {
+      request->SetMethod(upperCaseMethod);
+    } else {
+      request->SetMethod(method);
+    }
   }
 
   nsRefPtr<InternalHeaders> requestHeaders = request->Headers();
@@ -191,7 +219,16 @@ Request::Constructor(const GlobalObject& aGlobal,
   }
 
   if (aInit.mBody.WasPassed()) {
-    const OwningArrayBufferOrArrayBufferViewOrBlobOrScalarValueStringOrURLSearchParams& bodyInit = aInit.mBody.Value();
+    // HEAD and GET are not allowed to have a body.
+    nsAutoCString method;
+    request->GetMethod(method);
+    // method is guaranteed to be uppercase due to step 14.2 above.
+    if (method.EqualsLiteral("HEAD") || method.EqualsLiteral("GET")) {
+      aRv.ThrowTypeError(MSG_NO_BODY_ALLOWED_FOR_GET_AND_HEAD);
+      return nullptr;
+    }
+
+    const OwningArrayBufferOrArrayBufferViewOrBlobOrUSVStringOrURLSearchParams& bodyInit = aInit.mBody.Value();
     nsCOMPtr<nsIInputStream> stream;
     nsCString contentType;
     aRv = ExtractByteStreamFromBody(bodyInit,
@@ -218,12 +255,20 @@ Request::Constructor(const GlobalObject& aGlobal,
 }
 
 already_AddRefed<Request>
-Request::Clone() const
+Request::Clone(ErrorResult& aRv) const
 {
-  // FIXME(nsm): Bug 1073231. This is incorrect, but the clone method isn't
-  // well defined yet.
-  nsRefPtr<Request> request = new Request(mOwner,
-                                          new InternalRequest(*mRequest));
+  if (BodyUsed()) {
+    aRv.ThrowTypeError(MSG_FETCH_BODY_CONSUMED_ERROR);
+    return nullptr;
+  }
+
+  nsRefPtr<InternalRequest> ir = mRequest->Clone();
+  if (!ir) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  nsRefPtr<Request> request = new Request(mOwner, ir);
   return request.forget();
 }
 

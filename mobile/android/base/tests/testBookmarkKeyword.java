@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 
@@ -15,12 +19,8 @@ public class testBookmarkKeyword extends AboutHomeTest {
         // Enter the keyword in the urlbar.
         inputAndLoadUrl(keyword);
 
-        // Wait for the page to load.
-        waitForText(StringHelper.ROBOCOP_BLANK_PAGE_01_TITLE);
-
         // Make sure the title of the page appeared.
-        verifyPageTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_TITLE,
-                StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
+        verifyUrlBarTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
 
         // Delete the bookmark to clean up.
         mDatabaseHelper.deleteBookmark(url);

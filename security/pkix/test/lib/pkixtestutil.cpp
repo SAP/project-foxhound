@@ -29,6 +29,7 @@
 #include <limits>
 #include <new>
 #include <sstream>
+#include <cstdlib>
 
 #include "pkixder.h"
 #include "pkixutil.h"
@@ -83,6 +84,20 @@ InputEqualsByteString(Input input, const ByteString& bs)
   return InputsAreEqual(input, bsInput);
 }
 
+ByteString
+InputToByteString(Input input)
+{
+  ByteString result;
+  Reader reader(input);
+  for (;;) {
+    uint8_t b;
+    if (reader.Read(b) != Success) {
+      return result;
+    }
+    result.push_back(b);
+  }
+}
+
 Result
 TamperOnce(/*in/out*/ ByteString& item, const ByteString& from,
            const ByteString& to)
@@ -106,20 +121,20 @@ TamperOnce(/*in/out*/ ByteString& item, const ByteString& from,
 
 // Given a tag and a value, generates a DER-encoded tag-length-value item.
 ByteString
-TLV(uint8_t tag, const ByteString& value)
+TLV(uint8_t tag, size_t length, const ByteString& value)
 {
   ByteString result;
   result.push_back(tag);
 
   if (value.length() < 128) {
-    result.push_back(value.length());
+    result.push_back(static_cast<uint8_t>(length));
   } else if (value.length() < 256) {
     result.push_back(0x81u);
-    result.push_back(value.length());
+    result.push_back(static_cast<uint8_t>(length));
   } else if (value.length() < 65536) {
     result.push_back(0x82u);
-    result.push_back(static_cast<uint8_t>(value.length() / 256));
-    result.push_back(static_cast<uint8_t>(value.length() % 256));
+    result.push_back(static_cast<uint8_t>(length / 256));
+    result.push_back(static_cast<uint8_t>(length % 256));
   } else {
     // It is MUCH more convenient for TLV to be infallible than for it to have
     // "proper" error handling.
@@ -143,7 +158,7 @@ OCSPResponseContext::OCSPResponseContext(const CertID& certID, time_t time)
   , certStatus(good)
   , revocationTime(0)
   , thisUpdate(time)
-  , nextUpdate(time + Time::ONE_DAY_IN_SECONDS)
+  , nextUpdate(time + static_cast<time_t>(Time::ONE_DAY_IN_SECONDS))
   , includeNextUpdate(true)
 {
 }
@@ -156,6 +171,22 @@ static ByteString KeyHash(const ByteString& subjectPublicKeyInfo);
 static ByteString SingleResponse(OCSPResponseContext& context);
 static ByteString CertID(OCSPResponseContext& context);
 static ByteString CertStatus(OCSPResponseContext& context);
+
+static ByteString
+SHA1(const ByteString& toHash)
+{
+  uint8_t digestBuf[20];
+  Input input;
+  if (input.Init(toHash.data(), toHash.length()) != Success) {
+    abort();
+  }
+  Result rv = TestDigestBuf(input, DigestAlgorithm::sha1, digestBuf,
+                            sizeof(digestBuf));
+  if (rv != Success) {
+    abort();
+  }
+  return ByteString(digestBuf, sizeof(digestBuf));
+}
 
 static ByteString
 HashedOctetString(const ByteString& bytes)
@@ -183,15 +214,15 @@ BitString(const ByteString& rawBytes, bool corrupt)
   return TLV(der::BIT_STRING, prefixed);
 }
 
-static ByteString
+ByteString
 Boolean(bool value)
 {
   ByteString encodedValue;
-  encodedValue.push_back(value ? 0xff : 0x00);
+  encodedValue.push_back(value ? 0xffu : 0x00u);
   return TLV(der::BOOLEAN, encodedValue);
 }
 
-static ByteString
+ByteString
 Integer(long value)
 {
   if (value < 0 || value > 127) {
@@ -209,7 +240,7 @@ Integer(long value)
 enum TimeEncoding { UTCTime = 0, GeneralizedTime = 1 };
 
 // Windows doesn't provide gmtime_r, but it provides something very similar.
-#ifdef WIN32
+#if defined(WIN32) && !defined(_POSIX_THREAD_SAFE_FUNCTIONS)
 static tm*
 gmtime_r(const time_t* t, /*out*/ tm* exploded)
 {
@@ -251,22 +282,22 @@ TimeToEncodedTime(time_t time, TimeEncoding encoding)
   ByteString value;
 
   if (encoding == GeneralizedTime) {
-    value.push_back('0' + (year / 1000));
-    value.push_back('0' + ((year % 1000) / 100));
+    value.push_back(static_cast<uint8_t>('0' + (year / 1000)));
+    value.push_back(static_cast<uint8_t>('0' + ((year % 1000) / 100)));
   }
 
-  value.push_back('0' + ((year % 100) / 10));
-  value.push_back('0' + (year % 10));
-  value.push_back('0' + ((exploded.tm_mon + 1) / 10));
-  value.push_back('0' + ((exploded.tm_mon + 1) % 10));
-  value.push_back('0' + (exploded.tm_mday / 10));
-  value.push_back('0' + (exploded.tm_mday % 10));
-  value.push_back('0' + (exploded.tm_hour / 10));
-  value.push_back('0' + (exploded.tm_hour % 10));
-  value.push_back('0' + (exploded.tm_min / 10));
-  value.push_back('0' + (exploded.tm_min % 10));
-  value.push_back('0' + (exploded.tm_sec / 10));
-  value.push_back('0' + (exploded.tm_sec % 10));
+  value.push_back(static_cast<uint8_t>('0' + ((year % 100) / 10)));
+  value.push_back(static_cast<uint8_t>('0' + (year % 10)));
+  value.push_back(static_cast<uint8_t>('0' + ((exploded.tm_mon + 1) / 10)));
+  value.push_back(static_cast<uint8_t>('0' + ((exploded.tm_mon + 1) % 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_mday / 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_mday % 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_hour / 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_hour % 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_min / 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_min % 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_sec / 10)));
+  value.push_back(static_cast<uint8_t>('0' + (exploded.tm_sec % 10)));
   value.push_back('Z');
 
   return TLV(encoding == GeneralizedTime ? der::GENERALIZED_TIME : der::UTCTime,
@@ -300,18 +331,15 @@ TimeToTimeChoice(time_t time)
 }
 
 Time
-YMDHMS(int16_t year, int16_t month, int16_t day,
-       int16_t hour, int16_t minutes, int16_t seconds)
+YMDHMS(uint16_t year, uint16_t month, uint16_t day,
+       uint16_t hour, uint16_t minutes, uint16_t seconds)
 {
   assert(year <= 9999);
   assert(month >= 1);
   assert(month <= 12);
   assert(day >= 1);
-  assert(hour >= 0);
   assert(hour < 24);
-  assert(minutes >= 0);
   assert(minutes < 60);
-  assert(seconds >= 0);
   assert(seconds < 60);
 
   uint64_t days = DaysBeforeYear(year);
@@ -394,22 +422,59 @@ SignedData(const ByteString& tbsData,
 //                  -- by extnID
 //      }
 static ByteString
-Extension(Input extnID, ExtensionCriticality criticality,
-          const ByteString& extnValueBytes)
+Extension(Input extnID, Critical critical, const ByteString& extnValueBytes)
 {
   ByteString encoded;
 
   encoded.append(ByteString(extnID.UnsafeGetData(), extnID.GetLength()));
 
-  if (criticality == ExtensionCriticality::Critical) {
-    ByteString critical(Boolean(true));
-    encoded.append(critical);
+  if (critical == Critical::Yes) {
+    encoded.append(Boolean(true));
   }
 
   ByteString extnValueSequence(TLV(der::SEQUENCE, extnValueBytes));
   ByteString extnValue(TLV(der::OCTET_STRING, extnValueSequence));
   encoded.append(extnValue);
   return TLV(der::SEQUENCE, encoded);
+}
+
+static ByteString
+EmptyExtension(Input extnID, Critical critical)
+{
+  ByteString encoded(extnID.UnsafeGetData(), extnID.GetLength());
+
+  if (critical == Critical::Yes) {
+    encoded.append(Boolean(true));
+  }
+
+  ByteString extnValue(TLV(der::OCTET_STRING, ByteString()));
+  encoded.append(extnValue);
+  return TLV(der::SEQUENCE, encoded);
+}
+
+std::string
+GetEnv(const char* name)
+{
+  std::string result;
+
+#ifndef _MSC_VER
+  // XXX: Not thread safe.
+  const char* value = getenv(name);
+  if (value) {
+    result = value;
+  }
+#else
+  char* value = nullptr;
+  size_t valueLength = 0;
+  if (_dupenv_s(&value, &valueLength, name) != 0) {
+    abort();
+  }
+  if (value) {
+    result = value;
+    free(value);
+  }
+#endif
+  return result;
 }
 
 void
@@ -420,8 +485,8 @@ MaybeLogOutput(const ByteString& result, const char* suffix)
   // This allows us to more easily debug the generated output, by creating a
   // file in the directory given by MOZILLA_PKIX_TEST_LOG_DIR for each
   // NOT THREAD-SAFE!!!
-  const char* logPath = getenv("MOZILLA_PKIX_TEST_LOG_DIR");
-  if (logPath) {
+  std::string logPath(GetEnv("MOZILLA_PKIX_TEST_LOG_DIR"));
+  if (!logPath.empty()) {
     static int counter = 0;
 
     std::ostringstream counterStream;
@@ -569,49 +634,87 @@ TBSCertificate(long versionValue,
   return TLV(der::SEQUENCE, value);
 }
 
-ByteString
-CNToDERName(const char* cn)
+// AttributeTypeAndValue ::= SEQUENCE {
+//   type     AttributeType,
+//   value    AttributeValue }
+//
+// AttributeType ::= OBJECT IDENTIFIER
+//
+// AttributeValue ::= ANY -- DEFINED BY AttributeType
+//
+// DirectoryString ::= CHOICE {
+//       teletexString           TeletexString (SIZE (1..MAX)),
+//       printableString         PrintableString (SIZE (1..MAX)),
+//       universalString         UniversalString (SIZE (1..MAX)),
+//       utf8String              UTF8String (SIZE (1..MAX)),
+//       bmpString               BMPString (SIZE (1..MAX)) }
+template <size_t N>
+static ByteString
+AVA(const uint8_t (&type)[N], uint8_t directoryStringType,
+    const ByteString& value)
 {
-  // Name ::= CHOICE { -- only one possibility for now --
-  //   rdnSequence  RDNSequence }
-  //
-  // RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
-  //
-  // RelativeDistinguishedName ::=
-  //   SET SIZE (1..MAX) OF AttributeTypeAndValue
-  //
-  // AttributeTypeAndValue ::= SEQUENCE {
-  //   type     AttributeType,
-  //   value    AttributeValue }
-  //
-  // AttributeType ::= OBJECT IDENTIFIER
-  //
-  // AttributeValue ::= ANY -- DEFINED BY AttributeType
-  //
-  // DirectoryString ::= CHOICE {
-  //       teletexString           TeletexString (SIZE (1..MAX)),
-  //       printableString         PrintableString (SIZE (1..MAX)),
-  //       universalString         UniversalString (SIZE (1..MAX)),
-  //       utf8String              UTF8String (SIZE (1..MAX)),
-  //       bmpString               BMPString (SIZE (1..MAX)) }
-  //
+  ByteString wrappedValue(TLV(directoryStringType, value));
+  ByteString ava;
+  ava.append(type, N);
+  ava.append(wrappedValue);
+  return TLV(der::SEQUENCE, ava);
+}
+
+ByteString
+CN(const ByteString& value, uint8_t encodingTag)
+{
   // id-at OBJECT IDENTIFIER ::= { joint-iso-ccitt(2) ds(5) 4 }
   // id-at-commonName        AttributeType ::= { id-at 3 }
-
   // python DottedOIDToCode.py --tlv id-at-commonName 2.5.4.3
   static const uint8_t tlv_id_at_commonName[] = {
     0x06, 0x03, 0x55, 0x04, 0x03
   };
+  return AVA(tlv_id_at_commonName, encodingTag, value);
+}
 
-  ByteString value(reinterpret_cast<const ByteString::value_type*>(cn));
-  value = TLV(der::UTF8String, value);
+ByteString
+OU(const ByteString& value)
+{
+  // id-at OBJECT IDENTIFIER ::= { joint-iso-ccitt(2) ds(5) 4 }
+  // id-at-organizationalUnitName AttributeType ::= { id-at 11 }
+  // python DottedOIDToCode.py --tlv id-at-organizationalUnitName 2.5.4.11
+  static const uint8_t tlv_id_at_organizationalUnitName[] = {
+    0x06, 0x03, 0x55, 0x04, 0x0b
+  };
 
-  ByteString ava;
-  ava.append(tlv_id_at_commonName, sizeof(tlv_id_at_commonName));
-  ava.append(value);
-  ava = TLV(der::SEQUENCE, ava);
-  ByteString rdn(TLV(der::SET, ava));
-  return TLV(der::SEQUENCE, rdn);
+  return AVA(tlv_id_at_organizationalUnitName, der::UTF8String, value);
+}
+
+ByteString
+emailAddress(const ByteString& value)
+{
+  // id-emailAddress AttributeType ::= { pkcs-9 1 }
+  // python DottedOIDToCode.py --tlv id-emailAddress 1.2.840.113549.1.9.1
+  static const uint8_t tlv_id_emailAddress[] = {
+    0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x09, 0x01
+  };
+
+  return AVA(tlv_id_emailAddress, der::IA5String, value);
+}
+
+// RelativeDistinguishedName ::=
+//   SET SIZE (1..MAX) OF AttributeTypeAndValue
+//
+ByteString
+RDN(const ByteString& avas)
+{
+  return TLV(der::SET, avas);
+}
+
+// Name ::= CHOICE { -- only one possibility for now --
+//   rdnSequence  RDNSequence }
+//
+// RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
+//
+ByteString
+Name(const ByteString& rdns)
+{
+  return TLV(der::SEQUENCE, rdns);
 }
 
 ByteString
@@ -626,7 +729,7 @@ CreateEncodedSerialNumber(long serialNumberValue)
 ByteString
 CreateEncodedBasicConstraints(bool isCA,
                               /*optional*/ long* pathLenConstraintValue,
-                              ExtensionCriticality criticality)
+                              Critical critical)
 {
   ByteString value;
 
@@ -644,13 +747,13 @@ CreateEncodedBasicConstraints(bool isCA,
   static const uint8_t tlv_id_ce_basicConstraints[] = {
     0x06, 0x03, 0x55, 0x1d, 0x13
   };
-  return Extension(Input(tlv_id_ce_basicConstraints), criticality, value);
+  return Extension(Input(tlv_id_ce_basicConstraints), critical, value);
 }
 
 // ExtKeyUsageSyntax ::= SEQUENCE SIZE (1..MAX) OF KeyPurposeId
 // KeyPurposeId ::= OBJECT IDENTIFIER
 ByteString
-CreateEncodedEKUExtension(Input ekuOID, ExtensionCriticality criticality)
+CreateEncodedEKUExtension(Input ekuOID, Critical critical)
 {
   ByteString value(ekuOID.UnsafeGetData(), ekuOID.GetLength());
 
@@ -659,7 +762,24 @@ CreateEncodedEKUExtension(Input ekuOID, ExtensionCriticality criticality)
     0x06, 0x03, 0x55, 0x1d, 0x25
   };
 
-  return Extension(Input(tlv_id_ce_extKeyUsage), criticality, value);
+  return Extension(Input(tlv_id_ce_extKeyUsage), critical, value);
+}
+
+// python DottedOIDToCode.py --tlv id-ce-subjectAltName 2.5.29.17
+static const uint8_t tlv_id_ce_subjectAltName[] = {
+  0x06, 0x03, 0x55, 0x1d, 0x11
+};
+
+ByteString
+CreateEncodedSubjectAltName(const ByteString& names)
+{
+  return Extension(Input(tlv_id_ce_subjectAltName), Critical::No, names);
+}
+
+ByteString
+CreateEncodedEmptySubjectAltName()
+{
+  return EmptyExtension(Input(tlv_id_ce_subjectAltName), Critical::No);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -759,13 +879,12 @@ BasicOCSPResponse(OCSPResponseContext& context)
 //   value            OCTET STRING
 // }
 static ByteString
-OCSPExtension(OCSPResponseContext& context, OCSPResponseExtension& extension)
+OCSPExtension(OCSPResponseExtension& extension)
 {
   ByteString encoded;
   encoded.append(extension.id);
   if (extension.critical) {
-    ByteString critical(Boolean(true));
-    encoded.append(critical);
+    encoded.append(Boolean(true));
   }
   ByteString value(TLV(der::OCTET_STRING, extension.value));
   encoded.append(value);
@@ -781,7 +900,7 @@ Extensions(OCSPResponseContext& context)
   ByteString value;
   for (OCSPResponseExtension* extension = context.extensions;
        extension; extension = extension->next) {
-    ByteString extensionEncoded(OCSPExtension(context, *extension));
+    ByteString extensionEncoded(OCSPExtension(*extension));
     if (ENCODING_FAILED(extensionEncoded)) {
       return ByteString();
     }
@@ -846,8 +965,11 @@ ResponderID(OCSPResponseContext& context)
     responderIDType = 2; // byKey
   }
 
-  return TLV(der::CONSTRUCTED | der::CONTEXT_SPECIFIC | responderIDType,
-             contents);
+  // XXX: MSVC 2015 wrongly warns about signed/unsigned conversion without the
+  // static_cast.
+  uint8_t tag = static_cast<uint8_t>(der::CONSTRUCTED | der::CONTEXT_SPECIFIC |
+                                     responderIDType);
+  return TLV(tag, contents);
 }
 
 // KeyHash ::= OCTET STRING -- SHA-1 hash of responder's public key
@@ -978,7 +1100,10 @@ CertStatus(OCSPResponseContext& context)
     case 0:
     case 2:
     {
-      return TLV(der::CONTEXT_SPECIFIC | context.certStatus, ByteString());
+      // XXX: MSVC 2015 wrongly warns about signed/unsigned conversion without
+      // the static cast.
+      return TLV(static_cast<uint8_t>(der::CONTEXT_SPECIFIC |
+                                      context.certStatus), ByteString());
     }
     case 1:
     {

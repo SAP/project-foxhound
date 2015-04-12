@@ -9,6 +9,7 @@
 #include <jni.h>
 #include <android/input.h>
 #include <android/log.h>
+#include <android/api-level.h>
 
 #include "nsGeoPosition.h"
 #include "nsRect.h"
@@ -233,6 +234,7 @@ private:
 
 enum {
     // These keycode masks are not defined in android/keycodes.h:
+#if __ANDROID_API__ < 13
     AKEYCODE_ESCAPE             = 111,
     AKEYCODE_FORWARD_DEL        = 112,
     AKEYCODE_CTRL_LEFT          = 113,
@@ -326,13 +328,19 @@ enum {
     AKEYCODE_BUTTON_14          = 201,
     AKEYCODE_BUTTON_15          = 202,
     AKEYCODE_BUTTON_16          = 203,
+#endif
+#if __ANDROID_API__ < 14
     AKEYCODE_LANGUAGE_SWITCH    = 204,
     AKEYCODE_MANNER_MODE        = 205,
     AKEYCODE_3D_MODE            = 206,
+#endif
+#if __ANDROID_API__ < 15
     AKEYCODE_CONTACTS           = 207,
     AKEYCODE_CALENDAR           = 208,
     AKEYCODE_MUSIC              = 209,
     AKEYCODE_CALCULATOR         = 210,
+#endif
+#if __ANDROID_API__ < 16
     AKEYCODE_ZENKAKU_HANKAKU    = 211,
     AKEYCODE_EISU               = 212,
     AKEYCODE_MUHENKAN           = 213,
@@ -342,6 +350,7 @@ enum {
     AKEYCODE_RO                 = 217,
     AKEYCODE_KANA               = 218,
     AKEYCODE_ASSIST             = 219,
+#endif
 
     AMETA_FUNCTION_ON           = 0x00000008,
     AMETA_CTRL_ON               = 0x00001000,
@@ -360,7 +369,7 @@ enum {
     AMETA_SHIFT_MASK            = AMETA_SHIFT_LEFT_ON | AMETA_SHIFT_RIGHT_ON | AMETA_SHIFT_ON,
 };
 
-class nsAndroidDisplayport MOZ_FINAL : public nsIAndroidDisplayport
+class nsAndroidDisplayport final : public nsIAndroidDisplayport
 {
 public:
     NS_DECL_ISUPPORTS
@@ -487,11 +496,12 @@ public:
         return event;
     }
 
-    static AndroidGeckoEvent* MakeApzInputEvent(const MultiTouchInput& aInput, const mozilla::layers::ScrollableLayerGuid& aGuid) {
+    static AndroidGeckoEvent* MakeApzInputEvent(const MultiTouchInput& aInput, const mozilla::layers::ScrollableLayerGuid& aGuid, uint64_t aInputBlockId) {
         AndroidGeckoEvent* event = new AndroidGeckoEvent();
         event->Init(APZ_INPUT_EVENT);
         event->mApzInput = aInput;
         event->mApzGuid = aGuid;
+        event->mApzInputBlockId = aInputBlockId;
         return event;
     }
 
@@ -516,7 +526,6 @@ public:
     int KeyCode() { return mKeyCode; }
     int ScanCode() { return mScanCode; }
     int MetaState() { return mMetaState; }
-    uint32_t DomKeyLocation() { return mDomKeyLocation; }
     Modifiers DOMModifiers() const;
     bool IsAltPressed() const { return (mMetaState & AMETA_ALT_MASK) != 0; }
     bool IsShiftPressed() const { return (mMetaState & AMETA_SHIFT_MASK) != 0; }
@@ -560,6 +569,7 @@ public:
     void UnionRect(nsIntRect const& aRect);
     nsIObserver *Observer() { return mObserver; }
     mozilla::layers::ScrollableLayerGuid ApzGuid();
+    uint64_t ApzInputBlockId();
 
 protected:
     int mAction;
@@ -574,7 +584,6 @@ protected:
     nsTArray<int> mToolTypes;
     nsIntRect mRect;
     int mFlags, mMetaState;
-    uint32_t mDomKeyLocation;
     int mKeyCode, mScanCode;
     int mUnicodeChar, mBaseUnicodeChar, mDOMPrintableKeyValue;
     int mRepeatCount;
@@ -602,6 +611,7 @@ protected:
     nsTArray<nsString> mPrefNames;
     MultiTouchInput mApzInput;
     mozilla::layers::ScrollableLayerGuid mApzGuid;
+    uint64_t mApzInputBlockId;
     AutoGlobalWrappedJavaObject mObject;
 
     void ReadIntArray(nsTArray<int> &aVals,
@@ -624,8 +634,6 @@ protected:
     void ReadCharactersExtraField(JNIEnv *jenv);
     void ReadDataField(JNIEnv *jenv);
     void ReadStringFromJString(nsString &aString, JNIEnv *jenv, jstring s);
-
-    uint32_t ReadDomKeyLocation(JNIEnv* jenv, jobject jGeckoEventObj);
 
     static jclass jGeckoEventClass;
     static jfieldID jActionField;
@@ -652,7 +660,6 @@ protected:
     static jfieldID jKeyCodeField;
     static jfieldID jScanCodeField;
     static jfieldID jMetaStateField;
-    static jfieldID jDomKeyLocationField;
     static jfieldID jFlagsField;
     static jfieldID jCountField;
     static jfieldID jStartField;
@@ -688,9 +695,6 @@ protected:
     static jfieldID jGamepadValuesField;
 
     static jfieldID jObjectField;
-
-    static jclass jDomKeyLocationClass;
-    static jfieldID jDomKeyLocationValueField;
 
 public:
     enum {
@@ -734,6 +738,7 @@ public:
         GAMEPAD_ADDREMOVE = 45,
         GAMEPAD_DATA = 46,
         LONG_PRESS = 47,
+        ZOOMEDVIEW = 48,
         dummy_java_enum_list_end
     };
 

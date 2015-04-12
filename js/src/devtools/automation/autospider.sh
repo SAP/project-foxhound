@@ -11,11 +11,17 @@ function usage() {
 }
 
 clean=""
+platform=""
 while [ $# -gt 1 ]; do
     case "$1" in
         --clobber)
             shift
             clean=1
+            ;;
+        --platform)
+            shift
+            platform="$1"
+            shift
             ;;
         *)
             echo "Invalid arguments" >&2
@@ -41,7 +47,7 @@ else
   CONFIGURE_ARGS="$(cat "$ABSDIR/$VARIANT")"
 fi
 
-OBJDIR="$SOURCE/obj-spider"
+OBJDIR="${OBJDIR:-$SOURCE/obj-spider}"
 
 if [ -n "$clean" ]; then
   [ -d "$OBJDIR" ] && rm -rf "$OBJDIR"
@@ -81,7 +87,11 @@ elif [ "$OSTYPE" = "linux-gnu" ]; then
   fi
 elif [ "$OSTYPE" = "msys" ]; then
   USE_64BIT=false
+  if [ "$platform" = "win64" ]; then
+      USE_64BIT=true
+  fi
   MAKE=${MAKE:-mozmake}
+  source "$ABSDIR/winbuildenv.sh"
 fi
 
 MAKE=${MAKE:-make}
@@ -101,29 +111,39 @@ $SOURCE/js/src/configure $CONFIGURE_ARGS --enable-nspr-build --prefix=$OBJDIR/di
 $MAKE -s -w -j4 || exit 2
 cp -p $SOURCE/build/unix/run-mozilla.sh $OBJDIR/dist/bin
 
-# The root analysis tests run in a special GC Zeal mode and disable ASLR to
-# make tests reproducible.
 COMMAND_PREFIX=''
+
+# On Linux, disable ASLR to make shell builds a bit more reproducible.
+if type setarch >/dev/null 2>&1; then
+    COMMAND_PREFIX="setarch $(uname -m) -R "
+fi
+
+RUN_JSTESTS=true
+
 if [[ "$VARIANT" = "rootanalysis" ]]; then
     export JS_GC_ZEAL=7
 
-    # rootanalysis builds are currently only done on Linux, which should have
-    # setarch, but just in case we enable them on another platform:
-    if type setarch >/dev/null 2>&1; then
-        COMMAND_PREFIX="setarch $(uname -m) -R "
-    fi
 elif [[ "$VARIANT" = "generational" ]]; then
     # Generational is currently being used for compacting GC
     export JS_GC_ZEAL=14
 
-    # rootanalysis builds are currently only done on Linux, which should have
-    # setarch, but just in case we enable them on another platform:
-    if type setarch >/dev/null 2>&1; then
-        COMMAND_PREFIX="setarch $(uname -m) -R "
-    fi
+    # Ignore timeouts from tests that are known to take too long with this zeal mode
+    export JITTEST_EXTRA_ARGS=--ignore-timeouts=$ABSDIR/cgc-jittest-timeouts.txt
+    export JSTESTS_EXTRA_ARGS=--exclude-file=$ABSDIR/cgc-jstests-slow.txt
+
+    case "$platform" in
+    win*)
+        RUN_JSTESTS=false
+    esac
+fi
+
+if [[ "$VARIANT" = "warnaserr" ]]; then
+    export JSTESTS_EXTRA_ARGS=--tbpl
 fi
 
 $COMMAND_PREFIX $MAKE check || exit 1
 $COMMAND_PREFIX $MAKE check-jit-test || exit 1
-$COMMAND_PREFIX $MAKE check-jstests || exit 1
 $COMMAND_PREFIX $OBJDIR/dist/bin/jsapi-tests || exit 1
+if $RUN_JSTESTS; then
+    $COMMAND_PREFIX $MAKE check-jstests || exit 1
+fi

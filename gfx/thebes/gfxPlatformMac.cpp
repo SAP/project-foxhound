@@ -17,13 +17,16 @@
 
 #include "nsTArray.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/VsyncDispatcher.h"
 #include "qcms.h"
 #include "gfx2DGlue.h"
-#include "gfxPrefs.h"
 
 #include <dlfcn.h>
+#include <CoreVideo/CoreVideo.h>
 
 #include "nsCocoaFeatures.h"
+#include "mozilla/layers/CompositorParent.h"
+#include "VsyncSource.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -36,7 +39,7 @@ typedef uint32_t AutoActivationSetting;
 
 // bug 567552 - disable auto-activation of fonts
 
-static void 
+static void
 DisableFontActivation()
 {
     // get the main bundle identifier
@@ -78,6 +81,18 @@ gfxPlatformMac::gfxPlatformMac()
     uint32_t contentMask = BackendTypeBit(BackendType::COREGRAPHICS);
     InitBackendPrefs(canvasMask, BackendType::COREGRAPHICS,
                      contentMask, BackendType::COREGRAPHICS);
+
+    // XXX: Bug 1036682 - we run out of fds on Mac when using tiled layers because
+    // with 256x256 tiles we can easily hit the soft limit of 800 when using double
+    // buffered tiles in e10s, so let's bump the soft limit to the hard limit for the OS
+    // up to a new cap of OPEN_MAX.
+    struct rlimit limits;
+    if (getrlimit(RLIMIT_NOFILE, &limits) == 0) {
+        limits.rlim_cur = std::min(rlim_t(OPEN_MAX), limits.rlim_max);
+        if (setrlimit(RLIMIT_NOFILE, &limits) != 0) {
+            NS_WARNING("Unable to bump RLIMIT_NOFILE to the maximum number on this OS");
+        }
+    }
 }
 
 gfxPlatformMac::~gfxPlatformMac()
@@ -373,14 +388,14 @@ uint32_t
 gfxPlatformMac::ReadAntiAliasingThreshold()
 {
     uint32_t threshold = 0;  // default == no threshold
-    
+
     // first read prefs flag to determine whether to use the setting or not
     bool useAntiAliasingThreshold = Preferences::GetBool("gfx.use_text_smoothing_setting", false);
 
     // if the pref setting is disabled, return 0 which effectively disables this feature
     if (!useAntiAliasingThreshold)
         return threshold;
-        
+
     // value set via Appearance pref panel, "Turn off text smoothing for font sizes xxx and smaller"
     CFNumberRef prefValue = (CFNumberRef)CFPreferencesCopyAppValue(CFSTR("AppleAntiAliasingThreshold"), kCFPreferencesCurrentApplication);
 
@@ -402,13 +417,139 @@ gfxPlatformMac::UseAcceleratedCanvas()
 }
 
 bool
-gfxPlatformMac::UseTiling()
+gfxPlatformMac::UseProgressivePaint()
 {
-  if (gfxPrefs::LayersTilesForceEnabled()) {
-    return true;
+  // Progressive painting requires cross-process mutexes, which don't work so
+  // well on OS X 10.6 so we disable there.
+  return nsCocoaFeatures::OnLionOrLater() && gfxPlatform::UseProgressivePaint();
+}
+
+// This is the renderer output callback function, called on the vsync thread
+static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
+                              const CVTimeStamp* aNow,
+                              const CVTimeStamp* aOutputTime,
+                              CVOptionFlags aFlagsIn,
+                              CVOptionFlags* aFlagsOut,
+                              void* aDisplayLinkContext);
+
+class OSXVsyncSource final : public VsyncSource
+{
+public:
+  OSXVsyncSource()
+  {
   }
-  // Tiling seems to be slow on 10.6 so disable it until we figure it out
-  return nsCocoaFeatures::OnLionOrLater() && gfxPlatform::UseTiling();
+
+  virtual Display& GetGlobalDisplay() override
+  {
+    return mGlobalDisplay;
+  }
+
+  class OSXDisplay final : public VsyncSource::Display
+  {
+  public:
+    OSXDisplay()
+      : mDisplayLink(nullptr)
+    {
+    }
+
+    ~OSXDisplay()
+    {
+      DisableVsync();
+    }
+
+    virtual void EnableVsync() override
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      if (IsVsyncEnabled()) {
+        return;
+      }
+
+      // Create a display link capable of being used with all active displays
+      // TODO: See if we need to create an active DisplayLink for each monitor in multi-monitor
+      // situations. According to the docs, it is compatible with all displays running on the computer
+      // But if we have different monitors at different display rates, we may hit issues.
+      if (CVDisplayLinkCreateWithActiveCGDisplays(&mDisplayLink) != kCVReturnSuccess) {
+        NS_WARNING("Could not create a display link, returning");
+        return;
+      }
+
+      if (CVDisplayLinkSetOutputCallback(mDisplayLink, &VsyncCallback, this) != kCVReturnSuccess) {
+        NS_WARNING("Could not set displaylink output callback");
+        return;
+      }
+
+      mPreviousTimestamp = TimeStamp::Now();
+      if (CVDisplayLinkStart(mDisplayLink) != kCVReturnSuccess) {
+        NS_WARNING("Could not activate the display link");
+        mDisplayLink = nullptr;
+      }
+    }
+
+    virtual void DisableVsync() override
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      if (!IsVsyncEnabled()) {
+        return;
+      }
+
+      // Release the display link
+      if (mDisplayLink) {
+        CVDisplayLinkRelease(mDisplayLink);
+        mDisplayLink = nullptr;
+      }
+    }
+
+    virtual bool IsVsyncEnabled() override
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      return mDisplayLink != nullptr;
+    }
+
+    // The vsync timestamps given by the CVDisplayLinkCallback are
+    // in the future for the NEXT frame. Large parts of Gecko, such
+    // as animations assume a timestamp at either now or in the past.
+    // Normalize the timestamps given to the VsyncDispatchers to the vsync
+    // that just occured, not the vsync that is upcoming.
+    TimeStamp mPreviousTimestamp;
+
+  private:
+    // Manages the display link render thread
+    CVDisplayLinkRef   mDisplayLink;
+  }; // OSXDisplay
+
+private:
+  virtual ~OSXVsyncSource()
+  {
+  }
+
+  OSXDisplay mGlobalDisplay;
+}; // OSXVsyncSource
+
+static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
+                              const CVTimeStamp* aNow,
+                              const CVTimeStamp* aOutputTime,
+                              CVOptionFlags aFlagsIn,
+                              CVOptionFlags* aFlagsOut,
+                              void* aDisplayLinkContext)
+{
+  // Executed on OS X hardware vsync thread
+  OSXVsyncSource::OSXDisplay* display = (OSXVsyncSource::OSXDisplay*) aDisplayLinkContext;
+  int64_t nextVsyncTimestamp = aOutputTime->hostTime;
+  mozilla::TimeStamp nextVsync = mozilla::TimeStamp::FromSystemTime(nextVsyncTimestamp);
+
+  mozilla::TimeStamp previousVsync = display->mPreviousTimestamp;
+  display->mPreviousTimestamp = nextVsync;
+  MOZ_ASSERT(TimeStamp::Now() > previousVsync);
+
+  display->NotifyVsync(previousVsync);
+  return kCVReturnSuccess;
+}
+
+already_AddRefed<mozilla::gfx::VsyncSource>
+gfxPlatformMac::CreateHardwareVsyncSource()
+{
+  nsRefPtr<VsyncSource> osxVsyncSource = new OSXVsyncSource();
+  return osxVsyncSource.forget();
 }
 
 void

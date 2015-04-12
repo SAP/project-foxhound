@@ -25,9 +25,10 @@ interface AudioContext : EventTarget {
     [NewObject, Throws]
     AudioBuffer createBuffer(unsigned long numberOfChannels, unsigned long length, float sampleRate);
 
-    void decodeAudioData(ArrayBuffer audioData,
-                         DecodeSuccessCallback successCallback,
-                         optional DecodeErrorCallback errorCallback);
+    [Throws]
+    Promise<AudioBuffer> decodeAudioData(ArrayBuffer audioData,
+                                         optional DecodeSuccessCallback successCallback,
+                                         optional DecodeErrorCallback errorCallback);
 
     // AudioNode creation
     [NewObject]
@@ -42,10 +43,12 @@ interface AudioContext : EventTarget {
                                               optional unsigned long numberOfOutputChannels = 2);
 
     [NewObject]
+    StereoPannerNode createStereoPanner();
+    [NewObject]
     AnalyserNode createAnalyser();
-    [NewObject, Throws]
+    [NewObject, Throws, UnsafeInPrerendering]
     MediaElementAudioSourceNode createMediaElementSource(HTMLMediaElement mediaElement);
-    [NewObject, Throws]
+    [NewObject, Throws, UnsafeInPrerendering]
     MediaStreamAudioSourceNode createMediaStreamSource(MediaStream mediaStream);
     [NewObject]
     GainNode createGain();
@@ -78,8 +81,8 @@ interface AudioContext : EventTarget {
 // Mozilla extensions
 partial interface AudioContext {
   // Read AudioChannel.webidl for more information about this attribute.
-  [Pref="media.useAudioChannelService", SetterThrows]
-  attribute AudioChannel mozAudioChannelType;
+  [Pref="media.useAudioChannelService"]
+  readonly attribute AudioChannel mozAudioChannelType;
 
   // These 2 events are dispatched when the AudioContext object is muted by
   // the AudioChannelService. It's call 'interrupt' because when this event is

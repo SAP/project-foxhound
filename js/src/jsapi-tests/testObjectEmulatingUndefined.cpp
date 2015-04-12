@@ -6,21 +6,14 @@
 
 static const JSClass ObjectEmulatingUndefinedClass = {
     "ObjectEmulatingUndefined",
-    JSCLASS_EMULATES_UNDEFINED,
-    JS_PropertyStub,
-    JS_DeletePropertyStub,
-    JS_PropertyStub,
-    JS_StrictPropertyStub,
-    JS_EnumerateStub,
-    JS_ResolveStub,
-    JS_ConvertStub
+    JSCLASS_EMULATES_UNDEFINED
 };
 
 static bool
-ObjectEmulatingUndefinedConstructor(JSContext *cx, unsigned argc, jsval *vp)
+ObjectEmulatingUndefinedConstructor(JSContext* cx, unsigned argc, jsval* vp)
 {
     JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
-    JSObject *obj = JS_NewObjectForConstructor(cx, &ObjectEmulatingUndefinedClass, args);
+    JSObject* obj = JS_NewObjectForConstructor(cx, &ObjectEmulatingUndefinedClass, args);
     if (!obj)
         return false;
     args.rval().setObject(*obj);

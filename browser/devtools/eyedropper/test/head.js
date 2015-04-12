@@ -38,6 +38,19 @@ function addTab(uri) {
   return deferred.promise;
 }
 
+function waitForClipboard(setup, expected) {
+  let deferred = promise.defer();
+  SimpleTest.waitForClipboard(expected, setup, deferred.resolve, deferred.reject);
+  return deferred.promise;
+}
+
+function dropperStarted(dropper) {
+  if (dropper.isStarted) {
+    return promise.resolve();
+  }
+  return dropper.once("started");
+}
+
 function dropperLoaded(dropper) {
   if (dropper.loaded) {
     return promise.resolve();

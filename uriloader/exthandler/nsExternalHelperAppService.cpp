@@ -458,9 +458,7 @@ static nsDefaultMimeTypeEntry defaultMimeEntries [] =
   { VIDEO_OGG, "ogg" },
   { APPLICATION_OGG, "ogg" },
   { AUDIO_OGG, "oga" },
-#ifdef MOZ_OPUS
   { AUDIO_OGG, "opus" },
-#endif
 #ifdef MOZ_WEBM
   { VIDEO_WEBM, "webm" },
   { AUDIO_WEBM, "webm" },
@@ -544,6 +542,12 @@ static nsExtraMimeTypeEntry extraMimeEntries [] =
   { AUDIO_OGG, "opus", "Opus Audio" },
 #ifdef MOZ_WIDGET_GONK
   { AUDIO_AMR, "amr", "Adaptive Multi-Rate Audio" },
+  { VIDEO_AVI, "avi", "Audio Video Interleave" },
+  { VIDEO_AVI, "divx", "Audio Video Interleave" },
+  { VIDEO_MPEG_TS, "ts", "MPEG Transport Stream" },
+  { VIDEO_MPEG_TS, "m2ts", "MPEG-2 Transport Stream" },
+  { VIDEO_MATROSKA, "mkv", "MATROSKA VIDEO" },
+  { AUDIO_MATROSKA, "mka", "MATROSKA AUDIO" },
 #endif
   { VIDEO_WEBM, "webm", "Web Media Video" },
   { AUDIO_WEBM, "webm", "Web Media Audio" },
@@ -1454,7 +1458,7 @@ nsresult nsExternalAppHandler::SetUpTempFile(nsIChannel * aChannel)
   rv = mTempFile->Append(NS_ConvertUTF8toUTF16(tempLeafName));
   // make this file unique!!!
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = mTempFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0644);
+  rv = mTempFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Now save the temp leaf name, minus the ".part" bit, so we can use it later.
@@ -1495,6 +1499,51 @@ nsresult nsExternalAppHandler::SetUpTempFile(nsIChannel * aChannel)
   NS_ENSURE_SUCCESS(rv, rv);
 
   return rv;
+}
+
+void
+nsExternalAppHandler::MaybeApplyDecodingForExtension(nsIRequest *aRequest)
+{
+  MOZ_ASSERT(aRequest);
+
+  nsCOMPtr<nsIEncodedChannel> encChannel = do_QueryInterface(aRequest);
+  if (!encChannel) {
+    return;
+  }
+
+  // Turn off content encoding conversions if needed
+  bool applyConversion = true;
+
+  nsCOMPtr<nsIURL> sourceURL(do_QueryInterface(mSourceUrl));
+  if (sourceURL)
+  {
+    nsAutoCString extension;
+    sourceURL->GetFileExtension(extension);
+    if (!extension.IsEmpty())
+    {
+      nsCOMPtr<nsIUTF8StringEnumerator> encEnum;
+      encChannel->GetContentEncodings(getter_AddRefs(encEnum));
+      if (encEnum)
+      {
+        bool hasMore;
+        nsresult rv = encEnum->HasMore(&hasMore);
+        if (NS_SUCCEEDED(rv) && hasMore)
+        {
+          nsAutoCString encType;
+          rv = encEnum->GetNext(encType);
+          if (NS_SUCCEEDED(rv) && !encType.IsEmpty())
+          {
+            MOZ_ASSERT(mExtProtSvc);
+            mExtProtSvc->ApplyDecodingForExtension(extension, encType,
+                                                   &applyConversion);
+          }
+        }
+      }
+    }
+  }
+
+  encChannel->SetApplyConversion( applyConversion );
+  return;
 }
 
 NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest *request, nsISupports * aCtxt)
@@ -1559,35 +1608,7 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest *request, nsISuppo
   // Con: Uncompressed data means more IPC overhead.
   // Pros: ExternalHelperAppParent doesn't need to implement nsIEncodedChannel.
   //       Parent process doesn't need to expect CPU time on decompression.
-  nsCOMPtr<nsIEncodedChannel> encChannel = do_QueryInterface( aChannel );
-  if (encChannel) {
-    // Turn off content encoding conversions if needed
-    bool applyConversion = true;
-
-    nsCOMPtr<nsIURL> sourceURL(do_QueryInterface(mSourceUrl));
-    if (sourceURL) {
-      nsAutoCString extension;
-      sourceURL->GetFileExtension(extension);
-      if (!extension.IsEmpty()) {
-        nsCOMPtr<nsIUTF8StringEnumerator> encEnum;
-        encChannel->GetContentEncodings(getter_AddRefs(encEnum));
-        if (encEnum) {
-          bool hasMore;
-          rv = encEnum->HasMore(&hasMore);
-          if (NS_SUCCEEDED(rv) && hasMore) {
-            nsAutoCString encType;
-            rv = encEnum->GetNext(encType);
-            if (NS_SUCCEEDED(rv) && !encType.IsEmpty()) {
-              mExtProtSvc->ApplyDecodingForExtension(extension, encType,
-                                                     &applyConversion);
-            }
-          }
-        }
-      }    
-    }
-
-    encChannel->SetApplyConversion( applyConversion );
-  }
+  MaybeApplyDecodingForExtension(aChannel);
 
   // At this point, the child process has done everything it can usefully do
   // for OnStartRequest.
@@ -2216,24 +2237,16 @@ void nsExternalAppHandler::RequestSaveDestination(const nsAFlatString &aDefaultF
   // picker is up would cause Cancel() to be called, and the dialog would be
   // released, which would release this object too, which would crash.
   // See Bug 249143
-  nsIFile* fileToUse;
   nsRefPtr<nsExternalAppHandler> kungFuDeathGrip(this);
   nsCOMPtr<nsIHelperAppLauncherDialog> dlg(mDialog);
-  rv = mDialog->PromptForSaveToFile(this,
-                                    GetDialogParent(),
-                                    aDefaultFile.get(),
-                                    aFileExtension.get(),
-                                    mForceSave, &fileToUse);
 
-  if (rv == NS_ERROR_NOT_AVAILABLE) {
-    // we need to use the async version -> nsIHelperAppLauncherDialog.promptForSaveToFileAsync.
-    rv = mDialog->PromptForSaveToFileAsync(this, 
-                                           GetDialogParent(),
-                                           aDefaultFile.get(),
-                                           aFileExtension.get(),
-                                           mForceSave);
-  } else {
-    SaveDestinationAvailable(rv == NS_OK ? fileToUse : nullptr);
+  rv = mDialog->PromptForSaveToFileAsync(this,
+                                         GetDialogParent(),
+                                         aDefaultFile.get(),
+                                         aFileExtension.get(),
+                                         mForceSave);
+  if (NS_FAILED(rv)) {
+    Cancel(NS_BINDING_ABORTED);
   }
 }
 
@@ -2384,7 +2397,7 @@ NS_IMETHODIMP nsExternalAppHandler::LaunchWithApplication(nsIFile * aApplication
   fileToUse->Append(mSuggestedFileName);  
 #endif
 
-  nsresult rv = fileToUse->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0644);
+  nsresult rv = fileToUse->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
   if(NS_SUCCEEDED(rv)) {
     mFinalFileDestination = do_QueryInterface(fileToUse);
     // launch the progress window now that the user has picked the desired action.

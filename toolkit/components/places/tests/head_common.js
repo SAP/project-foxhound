@@ -3,7 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const CURRENT_SCHEMA_VERSION = 24;
+const CURRENT_SCHEMA_VERSION = 26;
+const FIRST_UPGRADABLE_SCHEMA_VERSION = 11;
 
 const NS_APP_USER_PROFILE_50_DIR = "ProfD";
 const NS_APP_PROFILE_DIR_STARTUP = "ProfDS";
@@ -20,8 +21,9 @@ const TRANSITION_DOWNLOAD = Ci.nsINavHistoryService.TRANSITION_DOWNLOAD;
 
 const TITLE_LENGTH_MAX = 4096;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.importGlobalProperties(["URL"]);
 
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
                                   "resource://gre/modules/FileUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
@@ -38,10 +40,14 @@ XPCOMUtils.defineLazyModuleGetter(this, "BookmarkHTMLUtils",
                                   "resource://gre/modules/BookmarkHTMLUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesBackups",
                                   "resource://gre/modules/PlacesBackups.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
+                                  "resource://testing-common/PlacesTestUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesTransactions",
                                   "resource://gre/modules/PlacesTransactions.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "OS",
                                   "resource://gre/modules/osfile.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
+                                  "resource://gre/modules/Sqlite.jsm");
 
 // This imports various other objects in addition to PlacesUtils.
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
@@ -102,10 +108,7 @@ function DBConn(aForceNewConnection) {
     let dbConn = gDBConn = Services.storage.openDatabase(file);
 
     // Be sure to cleanly close this connection.
-    Services.obs.addObserver(function DBCloseCallback(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(DBCloseCallback, aTopic);
-      dbConn.asyncClose();
-    }, "profile-before-change", false);
+    promiseTopicObserved("profile-before-change").then(() => dbConn.asyncClose());
   }
 
   return gDBConn.connectionReady ? gDBConn : null;
@@ -373,30 +376,13 @@ function check_no_bookmarks() {
  */
 function promiseTopicObserved(aTopic)
 {
-  let deferred = Promise.defer();
-
-  Services.obs.addObserver(
-    function PTO_observe(aSubject, aTopic, aData) {
-      Services.obs.removeObserver(PTO_observe, aTopic);
-      deferred.resolve([aSubject, aData]);
+  return new Promise(resolve => {
+    Services.obs.addObserver(function observe(aSubject, aTopic, aData) {
+      Services.obs.removeObserver(observe, aTopic);
+      resolve([aSubject, aData]);
     }, aTopic, false);
-
-  return deferred.promise;
+  });
 }
-
-/**
- * Clears history asynchronously.
- *
- * @return {Promise}
- * @resolves When history has been cleared.
- * @rejects Never.
- */
-function promiseClearHistory() {
-  let promise = promiseTopicObserved(PlacesUtils.TOPIC_EXPIRATION_FINISHED);
-  do_execute_soon(function() PlacesUtils.bhistory.removeAllPages());
-  return promise;
-}
-
 
 /**
  * Simulates a Places shutdown.
@@ -409,9 +395,8 @@ function shutdownPlaces(aKeepAliveConnection)
 }
 
 const FILENAME_BOOKMARKS_HTML = "bookmarks.html";
-let (backup_date = new Date().toLocaleFormat("%Y-%m-%d")) {
-  const FILENAME_BOOKMARKS_JSON = "bookmarks-" + backup_date + ".json";
-}
+const FILENAME_BOOKMARKS_JSON = "bookmarks-" +
+  (new Date().toLocaleFormat("%Y-%m-%d")) + ".json";
 
 /**
  * Creates a bookmarks.html file in the profile folder from a given source file.
@@ -549,7 +534,9 @@ function check_JSON_backup(aIsAutomaticBackup) {
  */
 function frecencyForUrl(aURI)
 {
-  let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
+  let url = aURI instanceof Ci.nsIURI ? aURI.spec
+                                      : aURI instanceof URL ? aURI.href
+                                                            : aURI;
   let stmt = DBConn().createStatement(
     "SELECT frecency FROM moz_places WHERE url = ?1"
   );
@@ -606,42 +593,6 @@ function is_time_ordered(before, after) {
 }
 
 /**
- * Waits for all pending async statements on the default connection.
- *
- * @return {Promise}
- * @resolves When all pending async statements finished.
- * @rejects Never.
- *
- * @note The result is achieved by asynchronously executing a query requiring
- *       a write lock.  Since all statements on the same connection are
- *       serialized, the end of this write operation means that all writes are
- *       complete.  Note that WAL makes so that writers don't block readers, but
- *       this is a problem only across different connections.
- */
-function promiseAsyncUpdates()
-{
-  let deferred = Promise.defer();
-
-  let db = DBConn();
-  let begin = db.createAsyncStatement("BEGIN EXCLUSIVE");
-  begin.executeAsync();
-  begin.finalize();
-
-  let commit = db.createAsyncStatement("COMMIT");
-  commit.executeAsync({
-    handleResult: function () {},
-    handleError: function () {},
-    handleCompletion: function(aReason)
-    {
-      deferred.resolve();
-    }
-  });
-  commit.finalize();
-
-  return deferred.promise;
-}
-
-/**
  * Shutdowns Places, invoking the callback when the connection has been closed.
  *
  * @param aCallback
@@ -649,10 +600,7 @@ function promiseAsyncUpdates()
  */
 function waitForConnectionClosed(aCallback)
 {
-  Services.obs.addObserver(function WFCCCallback() {
-    Services.obs.removeObserver(WFCCCallback, "places-connection-closed");
-    aCallback();
-  }, "places-connection-closed", false);
+  promiseTopicObserved("places-connection-closed").then(aCallback);
   shutdownPlaces();
 }
 
@@ -768,17 +716,6 @@ function do_check_guid_for_bookmark(aId,
 }
 
 /**
- * Logs info to the console in the standard way (includes the filename).
- *
- * @param aMessage
- *        The message to log to the console.
- */
-function do_log_info(aMessage)
-{
-  print("TEST-INFO | " + _TEST_FILE + " | " + aMessage);
-}
-
-/**
  * Compares 2 arrays returning whether they contains the same elements.
  *
  * @param a1
@@ -872,69 +809,6 @@ NavHistoryResultObserver.prototype = {
 };
 
 /**
- * Asynchronously adds visits to a page.
- *
- * @param aPlaceInfo
- *        Can be an nsIURI, in such a case a single LINK visit will be added.
- *        Otherwise can be an object describing the visit to add, or an array
- *        of these objects:
- *          { uri: nsIURI of the page,
- *            transition: one of the TRANSITION_* from nsINavHistoryService,
- *            [optional] title: title of the page,
- *            [optional] visitDate: visit date in microseconds from the epoch
- *            [optional] referrer: nsIURI of the referrer for this visit
- *          }
- *
- * @return {Promise}
- * @resolves When all visits have been added successfully.
- * @rejects JavaScript exception.
- */
-function promiseAddVisits(aPlaceInfo)
-{
-  let deferred = Promise.defer();
-  let places = [];
-  if (aPlaceInfo instanceof Ci.nsIURI) {
-    places.push({ uri: aPlaceInfo });
-  }
-  else if (Array.isArray(aPlaceInfo)) {
-    places = places.concat(aPlaceInfo);
-  } else {
-    places.push(aPlaceInfo)
-  }
-
-  // Create mozIVisitInfo for each entry.
-  let now = Date.now();
-  for (let i = 0; i < places.length; i++) {
-    if (!places[i].title) {
-      places[i].title = "test visit for " + places[i].uri.spec;
-    }
-    places[i].visits = [{
-      transitionType: places[i].transition === undefined ? TRANSITION_LINK
-                                                         : places[i].transition,
-      visitDate: places[i].visitDate || (now++) * 1000,
-      referrerURI: places[i].referrer
-    }];
-  }
-
-  PlacesUtils.asyncHistory.updatePlaces(
-    places,
-    {
-      handleError: function AAV_handleError(aResultCode, aPlaceInfo) {
-        let ex = new Components.Exception("Unexpected error in adding visits.",
-                                          aResultCode);
-        deferred.reject(ex);
-      },
-      handleResult: function () {},
-      handleCompletion: function UP_handleCompletion() {
-        deferred.resolve();
-      }
-    }
-  );
-
-  return deferred.promise;
-}
-
-/**
  * Asynchronously check a url is visited.
  *
  * @param aURI The URI.
@@ -966,4 +840,14 @@ function promiseSetIconForPage(aPageURI, aIconURI) {
     PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
     () => { deferred.resolve(); });
   return deferred.promise;
+}
+
+function checkBookmarkObject(info) {
+  do_check_valid_places_guid(info.guid);
+  do_check_valid_places_guid(info.parentGuid);
+  Assert.ok(typeof info.index == "number", "index should be a number");
+  Assert.ok(info.dateAdded.constructor.name == "Date", "dateAdded should be a Date");
+  Assert.ok(info.lastModified.constructor.name == "Date", "lastModified should be a Date");
+  Assert.ok(info.lastModified >= info.dateAdded, "lastModified should never be smaller than dateAdded");
+  Assert.ok(typeof info.type == "number", "type should be a number");
 }

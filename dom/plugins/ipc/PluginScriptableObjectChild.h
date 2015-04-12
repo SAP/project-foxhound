@@ -55,57 +55,57 @@ public:
 
 
   virtual bool
-  AnswerInvalidate() MOZ_OVERRIDE;
+  AnswerInvalidate() override;
 
   virtual bool
   AnswerHasMethod(const PluginIdentifier& aId,
-                  bool* aHasMethod) MOZ_OVERRIDE;
+                  bool* aHasMethod) override;
 
   virtual bool
   AnswerInvoke(const PluginIdentifier& aId,
-               const InfallibleTArray<Variant>& aArgs,
+               InfallibleTArray<Variant>&& aArgs,
                Variant* aResult,
-               bool* aSuccess) MOZ_OVERRIDE;
+               bool* aSuccess) override;
 
   virtual bool
-  AnswerInvokeDefault(const InfallibleTArray<Variant>& aArgs,
+  AnswerInvokeDefault(InfallibleTArray<Variant>&& aArgs,
                       Variant* aResult,
-                      bool* aSuccess) MOZ_OVERRIDE;
+                      bool* aSuccess) override;
 
   virtual bool
   AnswerHasProperty(const PluginIdentifier& aId,
-                    bool* aHasProperty) MOZ_OVERRIDE;
+                    bool* aHasProperty) override;
 
   virtual bool
   AnswerGetChildProperty(const PluginIdentifier& aId,
                          bool* aHasProperty,
                          bool* aHasMethod,
                          Variant* aResult,
-                         bool* aSuccess) MOZ_OVERRIDE;
+                         bool* aSuccess) override;
 
   virtual bool
   AnswerSetProperty(const PluginIdentifier& aId,
                     const Variant& aValue,
-                    bool* aSuccess) MOZ_OVERRIDE;
+                    bool* aSuccess) override;
 
   virtual bool
   AnswerRemoveProperty(const PluginIdentifier& aId,
-                       bool* aSuccess) MOZ_OVERRIDE;
+                       bool* aSuccess) override;
 
   virtual bool
   AnswerEnumerate(InfallibleTArray<PluginIdentifier>* aProperties,
-                  bool* aSuccess) MOZ_OVERRIDE;
+                  bool* aSuccess) override;
 
   virtual bool
-  AnswerConstruct(const InfallibleTArray<Variant>& aArgs,
+  AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
                   Variant* aResult,
-                  bool* aSuccess) MOZ_OVERRIDE;
+                  bool* aSuccess) override;
 
   virtual bool
-  RecvProtect() MOZ_OVERRIDE;
+  RecvProtect() override;
 
   virtual bool
-  RecvUnprotect() MOZ_OVERRIDE;
+  RecvUnprotect() override;
 
   NPObject*
   GetObject(bool aCanResurrect);
@@ -189,8 +189,8 @@ public:
   class MOZ_STACK_CLASS StackIdentifier
   {
   public:
-    StackIdentifier(const PluginIdentifier& aIdentifier);
-    StackIdentifier(NPIdentifier aIdentifier);
+    explicit StackIdentifier(const PluginIdentifier& aIdentifier);
+    explicit StackIdentifier(NPIdentifier aIdentifier);
     ~StackIdentifier();
 
     void MakePermanent()
@@ -216,6 +216,22 @@ public:
   };
 
   static void ClearIdentifiers();
+
+  bool RegisterActor(NPObject* aObject);
+  void UnregisterActor(NPObject* aObject);
+
+  static PluginScriptableObjectChild* GetActorForNPObject(NPObject* aObject);
+
+  static void RegisterObject(NPObject* aObject, PluginInstanceChild* aInstance);
+  static void UnregisterObject(NPObject* aObject);
+
+  static PluginInstanceChild* GetInstanceForNPObject(NPObject* aObject);
+
+  /**
+   * Fill PluginInstanceChild.mDeletingHash with all the remaining NPObjects
+   * associated with that instance.
+   */
+  static void NotifyOfInstanceShutdown(PluginInstanceChild* aInstance);
 
 private:
   static NPObject*
@@ -297,6 +313,29 @@ private:
 
   typedef nsDataHashtable<nsCStringHashKey, nsRefPtr<StoredIdentifier>> IdentifierTable;
   static IdentifierTable sIdentifiers;
+
+  struct NPObjectData : public nsPtrHashKey<NPObject>
+  {
+    explicit NPObjectData(const NPObject* key)
+    : nsPtrHashKey<NPObject>(key),
+      instance(nullptr),
+      actor(nullptr)
+    { }
+
+    // never nullptr
+    PluginInstanceChild* instance;
+
+    // sometimes nullptr (no actor associated with an NPObject)
+    PluginScriptableObjectChild* actor;
+  };
+
+  static PLDHashOperator CollectForInstance(NPObjectData* d, void* userArg);
+
+  /**
+   * mObjectMap contains all the currently active NPObjects (from NPN_CreateObject until the
+   * final release/dealloc, whether or not an actor is currently associated with the object.
+   */
+  static nsTHashtable<NPObjectData>* sObjectMap;
 };
 
 } /* namespace plugins */

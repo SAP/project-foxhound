@@ -10,13 +10,13 @@ FAIL_ON_WARNINGS = True
 
 BROWSER_CHROME_MANIFESTS += ['browser/browser.ini']
 MOCHITEST_MANIFESTS += ['mochitests/mochitest.ini']
-XPCSHELL_TESTS_MANIFESTS += ['unit/xpcshell.ini']
 
-# FIXME/bug 575918: out-of-process xpcshell is broken on OS X
-if CONFIG['OS_ARCH'] != 'Darwin':
-    XPCSHELL_TESTS_MANIFESTS += ['unit_ipc/xpcshell.ini']
+XPCSHELL_TESTS_MANIFESTS += [
+    'unit/xpcshell.ini',
+    'unit_ipc/xpcshell.ini',
+]
 
-SimplePrograms([
+GeckoSimplePrograms([
     'PropertiesTest',
     'ReadNTLM',
     'TestBlockingSocket',
@@ -24,7 +24,6 @@ SimplePrograms([
     'TestDNS',
     'TestIncrementalDownload',
     'TestOpen',
-    'TestPageLoad',
     'TestProtocols',
     'TestServ',
     'TestStandardURL',
@@ -38,7 +37,6 @@ SimplePrograms([
 #SIMPLE_PROGRAMS += [
 #    TestIDN',
 #    TestIOThreads',
-#    TestPerf',
 #    TestSocketTransport',
 #    TestStreamChannel',
 #    TestStreamPump',
@@ -56,13 +54,6 @@ CppUnitTests([
 RESOURCE_FILES += [
     'urlparse.dat',
     'urlparse_unx.dat',
-]
-
-USE_LIBS += [
-    'mozalloc',
-    'nspr',
-    'xpcomglue_s',
-    'xul',
 ]
 
 CXXFLAGS += CONFIG['TK_CFLAGS']

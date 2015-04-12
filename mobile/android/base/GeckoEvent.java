@@ -28,13 +28,10 @@ import android.view.MotionEvent;
 import org.mozilla.gecko.mozglue.JNITarget;
 import org.mozilla.gecko.mozglue.RobocopTarget;
 
-/* We're not allowed to hold on to most events given to us
+/**
+ * We're not allowed to hold on to most events given to us
  * so we save the parts of the events we want to use in GeckoEvent.
  * Fields have different meanings depending on the event type.
- */
-
-/* This class is referenced by Robocop via reflection; use care when
- * modifying the signature.
  */
 @JNITarget
 public class GeckoEvent {
@@ -108,31 +105,12 @@ public class GeckoEvent {
         TELEMETRY_UI_EVENT(44),
         GAMEPAD_ADDREMOVE(45),
         GAMEPAD_DATA(46),
-        LONG_PRESS(47);
+        LONG_PRESS(47),
+        ZOOMEDVIEW(48);
 
         public final int value;
 
         private NativeGeckoEvent(int value) {
-            this.value = value;
-        }
-    }
-
-    /**
-     * The DomKeyLocation enum encapsulates the DOM KeyboardEvent's constants.
-     * @see https://developer.mozilla.org/en-US/docs/DOM/KeyboardEvent#Key_location_constants
-     */
-    @JNITarget
-    public enum DomKeyLocation {
-        DOM_KEY_LOCATION_STANDARD(0),
-        DOM_KEY_LOCATION_LEFT(1),
-        DOM_KEY_LOCATION_RIGHT(2),
-        DOM_KEY_LOCATION_NUMPAD(3),
-        DOM_KEY_LOCATION_MOBILE(4),
-        DOM_KEY_LOCATION_JOYSTICK(5);
-
-        public final int value;
-
-        private DomKeyLocation(int value) {
             this.value = value;
         }
     }
@@ -225,7 +203,6 @@ public class GeckoEvent {
     private int mRangeLineColor;
     private Location mLocation;
     private Address mAddress;
-    private DomKeyLocation mDomKeyLocation;
 
     private int     mConnectionType;
     private boolean mIsWifi;
@@ -314,30 +291,6 @@ public class GeckoEvent {
             if (unmodifiedMetaState != mMetaState) {
                 mDOMPrintableKeyValue = k.getUnicodeChar(unmodifiedMetaState);
             }
-        }
-        mDomKeyLocation = isJoystickButton(mKeyCode) ? DomKeyLocation.DOM_KEY_LOCATION_JOYSTICK
-                                                     : DomKeyLocation.DOM_KEY_LOCATION_MOBILE;
-    }
-
-    /**
-     * This method tests if a key is one of the described in:
-     * https://bugzilla.mozilla.org/show_bug.cgi?id=756504#c0
-     * @param keyCode int with the key code (Android key constant from KeyEvent)
-     * @return true if the key is one of the listed above, false otherwise.
-     */
-    private static boolean isJoystickButton(int keyCode) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-            case KeyEvent.KEYCODE_DPAD_UP:
-                return true;
-            default:
-                if (Versions.feature12Plus) {
-                    return KeyEvent.isGamepadButton(keyCode);
-                }
-                return GeckoEvent.isGamepadButton(keyCode);
         }
     }
 
@@ -722,13 +675,6 @@ public class GeckoEvent {
         return event;
     }
 
-    public static GeckoEvent createWebappLoadEvent(String uri) {
-        GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.LOAD_URI);
-        event.mCharacters = uri;
-        event.mCharactersExtra = "-webapp";
-        return event;
-    }
-
     public static GeckoEvent createBookmarkLoadEvent(String uri) {
         GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.LOAD_URI);
         event.mCharacters = uri;
@@ -754,6 +700,17 @@ public class GeckoEvent {
         GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.THUMBNAIL);
         event.mPoints = new Point[1];
         event.mPoints[0] = new Point(bufw, bufh);
+        event.mMetaState = tabId;
+        event.mBuffer = buffer;
+        return event;
+    }
+
+    public static GeckoEvent createZoomedViewEvent(int tabId, int x, int y, int bufw, int bufh, float scaleFactor, ByteBuffer buffer) {
+        GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.ZOOMEDVIEW);
+        event.mPoints = new Point[2];
+        event.mPoints[0] = new Point(x, y);
+        event.mPoints[1] = new Point(bufw, bufh);
+        event.mX = (double) scaleFactor;
         event.mMetaState = tabId;
         event.mBuffer = buffer;
         return event;

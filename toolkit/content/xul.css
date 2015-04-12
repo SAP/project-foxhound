@@ -242,6 +242,28 @@ caption {
   -moz-box-orient: vertical;
 }
 
+/******** draggable elements *********/
+
+%ifdef XP_MACOSX
+titlebar,
+toolbar:not([nowindowdrag="true"]):not([customizing="true"]),
+statusbar:not([nowindowdrag="true"]),
+windowdragbox {
+  -moz-window-dragging: drag;
+}
+
+/* The list below is non-comprehensive and will probably need some tweaking. */
+toolbarbutton,
+button,
+textbox,
+searchbar,
+tab,
+radio,
+splitter {
+  -moz-window-dragging: no-drag;
+}
+%endif
+
 /******* toolbar *******/
 
 toolbox {
@@ -906,6 +928,14 @@ colorpicker[type="button"] {
 
 menulist {
   -moz-binding: url("chrome://global/content/bindings/menulist.xml#menulist");
+}
+
+menulist[popuponly="true"] {
+  -moz-binding: url("chrome://global/content/bindings/menulist.xml#menulist-popuponly");
+  -moz-appearance: none !important;
+  margin: 0 !important;
+  height: 0 !important;
+  border: 0 !important;
 }
 
 menulist[editable="true"] {

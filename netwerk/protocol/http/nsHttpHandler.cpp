@@ -83,8 +83,7 @@ extern PRThread *gSocketThread;
 #define INTL_ACCEPT_LANGUAGES   "intl.accept_languages"
 #define BROWSER_PREF_PREFIX     "browser.cache."
 #define DONOTTRACK_HEADER_ENABLED "privacy.donottrackheader.enabled"
-#define DONOTTRACK_HEADER_VALUE   "privacy.donottrackheader.value"
-#define DONOTTRACK_VALUE_UNSET    2
+#define H2MANDATORY_SUITE        "security.ssl3.ecdhe_rsa_aes_128_gcm_sha256"
 #define TELEMETRY_ENABLED        "toolkit.telemetry.enabled"
 #define ALLOW_EXPERIMENTS        "network.allow-experiments"
 #define SAFE_HINT_HEADER_VALUE   "safeHint.enabled"
@@ -148,6 +147,7 @@ nsHttpHandler::nsHttpHandler()
     , mMaxRequestAttempts(10)
     , mMaxRequestDelay(10)
     , mIdleSynTimeout(250)
+    , mH2MandatorySuiteEnabled(false)
     , mPipeliningEnabled(false)
     , mMaxConnections(24)
     , mMaxPersistentConnectionsPerServer(2)
@@ -175,17 +175,16 @@ nsHttpHandler::nsHttpHandler()
     , mSendSecureXSiteReferrer(true)
     , mEnablePersistentHttpsCaching(false)
     , mDoNotTrackEnabled(false)
-    , mDoNotTrackValue(1)
     , mSafeHintEnabled(false)
     , mParentalControlEnabled(false)
     , mTelemetryEnabled(false)
     , mAllowExperiments(true)
     , mHandlerActive(false)
     , mEnableSpdy(false)
-    , mSpdyV3(true)
     , mSpdyV31(true)
     , mHttp2DraftEnabled(true)
     , mHttp2Enabled(true)
+    , mUseH2Deps(true)
     , mEnforceHttp2TlsProfile(true)
     , mCoalesceSpdy(true)
     , mSpdyPersistentSettings(false)
@@ -195,6 +194,7 @@ nsHttpHandler::nsHttpHandler()
     , mSpdySendingChunkSize(ASpdySession::kSendingChunkSize)
     , mSpdySendBufferSize(ASpdySession::kTCPSendBufferSize)
     , mSpdyPushAllowance(32768)
+    , mDefaultSpdyConcurrent(ASpdySession::kDefaultMaxConcurrent)
     , mSpdyPingThreshold(PR_SecondsToInterval(58))
     , mSpdyPingTimeout(PR_SecondsToInterval(8))
     , mConnectTimeout(90000)
@@ -208,6 +208,7 @@ nsHttpHandler::nsHttpHandler()
     , mTCPKeepaliveShortLivedIdleTimeS(10)
     , mTCPKeepaliveLongLivedEnabled(false)
     , mTCPKeepaliveLongLivedIdleTimeS(600)
+    , mEnforceH1Framing(false)
 {
 #if defined(PR_LOGGING)
     gHttpLog = PR_NewLogModule("nsHttp");
@@ -274,8 +275,8 @@ nsHttpHandler::Init()
         prefBranch->AddObserver(INTL_ACCEPT_LANGUAGES, this, true);
         prefBranch->AddObserver(BROWSER_PREF("disk_cache_ssl"), this, true);
         prefBranch->AddObserver(DONOTTRACK_HEADER_ENABLED, this, true);
-        prefBranch->AddObserver(DONOTTRACK_HEADER_VALUE, this, true);
         prefBranch->AddObserver(TELEMETRY_ENABLED, this, true);
+        prefBranch->AddObserver(H2MANDATORY_SUITE, this, true);
         prefBranch->AddObserver(HTTP_PREF("tcp_keepalive.short_lived_connections"), this, true);
         prefBranch->AddObserver(HTTP_PREF("tcp_keepalive.long_lived_connections"), this, true);
         prefBranch->AddObserver(SAFE_HINT_HEADER_VALUE, this, true);
@@ -427,8 +428,7 @@ nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request)
 
     // Add the "Do-Not-Track" header
     if (mDoNotTrackEnabled) {
-      rv = request->SetHeader(nsHttp::DoNotTrack,
-                              nsPrintfCString("%d", mDoNotTrackValue));
+      rv = request->SetHeader(nsHttp::DoNotTrack, NS_LITERAL_CSTRING("1"));
       if (NS_FAILED(rv)) return rv;
     }
 
@@ -696,7 +696,9 @@ nsHttpHandler::InitUserAgentComponents()
     );
 #endif
 
-#if defined(ANDROID) || defined(MOZ_B2G)
+   // Add the `Mobile` or `Tablet` token when running on device or in the
+   // b2g desktop simulator.
+#if defined(ANDROID) || defined(FXOS_SIMULATOR)
     nsCOMPtr<nsIPropertyBag2> infoService = do_GetService("@mozilla.org/system-info;1");
     MOZ_ASSERT(infoService, "Could not find a system info service");
 
@@ -717,7 +719,7 @@ nsHttpHandler::InitUserAgentComponents()
     if (NS_SUCCEEDED(rv)) {
         bool valid = true;
         deviceId.Trim(" ", true, true);
-        for (int i = 0; i < deviceId.Length(); i++) {
+        for (size_t i = 0; i < deviceId.Length(); i++) {
             char c = deviceId.CharAt(i);
             if (!(isalnum(c) || c == '-' || c == '.')) {
                 valid = false;
@@ -1181,12 +1183,6 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mEnableSpdy = cVar;
     }
 
-    if (PREF_CHANGED(HTTP_PREF("spdy.enabled.v3"))) {
-        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.v3"), &cVar);
-        if (NS_SUCCEEDED(rv))
-            mSpdyV3 = cVar;
-    }
-
     if (PREF_CHANGED(HTTP_PREF("spdy.enabled.v3-1"))) {
         rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.v3-1"), &cVar);
         if (NS_SUCCEEDED(rv))
@@ -1203,6 +1199,12 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.http2"), &cVar);
         if (NS_SUCCEEDED(rv))
             mHttp2Enabled = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.enabled.deps"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.deps"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mUseH2Deps = cVar;
     }
 
     if (PREF_CHANGED(HTTP_PREF("spdy.enforce-tls-profile"))) {
@@ -1286,6 +1288,14 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         }
     }
 
+    if (PREF_CHANGED(HTTP_PREF("spdy.default-concurrent"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("spdy.default-concurrent"), &val);
+        if (NS_SUCCEEDED(rv)) {
+            mDefaultSpdyConcurrent =
+                static_cast<uint32_t>(std::max<int32_t>(std::min<int32_t>(val, 9999), 1));
+        }
+    }
+
     // The amount of seconds to wait for a spdy ping response before
     // closing the session.
     if (PREF_CHANGED(HTTP_PREF("spdy.send-buffer-size"))) {
@@ -1356,14 +1366,6 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mDoNotTrackEnabled = cVar;
         }
     }
-    if (PREF_CHANGED(DONOTTRACK_HEADER_VALUE)) {
-        val = 1;
-        rv = prefs->GetIntPref(DONOTTRACK_HEADER_VALUE, &val);
-        if (NS_SUCCEEDED(rv)) {
-            mDoNotTrackValue = val;
-        }
-    }
-
     // Hint option
     if (PREF_CHANGED(SAFE_HINT_HEADER_VALUE)) {
         cVar = false;
@@ -1387,6 +1389,17 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         rv = prefs->GetBoolPref(TELEMETRY_ENABLED, &cVar);
         if (NS_SUCCEEDED(rv)) {
             mTelemetryEnabled = cVar;
+        }
+    }
+
+    // "security.ssl3.ecdhe_rsa_aes_128_gcm_sha256" is the required h2 interop
+    // suite.
+
+    if (PREF_CHANGED(H2MANDATORY_SUITE)) {
+        cVar = false;
+        rv = prefs->GetBoolPref(H2MANDATORY_SUITE, &cVar);
+        if (NS_SUCCEEDED(rv)) {
+            mH2MandatorySuiteEnabled = cVar;
         }
     }
 
@@ -1511,6 +1524,13 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
                                                       1, kMaxTCPKeepIdle);
     }
 
+    if (PREF_CHANGED(HTTP_PREF("enforce-framing.http1"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("enforce-framing.http1"), &cVar);
+        if (NS_SUCCEEDED(rv)) {
+            mEnforceH1Framing = cVar;
+        }
+    }
+
     // Enable HTTP response timeout if TCP Keepalives are disabled.
     mResponseTimeoutEnabled = !mTCPKeepaliveShortLivedEnabled &&
                               !mTCPKeepaliveLongLivedEnabled;
@@ -1529,6 +1549,25 @@ nsHttpHandler::TimerCallback(nsITimer * aTimer, void * aClosure)
     nsRefPtr<nsHttpHandler> thisObject = static_cast<nsHttpHandler*>(aClosure);
     if (!thisObject->mPipeliningEnabled)
         thisObject->mCapabilities &= ~NS_HTTP_ALLOW_PIPELINING;
+}
+
+static void
+NormalizeLanguageTag(char *code)
+{
+    bool is_region = false;
+    while (*code != '\0')
+    {
+        if (*code == '-') {
+            is_region = true;
+        } else {
+            if (is_region) {
+                *code = nsCRT::ToUpper(*code);
+            } else {
+                *code = nsCRT::ToLower(*code);
+            }
+        }
+        code++;
+    }
 }
 
 /**
@@ -1586,6 +1625,8 @@ PrepareAcceptLanguages(const char *i_AcceptLanguages, nsACString &o_AcceptLangua
             *trim = '\0';
 
         if (*token != '\0') {
+            NormalizeLanguageTag(token);
+
             comma = count_n++ != 0 ? "," : ""; // delimiter if not first item
             uint32_t u = QVAL_TO_UINT(q);
 
@@ -1693,7 +1734,9 @@ nsHttpHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsHttpHandler::NewChannel(nsIURI *uri, nsIChannel **result)
+nsHttpHandler::NewChannel2(nsIURI* uri,
+                           nsILoadInfo* aLoadInfo,
+                           nsIChannel** result)
 {
     LOG(("nsHttpHandler::NewChannel\n"));
 
@@ -1714,7 +1757,13 @@ nsHttpHandler::NewChannel(nsIURI *uri, nsIChannel **result)
         }
     }
 
-    return NewProxiedChannel(uri, nullptr, 0, nullptr, result);
+    return NewProxiedChannel2(uri, nullptr, 0, nullptr, aLoadInfo, result);
+}
+
+NS_IMETHODIMP
+nsHttpHandler::NewChannel(nsIURI *uri, nsIChannel **result)
+{
+    return NewChannel2(uri, nullptr, result);
 }
 
 NS_IMETHODIMP
@@ -1730,11 +1779,12 @@ nsHttpHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsHttpHandler::NewProxiedChannel(nsIURI *uri,
-                                 nsIProxyInfo* givenProxyInfo,
-                                 uint32_t proxyResolveFlags,
-                                 nsIURI *proxyURI,
-                                 nsIChannel **result)
+nsHttpHandler::NewProxiedChannel2(nsIURI *uri,
+                                  nsIProxyInfo* givenProxyInfo,
+                                  uint32_t proxyResolveFlags,
+                                  nsIURI *proxyURI,
+                                  nsILoadInfo* aLoadInfo,
+                                  nsIChannel** result)
 {
     nsRefPtr<HttpBaseChannel> httpChannel;
 
@@ -1775,8 +1825,26 @@ nsHttpHandler::NewProxiedChannel(nsIURI *uri,
     if (NS_FAILED(rv))
         return rv;
 
+    // set the loadInfo on the new channel
+    rv = httpChannel->SetLoadInfo(aLoadInfo);
+    if (NS_FAILED(rv)) {
+        return rv;
+    }
+
     httpChannel.forget(result);
     return NS_OK;
+}
+
+NS_IMETHODIMP
+nsHttpHandler::NewProxiedChannel(nsIURI *uri,
+                                 nsIProxyInfo* givenProxyInfo,
+                                 uint32_t proxyResolveFlags,
+                                 nsIURI *proxyURI,
+                                 nsIChannel **result)
+{
+    return NewProxiedChannel2(uri, givenProxyInfo,
+                              proxyResolveFlags, proxyURI,
+                              nullptr, result);
 }
 
 //-----------------------------------------------------------------------------
@@ -1860,9 +1928,9 @@ nsHttpHandler::Observe(nsISupports *subject,
         mSessionStartTime = NowInSeconds();
 
         if (!mDoNotTrackEnabled) {
-            Telemetry::Accumulate(Telemetry::DNT_USAGE, DONOTTRACK_VALUE_UNSET);
+            Telemetry::Accumulate(Telemetry::DNT_USAGE, 2);
         } else {
-            Telemetry::Accumulate(Telemetry::DNT_USAGE, mDoNotTrackValue);
+            Telemetry::Accumulate(Telemetry::DNT_USAGE, 1);
         }
     } else if (!strcmp(topic, "profile-change-net-restore")) {
         // initialize connection manager
@@ -2070,12 +2138,20 @@ nsHttpsHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsHttpsHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
+nsHttpsHandler::NewChannel2(nsIURI* aURI,
+                            nsILoadInfo* aLoadInfo,
+                            nsIChannel** _retval)
 {
     MOZ_ASSERT(gHttpHandler);
     if (!gHttpHandler)
       return NS_ERROR_UNEXPECTED;
-    return gHttpHandler->NewChannel(aURI, _retval);
+    return gHttpHandler->NewChannel2(aURI, aLoadInfo, _retval);
+}
+
+NS_IMETHODIMP
+nsHttpsHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
+{
+    return NewChannel2(aURI, nullptr, _retval);
 }
 
 NS_IMETHODIMP

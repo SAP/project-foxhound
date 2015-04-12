@@ -226,7 +226,7 @@ nsViewManager::FlushDelayedResize(bool aDoReflow)
     if (aDoReflow) {
       DoSetWindowDimensions(mDelayedResize.width, mDelayedResize.height);
       mDelayedResize.SizeTo(NSCOORD_NONE, NSCOORD_NONE);
-    } else if (mPresShell) {
+    } else if (mPresShell && !mPresShell->GetIsViewportOverridden()) {
       nsPresContext* presContext = mPresShell->GetPresContext();
       if (presContext) {
         presContext->SetVisibleArea(nsRect(nsPoint(0, 0), mDelayedResize));
@@ -553,7 +553,7 @@ nsViewManager::InvalidateWidgetArea(nsView *aWidgetView,
       NS_ASSERTION(view != aWidgetView, "will recur infinitely");
       nsWindowType type = childWidget->WindowType();
       if (view && childWidget->IsVisible() && type != eWindowType_popup) {
-        NS_ASSERTION(type == eWindowType_plugin,
+        NS_ASSERTION(childWidget->IsPlugin(),
                      "Only plugin or popup widgets can be children!");
 
         // We do not need to invalidate in plugin widgets, but we should
@@ -755,8 +755,7 @@ nsViewManager::DispatchEvent(WidgetGUIEvent *aEvent,
       (dispatchUsingCoordinates || aEvent->HasKeyEventMessage() ||
        aEvent->IsIMERelatedEvent() ||
        aEvent->IsNonRetargetedNativeEventDelivererForPlugin() ||
-       aEvent->HasPluginActivationEventMessage() ||
-       aEvent->message == NS_PLUGIN_RESOLUTION_CHANGED)) {
+       aEvent->HasPluginActivationEventMessage())) {
     while (view && !view->GetFrame()) {
       view = view->GetParent();
     }
@@ -1066,13 +1065,14 @@ nsViewManager::ProcessPendingUpdates()
     return;
   }
 
-  mPresShell->GetPresContext()->RefreshDriver()->RevokeViewManagerFlush();
-
   // Flush things like reflows by calling WillPaint on observer presShells.
   if (mPresShell) {
+    mPresShell->GetPresContext()->RefreshDriver()->RevokeViewManagerFlush();
+
     CallWillPaintOnObservers();
+
+    ProcessPendingUpdatesForView(mRootView, true);
   }
-  ProcessPendingUpdatesForView(mRootView, true);
 }
 
 void

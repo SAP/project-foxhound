@@ -89,10 +89,8 @@ gfxSurfaceDrawable::DrawInternal(gfxContext* aContext,
     Rect fillRect = ToRect(aFillRect);
     DrawTarget* dt = aContext->GetDrawTarget();
 
-    if (aContext->CurrentOperator() == gfxContext::OPERATOR_CLEAR) {
-        dt->ClearRect(fillRect);
-    } else if (aContext->CurrentOperator() == gfxContext::OPERATOR_SOURCE &&
-               aOpacity == 1.0) {
+    if (aContext->CurrentOperator() == gfxContext::OPERATOR_SOURCE &&
+        aOpacity == 1.0) {
         // Emulate cairo operator source which is bound by mask!
         dt->ClearRect(fillRect);
         dt->FillRect(fillRect, pattern);
@@ -202,6 +200,8 @@ gfxPatternDrawable::Draw(gfxContext* aContext,
                          gfxFloat aOpacity,
                          const gfxMatrix& aTransform)
 {
+    DrawTarget& aDrawTarget = *aContext->GetDrawTarget();
+
     if (!mPattern)
         return false;
 
@@ -218,12 +218,11 @@ gfxPatternDrawable::Draw(gfxContext* aContext,
                                       aOpacity, aTransform);
     }
 
-    aContext->NewPath();
     gfxMatrix oldMatrix = mPattern->GetMatrix();
     mPattern->SetMatrix(aTransform * oldMatrix);
-    aContext->SetPattern(mPattern);
-    aContext->Rectangle(aFillRect);
-    aContext->FillWithOpacity(aOpacity);
+    DrawOptions drawOptions(aOpacity);
+    aDrawTarget.FillRect(ToRect(aFillRect),
+                         *mPattern->GetPattern(&aDrawTarget), drawOptions);
     mPattern->SetMatrix(oldMatrix);
     return true;
 }

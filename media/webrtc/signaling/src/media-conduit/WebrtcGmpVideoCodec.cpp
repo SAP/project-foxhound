@@ -279,7 +279,7 @@ WebrtcGmpVideoEncoder::Encode_g(const webrtc::I420VideoFrame* aInputImage,
   if (err != GMPNoErr) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
-  UniquePtr<GMPVideoi420Frame> frame(static_cast<GMPVideoi420Frame*>(ftmp));
+  GMPUnique<GMPVideoi420Frame>::Ptr frame(static_cast<GMPVideoi420Frame*>(ftmp));
 
   err = frame->CreateFrame(aInputImage->allocated_size(webrtc::kYPlane),
                            aInputImage->buffer(webrtc::kYPlane),
@@ -446,6 +446,11 @@ WebrtcGmpVideoEncoder::Encoded(GMPVideoEncodedFrame* aEncodedFrame,
         return;
     }
 
+    struct nal_entry {
+      uint32_t offset;
+      uint32_t size;
+    };
+    nsTArray<nal_entry> nals;
     uint32_t size;
     // make sure we don't read past the end of the buffer getting the size
     while (buffer+size_bytes < end) {
@@ -484,19 +489,33 @@ WebrtcGmpVideoEncoder::Encoded(GMPVideoEncodedFrame* aEncodedFrame,
              buffer+size - end));
         return;
       }
-      webrtc::EncodedImage unit(buffer, size, size);
-      unit._frameType = ft;
-      unit._timeStamp = timestamp;
-      unit._completeFrame = true;
-
-      mCallback->Encoded(unit, nullptr, nullptr);
-
+      // XXX optimize by making buffer an offset
+      nal_entry nal = {((uint32_t) (buffer-aEncodedFrame->Buffer())), (uint32_t) size};
+      nals.AppendElement(nal);
       buffer += size;
       // on last one, buffer == end normally
     }
     if (buffer != end) {
       // At most 3 bytes can be left over, depending on buffertype
       LOGD(("GMP plugin returned %td extra bytes", end - buffer));
+    }
+
+    size_t num_nals = nals.Length();
+    if (num_nals > 0) {
+      webrtc::RTPFragmentationHeader fragmentation;
+      fragmentation.VerifyAndAllocateFragmentationHeader(num_nals);
+      for (size_t i = 0; i < num_nals; i++) {
+        fragmentation.fragmentationOffset[i] = nals[i].offset;
+        fragmentation.fragmentationLength[i] = nals[i].size;
+      }
+
+      webrtc::EncodedImage unit(aEncodedFrame->Buffer(), size, size);
+      unit._frameType = ft;
+      unit._timeStamp = timestamp;
+      unit._completeFrame = true;
+
+      mCallback->Encoded(unit, nullptr, &fragmentation);
+
     }
   }
 }
@@ -506,7 +525,8 @@ WebrtcGmpVideoDecoder::WebrtcGmpVideoDecoder() :
   mGMP(nullptr),
   mHost(nullptr),
   mCallback(nullptr),
-  mCachedPluginId(0) {}
+  mCachedPluginId(0),
+  mDecoderStatus(GMPNoErr){}
 
 static void
 Decoder_Close_g(GMPVideoDecoderProxy* aGMP)
@@ -635,7 +655,7 @@ WebrtcGmpVideoDecoder::Decode_g(const webrtc::EncodedImage& aInputImage,
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
-  UniquePtr<GMPVideoEncodedFrame> frame(static_cast<GMPVideoEncodedFrame*>(ftmp));
+  GMPUnique<GMPVideoEncodedFrame>::Ptr frame(static_cast<GMPVideoEncodedFrame*>(ftmp));
   err = frame->CreateEmptyFrame(aInputImage._length);
   if (err != GMPNoErr) {
     return WEBRTC_VIDEO_CODEC_ERROR;
@@ -676,7 +696,10 @@ WebrtcGmpVideoDecoder::Decode_g(const webrtc::EncodedImage& aInputImage,
   if (NS_FAILED(rv)) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
-
+  if(mDecoderStatus != GMPNoErr){
+    mDecoderStatus = GMPNoErr;
+    return WEBRTC_VIDEO_CODEC_ERROR;
+  }
   return WEBRTC_VIDEO_CODEC_OK;
 }
 

@@ -156,7 +156,7 @@
       <menuitem id="context-video-fullscreen"
                 accesskey="&videoFullScreen.accesskey;"
                 label="&videoFullScreen.label;"
-                oncommand="gContextMenu.fullScreenVideo();"/>
+                oncommand="gContextMenu.mediaCommand('fullscreen');"/>
       <menuitem id="context-leave-dom-fullscreen"
                 accesskey="&leaveDOMFullScreen.accesskey;"
                 label="&leaveDOMFullScreen.label;"
@@ -415,3 +415,11 @@
                 label="&inspectContextMenu.label;"
                 accesskey="&inspectContextMenu.accesskey;"
                 oncommand="gContextMenu.inspectNode();"/>
+      <menuseparator id="context-media-eme-separator" hidden="true"/>
+      <menuitem id="context-media-eme-learnmore"
+                class="menuitem-iconic"
+                hidden="true"
+                label="&emeLearnMoreContextMenu.label;"
+                accesskey="&emeLearnMoreContextMenu.accesskey;"
+                oncommand="gContextMenu.drmLearnMore(event);"
+                onclick="checkForMiddleClick(this, event);"/>

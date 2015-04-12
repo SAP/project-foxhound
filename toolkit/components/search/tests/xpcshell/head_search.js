@@ -22,6 +22,9 @@ const MODE_CREATE = FileUtils.MODE_CREATE;
 const MODE_TRUNCATE = FileUtils.MODE_TRUNCATE;
 
 // nsSearchService.js uses Services.appinfo.name to build a salt for a hash.
+var XULRuntime = Components.classesByID["{95d89e3e-a169-41a3-8e56-719978e15b12}"]
+                           .getService(Ci.nsIXULRuntime);
+
 var XULAppInfo = {
   vendor: "Mozilla",
   name: "XPCShell",
@@ -32,8 +35,11 @@ var XULAppInfo = {
   platformBuildID: "2007010101",
   inSafeMode: false,
   logConsoleErrors: true,
-  OS: "XPCShell",
+  // mirror OS from the base impl as some of the "location" tests rely on it
+  OS: XULRuntime.OS,
   XPCOMABI: "noarch-spidermonkey",
+  // mirror processType from the base implementation
+  processType: XULRuntime.processType,
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIXULAppInfo, Ci.nsIXULRuntime,
                                          Ci.nsISupports])
@@ -47,13 +53,18 @@ var XULAppInfoFactory = {
   }
 };
 
+var isChild = XULRuntime.processType == XULRuntime.PROCESS_TYPE_CONTENT;
+
 Components.manager.QueryInterface(Ci.nsIComponentRegistrar)
           .registerFactory(Components.ID("{ecff8849-cee8-40a7-bd4a-3f4fdfeddb5c}"),
                            "XULAppInfo", "@mozilla.org/xre/app-info;1",
                            XULAppInfoFactory);
 
-// Need to create and register a profile folder.
-var gProfD = do_get_profile();
+var gProfD;
+if (!isChild) {
+  // Need to create and register a profile folder.
+  gProfD = do_get_profile();
+}
 
 function dumpn(text)
 {
@@ -109,6 +120,26 @@ function removeCache()
     file.remove(false);
   }
 
+}
+
+/**
+ * isUSTimezone taken from nsSearchService.js
+ */
+function isUSTimezone() {
+  // Timezone assumptions! We assume that if the system clock's timezone is
+  // between Newfoundland and Hawaii, that the user is in North America.
+
+  // This includes all of South America as well, but we have relatively few
+  // en-US users there, so that's OK.
+
+  // 150 minutes = 2.5 hours (UTC-2.5), which is
+  // Newfoundland Daylight Time (http://www.timeanddate.com/time/zones/ndt)
+
+  // 600 minutes = 10 hours (UTC-10), which is
+  // Hawaii-Aleutian Standard Time (http://www.timeanddate.com/time/zones/hast)
+
+  let UTCOffset = (new Date()).getTimezoneOffset();
+  return UTCOffset >= 150 && UTCOffset <= 600;
 }
 
 /**
@@ -182,8 +213,19 @@ function isSubObjectOf(expectedObj, actualObj) {
   }
 }
 
-// Expand the amount of information available in error logs
-Services.prefs.setBoolPref("browser.search.log", true);
+// Can't set prefs if we're running in a child process, but the search  service
+// doesn't run in child processes anyways.
+if (!isChild) {
+  // Expand the amount of information available in error logs
+  Services.prefs.setBoolPref("browser.search.log", true);
+
+  // The geo-specific search tests assume certain prefs are already setup, which
+  // might not be true when run in comm-central etc.  So create them here.
+  Services.prefs.setBoolPref("browser.search.geoSpecificDefaults", true);
+  Services.prefs.setIntPref("browser.search.geoip.timeout", 2000);
+  // But still disable geoip lookups - tests that need it will re-configure this.
+  Services.prefs.setCharPref("browser.search.geoip.url", "");
+}
 
 /**
  * After useHttpServer() is called, this string contains the URL of the "data"
@@ -262,3 +304,75 @@ let addTestEngines = Task.async(function* (aItems) {
 
   return engines;
 });
+
+/**
+ * Installs a test engine into the test profile.
+ */
+function installTestEngine() {
+  removeMetadata();
+  removeCacheFile();
+
+  do_check_false(Services.search.isInitialized);
+
+  let engineDummyFile = gProfD.clone();
+  engineDummyFile.append("searchplugins");
+  engineDummyFile.append("test-search-engine.xml");
+  let engineDir = engineDummyFile.parent;
+  engineDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
+
+  do_get_file("data/engine.xml").copyTo(engineDir, "engine.xml");
+
+  do_register_cleanup(function() {
+    removeMetadata();
+    removeCacheFile();
+  });
+}
+
+
+/**
+ * Returns a promise that is resolved when an observer notification from the
+ * search service fires with the specified data.
+ *
+ * @param aExpectedData
+ *        The value the observer notification sends that causes us to resolve
+ *        the promise.
+ */
+function waitForSearchNotification(aExpectedData) {
+  return new Promise(resolve => {
+    const SEARCH_SERVICE_TOPIC = "browser-search-service";
+    Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
+      if (aData != aExpectedData)
+        return;
+
+      Services.obs.removeObserver(observer, SEARCH_SERVICE_TOPIC);
+      resolve(aSubject);
+    }, SEARCH_SERVICE_TOPIC, false);
+  });
+}
+
+// This "enum" from nsSearchService.js
+const TELEMETRY_RESULT_ENUM = {
+  SUCCESS: 0,
+  SUCCESS_WITHOUT_DATA: 1,
+  XHRTIMEOUT: 2,
+  ERROR: 3,
+};
+
+/**
+ * Checks the value of the SEARCH_SERVICE_COUNTRY_FETCH_RESULT probe.
+ *
+ * @param aExpectedValue
+ *        If a value from TELEMETRY_RESULT_ENUM, we expect to see this value
+ *        recorded exactly once in the probe.  If |null|, we expect to see
+ *        nothing recorded in the probe at all.
+ */
+function checkCountryResultTelemetry(aExpectedValue) {
+  let histogram = Services.telemetry.getHistogramById("SEARCH_SERVICE_COUNTRY_FETCH_RESULT");
+  let snapshot = histogram.snapshot();
+  // The probe is declared with 8 values, but we get 9 back from .counts
+  let expectedCounts = [0,0,0,0,0,0,0,0,0];
+  if (aExpectedValue != null) {
+    expectedCounts[aExpectedValue] = 1;
+  }
+  deepEqual(snapshot.counts, expectedCounts);
+}

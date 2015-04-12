@@ -65,7 +65,7 @@ BEGIN_TEST(testArrayBufferView_type)
     CHECK((TestViewType<uint8_t,
                         CreateDataView,
                         JS_GetObjectAsArrayBufferView,
-                        js::Scalar::TypeMax,
+                        js::Scalar::MaxTypedArrayViewType,
                         8, 8>(cx)));
 
     JS::Rooted<JS::Value> hasTypedObject(cx);
@@ -83,8 +83,8 @@ BEGIN_TEST(testArrayBufferView_type)
     return true;
 }
 
-static JSObject *
-CreateDataView(JSContext *cx)
+static JSObject*
+CreateDataView(JSContext* cx)
 {
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
     if (!global)
@@ -93,7 +93,9 @@ CreateDataView(JSContext *cx)
     static const char code[] = "new DataView(new ArrayBuffer(8))";
 
     JS::Rooted<JS::Value> val(cx);
-    if (!JS_EvaluateScript(cx, global, code, strlen(code), __FILE__, __LINE__, &val))
+    JS::CompileOptions opts(cx);
+    if (!JS::Evaluate(cx, global, opts.setFileAndLine(__FILE__, __LINE__),
+                      code, strlen(code), &val))
         return nullptr;
 
     JS::Rooted<JSObject*> dv(cx, &val.toObject());
@@ -103,21 +105,21 @@ CreateDataView(JSContext *cx)
     return dv;
 }
 
-template<JSObject * CreateTypedArray(JSContext *cx, uint32_t length),
+template<JSObject * CreateTypedArray(JSContext* cx, uint32_t length),
          size_t Length>
-static JSObject *
-Create(JSContext *cx)
+static JSObject*
+Create(JSContext* cx)
 {
     return CreateTypedArray(cx, Length);
 }
 
 template<typename T,
-         JSObject * CreateViewType(JSContext *cx),
-         JSObject * GetObjectAs(JSObject *obj, uint32_t *length, T **data),
+         JSObject * CreateViewType(JSContext* cx),
+         JSObject * GetObjectAs(JSObject* obj, uint32_t* length, T** data),
          js::Scalar::Type ExpectedType,
          uint32_t ExpectedLength,
          uint32_t ExpectedByteLength>
-bool TestViewType(JSContext *cx)
+bool TestViewType(JSContext* cx)
 {
     JS::Rooted<JSObject*> obj(cx, CreateViewType(cx));
     CHECK(obj);
@@ -130,9 +132,9 @@ bool TestViewType(JSContext *cx)
 
     {
         JS::AutoCheckCannotGC nogc;
-        T *data1 = static_cast<T*>(JS_GetArrayBufferViewData(obj, nogc));
+        T* data1 = static_cast<T*>(JS_GetArrayBufferViewData(obj, nogc));
 
-        T *data2;
+        T* data2;
         uint32_t len;
         CHECK(obj == GetObjectAs(obj, &len, &data2));
         CHECK(data1 == data2);

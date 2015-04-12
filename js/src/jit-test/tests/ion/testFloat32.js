@@ -27,11 +27,6 @@
     })();
     //
     (function() {
-        if (typeof ParallelArray !== "undefined")
-        ParallelArray([1606], Math.fround)
-    })();
-    //
-    (function() {
         x = y = {};
         z = new Float32Array(6)
         for (c in this) {
@@ -42,6 +37,12 @@
         }))
     })();
     //
+    (function() {
+        // bug 1134298
+        for (var k = 0; k < 1; k++) {
+            Math.fround(Math.ceil(Math.fround(Math.acos(3.0))))
+        }
+    })();
 })();
 //
 // ION TESTS

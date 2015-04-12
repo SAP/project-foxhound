@@ -4,6 +4,7 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -12,22 +13,21 @@ var WebcompatReporter = {
   menuItemEnabled: null,
   init: function() {
     Services.obs.addObserver(this, "DesktopMode:Change", false);
-    Services.obs.addObserver(this, "content-page-shown", false);
+    Services.obs.addObserver(this, "chrome-document-global-created", false);
+    Services.obs.addObserver(this, "content-document-global-created", false);
     this.addMenuItem();
   },
 
-  uninit: function() {
-    Services.obs.removeObserver(this, "DesktopMode:Change");
-
-    if (this.menuItem) {
-      NativeWindow.menu.remove(this.menuItem);
-      this.menuItem = null;
-    }
-  },
-
   observe: function(subject, topic, data) {
-    if (topic === "content-page-shown") {
-      let currentURI = subject.documentURI;
+    if (topic == "content-document-global-created" || topic == "chrome-document-global-created") {
+      let win = subject;
+      let currentURI = win.document.documentURI;
+
+      // Ignore non top-level documents
+      if (currentURI !== win.top.location.href) {
+        return;
+      }
+
       if (!this.menuItemEnabled && this.isReportableUrl(currentURI)) {
         NativeWindow.menu.update(this.menuItem, {enabled: true});
         this.menuItemEnabled = true;
@@ -38,7 +38,8 @@ var WebcompatReporter = {
     } else if (topic === "DesktopMode:Change") {
       let args = JSON.parse(data);
       let tab = BrowserApp.getTabForId(args.tabId);
-      if (args.desktopMode && tab !== null) {
+      let currentURI = tab.browser.currentURI.spec;
+      if (args.desktopMode && this.isReportableUrl(currentURI)) {
         this.reportDesktopModePrompt();
       }
     }
@@ -56,10 +57,10 @@ var WebcompatReporter = {
   },
 
   isReportableUrl: function(url) {
-    return url !== null && !(url.startsWith("about") ||
-                             url.startsWith("chrome") ||
-                             url.startsWith("file") ||
-                             url.startsWith("resource"));
+    return url && !(url.startsWith("about") ||
+                    url.startsWith("chrome") ||
+                    url.startsWith("file") ||
+                    url.startsWith("resource"));
   },
 
   reportDesktopModePrompt: function() {
@@ -75,10 +76,14 @@ var WebcompatReporter = {
   },
 
   reportIssue: function(url) {
-    let webcompatURL = new URL("http://webcompat.com/");
+    let webcompatURL = new URL("https://webcompat.com/");
     webcompatURL.searchParams.append("open", "1");
     webcompatURL.searchParams.append("url", url);
-    BrowserApp.addTab(webcompatURL.href);
+    if (PrivateBrowsingUtils.isBrowserPrivate(BrowserApp.selectedTab.browser)) {
+      BrowserApp.addTab(webcompatURL.href, {parentId: BrowserApp.selectedTab.id, isPrivate: true});
+    } else {
+      BrowserApp.addTab(webcompatURL.href);
+    }
   }
 };
 

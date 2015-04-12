@@ -57,6 +57,7 @@ private:
     
     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
     nsCOMPtr<nsILoadGroup> mLoadGroup;
+    nsCOMPtr<nsILoadInfo> mLoadInfo;
 };
 
 NS_IMPL_ADDREF(nsExtProtocolChannel)
@@ -264,14 +265,16 @@ NS_IMETHODIMP nsExtProtocolChannel::SetOwner(nsISupports * aPrincipal)
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::GetLoadInfo(nsILoadInfo * *aLoadInfo)
+NS_IMETHODIMP nsExtProtocolChannel::GetLoadInfo(nsILoadInfo **aLoadInfo)
 {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  NS_IF_ADDREF(*aLoadInfo = mLoadInfo);
+  return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::SetLoadInfo(nsILoadInfo * aLoadInfo)
+NS_IMETHODIMP nsExtProtocolChannel::SetLoadInfo(nsILoadInfo *aLoadInfo)
 {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  mLoadInfo = aLoadInfo;
+  return NS_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -395,7 +398,10 @@ NS_IMETHODIMP nsExternalProtocolHandler::NewURI(const nsACString &aSpec,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExternalProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
+NS_IMETHODIMP
+nsExternalProtocolHandler::NewChannel2(nsIURI* aURI,
+                                       nsILoadInfo* aLoadInfo,
+                                       nsIChannel** _retval)
 {
   // Only try to return a channel if we have a protocol handler for the url.
   // nsOSHelperAppService::LoadUriInternal relies on this to check trustedness
@@ -410,6 +416,9 @@ NS_IMETHODIMP nsExternalProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_
     ((nsExtProtocolChannel*) channel.get())->SetURI(aURI);
     channel->SetOriginalURI(aURI);
 
+    // set the loadInfo on the new channel
+    ((nsExtProtocolChannel*) channel.get())->SetLoadInfo(aLoadInfo);
+
     if (_retval)
     {
       *_retval = channel;
@@ -419,6 +428,11 @@ NS_IMETHODIMP nsExternalProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_
   }
 
   return NS_ERROR_UNKNOWN_PROTOCOL;
+}
+
+NS_IMETHODIMP nsExternalProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
+{
+  return NewChannel2(aURI, nullptr, _retval);
 }
 
 ///////////////////////////////////////////////////////////////////////

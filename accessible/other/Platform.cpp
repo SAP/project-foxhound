@@ -20,11 +20,16 @@ a11y::PlatformShutdown()
 }
 
 void
-a11y::ProxyCreated(ProxyAccessible*)
+a11y::ProxyCreated(ProxyAccessible*, uint32_t)
 {
 }
 
 void
 a11y::ProxyDestroyed(ProxyAccessible*)
+{
+}
+
+void
+a11y::ProxyEvent(ProxyAccessible*, uint32_t)
 {
 }

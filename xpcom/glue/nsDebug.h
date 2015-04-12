@@ -50,33 +50,6 @@ inline bool NS_warn_if_impl(bool aCondition, const char* aExpr,
 #endif
 
 /**
- * Abort the execution of the program if the expression evaluates to
- * false.
- *
- * There is no status value returned from the macro.
- *
- * Note that the non-debug version of this macro does <b>not</b>
- * evaluate the expression argument. Hence side effect statements
- * as arguments to the macro will yield improper execution in a
- * non-debug build. For example:
- *
- *      NS_ABORT_IF_FALSE(0 == foo++, "yikes foo should be zero");
- *
- * Note also that the non-debug version of this macro does <b>not</b>
- * evaluate the message argument.
- */
-#ifdef DEBUG
-#define NS_ABORT_IF_FALSE(_expr, _msg)                        \
-  do {                                                        \
-    if (!(_expr)) {                                           \
-      NS_DebugBreak(NS_DEBUG_ABORT, _msg, #_expr, __FILE__, __LINE__); \
-    }                                                         \
-  } while(0)
-#else
-#define NS_ABORT_IF_FALSE(_expr, _msg) do { /* nothing */ } while(0)
-#endif
-
-/**
  * Warn if a given condition is false.
  *
  * Program execution continues past the usage of this macro.
@@ -402,16 +375,70 @@ typedef void (*StderrCallback)(const char* aFmt, va_list aArgs);
 extern "C" {
 #endif
 
+/**
+ * printf_stderr(...) is much like fprintf(stderr, ...), except that:
+ *  - it calls the callback set through set_stderr_callback
+ *  - on Android and Firefox OS, *instead* of printing to stderr, it
+ *    prints to logcat.  (Newlines in the string lead to multiple lines
+ *    of logcat, but each function call implicitly completes a line even
+ *    if the string does not end with a newline.)
+ *  - on Windows, if a debugger is present, it calls OutputDebugString
+ *    in *addition* to writing to stderr
+ */
 void printf_stderr(const char* aFmt, ...) MOZ_FORMAT_PRINTF(1, 2);
 
+/**
+ * Same as printf_stderr, but taking va_list instead of varargs
+ */
 void vprintf_stderr(const char* aFmt, va_list aArgs);
 
-// fprintf with special handling for stderr to print to the console
+/**
+ * fprintf_stderr is like fprintf, except that if its file argument
+ * is stderr, it invokes printf_stderr instead.
+ *
+ * This is useful for general debugging code that logs information to a
+ * file, but that you would like to be useful on Android and Firefox OS.
+ * If you use fprintf_stderr instead of fprintf in such debugging code,
+ * then callers can pass stderr to get logging that works on Android and
+ * Firefox OS (and also the other side-effects of using printf_stderr).
+ *
+ * Code that is structured this way needs to be careful not to split a
+ * line of output across multiple calls to fprintf_stderr, since doing
+ * so will cause it to appear in multiple lines in logcat output.
+ * (Producing multiple lines at once is fine.)
+ */
 void fprintf_stderr(FILE* aFile, const char* aFmt, ...) MOZ_FORMAT_PRINTF(2, 3);
 
 // used by the profiler to log stderr in the profiler for more
 // advanced performance debugging and display/layers visualization.
 void set_stderr_callback(StderrCallback aCallback);
+
+#if defined(ANDROID) && !defined(RELEASE_BUILD)
+// Call this if you want a copy of stderr logging sent to a file. This is
+// useful to get around logcat overflow problems on android devices, which use
+// a circular logcat buffer and can intermittently drop messages if there's too
+// much spew.
+//
+// This is intended for local debugging only, DO NOT USE IN PRODUCTION CODE.
+// (This is ifndef RELEASE_BUILD to catch uses of it that accidentally get
+// checked in). Using this will also prevent the profiler from getting a copy of
+// the stderr messages which it uses for various visualization features.
+//
+// This function can be called from any thread, but if it is called multiple
+// times all invocations must be on the same thread. Invocations after the
+// first one are ignored, so you can safely put it inside a loop, for example.
+// Once this is called there is no way to turn it off; all stderr output from
+// that point forward will go to the file. Note that the output is subject to
+// buffering so make sure you have enough output to flush the messages you care
+// about before you terminate the process.
+//
+// The file passed in should be writable, so on Android devices a path like
+// "/data/local/tmp/blah" is a good one to use as it is world-writable and will
+// work even in B2G child processes which have reduced privileges. Note that the
+// actual file created will have the PID appended to the path you pass in, so
+// that on B2G the output from each process goes to a separate file.
+void copy_stderr_to_file(const char* aFile);
+#endif
 
 #ifdef __cplusplus
 }

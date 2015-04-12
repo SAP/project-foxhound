@@ -237,6 +237,22 @@ EVENT(keyup,
       NS_KEY_UP,
       EventNameType_HTMLXUL,
       eKeyboardEventClass)
+NON_IDL_EVENT(mozbrowserbeforekeydown,
+              NS_KEY_BEFORE_DOWN,
+              EventNameType_None,
+              eBeforeAfterKeyboardEventClass)
+NON_IDL_EVENT(mozbrowserafterkeydown,
+              NS_KEY_AFTER_DOWN,
+              EventNameType_None,
+              eBeforeAfterKeyboardEventClass)
+NON_IDL_EVENT(mozbrowserbeforekeyup,
+              NS_KEY_BEFORE_UP,
+              EventNameType_None,
+              eBeforeAfterKeyboardEventClass)
+NON_IDL_EVENT(mozbrowserafterkeyup,
+              NS_KEY_AFTER_UP,
+              EventNameType_None,
+              eBeforeAfterKeyboardEventClass)
 EVENT(loadeddata,
       NS_LOADEDDATA,
       EventNameType_HTML,
@@ -442,6 +458,10 @@ FORWARDED_EVENT(load,
                 NS_LOAD,
                 EventNameType_All,
                 eBasicEventClass)
+FORWARDED_EVENT(resize,
+                NS_RESIZE_EVENT,
+                EventNameType_All,
+                eBasicEventClass)
 FORWARDED_EVENT(scroll,
                 NS_SCROLL_EVENT,
                 (EventNameType_HTMLXUL | EventNameType_SVGSVG),
@@ -496,11 +516,6 @@ WINDOW_EVENT(popstate,
              eBasicEventClass)
 // Not supported yet
 // WINDOW_EVENT(redo)
-WINDOW_EVENT(resize,
-             NS_RESIZE_EVENT,
-             (EventNameType_XUL | EventNameType_SVGSVG |
-              EventNameType_HTMLBodyOrFramesetOnly),
-             eBasicEventClass)
 // Not supported yet
 // WINDOW_EVENT(storage)
 // Not supported yet

@@ -61,7 +61,7 @@ class ShadowLayerForwarder;
 
 namespace ipc {
 
-class Shmem MOZ_FINAL
+class Shmem final
 {
   friend struct IPC::ParamTraits<mozilla::ipc::Shmem>;
 #ifdef DEBUG
@@ -265,7 +265,7 @@ private:
   void AssertInvariants() const;
 #endif
 
-  SharedMemory* mSegment;
+  SharedMemory* MOZ_NON_OWNING_REF mSegment;
   void* mData;
   size_t mSize;
   id_t mId;

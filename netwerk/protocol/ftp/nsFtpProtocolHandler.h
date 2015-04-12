@@ -17,9 +17,9 @@ class nsICacheSession;
 
 //-----------------------------------------------------------------------------
 
-class nsFtpProtocolHandler : public nsIProxiedProtocolHandler
-                           , public nsIObserver
-                           , public nsSupportsWeakReference
+class nsFtpProtocolHandler final : public nsIProxiedProtocolHandler
+                                     , public nsIObserver
+                                     , public nsSupportsWeakReference
 {
 public:
     NS_DECL_THREADSAFE_ISUPPORTS

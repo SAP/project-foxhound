@@ -20,6 +20,7 @@
 #include "jsfun.h"
 #include "jsnum.h"
 #include "jsobj.h"
+#include "jsprf.h"
 #include "jsscript.h"
 #include "jstypes.h"
 #include "jsutil.h"
@@ -36,19 +37,18 @@
 
 using namespace js;
 using namespace js::gc;
-using namespace js::types;
 
 using mozilla::ArrayLength;
 using mozilla::PodArrayZero;
 
 static void
-exn_finalize(FreeOp *fop, JSObject *obj);
+exn_finalize(FreeOp* fop, JSObject* obj);
 
 bool
-Error(JSContext *cx, unsigned argc, Value *vp);
+Error(JSContext* cx, unsigned argc, Value* vp);
 
 static bool
-exn_toSource(JSContext *cx, unsigned argc, Value *vp);
+exn_toSource(JSContext* cx, unsigned argc, Value* vp);
 
 static const JSFunctionSpec exception_methods[] = {
 #if JS_HAS_TOSOURCE
@@ -64,13 +64,13 @@ static const JSFunctionSpec exception_methods[] = {
         JSCLASS_IMPLEMENTS_BARRIERS | \
         JSCLASS_HAS_CACHED_PROTO(JSProto_##name) | \
         JSCLASS_HAS_RESERVED_SLOTS(ErrorObject::RESERVED_SLOTS), \
-        JS_PropertyStub,         /* addProperty */ \
-        JS_DeletePropertyStub,   /* delProperty */ \
-        JS_PropertyStub,         /* getProperty */ \
-        JS_StrictPropertyStub,   /* setProperty */ \
-        JS_EnumerateStub, \
-        JS_ResolveStub, \
-        JS_ConvertStub, \
+        nullptr,                 /* addProperty */ \
+        nullptr,                 /* delProperty */ \
+        nullptr,                 /* getProperty */ \
+        nullptr,                 /* setProperty */ \
+        nullptr,                 /* enumerate */ \
+        nullptr,                 /* resolve */ \
+        nullptr,                 /* convert */ \
         exn_finalize, \
         nullptr,                 /* call        */ \
         nullptr,                 /* hasInstance */ \
@@ -94,13 +94,13 @@ ErrorObject::classes[JSEXN_LIMIT] = {
         JSCLASS_IMPLEMENTS_BARRIERS |
         JSCLASS_HAS_CACHED_PROTO(JSProto_Error) |
         JSCLASS_HAS_RESERVED_SLOTS(ErrorObject::RESERVED_SLOTS),
-        JS_PropertyStub,         /* addProperty */
-        JS_DeletePropertyStub,   /* delProperty */
-        JS_PropertyStub,         /* getProperty */
-        JS_StrictPropertyStub,   /* setProperty */
-        JS_EnumerateStub,
-        JS_ResolveStub,
-        JS_ConvertStub,
+        nullptr,                 /* addProperty */
+        nullptr,                 /* delProperty */
+        nullptr,                 /* getProperty */
+        nullptr,                 /* setProperty */
+        nullptr,                 /* enumerate */
+        nullptr,                 /* resolve */
+        nullptr,                 /* convert */
         exn_finalize,
         nullptr,                 /* call        */
         nullptr,                 /* hasInstance */
@@ -123,8 +123,8 @@ ErrorObject::classes[JSEXN_LIMIT] = {
     IMPLEMENT_ERROR_SUBCLASS(URIError)
 };
 
-JSErrorReport *
-js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
+JSErrorReport*
+js::CopyErrorReport(JSContext* cx, JSErrorReport* report)
 {
     /*
      * We use a single malloc block to make a deep copy of JSErrorReport with
@@ -139,8 +139,8 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
      * Such layout together with the properties enforced by the following
      * asserts does not need any extra alignment padding.
      */
-    JS_STATIC_ASSERT(sizeof(JSErrorReport) % sizeof(const char *) == 0);
-    JS_STATIC_ASSERT(sizeof(const char *) % sizeof(char16_t) == 0);
+    JS_STATIC_ASSERT(sizeof(JSErrorReport) % sizeof(const char*) == 0);
+    JS_STATIC_ASSERT(sizeof(const char*) % sizeof(char16_t) == 0);
 
     size_t filenameSize;
     size_t linebufSize;
@@ -148,8 +148,8 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
     size_t ucmessageSize;
     size_t i, argsArraySize, argsCopySize, argSize;
     size_t mallocSize;
-    JSErrorReport *copy;
-    uint8_t *cursor;
+    JSErrorReport* copy;
+    uint8_t* cursor;
 
 #define JS_CHARS_SIZE(chars) ((js_strlen(chars) + 1) * sizeof(char16_t))
 
@@ -167,7 +167,7 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
 
             /* Non-null messageArgs should have at least one non-null arg. */
             MOZ_ASSERT(i != 0);
-            argsArraySize = (i + 1) * sizeof(const char16_t *);
+            argsArraySize = (i + 1) * sizeof(const char16_t*);
         }
     }
 
@@ -181,31 +181,31 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
     if (!cursor)
         return nullptr;
 
-    copy = (JSErrorReport *)cursor;
+    copy = (JSErrorReport*)cursor;
     memset(cursor, 0, sizeof(JSErrorReport));
     cursor += sizeof(JSErrorReport);
 
     if (argsArraySize != 0) {
-        copy->messageArgs = (const char16_t **)cursor;
+        copy->messageArgs = (const char16_t**)cursor;
         cursor += argsArraySize;
         for (i = 0; report->messageArgs[i]; ++i) {
-            copy->messageArgs[i] = (const char16_t *)cursor;
+            copy->messageArgs[i] = (const char16_t*)cursor;
             argSize = JS_CHARS_SIZE(report->messageArgs[i]);
             js_memcpy(cursor, report->messageArgs[i], argSize);
             cursor += argSize;
         }
         copy->messageArgs[i] = nullptr;
-        MOZ_ASSERT(cursor == (uint8_t *)copy->messageArgs[0] + argsCopySize);
+        MOZ_ASSERT(cursor == (uint8_t*)copy->messageArgs[0] + argsCopySize);
     }
 
     if (report->ucmessage) {
-        copy->ucmessage = (const char16_t *)cursor;
+        copy->ucmessage = (const char16_t*)cursor;
         js_memcpy(cursor, report->ucmessage, ucmessageSize);
         cursor += ucmessageSize;
     }
 
     if (report->uclinebuf) {
-        copy->uclinebuf = (const char16_t *)cursor;
+        copy->uclinebuf = (const char16_t*)cursor;
         js_memcpy(cursor, report->uclinebuf, uclinebufSize);
         cursor += uclinebufSize;
         if (report->uctokenptr) {
@@ -215,7 +215,7 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
     }
 
     if (report->linebuf) {
-        copy->linebuf = (const char *)cursor;
+        copy->linebuf = (const char*)cursor;
         js_memcpy(cursor, report->linebuf, linebufSize);
         cursor += linebufSize;
         if (report->tokenptr) {
@@ -225,10 +225,10 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
     }
 
     if (report->filename) {
-        copy->filename = (const char *)cursor;
+        copy->filename = (const char*)cursor;
         js_memcpy(cursor, report->filename, filenameSize);
     }
-    MOZ_ASSERT(cursor + filenameSize == (uint8_t *)copy + mallocSize);
+    MOZ_ASSERT(cursor + filenameSize == (uint8_t*)copy + mallocSize);
 
     /* Copy non-pointer members. */
     copy->isMuted = report->isMuted;
@@ -246,11 +246,11 @@ js::CopyErrorReport(JSContext *cx, JSErrorReport *report)
 
 struct SuppressErrorsGuard
 {
-    JSContext *cx;
+    JSContext* cx;
     JSErrorReporter prevReporter;
     JS::AutoSaveExceptionState prevState;
 
-    explicit SuppressErrorsGuard(JSContext *cx)
+    explicit SuppressErrorsGuard(JSContext* cx)
       : cx(cx),
         prevReporter(JS_SetErrorReporter(cx->runtime(), nullptr)),
         prevState(cx)
@@ -262,8 +262,8 @@ struct SuppressErrorsGuard
     }
 };
 
-JSString *
-js::ComputeStackString(JSContext *cx)
+JSString*
+js::ComputeStackString(JSContext* cx)
 {
     StringBuffer sb(cx);
 
@@ -290,12 +290,12 @@ js::ComputeStackString(JSContext *cx)
             /* Now the filename. */
 
             /* First, try the `//# sourceURL=some-display-url.js` directive. */
-            if (const char16_t *display = i.scriptDisplayURL()) {
+            if (const char16_t* display = i.scriptDisplayURL()) {
                 if (!sb.append(display, js_strlen(display)))
                     return nullptr;
             }
             /* Second, try the actual filename. */
-            else if (const char *filename = i.scriptFilename()) {
+            else if (const char* filename = i.scriptFilename()) {
                 if (!sb.append(filename, strlen(filename)))
                     return nullptr;
             }
@@ -328,14 +328,14 @@ js::ComputeStackString(JSContext *cx)
 }
 
 static void
-exn_finalize(FreeOp *fop, JSObject *obj)
+exn_finalize(FreeOp* fop, JSObject* obj)
 {
-    if (JSErrorReport *report = obj->as<ErrorObject>().getErrorReport())
+    if (JSErrorReport* report = obj->as<ErrorObject>().getErrorReport())
         fop->free_(report);
 }
 
-JSErrorReport *
-js_ErrorFromException(JSContext *cx, HandleObject objArg)
+JSErrorReport*
+js_ErrorFromException(JSContext* cx, HandleObject objArg)
 {
     // It's ok to UncheckedUnwrap here, since all we do is get the
     // JSErrorReport, and consumers are careful with the information they get
@@ -351,7 +351,7 @@ js_ErrorFromException(JSContext *cx, HandleObject objArg)
 }
 
 bool
-Error(JSContext *cx, unsigned argc, Value *vp)
+Error(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -373,7 +373,7 @@ Error(JSContext *cx, unsigned argc, Value *vp)
     } else {
         fileName = cx->runtime()->emptyString;
         if (!iter.done()) {
-            if (const char *cfilename = iter.scriptFilename())
+            if (const char* cfilename = iter.scriptFilename())
                 fileName = JS_NewStringCopyZ(cx, cfilename);
         }
     }
@@ -415,7 +415,7 @@ Error(JSContext *cx, unsigned argc, Value *vp)
  * Return a string that may eval to something similar to the original object.
  */
 static bool
-exn_toSource(JSContext *cx, unsigned argc, Value *vp)
+exn_toSource(JSContext* cx, unsigned argc, Value* vp)
 {
     JS_CHECK_RECURSION(cx, return false);
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -426,7 +426,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
 
     RootedValue nameVal(cx);
     RootedString name(cx);
-    if (!JSObject::getProperty(cx, obj, obj, cx->names().name, &nameVal) ||
+    if (!GetProperty(cx, obj, obj, cx->names().name, &nameVal) ||
         !(name = ToString<CanGC>(cx, nameVal)))
     {
         return false;
@@ -434,7 +434,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
 
     RootedValue messageVal(cx);
     RootedString message(cx);
-    if (!JSObject::getProperty(cx, obj, obj, cx->names().message, &messageVal) ||
+    if (!GetProperty(cx, obj, obj, cx->names().message, &messageVal) ||
         !(message = ValueToSource(cx, messageVal)))
     {
         return false;
@@ -442,7 +442,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
 
     RootedValue filenameVal(cx);
     RootedString filename(cx);
-    if (!JSObject::getProperty(cx, obj, obj, cx->names().fileName, &filenameVal) ||
+    if (!GetProperty(cx, obj, obj, cx->names().fileName, &filenameVal) ||
         !(filename = ValueToSource(cx, filenameVal)))
     {
         return false;
@@ -450,7 +450,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
 
     RootedValue linenoVal(cx);
     uint32_t lineno;
-    if (!JSObject::getProperty(cx, obj, obj, cx->names().lineNumber, &linenoVal) ||
+    if (!GetProperty(cx, obj, obj, cx->names().lineNumber, &linenoVal) ||
         !ToUint32(cx, linenoVal, &lineno))
     {
         return false;
@@ -472,7 +472,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
         if (filename->empty() && !sb.append(", \"\""))
                 return false;
 
-        JSString *linenumber = ToString<CanGC>(cx, linenoVal);
+        JSString* linenumber = ToString<CanGC>(cx, linenoVal);
         if (!linenumber)
             return false;
         if (!sb.append(", ") || !sb.append(linenumber))
@@ -482,7 +482,7 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
     if (!sb.append("))"))
         return false;
 
-    JSString *str = sb.finishString();
+    JSString* str = sb.finishString();
     if (!str)
         return false;
     args.rval().setString(str);
@@ -490,18 +490,8 @@ exn_toSource(JSContext *cx, unsigned argc, Value *vp)
 }
 #endif
 
-/* JSProto_ ordering for exceptions shall match JSEXN_ constants. */
-JS_STATIC_ASSERT(JSEXN_ERR == 0);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_INTERNALERR  == JSProto_InternalError);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_EVALERR      == JSProto_EvalError);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_RANGEERR     == JSProto_RangeError);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_REFERENCEERR == JSProto_ReferenceError);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_SYNTAXERR    == JSProto_SyntaxError);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_TYPEERR      == JSProto_TypeError);
-JS_STATIC_ASSERT(JSProto_Error + JSEXN_URIERR       == JSProto_URIError);
-
-/* static */ JSObject *
-ErrorObject::createProto(JSContext *cx, JSProtoKey key)
+/* static */ JSObject*
+ErrorObject::createProto(JSContext* cx, JSProtoKey key)
 {
     RootedObject errorProto(cx, GenericCreatePrototype(cx, key));
     if (!errorProto)
@@ -517,17 +507,14 @@ ErrorObject::createProto(JSContext *cx, JSProtoKey key)
     // instance properties.
     RootedPropertyName name(cx, ClassName(key, cx));
     RootedValue nameValue(cx, StringValue(name));
-    if (!JSObject::defineProperty(cx, err, cx->names().name, nameValue,
-                                  JS_PropertyStub, JS_StrictPropertyStub, 0))
-    {
+    if (!DefineProperty(cx, err, cx->names().name, nameValue, nullptr, nullptr, 0))
         return nullptr;
-    }
 
     return errorProto;
 }
 
-/* static */ JSObject *
-ErrorObject::createConstructor(JSContext *cx, JSProtoKey key)
+/* static */ JSObject*
+ErrorObject::createConstructor(JSContext* cx, JSProtoKey key)
 {
     RootedObject ctor(cx);
     ctor = GenericCreateConstructor<Error, 1, JSFunction::ExtendedFinalizeKind>(cx, key);
@@ -538,8 +525,8 @@ ErrorObject::createConstructor(JSContext *cx, JSProtoKey key)
     return ctor;
 }
 
-JS_FRIEND_API(JSFlatString *)
-js::GetErrorTypeName(JSRuntime *rt, int16_t exnType)
+JS_FRIEND_API(JSFlatString*)
+js::GetErrorTypeName(JSRuntime* rt, int16_t exnType)
 {
     /*
      * JSEXN_INTERNALERR returns null to prevent that "InternalError: "
@@ -555,8 +542,8 @@ js::GetErrorTypeName(JSRuntime *rt, int16_t exnType)
 }
 
 bool
-js_ErrorToException(JSContext *cx, const char *message, JSErrorReport *reportp,
-                    JSErrorCallback callback, void *userRef)
+js_ErrorToException(JSContext* cx, const char* message, JSErrorReport* reportp,
+                    JSErrorCallback callback, void* userRef)
 {
     // Tell our caller to report immediately if this report is just a warning.
     MOZ_ASSERT(reportp);
@@ -567,7 +554,7 @@ js_ErrorToException(JSContext *cx, const char *message, JSErrorReport *reportp,
     JSErrNum errorNumber = static_cast<JSErrNum>(reportp->errorNumber);
     if (!callback)
         callback = js_GetErrorMessage;
-    const JSErrorFormatString *errorString = callback(userRef, errorNumber);
+    const JSErrorFormatString* errorString = callback(userRef, errorNumber);
     JSExnType exnType = errorString ? static_cast<JSExnType>(errorString->exnType) : JSEXN_NONE;
     MOZ_ASSERT(exnType < JSEXN_LIMIT);
 
@@ -617,13 +604,13 @@ js_ErrorToException(JSContext *cx, const char *message, JSErrorReport *reportp,
 }
 
 static bool
-IsDuckTypedErrorObject(JSContext *cx, HandleObject exnObject, const char **filename_strp)
+IsDuckTypedErrorObject(JSContext* cx, HandleObject exnObject, const char** filename_strp)
 {
     bool found;
     if (!JS_HasProperty(cx, exnObject, js_message_str, &found) || !found)
         return false;
 
-    const char *filename_str = *filename_strp;
+    const char* filename_str = *filename_strp;
     if (!JS_HasProperty(cx, exnObject, filename_str, &found) || !found) {
         /* Now try "fileName", in case this quacks like an Error */
         filename_str = js_fileName_str;
@@ -638,8 +625,8 @@ IsDuckTypedErrorObject(JSContext *cx, HandleObject exnObject, const char **filen
     return true;
 }
 
-JS_FRIEND_API(JSString *)
-js::ErrorReportToString(JSContext *cx, JSErrorReport *reportp)
+JS_FRIEND_API(JSString*)
+js::ErrorReportToString(JSContext* cx, JSErrorReport* reportp)
 {
     JSExnType type = static_cast<JSExnType>(reportp->exnType);
     RootedString str(cx, cx->runtime()->emptyString);
@@ -658,7 +645,7 @@ js::ErrorReportToString(JSContext *cx, JSErrorReport *reportp)
 }
 
 bool
-js_ReportUncaughtException(JSContext *cx)
+js_ReportUncaughtException(JSContext* cx)
 {
     if (!cx->isExceptionPending())
         return true;
@@ -681,7 +668,7 @@ js_ReportUncaughtException(JSContext *cx)
     return true;
 }
 
-ErrorReport::ErrorReport(JSContext *cx)
+ErrorReport::ErrorReport(JSContext* cx)
   : reportp(nullptr),
     message_(nullptr),
     ownedMessage(nullptr),
@@ -700,7 +687,7 @@ ErrorReport::~ErrorReport()
     if (ownedReport.messageArgs) {
         /*
          * js_ExpandErrorArguments owns its messageArgs only if it had to
-         * inflate the arguments (from regular |char *|s), which is always in
+         * inflate the arguments (from regular |char*|s), which is always in
          * our case.
          */
         size_t i = 0;
@@ -712,7 +699,7 @@ ErrorReport::~ErrorReport()
 }
 
 bool
-ErrorReport::init(JSContext *cx, HandleValue exn)
+ErrorReport::init(JSContext* cx, HandleValue exn)
 {
     MOZ_ASSERT(!cx->isExceptionPending());
 
@@ -723,8 +710,31 @@ ErrorReport::init(JSContext *cx, HandleValue exn)
     if (exn.isObject()) {
         exnObject = &exn.toObject();
         reportp = js_ErrorFromException(cx, exnObject);
-    }
 
+        JSCompartment* comp = exnObject->compartment();
+        JSAddonId* addonId = comp->addonId;
+        if (addonId) {
+            UniqueChars addonIdChars(JS_EncodeString(cx, addonId));
+
+            const char* filename = nullptr;
+            
+            if (reportp && reportp->filename) {
+                filename = strrchr(reportp->filename, '/');
+                if (filename)
+                    filename++;
+            }
+            if (!filename) {
+                filename = "FILE_NOT_FOUND";
+            }
+            char histogramKey[64];
+            JS_snprintf(histogramKey, sizeof(histogramKey),
+                        "%s %s %u",
+                        addonIdChars.get(),
+                        filename,
+                        (reportp ? reportp->lineno : 0) );
+            cx->runtime()->addTelemetry(JS_TELEMETRY_ADDON_EXCEPTIONS, 1, histogramKey);
+        }
+    }
     // Be careful not to invoke ToString if we've already successfully extracted
     // an error report, since the exception might be wrapped in a security
     // wrapper, and ToString-ing it might throw.
@@ -744,7 +754,7 @@ ErrorReport::init(JSContext *cx, HandleValue exn)
     // have to do it in that order, because DOMExceptions have Error.prototype
     // on their proto chain, and hence also have a "fileName" property, but its
     // value is "".
-    const char *filename_str = "filename";
+    const char* filename_str = "filename";
     if (!reportp && exnObject && IsDuckTypedErrorObject(cx, exnObject, &filename_str))
     {
         // Temporary value for pulling properties off of duck-typed objects.
@@ -786,7 +796,7 @@ ErrorReport::init(JSContext *cx, HandleValue exn)
         }
 
         if (JS_GetProperty(cx, exnObject, filename_str, &val)) {
-            JSString *tmp = ToString<CanGC>(cx, val);
+            JSString* tmp = ToString<CanGC>(cx, val);
             if (tmp)
                 filename.encodeLatin1(cx, tmp);
             else
@@ -843,7 +853,11 @@ ErrorReport::init(JSContext *cx, HandleValue exn)
         //
         // but without the reporting bits.  Instead it just puts all
         // the stuff we care about in our ownedReport and message_.
-        populateUncaughtExceptionReport(cx, message_);
+        if (!populateUncaughtExceptionReport(cx, message_)) {
+            // Just give up.  We're out of memory or something; not much we can
+            // do here.
+            return false;
+        }
     } else {
         /* Flag the error as an exception. */
         reportp->flags |= JSREPORT_EXCEPTION;
@@ -852,17 +866,18 @@ ErrorReport::init(JSContext *cx, HandleValue exn)
     return true;
 }
 
-void
-ErrorReport::populateUncaughtExceptionReport(JSContext *cx, ...)
+bool
+ErrorReport::populateUncaughtExceptionReport(JSContext* cx, ...)
 {
     va_list ap;
     va_start(ap, cx);
-    populateUncaughtExceptionReportVA(cx, ap);
+    bool ok = populateUncaughtExceptionReportVA(cx, ap);
     va_end(ap);
+    return ok;
 }
 
-void
-ErrorReport::populateUncaughtExceptionReportVA(JSContext *cx, va_list ap)
+bool
+ErrorReport::populateUncaughtExceptionReportVA(JSContext* cx, va_list ap)
 {
     new (&ownedReport) JSErrorReport();
     ownedReport.flags = JSREPORT_ERROR;
@@ -880,19 +895,20 @@ ErrorReport::populateUncaughtExceptionReportVA(JSContext *cx, va_list ap)
     if (!js_ExpandErrorArguments(cx, js_GetErrorMessage, nullptr,
                                  JSMSG_UNCAUGHT_EXCEPTION, &ownedMessage,
                                  &ownedReport, ArgumentsAreASCII, ap)) {
-        return;
+        return false;
     }
 
     reportp = &ownedReport;
     message_ = ownedMessage;
     ownsMessageAndReport = true;
+    return true;
 }
 
-JSObject *
-js_CopyErrorObject(JSContext *cx, Handle<ErrorObject*> err)
+JSObject*
+js_CopyErrorObject(JSContext* cx, Handle<ErrorObject*> err)
 {
     js::ScopedJSFreePtr<JSErrorReport> copyReport;
-    if (JSErrorReport *errorReport = err->getErrorReport()) {
+    if (JSErrorReport* errorReport = err->getErrorReport()) {
         copyReport = CopyErrorReport(cx, errorReport);
         if (!copyReport)
             return nullptr;
@@ -917,8 +933,8 @@ js_CopyErrorObject(JSContext *cx, Handle<ErrorObject*> err)
 }
 
 JS_PUBLIC_API(bool)
-JS::CreateError(JSContext *cx, JSExnType type, HandleString stack, HandleString fileName,
-                    uint32_t lineNumber, uint32_t columnNumber, JSErrorReport *report,
+JS::CreateError(JSContext* cx, JSExnType type, HandleString stack, HandleString fileName,
+                    uint32_t lineNumber, uint32_t columnNumber, JSErrorReport* report,
                     HandleString message, MutableHandleValue rval)
 {
     assertSameCompartment(cx, stack, fileName, message);

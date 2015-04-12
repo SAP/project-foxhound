@@ -6,7 +6,6 @@
 #ifndef mozilla_a11y_DocAccessible_h__
 #define mozilla_a11y_DocAccessible_h__
 
-#include "xpcAccessibleDocument.h"
 #include "nsIAccessiblePivot.h"
 
 #include "AccEvent.h"
@@ -39,7 +38,6 @@ template<class Class, class Arg>
 class TNotification;
 
 class DocAccessible : public HyperTextAccessibleWrap,
-                      public xpcAccessibleDocument,
                       public nsIDocumentObserver,
                       public nsIObserver,
                       public nsIScrollPositionListener,
@@ -50,7 +48,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocAccessible, Accessible)
 
   NS_DECL_NSIOBSERVER
-
   NS_DECL_NSIACCESSIBLEPIVOTOBSERVER
 
 public:
@@ -59,39 +56,39 @@ public:
                 nsIPresShell* aPresShell);
 
   // nsIScrollPositionListener
-  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) {}
-  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY);
+  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) override {}
+  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY) override;
 
   // nsIDocumentObserver
   NS_DECL_NSIDOCUMENTOBSERVER
 
   // Accessible
   virtual void Init();
-  virtual void Shutdown();
-  virtual nsIFrame* GetFrame() const;
-  virtual nsINode* GetNode() const { return mDocumentNode; }
+  virtual void Shutdown() override;
+  virtual nsIFrame* GetFrame() const override;
+  virtual nsINode* GetNode() const override { return mDocumentNode; }
   nsIDocument* DocumentNode() const { return mDocumentNode; }
 
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
-  virtual void Description(nsString& aDescription);
-  virtual Accessible* FocusedChild();
-  virtual mozilla::a11y::role NativeRole() MOZ_OVERRIDE;
-  virtual uint64_t NativeState() MOZ_OVERRIDE;
-  virtual uint64_t NativeInteractiveState() const MOZ_OVERRIDE;
-  virtual bool NativelyUnavailable() const;
-  virtual void ApplyARIAState(uint64_t* aState) const;
-  virtual already_AddRefed<nsIPersistentProperties> Attributes();
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) override;
+  virtual void Description(nsString& aDescription) override;
+  virtual Accessible* FocusedChild() override;
+  virtual mozilla::a11y::role NativeRole() override;
+  virtual uint64_t NativeState() override;
+  virtual uint64_t NativeInteractiveState() const override;
+  virtual bool NativelyUnavailable() const override;
+  virtual void ApplyARIAState(uint64_t* aState) const override;
+  virtual already_AddRefed<nsIPersistentProperties> Attributes() override;
 
-  virtual void TakeFocus() MOZ_OVERRIDE;
+  virtual void TakeFocus() override;
 
 #ifdef A11Y_LOG
-  virtual nsresult HandleAccEvent(AccEvent* aEvent);
+  virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
 #endif
 
-  virtual nsRect RelativeBounds(nsIFrame** aRelativeFrame) const MOZ_OVERRIDE;
+  virtual nsRect RelativeBounds(nsIFrame** aRelativeFrame) const override;
 
   // HyperTextAccessible
-  virtual already_AddRefed<nsIEditor> GetEditor() const;
+  virtual already_AddRefed<nsIEditor> GetEditor() const override;
 
   // DocAccessible
 
@@ -324,7 +321,7 @@ public:
   {
     // Update the whole tree of this document accessible when the container is
     // null (document element is removed).
-    UpdateTree((aContainer ? aContainer : this), aChildNode, false);
+    UpdateTreeOnRemoval((aContainer ? aContainer : this), aChildNode);
   }
   void ContentRemoved(nsIContent* aContainerNode, nsIContent* aChildNode)
   {
@@ -347,7 +344,7 @@ protected:
   void LastRelease();
 
   // Accessible
-  virtual void CacheChildren();
+  virtual void CacheChildren() override;
 
   // DocAccessible
   virtual nsresult AddEventListeners();
@@ -468,13 +465,17 @@ protected:
   void ProcessInvalidationList();
 
   /**
-   * Update the accessible tree for content insertion or removal.
+   * Update the tree on content insertion.
    */
-  void UpdateTree(Accessible* aContainer, nsIContent* aChildNode,
-                  bool aIsInsert);
+  void UpdateTreeOnInsertion(Accessible* aContainer);
 
   /**
-   * Helper for UpdateTree() method. Go down to DOM subtree and updates
+   * Update the accessible tree for content removal.
+   */
+  void UpdateTreeOnRemoval(Accessible* aContainer, nsIContent* aChildNode);
+
+  /**
+   * Helper for UpdateTreeOn methods. Go down to DOM subtree and updates
    * accessible tree. Return one of these flags.
    */
   enum EUpdateTreeFlags {

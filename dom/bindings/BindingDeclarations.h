@@ -39,6 +39,14 @@ protected:
   bool StringifyToJSON(JSContext* aCx,
                        JS::MutableHandle<JS::Value> aValue,
                        nsAString& aJSON) const;
+
+  // Struct used as a way to force a dictionary constructor to not init the
+  // dictionary (via constructing from a pointer to this class).  We're putting
+  // it here so that all the dictionaries will have access to it, but outside
+  // code will not.
+  struct FastDictionaryInitializer {
+  };
+
 private:
   // aString is expected to actually be an nsAString*.  Should only be
   // called from StringifyToJSON.
@@ -92,8 +100,10 @@ public:
 protected:
   JS::Rooted<JSObject*> mGlobalJSObject;
   JSContext* mCx;
-  mutable nsISupports* mGlobalObject;
-  mutable nsCOMPtr<nsISupports> mGlobalObjectRef;
+  mutable nsISupports* MOZ_UNSAFE_REF("Valid because GlobalObject is a stack "
+                                      "class, and mGlobalObject points to the "
+                                      "global, so it won't be destroyed as long "
+                                      "as GlobalObject lives on the stack") mGlobalObject;
 };
 
 // Class for representing optional arguments.
@@ -169,8 +179,8 @@ public:
 
 private:
   // Forbid copy-construction and assignment
-  Optional_base(const Optional_base& other) MOZ_DELETE;
-  const Optional_base &operator=(const Optional_base &other) MOZ_DELETE;
+  Optional_base(const Optional_base& other) = delete;
+  const Optional_base &operator=(const Optional_base &other) = delete;
 
 protected:
   Maybe<InternalType> mImpl;
@@ -259,9 +269,9 @@ template<>
 class Optional<JS::Value>
 {
 private:
-  Optional() MOZ_DELETE;
+  Optional() = delete;
 
-  explicit Optional(JS::Value aValue) MOZ_DELETE;
+  explicit Optional(JS::Value aValue) = delete;
 };
 
 // A specialization of Optional for NonNull that lets us get a T& from Value()
@@ -352,8 +362,8 @@ public:
 
 private:
   // Forbid copy-construction and assignment
-  Optional(const Optional& other) MOZ_DELETE;
-  const Optional &operator=(const Optional &other) MOZ_DELETE;
+  Optional(const Optional& other) = delete;
+  const Optional &operator=(const Optional &other) = delete;
 
   bool mPassed;
   const nsAString* mStr;
@@ -459,7 +469,7 @@ GetWrapperCache(const SmartPtr<T>& aObject)
   return GetWrapperCache(aObject.get());
 }
 
-struct ParentObject {
+struct MOZ_STACK_CLASS ParentObject {
   template<class T>
   ParentObject(T* aObject) :
     mObject(aObject),
@@ -480,7 +490,9 @@ struct ParentObject {
     mUseXBLScope(false)
   {}
 
-  nsISupports* const mObject;
+  // We don't want to make this an nsCOMPtr because of performance reasons, but
+  // it's safe because ParentObject is a stack class.
+  nsISupports* const MOZ_NON_OWNING_REF mObject;
   nsWrapperCache* const mWrapperCache;
   bool mUseXBLScope;
 };

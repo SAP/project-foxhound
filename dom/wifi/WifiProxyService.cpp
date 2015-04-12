@@ -65,13 +65,16 @@ public:
   NS_IMETHOD Run()
   {
     MOZ_ASSERT(!NS_IsMainThread());
+#ifdef MOZ_NUWA_PROCESS
+    NS_SetIgnoreStatusOfCurrentThread();
+#endif
     nsAutoString event;
     gWpaSupplicant->WaitForEvent(event, mInterface);
     if (!event.IsEmpty()) {
 #ifdef MOZ_TASK_TRACER
       // Make wifi initialization events to be the source events of TaskTracer,
       // and originate the rest correlation tasks from here.
-      AutoSourceEvent taskTracerEvent(SourceEventType::WIFI);
+      AutoSourceEvent taskTracerEvent(SourceEventType::Wifi);
       AddLabel("%s %s", mInterface.get(), NS_ConvertUTF16toUTF8(event).get());
 #endif
       nsCOMPtr<nsIRunnable> runnable = new WifiEventDispatcher(event, mInterface);

@@ -8,7 +8,7 @@
 #include "UnwinderThread2.h"
 
 SyncProfile::SyncProfile(ThreadInfo* aInfo, int aEntrySize)
-  : ThreadProfile(aInfo, aEntrySize)
+  : ThreadProfile(aInfo, new ProfileBuffer(aEntrySize))
   , mOwnerState(REFERENCED)
   , mUtb(nullptr)
 {
@@ -21,7 +21,10 @@ SyncProfile::~SyncProfile()
   if (mUtb) {
     utb__release_sync_buffer(mUtb);
   }
-  Sampler::FreePlatformData(GetPlatformData());
+
+  // SyncProfile owns the ThreadInfo; see NewSyncProfile.
+  ThreadInfo* info = GetThreadInfo();
+  delete info;
 }
 
 bool
@@ -54,7 +57,6 @@ SyncProfile::EndUnwind()
     utb__end_sync_buffer_unwind(mUtb);
   }
   if (mOwnerState != ORPHANED) {
-    flush();
     mOwnerState = OWNED;
   }
   // Save mOwnerState before we release the mutex

@@ -30,12 +30,12 @@ static const uint32_t kGenericAccType = 0;
  *
  *  Definition of nsRoleMapEntry contains comments explaining this table.
  *
- *  When no nsIAccessibleRole enum mapping exists for an ARIA role, the
- *  role will be exposed via the object attribute "xml-roles".
- *  In addition, in MSAA, the unmapped role will also be exposed as a BSTR string role.
+ *  When no Role enum mapping exists for an ARIA role, the role will be exposed
+ *  via the object attribute "xml-roles".
  *
- *  There are no nsIAccessibleRole enums for the following landmark roles:
- *    banner, contentinfo, main, navigation, note, search, secondary, seealso, breadcrumbs
+ *  There are no Role enums for the following landmark roles:
+ *    banner, contentinfo, main, navigation, note, search, secondary,
+ *    seealso, breadcrumbs.
  */
 
 static nsRoleMapEntry sWAIRoleMaps[] =
@@ -366,6 +366,16 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     kNoReqStates,
     eARIACheckableBool
   },
+  { // none
+    &nsGkAtoms::none,
+    roles::NOTHING,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
+    kNoReqStates
+  },
   { // note
     &nsGkAtoms::note_,
     roles::NOTE,
@@ -681,6 +691,7 @@ static const EStateRule sWAIUnivStateMap[] = {
   eARIAExpanded,  // Currently under spec review but precedent exists
   eARIAHasPopup,  // Note this is technically a "property"
   eARIAInvalid,
+  eARIAModal,
   eARIARequired,  // XXX not global, Bug 553117
   eARIANone
 };
@@ -710,12 +721,13 @@ static const AttrCharacteristics gWAIUnivAttrMap[] = {
   {&nsGkAtoms::aria_flowto,            ATTR_BYPASSOBJ                 | ATTR_GLOBAL },
   {&nsGkAtoms::aria_grabbed,                            ATTR_VALTOKEN | ATTR_GLOBAL },
   {&nsGkAtoms::aria_haspopup,          ATTR_BYPASSOBJ | ATTR_VALTOKEN | ATTR_GLOBAL },
-  {&nsGkAtoms::aria_hidden,   ATTR_BYPASSOBJ_IF_FALSE | ATTR_VALTOKEN | ATTR_GLOBAL },
+  {&nsGkAtoms::aria_hidden,            ATTR_BYPASSOBJ | ATTR_VALTOKEN | ATTR_GLOBAL }, /* handled special way */
   {&nsGkAtoms::aria_invalid,           ATTR_BYPASSOBJ | ATTR_VALTOKEN | ATTR_GLOBAL },
   {&nsGkAtoms::aria_label,             ATTR_BYPASSOBJ                 | ATTR_GLOBAL },
   {&nsGkAtoms::aria_labelledby,        ATTR_BYPASSOBJ                 | ATTR_GLOBAL },
   {&nsGkAtoms::aria_level,             ATTR_BYPASSOBJ                               }, /* handled via groupPosition */
   {&nsGkAtoms::aria_live,                               ATTR_VALTOKEN | ATTR_GLOBAL },
+  {&nsGkAtoms::aria_modal,             ATTR_BYPASSOBJ | ATTR_VALTOKEN | ATTR_GLOBAL },
   {&nsGkAtoms::aria_multiline,         ATTR_BYPASSOBJ | ATTR_VALTOKEN               },
   {&nsGkAtoms::aria_multiselectable,   ATTR_BYPASSOBJ | ATTR_VALTOKEN               },
   {&nsGkAtoms::aria_owns,              ATTR_BYPASSOBJ                 | ATTR_GLOBAL },
@@ -794,6 +806,15 @@ aria::AttrCharacteristicsFor(nsIAtom* aAtom)
       return gWAIUnivAttrMap[i].characteristics;
 
   return 0;
+}
+
+bool
+aria::HasDefinedARIAHidden(nsIContent* aContent)
+{
+  return aContent &&
+    nsAccUtils::HasDefinedARIAToken(aContent, nsGkAtoms::aria_hidden) &&
+    !aContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::aria_hidden,
+                           nsGkAtoms::_false, eCaseMatters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

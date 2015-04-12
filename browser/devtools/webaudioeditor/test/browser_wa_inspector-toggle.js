@@ -6,7 +6,7 @@
  * the inspector panel as intended.
  */
 
-function spawnTest() {
+add_task(function*() {
   let { target, panel } = yield initWebAudioEditor(SIMPLE_CONTEXT_URL);
   let { panelWin } = panel;
   let { gFront, $, $$, EVENTS, InspectorView } = panelWin;
@@ -34,8 +34,6 @@ function spawnTest() {
     "InspectorView empty message should still be visible.");
   ok(!isVisible($("#web-audio-editor-tabs")),
     "InspectorView tabs view should still be hidden.");
-  is($("#web-audio-inspector-title").value, "AudioNode Inspector",
-    "Inspector should still have default title.");
 
   // Close inspector pane
   $("#inspector-pane-toggle").click();
@@ -51,16 +49,12 @@ function spawnTest() {
   ok(!isVisible($("#web-audio-editor-tabs")),
     "InspectorView tabs are still hidden.");
 
-  click(panelWin, findGraphNode(panelWin, nodeIds[1]));
-  yield once(panelWin, EVENTS.UI_INSPECTOR_NODE_SET);
+  yield clickGraphNode(panelWin, findGraphNode(panelWin, nodeIds[1]));
 
   ok(!isVisible($("#web-audio-editor-details-pane-empty")),
     "Empty message hides even when loading node while open.");
   ok(isVisible($("#web-audio-editor-tabs")),
     "Switches to tab view when loading node while open.");
-  is($("#web-audio-inspector-title").value, "Oscillator",
-    "Inspector title updates when loading node while open.");
 
-  yield teardown(panel);
-  finish();
-}
+  yield teardown(target);
+});

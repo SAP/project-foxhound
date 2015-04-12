@@ -196,13 +196,11 @@ FT2FontEntry::CreateScaledFont(const gfxFontStyle *aStyle)
             aStyle->allowSyntheticStyle;
 
     if (needsOblique) {
-        const double kSkewFactor = 0.25;
-
         cairo_matrix_t style;
         cairo_matrix_init(&style,
                           1,                //xx
                           0,                //yx
-                          -1 * kSkewFactor,  //xy
+                          -1 * OBLIQUE_SKEW_FACTOR, //xy
                           1,                //yy
                           0,                //x0
                           0);               //y0
@@ -624,20 +622,18 @@ public:
         : mWriteNeeded(false)
     {
         mOps = (PLDHashTableOps) {
-            PL_DHashAllocTable,
-            PL_DHashFreeTable,
             StringHash,
             HashMatchEntry,
             MoveEntry,
             PL_DHashClearEntryStub,
-            PL_DHashFinalizeStub,
             nullptr
         };
 
-        PL_DHashTableInit(&mMap, &mOps, nullptr, sizeof(FNCMapEntry), 0);
+        PL_DHashTableInit(&mMap, &mOps, sizeof(FNCMapEntry), 0);
 
-        NS_ABORT_IF_FALSE(XRE_GetProcessType() == GeckoProcessType_Default,
-                          "StartupCacheFontNameCache should only be used in chrome process");
+        MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default,
+                   "StartupCacheFontNameCache should only be used in chrome "
+                   "process");
         mCache = mozilla::scache::StartupCache::GetSingleton();
 
         Init();
@@ -645,7 +641,7 @@ public:
 
     ~FontNameCache()
     {
-        if (!mMap.ops) {
+        if (!mMap.IsInitialized()) {
             return;
         }
         if (!mWriteNeeded || !mCache) {
@@ -661,7 +657,7 @@ public:
 
     void Init()
     {
-        if (!mMap.ops || !mCache) {
+        if (!mMap.IsInitialized() || !mCache) {
             return;
         }
         uint32_t size;
@@ -692,9 +688,8 @@ public:
             }
             uint32_t filesize = strtoul(beginning, nullptr, 10);
 
-            FNCMapEntry* mapEntry =
-                static_cast<FNCMapEntry*>
-                (PL_DHashTableOperate(&mMap, filename.get(), PL_DHASH_ADD));
+            FNCMapEntry* mapEntry = static_cast<FNCMapEntry*>
+                (PL_DHashTableAdd(&mMap, filename.get(), fallible));
             if (mapEntry) {
                 mapEntry->mFilename.Assign(filename);
                 mapEntry->mTimestamp = timestamp;
@@ -717,16 +712,13 @@ public:
     GetInfoForFile(const nsCString& aFileName, nsCString& aFaceList,
                    uint32_t *aTimestamp, uint32_t *aFilesize)
     {
-        if (!mMap.ops) {
+        if (!mMap.IsInitialized()) {
             return;
         }
-        PLDHashEntryHdr *hdr =
-            PL_DHashTableOperate(&mMap, aFileName.get(), PL_DHASH_LOOKUP);
-        if (!hdr) {
-            return;
-        }
-        FNCMapEntry* entry = static_cast<FNCMapEntry*>(hdr);
-        if (entry && entry->mFilesize) {
+        FNCMapEntry *entry =
+            static_cast<FNCMapEntry*>(PL_DHashTableSearch(&mMap,
+                                                          aFileName.get()));
+        if (entry) {
             *aTimestamp = entry->mTimestamp;
             *aFilesize = entry->mFilesize;
             aFaceList.Assign(entry->mFaces);
@@ -741,12 +733,11 @@ public:
     CacheFileInfo(const nsCString& aFileName, const nsCString& aFaceList,
                   uint32_t aTimestamp, uint32_t aFilesize)
     {
-        if (!mMap.ops) {
+        if (!mMap.IsInitialized()) {
             return;
         }
-        FNCMapEntry* entry =
-            static_cast<FNCMapEntry*>
-            (PL_DHashTableOperate(&mMap, aFileName.get(), PL_DHASH_ADD));
+        FNCMapEntry* entry = static_cast<FNCMapEntry*>
+            (PL_DHashTableAdd(&mMap, aFileName.get(), fallible));
         if (entry) {
             entry->mFilename.Assign(aFileName);
             entry->mTimestamp = aTimestamp;
@@ -1104,7 +1095,6 @@ gfxFT2FontList::AppendFacesFromOmnijarEntry(nsZipArchive* aArchive,
     uint32_t bufSize = item->RealSize();
     // We use fallible allocation here; if there's not enough RAM, we'll simply
     // ignore the bundled fonts and fall back to the device's installed fonts.
-    static const fallible_t fallible = fallible_t();
     nsAutoArrayPtr<uint8_t> buf(new (fallible) uint8_t[bufSize]);
     if (!buf) {
         return;

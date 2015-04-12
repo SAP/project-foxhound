@@ -197,8 +197,11 @@ Convert(bt_property_type_t aIn, BluetoothPropertyType& aOut)
     CONVERT(BT_PROPERTY_ADAPTER_DISCOVERY_TIMEOUT,
       PROPERTY_ADAPTER_DISCOVERY_TIMEOUT),
     CONVERT(BT_PROPERTY_REMOTE_FRIENDLY_NAME, PROPERTY_REMOTE_FRIENDLY_NAME),
-    CONVERT(BT_PROPERTY_REMOTE_RSSI, PROPERTY_REMOTE_RSSI),
+    CONVERT(BT_PROPERTY_REMOTE_RSSI, PROPERTY_REMOTE_RSSI)
+#if ANDROID_VERSION >= 18
+    ,
     CONVERT(BT_PROPERTY_REMOTE_VERSION_INFO,PROPERTY_REMOTE_VERSION_INFO)
+#endif
   };
   if (aIn == BT_PROPERTY_REMOTE_DEVICE_TIMESTAMP) {
     /* This case is handled separately to not populate
@@ -765,6 +768,56 @@ Convert(btrc_remote_features_t aIn, unsigned long& aOut)
 }
 #endif // ANDROID_VERSION >= 19
 
+#if ANDROID_VERSION >= 21
+inline nsresult
+Convert(BluetoothTransport aIn, int& aOut)
+{
+  static const int sTransport[] = {
+    CONVERT(TRANSPORT_AUTO, 0),
+    CONVERT(TRANSPORT_BREDR, 1),
+    CONVERT(TRANSPORT_LE, 2)
+  };
+  if (NS_WARN_IF(aIn >= MOZ_ARRAY_LENGTH(sTransport))) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+  aOut = sTransport[aIn];
+  return NS_OK;
+}
+
+nsresult
+Convert(const bt_activity_energy_info& aIn, BluetoothActivityEnergyInfo& aOut);
+
+inline nsresult
+Convert(bthf_wbs_config_t aIn, BluetoothHandsfreeWbsConfig& aOut)
+{
+  static const BluetoothHandsfreeWbsConfig sWbsConfig[] = {
+    CONVERT(BTHF_WBS_NONE, HFP_WBS_NONE),
+    CONVERT(BTHF_WBS_NO, HFP_WBS_NO),
+    CONVERT(BTHF_WBS_YES, HFP_WBS_YES)
+  };
+  if (NS_WARN_IF(aIn >= MOZ_ARRAY_LENGTH(sWbsConfig))) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+  aOut = sWbsConfig[aIn];
+  return NS_OK;
+}
+
+inline nsresult
+Convert(BluetoothHandsfreeWbsConfig aIn, bthf_wbs_config_t& aOut)
+{
+  static const bthf_wbs_config_t sWbsConfig[] = {
+    CONVERT(HFP_WBS_NONE, BTHF_WBS_NONE),
+    CONVERT(HFP_WBS_NO, BTHF_WBS_NO),
+    CONVERT(HFP_WBS_YES, BTHF_WBS_YES)
+  };
+  if (NS_WARN_IF(aIn >= MOZ_ARRAY_LENGTH(sWbsConfig))) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+  aOut = sWbsConfig[aIn];
+  return NS_OK;
+}
+#endif // ANDROID_VERSION >= 21
+
 /* |ConvertArray| is a helper for converting arrays. Pass an
  * instance of this structure as the first argument to |Convert|
  * to convert an array. The output type has to support the array
@@ -861,7 +914,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     ((*mObj).*mMethod)();
     return NS_OK;
@@ -887,7 +940,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     ((*mObj).*mMethod)(mArg1);
     return NS_OK;
@@ -920,7 +973,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     ((*mObj).*mMethod)(mArg1, mArg2, mArg3);
     return NS_OK;
@@ -968,7 +1021,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -1030,7 +1083,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -1107,7 +1160,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -1191,7 +1244,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -1280,7 +1333,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -1378,7 +1431,7 @@ public:
   }
 
   NS_METHOD
-  Run() MOZ_OVERRIDE
+  Run() override
   {
     MOZ_ASSERT(NS_IsMainThread());
 

@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Keep in (case-insensitive) order:
+#include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsFrame.h"
 #include "nsGkAtoms.h"
@@ -33,16 +34,16 @@ public:
 
   virtual void Init(nsIContent*       aContent,
                     nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) MOZ_OVERRIDE;
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
+                    nsIFrame*         aPrevInFlow) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
 
-  virtual bool IsFrameOfType(uint32_t aFlags) const MOZ_OVERRIDE
+  virtual bool IsFrameOfType(uint32_t aFlags) const override
   {
     return SVGFEImageFrameBase::IsFrameOfType(aFlags & ~(nsIFrame::eSVG));
   }
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const MOZ_OVERRIDE
+  virtual nsresult GetFrameName(nsAString& aResult) const override
   {
     return MakeFrameName(NS_LITERAL_STRING("SVGFEImage"), aResult);
   }
@@ -53,13 +54,13 @@ public:
    *
    * @see nsGkAtoms::svgFEImageFrame
    */
-  virtual nsIAtom* GetType() const MOZ_OVERRIDE;
+  virtual nsIAtom* GetType() const override;
 
   virtual nsresult AttributeChanged(int32_t  aNameSpaceID,
                                     nsIAtom* aAttribute,
-                                    int32_t  aModType) MOZ_OVERRIDE;
+                                    int32_t  aModType) override;
 
-  virtual bool UpdateOverflow() MOZ_OVERRIDE {
+  virtual bool UpdateOverflow() override {
     // We don't maintain a visual overflow rect
     return false;
   }
@@ -81,7 +82,8 @@ SVGFEImageFrame::DestroyFrom(nsIFrame* aDestructRoot)
 
   if (imageLoader) {
     imageLoader->FrameDestroyed(this);
-    imageLoader->DecrementVisibleCount();
+    imageLoader
+      ->DecrementVisibleCount(nsIImageLoadingContent::ON_NONVISIBLE_NO_ACTION);
   }
 
   SVGFEImageFrameBase::DestroyFrom(aDestructRoot);
@@ -122,7 +124,9 @@ SVGFEImageFrame::AttributeChanged(int32_t  aNameSpaceID,
 {
   SVGFEImageElement *element = static_cast<SVGFEImageElement*>(mContent);
   if (element->AttributeAffectsRendering(aNameSpaceID, aAttribute)) {
-    nsSVGEffects::InvalidateRenderingObservers(this);
+    MOZ_ASSERT(GetParent()->GetType() == nsGkAtoms::svgFilterFrame,
+               "Observers observe the filter, so that's what we must invalidate");
+    nsSVGEffects::InvalidateDirectRenderingObservers(GetParent());
   }
   if (aNameSpaceID == kNameSpaceID_XLink &&
       aAttribute == nsGkAtoms::href) {
@@ -140,5 +144,5 @@ SVGFEImageFrame::AttributeChanged(int32_t  aNameSpaceID,
   }
 
   return SVGFEImageFrameBase::AttributeChanged(aNameSpaceID,
-                                                 aAttribute, aModType);
+                                               aAttribute, aModType);
 }

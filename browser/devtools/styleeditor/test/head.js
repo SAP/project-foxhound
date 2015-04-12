@@ -27,13 +27,6 @@ SimpleTest.registerCleanupFunction(() => {
 });
 
 /**
- * Define an async test based on a generator function
- */
-function asyncTest(generator) {
-  return () => Task.spawn(generator).then(null, ok.bind(null, false)).then(finish);
-}
-
-/**
  * Add a new test tab in the browser and load the given url.
  * @param {String} url The url to be loaded in the new tab
  * @return a promise that resolves to the tab object when the url is loaded
@@ -51,6 +44,21 @@ function addTab(url) {
   content.location = url;
 
   return def.promise;
+}
+
+/**
+ * Navigate the currently selected tab to a new URL and wait for it to load.
+ * @param {String} url The url to be loaded in the current tab.
+ * @return a promise that resolves when the page has fully loaded.
+ */
+function navigateTo(url) {
+  let navigating = promise.defer();
+  gBrowser.selectedBrowser.addEventListener("load", function onload() {
+    gBrowser.selectedBrowser.removeEventListener("load", onload, true);
+    navigating.resolve();
+  }, true);
+  content.location = url;
+  return navigating.promise;
 }
 
 function* cleanup()

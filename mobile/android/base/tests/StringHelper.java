@@ -1,3 +1,8 @@
+/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 
@@ -50,6 +55,8 @@ public class StringHelper {
     public static final String CONTEXT_MENU_COPY_ADDRESS = "Copy Address";
     public static final String CONTEXT_MENU_EDIT_SITE_SETTINGS = "Edit Site Settings";
     public static final String CONTEXT_MENU_ADD_TO_HOME_SCREEN = "Add to Home Screen";
+    public static final String CONTEXT_MENU_PIN_SITE = "Pin Site";
+    public static final String CONTEXT_MENU_UNPIN_SITE = "Unpin Site";
 
     // Context Menu menu items
     public static final String[] CONTEXT_MENU_ITEMS_IN_PRIVATE_TAB = new String[] {
@@ -141,7 +148,10 @@ public class StringHelper {
     public static final String ROBOCOP_SEARCH_TITLE = "Robocop Search Engine";
     public static final String ROBOCOP_TEXT_PAGE_TITLE = "Robocop Text Page";
     public static final String ROBOCOP_INPUT_TITLE = "Robocop Input";
-    public static final String ROBOCOP_SELECTION_HANDLER_TITLE = "Automated Text Selection tests for Mobile";
+
+    // Distribution tile labels
+    public static final String DISTRIBUTION1_LABEL = "Distribution 1";
+    public static final String DISTRIBUTION2_LABEL = "Distribution 2";
 
     // Settings menu strings
     // Section labels - ordered as found in the settings menu
@@ -161,7 +171,6 @@ public class StringHelper {
     public static final String TEXT_SIZE_LABEL = "Text size";
     public static final String TITLE_BAR_LABEL = "Title bar";
     public static final String SCROLL_TITLE_BAR_LABEL = "Full-screen browsing";
-    public static final String NEW_TABLET_UI = "Enable new tablet UI";
     public static final String TEXT_REFLOW_LABEL = "Text reflow";
     public static final String CHARACTER_ENCODING_LABEL = "Character encoding";
     public static final String PLUGINS_LABEL = "Plugins";
@@ -171,7 +180,8 @@ public class StringHelper {
     public static final String SHOW_PAGE_ADDRESS_LABEL = "Show page address";
 
     // Privacy
-    public static final String TRACKING_LABEL = "Tracking";
+    public static final String TRACKING_PROTECTION_LABEL = "Tracking protection";
+    public static final String DNT_LABEL = "Do not track";
     public static final String COOKIES_LABEL = "Cookies";
     public static final String REMEMBER_PASSWORDS_LABEL = "Remember passwords";
     public static final String MASTER_PASSWORD_LABEL = "Use master password";
@@ -182,7 +192,7 @@ public class StringHelper {
     public static final String ABOUT_LABEL = "About " + BRAND_NAME;
     public static final String FAQS_LABEL = "FAQs";
     public static final String FEEDBACK_LABEL = "Give feedback";
-    public static final String LOCATION_SERVICES_LABEL = "Mozilla location services";
+    public static final String LOCATION_SERVICES_LABEL = "Mozilla Location Service";
     public static final String HEALTH_REPORT_LABEL = BRAND_NAME + " Health Report";
     public static final String MY_HEALTH_REPORT_LABEL = "View my Health Report";
 
@@ -238,4 +248,21 @@ public class StringHelper {
 
     // Edit Bookmark screen
     public static final String EDIT_BOOKMARK = "Edit Bookmark";
+
+    // Strings used in doorhanger messages and buttons
+    public static final String GEO_MESSAGE = "Share your location with";
+    public static final String GEO_ALLOW = "Share";
+    public static final String GEO_DENY = "Don't share";
+
+    public static final String OFFLINE_MESSAGE = "to store data on your device for offline use";
+    public static final String OFFLINE_ALLOW = "Allow";
+    public static final String OFFLINE_DENY = "Don't allow";
+
+    public static final String LOGIN_MESSAGE = "Save password";
+    public static final String LOGIN_ALLOW = "Save";
+    public static final String LOGIN_DENY = "Don't save";
+
+    public static final String POPUP_MESSAGE = "prevented this site from opening";
+    public static final String POPUP_ALLOW = "Show";
+    public static final String POPUP_DENY = "Don't show";
 }

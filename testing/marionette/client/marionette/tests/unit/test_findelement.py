@@ -3,9 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from marionette_test import MarionetteTestCase
-from marionette import HTMLElement
-from by import By
-from errors import NoSuchElementException
+from marionette_driver.marionette import HTMLElement
+from marionette_driver.by import By
+from marionette_driver.errors import NoSuchElementException, InvalidSelectorException
 
 
 class TestElements(MarionetteTestCase):
@@ -154,3 +154,8 @@ class TestElements(MarionetteTestCase):
         fbody = self.marionette.find_element(By.TAG_NAME, 'body')
         abody = self.marionette.get_active_element()
         self.assertEqual(fbody, abody)
+
+    def test_throws_error_when_trying_to_use_invalid_selector_type(self):
+        test_html = self.marionette.absolute_url("test.html")
+        self.marionette.navigate(test_html)
+        self.assertRaises(InvalidSelectorException, self.marionette.find_element, "Brie Search Type", "doesn't matter")

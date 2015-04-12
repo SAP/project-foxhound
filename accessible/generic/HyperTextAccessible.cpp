@@ -48,19 +48,13 @@ using namespace mozilla::a11y;
 
 HyperTextAccessible::
   HyperTextAccessible(nsIContent* aNode, DocAccessible* aDoc) :
-  AccessibleWrap(aNode, aDoc), xpcAccessibleHyperText()
+  AccessibleWrap(aNode, aDoc)
 {
+  mType = eHyperTextType;
   mGenericTypes |= eHyperText;
 }
 
-nsresult
-HyperTextAccessible::QueryInterface(REFNSIID aIID, void** aInstancePtr)
-{
-  xpcAccessibleHyperText::QueryInterface(aIID, aInstancePtr);
-  return *aInstancePtr ? NS_OK : Accessible::QueryInterface(aIID, aInstancePtr);
-}
-NS_IMPL_ADDREF_INHERITED(HyperTextAccessible, AccessibleWrap)
-NS_IMPL_RELEASE_INHERITED(HyperTextAccessible, AccessibleWrap)
+NS_IMPL_ISUPPORTS_INHERITED0(HyperTextAccessible, Accessible)
 
 role
 HyperTextAccessible::NativeRole()
@@ -515,9 +509,9 @@ HyperTextAccessible::FindOffset(uint32_t aOffset, nsDirection aDirection,
   const bool kIsKeyboardSelect = true; // is keyboard selection
   const bool kIsVisualBidi = false; // use visual order for bidi text
   nsPeekOffsetStruct pos(aAmount, aDirection, innerContentOffset,
-                         0, kIsJumpLinesOk, kIsScrollViewAStop,
+                         nsPoint(0, 0), kIsJumpLinesOk, kIsScrollViewAStop,
                          kIsKeyboardSelect, kIsVisualBidi,
-                         aWordMovementType);
+                         false, aWordMovementType);
   nsresult rv = frameAtOffset->PeekOffset(&pos);
 
   // PeekOffset fails on last/first lines of the text in certain cases.
@@ -649,12 +643,12 @@ HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
     adjustedOffset = AdjustCaretOffset(adjustedOffset);
 
   switch (aBoundaryType) {
-    case BOUNDARY_CHAR:
+    case nsIAccessibleText::BOUNDARY_CHAR:
       if (convertedOffset != 0)
         CharAt(convertedOffset - 1, aText, aStartOffset, aEndOffset);
       break;
 
-    case BOUNDARY_WORD_START: {
+    case nsIAccessibleText::BOUNDARY_WORD_START: {
       // If the offset is a word start (except text length offset) then move
       // backward to find a start offset (end offset is the given offset).
       // Otherwise move backward twice to find both start and end offsets.
@@ -673,7 +667,7 @@ HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
       break;
     }
 
-    case BOUNDARY_WORD_END: {
+    case nsIAccessibleText::BOUNDARY_WORD_END: {
       // Move word backward twice to find start and end offsets.
       *aEndOffset = FindWordBoundary(convertedOffset, eDirPrevious, eEndWord);
       *aStartOffset = FindWordBoundary(*aEndOffset, eDirPrevious, eEndWord);
@@ -681,13 +675,13 @@ HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
       break;
     }
 
-    case BOUNDARY_LINE_START:
+    case nsIAccessibleText::BOUNDARY_LINE_START:
       *aStartOffset = FindLineBoundary(adjustedOffset, ePrevLineBegin);
       *aEndOffset = FindLineBoundary(adjustedOffset, eThisLineBegin);
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_LINE_END: {
+    case nsIAccessibleText::BOUNDARY_LINE_END: {
       *aEndOffset = FindLineBoundary(adjustedOffset, ePrevLineEnd);
       int32_t tmpOffset = *aEndOffset;
       // Adjust offset if line is wrapped.
@@ -717,7 +711,7 @@ HyperTextAccessible::TextAtOffset(int32_t aOffset,
   }
 
   switch (aBoundaryType) {
-    case BOUNDARY_CHAR:
+    case nsIAccessibleText::BOUNDARY_CHAR:
       // Return no char if caret is at the end of wrapped line (case of no line
       // end character). Returning a next line char is confusing for AT.
       if (aOffset == nsIAccessibleText::TEXT_OFFSET_CARET && IsCaretAtEndOfLine())
@@ -726,7 +720,7 @@ HyperTextAccessible::TextAtOffset(int32_t aOffset,
         CharAt(adjustedOffset, aText, aStartOffset, aEndOffset);
       break;
 
-    case BOUNDARY_WORD_START:
+    case nsIAccessibleText::BOUNDARY_WORD_START:
       if (aOffset == nsIAccessibleText::TEXT_OFFSET_CARET)
         adjustedOffset = AdjustCaretOffset(adjustedOffset);
 
@@ -735,7 +729,7 @@ HyperTextAccessible::TextAtOffset(int32_t aOffset,
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_WORD_END:
+    case nsIAccessibleText::BOUNDARY_WORD_END:
       // Ignore the spec and follow what WebKitGtk does because Orca expects it,
       // i.e. return a next word at word end offset of the current word
       // (WebKitGtk behavior) instead the current word (AKT spec).
@@ -744,7 +738,7 @@ HyperTextAccessible::TextAtOffset(int32_t aOffset,
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_LINE_START:
+    case nsIAccessibleText::BOUNDARY_LINE_START:
       if (aOffset == nsIAccessibleText::TEXT_OFFSET_CARET)
         adjustedOffset = AdjustCaretOffset(adjustedOffset);
 
@@ -753,7 +747,7 @@ HyperTextAccessible::TextAtOffset(int32_t aOffset,
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_LINE_END:
+    case nsIAccessibleText::BOUNDARY_LINE_END:
       if (aOffset == nsIAccessibleText::TEXT_OFFSET_CARET)
         adjustedOffset = AdjustCaretOffset(adjustedOffset);
 
@@ -785,7 +779,7 @@ HyperTextAccessible::TextAfterOffset(int32_t aOffset,
     adjustedOffset = AdjustCaretOffset(adjustedOffset);
 
   switch (aBoundaryType) {
-    case BOUNDARY_CHAR:
+    case nsIAccessibleText::BOUNDARY_CHAR:
       // If caret is at the end of wrapped line (case of no line end character)
       // then char after the offset is a first char at next line.
       if (adjustedOffset >= CharacterCount())
@@ -794,14 +788,14 @@ HyperTextAccessible::TextAfterOffset(int32_t aOffset,
         CharAt(adjustedOffset + 1, aText, aStartOffset, aEndOffset);
       break;
 
-    case BOUNDARY_WORD_START:
+    case nsIAccessibleText::BOUNDARY_WORD_START:
       // Move word forward twice to find start and end offsets.
       *aStartOffset = FindWordBoundary(adjustedOffset, eDirNext, eStartWord);
       *aEndOffset = FindWordBoundary(*aStartOffset, eDirNext, eStartWord);
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_WORD_END:
+    case nsIAccessibleText::BOUNDARY_WORD_END:
       // If the offset is a word end (except 0 offset) then move forward to find
       // end offset (start offset is the given offset). Otherwise move forward
       // twice to find both start and end offsets.
@@ -819,13 +813,13 @@ HyperTextAccessible::TextAfterOffset(int32_t aOffset,
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_LINE_START:
+    case nsIAccessibleText::BOUNDARY_LINE_START:
       *aStartOffset = FindLineBoundary(adjustedOffset, eNextLineBegin);
       *aEndOffset = FindLineBoundary(*aStartOffset, eNextLineBegin);
       TextSubstring(*aStartOffset, *aEndOffset, aText);
       break;
 
-    case BOUNDARY_LINE_END:
+    case nsIAccessibleText::BOUNDARY_LINE_END:
       *aStartOffset = FindLineBoundary(adjustedOffset, eThisLineEnd);
       *aEndOffset = FindLineBoundary(adjustedOffset, eNextLineEnd);
       TextSubstring(*aStartOffset, *aEndOffset, aText);
@@ -989,6 +983,15 @@ HyperTextAccessible::NativeAttributes()
   } else if (tag == nsGkAtoms::main) {
     nsAccUtils::SetAccAttr(attributes, nsGkAtoms::xmlroles,
                            NS_LITERAL_STRING("main"));
+  } else if (tag == nsGkAtoms::time) {
+    nsAccUtils::SetAccAttr(attributes, nsGkAtoms::xmlroles,
+                           NS_LITERAL_STRING("time"));
+
+    if (mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::datetime)) {
+      nsAutoString datetime;
+      mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::datetime, datetime);
+      nsAccUtils::SetAccAttr(attributes, nsGkAtoms::datetime, datetime);
+    }
   }
 
   return attributes.forget();
@@ -1342,7 +1345,7 @@ HyperTextAccessible::GetCaretRect(nsIWidget** aWidget)
   nsIntRect caretRect;
   caretRect = rect.ToOutsidePixels(frame->PresContext()->AppUnitsPerDevPixel());
   // ((content screen origin) - (content offset in the widget)) = widget origin on the screen
-  caretRect.MoveBy((*aWidget)->WidgetToScreenOffset() - (*aWidget)->GetClientOffset());
+  caretRect.MoveBy((*aWidget)->WidgetToScreenOffsetUntyped() - (*aWidget)->GetClientOffset());
 
   // Correct for character size, so that caret always matches the size of
   // the character. This is important for font size transitions, and is

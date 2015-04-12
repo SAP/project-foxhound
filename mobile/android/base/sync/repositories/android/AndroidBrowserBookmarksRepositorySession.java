@@ -112,7 +112,7 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
   /**
    * An array of known-special GUIDs.
    */
-  public static String[] SPECIAL_GUIDS = new String[] {
+  public static final String[] SPECIAL_GUIDS = new String[] {
     // Mobile and desktop places roots have to come first.
     "places",
     "mobile",
@@ -203,8 +203,6 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
    */
   public static boolean forbiddenGUID(final String recordGUID) {
     return recordGUID == null ||
-           // Temporarily exclude reading list items (Bug 762118; re-enable in Bug 762109.)
-           BrowserContract.Bookmarks.READING_LIST_FOLDER_GUID.equals(recordGUID) ||
            BrowserContract.Bookmarks.PINNED_FOLDER_GUID.equals(recordGUID) ||
            BrowserContract.Bookmarks.PLACES_FOLDER_GUID.equals(recordGUID) ||
            BrowserContract.Bookmarks.TAGS_FOLDER_GUID.equals(recordGUID);
@@ -221,8 +219,6 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
    */
   public static boolean forbiddenParent(final String parentGUID) {
     return parentGUID == null ||
-           // Temporarily exclude reading list items (Bug 762118; re-enable in Bug 762109.)
-           BrowserContract.Bookmarks.READING_LIST_FOLDER_GUID.equals(parentGUID) ||
            BrowserContract.Bookmarks.PINNED_FOLDER_GUID.equals(parentGUID);
   }
 
@@ -567,9 +563,6 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
       Logger.debug(LOG_TAG, "Got GUIDs for folders.");
     } catch (android.database.sqlite.SQLiteConstraintException e) {
       Logger.error(LOG_TAG, "Got sqlite constraint exception working with Fennec bookmark DB.", e);
-      delegate.onBeginFailed(e);
-      return;
-    } catch (NullCursorException e) {
       delegate.onBeginFailed(e);
       return;
     } catch (Exception e) {

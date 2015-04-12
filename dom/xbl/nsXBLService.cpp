@@ -116,6 +116,14 @@ public:
     if (!doc)
       return;
 
+    // Destroy the frames for mBoundElement.
+    nsIContent* destroyedFramesFor = nullptr;
+    nsIPresShell* shell = doc->GetShell();
+    if (shell) {
+      shell->DestroyFramesFor(mBoundElement, &destroyedFramesFor);
+    }
+    MOZ_ASSERT(!mBoundElement->GetPrimaryFrame());
+
     // Get the binding.
     bool ready = false;
     nsXBLService::GetInstance()->BindingReady(mBoundElement, mBindingURI, &ready);
@@ -128,19 +136,22 @@ public:
     // notification of its parent.  (We can know about both if the
     // binding loads were triggered from the DOM rather than frame
     // construction.)  So we have to check both whether the element
-    // has a primary frame and whether it's in the undisplayed map
+    // has a primary frame and whether it's in the frame manager maps
     // before sending a ContentInserted notification, or bad things
     // will happen.
-    nsIPresShell *shell = doc->GetShell();
+    MOZ_ASSERT(shell == doc->GetShell());
     if (shell) {
       nsIFrame* childFrame = mBoundElement->GetPrimaryFrame();
       if (!childFrame) {
-        // Check to see if it's in the undisplayed content map.
-        nsStyleContext* sc =
-          shell->FrameManager()->GetUndisplayedContent(mBoundElement);
-
+        // Check to see if it's in the undisplayed content map...
+        nsFrameManager* fm = shell->FrameManager();
+        nsStyleContext* sc = fm->GetUndisplayedContent(mBoundElement);
         if (!sc) {
-          shell->RecreateFramesFor(mBoundElement);
+          // or in the display:contents map.
+          sc = fm->GetDisplayContentsStyleFor(mBoundElement);
+        }
+        if (!sc) {
+          shell->CreateFramesFor(destroyedFramesFor);
         }
       }
     }
@@ -156,7 +167,7 @@ public:
 // nsXBLStreamListener, a helper class used for
 // asynchronous parsing of URLs
 /* Header file */
-class nsXBLStreamListener MOZ_FINAL : public nsIStreamListener,
+class nsXBLStreamListener final : public nsIStreamListener,
                                       public nsIDOMEventListener
 {
 public:
@@ -753,12 +764,10 @@ nsXBLService::GetBinding(nsIContent* aBoundElement, nsIURI* aURI,
    return NS_ERROR_FAILURE;
   }
 
-  NS_ENSURE_TRUE(aDontExtendURIs.AppendElement(protoBinding->BindingURI()),
-                 NS_ERROR_OUT_OF_MEMORY);
+  aDontExtendURIs.AppendElement(protoBinding->BindingURI());
   nsCOMPtr<nsIURI> altBindingURI = protoBinding->AlternateBindingURI();
   if (altBindingURI) {
-    NS_ENSURE_TRUE(aDontExtendURIs.AppendElement(altBindingURI),
-                   NS_ERROR_OUT_OF_MEMORY);
+    aDontExtendURIs.AppendElement(altBindingURI);
   }
 
   // Our prototype binding must have all its resources loaded.
@@ -820,7 +829,6 @@ nsXBLService::GetBinding(nsIContent* aBoundElement, nsIURI* aURI,
   if (!aPeekOnly) {
     // Make a new binding
     nsXBLBinding *newBinding = new nsXBLBinding(protoBinding);
-    NS_ENSURE_TRUE(newBinding, NS_ERROR_OUT_OF_MEMORY);
 
     if (baseBinding) {
       if (!baseProto) {
@@ -1065,23 +1073,31 @@ nsXBLService::FetchBindingDocument(nsIContent* aBoundElement, nsIDocument* aBoun
   // FetchBindingDocument().  LoadInfo will end up with no principal or node in those cases,
   // so we use systemPrincipal.  This achieves the same result of bypassing security checks,
   // but it gives the wrong information to potential future consumers of loadInfo.
-  nsCOMPtr<nsIPrincipal> requestingPrincipal = aOriginPrincipal ? aOriginPrincipal
-                                                                : nsContentUtils::GetSystemPrincipal();
   nsCOMPtr<nsIChannel> channel;
-  // Note that we are calling NS_NewChannelInternal here with both a node and a principal.
-  // This is because the principal and node could be different.
-  rv = NS_NewChannelInternal(getter_AddRefs(channel),
-                             aDocumentURI,
-                             aBoundDocument,
-                             requestingPrincipal,
-                             nsILoadInfo::SEC_NORMAL,
-                             nsIContentPolicy::TYPE_OTHER,
-                             loadGroup);
+
+  if (aOriginPrincipal) {
+    // if there is an originPrincipal we should also have aBoundDocument
+    NS_ASSERTION(aBoundDocument, "can not create a channel without aBoundDocument");
+    rv = NS_NewChannelWithTriggeringPrincipal(getter_AddRefs(channel),
+                                              aDocumentURI,
+                                              aBoundDocument,
+                                              aOriginPrincipal,
+                                              nsILoadInfo::SEC_NORMAL,
+                                              nsIContentPolicy::TYPE_OTHER,
+                                              loadGroup);
+  }
+  else {
+    rv = NS_NewChannel(getter_AddRefs(channel),
+                       aDocumentURI,
+                       nsContentUtils::GetSystemPrincipal(),
+                       nsILoadInfo::SEC_NORMAL,
+                       nsIContentPolicy::TYPE_OTHER,
+                       loadGroup);
+  }
 
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIInterfaceRequestor> sameOriginChecker = nsContentUtils::GetSameOriginChecker();
-  NS_ENSURE_TRUE(sameOriginChecker, NS_ERROR_OUT_OF_MEMORY);
+  nsCOMPtr<nsIInterfaceRequestor> sameOriginChecker = nsContentUtils::SameOriginChecker();
 
   channel->SetNotificationCallbacks(sameOriginChecker);
 
@@ -1089,7 +1105,6 @@ nsXBLService::FetchBindingDocument(nsIContent* aBoundElement, nsIDocument* aBoun
     // We can be asynchronous
     nsXBLStreamListener* xblListener =
       new nsXBLStreamListener(aBoundDocument, xblSink, doc);
-    NS_ENSURE_TRUE(xblListener,NS_ERROR_OUT_OF_MEMORY);
 
     // Add ourselves to the list of loading docs.
     nsBindingManager *bindingManager;

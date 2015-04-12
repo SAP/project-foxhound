@@ -40,8 +40,10 @@
 
   #ifdef DEBUG
     //#define DEBUG_UNDISPLAYED_MAP
+    //#define DEBUG_DISPLAY_CONTENTS_MAP
   #else
     #undef DEBUG_UNDISPLAYED_MAP
+    #undef DEBUG_DISPLAY_CONTENTS_MAP
   #endif
 
 using namespace mozilla;
@@ -67,13 +69,10 @@ PlaceholderMapMatchEntry(PLDHashTable *table, const PLDHashEntryHdr *hdr,
 }
 
 static const PLDHashTableOps PlaceholderMapOps = {
-  PL_DHashAllocTable,
-  PL_DHashFreeTable,
   PL_DHashVoidPtrKeyStub,
   PlaceholderMapMatchEntry,
   PL_DHashMoveEntryStub,
   PL_DHashClearEntryStub,
-  PL_DHashFinalizeStub,
   nullptr
 };
 
@@ -96,6 +95,7 @@ public:
                                  UndisplayedNode* aNode);
 
   void RemoveNodesFor(nsIContent* aParentContent);
+  UndisplayedNode* UnlinkNodesFor(nsIContent* aParentContent);
 
   // Removes all entries from the hash table
   void  Clear(void);
@@ -139,6 +139,8 @@ nsFrameManager::Destroy()
   
   delete mUndisplayedMap;
   mUndisplayedMap = nullptr;
+  delete mDisplayContentsMap;
+  mDisplayContentsMap = nullptr;
 
   mPresShell = nullptr;
 }
@@ -151,11 +153,11 @@ nsFrameManager::GetPlaceholderFrameFor(const nsIFrame* aFrame)
 {
   NS_PRECONDITION(aFrame, "null param unexpected");
 
-  if (mPlaceholderMap.ops) {
+  if (mPlaceholderMap.IsInitialized()) {
     PlaceholderMapEntry *entry = static_cast<PlaceholderMapEntry*>
-                                            (PL_DHashTableOperate(const_cast<PLDHashTable*>(&mPlaceholderMap),
-                                aFrame, PL_DHASH_LOOKUP));
-    if (PL_DHASH_ENTRY_IS_BUSY(entry)) {
+                                            (PL_DHashTableSearch(const_cast<PLDHashTable*>(&mPlaceholderMap),
+                                aFrame));
+    if (entry) {
       return entry->placeholderFrame;
     }
   }
@@ -169,13 +171,13 @@ nsFrameManager::RegisterPlaceholderFrame(nsPlaceholderFrame* aPlaceholderFrame)
   NS_PRECONDITION(aPlaceholderFrame, "null param unexpected");
   NS_PRECONDITION(nsGkAtoms::placeholderFrame == aPlaceholderFrame->GetType(),
                   "unexpected frame type");
-  if (!mPlaceholderMap.ops) {
-    PL_DHashTableInit(&mPlaceholderMap, &PlaceholderMapOps, nullptr,
+  if (!mPlaceholderMap.IsInitialized()) {
+    PL_DHashTableInit(&mPlaceholderMap, &PlaceholderMapOps,
                       sizeof(PlaceholderMapEntry));
   }
-  PlaceholderMapEntry *entry = static_cast<PlaceholderMapEntry*>(PL_DHashTableOperate(&mPlaceholderMap,
-                              aPlaceholderFrame->GetOutOfFlowFrame(),
-                              PL_DHASH_ADD));
+  PlaceholderMapEntry *entry = static_cast<PlaceholderMapEntry*>
+    (PL_DHashTableAdd(&mPlaceholderMap,
+                      aPlaceholderFrame->GetOutOfFlowFrame(), fallible));
   if (!entry)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -192,10 +194,9 @@ nsFrameManager::UnregisterPlaceholderFrame(nsPlaceholderFrame* aPlaceholderFrame
   NS_PRECONDITION(nsGkAtoms::placeholderFrame == aPlaceholderFrame->GetType(),
                   "unexpected frame type");
 
-  if (mPlaceholderMap.ops) {
-    PL_DHashTableOperate(&mPlaceholderMap,
-                         aPlaceholderFrame->GetOutOfFlowFrame(),
-                         PL_DHASH_REMOVE);
+  if (mPlaceholderMap.IsInitialized()) {
+    PL_DHashTableRemove(&mPlaceholderMap,
+                        aPlaceholderFrame->GetOutOfFlowFrame());
   }
 }
 
@@ -211,23 +212,22 @@ UnregisterPlaceholders(PLDHashTable* table, PLDHashEntryHdr* hdr,
 void
 nsFrameManager::ClearPlaceholderFrameMap()
 {
-  if (mPlaceholderMap.ops) {
+  if (mPlaceholderMap.IsInitialized()) {
     PL_DHashTableEnumerate(&mPlaceholderMap, UnregisterPlaceholders, nullptr);
     PL_DHashTableFinish(&mPlaceholderMap);
-    mPlaceholderMap.ops = nullptr;
   }
 }
 
 //----------------------------------------------------------------------
 
-nsStyleContext*
-nsFrameManager::GetUndisplayedContent(nsIContent* aContent)
+/* static */ nsStyleContext*
+nsFrameManager::GetStyleContextInMap(UndisplayedMap* aMap, nsIContent* aContent)
 {
-  if (!aContent || !mUndisplayedMap)
+  if (!aContent) {
     return nullptr;
-
+  }
   nsIContent* parent = aContent->GetParent();
-  for (UndisplayedNode* node = mUndisplayedMap->GetFirstNode(parent);
+  for (UndisplayedNode* node = aMap->GetFirstNode(parent);
          node; node = node->mNext) {
     if (node->mContent == aContent)
       return node->mStyle;
@@ -236,53 +236,69 @@ nsFrameManager::GetUndisplayedContent(nsIContent* aContent)
   return nullptr;
 }
 
+/* static */ UndisplayedNode*
+nsFrameManager::GetAllUndisplayedNodesInMapFor(UndisplayedMap* aMap,
+                                               nsIContent* aParentContent)
+{
+  return aMap ? aMap->GetFirstNode(aParentContent) : nullptr;
+}
+
 UndisplayedNode*
 nsFrameManager::GetAllUndisplayedContentIn(nsIContent* aParentContent)
 {
-  if (!mUndisplayedMap)
-    return nullptr;
-
-  return mUndisplayedMap->GetFirstNode(aParentContent);
+  return GetAllUndisplayedNodesInMapFor(mUndisplayedMap, aParentContent);
 }
 
-void
-nsFrameManager::SetUndisplayedContent(nsIContent* aContent, 
-                                      nsStyleContext* aStyleContext)
+/* static */ void
+nsFrameManager::SetStyleContextInMap(UndisplayedMap* aMap,
+                                     nsIContent* aContent,
+                                     nsStyleContext* aStyleContext)
 {
   NS_PRECONDITION(!aStyleContext->GetPseudo(),
                   "Should only have actual elements here");
 
-#ifdef DEBUG_UNDISPLAYED_MAP
+#if defined(DEBUG_UNDISPLAYED_MAP) || defined(DEBUG_DISPLAY_BOX_CONTENTS_MAP)
   static int i = 0;
-  printf("SetUndisplayedContent(%d): p=%p \n", i++, (void *)aContent);
+  printf("SetStyleContextInMap(%d): p=%p \n", i++, (void *)aContent);
 #endif
 
-  NS_ASSERTION(!GetUndisplayedContent(aContent),
-               "Already have an undisplayed context entry for aContent");
+  NS_ASSERTION(!GetStyleContextInMap(aMap, aContent),
+               "Already have an entry for aContent");
 
-  if (! mUndisplayedMap) {
-    mUndisplayedMap = new UndisplayedMap;
-  }
   nsIContent* parent = aContent->GetParent();
-  NS_ASSERTION(parent || (mPresShell && mPresShell->GetDocument() &&
-               mPresShell->GetDocument()->GetRootElement() == aContent),
+#ifdef DEBUG
+  nsIPresShell* shell = aStyleContext->PresContext()->PresShell();
+  NS_ASSERTION(parent || (shell && shell->GetDocument() &&
+                          shell->GetDocument()->GetRootElement() == aContent),
                "undisplayed content must have a parent, unless it's the root "
                "element");
-  mUndisplayedMap->AddNodeFor(parent, aContent, aStyleContext);
+#endif
+  aMap->AddNodeFor(parent, aContent, aStyleContext);
 }
 
 void
-nsFrameManager::ChangeUndisplayedContent(nsIContent* aContent, 
-                                         nsStyleContext* aStyleContext)
+nsFrameManager::SetUndisplayedContent(nsIContent* aContent,
+                                      nsStyleContext* aStyleContext)
 {
-  NS_ASSERTION(mUndisplayedMap, "no existing undisplayed content");
-  
-#ifdef DEBUG_UNDISPLAYED_MAP
+  if (!mUndisplayedMap) {
+    mUndisplayedMap = new UndisplayedMap;
+  }
+  SetStyleContextInMap(mUndisplayedMap, aContent, aStyleContext);
+}
+
+/* static */ void
+nsFrameManager::ChangeStyleContextInMap(UndisplayedMap* aMap,
+                                        nsIContent* aContent,
+                                        nsStyleContext* aStyleContext)
+{
+  MOZ_ASSERT(aMap, "expecting a map");
+
+#if defined(DEBUG_UNDISPLAYED_MAP) || defined(DEBUG_DISPLAY_BOX_CONTENTS_MAP)
    static int i = 0;
-   printf("ChangeUndisplayedContent(%d): p=%p \n", i++, (void *)aContent);
+   printf("ChangeStyleContextInMap(%d): p=%p \n", i++, (void *)aContent);
 #endif
 
-  for (UndisplayedNode* node = mUndisplayedMap->GetFirstNode(aContent->GetParent());
+  for (UndisplayedNode* node = aMap->GetFirstNode(aContent->GetParent());
          node; node = node->mNext) {
     if (node->mContent == aContent) {
       node->mStyle = aStyleContext;
@@ -290,7 +306,7 @@ nsFrameManager::ChangeUndisplayedContent(nsIContent* aContent,
     }
   }
 
-  NS_NOTREACHED("no existing undisplayed content");
+  MOZ_CRASH("couldn't find the entry to change");
 }
 
 void
@@ -321,6 +337,9 @@ nsFrameManager::ClearUndisplayedContentIn(nsIContent* aContent,
       node = node->mNext;
     }
   }
+#ifdef DEBUG_UNDISPLAYED_MAP
+  printf( "not found.\n");
+#endif
 }
 
 void
@@ -342,6 +361,92 @@ nsFrameManager::ClearAllUndisplayedContentIn(nsIContent* aParentContent)
   FlattenedChildIterator iter(aParentContent);
   for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
     if (child->GetParent() != aParentContent) {
+      ClearUndisplayedContentIn(child, child->GetParent());
+    }
+  }
+}
+
+//----------------------------------------------------------------------
+
+void
+nsFrameManager::SetDisplayContents(nsIContent* aContent,
+                                   nsStyleContext* aStyleContext)
+{
+  if (!mDisplayContentsMap) {
+    mDisplayContentsMap = new UndisplayedMap;
+  }
+  SetStyleContextInMap(mDisplayContentsMap, aContent, aStyleContext);
+}
+
+UndisplayedNode*
+nsFrameManager::GetAllDisplayContentsIn(nsIContent* aParentContent)
+{
+  return GetAllUndisplayedNodesInMapFor(mDisplayContentsMap, aParentContent);
+}
+
+void
+nsFrameManager::ClearDisplayContentsIn(nsIContent* aContent,
+                                       nsIContent* aParentContent)
+{
+#ifdef DEBUG_DISPLAY_CONTENTS_MAP
+  static int i = 0;
+  printf("ClearDisplayContents(%d): content=%p parent=%p --> ", i++, (void *)aContent, (void*)aParentContent);
+#endif
+  
+  if (mDisplayContentsMap) {
+    UndisplayedNode* node = mDisplayContentsMap->GetFirstNode(aParentContent);
+    while (node) {
+      if (node->mContent == aContent) {
+        mDisplayContentsMap->RemoveNodeFor(aParentContent, node);
+
+#ifdef DEBUG_DISPLAY_CONTENTS_MAP
+        printf( "REMOVED!\n");
+#endif
+#ifdef DEBUG
+        // make sure that there are no more entries for the same content
+        nsStyleContext* context = GetDisplayContentsStyleFor(aContent);
+        NS_ASSERTION(context == nullptr, "Found more entries for aContent after removal");
+#endif
+        ClearAllDisplayContentsIn(aContent);
+        ClearAllUndisplayedContentIn(aContent);
+        return;
+      }
+      node = node->mNext;
+    }
+  }
+#ifdef DEBUG_DISPLAY_CONTENTS_MAP
+  printf( "not found.\n");
+#endif
+}
+
+void
+nsFrameManager::ClearAllDisplayContentsIn(nsIContent* aParentContent)
+{
+#ifdef DEBUG_DISPLAY_CONTENTS_MAP
+  static int i = 0;
+  printf("ClearAllDisplayContentsIn(%d): parent=%p \n", i++, (void*)aParentContent);
+#endif
+
+  if (mDisplayContentsMap) {
+    UndisplayedNode* cur = mDisplayContentsMap->UnlinkNodesFor(aParentContent);
+    while (cur) {
+      UndisplayedNode* next = cur->mNext;
+      cur->mNext = nullptr;
+      ClearAllDisplayContentsIn(cur->mContent);
+      ClearAllUndisplayedContentIn(cur->mContent);
+      delete cur;
+      cur = next;
+    }
+  }
+
+  // Need to look at aParentContent's content list due to XBL insertions.
+  // Nodes in aParentContent's content list do not have aParentContent as a
+  // parent, but are treated as children of aParentContent. We iterate over
+  // the flattened content list and just ignore any nodes we don't care about.
+  FlattenedChildIterator iter(aParentContent);
+  for (nsIContent* child = iter.GetNextChild(); child; child = iter.GetNextChild()) {
+    if (child->GetParent() != aParentContent) {
+      ClearDisplayContentsIn(child, child->GetParent());
       ClearUndisplayedContentIn(child, child->GetParent());
     }
   }
@@ -424,6 +529,7 @@ nsFrameManager::NotifyDestroyingFrame(nsIFrame* aFrame)
   nsIContent* content = aFrame->GetContent();
   if (content && content->GetPrimaryFrame() == aFrame) {
     ClearAllUndisplayedContentIn(content);
+    ClearAllDisplayContentsIn(content);
   }
 }
 
@@ -700,18 +806,26 @@ nsFrameManagerBase::UndisplayedMap::RemoveNodeFor(nsIContent* aParentContent,
   delete aNode;
 }
 
-void
-nsFrameManagerBase::UndisplayedMap::RemoveNodesFor(nsIContent* aParentContent)
+
+UndisplayedNode*
+nsFrameManagerBase::UndisplayedMap::UnlinkNodesFor(nsIContent* aParentContent)
 {
   PLHashEntry** entry = GetEntryFor(&aParentContent);
   NS_ASSERTION(entry, "content not in map");
   if (*entry) {
-    UndisplayedNode*  node = (UndisplayedNode*)((*entry)->value);
+    UndisplayedNode* node = (UndisplayedNode*)((*entry)->value);
     NS_ASSERTION(node, "null node for non-null entry in UndisplayedMap");
-    delete node;
     PL_HashTableRawRemove(mTable, entry, *entry);
     mLastLookup = nullptr; // hashtable may have shifted bucket out from under us
+    return node;
   }
+  return nullptr;
+}
+
+void
+nsFrameManagerBase::UndisplayedMap::RemoveNodesFor(nsIContent* aParentContent)
+{
+  delete UnlinkNodesFor(aParentContent);
 }
 
 static int

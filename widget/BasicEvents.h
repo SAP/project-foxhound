@@ -41,6 +41,11 @@
 // Key is pressed within a window
 #define NS_KEY_DOWN                     (NS_WINDOW_START + 33)
 
+#define NS_KEY_BEFORE_DOWN              (NS_WINDOW_START + 34)
+#define NS_KEY_AFTER_DOWN               (NS_WINDOW_START + 35)
+#define NS_KEY_BEFORE_UP                (NS_WINDOW_START + 36)
+#define NS_KEY_AFTER_UP                 (NS_WINDOW_START + 37)
+
 #define NS_RESIZE_EVENT                 (NS_WINDOW_START + 60)
 #define NS_SCROLL_EVENT                 (NS_WINDOW_START + 61)
 
@@ -59,11 +64,6 @@
 // Indicates that the user is either idle or active
 #define NS_MOZ_USER_IDLE                 (NS_WINDOW_START + 67)
 #define NS_MOZ_USER_ACTIVE               (NS_WINDOW_START + 68)
-
-// The resolution at which a plugin should draw has changed, for
-// example as the result of changing from a HiDPI mode to a non-
-// HiDPI mode.
-#define NS_PLUGIN_RESOLUTION_CHANGED     (NS_WINDOW_START + 69)
 
 #define NS_LANGUAGECHANGE                (NS_WINDOW_START + 70)
 
@@ -171,6 +171,9 @@
 // composition events
 #define NS_COMPOSITION_EVENT_START    2200
 #define NS_COMPOSITION_START          (NS_COMPOSITION_EVENT_START)
+// NS_COMPOSITION_END is the message for DOM compositionend event.
+// This event should NOT be dispatched from widget if NS_COMPOSITION_COMMIT
+// is available.
 #define NS_COMPOSITION_END            (NS_COMPOSITION_EVENT_START + 1)
 // NS_COMPOSITION_UPDATE is the message for DOM compositionupdate event.
 // This event should NOT be dispatched from widget since it will be dispatched
@@ -182,6 +185,19 @@
 // composition string isn't changed but the ranges are changed.  This causes
 // a DOM "text" event which is a non-standard DOM event.
 #define NS_COMPOSITION_CHANGE         (NS_COMPOSITION_EVENT_START + 3)
+// NS_COMPOSITION_COMMIT_AS_IS is the message for representing a commit of
+// composition string.  TextComposition will commit composition with the
+// last data.  TextComposition will dispatch this event to the DOM tree as
+// NS_COMPOSITION_CHANGE without clause information.  After that,
+// NS_COMPOSITION_END will be dispatched automatically.
+// Its mData and mRanges should be empty and nullptr.
+#define NS_COMPOSITION_COMMIT_AS_IS   (NS_COMPOSITION_EVENT_START + 4)
+// NS_COMPOSITION_COMMIT is the message for representing a commit of
+// composition string with its mData value.  TextComposition will dispatch this
+// event to the DOM tree as NS_COMPOSITION_CHANGE without clause information.
+// After that, NS_COMPOSITION_END will be dispatched automatically.
+// Its mRanges should be nullptr.
+#define NS_COMPOSITION_COMMIT         (NS_COMPOSITION_EVENT_START + 5)
 
 // UI events
 #define NS_UI_EVENT_START          2500
@@ -479,6 +495,10 @@ public:
   // consumed by content.
   // Note that mDefaultPrevented must be true when this is true.
   bool    mDefaultPreventedByContent : 1;
+  // If mDefaultPreventedByChrome is true, the event has been
+  // consumed by chrome.
+  // Note that mDefaultPrevented must be true when this is true.
+  bool    mDefaultPreventedByChrome : 1;
   // mMultipleActionsPrevented may be used when default handling don't want to
   // be prevented, but only one of the event targets should handle the event.
   // For example, when a <label> element is in another <label> element and
@@ -806,7 +826,7 @@ protected:
   }
 
 public:
-  virtual WidgetGUIEvent* AsGUIEvent() MOZ_OVERRIDE { return this; }
+  virtual WidgetGUIEvent* AsGUIEvent() override { return this; }
 
   WidgetGUIEvent(bool aIsTrusted, uint32_t aMessage, nsIWidget* aWidget) :
     WidgetEvent(aIsTrusted, aMessage, eGUIEventClass),
@@ -814,7 +834,7 @@ public:
   {
   }
 
-  virtual WidgetEvent* Duplicate() const MOZ_OVERRIDE
+  virtual WidgetEvent* Duplicate() const override
   {
     MOZ_ASSERT(mClass == eGUIEventClass,
                "Duplicate() must be overridden by sub class");
@@ -854,7 +874,7 @@ public:
    * WidgetGUIEvent and other Event classes to remove the need for this
    * mPluginEvent field.
    */
-  class PluginEvent MOZ_FINAL
+  class PluginEvent final
   {
     nsTArray<uint8_t> mBuffer;
 
@@ -917,12 +937,14 @@ enum Modifier
   MODIFIER_CAPSLOCK   = 0x0004,
   MODIFIER_CONTROL    = 0x0008,
   MODIFIER_FN         = 0x0010,
-  MODIFIER_META       = 0x0020,
-  MODIFIER_NUMLOCK    = 0x0040,
-  MODIFIER_SCROLLLOCK = 0x0080,
-  MODIFIER_SHIFT      = 0x0100,
-  MODIFIER_SYMBOLLOCK = 0x0200,
-  MODIFIER_OS         = 0x0400
+  MODIFIER_FNLOCK     = 0x0020,
+  MODIFIER_META       = 0x0040,
+  MODIFIER_NUMLOCK    = 0x0080,
+  MODIFIER_SCROLLLOCK = 0x0100,
+  MODIFIER_SHIFT      = 0x0200,
+  MODIFIER_SYMBOL     = 0x0400,
+  MODIFIER_SYMBOLLOCK = 0x0800,
+  MODIFIER_OS         = 0x1000
 };
 
 /******************************************************************************
@@ -934,10 +956,12 @@ enum Modifier
 #define NS_DOM_KEYNAME_CAPSLOCK   "CapsLock"
 #define NS_DOM_KEYNAME_CONTROL    "Control"
 #define NS_DOM_KEYNAME_FN         "Fn"
+#define NS_DOM_KEYNAME_FNLOCK     "FnLock"
 #define NS_DOM_KEYNAME_META       "Meta"
 #define NS_DOM_KEYNAME_NUMLOCK    "NumLock"
 #define NS_DOM_KEYNAME_SCROLLLOCK "ScrollLock"
 #define NS_DOM_KEYNAME_SHIFT      "Shift"
+#define NS_DOM_KEYNAME_SYMBOL     "Symbol"
 #define NS_DOM_KEYNAME_SYMBOLLOCK "SymbolLock"
 #define NS_DOM_KEYNAME_OS         "OS"
 
@@ -966,7 +990,7 @@ protected:
   }
 
 public:
-  virtual WidgetInputEvent* AsInputEvent() MOZ_OVERRIDE { return this; }
+  virtual WidgetInputEvent* AsInputEvent() override { return this; }
 
   WidgetInputEvent(bool aIsTrusted, uint32_t aMessage, nsIWidget* aWidget)
     : WidgetGUIEvent(aIsTrusted, aMessage, aWidget, eInputEventClass)
@@ -974,7 +998,7 @@ public:
   {
   }
 
-  virtual WidgetEvent* Duplicate() const MOZ_OVERRIDE
+  virtual WidgetEvent* Duplicate() const override
   {
     MOZ_ASSERT(mClass == eInputEventClass,
                "Duplicate() must be overridden by sub class");
@@ -991,6 +1015,11 @@ public:
    * key.
    */
   static Modifier AccelModifier();
+
+  /**
+   * GetModifier() returns a modifier flag which is activated by aDOMKeyName.
+   */
+  static Modifier GetModifier(const nsAString& aDOMKeyName);
 
   // true indicates the accel key on the environment is down
   bool IsAccel() const
@@ -1031,29 +1060,42 @@ public:
   {
     return ((modifiers & MODIFIER_ALTGRAPH) != 0);
   }
-  // true indeicates the CapLock LED is turn on.
+  // true indicates the CapLock LED is turn on.
   bool IsCapsLocked() const
   {
     return ((modifiers & MODIFIER_CAPSLOCK) != 0);
   }
-  // true indeicates the NumLock LED is turn on.
+  // true indicates the NumLock LED is turn on.
   bool IsNumLocked() const
   {
     return ((modifiers & MODIFIER_NUMLOCK) != 0);
   }
-  // true indeicates the ScrollLock LED is turn on.
+  // true indicates the ScrollLock LED is turn on.
   bool IsScrollLocked() const
   {
     return ((modifiers & MODIFIER_SCROLLLOCK) != 0);
   }
 
-  // true indeicates the Fn key is down, but this is not supported by native
+  // true indicates the Fn key is down, but this is not supported by native
   // key event on any platform.
   bool IsFn() const
   {
     return ((modifiers & MODIFIER_FN) != 0);
   }
-  // true indeicates the ScrollLock LED is turn on.
+  // true indicates the FnLock LED is turn on, but we don't know such
+  // keyboards nor platforms.
+  bool IsFnLocked() const
+  {
+    return ((modifiers & MODIFIER_FNLOCK) != 0);
+  }
+  // true indicates the Symbol is down, but this is not supported by native
+  // key event on any platforms.
+  bool IsSymbol() const
+  {
+    return ((modifiers & MODIFIER_SYMBOL) != 0);
+  }
+  // true indicates the SymbolLock LED is turn on, but we don't know such
+  // keyboards nor platforms.
   bool IsSymbolLocked() const
   {
     return ((modifiers & MODIFIER_SYMBOLLOCK) != 0);
@@ -1118,7 +1160,7 @@ protected:
   }
 
 public:
-  virtual InternalUIEvent* AsUIEvent() MOZ_OVERRIDE { return this; }
+  virtual InternalUIEvent* AsUIEvent() override { return this; }
 
   InternalUIEvent(bool aIsTrusted, uint32_t aMessage)
     : WidgetGUIEvent(aIsTrusted, aMessage, nullptr, eUIEventClass)
@@ -1126,7 +1168,7 @@ public:
   {
   }
 
-  virtual WidgetEvent* Duplicate() const MOZ_OVERRIDE
+  virtual WidgetEvent* Duplicate() const override
   {
     MOZ_ASSERT(mClass == eUIEventClass,
                "Duplicate() must be overridden by sub class");

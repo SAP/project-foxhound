@@ -54,13 +54,13 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   NS_IMETHODIMP
-  GetInterfaces(uint32_t *_count, nsIID ***_array)
+  GetInterfaces(uint32_t *_count, nsIID ***_array) override
   {
     return NS_CI_INTERFACE_GETTER_NAME(Statement)(_count, _array);
   }
 
   NS_IMETHODIMP
-  GetHelperForLanguage(uint32_t aLanguage, nsISupports **_helper)
+  GetHelperForLanguage(uint32_t aLanguage, nsISupports **_helper) override
   {
     if (aLanguage == nsIProgrammingLanguage::JAVASCRIPT) {
       static StatementJSHelper sJSHelper;
@@ -73,42 +73,42 @@ public:
   }
 
   NS_IMETHODIMP
-  GetContractID(char **_contractID)
+  GetContractID(char **_contractID) override
   {
     *_contractID = nullptr;
     return NS_OK;
   }
 
   NS_IMETHODIMP
-  GetClassDescription(char **_desc)
+  GetClassDescription(char **_desc) override
   {
     *_desc = nullptr;
     return NS_OK;
   }
 
   NS_IMETHODIMP
-  GetClassID(nsCID **_id)
+  GetClassID(nsCID **_id) override
   {
     *_id = nullptr;
     return NS_OK;
   }
 
   NS_IMETHODIMP
-  GetImplementationLanguage(uint32_t *_language)
+  GetImplementationLanguage(uint32_t *_language) override
   {
     *_language = nsIProgrammingLanguage::CPLUSPLUS;
     return NS_OK;
   }
 
   NS_IMETHODIMP
-  GetFlags(uint32_t *_flags)
+  GetFlags(uint32_t *_flags) override
   {
     *_flags = 0;
     return NS_OK;
   }
 
   NS_IMETHODIMP
-  GetClassIDNoAlloc(nsCID *_cid)
+  GetClassIDNoAlloc(nsCID *_cid) override
   {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -431,27 +431,9 @@ Statement::internalFinalize(bool aDestructing)
       asyncFinalize();
   }
 
-  // We are considered dead at this point, so any wrappers for row or params
-  // need to lose their reference to us.
-  if (mStatementParamsHolder) {
-    nsCOMPtr<nsIXPConnectWrappedNative> wrapper =
-        do_QueryInterface(mStatementParamsHolder);
-    nsCOMPtr<mozIStorageStatementParams> iParams =
-        do_QueryWrappedNative(wrapper);
-    StatementParams *params = static_cast<StatementParams *>(iParams.get());
-    params->mStatement = nullptr;
-    mStatementParamsHolder = nullptr;
-  }
-
-  if (mStatementRowHolder) {
-    nsCOMPtr<nsIXPConnectWrappedNative> wrapper =
-        do_QueryInterface(mStatementRowHolder);
-    nsCOMPtr<mozIStorageStatementRow> iRow =
-        do_QueryWrappedNative(wrapper);
-    StatementRow *row = static_cast<StatementRow *>(iRow.get());
-    row->mStatement = nullptr;
-    mStatementRowHolder = nullptr;
-  }
+  // Release the holders, so they can release the reference to us.
+  mStatementParamsHolder = nullptr;
+  mStatementRowHolder = nullptr;
 
   return convertResultCode(srv);
 }

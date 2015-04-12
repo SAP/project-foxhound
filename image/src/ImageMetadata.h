@@ -25,7 +25,6 @@ public:
     : mHotspotX(-1)
     , mHotspotY(-1)
     , mLoopCount(-1)
-    , mIsNonPremultiplied(false)
   {}
 
   // Set the metadata this object represents on an image.
@@ -41,15 +40,12 @@ public:
     mLoopCount = loopcount;
   }
 
-  void SetIsNonPremultiplied(bool nonPremult)
-  {
-    mIsNonPremultiplied = nonPremult;
-  }
-
   void SetSize(int32_t width, int32_t height, Orientation orientation)
   {
-    mSize.emplace(nsIntSize(width, height));
-    mOrientation.emplace(orientation);
+    if (!HasSize()) {
+      mSize.emplace(nsIntSize(width, height));
+      mOrientation.emplace(orientation);
+    }
   }
 
   bool HasSize() const { return mSize.isSome(); }
@@ -57,6 +53,7 @@ public:
 
   int32_t GetWidth() const { return mSize->width; }
   int32_t GetHeight() const { return mSize->height; }
+  nsIntSize GetSize() const { return *mSize; }
   Orientation GetOrientation() const { return *mOrientation; }
 
 private:
@@ -68,9 +65,7 @@ private:
   int32_t mLoopCount;
 
   Maybe<nsIntSize> mSize;
-  Maybe<Orientation>  mOrientation;
-
-  bool mIsNonPremultiplied;
+  Maybe<Orientation> mOrientation;
 };
 
 } // namespace image

@@ -18,13 +18,16 @@ extern bool gBluetoothDebugFlag;
 
 #if MOZ_IS_GCC && MOZ_GCC_VERSION_AT_LEAST(4, 7, 0)
 /* use designated array initializers if supported */
-#define CONVERT(in_, out_) \
+#define INIT_ARRAY_AT(in_, out_) \
   [in_] = out_
 #else
 /* otherwise init array element by position */
-#define CONVERT(in_, out_) \
+#define INIT_ARRAY_AT(in_, out_) \
   out_
 #endif
+
+#define CONVERT(in_, out_) \
+  INIT_ARRAY_AT(in_, out_)
 
 #undef BT_LOG
 #if defined(MOZ_WIDGET_GONK)
@@ -63,8 +66,8 @@ extern bool gBluetoothDebugFlag;
     }                                                                \
   } while(0)
 
-#define BT_LOGR(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__))
-#define BT_WARNING(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__))
+#define BT_LOGR(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__)
+#define BT_WARNING(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__)
 #endif
 
 /**
@@ -140,6 +143,7 @@ extern bool gBluetoothDebugFlag;
 #define KEY_REMOTE_AGENT      "/B2G/bluetooth/remote_device_agent"
 #define KEY_MANAGER           "/B2G/bluetooth/manager"
 #define KEY_ADAPTER           "/B2G/bluetooth/adapter"
+#define KEY_PAIRING_LISTENER  "/B2G/bluetooth/pairing_listener"
 
 /**
  * When the connection status of a Bluetooth profile is changed, we'll notify
@@ -168,6 +172,18 @@ extern bool gBluetoothDebugFlag;
 #define PAIRING_REQ_TYPE_CONSENT              "pairingconsentreq"
 
 /**
+ * System message to launch bluetooth app if no pairing listener is ready to
+ * receive pairing requests.
+ */
+#define SYS_MSG_BT_PAIRING_REQ                "bluetooth-pairing-request"
+
+/**
+ * The app origin of bluetooth app, which is responsible for listening pairing
+ * requests.
+ */
+#define BLUETOOTH_APP_ORIGIN                  "app://bluetooth.gaiamobile.org"
+
+/**
  * When a remote device gets paired / unpaired with local bluetooth adapter,
  * we'll dispatch an event.
  */
@@ -179,6 +195,12 @@ extern bool gBluetoothDebugFlag;
  * dispatch an event.
  */
 #define REQUEST_MEDIA_PLAYSTATUS_ID          "requestmediaplaystatus"
+
+/**
+ * When a remote BLE device gets connected / disconnected, we'll dispatch an
+ * event
+ */
+#define GATT_CONNECTION_STATE_CHANGED_ID     "connectionstatechanged"
 
 // Bluetooth address format: xx:xx:xx:xx:xx:xx (or xx_xx_xx_xx_xx_xx)
 #define BLUETOOTH_ADDRESS_LENGTH 17

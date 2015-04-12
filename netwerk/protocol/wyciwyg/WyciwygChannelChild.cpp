@@ -9,6 +9,7 @@
 #include "mozilla/net/ChannelEventQueue.h"
 #include "WyciwygChannelChild.h"
 #include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/ContentChild.h"
 
 #include "nsCharsetSource.h"
 #include "nsStringStream.h"
@@ -22,6 +23,7 @@
 #include "nsProxyRelease.h"
 
 using namespace mozilla::ipc;
+using namespace mozilla::dom;
 
 namespace mozilla {
 namespace net {
@@ -64,7 +66,7 @@ WyciwygChannelChild::~WyciwygChannelChild()
 void
 WyciwygChannelChild::AddIPDLReference()
 {
-  NS_ABORT_IF_FALSE(!mIPCOpen, "Attempt to retain more than one IPDL reference");
+  MOZ_ASSERT(!mIPCOpen, "Attempt to retain more than one IPDL reference");
   mIPCOpen = true;
   AddRef();
 }
@@ -72,7 +74,7 @@ WyciwygChannelChild::AddIPDLReference()
 void
 WyciwygChannelChild::ReleaseIPDLReference()
 {
-  NS_ABORT_IF_FALSE(mIPCOpen, "Attempt to release nonexistent IPDL reference");
+  MOZ_ASSERT(mIPCOpen, "Attempt to release nonexistent IPDL reference");
   mIPCOpen = false;
   Release();
 }
@@ -91,25 +93,31 @@ WyciwygChannelChild::Init(nsIURI* uri)
   SerializeURI(uri, serializedUri);
 
   // propagate loadInfo
-  mozilla::ipc::PrincipalInfo principalInfo;
+  mozilla::ipc::PrincipalInfo requestingPrincipalInfo;
+  mozilla::ipc::PrincipalInfo triggeringPrincipalInfo;
   uint32_t securityFlags;
   uint32_t policyType;
   if (mLoadInfo) {
     mozilla::ipc::PrincipalToPrincipalInfo(mLoadInfo->LoadingPrincipal(),
-                                           &principalInfo);
+                                           &requestingPrincipalInfo);
+    mozilla::ipc::PrincipalToPrincipalInfo(mLoadInfo->TriggeringPrincipal(),
+                                           &triggeringPrincipalInfo);
     securityFlags = mLoadInfo->GetSecurityFlags();
     policyType = mLoadInfo->GetContentPolicyType();
   }
   else {
     // use default values if no loadInfo is provided
     mozilla::ipc::PrincipalToPrincipalInfo(nsContentUtils::GetSystemPrincipal(),
-                                           &principalInfo);
+                                           &requestingPrincipalInfo);
+    mozilla::ipc::PrincipalToPrincipalInfo(nsContentUtils::GetSystemPrincipal(),
+                                           &triggeringPrincipalInfo);
     securityFlags = nsILoadInfo::SEC_NORMAL;
     policyType = nsIContentPolicy::TYPE_OTHER;
   }
 
   SendInit(serializedUri,
-           principalInfo,
+           requestingPrincipalInfo,
+           triggeringPrincipalInfo,
            securityFlags,
            policyType);
   return NS_OK;
@@ -246,7 +254,7 @@ WyciwygChannelChild::OnDataAvailable(const nsCString& data,
 
   if (mProgressSink && NS_SUCCEEDED(rv)) {
     mProgressSink->OnProgress(this, nullptr, offset + data.Length(),
-                              uint64_t(mContentLength));
+                              mContentLength);
   }
 }
 
@@ -641,8 +649,9 @@ WyciwygChannelChild::AsyncOpen(nsIStreamListener *aListener, nsISupports *aConte
   mListenerContext = aContext;
   mIsPending = true;
 
-  if (mLoadGroup)
+  if (mLoadGroup) {
     mLoadGroup->AddRequest(this, nullptr);
+  }
 
   URIParams originalURI;
   SerializeURI(mOriginalURI, originalURI);
@@ -652,7 +661,10 @@ WyciwygChannelChild::AsyncOpen(nsIStreamListener *aListener, nsISupports *aConte
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  SendAsyncOpen(originalURI, mLoadFlags, IPC::SerializedLoadContext(this), tabChild);
+  PBrowserOrId browser = static_cast<ContentChild*>(Manager()->Manager())
+                         ->GetBrowserOrId(tabChild);
+
+  SendAsyncOpen(originalURI, mLoadFlags, IPC::SerializedLoadContext(this), browser);
 
   mSentAppData = true;
   mState = WCC_OPENED;
@@ -673,7 +685,11 @@ WyciwygChannelChild::WriteToCacheEntry(const nsAString & aData)
 
   if (!mSentAppData) {
     mozilla::dom::TabChild* tabChild = GetTabChild(this);
-    SendAppData(IPC::SerializedLoadContext(this), tabChild);
+
+    PBrowserOrId browser = static_cast<ContentChild*>(Manager()->Manager())
+                           ->GetBrowserOrId(tabChild);
+
+    SendAppData(IPC::SerializedLoadContext(this), browser);
     mSentAppData = true;
   }
 

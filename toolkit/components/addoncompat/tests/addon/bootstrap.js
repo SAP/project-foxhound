@@ -1,8 +1,11 @@
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
+var Cr = Components.results;
 
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/BrowserUtils.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const baseURL = "http://mochi.test:8888/browser/" +
   "toolkit/components/addoncompat/tests/browser/";
@@ -81,7 +84,7 @@ function testListeners()
       // We also want to make sure that this listener doesn't fire
       // after it's removed.
       let loadWithRemoveCount = 0;
-      addLoadListener(browser, function handler1() {
+      addLoadListener(browser, function handler1(event) {
         loadWithRemoveCount++;
         is(event.target.documentURI, url1, "only fire for first url");
       });
@@ -216,9 +219,277 @@ function testSandbox()
       is(browser.contentDocument.getElementById("output").innerHTML, "hello",
          "sandbox code ran successfully");
 
+      // Now try a sandbox with expanded principals.
+      sandbox = Cu.Sandbox([browser.contentWindow],
+                           {sandboxPrototype: browser.contentWindow,
+                            wantXrays: false});
+      Cu.evalInSandbox("const unsafeWindow = window;", sandbox);
+      Cu.evalInSandbox("document.getElementById('output').innerHTML = 'hello2';", sandbox);
+
+      is(browser.contentDocument.getElementById("output").innerHTML, "hello2",
+         "EP sandbox code ran successfully");
+
       gBrowser.removeTab(tab);
       resolve();
     }, true);
+  });
+}
+
+// Test for bug 1095305. We just want to make sure that loading some
+// unprivileged content from an add-on package doesn't crash.
+function testAddonContent()
+{
+  let chromeRegistry = Components.classes["@mozilla.org/chrome/chrome-registry;1"]
+    .getService(Components.interfaces.nsIChromeRegistry);
+  let base = chromeRegistry.convertChromeURL(BrowserUtils.makeURI("chrome://addonshim1/content/"));
+
+  let res = Services.io.getProtocolHandler("resource")
+    .QueryInterface(Ci.nsIResProtocolHandler);
+  res.setSubstitution("addonshim1", base);
+
+  return new Promise(function(resolve, reject) {
+    const url = "resource://addonshim1/page.html";
+    let tab = gBrowser.addTab(url);
+    let browser = tab.linkedBrowser;
+    addLoadListener(browser, function handler() {
+      gBrowser.removeTab(tab);
+      res.setSubstitution("addonshim1", null);
+
+      resolve();
+    });
+  });
+}
+
+
+// Test for bug 1102410. We check that multiple nsIAboutModule's can be
+// registered in the parent, and that the child can browse to each of
+// the registered about: pages.
+function testAboutModuleRegistration()
+{
+  let Registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
+
+  let modulesToUnregister = new Map();
+
+  function TestChannel(uri, aboutName) {
+    this.aboutName = aboutName;
+    this.URI = this.originalURI = uri;
+  }
+
+  TestChannel.prototype = {
+    asyncOpen: function(listener, context) {
+      let stream = this.open();
+      let runnable = {
+        run: () => {
+          try {
+            listener.onStartRequest(this, context);
+          } catch(e) {}
+          try {
+            listener.onDataAvailable(this, context, stream, 0, stream.available());
+          } catch(e) {}
+          try {
+            listener.onStopRequest(this, context, Cr.NS_OK);
+          } catch(e) {}
+        }
+      };
+      Services.tm.currentThread.dispatch(runnable, Ci.nsIEventTarget.DISPATCH_NORMAL);
+    },
+
+    open: function() {
+      function getWindow(channel) {
+        try
+        {
+          if (channel.notificationCallbacks)
+            return channel.notificationCallbacks.getInterface(Ci.nsILoadContext).associatedWindow;
+        } catch(e) {}
+
+        try
+        {
+          if (channel.loadGroup && channel.loadGroup.notificationCallbacks)
+            return channel.loadGroup.notificationCallbacks.getInterface(Ci.nsILoadContext).associatedWindow;
+        } catch(e) {}
+
+        return null;
+      }
+
+      let data = `<html><h1>${this.aboutName}</h1></html>`;
+      let wnd = getWindow(this);
+      if (!wnd)
+        throw Cr.NS_ERROR_UNEXPECTED;
+
+      let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(Ci.nsIStringInputStream);
+      stream.setData(data, data.length);
+      return stream;
+    },
+
+    isPending: function() {
+      return false;
+    },
+    cancel: function() {
+      throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+    },
+    suspend: function() {
+      throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+    },
+    resume: function() {
+      throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+    },
+
+    QueryInterface: XPCOMUtils.generateQI([Ci.nsIChannel, Ci.nsIRequest])
+  };
+
+  /**
+   * This function creates a new nsIAboutModule and registers it. Callers
+   * should also call unregisterModules after using this function to clean
+   * up the nsIAboutModules at the end of this test.
+   *
+   * @param aboutName
+   *        This will be the string after about: used to refer to this module.
+   *        For example, if aboutName is foo, you can refer to this module by
+   *        browsing to about:foo.
+   *
+   * @param uuid
+   *        A unique identifer string for this module. For example,
+   *        "5f3a921b-250f-4ac5-a61c-8f79372e6063"
+   */
+  let createAndRegisterAboutModule = function(aboutName, uuid) {
+
+    let AboutModule = function() {};
+
+    AboutModule.prototype = {
+      classID: Components.ID(uuid),
+      classDescription: `Testing About Module for about:${aboutName}`,
+      contractID: `@mozilla.org/network/protocol/about;1?what=${aboutName}`,
+      QueryInterface: XPCOMUtils.generateQI([Ci.nsIAboutModule]),
+
+      newChannel: (aURI) => {
+        return new TestChannel(aURI, aboutName);
+      },
+
+      getURIFlags: (aURI) => {
+        return Ci.nsIAboutModule.URI_SAFE_FOR_UNTRUSTED_CONTENT |
+               Ci.nsIAboutModule.ALLOW_SCRIPT;
+      },
+    };
+
+    let factory = {
+      createInstance: function(outer, iid) {
+        if (outer) {
+          throw Cr.NS_ERROR_NO_AGGREGATION;
+        }
+        return new AboutModule();
+      },
+    };
+
+    Registrar.registerFactory(AboutModule.prototype.classID,
+                              AboutModule.prototype.classDescription,
+                              AboutModule.prototype.contractID,
+                              factory);
+
+    modulesToUnregister.set(AboutModule.prototype.classID,
+                            factory);
+  };
+
+  /**
+   * Unregisters any nsIAboutModules registered with
+   * createAndRegisterAboutModule.
+   */
+  let unregisterModules = () => {
+    for (let [classID, factory] of modulesToUnregister) {
+      Registrar.unregisterFactory(classID, factory);
+    }
+  };
+
+  /**
+   * Takes a browser, and sends it a framescript to attempt to
+   * load some about: pages. The frame script will send a test:result
+   * message on completion, passing back a data object with:
+   *
+   * {
+   *   pass: true
+   * }
+   *
+   * on success, and:
+   *
+   * {
+   *   pass: false,
+   *   errorMsg: message,
+   * }
+   *
+   * on failure.
+   *
+   * @param browser
+   *        The browser to send the framescript to.
+   */
+  let testAboutModulesWork = (browser) => {
+    let testConnection = () => {
+      let request = new content.XMLHttpRequest();
+      try {
+        request.open("GET", "about:test1", false);
+        request.send(null);
+        if (request.status != 200) {
+          throw(`about:test1 response had status ${request.status} - expected 200`);
+        }
+        if (request.responseText.indexOf("test1") == -1) {
+          throw(`about:test1 response had result ${request.responseText}`);
+        }
+
+        request = new content.XMLHttpRequest();
+        request.open("GET", "about:test2", false);
+        request.send(null);
+
+        if (request.status != 200) {
+          throw(`about:test2 response had status ${request.status} - expected 200`);
+        }
+        if (request.responseText.indexOf("test2") == -1) {
+          throw(`about:test2 response had result ${request.responseText}`);
+        }
+
+        sendAsyncMessage("test:result", {
+          pass: true,
+        });
+      } catch(e) {
+        sendAsyncMessage("test:result", {
+          pass: false,
+          errorMsg: e.toString(),
+        });
+      }
+    };
+
+    return new Promise((resolve, reject) => {
+      let mm = browser.messageManager;
+      mm.addMessageListener("test:result", function onTestResult(message) {
+        mm.removeMessageListener("test:result", onTestResult);
+        if (message.data.pass) {
+          ok(true, "Connections to about: pages were successful");
+        } else {
+          ok(false, message.data.errorMsg);
+        }
+        resolve();
+      });
+      mm.loadFrameScript("data:,(" + testConnection.toString() + ")();", false);
+    });
+  }
+
+  // Here's where the actual test is performed.
+  return new Promise((resolve, reject) => {
+    createAndRegisterAboutModule("test1", "5f3a921b-250f-4ac5-a61c-8f79372e6063");
+    createAndRegisterAboutModule("test2", "d7ec0389-1d49-40fa-b55c-a1fc3a6dbf6f");
+
+    // This needs to be a chrome-privileged page that loads in the
+    // content process. It needs chrome privs because otherwise the
+    // XHRs for about:test[12] will fail with a privilege error
+    // despite the presence of URI_SAFE_FOR_UNTRUSTED_CONTENT.
+    let newTab = gBrowser.addTab("chrome://addonshim1/content/page.html");
+    gBrowser.selectedTab = newTab;
+    let browser = newTab.linkedBrowser;
+
+    addLoadListener(browser, function() {
+      testAboutModulesWork(browser).then(() => {
+        gBrowser.removeTab(newTab);
+        unregisterModules();
+        resolve();
+      });
+    });
   });
 }
 
@@ -235,7 +506,9 @@ function runTests(win, funcs)
     then(testListeners).
     then(testCapturing).
     then(testObserver).
-    then(testSandbox);
+    then(testSandbox).
+    then(testAddonContent).
+    then(testAboutModuleRegistration);
 }
 
 /*

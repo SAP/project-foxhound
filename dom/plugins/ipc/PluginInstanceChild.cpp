@@ -119,8 +119,16 @@ CreateDrawTargetForSurface(gfxASurface *aSurface)
   return drawTarget;
 }
 
-PluginInstanceChild::PluginInstanceChild(const NPPluginFuncs* aPluginIface)
+PluginInstanceChild::PluginInstanceChild(const NPPluginFuncs* aPluginIface,
+                                         const nsCString& aMimeType,
+                                         const uint16_t& aMode,
+                                         const InfallibleTArray<nsCString>& aNames,
+                                         const InfallibleTArray<nsCString>& aValues)
     : mPluginIface(aPluginIface)
+    , mMimeType(aMimeType)
+    , mMode(aMode)
+    , mNames(aNames)
+    , mValues(aValues)
 #if defined(XP_MACOSX)
     , mContentsScaleFactor(1.0)
 #endif
@@ -165,6 +173,7 @@ PluginInstanceChild::PluginInstanceChild(const NPPluginFuncs* aPluginIface)
     , mDoAlphaExtraction(false)
     , mHasPainted(false)
     , mSurfaceDifferenceRect(0,0,0,0)
+    , mDestroyed(false)
 {
     memset(&mWindow, 0, sizeof(mWindow));
     mWindow.type = NPWindowTypeWindow;
@@ -209,10 +218,58 @@ PluginInstanceChild::~PluginInstanceChild()
 #endif
 }
 
+NPError
+PluginInstanceChild::DoNPP_New()
+{
+    // unpack the arguments into a C format
+    int argc = mNames.Length();
+    NS_ASSERTION(argc == (int) mValues.Length(),
+                 "argn.length != argv.length");
+
+    nsAutoArrayPtr<char*> argn(new char*[1 + argc]);
+    nsAutoArrayPtr<char*> argv(new char*[1 + argc]);
+    argn[argc] = 0;
+    argv[argc] = 0;
+
+    for (int i = 0; i < argc; ++i) {
+        argn[i] = const_cast<char*>(NullableStringGet(mNames[i]));
+        argv[i] = const_cast<char*>(NullableStringGet(mValues[i]));
+    }
+
+    NPP npp = GetNPP();
+
+    NPError rv = mPluginIface->newp((char*)NullableStringGet(mMimeType), npp,
+                                    mMode, argc, argn, argv, 0);
+    if (NPERR_NO_ERROR != rv) {
+        return rv;
+    }
+
+    Initialize();
+
+#if defined(XP_MACOSX) && defined(__i386__)
+    // If an i386 Mac OS X plugin has selected the Carbon event model then
+    // we have to fail. We do not support putting Carbon event model plugins
+    // out of process. Note that Carbon is the default model so out of process
+    // plugins need to actively negotiate something else in order to work
+    // out of process.
+    if (EventModel() == NPEventModelCarbon) {
+      // Send notification that a plugin tried to negotiate Carbon NPAPI so that
+      // users can be notified that restarting the browser in i386 mode may allow
+      // them to use the plugin.
+      SendNegotiatedCarbon();
+
+      // Fail to instantiate.
+      rv = NPERR_MODULE_LOAD_FAILED_ERROR;
+    }
+#endif
+
+    return rv;
+}
+
 int
 PluginInstanceChild::GetQuirks()
 {
-    return PluginModuleChild::current()->GetQuirks();
+    return PluginModuleChild::GetChrome()->GetQuirks();
 }
 
 NPError
@@ -387,12 +444,12 @@ PluginInstanceChild::NPN_GetValue(NPNVariable aVar,
     }
 
     case NPNVsupportsCoreAnimationBool: {
-        *((NPBool*)aValue) = nsCocoaFeatures::SupportCoreAnimationPlugins();
+        *((NPBool*)aValue) = true;
         return NPERR_NO_ERROR;
     }
 
     case NPNVsupportsInvalidatingCoreAnimationBool: {
-        *((NPBool*)aValue) = nsCocoaFeatures::SupportCoreAnimationPlugins();
+        *((NPBool*)aValue) = true;
         return NPERR_NO_ERROR;
     }
 
@@ -794,7 +851,7 @@ PluginInstanceChild::AnswerNPP_HandleEvent(const NPRemoteEvent& event,
 
 bool
 PluginInstanceChild::AnswerNPP_HandleEvent_Shmem(const NPRemoteEvent& event,
-                                                 Shmem& mem,
+                                                 Shmem&& mem,
                                                  int16_t* handled,
                                                  Shmem* rtnmem)
 {
@@ -858,7 +915,7 @@ PluginInstanceChild::AnswerNPP_HandleEvent_Shmem(const NPRemoteEvent& event,
 #else
 bool
 PluginInstanceChild::AnswerNPP_HandleEvent_Shmem(const NPRemoteEvent& event,
-                                                 Shmem& mem,
+                                                 Shmem&& mem,
                                                  int16_t* handled,
                                                  Shmem* rtnmem)
 {
@@ -2233,21 +2290,86 @@ PluginInstanceChild::RecvPPluginScriptableObjectConstructor(
 }
 
 bool
-PluginInstanceChild::AnswerPBrowserStreamConstructor(
+PluginInstanceChild::RecvPBrowserStreamConstructor(
     PBrowserStreamChild* aActor,
     const nsCString& url,
     const uint32_t& length,
     const uint32_t& lastmodified,
     PStreamNotifyChild* notifyData,
-    const nsCString& headers,
-    const nsCString& mimeType,
-    const bool& seekable,
-    NPError* rv,
-    uint16_t* stype)
+    const nsCString& headers)
+{
+    return true;
+}
+
+NPError
+PluginInstanceChild::DoNPP_NewStream(BrowserStreamChild* actor,
+                                     const nsCString& mimeType,
+                                     const bool& seekable,
+                                     uint16_t* stype)
 {
     AssertPluginThread();
-    *rv = static_cast<BrowserStreamChild*>(aActor)
-          ->StreamConstructed(mimeType, seekable, stype);
+    NPError rv = actor->StreamConstructed(mimeType, seekable, stype);
+    return rv;
+}
+
+bool
+PluginInstanceChild::AnswerNPP_NewStream(PBrowserStreamChild* actor,
+                                         const nsCString& mimeType,
+                                         const bool& seekable,
+                                         NPError* rv,
+                                         uint16_t* stype)
+{
+    *rv = DoNPP_NewStream(static_cast<BrowserStreamChild*>(actor), mimeType,
+                          seekable, stype);
+    return true;
+}
+
+class NewStreamAsyncCall : public ChildAsyncCall
+{
+public:
+    NewStreamAsyncCall(PluginInstanceChild* aInstance,
+                       BrowserStreamChild* aBrowserStreamChild,
+                       const nsCString& aMimeType,
+                       const bool aSeekable)
+        : ChildAsyncCall(aInstance, nullptr, nullptr)
+        , mBrowserStreamChild(aBrowserStreamChild)
+        , mMimeType(aMimeType)
+        , mSeekable(aSeekable)
+    {
+    }
+
+    void Run() override
+    {
+        RemoveFromAsyncList();
+
+        uint16_t stype = NP_NORMAL;
+        NPError rv = mInstance->DoNPP_NewStream(mBrowserStreamChild, mMimeType,
+                                                mSeekable, &stype);
+        DebugOnly<bool> sendOk =
+            mBrowserStreamChild->SendAsyncNPP_NewStreamResult(rv, stype);
+        MOZ_ASSERT(sendOk);
+    }
+
+private:
+    BrowserStreamChild* mBrowserStreamChild;
+    const nsCString     mMimeType;
+    const bool          mSeekable;
+};
+
+bool
+PluginInstanceChild::RecvAsyncNPP_NewStream(PBrowserStreamChild* actor,
+                                            const nsCString& mimeType,
+                                            const bool& seekable)
+{
+    // Reusing ChildAsyncCall so that the task is cancelled properly on Destroy
+    BrowserStreamChild* child = static_cast<BrowserStreamChild*>(actor);
+    NewStreamAsyncCall* task = new NewStreamAsyncCall(this, child, mimeType,
+                                                      seekable);
+    {
+        MutexAutoLock lock(mAsyncCallMutex);
+        mPendingAsyncCalls.AppendElement(task);
+    }
+    MessageLoop::current()->PostTask(FROM_HERE, task);
     return true;
 }
 
@@ -2256,16 +2378,12 @@ PluginInstanceChild::AllocPBrowserStreamChild(const nsCString& url,
                                               const uint32_t& length,
                                               const uint32_t& lastmodified,
                                               PStreamNotifyChild* notifyData,
-                                              const nsCString& headers,
-                                              const nsCString& mimeType,
-                                              const bool& seekable,
-                                              NPError* rv,
-                                              uint16_t *stype)
+                                              const nsCString& headers)
 {
     AssertPluginThread();
     return new BrowserStreamChild(this, url, length, lastmodified,
                                   static_cast<StreamNotifyChild*>(notifyData),
-                                  headers, mimeType, seekable, rv, stype);
+                                  headers);
 }
 
 bool
@@ -2322,7 +2440,6 @@ StreamNotifyChild::ActorDestroy(ActorDestroyReason why)
 void
 StreamNotifyChild::SetAssociatedStream(BrowserStreamChild* bs)
 {
-    NS_ASSERTION(bs, "Shouldn't be null");
     NS_ASSERTION(!mBrowserStream, "Two streams for one streamnotify?");
 
     mBrowserStream = bs;
@@ -2393,7 +2510,7 @@ PluginInstanceChild::GetActorForNPObject(NPObject* aObject)
     }
 
     PluginScriptableObjectChild* actor =
-        PluginModuleChild::current()->GetActorForNPObject(aObject);
+        PluginScriptableObjectChild::GetActorForNPObject(aObject);
     if (actor) {
         // Plugin-provided object that we've previously wrapped.
         return actor;
@@ -2548,8 +2665,8 @@ PluginInstanceChild::DoAsyncSetWindow(const gfxSurfaceType& aSurfaceType,
 bool
 PluginInstanceChild::CreateOptSurface(void)
 {
-    NS_ABORT_IF_FALSE(mSurfaceType != gfxSurfaceType::Max,
-                      "Need a valid surface type here");
+    MOZ_ASSERT(mSurfaceType != gfxSurfaceType::Max,
+               "Need a valid surface type here");
     NS_ASSERTION(!mCurrentSurface, "mCurrentSurfaceActor can get out of sync.");
 
     nsRefPtr<gfxASurface> retsurf;
@@ -2978,8 +3095,8 @@ void
 PluginInstanceChild::PaintRectWithAlphaExtraction(const nsIntRect& aRect,
                                                   gfxASurface* aSurface)
 {
-    NS_ABORT_IF_FALSE(aSurface->GetContentType() == gfxContentType::COLOR_ALPHA,
-                      "Refusing to pointlessly recover alpha");
+    MOZ_ASSERT(aSurface->GetContentType() == gfxContentType::COLOR_ALPHA,
+               "Refusing to pointlessly recover alpha");
 
     nsIntRect rect(aRect);
     // If |aSurface| can be used to paint and can have alpha values
@@ -3058,7 +3175,7 @@ PluginInstanceChild::PaintRectWithAlphaExtraction(const nsIntRect& aRect,
     PaintRectToSurface(rect, blackImage, gfxRGBA(0.0, 0.0, 0.0));
 #endif
 
-    NS_ABORT_IF_FALSE(whiteImage && blackImage, "Didn't paint enough!");
+    MOZ_ASSERT(whiteImage && blackImage, "Didn't paint enough!");
 
     // Extract alpha from black and white image and store to black
     // image
@@ -3276,7 +3393,7 @@ PluginInstanceChild::ShowPluginFrame()
         SharedDIBSurface* s = static_cast<SharedDIBSurface*>(mCurrentSurface.get());
         if (!mCurrentSurfaceActor) {
             base::SharedMemoryHandle handle = nullptr;
-            s->ShareToProcess(PluginModuleChild::current()->OtherProcess(), &handle);
+            s->ShareToProcess(OtherProcess(), &handle);
 
             mCurrentSurfaceActor =
                 SendPPluginSurfaceConstructor(handle,
@@ -3422,7 +3539,7 @@ bool
 PluginInstanceChild::RecvUpdateBackground(const SurfaceDescriptor& aBackground,
                                           const nsIntRect& aRect)
 {
-    NS_ABORT_IF_FALSE(mIsTransparent, "Only transparent plugins use backgrounds");
+    MOZ_ASSERT(mIsTransparent, "Only transparent plugins use backgrounds");
 
     if (!mBackground) {
         // XXX refactor me
@@ -3678,12 +3795,13 @@ PluginInstanceChild::ClearAllSurfaces()
 #endif
 }
 
-bool
-PluginInstanceChild::AnswerNPP_Destroy(NPError* aResult)
+void
+PluginInstanceChild::Destroy()
 {
-    PLUGIN_LOG_DEBUG_METHOD;
-    AssertPluginThread();
-    *aResult = NPERR_NO_ERROR;
+    if (mDestroyed) {
+        return;
+    }
+    mDestroyed = true;
 
 #if defined(OS_WIN)
     SetProp(mPluginWindowHWND, kPluginIgnoreSubclassProperty, (HANDLE)1);
@@ -3707,7 +3825,7 @@ PluginInstanceChild::AnswerNPP_Destroy(NPError* aResult)
     // NPP_Destroy() should be a synchronization point for plugin threads
     // calling NPN_AsyncCall: after this function returns, they are no longer
     // allowed to make async calls on this instance.
-    PluginModuleChild::current()->NPP_Destroy(this);
+    static_cast<PluginModuleChild *>(Manager())->NPP_Destroy(this);
     mData.ndata = 0;
 
     if (mCurrentInvalidateTask) {
@@ -3729,7 +3847,7 @@ PluginInstanceChild::AnswerNPP_Destroy(NPError* aResult)
     ClearAllSurfaces();
 
     mDeletingHash = new nsTHashtable<DeletingObjectEntry>;
-    PluginModuleChild::current()->FindNPObjectsForInstance(this);
+    PluginScriptableObjectChild::NotifyOfInstanceShutdown(this);
 
     mDeletingHash->EnumerateEntries(InvalidateObject, nullptr);
     mDeletingHash->EnumerateEntries(DeleteObject, nullptr);
@@ -3761,6 +3879,22 @@ PluginInstanceChild::AnswerNPP_Destroy(NPError* aResult)
 #if defined(MOZ_X11) && defined(XP_UNIX) && !defined(XP_MACOSX)
     DeleteWindow();
 #endif
+}
+
+bool
+PluginInstanceChild::AnswerNPP_Destroy(NPError* aResult)
+{
+    PLUGIN_LOG_DEBUG_METHOD;
+    AssertPluginThread();
+    *aResult = NPERR_NO_ERROR;
+
+    Destroy();
 
     return true;
+}
+
+void
+PluginInstanceChild::ActorDestroy(ActorDestroyReason why)
+{
+    Destroy();
 }

@@ -53,6 +53,13 @@
 /**
  * B2G bluedroid:
  *   MOZ_B2G_BT and MOZ_B2G_BT_BLUEDROID are both defined;
+ *   MOZ_B2G_BLUEZ or MOZ_B2G_DAEMON are not defined.
+ */
+#include "BluetoothServiceBluedroid.h"
+#elif defined(MOZ_B2G_BT_DAEMON)
+/**
+ * B2G Bluetooth daemon:
+ *   MOZ_B2G_BT, MOZ_B2G_BLUEDROID and MOZ_B2G_BT_DAEMON are defined;
  *   MOZ_B2G_BLUEZ is not defined.
  */
 #include "BluetoothServiceBluedroid.h"
@@ -139,46 +146,12 @@ BluetoothService::ToggleBtAck::ToggleBtAck(bool aEnabled)
 NS_METHOD
 BluetoothService::ToggleBtAck::Run()
 {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  // This is requested in Bug 836516. With settings this property, WLAN
-  // firmware could be aware of Bluetooth has been turned on/off, so that the
-  // mecahnism of handling coexistence of WIFI and Bluetooth could be started.
-  //
-  // In the future, we may have our own way instead of setting a system
-  // property to let firmware developers be able to sense that Bluetooth has
-  // been toggled.
-#if defined(MOZ_WIDGET_GONK)
-  if (property_set(PROP_BLUETOOTH_ENABLED, mEnabled ? "true" : "false") != 0) {
-    BT_WARNING("Failed to set bluetooth enabled property");
-  }
-#endif
-
-  NS_ENSURE_TRUE(sBluetoothService, NS_OK);
-
-  if (sInShutdown) {
-    sBluetoothService = nullptr;
-    return NS_OK;
-  }
-
-  // Update mEnabled of BluetoothService object since
-  // StartInternal/StopInternal have been already done.
-  sBluetoothService->SetEnabled(mEnabled);
-  sToggleInProgress = false;
-
-  nsAutoString signalName;
-  signalName = mEnabled ? NS_LITERAL_STRING("Enabled")
-                        : NS_LITERAL_STRING("Disabled");
-  BluetoothSignal signal(signalName, NS_LITERAL_STRING(KEY_MANAGER), true);
-  sBluetoothService->DistributeSignal(signal);
-
-  // Event 'AdapterAdded' has to be fired after firing 'Enabled'
-  sBluetoothService->TryFiringAdapterAdded();
+  BluetoothService::AcknowledgeToggleBt(mEnabled);
 
   return NS_OK;
 }
 
-class BluetoothService::StartupTask : public nsISettingsServiceCallback
+class BluetoothService::StartupTask final : public nsISettingsServiceCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -248,6 +221,8 @@ BluetoothService::Create()
 #if defined(MOZ_B2G_BT_BLUEZ)
   return new BluetoothDBusService();
 #elif defined(MOZ_B2G_BT_BLUEDROID)
+  return new BluetoothServiceBluedroid();
+#elif defined(MOZ_B2G_BT_DAEMON)
   return new BluetoothServiceBluedroid();
 #endif
 #elif defined(MOZ_BLUETOOTH_DBUS)
@@ -570,11 +545,8 @@ BluetoothService::HandleSettingsChanged(nsISupports* aSubject)
   // The string that we're interested in will be a JSON string that looks like:
   //  {"key":"bluetooth.enabled","value":true}
 
-  AutoJSAPI jsapi;
-  jsapi.Init();
-  JSContext* cx = jsapi.cx();
-  RootedDictionary<SettingChangeNotification> setting(cx);
-  if (!WrappedJSToDictionary(cx, aSubject, setting)) {
+  RootedDictionary<SettingChangeNotification> setting(nsContentUtils::RootingCx());
+  if (!WrappedJSToDictionary(aSubject, setting)) {
     return NS_OK;
   }
   if (setting.mKey.EqualsASCII(BLUETOOTH_DEBUGGING_SETTING)) {
@@ -582,7 +554,7 @@ BluetoothService::HandleSettingsChanged(nsISupports* aSubject)
       MOZ_ASSERT(false, "Expecting a boolean for 'bluetooth.debugging.enabled'!");
       return NS_ERROR_UNEXPECTED;
     }
-  
+
     SWITCH_BT_DEBUG(setting.mValue.toBoolean());
 
     return NS_OK;
@@ -750,8 +722,7 @@ BluetoothService::Notify(const BluetoothSignal& aData)
   nsString type = NS_LITERAL_STRING("bluetooth-pairing-request");
 
   AutoSafeJSContext cx;
-  JS::Rooted<JSObject*> obj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(),
-                                             JS::NullPtr()));
+  JS::Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
   NS_ENSURE_TRUE_VOID(obj);
 
   if (!SetJsObject(cx, aData.value(), obj)) {
@@ -793,4 +764,54 @@ BluetoothService::Notify(const BluetoothSignal& aData)
   JS::Rooted<JS::Value> value(cx, JS::ObjectValue(*obj));
   systemMessenger->BroadcastMessage(type, value,
                                     JS::UndefinedHandleValue);
+}
+
+void
+BluetoothService::AcknowledgeToggleBt(bool aEnabled)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+#if defined(MOZ_WIDGET_GONK)
+  // This is requested in Bug 836516. With settings this property, WLAN
+  // firmware could be aware of Bluetooth has been turned on/off, so that
+  // the mechanism of handling coexistence of WIFI and Bluetooth could be
+  // started.
+  //
+  // In the future, we may have our own way instead of setting a system
+  // property to let firmware developers be able to sense that Bluetooth
+  // has been toggled.
+  if (property_set(PROP_BLUETOOTH_ENABLED, aEnabled ? "true" : "false") != 0) {
+    BT_WARNING("Failed to set bluetooth enabled property");
+  }
+#endif
+
+  if (sInShutdown) {
+    sBluetoothService = nullptr;
+    return;
+  }
+
+  NS_ENSURE_TRUE_VOID(sBluetoothService);
+
+  sBluetoothService->CompleteToggleBt(aEnabled);
+}
+
+void
+BluetoothService::CompleteToggleBt(bool aEnabled)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // Update |mEnabled| of |BluetoothService| object since
+  // |StartInternal| and |StopInternal| have been already
+  // done.
+  SetEnabled(aEnabled);
+  sToggleInProgress = false;
+
+  nsAutoString signalName;
+  signalName = aEnabled ? NS_LITERAL_STRING("Enabled")
+                        : NS_LITERAL_STRING("Disabled");
+  BluetoothSignal signal(signalName, NS_LITERAL_STRING(KEY_MANAGER), true);
+  DistributeSignal(signal);
+
+  // Event 'AdapterAdded' has to be fired after firing 'Enabled'
+  TryFiringAdapterAdded();
 }

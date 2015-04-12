@@ -7,6 +7,7 @@
 #include "mozilla/JSONWriter.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/nsMemoryInfoDumper.h"
+#include "mozilla/DebugOnly.h"
 #include "nsDumpUtils.h"
 
 #include "mozilla/unused.h"
@@ -82,7 +83,7 @@ private:
   const bool mMinimizeMemoryUsage;
 };
 
-class GCAndCCLogDumpRunnable MOZ_FINAL
+class GCAndCCLogDumpRunnable final
   : public nsRunnable
   , public nsIDumpGCAndCCLogsCallback
 {
@@ -98,7 +99,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run() MOZ_OVERRIDE
+  NS_IMETHOD Run() override
   {
     nsCOMPtr<nsIMemoryInfoDumper> dumper =
       do_GetService("@mozilla.org/memory-info-dumper;1");
@@ -108,12 +109,12 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD OnDump(nsIFile* aGCLog, nsIFile* aCCLog, bool aIsParent) MOZ_OVERRIDE
+  NS_IMETHOD OnDump(nsIFile* aGCLog, nsIFile* aCCLog, bool aIsParent) override
   {
     return NS_OK;
   }
 
-  NS_IMETHOD OnFinish() MOZ_OVERRIDE
+  NS_IMETHOD OnFinish() override
   {
     return NS_OK;
   }
@@ -221,7 +222,7 @@ doGCCCDump(const nsCString& aInputStr)
 bool
 SetupFifo()
 {
-  static bool fifoCallbacksRegistered = false;
+  static DebugOnly<bool> fifoCallbacksRegistered = false;
 
   if (!FifoWatcher::MaybeCreate()) {
     return false;
@@ -317,7 +318,7 @@ EnsureNonEmptyIdentifier(nsAString& aIdentifier)
 // Use XPCOM refcounting to fire |onFinish| when all reference-holders
 // (remote dump actors or the |DumpGCAndCCLogsToFile| activation itself)
 // have gone away.
-class nsDumpGCAndCCLogsCallbackHolder MOZ_FINAL
+class nsDumpGCAndCCLogsCallbackHolder final
   : public nsIDumpGCAndCCLogsCallback
 {
 public:
@@ -328,12 +329,12 @@ public:
   {
   }
 
-  NS_IMETHODIMP OnFinish()
+  NS_IMETHODIMP OnFinish() override
   {
     return NS_ERROR_UNEXPECTED;
   }
 
-  NS_IMETHODIMP OnDump(nsIFile* aGCLog, nsIFile* aCCLog, bool aIsParent)
+  NS_IMETHODIMP OnDump(nsIFile* aGCLog, nsIFile* aCCLog, bool aIsParent) override
   {
     return mCallback->OnDump(aGCLog, aCCLog, aIsParent);
   }
@@ -455,7 +456,7 @@ private:
 // We need two callbacks: one that handles reports, and one that is called at
 // the end of reporting. Both the callbacks need access to the same JSONWriter,
 // so we implement both of them in this one class.
-class HandleReportAndFinishReportingCallbacks MOZ_FINAL
+class HandleReportAndFinishReportingCallbacks final
   : public nsIHandleReportCallback, public nsIFinishReportingCallback
 {
 public:
@@ -474,7 +475,7 @@ public:
   NS_IMETHOD Callback(const nsACString& aProcess, const nsACString& aPath,
                       int32_t aKind, int32_t aUnits, int64_t aAmount,
                       const nsACString& aDescription,
-                      nsISupports* aData)
+                      nsISupports* aData) override
   {
     nsAutoCString process;
     if (aProcess.IsEmpty()) {
@@ -514,7 +515,7 @@ public:
   }
 
   // This is the callback for nsIFinishReportingCallback.
-  NS_IMETHOD Callback(nsISupports* aData)
+  NS_IMETHOD Callback(nsISupports* aData) override
   {
     mWriter->EndArray();  // end of "reports" array
     mWriter->End();
@@ -545,7 +546,7 @@ private:
 NS_IMPL_ISUPPORTS(HandleReportAndFinishReportingCallbacks,
                   nsIHandleReportCallback, nsIFinishReportingCallback)
 
-class TempDirFinishCallback MOZ_FINAL : public nsIFinishDumpingCallback
+class TempDirFinishCallback final : public nsIFinishDumpingCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -557,7 +558,7 @@ public:
   {
   }
 
-  NS_IMETHOD Callback(nsISupports* aData)
+  NS_IMETHOD Callback(nsISupports* aData) override
   {
     // Rename the memory reports file, now that we're done writing all the
     // files. Its final name is "memory-report<-identifier>-<pid>.json.gz".
@@ -760,6 +761,8 @@ nsMemoryInfoDumper::DumpMemoryInfoToTempDir(const nsAString& aIdentifier,
 }
 
 #ifdef MOZ_DMD
+dmd::DMDFuncs::Singleton dmd::DMDFuncs::sSingleton;
+
 nsresult
 nsMemoryInfoDumper::OpenDMDFile(const nsAString& aIdentifier, int aPid,
                                 FILE** aOutFile)
@@ -811,8 +814,7 @@ nsMemoryInfoDumper::DumpDMDToFile(FILE* aFile)
   }
 
   // Dump DMD's memory reports analysis to the file.
-  JSONWriter jsonWriter(MakeUnique<GZWriterWrapper>(gzWriter));
-  dmd::AnalyzeReports(jsonWriter);
+  dmd::Analyze(MakeUnique<GZWriterWrapper>(gzWriter));
 
   rv = gzWriter->Finish();
   NS_WARN_IF(NS_FAILED(rv));

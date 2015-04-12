@@ -8,6 +8,7 @@
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/layers/TextureClientOGL.h"
 #include "nsSize.h"                     // for nsIntSize
+#include "GLLibraryEGL.h"
 
 using namespace mozilla::gl;
 
@@ -19,11 +20,11 @@ class CompositableForwarder;
 ////////////////////////////////////////////////////////////////////////
 // EGLImageTextureClient
 
-EGLImageTextureClient::EGLImageTextureClient(TextureFlags aFlags,
-                                             EGLImage aImage,
-                                             gfx::IntSize aSize,
-                                             bool aInverted)
-  : TextureClient(aFlags)
+EGLImageTextureClient::EGLImageTextureClient(ISurfaceAllocator* aAllocator,
+                                             TextureFlags aFlags,
+                                             EGLImageImage* aImage,
+                                             gfx::IntSize aSize)
+  : TextureClient(aAllocator, aFlags)
   , mImage(aImage)
   , mSize(aSize)
   , mIsLocked(false)
@@ -31,17 +32,11 @@ EGLImageTextureClient::EGLImageTextureClient(TextureFlags aFlags,
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default,
              "Can't pass an `EGLImage` between processes.");
 
-  // Our data is always owned externally.
   AddFlags(TextureFlags::DEALLOCATE_CLIENT);
 
-  if (aInverted) {
-    AddFlags(TextureFlags::NEEDS_Y_FLIP);
+  if (aImage->GetData()->mOriginPos == gl::OriginPos::BottomLeft) {
+    AddFlags(TextureFlags::ORIGIN_BOTTOM_LEFT);
   }
-}
-
-EGLImageTextureClient::~EGLImageTextureClient()
-{
-  // Our data is always owned externally.
 }
 
 bool
@@ -50,7 +45,8 @@ EGLImageTextureClient::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
   MOZ_ASSERT(IsValid());
   MOZ_ASSERT(IsAllocated());
 
-  aOutDescriptor = EGLImageDescriptor((uintptr_t)mImage, mSize);
+  const EGLImageImage::Data* data = mImage->GetData();
+  aOutDescriptor = EGLImageDescriptor((uintptr_t)data->mImage, (uintptr_t)data->mSync, mSize);
   return true;
 }
 
@@ -77,11 +73,12 @@ EGLImageTextureClient::Unlock()
 
 #ifdef MOZ_WIDGET_ANDROID
 
-SurfaceTextureClient::SurfaceTextureClient(TextureFlags aFlags,
+SurfaceTextureClient::SurfaceTextureClient(ISurfaceAllocator* aAllocator,
+                                           TextureFlags aFlags,
                                            AndroidSurfaceTexture* aSurfTex,
                                            gfx::IntSize aSize,
-                                           bool aInverted)
-  : TextureClient(aFlags)
+                                           gl::OriginPos aOriginPos)
+  : TextureClient(aAllocator, aFlags)
   , mSurfTex(aSurfTex)
   , mSize(aSize)
   , mIsLocked(false)
@@ -92,8 +89,8 @@ SurfaceTextureClient::SurfaceTextureClient(TextureFlags aFlags,
   // Our data is always owned externally.
   AddFlags(TextureFlags::DEALLOCATE_CLIENT);
 
-  if (aInverted) {
-    AddFlags(TextureFlags::NEEDS_Y_FLIP);
+  if (aOriginPos == gl::OriginPos::BottomLeft) {
+    AddFlags(TextureFlags::ORIGIN_BOTTOM_LEFT);
   }
 }
 

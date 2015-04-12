@@ -125,6 +125,14 @@ PluginContent.prototype = {
       pluginTag = pluginHost.getPluginTagForType(pluginElement.actualType);
       pluginName = BrowserUtils.makeNicePluginName(pluginTag.name);
 
+      // Convert this from nsIPluginTag so it can be serialized.
+      let properties = ["name", "description", "filename", "version", "enabledState"];
+      let pluginTagCopy = {};
+      for (let prop of properties) {
+        pluginTagCopy[prop] = pluginTag[prop];
+      }
+      pluginTag = pluginTagCopy;
+
       permissionString = pluginHost.getPermissionStringForType(pluginElement.actualType);
       fallbackType = pluginElement.defaultFallbackType;
       blocklistState = pluginHost.getBlocklistStateForType(pluginElement.actualType);
@@ -438,6 +446,9 @@ PluginContent.prototype = {
                        .add(pluginRect.width * pluginRect.height);
 
       let state = this._getPluginInfo(plugin).fallbackType;
+      if (state === null) {
+        state = Ci.nsIObjectLoadingContent.PLUGIN_UNSUPPORTED;
+      }
       Services.telemetry.getHistogramById('FLASH_PLUGIN_STATES')
                        .add(state);
     }
@@ -841,30 +852,16 @@ PluginContent.prototype = {
   // Crashed-plugin event listener. Called for every instance of a
   // plugin in content.
   pluginInstanceCrashed: function (target, aEvent) {
-    // Ensure the plugin and event are of the right type.
-    if (!(aEvent instanceof Ci.nsIDOMCustomEvent))
+    if (!(aEvent instanceof this.content.PluginCrashedEvent))
       return;
 
-    let propBag = aEvent.detail.QueryInterface(Ci.nsIPropertyBag2);
-    let submittedReport = propBag.getPropertyAsBool("submittedCrashReport");
-    let doPrompt        = true; // XXX followup for .getPropertyAsBool("doPrompt");
-    let submitReports   = true; // XXX followup for .getPropertyAsBool("submitReports");
-    let pluginName      = propBag.getPropertyAsAString("pluginName");
-    let pluginDumpID    = propBag.getPropertyAsAString("pluginDumpID");
-    let browserDumpID   = null;
-    let gmpPlugin       = false;
-
-    try {
-      browserDumpID = propBag.getPropertyAsAString("browserDumpID");
-    } catch (e) {
-      // For GMP crashes we don't get a browser dump.
-    }
-
-    try {
-      gmpPlugin = propBag.getPropertyAsBool("gmpPlugin");
-    } catch (e) {
-      // This property is only set for GMP plugins.
-    }
+    let submittedReport = aEvent.submittedCrashReport;
+    let doPrompt        = true; // XXX followup for aEvent.doPrompt;
+    let submitReports   = true; // XXX followup for aEvent.submitReports;
+    let pluginName      = aEvent.pluginName;
+    let pluginDumpID    = aEvent.pluginDumpID;
+    let browserDumpID   = aEvent.browserDumpID;
+    let gmpPlugin       = aEvent.gmpPlugin;
 
     // For non-GMP plugins, remap the plugin name to a more user-presentable form.
     if (!gmpPlugin) {

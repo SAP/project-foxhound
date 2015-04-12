@@ -17,9 +17,6 @@ import android.util.Log;
 public final class ThreadUtils {
     private static final String LOGTAG = "ThreadUtils";
 
-    // Time in ms until the Gecko thread is reset to normal priority.
-    private static final long PRIORITY_RESET_TIMEOUT = 10000;
-
     /**
      * Controls the action taken when a method like
      * {@link ThreadUtils#assertOnUiThread(AssertBehavior)} detects a problem.
@@ -97,6 +94,14 @@ public final class ThreadUtils {
 
     public static void postToUiThread(Runnable runnable) {
         sUiHandler.post(runnable);
+    }
+
+    public static void postDelayedToUiThread(Runnable runnable, long timeout) {
+        sUiHandler.postDelayed(runnable, timeout);
+    }
+
+    public static void removeCallbacksFromUiThread(Runnable runnable) {
+        sUiHandler.removeCallbacks(runnable);
     }
 
     public static Thread getBackgroundThread() {
@@ -212,8 +217,10 @@ public final class ThreadUtils {
      *
      * Note that there are no guards in place to prevent multiple calls
      * to this method from conflicting with each other.
+     *
+     * @param timeout Timeout in ms after which the priority will be reset
      */
-    public static void reduceGeckoPriority() {
+    public static void reduceGeckoPriority(long timeout) {
         if (Runtime.getRuntime().availableProcessors() > 1) {
             // Don't reduce priority for multicore devices. We use availableProcessors()
             // for its fast performance. It may give false negatives (i.e. multicore
@@ -223,7 +230,7 @@ public final class ThreadUtils {
         if (!sIsGeckoPriorityReduced && sGeckoThread != null) {
             sIsGeckoPriorityReduced = true;
             sGeckoThread.setPriority(Thread.MIN_PRIORITY);
-            getUiHandler().postDelayed(sPriorityResetRunnable, PRIORITY_RESET_TIMEOUT);
+            getUiHandler().postDelayed(sPriorityResetRunnable, timeout);
         }
     }
 

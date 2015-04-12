@@ -8,7 +8,7 @@ browser.jar:
 # NOTE: If you add a new file here, you'll need to add it to the aero
 # section at the bottom of this file
         skin/classic/browser/sanitizeDialog.css
-*       skin/classic/browser/aboutSessionRestore.css
+*       skin/classic/browser/aboutSessionRestore.css                 (../shared/aboutSessionRestore.css)
         skin/classic/browser/aboutSessionRestore-window-icon.png     (preferences/application.png)
         skin/classic/browser/aboutWelcomeBack.css                    (../shared/aboutWelcomeBack.css)
         skin/classic/browser/aboutCertError.css
@@ -17,22 +17,27 @@ browser.jar:
         skin/classic/browser/aboutCertError_sectionExpanded.png
         skin/classic/browser/aboutNetError.css                       (../shared/aboutNetError.css)
         skin/classic/browser/aboutNetError_info.svg                  (../shared/aboutNetError_info.svg)
+        skin/classic/browser/aboutNetError_alert.svg                 (../shared/aboutNetError_alert.svg)
         skin/classic/browser/aboutSocialError.css                    (../shared/aboutSocialError.css)
 *       skin/classic/browser/aboutProviderDirectory.css              (../shared/aboutProviderDirectory.css)
 #ifdef MOZ_SERVICES_SYNC
         skin/classic/browser/aboutSyncTabs.css
 #endif
-        skin/classic/browser/aboutTabCrashed.css
+        skin/classic/browser/aboutTabCrashed.css                     (../shared/aboutTabCrashed.css)
         skin/classic/browser/actionicon-tab.png
 *       skin/classic/browser/browser.css
 *       skin/classic/browser/devedition.css
 *       skin/classic/browser/browser-lightweightTheme.css
         skin/classic/browser/click-to-play-warning-stripes.png
-*       skin/classic/browser/content-contextmenu.svg
+        skin/classic/browser/content-contextmenu.svg
+        skin/classic/browser/drm-icon.svg                            (../shared/drm-icon.svg)
 *       skin/classic/browser/engineManager.css
         skin/classic/browser/fullscreen-darknoise.png
         skin/classic/browser/Geolocation-16.png
         skin/classic/browser/Geolocation-64.png
+        skin/classic/browser/heartbeat-icon.svg                      (../shared/heartbeat-icon.svg)
+        skin/classic/browser/heartbeat-star-lit.svg                  (../shared/heartbeat-star-lit.svg)
+        skin/classic/browser/heartbeat-star-off.svg                  (../shared/heartbeat-star-off.svg)
         skin/classic/browser/Info.png
         skin/classic/browser/identity.png
         skin/classic/browser/identity-icons-generic.png
@@ -43,6 +48,8 @@ browser.jar:
         skin/classic/browser/keyhole-forward-mask.svg
         skin/classic/browser/KUI-background.png
         skin/classic/browser/livemark-folder.png
+        skin/classic/browser/magnifier.png                          (../shared/magnifier.png)
+        skin/classic/browser/magnifier@2x.png                       (../shared/magnifier@2x.png)
         skin/classic/browser/mask.png                               (../shared/mask.png)
         skin/classic/browser/mask@2x.png                            (../shared/mask@2x.png)
         skin/classic/browser/menu-back.png
@@ -55,10 +62,11 @@ browser.jar:
         skin/classic/browser/Metro_Glyph.png                        (Metro_Glyph-aero.png)
         skin/classic/browser/Metro_Glyph-inverted.png
         skin/classic/browser/Metro_Glyph-menuPanel.png
-        skin/classic/browser/bad-content-blocked-16.png
-        skin/classic/browser/bad-content-blocked-64.png
-        skin/classic/browser/bad-content-unblocked-16.png
-        skin/classic/browser/bad-content-unblocked-64.png
+        skin/classic/browser/bad-content-blocked-16.png             (../shared/bad-content-blocked-16.png)
+        skin/classic/browser/bad-content-blocked-16@2x.png          (../shared/bad-content-blocked-16@2x.png)
+        skin/classic/browser/bad-content-blocked-64.png             (../shared/bad-content-blocked-64.png)
+        skin/classic/browser/bad-content-unblocked-16.png           (../shared/bad-content-unblocked-16.png)
+        skin/classic/browser/bad-content-unblocked-64.png           (../shared/bad-content-unblocked-64.png)
         skin/classic/browser/monitor.png
         skin/classic/browser/monitor_16-10.png
         skin/classic/browser/notification-16.png
@@ -77,6 +85,13 @@ browser.jar:
         skin/classic/browser/reload-stop-go.png
         skin/classic/browser/searchbar.css
         skin/classic/browser/searchbar-dropdown-arrow.png
+        skin/classic/browser/search-pref.png                         (../shared/search/search-pref.png)
+        skin/classic/browser/search-indicator.png                    (../shared/search/search-indicator.png)
+        skin/classic/browser/search-indicator-add-engine.png         (../shared/search/search-indicator-add-engine.png)
+        skin/classic/browser/search-engine-placeholder.png           (../shared/search/search-engine-placeholder.png)
+        skin/classic/browser/badge-add-engine.png                    (../shared/search/badge-add-engine.png)
+        skin/classic/browser/search-indicator-badge-add.png          (../shared/search/search-indicator-badge-add.png)
+        skin/classic/browser/search-history-icon.svg                 (../shared/search/history-icon.svg)
         skin/classic/browser/Secure24.png
         skin/classic/browser/setDesktopBackground.css
         skin/classic/browser/slowStartup-16.png
@@ -84,13 +99,21 @@ browser.jar:
         skin/classic/browser/Toolbar.png                             (Toolbar-XP.png)
         skin/classic/browser/Toolbar-inverted.png
         skin/classic/browser/Toolbar-lunaSilver.png
-        skin/classic/browser/toolbarbutton-dropdown-arrow.png
+        skin/classic/browser/toolbarbutton-dropdown-arrow.png        (toolbarbutton-dropdown-arrow-XPVista7.png)
         skin/classic/browser/toolbarbutton-dropdown-arrow-inverted.png
         skin/classic/browser/undoCloseTab.png                        (../shared/undoCloseTab.png)
         skin/classic/browser/undoCloseTab@2x.png                     (../shared/undoCloseTab@2x.png)
+        skin/classic/browser/update-badge.svg                        (../shared/update-badge.svg)
         skin/classic/browser/urlbar-arrow.png
         skin/classic/browser/urlbar-popup-blocked.png
         skin/classic/browser/urlbar-history-dropmarker.png
+        skin/classic/browser/session-restore.svg                     (../shared/incontent-icons/session-restore.svg)
+        skin/classic/browser/tab-crashed.svg                         (../shared/incontent-icons/tab-crashed.svg)
+        skin/classic/browser/welcome-back.svg                        (../shared/incontent-icons/welcome-back.svg)
+        skin/classic/browser/readerMode.svg                          (../shared/reader/readerMode.svg)
+        skin/classic/browser/readinglist/icons.svg                   (../shared/readinglist/icons.svg)
+        skin/classic/browser/readinglist/readinglist-icon.svg        (../shared/readinglist/readinglist-icon.svg)
+*       skin/classic/browser/readinglist/sidebar.css                 (readinglist/sidebar.css)
         skin/classic/browser/notification-pluginNormal.png           (../shared/plugins/notification-pluginNormal.png)
         skin/classic/browser/notification-pluginAlert.png            (../shared/plugins/notification-pluginAlert.png)
         skin/classic/browser/notification-pluginBlocked.png          (../shared/plugins/notification-pluginBlocked.png)
@@ -108,9 +131,9 @@ browser.jar:
         skin/classic/browser/webRTC-microphone-white-16.png          (../shared/webrtc/microphone-white-16.png)
         skin/classic/browser/webRTC-screen-white-16.png              (../shared/webrtc/screen-white-16.png)
         skin/classic/browser/loop/menuPanel.png                      (loop/menuPanel.png)
-        skin/classic/browser/loop/toolbar.png                        (loop/toolbar-XPVista7.png)
-        skin/classic/browser/loop/toolbar-lunaSilver.png             (loop/toolbar-lunaSilver.png)
+        skin/classic/browser/loop/toolbar.png                        (loop/toolbar-XP.png)
         skin/classic/browser/loop/toolbar-inverted.png               (loop/toolbar-inverted.png)
+        skin/classic/browser/loop/toolbar-lunaSilver.png             (loop/toolbar-lunaSilver.png)
         skin/classic/browser/customizableui/background-noise-toolbar.png  (customizableui/background-noise-toolbar.png)
         skin/classic/browser/customizableui/customizeFavicon.ico  (../shared/customizableui/customizeFavicon.ico)
         skin/classic/browser/customizableui/customize-illustration.png  (../shared/customizableui/customize-illustration.png)
@@ -120,6 +143,7 @@ browser.jar:
         skin/classic/browser/customizableui/customizeMode-separatorHorizontal.png  (customizableui/customizeMode-separatorHorizontal.png)
         skin/classic/browser/customizableui/customizeMode-separatorVertical.png  (customizableui/customizeMode-separatorVertical.png)
         skin/classic/browser/customizableui/info-icon-customizeTip.png  (../shared/customizableui/info-icon-customizeTip.png)
+        skin/classic/browser/customizableui/menu-arrow.svg           (customizableui/menu-arrow.svg)
         skin/classic/browser/customizableui/menuPanel-customizeFinish.png  (../shared/customizableui/menuPanel-customizeFinish.png)
         skin/classic/browser/customizableui/panelarrow-customizeTip.png  (../shared/customizableui/panelarrow-customizeTip.png)
 *       skin/classic/browser/customizableui/panelUIOverlay.css       (customizableui/panelUIOverlay.css)
@@ -132,7 +156,6 @@ browser.jar:
 *       skin/classic/browser/downloads/allDownloadsViewOverlay.css   (downloads/allDownloadsViewOverlay.css)
         skin/classic/browser/downloads/buttons.png                   (downloads/buttons.png)
         skin/classic/browser/downloads/contentAreaDownloadsView.css  (downloads/contentAreaDownloadsView.css)
-        skin/classic/browser/downloads/download-glow-XPVista7.png             (downloads/download-glow-XPVista7.png)
         skin/classic/browser/downloads/download-glow-menuPanel-XPVista7.png   (downloads/download-glow-menuPanel-XPVista7.png)
         skin/classic/browser/downloads/download-notification-finish.png (downloads/download-notification-finish.png)
         skin/classic/browser/downloads/download-notification-start.png (downloads/download-notification-start.png)
@@ -159,7 +182,6 @@ browser.jar:
         skin/classic/browser/places/bookmarksToolbar.png             (places/bookmarksToolbar.png)
         skin/classic/browser/places/bookmarksToolbar-menuPanel.png   (places/bookmarksToolbar-menuPanel.png)
         skin/classic/browser/places/bookmarks-notification-finish.png (places/bookmarks-notification-finish.png)
-        skin/classic/browser/places/bookmarks-menu-arrow.png         (places/bookmarks-menu-arrow.png)
         skin/classic/browser/places/calendar.png                     (places/calendar.png)
         skin/classic/browser/places/toolbarDropMarker.png            (places/toolbarDropMarker.png)
         skin/classic/browser/places/editBookmarkOverlay.css          (places/editBookmarkOverlay.css)
@@ -182,23 +204,28 @@ browser.jar:
         skin/classic/browser/preferences/saveFile.png                (preferences/saveFile.png)
 *       skin/classic/browser/preferences/preferences.css             (preferences/preferences.css)
 *       skin/classic/browser/preferences/in-content/preferences.css  (preferences/in-content/preferences.css)
+*       skin/classic/browser/preferences/in-content/dialog.css       (preferences/in-content/dialog.css)
         skin/classic/browser/preferences/in-content/favicon.ico      (../shared/incontentprefs/favicon.ico)
-        skin/classic/browser/preferences/in-content/icons.png        (../shared/incontentprefs/icons.png)
-        skin/classic/browser/preferences/in-content/icons@2x.png     (../shared/incontentprefs/icons@2x.png)
+        skin/classic/browser/preferences/in-content/icons.svg        (../shared/incontentprefs/icons.svg)
+        skin/classic/browser/preferences/in-content/search.css       (../shared/incontentprefs/search.css)
         skin/classic/browser/preferences/applications.css            (preferences/applications.css)
         skin/classic/browser/preferences/aboutPermissions.css        (preferences/aboutPermissions.css)
+        skin/classic/browser/preferences/search.css                  (preferences/search.css)
+        skin/classic/browser/preferences/checkbox.png                (preferences/checkbox-xp.png)
+        skin/classic/browser/preferences/checkbox-classic.png        (preferences/checkbox-classic.png)
         skin/classic/browser/social/services-16.png                  (social/services-16.png)
         skin/classic/browser/social/services-64.png                  (social/services-64.png)
         skin/classic/browser/social/chat-icons.svg                   (../shared/social/chat-icons.svg)
         skin/classic/browser/social/gear_default.png                 (../shared/social/gear_default.png)
         skin/classic/browser/social/gear_clicked.png                 (../shared/social/gear_clicked.png)
-        skin/classic/browser/tabbrowser/newtab.png                   (tabbrowser/newtab.png)
+        skin/classic/browser/tabbrowser/newtab.png                   (tabbrowser/newtab-XPVista7.png)
         skin/classic/browser/tabbrowser/newtab-inverted.png          (tabbrowser/newtab-inverted.png)
         skin/classic/browser/tabbrowser/connecting.png               (tabbrowser/connecting.png)
+        skin/classic/browser/tabbrowser/crashed.svg                  (../shared/tabbrowser/crashed.svg)
         skin/classic/browser/tabbrowser/loading.png                  (tabbrowser/loading.png)
         skin/classic/browser/tabbrowser/tab-active-middle.png        (tabbrowser/tab-active-middle.png)
         skin/classic/browser/tabbrowser/tab-active-middle@2x.png     (tabbrowser/tab-active-middle@2x.png)
-        skin/classic/browser/tabbrowser/tab-arrow-left.png           (tabbrowser/tab-arrow-left.png)
+        skin/classic/browser/tabbrowser/tab-arrow-left.png           (tabbrowser/tab-arrow-left-XPVista7.png)
         skin/classic/browser/tabbrowser/tab-arrow-left-inverted.png  (tabbrowser/tab-arrow-left-inverted.png)
         skin/classic/browser/tabbrowser/tab-background-start.png     (tabbrowser/tab-background-start.png)
         skin/classic/browser/tabbrowser/tab-background-start@2x.png  (tabbrowser/tab-background-start@2x.png)
@@ -207,6 +234,8 @@ browser.jar:
         skin/classic/browser/tabbrowser/tab-background-end.png       (tabbrowser/tab-background-end.png)
         skin/classic/browser/tabbrowser/tab-background-end@2x.png    (tabbrowser/tab-background-end@2x.png)
         skin/classic/browser/tabbrowser/tab-overflow-indicator.png   (../shared/tabbrowser/tab-overflow-indicator.png)
+
+        skin/classic/browser/tabbrowser/pendingpaint.png             (../shared/tabbrowser/pendingpaint.png)
 
 # NOTE: The following two files (tab-selected-end.svg, tab-selected-start.svg) get pre-processed in
 #       Makefile.in with a non-default marker of "%" and the result of that gets packaged.
@@ -232,17 +261,21 @@ browser.jar:
         skin/classic/browser/translating-16@2x.png                  (../shared/translation/translating-16@2x.png)
         skin/classic/browser/translation-16.png                     (../shared/translation/translation-16.png)
         skin/classic/browser/translation-16@2x.png                  (../shared/translation/translation-16@2x.png)
+        skin/classic/browser/devedition/search.svg                  (../shared/devedition/search.svg)
+        skin/classic/browser/devedition/urlbar-history-dropmarker.svg            (../shared/devedition/urlbar-history-dropmarker.svg)
 *       skin/classic/browser/devtools/common.css                    (../shared/devtools/common.css)
 *       skin/classic/browser/devtools/dark-theme.css                (../shared/devtools/dark-theme.css)
 *       skin/classic/browser/devtools/light-theme.css               (../shared/devtools/light-theme.css)
         skin/classic/browser/devtools/filters.svg                   (../shared/devtools/filters.svg)
         skin/classic/browser/devtools/controls.png                  (../shared/devtools/images/controls.png)
         skin/classic/browser/devtools/controls@2x.png               (../shared/devtools/images/controls@2x.png)
+        skin/classic/browser/devtools/performance-icons.svg         (../shared/devtools/images/performance-icons.svg)
         skin/classic/browser/devtools/newtab.png                    (../shared/devtools/images/newtab.png)
         skin/classic/browser/devtools/newtab@2x.png                 (../shared/devtools/images/newtab@2x.png)
         skin/classic/browser/devtools/newtab-inverted.png           (../shared/devtools/images/newtab-inverted.png)
         skin/classic/browser/devtools/newtab-inverted@2x.png        (../shared/devtools/images/newtab-inverted@2x.png)
 *       skin/classic/browser/devtools/widgets.css                   (devtools/widgets.css)
+        skin/classic/browser/devtools/power.svg                     (../shared/devtools/images/power.svg)
         skin/classic/browser/devtools/filetype-dir-close.svg        (../shared/devtools/images/filetypes/dir-close.svg)
         skin/classic/browser/devtools/filetype-dir-open.svg         (../shared/devtools/images/filetypes/dir-open.svg)
         skin/classic/browser/devtools/filetype-globe.svg            (../shared/devtools/images/filetypes/globe.svg)
@@ -284,6 +317,7 @@ browser.jar:
         skin/classic/browser/devtools/breadcrumbs-divider@2x.png    (../shared/devtools/images/breadcrumbs-divider@2x.png)
         skin/classic/browser/devtools/breadcrumbs-scrollbutton.png  (../shared/devtools/images/breadcrumbs-scrollbutton.png)
         skin/classic/browser/devtools/breadcrumbs-scrollbutton@2x.png (../shared/devtools/images/breadcrumbs-scrollbutton@2x.png)
+        skin/classic/browser/devtools/animationinspector.css        (../shared/devtools/animationinspector.css)
         skin/classic/browser/devtools/eyedropper.css                (../shared/devtools/eyedropper.css)
 *       skin/classic/browser/devtools/canvasdebugger.css            (devtools/canvasdebugger.css)
 *       skin/classic/browser/devtools/debugger.css                  (devtools/debugger.css)
@@ -291,6 +325,7 @@ browser.jar:
 *       skin/classic/browser/devtools/profiler.css                  (devtools/profiler.css)
 *       skin/classic/browser/devtools/performance.css               (devtools/performance.css)
 *       skin/classic/browser/devtools/timeline.css                  (devtools/timeline.css)
+        skin/classic/browser/devtools/timeline-filter.svg           (../shared/devtools/images/timeline-filter.svg)
 *       skin/classic/browser/devtools/scratchpad.css                (devtools/scratchpad.css)
 *       skin/classic/browser/devtools/shadereditor.css              (devtools/shadereditor.css)
         skin/classic/browser/devtools/storage.css                   (../shared/devtools/storage.css)
@@ -326,6 +361,8 @@ browser.jar:
         skin/classic/browser/devtools/debugger-step-over@2x.png     (../shared/devtools/images/debugger-step-over@2x.png)
         skin/classic/browser/devtools/debugger-blackbox.png         (../shared/devtools/images/debugger-blackbox.png)
         skin/classic/browser/devtools/debugger-blackbox@2x.png      (../shared/devtools/images/debugger-blackbox@2x.png)
+        skin/classic/browser/devtools/debugger-prettyprint.png      (../shared/devtools/images/debugger-prettyprint.png)
+        skin/classic/browser/devtools/debugger-prettyprint@2x.png   (../shared/devtools/images/debugger-prettyprint@2x.png)
         skin/classic/browser/devtools/debugger-toggleBreakpoints.png  (../shared/devtools/images/debugger-toggleBreakpoints.png)
         skin/classic/browser/devtools/debugger-toggleBreakpoints@2x.png  (../shared/devtools/images/debugger-toggleBreakpoints@2x.png)
         skin/classic/browser/devtools/tracer-icon.png               (../shared/devtools/images/tracer-icon.png)
@@ -428,12 +465,14 @@ browser.jar:
 #ifdef E10S_TESTING_ONLY
         skin/classic/browser/e10s-64@2x.png (../shared/e10s-64@2x.png)
 #endif
+        skin/classic/browser/warning16.png                            (../shared/warning16.png)
+        skin/classic/browser/warning16@2x.png                         (../shared/warning16@2x.png)
 
 #ifdef XP_WIN
 browser.jar:
 % skin browser classic/1.0 %skin/classic/aero/browser/ os=WINNT osversion>=6
         skin/classic/aero/browser/sanitizeDialog.css                       (sanitizeDialog.css)
-*       skin/classic/aero/browser/aboutSessionRestore.css            (aboutSessionRestore.css)
+*       skin/classic/aero/browser/aboutSessionRestore.css             (../shared/aboutSessionRestore.css)
         skin/classic/aero/browser/aboutSessionRestore-window-icon.png (aboutSessionRestore-window-icon-aero.png)
         skin/classic/aero/browser/aboutCertError.css
         skin/classic/aero/browser/aboutCertError_sectionCollapsed.png
@@ -441,23 +480,28 @@ browser.jar:
         skin/classic/aero/browser/aboutCertError_sectionExpanded.png
         skin/classic/aero/browser/aboutNetError.css                   (../shared/aboutNetError.css)
         skin/classic/aero/browser/aboutNetError_info.svg              (../shared/aboutNetError_info.svg)
+        skin/classic/aero/browser/aboutNetError_alert.svg             (../shared/aboutNetError_alert.svg)
         skin/classic/aero/browser/aboutSocialError.css                (../shared/aboutSocialError.css)
 *       skin/classic/aero/browser/aboutProviderDirectory.css          (../shared/aboutProviderDirectory.css)
 #ifdef MOZ_SERVICES_SYNC
         skin/classic/aero/browser/aboutSyncTabs.css
 #endif
-        skin/classic/aero/browser/aboutTabCrashed.css
+        skin/classic/aero/browser/aboutTabCrashed.css                (../shared/aboutTabCrashed.css)
         skin/classic/aero/browser/aboutWelcomeBack.css               (../shared/aboutWelcomeBack.css)
         skin/classic/aero/browser/actionicon-tab.png
 *       skin/classic/aero/browser/browser.css                        (browser-aero.css)
 *       skin/classic/aero/browser/devedition.css                     (devedition-aero.css)
 *       skin/classic/aero/browser/browser-lightweightTheme.css
         skin/classic/aero/browser/click-to-play-warning-stripes.png
-*       skin/classic/aero/browser/content-contextmenu.svg
+        skin/classic/aero/browser/content-contextmenu.svg
+        skin/classic/aero/browser/drm-icon.svg                       (../shared/drm-icon.svg)
 *       skin/classic/aero/browser/engineManager.css
         skin/classic/aero/browser/fullscreen-darknoise.png
         skin/classic/aero/browser/Geolocation-16.png
         skin/classic/aero/browser/Geolocation-64.png
+        skin/classic/aero/browser/heartbeat-icon.svg                 (../shared/heartbeat-icon.svg)
+        skin/classic/aero/browser/heartbeat-star-lit.svg             (../shared/heartbeat-star-lit.svg)
+        skin/classic/aero/browser/heartbeat-star-off.svg             (../shared/heartbeat-star-off.svg)
         skin/classic/aero/browser/Info.png                           (Info-aero.png)
         skin/classic/aero/browser/identity.png                       (identity-aero.png)
         skin/classic/aero/browser/identity-icons-generic.png
@@ -468,6 +512,8 @@ browser.jar:
         skin/classic/aero/browser/keyhole-forward-mask.svg
         skin/classic/aero/browser/KUI-background.png
         skin/classic/aero/browser/livemark-folder.png                (livemark-folder-aero.png)
+        skin/classic/aero/browser/magnifier.png                      (../shared/magnifier.png)
+        skin/classic/aero/browser/magnifier@2x.png                   (../shared/magnifier@2x.png)
         skin/classic/aero/browser/mask.png                           (../shared/mask.png)
         skin/classic/aero/browser/mask@2x.png                        (../shared/mask@2x.png)
         skin/classic/aero/browser/menu-back.png                      (menu-back-aero.png)
@@ -482,10 +528,11 @@ browser.jar:
         skin/classic/aero/browser/Metro_Glyph.png                    (Metro_Glyph-aero.png)
         skin/classic/aero/browser/Metro_Glyph-inverted.png
         skin/classic/aero/browser/Metro_Glyph-menuPanel.png
-        skin/classic/aero/browser/bad-content-blocked-16.png
-        skin/classic/aero/browser/bad-content-blocked-64.png
-        skin/classic/aero/browser/bad-content-unblocked-16.png
-        skin/classic/aero/browser/bad-content-unblocked-64.png
+        skin/classic/aero/browser/bad-content-blocked-16.png         (../shared/bad-content-blocked-16.png)
+        skin/classic/aero/browser/bad-content-blocked-16@2x.png      (../shared/bad-content-blocked-16@2x.png)
+        skin/classic/aero/browser/bad-content-blocked-64.png         (../shared/bad-content-blocked-64.png)
+        skin/classic/aero/browser/bad-content-unblocked-16.png       (../shared/bad-content-unblocked-16.png)
+        skin/classic/aero/browser/bad-content-unblocked-64.png       (../shared/bad-content-unblocked-64.png)
         skin/classic/aero/browser/monitor.png
         skin/classic/aero/browser/monitor_16-10.png
         skin/classic/aero/browser/notification-16.png
@@ -505,6 +552,13 @@ browser.jar:
         skin/classic/aero/browser/reload-stop-go.png
         skin/classic/aero/browser/searchbar.css
         skin/classic/aero/browser/searchbar-dropdown-arrow.png       (searchbar-dropdown-arrow-aero.png)
+        skin/classic/aero/browser/search-pref.png                    (../shared/search/search-pref.png)
+        skin/classic/aero/browser/search-indicator.png               (../shared/search/search-indicator.png)
+        skin/classic/aero/browser/search-indicator-add-engine.png    (../shared/search/search-indicator-add-engine.png)
+        skin/classic/aero/browser/search-engine-placeholder.png      (../shared/search/search-engine-placeholder.png)
+        skin/classic/aero/browser/badge-add-engine.png               (../shared/search/badge-add-engine.png)
+        skin/classic/aero/browser/search-indicator-badge-add.png     (../shared/search/search-indicator-badge-add.png)
+        skin/classic/aero/browser/search-history-icon.svg            (../shared/search/history-icon.svg)
         skin/classic/aero/browser/Secure24.png                       (Secure24-aero.png)
         skin/classic/aero/browser/setDesktopBackground.css
         skin/classic/aero/browser/slowStartup-16.png
@@ -514,12 +568,20 @@ browser.jar:
         skin/classic/aero/browser/Toolbar-inverted.png
         skin/classic/aero/browser/Toolbar-aero.png
         skin/classic/aero/browser/toolbarbutton-dropdown-arrow.png
+        skin/classic/aero/browser/toolbarbutton-dropdown-arrow-XPVista7.png
         skin/classic/aero/browser/toolbarbutton-dropdown-arrow-inverted.png
         skin/classic/aero/browser/undoCloseTab.png                        (../shared/undoCloseTab.png)
         skin/classic/aero/browser/undoCloseTab@2x.png                     (../shared/undoCloseTab@2x.png)
         skin/classic/aero/browser/urlbar-arrow.png
         skin/classic/aero/browser/urlbar-popup-blocked.png
         skin/classic/aero/browser/urlbar-history-dropmarker.png
+        skin/classic/aero/browser/session-restore.svg               (../shared/incontent-icons/session-restore.svg)
+        skin/classic/aero/browser/tab-crashed.svg                   (../shared/incontent-icons/tab-crashed.svg)
+        skin/classic/aero/browser/welcome-back.svg                  (../shared/incontent-icons/welcome-back.svg)
+        skin/classic/aero/browser/readerMode.svg                    (../shared/reader/readerMode.svg)
+        skin/classic/aero/browser/readinglist/icons.svg             (../shared/readinglist/icons.svg)
+        skin/classic/aero/browser/readinglist/readinglist-icon.svg  (../shared/readinglist/readinglist-icon.svg)
+*       skin/classic/aero/browser/readinglist/sidebar.css           (readinglist/sidebar.css)
         skin/classic/aero/browser/notification-pluginNormal.png     (../shared/plugins/notification-pluginNormal.png)
         skin/classic/aero/browser/notification-pluginAlert.png      (../shared/plugins/notification-pluginAlert.png)
         skin/classic/aero/browser/notification-pluginBlocked.png    (../shared/plugins/notification-pluginBlocked.png)
@@ -536,9 +598,10 @@ browser.jar:
         skin/classic/aero/browser/webRTC-camera-white-16.png              (../shared/webrtc/camera-white-16.png)
         skin/classic/aero/browser/webRTC-microphone-white-16.png          (../shared/webrtc/microphone-white-16.png)
         skin/classic/aero/browser/webRTC-screen-white-16.png              (../shared/webrtc/screen-white-16.png)
-        skin/classic/aero/browser/loop/menuPanel.png                      (loop/menuPanel-aero.png)
+        skin/classic/aero/browser/loop/menuPanel.png                      (loop/menuPanel.png)
+        skin/classic/aero/browser/loop/menuPanel-aero.png                 (loop/menuPanel-aero.png)
         skin/classic/aero/browser/loop/toolbar.png                        (loop/toolbar.png)
-        skin/classic/aero/browser/loop/toolbar-XPVista7.png               (loop/toolbar-XPVista7.png)
+        skin/classic/aero/browser/loop/toolbar-aero.png                   (loop/toolbar-aero.png)
         skin/classic/aero/browser/loop/toolbar-inverted.png               (loop/toolbar-inverted.png)
         skin/classic/aero/browser/customizableui/background-noise-toolbar.png  (customizableui/background-noise-toolbar.png)
         skin/classic/aero/browser/customizableui/customize-illustration.png  (../shared/customizableui/customize-illustration.png)
@@ -549,6 +612,7 @@ browser.jar:
         skin/classic/aero/browser/customizableui/customizeMode-separatorHorizontal.png  (customizableui/customizeMode-separatorHorizontal.png)
         skin/classic/aero/browser/customizableui/customizeMode-separatorVertical.png  (customizableui/customizeMode-separatorVertical.png)
         skin/classic/aero/browser/customizableui/info-icon-customizeTip.png  (../shared/customizableui/info-icon-customizeTip.png)
+        skin/classic/aero/browser/customizableui/menu-arrow.svg      (customizableui/menu-arrow.svg)
         skin/classic/aero/browser/customizableui/menuPanel-customizeFinish.png  (../shared/customizableui/menuPanel-customizeFinish.png)
         skin/classic/aero/browser/customizableui/panelarrow-customizeTip.png  (../shared/customizableui/panelarrow-customizeTip.png)
 *       skin/classic/aero/browser/customizableui/panelUIOverlay.css  (customizableui/panelUIOverlay-aero.css)
@@ -561,8 +625,6 @@ browser.jar:
 *       skin/classic/aero/browser/downloads/allDownloadsViewOverlay.css (downloads/allDownloadsViewOverlay-aero.css)
         skin/classic/aero/browser/downloads/buttons.png              (downloads/buttons-aero.png)
         skin/classic/aero/browser/downloads/contentAreaDownloadsView.css (downloads/contentAreaDownloadsView.css)
-        skin/classic/aero/browser/downloads/download-glow.png        (downloads/download-glow.png)
-        skin/classic/aero/browser/downloads/download-glow-XPVista7.png        (downloads/download-glow-XPVista7.png)
         skin/classic/aero/browser/downloads/download-glow-menuPanel.png   (downloads/download-glow-menuPanel.png)
         skin/classic/aero/browser/downloads/download-glow-menuPanel-XPVista7.png   (downloads/download-glow-menuPanel-XPVista7.png)
         skin/classic/aero/browser/downloads/download-notification-finish.png (downloads/download-notification-finish.png)
@@ -590,7 +652,6 @@ browser.jar:
         skin/classic/aero/browser/places/bookmarksToolbar.png        (places/bookmarksToolbar-aero.png)
         skin/classic/aero/browser/places/bookmarksToolbar-menuPanel.png (places/bookmarksToolbar-menuPanel-aero.png)
         skin/classic/aero/browser/places/bookmarks-notification-finish.png   (places/bookmarks-notification-finish.png)
-        skin/classic/aero/browser/places/bookmarks-menu-arrow.png    (places/bookmarks-menu-arrow.png)
         skin/classic/aero/browser/places/calendar.png                (places/calendar-aero.png)
         skin/classic/aero/browser/places/toolbarDropMarker.png       (places/toolbarDropMarker-aero.png)
         skin/classic/aero/browser/places/editBookmarkOverlay.css     (places/editBookmarkOverlay.css)
@@ -613,23 +674,31 @@ browser.jar:
         skin/classic/aero/browser/preferences/saveFile.png           (preferences/saveFile-aero.png)
 *       skin/classic/aero/browser/preferences/preferences.css        (preferences/preferences.css)
 *       skin/classic/aero/browser/preferences/in-content/preferences.css (preferences/in-content/preferences.css)
-        skin/classic/aero/browser/preferences/in-content/favicon.ico      (../shared/incontentprefs/favicon.ico)
-        skin/classic/aero/browser/preferences/in-content/icons.png       (../shared/incontentprefs/icons.png)
-        skin/classic/aero/browser/preferences/in-content/icons@2x.png    (../shared/incontentprefs/icons@2x.png)
+*       skin/classic/aero/browser/preferences/in-content/dialog.css      (preferences/in-content/dialog.css)
+        skin/classic/aero/browser/preferences/in-content/favicon.ico     (../shared/incontentprefs/favicon.ico)
+        skin/classic/aero/browser/preferences/in-content/icons.svg       (../shared/incontentprefs/icons.svg)
+        skin/classic/aero/browser/preferences/in-content/search.css      (../shared/incontentprefs/search.css)
         skin/classic/aero/browser/preferences/applications.css       (preferences/applications.css)
         skin/classic/aero/browser/preferences/aboutPermissions.css   (preferences/aboutPermissions.css)
+        skin/classic/aero/browser/preferences/search.css             (preferences/search.css)
+        skin/classic/aero/browser/preferences/checkbox.png           (preferences/checkbox-8.png)
+        skin/classic/aero/browser/preferences/checkbox-aero.png      (preferences/checkbox-aero.png)
+        skin/classic/aero/browser/preferences/checkbox-classic.png   (preferences/checkbox-classic.png)
         skin/classic/aero/browser/social/services-16.png             (social/services-16.png)
         skin/classic/aero/browser/social/services-64.png             (social/services-64.png)
         skin/classic/aero/browser/social/chat-icons.svg              (../shared/social/chat-icons.svg)
         skin/classic/aero/browser/social/gear_default.png            (../shared/social/gear_default.png)
         skin/classic/aero/browser/social/gear_clicked.png            (../shared/social/gear_clicked.png)
         skin/classic/aero/browser/tabbrowser/newtab.png              (tabbrowser/newtab.png)
+        skin/classic/aero/browser/tabbrowser/newtab-XPVista7.png     (tabbrowser/newtab-XPVista7.png)
         skin/classic/aero/browser/tabbrowser/newtab-inverted.png     (tabbrowser/newtab-inverted.png)
         skin/classic/aero/browser/tabbrowser/connecting.png          (tabbrowser/connecting.png)
+        skin/classic/aero/browser/tabbrowser/crashed.svg             (../shared/tabbrowser/crashed.svg)
         skin/classic/aero/browser/tabbrowser/loading.png             (tabbrowser/loading.png)
         skin/classic/aero/browser/tabbrowser/tab-active-middle.png   (tabbrowser/tab-active-middle.png)
         skin/classic/aero/browser/tabbrowser/tab-active-middle@2x.png (tabbrowser/tab-active-middle@2x.png)
         skin/classic/aero/browser/tabbrowser/tab-arrow-left.png      (tabbrowser/tab-arrow-left.png)
+        skin/classic/aero/browser/tabbrowser/tab-arrow-left-XPVista7.png (tabbrowser/tab-arrow-left-XPVista7.png)
         skin/classic/aero/browser/tabbrowser/tab-arrow-left-inverted.png (tabbrowser/tab-arrow-left-inverted.png)
         skin/classic/aero/browser/tabbrowser/tab-background-start.png    (tabbrowser/tab-background-start.png)
         skin/classic/aero/browser/tabbrowser/tab-background-start@2x.png (tabbrowser/tab-background-start@2x.png)
@@ -638,6 +707,8 @@ browser.jar:
         skin/classic/aero/browser/tabbrowser/tab-background-end.png      (tabbrowser/tab-background-end.png)
         skin/classic/aero/browser/tabbrowser/tab-background-end@2x.png   (tabbrowser/tab-background-end@2x.png)
         skin/classic/aero/browser/tabbrowser/tab-overflow-indicator.png  (../shared/tabbrowser/tab-overflow-indicator.png)
+
+        skin/classic/aero/browser/tabbrowser/pendingpaint.png            (../shared/tabbrowser/pendingpaint.png)
 
 # NOTE: The following two files (tab-selected-end.svg, tab-selected-start.svg) get pre-processed in
 #       Makefile.in with a non-default marker of "%" and the result of that gets packaged.
@@ -662,17 +733,21 @@ browser.jar:
         skin/classic/aero/browser/translating-16@2x.png              (../shared/translation/translating-16@2x.png)
         skin/classic/aero/browser/translation-16.png                 (../shared/translation/translation-16.png)
         skin/classic/aero/browser/translation-16@2x.png              (../shared/translation/translation-16@2x.png)
+        skin/classic/aero/browser/devedition/search.svg              (../shared/devedition/search.svg)
+        skin/classic/aero/browser/devedition/urlbar-history-dropmarker.svg            (../shared/devedition/urlbar-history-dropmarker.svg)
 *       skin/classic/aero/browser/devtools/common.css                (../shared/devtools/common.css)
 *       skin/classic/aero/browser/devtools/dark-theme.css            (../shared/devtools/dark-theme.css)
 *       skin/classic/aero/browser/devtools/light-theme.css           (../shared/devtools/light-theme.css)
         skin/classic/aero/browser/devtools/filters.svg               (../shared/devtools/filters.svg)
         skin/classic/aero/browser/devtools/controls.png              (../shared/devtools/images/controls.png)
         skin/classic/aero/browser/devtools/controls@2x.png           (../shared/devtools/images/controls@2x.png)
+        skin/classic/aero/browser/devtools/performance-icons.svg     (../shared/devtools/images/performance-icons.svg)
         skin/classic/aero/browser/devtools/newtab.png                (../shared/devtools/images/newtab.png)
         skin/classic/aero/browser/devtools/newtab@2x.png             (../shared/devtools/images/newtab@2x.png)
         skin/classic/aero/browser/devtools/newtab-inverted.png       (../shared/devtools/images/newtab-inverted.png)
         skin/classic/aero/browser/devtools/newtab-inverted@2x.png    (../shared/devtools/images/newtab-inverted@2x.png)
 *       skin/classic/aero/browser/devtools/widgets.css               (devtools/widgets.css)
+        skin/classic/aero/browser/devtools/power.svg                 (../shared/devtools/images/power.svg)
         skin/classic/aero/browser/devtools/filetype-dir-close.svg    (../shared/devtools/images/filetypes/dir-close.svg)
         skin/classic/aero/browser/devtools/filetype-dir-open.svg     (../shared/devtools/images/filetypes/dir-open.svg)
         skin/classic/aero/browser/devtools/filetype-globe.svg        (../shared/devtools/images/filetypes/globe.svg)
@@ -714,12 +789,15 @@ browser.jar:
         skin/classic/aero/browser/devtools/breadcrumbs-divider@2x.png      (../shared/devtools/images/breadcrumbs-divider@2x.png)
         skin/classic/aero/browser/devtools/breadcrumbs-scrollbutton.png    (../shared/devtools/images/breadcrumbs-scrollbutton.png)
         skin/classic/aero/browser/devtools/breadcrumbs-scrollbutton@2x.png (../shared/devtools/images/breadcrumbs-scrollbutton@2x.png)
+        skin/classic/aero/browser/devtools/animationinspector.css    (../shared/devtools/animationinspector.css)
 *       skin/classic/aero/browser/devtools/canvasdebugger.css        (devtools/canvasdebugger.css)
 *       skin/classic/aero/browser/devtools/debugger.css              (devtools/debugger.css)
         skin/classic/aero/browser/devtools/eyedropper.css            (../shared/devtools/eyedropper.css)
 *       skin/classic/aero/browser/devtools/netmonitor.css            (devtools/netmonitor.css)
 *       skin/classic/aero/browser/devtools/profiler.css              (devtools/profiler.css)
+*       skin/classic/aero/browser/devtools/performance.css           (devtools/performance.css)
 *       skin/classic/aero/browser/devtools/timeline.css              (devtools/timeline.css)
+        skin/classic/aero/browser/devtools/timeline-filter.svg       (../shared/devtools/images/timeline-filter.svg)
 *       skin/classic/aero/browser/devtools/scratchpad.css            (devtools/scratchpad.css)
 *       skin/classic/aero/browser/devtools/shadereditor.css          (devtools/shadereditor.css)
 *       skin/classic/aero/browser/devtools/splitview.css             (../shared/devtools/splitview.css)
@@ -755,6 +833,8 @@ browser.jar:
         skin/classic/aero/browser/devtools/debugger-step-over@2x.png  (../shared/devtools/images/debugger-step-over@2x.png)
         skin/classic/aero/browser/devtools/debugger-blackbox.png      (../shared/devtools/images/debugger-blackbox.png)
         skin/classic/aero/browser/devtools/debugger-blackbox@2x.png   (../shared/devtools/images/debugger-blackbox@2x.png)
+        skin/classic/aero/browser/devtools/debugger-prettyprint.png    (../shared/devtools/images/debugger-prettyprint.png)
+        skin/classic/aero/browser/devtools/debugger-prettyprint@2x.png (../shared/devtools/images/debugger-prettyprint@2x.png)
         skin/classic/aero/browser/devtools/debugger-toggleBreakpoints.png (../shared/devtools/images/debugger-toggleBreakpoints.png)
         skin/classic/aero/browser/devtools/debugger-toggleBreakpoints@2x.png (../shared/devtools/images/debugger-toggleBreakpoints@2x.png)
         skin/classic/aero/browser/devtools/tracer-icon.png           (../shared/devtools/images/tracer-icon.png)
@@ -857,6 +937,8 @@ browser.jar:
 #ifdef E10S_TESTING_ONLY
         skin/classic/aero/browser/e10s-64@2x.png (../shared/e10s-64@2x.png)
 #endif
+        skin/classic/aero/browser/warning16.png                       (../shared/warning16.png)
+        skin/classic/aero/browser/warning16@2x.png                    (../shared/warning16@2x.png)
 
 % override chrome://browser/skin/Toolbar.png               chrome://browser/skin/Toolbar-aero.png                  os=WINNT osversion=6
 % override chrome://browser/skin/Toolbar.png               chrome://browser/skin/Toolbar-aero.png                  os=WINNT osversion=6.1
@@ -867,11 +949,26 @@ browser.jar:
 % override chrome://browser/skin/menuPanel-small.png       chrome://browser/skin/menuPanel-small-aero.png          os=WINNT osversion=6
 % override chrome://browser/skin/menuPanel-small.png       chrome://browser/skin/menuPanel-small-aero.png          os=WINNT osversion=6.1
 
+% override chrome://browser/skin/preferences/checkbox.png  chrome://browser/skin/preferences/checkbox-aero.png     os=WINNT osversion=6
+% override chrome://browser/skin/preferences/checkbox.png  chrome://browser/skin/preferences/checkbox-aero.png     os=WINNT osversion=6.1
+
 % override chrome://browser/skin/theme-switcher-icon.png   chrome://browser/skin/theme-switcher-icon-aero.png      os=WINNT osversion=6
 % override chrome://browser/skin/theme-switcher-icon.png   chrome://browser/skin/theme-switcher-icon-aero.png      os=WINNT osversion=6.1
 
 % override chrome://browser/skin/sync-horizontalbar.png          chrome://browser/skin/sync-horizontalbar-XPVista7.png          os=WINNT osversion<6.2
 % override chrome://browser/skin/syncProgress-horizontalbar.png  chrome://browser/skin/syncProgress-horizontalbar-XPVista7.png  os=WINNT osversion<6.2
 
-% override chrome://browser/skin/loop/toolbar.png          chrome://browser/skin/loop/toolbar-XPVista7.png         os=WINNT osversion=6
-% override chrome://browser/skin/loop/toolbar.png          chrome://browser/skin/loop/toolbar-XPVista7.png         os=WINNT osversion=6.1
+% override chrome://browser/skin/toolbarbutton-dropdown-arrow.png  chrome://browser/skin/toolbarbutton-dropdown-arrow-XPVista7.png  os=WINNT osversion=6
+% override chrome://browser/skin/toolbarbutton-dropdown-arrow.png  chrome://browser/skin/toolbarbutton-dropdown-arrow-XPVista7.png  os=WINNT osversion=6.1
+
+% override chrome://browser/skin/tabbrowser/newtab.png     chrome://browser/skin/tabbrowser/newtab-XPVista7.png    os=WINNT osversion=6
+% override chrome://browser/skin/tabbrowser/newtab.png     chrome://browser/skin/tabbrowser/newtab-XPVista7.png    os=WINNT osversion=6.1
+
+% override chrome://browser/skin/tabbrowser/tab-arrow-left.png     chrome://browser/skin/tabbrowser/tab-arrow-left-XPVista7.png    os=WINNT osversion=6
+% override chrome://browser/skin/tabbrowser/tab-arrow-left.png     chrome://browser/skin/tabbrowser/tab-arrow-left-XPVista7.png    os=WINNT osversion=6.1
+
+% override chrome://browser/skin/loop/toolbar.png          chrome://browser/skin/loop/toolbar-aero.png             os=WINNT osversion=6
+% override chrome://browser/skin/loop/toolbar.png          chrome://browser/skin/loop/toolbar-aero.png             os=WINNT osversion=6.1
+
+% override chrome://browser/skin/loop/menuPanel.png        chrome://browser/skin/loop/menuPanel-aero.png           os=WINNT osversion=6
+% override chrome://browser/skin/loop/menuPanel.png        chrome://browser/skin/loop/menuPanel-aero.png           os=WINNT osversion=6.1

@@ -15,7 +15,7 @@ ac_add_options --enable-elf-hack
 
 ANDROID_NDK_VERSION="r8e"
 ANDROID_NDK_VERSION_32BIT="r8c"
-ANDROID_SDK_VERSION="20"
+ANDROID_SDK_VERSION="21"
 
 # Build Fennec
 ac_add_options --enable-application=mobile/android
@@ -36,7 +36,7 @@ ac_add_options --enable-update-channel=${MOZ_UPDATE_CHANNEL}
 # Treat warnings as errors in directories with FAIL_ON_WARNINGS.
 ac_add_options --enable-warnings-as-errors
 
-ac_add_options --with-mozilla-api-keyfile=/builds/mozilla-api.key
+ac_add_options --with-mozilla-api-keyfile=/builds/mozilla-fennec-geoloc-api.key
 
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
@@ -44,12 +44,14 @@ export MOZ_PACKAGE_JSSHELL=1
 # Use ccache
 . "$topsrcdir/build/mozconfig.cache"
 
-HOST_CC="/tools/gcc-4.7.2-0moz1/bin/gcc"
-HOST_CXX="/tools/gcc-4.7.2-0moz1/bin/g++"
+HOST_CC="$topsrcdir/gcc/bin/gcc"
+HOST_CXX="$topsrcdir/gcc/bin/g++"
 
 # Avoid dependency on libstdc++ 4.7
 ac_add_options --enable-stdcxx-compat
 
 mk_add_options "export ANT_HOME=$topsrcdir/apache-ant"
 
-mk_add_options "export PATH=$topsrcdir/gcc/bin:$topsrcdir/apache-ant/bin:$PATH"
+mk_add_options "export PATH=$topsrcdir/apache-ant/bin:$PATH"
+
+JS_BINARY="$topsrcdir/mobile/android/config/js_wrapper.sh"

@@ -34,7 +34,7 @@ public:
 
   DummyChannel();
 
-  NS_IMETHODIMP Run();
+  NS_IMETHODIMP Run() override;
 
 private:
   ~DummyChannel() {}
@@ -145,10 +145,8 @@ NS_IMETHODIMP DummyChannel::EnsureChildFd()
 NS_IMETHODIMP DummyChannel::Run()
 {
   nsresult rv = mListener->OnStartRequest(this, mListenerContext);
-  NS_ENSURE_SUCCESS(rv, rv);
   mPending = false;
   rv = mListener->OnStopRequest(this, mListenerContext, NS_ERROR_FILE_NOT_FOUND);
-  NS_ENSURE_SUCCESS(rv, rv);
   if (mLoadGroup) {
     mLoadGroup->RemoveRequest(this, mListenerContext, NS_ERROR_FILE_NOT_FOUND);
   }
@@ -375,10 +373,10 @@ AppProtocolHandler::NewURI(const nsACString &aSpec,
   return NS_OK;
 }
 
-// We map app://ABCDEF/path/to/file.ext to
-// jar:file:///path/to/profile/webapps/ABCDEF/application.zip!/path/to/file.ext
 NS_IMETHODIMP
-AppProtocolHandler::NewChannel(nsIURI* aUri, nsIChannel* *aResult)
+AppProtocolHandler::NewChannel2(nsIURI* aUri,
+                                nsILoadInfo* aLoadInfo,
+                                nsIChannel** aResult)
 {
   NS_ENSURE_ARG_POINTER(aUri);
   nsRefPtr<nsJARChannel> channel = new nsJARChannel();
@@ -423,7 +421,9 @@ AppProtocolHandler::NewChannel(nsIURI* aUri, nsIChannel* *aResult)
     if (NS_FAILED(rv) || !jsInfo.isObject()) {
       // Return a DummyChannel.
       printf_stderr("!! Creating a dummy channel for %s (no appInfo)\n", host.get());
-      NS_IF_ADDREF(*aResult = new DummyChannel());
+      nsRefPtr<nsIChannel> dummyChannel = new DummyChannel();
+      dummyChannel->SetLoadInfo(aLoadInfo);
+      dummyChannel.forget(aResult);
       return NS_OK;
     }
 
@@ -432,7 +432,9 @@ AppProtocolHandler::NewChannel(nsIURI* aUri, nsIChannel* *aResult)
     if (!appInfo->Init(cx, jsInfo) || appInfo->mPath.IsEmpty()) {
       // Return a DummyChannel.
       printf_stderr("!! Creating a dummy channel for %s (invalid appInfo)\n", host.get());
-      NS_IF_ADDREF(*aResult = new DummyChannel());
+      nsRefPtr<nsIChannel> dummyChannel = new DummyChannel();
+      dummyChannel->SetLoadInfo(aLoadInfo);
+      dummyChannel.forget(aResult);
       return NS_OK;
     }
     mAppInfoCache.Put(host, appInfo);
@@ -456,6 +458,10 @@ AppProtocolHandler::NewChannel(nsIURI* aUri, nsIChannel* *aResult)
   rv = channel->Init(jarURI);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // set the loadInfo on the new channel
+  rv = channel->SetLoadInfo(aLoadInfo);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   rv = channel->SetAppURI(aUri);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -464,6 +470,14 @@ AppProtocolHandler::NewChannel(nsIURI* aUri, nsIChannel* *aResult)
 
   channel.forget(aResult);
   return NS_OK;
+}
+
+// We map app://ABCDEF/path/to/file.ext to
+// jar:file:///path/to/profile/webapps/ABCDEF/application.zip!/path/to/file.ext
+NS_IMETHODIMP
+AppProtocolHandler::NewChannel(nsIURI* aUri, nsIChannel* *aResult)
+{
+  return NewChannel2(aUri, nullptr, aResult);
 }
 
 NS_IMETHODIMP

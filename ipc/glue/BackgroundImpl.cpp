@@ -107,7 +107,7 @@ AssertIsOnMainThread()
 // ParentImpl Declaration
 // -----------------------------------------------------------------------------
 
-class ParentImpl MOZ_FINAL : public BackgroundParentImpl
+class ParentImpl final : public BackgroundParentImpl
 {
   friend class mozilla::ipc::BackgroundParent;
 
@@ -301,17 +301,17 @@ private:
   virtual IToplevelProtocol*
   CloneToplevel(const InfallibleTArray<ProtocolFdMapping>& aFds,
                 ProcessHandle aPeerProcess,
-                ProtocolCloneContext* aCtx) MOZ_OVERRIDE;
+                ProtocolCloneContext* aCtx) override;
 
   virtual void
-  ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
+  ActorDestroy(ActorDestroyReason aWhy) override;
 };
 
 // -----------------------------------------------------------------------------
 // ChildImpl Declaration
 // -----------------------------------------------------------------------------
 
-class ChildImpl MOZ_FINAL : public BackgroundChildImpl
+class ChildImpl final : public BackgroundChildImpl
 {
   friend class mozilla::ipc::BackgroundChild;
   friend class mozilla::ipc::BackgroundChildImpl;
@@ -338,6 +338,7 @@ class ChildImpl MOZ_FINAL : public BackgroundChildImpl
   struct ThreadLocalInfo
   {
     explicit ThreadLocalInfo(nsIIPCBackgroundChildCreateCallback* aCallback)
+      : mClosed(false)
     {
       mCallbacks.AppendElement(aCallback);
     }
@@ -345,6 +346,7 @@ class ChildImpl MOZ_FINAL : public BackgroundChildImpl
     nsRefPtr<ChildImpl> mActor;
     nsTArray<nsCOMPtr<nsIIPCBackgroundChildCreateCallback>> mCallbacks;
     nsAutoPtr<BackgroundChildImpl::ThreadLocal> mConsumerThreadLocal;
+    DebugOnly<bool> mClosed;
   };
 
   // This is only modified on the main thread. It is a FIFO queue for actors
@@ -431,6 +433,8 @@ private:
     auto threadLocalInfo = static_cast<ThreadLocalInfo*>(aThreadLocal);
 
     if (threadLocalInfo) {
+      MOZ_ASSERT(threadLocalInfo->mClosed);
+
       if (threadLocalInfo->mActor) {
         threadLocalInfo->mActor->Close();
         threadLocalInfo->mActor->AssertActorDestroyed();
@@ -473,7 +477,7 @@ private:
 
   // Only called by IPDL.
   virtual void
-  ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
+  ActorDestroy(ActorDestroyReason aWhy) override;
 
   static already_AddRefed<nsIIPCBackgroundChildCreateCallback>
   GetNextCallback();
@@ -483,7 +487,7 @@ private:
 // ParentImpl Helper Declarations
 // -----------------------------------------------------------------------------
 
-class ParentImpl::ShutdownObserver MOZ_FINAL : public nsIObserver
+class ParentImpl::ShutdownObserver final : public nsIObserver
 {
 public:
   ShutdownObserver()
@@ -501,7 +505,7 @@ private:
   }
 };
 
-class ParentImpl::RequestMessageLoopRunnable MOZ_FINAL :
+class ParentImpl::RequestMessageLoopRunnable final :
   public nsRunnable
 {
   nsCOMPtr<nsIThread> mTargetThread;
@@ -525,7 +529,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-class ParentImpl::ShutdownBackgroundThreadRunnable MOZ_FINAL : public nsRunnable
+class ParentImpl::ShutdownBackgroundThreadRunnable final : public nsRunnable
 {
 public:
   ShutdownBackgroundThreadRunnable()
@@ -543,7 +547,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-class ParentImpl::ForceCloseBackgroundActorsRunnable MOZ_FINAL : public nsRunnable
+class ParentImpl::ForceCloseBackgroundActorsRunnable final : public nsRunnable
 {
   nsTArray<ParentImpl*>* mActorArray;
 
@@ -565,7 +569,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-class ParentImpl::CreateCallbackRunnable MOZ_FINAL : public nsRunnable
+class ParentImpl::CreateCallbackRunnable final : public nsRunnable
 {
   nsRefPtr<CreateCallback> mCallback;
 
@@ -587,7 +591,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-class ParentImpl::ConnectActorRunnable MOZ_FINAL : public nsRunnable
+class ParentImpl::ConnectActorRunnable final : public nsRunnable
 {
   nsRefPtr<ParentImpl> mActor;
   Transport* mTransport;
@@ -640,7 +644,7 @@ protected:
 // ChildImpl Helper Declarations
 // -----------------------------------------------------------------------------
 
-class ChildImpl::ShutdownObserver MOZ_FINAL : public nsIObserver
+class ChildImpl::ShutdownObserver final : public nsIObserver
 {
 public:
   ShutdownObserver()
@@ -658,7 +662,7 @@ private:
   }
 };
 
-class ChildImpl::CreateActorRunnable MOZ_FINAL : public nsRunnable
+class ChildImpl::CreateActorRunnable final : public nsRunnable
 {
   nsCOMPtr<nsIEventTarget> mEventTarget;
 
@@ -678,7 +682,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-class ChildImpl::ParentCreateCallback MOZ_FINAL :
+class ChildImpl::ParentCreateCallback final :
   public ParentImpl::CreateCallback
 {
   nsCOMPtr<nsIEventTarget> mEventTarget;
@@ -698,14 +702,14 @@ private:
 
   virtual void
   Success(already_AddRefed<ParentImpl> aActor, MessageLoop* aMessageLoop)
-          MOZ_OVERRIDE;
+          override;
 
   virtual void
-  Failure() MOZ_OVERRIDE;
+  Failure() override;
 };
 
 // Must be cancelable in order to dispatch on active worker threads
-class ChildImpl::AlreadyCreatedCallbackRunnable MOZ_FINAL :
+class ChildImpl::AlreadyCreatedCallbackRunnable final :
   public nsCancelableRunnable
 {
 public:
@@ -724,7 +728,7 @@ protected:
   NS_DECL_NSICANCELABLERUNNABLE
 };
 
-class ChildImpl::FailedCreateCallbackRunnable MOZ_FINAL : public nsRunnable
+class ChildImpl::FailedCreateCallbackRunnable final : public nsRunnable
 {
 public:
   FailedCreateCallbackRunnable()
@@ -741,7 +745,7 @@ protected:
   NS_DECL_NSIRUNNABLE
 };
 
-class ChildImpl::OpenChildProcessActorRunnable MOZ_FINAL : public nsRunnable
+class ChildImpl::OpenChildProcessActorRunnable final : public nsRunnable
 {
   nsRefPtr<ChildImpl> mActor;
   nsAutoPtr<Transport> mTransport;
@@ -773,7 +777,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-class ChildImpl::OpenMainProcessActorRunnable MOZ_FINAL : public nsRunnable
+class ChildImpl::OpenMainProcessActorRunnable final : public nsRunnable
 {
   nsRefPtr<ChildImpl> mActor;
   nsRefPtr<ParentImpl> mParentActor;
@@ -1347,6 +1351,7 @@ ParentImpl::CloneToplevel(const InfallibleTArray<ProtocolFdMapping>& aFds,
 {
   AssertIsInMainProcess();
   AssertIsOnMainThread();
+  MOZ_ASSERT(aCtx->GetContentParent());
 
   const ProtocolId protocolId = GetProtocolId();
 
@@ -1363,7 +1368,7 @@ ParentImpl::CloneToplevel(const InfallibleTArray<ProtocolFdMapping>& aFds,
     }
 
     PBackgroundParent* clonedActor =
-      Alloc(mContent, transport, base::GetProcId(aPeerProcess));
+      Alloc(aCtx->GetContentParent(), transport, base::GetProcId(aPeerProcess));
     MOZ_ASSERT(clonedActor);
 
     clonedActor->CloneManagees(this, aCtx);
@@ -1639,6 +1644,14 @@ ChildImpl::Shutdown()
 
   MOZ_ASSERT(sThreadLocalIndex != kBadThreadLocalIndex);
 
+  auto threadLocalInfo =
+    static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
+
+  if (threadLocalInfo) {
+    MOZ_ASSERT(!threadLocalInfo->mClosed);
+    threadLocalInfo->mClosed = true;
+  }
+
   DebugOnly<PRStatus> status = PR_SetThreadPrivate(sThreadLocalIndex, nullptr);
   MOZ_ASSERT(status == PR_SUCCESS);
 }
@@ -1765,14 +1778,12 @@ ChildImpl::CloseForCurrentThread()
   auto threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
 
-  // If we don't have a thread local we are in one of these conditions:
-  //   1) Startup has not completed and we are racing
-  //   2) We were called again after a previous close or shutdown
-  // For now, these should not happen, so crash.  We can add extra complexity
-  // in the future if it turns out we need to support these cases.
   if (!threadLocalInfo) {
-    MOZ_CRASH("Attempting to close a non-existent PBackground actor!");
+    return;
   }
+
+  MOZ_ASSERT(!threadLocalInfo->mClosed);
+  threadLocalInfo->mClosed = true;
 
   if (threadLocalInfo->mActor) {
     threadLocalInfo->mActor->FlushPendingInterruptQueue();

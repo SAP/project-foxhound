@@ -11,7 +11,6 @@
 #include "CertVerifier.h"
 #include "nsCRTGlue.h"
 #include "nsISSLStatus.h"
-#include "nsISSLStatusProvider.h"
 #include "nsISocketProvider.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
@@ -271,15 +270,23 @@ nsSiteSecurityService::Init()
 }
 
 nsresult
-nsSiteSecurityService::GetHost(nsIURI *aURI, nsACString &aResult)
+nsSiteSecurityService::GetHost(nsIURI* aURI, nsACString& aResult)
 {
   nsCOMPtr<nsIURI> innerURI = NS_GetInnermostURI(aURI);
-  if (!innerURI) return NS_ERROR_FAILURE;
+  if (!innerURI) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsresult rv = innerURI->GetAsciiHost(aResult);
+  nsAutoCString host;
+  nsresult rv = innerURI->GetAsciiHost(host);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
-  if (NS_FAILED(rv) || aResult.IsEmpty())
+  aResult.Assign(PublicKeyPinningService::CanonicalizeHostname(host.get()));
+  if (aResult.IsEmpty()) {
     return NS_ERROR_UNEXPECTED;
+  }
 
   return NS_OK;
 }
@@ -864,8 +871,7 @@ nsSiteSecurityService::IsSecureHost(uint32_t aType, const char* aHost,
   }
 
   // Holepunch chart.apis.google.com and subdomains.
-  nsAutoCString host(aHost);
-  ToLowerCase(host);
+  nsAutoCString host(PublicKeyPinningService::CanonicalizeHostname(aHost));
   if (host.EqualsLiteral("chart.apis.google.com") ||
       StringEndsWith(host, NS_LITERAL_CSTRING(".chart.apis.google.com"))) {
     return NS_OK;
@@ -965,39 +971,6 @@ nsSiteSecurityService::IsSecureHost(uint32_t aType, const char* aHost,
   return NS_OK;
 }
 
-
-// Verify the trustworthiness of the security info (are there any cert errors?)
-NS_IMETHODIMP
-nsSiteSecurityService::ShouldIgnoreHeaders(nsISupports* aSecurityInfo,
-                                           bool* aResult)
-{
-  nsresult rv;
-  bool tlsIsBroken = false;
-  nsCOMPtr<nsISSLStatusProvider> sslprov = do_QueryInterface(aSecurityInfo);
-  NS_ENSURE_TRUE(sslprov, NS_ERROR_FAILURE);
-
-  nsCOMPtr<nsISSLStatus> sslstat;
-  rv = sslprov->GetSSLStatus(getter_AddRefs(sslstat));
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(sslstat, NS_ERROR_FAILURE);
-
-  bool trustcheck;
-  rv = sslstat->GetIsDomainMismatch(&trustcheck);
-  NS_ENSURE_SUCCESS(rv, rv);
-  tlsIsBroken = tlsIsBroken || trustcheck;
-
-  rv = sslstat->GetIsNotValidAtThisTime(&trustcheck);
-  NS_ENSURE_SUCCESS(rv, rv);
-  tlsIsBroken = tlsIsBroken || trustcheck;
-
-  rv = sslstat->GetIsUntrusted(&trustcheck);
-  NS_ENSURE_SUCCESS(rv, rv);
-  tlsIsBroken = tlsIsBroken || trustcheck;
-
-  *aResult = tlsIsBroken;
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsSiteSecurityService::ClearAll()
 {
@@ -1018,7 +991,7 @@ nsSiteSecurityService::GetKeyPinsForHostname(const char* aHostname,
   *aIncludeSubdomains = false;
   pinArray.Clear();
 
-  nsAutoCString host(aHostname);
+  nsAutoCString host(PublicKeyPinningService::CanonicalizeHostname(aHostname));
   nsAutoCString storageKey;
   SetStorageKey(storageKey, host, nsISiteSecurityService::HEADER_HPKP);
 
@@ -1071,7 +1044,8 @@ nsSiteSecurityService::SetKeyPins(const char* aHost, bool aIncludeSubdomains,
   SiteHPKPState dynamicEntry(expireTime, SecurityPropertySet,
                              aIncludeSubdomains, sha256keys);
   // we always store data in permanent storage (ie no flags)
-  return SetHPKPState(aHost, dynamicEntry, 0);
+  nsAutoCString host(PublicKeyPinningService::CanonicalizeHostname(aHost));
+  return SetHPKPState(host.get(), dynamicEntry, 0);
 }
 
 nsresult

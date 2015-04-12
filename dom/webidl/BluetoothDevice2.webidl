@@ -13,6 +13,12 @@ interface BluetoothDevice : EventTarget
   readonly attribute boolean                paired;
   readonly attribute BluetoothDeviceType    type;
 
+  /**
+   * Retrieve the BluetoothGatt interface to interact with remote BLE devices.
+   * This attribute is null if the device type is not dual or le.
+   */
+  readonly attribute BluetoothGatt?         gatt;
+
   [Cached, Pure]
   readonly attribute sequence<DOMString>    uuids;
 
@@ -26,7 +32,7 @@ interface BluetoothDevice : EventTarget
    * If the operation succeeds, the promise will be resolved with up-to-date
    * UUID list which is identical to attribute uuids.
    */
-  [NewObject, Throws]
+  [NewObject]
   Promise<sequence<DOMString>>              fetchUuids();
 };
 

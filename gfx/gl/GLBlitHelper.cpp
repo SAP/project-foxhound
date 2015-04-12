@@ -20,6 +20,7 @@
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidSurfaceTexture.h"
 #include "GLImages.h"
+#include "GLLibraryEGL.h"
 #endif
 
 using mozilla::layers::PlanarYCbCrImage;
@@ -305,6 +306,7 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
     GLuint *fragShaderPtr;
     const char* fragShaderSource;
     switch (target) {
+    case ConvertEGLImage:
     case BlitTex2D:
         programPtr = &mTex2DBlit_Program;
         fragShaderPtr = &mTex2DBlit_FragShader;
@@ -451,6 +453,7 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
         switch (target) {
             case BlitTex2D:
             case BlitTexRect:
+            case ConvertEGLImage:
             case ConvertSurfaceTexture:
             case ConvertGralloc: {
 #ifdef ANDROID
@@ -666,27 +669,28 @@ GLBlitHelper::BindAndUploadYUVTexture(Channel which,
     }
 }
 
-#ifdef MOZ_WIDGET_GONK
 void
-GLBlitHelper::BindAndUploadExternalTexture(EGLImage image)
+GLBlitHelper::BindAndUploadEGLImage(EGLImage image, GLuint target)
 {
     MOZ_ASSERT(image != EGL_NO_IMAGE, "Bad EGLImage");
 
     if (!mSrcTexEGL) {
         mGL->fGenTextures(1, &mSrcTexEGL);
-        mGL->fBindTexture(LOCAL_GL_TEXTURE_EXTERNAL_OES, mSrcTexEGL);
-        mGL->fTexParameteri(LOCAL_GL_TEXTURE_EXTERNAL_OES, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
-        mGL->fTexParameteri(LOCAL_GL_TEXTURE_EXTERNAL_OES, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
-        mGL->fTexParameteri(LOCAL_GL_TEXTURE_EXTERNAL_OES, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_NEAREST);
-        mGL->fTexParameteri(LOCAL_GL_TEXTURE_EXTERNAL_OES, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_NEAREST);
+        mGL->fBindTexture(target, mSrcTexEGL);
+        mGL->fTexParameteri(target, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+        mGL->fTexParameteri(target, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+        mGL->fTexParameteri(target, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_NEAREST);
+        mGL->fTexParameteri(target, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_NEAREST);
     } else {
-        mGL->fBindTexture(LOCAL_GL_TEXTURE_EXTERNAL_OES, mSrcTexEGL);
+        mGL->fBindTexture(target, mSrcTexEGL);
     }
-    mGL->fEGLImageTargetTexture2D(LOCAL_GL_TEXTURE_EXTERNAL_OES, image);
+    mGL->fEGLImageTargetTexture2D(target, image);
 }
 
+#ifdef MOZ_WIDGET_GONK
+
 bool
-GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yFlip)
+GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yflip)
 {
     ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
     mGL->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
@@ -705,9 +709,9 @@ GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yFlip)
     int oldBinding = 0;
     mGL->fGetIntegerv(LOCAL_GL_TEXTURE_BINDING_EXTERNAL_OES, &oldBinding);
 
-    BindAndUploadExternalTexture(image);
+    BindAndUploadEGLImage(image, LOCAL_GL_TEXTURE_EXTERNAL_OES);
 
-    mGL->fUniform1f(mYFlipLoc, yFlip ? (float)1.0f : (float)0.0f);
+    mGL->fUniform1f(mYFlipLoc, yflip ? (float)1.0f : (float)0.0f);
 
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 
@@ -719,18 +723,17 @@ GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yFlip)
 
 #ifdef MOZ_WIDGET_ANDROID
 
+#define ATTACH_WAIT_MS 50
+
 bool
-GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage)
+GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage, bool yflip)
 {
     AndroidSurfaceTexture* surfaceTexture = stImage->GetData()->mSurfTex;
-    bool yFlip = stImage->GetData()->mInverted;
 
     ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
-    mGL->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
 
-    if (!surfaceTexture->Attach(mGL)) {
+    if (NS_FAILED(surfaceTexture->Attach(mGL, PR_MillisecondsToInterval(ATTACH_WAIT_MS))))
         return false;
-    }
 
     // UpdateTexImage() changes the EXTERNAL binding, so save it here
     // so we can restore it after.
@@ -743,7 +746,7 @@ GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage)
     surfaceTexture->GetTransformMatrix(transform);
 
     mGL->fUniformMatrix4fv(mTextureTransformLoc, 1, false, &transform._11);
-    mGL->fUniform1f(mYFlipLoc, yFlip ? 1.0f : 0.0f);
+    mGL->fUniform1f(mYFlipLoc, yflip ? 1.0f : 0.0f);
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 
     surfaceTexture->Detach();
@@ -751,10 +754,39 @@ GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage)
     mGL->fBindTexture(LOCAL_GL_TEXTURE_EXTERNAL, oldBinding);
     return true;
 }
+
+bool
+GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image, bool yflip)
+{
+    EGLImage eglImage = image->GetData()->mImage;
+    EGLSync eglSync = image->GetData()->mSync;
+
+    if (eglSync) {
+        EGLint status = sEGLLibrary.fClientWaitSync(EGL_DISPLAY(), eglSync, 0, LOCAL_EGL_FOREVER);
+        if (status != LOCAL_EGL_CONDITION_SATISFIED) {
+            return false;
+        }
+    }
+
+    ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
+
+    int oldBinding = 0;
+    mGL->fGetIntegerv(LOCAL_GL_TEXTURE_BINDING_2D, &oldBinding);
+
+    BindAndUploadEGLImage(eglImage, LOCAL_GL_TEXTURE_2D);
+
+    mGL->fUniform1f(mYFlipLoc, yflip ? 1.0f : 0.0f);
+
+    mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
+
+    mGL->fBindTexture(LOCAL_GL_TEXTURE_EXTERNAL_OES, oldBinding);
+    return true;
+}
+
 #endif
 
 bool
-GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yFlip)
+GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yflip)
 {
     ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
     const PlanarYCbCrData* yuvData = yuvImage->GetData();
@@ -775,7 +807,7 @@ GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yFli
     BindAndUploadYUVTexture(Channel_Cb, yuvData->mCbCrStride, yuvData->mCbCrSize.height, yuvData->mCbChannel, needsAllocation);
     BindAndUploadYUVTexture(Channel_Cr, yuvData->mCbCrStride, yuvData->mCbCrSize.height, yuvData->mCrChannel, needsAllocation);
 
-    mGL->fUniform1f(mYFlipLoc, yFlip ? (float)1.0 : (float)0.0);
+    mGL->fUniform1f(mYFlipLoc, yflip ? (float)1.0 : (float)0.0);
 
     if (needsAllocation) {
         mGL->fUniform2f(mYTexScaleLoc, (float)yuvData->mYSize.width/yuvData->mYStride, 1.0f);
@@ -794,7 +826,7 @@ bool
 GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
                                      const gfx::IntSize& destSize,
                                      GLuint destFB,
-                                     bool yFlip,
+                                     bool yflip,
                                      GLuint xoffset,
                                      GLuint yoffset,
                                      GLuint cropWidth,
@@ -815,6 +847,9 @@ GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
 #ifdef MOZ_WIDGET_ANDROID
     case ImageFormat::SURFACE_TEXTURE:
         type = ConvertSurfaceTexture;
+        break;
+    case ImageFormat::EGLIMAGE:
+        type = ConvertEGLImage;
         break;
 #endif
     default:
@@ -837,18 +872,22 @@ GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
 #ifdef MOZ_WIDGET_GONK
     if (type == ConvertGralloc) {
         layers::GrallocImage* grallocImage = static_cast<layers::GrallocImage*>(srcImage);
-        return BlitGrallocImage(grallocImage, yFlip);
+        return BlitGrallocImage(grallocImage, yflip);
     }
 #endif
     if (type == ConvertPlanarYCbCr) {
         mGL->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);
         PlanarYCbCrImage* yuvImage = static_cast<PlanarYCbCrImage*>(srcImage);
-        return BlitPlanarYCbCrImage(yuvImage, yFlip);
+        return BlitPlanarYCbCrImage(yuvImage, yflip);
     }
 #ifdef MOZ_WIDGET_ANDROID
     if (type == ConvertSurfaceTexture) {
         layers::SurfaceTextureImage* stImage = static_cast<layers::SurfaceTextureImage*>(srcImage);
-        return BlitSurfaceTextureImage(stImage);
+        return BlitSurfaceTextureImage(stImage, yflip);
+    }
+    if (type == ConvertEGLImage) {
+        layers::EGLImageImage* eglImage = static_cast<layers::EGLImageImage*>(srcImage);
+        return BlitEGLImageImage(eglImage, yflip);
     }
 #endif
 
@@ -860,7 +899,7 @@ GLBlitHelper::BlitImageToTexture(layers::Image* srcImage,
                                  const gfx::IntSize& destSize,
                                  GLuint destTex,
                                  GLenum destTarget,
-                                 bool yFlip,
+                                 bool yflip,
                                  GLuint xoffset,
                                  GLuint yoffset,
                                  GLuint cropWidth,
@@ -868,13 +907,13 @@ GLBlitHelper::BlitImageToTexture(layers::Image* srcImage,
 {
     ScopedGLDrawState autoStates(mGL);
 
-    if (!mFBO) {
+    if (!mFBO)
         mGL->fGenFramebuffers(1, &mFBO);
-    }
 
     ScopedBindFramebuffer boundFB(mGL, mFBO);
-    mGL->fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0, destTarget, destTex, 0);
-    return BlitImageToFramebuffer(srcImage, destSize, mFBO, yFlip, xoffset, yoffset,
+    mGL->fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
+                               destTarget, destTex, 0);
+    return BlitImageToFramebuffer(srcImage, destSize, mFBO, yflip, xoffset, yoffset,
                                   cropWidth, cropHeight);
 }
 
@@ -982,5 +1021,5 @@ GLBlitHelper::BlitTextureToTexture(GLuint srcTex, GLuint destTex,
                              srcSize, destSize, destTarget);
 }
 
-}
-}
+} // namespace gl
+} // namespace mozilla

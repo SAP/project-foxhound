@@ -1141,7 +1141,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 class nsDependentCString : public nsCString
@@ -1165,7 +1165,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 
@@ -1218,7 +1218,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 class NS_ConvertUTF8toUTF16 : public nsString
@@ -1239,7 +1239,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 class NS_ConvertUTF16toUTF8 : public nsCString
@@ -1260,7 +1260,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 class NS_LossyConvertUTF16toASCII : public nsCString
@@ -1281,7 +1281,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 
@@ -1423,7 +1423,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 class nsDependentCSubstring : public nsCStringContainer
@@ -1456,7 +1456,7 @@ public:
   }
 
 private:
-  self_type& operator=(const self_type& aString) MOZ_DELETE;
+  self_type& operator=(const self_type& aString) = delete;
 };
 
 
@@ -1480,8 +1480,8 @@ Substring(const nsAString& aStr, uint32_t aStartPos, uint32_t aLength)
 inline const nsDependentSubstring
 Substring(const char16_t* aStart, const char16_t* aEnd)
 {
-  NS_ABORT_IF_FALSE(uint32_t(aEnd - aStart) == uintptr_t(aEnd - aStart),
-                    "string too long");
+  MOZ_ASSERT(uint32_t(aEnd - aStart) == uintptr_t(aEnd - aStart),
+             "string too long");
   return nsDependentSubstring(aStart, uint32_t(aEnd - aStart));
 }
 
@@ -1519,8 +1519,8 @@ Substring(const nsACString& aStr, uint32_t aStartPos, uint32_t aLength)
 inline const nsDependentCSubstring
 Substring(const char* aStart, const char* aEnd)
 {
-  NS_ABORT_IF_FALSE(uint32_t(aEnd - aStart) == uintptr_t(aEnd - aStart),
-                    "string too long");
+  MOZ_ASSERT(uint32_t(aEnd - aStart) == uintptr_t(aEnd - aStart),
+             "string too long");
   return nsDependentCSubstring(aStart, uint32_t(aEnd - aStart));
 }
 

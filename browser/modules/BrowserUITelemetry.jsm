@@ -138,6 +138,7 @@ XPCOMUtils.defineLazyGetter(this, "ALL_BUILTIN_ITEMS", function() {
     "BMB_bookmarksPopup",
     "BMB_unsortedBookmarksPopup",
     "BMB_bookmarksToolbarPopup",
+    "search-go-button",
   ]
   return DEFAULT_ITEMS.concat(PALETTE_ITEMS)
                       .concat(SPECIAL_CASES);
@@ -285,9 +286,11 @@ this.BrowserUITelemetry = {
       allowPopups: false,
     });
 
-    // If there are no such windows, we're out of luck. :(
-    this._firstWindowMeasurements = win ? this._getWindowMeasurements(win)
-                                        : {};
+    Services.search.init(rv => {
+      // If there are no such windows, we're out of luck. :(
+      this._firstWindowMeasurements = win ? this._getWindowMeasurements(win, rv)
+                                          : {};
+    });
   },
 
   _registerWindow: function(aWindow) {
@@ -456,6 +459,13 @@ this.BrowserUITelemetry = {
       return;
     }
 
+    // If not, we need to check if the item's anonid is in our list
+    // of built-in items to check.
+    if (ALL_BUILTIN_ITEMS.indexOf(item.getAttribute("anonid")) != -1) {
+      this._countMouseUpEvent("click-builtin-item", item.getAttribute("anonid"), aEvent.button);
+      return;
+    }
+
     // If not, we need to check if one of the ancestors of the clicked
     // item is in our list of built-in items to check.
     let candidate = getIDBasedOnFirstIDedAncestor(item);
@@ -464,7 +474,7 @@ this.BrowserUITelemetry = {
     }
   },
 
-  _getWindowMeasurements: function(aWindow) {
+  _getWindowMeasurements: function(aWindow, searchResult) {
     let document = aWindow.document;
     let result = {};
 
@@ -553,6 +563,10 @@ this.BrowserUITelemetry = {
     result.visibleTabs = visibleTabs;
     result.hiddenTabs = hiddenTabs;
 
+    if (Components.isSuccessCode(searchResult)) {
+      result.currentSearchEngine = Services.search.currentEngine.name;
+    }
+    result.oneOffSearchEnabled = Services.prefs.getBoolPref("browser.search.showOneOffButtons");
     return result;
   },
 
@@ -575,6 +589,18 @@ this.BrowserUITelemetry = {
     if (selection) {
       this._countEvent(["search", "selection", source, selection.index, selection.kind]);
     }
+  },
+
+  countOneoffSearchEvent: function(id, type, where) {
+    this._countEvent(["search-oneoff", id, type, where]);
+  },
+
+  countSearchSettingsEvent: function(source) {
+    this._countEvent(["click-builtin-item", source, "search-settings"]);
+  },
+
+  countPanicEvent: function(timeId) {
+    this._countEvent(["forget-button", timeId]);
   },
 
   _logAwesomeBarSearchResult: function (url) {
@@ -647,6 +673,7 @@ this.BrowserUITelemetry = {
     "spell-add-dictionaries-main", "spell-dictionaries",
     "spell-dictionaries-menu", "spell-add-dictionaries",
     "bidi-text-direction-toggle", "bidi-page-direction-toggle", "inspect",
+    "media-eme-learn-more"
   ]),
 
   _contextMenuInteractions: {},

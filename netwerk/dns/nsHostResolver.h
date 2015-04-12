@@ -37,6 +37,7 @@ struct nsHostKey
     const char *host;
     uint16_t    flags;
     uint16_t    af;
+    const char *netInterface;
 };
 
 /**
@@ -101,6 +102,7 @@ public:
     // mValidEnd, and mGraceStart). valid and grace are durations in seconds.
     void SetExpiration(const mozilla::TimeStamp& now, unsigned int valid,
                        unsigned int grace);
+    void CopyExpirationTimesAndFlagsFrom(const nsHostRecord *aFromHostRecord);
 
     // Checks if the record is usable (not expired and has a value)
     bool HasUsableResult(const mozilla::TimeStamp& now, uint16_t queryFlags = 0) const;
@@ -240,6 +242,7 @@ public:
     nsresult ResolveHost(const char            *hostname,
                          uint16_t               flags,
                          uint16_t               af,
+                         const char            *netInterface,
                          nsResolveHostCallback *callback);
 
     /**
@@ -251,6 +254,7 @@ public:
     void DetachCallback(const char            *hostname,
                         uint16_t               flags,
                         uint16_t               af,
+                        const char            *netInterface,
                         nsResolveHostCallback *callback,
                         nsresult               status);
 
@@ -264,6 +268,7 @@ public:
     void CancelAsyncRequest(const char            *host,
                             uint16_t               flags,
                             uint16_t               af,
+                            const char            *netInterface,
                             nsIDNSListener        *aListener,
                             nsresult               status);
     /**

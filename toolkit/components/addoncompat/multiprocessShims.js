@@ -9,6 +9,8 @@ const Ci = Components.interfaces;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "Prefetcher",
+                                  "resource://gre/modules/Prefetcher.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "RemoteAddonsParent",
                                   "resource://gre/modules/RemoteAddonsParent.jsm");
 
@@ -61,6 +63,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "RemoteAddonsParent",
 
 function AddonInterpositionService()
 {
+  Prefetcher.init();
   RemoteAddonsParent.init();
 
   // These maps keep track of the interpositions for all different
@@ -77,13 +80,7 @@ AddonInterpositionService.prototype = {
   // determines the type of the target object.
   getObjectTag: function(target) {
     if (Cu.isCrossProcessWrapper(target)) {
-      if (target instanceof Ci.nsIDocShellTreeItem) {
-        return "ContentDocShellTreeItem";
-      }
-
-      if (target instanceof Ci.nsIDOMDocument) {
-        return "ContentDocument";
-      }
+      return Cu.getCrossProcessWrapperTag(target);
     }
 
     const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -122,7 +119,7 @@ AddonInterpositionService.prototype = {
     }
 
     if (!interp) {
-      return null;
+      return Prefetcher.lookupInCache(addon, target, prop);
     }
 
     let desc = { configurable: false, enumerable: true };
@@ -144,7 +141,7 @@ AddonInterpositionService.prototype = {
       return desc;
     }
 
-    return null;
+    return Prefetcher.lookupInCache(addon, target, prop);
   },
 };
 

@@ -53,9 +53,11 @@ LOCAL_INCLUDES += [
     '/accessible/windows/uia',
     '/accessible/xpcom',
     '/accessible/xul',
-    '/content/base/src',
+    '/dom/base',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
+
+FAIL_ON_WARNINGS = True

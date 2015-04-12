@@ -6,6 +6,7 @@
 #include "Matrix.h"
 #include "Tools.h"
 #include <algorithm>
+#include <ostream>
 #include <math.h>
 
 #include "mozilla/FloatingPoint.h" // for UnspecifiedNaN
@@ -14,6 +15,18 @@ using namespace std;
 
 namespace mozilla {
 namespace gfx {
+
+std::ostream&
+operator<<(std::ostream& aStream, const Matrix& aMatrix)
+{
+  return aStream << "[ " << aMatrix._11
+                 << " "  << aMatrix._12
+                 << "; " << aMatrix._21
+                 << " "  << aMatrix._22
+                 << "; " << aMatrix._31
+                 << " "  << aMatrix._32
+                 << "; ]";
+}
 
 Matrix
 Matrix::Rotation(Float aAngle)
@@ -134,8 +147,8 @@ Rect Matrix4x4::ProjectRectBounds(const Rect& aRect) const
 
   points[0] = ProjectPoint(aRect.TopLeft());
   points[1] = ProjectPoint(aRect.TopRight());
-  points[2] = ProjectPoint(aRect.BottomLeft());
-  points[3] = ProjectPoint(aRect.BottomRight());
+  points[2] = ProjectPoint(aRect.BottomRight());
+  points[3] = ProjectPoint(aRect.BottomLeft());
 
   Float min_x = std::numeric_limits<Float>::max();
   Float min_y = std::numeric_limits<Float>::max();

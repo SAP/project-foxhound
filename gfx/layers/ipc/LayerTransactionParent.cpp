@@ -13,7 +13,6 @@
 #include "Layers.h"                     // for Layer, ContainerLayer, etc
 #include "ShadowLayerParent.h"          // for ShadowLayerParent
 #include "CompositableTransactionParent.h"  // for EditReplyVector
-#include "ShadowLayersManager.h"        // for ShadowLayersManager
 #include "mozilla/gfx/BasePoint3D.h"    // for BasePoint3D
 #include "mozilla/layers/CanvasLayerComposite.h"
 #include "mozilla/layers/ColorLayerComposite.h"
@@ -29,6 +28,7 @@
 #include "mozilla/layers/PLayerParent.h"  // for PLayerParent
 #include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
 #include "mozilla/layers/PaintedLayerComposite.h"
+#include "mozilla/layers/ShadowLayersManager.h" // for ShadowLayersManager
 #include "mozilla/mozalloc.h"           // for operator delete, etc
 #include "mozilla/unused.h"
 #include "nsCoord.h"                    // for NSAppUnitsToFloatPixels
@@ -48,6 +48,10 @@ typedef std::vector<mozilla::layers::EditReply> EditReplyVector;
 using mozilla::layout::RenderFrameParent;
 
 namespace mozilla {
+namespace gfx {
+class VRHMDInfo;
+}
+
 namespace layers {
 
 class PGrallocBufferParent;
@@ -186,16 +190,17 @@ LayerTransactionParent::GetCompositorBackendType() const
 }
 
 bool
-LayerTransactionParent::RecvUpdateNoSwap(const InfallibleTArray<Edit>& cset,
+LayerTransactionParent::RecvUpdateNoSwap(InfallibleTArray<Edit>&& cset,
                                          const uint64_t& aTransactionId,
                                          const TargetConfig& targetConfig,
+                                         PluginsArray&& aPlugins,
                                          const bool& isFirstPaint,
                                          const bool& scheduleComposite,
                                          const uint32_t& paintSequenceNumber,
                                          const bool& isRepeatTransaction,
                                          const mozilla::TimeStamp& aTransactionStart)
 {
-  return RecvUpdate(cset, aTransactionId, targetConfig, isFirstPaint,
+  return RecvUpdate(Move(cset), aTransactionId, targetConfig, Move(aPlugins), isFirstPaint,
       scheduleComposite, paintSequenceNumber, isRepeatTransaction,
       aTransactionStart, nullptr);
 }
@@ -216,9 +221,10 @@ private:
 };
 
 bool
-LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
+LayerTransactionParent::RecvUpdate(InfallibleTArray<Edit>&& cset,
                                    const uint64_t& aTransactionId,
                                    const TargetConfig& targetConfig,
+                                   PluginsArray&& aPlugins,
                                    const bool& isFirstPaint,
                                    const bool& scheduleComposite,
                                    const uint32_t& paintSequenceNumber,
@@ -378,6 +384,18 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
           specific.get_ContainerLayerAttributes();
         containerLayer->SetPreScale(attrs.preXScale(), attrs.preYScale());
         containerLayer->SetInheritedScale(attrs.inheritedXScale(), attrs.inheritedYScale());
+        containerLayer->SetScaleToResolution(attrs.scaleToResolution(),
+                                             attrs.presShellResolution());
+        containerLayer->SetEventRegionsOverride(attrs.eventRegionsOverride());
+
+        if (attrs.hmdInfo()) {
+          if (!IsSameProcess()) {
+            NS_WARNING("VR layers currently not supported with cross-process compositing");
+            return false;
+          }
+          containerLayer->SetVRHMDInfo(reinterpret_cast<mozilla::gfx::VRHMDInfo*>(attrs.hmdInfo()));
+        }
+
         break;
       }
       case Specific::TColorLayerAttributes: {
@@ -410,6 +428,7 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
           return false;
         }
         refLayer->SetReferentId(specific.get_RefLayerAttributes().id());
+        refLayer->SetEventRegionsOverride(specific.get_RefLayerAttributes().eventRegionsOverride());
         break;
       }
       case Specific::TImageLayerAttributes: {
@@ -566,7 +585,8 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
   }
 
   mShadowLayersManager->ShadowLayersUpdated(this, aTransactionId, targetConfig,
-      isFirstPaint, scheduleComposite, paintSequenceNumber, isRepeatTransaction);
+                                            aPlugins, isFirstPaint, scheduleComposite,
+                                            paintSequenceNumber, isRepeatTransaction);
 
   {
     AutoResolveRefLayers resolve(mShadowLayersManager->GetCompositionManager(this));
@@ -594,15 +614,25 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
   }
 #endif
 
-  TimeDuration latency = TimeStamp::Now() - aTransactionStart;
-  // Theshold is 200ms to trigger, 1000ms to hit red
-  if (latency > TimeDuration::FromMilliseconds(kVisualWarningTrigger)) {
-    float severity = (latency - TimeDuration::FromMilliseconds(kVisualWarningTrigger)).ToMilliseconds() /
-                       (kVisualWarningMax - kVisualWarningTrigger);
-    if (severity > 1.f) {
-      severity = 1.f;
+  // Enable visual warning for long transaction when draw FPS option is enabled
+  bool drawFps = gfxPrefs::LayersDrawFPS();
+  if (drawFps) {
+    uint32_t visualWarningTrigger = gfxPrefs::LayerTransactionWarning();
+    // The default theshold is 200ms to trigger, hit red when it take 4 times longer
+    TimeDuration latency = TimeStamp::Now() - aTransactionStart;
+    if (latency > TimeDuration::FromMilliseconds(visualWarningTrigger)) {
+      float severity = (latency - TimeDuration::FromMilliseconds(visualWarningTrigger)).ToMilliseconds() /
+                         (4 * visualWarningTrigger);
+      if (severity > 1.f) {
+        severity = 1.f;
+      }
+      mLayerManager->VisualFrameWarning(severity);
+#ifdef PR_LOGGING
+      PR_LogPrint("LayerTransactionParent::RecvUpdate transaction from process %d took %f ms",
+                  mChildProcessId,
+                  latency.ToMilliseconds());
+#endif
     }
-    mLayerManager->VisualFrameWarning(severity);
   }
 
   profiler_tracing("Paint", "LayerTransaction", TRACING_INTERVAL_END);
@@ -863,7 +893,7 @@ LayerTransactionParent::DeallocPTextureParent(PTextureParent* actor)
 }
 
 bool
-LayerTransactionParent::RecvChildAsyncMessages(const InfallibleTArray<AsyncChildMessageData>& aMessages)
+LayerTransactionParent::RecvChildAsyncMessages(InfallibleTArray<AsyncChildMessageData>&& aMessages)
 {
   AutoLayerTransactionParentAsyncMessageSender autoAsyncMessageSender(this);
 

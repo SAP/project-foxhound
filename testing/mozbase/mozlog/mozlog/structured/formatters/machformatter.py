@@ -44,6 +44,7 @@ class MachFormatter(base.BaseFormatter):
         self.last_time = None
         self.terminal = terminal
         self.verbose = False
+        self._known_pids = set()
 
         self.summary_values = {"tests": 0,
                                "subtests": 0,
@@ -92,6 +93,15 @@ class MachFormatter(base.BaseFormatter):
             test_id = tuple(test_id)
         return test_id
 
+    def _get_file_name(self, test_id):
+        if isinstance(test_id, (str, unicode)):
+            return test_id
+
+        if isinstance(test_id, tuple):
+            return "".join(test_id)
+
+        assert False, "unexpected test_id"
+
     def suite_start(self, data):
         self.summary_values = {"tests": 0,
                                "subtests": 0,
@@ -138,14 +148,16 @@ class MachFormatter(base.BaseFormatter):
             heading = "Unexpected Results"
             rv.extend([heading, "=" * len(heading), ""])
             if has_subtests:
-                for test, results in self.summary_unexpected:
+                for test_id, results in self.summary_unexpected:
+                    test = self._get_file_name(test_id)
                     rv.extend([test, "-" * len(test)])
                     for name, status, expected, message in results:
                         if name is None:
                             name = "[Parent]"
                         rv.append("%s %s" % (self.format_expected(status, expected), name))
             else:
-                for test, results in self.summary_unexpected:
+                for test_id, results in self.summary_unexpected:
+                    test = self._get_file_name(test_id)
                     assert len(results) == 1
                     name, status, expected, messge = results[0]
                     assert name is None
@@ -242,8 +254,9 @@ class MachFormatter(base.BaseFormatter):
         status, subtest = data["status"], data["subtest"]
         unexpected = "expected" in data
         if self.verbose:
-            color = self.terminal.red if unexpected else self.terminal.green
-            rv = " ".join([subtest, color(status), message])
+            if self.terminal is not None:
+                status = (self.terminal.red if unexpected else self.terminal.green)(status)
+            rv = " ".join([subtest, status, message])
         elif unexpected:
             # We only append an unexpected summary if it was not logged
             # directly by verbose mode.
@@ -262,9 +275,14 @@ class MachFormatter(base.BaseFormatter):
             self.summary_values["expected"] += 1
 
     def process_output(self, data):
-        return '"%s" (pid:%s command:%s)' % (data["data"],
-                                             data["process"],
-                                             data.get("command", ""))
+        rv = []
+
+        if "command" in data and data["process"] not in self._known_pids:
+            self._known_pids.add(data["process"])
+            rv.append('(pid:%s) Full command: %s' % (data["process"], data["command"]))
+
+        rv.append('(pid:%s) "%s"' % (data["process"], data["data"]))
+        return "\n".join(rv)
 
     def crash(self, data):
         test = self._get_test_id(data)

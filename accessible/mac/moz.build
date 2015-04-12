@@ -33,8 +33,10 @@ LOCAL_INCLUDES += [
     '/accessible/xul',
     '/layout/generic',
     '/layout/xul',
+    '/widget',
     '/widget/cocoa',
-    '/widget/xpwidgets',
 ]
 
 FINAL_LIBRARY = 'xul'
+
+FAIL_ON_WARNINGS = True

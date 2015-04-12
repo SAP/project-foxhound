@@ -15,11 +15,12 @@
 #include "mozilla/dom/DesktopNotification.h"
 #include "mozilla/dom/File.h"
 #include "nsGeolocation.h"
+#include "nsIClassOfService.h"
 #include "nsIHttpProtocolHandler.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsContentPolicyUtils.h"
-#include "nsCrossSiteListenerProxy.h"
+#include "nsCORSListenerProxy.h"
 #include "nsISupportsPriority.h"
 #include "nsICachingChannel.h"
 #include "nsIWebContentHandlerRegistrar.h"
@@ -39,6 +40,8 @@
 #include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/Telephony.h"
 #include "mozilla/dom/Voicemail.h"
+#include "mozilla/dom/TVManager.h"
+#include "mozilla/dom/VRDevice.h"
 #include "mozilla/Hal.h"
 #include "nsISiteSpecificUserAgent.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -69,6 +72,7 @@
 #include "mozIThirdPartyUtil.h"
 
 #ifdef MOZ_MEDIA_NAVIGATOR
+#include "mozilla/dom/MediaDevices.h"
 #include "MediaManager.h"
 #endif
 #ifdef MOZ_B2G_BT
@@ -108,11 +112,14 @@
 
 #include "mozilla/dom/FeatureList.h"
 
+#ifdef MOZ_EME
+#include "mozilla/EMEUtils.h"
+#endif
+
 namespace mozilla {
 namespace dom {
 
 static bool sDoNotTrackEnabled = false;
-static uint32_t sDoNotTrackValue = 1;
 static bool sVibratorEnabled   = false;
 static uint32_t sMaxVibrateMS  = 0;
 static uint32_t sMaxVibrateListLen = 0;
@@ -124,9 +131,6 @@ Navigator::Init()
   Preferences::AddBoolVarCache(&sDoNotTrackEnabled,
                                "privacy.donottrackheader.enabled",
                                false);
-  Preferences::AddUintVarCache(&sDoNotTrackValue,
-                               "privacy.donottrackheader.value",
-                               1);
   Preferences::AddBoolVarCache(&sVibratorEnabled,
                                "dom.vibrator.enabled", true);
   Preferences::AddUintVarCache(&sMaxVibrateMS,
@@ -176,6 +180,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMobileMessageManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTelephony)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVoicemail)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTVManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConnection)
 #ifdef MOZ_B2G_RIL
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMobileConnections)
@@ -195,6 +200,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCachedResolveResults)
+#ifdef MOZ_EME
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
+#endif
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -259,6 +267,10 @@ Navigator::Invalidate()
     mVoicemail = nullptr;
   }
 
+  if (mTVManager) {
+    mTVManager = nullptr;
+  }
+
   if (mConnection) {
     mConnection->Shutdown();
     mConnection = nullptr;
@@ -304,6 +316,13 @@ Navigator::Invalidate()
   }
 
   mServiceWorkerContainer = nullptr;
+
+#ifdef MOZ_EME
+  if (mMediaKeySystemAccessManager) {
+    mMediaKeySystemAccessManager->Shutdown();
+    mMediaKeySystemAccessManager = nullptr;
+  }
+#endif
 }
 
 //*****************************************************************************
@@ -628,11 +647,7 @@ NS_IMETHODIMP
 Navigator::GetDoNotTrack(nsAString &aResult)
 {
   if (sDoNotTrackEnabled) {
-    if (sDoNotTrackValue == 0) {
-      aResult.AssignLiteral("0");
-    } else {
-      aResult.AssignLiteral("1");
-    }
+    aResult.AssignLiteral("1");
   } else {
     aResult.AssignLiteral("unspecified");
   }
@@ -945,7 +960,7 @@ Navigator::GetGeolocation(ErrorResult& aRv)
   return mGeolocation;
 }
 
-class BeaconStreamListener MOZ_FINAL : public nsIStreamListener
+class BeaconStreamListener final : public nsIStreamListener
 {
     ~BeaconStreamListener() {}
 
@@ -1100,7 +1115,10 @@ Navigator::SendBeacon(const nsAString& aUrl,
   }
   bool isForeign = true;
   thirdPartyUtil->IsThirdPartyWindow(mWindow, uri, &isForeign);
-  httpChannelInternal->SetForceAllowThirdPartyCookie(!isForeign);
+  uint32_t thirdPartyFlags = isForeign ?
+    0 :
+    nsIHttpChannelInternal::THIRD_PARTY_FORCE_ALLOW;
+  httpChannelInternal->SetThirdPartyFlags(thirdPartyFlags);
 
   nsCString mimeType;
   if (!aData.IsNull()) {
@@ -1187,9 +1205,17 @@ Navigator::SendBeacon(const nsAString& aUrl,
     p->SetPriority(nsISupportsPriority::PRIORITY_LOWEST);
   }
 
+  nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(channel));
+  if (cos) {
+    cos->AddClassFlags(nsIClassOfService::Background);
+  }
+
   nsRefPtr<nsCORSListenerProxy> cors = new nsCORSListenerProxy(new BeaconStreamListener(),
                                                                principal,
                                                                true);
+
+  rv = cors->Init(channel, true);
+  NS_ENSURE_SUCCESS(rv, false);
 
   // Start a preflight if cross-origin and content type is not whitelisted
   rv = secMan->CheckSameOriginURI(documentURI, uri, false);
@@ -1201,6 +1227,12 @@ Navigator::SendBeacon(const nsAString& aUrl,
       !contentType.Equals(APPLICATION_WWW_FORM_URLENCODED) &&
       !contentType.Equals(MULTIPART_FORM_DATA) &&
       !contentType.Equals(TEXT_PLAIN)) {
+
+    // we need to set the sameOriginChecker as a notificationCallback
+    // so we can tell the channel not to follow redirects
+    nsCOMPtr<nsIInterfaceRequestor> soc = nsContentUtils::SameOriginChecker();
+    channel->SetNotificationCallbacks(soc);
+
     nsCOMPtr<nsIChannel> preflightChannel;
     nsTArray<nsCString> unsafeHeaders;
     unsafeHeaders.AppendElement(NS_LITERAL_CSTRING("Content-Type"));
@@ -1221,6 +1253,21 @@ Navigator::SendBeacon(const nsAString& aUrl,
 }
 
 #ifdef MOZ_MEDIA_NAVIGATOR
+MediaDevices*
+Navigator::GetMediaDevices(ErrorResult& aRv)
+{
+  if (!mMediaDevices) {
+    if (!mWindow ||
+        !mWindow->GetOuterWindow() ||
+        mWindow->GetOuterWindow()->GetCurrentInnerWindow() != mWindow) {
+      aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+      return nullptr;
+    }
+    mMediaDevices = new MediaDevices(mWindow);
+  }
+  return mMediaDevices;
+}
+
 void
 Navigator::MozGetUserMedia(const MediaStreamConstraints& aConstraints,
                            NavigatorUserMediaSuccessCallback& aOnSuccess,
@@ -1396,6 +1443,19 @@ Navigator::GetFeature(const nsAString& aName, ErrorResult& aRv)
   } // hardware.memory
 #endif
 
+  p->MaybeResolve(JS::UndefinedHandleValue);
+  return p.forget();
+}
+
+already_AddRefed<Promise>
+Navigator::HasFeature(const nsAString& aName, ErrorResult& aRv)
+{
+  nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(mWindow);
+  nsRefPtr<Promise> p = Promise::Create(go, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
   // Hardcoded manifest features. Some are still b2g specific.
   const char manifestFeatures[][64] = {
     "manifest.origin"
@@ -1412,19 +1472,6 @@ Navigator::GetFeature(const nsAString& aName, ErrorResult& aRv)
       p->MaybeResolve(true);
       return p.forget();
     }
-  }
-
-  p->MaybeResolve(JS::UndefinedHandleValue);
-  return p.forget();
-}
-
-already_AddRefed<Promise>
-Navigator::HasFeature(const nsAString& aName, ErrorResult& aRv)
-{
-  nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(mWindow);
-  nsRefPtr<Promise> p = Promise::Create(go, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
   }
 
   NS_NAMED_LITERAL_STRING(apiWindowPrefix, "api.window.");
@@ -1571,6 +1618,19 @@ Navigator::GetMozTelephony(ErrorResult& aRv)
   return mTelephony;
 }
 
+TVManager*
+Navigator::GetTv()
+{
+  if (!mTVManager) {
+    if (!mWindow) {
+      return nullptr;
+    }
+    mTVManager = TVManager::Create(mWindow);
+  }
+
+  return mTVManager;
+}
+
 #ifdef MOZ_B2G
 already_AddRefed<Promise>
 Navigator::GetMobileIdAssertion(const MobileIdOptions& aOptions,
@@ -1692,6 +1752,32 @@ Navigator::GetGamepads(nsTArray<nsRefPtr<Gamepad> >& aGamepads,
 }
 #endif
 
+already_AddRefed<Promise>
+Navigator::GetVRDevices(ErrorResult& aRv)
+{
+  if (!mWindow || !mWindow->GetDocShell()) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(mWindow);
+  nsRefPtr<Promise> p = Promise::Create(go, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  nsGlobalWindow* win = static_cast<nsGlobalWindow*>(mWindow.get());
+
+  nsTArray<nsRefPtr<VRDevice>> vrDevs;
+  if (!win->GetVRDevices(vrDevs)) {
+    p->MaybeReject(NS_ERROR_FAILURE);
+  } else {
+    p->MaybeResolve(vrDevs);
+  }
+
+  return p.forget();
+}
+
 //*****************************************************************************
 //    Navigator::nsIMozNavigatorNetwork
 //*****************************************************************************
@@ -1779,6 +1865,33 @@ Navigator::MozHasPendingMessage(const nsAString& aType, ErrorResult& aRv)
     return false;
   }
   return result;
+}
+
+void
+Navigator::MozSetMessageHandlerPromise(Promise& aPromise,
+                                       ErrorResult& aRv)
+{
+  // The WebIDL binding is responsible for the pref check here.
+  aRv = EnsureMessagesManager();
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  bool result = false;
+  aRv = mMessagesManager->MozIsHandlingMessage(&result);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  if (!result) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    return;
+  }
+
+  aRv = mMessagesManager->MozSetMessageHandlerPromise(&aPromise);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
 }
 
 void
@@ -1931,9 +2044,9 @@ Navigator::GetMozAudioChannelManager(ErrorResult& aRv)
 #endif
 
 bool
-Navigator::DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
-                        JS::Handle<jsid> aId,
-                        JS::MutableHandle<JSPropertyDescriptor> aDesc)
+Navigator::DoResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
+                     JS::Handle<jsid> aId,
+                     JS::MutableHandle<JSPropertyDescriptor> aDesc)
 {
   if (!JSID_IS_STRING(aId)) {
     return true;
@@ -1999,7 +2112,7 @@ Navigator::DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
       nsISupports* existingObject = mCachedResolveResults.GetWeak(name);
       if (existingObject) {
         // We know all of our WebIDL objects here are wrappercached, so just go
-        // ahead and WrapObject() them.  We can't use WrapNewBindingObject,
+        // ahead and WrapObject() them.  We can't use GetOrCreateDOMReflector,
         // because we don't have the concrete type.
         JS::Rooted<JS::Value> wrapped(aCx);
         if (!dom::WrapObject(aCx, existingObject, &wrapped)) {
@@ -2228,7 +2341,7 @@ Navigator::HasDataStoreSupport(nsIPrincipal* aPrincipal)
 
 // A WorkerMainThreadRunnable to synchronously dispatch the call of
 // HasDataStoreSupport() from the worker thread to the main thread.
-class HasDataStoreSupportRunnable MOZ_FINAL
+class HasDataStoreSupportRunnable final
   : public workers::WorkerMainThreadRunnable
 {
 public:
@@ -2244,7 +2357,7 @@ public:
 
 protected:
   virtual bool
-  MainThreadRun() MOZ_OVERRIDE
+  MainThreadRun() override
   {
     workers::AssertIsOnMainThread();
 
@@ -2314,6 +2427,51 @@ Navigator::HasMobileIdSupport(JSContext* aCx, JSObject* aGlobal)
          permission == nsIPermissionManager::ALLOW_ACTION;
 }
 #endif
+
+/* static */
+bool
+Navigator::HasTVSupport(JSContext* aCx, JSObject* aGlobal)
+{
+  JS::Rooted<JSObject*> global(aCx, aGlobal);
+
+  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(global);
+  if (!win) {
+    return false;
+  }
+
+  // Just for testing, we can enable TV for any kind of app.
+  if (Preferences::GetBool("dom.testing.tv_enabled_for_hosted_apps", false)) {
+    return true;
+  }
+
+  nsIDocument* doc = win->GetExtantDoc();
+  if (!doc || !doc->NodePrincipal()) {
+    return false;
+  }
+
+  nsIPrincipal* principal = doc->NodePrincipal();
+  uint16_t status;
+  if (NS_FAILED(principal->GetAppStatus(&status))) {
+    return false;
+  }
+
+  // Only support TV Manager API for certified apps for now.
+  return status == nsIPrincipal::APP_STATUS_CERTIFIED;
+}
+
+/* static */
+bool
+Navigator::IsE10sEnabled(JSContext* aCx, JSObject* aGlobal)
+{
+  return XRE_GetProcessType() == GeckoProcessType_Content;
+}
+
+bool
+Navigator::MozE10sEnabled()
+{
+  // This will only be called if IsE10sEnabled() is true.
+  return true;
+}
 
 /* static */
 already_AddRefed<nsPIDOMWindow>
@@ -2471,6 +2629,28 @@ Navigator::GetUserAgent(nsPIDOMWindow* aWindow, nsIURI* aURI,
 
   return siteSpecificUA->GetUserAgentForURIAndWindow(aURI, aWindow, aUserAgent);
 }
+
+#ifdef MOZ_EME
+already_AddRefed<Promise>
+Navigator::RequestMediaKeySystemAccess(const nsAString& aKeySystem,
+                                       const Optional<Sequence<MediaKeySystemOptions>>& aOptions,
+                                       ErrorResult& aRv)
+{
+  nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(mWindow);
+  nsRefPtr<Promise> promise = Promise::Create(go, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  if (!mMediaKeySystemAccessManager) {
+    mMediaKeySystemAccessManager = new MediaKeySystemAccessManager(mWindow);
+  }
+
+  mMediaKeySystemAccessManager->Request(promise, aKeySystem, aOptions);
+  return promise.forget();
+}
+
+#endif
 
 } // namespace dom
 } // namespace mozilla

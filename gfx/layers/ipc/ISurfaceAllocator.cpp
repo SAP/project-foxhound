@@ -111,6 +111,9 @@ ISurfaceAllocator::AllocSurfaceDescriptorWithCaps(const gfx::IntSize& aSize,
   gfx::SurfaceFormat format =
     gfxPlatform::GetPlatform()->Optimal2DFormatForContent(aContent);
   size_t size = ImageDataSerializer::ComputeMinBufferSize(aSize, format);
+  if (!size) {
+    return false;
+  }
   if (IsSameProcess()) {
     uint8_t *data = new (std::nothrow) uint8_t[size];
     if (!data) {
@@ -294,20 +297,26 @@ ISurfaceAllocator::FreeShmemSection(mozilla::layers::ShmemSection& aShmemSection
   ShrinkShmemSectionHeap();
 }
 
+
 void
 ISurfaceAllocator::ShrinkShmemSectionHeap()
 {
-  for (size_t i = 0; i < mUsedShmems.size(); i++) {
+  // The loop will terminate as we either increase i, or decrease size
+  // every time through.
+  size_t i = 0;
+  while (i < mUsedShmems.size()) {
     ShmemSectionHeapHeader* header = mUsedShmems[i].get<ShmemSectionHeapHeader>();
     if (header->mAllocatedBlocks == 0) {
       DeallocShmem(mUsedShmems[i]);
 
       // We don't particularly care about order, move the last one in the array
       // to this position.
-      mUsedShmems[i] = mUsedShmems[mUsedShmems.size() - 1];
+      if (i < mUsedShmems.size() - 1) {
+        mUsedShmems[i] = mUsedShmems[mUsedShmems.size() - 1];
+      }
       mUsedShmems.pop_back();
-      i--;
-      break;
+    } else {
+      i++;
     }
   }
 }

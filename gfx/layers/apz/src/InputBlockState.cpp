@@ -6,6 +6,7 @@
 
 #include "InputBlockState.h"
 #include "mozilla/layers/APZCTreeManager.h" // for AllowedTouchBehavior
+#include "AsyncPanZoomController.h"         // for AsyncPanZoomController
 #include "gfxPrefs.h"                       // for gfxPrefs
 #include "OverscrollHandoffState.h"
 
@@ -15,11 +16,50 @@
 namespace mozilla {
 namespace layers {
 
-InputBlockState::InputBlockState(const nsRefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain)
-  : mOverscrollHandoffChain(aOverscrollHandoffChain)
+static uint64_t sBlockCounter = InputBlockState::NO_BLOCK_ID + 1;
+
+InputBlockState::InputBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                                 bool aTargetConfirmed)
+  : mTargetApzc(aTargetApzc)
+  , mTargetConfirmed(aTargetConfirmed)
+  , mBlockId(sBlockCounter++)
+  , mTransformToApzc(aTargetApzc->GetTransformToThis())
 {
-  // We should never be constructed with a nullptr handoff chain.
-  MOZ_ASSERT(mOverscrollHandoffChain);
+  // We should never be constructed with a nullptr target.
+  MOZ_ASSERT(mTargetApzc);
+  mOverscrollHandoffChain = mTargetApzc->BuildOverscrollHandoffChain();
+}
+
+bool
+InputBlockState::SetConfirmedTargetApzc(const nsRefPtr<AsyncPanZoomController>& aTargetApzc)
+{
+  if (mTargetConfirmed) {
+    return false;
+  }
+  mTargetConfirmed = true;
+
+  TBS_LOG("%p got confirmed target APZC %p\n", this, mTargetApzc.get());
+  if (mTargetApzc == aTargetApzc) {
+    // The confirmed target is the same as the tentative one, so we're done.
+    return true;
+  }
+
+  // Log enabled by default for now, we will put it in a TBS_LOG eventually
+  // once this code is more baked
+  printf_stderr("%p replacing unconfirmed target %p with real target %p\n",
+      this, mTargetApzc.get(), aTargetApzc.get());
+
+  // note that aTargetApzc MAY be null here.
+  mTargetApzc = aTargetApzc;
+  mTransformToApzc = aTargetApzc ? aTargetApzc->GetTransformToThis() : gfx::Matrix4x4();
+  mOverscrollHandoffChain = (mTargetApzc ? mTargetApzc->BuildOverscrollHandoffChain() : nullptr);
+  return true;
+}
+
+const nsRefPtr<AsyncPanZoomController>&
+InputBlockState::GetTargetApzc() const
+{
+  return mTargetApzc;
 }
 
 const nsRefPtr<const OverscrollHandoffChain>&
@@ -28,20 +68,29 @@ InputBlockState::GetOverscrollHandoffChain() const
   return mOverscrollHandoffChain;
 }
 
-TouchBlockState::TouchBlockState(const nsRefPtr<const OverscrollHandoffChain>& aOverscrollHandoffChain)
-  : InputBlockState(aOverscrollHandoffChain)
-  , mAllowedTouchBehaviorSet(false)
-  , mPreventDefault(false)
-  , mContentResponded(false)
-  , mContentResponseTimerExpired(false)
-  , mSingleTapDisallowed(false)
-  , mSingleTapOccurred(false)
+uint64_t
+InputBlockState::GetBlockId() const
 {
-  TBS_LOG("Creating %p\n", this);
+  return mBlockId;
 }
 
 bool
-TouchBlockState::SetContentResponse(bool aPreventDefault)
+InputBlockState::IsTargetConfirmed() const
+{
+  return mTargetConfirmed;
+}
+
+CancelableBlockState::CancelableBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                                           bool aTargetConfirmed)
+  : InputBlockState(aTargetApzc, aTargetConfirmed)
+  , mPreventDefault(false)
+  , mContentResponded(false)
+  , mContentResponseTimerExpired(false)
+{
+}
+
+bool
+CancelableBlockState::SetContentResponse(bool aPreventDefault)
 {
   if (mContentResponded) {
     return false;
@@ -56,7 +105,7 @@ TouchBlockState::SetContentResponse(bool aPreventDefault)
 }
 
 bool
-TouchBlockState::TimeoutContentResponse()
+CancelableBlockState::TimeoutContentResponse()
 {
   if (mContentResponseTimerExpired) {
     return false;
@@ -71,6 +120,96 @@ TouchBlockState::TimeoutContentResponse()
 }
 
 bool
+CancelableBlockState::IsDefaultPrevented() const
+{
+  MOZ_ASSERT(mContentResponded || mContentResponseTimerExpired);
+  return mPreventDefault;
+}
+
+bool
+CancelableBlockState::IsReadyForHandling() const
+{
+  if (!IsTargetConfirmed())
+    return false;
+  return mContentResponded || mContentResponseTimerExpired;
+}
+
+void
+CancelableBlockState::DispatchImmediate(const InputData& aEvent) const
+{
+  MOZ_ASSERT(!HasEvents());
+  MOZ_ASSERT(GetTargetApzc());
+  GetTargetApzc()->HandleInputEvent(aEvent, mTransformToApzc);
+}
+
+WheelBlockState::WheelBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                                 bool aTargetConfirmed)
+  : CancelableBlockState(aTargetApzc, aTargetConfirmed)
+{
+}
+
+void
+WheelBlockState::AddEvent(const ScrollWheelInput& aEvent)
+{
+  mEvents.AppendElement(aEvent);
+}
+
+bool
+WheelBlockState::IsReadyForHandling() const
+{
+  if (!CancelableBlockState::IsReadyForHandling()) {
+    return false;
+  }
+  return true;
+}
+
+bool
+WheelBlockState::HasEvents() const
+{
+  return !mEvents.IsEmpty();
+}
+
+void
+WheelBlockState::DropEvents()
+{
+  TBS_LOG("%p dropping %lu events\n", this, mEvents.Length());
+  mEvents.Clear();
+}
+
+void
+WheelBlockState::HandleEvents()
+{
+  while (HasEvents()) {
+    TBS_LOG("%p returning first of %lu events\n", this, mEvents.Length());
+    ScrollWheelInput event = mEvents[0];
+    mEvents.RemoveElementAt(0);
+    GetTargetApzc()->HandleInputEvent(event, mTransformToApzc);
+  }
+}
+
+bool
+WheelBlockState::MustStayActive()
+{
+  return false;
+}
+
+const char*
+WheelBlockState::Type()
+{
+  return "scroll wheel";
+}
+
+TouchBlockState::TouchBlockState(const nsRefPtr<AsyncPanZoomController>& aTargetApzc,
+                                 bool aTargetConfirmed)
+  : CancelableBlockState(aTargetApzc, aTargetConfirmed)
+  , mAllowedTouchBehaviorSet(false)
+  , mDuringFastMotion(false)
+  , mSingleTapOccurred(false)
+{
+  TBS_LOG("Creating %p\n", this);
+}
+
+bool
 TouchBlockState::SetAllowedTouchBehaviors(const nsTArray<TouchBehaviorFlags>& aBehaviors)
 {
   if (mAllowedTouchBehaviorSet) {
@@ -82,46 +221,50 @@ TouchBlockState::SetAllowedTouchBehaviors(const nsTArray<TouchBehaviorFlags>& aB
   return true;
 }
 
-bool
-TouchBlockState::CopyAllowedTouchBehaviorsFrom(const TouchBlockState& aOther)
+void
+TouchBlockState::CopyPropertiesFrom(const TouchBlockState& aOther)
 {
-  TBS_LOG("%p copying allowed touch behaviours from %p\n", this, &aOther);
-  MOZ_ASSERT(aOther.mAllowedTouchBehaviorSet);
-  return SetAllowedTouchBehaviors(aOther.mAllowedTouchBehaviors);
+  TBS_LOG("%p copying properties from %p\n", this, &aOther);
+  if (gfxPrefs::TouchActionEnabled()) {
+    MOZ_ASSERT(aOther.mAllowedTouchBehaviorSet);
+    SetAllowedTouchBehaviors(aOther.mAllowedTouchBehaviors);
+  }
+  mTransformToApzc = aOther.mTransformToApzc;
 }
 
 bool
 TouchBlockState::IsReadyForHandling() const
 {
-  // TODO: for long-tap blocks we probably don't need the touch behaviour?
-  if (gfxPrefs::TouchActionEnabled() && !mAllowedTouchBehaviorSet) {
+  if (!CancelableBlockState::IsReadyForHandling()) {
     return false;
   }
-  if (!mContentResponded && !mContentResponseTimerExpired) {
+
+  // TODO: for long-tap blocks we probably don't need the touch behaviour?
+  if (gfxPrefs::TouchActionEnabled() && !mAllowedTouchBehaviorSet) {
     return false;
   }
   return true;
 }
 
-bool
-TouchBlockState::IsDefaultPrevented() const
+void
+TouchBlockState::SetDuringFastMotion()
 {
-  MOZ_ASSERT(mContentResponded || mContentResponseTimerExpired);
-  return mPreventDefault;
+  TBS_LOG("%p setting fast-motion flag\n", this);
+  mDuringFastMotion = true;
 }
 
-void
-TouchBlockState::DisallowSingleTap()
+bool
+TouchBlockState::IsDuringFastMotion() const
 {
-  TBS_LOG("%p disallowing single-tap\n", this);
-  mSingleTapDisallowed = true;
+  return mDuringFastMotion;
 }
 
 bool
 TouchBlockState::SetSingleTapOccurred()
 {
-  TBS_LOG("%p attempting to set single-tap occurred; disallowed=%d\n", this, mSingleTapDisallowed);
-  if (!mSingleTapDisallowed) {
+  TBS_LOG("%p attempting to set single-tap occurred; disallowed=%d\n",
+    this, mDuringFastMotion);
+  if (!mDuringFastMotion) {
     mSingleTapOccurred = true;
     return true;
   }
@@ -147,6 +290,18 @@ TouchBlockState::AddEvent(const MultiTouchInput& aEvent)
   mEvents.AppendElement(aEvent);
 }
 
+bool
+TouchBlockState::MustStayActive()
+{
+  return true;
+}
+
+const char*
+TouchBlockState::Type()
+{
+  return "touch";
+}
+
 void
 TouchBlockState::DropEvents()
 {
@@ -154,14 +309,15 @@ TouchBlockState::DropEvents()
   mEvents.Clear();
 }
 
-MultiTouchInput
-TouchBlockState::RemoveFirstEvent()
+void
+TouchBlockState::HandleEvents()
 {
-  MOZ_ASSERT(!mEvents.IsEmpty());
-  TBS_LOG("%p returning first of %lu events\n", this, mEvents.Length());
-  MultiTouchInput event = mEvents[0];
-  mEvents.RemoveElementAt(0);
-  return event;
+  while (HasEvents()) {
+    TBS_LOG("%p returning first of %lu events\n", this, mEvents.Length());
+    MultiTouchInput event = mEvents[0];
+    mEvents.RemoveElementAt(0);
+    GetTargetApzc()->HandleInputEvent(event, mTransformToApzc);
+  }
 }
 
 bool

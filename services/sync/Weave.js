@@ -72,6 +72,11 @@ WeaveService.prototype = {
                                          Ci.nsISupportsWeakReference]),
 
   ensureLoaded: function () {
+    // If we are loaded and not using FxA, load the migration module.
+    if (!this.fxAccountsEnabled) {
+      Cu.import("resource://services-sync/FxaMigrator.jsm");
+    }
+
     Components.utils.import("resource://services-sync/main.js");
 
     // Side-effect of accessing the service is that it is instantiated.
@@ -172,10 +177,11 @@ AboutWeaveLog.prototype = {
     return 0;
   },
 
-  newChannel: function(aURI) {
+  newChannel: function(aURI, aLoadInfo) {
     let dir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
     let uri = Services.io.newFileURI(dir);
-    let channel = Services.io.newChannelFromURI(uri);
+    let channel = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
+
     channel.originalURI = aURI;
 
     // Ensure that the about page has the same privileges as a regular directory

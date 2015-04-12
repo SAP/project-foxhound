@@ -50,6 +50,14 @@ class gfxTextContextPaint;
 
 #define SMALL_CAPS_SCALE_FACTOR        0.8
 
+// The skew factor used for synthetic-italic [oblique] fonts;
+// we use a platform-dependent value to harmonize with the platform's own APIs.
+#ifdef XP_WIN
+#define OBLIQUE_SKEW_FACTOR  0.3
+#else
+#define OBLIQUE_SKEW_FACTOR  0.25
+#endif
+
 struct gfxTextRunDrawCallbacks;
 
 namespace mozilla {
@@ -61,7 +69,7 @@ class GlyphRenderingOptions;
 struct gfxFontStyle {
     gfxFontStyle();
     gfxFontStyle(uint8_t aStyle, uint16_t aWeight, int16_t aStretch,
-                 gfxFloat aSize, nsIAtom *aLanguage,
+                 gfxFloat aSize, nsIAtom *aLanguage, bool aExplicitLanguage,
                  float aSizeAdjust, bool aSystemFont,
                  bool aPrinterFont,
                  bool aWeightSynthesis, bool aStyleSynthesis,
@@ -143,6 +151,10 @@ struct gfxFontStyle {
     // code, so set up a bool to indicate when shaping with fallback is needed
     bool noFallbackVariantFeatures : 1;
 
+    // whether the |language| field comes from explicit lang tagging in the
+    // document, or was inferred from charset/system locale
+    bool explicitLanguage : 1;
+
     // caps variant (small-caps, petite-caps, etc.)
     uint8_t variantCaps;
 
@@ -181,6 +193,7 @@ struct gfxFontStyle {
             (systemFont == other.systemFont) &&
             (printerFont == other.printerFont) &&
             (useGrayscaleAntialiasing == other.useGrayscaleAntialiasing) &&
+            (explicitLanguage == other.explicitLanguage) &&
             (weight == other.weight) &&
             (stretch == other.stretch) &&
             (language == other.language) &&
@@ -257,7 +270,7 @@ struct FontCacheSizes {
     size_t mShapedWords; // memory used by the per-font shapedWord caches
 };
 
-class gfxFontCache MOZ_FINAL : public nsExpirationTracker<gfxFont,3> {
+class gfxFontCache final : public nsExpirationTracker<gfxFont,3> {
 public:
     enum {
         FONT_TIMEOUT_SECONDS = 10,
@@ -281,8 +294,11 @@ public:
 
     // Look up a font in the cache. Returns an addrefed pointer, or null
     // if there's nothing matching in the cache
-    already_AddRefed<gfxFont> Lookup(const gfxFontEntry *aFontEntry,
-                                     const gfxFontStyle *aStyle);
+    already_AddRefed<gfxFont>
+    Lookup(const gfxFontEntry* aFontEntry,
+           const gfxFontStyle* aStyle,
+           const gfxCharacterMap* aUnicodeRangeMap = nullptr);
+
     // We created a new font (presumably because Lookup returned null);
     // put it in the cache. The font's refcount should be nonzero. It is
     // allowable to add a new font even if there is one already in the
@@ -296,7 +312,7 @@ public:
 
     // This gets called when the timeout has expired on a zero-refcount
     // font; we just delete it.
-    virtual void NotifyExpired(gfxFont *aFont);
+    virtual void NotifyExpired(gfxFont *aFont) override;
 
     // Cleans out the hashtable and removes expired fonts waiting for cleanup.
     // Other gfxFont objects may be still in use but they will be pushed
@@ -316,7 +332,7 @@ public:
                                 FontCacheSizes* aSizes) const;
 
 protected:
-    class MemoryReporter MOZ_FINAL : public nsIMemoryReporter
+    class MemoryReporter final : public nsIMemoryReporter
     {
         ~MemoryReporter() {}
     public:
@@ -325,7 +341,7 @@ protected:
     };
 
     // Observer for notifications that the font cache cares about
-    class Observer MOZ_FINAL
+    class Observer final
         : public nsIObserver
     {
         ~Observer() {}
@@ -341,8 +357,12 @@ protected:
     struct Key {
         const gfxFontEntry* mFontEntry;
         const gfxFontStyle* mStyle;
-        Key(const gfxFontEntry* aFontEntry, const gfxFontStyle* aStyle)
-            : mFontEntry(aFontEntry), mStyle(aStyle) {}
+        const gfxCharacterMap* mUnicodeRangeMap;
+        Key(const gfxFontEntry* aFontEntry, const gfxFontStyle* aStyle,
+            const gfxCharacterMap* aUnicodeRangeMap)
+            : mFontEntry(aFontEntry), mStyle(aStyle),
+              mUnicodeRangeMap(aUnicodeRangeMap)
+        {}
     };
 
     class HashEntry : public PLDHashEntryHdr {
@@ -359,7 +379,8 @@ protected:
         bool KeyEquals(const KeyTypePointer aKey) const;
         static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
         static PLDHashNumber HashKey(const KeyTypePointer aKey) {
-            return mozilla::HashGeneric(aKey->mStyle->Hash(), aKey->mFontEntry);
+            return mozilla::HashGeneric(aKey->mStyle->Hash(), aKey->mFontEntry,
+                                        aKey->mUnicodeRangeMap);
         }
         enum { ALLOW_MEMMOVE = true };
 
@@ -615,14 +636,15 @@ public:
 
     gfxFont *GetFont() const { return mFont; }
 
-    // returns true if features exist in output, false otherwise
-    static bool
+    static void
     MergeFontFeatures(const gfxFontStyle *aStyle,
                       const nsTArray<gfxFontFeature>& aFontFeatures,
                       bool aDisableLigatures,
                       const nsAString& aFamilyName,
                       bool aAddSmallCaps,
-                      nsDataHashtable<nsUint32HashKey,uint32_t>& aMergedFeatures);
+                      PLDHashOperator (*aHandleFeature)(const uint32_t&,
+                                                        uint32_t&, void*),
+                      void* aHandleFeatureData);
 
 protected:
     // the font this shaper is working with
@@ -937,6 +959,12 @@ public:
                 gfxTextRunFactory::TEXT_ORIENT_HORIZONTAL;
     }
 
+    bool UseCenterBaseline() const {
+        uint32_t orient = GetFlags() & gfxTextRunFactory::TEXT_ORIENT_MASK;
+        return orient == gfxTextRunFactory::TEXT_ORIENT_VERTICAL_MIXED ||
+               orient == gfxTextRunFactory::TEXT_ORIENT_VERTICAL_UPRIGHT;
+    }
+
     bool IsRightToLeft() const {
         return (GetFlags() & gfxTextRunFactory::TEXT_IS_RTL) != 0;
     }
@@ -1170,7 +1198,7 @@ public:
         moz_free(p);
     }
 
-    CompressedGlyph *GetCharacterGlyphs() {
+    virtual CompressedGlyph *GetCharacterGlyphs() override {
         return &mCharGlyphsStorage[0];
     }
 
@@ -1258,6 +1286,9 @@ class gfxFont {
 
     friend class gfxHarfBuzzShaper;
     friend class gfxGraphiteShaper;
+
+protected:
+    typedef mozilla::gfx::DrawTarget DrawTarget;
 
 public:
     nsrefcnt AddRef(void) {
@@ -1375,6 +1406,16 @@ public:
         return mFontEntry->HasGraphiteTables();
     }
 
+    // Whether this is a font that may be doing full-color rendering,
+    // and therefore needs us to use a mask for text-shadow even when
+    // we're not actually blurring.
+    bool AlwaysNeedsMaskForShadow() {
+        return mFontEntry->TryGetColorGlyphs() ||
+               mFontEntry->TryGetSVGData(this) ||
+               mFontEntry->HasFontTable(TRUETYPE_TAG('C','B','D','T')) ||
+               mFontEntry->HasFontTable(TRUETYPE_TAG('s','b','i','x'));
+    }
+
     // whether a feature is supported by the font (limited to a small set
     // of features for which some form of fallback needs to be implemented)
     bool SupportsFeature(int32_t aScript, uint32_t aFeatureTag);
@@ -1413,7 +1454,8 @@ public:
 
     // Return Azure GlyphRenderingOptions for drawing this font.
     virtual mozilla::TemporaryRef<mozilla::gfx::GlyphRenderingOptions>
-      GetGlyphRenderingOptions() { return nullptr; }
+      GetGlyphRenderingOptions(const TextRunDrawParams* aRunParams = nullptr)
+    { return nullptr; }
 
     gfxFloat SynthesizeSpaceWidth(uint32_t aCh);
 
@@ -1599,9 +1641,19 @@ public:
 
     gfxFontEntry *GetFontEntry() const { return mFontEntry.get(); }
     bool HasCharacter(uint32_t ch) {
-        if (!mIsValid)
+        if (!mIsValid ||
+            (mUnicodeRangeMap && !mUnicodeRangeMap->test(ch))) {
             return false;
+        }
         return mFontEntry->HasCharacter(ch); 
+    }
+
+    const gfxCharacterMap* GetUnicodeRangeMap() const {
+        return mUnicodeRangeMap.get();
+    }
+
+    void SetUnicodeRangeMap(gfxCharacterMap* aUnicodeRangeMap) {
+        mUnicodeRangeMap = aUnicodeRangeMap;
     }
 
     uint16_t GetUVSGlyph(uint32_t aCh, uint32_t aVS) {
@@ -1690,7 +1742,7 @@ public:
 
     virtual FontType GetType() const = 0;
 
-    virtual mozilla::TemporaryRef<mozilla::gfx::ScaledFont> GetScaledFont(mozilla::gfx::DrawTarget *aTarget)
+    virtual mozilla::TemporaryRef<mozilla::gfx::ScaledFont> GetScaledFont(DrawTarget* aTarget)
     { return gfxPlatform::GetPlatform()->GetScaledFontForFont(aTarget, this); }
 
     bool KerningDisabled() {
@@ -1801,9 +1853,11 @@ protected:
 
     // The return value is interpreted as a horizontal advance in 16.16 fixed
     // point format.
-    virtual int32_t GetGlyphWidth(gfxContext *aCtx, uint16_t aGID) {
+    virtual int32_t GetGlyphWidth(DrawTarget& aDrawTarget, uint16_t aGID) {
         return -1;
     }
+
+    bool IsSpaceGlyphInvisible(gfxContext *aRefContext, gfxTextRun *aTextRun);
 
     void AddGlyphChangeObserver(GlyphChangeObserver *aObserver);
     void RemoveGlyphChangeObserver(GlyphChangeObserver *aObserver);
@@ -1840,6 +1894,7 @@ protected:
                           const char16_t *aText,
                           uint32_t         aOffset, // position within aShapedText
                           uint32_t         aLength,
+                          bool             aVertical,
                           gfxShapedText   *aShapedText);
 
     // Shape text directly into a range within a textrun, without using the
@@ -1998,6 +2053,10 @@ protected:
     nsAutoPtr<gfxFontShaper>   mHarfBuzzShaper;
     nsAutoPtr<gfxFontShaper>   mGraphiteShaper;
 
+    // if a userfont with unicode-range specified, contains map of *possible*
+    // ranges supported by font
+    nsRefPtr<gfxCharacterMap> mUnicodeRangeMap;
+
     mozilla::RefPtr<mozilla::gfx::ScaledFont> mAzureScaledFont;
 
     // For vertical metrics, created on demand.
@@ -2058,6 +2117,7 @@ struct TextRunDrawParams {
     gfxFont::Spacing        *spacing;
     gfxTextRunDrawCallbacks *callbacks;
     gfxTextContextPaint     *runContextPaint;
+    mozilla::gfx::Color      fontSmoothingBGColor;
     gfxFloat                 direction;
     double                   devPerApp;
     DrawMode                 drawMode;

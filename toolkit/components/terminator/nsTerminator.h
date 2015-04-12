@@ -12,7 +12,7 @@
 
 namespace mozilla {
 
-class nsTerminator MOZ_FINAL: public nsIObserver {
+class nsTerminator final: public nsIObserver {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -22,10 +22,17 @@ public:
 private:
   nsresult SelfInit();
   void Start();
+  void StartWatchdog();
+  void StartWriter();
+
+  void UpdateHeartbeat(const char* aTopic);
+  void UpdateTelemetry();
+  void UpdateCrashReport(const char* aTopic);
 
   ~nsTerminator() {}
 
   bool mInitialized;
+  int32_t mCurrentStep;
 };
 
 }

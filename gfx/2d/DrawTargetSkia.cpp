@@ -687,6 +687,15 @@ DrawTargetSkia::CreateSourceSurfaceFromNativeSurface(const NativeSurface &aSurfa
     }
     cairo_surface_t* surf = static_cast<cairo_surface_t*>(aSurface.mSurface);
     return new SourceSurfaceCairo(surf, aSurface.mSize, aSurface.mFormat);
+#if USE_SKIA_GPU
+  } else if (aSurface.mType == NativeSurfaceType::OPENGL_TEXTURE) {
+    RefPtr<SourceSurfaceSkia> newSurf = new SourceSurfaceSkia();
+    unsigned int texture = (unsigned int)((uintptr_t)aSurface.mSurface);
+    if (UsingSkiaGPU() && newSurf->InitFromTexture((DrawTargetSkia*)this, texture, aSurface.mSize, aSurface.mFormat)) {
+      return newSurf;
+    }
+    return nullptr;
+#endif
   }
 
   return nullptr;
@@ -834,7 +843,7 @@ DrawTargetSkia::Init(unsigned char* aData, const IntSize &aSize, int32_t aStride
                                        alphaType);
   bitmap.setInfo(info, aStride);
   bitmap.setPixels(aData);
-  mCanvas.adopt(new SkCanvas(new SkBitmapDevice(bitmap)));
+  mCanvas.adopt(new SkCanvas(bitmap));
 
   mSize = aSize;
   mFormat = aFormat;

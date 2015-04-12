@@ -9,7 +9,7 @@
 
 const {TimelineFront} = require("devtools/server/actors/timeline");
 
-let test = asyncTest(function*() {
+add_task(function*() {
   let doc = yield addTab("data:text/html;charset=utf-8,mop");
 
   initDebuggerServer();
@@ -59,11 +59,10 @@ let test = asyncTest(function*() {
  */
 function waitUntil(predicate, interval = 10) {
   if (predicate()) {
-    return promise.resolve(true);
+    return Promise.resolve(true);
   }
-  let deferred = promise.defer();
-  setTimeout(function() {
-    waitUntil(predicate).then(() => deferred.resolve(true));
-  }, interval);
-  return deferred.promise;
+  return new Promise(resolve =>
+    setTimeout(function() {
+      waitUntil(predicate).then(() => resolve(true));
+    }, interval));
 }

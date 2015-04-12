@@ -11,6 +11,8 @@
 %{ C++
 #include "jspubtd.h"
 #include "js/TypeDecls.h"
+#include "mozilla/Attributes.h"
+#include "nsCOMPtr.h"
 
 struct JSFreeOp;
 
@@ -59,7 +61,7 @@ interface nsIXPConnectJSObjectHolder : nsISupports
     [notxpcom, nostdcall] JSObjectPtr GetJSObject();
 };
 
-[uuid(675b01ba-397b-472a-9b80-5716376a2ec6)]
+[uuid(cf6b00de-8ff4-443a-932c-b72ff341367a)]
 interface nsIXPConnectWrappedNative : nsIXPConnectJSObjectHolder
 {
     /* attribute 'JSObject' inherited from nsIXPConnectJSObjectHolder */
@@ -77,14 +79,6 @@ interface nsIXPConnectWrappedNative : nsIXPConnectJSObjectHolder
     void debugDump(in short depth);
 
     /*
-     * This finishes initializing a wrapped global, doing the parts that we
-     * couldn't do while the global and window were being simultaneously
-     * bootstrapped. This should be called exactly once, and only for wrapped
-     * globals.
-     */
-    void finishInitForWrappedGlobal();
-
-    /*
      * NOTE: Add new IDL methods _before_ the C++ block below if you
      * add them.  Otherwise the vtable won't be what xpidl thinks it
      * is, since GetObjectPrincipal() is virtual.
@@ -97,13 +91,12 @@ interface nsIXPConnectWrappedNative : nsIXPConnectJSObjectHolder
     nsISupports* Native() const { return mIdentity; }
 
 protected:
-    nsISupports *mIdentity;
+    nsCOMPtr<nsISupports> mIdentity;
 public:
 %}
 };
 
 %{C++
-#include "nsCOMPtr.h"
 
 inline
 const nsQueryInterface
@@ -274,7 +267,7 @@ interface nsIXPCFunctionThisTranslator : nsISupports
     { 0xbd, 0xd6, 0x0, 0x0, 0x64, 0x65, 0x73, 0x74 } }
 %}
 
-[noscript, uuid(a632b020-331f-11e4-8c21-0800200c9a66)]
+[noscript, uuid(6872bfd6-660b-4aa3-b54b-41ce1d2d69e3)]
 interface nsIXPConnect : nsISupports
 {
 %{ C++
@@ -472,14 +465,6 @@ interface nsIXPConnect : nsISupports
     setFunctionThisTranslator(in nsIIDRef aIID,
                               in nsIXPCFunctionThisTranslator aTranslator);
 
-    void
-    reparentWrappedNativeIfFound(in JSContextPtr aJSContext,
-                                 in JSObjectPtr  aScope,
-                                 in JSObjectPtr  aNewParent,
-                                 in nsISupports  aCOMObj);
-    void
-    rescueOrphansInScope(in JSContextPtr aJSContext, in JSObjectPtr  aScope);
-
     nsIXPConnectJSObjectHolder
     getWrappedNativePrototype(in JSContextPtr aJSContext,
                               in JSObjectPtr  aScope,
@@ -551,13 +536,6 @@ interface nsIXPConnect : nsISupports
                                     bool showLocals,
                                     bool showThisProps) = 0;
 %}
-
-    /**
-     * Creates a JS object holder around aObject that will hold the object
-     * alive for as long as the holder stays alive.
-     */
-    nsIXPConnectJSObjectHolder holdObject(in JSContextPtr aJSContext,
-                                          in JSObjectPtr aObject);
 
     [noscript] void writeScript(in nsIObjectOutputStream aStream,
                                 in JSContextPtr aJSContext,

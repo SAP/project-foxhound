@@ -43,6 +43,15 @@ void Init();
 void Accumulate(ID id, uint32_t sample);
 
 /**
+ * Adds sample to a keyed histogram defined in TelemetryHistograms.h
+ *
+ * @param id - keyed histogram id
+ * @param key - the string key
+ * @param sample - (optional) value to record, defaults to 1.
+ */
+void Accumulate(ID id, const nsCString& key, uint32_t sample = 1);
+
+/**
  * Adds a sample to a histogram defined in TelemetryHistograms.h.
  * This function is here to support telemetry measurements from Java,
  * where we have only names and not numeric IDs.  You should almost
@@ -68,6 +77,11 @@ void AccumulateTimeDelta(ID id, TimeStamp start, TimeStamp end = TimeStamp::Now(
 base::Histogram* GetHistogramById(ID id);
 
 /**
+ * Return a raw histogram for keyed histograms.
+ */
+base::Histogram* GetKeyedHistogramById(ID id, const nsAString&);
+
+/**
  * Those wrappers are needed because the VS versions we use do not support free
  * functions with default template arguments.
  */
@@ -75,6 +89,7 @@ template<TimerResolution res>
 struct AccumulateDelta_impl
 {
   static void compute(ID id, TimeStamp start, TimeStamp end = TimeStamp::Now());
+  static void compute(ID id, const nsCString& key, TimeStamp start, TimeStamp end = TimeStamp::Now());
 };
 
 template<>
@@ -83,6 +98,9 @@ struct AccumulateDelta_impl<Millisecond>
   static void compute(ID id, TimeStamp start, TimeStamp end = TimeStamp::Now()) {
     Accumulate(id, static_cast<uint32_t>((end - start).ToMilliseconds()));
   }
+  static void compute(ID id, const nsCString& key, TimeStamp start, TimeStamp end = TimeStamp::Now()) {
+    Accumulate(id, key, static_cast<uint32_t>((end - start).ToMilliseconds()));
+  }
 };
 
 template<>
@@ -90,6 +108,9 @@ struct AccumulateDelta_impl<Microsecond>
 {
   static void compute(ID id, TimeStamp start, TimeStamp end = TimeStamp::Now()) {
     Accumulate(id, static_cast<uint32_t>((end - start).ToMicroseconds()));
+  }
+  static void compute(ID id, const nsCString& key, TimeStamp start, TimeStamp end = TimeStamp::Now()) {
+    Accumulate(id, key, static_cast<uint32_t>((end - start).ToMicroseconds()));
   }
 };
 
@@ -103,12 +124,24 @@ public:
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
+  explicit AutoTimer(const nsCString& aKey, TimeStamp aStart = TimeStamp::Now() MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    : start(aStart)
+    , key(aKey)
+  {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  }
+
   ~AutoTimer() {
-    AccumulateDelta_impl<res>::compute(id, start);
+    if (key.IsEmpty()) {
+      AccumulateDelta_impl<res>::compute(id, start);
+    } else {
+      AccumulateDelta_impl<res>::compute(id, key, start);
+    }
   }
 
 private:
   const TimeStamp start;
+  const nsCString key;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
@@ -205,7 +238,8 @@ void RecordChromeHang(uint32_t aDuration,
                       ProcessedStack &aStack,
                       int32_t aSystemUptime,
                       int32_t aFirefoxUptime,
-                      mozilla::HangMonitor::HangAnnotations* aAnnotations = nullptr);
+                      mozilla::UniquePtr<mozilla::HangMonitor::HangAnnotations>
+                              aAnnotations);
 #endif
 
 class ThreadHangStats;

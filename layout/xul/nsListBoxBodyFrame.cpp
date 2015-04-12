@@ -66,7 +66,7 @@ using namespace mozilla::dom;
 // do we wait before checking again?
 #define SMOOTH_INTERVAL 100
 
-class nsListScrollSmoother MOZ_FINAL : public nsITimerCallback
+class nsListScrollSmoother final : public nsITimerCallback
 {
 private:
   virtual ~nsListScrollSmoother();
@@ -139,10 +139,9 @@ NS_IMPL_ISUPPORTS(nsListScrollSmoother, nsITimerCallback)
 
 /////////////// nsListBoxBodyFrame //////////////////
 
-nsListBoxBodyFrame::nsListBoxBodyFrame(nsIPresShell* aPresShell,
-                                       nsStyleContext* aContext,
+nsListBoxBodyFrame::nsListBoxBodyFrame(nsStyleContext* aContext,
                                        nsBoxLayout* aLayoutManager)
-  : nsBoxFrame(aPresShell, aContext, false, aLayoutManager),
+  : nsBoxFrame(aContext, false, aLayoutManager),
     mTopFrame(nullptr),
     mBottomFrame(nullptr),
     mLinkupFrame(nullptr),
@@ -725,10 +724,10 @@ nsListBoxBodyFrame::ComputeIntrinsicISize(nsBoxLayoutState& aBoxLayoutState)
           nsRefPtr<nsFontMetrics> fm;
           nsLayoutUtils::GetFontMetricsForStyleContext(styleContext,
                                                        getter_AddRefs(fm));
-          rendContext->SetFont(fm);
 
           nscoord textWidth =
-            nsLayoutUtils::GetStringWidth(this, rendContext, value.get(), value.Length());
+            nsLayoutUtils::AppUnitWidthOfStringBidi(value, this, *fm,
+                                                    *rendContext);
           textWidth += width;
 
           if (textWidth > largestWidth) 
@@ -1526,7 +1525,7 @@ nsIFrame*
 NS_NewListBoxBodyFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
   nsCOMPtr<nsBoxLayout> layout = NS_NewListBoxLayout();
-  return new (aPresShell) nsListBoxBodyFrame(aPresShell, aContext, layout);
+  return new (aPresShell) nsListBoxBodyFrame(aContext, layout);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsListBoxBodyFrame)

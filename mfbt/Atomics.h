@@ -42,21 +42,7 @@
 #  elif MOZ_USING_LIBCXX && defined(__clang__)
 #    define MOZ_HAVE_CXX11_ATOMICS
 #  endif
-/*
- * Although Visual Studio 2012's CRT supports <atomic>, its atomic load
- * implementation unnecessarily uses an atomic intrinsic for the less
- * restrictive memory orderings, which can be prohibitively expensive.
- * Therefore, we require at least Visual Studio 2013 for using the CRT
- * (bug 1061764).
- */
-#elif defined(_MSC_VER) && _MSC_VER >= 1800
-#  if defined(DEBUG)
-     /*
-      * Provide our own failure code since we're having trouble linking to
-      * std::_Debug_message (bug 982310).
-      */
-#    define _INVALID_MEMORY_ORDER MOZ_CRASH("Invalid memory order")
-#  endif
+#elif defined(_MSC_VER)
 #  define MOZ_HAVE_CXX11_ATOMICS
 #endif
 
@@ -298,8 +284,7 @@ private:
   {
 #if defined(__clang__) || defined(_MSC_VER)
     return aVal;
-#elif defined(__GNUC__) && MOZ_GCC_VERSION_AT_LEAST(4, 6, 0) && \
-    !MOZ_GCC_VERSION_AT_LEAST(4, 7, 0)
+#elif defined(__GNUC__) && !MOZ_GCC_VERSION_AT_LEAST(4, 7, 0)
     return aVal * sizeof(T);
 #else
     return aVal;
@@ -969,7 +954,7 @@ public:
 
 private:
   template<MemoryOrdering AnyOrder>
-  AtomicBase(const AtomicBase<T, AnyOrder>& aCopy) MOZ_DELETE;
+  AtomicBase(const AtomicBase<T, AnyOrder>& aCopy) = delete;
 };
 
 template<typename T, MemoryOrdering Order>
@@ -991,7 +976,7 @@ public:
 
 private:
   template<MemoryOrdering AnyOrder>
-  AtomicBaseIncDec(const AtomicBaseIncDec<T, AnyOrder>& aCopy) MOZ_DELETE;
+  AtomicBaseIncDec(const AtomicBaseIncDec<T, AnyOrder>& aCopy) = delete;
 };
 
 } // namespace detail
@@ -1065,7 +1050,7 @@ public:
   }
 
 private:
-  Atomic(Atomic<T, Order>& aOther) MOZ_DELETE;
+  Atomic(Atomic<T, Order>& aOther) = delete;
 };
 
 /**
@@ -1098,7 +1083,7 @@ public:
   }
 
 private:
-  Atomic(Atomic<T*, Order>& aOther) MOZ_DELETE;
+  Atomic(Atomic<T*, Order>& aOther) = delete;
 };
 
 /**
@@ -1121,7 +1106,7 @@ public:
   using Base::operator=;
 
 private:
-  Atomic(Atomic<T, Order>& aOther) MOZ_DELETE;
+  Atomic(Atomic<T, Order>& aOther) = delete;
 };
 
 /**
@@ -1172,7 +1157,7 @@ public:
   }
 
 private:
-  Atomic(Atomic<bool, Order>& aOther) MOZ_DELETE;
+  Atomic(Atomic<bool, Order>& aOther) = delete;
 };
 
 } // namespace mozilla

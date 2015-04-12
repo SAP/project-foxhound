@@ -32,6 +32,12 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/unused.h"
 
+#ifdef MOZ_TASK_TRACER
+#include "GeckoTaskTracer.h"
+#include "mozilla/dom/Element.h"
+using namespace mozilla::tasktracer;
+#endif
+
 namespace mozilla {
 
 using namespace dom;
@@ -391,7 +397,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
                           nsIDOMEvent* aDOMEvent,
                           nsEventStatus* aEventStatus,
                           EventDispatchingCallback* aCallback,
-                          nsCOMArray<EventTarget>* aTargets)
+                          nsTArray<EventTarget*>* aTargets)
 {
   PROFILER_LABEL("EventDispatcher", "Dispatch",
     js::ProfileEntry::Category::EVENTS);
@@ -406,6 +412,27 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
   // If aTargets is non-null, the event isn't going to be dispatched.
   NS_ENSURE_TRUE(aEvent->message || !aDOMEvent || aTargets,
                  NS_ERROR_DOM_INVALID_STATE_ERR);
+
+#ifdef MOZ_TASK_TRACER
+  {
+    if (aDOMEvent) {
+      nsAutoString eventType;
+      aDOMEvent->GetType(eventType);
+
+      nsCOMPtr<Element> element = do_QueryInterface(aTarget);
+      nsAutoString elementId;
+      nsAutoString elementTagName;
+      if (element) {
+        element->GetId(elementId);
+        element->GetTagName(elementTagName);
+      }
+      AddLabel("Event [%s] dispatched at target [id:%s tag:%s]",
+               NS_ConvertUTF16toUTF8(eventType).get(),
+               NS_ConvertUTF16toUTF8(elementId).get(),
+               NS_ConvertUTF16toUTF8(elementTagName).get());
+    }
+  }
+#endif
 
   nsCOMPtr<EventTarget> target = do_QueryInterface(aTarget);
 
@@ -449,7 +476,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
   }
 
 #ifdef DEBUG
-  if (!nsContentUtils::IsSafeToRunScript()) {
+  if (aEvent->message != NS_EVENT_NULL && !nsContentUtils::IsSafeToRunScript()) {
     nsresult rv = NS_ERROR_FAILURE;
     if (target->GetContextForEventHandlers(&rv) ||
         NS_FAILED(rv)) {
@@ -598,7 +625,7 @@ EventDispatcher::Dispatch(nsISupports* aTarget,
         aTargets->Clear();
         aTargets->SetCapacity(chain.Length());
         for (uint32_t i = 0; i < chain.Length(); ++i) {
-          aTargets->AppendObject(chain[i].CurrentTarget()->GetTargetForDOMEvent());
+          aTargets->AppendElement(chain[i].CurrentTarget()->GetTargetForDOMEvent());
         }
       } else {
         // Event target chain is created. Handle the chain.
@@ -701,6 +728,9 @@ EventDispatcher::CreateEvent(EventTarget* aOwner,
     case eKeyboardEventClass:
       return NS_NewDOMKeyboardEvent(aDOMEvent, aOwner, aPresContext,
                                     aEvent->AsKeyboardEvent());
+    case eBeforeAfterKeyboardEventClass:
+      return NS_NewDOMBeforeAfterKeyboardEvent(aDOMEvent, aOwner, aPresContext,
+                                               aEvent->AsBeforeAfterKeyboardEvent());
     case eCompositionEventClass:
       return NS_NewDOMCompositionEvent(aDOMEvent, aOwner, aPresContext,
                                        aEvent->AsCompositionEvent());

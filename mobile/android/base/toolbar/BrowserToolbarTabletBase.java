@@ -7,9 +7,11 @@ package org.mozilla.gecko.toolbar;
 
 import java.util.Arrays;
 
+import org.mozilla.gecko.NewTabletUI;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
+import org.mozilla.gecko.tabs.TabHistoryController;
 import org.mozilla.gecko.menu.MenuItemActionBar;
 
 import android.content.Context;
@@ -64,7 +66,8 @@ abstract class BrowserToolbarTabletBase extends BrowserToolbar {
         backButton.setOnLongClickListener(new Button.OnLongClickListener() {
             @Override
             public boolean onLongClick(View view) {
-                return Tabs.getInstance().getSelectedTab().showBackHistory();
+                return tabHistoryController.showTabHistory(Tabs.getInstance().getSelectedTab(),
+                        TabHistoryController.HistoryAction.BACK);
             }
         });
 
@@ -77,7 +80,8 @@ abstract class BrowserToolbarTabletBase extends BrowserToolbar {
         forwardButton.setOnLongClickListener(new Button.OnLongClickListener() {
             @Override
             public boolean onLongClick(View view) {
-                return Tabs.getInstance().getSelectedTab().showForwardHistory();
+                return tabHistoryController.showTabHistory(Tabs.getInstance().getSelectedTab(),
+                        TabHistoryController.HistoryAction.FORWARD);
             }
         });
     }
@@ -103,10 +107,17 @@ abstract class BrowserToolbarTabletBase extends BrowserToolbar {
         setButtonEnabled(backButton, canDoBack(tab));
 
         final boolean isForwardEnabled = canDoForward(tab);
-        if (forwardButton.isEnabled() != isForwardEnabled) {
-            // Save the state on the forward button so that we can skip animations
-            // when there's nothing to change
-            setButtonEnabled(forwardButton, isForwardEnabled);
+        if (!NewTabletUI.isEnabled(getContext())) {
+            if (forwardButton.isEnabled() != isForwardEnabled) {
+                // Save the state on the forward button so that we can skip animations
+                // when there's nothing to change
+                setButtonEnabled(forwardButton, isForwardEnabled);
+                animateForwardButton(
+                        isForwardEnabled ? ForwardButtonAnimation.SHOW : ForwardButtonAnimation.HIDE);
+            }
+        } else {
+            // I don't know the implications of changing this code on old tablet
+            // (and no one is going to thoroughly test it) so duplicate the code.
             animateForwardButton(
                     isForwardEnabled ? ForwardButtonAnimation.SHOW : ForwardButtonAnimation.HIDE);
         }

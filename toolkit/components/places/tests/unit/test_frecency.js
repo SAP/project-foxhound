@@ -73,8 +73,8 @@ AutoCompleteInput.prototype = {
 
 function ensure_results(uris, searchTerm)
 {
-  promiseAsyncUpdates().then(function () ensure_results_internal(uris,
-                                                                 searchTerm));
+  PlacesTestUtils.promiseAsyncUpdates()
+                 .then(() => ensure_results_internal(uris, searchTerm));
 }
 
 function ensure_results_internal(uris, searchTerm)
@@ -129,7 +129,7 @@ function task_setCountDate(aURI, aCount, aDate)
   for (let i = 0; i < aCount; i++) {
     visits.push({ uri: aURI, visitDate: aDate, transition: TRANSITION_TYPED });
   }
-  yield promiseAddVisits(visits);
+  yield PlacesTestUtils.addVisits(visits);
 }
 
 function setBookmark(aURI)
@@ -281,14 +281,19 @@ add_task(function test_frecency()
   // always search in history + bookmarks, no matter what the default is
   var prefs = Cc["@mozilla.org/preferences-service;1"].
               getService(Ci.nsIPrefBranch);
-  prefs.setIntPref("browser.urlbar.search.sources", 3);
-  prefs.setIntPref("browser.urlbar.default.behavior", 0);
+
+  prefs.setBoolPref("browser.urlbar.suggest.history", true);
+  prefs.setBoolPref("browser.urlbar.suggest.bookmark", true);
+  prefs.setBoolPref("browser.urlbar.suggest.openpage", false);
   for (let [, test] in Iterator(tests)) {
     remove_all_bookmarks();
-    yield promiseClearHistory();
+    yield PlacesTestUtils.clearHistory();
 
     deferEnsureResults = Promise.defer();
     yield test();
     yield deferEnsureResults.promise;
+  }
+  for (let type of ["history", "bookmark", "openpage"]) {
+    prefs.clearUserPref("browser.urlbar.suggest." + type);
   }
 });

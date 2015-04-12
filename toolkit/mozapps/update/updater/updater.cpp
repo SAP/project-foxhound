@@ -98,10 +98,17 @@ void LaunchMacPostProcess(const char* aAppBundle);
 # include <linux/ioprio.h>
 # include <sys/resource.h>
 
+#if ANDROID_VERSION < 21
 // The only header file in bionic which has a function prototype for ioprio_set
 // is libc/include/sys/linux-unistd.h. However, linux-unistd.h conflicts
 // badly with unistd.h, so we declare the prototype for ioprio_set directly.
 extern "C" MOZ_EXPORT int ioprio_set(int which, int who, int ioprio);
+#else
+# include <sys/syscall.h>
+static int ioprio_set(int which, int who, int ioprio) {
+      return syscall(__NR_ioprio_set, which, who, ioprio);
+}
+#endif
 
 # define MAYBE_USE_HARD_LINKS 1
 static bool sUseHardLinks = true;
@@ -133,10 +140,8 @@ static bool sUseHardLinks = true;
 #define BZ2_CRC32TABLE_UNDECLARED
 
 #if MOZ_IS_GCC
-#if MOZ_GCC_VERSION_AT_LEAST(3, 3, 0)
 extern "C"  __attribute__((visibility("default"))) unsigned int BZ2_crc32Table[256];
 #undef BZ2_CRC32TABLE_UNDECLARED
-#endif
 #elif defined(__SUNPRO_C) || defined(__SUNPRO_CC)
 extern "C" __global unsigned int BZ2_crc32Table[256];
 #undef BZ2_CRC32TABLE_UNDECLARED
@@ -468,7 +473,7 @@ static int ensure_remove_recursive(const NS_tchar *path)
 {
   // We use lstat rather than stat here so that we can successfully remove
   // symlinks.
-  struct stat sInfo;
+  struct NS_tstat_t sInfo;
   int rv = NS_tlstat(path, &sInfo);
   if (rv) {
     // This error is benign
@@ -550,7 +555,7 @@ static FILE* ensure_open(const NS_tchar *path, const NS_tchar *flags, unsigned i
     }
     return nullptr;
   }
-  struct stat ss;
+  struct NS_tstat_t ss;
   if (NS_tstat(path, &ss) != 0 || ss.st_mode != options) {
     if (f != nullptr) {
       fclose(f);
@@ -639,7 +644,7 @@ static int ensure_copy(const NS_tchar *path, const NS_tchar *dest)
   }
   return 0;
 #else
-  struct stat ss;
+  struct NS_tstat_t ss;
   int rv = NS_tlstat(path, &ss);
   if (rv) {
     LOG(("ensure_copy: failed to read file status info: " LOG_S ", err: %d",
@@ -722,8 +727,9 @@ struct copy_recursive_skiplist {
   void append(unsigned index, const NS_tchar *path, const NS_tchar *suffix) {
     NS_tsnprintf(paths[index], MAXPATHLEN, NS_T("%s/%s"), path, suffix);
   }
+
   bool find(const NS_tchar *path) {
-    for (unsigned i = 0; i < N; ++i) {
+    for (int i = 0; i < static_cast<int>(N); ++i) {
       if (!NS_tstricmp(paths[i], path)) {
         return true;
       }
@@ -738,7 +744,7 @@ template <unsigned N>
 static int ensure_copy_recursive(const NS_tchar *path, const NS_tchar *dest,
                                  copy_recursive_skiplist<N>& skiplist)
 {
-  struct stat sInfo;
+  struct NS_tstat_t sInfo;
   int rv = NS_tlstat(path, &sInfo);
   if (rv) {
     LOG(("ensure_copy_recursive: path doesn't exist: " LOG_S ", rv: %d, err: %d",
@@ -804,7 +810,7 @@ static int rename_file(const NS_tchar *spath, const NS_tchar *dpath,
   if (rv)
     return rv;
 
-  struct stat spathInfo;
+  struct NS_tstat_t spathInfo;
   rv = NS_tstat(spath, &spathInfo);
   if (rv) {
     LOG(("rename_file: failed to read file status info: " LOG_S ", " \
@@ -993,7 +999,7 @@ RemoveFile::Prepare()
   LOG(("PREPARE REMOVEFILE " LOG_S, mFile));
 
   // Make sure that we're actually a file...
-  struct stat fileInfo;
+  struct NS_tstat_t fileInfo;
   rv = NS_tstat(mFile, &fileInfo);
   if (rv) {
     LOG(("failed to read file status info: " LOG_S ", err: %d", mFile,
@@ -1102,7 +1108,7 @@ RemoveDir::Prepare()
   LOG(("PREPARE REMOVEDIR " LOG_S "/", mDir));
 
   // Make sure that we're actually a dir.
-  struct stat dirInfo;
+  struct NS_tstat_t dirInfo;
   rv = NS_tstat(mDir, &dirInfo);
   if (rv) {
     LOG(("failed to read directory status info: " LOG_S ", err: %d", mDir,
@@ -1435,7 +1441,7 @@ PatchFile::Execute()
 
   // Rename the destination file if it exists before proceeding so it can be
   // used to restore the file to its original state if there is an error.
-  struct stat ss;
+  struct NS_tstat_t ss;
   rv = NS_tstat(mFile, &ss);
   if (rv) {
     LOG(("failed to read file status info: " LOG_S ", err: %d", mFile,
@@ -2045,7 +2051,6 @@ WaitForServiceFinishThread(void *param)
   // We wait at most 10 minutes, we already waited 5 seconds previously
   // before deciding to show this UI.
   WaitForServiceStop(SVC_NAME, 595);
-  LOG(("calling QuitProgressUI"));
   QuitProgressUI();
 }
 #endif
@@ -2134,7 +2139,42 @@ UpdateThreadFunc(void *param)
 
 #ifdef MOZ_VERIFY_MAR_SIGNATURE
     if (rv == OK) {
+#ifdef XP_WIN
+      HKEY baseKey = nullptr;
+      wchar_t valueName[] = L"Image Path";
+      wchar_t rasenh[] = L"rsaenh.dll";
+      bool reset = false;
+      if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                        L"SOFTWARE\\Microsoft\\Cryptography\\Defaults\\Provider\\Microsoft Enhanced Cryptographic Provider v1.0",
+                        0, KEY_READ | KEY_WRITE,
+                        &baseKey) == ERROR_SUCCESS) {
+        wchar_t path[MAX_PATH + 1];
+        DWORD size = sizeof(path);
+        DWORD type;
+        if (RegQueryValueExW(baseKey, valueName, 0, &type,
+                             (LPBYTE)path, &size) == ERROR_SUCCESS) {
+          if (type == REG_SZ && wcscmp(path, rasenh) == 0) {
+            wchar_t rasenhFullPath[] = L"%SystemRoot%\\System32\\rsaenh.dll";
+            if (RegSetValueExW(baseKey, valueName, 0, REG_SZ,
+                               (const BYTE*)rasenhFullPath,
+                               sizeof(rasenhFullPath)) == ERROR_SUCCESS) {
+              reset = true;
+            }
+          }
+        }
+      }
+#endif
       rv = gArchiveReader.VerifySignature();
+#ifdef XP_WIN
+      if (baseKey) {
+        if (reset) {
+          RegSetValueExW(baseKey, valueName, 0, REG_SZ,
+                         (const BYTE*)rasenh,
+                         sizeof(rasenh));
+        }
+        RegCloseKey(baseKey);
+      }
+#endif
     }
 
     if (rv == OK) {
@@ -2185,7 +2225,7 @@ UpdateThreadFunc(void *param)
     // staged directory as it won't be useful any more.
     ensure_remove_recursive(gWorkingDirPath);
     WriteStatusFile(sUsingService ? "pending-service" : "pending");
-    putenv(const_cast<char*>("MOZ_PROCESS_UPDATES=")); // We need to use -process-updates again in the tests
+    putenv(const_cast<char*>("MOZ_PROCESS_UPDATES=")); // We need to use --process-updates again in the tests
     reportRealResults = false; // pretend success
   }
 
@@ -2283,7 +2323,7 @@ int NS_main(int argc, NS_tchar **argv)
 
   // Remove everything except close window from the context menu
   {
-    HKEY hkApp;
+    HKEY hkApp = nullptr;
     RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\Applications",
                     0, nullptr, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
                     &hkApp, nullptr);
@@ -2523,7 +2563,7 @@ int NS_main(int argc, NS_tchar **argv)
     // updater, then we drop the permissions here. We do not drop the
     // permissions on the originally called updater because we use its token
     // to start the callback application.
-    if(startedFromUnelevatedUpdater) {
+    if (startedFromUnelevatedUpdater) {
       // Disable every privilege we don't need. Processes started using
       // CreateProcess will use the same token as this process.
       UACHelper::DisablePrivileges(nullptr);
@@ -2583,7 +2623,7 @@ int NS_main(int argc, NS_tchar **argv)
       if (useService) {
         WCHAR maintenanceServiceKey[MAX_PATH + 1];
         if (CalculateRegistryPathFromFilePath(gInstallDirPath, maintenanceServiceKey)) {
-          HKEY baseKey;
+          HKEY baseKey = nullptr;
           if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             maintenanceServiceKey, 0,
                             KEY_READ | KEY_WOW64_64KEY,

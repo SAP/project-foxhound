@@ -159,7 +159,7 @@ input[type=button] {
 .newtab-cell {
   display: -moz-box;
   height: 180px;
-  margin: 20px 10px;
+  margin: 20px 10px 68px;
   width: 290px;
 }
 
@@ -193,20 +193,45 @@ input[type=button] {
 
 /* TITLES */
 .newtab-sponsored,
-.newtab-title {
-  bottom: -26px;
+.newtab-title,
+.newtab-suggested {
   overflow: hidden;
   position: absolute;
   right: 0;
   text-align: center;
+}
+
+.newtab-sponsored,
+.newtab-title {
+  bottom: -26px;
   white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.newtab-suggested {
+  border: 1px solid #dcdcdc;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 12px;
+  height: 17px;
+  line-height: 17px;
+  margin-bottom: -1px;
+  padding: 2px 8px;
+  display: none;
+  margin-left: auto;
+  margin-right: auto;
+  left: 0;
+  top: 215px;
+}
+
+.newtab-suggested-bounds {
+  max-height: 34px; /* 34 / 17 = 2 lines maximum */
 }
 
 .newtab-title {
-  font-size: 13px;
   left: 0;
   padding-top: 14px;
-  text-overflow: ellipsis;
 }
 
 .newtab-sponsored {
@@ -237,12 +262,19 @@ input[type=button] {
   display: block;
 }
 
+.newtab-site[suggested] .newtab-suggested {
+  display: table;
+}
+
 .sponsored-explain,
-.sponsored-explain a {
+.sponsored-explain a,
+.suggested-explain,
+.suggested-explain a {
   color: white;
 }
 
-.sponsored-explain {
+.sponsored-explain,
+.suggested-explain {
   background-color: rgba(51, 51, 51, 0.95);
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
@@ -254,7 +286,8 @@ input[type=button] {
 }
 
 #newtab-intro-panel input,
-.sponsored-explain input {
+.sponsored-explain input,
+.suggested-explain input {
   background-size: 18px;
   height: 18px;
   opacity: 1;
@@ -345,6 +378,19 @@ input[type=button] {
   background-size: 26px 26px;
 }
 
+#newtab-search-logo.magnifier {
+  width: 38px; /* 26 image width + 6 left "padding" + 6 right "padding" */
+  -moz-margin-end: 5px;
+  background-size: 26px;
+  background-image: url("chrome://browser/skin/magnifier.png");
+}
+
+@media not all and (max-resolution: 1dppx) {
+  #newtab-search-logo.magnifier {
+    background-image: url("chrome://browser/skin/magnifier@2x.png");
+  }
+}
+
 #newtab-search-logo[type="logo"] {
   background-size: 65px 26px;
   width: 77px; /* 65 image width + 6 left "padding" + 6 right "padding" */
@@ -366,7 +412,7 @@ input[type=button] {
 }
 
 #newtab-search-text {
-  height: 38px;
+  height: 38px; /* same height as #newtab-search-logo */
   -moz-box-flex: 1;
 
   padding: 0 8px;
@@ -390,7 +436,7 @@ input[type=button] {
 }
 
 #newtab-search-submit {
-  height: 38px;
+  height: 38px; /* same height as #newtab-search-logo */
   font-size: 13px !important;
 
   -moz-margin-start: -1px;
@@ -441,27 +487,20 @@ input[type=button] {
   transition-duration: 0ms;
 }
 
-#newtab-customize-panel .panel-arrowcontent,
-#newtab-search-panel .panel-arrowcontent {
-  -moz-padding-start: 0;
-  -moz-padding-end: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  background: rgb(248, 250, 251);
+#newtab-customize-panel > .panel-arrowcontainer > .panel-arrowcontent,
+#newtab-search-panel > .panel-arrowcontainer > .panel-arrowcontent {
+  padding: 0;
 }
 
 .newtab-customize-panel-item,
-.newtab-search-panel-engine {
-  -moz-box-align: center;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  -moz-padding-start: 24px;
-  -moz-padding-end: 24px;
+.newtab-search-panel-engine,
+#newtab-search-manage {
+  padding: 10px 10px 10px 25px;
 }
 
 .newtab-customize-panel-item:not(:last-child),
-.newtab-search-panel-engine:not(:last-child) {
-  border-bottom: 1px solid #ccc;
+.newtab-search-panel-engine {
+  border-bottom: 1px solid threedshadow;
 }
 
 .newtab-search-panel-engine > image {
@@ -472,15 +511,27 @@ input[type=button] {
 }
 
 .newtab-customize-panel-item > label,
-.newtab-search-panel-engine > label {
-  -moz-padding-start: 0;
-  -moz-margin-start: 0;
-  color: rgb(130, 132, 133);
+.newtab-search-panel-engine > label,
+#newtab-search-manage > label {
+  padding: 0;
+  margin: 0;
+}
+
+.newtab-customize-panel-item:not([selected]) {
+  color: #919191;
 }
 
 .newtab-customize-panel-item[selected],
 .newtab-search-panel-engine[selected] {
   background: url("chrome://global/skin/menu/shared-menu-check.png") center left 4px no-repeat transparent;
+  background-size: 16px 16px;
+}
+
+@media (min-resolution: 2dppx) {
+  .newtab-customize-panel-item[selected],
+  .newtab-search-panel-engine[selected] {
+    background-image: url("chrome://global/skin/menu/shared-menu-check@2x.png");
+  }
 }
 
 .searchSuggestionTable {

@@ -29,7 +29,6 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
-using namespace mozilla::widget::android;
 #endif
 
 #ifdef MOZ_WIDGET_GONK
@@ -42,6 +41,10 @@ using namespace mozilla::widget::android;
 extern "C" {
 NS_EXPORT int android_sdk_version;
 }
+#endif
+
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+#include "mozilla/SandboxInfo.h"
 #endif
 
 // Slot for NS_InitXPCOM2 to pass information to nsSystemInfo::Init.
@@ -304,7 +307,7 @@ nsSystemInfo::Init()
           "android/os/Build", "HARDWARE", str)) {
       SetPropertyAsAString(NS_LITERAL_STRING("hardware"), str);
     }
-    bool isTablet = mozilla::widget::android::GeckoAppShell::IsTablet();
+    bool isTablet = mozilla::widget::GeckoAppShell::IsTablet();
     SetPropertyAsBool(NS_LITERAL_STRING("tablet"), isTablet);
     // NSPR "version" is the kernel version. For Android we want the Android version.
     // Rename SDK version to version and put the kernel version into kernel_version.
@@ -351,6 +354,23 @@ nsSystemInfo::Init()
     SetPropertyAsAString(NS_LITERAL_STRING("version"), b2g_version);
   }
 #endif
+
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  SandboxInfo sandInfo = SandboxInfo::Get();
+
+  SetPropertyAsBool(NS_LITERAL_STRING("hasSeccompBPF"),
+                    sandInfo.Test(SandboxInfo::kHasSeccompBPF));
+
+  if (sandInfo.Test(SandboxInfo::kEnabledForContent)) {
+    SetPropertyAsBool(NS_LITERAL_STRING("canSandboxContent"),
+                      sandInfo.CanSandboxContent());
+  }
+
+  if (sandInfo.Test(SandboxInfo::kEnabledForMedia)) {
+    SetPropertyAsBool(NS_LITERAL_STRING("canSandboxMedia"),
+                      sandInfo.CanSandboxMedia());
+  }
+#endif // XP_LINUX && MOZ_SANDBOX
 
   return NS_OK;
 }

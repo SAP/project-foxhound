@@ -56,10 +56,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_SIDE_TO_HALF_CORNER(side_, second_, parallel_) \
   ((((side_) + !!(second_))*2 + ((side_) + !(parallel_))%2) % 8)
 
-// {margin,border-{width,style,color},padding}-{left,right}-{ltr,rtl}-source
-#define NS_BOXPROP_SOURCE_PHYSICAL 0
-#define NS_BOXPROP_SOURCE_LOGICAL  1
-
 // box-sizing
 #define NS_STYLE_BOX_SIZING_CONTENT       0
 #define NS_STYLE_BOX_SIZING_PADDING       1
@@ -79,7 +75,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_BASIC_SHAPE_POLYGON       0
 #define NS_STYLE_BASIC_SHAPE_CIRCLE        1
 #define NS_STYLE_BASIC_SHAPE_ELLIPSE       2
-//#define NS_STYLE_BASIC_SHAPE_INSET       3
+#define NS_STYLE_BASIC_SHAPE_INSET         3
 
 // box-shadow
 #define NS_STYLE_BOX_SHADOW_INSET         0
@@ -399,12 +395,13 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // See nsStyleVisibility
 #define NS_STYLE_DIRECTION_LTR                  0
 #define NS_STYLE_DIRECTION_RTL                  1
-#define NS_STYLE_DIRECTION_INHERIT              2
 
 // See nsStyleVisibility
+// WritingModes.h depends on the particular values used here
 #define NS_STYLE_WRITING_MODE_HORIZONTAL_TB     0
-#define NS_STYLE_WRITING_MODE_VERTICAL_LR       1
-#define NS_STYLE_WRITING_MODE_VERTICAL_RL       2
+#define NS_STYLE_WRITING_MODE_VERTICAL_RL       1
+// #define NS_STYLE_WRITING_MODE_HORIZONTAL_BT  2  // hypothetical
+#define NS_STYLE_WRITING_MODE_VERTICAL_LR       3
 
 // See nsStyleDisplay
 #define NS_STYLE_DISPLAY_NONE                   0
@@ -444,6 +441,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER    35
 #define NS_STYLE_DISPLAY_RUBY_TEXT              36
 #define NS_STYLE_DISPLAY_RUBY_TEXT_CONTAINER    37
+#define NS_STYLE_DISPLAY_CONTENTS               38
 
 // See nsStylePosition
 #define NS_STYLE_ALIGN_CONTENT_FLEX_START       0
@@ -574,10 +572,9 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_FONT_FIELD                     16
 
 // grid-auto-flow keywords
-#define NS_STYLE_GRID_AUTO_FLOW_STACK           (1 << 0)
-#define NS_STYLE_GRID_AUTO_FLOW_ROW             (1 << 1)
-#define NS_STYLE_GRID_AUTO_FLOW_COLUMN          (1 << 2)
-#define NS_STYLE_GRID_AUTO_FLOW_DENSE           (1 << 3)
+#define NS_STYLE_GRID_AUTO_FLOW_ROW             (1 << 0)
+#define NS_STYLE_GRID_AUTO_FLOW_COLUMN          (1 << 1)
+#define NS_STYLE_GRID_AUTO_FLOW_DENSE           (1 << 2)
 
 // 'subgrid' keyword in grid-template-{columns,rows}
 #define NS_STYLE_GRID_TEMPLATE_SUBGRID          0
@@ -621,12 +618,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_WIDTH_MIN_CONTENT              1
 #define NS_STYLE_WIDTH_FIT_CONTENT              2
 #define NS_STYLE_WIDTH_AVAILABLE                3
-// NOTE: The "main-size" keyword here is really for the "flex-basis" property,
-// not for width / min-width / max-width.  I'm listing it here with the "width"
-// keywords' enumerated values, because we need to make sure it doesn't collide
-// with any "width" enumerated values (because "flex-basis" accepts all valid
-// "width" keywords, in addition to accepting "main-size").
-#define NS_STYLE_FLEX_BASIS_MAIN_SIZE           4
 
 // See nsStyleDisplay.mPosition
 #define NS_STYLE_POSITION_STATIC                0
@@ -849,6 +840,17 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_HYPHENS_MANUAL                 1
 #define NS_STYLE_HYPHENS_AUTO                   2
 
+// ruby-align, see nsStyleText
+#define NS_STYLE_RUBY_ALIGN_START               0
+#define NS_STYLE_RUBY_ALIGN_CENTER              1
+#define NS_STYLE_RUBY_ALIGN_SPACE_BETWEEN       2
+#define NS_STYLE_RUBY_ALIGN_SPACE_AROUND        3
+
+// ruby-position, see nsStyleText
+#define NS_STYLE_RUBY_POSITION_OVER             0
+#define NS_STYLE_RUBY_POSITION_UNDER            1
+#define NS_STYLE_RUBY_POSITION_INTER_CHARACTER  2 /* placeholder, not yet parsed */
+
 // See nsStyleText
 #define NS_STYLE_TEXT_SIZE_ADJUST_NONE          0
 #define NS_STYLE_TEXT_SIZE_ADJUST_AUTO          1
@@ -883,7 +885,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 
 #define NS_STYLE_TABLE_EMPTY_CELLS_HIDE            0
 #define NS_STYLE_TABLE_EMPTY_CELLS_SHOW            1
-#define NS_STYLE_TABLE_EMPTY_CELLS_SHOW_BACKGROUND 2
 
 #define NS_STYLE_CAPTION_SIDE_TOP               0
 #define NS_STYLE_CAPTION_SIDE_RIGHT             1
@@ -1071,8 +1072,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 
 // See nsStyleDisplay::mScrollBehavior
 #define NS_STYLE_SCROLL_BEHAVIOR_AUTO       0
-#define NS_STYLE_SCROLL_BEHAVIOR_INSTANT    1
-#define NS_STYLE_SCROLL_BEHAVIOR_SMOOTH     2
+#define NS_STYLE_SCROLL_BEHAVIOR_SMOOTH     1
 
 /*****************************************************************************
  * Constants for media features.                                             *

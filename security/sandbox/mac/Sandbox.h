@@ -11,6 +11,7 @@
 enum MacSandboxType {
   MacSandboxType_Default = 0,
   MacSandboxType_Plugin,
+  MacSandboxType_Content,
   MacSandboxType_Invalid
 };
 
@@ -37,6 +38,7 @@ typedef struct _MacSandboxInfo {
   MacSandboxPluginInfo pluginInfo;
   nsCString appPath;
   nsCString appBinaryPath;
+  nsCString appDir;
 } MacSandboxInfo;
 
 namespace mozilla {

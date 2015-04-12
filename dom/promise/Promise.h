@@ -19,6 +19,7 @@
 #include "nsWrapperCache.h"
 #include "nsAutoPtr.h"
 #include "js/TypeDecls.h"
+#include "jspubtd.h"
 
 #include "mozilla/dom/workers/bindings/WorkerFeature.h"
 
@@ -29,6 +30,7 @@ namespace dom {
 
 class AnyCallback;
 class DOMError;
+class MediaStreamError;
 class PromiseCallback;
 class PromiseInit;
 class PromiseNativeHandler;
@@ -48,8 +50,12 @@ public:
   }
 
   virtual bool
-  Notify(JSContext* aCx, workers::Status aStatus) MOZ_OVERRIDE;
+  Notify(JSContext* aCx, workers::Status aStatus) override;
 };
+
+#define NS_PROMISE_IID \
+  { 0x1b8d6215, 0x3e67, 0x43ba, \
+    { 0x8a, 0xf9, 0x31, 0x5e, 0x8f, 0xce, 0x75, 0x65 } }
 
 class Promise : public nsISupports,
                 public nsWrapperCache,
@@ -67,6 +73,7 @@ class Promise : public nsISupports,
   friend class WrapperPromiseCallback;
 
 public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(NS_PROMISE_IID)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Promise)
   MOZ_DECLARE_REFCOUNTED_TYPENAME(Promise)
@@ -99,6 +106,14 @@ public:
     MOZ_ASSERT(NS_FAILED(aArg));
     MaybeSomething(aArg, &Promise::MaybeReject);
   }
+
+  inline void MaybeReject(ErrorResult& aArg) {
+    MOZ_ASSERT(aArg.Failed());
+    MaybeSomething(aArg, &Promise::MaybeReject);
+  }
+
+  void MaybeReject(const nsRefPtr<MediaStreamError>& aArg);
+
   // DO NOT USE MaybeRejectBrokenly with in new code.  Promises should be
   // rejected with Error instances.
   // Note: MaybeRejectBrokenly is a template so we can use it with DOMError
@@ -111,6 +126,10 @@ public:
                                            // specializations in the .cpp for
                                            // the T values we support.
 
+  // Called by DOM to let us execute our callbacks.  May be called recursively.
+  // Returns true if at least one microtask was processed.
+  static bool PerformMicroTaskCheckpoint();
+
   // WebIDL
 
   nsIGlobalObject* GetParentObject() const
@@ -119,7 +138,7 @@ public:
   }
 
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   static already_AddRefed<Promise>
   Constructor(const GlobalObject& aGlobal, PromiseInit& aInit,
@@ -158,6 +177,10 @@ public:
 
   void AppendNativeHandler(PromiseNativeHandler* aRunnable);
 
+  JSObject* GlobalJSObject() const;
+
+  JSCompartment* Compartment() const;
+
 protected:
   // Do NOT call this unless you're Promise::Create.  I wish we could enforce
   // that from inside this class too, somehow.
@@ -165,9 +188,9 @@ protected:
 
   virtual ~Promise();
 
-  // Queue an async task to current main or worker thread.
+  // Queue an async microtask to current main or worker thread.
   static void
-  DispatchToMainOrWorkerThread(nsIRunnable* aRunnable);
+  DispatchToMicroTask(nsIRunnable* aRunnable);
 
   // Do JS-wrapping after Promise creation.
   void CreateWrapper(ErrorResult& aRv);
@@ -194,11 +217,6 @@ private:
     Rejected
   };
 
-  enum PromiseTaskSync {
-    SyncTask,
-    AsyncTask
-  };
-
   void SetState(PromiseState aState)
   {
     MOZ_ASSERT(mState == Pending);
@@ -211,15 +229,14 @@ private:
     mResult = aValue;
   }
 
-  // This method processes promise's resolve/reject callbacks with promise's
+  // This method enqueues promise's resolve/reject callbacks with promise's
   // result. It's executed when the resolver.resolve() or resolver.reject() is
   // called or when the promise already has a result and new callbacks are
   // appended by then(), catch() or done().
-  void RunTask();
+  void EnqueueCallbackTasks();
 
-  void RunResolveTask(JS::Handle<JS::Value> aValue,
-                      Promise::PromiseState aState,
-                      PromiseTaskSync aAsynchronous);
+  void Settle(JS::Handle<JS::Value> aValue, Promise::PromiseState aState);
+  void MaybeSettle(JS::Handle<JS::Value> aValue, Promise::PromiseState aState);
 
   void AppendCallbacks(PromiseCallback* aResolveCallback,
                        PromiseCallback* aRejectCallback);
@@ -232,23 +249,18 @@ private:
   void MaybeReportRejectedOnce() {
     MaybeReportRejected();
     RemoveFeature();
-    mResult = JS::UndefinedValue();
+    mResult.setUndefined();
   }
 
   void MaybeResolveInternal(JSContext* aCx,
-                            JS::Handle<JS::Value> aValue,
-                            PromiseTaskSync aSync = AsyncTask);
+                            JS::Handle<JS::Value> aValue);
   void MaybeRejectInternal(JSContext* aCx,
-                           JS::Handle<JS::Value> aValue,
-                           PromiseTaskSync aSync = AsyncTask);
+                           JS::Handle<JS::Value> aValue);
 
   void ResolveInternal(JSContext* aCx,
-                       JS::Handle<JS::Value> aValue,
-                       PromiseTaskSync aSync = AsyncTask);
-
+                       JS::Handle<JS::Value> aValue);
   void RejectInternal(JSContext* aCx,
-                      JS::Handle<JS::Value> aValue,
-                      PromiseTaskSync aSync = AsyncTask);
+                      JS::Handle<JS::Value> aValue);
 
   template <typename T>
   void MaybeSomething(T& aArgument, MaybeFunc aFunc) {
@@ -313,7 +325,6 @@ private:
   // have a fulfillment stack.
   JS::Heap<JSObject*> mFullfillmentStack;
   PromiseState mState;
-  bool mTaskPending;
   bool mHadRejectCallback;
 
   bool mResolvePending;
@@ -330,6 +341,8 @@ private:
   // The time when this promise transitioned out of the pending state.
   TimeStamp mSettlementTimestamp;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(Promise, NS_PROMISE_IID)
 
 } // namespace dom
 } // namespace mozilla

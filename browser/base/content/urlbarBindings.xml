@@ -132,9 +132,7 @@
       -->
       <method name="onBeforeValueGet">
         <body><![CDATA[
-          if (this.hasAttribute("actiontype"))
-            return {value: this._value};
-          return null;
+          return {value: this._value};
         ]]></body>
       </method>
 
@@ -161,6 +159,11 @@
                 returnValue = action.params.input;
                 break;
               }
+            }
+          } else {
+            let originalUrl = ReaderParent.parseReaderUrl(aValue);
+            if (originalUrl) {
+              returnValue = originalUrl;
             }
           }
 
@@ -285,31 +288,31 @@
           var mayInheritPrincipal = false;
           var postData = null;
 
-          var action = this._parseActionUrl(url);
+          let action = this._parseActionUrl(this._value);
           let lastLocationChange = gBrowser.selectedBrowser.lastLocationChange;
 
           let matchLastLocationChange = true;
           if (action) {
-            if (this.hasAttribute("actiontype")) {
-              if (action.type == "switchtab") {
-                url = action.params.url;
+            if (action.type == "switchtab") {
+              url = action.params.url;
+              if (this.hasAttribute("actiontype")) {
                 this.handleRevert();
                 let prevTab = gBrowser.selectedTab;
                 if (switchToTabHavingURI(url) &&
                     isTabEmpty(prevTab))
                   gBrowser.removeTab(prevTab);
                 return;
-              } else if (action.type == "keyword") {
-                url = action.params.url;
-              } else if (action.type == "searchengine") {
-                let engine = Services.search.getEngineByName(action.params.engineName);
-                let submission = engine.getSubmission(action.params.searchQuery);
-
-                url = submission.uri.spec;
-                postData = submission.postData;
-              } else if (action.type == "visiturl") {
-                url = action.params.url;
               }
+            } else if (action.type == "keyword") {
+              url = action.params.url;
+            } else if (action.type == "searchengine") {
+              let engine = Services.search.getEngineByName(action.params.engineName);
+              let submission = engine.getSubmission(action.params.searchQuery);
+
+              url = submission.uri.spec;
+              postData = submission.postData;
+            } else if (action.type == "visiturl") {
+              url = action.params.url;
             }
             continueOperation.call(this);
           }
@@ -336,14 +339,16 @@
               Cu.reportError(ex);
             }
 
-            function loadCurrent() {
+            let loadCurrent = () => {
               openUILinkIn(url, "current", {
                 allowThirdPartyFixup: true,
                 disallowInheritPrincipal: !mayInheritPrincipal,
                 allowPinnedTabHostChange: true,
                 postData: postData
               });
-            }
+              // Ensure the start of the URL is visible for UX reasons:
+              this.selectionStart = this.selectionEnd = 0;
+            };
 
             // Focus the content area before triggering loads, since if the load
             // occurs in a new tab, we want focus to be restored to the content
@@ -584,7 +589,11 @@
               urlbar.inputField.value = urlbar.inputField.value.substring(0, start) +
                                         urlbar.inputField.value.substring(end);
               urlbar.selectionStart = urlbar.selectionEnd = start;
-              urlbar.removeAttribute("actiontype");
+
+              let event = document.createEvent("UIEvents");
+              event.initUIEvent("input", true, false, window, 0);
+              urlbar.dispatchEvent(event);
+
               SetPageProxyState("invalid");
             }
 
@@ -704,8 +713,10 @@
         ]]></body>
       </method>
 
-      <property name="textValue"
-                onget="return this.value;">
+      <property name="textValue">
+        <getter><![CDATA[
+          return this.inputField.value;
+        ]]></getter>
         <setter>
           <![CDATA[
           try {
@@ -714,8 +725,10 @@
 
           // Trim popup selected values, but never trim results coming from
           // autofill.
-          if (this.popup.selectedIndex == -1)
+          if (this.popup.selectedIndex == -1 ||
+              this.mController.getStyleAt(this.popup.selectedIndex) == "autofill") {
             this._disableTrim = true;
+          }
           this.value = val;
           this._disableTrim = false;
 
@@ -740,7 +753,6 @@
 
           // URL is in the format moz-action:ACTION,PARAMS
           // Where PARAMS is a JSON encoded object.
-          aUrl = decodeURI(aUrl);
           let [, type, params] = aUrl.match(/^moz-action:([^,]+),(.*)$/);
 
           let action = {
@@ -786,6 +798,19 @@
           this.inputField.setSelectionRange(aStartIndex, aEndIndex);
         ]]></body>
       </method>
+
+      <method name="onInput">
+        <parameter name="aEvent"/>
+        <body><![CDATA[
+          if (!this.mIgnoreInput && this.mController.input == this) {
+            this._value = this.inputField.value;
+            gBrowser.userTypedValue = this.value;
+            this.valueIsTyped = true;
+            this.mController.handleText();
+          }
+          this.resetActionType();
+        ]]></body>
+      </method>
     </implementation>
 
     <handlers>
@@ -819,7 +844,7 @@
 
       <handler event="dragstart" phase="capturing"><![CDATA[
         // Drag only if the gesture starts from the input field.
-        if (this.inputField != event.originalTarget && 
+        if (this.inputField != event.originalTarget &&
             !(this.inputField.compareDocumentPosition(event.originalTarget) &
               Node.DOCUMENT_POSITION_CONTAINED_BY))
           return;
@@ -904,6 +929,15 @@
 
           var controller = this.view.QueryInterface(Components.interfaces.nsIAutoCompleteController);
 
+          var searchBar = BrowserSearch.searchBar;
+          var popupForSearchBar = searchBar && searchBar.textbox == this.mInput;
+          if (popupForSearchBar) {
+            searchBar.telemetrySearchDetails = {
+              index: controller.selection.currentIndex,
+              kind: "mouse"
+            };
+          }
+
           // Check for unmodified left-click, and use default behavior
           if (aEvent.button == 0 && !aEvent.shiftKey && !aEvent.ctrlKey &&
               !aEvent.altKey && !aEvent.metaKey) {
@@ -912,8 +946,7 @@
           }
 
           // Check for middle-click or modified clicks on the search bar
-          var searchBar = BrowserSearch.searchBar;
-          if (searchBar && searchBar.textbox == this.mInput) {
+          if (popupForSearchBar) {
             // Handle search bar popup clicks
             var search = controller.getValueAt(this.selectedIndex);
 
@@ -921,16 +954,398 @@
             this.closePopup();
             controller.handleEscape();
 
-            // Fill in the search bar's value
-            searchBar.value = search;
-
             // open the search results according to the clicking subtlety
             var where = whereToOpenLink(aEvent, false, true);
+
+            // But open ctrl/cmd clicks on autocomplete items in a new background tab.
+            if (where == "tab" && (aEvent instanceof MouseEvent) &&
+                (aEvent.button == 1 ||
+#ifdef XP_MACOSX
+                 aEvent.metaKey))
+#else
+                 aEvent.ctrlKey))
+#endif
+              where = "tab-background";
+
             searchBar.doSearch(search, where);
+            if (where == "tab-background")
+              searchBar.focus();
+            else
+              searchBar.value = search;
           }
         ]]></body>
       </method>
     </implementation>
+  </binding>
+
+  <!-- Note: this binding is applied to the autocomplete popup used in the Search bar -->
+  <binding id="browser-search-autocomplete-result-popup" extends="chrome://browser/content/urlbarBindings.xml#browser-autocomplete-result-popup">
+    <resources>
+      <stylesheet src="chrome://browser/skin/searchbar.css"/>
+    </resources>
+    <content ignorekeys="true" level="top" consumeoutsideclicks="never">
+      <xul:hbox anonid="searchbar-engine" xbl:inherits="showonlysettings"
+                class="search-panel-header search-panel-current-engine">
+        <xul:image class="searchbar-engine-image" xbl:inherits="src"/>
+        <xul:label anonid="searchbar-engine-name" flex="1" crop="end"
+                   role="presentation"/>
+      </xul:hbox>
+      <xul:tree anonid="tree" flex="1"
+                class="autocomplete-tree plain search-panel-tree"
+                hidecolumnpicker="true" seltype="single">
+        <xul:treecols anonid="treecols">
+          <xul:treecol id="treecolAutoCompleteValue" class="autocomplete-treecol" flex="1" overflow="true"/>
+        </xul:treecols>
+        <xul:treechildren class="autocomplete-treebody"/>
+      </xul:tree>
+      <xul:deck anonid="search-panel-one-offs-header"
+                selectedIndex="0"
+                class="search-panel-header search-panel-current-input">
+        <xul:label anonid="searchbar-oneoffheader-search" value="&searchWithHeader.label;"/>
+        <xul:hbox anonid="search-panel-searchforwith"
+                  class="search-panel-current-input">
+          <xul:label anonid="searchbar-oneoffheader-before" value="&searchFor.label;"/>
+          <xul:label anonid="searchbar-oneoffheader-searchtext" flex="1" crop="end" class="search-panel-input-value"/>
+          <xul:label anonid="searchbar-oneoffheader-after" flex="10000" value="&searchWith.label;"/>
+        </xul:hbox>
+      </xul:deck>
+      <xul:description anonid="search-panel-one-offs"
+                       role="group"
+                       class="search-panel-one-offs"/>
+      <xul:vbox anonid="add-engines"/>
+      <xul:button anonid="search-settings"
+                  oncommand="BrowserUITelemetry.countSearchSettingsEvent('searchbar');openPreferences('paneSearch')"
+                  class="search-setting-button search-panel-header"
+                  label="&changeSearchSettings.button;"/>
+    </content>
+    <implementation>
+      <!-- Popup rollup is triggered by native events before the mousedown event
+           reaches the DOM. The will be set to true by the popuphiding event and
+           false after the mousedown event has been triggered to detect what
+           caused rollup. -->
+      <field name="_isHiding">false</field>
+      <field name="_bundle">null</field>
+      <property name="bundle" readonly="true">
+        <getter>
+          <![CDATA[
+            if (!this._bundle) {
+              const kBundleURI = "chrome://browser/locale/search.properties";
+              this._bundle = Services.strings.createBundle(kBundleURI);
+            }
+            return this._bundle;
+          ]]>
+        </getter>
+      </property>
+
+      <method name="updateHeader">
+        <body><![CDATA[
+          let currentEngine = Services.search.currentEngine;
+          let uri = currentEngine.iconURI;
+          if (uri) {
+            uri = uri.spec;
+            this.setAttribute("src", PlacesUtils.getImageURLForResolution(window, uri));
+          }
+          else {
+            // If the default has just been changed to a provider without icon,
+            // avoid showing the icon of the previous default provider.
+            this.removeAttribute("src");
+          }
+
+          let headerText = this.bundle.formatStringFromName("searchHeader",
+                                                            [currentEngine.name], 1);
+          document.getAnonymousElementByAttribute(this, "anonid", "searchbar-engine-name")
+                  .setAttribute("value", headerText);
+          document.getAnonymousElementByAttribute(this, "anonid", "searchbar-engine")
+                  .engine = currentEngine;
+        ]]></body>
+      </method>
+    </implementation>
+    <handlers>
+      <handler event="popuphidden"><![CDATA[
+        Services.tm.mainThread.dispatch(function() {
+          document.getElementById("searchbar").textbox.selectedButton = null;
+        }, Ci.nsIThread.DISPATCH_NORMAL);
+      ]]></handler>
+
+      <handler event="popupshowing"><![CDATA[
+        // First handle deciding if we are showing the reduced version of the
+        // popup containing only the preferences button. We do this if the
+        // glass icon has been clicked if the text field is empty.
+        let searchbar = document.getElementById("searchbar");
+        let tree = document.getAnonymousElementByAttribute(this, "anonid",
+                                                           "tree")
+        if (searchbar.hasAttribute("showonlysettings")) {
+          searchbar.removeAttribute("showonlysettings");
+          this.setAttribute("showonlysettings", "true");
+
+          // Setting this with an xbl-inherited attribute gets overridden the
+          // second time the user clicks the glass icon for some reason...
+          tree.collapsed = true;
+        }
+        else {
+          this.removeAttribute("showonlysettings");
+          tree.collapsed = false;
+        }
+
+        // Show the current default engine in the top header of the panel.
+        this.updateHeader();
+
+        // Update the 'Search for <keywords> with:" header.
+        let headerSearchText =
+          document.getAnonymousElementByAttribute(this, "anonid",
+                                                  "searchbar-oneoffheader-searchtext");
+        let headerPanel =
+          document.getAnonymousElementByAttribute(this, "anonid",
+                                                  "search-panel-one-offs-header");
+        let list = document.getAnonymousElementByAttribute(this, "anonid",
+                                                           "search-panel-one-offs");
+        let textbox = searchbar.textbox;
+        let self = this;
+        let inputHandler = function() {
+          headerSearchText.setAttribute("value", textbox.value);
+          let groupText;
+          if (textbox.value) {
+            self.removeAttribute("showonlysettings");
+            groupText = headerSearchText.previousSibling.value +
+                        '"' + headerSearchText.value + '"' +
+                        headerSearchText.nextSibling.value;
+            headerPanel.selectedIndex = 1;
+          }
+          else {
+            let noSearchHeader =
+              document.getAnonymousElementByAttribute(self, "anonid",
+                                                      "searchbar-oneoffheader-search");
+            groupText = noSearchHeader.value;
+            headerPanel.selectedIndex = 0;
+          }
+          list.setAttribute("aria-label", groupText);
+        };
+        textbox.addEventListener("input", inputHandler);
+        this.addEventListener("popuphiding", function hiding() {
+          textbox.removeEventListener("input", inputHandler);
+          this.removeEventListener("popuphiding", hiding);
+        });
+        inputHandler();
+
+        // Handle opensearch items. This needs to be done before building the
+        // list of one off providers, as that code will return early if all the
+        // alternative engines are hidden.
+        let addEngineList =
+          document.getAnonymousElementByAttribute(this, "anonid", "add-engines");
+        while (addEngineList.firstChild)
+          addEngineList.firstChild.remove();
+
+        const kXULNS =
+          "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+
+        let addEngines = gBrowser.selectedBrowser.engines;
+        if (addEngines && addEngines.length > 0) {
+          for (let engine of addEngines) {
+            let button = document.createElementNS(kXULNS, "button");
+            let label = this.bundle.formatStringFromName("cmd_addFoundEngine",
+                                                         [engine.title], 1);
+            button.id = "searchbar-add-engine-" + engine.title.replace(/ /g, '-');
+            button.setAttribute("class", "addengine-item");
+            button.setAttribute("label", label);
+            button.setAttribute("pack", "start");
+
+            button.setAttribute("crop", "end");
+            button.setAttribute("tooltiptext", engine.uri);
+            button.setAttribute("uri", engine.uri);
+            if (engine.icon) {
+              let uri = PlacesUtils.getImageURLForResolution(window, engine.icon);
+              button.setAttribute("image", uri);
+            }
+            button.setAttribute("title", engine.title);
+            addEngineList.appendChild(button);
+          }
+        }
+
+        // Finally, build the list of one-off buttons.
+        while (list.firstChild)
+          list.firstChild.remove();
+
+        // Avoid setting the selection based on mouse events before
+        // the 'popupshown' event has fired.
+        this._ignoreMouseEvents = true;
+
+        let Preferences =
+          Cu.import("resource://gre/modules/Preferences.jsm", {}).Preferences;
+        let pref = Preferences.get("browser.search.hiddenOneOffs");
+        let hiddenList = pref ? pref.split(",") : [];
+
+        let currentEngineName = Services.search.currentEngine.name;
+        let engines = Services.search.getVisibleEngines()
+                              .filter(e => e.name != currentEngineName &&
+                                           hiddenList.indexOf(e.name) == -1);
+
+        let header = document.getAnonymousElementByAttribute(this, "anonid",
+                                                             "search-panel-one-offs-header")
+        // header is a xul:deck so collapsed doesn't work on it, see bug 589569.
+        header.hidden = list.collapsed = !engines.length;
+
+        // 49px is the min-width of each search engine button,
+        // adapt this const when changing the css.
+        // It's actually 48px + 1px of right border.
+        const ENGINE_WIDTH = 49;
+        let panel = document.getElementById("PopupSearchAutoComplete");
+        // The panel width only spans to the textbox size, but we also want it
+        // to include the magnifier icon's width.
+        let ltr = getComputedStyle(this).direction == "ltr";
+        let magnifierWidth = parseInt(getComputedStyle(panel)[
+                               ltr ? "marginLeft" : "marginRight"
+                             ]) * -1;
+        let minWidth = parseInt(panel.width) + magnifierWidth;
+        if (engines.length) {
+          // Ensure the panel is wide enough to fit at least 3 engines.
+          minWidth = Math.max(minWidth, ENGINE_WIDTH * 3);
+        }
+        panel.style.minWidth = minWidth + "px";
+
+        if (!engines.length)
+          return;
+
+        let panelWidth = parseInt(panel.clientWidth);
+        // The + 1 is because the last button doesn't have a right border.
+        let enginesPerRow = Math.floor((panelWidth + 1) / ENGINE_WIDTH);
+        let buttonWidth = Math.floor(panelWidth / enginesPerRow);
+        // There will be an emtpy area of:
+        //   panelWidth - enginesPerRow * buttonWidth  px
+        // at the end of each row.
+
+        // If the <description> tag with the list of search engines doesn't have
+        // a fixed height, the panel will be sized incorrectly, causing the bottom
+        // of the suggestion <tree> to be hidden.
+        let rowCount = Math.ceil(engines.length / enginesPerRow);
+        let height = rowCount * 33; // 32px per row, 1px border.
+        list.setAttribute("height", height + "px");
+
+        // Ensure we can refer to the settings button by ID:
+        let settingsEl = document.getAnonymousElementByAttribute(this, "anonid", "search-settings");
+        settingsEl.id = this.id + "-anon-search-settings";
+
+        let dummyItems = enginesPerRow - (engines.length % enginesPerRow || enginesPerRow);
+        for (let i = 0; i < engines.length; ++i) {
+          let engine = engines[i];
+          let button = document.createElementNS(kXULNS, "button");
+          button.id = "searchbar-engine-one-off-item-" + engine.name.replace(/ /g, '-');
+          let uri = "chrome://browser/skin/search-engine-placeholder.png";
+          if (engine.iconURI) {
+            uri = PlacesUtils.getImageURLForResolution(window, engine.iconURI.spec);
+          }
+          button.setAttribute("image", uri);
+          button.setAttribute("class", "searchbar-engine-one-off-item");
+          button.setAttribute("tooltiptext", engine.name);
+          button.setAttribute("width", buttonWidth);
+          button.engine = engine;
+
+          if ((i + 1) % enginesPerRow == 0)
+            button.classList.add("last-of-row");
+
+          if (i >= engines.length + dummyItems - enginesPerRow)
+            button.classList.add("last-row");
+
+          list.appendChild(button);
+        }
+
+        while (dummyItems) {
+          let button = document.createElementNS(kXULNS, "button");
+          button.setAttribute("class", "searchbar-engine-one-off-item dummy last-row");
+          button.setAttribute("width", buttonWidth);
+
+          if (!--dummyItems)
+            button.classList.add("last-of-row");
+
+          list.appendChild(button);
+        }
+      ]]></handler>
+
+      <handler event="popupshown"><![CDATA[
+        this._ignoreMouseEvents = false;
+      ]]></handler>
+
+      <handler event="mousedown"><![CDATA[
+        // Required to receive click events from the buttons on Linux.
+        event.preventDefault();
+      ]]></handler>
+
+      <handler event="mouseover"><![CDATA[
+        let target = event.originalTarget;
+        if (target.localName != "button")
+          return;
+
+        // We ignore mouse events between the popupshowing and popupshown
+        // events to avoid selecting the button that happens to be under the
+        // mouse when the panel opens.
+        if (this._ignoreMouseEvents)
+          return;
+
+        if ((target.classList.contains("searchbar-engine-one-off-item") &&
+             !target.classList.contains("dummy")) ||
+            target.classList.contains("addengine-item") ||
+            target.classList.contains("search-setting-button"))
+          document.getElementById("searchbar").textbox.selectedButton = target;
+      ]]></handler>
+
+      <handler event="mouseout"><![CDATA[
+        let target = event.originalTarget;
+        if (target.localName != "button")
+          return;
+
+        let textbox = document.getElementById("searchbar").textbox;
+        if (textbox.selectedButton == target)
+          textbox.selectedButton = null;
+      ]]></handler>
+
+      <handler event="click"><![CDATA[
+        if (event.button == 2)
+          return; // ignore right clicks.
+
+        let button = event.originalTarget;
+        let engine = button.engine || button.parentNode.engine;
+
+        if (!engine)
+          return;
+
+        let searchbar = document.getElementById("searchbar");
+        searchbar.handleSearchCommand(event, engine);
+      ]]></handler>
+
+      <handler event="command"><![CDATA[
+        let target = event.originalTarget;
+        if (target.classList.contains("addengine-item")) {
+          // On success, hide and reshow the panel to show the new engine.
+          let installCallback = {
+            onSuccess: function(engine) {
+              event.target.hidePopup();
+              BrowserSearch.searchBar.openSuggestionsPanel();
+            },
+            onError: function(errorCode) {
+              Components.utils.reportError("Error adding search engine: " + errorCode);
+            }
+          }
+          Services.search.addEngine(target.getAttribute("uri"),
+                                    Ci.nsISearchEngine.DATA_XML,
+                                    target.getAttribute("image"), false,
+                                    installCallback);
+        }
+      ]]></handler>
+
+      <handler event="popuphiding"><![CDATA[
+        this._isHiding = true;
+        setTimeout(() => {
+          this._isHiding = false;
+        }, 0);
+      ]]></handler>
+    </handlers>
+  </binding>
+
+  <!-- Used for additional open search providers in the search panel. -->
+  <binding id="addengine-icon" extends="xul:box">
+    <content>
+      <xul:image class="addengine-icon" xbl:inherits="src"/>
+      <xul:image class="addengine-badge"/>
+    </content>
   </binding>
 
   <binding id="urlbar-rich-result-popup" extends="chrome://global/content/bindings/autocomplete.xml#autocomplete-rich-result-popup">
@@ -942,6 +1357,49 @@
           getService(Ci.nsIStringBundleService).
           createBundle("chrome://browser/locale/places/places.properties");
       </field>
+
+      <!-- Override this so that when UnifiedComplete is enabled, navigating
+           between items results in an item always being selected. This is
+           contrary to the old behaviour (UnifiedComplete disabled) where
+           if you navigate beyond either end of the list, no item will be
+           selected. -->
+      <method name="getNextIndex">
+        <parameter name="reverse"/>
+        <parameter name="amount"/>
+        <parameter name="index"/>
+        <parameter name="maxRow"/>
+        <body><![CDATA[
+          if (maxRow < 0)
+            return -1;
+
+          let newIndex = index + (reverse ? -1 : 1) * amount;
+
+          // We only want to wrap if navigation is in any direction by one item,
+          // otherwise we clamp to one end of the list.
+          // ie, hitting page-down will only cause is to wrap if we're already
+          // at one end of the list.
+
+          if (!Services.prefs.getBoolPref("browser.urlbar.unifiedcomplete")) {
+            if (reverse && index == -1 || newIndex > maxRow && index != maxRow)
+              newIndex = maxRow;
+            else if (!reverse && index == -1 || newIndex < 0 && index != 0)
+              newIndex = 0;
+
+            if (newIndex < 0 && index == 0 || newIndex > maxRow && index == maxRow)
+              newIndex = -1;
+
+            return newIndex;
+          }
+
+          if (newIndex < 0) {
+            newIndex = index > 0 ? 0 : maxRow;
+          } else if (newIndex > maxRow) {
+            newIndex = index < maxRow ? maxRow : 0;
+          }
+
+          return newIndex;
+        ]]></body>
+      </method>
 
       <property name="maxResults" readonly="true">
         <getter>
@@ -1046,6 +1504,18 @@
             }
 
             return label;
+          ]]>
+        </body>
+      </method>
+
+      <method name="onResultsAdded">
+        <body>
+          <![CDATA[
+            if (!Services.prefs.getBoolPref("browser.urlbar.unifiedcomplete"))
+              return;
+
+            if (this._matchCount > 0 && this.selectedIndex == -1)
+              this.selectedIndex = 0;
           ]]>
         </body>
       </method>
@@ -1180,7 +1650,6 @@
           // Cache these as cancelling the installs will remove this
           // notification which will drop these references
           let browser = this.notification.browser;
-          let contentWindow = this.notification.options.contentWindow;
           let sourceURI = this.notification.options.sourceURI;
 
           let installs = this.notification.options.installs;
@@ -1206,7 +1675,7 @@
             callback: function() {
               let weblistener = Cc["@mozilla.org/addons/web-install-listener;1"].
                                 getService(Ci.amIWebInstallListener);
-              if (weblistener.onWebInstallRequested(contentWindow, sourceURI,
+              if (weblistener.onWebInstallRequested(browser, sourceURI,
                                                     installs, installs.length)) {
                 installs.forEach(function(aInstall) {
                   aInstall.install();
@@ -1796,7 +2265,6 @@
         _doorhangerTitle.value =
           gNavigatorBundle.getFormattedString(
             "badContentBlocked.notblocked.message", [this._brandShortName]);
-
         if (this.notification.options.state &
             Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_ACTIVE_CONTENT) {
           _doorhangerTitle.value =
@@ -1837,6 +2305,10 @@
             Services.urlFormatter.formatURLPref("app.support.baseURL")
               + "tracking-protection";
         }
+        if (Services.prefs.getBoolPref("privacy.trackingprotection.enabled")) {
+          let histogram = Services.telemetry.getHistogramById("TRACKING_PROTECTION_EVENTS");
+          histogram.add(0);
+        }
       ]]></constructor>
       <method name="disableMixedContentProtection">
         <body><![CDATA[
@@ -1853,8 +2325,8 @@
       </method>
       <method name="enableMixedContentProtection">
         <body><![CDATA[
-          let docShell = gBrowser.webNavigation.QueryInterface(Ci.nsIDocShell);
-          docShell.mixedContentChannel = null;
+          gBrowser.selectedBrowser.messageManager.sendAsyncMessage(
+            "MixedContent:ReenableProtection", {});
           BrowserReload();
         ]]></body>
       </method>
@@ -1868,7 +2340,7 @@
             null, null);
           // Add the current host in the 'trackingprotection' consumer of
           // the permission manager using a normalized URI. This effectively
-          // places this host on the tracking protection white list.
+          // places this host on the tracking protection allowlist.
           Services.perms.add(normalizedUrl,
             "trackingprotection", Services.perms.ALLOW_ACTION);
           // Telemetry for disable protection
@@ -1882,7 +2354,7 @@
         <body><![CDATA[
           // Remove the current host from the 'trackingprotection' consumer
           // of the permission manager. This effectively removes this host
-          // from the tracking protection white list (any list actually).
+          // from the tracking protection allowlist.
           Services.perms.remove(gBrowser.selectedBrowser.currentURI.host,
             "trackingprotection");
           // Telemetry for enable protection

@@ -26,6 +26,9 @@ const STRINGS_URI = "chrome://browser/locale/devtools/webconsole.properties";
 const WebConsoleUtils = require("devtools/toolkit/webconsole/utils").Utils;
 const l10n = new WebConsoleUtils.l10n(STRINGS_URI);
 
+const MAX_STRING_GRIP_LENGTH = 36;
+const ELLIPSIS = Services.prefs.getComplexValue("intl.ellipsis", Ci.nsIPrefLocalizedString).data;
+
 // Constants for compatibility with the Web Console output implementation before
 // bug 778766.
 // TODO: remove these once bug 778766 is fixed.
@@ -97,7 +100,7 @@ const CONSOLE_API_LEVELS_TO_SEVERITIES = {
 };
 
 // Array of known message source URLs we need to hide from output.
-const IGNORED_SOURCE_URLS = ["debugger eval code", "self-hosted"];
+const IGNORED_SOURCE_URLS = ["debugger eval code"];
 
 // The maximum length of strings to be displayed by the Web Console.
 const MAX_LONG_STRING_LENGTH = 200000;
@@ -833,6 +836,7 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
 
     let icon = this.document.createElementNS(XHTML_NS, "span");
     icon.className = "icon";
+    icon.title = l10n.getStr("severity." + this._severityNameCompat);
 
     // Apply the current group by indenting appropriately.
     // TODO: remove this once bug 778766 is fixed.
@@ -893,13 +897,16 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
     let body = this.document.createElementNS(XHTML_NS, "span");
     body.className = "message-body-wrapper message-body devtools-monospace";
 
-    let anchor, container = body;
+    let bodyInner = this.document.createElementNS(XHTML_NS, "span");
+    body.appendChild(bodyInner);
+
+    let anchor, container = bodyInner;
     if (this._link || this._linkCallback) {
       container = anchor = this.document.createElementNS(XHTML_NS, "a");
       anchor.href = this._link || "#";
       anchor.draggable = false;
       this._addLinkCallback(anchor, this._linkCallback);
-      body.appendChild(anchor);
+      bodyInner.appendChild(anchor);
     }
 
     if (typeof this._message == "function") {
@@ -943,14 +950,16 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
       return null;
     }
 
-    let {url, line} = this.location;
+    let {url, line, column} = this.location;
     if (IGNORED_SOURCE_URLS.indexOf(url) != -1) {
       return null;
     }
 
     // The ConsoleOutput owner is a WebConsoleFrame instance from webconsole.js.
     // TODO: move createLocationNode() into this file when bug 778766 is fixed.
-    return this.output.owner.createLocationNode(url, line);
+    return this.output.owner.createLocationNode({url: url,
+                                                 line: line,
+                                                 column: column});
   },
 }); // Messages.Simple.prototype
 
@@ -1125,6 +1134,29 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
   },
 
   /**
+   * Shorten grips of the type string, leaves other grips unmodified.
+   *
+   * @param object grip
+   *        Value grip from the server.
+   * @return object
+   *        Possible values of object:
+   *        - A shortened string, if original grip was of string type.
+   *        - The unmodified input grip, if it wasn't of string type.
+   */
+  shortenValueGrip: function(grip)
+  {
+    let shortVal = grip;
+    if (typeof(grip)=="string") {
+      shortVal = grip.replace(/(\r\n|\n|\r)/gm," ");
+      if (shortVal.length > MAX_STRING_GRIP_LENGTH) {
+        shortVal = shortVal.substring(0,MAX_STRING_GRIP_LENGTH - 1) + ELLIPSIS;
+      }
+    }
+
+    return shortVal;
+  },
+
+  /**
    * Get a CodeMirror-compatible class name for a given value grip.
    *
    * @param object grip
@@ -1172,15 +1204,13 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
    */
   _renderObjectActor: function(objectActor, options = {})
   {
-    let widget = null;
-    let {preview} = objectActor;
+    let widget = Widgets.ObjectRenderers.byClass[objectActor.class];
 
-    if (preview && preview.kind) {
+    let { preview } = objectActor;
+    if ((!widget || (widget.canRender && !widget.canRender(objectActor)))
+        && preview
+        && preview.kind) {
       widget = Widgets.ObjectRenderers.byKind[preview.kind];
-    }
-
-    if (!widget || (widget.canRender && !widget.canRender(objectActor))) {
-      widget = Widgets.ObjectRenderers.byClass[objectActor.class];
     }
 
     if (!widget || (widget.canRender && !widget.canRender(objectActor))) {
@@ -1252,6 +1282,7 @@ Messages.ConsoleGeneric = function(packet)
     location: {
       url: packet.filename,
       line: packet.lineNumber,
+      column: packet.columnNumber
     },
   };
 
@@ -2300,6 +2331,119 @@ Widgets.JSObject.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
   },
 
   /**
+   * Render a concise representation of an object.
+   */
+  _renderConciseObject: function()
+  {
+    this.element = this._anchor(this.objectActor.class,
+                                { className: "cm-variable" });
+  },
+
+  /**
+   * Render the `<class> { ` prefix of an object.
+   */
+  _renderObjectPrefix: function()
+  {
+    let { kind } = this.objectActor.preview;
+    this.element = this.el("span.kind-" + kind);
+    this._anchor(this.objectActor.class, { className: "cm-variable" });
+    this._text(" { ");
+  },
+
+  /**
+   * Render the ` }` suffix of an object.
+   */
+  _renderObjectSuffix: function()
+  {
+    this._text(" }");
+  },
+
+  /**
+   * Render an object property.
+   *
+   * @param String key
+   *        The property name.
+   * @param Object value
+   *        The property value, as an RDP grip.
+   * @param nsIDOMNode container
+   *        The container node to render to.
+   * @param Boolean needsComma
+   *        True if there was another property before this one and we need to
+   *        separate them with a comma.
+   * @param Boolean valueIsText
+   *        Add the value as is, don't treat it as a grip and pass it to
+   *        `_renderValueGrip`.
+   */
+  _renderObjectProperty: function(key, value, container, needsComma, valueIsText = false)
+  {
+    if (needsComma) {
+      this._text(", ");
+    }
+
+    container.appendChild(this.el("span.cm-property", key));
+    this._text(": ");
+
+    if (valueIsText) {
+      this._text(value);
+    } else {
+      let shortVal = this.message.shortenValueGrip(value);
+      let valueElem = this.message._renderValueGrip(shortVal, { concise: true });
+      container.appendChild(valueElem);
+    }
+  },
+
+  /**
+   * Render this object's properties.
+   *
+   * @param nsIDOMNode container
+   *        The container node to render to.
+   * @param Boolean needsComma
+   *        True if there was another property before this one and we need to
+   *        separate them with a comma.
+   */
+  _renderObjectProperties: function(container, needsComma)
+  {
+    let { preview } = this.objectActor;
+    let { ownProperties, safeGetterValues } = preview;
+
+    let shown = 0;
+
+    let getValue = desc => {
+      if (desc.get) {
+        return "Getter";
+      } else if (desc.set) {
+        return "Setter";
+      } else {
+        return desc.value;
+      }
+    };
+
+    for (let key of Object.keys(ownProperties || {})) {
+      this._renderObjectProperty(key, getValue(ownProperties[key]), container,
+                                 shown > 0 || needsComma,
+                                 ownProperties[key].get || ownProperties[key].set);
+      shown++;
+    }
+
+    let ownPropertiesShown = shown;
+
+    for (let key of Object.keys(safeGetterValues || {})) {
+      this._renderObjectProperty(key, safeGetterValues[key].getterValue,
+                                 container, shown > 0 || needsComma);
+      shown++;
+    }
+
+    if (typeof preview.ownPropertiesLength == "number" &&
+        ownPropertiesShown < preview.ownPropertiesLength) {
+      this._text(", ");
+
+      let n = preview.ownPropertiesLength - ownPropertiesShown;
+      let str = VariablesView.stringifiers._getNMoreString(n);
+      this._anchor(str);
+    }
+  },
+
+  /**
    * Render an anchor with a given text content and link.
    *
    * @private
@@ -2563,7 +2707,9 @@ Widgets.ObjectRenderers.add({
           this._renderEmptySlots(emptySlots);
           emptySlots = 0;
         }
-        let elem = this.message._renderValueGrip(item, { concise: true });
+
+        let shortVal = this.message.shortenValueGrip(item);
+        let elem = this.message._renderValueGrip(shortVal, { concise: true });
         this.element.appendChild(elem);
       }
     }
@@ -2960,82 +3106,82 @@ Widgets.ObjectRenderers.add({
     // the message is destroyed.
     this.message.widgets.add(this);
 
-    this.linkToInspector();
+    this.linkToInspector().then(null, Cu.reportError);
   },
 
   /**
    * If the DOMNode being rendered can be highlit in the page, this function
    * will attach mouseover/out event listeners to do so, and the inspector icon
    * to open the node in the inspector.
-   * @return a promise (always the same) that resolves when the node has been
-   * linked to the inspector, or rejects if it wasn't (either if no toolbox
-   * could be found to access the inspector, or if the node isn't present in the
-   * inspector, i.e. if the node is in a DocumentFragment or not part of the
-   * tree, or not of type Ci.nsIDOMNode.ELEMENT_NODE).
+   * @return a promise that resolves when the node has been linked to the
+   * inspector, or rejects if it wasn't (either if no toolbox could be found to
+   * access the inspector, or if the node isn't present in the inspector, i.e.
+   * if the node is in a DocumentFragment or not part of the tree, or not of
+   * type Ci.nsIDOMNode.ELEMENT_NODE).
    */
-  linkToInspector: function()
+  linkToInspector: Task.async(function*()
   {
     if (this._linkedToInspector) {
-      return this._linkedToInspector;
+      return;
     }
 
-    this._linkedToInspector = Task.spawn(function*() {
-      // Checking the node type
-      if (this.objectActor.preview.nodeType !== Ci.nsIDOMNode.ELEMENT_NODE) {
-        throw null;
-      }
+    // Checking the node type
+    if (this.objectActor.preview.nodeType !== Ci.nsIDOMNode.ELEMENT_NODE) {
+      throw new Error("The object cannot be linked to the inspector as it " +
+        "isn't an element node");
+    }
 
-      // Checking the presence of a toolbox
-      let target = this.message.output.toolboxTarget;
-      this.toolbox = gDevTools.getToolbox(target);
-      if (!this.toolbox) {
-        throw null;
-      }
+    // Checking the presence of a toolbox
+    let target = this.message.output.toolboxTarget;
+    this.toolbox = gDevTools.getToolbox(target);
+    if (!this.toolbox) {
+      throw new Error("The object cannot be linked to the inspector without a " +
+        "toolbox");
+    }
 
-      // Checking that the inspector supports the node
-      yield this.toolbox.initInspector();
-      this._nodeFront = yield this.toolbox.walker.getNodeActorFromObjectActor(this.objectActor.actor);
-      if (!this._nodeFront) {
-        throw null;
-      }
+    // Checking that the inspector supports the node
+    yield this.toolbox.initInspector();
+    this._nodeFront = yield this.toolbox.walker.getNodeActorFromObjectActor(this.objectActor.actor);
+    if (!this._nodeFront) {
+      throw new Error("The object cannot be linked to the inspector, the " +
+        "corresponding nodeFront could not be found");
+    }
 
-      // At this stage, the message may have been cleared already
-      if (!this.document) {
-        throw null;
-      }
+    // At this stage, the message may have been cleared already
+    if (!this.document) {
+      throw new Error("The object cannot be linked to the inspector, the " +
+        "message was got cleared away");
+    }
 
-      this.highlightDomNode = this.highlightDomNode.bind(this);
-      this.element.addEventListener("mouseover", this.highlightDomNode, false);
-      this.unhighlightDomNode = this.unhighlightDomNode.bind(this);
-      this.element.addEventListener("mouseout", this.unhighlightDomNode, false);
+    this.highlightDomNode = this.highlightDomNode.bind(this);
+    this.element.addEventListener("mouseover", this.highlightDomNode, false);
+    this.unhighlightDomNode = this.unhighlightDomNode.bind(this);
+    this.element.addEventListener("mouseout", this.unhighlightDomNode, false);
 
-      this._openInspectorNode = this._anchor("", {
-        className: "open-inspector",
-        onClick: this.openNodeInInspector.bind(this)
-      });
-      this._openInspectorNode.title = l10n.getStr("openNodeInInspector");
-    }.bind(this));
+    this._openInspectorNode = this._anchor("", {
+      className: "open-inspector",
+      onClick: this.openNodeInInspector.bind(this)
+    });
+    this._openInspectorNode.title = l10n.getStr("openNodeInInspector");
 
-    return this._linkedToInspector;
-  },
+    this._linkedToInspector = true;
+  }),
 
   /**
    * Highlight the DOMNode corresponding to the ObjectActor in the page.
    * @return a promise that resolves when the node has been highlighted, or
    * rejects if the node cannot be highlighted (detached from the DOM)
    */
-  highlightDomNode: function()
+  highlightDomNode: Task.async(function*()
   {
-    return Task.spawn(function*() {
-      yield this.linkToInspector();
-      let isAttached = yield this.toolbox.walker.isInDOMTree(this._nodeFront);
-      if (isAttached) {
-        yield this.toolbox.highlighterUtils.highlightNodeFront(this._nodeFront);
-      } else {
-        throw null;
-      }
-    }.bind(this));
-  },
+    yield this.linkToInspector();
+    let isAttached = yield this.toolbox.walker.isInDOMTree(this._nodeFront);
+    if (isAttached) {
+      yield this.toolbox.highlighterUtils.highlightNodeFront(this._nodeFront);
+    } else {
+      throw null;
+    }
+  }),
 
   /**
    * Unhighlight a previously highlit node
@@ -3046,7 +3192,7 @@ Widgets.ObjectRenderers.add({
   {
     return this.linkToInspector().then(() => {
       return this.toolbox.highlighterUtils.unhighlight();
-    });
+    }).then(null, Cu.reportError);
   },
 
   /**
@@ -3056,22 +3202,20 @@ Widgets.ObjectRenderers.add({
    * (detached from the DOM). Note that in any case, the inspector panel will
    * be switched to.
    */
-  openNodeInInspector: function()
+  openNodeInInspector: Task.async(function*()
   {
-    return Task.spawn(function*() {
-      yield this.linkToInspector();
-      yield this.toolbox.selectTool("inspector");
+    yield this.linkToInspector();
+    yield this.toolbox.selectTool("inspector");
 
-      let isAttached = yield this.toolbox.walker.isInDOMTree(this._nodeFront);
-      if (isAttached) {
-        let onReady = this.toolbox.inspector.once("inspector-updated");
-        yield this.toolbox.selection.setNodeFront(this._nodeFront, "console");
-        yield onReady;
-      } else {
-        throw null;
-      }
-    }.bind(this));
-  },
+    let isAttached = yield this.toolbox.walker.isInDOMTree(this._nodeFront);
+    if (isAttached) {
+      let onReady = this.toolbox.inspector.once("inspector-updated");
+      yield this.toolbox.selection.setNodeFront(this._nodeFront, "console");
+      yield onReady;
+    } else {
+      throw null;
+    }
+  }),
 
   destroy: function()
   {
@@ -3086,6 +3230,42 @@ Widgets.ObjectRenderers.add({
 }); // Widgets.ObjectRenderers.byKind.DOMNode
 
 /**
+ * The widget user for displaying Promise objects.
+ */
+Widgets.ObjectRenderers.add({
+  byClass: "Promise",
+
+  render: function()
+  {
+    let { ownProperties, safeGetterValues } = this.objectActor.preview;
+    if ((!ownProperties && !safeGetterValues) || this.options.concise) {
+      this._renderConciseObject();
+      return;
+    }
+
+    this._renderObjectPrefix();
+    let container = this.element;
+    let addedPromiseInternalProps = false;
+
+    if (this.objectActor.promiseState) {
+      const { state, value, reason } = this.objectActor.promiseState;
+
+      this._renderObjectProperty("<state>", state, container, false);
+      addedPromiseInternalProps = true;
+
+      if (state == "fulfilled") {
+        this._renderObjectProperty("<value>", value, container, true);
+      } else if (state == "rejected") {
+        this._renderObjectProperty("<reason>", reason, container, true);
+      }
+    }
+
+    this._renderObjectProperties(container, addedPromiseInternalProps);
+    this._renderObjectSuffix();
+  }
+}); // Widgets.ObjectRenderers.byClass.Promise
+
+/**
  * The widget used for displaying generic JS object previews.
  */
 Widgets.ObjectRenderers.add({
@@ -3093,73 +3273,15 @@ Widgets.ObjectRenderers.add({
 
   render: function()
   {
-    let {preview} = this.objectActor;
-    let {ownProperties, safeGetterValues} = preview;
-
+    let { ownProperties, safeGetterValues } = this.objectActor.preview;
     if ((!ownProperties && !safeGetterValues) || this.options.concise) {
-      this.element = this._anchor(this.objectActor.class,
-                                  { className: "cm-variable" });
+      this._renderConciseObject();
       return;
     }
 
-    let container = this.element = this.el("span.kind-" + preview.kind);
-    this._anchor(this.objectActor.class, { className: "cm-variable" });
-    this._text(" { ");
-
-    let addProperty = (str) => {
-      container.appendChild(this.el("span.cm-property", str));
-    };
-
-    let shown = 0;
-    for (let key of Object.keys(ownProperties || {})) {
-      if (shown > 0) {
-        this._text(", ");
-      }
-
-      let value = ownProperties[key];
-
-      addProperty(key);
-      this._text(": ");
-
-      if (value.get) {
-        addProperty("Getter");
-      } else if (value.set) {
-        addProperty("Setter");
-      } else {
-        let valueElem = this.message._renderValueGrip(value.value, { concise: true });
-        container.appendChild(valueElem);
-      }
-
-      shown++;
-    }
-
-    let ownPropertiesShown = shown;
-
-    for (let key of Object.keys(safeGetterValues || {})) {
-      if (shown > 0) {
-        this._text(", ");
-      }
-
-      addProperty(key);
-      this._text(": ");
-
-      let value = safeGetterValues[key].getterValue;
-      let valueElem = this.message._renderValueGrip(value, { concise: true });
-      container.appendChild(valueElem);
-
-      shown++;
-    }
-
-    if (typeof preview.ownPropertiesLength == "number" &&
-        ownPropertiesShown < preview.ownPropertiesLength) {
-      this._text(", ");
-
-      let n = preview.ownPropertiesLength - ownPropertiesShown;
-      let str = VariablesView.stringifiers._getNMoreString(n);
-      this._anchor(str);
-    }
-
-    this._text(" }");
+    this._renderObjectPrefix();
+    this._renderObjectProperties(this.element, false);
+    this._renderObjectSuffix();
   },
 }); // Widgets.ObjectRenderers.byKind.Object
 
@@ -3358,8 +3480,8 @@ Widgets.Stacktrace.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
       fn.textContent = l10n.getStr("stacktrace.anonymousFunction");
     }
 
-    let location = this.output.owner.createLocationNode(frame.filename,
-                                                        frame.lineNumber,
+    let location = this.output.owner.createLocationNode({url: frame.filename,
+                                                        line: frame.lineNumber},
                                                         "jsdebugger");
 
     // .devtools-monospace sets font-size to 80%, however .body already has

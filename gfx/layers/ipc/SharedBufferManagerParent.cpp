@@ -15,6 +15,7 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/Transport.h"      // for Transport
 #include "mozilla/UniquePtr.h"          // for UniquePtr
+#include "mozilla/unused.h"
 #include "nsIMemoryReporter.h"
 #ifdef MOZ_WIDGET_GONK
 #include "mozilla/LinuxUtils.h"
@@ -37,7 +38,7 @@ StaticAutoPtr<Monitor> SharedBufferManagerParent::sManagerMonitor;
 uint64_t SharedBufferManagerParent::sBufferKey(0);
 
 #ifdef MOZ_WIDGET_GONK
-class GrallocReporter MOZ_FINAL : public nsIMemoryReporter
+class GrallocReporter final : public nsIMemoryReporter
 {
 public:
   NS_DECL_ISUPPORTS
@@ -115,7 +116,7 @@ public:
     explicit DeleteSharedBufferManagerParentTask(UniquePtr<SharedBufferManagerParent> aSharedBufferManager)
         : mSharedBufferManager(Move(aSharedBufferManager)) {
     }
-    virtual void Run() MOZ_OVERRIDE {}
+    virtual void Run() override {}
 private:
     UniquePtr<SharedBufferManagerParent> mSharedBufferManager;
 };
@@ -319,7 +320,7 @@ void SharedBufferManagerParent::DropGrallocBufferImpl(mozilla::layers::SurfaceDe
   NS_ASSERTION(key != -1, "Invalid buffer key");
   NS_ASSERTION(mBuffers.count(key) == 1, "No such buffer");
   mBuffers.erase(key);
-  SendDropGrallocBuffer(handle);
+  mozilla::unused << SendDropGrallocBuffer(handle);
 #endif
 }
 

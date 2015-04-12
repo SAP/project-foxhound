@@ -25,7 +25,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/BinarySearch.h"
-#include "mozilla/NullPtr.h"
 #include "nsDebug.h"
 
 template<class T, class L>
@@ -92,9 +91,8 @@ class autoJArray {
       arr = other.arr;
       length = other.length;
     }
-    void operator=(mozilla::NullptrT n) {
+    void operator=(decltype(nullptr)) {
       // Make assigning null to an array in Java delete the buffer in C++
-      MOZ_ASSERT(n == nullptr);
       delete[] arr;
       arr = nullptr;
       length = 0;

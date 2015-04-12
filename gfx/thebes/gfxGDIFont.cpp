@@ -168,8 +168,6 @@ gfxGDIFont::Measure(gfxTextRun *aTextRun,
     return metrics;
 }
 
-#define OBLIQUE_SKEW_FACTOR 0.3
-
 void
 gfxGDIFont::Initialize()
 {
@@ -460,7 +458,7 @@ gfxGDIFont::GetGlyph(uint32_t aUnicode, uint32_t aVarSelector)
 }
 
 int32_t
-gfxGDIFont::GetGlyphWidth(gfxContext *aCtx, uint16_t aGID)
+gfxGDIFont::GetGlyphWidth(DrawTarget& aDrawTarget, uint16_t aGID)
 {
     if (!mGlyphWidths) {
         mGlyphWidths = new nsDataHashtable<nsUint32HashKey,int32_t>(128);
@@ -471,7 +469,7 @@ gfxGDIFont::GetGlyphWidth(gfxContext *aCtx, uint16_t aGID)
         return width;
     }
 
-    DCFromContext dc(aCtx);
+    DCFromDrawTarget dc(aDrawTarget);
     AutoSelectFont fs(dc, GetHFONT());
 
     int devWidth;

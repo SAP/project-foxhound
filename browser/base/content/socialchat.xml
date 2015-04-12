@@ -12,8 +12,14 @@
           <xul:image class="chat-status-icon" xbl:inherits="src=image"/>
           <xul:label class="chat-title" flex="1" xbl:inherits="value=label" crop="center"/>
         </xul:hbox>
+        <xul:toolbarbutton anonid="webRTC-shareScreen-icon"
+                           class="notification-anchor-icon chat-toolbarbutton"
+                           oncommand="document.getBindingParent(this).showNotifications(this); event.stopPropagation();"/>
+        <xul:toolbarbutton anonid="webRTC-sharingScreen-icon"
+                           class="notification-anchor-icon chat-toolbarbutton"
+                           oncommand="document.getBindingParent(this).showNotifications(this); event.stopPropagation();"/>
         <xul:toolbarbutton anonid="notification-icon" class="notification-anchor-icon chat-toolbarbutton"
-                           oncommand="document.getBindingParent(this).showNotifications(); event.stopPropagation();"/>
+                           oncommand="document.getBindingParent(this).showNotifications(this); event.stopPropagation();"/>
         <xul:toolbarbutton anonid="minimize" class="chat-minimize-button chat-toolbarbutton"
                            oncommand="document.getBindingParent(this).toggle();"/>
         <xul:toolbarbutton anonid="swap" class="chat-swap-button chat-toolbarbutton"
@@ -30,8 +36,20 @@
 
     <implementation implements="nsIDOMEventListener">
       <constructor><![CDATA[
-        this.content.__defineGetter__("popupnotificationanchor",
-                                      () => document.getAnonymousElementByAttribute(this, "anonid", "notification-icon"));
+        const kAnchorMap = new Map([
+          ["", "notification-"],
+          ["webRTC-shareScreen-", ""],
+          ["webRTC-sharingScreen-", ""]
+        ]);
+        for (let [getterPrefix, idPrefix] of kAnchorMap) {
+          let getter = getterPrefix + "popupnotificationanchor";
+          let anonid = (idPrefix || getterPrefix) + "icon";
+          this.content.__defineGetter__(getter, () => {
+            delete this.content[getter];
+            return this.content[getter] = document.getAnonymousElementByAttribute(
+              this, "anonid", anonid);
+          });
+        }
 
         if (!this.chatbar) {
           document.getAnonymousElementByAttribute(this, "anonid", "minimize").hidden = true;
@@ -53,6 +71,14 @@
           this.isActive = !this.minimized;
           this._deferredChatLoaded.resolve(this);
         }, true);
+
+        // load content.js to support webrtc, fullscreen, etc.
+        this.addEventListener("load", function loaded(event) {
+          this.removeEventListener("load", loaded, true);
+          let mm = this.content.messageManager;
+          mm.loadFrameScript("chrome://browser/content/content.js", true);
+        }, true);
+
         if (this.src)
           this.setAttribute("src", this.src);
       ]]></constructor>
@@ -128,8 +154,9 @@
       </property>
 
       <method name="showNotifications">
+        <parameter name="aAnchor"/>
         <body><![CDATA[
-        PopupNotifications._reshowNotifications(this.content.popupnotificationanchor,
+        PopupNotifications._reshowNotifications(aAnchor,
                                                 this.content);
         ]]></body>
       </method>
@@ -143,7 +170,7 @@
           aTarget.src = this.src;
           aTarget.content.setAttribute("origin", this.content.getAttribute("origin"));
           aTarget.content.popupnotificationanchor.className = this.content.popupnotificationanchor.className;
-          this.content.swapDocShells(aTarget.content);
+          aTarget.content.swapDocShells(this.content);
         ]]></body>
       </method>
 
@@ -193,6 +220,9 @@
             () => {
               this.swapDocShells(cb);
 
+              chatbar.focus();
+              this.close();
+
               // chatboxForURL is a map of URL -> chatbox used to avoid opening
               // duplicate chat windows. Ensure reattached chat windows aren't
               // registered with about:blank as their URL, otherwise reattaching
@@ -200,8 +230,6 @@
               chatbar.chatboxForURL.delete("about:blank");
               chatbar.chatboxForURL.set(this.src, Cu.getWeakReference(cb));
 
-              chatbar.focus();
-              this.close();
               deferred.resolve(cb);
             }
           );
@@ -527,7 +555,9 @@
           let cb = this.chatboxForURL.get(aURL);
           if (cb) {
             cb = cb.get();
-            if (cb.parentNode) {
+            // A chatbox is still alive to us when it's parented and still has
+            // content.
+            if (cb.parentNode && cb.contentWindow) {
               this.showChat(cb, aMode);
               if (aCallback) {
                 if (cb._callbacks == null) {
@@ -646,6 +676,7 @@
         <parameter name="aOptions"/>
         <body><![CDATA[
           let deferred = Promise.defer();
+          let chatbar = this;
           let options = "";
           for (let name in aOptions)
             options += "," + name + "=" + aOptions[name];
@@ -657,10 +688,18 @@
             if (event.target != otherWin.document)
               return;
 
+            let detachEvent = new aChatbox.contentWindow.CustomEvent("socialFrameDetached", {
+              bubbles: true,
+              cancelable: true,
+            });
+            aChatbox.contentDocument.dispatchEvent(detachEvent);
+
             otherWin.removeEventListener("load", _chatLoad, true);
             let otherChatbox = otherWin.document.getElementById("chatter");
             aChatbox.swapDocShells(otherChatbox);
             aChatbox.close();
+            chatbar.chatboxForURL.set(aChatbox.src, Cu.getWeakReference(otherChatbox));
+
             deferred.resolve(otherChatbox);
           }, true);
           return deferred.promise;

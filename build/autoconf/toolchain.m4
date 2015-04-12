@@ -15,7 +15,7 @@ cat <<EOF > conftest.c
 #if defined(__clang__)
 COMPILER clang-cl _MSC_VER
 #else
-COMPILER msvc _MSC_VER
+COMPILER msvc _MSC_FULL_VER
 #endif
 #elif defined(__clang__)
 COMPILER clang __clang_major__.__clang_minor__.__clang_patchlevel__
@@ -55,6 +55,13 @@ rm -f conftest.out
 if test "`echo | $LD -v 2>&1 | grep -c GNU`" != "0"; then
     GNU_LD=1
 fi
+
+if test "$compiler" = "msvc"; then
+     MSVC_VERSION_FULL="$CXX_VERSION"
+     CC_VERSION=`echo ${CC_VERSION} | cut -c 1-4`
+     CXX_VERSION=`echo ${CXX_VERSION} | cut -c 1-4`
+fi
+
 INTEL_CC=
 INTEL_CXX=
 if test "$compiler" = "icc"; then
@@ -73,6 +80,15 @@ if test "$compiler" = "clang"; then
 fi
 if test "$compiler" = "clang-cl"; then
     CLANG_CL=1
+    # We force clang-cl to emulate Visual C++ 2013 in configure.in, but that
+    # is based on the CLANG_CL variable defined here, so make sure that we're
+    # getting the right version here manually.
+    CC_VERSION=1800
+    CXX_VERSION=1800
+    MSVC_VERSION_FULL=180030723
+    # Build on clang-cl with MSVC 2013 Update 3 with fallback emulation.
+    CFLAGS="$CFLAGS -fms-compatibility-version=18.00.30723 -fallback"
+    CXXFLAGS="$CXXFLAGS -fms-compatibility-version=18.00.30723 -fallback"
 fi
 
 if test "$GNU_CC"; then
@@ -83,6 +99,13 @@ fi
 
 AC_SUBST(CLANG_CXX)
 AC_SUBST(CLANG_CL)
+
+if test -n "$GNU_CC" -a -z "$CLANG_CC" ; then
+    if test "$GCC_MAJOR_VERSION" -eq 4 -a "$GCC_MINOR_VERSION" -lt 7 ||
+       test "$GCC_MAJOR_VERSION" -lt 4; then
+        AC_MSG_ERROR([Only GCC 4.7 or newer supported])
+    fi
+fi
 ])
 
 AC_DEFUN([MOZ_CROSS_COMPILER],
@@ -149,10 +172,11 @@ AC_PROG_CXX
 
 AC_CHECK_PROGS(RANLIB, "${target_alias}-ranlib" "${target}-ranlib", :)
 AC_CHECK_PROGS(AR, "${target_alias}-ar" "${target}-ar", :)
-MOZ_PATH_PROGS(AS, "${target_alias}-as" "${target}-as", :)
+AC_CHECK_PROGS(AS, "${target_alias}-as" "${target}-as", :)
 AC_CHECK_PROGS(LD, "${target_alias}-ld" "${target}-ld", :)
 AC_CHECK_PROGS(STRIP, "${target_alias}-strip" "${target}-strip", :)
 AC_CHECK_PROGS(WINDRES, "${target_alias}-windres" "${target}-windres", :)
+AC_CHECK_PROGS(OTOOL, "${target_alias}-otool" "${target}-otool", :)
 AC_DEFINE(CROSS_COMPILE)
 CROSS_COMPILE=1
 

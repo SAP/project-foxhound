@@ -15,6 +15,7 @@
 #include "GeckoProfiler.h"
 
 #include <bitset>
+#include <vector>
 
 #if defined(XP_WIN)
 
@@ -104,7 +105,7 @@ namespace gl {
 class GLLibraryEGL
 {
 public:
-    GLLibraryEGL() 
+    GLLibraryEGL()
         : mInitialized(false),
           mEGLLibrary(nullptr),
           mIsANGLE(false)
@@ -152,6 +153,14 @@ public:
         EGLDisplay disp = mSymbols.fGetDisplay(display_id);
         AFTER_GL_CALL;
         return disp;
+    }
+
+    EGLBoolean fTerminate(EGLDisplay display)
+    {
+        BEFORE_GL_CALL;
+        EGLBoolean ret = mSymbols.fTerminate(display);
+        AFTER_GL_CALL;
+        return ret;
     }
 
     EGLSurface fGetCurrentSurface(EGLint id)
@@ -392,6 +401,14 @@ public:
         return b;
     }
 
+    EGLBoolean fSurfaceReleaseSyncANGLE(EGLDisplay dpy, EGLSurface surface)
+    {
+        BEFORE_GL_CALL;
+        EGLBoolean b = mSymbols.fSurfaceReleaseSyncANGLE(dpy, surface);
+        AFTER_GL_CALL;
+        return b;
+    }
+
     EGLSync fCreateSync(EGLDisplay dpy, EGLenum type, const EGLint *attrib_list)
     {
         BEFORE_GL_CALL;
@@ -469,6 +486,8 @@ public:
     struct {
         typedef EGLDisplay (GLAPIENTRY * pfnGetDisplay)(void *display_id);
         pfnGetDisplay fGetDisplay;
+        typedef EGLBoolean (GLAPIENTRY * pfnTerminate)(EGLDisplay dpy);
+        pfnTerminate fTerminate;
         typedef EGLSurface (GLAPIENTRY * pfnGetCurrentSurface)(EGLint);
         pfnGetCurrentSurface fGetCurrentSurface;
         typedef EGLContext (GLAPIENTRY * pfnGetCurrentContext)(void);
@@ -533,6 +552,9 @@ public:
 
         typedef EGLBoolean (GLAPIENTRY * pfnQuerySurfacePointerANGLE)(EGLDisplay dpy, EGLSurface surface, EGLint attribute, void **value);
         pfnQuerySurfacePointerANGLE fQuerySurfacePointerANGLE;
+
+        typedef EGLBoolean (GLAPIENTRY * pfnSurfaceReleaseSyncANGLE)(EGLDisplay dpy, EGLSurface surface);
+        pfnSurfaceReleaseSyncANGLE fSurfaceReleaseSyncANGLE;
 
         typedef EGLSync (GLAPIENTRY * pfnCreateSync)(EGLDisplay dpy, EGLenum type, const EGLint *attrib_list);
         pfnCreateSync fCreateSync;

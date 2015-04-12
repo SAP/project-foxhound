@@ -9,9 +9,9 @@ Cu.import('resource://gre/modules/Services.jsm');
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 
-const {Promise: promise} = Cu.import("resource://gre/modules/devtools/deprecated-sync-thenables.js", {});
 const {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 const {require} = devtools;
+const promise = require("promise");
 const {AppProjects} = require("devtools/app-manager/app-projects");
 
 let TEST_BASE;
@@ -65,6 +65,8 @@ function closeWebIDE(win) {
   info("Closing WebIDE");
 
   let deferred = promise.defer();
+
+  Services.prefs.clearUserPref("devtools.webide.widget.enabled");
 
   win.addEventListener("unload", function onUnload() {
     win.removeEventListener("unload", onUnload);
@@ -135,6 +137,15 @@ function documentIsLoaded(doc) {
   return deferred.promise;
 }
 
+function lazyIframeIsLoaded(iframe) {
+  let deferred = promise.defer();
+  iframe.addEventListener("load", function onLoad() {
+    iframe.removeEventListener("load", onLoad, true);
+    deferred.resolve();
+  }, true);
+  return deferred.promise;
+}
+
 function addTab(aUrl, aWindow) {
   info("Adding tab: " + aUrl);
 
@@ -170,6 +181,25 @@ function removeTab(aTab, aWindow) {
   }, false);
 
   targetBrowser.removeTab(aTab);
+  return deferred.promise;
+}
+
+function connectToLocalRuntime(aWindow) {
+  info("Loading local runtime.");
+
+  let panelNode = aWindow.document.querySelector("#runtime-panel");
+  let items = panelNode.querySelectorAll(".runtime-panel-item-other");
+  is(items.length, 2, "Found 2 custom runtime buttons");
+
+  let deferred = promise.defer();
+  aWindow.AppManager.on("app-manager-update", function onUpdate(e,w) {
+    if (w == "list-tabs-response") {
+      aWindow.AppManager.off("app-manager-update", onUpdate);
+      deferred.resolve();
+    }
+  });
+
+  items[1].click();
   return deferred.promise;
 }
 

@@ -26,19 +26,13 @@ namespace mozilla {
   class nsDOMCameraControl;
   namespace dom {
     struct CameraConfiguration;
-    class GetCameraCallback;
-    class CameraErrorCallback;
   }
 }
 
-typedef nsTArray<nsRefPtr<mozilla::nsDOMCameraControl> > CameraControls;
+typedef nsTArray<nsWeakPtr> CameraControls;
 typedef nsClassHashtable<nsUint64HashKey, CameraControls> WindowTable;
-typedef mozilla::dom::Optional<mozilla::dom::OwningNonNull<mozilla::dom::GetCameraCallback> >
-          OptionalNonNullGetCameraCallback;
-typedef mozilla::dom::Optional<mozilla::dom::OwningNonNull<mozilla::dom::CameraErrorCallback> >
-          OptionalNonNullCameraErrorCallback;
 
-class nsDOMCameraManager MOZ_FINAL
+class nsDOMCameraManager final
   : public nsIObserver
   , public nsSupportsWeakReference
   , public nsWrapperCache
@@ -66,28 +60,25 @@ public:
 
   void PermissionAllowed(uint32_t aCameraId,
                          const mozilla::dom::CameraConfiguration& aOptions,
-                         mozilla::dom::GetCameraCallback* aOnSuccess,
-                         mozilla::dom::CameraErrorCallback* aOnError,
                          mozilla::dom::Promise* aPromise);
 
   void PermissionCancelled(uint32_t aCameraId,
                            const mozilla::dom::CameraConfiguration& aOptions,
-                           mozilla::dom::GetCameraCallback* aOnSuccess,
-                           mozilla::dom::CameraErrorCallback* aOnError,
                            mozilla::dom::Promise* aPromise);
 
   // WebIDL
   already_AddRefed<mozilla::dom::Promise>
   GetCamera(const nsAString& aCamera,
             const mozilla::dom::CameraConfiguration& aOptions,
-            const OptionalNonNullGetCameraCallback& aOnSuccess,
-            const OptionalNonNullCameraErrorCallback& aOnError,
             mozilla::ErrorResult& aRv);
   void GetListOfCameras(nsTArray<nsString>& aList, mozilla::ErrorResult& aRv);
 
   nsPIDOMWindow* GetParentObject() const { return mWindow; }
-  virtual JSObject* WrapObject(JSContext* aCx)
-    MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext* aCx) override;
+
+#ifdef MOZ_WIDGET_GONK
+  static void PreinitCameraHardware();
+#endif
 
 protected:
   void XpComShutdown();
@@ -95,10 +86,10 @@ protected:
   ~nsDOMCameraManager();
 
 private:
-  nsDOMCameraManager() MOZ_DELETE;
+  nsDOMCameraManager() = delete;
   explicit nsDOMCameraManager(nsPIDOMWindow* aWindow);
-  nsDOMCameraManager(const nsDOMCameraManager&) MOZ_DELETE;
-  nsDOMCameraManager& operator=(const nsDOMCameraManager&) MOZ_DELETE;
+  nsDOMCameraManager(const nsDOMCameraManager&) = delete;
+  nsDOMCameraManager& operator=(const nsDOMCameraManager&) = delete;
 
 protected:
   uint64_t mWindowId;

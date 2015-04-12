@@ -200,7 +200,7 @@ this.PlacesUtils = {
    * @param aNode
    *        A result node
    */
-  nodeAncestors: function PU_nodeAncestors(aNode) {
+  nodeAncestors: function* PU_nodeAncestors(aNode) {
     let node = aNode.parent;
     while (node) {
       yield node;
@@ -383,6 +383,18 @@ this.PlacesUtils = {
     }
     return aNode.itemId;
   },
+
+  /**
+   * Reverse a host based on the moz_places algorithm, that is reverse the host
+   * string and add a trailing period.  For example "google.com" becomes
+   * "moc.elgoog.".
+   *
+   * @param url
+   *        the URL to generate a rev host for.
+   * @return the reversed host string.
+   */
+  getReversedHost(url)
+    url.host.split("").reverse().join("") + ".",
 
   /**
    * String-wraps a result node according to the rules of the specified
@@ -944,7 +956,7 @@ this.PlacesUtils = {
    *        The container node to search through.
    * @returns true if the node contains uri nodes, false otherwise.
    */
-  hasChildURIs: function PU_hasChildURIs(aNode, aMultiple=false) {
+  hasChildURIs: function PU_hasChildURIs(aNode) {
     if (!this.nodeIsContainer(aNode))
       return false;
 
@@ -960,14 +972,11 @@ this.PlacesUtils = {
       root.containerOpen = true;
     }
 
-    let foundFirst = !aMultiple;
     let found = false;
     for (let i = 0; i < root.childCount && !found; i++) {
       let child = root.getChild(i);
-      if (this.nodeIsURI(child)) {
-        found = foundFirst;
-        foundFirst = true;
-      }
+      if (this.nodeIsURI(child))
+        found = true;
     }
 
     if (!wasOpen) {
@@ -1454,7 +1463,7 @@ this.PlacesUtils = {
         uri = PlacesUtils.favicons.getFaviconLinkForIcon(uri);
         deferred.resolve(uri);
       } else {
-        deferred.reject();
+        deferred.reject("favicon not found for uri");
       }
     });
     return deferred.promise;
@@ -1481,6 +1490,9 @@ this.PlacesUtils = {
    */
   getImageURLForResolution:
   function PU_getImageURLForResolution(aWindow, aURL, aWidth = 16, aHeight = 16) {
+    if (!aURL.endsWith('.ico') && !aURL.endsWith('.ICO')) {
+      return aURL;
+    }
     let width  = Math.round(aWidth * aWindow.devicePixelRatio);
     let height = Math.round(aHeight * aWindow.devicePixelRatio);
     return aURL + (aURL.contains("#") ? "&" : "#") +
@@ -1680,7 +1692,7 @@ this.PlacesUtils = {
 
 
     if (!aItemGuid)
-      aItemGuid = yield this.promiseItemGuid(PlacesUtils.placesRootId);
+      aItemGuid = this.bookmarks.rootGuid;
 
     let hasExcludeItemsCallback =
       aOptions.hasOwnProperty("excludeItemsCallback");

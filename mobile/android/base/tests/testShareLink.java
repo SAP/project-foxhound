@@ -37,7 +37,7 @@ public class testShareLink extends AboutHomeTest {
         openAboutHomeTab(AboutHomeTabs.READING_LIST);
 
         inputAndLoadUrl(url);
-        verifyPageTitle(urlTitle, url); // Waiting for page title to ensure the page is loaded
+        verifyUrlBarTitle(url); // Waiting for page title to ensure the page is loaded
 
         selectMenuItem(StringHelper.SHARE_LABEL);
         if (Build.VERSION.SDK_INT >= 14) {
@@ -243,9 +243,9 @@ public class testShareLink extends AboutHomeTest {
 
     private AbsListView getDisplayedShareList() {
         mViewGroup = null;
-        boolean success = waitForTest(new BooleanTest() {
+        boolean success = waitForCondition(new Condition() {
             @Override
-            public boolean test() {
+            public boolean isSatisfied() {
                 ArrayList<View> views = mSolo.getCurrentViews();
                 for (View view : views) {
                     // List may be displayed in different view formats.

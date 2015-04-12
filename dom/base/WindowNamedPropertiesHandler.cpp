@@ -83,8 +83,11 @@ WindowNamedPropertiesHandler::getOwnPropDescriptor(JSContext* aCx,
     return true;
   }
 
-  JS::Rooted<JSObject*> global(aCx, JS_GetGlobalForObject(aCx, aProxy));
-  if (HasPropertyOnPrototype(aCx, aProxy, aId)) {
+  bool hasOnPrototype;
+  if (!HasPropertyOnPrototype(aCx, aProxy, aId, &hasOnPrototype)) {
+    return false;
+  }
+  if (hasOnPrototype) {
     return true;
   }
 
@@ -94,6 +97,7 @@ WindowNamedPropertiesHandler::getOwnPropDescriptor(JSContext* aCx,
   }
 
   // Grab the DOM window.
+  JS::Rooted<JSObject*> global(aCx, JS_GetGlobalForObject(aCx, aProxy));
   nsGlobalWindow* win = xpc::WindowOrNull(global);
   if (win->Length() > 0) {
     nsCOMPtr<nsIDOMWindow> childWin = win->GetChildWindow(str);
@@ -155,7 +159,7 @@ WindowNamedPropertiesHandler::defineProperty(JSContext* aCx,
 {
   ErrorResult rv;
   rv.ThrowTypeError(MSG_DEFINEPROPERTY_ON_GSP);
-  rv.ReportTypeError(aCx);
+  rv.ReportErrorWithMessage(aCx);
   return false;
 }
 

@@ -39,11 +39,44 @@ TestGonkCameraHardware::~TestGonkCameraHardware()
   DOM_CAMERA_LOGA("^===== Destroyed TestGonkCameraHardware =====^\n");
 }
 
+void
+TestGonkCameraHardware::InjectFakeSystemFailure()
+{
+  DOM_CAMERA_LOGA("====== Fake Camera Hardware Failure ======\n");
+  // The values '100' and '0' below seem to be what the AOSP layer
+  // throws back when the mediaserver process fails.
+  OnSystemError(mTarget, CameraControlListener::kSystemService, 100, 0);
+}
+
 nsresult
 TestGonkCameraHardware::Init()
 {
+  class DeferredSystemFailure : public nsRunnable
+  {
+  public:
+    DeferredSystemFailure(TestGonkCameraHardware* aCameraHw)
+      : mCameraHw(aCameraHw)
+    { }
+
+    NS_IMETHODIMP
+    Run()
+    {
+      mCameraHw->InjectFakeSystemFailure();
+      return NS_OK;
+    }
+
+  protected:
+    android::sp<TestGonkCameraHardware> mCameraHw;
+  };
+
   if (IsTestCase("init-failure")) {
     return NS_ERROR_NOT_INITIALIZED;
+  }
+  if (IsTestCase("post-init-system-failure")) {
+    nsCOMPtr<nsIThread> me = NS_GetCurrentThread();
+    if (me) {
+      me->Dispatch(new DeferredSystemFailure(this), NS_DISPATCH_NORMAL);
+    }
   }
 
   return GonkCameraHardware::Init();
@@ -193,7 +226,7 @@ public:
   { }
 
   nsresult
-  InitMetaData() MOZ_OVERRIDE
+  InitMetaData() override
   {
     mMetaData.number_of_faces = 1;
     AllocateFacesArray(1);
@@ -222,7 +255,7 @@ public:
   { }
 
   nsresult
-  InitMetaData() MOZ_OVERRIDE
+  InitMetaData() override
   {
     mMetaData.number_of_faces = 2;
     AllocateFacesArray(2);
@@ -263,7 +296,7 @@ public:
   { }
 
   nsresult
-  InitMetaData() MOZ_OVERRIDE
+  InitMetaData() override
   {
     mMetaData.number_of_faces = 1;
     AllocateFacesArray(1);
@@ -296,7 +329,7 @@ public:
   { }
 
   nsresult
-  InitMetaData() MOZ_OVERRIDE
+  InitMetaData() override
   {
     mMetaData.number_of_faces = 0;
     mMetaData.faces = nullptr;

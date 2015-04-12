@@ -7,8 +7,10 @@
 #define MOZILLA_IMAGELIB_IMAGE_H_
 
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/TimeStamp.h"
+#include "gfx2DGlue.h"                // for gfxMemoryLocation
 #include "imgIContainer.h"
-#include "imgStatusTracker.h"
+#include "ProgressTracker.h"
 #include "ImageURL.h"
 #include "nsStringFwd.h"
 
@@ -31,7 +33,7 @@ public:
     eDecoderType_icon    = 5,
     eDecoderType_unknown = 6
   };
-  static eDecoderType GetDecoderType(const char *aMimeType);
+  static eDecoderType GetDecoderType(const char* aMimeType);
 
   /**
    * Flags for Image initialization.
@@ -45,14 +47,21 @@ public:
    * INIT_FLAG_DECODE_ON_DRAW: The container should decode on draw rather than
    * decoding on load.
    *
-   * INIT_FLAG_MULTIPART: The container will be used to display a stream of
-   * images in a multipart channel. If this flag is set, INIT_FLAG_DISCARDABLE
-   * and INIT_FLAG_DECODE_ON_DRAW must not be set.
+   * INIT_FLAG_TRANSIENT: The container is likely to exist for only a short time
+   * before being destroyed. (For example, containers for
+   * multipart/x-mixed-replace image parts fall into this category.) If this
+   * flag is set, INIT_FLAG_DISCARDABLE and INIT_FLAG_DECODE_ON_DRAW must not be
+   * set.
+   *
+   * INIT_FLAG_DOWNSCALE_DURING_DECODE: The container should attempt to
+   * downscale images during decoding instead of decoding them to their
+   * intrinsic size.
    */
-  static const uint32_t INIT_FLAG_NONE           = 0x0;
-  static const uint32_t INIT_FLAG_DISCARDABLE    = 0x1;
-  static const uint32_t INIT_FLAG_DECODE_ON_DRAW = 0x2;
-  static const uint32_t INIT_FLAG_MULTIPART      = 0x4;
+  static const uint32_t INIT_FLAG_NONE                     = 0x0;
+  static const uint32_t INIT_FLAG_DISCARDABLE              = 0x1;
+  static const uint32_t INIT_FLAG_DECODE_ON_DRAW           = 0x2;
+  static const uint32_t INIT_FLAG_TRANSIENT                = 0x4;
+  static const uint32_t INIT_FLAG_DOWNSCALE_DURING_DECODE  = 0x8;
 
   /**
    * Creates a new image container.
@@ -63,34 +72,22 @@ public:
   virtual nsresult Init(const char* aMimeType,
                         uint32_t aFlags) = 0;
 
-  virtual already_AddRefed<imgStatusTracker> GetStatusTracker() = 0;
-  virtual void SetStatusTracker(imgStatusTracker* aStatusTracker) {}
+  virtual already_AddRefed<ProgressTracker> GetProgressTracker() = 0;
+  virtual void SetProgressTracker(ProgressTracker* aProgressTracker) {}
 
   /**
-   * The rectangle defining the location and size of the given frame.
+   * The size, in bytes, occupied by the compressed source data of the image.
+   * If MallocSizeOf does not work on this platform, uses a fallback approach to
+   * ensure that something reasonable is always returned.
    */
-  virtual nsIntRect FrameRect(uint32_t aWhichFrame) = 0;
+  virtual size_t SizeOfSourceWithComputedFallback(
+                                          MallocSizeOf aMallocSizeOf) const = 0;
 
   /**
-   * The size, in bytes, occupied by the significant data portions of the image.
-   * This includes both compressed source data and decoded frames.
+   * The size, in bytes, occupied by the image's decoded data.
    */
-  virtual uint32_t SizeOfData() = 0;
-
-  /**
-   * The components that make up SizeOfData().
-   */
-  virtual size_t HeapSizeOfSourceWithComputedFallback(MallocSizeOf aMallocSizeOf) const = 0;
-  virtual size_t HeapSizeOfDecodedWithComputedFallback(MallocSizeOf aMallocSizeOf) const = 0;
-  virtual size_t NonHeapSizeOfDecoded() const = 0;
-  virtual size_t OutOfProcessSizeOfDecoded() const = 0;
-
-  /**
-   * Gets the size of the memory taken up for the parsed vector image's
-   * document (e.g. SVGDocument), and returns the document's URL via the
-   * aDocURL outparam.
-   */
-  virtual size_t HeapSizeOfVectorImageDocument(nsACString* aDocURL = nullptr) const = 0;
+  virtual size_t SizeOfDecoded(gfxMemoryLocation aLocation,
+                               MallocSizeOf aMallocSizeOf) const = 0;
 
   virtual void IncrementAnimationConsumers() = 0;
   virtual void DecrementAnimationConsumers() = 0;
@@ -129,10 +126,10 @@ public:
                                        bool aLastPart) = 0;
 
   /**
-   * Called for multipart images to allow for any necessary reinitialization
-   * when there's a new part to add.
+   * Called when the SurfaceCache discards a persistent surface belonging to
+   * this image.
    */
-  virtual nsresult OnNewSourceData() = 0;
+  virtual void OnSurfaceDiscarded() = 0;
 
   virtual void SetInnerWindowID(uint64_t aInnerWindowId) = 0;
   virtual uint64_t InnerWindowID() const = 0;
@@ -146,44 +143,53 @@ public:
 class ImageResource : public Image
 {
 public:
-  already_AddRefed<imgStatusTracker> GetStatusTracker() MOZ_OVERRIDE {
-    nsRefPtr<imgStatusTracker> statusTracker = mStatusTracker;
-    MOZ_ASSERT(statusTracker);
-    return statusTracker.forget();
+  already_AddRefed<ProgressTracker> GetProgressTracker() override
+  {
+    nsRefPtr<ProgressTracker> progressTracker = mProgressTracker;
+    MOZ_ASSERT(progressTracker);
+    return progressTracker.forget();
   }
-  void SetStatusTracker(imgStatusTracker* aStatusTracker) MOZ_OVERRIDE MOZ_FINAL {
-    MOZ_ASSERT(aStatusTracker);
-    MOZ_ASSERT(!mStatusTracker);
-    mStatusTracker = aStatusTracker;
-  }
-  virtual uint32_t SizeOfData() MOZ_OVERRIDE;
 
-  virtual void IncrementAnimationConsumers() MOZ_OVERRIDE;
-  virtual void DecrementAnimationConsumers() MOZ_OVERRIDE;
+  void SetProgressTracker(
+                       ProgressTracker* aProgressTracker) override final
+  {
+    MOZ_ASSERT(aProgressTracker);
+    MOZ_ASSERT(!mProgressTracker);
+    mProgressTracker = aProgressTracker;
+  }
+
+  virtual void IncrementAnimationConsumers() override;
+  virtual void DecrementAnimationConsumers() override;
 #ifdef DEBUG
-  virtual uint32_t GetAnimationConsumers() MOZ_OVERRIDE { return mAnimationConsumers; }
+  virtual uint32_t GetAnimationConsumers() override
+  {
+    return mAnimationConsumers;
+  }
 #endif
 
-  virtual void SetInnerWindowID(uint64_t aInnerWindowId) MOZ_OVERRIDE {
+  virtual void OnSurfaceDiscarded() override { }
+
+  virtual void SetInnerWindowID(uint64_t aInnerWindowId) override
+  {
     mInnerWindowId = aInnerWindowId;
   }
-  virtual uint64_t InnerWindowID() const MOZ_OVERRIDE { return mInnerWindowId; }
+  virtual uint64_t InnerWindowID() const override { return mInnerWindowId; }
 
-  virtual bool HasError() MOZ_OVERRIDE    { return mError; }
-  virtual void SetHasError() MOZ_OVERRIDE { mError = true; }
+  virtual bool HasError() override    { return mError; }
+  virtual void SetHasError() override { mError = true; }
 
   /*
    * Returns a non-AddRefed pointer to the URI associated with this image.
    * Illegal to use off-main-thread.
    */
-  virtual ImageURL* GetURI() MOZ_OVERRIDE { return mURI.get(); }
+  virtual ImageURL* GetURI() override { return mURI.get(); }
 
 protected:
   explicit ImageResource(ImageURL* aURI);
 
   // Shared functionality for implementors of imgIContainer. Every
   // implementation of attribute animationMode should forward here.
-  nsresult GetAnimationModeInternal(uint16_t *aAnimationMode);
+  nsresult GetAnimationModeInternal(uint16_t* aAnimationMode);
   nsresult SetAnimationModeInternal(uint16_t aAnimationMode);
 
   /**
@@ -215,7 +221,7 @@ protected:
   virtual nsresult StopAnimation() = 0;
 
   // Member data shared by all implementations of this abstract class
-  nsRefPtr<imgStatusTracker>    mStatusTracker;
+  nsRefPtr<ProgressTracker>     mProgressTracker;
   nsRefPtr<ImageURL>            mURI;
   TimeStamp                     mLastRefreshTime;
   uint64_t                      mInnerWindowId;

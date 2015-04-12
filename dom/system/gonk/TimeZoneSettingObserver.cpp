@@ -26,6 +26,7 @@
 #include "mozilla/dom/SettingChangeNotificationBinding.h"
 
 #undef LOG
+#undef ERR
 #define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Time Zone Setting" , ## args)
 #define ERR(args...)  __android_log_print(ANDROID_LOG_ERROR, "Time Zone Setting" , ## args)
 
@@ -48,7 +49,7 @@ public:
   static nsresult SetTimeZone(const JS::Value &aValue, JSContext *aContext);
 };
 
-class TimeZoneSettingCb MOZ_FINAL : public nsISettingsServiceCallback
+class TimeZoneSettingCb final : public nsISettingsServiceCallback
 {
 public:
   NS_DECL_ISUPPORTS

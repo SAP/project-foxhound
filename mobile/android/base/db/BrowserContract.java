@@ -157,7 +157,6 @@ public class BrowserContract {
         public static final String TAGS_FOLDER_GUID = "tags";
         public static final String TOOLBAR_FOLDER_GUID = "toolbar";
         public static final String UNFILED_FOLDER_GUID = "unfiled";
-        public static final String READING_LIST_FOLDER_GUID = "readinglist";
         public static final String FAKE_DESKTOP_FOLDER_GUID = "desktop";
         public static final String PINNED_FOLDER_GUID = "pinned";
 
@@ -342,69 +341,110 @@ public class BrowserContract {
             new String[] { _ID, DATASET_ID, URL, TITLE, DESCRIPTION, IMAGE_URL, FILTER };
     }
 
-    /*
-     * Contains names and schema definitions for tables and views
-     * no longer being used by current ContentProviders. These values are used
-     * to make incremental updates to the schema during a database upgrade. Will be
-     * removed with bug 947018.
-     */
-    static final class Obsolete {
-        public static final String TABLE_IMAGES = "images";
-        public static final String VIEW_BOOKMARKS_WITH_IMAGES = "bookmarks_with_images";
-        public static final String VIEW_HISTORY_WITH_IMAGES = "history_with_images";
-        public static final String VIEW_COMBINED_WITH_IMAGES = "combined_with_images";
-
-        public static final class Images implements CommonColumns, SyncColumns {
-            private Images() {}
-
-            public static final String URL = "url_key";
-            public static final String FAVICON_URL = "favicon_url";
-            public static final String FAVICON = "favicon";
-            public static final String THUMBNAIL = "thumbnail";
-            public static final String _ID = "_id";
-            public static final String GUID = "guid";
-            public static final String DATE_CREATED = "created";
-            public static final String DATE_MODIFIED = "modified";
-            public static final String IS_DELETED = "deleted";
-        }
-
-        public static final class Combined {
-            private Combined() {}
-
-            public static final String THUMBNAIL = "thumbnail";
-            public static final String DISPLAY = "display";
-
-            public static final int DISPLAY_NORMAL = 0;
-            public static final int DISPLAY_READER = 1;
-        }
-
-        static final String TABLE_BOOKMARKS_JOIN_IMAGES = Bookmarks.TABLE_NAME + " LEFT OUTER JOIN " +
-                Obsolete.TABLE_IMAGES + " ON " + Bookmarks.TABLE_NAME + "." + Bookmarks.URL + " = " +
-                Obsolete.TABLE_IMAGES + "." + Obsolete.Images.URL;
-
-        static final String TABLE_HISTORY_JOIN_IMAGES = History.TABLE_NAME + " LEFT OUTER JOIN " +
-                Obsolete.TABLE_IMAGES + " ON " + Bookmarks.TABLE_NAME + "." + History.URL + " = " +
-                Obsolete.TABLE_IMAGES + "." + Obsolete.Images.URL;
-
-        static final String FAVICON_DB = "favicon_urls.db";
-    }
-
     @RobocopTarget
-    public static final class ReadingListItems implements CommonColumns, URLColumns, SyncColumns {
+    public static final class ReadingListItems implements CommonColumns, URLColumns {
+        public static final String EXCERPT = "excerpt";
+        public static final String CLIENT_LAST_MODIFIED = "client_last_modified";
+        public static final String GUID = "guid";
+        public static final String SERVER_LAST_MODIFIED = "last_modified";
+        public static final String SERVER_STORED_ON = "stored_on";
+        public static final String ADDED_ON = "added_on";
+        public static final String MARKED_READ_ON = "marked_read_on";
+        public static final String IS_DELETED = "is_deleted";
+        public static final String IS_ARCHIVED = "is_archived";
+        public static final String IS_UNREAD = "is_unread";
+        public static final String IS_ARTICLE = "is_article";
+        public static final String IS_FAVORITE = "is_favorite";
+        public static final String RESOLVED_URL = "resolved_url";
+        public static final String RESOLVED_TITLE = "resolved_title";
+        public static final String ADDED_BY = "added_by";
+        public static final String MARKED_READ_BY = "marked_read_by";
+        public static final String WORD_COUNT = "word_count";
+        public static final String READ_POSITION = "read_position";
+        public static final String CONTENT_STATUS = "content_status";
+
+        public static final String SYNC_STATUS = "sync_status";
+        public static final String SYNC_CHANGE_FLAGS = "sync_change_flags";
+
         private ReadingListItems() {}
         public static final Uri CONTENT_URI = Uri.withAppendedPath(READING_LIST_AUTHORITY_URI, "items");
 
         public static final String CONTENT_TYPE = "vnd.android.cursor.dir/readinglistitem";
         public static final String CONTENT_ITEM_TYPE = "vnd.android.cursor.item/readinglistitem";
 
-        public static final String EXCERPT = "excerpt";
-        public static final String READ = "read";
-        public static final String LENGTH = "length";
-        public static final String DEFAULT_SORT_ORDER = DATE_MODIFIED + " DESC";
-        public static final String[] DEFAULT_PROJECTION = new String[] { _ID, URL, TITLE, EXCERPT, LENGTH };
+        // CONTENT_STATUS represents the result of an attempt to fetch content for the reading list item.
+        public static final int STATUS_UNFETCHED = 0;
+        public static final int STATUS_FETCH_FAILED_TEMPORARY = 1;
+        public static final int STATUS_FETCH_FAILED_PERMANENT = 2;
+        public static final int STATUS_FETCH_FAILED_UNSUPPORTED_FORMAT = 3;
+        public static final int STATUS_FETCHED_ARTICLE = 4;
+
+        // See https://github.com/mozilla-services/readinglist/wiki/Client-phases for how this is expected to work.
+        //
+        // If an item is SYNCED, it doesn't need to be uploaded.
+        //
+        // If its status is NEW, the entire record should be uploaded.
+        //
+        // If DELETED, the record should be deleted. A record can only move into this state from SYNCED; NEW records
+        // are deleted immediately.
+        //
+
+        public static final int SYNC_STATUS_SYNCED = 0;
+        public static final int SYNC_STATUS_NEW = 1;                      // Upload everything.
+        public static final int SYNC_STATUS_DELETED = 2;                  // Delete the record from the server.
+        public static final int SYNC_STATUS_MODIFIED = 3;                 // Consult SYNC_CHANGE_FLAGS.
+
+        // SYNC_CHANGE_FLAG represents the sets of fields that need to be uploaded.
+        // If its status is only UNREAD_CHANGED (and maybe FAVORITE_CHANGED?), then it can easily be uploaded
+        // in a fire-and-forget manner. This change can never conflict.
+        //
+        // If its status is RESOLVED, then one or more of the content-oriented fields has changed, and a full
+        // upload of those fields should occur. These can result in conflicts.
+        //
+        // Note that these are flags; they should be considered together when deciding on a course of action.
+        //
+        // These flags are meaningless for records in any state other than SYNCED. They can be safely altered in
+        // other states (to avoid having to query to pre-fill a ContentValues), but should be ignored.
+        public static final int SYNC_CHANGE_NONE = 0;
+        public static final int SYNC_CHANGE_UNREAD_CHANGED   = 1 << 0;    // => marked_read_{on,by}, is_unread
+        public static final int SYNC_CHANGE_FAVORITE_CHANGED = 1 << 1;    // => is_favorite
+        public static final int SYNC_CHANGE_RESOLVED = 1 << 2;            // => is_article, resolved_{url,title}, excerpt, word_count
+
+
+        public static final String DEFAULT_SORT_ORDER = CLIENT_LAST_MODIFIED + " DESC";
+        public static final String[] DEFAULT_PROJECTION = new String[] { _ID, URL, TITLE, EXCERPT, WORD_COUNT };
 
         // Minimum fields required to create a reading list item.
-        public static final String[] REQUIRED_FIELDS = { Bookmarks.URL, Bookmarks.TITLE };
+        public static final String[] REQUIRED_FIELDS = { ReadingListItems.URL, ReadingListItems.TITLE };
+
+        // All fields that might be mapped from the DB into a record object.
+        public static final String[] ALL_FIELDS = {
+                CommonColumns._ID,
+                URLColumns.URL,
+                URLColumns.TITLE,
+                EXCERPT,
+                CLIENT_LAST_MODIFIED,
+                GUID,
+                SERVER_LAST_MODIFIED,
+                SERVER_STORED_ON,
+                ADDED_ON,
+                MARKED_READ_ON,
+                IS_DELETED,
+                IS_ARCHIVED,
+                IS_UNREAD,
+                IS_ARTICLE,
+                IS_FAVORITE,
+                RESOLVED_URL,
+                RESOLVED_TITLE,
+                ADDED_BY,
+                MARKED_READ_BY,
+                WORD_COUNT,
+                READ_POSITION,
+                CONTENT_STATUS,
+
+                SYNC_STATUS,
+                SYNC_CHANGE_FLAGS,
+        };
 
         public static final String TABLE_NAME = "reading_list";
     }

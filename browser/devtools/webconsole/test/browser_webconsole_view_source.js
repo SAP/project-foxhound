@@ -6,16 +6,14 @@
 
 const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/test/test-error.html";
 
-let containsValue;
+let getItemForAttachment;
 let Sources;
-let containsValueInvoked = false;
+let getItemInvoked = false;
 
 function test() {
-  addTab(TEST_URI);
-  browser.addEventListener("load", function onLoad() {
-    browser.removeEventListener("load", onLoad, true);
-    openConsole(null, testViewSource);
-  }, true);
+  loadTab(TEST_URI).then(() => {
+    openConsole(null).then(testViewSource);
+  });
 }
 
 function testViewSource(hud) {
@@ -30,7 +28,7 @@ function testViewSource(hud) {
   openDebugger().then(({panelWin: { DebuggerView }}) => {
     info("debugger opened");
     Sources = DebuggerView.Sources;
-    openConsole(null, (hud) => {
+    openConsole().then((hud) => {
       info("console opened again");
 
       waitForMessages({
@@ -52,9 +50,9 @@ function testViewSource(hud) {
 
     Services.ww.registerNotification(observer);
 
-    containsValue = Sources.containsValue;
-    Sources.containsValue = () => {
-      containsValueInvoked = true;
+    getItemForAttachment = Sources.getItemForAttachment;
+    Sources.getItemForAttachment = () => {
+      getItemInvoked = true;
       return false;
     };
 
@@ -72,9 +70,9 @@ let observer = {
        "the location node");
 
     aSubject.close();
-    ok(containsValueInvoked, "custom containsValue() was invoked");
-    Sources.containsValue = containsValue;
-    Sources = containsValue = null;
+    ok(getItemInvoked, "custom getItemForAttachment() was invoked");
+    Sources.getItemForAttachment = getItemForAttachment;
+    Sources = getItemForAttachment = null;
     finishTest();
   }
 };

@@ -157,7 +157,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
         nsCOMPtr<nsILoadInfo> loadInfo;
         aChannel->GetLoadInfo(getter_AddRefs(loadInfo));
         if (loadInfo && loadInfo->GetForceInheritPrincipal()) {
-            principal = loadInfo->LoadingPrincipal();
+            principal = loadInfo->TriggeringPrincipal();
         } else {
             // No execution without a principal!
             NS_ASSERTION(!owner, "Non-principal owner?");
@@ -271,7 +271,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     JS::CompileOptions options(cx);
     options.setFileAndLine(mURL.get(), 1)
            .setVersion(JSVERSION_DEFAULT);
-    nsJSUtils::EvaluateOptions evalOptions;
+    nsJSUtils::EvaluateOptions evalOptions(cx);
     evalOptions.setCoerceToString(true);
     rv = nsJSUtils::EvaluateString(cx, NS_ConvertUTF8toUTF16(script),
                                    globalJSObject, options, evalOptions, &v);
@@ -1207,7 +1207,9 @@ nsJSProtocolHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsJSProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
+nsJSProtocolHandler::NewChannel2(nsIURI* uri,
+                                 nsILoadInfo* aLoadInfo,
+                                 nsIChannel** result)
 {
     nsresult rv;
     nsJSChannel * channel;
@@ -1221,12 +1223,23 @@ nsJSProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
     NS_ADDREF(channel);
 
     rv = channel->Init(uri);
+
+    // set the loadInfo on the new channel
+    rv = channel->SetLoadInfo(aLoadInfo);
+    NS_ENSURE_SUCCESS(rv, rv);
+
     if (NS_SUCCEEDED(rv)) {
         *result = channel;
         NS_ADDREF(*result);
     }
     NS_RELEASE(channel);
     return rv;
+}
+
+NS_IMETHODIMP
+nsJSProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
+{
+    return NewChannel2(uri, nullptr, result);
 }
 
 NS_IMETHODIMP 

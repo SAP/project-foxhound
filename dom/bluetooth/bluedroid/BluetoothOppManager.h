@@ -68,10 +68,10 @@ public:
   // The following functions are inherited from BluetoothSocketObserver
   void ReceiveSocketData(
     BluetoothSocket* aSocket,
-    nsAutoPtr<mozilla::ipc::UnixSocketRawData>& aMessage) MOZ_OVERRIDE;
-  virtual void OnSocketConnectSuccess(BluetoothSocket* aSocket) MOZ_OVERRIDE;
-  virtual void OnSocketConnectError(BluetoothSocket* aSocket) MOZ_OVERRIDE;
-  virtual void OnSocketDisconnect(BluetoothSocket* aSocket) MOZ_OVERRIDE;
+    nsAutoPtr<mozilla::ipc::UnixSocketRawData>& aMessage) override;
+  virtual void OnSocketConnectSuccess(BluetoothSocket* aSocket) override;
+  virtual void OnSocketConnectError(BluetoothSocket* aSocket) override;
+  virtual void OnSocketDisconnect(BluetoothSocket* aSocket) override;
 
 private:
   BluetoothOppManager();
@@ -85,6 +85,7 @@ private:
   void ReceivingFileConfirmation();
   bool CreateFile();
   bool WriteToFile(const uint8_t* aData, int aDataLength);
+  void RestoreReceivedFileAndNotify();
   void DeleteReceivedFile();
   void ReplyToConnect();
   void ReplyToDisconnectOrAbort();
@@ -209,6 +210,7 @@ private:
   nsCOMPtr<nsIInputStream> mInputStream;
   nsCOMPtr<nsIVolumeMountLock> mMountLock;
   nsRefPtr<DeviceStorageFile> mDsFile;
+  nsRefPtr<DeviceStorageFile> mDummyDsFile;
 
   // If a connection has been established, mSocket will be the socket
   // communicating with the remote socket. We maintain the invariant that if

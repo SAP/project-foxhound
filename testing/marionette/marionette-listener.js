@@ -39,6 +39,7 @@ let listenerId = null; //unique ID of this listener
 let curFrame = content;
 let previousFrame = null;
 let elementManager = new ElementManager([]);
+let accessibility = new Accessibility();
 let importedScripts = null;
 let inputSource = null;
 
@@ -102,27 +103,45 @@ function registerSelf() {
 
   if (register[0]) {
     listenerId = register[0][0].id;
-    // check if we're the main process
-    if (register[0][1] == true) {
-      addMessageListener("MarionetteMainListener:emitTouchEvent", emitTouchEventForIFrame);
+    if (typeof listenerId != "undefined") {
+      // check if we're the main process
+      if (register[0][1] == true) {
+        addMessageListener("MarionetteMainListener:emitTouchEvent", emitTouchEventForIFrame);
+      }
+      importedScripts = FileUtils.getDir('TmpD', [], false);
+      importedScripts.append('marionetteContentScripts');
+      startListeners();
     }
-    importedScripts = FileUtils.getDir('TmpD', [], false);
-    importedScripts.append('marionetteContentScripts');
-    startListeners();
   }
 }
 
 function emitTouchEventForIFrame(message) {
   message = message.json;
-  let frames = curFrame.document.getElementsByTagName("iframe");
-  let iframe = frames[message.index];
   let identifier = nextTouchId;
-  let tabParent = iframe.QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader.tabParent;
-  tabParent.injectTouchEvent(message.type, [identifier],
-                             [message.clientX], [message.clientY],
-                             [message.radiusX], [message.radiusY],
-                             [message.rotationAngle], [message.force],
-                             1, 0);
+
+  let domWindowUtils = curFrame.
+    QueryInterface(Components.interfaces.nsIInterfaceRequestor).
+    getInterface(Components.interfaces.nsIDOMWindowUtils);
+  var ratio = domWindowUtils.screenPixelsPerCSSPixel;
+
+  var typeForUtils;
+  switch (message.type) {
+    case 'touchstart':
+      typeForUtils = domWindowUtils.TOUCH_CONTACT;
+      break;
+    case 'touchend':
+      typeForUtils = domWindowUtils.TOUCH_REMOVE;
+      break;
+    case 'touchcancel':
+      typeForUtils = domWindowUtils.TOUCH_CANCEL;
+      break;
+    case 'touchmove':
+      typeForUtils = domWindowUtils.TOUCH_CONTACT;
+      break;
+  }
+  domWindowUtils.sendNativeTouchPoint(identifier, typeForUtils,
+    Math.round(message.screenX * ratio), Math.round(message.screenY * ratio),
+    message.force, 90);
 }
 
 /**
@@ -208,6 +227,7 @@ function waitForReady() {
  */
 function newSession(msg) {
   isB2G = msg.json.B2G;
+  accessibility.strict = msg.json.raisesAccessibilityExceptions;
   resetValues();
   if (isB2G) {
     readyStateTimer.initWithCallback(waitForReady, 100, Ci.nsITimer.TYPE_ONE_SHOT);
@@ -264,6 +284,7 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:getActiveElement", getActiveElement);
   removeMessageListenerId("Marionette:clickElement", clickElement);
   removeMessageListenerId("Marionette:getElementAttribute", getElementAttribute);
+  removeMessageListenerId("Marionette:getElementText", getElementText);
   removeMessageListenerId("Marionette:getElementTagName", getElementTagName);
   removeMessageListenerId("Marionette:isElementDisplayed", isElementDisplayed);
   removeMessageListenerId("Marionette:getElementValueOfCssProperty", getElementValueOfCssProperty);
@@ -704,10 +725,12 @@ function emitTouchEvent(type, touch) {
       let index = sendSyncMessage("MarionetteFrame:getCurrentFrameId");
       // only call emitTouchEventForIFrame if we're inside an iframe.
       if (index != null) {
-        sendSyncMessage("Marionette:emitTouchEvent", {index: index, type: type, id: touch.identifier,
-                                                      clientX: touch.clientX, clientY: touch.clientY,
-                                                      radiusX: touch.radiusX, radiusY: touch.radiusY,
-                                                      rotation: touch.rotationAngle, force: touch.force});
+        sendSyncMessage("Marionette:emitTouchEvent",
+          { index: index, type: type, id: touch.identifier,
+            clientX: touch.clientX, clientY: touch.clientY,
+            screenX: touch.screenX, screenY: touch.screenY,
+            radiusX: touch.radiusX, radiusY: touch.radiusY,
+            rotation: touch.rotationAngle, force: touch.force });
         return;
       }
     }
@@ -730,10 +753,15 @@ function emitTouchEvent(type, touch) {
  *           type is the type of event to dispatch
  *           clickCount is the number of clicks, button notes the mouse button
  *           elClientX and elClientY are the coordinates of the mouse relative to the viewport
+ *           modifiers is an object of modifier keys present
  */
-function emitMouseEvent(doc, type, elClientX, elClientY, clickCount, button) {
+function emitMouseEvent(doc, type, elClientX, elClientY, button, clickCount, modifiers) {
   if (!wasInterrupted()) {
-    let loggingInfo = "emitting Mouse event of type " + type + " at coordinates (" + elClientX + ", " + elClientY + ") relative to the viewport";
+    let loggingInfo = "emitting Mouse event of type " + type +
+      " at coordinates (" + elClientX + ", " + elClientY +
+      ") relative to the viewport\n" +
+      " button: " + button + "\n" +
+      " clickCount: " + clickCount + "\n";
     dumpLog(loggingInfo);
     /*
     Disabled per bug 888303
@@ -743,18 +771,26 @@ function emitMouseEvent(doc, type, elClientX, elClientY, clickCount, button) {
     marionetteLogObj.clearLogs();
     */
     let win = doc.defaultView;
-    let domUtils = win.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindowUtils);
-    domUtils.sendMouseEvent(type, elClientX, elClientY, button || 0, clickCount || 1, 0, false, 0, inputSource);
+    let domUtils = win.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                      .getInterface(Components.interfaces.nsIDOMWindowUtils);
+    let mods;
+    if (typeof modifiers != "undefined") {
+      mods = utils._parseModifiers(modifiers);
+    } else {
+      mods = 0;
+    }
+    domUtils.sendMouseEvent(type, elClientX, elClientY, button || 0, clickCount || 1,
+                            mods, false, 0, inputSource);
   }
 }
 
 /**
  * Helper function that perform a mouse tap
  */
-function mousetap(doc, x, y) {
-  emitMouseEvent(doc, 'mousemove', x, y);
-  emitMouseEvent(doc, 'mousedown', x, y);
-  emitMouseEvent(doc, 'mouseup', x, y);
+function mousetap(doc, x, y, keyModifiers) {
+  emitMouseEvent(doc, 'mousemove', x, y, null, null, keyModifiers);
+  emitMouseEvent(doc, 'mousedown', x, y, null, null, keyModifiers);
+  emitMouseEvent(doc, 'mouseup', x, y, null, null, keyModifiers);
 }
 
 
@@ -802,11 +838,15 @@ function elementInViewport(el, x, y) {
  *        If they are not specified, then the center of the target is used.
  */
 function checkVisible(el, x, y) {
-  //check if the element is visible
-  let visible = utils.isElementDisplayed(el);
-  if (!visible) {
-    return false;
+  // Bug 1094246 - Webdriver's isShown doesn't work with content xul
+  if (utils.getElementAttribute(el, "namespaceURI").indexOf("there.is.only.xul") == -1) {
+    //check if the element is visible
+    let visible = utils.isElementDisplayed(el);
+    if (!visible) {
+      return false;
+    }
   }
+
   if (el.tagName.toLowerCase() === 'body') {
     return true;
   }
@@ -826,7 +866,7 @@ function checkVisible(el, x, y) {
 }
 
 //x and y are coordinates relative to the viewport
-function generateEvents(type, x, y, touchId, target) {
+function generateEvents(type, x, y, touchId, target, keyModifiers) {
   lastCoordinates = [x, y];
   let doc = curFrame.document;
   switch (type) {
@@ -846,8 +886,8 @@ function generateEvents(type, x, y, touchId, target) {
     case 'press':
       isTap = true;
       if (mouseEventsOnly) {
-        emitMouseEvent(doc, 'mousemove', x, y);
-        emitMouseEvent(doc, 'mousedown', x, y);
+        emitMouseEvent(doc, 'mousemove', x, y, null, null, keyModifiers);
+        emitMouseEvent(doc, 'mousedown', x, y, null, null, keyModifiers);
       }
       else {
         let touchId = nextTouchId++;
@@ -859,14 +899,15 @@ function generateEvents(type, x, y, touchId, target) {
       break;
     case 'release':
       if (mouseEventsOnly) {
-        emitMouseEvent(doc, 'mouseup', lastCoordinates[0], lastCoordinates[1]);
+        emitMouseEvent(doc, 'mouseup', lastCoordinates[0], lastCoordinates[1],
+                       null, null, keyModifiers);
       }
       else {
         let touch = touchIds[touchId];
         touch = createATouch(touch.target, lastCoordinates[0], lastCoordinates[1], touchId);
         emitTouchEvent('touchend', touch);
         if (isTap) {
-          mousetap(touch.target.ownerDocument, touch.clientX, touch.clientY);
+          mousetap(touch.target.ownerDocument, touch.clientX, touch.clientY, keyModifiers);
         }
         delete touchIds[touchId];
       }
@@ -876,7 +917,8 @@ function generateEvents(type, x, y, touchId, target) {
     case 'cancel':
       isTap = false;
       if (mouseEventsOnly) {
-        emitMouseEvent(doc, 'mouseup', lastCoordinates[0], lastCoordinates[1]);
+        emitMouseEvent(doc, 'mouseup', lastCoordinates[0], lastCoordinates[1],
+                       null, null, keyModifiers);
       }
       else {
         emitTouchEvent('touchcancel', touchIds[touchId]);
@@ -887,7 +929,7 @@ function generateEvents(type, x, y, touchId, target) {
     case 'move':
       isTap = false;
       if (mouseEventsOnly) {
-        emitMouseEvent(doc, 'mousemove', x, y);
+        emitMouseEvent(doc, 'mousemove', x, y, null, null, keyModifiers);
       }
       else {
         touch = createATouch(touchIds[touchId].target, x, y, touchId);
@@ -938,11 +980,15 @@ function singleTap(msg) {
   let command_id = msg.json.command_id;
   try {
     let el = elementManager.getKnownElement(msg.json.id, curFrame);
+    let acc = accessibility.getAccessibleObject(el, true);
     // after this block, the element will be scrolled into view
-    if (!checkVisible(el, msg.json.corx, msg.json.cory)) {
-       sendError("Element is not currently visible and may not be manipulated", 11, null, command_id);
-       return;
+    let visible = checkVisible(el, msg.json.corx, msg.json.cory);
+    checkVisibleAccessibility(acc, visible);
+    if (!visible) {
+      sendError("Element is not currently visible and may not be manipulated", 11, null, command_id);
+      return;
     }
+    checkActionableAccessibility(acc);
     if (!curFrame.document.createTouch) {
       mouseEventsOnly = true;
     }
@@ -953,6 +999,64 @@ function singleTap(msg) {
   catch (e) {
     sendError(e.message, e.code, e.stack, msg.json.command_id);
   }
+}
+
+/**
+ * Check if the element's unavailable accessibility state matches the enabled
+ * state
+ * @param nsIAccessible object
+ * @param Boolean enabled element's enabled state
+ */
+function checkEnabledStateAccessibility(accesible, enabled) {
+  if (!accesible) {
+    return;
+  }
+  if (enabled && accessibility.matchState(accesible, 'STATE_UNAVAILABLE')) {
+    accessibility.handleErrorMessage('Element is enabled but disabled via ' +
+      'the accessibility API');
+  }
+}
+
+/**
+ * Check if the element's visible state corresponds to its accessibility API
+ * visibility
+ * @param nsIAccessible object
+ * @param Boolean visible element's visibility state
+ */
+function checkVisibleAccessibility(accesible, visible) {
+  if (!accesible) {
+    return;
+  }
+  let hiddenAccessibility = accessibility.isHidden(accesible);
+  let message;
+  if (visible && hiddenAccessibility) {
+    message = 'Element is not currently visible via the accessibility API ' +
+      'and may not be manipulated by it';
+  } else if (!visible && !hiddenAccessibility) {
+    message = 'Element is currently only visible via the accessibility API ' +
+      'and can be manipulated by it';
+  }
+  accessibility.handleErrorMessage(message);
+}
+
+/**
+ * Check if it is possible to activate an element with the accessibility API
+ * @param nsIAccessible object
+ */
+function checkActionableAccessibility(accesible) {
+  if (!accesible) {
+    return;
+  }
+  let message;
+  if (!accessibility.hasActionCount(accesible)) {
+    message = 'Element does not support any accessible actions';
+  } else if (!accessibility.isActionableRole(accesible)) {
+    message = 'Element does not have a correct accessibility role ' +
+      'and may not be manipulated via the accessibility API';
+  } else if (!accessibility.hasValidName(accesible)) {
+    message = 'Element is missing an accesible name';
+  }
+  accessibility.handleErrorMessage(message);
 }
 
 /**
@@ -986,10 +1090,19 @@ function createATouch(el, corx, cory, touchId) {
 /**
  * Function to emit touch events for each finger. e.g. finger=[['press', id], ['wait', 5], ['release']]
  * touchId represents the finger id, i keeps track of the current action of the chain
+ * keyModifiers is an object keeping track keyDown/keyUp pairs through an action chain.
  */
-function actions(chain, touchId, command_id, i) {
+function actions(chain, touchId, command_id, i, keyModifiers) {
   if (typeof i === "undefined") {
     i = 0;
+  }
+  if (typeof keyModifiers === "undefined") {
+    keyModifiers = {
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false
+    };
   }
   if (i == chain.length) {
     sendResponse({value: touchId}, command_id);
@@ -1000,7 +1113,7 @@ function actions(chain, touchId, command_id, i) {
   let el;
   let c;
   i++;
-  if (command != 'press' && command != 'wait') {
+  if (['press', 'wait', 'keyDown', 'keyUp'].indexOf(command) == -1) {
     //if mouseEventsOnly, then touchIds isn't used
     if (!(touchId in touchIds) && !mouseEventsOnly) {
       sendError("Element has not been pressed", 500, null, command_id);
@@ -1008,9 +1121,35 @@ function actions(chain, touchId, command_id, i) {
     }
   }
   switch(command) {
+    case 'keyDown':
+      utils.sendKeyDown(pack[1], keyModifiers, curFrame);
+      actions(chain, touchId, command_id, i, keyModifiers);
+      break;
+    case 'keyUp':
+      utils.sendKeyUp(pack[1], keyModifiers, curFrame);
+      actions(chain, touchId, command_id, i, keyModifiers);
+      break;
+    case 'click':
+      el = elementManager.getKnownElement(pack[1], curFrame);
+      let button = pack[2];
+      let clickCount = pack[3];
+      c = coordinates(el, null, null);
+      emitMouseEvent(el.ownerDocument, 'mousemove', c.x, c.y, button, clickCount,
+                     keyModifiers);
+      emitMouseEvent(el.ownerDocument, 'mousedown', c.x, c.y, button, clickCount,
+                     keyModifiers);
+      emitMouseEvent(el.ownerDocument, 'mouseup', c.x, c.y, button, clickCount,
+                     keyModifiers);
+      if (button == 2) {
+        emitMouseEvent(el.ownerDocument, 'contextmenu', c.x, c.y, button, clickCount,
+                       keyModifiers);
+      }
+      actions(chain, touchId, command_id, i, keyModifiers);
+      break;
     case 'press':
       if (lastCoordinates) {
-        generateEvents('cancel', lastCoordinates[0], lastCoordinates[1], touchId);
+        generateEvents('cancel', lastCoordinates[0], lastCoordinates[1],
+                       touchId, null, keyModifiers);
         sendError("Invalid Command: press cannot follow an active touch event", 500, null, command_id);
         return;
       }
@@ -1020,23 +1159,25 @@ function actions(chain, touchId, command_id, i) {
       }
       el = elementManager.getKnownElement(pack[1], curFrame);
       c = coordinates(el, pack[2], pack[3]);
-      touchId = generateEvents('press', c.x, c.y, null, el);
-      actions(chain, touchId, command_id, i);
+      touchId = generateEvents('press', c.x, c.y, null, el, keyModifiers);
+      actions(chain, touchId, command_id, i, keyModifiers);
       break;
     case 'release':
-      generateEvents('release', lastCoordinates[0], lastCoordinates[1], touchId);
-      actions(chain, null, command_id, i);
+      generateEvents('release', lastCoordinates[0], lastCoordinates[1],
+                     touchId, null, keyModifiers);
+      actions(chain, null, command_id, i, keyModifiers);
       scrolling =  false;
       break;
     case 'move':
       el = elementManager.getKnownElement(pack[1], curFrame);
       c = coordinates(el);
-      generateEvents('move', c.x, c.y, touchId);
-      actions(chain, touchId, command_id, i);
+      generateEvents('move', c.x, c.y, touchId, null, keyModifiers);
+      actions(chain, touchId, command_id, i, keyModifiers);
       break;
     case 'moveByOffset':
-      generateEvents('move', lastCoordinates[0] + pack[1], lastCoordinates[1] + pack[2], touchId);
-      actions(chain, touchId, command_id, i);
+      generateEvents('move', lastCoordinates[0] + pack[1], lastCoordinates[1] + pack[2],
+                     touchId, null, keyModifiers);
+      actions(chain, touchId, command_id, i, keyModifiers);
       break;
     case 'wait':
       if (pack[1] != null ) {
@@ -1051,20 +1192,24 @@ function actions(chain, touchId, command_id, i) {
             chain.splice(i, 0, ['longPress'], ['wait', (time-standard)/1000]);
             time = standard;
         }
-        checkTimer.initWithCallback(function(){actions(chain, touchId, command_id, i);}, time, Ci.nsITimer.TYPE_ONE_SHOT);
+        checkTimer.initWithCallback(function() {
+          actions(chain, touchId, command_id, i, keyModifiers);
+        }, time, Ci.nsITimer.TYPE_ONE_SHOT);
       }
       else {
-        actions(chain, touchId, command_id, i);
+        actions(chain, touchId, command_id, i, keyModifiers);
       }
       break;
     case 'cancel':
-      generateEvents('cancel', lastCoordinates[0], lastCoordinates[1], touchId);
-      actions(chain, touchId, command_id, i);
+      generateEvents('cancel', lastCoordinates[0], lastCoordinates[1],
+                     touchId, null, keyModifiers);
+      actions(chain, touchId, command_id, i, keyModifiers);
       scrolling = false;
       break;
     case 'longPress':
-      generateEvents('contextmenu', lastCoordinates[0], lastCoordinates[1], touchId);
-      actions(chain, touchId, command_id, i);
+      generateEvents('contextmenu', lastCoordinates[0], lastCoordinates[1],
+                     touchId, null, keyModifiers);
+      actions(chain, touchId, command_id, i, keyModifiers);
       break;
   }
 }
@@ -1274,19 +1419,23 @@ function get(msg) {
   function checkLoad() {
     checkTimer.cancel();
     end = new Date().getTime();
-    let errorRegex = /about:.+(error)|(blocked)\?/;
+    let aboutErrorRegex = /about:.+(error)\?/;
     let elapse = end - start;
     if (msg.json.pageTimeout == null || elapse <= msg.json.pageTimeout) {
       if (curFrame.document.readyState == "complete") {
         removeEventListener("DOMContentLoaded", onDOMContentLoaded, false);
         sendOk(command_id);
-      }
-      else if (curFrame.document.readyState == "interactive" &&
-               errorRegex.exec(curFrame.document.baseURI)) {
+      } else if (curFrame.document.readyState == "interactive" &&
+                 aboutErrorRegex.exec(curFrame.document.baseURI) &&
+                 !curFrame.document.baseURI.startsWith(msg.json.url)) {
+        // We have reached an error url without requesting it.
         removeEventListener("DOMContentLoaded", onDOMContentLoaded, false);
         sendError("Error loading page", 13, null, command_id);
-      }
-      else {
+      } else if (curFrame.document.readyState == "interactive" &&
+                 curFrame.document.baseURI.startsWith("about:")) {
+        removeEventListener("DOMContentLoaded", onDOMContentLoaded, false);
+        sendOk(command_id);
+      } else {
         checkTimer.initWithCallback(checkLoad, 100, Ci.nsITimer.TYPE_ONE_SHOT);
       }
     }
@@ -1420,7 +1569,11 @@ function clickElement(msg) {
   let el;
   try {
     el = elementManager.getKnownElement(msg.json.id, curFrame);
-    if (checkVisible(el)) {
+    let acc = accessibility.getAccessibleObject(el, true);
+    let visible = checkVisible(el);
+    checkVisibleAccessibility(acc, visible);
+    if (visible) {
+      checkActionableAccessibility(acc);
       if (utils.isElementEnabled(el)) {
         utils.synthesizeMouseAtCenter(el, {}, el.ownerDocument.defaultView)
       }
@@ -1488,7 +1641,9 @@ function isElementDisplayed(msg) {
   let command_id = msg.json.command_id;
   try {
     let el = elementManager.getKnownElement(msg.json.id, curFrame);
-    sendResponse({value: utils.isElementDisplayed(el)}, command_id);
+    let displayed = utils.isElementDisplayed(el);
+    checkVisibleAccessibility(accessibility.getAccessibleObject(el), displayed);
+    sendResponse({value: displayed}, command_id);
   }
   catch (e) {
     sendError(e.message, e.code, e.stack, command_id);
@@ -1584,7 +1739,10 @@ function isElementEnabled(msg) {
   let command_id = msg.json.command_id;
   try {
     let el = elementManager.getKnownElement(msg.json.id, curFrame);
-    sendResponse({value: utils.isElementEnabled(el)}, command_id);
+    let enabled = utils.isElementEnabled(el);
+    checkEnabledStateAccessibility(accessibility.getAccessibleObject(el),
+      enabled);
+    sendResponse({value: enabled}, command_id);
   }
   catch (e) {
     sendError(e.message, e.code, e.stack, command_id);
@@ -1758,8 +1916,10 @@ function switchToFrame(msg) {
         // and we land up here. Let's not give up and check if there are
         // iframes and switch to the indexed frame there
         let iframes = curFrame.document.getElementsByTagName("iframe");
-        curFrame = iframes[msg.json.id];
-        foundFrame = msg.json.id
+        if (msg.json.id >= 0 && msg.json.id < iframes.length) {
+          curFrame = iframes[msg.json.id];
+          foundFrame = msg.json.id;
+        }
       }
     }
   }
@@ -1795,8 +1955,7 @@ function switchToFrame(msg) {
   * Add a cookie to the document
   */
 function addCookie(msg) {
-  cookie = msg.json.cookie;
-
+  let cookie = msg.json.cookie;
   if (!cookie.expiry) {
     var date = new Date();
     var thePresent = new Date(Date.now());
@@ -1827,10 +1986,12 @@ function addCookie(msg) {
   if (!document || !document.contentType.match(/html/i)) {
     sendError('You may only set cookies on html documents', 25, null, msg.json.command_id);
   }
-  var cookieManager = Cc['@mozilla.org/cookiemanager;1'].
-                        getService(Ci.nsICookieManager2);
-  cookieManager.add(cookie.domain, cookie.path, cookie.name, cookie.value,
-                   cookie.secure, false, false, cookie.expiry);
+
+  let added = sendSyncMessage("Marionette:addCookie", {value: cookie});
+  if (added[0] !== true) {
+    sendError("Error setting cookie", 13, null, msg.json.command_id);
+    return;
+  }
   sendOk(msg.json.command_id);
 }
 
@@ -1840,8 +2001,7 @@ function addCookie(msg) {
 function getCookies(msg) {
   var toReturn = [];
   var cookies = getVisibleCookies(curFrame.location);
-  for (var i = 0; i < cookies.length; i++) {
-    var cookie = cookies[i];
+  for (let cookie of cookies) {
     var expires = cookie.expires;
     if (expires == 0) {  // Session cookie, don't return an expiry.
       expires = null;
@@ -1857,7 +2017,6 @@ function getCookies(msg) {
       'expiry': expires
     });
   }
-
   sendResponse({value: toReturn}, msg.json.command_id);
 }
 
@@ -1865,15 +2024,15 @@ function getCookies(msg) {
  * Delete a cookie by name
  */
 function deleteCookie(msg) {
-  var toDelete = msg.json.name;
-  var cookieManager = Cc['@mozilla.org/cookiemanager;1'].
-                        getService(Ci.nsICookieManager);
-
-  var cookies = getVisibleCookies(curFrame.location);
-  for (var i = 0; i < cookies.length; i++) {
-    var cookie = cookies[i];
+  let toDelete = msg.json.name;
+  let cookies = getVisibleCookies(curFrame.location);
+  for (let cookie of cookies) {
     if (cookie.name == toDelete) {
-      cookieManager.remove(cookie.host, cookie.name, cookie.path, false);
+      let deleted = sendSyncMessage("Marionette:deleteCookie", {value: cookie});
+      if (deleted[0] !== true) {
+        sendError("Could not delete cookie: " + msg.json.name, 13, null, msg.json.command_id);
+        return;
+      }
     }
   }
 
@@ -1884,12 +2043,13 @@ function deleteCookie(msg) {
  * Delete all the visibile cookies on a page
  */
 function deleteAllCookies(msg) {
-  let cookieManager = Cc['@mozilla.org/cookiemanager;1'].
-                        getService(Ci.nsICookieManager);
   let cookies = getVisibleCookies(curFrame.location);
-  for (let i = 0; i < cookies.length; i++) {
-    let cookie = cookies[i];
-    cookieManager.remove(cookie.host, cookie.name, cookie.path, false);
+  for (let cookie of cookies) {
+    let deleted = sendSyncMessage("Marionette:deleteCookie", {value: cookie});
+    if (!deleted[0]) {
+      sendError("Could not delete cookie: " + JSON.stringify(cookie), 13, null, msg.json.command_id);
+      return;
+    }
   }
   sendOk(msg.json.command_id);
 }
@@ -1898,32 +2058,10 @@ function deleteAllCookies(msg) {
  * Get all the visible cookies from a location
  */
 function getVisibleCookies(location) {
-  let results = [];
-  let currentPath = location.pathname;
-  if (!currentPath) currentPath = '/';
-  let isForCurrentPath = function(aPath) {
-    return currentPath.indexOf(aPath) != -1;
-  }
-
-  let cookieManager = Cc['@mozilla.org/cookiemanager;1'].
-                        getService(Ci.nsICookieManager);
-  let enumerator = cookieManager.enumerator;
-  while (enumerator.hasMoreElements()) {
-    let cookie = enumerator.getNext().QueryInterface(Ci['nsICookie']);
-
-    // Take the hostname and progressively shorten
-    let hostname = location.hostname;
-    do {
-      if ((cookie.host == '.' + hostname || cookie.host == hostname)
-          && isForCurrentPath(cookie.path)) {
-          results.push(cookie);
-          break;
-      }
-      hostname = hostname.replace(/^.*?\./, '');
-    } while (hostname.indexOf('.') != -1);
-  }
-
-  return results;
+  let currentPath = location.pathname || '/';
+  let result = sendSyncMessage("Marionette:getVisibleCookies",
+                               {value: [currentPath, location.hostname]});
+  return result[0];
 }
 
 function getAppCacheStatus(msg) {
@@ -2021,10 +2159,20 @@ function takeScreenshot(msg) {
   if (node == curFrame) {
     // node is a window
     win = node;
-    width = document.body.scrollWidth;
-    height = document.body.scrollHeight;
-    top = 0;
-    left = 0;
+    if (msg.json.full) {
+      // the full window
+      width = document.body.scrollWidth;
+      height = document.body.scrollHeight;
+      top = 0;
+      left = 0;
+    }
+    else {
+      // only the viewport
+      width = document.documentElement.clientWidth;
+      height = document.documentElement.clientHeight;
+      left = curFrame.pageXOffset;
+      top = curFrame.pageYOffset;
+    }
   }
   else {
     // node is an arbitrary DOM node

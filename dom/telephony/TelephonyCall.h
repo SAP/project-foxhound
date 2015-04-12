@@ -7,18 +7,17 @@
 #ifndef mozilla_dom_telephony_telephonycall_h__
 #define mozilla_dom_telephony_telephonycall_h__
 
-#include "mozilla/dom/telephony/TelephonyCommon.h"
-
 #include "mozilla/dom/DOMError.h"
-
-#include "TelephonyCallId.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TelephonyCallId.h"
+#include "mozilla/dom/telephony/TelephonyCommon.h"
 
 class nsPIDOMWindow;
 
 namespace mozilla {
 namespace dom {
 
-class TelephonyCall MOZ_FINAL : public DOMEventTargetHelper
+class TelephonyCall final : public DOMEventTargetHelper
 {
   nsRefPtr<Telephony> mTelephony;
   nsRefPtr<TelephonyCallGroup> mGroup;
@@ -52,7 +51,7 @@ public:
 
   // WrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   // WebIDL
   already_AddRefed<TelephonyCallId>
@@ -91,28 +90,24 @@ public:
   already_AddRefed<TelephonyCallGroup>
   GetGroup() const;
 
-  void
+  already_AddRefed<Promise>
   Answer(ErrorResult& aRv);
 
-  void
+  already_AddRefed<Promise>
   HangUp(ErrorResult& aRv);
 
-  void
+  already_AddRefed<Promise>
   Hold(ErrorResult& aRv);
 
-  void
+  already_AddRefed<Promise>
   Resume(ErrorResult& aRv);
 
   IMPL_EVENT_HANDLER(statechange)
   IMPL_EVENT_HANDLER(dialing)
   IMPL_EVENT_HANDLER(alerting)
-  IMPL_EVENT_HANDLER(connecting)
   IMPL_EVENT_HANDLER(connected)
-  IMPL_EVENT_HANDLER(disconnecting)
   IMPL_EVENT_HANDLER(disconnected)
-  IMPL_EVENT_HANDLER(holding)
   IMPL_EVENT_HANDLER(held)
-  IMPL_EVENT_HANDLER(resuming)
   IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(groupchange)
 
@@ -184,6 +179,9 @@ private:
   nsresult
   DispatchCallEvent(const nsAString& aType,
                     TelephonyCall* aCall);
+
+  already_AddRefed<Promise>
+  CreatePromise(ErrorResult& aRv);
 };
 
 } // namespace dom

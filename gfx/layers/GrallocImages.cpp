@@ -25,7 +25,7 @@ using namespace android;
 namespace mozilla {
 namespace layers {
 
-uint32_t GrallocImage::sColorIdMap[] = {
+int32_t GrallocImage::sColorIdMap[] = {
     HAL_PIXEL_FORMAT_YCbCr_420_P, OMX_COLOR_FormatYUV420Planar,
     HAL_PIXEL_FORMAT_YCbCr_422_P, OMX_COLOR_FormatYUV422Planar,
     HAL_PIXEL_FORMAT_YCbCr_420_SP, OMX_COLOR_FormatYUV420SemiPlanar,
@@ -76,6 +76,8 @@ GrallocImage::SetData(const Data& aData)
        new GrallocTextureClientOGL(ImageBridgeChild::GetSingleton(),
                                    gfx::SurfaceFormat::UNKNOWN,
                                    gfx::BackendType::NONE);
+  // GrallocImages are all YUV and don't support alpha.
+  textureClient->SetIsOpaque(true);
   bool result =
     textureClient->AllocateGralloc(mData.mYSize,
                                    HAL_PIXEL_FORMAT_YV12,

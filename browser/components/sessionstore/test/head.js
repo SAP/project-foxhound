@@ -6,6 +6,7 @@ const TAB_STATE_NEEDS_RESTORE = 1;
 const TAB_STATE_RESTORING = 2;
 
 const ROOT = getRootDirectory(gTestPath);
+const HTTPROOT = ROOT.replace("chrome://mochitests/content/", "http://example.com/");
 const FRAME_SCRIPTS = [
   ROOT + "content.js",
   ROOT + "content-forms.js"
@@ -172,25 +173,14 @@ function promiseBrowserState(aState) {
   return new Promise(resolve => waitForBrowserState(aState, resolve));
 }
 
-// Doesn't assume that the tab needs to be closed in a cleanup function.
-// If that's the case, the test author should handle that in the test.
-function waitForTabState(aTab, aState, aCallback) {
-  let listening = true;
-
-  function onSSTabRestored() {
-    aTab.removeEventListener("SSTabRestored", onSSTabRestored, false);
-    listening = false;
-    aCallback();
+function promiseTabState(tab, state) {
+  if (typeof(state) != "string") {
+    state = JSON.stringify(state);
   }
 
-  aTab.addEventListener("SSTabRestored", onSSTabRestored, false);
-
-  registerCleanupFunction(function() {
-    if (listening) {
-      aTab.removeEventListener("SSTabRestored", onSSTabRestored, false);
-    }
-  });
-  ss.setTabState(aTab, JSON.stringify(aState));
+  let promise = promiseTabRestored(tab);
+  ss.setTabState(tab, state);
+  return promise;
 }
 
 /**
@@ -293,32 +283,14 @@ let promiseForEachSessionRestoreFile = Task.async(function*(cb) {
   }
 });
 
-function whenBrowserLoaded(aBrowser, aCallback = next, ignoreSubFrames = true, expectedURL = null) {
-  aBrowser.messageManager.addMessageListener("ss-test:loadEvent", function onLoad(msg) {
-    if (expectedURL && aBrowser.currentURI.spec != expectedURL) {
-      return;
-    }
-
-    if (!ignoreSubFrames || !msg.data.subframe) {
-      aBrowser.messageManager.removeMessageListener("ss-test:loadEvent", onLoad);
-      executeSoon(aCallback);
-    }
-  });
-}
 function promiseBrowserLoaded(aBrowser, ignoreSubFrames = true) {
   return new Promise(resolve => {
-    whenBrowserLoaded(aBrowser, resolve, ignoreSubFrames);
-  });
-}
-function whenBrowserUnloaded(aBrowser, aContainer, aCallback = next) {
-  aBrowser.addEventListener("unload", function onUnload() {
-    aBrowser.removeEventListener("unload", onUnload, true);
-    executeSoon(aCallback);
-  }, true);
-}
-function promiseBrowserUnloaded(aBrowser, aContainer) {
-  return new Promise(resolve => {
-    whenBrowserUnloaded(aBrowser, aContainer, resolve);
+    aBrowser.messageManager.addMessageListener("ss-test:loadEvent", function onLoad(msg) {
+      if (!ignoreSubFrames || !msg.data.subframe) {
+        aBrowser.messageManager.removeMessageListener("ss-test:loadEvent", onLoad);
+        resolve();
+      }
+    });
   });
 }
 
@@ -332,15 +304,6 @@ function whenWindowLoaded(aWindow, aCallback = next) {
 }
 function promiseWindowLoaded(aWindow) {
   return new Promise(resolve => whenWindowLoaded(aWindow, resolve));
-}
-
-function whenTabRestored(aTab, aCallback = next) {
-  aTab.addEventListener("SSTabRestored", function onRestored(aEvent) {
-    aTab.removeEventListener("SSTabRestored", onRestored, true);
-    executeSoon(function executeWhenTabRestored() {
-      aCallback();
-    });
-  }, true);
 }
 
 var gUniqueCounter = 0;
@@ -437,13 +400,22 @@ registerCleanupFunction(function () {
   gProgressListener.unsetCallback();
 });
 
-// Close everything but our primary window. We can't use waitForFocus()
-// because apparently it's buggy. See bug 599253.
-function closeAllButPrimaryWindow() {
+// Close all but our primary window.
+function promiseAllButPrimaryWindowClosed() {
+  let windows = [];
   for (let win in BrowserWindowIterator()) {
     if (win != window) {
-      win.close();
+      windows.push(win);
     }
+  }
+
+  return Promise.all(windows.map(promiseWindowClosed));
+}
+
+// Forget all closed windows.
+function forgetClosedWindows() {
+  while (ss.getClosedWindowCount() > 0) {
+    ss.forgetClosedWindow(0);
   }
 }
 
@@ -517,63 +489,17 @@ function promiseDelayedStartupFinished(aWindow) {
   return new Promise(resolve => whenDelayedStartupFinished(aWindow, resolve));
 }
 
-/**
- * The test runner that controls the execution flow of our tests.
- */
-let TestRunner = {
-  _iter: null,
-
-  /**
-   * Holds the browser state from before we started so
-   * that we can restore it after all tests ran.
-   */
-  backupState: {},
-
-  /**
-   * Starts the test runner.
-   */
-  run: function () {
-    waitForExplicitFinish();
-
-    SessionStore.promiseInitialized.then(() => {
-      this.backupState = JSON.parse(ss.getBrowserState());
-      this._iter = runTests();
-      this.next();
-    });
-  },
-
-  /**
-   * Runs the next available test or finishes if there's no test left.
-   */
-  next: function () {
-    try {
-      TestRunner._iter.next();
-    } catch (e if e instanceof StopIteration) {
-      TestRunner.finish();
-    }
-  },
-
-  /**
-   * Finishes all tests and cleans up.
-   */
-  finish: function () {
-    closeAllButPrimaryWindow();
-    gBrowser.selectedTab = gBrowser.tabs[0];
-    waitForBrowserState(this.backupState, finish);
-  }
-};
-
-function next() {
-  TestRunner.next();
+function promiseEvent(element, eventType, isCapturing = false) {
+  return new Promise(resolve => {
+    element.addEventListener(eventType, function listener(event) {
+      element.removeEventListener(eventType, listener, isCapturing);
+      resolve(event);
+    }, isCapturing);
+  });
 }
 
 function promiseTabRestored(tab) {
-  return new Promise(resolve => {
-    tab.addEventListener("SSTabRestored", function onRestored() {
-      tab.removeEventListener("SSTabRestored", onRestored);
-      resolve();
-    });
-  });
+  return promiseEvent(tab, "SSTabRestored");
 }
 
 function sendMessage(browser, name, data = {}) {

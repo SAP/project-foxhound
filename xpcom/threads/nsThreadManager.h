@@ -14,9 +14,26 @@
 
 class nsIRunnable;
 
+namespace mozilla {
+class ReentrantMonitor;
+}
+
 class nsThreadManager : public nsIThreadManager
 {
 public:
+#ifdef MOZ_NUWA_PROCESS
+  struct ThreadStatusInfo;
+  class AllThreadsWereIdleListener {
+  public:
+    NS_INLINE_DECL_REFCOUNTING(AllThreadsWereIdleListener);
+    virtual void OnAllThreadsWereIdle() = 0;
+  protected:
+    virtual ~AllThreadsWereIdleListener()
+    {
+    }
+  };
+#endif // MOZ_NUWA_PROCESS
+
   NS_DECL_ISUPPORTS
   NS_DECL_NSITHREADMANAGER
 
@@ -54,30 +71,71 @@ public:
   {
   }
 
+#ifdef MOZ_NUWA_PROCESS
+  void SetIgnoreThreadStatus();
+
+  // |SetThreadWorking| and |SetThreadIdle| set status of thread that is
+  // currently running. They get thread status information from TLS and pass
+  // the information to |SetThreadIsWorking|.
+  void SetThreadIdle(nsIRunnable** aReturnRunnable);
+  void SetThreadWorking();
+
+  // |SetThreadIsWorking| is where is status actually changed. Thread status
+  // information is passed as a argument so caller must obtain the structure
+  // by itself. If this method is invoked on main thread, |aReturnRunnable|
+  // should be provided to receive the runnable of notifying listeners.
+  // |ResetIsDispatchingToMainThread| should be invoked after caller on main
+  // thread dispatched the task to main thread's queue.
+  void SetThreadIsWorking(ThreadStatusInfo* aInfo,
+                          bool aIsWorking,
+                          nsIRunnable** aReturnRunnable);
+  void ResetIsDispatchingToMainThread();
+
+  void AddAllThreadsWereIdleListener(AllThreadsWereIdleListener *listener);
+  void RemoveAllThreadsWereIdleListener(AllThreadsWereIdleListener *listener);
+  ThreadStatusInfo* GetCurrentThreadStatusInfo();
+#endif // MOZ_NUWA_PROCESS
+
 private:
   nsThreadManager()
     : mCurThreadIndex(0)
     , mMainPRThread(nullptr)
-    , mLock(nullptr)
+    , mLock("nsThreadManager.mLock")
     , mInitialized(false)
     , mCurrentNumberOfThreads(1)
     , mHighestNumberOfThreads(1)
+#ifdef MOZ_NUWA_PROCESS
+    , mMonitor(nullptr)
+    , mMainThreadStatusInfo(nullptr)
+    , mDispatchingToMainThread(nullptr)
+#endif
   {
   }
 
   nsRefPtrHashtable<nsPtrHashKey<PRThread>, nsThread> mThreadsByPRThread;
-  unsigned             mCurThreadIndex;  // thread-local-storage index
+  unsigned            mCurThreadIndex;  // thread-local-storage index
   nsRefPtr<nsThread>  mMainThread;
   PRThread*           mMainPRThread;
-  // This is a pointer in order to allow creating nsThreadManager from
-  // the static context in debug builds.
-  nsAutoPtr<mozilla::Mutex> mLock;  // protects tables
-  bool                mInitialized;
+  mozilla::OffTheBooksMutex mLock;  // protects tables
+  mozilla::Atomic<bool> mInitialized;
 
   // The current number of threads
   uint32_t            mCurrentNumberOfThreads;
   // The highest number of threads encountered so far during the session
   uint32_t            mHighestNumberOfThreads;
+
+#ifdef MOZ_NUWA_PROCESS
+  static void DeleteThreadStatusInfo(void *aData);
+  unsigned mThreadStatusInfoIndex;
+  nsTArray<nsRefPtr<AllThreadsWereIdleListener>> mThreadsIdledListeners;
+  nsTArray<ThreadStatusInfo*> mThreadStatusInfos;
+  mozilla::UniquePtr<mozilla::ReentrantMonitor> mMonitor;
+  ThreadStatusInfo* mMainThreadStatusInfo;
+  // |mDispatchingToMainThread| is set when all thread are found to be idle
+  // before task of notifying all listeners are dispatched to main thread.
+  // The flag is protected by |mMonitor|.
+  bool mDispatchingToMainThread;
+#endif // MOZ_NUWA_PROCESS
 };
 
 #define NS_THREADMANAGER_CID                       \

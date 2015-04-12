@@ -18,7 +18,7 @@
 #include "nsMargin.h"                   // for nsIntMargin
 #include "nsStringGlue.h"               // for nsCString
 #include "xpcom-config.h"               // for CPP_THROW_NEW
-#include "mozilla/TypedEnum.h"          // for the VisitEdges typed enum
+#include "mozilla/Move.h"               // for mozilla::Move
 
 class nsIntRegion;
 class gfx3DMatrix;
@@ -39,12 +39,12 @@ class gfx3DMatrix;
  * projects including Qt, Gtk, Wine. It should perform reasonably well.
  */
 
-MOZ_BEGIN_ENUM_CLASS(VisitSide)
+enum class VisitSide {
 	TOP,
 	BOTTOM,
 	LEFT,
 	RIGHT
-MOZ_END_ENUM_CLASS(VisitSide)
+};
 
 class nsRegionRectIterator;
 
@@ -61,6 +61,13 @@ public:
                                                                           aRect.width,
                                                                           aRect.height); }
   nsRegion (const nsRegion& aRegion) { pixman_region32_init(&mImpl); pixman_region32_copy(&mImpl,aRegion.Impl()); }
+  nsRegion (nsRegion&& aRegion) { mImpl = aRegion.mImpl; pixman_region32_init(&aRegion.mImpl); }
+  nsRegion& operator = (nsRegion&& aRegion) {
+      pixman_region32_fini(&mImpl);
+      mImpl = aRegion.mImpl;
+      pixman_region32_init(&aRegion.mImpl);
+      return *this;
+  }
  ~nsRegion () { pixman_region32_fini(&mImpl); }
   nsRegion& operator = (const nsRect& aRect) { Copy (aRect); return *this; }
   nsRegion& operator = (const nsRegion& aRegion) { Copy (aRegion); return *this; }
@@ -121,13 +128,13 @@ public:
     return Copy(TmpRect);
   }
 
-  void OrWith(const nsRegion& aOther)
+  nsRegion& OrWith(const nsRegion& aOther)
   {
-    Or(*this, aOther);
+    return Or(*this, aOther);
   }
-  void OrWith(const nsRect& aOther)
+  nsRegion& OrWith(const nsRect& aOther)
   {
-    Or(*this, aOther);
+    return Or(*this, aOther);
   }
   nsRegion& Or(const nsRegion& aRgn1, const nsRegion& aRgn2)
   {
@@ -149,13 +156,13 @@ public:
     return Or (*this, aRect2);
   }
 
-  void XorWith(const nsRegion& aOther)
+  nsRegion& XorWith(const nsRegion& aOther)
   {
-    Xor(*this, aOther);
+    return Xor(*this, aOther);
   }
-  void XorWith(const nsRect& aOther)
+  nsRegion& XorWith(const nsRect& aOther)
   {
-    Xor(*this, aOther);
+    return Xor(*this, aOther);
   }
   nsRegion& Xor(const nsRegion& aRgn1,   const nsRegion& aRgn2)
   {
@@ -182,13 +189,13 @@ public:
 
   nsRegion ToAppUnits (nscoord aAppUnitsPerPixel) const;
 
-  void SubOut(const nsRegion& aOther)
+  nsRegion& SubOut(const nsRegion& aOther)
   {
-    Sub(*this, aOther);
+    return Sub(*this, aOther);
   }
-  void SubOut(const nsRect& aOther)
+  nsRegion& SubOut(const nsRect& aOther)
   {
-    Sub(*this, aOther);
+    return Sub(*this, aOther);
   }
   nsRegion& Sub(const nsRegion& aRgn1, const nsRegion& aRgn2)
   {
@@ -461,8 +468,10 @@ public:
   nsIntRegion () {}
   MOZ_IMPLICIT nsIntRegion (const nsIntRect& aRect) : mImpl (ToRect(aRect)) {}
   nsIntRegion (const nsIntRegion& aRegion) : mImpl (aRegion.mImpl) {}
+  nsIntRegion (nsIntRegion&& aRegion) : mImpl (mozilla::Move(aRegion.mImpl)) {}
   nsIntRegion& operator = (const nsIntRect& aRect) { mImpl = ToRect (aRect); return *this; }
   nsIntRegion& operator = (const nsIntRegion& aRegion) { mImpl = aRegion.mImpl; return *this; }
+  nsIntRegion& operator = (nsIntRegion&& aRegion) { mImpl = mozilla::Move(aRegion.mImpl); return *this; }
 
   bool operator==(const nsIntRegion& aRgn) const
   {
@@ -513,13 +522,13 @@ public:
     return *this;
   }
 
-  void OrWith(const nsIntRegion& aOther)
+  nsIntRegion& OrWith(const nsIntRegion& aOther)
   {
-    Or(*this, aOther);
+    return Or(*this, aOther);
   }
-  void OrWith(const nsIntRect& aOther)
+  nsIntRegion& OrWith(const nsIntRect& aOther)
   {
-    Or(*this, aOther);
+    return Or(*this, aOther);
   }
   nsIntRegion& Or   (const nsIntRegion& aRgn1,   const nsIntRegion& aRgn2)
   {
@@ -541,13 +550,13 @@ public:
     return Or (*this, aRect2);
   }
 
-  void XorWith(const nsIntRegion& aOther)
+  nsIntRegion& XorWith(const nsIntRegion& aOther)
   {
-    Xor(*this, aOther);
+    return Xor(*this, aOther);
   }
-  void XorWith(const nsIntRect& aOther)
+  nsIntRegion& XorWith(const nsIntRect& aOther)
   {
-    Xor(*this, aOther);
+    return Xor(*this, aOther);
   }
   nsIntRegion& Xor  (const nsIntRegion& aRgn1,   const nsIntRegion& aRgn2)
   {
@@ -569,13 +578,13 @@ public:
     return Xor (*this, aRect2);
   }
 
-  void SubOut(const nsIntRegion& aOther)
+  nsIntRegion& SubOut(const nsIntRegion& aOther)
   {
-    Sub(*this, aOther);
+    return Sub(*this, aOther);
   }
-  void SubOut(const nsIntRect& aOther)
+  nsIntRegion& SubOut(const nsIntRect& aOther)
   {
-    Sub(*this, aOther);
+    return Sub(*this, aOther);
   }
   nsIntRegion& Sub  (const nsIntRegion& aRgn1,   const nsIntRegion& aRgn2)
   {

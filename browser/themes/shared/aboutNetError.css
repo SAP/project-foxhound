@@ -28,6 +28,7 @@ ul {
 }
 
 #errorPageContainer {
+  position: relative;
   min-width: 320px;
   max-width: 512px;
 }
@@ -41,6 +42,10 @@ ul {
 
 #errorTitleText:-moz-dir(rtl) {
   background-position: right 0;
+}
+
+#errorTitleText[sslv3=true] {
+  background-image: url("aboutNetError_alert.svg");
 }
 
 #errorTryAgain {
@@ -66,4 +71,82 @@ ul {
  * the button disabled as the initial state. */
 button:disabled {
   cursor: pointer;
+}
+
+div#certificateErrorReporting {
+  display: none;
+  float: right;
+  /* Align with the "Try Again" button */
+  margin-top: 24px;
+  -moz-margin-end: 24px;
+}
+
+div#certificateErrorReporting a {
+  text-decoration: none;
+}
+
+div#certificateErrorReporting a:hover {
+  text-decoration: underline;
+}
+
+span.downArrow {
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 0.6em;
+  -moz-margin-start: 0.5em;
+  transform: scaleY(0.7);
+}
+
+div#certificateErrorReportingPanel {
+  /* Hidden until the link is clicked */
+  display: none;
+  background-color: white;
+  border: 1px lightgray solid;
+  /* Don't use top padding because the default p style has top padding, and it
+   * makes the overall div look uneven */
+  padding: 0 12px 12px 12px;
+  box-shadow: 0 0 4px #ddd;
+  font-size: 0.9em;
+  position: absolute;
+  width: 75%;
+  margin-top: 10px;
+}
+
+div#certificateErrorReportingPanel:-moz-dir(ltr) {
+  left: 34%;
+}
+
+div#certificateErrorReportingPanel:-moz-dir(rtl) {
+  right: 0;
+}
+
+span#hostname {
+  font-weight: bold;
+}
+
+#automaticallyReportInFuture {
+  cursor: pointer;
+}
+
+#reportingState {
+  padding-left: 150px;
+}
+
+#reportSendingMessage {
+  position: relative;
+  display: none;
+}
+
+#reportSentMessage {
+  position: relative;
+  display: none;
+}
+
+button#reportCertificateError {
+  position: relative;
+}
+
+button#reportCertificateErrorRetry {
+  position: relative;
+  display: none;
 }

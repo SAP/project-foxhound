@@ -29,7 +29,7 @@ public:
   NS_DECL_NSIUTF8STRINGENUMERATOR
   // can't use NS_DECL_NSISTRINGENUMERATOR because they share the
   // HasMore() signature
-  NS_IMETHOD GetNext(nsAString& aResult);
+  NS_IMETHOD GetNext(nsAString& aResult) override;
 
   static EmptyEnumeratorImpl* GetInstance()
   {
@@ -96,14 +96,14 @@ NS_NewEmptyEnumerator(nsISimpleEnumerator** aResult)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class nsSingletonEnumerator MOZ_FINAL : public nsISimpleEnumerator
+class nsSingletonEnumerator final : public nsISimpleEnumerator
 {
 public:
   NS_DECL_ISUPPORTS
 
   // nsISimpleEnumerator methods
-  NS_IMETHOD HasMoreElements(bool* aResult);
-  NS_IMETHOD GetNext(nsISupports** aResult);
+  NS_IMETHOD HasMoreElements(bool* aResult) override;
+  NS_IMETHOD GetNext(nsISupports** aResult) override;
 
   explicit nsSingletonEnumerator(nsISupports* aValue);
 
@@ -111,20 +111,18 @@ private:
   ~nsSingletonEnumerator();
 
 protected:
-  nsISupports* mValue;
+  nsCOMPtr<nsISupports> mValue;
   bool mConsumed;
 };
 
 nsSingletonEnumerator::nsSingletonEnumerator(nsISupports* aValue)
   : mValue(aValue)
 {
-  NS_IF_ADDREF(mValue);
   mConsumed = (mValue ? false : true);
 }
 
 nsSingletonEnumerator::~nsSingletonEnumerator()
 {
-  NS_IF_RELEASE(mValue);
 }
 
 NS_IMPL_ISUPPORTS(nsSingletonEnumerator, nsISimpleEnumerator)
@@ -176,14 +174,14 @@ NS_NewSingletonEnumerator(nsISimpleEnumerator** aResult,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class nsUnionEnumerator MOZ_FINAL : public nsISimpleEnumerator
+class nsUnionEnumerator final : public nsISimpleEnumerator
 {
 public:
   NS_DECL_ISUPPORTS
 
   // nsISimpleEnumerator methods
-  NS_IMETHOD HasMoreElements(bool* aResult);
-  NS_IMETHOD GetNext(nsISupports** aResult);
+  NS_IMETHOD HasMoreElements(bool* aResult) override;
+  NS_IMETHOD GetNext(nsISupports** aResult) override;
 
   nsUnionEnumerator(nsISimpleEnumerator* aFirstEnumerator,
                     nsISimpleEnumerator* aSecondEnumerator);

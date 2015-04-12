@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 
@@ -18,7 +22,7 @@ public class testPictureLinkContextMenu extends ContentContextMenuTest {
         PICTURE_PAGE_URL=getAbsoluteUrl(StringHelper.ROBOCOP_PICTURE_LINK_URL);
         BLANK_PAGE_URL=getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_02_URL);
         loadAndPaint(PICTURE_PAGE_URL);
-        verifyPageTitle(PICTURE_PAGE_TITLE, PICTURE_PAGE_URL);
+        verifyUrlBarTitle(PICTURE_PAGE_URL);
 
         switchTabs(imageTitle);
         verifyContextMenuItems(photoMenuItems);

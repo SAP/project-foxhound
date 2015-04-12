@@ -269,7 +269,7 @@ NS_ProcessNextEvent(nsIThread* aThread, bool aMayWait)
 
 namespace {
 
-class nsNameThreadRunnable MOZ_FINAL : public nsIRunnable
+class nsNameThreadRunnable final : public nsIRunnable
 {
   ~nsNameThreadRunnable() {}
 
@@ -375,3 +375,11 @@ nsAutoLowPriorityIO::~nsAutoLowPriorityIO()
 #endif
 }
 
+#ifdef MOZ_NUWA_PROCESS
+#ifdef MOZILLA_INTERNAL_API
+void
+NS_SetIgnoreStatusOfCurrentThread() {
+  nsThreadManager::get()->SetIgnoreThreadStatus();
+}
+#endif // MOZILLA_INTERNAL_API
+#endif // MOZ_NUWA_PROCESS

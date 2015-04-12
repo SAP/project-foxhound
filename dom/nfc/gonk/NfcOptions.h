@@ -25,18 +25,28 @@ struct CommandOptions
 #define COPY_FIELD(prop) prop = aOther.prop;
 
 #define COPY_OPT_FIELD(prop, defaultValue)            \
-  if (aOther.prop.WasPassed()) {                      \
-    prop = aOther.prop.Value();                       \
-  } else {                                            \
-    prop = defaultValue;                              \
-  }
+  prop = aOther.prop.WasPassed() ? aOther.prop.Value() : defaultValue;
 
     COPY_FIELD(mType)
     COPY_FIELD(mRequestId)
     COPY_OPT_FIELD(mSessionId, 0)
-    COPY_OPT_FIELD(mPowerLevel, 0)
+
+    mRfState = aOther.mRfState.WasPassed() ?
+                 static_cast<int32_t>(aOther.mRfState.Value()) :
+                 0;
+
     COPY_OPT_FIELD(mTechType, 0)
     COPY_OPT_FIELD(mIsP2P, false)
+
+    mTechnology = aOther.mTechnology.WasPassed() ?
+                    static_cast<int32_t>(aOther.mTechnology.Value()) :
+                    -1;
+
+    if (aOther.mCommand.WasPassed()) {
+      dom::Uint8Array const & currentValue = aOther.mCommand.InternalValue();
+      currentValue.ComputeLengthAndData();
+      mCommand.AppendElements(currentValue.Data(), currentValue.Length());
+    }
 
     if (!aOther.mRecords.WasPassed()) {
       return;
@@ -76,37 +86,45 @@ struct CommandOptions
   nsString mType;
   int32_t mSessionId;
   nsString mRequestId;
-  int32_t mPowerLevel;
+  int32_t mRfState;
   int32_t mTechType;
   bool mIsP2P;
   nsTArray<NDEFRecordStruct> mRecords;
+  int32_t mTechnology;
+  nsTArray<uint8_t> mCommand;
 };
 
 struct EventOptions
 {
   EventOptions()
-    : mType(EmptyString()), mStatus(-1), mSessionId(-1), mRequestId(EmptyString()), mMajorVersion(-1), mMinorVersion(-1),
-      mIsReadOnly(-1), mCanBeMadeReadOnly(-1), mMaxSupportedLength(-1), mPowerLevel(-1),
+    : mType(EmptyString()), mStatus(-1), mErrorCode(-1), mSessionId(-1), mRequestId(EmptyString()),
+      mMajorVersion(-1), mMinorVersion(-1), mIsP2P(-1),
+      mTagType(-1), mMaxNDEFSize(-1), mIsReadOnly(-1), mIsFormatable(-1), mRfState(-1),
       mOriginType(-1), mOriginIndex(-1)
   {}
 
   nsString mType;
   int32_t mStatus;
+  int32_t mErrorCode;
   int32_t mSessionId;
   nsString mRequestId;
   int32_t mMajorVersion;
   int32_t mMinorVersion;
   nsTArray<uint8_t> mTechList;
+  nsTArray<uint8_t> mTagId;
+  int32_t mIsP2P;
   nsTArray<NDEFRecordStruct> mRecords;
+  int32_t mTagType;
+  int32_t mMaxNDEFSize;
   int32_t mIsReadOnly;
-  int32_t mCanBeMadeReadOnly;
-  int32_t mMaxSupportedLength;
-  int32_t mPowerLevel;
+  int32_t mIsFormatable;
+  int32_t mRfState;
 
   int32_t mOriginType;
   int32_t mOriginIndex;
   nsTArray<uint8_t> mAid;
   nsTArray<uint8_t> mPayload;
+  nsTArray<uint8_t> mResponse;
 };
 
 } // namespace mozilla

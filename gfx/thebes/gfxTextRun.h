@@ -16,6 +16,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "DrawMode.h"
 #include "harfbuzz/hb.h"
+#include "nsUnicodeScriptCodes.h"
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -27,6 +28,7 @@ class gfxUserFontSet;
 class gfxTextContextPaint;
 class nsIAtom;
 class nsILanguageAtomService;
+class gfxMissingFontRecorder;
 
 /**
  * Callback for Draw() to use when drawing text with mode
@@ -101,38 +103,41 @@ public:
 
     // Public textrun API for general use
 
-    bool IsClusterStart(uint32_t aPos) {
+    bool IsClusterStart(uint32_t aPos) const {
         NS_ASSERTION(aPos < GetLength(), "aPos out of range");
         return mCharacterGlyphs[aPos].IsClusterStart();
     }
-    bool IsLigatureGroupStart(uint32_t aPos) {
+    bool IsLigatureGroupStart(uint32_t aPos) const {
         NS_ASSERTION(aPos < GetLength(), "aPos out of range");
         return mCharacterGlyphs[aPos].IsLigatureGroupStart();
     }
-    bool CanBreakLineBefore(uint32_t aPos) {
-        NS_ASSERTION(aPos < GetLength(), "aPos out of range");
-        return mCharacterGlyphs[aPos].CanBreakBefore() ==
-            CompressedGlyph::FLAG_BREAK_TYPE_NORMAL;
+    bool CanBreakLineBefore(uint32_t aPos) const {
+        return CanBreakBefore(aPos) == CompressedGlyph::FLAG_BREAK_TYPE_NORMAL;
     }
-    bool CanHyphenateBefore(uint32_t aPos) {
-        NS_ASSERTION(aPos < GetLength(), "aPos out of range");
-        return mCharacterGlyphs[aPos].CanBreakBefore() ==
-            CompressedGlyph::FLAG_BREAK_TYPE_HYPHEN;
+    bool CanHyphenateBefore(uint32_t aPos) const {
+        return CanBreakBefore(aPos) == CompressedGlyph::FLAG_BREAK_TYPE_HYPHEN;
     }
 
-    bool CharIsSpace(uint32_t aPos) {
+    // Returns a gfxShapedText::CompressedGlyph::FLAG_BREAK_TYPE_* value
+    // as defined in gfxFont.h (may be NONE, NORMAL or HYPHEN).
+    uint8_t CanBreakBefore(uint32_t aPos) const {
+        NS_ASSERTION(aPos < GetLength(), "aPos out of range");
+        return mCharacterGlyphs[aPos].CanBreakBefore();
+    }
+
+    bool CharIsSpace(uint32_t aPos) const {
         NS_ASSERTION(aPos < GetLength(), "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsSpace();
     }
-    bool CharIsTab(uint32_t aPos) {
+    bool CharIsTab(uint32_t aPos) const {
         NS_ASSERTION(aPos < GetLength(), "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsTab();
     }
-    bool CharIsNewline(uint32_t aPos) {
+    bool CharIsNewline(uint32_t aPos) const {
         NS_ASSERTION(aPos < GetLength(), "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsNewline();
     }
-    bool CharIsLowSurrogate(uint32_t aPos) {
+    bool CharIsLowSurrogate(uint32_t aPos) const {
         NS_ASSERTION(aPos < GetLength(), "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsLowSurrogate();
     }
@@ -267,9 +272,13 @@ public:
     /**
      * Computes just the advance width for a substring.
      * Uses GetSpacing from aBreakProvider.
+     * If aSpacing is not null, the spacing attached before and after
+     * the substring would be returned in it. NOTE: the spacing is
+     * included in the advance width.
      */
     gfxFloat GetAdvanceWidth(uint32_t aStart, uint32_t aLength,
-                             PropertyProvider *aProvider);
+                             PropertyProvider *aProvider,
+                             PropertyProvider::Spacing* aSpacing = nullptr);
 
     /**
      * Clear all stored line breaks for the given range (both before and after),
@@ -303,6 +312,14 @@ public:
                                  gfxFloat *aAdvanceWidthDelta,
                                  gfxContext *aRefContext);
 
+    enum SuppressBreak {
+      eNoSuppressBreak,
+      // Measure the range of text as if there is no break before it.
+      eSuppressInitialBreak,
+      // Measure the range of text as if it contains no break
+      eSuppressAllBreaks
+    };
+
     /**
      * Finds the longest substring that will fit into the given width.
      * Uses GetHyphenationBreaks and GetSpacing from aBreakProvider.
@@ -327,10 +344,7 @@ public:
      * is up to the end of the string
      * @param aLineBreakBefore set to true if and only if there is an actual
      * line break at the start of this string.
-     * @param aSuppressInitialBreak if true, then we assume there is no possible
-     * linebreak before aStart. If false, then we will check the internal
-     * line break opportunity state before deciding whether to return 0 as the
-     * character to break before.
+     * @param aSuppressBreak what break should be suppressed.
      * @param aTrimWhitespace if non-null, then we allow a trailing run of
      * spaces to be trimmed; the width of the space(s) will not be included in
      * the measured string width for comparison with the limit aWidth, and
@@ -364,7 +378,7 @@ public:
     uint32_t BreakAndMeasureText(uint32_t aStart, uint32_t aMaxLength,
                                  bool aLineBreakBefore, gfxFloat aWidth,
                                  PropertyProvider *aProvider,
-                                 bool aSuppressInitialBreak,
+                                 SuppressBreak aSuppressBreak,
                                  gfxFloat *aTrimWhitespace,
                                  Metrics *aMetrics,
                                  gfxFont::BoundingBoxType aBoundingBoxType,
@@ -735,7 +749,7 @@ public:
 
     // Returns first valid font in the fontlist or default font.
     // Initiates userfont loads if userfont not loaded
-    virtual gfxFont* GetFirstValidFont();
+    virtual gfxFont* GetFirstValidFont(uint32_t aCh = 0x20);
 
     // Returns the first font in the font-group that has an OpenType MATH table,
     // or null if no such font is available. The GetMathConstant methods may be
@@ -760,7 +774,8 @@ public:
      * This calls FetchGlyphExtents on the textrun.
      */
     virtual gfxTextRun *MakeTextRun(const char16_t *aString, uint32_t aLength,
-                                    const Parameters *aParams, uint32_t aFlags);
+                                    const Parameters *aParams, uint32_t aFlags,
+                                    gfxMissingFontRecorder *aMFR);
     /**
      * Make a textrun for a given string.
      * If aText is not persistent (aFlags & TEXT_IS_PERSISTENT), the
@@ -768,7 +783,8 @@ public:
      * This calls FetchGlyphExtents on the textrun.
      */
     virtual gfxTextRun *MakeTextRun(const uint8_t *aString, uint32_t aLength,
-                                    const Parameters *aParams, uint32_t aFlags);
+                                    const Parameters *aParams, uint32_t aFlags,
+                                    gfxMissingFontRecorder *aMFR);
 
     /**
      * Textrun creation helper for clients that don't want to pass
@@ -778,12 +794,13 @@ public:
     gfxTextRun *MakeTextRun(const T *aString, uint32_t aLength,
                             gfxContext *aRefContext,
                             int32_t aAppUnitsPerDevUnit,
-                            uint32_t aFlags)
+                            uint32_t aFlags,
+                            gfxMissingFontRecorder *aMFR)
     {
         gfxTextRunFactory::Parameters params = {
             aRefContext, nullptr, nullptr, nullptr, 0, aAppUnitsPerDevUnit
         };
-        return MakeTextRun(aString, aLength, &params, aFlags);
+        return MakeTextRun(aString, aLength, &params, aFlags, aMFR);
     }
 
     /**
@@ -973,11 +990,12 @@ protected:
         }
 
         bool NeedsBold() const { return mNeedsBold; }
-        bool IsUserFont() const {
+        bool IsUserFontContainer() const {
             return FontEntry()->mIsUserFontContainer;
         }
         bool IsLoading() const { return mLoading; }
         bool IsInvalid() const { return mInvalid; }
+        void CheckState(bool& aSkipDrawing);
         void SetLoading(bool aIsLoading) { mLoading = aIsLoading; }
         void SetInvalid() { mInvalid = true; }
 
@@ -992,6 +1010,7 @@ protected:
             }
             mFont = aFont;
             mFontCreated = true;
+            mLoading = false;
         }
 
     private:
@@ -1057,7 +1076,11 @@ protected:
     // Get the font at index i within the fontlist.
     // Will initiate userfont load if not already loaded.
     // May return null if userfont not loaded or if font invalid
-    virtual gfxFont* GetFontAt(int32_t i);
+    virtual gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20);
+
+    // Whether there's a font loading for a given family in the fontlist
+    // for a given character
+    bool FontLoadingForFamily(gfxFontFamily* aFamily, uint32_t aCh) const;
 
     // will always return a font or force a shutdown
     gfxFont* GetDefaultFont();
@@ -1073,7 +1096,8 @@ protected:
     void InitTextRun(gfxContext *aContext,
                      gfxTextRun *aTextRun,
                      const T *aString,
-                     uint32_t aLength);
+                     uint32_t aLength,
+                     gfxMissingFontRecorder *aMFR);
 
     // InitTextRun helper to handle a single script run, by finding font ranges
     // and calling each font's InitTextRun() as appropriate
@@ -1083,7 +1107,8 @@ protected:
                        const T *aString,
                        uint32_t aScriptRunStart,
                        uint32_t aScriptRunEnd,
-                       int32_t aRunScript);
+                       int32_t aRunScript,
+                       gfxMissingFontRecorder *aMFR);
 
     // Helper for font-matching:
     // When matching the italic case, allow use of the regular face
@@ -1109,4 +1134,56 @@ protected:
 
     static nsILanguageAtomService* gLangService;
 };
+
+// A "missing font recorder" is to be used during text-run creation to keep
+// a record of any scripts encountered for which font coverage was lacking;
+// when Flush() is called, it sends a notification that front-end code can use
+// to download fonts on demand (or whatever else it wants to do).
+
+#define GFX_MISSING_FONTS_NOTIFY_PREF "gfx.missing_fonts.notify"
+
+class gfxMissingFontRecorder {
+public:
+    gfxMissingFontRecorder()
+    {
+        MOZ_COUNT_CTOR(gfxMissingFontRecorder);
+        memset(&mMissingFonts, 0, sizeof(mMissingFonts));
+    }
+
+    ~gfxMissingFontRecorder()
+    {
+#ifdef DEBUG
+        for (uint32_t i = 0; i < kNumScriptBitsWords; i++) {
+            NS_ASSERTION(mMissingFonts[i] == 0,
+                         "failed to flush the missing-font recorder");
+        }
+#endif
+        MOZ_COUNT_DTOR(gfxMissingFontRecorder);
+    }
+
+    // record this script code in our mMissingFonts bitset
+    void RecordScript(int32_t aScriptCode)
+    {
+        mMissingFonts[uint32_t(aScriptCode) >> 5] |=
+            (1 << (uint32_t(aScriptCode) & 0x1f));
+    }
+
+    // send a notification of any missing-scripts that have been
+    // recorded, and clear the mMissingFonts set for re-use
+    void Flush();
+
+    // forget any missing-scripts that have been recorded up to now;
+    // called before discarding a recorder we no longer care about
+    void Clear()
+    {
+        memset(&mMissingFonts, 0, sizeof(mMissingFonts));
+    }
+
+private:
+    // Number of 32-bit words needed for the missing-script flags
+    static const uint32_t kNumScriptBitsWords =
+        ((MOZ_NUM_SCRIPT_CODES + 31) / 32);
+    uint32_t mMissingFonts[kNumScriptBitsWords];
+};
+
 #endif

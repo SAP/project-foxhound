@@ -6,14 +6,13 @@
 
 from __future__ import unicode_literals, print_function
 
-import mozpack.path
-import logging
+import argparse
 import os
 import shutil
 import sys
 import urllib2
 
-from StringIO import StringIO
+from mozlog import structured
 
 from mozbuild.base import (
     MachCommandBase,
@@ -26,6 +25,9 @@ from mach.decorators import (
     CommandProvider,
     Command,
 )
+
+_parser = argparse.ArgumentParser()
+structured.commandline.add_logging_group(_parser)
 
 ADB_NOT_FOUND = '''
 The %s command requires the adb binary to be on your path.
@@ -45,11 +47,6 @@ if sys.version_info[0] < 3:
 else:
     unicode_type = str
 
-# Simple filter to omit the message emitted as a test file begins.
-class TestStartFilter(logging.Filter):
-    def filter(self, record):
-        return not record.params['msg'].endswith("running test ...")
-
 # This should probably be consolidated with similar classes in other test
 # runners.
 class InvalidTestPathError(Exception):
@@ -68,7 +65,9 @@ class XPCShellRunner(MozbuildObject):
     def run_test(self, test_paths, interactive=False,
                  keep_going=False, sequential=False, shuffle=False,
                  debugger=None, debuggerArgs=None, debuggerInteractive=None,
+                 jsDebugger=False, jsDebuggerPort=None,
                  rerun_failures=False, test_objects=None, verbose=False,
+                 log=None,
                  # ignore parameters from other platforms' options
                  **kwargs):
         """Runs an individual xpcshell test."""
@@ -80,13 +79,17 @@ class XPCShellRunner(MozbuildObject):
         if build_path not in sys.path:
             sys.path.append(build_path)
 
+        if not os.path.isfile(os.path.join(self.topsrcdir, 'build', 'automationutils.py')):
+            sys.path.append(os.path.join(self.topsrcdir, 'mozilla', 'build'))
+
         if test_paths == ['all']:
             self.run_suite(interactive=interactive,
                            keep_going=keep_going, shuffle=shuffle, sequential=sequential,
                            debugger=debugger, debuggerArgs=debuggerArgs,
                            debuggerInteractive=debuggerInteractive,
+                           jsDebugger=jsDebugger, jsDebuggerPort=jsDebuggerPort,
                            rerun_failures=rerun_failures,
-                           verbose=verbose)
+                           verbose=verbose, log=log)
             return
         elif test_paths:
             test_paths = [self._wrap_path_argument(p).relpath() for p in test_paths]
@@ -115,9 +118,12 @@ class XPCShellRunner(MozbuildObject):
             'debugger': debugger,
             'debuggerArgs': debuggerArgs,
             'debuggerInteractive': debuggerInteractive,
+            'jsDebugger': jsDebugger,
+            'jsDebuggerPort': jsDebuggerPort,
             'rerun_failures': rerun_failures,
             'manifest': manifest,
             'verbose': verbose,
+            'log': log,
         }
 
         return self._run_xpcshell_harness(**args)
@@ -126,17 +132,14 @@ class XPCShellRunner(MozbuildObject):
                               test_path=None, shuffle=False, interactive=False,
                               keep_going=False, sequential=False,
                               debugger=None, debuggerArgs=None, debuggerInteractive=None,
-                              rerun_failures=False, verbose=False):
+                              jsDebugger=False, jsDebuggerPort=None,
+                              rerun_failures=False, verbose=False, log=None):
 
         # Obtain a reference to the xpcshell test runner.
         import runxpcshelltests
 
-        dummy_log = StringIO()
-        xpcshell = runxpcshelltests.XPCShellTests(log=dummy_log)
+        xpcshell = runxpcshelltests.XPCShellTests(log=log)
         self.log_manager.enable_unstructured()
-
-        xpcshell_filter = TestStartFilter()
-        self.log_manager.terminal_handler.addFilter(xpcshell_filter)
 
         tests_dir = os.path.join(self.topobjdir, '_tests', 'xpcshell')
         modules_dir = os.path.join(self.topobjdir, '_tests', 'modules')
@@ -144,7 +147,6 @@ class XPCShellRunner(MozbuildObject):
         # running a single test.
         single_test = (test_path is not None or
                        (manifest and len(manifest.test_paths())==1))
-        verbose_output = verbose or single_test
         sequential = sequential or single_test
 
         args = {
@@ -160,15 +162,15 @@ class XPCShellRunner(MozbuildObject):
             'testsRootDir': tests_dir,
             'testingModulesDir': modules_dir,
             'profileName': 'firefox',
-            'verbose': test_path is not None,
+            'verbose': verbose or single_test,
             'xunitFilename': os.path.join(self.statedir, 'xpchsell.xunit.xml'),
             'xunitName': 'xpcshell',
             'pluginsPath': os.path.join(self.distdir, 'plugins'),
             'debugger': debugger,
             'debuggerArgs': debuggerArgs,
             'debuggerInteractive': debuggerInteractive,
-            'on_message': (lambda obj, msg: xpcshell.log.info(msg.decode('utf-8', 'replace'))) \
-                            if verbose_output else None,
+            'jsDebugger': jsDebugger,
+            'jsDebuggerPort': jsDebuggerPort,
         }
 
         if test_path is not None:
@@ -204,7 +206,6 @@ class XPCShellRunner(MozbuildObject):
 
         result = xpcshell.runTests(**filtered_args)
 
-        self.log_manager.terminal_handler.removeFilter(xpcshell_filter)
         self.log_manager.disable_unstructured()
 
         if not result and not xpcshell.sequential:
@@ -215,16 +216,16 @@ class XPCShellRunner(MozbuildObject):
 class AndroidXPCShellRunner(MozbuildObject):
     """Get specified DeviceManager"""
     def get_devicemanager(self, devicemanager, ip, port, remote_test_root):
-        from mozdevice import devicemanagerADB, devicemanagerSUT
+        import mozdevice
         dm = None
         if devicemanager == "adb":
             if ip:
-                dm = devicemanagerADB.DeviceManagerADB(ip, port, packageName=None, deviceRoot=remote_test_root)
+                dm = mozdevice.DroidADB(ip, port, packageName=None, deviceRoot=remote_test_root)
             else:
-                dm = devicemanagerADB.DeviceManagerADB(packageName=None, deviceRoot=remote_test_root)
+                dm = mozdevice.DroidADB(packageName=None, deviceRoot=remote_test_root)
         else:
             if ip:
-                dm = devicemanagerSUT.DeviceManagerSUT(ip, port, deviceRoot=remote_test_root)
+                dm = mozdevice.DroidSUT(ip, port, deviceRoot=remote_test_root)
             else:
                 raise Exception("You must provide a device IP to connect to via the --ip option")
         return dm
@@ -233,7 +234,7 @@ class AndroidXPCShellRunner(MozbuildObject):
     def run_test(self,
                  test_paths, keep_going,
                  devicemanager, ip, port, remote_test_root, no_setup, local_apk,
-                 test_objects=None,
+                 test_objects=None, log=None,
                  # ignore parameters from other platforms' options
                  **kwargs):
         # TODO Bug 794506 remove once mach integrates with virtualenv.
@@ -288,12 +289,8 @@ class AndroidXPCShellRunner(MozbuildObject):
             testdirs = test_paths[0]
             options.testPath = test_paths[0]
             options.verbose = True
-        dummy_log = StringIO()
-        xpcshell = remotexpcshelltests.XPCShellRemote(dm, options, args=testdirs, log=dummy_log)
-        self.log_manager.enable_unstructured()
 
-        xpcshell_filter = TestStartFilter()
-        self.log_manager.terminal_handler.addFilter(xpcshell_filter)
+        xpcshell = remotexpcshelltests.XPCShellRemote(dm, options, testdirs, log)
 
         result = xpcshell.runTests(xpcshell='xpcshell',
                       testClass=remotexpcshelltests.RemoteXPCShellTestThread,
@@ -301,8 +298,6 @@ class AndroidXPCShellRunner(MozbuildObject):
                       mobileArgs=xpcshell.mobileArgs,
                       **options.__dict__)
 
-        self.log_manager.terminal_handler.removeFilter(xpcshell_filter)
-        self.log_manager.disable_unstructured()
 
         return int(not result)
 
@@ -348,7 +343,7 @@ class B2GXPCShellRunner(MozbuildObject):
         return busybox_path
 
     def run_test(self, test_paths, b2g_home=None, busybox=None, device_name=None,
-                 test_objects=None,
+                 test_objects=None, log=None,
                  # ignore parameters from other platforms' options
                  **kwargs):
         try:
@@ -397,13 +392,7 @@ class B2GXPCShellRunner(MozbuildObject):
         if not options.busybox:
             options.busybox = self._download_busybox(b2g_home, options.emulator)
 
-        return runtestsb2g.run_remote_xpcshell(parser, options, args)
-
-def is_platform_supported(cls):
-    """Must have a Firefox, Android or B2G build."""
-    return conditions.is_android(cls) or \
-           conditions.is_b2g(cls) or \
-           conditions.is_firefox(cls)
+        return runtestsb2g.run_remote_xpcshell(parser, options, args, log)
 
 @CommandProvider
 class MachCommands(MachCommandBase):
@@ -414,8 +403,8 @@ class MachCommands(MachCommandBase):
             setattr(self, attr, getattr(context, attr, None))
 
     @Command('xpcshell-test', category='testing',
-        conditions=[is_platform_supported],
-        description='Run XPCOM Shell tests (API direct unit testing)')
+        description='Run XPCOM Shell tests (API direct unit testing)',
+        parser=_parser)
     @CommandArgument('test_paths', default='all', nargs='*', metavar='TEST',
         help='Test to run. Can be specified as a single JS file, a directory, '
              'or omitted. If omitted, the entire test suite is executed.')
@@ -431,6 +420,13 @@ class MachCommands(MachCommandBase):
                      dest = "debuggerInteractive",
                      help = "prevents the test harness from redirecting "
                             "stdout and stderr for interactive debuggers")
+    @CommandArgument("--jsdebugger", dest="jsDebugger", action="store_true",
+                     help="Waits for a devtools JS debugger to connect before "
+                          "starting the test.")
+    @CommandArgument("--jsdebugger-port", dest="jsDebuggerPort",
+                     type=int, default=6000,
+                     help="The port to listen on for a debugger connection if "
+                          "--jsdebugger is specified (default=6000).")
     @CommandArgument('--interactive', '-i', action='store_true',
         help='Open an xpcshell prompt before running tests.')
     @CommandArgument('--keep-going', '-k', action='store_true',
@@ -465,6 +461,11 @@ class MachCommands(MachCommandBase):
 
         driver = self._spawn(BuildDriver)
         driver.install_tests(remove=False)
+
+        structured.commandline.formatter_option_defaults['verbose'] = True
+        params['log'] = structured.commandline.setup_logging("XPCShellTests",
+                                                             params,
+                                                             {"mach": sys.stdout})
 
         if conditions.is_android(self):
             xpcshell = self._spawn(AndroidXPCShellRunner)

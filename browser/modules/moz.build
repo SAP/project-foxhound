@@ -5,19 +5,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
-MOCHITEST_CHROME_MANIFESTS += ['test/chrome/chrome.ini']
 XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/social/xpcshell.ini',
     'test/xpcshell/xpcshell.ini',
 ]
 
 EXTRA_JS_MODULES += [
-    'BrowserNewTabPreloader.jsm',
     'BrowserUITelemetry.jsm',
     'CastingApps.jsm',
     'Chat.jsm',
     'ContentClick.jsm',
     'ContentLinkHandler.jsm',
+    'ContentObservers.jsm',
     'ContentSearch.jsm',
     'ContentWebRTC.jsm',
     'CustomizationTabPreloader.jsm',
@@ -26,11 +25,14 @@ EXTRA_JS_MODULES += [
     'Feeds.jsm',
     'FormSubmitObserver.jsm',
     'FormValidationHandler.jsm',
+    'HiddenFrame.jsm',
     'NetworkPrioritizer.jsm',
     'offlineAppCache.jsm',
     'PanelFrame.jsm',
+    'ProcessHangMonitor.jsm',
+    'ReaderParent.jsm',
     'RemotePrompt.jsm',
-    'SharedFrame.jsm',
+    'SelfSupportBackend.jsm',
     'SitePermissions.jsm',
     'Social.jsm',
     'TabCrashReporter.jsm',
@@ -53,8 +55,11 @@ EXTRA_PP_JS_MODULES += [
     'AboutHome.jsm',
     'PluginContent.jsm',
     'RecentWindow.jsm',
-    'UITour.jsm',
     'webrtcUI.jsm',
+]
+
+EXTRA_PP_COMPONENTS += [
+    'browsermodules.manifest',
 ]
 
 if CONFIG['MOZILLA_OFFICIAL']:

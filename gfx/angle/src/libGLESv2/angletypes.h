@@ -15,6 +15,7 @@
 namespace gl
 {
 class Buffer;
+class State;
 class ProgramBinary;
 struct VertexAttribute;
 struct VertexAttribCurrentValueData;
@@ -65,6 +66,8 @@ struct Box
 
     Box() : x(0), y(0), z(0), width(0), height(0), depth(0) { }
     Box(int x_in, int y_in, int z_in, int width_in, int height_in, int depth_in) : x(x_in), y(y_in), z(z_in), width(width_in), height(height_in), depth(depth_in) { }
+    bool operator==(const Box &other) const;
+    bool operator!=(const Box &other) const;
 };
 
 struct Extents
@@ -229,8 +232,7 @@ struct VertexFormat
 
     static void GetInputLayout(VertexFormat *inputLayout,
                                ProgramBinary *programBinary,
-                               const VertexAttribute *attributes,
-                               const gl::VertexAttribCurrentValueData *currentValues);
+                               const State& currentValues);
 
     bool operator==(const VertexFormat &other) const;
     bool operator!=(const VertexFormat &other) const;

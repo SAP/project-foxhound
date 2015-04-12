@@ -21,7 +21,7 @@
         Task.spawn(function* () {
 
           Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
-          DebuggerServer.init(function () { return true; });
+          DebuggerServer.init();
           DebuggerServer.addBrowserActors();
 
           let win = yield openWebIDE();
@@ -29,17 +29,17 @@
           let fakeRuntime = {
             type: "USB",
             connect: function(connection) {
-              ok(connection, win.AppManager.connection, "connection is valid");
+              is(connection, win.AppManager.connection, "connection is valid");
               connection.host = null; // force connectPipe
               connection.connect();
               return promise.resolve();
             },
 
-            getID: function() {
+            get id() {
               return "fakeRuntime";
             },
 
-            getName: function() {
+            get name() {
               return "fakeRuntime";
             }
           };
@@ -71,7 +71,7 @@
           win.AppManager.runtimeList.usb.push(fakeRuntime);
           win.AppManager.update("runtimelist");
 
-          yield waitForUpdate(win, "list-tabs-response");
+          yield waitForUpdate(win, "runtime-apps-found");
 
           is(Object.keys(DebuggerServer._connections).length, 1, "Automatically reconnected");
 

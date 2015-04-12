@@ -6,8 +6,9 @@
 
 #include "BluetoothReplyRunnable.h"
 #include "BluetoothService.h"
-#include "BluetoothUtils.h"
 #include "DOMRequest.h"
+#include "nsIDocument.h"
+#include "nsIPrincipal.h"
 #include "nsTArrayHelpers.h"
 
 #include "mozilla/dom/BluetoothAdapter2Binding.h"
@@ -39,7 +40,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(BluetoothAdapter, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(BluetoothAdapter, DOMEventTargetHelper)
 
-class StartDiscoveryTask MOZ_FINAL : public BluetoothReplyRunnable
+class StartDiscoveryTask final : public BluetoothReplyRunnable
 {
 public:
   StartDiscoveryTask(BluetoothAdapter* aAdapter, Promise* aPromise)
@@ -77,7 +78,7 @@ public:
   }
 
   virtual void
-  ReleaseMembers() MOZ_OVERRIDE
+  ReleaseMembers() override
   {
     BluetoothReplyRunnable::ReleaseMembers();
     mAdapter = nullptr;
@@ -193,11 +194,15 @@ BluetoothAdapter::BluetoothAdapter(nsPIDOMWindow* aWindow,
   , mState(BluetoothAdapterState::Disabled)
   , mDiscoverable(false)
   , mDiscovering(false)
+  , mPairingReqs(nullptr)
   , mDiscoveryHandleInUse(nullptr)
 {
   MOZ_ASSERT(aWindow);
 
-  mPairingReqs = BluetoothPairingListener::Create(aWindow);
+  // Only allow certified bluetooth application to receive pairing requests
+  if (IsBluetoothCertifiedApp()) {
+    mPairingReqs = BluetoothPairingListener::Create(aWindow);
+  }
 
   const InfallibleTArray<BluetoothNamedValue>& values =
     aValue.get_ArrayOfBluetoothNamedValue();
@@ -275,6 +280,13 @@ BluetoothAdapter::SetPropertyByValue(const BluetoothNamedValue& aValue)
       = value.get_ArrayOfnsString();
 
     for (uint32_t i = 0; i < pairedDeviceAddresses.Length(); i++) {
+      // Check whether or not the address exists in mDevices.
+      if (mDevices.Contains(pairedDeviceAddresses[i])) {
+        // If the paired device exists in mDevices, it would handle
+        // 'PropertyChanged' signal in BluetoothDevice::Notify().
+        continue;
+      }
+
       InfallibleTArray<BluetoothNamedValue> props;
       BT_APPEND_NAMED_VALUE(props, "Address", pairedDeviceAddresses[i]);
       BT_APPEND_NAMED_VALUE(props, "Paired", true);
@@ -283,10 +295,8 @@ BluetoothAdapter::SetPropertyByValue(const BluetoothNamedValue& aValue)
       nsRefPtr<BluetoothDevice> pairedDevice =
         BluetoothDevice::Create(GetOwner(), BluetoothValue(props));
 
-      // Append to adapter's device array if the device hasn't been created
-      if (!mDevices.Contains(pairedDevice)) {
-        mDevices.AppendElement(pairedDevice);
-      }
+      // Append to adapter's device array
+      mDevices.AppendElement(pairedDevice);
     }
 
     // Retrieve device properties, result will be handled by device objects.
@@ -329,8 +339,6 @@ BluetoothAdapter::Notify(const BluetoothSignal& aData)
     if (mDiscoveryHandleInUse) {
       HandleDeviceFound(v);
     }
-  } else if (aData.name().EqualsLiteral("PairingRequest")) {
-    HandlePairingRequest(v);
   } else if (aData.name().EqualsLiteral(DEVICE_PAIRED_ID)) {
     HandleDevicePaired(aData.value());
   } else if (aData.name().EqualsLiteral(DEVICE_UNPAIRED_ID)) {
@@ -762,6 +770,23 @@ BluetoothAdapter::IsAdapterAttributeChanged(BluetoothAdapterAttribute aType,
   }
 }
 
+bool
+BluetoothAdapter::IsBluetoothCertifiedApp()
+{
+  // Retrieve the app status and origin for permission checking
+  nsCOMPtr<nsIDocument> doc = GetOwner()->GetExtantDoc();
+  NS_ENSURE_TRUE(doc, false);
+
+  uint16_t appStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
+  nsAutoCString appOrigin;
+
+  doc->NodePrincipal()->GetAppStatus(&appStatus);
+  doc->NodePrincipal()->GetOrigin(getter_Copies(appOrigin));
+
+  return appStatus == nsIPrincipal::APP_STATUS_CERTIFIED &&
+         appOrigin.EqualsLiteral(BLUETOOTH_APP_ORIGIN);
+}
+
 void
 BluetoothAdapter::SetAdapterState(BluetoothAdapterState aState)
 {
@@ -832,42 +857,6 @@ BluetoothAdapter::HandleDeviceFound(const BluetoothValue& aValue)
 }
 
 void
-BluetoothAdapter::HandlePairingRequest(const BluetoothValue& aValue)
-{
-  MOZ_ASSERT(mPairingReqs);
-  MOZ_ASSERT(aValue.type() == BluetoothValue::TArrayOfBluetoothNamedValue);
-
-  const InfallibleTArray<BluetoothNamedValue>& arr =
-    aValue.get_ArrayOfBluetoothNamedValue();
-
-  MOZ_ASSERT(arr.Length() == 3 &&
-             arr[0].value().type() == BluetoothValue::TnsString && // address
-             arr[1].value().type() == BluetoothValue::TnsString && // passkey
-             arr[2].value().type() == BluetoothValue::TnsString);  // type
-
-  nsString deviceAddress = arr[0].value().get_nsString();
-  nsString passkey = arr[1].value().get_nsString();
-  nsString type = arr[2].value().get_nsString();
-
-  // Create a temporary device with deviceAddress for searching
-  InfallibleTArray<BluetoothNamedValue> props;
-  BT_APPEND_NAMED_VALUE(props, "Address", deviceAddress);
-  nsRefPtr<BluetoothDevice> device =
-    BluetoothDevice::Create(GetOwner(), props);
-
-  // Find the remote device by address
-  size_t index = mDevices.IndexOf(device);
-  if (index == mDevices.NoIndex) {
-    BT_WARNING("Cannot find the remote device with address %s",
-               NS_ConvertUTF16toUTF8(deviceAddress).get());
-    return;
-  }
-
-  // Notify application of pairing requests
-  mPairingReqs->DispatchPairingEvent(mDevices[index], passkey, type);
-}
-
-void
 BluetoothAdapter::DispatchAttributeEvent(const nsTArray<nsString>& aTypes)
 {
   NS_ENSURE_TRUE_VOID(aTypes.Length());
@@ -901,14 +890,27 @@ BluetoothAdapter::HandleDevicePaired(const BluetoothValue& aValue)
     return;
   }
 
-  // Create paired device with 'address' and 'paired' attributes
-  nsRefPtr<BluetoothDevice> pairedDevice =
-    BluetoothDevice::Create(GetOwner(), aValue);
+  const InfallibleTArray<BluetoothNamedValue>& arr =
+    aValue.get_ArrayOfBluetoothNamedValue();
 
-  size_t index = mDevices.IndexOf(pairedDevice);
+  MOZ_ASSERT(arr.Length() == 2 &&
+             arr[0].value().type() == BluetoothValue::TnsString && // Address
+             arr[1].value().type() == BluetoothValue::Tbool);      // Paired
+  MOZ_ASSERT(!arr[0].value().get_nsString().IsEmpty() &&
+             arr[1].value().get_bool());
+
+  nsString deviceAddress = arr[0].value().get_nsString();
+
+  nsRefPtr<BluetoothDevice> pairedDevice = nullptr;
+
+  // Check whether or not the address exists in mDevices.
+  size_t index = mDevices.IndexOf(deviceAddress);
   if (index == mDevices.NoIndex) {
+    // Create a new device and append it to adapter's device array
+    pairedDevice = BluetoothDevice::Create(GetOwner(), aValue);
     mDevices.AppendElement(pairedDevice);
   } else {
+    // Use existing device
     pairedDevice = mDevices[index];
   }
 
@@ -928,19 +930,19 @@ BluetoothAdapter::HandleDeviceUnpaired(const BluetoothValue& aValue)
     return;
   }
 
-  // Create unpaired device with 'address' and 'paired' attributes
-  nsRefPtr<BluetoothDevice> unpairedDevice =
-    BluetoothDevice::Create(GetOwner(), aValue);
+  const InfallibleTArray<BluetoothNamedValue>& arr =
+    aValue.get_ArrayOfBluetoothNamedValue();
 
-  size_t index = mDevices.IndexOf(unpairedDevice);
+  MOZ_ASSERT(arr.Length() == 2 &&
+             arr[0].value().type() == BluetoothValue::TnsString && // Address
+             arr[1].value().type() == BluetoothValue::Tbool);      // Paired
+  MOZ_ASSERT(!arr[0].value().get_nsString().IsEmpty() &&
+             !arr[1].value().get_bool());
 
-  nsString deviceAddress;
-  if (index == mDevices.NoIndex) {
-    unpairedDevice->GetAddress(deviceAddress);
-  } else {
-    mDevices[index]->GetAddress(deviceAddress);
-    mDevices.RemoveElementAt(index);
-  }
+  nsString deviceAddress = arr[0].value().get_nsString();
+
+  // Remove the device with the same address
+  mDevices.RemoveElement(deviceAddress);
 
   // Notify application of unpaired device
   BluetoothDeviceEventInit init;

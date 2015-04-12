@@ -27,16 +27,16 @@ namespace android {
 
 StaticRefPtr<APZCCallbackHandler> APZCCallbackHandler::sInstance;
 
-NativePanZoomController*
-APZCCallbackHandler::SetNativePanZoomController(jobject obj)
+NativePanZoomController::LocalRef
+APZCCallbackHandler::SetNativePanZoomController(NativePanZoomController::Param obj)
 {
-    NativePanZoomController* old = mNativePanZoomController;
-    mNativePanZoomController = NativePanZoomController::Wrap(obj);
+    NativePanZoomController::LocalRef old = mNativePanZoomController;
+    mNativePanZoomController = obj;
     return old;
 }
 
 void
-APZCCallbackHandler::NotifyDefaultPrevented(const ScrollableLayerGuid& aGuid,
+APZCCallbackHandler::NotifyDefaultPrevented(uint64_t aInputBlockId,
                                             bool aDefaultPrevented)
 {
     if (!AndroidBridge::IsJavaUiThread()) {
@@ -45,14 +45,14 @@ APZCCallbackHandler::NotifyDefaultPrevented(const ScrollableLayerGuid& aGuid,
         // have to throw it onto the other thread.
         AndroidBridge::Bridge()->PostTaskToUiThread(NewRunnableMethod(
             this, &APZCCallbackHandler::NotifyDefaultPrevented,
-            aGuid, aDefaultPrevented), 0);
+            aInputBlockId, aDefaultPrevented), 0);
         return;
     }
 
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
     APZCTreeManager* controller = nsWindow::GetAPZCTreeManager();
     if (controller) {
-        controller->ContentReceivedTouch(aGuid, aDefaultPrevented);
+        controller->ContentReceivedInputBlock(aInputBlockId, aDefaultPrevented);
     }
 }
 
@@ -90,7 +90,6 @@ APZCCallbackHandler::RequestContentRepaint(const FrameMetrics& aFrameMetrics)
         if (utils && APZCCallbackHelper::HasValidPresShellId(utils, aFrameMetrics)) {
             FrameMetrics metrics = aFrameMetrics;
             APZCCallbackHelper::UpdateRootFrame(utils, metrics);
-            APZCCallbackHelper::UpdateCallbackTransform(aFrameMetrics, metrics);
         }
     } else {
         // aFrameMetrics.mIsRoot is false, so we are trying to update a subframe.
@@ -99,7 +98,6 @@ APZCCallbackHandler::RequestContentRepaint(const FrameMetrics& aFrameMetrics)
         if (content) {
             FrameMetrics newSubFrameMetrics(aFrameMetrics);
             APZCCallbackHelper::UpdateSubFrame(content, newSubFrameMetrics);
-            APZCCallbackHelper::UpdateCallbackTransform(aFrameMetrics, newSubFrameMetrics);
         }
     }
 }
@@ -137,7 +135,8 @@ APZCCallbackHandler::HandleSingleTap(const CSSPoint& aPoint,
 void
 APZCCallbackHandler::HandleLongTap(const CSSPoint& aPoint,
                                    int32_t aModifiers,
-                                   const mozilla::layers::ScrollableLayerGuid& aGuid)
+                                   const mozilla::layers::ScrollableLayerGuid& aGuid,
+                                   uint64_t aInputBlockId)
 {
     // TODO send content response back to APZC
     CSSIntPoint point = RoundedToInt(aPoint);

@@ -17,16 +17,14 @@
         <item name="android:fontFamily">sans-serif-light</item>
     </style>
 
-    <style name="Widget.ReadingListRow.ReadTime">
-        <item name="android:textStyle">italic</item>
-        <item name="android:textColor">#FF9400</item>
-        <item name="android:fontFamily">sans-serif-condensed</item>
-    </style>
-
-    <style name="OnboardStartTextAppearance.Subtext">
-        <item name="android:textSize">18sp</item>
+    <style name="TextAppearance.FirstrunTextLight">
         <item name="android:fontFamily">sans-serif-light</item>
     </style>
+
+    <style name="TextAppearance.FirstrunTextRegular">
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
     <style name="TextAppearance.UrlBar.Title" parent="TextAppearance.Small">
         <item name="android:textSize">15sp</item>
         <item name="android:fontFamily">sans-serif-light</item>

@@ -28,7 +28,7 @@ namespace dom {
 
 class MozNDEFRecordOptions;
 
-class MozNDEFRecord MOZ_FINAL : public nsISupports,
+class MozNDEFRecord final : public nsISupports,
                                 public nsWrapperCache
 {
 public:
@@ -47,7 +47,7 @@ public:
     return mWindow;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext* aCx) override;
 
   static already_AddRefed<MozNDEFRecord>
   Constructor(const GlobalObject& aGlobal,
@@ -83,8 +83,13 @@ public:
     retval.set(mPayload);
   }
 
+  uint32_t Size() const
+  {
+    return mSize;
+  }
+
 private:
-  MozNDEFRecord() MOZ_DELETE;
+  MozNDEFRecord() = delete;
   nsRefPtr<nsPIDOMWindow> mWindow;
   void HoldData();
   void DropData();
@@ -96,6 +101,7 @@ private:
   JS::Heap<JSObject*> mType;
   JS::Heap<JSObject*> mId;
   JS::Heap<JSObject*> mPayload;
+  uint32_t mSize;
 };
 
 } // namespace dom

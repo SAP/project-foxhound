@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsTextEditRules.h"
+
 #include "mozilla/Assertions.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
@@ -33,12 +35,9 @@
 #include "nsNameSpaceManager.h"
 #include "nsINode.h"
 #include "nsIPlaintextEditor.h"
-#include "nsISelection.h"
-#include "nsISelectionPrivate.h"
 #include "nsISupportsBase.h"
 #include "nsLiteralString.h"
 #include "mozilla/dom/NodeIterator.h"
-#include "nsTextEditRules.h"
 #include "nsTextEditUtils.h"
 #include "nsUnicharUtils.h"
 
@@ -117,8 +116,7 @@ nsTextEditRules::Init(nsPlaintextEditor *aEditor)
   InitFields();
 
   mEditor = aEditor;  // we hold a non-refcounted reference back to our editor
-  nsCOMPtr<nsISelection> selection;
-  mEditor->GetSelection(getter_AddRefs(selection));
+  nsRefPtr<Selection> selection = mEditor->GetSelection();
   NS_WARN_IF_FALSE(selection, "editor cannot get selection");
 
   // Put in a magic br if needed. This method handles null selection,
@@ -184,10 +182,9 @@ nsTextEditRules::BeforeEdit(EditAction action,
   mActionNesting++;
   
   // get the selection and cache the position before editing
-  nsCOMPtr<nsISelection> selection;
   NS_ENSURE_STATE(mEditor);
-  nsresult res = mEditor->GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(res, res);
+  nsRefPtr<Selection> selection = mEditor->GetSelection();
+  NS_ENSURE_STATE(selection);
 
   selection->GetAnchorNode(getter_AddRefs(mCachedSelectionNode));
   selection->GetAnchorOffset(&mCachedSelectionOffset);
@@ -208,10 +205,9 @@ nsTextEditRules::AfterEdit(EditAction action,
   nsresult res = NS_OK;
   if (!--mActionNesting)
   {
-    nsCOMPtr<nsISelection>selection;
     NS_ENSURE_STATE(mEditor);
-    res = mEditor->GetSelection(getter_AddRefs(selection));
-    NS_ENSURE_SUCCESS(res, res);
+    nsRefPtr<Selection> selection = mEditor->GetSelection();
+    NS_ENSURE_STATE(selection);
   
     NS_ENSURE_STATE(mEditor);
     res = mEditor->HandleInlineSpellCheck(action, selection,
@@ -285,7 +281,7 @@ nsTextEditRules::WillDoAction(Selection* aSelection,
 }
 
 NS_IMETHODIMP 
-nsTextEditRules::DidDoAction(nsISelection *aSelection,
+nsTextEditRules::DidDoAction(Selection* aSelection,
                              nsRulesInfo *aInfo, nsresult aResult)
 {
   NS_ENSURE_STATE(mEditor);
@@ -339,7 +335,7 @@ nsTextEditRules::DocumentIsEmpty(bool *aDocumentIsEmpty)
 
 
 nsresult
-nsTextEditRules::WillInsert(nsISelection *aSelection, bool *aCancel)
+nsTextEditRules::WillInsert(Selection* aSelection, bool* aCancel)
 {
   NS_ENSURE_TRUE(aSelection && aCancel, NS_ERROR_NULL_POINTER);
   
@@ -360,7 +356,7 @@ nsTextEditRules::WillInsert(nsISelection *aSelection, bool *aCancel)
 }
 
 nsresult
-nsTextEditRules::DidInsert(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidInsert(Selection* aSelection, nsresult aResult)
 {
   return NS_OK;
 }
@@ -416,13 +412,13 @@ nsTextEditRules::WillInsertBreak(Selection* aSelection,
 }
 
 nsresult
-nsTextEditRules::DidInsertBreak(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidInsertBreak(Selection* aSelection, nsresult aResult)
 {
   return NS_OK;
 }
 
 nsresult
-nsTextEditRules::CollapseSelectionToTrailingBRIfNeeded(nsISelection* aSelection)
+nsTextEditRules::CollapseSelectionToTrailingBRIfNeeded(Selection* aSelection)
 {
   // we only need to execute the stuff below if we are a plaintext editor.
   // html editors have a different mechanism for putting in mozBR's
@@ -470,7 +466,7 @@ nsTextEditRules::CollapseSelectionToTrailingBRIfNeeded(nsISelection* aSelection)
 }
 
 static inline already_AddRefed<nsIDOMNode>
-GetTextNode(nsISelection *selection, nsEditor *editor) {
+GetTextNode(Selection* selection, nsEditor* editor) {
   int32_t selOffset;
   nsCOMPtr<nsIDOMNode> selNode;
   nsresult res = editor->GetStartNodeAndOffset(selection, getter_AddRefs(selNode), &selOffset);
@@ -700,22 +696,21 @@ nsTextEditRules::WillInsertText(EditAction aAction,
   }
 
   // get the (collapsed) selection location
-  nsCOMPtr<nsIDOMNode> selNode;
-  int32_t selOffset;
-  NS_ENSURE_STATE(mEditor);
-  res = mEditor->GetStartNodeAndOffset(aSelection, getter_AddRefs(selNode), &selOffset);
-  NS_ENSURE_SUCCESS(res, res);
+  NS_ENSURE_STATE(aSelection->GetRangeAt(0));
+  nsCOMPtr<nsINode> selNode = aSelection->GetRangeAt(0)->GetStartParent();
+  int32_t selOffset = aSelection->GetRangeAt(0)->StartOffset();
+  NS_ENSURE_STATE(selNode);
 
   // don't put text in places that can't have it
   NS_ENSURE_STATE(mEditor);
   if (!mEditor->IsTextNode(selNode) &&
-      !mEditor->CanContainTag(selNode, nsGkAtoms::textTagName)) {
+      !mEditor->CanContainTag(*selNode, *nsGkAtoms::textTagName)) {
     return NS_ERROR_FAILURE;
   }
 
   // we need to get the doc
   NS_ENSURE_STATE(mEditor);
-  nsCOMPtr<nsIDOMDocument> doc = mEditor->GetDOMDocument();
+  nsCOMPtr<nsIDocument> doc = mEditor->GetDocument();
   NS_ENSURE_TRUE(doc, NS_ERROR_NOT_INITIALIZED);
     
   if (aAction == EditAction::insertIMEText) {
@@ -724,7 +719,7 @@ nsTextEditRules::WillInsertText(EditAction aAction,
     NS_ENSURE_SUCCESS(res, res);
   } else {
     // aAction == EditAction::insertText; find where we are
-    nsCOMPtr<nsIDOMNode> curNode = selNode;
+    nsCOMPtr<nsINode> curNode = selNode;
     int32_t curOffset = selOffset;
 
     // don't spaz my selection in subtransactions
@@ -751,8 +746,7 @@ nsTextEditRules::WillInsertText(EditAction aAction,
 }
 
 nsresult
-nsTextEditRules::DidInsertText(nsISelection *aSelection, 
-                               nsresult aResult)
+nsTextEditRules::DidInsertText(Selection* aSelection, nsresult aResult)
 {
   return DidInsert(aSelection, aResult);
 }
@@ -760,7 +754,8 @@ nsTextEditRules::DidInsertText(nsISelection *aSelection,
 
 
 nsresult
-nsTextEditRules::WillSetTextProperty(nsISelection *aSelection, bool *aCancel, bool *aHandled)
+nsTextEditRules::WillSetTextProperty(Selection* aSelection, bool* aCancel,
+                                     bool* aHandled)
 {
   if (!aSelection || !aCancel || !aHandled) 
     { return NS_ERROR_NULL_POINTER; }
@@ -773,13 +768,14 @@ nsTextEditRules::WillSetTextProperty(nsISelection *aSelection, bool *aCancel, bo
 }
 
 nsresult
-nsTextEditRules::DidSetTextProperty(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidSetTextProperty(Selection* aSelection, nsresult aResult)
 {
   return NS_OK;
 }
 
 nsresult
-nsTextEditRules::WillRemoveTextProperty(nsISelection *aSelection, bool *aCancel, bool *aHandled)
+nsTextEditRules::WillRemoveTextProperty(Selection* aSelection, bool* aCancel,
+                                        bool* aHandled)
 {
   if (!aSelection || !aCancel || !aHandled) 
     { return NS_ERROR_NULL_POINTER; }
@@ -792,7 +788,7 @@ nsTextEditRules::WillRemoveTextProperty(nsISelection *aSelection, bool *aCancel,
 }
 
 nsresult
-nsTextEditRules::DidRemoveTextProperty(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidRemoveTextProperty(Selection* aSelection, nsresult aResult)
 {
   return NS_OK;
 }
@@ -890,7 +886,7 @@ nsTextEditRules::WillDeleteSelection(Selection* aSelection,
 }
 
 nsresult
-nsTextEditRules::DidDeleteSelection(nsISelection *aSelection, 
+nsTextEditRules::DidDeleteSelection(Selection* aSelection, 
                                     nsIEditor::EDirection aCollapsedAction, 
                                     nsresult aResult)
 {
@@ -920,14 +916,13 @@ nsTextEditRules::DidDeleteSelection(nsISelection *aSelection,
   {
     // We prevent the caret from sticking on the left of prior BR
     // (i.e. the end of previous line) after this deletion.  Bug 92124
-    nsCOMPtr<nsISelectionPrivate> selPriv = do_QueryInterface(aSelection);
-    if (selPriv) res = selPriv->SetInterlinePosition(true);
+    res = aSelection->SetInterlinePosition(true);
   }
   return res;
 }
 
 nsresult
-nsTextEditRules::WillUndo(nsISelection *aSelection, bool *aCancel, bool *aHandled)
+nsTextEditRules::WillUndo(Selection* aSelection, bool* aCancel, bool* aHandled)
 {
   if (!aSelection || !aCancel || !aHandled) { return NS_ERROR_NULL_POINTER; }
   CANCEL_OPERATION_IF_READONLY_OR_DISABLED
@@ -943,7 +938,7 @@ nsTextEditRules::WillUndo(nsISelection *aSelection, bool *aCancel, bool *aHandle
  * Since undo and redo are relatively rare, it makes sense to take the (small) performance hit here.
  */
 nsresult
-nsTextEditRules::DidUndo(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidUndo(Selection* aSelection, nsresult aResult)
 {
   NS_ENSURE_TRUE(aSelection, NS_ERROR_NULL_POINTER);
   // If aResult is an error, we return it.
@@ -962,7 +957,7 @@ nsTextEditRules::DidUndo(nsISelection *aSelection, nsresult aResult)
 }
 
 nsresult
-nsTextEditRules::WillRedo(nsISelection *aSelection, bool *aCancel, bool *aHandled)
+nsTextEditRules::WillRedo(Selection* aSelection, bool* aCancel, bool* aHandled)
 {
   if (!aSelection || !aCancel || !aHandled) { return NS_ERROR_NULL_POINTER; }
   CANCEL_OPERATION_IF_READONLY_OR_DISABLED
@@ -973,7 +968,7 @@ nsTextEditRules::WillRedo(nsISelection *aSelection, bool *aCancel, bool *aHandle
 }
 
 nsresult
-nsTextEditRules::DidRedo(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidRedo(Selection* aSelection, nsresult aResult)
 {
   nsresult res = aResult;  // if aResult is an error, we return it.
   if (!aSelection) { return NS_ERROR_NULL_POINTER; }
@@ -1013,7 +1008,7 @@ nsTextEditRules::DidRedo(nsISelection *aSelection, nsresult aResult)
 }
 
 nsresult
-nsTextEditRules::WillOutputText(nsISelection *aSelection, 
+nsTextEditRules::WillOutputText(Selection* aSelection,
                                 const nsAString  *aOutputFormat,
                                 nsAString *aOutString,                                
                                 bool     *aCancel,
@@ -1046,7 +1041,7 @@ nsTextEditRules::WillOutputText(nsISelection *aSelection,
 }
 
 nsresult
-nsTextEditRules::DidOutputText(nsISelection *aSelection, nsresult aResult)
+nsTextEditRules::DidOutputText(Selection* aSelection, nsresult aResult)
 {
   return NS_OK;
 }
@@ -1132,7 +1127,7 @@ nsTextEditRules::CreateTrailingBRIfNeeded()
 }
 
 nsresult
-nsTextEditRules::CreateBogusNodeIfNeeded(nsISelection *aSelection)
+nsTextEditRules::CreateBogusNodeIfNeeded(Selection* aSelection)
 {
   NS_ENSURE_TRUE(aSelection, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(mEditor, NS_ERROR_NULL_POINTER);
@@ -1160,7 +1155,7 @@ nsTextEditRules::CreateBogusNodeIfNeeded(nsISelection *aSelection)
        bodyChild = bodyChild->GetNextSibling()) {
     if (mEditor->IsMozEditorBogusNode(bodyChild) ||
         !mEditor->IsEditable(body) || // XXX hoist out of the loop?
-        mEditor->IsEditable(bodyChild)) {
+        mEditor->IsEditable(bodyChild) || mEditor->IsBlockNode(bodyChild)) {
       return NS_OK;
     }
   }
@@ -1203,7 +1198,9 @@ nsTextEditRules::TruncateInsertionIfNeeded(Selection* aSelection,
   if (!aSelection || !aInString || !aOutString) {return NS_ERROR_NULL_POINTER;}
   
   nsresult res = NS_OK;
-  *aOutString = *aInString;
+  if (!aOutString->Assign(*aInString, mozilla::fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
   if (aTruncated) {
     *aTruncated = false;
   }
@@ -1238,6 +1235,8 @@ nsTextEditRules::TruncateInsertionIfNeeded(Selection* aSelection,
     const int32_t resultingDocLength = docLength - selectionLength - oldCompStrLength;
     if (resultingDocLength >= aMaxLength)
     {
+      // This call is guaranteed to reduce the capacity of the string, so it
+      // cannot cause an OOM.
       aOutString->Truncate();
       if (aTruncated) {
         *aTruncated = true;
@@ -1258,6 +1257,8 @@ nsTextEditRules::TruncateInsertionIfNeeded(Selection* aSelection,
         }
         // XXX What should we do if we're removing IVS and its preceding
         //     character won't be removed?
+        // This call is guaranteed to reduce the capacity of the string, so it
+        // cannot cause an OOM.
         aOutString->Truncate(newLength);
         if (aTruncated) {
           *aTruncated = true;

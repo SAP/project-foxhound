@@ -12,20 +12,17 @@
 using namespace js;
 using namespace js::jit;
 
-BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator &activations,
-                                   BailoutStack *bailout)
+BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& activations,
+                                   BailoutStack* bailout)
   : machine_(bailout->machine())
 {
-    uint8_t *sp = bailout->parentStackPointer();
+    uint8_t* sp = bailout->parentStackPointer();
     framePointer_ = sp + bailout->frameSize();
     topFrameSize_ = framePointer_ - sp;
 
-    JSScript *script = ScriptFromCalleeToken(((IonJSFrameLayout *) framePointer_)->calleeToken());
-    JitActivation *activation = activations.activation()->asJit();
-    if (activation->cx()->isForkJoinContext())
-        topIonScript_ = script->parallelIonScript();
-    else
-        topIonScript_ = script->ionScript();
+    JSScript* script = ScriptFromCalleeToken(((JitFrameLayout*) framePointer_)->calleeToken());
+    JitActivation* activation = activations.activation()->asJit();
+    topIonScript_ = script->ionScript();
 
     attachOnJitActivation(activations);
 
@@ -35,8 +32,8 @@ BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator &activations,
     }
 
     // Compute the snapshot offset from the bailout ID.
-    JSRuntime *rt = activation->compartment()->runtimeFromMainThread();
-    JitCode *code = rt->jitRuntime()->getBailoutTable(bailout->frameClass());
+    JSRuntime* rt = activation->compartment()->runtimeFromMainThread();
+    JitCode* code = rt->jitRuntime()->getBailoutTable(bailout->frameClass());
     uintptr_t tableOffset = bailout->tableOffset();
     uintptr_t tableStart = reinterpret_cast<uintptr_t>(code->raw());
 
@@ -50,8 +47,8 @@ BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator &activations,
     snapshotOffset_ = topIonScript_->bailoutToSnapshot(bailoutId);
 }
 
-BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator &activations,
-                                   InvalidationBailoutStack *bailout)
+BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& activations,
+                                   InvalidationBailoutStack* bailout)
   : machine_(bailout->machine())
 {
     framePointer_ = (uint8_t*) bailout->fp();
@@ -59,7 +56,7 @@ BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator &activations,
     topIonScript_ = bailout->ionScript();
     attachOnJitActivation(activations);
 
-    uint8_t *returnAddressToFp_ = bailout->osiPointReturnAddress();
-    const OsiIndex *osiIndex = topIonScript_->getOsiIndex(returnAddressToFp_);
+    uint8_t* returnAddressToFp_ = bailout->osiPointReturnAddress();
+    const OsiIndex* osiIndex = topIonScript_->getOsiIndex(returnAddressToFp_);
     snapshotOffset_ = osiIndex->snapshotOffset();
 }

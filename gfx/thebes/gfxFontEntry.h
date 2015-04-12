@@ -63,6 +63,11 @@ public:
         mHash(0), mBuildOnTheFly(false), mShared(false)
     { }
 
+    explicit gfxCharacterMap(const gfxSparseBitSet& aOther) :
+        gfxSparseBitSet(aOther),
+        mHash(0), mBuildOnTheFly(false), mShared(false)
+    { }
+
     void CalcHash() { mHash = GetChecksum(); }
 
     size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
@@ -158,7 +163,6 @@ public:
     }
 
     virtual bool SkipDuringSystemFallback() { return false; }
-    virtual bool TestCharacterMap(uint32_t aCh);
     nsresult InitializeUVSMap();
     uint16_t GetUVSGlyph(uint32_t aCh, uint32_t aVS);
 
@@ -302,12 +306,14 @@ public:
     private:
         hb_blob_t* mBlob;
         // not implemented:
-        AutoTable(const AutoTable&) MOZ_DELETE;
-        AutoTable& operator=(const AutoTable&) MOZ_DELETE;
+        AutoTable(const AutoTable&) = delete;
+        AutoTable& operator=(const AutoTable&) = delete;
     };
 
-    already_AddRefed<gfxFont> FindOrMakeFont(const gfxFontStyle *aStyle,
-                                             bool aNeedsBold);
+    already_AddRefed<gfxFont>
+    FindOrMakeFont(const gfxFontStyle *aStyle,
+                   bool aNeedsBold,
+                   gfxCharacterMap* aUnicodeRangeMap = nullptr);
 
     // Get an existing font table cache entry in aBlob if it has been
     // registered, or return false if not.  Callers must call
@@ -396,6 +402,8 @@ public:
     bool             mHasSpaceFeaturesKerning : 1;
     bool             mHasSpaceFeaturesNonKerning : 1;
     bool             mSkipDefaultFeatureSpaceCheck : 1;
+    bool             mSpaceGlyphIsInvisible : 1;
+    bool             mSpaceGlyphIsInvisibleInitialized : 1;
     bool             mHasGraphiteTables : 1;
     bool             mCheckedForGraphiteTables : 1;
     bool             mHasCmapTable : 1;
@@ -467,6 +475,9 @@ protected:
     GetCMAPFromFontInfo(FontInfoData *aFontInfoData,
                         uint32_t& aUVSOffset,
                         bool& aSymbolFont);
+
+    // helper for HasCharacter(), which is what client code should call
+    virtual bool TestCharacterMap(uint32_t aCh);
 
     // Font's unitsPerEm from the 'head' table, if available (will be set to
     // kInvalidUPEM for non-sfnt font formats)
@@ -682,6 +693,11 @@ public:
     gfxFontEntry *FindFontForStyle(const gfxFontStyle& aFontStyle, 
                                    bool& aNeedsSyntheticBold);
 
+    void
+    FindAllFontsForStyle(const gfxFontStyle& aFontStyle,
+                         nsTArray<gfxFontEntry*>& aFontEntryList,
+                         bool& aNeedsSyntheticBold);
+
     // checks for a matching font within the family
     // used as part of the font fallback process
     void FindFontForChar(GlobalFontMatch *aMatchData);
@@ -771,11 +787,6 @@ protected:
     virtual ~gfxFontFamily()
     {
     }
-
-    // fills in an array with weights of faces that match style,
-    // returns whether any matching entries found
-    virtual bool FindWeightsForStyle(gfxFontEntry* aFontsForWeights[],
-                                       bool anItalic, int16_t aStretch);
 
     bool ReadOtherFamilyNamesForFace(gfxPlatformFontList *aPlatformFontList,
                                      hb_blob_t           *aNameTable,

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import org.json.JSONObject;
@@ -36,14 +40,14 @@ public class testAddonManager extends PixelTest  {
         contentEventExpecter.unregisterListener();
 
         // Verify the url
-        verifyPageTitle(StringHelper.ADDONS_LABEL, aboutAddonsURL);
+        verifyUrlBarTitle(aboutAddonsURL);
 
         // Close the Add-on Manager
         mActions.sendSpecialKey(Actions.SpecialKey.BACK);
 
         // Load the about:addons page and verify it was loaded
         loadAndPaint(aboutAddonsURL);
-        verifyPageTitle(StringHelper.ADDONS_LABEL, aboutAddonsURL);
+        verifyUrlBarTitle(aboutAddonsURL);
 
         // Setup wait for tab to spawn and load
         tabEventExpecter = mActions.expectGeckoEvent("Tab:Added");
@@ -64,7 +68,7 @@ public class testAddonManager extends PixelTest  {
         verifyTabCount(2);
 
         // Verify the page was opened
-        verifyPageTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_TITLE, blankURL);
+        verifyUrlBarTitle(blankURL);
 
         // Addons Manager is not opened 2 separate times when opened from the menu
         selectMenuItem(StringHelper.ADDONS_LABEL);

@@ -14,7 +14,6 @@
 #include "WebGLRenderbuffer.h"
 #include "WebGLShader.h"
 #include "WebGLTexture.h"
-#include "WebGLUniformInfo.h"
 #include "WebGLVertexArray.h"
 #include "WebGLVertexAttribData.h"
 
@@ -99,8 +98,8 @@ bool WebGLContext::DrawArrays_check(GLint first, GLsizei count, GLsizei primcoun
 
     MakeContextCurrent();
 
-    if (mBoundFramebuffer) {
-        if (!mBoundFramebuffer->CheckAndInitializeAttachments()) {
+    if (mBoundDrawFramebuffer) {
+        if (!mBoundDrawFramebuffer->CheckAndInitializeAttachments()) {
             ErrorInvalidFramebufferOperation("%s: incomplete framebuffer", info);
             return false;
         }
@@ -280,8 +279,8 @@ WebGLContext::DrawElements_check(GLsizei count, GLenum type,
 
     MakeContextCurrent();
 
-    if (mBoundFramebuffer) {
-        if (!mBoundFramebuffer->CheckAndInitializeAttachments()) {
+    if (mBoundDrawFramebuffer) {
+        if (!mBoundDrawFramebuffer->CheckAndInitializeAttachments()) {
             ErrorInvalidFramebufferOperation("%s: incomplete framebuffer", info);
             return false;
         }
@@ -370,7 +369,7 @@ void WebGLContext::Draw_cleanup()
     UndoFakeVertexAttrib0();
     UnbindFakeBlackTextures();
 
-    if (!mBoundFramebuffer) {
+    if (!mBoundDrawFramebuffer) {
         Invalidate();
         mShouldPresent = true;
         MOZ_ASSERT(!mBackbufferNeedsClear);
@@ -388,7 +387,7 @@ void WebGLContext::Draw_cleanup()
     }
 
     // Let's check the viewport
-    const WebGLRectangleObject* rect = CurValidFBRectObject();
+    const WebGLRectangleObject* rect = CurValidDrawFBRectObject();
     if (rect) {
         if (mViewportWidth > rect->Width() ||
             mViewportHeight > rect->Height())
@@ -408,19 +407,22 @@ void WebGLContext::Draw_cleanup()
  */
 
 bool
-WebGLContext::ValidateBufferFetching(const char *info)
+WebGLContext::ValidateBufferFetching(const char* info)
 {
+    MOZ_ASSERT(mCurrentProgram);
+    // Note that mCurrentProgram->IsLinked() is NOT GUARANTEED.
+    MOZ_ASSERT(mActiveProgramLinkInfo);
+
 #ifdef DEBUG
     GLint currentProgram = 0;
     MakeContextCurrent();
     gl->fGetIntegerv(LOCAL_GL_CURRENT_PROGRAM, &currentProgram);
-    MOZ_ASSERT(GLuint(currentProgram) == mCurrentProgram->GLName(),
+    MOZ_ASSERT(GLuint(currentProgram) == mCurrentProgram->mGLName,
                "WebGL: current program doesn't agree with GL state");
 #endif
 
-    if (mBufferFetchingIsVerified) {
+    if (mBufferFetchingIsVerified)
         return true;
-    }
 
     bool hasPerVertex = false;
     uint32_t maxVertices = UINT32_MAX;
@@ -442,7 +444,7 @@ WebGLContext::ValidateBufferFetching(const char *info)
 
         // If the attrib is not in use, then we don't have to validate
         // it, just need to make sure that the binding is non-null.
-        if (!mCurrentProgram->IsAttribInUse(i))
+        if (!mActiveProgramLinkInfo->HasActiveAttrib(i))
             continue;
 
         // the base offset
@@ -499,12 +501,13 @@ WebGLVertexAttrib0Status
 WebGLContext::WhatDoesVertexAttrib0Need()
 {
     MOZ_ASSERT(mCurrentProgram);
+    MOZ_ASSERT(mActiveProgramLinkInfo);
 
     // work around Mac OSX crash, see bug 631420
 #ifdef XP_MACOSX
     if (gl->WorkAroundDriverBugs() &&
         mBoundVertexArray->IsAttribArrayEnabled(0) &&
-        !mCurrentProgram->IsAttribInUse(0))
+        !mActiveProgramLinkInfo->HasActiveAttrib(0))
     {
         return WebGLVertexAttrib0Status::EmulatedUninitializedArray;
     }
@@ -516,7 +519,7 @@ WebGLContext::WhatDoesVertexAttrib0Need()
         return WebGLVertexAttrib0Status::Default;
     }
 
-    return mCurrentProgram->IsAttribInUse(0)
+    return mActiveProgramLinkInfo->HasActiveAttrib(0)
            ? WebGLVertexAttrib0Status::EmulatedInitializedArray
            : WebGLVertexAttrib0Status::EmulatedUninitializedArray;
 }
@@ -578,7 +581,7 @@ WebGLContext::DoFakeVertexAttrib0(GLuint vertexCount)
         GetAndFlushUnderlyingGLErrors();
 
         if (mFakeVertexAttrib0BufferStatus == WebGLVertexAttrib0Status::EmulatedInitializedArray) {
-            UniquePtr<GLfloat[]> array(new ((fallible_t())) GLfloat[4 * vertexCount]);
+            UniquePtr<GLfloat[]> array(new (fallible) GLfloat[4 * vertexCount]);
             if (!array) {
                 ErrorOutOfMemory("Fake attrib0 array.");
                 return false;
@@ -622,12 +625,20 @@ WebGLContext::UndoFakeVertexAttrib0()
     if (mBoundVertexArray->HasAttrib(0) && mBoundVertexArray->mAttribs[0].buf) {
         const WebGLVertexAttribData& attrib0 = mBoundVertexArray->mAttribs[0];
         gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, attrib0.buf->GLName());
-        gl->fVertexAttribPointer(0,
-                                 attrib0.size,
-                                 attrib0.type,
-                                 attrib0.normalized,
-                                 attrib0.stride,
-                                 reinterpret_cast<const GLvoid *>(attrib0.byteOffset));
+        if (attrib0.integer) {
+            gl->fVertexAttribIPointer(0,
+                                      attrib0.size,
+                                      attrib0.type,
+                                      attrib0.stride,
+                                      reinterpret_cast<const GLvoid*>(attrib0.byteOffset));
+        } else {
+            gl->fVertexAttribPointer(0,
+                                     attrib0.size,
+                                     attrib0.type,
+                                     attrib0.normalized,
+                                     attrib0.stride,
+                                     reinterpret_cast<const GLvoid*>(attrib0.byteOffset));
+        }
     } else {
         gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, 0);
     }
@@ -735,7 +746,7 @@ WebGLContext::UnbindFakeBlackTextures()
     gl->fActiveTexture(LOCAL_GL_TEXTURE0 + mActiveTexture);
 }
 
-WebGLContext::FakeBlackTexture::FakeBlackTexture(GLContext *gl, TexTarget target, GLenum format)
+WebGLContext::FakeBlackTexture::FakeBlackTexture(GLContext* gl, TexTarget target, GLenum format)
     : mGL(gl)
     , mGLName(0)
 {

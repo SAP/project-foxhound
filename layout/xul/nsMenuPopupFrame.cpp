@@ -59,6 +59,10 @@ using namespace mozilla;
 using mozilla::dom::PopupBoxObject;
 
 int8_t nsMenuPopupFrame::sDefaultLevelIsTop = -1;
+uint32_t nsMenuPopupFrame::sTimeoutOfIncrementalSearch = 1000;
+
+const char* kPrefIncrementalSearchTimeout =
+  "ui.menu.incremental_search.timeout";
 
 // NS_NewMenuPopupFrame
 //
@@ -67,7 +71,7 @@ int8_t nsMenuPopupFrame::sDefaultLevelIsTop = -1;
 nsIFrame*
 NS_NewMenuPopupFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
-  return new (aPresShell) nsMenuPopupFrame (aPresShell, aContext);
+  return new (aPresShell) nsMenuPopupFrame(aContext);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMenuPopupFrame)
@@ -79,8 +83,8 @@ NS_QUERYFRAME_TAIL_INHERITING(nsBoxFrame)
 //
 // nsMenuPopupFrame ctor
 //
-nsMenuPopupFrame::nsMenuPopupFrame(nsIPresShell* aShell, nsStyleContext* aContext)
-  :nsBoxFrame(aShell, aContext),
+nsMenuPopupFrame::nsMenuPopupFrame(nsStyleContext* aContext)
+  :nsBoxFrame(aContext),
   mCurrentMenu(nullptr),
   mPrefSize(-1, -1),
   mLastClientOffset(0, 0),
@@ -109,8 +113,9 @@ nsMenuPopupFrame::nsMenuPopupFrame(nsIPresShell* aShell, nsStyleContext* aContex
     return;
   sDefaultLevelIsTop =
     Preferences::GetBool("ui.panel.default_level_parent", false);
+  Preferences::AddUintVarCache(&sTimeoutOfIncrementalSearch,
+                               kPrefIncrementalSearchTimeout, 1000);
 } // ctor
-
 
 void
 nsMenuPopupFrame::Init(nsIContent*       aContent,
@@ -1216,8 +1221,9 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove, bool aS
   // Relative to the screen
   parentRect.MoveBy(referenceFrame->GetScreenRectInAppUnits().TopLeft());
   // In its own app units
-  parentRect.ConvertAppUnitsRoundOut(rootPresContext->AppUnitsPerDevPixel(),
-                                     presContext->AppUnitsPerDevPixel());
+  parentRect =
+    parentRect.ConvertAppUnitsRoundOut(rootPresContext->AppUnitsPerDevPixel(),
+                                       presContext->AppUnitsPerDevPixel());
 
   // Set the popup's size to the preferred size. Below, this size will be
   // adjusted to fit on the screen or within the content area. If the anchor
@@ -1300,9 +1306,9 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove, bool aS
   else {
     // the popup is positioned at a screen coordinate.
     // first convert the screen position in mScreenXPos and mScreenYPos from
-    // CSS pixels into device pixels, ignoring any scaling as mScreenXPos and
-    // mScreenYPos are unscaled screen coordinates.
-    int32_t factor = devContext->UnscaledAppUnitsPerDevPixel();
+    // CSS pixels into device pixels, ignoring any zoom as mScreenXPos and
+    // mScreenYPos are unzoomed screen coordinates.
+    int32_t factor = devContext->AppUnitsPerDevPixelAtUnitFullZoom();
 
     // context menus should be offset by two pixels so that they don't appear
     // directly where the cursor is. Otherwise, it is too easy to have the
@@ -1313,7 +1319,7 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove, bool aS
       offsetForContextMenu = presContext->DevPixelsToAppUnits(offsetForContextMenuDev);
     }
 
-    // next, convert into app units accounting for the scaling
+    // next, convert into app units accounting for the zoom
     screenPoint.x = presContext->DevPixelsToAppUnits(
                       nsPresContext::CSSPixelsToAppUnits(mScreenXPos) / factor);
     screenPoint.y = presContext->DevPixelsToAppUnits(
@@ -1477,7 +1483,9 @@ nsMenuPopupFrame::GetConstraintRect(const nsRect& aAnchorRect,
   return screenRect;
 }
 
-void nsMenuPopupFrame::CanAdjustEdges(int8_t aHorizontalSide, int8_t aVerticalSide, nsIntPoint& aChange)
+void nsMenuPopupFrame::CanAdjustEdges(int8_t aHorizontalSide,
+                                      int8_t aVerticalSide,
+                                      LayoutDeviceIntPoint& aChange)
 {
   int8_t popupAlign(mPopupAlignment);
   if (IsDirectionRTL()) {
@@ -1507,27 +1515,32 @@ void nsMenuPopupFrame::CanAdjustEdges(int8_t aHorizontalSide, int8_t aVerticalSi
   }
 }
 
-bool nsMenuPopupFrame::ConsumeOutsideClicks()
+ConsumeOutsideClicksResult nsMenuPopupFrame::ConsumeOutsideClicks()
 {
   // If the popup has explicitly set a consume mode, honor that.
   if (mConsumeRollupEvent != PopupBoxObject::ROLLUP_DEFAULT) {
-    return (mConsumeRollupEvent == PopupBoxObject::ROLLUP_CONSUME);
+    return (mConsumeRollupEvent == PopupBoxObject::ROLLUP_CONSUME) ?
+           ConsumeOutsideClicks_True : ConsumeOutsideClicks_ParentOnly;
   }
 
   if (mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::consumeoutsideclicks,
                             nsGkAtoms::_true, eCaseMatters)) {
-    return true;
+    return ConsumeOutsideClicks_True;
   }
   if (mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::consumeoutsideclicks,
                             nsGkAtoms::_false, eCaseMatters)) {
-    return false;
+    return ConsumeOutsideClicks_ParentOnly;
+  }
+  if (mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::consumeoutsideclicks,
+                            nsGkAtoms::never, eCaseMatters)) {
+    return ConsumeOutsideClicks_Never;
   }
 
   nsCOMPtr<nsIContent> parentContent = mContent->GetParent();
   if (parentContent) {
     dom::NodeInfo *ni = parentContent->NodeInfo();
     if (ni->Equals(nsGkAtoms::menulist, kNameSpaceID_XUL)) {
-      return true;  // Consume outside clicks for combo boxes on all platforms
+      return ConsumeOutsideClicks_True;  // Consume outside clicks for combo boxes on all platforms
     }
 #if defined(XP_WIN)
     // Don't consume outside clicks for menus in Windows
@@ -1540,19 +1553,19 @@ bool nsMenuPopupFrame::ConsumeOutsideClicks()
                                      nsGkAtoms::menu, eCaseMatters) ||
           parentContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                      nsGkAtoms::menuButton, eCaseMatters)))) {
-      return false;
+      return ConsumeOutsideClicks_Never;
     }
 #endif
     if (ni->Equals(nsGkAtoms::textbox, kNameSpaceID_XUL)) {
       // Don't consume outside clicks for autocomplete widget
       if (parentContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                      nsGkAtoms::autocomplete, eCaseMatters)) {
-        return false;
+        return ConsumeOutsideClicks_Never;
       }
     }
   }
 
-  return true;
+  return ConsumeOutsideClicks_True;
 }
 
 // XXXroc this is megalame. Fossicking around for a frame of the right
@@ -1680,8 +1693,9 @@ nsMenuPopupFrame::FindMenuWithShortcut(nsIDOMKeyEvent* aKeyEvent, bool& doAction
   doAction = false;
 
   // Enumerate over our list of frames.
-  nsContainerFrame* immediateParent = PresContext()->PresShell()->
+  auto insertion = PresContext()->PresShell()->
     FrameConstructor()->GetInsertionPoint(GetContent(), nullptr);
+  nsContainerFrame* immediateParent = insertion.mParentFrame;
   if (!immediateParent)
     immediateParent = this;
 
@@ -1719,10 +1733,14 @@ nsMenuPopupFrame::FindMenuWithShortcut(nsIDOMKeyEvent* aKeyEvent, bool& doAction
   }
   else {
     char16_t uniChar = ToLowerCase(static_cast<char16_t>(charCode));
-    if (isMenu || // Menu supports only first-letter navigation
-        keyTime - lastKeyTime > INC_TYP_INTERVAL) // Interval too long, treat as new typing
+    if (isMenu) {
+      // Menu supports only first-letter navigation
       mIncrementalString = uniChar;
-    else {
+    } else if (sTimeoutOfIncrementalSearch &&
+               keyTime - lastKeyTime > sTimeoutOfIncrementalSearch) {
+      // Interval too long, treat as new typing
+      mIncrementalString = uniChar;
+    } else {
       mIncrementalString.Append(uniChar);
     }
   }

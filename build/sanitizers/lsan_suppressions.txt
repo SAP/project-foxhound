@@ -15,9 +15,6 @@ leak:nsComponentManagerImpl
 leak:mozJSComponentLoader::LoadModule
 leak:nsNativeModuleLoader::LoadModule
 
-# Bug 980109 - Freeing this properly on shutdown is hard.
-leak:profiler_init
-
 # Bug 981220 - Pixman fails to free TLS memory.
 leak:pixman_implementation_lookup_composite
 
@@ -26,6 +23,8 @@ leak:libfontconfig.so
 leak:GI___strdup
 # The symbol is really __GI___strdup, but if you have the leading _, it doesn't suppress it.
 
+# Bug 1078015 - If the process terminates during a PR_Sleep, LSAN  detects a leak
+leak:PR_Sleep
 
 ###
 ### Bug 979928 - WebRTC leaks. m2, m3.
@@ -47,7 +46,7 @@ leak:mozilla::TransportLayerDtls::Setup
 ###
 
 # Bug 981195 - Small leak in the parser. m4
-leak:TypeCompartment::fixObjectType
+leak:ObjectGroup::fixPlainObjectGroup
 
 # Bug 982111 - WebM is leaking. m1
 leak:nestegg_read_packet
@@ -92,6 +91,7 @@ leak:processInternalEntity
 ###
 
 leak:libcairo.so
+leak:libdl.so
 leak:libdricore.so
 leak:libGL.so
 leak:libglib-2.0.so

@@ -4,9 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-FAIL_ON_WARNINGS = True
-
-Program('xpcshell')
+GeckoProgram('xpcshell', linkage='dependent')
 
 SOURCES += [
     'xpcshell.cpp',
@@ -37,9 +35,4 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     RCINCLUDE = 'xpcshell.rc'
     DEFINES['_TAINT_NO_TRACK_'] = True
 
-USE_LIBS += [
-    'mozalloc',
-    'nspr',
-    'xpcomglue_s',
-    'xul',
-]
+FAIL_ON_WARNINGS = True

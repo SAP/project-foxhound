@@ -30,7 +30,7 @@
 @BINPATH@/dictionaries/*
 @BINPATH@/hyphenation/*
 
-[assets destdir="assets"]
+[assets destdir="assets/@ANDROID_CPU_ARCH@"]
 #ifndef MOZ_STATIC_JS
 @BINPATH@/@DLL_PREFIX@mozjs@DLL_SUFFIX@
 #endif
@@ -117,16 +117,17 @@
 @BINPATH@/components/autocomplete.xpt
 @BINPATH@/components/autoconfig.xpt
 @BINPATH@/components/browsercompsbase.xpt
+@BINPATH@/components/browser-element.xpt
 @BINPATH@/components/browser-feeds.xpt
 @BINPATH@/components/caps.xpt
 @BINPATH@/components/chardet.xpt
 @BINPATH@/components/chrome.xpt
 @BINPATH@/components/commandhandler.xpt
 @BINPATH@/components/commandlines.xpt
+@BINPATH@/components/compartments.xpt
 @BINPATH@/components/composer.xpt
-@BINPATH@/components/content_base.xpt
 @BINPATH@/components/content_events.xpt
-@BINPATH@/components/content_htmldoc.xpt
+@BINPATH@/components/content_geckomediaplugins.xpt
 @BINPATH@/components/content_html.xpt
 @BINPATH@/components/content_webrtc.xpt
 @BINPATH@/components/content_xslt.xpt
@@ -154,6 +155,7 @@
 @BINPATH@/components/dom_power.xpt
 @BINPATH@/components/dom_quota.xpt
 @BINPATH@/components/dom_range.xpt
+@BINPATH@/components/dom_security.xpt
 @BINPATH@/components/dom_settings.xpt
 @BINPATH@/components/dom_permissionsettings.xpt
 @BINPATH@/components/dom_sidebar.xpt
@@ -163,6 +165,7 @@
 @BINPATH@/components/dom_system.xpt
 @BINPATH@/components/dom_threads.xpt
 @BINPATH@/components/dom_traversal.xpt
+@BINPATH@/components/dom_tv.xpt
 @BINPATH@/components/dom_views.xpt
 #ifdef MOZ_WEBSPEECH
 @BINPATH@/components/dom_webspeechrecognition.xpt
@@ -173,6 +176,7 @@
 #ifdef MOZ_GAMEPAD
 @BINPATH@/components/dom_gamepad.xpt
 #endif
+@BINPATH@/components/dom_presentation.xpt
 @BINPATH@/components/downloads.xpt
 @BINPATH@/components/editor.xpt
 @BINPATH@/components/embed_base.xpt
@@ -187,7 +191,6 @@
 @BINPATH@/components/html5.xpt
 @BINPATH@/components/htmlparser.xpt
 @BINPATH@/components/imglib2.xpt
-@BINPATH@/components/imgicon.xpt
 @BINPATH@/components/inspector.xpt
 @BINPATH@/components/intl.xpt
 @BINPATH@/components/jar.xpt
@@ -281,11 +284,13 @@
 @BINPATH@/components/xpconnect.xpt
 @BINPATH@/components/xulapp.xpt
 @BINPATH@/components/xul.xpt
-@BINPATH@/components/xuldoc.xpt
 @BINPATH@/components/xultmpl.xpt
 @BINPATH@/components/zipwriter.xpt
 
 ; JavaScript components
+@BINPATH@/components/RequestSync.manifest
+@BINPATH@/components/RequestSyncManager.js
+@BINPATH@/components/RequestSyncScheduler.js
 @BINPATH@/components/ChromeNotifications.js
 @BINPATH@/components/ChromeNotifications.manifest
 @BINPATH@/components/ConsoleAPI.manifest
@@ -324,16 +329,12 @@
 @BINPATH@/components/nsLoginInfo.js
 @BINPATH@/components/nsLoginManager.js
 @BINPATH@/components/nsLoginManagerPrompter.js
-@BINPATH@/components/SiteSpecificUserAgent.js
-@BINPATH@/components/SiteSpecificUserAgent.manifest
 @BINPATH@/components/storage-mozStorage.js
 @BINPATH@/components/crypto-SDR.js
 @BINPATH@/components/jsconsole-clhandler.manifest
 @BINPATH@/components/jsconsole-clhandler.js
 @BINPATH@/components/nsHelperAppDlg.manifest
 @BINPATH@/components/nsHelperAppDlg.js
-@BINPATH@/components/nsDownloadManagerUI.manifest
-@BINPATH@/components/nsDownloadManagerUI.js
 @BINPATH@/components/NetworkGeolocationProvider.manifest
 @BINPATH@/components/NetworkGeolocationProvider.js
 @BINPATH@/components/nsSidebar.manifest
@@ -408,6 +409,8 @@
 @BINPATH@/components/Webapps.manifest
 @BINPATH@/components/AppsService.js
 @BINPATH@/components/AppsService.manifest
+@BINPATH@/components/htmlMenuBuilder.js
+@BINPATH@/components/htmlMenuBuilder.manifest
 
 @BINPATH@/components/Activities.manifest
 @BINPATH@/components/ActivitiesGlue.js
@@ -447,6 +450,12 @@
 
 @BINPATH@/components/nsAsyncShutdown.manifest
 @BINPATH@/components/nsAsyncShutdown.js
+
+@BINPATH@/components/Downloads.manifest
+@BINPATH@/components/DownloadLegacy.js
+
+@BINPATH@/components/PresentationDeviceInfoManager.manifest
+@BINPATH@/components/PresentationDeviceInfoManager.js
 
 ; Modules
 @BINPATH@/modules/*
@@ -528,7 +537,6 @@
 @BINPATH@/res/grabber.gif
 @BINPATH@/res/dtd/*
 @BINPATH@/res/html/*
-@BINPATH@/res/langGroups.properties
 @BINPATH@/res/language.properties
 @BINPATH@/res/entityTables/*
 
@@ -602,7 +610,6 @@ bin/components/@DLL_PREFIX@nkgnomevfs@DLL_SUFFIX@
 @BINPATH@/components/ContentDispatchChooser.js
 @BINPATH@/components/ContentPermissionPrompt.js
 @BINPATH@/components/DirectoryProvider.js
-@BINPATH@/components/DownloadManagerUI.js
 @BINPATH@/components/FilePicker.js
 @BINPATH@/components/HelperAppDialog.js
 @BINPATH@/components/LoginManagerPrompter.js
@@ -612,12 +619,15 @@ bin/components/@DLL_PREFIX@nkgnomevfs@DLL_SUFFIX@
 @BINPATH@/components/PromptService.js
 @BINPATH@/components/SessionStore.js
 @BINPATH@/components/Sidebar.js
+@BINPATH@/components/SiteSpecificUserAgent.js
 @BINPATH@/components/Snippets.js
 
 @BINPATH@/components/Payment.js
 @BINPATH@/components/PaymentFlowInfo.js
+@BINPATH@/components/PaymentProvider.js
 @BINPATH@/components/Payment.manifest
 @BINPATH@/components/PaymentsUI.js
+@BINPATH@/components/PaymentProviderStrategy.js
 
 #ifdef MOZ_SAFE_BROWSING
 @BINPATH@/components/SafeBrowsing.jsm

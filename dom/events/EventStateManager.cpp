@@ -191,7 +191,7 @@ GetDocumentFromWindow(nsIDOMWindow *aWindow)
 /* mozilla::UITimerCallback                                       */
 /******************************************************************/
 
-class UITimerCallback MOZ_FINAL : public nsITimerCallback
+class UITimerCallback final : public nsITimerCallback
 {
 public:
   UITimerCallback() : mPreviousCount(0) {}
@@ -265,7 +265,7 @@ EventStateManager* EventStateManager::sActiveESM = nullptr;
 nsIDocument* EventStateManager::sMouseOverDocument = nullptr;
 nsWeakFrame EventStateManager::sLastDragOverFrame = nullptr;
 LayoutDeviceIntPoint EventStateManager::sLastRefPoint = kInvalidRefPoint;
-nsIntPoint EventStateManager::sLastScreenPoint = nsIntPoint(0, 0);
+LayoutDeviceIntPoint EventStateManager::sLastScreenPoint = LayoutDeviceIntPoint(0, 0);
 LayoutDeviceIntPoint EventStateManager::sSynthCenteringPoint = kInvalidRefPoint;
 CSSIntPoint EventStateManager::sLastClientPoint = CSSIntPoint(0, 0);
 bool EventStateManager::sIsPointerLocked = false;
@@ -481,32 +481,9 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
   mCurrentTarget = aTargetFrame;
   mCurrentTargetContent = nullptr;
 
-  // Focus events don't necessarily need a frame.
-  if (NS_EVENT_NEEDS_FRAME(aEvent)) {
-    NS_ASSERTION(mCurrentTarget, "mCurrentTarget is null.  this should not happen.  see bug #13007");
-    if (!mCurrentTarget) return NS_ERROR_NULL_POINTER;
-  }
-#ifdef DEBUG
-  if (aEvent->HasDragEventMessage() && sIsPointerLocked) {
-    NS_ASSERTION(sIsPointerLocked,
-      "sIsPointerLocked is true. Drag events should be suppressed when the pointer is locked.");
-  }
-#endif
-  // Store last known screenPoint and clientPoint so pointer lock
-  // can use these values as constants.
-  WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
-  if (aEvent->mFlags.mIsTrusted &&
-      ((mouseEvent && mouseEvent->IsReal()) ||
-       aEvent->mClass == eWheelEventClass) &&
-      !sIsPointerLocked) {
-    sLastScreenPoint =
-      UIEvent::CalculateScreenPoint(aPresContext, aEvent);
-    sLastClientPoint =
-      UIEvent::CalculateClientPoint(aPresContext, aEvent, nullptr);
-  }
-
   // Do not take account NS_MOUSE_ENTER/EXIT so that loading a page
   // when user is not active doesn't change the state to active.
+  WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
   if (aEvent->mFlags.mIsTrusted &&
       ((mouseEvent && mouseEvent->IsReal() &&
         mouseEvent->message != NS_MOUSE_ENTER &&
@@ -524,11 +501,41 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     ++gMouseOrKeyboardEventCounter;
   }
 
-  *aStatus = nsEventStatus_eIgnore;
-
   WheelTransaction::OnEvent(aEvent);
 
+  // Focus events don't necessarily need a frame.
+  if (NS_EVENT_NEEDS_FRAME(aEvent)) {
+    if (!mCurrentTarget) {
+      return NS_ERROR_NULL_POINTER;
+    }
+  }
+#ifdef DEBUG
+  if (aEvent->HasDragEventMessage() && sIsPointerLocked) {
+    NS_ASSERTION(sIsPointerLocked,
+      "sIsPointerLocked is true. Drag events should be suppressed when "
+      "the pointer is locked.");
+  }
+#endif
+  // Store last known screenPoint and clientPoint so pointer lock
+  // can use these values as constants.
+  if (aEvent->mFlags.mIsTrusted &&
+      ((mouseEvent && mouseEvent->IsReal()) ||
+       aEvent->mClass == eWheelEventClass) &&
+      !sIsPointerLocked) {
+    sLastScreenPoint =
+      UIEvent::CalculateScreenPoint(aPresContext, aEvent);
+    sLastClientPoint =
+      UIEvent::CalculateClientPoint(aPresContext, aEvent, nullptr);
+  }
+
+  *aStatus = nsEventStatus_eIgnore;
+
   switch (aEvent->message) {
+  case NS_CONTEXTMENU:
+    if (sIsPointerLocked) {
+      return NS_ERROR_DOM_INVALID_STATE_ERR;
+    }
+    break;
   case NS_MOUSE_BUTTON_DOWN: {
     switch (mouseEvent->button) {
     case WidgetMouseEvent::eLeftButton:
@@ -651,8 +658,12 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       }
     }
     // then fall through...
+  case NS_KEY_BEFORE_DOWN:
   case NS_KEY_DOWN:
+  case NS_KEY_AFTER_DOWN:
+  case NS_KEY_BEFORE_UP:
   case NS_KEY_UP:
+  case NS_KEY_AFTER_UP:
     {
       nsIContent* content = GetFocusedContent();
       if (content)
@@ -733,7 +744,9 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     break;
   case NS_QUERY_EDITOR_RECT:
     {
-      // XXX remote event
+      if (RemoteQueryContentEvent(aEvent)) {
+        break;
+      }
       ContentEventHandler handler(mPresContext);
       handler.OnQueryEditorRect(aEvent->AsQueryContentEvent());
     }
@@ -810,6 +823,8 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     // through to compositionend handling
   case NS_COMPOSITION_END:
   case NS_COMPOSITION_CHANGE:
+  case NS_COMPOSITION_COMMIT_AS_IS:
+  case NS_COMPOSITION_COMMIT:
     {
       WidgetCompositionEvent* compositionEvent = aEvent->AsCompositionEvent();
       if (IsTargetCrossProcess(compositionEvent)) {
@@ -1075,8 +1090,7 @@ bool
 EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
                                              nsFrameLoader* aFrameLoader,
                                              nsEventStatus *aStatus) {
-  PBrowserParent* remoteBrowser = aFrameLoader->GetRemoteBrowser();
-  TabParent* remote = static_cast<TabParent*>(remoteBrowser);
+  TabParent* remote = TabParent::GetFrom(aFrameLoader);
   if (!remote) {
     return false;
   }
@@ -1125,24 +1139,6 @@ EventStateManager::IsRemoteTarget(nsIContent* target) {
   }
 
   return false;
-}
-
-/*static*/ LayoutDeviceIntPoint
-EventStateManager::GetChildProcessOffset(nsFrameLoader* aFrameLoader,
-                                         const WidgetEvent& aEvent)
-{
-  // The "toplevel widget" in child processes is always at position
-  // 0,0.  Map the event coordinates to match that.
-  nsIFrame* targetFrame = aFrameLoader->GetPrimaryFrameOfOwningContent();
-  if (!targetFrame) {
-    return LayoutDeviceIntPoint();
-  }
-  nsPresContext* presContext = targetFrame->PresContext();
-
-  // Find out how far we're offset from the nearest widget.
-  nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(&aEvent,
-                                                            targetFrame);
-  return LayoutDeviceIntPoint::FromAppUnitsToNearest(pt, presContext->AppUnitsPerDevPixel());
 }
 
 bool
@@ -1273,8 +1269,11 @@ EventStateManager::CreateClickHoldTimer(nsPresContext* inPresContext,
                                         nsIFrame* inDownFrame,
                                         WidgetGUIEvent* inMouseDownEvent)
 {
-  if (!inMouseDownEvent->mFlags.mIsTrusted || IsRemoteTarget(mGestureDownContent))
+  if (!inMouseDownEvent->mFlags.mIsTrusted ||
+      IsRemoteTarget(mGestureDownContent) ||
+      sIsPointerLocked) {
     return;
+  }
 
   // just to be anal (er, safe)
   if (mClickHoldTimer) {
@@ -1356,7 +1355,7 @@ EventStateManager::sClickHoldCallback(nsITimer* aTimer, void* aESM)
 void
 EventStateManager::FireContextClick()
 {
-  if (!mGestureDownContent || !mPresContext) {
+  if (!mGestureDownContent || !mPresContext || sIsPointerLocked) {
     return;
   }
 
@@ -1489,8 +1488,7 @@ EventStateManager::BeginTrackingDragGesture(nsPresContext* aPresContext,
 
   // Note that |inDownEvent| could be either a mouse down event or a
   // synthesized mouse move event.
-  mGestureDownPoint = inDownEvent->refPoint +
-    LayoutDeviceIntPoint::FromUntyped(inDownEvent->widget->WidgetToScreenOffset());
+  mGestureDownPoint = inDownEvent->refPoint + inDownEvent->widget->WidgetToScreenOffset();
 
   inDownFrame->GetContentForEvent(inDownEvent,
                                   getter_AddRefs(mGestureDownContent));
@@ -1528,8 +1526,7 @@ EventStateManager::FillInEventFromGestureDown(WidgetMouseEvent* aEvent)
   // Set the coordinates in the new event to the coordinates of
   // the old event, adjusted for the fact that the widget might be
   // different
-  aEvent->refPoint = mGestureDownPoint -
-    LayoutDeviceIntPoint::FromUntyped(aEvent->widget->WidgetToScreenOffset());
+  aEvent->refPoint = mGestureDownPoint - aEvent->widget->WidgetToScreenOffset();
   aEvent->modifiers = mGestureModifiers;
   aEvent->buttons = mGestureDownButtons;
 }
@@ -1585,8 +1582,7 @@ EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
     }
 
     // fire drag gesture if mouse has moved enough
-    LayoutDeviceIntPoint pt = aEvent->refPoint +
-      LayoutDeviceIntPoint::FromUntyped(aEvent->widget->WidgetToScreenOffset());
+    LayoutDeviceIntPoint pt = aEvent->refPoint + aEvent->widget->WidgetToScreenOffset();
     LayoutDeviceIntPoint distance = pt - mGestureDownPoint;
     if (Abs(distance.x) > AssertedCast<uint32_t>(pixelThresholdX) ||
         Abs(distance.y) > AssertedCast<uint32_t>(pixelThresholdY)) {
@@ -2013,6 +2009,7 @@ EventStateManager::DoScrollZoom(nsIFrame* aTargetFrame,
       } else {
         ChangeTextSize(change);
       }
+      EnsureDocument(mPresContext);
       nsContentUtils::DispatchChromeEvent(mDocument, static_cast<nsIDocument*>(mDocument),
                                           NS_LITERAL_STRING("ZoomChangeUsingMouseWheel"),
                                           true, true);
@@ -2565,6 +2562,16 @@ EventStateManager::DecideGestureEvent(WidgetGestureNotifyEvent* aEvent,
   for (nsIFrame* current = targetFrame; current;
        current = nsLayoutUtils::GetCrossDocParentFrame(current)) {
 
+    // e10s - mark remote content as pannable. This is a work around since
+    // we don't have access to remote frame scroll info here. Apz data may
+    // assist is solving this.
+    if (current && IsRemoteTarget(current->GetContent())) {
+      panDirection = WidgetGestureNotifyEvent::ePanBoth;
+      // We don't know when we reach bounds, so just disable feedback for now.
+      displayPanFeedback = false;
+      break;
+    }
+
     nsIAtom* currentFrameType = current->GetType();
 
     // Scrollbars should always be draggable
@@ -2657,6 +2664,67 @@ NodeAllowsClickThrough(nsINode* aNode)
   return true;
 }
 #endif
+
+void
+EventStateManager::PostHandleKeyboardEvent(WidgetKeyboardEvent* aKeyboardEvent,
+                                           nsEventStatus& aStatus,
+                                           bool dispatchedToContentProcess)
+{
+  if (aStatus == nsEventStatus_eConsumeNoDefault) {
+    return;
+  }
+
+  // XXX Currently, our automated tests don't support mKeyNameIndex.
+  //     Therefore, we still need to handle this with keyCode.
+  switch(aKeyboardEvent->keyCode) {
+    case NS_VK_TAB:
+    case NS_VK_F6:
+      // This is to prevent keyboard scrolling while alt modifier in use.
+      if (!aKeyboardEvent->IsAlt()) {
+        // Handling the tab event after it was sent to content is bad,
+        // because to the FocusManager the remote-browser looks like one
+        // element, so we would just move the focus to the next element
+        // in chrome, instead of handling it in content.
+        if (dispatchedToContentProcess)
+          break;
+
+        EnsureDocument(mPresContext);
+        nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+        if (fm && mDocument) {
+          // Shift focus forward or back depending on shift key
+          bool isDocMove =
+            aKeyboardEvent->IsControl() || aKeyboardEvent->keyCode == NS_VK_F6;
+          uint32_t dir = aKeyboardEvent->IsShift() ?
+            (isDocMove ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_BACKWARDDOC) :
+                         static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_BACKWARD)) :
+            (isDocMove ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_FORWARDDOC) :
+                         static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_FORWARD));
+          nsCOMPtr<nsIDOMElement> result;
+          fm->MoveFocus(mDocument->GetWindow(), nullptr, dir,
+                        nsIFocusManager::FLAG_BYKEY,
+                        getter_AddRefs(result));
+        }
+        aStatus = nsEventStatus_eConsumeNoDefault;
+      }
+      return;
+    case 0:
+      // We handle keys with no specific keycode value below.
+      break;
+    default:
+      return;
+  }
+
+  switch(aKeyboardEvent->mKeyNameIndex) {
+    case KEY_NAME_INDEX_ZoomIn:
+    case KEY_NAME_INDEX_ZoomOut:
+      ChangeFullZoom(
+        aKeyboardEvent->mKeyNameIndex == KEY_NAME_INDEX_ZoomIn ? 1 : -1);
+      aStatus = nsEventStatus_eConsumeNoDefault;
+      break;
+    default:
+      break;
+  }
+}
 
 nsresult
 EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
@@ -3139,9 +3207,9 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
         event.refPoint = mouseEvent->refPoint;
         if (mouseEvent->widget) {
-          event.refPoint += LayoutDeviceIntPoint::FromUntyped(mouseEvent->widget->WidgetToScreenOffset());
+          event.refPoint += mouseEvent->widget->WidgetToScreenOffset();
         }
-        event.refPoint -= LayoutDeviceIntPoint::FromUntyped(widget->WidgetToScreenOffset());
+        event.refPoint -= widget->WidgetToScreenOffset();
         event.modifiers = mouseEvent->modifiers;
         event.buttons = mouseEvent->buttons;
         event.inputSource = mouseEvent->inputSource;
@@ -3163,44 +3231,15 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
     GenerateDragDropEnterExit(presContext, aEvent->AsDragEvent());
     break;
 
+  case NS_KEY_BEFORE_UP:
   case NS_KEY_UP:
+  case NS_KEY_AFTER_UP:
     break;
 
   case NS_KEY_PRESS:
-    if (nsEventStatus_eConsumeNoDefault != *aStatus) {
+    {
       WidgetKeyboardEvent* keyEvent = aEvent->AsKeyboardEvent();
-      //This is to prevent keyboard scrolling while alt modifier in use.
-      if (!keyEvent->IsAlt()) {
-        switch(keyEvent->keyCode) {
-          case NS_VK_TAB:
-          case NS_VK_F6:
-            // Handling the tab event after it was sent to content is bad,
-            // because to the FocusManager the remote-browser looks like one
-            // element, so we would just move the focus to the next element
-            // in chrome, instead of handling it in content.
-            if (dispatchedToContentProcess)
-              break;
-
-            EnsureDocument(mPresContext);
-            nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-            if (fm && mDocument) {
-              // Shift focus forward or back depending on shift key
-              bool isDocMove =
-                keyEvent->IsControl() || keyEvent->keyCode == NS_VK_F6;
-              uint32_t dir = keyEvent->IsShift() ?
-                  (isDocMove ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_BACKWARDDOC) :
-                               static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_BACKWARD)) :
-                  (isDocMove ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_FORWARDDOC) :
-                               static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_FORWARD));
-              nsCOMPtr<nsIDOMElement> result;
-              fm->MoveFocus(mDocument->GetWindow(), nullptr, dir,
-                            nsIFocusManager::FLAG_BYKEY,
-                            getter_AddRefs(result));
-            }
-            *aStatus = nsEventStatus_eConsumeNoDefault;
-            break;
-        }
-      }
+      PostHandleKeyboardEvent(keyEvent, *aStatus, dispatchedToContentProcess);
     }
     break;
 
@@ -3975,8 +4014,7 @@ EventStateManager::GenerateMouseEnterExit(WidgetMouseEvent* aMouseEvent)
           // in the other branch here.
           sSynthCenteringPoint = center;
           aMouseEvent->widget->SynthesizeNativeMouseMove(
-            LayoutDeviceIntPoint::ToUntyped(center) +
-              aMouseEvent->widget->WidgetToScreenOffset());
+            center + aMouseEvent->widget->WidgetToScreenOffset());
         } else if (aMouseEvent->refPoint == sSynthCenteringPoint) {
           // This is the "synthetic native" event we dispatched to re-center the
           // pointer. Cancel it so we don't expose the centering move to content.
@@ -4111,8 +4149,7 @@ EventStateManager::SetPointerLock(nsIWidget* aWidget,
     sLastRefPoint = GetWindowInnerRectCenter(aElement->OwnerDoc()->GetWindow(),
                                              aWidget,
                                              mPresContext);
-    aWidget->SynthesizeNativeMouseMove(
-      LayoutDeviceIntPoint::ToUntyped(sLastRefPoint) + aWidget->WidgetToScreenOffset());
+    aWidget->SynthesizeNativeMouseMove(sLastRefPoint + aWidget->WidgetToScreenOffset());
 
     // Retarget all events to this element via capture.
     nsIPresShell::SetCapturingContent(aElement, CAPTURE_POINTERLOCK);
@@ -4127,8 +4164,7 @@ EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // pre-pointerlock position, so that the synthetic mouse event reports
     // no movement.
     sLastRefPoint = mPreLockPoint;
-    aWidget->SynthesizeNativeMouseMove(
-      LayoutDeviceIntPoint::ToUntyped(mPreLockPoint) + aWidget->WidgetToScreenOffset());
+    aWidget->SynthesizeNativeMouseMove(mPreLockPoint + aWidget->WidgetToScreenOffset());
 
     // Don't retarget events to this element any more.
     nsIPresShell::SetCapturingContent(nullptr, CAPTURE_POINTERLOCK);
@@ -4389,6 +4425,14 @@ EventStateManager::CheckForAndDispatchClick(nsPresContext* aPresContext,
     nsCOMPtr<nsIPresShell> presShell = mPresContext->GetPresShell();
     if (presShell) {
       nsCOMPtr<nsIContent> mouseContent = GetEventTargetContent(aEvent);
+      // Click events apply to *elements* not nodes. At this point the target
+      // content may have been reset to some non-element content, and so we need
+      // to walk up the closest ancestor element, just like we do in
+      // nsPresShell::HandlePositionedEvent.
+      while (mouseContent && !mouseContent->IsElement()) {
+        mouseContent = mouseContent->GetParent();
+      }
+
       if (!mouseContent && !mCurrentTarget) {
         return NS_OK;
       }
@@ -4642,6 +4686,11 @@ EventStateManager::SetContentState(nsIContent* aContent, EventStates aState)
     }
 
     if (aState == NS_EVENT_STATE_ACTIVE) {
+      // Editable content can never become active since their default actions
+      // are disabled.
+      if (aContent && aContent->IsEditable()) {
+        aContent = nullptr;
+      }
       if (aContent != mActiveContent) {
         notifyContent1 = aContent;
         notifyContent2 = mActiveContent;
@@ -5437,6 +5486,12 @@ EventStateManager::WheelPrefs::NeedToComputeLineOrPageDelta(
 }
 
 bool
+EventStateManager::WheelEventIsScrollAction(WidgetWheelEvent* aEvent)
+{
+  return WheelPrefs::GetInstance()->ComputeActionFor(aEvent) == WheelPrefs::ACTION_SCROLL;
+}
+
+bool
 EventStateManager::WheelPrefs::IsOverOnePageScrollAllowedX(
                                  WidgetWheelEvent* aEvent)
 {
@@ -5470,10 +5525,18 @@ int32_t EventStateManager::Prefs::sContentAccessModifierMask = 0;
 void
 EventStateManager::Prefs::Init()
 {
-  DebugOnly<nsresult> rv =
-    Preferences::AddBoolVarCache(&sKeyCausesActivation,
-                                 "accessibility.accesskeycausesactivation",
-                                 sKeyCausesActivation);
+  DebugOnly<nsresult> rv = Preferences::RegisterCallback(OnChange, "dom.popup_allowed_events");
+  MOZ_ASSERT(NS_SUCCEEDED(rv),
+             "Failed to observe \"dom.popup_allowed_events\"");
+
+  static bool sPrefsAlreadyCached = false;
+  if (sPrefsAlreadyCached) {
+    return;
+  }
+
+  rv = Preferences::AddBoolVarCache(&sKeyCausesActivation,
+                                    "accessibility.accesskeycausesactivation",
+                                    sKeyCausesActivation);
   MOZ_ASSERT(NS_SUCCEEDED(rv),
              "Failed to observe \"accessibility.accesskeycausesactivation\"");
   rv = Preferences::AddBoolVarCache(&sClickHoldContextMenu,
@@ -5496,10 +5559,7 @@ EventStateManager::Prefs::Init()
                                    sContentAccessModifierMask);
   MOZ_ASSERT(NS_SUCCEEDED(rv),
              "Failed to observe \"ui.key.contentAccess\"");
-
-  rv = Preferences::RegisterCallback(OnChange, "dom.popup_allowed_events");
-  MOZ_ASSERT(NS_SUCCEEDED(rv),
-             "Failed to observe \"dom.popup_allowed_events\"");
+  sPrefsAlreadyCached = true;
 }
 
 // static

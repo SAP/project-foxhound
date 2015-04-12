@@ -18,24 +18,31 @@
   // 1.1 Panel
   var PanelView = loop.panel.PanelView;
   // 1.2. Conversation Window
-  var IncomingCallView = loop.conversation.IncomingCallView;
+  var IncomingCallView = loop.conversationViews.IncomingCallView;
   var DesktopPendingConversationView = loop.conversationViews.PendingConversationView;
   var CallFailedView = loop.conversationViews.CallFailedView;
+  var DesktopRoomConversationView = loop.roomViews.DesktopRoomConversationView;
 
   // 2. Standalone webapp
   var HomeView = loop.webapp.HomeView;
   var UnsupportedBrowserView  = loop.webapp.UnsupportedBrowserView;
   var UnsupportedDeviceView   = loop.webapp.UnsupportedDeviceView;
   var CallUrlExpiredView      = loop.webapp.CallUrlExpiredView;
-  var PendingConversationView = loop.webapp.PendingConversationView;
+  var GumPromptConversationView = loop.webapp.GumPromptConversationView;
+  var WaitingConversationView = loop.webapp.WaitingConversationView;
   var StartConversationView   = loop.webapp.StartConversationView;
   var FailedConversationView  = loop.webapp.FailedConversationView;
   var EndedConversationView   = loop.webapp.EndedConversationView;
+  var StandaloneRoomView      = loop.standaloneRoomViews.StandaloneRoomView;
 
   // 3. Shared components
   var ConversationToolbar = loop.shared.views.ConversationToolbar;
   var ConversationView = loop.shared.views.ConversationView;
   var FeedbackView = loop.shared.views.FeedbackView;
+
+  // Store constants
+  var ROOM_STATES = loop.store.ROOM_STATES;
+  var FEEDBACK_STATES = loop.store.FEEDBACK_STATES;
 
   // Local helpers
   function returnTrue() {
@@ -57,12 +64,27 @@
   );
 
   var dispatcher = new loop.Dispatcher();
-  var roomListStore = new loop.store.RoomListStore({
-    dispatcher: dispatcher,
-    mozLoop: {}
+  var activeRoomStore = new loop.store.ActiveRoomStore(dispatcher, {
+    mozLoop: navigator.mozLoop,
+    sdkDriver: {}
+  });
+  var roomStore = new loop.store.RoomStore(dispatcher, {
+    mozLoop: navigator.mozLoop
+  });
+  var feedbackStore = new loop.store.FeedbackStore(dispatcher, {
+    feedbackClient: stageFeedbackApiClient
+  });
+  var conversationStore = new loop.store.ConversationStore(dispatcher, {
+    client: {},
+    mozLoop: navigator.mozLoop,
+    sdkDriver: {}
   });
 
+  loop.store.StoreMixin.register({feedbackStore: feedbackStore});
+
   // Local mocks
+
+  var mockMozLoopRooms = _.extend({}, navigator.mozLoop);
 
   var mockContact = {
     name: ["Mr Smith"],
@@ -72,7 +94,6 @@
   };
 
   var mockClient = {
-    requestCallUrl: noop,
     requestCallUrlInfo: noop
   };
 
@@ -101,6 +122,60 @@
     detailsButtonLabel: "Retry",
   });
 
+  var SVGIcon = React.createClass({
+    render: function() {
+      var sizeUnit = this.props.size.split("x")[0] + "px";
+      return (
+        <span className="svg-icon" style={{
+          "backgroundImage": "url(../content/shared/img/icons-" + this.props.size +
+                              ".svg#" + this.props.shapeId + ")",
+          "backgroundSize": sizeUnit + " " + sizeUnit
+        }} />
+      );
+    }
+  });
+
+  var SVGIcons = React.createClass({
+    shapes: {
+      "10x10": ["close", "close-active", "close-disabled", "dropdown",
+        "dropdown-white", "dropdown-active", "dropdown-disabled", "expand",
+        "expand-active", "expand-disabled", "minimize", "minimize-active",
+        "minimize-disabled"
+      ],
+      "14x14": ["audio", "audio-active", "audio-disabled", "facemute",
+        "facemute-active", "facemute-disabled", "hangup", "hangup-active",
+        "hangup-disabled", "incoming", "incoming-active", "incoming-disabled",
+        "link", "link-active", "link-disabled", "mute", "mute-active",
+        "mute-disabled", "pause", "pause-active", "pause-disabled", "video",
+        "video-white", "video-active", "video-disabled", "volume", "volume-active",
+        "volume-disabled"
+      ],
+      "16x16": ["audio", "audio-hover", "audio-active", "block", "block-red",
+        "block-hover", "block-active", "contacts", "contacts-hover", "contacts-active",
+        "copy", "checkmark", "google", "google-hover", "google-active", "history",
+        "history-hover", "history-active", "leave", "precall", "precall-hover",
+        "precall-active", "screen-white", "screenmute-white", "settings",
+        "settings-hover", "settings-active", "tag", "tag-hover", "tag-active",
+        "trash", "unblock", "unblock-hover", "unblock-active", "video", "video-hover",
+        "video-active", "tour"
+      ]
+    },
+
+    render: function() {
+      var icons = this.shapes[this.props.size].map(function(shapeId, i) {
+        return (
+          <li key={this.props.size + "-" + i} className="svg-icon-entry">
+            <p><SVGIcon shapeId={shapeId} size={this.props.size} /></p>
+            <p>{shapeId}</p>
+          </li>
+        );
+      }, this);
+      return (
+        <ul className="svg-icon-list">{icons}</ul>
+      );
+    }
+  });
+
   var Example = React.createClass({
     makeId: function(prefix) {
       return (prefix || "") + this.props.summary.toLowerCase().replace(/\s/g, "-");
@@ -115,7 +190,7 @@
             <a href={this.makeId("#")}>&nbsp;¶</a>
           </h3>
           <div className={cx({comp: true, dashed: this.props.dashed})}
-               style={this.props.style || {}}>
+               style={this.props.style}>
             {this.props.children}
           </div>
         </div>
@@ -126,7 +201,7 @@
   var Section = React.createClass({
     render: function() {
       return (
-        <section id={this.props.name}>
+        <section id={this.props.name} className={this.props.className}>
           <h1>{this.props.name}</h1>
           {this.props.children}
         </section>
@@ -164,47 +239,50 @@
             <p className="note">
               <strong>Note:</strong> 332px wide.
             </p>
-            <Example summary="Call URL retrieved" dashed="true" style={{width: "332px"}}>
-              <PanelView client={mockClient} notifications={notifications}
-                         callUrl="http://invalid.example.url/"
-                         dispatcher={dispatcher}
-                         roomListStore={roomListStore} />
-            </Example>
-            <Example summary="Call URL retrieved - authenticated" dashed="true" style={{width: "332px"}}>
-              <PanelView client={mockClient} notifications={notifications}
-                         callUrl="http://invalid.example.url/"
-                         userProfile={{email: "test@example.com"}}
-                         dispatcher={dispatcher}
-                         roomListStore={roomListStore} />
-            </Example>
-            <Example summary="Pending call url retrieval" dashed="true" style={{width: "332px"}}>
-              <PanelView client={mockClient} notifications={notifications}
-                         dispatcher={dispatcher}
-                         roomListStore={roomListStore} />
-            </Example>
-            <Example summary="Pending call url retrieval - authenticated" dashed="true" style={{width: "332px"}}>
+            <Example summary="Room list tab" dashed="true" style={{width: "332px"}}>
               <PanelView client={mockClient} notifications={notifications}
                          userProfile={{email: "test@example.com"}}
+                         mozLoop={mockMozLoopRooms}
                          dispatcher={dispatcher}
-                         roomListStore={roomListStore} />
+                         roomStore={roomStore}
+                         selectedTab="rooms" />
+            </Example>
+            <Example summary="Contact list tab" dashed="true" style={{width: "332px"}}>
+              <PanelView client={mockClient} notifications={notifications}
+                         userProfile={{email: "test@example.com"}}
+                         mozLoop={mockMozLoopRooms}
+                         dispatcher={dispatcher}
+                         roomStore={roomStore}
+                         selectedTab="contacts" />
             </Example>
             <Example summary="Error Notification" dashed="true" style={{width: "332px"}}>
               <PanelView client={mockClient} notifications={errNotifications}
+                         mozLoop={navigator.mozLoop}
                          dispatcher={dispatcher}
-                         roomListStore={roomListStore} />
+                         roomStore={roomStore} />
             </Example>
             <Example summary="Error Notification - authenticated" dashed="true" style={{width: "332px"}}>
               <PanelView client={mockClient} notifications={errNotifications}
                          userProfile={{email: "test@example.com"}}
+                         mozLoop={navigator.mozLoop}
                          dispatcher={dispatcher}
-                         roomListStore={roomListStore} />
+                         roomStore={roomStore} />
             </Example>
-            <Example summary="Room list tab" dashed="true" style={{width: "332px"}}>
-              <PanelView client={mockClient} notifications={notifications}
+            <Example summary="Contact import success" dashed="true" style={{width: "332px"}}>
+              <PanelView notifications={new loop.shared.models.NotificationCollection([{level: "success", message: "Import success"}])}
                          userProfile={{email: "test@example.com"}}
+                         mozLoop={mockMozLoopRooms}
                          dispatcher={dispatcher}
-                         roomListStore={roomListStore}
-                         selectedTab="rooms" />
+                         roomStore={roomStore}
+                         selectedTab="contacts" />
+            </Example>
+            <Example summary="Contact import error" dashed="true" style={{width: "332px"}}>
+              <PanelView notifications={new loop.shared.models.NotificationCollection([{level: "error", message: "Import error"}])}
+                         userProfile={{email: "test@example.com"}}
+                         mozLoop={mockMozLoopRooms}
+                         dispatcher={dispatcher}
+                         roomStore={roomStore}
+                         selectedTab="contacts" />
             </Example>
           </Section>
 
@@ -279,16 +357,24 @@
             </div>
           </Section>
 
-          <Section name="PendingConversationView">
-            <Example summary="Pending conversation view (connecting)" dashed="true">
+          <Section name="GumPromptConversationView">
+            <Example summary="Gum Prompt conversation view" dashed="true">
               <div className="standalone">
-                <PendingConversationView websocket={mockWebSocket}
+                <GumPromptConversationView />
+              </div>
+            </Example>
+          </Section>
+
+          <Section name="WaitingConversationView">
+            <Example summary="Waiting conversation view (connecting)" dashed="true">
+              <div className="standalone">
+                <WaitingConversationView websocket={mockWebSocket}
                                          dispatcher={dispatcher} />
               </div>
             </Example>
-            <Example summary="Pending conversation view (ringing)" dashed="true">
+            <Example summary="Waiting conversation view (ringing)" dashed="true">
               <div className="standalone">
-                <PendingConversationView websocket={mockWebSocket}
+                <WaitingConversationView websocket={mockWebSocket}
                                          dispatcher={dispatcher}
                                          callState="ringing"/>
               </div>
@@ -310,13 +396,14 @@
             <Example summary="Call Failed" dashed="true"
                      style={{width: "260px", height: "265px"}}>
               <div className="fx-embedded">
-                <CallFailedView dispatcher={dispatcher} />
+                <CallFailedView dispatcher={dispatcher} store={conversationStore} />
               </div>
             </Example>
             <Example summary="Call Failed — with call URL error" dashed="true"
                      style={{width: "260px", height: "265px"}}>
               <div className="fx-embedded">
-                <CallFailedView dispatcher={dispatcher} emailLinkError={true} />
+                <CallFailedView dispatcher={dispatcher} emailLinkError={true}
+                                store={conversationStore} />
               </div>
             </Example>
           </Section>
@@ -417,22 +504,22 @@
               <a href="https://input.allizom.org/">input.allizom.org</a>.
             </p>
             <Example summary="Default (useable demo)" dashed="true" style={{width: "260px"}}>
-              <FeedbackView feedbackApiClient={stageFeedbackApiClient} />
+              <FeedbackView feedbackStore={feedbackStore} />
             </Example>
             <Example summary="Detailed form" dashed="true" style={{width: "260px"}}>
-              <FeedbackView feedbackApiClient={stageFeedbackApiClient} step="form" />
+              <FeedbackView feedbackStore={feedbackStore} feedbackState={FEEDBACK_STATES.DETAILS} />
             </Example>
             <Example summary="Thank you!" dashed="true" style={{width: "260px"}}>
-              <FeedbackView feedbackApiClient={stageFeedbackApiClient} step="finished" />
+              <FeedbackView feedbackStore={feedbackStore} feedbackState={FEEDBACK_STATES.SENT} />
             </Example>
           </Section>
 
           <Section name="CallUrlExpiredView">
             <Example summary="Firefox User">
-              <CallUrlExpiredView helper={{isFirefox: returnTrue}} />
+              <CallUrlExpiredView isFirefox={true} />
             </Example>
             <Example summary="Non-Firefox User">
-              <CallUrlExpiredView helper={{isFirefox: returnFalse}} />
+              <CallUrlExpiredView isFirefox={false} />
             </Example>
           </Section>
 
@@ -443,7 +530,7 @@
                                        video={{enabled: true}}
                                        audio={{enabled: true}}
                                        conversation={mockConversationModel}
-                                       feedbackApiClient={stageFeedbackApiClient}
+                                       feedbackStore={feedbackStore}
                                        onAfterFeedbackReceived={noop} />
               </div>
             </Example>
@@ -479,7 +566,7 @@
           <Section name="UnsupportedBrowserView">
             <Example summary="Standalone Unsupported Browser">
               <div className="standalone">
-                <UnsupportedBrowserView />
+                <UnsupportedBrowserView isFirefox={false}/>
               </div>
             </Example>
           </Section>
@@ -487,8 +574,117 @@
           <Section name="UnsupportedDeviceView">
             <Example summary="Standalone Unsupported Device">
               <div className="standalone">
-                <UnsupportedDeviceView />
+                <UnsupportedDeviceView platform="ios"/>
               </div>
+            </Example>
+          </Section>
+
+          <Section name="DesktopRoomConversationView">
+            <Example summary="Desktop room conversation (invitation)" dashed="true"
+                     style={{width: "260px", height: "265px"}}>
+              <div className="fx-embedded">
+                <DesktopRoomConversationView
+                  roomStore={roomStore}
+                  dispatcher={dispatcher}
+                  mozLoop={navigator.mozLoop}
+                  roomState={ROOM_STATES.INIT} />
+              </div>
+            </Example>
+
+            <Example summary="Desktop room conversation" dashed="true"
+                     style={{width: "260px", height: "265px"}}>
+              <div className="fx-embedded">
+                <DesktopRoomConversationView
+                  roomStore={roomStore}
+                  dispatcher={dispatcher}
+                  mozLoop={navigator.mozLoop}
+                  roomState={ROOM_STATES.HAS_PARTICIPANTS} />
+              </div>
+            </Example>
+          </Section>
+
+          <Section name="StandaloneRoomView">
+            <Example summary="Standalone room conversation (ready)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  roomState={ROOM_STATES.READY}
+                  isFirefox={true} />
+              </div>
+            </Example>
+
+            <Example summary="Standalone room conversation (joined)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  roomState={ROOM_STATES.JOINED}
+                  isFirefox={true} />
+              </div>
+            </Example>
+
+            <Example summary="Standalone room conversation (has-participants)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  roomState={ROOM_STATES.HAS_PARTICIPANTS}
+                  isFirefox={true} />
+              </div>
+            </Example>
+
+            <Example summary="Standalone room conversation (full - FFx user)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  roomState={ROOM_STATES.FULL}
+                  isFirefox={true} />
+              </div>
+            </Example>
+
+            <Example summary="Standalone room conversation (full - non FFx user)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  roomState={ROOM_STATES.FULL}
+                  isFirefox={false} />
+              </div>
+            </Example>
+
+            <Example summary="Standalone room conversation (feedback)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  feedbackStore={feedbackStore}
+                  roomState={ROOM_STATES.ENDED}
+                  isFirefox={false} />
+              </div>
+            </Example>
+
+            <Example summary="Standalone room conversation (failed)">
+              <div className="standalone">
+                <StandaloneRoomView
+                  dispatcher={dispatcher}
+                  activeRoomStore={activeRoomStore}
+                  roomState={ROOM_STATES.FAILED}
+                  isFirefox={false} />
+              </div>
+            </Example>
+          </Section>
+
+          <Section name="SVG icons preview" className="svg-icons">
+            <Example summary="10x10">
+              <SVGIcons size="10x10"/>
+            </Example>
+            <Example summary="14x14">
+              <SVGIcons size="14x14" />
+            </Example>
+            <Example summary="16x16">
+              <SVGIcons size="16x16"/>
             </Example>
           </Section>
 
@@ -537,10 +733,11 @@
   }
 
   window.addEventListener("DOMContentLoaded", function() {
-    var body = document.body;
-    body.className = loop.shared.utils.getTargetPlatform();
-
-    React.renderComponent(<App />, body);
+    try {
+      React.render(<App />, document.body);
+    } catch(err) {
+      console.log(err);
+    }
 
     _renderComponentsInIframes();
 

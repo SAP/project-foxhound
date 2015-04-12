@@ -19,6 +19,7 @@
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
 #include "nsRuleWalker.h"
+#include "mozilla/UniquePtr.h"
 
 struct CascadeEnumData;
 struct nsCSSSelector;
@@ -51,9 +52,12 @@ public:
 
   // aScopeElement must be non-null iff aSheetType is
   // nsStyleSet::eScopedDocSheet.
+  // aPreviousCSSRuleProcessor is the rule processor (if any) that this
+  // one is replacing.
   nsCSSRuleProcessor(const sheet_array_type& aSheets,
                      uint8_t aSheetType,
-                     mozilla::dom::Element* aScopeElement);
+                     mozilla::dom::Element* aScopeElement,
+                     nsCSSRuleProcessor* aPreviousCSSRuleProcessor);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsCSSRuleProcessor)
@@ -61,7 +65,7 @@ public:
 public:
   nsresult ClearRuleCascades();
 
-  static nsresult Startup();
+  static void Startup();
   static void Shutdown();
   static void FreeSystemMetrics();
   static bool HasSystemMetric(nsIAtom* aMetric);
@@ -100,30 +104,36 @@ public:
   static bool IsLink(mozilla::dom::Element* aElement);
 
   // nsIStyleRuleProcessor
-  virtual void RulesMatching(ElementRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual void RulesMatching(ElementRuleProcessorData* aData) override;
 
-  virtual void RulesMatching(PseudoElementRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual void RulesMatching(PseudoElementRuleProcessorData* aData) override;
 
-  virtual void RulesMatching(AnonBoxRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual void RulesMatching(AnonBoxRuleProcessorData* aData) override;
 
 #ifdef MOZ_XUL
-  virtual void RulesMatching(XULTreeRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual void RulesMatching(XULTreeRuleProcessorData* aData) override;
 #endif
 
-  virtual nsRestyleHint HasStateDependentStyle(StateRuleProcessorData* aData) MOZ_OVERRIDE;
-  virtual nsRestyleHint HasStateDependentStyle(PseudoElementStateRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual nsRestyleHint HasStateDependentStyle(StateRuleProcessorData* aData) override;
+  virtual nsRestyleHint HasStateDependentStyle(PseudoElementStateRuleProcessorData* aData) override;
 
-  virtual bool HasDocumentStateDependentStyle(StateRuleProcessorData* aData) MOZ_OVERRIDE;
+  virtual bool HasDocumentStateDependentStyle(StateRuleProcessorData* aData) override;
 
   virtual nsRestyleHint
-    HasAttributeDependentStyle(AttributeRuleProcessorData* aData) MOZ_OVERRIDE;
+    HasAttributeDependentStyle(AttributeRuleProcessorData* aData) override;
 
-  virtual bool MediumFeaturesChanged(nsPresContext* aPresContext) MOZ_OVERRIDE;
+  virtual bool MediumFeaturesChanged(nsPresContext* aPresContext) override;
+
+  /**
+   * If this rule processor currently has a substantive media query
+   * result cache key, return a copy of it.
+   */
+  mozilla::UniquePtr<nsMediaQueryResultCacheKey> CloneMQCacheKey();
 
   virtual size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
-    const MOZ_MUST_OVERRIDE MOZ_OVERRIDE;
+    const MOZ_MUST_OVERRIDE override;
   virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf)
-    const MOZ_MUST_OVERRIDE MOZ_OVERRIDE;
+    const MOZ_MUST_OVERRIDE override;
 
   // Append all the currently-active font face rules to aArray.  Return
   // true for success and false for failure.
@@ -196,6 +206,11 @@ private:
 
   // active first, then cached (most recent first)
   RuleCascadeData* mRuleCascades;
+
+  // If we cleared our mRuleCascades or replaced a previous rule
+  // processor, this is the media query result cache key that was used
+  // before we lost the old rule cascades.
+  mozilla::UniquePtr<nsMediaQueryResultCacheKey> mPreviousCacheKey;
 
   // The last pres context for which GetRuleCascades was called.
   nsPresContext *mLastPresContext;

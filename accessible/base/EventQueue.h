@@ -32,8 +32,8 @@ protected:
   void ProcessEventQueue();
 
 private:
-  EventQueue(const EventQueue&) MOZ_DELETE;
-  EventQueue& operator = (const EventQueue&) MOZ_DELETE;
+  EventQueue(const EventQueue&) = delete;
+  EventQueue& operator = (const EventQueue&) = delete;
 
   // Event queue processing
   /**
@@ -52,6 +52,11 @@ private:
   void CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
                                AccSelChangeEvent* aThisEvent,
                                uint32_t aThisIndex);
+
+  /**
+   * Notify the parent process of events being fired by this event queue.
+   */
+  void SendIPCEvent(AccEvent* aEvent) const;
 
   /**
    * Coalesce text change events caused by sibling hide events.

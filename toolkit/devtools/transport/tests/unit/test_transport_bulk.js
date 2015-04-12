@@ -5,6 +5,7 @@ let { DebuggerServer } =
   Cu.import("resource://gre/modules/devtools/dbg-server.jsm", {});
 let { FileUtils } = Cu.import("resource://gre/modules/FileUtils.jsm", {});
 let { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm", {});
+let { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
 
 function run_test() {
   initTestDebuggerServer();
@@ -23,7 +24,7 @@ function run_test() {
 /**
  * This tests a one-way bulk transfer at the transport layer.
  */
-function test_bulk_transfer_transport(transportFactory) {
+let test_bulk_transfer_transport = Task.async(function*(transportFactory) {
   do_print("Starting bulk transfer test at " + new Date().toTimeString());
 
   let clientDeferred = promise.defer();
@@ -36,15 +37,22 @@ function test_bulk_transfer_transport(transportFactory) {
 
   do_check_eq(Object.keys(DebuggerServer._connections).length, 0);
 
-  let transport = transportFactory();
+  let transport = yield transportFactory();
 
   // Sending from client to server
   function write_data({copyFrom}) {
-    NetUtil.asyncFetch(getTestTempFile("bulk-input"), function(input, status) {
-      copyFrom(input).then(() => {
-        input.close();
-      });
-    });
+    NetUtil.asyncFetch2(
+      getTestTempFile("bulk-input"),
+      function(input, status) {
+        copyFrom(input).then(() => {
+          input.close();
+        });
+      },
+      null,      // aLoadingNode
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      null,      // aTriggeringPrincipal
+      Ci.nsILoadInfo.SEC_NORMAL,
+      Ci.nsIContentPolicy.TYPE_OTHER);
   }
 
   // Receiving on server from client
@@ -104,7 +112,7 @@ function test_bulk_transfer_transport(transportFactory) {
   transport.ready();
 
   return promise.all([clientDeferred.promise, serverDeferred.promise]);
-}
+});
 
 /*** Test Utils ***/
 
@@ -119,13 +127,20 @@ function verify() {
 
   // Ensure output file contents actually match
   let compareDeferred = promise.defer();
-  NetUtil.asyncFetch(getTestTempFile("bulk-output"), input => {
-    let outputData = NetUtil.readInputStreamToString(input, reallyLong.length);
-    // Avoid do_check_eq here so we don't log the contents
-    do_check_true(outputData === reallyLong);
-    input.close();
-    compareDeferred.resolve();
-  });
+  NetUtil.asyncFetch2(
+    getTestTempFile("bulk-output"),
+    input => {
+      let outputData = NetUtil.readInputStreamToString(input, reallyLong.length);
+      // Avoid do_check_eq here so we don't log the contents
+      do_check_true(outputData === reallyLong);
+      input.close();
+      compareDeferred.resolve();
+    },
+    null,      // aLoadingNode
+    Services.scriptSecurityManager.getSystemPrincipal(),
+    null,      // aTriggeringPrincipal
+    Ci.nsILoadInfo.SEC_NORMAL,
+    Ci.nsIContentPolicy.TYPE_OTHER);
 
   return compareDeferred.promise.then(cleanup_files);
 }

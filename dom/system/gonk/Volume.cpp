@@ -14,7 +14,20 @@
 namespace mozilla {
 namespace system {
 
-Volume::EventObserverList Volume::mEventObserverList;
+#if DEBUG_VOLUME_OBSERVER
+void
+VolumeObserverList::Broadcast(Volume* const& aVolume)
+{
+  uint32_t size = mObservers.Length();
+  for (uint32_t i = 0; i < size; ++i) {
+    LOG("VolumeObserverList::Broadcast to [%u] %p volume '%s'",
+        i, mObservers[i], aVolume->NameStr());
+    mObservers[i]->Notify(aVolume);
+  }
+}
+#endif
+
+VolumeObserverList Volume::sEventObserverList;
 
 // We have a feature where volumes can be locked when mounted. This
 // is used to prevent a volume from being shared with the PC while
@@ -68,9 +81,43 @@ Volume::Volume(const nsCSubstring& aName)
     mIsSharing(false),
     mIsFormatting(false),
     mIsUnmounting(false),
+    mIsRemovable(false),
+    mIsHotSwappable(false),
     mId(sNextId++)
 {
   DBG("Volume %s: created", NameStr());
+}
+
+void
+Volume::Dump(const char* aLabel) const
+{
+  LOG("%s: Volume: %s (%d) is %s and %s @ %s gen %d locked %d",
+      aLabel,
+      NameStr(),
+      Id(),
+      StateStr(),
+      MediaPresent() ? "inserted" : "missing",
+      MountPoint().get(),
+      MountGeneration(),
+      (int)IsMountLocked());
+  LOG("%s:   Sharing %s Mounting %s Formating %s Unmounting %s",
+      aLabel,
+      CanBeShared() ? (IsSharingEnabled() ? (IsSharing() ? "en-y" : "en-n")
+                                          : "dis")
+                    : "x",
+      IsMountRequested() ? "req" : "n",
+      IsFormatRequested() ? (IsFormatting() ? "req-y" : "req-n")
+                          : (IsFormatting() ? "y" : "n"),
+      IsUnmountRequested() ? (IsUnmounting() ? "req-y" : "req-n")
+                           : (IsUnmounting() ? "y" : "n"));
+}
+
+void Volume::SetFakeVolume(const nsACString& aMountPoint)
+{
+  this->mMountLocked = false;
+  this->mCanBeShared = false;
+  this->mMountPoint = aMountPoint;
+  SetState(nsIVolume::STATE_MOUNTED);
 }
 
 void
@@ -82,7 +129,7 @@ Volume::SetIsSharing(bool aIsSharing)
   mIsSharing = aIsSharing;
   LOG("Volume %s: IsSharing set to %d state %s",
       NameStr(), (int)mIsSharing, StateStr(mState));
-  mEventObserverList.Broadcast(this);
+  sEventObserverList.Broadcast(this);
 }
 
 void
@@ -95,7 +142,7 @@ Volume::SetIsFormatting(bool aIsFormatting)
   LOG("Volume %s: IsFormatting set to %d state %s",
       NameStr(), (int)mIsFormatting, StateStr(mState));
   if (mIsFormatting) {
-    mEventObserverList.Broadcast(this);
+    sEventObserverList.Broadcast(this);
   }
 }
 
@@ -108,7 +155,79 @@ Volume::SetIsUnmounting(bool aIsUnmounting)
   mIsUnmounting = aIsUnmounting;
   LOG("Volume %s: IsUnmounting set to %d state %s",
       NameStr(), (int)mIsUnmounting, StateStr(mState));
-  mEventObserverList.Broadcast(this);
+  sEventObserverList.Broadcast(this);
+}
+
+void
+Volume::SetIsRemovable(bool aIsRemovable)
+{
+  if (aIsRemovable == mIsRemovable) {
+    return;
+  }
+  mIsRemovable = aIsRemovable;
+  if (!mIsRemovable) {
+    mIsHotSwappable = false;
+  }
+  LOG("Volume %s: IsRemovable set to %d state %s",
+      NameStr(), (int)mIsRemovable, StateStr(mState));
+  sEventObserverList.Broadcast(this);
+}
+
+void
+Volume::SetIsHotSwappable(bool aIsHotSwappable)
+{
+  if (aIsHotSwappable == mIsHotSwappable) {
+    return;
+  }
+  mIsHotSwappable = aIsHotSwappable;
+  if (mIsHotSwappable) {
+    mIsRemovable = true;
+  }
+  LOG("Volume %s: IsHotSwappable set to %d state %s",
+      NameStr(), (int)mIsHotSwappable, StateStr(mState));
+  sEventObserverList.Broadcast(this);
+}
+
+bool
+Volume::BoolConfigValue(const nsCString& aConfigValue, bool& aBoolValue)
+{
+  if (aConfigValue.EqualsLiteral("1") ||
+      aConfigValue.LowerCaseEqualsLiteral("true")) {
+    aBoolValue = true;
+    return true;
+  }
+  if (aConfigValue.EqualsLiteral("0") ||
+      aConfigValue.LowerCaseEqualsLiteral("false")) {
+    aBoolValue = false;
+    return true;
+  }
+  return false;
+}
+
+void
+Volume::SetConfig(const nsCString& aConfigName, const nsCString& aConfigValue)
+{
+  if (aConfigName.LowerCaseEqualsLiteral("removable")) {
+    bool value = false;
+    if (BoolConfigValue(aConfigValue, value)) {
+      SetIsRemovable(value);
+    } else {
+      ERR("Volume %s: invalid value '%s' for configuration '%s'",
+          NameStr(), aConfigValue.get(), aConfigName.get());
+    }
+    return;
+  }
+  if (aConfigName.LowerCaseEqualsLiteral("hotswappable")) {
+    bool value = false;
+    if (BoolConfigValue(aConfigValue, value)) {
+      SetIsHotSwappable(value);
+    } else {
+      ERR("Volume %s: invalid value '%s' for configuration '%s'",
+          NameStr(), aConfigValue.get(), aConfigName.get());
+    }
+    return;
+  }
+  ERR("Volume %s: invalid config '%s'", NameStr(), aConfigName.get());
 }
 
 void
@@ -146,7 +265,7 @@ Volume::SetMediaPresent(bool aMediaPresent)
 
   LOG("Volume: %s media %s", NameStr(), aMediaPresent ? "inserted" : "removed");
   mMediaPresent = aMediaPresent;
-  mEventObserverList.Broadcast(this);
+  sEventObserverList.Broadcast(this);
 }
 
 void
@@ -156,7 +275,7 @@ Volume::SetSharingEnabled(bool aSharingEnabled)
 
   LOG("SetSharingMode for volume %s to %d canBeShared = %d",
       NameStr(), (int)mSharingEnabled, (int)mCanBeShared);
-  mEventObserverList.Broadcast(this);
+  sEventObserverList.Broadcast(this);
 }
 
 void
@@ -199,12 +318,12 @@ Volume::SetState(Volume::STATE aNewState)
     LOG("Volume %s (%u): changing state from %s to %s @ '%s' (%d observers) "
         "mountGeneration = %d, locked = %d",
         NameStr(), mId, StateStr(mState),
-        StateStr(aNewState), mMountPoint.get(), mEventObserverList.Length(),
+        StateStr(aNewState), mMountPoint.get(), sEventObserverList.Length(),
         mMountGeneration, (int)mMountLocked);
   } else {
     LOG("Volume %s (%u): changing state from %s to %s (%d observers)",
         NameStr(), mId, StateStr(mState),
-        StateStr(aNewState), mEventObserverList.Length());
+        StateStr(aNewState), sEventObserverList.Length());
   }
 
   switch (aNewState) {
@@ -218,11 +337,13 @@ Volume::SetState(Volume::STATE aNewState)
        break;
 
      case nsIVolume::STATE_MOUNTED:
+     case nsIVolume::STATE_MOUNT_FAIL:
        mMountRequested = false;
        mIsFormatting = false;
        mIsSharing = false;
        mIsUnmounting = false;
        break;
+
      case nsIVolume::STATE_FORMATTING:
        mFormatRequested = false;
        mIsFormatting = true;
@@ -247,13 +368,13 @@ Volume::SetState(Volume::STATE aNewState)
        mIsSharing = false;
        break;
 
-     case nsIVolume::STATE_IDLE:
-       break;
+     case nsIVolume::STATE_IDLE: // Fall through
+     case nsIVolume::STATE_CHECKMNT: // Fall through
      default:
        break;
   }
   mState = aNewState;
-  mEventObserverList.Broadcast(this);
+  sEventObserverList.Broadcast(this);
 }
 
 void
@@ -325,12 +446,16 @@ Volume::StartCommand(VolumeCommand* aCommand)
 
 //static
 void
-Volume::RegisterObserver(Volume::EventObserver* aObserver)
+Volume::RegisterVolumeObserver(Volume::EventObserver* aObserver, const char* aName)
 {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
 
-  mEventObserverList.AddObserver(aObserver);
+  sEventObserverList.AddObserver(aObserver);
+
+  DBG("Added Volume Observer '%s' @%p, length = %u",
+      aName, aObserver, sEventObserverList.Length());
+
   // Send an initial event to the observer (for each volume)
   size_t numVolumes = VolumeManager::NumVolumes();
   for (size_t volIndex = 0; volIndex < numVolumes; volIndex++) {
@@ -341,12 +466,15 @@ Volume::RegisterObserver(Volume::EventObserver* aObserver)
 
 //static
 void
-Volume::UnregisterObserver(Volume::EventObserver* aObserver)
+Volume::UnregisterVolumeObserver(Volume::EventObserver* aObserver, const char* aName)
 {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
 
-  mEventObserverList.RemoveObserver(aObserver);
+  sEventObserverList.RemoveObserver(aObserver);
+
+  DBG("Removed Volume Observer '%s' @%p, length = %u",
+      aName, aObserver, sEventObserverList.Length());
 }
 
 //static
@@ -365,7 +493,7 @@ Volume::UpdateMountLock(const nsACString& aVolumeName,
   if (vol->mMountLocked != aMountLocked) {
     vol->mMountLocked = aMountLocked;
     DBG("Volume::UpdateMountLock for '%s' to %d\n", vol->NameStr(), (int)aMountLocked);
-    mEventObserverList.Broadcast(vol);
+    sEventObserverList.Broadcast(vol);
   }
 }
 
@@ -408,7 +536,20 @@ Volume::HandleVoldResponse(int aResponseCode, nsCWhitespaceTokenizer& aTokenizer
         if (token.EqualsLiteral("to")) {
           nsresult errCode;
           token = aTokenizer.nextToken();
-          SetState((STATE)token.ToInteger(&errCode));
+          STATE newState = (STATE)(token.ToInteger(&errCode));
+          if (newState == nsIVolume::STATE_MOUNTED) {
+            // We set the state to STATE_CHECKMNT here, and the once the
+            // AutoMounter detects that the volume is actually accessible
+            // then the AutoMounter will set the volume as STATE_MOUNTED.
+            SetState(nsIVolume::STATE_CHECKMNT);
+          } else {
+            if (State() == nsIVolume::STATE_CHECKING && newState == nsIVolume::STATE_IDLE) {
+              LOG("Mount of volume '%s' failed", NameStr());
+              SetState(nsIVolume::STATE_MOUNT_FAIL);
+            } else {
+              SetState(newState);
+            }
+          }
           break;
         }
       }

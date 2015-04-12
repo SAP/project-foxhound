@@ -21,6 +21,7 @@ class nsPIDOMWindow;
 class nsGlobalWindow;
 class nsIScriptContext;
 class nsIDocument;
+class nsIDocShell;
 
 namespace mozilla {
 namespace dom {
@@ -62,6 +63,17 @@ private:
  */
 void InitScriptSettings();
 void DestroyScriptSettings();
+bool ScriptSettingsInitialized();
+
+/*
+ * Static helpers in ScriptSettings which track the number of listeners
+ * of Javascript RunToCompletion events.  These should be used by the code in
+ * nsDocShell::SetRecordProfileTimelineMarkers to indicate to script
+ * settings that script run-to-completion needs to be monitored.
+ * SHOULD BE CALLED ONLY BY MAIN THREAD.
+ */
+void UseEntryScriptProfiling();
+void UnuseEntryScriptProfiling();
 
 // To implement a web-compatible browser, it is often necessary to obtain the
 // global object that is "associated" with the currently-running code. This
@@ -295,20 +307,20 @@ private:
 
   // Track state between the old and new error reporting modes.
   bool mOwnErrorReporting;
-  bool mOldDontReportUncaught;
+  bool mOldAutoJSAPIOwnsErrorReporting;
   Maybe<JSErrorReporter> mOldErrorReporter;
 
   void InitInternal(JSObject* aGlobal, JSContext* aCx, bool aIsMainThread);
 
-  AutoJSAPI(const AutoJSAPI&) MOZ_DELETE;
-  AutoJSAPI& operator= (const AutoJSAPI&) MOZ_DELETE;
+  AutoJSAPI(const AutoJSAPI&) = delete;
+  AutoJSAPI& operator= (const AutoJSAPI&) = delete;
 };
 
 /*
  * A class that represents a new script entry point.
  */
-class AutoEntryScript : public AutoJSAPI,
-                        protected ScriptSettingsStackEntry {
+class MOZ_STACK_CLASS AutoEntryScript : public AutoJSAPI,
+                                        protected ScriptSettingsStackEntry {
 public:
   explicit AutoEntryScript(nsIGlobalObject* aGlobalObject,
                   bool aIsMainThread = NS_IsMainThread(),
@@ -329,8 +341,12 @@ private:
   // is the principal of the callee function that is part of the CallArgs just a
   // bit up the stack, and which will outlive us.  So we know the principal
   // can't go away until then either.
-  nsIPrincipal* mWebIDLCallerPrincipal;
+  nsIPrincipal* MOZ_NON_OWNING_REF mWebIDLCallerPrincipal;
   friend nsIPrincipal* GetWebIDLCallerPrincipal();
+
+  nsCOMPtr<nsIDocShell> mDocShellForJSRunToCompletion;
+
+  bool mIsMainThread;
 };
 
 /*

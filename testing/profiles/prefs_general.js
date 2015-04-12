@@ -14,6 +14,8 @@ user_pref("dom.forms.color", true); // on for testing
 user_pref("dom.max_script_run_time", 0); // no slow script dialogs
 user_pref("hangmonitor.timeout", 0); // no hang monitor
 user_pref("dom.max_chrome_script_run_time", 0);
+user_pref("dom.max_child_script_run_time", 0);
+user_pref("dom.ipc.reportProcessHangs", false); // process hang monitor
 user_pref("dom.popup_maximum", -1);
 user_pref("dom.send_after_paint_to_content", true);
 user_pref("dom.successive_dialog_time_limit", 0);
@@ -23,6 +25,7 @@ user_pref("shell.checkDefaultClient", false);
 user_pref("browser.warnOnQuit", false);
 user_pref("accessibility.typeaheadfind.autostart", false);
 user_pref("javascript.options.showInConsole", true);
+user_pref("devtools.browsertoolbox.panel", "jsdebugger");
 user_pref("devtools.errorconsole.enabled", true);
 user_pref("devtools.debugger.remote-port", 6023);
 user_pref("layout.debug.enable_data_xbl", true);
@@ -40,6 +43,7 @@ user_pref("media.volume_scale", "0.01");
 user_pref("security.warn_viewing_mixed", false);
 user_pref("app.update.enabled", false);
 user_pref("app.update.staging.enabled", false);
+user_pref("app.update.url.android", "");
 // Make sure GMPInstallManager won't hit the network.
 user_pref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
 user_pref("browser.panorama.experienced_first_run", true); // Assume experienced
@@ -156,6 +160,9 @@ user_pref("layout.spammy_warnings.enabled", false);
 
 // Enable Media Source Extensions for testing
 user_pref("media.mediasource.enabled", true);
+user_pref("media.mediasource.whitelist", false);
+user_pref("media.mediasource.mp4.enabled", true);
+user_pref("media.mediasource.webm.enabled", true);
 
 // Enable mozContacts
 user_pref("dom.mozContacts.enabled", true);
@@ -216,6 +223,9 @@ user_pref('browser.contentHandlers.types.3.uri', 'http://test1.example.org/rss?u
 user_pref('browser.contentHandlers.types.4.uri', 'http://test1.example.org/rss?url=%%s')
 user_pref('browser.contentHandlers.types.5.uri', 'http://test1.example.org/rss?url=%%s')
 
+// Set dummy server for Android tiles testing.
+user_pref('browser.tiles.reportURL', 'http://%(server)s/tests/robocop/robocop_tiles.sjs')
+
 // We want to collect telemetry, but we don't want to send in the results.
 user_pref('toolkit.telemetry.server', 'https://%(server)s/telemetry-dummy/');
 
@@ -233,6 +243,9 @@ user_pref("identity.fxaccounts.settings.uri", "https://%(server)s/fxa-settings")
 // Enable logging of APZ test data (see bug 961289).
 user_pref('apz.test.logging_enabled', true);
 
+// Make sure SSL Error reports don't hit the network
+user_pref("security.ssl.errorReporting.url", "https://example.com/browser/browser/base/content/test/general/pinning_reports.sjs?succeed");
+
 // Make sure Translation won't hit the network.
 user_pref("browser.translation.bing.authURL", "http://%(server)s/browser/browser/components/translation/test/bing.sjs");
 user_pref("browser.translation.bing.translateArrayURL", "http://%(server)s/browser/browser/components/translation/test/bing.sjs");
@@ -242,23 +255,48 @@ user_pref("browser.aboutHomeSnippets.updateUrl", "nonexistent://test");
 
 // Enable debug logging in the mozApps implementation.
 user_pref("dom.mozApps.debug", true);
+// Enable apps customizations
+user_pref("dom.apps.customization.enabled", true);
 
 // Don't fetch or send directory tiles data from real servers
 user_pref("browser.newtabpage.directory.source", 'data:application/json,{"testing":1}');
 user_pref("browser.newtabpage.directory.ping", "");
 
 // Enable Loop
+user_pref("loop.debug.loglevel", "All");
 user_pref("loop.enabled", true);
 user_pref("loop.throttled", false);
 user_pref("loop.oauth.google.URL", "http://%(server)s/browser/browser/components/loop/test/mochitest/google_service.sjs?action=");
 user_pref("loop.oauth.google.getContactsURL", "http://%(server)s/browser/browser/components/loop/test/mochitest/google_service.sjs?action=contacts");
+user_pref("loop.oauth.google.getGroupsURL", "http://%(server)s/browser/browser/components/loop/test/mochitest/google_service.sjs?action=groups");
+user_pref("loop.server", "http://%(server)s/browser/browser/components/loop/test/mochitest/loop_fxa.sjs?");
 user_pref("loop.CSP","default-src 'self' about: file: chrome: data: wss://* http://* https://*");
 
 // Ensure UITour won't hit the network
 user_pref("browser.uitour.pinnedTabUrl", "http://%(server)s/uitour-dummy/pinnedTab");
 user_pref("browser.uitour.url", "http://%(server)s/uitour-dummy/tour");
 
+// Tell the search service we are running in the US.  This also has the desired
+// side-effect of preventing our geoip lookup.
+user_pref("browser.search.isUS", true);
+user_pref("browser.search.countryCode", "US");
+
+// Make sure the self support tab doesn't hit the network.
+user_pref("browser.selfsupport.url", "https://%(server)s/selfsupport-dummy/");
+
 user_pref("media.eme.enabled", true);
+user_pref("media.eme.apiVisible", true);
+
+#if defined(XP_WIN)
+user_pref("media.decoder.heuristic.dormant.timeout", 0);
+#endif
 
 // Don't prompt about e10s
 user_pref("browser.displayedE10SPrompt.1", 5);
+// Don't use auto-enabled e10s
+user_pref("browser.tabs.remote.autostart.1", false);
+// Don't forceably kill content processes after a timeout
+user_pref("dom.ipc.tabs.shutdownTimeoutSecs", 0);
+
+// Avoid performing Readinglist Intro during tests.
+user_pref("browser.readinglist.introShown", true);

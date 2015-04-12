@@ -7,6 +7,7 @@
 #define nsXREAppData_h
 
 #include <stdint.h>
+#include "mozilla/Attributes.h"
 
 class nsIFile;
 
@@ -30,7 +31,7 @@ struct nsXREAppData
    * The directory of the application to be run. May be null if the
    * xulrunner and the app are installed into the same directory.
    */
-  nsIFile* directory;
+  nsIFile* MOZ_NON_OWNING_REF directory;
 
   /**
    * The name of the application vendor. This must be ASCII, and is normally
@@ -45,6 +46,13 @@ struct nsXREAppData
    * string).
    */
   const char* name;
+
+  /**
+   * The internal name of the application for remoting purposes. When left
+   * unspecified, "name" is used instead. This must be ASCII, and is normally
+   * lowercase, e.g. "firefox". Optional (may be null but not an empty string).
+   */
+  const char* remotingName;
 
   /**
    * The major version, e.g. "0.8.0+". Optional (may be null), but
@@ -85,7 +93,7 @@ struct nsXREAppData
    * The location of the XRE. XRE_main may not be able to figure this out
    * programatically.
    */
-  nsIFile* xreDirectory;
+  nsIFile* MOZ_NON_OWNING_REF xreDirectory;
 
   /**
    * The minimum/maximum compatible XRE version.

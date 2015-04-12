@@ -8,13 +8,13 @@ var FindHelper = {
   _targetTab: null,
   _initialViewport: null,
   _viewportChanged: false,
-  _matchesCountResult: null,
+  _result: null,
+  _limit: 0,
 
   observe: function(aMessage, aTopic, aData) {
     switch(aTopic) {
       case "FindInPage:Opened": {
         this._findOpened();
-        this._init();
         break;
       }
 
@@ -32,19 +32,26 @@ var FindHelper = {
   },
 
   _findOpened: function() {
+    try {
+      this._limit = Services.prefs.getIntPref("accessibility.typeaheadfind.matchesCountLimit");
+    } catch (e) {
+      // Pref not available, assume 0, no match counting.
+      this._limit = 0;
+    }
+
     Messaging.addListener((data) => {
-      this.doFind(data);
-      return this._getMatchesCountResult(data);
+      this.doFind(data.searchString, data.matchCase);
+      return this._getMatchesCountResult(data.searchString);
     }, "FindInPage:Find");
 
     Messaging.addListener((data) => {
-      this.findAgain(data, false);
-      return this._getMatchesCountResult(data);
+      this.findAgain(data.searchString, false, data.matchCase);
+      return this._getMatchesCountResult(data.searchString);
     }, "FindInPage:Next");
 
     Messaging.addListener((data) => {
-      this.findAgain(data, true);
-      return this._getMatchesCountResult(data);
+      this.findAgain(data.searchString, true, data.matchCase);
+      return this._getMatchesCountResult(data.searchString);
     }, "FindInPage:Prev");
   },
 
@@ -55,7 +62,13 @@ var FindHelper = {
     }
 
     this._targetTab = BrowserApp.selectedTab;
-    this._finder = this._targetTab.browser.finder;
+    try {
+      this._finder = this._targetTab.browser.finder;
+    } catch (e) {
+      throw new Error("FindHelper: " + e + "\n" +
+        "JS stack: \n" + (e.stack || Components.stack.formattedStack));
+    }
+
     this._finder.addResultListener(this);
     this._initialViewport = JSON.stringify(this._targetTab.getViewport());
     this._viewportChanged = false;
@@ -85,36 +98,44 @@ var FindHelper = {
    * Request, wait for, and return the current matchesCount results for a string.
    */
   _getMatchesCountResult: function(findString) {
-      // Sync call to Finder, results available immediately.
-      this._matchesCountResult = null;
-      this._finder.requestMatchesCount(findString);
+    // Count matches up to any provided limit.
+    if (this._limit <= 0) {
+      return { total: 0, current: 0, limit: 0 };
+    }
 
-      return this._matchesCountResult;
+    // Sync call to Finder, results available immediately.
+    this._finder.requestMatchesCount(findString, this._limit);
+    return this._result;
   },
 
   /**
    * Pass along the count results to FindInPageBar for display.
    */
   onMatchesCountResult: function(result) {
-    this._matchesCountResult = result;
+    this._result = result;
+    this._result.limit = this._limit;
   },
 
-  doFind: function(aSearchString) {
+  doFind: function(searchString, matchCase) {
     if (!this._finder) {
       this._init();
     }
 
-    this._finder.fastFind(aSearchString, false);
+    this._finder.caseSensitive = matchCase;
+    this._finder.fastFind(searchString, false);
   },
 
-  findAgain: function(aString, aFindBackwards) {
-    // This can happen if the user taps next/previous after re-opening the search bar
+  findAgain: function(searchString, findBackwards, matchCase) {
+    // This always happens if the user taps next/previous after re-opening the
+    // search bar, and not only forces _init() but also an initial fastFind(STRING)
+    // before any findAgain(DIRECTION).
     if (!this._finder) {
-      this.doFind(aString);
+      this.doFind(searchString, matchCase);
       return;
     }
 
-    this._finder.findAgain(aFindBackwards, false, false);
+    this._finder.caseSensitive = matchCase;
+    this._finder.findAgain(findBackwards, false, false);
   },
 
   onFindResult: function(aData) {

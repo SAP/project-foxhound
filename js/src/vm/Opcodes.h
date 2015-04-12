@@ -64,7 +64,7 @@
  *     Block-local Scope
  *     This
  *     Arguments
- *   [Operator]
+ *   [Operators]
  *     Comparison Operators
  *     Arithmetic Operators
  *     Bitwise Logical Operators
@@ -72,6 +72,7 @@
  *     Logical Operators
  *     Special Operators
  *     Stack Operations
+ *     Debugger
  *   [Literals]
  *     Constants
  *     Object
@@ -179,7 +180,7 @@
     /*
      * Swaps the top two values on the stack. This is useful for things like
      * post-increment/decrement.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands:
      *   Stack: v1, v2 => v2, v1
@@ -187,7 +188,7 @@
     macro(JSOP_SWAP,      10, "swap",       NULL,         1,  2,  2, JOF_BYTE) \
     /*
      * Pops the top 'n' values from the stack.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands: uint16_t n
      *   Stack: v[n-1], ..., v[1], v[0] =>
@@ -198,7 +199,7 @@
     /* More long-standing bytecodes. */ \
     /*
      * Pushes a copy of the top value on the stack.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands:
      *   Stack: v => v, v
@@ -206,7 +207,7 @@
     macro(JSOP_DUP,       12, "dup",        NULL,         1,  1,  2, JOF_BYTE) \
     /*
      * Duplicates the top two values on the stack.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands:
      *   Stack: v1, v2 => v1, v2, v1, v2
@@ -225,7 +226,7 @@
      * Pops the top two values 'lval' and 'rval' from the stack, then pushes
      * the result of the operation applied to the two operands, converting
      * both to 32-bit signed integers if necessary.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Bitwise Logical Operators
      *   Operands:
      *   Stack: lval, rval => (lval OP rval)
@@ -236,7 +237,7 @@
     /*
      * Pops the top two values from the stack and pushes the result of
      * comparing them.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Comparison Operators
      *   Operands:
      *   Stack: lval, rval => (lval OP rval)
@@ -250,7 +251,7 @@
     /*
      * Pops the top two values 'lval' and 'rval' from the stack, then pushes
      * the result of the operation applied to the operands.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Bitwise Shift Operators
      *   Operands:
      *   Stack: lval, rval => (lval OP rval)
@@ -260,7 +261,7 @@
     /*
      * Pops the top two values 'lval' and 'rval' from the stack, then pushes
      * 'lval >>> rval'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Bitwise Shift Operators
      *   Operands:
      *   Stack: lval, rval => (lval >>> rval)
@@ -269,7 +270,7 @@
     /*
      * Pops the top two values 'lval' and 'rval' from the stack, then pushes
      * the result of 'lval + rval'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Arithmetic Operators
      *   Operands:
      *   Stack: lval, rval => (lval + rval)
@@ -278,7 +279,7 @@
     /*
      * Pops the top two values 'lval' and 'rval' from the stack, then pushes
      * the result of applying the arithmetic operation to them.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Arithmetic Operators
      *   Operands:
      *   Stack: lval, rval => (lval OP rval)
@@ -289,7 +290,7 @@
     macro(JSOP_MOD,       31, "mod",        "%",          1,  2,  1, JOF_BYTE|JOF_LEFTASSOC|JOF_ARITH) \
     /*
      * Pops the value 'val' from the stack, then pushes '!val'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Logical Operators
      *   Operands:
      *   Stack: val => (!val)
@@ -297,7 +298,7 @@
     macro(JSOP_NOT,       32, "not",        "!",          1,  1,  1, JOF_BYTE|JOF_ARITH|JOF_DETECTING) \
     /*
      * Pops the value 'val' from the stack, then pushes '~val'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Bitwise Logical Operators
      *   Operands:
      *   Stack: val => (~val)
@@ -305,7 +306,7 @@
     macro(JSOP_BITNOT,    33, "bitnot",     "~",          1,  1,  1, JOF_BYTE|JOF_ARITH) \
     /*
      * Pops the value 'val' from the stack, then pushes '-val'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Arithmetic Operators
      *   Operands:
      *   Stack: val => (-val)
@@ -314,7 +315,7 @@
     /*
      * Pops the value 'val' from the stack, then pushes '+val'.
      * ('+val' is the value converted to a number.)
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Arithmetic Operators
      *   Operands:
      *   Stack: val => (+val)
@@ -331,29 +332,29 @@
      *   Operands: uint32_t nameIndex
      *   Stack: => succeeded
      */ \
-    macro(JSOP_DELNAME,   36, "delname",    NULL,         5,  0,  1, JOF_ATOM|JOF_NAME) \
+    macro(JSOP_DELNAME,   36, "delname",    NULL,         5,  0,  1, JOF_ATOM|JOF_NAME|JOF_CHECKSLOPPY) \
     /*
      * Pops the top of stack value, deletes property from it, pushes 'true' onto
      * the stack if succeeded, 'false' if not.
-     *   Category: Literals
-     *   Type: Object
+     *   Category: Operators
+     *   Type: Special Operators
      *   Operands: uint32_t nameIndex
      *   Stack: obj => succeeded
      */ \
-    macro(JSOP_DELPROP,   37, "delprop",    NULL,         5,  1,  1, JOF_ATOM|JOF_PROP) \
+    macro(JSOP_DELPROP,   37, "delprop",    NULL,         5,  1,  1, JOF_ATOM|JOF_PROP|JOF_CHECKSLOPPY) \
     /*
      * Pops the top two values on the stack as 'propval' and 'obj',
      * deletes 'propval' property from 'obj', pushes 'true'  onto the stack if
      * succeeded, 'false' if not.
-     *   Category: Literals
-     *   Type: Object
+     *   Category: Operators
+     *   Type: Special Operators
      *   Operands:
      *   Stack: obj, propval => succeeded
      */ \
-    macro(JSOP_DELELEM,   38, "delelem",    NULL,         1,  2,  1, JOF_BYTE |JOF_ELEM) \
+    macro(JSOP_DELELEM,   38, "delelem",    NULL,         1,  2,  1, JOF_BYTE |JOF_ELEM|JOF_CHECKSLOPPY) \
     /*
      * Pops the value 'val' from the stack, then pushes 'typeof val'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Special Operators
      *   Operands:
      *   Stack: val => (typeof val)
@@ -361,7 +362,7 @@
     macro(JSOP_TYPEOF,    39, js_typeof_str,NULL,         1,  1,  1, JOF_BYTE|JOF_DETECTING) \
     /*
      * Pops the top value on the stack and pushes 'undefined'.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Special Operators
      *   Operands:
      *   Stack: val => undefined
@@ -404,11 +405,11 @@
      *   Operands:
      *   Stack: callee, this, args => rval
      */ \
-    macro(JSOP_SPREADEVAL,43, "spreadeval", NULL,         1,  3,  1, JOF_BYTE|JOF_INVOKE|JOF_TYPESET) \
+    macro(JSOP_SPREADEVAL,43, "spreadeval", NULL,         1,  3,  1, JOF_BYTE|JOF_INVOKE|JOF_TYPESET|JOF_CHECKSLOPPY) \
     \
     /*
      * Duplicates the Nth value from the top onto the stack.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands: uint24_t n
      *   Stack: v[n], v[n-1], ..., v[1], v[0] =>
@@ -416,12 +417,69 @@
      */ \
     macro(JSOP_DUPAT,     44, "dupat",      NULL,         4,  0,  1,  JOF_UINT24) \
     \
-    macro(JSOP_UNUSED45,  45, "unused45",   NULL,         1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED46,  46, "unused46",   NULL,         1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED47,  47, "unused47",   NULL,         1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED48,  48, "unused48",   NULL,         1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED49,  49, "unused49",   NULL,         1,  0,  0,  JOF_BYTE) \
-    macro(JSOP_UNUSED50,  50, "unused50",   NULL,         1,  0,  0,  JOF_BYTE) \
+    /*
+     * Push a well-known symbol onto the operand stack.
+     *   Category: Literals
+     *   Type: Constants
+     *   Operands: uint8_t n, the JS::SymbolCode of the symbol to use
+     *   Stack: => symbol
+     */ \
+    macro(JSOP_SYMBOL,    45, "symbol",     NULL,         2,  0,  1,  JOF_UINT8) \
+    \
+    /*
+     * Pops the top of stack value and attempts to delete the given property
+     * from it. Pushes 'true' onto success, else throws a TypeError per strict
+     * mode property-deletion requirements.
+     *   Category: Operators
+     *   Type: Special Operators
+     *   Operands: uint32_t nameIndex
+     *   Stack: obj => succeeded
+     */ \
+    macro(JSOP_STRICTDELPROP,   46, "strict-delprop",    NULL,         5,  1,  1, JOF_ATOM|JOF_PROP|JOF_CHECKSTRICT) \
+    /*
+     * Pops the top two values on the stack as 'propval' and 'obj',
+     * and attempts to delete 'propval' property from 'obj'. Pushes 'true' onto
+     * the stack on success, else throws a TypeError per strict mode property
+     * deletion requirements.
+     *   Category: Literals
+     *   Type: Object
+     *   Operands:
+     *   Stack: obj, propval => succeeded
+     */ \
+    macro(JSOP_STRICTDELELEM,   47, "strict-delelem",    NULL,         1,  2,  1, JOF_BYTE|JOF_ELEM|JOF_CHECKSTRICT) \
+    /*
+     * Pops the top two values on the stack as 'val' and 'obj', and performs
+     * 'obj.prop = val', pushing 'val' back onto the stack. Throws a TypeError
+     * if the set-operation failed (per strict mode semantics).
+     *   Category: Literals
+     *   Type: Object
+     *   Operands: uint32_t nameIndex
+     *   Stack: obj, val => val
+     */ \
+    macro(JSOP_STRICTSETPROP,   48, "strict-setprop",    NULL,         5,  2,  1, JOF_ATOM|JOF_PROP|JOF_SET|JOF_DETECTING|JOF_CHECKSTRICT) \
+    /*
+     * Pops a scope and value from the stack, assigns value to the given name,
+     * and pushes the value back on the stack. If the set failed, then throw
+     * a TypeError, per usual strict mode semantics.
+     *   Category: Variables and Scopes
+     *   Type: Variables
+     *   Operands: uint32_t nameIndex
+     *   Stack: scope, val => val
+     */ \
+    macro(JSOP_STRICTSETNAME,   49, "strict-setname",    NULL,         5,  2,  1,  JOF_ATOM|JOF_NAME|JOF_SET|JOF_DETECTING|JOF_CHECKSTRICT) \
+    /*
+     * spreadcall variant of JSOP_EVAL
+     *
+     * Invokes 'eval' with 'args' and pushes the return value onto the stack.
+     *
+     * If 'eval' in global scope is not original one, invokes the function
+     * with 'this' and 'args', and pushes return value onto the stack.
+     *   Category: Statements
+     *   Type: Function
+     *   Operands:
+     *   Stack: callee, this, args => rval
+     */ \
+    macro(JSOP_STRICTSPREADEVAL,      50, "strict-spreadeval", NULL,         1,  3,  1, JOF_BYTE|JOF_INVOKE|JOF_TYPESET|JOF_CHECKSTRICT) \
     macro(JSOP_UNUSED51,  51, "unused51",   NULL,         1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED52,  52, "unused52",   NULL,         1,  0,  0,  JOF_BYTE) \
     \
@@ -434,14 +492,14 @@
      */ \
     macro(JSOP_GETPROP,   53, "getprop",    NULL,         5,  1,  1, JOF_ATOM|JOF_PROP|JOF_TYPESET|JOF_TMPSLOT3) \
     /*
-     * Pops the top two values on the stack as 'val' and 'obj', sets property of
-     * 'obj' as 'val', pushes 'obj' onto the stack.
+     * Pops the top two values on the stack as 'val' and 'obj' and performs
+     * 'obj.prop = val', pushing 'val' back onto the stack.
      *   Category: Literals
      *   Type: Object
      *   Operands: uint32_t nameIndex
      *   Stack: obj, val => val
      */ \
-    macro(JSOP_SETPROP,   54, "setprop",    NULL,         5,  2,  1, JOF_ATOM|JOF_PROP|JOF_SET|JOF_DETECTING) \
+    macro(JSOP_SETPROP,   54, "setprop",    NULL,         5,  2,  1, JOF_ATOM|JOF_PROP|JOF_SET|JOF_DETECTING|JOF_CHECKSLOPPY) \
     /*
      * Pops the top two values on the stack as 'propval' and 'obj', pushes
      * 'propval' property of 'obj' onto the stack.
@@ -460,8 +518,18 @@
      *   Operands:
      *   Stack: obj, propval, val => val
      */ \
-    macro(JSOP_SETELEM,   56, "setelem",    NULL,         1,  3,  1, JOF_BYTE |JOF_ELEM|JOF_SET|JOF_DETECTING) \
-    macro(JSOP_UNUSED57,  57, "unused57",   NULL,         1,  0,  0, JOF_BYTE) \
+    macro(JSOP_SETELEM,   56, "setelem",    NULL,         1,  3,  1, JOF_BYTE |JOF_ELEM|JOF_SET|JOF_DETECTING|JOF_CHECKSLOPPY) \
+    /*
+     * Pops the top three values on the stack as 'val', 'propval' and 'obj',
+     * sets 'propval' property of 'obj' as 'val', pushes 'obj' onto the
+     * stack. Throws a TypeError if the set fails, per strict mode
+     * semantics.
+     *   Category: Literals
+     *   Type: Object
+     *   Operands:
+     *   Stack: obj, propval, val => val
+     */ \
+    macro(JSOP_STRICTSETELEM,   57, "strict-setelem",    NULL,         1,  3,  1, JOF_BYTE |JOF_ELEM|JOF_SET|JOF_DETECTING|JOF_CHECKSTRICT) \
     /*
      * Invokes 'callee' with 'this' and 'args', pushes return value onto the
      * stack.
@@ -479,7 +547,7 @@
      *   Operands: uint32_t nameIndex
      *   Stack: => val
      */ \
-    macro(JSOP_NAME,      59, "name",       NULL,         5,  0,  1, JOF_ATOM|JOF_NAME|JOF_TYPESET) \
+    macro(JSOP_GETNAME,   59, "getname",    NULL,         5,  0,  1, JOF_ATOM|JOF_NAME|JOF_TYPESET) \
     /*
      * Pushes numeric constant onto the stack.
      *   Category: Literals
@@ -585,7 +653,7 @@
     /*
      * Pops the top two values from the stack, then pushes the result of
      * applying the operator to the two values.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Comparison Operators
      *   Operands:
      *   Stack: lval, rval => (lval OP rval)
@@ -668,7 +736,7 @@
     \
     /*
      * Pops the top value off the stack.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands:
      *   Stack: v =>
@@ -770,17 +838,9 @@
      *   Stack: => obj
      */ \
     macro(JSOP_NEWOBJECT, 91, "newobject",  NULL,         5,  0,  1, JOF_OBJECT) \
-    /*
-     * A no-operation bytecode.
-     *
-     * Indicates the end of object/array initialization, and used for
-     * Type-Inference, decompile, etc.
-     *   Category: Literals
-     *   Type: Object
-     *   Operands:
-     *   Stack: =>
-     */ \
-    macro(JSOP_ENDINIT,   92, "endinit",    NULL,         1,  0,  0, JOF_BYTE) \
+    \
+    macro(JSOP_UNUSED92,  92, "unused92",   NULL,         1,  0,  0, JOF_BYTE) \
+    \
     /*
      * Initialize a named property in an object literal, like '{a: x}'.
      *
@@ -965,7 +1025,7 @@
      *   Operands: uint32_t nameIndex
      *   Stack: scope, val => val
      */ \
-    macro(JSOP_SETNAME,   111,"setname",    NULL,         5,  2,  1,  JOF_ATOM|JOF_NAME|JOF_SET|JOF_DETECTING) \
+    macro(JSOP_SETNAME,   111,"setname",    NULL,         5,  2,  1,  JOF_ATOM|JOF_NAME|JOF_SET|JOF_DETECTING|JOF_CHECKSLOPPY) \
     \
     /* Exception handling ops. */ \
     /*
@@ -983,7 +1043,7 @@
      * 'id in obj'.  This will throw a 'TypeError' if 'obj' is not an object.
      *
      * Note that 'obj' is the top value.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Special Operators
      *   Operands:
      *   Stack: id, obj => (id in obj)
@@ -993,7 +1053,7 @@
      * Pops the top two values 'obj' and 'ctor' from the stack, then pushes
      * 'obj instanceof ctor'.  This will throw a 'TypeError' if 'obj' is not an
      * object.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Special Operators
      *   Operands:
      *   Stack: obj, ctor => (obj instanceof ctor)
@@ -1121,9 +1181,21 @@
      *   Stack: callee, this, args[0], ..., args[argc-1] => rval
      *   nuses: (argc+2)
      */ \
-    macro(JSOP_EVAL,      123,"eval",       NULL,         3, -1,  1, JOF_UINT16|JOF_INVOKE|JOF_TYPESET) \
+    macro(JSOP_EVAL,      123,"eval",       NULL,         3, -1,  1, JOF_UINT16|JOF_INVOKE|JOF_TYPESET|JOF_CHECKSLOPPY) \
     \
-    macro(JSOP_UNUSED124,  124, "unused124", NULL,      1,  0,  0,  JOF_BYTE) \
+    /* ECMA-compliant call to eval op. */ \
+    /*
+     * Invokes 'eval' with 'args' and pushes return value onto the stack.
+     *
+     * If 'eval' in global scope is not original one, invokes the function
+     * with 'this' and 'args', and pushes return value onto the stack.
+     *   Category: Statements
+     *   Type: Function
+     *   Operands: uint16_t argc
+     *   Stack: callee, this, args[0], ..., args[argc-1] => rval
+     *   nuses: (argc+2)
+     */ \
+    macro(JSOP_STRICTEVAL,       124, "strict-eval",       NULL,         3, -1,  1, JOF_UINT16|JOF_INVOKE|JOF_TYPESET|JOF_CHECKSTRICT) \
     macro(JSOP_UNUSED125,  125, "unused125", NULL,      1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED126,  126, "unused126", NULL,      1,  0,  0,  JOF_BYTE) \
     \
@@ -1198,7 +1270,7 @@
     /*
      * Picks the nth element from the stack and moves it to the top of the
      * stack.
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Stack Operations
      *   Operands: uint8_t n
      *   Stack: v[n], v[n-1], ..., v[1], v[0] => v[n-1], ..., v[1], v[0], v[n]
@@ -1406,9 +1478,20 @@
      *   Operands: uint32_t nameIndex
      *   Stack: scope, val => val
      */ \
-    macro(JSOP_SETGNAME,      155,"setgname",  NULL,       5,  2,  1, JOF_ATOM|JOF_NAME|JOF_SET|JOF_DETECTING|JOF_GNAME) \
+    macro(JSOP_SETGNAME,      155,"setgname",  NULL,       5,  2,  1, JOF_ATOM|JOF_NAME|JOF_SET|JOF_DETECTING|JOF_GNAME|JOF_CHECKSLOPPY) \
     \
-    macro(JSOP_UNUSED156,  156, "unused156",   NULL,         1,  0,  0,  JOF_BYTE) \
+    /*
+     * Pops the top two values on the stack as 'val' and 'scope', sets property
+     * of 'scope' as 'val' and pushes 'val' back on the stack. Throws a
+     * TypeError if the set fails, per strict mode semantics.
+     *
+     * 'scope' should be the global scope.
+     *   Category: Variables and Scopes
+     *   Type: Free Variables
+     *   Operands: uint32_t nameIndex
+     *   Stack: scope, val => val
+     */ \
+    macro(JSOP_STRICTSETGNAME, 156, "strict-setgname",  NULL,       5,  2,  1, JOF_ATOM|JOF_NAME|JOF_SET|JOF_DETECTING|JOF_GNAME|JOF_CHECKSTRICT) \
     macro(JSOP_UNUSED157,  157, "unused157",   NULL,         1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED158,  158, "unused158",   NULL,         1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED159,  159, "unused159",   NULL,         1,  0,  0,  JOF_BYTE) \
@@ -1518,7 +1601,7 @@
      * this opcode isn't used when, in the original source code, 'val' is a
      * name -- see 'JSOP_TYPEOF' for that.
      * (This is because 'typeof undefinedName === "undefined"'.)
-     *   Category: Operator
+     *   Category: Operators
      *   Type: Special Operators
      *   Operands:
      *   Stack: val => (typeof val)
@@ -1565,28 +1648,19 @@
      * interpretation.
      *   Category: Statements
      *   Type: Generator
-     *   Operands:
+     *   Operands: uint24_t yieldIndex
      *   Stack: generator =>
      */ \
-    macro(JSOP_INITIALYIELD,  202,"initialyield", NULL,   1,  1,  0,  JOF_BYTE) \
+    macro(JSOP_INITIALYIELD,  202,"initialyield", NULL,   4,  1,  1,  JOF_UINT24) \
     /*
      * Pops the generator and the return value 'rval1', stops interpretation and
      * returns 'rval1'. Pushes sent value from 'send()' onto the stack.
      *   Category: Statements
      *   Type: Generator
-     *   Operands:
+     *   Operands: uint24_t yieldIndex
      *   Stack: rval1, gen => rval2
      */ \
-    macro(JSOP_YIELD,         203,"yield",       NULL,    1,  2,  1,  JOF_BYTE) \
-    /*
-     * Pops the generator and the value to yield from the stack. Then suspends
-     * and closes the generator.
-     *   Category: Statements
-     *   Type: Generator
-     *   Operands:
-     *   Stack: gen, val =>
-     */ \
-    macro(JSOP_FINALYIELD,    204,"finalyield",  NULL,    1,  2,  0,  JOF_BYTE) \
+    macro(JSOP_YIELD,         203,"yield",       NULL,    4,  2,  1,  JOF_UINT24) \
     /*
      * Pops the generator and suspends and closes it. Yields the value in the
      * frame's return value slot.
@@ -1595,7 +1669,7 @@
      *   Operands:
      *   Stack: gen =>
      */ \
-    macro(JSOP_FINALYIELDRVAL,205,"finalyieldrval",NULL,  1,  1,  0,  JOF_BYTE) \
+    macro(JSOP_FINALYIELDRVAL,204,"finalyieldrval",NULL,  1,  1,  0,  JOF_BYTE) \
     /*
      * Pops the generator and argument from the stack, pushes a new generator
      * frame and resumes execution of it. Pushes the return value after the
@@ -1605,7 +1679,7 @@
      *   Operands: resume kind (GeneratorObject::ResumeKind)
      *   Stack: gen, val => rval
      */ \
-    macro(JSOP_RESUME,        206,"resume",      NULL,    3,  2,  1,  JOF_UINT8|JOF_INVOKE) \
+    macro(JSOP_RESUME,        205,"resume",      NULL,    3,  2,  1,  JOF_UINT8|JOF_INVOKE) \
     /*
      * Pops the top two values on the stack as 'obj' and 'v', pushes 'v' to
      * 'obj'.
@@ -1616,9 +1690,28 @@
      *   Operands:
      *   Stack: v, obj =>
      */ \
-    macro(JSOP_ARRAYPUSH,     207,"arraypush",   NULL,    1,  2,  0,  JOF_BYTE) \
+    macro(JSOP_ARRAYPUSH,     206,"arraypush",   NULL,    1,  2,  0,  JOF_BYTE) \
     \
-    macro(JSOP_UNUSED208,     208, "unused208",    NULL,  1,  0,  0,  JOF_BYTE) \
+    /*
+     * No-op bytecode only emitted in some self-hosted functions. Not handled by
+     * the JITs so the script always runs in the interpreter.
+     *
+     *   Category: Other
+     *   Operands:
+     *   Stack: =>
+     */ \
+    macro(JSOP_FORCEINTERPRETER, 207, "forceinterpreter", NULL,  1,  0,  0,  JOF_BYTE) \
+    \
+    /*
+     * Bytecode emitted after 'yield' expressions to help the Debugger
+     * fix up the frame in the JITs. No-op in the interpreter.
+     *
+     *   Category: Operators
+     *   Type: Debugger
+     *   Operands:
+     *   Stack: =>
+     */ \
+    macro(JSOP_DEBUGAFTERYIELD,  208, "debugafteryield",  NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED209,     209, "unused209",    NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED210,     210, "unused210",    NULL,  1,  0,  0,  JOF_BYTE) \
     macro(JSOP_UNUSED211,     211, "unused211",    NULL,  1,  0,  0,  JOF_BYTE) \

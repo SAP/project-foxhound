@@ -1,13 +1,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 "use strict";
 
 /**
  * Many Gecko operations (painting, reflows, restyle, ...) can be tracked
  * in real time. A marker is a representation of one operation. A marker
- * has a name, and start and end timestamps. Markers are stored in docShells.
+ * has a name, start and end timestamps. Markers are stored in docShells.
  *
  * This actor exposes this tracking mechanism to the devtools protocol.
  *
@@ -18,7 +17,6 @@
  *
  * When markers are available, an event is emitted:
  *   TimelineFront.on("markers", function(markers) {...})
- *
  */
 
 const {Ci, Cu} = require("chrome");
@@ -26,13 +24,29 @@ const protocol = require("devtools/server/protocol");
 const {method, Arg, RetVal, Option} = protocol;
 const events = require("sdk/event/core");
 const {setTimeout, clearTimeout} = require("sdk/timers");
+
 const {MemoryActor} = require("devtools/server/actors/memory");
 const {FramerateActor} = require("devtools/server/actors/framerate");
+const {StackFrameCache} = require("devtools/server/actors/utils/stack");
 
 // How often do we pull markers from the docShells, and therefore, how often do
 // we send events to the front (knowing that when there are no markers in the
 // docShell, no event is sent).
 const DEFAULT_TIMELINE_DATA_PULL_TIMEOUT = 200; // ms
+
+/**
+ * Type representing an array of numbers as strings, serialized fast(er).
+ * http://jsperf.com/json-stringify-parse-vs-array-join-split/3
+ *
+ * XXX: It would be nice if on local connections (only), we could just *give*
+ * the array directly to the front, instead of going through all this
+ * serialization redundancy.
+ */
+protocol.types.addType("array-of-numbers-as-strings", {
+  write: (v) => v.join(","),
+  // In Gecko <= 37, `v` is an array; do not transform in this case.
+  read: (v) => typeof v === "string" ? v.split(",") : v
+});
 
 /**
  * The timeline actor pops and forwards timeline markers registered in docshells.
@@ -42,22 +56,20 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
 
   events: {
     /**
-     * "markers" events are emitted every DEFAULT_TIMELINE_DATA_PULL_TIMEOUT ms
-     * at most, when profile markers are found. A marker has the following
-     * properties:
-     * - start {Number} ms
-     * - end {Number} ms
-     * - name {String}
+     * The "markers" events emitted every DEFAULT_TIMELINE_DATA_PULL_TIMEOUT ms
+     * at most, when profile markers are found. The timestamps on each marker
+     * are relative to when recording was started.
      */
     "markers" : {
       type: "markers",
-      markers: Arg(0, "array:json"),
+      markers: Arg(0, "json"),
       endTime: Arg(1, "number")
     },
 
     /**
-     * "memory" events emitted in tandem with "markers", if this was enabled
-     * when the recording started.
+     * The "memory" events emitted in tandem with "markers", if this was enabled
+     * when the recording started. The `delta` timestamp on this measurement is
+     * relative to when recording was started.
      */
     "memory" : {
       type: "memory",
@@ -66,22 +78,38 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
     },
 
     /**
-     * "ticks" events (from the refresh driver) emitted in tandem with "markers",
-     * if this was enabled when the recording started.
+     * The "ticks" events (from the refresh driver) emitted in tandem with
+     * "markers", if this was enabled when the recording started. All ticks
+     * are timestamps with a zero epoch.
      */
     "ticks" : {
       type: "ticks",
       delta: Arg(0, "number"),
-      timestamps: Arg(1, "array:number")
+      timestamps: Arg(1, "array-of-numbers-as-strings")
+    },
+
+    /**
+     * The "frames" events emitted in tandem with "markers", containing
+     * JS stack frames. The `delta` timestamp on this frames packet is
+     * relative to when recording was started.
+     */
+    "frames" : {
+      type: "frames",
+      delta: Arg(0, "number"),
+      frames: Arg(1, "json")
     }
   },
 
+  /**
+   * Initializes this actor with the provided connection and tab actor.
+   */
   initialize: function(conn, tabActor) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.tabActor = tabActor;
 
     this._isRecording = false;
     this._startTime = 0;
+    this._stackFrames = null;
 
     // Make sure to get markers from new windows as they become available
     this._onWindowReady = this._onWindowReady.bind(this);
@@ -97,6 +125,9 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
     this.destroy();
   },
 
+  /**
+   * Destroys this actor, stopping recording first.
+   */
   destroy: function() {
     this.stop();
 
@@ -116,7 +147,15 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
    * @return {Array}
    */
   get docShells() {
-    let docShellsEnum = this.tabActor.originalDocShell.getDocShellEnumerator(
+    let originalDocShell;
+
+    if (this.tabActor.isRootActor) {
+      originalDocShell = this.tabActor.docShell;
+    } else {
+      originalDocShell = this.tabActor.originalDocShell;
+    }
+
+    let docShellsEnum = originalDocShell.getDocShellEnumerator(
       Ci.nsIDocShellTreeItem.typeAll,
       Ci.nsIDocShell.ENUMERATE_FORWARDS
     );
@@ -132,7 +171,7 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
 
   /**
    * At regular intervals, pop the markers from the docshell, and forward
-   * markers if any.
+   * markers, memory, tick and frames events, if any.
    */
   _pullTimelineData: function() {
     if (!this._isRecording) {
@@ -147,6 +186,26 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
 
     for (let docShell of this.docShells) {
       markers = [...markers, ...docShell.popProfileTimelineMarkers()];
+    }
+
+    // The docshell may return markers with stack traces attached.
+    // Here we transform the stack traces via the stack frame cache,
+    // which lets us preserve tail sharing when transferring the
+    // frames to the client.  We must waive xrays here because Firefox
+    // doesn't understand that the Debugger.Frame object is safe to
+    // use from chrome.  See Tutorial-Alloc-Log-Tree.md.
+    for (let marker of markers) {
+      if (marker.stack) {
+        marker.stack = this._stackFrames.addFrame(Cu.waiveXrays(marker.stack));
+      }
+      if (marker.endStack) {
+        marker.endStack = this._stackFrames.addFrame(Cu.waiveXrays(marker.endStack));
+      }
+    }
+
+    let frames = this._stackFrames.makeEvent();
+    if (frames) {
+      events.emit(this, "frames", endTime, frames);
     }
     if (markers.length > 0) {
       events.emit(this, "markers", markers, endTime);
@@ -184,15 +243,17 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
     }
     this._isRecording = true;
     this._startTime = this.docShells[0].now();
+    this._stackFrames = new StackFrameCache();
+    this._stackFrames.initFrames();
 
     for (let docShell of this.docShells) {
       docShell.recordProfileTimelineMarkers = true;
     }
 
     if (withMemory) {
-      this._memoryActor = new MemoryActor(this.conn, this.tabActor);
-      events.emit(this, "memory", Date.now(), this._memoryActor.measure());
+      this._memoryActor = new MemoryActor(this.conn, this.tabActor, this._stackFrames);
     }
+
     if (withTicks) {
       this._framerateActor = new FramerateActor(this.conn, this.tabActor);
       this._framerateActor.startRecording();
@@ -218,10 +279,12 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
       return;
     }
     this._isRecording = false;
+    this._stackFrames = null;
 
     if (this._memoryActor) {
       this._memoryActor = null;
     }
+
     if (this._framerateActor) {
       this._framerateActor.stopRecording();
       this._framerateActor = null;
@@ -232,7 +295,14 @@ let TimelineActor = exports.TimelineActor = protocol.ActorClass({
     }
 
     clearTimeout(this._dataPullTimeout);
-  }, {}),
+    return this.docShells[0].now();
+  }, {
+    response: {
+      // Set as possibly nullable due to the end time possibly being
+      // undefined during destruction
+      value: RetVal("nullable:number")
+    }
+  }),
 
   /**
    * When a new window becomes available in the tabActor, start recording its
@@ -253,7 +323,6 @@ exports.TimelineFront = protocol.FrontClass(TimelineActor, {
     protocol.Front.prototype.initialize.call(this, client, {actor: timelineActor});
     this.manage(this);
   },
-
   destroy: function() {
     protocol.Front.prototype.destroy.call(this);
   },

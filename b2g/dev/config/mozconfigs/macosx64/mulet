@@ -1,4 +1,3 @@
-MOZ_AUTOMATION_TALOS_SENDCHANGE=0
 . $topsrcdir/build/macosx/mozconfig.common
 
 ac_add_options --enable-application=b2g/dev
@@ -21,5 +20,8 @@ ac_add_options --enable-warnings-as-errors
 
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
+
+# Include Firefox OS fonts.
+MOZTTDIR=$topsrcdir/moztt
 
 . "$topsrcdir/build/mozconfig.common.override"

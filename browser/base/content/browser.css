@@ -14,6 +14,30 @@
 %endif
 }
 
+/* These values are chosen to keep the Loop detached chat window from
+ * getting too small.  When it's too small, three bad things happen:
+ *
+ * - It looks terrible
+ * - It's not really usable
+ * - It's possible for the user to be transmitting video that's cropped by the
+ *   the edge of the window, so that they're not aware of it, which is a
+ *   privacy problem
+ *
+ * Note that if the chat window grows more users than Loop who want this
+ * ability, we'll need to generalize.  A partial patch for this is in
+ * bug 1112264.
+ */
+
+#chat-window {
+ /*
+  * In some ideal world, we'd have a simple way to express "block resizing
+  * along any dimension beyond the point at which an overflow event would
+  * occur".  But none of -moz-{fit,max,min}-content do what we want here. So..
+  */
+  min-width: 320px;
+  min-height: 280px;
+}
+
 #main-window[customize-entered] {
   min-width: -moz-fit-content;
 }
@@ -22,8 +46,12 @@ searchbar {
   -moz-binding: url("chrome://browser/content/search/search.xml#searchbar");
 }
 
+.browserStack > browser {
+  -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-browser");
+}
+
 .browserStack > browser[remote="true"] {
-  -moz-binding: url("chrome://global/content/bindings/remote-browser.xml#remote-browser");
+  -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-remote-browser");
 }
 
 toolbar[customizable="true"] {
@@ -188,6 +216,10 @@ toolbar[customizing] > .overflow-button {
 
 #titlebar {
   -moz-binding: url("chrome://global/content/bindings/general.xml#windowdragbox");
+
+%ifdef XP_MACOSX
+  -moz-window-dragging: drag;
+%endif
 }
 
 #titlebar-spacer {
@@ -251,6 +283,11 @@ toolbar[customizing] > .overflow-button {
 %endif
 
 %endif
+
+#main-window[inDOMFullscreen] #sidebar-box,
+#main-window[inDOMFullscreen] #sidebar-splitter {
+  visibility: collapse;
+}
 
 #main-window[inFullscreen] #global-notificationbox,
 #main-window[inFullscreen] #high-priority-global-notificationbox {
@@ -385,16 +422,16 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 /* For results that are actions, their description text is shown instead of
    the URL - this needs to follow the locale's direction, unlike URLs. */
-panel:not([noactions]) > richlistbox > richlistitem[type~="action"]:-moz-locale-dir(rtl) > .ac-url-box {
+panel:not([noactions]) > richlistbox > richlistitem.overridable-action:-moz-locale-dir(rtl) > .ac-url-box {
   direction: rtl;
 }
 
-panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .ac-url > .ac-action-text,
-panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .ac-action-icon {
+panel[noactions] > richlistbox > richlistitem.overridable-action > .ac-url-box > .ac-url > .ac-action-text,
+panel[noactions] > richlistbox > richlistitem.overridable-action > .ac-url-box > .ac-action-icon {
   visibility: collapse;
 }
 
-panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .ac-url > .ac-url-text {
+panel[noactions] > richlistbox > richlistitem.overridable-action > .ac-url-box > .ac-url > .ac-url-text {
   visibility: visible;
 }
 
@@ -404,6 +441,21 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
 
 #PopupAutoComplete {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#browser-autocomplete-result-popup");
+}
+
+#PopupSearchAutoComplete {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#browser-search-autocomplete-result-popup");
+}
+
+/* Overlay a badge on top of the icon of additional open search providers
+   in the search panel. */
+.addengine-item > .button-box > .button-icon {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#addengine-icon");
+  display: -moz-stack;
+}
+
+searchbar[oneoffui] {
+  -moz-binding: url("chrome://browser/content/search/search.xml#searchbar-flare") !important;
 }
 
 #PopupAutoCompleteRichResult {
@@ -529,7 +581,7 @@ window[sizemode="maximized"] #content .notification-inner {
 
 /* Hide extension toolbars that neglected to set the proper class */
 window[chromehidden~="location"][chromehidden~="toolbar"] toolbar:not(.chromeclass-menubar),
-window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-menubar) {
+window[chromehidden~="toolbar"] toolbar:not(#nav-bar):not(#TabsToolbar):not(#print-preview-toolbar):not(.chromeclass-menubar) {
   display: none;
 }
 
@@ -778,9 +830,6 @@ statuspanel[inactive][previoustype=overLink] {
   max-width: 32em;
 }
 
-/* highlighter */
-%include highlighter.css
-
 /* gcli */
 
 html|*#gcli-tooltip-frame,
@@ -834,7 +883,7 @@ toolbarbutton[type="socialmark"] {
 
 toolbarbutton.badged-button > .toolbarbutton-badge-container > .toolbarbutton-icon,
 toolbarbutton[type="socialmark"] > .toolbarbutton-icon {
-  max-width: 16px;
+  max-width: 18px;
 }
 toolbarpaletteitem[place="palette"] > toolbarbutton.badged-button > .toolbarbutton-badge-container > .toolbarbutton-icon {
   max-width: 32px;
@@ -848,6 +897,11 @@ panelview > .social-panel-frame {
 /* Translation */
 notification[value="translation"] {
   -moz-binding: url("chrome://browser/content/translation-infobar.xml#translationbar");
+}
+
+/* Loop/ Hello */
+notification[value="loop-sharing-notification"] .close-icon {
+  display: none;
 }
 
 /* Social */
@@ -963,8 +1017,8 @@ chatbox:-moz-full-screen-ancestor > .chat-titlebar {
 }
 
 /* Combobox dropdown renderer */
-#ContentSelectDropdown {
-  max-height: 400px;
+#ContentSelectDropdown > menupopup {
+  max-height: 350px;
 }
 
 .contentSelectDropdown-optgroup {
@@ -1102,14 +1156,14 @@ toolbarpaletteitem[dragover] {
 
 #customization-palette:not([hidden]) {
   display: block;
-  flex: 1 1 main-size;
+  flex: 1 1 auto;
   overflow: auto;
   min-height: 3em;
 }
 
 #customization-footer-spacer,
 #customization-spacer {
-  flex: 1 1 main-size;
+  flex: 1 1 auto;
 }
 
 #customization-footer {
@@ -1124,7 +1178,9 @@ toolbarpaletteitem[dragover] {
 
 toolbarpaletteitem[place="palette"] {
   width: 10em;
-  height: calc(40px + 2em);
+  /* icon (32) + margin (2 * 4) + button padding/border (2 * 4) + label margin (~2) + label
+   * line-height (1.5em): */
+  height: calc(50px + 1.5em);
   margin-bottom: 5px;
   overflow: hidden;
   display: inline-block;
@@ -1139,6 +1195,10 @@ toolbarpaletteitem[place="palette"][hidden] {
   -moz-box-flex: 1;
   width: 10em;
   max-width: 10em;
+}
+
+#main-window[customizing=true] #PanelUI-update-status {
+  display: none;
 }
 
 /* UI Tour */
@@ -1204,6 +1264,20 @@ toolbarpaletteitem[place="palette"][hidden] {
 #UITourHighlight[active="color"] {
   animation-name: uitour-color;
   animation-duration: 2s;
+}
+
+#abouthome-search-panel > .panel-arrowcontainer > .panel-arrowcontent {
+  padding: 0;
+  font-size: 110%;
+}
+
+#abouthome-search-panel-manage {
+  padding: 4px 24px;
+}
+
+#abouthome-search-panel-manage > label {
+  padding: 0;
+  margin: 0;
 }
 
 /* Combined context-menu items */

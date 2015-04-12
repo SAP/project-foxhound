@@ -59,7 +59,7 @@ class DataStoreAddEventListenerRunnable : public WorkerMainThreadRunnable
 
 protected:
   virtual bool
-  MainThreadRun() MOZ_OVERRIDE
+  MainThreadRun() override
   {
     AssertIsOnMainThread();
 
@@ -194,7 +194,7 @@ GetDataStoresStructuredCloneCallbacksWrite(JSContext* aCx,
   return true;
 }
 
-static JSStructuredCloneCallbacks kGetDataStoresStructuredCloneCallbacks = {
+static const JSStructuredCloneCallbacks kGetDataStoresStructuredCloneCallbacks = {
   GetDataStoresStructuredCloneCallbacksRead,
   GetDataStoresStructuredCloneCallbacksWrite,
   nullptr
@@ -202,7 +202,7 @@ static JSStructuredCloneCallbacks kGetDataStoresStructuredCloneCallbacks = {
 
 // A WorkerMainThreadRunnable to run WorkerNavigator::GetDataStores(...) on the
 // main thread.
-class NavigatorGetDataStoresRunnable MOZ_FINAL : public WorkerMainThreadRunnable
+class NavigatorGetDataStoresRunnable final : public WorkerMainThreadRunnable
 {
   nsRefPtr<PromiseWorkerProxy> mPromiseWorkerProxy;
   const nsString mName;
@@ -223,15 +223,29 @@ public:
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
 
+    // this might return null if the worker has started the close handler.
     mPromiseWorkerProxy =
-      new PromiseWorkerProxy(aWorkerPrivate,
-                             aWorkerPromise,
-                             &kGetDataStoresStructuredCloneCallbacks);
+      PromiseWorkerProxy::Create(aWorkerPrivate,
+                                 aWorkerPromise,
+                                 &kGetDataStoresStructuredCloneCallbacks);
   }
+
+  bool Dispatch(JSContext* aCx)
+  {
+    if (mPromiseWorkerProxy) {
+      return WorkerMainThreadRunnable::Dispatch(aCx);
+    }
+
+    // If the creation of mProxyWorkerProxy failed, the worker is terminating.
+    // In this case we don't want to dispatch the runnable and we should stop
+    // the promise chain here.
+    return true;
+  }
+
 
 protected:
   virtual bool
-  MainThreadRun() MOZ_OVERRIDE
+  MainThreadRun() override
   {
     AssertIsOnMainThread();
 
@@ -329,7 +343,7 @@ WorkerNavigator::GetPlatform(nsString& aPlatform) const
 
 namespace {
 
-class GetUserAgentRunnable MOZ_FINAL : public WorkerMainThreadRunnable
+class GetUserAgentRunnable final : public WorkerMainThreadRunnable
 {
   nsString& mUA;
 
@@ -342,7 +356,7 @@ public:
     aWorkerPrivate->AssertIsOnWorkerThread();
   }
 
-  virtual bool MainThreadRun() MOZ_OVERRIDE
+  virtual bool MainThreadRun() override
   {
     AssertIsOnMainThread();
 

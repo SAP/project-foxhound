@@ -46,12 +46,11 @@ interface nsIDOMClientRect;
 interface nsIURI;
 interface nsIDOMEventTarget;
 interface nsIRunnable;
-interface nsICompositionStringSynthesizer;
 interface nsITranslationNodeList;
 interface nsIJSRAIIHelper;
 interface nsIContentPermissionRequest;
 
-[scriptable, uuid(ed12c067-506b-4b10-9853-d4bba5c1bb6c)]
+[scriptable, uuid(d0461871-31bd-4da1-b22d-24595c27295c)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -102,6 +101,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * or is 0, it is taken to be 1.
    */
   unsigned long redraw([optional] in unsigned long aCount);
+
+  /**
+   * Force a synchronous layer transaction for this window if necessary.
+   */
+  void updateLayerTree();
 
   /**
    * Set the CSS viewport to be |widthPx| x |heightPx| in units of CSS
@@ -176,15 +180,13 @@ interface nsIDOMWindowUtils : nsISupports {
    * that each edge is located at a multiple of the "alignment" value.
    *
    * Note that both the margin values and alignment are treated as values in
-   * LayerPixels. Refer to layout/base/Units.h for a description of this unit.
+   * ScreenPixels. Refer to layout/base/Units.h for a description of this unit.
    * The base rect values are in app units.
    */
   void setDisplayPortMarginsForElement(in float aLeftMargin,
                                        in float aTopMargin,
                                        in float aRightMargin,
                                        in float aBottomMargin,
-                                       in uint32_t aAlignmentX,
-                                       in uint32_t aAlignmentY,
                                        in nsIDOMElement aElement,
                                        in uint32_t aPriority);
 
@@ -196,30 +198,35 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Get/set the resolution at which rescalable web content is drawn.
-   * Currently this is only (some) thebes content.
    *
    * Setting a new resolution does *not* trigger reflow.  This API is
    * entirely separate from textZoom and fullZoom; a resolution scale
    * can be applied together with both textZoom and fullZoom.
    *
-   * The effect of is API for gfx code to allocate more or fewer
+   * The effect of this API is for gfx code to allocate more or fewer
    * pixels for rescalable content by a factor of |resolution| in
-   * either or both dimensions.  setResolution() together with
-   * setDisplayport() can be used to implement a non-reflowing
-   * scale-zoom in concert with another entity that can draw with a
-   * scale.  For example, to scale a content |window| inside a
-   * <browser> by a factor of 2.0
-   *
-   *   window.setDisplayport(x, y, oldW / 2.0, oldH / 2.0);
-   *   window.setResolution(2.0, 2.0);
-   *   // elsewhere
-   *   browser.setViewportScale(2.0, 2.0);
+   * either or both dimensions.  The scale at which the content is
+   * displayed does not change; if that is desired, use
+   * setResolutionAndScaleTo() instead.
    *
    * The caller of this method must have chrome privileges.
    */
   void setResolution(in float aXResolution, in float aYResolution);
 
   void getResolution(out float aXResolution, out float aYResolution);
+
+  /**
+   * Similar to setResolution(), but also scales the content by the
+   * amount of the resolution, so that it is displayed at a
+   * correspondingly larger or smaller size, without the need for
+   * the caller to set an additional transform.
+   *
+   * This can be used to implement a non-reflowing scale-zoom, e.g.
+   * for pinch-zoom on mobile platforms.
+   *
+   * The caller of this method must have chrome privileges.
+   */
+  void setResolutionAndScaleTo(in float aXResolution, in float aYResolution);
 
   /**
    * Whether the resolution has been set by the user.
@@ -254,14 +261,16 @@ interface nsIDOMWindowUtils : nsISupports {
   const long MODIFIER_ALTGRAPH   = 0x0010;
   const long MODIFIER_CAPSLOCK   = 0x0020;
   const long MODIFIER_FN         = 0x0040;
-  const long MODIFIER_NUMLOCK    = 0x0080;
-  const long MODIFIER_SCROLLLOCK = 0x0100;
-  const long MODIFIER_SYMBOLLOCK = 0x0200;
-  const long MODIFIER_OS         = 0x0400;
+  const long MODIFIER_FNLOCK     = 0x0080;
+  const long MODIFIER_NUMLOCK    = 0x0100;
+  const long MODIFIER_SCROLLLOCK = 0x0200;
+  const long MODIFIER_SYMBOL     = 0x0400;
+  const long MODIFIER_SYMBOLLOCK = 0x0800;
+  const long MODIFIER_OS         = 0x1000;
 
   /** Synthesize a mouse event. The event types supported are:
    *    mousedown, mouseup, mousemove, mouseover, mouseout, contextmenu,
-   *    MozMouseHitTest
+   *    MozMouseHittest
    *
    * Events are sent in coordinates offset by aX and aY from the window.
    *
@@ -549,8 +558,6 @@ interface nsIDOMWindowUtils : nsISupports {
   const unsigned long KEY_FLAG_LOCATION_LEFT     = 0x0020;
   const unsigned long KEY_FLAG_LOCATION_RIGHT    = 0x0040;
   const unsigned long KEY_FLAG_LOCATION_NUMPAD   = 0x0080;
-  const unsigned long KEY_FLAG_LOCATION_MOBILE   = 0x0100;
-  const unsigned long KEY_FLAG_LOCATION_JOYSTICK = 0x0200;
 
   boolean sendKeyEvent(in AString aType,
                        in long aKeyCode,
@@ -656,8 +663,8 @@ interface nsIDOMWindowUtils : nsISupports {
    * drag - msg1-n:TOUCH_CONTACT (moving), msgn+1:TOUCH_REMOVE
    * hover drag - msg1-n:TOUCH_HOVER (moving), msgn+1:TOUCH_REMOVE
    *
-   * Widget support: Windows 8.0+, Winrt/Win32. Other widgets will
-   * throw.
+   * Widget support: Windows 8.0+, Winrt/Win32. Gonk supports CONTACT, REMOVE,
+   * and CANCEL but no HOVER. Other widgets will throw.
    *
    * @param aPointerId The touch point id to create or update.
    * @param aTouchState one or more of the touch states listed above
@@ -1026,31 +1033,6 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void sendContentCommandEvent(in AString aType,
                                [optional] in nsITransferable aTransferable);
-
-  /**
-   * Synthesize a composition event to the window.
-   *
-   * Cannot be accessed from unprivileged context (not content-accessible)
-   * Will throw a DOM security error if called without chrome privileges.
-   *
-   * @param aType     The event type: "compositionstart", "compositionend" or
-   *                  "compositionupdate".
-   * @param aData     The data property value.  Note that this isn't applied
-   *                  for compositionstart event because its value is the
-   *                  selected text which is automatically computed.
-   * @param aLocale   The locale property value.
-   */
-  void sendCompositionEvent(in AString aType,
-                            in AString aData,
-                            in AString aLocale);
-
-  /**
-   * Creating synthesizer of composition string on the window.
-   *
-   * Cannot be accessed from unprivileged context (not content-accessible)
-   * Will throw a DOM security error if called without chrome privileges.
-   */
-  nsICompositionStringSynthesizer createCompositionStringSynthesizer();
 
   /**
    * If sendQueryContentEvent()'s aAdditionalFlags argument is
@@ -1599,6 +1581,11 @@ interface nsIDOMWindowUtils : nsISupports {
   void loadSheet(in nsIURI sheetURI, in unsigned long type);
 
   /**
+   * Same as the above method but allows passing the URI as a string.
+   */
+  void loadSheetUsingURIString(in ACString sheetURI, in unsigned long type);
+
+  /**
    * Adds a style sheet to the list of additional style sheets of the document.
    *
    * Style sheets can be preloaded with nsIStyleSheetService.preloadSheet.
@@ -1612,6 +1599,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * style sheets of the document.  The removal takes effect immediately.
    */
   void removeSheet(in nsIURI sheetURI, in unsigned long type);
+
+  /**
+   * Same as the above method but allows passing the URI as a string.
+   */
+  void removeSheetUsingURIString(in ACString sheetURI, in unsigned long type);
 
   /**
    * Returns true if a user input is being handled.
@@ -1732,6 +1724,31 @@ interface nsIDOMWindowUtils : nsISupports {
      * e10s support properly.
      */
      void askPermission(in nsIContentPermissionRequest aRequest);
+
+  /**
+   * Number of frames constructed (excluding breaking) for the curent
+   * document.
+   *
+   * May throw NS_ERROR_NOT_AVAILABLE.
+   */
+  readonly attribute unsigned long long framesConstructed;
+
+  /**
+   * Number of frames reflowed for the curent document.
+   *
+   * May throw NS_ERROR_NOT_AVAILABLE.
+   */
+  readonly attribute unsigned long long framesReflowed;
+
+  /**
+   * Controls the amount of chrome that should be visible on each side of
+   * the window. Works like the chromemargin xul:window attribute.
+   * This should only be used with non-XUL windows.
+   */
+  void setChromeMargin(in int32_t aTop,
+                       in int32_t aRight,
+                       in int32_t aBottom,
+                       in int32_t aLeft);
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

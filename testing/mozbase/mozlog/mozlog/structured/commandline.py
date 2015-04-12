@@ -26,6 +26,13 @@ def verbose_wrapper(formatter, verbose):
     formatter.verbose = verbose
     return formatter
 
+def buffer_handler_wrapper(handler, buffer_limit):
+    if buffer_limit == "UNLIMITED":
+        buffer_limit = None
+    else:
+        buffer_limit = int(buffer_limit)
+    return handlers.BufferingLogFilter(handler, buffer_limit)
+
 formatter_option_defaults = {
     'verbose': False,
     'level': 'info',
@@ -40,6 +47,9 @@ fmt_options = {
     'level': (level_filter_wrapper,
               "A least log level to subscribe to for the given formatter (debug, info, error, etc.)",
               ["mach", "tbpl"], "store"),
+    'buffer': (buffer_handler_wrapper,
+               "If specified, enables message buffering at the given buffer size limit.",
+               ["mach", "tbpl"], "store"),
 }
 
 
@@ -76,8 +86,10 @@ def add_logging_group(parser):
                              help=help_str)
         for optname, (cls, help_str, formatters, action) in fmt_options.iteritems():
             for fmt in formatters:
-                group.add_option("--log-%s-%s" % (fmt, optname), action=action,
-                                 help=help_str, default=None)
+                # make sure fmt wasn't removed from log_formatters
+                if fmt in log_formatters:
+                    group.add_option("--log-%s-%s" % (fmt, optname), action=action,
+                                     help=help_str, default=None)
         parser.add_option_group(group)
     else:
         group = parser.add_argument_group(group_name,
@@ -88,8 +100,10 @@ def add_logging_group(parser):
 
         for optname, (cls, help_str, formatters, action) in fmt_options.iteritems():
             for fmt in formatters:
-                group.add_argument("--log-%s-%s" % (fmt, optname), action=action,
-                                   help=help_str, default=None)
+                # make sure fmt wasn't removed from log_formatters
+                if fmt in log_formatters:
+                    group.add_argument("--log-%s-%s" % (fmt, optname), action=action,
+                                       help=help_str, default=None)
 
 
 def setup_handlers(logger, formatters, formatter_options):
@@ -111,12 +125,18 @@ def setup_handlers(logger, formatters, formatter_options):
     for fmt, streams in formatters.iteritems():
         formatter_cls = log_formatters[fmt][0]
         formatter = formatter_cls()
+        handler_wrapper, handler_option = None, ""
         for option, value in formatter_options[fmt].iteritems():
-            formatter = fmt_options[option][0](formatter, value)
+            if option == "buffer":
+                handler_wrapper, handler_option = fmt_options[option][0], value
+            else:
+                formatter = fmt_options[option][0](formatter, value)
 
         for value in streams:
-            logger.add_handler(handlers.StreamHandler(stream=value,
-                                                      formatter=formatter))
+            handler = handlers.StreamHandler(stream=value, formatter=formatter)
+            if handler_wrapper:
+                handler = handler_wrapper(handler, handler_option)
+            logger.add_handler(handler)
 
 
 def setup_logging(suite, args, defaults=None):
@@ -124,7 +144,7 @@ def setup_logging(suite, args, defaults=None):
     Configure a structuredlogger based on command line arguments.
 
     The created structuredlogger will also be set as the default logger, and
-    can be retrieved with :py:func:`get_default_logger`.
+    can be retrieved with :py:func:`~mozlog.structured.structuredlog.get_default_logger`.
 
     :param suite: The name of the testsuite being run
     :param args: A dictionary of {argument_name:value} produced from
@@ -142,7 +162,7 @@ def setup_logging(suite, args, defaults=None):
     # Keep track of any options passed for formatters.
     formatter_options = defaultdict(lambda: formatter_option_defaults.copy())
     # Keep track of formatters and list of streams specified.
-    formatters = {}
+    formatters = defaultdict(list)
     found = False
     found_stdout_logger = False
     if not hasattr(args, 'iteritems'):
@@ -164,7 +184,6 @@ def setup_logging(suite, args, defaults=None):
                 continue
             if len(parts) == 2:
                 _, formatter = parts
-                formatters[formatter] = []
                 for value in values:
                     found = True
                     if isinstance(value, basestring):
@@ -179,12 +198,12 @@ def setup_logging(suite, args, defaults=None):
     #If there is no user-specified logging, go with the default options
     if not found:
         for name, value in defaults.iteritems():
-            formatters[name] = [value]
+            formatters[name].append(value)
 
     elif not found_stdout_logger and sys.stdout in defaults.values():
         for name, value in defaults.iteritems():
             if value == sys.stdout:
-                formatters[name] = [value]
+                formatters[name].append(value)
 
     setup_handlers(logger, formatters, formatter_options)
     set_default_logger(logger)

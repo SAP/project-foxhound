@@ -14,23 +14,21 @@ endif
 
 MOZ_APP_BUILDID=$(shell cat $(DEPTH)/config/buildid)
 
+# See Bug 1137586 for more details on version code computation.
 ifeq (,$(ANDROID_VERSION_CODE))
 ifeq ($(CPU_ARCH),arm)
-ifeq ($(MIN_CPU_VERSION),7)
-ANDROID_VERSION_CODE=$(shell cat $(DEPTH)/config/buildid | cut -c1-10)
-else
-# decrement the version code by 1 for armv6 builds so armv7 builds will win any compatability ties
-ANDROID_VERSION_CODE=$(shell echo $$((`cat $(DEPTH)/config/buildid | cut -c1-10` - 1)))
-endif
-else #not arm, so x86
-# increment the version code by 1 for x86 builds so they are offered to x86 phones that have arm emulators
-ANDROID_VERSION_CODE=$(shell echo $$((`cat $(DEPTH)/config/buildid | cut -c1-10` + 1)))
+# Increment by MIN_SDK_VERSION -- this adds 9 to every build ID as a minimum.
+# Our split APK starts at 11.
+ANDROID_VERSION_CODE=$(shell echo $$((`cat $(DEPTH)/config/buildid | cut -c1-10` + $(MOZ_ANDROID_MIN_SDK_VERSION) + 0)))
+else # not ARM, so x86.
+# Increment the version code by 3 for x86 builds so they are offered to x86 phones that have ARM emulators,
+# beating the 2-point advantage that the v11+ ARMv7 APK has.
+# If we change our splits in the future, we'll need to do this further still.
+ANDROID_VERSION_CODE=$(shell echo $$((`cat $(DEPTH)/config/buildid | cut -c1-10` + $(MOZ_ANDROID_MIN_SDK_VERSION) + 3)))
 endif
 endif
 
 UA_BUILDID=$(shell echo $(ANDROID_VERSION_CODE) | cut -c1-8)
-
-MOZ_BUILD_TIMESTAMP=$(shell echo `$(PYTHON) $(topsrcdir)/toolkit/xre/make-platformini.py --print-timestamp`)
 
 DEFINES += \
   -DANDROID_VERSION_CODE=$(ANDROID_VERSION_CODE) \
@@ -38,7 +36,6 @@ DEFINES += \
   -DMOZ_ANDROID_SHARED_ACCOUNT_TYPE="$(MOZ_ANDROID_SHARED_ACCOUNT_TYPE)" \
   -DMOZ_ANDROID_SHARED_FXACCOUNT_TYPE="$(MOZ_ANDROID_SHARED_FXACCOUNT_TYPE)" \
   -DMOZ_APP_BUILDID=$(MOZ_APP_BUILDID) \
-  -DMOZ_BUILD_TIMESTAMP=$(MOZ_BUILD_TIMESTAMP) \
   -DUA_BUILDID=$(UA_BUILDID) \
   $(NULL)
 
@@ -60,14 +57,20 @@ GARBAGE += \
 
 GARBAGE_DIRS += classes db jars res sync services generated
 
-JAVA_BOOTCLASSPATH = \
+# The bootclasspath is functionally identical to the classpath, but allows the
+# classes given to redefine classes in core packages, such as java.lang.
+# android.jar is here as it provides Android's definition of the Java Standard
+# Library. The compatability lib here tweaks a few of the core classes to paint
+# over changes in behaviour between versions.
+JAVA_BOOTCLASSPATH := \
     $(ANDROID_SDK)/android.jar \
     $(ANDROID_COMPAT_LIB) \
     $(NULL)
 
 JAVA_BOOTCLASSPATH := $(subst $(NULL) ,:,$(strip $(JAVA_BOOTCLASSPATH)))
 
-# If native devices are enabled, add Google Play Services and some of the v7 compat libraries
+# If native devices are enabled, add Google Play Services and some of the v7
+# compat libraries.
 ifdef MOZ_NATIVE_DEVICES
     JAVA_CLASSPATH += \
         $(GOOGLE_PLAY_SERVICES_LIB) \
@@ -78,7 +81,26 @@ endif
 
 JAVA_CLASSPATH := $(subst $(NULL) ,:,$(strip $(JAVA_CLASSPATH)))
 
+# Library jars that we're bundling: these are subject to Proguard before inclusion
+# into classes.dex.
+java_bundled_libs := \
+    $(ANDROID_COMPAT_LIB) \
+    $(NULL)
+
+ifdef MOZ_NATIVE_DEVICES
+    java_bundled_libs += \
+        $(GOOGLE_PLAY_SERVICES_LIB) \
+        $(ANDROID_MEDIAROUTER_LIB) \
+        $(ANDROID_APPCOMPAT_LIB) \
+        $(NULL)
+endif
+
+java_bundled_libs := $(subst $(NULL) ,:,$(strip $(java_bundled_libs)))
+
+# All the jars we're compiling from source. (not to be confused with
+# java_bundled_libs, which holds the jars which we're including as binaries).
 ALL_JARS = \
+  constants.jar \
   gecko-R.jar \
   gecko-browser.jar \
   gecko-mozglue.jar \
@@ -101,24 +123,20 @@ ALL_JARS += ../stumbler/stumbler.jar
 generated/org/mozilla/mozstumbler/R.java: .aapt.deps ;
 endif
 
+# The list of jars in Java classpath notation (colon-separated).
+all_jars_classpath := $(subst $(NULL) ,:,$(strip $(ALL_JARS)))
+
 include $(topsrcdir)/config/config.mk
 
-# Note that we're going to set up a dependency directly between embed_android.dex and the java files
-# Instead of on the .class files, since more than one .class file might be produced per .java file
-# Sync dependencies are provided in a single jar. Sync classes themselves are delivered as source,
-# because Android resource classes must be compiled together in order to avoid overlapping resource
-# indices.
-
-library_jars = \
-    $(JAVA_CLASSPATH) \
-    $(JAVA_BOOTCLASSPATH) \
+library_jars := \
+    $(ANDROID_SDK)/android.jar \
     $(NULL)
 
 library_jars := $(subst $(NULL) ,:,$(strip $(library_jars)))
 
 classes.dex: .proguard.deps
 	$(REPORT_BUILD)
-	$(DX) --dex --output=classes.dex jars-proguarded $(subst :, ,$(ANDROID_COMPAT_LIB):$(JAVA_CLASSPATH))
+	$(DX) --dex --output=classes.dex jars-proguarded
 
 ifdef MOZ_DISABLE_PROGUARD
   PROGUARD_PASSES=0
@@ -134,19 +152,56 @@ else
   endif
 endif
 
-# We touch the target file before invoking Proguard so that Proguard's
-# outputs are fresher than the target, preventing a subsequent
-# invocation from thinking Proguard's outputs are stale.  This is safe
-# because Make removes the target file if any recipe command fails.
-.proguard.deps: $(ALL_JARS)
+proguard_config_dir=$(topsrcdir)/mobile/android/config/proguard
+
+# This stanza ensures that the set of GeckoView classes does not depend on too
+# much of Fennec, where "too much" is defined as the set of potentially
+# non-GeckoView classes that GeckoView already depended on at a certain point in
+# time.  The idea is to set a high-water mark that is not to be crossed.
+classycle_jar := $(topsrcdir)/mobile/android/build/classycle/classycle-1.4.1.jar
+.geckoview.deps: geckoview.ddf $(classycle_jar) $(ALL_JARS)
+	java -cp $(classycle_jar) \
+		classycle.dependency.DependencyChecker \
+		-mergeInnerClasses \
+		-dependencies=@$< \
+		$(ALL_JARS)
+	@$(TOUCH) $@
+
+# First, we delete debugging information from libraries. Having line-number
+# information for libraries for which we lack the source isn't useful, so this
+# saves us a bit of space. Importantly, Proguard has a bug causing it to
+# sometimes corrupt this information if present (which it does for some of the
+# included libraries). This corruption prevents dex from completing, so we need
+# to get rid of it.  This prevents us from seeing line numbers in stack traces
+# for stack frames inside libraries.
+#
+# This step can occur much earlier than the main Proguard pass: it needs only
+# gecko-R.jar to have been compiled (as that's where the library R.java files
+# end up), but it does block the main Proguard pass.
+.bundled.proguard.deps: gecko-R.jar $(proguard_config_dir)/strip-libs.cfg
 	$(REPORT_BUILD)
 	@$(TOUCH) $@
 	java \
 		-Xmx512m -Xms128m \
 		-jar $(ANDROID_SDK_ROOT)/tools/proguard/lib/proguard.jar \
-		@$(topsrcdir)/mobile/android/config/proguard.cfg \
+		@$(proguard_config_dir)/strip-libs.cfg \
+		-injars $(subst ::,:,$(java_bundled_libs))\
+		-outjars bundled-jars-nodebug \
+		-libraryjars $(library_jars):gecko-R.jar
+
+# We touch the target file before invoking Proguard so that Proguard's
+# outputs are fresher than the target, preventing a subsequent
+# invocation from thinking Proguard's outputs are stale.  This is safe
+# because Make removes the target file if any recipe command fails.
+.proguard.deps: .geckoview.deps .bundled.proguard.deps $(ALL_JARS) $(proguard_config_dir)/proguard.cfg
+	$(REPORT_BUILD)
+	@$(TOUCH) $@
+	java \
+		-Xmx512m -Xms128m \
+		-jar $(ANDROID_SDK_ROOT)/tools/proguard/lib/proguard.jar \
+		@$(proguard_config_dir)/proguard.cfg \
 		-optimizationpasses $(PROGUARD_PASSES) \
-		-injars $(subst ::,:,$(subst $(NULL) ,:,$(strip $(ALL_JARS)))) \
+		-injars $(subst ::,:,$(all_jars_classpath)):bundled-jars-nodebug \
 		-outjars jars-proguarded \
 		-libraryjars $(library_jars)
 
@@ -178,14 +233,6 @@ GeneratedJNIWrappers.cpp: $(ANNOTATION_PROCESSOR_JAR_FILES)
 GeneratedJNIWrappers.cpp: $(ALL_JARS)
 	$(JAVA) -classpath gecko-mozglue.jar:$(JAVA_BOOTCLASSPATH):$(JAVA_CLASSPATH):$(ANNOTATION_PROCESSOR_JAR_FILES) org.mozilla.gecko.annotationProcessors.AnnotationProcessor $(ALL_JARS)
 
-# Like generated/org/mozilla/fennec_$USERID.
-android_package_dir = $(addprefix generated/,$(subst .,/,$(ANDROID_PACKAGE_NAME)))
-
-# These _PP_JAVAFILES are specified in moz.build and defined in
-# backend.mk, which is included by config.mk.  Therefore this needs to
-# be defined after config.mk is included.
-PP_JAVAFILES := $(filter-out generated/org/mozilla/gecko/R.java,$(gecko-mozglue_PP_JAVAFILES) $(gecko-browser_PP_JAVAFILES))
-
 manifest := \
   AndroidManifest.xml.in \
   WebappManifestFragment.xml.frag.in \
@@ -197,27 +244,19 @@ PP_TARGETS += manifest
 # generates these files into generated/org/mozilla/gecko for
 # consumption by the build system and IDEs.
 
-preprocessed := $(addsuffix .in,$(subst generated/org/mozilla/gecko/,,$(filter generated/org/mozilla/gecko/%,$(PP_JAVAFILES))))
+# The list in moz.build looks like
+# 'preprocessed/org/mozilla/gecko/AppConstants.java'.  The list in
+# constants_PP_JAVAFILES looks like
+# 'generated/preprocessed/org/mozilla/gecko/AppConstants.java'.  We
+# need to write AppConstants.java.in to
+# generated/preprocessed/org/mozilla/gecko.
+preprocessed := $(addsuffix .in,$(subst generated/preprocessed/org/mozilla/gecko/,,$(filter generated/preprocessed/org/mozilla/gecko/%,$(constants_PP_JAVAFILES))))
 
-preprocessed_PATH := generated/org/mozilla/gecko
+preprocessed_PATH := generated/preprocessed/org/mozilla/gecko
 preprocessed_KEEP_PATH := 1
 preprocessed_FLAGS := --marker='//\\\#'
 
 PP_TARGETS += preprocessed
-
-# Certain source files have Java package name @ANDROID_PACKAGE_NAME@.
-# We hate these files but they are necessary for backwards
-# compatibility.  These special rules generate these files into
-# generated/org/mozilla/{firefox,firefox_beta,fennec,fennec_$USER} for
-# consumption by the build system and IDEs.
-
-preprocessed_package := $(addsuffix .in,$(subst $(android_package_dir)/,,$(filter $(android_package_dir)/%,$(PP_JAVAFILES))))
-
-preprocessed_package_PATH := $(android_package_dir)
-preprocessed_package_KEEP_PATH := 1
-preprocessed_package_FLAGS := --marker='//\\\#'
-
-PP_TARGETS += preprocessed_package
 
 include $(topsrcdir)/config/rules.mk
 
@@ -356,6 +395,8 @@ extra_packages := $(subst $(NULL) ,:,$(strip $(extra_packages)))
 # thinking aapt's outputs are stale.  This is safe because Make
 # removes the target file if any recipe command fails.
 
+CONSTRAINED_AAPT_CONFIGURATIONS := mdpi,hdpi
+
 define aapt_command
 $(1): $$(call mkdir_deps,$(filter-out ./,$(dir $(3) $(4) $(5)))) $(2)
 	@$$(TOUCH) $$@
@@ -372,7 +413,7 @@ $(1): $$(call mkdir_deps,$(filter-out ./,$(dir $(3) $(4) $(5)))) $(2)
 		-F $(3) \
 		-J $(4) \
 		--output-text-symbols $(5) \
-		$(if $(MOZ_ANDROID_RESOURCE_CONSTRAINED),-c hdpi,) \
+		$(if $(MOZ_ANDROID_RESOURCE_CONSTRAINED),-c $(CONSTRAINED_AAPT_CONFIGURATIONS),) \
 		--ignore-assets "$$(ANDROID_AAPT_IGNORE)"
 endef
 
@@ -395,10 +436,20 @@ fennec_ids.txt: generated/org/mozilla/gecko/R.java fennec-ids-generator.py
 # Override the Java settings with some specific android settings
 include $(topsrcdir)/config/android-common.mk
 
-# This target is only used by the Eclipse integration. It rebuilds
-# resources that end up in omni.ja, does most of the packaging step,
-# and then updates omni.ja in place. If you're not using Eclipse, you
-# should be using |mach build mobile/android && mach package|.
+update-generated-wrappers:
+	@mv $(topsrcdir)/widget/android/GeneratedJNIWrappers.cpp $(topsrcdir)/widget/android/GeneratedJNIWrappers.cpp.old
+	@mv $(topsrcdir)/widget/android/GeneratedJNIWrappers.h $(topsrcdir)/widget/android/GeneratedJNIWrappers.h.old
+	@echo old GeneratedJNIWrappers.cpp/h moved to GeneratedJNIWrappers.cpp/h.old
+	@cp $(CURDIR)/jni-stubs.inc $(topsrcdir)/mozglue/android
+	@cp $(CURDIR)/GeneratedJNIWrappers.* $(topsrcdir)/widget/android
+	@echo Updated GeneratedJNIWrappers
+
+.PHONY: update-generated-wrappers
+
+# This target is only used by IDE integrations. It rebuilds resources
+# that end up in omni.ja, does most of the packaging step, and then
+# updates omni.ja in place. If you're not using an IDE, you should be
+# using |mach build mobile/android && mach package|.
 $(abspath $(DIST)/fennec/$(OMNIJAR_NAME)): FORCE
 	$(REPORT_BUILD)
 	$(MAKE) -C ../locales
@@ -411,6 +462,13 @@ $(abspath $(DIST)/fennec/$(OMNIJAR_NAME)): FORCE
 	rsync --update $(DIST)/fennec/$(notdir $(OMNIJAR_NAME)) $@
 	$(RM) $(DIST)/fennec/$(notdir $(OMNIJAR_NAME))
 
+# Targets built very early during a Gradle build.
+gradle-targets: .aapt.deps
+
+gradle-omnijar: $(abspath $(DIST)/fennec/$(OMNIJAR_NAME))
+
+.PHONY: gradle-targets gradle-omnijar
+
 libs:: geckoview_resources.zip classes.dex jni-stubs.inc GeneratedJNIWrappers.cpp fennec_ids.txt
 	$(INSTALL) geckoview_resources.zip $(FINAL_TARGET)
 	$(INSTALL) classes.dex $(FINAL_TARGET)
@@ -419,7 +477,7 @@ libs:: geckoview_resources.zip classes.dex jni-stubs.inc GeneratedJNIWrappers.cp
 	  echo '***   Error: The generated JNI code has changed   ***' && \
 	  echo '* To update generated code in the tree, please run  *' && \
 	  echo && \
-	  echo '  cp $(CURDIR)/jni-stubs.inc $(topsrcdir)/mozglue/android && cp $(CURDIR)/GeneratedJNIWrappers.* $(topsrcdir)/widget/android' && \
+	  echo '  make -C $(CURDIR) update-generated-wrappers' && \
 	  echo && \
 	  echo '* Repeat the build, and check in any changes.       *' && \
 	  echo '*****************************************************' && \

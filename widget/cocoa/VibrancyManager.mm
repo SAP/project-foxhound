@@ -103,6 +103,23 @@ VibrancyManager::VibrancyFillColorForType(VibrancyType aType)
   return [NSColor whiteColor];
 }
 
+@interface NSView(FontSmoothingBackgroundColor)
+- (NSColor*)fontSmoothingBackgroundColor;
+@end
+
+NSColor*
+VibrancyManager::VibrancyFontSmoothingBackgroundColorForType(VibrancyType aType)
+{
+  const nsTArray<NSView*>& views =
+    mVibrantRegions.LookupOrAdd(uint32_t(aType))->effectViews;
+
+  if (!views.IsEmpty() &&
+      [views[0] respondsToSelector:@selector(fontSmoothingBackgroundColor)]) {
+    return [views[0] fontSmoothingBackgroundColor];
+  }
+  return [NSColor clearColor];
+}
+
 static void
 DrawRectNothing(id self, SEL _cmd, NSRect aRect)
 {
@@ -123,18 +140,31 @@ HitTestNil(id self, SEL _cmd, NSPoint aPoint)
   return nil;
 }
 
+static BOOL
+AllowsVibrancyYes(id self, SEL _cmd)
+{
+  // Means that the foreground is blended using a vibrant blend mode.
+  return YES;
+}
+
 static Class
-CreateEffectViewClass()
+CreateEffectViewClass(BOOL aForegroundVibrancy)
 {
   // Create a class called EffectView that inherits from NSVisualEffectView
   // and overrides the methods -[NSVisualEffectView drawRect:] and
   // -[NSView hitTest:].
   Class NSVisualEffectViewClass = NSClassFromString(@"NSVisualEffectView");
-  Class EffectViewClass = objc_allocateClassPair(NSVisualEffectViewClass, "EffectView", 0);
+  const char* className = aForegroundVibrancy
+    ? "EffectViewWithForegroundVibrancy" : "EffectViewWithoutForegroundVibrancy";
+  Class EffectViewClass = objc_allocateClassPair(NSVisualEffectViewClass, className, 0);
   class_addMethod(EffectViewClass, @selector(drawRect:), (IMP)DrawRectNothing,
                   "v@:{CGRect={CGPoint=dd}{CGSize=dd}}");
   class_addMethod(EffectViewClass, @selector(hitTest:), (IMP)HitTestNil,
                   "@@:{CGPoint=dd}");
+  if (aForegroundVibrancy) {
+    // Also override the -[NSView allowsVibrancy] method to return YES.
+    class_addMethod(EffectViewClass, @selector(allowsVibrancy), (IMP)AllowsVibrancyYes, "I@:");
+  }
   return EffectViewClass;
 }
 
@@ -144,6 +174,9 @@ AppearanceForVibrancyType(VibrancyType aType)
   Class NSAppearanceClass = NSClassFromString(@"NSAppearance");
   switch (aType) {
     case VibrancyType::LIGHT:
+    case VibrancyType::TOOLTIP:
+    case VibrancyType::MENU:
+    case VibrancyType::HIGHLIGHTED_MENUITEM:
       return [NSAppearanceClass performSelector:@selector(appearanceNamed:)
                                      withObject:@"NSAppearanceNameVibrantLight"];
     case VibrancyType::DARK:
@@ -152,21 +185,95 @@ AppearanceForVibrancyType(VibrancyType aType)
   }
 }
 
+#if !defined(MAC_OS_X_VERSION_10_10) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10
+enum {
+  NSVisualEffectStateFollowsWindowActiveState,
+  NSVisualEffectStateActive,
+  NSVisualEffectStateInactive
+};
+
+enum {
+  NSVisualEffectMaterialTitlebar = 3
+};
+#endif
+
+static NSUInteger
+VisualEffectStateForVibrancyType(VibrancyType aType)
+{
+  switch (aType) {
+    case VibrancyType::TOOLTIP:
+    case VibrancyType::MENU:
+    case VibrancyType::HIGHLIGHTED_MENUITEM:
+      // Tooltip and menu windows are never "key", so we need to tell the
+      // vibrancy effect to look active regardless of window state.
+      return NSVisualEffectStateActive;
+    default:
+      return NSVisualEffectStateFollowsWindowActiveState;
+  }
+}
+
+static BOOL
+HasVibrantForeground(VibrancyType aType)
+{
+  switch (aType) {
+    case VibrancyType::MENU:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+enum {
+  NSVisualEffectMaterialMenuItem = 4
+};
+
+@interface NSView(NSVisualEffectViewMethods)
+- (void)setState:(NSUInteger)state;
+- (void)setMaterial:(NSUInteger)material;
+- (void)setEmphasized:(BOOL)emphasized;
+@end
+
 NSView*
 VibrancyManager::CreateEffectView(VibrancyType aType, NSRect aRect)
 {
-  static Class EffectViewClass = CreateEffectViewClass();
+  static Class EffectViewClassWithoutForegroundVibrancy = CreateEffectViewClass(NO);
+  static Class EffectViewClassWithForegroundVibrancy = CreateEffectViewClass(YES);
+
+  Class EffectViewClass = HasVibrantForeground(aType)
+    ? EffectViewClassWithForegroundVibrancy : EffectViewClassWithoutForegroundVibrancy;
   NSView* effectView = [[EffectViewClass alloc] initWithFrame:aRect];
   [effectView performSelector:@selector(setAppearance:)
                    withObject:AppearanceForVibrancyType(aType)];
+  [effectView setState:VisualEffectStateForVibrancyType(aType)];
+
+  if (aType == VibrancyType::MENU) {
+    // NSVisualEffectMaterialTitlebar doesn't match the native menu look
+    // perfectly but comes pretty close. Ideally we'd use a material with
+    // materialTypeName "MacLight", since that's what menus use, but there's
+    // no entry with that material in the internalMaterialType-to-
+    // CGSWindowBackdropViewSpec table which NSVisualEffectView consults when
+    // setting up the effect.
+    [effectView setMaterial:NSVisualEffectMaterialTitlebar];
+  } else if (aType == VibrancyType::HIGHLIGHTED_MENUITEM) {
+    [effectView setMaterial:NSVisualEffectMaterialMenuItem];
+    if ([effectView respondsToSelector:@selector(setEmphasized:)]) {
+      [effectView setEmphasized:YES];
+    }
+  }
+
   return effectView;
 }
 
 static bool
 ComputeSystemSupportsVibrancy()
 {
+#ifdef __x86_64__
   return NSClassFromString(@"NSAppearance") &&
       NSClassFromString(@"NSVisualEffectView");
+#else
+  // objc_allocateClassPair doesn't work in 32 bit mode, so turn off vibrancy.
+  return false;
+#endif
 }
 
 /* static */ bool

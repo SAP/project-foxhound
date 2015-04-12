@@ -111,16 +111,14 @@ function registerOnpeerready() {
 function fireCheckP2PReg(manifestUrl) {
   let deferred = Promise.defer();
 
-  let request = nfc.checkP2PRegistration(manifestUrl);
-  request.onsuccess = function() {
+  let promise = nfc.checkP2PRegistration(manifestUrl);
+  promise.then(() => {
     ok(true, 'checkP2PRegistration allways results in success');
     deferred.resolve(request.result);
-  };
-
-  request.onerror = function() {
+  }).catch(() => {
     ok(false, 'see NfcContentHelper.handleCheckP2PRegistrationResponse');
     deferred.reject();
-  };
+  });
 
   return deferred.promise;
 }
@@ -148,11 +146,11 @@ let tests = [
 /**
  * nfc-manager for mozNfc.checkP2PRegistration(manifestUrl)
  *  -> "NFC:CheckP2PRegistration" IPC
- * nfc-write to set/unset onpeerready
+ * nfc-share to set/unset onpeerready
  *  -> "NFC:RegisterPeerTarget", "NFC:UnregisterPeerTarget" IPC
  */
 SpecialPowers.pushPermissions(
   [
     {'type': 'nfc-manager', 'allow': true, context: document},
-    {'type': 'nfc-write', 'allow': true, context: document}
+    {'type': 'nfc-share', 'allow': true, context: document}
   ], runTests);

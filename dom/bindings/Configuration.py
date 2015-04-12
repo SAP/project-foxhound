@@ -13,7 +13,7 @@ class Configuration:
     Represents global configuration state based on IDL parse data and
     the configuration file.
     """
-    def __init__(self, filename, parseData):
+    def __init__(self, filename, parseData, generatedEvents=[]):
 
         # Read the configuration file.
         glbl = {}
@@ -25,6 +25,7 @@ class Configuration:
         # |parseData|.
         self.descriptors = []
         self.interfaces = {}
+        self.generatedEvents = generatedEvents;
         self.maxProtoChainLength = 0;
         for thing in parseData:
             if isinstance(thing, IDLImplementsStatement):
@@ -205,11 +206,11 @@ class Configuration:
             elif key == 'isNavigatorProperty':
                 getter = lambda x: x.interface.getNavigatorProperty() != None
             elif key == 'isExposedInAnyWorker':
-                getter = lambda x: (not x.interface.isExternal() and
-                                    x.interface.isExposedInAnyWorker())
+                getter = lambda x: x.interface.isExposedInAnyWorker()
             elif key == 'isExposedInSystemGlobals':
-                getter = lambda x: (not x.interface.isExternal() and
-                                    x.interface.isExposedInSystemGlobals())
+                getter = lambda x: x.interface.isExposedInSystemGlobals()
+            elif key == 'isExposedInWindow':
+                getter = lambda x: x.interface.isExposedInWindow()
             else:
                 # Have to watch out: just closing over "key" is not enough,
                 # since we're about to mutate its value
@@ -280,6 +281,18 @@ class DescriptorProvider:
         implementation for cases like workers.
         """
         return self.config.getDescriptor(interfaceName, self.workers)
+
+def methodReturnsJSObject(method):
+    assert method.isMethod()
+    if method.returnsPromise():
+        return True
+
+    for signature in method.signatures():
+        returnType = signature[0]
+        if returnType.isObject() or returnType.isSpiderMonkeyInterface():
+            return True
+
+    return False
 
 class Descriptor(DescriptorProvider):
     """
@@ -452,16 +465,10 @@ class Descriptor(DescriptorProvider):
                     iface.setUserData('hasProxyDescendant', True)
                     iface = iface.parent
 
-        self.nativeOwnership = desc.get('nativeOwnership', 'refcounted')
-        if not self.nativeOwnership in ('owned', 'refcounted'):
-            raise TypeError("Descriptor for %s has unrecognized value (%s) "
-                            "for nativeOwnership" %
-                            (self.interface.identifier.name, self.nativeOwnership))
         if desc.get('wantsQI', None) != None:
             self._wantsQI = desc.get('wantsQI', None)
         self.wrapperCache = (not self.interface.isCallback() and
-                             (self.nativeOwnership != 'owned' and
-                              desc.get('wrapperCache', True)))
+                             desc.get('wrapperCache', True))
 
         def make_name(name):
             return name + "_workers" if self.workers else name
@@ -618,6 +625,11 @@ class Descriptor(DescriptorProvider):
         name = member.identifier.name
         throws = self.interface.isJSImplemented() or member.getExtendedAttribute("Throws")
         if member.isMethod():
+            # JSObject-returning [NewObject] methods must be fallible,
+            # since they have to (fallibly) allocate the new JSObject.
+            if (member.getExtendedAttribute("NewObject") and
+                methodReturnsJSObject(member)):
+                throws = True
             attrs = self.extendedAttributes['all'].get(name, [])
             maybeAppendInfallibleToAttrs(attrs, throws)
             return attrs
@@ -654,23 +666,24 @@ class Descriptor(DescriptorProvider):
                 in self.interface.members))
 
     def hasThreadChecks(self):
-        return ((not self.workers and not self.interface.isExposedInWindow()) or
-                (self.interface.isExposedInAnyWorker() and
-                 self.interface.isExposedOnlyInSomeWorkers()))
+        return ((self.isExposedConditionally() and
+                 not self.interface.isExposedInWindow()) or
+                self.interface.isExposedInSomeButNotAllWorkers())
 
     def isExposedConditionally(self):
-        return self.interface.isExposedConditionally() or self.hasThreadChecks()
+        return (self.interface.isExposedConditionally() or
+                self.interface.isExposedInSomeButNotAllWorkers())
 
     def needsXrayResolveHooks(self):
         """
-        Generally, any interface with NeedNewResolve needs Xray
+        Generally, any interface with NeedResolve needs Xray
         resolveOwnProperty and enumerateOwnProperties hooks.  But for
         the special case of plugin-loading elements, we do NOT want
         those, because we don't want to instantiate plug-ins simply
         due to chrome touching them and that's all those hooks do on
         those elements.  So we special-case those here.
         """
-        return (self.interface.getExtendedAttribute("NeedNewResolve") and
+        return (self.interface.getExtendedAttribute("NeedResolve") and
                 self.interface.identifier.name not in ["HTMLObjectElement",
                                                        "HTMLEmbedElement",
                                                        "HTMLAppletElement"])

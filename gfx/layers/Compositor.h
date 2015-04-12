@@ -136,17 +136,6 @@ enum SurfaceInitMode
 };
 
 /**
- * A base class for a platform-dependent helper for use by TextureHost.
- */
-class CompositorBackendSpecificData
-{
-  NS_INLINE_DECL_REFCOUNTING(CompositorBackendSpecificData)
-
-protected:
-  virtual ~CompositorBackendSpecificData() {}
-};
-
-/**
  * Common interface for compositor backends.
  *
  * Compositor provides a cross-platform interface to a set of operations for
@@ -176,8 +165,6 @@ protected:
  *    construct an EffectChain for the quad,
  *    call DrawQuad,
  *  call EndFrame.
- * If the user has to stop compositing at any point before EndFrame, call
- * AbortFrame.
  * If the compositor is usually used for compositing but compositing is
  * temporarily done without the compositor, call EndFrameForExternalComposition
  * after compositing each frame so the compositor can remain internally
@@ -367,11 +354,6 @@ public:
   virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) = 0;
 
   /**
-   * Tidy up if BeginFrame has been called, but EndFrame won't be.
-   */
-  virtual void AbortFrame() = 0;
-
-  /**
    * Setup the viewport and projection matrix for rendering to a target of the
    * given dimensions. The size and transform here will override those set in
    * BeginFrame. BeginFrame sets a size and transform for the default render
@@ -481,10 +463,6 @@ public:
     return fillRatio;
   }
 
-  virtual CompositorBackendSpecificData* GetCompositorBackendSpecificData() {
-    return nullptr;
-  }
-
   ScreenRotation GetScreenRotation() const {
     return mScreenRotation;
   }
@@ -492,15 +470,6 @@ public:
   void SetScreenRotation(ScreenRotation aRotation) {
     mScreenRotation = aRotation;
   }
-
-  // On b2g the clip rect is in the coordinate space of the physical screen
-  // independently of its rotation, while the coordinate space of the layers,
-  // on the other hand, depends on the screen orientation.
-  // This only applies to b2g as with other platforms, orientation is handled
-  // at the OS level rather than in Gecko.
-  // In addition, the clip rect needs to be offset by the rendering origin.
-  // This becomes important if intermediate surfaces are used.
-  RenderTargetRect ClipRectInLayersCoordinates(Layer* aLayer, RenderTargetIntRect aClip) const;
 
 protected:
   void DrawDiagnosticsInternal(DiagnosticFlags aFlags,
@@ -539,6 +508,13 @@ private:
   static LayersBackend sBackend;
 
 };
+
+// Returns the number of rects. (Up to 4)
+typedef gfx::Rect decomposedRectArrayT[4];
+size_t DecomposeIntoNoRepeatRects(const gfx::Rect& aRect,
+                                  const gfx::Rect& aTexCoordRect,
+                                  decomposedRectArrayT* aLayerRects,
+                                  decomposedRectArrayT* aTextureRects);
 
 } // namespace layers
 } // namespace mozilla

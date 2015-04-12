@@ -27,6 +27,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/Services.h"
 #include "nsContentPermissionHelper.h"
+#include "nsILoadContext.h"
 #ifdef MOZ_B2G
 #include "nsIDOMDesktopNotification.h"
 #endif
@@ -34,7 +35,7 @@
 namespace mozilla {
 namespace dom {
 
-class NotificationStorageCallback MOZ_FINAL : public nsINotificationStorageCallback
+class NotificationStorageCallback final : public nsINotificationStorageCallback
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -63,7 +64,7 @@ public:
                     const nsAString& aIcon,
                     const nsAString& aData,
                     const nsAString& aBehavior,
-                    JSContext* aCx)
+                    JSContext* aCx) override
   {
     MOZ_ASSERT(!aID.IsEmpty());
 
@@ -98,7 +99,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD Done(JSContext* aCx)
+  NS_IMETHOD Done(JSContext* aCx) override
   {
     JSAutoCompartment ac(aCx, mGlobal);
     JS::Rooted<JS::Value> result(aCx, JS::ObjectValue(*mNotifications));
@@ -331,9 +332,9 @@ NotificationPermissionRequest::GetTypes(nsIArray** aTypes)
 {
   nsTArray<nsString> emptyOptions;
   return nsContentPermissionUtils::CreatePermissionArray(NS_LITERAL_CSTRING("desktop-notification"),
-                                                         NS_LITERAL_CSTRING("unused"),
-                                                         emptyOptions,
-                                                         aTypes);
+							 NS_LITERAL_CSTRING("unused"),
+							 emptyOptions,
+							 aTypes);
 }
 
 NS_IMPL_ISUPPORTS(NotificationTask, nsIRunnable)
@@ -677,10 +678,16 @@ Notification::ShowInternal()
   // nsIObserver. Thus the cookie must be unique to differentiate observers.
   nsString uniqueCookie = NS_LITERAL_STRING("notification:");
   uniqueCookie.AppendInt(sCount++);
+  bool inPrivateBrowsing = false;
+  if (doc) {
+    nsCOMPtr<nsILoadContext> loadContext = doc->GetLoadContext();
+    inPrivateBrowsing = loadContext && loadContext->UsePrivateBrowsing();
+  }
   alertService->ShowAlertNotification(absoluteUrl, mTitle, mBody, true,
                                       uniqueCookie, observer, mAlertName,
                                       DirectionToString(mDir), mLang,
-                                      dataStr, GetPrincipal());
+                                      dataStr, GetPrincipal(),
+                                      inPrivateBrowsing);
 }
 
 void

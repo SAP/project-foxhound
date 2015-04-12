@@ -14,7 +14,7 @@ nsParentalControlsService::nsParentalControlsService() :
   mEnabled(false)
 {
   if (mozilla::AndroidBridge::HasEnv()) {
-    mEnabled = mozilla::widget::android::RestrictedProfiles::IsUserRestricted();
+    mEnabled = mozilla::widget::RestrictedProfiles::IsUserRestricted();
   }
 }
 
@@ -43,7 +43,9 @@ nsParentalControlsService::GetBlockFileDownloadsEnabled(bool *aResult)
 NS_IMETHODIMP
 nsParentalControlsService::GetLoggingEnabled(bool *aResult)
 {
-  return NS_ERROR_NOT_AVAILABLE;
+  // Android doesn't currently have any method of logging restricted actions.
+  *aResult = false;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -90,7 +92,7 @@ nsParentalControlsService::IsAllowed(int16_t aAction,
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    *_retval = mozilla::widget::android::RestrictedProfiles::IsAllowed(aAction,
+    *_retval = mozilla::widget::RestrictedProfiles::IsAllowed(aAction,
                                                     NS_ConvertUTF8toUTF16(url));
     return rv;
   }

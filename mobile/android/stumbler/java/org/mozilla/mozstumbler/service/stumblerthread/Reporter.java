@@ -30,8 +30,9 @@ import org.mozilla.mozstumbler.service.stumblerthread.scanners.GPSScanner;
 import org.mozilla.mozstumbler.service.stumblerthread.scanners.WifiScanner;
 
 public final class Reporter extends BroadcastReceiver {
-    private static final String LOG_TAG = AppGlobals.LOG_PREFIX + Reporter.class.getSimpleName();
+    private static final String LOG_TAG = AppGlobals.makeLogTag(Reporter.class.getSimpleName());
     public static final String ACTION_FLUSH_TO_BUNDLE = AppGlobals.ACTION_NAMESPACE + ".FLUSH";
+    public static final String ACTION_NEW_BUNDLE = AppGlobals.ACTION_NAMESPACE + ".NEW_BUNDLE";
     private boolean mIsStarted;
 
     /* The maximum number of Wi-Fi access points in a single observation. */
@@ -62,7 +63,12 @@ public final class Reporter extends BroadcastReceiver {
 
         mContext = context.getApplicationContext();
         TelephonyManager tm = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
-        mPhoneType = tm.getPhoneType();
+        if (tm != null) {
+            mPhoneType = tm.getPhoneType();
+        } else {
+            Log.d(LOG_TAG, "No telephony manager.");
+            mPhoneType = TelephonyManager.PHONE_TYPE_NONE;
+        }
 
         mIsStarted = true;
 
@@ -195,7 +201,8 @@ public final class Reporter extends BroadcastReceiver {
         }
 
         if (AppGlobals.isDebug) {
-            Log.d(LOG_TAG, "Received bundle: " + mlsObj.toString());
+            // PII: do not log the bundle without obfuscating it
+            Log.d(LOG_TAG, "Received bundle");
         }
 
         if (wifiCount + cellCount < 1) {

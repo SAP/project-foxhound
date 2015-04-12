@@ -8,14 +8,14 @@
 
 #include <set>
 
+#include "mozilla/Atomics.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/ProcessedStack.h"
-#include "mozilla/Atomics.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/StaticPtr.h"
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsReadableUtils.h"
 #include "nsStackWalk.h"
 #include "nsThreadUtils.h"
@@ -128,15 +128,15 @@ public:
   ChromeHangAnnotations();
   ~ChromeHangAnnotations();
 
-  void AddAnnotation(const nsAString& aName, const int32_t aData) MOZ_OVERRIDE;
-  void AddAnnotation(const nsAString& aName, const double aData) MOZ_OVERRIDE;
-  void AddAnnotation(const nsAString& aName, const nsAString& aData) MOZ_OVERRIDE;
-  void AddAnnotation(const nsAString& aName, const nsACString& aData) MOZ_OVERRIDE;
-  void AddAnnotation(const nsAString& aName, const bool aData) MOZ_OVERRIDE;
+  void AddAnnotation(const nsAString& aName, const int32_t aData) override;
+  void AddAnnotation(const nsAString& aName, const double aData) override;
+  void AddAnnotation(const nsAString& aName, const nsAString& aData) override;
+  void AddAnnotation(const nsAString& aName, const nsACString& aData) override;
+  void AddAnnotation(const nsAString& aName, const bool aData) override;
 
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
-  bool IsEmpty() const MOZ_OVERRIDE;
-  bool GetEnumerator(Enumerator** aOutEnum) MOZ_OVERRIDE;
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
+  bool IsEmpty() const override;
+  bool GetEnumerator(Enumerator** aOutEnum) override;
 
   typedef std::pair<nsString, nsString> AnnotationType;
   typedef std::vector<AnnotationType> VectorType;
@@ -363,7 +363,7 @@ ThreadMain(void*)
   Telemetry::ProcessedStack stack;
   int32_t systemUptime = -1;
   int32_t firefoxUptime = -1;
-  nsAutoPtr<ChromeHangAnnotations> annotations = new ChromeHangAnnotations();
+  auto annotations = MakeUnique<ChromeHangAnnotations>();
 #endif
 
   while (true) {
@@ -410,10 +410,9 @@ ThreadMain(void*)
       if (waitCount >= 2) {
         uint32_t hangDuration = PR_IntervalToSeconds(now - lastTimestamp);
         Telemetry::RecordChromeHang(hangDuration, stack, systemUptime,
-                                    firefoxUptime, annotations->IsEmpty() ?
-                                    nullptr : annotations.forget());
+                                    firefoxUptime, Move(annotations));
         stack.Clear();
-        annotations = new ChromeHangAnnotations();
+        annotations = MakeUnique<ChromeHangAnnotations>();
       }
 #endif
       lastTimestamp = timestamp;
@@ -589,6 +588,9 @@ void
 RegisterAnnotator(Annotator& aAnnotator)
 {
 #ifdef REPORT_CHROME_HANGS
+  if (GeckoProcessType_Default != XRE_GetProcessType()) {
+    return;
+  }
   MonitorAutoLock lock(*gMonitor);
   MOZ_ASSERT(gAnnotators);
   gAnnotators->insert(&aAnnotator);
@@ -599,6 +601,9 @@ void
 UnregisterAnnotator(Annotator& aAnnotator)
 {
 #ifdef REPORT_CHROME_HANGS
+  if (GeckoProcessType_Default != XRE_GetProcessType()) {
+    return;
+  }
   MonitorAutoLock lock(*gMonitor);
   MOZ_ASSERT(gAnnotators);
   gAnnotators->erase(&aAnnotator);

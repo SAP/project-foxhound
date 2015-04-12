@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/env python
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -20,37 +20,26 @@ import sys
 import tempfile
 
 # The DMD output version this script handles.
-outputVersion = 1
+outputVersion = 4
 
 # If --ignore-alloc-fns is specified, stack frames containing functions that
 # match these strings will be removed from the *start* of stack traces. (Once
 # we hit a non-matching frame, any subsequent frames won't be removed even if
 # they do match.)
 allocatorFns = [
-    'replace_malloc',
-    'replace_calloc',
-    'replace_realloc',
-    'replace_memalign',
-    'replace_posix_memalign',
-    'moz_xmalloc',
-    'moz_xcalloc',
-    'moz_xrealloc',
+    # Matches malloc, replace_malloc, moz_xmalloc, vpx_malloc, js_malloc, pod_malloc, malloc_zone_*, g_malloc.
+    'malloc',
+    # Matches calloc, replace_calloc, moz_xcalloc, vpx_calloc, js_calloc, pod_calloc, malloc_zone_calloc, pod_callocCanGC.
+    'calloc',
+    # Matches realloc, replace_realloc, moz_xrealloc, vpx_realloc, js_realloc, pod_realloc, pod_reallocCanGC.
+    'realloc',
+    # Matches memalign, posix_memalign, replace_memalign, replace_posix_memalign, moz_xmemalign, moz_xposix_memalign, vpx_memalign, malloc_zone_memalign.
+    'memalign',
     'operator new(',
     'operator new[](',
-    'g_malloc',
+    'NS_Alloc',
+    'NS_Realloc',
     'g_slice_alloc',
-    'callocCanGC',
-    'reallocCanGC',
-    'vpx_malloc',
-    'vpx_calloc',
-    'vpx_realloc',
-    'vpx_memalign',
-    'js_malloc',
-    'js_calloc',
-    'js_realloc',
-    'pod_malloc',
-    'pod_calloc',
-    'pod_realloc',
     # This one necessary to fully filter some sequences of allocation functions
     # that happen in practice. Note that ??? entries that follow non-allocation
     # functions won't be stripped, as explained above.
@@ -58,13 +47,72 @@ allocatorFns = [
 ]
 
 class Record(object):
+    '''A record is an aggregation of heap blocks that have identical stack
+    traces. It can also be used to represent the difference between two
+    records.'''
+
     def __init__(self):
         self.numBlocks = 0
         self.reqSize = 0
         self.slopSize = 0
         self.usableSize = 0
         self.isSampled = False
+        self.allocatedAtDesc = None
+        self.reportedAtDescs = []
         self.usableSizes = collections.defaultdict(int)
+
+    def isZero(self, args):
+        return self.numBlocks == 0 and \
+               self.reqSize == 0 and \
+               self.slopSize == 0 and \
+               self.usableSize == 0 and \
+               len(self.usableSizes) == 0
+
+    def negate(self):
+        self.numBlocks = -self.numBlocks
+        self.reqSize = -self.reqSize
+        self.slopSize = -self.slopSize
+        self.usableSize = -self.usableSize
+
+        negatedUsableSizes = collections.defaultdict(int)
+        for (usableSize, isSampled), count in self.usableSizes.items():
+            negatedUsableSizes[(-usableSize, isSampled)] = count
+        self.usableSizes = negatedUsableSizes
+
+    def subtract(self, r):
+        # We should only be calling this on records with matching stack traces.
+        # Check this.
+        assert self.allocatedAtDesc == r.allocatedAtDesc
+        assert self.reportedAtDescs == r.reportedAtDescs
+
+        self.numBlocks -= r.numBlocks
+        self.reqSize -= r.reqSize
+        self.slopSize -= r.slopSize
+        self.usableSize -= r.usableSize
+        self.isSampled = self.isSampled or r.isSampled
+
+        usableSizes1 = self.usableSizes
+        usableSizes2 = r.usableSizes
+        usableSizes3 = collections.defaultdict(int)
+        for usableSize, isSampled in usableSizes1:
+            counts1 = usableSizes1[usableSize, isSampled]
+            if (usableSize, isSampled) in usableSizes2:
+                counts2 = usableSizes2[usableSize, isSampled]
+                del usableSizes2[usableSize, isSampled]
+                counts3 = counts1 - counts2
+                if counts3 != 0:
+                    if counts3 < 0:
+                        usableSize = -usableSize
+                        counts3 = -counts3
+                    usableSizes3[usableSize, isSampled] = counts3
+            else:
+                usableSizes3[usableSize, isSampled] = counts1
+
+        for usableSize, isSampled in usableSizes2:
+            usableSizes3[-usableSize, isSampled] = \
+                usableSizes2[usableSize, isSampled]
+
+        self.usableSizes = usableSizes3
 
     @staticmethod
     def cmpByIsSampled(r1, r2):
@@ -74,23 +122,33 @@ class Record(object):
     @staticmethod
     def cmpByUsableSize(r1, r2):
         # Sort by usable size, then req size, then by isSampled.
-        return cmp(r1.usableSize, r2.usableSize) or Record.cmpByReqSize(r1, r2)
+        return cmp(abs(r1.usableSize), abs(r2.usableSize)) or \
+               Record.cmpByReqSize(r1, r2)
 
     @staticmethod
     def cmpByReqSize(r1, r2):
         # Sort by req size, then by isSampled.
-        return cmp(r1.reqSize, r2.reqSize) or Record.cmpByIsSampled(r1, r2)
+        return cmp(abs(r1.reqSize), abs(r2.reqSize)) or \
+               Record.cmpByIsSampled(r1, r2)
 
     @staticmethod
     def cmpBySlopSize(r1, r2):
         # Sort by slop size, then by isSampled.
-        return cmp(r1.slopSize, r2.slopSize) or Record.cmpByIsSampled(r1, r2)
+        return cmp(abs(r1.slopSize), abs(r2.slopSize)) or \
+               Record.cmpByIsSampled(r1, r2)
+
+    @staticmethod
+    def cmpByNumBlocks(r1, r2):
+        # Sort by block counts, then by usable size.
+        return cmp(abs(r1.numBlocks), abs(r2.numBlocks)) or \
+               Record.cmpByUsableSize(r1, r2)
 
 
 sortByChoices = {
-    'usable': Record.cmpByUsableSize,   # the default
-    'req':    Record.cmpByReqSize,
-    'slop':   Record.cmpBySlopSize,
+    'usable':     Record.cmpByUsableSize,   # the default
+    'req':        Record.cmpByReqSize,
+    'slop':       Record.cmpBySlopSize,
+    'num-blocks': Record.cmpByNumBlocks,
 }
 
 
@@ -105,7 +163,9 @@ def parseCommandLine():
 
     description = '''
 Analyze heap data produced by DMD.
-If no files are specified, read from stdin; input can be gzipped.
+If one file is specified, analyze it; if two files are specified, analyze the
+difference.
+Input files can be gzipped.
 Write to stdout unless -o/--output is specified.
 Stack traces are fixed to show function names, filenames and line numbers
 unless --no-fix-stacks is specified; stack fixing modifies the original file
@@ -120,19 +180,12 @@ variable is used to find breakpad symbols for stack fixing.
     p.add_argument('-f', '--max-frames', type=range_1_24,
                    help='maximum number of frames to consider in each trace')
 
-    p.add_argument('-r', '--ignore-reports', action='store_true',
-                   help='ignore memory reports data; useful if you just ' +
-                        'want basic heap profiling')
-
     p.add_argument('-s', '--sort-by', choices=sortByChoices.keys(),
-                   default=sortByChoices.keys()[0],
+                   default='usable',
                    help='sort the records by a particular metric')
 
     p.add_argument('-a', '--ignore-alloc-fns', action='store_true',
                    help='ignore allocation functions at the start of traces')
-
-    p.add_argument('-b', '--show-all-block-sizes', action='store_true',
-                   help='show individual block sizes for each record')
 
     p.add_argument('--no-fix-stacks', action='store_true',
                    help='do not fix stacks')
@@ -140,7 +193,11 @@ variable is used to find breakpad symbols for stack fixing.
     p.add_argument('--filter-stacks-for-testing', action='store_true',
                    help='filter stack traces; only useful for testing purposes')
 
-    p.add_argument('input_file')
+    p.add_argument('input_file',
+                   help='a file produced by DMD')
+
+    p.add_argument('input_file2', nargs='?',
+                   help='a file produced by DMD; if present, it is diff\'d with input_file')
 
     return p.parse_args(sys.argv[1:])
 
@@ -195,18 +252,16 @@ def fixStackTraces(inputFilename, isZipped, opener):
         shutil.move(tmpFilename, inputFilename)
 
 
-def main():
-    args = parseCommandLine()
-
+def getDigestFromFile(args, inputFile):
     # Handle gzipped input if necessary.
-    isZipped = args.input_file.endswith('.gz')
+    isZipped = inputFile.endswith('.gz')
     opener = gzip.open if isZipped else open
 
     # Fix stack traces unless otherwise instructed.
     if not args.no_fix_stacks:
-        fixStackTraces(args.input_file, isZipped, opener)
+        fixStackTraces(inputFile, isZipped, opener)
 
-    with opener(args.input_file, 'rb') as f:
+    with opener(inputFile, 'rb') as f:
         j = json.load(f)
 
     if j['version'] != outputVersion:
@@ -215,10 +270,14 @@ def main():
     # Extract the main parts of the JSON object.
     invocation = j['invocation']
     dmdEnvVar = invocation['dmdEnvVar']
+    mode = invocation['mode']
     sampleBelowSize = invocation['sampleBelowSize']
     blockList = j['blockList']
     traceTable = j['traceTable']
     frameTable = j['frameTable']
+
+    if not mode in ['live', 'dark-matter', 'cumulative']:
+        raise Exception("bad 'mode' property: '{:s}'".format(mode))
 
     heapIsSampled = sampleBelowSize > 1     # is sampling present?
 
@@ -245,12 +304,37 @@ def main():
         if len(frameKeys) > args.max_frames:
             traceTable[traceKey] = frameKeys[:args.max_frames]
 
+    def buildTraceDescription(traceTable, frameTable, traceKey):
+        frameKeys = traceTable[traceKey]
+        fmt = '    #{:02d}{:}'
+
+        if args.filter_stacks_for_testing:
+            # When running SmokeDMD.cpp, every stack trace should contain at
+            # least one frame that contains 'DMD.cpp', from either |DMD.cpp| or
+            # |SmokeDMD.cpp|. (Or 'dmd.cpp' on Windows.) If we see such a
+            # frame, we replace the entire stack trace with a single,
+            # predictable frame. There is too much variation in the stack
+            # traces across different machines and platforms to do more precise
+            # matching, but this level of matching will result in failure if
+            # stack fixing fails completely.
+            for frameKey in frameKeys:
+                frameDesc = frameTable[frameKey]
+                if 'DMD.cpp' in frameDesc or 'dmd.cpp' in frameDesc:
+                    return [fmt.format(1, ': ... DMD.cpp ...')]
+
+        # The frame number is always '#00' (see DMD.h for why), so we have to
+        # replace that with the correct frame number.
+        desc = []
+        for n, frameKey in enumerate(traceTable[traceKey], start=1):
+            desc.append(fmt.format(n, frameTable[frameKey][3:]))
+        return desc
+
     # Aggregate blocks into records. All sufficiently similar blocks go into a
     # single record.
 
-    if args.ignore_reports:
-        liveRecords = collections.defaultdict(Record)
-    else:
+    if mode in ['live', 'cumulative']:
+        liveOrCumulativeRecords = collections.defaultdict(Record)
+    elif mode == 'dark-matter':
         unreportedRecords    = collections.defaultdict(Record)
         onceReportedRecords  = collections.defaultdict(Record)
         twiceReportedRecords = collections.defaultdict(Record)
@@ -258,30 +342,51 @@ def main():
     heapUsableSize = 0
     heapBlocks = 0
 
+    recordKeyPartCache = {}
+
     for block in blockList:
         # For each block we compute a |recordKey|, and all blocks with the same
         # |recordKey| are aggregated into a single record. The |recordKey| is
         # derived from the block's 'alloc' and 'reps' (if present) stack
         # traces.
         #
-        # Each stack trace has a key in the JSON file. But we don't use that
-        # key to construct |recordKey|; instead we use the frame keys.
-        # This is because the stack trimming done for --max-frames can cause
-        # stack traces with distinct trace keys to end up with the same frame
-        # keys, and these should be considered equivalent. E.g. if we have
-        # distinct traces T1:[A,B,C] and T2:[A,B,D] and we trim the final frame
-        # of each they should be considered equivalent.
-        allocatedAt = block['alloc']
-        if args.ignore_reports:
-            recordKey = str(traceTable[allocatedAt])
-            records = liveRecords
-        else:
-            recordKey = str(traceTable[allocatedAt])
+        # We use frame descriptions (e.g. "#00: foo (X.cpp:99)") when comparing
+        # traces for equality. We can't use trace keys or frame keys because
+        # they're not comparable across different DMD runs (which is relevant
+        # when doing diffs).
+        #
+        # Using frame descriptions also fits in with the stack trimming done
+        # for --max-frames, which requires that stack traces with common
+        # beginnings but different endings to be considered equivalent. E.g. if
+        # we have distinct traces T1:[A:D1,B:D2,C:D3] and T2:[X:D1,Y:D2,Z:D4]
+        # and we trim the final frame of each they should be considered
+        # equivalent because the untrimmed frame descriptions (D1 and D2)
+        # match.
+        #
+        # Having said all that, during a single invocation of dmd.py on a
+        # single DMD file, for a single frameKey value the record key will
+        # always be the same, and we might encounter it 1000s of times. So we
+        # cache prior results for speed.
+        def makeRecordKeyPart(traceKey):
+            if traceKey in recordKeyPartCache:
+                return recordKeyPartCache[traceKey]
+
+            recordKeyPart = str(map(lambda frameKey: frameTable[frameKey],
+                                    traceTable[traceKey]))
+            recordKeyPartCache[traceKey] = recordKeyPart
+            return recordKeyPart
+
+        allocatedAtTraceKey = block['alloc']
+        if mode in ['live', 'cumulative']:
+            recordKey = makeRecordKeyPart(allocatedAtTraceKey)
+            records = liveOrCumulativeRecords
+        elif mode == 'dark-matter':
+            recordKey = makeRecordKeyPart(allocatedAtTraceKey)
             if 'reps' in block:
-                reportedAts = block['reps']
-                for reportedAt in reportedAts:
-                    recordKey += str(traceTable[reportedAt])
-                if len(reportedAts) == 1:
+                reportedAtTraceKeys = block['reps']
+                for reportedAtTraceKey in reportedAtTraceKeys:
+                    recordKey += makeRecordKeyPart(reportedAtTraceKey)
+                if len(reportedAtTraceKeys) == 1:
                     records = onceReportedRecords
                 else:
                     records = twiceReportedRecords
@@ -303,24 +408,113 @@ def main():
             slopSize = 0
             isSampled = True
 
-        usableSize = reqSize + slopSize
-        heapUsableSize += usableSize
-        heapBlocks += 1
-
-        record.numBlocks  += 1
-        record.reqSize    += reqSize
-        record.slopSize   += slopSize
-        record.usableSize += usableSize
-        record.isSampled   = record.isSampled or isSampled
-        record.allocatedAt = block['alloc']
-        if args.ignore_reports:
-            pass
+        if 'num' in block:
+            num = block['num']
         else:
-            if 'reps' in block:
-                record.reportedAts = block['reps']
-        record.usableSizes[(usableSize, isSampled)] += 1
+            num = 1
 
-    # Print records.
+        usableSize = reqSize + slopSize
+        heapUsableSize += num * usableSize
+        heapBlocks += num
+
+        record.numBlocks  += num
+        record.reqSize    += num * reqSize
+        record.slopSize   += num * slopSize
+        record.usableSize += num * usableSize
+        record.isSampled   = record.isSampled or isSampled
+        if record.allocatedAtDesc == None:
+            record.allocatedAtDesc = \
+                buildTraceDescription(traceTable, frameTable,
+                                      allocatedAtTraceKey)
+
+        if mode in ['live', 'cumulative']:
+            pass
+        elif mode == 'dark-matter':
+            if 'reps' in block and record.reportedAtDescs == []:
+                f = lambda k: buildTraceDescription(traceTable, frameTable, k)
+                record.reportedAtDescs = map(f, reportedAtTraceKeys)
+        record.usableSizes[(usableSize, isSampled)] += num
+
+    # All the processed data for a single DMD file is called a "digest".
+    digest = {}
+    digest['dmdEnvVar'] = dmdEnvVar
+    digest['mode'] = mode
+    digest['sampleBelowSize'] = sampleBelowSize
+    digest['heapUsableSize'] = heapUsableSize
+    digest['heapBlocks'] = heapBlocks
+    digest['heapIsSampled'] = heapIsSampled
+    if mode in ['live', 'cumulative']:
+        digest['liveOrCumulativeRecords'] = liveOrCumulativeRecords
+    elif mode == 'dark-matter':
+        digest['unreportedRecords'] = unreportedRecords
+        digest['onceReportedRecords'] = onceReportedRecords
+        digest['twiceReportedRecords'] = twiceReportedRecords
+    return digest
+
+
+def diffRecords(args, records1, records2):
+    records3 = {}
+
+    # Process records1.
+    for k in records1:
+        r1 = records1[k]
+        if k in records2:
+            # This record is present in both records1 and records2.
+            r2 = records2[k]
+            del records2[k]
+            r2.subtract(r1)
+            if not r2.isZero(args):
+                records3[k] = r2
+        else:
+            # This record is present only in records1.
+            r1.negate()
+            records3[k] = r1
+
+    for k in records2:
+        # This record is present only in records2.
+        records3[k] = records2[k]
+
+    return records3
+
+
+def diffDigests(args, d1, d2):
+    if (d1['mode'] != d2['mode']):
+        raise Exception("the input files have different 'mode' properties")
+
+    d3 = {}
+    d3['dmdEnvVar'] = (d1['dmdEnvVar'], d2['dmdEnvVar'])
+    d3['mode'] = d1['mode']
+    d3['sampleBelowSize'] = (d1['sampleBelowSize'], d2['sampleBelowSize'])
+    d3['heapUsableSize'] = d2['heapUsableSize'] - d1['heapUsableSize']
+    d3['heapBlocks']     = d2['heapBlocks']     - d1['heapBlocks']
+    d3['heapIsSampled']  = d2['heapIsSampled'] or d1['heapIsSampled']
+    if d1['mode'] in ['live', 'cumulative']:
+        d3['liveOrCumulativeRecords'] = \
+            diffRecords(args, d1['liveOrCumulativeRecords'],
+                              d2['liveOrCumulativeRecords'])
+    elif d1['mode'] == 'dark-matter':
+        d3['unreportedRecords']    = diffRecords(args, d1['unreportedRecords'],
+                                                       d2['unreportedRecords'])
+        d3['onceReportedRecords']  = diffRecords(args, d1['onceReportedRecords'],
+                                                       d2['onceReportedRecords'])
+        d3['twiceReportedRecords'] = diffRecords(args, d1['twiceReportedRecords'],
+                                                       d2['twiceReportedRecords'])
+    return d3
+
+
+def printDigest(args, digest):
+    dmdEnvVar       = digest['dmdEnvVar']
+    mode            = digest['mode']
+    sampleBelowSize = digest['sampleBelowSize']
+    heapUsableSize  = digest['heapUsableSize']
+    heapIsSampled   = digest['heapIsSampled']
+    heapBlocks      = digest['heapBlocks']
+    if mode in ['live', 'cumulative']:
+        liveOrCumulativeRecords = digest['liveOrCumulativeRecords']
+    elif mode == 'dark-matter':
+        unreportedRecords    = digest['unreportedRecords']
+        onceReportedRecords  = digest['onceReportedRecords']
+        twiceReportedRecords = digest['twiceReportedRecords']
 
     separator = '#' + '-' * 65 + '\n'
 
@@ -339,27 +533,9 @@ def main():
     def out(*arguments, **kwargs):
         print(*arguments, file=args.output, **kwargs)
 
-    def printStack(traceTable, frameTable, traceKey):
-        frameKeys = traceTable[traceKey]
-        fmt = '    #{:02d}{:}'
-
-        if args.filter_stacks_for_testing:
-            # If any frame has "DMD.cpp" or "replace_malloc.c" in its
-            # description -- as should be the case for every stack trace when
-            # running DMD in test mode -- we replace the entire trace with a
-            # single, predictable frame. There is too much variation in the
-            # stack traces across different machines and platforms to do more
-            # specific matching.
-            for frameKey in frameKeys:
-                frameDesc = frameTable[frameKey]
-                if 'DMD.cpp' in frameDesc or 'replace_malloc.c' in frameDesc:
-                    out(fmt.format(1, ': ... DMD.cpp ...'))
-                    return
-
-        # The frame number is always '#00' (see DMD.h for why), so we have to
-        # replace that with the correct frame number.
-        for n, frameKey in enumerate(traceTable[traceKey], start=1):
-            out(fmt.format(n, frameTable[frameKey][3:]))
+    def printStack(traceDesc):
+        for frameDesc in traceDesc:
+            out(frameDesc)
 
     def printRecords(recordKind, records, heapUsableSize):
         RecordKind = recordKind.capitalize()
@@ -400,77 +576,100 @@ def main():
                 format(number(record.usableSize, isSampled),
                        number(record.reqSize, isSampled),
                        number(record.slopSize, isSampled)))
+
+            abscmp = lambda ((usableSize1, _1a), _1b), \
+                            ((usableSize2, _2a), _2b): \
+                            cmp(abs(usableSize1), abs(usableSize2))
+            usableSizes = sorted(record.usableSizes.items(), cmp=abscmp,
+                                 reverse=True)
+
+            hasSingleBlock = len(usableSizes) == 1 and usableSizes[0][1] == 1
+
+            if not hasSingleBlock:
+                out('  Individual block sizes: ', end='')
+                if len(usableSizes) == 0:
+                    out('(no change)', end='')
+                else:
+                    isFirst = True
+                    for (usableSize, isSampled), count in usableSizes:
+                        if not isFirst:
+                            out('; ', end='')
+                        out('{:}'.format(number(usableSize, isSampled)), end='')
+                        if count > 1:
+                            out(' x {:,d}'.format(count), end='')
+                        isFirst = False
+                out()
+
             out('  {:4.2f}% of the heap ({:4.2f}% cumulative)'.
                 format(perc(record.usableSize, heapUsableSize),
                        perc(kindCumulativeUsableSize, heapUsableSize)))
-            if args.ignore_reports:
+            if mode in ['live', 'cumulative']:
                 pass
-            else:
+            elif mode == 'dark-matter':
                 out('  {:4.2f}% of {:} ({:4.2f}% cumulative)'.
                     format(perc(record.usableSize, kindUsableSize),
                            recordKind,
                            perc(kindCumulativeUsableSize, kindUsableSize)))
-
-            if args.show_all_block_sizes:
-                usableSizes = sorted(record.usableSizes.items(), reverse=True)
-
-                out('  Individual block sizes: ', end='')
-                isFirst = True
-                for (usableSize, isSampled), count in usableSizes:
-                    if not isFirst:
-                        out('; ', end='')
-                    out('{:}'.format(number(usableSize, isSampled)), end='')
-                    if count > 1:
-                        out(' x {:,d}'.format(count), end='')
-                    isFirst = False
-                out()
-
             out('  Allocated at {')
-            printStack(traceTable, frameTable, record.allocatedAt)
+            printStack(record.allocatedAtDesc)
             out('  }')
-            if args.ignore_reports:
+            if mode in ['live', 'cumulative']:
                 pass
-            else:
-                if hasattr(record, 'reportedAts'):
-                    for n, reportedAt in enumerate(record.reportedAts):
-                        again = 'again ' if n > 0 else ''
-                        out('  Reported {:}at {{'.format(again))
-                        printStack(traceTable, frameTable, reportedAt)
-                        out('  }')
+            elif mode == 'dark-matter':
+                for n, reportedAtDesc in enumerate(record.reportedAtDescs):
+                    again = 'again ' if n > 0 else ''
+                    out('  Reported {:}at {{'.format(again))
+                    printStack(reportedAtDesc)
+                    out('  }')
             out('}\n')
 
         return (kindUsableSize, kindBlocks)
 
 
-    # Print header.
-    out(separator)
-    out('Invocation {')
-    out('  $DMD = \'' + dmdEnvVar + '\'')
-    out('  Sample-below size = ' + str(sampleBelowSize))
-    out('}\n')
+    def printInvocation(n, dmdEnvVar, mode, sampleBelowSize):
+        out('Invocation{:} {{'.format(n))
+        if dmdEnvVar == None:
+            out('  $DMD is undefined')
+        else:
+            out('  $DMD = \'' + dmdEnvVar + '\'')
+        out('  Mode = \'' + mode + '\'')
+        out('  Sample-below size = ' + str(sampleBelowSize))
+        out('}\n')
+
+    # Print command line. Strip dirs so the output is deterministic, which is
+    # needed for testing.
+    out(separator, end='')
+    out('# ' + ' '.join(map(os.path.basename, sys.argv)) + '\n')
+
+    # Print invocation(s).
+    if type(dmdEnvVar) is not tuple:
+        printInvocation('', dmdEnvVar, mode, sampleBelowSize)
+    else:
+        printInvocation(' 1', dmdEnvVar[0], mode, sampleBelowSize[0])
+        printInvocation(' 2', dmdEnvVar[1], mode, sampleBelowSize[1])
 
     # Print records.
-    if args.ignore_reports:
-        liveUsableSize, liveBlocks = \
-            printRecords('live', liveRecords, heapUsableSize)
-    else:
+    if mode in ['live', 'cumulative']:
+        liveOrCumulativeUsableSize, liveOrCumulativeBlocks = \
+            printRecords(mode, liveOrCumulativeRecords, heapUsableSize)
+    elif mode == 'dark-matter':
         twiceReportedUsableSize, twiceReportedBlocks = \
             printRecords('twice-reported', twiceReportedRecords, heapUsableSize)
 
         unreportedUsableSize, unreportedBlocks = \
-            printRecords('unreported',     unreportedRecords, heapUsableSize)
+            printRecords('unreported', unreportedRecords, heapUsableSize)
 
         onceReportedUsableSize, onceReportedBlocks = \
-            printRecords('once-reported',  onceReportedRecords, heapUsableSize)
+            printRecords('once-reported', onceReportedRecords, heapUsableSize)
 
     # Print summary.
     out(separator)
     out('Summary {')
-    if args.ignore_reports:
+    if mode in ['live', 'cumulative']:
         out('  Total: {:} bytes in {:} blocks'.
-            format(number(liveUsableSize, heapIsSampled),
-                   number(liveBlocks, heapIsSampled)))
-    else:
+            format(number(liveOrCumulativeUsableSize, heapIsSampled),
+                   number(liveOrCumulativeBlocks, heapIsSampled)))
+    elif mode == 'dark-matter':
         fmt = '  {:15} {:>12} bytes ({:6.2f}%) in {:>7} blocks ({:6.2f}%)'
         out(fmt.
             format('Total:',
@@ -499,5 +698,15 @@ def main():
     out('}\n')
 
 
+def main():
+    args = parseCommandLine()
+    digest = getDigestFromFile(args, args.input_file)
+    if args.input_file2:
+        digest2 = getDigestFromFile(args, args.input_file2)
+        digest = diffDigests(args, digest, digest2)
+    printDigest(args, digest)
+
+
 if __name__ == '__main__':
     main()
+

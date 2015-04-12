@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2014 Mozilla Foundation
+ * Copyright (C) 2013-2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include "ICameraControl.h"
 #include "CameraCommon.h"
 #include "mozilla/Hal.h"
+#include "nsDataHashtable.h"
 
 using namespace mozilla;
 using namespace android;
@@ -50,7 +51,25 @@ GonkCameraParameters::IsLowMemoryPlatform()
   return false;
 }
 
-/* static */ const char*
+const char*
+GonkCameraParameters::Parameters::FindVendorSpecificKey(const char* aPotentialKeys[],
+                                                        size_t aPotentialKeyCount)
+{
+  const char* val;
+
+  for (size_t i = 0; i < aPotentialKeyCount; ++i) {
+    get(aPotentialKeys[i], val);
+    if (val) {
+      // We received a value (potentially an empty-string one),
+      // which indicates that this key exists.
+      return aPotentialKeys[i];
+    }
+  }
+
+  return nullptr;
+}
+
+const char*
 GonkCameraParameters::Parameters::GetTextKey(uint32_t aKey)
 {
   switch (aKey) {
@@ -104,9 +123,15 @@ GonkCameraParameters::Parameters::GetTextKey(uint32_t aKey)
     case CAMERA_PARAM_VIDEOSIZE:
       return KEY_VIDEO_SIZE;
     case CAMERA_PARAM_ISOMODE:
-      // Not every platform defines KEY_ISO_MODE;
-      // for those that don't, we use the raw string key.
-      return "iso";
+      if (!mVendorSpecificKeyIsoMode) {
+        const char* isoModeKeys[] = {
+          "iso",
+          "sony-iso"
+        };
+        mVendorSpecificKeyIsoMode =
+          FindVendorSpecificKey(isoModeKeys, MOZ_ARRAY_LENGTH(isoModeKeys));
+      }
+      return mVendorSpecificKeyIsoMode;
     case CAMERA_PARAM_LUMINANCE:
       return "luminance-condition";
     case CAMERA_PARAM_SCENEMODE_HDR_RETURNNORMALPICTURE:
@@ -117,6 +142,11 @@ GonkCameraParameters::Parameters::GetTextKey(uint32_t aKey)
       return KEY_RECORDING_HINT;
     case CAMERA_PARAM_PICTURE_QUALITY:
       return KEY_JPEG_QUALITY;
+    case CAMERA_PARAM_PREFERRED_PREVIEWSIZE_FOR_VIDEO:
+      return KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO;
+    case CAMERA_PARAM_METERINGMODE:
+      // Not every platform defines KEY_AUTO_EXPOSURE.
+      return "auto-exposure";
 
     case CAMERA_PARAM_SUPPORTED_PREVIEWSIZES:
       return KEY_SUPPORTED_PREVIEW_SIZES;
@@ -155,9 +185,19 @@ GonkCameraParameters::Parameters::GetTextKey(uint32_t aKey)
     case CAMERA_PARAM_SUPPORTED_JPEG_THUMBNAIL_SIZES:
       return KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES;
     case CAMERA_PARAM_SUPPORTED_ISOMODES:
-      // Not every platform defines KEY_SUPPORTED_ISO_MODES;
-      // for those that don't, we use the raw string key.
-      return "iso-values";
+      if (!mVendorSpecificKeySupportedIsoModes) {
+        const char* supportedIsoModesKeys[] = {
+          "iso-values",
+          "sony-iso-values"
+        };
+        mVendorSpecificKeySupportedIsoModes =
+          FindVendorSpecificKey(supportedIsoModesKeys,
+                                MOZ_ARRAY_LENGTH(supportedIsoModesKeys));
+      }
+      return mVendorSpecificKeySupportedIsoModes;
+    case CAMERA_PARAM_SUPPORTED_METERINGMODES:
+      // Not every platform defines KEY_SUPPORTED_AUTO_EXPOSURE.
+      return "auto-exposure-values";
     default:
       DOM_CAMERA_LOGE("Unhandled camera parameter value %u\n", aKey);
       return nullptr;
@@ -208,6 +248,10 @@ GonkCameraParameters::MapIsoToGonk(const nsAString& aIso, nsACString& aIsoOut)
 nsresult
 GonkCameraParameters::MapIsoFromGonk(const char* aIso, nsAString& aIsoOut)
 {
+  if (!aIso) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   if (strcmp(aIso, "ISO_HJR") == 0) {
     aIsoOut.AssignASCII("hjr");
   } else if (strcmp(aIso, "auto") == 0) {
@@ -276,7 +320,7 @@ GonkCameraParameters::Initialize()
   nsString s;
   nsTArray<nsCString> isoModes;
   GetListAsArray(CAMERA_PARAM_SUPPORTED_ISOMODES, isoModes);
-  for (nsTArray<nsCString>::size_type i = 0; i < isoModes.Length(); ++i) {
+  for (nsTArray<nsCString>::index_type i = 0; i < isoModes.Length(); ++i) {
     rv = MapIsoFromGonk(isoModes[i].get(), s);
     if (NS_FAILED(rv)) {
       DOM_CAMERA_LOGW("Unrecognized ISO mode value '%s'\n", isoModes[i].get());
@@ -297,6 +341,22 @@ GonkCameraParameters::Initialize()
     }
   }
 
+  // Some platforms have strange duplicate metering mode values.
+  // We filter any out here.
+  nsDataHashtable<nsStringHashKey, bool> uniqueModes;
+  GetListAsArray(CAMERA_PARAM_SUPPORTED_METERINGMODES, mMeteringModes);
+  nsTArray<nsCString>::index_type i = mMeteringModes.Length();
+  while (i > 0) {
+    --i;
+    if (!uniqueModes.Get(mMeteringModes[i])) {
+      uniqueModes.Put(mMeteringModes[i], true);
+    } else {
+      DOM_CAMERA_LOGW("Dropped duplicate metering mode '%s' (index=%u)\n",
+        NS_ConvertUTF16toUTF8(mMeteringModes[i]).get(), i);
+      mMeteringModes.RemoveElementAt(i);
+    }
+  }
+  
   mInitialized = true;
   return NS_OK;
 }
@@ -335,10 +395,12 @@ GonkCameraParameters::GetTranslated(uint32_t aKey, nsAString& aValue)
   if (NS_FAILED(rv)) {
     return rv;
   }
-  if (aKey == CAMERA_PARAM_ISOMODE) {
-    rv = MapIsoFromGonk(val, aValue);
-  } else if(val) {
-    aValue.AssignASCII(val);
+  if (val) {
+    if (aKey == CAMERA_PARAM_ISOMODE) {
+      rv = MapIsoFromGonk(val, aValue);
+    } else {
+      aValue.AssignASCII(val);
+    }
   } else {
     aValue.Truncate(0);
   }
@@ -352,7 +414,7 @@ GonkCameraParameters::SetTranslated(uint32_t aKey, const ICameraControl::Size& a
   if (aSize.width > INT_MAX || aSize.height > INT_MAX) {
     // AOSP can only handle signed ints.
     DOM_CAMERA_LOGE("Camera parameter aKey=%d out of bounds (width=%u, height=%u)\n",
-      aSize.width, aSize.height);
+      aKey, aSize.width, aSize.height);
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -932,6 +994,10 @@ GonkCameraParameters::GetTranslated(uint32_t aKey, nsTArray<nsString>& aValues)
 
     case CAMERA_PARAM_SUPPORTED_SCENEMODES:
       aValues = mSceneModes;
+      return NS_OK;
+
+    case CAMERA_PARAM_SUPPORTED_METERINGMODES:
+      aValues = mMeteringModes;
       return NS_OK;
 
     default:

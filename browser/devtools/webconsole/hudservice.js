@@ -19,6 +19,7 @@ loader.lazyImporter(this, "devtools", "resource://gre/modules/devtools/Loader.js
 loader.lazyImporter(this, "Services", "resource://gre/modules/Services.jsm");
 loader.lazyImporter(this, "DebuggerServer", "resource://gre/modules/devtools/dbg-server.jsm");
 loader.lazyImporter(this, "DebuggerClient", "resource://gre/modules/devtools/dbg-client.jsm");
+loader.lazyGetter(this, "showDoorhanger", () => require("devtools/shared/doorhanger").showDoorhanger);
 
 const STRINGS_URI = "chrome://browser/locale/devtools/webconsole.properties";
 let l10n = new WebConsoleUtils.l10n(STRINGS_URI);
@@ -248,6 +249,21 @@ HUD_SERVICE.prototype =
     }, console.error);
 
     return this._browserConsoleDefer.promise;
+  },
+
+  /**
+   * Opens or focuses the Browser Console.
+   */
+  openBrowserConsoleOrFocus: function HS_openBrowserConsoleOrFocus()
+  {
+    let hud = this.getBrowserConsole();
+    if (hud) {
+      hud.iframeWindow.focus();
+      return promise.resolve(hud);
+    }
+    else {
+      return this.toggleBrowserConsole();
+    }
   },
 
   /**
@@ -485,8 +501,11 @@ WebConsole.prototype = {
     }
 
     let showSource = ({ DebuggerView }) => {
-      if (DebuggerView.Sources.containsValue(aSourceURL)) {
-        DebuggerView.setEditorLocation(aSourceURL, aSourceLine,
+      let item = DebuggerView.Sources.getItemForAttachment(
+        a => a.source.url === aSourceURL
+      );
+      if (item) {
+        DebuggerView.setEditorLocation(item.attachment.source.actor, aSourceLine,
                                        { noDebug: true }).then(() => {
           this.ui.emit("source-in-debugger-opened");
         });
@@ -704,6 +723,7 @@ BrowserConsole.prototype = Heritage.extend(WebConsole.prototype,
     // instance.
     let onClose = () => {
       window.removeEventListener("unload", onClose);
+      window.removeEventListener("focus", onFocus);
       this.destroy();
     };
     window.addEventListener("unload", onClose);
@@ -712,6 +732,12 @@ BrowserConsole.prototype = Heritage.extend(WebConsole.prototype,
     window.document.getElementById("cmd_close").removeAttribute("disabled");
 
     this._telemetry.toolOpened("browserconsole");
+
+    // Create an onFocus handler just to display the dev edition promo.
+    // This is to prevent race conditions in some environments.
+    // Hook to display promotional Developer Edition doorhanger. Only displayed once.
+    let onFocus = () => showDoorhanger({ window, type: "deveditionpromo" });
+    window.addEventListener("focus", onFocus);
 
     this._bc_init = this.$init();
     return this._bc_init;
@@ -752,7 +778,8 @@ const HUDService = new HUD_SERVICE();
 (() => {
   let methods = ["openWebConsole", "openBrowserConsole",
                  "toggleBrowserConsole", "getOpenWebConsole",
-                 "getBrowserConsole", "getHudByWindow", "getHudReferenceById"];
+                 "getBrowserConsole", "getHudByWindow",
+                 "openBrowserConsoleOrFocus", "getHudReferenceById"];
   for (let method of methods) {
     exports[method] = HUDService[method].bind(HUDService);
   }

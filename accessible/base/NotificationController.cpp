@@ -209,6 +209,7 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
 
   // Bind hanging child documents.
   uint32_t hangingDocCnt = mHangingChildDocuments.Length();
+  nsTArray<nsRefPtr<DocAccessible>> newChildDocs;
   for (uint32_t idx = 0; idx < hangingDocCnt; idx++) {
     DocAccessible* childDoc = mHangingChildDocuments[idx];
     if (childDoc->IsDefunct())
@@ -220,16 +221,7 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
       Accessible* outerDocAcc = mDocument->GetAccessible(ownerContent);
       if (outerDocAcc && outerDocAcc->AppendChild(childDoc)) {
         if (mDocument->AppendChildDocument(childDoc)) {
-          if (IPCAccessibilityActive()) {
-            DocAccessibleChild* ipcDoc = new DocAccessibleChild(childDoc);
-            childDoc->SetIPCDoc(ipcDoc);
-            auto contentChild = dom::ContentChild::GetSingleton();
-            DocAccessibleChild* parentIPCDoc = mDocument->IPCDoc();
-            uint64_t id = reinterpret_cast<uintptr_t>(outerDocAcc->UniqueID());
-            contentChild->SendPDocAccessibleConstructor(ipcDoc, parentIPCDoc,
-                                                        id);
-          }
-
+          newChildDocs.AppendElement(Move(mHangingChildDocuments[idx]));
           continue;
         }
 
@@ -240,6 +232,7 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
       childDoc->Shutdown();
     }
   }
+
   mHangingChildDocuments.Clear();
 
   // If the document is ready and all its subdocuments are completely loaded
@@ -282,6 +275,21 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
   mObservingState = eRefreshProcessing;
 
   ProcessEventQueue();
+
+  if (IPCAccessibilityActive()) {
+    size_t newDocCount = newChildDocs.Length();
+    for (size_t i = 0; i < newDocCount; i++) {
+      DocAccessible* childDoc = newChildDocs[i];
+      DocAccessibleChild* ipcDoc = new DocAccessibleChild(childDoc);
+      childDoc->SetIPCDoc(ipcDoc);
+      auto contentChild = dom::ContentChild::GetSingleton();
+      DocAccessibleChild* parentIPCDoc = mDocument->IPCDoc();
+      uint64_t id = reinterpret_cast<uintptr_t>(childDoc->Parent()->UniqueID());
+      MOZ_ASSERT(id);
+      contentChild->SendPDocAccessibleConstructor(ipcDoc, parentIPCDoc, id);
+    }
+  }
+
   mObservingState = eRefreshObserving;
   if (!mDocument)
     return;

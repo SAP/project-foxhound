@@ -136,8 +136,13 @@ class NrIceMediaStream {
   // queue, in priority order. |out_pairs| is cleared before being filled.
   nsresult GetCandidatePairs(std::vector<NrIceCandidatePair>* out_pairs) const;
 
+  // TODO(bug 1096795): This needs to take a component number, so we can get
+  // default candidates for rtcp.
+  nsresult GetDefaultCandidate(NrIceCandidate* candidate) const;
+
   // Parse remote attributes
   nsresult ParseAttributes(std::vector<std::string>& candidates);
+  bool HasParsedAttributes() const { return has_parsed_attrs_; }
 
   // Parse trickle ICE candidate
   nsresult ParseTrickleCandidate(const std::string& candidate);
@@ -151,7 +156,7 @@ class NrIceMediaStream {
                          NrIceCandidate** local, NrIceCandidate** remote);
 
   // The number of components
-  int components() const { return components_; }
+  size_t components() const { return components_; }
 
   // The underlying nICEr stream
   nr_ice_media_stream *stream() { return stream_; }
@@ -188,13 +193,14 @@ class NrIceMediaStream {
 
  private:
   NrIceMediaStream(NrIceCtx *ctx,  const std::string& name,
-                   int components) :
+                   size_t components) :
       state_(ICE_CONNECTING),
       ctx_(ctx),
       name_(name),
       components_(components),
       stream_(nullptr),
-      level_(0) {}
+      level_(0),
+      has_parsed_attrs_(false) {}
 
   ~NrIceMediaStream();
 
@@ -203,9 +209,10 @@ class NrIceMediaStream {
   State state_;
   NrIceCtx *ctx_;
   const std::string name_;
-  const int components_;
+  const size_t components_;
   nr_ice_media_stream *stream_;
   uint16_t level_;
+  bool has_parsed_attrs_;
 };
 
 

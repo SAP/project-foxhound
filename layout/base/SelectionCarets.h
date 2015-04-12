@@ -7,14 +7,18 @@
 #ifndef SelectionCarets_h__
 #define SelectionCarets_h__
 
+#include "nsIReflowObserver.h"
 #include "nsIScrollObserver.h"
 #include "nsISelectionListener.h"
 #include "nsWeakPtr.h"
 #include "nsWeakReference.h"
 #include "Units.h"
+#include "mozilla/dom/SelectionStateChangedEvent.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/WeakPtr.h"
 
 class nsCanvasFrame;
+class nsDocShell;
 class nsFrameSelection;
 class nsIContent;
 class nsIDocument;
@@ -37,6 +41,9 @@ class Selection;
  * when long tap event fired.
  *
  * The DOM structure is 2 div elements for showing start and end caret.
+ * Each div element has a child div element. That is, each caret consist of
+ * outer div and inner div. Outer div takes responsibility for detecting two
+ * carets are overlapping. Inner div is for actual appearance.
  *
  * Here is an explanation of the html class names:
  *   .moz-selectioncaret-left: Indicates start DIV.
@@ -45,10 +52,11 @@ class Selection;
  *            SetStartFrameVisibility and SetEndFrameVisibility. Element
  *            with this class name become hidden.
  *   .tilt: This class name is set by SetTilted. According to the
- *          UX spec, when selection contains only one characters, the image of
+ *          UX spec, when selection carets are overlapping, the image of
  *          caret becomes tilt.
  */
-class SelectionCarets MOZ_FINAL : public nsISelectionListener,
+class SelectionCarets final : public nsIReflowObserver,
+                                  public nsISelectionListener,
                                   public nsIScrollObserver,
                                   public nsSupportsWeakReference
 {
@@ -65,26 +73,23 @@ public:
   explicit SelectionCarets(nsIPresShell *aPresShell);
 
   NS_DECL_ISUPPORTS
+  NS_DECL_NSIREFLOWOBSERVER
   NS_DECL_NSISELECTIONLISTENER
 
+  // Notify selection carets about the blur event to hidden itself
+  void NotifyBlur(bool aIsLeavingDocument);
+
   // nsIScrollObserver
-  virtual void ScrollPositionChanged() MOZ_OVERRIDE;
+  virtual void ScrollPositionChanged() override;
 
   // AsyncPanZoom started/stopped callbacks from nsIScrollObserver
-  virtual void AsyncPanZoomStarted(const mozilla::CSSIntPoint aScrollPos) MOZ_OVERRIDE;
-  virtual void AsyncPanZoomStopped(const mozilla::CSSIntPoint aScrollPos) MOZ_OVERRIDE;
+  virtual void AsyncPanZoomStarted(const mozilla::CSSIntPoint aScrollPos) override;
+  virtual void AsyncPanZoomStopped(const mozilla::CSSIntPoint aScrollPos) override;
 
-  void Terminate()
-  {
-    mPresShell = nullptr;
-  }
+  void Init();
+  void Terminate();
 
   nsEventStatus HandleEvent(WidgetEvent* aEvent);
-
-  /**
-   * Set visibility for selection caret.
-   */
-  void SetVisibility(bool aVisible);
 
   bool GetVisibility() const
   {
@@ -103,7 +108,12 @@ public:
 private:
   virtual ~SelectionCarets();
 
-  SelectionCarets() MOZ_DELETE;
+  SelectionCarets() = delete;
+
+  /**
+   * Set visibility for selection caret.
+   */
+  void SetVisibility(bool aVisible);
 
   /**
    * Update selection caret position base on current selection range.
@@ -111,8 +121,8 @@ private:
   void UpdateSelectionCarets();
 
   /**
-   * Select word base on current position, only active when element
-   * is focused. Triggered by long tap event.
+   * Select a word base on current position, which activates only if element is
+   * selectable. Triggered by long tap event.
    */
   nsresult SelectWord();
 
@@ -122,7 +132,7 @@ private:
   nsEventStatus DragSelection(const nsPoint &movePoint);
 
   /**
-   * Get the vertical center position of selection caret relative to canvas
+   * Get the vertical center position of selection caret relative to root
    * frame.
    */
   nscoord GetCaretYCenterPosition();
@@ -149,25 +159,27 @@ private:
 
   /**
    * Check if aPosition is on the start or end frame of the
-   * selection carets.
+   * selection caret's inner div element.
    *
-   * @param aPosition should be relative to document's canvas frame
+   * @param aPosition should be relative to document's root frame
    * in app units
    */
-  bool IsOnStartFrame(const nsPoint& aPosition);
-  bool IsOnEndFrame(const nsPoint& aPosition);
+  bool IsOnStartFrameInner(const nsPoint& aPosition);
+  bool IsOnEndFrameInner(const nsPoint& aPosition);
 
   /**
-   * Get rect of selection caret's start frame relative
-   * to document's canvas frame, in app units.
+   * Get rect of selection caret's outer div element relative
+   * to document's root frame, in app units.
    */
   nsRect GetStartFrameRect();
+  nsRect GetEndFrameRect();
 
   /**
-   * Get rect of selection caret's end frame relative
-   * to document's canvas frame, in app units.
+   * Get rect of selection caret's inner div element relative
+   * to document's root frame, in app units.
    */
-  nsRect GetEndFrameRect();
+  nsRect GetStartFrameRectInner();
+  nsRect GetEndFrameRectInner();
 
   /**
    * Set visibility for start part of selection caret, this function
@@ -187,10 +199,15 @@ private:
    */
   void SetTilted(bool aIsTilt);
 
-  // Utility function
+  // Utility functions
   dom::Selection* GetSelection();
   already_AddRefed<nsFrameSelection> GetFrameSelection();
   nsIContent* GetFocusedContent();
+  void DispatchSelectionStateChangedEvent(dom::Selection* aSelection,
+                                          dom::SelectionState aState);
+  void DispatchSelectionStateChangedEvent(dom::Selection* aSelection,
+                                          const dom::Sequence<dom::SelectionState>& aStates);
+  void DispatchCustomEvent(const nsAString& aEvent);
 
   /**
    * Detecting long tap using timer
@@ -200,9 +217,11 @@ private:
   static void FireLongTap(nsITimer* aTimer, void* aSelectionCarets);
 
   void LaunchScrollEndDetector();
+  void CancelScrollEndDetector();
   static void FireScrollEnd(nsITimer* aTimer, void* aSelectionCarets);
 
   nsIPresShell* mPresShell;
+  WeakPtr<nsDocShell> mDocShell;
 
   // This timer is used for detecting long tap fire. If content process
   // has APZC, we'll use APZC for long tap detecting. Otherwise, we use this
@@ -223,12 +242,30 @@ private:
   int32_t mActiveTouchId;
 
   nscoord mCaretCenterToDownPointOffsetY;
+
+  // The horizontal boundary is defined by the first selected frame which
+  // determines the start-caret position. When users drag the end-caret up,
+  // the touch input(pos.y) will be changed to not cross this boundary.
+  // Otherwise, the selection range changes to one character only
+  // which causes the bad user experience.
+  nscoord mDragUpYBoundary;
+  // The horizontal boundary is defined by the last selected frame which
+  // determines the end-caret position. When users drag the start-caret down,
+  // the touch input(pos.y) will be changed to not cross this boundary.
+  // Otherwise, the selection range changes to one character only
+  // which causes the bad user experience.
+  nscoord mDragDownYBoundary;
+
   DragMode mDragMode;
 
   // True if AsyncPanZoom is enabled
-  bool mAPZenabled;
+  bool mAsyncPanZoomEnabled;
+  // True if AsyncPanZoom is started
+  bool mInAsyncPanZoomGesture;
+
   bool mEndCaretVisible;
   bool mStartCaretVisible;
+  bool mSelectionVisibleInScrollFrames;
   bool mVisible;
 
   // Preference

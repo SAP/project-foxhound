@@ -7,6 +7,7 @@ this.EXPORTED_SYMBOLS = ["RemoteAddonsParent"];
 const Ci = Components.interfaces;
 const Cc = Components.classes;
 const Cu = Components.utils;
+const Cr = Components.results;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import('resource://gre/modules/Services.jsm');
@@ -15,6 +16,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
                                   "resource://gre/modules/BrowserUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
                                   "resource://gre/modules/NetUtil.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Prefetcher",
+                                  "resource://gre/modules/Prefetcher.jsm");
 
 // Similar to Python. Returns dict[key] if it exists. Otherwise,
 // sets dict[key] to default_ and returns default_.
@@ -109,21 +112,17 @@ let ContentPolicyParent = {
                .getService(Ci.nsIMessageBroadcaster);
     ppmm.addMessageListener("Addons:ContentPolicy:Run", this);
 
-    this._policies = [];
+    this._policies = new Map();
   },
 
-  addContentPolicy: function(cid) {
-    this._policies.push(cid);
-    NotificationTracker.add(["content-policy"]);
+  addContentPolicy: function(addon, name, cid) {
+    this._policies.set(name, cid);
+    NotificationTracker.add(["content-policy", addon]);
   },
 
-  removeContentPolicy: function(cid) {
-    let index = this._policies.lastIndexOf(cid);
-    if (index > -1) {
-      this._policies.splice(index, 1);
-    }
-
-    NotificationTracker.remove(["content-policy"]);
+  removeContentPolicy: function(addon, name) {
+    this._policies.delete(name);
+    NotificationTracker.remove(["content-policy", addon]);
   },
 
   receiveMessage: function (aMessage) {
@@ -135,15 +134,27 @@ let ContentPolicyParent = {
   },
 
   shouldLoad: function(aData, aObjects) {
-    for (let policyCID of this._policies) {
-      let policy = Cc[policyCID].getService(Ci.nsIContentPolicy);
+    for (let policyCID of this._policies.values()) {
+      let policy;
       try {
-        let result = policy.shouldLoad(aObjects.contentType,
-                                       aObjects.contentLocation,
-                                       aObjects.requestOrigin,
-                                       aObjects.node,
-                                       aObjects.mimeTypeGuess,
-                                       null);
+        policy = Cc[policyCID].getService(Ci.nsIContentPolicy);
+      } catch (e) {
+        // Current Gecko behavior is to ignore entries that don't QI.
+        continue;
+      }
+      try {
+        let contentLocation = BrowserUtils.makeURI(aData.contentLocation);
+        let requestOrigin = aData.requestOrigin ? BrowserUtils.makeURI(aData.requestOrigin) : null;
+
+        let result = Prefetcher.withPrefetching(aData.prefetched, aObjects, () => {
+          return policy.shouldLoad(aData.contentType,
+                                   contentLocation,
+                                   requestOrigin,
+                                   aObjects.node,
+                                   aData.mimeTypeGuess,
+                                   null,
+                                   aData.requestPrincipal);
+        });
         if (result != Ci.nsIContentPolicy.ACCEPT && result != 0)
           return result;
       } catch (e) {
@@ -163,7 +174,7 @@ let CategoryManagerInterposition = new Interposition("CategoryManagerInterpositi
 CategoryManagerInterposition.methods.addCategoryEntry =
   function(addon, target, category, entry, value, persist, replace) {
     if (category == "content-policy") {
-      ContentPolicyParent.addContentPolicy(entry);
+      ContentPolicyParent.addContentPolicy(addon, entry, value);
     }
 
     target.addCategoryEntry(category, entry, value, persist, replace);
@@ -172,7 +183,7 @@ CategoryManagerInterposition.methods.addCategoryEntry =
 CategoryManagerInterposition.methods.deleteCategoryEntry =
   function(addon, target, category, entry, persist) {
     if (category == "content-policy") {
-      ContentPolicyParent.remoteContentPolicy(entry);
+      ContentPolicyParent.removeContentPolicy(addon, entry);
     }
 
     target.deleteCategoryEntry(category, entry, persist);
@@ -190,15 +201,15 @@ let AboutProtocolParent = {
     this._protocols = [];
   },
 
-  registerFactory: function(class_, className, contractID, factory) {
+  registerFactory: function(addon, class_, className, contractID, factory) {
     this._protocols.push({contractID: contractID, factory: factory});
-    NotificationTracker.add(["about-protocol", contractID]);
+    NotificationTracker.add(["about-protocol", contractID, addon]);
   },
 
-  unregisterFactory: function(class_, factory) {
+  unregisterFactory: function(addon, class_, factory) {
     for (let i = 0; i < this._protocols.length; i++) {
       if (this._protocols[i].factory == factory) {
-        NotificationTracker.remove(["about-protocol", this._protocols[i].contractID]);
+        NotificationTracker.remove(["about-protocol", this._protocols[i].contractID, addon]);
         this._protocols.splice(i, 1);
         break;
       }
@@ -229,13 +240,27 @@ let AboutProtocolParent = {
   // We immediately read all the data out of the channel here and
   // return it to the child.
   openChannel: function(msg) {
+    function wrapGetInterface(cpow) {
+      return {
+        getInterface: function(intf) { return cpow.getInterface(intf); }
+      };
+    }
+
     let uri = BrowserUtils.makeURI(msg.data.uri);
     let contractID = msg.data.contractID;
     let module = Cc[contractID].getService(Ci.nsIAboutModule);
     try {
-      let channel = module.newChannel(uri);
-      channel.notificationCallbacks = msg.objects.notificationCallbacks;
-      channel.loadGroup = {notificationCallbacks: msg.objects.loadGroupNotificationCallbacks};
+      let channel = module.newChannel(uri, null);
+      // We're not allowed to set channel.notificationCallbacks to a
+      // CPOW, since the setter for notificationCallbacks is in C++,
+      // which can't tolerate CPOWs. Instead we just use a JS object
+      // that wraps the CPOW.
+      channel.notificationCallbacks = wrapGetInterface(msg.objects.notificationCallbacks);
+      if (msg.objects.loadGroupNotificationCallbacks) {
+        channel.loadGroup = {notificationCallbacks: msg.objects.loadGroupNotificationCallbacks};
+      } else {
+        channel.loadGroup = null;
+      }
       let stream = channel.open();
       let data = NetUtil.readInputStreamToString(stream, stream.available(), {});
       return {
@@ -253,8 +278,8 @@ let ComponentRegistrarInterposition = new Interposition("ComponentRegistrarInter
 
 ComponentRegistrarInterposition.methods.registerFactory =
   function(addon, target, class_, className, contractID, factory) {
-    if (contractID.startsWith("@mozilla.org/network/protocol/about;1?")) {
-      AboutProtocolParent.registerFactory(class_, className, contractID, factory);
+    if (contractID && contractID.startsWith("@mozilla.org/network/protocol/about;1?")) {
+      AboutProtocolParent.registerFactory(addon, class_, className, contractID, factory);
     }
 
     target.registerFactory(class_, className, contractID, factory);
@@ -262,7 +287,7 @@ ComponentRegistrarInterposition.methods.registerFactory =
 
 ComponentRegistrarInterposition.methods.unregisterFactory =
   function(addon, target, class_, factory) {
-    AboutProtocolParent.unregisterFactory(class_, factory);
+    AboutProtocolParent.unregisterFactory(addon, class_, factory);
     target.unregisterFactory(class_, factory);
   };
 
@@ -282,14 +307,14 @@ let ObserverParent = {
     ppmm.addMessageListener("Addons:Observer:Run", this);
   },
 
-  addObserver: function(observer, topic, ownsWeak) {
+  addObserver: function(addon, observer, topic, ownsWeak) {
     Services.obs.addObserver(observer, "e10s-" + topic, ownsWeak);
-    NotificationTracker.add(["observer", topic]);
+    NotificationTracker.add(["observer", topic, addon]);
   },
 
-  removeObserver: function(observer, topic) {
+  removeObserver: function(addon, observer, topic) {
     Services.obs.removeObserver(observer, "e10s-" + topic);
-    NotificationTracker.remove(["observer", topic]);
+    NotificationTracker.remove(["observer", topic, addon]);
   },
 
   receiveMessage: function(msg) {
@@ -315,8 +340,13 @@ let ObserverParent = {
 ObserverParent.init();
 
 // We only forward observers for these topics.
-let TOPIC_WHITELIST = ["content-document-global-created",
-                       "document-element-inserted",];
+let TOPIC_WHITELIST = [
+  "content-document-global-created",
+  "document-element-inserted",
+  "dom-window-destroyed",
+  "inner-window-destroyed",
+  "outer-window-destroyed",
+];
 
 // This interposition listens for
 // nsIObserverService.{add,remove}Observer.
@@ -325,7 +355,7 @@ let ObserverInterposition = new Interposition("ObserverInterposition");
 ObserverInterposition.methods.addObserver =
   function(addon, target, observer, topic, ownsWeak) {
     if (TOPIC_WHITELIST.indexOf(topic) >= 0) {
-      ObserverParent.addObserver(observer, topic);
+      ObserverParent.addObserver(addon, observer, topic);
     }
 
     target.addObserver(observer, topic, ownsWeak);
@@ -334,7 +364,7 @@ ObserverInterposition.methods.addObserver =
 ObserverInterposition.methods.removeObserver =
   function(addon, target, observer, topic) {
     if (TOPIC_WHITELIST.indexOf(topic) >= 0) {
-      ObserverParent.removeObserver(observer, topic);
+      ObserverParent.removeObserver(addon, observer, topic);
     }
 
     target.removeObserver(observer, topic);
@@ -378,7 +408,7 @@ let EventTargetParent = {
       // Check if |target| is somewhere on the patch from the
       // <tabbrowser> up to the root element.
       let window = target.ownerDocument.defaultView;
-      if (target.contains(window.gBrowser)) {
+      if (window && target.contains(window.gBrowser)) {
         return window;
       }
     }
@@ -394,7 +424,7 @@ let EventTargetParent = {
     return [browser, window];
   },
 
-  addEventListener: function(target, type, listener, useCapture, wantsUntrusted) {
+  addEventListener: function(addon, target, type, listener, useCapture, wantsUntrusted) {
     let newTarget = this.redirectEventTarget(target);
     if (!newTarget) {
       return;
@@ -403,7 +433,7 @@ let EventTargetParent = {
     useCapture = useCapture || false;
     wantsUntrusted = wantsUntrusted || false;
 
-    NotificationTracker.add(["event", type, useCapture]);
+    NotificationTracker.add(["event", type, useCapture, addon]);
 
     let listeners = this._listeners.get(newTarget);
     if (!listeners) {
@@ -415,16 +445,20 @@ let EventTargetParent = {
     // If there's already an identical listener, don't do anything.
     for (let i = 0; i < forType.length; i++) {
       if (forType[i].listener === listener &&
+          forType[i].target === target &&
           forType[i].useCapture === useCapture &&
           forType[i].wantsUntrusted === wantsUntrusted) {
         return;
       }
     }
 
-    forType.push({listener: listener, wantsUntrusted: wantsUntrusted, useCapture: useCapture});
+    forType.push({listener: listener,
+                  target: target,
+                  wantsUntrusted: wantsUntrusted,
+                  useCapture: useCapture});
   },
 
-  removeEventListener: function(target, type, listener, useCapture) {
+  removeEventListener: function(addon, target, type, listener, useCapture) {
     let newTarget = this.redirectEventTarget(target);
     if (!newTarget) {
       return;
@@ -439,9 +473,11 @@ let EventTargetParent = {
     let forType = setDefault(listeners, type, []);
 
     for (let i = 0; i < forType.length; i++) {
-      if (forType[i].listener === listener && forType[i].useCapture === useCapture) {
+      if (forType[i].listener === listener &&
+          forType[i].target === target &&
+          forType[i].useCapture === useCapture) {
         forType.splice(i, 1);
-        NotificationTracker.remove(["event", type, useCapture]);
+        NotificationTracker.remove(["event", type, useCapture, addon]);
         break;
       }
     }
@@ -451,12 +487,14 @@ let EventTargetParent = {
     switch (msg.name) {
       case "Addons:Event:Run":
         this.dispatch(msg.target, msg.data.type, msg.data.capturing,
-                      msg.data.isTrusted, msg.objects.event);
+                      msg.data.isTrusted, msg.data.prefetched, msg.objects);
         break;
     }
   },
 
-  dispatch: function(browser, type, capturing, isTrusted, event) {
+  dispatch: function(browser, type, capturing, isTrusted, prefetched, cpows) {
+    let event = cpows.event;
+    let eventTarget = cpows.eventTarget;
     let targets = this.getTargets(browser);
     for (let target of targets) {
       let listeners = this._listeners.get(target);
@@ -467,19 +505,43 @@ let EventTargetParent = {
 
       // Make a copy in case they call removeEventListener in the listener.
       let handlers = [];
-      for (let {listener, wantsUntrusted, useCapture} of forType) {
+      for (let {listener, target, wantsUntrusted, useCapture} of forType) {
         if ((wantsUntrusted || isTrusted) && useCapture == capturing) {
-          handlers.push(listener);
+          handlers.push([listener, target]);
         }
       }
 
-      for (let handler of handlers) {
-        try {
-          if ("handleEvent" in handler) {
-            handler.handleEvent(event);
-          } else {
-            handler.call(event.target, event);
+      for (let [handler, target] of handlers) {
+        let EventProxy = {
+          get: function(knownProps, name) {
+            if (knownProps.hasOwnProperty(name))
+              return knownProps[name];
+            return event[name];
           }
+        }
+        let proxyEvent = new Proxy({
+          currentTarget: target,
+          target: eventTarget,
+          type: type,
+          QueryInterface: function(iid) {
+            if (iid.equals(Ci.nsISupports) ||
+                iid.equals(Ci.nsIDOMEventTarget))
+              return proxyEvent;
+            // If event deson't support the interface this will throw. If it
+            // does we want to return the proxy
+            event.QueryInterface(iid);
+            return proxyEvent;
+          }
+        }, EventProxy);
+
+        try {
+          Prefetcher.withPrefetching(prefetched, cpows, () => {
+            if ("handleEvent" in handler) {
+              handler.handleEvent(proxyEvent);
+            } else {
+              handler.call(eventTarget, proxyEvent);
+            }
+          });
         } catch (e) {
           Cu.reportError(e);
         }
@@ -531,13 +593,13 @@ let EventTargetInterposition = new Interposition("EventTargetInterposition");
 
 EventTargetInterposition.methods.addEventListener =
   function(addon, target, type, listener, useCapture, wantsUntrusted) {
-    EventTargetParent.addEventListener(target, type, listener, useCapture, wantsUntrusted);
+    EventTargetParent.addEventListener(addon, target, type, listener, useCapture, wantsUntrusted);
     target.addEventListener(type, makeFilteringListener(type, listener), useCapture, wantsUntrusted);
   };
 
 EventTargetInterposition.methods.removeEventListener =
   function(addon, target, type, listener, useCapture) {
-    EventTargetParent.removeEventListener(target, type, listener, useCapture);
+    EventTargetParent.removeEventListener(addon, target, type, listener, useCapture);
     target.removeEventListener(type, makeFilteringListener(type, listener), useCapture);
   };
 
@@ -571,6 +633,17 @@ ContentDocShellTreeItemInterposition.getters.rootTreeItem =
       .QueryInterface(Ci.nsIDocShellTreeItem);
   };
 
+function chromeGlobalForContentWindow(window)
+{
+    return window
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIWebNavigation)
+      .QueryInterface(Ci.nsIDocShellTreeItem)
+      .rootTreeItem
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIContentFrameMessageManager);
+}
+
 // This object manages sandboxes created with content principals in
 // the parent. We actually create these sandboxes in the child process
 // so that the code loaded into them runs there. The resulting sandbox
@@ -578,16 +651,7 @@ ContentDocShellTreeItemInterposition.getters.rootTreeItem =
 let SandboxParent = {
   componentsMap: new WeakMap(),
 
-  makeContentSandbox: function(principal, ...rest) {
-    // The chrome global in the content process.
-    let chromeGlobal = principal
-      .QueryInterface(Ci.nsIInterfaceRequestor)
-      .getInterface(Ci.nsIWebNavigation)
-      .QueryInterface(Ci.nsIDocShellTreeItem)
-      .rootTreeItem
-      .QueryInterface(Ci.nsIInterfaceRequestor)
-      .getInterface(Ci.nsIContentFrameMessageManager);
-
+  makeContentSandbox: function(chromeGlobal, principals, ...rest) {
     if (rest.length) {
       // Do a shallow copy of the options object into the child
       // process. This way we don't have to access it through a Chrome
@@ -606,7 +670,7 @@ let SandboxParent = {
 
     // Make a sandbox in the child.
     let cu = chromeGlobal.Components.utils;
-    let sandbox = cu.Sandbox(principal, ...rest);
+    let sandbox = cu.Sandbox(principals, ...rest);
 
     // We need to save the sandbox in the child so it won't get
     // GCed. The child will drop this reference at the next
@@ -632,14 +696,31 @@ let SandboxParent = {
 let ComponentsUtilsInterposition = new Interposition("ComponentsUtilsInterposition");
 
 ComponentsUtilsInterposition.methods.Sandbox =
-  function(addon, target, principal, ...rest) {
-    if (principal &&
-        typeof(principal) == "object" &&
-        Cu.isCrossProcessWrapper(principal) &&
-        principal instanceof Ci.nsIDOMWindow) {
-      return SandboxParent.makeContentSandbox(principal, ...rest);
+  function(addon, target, principals, ...rest) {
+    // principals can be a window object, a list of window objects, or
+    // something else (a string, for example).
+    if (principals &&
+        typeof(principals) == "object" &&
+        Cu.isCrossProcessWrapper(principals) &&
+        principals instanceof Ci.nsIDOMWindow) {
+      let chromeGlobal = chromeGlobalForContentWindow(principals);
+      return SandboxParent.makeContentSandbox(chromeGlobal, principals, ...rest);
+    } else if (principals &&
+               typeof(principals) == "object" &&
+               "every" in principals &&
+               principals.length &&
+               principals.every(e => e instanceof Ci.nsIDOMWindow && Cu.isCrossProcessWrapper(e))) {
+      let chromeGlobal = chromeGlobalForContentWindow(principals[0]);
+
+      // The principals we pass to the content process must use an
+      // Array object from the content process.
+      let array = new chromeGlobal.Array();
+      for (let i = 0; i < principals.length; i++) {
+        array[i] = principals[i];
+      }
+      return SandboxParent.makeContentSandbox(chromeGlobal, array, ...rest);
     } else {
-      return Components.utils.Sandbox(principal, ...rest);
+      return Components.utils.Sandbox(principals, ...rest);
     }
   };
 
@@ -693,8 +774,16 @@ function makeDummyContentWindow(browser) {
   let dummyContentWindow = {
     set location(url) {
       browser.loadURI(url, null, null);
-    }
+    },
+    document: {
+      readyState: "loading",
+      location: { href: "about:blank" }
+    },
+    frames: [],
   };
+  dummyContentWindow.top = dummyContentWindow;
+  dummyContentWindow.document.defaultView = dummyContentWindow;
+  browser._contentWindow = dummyContentWindow;
   return dummyContentWindow;
 }
 
@@ -708,18 +797,22 @@ RemoteBrowserElementInterposition.getters.contentWindow = function(addon, target
   return target.contentWindowAsCPOW;
 };
 
-let DummyContentDocument = {
-  readyState: "loading"
-};
+function getContentDocument(addon, browser)
+{
+  if (!browser.contentWindowAsCPOW) {
+    return makeDummyContentWindow(browser).document;
+  }
+
+  let doc = Prefetcher.lookupInCache(addon, browser.contentWindowAsCPOW, "document");
+  if (doc) {
+    return doc;
+  }
+
+  return browser.contentDocumentAsCPOW;
+}
 
 RemoteBrowserElementInterposition.getters.contentDocument = function(addon, target) {
-  // If we don't have a CPOW yet, just return something we can use to
-  // examine readyState. This is useful for tests that create a new
-  // tab and then immediately start polling readyState.
-  if (!target.contentDocumentAsCPOW) {
-    return DummyContentDocument;
-  }
-  return target.contentDocumentAsCPOW;
+  return getContentDocument(addon, target);
 };
 
 let TabBrowserElementInterposition = new Interposition("TabBrowserElementInterposition",
@@ -734,16 +827,16 @@ TabBrowserElementInterposition.getters.contentWindow = function(addon, target) {
 
 TabBrowserElementInterposition.getters.contentDocument = function(addon, target) {
   let browser = target.selectedBrowser;
-  if (!browser.contentDocumentAsCPOW) {
-    return DummyContentDocument;
-  }
-  return browser.contentDocumentAsCPOW;
+  return getContentDocument(addon, browser);
 };
 
 let ChromeWindowInterposition = new Interposition("ChromeWindowInterposition",
                                                   EventTargetInterposition);
 
-ChromeWindowInterposition.getters.content = function(addon, target) {
+// _content is for older add-ons like pinboard and all-in-one gestures
+// that should be using content instead.
+ChromeWindowInterposition.getters.content =
+ChromeWindowInterposition.getters._content = function(addon, target) {
   let browser = target.gBrowser.selectedBrowser;
   if (!browser.contentWindowAsCPOW) {
     return makeDummyContentWindow(browser);

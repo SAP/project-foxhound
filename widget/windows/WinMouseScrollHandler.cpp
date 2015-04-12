@@ -249,7 +249,7 @@ MouseScrollHandler::ProcessMessage(nsWindowBase* aWidget, UINT msg,
 /* static */
 nsresult
 MouseScrollHandler::SynthesizeNativeMouseScrollEvent(nsWindowBase* aWidget,
-                                                     const nsIntPoint& aPoint,
+                                                     const LayoutDeviceIntPoint& aPoint,
                                                      uint32_t aNativeMessage,
                                                      int32_t aDelta,
                                                      uint32_t aModifierFlags,
@@ -462,7 +462,7 @@ MouseScrollHandler::ProcessNativeMouseWheelMessage(nsWindowBase* aWidget,
     // message on its parent window.  However, note that the DOM event may
     // cause accessing the plugin.  Therefore, we should unlock the plugin
     // process by using PostMessage().
-    if (destWindow->WindowType() == eWindowType_plugin) {
+    if (destWindow->IsPlugin()) {
       destWindow = destWindow->GetParentWindowBase(false);
       if (!destWindow) {
         PR_LOG(gMouseScrollLog, PR_LOG_ALWAYS,
@@ -501,7 +501,7 @@ MouseScrollHandler::ProcessNativeMouseWheelMessage(nsWindowBase* aWidget,
   // it on parent window.  However, note that the DOM event may cause accessing
   // the plugin.  Therefore, we should unlock the plugin process by using
   // PostMessage().
-  if (aWidget->WindowType() == eWindowType_plugin &&
+  if (aWidget->IsPlugin() &&
       aWidget->GetWindowHandle() == pluginWnd) {
     nsWindowBase* destWindow = aWidget->GetParentWindowBase(false);
     if (!destWindow) {
@@ -607,7 +607,7 @@ MouseScrollHandler::HandleMouseWheelMessage(nsWindowBase* aWidget,
                                             WPARAM aWParam,
                                             LPARAM aLParam)
 {
-  NS_ABORT_IF_FALSE(
+  MOZ_ASSERT(
     (aMessage == MOZ_WM_MOUSEVWHEEL || aMessage == MOZ_WM_MOUSEHWHEEL),
     "HandleMouseWheelMessage must be called with "
     "MOZ_WM_MOUSEVWHEEL or MOZ_WM_MOUSEHWHEEL");
@@ -672,7 +672,7 @@ MouseScrollHandler::HandleScrollMessageAsMouseWheelMessage(nsWindowBase* aWidget
                                                            WPARAM aWParam,
                                                            LPARAM aLParam)
 {
-  NS_ABORT_IF_FALSE(
+  MOZ_ASSERT(
     (aMessage == MOZ_WM_VSCROLL || aMessage == MOZ_WM_HSCROLL),
     "HandleScrollMessageAsMouseWheelMessage must be called with "
     "MOZ_WM_VSCROLL or MOZ_WM_HSCROLL");
@@ -743,7 +743,7 @@ MouseScrollHandler::EventInfo::EventInfo(nsWindowBase* aWidget,
                                          UINT aMessage,
                                          WPARAM aWParam, LPARAM aLParam)
 {
-  NS_ABORT_IF_FALSE(aMessage == WM_MOUSEWHEEL || aMessage == WM_MOUSEHWHEEL,
+  MOZ_ASSERT(aMessage == WM_MOUSEWHEEL || aMessage == WM_MOUSEHWHEEL,
     "EventInfo must be initialized with WM_MOUSEWHEEL or WM_MOUSEHWHEEL");
 
   MouseScrollHandler::GetInstance()->mSystemSettings.Init();
@@ -1532,7 +1532,7 @@ MouseScrollHandler::SynthesizingEvent::NativeMessageReceived(nsWindowBase* aWidg
     }
     // If the target window is not ours and received window is our plugin
     // window, it comes from child window of the plugin.
-    if (aWidget && aWidget->WindowType() == eWindowType_plugin &&
+    if (aWidget && aWidget->IsPlugin() &&
         !WinUtils::GetNSWindowBasePtr(mWnd)) {
       return;
     }

@@ -84,6 +84,10 @@ emitted:
   ``test``
     A unique id for the test (string or list of strings).
 
+  ``path``
+    Optional path to the test relative to some base (typically the root of the
+    source tree). Mainly used when ``test`` id is not a path (string).
+
 ``test_status``
   Emitted for a test which has subtests to record the result of a
   single subtest.
@@ -217,10 +221,16 @@ and writes it to a file.
 
 .. automodule:: mozlog.structured.handlers
 
+.. autoclass:: BaseHandler
+  :members:
+
 .. autoclass:: StreamHandler
   :members:
 
 .. autoclass:: LogLevelFilter
+  :members:
+
+.. autoclass:: BufferHandler
   :members:
 
 Formatters

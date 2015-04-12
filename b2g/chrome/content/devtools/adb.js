@@ -8,6 +8,8 @@
 
 // This file is only loaded on Gonk to manage ADB state
 
+Components.utils.import("resource://gre/modules/FileUtils.jsm");
+
 const DEBUG = false;
 var debug = function(str) {
   dump("AdbController: " + str + "\n");
@@ -98,11 +100,11 @@ let AdbController = {
       return;
     }
     let storage = this.storages[storageIndex];
-    DEBUG && debug("Checking availability of storage: '" + storage.storageName);
+    DEBUG && debug("Checking availability of storage: '" + storage.storageName + "'");
 
     let req = storage.available();
     req.onsuccess = function(e) {
-      DEBUG && debug("Storage: '" + storage.storageName + "' is '" + e.target.result);
+      DEBUG && debug("Storage: '" + storage.storageName + "' is '" + e.target.result + "'");
       if (e.target.result == 'shared') {
         // We've found a storage area that's being shared with the PC.
         // We can stop looking now.
@@ -155,9 +157,10 @@ let AdbController = {
     // If USB Mass Storage, USB tethering, or a debug session is active,
     // then we don't want to disable adb in an automatic fashion (i.e.
     // when the screen locks or due to timeout).
-    let sysUsbConfig = libcutils.property_get("sys.usb.config");
-    let rndisActive = (sysUsbConfig.split(",").indexOf("rndis") >= 0);
-    let usbFuncActive = rndisActive || this.umsActive || isDebugging;
+    let sysUsbConfig = libcutils.property_get("sys.usb.config").split(",");
+    let usbFuncActive = this.umsActive || isDebugging;
+    usbFuncActive |= (sysUsbConfig.indexOf("rndis") >= 0);
+    usbFuncActive |= (sysUsbConfig.indexOf("mtp") >= 0);
 
     let enableAdb = this.remoteDebuggerEnabled &&
       (!(this.lockEnabled && this.locked) || usbFuncActive);
@@ -176,6 +179,34 @@ let AdbController = {
       // This means that the pref doesn't exist. Which is fine. We just leave
       // enableAdb alone.
     }
+
+    // Check wakelock to prevent adb from disconnecting when phone is locked
+    let lockFile = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
+    lockFile.initWithPath('/sys/power/wake_lock');
+    if(lockFile.exists()) {
+      let foStream = Cc["@mozilla.org/network/file-input-stream;1"]
+            .createInstance(Ci.nsIFileInputStream);
+      let coStream = Cc["@mozilla.org/intl/converter-input-stream;1"]
+            .createInstance(Ci.nsIConverterInputStream);
+      let str = {};
+      foStream.init(lockFile, FileUtils.MODE_RDONLY, 0, 0);
+      coStream.init(foStream, "UTF-8", 0, 0);
+      coStream.readString(-1, str);
+      coStream.close();
+      foStream.close();
+      let wakeLockContents = str.value.replace(/\n/, "");
+      let wakeLockList = wakeLockContents.split(" ");
+      if (wakeLockList.indexOf("adb") >= 0) {
+        enableAdb = true;
+        useDisableAdbTimer = false;
+        DEBUG && debug("Keeping ADB enabled as ADB wakelock is present.");
+      } else {
+        DEBUG && debug("ADB wakelock not found.");
+      }
+    } else {
+      DEBUG && debug("Wake_lock file not found.");
+    }
+
     DEBUG && debug("updateState: enableAdb = " + enableAdb +
                    " remoteDebuggerEnabled = " + this.remoteDebuggerEnabled +
                    " lockEnabled = " + this.lockEnabled +
@@ -185,6 +216,11 @@ let AdbController = {
     // Configure adb.
     let currentConfig = libcutils.property_get("persist.sys.usb.config");
     let configFuncs = currentConfig.split(",");
+    if (currentConfig == "" || currentConfig == "none") {
+      // We want to treat none like the empty string.
+      // "".split(",") yields [""] and not []
+      configFuncs = [];
+    }
     let adbIndex = configFuncs.indexOf("adb");
 
     if (enableAdb) {
@@ -199,6 +235,11 @@ let AdbController = {
       }
     }
     let newConfig = configFuncs.join(",");
+    if (newConfig == "") {
+      // Convert the empty string back into none, since that's what init.rc
+      // needs.
+      newConfig = "none";
+    }
     if (newConfig != currentConfig) {
       DEBUG && debug("updateState: currentConfig = " + currentConfig);
       DEBUG && debug("updateState:     newConfig = " + newConfig);
@@ -216,7 +257,6 @@ let AdbController = {
       }
     }
   }
-
 };
 
 SettingsListener.observe("lockscreen.locked", false,

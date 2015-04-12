@@ -18,6 +18,7 @@
 #define DOM_CAMERA_GONKCAMERACONTROL_H
 
 #include "base/basictypes.h"
+#include "nsRefPtrHashtable.h"
 #include <media/MediaProfiles.h>
 #include "mozilla/ReentrantMonitor.h"
 #include "DeviceStorage.h"
@@ -31,6 +32,7 @@ namespace android {
   class GonkCameraHardware;
   class MediaProfiles;
   class GonkRecorder;
+  class GonkCameraSource;
 }
 
 namespace mozilla {
@@ -58,26 +60,30 @@ public:
   void OnSystemError(CameraControlListener::SystemContext aWhere, nsresult aError);
 
   // See ICameraControl.h for getter/setter return values.
-  virtual nsresult Set(uint32_t aKey, const nsAString& aValue) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, nsAString& aValue) MOZ_OVERRIDE;
-  virtual nsresult Set(uint32_t aKey, double aValue) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, double& aValue) MOZ_OVERRIDE;
-  virtual nsresult Set(uint32_t aKey, int32_t aValue) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, int32_t& aValue) MOZ_OVERRIDE;
-  virtual nsresult Set(uint32_t aKey, int64_t aValue) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, int64_t& aValue) MOZ_OVERRIDE;
-  virtual nsresult Set(uint32_t aKey, bool aValue) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, bool& aValue) MOZ_OVERRIDE;
-  virtual nsresult Set(uint32_t aKey, const Size& aValue) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, Size& aValue) MOZ_OVERRIDE;
-  virtual nsresult Set(uint32_t aKey, const nsTArray<Region>& aRegions) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, nsTArray<Region>& aRegions) MOZ_OVERRIDE;
+  virtual nsresult Set(uint32_t aKey, const nsAString& aValue) override;
+  virtual nsresult Get(uint32_t aKey, nsAString& aValue) override;
+  virtual nsresult Set(uint32_t aKey, double aValue) override;
+  virtual nsresult Get(uint32_t aKey, double& aValue) override;
+  virtual nsresult Set(uint32_t aKey, int32_t aValue) override;
+  virtual nsresult Get(uint32_t aKey, int32_t& aValue) override;
+  virtual nsresult Set(uint32_t aKey, int64_t aValue) override;
+  virtual nsresult Get(uint32_t aKey, int64_t& aValue) override;
+  virtual nsresult Set(uint32_t aKey, bool aValue) override;
+  virtual nsresult Get(uint32_t aKey, bool& aValue) override;
+  virtual nsresult Set(uint32_t aKey, const Size& aValue) override;
+  virtual nsresult Get(uint32_t aKey, Size& aValue) override;
+  virtual nsresult Set(uint32_t aKey, const nsTArray<Region>& aRegions) override;
+  virtual nsresult Get(uint32_t aKey, nsTArray<Region>& aRegions) override;
 
-  virtual nsresult SetLocation(const Position& aLocation) MOZ_OVERRIDE;
+  virtual nsresult SetLocation(const Position& aLocation) override;
 
-  virtual nsresult Get(uint32_t aKey, nsTArray<Size>& aSizes) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, nsTArray<nsString>& aValues) MOZ_OVERRIDE;
-  virtual nsresult Get(uint32_t aKey, nsTArray<double>& aValues) MOZ_OVERRIDE;
+  virtual nsresult Get(uint32_t aKey, nsTArray<Size>& aSizes) override;
+  virtual nsresult Get(uint32_t aKey, nsTArray<nsString>& aValues) override;
+  virtual nsresult Get(uint32_t aKey, nsTArray<double>& aValues) override;
+
+  virtual nsresult GetRecorderProfiles(nsTArray<nsString>& aProfiles) override;
+  virtual ICameraControl::RecorderProfile* 
+    GetProfileInfo(const nsAString& aProfile) override;
 
   nsresult PushParameters();
   nsresult PullParameters();
@@ -93,43 +99,53 @@ protected:
   using CameraControlImpl::OnConfigurationChange;
   using CameraControlImpl::OnUserError;
 
-  virtual void BeginBatchParameterSet() MOZ_OVERRIDE;
-  virtual void EndBatchParameterSet() MOZ_OVERRIDE;
+  typedef nsTArray<Size>::index_type SizeIndex;
+
+  virtual void BeginBatchParameterSet() override;
+  virtual void EndBatchParameterSet() override;
 
   nsresult Initialize();
 
+  nsresult ValidateConfiguration(const Configuration& aConfig, Configuration& aValidatedConfig);
   nsresult SetConfigurationInternal(const Configuration& aConfig);
   nsresult SetPictureConfiguration(const Configuration& aConfig);
   nsresult SetVideoConfiguration(const Configuration& aConfig);
+  nsresult StartInternal(const Configuration* aInitialConfig);
+  nsresult StartPreviewInternal();
+  nsresult StopInternal();
 
   template<class T> nsresult SetAndPush(uint32_t aKey, const T& aValue);
 
   // See CameraControlImpl.h for these methods' return values.
-  virtual nsresult StartImpl(const Configuration* aInitialConfig = nullptr) MOZ_OVERRIDE;
-  virtual nsresult SetConfigurationImpl(const Configuration& aConfig) MOZ_OVERRIDE;
-  virtual nsresult StopImpl() MOZ_OVERRIDE;
-  virtual nsresult StartPreviewImpl() MOZ_OVERRIDE;
-  virtual nsresult StopPreviewImpl() MOZ_OVERRIDE;
-  virtual nsresult AutoFocusImpl() MOZ_OVERRIDE;
-  virtual nsresult StartFaceDetectionImpl() MOZ_OVERRIDE;
-  virtual nsresult StopFaceDetectionImpl() MOZ_OVERRIDE;
-  virtual nsresult TakePictureImpl() MOZ_OVERRIDE;
+  virtual nsresult StartImpl(const Configuration* aInitialConfig = nullptr) override;
+  virtual nsresult SetConfigurationImpl(const Configuration& aConfig) override;
+  virtual nsresult StopImpl() override;
+  virtual nsresult StartPreviewImpl() override;
+  virtual nsresult StopPreviewImpl() override;
+  virtual nsresult AutoFocusImpl() override;
+  virtual nsresult StartFaceDetectionImpl() override;
+  virtual nsresult StopFaceDetectionImpl() override;
+  virtual nsresult TakePictureImpl() override;
   virtual nsresult StartRecordingImpl(DeviceStorageFileDescriptor* aFileDescriptor,
-                                      const StartRecordingOptions* aOptions = nullptr) MOZ_OVERRIDE;
-  virtual nsresult StopRecordingImpl() MOZ_OVERRIDE;
-  virtual nsresult ResumeContinuousFocusImpl() MOZ_OVERRIDE;
-  virtual nsresult PushParametersImpl() MOZ_OVERRIDE;
-  virtual nsresult PullParametersImpl() MOZ_OVERRIDE;
-  virtual already_AddRefed<RecorderProfileManager> GetRecorderProfileManagerImpl() MOZ_OVERRIDE;
-  already_AddRefed<GonkRecorderProfileManager> GetGonkRecorderProfileManager();
+                                      const StartRecordingOptions* aOptions = nullptr) override;
+  virtual nsresult StopRecordingImpl() override;
+  virtual nsresult ResumeContinuousFocusImpl() override;
+  virtual nsresult PushParametersImpl() override;
+  virtual nsresult PullParametersImpl() override;
 
   nsresult SetupRecording(int aFd, int aRotation, uint64_t aMaxFileSizeBytes,
                           uint64_t aMaxVideoLengthMs);
   nsresult SetupRecordingFlash(bool aAutoEnableLowLightTorch);
-  nsresult SetPreviewSize(const Size& aSize);
-  nsresult SetVideoSize(const Size& aSize);
+  nsresult SelectCaptureAndPreviewSize(const Size& aPreviewSize, const Size& aCaptureSize,
+                                       const Size& aMaxSize, uint32_t aCaptureSizeKey);
+  nsresult MaybeAdjustVideoSize();
   nsresult PausePreview();
   nsresult GetSupportedSize(const Size& aSize, const nsTArray<Size>& supportedSizes, Size& best);
+
+  nsresult LoadRecorderProfiles();
+  static PLDHashOperator Enumerate(const nsAString& aProfileName,
+                                   RecorderProfile* aProfile,
+                                   void* aUserArg);
 
   friend class SetPictureSize;
   friend class SetThumbnailSize;
@@ -139,11 +155,15 @@ protected:
   nsresult UpdateThumbnailSize();
   nsresult SetThumbnailSizeImpl(const Size& aSize);
 
+  friend class android::GonkCameraSource;
+  android::sp<android::GonkCameraHardware> GetCameraHw();
+
   int32_t RationalizeRotation(int32_t aRotation);
+
+  uint32_t                  mCameraId;
 
   android::sp<android::GonkCameraHardware> mCameraHw;
 
-  Size                      mLastPictureSize;
   Size                      mLastThumbnailSize;
   Size                      mLastRecorderSize;
   uint32_t                  mPreviewFps;
@@ -157,16 +177,14 @@ protected:
 
   nsRefPtr<mozilla::layers::ImageContainer> mImageContainer;
 
-  android::MediaProfiles*   mMediaProfiles;
   nsRefPtr<android::GonkRecorder> mRecorder;
   // Touching mRecorder happens inside this monitor because the destructor
   // can run on any thread, and we need to be able to clean up properly if
   // GonkCameraControl goes away.
   ReentrantMonitor          mRecorderMonitor;
 
-  // Camcorder profile settings for the desired quality level
-  nsRefPtr<GonkRecorderProfileManager> mProfileManager;
-  nsRefPtr<GonkRecorderProfile> mRecorderProfile;
+  // Supported recorder profiles
+  nsRefPtrHashtable<nsStringHashKey, RecorderProfile> mRecorderProfiles;
 
   nsRefPtr<DeviceStorageFile> mVideoFile;
   nsString                  mFileFormat;
@@ -175,8 +193,8 @@ protected:
   ReentrantMonitor          mReentrantMonitor;
 
 private:
-  nsGonkCameraControl(const nsGonkCameraControl&) MOZ_DELETE;
-  nsGonkCameraControl& operator=(const nsGonkCameraControl&) MOZ_DELETE;
+  nsGonkCameraControl(const nsGonkCameraControl&) = delete;
+  nsGonkCameraControl& operator=(const nsGonkCameraControl&) = delete;
 };
 
 // camera driver callbacks
@@ -188,7 +206,6 @@ void OnAutoFocusMoving(nsGonkCameraControl* gc, bool aIsMoving);
 void OnFacesDetected(nsGonkCameraControl* gc, camera_frame_metadata_t* aMetaData);
 void OnNewPreviewFrame(nsGonkCameraControl* gc, layers::TextureClient* aBuffer);
 void OnShutter(nsGonkCameraControl* gc);
-void OnClosed(nsGonkCameraControl* gc);
 void OnSystemError(nsGonkCameraControl* gc,
                    CameraControlListener::SystemContext aWhere,
                    int32_t aArg1, int32_t aArg2);

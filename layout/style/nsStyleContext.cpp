@@ -22,6 +22,7 @@
 #include "mozilla/StyleAnimationValue.h"
 #include "GeckoProfiler.h"
 #include "nsIDocument.h"
+#include "nsPrintfCString.h"
 
 #ifdef DEBUG
 // #define NOISY_DEBUG
@@ -31,20 +32,53 @@ using namespace mozilla;
 
 //----------------------------------------------------------------------
 
+#ifdef DEBUG
+
+// Check that the style struct IDs are in the same order as they are
+// in nsStyleStructList.h, since when we set up the IDs, we include
+// the inherited and reset structs spearately from nsStyleStructList.h
+enum DebugStyleStruct {
+#define STYLE_STRUCT(name, checkdata_cb) eDebugStyleStruct_##name,
+#include "nsStyleStructList.h"
+#undef STYLE_STRUCT
+};
+
+#define STYLE_STRUCT(name, checkdata_cb) \
+  static_assert(static_cast<int>(eDebugStyleStruct_##name) == \
+                  static_cast<int>(eStyleStruct_##name), \
+                "Style struct IDs are not declared in order?");
+#include "nsStyleStructList.h"
+#undef STYLE_STRUCT
+
+const uint32_t nsStyleContext::sDependencyTable[] = {
+#define STYLE_STRUCT(name, checkdata_cb)
+#define STYLE_STRUCT_DEP(dep) NS_STYLE_INHERIT_BIT(dep) |
+#define STYLE_STRUCT_END() 0,
+#include "nsStyleStructList.h"
+#undef STYLE_STRUCT
+#undef STYLE_STRUCT_DEP
+#undef STYLE_STRUCT_END
+};
+
+#endif
 
 nsStyleContext::nsStyleContext(nsStyleContext* aParent,
                                nsIAtom* aPseudoTag,
                                nsCSSPseudoElements::Type aPseudoType,
                                nsRuleNode* aRuleNode,
                                bool aSkipParentDisplayBasedStyleFixup)
-  : mParent(aParent),
-    mChild(nullptr),
-    mEmptyChild(nullptr),
-    mPseudoTag(aPseudoTag),
-    mRuleNode(aRuleNode),
-    mCachedResetData(nullptr),
-    mBits(((uint64_t)aPseudoType) << NS_STYLE_CONTEXT_TYPE_SHIFT),
-    mRefCnt(0)
+  : mParent(aParent)
+  , mChild(nullptr)
+  , mEmptyChild(nullptr)
+  , mPseudoTag(aPseudoTag)
+  , mRuleNode(aRuleNode)
+  , mCachedResetData(nullptr)
+  , mBits(((uint64_t)aPseudoType) << NS_STYLE_CONTEXT_TYPE_SHIFT)
+  , mRefCnt(0)
+#ifdef DEBUG
+  , mFrameRefCnt(0)
+  , mComputingStruct(nsStyleStructID_None)
+#endif
 {
   // This check has to be done "backward", because if it were written the
   // more natural way it wouldn't fail even when it needed to.
@@ -52,6 +86,12 @@ nsStyleContext::nsStyleContext(nsStyleContext* aParent,
                 nsCSSPseudoElements::ePseudo_MAX,
                 "pseudo element bits no longer fit in a uint64_t");
   MOZ_ASSERT(aRuleNode);
+
+#ifdef DEBUG
+  static_assert(MOZ_ARRAY_LENGTH(nsStyleContext::sDependencyTable)
+                  == nsStyleStructID_Length,
+                "Number of items in dependency table doesn't match IDs");
+#endif
 
   mNextSibling = this;
   mPrevSibling = this;
@@ -397,9 +437,7 @@ nsStyleContext::GetUniqueStyleData(const nsStyleStructID& aSID)
     break;
 
   UNIQUE_CASE(Display)
-  UNIQUE_CASE(Background)
   UNIQUE_CASE(Text)
-  UNIQUE_CASE(TextReset)
 
 #undef UNIQUE_CASE
 
@@ -411,6 +449,41 @@ nsStyleContext::GetUniqueStyleData(const nsStyleStructID& aSID)
   SetStyle(aSID, result);
   mBits &= ~static_cast<uint64_t>(nsCachedStyleData::GetBitForSID(aSID));
 
+  return result;
+}
+
+// This is an evil function, but less evil than GetUniqueStyleData. It
+// creates an empty style struct for this nsStyleContext.
+void*
+nsStyleContext::CreateEmptyStyleData(const nsStyleStructID& aSID)
+{
+  MOZ_ASSERT(!mChild && !mEmptyChild &&
+             !(mBits & nsCachedStyleData::GetBitForSID(aSID)) &&
+             !GetCachedStyleData(aSID),
+             "This style should not have been computed");
+
+  void* result;
+  nsPresContext* presContext = PresContext();
+  switch (aSID) {
+#define UNIQUE_CASE(c_, ...) \
+    case eStyleStruct_##c_: \
+      result = new (presContext) nsStyle##c_(__VA_ARGS__); \
+      break;
+
+  UNIQUE_CASE(Border, presContext)
+  UNIQUE_CASE(Padding)
+
+#undef UNIQUE_CASE
+
+  default:
+    NS_ERROR("Struct type not supported.");
+    return nullptr;
+  }
+
+  // The new struct is owned by this style context, but that we don't
+  // need to clear the bit in mBits because we've asserted that at the
+  // top of this function.
+  SetStyle(aSID, result);
   return result;
 }
 
@@ -506,18 +579,31 @@ nsStyleContext::ApplyStyleFixups(bool aSkipParentDisplayBasedStyleFixup)
   //   # The computed 'display' of a flex item is determined
   //   # by applying the table in CSS 2.1 Chapter 9.7.
   // ...which converts inline-level elements to their block-level equivalents.
-  // Any direct children of elements with Ruby display values which are
-  // block-level are converted to their inline-level equivalents.
+  // Any block-level element directly contained by elements with ruby display
+  // values are converted to their inline-level equivalents.
   if (!aSkipParentDisplayBasedStyleFixup && mParent) {
-    const nsStyleDisplay* parentDisp = mParent->StyleDisplay();
-    if (parentDisp->IsFlexOrGridDisplayType() &&
+    // Skip display:contents ancestors to reach the potential container.
+    // (If there are only display:contents ancestors between this node and
+    // a flex/grid container ancestor, then this node is a flex/grid item, since
+    // its parent *in the frame tree* will be the flex/grid container. So we treat
+    // it like a flex/grid item here.)
+    nsStyleContext* containerContext = mParent;
+    const nsStyleDisplay* containerDisp = containerContext->StyleDisplay();
+    while (containerDisp->mDisplay == NS_STYLE_DISPLAY_CONTENTS) {
+      if (!containerContext->GetParent()) {
+        break;
+      }
+      containerContext = containerContext->GetParent();
+      containerDisp = containerContext->StyleDisplay();
+    }
+    if (containerDisp->IsFlexOrGridDisplayType() &&
         GetPseudo() != nsCSSAnonBoxes::mozNonElement) {
       uint8_t displayVal = disp->mDisplay;
       // Skip table parts.
       // NOTE: This list needs to be kept in sync with
-      // nsCSSFrameConstructor.cpp's "sDisplayData" array -- specifically,
-      // this should be the list of display-values that have
-      // FCDATA_DESIRED_PARENT_TYPE_TO_BITS specified in that array.
+      // nsCSSFrameConstructor::FindDisplayData() -- specifically,
+      // this should be the list of display-values that returns
+      // FCDATA_DESIRED_PARENT_TYPE_TO_BITS from that method.
       if (NS_STYLE_DISPLAY_TABLE_CAPTION      != displayVal &&
           NS_STYLE_DISPLAY_TABLE_ROW_GROUP    != displayVal &&
           NS_STYLE_DISPLAY_TABLE_HEADER_GROUP != displayVal &&
@@ -543,18 +629,32 @@ nsStyleContext::ApplyStyleFixups(bool aSkipParentDisplayBasedStyleFixup)
             static_cast<nsStyleDisplay*>(GetUniqueStyleData(eStyleStruct_Display));
           mutable_display->mDisplay = displayVal;
         }
-      } 
-    } else if (parentDisp->IsRubyDisplayType()) {
+      }
+    }
+
+    // The display change should only occur for "in-flow" children
+    if (!disp->IsOutOfFlowStyle() &&
+        ((containerDisp->mDisplay == NS_STYLE_DISPLAY_INLINE &&
+          containerContext->IsInlineDescendantOfRuby()) ||
+         containerDisp->IsRubyDisplayType() ||
+         disp->mDisplay == NS_STYLE_DISPLAY_RUBY_TEXT ||
+         disp->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE)) {
+      mBits |= NS_STYLE_IS_INLINE_DESCENDANT_OF_RUBY;
       uint8_t displayVal = disp->mDisplay;
       nsRuleNode::EnsureInlineDisplay(displayVal);
-      // The display change should only occur for "in-flow" children
-      if (displayVal != disp->mDisplay && 
-          !disp->IsOutOfFlowStyle()) {
+      if (displayVal != disp->mDisplay) {
         nsStyleDisplay *mutable_display =
           static_cast<nsStyleDisplay*>(GetUniqueStyleData(eStyleStruct_Display));
         mutable_display->mDisplay = displayVal;
       }
     }
+  }
+
+  // Suppress border/padding of ruby level containers
+  if (disp->mDisplay == NS_STYLE_DISPLAY_RUBY_BASE_CONTAINER ||
+      disp->mDisplay == NS_STYLE_DISPLAY_RUBY_TEXT_CONTAINER) {
+    CreateEmptyStyleData(eStyleStruct_Border);
+    CreateEmptyStyleData(eStyleStruct_Padding);
   }
 
   // Compute User Interface style, to trigger loads of cursors
@@ -569,9 +669,9 @@ nsStyleContext::CalcStyleDifference(nsStyleContext* aOther,
   PROFILER_LABEL("nsStyleContext", "CalcStyleDifference",
     js::ProfileEntry::Category::CSS);
 
-  NS_ABORT_IF_FALSE(NS_IsHintSubset(aParentHintsNotHandledForDescendants,
-                                    nsChangeHint_Hints_NotHandledForDescendants),
-                    "caller is passing inherited hints, but shouldn't be");
+  MOZ_ASSERT(NS_IsHintSubset(aParentHintsNotHandledForDescendants,
+                             nsChangeHint_Hints_NotHandledForDescendants),
+             "caller is passing inherited hints, but shouldn't be");
 
   static_assert(nsStyleStructID_Length <= 32,
                 "aEqualStructs is not big enough");
@@ -750,7 +850,10 @@ nsStyleContext::CalcStyleDifference(nsStyleContext* aOther,
       const nsStyleBorder *otherVisBorder = otherVis->StyleBorder();
       NS_FOR_CSS_SIDES(side) {
         bool thisFG, otherFG;
-        nscolor thisColor, otherColor;
+        // Dummy initialisations to keep Valgrind/Memcheck happy.
+        // See bug 1122375 comment 4.
+        nscolor thisColor = NS_RGBA(0, 0, 0, 0);
+        nscolor otherColor = NS_RGBA(0, 0, 0, 0);
         thisVisBorder->GetBorderColor(side, thisColor, thisFG);
         otherVisBorder->GetBorderColor(side, otherColor, otherFG);
         if (thisFG != otherFG || (!thisFG && thisColor != otherColor)) {
@@ -790,7 +893,10 @@ nsStyleContext::CalcStyleDifference(nsStyleContext* aOther,
     if (!change && PeekStyleTextReset()) {
       const nsStyleTextReset *thisVisTextReset = thisVis->StyleTextReset();
       const nsStyleTextReset *otherVisTextReset = otherVis->StyleTextReset();
-      nscolor thisVisDecColor, otherVisDecColor;
+      // Dummy initialisations to keep Valgrind/Memcheck happy.
+      // See bug 1122375 comment 4.
+      nscolor thisVisDecColor = NS_RGBA(0, 0, 0, 0);
+      nscolor otherVisDecColor = NS_RGBA(0, 0, 0, 0);
       bool thisVisDecColorIsFG, otherVisDecColorIsFG;
       thisVisTextReset->GetDecorationColor(thisVisDecColor,
                                            thisVisDecColorIsFG);
@@ -845,22 +951,26 @@ nsStyleContext::Mark()
 }
 
 #ifdef DEBUG
-void nsStyleContext::List(FILE* out, int32_t aIndent)
+void nsStyleContext::List(FILE* out, int32_t aIndent, bool aListDescendants)
 {
+  nsAutoCString str;
   // Indent
   int32_t ix;
-  for (ix = aIndent; --ix >= 0; ) fputs("  ", out);
-  fprintf(out, "%p(%d) parent=%p ",
-          (void*)this, mRefCnt, (void *)mParent);
+  for (ix = aIndent; --ix >= 0; ) {
+    str.AppendLiteral("  ");
+  }
+  str.Append(nsPrintfCString("%p(%d) parent=%p ",
+                             (void*)this, mRefCnt, (void *)mParent));
   if (mPseudoTag) {
     nsAutoString  buffer;
     mPseudoTag->ToString(buffer);
-    fputs(NS_LossyConvertUTF16toASCII(buffer).get(), out);
-    fputs(" ", out);
+    AppendUTF16toUTF8(buffer, str);
+    str.Append(' ');
   }
 
   if (mRuleNode) {
-    fputs("{\n", out);
+    fprintf_stderr(out, "%s{\n", str.get());
+    str.Truncate();
     nsRuleNode* ruleNode = mRuleNode;
     while (ruleNode) {
       nsIStyleRule *styleRule = ruleNode->GetRule();
@@ -869,26 +979,30 @@ void nsStyleContext::List(FILE* out, int32_t aIndent)
       }
       ruleNode = ruleNode->GetParent();
     }
-    for (ix = aIndent; --ix >= 0; ) fputs("  ", out);
-    fputs("}\n", out);
+    for (ix = aIndent; --ix >= 0; ) {
+      str.AppendLiteral("  ");
+    }
+    fprintf_stderr(out, "%s}\n", str.get());
   }
   else {
-    fputs("{}\n", out);
+    fprintf_stderr(out, "%s{}\n", str.get());
   }
 
-  if (nullptr != mChild) {
-    nsStyleContext* child = mChild;
-    do {
-      child->List(out, aIndent + 1);
-      child = child->mNextSibling;
-    } while (mChild != child);
-  }
-  if (nullptr != mEmptyChild) {
-    nsStyleContext* child = mEmptyChild;
-    do {
-      child->List(out, aIndent + 1);
-      child = child->mNextSibling;
-    } while (mEmptyChild != child);
+  if (aListDescendants) {
+    if (nullptr != mChild) {
+      nsStyleContext* child = mChild;
+      do {
+        child->List(out, aIndent + 1, aListDescendants);
+        child = child->mNextSibling;
+      } while (mChild != child);
+    }
+    if (nullptr != mEmptyChild) {
+      nsStyleContext* child = mEmptyChild;
+      do {
+        child->List(out, aIndent + 1, aListDescendants);
+        child = child->mNextSibling;
+      } while (mEmptyChild != child);
+    }
   }
 }
 #endif
@@ -940,8 +1054,8 @@ ExtractAnimationValue(nsCSSProperty aProperty,
   DebugOnly<bool> success =
     StyleAnimationValue::ExtractComputedValue(aProperty, aStyleContext,
                                               aResult);
-  NS_ABORT_IF_FALSE(success,
-                    "aProperty must be extractable by StyleAnimationValue");
+  MOZ_ASSERT(success,
+             "aProperty must be extractable by StyleAnimationValue");
 }
 
 static nscolor
@@ -977,9 +1091,9 @@ nsStyleContext::GetVisitedDependentColor(nsCSSProperty aProperty)
   NS_ASSERTION(aProperty == eCSSProperty_color ||
                aProperty == eCSSProperty_background_color ||
                aProperty == eCSSProperty_border_top_color ||
-               aProperty == eCSSProperty_border_right_color_value ||
+               aProperty == eCSSProperty_border_right_color ||
                aProperty == eCSSProperty_border_bottom_color ||
-               aProperty == eCSSProperty_border_left_color_value ||
+               aProperty == eCSSProperty_border_left_color ||
                aProperty == eCSSProperty_outline_color ||
                aProperty == eCSSProperty__moz_column_rule_color ||
                aProperty == eCSSProperty_text_decoration_color ||
@@ -1147,6 +1261,7 @@ nsStyleContext::ClearCachedInheritedStyleDataOnDescendants(uint32_t aStructs)
 void
 nsStyleContext::DoClearCachedInheritedStyleDataOnDescendants(uint32_t aStructs)
 {
+  NS_ASSERTION(mFrameRefCnt == 0, "frame still referencing style context");
   for (nsStyleStructID i = nsStyleStructID_Inherited_Start;
        i < nsStyleStructID_Inherited_Start + nsStyleStructID_Inherited_Count;
        i = nsStyleStructID(i + 1)) {

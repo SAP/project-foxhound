@@ -617,7 +617,7 @@ Item.prototype = {
 
 // Creating maps thousands of times for widgets with a large number of children
 // fills up a lot of memory. Make sure these are instantiated only if needed.
-DevToolsUtils.defineLazyPrototypeGetter(Item.prototype, "_itemsByElement", Map);
+DevToolsUtils.defineLazyPrototypeGetter(Item.prototype, "_itemsByElement", () => new Map());
 
 /**
  * Some generic Widget methods handling Item instances.
@@ -800,7 +800,7 @@ this.WidgetMethods = {
    */
   removeForPredicate: function(aPredicate) {
     let item;
-    while (item = this.getItemForPredicate(aPredicate)) {
+    while ((item = this.getItemForPredicate(aPredicate))) {
       this.remove(item);
     }
   },
@@ -1729,7 +1729,7 @@ this.WidgetMethods = {
 /**
  * A generator-iterator over all the items in this container.
  */
-Item.prototype["@@iterator"] =
-WidgetMethods["@@iterator"] = function*() {
+Item.prototype[Symbol.iterator] =
+WidgetMethods[Symbol.iterator] = function*() {
   yield* this._itemsByElement.values();
 };

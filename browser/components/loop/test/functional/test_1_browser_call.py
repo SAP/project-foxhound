@@ -1,14 +1,21 @@
 from marionette_test import MarionetteTestCase
-from by import By
-import urlparse
-from errors import NoSuchElementException, StaleElementException
-# noinspection PyUnresolvedReferences
-from wait import Wait
-from time import sleep
+try:
+    from by import By
+    from errors import NoSuchElementException, StaleElementException
+    # noinspection PyUnresolvedReferences
+    from wait import Wait
+except ImportError:
+    from marionette_driver.by import By
+    from marionette_driver.errors import NoSuchElementException, StaleElementException
+    # noinspection PyUnresolvedReferences
+    from marionette_driver import Wait
 
 import os
 import sys
+import urlparse
 sys.path.insert(1, os.path.dirname(os.path.abspath(__file__)))
+
+import pyperclip
 
 from serversetup import LoopTestServers
 from config import *
@@ -39,104 +46,121 @@ class Test1BrowserCall(MarionetteTestCase):
             .until(lambda m: m.find_element(by, locator).is_displayed())
         return self.marionette.find_element(by, locator)
 
-    # XXX workaround for Marionette bug 1055309
+    def wait_for_subelement_displayed(self, parent, by, locator, timeout=None):
+        Wait(self.marionette, timeout,
+             ignored_exceptions=[NoSuchElementException, StaleElementException])\
+            .until(lambda m: parent.find_element(by, locator).is_displayed())
+        return parent.find_element(by, locator)
+
+    # XXX workaround for Marionette bug 1094246
     def wait_for_element_exists(self, by, locator, timeout=None):
         Wait(self.marionette, timeout,
              ignored_exceptions=[NoSuchElementException, StaleElementException]) \
             .until(lambda m: m.find_element(by, locator))
         return self.marionette.find_element(by, locator)
 
+    def wait_for_element_enabled(self, element, timeout=10):
+        Wait(self.marionette, timeout) \
+            .until(lambda e: element.is_enabled(),
+                   message="Timed out waiting for element to be enabled")
+
+    def wait_for_element_attribute_to_be_false(self, element, attribute, timeout=10):
+        Wait(self.marionette, timeout) \
+            .until(lambda e: element.get_attribute(attribute) == "false",
+                   message="Timeout out waiting for " + attribute + " to be false")
+
     def switch_to_panel(self):
-        button = self.marionette.find_element(By.ID, "loop-call-button")
+        button = self.marionette.find_element(By.ID, "loop-button")
 
         # click the element
         button.click()
 
         # switch to the frame
-        frame = self.marionette.find_element(By.ID, "loop")
+        frame = self.marionette.find_element(By.ID, "loop-panel-iframe")
         self.marionette.switch_to_frame(frame)
 
-    def load_and_verify_standalone_ui(self, url):
-        self.marionette.set_context("content")
-        self.marionette.navigate(url)
-
-        call_url_link = self.marionette.find_element(By.CLASS_NAME, "call-url") \
-            .text
-        self.assertEqual(url, call_url_link,
-                         "should be on the correct page")
-
-    def get_and_verify_call_url(self):
-        # get and check for a call url
-        url_input_element = self.wait_for_element_displayed(By.TAG_NAME,
-                                                            "input")
-
-        # wait for pending state to finish
-        self.assertEqual(url_input_element.get_attribute("class"), "pending",
-                         "expect the input to be pending")
-
-        # get and check the input (the "callUrl" class is only added after
-        # the pending class is removed and the URL has arrived).
-        #
-        # XXX should investigate getting rid of the fragile and otherwise
-        # unnecessary callUrl class and replacing this with a By.CSS_SELECTOR
-        # and some possible combination of :not and/or an attribute selector
-        # once bug 1048551 is fixed.
-        url_input_element = self.wait_for_element_displayed(By.CLASS_NAME,
-                                                            "callUrl")
-        call_url = url_input_element.get_attribute("value")
-
-        self.assertNotEqual(call_url, u'',
-                            "input is populated with call URL after pending"
-                            " is finished")
-        self.assertIn(urlparse.urlparse(call_url).scheme, ['http', 'https'],
-                      "call URL returned by server " + call_url +
-                      " has invalid scheme")
-        return call_url
-
-    def start_and_verify_outgoing_call(self):
-        # make the call!
-        call_button = self.marionette.find_element(By.CLASS_NAME,
-                                                   "btn-accept")
-        call_button.click()
-
-        # make sure the standalone progresses to the pending state
-        pending_header = self.wait_for_element_displayed(By.CLASS_NAME,
-                                                         "pending-header")
-        self.assertEqual(pending_header.tag_name, "header",
-                         "expect a pending header")
-
-    def accept_and_verify_incoming_call(self):
+    def switch_to_chatbox(self):
         self.marionette.set_context("chrome")
         self.marionette.switch_to_frame()
 
         # XXX should be using wait_for_element_displayed, but need to wait
-        # for Marionette bug 1055309 to be fixed.
+        # for Marionette bug 1094246 to be fixed.
         chatbox = self.wait_for_element_exists(By.TAG_NAME, 'chatbox')
         script = ("return document.getAnonymousElementByAttribute("
                   "arguments[0], 'class', 'chat-frame');")
         frame = self.marionette.execute_script(script, [chatbox])
         self.marionette.switch_to_frame(frame)
 
-        # Accept the incoming call
-        call_button = self.marionette.find_element(By.CLASS_NAME,
-                                                   "btn-accept")
-        # accept call from the desktop side
-        call_button.click()
+    def switch_to_standalone(self):
+        self.marionette.set_context("content")
+
+    def local_start_a_conversation(self):
+        button = self.marionette.find_element(By.CSS_SELECTOR, ".rooms .btn-info")
+
+        self.wait_for_element_enabled(button, 120)
+
+        button.click()
+
+    def local_check_room_self_video(self):
+        self.switch_to_chatbox()
 
         # expect a video container on desktop side
-        video = self.wait_for_element_displayed(By.CLASS_NAME, "media")
-        self.assertEqual(video.tag_name, "div", "expect a video container")
+        media_container = self.wait_for_element_displayed(By.CLASS_NAME, "media")
+        self.assertEqual(media_container.tag_name, "div", "expect a video container")
 
-    def hangup_call_and_verify_feedback(self):
-        self.marionette.set_context("chrome")
+    def local_get_and_verify_room_url(self):
+        button = self.wait_for_element_displayed(By.CLASS_NAME, "btn-copy")
+
+        button.click()
+
+        # click the element
+        room_url = pyperclip.paste()
+
+        self.assertIn(urlparse.urlparse(room_url).scheme, ['http', 'https'],
+                      "room URL returned by server " + room_url +
+                      " has invalid scheme")
+        return room_url
+
+    def standalone_load_and_join_room(self, url):
+        self.switch_to_standalone()
+        self.marionette.navigate(url)
+
+        # Join the room
+        join_button = self.wait_for_element_displayed(By.CLASS_NAME,
+                                                      "btn-join")
+        join_button.click()
+
+    # Assumes the standlone or the conversation window is selected first.
+    def check_video(self, selector):
+        video_wrapper = self.wait_for_element_displayed(By.CSS_SELECTOR,
+                                                        selector, 20)
+        video = self.wait_for_subelement_displayed(video_wrapper,
+                                                   By.TAG_NAME, "video")
+
+        self.wait_for_element_attribute_to_be_false(video, "paused")
+        self.assertEqual(video.get_attribute("ended"), "false")
+
+    def standalone_check_remote_video(self):
+        self.switch_to_standalone()
+        self.check_video(".remote .OT_subscriber .OT_widget-container")
+
+    def local_check_remote_video(self):
+        self.switch_to_chatbox()
+        self.check_video(".remote .OT_subscriber .OT_widget-container")
+
+    def local_enable_screenshare(self):
+        self.switch_to_chatbox()
+        button = self.marionette.find_element(By.CLASS_NAME, "btn-screen-share")
+
+        button.click()
+
+    def standalone_check_remote_screenshare(self):
+        self.switch_to_standalone()
+        self.check_video(".media .screen .OT_subscriber .OT_widget-container")
+
+    def local_leave_room_and_verify_feedback(self):
         button = self.marionette.find_element(By.CLASS_NAME, "btn-hangup")
 
-        # XXX bug 1080095 For whatever reason, the click doesn't take effect
-        # unless we wait for a bit (even if we wait for the element to
-        # actually be displayed first, which we're not currently bothering
-        # with).  It's not entirely clear whether the click is being
-        # delivered in this case, or whether there's a Marionette bug here.
-        sleep(5)
         button.click()
 
         # check that the feedback form is displayed
@@ -146,18 +170,27 @@ class Test1BrowserCall(MarionetteTestCase):
     def test_1_browser_call(self):
         self.switch_to_panel()
 
-        call_url = self.get_and_verify_call_url()
+        self.local_start_a_conversation()
+
+        # Check the self video in the conversation window
+        self.local_check_room_self_video()
+
+        room_url = self.local_get_and_verify_room_url()
 
         # load the link clicker interface into the current content browser
-        self.load_and_verify_standalone_ui(call_url)
+        self.standalone_load_and_join_room(room_url)
 
-        self.start_and_verify_outgoing_call()
+        # Check we get the video streams
+        self.standalone_check_remote_video()
+        self.local_check_remote_video()
 
-        # Switch to the conversation window and answer
-        self.accept_and_verify_incoming_call()
+        # XXX To enable this, we either need to navigate the permissions prompt
+        # or have a route where we don't need the permissions prompt.
+        # self.local_enable_screenshare()
+        # self.standalone_check_remote_screenshare()
 
         # hangup the call
-        self.hangup_call_and_verify_feedback()
+        self.local_leave_room_and_verify_feedback()
 
     def tearDown(self):
         self.loop_test_servers.shutdown()

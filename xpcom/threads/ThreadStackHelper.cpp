@@ -38,6 +38,10 @@
 #include "processor/stackwalker_arm.h"
 #endif
 
+#if defined(MOZ_VALGRIND)
+# include <valgrind/valgrind.h>
+#endif
+
 #include <string.h>
 #include <vector>
 
@@ -260,6 +264,14 @@ ThreadStackHelper::GetStack(Stack& aStack)
   MOZ_ALWAYS_TRUE(::ResumeThread(mThreadID) != DWORD(-1));
 
 #elif defined(XP_MACOSX)
+# if defined(MOZ_VALGRIND) && defined(RUNNING_ON_VALGRIND)
+  if (RUNNING_ON_VALGRIND) {
+    /* thread_suspend and thread_resume sometimes hang runs on Valgrind,
+       for unknown reasons.  So, just avoid them.  See bug 1100911. */
+    return;
+  }
+# endif
+
   if (::thread_suspend(mThreadID) != KERN_SUCCESS) {
     MOZ_ASSERT(false);
     return;
@@ -529,6 +541,35 @@ IsChromeJSScript(JSScript* aScript)
   return secman->IsSystemPrincipal(nsJSPrincipals::get(principals));
 }
 
+// Get the full path after the URI scheme, if the URI matches the scheme.
+// For example, GetFullPathForScheme("a://b/c/d/e", "a://") returns "b/c/d/e".
+template <size_t LEN>
+const char*
+GetFullPathForScheme(const char* filename, const char (&scheme)[LEN]) {
+  // Account for the null terminator included in LEN.
+  if (!strncmp(filename, scheme, LEN - 1)) {
+    return filename + LEN - 1;
+  }
+  return nullptr;
+}
+
+// Get the full path after a URI component, if the URI contains the component.
+// For example, GetPathAfterComponent("a://b/c/d/e", "/c/") returns "d/e".
+template <size_t LEN>
+const char*
+GetPathAfterComponent(const char* filename, const char (&component)[LEN]) {
+  const char* found = nullptr;
+  const char* next = strstr(filename, component);
+  while (next) {
+    // Move 'found' to end of the component, after the separator '/'.
+    // 'LEN - 1' accounts for the null terminator included in LEN,
+    found = next + LEN - 1;
+    // Resume searching before the separator '/'.
+    next = strstr(found - 1, component);
+  }
+  return found;
+}
+
 } // namespace
 
 const char*
@@ -544,14 +585,35 @@ ThreadStackHelper::AppendJSEntry(const volatile StackEntry* aEntry,
 
   const char* label;
   if (IsChromeJSScript(aEntry->script())) {
-    const char* const filename = JS_GetScriptFilename(aEntry->script());
-    unsigned lineno = JS_PCToLineNumber(aEntry->script(), aEntry->pc());
+    const char* filename = JS_GetScriptFilename(aEntry->script());
+    const unsigned lineno = JS_PCToLineNumber(aEntry->script(), aEntry->pc());
     MOZ_ASSERT(filename);
 
-    char buffer[64]; // Enough to fit longest js file name from the tree
-    const char* const basename = strrchr(filename, '/');
-    size_t len = PR_snprintf(buffer, sizeof(buffer), "%s:%u",
-                             basename ? basename + 1 : filename, lineno);
+    char buffer[128]; // Enough to fit longest js file name from the tree
+
+    // Some script names are in the form "foo -> bar -> baz".
+    // Here we find the origin of these redirected scripts.
+    const char* basename = GetPathAfterComponent(filename, " -> ");
+    if (basename) {
+      filename = basename;
+    }
+
+    basename = GetFullPathForScheme(filename, "chrome://");
+    if (!basename) {
+      basename = GetFullPathForScheme(filename, "resource://");
+    }
+    if (!basename) {
+      // If the (add-on) script is located under the {profile}/extensions
+      // directory, extract the path after the /extensions/ part.
+      basename = GetPathAfterComponent(filename, "/extensions/");
+    }
+    if (!basename) {
+      // Only keep the file base name for paths outside the above formats.
+      basename = strrchr(filename, '/');
+      basename = basename ? basename + 1 : filename;
+    }
+
+    size_t len = PR_snprintf(buffer, sizeof(buffer), "%s:%u", basename, lineno);
     if (len < sizeof(buffer)) {
       if (mStackToFill->IsSameAsEntry(aPrevLabel, buffer)) {
         return aPrevLabel;
@@ -611,10 +673,8 @@ ThreadStackHelper::FillStackBuffer()
     }
 #endif
     const char* const label = entry->label();
-    if (mStackToFill->IsSameAsEntry(prevLabel, label) ||
-        !strcmp(label, "js::RunScript")) {
+    if (mStackToFill->IsSameAsEntry(prevLabel, label)) {
       // Avoid duplicate labels to save space in the stack.
-      // Avoid js::RunScript labels because we save actual JS frames above.
       continue;
     }
     mStackToFill->infallibleAppend(label);

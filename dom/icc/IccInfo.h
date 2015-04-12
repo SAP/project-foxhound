@@ -34,7 +34,7 @@ public:
 
   // WrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   // WebIDL interface
   Nullable<IccType>
@@ -59,14 +59,14 @@ public:
   IsDisplaySpnRequired() const;
 
 protected:
-  ~IccInfo() {}
+  virtual ~IccInfo() {}
 
 protected:
   nsCOMPtr<nsPIDOMWindow> mWindow;
   nsCOMPtr<nsIIccInfo> mIccInfo;
 };
 
-class GsmIccInfo MOZ_FINAL : public IccInfo
+class GsmIccInfo final : public IccInfo
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -79,7 +79,7 @@ public:
 
   // WrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   // MozCdmaIccInfo WebIDL
   void
@@ -92,7 +92,7 @@ private:
   nsCOMPtr<nsIGsmIccInfo> mGsmIccInfo;
 };
 
-class CdmaIccInfo MOZ_FINAL : public IccInfo
+class CdmaIccInfo final : public IccInfo
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -105,7 +105,7 @@ public:
 
   // WrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   // MozCdmaIccInfo WebIDL
   void

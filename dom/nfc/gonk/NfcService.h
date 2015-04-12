@@ -18,7 +18,7 @@ namespace dom {
 class NfcEventOptions;
 } // namespace dom
 
-class NfcService MOZ_FINAL : public nsINfcService,
+class NfcService final : public nsINfcService,
                              public mozilla::ipc::NfcSocketListener
 {
 public:
@@ -30,7 +30,7 @@ public:
   void DispatchNfcEvent(const mozilla::dom::NfcEventOptions& aOptions);
 
   virtual void
-  ReceiveSocketData(nsAutoPtr<mozilla::ipc::UnixSocketRawData>& aData) MOZ_OVERRIDE;
+  ReceiveSocketData(nsAutoPtr<mozilla::ipc::UnixSocketRawData>& aData) override;
 
   nsCOMPtr<nsIThread> GetThread() {
     return mThread;
@@ -41,7 +41,7 @@ private:
   ~NfcService();
 
   nsCOMPtr<nsIThread> mThread;
-  nsCOMPtr<nsINfcEventListener> mListener;
+  nsCOMPtr<nsINfcGonkEventListener> mListener;
   nsRefPtr<mozilla::ipc::NfcConsumer> mConsumer;
   nsAutoPtr<NfcMessageHandler> mHandler;
 };

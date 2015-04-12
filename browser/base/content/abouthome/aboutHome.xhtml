@@ -41,7 +41,8 @@
 
       <div id="searchContainer">
         <form name="searchForm" id="searchForm" onsubmit="onSearchSubmit(event)">
-          <div id="searchLogoContainer"><img id="searchEngineLogo"/></div>
+          <div id="searchLogoContainer" hidden="true"><img id="searchEngineLogo"/></div>
+          <button id="searchIcon" type="button" />
           <input type="text" name="q" value="" id="searchText" maxlength="256"
                  autofocus="autofocus" dir="auto"/>
           <input id="searchSubmit" type="submit" value="&abouthome.searchEngineButton.label;"/>
@@ -63,7 +64,7 @@
       <button class="launchButton" id="downloads">&abouthome.downloadsButton.label;</button>
       <button class="launchButton" id="bookmarks">&abouthome.bookmarksButton.label;</button>
       <button class="launchButton" id="history">&abouthome.historyButton.label;</button>
-      <button class="launchButton" id="apps" hidden="true">&abouthome.appsButton.label;</button>
+      <button class="launchButton" id="apps">&abouthome.appsButton.label;</button>
       <button class="launchButton" id="addons">&abouthome.addonsButton.label;</button>
       <button class="launchButton" id="sync">&abouthome.syncButton.label;</button>
 #ifdef XP_WIN

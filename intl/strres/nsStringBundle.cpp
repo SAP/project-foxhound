@@ -69,7 +69,6 @@ nsStringBundle::LoadProperties()
   rv = NS_NewURI(getter_AddRefs(uri), mPropertiesURL);
   if (NS_FAILED(rv)) return rv;
 
-  // We don't use NS_OpenURI because we want to tweak the channel
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel),
                      uri,
@@ -477,7 +476,7 @@ nsresult nsExtensibleStringBundle::GetSimpleEnumeration(nsISimpleEnumerator ** a
 
 #define MAX_CACHED_BUNDLES 16
 
-struct bundleCacheEntry_t MOZ_FINAL : public LinkedListElement<bundleCacheEntry_t> {
+struct bundleCacheEntry_t final : public LinkedListElement<bundleCacheEntry_t> {
   nsCString mHashKey;
   nsCOMPtr<nsIStringBundle> mBundle;
 

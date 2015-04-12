@@ -75,9 +75,7 @@ QuotaObject::UpdateSize(int64_t aSize)
 
   GroupInfo* groupInfo = mOriginInfo->mGroupInfo;
 
-  if (groupInfo->IsForTemporaryStorage()) {
-    quotaManager->mTemporaryStorageUsage -= mSize;
-  }
+  quotaManager->mTemporaryStorageUsage -= mSize;
   groupInfo->mUsage -= mSize;
   mOriginInfo->mUsage -= mSize;
 
@@ -85,9 +83,7 @@ QuotaObject::UpdateSize(int64_t aSize)
 
   mOriginInfo->mUsage += mSize;
   groupInfo->mUsage += mSize;
-  if (groupInfo->IsForTemporaryStorage()) {
-    quotaManager->mTemporaryStorageUsage += mSize;
-  }
+  quotaManager->mTemporaryStorageUsage += mSize;
 }
 
 bool
@@ -106,58 +102,9 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
 
   GroupInfo* groupInfo = mOriginInfo->mGroupInfo;
 
-  if (groupInfo->IsForPersistentStorage()) {
-    uint64_t newUsage = mOriginInfo->mUsage - mSize + end;
-
-    if (newUsage > mOriginInfo->mLimit) {
-      // This will block the thread, but it will also drop the mutex while
-      // waiting. The mutex will be reacquired again when the waiting is
-      // finished.
-      if (!quotaManager->LockedQuotaIsLifted()) {
-        return false;
-      }
-
-      // Threads raced, the origin info removal has been done by some other
-      // thread.
-      if (!mOriginInfo) {
-        // The other thread could allocate more space.
-        if (end > mSize) {
-          mSize = end;
-        }
-
-        return true;
-      }
-
-      nsCString group = mOriginInfo->mGroupInfo->mGroup;
-      nsCString origin = mOriginInfo->mOrigin;
-
-      mOriginInfo->LockedClearOriginInfos();
-      NS_ASSERTION(!mOriginInfo,
-                   "Should have cleared in LockedClearOriginInfos!");
-
-      quotaManager->LockedRemoveQuotaForOrigin(PERSISTENCE_TYPE_PERSISTENT,
-                                               group, origin);
-
-      // Some other thread could increase the size without blocking (increasing
-      // the origin usage without hitting the limit), but no more than this one.
-      NS_ASSERTION(mSize < end, "This shouldn't happen!");
-
-      mSize = end;
-
-      return true;
-    }
-
-    mOriginInfo->mUsage = newUsage;
-
-    groupInfo->mUsage = groupInfo->mUsage - mSize + end;
-
-    mSize = end;
-
-    return true;
-  }
-
-  NS_ASSERTION(groupInfo->mPersistenceType == PERSISTENCE_TYPE_TEMPORARY,
-               "Huh?");
+  nsRefPtr<GroupInfo> complementaryGroupInfo =
+    groupInfo->mGroupInfoPair->LockedGetGroupInfo(
+      ComplementaryPersistenceType(groupInfo->mPersistenceType));
 
   uint64_t delta = end - mSize;
 
@@ -168,9 +115,14 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
 
   uint64_t newGroupUsage = groupInfo->mUsage + delta;
 
+  uint64_t groupUsage = groupInfo->mUsage;
+  if (complementaryGroupInfo) {
+    groupUsage += complementaryGroupInfo->mUsage;
+  }
+
   // Temporary storage has a hard limit for group usage (20 % of the global
   // limit).
-  if (newGroupUsage > quotaManager->GetGroupLimit()) {
+  if (groupUsage + delta > quotaManager->GetGroupLimit()) {
     return false;
   }
 
@@ -194,7 +146,11 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
       MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
       for (uint32_t i = 0; i < originInfos.Length(); i++) {
-        quotaManager->DeleteTemporaryFilesForOrigin(originInfos[i]->mOrigin);
+        OriginInfo* originInfo = originInfos[i];
+
+        quotaManager->DeleteFilesForOrigin(
+                                       originInfo->mGroupInfo->mPersistenceType,
+                                       originInfo->mOrigin);
       }
     }
 
@@ -202,22 +158,24 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
 
     NS_ASSERTION(mOriginInfo, "How come?!");
 
-    nsTArray<nsCString> origins;
+    nsTArray<OriginParams> origins;
     for (uint32_t i = 0; i < originInfos.Length(); i++) {
       OriginInfo* originInfo = originInfos[i];
 
       NS_ASSERTION(originInfo != mOriginInfo, "Deleted itself!");
 
+      PersistenceType persistenceType =
+        originInfo->mGroupInfo->mPersistenceType;
       nsCString group = originInfo->mGroupInfo->mGroup;
       nsCString origin = originInfo->mOrigin;
-      quotaManager->LockedRemoveQuotaForOrigin(PERSISTENCE_TYPE_TEMPORARY,
-                                               group, origin);
+      bool isApp = originInfo->mIsApp;
+      quotaManager->LockedRemoveQuotaForOrigin(persistenceType, group, origin);
 
 #ifdef DEBUG
       originInfos[i] = nullptr;
 #endif
 
-      origins.AppendElement(origin);
+      origins.AppendElement(OriginParams(persistenceType, origin, isApp));
     }
 
     // We unlocked and relocked several times so we need to recompute all the
@@ -229,7 +187,12 @@ QuotaObject::MaybeAllocateMoreSpace(int64_t aOffset, int32_t aCount)
 
     newGroupUsage = groupInfo->mUsage + delta;
 
-    if (newGroupUsage > quotaManager->GetGroupLimit()) {
+    groupUsage = groupInfo->mUsage;
+    if (complementaryGroupInfo) {
+      groupUsage += complementaryGroupInfo->mUsage;
+    }
+
+    if (groupUsage + delta > quotaManager->GetGroupLimit()) {
       // Unfortunately some other thread increased the group usage in the
       // meantime and we are not below the group limit anymore.
 
@@ -285,12 +248,10 @@ OriginInfo::LockedDecreaseUsage(int64_t aSize)
 
   mGroupInfo->mUsage -= aSize;
 
-  if (mGroupInfo->IsForTemporaryStorage()) {
-    QuotaManager* quotaManager = QuotaManager::Get();
-    NS_ASSERTION(quotaManager, "Shouldn't be null!");
+  QuotaManager* quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
 
-    quotaManager->mTemporaryStorageUsage -= aSize;
-  }
+  quotaManager->mTemporaryStorageUsage -= aSize;
 }
 
 // static
@@ -335,12 +296,10 @@ GroupInfo::LockedAddOriginInfo(OriginInfo* aOriginInfo)
 
   mUsage += aOriginInfo->mUsage;
 
-  if (IsForTemporaryStorage()) {
-    QuotaManager* quotaManager = QuotaManager::Get();
-    NS_ASSERTION(quotaManager, "Shouldn't be null!");
+  QuotaManager* quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
 
-    quotaManager->mTemporaryStorageUsage += aOriginInfo->mUsage;
-  }
+  quotaManager->mTemporaryStorageUsage += aOriginInfo->mUsage;
 }
 
 void
@@ -350,14 +309,15 @@ GroupInfo::LockedRemoveOriginInfo(const nsACString& aOrigin)
 
   for (uint32_t index = 0; index < mOriginInfos.Length(); index++) {
     if (mOriginInfos[index]->mOrigin == aOrigin) {
+      MOZ_ASSERT(mUsage >= mOriginInfos[index]->mUsage);
       mUsage -= mOriginInfos[index]->mUsage;
 
-      if (IsForTemporaryStorage()) {
-        QuotaManager* quotaManager = QuotaManager::Get();
-        NS_ASSERTION(quotaManager, "Shouldn't be null!");
+      QuotaManager* quotaManager = QuotaManager::Get();
+      MOZ_ASSERT(quotaManager);
 
-        quotaManager->mTemporaryStorageUsage -= mOriginInfos[index]->mUsage;
-      }
+      MOZ_ASSERT(quotaManager->mTemporaryStorageUsage >=
+                 mOriginInfos[index]->mUsage);
+      quotaManager->mTemporaryStorageUsage -= mOriginInfos[index]->mUsage;
 
       mOriginInfos.RemoveElementAt(index);
 
@@ -371,38 +331,19 @@ GroupInfo::LockedRemoveOriginInfos()
 {
   AssertCurrentThreadOwnsQuotaMutex();
 
+  QuotaManager* quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
+
   for (uint32_t index = mOriginInfos.Length(); index > 0; index--) {
-    mUsage -= mOriginInfos[index - 1]->mUsage;
+    OriginInfo* originInfo = mOriginInfos[index - 1];
 
-    if (IsForTemporaryStorage()) {
-      QuotaManager* quotaManager = QuotaManager::Get();
-      NS_ASSERTION(quotaManager, "Shouldn't be null!");
+    MOZ_ASSERT(mUsage >= originInfo->mUsage);
+    mUsage -= originInfo->mUsage;
 
-      quotaManager->mTemporaryStorageUsage -= mOriginInfos[index - 1]->mUsage;
-    }
+    MOZ_ASSERT(quotaManager->mTemporaryStorageUsage >= originInfo->mUsage);
+    quotaManager->mTemporaryStorageUsage -= originInfo->mUsage;
 
     mOriginInfos.RemoveElementAt(index - 1);
-  }
-}
-
-void
-GroupInfo::LockedRemoveOriginInfosForPattern(const nsACString& aPattern)
-{
-  AssertCurrentThreadOwnsQuotaMutex();
-
-  for (uint32_t index = mOriginInfos.Length(); index > 0; index--) {
-    if (PatternMatchesOrigin(aPattern, mOriginInfos[index - 1]->mOrigin)) {
-      mUsage -= mOriginInfos[index - 1]->mUsage;
-
-      if (IsForTemporaryStorage()) {
-        QuotaManager* quotaManager = QuotaManager::Get();
-        NS_ASSERTION(quotaManager, "Shouldn't be null!");
-
-        quotaManager->mTemporaryStorageUsage -= mOriginInfos[index - 1]->mUsage;
-      }
-
-      mOriginInfos.RemoveElementAt(index - 1);
-    }
   }
 }
 
@@ -410,14 +351,14 @@ nsRefPtr<GroupInfo>&
 GroupInfoPair::GetGroupInfoForPersistenceType(PersistenceType aPersistenceType)
 {
   switch (aPersistenceType) {
-    case PERSISTENCE_TYPE_PERSISTENT:
-      return mPersistentStorageGroupInfo;
     case PERSISTENCE_TYPE_TEMPORARY:
       return mTemporaryStorageGroupInfo;
+    case PERSISTENCE_TYPE_DEFAULT:
+      return mDefaultStorageGroupInfo;
 
+    case PERSISTENCE_TYPE_PERSISTENT:
     case PERSISTENCE_TYPE_INVALID:
     default:
       MOZ_CRASH("Bad persistence type value!");
-      return mPersistentStorageGroupInfo;
   }
 }

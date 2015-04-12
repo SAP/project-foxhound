@@ -146,8 +146,10 @@ FilePicker.prototype = {
         return null;
     }
 
-    if (this._domWin) {
-      return new this._domWin.File(f);
+    let win = this._domWin;
+    if (win) {
+      let utils = win.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+      return utils.wrapDOMFile(f);
     }
 
     return new File(f);
@@ -157,7 +159,8 @@ FilePicker.prototype = {
     let win = this._domWin;
     return this.getEnumerator([this.file], function(file) {
       if (win) {
-        return new win.File(file);
+        let utils = win.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+        return utils.wrapDOMFile(file);
       }
 
       return new File(file);
@@ -211,7 +214,6 @@ FilePicker.prototype = {
   _sendMessage: function() {
     let msg = {
       type: "FilePicker:Show",
-      guid: this.guid,
       guid: this.guid,
       title: this._title,
     };

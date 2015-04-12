@@ -17,6 +17,7 @@ let EventEmitter = require("devtools/toolkit/event-emitter");
 let Telemetry = require("devtools/shared/telemetry");
 let {getHighlighterUtils} = require("devtools/framework/toolbox-highlighter-utils");
 let HUDService = require("devtools/webconsole/hudservice");
+let {showDoorhanger} = require("devtools/shared/doorhanger");
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
@@ -46,17 +47,19 @@ loader.lazyGetter(this, "toolboxStrings", () => {
 
 loader.lazyGetter(this, "Selection", () => require("devtools/framework/selection").Selection);
 loader.lazyGetter(this, "InspectorFront", () => require("devtools/server/actors/inspector").InspectorFront);
+loader.lazyRequireGetter(this, "DevToolsUtils", "devtools/toolkit/DevToolsUtils");
 
 // White-list buttons that can be toggled to prevent adding prefs for
 // addons that have manually inserted toolbarbuttons into DOM.
 // (By default, supported target is only local tab)
 const ToolboxButtons = [
   { id: "command-button-pick",
-    isTargetSupported: target => !target.isAddon },
+    isTargetSupported: target =>
+      target.getTrait("highlightable")
+  },
   { id: "command-button-frames",
-    isTargetSupported: target => (
-      !target.isAddon && target.activeTab && target.activeTab.traits.frames
-    )
+    isTargetSupported: target =>
+      ( target.activeTab && target.activeTab.traits.frames )
   },
   { id: "command-button-splitconsole",
     isTargetSupported: target => !target.isAddon },
@@ -100,6 +103,7 @@ function Toolbox(target, selectedTool, hostType, hostOptions) {
   this._prefChanged = this._prefChanged.bind(this);
   this._saveSplitConsoleHeight = this._saveSplitConsoleHeight.bind(this);
   this._onFocus = this._onFocus.bind(this);
+  this._showDevEditionPromo = this._showDevEditionPromo.bind(this);
 
   this._target.on("close", this.destroy);
 
@@ -114,6 +118,7 @@ function Toolbox(target, selectedTool, hostType, hostOptions) {
   }
   this._defaultToolId = selectedTool;
 
+  this._hostOptions = hostOptions;
   this._host = this._createHost(hostType, hostOptions);
 
   EventEmitter.decorate(this);
@@ -123,6 +128,8 @@ function Toolbox(target, selectedTool, hostType, hostOptions) {
 
   this.on("host-changed", this._refreshHostTitle);
   this.on("select", this._refreshHostTitle);
+
+  this.on("ready", this._showDevEditionPromo);
 
   gDevTools.on("tool-registered", this._toolRegistered);
   gDevTools.on("tool-unregistered", this._toolUnregistered);
@@ -166,6 +173,33 @@ Toolbox.prototype = {
    */
   getPanel: function(id) {
     return this._toolPanels.get(id);
+  },
+
+  /**
+   * Get the panel instance for a given tool once it is ready.
+   * If the tool is already opened, the promise will resolve immediately,
+   * otherwise it will wait until the tool has been opened before resolving.
+   *
+   * Note that this does not open the tool, use selectTool if you'd
+   * like to select the tool right away.
+   *
+   * @param  {String} id
+   *         The id of the panel, for example "jsdebugger".
+   * @returns Promise
+   *          A promise that resolves once the panel is ready.
+   */
+  getPanelWhenReady: function(id) {
+    let deferred = promise.defer();
+    let panel = this.getPanel(id);
+    if (panel) {
+      deferred.resolve(panel);
+    } else {
+      this.on(id + "-ready", (e, panel) => {
+        deferred.resolve(panel);
+      });
+    }
+
+    return deferred.promise;
   },
 
   /**
@@ -268,7 +302,7 @@ Toolbox.prototype = {
       let domReady = () => {
         this.isReady = true;
 
-        this._listFrames();
+        let framesPromise = this._listFrames();
 
         this.closeButton = this.doc.getElementById("toolbox-close");
         this.closeButton.addEventListener("command", this.destroy, true);
@@ -285,8 +319,12 @@ Toolbox.prototype = {
         this._addKeysToWindow();
         this._addReloadKeys();
         this._addHostListeners();
-        this._addZoomKeys();
-        this._loadInitialZoom();
+        if (this._hostOptions && this._hostOptions.zoom === false) {
+          this._disableZoomKeys();
+        } else {
+          this._addZoomKeys();
+          this._loadInitialZoom();
+        }
 
         this.webconsolePanel = this.doc.querySelector("#toolbox-panel-webconsole");
         this.webconsolePanel.height =
@@ -309,7 +347,8 @@ Toolbox.prototype = {
 
           promise.all([
             splitConsolePromise,
-            buttonsPromise
+            buttonsPromise,
+            framesPromise
           ]).then(() => {
             this.emit("ready");
             deferred.resolve();
@@ -446,6 +485,20 @@ Toolbox.prototype = {
 
     let resetKey = this.doc.getElementById("toolbox-zoom-reset-key");
     resetKey.addEventListener("command", this.zoomReset.bind(this), true);
+  },
+
+  _disableZoomKeys: function() {
+    let inKey = this.doc.getElementById("toolbox-zoom-in-key");
+    inKey.setAttribute("disabled", "true");
+
+    let inKey2 = this.doc.getElementById("toolbox-zoom-in-key2");
+    inKey2.setAttribute("disabled", "true");
+
+    let outKey = this.doc.getElementById("toolbox-zoom-out-key");
+    outKey.setAttribute("disabled", "true");
+
+    let resetKey = this.doc.getElementById("toolbox-zoom-reset-key");
+    resetKey.setAttribute("disabled", "true");
   },
 
   /**
@@ -691,6 +744,13 @@ Toolbox.prototype = {
       if (!button) {
         return false;
       }
+
+      // Disable tilt in E10S mode. Removing it from the list of toolbox buttons
+      // allows a bunch of tests to pass without modification.
+      if (this.target.isMultiProcess && options.id === "command-button-tilt") {
+        return false;
+      }
+
       return {
         id: options.id,
         button: button,
@@ -698,7 +758,7 @@ Toolbox.prototype = {
         visibilityswitch: "devtools." + options.id + ".enabled",
         isTargetSupported: options.isTargetSupported ? options.isTargetSupported
                                                      : target => target.isLocalTab
-      }
+      };
     }).filter(button=>button);
   },
 
@@ -724,6 +784,22 @@ Toolbox.prototype = {
         }
       }
     });
+
+    // Tilt is handled separately because it is disabled in E10S mode. Because
+    // we have removed tilt from toolboxButtons we have to deal with it here.
+    let tiltEnabled = !this.target.isMultiProcess &&
+                      Services.prefs.getBoolPref("devtools.command-button-tilt.enabled");
+    let tiltButton = this.doc.getElementById("command-button-tilt");
+    // Remote toolboxes don't add the button to the DOM at all
+    if (!tiltButton) {
+      return;
+    }
+
+    if (tiltEnabled) {
+      tiltButton.removeAttribute("hidden");
+    } else {
+      tiltButton.setAttribute("hidden", "true");
+    }
   },
 
   /**
@@ -1202,21 +1278,24 @@ Toolbox.prototype = {
       toolName = toolboxStrings("toolbox.defaultTitle");
     }
     let title = toolboxStrings("toolbox.titleTemplate",
-                               toolName, this.target.url || this.target.name);
+                               toolName,
+                               this.target.isAddon ?
+                               this.target.name :
+                               this.target.url || this.target.name);
     this._host.setTitle(title);
   },
 
   _listFrames: function (event) {
-    if (!this._target.form || !this._target.form.actor) {
+    if (!this._target.activeTab || !this._target.activeTab.traits.frames) {
       // We are not targetting a regular TabActor
       // it can be either an addon or browser toolbox actor
-      return;
+      return promise.resolve();
     }
     let packet = {
       to: this._target.form.actor,
       type: "listFrames"
     };
-    this._target.client.request(packet, resp => {
+    return this._target.client.request(packet, resp => {
       this._updateFrames(null, { frames: resp.frames });
     });
   },
@@ -1425,7 +1504,9 @@ Toolbox.prototype = {
     if (!this._initInspector) {
       this._initInspector = Task.spawn(function*() {
         this._inspector = InspectorFront(this._target.client, this._target.form);
-        this._walker = yield this._inspector.getWalker();
+        this._walker = yield this._inspector.getWalker(
+          {showAllAnonymousContent: Services.prefs.getBoolPref("devtools.inspector.showAllAnonymousContent")}
+        );
         this._selection = new Selection(this._walker);
 
         if (this.highlighterUtils.isRemoteHighlightable()) {
@@ -1500,9 +1581,12 @@ Toolbox.prototype = {
    * @return {promise} to be resolved when the host is destroyed.
    */
   destroyHost: function() {
-    this.doc.removeEventListener("keypress",
-      this._splitConsoleOnKeypress, false);
-    this.doc.removeEventListener("focus", this._onFocus, true);
+    // The host iframe's contentDocument may already be gone.
+    if (this.doc) {
+      this.doc.removeEventListener("keypress",
+        this._splitConsoleOnKeypress, false);
+      this.doc.removeEventListener("focus", this._onFocus, true);
+    }
     return this._host.destroy();
   },
 
@@ -1567,18 +1651,20 @@ Toolbox.prototype = {
     // We need to grab a reference to win before this._host is destroyed.
     let win = this.frame.ownerGlobal;
 
-    // Remove the host UI
-    outstanding.push(this.destroyHost());
-
     if (this._requisition) {
       this._requisition.destroy();
     }
     this._telemetry.toolClosed("toolbox");
     this._telemetry.destroy();
 
-    // Finish all outstanding tasks (successfully or not) before destroying the
+    // Finish all outstanding tasks (which means finish destroying panels and
+    // then destroying the host, successfully or not) before destroying the
     // target.
-    this._destroyer = promise.all(outstanding).then(null, console.error).then(() => {
+    this._destroyer = DevToolsUtils.settleAll(outstanding)
+                                   .catch(console.error)
+                                   .then(() => this.destroyHost())
+                                   .catch(console.error)
+                                   .then(() => {
       // Targets need to be notified that the toolbox is being torn down.
       // This is done after other destruction tasks since it may tear down
       // fronts and the debugger transport which earlier destroy methods may
@@ -1629,5 +1715,18 @@ Toolbox.prototype = {
 
   _highlighterHidden: function() {
     this.emit("highlighter-hide");
+  },
+
+  /**
+   * For displaying the promotional Doorhanger on first opening of
+   * the developer tools, promoting the Developer Edition.
+   */
+  _showDevEditionPromo: function() {
+    // Do not display in browser toolbox
+    if (this.target.chrome) {
+      return;
+    }
+    let window = this.frame.contentWindow;
+    showDoorhanger({ window, type: "deveditionpromo" });
   }
 };

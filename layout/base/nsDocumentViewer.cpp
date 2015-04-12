@@ -80,7 +80,6 @@
 
 #include "nsIPrompt.h"
 #include "imgIContainer.h" // image animation mode constants
-#include "SelectionCarets.h"
 
 //--------------------------
 // Printing Include
@@ -122,6 +121,7 @@ static const char sPrintOptionsContractID[] =
 #include <stdio.h>
 
 #include "mozilla/dom/Element.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -213,7 +213,7 @@ private:
 
 
 //-------------------------------------------------------------
-class nsDocumentViewer MOZ_FINAL : public nsIContentViewer,
+class nsDocumentViewer final : public nsIContentViewer,
                                    public nsIContentViewerEdit,
                                    public nsIContentViewerFile,
                                    public nsIDocumentViewerPrint
@@ -441,7 +441,7 @@ public:
   explicit nsDocumentShownDispatcher(nsCOMPtr<nsIDocument> aDocument)
   : mDocument(aDocument) {}
 
-  NS_IMETHOD Run() MOZ_OVERRIDE;
+  NS_IMETHOD Run() override;
 
 private:
   nsCOMPtr<nsIDocument> mDocument;
@@ -666,7 +666,8 @@ nsDocumentViewer::InitPresentationStuff(bool aDoInitialReflow)
 
   // Initialize our view manager
   int32_t p2a = mPresContext->AppUnitsPerDevPixel();
-  MOZ_ASSERT(p2a == mPresContext->DeviceContext()->UnscaledAppUnitsPerDevPixel());
+  MOZ_ASSERT(p2a ==
+             mPresContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
   nscoord width = p2a * mBounds.width;
   nscoord height = p2a * mBounds.height;
 
@@ -708,14 +709,6 @@ nsDocumentViewer::InitPresentationStuff(bool aDoInitialReflow)
   rv = selection->AddSelectionListener(mSelectionListener);
   if (NS_FAILED(rv))
     return rv;
-
-  nsRefPtr<SelectionCarets> selectionCaret = mPresShell->GetSelectionCarets();
-  if (selectionCaret) {
-    nsCOMPtr<nsIDocShell> docShell(mContainer);
-    if (docShell) {
-      docShell->AddWeakScrollObserver(selectionCaret);
-    }
-  }
 
   // Save old listener so we can unregister it
   nsRefPtr<nsDocViewerFocusListener> oldFocusListener = mFocusListener;
@@ -1095,11 +1088,6 @@ nsDocumentViewer::PermitUnloadInternal(bool aCallerClosesWindow,
                                  BEFOREUNLOAD_DISABLED_PREFNAME);
   }
 
-  // If the user has turned off onbeforeunload warnings, no need to check.
-  if (sIsBeforeUnloadDisabled) {
-    return NS_OK;
-  }
-
   // First, get the script global object from the document...
   nsPIDOMWindow *window = mDocument->GetWindow();
 
@@ -1154,8 +1142,10 @@ nsDocumentViewer::PermitUnloadInternal(bool aCallerClosesWindow,
   nsCOMPtr<nsIDocShell> docShell(mContainer);
   nsAutoString text;
   beforeUnload->GetReturnValue(text);
-  if (*aShouldPrompt && (event->GetInternalNSEvent()->mFlags.mDefaultPrevented ||
-                         !text.IsEmpty())) {
+
+  if (!sIsBeforeUnloadDisabled && *aShouldPrompt &&
+      (event->GetInternalNSEvent()->mFlags.mDefaultPrevented ||
+       !text.IsEmpty())) {
     // Ask the user if it's ok to unload the current page
 
     nsCOMPtr<nsIPrompt> prompt = do_GetInterface(docShell);
@@ -1207,6 +1197,7 @@ nsDocumentViewer::PermitUnloadInternal(bool aCallerClosesWindow,
 
       nsAutoSyncOperation sync(mDocument);
       mInPermitUnloadPrompt = true;
+      mozilla::Telemetry::Accumulate(mozilla::Telemetry::ONBEFOREUNLOAD_PROMPT_COUNT, 1);
       rv = prompt->ConfirmEx(title, message, buttonFlags,
                              leaveLabel, stayLabel, nullptr, nullptr,
                              &dummy, &buttonPressed);
@@ -1221,12 +1212,15 @@ nsDocumentViewer::PermitUnloadInternal(bool aCallerClosesWindow,
       // XXX: Are there other cases where prompts can abort? Is it ok to
       //      prevent unloading the page in those cases?
       if (NS_FAILED(rv)) {
+        mozilla::Telemetry::Accumulate(mozilla::Telemetry::ONBEFOREUNLOAD_PROMPT_ACTION, 2);
         *aPermitUnload = false;
         return NS_OK;
       }
 
       // Button 0 == leave, button 1 == stay
       *aPermitUnload = (buttonPressed == 0);
+      mozilla::Telemetry::Accumulate(mozilla::Telemetry::ONBEFOREUNLOAD_PROMPT_ACTION,
+        (*aPermitUnload ? 1 : 0));
       // If the user decided to go ahead, make sure not to prompt the user again
       // by toggling the internal prompting bool to false:
       if (*aPermitUnload) {
@@ -1453,10 +1447,10 @@ nsDocumentViewer::Open(nsISupports *aState, nsISHEntry *aSHEntry)
     DetachFromTopLevelWidget();
 
     nsViewManager *vm = GetViewManager();
-    NS_ABORT_IF_FALSE(vm, "no view manager");
+    MOZ_ASSERT(vm, "no view manager");
     nsView* v = vm->GetRootView();
-    NS_ABORT_IF_FALSE(v, "no root view");
-    NS_ABORT_IF_FALSE(mParentWidget, "no mParentWidget to set");
+    MOZ_ASSERT(v, "no root view");
+    MOZ_ASSERT(mParentWidget, "no mParentWidget to set");
     v->AttachToTopLevelWidget(mParentWidget);
 
     mAttachedToParent = true;
@@ -1791,6 +1785,13 @@ nsDocumentViewer::SetDocumentInternal(nsIDocument* aDocument,
   aDocument->SetContainer(mContainer);
 
   if (mDocument != aDocument) {
+    if (aForceReuseInnerWindow) {
+      // Transfer the navigation timing information to the new document, since
+      // we're keeping the same inner and hence should really have the same
+      // timing information.
+      aDocument->SetNavigationTiming(mDocument->GetNavigationTiming());
+    }
+
     if (mDocument->IsStaticDocument()) {
       mDocument->SetScriptGlobalObject(nullptr);
       mDocument->Destroy();
@@ -3340,9 +3341,8 @@ nsDocumentViewer::GetContentSize(int32_t* aWidth, int32_t* aHeight)
 
   nscoord prefWidth;
   {
-    nsRefPtr<nsRenderingContext> rcx =
-      presShell->CreateReferenceRenderingContext();
-    prefWidth = root->GetPrefISize(rcx);
+    nsRenderingContext rcx(presShell->CreateReferenceRenderingContext());
+    prefWidth = root->GetPrefISize(&rcx);
   }
 
   nsresult rv = presShell->ResizeReflow(prefWidth, NS_UNCONSTRAINEDSIZE);
@@ -3563,8 +3563,6 @@ NS_IMETHODIMP nsDocViewerSelectionListener::NotifySelectionChanged(nsIDOMDocumen
     mSelectionWasCollapsed = selectionCollapsed;
   }
 
-  domWindow->UpdateCommands(NS_LITERAL_STRING("selectionchange"), selection, aReason);
-
   return NS_OK;
 }
 
@@ -3602,8 +3600,7 @@ nsDocViewerFocusListener::HandleEvent(nsIDOMEvent* aEvent)
       selCon->RepaintSelection(nsISelectionController::SELECTION_NORMAL);
     }
   } else {
-    NS_ABORT_IF_FALSE(eventType.EqualsLiteral("blur"),
-                      "Unexpected event type");
+    MOZ_ASSERT(eventType.EqualsLiteral("blur"), "Unexpected event type");
     // If selection was on, disable it.
     if(selectionStatus == nsISelectionController::SELECTION_ON ||
        selectionStatus == nsISelectionController::SELECTION_ATTENTION) {
@@ -4428,14 +4425,6 @@ nsDocumentViewer::DestroyPresShell()
   nsRefPtr<mozilla::dom::Selection> selection = GetDocumentSelection();
   if (selection && mSelectionListener)
     selection->RemoveSelectionListener(mSelectionListener);
-
-  nsRefPtr<SelectionCarets> selectionCaret = mPresShell->GetSelectionCarets();
-  if (selectionCaret) {
-    nsCOMPtr<nsIDocShell> docShell(mContainer);
-    if (docShell) {
-      docShell->RemoveWeakScrollObserver(selectionCaret);
-    }
-  }
 
   nsAutoScriptBlocker scriptBlocker;
   mPresShell->Destroy();

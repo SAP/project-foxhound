@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsHTMLEditUtils.h"
+
 #include "mozilla/ArrayUtils.h"         // for ArrayLength
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/dom/Element.h"        // for Element, nsINode
@@ -13,7 +15,6 @@
 #include "nsEditor.h"                   // for nsEditor
 #include "nsError.h"                    // for NS_SUCCEEDED
 #include "nsGkAtoms.h"                  // for nsGkAtoms, nsGkAtoms::a, etc
-#include "nsHTMLEditUtils.h"
 #include "nsHTMLTags.h"
 #include "nsIAtom.h"                    // for nsIAtom
 #include "nsIDOMHTMLAnchorElement.h"    // for nsIDOMHTMLAnchorElement
@@ -124,16 +125,23 @@ nsHTMLEditUtils::IsSmall(nsIDOMNode* aNode)
 // IsHeader: true if node an html header
 //                  
 bool 
-nsHTMLEditUtils::IsHeader(nsIDOMNode* aNode)
+nsHTMLEditUtils::IsHeader(nsINode& aNode)
 {
-  NS_PRECONDITION(aNode, "null parent passed to nsHTMLEditUtils::IsHeader");
-  nsCOMPtr<nsIAtom> nodeAtom = nsEditor::GetTag(aNode);
+  nsCOMPtr<nsIAtom> nodeAtom = aNode.Tag();
   return (nodeAtom == nsGkAtoms::h1)
       || (nodeAtom == nsGkAtoms::h2)
       || (nodeAtom == nsGkAtoms::h3)
       || (nodeAtom == nsGkAtoms::h4)
       || (nodeAtom == nsGkAtoms::h5)
       || (nodeAtom == nsGkAtoms::h6);
+}
+
+bool
+nsHTMLEditUtils::IsHeader(nsIDOMNode* aNode)
+{
+  nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
+  NS_PRECONDITION(node, "null parent passed to nsHTMLEditUtils::IsHeader");
+  return IsHeader(*node);
 }
 
 
@@ -355,6 +363,12 @@ nsHTMLEditUtils::IsPre(nsIDOMNode* aNode)
 ///////////////////////////////////////////////////////////////////////////
 // IsImage: true if node an html image node
 //                  
+bool
+nsHTMLEditUtils::IsImage(nsINode* aNode)
+{
+  return aNode && aNode->Tag() == nsGkAtoms::img;
+}
+
 bool 
 nsHTMLEditUtils::IsImage(nsIDOMNode* aNode)
 {

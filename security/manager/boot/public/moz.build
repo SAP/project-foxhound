@@ -6,8 +6,8 @@
 
 XPIDL_SOURCES += [
     'nsIBufEntropyCollector.idl',
+    'nsICertBlocklist.idl',
     'nsISecurityUITelemetry.idl',
-    'nsISecurityWarningDialogs.idl',
     'nsISSLStatusProvider.idl',
 ]
 

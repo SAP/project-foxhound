@@ -617,7 +617,7 @@ add_test(function test_editing_item_date_added() {
                                        "Test editing item date added");
 
   let oldAdded = bmsvc.getItemDateAdded(testBkmId);
-  let newAdded = Date.now() + 1000;
+  let newAdded = Date.now() * 1000 + 1000;
   let txn = new PlacesEditItemDateAddedTransaction(testBkmId, newAdded);
 
   txn.doTransaction();
@@ -635,7 +635,7 @@ add_test(function test_edit_item_last_modified() {
                                        "Test editing item last modified");
 
   let oldModified = bmsvc.getItemLastModified(testBkmId);
-  let newModified = Date.now() + 1000;
+  let newModified = Date.now() * 1000 + 1000;
   let txn = new PlacesEditItemLastModifiedTransaction(testBkmId, newModified);
 
   txn.doTransaction();
@@ -650,7 +650,7 @@ add_test(function test_edit_item_last_modified() {
 add_test(function test_generic_page_annotation() {
   const TEST_ANNO = "testAnno/testInt";
   let testURI = NetUtil.newURI("http://www.mozilla.org/");
-  promiseAddVisits(testURI).then(function () {
+  PlacesTestUtils.addVisits(testURI).then(function () {
     let pageAnnoObj = { name: TEST_ANNO,
                         type: Ci.nsIAnnotationService.TYPE_INT32,
                         flags: 0,
@@ -864,7 +864,7 @@ add_test(function test_create_item_with_childTxn() {
   const BOOKMARK_TITLE = "parent item";
   let testURI = NetUtil.newURI("http://test_create_item_with_childTxn.com");
   let childTxns = [];
-  let newDateAdded = Date.now() - 20000;
+  let newDateAdded = Date.now() * 1000 - 20000;
   let editDateAdddedTxn = new PlacesEditItemDateAddedTransaction(null, newDateAdded);
   childTxns.push(editDateAdddedTxn);
 

@@ -34,8 +34,17 @@ static mozilla::ThreadLocal<TraceInfo*>* sTraceInfoTLS = nullptr;
 static mozilla::StaticMutex sMutex;
 static nsTArray<nsAutoPtr<TraceInfo>>* sTraceInfos = nullptr;
 static bool sIsLoggingStarted = false;
+static PRTime sStartTime;
+
+static const char sJSLabelPrefix[] = "#tt#";
 
 namespace {
+
+static PRTime
+GetTimestamp()
+{
+  return PR_Now() / 1000;
+}
 
 static TraceInfo*
 AllocTraceInfo(int aTid)
@@ -95,8 +104,25 @@ CreateSourceEvent(SourceEventType aType)
   info->mCurTraceSourceType = aType;
   info->mCurTaskId = newId;
 
+  int* namePtr;
+#define SOURCE_EVENT_NAME(type)         \
+  case SourceEventType::type:           \
+  {                                     \
+    static int CreateSourceEvent##type; \
+    namePtr = &CreateSourceEvent##type; \
+    break;                              \
+  }
+
+  switch (aType) {
+#include "SourceEventTypeMap.h"
+    default:
+      MOZ_CRASH("Unknown SourceEvent.");
+  };
+#undef CREATE_SOURCE_EVENT_NAME
+
   // Log a fake dispatch and start for this source event.
-  LogDispatch(newId, newId,newId, aType);
+  LogDispatch(newId, newId, newId, aType);
+  LogVirtualTablePtr(newId, newId, namePtr);
   LogBegin(newId, newId);
 }
 
@@ -264,7 +290,7 @@ LogDispatch(uint64_t aTaskId, uint64_t aParentTaskId, uint64_t aSourceEventId,
   nsCString* log = info->AppendLog();
   if (log) {
     log->AppendPrintf("%d %lld %lld %lld %d %lld",
-                      ACTION_DISPATCH, aTaskId, PR_Now(), aSourceEventId,
+                      ACTION_DISPATCH, aTaskId, GetTimestamp(), aSourceEventId,
                       aSourceEventType, aParentTaskId);
   }
 }
@@ -282,7 +308,7 @@ LogBegin(uint64_t aTaskId, uint64_t aSourceEventId)
   nsCString* log = info->AppendLog();
   if (log) {
     log->AppendPrintf("%d %lld %lld %d %d",
-                      ACTION_BEGIN, aTaskId, PR_Now(), getpid(), gettid());
+                      ACTION_BEGIN, aTaskId, GetTimestamp(), getpid(), gettid());
   }
 }
 
@@ -298,7 +324,7 @@ LogEnd(uint64_t aTaskId, uint64_t aSourceEventId)
   // [2 taskId endTime]
   nsCString* log = info->AppendLog();
   if (log) {
-    log->AppendPrintf("%d %lld %lld", ACTION_END, aTaskId, PR_Now());
+    log->AppendPrintf("%d %lld %lld", ACTION_END, aTaskId, GetTimestamp());
   }
 }
 
@@ -358,7 +384,7 @@ void AddLabel(const char* aFormat, ...)
   nsCString* log = info->AppendLog();
   if (log) {
     log->AppendPrintf("%d %lld %lld \"%s\"", ACTION_ADD_LABEL, info->mCurTaskId,
-                      PR_Now(), buffer.get());
+                      GetTimestamp(), buffer.get());
   }
 }
 
@@ -367,6 +393,7 @@ void AddLabel(const char* aFormat, ...)
 void
 StartLogging()
 {
+  sStartTime = GetTimestamp();
   SetLogStarted(true);
 }
 
@@ -377,7 +404,7 @@ StopLogging()
 }
 
 TraceInfoLogsType*
-GetLoggedData(TimeStamp aStartTime)
+GetLoggedData()
 {
   TraceInfoLogsType* result = new TraceInfoLogsType();
 
@@ -389,6 +416,18 @@ GetLoggedData(TimeStamp aStartTime)
   }
 
   return result;
+}
+
+const PRTime
+GetStartTime()
+{
+  return sStartTime;
+}
+
+const char*
+GetJSLabelPrefix()
+{
+  return sJSLabelPrefix;
 }
 
 } // namespace tasktracer

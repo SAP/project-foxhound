@@ -10,18 +10,18 @@ EXPORTS += [
     'imgLoader.h',
     'imgRequest.h',
     'imgRequestProxy.h',
+    'IProgressObserver.h',
     'Orientation.h',
-    'SurfaceCache.h'
+    'SurfaceCache.h',
 ]
 
 UNIFIED_SOURCES += [
     'ClippedImage.cpp',
+    'DecodePool.cpp',
     'Decoder.cpp',
-    'DiscardTracker.cpp',
+    'Downscaler.cpp',
     'DynamicImage.cpp',
     'FrameAnimator.cpp',
-    'FrameBlender.cpp',
-    'FrameSequence.cpp',
     'FrozenImage.cpp',
     'Image.cpp',
     'ImageFactory.cpp',
@@ -30,9 +30,11 @@ UNIFIED_SOURCES += [
     'ImageWrapper.cpp',
     'imgFrame.cpp',
     'imgTools.cpp',
+    'MultipartImage.cpp',
     'OrientedImage.cpp',
     'ScriptedNotificationObserver.cpp',
     'ShutdownTracker.cpp',
+    'SourceBuffer.cpp',
     'SurfaceCache.cpp',
     'SVGDocumentWrapper.cpp',
     'VectorImage.cpp',
@@ -43,7 +45,7 @@ SOURCES += [
     'imgLoader.cpp',
     'imgRequest.cpp',
     'imgRequestProxy.cpp',
-    'imgStatusTracker.cpp',
+    'ProgressTracker.cpp',
     'RasterImage.cpp',
 ]
 
@@ -55,14 +57,16 @@ FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
     # Because SVGDocumentWrapper.cpp includes "mozilla/dom/SVGSVGElement.h"
-    '/content/base/src',
-    '/content/svg/content/src',
+    '/dom/base',
+    '/dom/svg',
+    # Access to Skia headers for Downscaler
+    '/gfx/2d',
     # We need to instantiate the decoders
     '/image/decoders',
     # Because VectorImage.cpp includes nsSVGUtils.h and nsSVGEffects.h
     '/layout/svg',
     # For URI-related functionality
-    '/netwerk/base/src',
+    '/netwerk/base',
 ]
 
 # Because imgFrame.cpp includes "cairo.h"

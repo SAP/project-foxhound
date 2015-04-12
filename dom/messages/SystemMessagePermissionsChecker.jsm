@@ -84,6 +84,7 @@ this.SystemMessagePermissionsTable = {
   "push-register": {
   	"push": []
   },
+  "request-sync": { },
   "sms-delivery-success": {
     "sms": []
   },
@@ -122,9 +123,6 @@ this.SystemMessagePermissionsTable = {
   },
   "nfc-manager-send-file": {
     "nfc-manager": []
-  },
-  "nfc-powerlevel-change": {
-    "settings": ["read", "write"]
   },
   "wifip2p-pairing-request": { },
   "first-run-with-sim": {

@@ -26,29 +26,6 @@ namespace image {
 
 NS_IMPL_ISUPPORTS_INHERITED0(OrientedImage, ImageWrapper)
 
-nsIntRect
-OrientedImage::FrameRect(uint32_t aWhichFrame)
-{
-  nsresult rv;
-
-  // Retrieve the frame rect of the inner image.
-  nsIntRect innerRect = InnerImage()->FrameRect(aWhichFrame);
-  if (mOrientation.IsIdentity()) {
-    return innerRect;
-  }
-
-  // Get the underlying image's dimensions.
-  nsIntSize size;
-  rv = InnerImage()->GetWidth(&size.width);
-  NS_ENSURE_SUCCESS(rv, innerRect);
-  rv = InnerImage()->GetHeight(&size.height);
-  NS_ENSURE_SUCCESS(rv, innerRect);
-
-  // Transform the frame rect.
-  gfxRect finalRect = OrientationMatrix(size).TransformBounds(innerRect);
-  return nsIntRect(finalRect.x, finalRect.y, finalRect.width, finalRect.height);
-}
-
 NS_IMETHODIMP
 OrientedImage::GetWidth(int32_t* aWidth)
 {
@@ -112,7 +89,7 @@ OrientedImage::GetFrame(uint32_t aWhichFrame,
 
   // Determine an appropriate format for the surface.
   gfx::SurfaceFormat surfaceFormat;
-  if (InnerImage()->FrameIsOpaque(aWhichFrame)) {
+  if (InnerImage()->IsOpaque()) {
     surfaceFormat = gfx::SurfaceFormat::B8G8R8X8;
   } else {
     surfaceFormat = gfx::SurfaceFormat::B8G8R8A8;
@@ -141,12 +118,13 @@ OrientedImage::GetFrame(uint32_t aWhichFrame,
   gfxUtils::DrawPixelSnapped(ctx, drawable, size,
                              ImageRegion::Create(size),
                              surfaceFormat, GraphicsFilter::FILTER_FAST);
-  
+
   return target->Snapshot();
 }
 
 NS_IMETHODIMP
-OrientedImage::GetImageContainer(LayerManager* aManager, ImageContainer** _retval)
+OrientedImage::GetImageContainer(LayerManager* aManager,
+                                 ImageContainer** _retval)
 {
   // XXX(seth): We currently don't have a way of orienting the result of
   // GetImageContainer. We work around this by always returning null, but if it
@@ -168,7 +146,8 @@ struct MatrixBuilder
 
   gfxMatrix Build() { return mMatrix; }
 
-  void Scale(gfxFloat aX, gfxFloat aY) {
+  void Scale(gfxFloat aX, gfxFloat aY)
+  {
     if (mInvert) {
       mMatrix *= gfxMatrix::Scaling(1.0 / aX, 1.0 / aY);
     } else {
@@ -176,7 +155,8 @@ struct MatrixBuilder
     }
   }
 
-  void Rotate(gfxFloat aPhi) {
+  void Rotate(gfxFloat aPhi)
+  {
     if (mInvert) {
       mMatrix *= gfxMatrix::Rotation(-aPhi);
     } else {
@@ -184,7 +164,8 @@ struct MatrixBuilder
     }
   }
 
-  void Translate(gfxPoint aDelta) {
+  void Translate(gfxPoint aDelta)
+  {
     if (mInvert) {
       mMatrix *= gfxMatrix::Translation(-aDelta);
     } else {
@@ -270,7 +251,7 @@ OrientViewport(const SVGImageContext& aOldContext,
                          aOldContext.GetPreserveAspectRatio());
 }
 
-NS_IMETHODIMP
+NS_IMETHODIMP_(DrawResult)
 OrientedImage::Draw(gfxContext* aContext,
                     const nsIntSize& aSize,
                     const ImageRegion& aRegion,
@@ -310,11 +291,13 @@ OrientedImage::Draw(gfxContext* aContext,
 }
 
 nsIntSize
-OrientedImage::OptimalImageSizeForDest(const gfxSize& aDest, uint32_t aWhichFrame,
+OrientedImage::OptimalImageSizeForDest(const gfxSize& aDest,
+                                       uint32_t aWhichFrame,
                                        GraphicsFilter aFilter, uint32_t aFlags)
 {
   if (!mOrientation.SwapsWidthAndHeight()) {
-    return InnerImage()->OptimalImageSizeForDest(aDest, aWhichFrame, aFilter, aFlags);
+    return InnerImage()->OptimalImageSizeForDest(aDest, aWhichFrame, aFilter,
+                                                 aFlags);
   }
 
   // Swap the size for the calculation, then swap it back for the caller.

@@ -209,6 +209,7 @@ nsresult NrIceMediaStream::ParseAttributes(std::vector<std::string>&
     return NS_ERROR_FAILURE;
   }
 
+  has_parsed_attrs_ = true;
   return NS_OK;
 }
 
@@ -333,6 +334,27 @@ nsresult NrIceMediaStream::GetCandidatePairs(std::vector<NrIceCandidatePair>*
     }
 
     out_pairs->push_back(pair);
+  }
+
+  return NS_OK;
+}
+
+nsresult NrIceMediaStream::GetDefaultCandidate(
+    NrIceCandidate* candidate) const {
+
+  nr_ice_candidate *cand;
+
+  int r = nr_ice_media_stream_get_default_candidate(stream_, 1, &cand);
+  if (r) {
+    MOZ_MTLOG(ML_ERROR, "Couldn't get default ICE candidate for '"
+              << name_ << "'");
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!ToNrIceCandidate(*cand, candidate)) {
+    MOZ_MTLOG(ML_ERROR, "Failed to convert default ICE candidate for '"
+              << name_ << "'");
+    return NS_ERROR_FAILURE;
   }
 
   return NS_OK;

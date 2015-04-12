@@ -43,6 +43,8 @@
 #include "nsCOMPtr.h"
 #include "ProfilerHelpers.h"
 #include "ReportInternalError.h"
+#include "WorkerPrivate.h"
+#include "WorkerScope.h"
 
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"
@@ -52,6 +54,7 @@ namespace dom {
 namespace indexedDB {
 
 using namespace mozilla::dom::quota;
+using namespace mozilla::dom::workers;
 using namespace mozilla::ipc;
 
 struct IDBObjectStore::StructuredCloneWriteInfo
@@ -133,7 +136,7 @@ struct IDBObjectStore::StructuredCloneWriteInfo
 
 namespace {
 
-struct MOZ_STACK_CLASS MutableFileData MOZ_FINAL
+struct MOZ_STACK_CLASS MutableFileData final
 {
   nsString type;
   nsString name;
@@ -149,7 +152,7 @@ struct MOZ_STACK_CLASS MutableFileData MOZ_FINAL
   }
 };
 
-struct MOZ_STACK_CLASS BlobOrFileData MOZ_FINAL
+struct MOZ_STACK_CLASS BlobOrFileData final
 {
   uint32_t tag;
   uint64_t size;
@@ -171,7 +174,7 @@ struct MOZ_STACK_CLASS BlobOrFileData MOZ_FINAL
   }
 };
 
-struct MOZ_STACK_CLASS GetAddInfoClosure MOZ_FINAL
+struct MOZ_STACK_CLASS GetAddInfoClosure final
 {
   IDBObjectStore::StructuredCloneWriteInfo& mCloneWriteInfo;
   JS::Handle<JS::Value> mValue;
@@ -294,8 +297,6 @@ StructuredCloneWriteCallback(JSContext* aCx,
 
     return true;
   }
-
-  MOZ_ASSERT(NS_IsMainThread(), "This can't work off the main thread!");
 
   {
     File* blob = nullptr;
@@ -463,7 +464,7 @@ StructuredCloneReadString(JSStructuredCloneReader* aReader,
   }
   length = NativeEndian::swapFromLittleEndian(length);
 
-  if (!aString.SetLength(length, fallible_t())) {
+  if (!aString.SetLength(length, fallible)) {
     NS_WARNING("Out of memory?");
     return false;
   }
@@ -605,16 +606,23 @@ public:
                aData.tag == SCTAG_DOM_BLOB);
     MOZ_ASSERT(aFile.mFile);
 
-    MOZ_ASSERT(NS_IsMainThread(),
-               "This wrapping currently only works on the main thread!");
-
     // It can happen that this IDB is chrome code, so there is no parent, but
     // still we want to set a correct parent for the new File object.
     nsCOMPtr<nsISupports> parent;
-    if (aDatabase && aDatabase->GetParentObject()) {
-      parent = aDatabase->GetParentObject();
+    if (NS_IsMainThread()) {
+      if (aDatabase && aDatabase->GetParentObject()) {
+        parent = aDatabase->GetParentObject();
+      } else {
+        parent = xpc::NativeGlobal(JS::CurrentGlobalOrNull(aCx));
+      }
     } else {
-      parent  = xpc::NativeGlobal(JS::CurrentGlobalOrNull(aCx));
+      WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+      MOZ_ASSERT(workerPrivate);
+
+      WorkerGlobalScope* globalScope = workerPrivate->GlobalScope();
+      MOZ_ASSERT(globalScope);
+
+      parent = do_QueryObject(globalScope);
     }
 
     MOZ_ASSERT(parent);
@@ -628,7 +636,7 @@ public:
       }
 
       JS::Rooted<JS::Value> wrappedBlob(aCx);
-      if (!WrapNewBindingObject(aCx, aFile.mFile, &wrappedBlob)) {
+      if (!GetOrCreateDOMReflector(aCx, aFile.mFile, &wrappedBlob)) {
         return false;
       }
 
@@ -647,7 +655,7 @@ public:
     }
 
     JS::Rooted<JS::Value> wrappedFile(aCx);
-    if (!WrapNewBindingObject(aCx, aFile.mFile, &wrappedFile)) {
+    if (!GetOrCreateDOMReflector(aCx, aFile.mFile, &wrappedFile)) {
       return false;
     }
 
@@ -669,9 +677,7 @@ public:
     MOZ_ASSERT(!aDatabase);
 
     // MutableFile can't be used in index creation, so just make a dummy object.
-    JS::Rooted<JSObject*> obj(aCx,
-      JS_NewObject(aCx, nullptr, JS::NullPtr(), JS::NullPtr()));
-
+    JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
     if (NS_WARN_IF(!obj)) {
       return false;
     }
@@ -697,8 +703,7 @@ public:
     //   File.name
     //   File.lastModifiedDate
 
-    JS::Rooted<JSObject*> obj(aCx,
-      JS_NewObject(aCx, nullptr, JS::NullPtr(), JS::NullPtr()));
+    JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
     if (NS_WARN_IF(!obj)) {
       return false;
     }
@@ -842,21 +847,13 @@ ClearStructuredCloneBuffer(JSAutoStructuredCloneBuffer& aBuffer)
 
 const JSClass IDBObjectStore::sDummyPropJSClass = {
   "IDBObjectStore Dummy",
-  0 /* flags */,
-  JS_PropertyStub /* addProperty */,
-  JS_DeletePropertyStub /* delProperty */,
-  JS_PropertyStub /* getProperty */,
-  JS_StrictPropertyStub /* setProperty */,
-  JS_EnumerateStub /* enumerate */,
-  JS_ResolveStub /* resolve */,
-  JS_ConvertStub /* convert */,
-  JSCLASS_NO_OPTIONAL_MEMBERS
+  0 /* flags */
 };
 
 IDBObjectStore::IDBObjectStore(IDBTransaction* aTransaction,
                                const ObjectStoreSpec* aSpec)
   : mTransaction(aTransaction)
-  , mCachedKeyPath(JSVAL_VOID)
+  , mCachedKeyPath(JS::UndefinedValue())
   , mSpec(aSpec)
   , mId(aSpec->metadata().id())
   , mRooted(false)
@@ -871,7 +868,7 @@ IDBObjectStore::~IDBObjectStore()
   AssertIsOnOwningThread();
 
   if (mRooted) {
-    mCachedKeyPath = JSVAL_VOID;
+    mCachedKeyPath.setUndefined();
     mozilla::DropJSObjects(this);
   }
 }
@@ -982,9 +979,6 @@ IDBObjectStore::ClearCloneReadInfo(StructuredCloneReadInfo& aReadInfo)
     return;
   }
 
-  // If there's something to clear, we should be on the main thread.
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
   ClearStructuredCloneBuffer(aReadInfo.mCloneBuffer);
   aReadInfo.mFiles.Clear();
 }
@@ -1009,7 +1003,7 @@ IDBObjectStore::DeserializeValue(JSContext* aCx,
 
   JSAutoRequest ar(aCx);
 
-  static JSStructuredCloneCallbacks callbacks = {
+  static const JSStructuredCloneCallbacks callbacks = {
     CommonStructuredCloneReadCallback<ValueDeserializationHelper>,
     nullptr,
     nullptr,
@@ -1050,7 +1044,7 @@ IDBObjectStore::DeserializeIndexValue(JSContext* aCx,
 
   JSAutoRequest ar(aCx);
 
-  static JSStructuredCloneCallbacks callbacks = {
+  static const JSStructuredCloneCallbacks callbacks = {
     CommonStructuredCloneReadCallback<IndexDeserializationHelper>,
     nullptr,
     nullptr
@@ -1151,10 +1145,12 @@ IDBObjectStore::AddOrPut(JSContext* aCx,
                          JS::Handle<JS::Value> aValue,
                          JS::Handle<JS::Value> aKey,
                          bool aOverwrite,
+                         bool aFromCursor,
                          ErrorResult& aRv)
 {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aCx);
+  MOZ_ASSERT_IF(aFromCursor, aOverwrite);
 
   if (!mTransaction->IsOpen()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -1257,9 +1253,34 @@ IDBObjectStore::AddOrPut(JSContext* aCx,
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
-  BackgroundRequestChild* actor = new BackgroundRequestChild(request);
+  if (!aFromCursor) {
+    if (aOverwrite) {
+      IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                     "database(%s).transaction(%s).objectStore(%s).put(%s)",
+                   "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.put()",
+                   IDB_LOG_ID_STRING(),
+                   mTransaction->LoggingSerialNumber(),
+                   request->LoggingSerialNumber(),
+                   IDB_LOG_STRINGIFY(mTransaction->Database()),
+                   IDB_LOG_STRINGIFY(mTransaction),
+                   IDB_LOG_STRINGIFY(this),
+                   IDB_LOG_STRINGIFY(key));
+    } else {
+      IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                     "database(%s).transaction(%s).objectStore(%s).add(%s)",
+                   "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.add()",
+                   IDB_LOG_ID_STRING(),
+                   mTransaction->LoggingSerialNumber(),
+                   request->LoggingSerialNumber(),
+                   IDB_LOG_STRINGIFY(mTransaction->Database()),
+                   IDB_LOG_STRINGIFY(mTransaction),
+                   IDB_LOG_STRINGIFY(this),
+                   IDB_LOG_STRINGIFY(key));
+    }
+  }
 
-  mTransaction->StartRequest(actor, params);
+  BackgroundRequestChild* actor = mTransaction->StartRequest(request, params);
+  MOZ_ASSERT(actor);
 
   if (!fileInfosToKeepAlive.IsEmpty()) {
     nsTArray<nsRefPtr<FileInfo>> fileInfos;
@@ -1268,28 +1289,6 @@ IDBObjectStore::AddOrPut(JSContext* aCx,
     actor->HoldFileInfosUntilComplete(fileInfos);
     MOZ_ASSERT(fileInfos.IsEmpty());
   }
-
-#ifdef IDB_PROFILER_USE_MARKS
-  if (aOverwrite) {
-    IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                      "database(%s).transaction(%s).objectStore(%s).%s(%s)",
-                      "IDBRequest[%llu] MT IDBObjectStore.put()",
-                      request->GetSerialNumber(),
-                      IDB_PROFILER_STRING(Transaction()->Database()),
-                      IDB_PROFILER_STRING(Transaction()),
-                      IDB_PROFILER_STRING(this),
-                      key.IsUnset() ? "" : IDB_PROFILER_STRING(key));
-  } else {
-    IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                      "database(%s).transaction(%s).objectStore(%s).add(%s)",
-                      "IDBRequest[%llu] MT IDBObjectStore.add()",
-                      request->GetSerialNumber(),
-                      IDB_PROFILER_STRING(Transaction()->Database()),
-                      IDB_PROFILER_STRING(Transaction()),
-                      IDB_PROFILER_STRING(this),
-                      key.IsUnset() ? "" : IDB_PROFILER_STRING(key));
-  }
-#endif
 
   return request.forget();
 }
@@ -1337,35 +1336,35 @@ IDBObjectStore::GetAllInternal(bool aKeysOnly,
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
-  BackgroundRequestChild* actor = new BackgroundRequestChild(request);
-
-  mTransaction->StartRequest(actor, params);
-
-#ifdef IDB_PROFILER_USE_MARKS
   if (aKeysOnly) {
-    IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                      "database(%s).transaction(%s).objectStore(%s)."
-                      "getAllKeys(%s, %lu)",
-                      "IDBRequest[%llu] MT IDBObjectStore.getAllKeys()",
-                      request->GetSerialNumber(),
-                      IDB_PROFILER_STRING(Transaction()->Database()),
-                      IDB_PROFILER_STRING(Transaction()),
-                      IDB_PROFILER_STRING(this),
-                      IDB_PROFILER_STRING(aKeyRange),
-                      aLimit);
+    IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                   "database(%s).transaction(%s).objectStore(%s)."
+                   "getAllKeys(%s, %s)",
+                 "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.getAllKeys()",
+                 IDB_LOG_ID_STRING(),
+                 mTransaction->LoggingSerialNumber(),
+                 request->LoggingSerialNumber(),
+                 IDB_LOG_STRINGIFY(mTransaction->Database()),
+                 IDB_LOG_STRINGIFY(mTransaction),
+                 IDB_LOG_STRINGIFY(this),
+                 IDB_LOG_STRINGIFY(keyRange),
+                 IDB_LOG_STRINGIFY(aLimit));
   } else {
-    IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                      "database(%s).transaction(%s).objectStore(%s)."
-                      "getAll(%s, %lu)",
-                      "IDBRequest[%llu] MT IDBObjectStore.getAll()",
-                      request->GetSerialNumber(),
-                      IDB_PROFILER_STRING(Transaction()->Database()),
-                      IDB_PROFILER_STRING(Transaction()),
-                      IDB_PROFILER_STRING(this),
-                      IDB_PROFILER_STRING(aKeyRange),
-                      aLimit);
+    IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                   "database(%s).transaction(%s).objectStore(%s)."
+                   "getAll(%s, %s)",
+                 "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.getAll()",
+                 IDB_LOG_ID_STRING(),
+                 mTransaction->LoggingSerialNumber(),
+                 request->LoggingSerialNumber(),
+                 IDB_LOG_STRINGIFY(mTransaction->Database()),
+                 IDB_LOG_STRINGIFY(mTransaction),
+                 IDB_LOG_STRINGIFY(this),
+                 IDB_LOG_STRINGIFY(keyRange),
+                 IDB_LOG_STRINGIFY(aLimit));
   }
-#endif
+
+  mTransaction->StartRequest(request, params);
 
   return request.forget();
 }
@@ -1391,17 +1390,17 @@ IDBObjectStore::Clear(ErrorResult& aRv)
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
-  BackgroundRequestChild* actor = new BackgroundRequestChild(request);
+  IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                 "database(%s).transaction(%s).objectStore(%s).clear()",
+               "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.clear()",
+               IDB_LOG_ID_STRING(),
+               mTransaction->LoggingSerialNumber(),
+               request->LoggingSerialNumber(),
+               IDB_LOG_STRINGIFY(mTransaction->Database()),
+               IDB_LOG_STRINGIFY(mTransaction),
+               IDB_LOG_STRINGIFY(this));
 
-  mTransaction->StartRequest(actor, params);
-
-  IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                    "database(%s).transaction(%s).objectStore(%s).clear()",
-                    "IDBRequest[%llu] MT IDBObjectStore.clear()",
-                    request->GetSerialNumber(),
-                    IDB_PROFILER_STRING(Transaction()->Database()),
-                    IDB_PROFILER_STRING(Transaction()),
-                    IDB_PROFILER_STRING(this));
+  mTransaction->StartRequest(request, params);
 
   return request.forget();
 }
@@ -1480,7 +1479,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBObjectStore)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndexes);
 
-  tmp->mCachedKeyPath = JSVAL_VOID;
+  tmp->mCachedKeyPath.setUndefined();
 
   if (tmp->mRooted) {
     mozilla::DropJSObjects(tmp);
@@ -1513,8 +1512,6 @@ IDBObjectStore::GetKeyPath(JSContext* aCx,
                            JS::MutableHandle<JS::Value> aResult,
                            ErrorResult& aRv)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
   if (!mCachedKeyPath.isUndefined()) {
     JS::ExposeValueToActiveJS(mCachedKeyPath);
     aResult.set(mCachedKeyPath);
@@ -1587,25 +1584,27 @@ IDBObjectStore::Get(JSContext* aCx,
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
-  BackgroundRequestChild* actor = new BackgroundRequestChild(request);
+  IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                 "database(%s).transaction(%s).objectStore(%s).get(%s)",
+               "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.get()",
+               IDB_LOG_ID_STRING(),
+               mTransaction->LoggingSerialNumber(),
+               request->LoggingSerialNumber(),
+               IDB_LOG_STRINGIFY(mTransaction->Database()),
+               IDB_LOG_STRINGIFY(mTransaction),
+               IDB_LOG_STRINGIFY(this),
+               IDB_LOG_STRINGIFY(keyRange));
 
-  mTransaction->StartRequest(actor, params);
-
-  IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                    "database(%s).transaction(%s).objectStore(%s).get(%s)",
-                    "IDBRequest[%llu] MT IDBObjectStore.get()",
-                    request->GetSerialNumber(),
-                    IDB_PROFILER_STRING(Transaction()->Database()),
-                    IDB_PROFILER_STRING(Transaction()),
-                    IDB_PROFILER_STRING(this), IDB_PROFILER_STRING(aKeyRange));
+  mTransaction->StartRequest(request, params);
 
   return request.forget();
 }
 
 already_AddRefed<IDBRequest>
-IDBObjectStore::Delete(JSContext* aCx,
-                       JS::Handle<JS::Value> aKey,
-                       ErrorResult& aRv)
+IDBObjectStore::DeleteInternal(JSContext* aCx,
+                               JS::Handle<JS::Value> aKey,
+                               bool aFromCursor,
+                               ErrorResult& aRv)
 {
   AssertIsOnOwningThread();
 
@@ -1638,24 +1637,26 @@ IDBObjectStore::Delete(JSContext* aCx,
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
-  BackgroundRequestChild* actor = new BackgroundRequestChild(request);
+  if (!aFromCursor) {
+    IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                   "database(%s).transaction(%s).objectStore(%s).delete(%s)",
+                 "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.delete()",
+                 IDB_LOG_ID_STRING(),
+                 mTransaction->LoggingSerialNumber(),
+                 request->LoggingSerialNumber(),
+                 IDB_LOG_STRINGIFY(mTransaction->Database()),
+                 IDB_LOG_STRINGIFY(mTransaction),
+                 IDB_LOG_STRINGIFY(this),
+                 IDB_LOG_STRINGIFY(keyRange));
+  }
 
-  mTransaction->StartRequest(actor, params);
-
-  IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                    "database(%s).transaction(%s).objectStore(%s).delete(%s)",
-                    "IDBRequest[%llu] MT IDBObjectStore.delete()",
-                    request->GetSerialNumber(),
-                    IDB_PROFILER_STRING(Transaction()->Database()),
-                    IDB_PROFILER_STRING(Transaction()),
-                    IDB_PROFILER_STRING(this), IDB_PROFILER_STRING(aKeyRange));
+  mTransaction->StartRequest(request, params);
 
   return request.forget();
 }
 
 already_AddRefed<IDBIndex>
-IDBObjectStore::CreateIndex(JSContext* aCx,
-                            const nsAString& aName,
+IDBObjectStore::CreateIndex(const nsAString& aName,
                             const nsAString& aKeyPath,
                             const IDBIndexParameters& aOptionalParameters,
                             ErrorResult& aRv)
@@ -1663,18 +1664,17 @@ IDBObjectStore::CreateIndex(JSContext* aCx,
   AssertIsOnOwningThread();
 
   KeyPath keyPath(0);
-  if (NS_FAILED(KeyPath::Parse(aCx, aKeyPath, &keyPath)) ||
+  if (NS_FAILED(KeyPath::Parse(aKeyPath, &keyPath)) ||
       !keyPath.IsValid()) {
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     return nullptr;
   }
 
-  return CreateIndexInternal(aCx, aName, keyPath, aOptionalParameters, aRv);
+  return CreateIndexInternal(aName, keyPath, aOptionalParameters, aRv);
 }
 
 already_AddRefed<IDBIndex>
-IDBObjectStore::CreateIndex(JSContext* aCx,
-                            const nsAString& aName,
+IDBObjectStore::CreateIndex(const nsAString& aName,
                             const Sequence<nsString >& aKeyPath,
                             const IDBIndexParameters& aOptionalParameters,
                             ErrorResult& aRv)
@@ -1683,18 +1683,17 @@ IDBObjectStore::CreateIndex(JSContext* aCx,
 
   KeyPath keyPath(0);
   if (aKeyPath.IsEmpty() ||
-      NS_FAILED(KeyPath::Parse(aCx, aKeyPath, &keyPath)) ||
+      NS_FAILED(KeyPath::Parse(aKeyPath, &keyPath)) ||
       !keyPath.IsValid()) {
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     return nullptr;
   }
 
-  return CreateIndexInternal(aCx, aName, keyPath, aOptionalParameters, aRv);
+  return CreateIndexInternal(aName, keyPath, aOptionalParameters, aRv);
 }
 
 already_AddRefed<IDBIndex>
 IDBObjectStore::CreateIndexInternal(
-                                  JSContext* aCx,
                                   const nsAString& aName,
                                   const KeyPath& aKeyPath,
                                   const IDBIndexParameters& aOptionalParameters,
@@ -1759,13 +1758,20 @@ IDBObjectStore::CreateIndexInternal(
 
   mIndexes.AppendElement(index);
 
-  IDB_PROFILER_MARK("IndexedDB Pseudo-request: "
-                    "database(%s).transaction(%s).objectStore(%s)."
-                    "createIndex(%s)",
-                    "MT IDBObjectStore.createIndex()",
-                    IDB_PROFILER_STRING(Transaction()->Database()),
-                    IDB_PROFILER_STRING(Transaction()),
-                    IDB_PROFILER_STRING(this), IDB_PROFILER_STRING(index));
+  // Don't do this in the macro because we always need to increment the serial
+  // number to keep in sync with the parent.
+  const uint64_t requestSerialNumber = IDBRequest::NextSerialNumber();
+
+  IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                 "database(%s).transaction(%s).objectStore(%s).createIndex(%s)",
+               "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.createIndex()",
+               IDB_LOG_ID_STRING(),
+               mTransaction->LoggingSerialNumber(),
+               requestSerialNumber,
+               IDB_LOG_STRINGIFY(mTransaction->Database()),
+               IDB_LOG_STRINGIFY(mTransaction),
+               IDB_LOG_STRINGIFY(this),
+               IDB_LOG_STRINGIFY(index));
 
   return index.forget();
 }
@@ -1824,16 +1830,23 @@ IDBObjectStore::DeleteIndex(const nsAString& aName, ErrorResult& aRv)
     return;
   }
 
-  transaction->DeleteIndex(this, foundId);
+  // Don't do this in the macro because we always need to increment the serial
+  // number to keep in sync with the parent.
+  const uint64_t requestSerialNumber = IDBRequest::NextSerialNumber();
 
-  IDB_PROFILER_MARK("IndexedDB Pseudo-request: "
-                    "database(%s).transaction(%s).objectStore(%s)."
-                    "deleteIndex(\"%s\")",
-                    "MT IDBObjectStore.deleteIndex()",
-                    IDB_PROFILER_STRING(Transaction()->Database()),
-                    IDB_PROFILER_STRING(Transaction()),
-                    IDB_PROFILER_STRING(this),
-                    NS_ConvertUTF16toUTF8(aName).get());
+  IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                 "database(%s).transaction(%s).objectStore(%s)."
+                 "deleteIndex(\"%s\")",
+               "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.deleteIndex()",
+               IDB_LOG_ID_STRING(),
+               mTransaction->LoggingSerialNumber(),
+               requestSerialNumber,
+               IDB_LOG_STRINGIFY(mTransaction->Database()),
+               IDB_LOG_STRINGIFY(mTransaction),
+               IDB_LOG_STRINGIFY(this),
+               NS_ConvertUTF16toUTF8(aName).get());
+
+  transaction->DeleteIndex(this, foundId);
 }
 
 already_AddRefed<IDBRequest>
@@ -1866,17 +1879,18 @@ IDBObjectStore::Count(JSContext* aCx,
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
-  BackgroundRequestChild* actor = new BackgroundRequestChild(request);
+  IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                 "database(%s).transaction(%s).objectStore(%s).count(%s)",
+               "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.count()",
+               IDB_LOG_ID_STRING(),
+               mTransaction->LoggingSerialNumber(),
+               request->LoggingSerialNumber(),
+               IDB_LOG_STRINGIFY(mTransaction->Database()),
+               IDB_LOG_STRINGIFY(mTransaction),
+               IDB_LOG_STRINGIFY(this),
+               IDB_LOG_STRINGIFY(keyRange));
 
-  mTransaction->StartRequest(actor, params);
-
-  IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                    "database(%s).transaction(%s).objectStore(%s).count(%s)",
-                    "IDBRequest[%llu] MT IDBObjectStore.count()",
-                    request->GetSerialNumber(),
-                    IDB_PROFILER_STRING(Transaction()->Database()),
-                    IDB_PROFILER_STRING(Transaction()),
-                    IDB_PROFILER_STRING(this), IDB_PROFILER_STRING(aKeyRange));
+  mTransaction->StartRequest(request, params);
 
   return request.forget();
 }
@@ -1936,34 +1950,40 @@ IDBObjectStore::OpenCursorInternal(bool aKeysOnly,
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
   MOZ_ASSERT(request);
 
+  if (aKeysOnly) {
+    IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                   "database(%s).transaction(%s).objectStore(%s)."
+                   "openKeyCursor(%s, %s)",
+                 "IndexedDB %s: C T[%lld] R[%llu]: "
+                   "IDBObjectStore.openKeyCursor()",
+                 IDB_LOG_ID_STRING(),
+                 mTransaction->LoggingSerialNumber(),
+                 request->LoggingSerialNumber(),
+                 IDB_LOG_STRINGIFY(mTransaction->Database()),
+                 IDB_LOG_STRINGIFY(mTransaction),
+                 IDB_LOG_STRINGIFY(this),
+                 IDB_LOG_STRINGIFY(keyRange),
+                 IDB_LOG_STRINGIFY(direction));
+  } else {
+    IDB_LOG_MARK("IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+                   "database(%s).transaction(%s).objectStore(%s)."
+                   "openCursor(%s, %s)",
+                 "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.openCursor()",
+                 IDB_LOG_ID_STRING(),
+                 mTransaction->LoggingSerialNumber(),
+                 request->LoggingSerialNumber(),
+                 IDB_LOG_STRINGIFY(mTransaction->Database()),
+                 IDB_LOG_STRINGIFY(mTransaction),
+                 IDB_LOG_STRINGIFY(this),
+                 IDB_LOG_STRINGIFY(keyRange),
+                 IDB_LOG_STRINGIFY(direction));
+  }
+
   BackgroundCursorChild* actor =
     new BackgroundCursorChild(request, this, direction);
 
   mTransaction->OpenCursor(actor, params);
 
-#ifdef IDB_PROFILER_USE_MARKS
-  if (aKeysOnly) {
-    IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                      "database(%s).transaction(%s).objectStore(%s)."
-                      "openKeyCursor(%s, %s)",
-                      "IDBRequest[%llu] MT IDBObjectStore.openKeyCursor()",
-                      request->GetSerialNumber(),
-                      IDB_PROFILER_STRING(Transaction()->Database()),
-                      IDB_PROFILER_STRING(Transaction()),
-                      IDB_PROFILER_STRING(this), IDB_PROFILER_STRING(aKeyRange),
-                      IDB_PROFILER_STRING(direction));
-  } else {
-    IDB_PROFILER_MARK("IndexedDB Request %llu: "
-                      "database(%s).transaction(%s).objectStore(%s)."
-                      "openCursor(%s, %s)",
-                      "IDBRequest[%llu] MT IDBObjectStore.openKeyCursor()",
-                      request->GetSerialNumber(),
-                      IDB_PROFILER_STRING(Transaction()->Database()),
-                      IDB_PROFILER_STRING(Transaction()),
-                      IDB_PROFILER_STRING(this), IDB_PROFILER_STRING(aKeyRange),
-                      IDB_PROFILER_STRING(direction));
-  }
-#endif
   return request.forget();
 }
 

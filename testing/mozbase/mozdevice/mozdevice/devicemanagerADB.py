@@ -35,12 +35,16 @@ class DeviceManagerADB(DeviceManager):
 
     def __init__(self, host=None, port=5555, retryLimit=5, packageName='fennec',
                  adbPath='adb', deviceSerial=None, deviceRoot=None,
-                 logLevel=mozlog.ERROR, autoconnect=True, runAdbAsRoot=False, **kwargs):
+                 logLevel=mozlog.ERROR, autoconnect=True, runAdbAsRoot=False,
+                 serverHost=None, serverPort=None, **kwargs):
         DeviceManager.__init__(self, logLevel=logLevel,
                                deviceRoot=deviceRoot)
         self.host = host
         self.port = port
         self.retryLimit = retryLimit
+
+        self._serverHost = serverHost
+        self._serverPort = serverPort
 
         # the path to adb, or 'adb' to assume that it's on the PATH
         self._adbPath = adbPath
@@ -122,6 +126,10 @@ class DeviceManagerADB(DeviceManager):
 
         # all output should be in stdout
         args=[self._adbPath]
+        if self._serverHost is not None:
+            args.extend(['-H', self._serverHost])
+        if self._serverPort is not None:
+            args.extend(['-P', str(self._serverPort)])
         if self._deviceSerial:
             args.extend(['-s', self._deviceSerial])
         args.extend(["shell", cmdline])
@@ -167,7 +175,8 @@ class DeviceManagerADB(DeviceManager):
           dev:<character device name>
           jdwp:<process pid> (remote only)
         """
-        return self._checkCmd(['forward', local, remote])
+        if not self._checkCmd(['forward', local, remote]) == 0:
+            raise DMError("Failed to forward socket connection.")
 
     def remount(self):
         "Remounts the /system partition on the device read-write."
@@ -240,13 +249,14 @@ class DeviceManagerADB(DeviceManager):
                 self._logger.warning(traceback.format_exc())
                 self._logger.warning("zip/unzip failure: falling back to normal push")
                 self._useZip = False
-                self.pushDir(localDir, remoteDir, retryLimit=retryLimit)
+                self.pushDir(localDir, remoteDir, retryLimit=retryLimit, timeout=timeout)
         else:
             tmpDir = tempfile.mkdtemp()
             # copytree's target dir must not already exist, so create a subdir
             tmpDirTarget = os.path.join(tmpDir, "tmp")
             shutil.copytree(localDir, tmpDirTarget)
-            self._checkCmd(["push", tmpDirTarget, remoteDir], retryLimit=retryLimit)
+            self._checkCmd(["push", tmpDirTarget, remoteDir],
+                           retryLimit=retryLimit, timeout=timeout)
             mozfile.remove(tmpDir)
 
     def dirExists(self, remotePath):
@@ -542,6 +552,10 @@ class DeviceManagerADB(DeviceManager):
         """
         retryLimit = retryLimit or self.retryLimit
         finalArgs = [self._adbPath]
+        if self._serverHost is not None:
+            finalArgs.extend(['-H', self._serverHost])
+        if self._serverPort is not None:
+            finalArgs.extend(['-P', str(self._serverPort)])
         if self._deviceSerial:
             finalArgs.extend(['-s', self._deviceSerial])
         finalArgs.extend(args)
@@ -569,6 +583,10 @@ class DeviceManagerADB(DeviceManager):
         """
         retryLimit = retryLimit or self.retryLimit
         finalArgs = [self._adbPath]
+        if self._serverHost is not None:
+            finalArgs.extend(['-H', self._serverHost])
+        if self._serverPort is not None:
+            finalArgs.extend(['-P', str(self._serverPort)])
         if self._deviceSerial:
             finalArgs.extend(['-s', self._deviceSerial])
         finalArgs.extend(args)
@@ -603,10 +621,10 @@ class DeviceManagerADB(DeviceManager):
                     self._checkCmd(["shell", "chmod", mask, remoteEntry])
                     self._logger.info("chmod %s" % remoteEntry)
             self._checkCmd(["shell", "chmod", mask, remoteDir])
-            self._logger.info("chmod %s" % remoteDir)
+            self._logger.debug("chmod %s" % remoteDir)
         else:
             self._checkCmd(["shell", "chmod", mask, remoteDir.strip()])
-            self._logger.info("chmod %s" % remoteDir.strip())
+            self._logger.debug("chmod %s" % remoteDir.strip())
 
     def _verifyADB(self):
         """
@@ -636,7 +654,7 @@ class DeviceManagerADB(DeviceManager):
                 raise DMError("bad status for device %s: %s" % (self._deviceSerial, deviceStatus))
 
         # Check to see if we can connect to device and run a simple command
-        if self._checkCmd(["shell", "echo"]) is None:
+        if not self._checkCmd(["shell", "echo"]) == 0:
             raise DMError("unable to connect to device")
 
     def _checkForRoot(self):
@@ -676,8 +694,13 @@ class DeviceManagerADB(DeviceManager):
         return False
 
     def _isLocalZipAvailable(self):
+        def _noOutput(line):
+            # suppress output from zip ProcessHandler
+            pass
         try:
-            self._checkCmd(["zip", "-?"])
+            proc = ProcessHandler(["zip", "-?"], storeOutput=False, processOutputLine=_noOutput)
+            proc.run()
+            proc.wait()
         except:
             return False
         return True

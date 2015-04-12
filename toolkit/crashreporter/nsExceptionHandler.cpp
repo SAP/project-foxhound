@@ -53,8 +53,10 @@
 #include "client/linux/crash_generation/client_info.h"
 #include "client/linux/crash_generation/crash_generation_server.h"
 #include "client/linux/handler/exception_handler.h"
+#include "common/linux/eintr_wrapper.h"
 #include <fcntl.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #elif defined(XP_SOLARIS)
 #include "client/solaris/handler/exception_handler.h"
@@ -406,7 +408,7 @@ JitExceptionHandler(void *exceptionRecord, void *context)
  * This size is bigger than xul.dll plus some extra for MinidumpWriteDump
  * allocations.
  */
-static const SIZE_T kReserveSize = 0x2800000; // 40 MB
+static const SIZE_T kReserveSize = 0x4000000; // 64 MB
 static void* gBreakpadReservedVM;
 #endif
 
@@ -956,6 +958,13 @@ bool MinidumpCallback(
     }
 #endif
     _exit(1);
+#ifdef MOZ_WIDGET_ANDROID
+  } else {
+    // We need to wait on the 'am start' command above to finish, otherwise everything will
+    // be killed by the ActivityManager as soon as the signal handler exits
+    int status;
+    unused << HANDLE_EINTR(sys_waitpid(pid, &status, __WALL));
+#endif
   }
 #endif // XP_MACOSX
 #endif // XP_UNIX
@@ -1694,8 +1703,10 @@ static PLDHashOperator EnumerateEntries(const nsACString& key,
                                         nsCString entry,
                                         void* userData)
 {
-  crashReporterAPIData->Append(key + NS_LITERAL_CSTRING("=") + entry +
-                               NS_LITERAL_CSTRING("\n"));
+  if (!entry.IsEmpty()) {
+    crashReporterAPIData->Append(key + NS_LITERAL_CSTRING("=") + entry +
+                                 NS_LITERAL_CSTRING("\n"));
+  }
   return PL_DHASH_NEXT;
 }
 
@@ -1795,6 +1806,11 @@ nsresult AnnotateCrashReport(const nsACString& key, const nsACString& data)
                                            crashReporterAPIData);
 
   return NS_OK;
+}
+
+nsresult RemoveCrashReportAnnotation(const nsACString& key)
+{
+  return AnnotateCrashReport(key, NS_LITERAL_CSTRING(""));
 }
 
 nsresult SetGarbageCollecting(bool collecting)
@@ -2322,7 +2338,7 @@ SetMemoryReportFile(nsIFile* aFile)
 #ifdef XP_WIN
   nsString path;
   aFile->GetPath(path);
-  memoryReportPath = ToNewUnicode(path);
+  memoryReportPath = reinterpret_cast<wchar_t*>(ToNewUnicode(path));
 #else
   nsCString path;
   aFile->GetNativePath(path);
@@ -2363,7 +2379,7 @@ FindPendingDir()
 static bool
 GetPendingDir(nsIFile** dir)
 {
-  MOZ_ASSERT(OOPInitialized());
+  // MOZ_ASSERT(OOPInitialized());
   if (!pendingDirectory) {
     return false;
   }
@@ -2698,8 +2714,8 @@ OOPInit()
 
   MOZ_ASSERT(NS_IsMainThread());
 
-  NS_ABORT_IF_FALSE(gExceptionHandler != nullptr,
-                    "attempt to initialize OOP crash reporter before in-process crashreporter!");
+  MOZ_ASSERT(gExceptionHandler != nullptr,
+             "attempt to initialize OOP crash reporter before in-process crashreporter!");
 
 #if defined(XP_WIN)
   childCrashNotifyPipe =
@@ -2943,7 +2959,7 @@ SetRemoteExceptionHandler(const nsACString& crashPipe)
   if (crashPipe.Equals(kNullNotifyPipe))
     return true;
 
-  NS_ABORT_IF_FALSE(!gExceptionHandler, "crash client already init'd");
+  MOZ_ASSERT(!gExceptionHandler, "crash client already init'd");
 
   gExceptionHandler = new google_breakpad::
     ExceptionHandler(L"",
@@ -2987,7 +3003,7 @@ CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd)
 bool
 SetRemoteExceptionHandler()
 {
-  NS_ABORT_IF_FALSE(!gExceptionHandler, "crash client already init'd");
+  MOZ_ASSERT(!gExceptionHandler, "crash client already init'd");
 
 #ifndef XP_LINUX
   xpstring path = "";
@@ -3024,7 +3040,7 @@ SetRemoteExceptionHandler(const nsACString& crashPipe)
   if (crashPipe.Equals(kNullNotifyPipe))
     return true;
 
-  NS_ABORT_IF_FALSE(!gExceptionHandler, "crash client already init'd");
+  MOZ_ASSERT(!gExceptionHandler, "crash client already init'd");
 
   gExceptionHandler = new google_breakpad::
     ExceptionHandler("",

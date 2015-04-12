@@ -22,27 +22,27 @@ public:
   friend nsIFrame* NS_NewAutoRepeatBoxFrame(nsIPresShell* aPresShell,
                                             nsStyleContext* aContext);
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) MOZ_OVERRIDE;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
 
   virtual nsresult AttributeChanged(int32_t aNameSpaceID,
                                     nsIAtom* aAttribute,
-                                    int32_t aModType) MOZ_OVERRIDE;
+                                    int32_t aModType) override;
 
   virtual nsresult HandleEvent(nsPresContext* aPresContext,
                                WidgetGUIEvent* aEvent,
-                               nsEventStatus* aEventStatus) MOZ_OVERRIDE;
+                               nsEventStatus* aEventStatus) override;
 
   NS_IMETHOD HandlePress(nsPresContext* aPresContext,
                          WidgetGUIEvent* aEvent,
-                         nsEventStatus* aEventStatus) MOZ_OVERRIDE;
+                         nsEventStatus* aEventStatus) override;
 
   NS_IMETHOD HandleRelease(nsPresContext* aPresContext,
                            WidgetGUIEvent* aEvent,
-                           nsEventStatus* aEventStatus) MOZ_OVERRIDE;
+                           nsEventStatus* aEventStatus) override;
 
 protected:
-  nsAutoRepeatBoxFrame(nsIPresShell* aPresShell, nsStyleContext* aContext):
-    nsButtonBoxFrame(aPresShell, aContext) {}
+  explicit nsAutoRepeatBoxFrame(nsStyleContext* aContext):
+    nsButtonBoxFrame(aContext) {}
   
   void StartRepeat() {
     if (IsActivatedOnHover()) {
@@ -68,7 +68,7 @@ protected:
 nsIFrame*
 NS_NewAutoRepeatBoxFrame (nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
-  return new (aPresShell) nsAutoRepeatBoxFrame (aPresShell, aContext);
+  return new (aPresShell) nsAutoRepeatBoxFrame(aContext);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsAutoRepeatBoxFrame)

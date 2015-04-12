@@ -27,6 +27,7 @@
 #include <hardware/hwcomposer.h>
 #if ANDROID_VERSION >= 17
 #include <ui/Fence.h>
+#include <utils/Timers.h>
 #endif
 
 namespace mozilla {
@@ -86,11 +87,11 @@ public:
     // Returns FALSE if the container cannot be fully rendered
     // by this composer so nothing was rendered at all
     bool TryRender(layers::Layer* aRoot,
-                   bool aGeometryChanged) MOZ_OVERRIDE;
+                   bool aGeometryChanged) override;
 
     bool Render(EGLDisplay dpy, EGLSurface sur);
 
-    void EnableVsync(bool aEnable);
+    bool EnableVsync(bool aEnable);
 #if ANDROID_VERSION >= 17
     bool RegisterHwcEventCallback();
     void Vsync(int aDisplay, int64_t aTimestamp);
@@ -110,10 +111,6 @@ private:
     void setHwcGeometry(bool aGeometryChanged);
     void SendtoLayerScope();
 
-#if ANDROID_VERSION >= 17
-    void RunVsyncEventControl(bool aEnable);
-#endif
-
     HwcDevice*              mHwc;
     HwcList*                mList;
     hwc_display_t           mDpy;
@@ -129,6 +126,7 @@ private:
 #if ANDROID_VERSION >= 17
     android::sp<android::Fence> mPrevRetireFence;
     android::sp<android::Fence> mPrevDisplayFence;
+    nsecs_t                 mLastVsyncTime;
 #endif
     nsTArray<layers::LayerComposite*> mHwcLayerMap;
     bool                    mPrepared;

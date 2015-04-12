@@ -38,6 +38,7 @@ const kPrefCustomizationAutoAdd      = "browser.uiCustomization.autoAdd";
 const kPrefCustomizationDebug        = "browser.uiCustomization.debug";
 const kPrefDrawInTitlebar            = "browser.tabs.drawInTitlebar";
 const kPrefDeveditionTheme           = "browser.devedition.theme.enabled";
+const kPrefWebIDEInNavbar            = "devtools.webide.widget.inNavbarByDefault";
 
 /**
  * The keys are the handlers that are fired when the event type (the value)
@@ -53,7 +54,7 @@ const kSubviewEvents = [
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-let kVersion = 1;
+let kVersion = 4;
 
 /**
  * gPalette is a map of every widget that CustomizableUI.jsm knows about, keyed
@@ -167,7 +168,9 @@ let CustomizableUIInternal = {
       "find-button",
       "preferences-button",
       "add-ons-button",
+#ifndef MOZ_DEV_EDITION
       "developer-button",
+#endif
     ];
 
     if (gPalette.has("switch-to-metro-button")) {
@@ -198,18 +201,27 @@ let CustomizableUIInternal = {
     }, true);
     PanelWideWidgetTracker.init();
 
+    let navbarPlacements = [
+      "urlbar-container",
+      "search-container",
+#ifdef MOZ_DEV_EDITION
+      "developer-button",
+#endif
+      "bookmarks-menu-button",
+      "downloads-button",
+      "home-button",
+      "loop-button",
+    ];
+
+    if (Services.prefs.getBoolPref(kPrefWebIDEInNavbar)) {
+      navbarPlacements.push("webide-button");
+    }
+
     this.registerArea(CustomizableUI.AREA_NAVBAR, {
       legacy: true,
       type: CustomizableUI.TYPE_TOOLBAR,
       overflowable: true,
-      defaultPlacements: [
-        "urlbar-container",
-        "search-container",
-        "bookmarks-menu-button",
-        "downloads-button",
-        "home-button",
-        "loop-call-button",
-      ],
+      defaultPlacements: navbarPlacements,
       defaultCollapsed: false,
     }, true);
 #ifndef XP_MACOSX
@@ -295,6 +307,15 @@ let CustomizableUIInternal = {
           gFuturePlacements.set(widget.defaultArea, new Set([id]));
         }
       }
+    }
+
+    if (currentVersion < 2) {
+      // Nuke the old 'loop-call-button' out of orbit.
+      CustomizableUI.removeWidgetFromArea("loop-call-button");
+    }
+
+    if (currentVersion < 4) {
+      CustomizableUI.removeWidgetFromArea("loop-button-throttled");
     }
   },
 
@@ -2028,25 +2049,23 @@ let CustomizableUIInternal = {
     // If we're restoring the widget to it's old placement, fire off the
     // onWidgetAdded event - our own handler will take care of adding it to
     // any build areas.
-    if (widget.currentArea) {
-      this.notifyListeners("onWidgetAdded", widget.id, widget.currentArea,
-                           widget.currentPosition);
-    } else if (widgetMightNeedAutoAdding) {
-      let autoAdd = true;
-      try {
-        autoAdd = Services.prefs.getBoolPref(kPrefCustomizationAutoAdd);
-      } catch (e) {}
-
-      // If the widget doesn't have an existing placement, and it hasn't been
-      // seen before, then add it to its default area so it can be used.
-      // If the widget is not removable, we *have* to add it to its default
-      // area here.
-      let canBeAutoAdded = autoAdd && !gSeenWidgets.has(widget.id);
-      if (!widget.currentArea && (!widget.removable || canBeAutoAdded)) {
-        this.beginBatchUpdate();
+    this.beginBatchUpdate();
+    try {
+      if (widget.currentArea) {
+        this.notifyListeners("onWidgetAdded", widget.id, widget.currentArea,
+                             widget.currentPosition);
+      } else if (widgetMightNeedAutoAdding) {
+        let autoAdd = true;
         try {
-          gSeenWidgets.add(widget.id);
+          autoAdd = Services.prefs.getBoolPref(kPrefCustomizationAutoAdd);
+        } catch (e) {}
 
+        // If the widget doesn't have an existing placement, and it hasn't been
+        // seen before, then add it to its default area so it can be used.
+        // If the widget is not removable, we *have* to add it to its default
+        // area here.
+        let canBeAutoAdded = autoAdd && !gSeenWidgets.has(widget.id);
+        if (!widget.currentArea && (!widget.removable || canBeAutoAdded)) {
           if (widget.defaultArea) {
             if (this.isAreaLazy(widget.defaultArea)) {
               gFuturePlacements.get(widget.defaultArea).add(widget.id);
@@ -2054,10 +2073,13 @@ let CustomizableUIInternal = {
               this.addWidgetToArea(widget.id, widget.defaultArea);
             }
           }
-        } finally {
-          this.endBatchUpdate(true);
         }
       }
+    } finally {
+      // Ensure we always have this widget in gSeenWidgets, and save
+      // state in case this needs to be done here.
+      gSeenWidgets.add(widget.id);
+      this.endBatchUpdate(true);
     }
 
     this.notifyListeners("onWidgetAfterCreation", widget.id, widget.currentArea);
@@ -2091,7 +2113,7 @@ let CustomizableUIInternal = {
   normalizeWidget: function(aData, aSource) {
     let widget = {
       implementation: aData,
-      source: aSource || "addon",
+      source: aSource || CustomizableUI.SOURCE_EXTERNAL,
       instances: new Map(),
       currentArea: null,
       removable: true,
@@ -2294,6 +2316,15 @@ let CustomizableUIInternal = {
     // Rebuild each registered area (across windows) to reflect the state that
     // was reset above.
     this._rebuildRegisteredAreas();
+
+    for (let [widgetId, widget] of gPalette) {
+      if (widget.source == CustomizableUI.SOURCE_EXTERNAL) {
+        gSeenWidgets.add(widgetId);
+      }
+    }
+    if (gSeenWidgets.size) {
+      gDirty = true;
+    }
 
     gResetting = false;
   },
@@ -2672,7 +2703,7 @@ this.CustomizableUI = {
    *     for (let window of CustomizableUI.windows) { ... }
    */
   windows: {
-    "@@iterator": function*() {
+    *[Symbol.iterator]() {
       for (let [window,] of gBuildWindows)
         yield window;
     }
@@ -3771,7 +3802,7 @@ function XULWidgetSingleWrapper(aWidgetId, aNode, aDocument) {
 }
 
 const LAZY_RESIZE_INTERVAL_MS = 200;
-const OVERFLOW_PANEL_HIDE_DELAY_MS = 500
+const OVERFLOW_PANEL_HIDE_DELAY_MS = 500;
 
 function OverflowableToolbar(aToolbarNode) {
   this._toolbar = aToolbarNode;
@@ -3931,8 +3962,12 @@ OverflowableToolbar.prototype = {
   },
 
   onOverflow: function(aEvent) {
+    // The rangeParent check is here because of bug 1111986 and ensuring that
+    // overflow events from the bookmarks toolbar items or similar things that
+    // manage their own overflow don't trigger an overflow on the entire toolbar
     if (!this._enabled ||
-        (aEvent && aEvent.target != this._toolbar.customizationTarget))
+        (aEvent && aEvent.target != this._toolbar.customizationTarget) ||
+        (aEvent && aEvent.rangeParent))
       return;
 
     let child = this._target.lastChild;
@@ -4162,17 +4197,17 @@ OverflowableToolbar.prototype = {
 
   _hideTimeoutId: null,
   _showWithTimeout: function() {
-    this.show();
-    let window = this._toolbar.ownerDocument.defaultView;
-    if (this._hideTimeoutId) {
-      window.clearTimeout(this._hideTimeoutId);
-      this._hideTimeoutId = null;
-    }
-    this._hideTimeoutId = window.setTimeout(() => {
-      if (!this._panel.firstChild.matches(":hover")) {
-        this._panel.hidePopup();
+    this.show().then(function () {
+      let window = this._toolbar.ownerDocument.defaultView;
+      if (this._hideTimeoutId) {
+        window.clearTimeout(this._hideTimeoutId);
       }
-    }, OVERFLOW_PANEL_HIDE_DELAY_MS);
+      this._hideTimeoutId = window.setTimeout(() => {
+        if (!this._panel.firstChild.matches(":hover")) {
+          this._panel.hidePopup();
+        }
+      }, OVERFLOW_PANEL_HIDE_DELAY_MS);
+    }.bind(this));
   },
 };
 

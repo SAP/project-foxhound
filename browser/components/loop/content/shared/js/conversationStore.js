@@ -7,9 +7,11 @@
 var loop = loop || {};
 loop.store = loop.store || {};
 
-loop.store.ConversationStore = (function() {
+(function() {
   var sharedActions = loop.shared.actions;
   var CALL_TYPES = loop.shared.utils.CALL_TYPES;
+  var REST_ERRNOS = loop.shared.utils.REST_ERRNOS;
+  var FAILURE_DETAILS = loop.shared.utils.FAILURE_DETAILS;
 
   /**
    * Websocket states taken from:
@@ -53,82 +55,85 @@ loop.store.ConversationStore = (function() {
     TERMINATED: "cs-terminated"
   };
 
-  var ConversationStore = Backbone.Model.extend({
-    defaults: {
-      // The current state of the call
-      callState: CALL_STATES.INIT,
-      // The reason if a call was terminated
-      callStateReason: undefined,
-      // The error information, if there was a failure
-      error: undefined,
-      // True if the call is outgoing, false if not, undefined if unknown
-      outgoing: undefined,
-      // The contact being called for outgoing calls
-      contact: undefined,
-      // The call type for the call.
-      // XXX Don't hard-code, this comes from the data in bug 1072323
-      callType: CALL_TYPES.AUDIO_VIDEO,
+  /**
+   * Conversation store.
+   *
+   * @param {loop.Dispatcher} dispatcher  The dispatcher for dispatching actions
+   *                                      and registering to consume actions.
+   * @param {Object} options Options object:
+   * - {client}           client           The client object.
+   * - {mozLoop}          mozLoop          The MozLoop API object.
+   * - {loop.OTSdkDriver} loop.OTSdkDriver The SDK Driver
+   */
+  loop.store.ConversationStore = loop.store.createStore({
+    // Further actions are registered in setupWindowData when
+    // we know what window type this is.
+    actions: [
+      "setupWindowData"
+    ],
 
-      // Call Connection information
-      // The call id from the loop-server
-      callId: undefined,
-      // The connection progress url to connect the websocket
-      progressURL: undefined,
-      // The websocket token that allows connection to the progress url
-      websocketToken: undefined,
-      // SDK API key
-      apiKey: undefined,
-      // SDK session ID
-      sessionId: undefined,
-      // SDK session token
-      sessionToken: undefined,
-      // If the audio is muted
-      audioMuted: false,
-      // If the video is muted
-      videoMuted: false
+    getInitialStoreState: function() {
+      return {
+        // The id of the window. Currently used for getting the window id.
+        windowId: undefined,
+        // The current state of the call
+        callState: CALL_STATES.INIT,
+        // The reason if a call was terminated
+        callStateReason: undefined,
+        // True if the call is outgoing, false if not, undefined if unknown
+        outgoing: undefined,
+        // The contact being called for outgoing calls
+        contact: undefined,
+        // The call type for the call.
+        // XXX Don't hard-code, this comes from the data in bug 1072323
+        callType: CALL_TYPES.AUDIO_VIDEO,
+        // A link for emailing once obtained from the server
+        emailLink: undefined,
+
+        // Call Connection information
+        // The call id from the loop-server
+        callId: undefined,
+        // The caller id of the contacting side
+        callerId: undefined,
+        // The connection progress url to connect the websocket
+        progressURL: undefined,
+        // The websocket token that allows connection to the progress url
+        websocketToken: undefined,
+        // SDK API key
+        apiKey: undefined,
+        // SDK session ID
+        sessionId: undefined,
+        // SDK session token
+        sessionToken: undefined,
+        // If the audio is muted
+        audioMuted: false,
+        // If the video is muted
+        videoMuted: false
+      };
     },
 
     /**
-     * Constructor
+     * Handles initialisation of the store.
      *
-     * Options:
-     * - {loop.Dispatcher} dispatcher The dispatcher for dispatching actions and
-     *                                registering to consume actions.
-     * - {Object} client              A client object for communicating with the server.
-     *
-     * @param  {Object} attributes Attributes object.
      * @param  {Object} options    Options object.
      */
-    initialize: function(attributes, options) {
+    initialize: function(options) {
       options = options || {};
 
-      if (!options.dispatcher) {
-        throw new Error("Missing option dispatcher");
-      }
       if (!options.client) {
         throw new Error("Missing option client");
       }
       if (!options.sdkDriver) {
         throw new Error("Missing option sdkDriver");
       }
+      if (!options.mozLoop) {
+        throw new Error("Missing option mozLoop");
+      }
 
       this.client = options.client;
-      this.dispatcher = options.dispatcher;
       this.sdkDriver = options.sdkDriver;
-
-      this.dispatcher.register(this, [
-        "connectionFailure",
-        "connectionProgress",
-        "gatherCallData",
-        "connectCall",
-        "hangupCall",
-        "peerHungupCall",
-        "cancelCall",
-        "retryCall",
-        "mediaConnected",
-        "setMute",
-        "fetchEmailLink"
-      ]);
+      this.mozLoop = options.mozLoop;
+      this._isDesktop = options.isDesktop || false;
     },
 
     /**
@@ -138,8 +143,23 @@ loop.store.ConversationStore = (function() {
      * @param {sharedActions.ConnectionFailure} actionData The action data.
      */
     connectionFailure: function(actionData) {
+      /**
+       * XXX This is a workaround for desktop machines that do not have a
+       * camera installed. As we don't yet have device enumeration, when
+       * we do, this can be removed (bug 1138851), and the sdk should handle it.
+       */
+      if (this._isDesktop &&
+          actionData.reason === FAILURE_DETAILS.UNABLE_TO_PUBLISH_MEDIA &&
+          this.getStoreState().videoMuted === false) {
+        // We failed to publish with media, so due to the bug, we try again without
+        // video.
+        this.setStoreState({videoMuted: true});
+        this.sdkDriver.retryPublishWithoutVideo();
+        return;
+      }
+
       this._endSession();
-      this.set({
+      this.setStoreState({
         callState: CALL_STATES.TERMINATED,
         callStateReason: actionData.reason
       });
@@ -152,31 +172,35 @@ loop.store.ConversationStore = (function() {
      * @param {sharedActions.ConnectionProgress} actionData The action data.
      */
     connectionProgress: function(actionData) {
-      var callState = this.get("callState");
+      var state = this.getStoreState();
 
       switch(actionData.wsState) {
         case WS_STATES.INIT: {
-          if (callState === CALL_STATES.GATHER) {
-            this.set({callState: CALL_STATES.CONNECTING});
+          if (state.callState === CALL_STATES.GATHER) {
+            this.setStoreState({callState: CALL_STATES.CONNECTING});
           }
           break;
         }
         case WS_STATES.ALERTING: {
-          this.set({callState: CALL_STATES.ALERTING});
+          this.setStoreState({callState: CALL_STATES.ALERTING});
           break;
         }
         case WS_STATES.CONNECTING: {
           this.sdkDriver.connectSession({
-            apiKey: this.get("apiKey"),
-            sessionId: this.get("sessionId"),
-            sessionToken: this.get("sessionToken")
+            apiKey: state.apiKey,
+            sessionId: state.sessionId,
+            sessionToken: state.sessionToken
           });
-          this.set({callState: CALL_STATES.ONGOING});
+          this.mozLoop.addConversationContext(
+            state.windowId,
+            state.sessionId,
+            state.callId);
+          this.setStoreState({callState: CALL_STATES.ONGOING});
           break;
         }
         case WS_STATES.HALF_CONNECTED:
         case WS_STATES.CONNECTED: {
-          this.set({callState: CALL_STATES.ONGOING});
+          this.setStoreState({callState: CALL_STATES.ONGOING});
           break;
         }
         default: {
@@ -186,38 +210,37 @@ loop.store.ConversationStore = (function() {
       }
     },
 
-    /**
-     * Handles the gather call data action, setting the state
-     * and starting to get the appropriate data for the type of call.
-     *
-     * @param {sharedActions.GatherCallData} actionData The action data.
-     */
-    gatherCallData: function(actionData) {
-      if (!actionData.outgoing) {
-        // XXX Other types aren't supported yet, but set the state for the
-        // view selection.
-        this.set({outgoing: false});
+    setupWindowData: function(actionData) {
+      var windowType = actionData.type;
+      if (windowType !== "outgoing" &&
+          windowType !== "incoming") {
+        // Not for this store, don't do anything.
         return;
       }
 
-      var callData = navigator.mozLoop.getCallData(actionData.callId);
-      if (!callData) {
-        console.error("Failed to get the call data");
-        this.set({callState: CALL_STATES.TERMINATED});
-        return;
-      }
+      this.dispatcher.register(this, [
+        "connectionFailure",
+        "connectionProgress",
+        "connectCall",
+        "hangupCall",
+        "remotePeerDisconnected",
+        "cancelCall",
+        "retryCall",
+        "mediaConnected",
+        "setMute",
+        "fetchRoomEmailLink"
+      ]);
 
-      this.set({
-        contact: callData.contact,
-        outgoing: actionData.outgoing,
-        callId: actionData.callId,
-        callType: callData.callType,
-        callState: CALL_STATES.GATHER
+      this.setStoreState({
+        contact: actionData.contact,
+        outgoing: windowType === "outgoing",
+        windowId: actionData.windowId,
+        callType: actionData.callType,
+        callState: CALL_STATES.GATHER,
+        videoMuted: actionData.callType === CALL_TYPES.AUDIO_ONLY
       });
 
-      this.set({videoMuted: this.get("callType") === CALL_TYPES.AUDIO_ONLY});
-
-      if (this.get("outgoing")) {
+      if (this.getStoreState("outgoing")) {
         this._setupOutgoingCall();
       } // XXX Else, other types aren't supported yet.
     },
@@ -230,7 +253,7 @@ loop.store.ConversationStore = (function() {
      * @param {sharedActions.ConnectCall} actionData The action data.
      */
     connectCall: function(actionData) {
-      this.set(actionData.sessionData);
+      this.setStoreState(actionData.sessionData);
       this._connectWebSocket();
     },
 
@@ -244,22 +267,34 @@ loop.store.ConversationStore = (function() {
       }
 
       this._endSession();
-      this.set({callState: CALL_STATES.FINISHED});
+      this.setStoreState({callState: CALL_STATES.FINISHED});
     },
 
     /**
-     * The peer hungup the call.
+     * The remote peer disconnected from the session.
+     *
+     * @param {sharedActions.RemotePeerDisconnected} actionData
      */
-    peerHungupCall: function() {
+    remotePeerDisconnected: function(actionData) {
       this._endSession();
-      this.set({callState: CALL_STATES.FINISHED});
+
+      // If the peer hungup, we end normally, otherwise
+      // we treat this as a call failure.
+      if (actionData.peerHungup) {
+        this.setStoreState({callState: CALL_STATES.FINISHED});
+      } else {
+        this.setStoreState({
+          callState: CALL_STATES.TERMINATED,
+          callStateReason: "peerNetworkDisconnected"
+        });
+      }
     },
 
     /**
      * Cancels a call
      */
     cancelCall: function() {
-      var callState = this.get("callState");
+      var callState = this.getStoreState("callState");
       if (this._websocket &&
           (callState === CALL_STATES.CONNECTING ||
            callState === CALL_STATES.ALERTING)) {
@@ -268,21 +303,21 @@ loop.store.ConversationStore = (function() {
       }
 
       this._endSession();
-      this.set({callState: CALL_STATES.CLOSE});
+      this.setStoreState({callState: CALL_STATES.CLOSE});
     },
 
     /**
      * Retries a call
      */
     retryCall: function() {
-      var callState = this.get("callState");
+      var callState = this.getStoreState("callState");
       if (callState !== CALL_STATES.TERMINATED) {
         console.error("Unexpected retry in state", callState);
         return;
       }
 
-      this.set({callState: CALL_STATES.GATHER});
-      if (this.get("outgoing")) {
+      this.setStoreState({callState: CALL_STATES.GATHER});
+      if (this.getStoreState("outgoing")) {
         this._setupOutgoingCall();
       }
     },
@@ -300,23 +335,27 @@ loop.store.ConversationStore = (function() {
      * @param {sharedActions.setMute} actionData The mute state for the stream type.
      */
     setMute: function(actionData) {
-      var muteType = actionData.type + "Muted";
-      this.set(muteType, !actionData.enabled);
+      var newState = {};
+      newState[actionData.type + "Muted"] = !actionData.enabled;
+      this.setStoreState(newState);
     },
 
     /**
-     * Fetches a new call URL intended to be sent over email when a contact
+     * Fetches a new room URL intended to be sent over email when a contact
      * can't be reached.
      */
-    fetchEmailLink: function() {
-      // XXX This is an empty string as a conversation identifier. Bug 1015938 implements
-      // a user-set string.
-      this.client.requestCallUrl("", function(err, callUrlData) {
+    fetchRoomEmailLink: function(actionData) {
+      this.mozLoop.rooms.create({
+        roomName: actionData.roomName,
+        roomOwner: actionData.roomOwner,
+        maxSize:   loop.store.MAX_ROOM_CREATION_SIZE,
+        expiresIn: loop.store.DEFAULT_EXPIRES_IN
+      }, function(err, createdRoomData) {
         if (err) {
           this.trigger("error:emailLink");
           return;
         }
-        this.set("emailLink", callUrlData.callUrl);
+        this.setStoreState({"emailLink": createdRoomData.roomUrl});
       }.bind(this));
     },
 
@@ -326,7 +365,9 @@ loop.store.ConversationStore = (function() {
      */
     _setupOutgoingCall: function() {
       var contactAddresses = [];
-      var contact = this.get("contact");
+      var contact = this.getStoreState("contact");
+
+      this.mozLoop.calls.setCallInProgress(this.getStoreState("windowId"));
 
       function appendContactValues(property, strip) {
         if (contact.hasOwnProperty(property)) {
@@ -347,12 +388,16 @@ loop.store.ConversationStore = (function() {
       appendContactValues("tel", true);
 
       this.client.setupOutgoingCall(contactAddresses,
-        this.get("callType"),
+        this.getStoreState("callType"),
         function(err, result) {
           if (err) {
             console.error("Failed to get outgoing call data", err);
+            var failureReason = "setup";
+            if (err.errno == REST_ERRNOS.USER_UNAVAILABLE) {
+              failureReason = REST_ERRNOS.USER_UNAVAILABLE;
+            }
             this.dispatcher.dispatch(
-              new sharedActions.ConnectionFailure({reason: "setup"}));
+              new sharedActions.ConnectionFailure({reason: failureReason}));
             return;
           }
 
@@ -370,9 +415,9 @@ loop.store.ConversationStore = (function() {
      */
     _connectWebSocket: function() {
       this._websocket = new loop.CallConnectionWebSocket({
-        url: this.get("progressURL"),
-        callId: this.get("callId"),
-        websocketToken: this.get("websocketToken")
+        url: this.getStoreState("progressURL"),
+        callId: this.getStoreState("callId"),
+        websocketToken: this.getStoreState("websocketToken")
       });
 
       this._websocket.promiseConnect().then(
@@ -407,11 +452,8 @@ loop.store.ConversationStore = (function() {
         delete this._websocket;
       }
 
-      // XXX: The internal callId is different from
-      // this.get("callId"), see bug 1084228 for more info.
-      var locationHash = new loop.shared.utils.Helper().locationHash();
-      var callId = locationHash.match(/\#outgoing\/(.*)/)[1];
-      navigator.mozLoop.releaseCallData(callId);
+      this.mozLoop.calls.clearCallInProgress(
+        this.getStoreState("windowId"));
     },
 
     /**
@@ -439,6 +481,4 @@ loop.store.ConversationStore = (function() {
       this.dispatcher.dispatch(action);
     }
   });
-
-  return ConversationStore;
 })();

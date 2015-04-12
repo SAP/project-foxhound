@@ -58,6 +58,8 @@ extern int    gRestartArgc;
 extern char **gRestartArgv;
 extern bool gLogConsoleErrors;
 
+extern bool gIsGtest;
+
 /**
  * Create the nativeappsupport implementation.
  *
@@ -96,6 +98,9 @@ void
 WriteConsoleLog();
 
 #ifdef XP_WIN
+void
+UseParentConsole();
+
 BOOL
 WinLaunchChild(const wchar_t *exePath, int argc,
                char **argv, HANDLE userToken = nullptr,

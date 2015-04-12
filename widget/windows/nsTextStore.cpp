@@ -597,6 +597,10 @@ GetModifiersName(Modifiers aModifiers)
     ADD_SEPARATOR_IF_NECESSARY(names);
     names += NS_DOM_KEYNAME_FN;
   }
+  if (aModifiers & MODIFIER_FNLOCK) {
+    ADD_SEPARATOR_IF_NECESSARY(names);
+    names += NS_DOM_KEYNAME_FNLOCK;
+  }
   if (aModifiers & MODIFIER_META) {
     ADD_SEPARATOR_IF_NECESSARY(names);
     names += NS_DOM_KEYNAME_META;
@@ -612,6 +616,10 @@ GetModifiersName(Modifiers aModifiers)
   if (aModifiers & MODIFIER_SHIFT) {
     ADD_SEPARATOR_IF_NECESSARY(names);
     names += NS_DOM_KEYNAME_SHIFT;
+  }
+  if (aModifiers & MODIFIER_SYMBOL) {
+    ADD_SEPARATOR_IF_NECESSARY(names);
+    names += NS_DOM_KEYNAME_SYMBOL;
   }
   if (aModifiers & MODIFIER_SYMBOLLOCK) {
     ADD_SEPARATOR_IF_NECESSARY(names);
@@ -630,7 +638,7 @@ GetModifiersName(Modifiers aModifiers)
 /* InputScopeImpl                                                 */
 /******************************************************************/
 
-class InputScopeImpl MOZ_FINAL : public ITfInputScope
+class InputScopeImpl final : public ITfInputScope
 {
   ~InputScopeImpl() {}
 
@@ -695,7 +703,7 @@ private:
 /* TSFStaticSink                                                  */
 /******************************************************************/
 
-class TSFStaticSink MOZ_FINAL : public ITfActiveLanguageProfileNotifySink
+class TSFStaticSink final : public ITfActiveLanguageProfileNotifySink
                               , public ITfInputProcessorProfileActivationSink
 {
 public:
@@ -1674,24 +1682,12 @@ nsTextStore::FlushPendingActions()
 
         PR_LOG(sTextStoreLog, PR_LOG_DEBUG,
                ("TSF: 0x%p   nsTextStore::FlushPendingActions(), "
-                "dispatching compositionchange event...", this));
-        WidgetCompositionEvent compositionChange(true, NS_COMPOSITION_CHANGE,
+                "dispatching compositioncommit event...", this));
+        WidgetCompositionEvent compositionCommit(true, NS_COMPOSITION_COMMIT,
                                                  mWidget);
-        mWidget->InitEvent(compositionChange);
-        compositionChange.mData = action.mData;
-        mWidget->DispatchWindowEvent(&compositionChange);
-        if (!mWidget || mWidget->Destroyed()) {
-          break;
-        }
-
-        PR_LOG(sTextStoreLog, PR_LOG_DEBUG,
-               ("TSF: 0x%p   nsTextStore::FlushPendingActions(), "
-                "dispatching compositionend event...", this));
-        WidgetCompositionEvent compositionEnd(true, NS_COMPOSITION_END,
-                                              mWidget);
-        compositionEnd.mData = compositionChange.mData;
-        mWidget->InitEvent(compositionEnd);
-        mWidget->DispatchWindowEvent(&compositionEnd);
+        mWidget->InitEvent(compositionCommit);
+        compositionCommit.mData = action.mData;
+        mWidget->DispatchWindowEvent(&compositionCommit);
         if (!mWidget || mWidget->Destroyed()) {
           break;
         }
@@ -1907,7 +1903,8 @@ nsTextStore::CurrentSelection()
 
     mSelection.SetSelection(querySelection.mReply.mOffset,
                             querySelection.mReply.mString.Length(),
-                            querySelection.mReply.mReversed);
+                            querySelection.mReply.mReversed,
+                            querySelection.GetWritingMode());
   }
 
   PR_LOG(sTextStoreLog, PR_LOG_DEBUG,
@@ -2813,6 +2810,9 @@ nsTextStore::GetRequestedAttrIndex(const TS_ATTRID& aAttrID)
   if (IsEqualGUID(aAttrID, TSATTRID_Text_VerticalWriting)) {
     return eTextVerticalWriting;
   }
+  if (IsEqualGUID(aAttrID, TSATTRID_Text_Orientation)) {
+    return eTextOrientation;
+  }
   return eNotSupported;
 }
 
@@ -2824,6 +2824,8 @@ nsTextStore::GetAttrID(int32_t aIndex)
       return GUID_PROP_INPUTSCOPE;
     case eTextVerticalWriting:
       return TSATTRID_Text_VerticalWriting;
+    case eTextOrientation:
+      return TSATTRID_Text_Orientation;
     default:
       MOZ_CRASH("Invalid index? Or not implemented yet?");
       return GUID_NULL;
@@ -2992,11 +2994,21 @@ nsTextStore::RetrieveRequestedAttrs(ULONG ulCount,
           paAttrVals[count].varValue.punkVal = inputScope.forget().take();
           break;
         }
-        case eTextVerticalWriting:
-          // Currently, we don't support vertical writing mode.
+        case eTextVerticalWriting: {
+          Selection& currentSelection = CurrentSelection();
           paAttrVals[count].varValue.vt = VT_BOOL;
-          paAttrVals[count].varValue.boolVal = VARIANT_FALSE;
+          paAttrVals[count].varValue.boolVal =
+            currentSelection.GetWritingMode().IsVertical()
+            ? VARIANT_TRUE : VARIANT_FALSE;
           break;
+        }
+        case eTextOrientation: {
+          Selection& currentSelection = CurrentSelection();
+          paAttrVals[count].varValue.vt = VT_I4;
+          paAttrVals[count].varValue.lVal =
+            currentSelection.GetWritingMode().IsVertical() ? 2700 : 0;
+          break;
+        }
         default:
           MOZ_CRASH("Invalid index? Or not implemented yet?");
           break;
@@ -3158,10 +3170,10 @@ nsTextStore::GetTextExt(TsViewCookie vcView,
   // TODO: On Win 9, we need to check this hack is still necessary.
   const nsString& activeTIPKeyboardDescription =
     TSFStaticSink::GetInstance()->GetActiveTIPKeyboardDescription();
-  if ((sDoNotReturnNoLayoutErrorToFreeChangJie &&
+  if (((sDoNotReturnNoLayoutErrorToFreeChangJie &&
        activeTIPKeyboardDescription.Equals(TIP_NAME_FREE_CHANG_JIE_2010)) ||
       (sDoNotReturnNoLayoutErrorToEasyChangjei &&
-       activeTIPKeyboardDescription.Equals(TIP_NAME_EASY_CHANGJEI)) &&
+       activeTIPKeyboardDescription.Equals(TIP_NAME_EASY_CHANGJEI))) &&
       mComposition.IsComposing() &&
       mLockedContent.IsLayoutChangedAfter(acpEnd) &&
       mComposition.mStart < acpEnd) {
@@ -3346,9 +3358,9 @@ nsTextStore::GetScreenExtInternal(RECT &aScreenExt)
     boundRect.MoveTo(0, 0);
 
     // Clip frame rect to window rect
-    boundRect.IntersectRect(event.mReply.mRect, boundRect);
+    boundRect.IntersectRect(LayoutDevicePixel::ToUntyped(event.mReply.mRect), boundRect);
     if (!boundRect.IsEmpty()) {
-      boundRect.MoveBy(refWindow->WidgetToScreenOffset());
+      boundRect.MoveBy(refWindow->WidgetToScreenOffsetUntyped());
       ::SetRect(&aScreenExt, boundRect.x, boundRect.y,
                 boundRect.XMost(), boundRect.YMost());
     } else {
@@ -4317,7 +4329,7 @@ nsTextStore::CreateNativeCaret()
     return;
   }
 
-  nsIntRect& caretRect = queryCaretRect.mReply.mRect;
+  LayoutDeviceIntRect& caretRect = queryCaretRect.mReply.mRect;
   mNativeCaretIsCreated = ::CreateCaret(mWidget->GetWindowHandle(), nullptr,
                                         caretRect.width, caretRect.height);
   if (!mNativeCaretIsCreated) {
@@ -4905,8 +4917,10 @@ nsTextStore::Content::StartComposition(ITfCompositionView* aCompositionView,
     GetSubstring(static_cast<uint32_t>(aCompStart.mSelectionStart),
                  static_cast<uint32_t>(aCompStart.mSelectionLength)));
   if (!aPreserveSelection) {
+    // XXX Do we need to set a new writing-mode here when setting a new
+    // selection? Currently, we just preserve the existing value.
     mSelection.SetSelection(mComposition.mStart, mComposition.mString.Length(),
-                            false);
+                            false, mSelection.GetWritingMode());
   }
 }
 

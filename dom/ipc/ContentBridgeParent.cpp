@@ -6,10 +6,9 @@
 
 #include "mozilla/dom/ContentBridgeParent.h"
 #include "mozilla/dom/TabParent.h"
-#include "JavaScriptParent.h"
+#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "nsXULAppAPI.h"
 
-using namespace base;
 using namespace mozilla::ipc;
 using namespace mozilla::jsipc;
 
@@ -62,20 +61,22 @@ ContentBridgeParent::DeferredDestroy()
 bool
 ContentBridgeParent::RecvSyncMessage(const nsString& aMsg,
                                      const ClonedMessageData& aData,
-                                     const InfallibleTArray<jsipc::CpowEntry>& aCpows,
+                                     InfallibleTArray<jsipc::CpowEntry>&& aCpows,
                                      const IPC::Principal& aPrincipal,
                                      InfallibleTArray<nsString>* aRetvals)
 {
-  return nsIContentParent::RecvSyncMessage(aMsg, aData, aCpows, aPrincipal, aRetvals);
+  return nsIContentParent::RecvSyncMessage(aMsg, aData, Move(aCpows),
+                                           aPrincipal, aRetvals);
 }
 
 bool
 ContentBridgeParent::RecvAsyncMessage(const nsString& aMsg,
                                       const ClonedMessageData& aData,
-                                      const InfallibleTArray<jsipc::CpowEntry>& aCpows,
+                                      InfallibleTArray<jsipc::CpowEntry>&& aCpows,
                                       const IPC::Principal& aPrincipal)
 {
-  return nsIContentParent::RecvAsyncMessage(aMsg, aData, aCpows, aPrincipal);
+  return nsIContentParent::RecvAsyncMessage(aMsg, aData, Move(aCpows),
+                                            aPrincipal);
 }
 
 PBlobParent*
@@ -87,16 +88,18 @@ ContentBridgeParent::SendPBlobConstructor(PBlobParent* actor,
 
 PBrowserParent*
 ContentBridgeParent::SendPBrowserConstructor(PBrowserParent* aActor,
+                                             const TabId& aTabId,
                                              const IPCTabContext& aContext,
                                              const uint32_t& aChromeFlags,
-                                             const uint64_t& aID,
+                                             const ContentParentId& aCpID,
                                              const bool& aIsForApp,
                                              const bool& aIsForBrowser)
 {
   return PContentBridgeParent::SendPBrowserConstructor(aActor,
+                                                       aTabId,
                                                        aContext,
                                                        aChromeFlags,
-                                                       aID,
+                                                       aCpID,
                                                        aIsForApp,
                                                        aIsForBrowser);
 }
@@ -126,15 +129,17 @@ ContentBridgeParent::DeallocPJavaScriptParent(PJavaScriptParent *parent)
 }
 
 PBrowserParent*
-ContentBridgeParent::AllocPBrowserParent(const IPCTabContext &aContext,
+ContentBridgeParent::AllocPBrowserParent(const TabId& aTabId,
+                                         const IPCTabContext &aContext,
                                          const uint32_t& aChromeFlags,
-                                         const uint64_t& aID,
+                                         const ContentParentId& aCpID,
                                          const bool& aIsForApp,
                                          const bool& aIsForBrowser)
 {
-  return nsIContentParent::AllocPBrowserParent(aContext,
+  return nsIContentParent::AllocPBrowserParent(aTabId,
+                                               aContext,
                                                aChromeFlags,
-                                               aID,
+                                               aCpID,
                                                aIsForApp,
                                                aIsForBrowser);
 }
@@ -148,14 +153,13 @@ ContentBridgeParent::DeallocPBrowserParent(PBrowserParent* aParent)
 // This implementation is identical to ContentParent::GetCPOWManager but we can't
 // move it to nsIContentParent because it calls ManagedPJavaScriptParent() which
 // only exists in PContentParent and PContentBridgeParent.
-jsipc::JavaScriptShared*
+jsipc::CPOWManager*
 ContentBridgeParent::GetCPOWManager()
 {
   if (ManagedPJavaScriptParent().Length()) {
-    return static_cast<JavaScriptParent*>(ManagedPJavaScriptParent()[0]);
+    return CPOWManagerFor(ManagedPJavaScriptParent()[0]);
   }
-  JavaScriptParent* actor = static_cast<JavaScriptParent*>(SendPJavaScriptConstructor());
-  return actor;
+  return CPOWManagerFor(SendPJavaScriptConstructor());
 }
 
 } // namespace dom

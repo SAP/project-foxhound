@@ -130,6 +130,88 @@ void EllipseToBezier(T* aSink, const Point &aOrigin, const Size &aRadius)
 }
 
 /**
+ * Appends a path represending a rectangle to the path being built by
+ * aPathBuilder.
+ *
+ * aRect           The rectangle to append.
+ * aDrawClockwise  If set to true, the path will start at the left of the top
+ *                 left edge and draw clockwise. If set to false the path will
+ *                 start at the right of the top left edge and draw counter-
+ *                 clockwise.
+ */
+GFX2D_API void AppendRectToPath(PathBuilder* aPathBuilder,
+                                const Rect& aRect,
+                                bool aDrawClockwise = true);
+
+inline TemporaryRef<Path> MakePathForRect(const DrawTarget& aDrawTarget,
+                                          const Rect& aRect,
+                                          bool aDrawClockwise = true)
+{
+  RefPtr<PathBuilder> builder = aDrawTarget.CreatePathBuilder();
+  AppendRectToPath(builder, aRect, aDrawClockwise);
+  return builder->Finish();
+}
+
+struct RectCornerRadii {
+  Size radii[RectCorner::Count];
+
+  RectCornerRadii() {}
+
+  explicit RectCornerRadii(Float radius) {
+    for (int i = 0; i < RectCorner::Count; i++) {
+      radii[i].SizeTo(radius, radius);
+    }
+  }
+
+  explicit RectCornerRadii(Float radiusX, Float radiusY) {
+    for (int i = 0; i < RectCorner::Count; i++) {
+      radii[i].SizeTo(radiusX, radiusY);
+    }
+  }
+
+  RectCornerRadii(Float tl, Float tr, Float br, Float bl) {
+    radii[RectCorner::TopLeft].SizeTo(tl, tl);
+    radii[RectCorner::TopRight].SizeTo(tr, tr);
+    radii[RectCorner::BottomRight].SizeTo(br, br);
+    radii[RectCorner::BottomLeft].SizeTo(bl, bl);
+  }
+
+  RectCornerRadii(const Size& tl, const Size& tr,
+                  const Size& br, const Size& bl) {
+    radii[RectCorner::TopLeft] = tl;
+    radii[RectCorner::TopRight] = tr;
+    radii[RectCorner::BottomRight] = br;
+    radii[RectCorner::BottomLeft] = bl;
+  }
+
+  const Size& operator[](size_t aCorner) const {
+    return radii[aCorner];
+  }
+
+  Size& operator[](size_t aCorner) {
+    return radii[aCorner];
+  }
+
+  void Scale(Float aXScale, Float aYScale) {
+    for (int i = 0; i < RectCorner::Count; i++) {
+      radii[i].Scale(aXScale, aYScale);
+    }
+  }
+
+  const Size TopLeft() const { return radii[RectCorner::TopLeft]; }
+  Size& TopLeft() { return radii[RectCorner::TopLeft]; }
+
+  const Size TopRight() const { return radii[RectCorner::TopRight]; }
+  Size& TopRight() { return radii[RectCorner::TopRight]; }
+
+  const Size BottomRight() const { return radii[RectCorner::BottomRight]; }
+  Size& BottomRight() { return radii[RectCorner::BottomRight]; }
+
+  const Size BottomLeft() const { return radii[RectCorner::BottomLeft]; }
+  Size& BottomLeft() { return radii[RectCorner::BottomLeft]; }
+};
+
+/**
  * Appends a path represending a rounded rectangle to the path being built by
  * aPathBuilder.
  *
@@ -143,8 +225,18 @@ void EllipseToBezier(T* aSink, const Point &aOrigin, const Size &aRadius)
  */
 GFX2D_API void AppendRoundedRectToPath(PathBuilder* aPathBuilder,
                                        const Rect& aRect,
-                                       const Size(& aCornerRadii)[4],
+                                       const RectCornerRadii& aRadii,
                                        bool aDrawClockwise = true);
+
+inline TemporaryRef<Path> MakePathForRoundedRect(const DrawTarget& aDrawTarget,
+                                                 const Rect& aRect,
+                                                 const RectCornerRadii& aRadii,
+                                                 bool aDrawClockwise = true)
+{
+  RefPtr<PathBuilder> builder = aDrawTarget.CreatePathBuilder();
+  AppendRoundedRectToPath(builder, aRect, aRadii, aDrawClockwise);
+  return builder->Finish();
+}
 
 /**
  * Appends a path represending an ellipse to the path being built by
@@ -156,6 +248,15 @@ GFX2D_API void AppendRoundedRectToPath(PathBuilder* aPathBuilder,
 GFX2D_API void AppendEllipseToPath(PathBuilder* aPathBuilder,
                                    const Point& aCenter,
                                    const Size& aDimensions);
+
+inline TemporaryRef<Path> MakePathForEllipse(const DrawTarget& aDrawTarget,
+                                             const Point& aCenter,
+                                             const Size& aDimensions)
+{
+  RefPtr<PathBuilder> builder = aDrawTarget.CreatePathBuilder();
+  AppendEllipseToPath(builder, aCenter, aDimensions);
+  return builder->Finish();
+}
 
 /**
  * If aDrawTarget's transform only contains a translation, and if this line is

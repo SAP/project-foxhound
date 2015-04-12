@@ -3,14 +3,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function StarGeneratorNext(val) {
-    if (!IsObject(this) || !IsStarGeneratorObject(this))
-        return callFunction(CallStarGeneratorMethodIfWrapped, this, val, "StarGeneratorNext");
+    // The IsSuspendedStarGenerator call below is not necessary for
+    // correctness. It's a performance optimization to check for the
+    // common case with a single call. It's also inlined in Baseline.
 
-    if (StarGeneratorObjectIsClosed(this))
-        return { value: undefined, done: true };
+    if (!IsSuspendedStarGenerator(this)) {
+        if (!IsObject(this) || !IsStarGeneratorObject(this))
+            return callFunction(CallStarGeneratorMethodIfWrapped, this, val, "StarGeneratorNext");
 
-    if (GeneratorIsRunning(this))
-        ThrowError(JSMSG_NESTING_GENERATOR);
+        if (StarGeneratorObjectIsClosed(this))
+            return { value: undefined, done: true };
+
+        if (GeneratorIsRunning(this))
+            ThrowError(JSMSG_NESTING_GENERATOR);
+    }
 
     try {
         return resumeGenerator(this, val, 'next');
@@ -22,17 +28,41 @@ function StarGeneratorNext(val) {
 }
 
 function StarGeneratorThrow(val) {
-    if (!IsObject(this) || !IsStarGeneratorObject(this))
-        return callFunction(CallStarGeneratorMethodIfWrapped, this, val, "StarGeneratorThrow");
+    if (!IsSuspendedStarGenerator(this)) {
+        if (!IsObject(this) || !IsStarGeneratorObject(this))
+            return callFunction(CallStarGeneratorMethodIfWrapped, this, val, "StarGeneratorThrow");
 
-    if (StarGeneratorObjectIsClosed(this))
-        throw val;
+        if (StarGeneratorObjectIsClosed(this))
+            throw val;
 
-    if (GeneratorIsRunning(this))
-        ThrowError(JSMSG_NESTING_GENERATOR);
+        if (GeneratorIsRunning(this))
+            ThrowError(JSMSG_NESTING_GENERATOR);
+    }
 
     try {
         return resumeGenerator(this, val, 'throw');
+    } catch (e) {
+        if (!StarGeneratorObjectIsClosed(this))
+            GeneratorSetClosed(this);
+        throw e;
+    }
+}
+
+function StarGeneratorReturn(val) {
+    if (!IsSuspendedStarGenerator(this)) {
+        if (!IsObject(this) || !IsStarGeneratorObject(this))
+            return callFunction(CallStarGeneratorMethodIfWrapped, this, val, "StarGeneratorReturn");
+
+        if (StarGeneratorObjectIsClosed(this))
+            return { value: val, done: true };
+
+        if (GeneratorIsRunning(this))
+            ThrowError(JSMSG_NESTING_GENERATOR);
+    }
+
+    try {
+        var rval = { value: val, done: true };
+        return resumeGenerator(this, rval, 'close');
     } catch (e) {
         if (!StarGeneratorObjectIsClosed(this))
             GeneratorSetClosed(this);
@@ -83,7 +113,6 @@ function LegacyGeneratorCloseInternal() {
     assert(IsObject(this), "Not an object: " + ToString(this));
     assert(IsLegacyGeneratorObject(this), "Not a legacy generator object: " + ToString(this));
     assert(!LegacyGeneratorObjectIsClosed(this), "Already closed: " + ToString(this));
-    assert(!CloseNewbornLegacyGeneratorObject(this), "Newborn: " + ToString(this));
 
     if (GeneratorIsRunning(this))
         ThrowError(JSMSG_NESTING_GENERATOR);
@@ -97,8 +126,22 @@ function LegacyGeneratorClose() {
     if (!IsObject(this) || !IsLegacyGeneratorObject(this))
         return callFunction(CallLegacyGeneratorMethodIfWrapped, this, "LegacyGeneratorClose");
 
-    if (LegacyGeneratorObjectIsClosed(this) || CloseNewbornLegacyGeneratorObject(this))
+    if (LegacyGeneratorObjectIsClosed(this))
         return;
 
     callFunction(LegacyGeneratorCloseInternal, this);
+}
+
+function InterpretGeneratorResume(gen, val, kind) {
+    // If we want to resume a generator in the interpreter, the script containing
+    // the resumeGenerator/JSOP_RESUME also has to run in the interpreter. The
+    // forceInterpreter() call below compiles to a bytecode op that prevents us
+    // from JITing this script.
+    forceInterpreter();
+    if (kind === "next")
+       return resumeGenerator(gen, val, "next");
+    if (kind === "throw")
+       return resumeGenerator(gen, val, "throw");
+    assert(kind === "close", "Invalid resume kind");
+    return resumeGenerator(gen, val, "close");
 }

@@ -35,8 +35,7 @@ static const char *sEGLExtensionNames[] = {
     "EGL_EXT_create_context_robustness",
     "EGL_KHR_image",
     "EGL_KHR_fence_sync",
-    "EGL_ANDROID_native_fence_sync",
-    nullptr
+    "EGL_ANDROID_native_fence_sync"
 };
 
 #if defined(ANDROID)
@@ -99,6 +98,19 @@ LoadLibraryForEGLOnWindows(const nsAString& filename)
 }
 #endif // XP_WIN
 
+static EGLDisplay
+GetAndInitDisplay(GLLibraryEGL& egl, void* displayType)
+{
+    EGLDisplay display = egl.fGetDisplay(displayType);
+    if (display == EGL_NO_DISPLAY)
+        return EGL_NO_DISPLAY;
+
+    if (!egl.fInitialize(display, nullptr, nullptr))
+        return EGL_NO_DISPLAY;
+
+    return display;
+}
+
 bool
 GLLibraryEGL::EnsureInitialized()
 {
@@ -110,7 +122,7 @@ GLLibraryEGL::EnsureInitialized()
 
 #ifdef MOZ_B2G
     if (!sCurrentContext.init())
-	    MOZ_CRASH("Tls init failed");
+      MOZ_CRASH("Tls init failed");
 #endif
 
 #ifdef XP_WIN
@@ -185,6 +197,7 @@ GLLibraryEGL::EnsureInitialized()
 
     GLLibraryLoader::SymLoadStruct earlySymbols[] = {
         SYMBOL(GetDisplay),
+        SYMBOL(Terminate),
         SYMBOL(GetCurrentSurface),
         SYMBOL(GetCurrentContext),
         SYMBOL(MakeCurrent),
@@ -225,42 +238,50 @@ GLLibraryEGL::EnsureInitialized()
         { nullptr, { nullptr } }
     };
 
-    GLLibraryLoader::LoadSymbols(mEGLLibrary, &optionalSymbols[0]);
+    // Do not warn about the failure to load this - see bug 1092191
+    GLLibraryLoader::LoadSymbols(mEGLLibrary, &optionalSymbols[0], nullptr, nullptr,
+                                 false);
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 18
     MOZ_RELEASE_ASSERT(mSymbols.fQueryStringImplementationANDROID,
                        "Couldn't find eglQueryStringImplementationANDROID");
 #endif
 
-    mEGLDisplay = nullptr;
+    mEGLDisplay = GetAndInitDisplay(*this, EGL_DEFAULT_DISPLAY);
 
-#ifdef XP_WIN
-    // XXX we have no way of knowing if this is ANGLE, or if we're just using
-    // a native EGL on windows.  We don't really do the latter right now, so
-    // let's assume it is ANGLE, and try our special types.
-
-    // D3D11 ANGLE only works with OMTC; there's a bug in the non-OMTC layer
-    // manager, and it's pointless to try to fix it.  We also don't try D3D11
-    // ANGLE if the layer manager is prefering D3D9 (hrm, do we care?)
-    if (gfxPrefs::LayersOffMainThreadCompositionEnabled() &&
-        !gfxPrefs::LayersPreferD3D9())
+    const char* vendor = (char*)fQueryString(mEGLDisplay, LOCAL_EGL_VENDOR);
+    if (vendor && (strstr(vendor, "TransGaming") != 0 ||
+                   strstr(vendor, "Google Inc.") != 0))
     {
-        if (gfxPrefs::WebGLANGLEForceD3D11()) {
-            mEGLDisplay = fGetDisplay(LOCAL_EGL_D3D11_ONLY_DISPLAY_ANGLE);
-        } else if (gfxPrefs::WebGLANGLETryD3D11()) {
-            mEGLDisplay = fGetDisplay(LOCAL_EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE);
-        }
-    }
-#endif
-
-    if (!mEGLDisplay)
-        mEGLDisplay = fGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (!fInitialize(mEGLDisplay, nullptr, nullptr))
-        return false;
-
-    const char *vendor = (const char*) fQueryString(mEGLDisplay, LOCAL_EGL_VENDOR);
-    if (vendor && (strstr(vendor, "TransGaming") != 0 || strstr(vendor, "Google Inc.") != 0)) {
         mIsANGLE = true;
+    }
+
+    if (mIsANGLE) {
+        EGLDisplay newDisplay = EGL_NO_DISPLAY;
+
+        // D3D11 ANGLE only works with OMTC; there's a bug in the non-OMTC layer
+        // manager, and it's pointless to try to fix it.  We also don't try
+        // D3D11 ANGLE if the layer manager is prefering D3D9 (hrm, do we care?)
+        if (gfxPrefs::LayersOffMainThreadCompositionEnabled() &&
+            !gfxPrefs::LayersPreferD3D9())
+        {
+            if (gfxPrefs::WebGLANGLEForceD3D11()) {
+                newDisplay = GetAndInitDisplay(*this,
+                                               LOCAL_EGL_D3D11_ONLY_DISPLAY_ANGLE);
+            } else if (gfxPrefs::WebGLANGLETryD3D11()) {
+                newDisplay = GetAndInitDisplay(*this,
+                                               LOCAL_EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE);
+            }
+        }
+
+        if (newDisplay != EGL_NO_DISPLAY) {
+            DebugOnly<EGLBoolean> success = fTerminate(mEGLDisplay);
+            MOZ_ASSERT(success == LOCAL_EGL_TRUE);
+
+            mEGLDisplay = newDisplay;
+
+            vendor = (char*)fQueryString(mEGLDisplay, LOCAL_EGL_VENDOR);
+        }
     }
 
     InitExtensions();
@@ -303,6 +324,25 @@ GLLibraryEGL::EnsureInitialized()
             MarkExtensionUnsupported(ANGLE_surface_d3d_texture_2d_share_handle);
 
             mSymbols.fQuerySurfacePointerANGLE = nullptr;
+        }
+    }
+
+    //XXX: use correct extension name
+    if (IsExtensionSupported(ANGLE_surface_d3d_texture_2d_share_handle)) {
+        GLLibraryLoader::SymLoadStruct d3dSymbols[] = {
+            { (PRFuncPtr*)&mSymbols.fSurfaceReleaseSyncANGLE, { "eglSurfaceReleaseSyncANGLE", nullptr } },
+            { nullptr, { nullptr } }
+        };
+
+        bool success = GLLibraryLoader::LoadSymbols(mEGLLibrary,
+                                                    &d3dSymbols[0],
+                                                    lookupFunction);
+        if (!success) {
+            NS_ERROR("EGL supports ANGLE_surface_d3d_texture_2d_share_handle without exposing its functions!");
+
+            MarkExtensionUnsupported(ANGLE_surface_d3d_texture_2d_share_handle);
+
+            mSymbols.fSurfaceReleaseSyncANGLE = nullptr;
         }
     }
 
@@ -380,29 +420,24 @@ GLLibraryEGL::EnsureInitialized()
 void
 GLLibraryEGL::InitExtensions()
 {
-    const char *extensions = (const char*)fQueryString(mEGLDisplay, LOCAL_EGL_EXTENSIONS);
+    std::vector<nsCString> driverExtensionList;
 
-    if (!extensions) {
+    const char* rawExts = (const char*)fQueryString(mEGLDisplay, LOCAL_EGL_EXTENSIONS);
+    if (rawExts) {
+        nsDependentCString exts(rawExts);
+        SplitByChar(exts, ' ', &driverExtensionList);
+    } else {
         NS_WARNING("Failed to load EGL extension list!");
-        return;
     }
 
-    bool debugMode = false;
-#ifdef DEBUG
-    if (PR_GetEnv("MOZ_GL_DEBUG"))
-        debugMode = true;
+    const bool shouldDumpExts = GLContext::ShouldDumpExts();
+    if (shouldDumpExts) {
+        printf_stderr("%i EGL driver extensions: (*: recognized)\n",
+                      (uint32_t)driverExtensionList.size());
+    }
 
-    static bool firstRun = true;
-#else
-    // Non-DEBUG, so never spew.
-    const bool firstRun = false;
-#endif
-
-    GLContext::InitializeExtensionsBitSet(mAvailableExtensions, extensions, sEGLExtensionNames, firstRun && debugMode);
-
-#ifdef DEBUG
-    firstRun = false;
-#endif
+    MarkBitfieldByStrings(driverExtensionList, shouldDumpExts, sEGLExtensionNames,
+                          &mAvailableExtensions);
 }
 
 void

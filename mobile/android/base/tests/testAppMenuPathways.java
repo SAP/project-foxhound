@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import org.json.JSONObject;
@@ -48,8 +52,7 @@ public class testAppMenuPathways extends UITest {
         // The above mock video playback test changes Java state, but not the associated JS state.
         // Navigate to a new page so that the Java state is cleared.
         NavigationHelper.enterAndLoadUrl(StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
-        mToolbar.assertTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_TITLE,
-                StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
+        mToolbar.assertTitle(StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
 
         // Test save as pdf functionality.
         // The following call doesn't wait for the resulting pdf but checks that no exception are thrown.

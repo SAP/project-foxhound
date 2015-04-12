@@ -136,7 +136,7 @@ static void mount_operation_ask_password (GMountOperation   *mount_op,
                                           gpointer          user_data);
 //-----------------------------------------------------------------------------
 
-class nsGIOInputStream MOZ_FINAL : public nsIInputStream
+class nsGIOInputStream final : public nsIInputStream
 {
    ~nsGIOInputStream() { Close(); }
 
@@ -882,7 +882,7 @@ mount_operation_ask_password (GMountOperation   *mount_op,
 
 //-----------------------------------------------------------------------------
 
-class nsGIOProtocolHandler MOZ_FINAL : public nsIProtocolHandler
+class nsGIOProtocolHandler final : public nsIProtocolHandler
                                      , public nsIObserver
 {
   public:
@@ -1046,7 +1046,9 @@ nsGIOProtocolHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsGIOProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
+nsGIOProtocolHandler::NewChannel2(nsIURI* aURI,
+                                  nsILoadInfo* aLoadInfo,
+                                  nsIChannel** aResult)
 {
   NS_ENSURE_ARG_POINTER(aURI);
   nsresult rv;
@@ -1057,29 +1059,26 @@ nsGIOProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
     return rv;
 
   nsRefPtr<nsGIOInputStream> stream = new nsGIOInputStream(spec);
-  if (!stream)
-  {
-    rv = NS_ERROR_OUT_OF_MEMORY;
+  if (!stream) {
+    return NS_ERROR_OUT_OF_MEMORY;
   }
-  else
-  {
-    nsCOMPtr<nsIPrincipal> nullPrincipal =
-      do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
 
-    // start out assuming an unknown content-type.  we'll set the content-type
-    // to something better once we open the URI.
-    rv = NS_NewInputStreamChannel(aResult,
-                                  aURI,
-                                  stream,
-                                  nullPrincipal,
-                                  nsILoadInfo::SEC_NORMAL,
-                                  nsIContentPolicy::TYPE_OTHER,
-                                  NS_LITERAL_CSTRING(UNKNOWN_CONTENT_TYPE));
-    if (NS_SUCCEEDED(rv))
-      stream->SetChannel(*aResult);
+  rv = NS_NewInputStreamChannelInternal(aResult,
+                                        aURI,
+                                        stream,
+                                        NS_LITERAL_CSTRING(UNKNOWN_CONTENT_TYPE),
+                                        EmptyCString(), // aContentCharset
+                                        aLoadInfo);
+  if (NS_SUCCEEDED(rv)) {
+    stream->SetChannel(*aResult);
   }
   return rv;
+}
+
+NS_IMETHODIMP
+nsGIOProtocolHandler::NewChannel(nsIURI *aURI, nsIChannel **aResult)
+{
+    return NewChannel2(aURI, nullptr, aResult);
 }
 
 NS_IMETHODIMP

@@ -344,8 +344,7 @@ nsBindingManager::RemoveFromAttachedQueue(nsXBLBinding* aBinding)
 nsresult
 nsBindingManager::AddToAttachedQueue(nsXBLBinding* aBinding)
 {
-  if (!mAttachedStack.AppendElement(aBinding))
-    return NS_ERROR_OUT_OF_MEMORY;
+  mAttachedStack.AppendElement(aBinding);
 
   // If we're in the middle of processing our queue already, don't
   // bother posting the event.
@@ -884,6 +883,19 @@ nsBindingManager::ContentAppended(nsIDocument* aDocument,
   // Try to find insertion points for all the new kids.
   XBLChildrenElement* point = nullptr;
   nsIContent* parent = aContainer;
+
+  // Handle appending of default content.
+  if (parent && parent->IsActiveChildrenElement()) {
+    XBLChildrenElement* childrenEl = static_cast<XBLChildrenElement*>(parent);
+    if (childrenEl->HasInsertedChildren()) {
+      // Appending default content that isn't being used. Ignore.
+      return;
+    }
+
+    childrenEl->MaybeSetupDefaultContent();
+    parent = childrenEl->GetParent();
+  }
+
   bool first = true;
   do {
     nsXBLBinding* binding = GetBindingWithContent(parent);
@@ -957,6 +969,18 @@ nsBindingManager::ContentRemoved(nsIDocument* aDocument,
 
   XBLChildrenElement* point = nullptr;
   nsIContent* parent = aContainer;
+
+  // Handle appending of default content.
+  if (parent && parent->IsActiveChildrenElement()) {
+    XBLChildrenElement* childrenEl = static_cast<XBLChildrenElement*>(parent);
+    if (childrenEl->HasInsertedChildren()) {
+      // Removing default content that isn't being used. Ignore.
+      return;
+    }
+
+    parent = childrenEl->GetParent();
+  }
+
   do {
     nsXBLBinding* binding = GetBindingWithContent(parent);
     if (!binding) {
@@ -1075,6 +1099,19 @@ nsBindingManager::HandleChildInsertion(nsIContent* aContainer,
 
   XBLChildrenElement* point = nullptr;
   nsIContent* parent = aContainer;
+
+  // Handle insertion of default content.
+  if (parent && parent->IsActiveChildrenElement()) {
+    XBLChildrenElement* childrenEl = static_cast<XBLChildrenElement*>(parent);
+    if (childrenEl->HasInsertedChildren()) {
+      // Inserting default content that isn't being used. Ignore.
+      return;
+    }
+
+    childrenEl->MaybeSetupDefaultContent();
+    parent = childrenEl->GetParent();
+  }
+
   while (parent) {
     nsXBLBinding* binding = GetBindingWithContent(parent);
     if (!binding) {

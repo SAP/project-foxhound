@@ -32,17 +32,20 @@ struct HttpChannelOpenArgs
   OptionalURIParams           original;
   OptionalURIParams           doc;
   OptionalURIParams           referrer;
+  uint32_t                    referrerPolicy;
   OptionalURIParams           apiRedirectTo;
+  OptionalURIParams           topWindowURI;
   uint32_t                    loadFlags;
   RequestHeaderTuples         requestHeaders;
   nsCString                   requestMethod;
   OptionalInputStreamParams   uploadStream;
   bool                        uploadStreamHasHeaders;
   uint16_t                    priority;
+  uint32_t                    classOfService;
   uint8_t                     redirectionLimit;
   bool                        allowPipelining;
   bool                        allowSTS;
-  bool                        forceAllowThirdPartyCookie;
+  uint32_t                    thirdPartyFlags;
   bool                        resumeAt;
   uint64_t                    startPos;
   nsCString                   entityID;
@@ -51,8 +54,10 @@ struct HttpChannelOpenArgs
   bool                        allowSpdy;
   OptionalFileDescriptorSet   fds;
   PrincipalInfo               requestingPrincipalInfo;
+  PrincipalInfo               triggeringPrincipalInfo;
   uint32_t                    securityFlags;
   uint32_t                    contentPolicyType;
+  uint32_t                    innerWindowID;
 };
 
 struct HttpChannelConnectArgs
@@ -77,8 +82,10 @@ struct FTPChannelOpenArgs
   nsCString                 entityID;
   OptionalInputStreamParams uploadStream;
   PrincipalInfo             requestingPrincipalInfo;
+  PrincipalInfo             triggeringPrincipalInfo;
   uint32_t                  securityFlags;
   uint32_t                  contentPolicyType;
+  uint32_t                  innerWindowID;
 };
 
 struct FTPChannelConnectArgs
@@ -92,9 +99,15 @@ union FTPChannelCreationArgs
   FTPChannelConnectArgs;   // Used for redirected-to channels
 };
 
+struct HttpChannelDiverterArgs
+{
+  PHttpChannel mChannel;
+  bool mApplyConversion;
+};
+
 union ChannelDiverterArgs
 {
-  PHttpChannel;
+  HttpChannelDiverterArgs;
   PFTPChannel;
 };
 
@@ -106,6 +119,19 @@ struct RtspChannelConnectArgs
 {
   URIParams uri;
   uint32_t channelId;
+};
+
+//-----------------------------------------------------------------------------
+// WS IPDL structs
+//-----------------------------------------------------------------------------
+
+struct WebSocketLoadInfoArgs
+{
+  PrincipalInfo requestingPrincipalInfo;
+  PrincipalInfo triggeringPrincipalInfo;
+  uint32_t      securityFlags;
+  uint32_t      contentPolicyType;
+  uint32_t      innerWindowID;
 };
 
 } // namespace ipc

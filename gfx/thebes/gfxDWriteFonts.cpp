@@ -15,9 +15,6 @@
 
 #include "harfbuzz/hb.h"
 
-// Chosen this as to resemble DWrite's own oblique face style.
-#define OBLIQUE_SKEW_FACTOR 0.3
-
 using namespace mozilla;
 using namespace mozilla::gfx;
 
@@ -78,6 +75,7 @@ gfxDWriteFont::gfxDWriteFont(gfxFontEntry *aFontEntry,
     : gfxFont(aFontEntry, aFontStyle, anAAOption)
     , mCairoFontFace(nullptr)
     , mMetrics(nullptr)
+    , mSpaceGlyph(0)
     , mNeedsOblique(false)
     , mNeedsBold(aNeedsBold)
     , mUseSubpixelPositions(false)
@@ -231,8 +229,15 @@ gfxDWriteFont::ComputeMetrics(AntialiasOption anAAOption)
     mMetrics->internalLeading = std::max(mMetrics->maxHeight - mMetrics->emHeight, 0.0);
     mMetrics->externalLeading = ceil(fontMetrics.lineGap * mFUnitsConvFactor);
 
-    UINT16 glyph = (uint16_t)GetSpaceGlyph();
-    mMetrics->spaceWidth = MeasureGlyphWidth(glyph);
+    UINT32 ucs = L' ';
+    UINT16 glyph;
+    HRESULT hr = mFontFace->GetGlyphIndicesA(&ucs, 1, &glyph);
+    if (FAILED(hr)) {
+        mMetrics->spaceWidth = 0;
+    } else {
+        mSpaceGlyph = glyph;
+        mMetrics->spaceWidth = MeasureGlyphWidth(glyph);
+    }
 
     // try to get aveCharWidth from the OS/2 table, fall back to measuring 'x'
     // if the table is not available or if using hinted/pixel-snapped widths
@@ -254,7 +259,6 @@ gfxDWriteFont::ComputeMetrics(AntialiasOption anAAOption)
         }
     }
 
-    UINT32 ucs;
     if (mMetrics->aveCharWidth < 1) {
         ucs = L'x';
         if (SUCCEEDED(mFontFace->GetGlyphIndicesA(&ucs, 1, &glyph))) {
@@ -445,14 +449,7 @@ gfxDWriteFont::HasBitmapStrikeForSize(uint32_t aSize)
 uint32_t
 gfxDWriteFont::GetSpaceGlyph()
 {
-    UINT32 ucs = L' ';
-    UINT16 glyph;
-    HRESULT hr;
-    hr = mFontFace->GetGlyphIndicesA(&ucs, 1, &glyph);
-    if (FAILED(hr)) {
-        return 0;
-    }
-    return glyph;
+    return mSpaceGlyph;
 }
 
 bool
@@ -469,7 +466,7 @@ gfxDWriteFont::SetupCairoFont(gfxContext *aContext)
 }
 
 bool
-gfxDWriteFont::IsValid()
+gfxDWriteFont::IsValid() const
 {
     return mFontFace != nullptr;
 }
@@ -584,7 +581,7 @@ gfxDWriteFont::ProvidesGlyphWidths() const
 }
 
 int32_t
-gfxDWriteFont::GetGlyphWidth(gfxContext *aCtx, uint16_t aGID)
+gfxDWriteFont::GetGlyphWidth(DrawTarget& aDrawTarget, uint16_t aGID)
 {
     if (!mGlyphWidths) {
         mGlyphWidths = new nsDataHashtable<nsUint32HashKey,int32_t>(128);
@@ -601,7 +598,7 @@ gfxDWriteFont::GetGlyphWidth(gfxContext *aCtx, uint16_t aGID)
 }
 
 TemporaryRef<GlyphRenderingOptions>
-gfxDWriteFont::GetGlyphRenderingOptions()
+gfxDWriteFont::GetGlyphRenderingOptions(const TextRunDrawParams* aRunParams)
 {
   if (UsingClearType()) {
     return Factory::CreateDWriteGlyphRenderingOptions(

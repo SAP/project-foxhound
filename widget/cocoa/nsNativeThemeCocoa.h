@@ -28,6 +28,18 @@ class nsNativeThemeCocoa : private nsNativeTheme,
                            public nsITheme
 {
 public:
+  enum {
+    eThemeGeometryTypeTitlebar = eThemeGeometryTypeUnknown + 1,
+    eThemeGeometryTypeToolbar,
+    eThemeGeometryTypeWindowButtons,
+    eThemeGeometryTypeFullscreenButton,
+    eThemeGeometryTypeMenu,
+    eThemeGeometryTypeHighlightedMenuItem,
+    eThemeGeometryTypeVibrancyLight,
+    eThemeGeometryTypeVibrancyDark,
+    eThemeGeometryTypeTooltip,
+  };
+
   nsNativeThemeCocoa();
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -37,33 +49,37 @@ public:
                                   nsIFrame* aFrame,
                                   uint8_t aWidgetType,
                                   const nsRect& aRect,
-                                  const nsRect& aDirtyRect);
+                                  const nsRect& aDirtyRect) override;
   NS_IMETHOD GetWidgetBorder(nsDeviceContext* aContext, 
                              nsIFrame* aFrame,
                              uint8_t aWidgetType,
-                             nsIntMargin* aResult);
+                             nsIntMargin* aResult) override;
 
   virtual bool GetWidgetPadding(nsDeviceContext* aContext,
                                   nsIFrame* aFrame,
                                   uint8_t aWidgetType,
-                                  nsIntMargin* aResult);
+                                  nsIntMargin* aResult) override;
 
   virtual bool GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
-                                   uint8_t aWidgetType, nsRect* aOverflowRect);
+                                   uint8_t aWidgetType, nsRect* aOverflowRect) override;
 
   NS_IMETHOD GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
                                   uint8_t aWidgetType,
-                                  nsIntSize* aResult, bool* aIsOverridable);
+                                  nsIntSize* aResult, bool* aIsOverridable) override;
   NS_IMETHOD WidgetStateChanged(nsIFrame* aFrame, uint8_t aWidgetType, 
-                                nsIAtom* aAttribute, bool* aShouldRepaint);
-  NS_IMETHOD ThemeChanged();
-  bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame, uint8_t aWidgetType);
-  bool WidgetIsContainer(uint8_t aWidgetType);
-  bool ThemeDrawsFocusForWidget(uint8_t aWidgetType) MOZ_OVERRIDE;
-  bool ThemeNeedsComboboxDropmarker();
-  virtual bool WidgetAppearanceDependsOnWindowFocus(uint8_t aWidgetType) MOZ_OVERRIDE;
-  virtual bool NeedToClearBackgroundBehindWidget(uint8_t aWidgetType) MOZ_OVERRIDE;
-  virtual Transparency GetWidgetTransparency(nsIFrame* aFrame, uint8_t aWidgetType);
+                                nsIAtom* aAttribute, bool* aShouldRepaint) override;
+  NS_IMETHOD ThemeChanged() override;
+  bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame, uint8_t aWidgetType) override;
+  bool WidgetIsContainer(uint8_t aWidgetType) override;
+  bool ThemeDrawsFocusForWidget(uint8_t aWidgetType) override;
+  bool ThemeNeedsComboboxDropmarker() override;
+  virtual bool WidgetAppearanceDependsOnWindowFocus(uint8_t aWidgetType) override;
+  virtual bool NeedToClearBackgroundBehindWidget(uint8_t aWidgetType) override;
+  virtual bool WidgetProvidesFontSmoothingBackgroundColor(nsIFrame* aFrame, uint8_t aWidgetType,
+                                                          nscolor* aColor) override;
+  virtual ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame* aFrame,
+                                                       uint8_t aWidgetType) override;
+  virtual Transparency GetWidgetTransparency(nsIFrame* aFrame, uint8_t aWidgetType) override;
 
   void DrawProgress(CGContextRef context, const HIRect& inBoxRect,
                     bool inIsIndeterminate, bool inIsHorizontal,
@@ -141,6 +157,7 @@ protected:
   bool IsParentScrollbarRolledOver(nsIFrame* aFrame);
 
 private:
+  NSButtonCell* mDisclosureButtonCell;
   NSButtonCell* mHelpButtonCell;
   NSButtonCell* mPushButtonCell;
   NSButtonCell* mRadioButtonCell;

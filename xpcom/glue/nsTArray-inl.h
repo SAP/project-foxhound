@@ -45,8 +45,8 @@ nsTArray_base<Alloc, Copy>::GetAutoArrayBufferUnsafe(size_t aElemAlign) const
                 "auto array padding wasn't what we expected");
 
   // We don't support alignments greater than 8 bytes.
-  NS_ABORT_IF_FALSE(aElemAlign <= 4 || aElemAlign == 8,
-                    "unsupported alignment.");
+  MOZ_ASSERT(aElemAlign <= 4 || aElemAlign == 8,
+             "unsupported alignment.");
   if (sizeof(void*) == 4 && aElemAlign == 8) {
     autoBuf = reinterpret_cast<const char*>(autoBuf) + 4;
   }
@@ -97,8 +97,8 @@ nsTArray_base<Alloc, Copy>::UsesAutoArrayBuffer() const
 #ifdef DEBUG
   ptrdiff_t diff = reinterpret_cast<const char*>(GetAutoArrayBuffer(8)) -
                    reinterpret_cast<const char*>(GetAutoArrayBuffer(4));
-  NS_ABORT_IF_FALSE(diff >= 0 && diff <= 4,
-                    "GetAutoArrayBuffer doesn't do what we expect.");
+  MOZ_ASSERT(diff >= 0 && diff <= 4,
+             "GetAutoArrayBuffer doesn't do what we expect.");
 #endif
 
   return mHdr == GetAutoArrayBuffer(4) || mHdr == GetAutoArrayBuffer(8);
@@ -128,10 +128,11 @@ nsTArray_base<Alloc, Copy>::EnsureCapacity(size_type aCapacity,
     return Alloc::FailureResult();
   }
 
+  size_t reqSize = sizeof(Header) + aCapacity * aElemSize;
+
   if (mHdr == EmptyHdr()) {
     // Malloc() new data
-    Header* header =
-      static_cast<Header*>(Alloc::Malloc(sizeof(Header) + aCapacity * aElemSize));
+    Header* header = static_cast<Header*>(Alloc::Malloc(reqSize));
     if (!header) {
       return Alloc::FailureResult();
     }
@@ -143,30 +144,24 @@ nsTArray_base<Alloc, Copy>::EnsureCapacity(size_type aCapacity,
     return Alloc::SuccessResult();
   }
 
-  // We increase our capacity so |aCapacity * aElemSize + sizeof(Header)| is the
-  // next power of two, if this value is less than pageSize bytes, or otherwise
-  // so it's the next multiple of pageSize.
-  const size_t pageSizeBytes = 12;
-  const size_t pageSize = 1 << pageSizeBytes;
+  // We increase our capacity so that the allocated buffer grows exponentially,
+  // which gives us amortized O(1) appending. Below the threshold, we use
+  // powers-of-two. Above the threshold, we grow by at least 1.125, rounding up
+  // to the nearest MiB.
+  const size_t slowGrowthThreshold = 8 * 1024 * 1024;
 
-  size_t minBytes = aCapacity * aElemSize + sizeof(Header);
   size_t bytesToAlloc;
-  if (minBytes >= pageSize) {
-    // Round up to the next multiple of pageSize.
-    bytesToAlloc = pageSize * ((minBytes + pageSize - 1) / pageSize);
-  } else {
-    // Round up to the next power of two.  See
-    // http://graphics.stanford.edu/~seander/bithacks.html
-    bytesToAlloc = minBytes - 1;
-    bytesToAlloc |= bytesToAlloc >> 1;
-    bytesToAlloc |= bytesToAlloc >> 2;
-    bytesToAlloc |= bytesToAlloc >> 4;
-    bytesToAlloc |= bytesToAlloc >> 8;
-    bytesToAlloc |= bytesToAlloc >> 16;
-    bytesToAlloc++;
+  if (reqSize >= slowGrowthThreshold) {
+    size_t currSize = sizeof(Header) + Capacity() * aElemSize;
+    size_t minNewSize = currSize + (currSize >> 3); // multiply by 1.125
+    bytesToAlloc = reqSize > minNewSize ? reqSize : minNewSize;
 
-    MOZ_ASSERT((bytesToAlloc & (bytesToAlloc - 1)) == 0,
-               "nsTArray's allocation size should be a power of two!");
+    // Round up to the next multiple of MiB.
+    const size_t MiB = 1 << 20;
+    bytesToAlloc = MiB * ((bytesToAlloc + MiB - 1) / MiB);
+  } else {
+    // Round up to the next power of two.
+    bytesToAlloc = mozilla::RoundUpPow2(reqSize);
   }
 
   Header* header;
@@ -383,9 +378,8 @@ nsTArray_base<Alloc, Copy>::SwapArrayElements(nsTArray_base<Allocator,
 
   // The EnsureCapacity calls above shouldn't have caused *both* arrays to
   // switch from their auto buffers to malloc'ed space.
-  NS_ABORT_IF_FALSE(UsesAutoArrayBuffer() ||
-                    aOther.UsesAutoArrayBuffer(),
-                    "One of the arrays should be using its auto buffer.");
+  MOZ_ASSERT(UsesAutoArrayBuffer() || aOther.UsesAutoArrayBuffer(),
+             "One of the arrays should be using its auto buffer.");
 
   size_type smallerLength = XPCOM_MIN(Length(), aOther.Length());
   size_type largerLength = XPCOM_MAX(Length(), aOther.Length());
@@ -414,9 +408,9 @@ nsTArray_base<Alloc, Copy>::SwapArrayElements(nsTArray_base<Allocator,
   Copy::CopyElements(largerElements, temp.Elements(), smallerLength, aElemSize);
 
   // Swap the arrays' lengths.
-  NS_ABORT_IF_FALSE((aOther.Length() == 0 || mHdr != EmptyHdr()) &&
-                    (Length() == 0 || aOther.mHdr != EmptyHdr()),
-                    "Don't set sEmptyHdr's length.");
+  MOZ_ASSERT((aOther.Length() == 0 || mHdr != EmptyHdr()) &&
+             (Length() == 0 || aOther.mHdr != EmptyHdr()),
+             "Don't set sEmptyHdr's length.");
   size_type tempLength = Length();
   mHdr->mLength = aOther.Length();
   aOther.mHdr->mLength = tempLength;

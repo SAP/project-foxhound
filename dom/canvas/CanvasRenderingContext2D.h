@@ -49,7 +49,7 @@ extern const mozilla::gfx::Float SIGMA_MAX;
 
 template<typename T> class Optional;
 
-class CanvasPath MOZ_FINAL :
+class CanvasPath final :
   public nsWrapperCache
 {
 public:
@@ -114,11 +114,12 @@ private:
 
 struct CanvasBidiProcessor;
 class CanvasRenderingContext2DUserData;
+class CanvasDrawObserver;
 
 /**
  ** CanvasRenderingContext2D
  **/
-class CanvasRenderingContext2D MOZ_FINAL :
+class CanvasRenderingContext2D final :
   public nsICanvasRenderingContextInternal,
   public nsWrapperCache
 {
@@ -130,7 +131,7 @@ typedef HTMLImageElementOrHTMLCanvasElementOrHTMLVideoElement
 public:
   CanvasRenderingContext2D();
 
-  virtual JSObject* WrapObject(JSContext *cx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext *cx) override;
 
   HTMLCanvasElement* GetCanvas() const
   {
@@ -147,6 +148,7 @@ public:
                  double dy, mozilla::ErrorResult& error);
   void SetTransform(double m11, double m12, double m21, double m22, double dx,
                     double dy, mozilla::ErrorResult& error);
+  void ResetTransform(mozilla::ErrorResult& error);
 
   double GlobalAlpha()
   {
@@ -267,6 +269,7 @@ public:
 
   void AddHitRegion(const HitRegionOptions& options, mozilla::ErrorResult& error);
   void RemoveHitRegion(const nsAString& id);
+  void ClearHitRegions();
 
   void DrawImage(const HTMLImageOrCanvasOrVideoElement& image,
                  double dx, double dy, mozilla::ErrorResult& error)
@@ -479,14 +482,14 @@ public:
   nsresult Redraw();
 
 #ifdef DEBUG
-    virtual int32_t GetWidth() const MOZ_OVERRIDE;
-    virtual int32_t GetHeight() const MOZ_OVERRIDE;
+    virtual int32_t GetWidth() const override;
+    virtual int32_t GetHeight() const override;
 #endif
   // nsICanvasRenderingContextInternal
   /**
     * Gets the pres shell from either the canvas element or the doc shell
     */
-  virtual nsIPresShell *GetPresShell() MOZ_OVERRIDE {
+  virtual nsIPresShell *GetPresShell() override {
     if (mCanvasElement) {
       return mCanvasElement->OwnerDoc()->GetShell();
     }
@@ -495,14 +498,14 @@ public:
     }
     return nullptr;
   }
-  NS_IMETHOD SetDimensions(int32_t width, int32_t height) MOZ_OVERRIDE;
-  NS_IMETHOD InitializeWithSurface(nsIDocShell *shell, gfxASurface *surface, int32_t width, int32_t height) MOZ_OVERRIDE;
+  NS_IMETHOD SetDimensions(int32_t width, int32_t height) override;
+  NS_IMETHOD InitializeWithSurface(nsIDocShell *shell, gfxASurface *surface, int32_t width, int32_t height) override;
 
   NS_IMETHOD GetInputStream(const char* aMimeType,
                             const char16_t* aEncoderOptions,
-                            nsIInputStream **aStream) MOZ_OVERRIDE;
+                            nsIInputStream **aStream) override;
 
-  mozilla::TemporaryRef<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(bool* aPremultAlpha = nullptr) MOZ_OVERRIDE
+  mozilla::TemporaryRef<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(bool* aPremultAlpha = nullptr) override
   {
     EnsureTarget();
     if (aPremultAlpha) {
@@ -511,26 +514,26 @@ public:
     return mTarget->Snapshot();
   }
 
-  NS_IMETHOD SetIsOpaque(bool isOpaque) MOZ_OVERRIDE;
-  bool GetIsOpaque() MOZ_OVERRIDE { return mOpaque; }
-  NS_IMETHOD Reset() MOZ_OVERRIDE;
+  NS_IMETHOD SetIsOpaque(bool isOpaque) override;
+  bool GetIsOpaque() override { return mOpaque; }
+  NS_IMETHOD Reset() override;
   already_AddRefed<CanvasLayer> GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                                CanvasLayer *aOldLayer,
-                                               LayerManager *aManager) MOZ_OVERRIDE;
-  virtual bool ShouldForceInactiveLayer(LayerManager *aManager) MOZ_OVERRIDE;
-  void MarkContextClean() MOZ_OVERRIDE;
-  NS_IMETHOD SetIsIPC(bool isIPC) MOZ_OVERRIDE;
+                                               LayerManager *aManager) override;
+  virtual bool ShouldForceInactiveLayer(LayerManager *aManager) override;
+  void MarkContextClean() override;
+  NS_IMETHOD SetIsIPC(bool isIPC) override;
   // this rect is in canvas device space
   void Redraw(const mozilla::gfx::Rect &r);
-  NS_IMETHOD Redraw(const gfxRect &r) MOZ_OVERRIDE { Redraw(ToRect(r)); return NS_OK; }
-  NS_IMETHOD SetContextOptions(JSContext* aCx, JS::Handle<JS::Value> aOptions) MOZ_OVERRIDE;
+  NS_IMETHOD Redraw(const gfxRect &r) override { Redraw(ToRect(r)); return NS_OK; }
+  NS_IMETHOD SetContextOptions(JSContext* aCx, JS::Handle<JS::Value> aOptions) override;
 
   /**
    * An abstract base class to be implemented by callers wanting to be notified
    * that a refresh has occurred. Callers must ensure an observer is removed
    * before it is destroyed.
    */
-  virtual void DidRefresh() MOZ_OVERRIDE;
+  virtual void DidRefresh() override;
 
   // this rect is in mTarget's current user space
   void RedrawUser(const gfxRect &r);
@@ -540,17 +543,17 @@ public:
 
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(CanvasRenderingContext2D)
 
-  MOZ_BEGIN_NESTED_ENUM_CLASS(CanvasMultiGetterType, uint8_t)
+  enum class CanvasMultiGetterType : uint8_t {
     STRING = 0,
     PATTERN = 1,
     GRADIENT = 2
-  MOZ_END_NESTED_ENUM_CLASS(CanvasMultiGetterType)
+  };
 
-  MOZ_BEGIN_NESTED_ENUM_CLASS(Style, uint8_t)
+  enum class Style : uint8_t {
     STROKE = 0,
     FILL,
     MAX
-  MOZ_END_NESTED_ENUM_CLASS(Style)
+  };
 
   nsINode* GetParentObject()
   {
@@ -582,15 +585,15 @@ public:
 
   friend class CanvasRenderingContext2DUserData;
 
-  virtual void GetImageBuffer(uint8_t** aImageBuffer, int32_t* aFormat);
+  virtual void GetImageBuffer(uint8_t** aImageBuffer, int32_t* aFormat) override;
 
 
   // Given a point, return hit region ID if it exists
-  nsString GetHitRegion(const mozilla::gfx::Point& aPoint);
+  nsString GetHitRegion(const mozilla::gfx::Point& aPoint) override;
 
 
   // return true and fills in the bound rect if element has a hit region.
-  bool GetHitRegionRect(Element* aElement, nsRect& aRect);
+  bool GetHitRegionRect(Element* aElement, nsRect& aRect) override;
 
 protected:
   nsresult GetImageDataArray(JSContext* aCx, int32_t aX, int32_t aY,
@@ -714,6 +717,9 @@ protected:
    */
   void UpdateFilter();
 
+  nsLayoutUtils::SurfaceFromElementResult
+    CachedSurfaceFromElement(Element* aElement);
+
   void DrawImage(const HTMLImageOrCanvasOrVideoElement &imgElt,
                  double sx, double sy, double sw, double sh,
                  double dx, double dy, double dw, double dh,
@@ -723,7 +729,7 @@ protected:
                             mozilla::gfx::Rect* bounds,
                             mozilla::gfx::Rect dest,
                             mozilla::gfx::Rect src,
-                            gfxIntSize imgSize);
+                            gfx::IntSize imgSize);
 
   nsString& GetFont()
   {
@@ -740,6 +746,10 @@ protected:
   static void RemoveDemotableContext(CanvasRenderingContext2D* context);
 
   RenderingMode mRenderingMode;
+
+  // Texture informations for fast video rendering
+  unsigned int mVideoTexture;
+  nsIntSize mCurrentVideoSize;
 
   // Member vars
   int32_t mWidth, mHeight;
@@ -767,6 +777,12 @@ protected:
   mozilla::RefPtr<mozilla::gfx::DrawTarget> mTarget;
 
   uint32_t SkiaGLTex() const;
+
+  // This observes our draw calls at the beginning of the canvas
+  // lifetime and switches to software or GPU mode depending on
+  // what it thinks is best
+  CanvasDrawObserver* mDrawObserver;
+  void RemoveDrawObserver();
 
   /**
     * Flag to avoid duplicate calls to InvalidateFrame. Set to true whenever
@@ -875,31 +891,29 @@ protected:
 
   // text
 
-public: // These enums are public only to accomodate non-C++11 legacy path of
-        // MOZ_FINISH_NESTED_ENUM_CLASS. Can move back to protected as soon
-        // as that legacy path is dropped.
-  MOZ_BEGIN_NESTED_ENUM_CLASS(TextAlign, uint8_t)
+protected:
+  enum class TextAlign : uint8_t {
     START,
     END,
     LEFT,
     RIGHT,
     CENTER
-  MOZ_END_NESTED_ENUM_CLASS(TextAlign)
+  };
 
-  MOZ_BEGIN_NESTED_ENUM_CLASS(TextBaseline, uint8_t)
+  enum class TextBaseline : uint8_t {
     TOP,
     HANGING,
     MIDDLE,
     ALPHABETIC,
     IDEOGRAPHIC,
     BOTTOM
-  MOZ_END_NESTED_ENUM_CLASS(TextBaseline)
+  };
 
-  MOZ_BEGIN_NESTED_ENUM_CLASS(TextDrawOperation, uint8_t)
+  enum class TextDrawOperation : uint8_t {
     FILL,
     STROKE,
     MEASURE
-  MOZ_END_NESTED_ENUM_CLASS(TextDrawOperation)
+  };
 
 protected:
   gfxFontGroup *GetCurrentFontStyle();
@@ -931,7 +945,8 @@ protected:
                      fillRule(mozilla::gfx::FillRule::FILL_WINDING),
                      lineCap(mozilla::gfx::CapStyle::BUTT),
                      lineJoin(mozilla::gfx::JoinStyle::MITER_OR_BEVEL),
-                     imageSmoothingEnabled(true)
+                     imageSmoothingEnabled(true),
+                     fontExplicitLanguage(false)
     { }
 
     ContextState(const ContextState& other)
@@ -962,7 +977,8 @@ protected:
           filterChainObserver(other.filterChainObserver),
           filter(other.filter),
           filterAdditionalImages(other.filterAdditionalImages),
-          imageSmoothingEnabled(other.imageSmoothingEnabled)
+          imageSmoothingEnabled(other.imageSmoothingEnabled),
+          fontExplicitLanguage(other.fontExplicitLanguage)
     { }
 
     void SetColorStyle(Style whichStyle, nscolor color)
@@ -1040,6 +1056,7 @@ protected:
     nsTArray<mozilla::RefPtr<mozilla::gfx::SourceSurface>> filterAdditionalImages;
 
     bool imageSmoothingEnabled;
+    bool fontExplicitLanguage;
   };
 
   nsAutoTArray<ContextState, 3> mStyleStack;
@@ -1082,13 +1099,8 @@ protected:
   }
 
   friend struct CanvasBidiProcessor;
+  friend class CanvasDrawObserver;
 };
-
-MOZ_FINISH_NESTED_ENUM_CLASS(CanvasRenderingContext2D::CanvasMultiGetterType)
-MOZ_FINISH_NESTED_ENUM_CLASS(CanvasRenderingContext2D::Style)
-MOZ_FINISH_NESTED_ENUM_CLASS(CanvasRenderingContext2D::TextAlign)
-MOZ_FINISH_NESTED_ENUM_CLASS(CanvasRenderingContext2D::TextBaseline)
-MOZ_FINISH_NESTED_ENUM_CLASS(CanvasRenderingContext2D::TextDrawOperation)
 
 }
 }

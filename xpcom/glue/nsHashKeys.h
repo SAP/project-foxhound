@@ -53,7 +53,7 @@ HashString(const nsACString& aStr)
  * nsUint32HashKey
  * nsUint64HashKey
  * nsFloatHashKey
- * nsPtrHashkey
+ * nsPtrHashKey
  * nsClearingPtrHashKey
  * nsVoidPtrHashKey
  * nsClearingVoidPtrHashKey
@@ -385,7 +385,7 @@ public:
   enum { ALLOW_MEMMOVE = true };
 
 protected:
-  T* mKey;
+  T* MOZ_NON_OWNING_REF mKey;
 };
 
 /**

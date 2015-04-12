@@ -33,7 +33,7 @@ public:
 
   nsDeviceSensors();
 
-  void Notify(const mozilla::hal::SensorData& aSensorData);
+  void Notify(const mozilla::hal::SensorData& aSensorData) override;
 
 private:
   virtual ~nsDeviceSensors();
@@ -73,7 +73,7 @@ private:
   mozilla::TimeStamp mLastDOMMotionEventTime;
   bool mIsUserProximityNear;
   mozilla::Maybe<DeviceAccelerationInit> mLastAcceleration;
-  mozilla::Maybe<DeviceAccelerationInit> mLastAccelerationIncluduingGravity;
+  mozilla::Maybe<DeviceAccelerationInit> mLastAccelerationIncludingGravity;
   mozilla::Maybe<DeviceRotationRateInit> mLastRotationRate;
 };
 

@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsSelectionState.h"
+
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/dom/Selection.h"      // for Selection
 #include "nsAString.h"                  // for nsAString_internal::Length
@@ -15,11 +17,8 @@
 #include "nsIContent.h"                 // for nsIContent
 #include "nsIDOMCharacterData.h"        // for nsIDOMCharacterData
 #include "nsIDOMNode.h"                 // for nsIDOMNode
-#include "nsIDOMRange.h"                // for nsIDOMRange, etc
-#include "nsISelection.h"               // for nsISelection
 #include "nsISupportsImpl.h"            // for nsRange::Release
 #include "nsRange.h"                    // for nsRange
-#include "nsSelectionState.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -78,7 +77,7 @@ nsSelectionState::SaveSelection(Selection* aSel)
 }
 
 nsresult  
-nsSelectionState::RestoreSelection(nsISelection *aSel)
+nsSelectionState::RestoreSelection(Selection* aSel)
 {
   NS_ENSURE_TRUE(aSel, NS_ERROR_NULL_POINTER);
   nsresult res;
@@ -150,7 +149,7 @@ nsSelectionState::IsEmpty()
 }
 
 /***************************************************************************
- * nsRangeUpdater:  class for updating nsIDOMRanges in response to editor actions.
+ * nsRangeUpdater:  class for updating nsRanges in response to editor actions.
  */
 
 nsRangeUpdater::nsRangeUpdater() : mArray(), mLock(false) {}
@@ -320,21 +319,21 @@ nsRangeUpdater::SelAdjDeleteNode(nsIDOMNode *aNode)
 
 
 nsresult
-nsRangeUpdater::SelAdjSplitNode(nsINode* aOldRightNode, int32_t aOffset,
-                                nsINode* aNewLeftNode)
+nsRangeUpdater::SelAdjSplitNode(nsIContent& aOldRightNode, int32_t aOffset,
+                                nsIContent* aNewLeftNode)
 {
   if (mLock) {
     // lock set by Will/DidReplaceParent, etc...
     return NS_OK;
   }
-  NS_ENSURE_TRUE(aOldRightNode && aNewLeftNode, NS_ERROR_NULL_POINTER);
+  NS_ENSURE_TRUE(aNewLeftNode, NS_ERROR_NULL_POINTER);
   uint32_t count = mArray.Length();
   if (!count) {
     return NS_OK;
   }
 
-  nsCOMPtr<nsINode> parent = aOldRightNode->GetParentNode();
-  int32_t offset = parent ? parent->IndexOf(aOldRightNode) : -1;
+  nsCOMPtr<nsINode> parent = aOldRightNode.GetParentNode();
+  int32_t offset = parent ? parent->IndexOf(&aOldRightNode) : -1;
 
   // first part is same as inserting aNewLeftnode
   nsresult result = SelAdjInsertNode(parent, offset - 1);
@@ -345,14 +344,14 @@ nsRangeUpdater::SelAdjSplitNode(nsINode* aOldRightNode, int32_t aOffset,
     nsRangeStore* item = mArray[i];
     NS_ENSURE_TRUE(item, NS_ERROR_NULL_POINTER);
 
-    if (item->startNode == aOldRightNode) {
+    if (item->startNode == &aOldRightNode) {
       if (item->startOffset > aOffset) {
         item->startOffset -= aOffset;
       } else {
         item->startNode = aNewLeftNode;
       }
     }
-    if (item->endNode == aOldRightNode) {
+    if (item->endNode == &aOldRightNode) {
       if (item->endOffset > aOffset) {
         item->endOffset -= aOffset;
       } else {
@@ -364,19 +363,9 @@ nsRangeUpdater::SelAdjSplitNode(nsINode* aOldRightNode, int32_t aOffset,
 }
 
 nsresult
-nsRangeUpdater::SelAdjSplitNode(nsIDOMNode* aOldRightNode, int32_t aOffset,
-                                nsIDOMNode* aNewLeftNode)
-{
-  nsCOMPtr<nsINode> oldRightNode = do_QueryInterface(aOldRightNode);
-  nsCOMPtr<nsINode> newLeftNode = do_QueryInterface(aNewLeftNode);
-  return SelAdjSplitNode(oldRightNode, aOffset, newLeftNode);
-}
-
-
-nsresult
-nsRangeUpdater::SelAdjJoinNodes(nsINode* aLeftNode,
-                                nsINode* aRightNode,
-                                nsINode* aParent,
+nsRangeUpdater::SelAdjJoinNodes(nsINode& aLeftNode,
+                                nsINode& aRightNode,
+                                nsINode& aParent,
                                 int32_t aOffset,
                                 int32_t aOldLeftNodeLength)
 {
@@ -384,7 +373,6 @@ nsRangeUpdater::SelAdjJoinNodes(nsINode* aLeftNode,
     // lock set by Will/DidReplaceParent, etc...
     return NS_OK;
   }
-  NS_ENSURE_TRUE(aLeftNode && aRightNode && aParent, NS_ERROR_NULL_POINTER);
   uint32_t count = mArray.Length();
   if (!count) {
     return NS_OK;
@@ -394,55 +382,42 @@ nsRangeUpdater::SelAdjJoinNodes(nsINode* aLeftNode,
     nsRangeStore* item = mArray[i];
     NS_ENSURE_TRUE(item, NS_ERROR_NULL_POINTER);
 
-    if (item->startNode == aParent) {
+    if (item->startNode == &aParent) {
       // adjust start point in aParent
       if (item->startOffset > aOffset) {
         item->startOffset--;
       } else if (item->startOffset == aOffset) {
         // join keeps right hand node
-        item->startNode = aRightNode;
+        item->startNode = &aRightNode;
         item->startOffset = aOldLeftNodeLength;
       }
-    } else if (item->startNode == aRightNode) {
+    } else if (item->startNode == &aRightNode) {
       // adjust start point in aRightNode
       item->startOffset += aOldLeftNodeLength;
-    } else if (item->startNode == aLeftNode) {
+    } else if (item->startNode == &aLeftNode) {
       // adjust start point in aLeftNode
-      item->startNode = aRightNode;
+      item->startNode = &aRightNode;
     }
 
-    if (item->endNode == aParent) {
+    if (item->endNode == &aParent) {
       // adjust end point in aParent
       if (item->endOffset > aOffset) {
         item->endOffset--;
       } else if (item->endOffset == aOffset) {
         // join keeps right hand node
-        item->endNode = aRightNode;
+        item->endNode = &aRightNode;
         item->endOffset = aOldLeftNodeLength;
       }
-    } else if (item->endNode == aRightNode) {
+    } else if (item->endNode == &aRightNode) {
       // adjust end point in aRightNode
        item->endOffset += aOldLeftNodeLength;
-    } else if (item->endNode == aLeftNode) {
+    } else if (item->endNode == &aLeftNode) {
       // adjust end point in aLeftNode
-      item->endNode = aRightNode;
+      item->endNode = &aRightNode;
     }
   }
 
   return NS_OK;
-}
-
-nsresult
-nsRangeUpdater::SelAdjJoinNodes(nsIDOMNode* aLeftNode,
-                                nsIDOMNode* aRightNode,
-                                nsIDOMNode* aParent,
-                                int32_t aOffset,
-                                int32_t aOldLeftNodeLength)
-{
-  nsCOMPtr<nsINode> leftNode = do_QueryInterface(aLeftNode);
-  nsCOMPtr<nsINode> rightNode = do_QueryInterface(aRightNode);
-  nsCOMPtr<nsINode> parent = do_QueryInterface(aParent);
-  return SelAdjJoinNodes(leftNode, rightNode, parent, aOffset, aOldLeftNodeLength);
 }
 
 

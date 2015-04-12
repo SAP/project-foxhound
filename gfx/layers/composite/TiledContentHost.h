@@ -13,7 +13,7 @@
 #include "TiledLayerBuffer.h"           // for TiledLayerBuffer, etc
 #include "CompositableHost.h"
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/gfx/Point.h"          // for Point
 #include "mozilla/gfx/Rect.h"           // for Rect
@@ -62,15 +62,21 @@ public:
   // Constructs a TileHost from a gfxSharedReadLock and TextureHost.
   TileHost(gfxSharedReadLock* aSharedLock,
                TextureHost* aTextureHost,
-               TextureHost* aTextureHostOnWhite)
+               TextureHost* aTextureHostOnWhite,
+               TextureSource* aSource,
+               TextureSource* aSourceOnWhite)
     : mSharedLock(aSharedLock)
     , mTextureHost(aTextureHost)
     , mTextureHostOnWhite(aTextureHostOnWhite)
+    , mTextureSource(aSource)
+    , mTextureSourceOnWhite(aSourceOnWhite)
   {}
 
   TileHost(const TileHost& o) {
     mTextureHost = o.mTextureHost;
     mTextureHostOnWhite = o.mTextureHostOnWhite;
+    mTextureSource = o.mTextureSource;
+    mTextureSourceOnWhite = o.mTextureSourceOnWhite;
     mSharedLock = o.mSharedLock;
   }
   TileHost& operator=(const TileHost& o) {
@@ -79,6 +85,8 @@ public:
     }
     mTextureHost = o.mTextureHost;
     mTextureHostOnWhite = o.mTextureHostOnWhite;
+    mTextureSource = o.mTextureSource;
+    mTextureSourceOnWhite = o.mTextureSourceOnWhite;
     mSharedLock = o.mSharedLock;
     return *this;
   }
@@ -98,9 +106,16 @@ public:
     }
   }
 
+  void DumpTexture(std::stringstream& aStream) {
+    // TODO We should combine the OnWhite/OnBlack here an just output a single image.
+    CompositableHost::DumpTextureHost(aStream, mTextureHost);
+  }
+
   RefPtr<gfxSharedReadLock> mSharedLock;
-  RefPtr<TextureHost> mTextureHost;
-  RefPtr<TextureHost> mTextureHostOnWhite;
+  CompositableTextureHostRef mTextureHost;
+  CompositableTextureHostRef mTextureHostOnWhite;
+  mutable CompositableTextureSourceRef mTextureSource;
+  mutable CompositableTextureSourceRef mTextureSourceOnWhite;
 };
 
 class TiledLayerBufferComposite
@@ -114,7 +129,8 @@ public:
   TiledLayerBufferComposite();
   TiledLayerBufferComposite(ISurfaceAllocator* aAllocator,
                             const SurfaceDescriptorTiles& aDescriptor,
-                            const nsIntRegion& aOldPaintedRegion);
+                            const nsIntRegion& aOldPaintedRegion,
+                            Compositor* aCompositor);
 
   TileHost GetPlaceholderTile() const { return TileHost(); }
 
@@ -195,7 +211,7 @@ protected:
   ~TiledContentHost();
 
 public:
-  virtual LayerRenderState GetRenderState() MOZ_OVERRIDE
+  virtual LayerRenderState GetRenderState() override
   {
     return LayerRenderState();
   }
@@ -204,18 +220,23 @@ public:
   virtual bool UpdateThebes(const ThebesBufferData& aData,
                             const nsIntRegion& aUpdated,
                             const nsIntRegion& aOldValidRegionBack,
-                            nsIntRegion* aUpdatedRegionBack)
+                            nsIntRegion* aUpdatedRegionBack) override
   {
     NS_ERROR("N/A for tiled layers");
     return false;
   }
 
-  const nsIntRegion& GetValidLowPrecisionRegion() const
+  const nsIntRegion& GetValidLowPrecisionRegion() const override
   {
     return mLowPrecisionTiledBuffer.GetValidRegion();
   }
 
-  virtual void SetCompositor(Compositor* aCompositor)
+  const nsIntRegion& GetValidRegion() const override
+  {
+    return mTiledBuffer.GetValidRegion();
+  }
+
+  virtual void SetCompositor(Compositor* aCompositor) override
   {
     CompositableHost::SetCompositor(aCompositor);
     mTiledBuffer.SetCompositor(aCompositor);
@@ -225,33 +246,31 @@ public:
   }
 
   virtual bool UseTiledLayerBuffer(ISurfaceAllocator* aAllocator,
-                                   const SurfaceDescriptorTiles& aTiledDescriptor) MOZ_OVERRIDE;
+                                   const SurfaceDescriptorTiles& aTiledDescriptor) override;
 
   void Composite(EffectChain& aEffectChain,
                  float aOpacity,
                  const gfx::Matrix4x4& aTransform,
                  const gfx::Filter& aFilter,
                  const gfx::Rect& aClipRect,
-                 const nsIntRegion* aVisibleRegion = nullptr);
+                 const nsIntRegion* aVisibleRegion = nullptr) override;
 
-  virtual CompositableType GetType() { return CompositableType::BUFFER_TILED; }
+  virtual CompositableType GetType() override { return CompositableType::CONTENT_TILED; }
 
-  virtual TiledLayerComposer* AsTiledLayerComposer() MOZ_OVERRIDE { return this; }
+  virtual TiledLayerComposer* AsTiledLayerComposer() override { return this; }
 
   virtual void Attach(Layer* aLayer,
                       Compositor* aCompositor,
-                      AttachFlags aFlags = NO_FLAGS) MOZ_OVERRIDE;
+                      AttachFlags aFlags = NO_FLAGS) override;
 
   virtual void Detach(Layer* aLayer = nullptr,
-                      AttachFlags aFlags = NO_FLAGS) MOZ_OVERRIDE;
+                      AttachFlags aFlags = NO_FLAGS) override;
 
-#ifdef MOZ_DUMP_PAINTING
   virtual void Dump(std::stringstream& aStream,
                     const char* aPrefix="",
-                    bool aDumpHtml=false) MOZ_OVERRIDE;
-#endif
+                    bool aDumpHtml=false) override;
 
-  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
   /**

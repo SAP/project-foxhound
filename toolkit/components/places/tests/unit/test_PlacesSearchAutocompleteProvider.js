@@ -5,6 +5,10 @@
 Cu.import("resource://gre/modules/PlacesSearchAutocompleteProvider.jsm");
 
 function run_test() {
+  // Tell the search service we are running in the US.  This also has the
+  // desired side-effect of preventing our geoip lookup.
+  Services.prefs.setBoolPref("browser.search.isUS", true);
+  Services.prefs.setCharPref("browser.search.countryCode", "US");
   run_next_test();
 }
 
@@ -85,7 +89,7 @@ function promiseDefaultSearchEngine() {
 function promiseSearchTopic(expectedVerb) {
   let deferred = Promise.defer();
   Services.obs.addObserver( function observe(subject, topic, verb) {
-    do_log_info("browser-search-engine-modified: " + verb);
+    do_print("browser-search-engine-modified: " + verb);
     if (verb == expectedVerb) {
       Services.obs.removeObserver(observe, "browser-search-engine-modified");
       deferred.resolve();

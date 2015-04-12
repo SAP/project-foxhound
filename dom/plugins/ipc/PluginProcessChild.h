@@ -19,14 +19,15 @@ protected:
     typedef mozilla::ipc::ProcessChild ProcessChild;
 
 public:
-    explicit PluginProcessChild(ProcessHandle aParentHandle) : ProcessChild(aParentHandle)
+    explicit PluginProcessChild(ProcessHandle aParentHandle)
+      : ProcessChild(aParentHandle), mPlugin(true)
     { }
 
     virtual ~PluginProcessChild()
     { }
 
-    virtual bool Init() MOZ_OVERRIDE;
-    virtual void CleanUp() MOZ_OVERRIDE;
+    virtual bool Init() override;
+    virtual void CleanUp() override;
 
 protected:
     static PluginProcessChild* current() {

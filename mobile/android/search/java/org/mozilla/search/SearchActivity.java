@@ -4,11 +4,13 @@
 
 package org.mozilla.search;
 
-import org.mozilla.gecko.LocaleAware;
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.Locales;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.db.BrowserContract.SearchHistory;
+import org.mozilla.gecko.distribution.Distribution;
 import org.mozilla.gecko.health.BrowserHealthRecorder;
 import org.mozilla.search.autocomplete.SearchBar;
 import org.mozilla.search.autocomplete.SuggestionsFragment;
@@ -37,7 +39,7 @@ import com.nineoldandroids.animation.ObjectAnimator;
  * State management is delegated to child fragments. Fragments communicate
  * with each other by passing messages through this activity.
  */
-public class SearchActivity extends LocaleAware.LocaleAwareFragmentActivity
+public class SearchActivity extends Locales.LocaleAwareFragmentActivity
         implements AcceptsSearchQuery, SearchEngineCallback {
 
     private static final String LOGTAG = "GeckoSearchActivity";
@@ -92,13 +94,15 @@ public class SearchActivity extends LocaleAware.LocaleAwareFragmentActivity
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        GeckoAppShell.ensureCrashHandling();
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.search_activity_main);
 
         suggestionsFragment = (SuggestionsFragment) getSupportFragmentManager().findFragmentById(R.id.suggestions);
         postSearchFragment = (PostSearchFragment)  getSupportFragmentManager().findFragmentById(R.id.postsearch);
 
-        searchEngineManager = new SearchEngineManager(this);
+        searchEngineManager = new SearchEngineManager(this, Distribution.init(this));
         searchEngineManager.setChangeCallback(this);
 
         // Initialize the fragments with the selected search engine.
@@ -276,7 +280,10 @@ public class SearchActivity extends LocaleAware.LocaleAwareFragmentActivity
         searchEngineManager.getEngine(new SearchEngineCallback() {
             @Override
             public void execute(SearchEngine engine) {
-                postSearchFragment.startSearch(engine, query);
+                // TODO: If engine is null, we should show an error message.
+                if (engine != null) {
+                    postSearchFragment.startSearch(engine, query);
+                }
             }
         });
     }
@@ -290,6 +297,10 @@ public class SearchActivity extends LocaleAware.LocaleAwareFragmentActivity
      */
     @Override
     public void execute(SearchEngine engine) {
+        // TODO: If engine is null, we should show an error message.
+        if (engine == null) {
+            return;
+        }
         this.engine = engine;
         suggestionsFragment.setEngine(engine);
         searchBar.setEngine(engine);
@@ -329,6 +340,11 @@ public class SearchActivity extends LocaleAware.LocaleAwareFragmentActivity
 
             @Override
             public void onAnimationEnd(Animator animation) {
+                // Don't do anything if the activity is destroyed before the animation ends.
+                if (searchEngineManager == null) {
+                    return;
+                }
+
                 setEditState(EditState.WAITING);
                 setSearchState(SearchState.POSTSEARCH);
 

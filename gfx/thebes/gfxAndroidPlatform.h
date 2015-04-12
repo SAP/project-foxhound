@@ -76,18 +76,21 @@ public:
                     const gfxFontStyle *aStyle,
                     gfxUserFontSet* aUserFontSet);
 
-    virtual bool FontHintingEnabled() MOZ_OVERRIDE;
-    virtual bool RequiresLinearZoom() MOZ_OVERRIDE;
+    virtual bool FontHintingEnabled() override;
+    virtual bool RequiresLinearZoom() override;
 
     FT_Library GetFTLibrary();
 
     virtual int GetScreenDepth() const;
 
-    virtual bool CanRenderContentToDataSurface() const MOZ_OVERRIDE {
+    virtual bool CanRenderContentToDataSurface() const override {
       return true;
     }
 
-    virtual bool UseAcceleratedSkiaCanvas() MOZ_OVERRIDE;
+    virtual bool HaveChoiceOfHWAndSWCanvas() override;
+    virtual bool UseAcceleratedSkiaCanvas() override;
+    virtual already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource() override;
+
 
 #ifdef MOZ_WIDGET_GONK
     virtual bool IsInGonkEmulator() const { return mIsInGonkEmulator; }

@@ -13,9 +13,18 @@ Cu.import("resource://gre/modules/Services.jsm");
 
 this.EXPORTED_SYMBOLS = ["SettingsDB", "SETTINGSDB_NAME", "SETTINGSSTORE_NAME"];
 
-const DEBUG = false;
+let DEBUG = false;
+let VERBOSE = false;
+
+try {
+  DEBUG   =
+    Services.prefs.getBoolPref("dom.mozSettings.SettingsDB.debug.enabled");
+  VERBOSE =
+    Services.prefs.getBoolPref("dom.mozSettings.SettingsDB.verbose.enabled");
+} catch (ex) { }
+
 function debug(s) {
-  if (DEBUG) dump("-*- SettingsDB: " + s + "\n");
+  dump("-*- SettingsDB: " + s + "\n");
 }
 
 const TYPED_ARRAY_THINGS = new Set([
@@ -48,13 +57,13 @@ SettingsDB.prototype = {
     let objectStore;
     if (aOldVersion == 0) {
       objectStore = aDb.createObjectStore(SETTINGSSTORE_NAME, { keyPath: "settingName" });
-      if (DEBUG) debug("Created object stores");
+      if (VERBOSE) debug("Created object stores");
     } else if (aOldVersion == 1) {
-      if (DEBUG) debug("Get object store for upgrade and remove old index");
+      if (VERBOSE) debug("Get object store for upgrade and remove old index");
       objectStore = aTransaction.objectStore(SETTINGSSTORE_NAME);
       objectStore.deleteIndex("settingValue");
     } else {
-      if (DEBUG) debug("Get object store for upgrade");
+      if (VERBOSE) debug("Get object store for upgrade");
       objectStore = aTransaction.objectStore(SETTINGSSTORE_NAME);
     }
 
@@ -71,7 +80,14 @@ SettingsDB.prototype = {
       }
     }
 
-    let chan = NetUtil.newChannel(settingsFile);
+    let chan = NetUtil.newChannel2(settingsFile,
+                                   null,
+                                   null,
+                                   null,      // aLoadingNode
+                                   Services.scriptSecurityManager.getSystemPrincipal(),
+                                   null,      // aTriggeringPrincipal
+                                   Ci.nsILoadInfo.SEC_NORMAL,
+                                   Ci.nsIContentPolicy.TYPE_OTHER);
     let stream = chan.open();
     // Obtain a converter to read from a UTF-8 encoded input stream.
     let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
@@ -94,7 +110,7 @@ SettingsDB.prototype = {
       if (cursor) {
         let value = cursor.value;
         if (value.settingName in settings) {
-          if (DEBUG) debug("Upgrade " +settings[value.settingName]);
+          if (VERBOSE) debug("Upgrade " +settings[value.settingName]);
           value.defaultValue = this.prepareValue(settings[value.settingName]);
           delete settings[value.settingName];
           if ("settingValue" in value) {
@@ -116,7 +132,7 @@ SettingsDB.prototype = {
       } else {
         for (let name in settings) {
           let value = this.prepareValue(settings[name]);
-          if (DEBUG) debug("Set new:" + name +", " + value);
+          if (VERBOSE) debug("Set new:" + name +", " + value);
           objectStore.add({ settingName: name, defaultValue: value, userValue: undefined });
         }
       }

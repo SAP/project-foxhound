@@ -22,7 +22,7 @@ class NetworkInformation;
 namespace dom {
 namespace network {
 
-class Connection MOZ_FINAL : public DOMEventTargetHelper
+class Connection final : public DOMEventTargetHelper
                            , public NetworkObserver
                            , public nsINetworkProperties
 {
@@ -32,16 +32,16 @@ public:
 
   NS_REALLY_FORWARD_NSIDOMEVENTTARGET(DOMEventTargetHelper)
 
-  Connection(nsPIDOMWindow *aWindow);
+  explicit Connection(nsPIDOMWindow *aWindow);
 
   void Shutdown();
 
   // For IObserver
-  void Notify(const hal::NetworkInformation& aNetworkInfo);
+  void Notify(const hal::NetworkInformation& aNetworkInfo) override;
 
   // WebIDL
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext* aCx) override;
 
   ConnectionType Type() const { return mType; }
 

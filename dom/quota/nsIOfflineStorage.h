@@ -43,9 +43,6 @@ public:
   GetClient() = 0;
 
   NS_IMETHOD_(bool)
-  IsOwnedByWindow(nsPIDOMWindow* aOwner) = 0;
-
-  NS_IMETHOD_(bool)
   IsOwnedByProcess(ContentParent* aOwner) = 0;
 
   NS_IMETHOD_(PersistenceType)
@@ -68,10 +65,6 @@ public:
   NS_IMETHOD_(nsresult)
   Close() = 0;
 
-  // Whether or not the storage has had Close called on it.
-  NS_IMETHOD_(bool)
-  IsClosed() = 0;
-
   // Implementation of this method should close the storage, all running
   // operations should be aborted and pending operations should be discarded.
   NS_IMETHOD_(void)
@@ -93,27 +86,21 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIOfflineStorage, NS_OFFLINESTORAGE_IID)
 
 #define NS_DECL_NSIOFFLINESTORAGE                                              \
   NS_IMETHOD_(const nsACString&)                                               \
-  Id() MOZ_OVERRIDE;                                                           \
+  Id() override;                                                           \
                                                                                \
   NS_IMETHOD_(Client*)                                                         \
-  GetClient() MOZ_OVERRIDE;                                                    \
+  GetClient() override;                                                    \
                                                                                \
   NS_IMETHOD_(bool)                                                            \
-  IsOwnedByWindow(nsPIDOMWindow* aOwner) MOZ_OVERRIDE;                         \
-                                                                               \
-  NS_IMETHOD_(bool)                                                            \
-  IsOwnedByProcess(ContentParent* aOwner) MOZ_OVERRIDE;                        \
+  IsOwnedByProcess(ContentParent* aOwner) override;                        \
                                                                                \
   NS_IMETHOD_(const nsACString&)                                               \
-  Origin() MOZ_OVERRIDE;                                                       \
+  Origin() override;                                                       \
                                                                                \
   NS_IMETHOD_(nsresult)                                                        \
-  Close() MOZ_OVERRIDE;                                                        \
-                                                                               \
-  NS_IMETHOD_(bool)                                                            \
-  IsClosed() MOZ_OVERRIDE;                                                     \
+  Close() override;                                                        \
                                                                                \
   NS_IMETHOD_(void)                                                            \
-  Invalidate() MOZ_OVERRIDE;
+  Invalidate() override;
 
 #endif // nsIOfflineStorage_h__

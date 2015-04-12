@@ -21,13 +21,12 @@ const js::Class OuterWrapperClass =
         PROXY_MAKE_EXT(
             nullptr, /* outerObject */
             js::proxy_innerObject,
-            nullptr, /* iteratorObject */
             false,   /* isWrappedNative */
             nullptr  /* objectMoved */
         ));
 
-static JSObject *
-wrap(JSContext *cx, JS::HandleObject toWrap, JS::HandleObject target)
+static JSObject*
+wrap(JSContext* cx, JS::HandleObject toWrap, JS::HandleObject target)
 {
     JSAutoCompartment ac(cx, target);
     JS::RootedObject wrapper(cx, toWrap);
@@ -36,16 +35,16 @@ wrap(JSContext *cx, JS::HandleObject toWrap, JS::HandleObject target)
     return wrapper;
 }
 
-static JSObject *
-PreWrap(JSContext *cx, JS::HandleObject scope, JS::HandleObject obj,
+static JSObject*
+PreWrap(JSContext* cx, JS::HandleObject scope, JS::HandleObject obj,
         JS::HandleObject objectPassedToWrap)
 {
     JS_GC(JS_GetRuntime(cx));
     return obj;
 }
 
-static JSObject *
-Wrap(JSContext *cx, JS::HandleObject existing, JS::HandleObject obj,
+static JSObject*
+Wrap(JSContext* cx, JS::HandleObject existing, JS::HandleObject obj,
      JS::HandleObject parent)
 {
     return js::Wrapper::New(cx, obj, parent, &js::CrossCompartmentWrapper::singleton);

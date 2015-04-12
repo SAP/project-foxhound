@@ -6,8 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if defined(JS_MIPS_SIMULATOR)
-#include "jit/IonLinker.h"
-#include "jit/IonMacroAssembler.h"
+#include "jit/Linker.h"
+#include "jit/MacroAssembler.h"
 #include "jit/mips/Assembler-mips.h"
 #include "jit/mips/MoveEmitter-mips.h"
 #include "jit/mips/Simulator-mips.h"
@@ -69,9 +69,11 @@ static MOZ_CONSTEXPR_VAR js::jit::FloatRegister double13(26, js::jit::FloatRegis
 static MOZ_CONSTEXPR_VAR js::jit::FloatRegister double14(28, js::jit::FloatRegister::Double);
 static MOZ_CONSTEXPR_VAR js::jit::FloatRegister double15(30, js::jit::FloatRegister::Double);
 
-static JitCode *
-linkAndAllocate(JSContext *cx, MacroAssembler *masm)
+static js::jit::JitCode*
+linkAndAllocate(JSContext* cx, js::jit::MacroAssembler* masm)
 {
+    using namespace js;
+    using namespace js::jit;
     AutoFlushICache afc("test");
     Linker l(*masm);
     return l.newCode<CanGC>(cx, ION_CODE);
@@ -83,7 +85,7 @@ BEGIN_TEST(testJitMoveEmitterCycles_simple)
     using namespace js::jit;
     LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
     TempAllocator alloc(&lifo);
-    IonContext ic(cx, &alloc);
+    JitContext jc(cx, &alloc);
     rt->getJitRuntime(cx);
     AutoFlushICache afc("test");
 
@@ -91,7 +93,7 @@ BEGIN_TEST(testJitMoveEmitterCycles_simple)
     MoveEmitter mover(masm);
     MoveResolver mr;
     mr.setAllocator(alloc);
-    Simulator *sim = Simulator::Current();
+    Simulator* sim = Simulator::Current();
     mr.addMove(MoveOperand(double0), MoveOperand(double2), MoveOp::DOUBLE);
     sim->setFpuRegisterDouble(double0.id(), 2.0);
     mr.addMove(MoveOperand(double3), MoveOperand(double1), MoveOp::DOUBLE);
@@ -109,7 +111,7 @@ BEGIN_TEST(testJitMoveEmitterCycles_simple)
     mover.emit(mr);
     mover.finish();
     masm.abiret();
-    JitCode *code = linkAndAllocate(cx, &masm);
+    JitCode* code = linkAndAllocate(cx, &masm);
     sim->call(code->raw(), 1, 1);
     CHECK(sim->getFpuRegisterDouble(double2.id()) == 2.0);
     CHECK(int(sim->getFpuRegisterDouble(double1.id())) == 1.0);
@@ -126,14 +128,14 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen)
     using namespace js::jit;
     LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
     TempAllocator alloc(&lifo);
-    IonContext ic(cx, &alloc);
+    JitContext jc(cx, &alloc);
     rt->getJitRuntime(cx);
     AutoFlushICache afc("test");
     MacroAssembler masm;
     MoveEmitter mover(masm);
     MoveResolver mr;
     mr.setAllocator(alloc);
-    Simulator *sim = Simulator::Current();
+    Simulator* sim = Simulator::Current();
     sim->setFpuRegisterDouble(double9.id(), 9.0);
     mr.addMove(MoveOperand(single24), MoveOperand(single25), MoveOp::FLOAT32);
     sim->setFpuRegisterFloat(single24.id(), 24.0f);
@@ -181,7 +183,7 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen)
     mover.emit(mr);
     mover.finish();
     masm.abiret();
-    JitCode *code = linkAndAllocate(cx, &masm);
+    JitCode* code = linkAndAllocate(cx, &masm);
     sim->call(code->raw(), 1, 1);
     CHECK(int(sim->getFpuRegisterFloat(single25.id())) == 24.0);
     CHECK(int(sim->getFpuRegisterDouble(double0.id())) == 3.0);
@@ -214,14 +216,14 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen2)
     using namespace js::jit;
     LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
     TempAllocator alloc(&lifo);
-    IonContext ic(cx, &alloc);
+    JitContext jc(cx, &alloc);
     rt->getJitRuntime(cx);
     AutoFlushICache afc("test");
     MacroAssembler masm;
     MoveEmitter mover(masm);
     MoveResolver mr;
     mr.setAllocator(alloc);
-    Simulator *sim = Simulator::Current();
+    Simulator* sim = Simulator::Current();
     mr.addMove(MoveOperand(double10), MoveOperand(double0), MoveOp::DOUBLE);
     sim->setFpuRegisterDouble(double10.id(), 10.0);
     mr.addMove(MoveOperand(single15), MoveOperand(single3), MoveOp::FLOAT32);
@@ -276,7 +278,7 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen2)
     mover.emit(mr);
     mover.finish();
     masm.abiret();
-    JitCode *code = linkAndAllocate(cx, &masm);
+    JitCode* code = linkAndAllocate(cx, &masm);
     sim->call(code->raw(), 1, 1);
     CHECK(int(sim->getFpuRegisterDouble(double0.id())) == 10);
     CHECK(int(sim->getFpuRegisterFloat(single3.id())) == 15);
@@ -314,14 +316,14 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen3)
     using namespace js::jit;
     LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
     TempAllocator alloc(&lifo);
-    IonContext ic(cx, &alloc);
+    JitContext jc(cx, &alloc);
     rt->getJitRuntime(cx);
     AutoFlushICache afc("test");
     MacroAssembler masm;
     MoveEmitter mover(masm);
     MoveResolver mr;
     mr.setAllocator(alloc);
-    Simulator *sim = Simulator::Current();
+    Simulator* sim = Simulator::Current();
     mr.addMove(MoveOperand(single0), MoveOperand(single21), MoveOp::FLOAT32);
     sim->setFpuRegisterFloat(single0.id(), 0.0f);
     mr.addMove(MoveOperand(single2), MoveOperand(single26), MoveOp::FLOAT32);
@@ -378,7 +380,7 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen3)
     mover.emit(mr);
     mover.finish();
     masm.abiret();
-    JitCode *code = linkAndAllocate(cx, &masm);
+    JitCode* code = linkAndAllocate(cx, &masm);
     sim->call(code->raw(), 1, 1);
     CHECK(int(sim->getFpuRegisterFloat(single21.id())) == 0);
     CHECK(int(sim->getFpuRegisterFloat(single26.id())) == 2);

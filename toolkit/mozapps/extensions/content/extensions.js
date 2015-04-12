@@ -53,8 +53,6 @@ const XMLURI_PARSE_ERROR = "http://www.mozilla.org/newlayout/xml/parsererror.xml
 
 const VIEW_DEFAULT = "addons://discover/";
 
-const OPENH264_ADDON_ID = "gmp-gmpopenh264";
-
 var gStrings = {};
 XPCOMUtils.defineLazyServiceGetter(gStrings, "bundleSvc",
                                    "@mozilla.org/intl/stringbundle;1",
@@ -241,6 +239,12 @@ function getMainWindow() {
                .rootTreeItem
                .QueryInterface(Ci.nsIInterfaceRequestor)
                .getInterface(Ci.nsIDOMWindow);
+}
+
+function getBrowserElement() {
+  return window.QueryInterface(Ci.nsIInterfaceRequestor)
+               .getInterface(Ci.nsIDocShell)
+               .chromeEventHandler;
 }
 
 /**
@@ -1027,8 +1031,11 @@ var gViewController = {
 
     cmd_showItemPreferences: {
       isEnabled: function cmd_showItemPreferences_isEnabled(aAddon) {
-        if (!aAddon || (!aAddon.isActive && aAddon.id != OPENH264_ADDON_ID) || !aAddon.optionsURL)
+        if (!aAddon ||
+            (!aAddon.isActive && !aAddon.isGMPlugin) ||
+            !aAddon.optionsURL) {
           return false;
+        }
         if (gViewController.currentViewObj == gDetailView &&
             aAddon.optionsType == AddonManager.OPTIONS_TYPE_INLINE) {
           return false;
@@ -1215,7 +1222,7 @@ var gViewController = {
             if (installs.length > 0) {
               // Display the normal install confirmation for the installs
               AddonManager.installAddonsFromWebpage("application/x-xpinstall",
-                                                    window, null, installs);
+                                                    getBrowserElement(), null, installs);
             }
             return;
           }
@@ -2591,6 +2598,10 @@ var gListView = {
     while (this._listBox.itemCount > 0)
       this._listBox.removeItemAt(0);
 
+    if (aType == "plugin") {
+      navigator.plugins.refresh(false);
+    }
+
     var self = this;
     getAddonsAndInstalls(aType, function show_getAddonsAndInstalls(aAddonsList, aInstallsList) {
       if (gViewController && aRequest != gViewController.currentViewRequest)
@@ -2792,13 +2803,14 @@ var gDetailView = {
 
     var fullDesc = document.getElementById("detail-fulldesc");
     if (aAddon.fullDescription) {
-      // The following is part of an awful hack to include the OpenH264 license
-      // without having bug 624602 fixed yet, and intentionally ignores
+      // The following is part of an awful hack to include the licenses for GMP
+      // plugins without having bug 624602 fixed yet, and intentionally ignores
       // localisation.
-      if (aAddon.id == OPENH264_ADDON_ID)
+      if (aAddon.isGMPlugin) {
         fullDesc.innerHTML = aAddon.fullDescription;
-      else
+      } else {
         fullDesc.textContent = aAddon.fullDescription;
+      }
 
       fullDesc.hidden = false;
     } else {
@@ -3105,10 +3117,13 @@ var gDetailView = {
         errorLink.value = gStrings.ext.GetStringFromName("details.notification.vulnerableNoUpdate.link");
         errorLink.href = this._addon.blocklistURL;
         errorLink.hidden = false;
-      } else if (this._addon.id == OPENH264_ADDON_ID && !this._addon.isInstalled) {
+      } else if (this._addon.isGMPlugin && !this._addon.isInstalled &&
+                 this._addon.isActive) {
         this.node.setAttribute("notification", "warning");
         let warning = document.getElementById("detail-warning");
-        warning.textContent = gStrings.ext.GetStringFromName("details.notification.openH264Pending");
+        warning.textContent =
+          gStrings.ext.formatStringFromName("details.notification.gmpPending",
+                                            [this._addon.name], 1);
       } else {
         this.node.removeAttribute("notification");
       }
@@ -3123,7 +3138,7 @@ var gDetailView = {
       let hasActivatePermission =
         ["ask_to_activate", "enable", "disable"].some(perm => hasPermission(this._addon, perm));
 
-      if (this._addon.userDisabled === true) {
+      if (!this._addon.isActive) {
         menulist.selectedItem = neverItem;
       } else if (this._addon.userDisabled == AddonManager.STATE_ASK_TO_ACTIVATE) {
         menulist.selectedItem = askItem;
@@ -3613,7 +3628,7 @@ var gDragDrop = {
         if (installs.length > 0) {
           // Display the normal install confirmation for the installs
           AddonManager.installAddonsFromWebpage("application/x-xpinstall",
-                                                window, null, installs);
+                                                getBrowserElement(), null, installs);
         }
         return;
       }

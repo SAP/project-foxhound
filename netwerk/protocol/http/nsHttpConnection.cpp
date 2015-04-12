@@ -654,17 +654,6 @@ nsHttpConnection::InitSSLParams(bool connectingToProxy, bool proxyStartSSL)
         mNPNComplete = false;
     }
 
-    // transaction caps apply only to origin. we don't track
-    // proxy history.
-    if (!connectingToProxy &&
-        (mTransactionCaps & NS_HTTP_ALLOW_RSA_FALSESTART)) {
-        LOG(("nsHttpConnection::InitSSLParams %p "
-             ">= RSA Key Exchange Expected\n", this));
-        ssl->SetKEAExpected(ssl_kea_rsa);
-    } else {
-        ssl->SetKEAExpected(nsISSLSocketControl::KEY_EXCHANGE_UNKNOWN);
-    }
-
     return NS_OK;
 }
 
@@ -1131,9 +1120,9 @@ nsHttpConnection::TakeTransport(nsISocketTransport  **aTransport,
     // via https) that filter needs to take direct control of the
     // streams
     if (mTLSFilter) {
-        nsCOMPtr<nsISupports> ref1(mSocketIn);
-        nsCOMPtr<nsISupports> ref2(mSocketOut);
-        mTLSFilter->newIODriver(mSocketIn, mSocketOut,
+        nsCOMPtr<nsIAsyncInputStream>  ref1(mSocketIn);
+        nsCOMPtr<nsIAsyncOutputStream> ref2(mSocketOut);
+        mTLSFilter->newIODriver(ref1, ref2,
                                 getter_AddRefs(mSocketIn),
                                 getter_AddRefs(mSocketOut));
         mTLSFilter = nullptr;
@@ -1599,7 +1588,7 @@ nsHttpConnection::OnSocketWritable()
             if (mSocketOutCondition == NS_BASE_STREAM_WOULD_BLOCK) {
                 if (mTLSFilter) {
                     LOG(("  blocked tunnel (handshake?)\n"));
-                    mTLSFilter->NudgeTunnel(this);
+                    rv = mTLSFilter->NudgeTunnel(this);
                 } else {
                     rv = mSocketOut->AsyncWait(this, 0, 0, nullptr); // continue writing
                 }
@@ -1644,7 +1633,8 @@ nsHttpConnection::OnWriteSegment(char *buf,
         return NS_ERROR_FAILURE; // stop iterating
     }
 
-    if (ChaosMode::isActive() && ChaosMode::randomUint32LessThan(2)) {
+    if (ChaosMode::isActive(ChaosMode::IOAmounts) &&
+        ChaosMode::randomUint32LessThan(2)) {
         // read 1...count bytes
         count = ChaosMode::randomUint32LessThan(count) + 1;
     }
@@ -1776,10 +1766,19 @@ nsHttpConnection::SetupSecondaryTLS()
     MOZ_ASSERT(!mTLSFilter);
     LOG(("nsHttpConnection %p SetupSecondaryTLS %s %d\n",
          this, mConnInfo->Host(), mConnInfo->Port()));
+
+    nsHttpConnectionInfo *ci = nullptr;
+    if (mTransaction) {
+        ci = mTransaction->ConnectionInfo();
+    }
+    if (!ci) {
+        ci = mConnInfo;
+    }
+    MOZ_ASSERT(ci);
+
     mTLSFilter = new TLSFilterTransaction(mTransaction,
-                                          mConnInfo->Host(),
-                                          mConnInfo->Port(),
-                                          this, this);
+                                          ci->Host(), ci->Port(), this, this);
+
     if (mTransaction) {
         mTransaction = mTLSFilter;
     }
@@ -2081,8 +2080,8 @@ nsHttpConnection::OnOutputStreamReady(nsIAsyncOutputStream *out)
 NS_IMETHODIMP
 nsHttpConnection::OnTransportStatus(nsITransport *trans,
                                     nsresult status,
-                                    uint64_t progress,
-                                    uint64_t progressMax)
+                                    int64_t progress,
+                                    int64_t progressMax)
 {
     if (mTransaction)
         mTransaction->OnTransportStatus(trans, status, progress);

@@ -12,22 +12,32 @@
   #PanelUI-help[panel-multiview-anchor="true"]::after,
   toolbarbutton[panel-multiview-anchor="true"] {
     background-image: url(chrome://browser/skin/customizableui/subView-arrow-back-inverted@2x.png),
-                      linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+                      linear-gradient(rgba(255,255,255,0.3), transparent);
     background-size: 16px, auto;
   }
 
   #PanelUI-help[panel-multiview-anchor="true"]:-moz-locale-dir(rtl)::after,
   toolbarbutton[panel-multiview-anchor="true"]:-moz-locale-dir(rtl) {
     background-image: url(chrome://browser/skin/customizableui/subView-arrow-back-inverted-rtl@2x.png),
-                      linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+                      linear-gradient(rgba(255,255,255,0.3), transparent);
+  }
+
+  #PanelUI-update-status {
+    list-style-image: url(chrome://branding/content/icon32.png);
   }
 
   #PanelUI-fxa-status {
     list-style-image: url(chrome://browser/skin/sync-horizontalbar@2x.png);
   }
 
-  #PanelUI-fxa-status[status="active"] {
+  #PanelUI-fxa-status[syncstatus="active"] {
     list-style-image: url(chrome://browser/skin/syncProgress-horizontalbar@2x.png);
+  }
+
+  #PanelUI-fxa-status[fxastatus="migrate-signup"],
+  #PanelUI-fxa-status[fxastatus="migrate-verify"] {
+    list-style-image: url(chrome://browser/skin/warning16@2x.png);
+    -moz-image-region: rect(0, 64px, 32px, 32px);
   }
 
   #PanelUI-customize {
@@ -166,4 +176,8 @@ menu.subviewbutton > .menu-right > image {
 toolbarpaletteitem:-moz-any([place="palette"], [place="panel"]) > toolbaritem[sdkstylewidget="true"] > .toolbarbutton-1 > .toolbarbutton-icon {
   width: 32px;
   height: 32px;
+}
+
+toolbarpaletteitem[place="palette"] > .toolbarbutton-1 > .toolbarbutton-menubutton-button {
+  padding: 3px 1px;
 }

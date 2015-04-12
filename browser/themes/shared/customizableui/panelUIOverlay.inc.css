@@ -20,6 +20,15 @@
 
 %include ../browser.inc
 
+:root {
+  --panel-ui-button-background-image: linear-gradient(to bottom, transparent, hsla(0,0%,100%,.3) 30%, hsla(0,0%,100%,.3) 70%, transparent),
+                    linear-gradient(to bottom, transparent, hsla(210,54%,20%,.3) 30%, hsla(210,54%,20%,.3) 70%, transparent),
+                    linear-gradient(to bottom, transparent, hsla(0,0%,100%,.3) 30%, hsla(0,0%,100%,.3) 70%, transparent);
+  --panel-ui-button-background-size: 1px calc(100% - 1px), 1px calc(100% - 1px), 1px  calc(100% - 1px) !important;
+  --panel-ui-button-background-position: 0px 0px, 1px 0px, 2px 0px;
+  --panel-ui-button-background-repeat: no-repeat;
+}
+
 #PanelUI-popup #PanelUI-contents:empty {
   height: 128px;
 }
@@ -87,16 +96,20 @@
 }
 
 #PanelUI-button {
-  background-image: linear-gradient(to bottom, hsla(0,0%,100%,0), hsla(0,0%,100%,.3) 30%, hsla(0,0%,100%,.3) 70%, hsla(0,0%,100%,0)),
-                    linear-gradient(to bottom, hsla(210,54%,20%,0), hsla(210,54%,20%,.3) 30%, hsla(210,54%,20%,.3) 70%, hsla(210,54%,20%,0)),
-                    linear-gradient(to bottom, hsla(0,0%,100%,0), hsla(0,0%,100%,.3) 30%, hsla(0,0%,100%,.3) 70%, hsla(0,0%,100%,0));
-  background-size: 1px calc(100% - 1px), 1px calc(100% - 1px), 1px  calc(100% - 1px) !important;
-  background-position: 0px 0px, 1px 0px, 2px 0px;
-  background-repeat: no-repeat;
+  background-image: var(--panel-ui-button-background-image);
+  background-size: var(--panel-ui-button-background-size);
+  background-position: var(--panel-ui-button-background-position);
+  background-repeat: var(--panel-ui-button-background-repeat);
 }
 
 #PanelUI-button:-moz-locale-dir(rtl) {
   background-position: 100% 0, calc(100% - 1px) 0, calc(100% - 2px) 0;
+}
+
+#PanelUI-menu-button[update-status="succeeded"] .toolbarbutton-badge::after {
+  content: url(chrome://browser/skin/update-badge.svg);
+  background-color: #74BF43;
+  height: 10px;
 }
 
 .panel-subviews {
@@ -248,7 +261,7 @@ panelview:not([mainview]) .toolbarbutton-text,
 
 #PanelUI-contents {
   display: block;
-  flex: 1 0 main-size;
+  flex: 1 0 auto;
   margin-left: auto;
   margin-right: auto;
   padding: .5em 0;
@@ -374,6 +387,7 @@ toolbaritem[cui-areatype="menu-panel"][sdkstylewidget="true"] > iframe {
 #PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-contents-scroller > #PanelUI-contents > .panel-wide-item,
 #PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-contents-scroller > #PanelUI-contents > .toolbarbutton-1:not([panel-multiview-anchor="true"]),
 #PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-footer > #PanelUI-fxa-status,
+#PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-footer > #PanelUI-update-status,
 #PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-footer > #PanelUI-footer-inner > toolbarseparator,
 #PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-footer > #PanelUI-footer-inner > #PanelUI-customize,
 #PanelUI-multiView[viewtype="subview"] #PanelUI-mainView > #PanelUI-footer > #PanelUI-footer-inner > #PanelUI-help:not([panel-multiview-anchor="true"]) {
@@ -486,6 +500,7 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   margin: 0;
 }
 
+#PanelUI-update-status,
 #PanelUI-help,
 #PanelUI-fxa-status,
 #PanelUI-customize,
@@ -502,12 +517,14 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   -moz-box-orient: horizontal;
 }
 
+#PanelUI-update-status,
 #PanelUI-fxa-status {
   border-top: 1px solid hsla(210,4%,10%,.14);
   border-bottom: 1px solid transparent;
   margin-bottom: -1px;
 }
 
+#PanelUI-update-status > .toolbarbutton-text,
 #PanelUI-fxa-status > .toolbarbutton-text {
   width: 0; /* Fancy cropping solution for flexbox. */
 }
@@ -517,6 +534,7 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   min-width: 46px;
 }
 
+#PanelUI-update-status > .toolbarbutton-text,
 #PanelUI-fxa-status > .toolbarbutton-text,
 #PanelUI-customize > .toolbarbutton-text {
   margin: 0;
@@ -529,6 +547,7 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   display: none;
 }
 
+#PanelUI-update-status > .toolbarbutton-icon,
 #PanelUI-fxa-status > .toolbarbutton-icon,
 #PanelUI-customize > .toolbarbutton-icon,
 #PanelUI-help > .toolbarbutton-icon,
@@ -543,12 +562,28 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   -moz-border-start-style: none;
 }
 
+#PanelUI-update-status {
+  width: calc(@menuPanelWidth@ + 30px);
+  -moz-padding-start: 15px;
+  -moz-border-start-style: none;
+}
+
+#PanelUI-update-status {
+  list-style-image: url(chrome://branding/content/icon16.png);
+}
+
 #PanelUI-fxa-status {
   list-style-image: url(chrome://browser/skin/sync-horizontalbar.png);
 }
 
-#PanelUI-fxa-status[status="active"] {
+#PanelUI-fxa-status[syncstatus="active"] {
   list-style-image: url(chrome://browser/skin/syncProgress-horizontalbar.png);
+}
+
+#PanelUI-fxa-status[fxastatus="migrate-signup"],
+#PanelUI-fxa-status[fxastatus="migrate-verify"] {
+  list-style-image: url(chrome://browser/skin/warning16.png);
+  -moz-image-region: rect(0, 32px, 16px, 16px);
 }
 
 #PanelUI-customize {
@@ -618,6 +653,34 @@ toolbarpaletteitem[place="palette"] > toolbaritem > toolbarbutton {
   outline: none;
 }
 
+#PanelUI-update-status {
+  color: black;
+}
+
+#PanelUI-update-status[update-status="succeeded"] {
+  background-color: hsla(96, 65%, 75%, 0.5);
+}
+
+#PanelUI-update-status[update-status="succeeded"]:not([disabled]):hover {
+  background-color: hsla(96, 65%, 75%, 0.8);
+}
+
+#PanelUI-update-status[update-status="succeeded"]:not([disabled]):hover:active {
+  background-color: hsl(96, 65%, 75%);
+}
+
+#PanelUI-update-status[update-status="failed"] {
+  background-color: hsla(359, 69%, 84%, 0.5);
+}
+
+#PanelUI-update-status[update-status="failed"]:not([disabled]):hover {
+  background-color: hsla(359, 69%, 84%, 0.8);
+}
+
+#PanelUI-update-status[update-status="failed"]:not([disabled]):hover:active {
+  background-color: hsl(359, 69%, 84%);
+}
+
 #PanelUI-quit:not([disabled]):hover {
   background-color: #d94141;
   outline-color: #c23a3a;
@@ -653,6 +716,7 @@ panelview .toolbarbutton-1,
 .subviewbutton,
 .widget-overflow-list .toolbarbutton-1,
 .panelUI-grid .toolbarbutton-1 > .toolbarbutton-menubutton-button,
+.share-provider-button,
 .toolbaritem-combined-buttons@inAnyPanel@ > toolbarbutton {
   -moz-appearance: none;
   padding: 0 6px;
@@ -665,6 +729,7 @@ panelview .toolbarbutton-1,
 panelview .toolbarbutton-1,
 .subviewbutton,
 .widget-overflow-list .toolbarbutton-1,
+.share-provider-button,
 .toolbaritem-combined-buttons@inAnyPanel@ > toolbarbutton {
   border-width: 1px;
 }
@@ -737,6 +802,7 @@ panelview .toolbarbutton-1@buttonStateHover@,
 toolbarbutton.subviewbutton@buttonStateHover@,
 menu.subviewbutton@menuStateHover@,
 menuitem.subviewbutton@menuStateHover@,
+.share-provider-button@buttonStateHover@,
 .widget-overflow-list .toolbarbutton-1@buttonStateHover@,
 .toolbaritem-combined-buttons@inAnyPanel@ > toolbarbutton@buttonStateHover@ {
   background-color: hsla(210,4%,10%,.08);
@@ -751,6 +817,7 @@ panelview .toolbarbutton-1:-moz-any(@buttonStateActive@,[checked=true]),
 toolbarbutton.subviewbutton@buttonStateActive@,
 menu.subviewbutton@menuStateActive@,
 menuitem.subviewbutton@menuStateActive@,
+.share-provider-button:-moz-any(@buttonStateActive@,[checked=true]),
 .widget-overflow-list .toolbarbutton-1@buttonStateActive@,
 .toolbaritem-combined-buttons@inAnyPanel@ > toolbarbutton@buttonStateActive@ {
   background-color: hsla(210,4%,10%,.12);
@@ -874,7 +941,7 @@ toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-menubutton-button 
 }
 
 #PanelUI-help[panel-multiview-anchor="true"] {
-  background-image: linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+  background-image: linear-gradient(rgba(255,255,255,0.3), transparent);
   background-position: 0;
 }
 
@@ -885,7 +952,7 @@ toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-menubutton-button 
   height: 100%;
   width: @exitSubviewGutterWidth@;
   background-image: url(chrome://browser/skin/customizableui/subView-arrow-back-inverted.png),
-                    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+                    linear-gradient(rgba(255,255,255,0.3), transparent);
   background-repeat: no-repeat;
   background-color: Highlight;
   background-position: left 10px center, 0;
@@ -893,20 +960,20 @@ toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-menubutton-button 
 
 #PanelUI-help[panel-multiview-anchor="true"]:-moz-locale-dir(rtl)::after {
   background-image: url(chrome://browser/skin/customizableui/subView-arrow-back-inverted-rtl.png),
-                    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+                    linear-gradient(rgba(255,255,255,0.3), transparent);
   background-position: right 10px center, 0;
 }
 
 toolbarbutton[panel-multiview-anchor="true"] {
   background-image: url(chrome://browser/skin/customizableui/subView-arrow-back-inverted.png),
-                    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+                    linear-gradient(rgba(255,255,255,0.3), transparent);
   background-position: right calc(@menuPanelButtonWidth@ / 2 - @exitSubviewGutterWidth@ + 2px) center;
   background-repeat: no-repeat, repeat;
 }
 
 toolbarbutton[panel-multiview-anchor="true"]:-moz-locale-dir(rtl) {
   background-image: url(chrome://browser/skin/customizableui/subView-arrow-back-inverted-rtl.png),
-                    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0));
+                    linear-gradient(rgba(255,255,255,0.3), transparent);
   background-position: left calc(@menuPanelButtonWidth@ / 2 - @exitSubviewGutterWidth@ + 2px) center;
 }
 
@@ -1005,9 +1072,9 @@ toolbarpaletteitem[haswideitem][place="panel"] + toolbarpaletteitem[haswideitem]
   -moz-appearance: none;
   width: 3px;
   -moz-box-align: stretch;
-  background-image: linear-gradient(to bottom, hsla(0,0%,100%,0), hsla(0,0%,100%,.3) 40%, hsla(0,0%,100%,.3) 60%, hsla(0,0%,100%,0)),
-                    linear-gradient(to bottom, hsla(210,54%,20%,0), hsla(210,54%,20%,.15) 40%, hsla(210,54%,20%,.15) 60%, hsla(210,54%,20%,0)),
-                    linear-gradient(to bottom, hsla(0,0%,100%,0), hsla(0,0%,100%,.3) 40%, hsla(0,0%,100%,.3) 60%, hsla(0,0%,100%,0));
+  background-image: linear-gradient(to bottom, transparent, hsla(0,0%,100%,.3) 40%, hsla(0,0%,100%,.3) 60%, transparent),
+                    linear-gradient(to bottom, transparent, hsla(210,54%,20%,.15) 40%, hsla(210,54%,20%,.15) 60%, transparent),
+                    linear-gradient(to bottom, transparent, hsla(0,0%,100%,.3) 40%, hsla(0,0%,100%,.3) 60%, transparent);
   background-size: 1px, 1px, 1px;
   background-position: 0 0, 1px 0, 2px 0;
   background-repeat: no-repeat;
@@ -1103,6 +1170,14 @@ toolbaritem[overflowedItem=true],
 
 menuitem[checked="true"].subviewbutton > .menu-iconic-left {
   visibility: hidden;
+}
+
+.panel-mainview[panelid=customizationui-widget-panel],
+#customizationui-widget-multiview > .panel-viewcontainer,
+#customizationui-widget-multiview > .panel-viewcontainer > .panel-viewstack,
+#PanelUI-panicView > .panel-subview-body,
+#PanelUI-panicView {
+  overflow: visible;
 }
 
 #PanelUI-panicView.cui-widget-panelview {

@@ -46,8 +46,11 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/layers/APZCTreeManager.h"
+#include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/layers/CompositorParent.h"
-#include "ParentProcessController.h"
+#include "mozilla/layers/InputAPZContext.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/TouchEvents.h"
 #include "nsThreadUtils.h"
 #include "HwcComposer2D.h"
 
@@ -125,6 +128,8 @@ displayEnabledCallback(bool enabled)
 }
 
 } // anonymous namespace
+
+NS_IMPL_ISUPPORTS_INHERITED0(nsWindow, nsBaseWidget)
 
 nsWindow::nsWindow()
 {
@@ -213,44 +218,214 @@ nsWindow::DoDraw(void)
     }
 }
 
-nsEventStatus
-nsWindow::DispatchInputEvent(WidgetGUIEvent& aEvent, bool* aWasCaptured)
+/*static*/ nsEventStatus
+nsWindow::DispatchInputEvent(WidgetGUIEvent& aEvent)
 {
-    if (aWasCaptured) {
-        *aWasCaptured = false;
-    }
     if (!gFocusedWindow) {
         return nsEventStatus_eIgnore;
     }
 
     gFocusedWindow->UserActivity();
 
+    nsEventStatus status;
     aEvent.widget = gFocusedWindow;
+    gFocusedWindow->DispatchEvent(&aEvent, status);
+    return status;
+}
 
-    if (TabParent* capturer = TabParent::GetEventCapturer()) {
-        bool captured = capturer->TryCapture(aEvent);
-        if (aWasCaptured) {
-            *aWasCaptured = captured;
+/*static*/ void
+nsWindow::DispatchTouchInput(MultiTouchInput& aInput)
+{
+    APZThreadUtils::AssertOnControllerThread();
+
+    if (!gFocusedWindow) {
+        return;
+    }
+
+    gFocusedWindow->DispatchTouchInputViaAPZ(aInput);
+}
+
+class DispatchTouchInputOnMainThread : public nsRunnable
+{
+public:
+    DispatchTouchInputOnMainThread(const MultiTouchInput& aInput,
+                                   const ScrollableLayerGuid& aGuid,
+                                   const uint64_t& aInputBlockId)
+      : mInput(aInput)
+      , mGuid(aGuid)
+      , mInputBlockId(aInputBlockId)
+    {}
+
+    NS_IMETHOD Run() {
+        if (gFocusedWindow) {
+            gFocusedWindow->DispatchTouchEventForAPZ(mInput, mGuid, mInputBlockId);
         }
-        if (captured) {
-            return nsEventStatus_eConsumeNoDefault;
+        return NS_OK;
+    }
+
+private:
+    MultiTouchInput mInput;
+    ScrollableLayerGuid mGuid;
+    uint64_t mInputBlockId;
+};
+
+void
+nsWindow::DispatchTouchInputViaAPZ(MultiTouchInput& aInput)
+{
+    APZThreadUtils::AssertOnControllerThread();
+
+    if (!mAPZC) {
+        // In general mAPZC should not be null, but during initial setup
+        // it might be, so we handle that case by ignoring touch input there.
+        return;
+    }
+
+    // First send it through the APZ code
+    mozilla::layers::ScrollableLayerGuid guid;
+    uint64_t inputBlockId;
+    nsEventStatus rv = mAPZC->ReceiveInputEvent(aInput, &guid, &inputBlockId);
+    // If the APZ says to drop it, then we drop it
+    if (rv == nsEventStatus_eConsumeNoDefault) {
+        return;
+    }
+
+    // Can't use NS_NewRunnableMethod because it only takes up to one arg and
+    // we need more. Also we can't pass in |this| to the task because nsWindow
+    // refcounting is not threadsafe. Instead we just use the gFocusedWindow
+    // static ptr inside the task.
+    NS_DispatchToMainThread(new DispatchTouchInputOnMainThread(
+        aInput, guid, inputBlockId));
+}
+
+void
+nsWindow::DispatchTouchEventForAPZ(const MultiTouchInput& aInput,
+                                   const ScrollableLayerGuid& aGuid,
+                                   const uint64_t aInputBlockId)
+{
+    MOZ_ASSERT(NS_IsMainThread());
+    UserActivity();
+
+    // Convert it to an event we can send to Gecko
+    WidgetTouchEvent event = aInput.ToWidgetTouchEvent(this);
+
+    // If there is an event capturing child process, send it directly there.
+    // This happens if we already sent a touchstart event through the root
+    // process hit test and it ended up going to a child process. The event
+    // capturing process should get all subsequent touch events in the same
+    // event block. In this case the TryCapture call below will return true,
+    // and the child process will take care of responding to the event as needed
+    // so we don't need to do anything else here.
+    if (TabParent* capturer = TabParent::GetEventCapturer()) {
+        InputAPZContext context(aGuid, aInputBlockId);
+        if (capturer->TryCapture(event)) {
+            return;
         }
     }
 
-    nsEventStatus status;
-    gFocusedWindow->DispatchEvent(&aEvent, status);
-    return status;
+    // If it didn't get captured, dispatch the event into the gecko root process
+    // for "normal" flow. The event might get sent to the child process still,
+    // but if it doesn't we need to notify the APZ of various things. All of
+    // that happens in DispatchEventForAPZ
+    DispatchEventForAPZ(&event, aGuid, aInputBlockId);
+}
+
+class DispatchTouchInputOnControllerThread : public Task
+{
+public:
+    DispatchTouchInputOnControllerThread(const MultiTouchInput& aInput)
+      : Task()
+      , mInput(aInput)
+    {}
+
+    virtual void Run() override {
+        if (gFocusedWindow) {
+            gFocusedWindow->DispatchTouchInputViaAPZ(mInput);
+        }
+    }
+
+private:
+    MultiTouchInput mInput;
+};
+
+nsresult
+nsWindow::SynthesizeNativeTouchPoint(uint32_t aPointerId,
+                                     TouchPointerState aPointerState,
+                                     nsIntPoint aPointerScreenPoint,
+                                     double aPointerPressure,
+                                     uint32_t aPointerOrientation)
+{
+    if (aPointerState == TOUCH_HOVER) {
+        return NS_ERROR_UNEXPECTED;
+    }
+
+    if (!mSynthesizedTouchInput) {
+        mSynthesizedTouchInput = new MultiTouchInput();
+    }
+
+    // We can't dispatch mSynthesizedTouchInput directly because (a) dispatching
+    // it might inadvertently modify it and (b) in the case of touchend or
+    // touchcancel events mSynthesizedTouchInput will hold the touches that are
+    // still down whereas the input dispatched needs to hold the removed
+    // touch(es). We use |inputToDispatch| for this purpose.
+    MultiTouchInput inputToDispatch;
+    inputToDispatch.mInputType = MULTITOUCH_INPUT;
+
+    int32_t index = mSynthesizedTouchInput->IndexOfTouch((int32_t)aPointerId);
+    if (aPointerState == TOUCH_CONTACT) {
+        if (index >= 0) {
+            // found an existing touch point, update it
+            SingleTouchData& point = mSynthesizedTouchInput->mTouches[index];
+            point.mScreenPoint = ScreenIntPoint::FromUntyped(aPointerScreenPoint);
+            point.mRotationAngle = (float)aPointerOrientation;
+            point.mForce = (float)aPointerPressure;
+            inputToDispatch.mType = MultiTouchInput::MULTITOUCH_MOVE;
+        } else {
+            // new touch point, add it
+            mSynthesizedTouchInput->mTouches.AppendElement(SingleTouchData(
+                (int32_t)aPointerId,
+                ScreenIntPoint::FromUntyped(aPointerScreenPoint),
+                ScreenSize(0, 0),
+                (float)aPointerOrientation,
+                (float)aPointerPressure));
+            inputToDispatch.mType = MultiTouchInput::MULTITOUCH_START;
+        }
+        inputToDispatch.mTouches = mSynthesizedTouchInput->mTouches;
+    } else {
+        MOZ_ASSERT(aPointerState == TOUCH_REMOVE || aPointerState == TOUCH_CANCEL);
+        // a touch point is being lifted, so remove it from the stored list
+        if (index >= 0) {
+            mSynthesizedTouchInput->mTouches.RemoveElementAt(index);
+        }
+        inputToDispatch.mType = (aPointerState == TOUCH_REMOVE
+            ? MultiTouchInput::MULTITOUCH_END
+            : MultiTouchInput::MULTITOUCH_CANCEL);
+        inputToDispatch.mTouches.AppendElement(SingleTouchData(
+            (int32_t)aPointerId,
+            ScreenIntPoint::FromUntyped(aPointerScreenPoint),
+            ScreenSize(0, 0),
+            (float)aPointerOrientation,
+            (float)aPointerPressure));
+    }
+
+    // Can't use NewRunnableMethod here because that will pass a const-ref
+    // argument to DispatchTouchInputViaAPZ whereas that function takes a
+    // non-const ref. At this callsite we don't care about the mutations that
+    // the function performs so this is fine. Also we can't pass |this| to the
+    // task because nsWindow refcounting is not threadsafe. Instead we just use
+    // the gFocusedWindow static ptr instead the task.
+    APZThreadUtils::RunOnControllerThread(new DispatchTouchInputOnControllerThread(inputToDispatch));
+
+    return NS_OK;
 }
 
 NS_IMETHODIMP
 nsWindow::Create(nsIWidget *aParent,
                  void *aNativeParent,
                  const nsIntRect &aRect,
-                 nsDeviceContext *aContext,
                  nsWidgetInitData *aInitData)
 {
     BaseCreate(aParent, IS_TOPLEVEL() ? sVirtualBounds : aRect,
-               aContext, aInitData);
+               aInitData);
 
     mBounds = aRect;
 
@@ -399,10 +574,10 @@ nsWindow::Invalidate(const nsIntRect &aRect)
     return NS_OK;
 }
 
-nsIntPoint
+LayoutDeviceIntPoint
 nsWindow::WidgetToScreenOffset()
 {
-    nsIntPoint p(0, 0);
+    LayoutDeviceIntPoint p(0, 0);
     nsWindow *w = this;
 
     while (w && w->mParent) {
@@ -455,7 +630,7 @@ nsWindow::ReparentNativeWidget(nsIWidget* aNewParent)
 }
 
 NS_IMETHODIMP
-nsWindow::MakeFullScreen(bool aFullScreen)
+nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen*)
 {
     if (mWindowType != eWindowType_toplevel) {
         // Ignore fullscreen request for non-toplevel windows.
@@ -526,15 +701,26 @@ nsWindow::StartRemoteDrawing()
     int bytepp;
     SurfaceFormat format = HalFormatToSurfaceFormat(display->surfaceformat,
                                                     &bytepp);
-    return mFramebufferTarget = Factory::CreateDrawTargetForData(
-        BackendType::CAIRO, (uint8_t*)vaddr,
-        IntSize(width, height), mFramebuffer->stride * bytepp, format);
+    mFramebufferTarget = Factory::CreateDrawTargetForData(
+         BackendType::CAIRO, (uint8_t*)vaddr,
+         IntSize(width, height), mFramebuffer->stride * bytepp, format);
+    if (!mBackBuffer ||
+        mBackBuffer->GetSize() != mFramebufferTarget->GetSize() ||
+        mBackBuffer->GetFormat() != mFramebufferTarget->GetFormat()) {
+        mBackBuffer = mFramebufferTarget->CreateSimilarDrawTarget(
+            mFramebufferTarget->GetSize(), mFramebufferTarget->GetFormat());
+    }
+    return mBackBuffer;
 }
 
 void
 nsWindow::EndRemoteDrawing()
 {
     if (mFramebufferTarget) {
+        IntSize size = mFramebufferTarget->GetSize();
+        Rect rect(0, 0, size.width, size.height);
+        RefPtr<SourceSurface> source = mBackBuffer->Snapshot();
+        mFramebufferTarget->DrawSurface(source, rect, rect);
         gralloc_module()->unlock(gralloc_module(), mFramebuffer->handle);
     }
     if (mFramebuffer) {
@@ -599,9 +785,6 @@ nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
 
     CreateCompositor();
     if (mCompositorParent) {
-        uint64_t rootLayerTreeId = mCompositorParent->RootLayerTreeId();
-        CompositorParent::SetControllerForLayerTree(rootLayerTreeId, new ParentProcessController());
-        CompositorParent::GetAPZCTreeManager(rootLayerTreeId)->SetDPI(GetDPI());
         HwcComposer2D::GetInstance()->SetCompositorParent(mCompositorParent);
     }
     MOZ_ASSERT(mLayerManager);

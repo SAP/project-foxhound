@@ -27,6 +27,10 @@ from mozbuild.util import (
 import mozpack.path as mozpath
 from .context import FinalTargetValue
 
+from ..util import (
+    group_unified_files,
+)
+
 
 class TreeMetadata(object):
     """Base class for all data being captured."""
@@ -157,6 +161,7 @@ class XPIDLFile(ContextDerived):
 
     __slots__ = (
         'basename',
+        'install_target',
         'source_path',
     )
 
@@ -166,6 +171,8 @@ class XPIDLFile(ContextDerived):
         self.source_path = source
         self.basename = mozpath.basename(source)
         self.module = module
+
+        self.install_target = context['FINAL_TARGET']
 
 class Defines(ContextDerived):
     """Context derived container object for DEFINES, which is an OrderedDict.
@@ -241,6 +248,15 @@ class Resources(ContextDerived):
             defs.update(defines)
         self.defines = defs
 
+class JsPreferenceFile(ContextDerived):
+    """Context derived container object for a Javascript preference file.
+
+    Paths are assumed to be relative to the srcdir."""
+    __slots__ = ('path')
+
+    def __init__(self, context, path):
+        ContextDerived.__init__(self, context)
+        self.path = path
 
 class IPDLFile(ContextDerived):
     """Describes an individual .ipdl source file."""
@@ -726,6 +742,74 @@ class JavaJarData(object):
         self.javac_flags = list(javac_flags)
 
 
+class BaseSources(ContextDerived):
+    """Base class for files to be compiled during the build."""
+
+    __slots__ = (
+        'files',
+        'canonical_suffix',
+    )
+
+    def __init__(self, context, files, canonical_suffix):
+        ContextDerived.__init__(self, context)
+
+        self.files = files
+        self.canonical_suffix = canonical_suffix
+
+
+class Sources(BaseSources):
+    """Represents files to be compiled during the build."""
+
+    def __init__(self, context, files, canonical_suffix):
+        BaseSources.__init__(self, context, files, canonical_suffix)
+
+
+class GeneratedSources(BaseSources):
+    """Represents generated files to be compiled during the build."""
+
+    def __init__(self, context, files, canonical_suffix):
+        BaseSources.__init__(self, context, files, canonical_suffix)
+
+
+class HostSources(BaseSources):
+    """Represents files to be compiled for the host during the build."""
+
+    def __init__(self, context, files, canonical_suffix):
+        BaseSources.__init__(self, context, files, canonical_suffix)
+
+
+class UnifiedSources(BaseSources):
+    """Represents files to be compiled in a unified fashion during the build."""
+
+    __slots__ = (
+        'have_unified_mapping',
+        'unified_source_mapping'
+    )
+
+    def __init__(self, context, files, canonical_suffix, files_per_unified_file=16):
+        BaseSources.__init__(self, context, files, canonical_suffix)
+
+        self.have_unified_mapping = files_per_unified_file > 1
+
+        if self.have_unified_mapping:
+            # Sorted so output is consistent and we don't bump mtimes.
+            source_files = list(sorted(self.files))
+
+            # On Windows, path names have a maximum length of 255 characters,
+            # so avoid creating extremely long path names.
+            unified_prefix = context.relsrcdir
+            if len(unified_prefix) > 20:
+                unified_prefix = unified_prefix[-20:].split('/', 1)[-1]
+            unified_prefix = unified_prefix.replace('/', '_')
+
+            suffix = self.canonical_suffix[1:]
+            unified_prefix='Unified_%s_%s' % (suffix, unified_prefix)
+            self.unified_source_mapping = list(group_unified_files(source_files,
+                                                                   unified_prefix=unified_prefix,
+                                                                   unified_suffix=suffix,
+                                                                   files_per_unified_file=files_per_unified_file))
+
+
 class InstallationTarget(ContextDerived):
     """Describes the rules that affect where files get installed to."""
 
@@ -751,6 +835,38 @@ class InstallationTarget(ContextDerived):
         return FinalTargetValue(dict(
             XPI_NAME=self.xpiname,
             DIST_SUBDIR=self.subdir)) == self.target
+
+
+class FinalTargetFiles(ContextDerived):
+    """Sandbox container object for FINAL_TARGET_FILES, which is a
+    HierarchicalStringList.
+
+    We need an object derived from ContextDerived for use in the backend, so
+    this object fills that role. It just has a reference to the underlying
+    HierarchicalStringList, which is created when parsing FINAL_TARGET_FILES.
+    """
+    __slots__ = ('files', 'target')
+
+    def __init__(self, sandbox, files, target):
+        ContextDerived.__init__(self, sandbox)
+        self.files = files
+        self.target = target
+
+
+class GeneratedFile(ContextDerived):
+    """Represents a generated file."""
+
+    __slots__ = (
+        'script',
+        'output',
+        'inputs',
+    )
+
+    def __init__(self, context, script, output, inputs):
+        ContextDerived.__init__(self, context)
+        self.script = script
+        self.output = output
+        self.inputs = inputs
 
 
 class ClassPathEntry(object):

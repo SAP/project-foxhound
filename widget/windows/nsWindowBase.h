@@ -23,7 +23,7 @@ public:
   /*
    * Return the HWND or null for this widget.
    */
-  virtual HWND GetWindowHandle() MOZ_FINAL {
+  virtual HWND GetWindowHandle() final {
     return static_cast<HWND>(GetNativeData(NS_NATIVE_WINDOW));
   }
 
@@ -73,7 +73,7 @@ public:
   /*
    * Returns true if a plugin has focus on this widget.  Otherwise, false.
    */
-  virtual bool PluginHasFocus() const MOZ_FINAL
+  virtual bool PluginHasFocus() const final
   {
     return (mInputContext.mIMEState.mEnabled == IMEState::PLUGIN);
   }
@@ -89,14 +89,13 @@ public:
   virtual nsresult ClearNativeTouchSequence();
 
   /*
-   * WM_APPCOMMAND common handler. Sends events via DispatchWindowEvent.
+   * WM_APPCOMMAND common handler.
+   * Sends events via NativeKey::HandleAppCommandMessage().
    */
-  virtual bool HandleAppCommandMsg(WPARAM aWParam,
-                                   LPARAM aLParam,
+  virtual bool HandleAppCommandMsg(const MSG& aAppCommandMsg,
                                    LRESULT *aRetValue);
 
 protected:
-  bool DispatchCommandEvent(uint32_t aEventCommand);
   static bool InitTouchInjection();
   bool InjectTouchPoint(uint32_t aId, nsIntPoint& aPointerScreenPoint,
                         POINTER_FLAGS aFlags, uint32_t aPressure = 1024,

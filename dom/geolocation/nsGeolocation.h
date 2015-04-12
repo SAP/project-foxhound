@@ -53,7 +53,7 @@ struct CachedPositionAndAccuracy {
 /**
  * Singleton that manages the geolocation provider
  */
-class nsGeolocationService MOZ_FINAL : public nsIGeolocationUpdate, public nsIObserver
+class nsGeolocationService final : public nsIGeolocationUpdate, public nsIObserver
 {
 public:
 
@@ -123,7 +123,7 @@ namespace dom {
 /**
  * Can return a geolocation info
  */
-class Geolocation MOZ_FINAL : public nsIDOMGeoGeolocation,
+class Geolocation final : public nsIDOMGeoGeolocation,
                               public nsIGeolocationUpdate,
                               public nsWrapperCache
 {
@@ -140,7 +140,7 @@ public:
   nsresult Init(nsIDOMWindow* contentDom=nullptr);
 
   nsIDOMWindow* GetParentObject() const;
-  virtual JSObject* WrapObject(JSContext *aCtx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext *aCtx) override;
 
   int32_t WatchPosition(PositionCallback& aCallback, PositionErrorCallback* aErrorCallback, const PositionOptions& aOptions, ErrorResult& aRv);
   void GetCurrentPosition(PositionCallback& aCallback, PositionErrorCallback* aErrorCallback, const PositionOptions& aOptions, ErrorResult& aRv);
@@ -153,6 +153,10 @@ public:
 
   // Remove request from all callbacks arrays
   void RemoveRequest(nsGeolocationRequest* request);
+
+  // Check if there is already ClearWatch called for current
+  // request & clear if yes
+  bool ClearPendingRequest(nsGeolocationRequest* aRequest);
 
   // Shutting down.
   void Shutdown();
@@ -185,6 +189,9 @@ private:
   nsresult GetCurrentPositionReady(nsGeolocationRequest* aRequest);
   nsresult WatchPositionReady(nsGeolocationRequest* aRequest);
 
+  // Check if clearWatch is already called
+  bool IsAlreadyCleared(nsGeolocationRequest* aRequest);
+
   // Two callback arrays.  The first |mPendingCallbacks| holds objects for only
   // one callback and then they are released/removed from the array.  The second
   // |mWatchingCallbacks| holds objects until the object is explictly removed or
@@ -208,9 +215,12 @@ private:
 
   // Pending requests are used when the service is not ready
   nsTArray<nsRefPtr<nsGeolocationRequest> > mPendingRequests;
+
+  // Array containing already cleared watch IDs
+  nsTArray<int32_t> mClearedWatchIDs;
 };
 
-class PositionError MOZ_FINAL : public nsIDOMGeoPositionError,
+class PositionError final : public nsIDOMGeoPositionError,
                                 public nsWrapperCache
 {
 public:
@@ -223,7 +233,7 @@ public:
 
   Geolocation* GetParentObject() const;
 
-  virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  virtual JSObject* WrapObject(JSContext* aCx) override;
 
   int16_t Code() const {
     return mCode;

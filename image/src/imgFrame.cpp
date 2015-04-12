@@ -6,7 +6,6 @@
 
 #include "imgFrame.h"
 #include "ImageRegion.h"
-#include "DiscardTracker.h"
 #include "ShutdownTracker.h"
 
 #include "prenv.h"
@@ -20,8 +19,10 @@ static bool gDisableOptimize = false;
 
 #include "GeckoProfiler.h"
 #include "mozilla/Likely.h"
+#include "MainThreadUtils.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsMargin.h"
+#include "nsThreadUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/gfx/Tools.h"
 
@@ -111,21 +112,38 @@ static bool AllowedImageSize(int32_t aWidth, int32_t aHeight)
   return true;
 }
 
-imgFrame::imgFrame() :
-  mDecoded(0, 0, 0, 0),
-  mDecodedMutex("imgFrame::mDecoded"),
-  mPalettedImageData(nullptr),
-  mTimeout(100),
-  mDisposalMethod(0), /* imgIContainer::kDisposeNotSpecified */
-  mLockCount(0),
-  mBlendMethod(1), /* imgIContainer::kBlendOver */
-  mSinglePixel(false),
-  mCompositingFailed(false),
-  mHasNoAlpha(false),
-  mNonPremult(false),
-  mDiscardable(false),
-  mOptimizable(false),
-  mInformedDiscardTracker(false)
+static bool AllowedImageAndFrameDimensions(const nsIntSize& aImageSize,
+                                           const nsIntRect& aFrameRect)
+{
+  if (!AllowedImageSize(aImageSize.width, aImageSize.height)) {
+    return false;
+  }
+  if (!AllowedImageSize(aFrameRect.width, aFrameRect.height)) {
+    return false;
+  }
+  nsIntRect imageRect(0, 0, aImageSize.width, aImageSize.height);
+  if (!imageRect.Contains(aFrameRect)) {
+    NS_WARNING("Animated image frame does not fit inside bounds of image");
+  }
+  return true;
+}
+
+
+imgFrame::imgFrame()
+  : mMonitor("imgFrame")
+  , mDecoded(0, 0, 0, 0)
+  , mLockCount(0)
+  , mTimeout(100)
+  , mDisposalMethod(DisposalMethod::NOT_SPECIFIED)
+  , mBlendMethod(BlendMethod::OVER)
+  , mHasNoAlpha(false)
+  , mAborted(false)
+  , mPalettedImageData(nullptr)
+  , mPaletteDepth(0)
+  , mNonPremult(false)
+  , mSinglePixel(false)
+  , mCompositingFailed(false)
+  , mOptimizable(false)
 {
   static bool hasCheckedOptimize = false;
   if (!hasCheckedOptimize) {
@@ -138,57 +156,135 @@ imgFrame::imgFrame() :
 
 imgFrame::~imgFrame()
 {
+#ifdef DEBUG
+  MonitorAutoLock lock(mMonitor);
+  MOZ_ASSERT(mAborted || IsImageCompleteInternal());
+#endif
+
   moz_free(mPalettedImageData);
   mPalettedImageData = nullptr;
-
-  if (mInformedDiscardTracker) {
-    DiscardTracker::InformDeallocation(4 * mSize.height * mSize.width);
-  }
 }
 
 nsresult
-imgFrame::InitForDecoder(const nsIntRect& aRect,
-                         SurfaceFormat aFormat,
-                         uint8_t aPaletteDepth /* = 0 */)
+imgFrame::ReinitForDecoder(const nsIntSize& aImageSize,
+                           const nsIntRect& aRect,
+                           SurfaceFormat aFormat,
+                           uint8_t aPaletteDepth /* = 0 */,
+                           bool aNonPremult /* = false */)
 {
-  // Assert for properties that should be verified by decoders,
-  // warn for properties related to bad content.
-  if (!AllowedImageSize(aRect.width, aRect.height)) {
-    NS_WARNING("Should have legal image size");
+  MonitorAutoLock lock(mMonitor);
+
+  if (mDecoded.x != 0 || mDecoded.y != 0 ||
+      mDecoded.width != 0 || mDecoded.height != 0) {
+    MOZ_ASSERT_UNREACHABLE("Shouldn't reinit after write");
+    return NS_ERROR_FAILURE;
+  }
+  if (mAborted) {
+    MOZ_ASSERT_UNREACHABLE("Shouldn't reinit if aborted");
+    return NS_ERROR_FAILURE;
+  }
+  if (mLockCount < 1) {
+    MOZ_ASSERT_UNREACHABLE("Shouldn't reinit unless locked");
     return NS_ERROR_FAILURE;
   }
 
+  // Restore everything (except mLockCount, which we need to keep) to how it was
+  // when we were first created.
+  // XXX(seth): This is probably a little excessive, but I want to be *really*
+  // sure that nothing got missed.
+  mDecoded = nsIntRect(0, 0, 0, 0);
+  mTimeout = 100;
+  mDisposalMethod = DisposalMethod::NOT_SPECIFIED;
+  mBlendMethod = BlendMethod::OVER;
+  mHasNoAlpha = false;
+  mAborted = false;
+  mPaletteDepth = 0;
+  mNonPremult = false;
+  mSinglePixel = false;
+  mCompositingFailed = false;
+  mOptimizable = false;
+  mImageSize = IntSize();
+  mSize = IntSize();
+  mOffset = nsIntPoint();
+  mSinglePixelColor = Color();
+
+  // Release all surfaces.
+  mImageSurface = nullptr;
+  mOptSurface = nullptr;
+  mVBuf = nullptr;
+  mVBufPtr = nullptr;
+  moz_free(mPalettedImageData);
+  mPalettedImageData = nullptr;
+
+  // Reinitialize.
+  nsresult rv = InitForDecoder(aImageSize, aRect, aFormat,
+                               aPaletteDepth, aNonPremult);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // We were locked before; perform the same actions we would've performed when
+  // we originally got locked.
+  if (mImageSurface) {
+    mVBufPtr = mVBuf;
+    return NS_OK;
+  }
+
+  if (!mPalettedImageData) {
+    MOZ_ASSERT_UNREACHABLE("We got optimized somehow during reinit");
+    return NS_ERROR_FAILURE;
+  }
+
+  // Paletted images don't have surfaces, so there's nothing to do.
+  return NS_OK;
+}
+
+nsresult
+imgFrame::InitForDecoder(const nsIntSize& aImageSize,
+                         const nsIntRect& aRect,
+                         SurfaceFormat aFormat,
+                         uint8_t aPaletteDepth /* = 0 */,
+                         bool aNonPremult /* = false */)
+{
+  // Assert for properties that should be verified by decoders,
+  // warn for properties related to bad content.
+  if (!AllowedImageAndFrameDimensions(aImageSize, aRect)) {
+    NS_WARNING("Should have legal image size");
+    mAborted = true;
+    return NS_ERROR_FAILURE;
+  }
+
+  mImageSize = aImageSize.ToIntSize();
   mOffset.MoveTo(aRect.x, aRect.y);
   mSize.SizeTo(aRect.width, aRect.height);
 
   mFormat = aFormat;
   mPaletteDepth = aPaletteDepth;
+  mNonPremult = aNonPremult;
 
   if (aPaletteDepth != 0) {
     // We're creating for a paletted image.
     if (aPaletteDepth > 8) {
       NS_WARNING("Should have legal palette depth");
       NS_ERROR("This Depth is not supported");
+      mAborted = true;
       return NS_ERROR_FAILURE;
     }
 
-    // Use the fallible allocator here
-    mPalettedImageData = (uint8_t*)moz_malloc(PaletteDataLength() + GetImageDataLength());
+    // Use the fallible allocator here. Paletted images always use 1 byte per
+    // pixel, so calculating the amount of memory we need is straightforward.
+    mPalettedImageData =
+      static_cast<uint8_t*>(moz_malloc(PaletteDataLength() +
+                                       (mSize.width * mSize.height)));
     if (!mPalettedImageData)
       NS_WARNING("moz_malloc for paletted image data should succeed");
     NS_ENSURE_TRUE(mPalettedImageData, NS_ERROR_OUT_OF_MEMORY);
   } else {
     MOZ_ASSERT(!mImageSurface, "Called imgFrame::InitForDecoder() twice?");
 
-    // Inform the discard tracker that we are going to allocate some memory.
-    mInformedDiscardTracker =
-      DiscardTracker::TryAllocation(4 * mSize.width * mSize.height);
-    if (!mInformedDiscardTracker) {
-      NS_WARNING("Exceeded the image decode size hard limit");
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
     mVBuf = AllocateBufferForImage(mSize, mFormat);
     if (!mVBuf) {
+      mAborted = true;
       return NS_ERROR_OUT_OF_MEMORY;
     }
     if (mVBuf->OnHeap()) {
@@ -200,6 +296,7 @@ imgFrame::InitForDecoder(const nsIntRect& aRect,
 
     if (!mImageSurface) {
       NS_WARNING("Failed to create VolatileDataSourceSurface");
+      mAborted = true;
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
@@ -218,22 +315,16 @@ imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
   // warn for properties related to bad content.
   if (!AllowedImageSize(aSize.width, aSize.height)) {
     NS_WARNING("Should have legal image size");
+    mAborted = true;
     return NS_ERROR_FAILURE;
   }
 
+  mImageSize = aSize.ToIntSize();
   mOffset.MoveTo(0, 0);
   mSize.SizeTo(aSize.width, aSize.height);
 
   mFormat = aFormat;
   mPaletteDepth = 0;
-
-  // Inform the discard tracker that we are going to allocate some memory.
-  mInformedDiscardTracker =
-    DiscardTracker::TryAllocation(4 * mSize.width * mSize.height);
-  if (!mInformedDiscardTracker) {
-    NS_WARNING("Exceed the image decode size hard limit");
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   RefPtr<DrawTarget> target;
 
@@ -247,12 +338,14 @@ imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
 
     mVBuf = AllocateBufferForImage(mSize, mFormat);
     if (!mVBuf) {
+      mAborted = true;
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
     int32_t stride = VolatileSurfaceStride(mSize, mFormat);
     VolatileBufferPtr<uint8_t> ptr(mVBuf);
     if (!ptr) {
+      mAborted = true;
       return NS_ERROR_OUT_OF_MEMORY;
     }
     if (mVBuf->OnHeap()) {
@@ -274,6 +367,7 @@ imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
   }
 
   if (!target) {
+    mAborted = true;
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -286,6 +380,7 @@ imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
 
   if (canUseDataSurface && !mImageSurface) {
     NS_WARNING("Failed to create VolatileDataSourceSurface");
+    mAborted = true;
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -295,12 +390,17 @@ imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
     mOptSurface = target->Snapshot();
   }
 
+  // If we reach this point, we should regard ourselves as complete.
+  mDecoded = GetRect();
+  MOZ_ASSERT(IsImageComplete());
+
   return NS_OK;
 }
 
 nsresult imgFrame::Optimize()
 {
   MOZ_ASSERT(NS_IsMainThread());
+  mMonitor.AssertCurrentThreadOwns();
   MOZ_ASSERT(mLockCount == 1,
              "Should only optimize when holding the lock exclusively");
 
@@ -321,8 +421,8 @@ nsresult imgFrame::Optimize()
 
   /* Figure out if the entire image is a constant color */
 
-  // this should always be true
-  if (mImageSurface->Stride() == mSize.width * 4) {
+  if (gfxPrefs::ImageSingleColorOptimizationEnabled() &&
+      mImageSurface->Stride() == mSize.width * 4) {
     uint32_t *imgData = (uint32_t*) ((uint8_t *)mVBufPtr);
     uint32_t firstPixel = * (uint32_t*) imgData;
     uint32_t pixelCount = mSize.width * mSize.height + 1;
@@ -349,13 +449,6 @@ nsresult imgFrame::Optimize()
         mImageSurface = nullptr;
         mOptSurface = nullptr;
 
-        // We just dumped most of our allocated memory, so tell the discard
-        // tracker that we're not using any at all.
-        if (mInformedDiscardTracker) {
-          DiscardTracker::InformDeallocation(4 * mSize.width * mSize.height);
-          mInformedDiscardTracker = false;
-        }
-
         return NS_OK;
       }
     }
@@ -367,7 +460,8 @@ nsresult imgFrame::Optimize()
   SurfaceFormat optFormat =
     gfxPlatform::GetPlatform()->Optimal2DFormatForContent(gfxContentType::COLOR);
 
-  if (!GetHasAlpha() && optFormat == SurfaceFormat::R5G6B5) {
+  if (mFormat != SurfaceFormat::B8G8R8A8 &&
+      optFormat == SurfaceFormat::R5G6B5) {
     RefPtr<VolatileBuffer> buf =
       AllocateBufferForImage(mSize, optFormat);
     if (!buf)
@@ -415,9 +509,7 @@ nsresult imgFrame::Optimize()
   // allows the operating system to free our volatile buffer.
   // XXX(seth): We'd eventually like to do this on all platforms, but right now
   // converting raw memory to a SourceSurface is expensive on some backends.
-  if (mDiscardable) {
-    mImageSurface = nullptr;
-  }
+  mImageSurface = nullptr;
 #endif
 
   return NS_OK;
@@ -435,6 +527,16 @@ imgFrame::RawAccessRef()
   return RawAccessFrameRef(this);
 }
 
+void
+imgFrame::SetRawAccessOnly()
+{
+  AssertImageDataLocked();
+
+  // Lock our data and throw away the key.
+  LockImageData();
+}
+
+
 imgFrame::SurfaceWithFormat
 imgFrame::SurfaceForDrawing(bool               aDoPadding,
                             bool               aDoPartialDecode,
@@ -445,6 +547,9 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
                             ImageRegion&       aRegion,
                             SourceSurface*     aSurface)
 {
+  MOZ_ASSERT(NS_IsMainThread());
+  mMonitor.AssertCurrentThreadOwns();
+
   IntSize size(int32_t(aImageRect.Width()), int32_t(aImageRect.Height()));
   if (!aDoPadding && !aDoPartialDecode) {
     NS_ASSERTION(!mSinglePixel, "This should already have been handled");
@@ -492,20 +597,27 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
 }
 
 bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
-                    const nsIntMargin& aPadding, GraphicsFilter aFilter,
-                    uint32_t aImageFlags)
+                    GraphicsFilter aFilter, uint32_t aImageFlags)
 {
   PROFILER_LABEL("imgFrame", "Draw",
     js::ProfileEntry::Category::GRAPHICS);
 
+  MOZ_ASSERT(NS_IsMainThread());
   NS_ASSERTION(!aRegion.Rect().IsEmpty(), "Drawing empty region!");
   NS_ASSERTION(!aRegion.IsRestricted() ||
                !aRegion.Rect().Intersect(aRegion.Restriction()).IsEmpty(),
                "We must be allowed to sample *some* source pixels!");
   NS_ASSERTION(!mPalettedImageData, "Directly drawing a paletted image!");
 
-  bool doPadding = aPadding != nsIntMargin(0,0,0,0);
-  bool doPartialDecode = !ImageComplete();
+  MonitorAutoLock lock(mMonitor);
+
+  nsIntMargin padding(mOffset.y,
+                      mImageSize.width - (mOffset.x + mSize.width),
+                      mImageSize.height - (mOffset.y + mSize.height),
+                      mOffset.x);
+
+  bool doPadding = padding != nsIntMargin(0,0,0,0);
+  bool doPartialDecode = !IsImageCompleteInternal();
 
   if (mSinglePixel && !doPadding && !doPartialDecode) {
     if (mSinglePixelColor.a == 0.0) {
@@ -519,14 +631,12 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
     return true;
   }
 
-  gfxRect imageRect(0, 0, mSize.width + aPadding.LeftRight(),
-                    mSize.height + aPadding.TopBottom());
-
-  RefPtr<SourceSurface> surf = GetSurface();
+  RefPtr<SourceSurface> surf = GetSurfaceInternal();
   if (!surf && !mSinglePixel) {
     return false;
   }
 
+  gfxRect imageRect(0, 0, mImageSize.width, mImageSize.height);
   bool doTile = !imageRect.Contains(aRegion.Rect()) &&
                 !(aImageFlags & imgIContainer::FLAG_CLAMP);
   ImageRegion region(aRegion);
@@ -539,7 +649,7 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
   gfxContextMatrixAutoSaveRestore autoSR(aContext);
   SurfaceWithFormat surfaceResult =
     SurfaceForDrawing(doPadding, doPartialDecode, doTile, aContext,
-                      aPadding, imageRect, region, surf);
+                      padding, imageRect, region, surf);
 
   if (surfaceResult.IsValid()) {
     gfxUtils::DrawPixelSnapped(aContext, surfaceResult.mDrawable,
@@ -549,10 +659,17 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
   return true;
 }
 
-// This can be called from any thread, but not simultaneously.
-nsresult imgFrame::ImageUpdated(const nsIntRect &aUpdateRect)
+nsresult
+imgFrame::ImageUpdated(const nsIntRect& aUpdateRect)
 {
-  MutexAutoLock lock(mDecodedMutex);
+  MonitorAutoLock lock(mMonitor);
+  return ImageUpdatedInternal(aUpdateRect);
+}
+
+nsresult
+imgFrame::ImageUpdatedInternal(const nsIntRect& aUpdateRect)
+{
+  mMonitor.AssertCurrentThreadOwns();
 
   mDecoded.UnionRect(mDecoded, aUpdateRect);
 
@@ -561,7 +678,31 @@ nsresult imgFrame::ImageUpdated(const nsIntRect &aUpdateRect)
   nsIntRect boundsRect(mOffset, nsIntSize(mSize.width, mSize.height));
   mDecoded.IntersectRect(mDecoded, boundsRect);
 
+  // If the image is now complete, wake up anyone who's waiting.
+  if (IsImageCompleteInternal()) {
+    mMonitor.NotifyAll();
+  }
+
   return NS_OK;
+}
+
+void
+imgFrame::Finish(Opacity aFrameOpacity /* = Opacity::SOME_TRANSPARENCY */,
+                 DisposalMethod aDisposalMethod /* = DisposalMethod::KEEP */,
+                 int32_t aRawTimeout /* = 0 */,
+                 BlendMethod aBlendMethod /* = BlendMethod::OVER */)
+{
+  MonitorAutoLock lock(mMonitor);
+  MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
+
+  if (aFrameOpacity == Opacity::OPAQUE) {
+    mHasNoAlpha = true;
+  }
+
+  mDisposalMethod = aDisposalMethod;
+  mTimeout = aRawTimeout;
+  mBlendMethod = aBlendMethod;
+  ImageUpdatedInternal(GetRect());
 }
 
 nsIntRect imgFrame::GetRect() const
@@ -572,6 +713,8 @@ nsIntRect imgFrame::GetRect() const
 int32_t
 imgFrame::GetStride() const
 {
+  mMonitor.AssertCurrentThreadOwns();
+
   if (mImageSurface) {
     return mImageSurface->Stride();
   }
@@ -581,17 +724,14 @@ imgFrame::GetStride() const
 
 SurfaceFormat imgFrame::GetFormat() const
 {
+  MonitorAutoLock lock(mMonitor);
   return mFormat;
-}
-
-bool imgFrame::GetNeedsBackground() const
-{
-  // We need a background painted if we have alpha or we're incomplete.
-  return (mFormat == SurfaceFormat::B8G8R8A8 || !ImageComplete());
 }
 
 uint32_t imgFrame::GetImageBytesPerRow() const
 {
+  mMonitor.AssertCurrentThreadOwns();
+
   if (mVBuf)
     return mSize.width * BytesPerPixel(mFormat);
 
@@ -606,18 +746,31 @@ uint32_t imgFrame::GetImageDataLength() const
   return GetImageBytesPerRow() * mSize.height;
 }
 
-void imgFrame::GetImageData(uint8_t **aData, uint32_t *length) const
+void
+imgFrame::GetImageData(uint8_t** aData, uint32_t* aLength) const
 {
-  NS_ABORT_IF_FALSE(mLockCount != 0, "Can't GetImageData unless frame is locked");
+  MonitorAutoLock lock(mMonitor);
+  GetImageDataInternal(aData, aLength);
+}
 
-  if (mImageSurface)
+void
+imgFrame::GetImageDataInternal(uint8_t** aData, uint32_t* aLength) const
+{
+  mMonitor.AssertCurrentThreadOwns();
+  MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
+
+  if (mImageSurface) {
     *aData = mVBufPtr;
-  else if (mPalettedImageData)
+    MOZ_ASSERT(*aData, "mImageSurface is non-null, but mVBufPtr is null in GetImageData");
+  } else if (mPalettedImageData) {
     *aData = mPalettedImageData + PaletteDataLength();
-  else
+    MOZ_ASSERT(*aData, "mPalettedImageData is non-null, but result is null in GetImageData");
+  } else {
+    MOZ_ASSERT(false, "Have neither mImageSurface nor mPalettedImageData in GetImageData");
     *aData = nullptr;
+  }
 
-  *length = GetImageDataLength();
+  *aLength = GetImageDataLength();
 }
 
 uint8_t* imgFrame::GetImageData() const
@@ -633,14 +786,9 @@ bool imgFrame::GetIsPaletted() const
   return mPalettedImageData != nullptr;
 }
 
-bool imgFrame::GetHasAlpha() const
-{
-  return mFormat == SurfaceFormat::B8G8R8A8;
-}
-
 void imgFrame::GetPaletteData(uint32_t **aPalette, uint32_t *length) const
 {
-  NS_ABORT_IF_FALSE(mLockCount != 0, "Can't GetPaletteData unless frame is locked");
+  AssertImageDataLocked();
 
   if (!mPalettedImageData) {
     *aPalette = nullptr;
@@ -659,11 +807,12 @@ uint32_t* imgFrame::GetPaletteData() const
   return data;
 }
 
-nsresult imgFrame::LockImageData()
+nsresult
+imgFrame::LockImageData()
 {
-  MOZ_ASSERT(NS_IsMainThread());
+  MonitorAutoLock lock(mMonitor);
 
-  NS_ABORT_IF_FALSE(mLockCount >= 0, "Unbalanced locks and unlocks");
+  MOZ_ASSERT(mLockCount >= 0, "Unbalanced locks and unlocks");
   if (mLockCount < 0) {
     return NS_ERROR_FAILURE;
   }
@@ -675,9 +824,26 @@ nsresult imgFrame::LockImageData()
     return NS_OK;
   }
 
-  // Paletted images don't have surfaces, so there's nothing to do.
-  if (mPalettedImageData)
+  // If we're the first lock, but have an image surface, we're OK.
+  if (mImageSurface) {
+    mVBufPtr = mVBuf;
     return NS_OK;
+  }
+
+  // Paletted images don't have surfaces, so there's nothing to do.
+  if (mPalettedImageData) {
+    return NS_OK;
+  }
+
+  return Deoptimize();
+}
+
+nsresult
+imgFrame::Deoptimize()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  mMonitor.AssertCurrentThreadOwns();
+  MOZ_ASSERT(!mImageSurface);
 
   if (!mImageSurface) {
     if (mVBuf) {
@@ -741,19 +907,54 @@ nsresult imgFrame::LockImageData()
   return NS_OK;
 }
 
-nsresult imgFrame::UnlockImageData()
+void
+imgFrame::AssertImageDataLocked() const
 {
-  MOZ_ASSERT(NS_IsMainThread());
+#ifdef DEBUG
+  MonitorAutoLock lock(mMonitor);
+  MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
+#endif
+}
+
+class UnlockImageDataRunnable : public nsRunnable
+{
+public:
+  explicit UnlockImageDataRunnable(imgFrame* aTarget)
+    : mTarget(aTarget)
+  {
+    MOZ_ASSERT(mTarget);
+  }
+
+  NS_IMETHOD Run() { return mTarget->UnlockImageData(); }
+
+private:
+  nsRefPtr<imgFrame> mTarget;
+};
+
+nsresult
+imgFrame::UnlockImageData()
+{
+  MonitorAutoLock lock(mMonitor);
 
   MOZ_ASSERT(mLockCount > 0, "Unlocking an unlocked image!");
   if (mLockCount <= 0) {
     return NS_ERROR_FAILURE;
   }
 
+  MOZ_ASSERT(mLockCount > 1 || IsImageCompleteInternal() || mAborted,
+             "Should have marked complete or aborted before unlocking");
+
   // If we're about to become unlocked, we don't need to hold on to our data
   // surface anymore. (But we don't need to do anything for paletted images,
   // which don't have surfaces.)
   if (mLockCount == 1 && !mPalettedImageData) {
+    // We can't safely optimize off-main-thread, so create a runnable to do it.
+    if (!NS_IsMainThread()) {
+      nsCOMPtr<nsIRunnable> runnable = new UnlockImageDataRunnable(this);
+      NS_DispatchToMainThread(runnable);
+      return NS_OK;
+    }
+
     // If we're using a surface format with alpha but the image has no alpha,
     // change the format. This doesn't change the underlying data at all, but
     // allows DrawTargets to avoid blending when drawing known opaque images.
@@ -776,22 +977,39 @@ nsresult imgFrame::UnlockImageData()
 }
 
 void
-imgFrame::SetDiscardable()
-{
-  MOZ_ASSERT(mLockCount, "Expected to be locked when SetDiscardable is called");
-  mDiscardable = true;
-}
-
-void
 imgFrame::SetOptimizable()
 {
-  MOZ_ASSERT(mLockCount, "Expected to be locked when SetOptimizable is called");
+  MOZ_ASSERT(NS_IsMainThread());
+  AssertImageDataLocked();
   mOptimizable = true;
+}
+
+Color
+imgFrame::SinglePixelColor() const
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  return mSinglePixelColor;
+}
+
+bool
+imgFrame::IsSinglePixel() const
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  return mSinglePixel;
 }
 
 TemporaryRef<SourceSurface>
 imgFrame::GetSurface()
 {
+  MonitorAutoLock lock(mMonitor);
+  return GetSurfaceInternal();
+}
+
+TemporaryRef<SourceSurface>
+imgFrame::GetSurfaceInternal()
+{
+  mMonitor.AssertCurrentThreadOwns();
+
   if (mOptSurface) {
     if (mOptSurface->IsValid())
       return mOptSurface;
@@ -815,9 +1033,11 @@ imgFrame::GetSurface()
 TemporaryRef<DrawTarget>
 imgFrame::GetDrawTarget()
 {
-  MOZ_ASSERT(mLockCount >= 1, "Should lock before requesting a DrawTarget");
+  MonitorAutoLock lock(mMonitor);
 
-  uint8_t* data = GetImageData();
+  uint8_t* data;
+  uint32_t length;
+  GetImageDataInternal(&data, &length);
   if (!data) {
     return nullptr;
   }
@@ -827,77 +1047,103 @@ imgFrame::GetDrawTarget()
     CreateDrawTargetForData(data, mSize, stride, mFormat);
 }
 
-int32_t imgFrame::GetRawTimeout() const
+AnimationData
+imgFrame::GetAnimationData() const
 {
-  return mTimeout;
+  MonitorAutoLock lock(mMonitor);
+  MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
+
+  uint8_t* data;
+  if (mPalettedImageData) {
+    data = mPalettedImageData;
+  } else {
+    uint32_t length;
+    GetImageDataInternal(&data, &length);
+  }
+
+  bool hasAlpha = mFormat == SurfaceFormat::B8G8R8A8;
+
+  return AnimationData(data, PaletteDataLength(), mTimeout, GetRect(),
+                       mBlendMethod, mDisposalMethod, hasAlpha);
 }
 
-void imgFrame::SetRawTimeout(int32_t aTimeout)
+ScalingData
+imgFrame::GetScalingData() const
 {
-  mTimeout = aTimeout;
+  MonitorAutoLock lock(mMonitor);
+  MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
+  MOZ_ASSERT(!GetIsPaletted(), "GetScalingData can't handle paletted images");
+
+  uint8_t* data;
+  uint32_t length;
+  GetImageDataInternal(&data, &length);
+
+  return ScalingData(data, mSize, GetImageBytesPerRow(), mFormat);
 }
 
-int32_t imgFrame::GetFrameDisposalMethod() const
+void
+imgFrame::Abort()
 {
-  return mDisposalMethod;
+  MonitorAutoLock lock(mMonitor);
+
+  mAborted = true;
+
+  // Wake up anyone who's waiting.
+  mMonitor.NotifyAll();
 }
 
-void imgFrame::SetFrameDisposalMethod(int32_t aFrameDisposalMethod)
+bool
+imgFrame::IsImageComplete() const
 {
-  mDisposalMethod = aFrameDisposalMethod;
+  MonitorAutoLock lock(mMonitor);
+  return IsImageCompleteInternal();
 }
 
-int32_t imgFrame::GetBlendMethod() const
+void
+imgFrame::WaitUntilComplete() const
 {
-  return mBlendMethod;
+  MonitorAutoLock lock(mMonitor);
+
+  while (true) {
+    // Return if we're aborted or complete.
+    if (mAborted || IsImageCompleteInternal()) {
+      return;
+    }
+
+    // Not complete yet, so we'll have to wait.
+    mMonitor.Wait();
+  }
 }
 
-void imgFrame::SetBlendMethod(int32_t aBlendMethod)
+bool
+imgFrame::IsImageCompleteInternal() const
 {
-  mBlendMethod = (int8_t)aBlendMethod;
-}
-
-// This can be called from any thread.
-bool imgFrame::ImageComplete() const
-{
-  MutexAutoLock lock(mDecodedMutex);
-
+  mMonitor.AssertCurrentThreadOwns();
   return mDecoded.IsEqualInterior(nsIntRect(mOffset.x, mOffset.y,
                                             mSize.width, mSize.height));
 }
 
-// A hint from the image decoders that this image has no alpha, even
-// though we're decoding it as B8G8R8A8. 
-void imgFrame::SetHasNoAlpha()
-{
-  MOZ_ASSERT(mLockCount, "Expected to be locked when SetHasNoAlpha is called");
-  mHasNoAlpha = true;
-}
-
-void imgFrame::SetAsNonPremult(bool aIsNonPremult)
-{
-  mNonPremult = aIsNonPremult;
-}
-
 bool imgFrame::GetCompositingFailed() const
 {
+  MOZ_ASSERT(NS_IsMainThread());
   return mCompositingFailed;
 }
 
 void imgFrame::SetCompositingFailed(bool val)
 {
+  MOZ_ASSERT(NS_IsMainThread());
   mCompositingFailed = val;
 }
 
-// If |aLocation| indicates this is heap memory, we try to measure things with
-// |aMallocSizeOf|.  If that fails (because the platform doesn't support it) or
-// it's non-heap memory, we fall back to computing the size analytically.
 size_t
-imgFrame::SizeOfExcludingThisWithComputedFallbackIfHeap(gfxMemoryLocation aLocation, MallocSizeOf aMallocSizeOf) const
+imgFrame::SizeOfExcludingThis(gfxMemoryLocation aLocation,
+                              MallocSizeOf aMallocSizeOf) const
 {
+  MonitorAutoLock lock(mMonitor);
+
   // aMallocSizeOf is only used if aLocation==gfxMemoryLocation::IN_PROCESS_HEAP.  It
   // should be nullptr otherwise.
-  NS_ABORT_IF_FALSE(
+  MOZ_ASSERT(
     (aLocation == gfxMemoryLocation::IN_PROCESS_HEAP &&  aMallocSizeOf) ||
     (aLocation != gfxMemoryLocation::IN_PROCESS_HEAP && !aMallocSizeOf),
     "mismatch between aLocation and aMallocSizeOf");
@@ -905,13 +1151,8 @@ imgFrame::SizeOfExcludingThisWithComputedFallbackIfHeap(gfxMemoryLocation aLocat
   size_t n = 0;
 
   if (mPalettedImageData && aLocation == gfxMemoryLocation::IN_PROCESS_HEAP) {
-    size_t n2 = aMallocSizeOf(mPalettedImageData);
-    if (n2 == 0) {
-      n2 = GetImageDataLength() + PaletteDataLength();
-    }
-    n += n2;
+    n += aMallocSizeOf(mPalettedImageData);
   }
-
   if (mImageSurface && aLocation == gfxMemoryLocation::IN_PROCESS_HEAP) {
     n += aMallocSizeOf(mImageSurface);
   }

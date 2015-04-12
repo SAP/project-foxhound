@@ -12,7 +12,8 @@
  */
 
 [Pref="dom.webnotifications.enabled",
- Constructor(DOMString title, optional NotificationOptions options)]
+ Constructor(DOMString title, optional NotificationOptions options),
+ UnsafeInPrerendering]
 interface Notification : EventTarget {
   [GetterThrows]
   static readonly attribute NotificationPermission permission;
@@ -72,6 +73,7 @@ dictionary GetNotificationOptions {
 dictionary NotificationBehavior {
   boolean noscreen = false;
   boolean noclear = false;
+  boolean showOnlyOnce = false;
   DOMString soundFile = "";
   sequence<unsigned long> vibrationPattern;
 };

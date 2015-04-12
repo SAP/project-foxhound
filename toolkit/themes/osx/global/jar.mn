@@ -10,6 +10,7 @@ toolkit.jar:
   skin/classic/global/aboutCache.css                                 (../../windows/global/aboutCache.css)
   skin/classic/global/aboutCacheEntry.css                            (../../windows/global/aboutCacheEntry.css)
   skin/classic/global/aboutMemory.css                                (../../windows/global/aboutMemory.css)
+  skin/classic/global/aboutReader.css                                (../../windows/global/aboutReader.css)
   skin/classic/global/aboutSupport.css                               (../../windows/global/aboutSupport.css)
   skin/classic/global/appPicker.css                                  (../../windows/global/appPicker.css)
   skin/classic/global/arrow.css
@@ -18,7 +19,7 @@ toolkit.jar:
   skin/classic/global/checkbox.css
   skin/classic/global/colorpicker.css
   skin/classic/global/commonDialog.css
-* skin/classic/global/config.css
+  skin/classic/global/config.css                                     (../../shared/config.css)
   skin/classic/global/customizeToolbar.css
   skin/classic/global/dialog.css
   skin/classic/global/dropmarker.css
@@ -142,6 +143,7 @@ toolkit.jar:
   skin/classic/global/icons/question-64.png                          (icons/question-64.png)
   skin/classic/global/icons/question-large.png                       (icons/question-large.png)
   skin/classic/global/icons/sslWarning.png                           (icons/sslWarning.png)
+  skin/classic/global/icons/warning.svg                              (../../shared/incontent-icons/warning.svg)
   skin/classic/global/icons/webapps-16.png                           (icons/webapps-16.png)
   skin/classic/global/icons/webapps-16@2x.png                        (icons/webapps-16@2x.png)
   skin/classic/global/icons/webapps-64.png                           (icons/webapps-64.png)
@@ -186,16 +188,20 @@ toolkit.jar:
   skin/classic/global/menu/shared-menu-check.png                     (../../shared/menu-check.png)
   skin/classic/global/menu/shared-menu-check@2x.png                  (../../shared/menu-check@2x.png)
 * skin/classic/global/in-content/common.css                          (in-content/common.css)
-  skin/classic/global/in-content/check.png                           (../../shared/in-content/check.png)
-  skin/classic/global/in-content/check@2x.png                        (../../shared/in-content/check@2x.png)
-  skin/classic/global/in-content/dropdown.png                        (../../shared/in-content/dropdown.png)
-  skin/classic/global/in-content/dropdown@2x.png                     (../../shared/in-content/dropdown@2x.png)
-  skin/classic/global/in-content/dropdown-disabled.png               (../../shared/in-content/dropdown-disabled.png)
-  skin/classic/global/in-content/dropdown-disabled@2x.png            (../../shared/in-content/dropdown-disabled@2x.png)
-  skin/classic/global/in-content/help-glyph.png                      (../../shared/in-content/help-glyph.png)
-  skin/classic/global/in-content/help-glyph@2x.png                   (../../shared/in-content/help-glyph@2x.png)
-  skin/classic/global/in-content/sorter.png                          (../../shared/in-content/sorter.png)
-  skin/classic/global/in-content/sorter@2x.png                       (../../shared/in-content/sorter@2x.png)
+* skin/classic/global/in-content/info-pages.css                      (in-content/info-pages.css)
+  skin/classic/global/in-content/check.svg                           (../../shared/in-content/check.svg)
+  skin/classic/global/in-content/check-partial.svg                   (../../shared/in-content/check-partial.svg)
+  skin/classic/global/in-content/dropdown.svg                        (../../shared/in-content/dropdown.svg)
+  skin/classic/global/in-content/help-glyph.svg                      (../../shared/in-content/help-glyph.svg)
+  skin/classic/global/in-content/radio.svg                           (../../shared/in-content/radio.svg)
+  skin/classic/global/reader/RM-Add-24x24.svg                        (../../shared/reader/RM-Add-24x24.svg)
+  skin/classic/global/reader/RM-Close-24x24.svg                      (../../shared/reader/RM-Close-24x24.svg)
+  skin/classic/global/reader/RM-Delete-24x24.svg                     (../../shared/reader/RM-Delete-24x24.svg)
+  skin/classic/global/reader/RM-Minus-24x24.svg                      (../../shared/reader/RM-Minus-24x24.svg)
+  skin/classic/global/reader/RM-Plus-24x24.svg                       (../../shared/reader/RM-Plus-24x24.svg)
+  skin/classic/global/reader/RM-Reading-List-24x24.svg               (../../shared/reader/RM-Reading-List-24x24.svg)
+  skin/classic/global/reader/RM-Type-Controls-24x24.svg              (../../shared/reader/RM-Type-Controls-24x24.svg)
+  skin/classic/global/reader/RM-Type-Controls-Arrow.svg              (../../shared/reader/RM-Type-Controls-Arrow.svg)
   skin/classic/global/scale/scale-tray-horiz.gif                     (scale/scale-tray-horiz.gif)
   skin/classic/global/scale/scale-tray-vert.gif                      (scale/scale-tray-vert.gif)
   skin/classic/global/splitter/dimple.png                            (splitter/dimple.png)
@@ -208,4 +214,3 @@ toolkit.jar:
   skin/classic/global/tree/columnpicker.gif                          (tree/columnpicker.gif)
   skin/classic/global/tree/folder.png                                (tree/folder.png)
   skin/classic/global/tree/folder@2x.png                             (tree/folder@2x.png)
-  skin/classic/global/spinner.png                                    (../../shared/spinner.png)

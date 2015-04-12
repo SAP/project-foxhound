@@ -113,8 +113,7 @@ interface nsINavBookmarkObserver : nsISupports
    *        For certain properties, this is set to the new value of the
    *        property (see the list below).
    * @param aLastModified
-   *        If lastModified changed, this parameter is the new value, otherwise
-   *        it's set to 0.
+   *        The updated last-modified value.
    * @param aItemType
    *        The type of the item to be removed (see TYPE_* constants below).
    * @param aParentId
@@ -223,7 +222,7 @@ interface nsINavBookmarkObserver : nsISupports
  * folders.  A URI in history can be contained in one or more such folders.
  */
 
-[scriptable, uuid(4C309044-B6DA-4511-AF57-E8940DB00045)]
+[scriptable, uuid(b0f9a80a-d7f0-4421-8513-444125f0d828)]
 interface nsINavBookmarksService : nsISupports
 {
   /**
@@ -409,27 +408,51 @@ interface nsINavBookmarksService : nsISupports
 
   /**
    * Set the date added time for an item.
+   *
+   * @param aItemId
+   *        the id of the item whose date added time should be updated.
+   * @param aDateAdded
+   *        the new date added value in microseconds.  Note that it is rounded
+   *        down to milliseconds precision.
    */
   void setItemDateAdded(in long long aItemId, in PRTime aDateAdded);
+
   /**
    * Get the date added time for an item.
+   *
+   * @param aItemId
+   *        the id of the item whose date added time should be retrieved.
+   *
+   * @return the date added value in microseconds.
    */
   PRTime getItemDateAdded(in long long aItemId);
 
   /**
    * Set the last modified time for an item.
    *
-   *  @note This is the only method that will send an itemChanged notification
-   *        for the property.  lastModified will still be updated in
-   *        any other method that changes an item property, but we will send
-   *        the corresponding itemChanged notification instead.
+   * @param aItemId
+   *        the id of the item whose last modified time should be updated.
+   * @param aLastModified
+   *        the new last modified value in microseconds.  Note that it is
+   *        rounded down to milliseconds precision.
+   *
+   * @note This is the only method that will send an itemChanged notification
+   *       for the property.  lastModified will still be updated in
+   *       any other method that changes an item property, but we will send
+   *       the corresponding itemChanged notification instead.
    */
   void setItemLastModified(in long long aItemId, in PRTime aLastModified);
+
   /**
    * Get the last modified time for an item.
    *
-   *  @note When an item is added lastModified is set to the same value as
-   *        dateAdded.
+   * @param aItemId
+   *        the id of the item whose last modified time should be retrieved.
+   *
+   * @return the date added value in microseconds.
+   *
+   * @note When an item is added lastModified is set to the same value as
+   *       dateAdded.
    */
   PRTime getItemLastModified(in long long aItemId);
 
@@ -543,6 +566,12 @@ interface nsINavBookmarksService : nsISupports
    * Removes a bookmark observer.
    */
   void removeObserver(in nsINavBookmarkObserver observer);
+
+  /**
+   * Gets an array of registered nsINavBookmarkObserver objects.
+   */
+  void getObservers([optional] out unsigned long count,
+                    [retval, array, size_is(count)] out nsINavBookmarkObserver observers);
 
   /**
    * Runs the passed callback inside of a database transaction.

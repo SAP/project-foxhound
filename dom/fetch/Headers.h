@@ -33,7 +33,7 @@ class OwningHeadersOrByteStringSequenceSequenceOrByteStringMozMap;
  * implementations, where they must always be created from the backing
  * InternalHeaders object.
  */
-class Headers MOZ_FINAL : public nsISupports
+class Headers final : public nsISupports
                         , public nsWrapperCache
 {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -53,7 +53,7 @@ public:
   {
   }
 
-  explicit Headers(const Headers& aOther) MOZ_DELETE;
+  explicit Headers(const Headers& aOther) = delete;
 
   static bool PrefEnabled(JSContext* cx, JSObject* obj);
 
@@ -110,7 +110,7 @@ public:
     mInternalHeaders->SetGuard(aGuard, aRv);
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx);
+  virtual JSObject* WrapObject(JSContext* aCx) override;
   nsISupports* GetParentObject() const { return mOwner; }
 
 private:

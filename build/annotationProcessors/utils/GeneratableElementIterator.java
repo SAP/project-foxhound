@@ -76,6 +76,7 @@ public class GeneratableElementIterator implements Iterator<AnnotatableEntity> {
                     boolean isMultithreadedStub = false;
                     boolean noThrow = false;
                     boolean narrowChars = false;
+                    boolean catchException = false;
                     try {
                         // Determine the explicitly-given name of the stub to generate, if any.
                         final Method stubNameMethod = annotationType.getDeclaredMethod("stubName");
@@ -97,6 +98,11 @@ public class GeneratableElementIterator implements Iterator<AnnotatableEntity> {
                         narrowCharsMethod.setAccessible(true);
                         narrowChars = (Boolean) narrowCharsMethod.invoke(annotation);
 
+                        // Determine if we should catch exceptions
+                        final Method catchExceptionMethod = annotationType.getDeclaredMethod("catchException");
+                        catchExceptionMethod.setAccessible(true);
+                        catchException = (Boolean) catchExceptionMethod.invoke(annotation);
+
                     } catch (NoSuchMethodException e) {
                         System.err.println("Unable to find expected field on WrapElementForJNI annotation. Did the signature change?");
                         e.printStackTrace(System.err);
@@ -113,22 +119,25 @@ public class GeneratableElementIterator implements Iterator<AnnotatableEntity> {
 
                     // If the method name was not explicitly given in the annotation generate one...
                     if (stubName.isEmpty()) {
-                        String aMethodName = candidateElement.getName();
-                        stubName = aMethodName.substring(0, 1).toUpperCase() + aMethodName.substring(1);
+                        stubName = Utils.getNativeName(candidateElement);
                     }
 
                     AnnotationInfo annotationInfo = new AnnotationInfo(
-                        stubName, isMultithreadedStub, noThrow, narrowChars);
+                        stubName, isMultithreadedStub, noThrow, narrowChars, catchException);
                     mNextReturnValue = new AnnotatableEntity(candidateElement, annotationInfo);
                     return;
                 }
             }
 
-            // If no annotation found, we might be expected to generate anyway using default arguments,
-            // thanks to the "Generate everything" annotation.
+            // If no annotation found, we might be expected to generate anyway
+            // using default arguments, thanks to the "Generate everything" annotation.
             if (mIterateEveryEntry) {
                 AnnotationInfo annotationInfo = new AnnotationInfo(
-                    candidateElement.getName(), false, false, false);
+                    Utils.getNativeName(candidateElement),
+                    /* multithreaded */ true,
+                    /* noThrow */ false,
+                    /* narrowChars */ false,
+                    /* catchException */ false);
                 mNextReturnValue = new AnnotatableEntity(candidateElement, annotationInfo);
                 return;
             }

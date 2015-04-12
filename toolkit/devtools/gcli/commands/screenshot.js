@@ -156,7 +156,14 @@ exports.items = [
           try {
             let io = Cc["@mozilla.org/network/io-service;1"]
                       .getService(Ci.nsIIOService);
-            let channel = io.newChannel(data, null, null);
+            let channel = io.newChannel2(data,
+                                         null,
+                                         null,
+                                         null,      // aLoadingNode
+                                         Services.scriptSecurityManager.getSystemPrincipal(),
+                                         null,      // aTriggeringPrincipal
+                                         Ci.nsILoadInfo.SEC_NORMAL,
+                                         Ci.nsIContentPolicy.TYPE_IMAGE);
             let input = channel.open();
             let imgTools = Cc["@mozilla.org/image/tools;1"]
                             .getService(Ci.imgITools);
@@ -229,7 +236,7 @@ exports.items = [
                                Persist.PERSIST_FLAGS_AUTODETECT_APPLY_CONVERSION;
 
         let source = ioService.newURI(data, "UTF8", null);
-        persist.saveURI(source, null, null, null, null, file, loadContext);
+        persist.saveURI(source, null, null, 0, null, null, file, loadContext);
 
         div.textContent = gcli.lookup("screenshotSavedToFile") + " \"" + filename +
                           "\"";

@@ -16,10 +16,13 @@ BEGIN_BLUETOOTH_NAMESPACE
 
 class BluetoothHALInterface;
 
-class BluetoothSocketHALInterface MOZ_FINAL
+class BluetoothSocketHALInterface final
   : public BluetoothSocketInterface
 {
 public:
+  class ConnectWatcher;
+  class AcceptWatcher;
+
   friend class BluetoothHALInterface;
 
   void Listen(BluetoothSocketType aType,

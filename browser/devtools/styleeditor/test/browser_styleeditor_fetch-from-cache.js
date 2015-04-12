@@ -8,7 +8,7 @@
 
 const TEST_URL = TEST_BASE_HTTP + "doc_uncached.html";
 
-let test = asyncTest(function() {
+add_task(function() {
   waitForExplicitFinish();
 
   info("Opening netmonitor");
@@ -18,7 +18,7 @@ let test = asyncTest(function() {
   let netmonitor = toolbox.getPanel("netmonitor");
 
   info("Navigating to test page");
-  content.location = TEST_URL;
+  yield navigateTo(TEST_URL);
 
   info("Opening Style Editor");
   let styleeditor = yield toolbox.selectTool("styleeditor");
@@ -36,5 +36,4 @@ let test = asyncTest(function() {
 
   is(requestsForCss, 1,
      "Got one request for doc_uncached.css after Style Editor was loaded.");
-
 });

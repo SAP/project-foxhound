@@ -41,9 +41,6 @@ namespace {
 // These bits are numbered so that the least subtle issues have higher values.
 // This should make it easier for us to interpret the results.
 const uint32_t NPN_NOT_NEGOTIATED = 64;
-const uint32_t KEA_NOT_FORWARD_SECRET = 32;
-const uint32_t KEA_NOT_SAME_AS_EXPECTED = 16;
-const uint32_t KEA_NOT_ALLOWED = 8;
 const uint32_t POSSIBLE_VERSION_DOWNGRADE = 4;
 const uint32_t POSSIBLE_CIPHER_SUITE_DOWNGRADE = 2;
 const uint32_t KEA_NOT_SUPPORTED = 1;
@@ -89,7 +86,15 @@ nsHTTPDownloadEvent::Run()
   NS_ENSURE_STATE(ios);
 
   nsCOMPtr<nsIChannel> chan;
-  ios->NewChannel(mRequestSession->mURL, nullptr, nullptr, getter_AddRefs(chan));
+  ios->NewChannel2(mRequestSession->mURL,
+                   nullptr,
+                   nullptr,
+                   nullptr, // aLoadingNode
+                   nsContentUtils::GetSystemPrincipal(),
+                   nullptr, // aTriggeringPrincipal
+                   nsILoadInfo::SEC_NORMAL,
+                   nsIContentPolicy::TYPE_OTHER,
+                   getter_AddRefs(chan));
   NS_ENSURE_STATE(chan);
 
   // Security operations scheduled through normal HTTP channels are given
@@ -892,10 +897,9 @@ PreliminaryHandshakeDone(PRFileDesc* fd)
         infoObject->SetSSLStatus(status);
       }
 
-      status->mHaveKeyLengthAndCipher = true;
-      status->mKeyLength = cipherInfo.symKeyBits;
-      status->mSecretKeyLength = cipherInfo.effectiveKeyBits;
-      status->mCipherName.Assign(cipherInfo.cipherSuiteName);
+      status->mHaveCipherSuiteAndProtocol = true;
+      status->mCipherSuite = channelInfo.cipherSuite;
+      status->mProtocolVersion = channelInfo.protocolVersion & 0xFF;
       infoObject->SetKEAUsed(cipherInfo.keaType);
       infoObject->SetKEAKeyBits(channelInfo.keaKeyBits);
       infoObject->SetMACAlgorithmUsed(cipherInfo.macAlgorithm);
@@ -963,64 +967,27 @@ CanFalseStartCallback(PRFileDesc* fd, void* client_data, PRBool *canFalseStart)
 
   nsSSLIOLayerHelpers& helpers = infoObject->SharedState().IOLayerHelpers();
 
-  // Prevent version downgrade attacks from TLS 1.x to SSL 3.0.
-  // TODO(bug 861310): If we negotiate less than our highest-supported version,
-  // then check that a previously-completed handshake negotiated that version;
-  // eventually, require that the highest-supported version of TLS is used.
-  if (channelInfo.protocolVersion < SSL_LIBRARY_VERSION_TLS_1_0) {
+  // Prevent version downgrade attacks from TLS 1.2, and avoid False Start for
+  // TLS 1.3 and later. See Bug 861310 for all the details as to why.
+  if (channelInfo.protocolVersion != SSL_LIBRARY_VERSION_TLS_1_2) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("CanFalseStartCallback [%p] failed - "
-                                      "SSL Version must be >= TLS1 %x\n", fd,
+                                      "SSL Version must be TLS 1.2, was %x\n", fd,
                                       static_cast<int32_t>(channelInfo.protocolVersion)));
     reasonsForNotFalseStarting |= POSSIBLE_VERSION_DOWNGRADE;
   }
 
-  // never do false start without one of these key exchange algorithms
-  if (cipherInfo.keaType != ssl_kea_rsa &&
-      cipherInfo.keaType != ssl_kea_dh &&
-      cipherInfo.keaType != ssl_kea_ecdh) {
+  // See bug 952863 for why ECDHE is allowed, but DHE (and RSA) are not.
+  if (cipherInfo.keaType != ssl_kea_ecdh) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("CanFalseStartCallback [%p] failed - "
                                       "unsupported KEA %d\n", fd,
                                       static_cast<int32_t>(cipherInfo.keaType)));
     reasonsForNotFalseStarting |= KEA_NOT_SUPPORTED;
   }
 
-  // XXX: This assumes that all TLS_DH_* and TLS_ECDH_* cipher suites
-  // are disabled.
-  if (cipherInfo.keaType != ssl_kea_ecdh &&
-      cipherInfo.keaType != ssl_kea_dh) {
-    if (helpers.mFalseStartRequireForwardSecrecy) {
-      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
-             ("CanFalseStartCallback [%p] failed - KEA used is %d, but "
-              "require-forward-secrecy configured.\n", fd,
-              static_cast<int32_t>(cipherInfo.keaType)));
-      reasonsForNotFalseStarting |= KEA_NOT_FORWARD_SECRET;
-    } else if (cipherInfo.keaType == ssl_kea_rsa) {
-      // Make sure we've seen the same kea from this host in the past, to limit
-      // the potential for downgrade attacks.
-      int16_t expected = infoObject->GetKEAExpected();
-      if (cipherInfo.keaType != expected) {
-        PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
-               ("CanFalseStartCallback [%p] failed - "
-                "KEA used is %d, expected %d\n", fd,
-                static_cast<int32_t>(cipherInfo.keaType),
-                static_cast<int32_t>(expected)));
-        reasonsForNotFalseStarting |= KEA_NOT_SAME_AS_EXPECTED;
-      }
-    } else {
-      reasonsForNotFalseStarting |= KEA_NOT_ALLOWED;
-    }
-  }
-
-  // Prevent downgrade attacks on the symmetric cipher. We accept downgrades
-  // from 256-bit keys to 128-bit keys and we treat AES and Camellia as being
-  // equally secure. We consider every message authentication mechanism that we
-  // support *for these ciphers* to be equally-secure. We assume that for CBC
-  // mode, that the server has implemented all the same mitigations for
-  // published attacks that we have, or that those attacks are not relevant in
-  // the decision to false start.
-  if (cipherInfo.symCipher != ssl_calg_aes_gcm && 
-      cipherInfo.symCipher != ssl_calg_aes &&
-      cipherInfo.symCipher != ssl_calg_camellia) {
+  // Prevent downgrade attacks on the symmetric cipher. We do not allow CBC
+  // mode due to BEAST, POODLE, and other attacks on the MAC-then-Encrypt
+  // design. See bug 1109766 for more details.
+  if (cipherInfo.symCipher != ssl_calg_aes_gcm) {
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
            ("CanFalseStartCallback [%p] failed - Symmetric cipher used, %d, "
             "is not supported with False Start.\n", fd,
@@ -1173,80 +1140,8 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
                                            infoObject->GetPort(),
                                            versions.max);
 
-  PRBool siteSupportsSafeRenego;
-  rv = SSL_HandshakeNegotiatedExtension(fd, ssl_renegotiation_info_xtn,
-                                        &siteSupportsSafeRenego);
-  MOZ_ASSERT(rv == SECSuccess);
-  if (rv != SECSuccess) {
-    siteSupportsSafeRenego = false;
-  }
-
-  if (siteSupportsSafeRenego ||
-      !ioLayerHelpers.treatUnsafeNegotiationAsBroken()) {
-    infoObject->SetSecurityState(nsIWebProgressListener::STATE_IS_SECURE |
-                                 nsIWebProgressListener::STATE_SECURE_HIGH);
-  } else {
-    infoObject->SetSecurityState(nsIWebProgressListener::STATE_IS_BROKEN);
-  }
-
-  // XXX Bug 883674: We shouldn't be formatting messages here in PSM; instead,
-  // we should set a flag on the channel that higher (UI) level code can check
-  // to log the warning. In particular, these warnings should go to the web
-  // console instead of to the error console. Also, the warning is not
-  // localized.
-  if (!siteSupportsSafeRenego &&
-      ioLayerHelpers.getWarnLevelMissingRFC5746() > 0) {
-    nsXPIDLCString hostName;
-    infoObject->GetHostName(getter_Copies(hostName));
-
-    nsAutoString msg;
-    msg.Append(NS_ConvertASCIItoUTF16(hostName));
-    msg.AppendLiteral(" : server does not support RFC 5746, see CVE-2009-3555");
-
-    nsContentUtils::LogSimpleConsoleError(msg, "SSL");
-  }
-
-  ScopedCERTCertificate serverCert(SSL_PeerCertificate(fd));
-
-  /* Set the SSL Status information */
-  RefPtr<nsSSLStatus> status(infoObject->SSLStatus());
-  if (!status) {
-    status = new nsSSLStatus();
-    infoObject->SetSSLStatus(status);
-  }
-
-  RememberCertErrorsTable::GetInstance().LookupCertErrorBits(infoObject,
-                                                             status);
-
-  RefPtr<nsNSSCertificate> nssc(nsNSSCertificate::Create(serverCert.get()));
-  nsCOMPtr<nsIX509Cert> prevcert;
-  infoObject->GetPreviousCert(getter_AddRefs(prevcert));
-
-  bool equals_previous = false;
-  if (prevcert && nssc) {
-    nsresult rv = nssc->Equals(prevcert, &equals_previous);
-    if (NS_FAILED(rv)) {
-      equals_previous = false;
-    }
-  }
-
-  if (equals_previous) {
-    PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
-            ("HandshakeCallback using PREV cert %p\n", prevcert.get()));
-    status->mServerCert = prevcert;
-  }
-  else {
-    if (status->mServerCert) {
-      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
-              ("HandshakeCallback KEEPING cert %p\n", status->mServerCert.get()));
-    }
-    else {
-      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
-              ("HandshakeCallback using NEW cert %p\n", nssc.get()));
-      status->mServerCert = nssc;
-    }
-  }
-
+  bool usesWeakProtocol = false;
+  bool usesWeakCipher = false;
   SSLChannelInfo channelInfo;
   rv = SSL_GetChannelInfo(fd, &channelInfo, sizeof(channelInfo));
   MOZ_ASSERT(rv == SECSuccess);
@@ -1265,6 +1160,10 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
                                 sizeof cipherInfo);
     MOZ_ASSERT(rv == SECSuccess);
     if (rv == SECSuccess) {
+      usesWeakProtocol =
+        channelInfo.protocolVersion <= SSL_LIBRARY_VERSION_3_0;
+      usesWeakCipher = cipherInfo.symCipher == ssl_calg_rc4;
+
       // keyExchange null=0, rsa=1, dh=2, fortezza=3, ecdh=4
       Telemetry::Accumulate(
         infoObject->IsFullHandshake()
@@ -1325,6 +1224,89 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
             ? Telemetry::SSL_SYMMETRIC_CIPHER_FULL
             : Telemetry::SSL_SYMMETRIC_CIPHER_RESUMED,
           cipherInfo.symCipher);
+    }
+  }
+
+  PRBool siteSupportsSafeRenego;
+  rv = SSL_HandshakeNegotiatedExtension(fd, ssl_renegotiation_info_xtn,
+                                        &siteSupportsSafeRenego);
+  MOZ_ASSERT(rv == SECSuccess);
+  if (rv != SECSuccess) {
+    siteSupportsSafeRenego = false;
+  }
+  bool renegotiationUnsafe = !siteSupportsSafeRenego &&
+                             ioLayerHelpers.treatUnsafeNegotiationAsBroken();
+
+  uint32_t state;
+  if (usesWeakProtocol || usesWeakCipher || renegotiationUnsafe) {
+    state = nsIWebProgressListener::STATE_IS_BROKEN;
+    if (usesWeakProtocol) {
+      state |= nsIWebProgressListener::STATE_USES_SSL_3;
+    }
+    if (usesWeakCipher) {
+      state |= nsIWebProgressListener::STATE_USES_WEAK_CRYPTO;
+    }
+  } else {
+    state = nsIWebProgressListener::STATE_IS_SECURE |
+            nsIWebProgressListener::STATE_SECURE_HIGH;
+  }
+  infoObject->SetSecurityState(state);
+
+  // XXX Bug 883674: We shouldn't be formatting messages here in PSM; instead,
+  // we should set a flag on the channel that higher (UI) level code can check
+  // to log the warning. In particular, these warnings should go to the web
+  // console instead of to the error console. Also, the warning is not
+  // localized.
+  if (!siteSupportsSafeRenego &&
+      ioLayerHelpers.getWarnLevelMissingRFC5746() > 0) {
+    nsXPIDLCString hostName;
+    infoObject->GetHostName(getter_Copies(hostName));
+
+    nsAutoString msg;
+    msg.Append(NS_ConvertASCIItoUTF16(hostName));
+    msg.AppendLiteral(" : server does not support RFC 5746, see CVE-2009-3555");
+
+    nsContentUtils::LogSimpleConsoleError(msg, "SSL");
+  }
+
+  ScopedCERTCertificate serverCert(SSL_PeerCertificate(fd));
+
+  /* Set the SSL Status information */
+  RefPtr<nsSSLStatus> status(infoObject->SSLStatus());
+  if (!status) {
+    status = new nsSSLStatus();
+    infoObject->SetSSLStatus(status);
+  }
+
+  RememberCertErrorsTable::GetInstance().LookupCertErrorBits(infoObject,
+                                                             status);
+
+  RefPtr<nsNSSCertificate> nssc(nsNSSCertificate::Create(serverCert.get()));
+  nsCOMPtr<nsIX509Cert> prevcert;
+  infoObject->GetPreviousCert(getter_AddRefs(prevcert));
+
+  bool equals_previous = false;
+  if (prevcert && nssc) {
+    nsresult rv = nssc->Equals(prevcert, &equals_previous);
+    if (NS_FAILED(rv)) {
+      equals_previous = false;
+    }
+  }
+
+  if (equals_previous) {
+    PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
+            ("HandshakeCallback using PREV cert %p\n", prevcert.get()));
+    status->SetServerCert(prevcert, nsNSSCertificate::ev_status_unknown);
+  }
+  else {
+    if (status->HasServerCert()) {
+      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
+              ("HandshakeCallback KEEPING existing cert\n"));
+    }
+    else {
+      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
+              ("HandshakeCallback using NEW cert %p\n", nssc.get()));
+      status->SetServerCert(nssc, nsNSSCertificate::ev_status_unknown);
     }
   }
 

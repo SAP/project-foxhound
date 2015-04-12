@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import java.util.ArrayList;
@@ -40,12 +44,11 @@ public class testBrowserProvider extends ContentProviderTest {
     }
 
     private void ensureEmptyDatabase() throws Exception {
-        Cursor c = null;
+        Cursor c;
 
         String guid = BrowserContract.Bookmarks.GUID;
 
         mProvider.delete(appendUriParam(BrowserContract.Bookmarks.CONTENT_URI, BrowserContract.PARAM_IS_SYNC, "1"),
-                         guid + " != ? AND " +
                          guid + " != ? AND " +
                          guid + " != ? AND " +
                          guid + " != ? AND " +
@@ -57,11 +60,10 @@ public class testBrowserProvider extends ContentProviderTest {
                                         BrowserContract.Bookmarks.MENU_FOLDER_GUID,
                                         BrowserContract.Bookmarks.TAGS_FOLDER_GUID,
                                         BrowserContract.Bookmarks.TOOLBAR_FOLDER_GUID,
-                                        BrowserContract.Bookmarks.UNFILED_FOLDER_GUID,
-                                        BrowserContract.Bookmarks.READING_LIST_FOLDER_GUID });
+                                        BrowserContract.Bookmarks.UNFILED_FOLDER_GUID });
 
         c = mProvider.query(appendUriParam(BrowserContract.Bookmarks.CONTENT_URI, BrowserContract.PARAM_SHOW_DELETED, "1"), null, null, null, null);
-        assertCountIsAndClose(c, 7, "All non-special bookmarks and folders were deleted");
+        assertCountIsAndClose(c, 6, "All non-special bookmarks and folders were deleted");
 
         mProvider.delete(appendUriParam(BrowserContract.History.CONTENT_URI, BrowserContract.PARAM_IS_SYNC, "1"), null, null);
         c = mProvider.query(appendUriParam(BrowserContract.History.CONTENT_URI, BrowserContract.PARAM_SHOW_DELETED, "1"), null, null, null, null);

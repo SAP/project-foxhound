@@ -36,7 +36,9 @@ const NS_DIRECTORY_SERVICE_CONTRACTID =
 const NS_OBSERVER_SERVICE_CONTRACTID =
           "@mozilla.org/observer-service;1";
 
-Components.utils.import("resource://gre/modules/FileUtils.jsm");
+CU.import("resource://gre/modules/FileUtils.jsm");
+CU.import("chrome://reftest/content/httpd.jsm", this);
+CU.import("resource://gre/modules/Services.jsm");
 
 var gLoadTimeout = 0;
 var gTimeoutHook = null;
@@ -397,17 +399,7 @@ function InitAndStartRefTests()
     if (gRemote) {
         gServer = null;
     } else {
-        // not all gecko applications autoregister xpcom components
-        if (CC["@mozilla.org/server/jshttp;1"] === undefined) {
-            var file = CC["@mozilla.org/file/directory_service;1"].
-                        getService(CI.nsIProperties).get("ProfD", CI.nsIFile);
-            file.appendRelativePath("extensions/reftest@mozilla.org/chrome.manifest");
-
-            registrar = Components.manager.QueryInterface(CI.nsIComponentRegistrar);
-            registrar.autoRegister(file);
-        }
-        gServer = CC["@mozilla.org/server/jshttp;1"].
-                      createInstance(CI.nsIHttpServer);
+        gServer = new HttpServer();
     }
     try {
         if (gServer)
@@ -676,15 +668,18 @@ function BuildConditionSandbox(aURL) {
     sandbox.http = new sandbox.Object();
     httpProps.forEach((x) => sandbox.http[x] = hh[x]);
 
-    // Set OSX to the Mac OS X version for Mac, and 0 otherwise.
-    var osxmatch = /Mac OS X (\d+.\d+)$/.exec(hh.oscpu);
-    sandbox.OSX = osxmatch ? parseFloat(osxmatch[1]) : 0;
+    // Set OSX to be the Mac OS X version, as an integer, or undefined
+    // for other platforms.  The integer is formed by 100 times the
+    // major version plus the minor version, so 1006 for 10.6, 1010 for
+    // 10.10, etc.
+    var osxmatch = /Mac OS X (\d+).(\d+)$/.exec(hh.oscpu);
+    sandbox.OSX = osxmatch ? parseInt(osxmatch[1]) * 100 + parseInt(osxmatch[2]) : undefined;
 
     // see if we have the test plugin available,
     // and set a sandox prop accordingly
     var navigator = gContainingWindow.navigator;
     var testPlugin = navigator.plugins["Test Plug-in"];
-    sandbox.haveTestPlugin = !!testPlugin && !gBrowserIsRemote;
+    sandbox.haveTestPlugin = !!testPlugin;
 
     // Set a flag on sandbox if the windows default theme is active
     sandbox.windowsDefaultTheme = gContainingWindow.matchMedia("(-moz-windows-default-theme)").matches;
@@ -807,7 +802,12 @@ function ReadManifest(aURL, inherited_status)
                      .getService(CI.nsIScriptSecurityManager);
 
     var listURL = aURL;
-    var channel = gIOService.newChannelFromURI(aURL);
+    var channel = gIOService.newChannelFromURI2(aURL,
+                                                null,      // aLoadingNode
+                                                Services.scriptSecurityManager.getSystemPrincipal(),
+                                                null,      // aTriggeringPrincipal
+                                                CI.nsILoadInfo.SEC_NORMAL,
+                                                CI.nsIContentPolicy.TYPE_OTHER);
     var inputStream = channel.open();
     if (channel instanceof Components.interfaces.nsIHttpChannel
         && channel.responseStatus != 200) {
@@ -1480,6 +1480,12 @@ function UpdateCurrentCanvasForInvalidation(rects)
         var right = Math.ceil(r.right);
         var bottom = Math.ceil(r.bottom);
 
+        // Clamp the values to the canvas size
+        left = Math.max(0, Math.min(left, gCurrentCanvas.width));
+        top = Math.max(0, Math.min(top, gCurrentCanvas.height));
+        right = Math.max(0, Math.min(right, gCurrentCanvas.width));
+        bottom = Math.max(0, Math.min(bottom, gCurrentCanvas.height));
+
         ctx.save();
         ctx.translate(left, top);
         DoDrawWindow(ctx, left, top, right - left, bottom - top);
@@ -1780,7 +1786,6 @@ function FinishTestItem()
     gDumpLog("REFTEST INFO | Loading a blank page\n");
     // After clearing, content will notify us of the assertion count
     // and tests will continue.
-    SetAsyncScroll(false);
     SendClear();
     gFailedNoPaint = false;
 }
@@ -1910,19 +1915,8 @@ function RegisterMessageListenersAndLoadContentScript()
         "reftest:ExpectProcessCrash",
         function (m) { RecvExpectProcessCrash(); }
     );
-    gBrowserMessageManager.addMessageListener(
-        "reftest:EnableAsyncScroll",
-        function (m) { SetAsyncScroll(true); }
-    );
 
     gBrowserMessageManager.loadFrameScript("chrome://reftest/content/reftest-content.js", true, true);
-}
-
-function SetAsyncScroll(enabled)
-{
-    gBrowser.QueryInterface(CI.nsIFrameLoaderOwner).frameLoader.renderMode =
-        enabled ? CI.nsIFrameLoader.RENDER_MODE_ASYNC_SCROLL :
-                  CI.nsIFrameLoader.RENDER_MODE_DEFAULT;
 }
 
 function RecvAssertionCount(count)

@@ -134,28 +134,18 @@ check-style::
 
 check-jit-test::
 	$(JITTEST_ASAN_ENV) $(wildcard $(RUN_TEST_PROGRAM)) $(PYTHON) -u $(srcdir)/jit-test/jit_test.py \
-	        --no-slow --no-progress --tinderbox --tbpl $(JITTEST_VALGRIND_FLAG) \
+	        --no-slow --no-progress --tinderbox --tbpl \
+			$(JITTEST_VALGRIND_FLAG) \
+			$(JITTEST_EXTRA_ARGS) \
 	        $(DIST)/bin/$(JS_SHELL_NAME)$(BIN_SUFFIX)
 
 check:: check-style
 
-# jstests doesn't have a --jitflags option, so we need to loop, updating the
-# exit code (RC) after each invocation.
-# FIXME: MethodJIT doesn't work for 1 test case (bug 644393), so
-# --no-extensions is set to skip that test. Remove as soon as possible.
 check-jstests:
-	RC=0; \
-	for f in `echo '$(JITFLAGS)' | tr ',' '\n'`; \
-		do \
-			$(wildcard $(RUN_TEST_PROGRAM)) $(PYTHON) -u $(srcdir)/tests/jstests.py \
-				--tinderbox --no-progress \
-				--no-extensions \
-				--timeout 300 \
-				--args="`echo $$f | sed 's/\(.\)/ -\1/g'`" \
-				$(DIST)/bin/$(JS_SHELL_NAME)$(BIN_SUFFIX); \
-			RC=$$(( $$RC || $$?)); \
-		done; \
-	exit $$RC
+	$(wildcard $(RUN_TEST_PROGRAM)) $(PYTHON) -u $(srcdir)/tests/jstests.py \
+		--no-progress --tinderbox --timeout 300 \
+		$(JSTESTS_EXTRA_ARGS) \
+		$(DIST)/bin/$(JS_SHELL_NAME)$(BIN_SUFFIX)
 
 # FIXME:
 # We want to run check-jstests as part of |make check| on all platforms, on
@@ -223,6 +213,9 @@ $(LIBRARY_NAME).pc: js.pc
 
 install:: $(LIBRARY_NAME).pc
 	$(SYSINSTALL) $^ $(DESTDIR)$(libdir)/pkgconfig
+
+install:: js-config.h
+	$(SYSINSTALL) $^ $(DESTDIR)$(includedir)
 
 ######################################################
 # BEGIN SpiderMonkey header installation
@@ -295,7 +288,7 @@ endif
 
 ifdef HAVE_DTRACE
 $(CURDIR)/javascript-trace.h: $(srcdir)/devtools/javascript-trace.d
-	dtrace -h -s $(srcdir)/devtools/javascript-trace.d -o javascript-trace.h.in
+	dtrace -x nolibs -h -s $(srcdir)/devtools/javascript-trace.d -o javascript-trace.h.in
 	sed -e 's/if _DTRACE_VERSION/ifdef INCLUDE_MOZILLA_DTRACE/' \
 	    -e '/const/!s/char \*/const char */g' \
 	    javascript-trace.h.in > javascript-trace.h
@@ -311,7 +304,6 @@ selfhosting:: selfhosted.out.h
 
 selfhosting_srcs := \
   $(srcdir)/builtin/Utilities.js \
-  $(srcdir)/builtin/ParallelUtilities.js \
   $(srcdir)/builtin/Array.js \
   $(srcdir)/builtin/Date.js \
   $(srcdir)/builtin/Error.js \
@@ -324,6 +316,7 @@ selfhosting_srcs := \
   $(srcdir)/builtin/Object.js \
   $(srcdir)/builtin/String.js \
   $(srcdir)/builtin/Set.js \
+  $(srcdir)/builtin/TypedArray.js \
   $(srcdir)/builtin/TypedObject.js \
   $(srcdir)/builtin/WeakSet.js \
   $(NULL)

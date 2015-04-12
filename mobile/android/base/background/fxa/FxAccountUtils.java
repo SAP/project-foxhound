@@ -12,12 +12,16 @@ import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 
+import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.R;
 import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.background.nativecode.NativeCrypto;
 import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.sync.crypto.HKDF;
 import org.mozilla.gecko.sync.crypto.KeyBundle;
 import org.mozilla.gecko.sync.crypto.PBKDF2;
+
+import android.content.Context;
 
 public class FxAccountUtils {
   private static final String LOG_TAG = FxAccountUtils.class.getSimpleName();
@@ -34,6 +38,16 @@ public class FxAccountUtils {
   public static final String KW_VERSION_STRING = "identity.mozilla.com/picl/v1/";
 
   public static final int NUMBER_OF_QUICK_STRETCH_ROUNDS = 1000;
+
+  // For extra debugging.  Not final so it can be changed from Fennec, or from
+  // an add-on.
+  public static boolean LOG_PERSONAL_INFORMATION = false;
+
+  public static void pii(String tag, String message) {
+    if (FxAccountUtils.LOG_PERSONAL_INFORMATION) {
+      Logger.info(tag, "$$FxA PII$$: " + message);
+    }
+  }
 
   public static String bytes(String string) throws UnsupportedEncodingException {
     return Utils.byte2Hex(string.getBytes("UTF-8"));
@@ -186,5 +200,18 @@ public class FxAccountUtils {
   public static String getAudienceForURL(String serverURI) throws URISyntaxException {
     URI uri = new URI(serverURI);
     return new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), null, null, null).toString();
+  }
+
+  public static String defaultClientName(Context context) {
+    String name = AppConstants.MOZ_APP_DISPLAYNAME; // The display name is never translated.
+    // Change "Firefox Aurora" or similar into "Aurora".
+    if (name.contains("Aurora")) {
+        name = "Aurora";
+    } else if (name.contains("Beta")) {
+        name = "Beta";
+    } else if (name.contains("Nightly")) {
+        name = "Nightly";
+    }
+    return context.getResources().getString(R.string.sync_default_client_name, name, android.os.Build.MODEL);
   }
 }

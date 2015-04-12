@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 import java.io.File;
@@ -192,13 +196,17 @@ public abstract class SessionTest extends BaseTest {
                 (new NavigationWalker<PageInfo>(tab) {
                     @Override
                     public void onItem(PageInfo page, int currentIndex) {
-                        if (page.url.equals(StringHelper.ABOUT_HOME_URL)) {
-                            waitForText("Enter Search or Address");
-                            verifyUrl(page.url);
+                        final String text;
+                        if (StringHelper.ABOUT_HOME_URL.equals(page.url)) {
+                            text = StringHelper.TITLE_PLACE_HOLDER;
+                        } else if (page.url.startsWith(URL_HTTP_PREFIX)) {
+                            text = page.url.substring(URL_HTTP_PREFIX.length());
                         } else {
-                            waitForText(page.title);
-                            verifyPageTitle(page.title, page.url);
+                            text = page.url;
                         }
+                        waitForText(text);
+
+                        verifyUrlBarTitle(page.url);
                     }
 
                     @Override

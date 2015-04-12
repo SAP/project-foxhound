@@ -284,11 +284,12 @@ class ScopedReadbackFB
     SharedSurface* mSurfToLock;
 
 public:
-    ScopedReadbackFB(SharedSurface* src);
+    explicit ScopedReadbackFB(SharedSurface* src);
     ~ScopedReadbackFB();
 };
 
 bool ReadbackSharedSurface(SharedSurface* src, gfx::DrawTarget* dst);
+uint32_t ReadPixel(SharedSurface* src);
 
 } // namespace gl
 } // namespace mozilla

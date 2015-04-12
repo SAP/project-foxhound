@@ -12,6 +12,7 @@
 #include "nsCaret.h"
 #include "nsContentUtils.h"
 #include "nsCSSAnonBoxes.h"
+#include "nsFontMetrics.h"
 #include "nsGfxScrollFrame.h"
 #include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
@@ -27,17 +28,14 @@
 namespace mozilla {
 namespace css {
 
-class LazyReferenceRenderingContextGetterFromFrame MOZ_FINAL :
+class LazyReferenceRenderingContextGetterFromFrame final :
     public gfxFontGroup::LazyReferenceContextGetter {
 public:
   explicit LazyReferenceRenderingContextGetterFromFrame(nsIFrame* aFrame)
     : mFrame(aFrame) {}
-  virtual already_AddRefed<gfxContext> GetRefContext() MOZ_OVERRIDE
+  virtual already_AddRefed<gfxContext> GetRefContext() override
   {
-    nsRefPtr<nsRenderingContext> rc =
-      mFrame->PresContext()->PresShell()->CreateReferenceRenderingContext();
-    nsRefPtr<gfxContext> ctx = rc->ThebesContext();
-    return ctx.forget();
+    return mFrame->PresContext()->PresShell()->CreateReferenceRenderingContext();
   }
 private:
   nsIFrame* mFrame;
@@ -169,16 +167,16 @@ public:
   }
 #endif
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
-                           bool* aSnap) MOZ_OVERRIDE {
+                           bool* aSnap) override {
     *aSnap = false;
     nsRect shadowRect =
       nsLayoutUtils::GetTextShadowRectsUnion(mRect, mFrame);
     return mRect.Union(shadowRect);
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsRenderingContext* aCtx) MOZ_OVERRIDE;
+                     nsRenderingContext* aCtx) override;
 
-  virtual uint32_t GetPerFrameKey() MOZ_OVERRIDE { 
+  virtual uint32_t GetPerFrameKey() override { 
     return (mIndex << nsDisplayItem::TYPE_BITS) | nsDisplayItem::GetPerFrameKey(); 
   }
   void PaintTextToContext(nsRenderingContext* aCtx,
@@ -238,8 +236,7 @@ nsDisplayTextOverflowMarker::PaintTextToContext(nsRenderingContext* aCtx,
     nsRefPtr<nsFontMetrics> fm;
     nsLayoutUtils::GetFontMetricsForFrame(mFrame, getter_AddRefs(fm),
       nsLayoutUtils::FontSizeInflationFor(mFrame));
-    aCtx->SetFont(fm);
-    nsLayoutUtils::DrawString(mFrame, aCtx, mStyle->mString.get(),
+    nsLayoutUtils::DrawString(mFrame, *fm, aCtx, mStyle->mString.get(),
                               mStyle->mString.Length(), pt);
   }
 }
@@ -758,14 +755,13 @@ TextOverflow::Marker::SetupString(nsIFrame* aFrame)
       mWidth = 0;
     }
   } else {
-    nsRefPtr<nsRenderingContext> rc =
-      aFrame->PresContext()->PresShell()->CreateReferenceRenderingContext();
+    nsRenderingContext rc(
+      aFrame->PresContext()->PresShell()->CreateReferenceRenderingContext());
     nsRefPtr<nsFontMetrics> fm;
     nsLayoutUtils::GetFontMetricsForFrame(aFrame, getter_AddRefs(fm),
       nsLayoutUtils::FontSizeInflationFor(aFrame));
-    rc->SetFont(fm);
-    mWidth = nsLayoutUtils::GetStringWidth(aFrame, rc, mStyle->mString.get(),
-                                           mStyle->mString.Length());
+    mWidth = nsLayoutUtils::AppUnitWidthOfStringBidi(mStyle->mString, aFrame,
+                                                     *fm, rc);
   }
   mIntrinsicISize = mWidth;
   mInitialized = true;

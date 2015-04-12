@@ -35,6 +35,8 @@
 #include "Statistics.h"
 #include "TextLeafAccessibleWrap.h"
 #include "TreeWalker.h"
+#include "xpcAccessibleApplication.h"
+#include "xpcAccessibleDocument.h"
 
 #ifdef MOZ_ACCESSIBILITY_ATK
 #include "AtkSocketAccessible.h"
@@ -137,6 +139,7 @@ MustBeAccessible(nsIContent* aContent, DocAccessible* aDocument)
 
 nsAccessibilityService *nsAccessibilityService::gAccessibilityService = nullptr;
 ApplicationAccessible* nsAccessibilityService::gApplicationAccessible = nullptr;
+xpcAccessibleApplication* nsAccessibilityService::gXPCApplicationAccessible = nullptr;
 bool nsAccessibilityService::gIsShutdown = true;
 
 nsAccessibilityService::nsAccessibilityService() :
@@ -222,7 +225,7 @@ nsAccessibilityService::GetRootDocumentAccessible(nsIPresShell* aPresShell,
 static StaticAutoPtr<nsTArray<nsCOMPtr<nsIContent> > > sPendingPlugins;
 static StaticAutoPtr<nsTArray<nsCOMPtr<nsITimer> > > sPluginTimers;
 
-class PluginTimerCallBack MOZ_FINAL : public nsITimerCallback
+class PluginTimerCallBack final : public nsITimerCallback
 {
   ~PluginTimerCallBack() {}
 
@@ -231,7 +234,7 @@ public:
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHODIMP Notify(nsITimer* aTimer) MOZ_FINAL
+  NS_IMETHODIMP Notify(nsITimer* aTimer) final
   {
     if (!mContent->IsInDoc())
       return NS_OK;
@@ -556,8 +559,7 @@ nsAccessibilityService::GetApplicationAccessible(nsIAccessible** aAccessibleAppl
 {
   NS_ENSURE_ARG_POINTER(aAccessibleApplication);
 
-  NS_IF_ADDREF(*aAccessibleApplication = ApplicationAcc());
-
+  NS_IF_ADDREF(*aAccessibleApplication = XPCApplicationAcc());
   return NS_OK;
 }
 
@@ -576,7 +578,7 @@ nsAccessibilityService::GetAccessibleFor(nsIDOMNode *aNode,
 
   DocAccessible* document = GetDocAccessible(node->OwnerDoc());
   if (document)
-    NS_IF_ADDREF(*aAccessible = document->GetAccessible(node));
+    NS_IF_ADDREF(*aAccessible = ToXPC(document->GetAccessible(node)));
 
   return NS_OK;
 }
@@ -780,7 +782,7 @@ nsAccessibilityService::GetAccessibleFromCache(nsIDOMNode* aNode,
       accessible = GetExistingDocAccessible(document);
   }
 
-  NS_IF_ADDREF(*aAccessible = accessible);
+  NS_IF_ADDREF(*aAccessible = ToXPC(accessible));
   return NS_OK;
 }
 
@@ -792,7 +794,7 @@ nsAccessibilityService::CreateAccessiblePivot(nsIAccessible* aRoot,
   NS_ENSURE_ARG(aRoot);
   *aPivot = nullptr;
 
-  nsRefPtr<Accessible> accessibleRoot(do_QueryObject(aRoot));
+  Accessible* accessibleRoot = aRoot->ToInternalAccessible();
   NS_ENSURE_TRUE(accessibleRoot, NS_ERROR_INVALID_ARG);
 
   nsAccessiblePivot* pivot = new nsAccessiblePivot(accessibleRoot);
@@ -960,7 +962,9 @@ nsAccessibilityService::GetOrCreateAccessible(nsINode* aNode,
   // If the element is focusable or global ARIA attribute is applied to it or
   // it is referenced by ARIA relationship then treat role="presentation" on
   // the element as the role is not there.
-  if (roleMapEntry && roleMapEntry->Is(nsGkAtoms::presentation)) {
+  if (roleMapEntry &&
+      (roleMapEntry->Is(nsGkAtoms::presentation) ||
+       roleMapEntry->Is(nsGkAtoms::none))) {
     if (!MustBeAccessible(content, document))
       return nullptr;
 
@@ -968,51 +972,50 @@ nsAccessibilityService::GetOrCreateAccessible(nsINode* aNode,
   }
 
   if (!newAcc && isHTML) {  // HTML accessibles
-    if (roleMapEntry) {
-      // Create pure ARIA grid/treegrid related accessibles if they weren't used
-      // on accessible HTML table elements.
-      if ((roleMapEntry->accTypes & eTableCell)) {
-        if (aContext->IsTableRow() &&
-            (frame->AccessibleType() != eHTMLTableCellType ||
-             aContext->GetContent() != content->GetParent())) {
-          newAcc = new ARIAGridCellAccessibleWrap(content, document);
-        }
+    bool isARIATableOrCell = roleMapEntry &&
+      (roleMapEntry->accTypes & (eTableCell | eTable));
 
-      } else if ((roleMapEntry->IsOfType(eTable)) &&
-                 frame->AccessibleType() != eHTMLTableType) {
+    if (!isARIATableOrCell ||
+        frame->AccessibleType() == eHTMLTableCellType ||
+        frame->AccessibleType() == eHTMLTableType) {
+      // Prefer to use markup (mostly tag name, perhaps attributes) to decide if
+      // and what kind of accessible to create,
+      newAcc = CreateHTMLAccessibleByMarkup(frame, content, aContext);
+      if (!newAcc) // try by frame accessible type.
+        newAcc = CreateAccessibleByFrameType(frame, content, aContext);
+    }
+
+    // In case of ARIA grids use grid-specific classes if it's not native table
+    // based.
+    if (isARIATableOrCell && (!newAcc || newAcc->IsGenericHyperText())) {
+      if ((roleMapEntry->accTypes & eTableCell)) {
+        if (aContext->IsTableRow())
+          newAcc = new ARIAGridCellAccessibleWrap(content, document);
+
+      } else if (roleMapEntry->IsOfType(eTable)) {
         newAcc = new ARIAGridAccessibleWrap(content, document);
       }
     }
 
-    if (!newAcc) {
-      // Prefer to use markup (mostly tag name, perhaps attributes) to decide if
-      // and what kind of accessible to create.
-      newAcc = CreateHTMLAccessibleByMarkup(frame, content, aContext);
-
-      // Try using frame to do it.
-      if (!newAcc)
-        newAcc = CreateAccessibleByFrameType(frame, content, aContext);
-
-      // If table has strong ARIA role then all table descendants shouldn't
-      // expose their native roles.
-      if (!roleMapEntry && newAcc && aContext->HasStrongARIARole()) {
-        if (frame->AccessibleType() == eHTMLTableRowType) {
-          nsRoleMapEntry* contextRoleMap = aContext->ARIARoleMap();
-          if (!contextRoleMap->IsOfType(eTable))
-            roleMapEntry = &aria::gEmptyRoleMap;
-
-        } else if (frame->AccessibleType() == eHTMLTableCellType &&
-                   aContext->ARIARoleMap() == &aria::gEmptyRoleMap) {
+    // If table has strong ARIA role then all table descendants shouldn't
+    // expose their native roles.
+    if (!roleMapEntry && newAcc && aContext->HasStrongARIARole()) {
+      if (frame->AccessibleType() == eHTMLTableRowType) {
+        nsRoleMapEntry* contextRoleMap = aContext->ARIARoleMap();
+        if (!contextRoleMap->IsOfType(eTable))
           roleMapEntry = &aria::gEmptyRoleMap;
 
-        } else if (content->Tag() == nsGkAtoms::dt ||
-                   content->Tag() == nsGkAtoms::li ||
-                   content->Tag() == nsGkAtoms::dd ||
-                   frame->AccessibleType() == eHTMLLiType) {
-          nsRoleMapEntry* contextRoleMap = aContext->ARIARoleMap();
-          if (!contextRoleMap->IsOfType(eList))
-            roleMapEntry = &aria::gEmptyRoleMap;
-        }
+      } else if (frame->AccessibleType() == eHTMLTableCellType &&
+                 aContext->ARIARoleMap() == &aria::gEmptyRoleMap) {
+        roleMapEntry = &aria::gEmptyRoleMap;
+
+      } else if (content->Tag() == nsGkAtoms::dt ||
+                 content->Tag() == nsGkAtoms::li ||
+                 content->Tag() == nsGkAtoms::dd ||
+                 frame->AccessibleType() == eHTMLLiType) {
+        nsRoleMapEntry* contextRoleMap = aContext->ARIARoleMap();
+        if (!contextRoleMap->IsOfType(eList))
+          roleMapEntry = &aria::gEmptyRoleMap;
       }
     }
   }
@@ -1179,6 +1182,9 @@ nsAccessibilityService::Shutdown()
   gApplicationAccessible->Shutdown();
   NS_RELEASE(gApplicationAccessible);
   gApplicationAccessible = nullptr;
+
+  NS_IF_RELEASE(gXPCApplicationAccessible);
+  gXPCApplicationAccessible = nullptr;
 }
 
 already_AddRefed<Accessible>
@@ -1475,7 +1481,8 @@ nsAccessibilityService::CreateHTMLAccessibleByMarkup(nsIFrame* aFrame,
       tag == nsGkAtoms::h6 ||
       tag == nsGkAtoms::nav ||
       tag == nsGkAtoms::q ||
-      tag == nsGkAtoms::section) {
+      tag == nsGkAtoms::section ||
+      tag == nsGkAtoms::time) {
     nsRefPtr<Accessible> accessible =
       new HyperTextAccessibleWrap(aContent, document);
     return accessible.forget();
@@ -1550,6 +1557,9 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
       if (aContext->IsList() &&
           aContext->GetContent() == aContent->GetParent()) {
         newAcc = new HTMLLIAccessible(aContent, document);
+      } else {
+        // Otherwise create a generic text accessible to avoid text jamming.
+        newAcc = new HyperTextAccessibleWrap(aContent, document);
       }
       break;
     case eHTMLSelectListType:
@@ -1666,6 +1676,20 @@ nsAccessibilityService::RemoveNativeRootAccessible(Accessible* aAccessible)
 #endif
 }
 
+bool
+nsAccessibilityService::HasAccessible(nsIDOMNode* aDOMNode)
+{
+  nsCOMPtr<nsINode> node(do_QueryInterface(aDOMNode));
+  if (!node)
+    return false;
+
+  DocAccessible* document = GetDocAccessible(node->OwnerDoc());
+  if (!document)
+    return false;
+
+  return document->HasAccessible(node);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NS_GetAccessibilityService
 ////////////////////////////////////////////////////////////////////////////////
@@ -1758,6 +1782,19 @@ ApplicationAccessible*
 ApplicationAcc()
 {
   return nsAccessibilityService::gApplicationAccessible;
+}
+
+xpcAccessibleApplication*
+XPCApplicationAcc()
+{
+  if (!nsAccessibilityService::gXPCApplicationAccessible &&
+      nsAccessibilityService::gApplicationAccessible) {
+    nsAccessibilityService::gXPCApplicationAccessible =
+      new xpcAccessibleApplication(nsAccessibilityService::gApplicationAccessible);
+    NS_ADDREF(nsAccessibilityService::gXPCApplicationAccessible);
+  }
+
+  return nsAccessibilityService::gXPCApplicationAccessible;
 }
 
 EPlatformDisabledState

@@ -13,6 +13,7 @@
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/gfx/2D.h"
+#include "gfx2DGlue.h"
 
 namespace mozilla {
 
@@ -82,12 +83,42 @@ public:
   nsAutoPtr<ImageCacheEntryData> mData;
 };
 
+class SimpleImageCacheEntry : public PLDHashEntryHdr {
+public:
+  typedef imgIRequest& KeyType;
+  typedef const imgIRequest* KeyTypePointer;
+
+  explicit SimpleImageCacheEntry(KeyTypePointer aKey)
+    : mRequest(const_cast<imgIRequest*>(aKey))
+  {}
+  SimpleImageCacheEntry(const SimpleImageCacheEntry &toCopy)
+    : mRequest(toCopy.mRequest)
+    , mSourceSurface(toCopy.mSourceSurface)
+  {}
+  ~SimpleImageCacheEntry() {}
+
+  bool KeyEquals(KeyTypePointer key) const
+  {
+    return key == mRequest;
+  }
+
+  static KeyTypePointer KeyToPointer(KeyType key) { return &key; }
+  static PLDHashNumber HashKey(KeyTypePointer key)
+  {
+    return NS_PTR_TO_UINT32(key) >> 2;
+  }
+  enum { ALLOW_MEMMOVE = true };
+
+  nsCOMPtr<imgIRequest> mRequest;
+  RefPtr<SourceSurface> mSourceSurface;
+};
+
 static bool sPrefsInitialized = false;
 static int32_t sCanvasImageCacheLimit = 0;
 
 class ImageCacheObserver;
 
-class ImageCache MOZ_FINAL : public nsExpirationTracker<ImageCacheEntryData,4> {
+class ImageCache final : public nsExpirationTracker<ImageCacheEntryData,4> {
 public:
   // We use 3 generations of 1 second each to get a 2-3 seconds timeout.
   enum { GENERATION_MS = 1000 };
@@ -99,10 +130,12 @@ public:
     mTotal -= aObject->SizeInBytes();
     RemoveObject(aObject);
     // Deleting the entry will delete aObject since the entry owns aObject
+    mSimpleCache.RemoveEntry(*aObject->mRequest);
     mCache.RemoveEntry(ImageCacheKey(aObject->mImage, aObject->mCanvas));
   }
 
   nsTHashtable<ImageCacheEntry> mCache;
+  nsTHashtable<SimpleImageCacheEntry> mSimpleCache;
   size_t mTotal;
   nsRefPtr<ImageCacheObserver> mImageCacheObserver;
 };
@@ -110,7 +143,7 @@ public:
 static ImageCache* gImageCache = nullptr;
 
 // Listen memory-pressure event for image cache purge
-class ImageCacheObserver MOZ_FINAL : public nsIObserver
+class ImageCacheObserver final : public nsIObserver
 {
 public:
   NS_DECL_ISUPPORTS
@@ -129,7 +162,7 @@ public:
 
   NS_IMETHODIMP Observe(nsISupports* aSubject,
                         const char* aTopic,
-                        const char16_t* aSomeData)
+                        const char16_t* aSomeData) override
   {
     if (!mImageCache || strcmp(aTopic, "memory-pressure")) {
       return NS_OK;
@@ -174,7 +207,7 @@ private:
 
 NS_IMPL_ISUPPORTS(ImageCacheObserver, nsIObserver)
 
-class CanvasImageCacheShutdownObserver MOZ_FINAL : public nsIObserver
+class CanvasImageCacheShutdownObserver final : public nsIObserver
 {
   ~CanvasImageCacheShutdownObserver() {}
 public:
@@ -217,6 +250,7 @@ CanvasImageCache::NotifyDrawImage(Element* aImage,
       // We are overwriting an existing entry.
       gImageCache->mTotal -= entry->mData->SizeInBytes();
       gImageCache->RemoveObject(entry->mData);
+      gImageCache->mSimpleCache.RemoveEntry(*entry->mData->mRequest);
     }
     gImageCache->AddObject(entry->mData);
 
@@ -230,6 +264,12 @@ CanvasImageCache::NotifyDrawImage(Element* aImage,
     entry->mData->mSize = aSize;
 
     gImageCache->mTotal += entry->mData->SizeInBytes();
+
+    if (entry->mData->mRequest) {
+      SimpleImageCacheEntry* simpleentry =
+        gImageCache->mSimpleCache.PutEntry(*entry->mData->mRequest);
+      simpleentry->mSourceSurface = aSource;
+    }
   }
 
   if (!sCanvasImageCacheLimit)
@@ -243,7 +283,7 @@ CanvasImageCache::NotifyDrawImage(Element* aImage,
 SourceSurface*
 CanvasImageCache::Lookup(Element* aImage,
                          HTMLCanvasElement* aCanvas,
-                         gfxIntSize* aSize)
+                         gfx::IntSize* aSize)
 {
   if (!gImageCache)
     return nullptr;
@@ -259,8 +299,31 @@ CanvasImageCache::Lookup(Element* aImage,
 
   gImageCache->MarkUsed(entry->mData);
 
-  *aSize = entry->mData->mSize;
+  *aSize = gfx::ToIntSize(entry->mData->mSize);
   return entry->mData->mSourceSurface;
+}
+
+SourceSurface*
+CanvasImageCache::SimpleLookup(Element* aImage)
+{
+  if (!gImageCache)
+    return nullptr;
+
+  nsCOMPtr<imgIRequest> request;
+  nsCOMPtr<nsIImageLoadingContent> ilc = do_QueryInterface(aImage);
+  if (!ilc)
+    return nullptr;
+
+  ilc->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
+                  getter_AddRefs(request));
+  if (!request)
+    return nullptr;
+
+  SimpleImageCacheEntry* entry = gImageCache->mSimpleCache.GetEntry(*request);
+  if (!entry)
+    return nullptr;
+
+  return entry->mSourceSurface;
 }
 
 NS_IMPL_ISUPPORTS(CanvasImageCacheShutdownObserver, nsIObserver)

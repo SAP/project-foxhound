@@ -105,33 +105,52 @@ GonkDisplayJB::GonkDisplayJB()
 
     mAlloc = new GraphicBufferAlloc();
 
-    status_t error;
-
-#if ANDROID_VERSION >= 19
-    sp<BufferQueue> bq = new BufferQueue(mAlloc);
+#if ANDROID_VERSION >= 21
+    sp<IGraphicBufferProducer> producer;
+    sp<IGraphicBufferConsumer> consumer;
+    BufferQueue::createBufferQueue(&producer, &consumer, mAlloc);
+#elif ANDROID_VERSION >= 19
+    sp<BufferQueue> consumer = new BufferQueue(mAlloc);
+    sp<IGraphicBufferProducer> producer = consumer;
+#elif ANDROID_VERSION >= 18
+    sp<BufferQueue> consumer = new BufferQueue(true, mAlloc);
+    sp<IGraphicBufferProducer> producer = consumer;
 #else
-    sp<BufferQueue> bq = new BufferQueue(true, mAlloc);
+    sp<BufferQueue> consumer = new BufferQueue(true, mAlloc);
 #endif
-    mFBSurface = new FramebufferSurface(0, mWidth, mHeight, surfaceformat, bq);
+
+    mFBSurface = new FramebufferSurface(0, mWidth, mHeight, surfaceformat, consumer);
 
 #if ANDROID_VERSION == 17
-    sp<SurfaceTextureClient> stc = new SurfaceTextureClient(static_cast<sp<ISurfaceTexture> >(mFBSurface->getBufferQueue()));
+    sp<SurfaceTextureClient> stc = new SurfaceTextureClient(
+        static_cast<sp<ISurfaceTexture> >(mFBSurface->getBufferQueue()));
 #else
-    sp<Surface> stc = new Surface(static_cast<sp<IGraphicBufferProducer> >(bq));
+    sp<Surface> stc = new Surface(producer);
 #endif
+
     mSTClient = stc;
     mSTClient->perform(mSTClient.get(), NATIVE_WINDOW_SET_BUFFER_COUNT, 2);
-    mSTClient->perform(mSTClient.get(), NATIVE_WINDOW_SET_USAGE, GRALLOC_USAGE_HW_FB | GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_COMPOSER);
+    mSTClient->perform(mSTClient.get(), NATIVE_WINDOW_SET_USAGE,
+                                        GRALLOC_USAGE_HW_FB |
+                                        GRALLOC_USAGE_HW_RENDER |
+                                        GRALLOC_USAGE_HW_COMPOSER);
 
     mList = (hwc_display_contents_1_t *)malloc(sizeof(*mList) + (sizeof(hwc_layer_1_t)*2));
-    if (mHwc)
+    if (mHwc) {
+#if ANDROID_VERSION >= 21
+        if (mHwc->common.version >= HWC_DEVICE_API_VERSION_1_4) {
+            mHwc->setPowerMode(mHwc, HWC_DISPLAY_PRIMARY, HWC_POWER_MODE_NORMAL);
+        } else {
+            mHwc->blank(mHwc, HWC_DISPLAY_PRIMARY, 0);
+        }
+#else
         mHwc->blank(mHwc, HWC_DISPLAY_PRIMARY, 0);
+#endif
+    }
 
-    if (error == NO_ERROR) {
-        ALOGI("Starting bootanimation with (%d) format framebuffer", surfaceformat);
-        StartBootAnimation();
-    } else
-        ALOGW("Couldn't show bootanimation (%s)", strerror(-error));
+
+    ALOGI("Starting bootanimation with (%d) format framebuffer", surfaceformat);
+    StartBootAnimation();
 }
 
 GonkDisplayJB::~GonkDisplayJB()
@@ -162,11 +181,24 @@ GonkDisplayJB::SetEnabled(bool enabled)
         mEnabledCallback(enabled);
     }
 
+#if ANDROID_VERSION >= 21
+    if (mHwc) {
+        if (mHwc->common.version >= HWC_DEVICE_API_VERSION_1_4) {
+            mHwc->setPowerMode(mHwc, HWC_DISPLAY_PRIMARY,
+                (enabled ? HWC_POWER_MODE_NORMAL : HWC_POWER_MODE_OFF));
+        } else {
+            mHwc->blank(mHwc, HWC_DISPLAY_PRIMARY, !enabled);
+        }
+    } else if (mFBDevice && mFBDevice->enableScreen) {
+        mFBDevice->enableScreen(mFBDevice, enabled);
+    }
+#else
     if (mHwc && mHwc->blank) {
         mHwc->blank(mHwc, HWC_DISPLAY_PRIMARY, !enabled);
     } else if (mFBDevice && mFBDevice->enableScreen) {
         mFBDevice->enableScreen(mFBDevice, enabled);
     }
+#endif
 
     if (enabled && mEnabledCallback) {
         mEnabledCallback(enabled);

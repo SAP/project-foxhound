@@ -32,11 +32,21 @@ class nsISSLStatus;
 
 namespace mozilla { namespace net {
 
+class Http2PushedStream;
 //-----------------------------------------------------------------------------
 // nsHttpChannel
 //-----------------------------------------------------------------------------
 
-class nsHttpChannel MOZ_FINAL : public HttpBaseChannel
+// Use to support QI nsIChannel to nsHttpChannel
+#define NS_HTTPCHANNEL_IID                         \
+{                                                  \
+  0x301bf95b,                                      \
+  0x7bb3,                                          \
+  0x4ae1,                                          \
+  {0xa9, 0x71, 0x40, 0xbc, 0xfa, 0x81, 0xde, 0x12} \
+}
+
+class nsHttpChannel final : public HttpBaseChannel
                               , public HttpAsyncAborter<nsHttpChannel>
                               , public nsIStreamListener
                               , public nsICachingChannel
@@ -67,60 +77,69 @@ public:
     NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
     NS_DECL_NSITHREADRETARGETABLEREQUEST
     NS_DECL_NSIDNSLISTENER
+    NS_DECLARE_STATIC_IID_ACCESSOR(NS_HTTPCHANNEL_IID)
 
     // nsIHttpAuthenticableChannel. We can't use
     // NS_DECL_NSIHTTPAUTHENTICABLECHANNEL because it duplicates cancel() and
     // others.
-    NS_IMETHOD GetIsSSL(bool *aIsSSL);
-    NS_IMETHOD GetProxyMethodIsConnect(bool *aProxyMethodIsConnect);
-    NS_IMETHOD GetServerResponseHeader(nsACString & aServerResponseHeader);
-    NS_IMETHOD GetProxyChallenges(nsACString & aChallenges);
-    NS_IMETHOD GetWWWChallenges(nsACString & aChallenges);
-    NS_IMETHOD SetProxyCredentials(const nsACString & aCredentials);
-    NS_IMETHOD SetWWWCredentials(const nsACString & aCredentials);
-    NS_IMETHOD OnAuthAvailable();
-    NS_IMETHOD OnAuthCancelled(bool userCancel);
+    NS_IMETHOD GetIsSSL(bool *aIsSSL) override;
+    NS_IMETHOD GetProxyMethodIsConnect(bool *aProxyMethodIsConnect) override;
+    NS_IMETHOD GetServerResponseHeader(nsACString & aServerResponseHeader) override;
+    NS_IMETHOD GetProxyChallenges(nsACString & aChallenges) override;
+    NS_IMETHOD GetWWWChallenges(nsACString & aChallenges) override;
+    NS_IMETHOD SetProxyCredentials(const nsACString & aCredentials) override;
+    NS_IMETHOD SetWWWCredentials(const nsACString & aCredentials) override;
+    NS_IMETHOD OnAuthAvailable() override;
+    NS_IMETHOD OnAuthCancelled(bool userCancel) override;
     // Functions we implement from nsIHttpAuthenticableChannel but are
     // declared in HttpBaseChannel must be implemented in this class. We
     // just call the HttpBaseChannel:: impls.
-    NS_IMETHOD GetLoadFlags(nsLoadFlags *aLoadFlags);
-    NS_IMETHOD GetURI(nsIURI **aURI);
-    NS_IMETHOD GetNotificationCallbacks(nsIInterfaceRequestor **aCallbacks);
-    NS_IMETHOD GetLoadGroup(nsILoadGroup **aLoadGroup);
-    NS_IMETHOD GetRequestMethod(nsACString& aMethod);
+    NS_IMETHOD GetLoadFlags(nsLoadFlags *aLoadFlags) override;
+    NS_IMETHOD GetURI(nsIURI **aURI) override;
+    NS_IMETHOD GetNotificationCallbacks(nsIInterfaceRequestor **aCallbacks) override;
+    NS_IMETHOD GetLoadGroup(nsILoadGroup **aLoadGroup) override;
+    NS_IMETHOD GetRequestMethod(nsACString& aMethod) override;
 
     nsHttpChannel();
 
     virtual nsresult Init(nsIURI *aURI, uint32_t aCaps, nsProxyInfo *aProxyInfo,
                           uint32_t aProxyResolveFlags,
-                          nsIURI *aProxyURI);
+                          nsIURI *aProxyURI) override;
+
+    nsresult OnPush(const nsACString &uri, Http2PushedStream *pushedStream);
 
     // Methods HttpBaseChannel didn't implement for us or that we override.
     //
     // nsIRequest
-    NS_IMETHOD Cancel(nsresult status);
-    NS_IMETHOD Suspend();
-    NS_IMETHOD Resume();
+    NS_IMETHOD Cancel(nsresult status) override;
+    NS_IMETHOD Suspend() override;
+    NS_IMETHOD Resume() override;
     // nsIChannel
-    NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo);
-    NS_IMETHOD AsyncOpen(nsIStreamListener *listener, nsISupports *aContext);
+    NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo) override;
+    NS_IMETHOD AsyncOpen(nsIStreamListener *listener, nsISupports *aContext) override;
     // nsIHttpChannelInternal
-    NS_IMETHOD SetupFallbackChannel(const char *aFallbackKey);
+    NS_IMETHOD SetupFallbackChannel(const char *aFallbackKey) override;
+    NS_IMETHOD ContinueBeginConnect() override;
     // nsISupportsPriority
-    NS_IMETHOD SetPriority(int32_t value);
-    // nsIResumableChannel
-    NS_IMETHOD ResumeAt(uint64_t startPos, const nsACString& entityID);
+    NS_IMETHOD SetPriority(int32_t value) override;
+    // nsIClassOfService
+    NS_IMETHOD SetClassFlags(uint32_t inFlags) override;
+    NS_IMETHOD AddClassFlags(uint32_t inFlags) override;
+    NS_IMETHOD ClearClassFlags(uint32_t inFlags) override;
 
-    NS_IMETHOD SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks);
-    NS_IMETHOD SetLoadGroup(nsILoadGroup *aLoadGroup);
+    // nsIResumableChannel
+    NS_IMETHOD ResumeAt(uint64_t startPos, const nsACString& entityID) override;
+
+    NS_IMETHOD SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks) override;
+    NS_IMETHOD SetLoadGroup(nsILoadGroup *aLoadGroup) override;
     // nsITimedChannel
-    NS_IMETHOD GetDomainLookupStart(mozilla::TimeStamp *aDomainLookupStart);
-    NS_IMETHOD GetDomainLookupEnd(mozilla::TimeStamp *aDomainLookupEnd);
-    NS_IMETHOD GetConnectStart(mozilla::TimeStamp *aConnectStart);
-    NS_IMETHOD GetConnectEnd(mozilla::TimeStamp *aConnectEnd);
-    NS_IMETHOD GetRequestStart(mozilla::TimeStamp *aRequestStart);
-    NS_IMETHOD GetResponseStart(mozilla::TimeStamp *aResponseStart);
-    NS_IMETHOD GetResponseEnd(mozilla::TimeStamp *aResponseEnd);
+    NS_IMETHOD GetDomainLookupStart(mozilla::TimeStamp *aDomainLookupStart) override;
+    NS_IMETHOD GetDomainLookupEnd(mozilla::TimeStamp *aDomainLookupEnd) override;
+    NS_IMETHOD GetConnectStart(mozilla::TimeStamp *aConnectStart) override;
+    NS_IMETHOD GetConnectEnd(mozilla::TimeStamp *aConnectEnd) override;
+    NS_IMETHOD GetRequestStart(mozilla::TimeStamp *aRequestStart) override;
+    NS_IMETHOD GetResponseStart(mozilla::TimeStamp *aResponseStart) override;
+    NS_IMETHOD GetResponseEnd(mozilla::TimeStamp *aResponseEnd) override;
 
 public: /* internal necko use only */
 
@@ -129,12 +148,19 @@ public: /* internal necko use only */
     void SetUploadStreamHasHeaders(bool hasHeaders)
       { mUploadStreamHasHeaders = hasHeaders; }
 
-    nsresult SetReferrerInternal(nsIURI *referrer) {
+    nsresult SetReferrerWithPolicyInternal(nsIURI *referrer,
+                                           uint32_t referrerPolicy) {
         nsAutoCString spec;
         nsresult rv = referrer->GetAsciiSpec(spec);
         if (NS_FAILED(rv)) return rv;
         mReferrer = referrer;
+        mReferrerPolicy = referrerPolicy;
         mRequestHead.SetHeader(nsHttp::Referer, spec);
+        return NS_OK;
+    }
+
+    nsresult SetTopWindowURI(nsIURI* aTopWindowURI) {
+        mTopWindowURI = aTopWindowURI;
         return NS_OK;
     }
 
@@ -223,7 +249,6 @@ private:
     nsresult EnsureAssocReq();
     void     ProcessSSLInformation();
     bool     IsHTTPS();
-    void     RetrieveSSLOptions();
 
     nsresult ContinueOnStartRequest1(nsresult);
     nsresult ContinueOnStartRequest2(nsresult);
@@ -237,7 +262,7 @@ private:
     void     HandleAsyncFallback();
     nsresult ContinueHandleAsyncFallback(nsresult);
     nsresult PromptTempRedirect();
-    virtual  nsresult SetupReplacementChannel(nsIURI *, nsIChannel *, bool preserveMethod);
+    virtual  nsresult SetupReplacementChannel(nsIURI *, nsIChannel *, bool preserveMethod) override;
 
     // proxy specific methods
     nsresult ProxyFailover();
@@ -342,8 +367,12 @@ private:
     nsresult MaybeSetupByteRangeRequest(int64_t partialLen, int64_t contentLength,
                                         bool ignoreMissingPartialLen = false);
     nsresult SetupByteRangeRequest(int64_t partialLen);
+    void UntieByteRangeRequest();
+    void UntieValidationRequest();
     nsresult OpenCacheInputStream(nsICacheEntry* cacheEntry, bool startBuffering,
                                   bool checkingAppCacheEntry);
+
+    void SetPushedStream(Http2PushedStream *stream);
 
 private:
     nsCOMPtr<nsISupports>             mSecurityInfo;
@@ -438,6 +467,11 @@ private:
     // Needed for accurate DNS timing
     nsRefPtr<nsDNSPrefetch>           mDNSPrefetch;
 
+    Http2PushedStream                 *mPushedStream;
+    // True if the channel's principal was found on a phishing, malware, or
+    // tracking (if tracking protection is enabled) blocklist
+    bool                              mLocalBlocklist;
+
     nsresult WaitForRedirectCallback();
     void PushRedirectAsyncFunc(nsContinueRedirectionFunc func);
     void PopRedirectAsyncFunc(nsContinueRedirectionFunc func);
@@ -445,12 +479,13 @@ private:
     nsCString mUsername;
 
 protected:
-    virtual void DoNotifyListenerCleanup();
+    virtual void DoNotifyListenerCleanup() override;
 
 private: // cache telemetry
     bool mDidReval;
 };
 
+NS_DEFINE_STATIC_IID_ACCESSOR(nsHttpChannel, NS_HTTPCHANNEL_IID)
 } } // namespace mozilla::net
 
 #endif // nsHttpChannel_h__

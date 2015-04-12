@@ -44,25 +44,25 @@ public:
 
   NS_DECL_EDITTXN
 
-  NS_IMETHOD RedoTransaction();
-  NS_IMETHOD Merge(nsITransaction *aTransaction, bool *aDidMerge);
+  NS_IMETHOD RedoTransaction() override;
+  NS_IMETHOD Merge(nsITransaction *aTransaction, bool *aDidMerge) override;
 
 // ------------ nsIAbsorbingTransaction -----------------------
 
   NS_IMETHOD Init(nsIAtom* aName, nsSelectionState* aSelState,
-                  nsEditor* aEditor);
+                  nsEditor* aEditor) override;
   
-  NS_IMETHOD GetTxnName(nsIAtom **aName);
+  NS_IMETHOD GetTxnName(nsIAtom **aName) override;
   
-  NS_IMETHOD StartSelectionEquals(nsSelectionState *aSelState, bool *aResult);
+  NS_IMETHOD StartSelectionEquals(nsSelectionState *aSelState, bool *aResult) override;
 
-  NS_IMETHOD EndPlaceHolderBatch();
+  NS_IMETHOD EndPlaceHolderBatch() override;
 
-  NS_IMETHOD ForwardEndBatchTo(nsIAbsorbingTransaction *aForwardingAddress);
+  NS_IMETHOD ForwardEndBatchTo(nsIAbsorbingTransaction *aForwardingAddress) override;
 
-  NS_IMETHOD Commit();
+  NS_IMETHOD Commit() override;
 
-  NS_IMETHOD RememberEndingSelection();
+  nsresult RememberEndingSelection();
 
 protected:
   virtual ~PlaceholderTxn();

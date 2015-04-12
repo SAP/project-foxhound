@@ -19,16 +19,44 @@
 using namespace js;
 using namespace js::jit;
 
+// Encodings:
+//   [ptr] A fixed-size pointer.
+//   [vwu] A variable-width unsigned integer.
+//   [vws] A variable-width signed integer.
+//    [u8] An 8-bit unsigned integer.
+//   [u8'] An 8-bit unsigned integer which is potentially extended with packed
+//         data.
+//   [u8"] Packed data which is stored and packed in the previous [u8'].
+//  [vwu*] A list of variable-width unsigned integers.
+//   [pld] Payload of Recover Value Allocation:
+//         PAYLOAD_NONE:
+//           There is no payload.
+//
+//         PAYLOAD_INDEX:
+//           [vwu] Index, such as the constant pool index.
+//
+//         PAYLOAD_STACK_OFFSET:
+//           [vws] Stack offset based on the base of the Ion frame.
+//
+//         PAYLOAD_GPR:
+//            [u8] Code of the general register.
+//
+//         PAYLOAD_FPU:
+//            [u8] Code of the FPU register.
+//
+//         PAYLOAD_PACKED_TAG:
+//           [u8"] Bits 5-7: JSValueType is encoded on the low bits of the Mode
+//                           of the RValueAllocation.
+//
 // Snapshot header:
 //
-//   [vwu] bits ((n+1)-31]: frame count
-//         bit n+1: resume after
+//   [vwu] bits ((n+1)-31]: recover instruction offset
 //         bits [0,n): bailout kind (n = SNAPSHOT_BAILOUTKIND_BITS)
 //
 // Snapshot body, repeated "frame count" times, from oldest frame to newest frame.
 // Note that the first frame doesn't have the "parent PC" field.
 //
-//   [ptr] Debug only: JSScript *
+//   [ptr] Debug only: JSScript*
 //   [vwu] pc offset
 //   [vwu] # of RVA's indexes, including nargs
 //  [vwu*] List of indexes to R(ecover)ValueAllocation table. Contains
@@ -79,6 +107,11 @@ using namespace js::jit;
 //         RECOVER_INSTRUCTION [INDEX]
 //           Index into the list of recovered instruction results.
 //
+//         RI_WITH_DEFAULT_CST [INDEX] [INDEX]
+//           The first payload is the index into the list of recovered
+//           instruction results.  The second payload is the index in the
+//           constant pool.
+//
 //         TYPED_REG [PACKED_TAG, GPR_REG]:
 //           Value with statically known type, which payload is stored in a
 //           register.
@@ -87,37 +120,8 @@ using namespace js::jit;
 //           Value with statically known type, which payload is stored at an
 //           offset on the stack.
 //
-// Encodings:
-//   [ptr] A fixed-size pointer.
-//   [vwu] A variable-width unsigned integer.
-//   [vws] A variable-width signed integer.
-//    [u8] An 8-bit unsigned integer.
-//   [u8'] An 8-bit unsigned integer which is potentially extended with packed
-//         data.
-//   [u8"] Packed data which is stored and packed in the previous [u8'].
-//  [vwu*] A list of variable-width unsigned integers.
-//   [pld] Payload of Recover Value Allocation:
-//         PAYLOAD_NONE:
-//           There is no payload.
-//
-//         PAYLOAD_INDEX:
-//           [vwu] Index, such as the constant pool index.
-//
-//         PAYLOAD_STACK_OFFSET:
-//           [vws] Stack offset based on the base of the Ion frame.
-//
-//         PAYLOAD_GPR:
-//            [u8] Code of the general register.
-//
-//         PAYLOAD_FPU:
-//            [u8] Code of the FPU register.
-//
-//         PAYLOAD_PACKED_TAG:
-//           [u8"] Bits 5-7: JSValueType is encoded on the low bits of the Mode
-//                           of the RValueAllocation.
-//
 
-const RValueAllocation::Layout &
+const RValueAllocation::Layout&
 RValueAllocation::layoutFromMode(Mode mode)
 {
     switch (mode) {
@@ -192,7 +196,8 @@ RValueAllocation::layoutFromMode(Mode mode)
       case UNTYPED_STACK_REG: {
         static const RValueAllocation::Layout layout = {
             PAYLOAD_STACK_OFFSET,
-            PAYLOAD_GPR
+            PAYLOAD_GPR,
+            "value"
         };
         return layout;
       }
@@ -227,6 +232,14 @@ RValueAllocation::layoutFromMode(Mode mode)
             PAYLOAD_INDEX,
             PAYLOAD_NONE,
             "instruction"
+        };
+        return layout;
+      }
+      case RI_WITH_DEFAULT_CST: {
+        static const RValueAllocation::Layout layout = {
+            PAYLOAD_INDEX,
+            PAYLOAD_INDEX,
+            "instruction with default"
         };
         return layout;
       }
@@ -270,8 +283,8 @@ RValueAllocation::layoutFromMode(Mode mode)
 static const size_t ALLOCATION_TABLE_ALIGNMENT = 2; /* bytes */
 
 void
-RValueAllocation::readPayload(CompactBufferReader &reader, PayloadType type,
-                              uint8_t *mode, Payload *p)
+RValueAllocation::readPayload(CompactBufferReader& reader, PayloadType type,
+                              uint8_t* mode, Payload* p)
 {
     switch (type) {
       case PAYLOAD_NONE:
@@ -296,10 +309,10 @@ RValueAllocation::readPayload(CompactBufferReader &reader, PayloadType type,
 }
 
 RValueAllocation
-RValueAllocation::read(CompactBufferReader &reader)
+RValueAllocation::read(CompactBufferReader& reader)
 {
     uint8_t mode = reader.readByte();
-    const Layout &layout = layoutFromMode(Mode(mode));
+    const Layout& layout = layoutFromMode(Mode(mode & MODE_MASK));
     Payload arg1, arg2;
 
     readPayload(reader, layout.type1, &mode, &arg1);
@@ -308,7 +321,7 @@ RValueAllocation::read(CompactBufferReader &reader)
 }
 
 void
-RValueAllocation::writePayload(CompactBufferWriter &writer, PayloadType type,
+RValueAllocation::writePayload(CompactBufferWriter& writer, PayloadType type,
                                Payload p)
 {
     switch (type) {
@@ -334,7 +347,7 @@ RValueAllocation::writePayload(CompactBufferWriter &writer, PayloadType type,
         // This code assumes that the PACKED_TAG payload is following the
         // writeByte of the mode.
         MOZ_ASSERT(writer.length());
-        uint8_t *mode = writer.buffer() + (writer.length() - 1);
+        uint8_t* mode = writer.buffer() + (writer.length() - 1);
         MOZ_ASSERT((*mode & PACKED_TAG_MASK) == 0 && (p.type & ~PACKED_TAG_MASK) == 0);
         *mode = *mode | p.type;
         break;
@@ -343,7 +356,7 @@ RValueAllocation::writePayload(CompactBufferWriter &writer, PayloadType type,
 }
 
 void
-RValueAllocation::writePadding(CompactBufferWriter &writer)
+RValueAllocation::writePadding(CompactBufferWriter& writer)
 {
     // Write 0x7f in all padding bytes.
     while (writer.length() % ALLOCATION_TABLE_ALIGNMENT)
@@ -351,9 +364,9 @@ RValueAllocation::writePadding(CompactBufferWriter &writer)
 }
 
 void
-RValueAllocation::write(CompactBufferWriter &writer) const
+RValueAllocation::write(CompactBufferWriter& writer) const
 {
-    const Layout &layout = layoutFromMode(mode());
+    const Layout& layout = layoutFromMode(mode());
     MOZ_ASSERT(layout.type2 != PAYLOAD_PACKED_TAG);
     MOZ_ASSERT(writer.length() % ALLOCATION_TABLE_ALIGNMENT == 0);
 
@@ -382,7 +395,7 @@ RValueAllocation::hash() const {
     return res;
 }
 
-static const char *
+static const char*
 ValTypeToString(JSValueType type)
 {
     switch (type) {
@@ -406,7 +419,7 @@ ValTypeToString(JSValueType type)
 }
 
 void
-RValueAllocation::dumpPayload(FILE *fp, PayloadType type, Payload p)
+RValueAllocation::dumpPayload(FILE* fp, PayloadType type, Payload p)
 {
     switch (type) {
       case PAYLOAD_NONE:
@@ -430,9 +443,9 @@ RValueAllocation::dumpPayload(FILE *fp, PayloadType type, Payload p)
 }
 
 void
-RValueAllocation::dump(FILE *fp) const
+RValueAllocation::dump(FILE* fp) const
 {
-    const Layout &layout = layoutFromMode(mode());
+    const Layout& layout = layoutFromMode(mode());
     fprintf(fp, "%s", layout.name);
 
     if (layout.type1 != PAYLOAD_NONE)
@@ -466,7 +479,7 @@ RValueAllocation::equalPayloads(PayloadType type, Payload lhs, Payload rhs)
     return false;
 }
 
-SnapshotReader::SnapshotReader(const uint8_t *snapshots, uint32_t offset,
+SnapshotReader::SnapshotReader(const uint8_t* snapshots, uint32_t offset,
                                uint32_t RVATableSize, uint32_t listSize)
   : reader_(snapshots + offset, snapshots + listSize),
     allocReader_(snapshots + listSize, snapshots + listSize + RVATableSize),
@@ -484,7 +497,7 @@ SnapshotReader::SnapshotReader(const uint8_t *snapshots, uint32_t offset,
 
 // Details of snapshot header packing.
 static const uint32_t SNAPSHOT_BAILOUTKIND_SHIFT = 0;
-static const uint32_t SNAPSHOT_BAILOUTKIND_BITS = 5;
+static const uint32_t SNAPSHOT_BAILOUTKIND_BITS = 6;
 static const uint32_t SNAPSHOT_BAILOUTKIND_MASK = COMPUTE_MASK_(SNAPSHOT_BAILOUTKIND);
 
 static const uint32_t SNAPSHOT_ROFFSET_SHIFT = COMPUTE_SHIFT_AFTER_(SNAPSHOT_BAILOUTKIND);
@@ -570,7 +583,7 @@ SnapshotWriter::init()
     return allocMap_.init(32);
 }
 
-RecoverReader::RecoverReader(SnapshotReader &snapshot, const uint8_t *recovers, uint32_t size)
+RecoverReader::RecoverReader(SnapshotReader& snapshot, const uint8_t* recovers, uint32_t size)
   : reader_(nullptr, nullptr),
     numInstructions_(0),
     numInstructionsRead_(0)
@@ -636,7 +649,7 @@ SnapshotWriter::trackSnapshot(uint32_t pcOpcode, uint32_t mirOpcode, uint32_t mi
 #endif
 
 bool
-SnapshotWriter::add(const RValueAllocation &alloc)
+SnapshotWriter::add(const RValueAllocation& alloc)
 {
     MOZ_ASSERT(allocMap_.initialized());
 
@@ -696,13 +709,12 @@ RecoverWriter::startRecover(uint32_t instructionCount, bool resumeAfter)
     return recoverOffset;
 }
 
-bool
-RecoverWriter::writeInstruction(const MNode *rp)
+void
+RecoverWriter::writeInstruction(const MNode* rp)
 {
     if (!rp->writeRecoverData(writer_))
-        return false;
+        writer_.setOOM();
     instructionsWritten_++;
-    return true;
 }
 
 void

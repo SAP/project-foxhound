@@ -32,7 +32,9 @@ class nsOverflowContinuationTracker;
 #define BRS_ISOVERFLOWCONTAINER   0x00000100
 // Our mPushedFloats list is stored on the blocks' proptable
 #define BRS_PROPTABLE_FLOATCLIST  0x00000200
-#define BRS_LASTFLAG              BRS_PROPTABLE_FLOATCLIST
+// Set when the pref layout.float-fragments-inside-column.enabled is true.
+#define BRS_FLOAT_FRAGMENTS_INSIDE_COLUMN_ENABLED 0x00000400
+#define BRS_LASTFLAG              BRS_FLOAT_FRAGMENTS_INSIDE_COLUMN_ENABLED
 
 class nsBlockReflowState {
 public:
@@ -113,16 +115,16 @@ public:
   // Caller must have called GetAvailableSpace for the correct position
   // (which need not be the current mBCoord).
   void ComputeReplacedBlockOffsetsForFloats(nsIFrame* aFrame,
-                                            const nsRect& aFloatAvailableSpace,
-                                            nscoord& aLeftResult,
-                                            nscoord& aRightResult);
+                          const mozilla::LogicalRect& aFloatAvailableSpace,
+                                            nscoord&  aIStartResult,
+                                            nscoord&  aIEndResult);
 
   // Caller must have called GetAvailableSpace for the current mBCoord
   void ComputeBlockAvailSpace(nsIFrame* aFrame,
                               const nsStyleDisplay* aDisplay,
                               const nsFlowAreaRect& aFloatAvailableSpace,
                               bool aBlockAvoidsFloats,
-                              nsRect& aResult);
+                              mozilla::LogicalRect& aResult);
 
 protected:
   void RecoverFloats(nsLineList::iterator aLine, nscoord aDeltaBCoord);
@@ -157,7 +159,7 @@ public:
   // padding. This, therefore, represents the inner "content area" (in
   // spacemanager coordinates) where child frames will be placed,
   // including child blocks and floats.
-  nscoord mFloatManagerX, mFloatManagerY;
+  nscoord mFloatManagerI, mFloatManagerB;
 
   // XXX get rid of this
   nsReflowStatus mReflowStatus;
@@ -202,7 +204,11 @@ public:
     mozilla::WritingMode wm = mReflowState.GetWritingMode();
     return mContentArea.Size(wm).ConvertTo(aWM, wm);
   }
-  nscoord mContainerWidth;
+
+  // Physical size. Use only for physical <-> logical coordinate conversion.
+  nsSize mContainerSize;
+  nscoord ContainerWidth() const { return mContainerSize.width; }
+  nscoord ContainerHeight() const { return mContainerSize.height; }
 
   // Continuation out-of-flow float frames that need to move to our
   // next in flow are placed here during reflow.  It's a pointer to
@@ -211,8 +217,14 @@ public:
   // This method makes sure pushed floats are accessible to
   // StealFrame. Call it before adding any frames to mPushedFloats.
   void SetupPushedFloatList();
-  // Use this method to append to mPushedFloats.
-  void AppendPushedFloat(nsIFrame* aFloatCont);
+  /**
+   * Append aFloatCont and its next-in-flows within the same block to
+   * mPushedFloats.  aFloatCont should not be on any child list when
+   * making this call.  Its next-in-flows will be removed from
+   * mBlock using StealFrame() before being added to mPushedFloats.
+   * All appended frames will be marked NS_FRAME_IS_PUSHED_FLOAT.
+   */
+  void AppendPushedFloatChain(nsIFrame* aFloatCont);
 
   // Track child overflow continuations.
   nsOverflowContinuationTracker* mOverflowTracker;

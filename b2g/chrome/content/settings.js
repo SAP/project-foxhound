@@ -11,6 +11,11 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
+// The load order is important here SettingsRequestManager _must_ be loaded
+// prior to using SettingsListener otherwise there is a race in acquiring the
+// lock and fulfilling it. If we ever move SettingsListener or this file down in
+// the load order of shell.html things will likely break.
+Cu.import('resource://gre/modules/SettingsRequestManager.jsm');
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
 
@@ -73,6 +78,10 @@ SettingsListener.observe('debug.console.enabled', true, function(value) {
   Services.prefs.setBoolPref('layout.css.report_errors', value);
 });
 
+SettingsListener.observe('homescreen.manifestURL', 'Sentinel Value' , function(value) {
+  Services.prefs.setCharPref('dom.mozApps.homescreenURL', value);
+});
+
 // =================== Languages ====================
 SettingsListener.observe('language.current', 'en-US', function(value) {
   Services.prefs.setCharPref('general.useragent.locale', value);
@@ -99,27 +108,12 @@ SettingsListener.observe('language.current', 'en-US', function(value) {
   Services.prefs.setCharPref(prefName, value);
 
   if (shell.hasStarted() == false) {
-    shell.start();
+    shell.bootstrap();
   }
 });
 
 // =================== RIL ====================
 (function RILSettingsToPrefs() {
-  let strPrefs = ['ril.mms.mmsc', 'ril.mms.mmsproxy'];
-  strPrefs.forEach(function(key) {
-    SettingsListener.observe(key, "", function(value) {
-      Services.prefs.setCharPref(key, value);
-    });
-  });
-
-  ['ril.mms.mmsport'].forEach(function(key) {
-    SettingsListener.observe(key, null, function(value) {
-      if (value != null) {
-        Services.prefs.setIntPref(key, value);
-      }
-    });
-  });
-
   // DSDS default service IDs
   ['mms', 'sms', 'telephony', 'voicemail'].forEach(function(key) {
     SettingsListener.observe('ril.' + key + '.defaultServiceId', 0,
@@ -149,10 +143,12 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
   let hardware_info = null;
   let firmware_revision = null;
   let product_model = null;
+  let build_number = null;
 #ifdef MOZ_WIDGET_GONK
     hardware_info = libcutils.property_get('ro.hardware');
     firmware_revision = libcutils.property_get('ro.firmware_revision');
     product_model = libcutils.property_get('ro.product.model');
+    build_number = libcutils.property_get('ro.build.version.incremental');
 #endif
 
   // Populate deviceinfo settings,
@@ -163,6 +159,7 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
     let previous_os = req.result && req.result['deviceinfo.os'] || '';
     let software = os_name + ' ' + os_version;
     let setting = {
+      'deviceinfo.build_number': build_number,
       'deviceinfo.os': os_version,
       'deviceinfo.previous_os': previous_os,
       'deviceinfo.software': software,
@@ -176,7 +173,7 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
   }
 })();
 
-// =================== DevTools HUD ====================
+// =================== DevTools ====================
 
 let developerHUD;
 SettingsListener.observe('devtools.overlay', false, (value) => {
@@ -282,6 +279,36 @@ function setUpdateTrackingId() {
 }
 setUpdateTrackingId();
 
+(function syncUpdatePrefs() {
+  // The update service reads the prefs from the default branch. This is by
+  // design, as explained in bug 302721 comment 43. If we are to successfully
+  // modify them, that's where we need to make our changes.
+  let defaultBranch = Services.prefs.getDefaultBranch(null);
+
+  function syncCharPref(prefName) {
+    SettingsListener.observe(prefName, null, function(value) {
+      // If set, propagate setting value to pref.
+      if (value) {
+        defaultBranch.setCharPref(prefName, value);
+        return;
+      }
+      // If unset, initialize setting to pref value.
+      try {
+        let value = defaultBranch.getCharPref(prefName);
+        if (value) {
+          let setting = {};
+          setting[prefName] = value;
+          window.navigator.mozSettings.createLock().set(setting);
+        }
+      } catch(e) {
+        console.log('Unable to read pref ' + prefName + ': ' + e);
+      }
+    });
+  }
+
+  syncCharPref('app.update.url');
+  syncCharPref('app.update.channel');
+})();
 
 // ================ Debug ================
 (function Composer2DSettingToPref() {
@@ -467,17 +494,7 @@ let settingsToObserve = {
     resetToPref: true,
     defaultValue: 0
   },
-  'app.update.channel': {
-    resetToPref: true
-  },
   'app.update.interval': 86400,
-  'app.update.url': {
-    resetToPref: true
-  },
-  'apz.force-enable': {
-    prefName: 'dom.browser_frames.useAsyncPanZoom',
-    defaultValue: false
-  },
   'apz.overscroll.enabled': true,
   'debug.fps.enabled': {
     prefName: 'layers.acceleration.draw-fps',
@@ -497,6 +514,7 @@ let settingsToObserve = {
   },
   'dom.mozApps.use_reviewer_certs': false,
   'dom.mozApps.signed_apps_installable_from': 'https://marketplace.firefox.com',
+  'gfx.layerscope.enabled': false,
   'layers.draw-borders': false,
   'layers.draw-tile-borders': false,
   'layers.dump': false,

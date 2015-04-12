@@ -26,6 +26,7 @@
 
 #if defined(HAVE_SYS_QUOTA_H) && defined(HAVE_LINUX_QUOTA_H)
 #define USE_LINUX_QUOTACTL
+#include <sys/mount.h>
 #include <sys/quota.h>
 #endif
 
@@ -48,7 +49,6 @@
 
 #ifdef MOZ_WIDGET_GTK
 #include "nsIGIOService.h"
-#include "nsIGnomeVFSService.h"
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -89,7 +89,7 @@ using namespace mozilla;
     PR_END_MACRO
 
 /* directory enumerator */
-class nsDirEnumeratorUnix MOZ_FINAL
+class nsDirEnumeratorUnix final
   : public nsISimpleEnumerator
   , public nsIDirectoryEnumerator
 {
@@ -1407,10 +1407,9 @@ nsLocalFile::GetDiskSpaceAvailable(int64_t* aDiskSpaceAvailable)
 #endif
       && dq.dqb_bhardlimit) {
     int64_t QuotaSpaceAvailable = 0;
-    if (dq.dqb_bhardlimit > dq.dqb_curspace) {
-      QuotaSpaceAvailable =
-        int64_t(fs_buf.F_BSIZE * (dq.dqb_bhardlimit - dq.dqb_curspace));
-    }
+    // dqb_bhardlimit is count of BLOCK_SIZE blocks, dqb_curspace is bytes
+    if ((BLOCK_SIZE * dq.dqb_bhardlimit) > dq.dqb_curspace)
+      QuotaSpaceAvailable = int64_t(BLOCK_SIZE * dq.dqb_bhardlimit - dq.dqb_curspace);
     if (QuotaSpaceAvailable < *aDiskSpaceAvailable) {
       *aDiskSpaceAvailable = QuotaSpaceAvailable;
     }
@@ -1971,9 +1970,7 @@ nsLocalFile::Reveal()
 {
 #ifdef MOZ_WIDGET_GTK
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
-  nsCOMPtr<nsIGnomeVFSService> gnomevfs =
-    do_GetService(NS_GNOMEVFSSERVICE_CONTRACTID);
-  if (!giovfs && !gnomevfs) {
+  if (!giovfs) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1983,15 +1980,8 @@ nsLocalFile::Reveal()
   }
 
   if (isDirectory) {
-    if (giovfs) {
-      return giovfs->ShowURIForInput(mPath);
-    } else
-      /* Fallback to GnomeVFS */
-    {
-      return gnomevfs->ShowURIForInput(mPath);
-    }
-  } else if (giovfs &&
-             NS_SUCCEEDED(giovfs->OrgFreedesktopFileManager1ShowItems(mPath))) {
+    return giovfs->ShowURIForInput(mPath);
+  } else if (NS_SUCCEEDED(giovfs->OrgFreedesktopFileManager1ShowItems(mPath))) {
     return NS_OK;
   } else {
     nsCOMPtr<nsIFile> parentDir;
@@ -2003,11 +1993,7 @@ nsLocalFile::Reveal()
       return NS_ERROR_FAILURE;
     }
 
-    if (giovfs) {
-      return giovfs->ShowURIForInput(dirPath);
-    } else {
-      return gnomevfs->ShowURIForInput(dirPath);
-    }
+    return giovfs->ShowURIForInput(dirPath);
   }
 #elif defined(MOZ_WIDGET_COCOA)
   CFURLRef url;
@@ -2027,16 +2013,11 @@ nsLocalFile::Launch()
 {
 #ifdef MOZ_WIDGET_GTK
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
-  nsCOMPtr<nsIGnomeVFSService> gnomevfs =
-    do_GetService(NS_GNOMEVFSSERVICE_CONTRACTID);
-  if (giovfs) {
-    return giovfs->ShowURIForInput(mPath);
-  } else if (gnomevfs) {
-    /* GnomeVFS fallback */
-    return gnomevfs->ShowURIForInput(mPath);
+  if (!giovfs) {
+    return NS_ERROR_FAILURE;
   }
 
-  return NS_ERROR_FAILURE;
+  return giovfs->ShowURIForInput(mPath);
 #elif defined(MOZ_ENABLE_CONTENTACTION)
   QUrl uri = QUrl::fromLocalFile(QString::fromUtf8(mPath.get()));
   ContentAction::Action action =
@@ -2058,9 +2039,13 @@ nsLocalFile::Launch()
   }
 
   nsAutoCString fileUri = NS_LITERAL_CSTRING("file://") + mPath;
-  return widget::android::GeckoAppShell::OpenUriExternal(
+  return widget::GeckoAppShell::OpenUriExternal(
     NS_ConvertUTF8toUTF16(fileUri),
-    NS_ConvertUTF8toUTF16(type)) ? NS_OK : NS_ERROR_FAILURE;
+    NS_ConvertUTF8toUTF16(type),
+    EmptyString(),
+    EmptyString(),
+    EmptyString(),
+    EmptyString()) ? NS_OK : NS_ERROR_FAILURE;
 #elif defined(MOZ_WIDGET_COCOA)
   CFURLRef url;
   if (NS_SUCCEEDED(GetCFURL(&url))) {

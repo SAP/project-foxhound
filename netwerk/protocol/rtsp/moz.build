@@ -48,14 +48,20 @@ MSVC_ENABLE_PGO = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
+# Suppress some GCC warnings being treated as errors:
+#  - about attributes on forward declarations for types that are already
+#    defined, which complains about an important MOZ_EXPORT for android::AString
+if CONFIG['GNU_CC']:
+  CXXFLAGS += ['-Wno-error=attributes']
+
 FINAL_LIBRARY = 'xul'
 
 DEFINES['IMPL_NS_NET'] = True
 DEFINES['FORCE_PR_LOG'] = True
 
 LOCAL_INCLUDES += [
-    '../../base/src',
-    '/content/base/src',
+    '/dom/base',
+    '/netwerk/base',
     'controller',
     'rtsp',
 ]

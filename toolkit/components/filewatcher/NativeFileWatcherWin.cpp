@@ -25,7 +25,7 @@ namespace {
 /**
  * An event used to notify the main thread when an error happens.
  */
-class WatchedErrorEvent MOZ_FINAL : public nsRunnable
+class WatchedErrorEvent final : public nsRunnable
 {
 public:
   /**
@@ -63,7 +63,7 @@ public:
 /**
  * An event used to notify the main thread when an operation is successful.
  */
-class WatchedSuccessEvent MOZ_FINAL : public nsRunnable
+class WatchedSuccessEvent final : public nsRunnable
 {
 public:
   /**
@@ -101,7 +101,7 @@ public:
  * An event used to notify the main thread of a change in a watched
  * resource.
  */
-class WatchedChangeEvent MOZ_FINAL : public nsRunnable
+class WatchedChangeEvent final : public nsRunnable
 {
 public:
   /**
@@ -565,13 +565,13 @@ NativeFileWatcherIOTask::AddPathRunnableMethod(
 {
   MOZ_ASSERT(!NS_IsMainThread());
 
+  nsAutoPtr<PathRunnablesParametersWrapper> wrappedParameters(aWrappedParameters);
+
   // We return immediately if |mShuttingDown| is true (see below for
   // details about the shutdown protocol being followed).
   if (mShuttingDown) {
     return NS_OK;
   }
-
-  nsAutoPtr<PathRunnablesParametersWrapper> wrappedParameters(aWrappedParameters);
 
   if (!wrappedParameters ||
       !wrappedParameters->mChangeCallbackHandle) {
@@ -693,7 +693,7 @@ NativeFileWatcherIOTask::AddPathRunnableMethod(
   // We failed to watch the folder. Remove the callbacks
   // from the hash tables.
   RemoveCallbacksFromHashtables(
-    watchedResource->mPath,
+    wrappedParameters->mPath,
     wrappedParameters->mChangeCallbackHandle,
     wrappedParameters->mErrorCallbackHandle);
 
@@ -735,13 +735,13 @@ NativeFileWatcherIOTask::RemovePathRunnableMethod(
 {
   MOZ_ASSERT(!NS_IsMainThread());
 
+  nsAutoPtr<PathRunnablesParametersWrapper> wrappedParameters(aWrappedParameters);
+
   // We return immediately if |mShuttingDown| is true (see below for
   // details about the shutdown protocol being followed).
   if (mShuttingDown) {
     return NS_OK;
   }
-
-  nsAutoPtr<PathRunnablesParametersWrapper> wrappedParameters(aWrappedParameters);
 
   if (!wrappedParameters ||
       !wrappedParameters->mChangeCallbackHandle) {

@@ -15,6 +15,7 @@
 
 #include "mozilla/dom/ContentParent.h"
 
+#include "nsContentUtils.h"
 #include "nsISupportsPrimitives.h"
 #include "nsThreadUtils.h"
 #include "nsHashPropertyBag.h"
@@ -524,7 +525,9 @@ AudioChannelService::SetDefaultVolumeControlChannelInternal(int32_t aChannel,
   // If this child is in the background and mDefChannelChildID is set to
   // others then it means other child in the foreground already set it's
   // own default channel already.
-  if (!aHidden && mDefChannelChildID != aChildID) {
+  if ((!aHidden && mDefChannelChildID != aChildID) ||
+      (mDefChannelChildID != aChildID &&
+       mDefChannelChildID != CONTENT_PROCESS_ID_UNKNOWN)) {
     return;
   }
 
@@ -828,11 +831,8 @@ AudioChannelService::Observe(nsISupports* aSubject, const char* aTopic, const ch
   // To process the volume control on each audio channel according to
   // change of settings
   else if (!strcmp(aTopic, "mozsettings-changed")) {
-    AutoJSAPI jsapi;
-    jsapi.Init();
-    JSContext* cx = jsapi.cx();
-    RootedDictionary<SettingChangeNotification> setting(cx);
-    if (!WrappedJSToDictionary(cx, aSubject, setting)) {
+    RootedDictionary<SettingChangeNotification> setting(nsContentUtils::RootingCxForThread());
+    if (!WrappedJSToDictionary(aSubject, setting)) {
       return NS_OK;
     }
     if (!StringBeginsWith(setting.mKey, NS_LITERAL_STRING("audio.volume."))) {
@@ -841,7 +841,7 @@ AudioChannelService::Observe(nsISupports* aSubject, const char* aTopic, const ch
     if (!setting.mValue.isNumber()) {
       return NS_OK;
     }
-    
+
     nsCOMPtr<nsIAudioManager> audioManager = do_GetService(NS_AUDIOMANAGER_CONTRACTID);
     NS_ENSURE_TRUE(audioManager, NS_OK);
 

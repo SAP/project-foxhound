@@ -8,6 +8,7 @@
 % locale global @AB_CD@ %locale/@AB_CD@/global/
   locale/@AB_CD@/global/about.dtd                       (%chrome/global/about.dtd)
   locale/@AB_CD@/global/aboutAbout.dtd                  (%chrome/global/aboutAbout.dtd)
+  locale/@AB_CD@/global/aboutReader.properties          (%chrome/global/aboutReader.properties)
   locale/@AB_CD@/global/aboutRights.dtd                 (%chrome/global/aboutRights.dtd)
   locale/@AB_CD@/global/aboutNetworking.dtd             (%chrome/global/aboutNetworking.dtd)
   locale/@AB_CD@/global/aboutSupport.dtd                (%chrome/global/aboutSupport.dtd)
@@ -37,6 +38,7 @@
   locale/@AB_CD@/global/devtools/styleinspector.properties (%chrome/global/devtools/styleinspector.properties)
   locale/@AB_CD@/global/dialogOverlay.dtd               (%chrome/global/dialogOverlay.dtd)
   locale/@AB_CD@/global/editMenuOverlay.dtd             (%chrome/global/editMenuOverlay.dtd)
+  locale/@AB_CD@/global/fallbackMenubar.properties      (%chrome/global/fallbackMenubar.properties)
   locale/@AB_CD@/global/filefield.properties            (%chrome/global/filefield.properties)
   locale/@AB_CD@/global/filepicker.dtd                  (%chrome/global/filepicker.dtd)
   locale/@AB_CD@/global/filepicker.properties           (%chrome/global/filepicker.properties)

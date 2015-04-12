@@ -43,7 +43,7 @@
           Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
 
           if (!DebuggerServer.initialized) {
-            DebuggerServer.init(function () { return true; });
+            DebuggerServer.init();
             DebuggerServer.addBrowserActors();
           }
 
@@ -51,13 +51,13 @@
 
           win.AppManager.runtimeList.usb.push({
             connect: function(connection) {
-              ok(connection, win.AppManager.connection, "connection is valid");
+              is(connection, win.AppManager.connection, "connection is valid");
               connection.host = null; // force connectPipe
               connection.connect();
               return promise.resolve();
             },
 
-            getName: function() {
+            get name() {
               return "fakeRuntime";
             }
           });
@@ -83,6 +83,8 @@
           yield win.UI._busyPromise;
 
           is(Object.keys(DebuggerServer._connections).length, 1, "Connected");
+
+          yield waitForUpdate(win, "runtime-apps-found");
 
           ok(isPlayActive(), "play button is enabled 1");
           ok(!isStopActive(), "stop button is disabled 1");
@@ -110,9 +112,9 @@
           ok(!isPlayActive(), "play button is disabled 4");
           ok(!isStopActive(), "stop button is disabled 4");
 
-          win.document.querySelectorAll(".runtime-panel-item-custom")[1].click();
+          win.document.querySelectorAll(".runtime-panel-item-other")[1].click();
 
-          yield waitForUpdate(win, "list-tabs-response");
+          yield waitForUpdate(win, "runtime-apps-found");
 
           is(Object.keys(DebuggerServer._connections).length, 1, "Locally connected");
 

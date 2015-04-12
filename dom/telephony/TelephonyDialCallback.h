@@ -6,7 +6,7 @@
 #define mozilla_dom_TelephonyDialCallback_h
 
 #include "Telephony.h"
-#include "mozilla/dom/DOMRequest.h"
+#include "mozilla/dom/MMICall.h"
 #include "mozilla/dom/MozMobileConnectionBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ToJSValue.h"
@@ -23,7 +23,7 @@ namespace mozilla {
 namespace dom {
 namespace telephony {
 
-class TelephonyDialCallback MOZ_FINAL : public TelephonyCallback,
+class TelephonyDialCallback final : public TelephonyCallback,
                                         public nsITelephonyDialCallback
 {
 public:
@@ -31,39 +31,12 @@ public:
   NS_DECL_NSITELEPHONYDIALCALLBACK
 
   TelephonyDialCallback(nsPIDOMWindow* aWindow, Telephony* aTelephony,
-                        Promise* aPromise, uint32_t aServiceId);
+                        Promise* aPromise);
 
   NS_FORWARD_NSITELEPHONYCALLBACK(TelephonyCallback::)
 
-  nsresult
-  NotifyDialMMISuccess(const nsAString& aStatusMessage);
-
-  template<typename T>
-  nsresult
-  NotifyDialMMISuccess(const nsAString& aStatusMessage, const T& aInfo)
-  {
-    AutoJSAPI jsapi;
-    if (!NS_WARN_IF(jsapi.Init(mWindow))) {
-      return NS_ERROR_FAILURE;
-    }
-
-    JSContext* cx = jsapi.cx();
-    JS::Rooted<JS::Value> info(cx);
-
-    if (!ToJSValue(cx, aInfo, &info)) {
-      JS_ClearPendingException(cx);
-      return NS_ERROR_TYPE_ERR;
-    }
-
-    return NotifyDialMMISuccess(cx, aStatusMessage, info);
-  }
-
 private:
   ~TelephonyDialCallback() {}
-
-  nsresult
-  NotifyDialMMISuccess(JSContext* aCx, const nsAString& aStatusMessage,
-                       JS::Handle<JS::Value> aInfo);
 
   nsresult
   NotifyDialMMISuccess(JSContext* aCx, const MozMMIResult& aResult);
@@ -71,10 +44,9 @@ private:
 
   nsCOMPtr<nsPIDOMWindow> mWindow;
   nsRefPtr<Telephony> mTelephony;
-  uint32_t mServiceId;
 
-  nsRefPtr<DOMRequest> mMMIRequest;
   nsString mServiceCode;
+  nsRefPtr<MMICall> mMMICall;
 };
 
 } // namespace telephony

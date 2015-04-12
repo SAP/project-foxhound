@@ -44,8 +44,8 @@ public:
 private: 
   nsAtomList* Clone(bool aDeep) const;
 
-  nsAtomList(const nsAtomList& aCopy) MOZ_DELETE;
-  nsAtomList& operator=(const nsAtomList& aCopy) MOZ_DELETE;
+  nsAtomList(const nsAtomList& aCopy) = delete;
+  nsAtomList& operator=(const nsAtomList& aCopy) = delete;
 };
 
 struct nsPseudoClassList {
@@ -82,8 +82,8 @@ public:
 private: 
   nsPseudoClassList* Clone(bool aDeep) const;
 
-  nsPseudoClassList(const nsPseudoClassList& aCopy) MOZ_DELETE;
-  nsPseudoClassList& operator=(const nsPseudoClassList& aCopy) MOZ_DELETE;
+  nsPseudoClassList(const nsPseudoClassList& aCopy) = delete;
+  nsPseudoClassList& operator=(const nsPseudoClassList& aCopy) = delete;
 };
 
 #define NS_ATTR_FUNC_SET        0     // [attr]
@@ -118,8 +118,8 @@ public:
 private: 
   nsAttrSelector* Clone(bool aDeep) const;
 
-  nsAttrSelector(const nsAttrSelector& aCopy) MOZ_DELETE;
-  nsAttrSelector& operator=(const nsAttrSelector& aCopy) MOZ_DELETE;
+  nsAttrSelector(const nsAttrSelector& aCopy) = delete;
+  nsAttrSelector& operator=(const nsAttrSelector& aCopy) = delete;
 };
 
 struct nsCSSSelector {
@@ -211,8 +211,8 @@ private:
   // int16_t to make sure it packs well with mOperator
   int16_t        mPseudoType;
 
-  nsCSSSelector(const nsCSSSelector& aCopy) MOZ_DELETE;
-  nsCSSSelector& operator=(const nsCSSSelector& aCopy) MOZ_DELETE;
+  nsCSSSelector(const nsCSSSelector& aCopy) = delete;
+  nsCSSSelector& operator=(const nsCSSSelector& aCopy) = delete;
 };
 
 /**
@@ -265,8 +265,8 @@ protected:
   nsCSSSelectorList* Clone(bool aDeep) const;
 
 private:
-  nsCSSSelectorList(const nsCSSSelectorList& aCopy) MOZ_DELETE;
-  nsCSSSelectorList& operator=(const nsCSSSelectorList& aCopy) MOZ_DELETE;
+  nsCSSSelectorList(const nsCSSSelectorList& aCopy) = delete;
+  nsCSSSelectorList& operator=(const nsCSSSelectorList& aCopy) = delete;
 };
 
 // 464bab7a-2fce-4f30-ab44-b7a5f3aae57d
@@ -282,16 +282,16 @@ class DOMCSSStyleRule;
 
 class StyleRule;
 
-class ImportantRule MOZ_FINAL : public nsIStyleRule {
+class ImportantRule final : public nsIStyleRule {
 public:
   explicit ImportantRule(Declaration *aDeclaration);
 
   NS_DECL_ISUPPORTS
 
   // nsIStyleRule interface
-  virtual void MapRuleInfoInto(nsRuleData* aRuleData) MOZ_OVERRIDE;
+  virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const MOZ_OVERRIDE;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
 #endif
 
 protected:
@@ -305,7 +305,7 @@ protected:
   friend class StyleRule;
 };
 
-class StyleRule MOZ_FINAL : public Rule
+class StyleRule final : public Rule
 {
  public:
   StyleRule(nsCSSSelectorList* aSelector,
@@ -353,22 +353,22 @@ public:
   void GetSelectorText(nsAString& aSelectorText);
   void SetSelectorText(const nsAString& aSelectorText);
 
-  virtual int32_t GetType() const;
+  virtual int32_t GetType() const override;
 
-  virtual already_AddRefed<Rule> Clone() const;
+  virtual already_AddRefed<Rule> Clone() const override;
 
-  virtual nsIDOMCSSRule* GetDOMRule();
+  virtual nsIDOMCSSRule* GetDOMRule() override;
 
-  virtual nsIDOMCSSRule* GetExistingDOMRule();
+  virtual nsIDOMCSSRule* GetExistingDOMRule() override;
 
   // The new mapping function.
-  virtual void MapRuleInfoInto(nsRuleData* aRuleData) MOZ_OVERRIDE;
+  virtual void MapRuleInfoInto(nsRuleData* aRuleData) override;
 
 #ifdef DEBUG
-  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const MOZ_OVERRIDE;
+  virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override;
 #endif
 
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
 private:
   ~StyleRule();
@@ -380,7 +380,7 @@ private:
   nsRefPtr<DOMCSSStyleRule> mDOMRule;
 
 private:
-  StyleRule& operator=(const StyleRule& aCopy) MOZ_DELETE;
+  StyleRule& operator=(const StyleRule& aCopy) = delete;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(StyleRule, NS_CSS_STYLE_RULE_IMPL_CID)

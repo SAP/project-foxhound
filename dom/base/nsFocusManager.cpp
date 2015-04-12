@@ -26,6 +26,7 @@
 #include "nsIWebNavigation.h"
 #include "nsCaret.h"
 #include "nsIBaseWindow.h"
+#include "nsIXULWindow.h"
 #include "nsViewManager.h"
 #include "nsFrameSelection.h"
 #include "mozilla/dom/Selection.h"
@@ -36,6 +37,8 @@
 #include "nsIObjectFrame.h"
 #include "nsBindingManager.h"
 #include "nsStyleCoord.h"
+#include "SelectionCarets.h"
+#include "TabChild.h"
 
 #include "mozilla/ContentEvents.h"
 #include "mozilla/dom/Element.h"
@@ -46,6 +49,7 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/unused.h"
 #include <algorithm>
 
 #ifdef MOZ_XUL
@@ -705,15 +709,12 @@ nsFocusManager::WindowRaised(nsIDOMWindow* aWindow)
     }
   }
 
-  // inform the DOM window that it has activated, so that the active attribute
-  // is updated on the window
-  window->ActivateOrDeactivate(true);
-
-  // send activate event
-  nsContentUtils::DispatchTrustedEvent(window->GetExtantDoc(),
-                                       window,
-                                       NS_LITERAL_STRING("activate"),
-                                       true, true, nullptr);
+  // If this is a parent or single process window, send the activate event.
+  // Events for child process windows will be sent when ParentActivated
+  // is called.
+  if (XRE_GetProcessType() == GeckoProcessType_Default) {
+    ActivateOrDeactivate(window, true);
+  }
 
   // retrieve the last focused element within the window that was raised
   nsCOMPtr<nsPIDOMWindow> currentWindow;
@@ -734,7 +735,10 @@ nsFocusManager::WindowRaised(nsIDOMWindow* aWindow)
     frameSelection->SetDragState(false);
   }
 
-  Focus(currentWindow, currentFocus, 0, true, false, true, true);
+  // If there is no nsIXULWindow, then this is an embedded or child process window.
+  // Pass false for aWindowRaised so that commands get updated.
+  nsCOMPtr<nsIXULWindow> xulWin(do_GetInterface(baseWindow));
+  Focus(currentWindow, currentFocus, 0, true, false, xulWin != nullptr, true);
 
   return NS_OK;
 }
@@ -770,15 +774,12 @@ nsFocusManager::WindowLowered(nsIDOMWindow* aWindow)
   // clear the mouse capture as the active window has changed
   nsIPresShell::SetCapturingContent(nullptr, 0);
 
-  // inform the DOM window that it has deactivated, so that the active
-  // attribute is updated on the window
-  window->ActivateOrDeactivate(false);
-
-  // send deactivate event
-  nsContentUtils::DispatchTrustedEvent(window->GetExtantDoc(),
-                                       window,
-                                       NS_LITERAL_STRING("deactivate"),
-                                       true, true, nullptr);
+  // If this is a parent or single process window, send the deactivate event.
+  // Events for child process windows will be sent when ParentActivated
+  // is called.
+  if (XRE_GetProcessType() == GeckoProcessType_Default) {
+    ActivateOrDeactivate(window, false);
+  }
 
   // keep track of the window being lowered, so that attempts to raise the
   // window can be prevented until we return. Otherwise, focus can get into
@@ -887,6 +888,11 @@ nsFocusManager::WindowShown(nsIDOMWindow* aWindow, bool aNeedsFocus)
     }
   }
 #endif
+
+  if (nsCOMPtr<nsITabChild> child = do_GetInterface(window->GetDocShell())) {
+    bool active = static_cast<TabChild*>(child.get())->ParentIsActive();
+    ActivateOrDeactivate(window, active);
+  }
 
   if (mFocusedWindow != window)
     return NS_OK;
@@ -1064,6 +1070,18 @@ nsFocusManager::FocusPlugin(nsIContent* aContent)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsFocusManager::ParentActivated(nsIDOMWindow* aWindow, bool aActive)
+{
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
+  NS_ENSURE_TRUE(window, NS_ERROR_INVALID_ARG);
+
+  window = window->GetOuterWindow();
+
+  ActivateOrDeactivate(window, aActive);
+  return NS_OK;
+}
+
 /* static */
 void
 nsFocusManager::NotifyFocusStateChange(nsIContent* aContent,
@@ -1106,6 +1124,37 @@ nsFocusManager::EnsureCurrentWidgetFocused()
       }
     }
   }
+}
+
+void
+ActivateOrDeactivateChild(TabParent* aParent, void* aArg)
+{
+  bool active = static_cast<bool>(aArg);
+  unused << aParent->SendParentActivated(active);
+}
+
+void
+nsFocusManager::ActivateOrDeactivate(nsPIDOMWindow* aWindow, bool aActive)
+{
+  if (!aWindow) {
+    return;
+  }
+
+  // Inform the DOM window that it has activated or deactivated, so that
+  // the active attribute is updated on the window.
+  aWindow->ActivateOrDeactivate(aActive);
+
+  // Send the activate event.
+  nsContentUtils::DispatchEventOnlyToChrome(aWindow->GetExtantDoc(),
+                                            aWindow,
+                                            aActive ?
+                                              NS_LITERAL_STRING("activate") :
+                                              NS_LITERAL_STRING("deactivate"),
+                                            true, true, nullptr);
+
+  // Look for any remote child frames, iterate over them and send the activation notification.
+  nsContentUtils::CallOnAllRemoteChildren(aWindow, ActivateOrDeactivateChild,
+                                          (void *)aActive);
 }
 
 void
@@ -1635,8 +1684,14 @@ nsFocusManager::Blur(nsPIDOMWindow* aWindowToClear,
 
   // if we are leaving the document or the window was lowered, make the caret
   // invisible.
-  if (aIsLeavingDocument || !mActiveWindow)
+  if (aIsLeavingDocument || !mActiveWindow) {
     SetCaretVisible(presShell, false, nullptr);
+  }
+
+  nsRefPtr<SelectionCarets> selectionCarets = presShell->GetSelectionCarets();
+  if (selectionCarets) {
+    selectionCarets->NotifyBlur(aIsLeavingDocument || !mActiveWindow);
+  }
 
   // at this point, it is expected that this window will be still be
   // focused, but the focused content will be null, as it was cleared before

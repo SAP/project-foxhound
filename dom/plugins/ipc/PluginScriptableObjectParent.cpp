@@ -12,6 +12,7 @@
 #include "mozilla/plugins/PluginTypes.h"
 #include "mozilla/unused.h"
 #include "nsNPAPIPlugin.h"
+#include "PluginAsyncSurrogate.h"
 #include "PluginScriptableObjectUtils.h"
 
 using namespace mozilla;
@@ -37,7 +38,8 @@ using namespace mozilla::plugins::parent;
 class MOZ_STACK_CLASS StackIdentifier
 {
 public:
-  StackIdentifier(const PluginIdentifier& aIdentifier, bool aIntern = false);
+  explicit StackIdentifier(const PluginIdentifier& aIdentifier,
+                           bool aIntern = false);
 
   bool Failed() const { return mFailed; }
   NPIdentifier ToNPIdentifier() const { return mIdentifier; }
@@ -109,6 +111,7 @@ inline void
 ReleaseVariant(NPVariant& aVariant,
                PluginInstanceParent* aInstance)
 {
+  PushSurrogateAcceptCalls acceptCalls(aInstance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(aInstance);
   if (npn) {
     npn->releasevariantvalue(&aVariant);
@@ -642,6 +645,7 @@ PluginScriptableObjectParent::CreateProxyObject()
   NS_ASSERTION(mInstance, "Must have an instance!");
   NS_ASSERTION(mType == Proxy, "Shouldn't call this for non-proxy object!");
 
+  PushSurrogateAcceptCalls acceptCalls(mInstance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(mInstance);
 
   NPObject* npobject = npn->createobject(mInstance->GetNPP(),
@@ -760,6 +764,7 @@ PluginScriptableObjectParent::AnswerHasMethod(const PluginIdentifier& aId,
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -778,7 +783,7 @@ PluginScriptableObjectParent::AnswerHasMethod(const PluginIdentifier& aId,
 
 bool
 PluginScriptableObjectParent::AnswerInvoke(const PluginIdentifier& aId,
-                                           const InfallibleTArray<Variant>& aArgs,
+                                           InfallibleTArray<Variant>&& aArgs,
                                            Variant* aResult,
                                            bool* aSuccess)
 {
@@ -800,6 +805,7 @@ PluginScriptableObjectParent::AnswerInvoke(const PluginIdentifier& aId,
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -867,7 +873,7 @@ PluginScriptableObjectParent::AnswerInvoke(const PluginIdentifier& aId,
 }
 
 bool
-PluginScriptableObjectParent::AnswerInvokeDefault(const InfallibleTArray<Variant>& aArgs,
+PluginScriptableObjectParent::AnswerInvokeDefault(InfallibleTArray<Variant>&& aArgs,
                                                   Variant* aResult,
                                                   bool* aSuccess)
 {
@@ -889,6 +895,7 @@ PluginScriptableObjectParent::AnswerInvokeDefault(const InfallibleTArray<Variant
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -969,6 +976,7 @@ PluginScriptableObjectParent::AnswerHasProperty(const PluginIdentifier& aId,
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -1011,6 +1019,7 @@ PluginScriptableObjectParent::AnswerGetParentProperty(
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -1067,6 +1076,7 @@ PluginScriptableObjectParent::AnswerSetProperty(const PluginIdentifier& aId,
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -1113,6 +1123,7 @@ PluginScriptableObjectParent::AnswerRemoveProperty(const PluginIdentifier& aId,
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -1151,6 +1162,7 @@ PluginScriptableObjectParent::AnswerEnumerate(InfallibleTArray<PluginIdentifier>
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_WARNING("No netscape funcs?!");
@@ -1181,7 +1193,7 @@ PluginScriptableObjectParent::AnswerEnumerate(InfallibleTArray<PluginIdentifier>
 }
 
 bool
-PluginScriptableObjectParent::AnswerConstruct(const InfallibleTArray<Variant>& aArgs,
+PluginScriptableObjectParent::AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
                                               Variant* aResult,
                                               bool* aSuccess)
 {
@@ -1203,6 +1215,7 @@ PluginScriptableObjectParent::AnswerConstruct(const InfallibleTArray<Variant>& a
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");
@@ -1295,6 +1308,7 @@ PluginScriptableObjectParent::AnswerNPN_Evaluate(const nsCString& aScript,
     return true;
   }
 
+  PushSurrogateAcceptCalls acceptCalls(instance);
   const NPNetscapeFuncs* npn = GetNetscapeFuncs(instance);
   if (!npn) {
     NS_ERROR("No netscape funcs?!");

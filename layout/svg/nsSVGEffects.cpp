@@ -181,7 +181,7 @@ nsSVGRenderingObserver::ContentRemoved(nsIDocument *aDocument,
 nsSVGIDRenderingObserver::nsSVGIDRenderingObserver(nsIURI* aURI,
                                                    nsIContent* aObservingContent,
                                                    bool aReferenceImage)
-  : mElement(MOZ_THIS_IN_INITIALIZER_LIST())
+  : mElement(this)
 {
   // Start watching the target element
   mElement.Reset(aObservingContent, aURI, true, aReferenceImage);
@@ -228,7 +228,9 @@ nsSVGRenderingObserverProperty::DoUpdate()
   if (frame && frame->IsFrameOfType(nsIFrame::eSVG)) {
     // Changes should propagate out to things that might be observing
     // the referencing frame or its ancestors.
-    nsSVGEffects::InvalidateRenderingObservers(frame);
+    nsLayoutUtils::PostRestyleEvent(
+      frame->GetContent()->AsElement(), nsRestyleHint(0),
+      nsChangeHint_InvalidateRenderingObservers);
   }
 }
 
@@ -316,15 +318,15 @@ nsSVGFilterProperty::DoUpdate()
   if (!frame)
     return;
 
-  if (frame && frame->IsFrameOfType(nsIFrame::eSVG)) {
-    // Changes should propagate out to things that might be observing
-    // the referencing frame or its ancestors.
-    nsSVGEffects::InvalidateRenderingObservers(frame);
-  }
-
   // Repaint asynchronously in case the filter frame is being torn down
   nsChangeHint changeHint =
     nsChangeHint(nsChangeHint_RepaintFrame);
+
+  if (frame && frame->IsFrameOfType(nsIFrame::eSVG)) {
+    // Changes should propagate out to things that might be observing
+    // the referencing frame or its ancestors.
+    NS_UpdateHint(changeHint, nsChangeHint_InvalidateRenderingObservers);
+  }
 
   // Don't need to request UpdateOverflow if we're being reflowed.
   if (!(frame->GetStateBits() & NS_FRAME_IN_REFLOW)) {
@@ -351,9 +353,9 @@ nsSVGMarkerProperty::DoUpdate()
 
   // Don't need to request ReflowFrame if we're being reflowed.
   if (!(frame->GetStateBits() & NS_FRAME_IN_REFLOW)) {
+    NS_UpdateHint(changeHint, nsChangeHint_InvalidateRenderingObservers);
     // XXXjwatt: We need to unify SVG into standard reflow so we can just use
     // nsChangeHint_NeedReflow | nsChangeHint_NeedDirtyReflow here.
-    nsSVGEffects::InvalidateRenderingObservers(frame);
     // XXXSDL KILL THIS!!!
     nsSVGUtils::ScheduleReflowSVG(frame);
   }
@@ -423,7 +425,9 @@ nsSVGPaintingProperty::DoUpdate()
     return;
 
   if (frame->GetStateBits() & NS_FRAME_SVG_LAYOUT) {
-    nsSVGEffects::InvalidateRenderingObservers(frame);
+    nsLayoutUtils::PostRestyleEvent(
+      frame->GetContent()->AsElement(), nsRestyleHint(0),
+      nsChangeHint_InvalidateRenderingObservers);
     frame->InvalidateFrameSubtree();
   } else {
     InvalidateAllContinuations(frame);
@@ -487,9 +491,9 @@ nsSVGMarkerProperty *
 nsSVGEffects::GetMarkerProperty(nsIURI *aURI, nsIFrame *aFrame,
                                 const FramePropertyDescriptor *aProp)
 {
-  NS_ABORT_IF_FALSE(aFrame->GetType() == nsGkAtoms::svgPathGeometryFrame &&
-                      static_cast<nsSVGPathGeometryElement*>(aFrame->GetContent())->IsMarkable(),
-                    "Bad frame");
+  MOZ_ASSERT(aFrame->GetType() == nsGkAtoms::svgPathGeometryFrame &&
+               static_cast<nsSVGPathGeometryElement*>(aFrame->GetContent())->IsMarkable(),
+             "Bad frame");
   return static_cast<nsSVGMarkerProperty*>(
           GetEffectProperty(aURI, aFrame, aProp, CreateMarkerProperty));
 }

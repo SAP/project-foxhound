@@ -10,7 +10,6 @@
 #include "prlog.h"
 #include "prprf.h"
 #include "mozilla/mozalloc.h"
-#include "mozilla/NullPtr.h"
 #include <string.h>
 #include <stdarg.h>
 
@@ -55,7 +54,7 @@ XPC_Log_Finish()
 }
 
 void
-XPC_Log_print(const char *fmt, ...)
+XPC_Log_print(const char* fmt, ...)
 {
     va_list ap;
     char line[LINE_LEN];

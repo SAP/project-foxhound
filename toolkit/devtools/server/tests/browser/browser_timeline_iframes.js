@@ -9,7 +9,7 @@
 
 const {TimelineFront} = require("devtools/server/actors/timeline");
 
-let test = asyncTest(function*() {
+add_task(function*() {
   let doc = yield addTab(MAIN_DOMAIN + "timeline-iframe-parent.html");
 
   initDebuggerServer();
@@ -35,7 +35,6 @@ let test = asyncTest(function*() {
 });
 
 function wait(ms) {
-  let def = promise.defer();
-  setTimeout(def.resolve, ms);
-  return def.promise;
+  return new Promise(resolve =>
+    setTimeout(resolve, ms));
 }

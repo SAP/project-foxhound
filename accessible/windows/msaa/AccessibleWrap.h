@@ -14,6 +14,7 @@
 #include "ia2AccessibleComponent.h"
 #include "ia2AccessibleHyperlink.h"
 #include "ia2AccessibleValue.h"
+#include "mozilla/a11y/ProxyAccessible.h"
 
 #ifdef __GNUC__
 // Inheriting from both XPCOM and MSCOM interfaces causes a lot of warnings
@@ -170,9 +171,9 @@ public: // construction, destruction
    */
   Accessible* GetXPAccessibleFor(const VARIANT& aVarChild);
 
-  NS_IMETHOD GetNativeInterface(void **aOutAccessible);
+  virtual void GetNativeInterface(void **aOutAccessible) override;
 
-  static IDispatch *NativeAccessible(nsIAccessible *aXPAccessible);
+  static IDispatch* NativeAccessible(Accessible* aAccessible);
 
 protected:
   virtual ~AccessibleWrap() { }
@@ -209,6 +210,11 @@ protected:
   };
 };
 
+static inline AccessibleWrap*
+WrapperFor(ProxyAccessible* aProxy)
+{
+  return reinterpret_cast<AccessibleWrap*>(aProxy->GetWrapper());
+}
 } // namespace a11y
 } // namespace mozilla
 

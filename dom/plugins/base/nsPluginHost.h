@@ -28,6 +28,17 @@
 #include "nsIEffectiveTLDService.h"
 #include "nsIIDNService.h"
 #include "nsCRT.h"
+#include "mozilla/plugins/PluginTypes.h"
+
+#ifdef XP_WIN
+#include "nsIWindowsRegKey.h"
+#endif
+
+namespace mozilla {
+namespace plugins {
+class PluginAsyncSurrogate;
+} // namespace mozilla
+} // namespace plugins
 
 class nsNPAPIPlugin;
 class nsIComponentManager;
@@ -36,6 +47,7 @@ class nsIChannel;
 class nsPluginNativeWindow;
 class nsObjectLoadingContent;
 class nsPluginInstanceOwner;
+class nsPluginUnloadRunnable;
 class nsNPAPIPluginInstance;
 class nsNPAPIPluginStreamListener;
 class nsIPluginInstanceOwner;
@@ -58,7 +70,7 @@ public:
   nsRefPtr<nsInvalidPluginTag> mNext;
 };
 
-class nsPluginHost MOZ_FINAL : public nsIPluginHost,
+class nsPluginHost final : public nsIPluginHost,
                                public nsIObserver,
                                public nsITimerCallback,
                                public nsSupportsWeakReference
@@ -88,6 +100,9 @@ public:
   nsresult IsPluginEnabledForExtension(const char* aExtension, const char* &aMimeType);
 
   void GetPlugins(nsTArray<nsRefPtr<nsPluginTag> >& aPluginArray);
+  void FindPluginsForContent(uint32_t aPluginEpoch,
+                             nsTArray<mozilla::plugins::PluginTag>* aPlugins,
+                             uint32_t* aNewPluginEpoch);
 
   nsresult GetURL(nsISupports* pluginInst,
                   const char* url,
@@ -160,9 +175,20 @@ public:
   // Always returns true if plugin.allowed_types is not set
   static bool IsTypeWhitelisted(const char *aType);
 
-  // checks whether aTag is a "java" plugin tag (a tag for a plugin
-  // that does Java)
-  static bool IsJavaMIMEType(const char *aType);
+  // checks whether aType is a type we recognize for potential special handling
+  enum SpecialType { eSpecialType_None,
+                     // Informs some decisions about OOP and quirks
+                     eSpecialType_Flash,
+                     // Binds to the <applet> tag, has various special
+                     // rules around opening channels, codebase, ...
+                     eSpecialType_Java,
+                     // Some IPC quirks
+                     eSpecialType_Silverlight,
+                     // Native widget quirks
+                     eSpecialType_PDF,
+                     // Native widget quirks
+                     eSpecialType_RealPlayer };
+  static SpecialType GetSpecialType(const nsACString & aMIMEType);
 
   static nsresult PostPluginUnloadEvent(PRLibrary* aLibrary);
 
@@ -190,13 +216,21 @@ public:
   // Does not accept nullptr and should never fail.
   nsPluginTag* TagForPlugin(nsNPAPIPlugin* aPlugin);
 
+  nsPluginTag* PluginWithId(uint32_t aId);
+
   nsresult GetPlugin(const char *aMimeType, nsNPAPIPlugin** aPlugin);
+  nsresult GetPluginForContentProcess(uint32_t aPluginId, nsNPAPIPlugin** aPlugin);
+  void NotifyContentModuleDestroyed(uint32_t aPluginId);
 
   nsresult NewPluginStreamListener(nsIURI* aURL,
                                    nsNPAPIPluginInstance* aInstance,
                                    nsIStreamListener **aStreamListener);
 
+  void CreateWidget(nsPluginInstanceOwner* aOwner);
+
 private:
+  friend class nsPluginUnloadRunnable;
+
   nsresult
   TrySetUpPluginInstance(const char *aMimeType, nsIURI *aURL, nsPluginInstanceOwner *aOwner);
 
@@ -214,6 +248,8 @@ private:
   nsresult
   FindStoppedPluginForURL(nsIURI* aURL, nsIPluginInstanceOwner *aOwner);
 
+  nsresult FindPluginsInContent(bool aCreatePluginList, bool * aPluginsChanged);
+
   nsresult
   FindPlugins(bool aCreatePluginList, bool * aPluginsChanged);
 
@@ -221,6 +257,8 @@ private:
   // (performs no checks - see UpdateCategoryManager)
   enum nsRegisterType { ePluginRegister, ePluginUnregister };
   void RegisterWithCategoryManager(nsCString &aMimeType, nsRegisterType aType);
+
+  void AddPluginTag(nsPluginTag* aPluginTag);
 
   nsresult
   ScanPluginsDirectory(nsIFile *pluginsDir,
@@ -260,6 +298,17 @@ private:
 
   void OnPluginInstanceDestroyed(nsPluginTag* aPluginTag);
 
+  // To be used by the chrome process whenever the set of plugins changes.
+  void IncrementChromeEpoch();
+
+  // To be used by the chrome process; returns the current epoch.
+  uint32_t ChromeEpoch();
+
+  // To be used by the content process to get/set the last observed epoch value
+  // from the chrome process.
+  uint32_t ChromeEpochForContent();
+  void SetChromeEpochForContent(uint32_t aEpoch);
+
   nsRefPtr<nsPluginTag> mPlugins;
   nsRefPtr<nsPluginTag> mCachedPlugins;
   nsRefPtr<nsInvalidPluginTag> mInvalidPlugins;
@@ -281,6 +330,11 @@ private:
   nsCOMPtr<nsIFile> mPluginRegFile;
 #ifdef XP_WIN
   nsRefPtr<nsPluginDirServiceProvider> mPrivateDirServiceProvider;
+
+  // In order to reload plugins when they change, we watch the registry via
+  // this object.
+  nsCOMPtr<nsIWindowsRegKey> mRegKeyHKLM;
+  nsCOMPtr<nsIWindowsRegKey> mRegKeyHKCU;
 #endif
 
   nsCOMPtr<nsIEffectiveTLDService> mTLDService;
@@ -295,6 +349,12 @@ private:
 
   nsWeakPtr mCurrentDocument; // weak reference, we use it to id document only
 
+  // This epoch increases each time we load the list of plugins from disk.
+  // In the chrome process, this stores the actual epoch.
+  // In the content process, this stores the last epoch value observed
+  // when reading plugins from chrome.
+  uint32_t mPluginEpoch;
+
   static nsIFile *sPluginTempDir;
 
   // We need to hold a global ptr to ourselves because we register for
@@ -302,11 +362,11 @@ private:
   static nsPluginHost* sInst;
 };
 
-class MOZ_STACK_CLASS PluginDestructionGuard : protected PRCList
+class PluginDestructionGuard : protected PRCList
 {
 public:
   explicit PluginDestructionGuard(nsNPAPIPluginInstance *aInstance);
-
+  explicit PluginDestructionGuard(mozilla::plugins::PluginAsyncSurrogate *aSurrogate);
   explicit PluginDestructionGuard(NPP npp);
 
   ~PluginDestructionGuard();
@@ -322,6 +382,18 @@ protected:
 
     PR_INIT_CLIST(this);
     PR_INSERT_BEFORE(this, &sListHead);
+  }
+
+  void InitAsync()
+  {
+    NS_ASSERTION(NS_IsMainThread(), "Should be on the main thread");
+
+    mDelayedDestroy = false;
+
+    PR_INIT_CLIST(this);
+    // Instances with active surrogates must be inserted *after* sListHead so
+    // that they appear to be at the bottom of the stack
+    PR_INSERT_AFTER(this, &sListHead);
   }
 
   nsRefPtr<nsNPAPIPluginInstance> mInstance;

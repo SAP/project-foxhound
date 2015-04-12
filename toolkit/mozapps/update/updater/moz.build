@@ -100,6 +100,7 @@ LOCAL_INCLUDES += [
 
 DELAYLOAD_DLLS += [
     'crypt32.dll',
+    'comctl32.dll',
     'userenv.dll',
     'wsock32.dll',
 ]
@@ -109,11 +110,8 @@ if CONFIG['_MSC_VER']:
 elif CONFIG['OS_ARCH'] == 'WINNT':
     WIN32_EXE_LDFLAGS += ['-municode']
 
-if CONFIG['MOZ_UPDATE_CHANNEL'] in ('beta', 'release', 'esr'):
-    DEFINES['MAR_SIGNING_RELEASE_BETA'] = '1'
-elif CONFIG['MOZ_UPDATE_CHANNEL'] in ('nightly', 'aurora', 'nightly-elm', 'nightly-profiling', 'nightly-oak', 'nightly-ux'):
-    DEFINES['MAR_SIGNING_AURORA_NIGHTLY'] = '1'
-
 if CONFIG['MOZ_WIDGET_GTK']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
     OS_LIBS += CONFIG['TK_LIBS']
+
+FAIL_ON_WARNINGS = True

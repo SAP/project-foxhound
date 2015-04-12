@@ -16,12 +16,12 @@ class FakeMediaStreamGraph : public MediaStreamGraph
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FakeMediaStreamGraph)
 public:
   FakeMediaStreamGraph()
-    : MediaStreamGraph()
+    : MediaStreamGraph(16000)
   {
   }
 
   virtual void
-  DispatchToMainThreadAfterStreamStateUpdate(already_AddRefed<nsIRunnable> aRunnable) MOZ_OVERRIDE;
+  DispatchToMainThreadAfterStreamStateUpdate(already_AddRefed<nsIRunnable> aRunnable) override;
 
 protected:
   ~FakeMediaStreamGraph()
@@ -32,8 +32,8 @@ protected:
  * This is a stream for camera preview.
  *
  * XXX It is a temporary fix of SourceMediaStream.
- * A camera preview requests no delay and no buffering stream.
- * But the SourceMediaStream do not support it.
+ * A camera preview requests no delay and no buffering stream,
+ * but the SourceMediaStream does not support it.
  */
 class CameraPreviewMediaStream : public MediaStream
 {
@@ -42,15 +42,17 @@ class CameraPreviewMediaStream : public MediaStream
 public:
   explicit CameraPreviewMediaStream(DOMMediaStream* aWrapper);
 
-  virtual void AddAudioOutput(void* aKey) MOZ_OVERRIDE;
-  virtual void SetAudioOutputVolume(void* aKey, float aVolume) MOZ_OVERRIDE;
-  virtual void RemoveAudioOutput(void* aKey) MOZ_OVERRIDE;
-  virtual void AddVideoOutput(VideoFrameContainer* aContainer) MOZ_OVERRIDE;
-  virtual void RemoveVideoOutput(VideoFrameContainer* aContainer) MOZ_OVERRIDE;
-  virtual void ChangeExplicitBlockerCount(int32_t aDelta) MOZ_OVERRIDE;
-  virtual void AddListener(MediaStreamListener* aListener) MOZ_OVERRIDE;
-  virtual void RemoveListener(MediaStreamListener* aListener) MOZ_OVERRIDE;
-  virtual void Destroy();
+  virtual CameraPreviewMediaStream* AsCameraPreviewStream() override { return this; };
+  virtual void AddAudioOutput(void* aKey) override;
+  virtual void SetAudioOutputVolume(void* aKey, float aVolume) override;
+  virtual void RemoveAudioOutput(void* aKey) override;
+  virtual void AddVideoOutput(VideoFrameContainer* aContainer) override;
+  virtual void RemoveVideoOutput(VideoFrameContainer* aContainer) override;
+  virtual void ChangeExplicitBlockerCount(int32_t aDelta) override;
+  virtual void AddListener(MediaStreamListener* aListener) override;
+  virtual void RemoveListener(MediaStreamListener* aListener) override;
+  virtual void Destroy() override;
+  void OnPreviewStateChange(bool aActive);
 
   void Invalidate();
 
@@ -67,6 +69,7 @@ protected:
   int32_t mInvalidatePending;
   uint32_t mDiscardedFrames;
   bool mRateLimit;
+  bool mTrackCreated;
   nsRefPtr<FakeMediaStreamGraph> mFakeMediaStreamGraph;
 };
 

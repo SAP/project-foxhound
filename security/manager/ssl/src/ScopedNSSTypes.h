@@ -92,6 +92,9 @@ MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedCERTCertList,
 MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedCERTName,
                                           CERTName,
                                           CERT_DestroyName)
+MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedCERTOidSequence,
+                                          CERTOidSequence,
+                                          CERT_DestroyOidSequence)
 MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedCERTCertNicknames,
                                           CERTCertNicknames,
                                           CERT_FreeNicknames)
@@ -269,7 +272,7 @@ SECITEM_AllocItem(SECItem & item, uint32_t len)
   }
 }
 
-class ScopedAutoSECItem MOZ_FINAL : public SECItem
+class ScopedAutoSECItem final : public SECItem
 {
 public:
   explicit ScopedAutoSECItem(uint32_t initialAllocatedLen = 0)

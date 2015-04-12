@@ -35,6 +35,7 @@ class PrincipalInfo;
 namespace dom {
 
 struct IDBOpenDBOptions;
+template <typename> class Optional;
 class TabChild;
 
 namespace indexedDB {
@@ -42,8 +43,9 @@ namespace indexedDB {
 class BackgroundFactoryChild;
 class FactoryRequestParams;
 class IDBOpenDBRequest;
+class LoggingInfo;
 
-class IDBFactory MOZ_FINAL
+class IDBFactory final
   : public nsISupports
   , public nsWrapperCache
 {
@@ -73,7 +75,8 @@ class IDBFactory MOZ_FINAL
   PRThread* mOwningThread;
 #endif
 
-  bool mRootedOwningObject;
+  uint64_t mInnerWindowID;
+
   bool mBackgroundActorFailed;
   bool mPrivateBrowsingMode;
 
@@ -91,6 +94,16 @@ public:
   CreateForDatastore(JSContext* aCx,
                     JS::Handle<JSObject*> aOwningObject,
                     IDBFactory** aFactory);
+
+  static nsresult
+  CreateForWorker(JSContext* aCx,
+                  JS::Handle<JSObject*> aOwningObject,
+                  const PrincipalInfo& aPrincipalInfo,
+                  uint64_t aInnerWindowID,
+                  IDBFactory** aFactory);
+
+  static bool
+  AllowedForWindow(nsPIDOMWindow* aWindow);
 
   void
   AssertIsOnOwningThread() const
@@ -111,6 +124,9 @@ public:
     mBackgroundActor = nullptr;
   }
 
+  void
+  IncrementParentLoggingRequestSerialNumber();
+
   nsPIDOMWindow*
   GetParentObject() const
   {
@@ -130,6 +146,17 @@ public:
 
     return mPrincipalInfo;
   }
+
+  uint64_t
+  InnerWindowID() const
+  {
+    AssertIsOnOwningThread();
+
+    return mInnerWindowID;
+  }
+
+  bool
+  IsChrome() const;
 
   already_AddRefed<IDBOpenDBRequest>
   Open(const nsAString& aName,
@@ -175,17 +202,28 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
 private:
   IDBFactory();
   ~IDBFactory();
 
   static nsresult
+  CreateForMainThreadJSInternal(JSContext* aCx,
+                                JS::Handle<JSObject*> aOwningObject,
+                                nsAutoPtr<PrincipalInfo>& aPrincipalInfo,
+                                IDBFactory** aFactory);
+
+  static nsresult
   CreateForJSInternal(JSContext* aCx,
                       JS::Handle<JSObject*> aOwningObject,
                       nsAutoPtr<PrincipalInfo>& aPrincipalInfo,
+                      uint64_t aInnerWindowID,
                       IDBFactory** aFactory);
+
+  static nsresult
+  AllowedForWindowInternal(nsPIDOMWindow* aWindow,
+                           nsIPrincipal** aPrincipal);
 
   already_AddRefed<IDBOpenDBRequest>
   OpenInternal(nsIPrincipal* aPrincipal,
@@ -196,7 +234,8 @@ private:
                ErrorResult& aRv);
 
   nsresult
-  BackgroundActorCreated(PBackgroundChild* aBackgroundActor);
+  BackgroundActorCreated(PBackgroundChild* aBackgroundActor,
+                         const LoggingInfo& aLoggingInfo);
 
   void
   BackgroundActorFailed();

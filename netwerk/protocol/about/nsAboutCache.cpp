@@ -27,7 +27,9 @@ using namespace mozilla::net;
 NS_IMPL_ISUPPORTS(nsAboutCache, nsIAboutModule, nsICacheStorageVisitor)
 
 NS_IMETHODIMP
-nsAboutCache::NewChannel(nsIURI *aURI, nsIChannel **result)
+nsAboutCache::NewChannel(nsIURI* aURI,
+                         nsILoadInfo* aLoadInfo,
+                         nsIChannel** result)
 {
     NS_ENSURE_ARG_POINTER(aURI);
 
@@ -62,14 +64,12 @@ nsAboutCache::NewChannel(nsIURI *aURI, nsIChannel **result)
     mEntriesHeaderAdded = false;
 
     nsCOMPtr<nsIChannel> channel;
-    rv = NS_NewInputStreamChannel(getter_AddRefs(channel),
-                                  aURI,
-                                  inputStream,
-                                  nsContentUtils::GetSystemPrincipal(),
-                                  nsILoadInfo::SEC_NORMAL,
-                                  nsIContentPolicy::TYPE_OTHER,
-                                  NS_LITERAL_CSTRING("text/html"),
-                                  NS_LITERAL_CSTRING("utf-8"));
+    rv = NS_NewInputStreamChannelInternal(getter_AddRefs(channel),
+                                          aURI,
+                                          inputStream,
+                                          NS_LITERAL_CSTRING("text/html"),
+                                          NS_LITERAL_CSTRING("utf-8"),
+                                          aLoadInfo);
     if (NS_FAILED(rv)) return rv;
 
     mBuffer.AssignLiteral(

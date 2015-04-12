@@ -45,7 +45,6 @@ class MessageChannel : HasResultCodes
 {
     friend class ProcessLink;
     friend class ThreadLink;
-    friend class AutoEnterRPCTransaction;
 
     class CxxStackFrame;
     class InterruptFrame;
@@ -85,6 +84,8 @@ class MessageChannel : HasResultCodes
     // for process links only, not thread links.
     void CloseWithError();
 
+    void CloseWithTimeout();
+
     void SetAbortOnError(bool abort)
     {
         mAbortOnError = true;
@@ -122,6 +123,9 @@ class MessageChannel : HasResultCodes
 
     // Make an Interrupt call to the other side of the channel
     bool Call(Message* aMsg, Message* aReply);
+
+    // Wait until a message is received
+    bool WaitForIncomingMessage();
 
     bool CanSend() const;
 
@@ -212,23 +216,10 @@ class MessageChannel : HasResultCodes
     // Send OnChannelConnected notification to listeners.
     void DispatchOnChannelConnected();
 
-    // Any protocol that requires blocking until a reply arrives, will send its
-    // outgoing message through this function. Currently, two protocols do this:
-    //
-    //  sync, which can only initiate messages from child to parent.
-    //  urgent, which can only initiate messages from parent to child.
-    //
-    // SendAndWait() expects that the worker thread owns the monitor, and that
-    // the message has been prepared to be sent over the link. It returns as
-    // soon as a reply has been received, or an error has occurred.
-    //
-    // Note that while the child is blocked waiting for a sync reply, it can wake
-    // up to process urgent calls from the parent.
-    bool SendAndWait(Message* aMsg, Message* aReply);
-
     bool InterruptEventOccurred();
+    bool HasPendingEvents();
 
-    bool ProcessPendingRequest(Message aUrgent);
+    bool ProcessPendingRequest(const Message &aUrgent);
 
     void MaybeUndeferIncall();
     void EnqueuePendingMessages();
@@ -300,6 +291,14 @@ class MessageChannel : HasResultCodes
         mListener->OnExitedCall();
     }
 
+    void EnteredSyncSend() {
+        mListener->OnEnteredSyncSend();
+    }
+
+    void ExitedSyncSend() {
+        mListener->OnExitedSyncSend();
+    }
+
     MessageListener *Listener() const {
         return mListener.get();
     }
@@ -332,6 +331,30 @@ class MessageChannel : HasResultCodes
         mMonitor->AssertCurrentThreadOwns();
         return !mInterruptStack.empty();
     }
+    bool AwaitingIncomingMessage() const {
+        mMonitor->AssertCurrentThreadOwns();
+        return mIsWaitingForIncoming;
+    }
+
+    class MOZ_STACK_CLASS AutoEnterWaitForIncoming
+    {
+    public:
+        explicit AutoEnterWaitForIncoming(MessageChannel& aChannel)
+            : mChannel(aChannel)
+        {
+            aChannel.mMonitor->AssertCurrentThreadOwns();
+            aChannel.mIsWaitingForIncoming = true;
+        }
+
+        ~AutoEnterWaitForIncoming()
+        {
+            mChannel.mIsWaitingForIncoming = false;
+        }
+
+    private:
+        MessageChannel& mChannel;
+    };
+    friend class AutoEnterWaitForIncoming;
 
     // Returns true if we're dispatching a sync message's callback.
     bool DispatchingSyncMessage() const {
@@ -342,6 +365,16 @@ class MessageChannel : HasResultCodes
     int DispatchingSyncMessagePriority() const {
         AssertWorkerThread();
         return mDispatchingSyncMessagePriority;
+    }
+
+    bool DispatchingAsyncMessage() const {
+        AssertWorkerThread();
+        return mDispatchingAsyncMessage;
+    }
+
+    int DispatchingAsyncMessagePriority() const {
+        AssertWorkerThread();
+        return mDispatchingAsyncMessagePriority;
     }
 
     bool Connected() const;
@@ -372,8 +405,8 @@ class MessageChannel : HasResultCodes
     // Can be run on either thread
     void AssertWorkerThread() const
     {
-        NS_ABORT_IF_FALSE(mWorkerLoopID == MessageLoop::current()->id(),
-                          "not on worker thread!");
+        MOZ_ASSERT(mWorkerLoopID == MessageLoop::current()->id(),
+                   "not on worker thread!");
     }
 
     // The "link" thread is either the I/O thread (ProcessLink) or the
@@ -381,8 +414,8 @@ class MessageChannel : HasResultCodes
     // NOT our worker thread.
     void AssertLinkThread() const
     {
-        NS_ABORT_IF_FALSE(mWorkerLoopID != MessageLoop::current()->id(),
-                          "on worker thread but should not be!");
+        MOZ_ASSERT(mWorkerLoopID != MessageLoop::current()->id(),
+                   "on worker thread but should not be!");
     }
 
   private:
@@ -418,7 +451,7 @@ class MessageChannel : HasResultCodes
         explicit DequeueTask(RefCountedTask* aTask)
           : mTask(aTask)
         { }
-        void Run() { mTask->Run(); }
+        void Run() override { mTask->Run(); }
 
       private:
         nsRefPtr<RefCountedTask> mTask;
@@ -478,6 +511,9 @@ class MessageChannel : HasResultCodes
     bool mDispatchingSyncMessage;
     int mDispatchingSyncMessagePriority;
 
+    bool mDispatchingAsyncMessage;
+    int mDispatchingAsyncMessagePriority;
+
     // When we send an urgent request from the parent process, we could race
     // with an RPC message that was issued by the child beforehand. In this
     // case, if the parent were to wake up while waiting for the urgent reply,
@@ -502,26 +538,26 @@ class MessageChannel : HasResultCodes
     class AutoEnterTransaction
     {
       public:
-       explicit AutoEnterTransaction(MessageChannel *aChan)
+       explicit AutoEnterTransaction(MessageChannel *aChan, int32_t aMsgSeqno)
         : mChan(aChan),
           mOldTransaction(mChan->mCurrentTransaction)
        {
            mChan->mMonitor->AssertCurrentThreadOwns();
            if (mChan->mCurrentTransaction == 0)
-               mChan->mCurrentTransaction = mChan->NextSeqno();
+               mChan->mCurrentTransaction = aMsgSeqno;
        }
-       explicit AutoEnterTransaction(MessageChannel *aChan, Message *message)
+       explicit AutoEnterTransaction(MessageChannel *aChan, const Message &aMessage)
         : mChan(aChan),
           mOldTransaction(mChan->mCurrentTransaction)
        {
            mChan->mMonitor->AssertCurrentThreadOwns();
 
-           if (!message->is_sync())
+           if (!aMessage.is_sync())
                return;
 
-           MOZ_ASSERT_IF(mChan->mSide == ParentSide && mOldTransaction != message->transaction_id(),
-                         !mOldTransaction || message->priority() > mChan->AwaitingSyncReplyPriority());
-           mChan->mCurrentTransaction = message->transaction_id();
+           MOZ_ASSERT_IF(mChan->mSide == ParentSide && mOldTransaction != aMessage.transaction_id(),
+                         !mOldTransaction || aMessage.priority() > mChan->AwaitingSyncReplyPriority());
+           mChan->mCurrentTransaction = aMessage.transaction_id();
        }
        ~AutoEnterTransaction() {
            mChan->mMonitor->AssertCurrentThreadOwns();
@@ -533,9 +569,28 @@ class MessageChannel : HasResultCodes
        int32_t mOldTransaction;
     };
 
+    // If a sync message times out, we store its sequence number here. Any
+    // future sync messages will fail immediately. Once the reply for original
+    // sync message is received, we allow sync messages again.
+    //
+    // When a message times out, nothing is done to inform the other side. The
+    // other side will eventually dispatch the message and send a reply. Our
+    // side is responsible for replying to all sync messages sent by the other
+    // side when it dispatches the timed out message. The response is always an
+    // error.
+    //
+    // A message is only timed out if it initiated a transaction. This avoids
+    // hitting a lot of corner cases with message nesting that we don't really
+    // care about.
+    int32_t mTimedOutMessageSeqno;
+
     // If waiting for the reply to a sync out-message, it will be saved here
     // on the I/O thread and then read and cleared by the worker thread.
     nsAutoPtr<Message> mRecvd;
+
+    // If a sync message reply that is an error arrives, we increment this
+    // counter rather than storing it in mRecvd.
+    size_t mRecvdErrors;
 
     // Queue of all incoming messages, except for replies to sync and urgent
     // messages, which are delivered directly to mRecvd, and any pending urgent
@@ -619,6 +674,11 @@ class MessageChannel : HasResultCodes
     // Did we process an Interrupt out-call during this stack?  Only meaningful in
     // ExitedCxxStack(), from which this variable is reset.
     bool mSawInterruptOutMsg;
+
+    // Are we waiting on this channel for an incoming message? This is used
+    // to implement WaitForIncomingMessage(). Must only be accessed while owning
+    // mMonitor.
+    bool mIsWaitingForIncoming;
 
     // Map of replies received "out of turn", because of Interrupt
     // in-calls racing with replies to outstanding in-calls.  See

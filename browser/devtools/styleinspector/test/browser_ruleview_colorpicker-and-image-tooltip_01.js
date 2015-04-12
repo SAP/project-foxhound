@@ -17,13 +17,13 @@ const PAGE_CONTENT = [
   'Testing the color picker tooltip!'
 ].join("\n");
 
-let test = asyncTest(function*() {
+add_task(function*() {
   yield addTab("data:text/html;charset=utf-8,rule view color picker tooltip test");
   content.document.body.innerHTML = PAGE_CONTENT;
   let {toolbox, inspector, view} = yield openRuleView();
 
   let value = getRuleViewProperty(view, "body", "background").valueSpan;
-  let swatch = value.querySelector(".ruleview-colorswatch");
+  let swatch = value.querySelectorAll(".ruleview-colorswatch")[1];
   let url = value.querySelector(".theme-link");
   yield testImageTooltipAfterColorChange(swatch, url, view);
 });

@@ -12,7 +12,7 @@
 #include <gdk/gdkprivate.h>
 #include <string.h>
 #include "gtkdrawing.h"
-#include "nsDebug.h"
+#include "mozilla/Assertions.h"
 #include "prinrval.h"
 
 #include <math.h>
@@ -64,12 +64,17 @@ static GtkWidget* gScrolledWindowWidget;
 
 static style_prop_t style_prop_func;
 static gboolean have_arrow_scaling;
+static gboolean checkbox_check_state;
 static gboolean is_initialized;
 
 #define ARROW_UP      0
 #define ARROW_DOWN    G_PI
 #define ARROW_RIGHT   G_PI_2
 #define ARROW_LEFT    (G_PI+G_PI_2)
+
+#if !GTK_CHECK_VERSION(3,14,0)
+#define GTK_STATE_FLAG_CHECKED (1 << 11)
+#endif
 
 static GtkStateFlags
 GetStateFlagsFromGtkWidgetState(GtkWidgetState* state)
@@ -714,6 +719,11 @@ moz_gtk_init()
     is_initialized = TRUE;
     have_arrow_scaling = (gtk_major_version > 2 ||
                           (gtk_major_version == 2 && gtk_minor_version >= 12));
+    if (gtk_major_version > 3 ||
+       (gtk_major_version == 3 && gtk_minor_version >= 14))
+        checkbox_check_state = GTK_STATE_FLAG_CHECKED;
+    else
+        checkbox_check_state = GTK_STATE_FLAG_ACTIVE;
 
     /* Add style property to GtkEntry.
      * Adding the style property to the normal GtkEntry class means that it
@@ -985,8 +995,8 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
 
     // XXX we should assert rect->height >= indicator_size too
     // after bug 369581 is fixed.
-    NS_ASSERTION(rect->width >= indicator_size,
-                 "GetMinimumWidgetSize was ignored");
+    MOZ_ASSERT(rect->width >= indicator_size,
+               "GetMinimumWidgetSize was ignored");
 
     // Paint it center aligned in the rect.
     x = rect->x + (rect->width - indicator_size) / 2;
@@ -1004,10 +1014,10 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
     gtk_widget_set_sensitive(w, !state->disabled);
     gtk_widget_set_direction(w, direction);
     gtk_style_context_save(style);
-      
+
     if (isradio) {
         gtk_style_context_add_class(style, GTK_STYLE_CLASS_RADIO);
-        gtk_style_context_set_state(style, selected ? GTK_STATE_FLAG_ACTIVE :
+        gtk_style_context_set_state(style, selected ? checkbox_check_state :
                                                       GTK_STATE_FLAG_NORMAL);
         gtk_render_option(style, cr, x, y, width, height);
         if (state->focused) {
@@ -1025,7 +1035,7 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
             gtk_style_context_set_state(style, GTK_STATE_FLAG_INCONSISTENT);
             gtk_toggle_button_set_inconsistent(GTK_TOGGLE_BUTTON(gCheckboxWidget), TRUE);
         } else if (selected) {
-            gtk_style_context_set_state(style, GTK_STATE_FLAG_ACTIVE);
+            gtk_style_context_set_state(style, checkbox_check_state);
         } else {
             gtk_toggle_button_set_inconsistent(GTK_TOGGLE_BUTTON(gCheckboxWidget), FALSE);
         }
@@ -2588,8 +2598,9 @@ moz_gtk_check_menu_item_paint(cairo_t *cr, GdkRectangle* rect,
       gtk_style_context_add_class(style, GTK_STYLE_CLASS_CHECK);
     }
 
-    if (checked)
-      state_flags |= GTK_STATE_FLAG_ACTIVE;
+    if (checked) {
+      state_flags |= checkbox_check_state;
+    }
     
     gtk_style_context_set_state(style, state_flags);
     gtk_style_context_get_padding(style, state_flags, &padding);
@@ -3386,7 +3397,7 @@ moz_gtk_widget_paint(GtkThemeWidgetType widget, cairo_t *cr,
 
 GtkWidget* moz_gtk_get_scrollbar_widget(void)
 {
-    NS_ASSERTION(is_initialized, "Forgot to call moz_gtk_init()");
+    MOZ_ASSERT(is_initialized, "Forgot to call moz_gtk_init()");
     ensure_scrollbar_widget();
     return gHorizScrollbarWidget;
 }

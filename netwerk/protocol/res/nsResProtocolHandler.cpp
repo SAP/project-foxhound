@@ -279,22 +279,34 @@ nsResProtocolHandler::NewURI(const nsACString &aSpec,
 }
 
 NS_IMETHODIMP
-nsResProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
+nsResProtocolHandler::NewChannel2(nsIURI* uri,
+                                  nsILoadInfo* aLoadInfo,
+                                  nsIChannel** result)
 {
     NS_ENSURE_ARG_POINTER(uri);
-    nsresult rv;
     nsAutoCString spec;
+    nsresult rv = ResolveURI(uri, spec);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = ResolveURI(uri, spec);
-    if (NS_FAILED(rv)) return rv;
+    nsCOMPtr<nsIURI> newURI;
+    rv = NS_NewURI(getter_AddRefs(newURI), spec);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = mIOService->NewChannel(spec, nullptr, nullptr, result);
-    if (NS_FAILED(rv)) return rv;
+    rv = NS_NewChannelInternal(result,
+                               newURI,
+                               aLoadInfo);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     nsLoadFlags loadFlags = 0;
     (*result)->GetLoadFlags(&loadFlags);
     (*result)->SetLoadFlags(loadFlags & ~nsIChannel::LOAD_REPLACE);
     return (*result)->SetOriginalURI(uri);
+}
+
+NS_IMETHODIMP
+nsResProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
+{
+    return NewChannel2(uri, nullptr, result);
 }
 
 NS_IMETHODIMP 

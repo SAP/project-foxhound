@@ -10,7 +10,6 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/systemlibs.js");
 
 XPCOMUtils.defineLazyGetter(this, "RIL", function () {
   let obj = {};
@@ -20,8 +19,13 @@ XPCOMUtils.defineLazyGetter(this, "RIL", function () {
 
 const GONK_TELEPHONYSERVICE_CONTRACTID =
   "@mozilla.org/telephony/gonktelephonyservice;1";
+
 const GONK_TELEPHONYSERVICE_CID =
   Components.ID("{67d26434-d063-4d28-9f48-5b3189788155}");
+const MOBILECALLFORWARDINGOPTIONS_CID =
+  Components.ID("{79b5988b-9436-48d8-a652-88fa033f146c}");
+const TELEPHONYCALLINFO_CID =
+  Components.ID("{d9e8b358-a02c-4cf3-9fc7-816c2e8d46e4}");
 
 const NS_XPCOM_SHUTDOWN_OBSERVER_ID = "xpcom-shutdown";
 
@@ -31,68 +35,28 @@ const kPrefRilNumRadioInterfaces = "ril.numRadioInterfaces";
 const kPrefRilDebuggingEnabled = "ril.debugging.enabled";
 const kPrefDefaultServiceId = "dom.telephony.defaultServiceId";
 
-const nsIAudioManager = Ci.nsIAudioManager;
+const nsITelephonyAudioService = Ci.nsITelephonyAudioService;
 const nsITelephonyService = Ci.nsITelephonyService;
+const nsIMobileConnection = Ci.nsIMobileConnection;
 
 const CALL_WAKELOCK_TIMEOUT = 5000;
 
-// Index of the CDMA second call which isn't held in RIL but only in TelephoyService.
+// In CDMA, RIL only hold one call index. We need to fake a second call index
+// in TelephonyService for 3-way calling.
+const CDMA_FIRST_CALL_INDEX = 1;
 const CDMA_SECOND_CALL_INDEX = 2;
 
 const DIAL_ERROR_INVALID_STATE_ERROR = "InvalidStateError";
 const DIAL_ERROR_OTHER_CONNECTION_IN_USE = "OtherConnectionInUse";
 const DIAL_ERROR_BAD_NUMBER = RIL.GECKO_CALL_ERROR_BAD_NUMBER;
+const DIAL_ERROR_RADIO_NOT_AVAILABLE = RIL.GECKO_ERROR_RADIO_NOT_AVAILABLE;
 
-const AUDIO_STATE_NAME = [
-  "PHONE_STATE_NORMAL",
-  "PHONE_STATE_RINGTONE",
-  "PHONE_STATE_IN_CALL"
-];
-
-const DEFAULT_EMERGENCY_NUMBERS = ["112", "911"];
-
-// MMI match groups
-const MMI_MATCH_GROUP_FULL_MMI = 1;
-const MMI_MATCH_GROUP_PROCEDURE = 2;
-const MMI_MATCH_GROUP_SERVICE_CODE = 3;
-const MMI_MATCH_GROUP_SIA = 4;
-const MMI_MATCH_GROUP_SIB = 5;
-const MMI_MATCH_GROUP_SIC = 6;
-const MMI_MATCH_GROUP_PWD_CONFIRM = 7;
-const MMI_MATCH_GROUP_DIALING_NUMBER = 8;
+const TONES_GAP_DURATION = 70;
 
 let DEBUG;
 function debug(s) {
   dump("TelephonyService: " + s + "\n");
 }
-
-XPCOMUtils.defineLazyGetter(this, "gAudioManager", function getAudioManager() {
-  try {
-    return Cc["@mozilla.org/telephony/audiomanager;1"]
-             .getService(nsIAudioManager);
-  } catch (ex) {
-    //TODO on the phone this should not fall back as silently.
-
-    // Fake nsIAudioManager implementation so that we can run the telephony
-    // code in a non-Gonk build.
-    if (DEBUG) debug("Using fake audio manager.");
-    return {
-      microphoneMuted: false,
-      masterVolume: 1.0,
-      masterMuted: false,
-      phoneState: nsIAudioManager.PHONE_STATE_CURRENT,
-      _forceForUse: {},
-
-      setForceForUse: function(usage, force) {
-        this._forceForUse[usage] = force;
-      },
-
-      getForceForUse: function(usage) {
-        return this._forceForUse[usage] || nsIAudioManager.FORCE_NONE;
-      }
-    };
-  }
-});
 
 XPCOMUtils.defineLazyServiceGetter(this, "gRadioInterfaceLayer",
                                    "@mozilla.org/ril;1",
@@ -102,9 +66,13 @@ XPCOMUtils.defineLazyServiceGetter(this, "gPowerManagerService",
                                    "@mozilla.org/power/powermanagerservice;1",
                                    "nsIPowerManagerService");
 
-XPCOMUtils.defineLazyServiceGetter(this, "gSystemMessenger",
-                                   "@mozilla.org/system-message-internal;1",
-                                   "nsISystemMessagesInternal");
+XPCOMUtils.defineLazyServiceGetter(this, "gTelephonyMessenger",
+                                   "@mozilla.org/ril/system-messenger-helper;1",
+                                   "nsITelephonyMessenger");
+
+XPCOMUtils.defineLazyServiceGetter(this, "gAudioService",
+                                   "@mozilla.org/telephony/audio-service;1",
+                                   "nsITelephonyAudioService");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gGonkMobileConnectionService",
                                    "@mozilla.org/mobileconnection/mobileconnectionservice;1",
@@ -116,50 +84,86 @@ XPCOMUtils.defineLazyGetter(this, "gPhoneNumberUtils", function() {
   return ns.PhoneNumberUtils;
 });
 
-function MMIResult(aMmiServiceCode, aOptions) {
-  this.serviceCode = aMmiServiceCode;
-  this.statusMessage = aOptions.statusMessage;
-  this.additionalInformation = aOptions.additionalInformation;
+XPCOMUtils.defineLazyGetter(this, "gDialNumberUtils", function() {
+  let ns = {};
+  Cu.import("resource://gre/modules/DialNumberUtils.jsm", ns);
+  return ns.DialNumberUtils;
+});
+
+function MobileCallForwardingOptions(aOptions) {
+  for (let key in aOptions) {
+    this[key] = aOptions[key];
+  }
 }
-MMIResult.prototype = {
-  __exposedProps__ : {serviceCode: 'r',
-                      statusMessage: 'r',
-                      additionalInformation: 'r'},
+MobileCallForwardingOptions.prototype = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIMobileCallForwardingOptions]),
+  classID: MOBILECALLFORWARDINGOPTIONS_CID,
+  classInfo: XPCOMUtils.generateCI({
+    classID:          MOBILECALLFORWARDINGOPTIONS_CID,
+    classDescription: "MobileCallForwardingOptions",
+    interfaces:       [Ci.nsIMobileCallForwardingOptions]
+  }),
+
+  // nsIMobileForwardingOptions
+
+  active: false,
+  action: nsIMobileConnection.CALL_FORWARD_ACTION_UNKNOWN,
+  reason: nsIMobileConnection.CALL_FORWARD_REASON_UNKNOWN,
+  number: null,
+  timeSeconds: -1,
+  serviceClass: nsIMobileConnection.ICC_SERVICE_CLASS_NONE
 };
 
-function CallForwardingOptions(aOptions) {
-  this.active = aOptions.active;
-  this.action = aOptions.action;
-  this.reason = aOptions.reason;
-  this.number = aOptions.number;
-  this.timeSeconds = aOptions.timeSeconds;
-  this.serviceClass = aOptions.serviceClass;
+function TelephonyCallInfo(aCall) {
+  this.clientId = aCall.clientId;
+  this.callIndex = aCall.callIndex;
+  this.callState = aCall.state;
+  this.number = aCall.number;
+  this.numberPresentation = aCall.numberPresentation;
+  this.name = aCall.name;
+  this.namePresentation = aCall.namePresentation;
+  this.isOutgoing = aCall.isOutgoing;
+  this.isEmergency = aCall.isEmergency;
+  this.isConference = aCall.isConference;
+  this.isSwitchable = aCall.isSwitchable;
+  this.isMergeable = aCall.isMergeable;
 }
-CallForwardingOptions.prototype = {
-  __exposedProps__ : {active: 'r',
-                      action: 'r',
-                      reason: 'r',
-                      number: 'r',
-                      timeSeconds: 'r',
-                      serviceClass: 'r'},
+TelephonyCallInfo.prototype = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsITelephonyCallInfo]),
+  classID: TELEPHONYCALLINFO_CID,
+  classInfo: XPCOMUtils.generateCI({
+    classID:          TELEPHONYCALLINFO_CID,
+    classDescription: "TelephonyCallInfo",
+    interfaces:       [Ci.nsITelephonyCallInfo]
+  }),
+
+  // nsITelephonyCallInfo
+
+  clientId: 0,
+  callIndex: 0,
+  callState: nsITelephonyService.CALL_STATE_UNKNOWN,
+  number: "",
+  numberPresentation: nsITelephonyService.CALL_PRESENTATION_ALLOWED,
+  name: "",
+  namePresentation: nsITelephonyService.CALL_PRESENTATION_ALLOWED,
+  isOutgoing: true,
+  isEmergency: false,
+  isConference: false,
+  isSwitchable: true,
+  isMergeable: true
 };
 
 function TelephonyService() {
   this._numClients = gRadioInterfaceLayer.numRadioInterfaces;
   this._listeners = [];
 
-  this._mmiRegExp = null;
-
   this._isDialing = false;
   this._cachedDialRequest = null;
   this._currentCalls = {};
+  this._currentConferenceState = nsITelephonyService.CALL_STATE_UNKNOWN;
   this._audioStates = {};
 
   this._cdmaCallWaitingNumber = null;
-
-  // _isActiveCall[clientId][callIndex] shows the active status of the call.
-  this._isActiveCall = {};
-  this._numActiveCall = 0;
 
   this._updateDebugFlag();
   this.defaultServiceId = this._getDefaultServiceId();
@@ -171,7 +175,6 @@ function TelephonyService() {
 
   for (let i = 0; i < this._numClients; ++i) {
     this._enumerateCallsForClient(i);
-    this._isActiveCall[i] = {};
     this._audioStates[i] = RIL.AUDIO_STATE_NO_CALL;
   }
 }
@@ -228,6 +231,37 @@ TelephonyService.prototype = {
     this._getClient(aClientId).sendWorkerMessage(aType, aMessage, aCallback);
   },
 
+  _isGsmTechGroup: function(aType) {
+    switch (aType) {
+      case null:  // Handle unknown as gsm.
+      case "gsm":
+      case "gprs":
+      case "edge":
+      case "umts":
+      case "hsdpa":
+      case "hsupa":
+      case "hspa":
+      case "hspa+":
+      case "lte":
+        return true;
+      default:
+        return false;
+    }
+  },
+
+  _isCdmaClient: function(aClientId) {
+    let type = gGonkMobileConnectionService.getItemByServiceId(aClientId).voice.type;
+    return !this._isGsmTechGroup(type);
+  },
+
+  _isEmergencyOnly: function(aClientId) {
+    return gGonkMobileConnectionService.getItemByServiceId(aClientId).voice.emergencyCallsOnly;
+  },
+
+  _isRadioOn: function(aClientId) {
+    return gGonkMobileConnectionService.getItemByServiceId(aClientId).radioState === nsIMobileConnection.MOBILE_RADIO_STATE_ENABLED;
+  },
+
   // An array of nsITelephonyListener instances.
   _listeners: null,
   _notifyAllListeners: function(aMethodName, aArgs) {
@@ -247,59 +281,17 @@ TelephonyService.prototype = {
     }
   },
 
-  /**
-   * Track the active call and update the audio system as its state changes.
-   */
-  _updateActiveCall: function(aCall) {
-    let active = false;
-    let incoming = false;
-
-    switch (aCall.state) {
-      case nsITelephonyService.CALL_STATE_DIALING: // Fall through...
-      case nsITelephonyService.CALL_STATE_ALERTING:
-      case nsITelephonyService.CALL_STATE_CONNECTED:
-        active = true;
-        break;
-      case nsITelephonyService.CALL_STATE_INCOMING:
-        incoming = true;
-        break;
-      case nsITelephonyService.CALL_STATE_HELD: // Fall through...
-      case nsITelephonyService.CALL_STATE_DISCONNECTED:
-        break;
-    }
-
-    // Update active count and info.
-    let oldActive = this._isActiveCall[aCall.clientId][aCall.callIndex];
-    if (!oldActive && active) {
-      this._numActiveCall++;
-    } else if (oldActive && !active) {
-      this._numActiveCall--;
-    }
-    this._isActiveCall[aCall.clientId][aCall.callIndex] = active;
-  },
-
   _updateAudioState: function(aAudioState) {
     switch (aAudioState) {
       case RIL.AUDIO_STATE_NO_CALL:
-        gAudioManager.phoneState = nsIAudioManager.PHONE_STATE_NORMAL;
+        gAudioService.setPhoneState(nsITelephonyAudioService.PHONE_STATE_NORMAL);
         break;
-
       case RIL.AUDIO_STATE_INCOMING:
-        gAudioManager.phoneState = nsIAudioManager.PHONE_STATE_RINGTONE;
+        gAudioService.setPhoneState(nsITelephonyAudioService.PHONE_STATE_RINGTONE);
         break;
-
       case RIL.AUDIO_STATE_IN_CALL:
-        gAudioManager.phoneState = nsIAudioManager.PHONE_STATE_IN_CALL;
-        if (this.speakerEnabled) {
-          gAudioManager.setForceForUse(nsIAudioManager.USE_COMMUNICATION,
-                                       nsIAudioManager.FORCE_SPEAKER);
-        }
+        gAudioService.setPhoneState(nsITelephonyAudioService.PHONE_STATE_IN_CALL);
         break;
-    }
-
-    if (DEBUG) {
-      debug("Put audio system into " + AUDIO_STATE_NAME[aAudioState] + ": " +
-            aAudioState + ", result is: " + gAudioManager.phoneState);
     }
   },
 
@@ -338,7 +330,7 @@ TelephonyService.prototype = {
   },
 
   _rulesToCallForwardingOptions: function(aRules) {
-    return aRules.map(rule => new CallForwardingOptions(rule));
+    return aRules.map(rule => new MobileCallForwardingOptions(rule));
   },
 
   _updateDebugFlag: function() {
@@ -379,26 +371,6 @@ TelephonyService.prototype = {
   },
 
   /**
-   * Check a given number against the list of emergency numbers provided by the
-   * RIL.
-   *
-   * @param aNumber
-   *        The number to look up.
-   */
-  _isEmergencyNumber: function(aNumber) {
-    // Check ril provided numbers first.
-    let numbers = libcutils.property_get("ril.ecclist") ||
-                  libcutils.property_get("ro.ril.ecclist");
-    if (numbers) {
-      numbers = numbers.split(",");
-    } else {
-      // No ecclist system property, so use our own list.
-      numbers = DEFAULT_EMERGENCY_NUMBERS;
-    }
-    return numbers.indexOf(aNumber) != -1;
-  },
-
-  /**
    * Checks whether to temporarily suppress caller id for the call.
    *
    * @param aMmi
@@ -414,7 +386,7 @@ TelephonyService.prototype = {
    * @param aProcedure
    *        MMI procedure
    */
-  _getTemporaryCLIRMode: function(aProcedure) {
+  _procedureToCLIRMode: function(aProcedure) {
     // In temporary mode, MMI_PROCEDURE_ACTIVATION means allowing CLI
     // presentation, i.e. CLIR_SUPPRESSION. See TS 22.030, Annex B.
     switch (aProcedure) {
@@ -460,12 +432,8 @@ TelephonyService.prototype = {
       }
       for (let i = 0, indexes = Object.keys(calls); i < indexes.length; ++i) {
         let call = calls[indexes[i]];
-        aListener.enumerateCallState(call.clientId, call.callIndex,
-                                     call.state, call.number,
-                                     call.numberPresentation, call.name,
-                                     call.namePresentation, call.isOutgoing,
-                                     call.isEmergency, call.isConference,
-                                     call.isSwitchable, call.isMergeable);
+        let callInfo = new TelephonyCallInfo(call);
+        aListener.enumerateCallState(callInfo);
       }
     }
     aListener.enumerateCallStateComplete();
@@ -514,33 +482,6 @@ TelephonyService.prototype = {
     return null;
   },
 
-  _addCdmaChildCall: function(aClientId, aNumber, aParentId) {
-    let childCall = {
-      callIndex: CDMA_SECOND_CALL_INDEX,
-      state: RIL.CALL_STATE_DIALING,
-      number: aNumber,
-      isOutgoing: true,
-      isEmergency: false,
-      isConference: false,
-      isSwitchable: false,
-      isMergeable: true,
-      parentId: aParentId
-    };
-
-    // Manual update call state according to the request response.
-    this.notifyCallStateChanged(aClientId, childCall);
-
-    childCall.state = RIL.CALL_STATE_ACTIVE;
-    this.notifyCallStateChanged(aClientId, childCall);
-
-    let parentCall = this._currentCalls[aClientId][childCall.parentId];
-    parentCall.childId = CDMA_SECOND_CALL_INDEX;
-    parentCall.state = RIL.CALL_STATE_HOLDING;
-    parentCall.isSwitchable = false;
-    parentCall.isMergeable = true;
-    this.notifyCallStateChanged(aClientId, parentCall);
-  },
-
   dial: function(aClientId, aNumber, aIsDialEmergency, aCallback) {
     if (DEBUG) debug("Dialing " + (aIsDialEmergency ? "emergency " : "") + aNumber);
 
@@ -558,33 +499,75 @@ TelephonyService.prototype = {
       return;
     }
 
-    let mmi = this._parseMMI(aNumber, this._hasCalls(aClientId));
-    if (!mmi) {
-      this._dialCall(aClientId,
-                     { number: aNumber,
-                       isDialEmergency: aIsDialEmergency }, aCallback);
-    } else if (this._isTemporaryCLIR(mmi)) {
-      this._dialCall(aClientId,
-                     { number: mmi.dialNumber,
-                       clirMode: this._getTemporaryCLIRMode(mmi.procedure),
-                       isDialEmergency: aIsDialEmergency }, aCallback);
-    } else {
-      // Reject MMI code from dialEmergency api.
-      if (aIsDialEmergency) {
-        aCallback.notifyError(DIAL_ERROR_BAD_NUMBER);
-        return;
-      }
+    let isEmergencyNumber = gDialNumberUtils.isEmergency(aNumber);
 
-      this._dialMMI(aClientId, mmi, aCallback, true);
+    // Should be radio on except it's an emergency number.
+    if (!(this._isRadioOn(aClientId) || isEmergencyNumber)) {
+      aCallback.notifyError(DIAL_ERROR_RADIO_NOT_AVAILABLE);
+      return;
+    }
+
+    // DialEmergency accepts only emergency number.
+    if (aIsDialEmergency && !isEmergencyNumber) {
+      if (DEBUG) debug("Error: Dail a non-emergency by dialEmergency. Drop.");
+      aCallback.notifyError(DIAL_ERROR_BAD_NUMBER);
+      return;
+    }
+
+    // In cdma, we should always handle the request as a call.
+    if (this._isCdmaClient(aClientId)) {
+      this._dialCall(aClientId, aNumber, undefined, aCallback);
+      return;
+    }
+
+    if (this._hasCalls(aClientId)) {
+      this._dialInCallMMI(aClientId, aNumber, aCallback);
+      return;
+    }
+
+    let mmi = gDialNumberUtils.parseMMI(aNumber);
+    if (!mmi) {
+      this._dialCall(aClientId, aNumber, undefined, aCallback);
+    } else if (this._isTemporaryCLIR(mmi)) {
+      this._dialCall(aClientId, mmi.dialNumber,
+                     this._procedureToCLIRMode(mmi.procedure), aCallback);
+    } else {
+      this._dialMMI(aClientId, mmi, aCallback);
     }
   },
 
-  /**
-   * @param aOptions.number
-   * @param aOptions.clirMode (optional)
-   * @param aOptions.isDialEmergency
-   */
-  _dialCall: function(aClientId, aOptions, aCallback) {
+  // Handling of supplementary services within a call as 3GPP TS 22.030 6.5.5
+  _dialInCallMMI: function(aClientId, aNumber, aCallback) {
+    let mmiCallback = response => {
+      aCallback.notifyDialMMI(RIL.MMI_KS_SC_CALL);
+      if (!response.success) {
+        aCallback.notifyDialMMIError(RIL.MMI_ERROR_KS_ERROR);
+      } else {
+        aCallback.notifyDialMMISuccess(RIL.MMI_SM_KS_CALL_CONTROL);
+      }
+    };
+
+    if (aNumber === "0") {
+      this._sendToRilWorker(aClientId, "hangUpBackground", null, mmiCallback);
+    } else if (aNumber === "1") {
+      this._sendToRilWorker(aClientId, "hangUpForeground", null, mmiCallback);
+    } else if (aNumber[0] === "1" && aNumber.length === 2) {
+      this._sendToRilWorker(aClientId, "hangUpCall",
+                            { callIndex: parseInt(aNumber[1]) }, mmiCallback);
+    } else if (aNumber === "2") {
+      this._sendToRilWorker(aClientId, "switchActiveCall", null, mmiCallback);
+    } else if (aNumber[0] === "2" && aNumber.length === 2) {
+      this._sendToRilWorker(aClientId, "separateCall",
+                            { callIndex: parseInt(aNumber[1]) }, mmiCallback);
+    } else if (aNumber === "3") {
+      this._sendToRilWorker(aClientId, "conferenceCall", null, mmiCallback);
+    } else {
+      this._dialCall(aClientId, aNumber, undefined, aCallback);
+    }
+  },
+
+  _dialCall: function(aClientId, aNumber, aClirMode = RIL.CLIR_DEFAULT,
+                      aCallback) {
     if (this._isDialing) {
       if (DEBUG) debug("Error: Already has a dialing call.");
       aCallback.notifyError(DIAL_ERROR_INVALID_STATE_ERROR);
@@ -606,8 +589,13 @@ TelephonyService.prototype = {
       return;
     }
 
-    aOptions.isEmergency = this._isEmergencyNumber(aOptions.number);
-    if (aOptions.isEmergency) {
+    let isEmergency = gDialNumberUtils.isEmergency(aNumber);
+    if (!isEmergency && this._isEmergencyOnly()) {
+      if (DEBUG) debug("Error: Dail a normal call when emergencyCallsOnly. Drop");
+      aCallback.notifyError(DIAL_ERROR_BAD_NUMBER);
+    }
+
+    if (isEmergency) {
       // Automatically select a proper clientId for emergency call.
       aClientId = gRadioInterfaceLayer.getClientIdForEmergencyCall() ;
       if (aClientId === -1) {
@@ -617,25 +605,95 @@ TelephonyService.prototype = {
       }
     }
 
-    // Before we dial, we have to hold the active call first.
+    let options = {
+      isEmergency: isEmergency,
+      number: aNumber,
+      clirMode: aClirMode
+    };
+
+    // No active call. Dial it out directly.
     let activeCall = this._getOneActiveCall(aClientId);
     if (!activeCall) {
-      this._sendDialCallRequest(aClientId, aOptions, aCallback);
-    } else {
-      if (DEBUG) debug("There is an active call. Hold it first before dial.");
+      this._sendDialCallRequest(aClientId, options, aCallback);
+      return;
+    }
 
-      this._cachedDialRequest = {
-        clientId: aClientId,
-        options: aOptions,
-        callback: aCallback
+    // CDMA 3-way calling.
+    if (this._isCdmaClient(aClientId)) {
+      this._dialCdmaThreeWayCall(aClientId, aNumber, aCallback);
+      return;
+    }
+
+    // GSM. Hold the active call before dialing.
+    if (DEBUG) debug("There is an active call. Hold it first before dial.");
+
+    if (this._cachedDialRequest) {
+      if (DEBUG) debug("Error: There already is a pending dial request.");
+      aCallback.notifyError(DIAL_ERROR_INVALID_STATE_ERROR);
+      return;
+    }
+
+    let autoHoldCallback = {
+      QueryInterface: XPCOMUtils.generateQI([Ci.nsITelephonyCallback]),
+
+      notifySuccess: () => {
+        this._cachedDialRequest = {
+          clientId: aClientId,
+          options: options,
+          callback: aCallback
+        };
+      },
+
+      notifyError: (aErrorMsg) => {
+        if (DEBUG) debug("Error: Fail to automatically hold the active call.");
+        aCallback.notifyError(aErrorMsg);
+      }
+    };
+
+    if (activeCall.isConference) {
+      this.holdConference(aClientId, autoHoldCallback);
+    } else {
+      this.holdCall(aClientId, activeCall.callIndex, autoHoldCallback);
+    }
+  },
+
+  _dialCdmaThreeWayCall: function(aClientId, aNumber, aCallback) {
+    this._sendToRilWorker(aClientId, "cdmaFlash", { featureStr: aNumber },
+                          response => {
+      if (!response.success) {
+        aCallback.notifyError(response.errorMsg);
+        return;
+      }
+
+      // RIL doesn't hold the 2nd call. We create one by ourselves.
+      aCallback.notifyDialCallSuccess(aClientId, CDMA_SECOND_CALL_INDEX,
+                                      aNumber);
+
+      let childCall = {
+        callIndex: CDMA_SECOND_CALL_INDEX,
+        state: RIL.CALL_STATE_DIALING,
+        number: aNumber,
+        isOutgoing: true,
+        isEmergency: false,
+        isConference: false,
+        isSwitchable: false,
+        isMergeable: true,
+        parentId: CDMA_FIRST_CALL_INDEX
       };
 
-      if (activeCall.isConference) {
-        this.holdConference(aClientId);
-      } else {
-        this.holdCall(aClientId, activeCall.callIndex);
-      }
-    }
+      // Manual update call state according to the request response.
+      this.notifyCallStateChanged(aClientId, childCall);
+
+      childCall.state = RIL.CALL_STATE_ACTIVE;
+      this.notifyCallStateChanged(aClientId, childCall);
+
+      let parentCall = this._currentCalls[aClientId][childCall.parentId];
+      parentCall.childId = CDMA_SECOND_CALL_INDEX;
+      parentCall.state = RIL.CALL_STATE_HOLDING;
+      parentCall.isSwitchable = false;
+      parentCall.isMergeable = true;
+      this.notifyCallStateChanged(aClientId, parentCall);
+    });
   },
 
   _sendDialCallRequest: function(aClientId, aOptions, aCallback) {
@@ -649,16 +707,8 @@ TelephonyService.prototype = {
         return;
       }
 
-      let currentCdmaCallIndex = !response.isCdma ? null :
-        Object.keys(this._currentCalls[aClientId])[0];
-
-      if (currentCdmaCallIndex == null) {
-        aCallback.notifyDialCallSuccess(response.callIndex, response.number);
-      } else {
-        // RIL doesn't hold the 2nd call. We create one by ourselves.
-        aCallback.notifyDialCallSuccess(CDMA_SECOND_CALL_INDEX, response.number);
-        this._addCdmaChildCall(aClientId, response.number, currentCdmaCallIndex);
-      }
+      aCallback.notifyDialCallSuccess(aClientId, response.callIndex,
+                                      response.number);
     });
   },
 
@@ -672,15 +722,14 @@ TelephonyService.prototype = {
    * @param aStartNewSession
    *        True to start a new session for ussd request.
    */
-  _dialMMI: function(aClientId, aMmi, aCallback, aStartNewSession) {
+  _dialMMI: function(aClientId, aMmi, aCallback) {
     let mmiServiceCode = aMmi ?
       this._serviceCodeToKeyString(aMmi.serviceCode) : RIL.MMI_KS_SC_USSD;
 
     aCallback.notifyDialMMI(mmiServiceCode);
 
     this._sendToRilWorker(aClientId, "sendMMI",
-                          { mmi: aMmi,
-                            startNewSession: aStartNewSession }, response => {
+                          { mmi: aMmi }, response => {
       if (DEBUG) debug("MMI response: " + JSON.stringify(response));
 
       if (!response.success) {
@@ -716,151 +765,37 @@ TelephonyService.prototype = {
         }
 
         if (response.additionalInformation != null) {
-          response.additionalInformation =
+          let callForwardingOptions =
             this._rulesToCallForwardingOptions(response.additionalInformation);
+          aCallback.notifyDialMMISuccessWithCallForwardingOptions(
+            response.statusMessage, callForwardingOptions.length, callForwardingOptions);
+          return;
         }
       }
 
-      let result = new MMIResult(mmiServiceCode, response);
-      aCallback.notifyDialMMISuccess(result);
+      // No additional information
+      if (response.additionalInformation === undefined) {
+        aCallback.notifyDialMMISuccess(response.statusMessage);
+        return;
+      }
+
+      // Additional information is an integer.
+      if (!isNaN(parseInt(response.additionalInformation, 10))) {
+        aCallback.notifyDialMMISuccessWithInteger(
+          response.statusMessage, response.additionalInformation);
+        return;
+      }
+
+      // Additional information is an array of strings.
+      let array = response.additionalInformation;
+      if (Array.isArray(array) && array.length > 0 && typeof array[0] === "string") {
+        aCallback.notifyDialMMISuccessWithStrings(response.statusMessage,
+                                                  array.length, array);
+        return;
+      }
+
+      aCallback.notifyDialMMISuccess(response.statusMessage);
     });
-  },
-
-  /**
-   * Build the regex to parse MMI string. TS.22.030
-   *
-   * The resulting groups after matching will be:
-   *    1 = full MMI string that might be used as a USSD request.
-   *    2 = MMI procedure.
-   *    3 = Service code.
-   *    4 = SIA.
-   *    5 = SIB.
-   *    6 = SIC.
-   *    7 = Password registration.
-   *    8 = Dialing number.
-   */
-  _buildMMIRegExp: function() {
-    // The general structure of the codes is as follows:
-    //    - Activation (*SC*SI#).
-    //    - Deactivation (#SC*SI#).
-    //    - Interrogation (*#SC*SI#).
-    //    - Registration (**SC*SI#).
-    //    - Erasure (##SC*SI#).
-    //
-    // where SC = Service Code (2 or 3 digits) and SI = Supplementary Info
-    // (variable length).
-
-    // Procedure, which could be *, #, *#, **, ##
-    let procedure = "(\\*[*#]?|##?)";
-
-    // Service code, which is a 2 or 3 digits that uniquely specifies the
-    // Supplementary Service associated with the MMI code.
-    let serviceCode = "(\\d{2,3})";
-
-    // Supplementary Information SIA, SIB and SIC. SIA may comprise e.g. a PIN
-    // code or Directory Number, SIB may be used to specify the tele or bearer
-    // service and SIC to specify the value of the "No Reply Condition  Timer".
-    // Where a particular service request does not require any SI,  "*SI" is
-    // not entered. The use of SIA, SIB and SIC is optional and shall be
-    // entered in any of the following formats:
-    //    - *SIA*SIB*SIC#
-    //    - *SIA*SIB#
-    //    - *SIA**SIC#
-    //    - *SIA#
-    //    - **SIB*SIC#
-    //    - ***SIC#
-    //
-    // Also catch the additional NEW_PASSWORD for the case of a password
-    // registration procedure. Ex:
-    //    - *  03 * ZZ * OLD_PASSWORD * NEW_PASSWORD * NEW_PASSWORD #
-    //    - ** 03 * ZZ * OLD_PASSWORD * NEW_PASSWORD * NEW_PASSWORD #
-    //    - *  03 **     OLD_PASSWORD * NEW_PASSWORD * NEW_PASSWORD #
-    //    - ** 03 **     OLD_PASSWORD * NEW_PASSWORD * NEW_PASSWORD #
-    let si = "\\*([^*#]*)";
-    let allSi = "";
-    for (let i = 0; i < 4; ++i) {
-      allSi = "(?:" + si + allSi + ")?";
-    }
-
-    let fullmmi = "(" + procedure + serviceCode + allSi + "#)";
-
-    // Dial string after the #.
-    let dialString = "([^#]*)";
-
-    return new RegExp(fullmmi + dialString);
-  },
-
-  /**
-   * Provide the regex to parse MMI string.
-   */
-  _getMMIRegExp: function() {
-    if (!this._mmiRegExp) {
-      this._mmiRegExp = this._buildMMIRegExp();
-    }
-
-    return this._mmiRegExp;
-  },
-
-  /**
-   * Helper to parse # string. TS.22.030 Figure 3.5.3.2.
-   */
-  _isPoundString: function(aMmiString) {
-    return (aMmiString.charAt(aMmiString.length - 1) === "#");
-  },
-
-  /**
-   * Helper to parse short string. TS.22.030 Figure 3.5.3.2.
-   */
-  _isShortString: function(aMmiString, hasCalls) {
-    if (aMmiString.length > 2) {
-      return false;
-    }
-
-    if (hasCalls) {
-      return true;
-    }
-
-    // Input string is
-    //   - emergency number or
-    //   - 2 digits starting with a "1"
-    if (this._isEmergencyNumber(aMmiString) ||
-        (aMmiString.length == 2) && (aMmiString.charAt(0) === '1')) {
-      return false;
-    }
-
-    return true;
-  },
-
-  /**
-   * Helper to parse MMI/USSD string. TS.22.030 Figure 3.5.3.2.
-   */
-  _parseMMI: function(aMmiString, hasCalls) {
-    if (!aMmiString) {
-      return null;
-    }
-
-    let matches = this._getMMIRegExp().exec(aMmiString);
-    if (matches) {
-      return {
-        fullMMI: matches[MMI_MATCH_GROUP_FULL_MMI],
-        procedure: matches[MMI_MATCH_GROUP_PROCEDURE],
-        serviceCode: matches[MMI_MATCH_GROUP_SERVICE_CODE],
-        sia: matches[MMI_MATCH_GROUP_SIA],
-        sib: matches[MMI_MATCH_GROUP_SIB],
-        sic: matches[MMI_MATCH_GROUP_SIC],
-        pwd: matches[MMI_MATCH_GROUP_PWD_CONFIRM],
-        dialNumber: matches[MMI_MATCH_GROUP_DIALING_NUMBER]
-      };
-    }
-
-    if (this._isPoundString(aMmiString) ||
-        this._isShortString(aMmiString, hasCalls)) {
-      return {
-        fullMMI: aMmiString
-      };
-    }
-
-    return null;
   },
 
   _serviceCodeToKeyString: function(aServiceCode) {
@@ -897,20 +832,57 @@ TelephonyService.prototype = {
         return RIL.MMI_KS_SC_CALL_BARRING;
       case RIL.MMI_SC_CALL_WAITING:
         return RIL.MMI_KS_SC_CALL_WAITING;
+      case RIL.MMI_SC_CHANGE_PASSWORD:
+        return RIL.MMI_KS_SC_CHANGE_PASSWORD;
       default:
         return RIL.MMI_KS_SC_USSD;
     }
   },
 
-  hangUp: function(aClientId, aCallIndex) {
-    let parentId = this._currentCalls[aClientId][aCallIndex].parentId;
-    if (parentId) {
-      // Should release both, child and parent, together. Since RIL holds only
-      // the parent call, we send 'parentId' to RIL.
-      this.hangUp(aClientId, parentId);
+  /**
+   * The default callback handler for call operations.
+   *
+   * @param aCallback
+   *        An callback object including notifySuccess() and notifyError(aMsg)
+   * @param aResponse
+   *        The response from ril_worker.
+   */
+  _defaultCallbackHandler: function(aCallback, aResponse) {
+    if (!aResponse.success) {
+      aCallback.notifyError(aResponse.errorMsg);
     } else {
-      this._sendToRilWorker(aClientId, "hangUp", { callIndex: aCallIndex });
+      aCallback.notifySuccess();
     }
+  },
+
+  sendTones: function(aClientId, aDtmfChars, aPauseDuration, aToneDuration,
+                      aCallback) {
+    let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    let tones = aDtmfChars;
+    let playTone = (tone) => {
+      this._sendToRilWorker(aClientId, "startTone", { dtmfChar: tone }, response => {
+        if (!response.success) {
+          aCallback.notifyError(response.errorMsg);
+          return;
+        }
+
+        timer.initWithCallback(() => {
+          this.stopTone();
+          timer.initWithCallback(() => {
+            if (tones.length === 1) {
+              aCallback.notifySuccess();
+            } else {
+              tones = tones.substr(1);
+              playTone(tones[0]);
+            }
+          }, TONES_GAP_DURATION, Ci.nsITimer.TYPE_ONE_SHOT);
+        }, aToneDuration, Ci.nsITimer.TYPE_ONE_SHOT);
+      });
+    };
+
+    timer.initWithCallback(() => {
+      playTone(tones[0]);
+    }, aPauseDuration, Ci.nsITimer.TYPE_ONE_SHOT);
   },
 
   startTone: function(aClientId, aDtmfChar) {
@@ -921,166 +893,236 @@ TelephonyService.prototype = {
     this._sendToRilWorker(aClientId, "stopTone");
   },
 
-  answerCall: function(aClientId, aCallIndex) {
-    this._sendToRilWorker(aClientId, "answerCall", { callIndex: aCallIndex });
+  answerCall: function(aClientId, aCallIndex, aCallback) {
+    this._sendToRilWorker(aClientId, "answerCall", { callIndex: aCallIndex },
+                          this._defaultCallbackHandler.bind(this, aCallback));
   },
 
-  rejectCall: function(aClientId, aCallIndex) {
-    this._sendToRilWorker(aClientId, "rejectCall", { callIndex: aCallIndex });
+  rejectCall: function(aClientId, aCallIndex, aCallback) {
+    this._sendToRilWorker(aClientId, "rejectCall", { callIndex: aCallIndex },
+                          this._defaultCallbackHandler.bind(this, aCallback));
   },
 
-  holdCall: function(aClientId, aCallIndex) {
+  hangUpCall: function(aClientId, aCallIndex, aCallback) {
+    // Should release both, child and parent, together. Since RIL holds only
+    // the parent call, we send 'parentId' to RIL.
+    aCallIndex = this._currentCalls[aClientId][aCallIndex].parentId || aCallIndex;
+
+    this._sendToRilWorker(aClientId, "hangUpCall", { callIndex: aCallIndex },
+                          this._defaultCallbackHandler.bind(this, aCallback));
+  },
+
+  _switchCall: function(aClientId, aCallIndex, aCallback, aRequiredState) {
     let call = this._currentCalls[aClientId][aCallIndex];
-    if (!call || !call.isSwitchable) {
-      // TODO: Bug 975949 - [B2G] Telephony should throw exceptions when some
-      // operations aren't allowed instead of simply ignoring them.
+    if (!call) {
+      aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
       return;
     }
 
-    this._sendToRilWorker(aClientId, "holdCall", { callIndex: aCallIndex });
+    if (this._isCdmaClient(aClientId)) {
+      this._switchCallCdma(aClientId, aCallIndex, aCallback);
+    } else {
+      this._switchCallGsm(aClientId, aCallIndex, aCallback, aRequiredState);
+    }
   },
 
-  resumeCall: function(aClientId, aCallIndex) {
+  _switchCallGsm: function(aClientId, aCallIndex, aCallback, aRequiredState) {
     let call = this._currentCalls[aClientId][aCallIndex];
-    if (!call || !call.isSwitchable) {
-      // TODO: Bug 975949 - [B2G] Telephony should throw exceptions when some
-      // operations aren't allowed instead of simply ignoring them.
+    if (call.state != aRequiredState) {
+      aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
       return;
     }
 
-    this._sendToRilWorker(aClientId, "resumeCall", { callIndex: aCallIndex });
+    this._sendToRilWorker(aClientId, "switchActiveCall", null,
+                          this._defaultCallbackHandler.bind(this, aCallback));
   },
 
-  conferenceCall: function(aClientId) {
-    let indexes = Object.keys(this._currentCalls[aClientId]);
-    if (indexes.length < 2) {
-      // TODO: Bug 975949 - [B2G] Telephony should throw exceptions when some
-      // operations aren't allowed instead of simply ignoring them.
+  _switchCallCdma: function(aClientId, aCallIndex, aCallback) {
+    let call = this._currentCalls[aClientId][aCallIndex];
+    if (!call.isSwitchable) {
+      aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
       return;
     }
 
-    for (let i = 0; i < indexes.length; ++i) {
-      let call = this._currentCalls[aClientId][indexes[i]];
+    this._sendToRilWorker(aClientId, "cdmaFlash", null,
+                          this._defaultCallbackHandler.bind(this, aCallback));
+  },
+
+  holdCall: function(aClientId, aCallIndex, aCallback) {
+    this._switchCall(aClientId, aCallIndex, aCallback,
+                     nsITelephonyService.CALL_STATE_CONNECTED);
+  },
+
+  resumeCall: function(aClientId, aCallIndex, aCallback) {
+    this._switchCall(aClientId, aCallIndex, aCallback,
+                     nsITelephonyService.CALL_STATE_HELD);
+  },
+
+  _conferenceCallGsm: function(aClientId, aCallback) {
+    this._sendToRilWorker(aClientId, "conferenceCall", null, response => {
+      if (!response.success) {
+        aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
+        // TODO: Bug 1124993. Deprecate it. Use callback response is enough.
+        this._notifyAllListeners("notifyConferenceError",
+                                 ["addError", response.errorMsg]);
+        return;
+      }
+
+      aCallback.notifySuccess();
+    });
+  },
+
+  _conferenceCallCdma: function(aClientId, aCallback) {
+    for (let index in this._currentCalls[aClientId]) {
+      let call = this._currentCalls[aClientId][index];
       if (!call.isMergeable) {
+        aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
         return;
       }
     }
 
-    function onCdmaConferenceCallSuccess() {
-      let indexes = Object.keys(this._currentCalls[aClientId]);
-      if (indexes.length < 2) {
+    this._sendToRilWorker(aClientId, "cdmaFlash", null, response => {
+      if (!response.success) {
+        aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
+        // TODO: Bug 1124993. Deprecate it. Use callback response is enough.
+        this._notifyAllListeners("notifyConferenceError",
+                                 ["addError", response.errorMsg]);
         return;
       }
 
-      for (let i = 0; i < indexes.length; ++i) {
-        let call = this._currentCalls[aClientId][indexes[i]];
+      for (let index in this._currentCalls[aClientId]) {
+        let call = this._currentCalls[aClientId][index];
         call.state = RIL.CALL_STATE_ACTIVE;
         call.isConference = true;
         this.notifyCallStateChanged(aClientId, call);
       }
       this.notifyConferenceCallStateChanged(RIL.CALL_STATE_ACTIVE);
-    }
 
-    this._sendToRilWorker(aClientId, "conferenceCall", null, response => {
-      if (!response.success) {
-        this._notifyAllListeners("notifyConferenceError", [response.errorName,
-                                                           response.errorMsg]);
-        return;
-      }
-
-      if (response.isCdma) {
-        onCdmaConferenceCallSuccess.call(this);
-      }
+      aCallback.notifySuccess();
     });
   },
 
-  separateCall: function(aClientId, aCallIndex) {
-    let call = this._currentCalls[aClientId][aCallIndex];
-    if (!call || !call.isConference) {
-      // TODO: Bug 975949 - [B2G] Telephony should throw exceptions when some
-      // operations aren't allowed instead of simply ignoring them.
+  conferenceCall: function(aClientId, aCallback) {
+    if (Object.keys(this._currentCalls[aClientId]).length < 2) {
+      aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
       return;
     }
 
-    let parentId = call.parentId;
-    if (parentId) {
-      this.separateCall(aClientId, parentId);
-      return;
+    if (this._isCdmaClient(aClientId)) {
+      this._conferenceCallCdma(aClientId, aCallback);
+    } else {
+      this._conferenceCallGsm(aClientId, aCallback);
     }
+  },
 
-    function onCdmaSeparateCallSuccess() {
-      // See 3gpp2, S.R0006-522-A v1.0. Table 4, XID 6S.
-      let call = this._currentCalls[aClientId][aCallIndex];
-      if (!call || !call.isConference) {
-        return;
-      }
-
-      let childId = call.childId;
-      if (!childId) {
-        return;
-      }
-
-      let childCall = this._currentCalls[aClientId][childId];
-      this.notifyCallDisconnected(aClientId, childCall);
-    }
-
+  _separateCallGsm: function(aClientId, aCallIndex, aCallback) {
     this._sendToRilWorker(aClientId, "separateCall", { callIndex: aCallIndex },
                           response => {
       if (!response.success) {
-        this._notifyAllListeners("notifyConferenceError", [response.errorName,
-                                                           response.errorMsg]);
+        aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
+        // TODO: Bug 1124993. Deprecate it. Use callback response is enough.
+        this._notifyAllListeners("notifyConferenceError",
+                                 ["removeError", response.errorMsg]);
         return;
       }
 
-      if (response.isCdma) {
-        onCdmaSeparateCallSuccess.call(this);
-      }
+      aCallback.notifySuccess();
     });
   },
 
-  holdConference: function(aClientId) {
-    this._sendToRilWorker(aClientId, "holdConference");
+  // See 3gpp2, S.R0006-522-A v1.0. Table 4, XID 6S.
+  // Release the third party. Optionally apply a warning tone. Connect the
+  // controlling subscriber and the second party. Go to the 2-way state.
+  _separateCallCdma: function(aClientId, aCallIndex, aCallback) {
+    this._sendToRilWorker(aClientId, "cdmaFlash", null, response => {
+      if (!response.success) {
+        aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
+        // TODO: Bug 1124993. Deprecate it. Use callback response is enough.
+        this._notifyAllListeners("notifyConferenceError",
+                                 ["removeError", response.errorMsg]);
+        return;
+      }
+
+      let childCall = this._currentCalls[aClientId][CDMA_SECOND_CALL_INDEX];
+      this.notifyCallDisconnected(aClientId, childCall);
+
+      aCallback.notifySuccess();
+    });
   },
 
-  resumeConference: function(aClientId) {
-    this._sendToRilWorker(aClientId, "resumeConference");
+  separateCall: function(aClientId, aCallIndex, aCallback) {
+    let call = this._currentCalls[aClientId][aCallIndex];
+    if (!call || !call.isConference) {
+      aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
+      return;
+    }
+
+    if (this._isCdmaClient(aClientId)) {
+      this._separateCallCdma(aClientId, aCallIndex, aCallback);
+    } else {
+      this._separateCallGsm(aClientId, aCallIndex, aCallback);
+    }
+  },
+
+  hangUpConference: function(aClientId, aCallback) {
+    // In cdma, ril only maintains one call index.
+    if (this._isCdmaClient(aClientId)) {
+      this._sendToRilWorker(aClientId, "hangUpCall",
+                            { callIndex: CDMA_FIRST_CALL_INDEX },
+                            this._defaultCallbackHandler.bind(this, aCallback));
+      return;
+    }
+
+    let foreground = this._currentConferenceState == nsITelephonyService.CALL_STATE_CONNECTED;
+    this._sendToRilWorker(aClientId,
+                          foreground ? "hangUpForeground" : "hangUpBackground",
+                          null,
+                          this._defaultCallbackHandler.bind(this, aCallback));
+  },
+
+  _switchConference: function(aClientId, aCallback) {
+    // Cannot hold/resume a conference in cdma.
+    if (this._isCdmaClient(aClientId)) {
+      aCallback.notifyError(RIL.GECKO_ERROR_GENERIC_FAILURE);
+      return;
+    }
+
+    this._sendToRilWorker(aClientId, "switchActiveCall", null,
+                          this._defaultCallbackHandler.bind(this, aCallback));
+  },
+
+  holdConference: function(aClientId, aCallback) {
+    this._switchConference(aClientId, aCallback);
+  },
+
+  resumeConference: function(aClientId, aCallback) {
+    this._switchConference(aClientId, aCallback);
   },
 
   sendUSSD: function(aClientId, aUssd, aCallback) {
-    this._sendToRilWorker(aClientId, "sendUSSD",
-                          { ussd: aUssd, checkSession: true },
-                          response => {
-      if (!response.success) {
-        aCallback.notifyError(response.errorMsg);
-      } else {
-        aCallback.notifySuccess();
-      }
-    });
+    this._sendToRilWorker(aClientId, "sendUSSD", { ussd: aUssd },
+                          this._defaultCallbackHandler.bind(this, aCallback));
+  },
+
+  cancelUSSD: function(aClientId, aCallback) {
+    this._sendToRilWorker(aClientId, "cancelUSSD", {},
+                          this._defaultCallbackHandler.bind(this, aCallback));
   },
 
   get microphoneMuted() {
-    return gAudioManager.microphoneMuted;
+    return gAudioService.microphoneMuted;
   },
 
   set microphoneMuted(aMuted) {
-    if (aMuted == this.microphoneMuted) {
-      return;
-    }
-    gAudioManager.microphoneMuted = aMuted;
+    gAudioService.microphoneMuted = aMuted;
   },
 
   get speakerEnabled() {
-    let force = gAudioManager.getForceForUse(nsIAudioManager.USE_COMMUNICATION);
-    return (force == nsIAudioManager.FORCE_SPEAKER);
+    return gAudioService.speakerEnabled;
   },
 
   set speakerEnabled(aEnabled) {
-    if (aEnabled == this.speakerEnabled) {
-      return;
-    }
-    let force = aEnabled ? nsIAudioManager.FORCE_SPEAKER :
-                           nsIAudioManager.FORCE_NONE;
-    gAudioManager.setForceForUse(nsIAudioManager.USE_COMMUNICATION, force);
+    gAudioService.speakerEnabled = aEnabled;
   },
 
   /**
@@ -1106,23 +1148,20 @@ TelephonyService.prototype = {
 
     aCall.clientId = aClientId;
     aCall.state = nsITelephonyService.CALL_STATE_DISCONNECTED;
+    aCall.isEmergency = gDialNumberUtils.isEmergency(aCall.number);
     let duration = ("started" in aCall && typeof aCall.started == "number") ?
       new Date().getTime() - aCall.started : 0;
-    let data = {
-      number: aCall.number,
-      serviceId: aClientId,
-      emergency: aCall.isEmergency,
-      duration: duration,
-      direction: aCall.isOutgoing ? "outgoing" : "incoming",
-      hangUpLocal: aCall.hangUpLocal
-    };
 
-    if (this._cdmaCallWaitingNumber != null) {
-      data.secondNumber = this._cdmaCallWaitingNumber;
-      this._cdmaCallWaitingNumber = null;
-    }
+    gTelephonyMessenger.notifyCallEnded(aClientId,
+                                        aCall.number,
+                                        this._cdmaCallWaitingNumber,
+                                        aCall.isEmergency,
+                                        duration,
+                                        aCall.isOutgoing,
+                                        aCall.hangUpLocal);
 
-    gSystemMessenger.broadcastMessage("telephony-call-ended", data);
+    // Clear cache of this._cdmaCallWaitingNumber after call disconnected.
+    this._cdmaCallWaitingNumber = null;
 
     let manualConfStateChange = false;
     let childId = this._currentCalls[aClientId][aCall.callIndex].childId;
@@ -1149,22 +1188,10 @@ TelephonyService.prototype = {
       }
     }
 
-    this._updateActiveCall(aCall);
-
     if (!aCall.failCause ||
         aCall.failCause === RIL.GECKO_CALL_ERROR_NORMAL_CALL_CLEARING) {
-      this._notifyAllListeners("callStateChanged", [aClientId,
-                                                    aCall.callIndex,
-                                                    aCall.state,
-                                                    aCall.number,
-                                                    aCall.numberPresentation,
-                                                    aCall.name,
-                                                    aCall.namePresentation,
-                                                    aCall.isOutgoing,
-                                                    aCall.isEmergency,
-                                                    aCall.isConference,
-                                                    aCall.isSwitchable,
-                                                    aCall.isMergeable]);
+      let callInfo = new TelephonyCallInfo(aCall);
+      this._notifyAllListeners("callStateChanged", [callInfo]);
     } else {
       this._notifyAllListeners("notifyError",
                                [aClientId, aCall.callIndex, aCall.failCause]);
@@ -1187,7 +1214,7 @@ TelephonyService.prototype = {
     // the sleep mode when the RIL handles the incoming call.
     this._acquireCallRingWakeLock();
 
-    gSystemMessenger.broadcastMessage("telephony-new-call", {});
+    gTelephonyMessenger.notifyNewCall();
   },
 
   /**
@@ -1202,11 +1229,10 @@ TelephonyService.prototype = {
     }
 
     if (aCall.state == nsITelephonyService.CALL_STATE_DIALING) {
-      gSystemMessenger.broadcastMessage("telephony-new-call", {});
+      gTelephonyMessenger.notifyNewCall();
     }
 
     aCall.clientId = aClientId;
-    this._updateActiveCall(aCall);
 
     function pick(arg, defaultValue) {
       return typeof arg !== 'undefined' ? arg : defaultValue;
@@ -1215,13 +1241,14 @@ TelephonyService.prototype = {
     let call = this._currentCalls[aClientId][aCall.callIndex];
     if (call) {
       call.state = aCall.state;
+      call.number = aCall.number;
       call.isConference = aCall.isConference;
-      call.isEmergency = pick(aCall.isEmergency, call.isEmergency);
+      call.isEmergency = gDialNumberUtils.isEmergency(aCall.number);
       call.isSwitchable = pick(aCall.isSwitchable, call.isSwitchable);
       call.isMergeable = pick(aCall.isMergeable, call.isMergeable);
     } else {
       call = aCall;
-      call.isEmergency = pick(aCall.isEmergency, this._isEmergencyNumber(aCall.number));
+      call.isEmergency = pick(aCall.isEmergency, gDialNumberUtils.isEmergency(aCall.number));
       call.isSwitchable = pick(aCall.isSwitchable, true);
       call.isMergeable = pick(aCall.isMergeable, true);
       call.name = pick(aCall.name, "");
@@ -1232,7 +1259,7 @@ TelephonyService.prototype = {
     }
 
     // Handle cached dial request.
-    if (this._cachedDialRequest && !this._getOneActiveCall()) {
+    if (this._cachedDialRequest && !this._getOneActiveCall(aClientId)) {
       if (DEBUG) debug("All calls held. Perform the cached dial request.");
 
       let request = this._cachedDialRequest;
@@ -1240,18 +1267,8 @@ TelephonyService.prototype = {
       this._cachedDialRequest = null;
     }
 
-    this._notifyAllListeners("callStateChanged", [aClientId,
-                                                  call.callIndex,
-                                                  call.state,
-                                                  call.number,
-                                                  call.numberPresentation,
-                                                  call.name,
-                                                  call.namePresentation,
-                                                  call.isOutgoing,
-                                                  call.isEmergency,
-                                                  call.isConference,
-                                                  call.isSwitchable,
-                                                  call.isMergeable]);
+    let callInfo = new TelephonyCallInfo(call);
+    this._notifyAllListeners("callStateChanged", [callInfo]);
   },
 
   notifyCdmaCallWaiting: function(aClientId, aCall) {
@@ -1283,8 +1300,9 @@ TelephonyService.prototype = {
 
   notifyConferenceCallStateChanged: function(aState) {
     if (DEBUG) debug("handleConferenceCallStateChanged: " + aState);
-    aState = this._convertRILCallState(aState);
-    this._notifyAllListeners("conferenceCallStateChanged", [aState]);
+    this._currentConferenceState = this._convertRILCallState(aState);
+    this._notifyAllListeners("conferenceCallStateChanged",
+                             [this._currentConferenceState]);
   },
 
   notifyUssdReceived: function(aClientId, aMessage, aSessionEnded) {
@@ -1293,21 +1311,7 @@ TelephonyService.prototype = {
             aMessage + " (sessionEnded : " + aSessionEnded + ")");
     }
 
-    let info = {
-      serviceId: aClientId,
-      message: aMessage,
-      sessionEnded: aSessionEnded
-    };
-
-    gSystemMessenger.broadcastMessage("ussd-received", info);
-
-    gGonkMobileConnectionService.notifyUssdReceived(aClientId, aMessage,
-                                                    aSessionEnded);
-  },
-
-  dialMMI: function(aClientId, aMmiString, aCallback) {
-    let mmi = this._parseMMI(aMmiString, this._hasCalls(aClientId));
-    this._dialMMI(aClientId, mmi, aCallback, false);
+    gTelephonyMessenger.notifyUssdReceived(aClientId, aMessage, aSessionEnded);
   },
 
   /**
@@ -1354,7 +1358,6 @@ USSDReceivedWrapper.prototype = {
     let event = new aWindow.USSDReceivedEvent("ussdreceived", {
       serviceId: aMessage.serviceId,
       message: aMessage.message,
-      sessionEnded: aMessage.sessionEnded,
       session: session
     });
 

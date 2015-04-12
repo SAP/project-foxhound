@@ -153,7 +153,7 @@ function WorkerDebuggerLoader(options) {
     try {
       loadInSandbox(url, sandbox);
     } catch (error) {
-      if (String(error) === "Error opening input stream (invalid filename?)") {
+      if (/^Error opening input stream/.test(String(error))) {
         throw new Error("can't load module " + module.id + " with url " + url +
                         "!");
       }
@@ -307,11 +307,32 @@ if (typeof Components === "object") {
   const xpcInspector = Cc["@mozilla.org/jsinspector;1"].
                        getService(Ci.nsIJSInspector);
 
-  this.worker = new WorkerDebuggerLoader({
+  let worker = this.worker = new WorkerDebuggerLoader({
     createSandbox: createSandbox,
     globals: {
       "isWorker": true,
       "reportError": Cu.reportError,
+      "loader": {
+        lazyGetter: function (aObject, aName, aLambda) {
+          Object.defineProperty(aObject, aName, {
+            get: function () {
+              delete aObject[aName];
+              return aObject[aName] = aLambda.apply(aObject);
+            },
+            configurable: true,
+            enumerable: true
+          });
+        },
+        lazyImporter: function () { throw new Error("Can't import JSM from worker debugger server") },
+        lazyServiceGetter: function () { throw new Error("Can't import XPCOM from worker debugger server") },
+        lazyRequireGetter: function (obj, property, module, destructure) {
+          Object.defineProperty(obj, property, {
+            get: () => destructure
+              ? worker.require(module)[property]
+              : worker.require(module || property)
+          });
+        }
+      }
     },
     loadInSandbox: loadInSandbox,
     modules: {
@@ -320,7 +341,8 @@ if (typeof Components === "object") {
       "promise": Promise,
       "Debugger": Debugger,
       "xpcInspector": xpcInspector,
-      "Timer": Object.create(Timer)
+      "Timer": Object.create(Timer),
+      "PromiseDebugging": PromiseDebugging
     },
     paths: {
       "": "resource://gre/modules/commonjs/",

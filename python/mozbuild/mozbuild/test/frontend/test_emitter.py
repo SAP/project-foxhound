@@ -14,17 +14,23 @@ from mozbuild.frontend.data import (
     Defines,
     DirectoryTraversal,
     Exports,
+    GeneratedFile,
     GeneratedInclude,
+    GeneratedSources,
+    HostSources,
     IPDLFile,
     JARManifest,
+    JsPreferenceFile,
     LocalInclude,
     Program,
     ReaderSummary,
     Resources,
     SimpleProgram,
+    Sources,
     StaticLibrary,
     TestHarnessFiles,
     TestManifest,
+    UnifiedSources,
     VariablePassthru,
 )
 from mozbuild.frontend.emitter import TreeMetadataEmitter
@@ -56,6 +62,7 @@ class TestEmitterBasic(unittest.TestCase):
         config = MockConfig(mozpath.join(data_path, name), extra_substs=dict(
             ENABLE_TESTS='1',
             BIN_SUFFIX='.prog',
+            OS_TARGET='WINNT',
         ))
 
         return BuildReader(config)
@@ -96,6 +103,8 @@ class TestEmitterBasic(unittest.TestCase):
 
         reldirs = [o.relativedir for o in objs]
         self.assertEqual(reldirs, ['', 'foo', 'foo/biz', 'bar'])
+
+        self.assertEqual(objs[3].affected_tiers, {'misc'})
 
         dirs = [o.dirs for o in objs]
         self.assertEqual(dirs, [
@@ -148,38 +157,61 @@ class TestEmitterBasic(unittest.TestCase):
         self.assertEqual(len(objs), 1)
         self.assertIsInstance(objs[0], VariablePassthru)
 
-        wanted = dict(
-            ASFILES=['fans.asm', 'tans.s'],
-            CMMSRCS=['fans.mm', 'tans.mm'],
-            CSRCS=['fans.c', 'tans.c'],
-            DISABLE_STL_WRAPPING=True,
-            EXTRA_COMPONENTS=['fans.js', 'tans.js'],
-            EXTRA_PP_COMPONENTS=['fans.pp.js', 'tans.pp.js'],
-            FAIL_ON_WARNINGS=True,
-            HOST_CPPSRCS=['fans.cpp', 'tans.cpp'],
-            HOST_CSRCS=['fans.c', 'tans.c'],
-            MSVC_ENABLE_PGO=True,
-            NO_DIST_INSTALL=True,
-            SSRCS=['bans.S', 'fans.S'],
-            VISIBILITY_FLAGS='',
-            DELAYLOAD_LDFLAGS=['-DELAYLOAD:foo.dll', '-DELAYLOAD:bar.dll'],
-            USE_DELAYIMP=True,
-            RCFILE='foo.rc',
-            RESFILE='bar.res',
-            RCINCLUDE='bar.rc',
-            DEFFILE='baz.def',
-            USE_STATIC_LIBS=True,
-            MOZBUILD_CFLAGS=['-fno-exceptions', '-w'],
-            MOZBUILD_CXXFLAGS=['-fcxx-exceptions', '-include foo.h'],
-            MOZBUILD_LDFLAGS=['-framework Foo', '-x'],
-            WIN32_EXE_LDFLAGS=['-subsystem:console'],
-        )
+        wanted = {
+            'DISABLE_STL_WRAPPING': True,
+            'EXTRA_COMPONENTS': ['fans.js', 'tans.js'],
+            'EXTRA_PP_COMPONENTS': ['fans.pp.js', 'tans.pp.js'],
+            'FAIL_ON_WARNINGS': True,
+            'MSVC_ENABLE_PGO': True,
+            'NO_DIST_INSTALL': True,
+            'VISIBILITY_FLAGS': '',
+            'RCFILE': 'foo.rc',
+            'RESFILE': 'bar.res',
+            'RCINCLUDE': 'bar.rc',
+            'DEFFILE': 'baz.def',
+            'USE_STATIC_LIBS': True,
+            'MOZBUILD_CFLAGS': ['-fno-exceptions', '-w'],
+            'MOZBUILD_CXXFLAGS': ['-fcxx-exceptions', '-include foo.h'],
+            'MOZBUILD_LDFLAGS': ['-framework Foo', '-x', '-DELAYLOAD:foo.dll',
+                                 '-DELAYLOAD:bar.dll'],
+            'WIN32_EXE_LDFLAGS': ['-subsystem:console'],
+        }
 
         variables = objs[0].variables
         maxDiff = self.maxDiff
         self.maxDiff = None
         self.assertEqual(wanted, variables)
         self.maxDiff = maxDiff
+
+    def test_generated_files(self):
+        reader = self.reader('generated-files')
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 2)
+        for o in objs:
+            self.assertIsInstance(o, GeneratedFile)
+
+        expected = ['bar.c', 'foo.c']
+        for o, expected_filename in zip(objs, expected):
+            self.assertEqual(o.output, expected_filename)
+
+    def test_generated_files_no_script(self):
+        reader = self.reader('generated-files-no-script')
+        with self.assertRaisesRegexp(SandboxValidationError,
+            'Script for generating bar.c does not exist'):
+            objs = self.read_topsrcdir(reader)
+
+    def test_generated_files_no_inputs(self):
+        reader = self.reader('generated-files-no-inputs')
+        with self.assertRaisesRegexp(SandboxValidationError,
+            'Input for generating foo.c does not exist'):
+            objs = self.read_topsrcdir(reader)
+
+    def test_generated_files_no_python_script(self):
+        reader = self.reader('generated-files-no-python-script')
+        with self.assertRaisesRegexp(SandboxValidationError,
+            'Script for generating bar.c does not end in .py'):
+            objs = self.read_topsrcdir(reader)
 
     def test_exports(self):
         reader = self.reader('exports')
@@ -281,6 +313,21 @@ class TestEmitterBasic(unittest.TestCase):
         self.assertIn('overwrite', resources._children)
         overwrite = resources._children['overwrite']
         self.assertEqual(overwrite._strings, ['new.res'])
+
+    def test_preferences_js(self):
+        reader = self.reader('js_preference_files')
+        objs = self.read_topsrcdir(reader)
+
+        prefs = [o.path for o in objs if isinstance(o, JsPreferenceFile)]
+
+        prefsByDir = [
+            'valid_val/prefs.js',
+            'ww/ww.js',
+            'xx/xx.js',
+            'yy/yy.js',
+            ]
+
+        self.assertEqual(sorted(prefs), prefsByDir)
 
     def test_program(self):
         reader = self.reader('program')
@@ -614,6 +661,124 @@ class TestEmitterBasic(unittest.TestCase):
         for lib in libraries:
             defines[lib.basename] = ' '.join(lib.defines.get_defines())
         self.assertEqual(expected, defines)
+
+    def test_sources(self):
+        """Test that SOURCES works properly."""
+        reader = self.reader('sources')
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 6)
+        for o in objs:
+            self.assertIsInstance(o, Sources)
+
+        suffix_map = {obj.canonical_suffix: obj for obj in objs}
+        self.assertEqual(len(suffix_map), 6)
+
+        expected = {
+            '.cpp': ['a.cpp', 'b.cc', 'c.cxx'],
+            '.c': ['d.c'],
+            '.m': ['e.m'],
+            '.mm': ['f.mm'],
+            '.S': ['g.S'],
+            '.s': ['h.s', 'i.asm'],
+        }
+        for suffix, files in expected.items():
+            sources = suffix_map[suffix]
+            self.assertEqual(sources.files, files)
+
+    def test_sources(self):
+        """Test that GENERATED_SOURCES works properly."""
+        reader = self.reader('generated-sources')
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 7)
+
+        # GENERATED_SOURCES automatically generate GARBAGE definitions.
+        garbage = [o for o in objs if isinstance(o, VariablePassthru)]
+        self.assertEqual(len(garbage), 1)
+
+        generated_sources = [o for o in objs if isinstance(o, GeneratedSources)]
+        self.assertEqual(len(generated_sources), 6)
+
+        suffix_map = {obj.canonical_suffix: obj for obj in generated_sources}
+        self.assertEqual(len(suffix_map), 6)
+
+        expected = {
+            '.cpp': ['a.cpp', 'b.cc', 'c.cxx'],
+            '.c': ['d.c'],
+            '.m': ['e.m'],
+            '.mm': ['f.mm'],
+            '.S': ['g.S'],
+            '.s': ['h.s', 'i.asm'],
+        }
+        for suffix, files in expected.items():
+            sources = suffix_map[suffix]
+            self.assertEqual(sources.files, files)
+
+    def test_host_sources(self):
+        """Test that HOST_SOURCES works properly."""
+        reader = self.reader('host-sources')
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 3)
+        for o in objs:
+            self.assertIsInstance(o, HostSources)
+
+        suffix_map = {obj.canonical_suffix: obj for obj in objs}
+        self.assertEqual(len(suffix_map), 3)
+
+        expected = {
+            '.cpp': ['a.cpp', 'b.cc', 'c.cxx'],
+            '.c': ['d.c'],
+            '.mm': ['e.mm', 'f.mm'],
+        }
+        for suffix, files in expected.items():
+            sources = suffix_map[suffix]
+            self.assertEqual(sources.files, files)
+
+    def test_unified_sources(self):
+        """Test that UNIFIED_SOURCES works properly."""
+        reader = self.reader('unified-sources')
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 3)
+        for o in objs:
+            self.assertIsInstance(o, UnifiedSources)
+
+        suffix_map = {obj.canonical_suffix: obj for obj in objs}
+        self.assertEqual(len(suffix_map), 3)
+
+        expected = {
+            '.cpp': ['bar.cxx', 'foo.cpp', 'quux.cc'],
+            '.mm': ['objc1.mm', 'objc2.mm'],
+            '.c': ['c1.c', 'c2.c'],
+        }
+        for suffix, files in expected.items():
+            sources = suffix_map[suffix]
+            self.assertEqual(sources.files, files)
+            self.assertTrue(sources.have_unified_mapping)
+
+    def test_unified_sources_non_unified(self):
+        """Test that UNIFIED_SOURCES with FILES_PER_UNIFIED_FILE=1 works properly."""
+        reader = self.reader('unified-sources-non-unified')
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 3)
+        for o in objs:
+            self.assertIsInstance(o, UnifiedSources)
+
+        suffix_map = {obj.canonical_suffix: obj for obj in objs}
+        self.assertEqual(len(suffix_map), 3)
+
+        expected = {
+            '.cpp': ['bar.cxx', 'foo.cpp', 'quux.cc'],
+            '.mm': ['objc1.mm', 'objc2.mm'],
+            '.c': ['c1.c', 'c2.c'],
+        }
+        for suffix, files in expected.items():
+            sources = suffix_map[suffix]
+            self.assertEqual(sources.files, files)
+            self.assertFalse(sources.have_unified_mapping)
 
 if __name__ == '__main__':
     main()

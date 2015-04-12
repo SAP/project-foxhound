@@ -80,7 +80,7 @@ public:
   void SetSource(const ArrayBuffer& aArrayBuffer);
   void SetSource(const ArrayBufferView& aArrayBufferView);
 
-  NS_IMETHOD Run();
+  NS_IMETHOD Run() override;
   void TakeBuffer(uint8_t*& aBuffer, uint32_t& aLength);
 
   nsRefPtr<FontFace> mFontFace;
@@ -156,7 +156,7 @@ public:
     : mFontFace(aFontFace)
     , mStatus(aStatus) {}
 
-  NS_IMETHOD Run();
+  NS_IMETHOD Run() override;
 
 protected:
   virtual ~FontFaceStatusSetter() {}
@@ -226,7 +226,10 @@ FontFace::FontFace(nsISupports* aParent, nsPresContext* aPresContext)
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aParent);
 
-  if (global) {
+  // If the pref is not set, don't create the Promise (which the page wouldn't
+  // be able to get to anyway) as it causes the window.FontFace constructor
+  // to be created.
+  if (global && FontFaceSet::PrefEnabled()) {
     ErrorResult rv;
     mLoaded = Promise::Create(global, rv);
   }

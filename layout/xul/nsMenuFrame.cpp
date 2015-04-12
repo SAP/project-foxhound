@@ -76,7 +76,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run() MOZ_OVERRIDE
+  NS_IMETHOD Run() override
   {
     nsAutoString domEventToFire;
 
@@ -123,7 +123,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run() MOZ_OVERRIDE
+  NS_IMETHOD Run() override
   {
     nsMenuFrame* frame = static_cast<nsMenuFrame*>(mFrame.GetFrame());
     NS_ENSURE_STATE(frame);
@@ -155,7 +155,7 @@ protected:
 nsIFrame*
 NS_NewMenuFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
-  nsMenuFrame* it = new (aPresShell) nsMenuFrame (aPresShell, aContext);
+  nsMenuFrame* it = new (aPresShell) nsMenuFrame(aContext);
   it->SetIsMenu(true);
   return it;
 }
@@ -163,7 +163,7 @@ NS_NewMenuFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 nsIFrame*
 NS_NewMenuItemFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
-  nsMenuFrame* it = new (aPresShell) nsMenuFrame (aPresShell, aContext);
+  nsMenuFrame* it = new (aPresShell) nsMenuFrame(aContext);
   it->SetIsMenu(false);
   return it;
 }
@@ -174,8 +174,8 @@ NS_QUERYFRAME_HEAD(nsMenuFrame)
   NS_QUERYFRAME_ENTRY(nsMenuFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsBoxFrame)
 
-nsMenuFrame::nsMenuFrame(nsIPresShell* aShell, nsStyleContext* aContext):
-  nsBoxFrame(aShell, aContext),
+nsMenuFrame::nsMenuFrame(nsStyleContext* aContext):
+  nsBoxFrame(aContext),
     mIsMenu(false),
     mChecked(false),
     mIgnoreAccelTextChange(false),
@@ -201,7 +201,7 @@ nsMenuFrame::GetMenuParent() const
   return nullptr;
 }
 
-class nsASyncMenuInitialization MOZ_FINAL : public nsIReflowCallback
+class nsASyncMenuInitialization final : public nsIReflowCallback
 {
 public:
   explicit nsASyncMenuInitialization(nsIFrame* aFrame)
@@ -209,7 +209,7 @@ public:
   {
   }
 
-  virtual bool ReflowFinished() MOZ_OVERRIDE
+  virtual bool ReflowFinished() override
   {
     bool shouldFlush = false;
     nsMenuFrame* menu = do_QueryFrame(mWeakFrame.GetFrame());
@@ -221,7 +221,7 @@ public:
     return shouldFlush;
   }
 
-  virtual void ReflowCallbackCanceled() MOZ_OVERRIDE
+  virtual void ReflowCallbackCanceled() override
   {
     delete this;
   }

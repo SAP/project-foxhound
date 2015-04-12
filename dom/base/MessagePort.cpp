@@ -125,7 +125,7 @@ PostMessageReadStructuredClone(JSContext* cx,
       {
         nsRefPtr<File> blob = new File(scInfo->mPort->GetParentObject(),
                                              blobImpl);
-        if (!WrapNewBindingObject(cx, blob, &val)) {
+        if (!GetOrCreateDOMReflector(cx, blob, &val)) {
           return nullptr;
         }
       }
@@ -287,7 +287,7 @@ PostMessageFreeTransferStructuredClone(uint32_t aTag, JS::TransferableOwnership 
   }
 }
 
-JSStructuredCloneCallbacks kPostMessageCallbacks = {
+const JSStructuredCloneCallbacks kPostMessageCallbacks = {
   PostMessageReadStructuredClone,
   PostMessageWriteStructuredClone,
   nullptr,

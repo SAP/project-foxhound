@@ -15,7 +15,7 @@
 namespace mozilla {
 namespace net {
 
-class RtspMetaData : public nsIStreamingProtocolMetaData
+class RtspMetaData final : public nsIStreamingProtocolMetaData
 {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS

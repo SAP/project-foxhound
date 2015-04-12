@@ -44,7 +44,7 @@ enum
   CALLBACK_TYPE_OBSERVER  = 3
 };
 
-class nsTimerImpl MOZ_FINAL : public nsITimer
+class nsTimerImpl final : public nsITimer
 {
 public:
   typedef mozilla::TimeStamp TimeStamp;
@@ -78,7 +78,7 @@ public:
   }
 #endif
 
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
 private:
   ~nsTimerImpl();
@@ -152,7 +152,7 @@ private:
   TimeStamp             mTimeout;
 
 #ifdef MOZ_TASK_TRACER
-  nsAutoPtr<mozilla::tasktracer::FakeTracedTask> mTracedTask;
+  nsRefPtr<mozilla::tasktracer::FakeTracedTask> mTracedTask;
 #endif
 
 #ifdef DEBUG_TIMERS

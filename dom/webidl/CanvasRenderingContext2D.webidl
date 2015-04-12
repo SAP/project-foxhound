@@ -47,7 +47,8 @@ interface CanvasRenderingContext2D {
   void transform(double a, double b, double c, double d, double e, double f);
   [Throws, LenientFloat]
   void setTransform(double a, double b, double c, double d, double e, double f);
-// NOT IMPLEMENTED  void resetTransform();
+  [Throws]
+  void resetTransform();
 
   // compositing
            attribute unrestricted double globalAlpha; // (default 1.0)
@@ -124,6 +125,7 @@ interface CanvasRenderingContext2D {
   // hit regions
   [Pref="canvas.hitregions.enabled", Throws] void addHitRegion(optional HitRegionOptions options);
   [Pref="canvas.hitregions.enabled"] void removeHitRegion(DOMString id);
+  [Pref="canvas.hitregions.enabled"] void clearHitRegions();
 
   // pixel manipulation
   [NewObject, Throws]

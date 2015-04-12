@@ -10,6 +10,7 @@
 #include "nsCSSProps.h"
 #include "nsRuleNode.h"
 #include "nsROCSSPrimitiveValue.h"
+#include "nsStyleStruct.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIURI.h"
@@ -215,7 +216,7 @@ nsStyleUtil::AppendBitmaskCSSValue(nsCSSProperty aProperty,
       }
     }
   }
-  NS_ABORT_IF_FALSE(aMaskedValue == 0, "unexpected bit remaining in bitfield");
+  MOZ_ASSERT(aMaskedValue == 0, "unexpected bit remaining in bitfield");
 }
 
 /* static */ void
@@ -486,8 +487,8 @@ nsStyleUtil::AppendUnicodeRange(const nsCSSValue& aValue, nsAString& aResult)
   nsCSSValue::Array const & sources = *aValue.GetArrayValue();
   nsAutoCString buf;
 
-  NS_ABORT_IF_FALSE(sources.Count() % 2 == 0,
-                    "odd number of entries in a unicode-range: array");
+  MOZ_ASSERT(sources.Count() % 2 == 0,
+             "odd number of entries in a unicode-range: array");
 
   for (uint32_t i = 0; i < sources.Count(); i += 2) {
     uint32_t min = sources[i].GetIntValue();
@@ -596,28 +597,56 @@ nsStyleUtil::IsSignificantChild(nsIContent* aChild, bool aTextIsSignificant,
           !aChild->TextIsOnlyWhitespace());
 }
 
-/* static */ bool
-nsStyleUtil::IsFlexBasisMainSize(const nsStyleCoord& aFlexBasis,
-                                 bool aIsMainAxisHorizontal)
+// For a replaced element whose concrete object size is no larger than the
+// element's content-box, this method checks whether the given
+// "object-position" coordinate might cause overflow in its dimension.
+typedef nsStyleBackground::Position::PositionCoord PositionCoord;
+static bool
+ObjectPositionCoordMightCauseOverflow(const PositionCoord& aCoord)
 {
-  // "main-size" is stored as an enumerated value; so if we're not enumerated,
-  // we're not "main-size".
-  if (aFlexBasis.GetUnit() != eStyleUnit_Enumerated) {
-    return false;
-  }
-
-  if (!aIsMainAxisHorizontal) {
-    // Special case for vertical flex items: We don't support any enumerated
-    // values (e.g. "-moz-max-content") for "height"-flavored properties
-    // yet. So, if our computed flex-basis is *any* enumerated value, we'll
-    // just behave as if it were "main-size" (the initial value of flex-basis).
-    // NOTE: Once we support intrinsic sizing keywords for "height",
-    // we can remove this special-case.
+  // Any nonzero length in "object-position" can push us to overflow
+  // (particularly if our concrete object size is exactly the same size as the
+  // replaced element's content-box).
+  if (aCoord.mLength != 0) {
     return true;
   }
 
-  return aFlexBasis.GetIntValue() == NS_STYLE_FLEX_BASIS_MAIN_SIZE;
+  // Percentages are interpreted as a fraction of the extra space. So,
+  // percentages in the 0-100% range are safe, but values outside of that
+  // range could cause overflow.
+  if (aCoord.mHasPercent &&
+      (aCoord.mPercent < 0.0f || aCoord.mPercent > 1.0f)) {
+    return true;
+  }
+  return false;
 }
+
+
+/* static */ bool
+nsStyleUtil::ObjectPropsMightCauseOverflow(const nsStylePosition* aStylePos)
+{
+  auto objectFit = aStylePos->mObjectFit;
+
+  // "object-fit: cover" & "object-fit: none" can give us a render rect that's
+  // larger than our container element's content-box.
+  if (objectFit == NS_STYLE_OBJECT_FIT_COVER ||
+      objectFit == NS_STYLE_OBJECT_FIT_NONE) {
+    return true;
+  }
+  // (All other object-fit values produce a concrete object size that's no larger
+  // than the constraint region.)
+
+  // Check each of our "object-position" coords to see if it could cause
+  // overflow in its dimension:
+  const nsStyleBackground::Position& objectPosistion = aStylePos->mObjectPosition;
+  if (ObjectPositionCoordMightCauseOverflow(objectPosistion.mXPosition) ||
+      ObjectPositionCoordMightCauseOverflow(objectPosistion.mYPosition)) {
+    return true;
+  }
+
+  return false;
+}
+
 
 /* static */ bool
 nsStyleUtil::CSPAllowsInlineStyle(nsIContent* aContent,

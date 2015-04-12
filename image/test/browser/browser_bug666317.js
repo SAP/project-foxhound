@@ -10,11 +10,25 @@ let prefBranch = Cc["@mozilla.org/preferences-service;1"]
                    .getService(Ci.nsIPrefService)
                    .getBranch('image.mem.');
 
-function isImgDecoded() {
+function ImageDiscardObserver(result) {
+  this.discard = function onDiscard(request)
+  {
+    result.wasDiscarded = true;
+    this.synchronous = false;
+  }
+
+  this.synchronous = true;
+}
+
+function currentRequest() {
   let img = gBrowser.getBrowserForTab(newTab).contentWindow
             .document.getElementById('testImg');
   img.QueryInterface(Ci.nsIImageLoadingContent);
-  let request = img.getRequest(Ci.nsIImageLoadingContent.CURRENT_REQUEST);
+  return img.getRequest(Ci.nsIImageLoadingContent.CURRENT_REQUEST);
+}
+
+function isImgDecoded() {
+  let request = currentRequest();
   return request.imageStatus & Ci.imgIRequest.STATUS_FRAME_COMPLETE ? true : false;
 }
 
@@ -43,6 +57,19 @@ function test() {
 }
 
 function step2() {
+  // Create a place to hold the result.
+  var result = { wasDiscarded: false };
+
+  // Create the discard observer.
+  var observer = new ImageDiscardObserver(result);
+  var scriptedObserver = Cc["@mozilla.org/image/tools;1"]
+                           .getService(Ci.imgITools)
+                           .createScriptedObserver(observer);
+
+  // Clone the current imgIRequest with our new observer.
+  var request = currentRequest();
+  var clonedRequest = request.clone(scriptedObserver);
+
   // Check that the image is decoded.
   forceDecodeImg();
   ok(isImgDecoded(), 'Image should initially be decoded.');
@@ -53,10 +80,24 @@ function step2() {
   var os = Cc["@mozilla.org/observer-service;1"]
              .getService(Ci.nsIObserverService);
   os.notifyObservers(null, 'memory-pressure', 'heap-minimize');
-  ok(!isImgDecoded(), 'Image should be discarded.');
+
+  // The discard notification is delivered asynchronously, so pump the event
+  // loop before checking.
+  window.addEventListener('message', function (event) {
+    if (event.data == 'step3') {
+      step3(result, scriptedObserver, clonedRequest);
+    }
+  }, false);
+
+  window.postMessage('step3', '*');
+}
+
+function step3(result, scriptedObserver, clonedRequest) {
+  ok(result.wasDiscarded, 'Image should be discarded.');
 
   // And we're done.
   gBrowser.removeTab(newTab);
   prefBranch.setBoolPref('discardable', oldDiscardingPref);
+  clonedRequest.cancelAndForgetObserver(0);
   finish();
 }

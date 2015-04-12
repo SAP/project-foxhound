@@ -299,6 +299,16 @@ public:
     return gfx::Matrix4x4();
   }
 
+  EventRegions GetEventRegions() const
+  {
+    MOZ_ASSERT(IsValid());
+
+    if (AtBottomLayer()) {
+      return mLayer->GetEventRegions();
+    }
+    return EventRegions();
+  }
+
   RefLayer* AsRefLayer() const
   {
     MOZ_ASSERT(IsValid());
@@ -326,6 +336,16 @@ public:
     MOZ_ASSERT(IsValid());
 
     return mLayer->GetClipRect();
+  }
+
+  EventRegionsOverride GetEventRegionsOverride() const
+  {
+    MOZ_ASSERT(IsValid());
+
+    if (mLayer->AsContainerLayer()) {
+      return mLayer->AsContainerLayer()->GetEventRegionsOverride();
+    }
+    return EventRegionsOverride::NoOverride;
   }
 
   // Expose an opaque pointer to the layer. Mostly used for printf

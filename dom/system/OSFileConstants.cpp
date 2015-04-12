@@ -208,7 +208,7 @@ nsresult GetPathToSpecialDir(const char *aKey, nsString& aOutPath)
  * For this purpose, we register an observer to set |gPaths->profileDir|
  * and |gPaths->localProfileDir| once the profile is setup.
  */
-class DelayedPathSetter MOZ_FINAL: public nsIObserver
+class DelayedPathSetter final: public nsIObserver
 {
   ~DelayedPathSetter() {}
 
@@ -480,6 +480,17 @@ static const dom::ConstantSpec gLibcProperties[] =
   INT_CONSTANT(SEEK_END),
   INT_CONSTANT(SEEK_SET),
 
+ // fcntl command values
+#if defined(XP_UNIX)
+  INT_CONSTANT(F_GETLK),
+  INT_CONSTANT(F_SETLK),
+  INT_CONSTANT(F_SETLKW),
+
+ // flock type values
+  INT_CONSTANT(F_RDLCK),
+  INT_CONSTANT(F_WRLCK),
+  INT_CONSTANT(F_UNLCK),
+#endif // defined(XP_UNIX)
   // copyfile
 #if defined(COPYFILE_DATA)
   INT_CONSTANT(COPYFILE_DATA),
@@ -586,6 +597,15 @@ static const dom::ConstantSpec gLibcProperties[] =
   // Size
   { "OSFILE_SIZEOF_DIRENT", INT_TO_JSVAL(sizeof (dirent)) },
 
+  // Defining |flock|.
+#if defined(XP_UNIX)
+  { "OSFILE_SIZEOF_FLOCK", INT_TO_JSVAL(sizeof (struct flock)) },
+  { "OSFILE_OFFSETOF_FLOCK_L_START", INT_TO_JSVAL(offsetof (struct flock, l_start)) },
+  { "OSFILE_OFFSETOF_FLOCK_L_LEN", INT_TO_JSVAL(offsetof (struct flock, l_len)) },
+  { "OSFILE_OFFSETOF_FLOCK_L_PID", INT_TO_JSVAL(offsetof (struct flock, l_pid)) },
+  { "OSFILE_OFFSETOF_FLOCK_L_TYPE", INT_TO_JSVAL(offsetof (struct flock, l_type)) },
+  { "OSFILE_OFFSETOF_FLOCK_L_WHENCE", INT_TO_JSVAL(offsetof (struct flock, l_whence)) },
+#endif // defined(XP_UNIX)
   // Offset of field |d_name|.
   { "OSFILE_OFFSETOF_DIRENT_D_NAME", INT_TO_JSVAL(offsetof (struct dirent, d_name)) },
   // An upper bound to the length of field |d_name| of struct |dirent|.
@@ -784,8 +804,7 @@ JSObject *GetOrCreateObjectProperty(JSContext *cx, JS::Handle<JSObject*> aObject
       JSMSG_UNEXPECTED_TYPE, aProperty, "not an object");
     return nullptr;
   }
-  return JS_DefineObject(cx, aObject, aProperty, nullptr, JS::NullPtr(),
-                         JSPROP_ENUMERATE);
+  return JS_DefineObject(cx, aObject, aProperty, nullptr, JSPROP_ENUMERATE);
 }
 
 /**

@@ -5,32 +5,34 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jit/RematerializedFrame.h"
-#include "jit/IonFrames.h"
 
+#include "jit/JitFrames.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/Debugger.h"
 
 #include "jsscriptinlines.h"
-#include "jit/IonFrames-inl.h"
+#include "jit/JitFrames-inl.h"
 
 using namespace js;
 using namespace jit;
 
 struct CopyValueToRematerializedFrame
 {
-    Value *slots;
+    Value* slots;
 
-    explicit CopyValueToRematerializedFrame(Value *slots)
+    explicit CopyValueToRematerializedFrame(Value* slots)
       : slots(slots)
     { }
 
-    void operator()(const Value &v) {
+    void operator()(const Value& v) {
         *slots++ = v;
     }
 };
 
-RematerializedFrame::RematerializedFrame(ThreadSafeContext *cx, uint8_t *top,
-                                         unsigned numActualArgs, InlineFrameIterator &iter)
+RematerializedFrame::RematerializedFrame(JSContext* cx, uint8_t* top, unsigned numActualArgs,
+                                         InlineFrameIterator& iter, MaybeReadFallback& fallback)
   : prevUpToDate_(false),
+    isDebuggee_(iter.script()->isDebuggee()),
     top_(top),
     pc_(iter.pc()),
     frameNo_(iter.frameNo()),
@@ -38,41 +40,48 @@ RematerializedFrame::RematerializedFrame(ThreadSafeContext *cx, uint8_t *top,
     script_(iter.script())
 {
     CopyValueToRematerializedFrame op(slots_);
-    MaybeReadFallback fallback(MagicValue(JS_OPTIMIZED_OUT));
-    iter.readFrameArgsAndLocals(cx, op, op, &scopeChain_, &returnValue_,
+    iter.readFrameArgsAndLocals(cx, op, op, &scopeChain_, &hasCallObj_, &returnValue_,
                                 &argsObj_, &thisValue_, ReadFrame_Actuals,
                                 fallback);
 }
 
-/* static */ RematerializedFrame *
-RematerializedFrame::New(ThreadSafeContext *cx, uint8_t *top, InlineFrameIterator &iter)
+/* static */ RematerializedFrame*
+RematerializedFrame::New(JSContext* cx, uint8_t* top, InlineFrameIterator& iter,
+                         MaybeReadFallback& fallback)
 {
-    unsigned numFormals = iter.isFunctionFrame() ? iter.callee()->nargs() : 0;
-    unsigned numActualArgs = Max(numFormals, iter.numActualArgs());
+    unsigned numFormals = iter.isFunctionFrame() ? iter.calleeTemplate()->nargs() : 0;
+    unsigned argSlots = Max(numFormals, iter.numActualArgs());
     size_t numBytes = sizeof(RematerializedFrame) +
-        (numActualArgs + iter.script()->nfixed()) * sizeof(Value) -
+        (argSlots + iter.script()->nfixed()) * sizeof(Value) -
         sizeof(Value); // 1 Value included in sizeof(RematerializedFrame)
 
-    void *buf = cx->pod_calloc<uint8_t>(numBytes);
+    void* buf = cx->pod_calloc<uint8_t>(numBytes);
     if (!buf)
         return nullptr;
 
-    return new (buf) RematerializedFrame(cx, top, numActualArgs, iter);
+    return new (buf) RematerializedFrame(cx, top, iter.numActualArgs(), iter, fallback);
 }
 
 /* static */ bool
-RematerializedFrame::RematerializeInlineFrames(ThreadSafeContext *cx, uint8_t *top,
-                                               InlineFrameIterator &iter,
-                                               Vector<RematerializedFrame *> &frames)
+RematerializedFrame::RematerializeInlineFrames(JSContext* cx, uint8_t* top,
+                                               InlineFrameIterator& iter,
+                                               MaybeReadFallback& fallback,
+                                               Vector<RematerializedFrame*>& frames)
 {
     if (!frames.resize(iter.frameCount()))
         return false;
 
     while (true) {
         size_t frameNo = iter.frameNo();
-        frames[frameNo] = RematerializedFrame::New(cx, top, iter);
-        if (!frames[frameNo])
+        RematerializedFrame* frame = RematerializedFrame::New(cx, top, iter, fallback);
+        if (!frame)
             return false;
+        if (frame->scopeChain()) {
+            if (!EnsureHasScopeObjects(cx, frame))
+                return false;
+        }
+
+        frames[frameNo] = frame;
 
         if (!iter.more())
             break;
@@ -83,10 +92,11 @@ RematerializedFrame::RematerializeInlineFrames(ThreadSafeContext *cx, uint8_t *t
 }
 
 /* static */ void
-RematerializedFrame::FreeInVector(Vector<RematerializedFrame *> &frames)
+RematerializedFrame::FreeInVector(Vector<RematerializedFrame*>& frames)
 {
     for (size_t i = 0; i < frames.length(); i++) {
-        RematerializedFrame *f = frames[i];
+        RematerializedFrame* f = frames[i];
+        Debugger::assertNotInFrameMaps(f);
         f->RematerializedFrame::~RematerializedFrame();
         js_free(f);
     }
@@ -94,25 +104,46 @@ RematerializedFrame::FreeInVector(Vector<RematerializedFrame *> &frames)
 }
 
 /* static */ void
-RematerializedFrame::MarkInVector(JSTracer *trc, Vector<RematerializedFrame *> &frames)
+RematerializedFrame::MarkInVector(JSTracer* trc, Vector<RematerializedFrame*>& frames)
 {
     for (size_t i = 0; i < frames.length(); i++)
         frames[i]->mark(trc);
 }
 
-CallObject &
+CallObject&
 RematerializedFrame::callObj() const
 {
     MOZ_ASSERT(hasCallObj());
 
-    JSObject *scope = scopeChain();
+    JSObject* scope = scopeChain();
     while (!scope->is<CallObject>())
         scope = scope->enclosingScope();
     return scope->as<CallObject>();
 }
 
 void
-RematerializedFrame::mark(JSTracer *trc)
+RematerializedFrame::pushOnScopeChain(ScopeObject& scope)
+{
+    MOZ_ASSERT(*scopeChain() == scope.enclosingScope() ||
+               *scopeChain() == scope.as<CallObject>().enclosingScope().as<DeclEnvObject>().enclosingScope());
+    scopeChain_ = &scope;
+}
+
+bool
+RematerializedFrame::initFunctionScopeObjects(JSContext* cx)
+{
+    MOZ_ASSERT(isNonEvalFunctionFrame());
+    MOZ_ASSERT(fun()->isHeavyweight());
+    CallObject* callobj = CallObject::createForFunction(cx, this);
+    if (!callobj)
+        return false;
+    pushOnScopeChain(*callobj);
+    hasCallObj_ = true;
+    return true;
+}
+
+void
+RematerializedFrame::mark(JSTracer* trc)
 {
     gc::MarkScriptRoot(trc, &script_, "remat ion frame script");
     gc::MarkObjectRoot(trc, &scopeChain_, "remat ion frame scope chain");

@@ -37,6 +37,7 @@ class BackgroundTransactionChild;
 class BackgroundVersionChangeTransactionChild;
 class IDBDatabase;
 class IDBObjectStore;
+class IDBOpenDBRequest;
 class IDBRequest;
 class IndexMetadata;
 class ObjectStoreSpec;
@@ -44,10 +45,16 @@ class OpenCursorParams;
 class PBackgroundIDBDatabaseFileChild;
 class RequestParams;
 
-class IDBTransaction MOZ_FINAL
+class IDBTransaction final
   : public IDBWrapperCache
   , public nsIRunnable
 {
+  friend class BackgroundCursorChild;
+  friend class BackgroundRequestChild;
+
+  class WorkerFeature;
+  friend class WorkerFeature;
+
 public:
   enum Mode
   {
@@ -73,6 +80,7 @@ private:
   nsTArray<nsString> mObjectStoreNames;
   nsTArray<nsRefPtr<IDBObjectStore>> mObjectStores;
   nsTArray<nsRefPtr<IDBObjectStore>> mDeletedObjectStores;
+  nsAutoPtr<WorkerFeature> mWorkerFeature;
 
   // Tagged with mMode. If mMode is VERSION_CHANGE then mBackgroundActor will be
   // a BackgroundVersionChangeTransactionChild. Otherwise it will be a
@@ -82,22 +90,23 @@ private:
     BackgroundVersionChangeTransactionChild* mVersionChangeBackgroundActor;
   } mBackgroundActor;
 
+  const int64_t mLoggingSerialNumber;
 
   // Only used for VERSION_CHANGE transactions.
   int64_t mNextObjectStoreId;
   int64_t mNextIndexId;
 
-#ifdef MOZ_ENABLE_PROFILER_SPS
-  uint64_t mSerialNumber;
-#endif
-
   nsresult mAbortCode;
   uint32_t mPendingRequestCount;
+
+  nsString mFilename;
+  uint32_t mLineNo;
 
   ReadyState mReadyState;
   Mode mMode;
 
   bool mCreating;
+  bool mRegistered;
   bool mAbortedByScript;
 
 #ifdef DEBUG
@@ -109,6 +118,7 @@ public:
   static already_AddRefed<IDBTransaction>
   CreateVersionChange(IDBDatabase* aDatabase,
                       BackgroundVersionChangeTransactionChild* aActor,
+                      IDBOpenDBRequest* aOpenRequest,
                       int64_t aNextObjectStoreId,
                       int64_t aNextIndexId);
 
@@ -143,9 +153,8 @@ public:
     }
   }
 
-  void
-  StartRequest(BackgroundRequestChild* aBackgroundActor,
-               const RequestParams& aParams);
+  BackgroundRequestChild*
+  StartRequest(IDBRequest* aRequest, const RequestParams& aParams);
 
   void
   OpenCursor(BackgroundCursorChild* aBackgroundActor,
@@ -153,12 +162,6 @@ public:
 
   void
   RefreshSpec(bool aMayDelete);
-
-  void
-  OnNewRequest();
-
-  void
-  OnRequestFinished();
 
   bool
   IsOpen() const;
@@ -183,6 +186,16 @@ public:
     AssertIsOnOwningThread();
     return NS_FAILED(mAbortCode);
   }
+
+  nsresult
+  AbortCode() const
+  {
+    AssertIsOnOwningThread();
+    return mAbortCode;
+  }
+
+  void
+  GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo) const;
 
   // 'Get' prefix is to avoid name collisions with the enum
   Mode
@@ -230,14 +243,13 @@ public:
   void
   Abort(nsresult aAbortCode);
 
-#ifdef MOZ_ENABLE_PROFILER_SPS
-  uint32_t
-  GetSerialNumber() const
+  int64_t
+  LoggingSerialNumber() const
   {
     AssertIsOnOwningThread();
-    return mSerialNumber;
+
+    return mLoggingSerialNumber;
   }
-#endif
 
   nsPIDOMWindow*
   GetParentObject() const;
@@ -278,11 +290,11 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+  WrapObject(JSContext* aCx) override;
 
   // nsIDOMEventTarget
   virtual nsresult
-  PreHandleEvent(EventChainPreVisitor& aVisitor) MOZ_OVERRIDE;
+  PreHandleEvent(EventChainPreVisitor& aVisitor) override;
 
 private:
   IDBTransaction(IDBDatabase* aDatabase,
@@ -298,6 +310,12 @@ private:
 
   void
   SendAbort(nsresult aResultCode);
+
+  void
+  OnNewRequest();
+
+  void
+  OnRequestFinished(bool aActorDestroyedNormally);
 };
 
 } // namespace indexedDB

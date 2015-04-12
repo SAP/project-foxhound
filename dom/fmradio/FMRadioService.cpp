@@ -10,6 +10,8 @@
 #include "nsIAudioManager.h"
 #include "AudioManager.h"
 #include "nsDOMClassInfo.h"
+#include "nsContentUtils.h"
+#include "mozilla/LazyIdleThread.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/FMRadioChild.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -18,6 +20,9 @@
 #include "nsJSUtils.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/SettingChangeNotificationBinding.h"
+#include "mozilla/DebugOnly.h"
+
+#define TUNE_THREAD_TIMEOUT_MS  5000
 
 #define BAND_87500_108000_kHz 1
 #define BAND_76000_108000_kHz 2
@@ -138,7 +143,7 @@ FMRadioService::~FMRadioService()
   UnregisterFMRadioObserver(this);
 }
 
-class EnableRunnable MOZ_FINAL : public nsRunnable
+class EnableRunnable final : public nsRunnable
 {
 public:
   EnableRunnable(uint32_t aUpperLimit, uint32_t aLowerLimit, uint32_t aSpaceType, uint32_t aPreemphasis)
@@ -161,9 +166,10 @@ public:
 
     FMRadioService* fmRadioService = FMRadioService::Singleton();
     if (!fmRadioService->mTuneThread) {
-      // SeekRunnable and SetFrequencyRunnable run on this thread.
-      // These call ioctls that can stall the main thread, so we run them here.
-      NS_NewNamedThread("FM Tuning", getter_AddRefs(fmRadioService->mTuneThread));
+      // SeekRunnable and SetFrequencyRunnable run on this thread. These
+      // call ioctls that can stall the main thread, so we run them here.
+      fmRadioService->mTuneThread = new LazyIdleThread(
+        TUNE_THREAD_TIMEOUT_MS, NS_LITERAL_CSTRING("FM Tuning"));
     }
 
     return NS_OK;
@@ -180,7 +186,7 @@ private:
  * Read the airplane-mode setting, if the airplane-mode is not enabled, we
  * enable the FM radio.
  */
-class ReadAirplaneModeSettingTask MOZ_FINAL : public nsISettingsServiceCallback
+class ReadAirplaneModeSettingTask final : public nsISettingsServiceCallback
 {
 public:
   NS_DECL_ISUPPORTS
@@ -238,7 +244,7 @@ private:
 
 NS_IMPL_ISUPPORTS(ReadAirplaneModeSettingTask, nsISettingsServiceCallback)
 
-class DisableRunnable MOZ_FINAL : public nsRunnable
+class DisableRunnable final : public nsRunnable
 {
 public:
   DisableRunnable() { }
@@ -259,7 +265,7 @@ public:
   }
 };
 
-class SetFrequencyRunnable MOZ_FINAL : public nsRunnable
+class SetFrequencyRunnable final : public nsRunnable
 {
 public:
   SetFrequencyRunnable(int32_t aFrequency)
@@ -275,7 +281,7 @@ private:
   int32_t mFrequency;
 };
 
-class SeekRunnable MOZ_FINAL : public nsRunnable
+class SeekRunnable final : public nsRunnable
 {
 public:
   SeekRunnable(FMRadioSeekDirection aDirection) : mDirection(aDirection) { }
@@ -298,7 +304,7 @@ private:
   FMRadioSeekDirection mDirection;
 };
 
-class NotifyRunnable MOZ_FINAL : public nsRunnable
+class NotifyRunnable final : public nsRunnable
 {
 public:
   NotifyRunnable(FMRadioEventType aType) : mType(aType) { }
@@ -775,7 +781,7 @@ FMRadioService::SetRDSGroupMask(uint32_t aRDSGroupMask)
 {
   mRDSGroupMask = aRDSGroupMask;
   if (IsFMRadioOn() && mRDSEnabled) {
-    bool enabled = hal::EnableRDS(mRDSGroupMask | DOM_PARSED_RDS_GROUPS);
+    DebugOnly<bool> enabled = hal::EnableRDS(mRDSGroupMask | DOM_PARSED_RDS_GROUPS);
     MOZ_ASSERT(enabled);
   }
 }
@@ -835,11 +841,8 @@ FMRadioService::Observe(nsISupports* aSubject,
 
   // The string that we're interested in will be a JSON string looks like:
   //  {"key":"airplaneMode.enabled","value":true}
-  AutoJSAPI jsapi;
-  jsapi.Init();
-  JSContext* cx = jsapi.cx();
-  RootedDictionary<dom::SettingChangeNotification> setting(cx);
-  if (!WrappedJSToDictionary(cx, aSubject, setting)) {
+  RootedDictionary<dom::SettingChangeNotification> setting(nsContentUtils::RootingCx());
+  if (!WrappedJSToDictionary(aSubject, setting)) {
     return NS_OK;
   }
   if (!setting.mKey.EqualsASCII(SETTING_KEY_AIRPLANEMODE_ENABLED)) {

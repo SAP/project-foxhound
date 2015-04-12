@@ -36,7 +36,10 @@ RunOnThreadInternal(nsIEventTarget *thread, nsIRunnable *runnable, uint32_t flag
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
 
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      // we're going to destroy the runnable on this thread!
+      return rv;
+    }
     if (!on) {
       return thread->Dispatch(runnable_ref, flags);
     }
@@ -92,6 +95,25 @@ RUN_ON_THREAD(nsIEventTarget *thread, detail::runnable_args_base<detail::Returns
 #else
 #define ASSERT_ON_THREAD(t)
 #endif
+
+template <class T>
+class DispatchedRelease : public detail::runnable_args_base<detail::NoResult> {
+public:
+  explicit DispatchedRelease(already_AddRefed<T>& ref) : ref_(ref) {}
+
+  NS_IMETHOD Run() {
+    ref_ = nullptr;
+    return NS_OK;
+  }
+private:
+  nsRefPtr<T> ref_;
+};
+
+template <typename T>
+DispatchedRelease<T>* WrapRelease(already_AddRefed<T>&& ref)
+{
+  return new DispatchedRelease<T>(ref);
+}
 
 } /* namespace mozilla */
 

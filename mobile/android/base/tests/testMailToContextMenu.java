@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.gecko.tests;
 
 
@@ -12,8 +16,8 @@ public class testMailToContextMenu extends ContentContextMenuTest {
         blockForGeckoReady();
 
         MAILTO_PAGE_URL=getAbsoluteUrl(StringHelper.ROBOCOP_BIG_MAILTO_URL);
-        loadAndPaint(MAILTO_PAGE_URL);
-        verifyPageTitle(MAILTO_PAGE_TITLE, MAILTO_PAGE_URL);
+        inputAndLoadUrl(MAILTO_PAGE_URL);
+        waitForText(MAILTO_PAGE_TITLE);
 
         verifyContextMenuItems(mailtoMenuItems);
         verifyCopyOption(mailtoMenuItems[0], "foo.bar@example.com"); // Test the "Copy Email Address" option

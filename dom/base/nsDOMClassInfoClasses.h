@@ -32,9 +32,6 @@ DOMCI_CLASS(XULTreeBuilder)
 DOMCI_CLASS(CSSMozDocumentRule)
 DOMCI_CLASS(CSSSupportsRule)
 
-// DOM Level 3 XPath objects
-DOMCI_CLASS(XPathNSResolver)
-
 DOMCI_CLASS(MozSmsMessage)
 DOMCI_CLASS(MozMmsMessage)
 DOMCI_CLASS(MozMobileMessageThread)
@@ -43,6 +40,7 @@ DOMCI_CLASS(MozMobileMessageThread)
 DOMCI_CLASS(CSSFontFaceRule)
 
 DOMCI_CLASS(ContentFrameMessageManager)
+DOMCI_CLASS(ContentProcessMessageManager)
 DOMCI_CLASS(ChromeMessageBroadcaster)
 DOMCI_CLASS(ChromeMessageSender)
 

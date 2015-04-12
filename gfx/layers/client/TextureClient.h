@@ -12,7 +12,7 @@
 #include "GLTextureImage.h"             // for TextureImage
 #include "ImageTypes.h"                 // for StereoMode
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr, RefCounted
 #include "mozilla/gfx/2D.h"             // for DrawTarget
 #include "mozilla/gfx/Point.h"          // for IntSize
@@ -21,6 +21,7 @@
 #include "mozilla/ipc/Shmem.h"          // for Shmem
 #include "mozilla/layers/AtomicRefCountedWithFinalize.h"
 #include "mozilla/layers/CompositorTypes.h"  // for TextureFlags, etc
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/mozalloc.h"           // for operator delete
 #include "nsAutoPtr.h"                  // for nsRefPtr
@@ -37,6 +38,12 @@ class GLContext;
 class SharedSurface;
 }
 
+// When defined, we track which pool the tile came from and test for
+// any inconsistencies.  This can be defined in release build as well.
+#ifdef DEBUG
+#define GFX_DEBUG_TRACK_CLIENTS_IN_POOL 1
+#endif
+
 namespace layers {
 
 class AsyncTransactionTracker;
@@ -51,6 +58,9 @@ class PTextureChild;
 class TextureChild;
 class BufferTextureClient;
 class TextureClient;
+#ifdef GFX_DEBUG_TRACK_CLIENTS_IN_POOL
+class TextureClientPool;
+#endif
 class KeepAlive;
 
 /**
@@ -61,7 +71,33 @@ class KeepAlive;
 enum TextureAllocationFlags {
   ALLOC_DEFAULT = 0,
   ALLOC_CLEAR_BUFFER = 1,
-  ALLOC_CLEAR_BUFFER_WHITE = 2
+  ALLOC_CLEAR_BUFFER_WHITE = 2,
+  ALLOC_DISALLOW_BUFFERTEXTURECLIENT = 4
+};
+
+#ifdef XP_WIN
+typedef void* SyncHandle;
+#else
+typedef uintptr_t SyncHandle;
+#endif // XP_WIN
+
+class SyncObject : public RefCounted<SyncObject>
+{
+public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SyncObject)
+  virtual ~SyncObject() { }
+
+  static TemporaryRef<SyncObject> CreateSyncObject(SyncHandle aHandle);
+
+  enum class SyncType {
+    D3D11,
+  };
+
+  virtual SyncType GetSyncType() = 0;
+  virtual void FinalizeFrame() = 0;
+
+protected:
+  SyncObject() { }
 };
 
 /**
@@ -137,7 +173,8 @@ class TextureClient
   : public AtomicRefCountedWithFinalize<TextureClient>
 {
 public:
-  explicit TextureClient(TextureFlags aFlags = TextureFlags::DEFAULT);
+  explicit TextureClient(ISurfaceAllocator* aAllocator,
+                         TextureFlags aFlags = TextureFlags::DEFAULT);
   virtual ~TextureClient();
 
   // Creates and allocates a TextureClient usable with Moz2D.
@@ -246,6 +283,20 @@ public:
   }
 
   /**
+   * This method is strictly for debugging. It causes locking and
+   * needless copies.
+   */
+  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() {
+    Lock(OpenMode::OPEN_READ);
+    RefPtr<gfx::SourceSurface> surf = BorrowDrawTarget()->Snapshot();
+    RefPtr<gfx::DataSourceSurface> data = surf->GetDataSurface();
+    Unlock();
+    return data;
+  }
+
+  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+
+  /**
    * Copies a rectangle from this texture client to a position in aTarget.
    * It is assumed that the necessary locks are in place; so this should at
    * least have a read lock and aTarget should at least have a write lock.
@@ -301,17 +352,11 @@ public:
     return (mFlags & aFlags) == aFlags;
   }
 
-  void AddFlags(TextureFlags aFlags)
-  {
-    MOZ_ASSERT(!IsSharedWithCompositor());
-    mFlags |= aFlags;
-  }
+  void AddFlags(TextureFlags aFlags);
 
-  void RemoveFlags(TextureFlags aFlags)
-  {
-    MOZ_ASSERT(!IsSharedWithCompositor());
-    mFlags &= ~aFlags;
-  }
+  void RemoveFlags(TextureFlags aFlags);
+
+  void RecycleTexture(TextureFlags aFlags);
 
   /**
    * valid only for TextureFlags::RECYCLE TextureClient.
@@ -342,12 +387,23 @@ public:
   bool IsValid() const { return mValid; }
 
   /**
+   * Called when TextureClient is added to CompositableClient.
+   */
+  void SetAddedToCompositableClient();
+
+  /**
+   * If this method retuns false, TextureClient is already added to CompositableClient,
+   * since its creation or recycling.
+   */
+  bool IsAddedToCompositableClient() const { return mAddedToCompositableClient; }
+
+  /**
    * kee the passed object alive until the IPDL actor is destroyed. This can
    * help avoid race conditions in some cases.
    * It's a temporary hack to ensure that DXGI textures don't get destroyed
    * between serialization and deserialization.
    */
-  void KeepUntilFullDeallocation(KeepAlive* aKeep);
+  void KeepUntilFullDeallocation(UniquePtr<KeepAlive> aKeep);
 
   /**
    * Create and init the TextureChild/Parent IPDL actor pair.
@@ -370,8 +426,10 @@ public:
    * If the texture flags contain TextureFlags::DEALLOCATE_CLIENT, the destruction
    * will be synchronously coordinated with the compositor side, otherwise it
    * will be done asynchronously.
+   * If sync is true, the destruction will be synchronous regardless of the
+   * texture's flags (bad for performance, use with care).
    */
-  void ForceRemove();
+  void ForceRemove(bool sync = false);
 
   virtual void SetReleaseFenceHandle(FenceHandle aReleaseFenceHandle)
   {
@@ -401,7 +459,7 @@ public:
   /**
    * This function waits until the buffer is no longer being used.
    */
-  virtual void WaitForBufferOwnership() {}
+  virtual void WaitForBufferOwnership(bool aWaitReleaseFence = true) {}
 
   /**
    * Track how much of this texture is wasted.
@@ -419,6 +477,8 @@ public:
    virtual void SetReadbackSink(TextureReadbackSink* aReadbackSink) {
      mReadbackSink = aReadbackSink;
    }
+   
+   virtual void SyncWithObject(SyncObject* aSyncObject) { }
 
 private:
   /**
@@ -461,6 +521,7 @@ protected:
   gl::GfxTextureWasteTracker mWasteTracker;
   bool mShared;
   bool mValid;
+  bool mAddedToCompositableClient;
 
   RefPtr<TextureReadbackSink> mReadbackSink;
 
@@ -468,6 +529,12 @@ protected:
   friend class RemoveTextureFromCompositableTracker;
   friend void TestTextureClientSurface(TextureClient*, gfxImageSurface*);
   friend void TestTextureClientYCbCr(TextureClient*, PlanarYCbCrData&);
+
+#ifdef GFX_DEBUG_TRACK_CLIENTS_IN_POOL
+public:
+  // Pointer to the pool this tile came from.
+  TextureClientPool* mPoolTracker;
+#endif
 };
 
 /**
@@ -480,7 +547,7 @@ public:
         : mTextureClient(aClient) {
     }
 
-    virtual void Run() MOZ_OVERRIDE
+    virtual void Run() override
     {
         mTextureClient = nullptr;
     }
@@ -503,38 +570,38 @@ public:
 
   virtual ~BufferTextureClient();
 
-  virtual bool IsAllocated() const = 0;
+  virtual bool IsAllocated() const override = 0;
 
   virtual uint8_t* GetBuffer() const = 0;
 
-  virtual gfx::IntSize GetSize() const { return mSize; }
+  virtual gfx::IntSize GetSize() const override { return mSize; }
 
-  virtual bool Lock(OpenMode aMode) MOZ_OVERRIDE;
+  virtual bool Lock(OpenMode aMode) override;
 
-  virtual void Unlock() MOZ_OVERRIDE;
+  virtual void Unlock() override;
 
-  virtual bool IsLocked() const MOZ_OVERRIDE { return mLocked; }
+  virtual bool IsLocked() const override { return mLocked; }
 
   uint8_t* GetLockedData() const;
 
-  virtual bool CanExposeDrawTarget() const MOZ_OVERRIDE { return true; }
+  virtual bool CanExposeDrawTarget() const override { return true; }
 
-  virtual gfx::DrawTarget* BorrowDrawTarget() MOZ_OVERRIDE;
+  virtual gfx::DrawTarget* BorrowDrawTarget() override;
 
   virtual bool AllocateForSurface(gfx::IntSize aSize,
-                                  TextureAllocationFlags aFlags = ALLOC_DEFAULT) MOZ_OVERRIDE;
+                                  TextureAllocationFlags aFlags = ALLOC_DEFAULT) override;
 
   // TextureClientYCbCr
 
-  virtual TextureClientYCbCr* AsTextureClientYCbCr() MOZ_OVERRIDE { return this; }
+  virtual TextureClientYCbCr* AsTextureClientYCbCr() override { return this; }
 
-  virtual bool UpdateYCbCr(const PlanarYCbCrData& aData) MOZ_OVERRIDE;
+  virtual bool UpdateYCbCr(const PlanarYCbCrData& aData) override;
 
   virtual bool AllocateForYCbCr(gfx::IntSize aYSize,
                                 gfx::IntSize aCbCrSize,
-                                StereoMode aStereoMode) MOZ_OVERRIDE;
+                                StereoMode aStereoMode) override;
 
-  virtual gfx::SurfaceFormat GetFormat() const MOZ_OVERRIDE { return mFormat; }
+  virtual gfx::SurfaceFormat GetFormat() const override { return mFormat; }
 
   // XXX - Bug 908196 - Make Allocate(uint32_t) and GetBufferSize() protected.
   // these two methods should only be called by methods of BufferTextureClient
@@ -544,17 +611,14 @@ public:
 
   virtual size_t GetBufferSize() const = 0;
 
-  virtual bool HasInternalBuffer() const MOZ_OVERRIDE { return true; }
-
-  ISurfaceAllocator* GetAllocator() const;
+  virtual bool HasInternalBuffer() const override { return true; }
 
   virtual TemporaryRef<TextureClient>
   CreateSimilar(TextureFlags aFlags = TextureFlags::DEFAULT,
-                TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT) const MOZ_OVERRIDE;
+                TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT) const override;
 
 protected:
   RefPtr<gfx::DrawTarget> mDrawTarget;
-  RefPtr<ISurfaceAllocator> mAllocator;
   gfx::SurfaceFormat mFormat;
   gfx::IntSize mSize;
   gfx::BackendType mBackend;
@@ -576,17 +640,17 @@ protected:
   ~ShmemTextureClient();
 
 public:
-  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) MOZ_OVERRIDE;
+  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) override;
 
-  virtual bool Allocate(uint32_t aSize) MOZ_OVERRIDE;
+  virtual bool Allocate(uint32_t aSize) override;
 
-  virtual uint8_t* GetBuffer() const MOZ_OVERRIDE;
+  virtual uint8_t* GetBuffer() const override;
 
-  virtual size_t GetBufferSize() const MOZ_OVERRIDE;
+  virtual size_t GetBufferSize() const override;
 
-  virtual bool IsAllocated() const MOZ_OVERRIDE { return mAllocated; }
+  virtual bool IsAllocated() const override { return mAllocated; }
 
-  virtual bool HasInternalBuffer() const MOZ_OVERRIDE { return true; }
+  virtual bool HasInternalBuffer() const override { return true; }
 
   mozilla::ipc::Shmem& GetShmem() { return mShmem; }
 
@@ -610,17 +674,17 @@ protected:
   ~MemoryTextureClient();
 
 public:
-  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) MOZ_OVERRIDE;
+  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) override;
 
-  virtual bool Allocate(uint32_t aSize) MOZ_OVERRIDE;
+  virtual bool Allocate(uint32_t aSize) override;
 
-  virtual uint8_t* GetBuffer() const MOZ_OVERRIDE { return mBuffer; }
+  virtual uint8_t* GetBuffer() const override { return mBuffer; }
 
-  virtual size_t GetBufferSize() const MOZ_OVERRIDE { return mBufSize; }
+  virtual size_t GetBufferSize() const override { return mBufSize; }
 
-  virtual bool IsAllocated() const MOZ_OVERRIDE { return mBuffer != nullptr; }
+  virtual bool IsAllocated() const override { return mBuffer != nullptr; }
 
-  virtual bool HasInternalBuffer() const MOZ_OVERRIDE { return true; }
+  virtual bool HasInternalBuffer() const override { return true; }
 
 protected:
   uint8_t* mBuffer;
@@ -633,52 +697,53 @@ protected:
 class SharedSurfaceTextureClient : public TextureClient
 {
 public:
-  SharedSurfaceTextureClient(TextureFlags aFlags, gl::SharedSurface* surf);
+  SharedSurfaceTextureClient(ISurfaceAllocator* aAllocator, TextureFlags aFlags,
+                             gl::SharedSurface* surf);
 
 protected:
   ~SharedSurfaceTextureClient();
 
 public:
   // Boilerplate start
-  virtual bool IsAllocated() const MOZ_OVERRIDE { return true; }
+  virtual bool IsAllocated() const override { return true; }
 
-  virtual bool Lock(OpenMode) MOZ_OVERRIDE {
+  virtual bool Lock(OpenMode) override {
     MOZ_ASSERT(!mIsLocked);
     mIsLocked = true;
     return true;
   }
 
-  virtual void Unlock() MOZ_OVERRIDE {
+  virtual void Unlock() override {
     MOZ_ASSERT(mIsLocked);
     mIsLocked = false;
   }
 
-  virtual bool IsLocked() const MOZ_OVERRIDE { return mIsLocked; }
+  virtual bool IsLocked() const override { return mIsLocked; }
 
-  virtual bool HasInternalBuffer() const MOZ_OVERRIDE { return false; }
+  virtual bool HasInternalBuffer() const override { return false; }
 
-  virtual gfx::SurfaceFormat GetFormat() const MOZ_OVERRIDE {
+  virtual gfx::SurfaceFormat GetFormat() const override {
     return gfx::SurfaceFormat::UNKNOWN;
   }
 
-  virtual gfx::IntSize GetSize() const MOZ_OVERRIDE { return gfx::IntSize(); }
+  virtual gfx::IntSize GetSize() const override { return gfx::IntSize(); }
 
   // This TextureClient should not be used in a context where we use CreateSimilar
   // (ex. component alpha) because the underlying texture data is always created by
   // an external producer.
   virtual TemporaryRef<TextureClient>
-  CreateSimilar(TextureFlags, TextureAllocationFlags) const MOZ_OVERRIDE {
+  CreateSimilar(TextureFlags, TextureAllocationFlags) const override {
     return nullptr;
   }
 
   virtual bool AllocateForSurface(gfx::IntSize,
-                                  TextureAllocationFlags) MOZ_OVERRIDE {
+                                  TextureAllocationFlags) override {
     MOZ_CRASH("Should never hit this.");
     return false;
   }
   // Boilerplate end
 
-  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor) MOZ_OVERRIDE;
+  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor) override;
 
 protected:
   bool mIsLocked;

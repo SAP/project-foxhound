@@ -84,7 +84,7 @@ namespace mozilla {
 namespace mozilla {
 namespace gl {
 
-MOZ_BEGIN_ENUM_CLASS(GLFeature)
+enum class GLFeature {
     bind_buffer_offset,
     blend_minmax,
     clear_buffers,
@@ -104,6 +104,7 @@ MOZ_BEGIN_ENUM_CLASS(GLFeature)
     get_integer_indexed,
     get_integer64_indexed,
     get_query_object_iv,
+    get_string_indexed,
     gpu_shader4,
     instanced_arrays,
     instanced_non_arrays,
@@ -114,6 +115,7 @@ MOZ_BEGIN_ENUM_CLASS(GLFeature)
     occlusion_query2,
     packed_depth_stencil,
     query_objects,
+    read_buffer,
     renderbuffer_color_float,
     renderbuffer_color_half_float,
     robustness,
@@ -134,17 +136,17 @@ MOZ_BEGIN_ENUM_CLASS(GLFeature)
     uniform_matrix_nonsquare,
     vertex_array_object,
     EnumMax
-MOZ_END_ENUM_CLASS(GLFeature)
+};
 
-MOZ_BEGIN_ENUM_CLASS(ContextProfile, uint8_t)
+enum class ContextProfile : uint8_t {
     Unknown = 0,
     OpenGL, // only for IsAtLeast's <profile> parameter
     OpenGLCore,
     OpenGLCompatibility,
     OpenGLES
-MOZ_END_ENUM_CLASS(ContextProfile)
+};
 
-MOZ_BEGIN_ENUM_CLASS(GLVendor)
+enum class GLVendor {
     Intel,
     NVIDIA,
     ATI,
@@ -153,10 +155,11 @@ MOZ_BEGIN_ENUM_CLASS(GLVendor)
     Nouveau,
     Vivante,
     VMware,
+    ARM,
     Other
-MOZ_END_ENUM_CLASS(GLVendor)
+};
 
-MOZ_BEGIN_ENUM_CLASS(GLRenderer)
+enum class GLRenderer {
     Adreno200,
     Adreno205,
     AdrenoTM200,
@@ -170,7 +173,7 @@ MOZ_BEGIN_ENUM_CLASS(GLRenderer)
     IntelHD3000,
     MicrosoftBasicRenderDriver,
     Other
-MOZ_END_ENUM_CLASS(GLRenderer)
+};
 
 class GLContext
     : public GLLibraryLoader
@@ -276,7 +279,7 @@ public:
      * Example :
      *   If this a OpenGL 2.1, that will return 210
      */
-    inline unsigned int Version() const {
+    inline uint32_t Version() const {
         return mVersion;
     }
 
@@ -308,7 +311,6 @@ public:
     virtual bool IsCurrent() = 0;
 
 protected:
-
     bool mInitialized;
     bool mIsOffscreen;
     bool mIsGlobalSharedContext;
@@ -318,16 +320,19 @@ protected:
      * mVersion store the OpenGL's version, multiplied by 100. For example, if
      * the context is an OpenGL 2.1 context, mVersion value will be 210.
      */
-    unsigned int mVersion;
+    uint32_t mVersion;
     nsCString mVersionString;
     ContextProfile mProfile;
 
     GLVendor mVendor;
     GLRenderer mRenderer;
 
-    inline void SetProfileVersion(ContextProfile profile, unsigned int version) {
-        MOZ_ASSERT(!mInitialized, "SetProfileVersion can only be called before initialization!");
-        MOZ_ASSERT(profile != ContextProfile::Unknown && profile != ContextProfile::OpenGL, "Invalid `profile` for SetProfileVersion");
+    void SetProfileVersion(ContextProfile profile, uint32_t version) {
+        MOZ_ASSERT(!mInitialized, "SetProfileVersion can only be called before"
+                                  " initialization!");
+        MOZ_ASSERT(profile != ContextProfile::Unknown &&
+                   profile != ContextProfile::OpenGL,
+                   "Invalid `profile` for SetProfileVersion");
         MOZ_ASSERT(version >= 100, "Invalid `version` for SetProfileVersion");
 
         mVersion = version;
@@ -457,6 +462,7 @@ public:
         return mAvailableExtensions[aKnownExtension];
     }
 
+protected:
     void MarkExtensionUnsupported(GLExtensions aKnownExtension) {
         mAvailableExtensions[aKnownExtension] = 0;
     }
@@ -465,45 +471,7 @@ public:
         mAvailableExtensions[aKnownExtension] = 1;
     }
 
-
-public:
-
-    template<size_t N>
-    static void InitializeExtensionsBitSet(std::bitset<N>& extensionsBitset, const char* extStr, const char** extList, bool verbose = false)
-    {
-        char* exts = ::strdup(extStr);
-
-        if (verbose)
-            printf_stderr("Extensions: %s\n", exts);
-
-        char* cur = exts;
-        bool done = false;
-        while (!done) {
-            char* space = strchr(cur, ' ');
-            if (space) {
-                *space = '\0';
-            } else {
-                done = true;
-            }
-
-            for (int i = 0; extList[i]; ++i) {
-                if (PL_strcasecmp(cur, extList[i]) == 0) {
-                    if (verbose)
-                        printf_stderr("Found extension %s\n", cur);
-                    extensionsBitset[i] = true;
-                }
-            }
-
-            cur = space + 1;
-        }
-
-        free(exts);
-    }
-
-
-protected:
     std::bitset<Extensions_Max> mAvailableExtensions;
-
 
 // -----------------------------------------------------------------------------
 // Feature queries
@@ -518,7 +486,6 @@ public:
     }
 
     static const char* GetFeatureName(GLFeature feature);
-
 
 private:
     std::bitset<size_t(GLFeature::EnumMax)> mAvailableFeatures;
@@ -580,112 +547,95 @@ public:
         }
     }
 
-    /** \returns the first GL error, and guarantees that all GL error flags are cleared,
-     * i.e. that a subsequent GetError call will return NO_ERROR
-     */
-    GLenum GetAndClearError() {
-        // the first error is what we want to return
-        GLenum error = fGetError();
-
-        if (error) {
-            // clear all pending errors
-            while(fGetError()) {}
-        }
-
-        return error;
-    }
-
 private:
-    GLenum raw_fGetError() {
+    GLenum mTopError;
+
+    GLenum RawGetError() {
         return mSymbols.fGetError();
     }
 
-    std::queue<GLenum> mGLErrorQueue;
+    GLenum RawGetErrorAndClear() {
+        GLenum err = RawGetError();
 
-public:
-    GLenum fGetError() {
-        if (!mGLErrorQueue.empty()) {
-            GLenum err = mGLErrorQueue.front();
-            mGLErrorQueue.pop();
-            return err;
-        }
+        if (err)
+            while (RawGetError()) {}
 
-        return GetUnpushedError();
-    }
-
-private:
-    GLenum GetUnpushedError() {
-        return raw_fGetError();
-    }
-
-    void ClearUnpushedErrors() {
-        while (GetUnpushedError()) {
-            // Discard errors.
-        }
-    }
-
-    GLenum GetAndClearUnpushedErrors() {
-        GLenum err = GetUnpushedError();
-        if (err) {
-            ClearUnpushedErrors();
-        }
         return err;
     }
 
-    void PushError(GLenum err) {
-        mGLErrorQueue.push(err);
+public:
+    GLenum FlushErrors() {
+        GLenum err = RawGetErrorAndClear();
+        if (!mTopError)
+            mTopError = err;
+        return err;
     }
 
-    void GetAndPushAllErrors() {
-        while (true) {
-            GLenum err = GetUnpushedError();
-            if (!err)
-                break;
+    // We smash all errors together, so you never have to loop on this. We
+    // guarantee that immediately after this call, there are no errors left.
+    GLenum fGetError() {
+        FlushErrors();
 
-            PushError(err);
-        }
+        GLenum err = mTopError;
+        mTopError = LOCAL_GL_NO_ERROR;
+        return err;
     }
 
     ////////////////////////////////////
     // Use this safer option.
+    class LocalErrorScope;
+
 private:
-#ifdef MOZ_GL_DEBUG
-    bool mIsInLocalErrorCheck;
-#endif
+    LocalErrorScope* mLocalErrorScope;
 
 public:
-    class ScopedLocalErrorCheck {
-        GLContext* const mGL;
+    class LocalErrorScope {
+        GLContext& mGL;
+        GLenum mOldTop;
         bool mHasBeenChecked;
 
     public:
-        explicit ScopedLocalErrorCheck(GLContext* gl)
+        explicit LocalErrorScope(GLContext& gl)
             : mGL(gl)
             , mHasBeenChecked(false)
         {
-#ifdef MOZ_GL_DEBUG
-            MOZ_ASSERT(!mGL->mIsInLocalErrorCheck);
-            mGL->mIsInLocalErrorCheck = true;
-#endif
-            mGL->GetAndPushAllErrors();
+            MOZ_ASSERT(!mGL.mLocalErrorScope);
+            mGL.mLocalErrorScope = this;
+
+            mGL.FlushErrors();
+
+            mOldTop = mGL.mTopError;
+            mGL.mTopError = LOCAL_GL_NO_ERROR;
         }
 
-        GLenum GetLocalError() {
-#ifdef MOZ_GL_DEBUG
-            MOZ_ASSERT(mGL->mIsInLocalErrorCheck);
-            mGL->mIsInLocalErrorCheck = false;
-#endif
-
+        GLenum GetError() {
             MOZ_ASSERT(!mHasBeenChecked);
             mHasBeenChecked = true;
 
-            return mGL->GetAndClearUnpushedErrors();
+            return mGL.fGetError();
         }
 
-        ~ScopedLocalErrorCheck() {
+        ~LocalErrorScope() {
             MOZ_ASSERT(mHasBeenChecked);
+
+            MOZ_ASSERT(mGL.fGetError() == LOCAL_GL_NO_ERROR);
+
+            mGL.mTopError = mOldTop;
+
+            MOZ_ASSERT(mGL.mLocalErrorScope == this);
+            mGL.mLocalErrorScope = nullptr;
         }
     };
+
+    bool GetPotentialInteger(GLenum pname, GLint* param) {
+        LocalErrorScope localError(*this);
+
+        fGetIntegerv(pname, param);
+
+        GLenum err = localError.GetError();
+        MOZ_ASSERT_IF(err != LOCAL_GL_NO_ERROR, err == LOCAL_GL_INVALID_ENUM);
+        return err == LOCAL_GL_NO_ERROR;
+    }
 
 private:
     static void GLAPIENTRY StaticDebugCallback(GLenum source,
@@ -722,43 +672,47 @@ private:
 # endif
 #endif
 
-    void BeforeGLCall(const char* glFunction) {
+    void BeforeGLCall(const char* funcName) {
         MOZ_ASSERT(IsCurrent());
-        if (DebugMode()) {
-            GLContext *currentGLContext = nullptr;
 
-            currentGLContext = (GLContext*)PR_GetThreadPrivate(sCurrentGLContextTLS);
+        if (DebugMode()) {
+            FlushErrors();
 
             if (DebugMode() & DebugTrace)
-                printf_stderr("[gl:%p] > %s\n", this, glFunction);
-            if (this != currentGLContext) {
-                printf_stderr("Fatal: %s called on non-current context %p. "
-                              "The current context for this thread is %p.\n",
-                              glFunction, this, currentGLContext);
-                NS_ABORT();
+                printf_stderr("[gl:%p] > %s\n", this, funcName);
+
+            GLContext* tlsContext = (GLContext*)PR_GetThreadPrivate(sCurrentGLContextTLS);
+            if (this != tlsContext) {
+                printf_stderr("Fatal: %s called on non-current context %p. The"
+                              " current context for this thread is %p.\n",
+                              funcName, this, tlsContext);
+                MOZ_CRASH("GLContext is not current.");
             }
         }
     }
 
-    void AfterGLCall(const char* glFunction) {
+    void AfterGLCall(const char* funcName) {
         if (DebugMode()) {
             // calling fFinish() immediately after every GL call makes sure that if this GL command crashes,
             // the stack trace will actually point to it. Otherwise, OpenGL being an asynchronous API, stack traces
             // tend to be meaningless
             mSymbols.fFinish();
-            GLenum err = GetUnpushedError();
-            PushError(err);
+            GLenum err = FlushErrors();
 
-            if (DebugMode() & DebugTrace)
-                printf_stderr("[gl:%p] < %s [0x%04x]\n", this, glFunction, err);
+            if (DebugMode() & DebugTrace) {
+                printf_stderr("[gl:%p] < %s [%s (0x%04x)]\n", this, funcName,
+                              GLErrorToString(err), err);
+            }
 
-            if (err != LOCAL_GL_NO_ERROR) {
-                printf_stderr("GL ERROR: %s generated GL error %s(0x%04x)\n",
-                              glFunction,
-                              GLErrorToString(err),
-                              err);
+            if (err != LOCAL_GL_NO_ERROR &&
+                !mLocalErrorScope)
+            {
+                printf_stderr("[gl:%p] %s: Generated unexpected %s error."
+                              " (0x%04x)\n", this, funcName,
+                              GLErrorToString(err), err);
+
                 if (DebugMode() & DebugAbortOnError)
-                    NS_ABORT();
+                    MOZ_CRASH("MOZ_GL_DEBUG_ABORT_ON_ERROR");
             }
         }
     }
@@ -2031,13 +1985,15 @@ public:
         AFTER_GL_CALL;
     }
 
-    void fShaderSource(GLuint shader, GLsizei count, const GLchar** strings, const GLint* lengths) {
+    void fShaderSource(GLuint shader, GLsizei count, const GLchar* const* strings, const GLint* lengths) {
         BEFORE_GL_CALL;
         mSymbols.fShaderSource(shader, count, strings, lengths);
         AFTER_GL_CALL;
     }
 
 private:
+    friend class SharedSurface;
+
     void raw_fBindFramebuffer(GLenum target, GLuint framebuffer) {
         BEFORE_GL_CALL;
         mSymbols.fBindFramebuffer(target, framebuffer);
@@ -2745,7 +2701,7 @@ public:
         AFTER_GL_CALL;
     }
 
-    void fDeleteTransformFeedbacks(GLsizei n, GLuint* ids)
+    void fDeleteTransformFeedbacks(GLsizei n, const GLuint* ids)
     {
         BEFORE_GL_CALL;
         ASSERT_SYMBOL_PRESENT(fDeleteTransformFeedbacks);
@@ -3197,6 +3153,17 @@ public:
     }
 
 // -----------------------------------------------------------------------------
+// get_string_indexed
+
+    const GLubyte* fGetStringi(GLenum name, GLuint index) {
+        BEFORE_GL_CALL;
+        ASSERT_SYMBOL_PRESENT(fGetStringi);
+        const GLubyte* ret = mSymbols.fGetStringi(name, index);
+        AFTER_GL_CALL;
+        return ret;
+    }
+
+// -----------------------------------------------------------------------------
 // Constructor
 protected:
     explicit GLContext(const SurfaceCaps& caps,
@@ -3431,7 +3398,6 @@ protected:
 #endif
 
     UniquePtr<GLBlitHelper> mBlitHelper;
-    UniquePtr<GLBlitTextureImageHelper> mBlitTextureImageHelper;
     UniquePtr<GLReadTexImageHelper> mReadTexImageHelper;
 
 public:
@@ -3465,11 +3431,9 @@ public:
         fViewport(0, 0, size.width, size.height);
 
         mCaps = mScreen->mCaps;
-        if (mCaps.any)
-            DetermineCaps();
+        MOZ_ASSERT(!mCaps.any);
 
         UpdateGLFormats(mCaps);
-        UpdatePixelFormat();
 
         return true;
     }
@@ -3480,22 +3444,7 @@ protected:
         if (!IsOffscreenSizeAllowed(size))
             return false;
 
-        SurfaceCaps tryCaps = caps;
-        if (tryCaps.antialias) {
-            // AA path
-            if (CreateScreenBufferImpl(size, tryCaps))
-                return true;
-
-            NS_WARNING("CreateScreenBuffer failed to initialize an AA context! Falling back to no AA...");
-            tryCaps.antialias = false;
-        }
-        MOZ_ASSERT(!tryCaps.antialias);
-
-        if (CreateScreenBufferImpl(size, tryCaps))
-            return true;
-
-        NS_WARNING("CreateScreenBuffer failed to initialize non-AA context!");
-        return false;
+       return CreateScreenBufferImpl(size, caps);
     }
 
     bool CreateScreenBufferImpl(const gfx::IntSize& size,
@@ -3507,10 +3456,8 @@ public:
 protected:
     SurfaceCaps mCaps;
     nsAutoPtr<GLFormats> mGLFormats;
-    nsAutoPtr<PixelBufferFormat> mPixelFormat;
 
 public:
-    void DetermineCaps();
     const SurfaceCaps& Caps() const {
         return mCaps;
     }
@@ -3524,14 +3471,6 @@ public:
     const GLFormats& GetGLFormats() const {
         MOZ_ASSERT(mGLFormats);
         return *mGLFormats;
-    }
-
-    PixelBufferFormat QueryPixelFormat();
-    void UpdatePixelFormat();
-
-    const PixelBufferFormat& GetPixelFormat() const {
-        MOZ_ASSERT(mPixelFormat);
-        return *mPixelFormat;
     }
 
     bool IsFramebufferComplete(GLuint fb, GLenum* status = nullptr);
@@ -3573,7 +3512,7 @@ public:
     }
 
     bool IsOffscreen() const {
-        return mScreen;
+        return mIsOffscreen;
     }
 
     GLScreenBuffer* Screen() const {
@@ -3642,6 +3581,9 @@ protected:
 
 
 public:
+    GLsizei MaxSamples() const {
+        return mMaxSamples;
+    }
 
     void fViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
         if (mViewportRect[0] == x &&
@@ -3724,10 +3666,44 @@ protected:
 
 public:
     void FlushIfHeavyGLCallsSinceLastFlush();
+    static bool ShouldSpew();
+    static bool ShouldDumpExts();
+    void Readback(SharedSurface* src, gfx::DataSourceSurface* dest);
 };
 
 bool DoesStringMatch(const char* aString, const char *aWantedString);
 
+void SplitByChar(const nsACString& str, const char delim,
+                 std::vector<nsCString>* const out);
+
+template<size_t N>
+bool
+MarkBitfieldByString(const nsACString& str, const char* (&markStrList)[N],
+                     std::bitset<N>* const out_markList)
+{
+    for (size_t i = 0; i < N; i++) {
+        if (str.Equals(markStrList[i])) {
+            (*out_markList)[i] = 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+template<size_t N>
+void
+MarkBitfieldByStrings(const std::vector<nsCString>& strList,
+                      bool dumpStrings, const char* (&markStrList)[N],
+                      std::bitset<N>* const out_markList)
+{
+    for (auto itr = strList.begin(); itr != strList.end(); ++itr) {
+        const nsACString& str = *itr;
+        const bool wasMarked = MarkBitfieldByString(str, markStrList,
+                                                    out_markList);
+        if (dumpStrings)
+            printf_stderr("  %s%s\n", str.BeginReading(), wasMarked ? "(*)" : "");
+    }
+}
 
 } /* namespace gl */
 } /* namespace mozilla */

@@ -81,9 +81,11 @@ const PREF_XPI_FILE_WHITELISTED       = "xpinstall.whitelist.fileRequest";
 const PREF_XPI_PERMISSIONS_BRANCH     = "xpinstall.";
 const PREF_XPI_UNPACK                 = "extensions.alwaysUnpack";
 const PREF_INSTALL_REQUIREBUILTINCERTS = "extensions.install.requireBuiltInCerts";
+const PREF_INSTALL_REQUIRESECUREORIGIN = "extensions.install.requireSecureOrigin";
 const PREF_INSTALL_DISTRO_ADDONS      = "extensions.installDistroAddons";
 const PREF_BRANCH_INSTALLED_ADDON     = "extensions.installedDistroAddon.";
 const PREF_SHOWN_SELECTION_UI         = "extensions.shownSelectionUI";
+const PREF_INTERPOSITION_ENABLED      = "extensions.interposition.enabled";
 
 const PREF_EM_MIN_COMPAT_APP_VERSION      = "extensions.minCompatibleAppVersion";
 const PREF_EM_MIN_COMPAT_PLATFORM_VERSION = "extensions.minCompatiblePlatformVersion";
@@ -1927,7 +1929,12 @@ this.XPIProvider = {
 
         let chan;
         try {
-          chan = Services.io.newChannelFromURI(aURI);
+          chan = Services.io.newChannelFromURI2(aURI,
+                                                null,      // aLoadingNode
+                                                Services.scriptSecurityManager.getSystemPrincipal(),
+                                                null,      // aTriggeringPrincipal
+                                                Ci.nsILoadInfo.SEC_NORMAL,
+                                                Ci.nsIContentPolicy.TYPE_OTHER);
         }
         catch (ex) {
           return null;
@@ -2092,6 +2099,8 @@ this.XPIProvider = {
 
       // Changes to installed extensions may have changed which theme is selected
       this.applyThemeChange();
+
+      AddonManagerPrivate.markProviderSafe(this);
 
       if (aAppChanged === undefined) {
         // For new profiles we will never need to show the add-on selection UI
@@ -2393,7 +2402,9 @@ this.XPIProvider = {
     }
     catch (e) { }
 
-    Cu.import("resource://gre/modules/TelemetryPing.jsm", {}).TelemetryPing.setAddOns(data);
+    let TelemetrySession =
+      Cu.import("resource://gre/modules/TelemetrySession.jsm", {}).TelemetrySession;
+    TelemetrySession.setAddOns(data);
   },
 
   /**
@@ -3734,6 +3745,11 @@ this.XPIProvider = {
     if (requireWhitelist && (permission != Ci.nsIPermissionManager.ALLOW_ACTION))
       return false;
 
+    let requireSecureOrigin = Preferences.get(PREF_INSTALL_REQUIRESECUREORIGIN, true);
+    let safeSchemes = ["https", "chrome", "file"];
+    if (requireSecureOrigin && safeSchemes.indexOf(aUri.scheme) == -1)
+      return false;
+
     return true;
   },
 
@@ -3750,16 +3766,16 @@ this.XPIProvider = {
    *         Icon URLs for the install
    * @param  aVersion
    *         A version for the install
-   * @param  aLoadGroup
-   *         An nsILoadGroup to associate requests with
+   * @param  aBrowser
+   *         The browser performing the install
    * @param  aCallback
    *         A callback to pass the AddonInstall to
    */
   getInstallForURL: function XPI_getInstallForURL(aUrl, aHash, aName, aIcons,
-                                                  aVersion, aLoadGroup, aCallback) {
+                                                  aVersion, aBrowser, aCallback) {
     AddonInstall.createDownload(function getInstallForURL_createDownload(aInstall) {
       aCallback(aInstall.wrapper);
-    }, aUrl, aHash, aName, aIcons, aVersion, aLoadGroup);
+    }, aUrl, aHash, aName, aIcons, aVersion, aBrowser);
   },
 
   /**
@@ -4282,8 +4298,7 @@ this.XPIProvider = {
 
     let principal = Cc["@mozilla.org/systemprincipal;1"].
                     createInstance(Ci.nsIPrincipal);
-
-    if (!aMultiprocessCompatible && Services.appinfo.browserTabsRemoteAutostart) {
+    if (!aMultiprocessCompatible && Preferences.get(PREF_INTERPOSITION_ENABLED, false)) {
       let interposition = Cc["@mozilla.org/addons/multiprocess-shims;1"].
         getService(Ci.nsIAddonInterposition);
       Cu.setAddonInterposition(aId, interposition);
@@ -4443,6 +4458,13 @@ this.XPIProvider = {
       if (aMethod == "shutdown" && aReason != BOOTSTRAP_REASONS.APP_SHUTDOWN) {
         logger.debug("Removing manifest for " + aFile.path);
         Components.manager.removeBootstrappedManifestLocation(aFile);
+
+        let manifest = getURIForResourceInFile(aFile, "chrome.manifest");
+        for (let line of ChromeManifestParser.parseSync(manifest)) {
+          if (line.type == "resource") {
+            ResProtocolHandler.setSubstitution(line.args[0], null);
+          }
+        }
       }
       this.setTelemetry(aAddon.id, aMethod + "_MS", new Date() - timeStart);
     }
@@ -4754,13 +4776,13 @@ function getHashStringForCrypto(aCrypto) {
  *         An optional nsIURI of release notes for the add-on
  * @param  aExistingAddon
  *         The add-on this install will update if known
- * @param  aLoadGroup
- *         The nsILoadGroup to associate any requests with
+ * @param  aBrowser
+ *         The browser performing the install
  * @throws if the url is the url of a local file and the hash does not match
  *         or the add-on does not contain an valid install manifest
  */
 function AddonInstall(aInstallLocation, aUrl, aHash, aReleaseNotesURI,
-                      aExistingAddon, aLoadGroup) {
+                      aExistingAddon, aBrowser) {
   this.wrapper = new AddonInstallWrapper(this);
   this.installLocation = aInstallLocation;
   this.sourceURI = aUrl;
@@ -4773,16 +4795,12 @@ function AddonInstall(aInstallLocation, aUrl, aHash, aReleaseNotesURI,
     };
   }
   this.hash = this.originalHash;
-  this.loadGroup = aLoadGroup;
+  this.browser = aBrowser;
   this.listeners = [];
   this.icons = {};
   this.existingAddon = aExistingAddon;
   this.error = 0;
-  if (aLoadGroup)
-    this.window = aLoadGroup.notificationCallbacks
-                            .getInterface(Ci.nsIDOMWindow);
-  else
-    this.window = null;
+  this.window = aBrowser ? aBrowser.contentWindow : null;
 
   // Giving each instance of AddonInstall a reference to the logger.
   this.logger = logger;
@@ -4795,7 +4813,7 @@ AddonInstall.prototype = {
   crypto: null,
   originalHash: null,
   hash: null,
-  loadGroup: null,
+  browser: null,
   badCertHandler: null,
   listeners: null,
   restartDownload: false,
@@ -5015,8 +5033,11 @@ AddonInstall.prototype = {
   cancel: function AI_cancel() {
     switch (this.state) {
     case AddonManager.STATE_DOWNLOADING:
-      if (this.channel)
+      if (this.channel) {
+        logger.debug("Cancelling download of " + this.sourceURI.spec);
         this.channel.cancel(Cr.NS_BINDING_ABORTED);
+      }
+      break;
     case AddonManager.STATE_AVAILABLE:
     case AddonManager.STATE_DOWNLOADED:
       logger.debug("Cancelling download of " + this.sourceURI.spec);
@@ -5384,7 +5405,14 @@ AddonInstall.prototype = {
       let requireBuiltIn = Preferences.get(PREF_INSTALL_REQUIREBUILTINCERTS, true);
       this.badCertHandler = new BadCertHandler(!requireBuiltIn);
 
-      this.channel = NetUtil.newChannel(this.sourceURI);
+      this.channel = NetUtil.newChannel2(this.sourceURI,
+                                         null,
+                                         null,
+                                         null,      // aLoadingNode
+                                         Services.scriptSecurityManager.getSystemPrincipal(),
+                                         null,      // aTriggeringPrincipal
+                                         Ci.nsILoadInfo.SEC_NORMAL,
+                                         Ci.nsIContentPolicy.TYPE_OTHER);
       this.channel.notificationCallbacks = this;
       if (this.channel instanceof Ci.nsIHttpChannel) {
         this.channel.setRequestHeader("Moz-XPI-Update", "1", true);
@@ -5503,8 +5531,20 @@ AddonInstall.prototype = {
     this.badCerthandler = null;
     Services.obs.removeObserver(this, "network:offline-about-to-go-offline");
 
-    // If the download was cancelled then all events will have already been sent
+    // If the download was cancelled then update the state and send events
     if (aStatus == Cr.NS_BINDING_ABORTED) {
+      if (this.state == AddonManager.STATE_DOWNLOADING) {
+        logger.debug("Cancelled download of " + this.sourceURI.spec);
+        this.state = AddonManager.STATE_CANCELLED;
+        XPIProvider.removeActiveInstall(this);
+        AddonManagerPrivate.callInstallListeners("onDownloadCancelled",
+                                                 this.listeners, this.wrapper);
+        // If a listener restarted the download then there is no need to
+        // remove the temporary file
+        if (this.state != AddonManager.STATE_CANCELLED)
+          return;
+      }
+
       this.removeTemporaryFile();
       if (this.restartDownload)
         this.openChannel();
@@ -5853,9 +5893,18 @@ AddonInstall.prototype = {
 
   getInterface: function AI_getInterface(iid) {
     if (iid.equals(Ci.nsIAuthPrompt2)) {
-      var factory = Cc["@mozilla.org/prompter;1"].
+      let win = this.window;
+      if (!win && this.browser)
+        win = this.browser.ownerDocument.defaultView;
+
+      let factory = Cc["@mozilla.org/prompter;1"].
                     getService(Ci.nsIPromptFactory);
-      return factory.getPrompt(this.window, Ci.nsIAuthPrompt);
+      let prompt = factory.getPrompt(win, Ci.nsIAuthPrompt2);
+
+      if (this.browser && this.browser.isRemoteBrowser && prompt instanceof Ci.nsILoginManagerPrompter)
+        prompt.setE10sData(this.browser, null);
+
+      return prompt;
     }
     else if (iid.equals(Ci.nsIChannelEventSink)) {
       return this;
@@ -5919,15 +5968,15 @@ AddonInstall.createInstall = function AI_createInstall(aCallback, aFile) {
  *         An icon URLs for the add-on
  * @param  aVersion
  *         A version for the add-on
- * @param  aLoadGroup
- *         An nsILoadGroup to associate the download with
+ * @param  aBrowser
+ *         The browser performing the install
  */
 AddonInstall.createDownload = function AI_createDownload(aCallback, aUri, aHash, aName, aIcons,
-                                       aVersion, aLoadGroup) {
+                                       aVersion, aBrowser) {
   let location = XPIProvider.installLocationsByName[KEY_APP_PROFILE];
   let url = NetUtil.newURI(aUri);
 
-  let install = new AddonInstall(location, url, aHash, null, null, aLoadGroup);
+  let install = new AddonInstall(location, url, aHash, null, null, aBrowser);
   if (url instanceof Ci.nsIFileURL)
     install.initLocalInstall(aCallback);
   else
@@ -6409,6 +6458,8 @@ AddonInternal.prototype = {
         }
       });
     });
+    if (aUpdate.multiprocessCompatible !== undefined)
+      this.multiprocessCompatible = aUpdate.multiprocessCompatible;
     this.appDisabled = !isUsableAddon(this);
   },
 
@@ -6568,7 +6619,7 @@ function AddonWrapper(aAddon) {
    "providesUpdatesSecurely", "blocklistState", "blocklistURL", "appDisabled",
    "softDisabled", "skinnable", "size", "foreignInstall", "hasBinaryComponents",
    "strictCompatibility", "compatibilityOverrides", "updateURL",
-   "getDataDirectory"].forEach(function(aProp) {
+   "getDataDirectory", "multiprocessCompatible"].forEach(function(aProp) {
      this.__defineGetter__(aProp, function AddonWrapper_propertyGetter() aAddon[aProp]);
   }, this);
 

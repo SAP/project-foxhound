@@ -11,6 +11,7 @@
 #include "platform.h"
 #include "PlatformMacros.h"
 #include "prenv.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ThreadLocal.h"
 #include "PseudoStack.h"
@@ -19,6 +20,7 @@
 #include "nsIObserverService.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsProfilerStartParams.h"
 #include "mozilla/Services.h"
 #include "nsThreadUtils.h"
 #include "ProfilerMarkers.h"
@@ -26,7 +28,6 @@
 
 #if defined(SPS_OS_android) && !defined(MOZ_WIDGET_GONK)
   #include "AndroidBridge.h"
-  using namespace mozilla::widget::android;
 #endif
 
 mozilla::ThreadLocal<PseudoStack *> tlsPseudoStack;
@@ -44,6 +45,9 @@ int         sFrameNumber = 0;
 int         sLastFrameNumber = 0;
 int         sInitCount = 0; // Each init must have a matched shutdown.
 static bool sIsProfiling = false; // is raced on
+static bool sIsGPUProfiling = false; // is raced on
+static bool sIsLayersDump = false; // is raced on
+static bool sIsDisplayListDump = false; // is raced on
 
 // env variables to control the profiler
 const char* PROFILER_MODE = "MOZ_PROFILER_MODE";
@@ -52,13 +56,6 @@ const char* PROFILER_ENTRIES = "MOZ_PROFILER_ENTRIES";
 const char* PROFILER_STACK = "MOZ_PROFILER_STACK_SCAN";
 const char* PROFILER_FEATURES = "MOZ_PROFILING_FEATURES";
 
-/* used to keep track of the last event that we sampled during */
-unsigned int sLastSampledEventGeneration = 0;
-
-/* a counter that's incremented everytime we get responsiveness event
- * note: it might also be worth trackplaing everytime we go around
- * the event loop */
-unsigned int sCurrentEventGeneration = 0;
 /* we don't need to worry about overflow because we only treat the
  * case of them being the same as special. i.e. we only run into
  * a problem if 2^32 events happen between samples that we need
@@ -86,10 +83,6 @@ void Sampler::Startup() {
 
 void Sampler::Shutdown() {
   while (sRegisteredThreads->size() > 0) {
-    // Any stack that's still referenced at this point are
-    // still active and we don't have a way to clean them up
-    // safetly and still handle the pop call on that object.
-    sRegisteredThreads->back()->ForgetStack();
     delete sRegisteredThreads->back();
     sRegisteredThreads->pop_back();
   }
@@ -125,9 +118,6 @@ ThreadInfo::~ThreadInfo() {
     delete mProfile;
 
   Sampler::FreePlatformData(mPlatformData);
-
-  delete mPseudoStack;
-  mPseudoStack = nullptr;
 }
 
 void
@@ -139,6 +129,33 @@ ThreadInfo::SetPendingDelete()
   if (mProfile) {
     mProfile->SetPendingDelete();
   }
+}
+
+StackOwningThreadInfo::StackOwningThreadInfo(const char* aName, int aThreadId,
+                                             bool aIsMainThread,
+                                             PseudoStack* aPseudoStack,
+                                             void* aStackTop)
+  : ThreadInfo(aName, aThreadId, aIsMainThread, aPseudoStack, aStackTop)
+{
+  aPseudoStack->ref();
+}
+
+StackOwningThreadInfo::~StackOwningThreadInfo()
+{
+  PseudoStack* stack = Stack();
+  if (stack) {
+    stack->deref();
+  }
+}
+
+void
+StackOwningThreadInfo::SetPendingDelete()
+{
+  PseudoStack* stack = Stack();
+  if (stack) {
+    stack->deref();
+  }
+  ThreadInfo::SetPendingDelete();
 }
 
 ProfilerMarker::ProfilerMarker(const char* aMarkerName,
@@ -179,45 +196,6 @@ void ProfilerMarker::StreamJSObject(JSStreamWriter& b) const {
   b.EndObject();
 }
 
-PendingMarkers::~PendingMarkers() {
-  clearMarkers();
-  if (mSignalLock != false) {
-    // We're releasing the pseudostack while it's still in use.
-    // The label macros keep a non ref counted reference to the
-    // stack to avoid a TLS. If these are not all cleared we will
-    // get a use-after-free so better to crash now.
-    abort();
-  }
-}
-
-void
-PendingMarkers::addMarker(ProfilerMarker *aMarker) {
-  mSignalLock = true;
-  STORE_SEQUENCER();
-
-  MOZ_ASSERT(aMarker);
-  mPendingMarkers.insert(aMarker);
-
-  // Clear markers that have been overwritten
-  while (mStoredMarkers.peek() &&
-         mStoredMarkers.peek()->HasExpired(mGenID)) {
-    delete mStoredMarkers.popHead();
-  } 
-  STORE_SEQUENCER();
-  mSignalLock = false;
-}
-
-void
-PendingMarkers::updateGeneration(int aGenID) {
-  mGenID = aGenID;
-}
-
-void
-PendingMarkers::addStoredMarker(ProfilerMarker *aStoredMarker) {
-  aStoredMarker->SetGeneration(mGenID);
-  mStoredMarkers.insert(aStoredMarker);
-}
-
 bool sps_version2()
 {
   static int version = 0; // Raced on, potentially
@@ -237,11 +215,6 @@ bool sps_version2()
 
     bool req2 = PR_GetEnv("MOZ_PROFILER_NEW") != nullptr; // Has v2 been requested?
 
-    bool elfhackd = false;
-#   if defined(USE_ELF_HACK)
-    bool elfhackd = true;
-#   endif
-
     if (req2 && allow2) {
       version = 2;
       LOG("------------------- MOZ_PROFILER_NEW set -------------------");
@@ -249,10 +222,6 @@ bool sps_version2()
       version = 1;
       LOG("--------------- MOZ_PROFILER_NEW requested, ----------------");
       LOG("---------- but is not available on this platform -----------");
-    } else if (req2 && elfhackd) {
-      version = 1;
-      LOG("--------------- MOZ_PROFILER_NEW requested, ----------------");
-      LOG("--- but this build was not done with --disable-elf-hack ----");
     } else {
       version = 1;
       LOG("----------------- MOZ_PROFILER_NEW not set -----------------");
@@ -476,8 +445,8 @@ bool is_main_thread_name(const char* aName) {
 #define VARARGS_ASSIGN(foo, bar)     (foo) = (bar)
 #endif
 
-static void
-profiler_log(const char *fmt, va_list args)
+void
+mozilla_sampler_log(const char *fmt, va_list args)
 {
   if (profiler_is_active()) {
     // nsAutoCString AppendPrintf would be nicer but
@@ -526,7 +495,7 @@ void mozilla_sampler_init(void* stackTop)
 
   Sampler::Startup();
 
-  PseudoStack *stack = new PseudoStack();
+  PseudoStack *stack = PseudoStack::create();
   tlsPseudoStack.set(stack);
 
   bool isMainThread = true;
@@ -546,7 +515,7 @@ void mozilla_sampler_init(void* stackTop)
   // platform specific initialization
   OS::Startup();
 
-  set_stderr_callback(profiler_log);
+  set_stderr_callback(mozilla_sampler_log);
 
   // We can't open pref so we use an environment variable
   // to know if we should trigger the profiler on startup
@@ -558,6 +527,7 @@ void mozilla_sampler_init(void* stackTop)
 
   const char* features[] = {"js"
                          , "leaf"
+                         , "threads"
 #if defined(XP_WIN) || defined(XP_MACOSX) || (defined(SPS_ARCH_arm) && defined(linux))
                          , "stackwalk"
 #endif
@@ -565,10 +535,12 @@ void mozilla_sampler_init(void* stackTop)
                          , "java"
 #endif
                          };
+
+  const char* threadFilters[] = { "GeckoMain", "Compositor" };
+
   profiler_start(PROFILE_DEFAULT_ENTRY, PROFILE_DEFAULT_INTERVAL,
-                         features, sizeof(features)/sizeof(const char*),
-                         // TODO Add env variable to select threads
-                         nullptr, 0);
+                         features, MOZ_ARRAY_LENGTH(features),
+                         threadFilters, MOZ_ARRAY_LENGTH(threadFilters));
   LOG("END   mozilla_sampler_init");
 }
 
@@ -599,9 +571,9 @@ void mozilla_sampler_shutdown()
 
   Sampler::Shutdown();
 
-  // We can't delete the Stack because we can be between a
-  // sampler call_enter/call_exit point.
-  // TODO Need to find a safe time to delete Stack
+  PseudoStack *stack = tlsPseudoStack.get();
+  stack->deref();
+  tlsPseudoStack.set(nullptr);
 }
 
 void mozilla_sampler_save()
@@ -681,10 +653,16 @@ const char** mozilla_sampler_get_features()
     // Tell the JS engine to emmit pseudostack entries in the
     // pro/epilogue.
     "js",
+    // GPU Profiling (may not be supported by the GL)
+    "gpu",
     // Profile the registered secondary threads.
     "threads",
     // Do not include user-identifiable information
     "privacy",
+    // Dump the layer tree with the textures.
+    "layersdump",
+    // Dump the display list with the textures.
+    "displaylistdump",
     // Add main thread I/O to the profile
     "mainthreadio",
     // Add RSS collection
@@ -768,7 +746,7 @@ void mozilla_sampler_start(int aProfileEntries, double aInterval,
     if (javaInterval < 10) {
       aInterval = 10;
     }
-    mozilla::widget::android::GeckoJavaSampler::StartJavaProfiling(javaInterval, 1000);
+    mozilla::widget::GeckoJavaSampler::StartJavaProfiling(javaInterval, 1000);
   }
 #endif
 
@@ -782,11 +760,30 @@ void mozilla_sampler_start(int aProfileEntries, double aInterval,
   }
 
   sIsProfiling = true;
+  sIsGPUProfiling = t->ProfileGPU();
+  sIsLayersDump = t->LayersDump();
+  sIsDisplayListDump = t->DisplayListDump();
 
   if (Sampler::CanNotifyObservers()) {
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-    if (os)
-      os->NotifyObservers(nullptr, "profiler-started", nullptr);
+    if (os) {
+      nsTArray<nsCString> featuresArray;
+      nsTArray<nsCString> threadNameFiltersArray;
+
+      for (size_t i = 0; i < aFeatureCount; ++i) {
+        featuresArray.AppendElement(aFeatures[i]);
+      }
+
+      for (size_t i = 0; i < aFilterCount; ++i) {
+        threadNameFiltersArray.AppendElement(aThreadNameFilters[i]);
+      }
+
+      nsCOMPtr<nsIProfilerStartParams> params =
+        new nsProfilerStartParams(aProfileEntries, aInterval, featuresArray,
+                                  threadNameFiltersArray);
+
+      os->NotifyObservers(params, "profiler-started", nullptr);
+    }
   }
 
   LOG("END   mozilla_sampler_start");
@@ -797,7 +794,7 @@ void mozilla_sampler_stop()
   LOG("BEGIN mozilla_sampler_stop");
 
   if (!stack_key_initialized)
-    profiler_init(nullptr);
+    return;
 
   TableTicker *t = tlsTicker.get();
   if (!t) {
@@ -835,6 +832,9 @@ void mozilla_sampler_stop()
   sInterposeObserver = nullptr;
 
   sIsProfiling = false;
+  sIsGPUProfiling = false;
+  sIsLayersDump = false;
+  sIsDisplayListDump = false;
 
   if (Sampler::CanNotifyObservers()) {
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
@@ -865,6 +865,27 @@ void mozilla_sampler_resume() {
   }
 }
 
+bool mozilla_sampler_feature_active(const char* aName)
+{
+  if (!profiler_is_active()) {
+    return false;
+  }
+
+  if (strcmp(aName, "gpu") == 0) {
+    return sIsGPUProfiling;
+  }
+
+  if (strcmp(aName, "layersdump") == 0) {
+    return sIsLayersDump;
+  }
+
+  if (strcmp(aName, "displaylistdump") == 0) {
+    return sIsDisplayListDump;
+  }
+
+  return false;
+}
+
 bool mozilla_sampler_is_active()
 {
   return sIsProfiling;
@@ -872,8 +893,6 @@ bool mozilla_sampler_is_active()
 
 void mozilla_sampler_responsiveness(const mozilla::TimeStamp& aTime)
 {
-  sCurrentEventGeneration++;
-
   sLastTracerEvent = aTime;
 }
 
@@ -917,7 +936,8 @@ bool mozilla_sampler_register_thread(const char* aName, void* stackTop)
   }
 #endif
 
-  PseudoStack* stack = new PseudoStack();
+  MOZ_ASSERT(tlsPseudoStack.get() == nullptr);
+  PseudoStack* stack = PseudoStack::create();
   tlsPseudoStack.set(stack);
   bool isMainThread = is_main_thread_name(aName);
   return Sampler::RegisterCurrentThread(aName, stack, isMainThread, stackTop);
@@ -925,7 +945,9 @@ bool mozilla_sampler_register_thread(const char* aName, void* stackTop)
 
 void mozilla_sampler_unregister_thread()
 {
-  if (sInitCount == 0) {
+  // Don't check sInitCount count here -- we may be unregistering the
+  // thread after the sampler was shut down.
+  if (!stack_key_initialized) {
     return;
   }
 
@@ -933,6 +955,7 @@ void mozilla_sampler_unregister_thread()
   if (!stack) {
     return;
   }
+  stack->deref();
   tlsPseudoStack.set(nullptr);
 
   Sampler::UnregisterCurrentThread();
@@ -1041,7 +1064,10 @@ void mozilla_sampler_add_marker(const char *aMarker, ProfilerMarkerPayload *aPay
   if (!stack) {
     return;
   }
-  mozilla::TimeDuration delta = mozilla::TimeStamp::Now() - sStartTime;
+
+  mozilla::TimeStamp origin = (aPayload && !aPayload->GetStartTime().IsNull()) ?
+                     aPayload->GetStartTime() : mozilla::TimeStamp::Now();
+  mozilla::TimeDuration delta = origin - sStartTime;
   stack->addMarker(aMarker, payload.forget(), static_cast<float>(delta.ToMilliseconds()));
 }
 

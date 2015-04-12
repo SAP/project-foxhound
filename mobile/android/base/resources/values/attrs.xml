@@ -54,15 +54,6 @@
 
     </declare-styleable>
 
-    <!-- DoorHangers -->
-    <declare-styleable name="DoorHanger">
-        <attr name="arrowPopupWidth" format="dimension">
-             <enum name="fill_parent" value="-1" />
-             <enum name="match_parent" value="-1" />
-             <enum name="wrap_content" value="-2" />
-        </attr>
-    </declare-styleable>
-
     <declare-styleable name="MenuItem">
         <attr name="android:id"/>
         <attr name="android:orderInCategory"/>
@@ -146,6 +137,12 @@
         <attr name="fadeWidth" format="dimension"/>
     </declare-styleable>
 
+    <declare-styleable name="FadedMultiColorTextView">
+        <!-- The background color we should be fading over. Useful because the
+             background is full alpha and we need to copy the background underneath. -->
+        <attr name="fadeBackgroundColor" format="dimension"/>
+    </declare-styleable>
+
     <declare-styleable name="BookmarkFolderView">
         <attr name="state_open" format="boolean"/>
     </declare-styleable>
@@ -174,12 +171,22 @@
         <attr name="strip" format="reference"/>
     </declare-styleable>
 
+    <declare-styleable name="TabPanelBackButton">
+        <attr name="rightDivider" format="reference"/>
+        <attr name="dividerVerticalPadding" format="dimension"/>
+    </declare-styleable>
+
     <declare-styleable name="EllipsisTextView">
         <attr name="ellipsizeAtLine" format="integer"/>
     </declare-styleable>
 
     <declare-styleable name="FloatingHintEditText">
         <attr name="floatingHintEditTextStyle" format="reference" />
+    </declare-styleable>
+
+    <declare-styleable name="FaviconView">
+        <attr name="dominantBorderEnabled" format="boolean" />
+        <attr name="overrideScaleType" format="boolean" />
     </declare-styleable>
 
 </resources>

@@ -8,7 +8,7 @@
 #include "jit/BaselineHelpers.h"
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
-#include "jit/IonLinker.h"
+#include "jit/Linker.h"
 
 using namespace js;
 using namespace js::jit;
@@ -19,7 +19,7 @@ namespace jit {
 // ICCompare_Int32
 
 bool
-ICCompare_Int32::Compiler::generateStubCode(MacroAssembler &masm)
+ICCompare_Int32::Compiler::generateStubCode(MacroAssembler& masm)
 {
     // Guard that R0 is an integer and R1 is an integer.
     Label failure;
@@ -28,7 +28,7 @@ ICCompare_Int32::Compiler::generateStubCode(MacroAssembler &masm)
 
     // Compare payload regs of R0 and R1.
     Assembler::Condition cond = JSOpToCondition(op, /* signed = */true);
-    masm.cmpl(R0.payloadReg(), R1.payloadReg());
+    masm.cmp32(R0.payloadReg(), R1.payloadReg());
     masm.setCC(cond, R0.payloadReg());
     masm.movzbl(R0.payloadReg(), R0.payloadReg());
 
@@ -45,7 +45,7 @@ ICCompare_Int32::Compiler::generateStubCode(MacroAssembler &masm)
 // ICBinaryArith_Int32
 
 bool
-ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
+ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
 {
     // Guard that R0 is an integer and R1 is an integer.
     Label failure;
@@ -81,7 +81,7 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
         masm.imull(R1.payloadReg(), scratchReg);
         masm.j(Assembler::Overflow, &failure);
 
-        masm.testl(scratchReg, scratchReg);
+        masm.test32(scratchReg, scratchReg);
         masm.j(Assembler::Zero, &maybeNegZero);
 
         masm.movl(scratchReg, R0.payloadReg());
@@ -173,7 +173,7 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.movl(R1.payloadReg(), ecx);
         masm.shrl_cl(R0.payloadReg());
-        masm.testl(R0.payloadReg(), R0.payloadReg());
+        masm.test32(R0.payloadReg(), R0.payloadReg());
         if (allowDouble_) {
             Label toUint;
             masm.j(Assembler::Signed, &toUint);
@@ -237,7 +237,7 @@ ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
 }
 
 bool
-ICUnaryArith_Int32::Compiler::generateStubCode(MacroAssembler &masm)
+ICUnaryArith_Int32::Compiler::generateStubCode(MacroAssembler& masm)
 {
     Label failure;
     masm.branchTestInt32(Assembler::NotEqual, R0, &failure);

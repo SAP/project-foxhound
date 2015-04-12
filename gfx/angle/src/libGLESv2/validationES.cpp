@@ -24,6 +24,9 @@
 #include "common/mathutil.h"
 #include "common/utilities.h"
 
+// FIXME(jmadill): remove this when we support buffer data caching
+#include "libGLESv2/renderer/d3d/BufferD3D.h"
+
 namespace gl
 {
 
@@ -519,14 +522,16 @@ bool ValidateBlitFramebufferParameters(gl::Context *context, GLint srcX0, GLint 
 
         if (readColorBuffer && drawColorBuffer)
         {
-            GLenum readInternalFormat = readColorBuffer->getActualFormat();
+            GLenum readActualFormat = readColorBuffer->getActualFormat();
+            GLenum readInternalFormat = readColorBuffer->getInternalFormat();
             const InternalFormat &readFormatInfo = GetInternalFormatInfo(readInternalFormat);
 
             for (unsigned int i = 0; i < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS; i++)
             {
                 if (drawFramebuffer->isEnabledColorAttachment(i))
                 {
-                    GLenum drawInternalFormat = drawFramebuffer->getColorbuffer(i)->getActualFormat();
+                    GLenum drawActualFormat = drawFramebuffer->getColorbuffer(i)->getActualFormat();
+                    GLenum drawInternalFormat = drawFramebuffer->getColorbuffer(i)->getInternalFormat();
                     const InternalFormat &drawFormatInfo = GetInternalFormatInfo(drawInternalFormat);
 
                     // The GL ES 3.0.2 spec (pg 193) states that:
@@ -588,7 +593,8 @@ bool ValidateBlitFramebufferParameters(gl::Context *context, GLint srcX0, GLint 
                             return false;
                         }
 
-                        if (attachment->getActualFormat() != readColorBuffer->getActualFormat())
+                        // Return an error if the destination formats do not match
+                        if (attachment->getInternalFormat() != readColorBuffer->getInternalFormat())
                         {
                             context->recordError(Error(GL_INVALID_OPERATION));
                             return false;
@@ -1670,8 +1676,17 @@ bool ValidateDrawElements(Context *context, GLenum mode, GLsizei count, GLenum t
         uintptr_t offset = reinterpret_cast<uintptr_t>(indices);
         if (!elementArrayBuffer->getIndexRangeCache()->findRange(type, offset, count, indexRangeOut, NULL))
         {
-            const void *dataPointer = elementArrayBuffer->getImplementation()->getData();
-            const uint8_t *offsetPointer = static_cast<const uint8_t *>(dataPointer) + offset;
+            // FIXME(jmadill): Use buffer data caching instead of the D3D back-end
+            rx::BufferD3D *bufferD3D = rx::BufferD3D::makeBufferD3D(elementArrayBuffer->getImplementation());
+            const uint8_t *dataPointer = NULL;
+            Error error = bufferD3D->getData(&dataPointer);
+            if (error.isError())
+            {
+                context->recordError(error);
+                return false;
+            }
+
+            const uint8_t *offsetPointer = dataPointer + offset;
             *indexRangeOut = rx::IndexRangeCache::ComputeRange(type, offsetPointer, count);
         }
     }

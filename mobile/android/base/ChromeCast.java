@@ -37,7 +37,7 @@ import android.util.Log;
 class ChromeCast implements GeckoMediaPlayer {
     private static final boolean SHOW_DEBUG = false;
 
-    static final String MIRROR_RECEIVER_APP_ID = "5F72F863";
+    static final String MIRROR_RECEIVER_APP_ID = "08FF1091";
 
     private final Context context;
     private final RouteInfo route;
@@ -47,6 +47,25 @@ class ChromeCast implements GeckoMediaPlayer {
     private String mSessionId;
     private MirrorChannel mMirrorChannel;
     private boolean mApplicationStarted = false;
+
+    // EventCallback which is actually a GeckoEventCallback is sometimes being invoked more
+    // than once. That causes the IllegalStateException to be thrown. To prevent a crash,
+    // catch the exception and report it as an error to the log.
+    private static void sendSuccess(final EventCallback callback, final String msg) {
+        try {
+            callback.sendSuccess(msg);
+        } catch (final IllegalStateException e) {
+            Log.e(LOGTAG, "Attempting to invoke callback.sendSuccess more than once.", e);
+        }
+    }
+
+    private static void sendError(final EventCallback callback, final String msg) {
+        try {
+            callback.sendError(msg);
+        } catch (final IllegalStateException e) {
+            Log.e(LOGTAG, "Attempting to invoke callback.sendError more than once.", e);
+        }
+    }
 
     // Callback to start playback of a url on a remote device
     private class VideoPlayCallback implements ResultCallback<ApplicationConnectionResult>,
@@ -101,7 +120,7 @@ class ChromeCast implements GeckoMediaPlayer {
 
                 startPlayback();
             } else {
-                callback.sendError(status.toString());
+                sendError(callback, status.toString());
             }
         }
 
@@ -118,13 +137,13 @@ class ChromeCast implements GeckoMediaPlayer {
                     @Override
                     public void onResult(MediaChannelResult result) {
                         if (result.getStatus().isSuccess()) {
-                            callback.sendSuccess(null);
+                            sendSuccess(callback, null);
                             debug("Media loaded successfully");
                             return;
                         }
 
                         debug("Media load failed " + result.getStatus());
-                        callback.sendError(result.getStatus().toString());
+                        sendError(callback, result.getStatus().toString());
                     }
                 });
 
@@ -135,14 +154,14 @@ class ChromeCast implements GeckoMediaPlayer {
                 debug("Problem opening media during loading", e);
             }
 
-            callback.sendError("");
+            sendError(callback, "");
         }
     }
 
     public ChromeCast(Context context, RouteInfo route) {
         int status =  GooglePlayServicesUtil.isGooglePlayServicesAvailable(context);
         if (status != ConnectionResult.SUCCESS) {
-            throw new IllegalStateException("Play services are required for Chromecast support (go status code " + status + ")");
+            throw new IllegalStateException("Play services are required for Chromecast support (got status code " + status + ")");
         }
 
         this.context = context;
@@ -150,8 +169,11 @@ class ChromeCast implements GeckoMediaPlayer {
         this.canMirror = route.supportsControlCategory(CastMediaControlIntent.categoryForCast(MIRROR_RECEIVER_APP_ID));
     }
 
-    // This dumps everything we can find about the device into JSON. This will hopefully make it
-    // easier to filter out duplicate devices from different sources in js.
+    /**
+     *  This dumps everything we can find about the device into JSON. This will hopefully make it
+     *  easier to filter out duplicate devices from different sources in JS.
+     *  Returns null if the device can't be found.
+     */
     @Override
     public JSONObject toJSON() {
         final JSONObject obj = new JSONObject();
@@ -169,7 +191,7 @@ class ChromeCast implements GeckoMediaPlayer {
             obj.put("mirror", canMirror);
             // For now we just assume all of these are Google devices
             obj.put("manufacturer", "Google Inc.");
-        } catch(JSONException ex) {
+        } catch (JSONException ex) {
             debug("Error building route", ex);
         }
 
@@ -198,7 +220,7 @@ class ChromeCast implements GeckoMediaPlayer {
                     // Sometimes apiClient is null here. See bug 1061032
                     if (apiClient != null && !apiClient.isConnected()) {
                         debug("Connection failed");
-                        callback.sendError("Not connected");
+                        sendError(callback, "Not connected");
                         return;
                     }
 
@@ -223,13 +245,13 @@ class ChromeCast implements GeckoMediaPlayer {
     @Override
     public void start(final EventCallback callback) {
         // Nothing to be done here
-        callback.sendSuccess(null);
+        sendSuccess(callback, null);
     }
 
     @Override
     public void stop(final EventCallback callback) {
         // Nothing to be done here
-        callback.sendSuccess(null);
+        sendSuccess(callback, null);
     }
 
     public boolean verifySession(final EventCallback callback) {
@@ -245,7 +267,7 @@ class ChromeCast implements GeckoMediaPlayer {
         if (msg != null) {
             debug(msg);
             if (callback != null) {
-                callback.sendError(msg);
+                sendError(callback, msg);
             }
             return false;
         }
@@ -266,15 +288,15 @@ class ChromeCast implements GeckoMediaPlayer {
                     Status status = result.getStatus();
                     if (!status.isSuccess()) {
                         debug("Unable to play: " + status.getStatusCode());
-                        callback.sendError(status.toString());
+                        sendError(callback, status.toString());
                     } else {
-                        callback.sendSuccess(null);
+                        sendSuccess(callback, null);
                     }
                 }
             });
         } catch(IllegalStateException ex) {
             // The media player may throw if the session has been killed. For now, we're just catching this here.
-            callback.sendError("Error playing");
+            sendError(callback, "Error playing");
         }
     }
 
@@ -291,15 +313,15 @@ class ChromeCast implements GeckoMediaPlayer {
                     Status status = result.getStatus();
                     if (!status.isSuccess()) {
                         debug("Unable to pause: " + status.getStatusCode());
-                        callback.sendError(status.toString());
+                        sendError(callback, status.toString());
                     } else {
-                        callback.sendSuccess(null);
+                        sendSuccess(callback, null);
                     }
                 }
             });
         } catch(IllegalStateException ex) {
             // The media player may throw if the session has been killed. For now, we're just catching this here.
-            callback.sendError("Error pausing");
+            sendError(callback, "Error pausing");
         }
     }
 
@@ -322,7 +344,7 @@ class ChromeCast implements GeckoMediaPlayer {
                             apiClient = null;
 
                             if (callback != null) {
-                                callback.sendSuccess(null);
+                                sendSuccess(callback, null);
                             }
 
                             return;
@@ -332,13 +354,13 @@ class ChromeCast implements GeckoMediaPlayer {
                     }
 
                     if (callback != null) {
-                        callback.sendError(result.getStatus().toString());
+                        sendError(callback, result.getStatus().toString());
                     }
                 }
             });
         } catch(IllegalStateException ex) {
             // The media player may throw if the session has been killed. For now, we're just catching this here.
-            callback.sendError("Error stopping");
+            sendError(callback, "Error stopping");
         }
     }
 
@@ -376,9 +398,7 @@ class ChromeCast implements GeckoMediaPlayer {
         }
     }
     private class MirrorCallback implements ResultCallback<ApplicationConnectionResult> {
-        // See Bug 1055562, callback is set to null after it has been
-        // invoked so that it will not be called a second time.
-        EventCallback callback;
+        final EventCallback callback;
         MirrorCallback(final EventCallback callback) {
             this.callback = callback;
         }
@@ -386,10 +406,6 @@ class ChromeCast implements GeckoMediaPlayer {
 
         @Override
         public void onResult(ApplicationConnectionResult result) {
-            if (callback == null) {
-                Log.e(LOGTAG, "Attempting to invoke MirrorChannel callback more than once.");
-                return;
-            }
             Status status = result.getStatus();
             if (status.isSuccess()) {
                 ApplicationMetadata applicationMetadata = result.getApplicationMetadata();
@@ -406,16 +422,14 @@ class ChromeCast implements GeckoMediaPlayer {
                                                              mMirrorChannel
                                                              .getNamespace(),
                                                              mMirrorChannel);
-                    callback.sendSuccess(null);
-                    callback = null;
+                    sendSuccess(callback, null);
                 } catch (IOException e) {
                     Log.e(LOGTAG, "Exception while creating channel", e);
                 }
 
                 GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Casting:Mirror", route.getId()));
             } else {
-                callback.sendError(status.toString());
-                callback = null;
+                sendError(callback, status.toString());
             }
         }
     }

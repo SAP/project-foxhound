@@ -17,6 +17,7 @@
 #include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/net/ReferrerPolicy.h"
 
 class nsINode;
 class nsIDOMNode;
@@ -48,7 +49,7 @@ class GlobalObject;
 /**
  * txMozillaXSLTProcessor is a front-end to the XSLT Processor.
  */
-class txMozillaXSLTProcessor MOZ_FINAL : public nsIXSLTProcessor,
+class txMozillaXSLTProcessor final : public nsIXSLTProcessor,
                                          public nsIXSLTProcessorPrivate,
                                          public nsIDocumentTransformer,
                                          public nsStubMutationObserver,
@@ -72,17 +73,17 @@ public:
     NS_DECL_NSIXSLTPROCESSORPRIVATE
 
     // nsIDocumentTransformer interface
-    NS_IMETHOD SetTransformObserver(nsITransformObserver* aObserver) MOZ_OVERRIDE;
-    NS_IMETHOD LoadStyleSheet(nsIURI* aUri, nsIDocument* aLoaderDocument) MOZ_OVERRIDE;
-    NS_IMETHOD SetSourceContentModel(nsIDOMNode* aSource) MOZ_OVERRIDE;
-    NS_IMETHOD CancelLoads() MOZ_OVERRIDE {return NS_OK;}
+    NS_IMETHOD SetTransformObserver(nsITransformObserver* aObserver) override;
+    NS_IMETHOD LoadStyleSheet(nsIURI* aUri, nsIDocument* aLoaderDocument) override;
+    NS_IMETHOD SetSourceContentModel(nsIDOMNode* aSource) override;
+    NS_IMETHOD CancelLoads() override {return NS_OK;}
     NS_IMETHOD AddXSLTParamNamespace(const nsString& aPrefix,
-                                     const nsString& aNamespace) MOZ_OVERRIDE;
+                                     const nsString& aNamespace) override;
     NS_IMETHOD AddXSLTParam(const nsString& aName,
                             const nsString& aNamespace,
                             const nsString& aSelect,
                             const nsString& aValue,
-                            nsIDOMNode* aContext) MOZ_OVERRIDE;
+                            nsIDOMNode* aContext) override;
 
     // nsIMutationObserver interface
     NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
@@ -93,7 +94,7 @@ public:
     NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
 
     // nsWrapperCache
-    virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
+    virtual JSObject* WrapObject(JSContext* aCx) override;
 
     // WebIDL
     nsISupports*
@@ -156,7 +157,7 @@ public:
     static void Shutdown();
 
 private:
-    txMozillaXSLTProcessor(nsISupports* aOwner);
+    explicit txMozillaXSLTProcessor(nsISupports* aOwner);
     /**
      * Default destructor for txMozillaXSLTProcessor
      */
@@ -185,7 +186,8 @@ private:
 };
 
 extern nsresult TX_LoadSheet(nsIURI* aUri, txMozillaXSLTProcessor* aProcessor,
-                             nsIDocument* aLoaderDocument);
+                             nsIDocument* aLoaderDocument,
+                             mozilla::net::ReferrerPolicy aReferrerPolicy);
 
 extern nsresult TX_CompileStylesheet(nsINode* aNode,
                                      txMozillaXSLTProcessor* aProcessor,

@@ -73,6 +73,7 @@
 
 // Defines kKeyMapping and GetKeyNameIndex()
 #include "GonkKeyMapping.h"
+#include "mozilla/layers/CompositorParent.h"
 #include "GeckoTouchDispatcher.h"
 
 #define LOG(args...)                                            \
@@ -211,6 +212,7 @@ private:
     char16_t mUnmodifiedChar;
 
     uint32_t mDOMKeyCode;
+    uint32_t mDOMKeyLocation;
     KeyNameIndex mDOMKeyNameIndex;
     CodeNameIndex mDOMCodeNameIndex;
     char16_t mDOMPrintableKeyValue;
@@ -245,9 +247,12 @@ private:
 };
 
 KeyEventDispatcher::KeyEventDispatcher(const UserInputData& aData,
-                                       KeyCharacterMap* aKeyCharMap) :
-    mData(aData), mKeyCharMap(aKeyCharMap), mChar(0), mUnmodifiedChar(0),
-    mDOMPrintableKeyValue(0)
+                                       KeyCharacterMap* aKeyCharMap)
+    : mData(aData)
+    , mKeyCharMap(aKeyCharMap)
+    , mChar(0)
+    , mUnmodifiedChar(0)
+    , mDOMPrintableKeyValue(0)
 {
     // XXX Printable key's keyCode value should be computed with actual
     //     input character.
@@ -255,6 +260,8 @@ KeyEventDispatcher::KeyEventDispatcher(const UserInputData& aData,
         kKeyMapping[mData.key.keyCode] : 0;
     mDOMKeyNameIndex = GetKeyNameIndex(mData.key.keyCode);
     mDOMCodeNameIndex = GetCodeNameIndex(mData.key.scanCode);
+    mDOMKeyLocation =
+        WidgetKeyboardEvent::ComputeLocationFromCodeValue(mDOMCodeNameIndex);
 
     if (!mKeyCharMap.get()) {
         return;
@@ -307,7 +314,7 @@ KeyEventDispatcher::DispatchKeyEventInternal(uint32_t aEventMessage)
     }
     event.mCodeNameIndex = mDOMCodeNameIndex;
     event.modifiers = getDOMModifiers(mData.metaState);
-    event.location = nsIDOMKeyEvent::DOM_KEY_LOCATION_MOBILE;
+    event.location = mDOMKeyLocation;
     event.time = mData.timeMs;
     return nsWindow::DispatchInputEvent(event);
 }
@@ -715,7 +722,7 @@ GeckoInputDispatcher::notifyMotion(const NotifyMotionArgs* args)
     int32_t action = args->action & AMOTION_EVENT_ACTION_MASK;
     int touchCount = args->pointerCount;
     MOZ_ASSERT(touchCount <= MAX_POINTERS);
-    TimeStamp timestamp = TimeStamp::Now();
+    TimeStamp timestamp = mozilla::TimeStamp::FromSystemTime(args->eventTime);
     Modifiers modifiers = getDOMModifiers(args->metaState);
 
     MultiTouchInput::MultiTouchType touchType = MultiTouchInput::MULTITOUCH_CANCEL;
@@ -760,7 +767,7 @@ GeckoInputDispatcher::notifyMotion(const NotifyMotionArgs* args)
         }
     }
 
-    mTouchDispatcher->NotifyTouch(touchData, args->eventTime);
+    mTouchDispatcher->NotifyTouch(touchData, timestamp);
 }
 
 void GeckoInputDispatcher::notifySwitch(const NotifySwitchArgs* args)

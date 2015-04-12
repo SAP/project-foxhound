@@ -9,6 +9,9 @@ const Services = require("Services");
 const promise = require("promise");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "gDevTools", "resource:///modules/devtools/gDevTools.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "CustomizeMode", "resource:///modules/CustomizeMode.jsm");
+const kDeveditionChangedNotification = "devedition-theme-state-changed";
+const DEVEDITION_THEME_PREF = "browser.devedition.theme.enabled";
 
 exports.OptionsPanel = OptionsPanel;
 
@@ -71,15 +74,20 @@ function InfallibleGetBoolPref(key) {
 function OptionsPanel(iframeWindow, toolbox) {
   this.panelDoc = iframeWindow.document;
   this.panelWin = iframeWindow;
+
   this.toolbox = toolbox;
   this.isReady = false;
 
   this._prefChanged = this._prefChanged.bind(this);
   this._themeRegistered = this._themeRegistered.bind(this);
   this._themeUnregistered = this._themeUnregistered.bind(this);
+  this._disableJSClicked = this._disableJSClicked.bind(this);
+
+  this.disableJSNode = this.panelDoc.getElementById("devtools-disable-javascript");
 
   this._addListeners();
 
+  Services.obs.addObserver(this, kDeveditionChangedNotification, false);
   const EventEmitter = require("devtools/toolkit/event-emitter");
   EventEmitter.decorate(this);
 }
@@ -104,13 +112,9 @@ OptionsPanel.prototype = {
       this.setupToolsList();
       this.setupToolbarButtonsList();
       this.setupThemeList();
+      this.setupBrowserThemeButton();
       this.populatePreferences();
       this.updateDefaultTheme();
-
-      this._disableJSClicked = this._disableJSClicked.bind(this);
-
-      let disableJSNode = this.panelDoc.getElementById("devtools-disable-javascript");
-      disableJSNode.addEventListener("click", this._disableJSClicked, false);
     }).then(() => {
       this.isReady = true;
       this.emit("ready");
@@ -142,6 +146,8 @@ OptionsPanel.prototype = {
     }
     else if (data.pref === "devtools.theme") {
       this.updateCurrentTheme();
+    } else if (data.pref === "browser.devedition.theme.enabled") {
+      this.updateBrowserTheme();
     }
   },
 
@@ -182,6 +188,10 @@ OptionsPanel.prototype = {
     };
 
     for (let tool of toggleableButtons) {
+      if (this.toolbox.target.isMultiProcess && tool.id === "command-button-tilt") {
+        continue;
+      }
+
       enabledToolbarButtonsBox.appendChild(createCommandCheckbox(tool));
     }
   },
@@ -273,18 +283,58 @@ OptionsPanel.prototype = {
     this.updateCurrentTheme();
   },
 
+  /**
+   * Similar to `populatePrefs`, except we want more
+   * special rules for the browser theme button.
+   */
+  setupBrowserThemeButton: function() {
+    let checkbox = this.panelDoc.getElementById("devtools-browser-theme");
+
+    checkbox.addEventListener("command", function() {
+      setPrefAndEmit(DEVEDITION_THEME_PREF, this.checked);
+    }.bind(checkbox));
+
+    this.updateBrowserThemeButton();
+  },
+
+  /**
+   * Called on theme changed via observer of "devedition-theme-state-changed".
+   */
+  updateBrowserThemeButton: function() {
+    let checkbox = this.panelDoc.getElementById("devtools-browser-theme");
+
+    // Check if the dev edition style sheet is applied -- will not
+    // be applied when dev edition theme is disabled, or when there's
+    // a LWT applied.
+    if (this._isDevEditionThemeOn()) {
+      checkbox.setAttribute("checked", "true");
+    } else {
+      checkbox.removeAttribute("checked");
+    }
+
+    // Should the button be shown
+    if (GetPref("browser.devedition.theme.showCustomizeButton")) {
+      checkbox.removeAttribute("hidden");
+    } else {
+      checkbox.setAttribute("hidden", "true");
+    }
+  },
+
+  /**
+   * Called when clicking the browser theme button to enable/disable
+   * the dev edition browser theme.
+   */
+  updateBrowserTheme: function() {
+    let enabled = GetPref("browser.devedition.theme.enabled");
+    CustomizeMode.prototype.toggleDevEditionTheme.call(this, enabled);
+  },
+
   populatePreferences: function() {
     let prefCheckboxes = this.panelDoc.querySelectorAll("checkbox[data-pref]");
     for (let checkbox of prefCheckboxes) {
       checkbox.checked = GetPref(checkbox.getAttribute("data-pref"));
       checkbox.addEventListener("command", function() {
-        let data = {
-          pref: this.getAttribute("data-pref"),
-          newValue: this.checked
-        };
-        data.oldValue = GetPref(data.pref);
-        SetPref(data.pref, data.newValue);
-        gDevTools.emit("pref-changed", data);
+        setPrefAndEmit(this.getAttribute("data-pref"), this.checked);
       }.bind(checkbox));
     }
     let prefRadiogroups = this.panelDoc.querySelectorAll("radiogroup[data-pref]");
@@ -298,17 +348,7 @@ OptionsPanel.prototype = {
         }
       }
       radiogroup.addEventListener("select", function() {
-        let data = {
-          pref: this.getAttribute("data-pref"),
-          newValue: this.selectedItem.getAttribute("value")
-        };
-
-        data.oldValue = GetPref(data.pref);
-        SetPref(data.pref, data.newValue);
-
-        if (data.newValue != data.oldValue) {
-          gDevTools.emit("pref-changed", data);
-        }
+        setPrefAndEmit(this.getAttribute("data-pref"), this.selectedItem.getAttribute("value"));
       }.bind(radiogroup));
     }
     let prefMenulists = this.panelDoc.querySelectorAll("menulist[data-pref]");
@@ -323,21 +363,19 @@ OptionsPanel.prototype = {
         }
       }
       menulist.addEventListener("command", function() {
-        let data = {
-          pref: this.getAttribute("data-pref"),
-          newValue: this.value
-        };
-        data.oldValue = GetPref(data.pref);
-        SetPref(data.pref, data.newValue);
-        gDevTools.emit("pref-changed", data);
+        setPrefAndEmit(this.getAttribute("data-pref"), this.value);
       }.bind(menulist));
     }
 
-    this.target.client.attachTab(this.target.activeTab._actor, (response) => {
-      this._origJavascriptEnabled = response.javascriptEnabled;
-
-      this._populateDisableJSCheckbox();
-    });
+    if (this.target.activeTab) {
+      this.target.client.attachTab(this.target.activeTab._actor, (response) => {
+        this._origJavascriptEnabled = response.javascriptEnabled;
+        this.disableJSNode.checked = !this._origJavascriptEnabled
+        this.disableJSNode.addEventListener("click", this._disableJSClicked, false);
+      });
+    } else {
+      this.disableJSNode.hidden = true;
+    }
   },
 
   updateDefaultTheme: function() {
@@ -357,11 +395,6 @@ OptionsPanel.prototype = {
     if (themeOption) {
       themeBox.selectedItem = themeOption;
     }
-  },
-
-  _populateDisableJSCheckbox: function() {
-    let cbx = this.panelDoc.getElementById("devtools-disable-javascript");
-    cbx.checked = !this._origJavascriptEnabled;
   },
 
   /**
@@ -384,6 +417,25 @@ OptionsPanel.prototype = {
     this.target.activeTab.reconfigure(options);
   },
 
+  /**
+   * Returns a boolean indicating whether or not the dev edition
+   * browser theme is applied.
+   */
+  _isDevEditionThemeOn: function() {
+    let win = Services.wm.getMostRecentWindow("navigator:browser");
+    return !!(win && win.DevEdition.styleSheet);
+  },
+
+  /**
+   * Called on observer notification for "devedition-theme-state-changed"
+   * to possibly change the state of the dev edition button
+   */
+  observe: function(aSubject, aTopic, aData) {
+    if (aTopic === kDeveditionChangedNotification) {
+      this.updateBrowserThemeButton();
+    }
+  },
+
   destroy: function() {
     if (this.destroyPromise) {
       return this.destroyPromise;
@@ -392,24 +444,38 @@ OptionsPanel.prototype = {
     let deferred = promise.defer();
 
     this.destroyPromise = deferred.promise;
-
-    let disableJSNode = this.panelDoc.getElementById("devtools-disable-javascript");
-    disableJSNode.removeEventListener("click", this._disableJSClicked, false);
-
     this._removeListeners();
 
-    this.panelWin = this.panelDoc = null;
-    this._disableJSClicked = null;
+    if (this.target.activeTab) {
+      this.disableJSNode.removeEventListener("click", this._disableJSClicked, false);
+      // If JavaScript is disabled we need to revert it to it's original value.
+      let options = {
+        "javascriptEnabled": this._origJavascriptEnabled
+      };
+      this.target.activeTab.reconfigure(options, () => {
+        this.toolbox = null;
+        deferred.resolve();
+      }, true);
+    }
 
-    // If JavaScript is disabled we need to revert it to it's original value.
-    let options = {
-      "javascriptEnabled": this._origJavascriptEnabled
-    };
-    this.target.activeTab.reconfigure(options, () => {
-      this.toolbox = null;
-      deferred.resolve();
-    }, true);
+    this.panelWin = this.panelDoc = this.disableJSNode = null;
+
+    Services.obs.removeObserver(this, kDeveditionChangedNotification);
 
     return deferred.promise;
   }
 };
+
+/* Set a pref and emit the pref-changed event if needed. */
+function setPrefAndEmit(prefName, newValue) {
+  let data = {
+    pref: prefName,
+    newValue: newValue
+  };
+  data.oldValue = GetPref(data.pref);
+  SetPref(data.pref, data.newValue);
+
+  if (data.newValue != data.oldValue) {
+    gDevTools.emit("pref-changed", data);
+  }
+}

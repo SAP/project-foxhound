@@ -14,6 +14,8 @@
 #include "GeckoTaskTracer.h"
 #endif
 
+#include "mozilla/Move.h"
+
 #ifdef MOZ_TASK_TRACER
 using namespace mozilla::tasktracer;
 #endif
@@ -34,7 +36,7 @@ Message::Message()
 #ifdef MOZ_TASK_TRACER
   header()->source_event_id = 0;
   header()->parent_task_id = 0;
-  header()->source_event_type = SourceEventType::UNKNOWN;
+  header()->source_event_type = SourceEventType::Unknown;
 #endif
   InitLoggingVariables();
 }
@@ -59,7 +61,7 @@ Message::Message(int32_t routing_id, msgid_t type, PriorityValue priority,
 #ifdef MOZ_TASK_TRACER
   header()->source_event_id = 0;
   header()->parent_task_id = 0;
-  header()->source_event_type = SourceEventType::UNKNOWN;
+  header()->source_event_type = SourceEventType::Unknown;
 #endif
   InitLoggingVariables(name);
 }
@@ -80,13 +82,20 @@ Message::Message(const Message& other) : Pickle(other) {
 #endif
 }
 
+Message::Message(Message&& other) : Pickle(mozilla::Move(other)) {
+  InitLoggingVariables(other.name_);
+#if defined(OS_POSIX)
+  file_descriptor_set_ = other.file_descriptor_set_.forget();
+#endif
+#ifdef MOZ_TASK_TRACER
+  header()->source_event_id = other.header()->source_event_id;
+  header()->parent_task_id = other.header()->parent_task_id;
+  header()->source_event_type = other.header()->source_event_type;
+#endif
+}
+
 void Message::InitLoggingVariables(const char* const name) {
   name_ = name;
-#ifdef IPC_MESSAGE_LOG_ENABLED
-  received_time_ = 0;
-  dont_log_ = false;
-  log_data_ = NULL;
-#endif
 }
 
 Message& Message::operator=(const Message& other) {
@@ -103,26 +112,20 @@ Message& Message::operator=(const Message& other) {
   return *this;
 }
 
-#ifdef IPC_MESSAGE_LOG_ENABLED
-void Message::set_sent_time(int64_t time) {
-  DCHECK((header()->flags & HAS_SENT_TIME_BIT) == 0);
-  header()->flags |= HAS_SENT_TIME_BIT;
-  WriteInt64(time);
-}
-
-int64_t Message::sent_time() const {
-  if ((header()->flags & HAS_SENT_TIME_BIT) == 0)
-    return 0;
-
-  const char* data = end_of_payload();
-  data -= sizeof(int64_t);
-  return *(reinterpret_cast<const int64_t*>(data));
-}
-
-void Message::set_received_time(int64_t time) const {
-  received_time_ = time;
-}
+Message& Message::operator=(Message&& other) {
+  *static_cast<Pickle*>(this) = mozilla::Move(other);
+  InitLoggingVariables(other.name_);
+#if defined(OS_POSIX)
+  file_descriptor_set_.swap(other.file_descriptor_set_);
 #endif
+#ifdef MOZ_TASK_TRACER
+  std::swap(header()->source_event_id, other.header()->source_event_id);
+  std::swap(header()->parent_task_id, other.header()->parent_task_id);
+  std::swap(header()->source_event_type, other.header()->source_event_type);
+#endif
+  return *this;
+}
+
 
 #if defined(OS_POSIX)
 bool Message::WriteFileDescriptor(const base::FileDescriptor& descriptor) {

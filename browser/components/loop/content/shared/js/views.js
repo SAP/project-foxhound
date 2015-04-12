@@ -8,13 +8,13 @@
 /* global loop:true, React */
 var loop = loop || {};
 loop.shared = loop.shared || {};
-loop.shared.views = (function(_, OT, l10n) {
+loop.shared.views = (function(_, l10n) {
   "use strict";
 
+  var sharedActions = loop.shared.actions;
   var sharedModels = loop.shared.models;
   var sharedMixins = loop.shared.mixins;
-
-  var WINDOW_AUTOCLOSE_TIMEOUT_IN_SECONDS = 5;
+  var SCREEN_SHARE_STATES = loop.shared.utils.SCREEN_SHARE_STATES;
 
   /**
    * Media control button.
@@ -25,7 +25,7 @@ loop.shared.views = (function(_, OT, l10n) {
    * - {Function} action  Function to be executed on click.
    * - {Enabled}  enabled Stream activation status (default: true).
    */
-  var MediaControlButton = React.createClass({displayName: 'MediaControlButton',
+  var MediaControlButton = React.createClass({displayName: "MediaControlButton",
     propTypes: {
       scope: React.PropTypes.string.isRequired,
       type: React.PropTypes.string.isRequired,
@@ -48,6 +48,7 @@ loop.shared.views = (function(_, OT, l10n) {
       var classesObj = {
         "btn": true,
         "media-control": true,
+        "transparent-button": true,
         "local-media": this.props.scope === "local",
         "muted": !this.props.enabled,
         "hide": !this.props.visible
@@ -66,7 +67,7 @@ loop.shared.views = (function(_, OT, l10n) {
     render: function() {
       return (
         /* jshint ignore:start */
-        React.DOM.button({className: this._getClasses(), 
+        React.createElement("button", {className: this._getClasses(), 
                 title: this._getTitle(), 
                 onClick: this.handleClick})
         /* jshint ignore:end */
@@ -75,21 +76,131 @@ loop.shared.views = (function(_, OT, l10n) {
   });
 
   /**
+   * Screen sharing control button.
+   *
+   * Required props:
+   * - {loop.Dispatcher} dispatcher  The dispatcher instance
+   * - {Boolean}         visible     Set to true to display the button
+   * - {String}          state       One of the screen sharing states, see
+   *                                 loop.shared.utils.SCREEN_SHARE_STATES
+   */
+  var ScreenShareControlButton = React.createClass({displayName: "ScreenShareControlButton",
+    mixins: [sharedMixins.DropdownMenuMixin],
+
+    propTypes: {
+      dispatcher: React.PropTypes.instanceOf(loop.Dispatcher).isRequired,
+      visible: React.PropTypes.bool.isRequired,
+      state: React.PropTypes.string.isRequired,
+    },
+
+    getInitialState: function() {
+      var os = loop.shared.utils.getOS();
+      var osVersion = loop.shared.utils.getOSVersion();
+      // Disable screensharing on older OSX and Windows versions.
+      if ((os.indexOf("mac") > -1 && osVersion.major <= 10 && osVersion.minor <= 6) ||
+          (os.indexOf("win") > -1 && osVersion.major <= 5 && osVersion.minor <= 2)) {
+        return { windowSharingDisabled: true };
+      }
+      return { windowSharingDisabled: false };
+    },
+
+    handleClick: function() {
+      if (this.props.state === SCREEN_SHARE_STATES.ACTIVE) {
+        this.props.dispatcher.dispatch(
+          new sharedActions.EndScreenShare({}));
+      } else {
+        this.toggleDropdownMenu();
+      }
+    },
+
+    _startScreenShare: function(type) {
+      this.props.dispatcher.dispatch(new sharedActions.StartScreenShare({
+        type: type
+      }));
+    },
+
+    _handleShareTabs: function() {
+      this._startScreenShare("browser");
+    },
+
+    _handleShareWindows: function() {
+      this._startScreenShare("window");
+    },
+
+    _getTitle: function() {
+      var prefix = this.props.state === SCREEN_SHARE_STATES.ACTIVE ?
+        "active" : "inactive";
+
+      return l10n.get(prefix + "_screenshare_button_title");
+    },
+
+    render: function() {
+      if (!this.props.visible) {
+        return null;
+      }
+
+      var cx = React.addons.classSet;
+
+      var isActive = this.props.state === SCREEN_SHARE_STATES.ACTIVE;
+      var screenShareClasses = cx({
+        "btn": true,
+        "btn-screen-share": true,
+        "transparent-button": true,
+        "menu-showing": this.state.showMenu,
+        "active": isActive,
+        "disabled": this.props.state === SCREEN_SHARE_STATES.PENDING
+      });
+      var dropdownMenuClasses = cx({
+        "native-dropdown-menu": true,
+        "conversation-window-dropdown": true,
+        "visually-hidden": !this.state.showMenu
+      });
+      var windowSharingClasses = cx({
+        "disabled": this.state.windowSharingDisabled
+      });
+
+      return (
+        React.createElement("div", null, 
+          React.createElement("button", {className: screenShareClasses, 
+                  onClick: this.handleClick, 
+                  title: this._getTitle()}, 
+            isActive ? null : React.createElement("span", {className: "chevron"})
+          ), 
+          React.createElement("ul", {ref: "menu", className: dropdownMenuClasses}, 
+            React.createElement("li", {onClick: this._handleShareTabs}, 
+              l10n.get("share_tabs_button_title")
+            ), 
+            React.createElement("li", {onClick: this._handleShareWindows, className: windowSharingClasses}, 
+              l10n.get("share_windows_button_title")
+            )
+          )
+        )
+      );
+    }
+  });
+
+  /**
    * Conversation controls.
    */
-  var ConversationToolbar = React.createClass({displayName: 'ConversationToolbar',
+  var ConversationToolbar = React.createClass({displayName: "ConversationToolbar",
     getDefaultProps: function() {
       return {
         video: {enabled: true, visible: true},
-        audio: {enabled: true, visible: true}
+        audio: {enabled: true, visible: true},
+        screenShare: {state: SCREEN_SHARE_STATES.INACTIVE, visible: false},
+        enableHangup: true
       };
     },
 
     propTypes: {
+      dispatcher: React.PropTypes.instanceOf(loop.Dispatcher).isRequired,
       video: React.PropTypes.object.isRequired,
       audio: React.PropTypes.object.isRequired,
+      screenShare: React.PropTypes.object,
       hangup: React.PropTypes.func.isRequired,
-      publishStream: React.PropTypes.func.isRequired
+      publishStream: React.PropTypes.func.isRequired,
+      hangupButtonLabel: React.PropTypes.string,
+      enableHangup: React.PropTypes.bool,
     },
 
     handleClickHangup: function() {
@@ -104,27 +215,36 @@ loop.shared.views = (function(_, OT, l10n) {
       this.props.publishStream("audio", !this.props.audio.enabled);
     },
 
+    _getHangupButtonLabel: function() {
+      return this.props.hangupButtonLabel || l10n.get("hangup_button_caption2");
+    },
+
     render: function() {
-      var cx = React.addons.classSet;
       return (
-        React.DOM.ul({className: "conversation-toolbar"}, 
-          React.DOM.li({className: "conversation-toolbar-btn-box"}, 
-            React.DOM.button({className: "btn btn-hangup", onClick: this.handleClickHangup, 
-                    title: l10n.get("hangup_button_title")}, 
-              l10n.get("hangup_button_caption2")
+        React.createElement("ul", {className: "conversation-toolbar"}, 
+          React.createElement("li", {className: "conversation-toolbar-btn-box btn-hangup-entry"}, 
+            React.createElement("button", {className: "btn btn-hangup", onClick: this.handleClickHangup, 
+                    title: l10n.get("hangup_button_title"), 
+                    disabled: !this.props.enableHangup}, 
+              this._getHangupButtonLabel()
             )
           ), 
-          React.DOM.li({className: "conversation-toolbar-btn-box"}, 
-            MediaControlButton({action: this.handleToggleVideo, 
+          React.createElement("li", {className: "conversation-toolbar-btn-box"}, 
+            React.createElement(MediaControlButton, {action: this.handleToggleVideo, 
                                 enabled: this.props.video.enabled, 
                                 visible: this.props.video.visible, 
                                 scope: "local", type: "video"})
           ), 
-          React.DOM.li({className: "conversation-toolbar-btn-box"}, 
-            MediaControlButton({action: this.handleToggleAudio, 
+          React.createElement("li", {className: "conversation-toolbar-btn-box"}, 
+            React.createElement(MediaControlButton, {action: this.handleToggleAudio, 
                                 enabled: this.props.audio.enabled, 
                                 visible: this.props.audio.visible, 
                                 scope: "local", type: "audio"})
+          ), 
+          React.createElement("li", {className: "conversation-toolbar-btn-box btn-screen-share-entry"}, 
+            React.createElement(ScreenShareControlButton, {dispatcher: this.props.dispatcher, 
+                                      visible: this.props.screenShare.visible, 
+                                      state: this.props.screenShare.state})
           )
         )
       );
@@ -134,34 +254,25 @@ loop.shared.views = (function(_, OT, l10n) {
   /**
    * Conversation view.
    */
-  var ConversationView = React.createClass({displayName: 'ConversationView',
-    mixins: [Backbone.Events],
+  var ConversationView = React.createClass({displayName: "ConversationView",
+    mixins: [
+      Backbone.Events,
+      sharedMixins.AudioMixin,
+      sharedMixins.MediaSetupMixin
+    ],
 
     propTypes: {
       sdk: React.PropTypes.object.isRequired,
       video: React.PropTypes.object,
       audio: React.PropTypes.object,
-      initiate: React.PropTypes.bool
-    },
-
-    // height set to 100%" to fix video layout on Google Chrome
-    // @see https://bugzilla.mozilla.org/show_bug.cgi?id=1020445
-    publisherConfig: {
-      insertMode: "append",
-      width: "100%",
-      height: "100%",
-      style: {
-        audioLevelDisplayMode: "off",
-        bugDisplayMode: "off",
-        buttonDisplayMode: "off",
-        nameDisplayMode: "off",
-        videoDisabledDisplayMode: "off"
-      }
+      initiate: React.PropTypes.bool,
+      isDesktop: React.PropTypes.bool
     },
 
     getDefaultProps: function() {
       return {
         initiate: true,
+        isDesktop: false,
         video: {enabled: true, visible: true},
         audio: {enabled: true, visible: true}
       };
@@ -174,16 +285,27 @@ loop.shared.views = (function(_, OT, l10n) {
       };
     },
 
-    componentWillMount: function() {
-      if (this.props.initiate) {
-        this.publisherConfig.publishVideo = this.props.video.enabled;
-      }
-    },
-
     componentDidMount: function() {
       if (this.props.initiate) {
+        /**
+         * XXX This is a workaround for desktop machines that do not have a
+         * camera installed. As we don't yet have device enumeration, when
+         * we do, this can be removed (bug 1138851), and the sdk should handle it.
+         */
+        if (this.props.isDesktop &&
+            !window.MediaStreamTrack.getSources) {
+          // If there's no getSources function, the sdk defines its own and caches
+          // the result. So here we define the "normal" one which doesn't get cached, so
+          // we can change it later.
+          window.MediaStreamTrack.getSources = function(callback) {
+            callback([{kind: "audio"}, {kind: "video"}]);
+          };
+        }
+
+        this.listenTo(this.props.sdk, "exception", this._handleSdkException.bind(this));
+
         this.listenTo(this.props.model, "session:connected",
-                                        this.startPublishing);
+                                        this._onSessionConnected);
         this.listenTo(this.props.model, "session:stream-created",
                                         this._streamCreated);
         this.listenTo(this.props.model, ["session:peer-hungup",
@@ -191,26 +313,6 @@ loop.shared.views = (function(_, OT, l10n) {
                                          "session:ended"].join(" "),
                                          this.stopPublishing);
         this.props.model.startSession();
-      }
-
-      /**
-       * OT inserts inline styles into the markup. Using a listener for
-       * resize events helps us trigger a full width/height on the element
-       * so that they update to the correct dimensions.
-       * XXX: this should be factored as a mixin.
-       */
-      window.addEventListener('orientationchange', this.updateVideoContainer);
-      window.addEventListener('resize', this.updateVideoContainer);
-    },
-
-    updateVideoContainer: function() {
-      var localStreamParent = document.querySelector('.local .OT_publisher');
-      var remoteStreamParent = document.querySelector('.remote .OT_subscriber');
-      if (localStreamParent) {
-        localStreamParent.style.width = "100%";
-      }
-      if (remoteStreamParent) {
-        remoteStreamParent.style.height = "100%";
       }
     },
 
@@ -225,6 +327,11 @@ loop.shared.views = (function(_, OT, l10n) {
       this.props.model.endSession();
     },
 
+    _onSessionConnected: function(event) {
+      this.startPublishing(event);
+      this.play("connected");
+    },
+
     /**
      * Subscribes and attaches each created stream to a DOM element.
      *
@@ -237,7 +344,39 @@ loop.shared.views = (function(_, OT, l10n) {
      */
     _streamCreated: function(event) {
       var incoming = this.getDOMNode().querySelector(".remote");
-      this.props.model.subscribe(event.stream, incoming, this.publisherConfig);
+      this.props.model.subscribe(event.stream, incoming,
+        this.getDefaultPublisherConfig({
+          publishVideo: this.props.video.enabled
+        }));
+    },
+
+    /**
+     * Handles the SDK Exception event.
+     *
+     * https://tokbox.com/opentok/libraries/client/js/reference/ExceptionEvent.html
+     *
+     * @param {ExceptionEvent} event
+     */
+    _handleSdkException: function(event) {
+      /**
+       * XXX This is a workaround for desktop machines that do not have a
+       * camera installed. As we don't yet have device enumeration, when
+       * we do, this can be removed (bug 1138851), and the sdk should handle it.
+       */
+      if (this.publisher &&
+          event.code === OT.ExceptionCodes.UNABLE_TO_PUBLISH &&
+          event.message === "GetUserMedia" &&
+          this.state.video.enabled) {
+        this.state.video.enabled = false;
+
+        window.MediaStreamTrack.getSources = function(callback) {
+          callback([{kind: "audio"}]);
+        };
+
+        this.stopListening(this.publisher);
+        this.publisher.destroy();
+        this.startPublishing();
+      }
     },
 
     /**
@@ -252,7 +391,7 @@ loop.shared.views = (function(_, OT, l10n) {
 
       // XXX move this into its StreamingVideo component?
       this.publisher = this.props.sdk.initPublisher(
-        outgoing, this.publisherConfig);
+        outgoing, this.getDefaultPublisherConfig({publishVideo: this.props.video.enabled}));
 
       // Suppress OT GuM custom dialog, see bug 1018875
       this.listenTo(this.publisher, "accessDialogOpened accessDenied",
@@ -313,15 +452,15 @@ loop.shared.views = (function(_, OT, l10n) {
       });
       /* jshint ignore:start */
       return (
-        React.DOM.div({className: "video-layout-wrapper"}, 
-          React.DOM.div({className: "conversation"}, 
-            React.DOM.div({className: "media nested"}, 
-              React.DOM.div({className: "video_wrapper remote_wrapper"}, 
-                React.DOM.div({className: "video_inner remote"})
+        React.createElement("div", {className: "video-layout-wrapper"}, 
+          React.createElement("div", {className: "conversation in-call"}, 
+            React.createElement("div", {className: "media nested"}, 
+              React.createElement("div", {className: "video_wrapper remote_wrapper"}, 
+                React.createElement("div", {className: "video_inner remote focus-stream"})
               ), 
-              React.DOM.div({className: localStreamClasses})
+              React.createElement("div", {className: localStreamClasses})
             ), 
-            ConversationToolbar({video: this.state.video, 
+            React.createElement(ConversationToolbar, {video: this.state.video, 
                                  audio: this.state.audio, 
                                  publishStream: this.publishStream, 
                                  hangup: this.hangup})
@@ -333,282 +472,9 @@ loop.shared.views = (function(_, OT, l10n) {
   });
 
   /**
-   * Feedback outer layout.
-   *
-   * Props:
-   * -
-   */
-  var FeedbackLayout = React.createClass({displayName: 'FeedbackLayout',
-    propTypes: {
-      children: React.PropTypes.component.isRequired,
-      title: React.PropTypes.string.isRequired,
-      reset: React.PropTypes.func // if not specified, no Back btn is shown
-    },
-
-    render: function() {
-      var backButton = React.DOM.div(null);
-      if (this.props.reset) {
-        backButton = (
-          React.DOM.button({className: "fx-embedded-btn-back", type: "button", 
-                  onClick: this.props.reset}, 
-            "« ", l10n.get("feedback_back_button")
-          )
-        );
-      }
-      return (
-        React.DOM.div({className: "feedback"}, 
-          backButton, 
-          React.DOM.h3(null, this.props.title), 
-          this.props.children
-        )
-      );
-    }
-  });
-
-  /**
-   * Detailed feedback form.
-   */
-  var FeedbackForm = React.createClass({displayName: 'FeedbackForm',
-    propTypes: {
-      pending:      React.PropTypes.bool,
-      sendFeedback: React.PropTypes.func,
-      reset:        React.PropTypes.func
-    },
-
-    getInitialState: function() {
-      return {category: "", description: ""};
-    },
-
-    getDefaultProps: function() {
-      return {pending: false};
-    },
-
-    _getCategories: function() {
-      return {
-        audio_quality: l10n.get("feedback_category_audio_quality"),
-        video_quality: l10n.get("feedback_category_video_quality"),
-        disconnected : l10n.get("feedback_category_was_disconnected"),
-        confusing:     l10n.get("feedback_category_confusing"),
-        other:         l10n.get("feedback_category_other")
-      };
-    },
-
-    _getCategoryFields: function() {
-      var categories = this._getCategories();
-      return Object.keys(categories).map(function(category, key) {
-        return (
-          React.DOM.label({key: key}, 
-            React.DOM.input({type: "radio", ref: "category", name: "category", 
-                   value: category, 
-                   onChange: this.handleCategoryChange, 
-                   checked: this.state.category === category}), 
-            categories[category]
-          )
-        );
-      }, this);
-    },
-
-    /**
-     * Checks if the form is ready for submission:
-     *
-     * - no feedback submission should be pending.
-     * - a category (reason) must be chosen;
-     * - if the "other" category is chosen, a custom description must have been
-     *   entered by the end user;
-     *
-     * @return {Boolean}
-     */
-    _isFormReady: function() {
-      if (this.props.pending || !this.state.category) {
-        return false;
-      }
-      if (this.state.category === "other" && !this.state.description) {
-        return false;
-      }
-      return true;
-    },
-
-    handleCategoryChange: function(event) {
-      var category = event.target.value;
-      this.setState({
-        category: category,
-        description: category == "other" ? "" : this._getCategories()[category]
-      });
-      if (category == "other") {
-        this.refs.description.getDOMNode().focus();
-      }
-    },
-
-    handleDescriptionFieldChange: function(event) {
-      this.setState({description: event.target.value});
-    },
-
-    handleDescriptionFieldFocus: function(event) {
-      this.setState({category: "other", description: ""});
-    },
-
-    handleFormSubmit: function(event) {
-      event.preventDefault();
-      this.props.sendFeedback({
-        happy: false,
-        category: this.state.category,
-        description: this.state.description
-      });
-    },
-
-    render: function() {
-      var descriptionDisplayValue = this.state.category === "other" ?
-                                    this.state.description : "";
-      return (
-        FeedbackLayout({title: l10n.get("feedback_what_makes_you_sad"), 
-                        reset: this.props.reset}, 
-          React.DOM.form({onSubmit: this.handleFormSubmit}, 
-            this._getCategoryFields(), 
-            React.DOM.p(null, 
-              React.DOM.input({type: "text", ref: "description", name: "description", 
-                onChange: this.handleDescriptionFieldChange, 
-                onFocus: this.handleDescriptionFieldFocus, 
-                value: descriptionDisplayValue, 
-                placeholder: 
-                  l10n.get("feedback_custom_category_text_placeholder")})
-            ), 
-            React.DOM.button({type: "submit", className: "btn btn-success", 
-                    disabled: !this._isFormReady()}, 
-              l10n.get("feedback_submit_button")
-            )
-          )
-        )
-      );
-    }
-  });
-
-  /**
-   * Feedback received view.
-   *
-   * Props:
-   * - {Function} onAfterFeedbackReceived Function to execute after the
-   *   WINDOW_AUTOCLOSE_TIMEOUT_IN_SECONDS timeout has elapsed
-   */
-  var FeedbackReceived = React.createClass({displayName: 'FeedbackReceived',
-    propTypes: {
-      onAfterFeedbackReceived: React.PropTypes.func
-    },
-
-    getInitialState: function() {
-      return {countdown: WINDOW_AUTOCLOSE_TIMEOUT_IN_SECONDS};
-    },
-
-    componentDidMount: function() {
-      this._timer = setInterval(function() {
-        this.setState({countdown: this.state.countdown - 1});
-      }.bind(this), 1000);
-    },
-
-    componentWillUnmount: function() {
-      if (this._timer) {
-        clearInterval(this._timer);
-      }
-    },
-
-    render: function() {
-      if (this.state.countdown < 1) {
-        clearInterval(this._timer);
-        if (this.props.onAfterFeedbackReceived) {
-          this.props.onAfterFeedbackReceived();
-        }
-      }
-      return (
-        FeedbackLayout({title: l10n.get("feedback_thank_you_heading")}, 
-          React.DOM.p({className: "info thank-you"}, 
-            l10n.get("feedback_window_will_close_in2", {
-              countdown: this.state.countdown,
-              num: this.state.countdown
-            }))
-        )
-      );
-    }
-  });
-
-  /**
-   * Feedback view.
-   */
-  var FeedbackView = React.createClass({displayName: 'FeedbackView',
-    propTypes: {
-      // A loop.FeedbackAPIClient instance
-      feedbackApiClient: React.PropTypes.object.isRequired,
-      onAfterFeedbackReceived: React.PropTypes.func,
-      // The current feedback submission flow step name
-      step: React.PropTypes.oneOf(["start", "form", "finished"])
-    },
-
-    getInitialState: function() {
-      return {pending: false, step: this.props.step || "start"};
-    },
-
-    getDefaultProps: function() {
-      return {step: "start"};
-    },
-
-    reset: function() {
-      this.setState(this.getInitialState());
-    },
-
-    handleHappyClick: function() {
-      this.sendFeedback({happy: true}, this._onFeedbackSent);
-    },
-
-    handleSadClick: function() {
-      this.setState({step: "form"});
-    },
-
-    sendFeedback: function(fields) {
-      // Setting state.pending to true will disable the submit button to avoid
-      // multiple submissions
-      this.setState({pending: true});
-      // Sends feedback data
-      this.props.feedbackApiClient.send(fields, this._onFeedbackSent);
-    },
-
-    _onFeedbackSent: function(err) {
-      if (err) {
-        // XXX better end user error reporting, see bug 1046738
-        console.error("Unable to send user feedback", err);
-      }
-      this.setState({pending: false, step: "finished"});
-    },
-
-    render: function() {
-      switch(this.state.step) {
-        case "finished":
-          return (
-            FeedbackReceived({
-              onAfterFeedbackReceived: this.props.onAfterFeedbackReceived})
-          );
-        case "form":
-          return FeedbackForm({feedbackApiClient: this.props.feedbackApiClient, 
-                               sendFeedback: this.sendFeedback, 
-                               reset: this.reset, 
-                               pending: this.state.pending});
-        default:
-          return (
-            FeedbackLayout({title: 
-              l10n.get("feedback_call_experience_heading2")}, 
-              React.DOM.div({className: "faces"}, 
-                React.DOM.button({className: "face face-happy", 
-                        onClick: this.handleHappyClick}), 
-                React.DOM.button({className: "face face-sad", 
-                        onClick: this.handleSadClick})
-              )
-            )
-          );
-      }
-    }
-  });
-
-  /**
    * Notification view.
    */
-  var NotificationView = React.createClass({displayName: 'NotificationView',
+  var NotificationView = React.createClass({displayName: "NotificationView",
     mixins: [Backbone.Events],
 
     propTypes: {
@@ -619,18 +485,19 @@ loop.shared.views = (function(_, OT, l10n) {
     render: function() {
       var notification = this.props.notification;
       return (
-        React.DOM.div({className: "notificationContainer"}, 
-          React.DOM.div({key: this.props.key, 
+        React.createElement("div", {className: "notificationContainer"}, 
+          React.createElement("div", {key: this.props.key, 
                className: "alert alert-" + notification.get("level")}, 
-            React.DOM.span({className: "message"}, notification.get("message"))
+            React.createElement("span", {className: "message"}, notification.get("message"))
           ), 
-          React.DOM.div({className: "detailsBar details-" + notification.get("level"), 
+          React.createElement("div", {className: "detailsBar details-" + notification.get("level"), 
                hidden: !notification.get("details")}, 
-            React.DOM.button({className: "detailsButton btn-info", 
-                    hidden: true || !notification.get("detailsButtonLabel")}, 
+            React.createElement("button", {className: "detailsButton btn-info", 
+                    onClick: notification.get("detailsButtonCallback"), 
+                    hidden: !notification.get("detailsButtonLabel") || !notification.get("detailsButtonCallback")}, 
               notification.get("detailsButtonLabel")
             ), 
-            React.DOM.span({className: "details"}, notification.get("details"))
+            React.createElement("span", {className: "details"}, notification.get("details"))
           )
         )
       );
@@ -640,7 +507,7 @@ loop.shared.views = (function(_, OT, l10n) {
   /**
    * Notification list view.
    */
-  var NotificationListView = React.createClass({displayName: 'NotificationListView',
+  var NotificationListView = React.createClass({displayName: "NotificationListView",
     mixins: [Backbone.Events, sharedMixins.DocumentVisibilityMixin],
 
     propTypes: {
@@ -680,9 +547,9 @@ loop.shared.views = (function(_, OT, l10n) {
 
     render: function() {
       return (
-        React.DOM.div({className: "messages"}, 
+        React.createElement("div", {className: "messages"}, 
           this.props.notifications.map(function(notification, key) {
-            return NotificationView({key: key, notification: notification});
+            return React.createElement(NotificationView, {key: key, notification: notification});
           })
         
         )
@@ -690,18 +557,20 @@ loop.shared.views = (function(_, OT, l10n) {
     }
   });
 
-  var Button = React.createClass({displayName: 'Button',
+  var Button = React.createClass({displayName: "Button",
     propTypes: {
       caption: React.PropTypes.string.isRequired,
       onClick: React.PropTypes.func.isRequired,
       disabled: React.PropTypes.bool,
       additionalClass: React.PropTypes.string,
+      htmlId: React.PropTypes.string,
     },
 
     getDefaultProps: function() {
       return {
         disabled: false,
         additionalClass: "",
+        htmlId: "",
       };
     },
 
@@ -712,16 +581,18 @@ loop.shared.views = (function(_, OT, l10n) {
         classObject[this.props.additionalClass] = true;
       }
       return (
-        React.DOM.button({onClick: this.props.onClick, 
+        React.createElement("button", {onClick: this.props.onClick, 
                 disabled: this.props.disabled, 
+                id: this.props.htmlId, 
                 className: cx(classObject)}, 
-          this.props.caption
+          React.createElement("span", {className: "button-caption"}, this.props.caption), 
+          this.props.children
         )
-      )
+      );
     }
   });
 
-  var ButtonGroup = React.createClass({displayName: 'ButtonGroup',
+  var ButtonGroup = React.createClass({displayName: "ButtonGroup",
     PropTypes: {
       additionalClass: React.PropTypes.string
     },
@@ -739,10 +610,10 @@ loop.shared.views = (function(_, OT, l10n) {
         classObject[this.props.additionalClass] = true;
       }
       return (
-        React.DOM.div({className: cx(classObject)}, 
+        React.createElement("div", {className: cx(classObject)}, 
           this.props.children
         )
-      )
+      );
     }
   });
 
@@ -751,8 +622,8 @@ loop.shared.views = (function(_, OT, l10n) {
     ButtonGroup: ButtonGroup,
     ConversationView: ConversationView,
     ConversationToolbar: ConversationToolbar,
-    FeedbackView: FeedbackView,
     MediaControlButton: MediaControlButton,
+    ScreenShareControlButton: ScreenShareControlButton,
     NotificationListView: NotificationListView
   };
-})(_, window.OT, navigator.mozL10n || document.mozL10n);
+})(_, navigator.mozL10n || document.mozL10n);

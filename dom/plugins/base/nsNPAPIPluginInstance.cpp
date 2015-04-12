@@ -91,15 +91,14 @@ static nsRefPtr<GLContext> sPluginContext = nullptr;
 static bool EnsureGLContext()
 {
   if (!sPluginContext) {
-    gfxIntSize dummySize(16, 16);
-    sPluginContext = GLContextProvider::CreateOffscreen(dummySize,
-                                                        SurfaceCaps::Any());
+    bool requireCompatProfile = true;
+    sPluginContext = GLContextProvider::CreateHeadless(requireCompatProfile);
   }
 
   return sPluginContext != nullptr;
 }
 
-class SharedPluginTexture MOZ_FINAL {
+class SharedPluginTexture final {
 public:
   NS_INLINE_DECL_REFCOUNTING(SharedPluginTexture)
 
@@ -173,25 +172,26 @@ static NS_DEFINE_IID(kIOutputStreamIID, NS_IOUTPUTSTREAM_IID);
 NS_IMPL_ISUPPORTS0(nsNPAPIPluginInstance)
 
 nsNPAPIPluginInstance::nsNPAPIPluginInstance()
-  :
-    mDrawingModel(kDefaultDrawingModel),
+  : mDrawingModel(kDefaultDrawingModel)
 #ifdef MOZ_WIDGET_ANDROID
-    mANPDrawingModel(0),
-    mFullScreenOrientation(dom::eScreenOrientation_LandscapePrimary),
-    mWakeLocked(false),
-    mFullScreen(false),
-    mInverted(false),
+  , mANPDrawingModel(0)
+  , mFullScreenOrientation(dom::eScreenOrientation_LandscapePrimary)
+  , mWakeLocked(false)
+  , mFullScreen(false)
+  , mOriginPos(gl::OriginPos::TopLeft)
 #endif
-    mRunning(NOT_STARTED),
-    mWindowless(false),
-    mTransparent(false),
-    mCached(false),
-    mUsesDOMForCursor(false),
-    mInPluginInitCall(false),
-    mPlugin(nullptr),
-    mMIMEType(nullptr),
-    mOwner(nullptr),
-    mCurrentPluginEvent(nullptr)
+  , mRunning(NOT_STARTED)
+  , mWindowless(false)
+  , mTransparent(false)
+  , mCached(false)
+  , mUsesDOMForCursor(false)
+  , mInPluginInitCall(false)
+  , mPlugin(nullptr)
+  , mMIMEType(nullptr)
+  , mOwner(nullptr)
+#ifdef XP_MACOSX
+  , mCurrentPluginEvent(nullptr)
+#endif
 #ifdef MOZ_WIDGET_ANDROID
   , mOnScreen(true)
 #endif
@@ -522,7 +522,7 @@ nsNPAPIPluginInstance::Start()
     return NS_ERROR_FAILURE;
   }
 
-  return NS_OK;
+  return newResult;
 }
 
 nsresult nsNPAPIPluginInstance::SetWindow(NPWindow* window)
@@ -534,8 +534,10 @@ nsresult nsNPAPIPluginInstance::SetWindow(NPWindow* window)
 #if MOZ_WIDGET_GTK
   // bug 108347, flash plugin on linux doesn't like window->width <=
   // 0, but Java needs wants this call.
-  if (!nsPluginHost::IsJavaMIMEType(mMIMEType) && window->type == NPWindowTypeWindow &&
-      (window->width <= 0 || window->height <= 0)) {
+  if (window && window->type == NPWindowTypeWindow &&
+      (window->width <= 0 || window->height <= 0) &&
+      (nsPluginHost::GetSpecialType(nsDependentCString(mMIMEType)) !=
+       nsPluginHost::eSpecialType_Java)) {
     return NS_OK;
   }
 #endif
@@ -671,7 +673,9 @@ nsresult nsNPAPIPluginInstance::HandleEvent(void* event, int16_t* result,
   int16_t tmpResult = kNPEventNotHandled;
 
   if (pluginFunctions->event) {
+#ifdef XP_MACOSX
     mCurrentPluginEvent = event;
+#endif
 #if defined(XP_WIN)
     NS_TRY_SAFE_CALL_RETURN(tmpResult, (*pluginFunctions->event)(&mNPP, event), this,
                             aSafeToReenterGecko);
@@ -685,7 +689,9 @@ nsresult nsNPAPIPluginInstance::HandleEvent(void* event, int16_t* result,
 
     if (result)
       *result = tmpResult;
+#ifdef XP_MACOSX
     mCurrentPluginEvent = nullptr;
+#endif
   }
 
   return NS_OK;
@@ -744,8 +750,8 @@ NPError nsNPAPIPluginInstance::SetWindowless(bool aWindowless)
     // property. (Last tested version: sl 4.0).
     // Changes to this code should be matched with changes in
     // PluginInstanceChild::InitQuirksMode.
-    NS_NAMED_LITERAL_CSTRING(silverlight, "application/x-silverlight");
-    if (!PL_strncasecmp(mMIMEType, silverlight.get(), silverlight.Length())) {
+    if (nsPluginHost::GetSpecialType(nsDependentCString(mMIMEType)) ==
+        nsPluginHost::eSpecialType_Silverlight) {
       mTransparent = true;
     }
   }
@@ -844,7 +850,7 @@ void nsNPAPIPluginInstance::NotifyFullScreen(bool aFullScreen)
   SendLifecycleEvent(this, mFullScreen ? kEnterFullScreen_ANPLifecycleAction : kExitFullScreen_ANPLifecycleAction);
 
   if (mFullScreen && mFullScreenOrientation != dom::eScreenOrientation_None) {
-    mozilla::widget::android::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
+    widget::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
   }
 }
 
@@ -901,11 +907,11 @@ void nsNPAPIPluginInstance::SetFullScreenOrientation(uint32_t orientation)
     // We're already fullscreen so immediately apply the orientation change
 
     if (mFullScreenOrientation != dom::eScreenOrientation_None) {
-      mozilla::widget::android::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
+      widget::GeckoAppShell::LockScreenOrientation(mFullScreenOrientation);
     } else if (oldOrientation != dom::eScreenOrientation_None) {
       // We applied an orientation when we entered fullscreen, but
       // we don't want it anymore
-      mozilla::widget::android::GeckoAppShell::UnlockScreenOrientation();
+      widget::GeckoAppShell::UnlockScreenOrientation();
     }
   }
 }
@@ -921,7 +927,7 @@ void nsNPAPIPluginInstance::SetWakeLock(bool aLocked)
     return;
 
   mWakeLocked = aLocked;
-  hal::ModifyWakeLock(NS_LITERAL_STRING("nsNPAPIPluginInstance"),
+  hal::ModifyWakeLock(NS_LITERAL_STRING("screen"),
                       mWakeLocked ? hal::WAKE_LOCK_ADD_ONE : hal::WAKE_LOCK_REMOVE_ONE,
                       hal::WAKE_LOCK_NO_CHANGE);
 }
@@ -952,7 +958,7 @@ void nsNPAPIPluginInstance::ReleaseContentTexture(nsNPAPIPluginInstance::Texture
   mContentTexture->Release(aTextureInfo);
 }
 
-AndroidSurfaceTexture* nsNPAPIPluginInstance::CreateSurfaceTexture()
+TemporaryRef<AndroidSurfaceTexture> nsNPAPIPluginInstance::CreateSurfaceTexture()
 {
   if (!EnsureGLContext())
     return nullptr;
@@ -961,14 +967,15 @@ AndroidSurfaceTexture* nsNPAPIPluginInstance::CreateSurfaceTexture()
   if (!texture)
     return nullptr;
 
-  AndroidSurfaceTexture* surface = AndroidSurfaceTexture::Create(TexturePoolOGL::GetGLContext(),
-                                                                 texture);
-  if (!surface)
+  RefPtr<AndroidSurfaceTexture> surface = AndroidSurfaceTexture::Create(TexturePoolOGL::GetGLContext(),
+                                                                        texture);
+  if (!surface) {
     return nullptr;
+  }
 
   nsCOMPtr<nsIRunnable> frameCallback = NS_NewRunnableMethod(this, &nsNPAPIPluginInstance::OnSurfaceTextureFrameAvailable);
   surface->SetFrameAvailableCallback(frameCallback);
-  return surface;
+  return surface.forget();
 }
 
 void nsNPAPIPluginInstance::OnSurfaceTextureFrameAvailable()
@@ -1009,9 +1016,10 @@ nsNPAPIPluginInstance::AsSurfaceTexture()
 
 void* nsNPAPIPluginInstance::AcquireVideoWindow()
 {
-  AndroidSurfaceTexture* surface = CreateSurfaceTexture();
-  if (!surface)
+  RefPtr<AndroidSurfaceTexture> surface = CreateSurfaceTexture();
+  if (!surface) {
     return nullptr;
+  }
 
   VideoInfo* info = new VideoInfo(surface);
 
@@ -1047,14 +1055,6 @@ void nsNPAPIPluginInstance::GetVideos(nsTArray<VideoInfo*>& aVideos)
   std::map<void*, VideoInfo*>::iterator it;
   for (it = mVideos.begin(); it != mVideos.end(); it++)
     aVideos.AppendElement(it->second);
-}
-
-void nsNPAPIPluginInstance::SetInverted(bool aInverted)
-{
-  if (aInverted == mInverted)
-    return;
-
-  mInverted = aInverted;
 }
 
 nsNPAPIPluginInstance* nsNPAPIPluginInstance::GetFromNPP(NPP npp)
@@ -1150,7 +1150,8 @@ nsNPAPIPluginInstance::ShouldCache()
 nsresult
 nsNPAPIPluginInstance::IsWindowless(bool* isWindowless)
 {
-#ifdef MOZ_WIDGET_ANDROID
+#if defined(MOZ_WIDGET_ANDROID) || defined(XP_MACOSX)
+  // All OS X plugins are windowless.
   // On android, pre-honeycomb, all plugins are treated as windowless.
   *isWindowless = true;
 #else
@@ -1509,23 +1510,13 @@ nsNPAPIPluginInstance::UnscheduleTimer(uint32_t timerID)
   delete t;
 }
 
-// Show the context menu at the location for the current event.
-// This can only be called from within an NPP_SendEvent call.
-NPError
-nsNPAPIPluginInstance::PopUpContextMenu(NPMenu* menu)
-{
-  if (mOwner && mCurrentPluginEvent)
-    return mOwner->ShowNativeContextMenu(menu, mCurrentPluginEvent);
-
-  return NPERR_GENERIC_ERROR;
-}
-
 NPBool
 nsNPAPIPluginInstance::ConvertPoint(double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
                                     double *destX, double *destY, NPCoordinateSpace destSpace)
 {
-  if (mOwner)
+  if (mOwner) {
     return mOwner->ConvertPoint(sourceX, sourceY, sourceSpace, destX, destY, destSpace);
+  }
 
   return false;
 }

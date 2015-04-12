@@ -51,7 +51,7 @@ const KEY_STATES = [
   ["r", "p3", false],
 ];
 
-let test = asyncTest(function* () {
+add_task(function* () {
   let { inspector } = yield openInspectorForURL(TEST_URL);
   let { searchBox } = inspector;
 
@@ -70,10 +70,12 @@ let test = asyncTest(function* () {
     info("Got " + event + " event. Waiting for search query to complete");
     yield inspector.searchSuggestions._lastQuery;
 
-    info(inspector.selection.node.id + " is selected with text " +
+    info(inspector.selection.nodeFront.id + " is selected with text " +
          searchBox.value);
-    is(inspector.selection.node, content.document.getElementById(id),
+    let nodeFront = yield getNodeFront("#" + id, inspector);
+    is(inspector.selection.nodeFront, nodeFront,
        "Correct node is selected for state " + index);
+
     is(!searchBox.classList.contains("devtools-no-search-result"), isValid,
        "Correct searchbox result state for state " + index);
 

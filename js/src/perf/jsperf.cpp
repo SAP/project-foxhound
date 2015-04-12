@@ -8,7 +8,8 @@
 #include "jscntxt.h" /* for error messages */
 #include "jsobj.h" /* for unwrapping without a context */
 
-using namespace JS;
+using namespace js;
+using JS::PerfMeasurement;
 
 // You cannot forward-declare a static object in C++, so instead
 // we have to forward-declare the helper function that refers to it.
@@ -18,7 +19,7 @@ static PerfMeasurement* GetPM(JSContext* cx, JS::HandleValue value, const char* 
 
 #define GETTER(name)                                                    \
     static bool                                                         \
-    pm_get_##name(JSContext* cx, unsigned argc, Value *vp)              \
+    pm_get_##name(JSContext* cx, unsigned argc, Value* vp)              \
     {                                                                   \
         CallArgs args = CallArgsFromVp(argc, vp);                       \
         PerfMeasurement* p = GetPM(cx, args.thisv(), #name);            \
@@ -131,12 +132,10 @@ static const JSPropertySpec pm_props[] = {
 
 // If this were C++ these would be "static const" members.
 
-static const uint8_t PM_CATTRS = JSPROP_ENUMERATE|JSPROP_READONLY|JSPROP_PERMANENT;
-
 #define CONSTANT(name) { #name, PerfMeasurement::name }
 
 static const struct pm_const {
-    const char *name;
+    const char* name;
     PerfMeasurement::EventMask value;
 } pm_consts[] = {
     CONSTANT(CPU_CYCLES),
@@ -162,8 +161,8 @@ static void pm_finalize(JSFreeOp* fop, JSObject* obj);
 
 static const JSClass pm_class = {
     "PerfMeasurement", JSCLASS_HAS_PRIVATE,
-    JS_PropertyStub, JS_DeletePropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
-    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, pm_finalize
+    nullptr, nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr, pm_finalize
 };
 
 // Constructor and destructor
@@ -230,8 +229,10 @@ GetPM(JSContext* cx, JS::HandleValue value, const char* fname)
 namespace JS {
 
 JSObject*
-RegisterPerfMeasurement(JSContext *cx, HandleObject globalArg)
+RegisterPerfMeasurement(JSContext* cx, HandleObject globalArg)
 {
+    static const uint8_t PM_CATTRS = JSPROP_ENUMERATE|JSPROP_READONLY|JSPROP_PERMANENT;
+
     RootedObject global(cx, globalArg);
     RootedObject prototype(cx);
     prototype = JS_InitClass(cx, global, js::NullPtr() /* parent */,
@@ -245,9 +246,9 @@ RegisterPerfMeasurement(JSContext *cx, HandleObject globalArg)
     if (!ctor)
         return 0;
 
-    for (const pm_const *c = pm_consts; c->name; c++) {
+    for (const pm_const* c = pm_consts; c->name; c++) {
         if (!JS_DefineProperty(cx, ctor, c->name, c->value, PM_CATTRS,
-                               JS_PropertyStub, JS_StrictPropertyStub))
+                               JS_STUBGETTER, JS_STUBSETTER))
             return 0;
     }
 
@@ -267,7 +268,7 @@ ExtractPerfMeasurement(jsval wrapper)
 
     // This is what JS_GetInstancePrivate does internally.  We can't
     // call JS_anything from here, because we don't have a JSContext.
-    JSObject *obj = wrapper.toObjectOrNull();
+    JSObject* obj = wrapper.toObjectOrNull();
     if (obj->getClass() != js::Valueify(&pm_class))
         return 0;
 

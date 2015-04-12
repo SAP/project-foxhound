@@ -10,7 +10,7 @@
 #include <stdio.h>                      // for FILE
 #include "gfxRect.h"                    // for gfxRect
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
+#include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr, RefCounted, etc
 #include "mozilla/gfx/Point.h"          // for Point
 #include "mozilla/gfx/Rect.h"           // for Rect
@@ -50,42 +50,6 @@ class PCompositableParent;
 struct EffectChain;
 
 /**
- * A base class for doing CompositableHost and platform dependent task on TextureHost.
- */
-class CompositableBackendSpecificData
-{
-protected:
-  virtual ~CompositableBackendSpecificData() {}
-
-public:
-  NS_INLINE_DECL_REFCOUNTING(CompositableBackendSpecificData)
-
-  CompositableBackendSpecificData();
-
-  virtual void ClearData() {}
-  virtual void SetCompositor(Compositor* aCompositor) {}
-
-  bool IsAllowingSharingTextureHost()
-  {
-    return mAllowSharingTextureHost;
-  }
-
-  void SetAllowSharingTextureHost(bool aAllow)
-  {
-    mAllowSharingTextureHost = aAllow;
-  }
-
-  uint64_t GetId()
-  {
-    return mId;
-  }
-
-public:
-  bool mAllowSharingTextureHost;
-  uint64_t mId;
-};
-
-/**
  * The compositor-side counterpart to CompositableClient. Responsible for
  * updating textures and data about textures from IPC and how textures are
  * composited (tiling, double buffering, etc.).
@@ -111,16 +75,6 @@ public:
   static TemporaryRef<CompositableHost> Create(const TextureInfo& aTextureInfo);
 
   virtual CompositableType GetType() = 0;
-
-  virtual CompositableBackendSpecificData* GetCompositableBackendSpecificData()
-  {
-    return mBackendData;
-  }
-
-  virtual void SetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData)
-  {
-    mBackendData = aBackendData;
-  }
 
   // If base class overrides, it should still call the parent implementation
   virtual void SetCompositor(Compositor* aCompositor);
@@ -198,6 +152,12 @@ public:
     MOZ_ASSERT(false, "Should have been overridden");
   }
 
+  virtual gfx::IntSize GetImageSize() const
+  {
+    MOZ_ASSERT(false, "Should have been overridden");
+    return gfx::IntSize();
+  }
+
   /**
    * Adds a mask effect using this texture as the mask, if possible.
    * @return true if the effect was added, false otherwise.
@@ -252,21 +212,16 @@ public:
       SetLayer(nullptr);
       mAttached = false;
       mKeepAttached = false;
-      if (mBackendData) {
-        mBackendData->ClearData();
-      }
     }
   }
   bool IsAttached() { return mAttached; }
 
-#ifdef MOZ_DUMP_PAINTING
   virtual void Dump(std::stringstream& aStream,
                     const char* aPrefix="",
                     bool aDumpHtml=false) { }
   static void DumpTextureHost(std::stringstream& aStream, TextureHost* aTexture);
 
   virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() { return nullptr; }
-#endif
 
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix) = 0;
 
@@ -314,24 +269,23 @@ protected:
   uint64_t mCompositorID;
   RefPtr<Compositor> mCompositor;
   Layer* mLayer;
-  RefPtr<CompositableBackendSpecificData> mBackendData;
   uint32_t mFlashCounter; // used when the pref "layers.flash-borders" is true.
   bool mAttached;
   bool mKeepAttached;
 };
 
-class AutoLockCompositableHost MOZ_FINAL
+class AutoLockCompositableHost final
 {
 public:
   explicit AutoLockCompositableHost(CompositableHost* aHost)
     : mHost(aHost)
   {
-    mSucceeded = mHost->Lock();
+    mSucceeded = (mHost && mHost->Lock());
   }
 
   ~AutoLockCompositableHost()
   {
-    if (mSucceeded) {
+    if (mSucceeded && mHost) {
       mHost->Unlock();
     }
   }

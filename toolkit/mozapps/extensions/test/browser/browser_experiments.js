@@ -2,6 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+Components.utils.import("resource://gre/modules/Promise.jsm", this);
+
 let {AddonTestUtils} = Components.utils.import("resource://testing-common/AddonManagerTesting.jsm", {});
 let {HttpServer} = Components.utils.import("resource://testing-common/httpd.js", {});
 
@@ -178,7 +180,7 @@ add_task(function* testExperimentLearnMore() {
     info("Telemetry privacy policy window opened.");
     window.removeEventListener("DOMContentLoaded", onLoad, false);
 
-    let browser = gBrowser.selectedTab.linkedBrowser;
+    let browser = gBrowser.selectedBrowser;
     let expected = Services.prefs.getCharPref("toolkit.telemetry.infoURL");
     Assert.equal(browser.currentURI.spec, expected, "New tab should have loaded privacy policy.");
     browser.contentWindow.close();

@@ -128,14 +128,27 @@ DrawTargetD2D1::DrawSurface(SourceSurface *aSurface,
     return;
   }
 
-  mDC->CreateImageBrush(image,
-                        D2D1::ImageBrushProperties(samplingBounds,
-                                                   D2D1_EXTEND_MODE_CLAMP,
-                                                   D2D1_EXTEND_MODE_CLAMP,
-                                                   D2DInterpolationMode(aSurfOptions.mFilter)),
-                        D2D1::BrushProperties(aOptions.mAlpha, D2DMatrix(transform)),
-                        byRef(brush));
-  mDC->FillRectangle(D2DRect(aDest), brush);
+  RefPtr<ID2D1Bitmap> bitmap;
+  if (aSurface->GetType() == SurfaceType::D2D1_1_IMAGE) {
+    // If this is called with a DataSourceSurface it might do a partial upload
+    // that our DrawBitmap call doesn't support.
+    image->QueryInterface((ID2D1Bitmap**)byRef(bitmap));
+  }
+
+  if (bitmap && aSurfOptions.mSamplingBounds == SamplingBounds::UNBOUNDED) {
+    mDC->DrawBitmap(bitmap, D2DRect(aDest), aOptions.mAlpha, D2DFilter(aSurfOptions.mFilter), D2DRect(aSource));
+  } else {
+    // This has issues ignoring the alpha channel on windows 7 with images marked opaque.
+    MOZ_ASSERT(aSurface->GetFormat() != SurfaceFormat::B8G8R8X8);
+    mDC->CreateImageBrush(image,
+                          D2D1::ImageBrushProperties(samplingBounds,
+                                                     D2D1_EXTEND_MODE_CLAMP,
+                                                     D2D1_EXTEND_MODE_CLAMP,
+                                                     D2DInterpolationMode(aSurfOptions.mFilter)),
+                          D2D1::BrushProperties(aOptions.mAlpha, D2DMatrix(transform)),
+                          byRef(brush));
+    mDC->FillRectangle(D2DRect(aDest), brush);
+  }
 
   FinalizeDrawing(aOptions.mCompositionOp, ColorPattern(Color()));
 }
@@ -177,6 +190,11 @@ DrawTargetD2D1::DrawSurfaceWithShadow(SourceSurface *aSurface,
 
   Matrix mat;
   RefPtr<ID2D1Image> image = GetImageForSurface(aSurface, mat, ExtendMode::CLAMP);
+
+  if (!image) {
+    gfxWarning() << "Couldn't get image for surface.";
+    return;
+  }
 
   if (!mat.IsIdentity()) {
     gfxDebug() << *this << ": At this point complex partial uploads are not supported for Shadow surfaces.";
@@ -251,11 +269,18 @@ DrawTargetD2D1::MaskSurface(const Pattern &aSource,
                             Point aOffset,
                             const DrawOptions &aOptions)
 {
-  PrepareForDrawing(aOptions.mCompositionOp, aSource);
+  MarkChanged();
 
   RefPtr<ID2D1Bitmap> bitmap;
 
   RefPtr<ID2D1Image> image = GetImageForSurface(aMask, ExtendMode::CLAMP);
+
+  if (!image) {
+    gfxWarning() << "Failed to get image for surface.";
+    return;
+  }
+
+  PrepareForDrawing(aOptions.mCompositionOp, aSource);
 
   // FillOpacityMask only works if the antialias mode is MODE_ALIASED
   mDC->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
@@ -291,6 +316,11 @@ DrawTargetD2D1::CopySurface(SourceSurface *aSurface,
 
   Matrix mat;
   RefPtr<ID2D1Image> image = GetImageForSurface(aSurface, mat, ExtendMode::CLAMP);
+
+  if (!image) {
+    gfxWarning() << "Couldn't get image for surface.";
+    return;
+  }
 
   if (!mat.IsIdentity()) {
     gfxDebug() << *this << ": At this point complex partial uploads are not supported for CopySurface.";
@@ -381,7 +411,7 @@ DrawTargetD2D1::Stroke(const Path *aPath,
                        const StrokeOptions &aStrokeOptions,
                        const DrawOptions &aOptions)
 {
-  if (aPath->GetBackendType() != BackendType::DIRECT2D) {
+  if (aPath->GetBackendType() != BackendType::DIRECT2D1_1) {
     gfxDebug() << *this << ": Ignoring drawing call for incompatible path.";
     return;
   }
@@ -404,7 +434,7 @@ DrawTargetD2D1::Fill(const Path *aPath,
                      const Pattern &aPattern,
                      const DrawOptions &aOptions)
 {
-  if (aPath->GetBackendType() != BackendType::DIRECT2D) {
+  if (aPath->GetBackendType() != BackendType::DIRECT2D1_1) {
     gfxDebug() << *this << ": Ignoring drawing call for incompatible path.";
     return;
   }
@@ -530,7 +560,7 @@ DrawTargetD2D1::Mask(const Pattern &aSource,
 void
 DrawTargetD2D1::PushClip(const Path *aPath)
 {
-  if (aPath->GetBackendType() != BackendType::DIRECT2D) {
+  if (aPath->GetBackendType() != BackendType::DIRECT2D1_1) {
     gfxDebug() << *this << ": Ignoring clipping call for incompatible path.";
     return;
   }
@@ -622,11 +652,8 @@ DrawTargetD2D1::CreateSourceSurfaceFromData(unsigned char *aData,
                                  D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_NONE, D2DPixelFormat(aFormat)),
                                  byRef(bitmap));
 
-  if (FAILED(hr)) {
-    gfxCriticalError() << "[D2D1.1] CreateBitmap failure " << aSize << " Code: " << hexa(hr);
-  }
-
-  if (!bitmap) {
+  if (FAILED(hr) || !bitmap) {
+    gfxCriticalError(CriticalLog::DefaultOptions(Factory::ReasonableSurfaceSize(aSize))) << "[D2D1.1] 1CreateBitmap failure " << aSize << " Code: " << hexa(hr);
     return nullptr;
   }
 
@@ -667,7 +694,7 @@ DrawTargetD2D1::CreatePathBuilder(FillRule aFillRule) const
     sink->SetFillMode(D2D1_FILL_MODE_WINDING);
   }
 
-  return new PathBuilderD2D(sink, path, aFillRule);
+  return new PathBuilderD2D(sink, path, aFillRule, BackendType::DIRECT2D1_1);
 }
 
 TemporaryRef<GradientStops>
@@ -698,7 +725,7 @@ DrawTargetD2D1::CreateGradientStops(GradientStop *rawStops, uint32_t aNumStops, 
     return nullptr;
   }
 
-  return new GradientStopsD2D(stopCollection);
+  return new GradientStopsD2D(stopCollection, Factory::GetDirect3D11Device());
 }
 
 TemporaryRef<FilterNode>
@@ -715,7 +742,7 @@ DrawTargetD2D1::Init(ID3D11Texture2D* aTexture, SurfaceFormat aFormat)
   hr = Factory::GetD2D1Device()->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, byRef(mDC));
 
   if (FAILED(hr)) {
-    gfxWarning() << *this << ": Error " << hexa(hr) << " failed to initialize new DeviceContext.";
+    gfxCriticalError() <<"[D2D1.1] 1Failed to create a DeviceContext, code: " << hexa(hr);
     return false;
   }
 
@@ -723,6 +750,7 @@ DrawTargetD2D1::Init(ID3D11Texture2D* aTexture, SurfaceFormat aFormat)
   aTexture->QueryInterface(__uuidof(IDXGISurface),
                            (void**)((IDXGISurface**)byRef(dxgiSurface)));
   if (!dxgiSurface) {
+    gfxCriticalError() <<"[D2D1.1] Failed to obtain a DXGI surface.";
     return false;
   }
 
@@ -751,7 +779,7 @@ DrawTargetD2D1::Init(ID3D11Texture2D* aTexture, SurfaceFormat aFormat)
   hr = mDC->CreateBitmap(D2DIntSize(mSize), nullptr, 0, props, (ID2D1Bitmap1**)byRef(mTempBitmap));
 
   if (FAILED(hr)) {
-    gfxCriticalError() << "[D2D1.1] CreateBitmap failure " << mSize << " Code: " << hexa(hr);
+    gfxCriticalError(CriticalLog::DefaultOptions(Factory::ReasonableSurfaceSize(mSize))) << "[D2D1.1] 2CreateBitmap failure " << mSize << " Code: " << hexa(hr);
     return false;
   }
 
@@ -769,14 +797,14 @@ DrawTargetD2D1::Init(const IntSize &aSize, SurfaceFormat aFormat)
   hr = Factory::GetD2D1Device()->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_ENABLE_MULTITHREADED_OPTIMIZATIONS, byRef(mDC));
 
   if (FAILED(hr)) {
-    gfxWarning() << *this << ": Error " << hexa(hr) << " failed to initialize new DeviceContext.";
+    gfxCriticalError() <<"[D2D1.1] 2Failed to create a DeviceContext, code: " << hexa(hr);
     return false;
   }
 
   if (mDC->GetMaximumBitmapSize() < UINT32(aSize.width) ||
       mDC->GetMaximumBitmapSize() < UINT32(aSize.height)) {
-    // This is 'ok'
-    gfxDebug() << *this << ": Attempt to use unsupported surface size for D2D 1.1.";
+    // This is 'ok', so don't assert
+    gfxCriticalError(CriticalLog::DefaultOptions(false)) << "[D2D1.1] Attempt to use unsupported surface size " << aSize;
     return false;
   }
 
@@ -786,17 +814,22 @@ DrawTargetD2D1::Init(const IntSize &aSize, SurfaceFormat aFormat)
   props.pixelFormat = D2DPixelFormat(aFormat);
   props.colorContext = nullptr;
   props.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET;
-  mDC->CreateBitmap(D2DIntSize(aSize), nullptr, 0, props, (ID2D1Bitmap1**)byRef(mBitmap));
+  hr = mDC->CreateBitmap(D2DIntSize(aSize), nullptr, 0, props, (ID2D1Bitmap1**)byRef(mBitmap));
 
   if (FAILED(hr)) {
-    gfxWarning() << *this << ": Error " << hexa(hr) << " failed to create new CommandList.";
+    gfxCriticalError() << "[D2D1.1] 3CreateBitmap failure " << aSize << " Code: " << hexa(hr);
     return false;
   }
 
   props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
   props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
 
-  mDC->CreateBitmap(D2DIntSize(aSize), nullptr, 0, props, (ID2D1Bitmap1**)byRef(mTempBitmap));
+  hr = mDC->CreateBitmap(D2DIntSize(aSize), nullptr, 0, props, (ID2D1Bitmap1**)byRef(mTempBitmap));
+
+  if (FAILED(hr)) {
+    gfxCriticalError() << "[D2D1.1] failed to create new TempBitmap " << aSize << " Code: " << hexa(hr);
+    return false;
+  }
 
   mDC->SetTarget(mBitmap);
 
@@ -826,7 +859,12 @@ DrawTargetD2D1::factory()
     return mFactory;
   }
 
-  HRESULT hr = D2DFactory()->QueryInterface((ID2D1Factory1**)&mFactory);
+  ID2D1Factory* d2dFactory = D2DFactory();
+  if (!d2dFactory) {
+    return nullptr;
+  }
+
+  HRESULT hr = d2dFactory->QueryInterface((ID2D1Factory1**)&mFactory);
 
   if (FAILED(hr)) {
     return nullptr;
@@ -835,6 +873,16 @@ DrawTargetD2D1::factory()
   RadialGradientEffectD2D1::Register(mFactory);
 
   return mFactory;
+}
+
+void
+DrawTargetD2D1::CleanupD2D()
+{
+  if (mFactory) {
+    RadialGradientEffectD2D1::Unregister(mFactory);
+    mFactory->Release();
+    mFactory = nullptr;
+  }
 }
 
 void
@@ -920,6 +968,8 @@ DrawTargetD2D1::FinalizeDrawing(CompositionOp aOp, const Pattern &aPattern)
     mDC->CreateBitmap(D2DIntSize(mSize), D2D1::BitmapProperties(D2DPixelFormat(mFormat)), byRef(tmpBitmap));
 
     // This flush is important since the copy method will not know about the context drawing to the surface.
+    // We also need to pop all the clips to make sure any drawn content will have made it to the final bitmap.
+    PopAllClips();
     mDC->Flush();
 
     // We need to use a copy here because affects don't accept a surface on
@@ -930,14 +980,22 @@ DrawTargetD2D1::FinalizeDrawing(CompositionOp aOp, const Pattern &aPattern)
     mBlendEffect->SetInput(1, mTempBitmap);
     mBlendEffect->SetValue(D2D1_BLEND_PROP_MODE, D2DBlendMode(aOp));
 
+    PushClipsToDC(mDC);
+    mClipsArePushed = true;
+
     mDC->DrawImage(mBlendEffect, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_BOUNDED_SOURCE_COPY);
+    return;
+  }
+
+  const RadialGradientPattern *pat = static_cast<const RadialGradientPattern*>(&aPattern);
+  if (pat->mCenter1 == pat->mCenter2 && pat->mRadius1 == pat->mRadius2) {
+    // Draw nothing!
     return;
   }
 
   RefPtr<ID2D1Effect> radialGradientEffect;
 
   mDC->CreateEffect(CLSID_RadialGradientEffect, byRef(radialGradientEffect));
-  const RadialGradientPattern *pat = static_cast<const RadialGradientPattern*>(&aPattern);
 
   radialGradientEffect->SetValue(RADIAL_PROP_STOP_COLLECTION,
                                  static_cast<const GradientStopsD2D*>(pat->mStops.get())->mStopCollection);
@@ -1175,6 +1233,12 @@ DrawTargetD2D1::CreateBrushForPattern(const Pattern &aPattern, Float aAlpha)
                                    D2D1::BrushProperties(aAlpha, D2DMatrix(pat->mMatrix)),
                                    stops->mStopCollection,
                                    byRef(gradBrush));
+
+    if (!gradBrush) {
+      gfxWarning() << "Couldn't create gradient brush.";
+      return CreateTransparentBlackBrush();
+    }
+
     return gradBrush.forget();
   }
   if (aPattern.GetType() == PatternType::RADIAL_GRADIENT) {
@@ -1198,6 +1262,11 @@ DrawTargetD2D1::CreateBrushForPattern(const Pattern &aPattern, Float aAlpha)
                             stops->mStopCollection,
                             byRef(gradBrush));
 
+    if (!gradBrush) {
+      gfxWarning() << "Couldn't create gradient brush.";
+      return CreateTransparentBlackBrush();
+    }
+
     return gradBrush.forget();
   }
   if (aPattern.GetType() == PatternType::SURFACE) {
@@ -1211,17 +1280,30 @@ DrawTargetD2D1::CreateBrushForPattern(const Pattern &aPattern, Float aAlpha)
 
     D2D1_RECT_F samplingBounds;
     Matrix mat = pat->mMatrix;
-    if (!pat->mSamplingRect.IsEmpty()) {
+
+    bool useSamplingRect = false;
+    if (!pat->mSamplingRect.IsEmpty() &&
+        (pat->mSurface->GetType() == SurfaceType::D2D1_1_IMAGE)) {
       samplingBounds = D2DRect(pat->mSamplingRect);
       mat.PreTranslate(pat->mSamplingRect.x, pat->mSamplingRect.y);
+    } else if (!pat->mSamplingRect.IsEmpty()) {
+      // We will do a partial upload of the sampling restricted area from GetImageForSurface.
+      samplingBounds = D2D1::RectF(0, 0, pat->mSamplingRect.width, pat->mSamplingRect.height);
     } else {
       samplingBounds = D2D1::RectF(0, 0,
                                    Float(pat->mSurface->GetSize().width),
                                    Float(pat->mSurface->GetSize().height));
     }
 
+    MOZ_ASSERT(pat->mSurface->IsValid());
+
     RefPtr<ID2D1ImageBrush> imageBrush;
-    RefPtr<ID2D1Image> image = GetImageForSurface(pat->mSurface, mat, pat->mExtendMode);
+    RefPtr<ID2D1Image> image = GetImageForSurface(pat->mSurface, mat, pat->mExtendMode, !pat->mSamplingRect.IsEmpty() ? &pat->mSamplingRect : nullptr);
+
+    if (!image) {
+      return CreateTransparentBlackBrush();
+    }
+
     mDC->CreateImageBrush(image,
                           D2D1::ImageBrushProperties(samplingBounds,
                                                      D2DExtend(pat->mExtendMode),
@@ -1238,7 +1320,7 @@ DrawTargetD2D1::CreateBrushForPattern(const Pattern &aPattern, Float aAlpha)
 
 TemporaryRef<ID2D1Image>
 DrawTargetD2D1::GetImageForSurface(SourceSurface *aSurface, Matrix &aSourceTransform,
-                                   ExtendMode aExtendMode)
+                                   ExtendMode aExtendMode, const IntRect* aSourceRect)
 {
   RefPtr<ID2D1Image> image;
 
@@ -1258,7 +1340,7 @@ DrawTargetD2D1::GetImageForSurface(SourceSurface *aSurface, Matrix &aSourceTrans
         return nullptr;
       }
       return CreatePartialBitmapForSurface(dataSurf, mTransform, mSize, aExtendMode,
-                                           aSourceTransform, mDC);
+                                           aSourceTransform, mDC, aSourceRect);
     }
     break;
   }
@@ -1286,7 +1368,7 @@ DrawTargetD2D1::OptimizeSourceSurface(SourceSurface* aSurface) const
                                  byRef(bitmap));
 
   if (FAILED(hr)) {
-    gfxCriticalError() << "[D2D1.1] CreateBitmap failure " << data->GetSize() << " Code: " << hexa(hr);
+    gfxCriticalError(CriticalLog::DefaultOptions(Factory::ReasonableSurfaceSize(data->GetSize()))) << "[D2D1.1] 4CreateBitmap failure " << data->GetSize() << " Code: " << hexa(hr);
   }
 
   data->Unmap();

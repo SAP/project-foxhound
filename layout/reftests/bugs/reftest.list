@@ -55,9 +55,9 @@ fails == 25888-2r-block.html 25888-2r-ref.html # Bug 25888
 fails == 25888-3l-block.html 25888-3l-ref.html # Bug 25888
 fails == 25888-3r-block.html 25888-3r-ref.html # Bug 25888
 skip-if(B2G) == 28811-1a.html 28811-1-ref.html
-== 28811-1b.html 28811-1-ref.html
+fuzzy-if(gtk2Widget,6,26200) == 28811-1b.html 28811-1-ref.html  # Bug 1128229
 skip-if(B2G) == 28811-2a.html 28811-2-ref.html
-== 28811-2b.html 28811-2-ref.html
+fuzzy-if(gtk2Widget,6,26200) == 28811-2b.html 28811-2-ref.html  # Bug 1128229
 == 40596-1a.html 40596-1-ref.html
 != 40596-1b.html 40596-1-ref.html
 == 40596-1c.html 40596-1-ref.html
@@ -82,6 +82,12 @@ skip-if(B2G) == 28811-2a.html 28811-2-ref.html
 == 68061-2.xml 68061-2-ref.xml
 == 76331-1.html 76331-1-ref.html
 == 81947-1.html 81947-ref.html
+== 82711-1.html 82711-1-ref.html
+== 82711-2.html 82711-2-ref.html
+== 82711-3.html 82711-3-ref.html
+!= 82711-1-ref.html 82711-2-ref.html
+!= 82711-1-ref.html 82711-3-ref.html
+!= 82711-2-ref.html 82711-3-ref.html
 == 84400-1.html 84400-1-ref.html
 == 84400-2.html 84400-2-ref.html
 == 97777-1.html 97777-1-ref.html
@@ -518,7 +524,7 @@ random-if(cocoaWidget) == 350506-1.html 350506-1-ref.html
 == 355548-3.xml 355548-3-ref.xml
 == 355548-4.xml 355548-4-ref.xml
 == 355548-5.xml 355548-5-ref.xml
-fails-if(cocoaWidget) == 356774-1.html 356774-1-ref.html # probably bug 379317
+== 356774-1.html 356774-1-ref.html
 == 356775-1.html 356775-1-ref.html
 == 359869-1.html 359869-1-ref.html
 skip-if(B2G) == 359903-1.html 359903-1-ref.html
@@ -551,9 +557,9 @@ skip-if(B2G) == 363858-1.html 363858-1-ref.html
 skip-if(B2G) == 363858-2.html 363858-2-ref.html
 skip-if(B2G) == 363858-3.html 363858-3-ref.html
 skip-if(B2G) == 363858-4.html 363858-4-ref.html
-fuzzy-if(OSX==10.8,45,2) == 363858-5a.html 363858-5-ref.html
+fuzzy-if(OSX>=1008,45,2) == 363858-5a.html 363858-5-ref.html
 == 363858-5b.html 363858-5-ref.html
-fuzzy-if(OSX==10.8,45,2) == 363858-6a.html 363858-6-ref.html
+fuzzy-if(OSX>=1008,45,2) == 363858-6a.html 363858-6-ref.html
 == 363858-6b.html 363858-6-ref.html
 == 363874.html 363874-ref.html
 == 363874-max-width.html 363874-max-width-ref.html
@@ -631,7 +637,7 @@ skip-if(B2G&&browserIsRemote) == 369882.xul 369882-ref.xul # bug 974780
 == 370525-rowspan-4.html 370525-rowspan-4-ref.html
 == 370525-sib.html 370525-sib-ref.html
 == 370586-1.xhtml 370586-1-ref.xhtml
-== 370629-1.html 370629-1-ref.html
+skip-if(B2G) == 370629-1.html 370629-1-ref.html # bug 1060869
 skip-if(B2G) == 370629-2.html 370629-2-ref.html
 == 370692-1.xhtml 370692-1-ref.xhtml
 == 371041-1.html 371041-1-ref.html
@@ -736,7 +742,8 @@ fails == 385823-2b.html 385823-2-ref.html
 == 386014-1c.html 386014-1-ref.html
 == 386065-1.html 386065-1-ref.html
 == 386065-2.html about:blank
-skip-if(B2G) fails == 386147-1.html 386147-1-ref.html # bug 447460
+test-pref(layout.float-fragments-inside-column.enabled,false) skip-if(B2G) fails == 386147-1.html 386147-1-ref.html
+test-pref(layout.float-fragments-inside-column.enabled,true) skip-if(B2G) == 386147-1.html 386147-1-ref.html
 == 386310-1a.html 386310-1-ref.html
 == 386310-1b.html 386310-1-ref.html
 == 386310-1c.html 386310-1-ref.html
@@ -909,7 +916,7 @@ fuzzy-if(Android&&AndroidVersion>=15,8,50) == 404553-1.html 404553-1-ref.html  #
 == 407016-1-b.html 407016-1-ref.html
 == 407078-1.html 407078-1-ref.html
 == 407095-1.html 407095-1-ref.html
-== 407111-1.html 407111-1-ref.html
+fuzzy-if(Android,13,9) == 407111-1.html 407111-1-ref.html  # Bug 1128229
 == 407227-1.html 407227-1-ref.html
 == 407243-1.html 407243-1-ref.html
 == 407419-1.html 407419-1-ref.html
@@ -928,10 +935,10 @@ fuzzy-if(Android&&AndroidVersion>=15,8,50) == 404553-1.html 404553-1-ref.html  #
 == 409089-1.html 409089-1-ref.html
 == 409089-2.html 409089-2-ref.html
 == 409089-3.html 409089-3-ref.html
-== 409659-1a.html 409659-1-ref.html
+fuzzy-if(winWidget,123,1600) == 409659-1a.html 409659-1-ref.html  # Bug 1128229
 != 409659-1b.html 409659-1-ref.html
 fails-if(Android&&AndroidVersion>=15&&smallScreen&&AndroidVersion!=17) != 409659-1c.html 409659-1-ref.html #there is no difference in the visible area of the screen
-== 409659-1d.html 409659-1-ref.html
+fuzzy-if(winWidget,123,1900) == 409659-1d.html 409659-1-ref.html  # Bug 1128229
 == 410621-1.html 410621-1-ref.html
 == 411059-1.html 411059-1-ref.html
 == 411334-1.xml 411334-1-ref.xml
@@ -964,7 +971,7 @@ fails == 413027-3.html 413027-3-ref.html
 == 413286-5.html 413286-5-ref.html
 == 413286-6.html 413286-6-ref.html
 skip-if(cocoaWidget) == 413292-1.html 413292-1-ref.html # disabling due to failure loading on some mac tinderboxes. See bug 432954
-fuzzy-if(Android&&AndroidVersion>=15,11,15) == 413361-1.html 413361-1-ref.html
+fuzzy-if(B2G||Android,11,17) == 413361-1.html 413361-1-ref.html # bug 1128229
 == 413840-background-unchanged.html 413840-background-unchanged-ref.html
 == 413840-ltr-offsets.html 413840-ltr-offsets-ref.html
 == 413840-rtl-offsets.html 413840-rtl-offsets-ref.html
@@ -1187,11 +1194,12 @@ test-pref(dom.use_xbl_scopes_for_remote_xul,true) != 449149-1b.html about:blank
 == 455105-2.html 455105-ref.html
 == 455171-5.html 455171-5-ref.html
 == 455280-1.xhtml 455280-1-ref.xhtml
-skip-if(B2G) fails-if(Android) == 455826-1.html 455826-1-ref.html
+skip-if(B2G) == 455826-1.html 455826-1-ref.html
 skip-if(B2G) fails-if(cocoaWidget) fails-if(Android) == 456147.xul 456147-ref.html # bug 458047
-skip-if(B2G) fails-if(Android) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),1,1) fuzzy-if(/^Windows\x20NT\x206\.2/.test(http.oscpu),1,69) == 456219-1a.html 456219-1-ref.html # bug 853273
-skip-if(B2G) fails-if(Android) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),1,1) fuzzy-if(/^Windows\x20NT\x206\.2/.test(http.oscpu),1,69) == 456219-1b.html 456219-1-ref.html # bug 853273
-skip-if(B2G) fails-if(Android) fuzzy-if(/^Windows\x20NT\x206\.1/.test(http.oscpu),1,1) fuzzy-if(/^Windows\x20NT\x206\.2/.test(http.oscpu),1,69) == 456219-1c.html 456219-1-ref.html # bug 853273
+# The next three tests are fuzzy due to bug 1128229.
+fuzzy-if(Android||B2G,11,41) fuzzy-if(d2d&&/^Windows\x20NT\x206\.2/.test(http.oscpu),1,69) == 456219-1a.html 456219-1-ref.html # bug 853273
+fuzzy-if(Android||B2G,11,41) fuzzy-if(d2d&&/^Windows\x20NT\x206\.2/.test(http.oscpu),1,69) == 456219-1b.html 456219-1-ref.html # bug 853273
+fuzzy-if(Android||B2G,11,41) fuzzy-if(d2d&&/^Windows\x20NT\x206\.2/.test(http.oscpu),1,69) == 456219-1c.html 456219-1-ref.html # bug 853273
 == 456219-2.html 456219-2-ref.html
 == 456330-1.gif 456330-1-ref.png
 == 456484-1.html 456484-1-ref.html
@@ -1305,9 +1313,9 @@ skip-if(B2G) == 478811-1.html 478811-1-ref.html
 == 480880-2a.html about:blank
 == 480880-2b.html about:blank
 == 480880-2c.html about:blank
-skip-if(B2G) == 481024-1a.html 481024-1-ref.html
-skip-if(B2G) == 481024-1b.html 481024-1-ref.html
-skip-if(B2G) == 481024-1c.html 481024-1-ref.html
+skip-if(B2G) fails-if(Android) == 481024-1a.html 481024-1-ref.html
+skip-if(B2G) fails-if(Android) == 481024-1b.html 481024-1-ref.html
+skip-if(B2G) fails-if(Android) == 481024-1c.html 481024-1-ref.html
 == 481024-1d.html 481024-1-ref.html
 == 481024-1e.html 481024-1-ref.html
 != 481948-1.html 481948-1-ref.html
@@ -1377,7 +1385,7 @@ pref(dom.use_xbl_scopes_for_remote_xul,true) skip-if(B2G&&browserIsRemote) == 49
 == 495385-3.html 495385-3-ref.html
 == 495385-4.html 495385-4-ref.html
 == 495385-5.html 495385-5-ref.html
-asserts(1) == 496032-1.html 496032-1-ref.html # bug 399262
+== 496032-1.html 496032-1-ref.html
 == 496840-1.html 496840-1-ref.html
 skip-if(B2G&&browserIsRemote) == 498228-1.xul 498228-1-ref.xul # bug 974780
 == 501037.html 501037-ref.html
@@ -1391,7 +1399,6 @@ skip-if(B2G) == 502447-1.html 502447-1-ref.html
 == 502942-1.html 502942-1-ref.html
 == 503364-1a.html 503364-1-ref.html
 == 503364-1b.html 503364-1-ref.html
-== 503399.html 503399-ref.html
 # Reftest for bug 503531 marked as failing; should be re-enabled when
 # bug 607548 gets resolved.
 needs-focus fails == 503531-1.html 503531-1-ref.html
@@ -1454,7 +1461,7 @@ random-if(d2d) == 523468-1.html 523468-1-ref.html
 == 534804-1.html 534804-1-ref.html
 == 534808-1.html 534808-1-ref.html
 == 534808-2.html 534808-2-ref.html
-fails-if(OSX==10.7) == 534919-1.html 534919-1-ref.html # Bug 705044
+fails-if(OSX==1007) == 534919-1.html 534919-1-ref.html # Bug 705044
 random == 536061.html 536061-ref.html # fixedpoint division in blur code makes this fail
 == 537471-1.html 537471-1-ref.html
 skip-if(B2G&&browserIsRemote) == 537507-1.xul 537507-1-ref.xul # bug 974780
@@ -1501,7 +1508,7 @@ skip-if(B2G) fails-if(Android) == 557087-2.html 557087-ref.html
 == 557736-1.html 557736-1-ref.html
 skip-if(B2G&&browserIsRemote) != 558011-1.xul 558011-1-ref.xul # bug 974780
 == 559284-1.html 559284-1-ref.html
-skip-if(B2G) == 560455-1.xul 560455-1-ref.xul
+skip-if(B2G) fails-if(Android) == 560455-1.xul 560455-1-ref.xul
 == 561981-1.html 561981-1-ref.html
 == 561981-2.html 561981-2-ref.html
 == 561981-3.html 561981-3-ref.html
@@ -1517,7 +1524,8 @@ skip-if(B2G) == 563584-2.html 563584-2-ref.html
 skip-if(B2G) == 563584-3.html 563584-3-ref.html
 skip-if(B2G) == 563584-4.html 563584-4-ref.html
 == 563584-5.html 563584-5-ref.html
-== 563584-6-columns.html 563584-6-columns-ref.html
+test-pref(layout.float-fragments-inside-column.enabled,false) == 563584-6-columns.html 563584-6-columns-ref.html
+test-pref(layout.float-fragments-inside-column.enabled,true) == 563584-6-columns.html 563584-6-columns-ref-enabled.html
 skip-if(B2G) == 563584-6-printing.html 563584-6-printing-ref.html
 skip-if(B2G) == 563584-7.html 563584-7-ref.html
 # FIXME: It would be nice to have variants of these -8 tests for the
@@ -1580,13 +1588,13 @@ skip-if(B2G) == 582476-1.svg 582476-1-ref.svg
 == 584699-1.html 584699-1-ref.html
 == 585598-2.xhtml 585598-2-ref.xhtml
 == 586400-1.html 586400-1-ref.html
-skip-if(B2G) fuzzy-if(d2d,52,1051) fuzzy-if(OSX==10.8,129,1068) == 586683-1.html 586683-1-ref.html
+skip-if(B2G) fuzzy-if(d2d,52,1051) fuzzy-if(OSX==1008,129,1068) == 586683-1.html 586683-1-ref.html
 == 589615-1a.xhtml 589615-1-ref.html
 == 589615-1b.html 589615-1-ref.html
 == 589672-1.html 589672-1-ref.html
 != 589682-1.html 589682-1-notref.html
-skip-if(!browserIsRemote) == 593243-1.html 593243-1-ref.html # bug 593168
-skip-if(!browserIsRemote) == 593243-2.html 593243-2-ref.html # bug 593168
+skip-if(!asyncPanZoom) == 593243-1.html 593243-1-ref.html # bug 593168
+skip-if(!asyncPanZoom) == 593243-2.html 593243-2-ref.html # bug 593168
 == 593544-1.html 593544-1-ref.html
 random-if(Android) == 594333-1.html 594333-1-ref.html
 fuzzy-if(B2G,1,40000) == 594624-1.html 594624-1-ref.html
@@ -1637,7 +1645,7 @@ skip-if(Android) HTTP(..) == 621253-1-externalFilter.html 621253-1-ref.html
 skip-if(Android) == 621253-1-internalFilter.html 621253-1-ref.html
 HTTP(..) == 621253-2-externalFilter.html 621253-2-ref.html
 == 621253-2-internalFilter.html 621253-2-ref.html
-skip-if(B2G) random-if(winWidget) fuzzy-if(OSX==10.8,19,17) == 621918-1.svg 621918-1-ref.svg # 1-pixel diacritic positioning discrepancy in rotated text (may depend on platform fonts)
+skip-if(B2G) random-if(winWidget) fuzzy-if(OSX==1008,19,17) == 621918-1.svg 621918-1-ref.svg # 1-pixel diacritic positioning discrepancy in rotated text (may depend on platform fonts)
 random-if(winWidget) HTTP(..) == 621918-2.svg 621918-2-ref.svg # same 1px issue as above, and HTTP(..) for filters.svg, used to mask antialiasing issues where glyphs touch
 fuzzy-if(d2d,5,1) == 622585-1.html 622585-1-ref.html # bug 789402
 fuzzy-if(Android&&AndroidVersion>=15,8,300) == 625409-1.html 625409-1-ref.html
@@ -1647,7 +1655,7 @@ fuzzy-if(Android&&AndroidVersion>=15,8,300) == 625409-1.html 625409-1-ref.html
 skip-if(!haveTestPlugin) skip-if(B2G) fails-if(Android) fuzzy-if(winWidget&&!layersGPUAccelerated,102,535)  == 632423-1.html 632423-1-ref.html
 skip-if(Android||B2G) random-if(winWidget) == 632781-verybig.html 632781-ref.html
 == 632781-normalsize.html 632781-ref.html
-== 633344-1.html 633344-1-ref.html
+fuzzy-if(d2d&&/^Windows\x20NT\x206\.2/.test(http.oscpu),1,559) == 633344-1.html 633344-1-ref.html # bug 1103623
 == 634232-1.html 634232-1-ref.html
 fails-if(Android&&AndroidVersion<17&&AndroidVersion!=10) == 635302-1.html 635302-1-ref.html
 skip-if(B2G) random-if(d2d) fails-if(Android) fuzzy-if(winWidget&&!d2d,1,11) == 635373-1.html 635373-1-ref.html
@@ -1756,7 +1764,7 @@ skip-if(B2G) == 818276-1.html 818276-1-ref.html
 == 836844-1.html 836844-1-ref.html
 == 841192-1.html 841192-1-ref.html
 == 844178.html 844178-ref.html
-== 846144-1.html 846144-1-ref.html
+fuzzy-if(OSX,1,364) == 846144-1.html 846144-1-ref.html
 == 847850-1.html 847850-1-ref.html
 == 848421-1.html 848421-1-ref.html
 random-if(B2G) == 849407-1.html 849407-1-ref.html
@@ -1784,7 +1792,7 @@ fuzzy-if(cocoaWidget,1,40) == 928607-1.html 928607-1-ref.html
 == 931464-1.html 931464-1-ref.html
 == 931853.html 931853-ref.html
 == 931853-quirks.html 931853-quirks-ref.html
-fuzzy-if(OSX==10.6,2,30) skip-if(B2G&&browserIsRemote) == 933264-1.html 933264-1-ref.html
+fuzzy-if(OSX==1006,2,30) skip-if(B2G&&browserIsRemote) == 933264-1.html 933264-1-ref.html
 == 936670-1.svg 936670-1-ref.svg
 == 941940-1.html 941940-1-ref.html
 fails == 942017.html 942017-ref.html # bug 942017
@@ -1795,7 +1803,7 @@ fuzzy-if(B2G,1,7) == 942672-1.html 942672-1-ref.html
 == 950436-1.html 950436-1-ref.html
 == 957770-1.svg 957770-1-ref.svg
 == 960277-1.html 960277-1-ref.html
-pref(layout.css.overflow-clip-box.enabled,true) fuzzy(50,31) == 966992-1.html 966992-1-ref.html
+pref(layout.css.overflow-clip-box.enabled,true) fuzzy(50,145) == 966992-1.html 966992-1-ref.html
 skip-if(Android) == 966510-1.html 966510-1-ref.html # scrollable elements other than the root probably won't work well on android until bug 776030 is fixed
 skip-if(Android) == 966510-2.html 966510-2-ref.html # same as above
 == 978911-1.svg 978911-1-ref.svg
@@ -1803,6 +1811,8 @@ skip-if(Android) == 966510-2.html 966510-2-ref.html # same as above
 == 983084-2.html 983084-2-ref.html
 == 983084-3.html 983084-1-ref.html
 == 983691-1.html 983691-ref.html
+HTTP(..) == 983985-1.html 983985-1-ref.html
+HTTP(..) == 983985-2.html 983985-2-ref.html
 == 985303-1a.html 985303-1-ref.html
 == 985303-1b.html 985303-1-ref.html
 == 987680-1.html 987680-1-ref.html
@@ -1811,6 +1821,7 @@ pref(layout.css.overflow-clip-box.enabled,true) == 992447.html 992447-ref.html
 == 1003425-1.html 1003425-1-ref.html
 == 1003425-2.html 1003425-2-ref.html
 pref(layout.css.sticky.enabled,true) == 1005405-1.html 1005405-1-ref.html
+== 1012640-1.html 1012640-1-ref.html
 fuzzy-if(/^Windows\x20NT\x205\.1/.test(http.oscpu),255,1) == 1013054-1.html 1013054-1-ref.html
 pref(layout.css.will-change.enabled,true) == 1018522-1.html 1018522-1-ref.html
 == 1021564-1.html 1021564-ref.html
@@ -1832,6 +1843,29 @@ test-pref(layout.css.grid.enabled,true) == 1053035-1-grid.html 1053035-1-ref.htm
 == 1059498-1.html 1059498-1-ref.html
 == 1059498-2.html 1059498-1-ref.html
 == 1059498-3.html 1059498-1-ref.html
+== 1062108-1.html 1062108-1-ref.html
+fails-if(Android) == 1062792-1.html 1062792-1-ref.html
+== 1062963-floatmanager-reflow.html 1062963-floatmanager-reflow-ref.html
 test-pref(dom.webcomponents.enabled,true) == 1066554-1.html 1066554-1-ref.html
 == 1069716-1.html 1069716-1-ref.html
 == 1078262-1.html about:blank
+test-pref(layout.testing.overlay-scrollbars.always-visible,false) == 1081072-1.html 1081072-1-ref.html
+== 1081185-1.html 1081185-1-ref.html
+== 1097437-1.html 1097437-1-ref.html
+== 1103258-1.html 1103258-1-ref.html # assertion crash test with layers culling test
+== 1105137-1.html 1105137-1-ref.html
+fuzzy-if(d2d,36,304) HTTP(..) == 1116480-1-fakeitalic-overflow.html 1116480-1-fakeitalic-overflow-ref.html
+== 1111753-1.html about:blank
+== 1119117-1a.html 1119117-1-ref.html
+== 1119117-1b.html 1119117-1-ref.html
+== 1120431-1.html 1120431-1-ref.html
+== 1120431-2.html 1120431-2-ref.html
+== 1121748-1.html 1121748-1-ref.html
+== 1121748-2.html 1121748-2-ref.html
+== 1127107-1a-nowrap.html 1127107-1-ref.html
+== 1127107-1b-pre.html 1127107-1-ref.html
+== 1127107-2-capitalize.html 1127107-2-capitalize-ref.html
+== 1127679-1a-inline-flex-relpos.html 1127679-1b-inline-flex-relpos.html
+== 1128354-1.html 1128354-1-ref.html
+== 1130231-1-button-padding-rtl.html 1130231-1-button-padding-rtl-ref.html
+== 1130231-2-button-padding-rtl.html 1130231-2-button-padding-rtl-ref.html

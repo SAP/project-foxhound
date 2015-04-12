@@ -5,11 +5,11 @@
  * Tests that properties are not updated when modifying the VariablesView.
  */
 
-function spawnTest() {
+add_task(function*() {
   let { target, panel } = yield initWebAudioEditor(COMPLEX_CONTEXT_URL);
   let { panelWin } = panel;
-  let { gFront, $, $$, EVENTS, InspectorView } = panelWin;
-  let gVars = InspectorView._propsView;
+  let { gFront, $, $$, EVENTS, PropertiesView } = panelWin;
+  let gVars = PropertiesView._propsView;
 
   let started = once(gFront, "start-context");
 
@@ -24,7 +24,7 @@ function spawnTest() {
   click(panelWin, findGraphNode(panelWin, nodeIds[3]));
   // Wait for the node to be set as well as the inspector to come fully into the view
   yield Promise.all([
-    once(panelWin, EVENTS.UI_INSPECTOR_NODE_SET),
+    waitForInspectorRender(panelWin, EVENTS),
     once(panelWin, EVENTS.UI_INSPECTOR_TOGGLED),
   ]);
 
@@ -40,6 +40,5 @@ function spawnTest() {
 
   checkVariableView(gVars, 0, {bufferSize: 4096}, "check that unwritable variable is not updated");
 
-  yield teardown(panel);
-  finish();
-}
+  yield teardown(target);
+});

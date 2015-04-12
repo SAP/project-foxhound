@@ -14,7 +14,8 @@ import unittest
 import weakref
 import warnings
 
-from errors import (
+
+from marionette_driver.errors import (
         ErrorCodes, MarionetteException, InstallGeckoError, TimeoutException, InvalidResponseException,
         JavascriptException, NoSuchElementException, XPathLookupException, NoSuchWindowException,
         StaleElementException, ScriptTimeoutException, ElementNotVisibleException,
@@ -22,10 +23,10 @@ from errors import (
         InvalidCookieDomainException, UnableToSetCookieException, InvalidSelectorException,
         MoveTargetOutOfBoundsException, FrameSendNotInitializedError, FrameSendFailureError
         )
-from marionette import Marionette
+from marionette_driver.marionette import Marionette
 from mozlog.structured.structuredlog import get_default_logger
-from wait import Wait
-from expected import element_present, element_not_present
+from marionette_driver.wait import Wait
+from marionette_driver.expected import element_present, element_not_present
 
 
 class SkipTest(Exception):
@@ -82,10 +83,25 @@ def expectedFailure(func):
 
 def skip_if_b2g(target):
     def wrapper(self, *args, **kwargs):
-        if not self.marionette.session_capabilities['device'] == 'qemu':
-            return target(self, *args, **kwargs)
-        else:
+        if self.marionette.session_capabilities.get('b2g') == True:
             raise SkipTest('skipping due to b2g')
+        return target(self, *args, **kwargs)
+
+    return wrapper
+
+def skip_if_e10s(target):
+    def wrapper(self, *args, **kwargs):
+        with self.marionette.using_context('chrome'):
+            multi_process_browser = self.marionette.execute_script("""
+            try {
+              return Services.appinfo.browserTabsRemoteAutostart;
+            } catch (e) {
+              return false;
+            }""")
+
+        if multi_process_browser:
+            raise SkipTest('skipping due to e10s')
+        return target(self, *args, **kwargs)
     return wrapper
 
 def parameterized(func_suffix, *args, **kwargs):
@@ -180,6 +196,12 @@ class MetaParameterized(type):
 
         return type.__new__(cls, name, bases, attrs)
 
+class JSTest:
+    head_js_re = re.compile(r"MARIONETTE_HEAD_JS(\s*)=(\s*)['|\"](.*?)['|\"];")
+    context_re = re.compile(r"MARIONETTE_CONTEXT(\s*)=(\s*)['|\"](.*?)['|\"];")
+    timeout_re = re.compile(r"MARIONETTE_TIMEOUT(\s*)=(\s*)(\d+);")
+    inactivity_timeout_re = re.compile(r"MARIONETTE_INACTIVITY_TIMEOUT(\s*)=(\s*)(\d+);")
+
 class CommonTestCase(unittest.TestCase):
 
     __metaclass__ = MetaParameterized
@@ -192,6 +214,7 @@ class CommonTestCase(unittest.TestCase):
         self.duration = 0
         self.start_time = 0
         self.expected = kwargs.pop('expected', 'pass')
+        self.logger = get_default_logger()
 
     def _addSkip(self, result, reason):
         addSkip = getattr(result, 'addSkip', None)
@@ -382,9 +405,10 @@ permissions.forEach(function (perm) {
             self.marionette.timeouts(self.marionette.TIMEOUT_PAGE, self.marionette.timeout)
         else:
             self.marionette.timeouts(self.marionette.TIMEOUT_PAGE, 30000)
+
         if hasattr(self, 'test_container') and self.test_container:
             self.switch_into_test_container()
-        else:
+        elif hasattr(self, 'test_container') and self.test_container is False:
             if self.marionette.session_capabilities.has_key('b2g') \
             and self.marionette.session_capabilities['b2g'] == True:
                 self.close_test_container()
@@ -416,56 +440,18 @@ permissions.forEach(function (perm) {
         self.marionette = None
 
     def switch_into_test_container(self):
-        self.marionette.set_context("content")
-        frame = None
-        try:
-            frame = self.marionette.find_element(
-                'css selector',
-                'iframe[src*="app://test-container.gaiamobile.org/index.html"]'
-            )
-        except NoSuchElementException:
-            result = self.marionette.execute_async_script("""
-if((navigator.mozSettings == undefined) || (navigator.mozSettings == null) || (navigator.mozApps == undefined) || (navigator.mozApps == null)) {
-    marionetteScriptFinished(false);
-    return;
-}
-let setReq = navigator.mozSettings.createLock().set({'lockscreen.enabled': false});
-setReq.onsuccess = function() {
-    let appsReq = navigator.mozApps.mgmt.getAll();
-    appsReq.onsuccess = function() {
-        let apps = appsReq.result;
-        for (let i = 0; i < apps.length; i++) {
-            let app = apps[i];
-            if (app.manifest.name === 'Test Container') {
-                app.launch();
-                window.addEventListener('apploadtime', function apploadtime(){
-                    window.removeEventListener('apploadtime', apploadtime);
-                    marionetteScriptFinished(true);
-                });
-                return;
-            }
-        }
-        marionetteScriptFinished(false);
-    }
-    appsReq.onerror = function() {
-        marionetteScriptFinished(false);
-    }
-}
-setReq.onerror = function() {
-    marionetteScriptFinished(false);
-}""", script_timeout=60000)
+        self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
 
-            self.assertTrue(result)
-            frame = Wait(self.marionette, timeout=10, interval=0.2).until(element_present(
-                'css selector',
-                'iframe[src*="app://test-container.gaiamobile.org/index.html"]'
-            ))
+        frame = Wait(self.marionette, timeout=10, interval=0.2).until(element_present(
+            'css selector',
+            'iframe[src*="app://test-container.gaiamobile.org/index.html"]'
+        ))
 
         self.marionette.switch_to_frame(frame)
 
     def close_test_container(self):
-        self.marionette.set_context("content")
-        self.marionette.switch_to_frame()
+        self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
+
         result = self.marionette.execute_async_script("""
 if((navigator.mozSettings == undefined) || (navigator.mozSettings == null) || (navigator.mozApps == undefined) || (navigator.mozApps == null)) {
     marionetteScriptFinished(false);
@@ -499,10 +485,116 @@ setReq.onerror = function() {
     marionetteScriptFinished(false);
 }""", script_timeout=60000)
 
-        frame = Wait(self.marionette, timeout=10, interval=0.2).until(element_not_present(
+        if not result:
+            raise Exception('Failed to close Test Container app')
+
+        Wait(self.marionette, timeout=10, interval=0.2).until(element_not_present(
             'css selector',
             'iframe[src*="app://test-container.gaiamobile.org/index.html"]'
         ))
+
+    def run_js_test(self, filename, marionette=None):
+        '''
+        Run a JavaScript test file and collect its set of assertions
+        into the current test's results.
+
+        :param filename: The path to the JavaScript test file to execute.
+                         May be relative to the current script.
+        :param marionette: The Marionette object in which to execute the test.
+                           Defaults to self.marionette.
+        '''
+        marionette = marionette or self.marionette
+        if not os.path.isabs(filename):
+            # Find the caller's filename and make the path relative to that.
+            caller_file = sys._getframe(1).f_globals.get('__file__', '')
+            caller_file = os.path.abspath(caller_file)
+            filename = os.path.join(os.path.dirname(caller_file), filename)
+        self.assert_(os.path.exists(filename),
+                     'Script "%s" must exist' % filename)
+        original_test_name = self.marionette.test_name
+        self.marionette.test_name = os.path.basename(filename)
+        f = open(filename, 'r')
+        js = f.read()
+        args = []
+
+        head_js = JSTest.head_js_re.search(js);
+        if head_js:
+            head_js = head_js.group(3)
+            head = open(os.path.join(os.path.dirname(filename), head_js), 'r')
+            js = head.read() + js;
+
+        context = JSTest.context_re.search(js)
+        if context:
+            context = context.group(3)
+        else:
+            context = 'content'
+        marionette.set_context(context)
+
+        if context != 'chrome':
+            marionette.navigate('data:text/html,<html>test page</html>')
+
+        timeout = JSTest.timeout_re.search(js)
+        if timeout:
+            timeout = timeout.group(3)
+            marionette.set_script_timeout(timeout)
+
+        inactivity_timeout = JSTest.inactivity_timeout_re.search(js)
+        if inactivity_timeout:
+            inactivity_timeout = inactivity_timeout.group(3)
+
+        try:
+            results = marionette.execute_js_script(
+                js,
+                args,
+                special_powers=True,
+                inactivity_timeout=inactivity_timeout,
+                filename=os.path.basename(filename)
+            )
+
+            self.assertTrue(not 'timeout' in filename,
+                            'expected timeout not triggered')
+
+            if 'fail' in filename:
+                self.assertTrue(len(results['failures']) > 0,
+                                "expected test failures didn't occur")
+            else:
+                for failure in results['failures']:
+                    diag = "" if failure.get('diag') is None else failure['diag']
+                    name = "got false, expected true" if failure.get('name') is None else failure['name']
+                    self.logger.test_status(self.test_name, name, 'FAIL',
+                                            message=diag)
+                for failure in results['expectedFailures']:
+                    diag = "" if failure.get('diag') is None else failure['diag']
+                    name = "got false, expected false" if failure.get('name') is None else failure['name']
+                    self.logger.test_status(self.test_name, name, 'FAIL',
+                                            expected='FAIL', message=diag)
+                for failure in results['unexpectedSuccesses']:
+                    diag = "" if failure.get('diag') is None else failure['diag']
+                    name = "got true, expected false" if failure.get('name') is None else failure['name']
+                    self.logger.test_status(self.test_name, name, 'PASS',
+                                            expected='FAIL', message=diag)
+                self.assertEqual(0, len(results['failures']),
+                                 '%d tests failed' % len(results['failures']))
+                if len(results['unexpectedSuccesses']) > 0:
+                    raise _UnexpectedSuccess('')
+                if len(results['expectedFailures']) > 0:
+                    raise _ExpectedFailure((AssertionError, AssertionError(''), None))
+
+            self.assertTrue(results['passed']
+                            + len(results['failures'])
+                            + len(results['expectedFailures'])
+                            + len(results['unexpectedSuccesses']) > 0,
+                            'no tests run')
+
+        except ScriptTimeoutException:
+            if 'timeout' in filename:
+                # expected exception
+                pass
+            else:
+                self.loglines = marionette.get_logs()
+                raise
+        self.marionette.test_name = original_test_name
+
 
 
 class MarionetteTestCase(CommonTestCase):
@@ -517,7 +609,7 @@ class MarionetteTestCase(CommonTestCase):
         self.methodName = methodName
         self.filepath = filepath
         self.testvars = kwargs.pop('testvars', None)
-        self.test_container = kwargs.pop('test_container', False)
+        self.test_container = kwargs.pop('test_container', None)
         CommonTestCase.__init__(self, methodName, **kwargs)
 
     @classmethod
@@ -577,10 +669,6 @@ class MarionetteTestCase(CommonTestCase):
 
 class MarionetteJSTestCase(CommonTestCase):
 
-    head_js_re = re.compile(r"MARIONETTE_HEAD_JS(\s*)=(\s*)['|\"](.*?)['|\"];")
-    context_re = re.compile(r"MARIONETTE_CONTEXT(\s*)=(\s*)['|\"](.*?)['|\"];")
-    timeout_re = re.compile(r"MARIONETTE_TIMEOUT(\s*)=(\s*)(\d+);")
-    inactivity_timeout_re = re.compile(r"MARIONETTE_INACTIVITY_TIMEOUT(\s*)=(\s*)(\d+);")
     match_re = re.compile(r"test_(.*)\.js$")
 
     def __init__(self, marionette_weakref, methodName='runTest', jsFile=None, **kwargs):
@@ -588,7 +676,7 @@ class MarionetteJSTestCase(CommonTestCase):
         self.jsFile = jsFile
         self._marionette_weakref = marionette_weakref
         self.marionette = None
-        self.test_container = kwargs.pop('test_container', False)
+        self.test_container = kwargs.pop('test_container', None)
         CommonTestCase.__init__(self, methodName)
 
     @classmethod
@@ -598,87 +686,20 @@ class MarionetteJSTestCase(CommonTestCase):
     def runTest(self):
         if self.marionette.session is None:
             self.marionette.start_session()
-        self.marionette.test_name = os.path.basename(self.jsFile)
         self.marionette.execute_script("log('TEST-START: %s');" % self.jsFile.replace('\\', '\\\\'))
 
-        f = open(self.jsFile, 'r')
-        js = f.read()
-        args = []
-
-        if os.path.basename(self.jsFile).startswith('test_'):
-            head_js = self.head_js_re.search(js);
-            if head_js:
-                head_js = head_js.group(3)
-                head = open(os.path.join(os.path.dirname(self.jsFile), head_js), 'r')
-                js = head.read() + js;
-
-        context = self.context_re.search(js)
-        if context:
-            context = context.group(3)
-            self.marionette.set_context(context)
-
-        if context != "chrome":
-            self.marionette.navigate('data:text/html,<html>test page</html>')
-
-        timeout = self.timeout_re.search(js)
-        if timeout:
-            timeout = timeout.group(3)
-            self.marionette.set_script_timeout(timeout)
-
-        inactivity_timeout = self.inactivity_timeout_re.search(js)
-        if inactivity_timeout:
-            inactivity_timeout = inactivity_timeout.group(3)
-
-        try:
-            results = self.marionette.execute_js_script(js,
-                                                        args,
-                                                        special_powers=True,
-                                                        inactivity_timeout=inactivity_timeout,
-                                                        filename=os.path.basename(self.jsFile))
-
-            self.assertTrue(not 'timeout' in self.jsFile,
-                            'expected timeout not triggered')
-
-            if 'fail' in self.jsFile:
-                self.assertTrue(len(results['failures']) > 0,
-                                "expected test failures didn't occur")
-            else:
-                logger = get_default_logger()
-                for failure in results['failures']:
-                    diag = "" if failure.get('diag') is None else failure['diag']
-                    name = "got false, expected true" if failure.get('name') is None else failure['name']
-                    logger.test_status(self.test_name, name, 'FAIL',
-                                       message=diag)
-                for failure in results['expectedFailures']:
-                    diag = "" if failure.get('diag') is None else failure['diag']
-                    name = "got false, expected false" if failure.get('name') is None else failure['name']
-                    logger.test_status(self.test_name, name, 'FAIL',
-                                       expected='FAIL', message=diag)
-                for failure in results['unexpectedSuccesses']:
-                    diag = "" if failure.get('diag') is None else failure['diag']
-                    name = "got true, expected false" if failure.get('name') is None else failure['name']
-                    logger.test_status(self.test_name, name, 'PASS',
-                                       expected='FAIL', message=diag)
-                self.assertEqual(0, len(results['failures']),
-                                 '%d tests failed' % len(results['failures']))
-                if len(results['unexpectedSuccesses']) > 0:
-                    raise _UnexpectedSuccess('')
-                if len(results['expectedFailures']) > 0:
-                    raise _ExpectedFailure((AssertionError, AssertionError(''), None))
-
-            self.assertTrue(results['passed']
-                            + len(results['failures'])
-                            + len(results['expectedFailures'])
-                            + len(results['unexpectedSuccesses']) > 0,
-                            'no tests run')
-
-        except ScriptTimeoutException:
-            if 'timeout' in self.jsFile:
-                # expected exception
-                pass
-            else:
-                self.loglines = self.marionette.get_logs()
-                raise
+        self.run_js_test(self.jsFile)
 
         self.marionette.execute_script("log('TEST-END: %s');" % self.jsFile.replace('\\', '\\\\'))
         self.marionette.test_name = None
+
+    def get_test_class_name(self):
+        # returns a dot separated folders as class name
+        dirname = os.path.dirname(self.jsFile).replace('\\', '/')
+        if dirname.startswith('/'):
+            dirname = dirname[1:]
+        return '.'.join(dirname.split('/'))
+
+    def get_test_method_name(self):
+        # returns the js filename without extension as method name
+        return os.path.splitext(os.path.basename(self.jsFile))[0]

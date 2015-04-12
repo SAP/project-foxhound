@@ -14,6 +14,7 @@ var Cu = Components.utils;
 Cu.import("resource://specialpowers/MockFilePicker.jsm");
 Cu.import("resource://specialpowers/MockColorPicker.jsm");
 Cu.import("resource://specialpowers/MockPermissionPrompt.jsm");
+Cu.import("resource://specialpowers/MockPaymentsUIGlue.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -213,8 +214,9 @@ function unwrapPrivileged(x) {
   if (!isWrapper(x))
     throw "Trying to unwrap a non-wrapped object!";
 
-  // Unwrap.
-  return x.SpecialPowers_wrappedObject;
+  var obj = x.SpecialPowers_wrappedObject;
+  // unwrapped.
+  return obj;
 };
 
 function crawlProtoChain(obj, fn) {
@@ -520,15 +522,19 @@ SpecialPowersAPI.prototype = {
   },
 
   get MockFilePicker() {
-    return MockFilePicker
+    return MockFilePicker;
   },
 
   get MockColorPicker() {
-    return MockColorPicker
+    return MockColorPicker;
   },
 
   get MockPermissionPrompt() {
-    return MockPermissionPrompt
+    return MockPermissionPrompt;
+  },
+
+  get MockPaymentsUIGlue() {
+    return MockPaymentsUIGlue;
   },
 
   loadChromeScript: function (url) {
@@ -576,7 +582,7 @@ SpecialPowersAPI.prototype = {
 
         if (aMessage.name == "SPChromeScriptMessage") {
           listeners.filter(o => (o.name == name))
-                   .forEach(o => o.listener(this.wrap(message)));
+                   .forEach(o => o.listener(message));
         } else if (aMessage.name == "SPChromeScriptAssert") {
           assert(aMessage.json);
         }
@@ -662,10 +668,10 @@ SpecialPowersAPI.prototype = {
    * we don't SpecialPowers-wrap Components.interfaces, because it's available
    * to untrusted content, and wrapping it confuses QI and identity checks.
    */
-  get Cc() { return wrapPrivileged(this.getFullComponents()).classes; },
+  get Cc() { return wrapPrivileged(this.getFullComponents().classes); },
   get Ci() { return this.Components.interfaces; },
-  get Cu() { return wrapPrivileged(this.getFullComponents()).utils; },
-  get Cr() { return wrapPrivileged(this.Components).results; },
+  get Cu() { return wrapPrivileged(this.getFullComponents().utils); },
+  get Cr() { return wrapPrivileged(this.Components.results); },
 
   /*
    * SpecialPowers.getRawComponents() allows content to get a reference to a
@@ -843,6 +849,12 @@ SpecialPowersAPI.prototype = {
       this.popPermissions(null);
 
     this.popPermissions(callback);
+  },
+
+
+  setTestPluginEnabledState: function(newEnabledState, pluginName) {
+    return this._sendSyncMessage("SPSetTestPluginEnabledState",
+                                 { newEnabledState: newEnabledState, pluginName: pluginName })[0];
   },
 
 
@@ -1093,6 +1105,21 @@ SpecialPowersAPI.prototype = {
     });
   },
 
+  // Allow tests to install addons without signing the package, for convenience.
+  allowUnsignedAddons: function() {
+    this._sendSyncMessage("SPWebAppService", {
+      op: "allow-unsigned-addons"
+    });
+  },
+
+  // Turn on debug information from UserCustomizations.jsm
+  debugUserCustomizations: function(value) {
+    this._sendSyncMessage("SPWebAppService", {
+      op: "debug-customizations",
+      value: value
+    });
+  },
+
   // Restore the launchable property to its default value.
   flushAllAppsLaunchable: function() {
     this._sendSyncMessage("SPWebAppService", {
@@ -1151,7 +1178,7 @@ SpecialPowersAPI.prototype = {
   // Returns a privileged getter from an object. GetOwnPropertyDescriptor does
   // not work here because xray wrappers don't properly implement it.
   //
-  // This terribleness is used by content/base/test/test_object.html because
+  // This terribleness is used by dom/base/test/test_object.html because
   // <object> and <embed> tags will spawn plugins if their prototype is touched,
   // so we need to get and cache the getter of |hasRunningPlugin| if we want to
   // call it without paradoxically spawning the plugin.
@@ -1394,21 +1421,18 @@ SpecialPowersAPI.prototype = {
     var self = this;
     let count = 0;
 
-    function doPreciseGCandCC() {
-      function scheduledGCCallback() {
+    function genGCCallback(cb) {
+      return function() {
         self.getDOMWindowUtils(win).cycleCollect();
-
         if (++count < 2) {
-          doPreciseGCandCC();
-        } else {
-          callback();
+          Cu.schedulePreciseGC(genGCCallback(cb));
+        } else if (cb) {
+          cb();
         }
       }
-
-      Cu.schedulePreciseGC(scheduledGCCallback);
     }
 
-    doPreciseGCandCC();
+    Cu.schedulePreciseGC(genGCCallback(callback));
   },
 
   setGCZeal: function(zeal) {
@@ -1462,6 +1486,14 @@ SpecialPowersAPI.prototype = {
 
     this._os = xulRuntime.OS;
     return this._os;
+  },
+
+  get isB2G() {
+#ifdef MOZ_B2G
+    return true;
+#else
+    return false;
+#endif
   },
 
   addSystemEventListener: function(target, type, listener, useCapture) {
@@ -1577,10 +1609,10 @@ SpecialPowersAPI.prototype = {
 
     var xferable = Components.classes["@mozilla.org/widget/transferable;1"].
                    createInstance(Components.interfaces.nsITransferable);
-    // in e10s b-c tests |content.window| is null whereas |window| works fine.
+    // in e10s b-c tests |content.window| is a CPOW whereas |window| works fine.
     // for some non-e10s mochi tests, |window| is null whereas |content.window|
     // works fine.  So we take whatever is non-null!
-    xferable.init(this._getDocShell(content.window || window)
+    xferable.init(this._getDocShell(typeof(window) == "undefined" ? content.window : window)
                       .QueryInterface(Components.interfaces.nsILoadContext));
     xferable.addDataFlavor(flavor);
     this._cb.getData(xferable, whichClipboard);

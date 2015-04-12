@@ -17,7 +17,7 @@ static const unsigned AllowWritable  = IgnoreAll & ~JSPROP_IGNORE_READONLY;
 static const unsigned ValueWithConfigurable = IgnoreWithValue & ~JSPROP_IGNORE_PERMANENT;
 
 static bool
-Getter(JSContext *cx, unsigned argc, JS::Value *vp)
+Getter(JSContext* cx, unsigned argc, JS::Value* vp)
 {
     JS::CallArgs args = CallArgsFromVp(argc, vp);
     args.rval().setBoolean(true);
@@ -41,14 +41,14 @@ CheckDescriptor(JS::Handle<JSPropertyDescriptor> desc, bool enumerable,
 
 BEGIN_TEST(testDefinePropertyIgnoredAttributes)
 {
-    JS::RootedObject obj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+    JS::RootedObject obj(cx, JS_NewPlainObject(cx));
     JS::Rooted<JSPropertyDescriptor> desc(cx);
     JS::RootedValue defineValue(cx);
 
     // Try a getter. Allow it to fill in the defaults.
     CHECK(JS_DefineProperty(cx, obj, "foo", defineValue,
-                            IgnoreAll | JSPROP_NATIVE_ACCESSORS | JSPROP_SHARED,
-                            (JSPropertyOp)Getter));
+                            IgnoreAll | JSPROP_SHARED,
+                            Getter));
 
     CHECK(JS_GetPropertyDescriptor(cx, obj, "foo", &desc));
 
@@ -58,8 +58,8 @@ BEGIN_TEST(testDefinePropertyIgnoredAttributes)
 
     // Install another configurable property, so we can futz with it.
     CHECK(JS_DefineProperty(cx, obj, "bar", defineValue,
-                            AllowConfigure | JSPROP_NATIVE_ACCESSORS | JSPROP_SHARED,
-                            (JSPropertyOp)Getter));
+                            AllowConfigure | JSPROP_SHARED,
+                            Getter));
     CHECK(JS_GetPropertyDescriptor(cx, obj, "bar", &desc));
     CHECK(CheckDescriptor(desc, false, true, true));
 
@@ -68,9 +68,8 @@ BEGIN_TEST(testDefinePropertyIgnoredAttributes)
     CHECK(JS_DefineProperty(cx, obj, "bar", defineValue,
                             AllowEnumerate |
                             JSPROP_ENUMERATE |
-                            JSPROP_NATIVE_ACCESSORS |
                             JSPROP_SHARED,
-                            (JSPropertyOp)Getter));
+                            Getter));
     CHECK(JS_GetPropertyDescriptor(cx, obj, "bar", &desc));
     CHECK(CheckDescriptor(desc, true, true, true));
 

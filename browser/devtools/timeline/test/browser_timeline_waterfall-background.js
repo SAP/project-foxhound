@@ -6,7 +6,7 @@
  * the container bounds.
  */
 
-let test = Task.async(function*() {
+add_task(function*() {
   let { target, panel } = yield initTimelinePanel(SIMPLE_URL);
   let { $, EVENTS, TimelineView, TimelineController } = panel.panelWin;
 
@@ -17,7 +17,7 @@ let test = Task.async(function*() {
   panel.panelWin.on(EVENTS.OVERVIEW_UPDATED, () => updated++);
 
   ok((yield waitUntil(() => updated > 0)),
-    "The overview graph was updated a bunch of times.");
+    "The overview graphs were updated a bunch of times.");
   ok((yield waitUntil(() => TimelineController.getMarkers().length > 0)),
     "There are some markers available.");
 
@@ -41,7 +41,4 @@ let test = Task.async(function*() {
     "The canvas width is correct.");
   is(TimelineView.waterfall._canvas.height, 1,
     "The canvas height is correct.");
-
-  yield teardown(panel);
-  finish();
 });

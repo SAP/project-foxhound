@@ -112,7 +112,7 @@ const MOBILE_DUN_RETRY_INTERVAL        = 5000;
 const MOBILE_DUN_MAX_RETRIES           = 5;
 
 // Connection Type for Network Information API
-const CONNECTION_TYPE_CULLULAR  = 0;
+const CONNECTION_TYPE_CELLULAR  = 0;
 const CONNECTION_TYPE_BLUETOOTH = 1;
 const CONNECTION_TYPE_ETHERNET  = 2;
 const CONNECTION_TYPE_WIFI      = 3;
@@ -134,12 +134,51 @@ function defineLazyRegExp(obj, name, pattern) {
   });
 }
 
+function NetworkInterfaceLinks()
+{
+  this.resetLinks();
+}
+NetworkInterfaceLinks.prototype = {
+  linkRoutes: null,
+  gateways: null,
+  interfaceName: null,
+  extraRoutes: null,
+
+  setLinks: function(linkRoutes, gateways, interfaceName) {
+    this.linkRoutes = linkRoutes;
+    this.gateways = gateways;
+    this.interfaceName = interfaceName;
+  },
+
+  resetLinks: function() {
+    this.linkRoutes = [];
+    this.gateways = [];
+    this.interfaceName = "";
+    this.extraRoutes = [];
+  },
+
+  compareGateways: function(gateways) {
+    if (this.gateways.length != gateways.length) {
+      return false;
+    }
+
+    for (let i = 0; i < this.gateways.length; i++) {
+      if (this.gateways[i] != gateways[i]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+};
+
 /**
  * This component watches for network interfaces changing state and then
  * adjusts routes etc. accordingly.
  */
 function NetworkManager() {
   this.networkInterfaces = {};
+  this.networkInterfaceLinks = {};
   Services.obs.addObserver(this, TOPIC_XPCOM_SHUTDOWN, false);
   Services.obs.addObserver(this, TOPIC_MOZSETTINGS_CHANGED, false);
 
@@ -233,10 +272,9 @@ NetworkManager.prototype = {
       case TOPIC_XPCOM_SHUTDOWN:
         Services.obs.removeObserver(this, TOPIC_XPCOM_SHUTDOWN);
         Services.obs.removeObserver(this, TOPIC_MOZSETTINGS_CHANGED);
-#ifdef MOZ_B2G_RIL
+
         this.dunConnectTimer.cancel();
         this.dunRetryTimer.cancel();
-#endif
         break;
     }
   },
@@ -244,23 +282,20 @@ NetworkManager.prototype = {
   receiveMessage: function(aMsg) {
     switch (aMsg.name) {
       case "NetworkInterfaceList:ListInterface": {
-#ifdef MOZ_B2G_RIL
         let excludeMms = aMsg.json.excludeMms;
         let excludeSupl = aMsg.json.excludeSupl;
         let excludeIms = aMsg.json.excludeIms;
         let excludeDun = aMsg.json.excludeDun;
-#endif
         let interfaces = [];
 
         for each (let i in this.networkInterfaces) {
-#ifdef MOZ_B2G_RIL
           if ((i.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS && excludeMms) ||
               (i.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_SUPL && excludeSupl) ||
               (i.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_IMS && excludeIms) ||
               (i.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN && excludeDun)) {
             continue;
           }
-#endif
+
           let ips = {};
           let prefixLengths = {};
           i.getAddresses(ips, prefixLengths);
@@ -284,12 +319,12 @@ NetworkManager.prototype = {
 
   getNetworkId: function(network) {
     let id = "device";
-#ifdef MOZ_B2G_RIL
-    if (network instanceof Ci.nsIRilNetworkInterface) {
-      let rilNetwork = network.QueryInterface(Ci.nsIRilNetworkInterface);
-      id = "ril" + rilNetwork.serviceId;
-    }
-#endif
+    try {
+      if (network instanceof Ci.nsIRilNetworkInterface) {
+        let rilNetwork = network.QueryInterface(Ci.nsIRilNetworkInterface);
+        id = "ril" + rilNetwork.serviceId;
+      }
+    } catch (e) {}
 
     return id + "-" + network.type;
   },
@@ -307,9 +342,29 @@ NetworkManager.prototype = {
                                  Cr.NS_ERROR_INVALID_ARG);
     }
     this.networkInterfaces[networkId] = network;
+    this.networkInterfaceLinks[networkId] = new NetworkInterfaceLinks();
+
+    if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN) {
+      debug("Force setting " + SETTINGS_DUN_REQUIRED + " to true.");
+      this.tetheringSettings[SETTINGS_DUN_REQUIRED] = true;
+    }
 
     Services.obs.notifyObservers(network, TOPIC_INTERFACE_REGISTERED, null);
     debug("Network '" + networkId + "' registered.");
+  },
+
+  _addSubnetRoutes: function(network) {
+    let ips = {};
+    let prefixLengths = {};
+    let length = network.getAddresses(ips, prefixLengths);
+    for (let i = 0; i < length; i++) {
+      debug('Adding subnet routes: ' + ips.value[i] + '/' + prefixLengths.value[i]);
+      gNetworkService.modifyRoute(Ci.nsINetworkService.MODIFY_ROUTE_ADD,
+                                  network.name, ips.value[i], prefixLengths.value[i])
+        .catch((aError) => {
+          debug("_addSubnetRoutes error: " + aError);
+        });
+    }
   },
 
   updateNetworkInterface: function(network) {
@@ -324,80 +379,101 @@ NetworkManager.prototype = {
     }
     debug("Network " + network.type + "/" + network.name +
           " changed state to " + network.state);
+
+    // Note that since Lollipop we need to allocate and initialize
+    // something through netd, so we add createNetwork/destroyNetwork
+    // to deal with that explicitly.
+
     switch (network.state) {
       case Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED:
-#ifdef MOZ_B2G_RIL
-        // Add host route for data calls
-        if (this.isNetworkTypeMobile(network.type)) {
-          gNetworkService.removeHostRoutes(network.name);
-          this.setHostRoutes(network);
-        }
-        // Dun type is a special case where we add the default route to a
-        // secondary table.
-        if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN) {
-          this.setSecondaryDefaultRoute(network);
-        }
-#endif
-        // Remove pre-created default route and let setAndConfigureActive()
-        // to set default route only on preferred network
-        gNetworkService.removeDefaultRoute(network);
-        this.setAndConfigureActive();
-#ifdef MOZ_B2G_RIL
-        // Update data connection when Wifi connected/disconnected
-        if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
-          for (let i = 0; i < this.mRil.numRadioInterfaces; i++) {
-            this.mRil.getRadioInterface(i).updateRILNetworkInterface();
+        gNetworkService.createNetwork(network.name, () => {
+          // Add host route for data calls
+          if (this.isNetworkTypeMobile(network.type)) {
+            let currentInterfaceLinks = this.networkInterfaceLinks[networkId];
+            let newLinkRoutes = network.getDnses().concat(network.httpProxyHost);
+            // If gateways have changed, remove all old routes first.
+            this._handleGateways(networkId, network.getGateways())
+              .then(() => this._updateRoutes(currentInterfaceLinks.linkRoutes,
+                                             newLinkRoutes,
+                                             network.getGateways(), network.name))
+              .then(() => currentInterfaceLinks.setLinks(newLinkRoutes,
+                                                         network.getGateways(),
+                                                         network.name));
           }
-        }
-#endif
 
-        this.onConnectionChanged(network);
+          // Remove pre-created default route and let setAndConfigureActive()
+          // to set default route only on preferred network
+          gNetworkService.removeDefaultRoute(network);
 
-        // Probing the public network accessibility after routing table is ready
-        CaptivePortalDetectionHelper
-          .notify(CaptivePortalDetectionHelper.EVENT_CONNECT, this.active);
+          // Dun type is a special case where we add the default route to a
+          // secondary table.
+          if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN) {
+            this.setSecondaryDefaultRoute(network);
+          }
+
+          this._addSubnetRoutes(network);
+          this.setAndConfigureActive();
+
+          // Update data connection when Wifi connected/disconnected
+          if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI && this.mRil) {
+            for (let i = 0; i < this.mRil.numRadioInterfaces; i++) {
+              this.mRil.getRadioInterface(i).updateRILNetworkInterface();
+            }
+          }
+
+          this.onConnectionChanged(network);
+
+          // Probing the public network accessibility after routing table is ready
+          CaptivePortalDetectionHelper
+            .notify(CaptivePortalDetectionHelper.EVENT_CONNECT, this.active);
+
+          // Notify outer modules like MmsService to start the transaction after
+          // the configuration of the network interface is done.
+          Services.obs.notifyObservers(network, TOPIC_CONNECTION_STATE_CHANGED,
+                                       this.convertConnectionType(network));
+        });
+
         break;
       case Ci.nsINetworkInterface.NETWORK_STATE_DISCONNECTED:
-#ifdef MOZ_B2G_RIL
         // Remove host route for data calls
         if (this.isNetworkTypeMobile(network.type)) {
-          this.removeHostRoutes(network);
+          this._cleanupAllHostRoutes(networkId);
         }
-
         // Remove secondary default route for dun.
         if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN) {
           this.removeSecondaryDefaultRoute(network);
         }
-#endif
         // Remove routing table in /proc/net/route
         if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
           gNetworkService.resetRoutingTable(network);
-#ifdef MOZ_B2G_RIL
         } else if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE) {
           gNetworkService.removeDefaultRoute(network);
-#endif
+        }
+        // Clear http proxy on active network.
+        if (this.active && network.type == this.active.type) {
+          gNetworkService.clearNetworkProxy();
         }
 
         // Abort ongoing captive portal detection on the wifi interface
         CaptivePortalDetectionHelper
           .notify(CaptivePortalDetectionHelper.EVENT_DISCONNECT, network);
         this.setAndConfigureActive();
-#ifdef MOZ_B2G_RIL
+
         // Update data connection when Wifi connected/disconnected
-        if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
+        if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI && this.mRil) {
           for (let i = 0; i < this.mRil.numRadioInterfaces; i++) {
             this.mRil.getRadioInterface(i).updateRILNetworkInterface();
           }
         }
-#endif
+
+        gNetworkService.destroyNetwork(network.name, () => {
+          // Notify outer modules like MmsService to start the transaction after
+          // the configuration of the network interface is done.
+          Services.obs.notifyObservers(network, TOPIC_CONNECTION_STATE_CHANGED,
+                                       this.convertConnectionType(network));
+        });
         break;
     }
-#ifdef MOZ_B2G_RIL
-    // Notify outer modules like MmsService to start the transaction after
-    // the configuration of the network interface is done.
-    Services.obs.notifyObservers(network, TOPIC_CONNECTION_STATE_CHANGED,
-                                 this.convertConnectionType(network));
-#endif
   },
 
   unregisterNetworkInterface: function(network) {
@@ -410,7 +486,19 @@ NetworkManager.prototype = {
       throw Components.Exception("No network with that type registered.",
                                  Cr.NS_ERROR_INVALID_ARG);
     }
+
+    // This is for in case a network gets unregistered without being
+    // DISCONNECTED.
+    if (this.isNetworkTypeMobile(network.type)) {
+      this._cleanupAllHostRoutes(networkId);
+    }
+
     delete this.networkInterfaces[networkId];
+
+    if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN) {
+      this.tetheringSettings[SETTINGS_DUN_REQUIRED] =
+        libcutils.property_get("ro.tethering.dun_required") === "1";
+    }
 
     Services.obs.notifyObservers(network, TOPIC_INTERFACE_UNREGISTERED, null);
     debug("Network '" + networkId + "' unregistered.");
@@ -420,6 +508,8 @@ NetworkManager.prototype = {
 
   networkInterfaces: null,
 
+  networkInterfaceLinks: null,
+
   _dataDefaultServiceId: null,
 
   _preferredNetworkType: DEFAULT_PREFERRED_NETWORK_TYPE,
@@ -427,12 +517,8 @@ NetworkManager.prototype = {
     return this._preferredNetworkType;
   },
   set preferredNetworkType(val) {
-#ifdef MOZ_B2G_RIL
     if ([Ci.nsINetworkInterface.NETWORK_TYPE_WIFI,
          Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE].indexOf(val) == -1) {
-#else
-    if (val != Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
-#endif
       throw "Invalid network type";
     }
     this._preferredNetworkType = val;
@@ -442,24 +528,49 @@ NetworkManager.prototype = {
   _overriddenActive: null,
 
   overrideActive: function(network) {
-#ifdef MOZ_B2G_RIL
-    if (this.isNetworkTypeSecondaryMobile(network.type)) {
+    if ([Ci.nsINetworkInterface.NETWORK_TYPE_WIFI,
+         Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE].indexOf(val) == -1) {
       throw "Invalid network type";
     }
-#endif
+
     this._overriddenActive = network;
     this.setAndConfigureActive();
   },
 
-  _updateRoutes: function(doAdd, ipAddresses, networkName, gateways) {
+  _updateRoutes: function(oldLinks, newLinks, gateways, interfaceName) {
+    // Returns items that are in base but not in target.
+    function getDifference(base, target) {
+      return base.filter(function(i) { return target.indexOf(i) < 0; });
+    }
+
+    let addedLinks = getDifference(newLinks, oldLinks);
+    let removedLinks = getDifference(oldLinks, newLinks);
+
+    if (addedLinks.length === 0 && removedLinks.length === 0) {
+      return Promise.resolve();
+    }
+
+    return this._setHostRoutes(false, removedLinks, interfaceName, gateways)
+      .then(this._setHostRoutes(true, addedLinks, interfaceName, gateways));
+  },
+
+  _setHostRoutes: function(doAdd, ipAddresses, networkName, gateways) {
+    let getMaxPrefixLength = (aIp) => {
+      return aIp.match(this.REGEXP_IPV4) ? IPV4_MAX_PREFIX_LENGTH : IPV6_MAX_PREFIX_LENGTH;
+    }
+
     let promises = [];
 
     ipAddresses.forEach((aIpAddress) => {
       let gateway = this.selectGateway(gateways, aIpAddress);
       if (gateway) {
         promises.push((doAdd)
-          ? gNetworkService.addHostRoute(networkName, gateway, aIpAddress)
-          : gNetworkService.removeHostRoute(networkName, gateway, aIpAddress));
+          ? gNetworkService.modifyRoute(Ci.nsINetworkService.MODIFY_ROUTE_ADD,
+                                        networkName, aIpAddress,
+                                        getMaxPrefixLength(aIpAddress), gateway)
+          : gNetworkService.modifyRoute(Ci.nsINetworkService.MODIFY_ROUTE_REMOVE,
+                                        networkName, aIpAddress,
+                                        getMaxPrefixLength(aIpAddress), gateway));
       }
     });
 
@@ -483,10 +594,20 @@ NetworkManager.prototype = {
     }
 
     return this.resolveHostname(network, host)
-      .then((ipAddresses) => this._updateRoutes(true,
-                                                ipAddresses,
-                                                network.name,
-                                                network.getGateways()));
+      .then((ipAddresses) => {
+        let promises = [];
+        let networkId = this.getNetworkId(network);
+
+        ipAddresses.forEach((aIpAddress) => {
+          let promise =
+            this._setHostRoutes(true, [aIpAddress], network.name, network.getGateways())
+              .then(() => this.networkInterfaceLinks[networkId].extraRoutes.push(aIpAddress));
+
+          promises.push(promise);
+        });
+
+        return Promise.all(promises);
+      });
   },
 
   removeHostRoute: function(network, host) {
@@ -495,13 +616,31 @@ NetworkManager.prototype = {
     }
 
     return this.resolveHostname(network, host)
-      .then((ipAddresses) => this._updateRoutes(false,
-                                                ipAddresses,
-                                                network.name,
-                                                network.getGateways()));
+      .then((ipAddresses) => {
+        let promises = [];
+        let networkId = this.getNetworkId(network);
+
+        ipAddresses.forEach((aIpAddress) => {
+          let found = this.networkInterfaceLinks[networkId].extraRoutes.indexOf(aIpAddress);
+          if (found < 0) {
+            return; // continue
+          }
+
+          let promise =
+            this._setHostRoutes(false, [aIpAddress], network.name, network.getGateways())
+              .then(() => {
+                this.networkInterfaceLinks[networkId].extraRoutes.splice(found, 1);
+              }, () => {
+                // We should remove it even if the operation failed.
+                this.networkInterfaceLinks[networkId].extraRoutes.splice(found, 1);
+              });
+          promises.push(promise);
+        });
+
+        return Promise.all(promises);
+      });
   },
 
-#ifdef MOZ_B2G_RIL
   isNetworkTypeSecondaryMobile: function(type) {
     return (type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_MMS ||
             type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_SUPL ||
@@ -514,18 +653,47 @@ NetworkManager.prototype = {
             this.isNetworkTypeSecondaryMobile(type));
   },
 
-  setHostRoutes: function(network) {
-    let hosts = network.getDnses().concat(network.httpProxyHost);
+  _handleGateways: function(networkId, gateways) {
+    let currentNetworkLinks = this.networkInterfaceLinks[networkId];
+    if (currentNetworkLinks.gateways.length == 0 ||
+        currentNetworkLinks.compareGateways(gateways)) {
+      return Promise.resolve();
+    }
 
-    return this._updateRoutes(true, hosts, network.name, network.getGateways());
+    let currentExtraRoutes = currentNetworkLinks.extraRoutes;
+    return this._cleanupAllHostRoutes(networkId)
+      .then(() => {
+        // If gateways have changed, re-add extra host routes with new gateways.
+        if (currentExtraRoutes.length > 0) {
+          this._setHostRoutes(true,
+                              currentExtraRoutes,
+                              currentNetworkLinks.interfaceName,
+                              gateways)
+          .then(() => {
+            currentNetworkLinks.extraRoutes = currentExtraRoutes;
+          });
+        }
+      });
   },
 
-  removeHostRoutes: function(network) {
-    let hosts = network.getDnses().concat(network.httpProxyHost);
+  _cleanupAllHostRoutes: function(networkId) {
+    let currentNetworkLinks = this.networkInterfaceLinks[networkId];
+    let hostRoutes = currentNetworkLinks.linkRoutes.concat(
+      currentNetworkLinks.extraRoutes);
 
-    return this._updateRoutes(false, hosts, network.name, network.getGateways());
+    if (hostRoutes.length === 0) {
+      return Promise.resolve();
+    }
+
+    return this._setHostRoutes(false,
+                               hostRoutes,
+                               currentNetworkLinks.interfaceName,
+                               currentNetworkLinks.gateways)
+      .catch((aError) => {
+        debug("Error (" + aError + ") on _cleanupAllHostRoutes, keep proceeding.");
+      })
+      .then(() => currentNetworkLinks.resetLinks());
   },
-#endif
 
   selectGateway: function(gateways, host) {
     for (let i = 0; i < gateways.length; i++) {
@@ -538,7 +706,6 @@ NetworkManager.prototype = {
     return null;
   },
 
-#ifdef MOZ_B2G_RIL
   setSecondaryDefaultRoute: function(network) {
     let gateways = network.getGateways();
     for (let i = 0; i < gateways.length; i++) {
@@ -579,7 +746,6 @@ NetworkManager.prototype = {
       gNetworkService.removeSecondaryRoute(network.name, route);
     }
   },
-#endif // MOZ_B2G_RIL
 
   /**
    * Determine the active interface and configure it.
@@ -611,29 +777,28 @@ NetworkManager.prototype = {
 
     // Find a suitable network interface to activate.
     this.active = null;
-#ifdef MOZ_B2G_RIL
+
     let defaultDataNetwork;
-#endif
     for each (let network in this.networkInterfaces) {
       if (network.state != Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED) {
         continue;
       }
-#ifdef MOZ_B2G_RIL
+
       if (network.type == Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE) {
         defaultDataNetwork = network;
       }
-#endif
+
       this.active = network;
       if (network.type == this.preferredNetworkType) {
         debug("Found our preferred type of network: " + network.name);
         break;
       }
     }
+
     if (this.active) {
-#ifdef MOZ_B2G_RIL
-      // Give higher priority to default data APN than seconary APN.
+      // Give higher priority to default data APN than secondary APN.
       // If default data APN is not connected, we still set default route
-      // and DNS on seconary APN.
+      // and DNS on secondary APN.
       if (defaultDataNetwork &&
           this.isNetworkTypeSecondaryMobile(this.active.type) &&
           this.active.type != this.preferredNetworkType) {
@@ -643,11 +808,8 @@ NetworkManager.prototype = {
       if (this.isNetworkTypeSecondaryMobile(this.active.type)) {
         gNetworkService.setDNS(this.active, function() {});
       } else {
-#endif // MOZ_B2G_RIL
         this._setDefaultRouteAndDNS(this.active, oldActive);
-#ifdef MOZ_B2G_RIL
       }
-#endif
     }
 
     if (this.active != oldActive) {
@@ -727,7 +889,7 @@ NetworkManager.prototype = {
       case Ci.nsINetworkInterface.NETWORK_TYPE_WIFI:
         return CONNECTION_TYPE_WIFI;
       case Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE:
-        return CONNECTION_TYPE_CULLULAR;
+        return CONNECTION_TYPE_CELLULAR;
     }
   },
 
@@ -747,10 +909,8 @@ NetworkManager.prototype = {
     this.tetheringSettings[SETTINGS_WIFI_DHCPSERVER_STARTIP] = DEFAULT_WIFI_DHCPSERVER_STARTIP;
     this.tetheringSettings[SETTINGS_WIFI_DHCPSERVER_ENDIP]   = DEFAULT_WIFI_DHCPSERVER_ENDIP;
 
-#ifdef MOZ_B2G_RIL
     this.tetheringSettings[SETTINGS_DUN_REQUIRED] =
       libcutils.property_get("ro.tethering.dun_required") === "1";
-#endif
   },
 
   _usbTetheringRequestCount: 0,
@@ -813,14 +973,14 @@ NetworkManager.prototype = {
   getNetworkInterface: function(type, serviceId) {
     for each (let network in this.networkInterfaces) {
       if (network.type == type) {
-#ifdef MOZ_B2G_RIL
-        if (network instanceof Ci.nsIRilNetworkInterface) {
-          let rilNetwork = network.QueryInterface(Ci.nsIRilNetworkInterface);
-          if (rilNetwork.serviceId != serviceId) {
-            continue;
+        try {
+          if (network instanceof Ci.nsIRilNetworkInterface) {
+            let rilNetwork = network.QueryInterface(Ci.nsIRilNetworkInterface);
+            if (rilNetwork.serviceId != serviceId) {
+              continue;
+            }
           }
-        }
-#endif
+        } catch (e) {}
         return network;
       }
     }
@@ -864,7 +1024,6 @@ NetworkManager.prototype = {
     }
   },
 
-#ifdef MOZ_B2G_RIL
   dunConnectTimer: Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer),
   /**
    * Callback when dun connection fails to connect within timeout.
@@ -887,8 +1046,10 @@ NetworkManager.prototype = {
       gMobileConnectionService.getItemByServiceId(this._dataDefaultServiceId);
     let data = connection && connection.data;
     if (data && data.state === "registered") {
+      let ril = this.mRil.getRadioInterface(this._dataDefaultServiceId);
+
       this.dunRetryTimes = 0;
-      ril.setupDataCallByType("dun");
+      ril.setupDataCallByType(Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN);
       this.dunConnectTimer.cancel();
       this.dunConnectTimer.
         initWithCallback(this.onDunConnectTimerTimeout.bind(this),
@@ -931,7 +1092,7 @@ NetworkManager.prototype = {
 
       if (dun && (dun.state == Ci.nsINetworkInterface.NETWORK_STATE_CONNECTED)) {
         this.mRil.getRadioInterface(this._dataDefaultServiceId)
-          .deactivateDataCallByType("dun");
+          .deactivateDataCallByType(Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN);
       }
       return;
     }
@@ -948,7 +1109,6 @@ NetworkManager.prototype = {
     this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = dun.name;
     callback(dun);
   },
-#endif
 
   handleUSBTetheringToggle: function(enable) {
     debug("handleUSBTetheringToggle: " + enable);
@@ -978,7 +1138,6 @@ NetworkManager.prototype = {
     this.tetheringSettings[SETTINGS_USB_ENABLED] = true;
     this._usbTetheringAction = TETHERING_STATE_ONGOING;
 
-#ifdef MOZ_B2G_RIL
     if (this.tetheringSettings[SETTINGS_DUN_REQUIRED]) {
       this.handleDunConnection(true, function(network) {
         if (!network){
@@ -990,14 +1149,13 @@ NetworkManager.prototype = {
       }.bind(this));
       return;
     }
-#endif
 
     if (this.active) {
       this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = this.active.name;
     } else {
       let mobile = this.getNetworkInterface(
         Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE, this._dataDefaultServiceId);
-      if (mobile) {
+      if (mobile && mobile.name) {
         this._tetheringInterface[TETHERING_TYPE_USB].externalInterface = mobile.name;
       }
     }
@@ -1076,13 +1234,12 @@ NetworkManager.prototype = {
 
     this._wifiTetheringRequestOngoing = true;
     gNetworkService.setWifiTethering(enable, config, (function(error) {
-#ifdef MOZ_B2G_RIL
       // Disconnect dun on error or when wifi tethering is disabled.
       if (this.tetheringSettings[SETTINGS_DUN_REQUIRED] &&
           (!enable || error)) {
         this.handleDunConnection(false);
       }
-#endif
+
       let resetSettings = error;
       debug('gNetworkService.setWifiTethering finished');
       this.notifyError(resetSettings, callback, error);
@@ -1125,7 +1282,6 @@ NetworkManager.prototype = {
 
     this._tetheringInterface[TETHERING_TYPE_WIFI].internalInterface = network.name;
 
-#ifdef MOZ_B2G_RIL
     if (this.tetheringSettings[SETTINGS_DUN_REQUIRED]) {
       this.handleDunConnection(true, function(config, callback, network) {
         if (!network) {
@@ -1137,12 +1293,11 @@ NetworkManager.prototype = {
       }.bind(this, config, callback));
       return;
     }
-#endif
 
     let mobile = this.getNetworkInterface(
       Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE, this._dataDefaultServiceId);
     // Update the real interface name
-    if (mobile) {
+    if (mobile && mobile.name) {
       this._tetheringInterface[TETHERING_TYPE_WIFI].externalInterface = mobile.name;
     }
 
@@ -1210,21 +1365,17 @@ NetworkManager.prototype = {
       // Skip others request when we found an error.
       this._usbTetheringRequestCount = 0;
       this._usbTetheringAction = TETHERING_STATE_IDLE;
-#ifdef MOZ_B2G_RIL
       if (this.tetheringSettings[SETTINGS_DUN_REQUIRED]) {
         this.handleDunConnection(false);
       }
-#endif
     } else {
       if (enable) {
         this._usbTetheringAction = TETHERING_STATE_ACTIVE;
       } else {
         this._usbTetheringAction = TETHERING_STATE_IDLE;
-#ifdef MOZ_B2G_RIL
         if (this.tetheringSettings[SETTINGS_DUN_REQUIRED]) {
           this.handleDunConnection(false);
         }
-#endif
       }
 
       this.handleLastUsbTetheringRequest();
@@ -1247,7 +1398,6 @@ NetworkManager.prototype = {
       return;
     }
 
-#ifdef MOZ_B2G_RIL
     if (this.tetheringSettings[SETTINGS_DUN_REQUIRED] &&
         network.type === Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN) {
       this.dunConnectTimer.cancel();
@@ -1260,14 +1410,12 @@ NetworkManager.prototype = {
       }
       return;
     }
-#endif
 
     if (!this.tetheringSettings[SETTINGS_USB_ENABLED]) {
       debug("Usb tethering settings is not enabled");
       return;
     }
 
-#ifdef MOZ_B2G_RIL
     if (this.tetheringSettings[SETTINGS_DUN_REQUIRED] &&
         network.type === Ci.nsINetworkInterface.NETWORK_TYPE_MOBILE_DUN &&
         this._tetheringInterface[TETHERING_TYPE_USB].externalInterface ===
@@ -1275,7 +1423,6 @@ NetworkManager.prototype = {
       debug("Dun required and dun interface is the same");
       return;
     }
-#endif
 
     if (this._tetheringInterface[TETHERING_TYPE_USB].externalInterface ===
         this.active.name) {
@@ -1311,6 +1458,10 @@ NetworkManager.prototype = {
 
   _setDefaultRouteAndDNS: function(network, oldInterface) {
     gNetworkService.setDefaultRoute(network, oldInterface, function(success) {
+      if (!success) {
+        gNetworkService.destroyNetwork(network, function() {});
+        return;
+      }
       gNetworkService.setDNS(network, function(result) {
         gNetworkService.setNetworkProxy(network);
       });
@@ -1392,11 +1543,13 @@ let CaptivePortalDetectionHelper = (function() {
   };
 }());
 
-#ifdef MOZ_B2G_RIL
-XPCOMUtils.defineLazyServiceGetter(NetworkManager.prototype, "mRil",
-                                   "@mozilla.org/ril;1",
-                                   "nsIRadioInterfaceLayer");
-#endif
+XPCOMUtils.defineLazyGetter(NetworkManager.prototype, "mRil", function() {
+  try {
+    return Cc["@mozilla.org/ril;1"].getService(Ci.nsIRadioInterfaceLayer);
+  } catch (e) {}
+
+  return null;
+});
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([NetworkManager]);
 

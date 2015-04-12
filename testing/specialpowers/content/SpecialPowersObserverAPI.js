@@ -16,13 +16,15 @@ if (typeof(Cc) == 'undefined') {
 /**
  * Special Powers Exception - used to throw exceptions nicely
  **/
-function SpecialPowersException(aMsg) {
+this.SpecialPowersException = function SpecialPowersException(aMsg) {
   this.message = aMsg;
   this.name = "SpecialPowersException";
 }
 
-SpecialPowersException.prototype.toString = function() {
-  return this.name + ': "' + this.message + '"';
+SpecialPowersException.prototype = {
+  toString: function SPE_toString() {
+    return this.name + ': "' + this.message + '"';
+  }
 };
 
 this.SpecialPowersObserverAPI = function SpecialPowersObserverAPI() {
@@ -65,6 +67,20 @@ function parseKeyValuePairsFromFile(file) {
   is.close();
   fstream.close();
   return parseKeyValuePairs(contents);
+}
+
+function getTestPlugin(pluginName) {
+  var ph = Cc["@mozilla.org/plugin/host;1"]
+    .getService(Ci.nsIPluginHost);
+  var tags = ph.getPluginTags();
+  var name = pluginName || "Test Plug-in";
+  for (var tag of tags) {
+    if (tag.name == name) {
+      return tag;
+    }
+  }
+
+  return null;
 }
 
 SpecialPowersObserverAPI.prototype = {
@@ -170,7 +186,14 @@ SpecialPowersObserverAPI.prototype = {
     // to evaluate http:// urls...
     var scriptableStream = Cc["@mozilla.org/scriptableinputstream;1"]
                              .getService(Ci.nsIScriptableInputStream);
-    var channel = Services.io.newChannel(aUrl, null, null);
+    var channel = Services.io.newChannel2(aUrl,
+                                          null,
+                                          null,
+                                          null,      // aLoadingNode
+                                          Services.scriptSecurityManager.getSystemPrincipal(),
+                                          null,      // aTriggeringPrincipal
+                                          Ci.nsILoadInfo.SEC_NORMAL,
+                                          Ci.nsIContentPolicy.TYPE_OTHER);
     var input = channel.open();
     scriptableStream.init(input);
 
@@ -321,6 +344,16 @@ SpecialPowersObserverAPI.prototype = {
         return undefined;	// See comment at the beginning of this function.
       }
 
+      case "SPSetTestPluginEnabledState": {
+        var plugin = getTestPlugin(aMessage.data.pluginName);
+        if (!plugin) {
+          return undefined;
+        }
+        var oldEnabledState = plugin.enabledState;
+        plugin.enabledState = aMessage.data.newEnabledState;
+        return oldEnabledState;
+      }
+
       case "SPWebAppService": {
         let Webapps = {};
         Components.utils.import("resource://gre/modules/Webapps.jsm", Webapps);
@@ -329,6 +362,20 @@ SpecialPowersObserverAPI.prototype = {
             let val = Webapps.DOMApplicationRegistry.allAppsLaunchable;
             Webapps.DOMApplicationRegistry.allAppsLaunchable = aMessage.json.launchable;
             return val;
+          case "allow-unsigned-addons":
+            {
+              let utils = {};
+              Components.utils.import("resource://gre/modules/AppsUtils.jsm", utils);
+              utils.AppsUtils.allowUnsignedAddons = true;
+              return;
+            }
+          case "debug-customizations":
+            {
+              let scope = {};
+              Components.utils.import("resource://gre/modules/UserCustomizations.jsm", scope);
+              scope.UserCustomizations._debug = aMessage.json.value;
+              return;
+            }
           default:
             throw new SpecialPowersException("Invalid operation for SPWebAppsService");
         }
@@ -370,6 +417,7 @@ SpecialPowersObserverAPI.prototype = {
         sb.addMessageListener = (name, listener) => {
           this._chromeScriptListeners.push({ id: id, name: name, listener: listener });
         };
+        sb.browserElement = aMessage.target;
 
         // Also expose assertion functions
         let reporter = function (err, message, stack) {

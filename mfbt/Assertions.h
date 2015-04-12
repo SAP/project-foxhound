@@ -131,7 +131,7 @@ extern "C" {
  * method is primarily for internal use in this header, and only secondarily
  * for use in implementing release-build assertions.
  */
-static MOZ_ALWAYS_INLINE void
+static MOZ_COLD MOZ_ALWAYS_INLINE void
 MOZ_ReportAssertionFailure(const char* aStr, const char* aFilename, int aLine)
   MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS
 {
@@ -148,7 +148,7 @@ MOZ_ReportAssertionFailure(const char* aStr, const char* aFilename, int aLine)
 #endif
 }
 
-static MOZ_ALWAYS_INLINE void
+static MOZ_COLD MOZ_ALWAYS_INLINE void
 MOZ_ReportCrash(const char* aStr, const char* aFilename, int aLine)
   MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS
 {
@@ -198,7 +198,7 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
 #    define MOZ_REALLY_CRASH() \
        do { \
          ::__debugbreak(); \
-         *((volatile int*) NULL) = 123; \
+         *((volatile int*) NULL) = __LINE__; \
          ::TerminateProcess(::GetCurrentProcess(), 3); \
          ::MOZ_NoReturn(); \
        } while (0)
@@ -206,7 +206,7 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
 #    define MOZ_REALLY_CRASH() \
        do { \
          __debugbreak(); \
-         *((volatile int*) NULL) = 123; \
+         *((volatile int*) NULL) = __LINE__; \
          TerminateProcess(GetCurrentProcess(), 3); \
          MOZ_NoReturn(); \
        } while (0)
@@ -215,13 +215,13 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
 #  ifdef __cplusplus
 #    define MOZ_REALLY_CRASH() \
        do { \
-         *((volatile int*) NULL) = 123; \
+         *((volatile int*) NULL) = __LINE__; \
          ::abort(); \
        } while (0)
 #  else
 #    define MOZ_REALLY_CRASH() \
        do { \
-         *((volatile int*) NULL) = 123; \
+         *((volatile int*) NULL) = __LINE__; \
          abort(); \
        } while (0)
 #  endif
@@ -294,6 +294,13 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
  * MOZ_ASSERT has no effect in non-debug builds.  It is designed to catch bugs
  * *only* during debugging, not "in the field". If you want the latter, use
  * MOZ_RELEASE_ASSERT, which applies to non-debug builds as well.
+ *
+ * MOZ_DIAGNOSTIC_ASSERT works like MOZ_RELEASE_ASSERT in Nightly/Aurora and
+ * MOZ_ASSERT in Beta/Release - use this when a condition is potentially rare
+ * enough to require real user testing to hit, but is not security-sensitive.
+ * This can cause user pain, so use it sparingly. If a MOZ_DIAGNOSTIC_ASSERT
+ * is firing, it should promptly be converted to a MOZ_ASSERT while the failure
+ * is being investigated, rather than letting users suffer.
  */
 
 /*
@@ -302,19 +309,6 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
  */
 
 #ifdef __cplusplus
-#  if defined(__clang__)
-#    define MOZ_SUPPORT_ASSERT_CONDITION_TYPE_VALIDATION
-#  elif defined(__GNUC__)
-//   B2G GCC 4.4 has insufficient decltype support.
-#    if MOZ_GCC_VERSION_AT_LEAST(4, 5, 0)
-#      define MOZ_SUPPORT_ASSERT_CONDITION_TYPE_VALIDATION
-#    endif
-#  elif defined(_MSC_VER)
-//   Disabled for now because of insufficient decltype support. Bug 1004028.
-#  endif
-#endif
-
-#ifdef MOZ_SUPPORT_ASSERT_CONDITION_TYPE_VALIDATION
 #  include "mozilla/TypeTraits.h"
 namespace mozilla {
 namespace detail {
@@ -391,6 +385,12 @@ struct AssertionConditionType
 #  define MOZ_ASSERT(...) do { } while (0)
 #endif /* DEBUG */
 
+#ifdef RELEASE_BUILD
+#  define MOZ_DIAGNOSTIC_ASSERT MOZ_ASSERT
+#else
+#  define MOZ_DIAGNOSTIC_ASSERT MOZ_RELEASE_ASSERT
+#endif
+
 /*
  * MOZ_ASSERT_IF(cond1, cond2) is equivalent to MOZ_ASSERT(cond2) if cond1 is
  * true.
@@ -418,23 +418,8 @@ struct AssertionConditionType
  * should use MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE because it has extra
  * asserts.
  */
-#if defined(__clang__)
+#if defined(__clang__) || defined(__GNUC__)
 #  define MOZ_ASSUME_UNREACHABLE_MARKER() __builtin_unreachable()
-#elif defined(__GNUC__)
-   /*
-    * __builtin_unreachable() was implemented in gcc 4.5.  If we don't have
-    * that, call a noreturn function; abort() will do nicely.  Qualify the call
-    * in C++ in case there's another abort() visible in local scope.
-    */
-#  if MOZ_GCC_VERSION_AT_LEAST(4, 5, 0)
-#    define MOZ_ASSUME_UNREACHABLE_MARKER() __builtin_unreachable()
-#  else
-#    ifdef __cplusplus
-#      define MOZ_ASSUME_UNREACHABLE_MARKER() ::abort()
-#    else
-#      define MOZ_ASSUME_UNREACHABLE_MARKER() abort()
-#    endif
-#  endif
 #elif defined(_MSC_VER)
 #  define MOZ_ASSUME_UNREACHABLE_MARKER() __assume(0)
 #else

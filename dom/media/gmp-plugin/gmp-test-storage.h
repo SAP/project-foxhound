@@ -12,6 +12,7 @@
 
 class ReadContinuation {
 public:
+  virtual ~ReadContinuation() {}
   virtual void ReadComplete(GMPErr aErr, const std::string& aData) = 0;
 };
 
@@ -26,13 +27,15 @@ ReadRecord(const std::string& aRecordName,
 GMPErr
 WriteRecord(const std::string& aRecordName,
             const std::string& aData,
-            GMPTask* aContinuation);
+            GMPTask* aOnSuccess,
+            GMPTask* aOnFailure);
 
 GMPErr
 WriteRecord(const std::string& aRecordName,
             const uint8_t* aData,
             uint32_t aNumBytes,
-            GMPTask* aContinuation);
+            GMPTask* aOnSuccess,
+            GMPTask* aOnFailure);
 
 GMPErr
 GMPOpenRecord(const char* aName,
@@ -45,11 +48,16 @@ GMPRunOnMainThread(GMPTask* aTask);
 
 class OpenContinuation {
 public:
+  virtual ~OpenContinuation() {}
   virtual void OpenComplete(GMPErr aStatus, GMPRecord* aRecord) = 0;
 };
 
-GMPErr
+void
 GMPOpenRecord(const std::string& aRecordName,
-           OpenContinuation* aContinuation);
+              OpenContinuation* aContinuation);
+
+GMPErr
+GMPEnumRecordNames(RecvGMPRecordIteratorPtr aRecvIteratorFunc,
+                   void* aUserArg);
 
 #endif // TEST_GMP_STORAGE_H__

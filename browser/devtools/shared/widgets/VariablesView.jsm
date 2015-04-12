@@ -2048,7 +2048,7 @@ Scope.prototype = {
     let parentView = self.ownerView;
     let topView;
 
-    while (topView = parentView.ownerView) {
+    while ((topView = parentView.ownerView)) {
       parentView = topView;
     }
     return parentView;
@@ -2116,7 +2116,7 @@ Scope.prototype = {
 // Creating maps and arrays thousands of times for variables or properties
 // with a large number of children fills up a lot of memory. Make sure
 // these are instantiated only if needed.
-DevToolsUtils.defineLazyPrototypeGetter(Scope.prototype, "_store", Map);
+DevToolsUtils.defineLazyPrototypeGetter(Scope.prototype, "_store", () => new Map());
 DevToolsUtils.defineLazyPrototypeGetter(Scope.prototype, "_enumItems", Array);
 DevToolsUtils.defineLazyPrototypeGetter(Scope.prototype, "_nonEnumItems", Array);
 
@@ -2419,10 +2419,27 @@ Variable.prototype = Heritage.extend(Scope.prototype, {
       this._valueLabel.classList.remove(VariablesView.getClass(prevGrip));
     }
     this._valueGrip = aGrip;
-    this._valueString = VariablesView.getString(aGrip, {
-      concise: true,
-      noEllipsis: true,
-    });
+
+    if(aGrip && (aGrip.optimizedOut || aGrip.uninitialized || aGrip.missingArguments)) {
+      if(aGrip.optimizedOut) {
+        this._valueString = STR.GetStringFromName("variablesViewOptimizedOut")
+      }
+      else if(aGrip.uninitialized) {
+        this._valueString = STR.GetStringFromName("variablesViewUninitialized")
+      }
+      else if(aGrip.missingArguments) {
+        this._valueString = STR.GetStringFromName("variablesViewMissingArgs")
+      }
+      this.eval = null;
+    }
+    else {
+      this._valueString = VariablesView.getString(aGrip, {
+        concise: true,
+        noEllipsis: true,
+      });
+      this.eval = this.ownerView.eval;
+    }
+
     this._valueClassName = VariablesView.getClass(aGrip);
 
     this._valueLabel.classList.add(this._valueClassName);
@@ -3056,10 +3073,10 @@ Property.prototype = Heritage.extend(Variable.prototype, {
 /**
  * A generator-iterator over the VariablesView, Scopes, Variables and Properties.
  */
-VariablesView.prototype["@@iterator"] =
-Scope.prototype["@@iterator"] =
-Variable.prototype["@@iterator"] =
-Property.prototype["@@iterator"] = function*() {
+VariablesView.prototype[Symbol.iterator] =
+Scope.prototype[Symbol.iterator] =
+Variable.prototype[Symbol.iterator] =
+Property.prototype[Symbol.iterator] = function*() {
   yield* this._store;
 };
 
@@ -3575,6 +3592,17 @@ VariablesView.stringifiers.byObjectKind = {
 
     let {preview} = aGrip;
     let props = [];
+
+    if (aGrip.class == "Promise" && aGrip.promiseState) {
+      let { state, value, reason } = aGrip.promiseState;
+      props.push("<state>: " + VariablesView.getString(state));
+      if (state == "fulfilled") {
+        props.push("<value>: " + VariablesView.getString(value, { concise: true }));
+      } else if (state == "rejected") {
+        props.push("<reason>: " + VariablesView.getString(reason, { concise: true }));
+      }
+    }
+
     for (let key of Object.keys(preview.ownProperties || {})) {
       let value = preview.ownProperties[key];
       let valueString = "";

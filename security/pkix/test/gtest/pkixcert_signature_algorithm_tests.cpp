@@ -4,7 +4,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 #include "pkix/pkix.h"
-#include "pkix/pkixnss.h"
 #include "pkixgtest.h"
 #include "pkixtestutil.h"
 
@@ -31,8 +30,7 @@ CreateCert(const char* issuerCN,
   ByteString extensions[2];
   if (endEntityOrCA == EndEntityOrCA::MustBeCA) {
     extensions[0] =
-      CreateEncodedBasicConstraints(true, nullptr,
-                                    ExtensionCriticality::Critical);
+      CreateEncodedBasicConstraints(true, nullptr, Critical::Yes);
     EXPECT_FALSE(ENCODING_FAILED(extensions[0]));
   }
 
@@ -47,7 +45,7 @@ CreateCert(const char* issuerCN,
   return certDER;
 }
 
-class AlgorithmTestsTrustDomain : public TrustDomain
+class AlgorithmTestsTrustDomain final : public TrustDomain
 {
 public:
   AlgorithmTestsTrustDomain(const ByteString& rootDER,
@@ -62,9 +60,8 @@ public:
   }
 
 private:
-  virtual Result GetCertTrust(EndEntityOrCA, const CertPolicyId&,
-                              Input candidateCert,
-                              /*out*/ TrustLevel& trustLevel)
+  Result GetCertTrust(EndEntityOrCA, const CertPolicyId&, Input candidateCert,
+                      /*out*/ TrustLevel& trustLevel) override
   {
     if (InputEqualsByteString(candidateCert, rootDER)) {
       trustLevel = TrustLevel::TrustAnchor;
@@ -74,8 +71,8 @@ private:
     return Success;
   }
 
-  virtual Result FindIssuer(Input encodedIssuerName, IssuerChecker& checker,
-                            Time)
+  Result FindIssuer(Input encodedIssuerName, IssuerChecker& checker, Time)
+                    override
   {
     ByteString* issuerDER = nullptr;
     if (InputEqualsByteString(encodedIssuerName, rootSubjectDER)) {
@@ -95,34 +92,44 @@ private:
     return checker.Check(issuerCert, nullptr, keepGoing);
   }
 
-  virtual Result CheckRevocation(EndEntityOrCA, const CertID&, Time,
-                                 const Input*, const Input*)
+  Result CheckRevocation(EndEntityOrCA, const CertID&, Time, const Input*,
+                         const Input*) override
   {
     return Success;
   }
 
-  virtual Result IsChainValid(const DERArray&, Time)
+  Result IsChainValid(const DERArray&, Time) override
   {
     return Success;
   }
 
-  virtual Result VerifySignedData(const SignedDataWithSignature& signedData,
-                                  Input subjectPublicKeyInfo)
+  Result DigestBuf(Input input, DigestAlgorithm digestAlg,
+                   /*out*/ uint8_t* digestBuf, size_t digestLen) override
   {
-    EXPECT_NE(SignatureAlgorithm::unsupported_algorithm, signedData.algorithm);
-    return ::mozilla::pkix::VerifySignedData(signedData, subjectPublicKeyInfo,
-                                             MINIMUM_TEST_KEY_BITS, nullptr);
+    return TestDigestBuf(input, digestAlg, digestBuf, digestLen);
   }
 
-  virtual Result DigestBuf(Input, uint8_t*, size_t)
+  Result CheckRSAPublicKeyModulusSizeInBits(EndEntityOrCA, unsigned int)
+                                            override
   {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
+    return Success;
   }
 
-  virtual Result CheckPublicKey(Input subjectPublicKeyInfo)
+  Result VerifyRSAPKCS1SignedDigest(const SignedDigest& signedDigest,
+                                    Input subjectPublicKeyInfo) override
   {
-    return TestCheckPublicKey(subjectPublicKeyInfo);
+    return TestVerifyRSAPKCS1SignedDigest(signedDigest, subjectPublicKeyInfo);
+  }
+
+  Result CheckECDSACurveIsAcceptable(EndEntityOrCA, NamedCurve) override
+  {
+    return Success;
+  }
+
+  Result VerifyECDSASignedDigest(const SignedDigest& signedDigest,
+                                 Input subjectPublicKeyInfo) override
+  {
+    return TestVerifyECDSASignedDigest(signedDigest, subjectPublicKeyInfo);
   }
 
   ByteString rootDER;
@@ -133,7 +140,7 @@ private:
 
 static const ByteString NO_INTERMEDIATE; // empty
 
-struct ChainValidity
+struct ChainValidity final
 {
   // In general, a certificate is generated for each of these.  However, if
   // optionalIntermediateSignatureAlgorithm is NO_INTERMEDIATE, then only 2

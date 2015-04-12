@@ -10,7 +10,7 @@
 */
 
 /*global ToObject: false, ToInteger: false, IsCallable: false,
-         ThrowError: false, AssertionFailed: false, SetScriptHints: false,
+         ThrowError: false, AssertionFailed: false,
          MakeConstructible: false, DecompileArg: false,
          RuntimeDefaultLocale: false,
          ParallelDo: false, ParallelSlices: false, NewDenseArray: false,
@@ -31,8 +31,8 @@
 //
 // The few items below here are either self-hosted or installing them under a
 // std_Foo name would require ugly contortions, so they just get aliased here.
-var std_iterator = '@@iterator'; // FIXME: Change to be a symbol.
 var std_Array_indexOf = ArrayIndexOf;
+var std_String_substring = String_substring;
 // WeakMap is a bare constructor without properties or methods.
 var std_WeakMap = WeakMap;
 // StopIteration is a bare constructor without properties or methods.
@@ -43,7 +43,10 @@ var std_StopIteration = StopIteration;
 
 
 /* Spec: ECMAScript Language Specification, 5.1 edition, 8.8 */
-function List() {}
+function List() {
+    this.length = 0;
+}
+
 {
   let ListProto = std_Object_create(null);
   ListProto.indexOf = std_Array_indexOf;
@@ -100,36 +103,64 @@ function ToLength(v) {
         return 0;
 
     // Math.pow(2, 53) - 1 = 0x1fffffffffffff
-    return v < 0x1fffffffffffff ? v : 0x1fffffffffffff;
+    return std_Math_min(v, 0x1fffffffffffff);
 }
 
-/********** Testing code **********/
-
-#ifdef ENABLE_PARALLEL_JS
-
-/**
- * Internal debugging tool: checks that the given `mode` permits
- * sequential execution
- */
-function AssertSequentialIsOK(mode) {
-  if (mode && mode.mode && mode.mode !== "seq" && ParallelTestsShouldPass())
-    ThrowError(JSMSG_WRONG_VALUE, "parallel execution", "sequential was forced");
+/* Spec: ECMAScript Draft, 6th edition Oct 14, 2014, 7.2.4 */
+function SameValueZero(x, y) {
+    return x === y || (x !== x && y !== y);
 }
 
-function ForkJoinMode(mode) {
-  // WARNING: this must match the enum ForkJoinMode in ForkJoin.cpp
-  if (!mode || !mode.mode) {
-    return 0;
-  } else if (mode.mode === "compile") {
-    return 1;
-  } else if (mode.mode === "par") {
-    return 2;
-  } else if (mode.mode === "recover") {
-    return 3;
-  } else if (mode.mode === "bailout") {
-    return 4;
-  }
-  ThrowError(JSMSG_PAR_ARRAY_BAD_ARG);
+/* Spec: ECMAScript Draft, 6th edition Dec 24, 2014, 7.3.8 */
+function GetMethod(O, P) {
+    // Step 1.
+    assert(IsPropertyKey(P), "Invalid property key");
+
+    // Steps 2-3.
+    var func = ToObject(O)[P];
+
+    // Step 4.
+    if (func === undefined || func === null)
+        return undefined;
+
+    // Step 5.
+    if (!IsCallable(func))
+        ThrowError(JSMSG_NOT_FUNCTION, typeof func);
+
+    // Step 6.
+    return func;
 }
 
-#endif
+/* Spec: ECMAScript Draft, 6th edition Dec 24, 2014, 7.2.7 */
+function IsPropertyKey(argument) {
+    var type = typeof argument;
+    return type === "string" || type === "symbol";
+}
+
+/* Spec: ECMAScript Draft, 6th edition Dec 24, 2014, 7.4.1 */
+function GetIterator(obj, method) {
+    // Steps 1-2.
+    if (arguments.length === 1)
+        method = GetMethod(obj, std_iterator);
+
+    // Steps 3-4.
+    var iterator = callFunction(method, obj);
+
+    // Step 5.
+    if (!IsObject(iterator))
+        ThrowError(JSMSG_NOT_ITERABLE, ToString(iterator));
+
+    // Step 6.
+    return iterator;
+}
+
+function SpeciesConstructor(obj, defaultConstructor) {
+    var C = obj.constructor;
+    if (C === undefined) {
+        return defaultConstructor;
+    }
+    if (!IsConstructor(C)) {
+        ThrowError(JSMSG_NOT_CONSTRUCTOR, DecompileArg(1, C));
+    }
+    return C;
+}

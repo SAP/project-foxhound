@@ -24,21 +24,6 @@ ImageResource::ImageResource(ImageURL* aURI) :
 {
 }
 
-uint32_t
-ImageResource::SizeOfData()
-{
-  if (mError)
-    return 0;
-
-  // This is not used by memory reporters, but for sizing the cache, which is
-  // why it uses |moz_malloc_size_of| rather than a
-  // |MOZ_DEFINE_MALLOC_SIZE_OF|.
-  return uint32_t(HeapSizeOfSourceWithComputedFallback(moz_malloc_size_of) +
-                  HeapSizeOfDecodedWithComputedFallback(moz_malloc_size_of) +
-                  NonHeapSizeOfDecoded() +
-                  OutOfProcessSizeOfDecoded());
-}
-
 // Translates a mimetype into a concrete decoder
 Image::eDecoderType
 Image::GetDecoderType(const char *aMimeType)
@@ -98,7 +83,7 @@ ImageResource::DecrementAnimationConsumers()
 {
   MOZ_ASSERT(NS_IsMainThread(), "Main thread only to encourage serialization "
                                 "with IncrementAnimationConsumers");
-  NS_ABORT_IF_FALSE(mAnimationConsumers >= 1, "Invalid no. of animation consumers!");
+  MOZ_ASSERT(mAnimationConsumers >= 1, "Invalid no. of animation consumers!");
   mAnimationConsumers--;
 }
 

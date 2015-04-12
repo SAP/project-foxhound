@@ -4,9 +4,6 @@
 
 dist_dest   = $(DIST)/$(MOZ_MACBUNDLE_NAME)
 
-PREF_JS_EXPORTS = $(srcdir)/profile/firefox.js \
-		  $(NULL)
-
 # hardcode en-US for the moment
 AB_CD = en-US
 
@@ -17,10 +14,6 @@ DEFINES += \
   -DNEWTAB_ICO='"$(DIST)/branding/newtab.ico"' \
   -DPBMODE_ICO='"$(DIST)/branding/pbmode.ico"' \
   $(NULL)
-
-ifdef LIBXUL_SDK #{
-PREF_JS_EXPORTS += $(srcdir)/profile/channel-prefs.js
-endif #} LIBXUL_SDK
 
 # Build a binary bootstrapping with XRE_main
 
@@ -69,18 +62,12 @@ libs::
 	$(INSTALL) $(IFLAGS1) $(DIST)/branding/default48.png  $(FINAL_TARGET)/chrome/icons/default
 endif
 
-libs:: $(srcdir)/profile/prefs.js
-	$(INSTALL) $(IFLAGS1) $^ $(FINAL_TARGET)/defaults/profile
-
 ifndef LIBXUL_SDK
 # channel-prefs.js is handled separate from other prefs due to bug 756325
 libs:: $(srcdir)/profile/channel-prefs.js
 	$(NSINSTALL) -D $(DIST)/bin/defaults/pref
 	$(call py_action,preprocessor,-Fsubstitution $(PREF_PPFLAGS) $(ACDEFINES) $^ -o $(DIST)/bin/defaults/pref/channel-prefs.js)
 endif
-
-libs:: $(srcdir)/blocklist.xml
-	$(INSTALL) $(IFLAGS1) $^ $(FINAL_TARGET)
 
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 

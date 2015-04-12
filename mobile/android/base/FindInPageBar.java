@@ -9,6 +9,7 @@ import org.mozilla.gecko.util.GeckoRequest;
 import org.mozilla.gecko.util.NativeJSObject;
 import org.mozilla.gecko.util.ThreadUtils;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.content.Context;
@@ -16,18 +17,25 @@ import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.CheckedTextView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public class FindInPageBar extends LinearLayout implements TextWatcher, View.OnClickListener, GeckoEventListener  {
+    private static final String LOGTAG = "GeckoFindInPageBar";
     private static final String REQUEST_ID = "FindInPageBar";
+
+    // Will be removed by Bug 1113297.
+    private static final boolean MATCH_CASE_ENABLED = AppConstants.NIGHTLY_BUILD;
 
     private final Context mContext;
     private CustomEditText mFindText;
+    private CheckedTextView mMatchCase;
     private TextView mStatusText;
     private boolean mInflated;
 
@@ -62,6 +70,13 @@ public class FindInPageBar extends LinearLayout implements TextWatcher, View.OnC
             }
         });
 
+        mMatchCase = (CheckedTextView) content.findViewById(R.id.find_matchcase);
+        if (MATCH_CASE_ENABLED) {
+            mMatchCase.setOnClickListener(this);
+        } else {
+            mMatchCase.setVisibility(View.GONE);
+        }
+
         mStatusText = (TextView) content.findViewById(R.id.find_status);
 
         mInflated = true;
@@ -81,6 +96,9 @@ public class FindInPageBar extends LinearLayout implements TextWatcher, View.OnC
     }
 
     public void hide() {
+        // Always clear the Find string, primarily for privacy.
+        mFindText.setText("");
+
         setVisibility(GONE);
         getInputMethodManager(mFindText).hideSoftInputFromWindow(mFindText.getWindowToken(), 0);
         GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("FindInPage:Closed", null));
@@ -120,6 +138,16 @@ public class FindInPageBar extends LinearLayout implements TextWatcher, View.OnC
     @Override
     public void onClick(View v) {
         final int viewId = v.getId();
+
+        if (viewId == R.id.find_matchcase) {
+            // Toggle matchcase state (color).
+            mMatchCase.toggle();
+
+            // Repeat the find after a matchcase change.
+            sendRequestToFinderHelper("FindInPage:Find", mFindText.getText().toString());
+            getInputMethodManager(mFindText).hideSoftInputFromWindow(mFindText.getWindowToken(), 0);
+            return;
+        }
 
         if (viewId == R.id.find_prev) {
             sendRequestToFinderHelper("FindInPage:Prev", mFindText.getText().toString());
@@ -181,20 +209,47 @@ public class FindInPageBar extends LinearLayout implements TextWatcher, View.OnC
     /**
      * Request find operation, and update matchCount results (current count and total).
      */
-    private void sendRequestToFinderHelper(String request, String searchString) {
-        GeckoAppShell.sendRequestToGecko(new GeckoRequest(request, searchString) {
+    private void sendRequestToFinderHelper(final String request, final String searchString) {
+        final JSONObject json = new JSONObject();
+        try {
+            json.put("searchString", searchString);
+            json.put("matchCase", mMatchCase.isChecked());
+        } catch (JSONException e) {
+            Log.e(LOGTAG, "JSON error - Error creating JSONObject", e);
+            return;
+        }
+
+        GeckoAppShell.sendRequestToGecko(new GeckoRequest(request, json) {
             @Override
             public void onResponse(NativeJSObject nativeJSObject) {
                 final int total = nativeJSObject.optInt("total", 0);
-                final int current = nativeJSObject.optInt("current", 0);
+                if (total == -1) {
+                    final int limit = nativeJSObject.optInt("limit", 0);
+                    updateResult(Integer.toString(limit) + "+");
+                } else if (total > 0) {
+                    final int current = nativeJSObject.optInt("current", 0);
+                    updateResult(Integer.toString(current) + "/" + Integer.toString(total));
+                } else {
+                    // We display no match-count information, when there were no
+                    // matches found, or if matching has been turned off by setting
+                    // pref accessibility.typeaheadfind.matchesCountLimit to 0.
+                    updateResult("");
+                }
+            }
 
-                final Boolean statusVisibility = (total > 0);
-                final String statusText = current + "/" + total;
+            @Override
+            public void onError(NativeJSObject error) {
+                // Gecko didn't respond due to state change, javascript error, etc.
+                Log.d(LOGTAG, "No response from Gecko on request to match string: [" +
+                    searchString + "]");
+                updateResult("");
+            }
 
+            private void updateResult(final String statusText) {
                 ThreadUtils.postToUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        mStatusText.setVisibility(statusVisibility ? View.VISIBLE : View.GONE);
+                        mStatusText.setVisibility(statusText.isEmpty() ? View.GONE : View.VISIBLE);
                         mStatusText.setText(statusText);
                     }
                 });

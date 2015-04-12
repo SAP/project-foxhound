@@ -31,7 +31,7 @@ interface TestInterfaceJS {
   // For testing bug 968335.
   DOMString getCallerPrincipal();
 
-  DOMString convertSVS(ScalarValueString svs);
+  DOMString convertSVS(USVString svs);
 
   (TestInterfaceJS or long) pingPongUnion((TestInterfaceJS or long) something);
   (DOMString or TestInterfaceJS?) pingPongUnionContainingNull((TestInterfaceJS? or DOMString) something);
@@ -48,4 +48,22 @@ interface TestInterfaceJS {
   void testSequenceOverload(DOMString arg);
 
   void testSequenceUnion((sequence<DOMString> or DOMString) arg);
+
+  // Tests for exception-throwing behavior
+  [Throws]
+  void testThrowDOMError();
+
+  [Throws]
+  void testThrowDOMException();
+
+  // Tests for promise-rejection behavior
+  Promise<void> testPromiseWithThrowingChromePromiseInit();
+  Promise<void> testPromiseWithThrowingContentPromiseInit(PromiseInit func);
+  Promise<void> testPromiseWithDOMExceptionThrowingPromiseInit();
+  Promise<void> testPromiseWithThrowingChromeThenFunction();
+  Promise<void> testPromiseWithThrowingContentThenFunction(AnyCallback func);
+  Promise<void> testPromiseWithDOMExceptionThrowingThenFunction();
+  Promise<void> testPromiseWithThrowingChromeThenable();
+  Promise<void> testPromiseWithThrowingContentThenable(object thenable);
+  Promise<void> testPromiseWithDOMExceptionThrowingThenable();
 };

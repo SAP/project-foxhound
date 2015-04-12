@@ -9,6 +9,8 @@ let protocol = require("devtools/server/protocol");
 let { method, RetVal, Arg, types } = protocol;
 const { reportException } = require("devtools/toolkit/DevToolsUtils");
 loader.lazyRequireGetter(this, "events", "sdk/event/core");
+loader.lazyRequireGetter(this, "StackFrameCache",
+                         "devtools/server/actors/utils/stack", true);
 
 /**
  * A method decorator that ensures the actor is in the expected state before
@@ -17,7 +19,8 @@ loader.lazyRequireGetter(this, "events", "sdk/event/core");
  *
  * @param String expectedState
  *        The expected state.
- *
+ * @param String activity
+ *        Additional info about what's going on.
  * @param Function method
  *        The actor method to proceed with when the actor is in the expected
  *        state.
@@ -25,11 +28,12 @@ loader.lazyRequireGetter(this, "events", "sdk/event/core");
  * @returns Function
  *          The decorated method.
  */
-function expectState(expectedState, method) {
+function expectState(expectedState, method, activity) {
   return function(...args) {
     if (this.state !== expectedState) {
-      const msg = "Wrong State: Expected '" + expectedState + "', but current "
-                + "state is '" + this.state + "'";
+      const msg = `Wrong state while ${activity}:` +
+                  `Expected '${expectedState}',` +
+                  `but current state is '${this.state}'.`;
       return Promise.reject(new Error(msg));
     }
 
@@ -60,17 +64,14 @@ let MemoryActor = protocol.ActorClass({
     return this._dbg;
   },
 
-  initialize: function(conn, parent) {
+  initialize: function(conn, parent, frameCache = new StackFrameCache()) {
     protocol.Actor.prototype.initialize.call(this, conn);
     this.parent = parent;
     this._mgr = Cc["@mozilla.org/memory-reporter-manager;1"]
                   .getService(Ci.nsIMemoryReporterManager);
     this.state = "detached";
     this._dbg = null;
-    this._framesToCounts = null;
-    this._framesToIndices = null;
-    this._framesToForms = null;
-
+    this._frameCache = frameCache;
     this._onWindowReady = this._onWindowReady.bind(this);
 
     events.on(this.parent, "window-ready", this._onWindowReady);
@@ -92,7 +93,8 @@ let MemoryActor = protocol.ActorClass({
   attach: method(expectState("detached", function() {
     this.dbg.addDebuggees();
     this.state = "attached";
-  }), {
+  },
+  `attaching to the debugger`), {
     request: {},
     response: {
       type: "attached"
@@ -107,10 +109,22 @@ let MemoryActor = protocol.ActorClass({
     this.dbg.enabled = false;
     this._dbg = null;
     this.state = "detached";
-  }), {
+  },
+  `detaching from the debugger`), {
     request: {},
     response: {
       type: "detached"
+    }
+  }),
+
+  /**
+   * Gets the current MemoryActor attach/detach state.
+   */
+  getState: method(function() {
+    return this.state;
+  }, {
+    response: {
+      state: RetVal(0, "string")
     }
   }),
 
@@ -124,25 +138,9 @@ let MemoryActor = protocol.ActorClass({
     }
   },
 
-  _initFrames: function() {
-    if (this._framesToCounts) {
-      // The maps are already initialized.
-      return;
-    }
-
-    this._framesToCounts = new Map();
-    this._framesToIndices = new Map();
-    this._framesToForms = new Map();
-  },
-
   _clearFrames: function() {
     if (this.dbg.memory.trackingAllocationSites) {
-      this._framesToCounts.clear();
-      this._framesToCounts = null;
-      this._framesToIndices.clear();
-      this._framesToIndices = null;
-      this._framesToForms.clear();
-      this._framesToForms = null;
+      this._frameCache.clearFrames();
     }
   },
 
@@ -153,7 +151,7 @@ let MemoryActor = protocol.ActorClass({
     if (this.state == "attached") {
       if (isTopLevel && this.dbg.memory.trackingAllocationSites) {
         this._clearDebuggees();
-        this._initFrames();
+        this._frameCache.initFrames();
       }
       this.dbg.addDebuggees();
     }
@@ -165,7 +163,8 @@ let MemoryActor = protocol.ActorClass({
    */
   takeCensus: method(expectState("attached", function() {
     return this.dbg.memory.takeCensus();
-  }), {
+  },
+  `taking census`), {
     request: {},
     response: RetVal("json")
   }),
@@ -177,16 +176,22 @@ let MemoryActor = protocol.ActorClass({
    *        See the protocol.js definition of AllocationsRecordingOptions above.
    */
   startRecordingAllocations: method(expectState("attached", function(options = {}) {
-    this._initFrames();
+    this._frameCache.initFrames();
     this.dbg.memory.allocationSamplingProbability = options.probability != null
       ? options.probability
       : 1.0;
     this.dbg.memory.trackingAllocationSites = true;
-  }), {
+
+    return Date.now();
+  },
+  `starting recording allocations`), {
     request: {
       options: Arg(0, "nullable:AllocationsRecordingOptions")
     },
-    response: {}
+    response: {
+      // Accept `nullable` in the case of server Gecko <= 37, handled on the front
+      value: RetVal(0, "nullable:number")
+    }
   }),
 
   /**
@@ -195,9 +200,15 @@ let MemoryActor = protocol.ActorClass({
   stopRecordingAllocations: method(expectState("attached", function() {
     this.dbg.memory.trackingAllocationSites = false;
     this._clearFrames();
-  }), {
+
+    return Date.now();
+  },
+  `stopping recording allocations`), {
     request: {},
-    response: {}
+    response: {
+      // Accept `nullable` in the case of server Gecko <= 37, handled on the front
+      value: RetVal(0, "nullable:number")
+    }
   }),
 
   /**
@@ -209,7 +220,12 @@ let MemoryActor = protocol.ActorClass({
    *          An object of the form:
    *
    *            {
-   *              allocations: [<index into "frames" below> ...],
+   *              allocations: [<index into "frames" below>, ...],
+   *              allocationsTimestamps: [
+   *                <timestamp for allocations[0]>,
+   *                <timestamp for allocations[1]>,
+   *                ...
+   *              ],
    *              frames: [
    *                {
    *                  line: <line number for this frame>,
@@ -217,7 +233,7 @@ let MemoryActor = protocol.ActorClass({
    *                  source: <filename string for this frame>,
    *                  functionDisplayName: <this frame's inferred function name function or null>,
    *                  parent: <index into "frames">
-   *                }
+   *                },
    *                ...
    *              ],
    *              counts: [
@@ -227,6 +243,8 @@ let MemoryActor = protocol.ActorClass({
    *                ...
    *              ]
    *            }
+   *
+   *          The timestamps' unit is microseconds since the epoch.
    *
    *          Subsequent `getAllocations` request within the same recording and
    *          tab navigation will always place the same stack frames at the same
@@ -255,10 +273,11 @@ let MemoryActor = protocol.ActorClass({
   getAllocations: method(expectState("attached", function() {
     const allocations = this.dbg.memory.drainAllocationsLog()
     const packet = {
-      allocations: []
+      allocations: [],
+      allocationsTimestamps: []
     };
 
-    for (let { frame: stack } of allocations) {
+    for (let { frame: stack, timestamp } of allocations) {
       if (stack && Cu.isDeadWrapper(stack)) {
         continue;
       }
@@ -270,92 +289,18 @@ let MemoryActor = protocol.ActorClass({
       // because we potentially haven't seen some or all of them yet. After this
       // loop, we can rely on the fact that every frame we deal with already has
       // its metadata stored.
-      this._assignFrameIndices(waived);
-      this._createFrameForms(waived);
-      this._countFrame(waived);
+      let index = this._frameCache.addFrame(waived);
 
-      packet.allocations.push(this._framesToIndices.get(waived));
+      packet.allocations.push(index);
+      packet.allocationsTimestamps.push(timestamp);
     }
 
-    // Now that we are guaranteed to have a form for every frame, we know the
-    // size the "frames" property's array must be. We use that information to
-    // create dense arrays even though we populate them out of order.
-    const size = this._framesToForms.size;
-    packet.frames = Array(size).fill(null);
-    packet.counts = Array(size).fill(0);
-
-    // Populate the "frames" and "counts" properties.
-    for (let [stack, index] of this._framesToIndices) {
-      packet.frames[index] = this._framesToForms.get(stack);
-      packet.counts[index] = this._framesToCounts.get(stack) || 0;
-    }
-
-    return packet;
-  }), {
+    return this._frameCache.updateFramePacket(packet);
+  },
+  `getting allocations`), {
     request: {},
     response: RetVal("json")
   }),
-
-  /**
-   * Assigns an index to the given frame and its parents, if an index is not
-   * already assigned.
-   *
-   * @param SavedFrame frame
-   *        A frame to assign an index to.
-   */
-  _assignFrameIndices: function(frame) {
-    if (this._framesToIndices.has(frame)) {
-      return;
-    }
-
-    if (frame) {
-      this._assignFrameIndices(frame.parent);
-    }
-
-    const index = this._framesToIndices.size;
-    this._framesToIndices.set(frame, index);
-  },
-
-  /**
-   * Create the form for the given frame, if one doesn't already exist.
-   *
-   * @param SavedFrame frame
-   *        A frame to create a form for.
-   */
-  _createFrameForms: function(frame) {
-    if (this._framesToForms.has(frame)) {
-      return;
-    }
-
-    let form = null;
-    if (frame) {
-      form = {
-        line: frame.line,
-        column: frame.column,
-        source: frame.source,
-        functionDisplayName: frame.functionDisplayName,
-        parent: this._framesToIndices.get(frame.parent)
-      };
-      this._createFrameForms(frame.parent);
-    }
-
-    this._framesToForms.set(frame, form);
-  },
-
-  /**
-   * Increment the allocation count for the provided frame.
-   *
-   * @param SavedFrame frame
-   *        The frame whose allocation count should be incremented.
-   */
-  _countFrame: function(frame) {
-    if (!this._framesToCounts.has(frame)) {
-      this._framesToCounts.set(frame, 1);
-    } else {
-      let count = this._framesToCounts.get(frame);
-      this._framesToCounts.set(frame, count + 1);
-    }
-  },
 
   /*
    * Force a browser-wide GC.

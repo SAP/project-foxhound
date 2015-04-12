@@ -23,6 +23,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "FxAccountsClient",
 XPCOMUtils.defineLazyModuleGetter(this, "jwcrypto",
   "resource://gre/modules/identity/jwcrypto.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "FxAccountsOAuthGrantClient",
+  "resource://gre/modules/FxAccountsOAuthGrantClient.jsm");
+
 // All properties exposed by the public FxAccounts API.
 let publicProperties = [
   "accountStatus",
@@ -32,6 +35,7 @@ let publicProperties = [
   "getAssertion",
   "getKeys",
   "getSignedInUser",
+  "getOAuthToken",
   "loadAndPoll",
   "localtimeOffsetMsec",
   "now",
@@ -297,11 +301,8 @@ this.FxAccounts = function (mockInternal) {
 function FxAccountsInternal() {
   this.version = DATA_FORMAT_VERSION;
 
-  // Make a local copy of these constants so we can mock it in testing
-  this.POLL_STEP = POLL_STEP;
+  // Make a local copy of this constant so we can mock it in testing
   this.POLL_SESSION = POLL_SESSION;
-  // We will create this.pollTimeRemaining below; it will initially be
-  // set to the value of POLL_SESSION.
 
   // We interact with the Firefox Accounts auth server in order to confirm that
   // a user's email has been verified and also to fetch the user's keys from
@@ -747,7 +748,11 @@ FxAccountsInternal.prototype = {
   },
 
   startVerifiedCheck: function(data) {
-    log.debug("startVerifiedCheck " + JSON.stringify(data));
+    log.debug("startVerifiedCheck", data && data.verified);
+    if (logPII) {
+      log.debug("startVerifiedCheck with user data", data);
+    }
+
     // Get us to the verified state, then get the keys. This returns a promise
     // that will fire when we are completely ready.
     //
@@ -791,7 +796,7 @@ FxAccountsInternal.prototype = {
       // If we were already polling, stop and start again.  This could happen
       // if the user requested the verification email to be resent while we
       // were already polling for receipt of an earlier email.
-      this.pollTimeRemaining = this.POLL_SESSION;
+      this.pollStartDate = Date.now();
       if (!currentState.whenVerifiedDeferred) {
         currentState.whenVerifiedDeferred = Promise.defer();
         // This deferred might not end up with any handlers (eg, if sync
@@ -808,8 +813,6 @@ FxAccountsInternal.prototype = {
       .then((response) => {
         log.debug("checkEmailStatus -> " + JSON.stringify(response));
         if (response && response.verified) {
-          // Bug 947056 - Server should be able to tell FxAccounts.jsm to back
-          // off or stop polling altogether
           currentState.getUserAccountData()
             .then((data) => {
               data.verified = true;
@@ -829,37 +832,55 @@ FxAccountsInternal.prototype = {
           this.pollEmailStatusAgain(currentState, sessionToken);
         }
       }, error => {
+        let timeoutMs = undefined;
+        if (error && error.retryAfter) {
+          // If the server told us to back off, back off the requested amount.
+          timeoutMs = (error.retryAfter + 3) * 1000;
+        }
         // The server will return 401 if a request parameter is erroneous or
         // if the session token expired. Let's continue polling otherwise.
         if (!error || !error.code || error.code != 401) {
-          this.pollEmailStatusAgain(currentState, sessionToken);
+          this.pollEmailStatusAgain(currentState, sessionToken, timeoutMs);
         }
       });
   },
 
-  // Poll email status after a short timeout.
-  pollEmailStatusAgain: function (currentState, sessionToken) {
-    log.debug("polling with step = " + this.POLL_STEP);
-    this.pollTimeRemaining -= this.POLL_STEP;
-    log.debug("time remaining: " + this.pollTimeRemaining);
-    if (this.pollTimeRemaining > 0) {
-      this.currentTimer = setTimeout(() => {
-        this.pollEmailStatus(currentState, sessionToken, "timer");
-      }, this.POLL_STEP);
-      log.debug("started timer " + this.currentTimer);
-    } else {
+  // Poll email status using truncated exponential back-off.
+  pollEmailStatusAgain: function (currentState, sessionToken, timeoutMs) {
+    let ageMs = Date.now() - this.pollStartDate;
+    if (ageMs >= this.POLL_SESSION) {
       if (currentState.whenVerifiedDeferred) {
         let error = new Error("User email verification timed out.")
         currentState.whenVerifiedDeferred.reject(error);
         delete currentState.whenVerifiedDeferred;
       }
+      log.debug("polling session exceeded, giving up");
+      return;
     }
+    if (timeoutMs === undefined) {
+      let currentMinute = Math.ceil(ageMs / 60000);
+      timeoutMs = 1000 * (currentMinute <= 2 ? 5 : 15);
+    }
+    log.debug("polling with timeout = " + timeoutMs);
+    this.currentTimer = setTimeout(() => {
+      this.pollEmailStatus(currentState, sessionToken, "timer");
+    }, timeoutMs);
+  },
+
+  _requireHttps: function() {
+    let allowHttp = false;
+    try {
+      allowHttp = Services.prefs.getBoolPref("identity.fxaccounts.allowHttp");
+    } catch(e) {
+      // Pref doesn't exist
+    }
+    return allowHttp !== true;
   },
 
   // Return the URI of the remote UI flows.
   getAccountsSignUpURI: function() {
     let url = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.signup.uri");
-    if (!/^https:/.test(url)) { // Comment to un-break emacs js-mode highlighting
+    if (this._requireHttps() && !/^https:/.test(url)) { // Comment to un-break emacs js-mode highlighting
       throw new Error("Firefox Accounts server must use HTTPS");
     }
     return url;
@@ -868,7 +889,7 @@ FxAccountsInternal.prototype = {
   // Return the URI of the remote UI flows.
   getAccountsSignInURI: function() {
     let url = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.signin.uri");
-    if (!/^https:/.test(url)) { // Comment to un-break emacs js-mode highlighting
+    if (this._requireHttps() && !/^https:/.test(url)) { // Comment to un-break emacs js-mode highlighting
       throw new Error("Firefox Accounts server must use HTTPS");
     }
     return url;
@@ -878,7 +899,7 @@ FxAccountsInternal.prototype = {
   // of the current account.
   promiseAccountsForceSigninURI: function() {
     let url = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.force_auth.uri");
-    if (!/^https:/.test(url)) { // Comment to un-break emacs js-mode highlighting
+    if (this._requireHttps() && !/^https:/.test(url)) { // Comment to un-break emacs js-mode highlighting
       throw new Error("Firefox Accounts server must use HTTPS");
     }
     let currentState = this.currentAccountState;
@@ -891,6 +912,98 @@ FxAccountsInternal.prototype = {
       newQueryPortion += "email=" + encodeURIComponent(accountData.email);
       return url + newQueryPortion;
     }).then(result => currentState.resolve(result));
+  },
+
+  /**
+   * Get an OAuth token for the user
+   *
+   * @param options
+   *        {
+   *          scope: (string) the oauth scope being requested
+   *        }
+   *
+   * @return Promise.<string | Error>
+   *        The promise resolves the oauth token as a string or rejects with
+   *        an error object ({error: ERROR, details: {}}) of the following:
+   *          INVALID_PARAMETER
+   *          NO_ACCOUNT
+   *          UNVERIFIED_ACCOUNT
+   *          NETWORK_ERROR
+   *          AUTH_ERROR
+   *          UNKNOWN_ERROR
+   */
+  getOAuthToken: function (options = {}) {
+    log.debug("getOAuthToken enter");
+
+    if (!options.scope) {
+      return this._error(ERROR_INVALID_PARAMETER, "Missing 'scope' option");
+    }
+
+    let oAuthURL = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.oauth.uri");
+    let client = options.client;
+
+    if (!client) {
+      try {
+        client = new FxAccountsOAuthGrantClient({
+          serverURL: oAuthURL,
+          client_id: FX_OAUTH_CLIENT_ID
+        });
+      } catch (e) {
+        return this._error(ERROR_INVALID_PARAMETER, e);
+      }
+    }
+
+    return this._getVerifiedAccountOrReject()
+      .then(() => this.getAssertion(oAuthURL))
+      .then(assertion => client.getTokenFromAssertion(assertion, options.scope))
+      .then(result => result.access_token)
+      .then(null, err => this._errorToErrorClass(err));
+  },
+
+  _getVerifiedAccountOrReject: function () {
+    return this.currentAccountState.getUserAccountData().then(data => {
+      if (!data) {
+        // No signed-in user
+        return this._error(ERROR_NO_ACCOUNT);
+      }
+      if (!this.isUserEmailVerified(data)) {
+        // Signed-in user has not verified email
+        return this._error(ERROR_UNVERIFIED_ACCOUNT);
+      }
+    });
+  },
+
+  /*
+   * Coerce an error into one of the general error cases:
+   *          NETWORK_ERROR
+   *          AUTH_ERROR
+   *          UNKNOWN_ERROR
+   *
+   * These errors will pass through:
+   *          INVALID_PARAMETER
+   *          NO_ACCOUNT
+   *          UNVERIFIED_ACCOUNT
+   */
+  _errorToErrorClass: function (aError) {
+    if (aError.errno) {
+      let error = SERVER_ERRNO_TO_ERROR[aError.errno];
+      return this._error(ERROR_TO_GENERAL_ERROR_CLASS[error] || ERROR_UNKNOWN, aError);
+    } else if (aError.message &&
+        aError.message === "INVALID_PARAMETER" ||
+        aError.message === "NO_ACCOUNT" ||
+        aError.message === "UNVERIFIED_ACCOUNT") {
+      return Promise.reject(aError);
+    }
+    return this._error(ERROR_UNKNOWN, aError);
+  },
+
+  _error: function(aError, aDetails) {
+    log.error("FxA rejecting with error ${aError}, details: ${aDetails}", {aError, aDetails});
+    let reason = new Error(aError);
+    if (aDetails) {
+      reason.details = aDetails;
+    }
+    return Promise.reject(reason);
   }
 };
 

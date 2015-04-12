@@ -25,6 +25,7 @@ gfxMacFont::gfxMacFont(MacOSFontEntry *aFontEntry, const gfxFontStyle *aFontStyl
                        bool aNeedsBold)
     : gfxFont(aFontEntry, aFontStyle),
       mCGFont(nullptr),
+      mCTFont(nullptr),
       mFontFace(nullptr)
 {
     mApplySyntheticBold = aNeedsBold;
@@ -67,13 +68,11 @@ gfxMacFont::gfxMacFont(MacOSFontEntry *aFontEntry, const gfxFontStyle *aFontStyl
         mStyle.allowSyntheticStyle;
 
     if (needsOblique) {
-        double skewfactor = (needsOblique ? Fix2X(kATSItalicQDSkew) : 0);
-
         cairo_matrix_t style;
         cairo_matrix_init(&style,
                           1,                //xx
                           0,                //yx
-                          -1 * skewfactor,   //xy
+                          -1 * OBLIQUE_SKEW_FACTOR, //xy
                           1,                //yy
                           0,                //x0
                           0);               //y0
@@ -110,6 +109,9 @@ gfxMacFont::gfxMacFont(MacOSFontEntry *aFontEntry, const gfxFontStyle *aFontStyl
 
 gfxMacFont::~gfxMacFont()
 {
+    if (mCTFont) {
+        ::CFRelease(mCTFont);
+    }
     if (mScaledFont) {
         cairo_scaled_font_destroy(mScaledFont);
     }
@@ -141,7 +143,8 @@ gfxMacFont::ShapeText(gfxContext     *aContext,
         }
         if (mCoreTextShaper->ShapeText(aContext, aText, aOffset, aLength,
                                        aScript, aVertical, aShapedText)) {
-            PostShapingFixup(aContext, aText, aOffset, aLength, aShapedText);
+            PostShapingFixup(aContext, aText, aOffset, aLength, aVertical,
+                             aShapedText);
             return true;
         }
     }
@@ -362,6 +365,24 @@ gfxMacFont::GetCharWidth(CFDataRef aCmap, char16_t aUniChar,
     return 0;
 }
 
+int32_t
+gfxMacFont::GetGlyphWidth(DrawTarget& aDrawTarget, uint16_t aGID)
+{
+    if (!mCTFont) {
+        mCTFont = ::CTFontCreateWithGraphicsFont(mCGFont, mAdjustedSize,
+                                                 nullptr, nullptr);
+        if (!mCTFont) { // shouldn't happen, but let's be safe
+            NS_WARNING("failed to create CTFontRef to measure glyph width");
+            return 0;
+        }
+    }
+
+    CGSize advance;
+    ::CTFontGetAdvancesForGlyphs(mCTFont, kCTFontDefaultOrientation, &aGID,
+                                 &advance, 1);
+    return advance.width * 0x10000;
+}
+
 // Try to initialize font metrics via platform APIs (CG/CT),
 // and set mIsValid = TRUE on success.
 // We ONLY call this for local (platform) fonts that are not sfnt format;
@@ -417,6 +438,15 @@ gfxMacFont::GetScaledFont(DrawTarget *aTarget)
   }
 
   return mAzureScaledFont;
+}
+
+TemporaryRef<mozilla::gfx::GlyphRenderingOptions>
+gfxMacFont::GetGlyphRenderingOptions(const TextRunDrawParams* aRunParams)
+{
+    if (aRunParams) {
+        return mozilla::gfx::Factory::CreateCGGlyphRenderingOptions(aRunParams->fontSmoothingBGColor);
+    }
+    return nullptr;
 }
 
 void

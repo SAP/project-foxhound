@@ -8,8 +8,6 @@
 #ifndef gc_Nursery_inl_h
 #define gc_Nursery_inl_h
 
-#ifdef JSGC_GENERATIONAL
-
 #include "gc/Nursery.h"
 
 #include "gc/Heap.h"
@@ -18,24 +16,16 @@
 
 template <typename T>
 MOZ_ALWAYS_INLINE bool
-js::Nursery::getForwardedPointer(T **ref)
+js::Nursery::getForwardedPointer(T** ref)
 {
     MOZ_ASSERT(ref);
-    MOZ_ASSERT(isInside((void *)*ref));
-    const gc::RelocationOverlay *overlay = reinterpret_cast<const gc::RelocationOverlay *>(*ref);
+    MOZ_ASSERT(isInside((void*)*ref));
+    const gc::RelocationOverlay* overlay = reinterpret_cast<const gc::RelocationOverlay*>(*ref);
     if (!overlay->isForwarded())
         return false;
     /* This static cast from Cell* restricts T to valid (GC thing) types. */
-    *ref = static_cast<T *>(overlay->forwardingAddress());
+    *ref = static_cast<T*>(overlay->forwardingAddress());
     return true;
 }
-
-inline void
-js::Nursery::forwardBufferPointer(JSTracer* trc, HeapSlot **pSlotElems)
-{
-    trc->runtime()->gc.nursery.forwardBufferPointer(pSlotElems);
-}
-
-#endif /* JSGC_GENERATIONAL */
 
 #endif /* gc_Nursery_inl_h */

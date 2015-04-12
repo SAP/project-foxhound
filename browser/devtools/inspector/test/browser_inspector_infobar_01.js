@@ -4,49 +4,44 @@
 
 "use strict";
 
+// Check the position and text content of the highlighter nodeinfo bar.
+
 const TEST_URI = "http://example.com/browser/browser/devtools/inspector/" +
-                 "test/browser_inspector_infobar_01.html";
+                 "test/doc_inspector_infobar_01.html";
 
-// Test that hovering over nodes in the markup-view shows the highlighter over
-// those nodes
-let test = asyncTest(function*() {
-  info("Loading the test document and opening the inspector");
-
+add_task(function*() {
   yield addTab(TEST_URI);
-
   let {inspector} = yield openInspector();
 
-  let doc = content.document;
   let testData = [
     {
-      node: doc.querySelector("#top"),
+      selector: "#top",
       position: "bottom",
       tag: "DIV",
-      id: "#top",
+      id: "top",
       classes: ".class1.class2",
-      dims: "500 x 100"
+      dims: "500" + " \u00D7 " + "100"
     },
     {
-      node: doc.querySelector("#vertical"),
+      selector: "#vertical",
       position: "overlap",
       tag: "DIV",
-      id: "#vertical",
+      id: "vertical",
       classes: ""
       // No dims as they will vary between computers
     },
     {
-      node: doc.querySelector("#bottom"),
+      selector: "#bottom",
       position: "top",
       tag: "DIV",
-      id: "#bottom",
+      id: "bottom",
       classes: "",
-      dims: "500 x 100"
+      dims: "500" + " \u00D7 " + "100"
     },
     {
-      node: doc.querySelector("body"),
+      selector: "body",
       position: "bottom",
       tag: "BODY",
-      id: "",
       classes: ""
       // No dims as they will vary between computers
     },
@@ -55,37 +50,35 @@ let test = asyncTest(function*() {
   for (let currTest of testData) {
     yield testPosition(currTest, inspector);
   }
-
-  gBrowser.removeCurrentTab();
 });
 
-function* testPosition(currTest, inspector) {
-  let browser = gBrowser.selectedBrowser;
-  let stack = browser.parentNode;
+function* testPosition(test, inspector) {
+  info("Testing " + test.selector);
 
-  info("Testing " + currTest.id);
+  yield selectAndHighlightNode(test.selector, inspector);
 
-  yield selectAndHighlightNode(currTest.node, inspector);
+  let highlighter = inspector.toolbox.highlighter;
+  let position = yield getHighlighterNodeAttribute(highlighter,
+    "box-model-nodeinfobar-container", "position");
+  is(position, test.position, "Node " + test.selector + ": position matches");
 
-  let container = stack.querySelector(".highlighter-nodeinfobar-positioner");
-  is(container.getAttribute("position"),
-    currTest.position, "node " + currTest.id + ": position matches.");
+  let tag = yield getHighlighterNodeTextContent(highlighter,
+    "box-model-nodeinfobar-tagname");
+  is(tag, test.tag, "node " + test.selector + ": tagName matches.");
 
-  let tagNameLabel = stack.querySelector(".highlighter-nodeinfobar-tagname");
-  is(tagNameLabel.textContent, currTest.tag,
-    "node " + currTest.id + ": tagName matches.");
-
-  if (currTest.id) {
-    let idLabel = stack.querySelector(".highlighter-nodeinfobar-id");
-    is(idLabel.textContent, currTest.id, "node " + currTest.id  + ": id matches.");
+  if (test.id) {
+    let id = yield getHighlighterNodeTextContent(highlighter,
+      "box-model-nodeinfobar-id");
+    is(id, "#" + test.id, "node " + test.selector  + ": id matches.");
   }
 
-  let classesBox = stack.querySelector(".highlighter-nodeinfobar-classes");
-  is(classesBox.textContent, currTest.classes,
-    "node " + currTest.id  + ": classes match.");
+  let classes = yield getHighlighterNodeTextContent(highlighter,
+    "box-model-nodeinfobar-classes");
+  is(classes, test.classes, "node " + test.selector  + ": classes match.");
 
-  if (currTest.dims) {
-    let dimBox = stack.querySelector(".highlighter-nodeinfobar-dimensions");
-    is(dimBox.textContent, currTest.dims, "node " + currTest.id  + ": dims match.");
+  if (test.dims) {
+    let dims = yield getHighlighterNodeTextContent(highlighter,
+      "box-model-nodeinfobar-dimensions");
+    is(dims, test.dims, "node " + test.selector  + ": dims match.");
   }
 }

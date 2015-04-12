@@ -16,6 +16,7 @@
 #ifndef nsWindow_h
 #define nsWindow_h
 
+#include "InputData.h"
 #include "nsBaseWidget.h"
 #include "nsRegion.h"
 #include "nsIIdleServiceInternal.h"
@@ -49,14 +50,15 @@ public:
     nsWindow();
     virtual ~nsWindow();
 
+    NS_DECL_ISUPPORTS_INHERITED
+
     static void DoDraw(void);
-    static nsEventStatus DispatchInputEvent(mozilla::WidgetGUIEvent& aEvent,
-                                            bool* aWasCaptured = nullptr);
+    static nsEventStatus DispatchInputEvent(mozilla::WidgetGUIEvent& aEvent);
+    static void DispatchTouchInput(mozilla::MultiTouchInput& aInput);
 
     NS_IMETHOD Create(nsIWidget *aParent,
                       void *aNativeParent,
                       const nsIntRect &aRect,
-                      nsDeviceContext *aContext,
                       nsWidgetInitData *aInitData);
     NS_IMETHOD Destroy(void);
 
@@ -85,9 +87,19 @@ public:
     {
         return NS_OK;
     }
-    virtual nsIntPoint WidgetToScreenOffset();
+    virtual mozilla::LayoutDeviceIntPoint WidgetToScreenOffset();
+    void DispatchTouchInputViaAPZ(mozilla::MultiTouchInput& aInput);
+    void DispatchTouchEventForAPZ(const mozilla::MultiTouchInput& aInput,
+                                  const ScrollableLayerGuid& aGuid,
+                                  const uint64_t aInputBlockId);
     NS_IMETHOD DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                              nsEventStatus& aStatus);
+    virtual nsresult SynthesizeNativeTouchPoint(uint32_t aPointerId,
+                                                TouchPointerState aPointerState,
+                                                nsIntPoint aPointerScreenPoint,
+                                                double aPointerPressure,
+                                                uint32_t aPointerOrientation) override;
+
     NS_IMETHOD CaptureRollupEvents(nsIRollupListener *aListener,
                                    bool aDoCapture)
     {
@@ -95,11 +107,11 @@ public:
     }
     NS_IMETHOD ReparentNativeWidget(nsIWidget* aNewParent);
 
-    NS_IMETHOD MakeFullScreen(bool aFullScreen) /*MOZ_OVERRIDE*/;
+    NS_IMETHOD MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen = nullptr) /*override*/;
 
     virtual mozilla::TemporaryRef<mozilla::gfx::DrawTarget>
-        StartRemoteDrawing() MOZ_OVERRIDE;
-    virtual void EndRemoteDrawing() MOZ_OVERRIDE;
+        StartRemoteDrawing() override;
+    virtual void EndRemoteDrawing() override;
 
     virtual float GetDPI();
     virtual double GetDefaultScaleInternal();
@@ -113,12 +125,12 @@ public:
                                       const InputContextAction& aAction);
     NS_IMETHOD_(InputContext) GetInputContext();
 
-    virtual uint32_t GetGLFrameBufferFormat() MOZ_OVERRIDE;
+    virtual uint32_t GetGLFrameBufferFormat() override;
 
-    virtual nsIntRect GetNaturalBounds() MOZ_OVERRIDE;
+    virtual nsIntRect GetNaturalBounds() override;
     virtual bool NeedsPaint();
 
-    virtual Composer2D* GetComposer2D() MOZ_OVERRIDE;
+    virtual Composer2D* GetComposer2D() override;
 
 protected:
     nsWindow* mParent;
@@ -130,12 +142,26 @@ protected:
     // framebuffer.
     mozilla::RefPtr<mozilla::gfx::DrawTarget> mFramebufferTarget;
     ANativeWindowBuffer* mFramebuffer;
+    // If we're using a BasicCompositor, this is our window back
+    // buffer.  The gralloc framebuffer driver expects us to draw the
+    // entire framebuffer on every frame, but gecko expects the
+    // windowing system to be tracking buffer updates for invalidated
+    // regions.  We get stuck holding that bag.
+    //
+    // Only accessed on the compositor thread, except during
+    // destruction.
+    mozilla::RefPtr<mozilla::gfx::DrawTarget> mBackBuffer;
 
     void BringToTop();
 
     // Call this function when the users activity is the direct cause of an
     // event (like a keypress or mouse click).
     void UserActivity();
+
+private:
+    // This is used by SynthesizeNativeTouchPoint to maintain state between
+    // multiple synthesized points
+    nsAutoPtr<mozilla::MultiTouchInput> mSynthesizedTouchInput;
 };
 
 #endif /* nsWindow_h */

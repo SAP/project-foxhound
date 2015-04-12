@@ -82,32 +82,31 @@ let inputTests = [
     output: "/foobar/",
     inspectable: true,
   },
+
+  // 9
+  {
+    input: "Symbol()",
+    output: "Symbol()"
+  },
+
+  // 10
+  {
+    input: "Symbol('foo')",
+    output: "Symbol(foo)"
+  },
+
+  // 11
+  {
+    input: "Symbol.iterator",
+    output: "Symbol(Symbol.iterator)"
+  },
 ];
-
-if (typeof Symbol !== "undefined") {
-  inputTests.push(
-    // 9
-    {
-      input: "Symbol()",
-      output: "Symbol()"
-    },
-
-    // 10
-    {
-      input: "Symbol('foo')",
-      output: "Symbol(foo)"
-    },
-
-    // 11
-    {
-      input: "Symbol.iterator",
-      output: "Symbol(Symbol.iterator)"
-    });
-}
 
 longString = initialString = null;
 
 function test() {
+  requestLongerTimeout(2);
+
   registerCleanupFunction(() => {
     DebuggerServer.LONG_STRING_LENGTH = LONG_STRING_LENGTH;
     DebuggerServer.LONG_STRING_INITIAL_LENGTH = LONG_STRING_INITIAL_LENGTH;
@@ -121,6 +120,6 @@ function test() {
 }
 
 function finishUp() {
-  inputTests = null;
+  longString = initialString = inputTests = null;
   finishTest();
 }

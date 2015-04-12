@@ -96,19 +96,9 @@ public:
     static void ClipToRegion(mozilla::gfx::DrawTarget* aTarget, const nsIntRegion& aRegion);
 
     /**
-     * Clip aContext to the region aRegion, snapping the rectangles.
-     */
-    static void ClipToRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion);
-
-    /**
      * Create a path consisting of rectangles in |aRegion|.
      */
     static void PathFromRegion(gfxContext* aContext, const nsIntRegion& aRegion);
-
-    /**
-     * Create a path consisting of rectangles in |aRegion|, snapping the rectangles.
-     */
-    static void PathFromRegionSnapped(gfxContext* aContext, const nsIntRegion& aRegion);
 
     /*
      * Convert image format to depth value
@@ -291,6 +281,9 @@ public:
     static inline void DumpAsDataURI(DrawTarget* aDT) {
         DumpAsDataURI(aDT, stdout);
     }
+    static nsCString GetAsDataURI(SourceSurface* aSourceSurface);
+    static nsCString GetAsDataURI(DrawTarget* aDT);
+    static nsCString GetAsLZ4Base64Str(DataSourceSurface* aSourceSurface);
 
     /**
      * Copy to the clipboard as a PNG encoded Data URL.
@@ -298,13 +291,11 @@ public:
     static void CopyAsDataURI(SourceSurface* aSourceSurface);
     static void CopyAsDataURI(DrawTarget* aDT);
 
-#ifdef MOZ_DUMP_PAINTING
-    static bool DumpPaintList();
+    static bool DumpDisplayList();
 
     static bool sDumpPainting;
     static bool sDumpPaintingToFile;
     static FILE* sDumpPaintFile;
-#endif
 };
 
 namespace mozilla {

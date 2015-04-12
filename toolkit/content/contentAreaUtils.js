@@ -53,6 +53,14 @@ function isContentFrame(aFocusedWindow)
   return (aFocusedWindow.top == window.content);
 }
 
+function forbidCPOW(arg, func, argname)
+{
+  if (arg && (typeof(arg) == "object" || typeof(arg) == "function") &&
+      Components.utils.isCrossProcessWrapper(arg)) {
+    throw new Error(`no CPOWs allowed for argument ${argname} to ${func}`);
+  }
+}
+
 // Clientele: (Make sure you don't break any of these)
 //  - File    ->  Save Page/Frame As...
 //  - Context ->  Save Page/Frame As...
@@ -74,6 +82,10 @@ function isContentFrame(aFocusedWindow)
 function saveURL(aURL, aFileName, aFilePickerTitleKey, aShouldBypassCache,
                  aSkipPrompt, aReferrer, aSourceDocument)
 {
+  forbidCPOW(aURL, "saveURL", "aURL");
+  forbidCPOW(aReferrer, "saveURL", "aReferrer");
+  // Allow aSourceDocument to be a CPOW.
+
   internalSave(aURL, null, aFileName, null, null, aShouldBypassCache,
                aFilePickerTitleKey, null, aReferrer, aSourceDocument,
                aSkipPrompt, null);
@@ -89,6 +101,10 @@ const nsISupportsCString = Components.interfaces.nsISupportsCString;
 function saveImageURL(aURL, aFileName, aFilePickerTitleKey, aShouldBypassCache,
                       aSkipPrompt, aReferrer, aDoc)
 {
+  forbidCPOW(aURL, "saveImageURL", "aURL");
+  forbidCPOW(aReferrer, "saveImageURL", "aReferrer");
+  // Allow aSourceDocument to be a CPOW.
+
   var contentType = null;
   var contentDisposition = null;
   if (!aShouldBypassCache) {
@@ -138,6 +154,11 @@ function saveDocument(aDocument, aSkipPrompt)
            .QueryInterface(Components.interfaces.nsIWebPageDescriptor);
   } catch (ex) {
     // We might not find it in the cache.  Oh, well.
+  }
+
+  if (cacheKey && Components.utils.isCrossProcessWrapper(cacheKey)) {
+    // Don't use a cache key from another process. See bug 1128050.
+    cacheKey = null;
   }
 
   internalSave(aDocument.location.href, aDocument, null, contentDisposition,
@@ -253,6 +274,11 @@ function internalSave(aURL, aDocument, aDefaultFileName, aContentDisposition,
                       aChosenData, aReferrer, aInitiatingDocument, aSkipPrompt,
                       aCacheKey)
 {
+  forbidCPOW(aURL, "internalSave", "aURL");
+  forbidCPOW(aReferrer, "internalSave", "aReferrer");
+  forbidCPOW(aCacheKey, "internalSave", "aCacheKey");
+  // Allow aInitiatingDocument to be a CPOW.
+
   if (aSkipPrompt == undefined)
     aSkipPrompt = false;
 
@@ -381,7 +407,7 @@ function internalPersist(persistArgs)
   // Find the URI associated with the target file
   var targetFileURL = makeFileURI(persistArgs.targetFile);
 
-  var isPrivate = PrivateBrowsingUtils.isWindowPrivate(persistArgs.initiatingWindow);
+  let isPrivate = PrivateBrowsingUtils.isContentWindowPrivate(persistArgs.initiatingWindow);
 
   // Create download and initiate it (below)
   var tr = Components.classes["@mozilla.org/transfer;1"].createInstance(Components.interfaces.nsITransfer);
@@ -418,13 +444,14 @@ function internalPersist(persistArgs)
     persist.saveDocument(persistArgs.sourceDocument, targetFileURL, filesFolder,
                          persistArgs.targetContentType, encodingFlags, kWrapColumn);
   } else {
-    let privacyContext = persistArgs.initiatingWindow
-                                    .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                                    .getInterface(Components.interfaces.nsIWebNavigation)
-                                    .QueryInterface(Components.interfaces.nsILoadContext);
-    persist.saveURI(persistArgs.sourceURI,
-                    persistArgs.sourceCacheKey, persistArgs.sourceReferrer, persistArgs.sourcePostData, null,
-                    targetFileURL, privacyContext);
+    persist.savePrivacyAwareURI(persistArgs.sourceURI,
+                                persistArgs.sourceCacheKey,
+                                persistArgs.sourceReferrer,
+                                Components.interfaces.nsIHttpChannel.REFERRER_POLICY_NO_REFERRER_WHEN_DOWNGRADE,
+                                persistArgs.sourcePostData,
+                                null,
+                                targetFileURL,
+                                isPrivate);
   }
 }
 
@@ -662,9 +689,9 @@ function DownloadURL(aURL, aFileName, aInitiatingDocument) {
   // For private browsing, try to get document out of the most recent browser
   // window, or provide our own if there's no browser window.
   let isPrivate = aInitiatingDocument.defaultView
-                                     .QueryInterface(Ci.nsIInterfaceRequestor)
-                                     .getInterface(Ci.nsIWebNavigation)
-                                     .QueryInterface(Ci.nsILoadContext)
+                                     .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                                     .getInterface(Components.interfaces.nsIWebNavigation)
+                                     .QueryInterface(Components.interfaces.nsILoadContext)
                                      .usePrivateBrowsing;
 
   let fileInfo = new FileInfo(aFileName);
@@ -713,31 +740,34 @@ function appendFiltersForContentType(aFilePicker, aContentType, aFileExtension, 
   // The corresponding filter string for a specific content type.
   var filterString;
 
-  // XXX all the cases that are handled explicitly here MUST be handled
-  // in GetSaveModeForContentType to return a non-fileonly filter.
-  switch (aContentType) {
-  case "text/html":
-    bundleName   = "WebPageHTMLOnlyFilter";
-    filterString = "*.htm; *.html";
-    break;
+  // Every case where GetSaveModeForContentType can return non-FILEONLY
+  // modes must be handled here.
+  if (aSaveMode != SAVEMODE_FILEONLY) {
+    switch (aContentType) {
+    case "text/html":
+      bundleName   = "WebPageHTMLOnlyFilter";
+      filterString = "*.htm; *.html";
+      break;
 
-  case "application/xhtml+xml":
-    bundleName   = "WebPageXHTMLOnlyFilter";
-    filterString = "*.xht; *.xhtml";
-    break;
+    case "application/xhtml+xml":
+      bundleName   = "WebPageXHTMLOnlyFilter";
+      filterString = "*.xht; *.xhtml";
+      break;
 
-  case "image/svg+xml":
-    bundleName   = "WebPageSVGOnlyFilter";
-    filterString = "*.svg; *.svgz";
-    break;
+    case "image/svg+xml":
+      bundleName   = "WebPageSVGOnlyFilter";
+      filterString = "*.svg; *.svgz";
+      break;
 
-  case "text/xml":
-  case "application/xml":
-    bundleName   = "WebPageXMLOnlyFilter";
-    filterString = "*.xml";
-    break;
+    case "text/xml":
+    case "application/xml":
+      bundleName   = "WebPageXMLOnlyFilter";
+      filterString = "*.xml";
+      break;
+    }
+  }
 
-  default:
+  if (!bundleName) {
     if (aSaveMode != SAVEMODE_FILEONLY)
       throw "Invalid save mode for type '" + aContentType + "'";
 
@@ -758,8 +788,6 @@ function appendFiltersForContentType(aFilePicker, aContentType, aFileExtension, 
       if (extString)
         aFilePicker.appendFilter(mimeInfo.description, extString);
     }
-
-    break;
   }
 
   if (aSaveMode & SAVEMODE_COMPLETE_DOM) {
@@ -1063,8 +1091,9 @@ function getDefaultExtension(aFilename, aURI, aContentType)
 
 function GetSaveModeForContentType(aContentType, aDocument)
 {
-  // We can only save a complete page if we have a loaded document
-  if (!aDocument)
+  // We can only save a complete page if we have a loaded document,
+  // and it's not a CPOW -- nsWebBrowserPersist needs a real document.
+  if (!aDocument || Components.utils.isCrossProcessWrapper(aDocument))
     return SAVEMODE_FILEONLY;
 
   // Find the possible save modes using the provided content type
@@ -1099,6 +1128,8 @@ function getCharsetforSave(aDocument)
  * Open a URL from chrome, determining if we can handle it internally or need to
  *  launch an external application to handle it.
  * @param aURL The URL to be opened
+ *
+ * WARNING: Please note that openURL() does not perform any content security checks!!!
  */
 function openURL(aURL)
 {
@@ -1155,7 +1186,12 @@ function openURL(aURL)
       }
     }
 
-    var channel = Services.io.newChannelFromURI(uri);
+    var channel = Services.io.newChannelFromURI2(uri,
+                                                 null,      // aLoadingNode
+                                                 Services.scriptSecurityManager.getSystemPrincipal(),
+                                                 null,      // aTriggeringPrincipal
+                                                 Components.interfaces.nsILoadInfo.SEC_NORMAL,
+                                                 Components.interfaces.nsIContentPolicy.TYPE_OTHER);
     var uriLoader = Components.classes["@mozilla.org/uriloader;1"]
                               .getService(Components.interfaces.nsIURILoader);
     uriLoader.openURI(channel,

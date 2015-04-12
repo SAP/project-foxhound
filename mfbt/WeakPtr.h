@@ -69,7 +69,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/NullPtr.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TypeTraits.h"
 
@@ -93,9 +93,6 @@ public:
   T* get() const { return mPtr; }
 
 #ifdef MOZ_REFCOUNTED_LEAK_CHECKING
-#ifdef XP_WIN
-#define snprintf _snprintf
-#endif
   const char* typeName() const
   {
     static char nameBuffer[1024];
@@ -106,15 +103,17 @@ public:
     MOZ_ASSERT(strlen(innerType) + sizeof("WeakReference<>") <
                ArrayLength(nameBuffer),
                "Exceedingly large type name");
-    snprintf(nameBuffer, ArrayLength(nameBuffer), "WeakReference<%s>",
-             innerType);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    _snprintf
+#else
+    ::snprintf
+#endif
+         (nameBuffer, ArrayLength(nameBuffer), "WeakReference<%s>", innerType);
     // This is usually not OK, but here we are returning a pointer to a static
     // buffer which will immediately be used by the caller.
     return nameBuffer;
   }
-
   size_t typeSize() const { return sizeof(*this); }
-#undef snprintf
 #endif
 
 private:
@@ -122,7 +121,7 @@ private:
 
   void detach() { mPtr = nullptr; }
 
-  T* mPtr;
+  T* MOZ_NON_OWNING_REF mPtr;
 };
 
 } // namespace detail
@@ -194,7 +193,7 @@ public:
   operator T*() const { return mRef->get(); }
   T& operator*() const { return *mRef->get(); }
 
-  T* operator->() const { return mRef->get(); }
+  T* operator->() const MOZ_NO_ADDREF_RELEASE_ON_RETURN { return mRef->get(); }
 
   T* get() const { return mRef->get(); }
 

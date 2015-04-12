@@ -14,7 +14,7 @@ const Cu = Components.utils;
 
 // The minimum sizes for the auto-resize panel code, minimum size necessary to
 // properly show the error page in the panel.
-const PANEL_MIN_HEIGHT = 200;
+const PANEL_MIN_HEIGHT = 190;
 const PANEL_MIN_WIDTH = 330;
 
 Cu.import("resource://gre/modules/Services.jsm");
@@ -24,6 +24,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "SocialService",
   "resource://gre/modules/SocialService.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PageMetadata",
+  "resource://gre/modules/PageMetadata.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
@@ -31,9 +33,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
   "resource://gre/modules/Promise.jsm");
 
-XPCOMUtils.defineLazyServiceGetter(this, "unescapeService",
-                                   "@mozilla.org/feed-unescapehtml;1",
-                                   "nsIScriptableUnescapeHTML");
 
 function promiseSetAnnotation(aURI, providerList) {
   let deferred = Promise.defer();
@@ -169,8 +168,8 @@ this.Social = {
     return SocialService.getManifestByOrigin(origin);
   },
 
-  installProvider: function(doc, data, installCallback, aBypassUserEnable=false) {
-    SocialService.installProvider(doc, data, installCallback, aBypassUserEnable);
+  installProvider: function(data, installCallback, options={}) {
+    SocialService.installProvider(data, installCallback, options);
   },
 
   uninstallProvider: function(origin, aCallback) {
@@ -327,6 +326,9 @@ function SocialErrorListener(iframe, errorHandler) {
   this.setErrorMessage = errorHandler;
   this.iframe = iframe;
   iframe.socialErrorListener = this;
+  // Force a layout flush by calling .clientTop so that the docShell of this
+  // frame is created for the error listener
+  iframe.clientTop;
   iframe.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
                                    .getInterface(Ci.nsIWebProgress)
                                    .addProgressListener(this,
@@ -397,7 +399,7 @@ SocialErrorListener.prototype = {
 };
 
 
-function sizeSocialPanelToContent(panel, iframe) {
+function sizeSocialPanelToContent(panel, iframe, requestedSize) {
   let doc = iframe.contentDocument;
   if (!doc || !doc.body) {
     return;
@@ -405,14 +407,15 @@ function sizeSocialPanelToContent(panel, iframe) {
   // We need an element to use for sizing our panel.  See if the body defines
   // an id for that element, otherwise use the body itself.
   let body = doc.body;
+  let docEl = doc.documentElement;
   let bodyId = body.getAttribute("contentid");
   if (bodyId) {
     body = doc.getElementById(bodyId) || doc.body;
   }
   // offsetHeight/Width don't include margins, so account for that.
   let cs = doc.defaultView.getComputedStyle(body);
-  let width = PANEL_MIN_WIDTH;
-  let height = PANEL_MIN_HEIGHT;
+  let width = Math.max(PANEL_MIN_WIDTH, docEl.offsetWidth);
+  let height = Math.max(PANEL_MIN_HEIGHT, docEl.offsetHeight);
   // if the panel is preloaded prior to being shown, cs will be null.  in that
   // case use the minimum size for the panel until it is shown.
   if (cs) {
@@ -422,19 +425,33 @@ function sizeSocialPanelToContent(panel, iframe) {
     width = Math.max(computedWidth, width);
   }
 
-  // only add the extra space if the iframe has been loaded
+  // if our scrollHeight is still larger than the iframe, the css calculations
+  // above did not work for this site, increase the height. This can happen if
+  // the site increases its height for additional UI.
+  if (docEl.scrollHeight > iframe.boxObject.height)
+    height = docEl.scrollHeight;
+
+  // if a size was defined in the manifest use it as a minimum
+  if (requestedSize) {
+    if (requestedSize.height)
+      height = Math.max(height, requestedSize.height);
+    if (requestedSize.width)
+      width = Math.max(width, requestedSize.width);
+  }
+
+  // add the extra space used by the panel (toolbar, borders, etc) if the iframe
+  // has been loaded
   if (iframe.boxObject.width && iframe.boxObject.height) {
     // add extra space the panel needs if any
     width += panel.boxObject.width - iframe.boxObject.width;
     height += panel.boxObject.height - iframe.boxObject.height;
   }
 
-  // when size is computed, we want to be sure changes are "significant" since
-  // some sites will resize when the iframe is resized by a small amount, making
-  // the panel slowly shrink to some minimum.
-  if (Math.abs(panel.boxObject.width - width) > 2 || Math.abs(panel.boxObject.height - height) > 2) {
-    panel.sizeTo(width, height);
-  }
+  // using panel.sizeTo will ignore css transitions, set size via style
+  if (Math.abs(panel.boxObject.width - width) >= 2)
+    panel.style.width = width + "px";
+  if (Math.abs(panel.boxObject.height - height) >= 2)
+    panel.style.height = height + "px";
 }
 
 function DynamicResizeWatcher() {
@@ -442,18 +459,18 @@ function DynamicResizeWatcher() {
 }
 
 DynamicResizeWatcher.prototype = {
-  start: function DynamicResizeWatcher_start(panel, iframe) {
+  start: function DynamicResizeWatcher_start(panel, iframe, requestedSize) {
     this.stop(); // just in case...
     let doc = iframe.contentDocument;
-    this._mutationObserver = new iframe.contentWindow.MutationObserver(function(mutations) {
-      sizeSocialPanelToContent(panel, iframe);
+    this._mutationObserver = new iframe.contentWindow.MutationObserver((mutations) => {
+      sizeSocialPanelToContent(panel, iframe, requestedSize);
     });
     // Observe anything that causes the size to change.
     let config = {attributes: true, characterData: true, childList: true, subtree: true};
     this._mutationObserver.observe(doc, config);
     // and since this may be setup after the load event has fired we do an
     // initial resize now.
-    sizeSocialPanelToContent(panel, iframe);
+    sizeSocialPanelToContent(panel, iframe, requestedSize);
   },
   stop: function DynamicResizeWatcher_stop() {
     if (this._mutationObserver) {
@@ -510,181 +527,4 @@ this.OpenGraphBuilder = {
       endpointURL = endpointURL + "?" + str.join("&");
     return endpointURL;
   },
-
-  getData: function(browser, target) {
-    let res = {
-      url: this._validateURL(browser, browser.currentURI.spec),
-      title: browser.contentDocument.title,
-      previews: []
-    };
-    this._getMetaData(browser, res);
-    this._getLinkData(browser, res);
-    this._getPageData(browser, res);
-    res.microdata = this.getMicrodata(browser, target);
-    return res;
-  },
-
-  getMicrodata: function (browser, target) {
-    return getMicrodata(browser.contentDocument, target);
-  },
-
-  _getMetaData: function(browser, o) {
-    // query for standardized meta data
-    let els = browser.contentDocument
-                  .querySelectorAll("head > meta[property], head > meta[name]");
-    if (els.length < 1)
-      return;
-    let url;
-    for (let el of els) {
-      let value = el.getAttribute("content")
-      if (!value)
-        continue;
-      value = unescapeService.unescape(value.trim());
-      let key = el.getAttribute("property") || el.getAttribute("name");
-      if (!key)
-        continue;
-      // There are a wide array of possible meta tags, expressing articles,
-      // products, etc. so all meta tags are passed through but we touch up the
-      // most common attributes.
-      o[key] = value;
-      switch (key) {
-        case "title":
-        case "og:title":
-          o.title = value;
-          break;
-        case "description":
-        case "og:description":
-          o.description = value;
-          break;
-        case "og:site_name":
-          o.siteName = value;
-          break;
-        case "medium":
-        case "og:type":
-          o.medium = value;
-          break;
-        case "og:video":
-          url = this._validateURL(browser, value);
-          if (url)
-            o.source = url;
-          break;
-        case "og:url":
-          url = this._validateURL(browser, value);
-          if (url)
-            o.url = url;
-          break;
-        case "og:image":
-          url = this._validateURL(browser, value);
-          if (url)
-            o.previews.push(url);
-          break;
-      }
-    }
-  },
-
-  _getLinkData: function(browser, o) {
-    let els = browser.contentDocument
-                  .querySelectorAll("head > link[rel], head > link[id]");
-    for (let el of els) {
-      let url = el.getAttribute("href");
-      if (!url)
-        continue;
-      url = this._validateURL(browser, unescapeService.unescape(url.trim()));
-      switch (el.getAttribute("rel") || el.getAttribute("id")) {
-        case "shorturl":
-        case "shortlink":
-          o.shortUrl = url;
-          break;
-        case "canonicalurl":
-        case "canonical":
-          o.url = url;
-          break;
-        case "image_src":
-          o.previews.push(url);
-          break;
-        case "alternate":
-          // expressly for oembed support but we're liberal here and will let
-          // other alternate links through. oembed defines an href, supplied by
-          // the site, where you can fetch additional meta data about a page.
-          // We'll let the client fetch the oembed data themselves, but they
-          // need the data from this link.
-          if (!o.alternate)
-            o.alternate = [];
-          o.alternate.push({
-            "type": el.getAttribute("type"),
-            "href": el.getAttribute("href"),
-            "title": el.getAttribute("title")
-          })
-      }
-    }
-  },
-
-  // scrape through the page for data we want
-  _getPageData: function(browser, o) {
-    if (o.previews.length < 1)
-      o.previews = this._getImageUrls(browser);
-  },
-
-  _validateURL: function(browser, url) {
-    let uri = Services.io.newURI(browser.currentURI.resolve(url), null, null);
-    if (["http", "https", "ftp", "ftps"].indexOf(uri.scheme) < 0)
-      return null;
-    uri.userPass = "";
-    return uri.spec;
-  },
-
-  _getImageUrls: function(browser) {
-    let l = [];
-    let els = browser.contentDocument.querySelectorAll("img");
-    for (let el of els) {
-      let content = el.getAttribute("src");
-      if (content) {
-        l.push(this._validateURL(browser, unescapeService.unescape(content)));
-        // we don't want a billion images
-        if (l.length > 5)
-          break;
-      }
-    }
-    return l;
-  }
 };
-
-// getMicrodata (and getObject) based on wg algorythm to convert microdata to json
-// http://www.whatwg.org/specs/web-apps/current-work/multipage/microdata-2.html#json
-function  getMicrodata(document, target) {
-
-  function _getObject(item) {
-    let result = {};
-    if (item.itemType.length)
-      result.types = [i for (i of item.itemType)];
-    if (item.itemId)
-      result.itemId = item.itemid;
-    if (item.properties.length)
-      result.properties = {};
-    for (let elem of item.properties) {
-      let value;
-      if (elem.itemScope)
-        value = _getObject(elem);
-      else if (elem.itemValue)
-        value = elem.itemValue;
-      // handle mis-formatted microdata
-      else if (elem.hasAttribute("content"))
-        value = elem.getAttribute("content");
-
-      for (let prop of elem.itemProp) {
-        if (!result.properties[prop])
-          result.properties[prop] = [];
-        result.properties[prop].push(value);
-      }
-    }
-    return result;
-  }
-
-  let result = { items: [] };
-  let elms = target ? [target] : document.getItems();
-  for (let el of elms) {
-    if (el.itemScope)
-      result.items.push(_getObject(el));
-  }
-  return result;
-}

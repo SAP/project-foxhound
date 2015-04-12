@@ -8,6 +8,7 @@
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 const NET_STRINGS_URI = "chrome://browser/locale/devtools/netmonitor.properties";
+const PKI_STRINGS_URI = "chrome://pippki/locale/pippki.properties";
 const LISTENERS = [ "NetworkActivity" ];
 const NET_PREFS = { "NetworkMonitor.saveRequestAndResponseBodies": true };
 
@@ -33,6 +34,10 @@ const EVENTS = {
   // When request post data begins and finishes receiving.
   UPDATING_REQUEST_POST_DATA: "NetMonitor:NetworkEventUpdating:RequestPostData",
   RECEIVED_REQUEST_POST_DATA: "NetMonitor:NetworkEventUpdated:RequestPostData",
+
+  // When security information begins and finishes receiving.
+  UPDATING_SECURITY_INFO: "NetMonitor::NetworkEventUpdating:SecurityInfo",
+  RECEIVED_SECURITY_INFO: "NetMonitor::NetworkEventUpdated:SecurityInfo",
 
   // When response headers begin and finish receiving.
   UPDATING_RESPONSE_HEADERS: "NetMonitor:NetworkEventUpdating:ResponseHeaders",
@@ -114,6 +119,7 @@ const promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const Editor = require("devtools/sourceeditor/editor");
 const {Tooltip} = require("devtools/shared/widgets/Tooltip");
+const {ToolSidebar} = require("devtools/framework/sidebar");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Chart",
   "resource:///modules/devtools/Chart.jsm");
@@ -135,6 +141,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "DevToolsUtils",
 
 XPCOMUtils.defineLazyServiceGetter(this, "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1", "nsIClipboardHelper");
+
+XPCOMUtils.defineLazyServiceGetter(this, "DOMParser",
+  "@mozilla.org/xmlextras/domparser;1", "nsIDOMParser");
 
 Object.defineProperty(this, "NetworkHelper", {
   get: function() {
@@ -392,6 +401,16 @@ let NetMonitorController = {
   },
 
   /**
+   * Getter that tells if the server includes the transferred (compressed /
+   * encoded) response size.
+   * @type boolean
+   */
+  get supportsTransferredResponseSize() {
+    return this.webConsoleClient &&
+           this.webConsoleClient.traits.transferredResponseSize;
+  },
+
+  /**
    * Getter that tells if the server can do network performance statistics.
    * @type boolean
    */
@@ -570,6 +589,13 @@ NetworkEventsHandler.prototype = {
         this.webConsoleClient.getRequestPostData(actor, this._onRequestPostData);
         window.emit(EVENTS.UPDATING_REQUEST_POST_DATA, actor);
         break;
+      case "securityInfo":
+        NetMonitorView.RequestsMenu.updateRequest(aPacket.from, {
+          securityState: aPacket.state,
+        });
+        this.webConsoleClient.getSecurityInfo(actor, this._onSecurityInfo);
+        window.emit(EVENTS.UPDATING_SECURITY_INFO, actor);
+        break;
       case "responseHeaders":
         this.webConsoleClient.getResponseHeaders(actor, this._onResponseHeaders);
         window.emit(EVENTS.UPDATING_RESPONSE_HEADERS, actor);
@@ -590,6 +616,7 @@ NetworkEventsHandler.prototype = {
       case "responseContent":
         NetMonitorView.RequestsMenu.updateRequest(aPacket.from, {
           contentSize: aPacket.contentSize,
+          transferredSize: aPacket.transferredSize,
           mimeType: aPacket.mimeType
         });
         this.webConsoleClient.getResponseContent(actor, this._onResponseContent);
@@ -643,6 +670,20 @@ NetworkEventsHandler.prototype = {
     });
     window.emit(EVENTS.RECEIVED_REQUEST_POST_DATA, aResponse.from);
   },
+
+  /**
+   * Handles additional information received for a "securityInfo" packet.
+   *
+   * @param object aResponse
+   *        The message received from the server.
+   */
+   _onSecurityInfo: function(aResponse) {
+     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
+       securityInfo: aResponse.securityInfo
+     });
+
+     window.emit(EVENTS.RECEIVED_SECURITY_INFO, aResponse.from);
+   },
 
   /**
    * Handles additional information received for a "responseHeaders" packet.
@@ -738,6 +779,7 @@ NetworkEventsHandler.prototype = {
  * Localization convenience methods.
  */
 let L10N = new ViewHelpers.L10N(NET_STRINGS_URI);
+let PKI_L10N = new ViewHelpers.L10N(PKI_STRINGS_URI);
 
 /**
  * Shortcuts for accessing various network monitor preferences.
@@ -773,7 +815,8 @@ NetMonitorController.NetworkEventsHandler = new NetworkEventsHandler();
  */
 Object.defineProperties(window, {
   "gNetwork": {
-    get: function() NetMonitorController.NetworkEventsHandler
+    get: function() NetMonitorController.NetworkEventsHandler,
+    configurable: true
   }
 });
 

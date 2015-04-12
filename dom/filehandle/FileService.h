@@ -28,7 +28,7 @@ namespace dom {
 
 class FileHandleBase;
 
-class FileService MOZ_FINAL : public nsIObserver
+class FileService final : public nsIObserver
 {
 public:
   NS_DECL_ISUPPORTS
@@ -62,9 +62,6 @@ public:
   void
   AbortFileHandlesForStorage(nsIOfflineStorage* aStorage);
 
-  bool
-  HasFileHandlesForStorage(nsIOfflineStorage* aStorage);
-
   nsIEventTarget*
   StreamTransportTarget()
   {
@@ -73,22 +70,22 @@ public:
   }
 
 private:
-  class FileHandleQueue MOZ_FINAL : public FileHelperListener
+  class FileHandleQueue final : public FileHelperListener
   {
     friend class FileService;
 
   public:
     NS_IMETHOD_(MozExternalRefCountType)
-    AddRef() MOZ_OVERRIDE;
+    AddRef() override;
 
     NS_IMETHOD_(MozExternalRefCountType)
-    Release() MOZ_OVERRIDE;
+    Release() override;
 
     inline nsresult
     Enqueue(FileHelper* aFileHelper);
 
     virtual void
-    OnFileHelperComplete(FileHelper* aFileHelper) MOZ_OVERRIDE;
+    OnFileHelperComplete(FileHelper* aFileHelper) override;
 
   private:
     inline
@@ -134,9 +131,6 @@ private:
     {
       return !mFileHandleQueues.IsEmpty();
     }
-
-    inline bool
-    HasRunningFileHandles(nsIOfflineStorage* aStorage);
 
     inline DelayedEnqueueInfo*
     CreateDelayedEnqueueInfo(FileHandleBase* aFileHandle,

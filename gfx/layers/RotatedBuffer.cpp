@@ -26,6 +26,7 @@
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
 #include "nsSize.h"                     // for nsIntSize
 #include "gfx2DGlue.h"
+#include "nsLayoutUtils.h"              // for invalidation debugging
 
 namespace mozilla {
 
@@ -364,7 +365,7 @@ RotatedContentBuffer::EnsureBufferOnWhite()
   }
 
   NS_WARN_IF_FALSE(mDTBufferOnWhite, "no buffer");
-  return mDTBufferOnWhite;
+  return !!mDTBufferOnWhite;
 }
 
 bool
@@ -446,13 +447,14 @@ RotatedContentBuffer::BeginPaint(PaintedLayer* aLayer,
 
   SurfaceMode mode;
   nsIntRegion neededRegion;
-  bool canReuseBuffer;
   nsIntRect destBufferRect;
+
+  bool canReuseBuffer = HaveBuffer();
 
   while (true) {
     mode = aLayer->GetSurfaceMode();
     neededRegion = aLayer->GetVisibleRegion();
-    canReuseBuffer = HaveBuffer() && BufferSizeOkFor(neededRegion.GetBounds().Size());
+    canReuseBuffer &= BufferSizeOkFor(neededRegion.GetBounds().Size());
     result.mContentType = layerContentType;
 
     if (canReuseBuffer) {
@@ -488,35 +490,54 @@ RotatedContentBuffer::BeginPaint(PaintedLayer* aLayer,
 
     if ((aFlags & PAINT_WILL_RESAMPLE) &&
         (!neededRegion.GetBounds().IsEqualInterior(destBufferRect) ||
-         neededRegion.GetNumRects() > 1)) {
-      // The area we add to neededRegion might not be painted opaquely
+         neededRegion.GetNumRects() > 1))
+    {
+      // The area we add to neededRegion might not be painted opaquely.
       if (mode == SurfaceMode::SURFACE_OPAQUE) {
         result.mContentType = gfxContentType::COLOR_ALPHA;
         mode = SurfaceMode::SURFACE_SINGLE_CHANNEL_ALPHA;
       }
 
       // We need to validate the entire buffer, to make sure that only valid
-      // pixels are sampled
+      // pixels are sampled.
       neededRegion = destBufferRect;
     }
 
     // If we have an existing buffer, but the content type has changed or we
     // have transitioned into/out of component alpha, then we need to recreate it.
-    if (HaveBuffer() &&
+    if (canReuseBuffer &&
         (result.mContentType != BufferContentType() ||
-        (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) != HaveBufferOnWhite())) {
-
-      // We're effectively clearing the valid region, so we need to draw
-      // the entire needed region now.
-      result.mRegionToInvalidate = aLayer->GetValidRegion();
-      validRegion.SetEmpty();
-      Clear();
-      // Restart decision process with the cleared buffer. We can only go
-      // around the loop one more iteration, since mDTBuffer is null now.
+        (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) != HaveBufferOnWhite()))
+    {
+      // Restart the decision process; we won't re-enter since we guard on
+      // being able to re-use the buffer.
+      canReuseBuffer = false;
       continue;
     }
 
     break;
+  }
+
+  if (HaveBuffer() &&
+      (result.mContentType != BufferContentType() ||
+      (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) != HaveBufferOnWhite()))
+  {
+    // We're effectively clearing the valid region, so we need to draw
+    // the entire needed region now.
+    canReuseBuffer = false;
+    result.mRegionToInvalidate = aLayer->GetValidRegion();
+    validRegion.SetEmpty();
+    Clear();
+
+#if defined(MOZ_DUMP_PAINTING)
+    if (nsLayoutUtils::InvalidationDebuggingIsEnabled()) {
+      if (result.mContentType != BufferContentType()) {
+        printf_stderr("Invalidating entire rotated buffer (layer %p): content type changed\n", aLayer);
+      } else if ((mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) != HaveBufferOnWhite()) {
+        printf_stderr("Invalidating entire rotated buffer (layer %p): component alpha changed\n", aLayer);
+      }
+    }
+#endif
   }
 
   NS_ASSERTION(destBufferRect.Contains(neededRegion.GetBounds()),
@@ -537,7 +558,7 @@ RotatedContentBuffer::BeginPaint(PaintedLayer* aLayer,
   nsIntRect drawBounds = result.mRegionToDraw.GetBounds();
   RefPtr<DrawTarget> destDTBuffer;
   RefPtr<DrawTarget> destDTBufferOnWhite;
-  uint32_t bufferFlags = canHaveRotation ? ALLOW_REPEAT : 0;
+  uint32_t bufferFlags = 0;
   if (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
     bufferFlags |= BUFFER_COMPONENT_ALPHA;
   }
@@ -627,7 +648,9 @@ RotatedContentBuffer::BeginPaint(PaintedLayer* aLayer,
             destBufferRect = ComputeBufferRect(neededRegion.GetBounds());
             CreateBuffer(result.mContentType, destBufferRect, bufferFlags,
                          &destDTBuffer, &destDTBufferOnWhite);
-            if (!destDTBuffer) {
+            if (!destDTBuffer ||
+                (!destDTBufferOnWhite && (bufferFlags & BUFFER_COMPONENT_ALPHA))) {
+              gfxCriticalError() << "Failed 1 buffer db=" << hexa(destDTBuffer.get()) << " dw=" << hexa(destDTBufferOnWhite.get()) << " for " << destBufferRect.x << ", " << destBufferRect.y << ", " << destBufferRect.width << ", " << destBufferRect.height;
               return result;
             }
           }
@@ -647,7 +670,9 @@ RotatedContentBuffer::BeginPaint(PaintedLayer* aLayer,
     // The buffer's not big enough, so allocate a new one
     CreateBuffer(result.mContentType, destBufferRect, bufferFlags,
                  &destDTBuffer, &destDTBufferOnWhite);
-    if (!destDTBuffer) {
+    if (!destDTBuffer ||
+        (!destDTBufferOnWhite && (bufferFlags & BUFFER_COMPONENT_ALPHA))) {
+      gfxCriticalError() << "Failed 2 buffer db=" << hexa(destDTBuffer.get()) << " dw=" << hexa(destDTBufferOnWhite.get()) << " for " << destBufferRect.x << ", " << destBufferRect.y << ", " << destBufferRect.width << ", " << destBufferRect.height;
       return result;
     }
   }
@@ -673,12 +698,11 @@ RotatedContentBuffer::BeginPaint(PaintedLayer* aLayer,
       destDTBuffer->SetTransform(Matrix());
 
       if (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
-        NS_ASSERTION(destDTBufferOnWhite, "Must have a white buffer!");
-        destDTBufferOnWhite->SetTransform(mat);
-        if (!EnsureBufferOnWhite()) {
+        if (!destDTBufferOnWhite || !EnsureBufferOnWhite()) {
           return result;
         }
         MOZ_ASSERT(mDTBufferOnWhite, "Have we got a Thebes buffer for some reason?");
+        destDTBufferOnWhite->SetTransform(mat);
         DrawBufferWithRotation(destDTBufferOnWhite, BUFFER_WHITE, 1.0, CompositionOp::OP_SOURCE);
         destDTBufferOnWhite->SetTransform(Matrix());
       }

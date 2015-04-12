@@ -83,6 +83,8 @@ function WebConsoleActor(aConnection, aParentActor)
 
   this.traits = {
     customNetworkRequest: !this._parentIsContentActor,
+    evaluateJSAsync: true,
+    transferredResponseSize: true
   };
 }
 
@@ -559,13 +561,15 @@ WebConsoleActor.prototype =
           startedListeners.push(listener);
           break;
         case "FileActivity":
-          if (!this.consoleProgressListener) {
-            this.consoleProgressListener =
-              new ConsoleProgressListener(this.window, this);
+          if (this.window instanceof Ci.nsIDOMWindow) {
+            if (!this.consoleProgressListener) {
+              this.consoleProgressListener =
+                new ConsoleProgressListener(this.window, this);
+            }
+            this.consoleProgressListener.startMonitor(this.consoleProgressListener.
+                                                      MONITOR_FILE_ACTIVITY);
+            startedListeners.push(listener);
           }
-          this.consoleProgressListener.startMonitor(this.consoleProgressListener.
-                                                    MONITOR_FILE_ACTIVITY);
-          startedListeners.push(listener);
           break;
         case "ReflowActivity":
           if (!this.consoleReflowListener) {
@@ -727,6 +731,39 @@ WebConsoleActor.prototype =
   },
 
   /**
+   * Handler for the "evaluateJSAsync" request. This method evaluates the given
+   * JavaScript string and sends back a packet with a unique ID.
+   * The result will be returned later as an unsolicited `evaluationResult`,
+   * that can be associated back to this request via the `resultID` field.
+   *
+   * @param object aRequest
+   *        The JSON request object received from the Web Console client.
+   * @return object
+   *         The response packet to send to with the unique id in the
+   *         `resultID` field.
+   */
+  onEvaluateJSAsync: function WCA_onEvaluateJSAsync(aRequest)
+  {
+    // We want to be able to run console commands without waiting
+    // for the first to return (see Bug 1088861).
+
+    // First, send a response packet with the id only.
+    let resultID = Date.now();
+    this.conn.send({
+      from: this.actorID,
+      resultID: resultID
+    });
+
+    // Then, execute the script that may pause.
+    let response = this.onEvaluateJS(aRequest);
+    response.resultID = resultID;
+
+    // Finally, send an unsolicited evaluationResult packet with
+    // the normal return value
+    this.conn.sendActorEvent(this.actorID, "evaluationResult", response);
+  },
+
+  /**
    * Handler for the "evaluateJS" request. This method evaluates the given
    * JavaScript string and sends back the result.
    *
@@ -785,7 +822,7 @@ WebConsoleActor.prototype =
       result: resultGrip,
       timestamp: timestamp,
       exception: errorGrip,
-      exceptionMessage: errorMessage,
+      exceptionMessage: this._createStringGrip(errorMessage),
       helperResult: helperResult,
     };
   },
@@ -1023,9 +1060,15 @@ WebConsoleActor.prototype =
    */
   evalWithDebugger: function WCA_evalWithDebugger(aString, aOptions = {})
   {
+    let trimmedString = aString.trim();
     // The help function needs to be easy to guess, so we make the () optional.
-    if (aString.trim() == "help" || aString.trim() == "?") {
+    if (trimmedString == "help" || trimmedString == "?") {
       aString = "help()";
+    }
+
+    // Add easter egg for console.mihai().
+    if (trimmedString == "console.mihai()" || trimmedString == "console.mihai();") {
+      aString = "\"http://incompleteness.me/blog/2015/02/09/console-dot-mihai/\"";
     }
 
     // Find the Debugger.Frame of the given FrameActor.
@@ -1469,6 +1512,7 @@ WebConsoleActor.prototype.requestTypes =
   stopListeners: WebConsoleActor.prototype.onStopListeners,
   getCachedMessages: WebConsoleActor.prototype.onGetCachedMessages,
   evaluateJS: WebConsoleActor.prototype.onEvaluateJS,
+  evaluateJSAsync: WebConsoleActor.prototype.onEvaluateJSAsync,
   autocomplete: WebConsoleActor.prototype.onAutocomplete,
   clearMessagesCache: WebConsoleActor.prototype.onClearMessagesCache,
   getPreferences: WebConsoleActor.prototype.onGetPreferences,
@@ -1685,6 +1729,7 @@ NetworkEventActor.prototype =
       from: this.actorID,
       headers: this._request.headers,
       headersSize: this._request.headersSize,
+      rawHeaders: this._request.rawHeaders,
     };
   },
 
@@ -1718,6 +1763,20 @@ NetworkEventActor.prototype =
   },
 
   /**
+   * The "getSecurityInfo" packet type handler.
+   *
+   * @return object
+   *         The response packet - connection security information.
+   */
+  onGetSecurityInfo: function NEA_onGetSecurityInfo()
+  {
+    return {
+      from: this.actorID,
+      securityInfo: this._securityInfo,
+    };
+  },
+
+  /**
    * The "getResponseHeaders" packet type handler.
    *
    * @return object
@@ -1729,6 +1788,7 @@ NetworkEventActor.prototype =
       from: this.actorID,
       headers: this._response.headers,
       headersSize: this._response.headersSize,
+      rawHeaders: this._response.rawHeaders,
     };
   },
 
@@ -1785,11 +1845,19 @@ NetworkEventActor.prototype =
    *
    * @param array aHeaders
    *        The request headers array.
+   * @param string aRawHeaders
+   *        The raw headers source.
    */
-  addRequestHeaders: function NEA_addRequestHeaders(aHeaders)
+  addRequestHeaders: function NEA_addRequestHeaders(aHeaders, aRawHeaders)
   {
     this._request.headers = aHeaders;
     this._prepareHeaders(aHeaders);
+
+    var rawHeaders = this.parent._createStringGrip(aRawHeaders);
+    if (typeof rawHeaders == "object") {
+      this._longStringActors.add(rawHeaders);
+    }
+    this._request.rawHeaders = rawHeaders;
 
     let packet = {
       from: this.actorID,
@@ -1853,9 +1921,17 @@ NetworkEventActor.prototype =
    *
    * @param object aInfo
    *        The response information.
+   * @param string aRawHeaders
+   *        The raw headers source.
    */
-  addResponseStart: function NEA_addResponseStart(aInfo)
+  addResponseStart: function NEA_addResponseStart(aInfo, aRawHeaders)
   {
+    var rawHeaders = this.parent._createStringGrip(aRawHeaders);
+    if (typeof rawHeaders == "object") {
+      this._longStringActors.add(rawHeaders);
+    }
+    this._response.rawHeaders = rawHeaders;
+
     this._response.httpVersion = aInfo.httpVersion;
     this._response.status = aInfo.status;
     this._response.statusText = aInfo.statusText;
@@ -1867,6 +1943,26 @@ NetworkEventActor.prototype =
       type: "networkEventUpdate",
       updateType: "responseStart",
       response: aInfo,
+    };
+
+    this.conn.send(packet);
+  },
+
+  /**
+   * Add connection security information.
+   *
+   * @param object info
+   *        The object containing security information.
+   */
+  addSecurityInfo: function NEA_addSecurityInfo(info)
+  {
+    this._securityInfo = info;
+
+    let packet = {
+      from: this.actorID,
+      type: "networkEventUpdate",
+      updateType: "securityInfo",
+      state: info.state,
     };
 
     this.conn.send(packet);
@@ -1938,6 +2034,7 @@ NetworkEventActor.prototype =
       updateType: "responseContent",
       mimeType: aContent.mimeType,
       contentSize: aContent.text.length,
+      transferredSize: aContent.transferredSize,
       discardResponseBody: aDiscardedResponseBody,
     };
 
@@ -1995,4 +2092,5 @@ NetworkEventActor.prototype.requestTypes =
   "getResponseCookies": NetworkEventActor.prototype.onGetResponseCookies,
   "getResponseContent": NetworkEventActor.prototype.onGetResponseContent,
   "getEventTimings": NetworkEventActor.prototype.onGetEventTimings,
+  "getSecurityInfo": NetworkEventActor.prototype.onGetSecurityInfo,
 };

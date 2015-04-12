@@ -40,10 +40,11 @@ WorkerDataStoreCursor::Constructor(GlobalObject& aGlobal, ErrorResult& aRv)
   return nullptr;
 }
 
-JSObject*
-WorkerDataStoreCursor::WrapObject(JSContext* aCx)
+bool
+WorkerDataStoreCursor::WrapObject(JSContext* aCx,
+                                  JS::MutableHandle<JSObject*> aReflector)
 {
-  return DataStoreCursorBinding_workers::Wrap(aCx, this);
+  return DataStoreCursorBinding_workers::Wrap(aCx, this, aReflector);
 }
 
 // A WorkerMainThreadRunnable which holds a reference to DataStoreCursor.
@@ -65,7 +66,7 @@ public:
 
 // A DataStoreCursorRunnable to run DataStoreCursor::Next(...) on the main
 // thread.
-class DataStoreCursorNextRunnable MOZ_FINAL : public DataStoreCursorRunnable
+class DataStoreCursorNextRunnable final : public DataStoreCursorRunnable
 {
   nsRefPtr<PromiseWorkerProxy> mPromiseWorkerProxy;
   ErrorResult& mRv;
@@ -82,12 +83,24 @@ public:
     aWorkerPrivate->AssertIsOnWorkerThread();
 
     mPromiseWorkerProxy =
-      new PromiseWorkerProxy(aWorkerPrivate, aWorkerPromise);
+      PromiseWorkerProxy::Create(aWorkerPrivate, aWorkerPromise);
+  }
+
+  bool Dispatch(JSContext* aCx)
+  {
+    if (mPromiseWorkerProxy) {
+      return DataStoreCursorRunnable::Dispatch(aCx);
+    }
+
+    // If the creation of mProxyWorkerProxy failed, the worker is terminating.
+    // In this case we don't want to dispatch the runnable and we should stop
+    // the promise chain here.
+    return true;
   }
 
 protected:
   virtual bool
-  MainThreadRun() MOZ_OVERRIDE
+  MainThreadRun() override
   {
     AssertIsOnMainThread();
 
@@ -99,7 +112,7 @@ protected:
 
 // A DataStoreCursorRunnable to run DataStoreCursor::Close(...) on the main
 // thread.
-class DataStoreCursorCloseRunnable MOZ_FINAL : public DataStoreCursorRunnable
+class DataStoreCursorCloseRunnable final : public DataStoreCursorRunnable
 {
   ErrorResult& mRv;
 
@@ -116,7 +129,7 @@ public:
 
 protected:
   virtual bool
-  MainThreadRun() MOZ_OVERRIDE
+  MainThreadRun() override
   {
     AssertIsOnMainThread();
 
@@ -172,12 +185,6 @@ WorkerDataStoreCursor::Close(JSContext* aCx, ErrorResult& aRv)
   nsRefPtr<DataStoreCursorCloseRunnable> runnable =
     new DataStoreCursorCloseRunnable(workerPrivate, mBackingCursor, aRv);
   runnable->Dispatch(aCx);
-}
-
-void
-WorkerDataStoreCursor::SetDataStoreCursorImpl(DataStoreCursorImpl& aCursor)
-{
-  NS_NOTREACHED("We don't use this for the WorkerDataStoreCursor!");
 }
 
 void

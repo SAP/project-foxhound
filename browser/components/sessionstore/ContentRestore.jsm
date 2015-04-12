@@ -151,15 +151,17 @@ ContentRestoreInternal.prototype = {
     let disallow = new Set(tabData.disallow && tabData.disallow.split(","));
     DocShellCapabilities.restore(this.docShell, disallow);
 
-    if (tabData.storage && this.docShell instanceof Ci.nsIDocShell)
+    if (tabData.storage && this.docShell instanceof Ci.nsIDocShell) {
       SessionStorage.restore(this.docShell, tabData.storage);
+      delete tabData.storage;
+    }
   },
 
   /**
    * Start loading the current page. When the data has finished loading from the
    * network, finishCallback is called. Returns true if the load was successful.
    */
-  restoreTabContent: function (finishCallback) {
+  restoreTabContent: function (loadArguments, finishCallback) {
     let tabData = this._tabData;
     this._tabData = null;
 
@@ -188,7 +190,23 @@ ContentRestoreInternal.prototype = {
     webNavigation.setCurrentURI(Utils.makeURI("about:blank"));
 
     try {
-      if (tabData.userTypedValue && tabData.userTypedClear) {
+      if (loadArguments) {
+        // A load has been redirected to a new process so get history into the
+        // same state it was before the load started then trigger the load.
+        let activeIndex = tabData.index - 1;
+        if (activeIndex > 0) {
+          // Go to the right history entry, but don't load anything yet.
+          history.getEntryAtIndex(activeIndex, true);
+        }
+        let referrer = loadArguments.referrer ?
+                       Utils.makeURI(loadArguments.referrer) : null;
+        let referrerPolicy = ('referrerPolicy' in loadArguments
+            ? loadArguments.referrerPolicy
+            : Ci.nsIHttpChannel.REFERRER_POLICY_DEFAULT);
+        webNavigation.loadURIWithOptions(loadArguments.uri, loadArguments.flags,
+                                         referrer, referrerPolicy, null, null,
+                                         null);
+      } else if (tabData.userTypedValue && tabData.userTypedClear) {
         // If the user typed a URL into the URL bar and hit enter right before
         // we crashed, we want to start loading that page again. A non-zero
         // userTypedClear value means that the load had started.
@@ -408,8 +426,8 @@ ProgressListener.prototype = {
   },
 
   onStateChange: function(webProgress, request, stateFlags, status) {
-    if (stateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
-        stateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK &&
+    if (webProgress.isTopLevel &&
+        stateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
         stateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW) {
       this.callback();
     }

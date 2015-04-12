@@ -169,7 +169,7 @@ endif
 	$(CHECK_TEST_ERROR)
 
 ifeq ($(OS_ARCH),Darwin)
-webapprt_stub_path = $(TARGET_DIST)/$(MOZ_MACBUNDLE_NAME)/Contents/MacOS/webapprt-stub$(BIN_SUFFIX)
+webapprt_stub_path = $(TARGET_DIST)/$(MOZ_MACBUNDLE_NAME)/Contents/Resources/webapprt-stub$(BIN_SUFFIX)
 endif
 ifeq ($(OS_ARCH),WINNT)
 webapprt_stub_path = $(TARGET_DIST)/bin/webapprt-stub$(BIN_SUFFIX)
@@ -195,13 +195,13 @@ RUN_REFTEST = rm -f ./$@.log && $(PYTHON) _tests/reftest/runreftest.py \
 REMOTE_REFTEST = rm -f ./$@.log && $(PYTHON) _tests/reftest/remotereftest.py \
   --dm_trans=$(DM_TRANS) --ignore-window-size \
   --app=$(TEST_PACKAGE_NAME) --deviceIP=${TEST_DEVICE} --xre-path=${MOZ_HOST_BIN} \
-  --httpd-path=_tests/reftest/reftest/components \
+  --httpd-path=_tests/modules \
   $(SYMBOLS_PATH) $(EXTRA_TEST_ARGS) '$(1)' | tee ./$@.log
 
 RUN_REFTEST_B2G = rm -f ./$@.log && $(PYTHON) _tests/reftest/runreftestb2g.py \
   --remote-webserver=10.0.2.2 --b2gpath=${B2G_PATH} --adbpath=${ADB_PATH} \
   --xre-path=${MOZ_HOST_BIN} $(SYMBOLS_PATH) --ignore-window-size \
-  --httpd-path=_tests/reftest/reftest/components \
+  --httpd-path=_tests/modules \
   $(EXTRA_TEST_ARGS) '$(1)' | tee ./$@.log
 
 ifeq ($(OS_ARCH),WINNT) #{
@@ -311,8 +311,6 @@ xpcshell-tests:
 	  --test-plugin-path='$(DIST)/plugins' \
 	  --tests-root-dir=$(abspath _tests/xpcshell) \
 	  --testing-modules-dir=$(abspath _tests/modules) \
-	  --xunit-file=$(abspath _tests/xpcshell/results.xml) \
-	  --xunit-suite-name=xpcshell \
           $(SYMBOLS_PATH) \
 	  $(TEST_PATH_ARG) $(EXTRA_TEST_ARGS) \
 	  $(xpcshell_path)
@@ -421,7 +419,7 @@ package-tests:
 ifndef UNIVERSAL_BINARY
 	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
 endif
-	find $(PKG_STAGE) -name '*.pyc' -exec rm {} \;
+	find -L $(PKG_STAGE) -name '*.pyc' -exec rm {} \;
 	$(MKDIR) -p $(abspath $(DIST))/$(PKG_PATH) && \
 	cd $(PKG_STAGE) && \
 	  zip -rq9D '$(abspath $(DIST))/$(PKG_PATH)$(TEST_PACKAGE)' \
@@ -507,17 +505,12 @@ ifdef STRIP_CPP_TESTS
 else
 	cp -RL $(DIST)/cppunittests $(PKG_STAGE)
 endif
-	$(NSINSTALL) $(topsrcdir)/testing/runcppunittests.py $(PKG_STAGE)/cppunittests
-	$(NSINSTALL) $(topsrcdir)/testing/remotecppunittests.py $(PKG_STAGE)/cppunittests
-ifeq ($(MOZ_WIDGET_TOOLKIT),android)
-	$(NSINSTALL) $(topsrcdir)/testing/android_cppunittest_manifest.txt $(PKG_STAGE)/cppunittests
-endif
-ifeq ($(MOZ_WIDGET_TOOLKIT),gonk)
-	$(NSINSTALL) $(topsrcdir)/testing/b2g_cppunittest_manifest.txt $(PKG_STAGE)/cppunittests
-endif
+	cp $(topsrcdir)/testing/runcppunittests.py $(PKG_STAGE)/cppunittests
+	cp $(topsrcdir)/testing/remotecppunittests.py $(PKG_STAGE)/cppunittests
+	cp $(topsrcdir)/testing/cppunittest.ini $(PKG_STAGE)/cppunittests
 ifeq ($(MOZ_DISABLE_STARTUPCACHE),)
-	$(NSINSTALL) $(topsrcdir)/startupcache/test/TestStartupCacheTelemetry.js $(PKG_STAGE)/cppunittests
-	$(NSINSTALL) $(topsrcdir)/startupcache/test/TestStartupCacheTelemetry.manifest $(PKG_STAGE)/cppunittests
+	cp $(topsrcdir)/startupcache/test/TestStartupCacheTelemetry.js $(PKG_STAGE)/cppunittests
+	cp $(topsrcdir)/startupcache/test/TestStartupCacheTelemetry.manifest $(PKG_STAGE)/cppunittests
 endif
 ifdef STRIP_CPP_TESTS
 	$(OBJCOPY) $(or $(STRIP_FLAGS),--strip-unneeded) $(DIST)/bin/jsapi-tests$(BIN_SUFFIX) $(PKG_STAGE)/cppunittests/jsapi-tests$(BIN_SUFFIX)
@@ -527,11 +520,11 @@ endif
 
 stage-jittest: make-stage-dir
 	$(NSINSTALL) -D $(PKG_STAGE)/jit-test/tests
-	cp -RL $(topsrcdir)/js/src/jsapi.h $(PKG_STAGE)/jit-test
-	cp -RL $(topsrcdir)/js/src/jit-test $(PKG_STAGE)/jit-test/jit-test
-	cp -RL $(topsrcdir)/js/src/tests/ecma_6 $(PKG_STAGE)/jit-test/tests/ecma_6
-	cp -RL $(topsrcdir)/js/src/tests/js1_8_5 $(PKG_STAGE)/jit-test/tests/js1_8_5
-	cp -RL $(topsrcdir)/js/src/tests/lib $(PKG_STAGE)/jit-test/tests/lib
+	cp -RL $(topsrcdir)/js/src/jsapi.h $(PKG_STAGE)/jit-test/
+	cp -RL $(topsrcdir)/js/src/jit-test $(PKG_STAGE)/jit-test/
+	cp -RL $(topsrcdir)/js/src/tests/ecma_6 $(PKG_STAGE)/jit-test/tests/
+	cp -RL $(topsrcdir)/js/src/tests/js1_8_5 $(PKG_STAGE)/jit-test/tests/
+	cp -RL $(topsrcdir)/js/src/tests/lib $(PKG_STAGE)/jit-test/tests/
 
 stage-steeplechase: make-stage-dir
 	$(NSINSTALL) -D $(PKG_STAGE)/steeplechase/
@@ -543,8 +536,10 @@ MARIONETTE_DIR=$(PKG_STAGE)/marionette
 stage-marionette: make-stage-dir
 	$(NSINSTALL) -D $(MARIONETTE_DIR)/tests
 	$(NSINSTALL) -D $(MARIONETTE_DIR)/transport
+	$(NSINSTALL) -D $(MARIONETTE_DIR)/driver
 	@(cd $(topsrcdir)/testing/marionette/client && tar --exclude marionette/tests $(TAR_CREATE_FLAGS) - *) | (cd $(MARIONETTE_DIR)/ && tar -xf -)
 	@(cd $(topsrcdir)/testing/marionette/transport && tar $(TAR_CREATE_FLAGS) - *) | (cd $(MARIONETTE_DIR)/transport && tar -xf -)
+	@(cd $(topsrcdir)/testing/marionette/driver && tar $(TAR_CREATE_FLAGS) - *) | (cd $(MARIONETTE_DIR)/driver && tar -xf -)
 	$(PYTHON) $(topsrcdir)/testing/marionette/client/marionette/tests/print-manifest-dirs.py \
           $(topsrcdir) \
           $(topsrcdir)/testing/marionette/client/marionette/tests/unit-tests.ini \

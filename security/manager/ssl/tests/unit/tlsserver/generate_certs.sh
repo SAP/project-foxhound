@@ -121,7 +121,7 @@ function make_CA {
 SERIALNO=$RANDOM
 
 function make_INT {
-  INT_RESPONSES="y\n0\ny\n2\n7\nhttp://localhost:8080/\n\nn\nn\n"
+  INT_RESPONSES="y\n0\ny\n2\n7\nhttp://localhost:8888/\n\nn\nn\n"
   NICKNAME="${1}"
   SUBJECT="${2}"
   CA="${3}"
@@ -171,7 +171,7 @@ function make_V1 {
 }
 
 function make_EE {
-  CERT_RESPONSES="n\n\ny\n2\n7\nhttp://localhost:8080/\n\nn\nn\n"
+  CERT_RESPONSES="n\n\ny\n2\n7\nhttp://localhost:8888/\n\nn\nn\n"
   NICKNAME="${1}"
   SUBJECT="${2}"
   CA="${3}"
@@ -260,6 +260,7 @@ make_EE localhostAndExampleCom 'CN=Test End-entity' testCA "localhost,*.example.
 make_EE otherIssuerEE 'CN=Wrong CA Pin Test End-Entity' otherCA "*.include-subdomains.pinning.example.com,*.exclude-subdomains.pinning.example.com,*.pinning.example.com"
 
 export_cert localhostAndExampleCom default-ee.der
+export_cert otherIssuerEE other-issuer-ee.der
 
 # A cert that is like localhostAndExampleCom, but with a different serial number for
 # testing the "OCSP response is from the right issuer, but it is for the wrong cert"
@@ -267,9 +268,11 @@ export_cert localhostAndExampleCom default-ee.der
 make_EE ocspOtherEndEntity 'CN=Other Cert' testCA "localhost,*.example.com"
 
 make_INT testINT 'CN=Test Intermediate' testCA
+export_cert testINT test-int.der
 make_EE ocspEEWithIntermediate 'CN=Test End-entity with Intermediate' testINT "localhost,*.example.com"
 make_EE expired 'CN=Expired Test End-entity' testCA "expired.example.com" "-w -400"
 export_cert expired expired-ee.der
+make_EE notYetValid 'CN=Not Yet Valid Test End-entity' testCA "notyetvalid.example.com" "-w 400"
 make_EE mismatch 'CN=Mismatch Test End-entity' testCA "doesntmatch.example.com"
 make_EE selfsigned 'CN=Self-signed Test End-entity' testCA "selfsigned.example.com" "-x"
 # If the certificate 'CN=Test Intermediate' isn't loaded into memory,
@@ -279,15 +282,26 @@ make_EE selfsigned 'CN=Self-signed Test End-entity' testCA "selfsigned.example.c
 # get regenerated. Either way, deletedINT will then be removed again.
 make_INT deletedINT 'CN=Test Intermediate to delete' testCA
 make_EE unknownissuer 'CN=Test End-entity from unknown issuer' deletedINT "unknownissuer.example.com"
+export_cert unknownissuer unknown-issuer.der
 
 $RUN_MOZILLA $CERTUTIL -d $DB_ARGUMENT -D -n deletedINT
 
+# certutil doesn't expose a way to directly specify a notBefore time.
+# Workaround this by just providing a large enough warp that the notBefore time
+# falls before the UNIX Epoch.
+make_EE beforeEpoch 'CN=Before UNIX Epoch Test End-entity' testCA "before-epoch.example.com" "-w -720 -v 960"
+make_INT beforeEpochINT 'CN=Before UNIX Epoch Test Intermediate' testCA "-w -720 -v 960"
+make_EE beforeEpochIssuer 'CN=Test End-entity with Before UNIX Epoch issuer' beforeEpochINT "before-epoch-issuer.example.com"
+
 make_INT expiredINT 'CN=Expired Test Intermediate' testCA "-w -400"
 make_EE expiredissuer 'CN=Test End-entity with expired issuer' expiredINT "expiredissuer.example.com"
+make_INT notYetValidINT 'CN=Not Yet Valid Test Intermediate' testCA "-w 400"
+make_EE notYetValidIssuer 'CN=Test End-entity with not yet valid issuer' notYetValidINT "notyetvalidissuer.example.com"
 NSS_ALLOW_WEAK_SIGNATURE_ALG=1 make_EE md5signature 'CN=Test End-entity with MD5 signature' testCA "md5signature.example.com" "-Z MD5"
 make_EE untrustedissuer 'CN=Test End-entity with untrusted issuer' otherCA "untrustedissuer.example.com"
 
 make_EE mismatch-expired 'CN=Mismatch-Expired Test End-entity' testCA "doesntmatch.example.com" "-w -400"
+make_EE mismatch-notYetValid 'CN=Mismatch-Not Yet Valid Test End-entity' testCA "doesntmatch.example.com" "-w 400"
 make_EE mismatch-untrusted 'CN=Mismatch-Untrusted Test End-entity' otherCA "doesntmatch.example.com"
 make_EE untrusted-expired 'CN=Untrusted-Expired Test End-entity' otherCA "untrusted-expired.example.com" "-w -400"
 make_EE mismatch-untrusted-expired 'CN=Mismatch-Untrusted-Expired Test End-entity' otherCA "doesntmatch.example.com" "-w -400"
@@ -306,7 +320,8 @@ make_delegated invalidDelegatedSignerWrongExtKeyUsage 'CN=Test Invalid Delegated
 make_INT self-signed-EE-with-cA-true 'CN=Test Self-signed End-entity with CA true' unused "-x -8 self-signed-end-entity-with-cA-true.example.com"
 make_INT ca-used-as-end-entity 'CN=Test Intermediate used as End-Entity' testCA "-8 ca-used-as-end-entity.example.com"
 
-make_delegated badKeysizeDelegatedSigner 'CN=Bad Keysize Delegated Responder' testCA "--extKeyUsage ocspResponder -g 1008"
+make_delegated rsa-1008-keysizeDelegatedSigner 'CN=RSA 1008 Key Size Test Delegated Responder' testCA "--extKeyUsage ocspResponder -g 1008"
+make_EE inadequateKeySizeEE 'CN=Inadequate Key Size End-Entity' testINT "inadequate-key-size-ee.example.com" "-g 1008"
 
 make_EE_with_nsCertType nsCertTypeCritical 'CN=nsCertType Critical' testCA "localhost,*.example.com" "y"
 make_EE_with_nsCertType nsCertTypeNotCritical 'CN=nsCertType Not Critical' testCA "localhost,*.example.com" "n"
@@ -318,5 +333,13 @@ make_EE_with_nsCertType nsCertTypeCriticalWithExtKeyUsage 'CN=nsCertType Critica
 make_V1 v1Cert 'CN=V1 Cert' testCA
 export_cert v1Cert v1Cert.der
 make_EE eeIssuedByV1Cert 'CN=EE Issued by V1 Cert' v1Cert "localhost,*.example.com"
+
+make_EE eeIssuedByNonCA 'CN=EE Issued by non-CA' localhostAndExampleCom "localhost,*.example.com"
+
+# Make a valid EE using testINT to test OneCRL revocation of testINT
+make_EE eeIssuedByIntermediate 'CN=EE issued by intermediate' testINT "localhost"
+export_cert eeIssuedByIntermediate test-int-ee.der
+
+make_EE badSubjectAltNames 'CN=EE with bad subjectAltNames' testCA "*.*.example.com"
 
 cleanup

@@ -31,7 +31,7 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "nsIOService.h"
 #include "nsICachingChannel.h"
-
+#include "mozilla/LoadInfo.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
@@ -57,6 +57,8 @@ HttpChannelParent::HttpChannelParent(const PBrowserOrId& iframeEmbedding,
   , mSuspendedForDiversion(false)
   , mNestedFrameId(0)
 {
+  LOG(("Creating HttpChannelParent [this=%p]\n", this));
+
   // Ensure gHttpHandler is initialized: we need the atom table up and running.
   nsCOMPtr<nsIHttpProtocolHandler> dummyInitializer =
     do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http");
@@ -67,7 +69,7 @@ HttpChannelParent::HttpChannelParent(const PBrowserOrId& iframeEmbedding,
   if (iframeEmbedding.type() == PBrowserOrId::TPBrowserParent) {
     mTabParent = static_cast<dom::TabParent*>(iframeEmbedding.get_PBrowserParent());
   } else {
-    mNestedFrameId = iframeEmbedding.get_uint64_t();
+    mNestedFrameId = iframeEmbedding.get_TabId();
   }
 
   mObserver = new OfflineObserver(this);
@@ -75,6 +77,7 @@ HttpChannelParent::HttpChannelParent(const PBrowserOrId& iframeEmbedding,
 
 HttpChannelParent::~HttpChannelParent()
 {
+  LOG(("Destroying HttpChannelParent [this=%p]\n", this));
   if (mObserver) {
     mObserver->RemoveObserver();
   }
@@ -92,20 +95,22 @@ HttpChannelParent::ActorDestroy(ActorDestroyReason why)
 bool
 HttpChannelParent::Init(const HttpChannelCreationArgs& aArgs)
 {
+  LOG(("HttpChannelParent::Init [this=%p]\n", this));
   switch (aArgs.type()) {
   case HttpChannelCreationArgs::THttpChannelOpenArgs:
   {
     const HttpChannelOpenArgs& a = aArgs.get_HttpChannelOpenArgs();
     return DoAsyncOpen(a.uri(), a.original(), a.doc(), a.referrer(),
-                       a.apiRedirectTo(), a.loadFlags(), a.requestHeaders(),
+                       a.referrerPolicy(), a.apiRedirectTo(), a.topWindowURI(),
+                       a.loadFlags(), a.requestHeaders(),
                        a.requestMethod(), a.uploadStream(),
-                       a.uploadStreamHasHeaders(), a.priority(),
+                       a.uploadStreamHasHeaders(), a.priority(), a.classOfService(),
                        a.redirectionLimit(), a.allowPipelining(), a.allowSTS(),
-                       a.forceAllowThirdPartyCookie(), a.resumeAt(),
-                       a.startPos(), a.entityID(), a.chooseApplicationCache(),
+                       a.thirdPartyFlags(), a.resumeAt(), a.startPos(),
+                       a.entityID(), a.chooseApplicationCache(),
                        a.appCacheClientID(), a.allowSpdy(), a.fds(),
-                       a.requestingPrincipalInfo(), a.securityFlags(),
-                       a.contentPolicyType());
+                       a.requestingPrincipalInfo(), a.triggeringPrincipalInfo(),
+                       a.securityFlags(), a.contentPolicyType(), a.innerWindowID());
   }
   case HttpChannelCreationArgs::THttpChannelConnectArgs:
   {
@@ -171,17 +176,20 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
                                  const OptionalURIParams&   aOriginalURI,
                                  const OptionalURIParams&   aDocURI,
                                  const OptionalURIParams&   aReferrerURI,
+                                 const uint32_t&            aReferrerPolicy,
                                  const OptionalURIParams&   aAPIRedirectToURI,
+                                 const OptionalURIParams&   aTopWindowURI,
                                  const uint32_t&            aLoadFlags,
                                  const RequestHeaderTuples& requestHeaders,
                                  const nsCString&           requestMethod,
                                  const OptionalInputStreamParams& uploadStream,
-                                 const bool&              uploadStreamHasHeaders,
+                                 const bool&                uploadStreamHasHeaders,
                                  const uint16_t&            priority,
+                                 const uint32_t&            classOfService,
                                  const uint8_t&             redirectionLimit,
-                                 const bool&              allowPipelining,
-                                 const bool&              allowSTS,
-                                 const bool&              forceAllowThirdPartyCookie,
+                                 const bool&                allowPipelining,
+                                 const bool&                allowSTS,
+                                 const uint32_t&            thirdPartyFlags,
                                  const bool&                doResumeAt,
                                  const uint64_t&            startPos,
                                  const nsCString&           entityID,
@@ -190,8 +198,10 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
                                  const bool&                allowSpdy,
                                  const OptionalFileDescriptorSet& aFds,
                                  const ipc::PrincipalInfo&  aRequestingPrincipalInfo,
+                                 const ipc::PrincipalInfo&  aTriggeringPrincipalInfo,
                                  const uint32_t&            aSecurityFlags,
-                                 const uint32_t&            aContentPolicyType)
+                                 const uint32_t&            aContentPolicyType,
+                                 const uint32_t&            aInnerWindowID)
 {
   nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
   if (!uri) {
@@ -203,6 +213,7 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
   nsCOMPtr<nsIURI> docUri = DeserializeURI(aDocURI);
   nsCOMPtr<nsIURI> referrerUri = DeserializeURI(aReferrerURI);
   nsCOMPtr<nsIURI> apiRedirectToUri = DeserializeURI(aAPIRedirectToURI);
+  nsCOMPtr<nsIURI> topWindowUri = DeserializeURI(aTopWindowURI);
 
   nsCString uriSpec;
   uri->GetSpec(uriSpec);
@@ -217,6 +228,11 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
 
   nsCOMPtr<nsIPrincipal> requestingPrincipal =
     mozilla::ipc::PrincipalInfoToPrincipal(aRequestingPrincipalInfo, &rv);
+  if (NS_FAILED(rv)) {
+    return SendFailedAsyncOpen(rv);
+  }
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal =
+    mozilla::ipc::PrincipalInfoToPrincipal(aTriggeringPrincipalInfo, &rv);
   if (NS_FAILED(rv)) {
     return SendFailedAsyncOpen(rv);
   }
@@ -235,16 +251,14 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
     loadFlags |= nsICachingChannel::LOAD_NO_NETWORK_IO;
   }
 
+  nsCOMPtr<nsILoadInfo> loadInfo =
+    new mozilla::LoadInfo(requestingPrincipal, triggeringPrincipal,
+                          aSecurityFlags, aContentPolicyType,
+                          aInnerWindowID);
+
   nsCOMPtr<nsIChannel> channel;
-  rv = NS_NewChannel(getter_AddRefs(channel),
-                     uri,
-                     requestingPrincipal,
-                     aSecurityFlags,
-                     aContentPolicyType,
-                     nullptr,   // loadGroup
-                     nullptr,   // aCallbacks
-                     loadFlags,
-                     ios);
+  rv = NS_NewChannelInternal(getter_AddRefs(channel), uri, loadInfo,
+                             nullptr, nullptr, loadFlags, ios);
 
   if (NS_FAILED(rv))
     return SendFailedAsyncOpen(rv);
@@ -263,9 +277,11 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
   if (docUri)
     mChannel->SetDocumentURI(docUri);
   if (referrerUri)
-    mChannel->SetReferrerInternal(referrerUri);
+    mChannel->SetReferrerWithPolicyInternal(referrerUri, aReferrerPolicy);
   if (apiRedirectToUri)
     mChannel->RedirectTo(apiRedirectToUri);
+  if (topWindowUri)
+    mChannel->SetTopWindowURI(topWindowUri);
   if (loadFlags != nsIRequest::LOAD_NORMAL)
     mChannel->SetLoadFlags(loadFlags);
 
@@ -291,6 +307,9 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
     MOZ_ASSERT(!fds.IsEmpty());
 
     unused << fdSetActor->Send__delete__(fdSetActor);
+  } else if (aFds.type() == OptionalFileDescriptorSet::TArrayOfFileDescriptor) {
+    const_cast<OptionalFileDescriptorSet&>(aFds).
+      get_ArrayOfFileDescriptor().SwapElements(fds);
   }
 
   nsCOMPtr<nsIInputStream> stream = DeserializeInputStream(uploadStream, fds);
@@ -299,12 +318,16 @@ HttpChannelParent::DoAsyncOpen(  const URIParams&           aURI,
     mChannel->SetUploadStreamHasHeaders(uploadStreamHasHeaders);
   }
 
-  if (priority != nsISupportsPriority::PRIORITY_NORMAL)
+  if (priority != nsISupportsPriority::PRIORITY_NORMAL) {
     mChannel->SetPriority(priority);
+  }
+  if (classOfService) {
+    mChannel->SetClassFlags(classOfService);
+  }
   mChannel->SetRedirectionLimit(redirectionLimit);
   mChannel->SetAllowPipelining(allowPipelining);
   mChannel->SetAllowSTS(allowSTS);
-  mChannel->SetForceAllowThirdPartyCookie(forceAllowThirdPartyCookie);
+  mChannel->SetThirdPartyFlags(thirdPartyFlags);
   mChannel->SetAllowSpdy(allowSpdy);
 
   nsCOMPtr<nsIApplicationCacheChannel> appCacheChan =
@@ -362,7 +385,8 @@ HttpChannelParent::ConnectChannel(const uint32_t& channelId)
 {
   nsresult rv;
 
-  LOG(("Looking for a registered channel [this=%p, id=%d]", this, channelId));
+  LOG(("HttpChannelParent::ConnectChannel: Looking for a registered channel "
+       "[this=%p, id=%lu]\n", this, channelId));
   nsCOMPtr<nsIChannel> channel;
   rv = NS_LinkRedirectChannels(channelId, this, getter_AddRefs(channel));
   mChannel = static_cast<nsHttpChannel*>(channel.get());
@@ -398,6 +422,9 @@ HttpChannelParent::ConnectChannel(const uint32_t& channelId)
 bool
 HttpChannelParent::RecvSetPriority(const uint16_t& priority)
 {
+  LOG(("HttpChannelParent::RecvSetPriority [this=%p, priority=%u]\n",
+       this, priority));
+
   if (mChannel) {
     mChannel->SetPriority(priority);
   }
@@ -411,8 +438,19 @@ HttpChannelParent::RecvSetPriority(const uint16_t& priority)
 }
 
 bool
+HttpChannelParent::RecvSetClassOfService(const uint32_t& cos)
+{
+  if (mChannel) {
+    mChannel->SetClassFlags(cos);
+  }
+  return true;
+}
+
+bool
 HttpChannelParent::RecvSuspend()
 {
+  LOG(("HttpChannelParent::RecvSuspend [this=%p]\n", this));
+
   if (mChannel) {
     mChannel->Suspend();
   }
@@ -422,6 +460,8 @@ HttpChannelParent::RecvSuspend()
 bool
 HttpChannelParent::RecvResume()
 {
+  LOG(("HttpChannelParent::RecvResume [this=%p]\n", this));
+
   if (mChannel) {
     mChannel->Resume();
   }
@@ -431,6 +471,8 @@ HttpChannelParent::RecvResume()
 bool
 HttpChannelParent::RecvCancel(const nsresult& status)
 {
+  LOG(("HttpChannelParent::RecvCancel [this=%p]\n", this));
+
   // May receive cancel before channel has been constructed!
   if (mChannel) {
     mChannel->Cancel(status);
@@ -463,6 +505,8 @@ HttpChannelParent::RecvRedirect2Verify(const nsresult& result,
                                        const RequestHeaderTuples& changedHeaders,
                                        const OptionalURIParams&   aAPIRedirectURI)
 {
+  LOG(("HttpChannelParent::RecvRedirect2Verify [this=%p result=%x]\n",
+       this, result));
   if (NS_SUCCEEDED(result)) {
     nsCOMPtr<nsIHttpChannel> newHttpChannel =
         do_QueryInterface(mRedirectChannel);
@@ -501,6 +545,9 @@ HttpChannelParent::RecvRedirect2Verify(const nsresult& result,
   mReceivedRedirect2Verify = true;
 
   if (mRedirectCallback) {
+    LOG(("HttpChannelParent::RecvRedirect2Verify call OnRedirectVerifyCallback"
+         " [this=%p result=%x, mRedirectCallback=%p]\n",
+         this, result, mRedirectCallback.get()));
     mRedirectCallback->OnRedirectVerifyCallback(result);
     mRedirectCallback = nullptr;
   }
@@ -533,6 +580,8 @@ HttpChannelParent::RecvDivertOnDataAvailable(const nsCString& data,
                                              const uint64_t& offset,
                                              const uint32_t& count)
 {
+  LOG(("HttpChannelParent::RecvDivertOnDataAvailable [this=%p]\n", this));
+
   MOZ_ASSERT(mParentListener);
   if (NS_WARN_IF(!mDivertingFromChild)) {
     MOZ_ASSERT(mDivertingFromChild,
@@ -573,6 +622,8 @@ HttpChannelParent::RecvDivertOnDataAvailable(const nsCString& data,
 bool
 HttpChannelParent::RecvDivertOnStopRequest(const nsresult& statusCode)
 {
+  LOG(("HttpChannelParent::RecvDivertOnStopRequest [this=%p]\n", this));
+
   MOZ_ASSERT(mParentListener);
   if (NS_WARN_IF(!mDivertingFromChild)) {
     MOZ_ASSERT(mDivertingFromChild,
@@ -596,8 +647,9 @@ HttpChannelParent::RecvDivertOnStopRequest(const nsresult& statusCode)
 bool
 HttpChannelParent::RecvDivertComplete()
 {
+  LOG(("HttpChannelParent::RecvDivertComplete [this=%p]\n", this));
+
   MOZ_ASSERT(mParentListener);
-  mParentListener = nullptr;
   if (NS_WARN_IF(!mDivertingFromChild)) {
     MOZ_ASSERT(mDivertingFromChild,
                "Cannot RecvDivertComplete if diverting is not set!");
@@ -611,6 +663,7 @@ HttpChannelParent::RecvDivertComplete()
     return false;
   }
 
+  mParentListener = nullptr;
   return true;
 }
 
@@ -621,7 +674,8 @@ HttpChannelParent::RecvDivertComplete()
 NS_IMETHODIMP
 HttpChannelParent::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
 {
-  LOG(("HttpChannelParent::OnStartRequest [this=%p]\n", this));
+  LOG(("HttpChannelParent::OnStartRequest [this=%p, aRequest=%p]\n",
+       this, aRequest));
 
   MOZ_RELEASE_ASSERT(!mDivertingFromChild,
     "Cannot call OnStartRequest if diverting is set!");
@@ -699,8 +753,8 @@ HttpChannelParent::OnStopRequest(nsIRequest *aRequest,
                                  nsISupports *aContext,
                                  nsresult aStatusCode)
 {
-  LOG(("HttpChannelParent::OnStopRequest: [this=%p status=%x]\n",
-       this, aStatusCode));
+  LOG(("HttpChannelParent::OnStopRequest: [this=%p aRequest=%p status=%x]\n",
+       this, aRequest, aStatusCode));
 
   MOZ_RELEASE_ASSERT(!mDivertingFromChild,
     "Cannot call OnStopRequest if diverting is set!");
@@ -732,7 +786,8 @@ HttpChannelParent::OnDataAvailable(nsIRequest *aRequest,
                                    uint64_t aOffset,
                                    uint32_t aCount)
 {
-  LOG(("HttpChannelParent::OnDataAvailable [this=%p]\n", this));
+  LOG(("HttpChannelParent::OnDataAvailable [this=%p aRequest=%p]\n",
+       this, aRequest));
 
   MOZ_RELEASE_ASSERT(!mDivertingFromChild,
     "Cannot call OnDataAvailable if diverting is set!");
@@ -764,8 +819,8 @@ HttpChannelParent::OnDataAvailable(nsIRequest *aRequest,
 NS_IMETHODIMP
 HttpChannelParent::OnProgress(nsIRequest *aRequest,
                               nsISupports *aContext,
-                              uint64_t aProgress,
-                              uint64_t aProgressMax)
+                              int64_t aProgress,
+                              int64_t aProgressMax)
 {
   // OnStatus has always just set mStoredStatus. If it indicates this precedes
   // OnDataAvailable, store and ODA will send to child.
@@ -811,11 +866,21 @@ HttpChannelParent::OnStatus(nsIRequest *aRequest,
 NS_IMETHODIMP
 HttpChannelParent::SetParentListener(HttpChannelParentListener* aListener)
 {
+  LOG(("HttpChannelParent::SetParentListener [this=%p aListener=%p]\n",
+       this, aListener));
   MOZ_ASSERT(aListener);
   MOZ_ASSERT(!mParentListener, "SetParentListener should only be called for "
                                "new HttpChannelParents after a redirect, when "
                                "mParentListener is null.");
   mParentListener = aListener;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpChannelParent::NotifyTrackingProtectionDisabled()
+{
+  if (!mIPCClosed)
+    unused << SendNotifyTrackingProtectionDisabled();
   return NS_OK;
 }
 
@@ -838,6 +903,10 @@ HttpChannelParent::StartRedirect(uint32_t newChannelId,
                                  uint32_t redirectFlags,
                                  nsIAsyncVerifyRedirectCallback* callback)
 {
+  LOG(("HttpChannelParent::StartRedirect [this=%p, newChannelId=%lu "
+       "newChannel=%p callback=%p]\n", this, newChannelId, newChannel,
+       callback));
+
   if (mIPCClosed)
     return NS_BINDING_ABORTED;
 
@@ -870,6 +939,9 @@ HttpChannelParent::StartRedirect(uint32_t newChannelId,
 NS_IMETHODIMP
 HttpChannelParent::CompleteRedirect(bool succeeded)
 {
+  LOG(("HttpChannelParent::CompleteRedirect [this=%p succeeded=%d]\n",
+       this, succeeded));
+
   if (succeeded && !mIPCClosed) {
     // TODO: check return value: assume child dead if failed
     unused << SendRedirect3Complete();
@@ -885,6 +957,7 @@ HttpChannelParent::CompleteRedirect(bool succeeded)
 nsresult
 HttpChannelParent::SuspendForDiversion()
 {
+  LOG(("HttpChannelParent::SuspendForDiversion [this=%p]\n", this));
   MOZ_ASSERT(mChannel);
   MOZ_ASSERT(mParentListener);
   if (NS_WARN_IF(mDivertingFromChild)) {
@@ -912,6 +985,7 @@ HttpChannelParent::SuspendForDiversion()
 nsresult
 HttpChannelParent::ResumeForDiversion()
 {
+  LOG(("HttpChannelParent::ResumeForDiversion [this=%p]\n", this));
   MOZ_ASSERT(mChannel);
   if (NS_WARN_IF(!mDivertingFromChild)) {
     MOZ_ASSERT(mDivertingFromChild,
@@ -939,6 +1013,8 @@ HttpChannelParent::ResumeForDiversion()
 void
 HttpChannelParent::DivertTo(nsIStreamListener *aListener)
 {
+  LOG(("HttpChannelParent::DivertTo [this=%p aListener=%p]\n",
+       this, aListener));
   MOZ_ASSERT(mParentListener);
   if (NS_WARN_IF(!mDivertingFromChild)) {
     MOZ_ASSERT(mDivertingFromChild,
@@ -946,13 +1022,7 @@ HttpChannelParent::DivertTo(nsIStreamListener *aListener)
     return;
   }
 
-  DebugOnly<nsresult> rv = mParentListener->DivertTo(aListener);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-  if (NS_WARN_IF(mIPCClosed || !SendFlushedForDiversion())) {
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return;
-  }
+  mDivertListener = aListener;
 
   // Call OnStartRequest and SendDivertMessages asynchronously to avoid
   // reentering client context.
@@ -964,6 +1034,7 @@ HttpChannelParent::DivertTo(nsIStreamListener *aListener)
 void
 HttpChannelParent::StartDiversion()
 {
+  LOG(("HttpChannelParent::StartDiversion [this=%p]\n", this));
   if (NS_WARN_IF(!mDivertingFromChild)) {
     MOZ_ASSERT(mDivertingFromChild,
                "Cannot StartDiversion if diverting is not set!");
@@ -976,7 +1047,7 @@ HttpChannelParent::StartDiversion()
   }
 
   // Call OnStartRequest for the "DivertTo" listener.
-  nsresult rv = mParentListener->OnStartRequest(mChannel, nullptr);
+  nsresult rv = mDivertListener->OnStartRequest(mChannel, nullptr);
   if (NS_FAILED(rv)) {
     if (mChannel) {
       mChannel->Cancel(rv);
@@ -985,8 +1056,29 @@ HttpChannelParent::StartDiversion()
   }
   mDivertedOnStartRequest = true;
 
-  // After OnStartRequest has been called, tell HttpChannelChild to divert the
-  // OnDataAvailables and OnStopRequest to this HttpChannelParent.
+  // After OnStartRequest has been called, setup content decoders if needed.
+  //
+  // Create a content conversion chain based on mDivertListener and update
+  // mDivertListener.
+  nsCOMPtr<nsIStreamListener> converterListener;
+  mChannel->DoApplyContentConversions(mDivertListener,
+                                      getter_AddRefs(converterListener));
+  if (converterListener) {
+    mDivertListener = converterListener.forget();
+  }
+
+  // Now mParentListener can be diverted to mDivertListener.
+  DebugOnly<nsresult> rvdbg = mParentListener->DivertTo(mDivertListener);
+  MOZ_ASSERT(NS_SUCCEEDED(rvdbg));
+  mDivertListener = nullptr;
+
+  if (NS_WARN_IF(mIPCClosed || !SendFlushedForDiversion())) {
+    FailDiversion(NS_ERROR_UNEXPECTED);
+    return;
+  }
+
+  // The listener chain should now be setup; tell HttpChannelChild to divert
+  // the OnDataAvailables and OnStopRequest to this HttpChannelParent.
   if (NS_WARN_IF(mIPCClosed || !SendDivertMessages())) {
     FailDiversion(NS_ERROR_UNEXPECTED);
     return;
@@ -1034,6 +1126,8 @@ void
 HttpChannelParent::NotifyDiversionFailed(nsresult aErrorCode,
                                          bool aSkipResume)
 {
+  LOG(("HttpChannelParent::NotifyDiversionFailed [this=%p aErrorCode=%x]\n",
+       this, aErrorCode));
   MOZ_RELEASE_ASSERT(NS_FAILED(aErrorCode));
   MOZ_RELEASE_ASSERT(mDivertingFromChild);
   MOZ_RELEASE_ASSERT(mParentListener);

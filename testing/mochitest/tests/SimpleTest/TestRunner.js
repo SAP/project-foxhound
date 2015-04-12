@@ -5,6 +5,9 @@
  * type = eventName (QuitApplication)
  * data = json object {"filename":filename} <- for LoggerInit
  */
+
+"use strict";
+
 function getElement(id) {
     return ((typeof(id) == "string") ?
         document.getElementById(id) : id);
@@ -259,11 +262,12 @@ function StructuredLogger(name) {
 
     this._dumpMessage = function(message) {
         var str;
-        if (this.interactiveDebugger) {
+        if (this.interactiveDebugger && !message.action.startsWith("buffering_")) {
             str = this.structuredFormatter[message.action](message);
         } else {
             str = LOG_DELIMITER + JSON.stringify(message) + LOG_DELIMITER;
         }
+
         // BUGFIX: browser-chrome tests doesn't use LogController
         if (Object.keys(LogController.listeners).length !== 0) {
             LogController.log(str);
@@ -272,7 +276,7 @@ function StructuredLogger(name) {
         }
 
         // Checking for error messages
-        if (message.expected || message.level === "ERROR") {
+        if (message.expected || (message.level && message.level === "ERROR")) {
             TestRunner.failureHandler();
         }
     };
@@ -281,7 +285,6 @@ function StructuredLogger(name) {
     this.validMessage = function(message) {
         return message.action !== undefined && VALID_ACTIONS.indexOf(message.action) >= 0;
     };
-
 }
 
 /**
@@ -684,7 +687,7 @@ TestRunner.testFinished = function(tests) {
 
     // TODO : replace this by a function that returns the mem data as an object
     // that's dumped later with the test_end message
-    MemoryStats.dump(TestRunner.structuredLogger, TestRunner._currentTest,
+    MemoryStats.dump(TestRunner._currentTest,
                      TestRunner.currentTestURL,
                      TestRunner.dumpOutputDirectory,
                      TestRunner.dumpAboutMemoryAfterTest,

@@ -17,6 +17,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "DownloadsCommon",
                                   "resource:///modules/DownloadsCommon.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch",
+                                  "resource://gre/modules/TelemetryStopwatch.jsm");
 
 function Sanitizer() {}
 Sanitizer.prototype = {
@@ -73,12 +75,26 @@ Sanitizer.prototype = {
     if (openWindowsIndex != -1) {
       itemsToClear.splice(openWindowsIndex, 1);
       let item = this.items.openWindows;
-      if (!item.clear()) {
-        // When cancelled, reject the deferred and return the promise:
-        deferred.reject();
-        return deferred.promise;
+
+      let ok = item.clear(() => {
+        try {
+          let clearedPromise = this.sanitize(itemsToClear);
+          clearedPromise.then(deferred.resolve, deferred.reject);
+        } catch(e) {
+          let error = "Sanitizer threw after closing windows: " + e;
+          Cu.reportError(error);
+          deferred.reject(error);
+        }
+      });
+      // When cancelled, reject immediately
+      if (!ok) {
+        deferred.reject("Sanitizer canceled closing windows");
       }
+
+      return deferred.promise;
     }
+
+    TelemetryStopwatch.start("FX_SANITIZE_TOTAL");
 
     // Cache the range of times to clear
     if (this.ignoreTimespan)
@@ -89,6 +105,7 @@ Sanitizer.prototype = {
     let itemCount = Object.keys(itemsToClear).length;
     let onItemComplete = function() {
       if (!--itemCount) {
+        TelemetryStopwatch.finish("FX_SANITIZE_TOTAL");
         seenError ? deferred.reject() : deferred.resolve();
       }
     };
@@ -134,6 +151,8 @@ Sanitizer.prototype = {
     cache: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_CACHE");
+
         var cache = Cc["@mozilla.org/netwerk/cache-storage-service;1"].
                     getService(Ci.nsICacheStorageService);
         try {
@@ -147,6 +166,8 @@ Sanitizer.prototype = {
         try {
           imageCache.clearCache(false); // true=chrome, false=content
         } catch(er) {}
+
+        TelemetryStopwatch.finish("FX_SANITIZE_CACHE");
       },
 
       get canClear()
@@ -158,6 +179,8 @@ Sanitizer.prototype = {
     cookies: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_COOKIES");
+
         var cookieMgr = Components.classes["@mozilla.org/cookiemanager;1"]
                                   .getService(Ci.nsICookieManager);
         if (this.range) {
@@ -205,6 +228,8 @@ Sanitizer.prototype = {
             }
           }
         }
+
+        TelemetryStopwatch.finish("FX_SANITIZE_COOKIES");
       },
 
       get canClear()
@@ -216,8 +241,10 @@ Sanitizer.prototype = {
     offlineApps: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_OFFLINEAPPS");
         Components.utils.import("resource:///modules/offlineAppCache.jsm");
         OfflineAppCacheHelper.clear();
+        TelemetryStopwatch.finish("FX_SANITIZE_OFFLINEAPPS");
       },
 
       get canClear()
@@ -229,6 +256,8 @@ Sanitizer.prototype = {
     history: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_HISTORY");
+
         if (this.range)
           PlacesUtils.history.removeVisitsByTimeframe(this.range[0], this.range[1]);
         else
@@ -237,7 +266,8 @@ Sanitizer.prototype = {
         try {
           var os = Components.classes["@mozilla.org/observer-service;1"]
                              .getService(Components.interfaces.nsIObserverService);
-          os.notifyObservers(null, "browser:purge-session-history", "");
+          let clearStartingTime = this.range ? String(this.range[0]) : "";
+          os.notifyObservers(null, "browser:purge-session-history", clearStartingTime);
         }
         catch (e) { }
 
@@ -246,6 +276,8 @@ Sanitizer.prototype = {
                                     .getService(Components.interfaces.nsINetworkPredictor);
           predictor.reset();
         } catch (e) { }
+
+        TelemetryStopwatch.finish("FX_SANITIZE_HISTORY");
       },
 
       get canClear()
@@ -259,6 +291,8 @@ Sanitizer.prototype = {
     formdata: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_FORMDATA");
+
         // Clear undo history of all searchBars
         var windowManager = Components.classes['@mozilla.org/appshell/window-mediator;1']
                                       .getService(Components.interfaces.nsIWindowMediator);
@@ -283,6 +317,8 @@ Sanitizer.prototype = {
           [ change.firstUsedStart, change.firstUsedEnd ] = this.range;
         }
         FormHistory.update(change);
+
+        TelemetryStopwatch.finish("FX_SANITIZE_FORMDATA");
       },
 
       canClear : function(aCallback, aArg)
@@ -329,6 +365,7 @@ Sanitizer.prototype = {
     downloads: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_DOWNLOADS");
         Task.spawn(function () {
           let filterByTime = null;
           if (this.range) {
@@ -342,7 +379,11 @@ Sanitizer.prototype = {
           // Clear all completed/cancelled downloads
           let list = yield Downloads.getList(Downloads.ALL);
           list.removeFinished(filterByTime);
-        }.bind(this)).then(null, Components.utils.reportError);
+          TelemetryStopwatch.finish("FX_SANITIZE_DOWNLOADS");
+        }.bind(this)).then(null, error => {
+          TelemetryStopwatch.finish("FX_SANITIZE_DOWNLOADS");
+          Components.utils.reportError(error);
+        });
       },
 
       canClear : function(aCallback, aArg)
@@ -355,10 +396,12 @@ Sanitizer.prototype = {
     passwords: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_PASSWORDS");
         var pwmgr = Components.classes["@mozilla.org/login-manager;1"]
                               .getService(Components.interfaces.nsILoginManager);
         // Passwords are timeless, and don't respect the timeSpan setting
         pwmgr.removeAllLogins();
+        TelemetryStopwatch.finish("FX_SANITIZE_PASSWORDS");
       },
 
       get canClear()
@@ -373,6 +416,8 @@ Sanitizer.prototype = {
     sessions: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_SESSIONS");
+
         // clear all auth tokens
         var sdr = Components.classes["@mozilla.org/security/sdr;1"]
                             .getService(Components.interfaces.nsISecretDecoderRing);
@@ -382,6 +427,8 @@ Sanitizer.prototype = {
         var os = Components.classes["@mozilla.org/observer-service;1"]
                            .getService(Components.interfaces.nsIObserverService);
         os.notifyObservers(null, "net:clear-active-logins", null);
+
+        TelemetryStopwatch.finish("FX_SANITIZE_SESSIONS");
       },
 
       get canClear()
@@ -393,6 +440,8 @@ Sanitizer.prototype = {
     siteSettings: {
       clear: function ()
       {
+        TelemetryStopwatch.start("FX_SANITIZE_SITESETTINGS");
+
         // Clear site-specific permissions like "Allow this site to open popups"
         // we ignore the "end" range and hope it is now() - none of the
         // interfaces used here support a true range anyway.
@@ -431,6 +480,8 @@ Sanitizer.prototype = {
         var sss = Cc["@mozilla.org/ssservice;1"]
                     .getService(Ci.nsISiteSecurityService);
         sss.clearAll();
+
+        TelemetryStopwatch.finish("FX_SANITIZE_SITESETTINGS");
       },
 
       get canClear()
@@ -465,10 +516,14 @@ Sanitizer.prototype = {
           win.getInterface(Ci.nsIDocShell).contentViewer.resetCloseWindow();
         }
       },
-      clear: function()
+      clear: function(aCallback)
       {
         // NB: this closes all *browser* windows, not other windows like the library, about window,
         // browser console, etc.
+
+        if (!aCallback) {
+          throw "Sanitizer's openWindows clear() requires a callback.";
+        }
 
         // Keep track of the time in case we get stuck in la-la-land because of onbeforeunload
         // dialogs
@@ -499,6 +554,8 @@ Sanitizer.prototype = {
 
         // If/once we get here, we should actually be able to close all windows.
 
+        TelemetryStopwatch.start("FX_SANITIZE_OPENWINDOWS");
+
         // First create a new window. We do this first so that on non-mac, we don't
         // accidentally close the app by closing all the windows.
         let handler = Cc["@mozilla.org/browser/clh;1"].getService(Ci.nsIBrowserHandler);
@@ -506,8 +563,61 @@ Sanitizer.prototype = {
         let features = "chrome,all,dialog=no," + this.privateStateForNewWindow;
         let newWindow = existingWindow.openDialog("chrome://browser/content/", "_blank",
                                                   features, defaultArgs);
+#ifdef XP_MACOSX
+        function onFullScreen(e) {
+          newWindow.removeEventListener("fullscreen", onFullScreen);
+          let docEl = newWindow.document.documentElement;
+          let sizemode = docEl.getAttribute("sizemode");
+          if (!newWindow.fullScreen && sizemode == "fullscreen") {
+            docEl.setAttribute("sizemode", "normal");
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }
+        newWindow.addEventListener("fullscreen", onFullScreen);
+#endif
 
-        // Then close all those windows we checked:
+        // Window creation and destruction is asynchronous. We need to wait
+        // until all existing windows are fully closed, and the new window is
+        // fully open, before continuing. Otherwise the rest of the sanitizer
+        // could run too early (and miss new cookies being set when a page
+        // closes) and/or run too late (and not have a fully-formed window yet
+        // in existence). See bug 1088137.
+        let newWindowOpened = false;
+        function onWindowOpened(subject, topic, data) {
+          if (subject != newWindow)
+            return;
+
+          Services.obs.removeObserver(onWindowOpened, "browser-delayed-startup-finished");
+#ifdef XP_MACOSX
+          newWindow.removeEventListener("fullscreen", onFullScreen);
+#endif
+          newWindowOpened = true;
+          // If we're the last thing to happen, invoke callback.
+          if (numWindowsClosing == 0) {
+            TelemetryStopwatch.finish("FX_SANITIZE_OPENWINDOWS");
+            aCallback();
+          }
+        }
+
+        let numWindowsClosing = windowList.length;
+        function onWindowClosed() {
+          numWindowsClosing--;
+          if (numWindowsClosing == 0) {
+            Services.obs.removeObserver(onWindowClosed, "xul-window-destroyed");
+            // If we're the last thing to happen, invoke callback.
+            if (newWindowOpened) {
+              TelemetryStopwatch.finish("FX_SANITIZE_OPENWINDOWS");
+              aCallback();
+            }
+          }
+        }
+
+        Services.obs.addObserver(onWindowOpened, "browser-delayed-startup-finished", false);
+        Services.obs.addObserver(onWindowClosed, "xul-window-destroyed", false);
+
+        // Start the process of closing windows
         while (windowList.length) {
           windowList.pop().close();
         }

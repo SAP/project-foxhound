@@ -15,17 +15,14 @@ import java.util.HashSet;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
 import org.mozilla.gecko.Actions;
-import org.mozilla.gecko.Driver;
 import org.mozilla.gecko.Element;
-import org.mozilla.gecko.FennecNativeActions;
-import org.mozilla.gecko.FennecNativeDriver;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.GeckoThread.LaunchState;
-import org.mozilla.gecko.NewTabletUI;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.RobocopUtils;
 import org.mozilla.gecko.Tab;
@@ -70,16 +67,9 @@ abstract class BaseTest extends BaseRobocopTest {
     private static final int GECKO_READY_WAIT_MS = 180000;
     public static final int MAX_WAIT_BLOCK_FOR_EVENT_DATA_MS = 90000;
 
-    private static final String URL_HTTP_PREFIX = "http://";
+    protected static final String URL_HTTP_PREFIX = "http://";
 
-    private Activity mActivity;
     private int mPreferenceRequestID = 0;
-    protected Solo mSolo;
-    protected Driver mDriver;
-    protected Actions mActions;
-    protected String mBaseUrl;
-    protected String mRawBaseUrl;
-    protected String mProfile;
     public Device mDevice;
     protected DatabaseHelper mDatabaseHelper;
     protected int mScreenMidWidth;
@@ -112,29 +102,8 @@ abstract class BaseTest extends BaseRobocopTest {
     public void setUp() throws Exception {
         super.setUp();
 
-        // Create the intent to be used with all the important arguments.
-        mBaseUrl = mConfig.get("host").replaceAll("(/$)", "");
-        mRawBaseUrl = mConfig.get("rawhost").replaceAll("(/$)", "");
-        Intent i = new Intent(Intent.ACTION_MAIN);
-        mProfile = mConfig.get("profile");
-        i.putExtra("args", "-no-remote -profile " + mProfile);
-        String envString = mConfig.get("envvars");
-        if (envString != "") {
-            String[] envStrings = envString.split(",");
-            for (int iter = 0; iter < envStrings.length; iter++) {
-                i.putExtra("env" + iter, envStrings[iter]);
-            }
-        }
-
-        // Start the activity.
-        setActivityIntent(i);
-        mActivity = getActivity();
-        // Set up Robotium.solo and Driver objects
-        mSolo = new Solo(getInstrumentation(), mActivity);
-        mDriver = new FennecNativeDriver(mActivity, mSolo, mRootPath);
-        mActions = new FennecNativeActions(mActivity, mSolo, getInstrumentation(), mAsserter);
         mDevice = new Device();
-        mDatabaseHelper = new DatabaseHelper(mActivity, mAsserter);
+        mDatabaseHelper = new DatabaseHelper(getActivity(), mAsserter);
 
         // Ensure Robocop tests have access to network, and are run with Display powered on.
         throwIfHttpGetFails();
@@ -180,13 +149,30 @@ abstract class BaseTest extends BaseRobocopTest {
             mAsserter.endTest();
             // request a force quit of the browser and wait for it to take effect
             GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Robocop:Quit", null));
-            mSolo.sleep(7000);
+            mSolo.sleep(120000);
             // if still running, finish activities as recommended by Robotium
             mSolo.finishOpenedActivities();
         } catch (Throwable e) {
             e.printStackTrace();
         }
         super.tearDown();
+    }
+
+    @Override
+    protected Intent createActivityIntent() {
+        final Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.putExtra("args", "-no-remote -profile " + mProfile);
+
+        final String envString = mConfig.get("envvars");
+        if (!TextUtils.isEmpty(envString)) {
+            final String[] envStrings = envString.split(",");
+
+            for (int iter = 0; iter < envStrings.length; iter++) {
+                intent.putExtra("env" + iter, envStrings[iter]);
+            }
+        }
+
+        return intent;
     }
 
     public void assertMatches(String value, String regex, String name) {
@@ -202,6 +188,7 @@ abstract class BaseTest extends BaseRobocopTest {
      */
     protected final void focusUrlBar() {
         // Click on the browser toolbar to enter editing mode
+        mSolo.waitForView(R.id.browser_toolbar);
         final View toolbarView = mSolo.getView(R.id.browser_toolbar);
         mSolo.clickOnView(toolbarView);
 
@@ -209,6 +196,7 @@ abstract class BaseTest extends BaseRobocopTest {
         boolean success = waitForCondition(new Condition() {
             @Override
             public boolean isSatisfied() {
+                mSolo.waitForView(R.id.url_edit_text);
                 EditText urlEditText = (EditText) mSolo.getView(R.id.url_edit_text);
                 if (urlEditText.isInputMethodTarget()) {
                     return true;
@@ -221,9 +209,9 @@ abstract class BaseTest extends BaseRobocopTest {
     }
 
     protected final void enterUrl(String url) {
-        final EditText urlEditView = (EditText) mSolo.getView(R.id.url_edit_text);
-
         focusUrlBar();
+
+        final EditText urlEditView = (EditText) mSolo.getView(R.id.url_edit_text);
 
         // Send the keys for the URL we want to enter
         mSolo.clearEditText(urlEditView);
@@ -309,11 +297,11 @@ abstract class BaseTest extends BaseRobocopTest {
     }
 
     protected final String getAbsoluteUrl(String url) {
-        return mBaseUrl + "/" + url.replaceAll("(^/)", "");
+        return mBaseHostnameUrl + "/" + url.replaceAll("(^/)", "");
     }
 
     protected final String getAbsoluteRawUrl(String url) {
-        return mRawBaseUrl + "/" + url.replaceAll("(^/)", "");
+        return mBaseIpUrl + "/" + url.replaceAll("(^/)", "");
     }
 
     /*
@@ -329,25 +317,6 @@ abstract class BaseTest extends BaseRobocopTest {
         return result;
     }
 
-    // TODO: With Robotium 4.2, we should use Condition and waitForCondition instead.
-    // Future boolean tests should not use this method.
-    protected final boolean waitForTest(BooleanTest t, int timeout) {
-        long end = SystemClock.uptimeMillis() + timeout;
-        while (SystemClock.uptimeMillis() < end) {
-            if (t.test()) {
-                return true;
-            }
-            mSolo.sleep(100);
-        }
-        // log out wait failure for diagnostic purposes only;
-        // a failed wait may be normal and does not necessarily
-        // warrant a test assertion/failure
-        mAsserter.dumpLog("waitForTest timeout after "+timeout+" ms");
-        return false;
-    }
-
-    // TODO: With Robotium 4.2, we should use Condition and waitForCondition instead.
-    // Future boolean tests should not implement this interface.
     protected interface BooleanTest {
         public boolean test();
     }
@@ -530,23 +499,16 @@ abstract class BaseTest extends BaseRobocopTest {
         }
     }
 
-    public final void verifyPageTitle(final String title, String url) {
-        // We are asserting visible state - we shouldn't know if the title is null.
-        mAsserter.isnot(title, null, "The title argument is not null");
+    public final void verifyUrlBarTitle(String url) {
         mAsserter.isnot(url, null, "The url argument is not null");
 
-        // TODO: We should also check the title bar preference.
         final String expected;
-        if (!NewTabletUI.isEnabled(mActivity)) {
-            expected = title;
+        if (StringHelper.ABOUT_HOME_URL.equals(url)) {
+            expected = StringHelper.ABOUT_HOME_TITLE;
+        } else if (url.startsWith(URL_HTTP_PREFIX)) {
+            expected = url.substring(URL_HTTP_PREFIX.length());
         } else {
-            if (StringHelper.ABOUT_HOME_URL.equals(url)) {
-                expected = StringHelper.ABOUT_HOME_TITLE;
-            } else if (url.startsWith(URL_HTTP_PREFIX)) {
-                expected = url.substring(URL_HTTP_PREFIX.length());
-            } else {
-                expected = url;
-            }
+            expected = url;
         }
 
         final TextView urlBarTitle = (TextView) mSolo.getView(R.id.url_bar_title);
@@ -554,7 +516,7 @@ abstract class BaseTest extends BaseRobocopTest {
         if (urlBarTitle != null) {
             // Wait for the title to make sure it has been displayed in case the view
             // does not update fast enough
-            waitForCondition(new VerifyTextViewText(urlBarTitle, title), MAX_WAIT_VERIFY_PAGE_TITLE_MS);
+            waitForCondition(new VerifyTextViewText(urlBarTitle, expected), MAX_WAIT_VERIFY_PAGE_TITLE_MS);
             pageTitle = urlBarTitle.getText().toString();
         }
         mAsserter.is(pageTitle, expected, "Page title is correct");
@@ -565,6 +527,43 @@ abstract class BaseTest extends BaseRobocopTest {
         String tabCountText = tabCount.getText();
         int tabCountInt = Integer.parseInt(tabCountText);
         mAsserter.is(tabCountInt, expectedTabCount, "The correct number of tabs are opened");
+    }
+
+    public void verifyPinned(final boolean isPinned, final String gridItemTitle) {
+        boolean viewFound = waitForText(gridItemTitle);
+        mAsserter.ok(viewFound, "Found top site title: " + gridItemTitle, null);
+
+        boolean success = waitForCondition(new Condition() {
+            @Override
+            public boolean isSatisfied() {
+                // We set the left compound drawable (index 0) to the pin icon.
+                final TextView gridItemTextView = mSolo.getText(gridItemTitle);
+                return isPinned == (gridItemTextView.getCompoundDrawables()[0] != null);
+            }
+        }, MAX_WAIT_MS);
+        mAsserter.ok(success, "Top site item was pinned: " + isPinned, null);
+    }
+
+    public void pinTopSite(String gridItemTitle) {
+        verifyPinned(false, gridItemTitle);
+        mSolo.clickLongOnText(gridItemTitle);
+        boolean dialogOpened = mSolo.waitForDialogToOpen();
+        mAsserter.ok(dialogOpened, "Pin site dialog opened: " + gridItemTitle, null);
+        boolean pinSiteFound = waitForText(StringHelper.CONTEXT_MENU_PIN_SITE);
+        mAsserter.ok(pinSiteFound, "Found pin site menu item", null);
+        mSolo.clickOnText(StringHelper.CONTEXT_MENU_PIN_SITE);
+        verifyPinned(true, gridItemTitle);
+    }
+
+    public void unpinTopSite(String gridItemTitle) {
+        verifyPinned(true, gridItemTitle);
+        mSolo.clickLongOnText(gridItemTitle);
+        boolean dialogOpened = mSolo.waitForDialogToOpen();
+        mAsserter.ok(dialogOpened, "Pin site dialog opened: " + gridItemTitle, null);
+        boolean unpinSiteFound = waitForText(StringHelper.CONTEXT_MENU_UNPIN_SITE);
+        mAsserter.ok(unpinSiteFound, "Found unpin site menu item", null);
+        mSolo.clickOnText(StringHelper.CONTEXT_MENU_UNPIN_SITE);
+        verifyPinned(false, gridItemTitle);
     }
 
     // Used to perform clicks on pop-up buttons without having to close the virtual keyboard
@@ -712,7 +711,7 @@ abstract class BaseTest extends BaseRobocopTest {
     }
 
     public final void runOnUiThreadSync(Runnable runnable) {
-        RobocopUtils.runOnUiThreadSync(mActivity, runnable);
+        RobocopUtils.runOnUiThreadSync(getActivity(), runnable);
     }
 
     /* Tap the "star" (bookmark) button to bookmark or un-bookmark the current page */
@@ -829,14 +828,14 @@ abstract class BaseTest extends BaseRobocopTest {
             Actions.EventExpecter pageShowExpecter = mActions.expectGeckoEvent("Content:PageShow");
 
             if (devType.equals("tablet")) {
-                Element fwdBtn = mDriver.findElement(getActivity(), R.id.forward);
-                fwdBtn.click();
+                mSolo.waitForView(R.id.forward);
+                mSolo.clickOnView(mSolo.getView(R.id.forward));
             } else {
                 mActions.sendSpecialKey(Actions.SpecialKey.MENU);
                 waitForText("^New Tab$");
                 if (!osVersion.equals("2.x")) {
-                    Element fwdBtn = mDriver.findElement(getActivity(), R.id.forward);
-                    fwdBtn.click();
+                    mSolo.waitForView(R.id.forward);
+                    mSolo.clickOnView(mSolo.getView(R.id.forward));
                 } else {
                     mSolo.clickOnText("^Forward$");
                 }
@@ -849,14 +848,14 @@ abstract class BaseTest extends BaseRobocopTest {
 
         public void reload() {
             if (devType.equals("tablet")) {
-                Element reloadBtn = mDriver.findElement(getActivity(), R.id.reload);
-                reloadBtn.click();
+                mSolo.waitForView(R.id.reload);
+                mSolo.clickOnView(mSolo.getView(R.id.reload));
             } else {
                 mActions.sendSpecialKey(Actions.SpecialKey.MENU);
                 waitForText("^New Tab$");
                 if (!osVersion.equals("2.x")) {
-                    Element reloadBtn = mDriver.findElement(getActivity(), R.id.reload);
-                    reloadBtn.click();
+                    mSolo.waitForView(R.id.reload);
+                    mSolo.clickOnView(mSolo.getView(R.id.reload));
                 } else {
                     mSolo.clickOnText("^Reload$");
                 }

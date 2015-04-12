@@ -5,15 +5,16 @@
 package org.mozilla.gecko.toolbar;
 
 import org.mozilla.gecko.GeckoApplication;
-import org.mozilla.gecko.LightweightTheme;
-import org.mozilla.gecko.LightweightThemeDrawable;
 import org.mozilla.gecko.R;
+import org.mozilla.gecko.lwt.LightweightTheme;
+import org.mozilla.gecko.lwt.LightweightThemeDrawable;
 import org.mozilla.gecko.tabs.TabCurve;
 import org.mozilla.gecko.widget.ThemedImageButton;
 
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff.Mode;
 import android.graphics.drawable.Drawable;
@@ -22,18 +23,21 @@ import android.util.AttributeSet;
 
 public class ShapedButton extends ThemedImageButton
                           implements CanvasDelegate.DrawManager {
-    protected final LightweightTheme mTheme;
 
     protected final Path mPath;
     protected final CanvasDelegate mCanvasDelegate;
 
     public ShapedButton(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mTheme = ((GeckoApplication) context.getApplicationContext()).getLightweightTheme();
 
         // Path is clipped.
         mPath = new Path();
-        mCanvasDelegate = new CanvasDelegate(this, Mode.DST_IN);
+
+        final Paint paint = new Paint();
+        paint.setAntiAlias(true);
+        paint.setColor(getResources().getColor(R.color.canvas_delegate_paint));
+        paint.setStrokeWidth(0.0f);
+        mCanvasDelegate = new CanvasDelegate(this, Mode.DST_IN, paint);
 
         setWillNotDraw(false);
     }
@@ -55,7 +59,7 @@ public class ShapedButton extends ThemedImageButton
     @Override
     public void onLightweightThemeChanged() {
         final int background = getResources().getColor(R.color.background_tabs);
-        final LightweightThemeDrawable lightWeight = mTheme.getColorDrawable(this, background);
+        final LightweightThemeDrawable lightWeight = getTheme().getColorDrawable(this, background);
 
         if (lightWeight == null)
             return;

@@ -2,10 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-"""Module to handle the installation and uninstallation of Gecko based
-applications across platforms.
-
-"""
 from optparse import OptionParser
 import os
 import shutil
@@ -124,9 +120,9 @@ def install(src, dest):
 
         return install_dir
 
-    except Exception:
+    except Exception, ex:
         cls, exc, trbk = sys.exc_info()
-        error = InstallError('Failed to install "%s"' % src)
+        error = InstallError('Failed to install "%s (%s)"' % (src, str(ex)))
         raise InstallError, error, trbk
 
     finally:
@@ -200,7 +196,7 @@ def uninstall(install_folder):
             try:
                 cmdArgs = ['%s\uninstall\helper.exe' % install_folder, '/S']
                 result = subprocess.call(cmdArgs)
-                if not result is 0:
+                if result is not 0:
                     raise Exception('Execution of uninstaller failed.')
 
                 # The uninstaller spawns another process so the subprocess call
@@ -213,9 +209,9 @@ def uninstall(install_folder):
                     if time.time() > end_time:
                         raise Exception('Failure removing uninstall folder.')
 
-            except Exception:
+            except Exception, ex:
                 cls, exc, trbk = sys.exc_info()
-                error = UninstallError('Failed to uninstall %s' % install_folder)
+                error = UninstallError('Failed to uninstall %s (%s)' % (install_folder, str(ex)))
                 raise UninstallError, error, trbk
 
             finally:
@@ -237,7 +233,7 @@ def _install_dmg(src, dest):
 
     """
     try:
-        proc = subprocess.Popen('hdiutil attach %s' % src,
+        proc = subprocess.Popen('hdiutil attach -nobrowse -noautoopen %s' % src,
                                 shell=True,
                                 stdout=subprocess.PIPE)
 
@@ -288,7 +284,7 @@ def _install_exe(src, dest):
 
     # As long as we support Python 2.4 check_call will not be available.
     result = subprocess.call(cmd)
-    if not result is 0:
+    if result is not 0:
         raise Exception('Execution of installer failed.')
 
     return dest

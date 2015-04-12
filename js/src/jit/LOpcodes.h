@@ -10,12 +10,15 @@
 #define LIR_COMMON_OPCODE_LIST(_)   \
     _(Label)                        \
     _(Nop)                          \
+    _(Mop)                          \
     _(OsiPoint)                     \
     _(MoveGroup)                    \
     _(Integer)                      \
     _(Pointer)                      \
     _(Double)                       \
     _(Float32)                      \
+    _(SimdBox)                      \
+    _(SimdUnbox)                    \
     _(SimdSplatX4)                  \
     _(Int32x4)                      \
     _(Float32x4)                    \
@@ -46,15 +49,14 @@
     _(Goto)                         \
     _(NewArray)                     \
     _(NewArrayCopyOnWrite)          \
+    _(NewArrayDynamicLength)        \
     _(ArraySplice)                  \
     _(NewObject)                    \
+    _(NewTypedObject)               \
     _(NewDeclEnvObject)             \
     _(NewCallObject)                \
     _(NewSingletonCallObject)       \
     _(NewStringObject)              \
-    _(NewPar)                       \
-    _(NewDenseArrayPar)             \
-    _(NewCallObjectPar)             \
     _(NewDerivedTypedObject)        \
     _(InitElem)                     \
     _(InitElemGetterSetter)         \
@@ -62,7 +64,6 @@
     _(InitProp)                     \
     _(InitPropGetterSetter)         \
     _(CheckOverRecursed)            \
-    _(CheckOverRecursedPar)         \
     _(DefVar)                       \
     _(DefFun)                       \
     _(CallKnown)                    \
@@ -102,7 +103,7 @@
     _(TestVAndBranch)               \
     _(TestOAndBranch)               \
     _(FunctionDispatch)             \
-    _(TypeObjectDispatch)           \
+    _(ObjectGroupDispatch)          \
     _(Compare)                      \
     _(CompareAndBranch)             \
     _(CompareD)                     \
@@ -117,10 +118,10 @@
     _(CompareVAndBranch)            \
     _(CompareVM)                    \
     _(BitAndAndBranch)              \
-    _(IsNullOrLikeUndefined)        \
-    _(IsNullOrLikeUndefinedAndBranch)\
-    _(EmulatesUndefined)            \
-    _(EmulatesUndefinedAndBranch)   \
+    _(IsNullOrLikeUndefinedV)       \
+    _(IsNullOrLikeUndefinedT)       \
+    _(IsNullOrLikeUndefinedAndBranchV)\
+    _(IsNullOrLikeUndefinedAndBranchT)\
     _(MinMaxI)                      \
     _(MinMaxD)                      \
     _(MinMaxF)                      \
@@ -153,7 +154,6 @@
     _(ModD)                         \
     _(BinaryV)                      \
     _(Concat)                       \
-    _(ConcatPar)                    \
     _(CharCodeAt)                   \
     _(FromCharCode)                 \
     _(StringSplit)                  \
@@ -172,6 +172,7 @@
     _(IntToString)                  \
     _(DoubleToString)               \
     _(ValueToString)                \
+    _(ValueToObjectOrNull)          \
     _(Int32x4ToFloat32x4)           \
     _(Float32x4ToInt32x4)           \
     _(Start)                        \
@@ -185,10 +186,10 @@
     _(RegExpTest)                   \
     _(RegExpReplace)                \
     _(StringReplace)                \
+    _(Substr)                       \
     _(Lambda)                       \
     _(LambdaArrow)                  \
     _(LambdaForSingleton)           \
-    _(LambdaPar)                    \
     _(Slots)                        \
     _(Elements)                     \
     _(ConvertElementsToDoubles)     \
@@ -200,10 +201,9 @@
     _(StoreSlotT)                   \
     _(GuardShape)                   \
     _(GuardShapePolymorphic)        \
-    _(GuardObjectType)              \
+    _(GuardObjectGroup)             \
     _(GuardObjectIdentity)          \
     _(GuardClass)                   \
-    _(GuardThreadExclusive)         \
     _(TypeBarrierV)                 \
     _(TypeBarrierO)                 \
     _(MonitorTypes)                 \
@@ -211,15 +211,19 @@
     _(PostWriteBarrierV)            \
     _(InitializedLength)            \
     _(SetInitializedLength)         \
-    _(NeuterCheck)                  \
     _(BoundsCheck)                  \
     _(BoundsCheckRange)             \
     _(BoundsCheckLower)             \
     _(LoadElementV)                 \
     _(LoadElementT)                 \
     _(LoadElementHole)              \
+    _(LoadUnboxedPointerV)          \
+    _(LoadUnboxedPointerT)          \
+    _(UnboxObjectOrNull)            \
     _(StoreElementV)                \
     _(StoreElementT)                \
+    _(StoreUnboxedPointer)          \
+    _(ConvertUnboxedObjectToNative) \
     _(ArrayPopShiftV)               \
     _(ArrayPopShiftT)               \
     _(ArrayPushV)                   \
@@ -234,6 +238,8 @@
     _(StoreTypedArrayElement)       \
     _(StoreTypedArrayElementHole)   \
     _(StoreTypedArrayElementStatic) \
+    _(CompareExchangeTypedArrayElement) \
+    _(AtomicTypedArrayElementBinop) \
     _(EffectiveAddress)             \
     _(ClampIToUint8)                \
     _(ClampDToUint8)                \
@@ -243,8 +249,6 @@
     _(StoreFixedSlotV)              \
     _(StoreFixedSlotT)              \
     _(FunctionEnvironment)          \
-    _(ForkJoinContext)              \
-    _(ForkJoinGetSlice)             \
     _(GetPropertyCacheV)            \
     _(GetPropertyCacheT)            \
     _(GetPropertyPolymorphicV)      \
@@ -255,7 +259,6 @@
     _(CallGetProperty)              \
     _(GetNameCache)                 \
     _(CallGetIntrinsicValue)        \
-    _(CallsiteCloneCache)           \
     _(CallGetElement)               \
     _(CallSetElement)               \
     _(CallInitElementArray)         \
@@ -277,8 +280,7 @@
     _(SetArrayLength)               \
     _(TypedArrayLength)             \
     _(TypedArrayElements)           \
-    _(TypedObjectProto)             \
-    _(TypedObjectUnsizedLength)     \
+    _(TypedObjectDescr)             \
     _(TypedObjectElements)          \
     _(SetTypedObjectOffset)         \
     _(StringLength)                 \
@@ -289,7 +291,6 @@
     _(SetFrameArgumentV)            \
     _(RunOncePrologue)              \
     _(Rest)                         \
-    _(RestPar)                      \
     _(TypeOfV)                      \
     _(ToIdV)                        \
     _(Floor)                        \
@@ -306,14 +307,14 @@
     _(InterruptCheck)               \
     _(AsmJSInterruptCheck)          \
     _(InterruptCheckImplicit)       \
-    _(ProfilerStackOp)              \
     _(GetDOMProperty)               \
-    _(GetDOMMember)                 \
+    _(GetDOMMemberV)                \
+    _(GetDOMMemberT)                \
     _(SetDOMProperty)               \
     _(CallDOMNative)                \
     _(IsCallable)                   \
     _(IsObject)                     \
-    _(HaveSameClass)                \
+    _(IsObjectAndBranch)            \
     _(HasClass)                     \
     _(AsmJSLoadHeap)                \
     _(AsmJSStoreHeap)               \
@@ -325,14 +326,18 @@
     _(AsmJSVoidReturn)              \
     _(AsmJSPassStackArg)            \
     _(AsmJSCall)                    \
-    _(InterruptCheckPar)            \
+    _(AsmJSCompareExchangeHeap)     \
+    _(AsmJSAtomicBinopHeap)         \
     _(RecompileCheck)               \
+    _(MemoryBarrier)                \
     _(AssertRangeI)                 \
     _(AssertRangeD)                 \
     _(AssertRangeF)                 \
     _(AssertRangeV)                 \
     _(LexicalCheck)                 \
-    _(ThrowUninitializedLexical)
+    _(ThrowUninitializedLexical)    \
+    _(NurseryObject)                \
+    _(Debugger)
 
 #if defined(JS_CODEGEN_X86)
 # include "jit/x86/LOpcodes-x86.h"

@@ -27,7 +27,9 @@ const SNIPPETS_URL_PREF = "browser.aboutHomeSnippets.updateUrl";
 const STARTPAGE_VERSION = 4;
 
 this.AboutHomeUtils = {
-  get snippetsVersion() STARTPAGE_VERSION,
+  get snippetsVersion() {
+    return STARTPAGE_VERSION;
+  },
 
   /*
    * showKnowYourRights - Determines if the user should be shown the
@@ -97,6 +99,7 @@ let AboutHome = {
     "AboutHome:Settings",
     "AboutHome:RequestUpdate",
     "AboutHome:Search",
+    "AboutHome:OpenSearchPanel",
   ],
 
   init: function() {
@@ -142,7 +145,7 @@ let AboutHome = {
         break;
 
       case "AboutHome:Apps":
-        window.openUILinkIn("https://marketplace.mozilla.org/", "tab");
+        window.BrowserOpenApps();
         break;
 
       case "AboutHome:Addons":
@@ -195,13 +198,27 @@ let AboutHome = {
 #endif
           // Trigger a search through nsISearchEngine.getSubmission()
           let submission = engine.getSubmission(data.searchTerms, null, "homepage");
-          window.loadURI(submission.uri.spec, null, submission.postData);
+          let where = data.useNewTab ? "tab" : "current";
+          window.openUILinkIn(submission.uri.spec, where, false,
+                              submission.postData);
 
           // Used for testing
           let mm = aMessage.target.messageManager;
           mm.sendAsyncMessage("AboutHome:SearchTriggered", aMessage.data.searchData);
         });
 
+        break;
+
+      case "AboutHome:OpenSearchPanel":
+        let panel = window.document.getElementById("abouthome-search-panel");
+        let anchor = aMessage.objects.anchor;
+        panel.hidden = false;
+        panel.openPopup(anchor);
+        anchor.setAttribute("active", "true");
+        panel.addEventListener("popuphidden", function onHidden() {
+          panel.removeEventListener("popuphidden", onHidden);
+          anchor.removeAttribute("active");
+        });
         break;
     }
   },

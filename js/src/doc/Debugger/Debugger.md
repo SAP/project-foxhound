@@ -25,6 +25,18 @@ its prototype:
     disentangling itself from the debuggee, regardless of what sort of
     events or handlers or "points" we add to the interface.
 
+`allowUnobservedAsmJS`
+:   A boolean value indicating whether asm.js code running inside this
+    `Debugger` instance's debuggee globals is invisible to Debugger API
+    handlers and breakpoints. Setting this to `false` inhibits the
+    ahead-of-time asm.js compiler and forces asm.js code to run as normal
+    JavaScript. This is an accessor property with a getter and setter. It is
+    initially `false` in a freshly created `Debugger` instance.
+
+    Setting this flag to `true` is intended for uses of subsystems of the
+    Debugger API (e.g, [`Debugger.Source`][source]) for purposes other than
+    step debugging a target JavaScript program.
+
 `uncaughtExceptionHook`
 :   Either `null` or a function that SpiderMonkey calls when a call to a
     debug event handler, breakpoint handler, watchpoint handler, or similar
@@ -81,11 +93,19 @@ compartment.
 
 <code>onNewScript(<i>script</i>, <i>global</i>)</code>
 :   New code, represented by the [`Debugger.Script`][script] instance
-    <i>script</i>, has been loaded in the scope of the debuggee global
-    object <i>global</i>. <i>global</i> is a [`Debugger.Object`][object]
-    instance whose referent is the global object.
+    <i>script</i>, has been loaded in the scope of the debuggees.
 
     This method's return value is ignored.
+
+<code>onNewPromise(<i>promise</i>)</code>
+:   A new Promise object, referenced by the [`Debugger.Object`][object] instance
+    *promise*, has been allocated in the scope of the debuggees.
+
+    This handler method should return a [resumption value][rv] specifying how
+    the debuggee's execution should proceed. However, note that a <code>{ return:
+    <i>value</i> }</code> resumption value is treated like `undefined` ("continue
+    normally"); <i>value</i> is ignored. (Allowing the handler to substitute
+    its own value for the new global object doesn't seem useful.)
 
 <code>onDebuggerStatement(<i>frame</i>)</code>
 :   Debuggee code has executed a <i>debugger</i> statement in <i>frame</i>.
@@ -142,6 +162,9 @@ compartment.
     other possibility is for the `finally` block to exit due to a `return`,
     `continue`, or `break` statement, or a new exception. In those cases the
     old exception does not continue to propagate; it is discarded.)
+
+    This handler is not called when unwinding a frame due to an over-recursion
+    or out-of-memory exception.
 
 <code>sourceHandler(<i>ASuffusionOfYellow</i>)</code>
 :   This method is never called. If it is ever called, a contradiction has
@@ -346,7 +369,7 @@ other kinds of objects.
     `url`
     :   The script's `url` property must be equal to this value.
 
-    `source` <i>(not yet implemented)</i>
+    `source`
     :   The script's `source` property must be equal to this value.
 
     `line`

@@ -31,7 +31,7 @@
 class nsFormHistory;
 class nsINode;
 
-class nsFormFillController MOZ_FINAL : public nsIFormFillController,
+class nsFormFillController final : public nsIFormFillController,
                                        public nsIAutoCompleteInput,
                                        public nsIAutoCompleteSearch,
                                        public nsIDOMEventListener,
@@ -66,6 +66,11 @@ protected:
 
   void StartControllingInput(nsIDOMHTMLInputElement *aInput);
   void StopControllingInput();
+  /**
+   * Checks that aElement is a type of element we want to fill, then calls
+   * StartControllingInput on it.
+   */
+  void MaybeStartControllingInput(nsIDOMHTMLInputElement* aElement);
 
   nsresult PerformInputListAutoComplete(nsIAutoCompleteResult* aPreviousResult);
 

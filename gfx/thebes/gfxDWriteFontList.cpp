@@ -96,14 +96,8 @@ GetDirectWriteFontName(IDWriteFont *aFont, nsAString& aFontName)
     return S_OK;
 }
 
-// These strings are only defined in Win SDK 8+, so use #ifdef for now
-#if MOZ_WINSDK_TARGETVER > 0x08000000
 #define FULLNAME_ID   DWRITE_INFORMATIONAL_STRING_FULL_NAME
 #define PSNAME_ID     DWRITE_INFORMATIONAL_STRING_POSTSCRIPT_NAME
-#else
-#define FULLNAME_ID   DWRITE_INFORMATIONAL_STRING_ID(DWRITE_INFORMATIONAL_STRING_SAMPLE_TEXT + 1)
-#define PSNAME_ID     DWRITE_INFORMATIONAL_STRING_ID(DWRITE_INFORMATIONAL_STRING_SAMPLE_TEXT + 2)
-#endif
 
 // for use in reading postscript or fullname
 static HRESULT
@@ -726,7 +720,7 @@ gfxDWriteFontList::GetDefaultFont(const gfxFontStyle *aStyle)
 
     // try Arial first
     gfxFontFamily *ff;
-    if (ff = FindFamily(NS_LITERAL_STRING("Arial"))) {
+    if ((ff = FindFamily(NS_LITERAL_STRING("Arial")))) {
         return ff;
     }
 
@@ -896,11 +890,6 @@ gfxDWriteFontList::InitFontList()
     QueryPerformanceCounter(&t1);
 
     HRESULT hr;
-    gfxFontCache *fc = gfxFontCache::GetCache();
-    if (fc) {
-        fc->AgeAllGenerations();
-    }
-
     mGDIFontTableAccess = Preferences::GetBool("gfx.font_rendering.directwrite.use_gdi_table_loading", false);
 
     gfxPlatformFontList::InitFontList();
@@ -1552,7 +1541,7 @@ gfxDWriteFontList::GlobalFontFallback(const uint32_t aCh,
         gfxFontEntry *fontEntry;
         bool needsBold;  // ignored in the system fallback case
         fontEntry = family->FindFontForStyle(*aMatchStyle, needsBold);
-        if (fontEntry && fontEntry->TestCharacterMap(aCh)) {
+        if (fontEntry && fontEntry->HasCharacter(aCh)) {
             *aMatchedFamily = family;
             return fontEntry;
         }
@@ -1811,9 +1800,9 @@ public:
     IFACEMETHODIMP GetCurrentFontFile(IDWriteFontFile ** fontFile);
 
 private:
-    BundledFontFileEnumerator() MOZ_DELETE;
-    BundledFontFileEnumerator(const BundledFontFileEnumerator&) MOZ_DELETE;
-    BundledFontFileEnumerator& operator=(const BundledFontFileEnumerator&) MOZ_DELETE;
+    BundledFontFileEnumerator() = delete;
+    BundledFontFileEnumerator(const BundledFontFileEnumerator&) = delete;
+    BundledFontFileEnumerator& operator=(const BundledFontFileEnumerator&) = delete;
 
     nsRefPtr<IDWriteFactory>      mFactory;
 
@@ -1879,8 +1868,8 @@ public:
         IDWriteFontFileEnumerator **aFontFileEnumerator);
 
 private:
-    BundledFontLoader(const BundledFontLoader&) MOZ_DELETE;
-    BundledFontLoader& operator=(const BundledFontLoader&) MOZ_DELETE;
+    BundledFontLoader(const BundledFontLoader&) = delete;
+    BundledFontLoader& operator=(const BundledFontLoader&) = delete;
 };
 
 IFACEMETHODIMP

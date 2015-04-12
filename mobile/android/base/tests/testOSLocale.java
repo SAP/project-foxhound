@@ -7,7 +7,10 @@ package org.mozilla.gecko.tests;
 import java.util.Locale;
 
 import org.mozilla.gecko.BrowserLocaleManager;
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.GeckoEvent;
 import org.mozilla.gecko.GeckoSharedPrefs;
+import org.mozilla.gecko.Locales;
 import org.mozilla.gecko.PrefsHelper;
 
 import android.content.SharedPreferences;
@@ -42,6 +45,8 @@ public class testOSLocale extends BaseTest {
         private final Object waiter = new Object();
 
         public void fetch() throws InterruptedException {
+            // Wait for any pending changes to have taken. Bug 1092580.
+            GeckoAppShell.sendEventToGeckoSync(GeckoEvent.createNoOpEvent());
             synchronized (waiter) {
                 PrefsHelper.getPrefs(TO_FETCH, this);
                 waiter.wait(MAX_WAIT_MS);
@@ -86,7 +91,7 @@ public class testOSLocale extends BaseTest {
         // have been set.
         //
         // Instead, we always send a new locale code, and see what we get.
-        final Locale fr = BrowserLocaleManager.parseLocaleCode("fr");
+        final Locale fr = Locales.parseLocaleCode("fr");
         BrowserLocaleManager.storeAndNotifyOSLocale(prefs, fr);
 
         state.fetch();
@@ -113,7 +118,6 @@ public class testOSLocale extends BaseTest {
         // This never changes.
         final String SELECTED_LOCALES = "es-es,fr,";
 
-
         // Expected, from es-ES's intl.properties:
         final String EXPECTED = SELECTED_LOCALES +
                                 (isMultiLocaleBuild ? "es,en-us,en" :  // Expected, from es-ES's intl.properties.
@@ -122,7 +126,7 @@ public class testOSLocale extends BaseTest {
         mAsserter.is(state.acceptLanguages, EXPECTED, "We have the right es-ES+fr Accept-Languages for this build.");
 
         // And back to en-US.
-        final Locale en_US = BrowserLocaleManager.parseLocaleCode("en-US");
+        final Locale en_US = Locales.parseLocaleCode("en-US");
         BrowserLocaleManager.storeAndNotifyOSLocale(prefs, en_US);
         BrowserLocaleManager.getInstance().resetToSystemLocale(getActivity());
 

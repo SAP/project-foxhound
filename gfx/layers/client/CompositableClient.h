@@ -16,6 +16,7 @@
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
+#include "mozilla/layers/TextureClientRecycleAllocator.h" // for TextureClientRecycleAllocator
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
 
 namespace mozilla {
@@ -47,23 +48,23 @@ protected:
   }
 
 public:
-  virtual void Complete() MOZ_OVERRIDE
+  virtual void Complete() override
   {
     ReleaseTextureClient();
   }
 
-  virtual void Cancel() MOZ_OVERRIDE
+  virtual void Cancel() override
   {
     ReleaseTextureClient();
   }
 
-  virtual void SetTextureClient(TextureClient* aTextureClient) MOZ_OVERRIDE
+  virtual void SetTextureClient(TextureClient* aTextureClient) override
   {
     ReleaseTextureClient();
     mTextureClient = aTextureClient;
   }
 
-  virtual void SetReleaseFenceHandle(FenceHandle& aReleaseFenceHandle) MOZ_OVERRIDE
+  virtual void SetReleaseFenceHandle(FenceHandle& aReleaseFenceHandle) override
   {
     if (mTextureClient) {
       mTextureClient->SetReleaseFenceHandle(aReleaseFenceHandle);
@@ -194,9 +195,7 @@ public:
    * Clear any resources that are not immediately necessary. This may be called
    * in low-memory conditions.
    */
-  virtual void ClearCachedResources() {}
-
-  virtual void UseTexture(TextureClient* aTexture);
+  virtual void ClearCachedResources();
 
   /**
    * Should be called when deataching a TextureClient from a Compositable, because
@@ -231,12 +230,16 @@ public:
 
   TextureFlags GetTextureFlags() const { return mTextureFlags; }
 
+  TextureClientRecycleAllocator* GetTextureClientRecycler();
+
+  static void DumpTextureClient(std::stringstream& aStream, TextureClient* aTexture);
 protected:
   CompositableChild* mCompositableChild;
   CompositableForwarder* mForwarder;
   // Some layers may want to enforce some flags to all their textures
   // (like disallowing tiling)
   TextureFlags mTextureFlags;
+  RefPtr<TextureClientRecycleAllocator> mTextureClientRecycler;
 
   friend class CompositableChild;
 };

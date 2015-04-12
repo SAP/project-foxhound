@@ -31,7 +31,7 @@ NS_IMPL_RELEASE(BackstagePass)
 // The nsIXPCScriptable map declaration that will generate stubs for us...
 #define XPC_MAP_CLASSNAME           BackstagePass
 #define XPC_MAP_QUOTED_CLASSNAME   "BackstagePass"
-#define                             XPC_MAP_WANT_NEWRESOLVE
+#define                             XPC_MAP_WANT_RESOLVE
 #define                             XPC_MAP_WANT_ENUMERATE
 #define                             XPC_MAP_WANT_FINALIZE
 #define                             XPC_MAP_WANT_PRECREATE
@@ -39,14 +39,13 @@ NS_IMPL_RELEASE(BackstagePass)
 #define XPC_MAP_FLAGS       nsIXPCScriptable::USE_JSSTUB_FOR_ADDPROPERTY   |  \
                             nsIXPCScriptable::USE_JSSTUB_FOR_DELPROPERTY   |  \
                             nsIXPCScriptable::USE_JSSTUB_FOR_SETPROPERTY   |  \
-                            nsIXPCScriptable::DONT_ENUM_STATIC_PROPS       |  \
                             nsIXPCScriptable::DONT_ENUM_QUERY_INTERFACE    |  \
                             nsIXPCScriptable::IS_GLOBAL_OBJECT             |  \
                             nsIXPCScriptable::DONT_REFLECT_INTERFACE_NAMES
 #include "xpc_map_end.h" /* This will #undef the above */
 
 
-JSObject *
+JSObject*
 BackstagePass::GetGlobalJSObject()
 {
     if (mWrapper)
@@ -62,34 +61,29 @@ BackstagePass::SetGlobalObject(JSObject* global)
     mWrapper = static_cast<XPCWrappedNative*>(p);
 }
 
-/* bool newResolve (in nsIXPConnectWrappedNative wrapper, in JSContextPtr cx, in JSObjectPtr obj, in jsval id, out JSObjectPtr objp); */
 NS_IMETHODIMP
-BackstagePass::NewResolve(nsIXPConnectWrappedNative *wrapper,
-                          JSContext * cx, JSObject * objArg,
-                          jsid idArg, JSObject * *objpArg,
-                          bool *_retval)
+BackstagePass::Resolve(nsIXPConnectWrappedNative* wrapper,
+                       JSContext * cx, JSObject * objArg,
+                       jsid idArg, bool* resolvedp,
+                       bool* _retval)
 {
     JS::RootedObject obj(cx, objArg);
     JS::RootedId id(cx, idArg);
 
     bool resolved;
-    *objpArg = nullptr;
-
     *_retval = !!JS_ResolveStandardClass(cx, obj, id, &resolved);
     NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
 
     if (resolved) {
-        *objpArg = obj;
+        *resolvedp = true;
         return NS_OK;
     }
 
-    JS::RootedObject objp(cx, *objpArg);
-
-    *_retval = ResolveSystemBinding(cx, obj, id, &objp);
+    *_retval = ResolveSystemBinding(cx, obj, id, &resolved);
     NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
 
-    if (objp) {
-        *objpArg = objp;
+    if (resolved) {
+        *resolvedp = true;
         return NS_OK;
     }
 
@@ -97,15 +91,15 @@ BackstagePass::NewResolve(nsIXPConnectWrappedNative *wrapper,
 }
 
 NS_IMETHODIMP
-BackstagePass::Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                         JSObject *objArg, bool *_retval)
+BackstagePass::Enumerate(nsIXPConnectWrappedNative* wrapper, JSContext* cx,
+                         JSObject* objArg, bool* _retval)
 {
     JS::RootedObject obj(cx, objArg);
 
     *_retval = JS_EnumerateStandardClasses(cx, obj);
     NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
 
-    JS::RootedObject ignored(cx);
+    bool ignored = false;
     *_retval = ResolveSystemBinding(cx, obj, JSID_VOIDHANDLE, &ignored);
     NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
 
@@ -116,11 +110,11 @@ BackstagePass::Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 /* void getInterfaces (out uint32_t count, [array, size_is (count), retval]
                        out nsIIDPtr array); */
 NS_IMETHODIMP
-BackstagePass::GetInterfaces(uint32_t *aCount, nsIID * **aArray)
+BackstagePass::GetInterfaces(uint32_t* aCount, nsIID * **aArray)
 {
     const uint32_t count = 2;
     *aCount = count;
-    nsIID **array;
+    nsIID** array;
     *aArray = array = static_cast<nsIID**>(nsMemory::Alloc(count * sizeof(nsIID*)));
     if (!array)
         return NS_ERROR_OUT_OF_MEMORY;
@@ -128,7 +122,7 @@ BackstagePass::GetInterfaces(uint32_t *aCount, nsIID * **aArray)
     uint32_t index = 0;
     nsIID* clone;
 #define PUSH_IID(id)                                                          \
-    clone = static_cast<nsIID *>(nsMemory::Clone(&NS_GET_IID( id ),           \
+    clone = static_cast<nsIID*>(nsMemory::Clone(&NS_GET_IID( id ),           \
                                                  sizeof(nsIID)));             \
     if (!clone)                                                               \
         goto oom;                                                             \
@@ -150,10 +144,10 @@ oom:
 /* nsISupports getHelperForLanguage (in uint32_t language); */
 NS_IMETHODIMP
 BackstagePass::GetHelperForLanguage(uint32_t language,
-                                    nsISupports **retval)
+                                    nsISupports** retval)
 {
     nsCOMPtr<nsISupports> supports =
-        do_QueryInterface(static_cast<nsIGlobalObject *>(this));
+        do_QueryInterface(static_cast<nsIGlobalObject*>(this));
     supports.forget(retval);
     return NS_OK;
 }
@@ -185,7 +179,7 @@ BackstagePass::GetClassID(nsCID * *aClassID)
 
 /* readonly attribute uint32_t implementationLanguage; */
 NS_IMETHODIMP
-BackstagePass::GetImplementationLanguage(uint32_t *aImplementationLanguage)
+BackstagePass::GetImplementationLanguage(uint32_t* aImplementationLanguage)
 {
     *aImplementationLanguage = nsIProgrammingLanguage::CPLUSPLUS;
     return NS_OK;
@@ -193,7 +187,7 @@ BackstagePass::GetImplementationLanguage(uint32_t *aImplementationLanguage)
 
 /* readonly attribute uint32_t flags; */
 NS_IMETHODIMP
-BackstagePass::GetFlags(uint32_t *aFlags)
+BackstagePass::GetFlags(uint32_t* aFlags)
 {
     *aFlags = nsIClassInfo::MAIN_THREAD_ONLY;
     return NS_OK;
@@ -201,13 +195,13 @@ BackstagePass::GetFlags(uint32_t *aFlags)
 
 /* [notxpcom] readonly attribute nsCID classIDNoAlloc; */
 NS_IMETHODIMP
-BackstagePass::GetClassIDNoAlloc(nsCID *aClassIDNoAlloc)
+BackstagePass::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc)
 {
     return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP
-BackstagePass::Finalize(nsIXPConnectWrappedNative *wrapper, JSFreeOp * fop, JSObject * obj)
+BackstagePass::Finalize(nsIXPConnectWrappedNative* wrapper, JSFreeOp * fop, JSObject * obj)
 {
     nsCOMPtr<nsIGlobalObject> bsp(do_QueryWrappedNative(wrapper));
     MOZ_ASSERT(bsp);
@@ -216,8 +210,8 @@ BackstagePass::Finalize(nsIXPConnectWrappedNative *wrapper, JSFreeOp * fop, JSOb
 }
 
 NS_IMETHODIMP
-BackstagePass::PreCreate(nsISupports *nativeObj, JSContext *cx,
-                         JSObject *globalObj, JSObject **parentObj)
+BackstagePass::PreCreate(nsISupports* nativeObj, JSContext* cx,
+                         JSObject* globalObj, JSObject** parentObj)
 {
     // We do the same trick here as for WindowSH. Return the js global
     // as parent, so XPConenct can find the right scope and the wrapper
@@ -225,7 +219,7 @@ BackstagePass::PreCreate(nsISupports *nativeObj, JSContext *cx,
     nsCOMPtr<nsIGlobalObject> global(do_QueryInterface(nativeObj));
     MOZ_ASSERT(global, "nativeObj not a global object!");
 
-    JSObject *jsglobal = global->GetGlobalJSObject();
+    JSObject* jsglobal = global->GetGlobalJSObject();
     if (jsglobal)
         *parentObj = jsglobal;
     return NS_OK;

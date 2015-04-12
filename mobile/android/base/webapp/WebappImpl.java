@@ -14,10 +14,14 @@ import org.json.JSONObject;
 import org.mozilla.gecko.GeckoApp;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoEvent;
+import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Tab;
 import org.mozilla.gecko.Tabs;
+import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.db.StubBrowserDB;
+import org.mozilla.gecko.mozglue.ContextUtils.SafeIntent;
 import org.mozilla.gecko.util.NativeJSObject;
 import org.mozilla.gecko.webapp.InstallHelper.InstallCallback;
 
@@ -59,11 +63,17 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
     @Override
     public boolean hasTabsSideBar() { return false; }
 
-    @Override
-    public void onCreate(Bundle savedInstance)
-    {
+    public WebappImpl() {
+        GeckoProfile.setBrowserDBFactory(new BrowserDB.Factory() {
+            @Override
+            public BrowserDB get(String profileName, File profileDir) {
+                return new StubBrowserDB(profileName);
+            }
+        });
+    }
 
-        String action = getIntent().getAction();
+    @Override
+    public void onCreate(Bundle savedInstance) {
         Bundle extras = getIntent().getExtras();
         if (extras == null) {
             extras = savedInstance;
@@ -157,7 +167,7 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
     }
 
     @Override
-    protected String getURIFromIntent(Intent intent) {
+    protected String getURIFromIntent(SafeIntent intent) {
         String uri = super.getURIFromIntent(intent);
         if (uri != null) {
             return uri;
@@ -178,10 +188,11 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
     }
 
     @Override
-    protected void loadStartupTab(String uri) {
+    protected void loadStartupTab(String uri, int flags) {
         // Load a tab so it's available for any code that assumes a tab
         // before the app tab itself is loaded in BrowserApp._loadWebapp.
-        super.loadStartupTab("about:blank");
+        flags = Tabs.LOADURL_NEW_TAB | Tabs.LOADURL_USER_ENTERED | Tabs.LOADURL_EXTERNAL;
+        super.loadStartupTab("about:blank", flags);
     }
 
     private void showSplash() {

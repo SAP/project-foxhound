@@ -20,7 +20,6 @@
 
 #include "base/message_loop.h"
 #include "DeviceStorage.h"
-#include "mozilla/FileUtils.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/Scoped.h"
 #include "mozilla/Services.h"
@@ -40,7 +39,7 @@ using namespace android;
 using namespace mozilla;
 BEGIN_MTP_NAMESPACE
 
-class FileWatcherUpdateRunnable MOZ_FINAL : public nsRunnable
+class FileWatcherUpdateRunnable final : public nsRunnable
 {
 public:
   FileWatcherUpdateRunnable(MozMtpDatabase* aMozMtpDatabase,
@@ -71,7 +70,7 @@ private:
 
 // The FileWatcherUpdate class listens for file-watcher-update events
 // and tells the MtpServer about the changes.
-class FileWatcherUpdate MOZ_FINAL : public nsIObserver
+class FileWatcherUpdate final : public nsIObserver
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -140,7 +139,7 @@ private:
 NS_IMPL_ISUPPORTS(FileWatcherUpdate, nsIObserver)
 static StaticRefPtr<FileWatcherUpdate> sFileWatcherUpdate;
 
-class AllocFileWatcherUpdateRunnable MOZ_FINAL : public nsRunnable
+class AllocFileWatcherUpdateRunnable final : public nsRunnable
 {
 public:
   AllocFileWatcherUpdateRunnable(MozMtpServer* aMozMtpServer)
@@ -158,7 +157,7 @@ private:
   nsRefPtr<MozMtpServer> mMozMtpServer;
 };
 
-class FreeFileWatcherUpdateRunnable MOZ_FINAL : public nsRunnable
+class FreeFileWatcherUpdateRunnable final : public nsRunnable
 {
 public:
   FreeFileWatcherUpdateRunnable(MozMtpServer* aMozMtpServer)
@@ -225,33 +224,38 @@ MozMtpServer::GetMozMtpDatabase()
   return db.forget();
 }
 
-void
-MozMtpServer::Run()
+bool
+MozMtpServer::Init()
 {
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
 
   const char *mtpUsbFilename = "/dev/mtp_usb";
-  ScopedClose mtpUsbFd(open(mtpUsbFilename, O_RDWR));
-  if (mtpUsbFd.get() < 0) {
-    MTP_ERR("open of '%s' failed", mtpUsbFilename);
-    return;
+  mMtpUsbFd = open(mtpUsbFilename, O_RDWR);
+  if (mMtpUsbFd.get() < 0) {
+    MTP_ERR("open of '%s' failed((%s))", mtpUsbFilename, strerror(errno));
+    return false;
   }
-  MTP_LOG("Opened '%s' fd %d", mtpUsbFilename, mtpUsbFd.get());
+  MTP_LOG("Opened '%s' fd %d", mtpUsbFilename, mMtpUsbFd.get());
 
   mMozMtpDatabase = new MozMtpDatabase();
-  mMtpServer = new RefCountedMtpServer(mtpUsbFd.get(),        // fd
+  mMtpServer = new RefCountedMtpServer(mMtpUsbFd.get(),        // fd
                                        mMozMtpDatabase.get(), // MtpDatabase
                                        false,                 // ptp?
                                        AID_MEDIA_RW,          // file group
                                        0664,                  // file permissions
                                        0775);                 // dir permissions
+  return true;
+}
 
+void
+MozMtpServer::Run()
+{
   nsresult rv = NS_NewNamedThread("MtpServer", getter_AddRefs(mServerThread));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
   MOZ_ASSERT(mServerThread);
-  mServerThread->Dispatch(new MtpServerRunnable(mtpUsbFd.forget(), this), NS_DISPATCH_NORMAL);
+  mServerThread->Dispatch(new MtpServerRunnable(mMtpUsbFd.forget(), this), NS_DISPATCH_NORMAL);
 }
 
 END_MTP_NAMESPACE

@@ -12,7 +12,6 @@
 
 #include "mozilla/Scoped.h"
 #include "mozilla/Services.h"
-#include "mozilla/NullPtr.h"
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
 
@@ -31,7 +30,7 @@ namespace {
  * Important note: we maintain the invariant that these private data
  * slots are already addrefed.
  */
-class FinalizationEvent MOZ_FINAL: public nsRunnable
+class FinalizationEvent final: public nsRunnable
 {
 public:
   FinalizationEvent(const char* aTopic,
@@ -115,13 +114,13 @@ void Finalize(JSFreeOp *fop, JSObject *objSelf)
 static const JSClass sWitnessClass = {
   "FinalizationWitness",
   JSCLASS_HAS_RESERVED_SLOTS(WITNESS_INSTANCES_SLOTS),
-  JS_PropertyStub /* addProperty */,
-  JS_DeletePropertyStub /* delProperty */,
-  JS_PropertyStub /* getProperty */,
-  JS_StrictPropertyStub /* setProperty */,
-  JS_EnumerateStub /* enumerate */,
-  JS_ResolveStub /* resolve */,
-  JS_ConvertStub /* convert */,
+  nullptr /* addProperty */,
+  nullptr /* delProperty */,
+  nullptr /* getProperty */,
+  nullptr /* setProperty */,
+  nullptr /* enumerate */,
+  nullptr /* resolve */,
+  nullptr /* convert */,
   Finalize /* finalize */
 };
 
@@ -191,8 +190,7 @@ FinalizationWitnessService::Make(const char* aTopic,
                                  JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aRetval)
 {
-  JS::Rooted<JSObject*> objResult(aCx, JS_NewObject(aCx, &sWitnessClass, JS::NullPtr(),
-                                                    JS::NullPtr()));
+  JS::Rooted<JSObject*> objResult(aCx, JS_NewObject(aCx, &sWitnessClass));
   if (!objResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

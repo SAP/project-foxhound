@@ -11,11 +11,9 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
-#include "GeneratedSDKWrappers.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using namespace mozilla::widget::android;
 
 jclass AndroidGeckoEvent::jGeckoEventClass = 0;
 jfieldID AndroidGeckoEvent::jActionField = 0;
@@ -42,7 +40,6 @@ jfieldID AndroidGeckoEvent::jDOMPrintableKeyValueField = 0;
 jfieldID AndroidGeckoEvent::jKeyCodeField = 0;
 jfieldID AndroidGeckoEvent::jScanCodeField = 0;
 jfieldID AndroidGeckoEvent::jMetaStateField = 0;
-jfieldID AndroidGeckoEvent::jDomKeyLocationField = 0;
 jfieldID AndroidGeckoEvent::jFlagsField = 0;
 jfieldID AndroidGeckoEvent::jUnicodeCharField = 0;
 jfieldID AndroidGeckoEvent::jBaseUnicodeCharField = 0;
@@ -73,9 +70,6 @@ jfieldID AndroidGeckoEvent::jGamepadButtonValueField = 0;
 jfieldID AndroidGeckoEvent::jGamepadValuesField = 0;
 jfieldID AndroidGeckoEvent::jPrefNamesField = 0;
 jfieldID AndroidGeckoEvent::jObjectField = 0;
-
-jclass AndroidGeckoEvent::jDomKeyLocationClass = 0;
-jfieldID AndroidGeckoEvent::jDomKeyLocationValueField = 0;
 
 jclass AndroidPoint::jPointClass = 0;
 jfieldID AndroidPoint::jXField = 0;
@@ -123,88 +117,80 @@ mozilla::InitAndroidJavaWrappers(JNIEnv *jEnv)
     AndroidRect::InitRectClass(jEnv);
     AndroidRectF::InitRectFClass(jEnv);
     AndroidLayerRendererFrame::InitLayerRendererFrameClass(jEnv);
-    InitStubs(jEnv);
 }
 
 void
 AndroidGeckoEvent::InitGeckoEventClass(JNIEnv *jEnv)
 {
-    initInit();
+    AutoJNIClass geckoEvent(jEnv, "org/mozilla/gecko/GeckoEvent");
+    jGeckoEventClass = geckoEvent.getGlobalRef();
 
-    jGeckoEventClass = getClassGlobalRef("org/mozilla/gecko/GeckoEvent");
+    jActionField = geckoEvent.getField("mAction", "I");
+    jTypeField = geckoEvent.getField("mType", "I");
+    jAckNeededField = geckoEvent.getField("mAckNeeded", "Z");
+    jTimeField = geckoEvent.getField("mTime", "J");
+    jPoints = geckoEvent.getField("mPoints", "[Landroid/graphics/Point;");
+    jPointIndicies = geckoEvent.getField("mPointIndicies", "[I");
+    jOrientations = geckoEvent.getField("mOrientations", "[F");
+    jPressures = geckoEvent.getField("mPressures", "[F");
+    jToolTypes = geckoEvent.getField("mToolTypes", "[I");
+    jPointRadii = geckoEvent.getField("mPointRadii", "[Landroid/graphics/Point;");
+    jXField = geckoEvent.getField("mX", "D");
+    jYField = geckoEvent.getField("mY", "D");
+    jZField = geckoEvent.getField("mZ", "D");
+    jRectField = geckoEvent.getField("mRect", "Landroid/graphics/Rect;");
 
-    jActionField = getField("mAction", "I");
-    jTypeField = getField("mType", "I");
-    jAckNeededField = getField("mAckNeeded", "Z");
-    jTimeField = getField("mTime", "J");
-    jPoints = getField("mPoints", "[Landroid/graphics/Point;");
-    jPointIndicies = getField("mPointIndicies", "[I");
-    jOrientations = getField("mOrientations", "[F");
-    jPressures = getField("mPressures", "[F");
-    jToolTypes = getField("mToolTypes", "[I");
-    jPointRadii = getField("mPointRadii", "[Landroid/graphics/Point;");
-    jXField = getField("mX", "D");
-    jYField = getField("mY", "D");
-    jZField = getField("mZ", "D");
-    jRectField = getField("mRect", "Landroid/graphics/Rect;");
-
-    jCharactersField = getField("mCharacters", "Ljava/lang/String;");
-    jCharactersExtraField = getField("mCharactersExtra", "Ljava/lang/String;");
-    jDataField = getField("mData", "Ljava/lang/String;");
-    jKeyCodeField = getField("mKeyCode", "I");
-    jScanCodeField = getField("mScanCode", "I");
-    jMetaStateField = getField("mMetaState", "I");
-    jDomKeyLocationField = getField("mDomKeyLocation", "Lorg/mozilla/gecko/GeckoEvent$DomKeyLocation;");
-    jFlagsField = getField("mFlags", "I");
-    jUnicodeCharField = getField("mUnicodeChar", "I");
-    jBaseUnicodeCharField = getField("mBaseUnicodeChar", "I");
-    jDOMPrintableKeyValueField = getField("mDOMPrintableKeyValue", "I");
-    jRepeatCountField = getField("mRepeatCount", "I");
-    jCountField = getField("mCount", "I");
-    jStartField = getField("mStart", "I");
-    jEndField = getField("mEnd", "I");
-    jPointerIndexField = getField("mPointerIndex", "I");
-    jRangeTypeField = getField("mRangeType", "I");
-    jRangeStylesField = getField("mRangeStyles", "I");
-    jRangeLineStyleField = getField("mRangeLineStyle", "I");
-    jRangeBoldLineField = getField("mRangeBoldLine", "Z");
-    jRangeForeColorField = getField("mRangeForeColor", "I");
-    jRangeBackColorField = getField("mRangeBackColor", "I");
-    jRangeLineColorField = getField("mRangeLineColor", "I");
-    jLocationField = getField("mLocation", "Landroid/location/Location;");
-    jConnectionTypeField = getField("mConnectionType", "I");
-    jIsWifiField = getField("mIsWifi", "Z");
-    jDHCPGatewayField = getField("mDHCPGateway", "I");
-    jScreenOrientationField = getField("mScreenOrientation", "S");
-    jByteBufferField = getField("mBuffer", "Ljava/nio/ByteBuffer;");
-    jWidthField = getField("mWidth", "I");
-    jHeightField = getField("mHeight", "I");
-    jIDField = getField("mID", "I");
-    jGamepadButtonField = getField("mGamepadButton", "I");
-    jGamepadButtonPressedField = getField("mGamepadButtonPressed", "Z");
-    jGamepadButtonValueField = getField("mGamepadButtonValue", "F");
-    jGamepadValuesField = getField("mGamepadValues", "[F");
-    jPrefNamesField = getField("mPrefNames", "[Ljava/lang/String;");
-    jObjectField = getField("mObject", "Ljava/lang/Object;");
-
-    // Init GeckoEvent.DomKeyLocation enum
-    jDomKeyLocationClass = getClassGlobalRef("org/mozilla/gecko/GeckoEvent$DomKeyLocation");
-    jDomKeyLocationValueField = getField("value", "I");
+    jCharactersField = geckoEvent.getField("mCharacters", "Ljava/lang/String;");
+    jCharactersExtraField = geckoEvent.getField("mCharactersExtra", "Ljava/lang/String;");
+    jDataField = geckoEvent.getField("mData", "Ljava/lang/String;");
+    jKeyCodeField = geckoEvent.getField("mKeyCode", "I");
+    jScanCodeField = geckoEvent.getField("mScanCode", "I");
+    jMetaStateField = geckoEvent.getField("mMetaState", "I");
+    jFlagsField = geckoEvent.getField("mFlags", "I");
+    jUnicodeCharField = geckoEvent.getField("mUnicodeChar", "I");
+    jBaseUnicodeCharField = geckoEvent.getField("mBaseUnicodeChar", "I");
+    jDOMPrintableKeyValueField = geckoEvent.getField("mDOMPrintableKeyValue", "I");
+    jRepeatCountField = geckoEvent.getField("mRepeatCount", "I");
+    jCountField = geckoEvent.getField("mCount", "I");
+    jStartField = geckoEvent.getField("mStart", "I");
+    jEndField = geckoEvent.getField("mEnd", "I");
+    jPointerIndexField = geckoEvent.getField("mPointerIndex", "I");
+    jRangeTypeField = geckoEvent.getField("mRangeType", "I");
+    jRangeStylesField = geckoEvent.getField("mRangeStyles", "I");
+    jRangeLineStyleField = geckoEvent.getField("mRangeLineStyle", "I");
+    jRangeBoldLineField = geckoEvent.getField("mRangeBoldLine", "Z");
+    jRangeForeColorField = geckoEvent.getField("mRangeForeColor", "I");
+    jRangeBackColorField = geckoEvent.getField("mRangeBackColor", "I");
+    jRangeLineColorField = geckoEvent.getField("mRangeLineColor", "I");
+    jLocationField = geckoEvent.getField("mLocation", "Landroid/location/Location;");
+    jConnectionTypeField = geckoEvent.getField("mConnectionType", "I");
+    jIsWifiField = geckoEvent.getField("mIsWifi", "Z");
+    jDHCPGatewayField = geckoEvent.getField("mDHCPGateway", "I");
+    jScreenOrientationField = geckoEvent.getField("mScreenOrientation", "S");
+    jByteBufferField = geckoEvent.getField("mBuffer", "Ljava/nio/ByteBuffer;");
+    jWidthField = geckoEvent.getField("mWidth", "I");
+    jHeightField = geckoEvent.getField("mHeight", "I");
+    jIDField = geckoEvent.getField("mID", "I");
+    jGamepadButtonField = geckoEvent.getField("mGamepadButton", "I");
+    jGamepadButtonPressedField = geckoEvent.getField("mGamepadButtonPressed", "Z");
+    jGamepadButtonValueField = geckoEvent.getField("mGamepadButtonValue", "F");
+    jGamepadValuesField = geckoEvent.getField("mGamepadValues", "[F");
+    jPrefNamesField = geckoEvent.getField("mPrefNames", "[Ljava/lang/String;");
+    jObjectField = geckoEvent.getField("mObject", "Ljava/lang/Object;");
 }
 
 void
 AndroidLocation::InitLocationClass(JNIEnv *jEnv)
 {
-    initInit();
-
-    jLocationClass = getClassGlobalRef("android/location/Location");
-    jGetLatitudeMethod = getMethod("getLatitude", "()D");
-    jGetLongitudeMethod = getMethod("getLongitude", "()D");
-    jGetAltitudeMethod = getMethod("getAltitude", "()D");
-    jGetAccuracyMethod = getMethod("getAccuracy", "()F");
-    jGetBearingMethod = getMethod("getBearing", "()F");
-    jGetSpeedMethod = getMethod("getSpeed", "()F");
-    jGetTimeMethod = getMethod("getTime", "()J");
+    AutoJNIClass location(jEnv, "android/location/Location");
+    jLocationClass = location.getGlobalRef();
+    jGetLatitudeMethod = location.getMethod("getLatitude", "()D");
+    jGetLongitudeMethod = location.getMethod("getLongitude", "()D");
+    jGetAltitudeMethod = location.getMethod("getAltitude", "()D");
+    jGetAccuracyMethod = location.getMethod("getAccuracy", "()F");
+    jGetBearingMethod = location.getMethod("getBearing", "()F");
+    jGetSpeedMethod = location.getMethod("getSpeed", "()F");
+    jGetTimeMethod = location.getMethod("getTime", "()J");
 }
 
 nsGeoPosition*
@@ -236,57 +222,48 @@ AndroidLocation::CreateGeoPosition(JNIEnv *jenv, jobject jobj)
 void
 AndroidPoint::InitPointClass(JNIEnv *jEnv)
 {
-    initInit();
+    AutoJNIClass point(jEnv, "android/graphics/Point");
+    jPointClass = point.getGlobalRef();
 
-    jPointClass = getClassGlobalRef("android/graphics/Point");
-
-    jXField = getField("x", "I");
-    jYField = getField("y", "I");
+    jXField = point.getField("x", "I");
+    jYField = point.getField("y", "I");
 }
 
 void
 AndroidRect::InitRectClass(JNIEnv *jEnv)
 {
-    initInit();
+    AutoJNIClass rect(jEnv, "android/graphics/Rect");
+    jRectClass = rect.getGlobalRef();
 
-    jRectClass = getClassGlobalRef("android/graphics/Rect");
-
-    jBottomField = getField("bottom", "I");
-    jLeftField = getField("left", "I");
-    jTopField = getField("top", "I");
-    jRightField = getField("right", "I");
+    jBottomField = rect.getField("bottom", "I");
+    jLeftField = rect.getField("left", "I");
+    jTopField = rect.getField("top", "I");
+    jRightField = rect.getField("right", "I");
 }
 
 void
 AndroidRectF::InitRectFClass(JNIEnv *jEnv)
 {
-    initInit();
+    AutoJNIClass rect(jEnv, "android/graphics/RectF");
+    jRectClass = rect.getGlobalRef();
 
-    jRectClass = getClassGlobalRef("android/graphics/RectF");
-
-    jBottomField = getField("bottom", "F");
-    jLeftField = getField("left", "F");
-    jTopField = getField("top", "F");
-    jRightField = getField("right", "F");
+    jBottomField = rect.getField("bottom", "F");
+    jLeftField = rect.getField("left", "F");
+    jTopField = rect.getField("top", "F");
+    jRightField = rect.getField("right", "F");
 }
 
 void
 AndroidLayerRendererFrame::InitLayerRendererFrameClass(JNIEnv *jEnv)
 {
-    initInit();
+    AutoJNIClass layerRendererFrame(jEnv, "org/mozilla/gecko/gfx/LayerRenderer$Frame");
+    jLayerRendererFrameClass = layerRendererFrame.getGlobalRef();
 
-    jLayerRendererFrameClass = getClassGlobalRef("org/mozilla/gecko/gfx/LayerRenderer$Frame");
-
-    jBeginDrawingMethod = getMethod("beginDrawing", "()V");
-    jDrawBackgroundMethod = getMethod("drawBackground", "()V");
-    jDrawForegroundMethod = getMethod("drawForeground", "()V");
-    jEndDrawingMethod = getMethod("endDrawing", "()V");
+    jBeginDrawingMethod = layerRendererFrame.getMethod("beginDrawing", "()V");
+    jDrawBackgroundMethod = layerRendererFrame.getMethod("drawBackground", "()V");
+    jDrawForegroundMethod = layerRendererFrame.getMethod("drawForeground", "()V");
+    jEndDrawingMethod = layerRendererFrame.getMethod("endDrawing", "()V");
 }
-
-#undef initInit
-#undef initClassGlobalRef
-#undef getField
-#undef getMethod
 
 void
 AndroidGeckoEvent::ReadPointArray(nsTArray<nsIntPoint> &points,
@@ -402,18 +379,6 @@ AndroidGeckoEvent::UnionRect(nsIntRect const& aRect)
     mRect = aRect.Union(mRect);
 }
 
-uint32_t
-AndroidGeckoEvent::ReadDomKeyLocation(JNIEnv* jenv, jobject jGeckoEventObj)
-{
-    jobject enumObject = jenv->GetObjectField(jGeckoEventObj,
-                                             jDomKeyLocationField);
-    MOZ_ASSERT(enumObject);
-    int enumValue = jenv->GetIntField(enumObject, jDomKeyLocationValueField);
-    MOZ_ASSERT(enumValue >= nsIDOMKeyEvent::DOM_KEY_LOCATION_STANDARD &&
-               enumValue <= nsIDOMKeyEvent::DOM_KEY_LOCATION_JOYSTICK);
-    return static_cast<uint32_t>(enumValue);
-}
-
 void
 AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
 {
@@ -437,7 +402,6 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
         case IME_KEY_EVENT:
             mTime = jenv->GetLongField(jobj, jTimeField);
             mMetaState = jenv->GetIntField(jobj, jMetaStateField);
-            mDomKeyLocation = ReadDomKeyLocation(jenv, jobj);
             mFlags = jenv->GetIntField(jobj, jFlagsField);
             mKeyCode = jenv->GetIntField(jobj, jKeyCodeField);
             mScanCode = jenv->GetIntField(jobj, jScanCodeField);
@@ -547,6 +511,14 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
         case THUMBNAIL: {
             mMetaState = jenv->GetIntField(jobj, jMetaStateField);
             ReadPointArray(mPoints, jenv, jPoints, 1);
+            mByteBuffer = new RefCountedJavaObject(jenv, jenv->GetObjectField(jobj, jByteBufferField));
+            break;
+        }
+
+        case ZOOMEDVIEW: {
+            mX = jenv->GetDoubleField(jobj, jXField);
+            mMetaState = jenv->GetIntField(jobj, jMetaStateField);
+            ReadPointArray(mPoints, jenv, jPoints, 2);
             mByteBuffer = new RefCountedJavaObject(jenv, jenv->GetObjectField(jobj, jByteBufferField));
             break;
         }
@@ -690,6 +662,13 @@ AndroidGeckoEvent::ApzGuid()
     return mApzGuid;
 }
 
+uint64_t
+AndroidGeckoEvent::ApzInputBlockId()
+{
+    MOZ_ASSERT(Type() == APZ_INPUT_EVENT);
+    return mApzInputBlockId;
+}
+
 WidgetTouchEvent
 AndroidGeckoEvent::MakeTouchEvent(nsIWidget* widget)
 {
@@ -751,7 +730,7 @@ AndroidGeckoEvent::MakeTouchEvent(nsIWidget* widget)
     event.modifiers = DOMModifiers();
     event.time = Time();
 
-    const nsIntPoint& offset = widget->WidgetToScreenOffset();
+    const LayoutDeviceIntPoint& offset = widget->WidgetToScreenOffset();
     event.touches.SetCapacity(endIndex - startIndex);
     for (int i = startIndex; i < endIndex; i++) {
         // In this code branch, we are dispatching this event directly
@@ -759,7 +738,7 @@ AndroidGeckoEvent::MakeTouchEvent(nsIWidget* widget)
         // and the Points() array has points in CSS pixels, which we need
         // to convert.
         CSSToLayoutDeviceScale scale = widget->GetDefaultScale();
-        nsIntPoint pt(
+        LayoutDeviceIntPoint pt(
             (Points()[i].x * scale.scale) - offset.x,
             (Points()[i].y * scale.scale) - offset.y);
         nsIntPoint radii(
@@ -817,7 +796,7 @@ AndroidGeckoEvent::MakeMultiTouchInput(nsIWidget* widget)
         return event;
     }
 
-    const nsIntPoint& offset = widget->WidgetToScreenOffset();
+    const nsIntPoint& offset = widget->WidgetToScreenOffsetUntyped();
     event.mTouches.SetCapacity(endIndex - startIndex);
     for (int i = startIndex; i < endIndex; i++) {
         nsIntPoint point = Points()[i] - offset;
@@ -874,11 +853,10 @@ AndroidGeckoEvent::MakeMouseEvent(nsIWidget* widget)
     // We are dispatching this event directly into Gecko (as opposed to going
     // through the AsyncPanZoomController), and the Points() array has points
     // in CSS pixels, which we need to convert to LayoutDevice pixels.
-    const nsIntPoint& offset = widget->WidgetToScreenOffset();
+    const LayoutDeviceIntPoint& offset = widget->WidgetToScreenOffset();
     CSSToLayoutDeviceScale scale = widget->GetDefaultScale();
     event.refPoint = LayoutDeviceIntPoint((Points()[0].x * scale.scale) - offset.x,
                                           (Points()[0].y * scale.scale) - offset.y);
-
     return event;
 }
 

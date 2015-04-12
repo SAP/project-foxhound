@@ -121,20 +121,20 @@ PrintCycle(const BlockingResourceBase::DDT::ResourceAcquisitionArray* aCycle,
 }
 
 #ifndef MOZ_CALLSTACK_DISABLED
-struct CodeAddressServiceLock MOZ_FINAL
+struct CodeAddressServiceLock final
 {
   static void Unlock() { }
   static void Lock() { }
   static bool IsLocked() { return true; }
 };
 
-struct CodeAddressServiceStringAlloc MOZ_FINAL
+struct CodeAddressServiceStringAlloc final
 {
   static char* copy(const char* aString) { return ::strdup(aString); }
   static void free(char* aString) { ::free(aString); }
 };
 
-class CodeAddressServiceStringTable MOZ_FINAL
+class CodeAddressServiceStringTable final
 {
 public:
   CodeAddressServiceStringTable() : mSet(32) {}
@@ -187,9 +187,11 @@ BlockingResourceBase::Print(nsACString& aOut) const
   for (uint32_t i = 0; i < state.Length(); i++) {
     const size_t kMaxLength = 1024;
     char buffer[kMaxLength];
-    addressService.GetLocation(state[i], buffer, kMaxLength);
+    addressService.GetLocation(i + 1, state[i], buffer, kMaxLength);
     const char* fmt = "    %s\n";
-    aOut += nsPrintfCString(fmt, buffer);
+    aOut.AppendLiteral("    ");
+    aOut.Append(buffer);
+    aOut.AppendLiteral("\n");
     fprintf(stderr, fmt, buffer);
   }
 
@@ -210,7 +212,7 @@ BlockingResourceBase::BlockingResourceBase(
   , mAcquired()
 #endif
 {
-  NS_ABORT_IF_FALSE(mName, "Name must be nonnull");
+  MOZ_ASSERT(mName, "Name must be nonnull");
   // PR_CallOnce guaranatees that InitStatics is called in a
   // thread-safe way
   if (PR_SUCCESS != PR_CallOnce(&sCallOnce, InitStatics)) {

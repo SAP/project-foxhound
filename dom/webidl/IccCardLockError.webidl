@@ -3,9 +3,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Constructor(DOMString lockType, DOMString errorName, short retryCount),
- Pref="dom.icc.enabled"]
+[Constructor(DOMString errorName, short retryCount),
+ Pref="dom.icc.enabled",
+ CheckPermissions="mobileconnection",
+ AvailableIn="CertifiedApps"]
 interface IccCardLockError : DOMError {
-  readonly attribute DOMString lockType;
   readonly attribute short retryCount;
 };

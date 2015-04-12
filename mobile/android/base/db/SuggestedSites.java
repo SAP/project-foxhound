@@ -34,10 +34,9 @@ import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
-import org.mozilla.gecko.BrowserLocaleManager;
 import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.GeckoProfile;
+import org.mozilla.gecko.Locales;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.distribution.Distribution;
 import org.mozilla.gecko.db.BrowserContract;
@@ -289,17 +288,16 @@ public class SuggestedSites {
             return;
         }
 
-        distribution.addOnDistributionReadyCallback(new Runnable() {
+        distribution.addOnDistributionReadyCallback(new Distribution.ReadyCallback() {
             @Override
-            public void run() {
-                Log.d(LOGTAG, "Running post-distribution task: suggested sites.");
-
+            public void distributionNotFound() {
                 // If distribution doesn't exist, simply continue to load
                 // suggested sites directly from resources. See refresh().
-                if (!distribution.exists()) {
-                    return;
-                }
+            }
 
+            @Override
+            public void distributionFound(Distribution distribution) {
+                Log.d(LOGTAG, "Running post-distribution task: suggested sites.");
                 // Merge suggested sites from distribution with the
                 // default ones. Distribution takes precedence.
                 Map<String, Site> sites = loadFromDistribution(distribution);
@@ -321,6 +319,11 @@ public class SuggestedSites {
                 final ContentResolver cr = context.getContentResolver();
                 cr.notifyChange(BrowserContract.SuggestedSites.CONTENT_URI, null);
             }
+
+            @Override
+            public void distributionArrivedLate(Distribution distribution) {
+                distributionFound(distribution);
+            }
         });
     }
 
@@ -334,7 +337,7 @@ public class SuggestedSites {
     static Map<String, Site> loadFromDistribution(Distribution dist) {
         for (Locale locale : getAcceptableLocales()) {
             try {
-                final String languageTag = BrowserLocaleManager.getLanguageTag(locale);
+                final String languageTag = Locales.getLanguageTag(locale);
                 final String path = String.format("suggestedsites/locales/%s/%s",
                                                   languageTag, FILENAME);
 

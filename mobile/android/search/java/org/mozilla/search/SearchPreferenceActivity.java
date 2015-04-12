@@ -5,7 +5,7 @@
 package org.mozilla.search;
 
 import org.mozilla.gecko.GeckoSharedPrefs;
-import org.mozilla.gecko.LocaleAware;
+import org.mozilla.gecko.Locales;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.util.Log;
+import android.view.MenuItem;
 import android.widget.Toast;
 
 /**
@@ -40,7 +41,7 @@ public class SearchPreferenceActivity extends PreferenceActivity {
     @Override
     @SuppressWarnings("deprecation")
     protected void onCreate(Bundle savedInstanceState) {
-        LocaleAware.initializeLocale(getApplicationContext());
+        Locales.initializeLocale(getApplicationContext());
         super.onCreate(savedInstanceState);
 
         getPreferenceManager().setSharedPreferencesName(GeckoSharedPrefs.APP_PREFS_NAME);
@@ -104,5 +105,14 @@ public class SearchPreferenceActivity extends PreferenceActivity {
             }
         };
         clearHistoryTask.execute();
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == android.R.id.home) {
+            finish();
+            return true;
+        }
+        return false;
     }
 }

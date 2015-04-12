@@ -12,6 +12,7 @@
  */
 
 this.EXPORTED_SYMBOLS = [
+  "Accessibility",
   "ElementManager",
   "CLASS_NAME",
   "SELECTOR",
@@ -20,7 +21,9 @@ this.EXPORTED_SYMBOLS = [
   "LINK_TEXT",
   "PARTIAL_LINK_TEXT",
   "TAG",
-  "XPATH"
+  "XPATH",
+  "ANON",
+  "ANON_ATTRIBUTE"
 ];
 
 const DOCUMENT_POSITION_DISCONNECTED = 1;
@@ -36,6 +39,8 @@ this.LINK_TEXT = "link text";
 this.PARTIAL_LINK_TEXT = "partial link text";
 this.TAG = "tag name";
 this.XPATH = "xpath";
+this.ANON= "anon";
+this.ANON_ATTRIBUTE = "anon attribute";
 
 function ElementException(msg, num, stack) {
   this.message = msg;
@@ -43,10 +48,153 @@ function ElementException(msg, num, stack) {
   this.stack = stack;
 }
 
+this.Accessibility = function Accessibility() {
+  // A flag indicating whether the accessibility issue should be logged or cause
+  // an exception. Default: log to stdout.
+  this.strict = false;
+  // An interface for in-process accessibility clients
+  // Note: we access it lazily to not enable accessibility when it is not needed
+  Object.defineProperty(this, 'accessibleRetrieval', {
+    configurable: true,
+    get: function() {
+      delete this.accessibleRetrieval;
+      this.accessibleRetrieval = Components.classes[
+        '@mozilla.org/accessibleRetrieval;1'].getService(
+          Components.interfaces.nsIAccessibleRetrieval);
+      return this.accessibleRetrieval;
+    }
+  });
+};
+
+Accessibility.prototype = {
+  /**
+   * Accessible object roles that support some action
+   * @type Object
+   */
+  actionableRoles: new Set([
+    'pushbutton',
+    'checkbutton',
+    'combobox',
+    'key',
+    'link',
+    'menuitem',
+    'check menu item',
+    'radio menu item',
+    'option',
+    'radiobutton',
+    'slider',
+    'spinbutton',
+    'pagetab',
+    'entry',
+    'outlineitem'
+  ]),
+
+  /**
+   * Get an accessible object for a DOM element
+   * @param nsIDOMElement element
+   * @param Boolean mustHaveAccessible a flag indicating that the element must
+   * have an accessible object
+   * @return nsIAccessible object for the element
+   */
+  getAccessibleObject(element, mustHaveAccessible = false) {
+    let acc = this.accessibleRetrieval.getAccessibleFor(element);
+    if (!acc && mustHaveAccessible) {
+      this.handleErrorMessage('Element does not have an accessible object');
+    }
+    return acc;
+  },
+
+  /**
+   * Check if the accessible has a role that supports some action
+   * @param nsIAccessible object
+   * @return Boolean an indicator of role being actionable
+   */
+  isActionableRole(accessible) {
+    return this.actionableRoles.has(
+      this.accessibleRetrieval.getStringRole(accessible.role));
+  },
+
+  /**
+   * Determine if an accessible has at least one action that it supports
+   * @param nsIAccessible object
+   * @return Boolean an indicator of supporting at least one accessible action
+   */
+  hasActionCount(accessible) {
+    return accessible.actionCount > 0;
+  },
+
+  /**
+   * Determine if an accessible has a valid name
+   * @param nsIAccessible object
+   * @return Boolean an indicator that the element has a non empty valid name
+   */
+  hasValidName(accessible) {
+    return accessible.name && accessible.name.trim();
+  },
+
+  /**
+   * Check if an accessible has a set hidden attribute
+   * @param nsIAccessible object
+   * @return Boolean an indicator that the element has a hidden accessible
+   * attribute set to true
+   */
+  hasHiddenAttribute(accessible) {
+    let hidden;
+    try {
+      hidden = accessible.attributes.getStringProperty('hidden');
+    } finally {
+      // If the property is missing, exception will be thrown.
+      return hidden && hidden === 'true';
+    }
+  },
+
+  /**
+   * Verify if an accessible has a given state
+   * @param nsIAccessible object
+   * @param String stateName name of the state to match
+   * @return Boolean accessible has a state
+   */
+  matchState(accessible, stateName) {
+    let stateToMatch = Components.interfaces.nsIAccessibleStates[stateName];
+    let state = {};
+    accessible.getState(state, {});
+    return !!(state.value & stateToMatch);
+  },
+
+  /**
+   * Check if an accessible is hidden from the user of the accessibility API
+   * @param nsIAccessible object
+   * @return Boolean an indicator that the element is hidden from the user
+   */
+  isHidden(accessible) {
+    while (accessible) {
+      if (this.hasHiddenAttribute(accessible)) {
+        return true;
+      }
+      accessible = accessible.parent;
+    }
+    return false;
+  },
+
+  /**
+   * Send an error message or log the error message in the log
+   * @param String message
+   */
+  handleErrorMessage(message) {
+    if (!message) {
+      return;
+    }
+    if (this.strict) {
+      throw new ElementException(message, 56, null);
+    }
+    dump(Date.now() + " Marionette: " + message);
+  }
+};
+
 this.ElementManager = function ElementManager(notSupported) {
   this.seenItems = {};
   this.timer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
-  this.elementStrategies = [CLASS_NAME, SELECTOR, ID, NAME, LINK_TEXT, PARTIAL_LINK_TEXT, TAG, XPATH];
+  this.elementStrategies = [CLASS_NAME, SELECTOR, ID, NAME, LINK_TEXT, PARTIAL_LINK_TEXT, TAG, XPATH, ANON, ANON_ATTRIBUTE];
   for (let i = 0; i < notSupported.length; i++) {
     this.elementStrategies.splice(this.elementStrategies.indexOf(notSupported[i]), 1);
   }
@@ -162,6 +310,7 @@ ElementManager.prototype = {
           result = [];
           for (let i = 0; i < val.length; ++i) {
             result.push(this.wrapValue(val[i]));
+
           }
         }
         else if (val == null) {
@@ -249,7 +398,7 @@ ElementManager.prototype = {
   applyNamedArgs: function EM_applyNamedArgs(args) {
     namedArgs = {};
     args.forEach(function(arg) {
-      if (typeof(arg['__marionetteArgs']) === 'object') {
+      if (arg && typeof(arg['__marionetteArgs']) === 'object') {
         for (let prop in arg['__marionetteArgs']) {
           namedArgs[prop] = arg['__marionetteArgs'][prop];
         }
@@ -289,16 +438,25 @@ ElementManager.prototype = {
     let startNode = (values.element != undefined) ?
                     this.getKnownElement(values.element, win) : win.document;
     if (this.elementStrategies.indexOf(values.using) < 0) {
-      throw new ElementException("No such strategy.", 17, null);
+      throw new ElementException("No such strategy.", 32, null);
     }
     let found = all ? this.findElements(values.using, values.value, win.document, startNode) :
                       this.findElement(values.using, values.value, win.document, startNode);
-    if (found == null || found.length <= 0) {
+    let type = Object.prototype.toString.call(found);
+    let isArrayLike = ((type == '[object Array]') || (type == '[object HTMLCollection]') || (type == '[object NodeList]'));
+    if (found == null || (isArrayLike && found.length <= 0)) {
       if (!searchTimeout || new Date().getTime() - startTime > searchTimeout) {
         if (all) {
           on_success([], command_id); // findElements should return empty list
         } else {
-          on_error("Unable to locate element: " + values.value, 7, null, command_id);
+          // Format message depending on strategy if necessary
+          let message = "Unable to locate element: " + values.value;
+          if (values.using == ANON) {
+            message = "Unable to locate anonymous children";
+          } else if (values.using == ANON_ATTRIBUTE) {
+            message = "Unable to locate anonymous element: " + JSON.stringify(values.value);
+          }
+          on_error(message, 7, null, command_id);
         }
       } else {
         values.time = startTime;
@@ -310,15 +468,13 @@ ElementManager.prototype = {
                                     Components.interfaces.nsITimer.TYPE_ONE_SHOT);
       }
     } else {
-      let type = Object.prototype.toString.call(found);
-      if ((type == '[object Array]') || (type == '[object HTMLCollection]') || (type == '[object NodeList]')) {
+      if (isArrayLike) {
         let ids = []
         for (let i = 0 ; i < found.length ; i++) {
-          ids.push(this.addToKnownElements(found[i]));
+          ids.push({'ELEMENT': this.addToKnownElements(found[i])});
         }
         on_success(ids, command_id);
-      }
-      else {
+      } else {
         let id = this.addToKnownElements(found);
         on_success({'ELEMENT':id}, command_id);
       }
@@ -423,6 +579,16 @@ ElementManager.prototype = {
       case SELECTOR:
         element = startNode.querySelector(value);
         break;
+      case ANON:
+        element = rootNode.getAnonymousNodes(startNode);
+        if (element != null) {
+          element = element[0];
+        }
+        break;
+      case ANON_ATTRIBUTE:
+        let attr = Object.keys(value)[0];
+        element = rootNode.getAnonymousElementByAttribute(startNode, attr, value[attr]);
+        break;
       default:
         throw new ElementException("No such strategy", 500, null);
     }
@@ -479,6 +645,16 @@ ElementManager.prototype = {
         break;
       case SELECTOR:
         elements = Array.slice(startNode.querySelectorAll(value));
+        break;
+      case ANON:
+        elements = rootNode.getAnonymousNodes(startNode) || [];
+        break;
+      case ANON_ATTRIBUTE:
+        let attr = Object.keys(value)[0];
+        let el = rootNode.getAnonymousElementByAttribute(startNode, attr, value[attr]);
+        if (el != null) {
+          elements = [el];
+        }
         break;
       default:
         throw new ElementException("No such strategy", 500, null);

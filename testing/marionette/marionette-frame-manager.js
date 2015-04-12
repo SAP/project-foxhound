@@ -16,8 +16,6 @@ let logger = Log.repository.getLogger("Marionette");
 let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
                .getService(Ci.mozIJSSubScriptLoader);
 let specialpowers = {};
-loader.loadSubScript("chrome://specialpowers/content/SpecialPowersObserver.js",
-                     specialpowers);
 
 //list of OOP frames that has the frame script loaded
 let remoteFrames = [];
@@ -108,6 +106,11 @@ FrameManager.prototype = {
     let oopFrame = frameWindow.document.getElementsByTagName("iframe")[message.json.frame]; //find the OOP frame
     let mm = oopFrame.QueryInterface(Ci.nsIFrameLoaderOwner).frameLoader.messageManager; //get the OOP frame's mm
 
+    if (!specialpowers.hasOwnProperty("specialPowersObserver")) {
+      loader.loadSubScript("chrome://specialpowers/content/SpecialPowersObserver.js",
+                           specialpowers);
+    }
+
     // See if this frame already has our frame script loaded in it; if so,
     // just wake it up.
     for (let i = 0; i < remoteFrames.length; i++) {
@@ -140,12 +143,13 @@ FrameManager.prototype = {
     // If we get here, then we need to load the frame script in this frame,
     // and set the frame's ChromeMessageSender as the active message manager the server will listen to
     this.addMessageManagerListeners(mm);
-    logger.info("frame-manager load script: " + mm.toString());
-    mm.loadFrameScript(FRAME_SCRIPT, true, true);
     let aFrame = new MarionetteRemoteFrame(message.json.win, message.json.frame);
     aFrame.messageManager = Cu.getWeakReference(mm);
     remoteFrames.push(aFrame);
     this.currentRemoteFrame = aFrame;
+
+    logger.info("frame-manager load script: " + mm.toString());
+    mm.loadFrameScript(FRAME_SCRIPT, true, true);
 
     aFrame.specialPowersObserver = new specialpowers.SpecialPowersObserver();
     aFrame.specialPowersObserver.init(mm);
@@ -201,6 +205,9 @@ FrameManager.prototype = {
     messageManager.addWeakMessageListener("Marionette:switchToModalOrigin", this.server);
     messageManager.addWeakMessageListener("Marionette:switchToFrame", this.server);
     messageManager.addWeakMessageListener("Marionette:switchedToFrame", this.server);
+    messageManager.addWeakMessageListener("Marionette:addCookie", this.server);
+    messageManager.addWeakMessageListener("Marionette:getVisibleCookies", this.server);
+    messageManager.addWeakMessageListener("Marionette:deleteCookie", this.server);
     messageManager.addWeakMessageListener("MarionetteFrame:handleModal", this);
     messageManager.addWeakMessageListener("MarionetteFrame:getCurrentFrameId", this);
     messageManager.addWeakMessageListener("MarionetteFrame:getInterruptedState", this);
@@ -229,6 +236,9 @@ FrameManager.prototype = {
     messageManager.removeWeakMessageListener("Marionette:runEmulatorShell", this.server);
     messageManager.removeWeakMessageListener("Marionette:switchToFrame", this.server);
     messageManager.removeWeakMessageListener("Marionette:switchedToFrame", this.server);
+    messageManager.removeWeakMessageListener("Marionette:addCookie", this.server);
+    messageManager.removeWeakMessageListener("Marionette:getVisibleCookies", this.server);
+    messageManager.removeWeakMessageListener("Marionette:deleteCookie", this.server);
     messageManager.removeWeakMessageListener("MarionetteFrame:handleModal", this);
     messageManager.removeWeakMessageListener("MarionetteFrame:getCurrentFrameId", this);
   },

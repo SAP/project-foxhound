@@ -10,7 +10,6 @@ let { Ci, Cu } = require("chrome");
 let Services = require("Services");
 let { ActorPool, createExtraActors, appendExtraActors } = require("devtools/server/actors/common");
 let { RootActor } = require("devtools/server/actors/root");
-let { AddonThreadActor, ThreadActor } = require("devtools/server/actors/script");
 let { DebuggerServer } = require("devtools/server/main");
 let DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
 let { dbg_assert } = DevToolsUtils;
@@ -20,18 +19,16 @@ let mapURIToAddonID = require("./utils/map-uri-to-addon-id");
 let {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
+loader.lazyRequireGetter(this, "AddonThreadActor", "devtools/server/actors/script", true);
+loader.lazyRequireGetter(this, "ThreadActor", "devtools/server/actors/script", true);
+loader.lazyImporter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
 
 // Assumptions on events module:
 // events needs to be dispatched synchronously,
 // by calling the listeners in the order or registration.
-XPCOMUtils.defineLazyGetter(this, "events", () => {
-  return require("sdk/event/core");
-});
+loader.lazyRequireGetter(this, "events", "sdk/event/core");
 
-XPCOMUtils.defineLazyGetter(this, "StyleSheetActor", () => {
-  return require("devtools/server/actors/stylesheets").StyleSheetActor;
-});
+loader.lazyRequireGetter(this, "StyleSheetActor", "devtools/server/actors/stylesheets", true);
 
 function getWindowID(window) {
   return window.QueryInterface(Ci.nsIInterfaceRequestor)
@@ -285,11 +282,12 @@ BrowserTabList.prototype._getBrowsers = function*() {
 };
 
 BrowserTabList.prototype._getChildren = function(aWindow) {
-  return aWindow.gBrowser ? aWindow.gBrowser.browsers : [];
+  let children = aWindow.gBrowser ? aWindow.gBrowser.browsers : [];
+  return children ? children : [];
 };
 
 BrowserTabList.prototype._isRemoteBrowser = function(browser) {
-  return browser.getAttribute("remote");
+  return browser.getAttribute("remote") == "true";
 };
 
 BrowserTabList.prototype.getList = function() {
@@ -856,7 +854,7 @@ TabActor.prototype = {
   _appendExtraActors: appendExtraActors,
 
   /**
-   * Does the actual work of attching to a tab.
+   * Does the actual work of attaching to a tab.
    */
   _attach: function BTA_attach() {
     if (this._attached) {
@@ -1512,7 +1510,7 @@ TabActor.prototype = {
    * is here because the Style Editor and Inspector share style sheet actors.
    *
    * @param DOMStyleSheet styleSheet
-   *        The style sheet to creat an actor for.
+   *        The style sheet to create an actor for.
    * @return StyleSheetActor actor
    *         The actor for this style sheet.
    *
@@ -1527,7 +1525,17 @@ TabActor.prototype = {
     this._tabPool.addActor(actor);
 
     return actor;
-  }
+  },
+
+  removeActorByName: function BTA_removeActor(aName) {
+    if (aName in this._extraActors) {
+      const actor = this._extraActors[aName];
+      if (this._tabActorPool.has(actor)) {
+        this._tabActorPool.removeActor(actor);
+      }
+      delete this._extraActors[aName];
+    }
+  },
 };
 
 /**
@@ -1550,7 +1558,7 @@ exports.TabActor = TabActor;
  * <browser> tab. Most of the implementation comes from TabActor.
  *
  * @param aConnection DebuggerServerConnection
- *        The conection to the client.
+ *        The connection to the client.
  * @param aBrowser browser
  *        The browser instance that contains this tab.
  * @param aTabBrowser tabbrowser
@@ -1581,6 +1589,13 @@ Object.defineProperty(BrowserTabActor.prototype, "docShell", {
 
 Object.defineProperty(BrowserTabActor.prototype, "title", {
   get: function() {
+    // On Fennec, we can check the session store data for zombie tabs
+    if (this._browser.__SS_restore) {
+      let sessionStore = this._browser.__SS_data;
+      // Get the last selected entry
+      let entry = sessionStore.entries[sessionStore.index - 1];
+      return entry.title;
+    }
     let title = this.contentDocument.title || this._browser.contentTitle;
     // If contentTitle is empty (e.g. on a not-yet-restored tab), but there is a
     // tabbrowser (i.e. desktop Firefox, but not Fennec), we can use the label
@@ -1595,6 +1610,24 @@ Object.defineProperty(BrowserTabActor.prototype, "title", {
   },
   enumerable: true,
   configurable: false
+});
+
+Object.defineProperty(BrowserTabActor.prototype, "url", {
+  get: function() {
+    // On Fennec, we can check the session store data for zombie tabs
+    if (this._browser.__SS_restore) {
+      let sessionStore = this._browser.__SS_data;
+      // Get the last selected entry
+      let entry = sessionStore.entries[sessionStore.index - 1];
+      return entry.url;
+    }
+    if (this.webNavigation.currentURI) {
+      return this.webNavigation.currentURI.spec;
+    }
+    return null;
+  },
+  enumerable: true,
+  configurable: true
 });
 
 Object.defineProperty(BrowserTabActor.prototype, "browser", {
@@ -1776,6 +1809,11 @@ BrowserAddonActor.prototype = {
       url: this.url,
       debuggable: this._addon.isDebuggable,
       consoleActor: this._consoleActor.actorID,
+
+      traits: {
+        highlightable: false,
+        networkMonitor: false,
+      },
     };
   },
 

@@ -21,22 +21,22 @@ class nsGroupBoxFrame : public nsBoxFrame {
 public:
   NS_DECL_FRAMEARENA_HELPERS
 
-  nsGroupBoxFrame(nsIPresShell* aShell, nsStyleContext* aContext):
-    nsBoxFrame(aShell, aContext) {}
+  explicit nsGroupBoxFrame(nsStyleContext* aContext):
+    nsBoxFrame(aContext) {}
 
-  virtual nsresult GetBorderAndPadding(nsMargin& aBorderAndPadding);
+  virtual nsresult GetBorderAndPadding(nsMargin& aBorderAndPadding) override;
 
   virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                 const nsRect&           aDirtyRect,
-                                const nsDisplayListSet& aLists) MOZ_OVERRIDE;
+                                const nsDisplayListSet& aLists) override;
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const {
+  virtual nsresult GetFrameName(nsAString& aResult) const override {
     return MakeFrameName(NS_LITERAL_STRING("GroupBoxFrame"), aResult);
   }
 #endif
 
-  virtual bool HonorPrintBackgroundSettings() { return false; }
+  virtual bool HonorPrintBackgroundSettings() override { return false; }
 
   void PaintBorderBackground(nsRenderingContext& aRenderingContext,
       nsPoint aPt, const nsRect& aDirtyRect);
@@ -44,10 +44,10 @@ public:
   // make sure we our kids get our orient and align instead of us.
   // our child box has no content node so it will search for a parent with one.
   // that will be us.
-  virtual void GetInitialOrientation(bool& aHorizontal) { aHorizontal = false; }
-  virtual bool GetInitialHAlignment(Halignment& aHalign)  { aHalign = hAlign_Left; return true; } 
-  virtual bool GetInitialVAlignment(Valignment& aValign)  { aValign = vAlign_Top; return true; } 
-  virtual bool GetInitialAutoStretch(bool& aStretch)    { aStretch = true; return true; } 
+  virtual void GetInitialOrientation(bool& aHorizontal) override { aHorizontal = false; }
+  virtual bool GetInitialHAlignment(Halignment& aHalign) override { aHalign = hAlign_Left; return true; } 
+  virtual bool GetInitialVAlignment(Valignment& aValign) override { aValign = vAlign_Top; return true; } 
+  virtual bool GetInitialAutoStretch(bool& aStretch) override { aStretch = true; return true; } 
 
   nsIFrame* GetCaptionBox(nsPresContext* aPresContext, nsRect& aCaptionRect);
 };
@@ -75,7 +75,7 @@ public:
 nsIFrame*
 NS_NewGroupBoxFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
-  return new (aPresShell) nsGroupBoxFrame(aPresShell, aContext);
+  return new (aPresShell) nsGroupBoxFrame(aContext);
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsGroupBoxFrame)
@@ -94,11 +94,11 @@ public:
 #endif
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
-                       HitTestState* aState, nsTArray<nsIFrame*> *aOutFrames) {
+                       HitTestState* aState, nsTArray<nsIFrame*> *aOutFrames) override {
     aOutFrames->AppendElement(mFrame);
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsRenderingContext* aCtx);
+                     nsRenderingContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("XULGroupBackground", TYPE_XUL_GROUP_BACKGROUND)
 };
 
@@ -173,7 +173,7 @@ nsGroupBoxFrame::PaintBorderBackground(nsRenderingContext& aRenderingContext,
     clipRect.height = border.top;
 
     gfx->Save();
-    gfx->Clip(NSRectToRect(clipRect, appUnitsPerDevPixel, *drawTarget));
+    gfx->Clip(NSRectToSnappedRect(clipRect, appUnitsPerDevPixel, *drawTarget));
     nsCSSRendering::PaintBorder(presContext, aRenderingContext, this,
                                 aDirtyRect, rect, mStyleContext, skipSides);
     gfx->Restore();
@@ -185,7 +185,7 @@ nsGroupBoxFrame::PaintBorderBackground(nsRenderingContext& aRenderingContext,
     clipRect.height = border.top;
 
     gfx->Save();
-    gfx->Clip(NSRectToRect(clipRect, appUnitsPerDevPixel, *drawTarget));
+    gfx->Clip(NSRectToSnappedRect(clipRect, appUnitsPerDevPixel, *drawTarget));
     nsCSSRendering::PaintBorder(presContext, aRenderingContext, this,
                                 aDirtyRect, rect, mStyleContext, skipSides);
     gfx->Restore();
@@ -197,7 +197,7 @@ nsGroupBoxFrame::PaintBorderBackground(nsRenderingContext& aRenderingContext,
     clipRect.height = mRect.height - (yoff + border.top);
   
     gfx->Save();
-    gfx->Clip(NSRectToRect(clipRect, appUnitsPerDevPixel, *drawTarget));
+    gfx->Clip(NSRectToSnappedRect(clipRect, appUnitsPerDevPixel, *drawTarget));
     nsCSSRendering::PaintBorder(presContext, aRenderingContext, this,
                                 aDirtyRect, rect, mStyleContext, skipSides);
     gfx->Restore();

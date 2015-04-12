@@ -23,6 +23,7 @@
 #include "nsServiceManagerUtils.h"
 #include "gfxPrefs.h"
 #include "cairo.h"
+#include "VsyncSource.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
@@ -30,6 +31,8 @@
 
 #ifdef MOZ_WIDGET_GONK
 #include <cutils/properties.h>
+#include "mozilla/layers/CompositorParent.h"
+#include "HwcComposer2D.h"
 #endif
 
 #include "ft2build.h"
@@ -42,7 +45,7 @@ using namespace mozilla::gfx;
 
 static FT_Library gPlatformFTLibrary = nullptr;
 
-class FreetypeReporter MOZ_FINAL : public nsIMemoryReporter,
+class FreetypeReporter final : public nsIMemoryReporter,
                                    public CountingAllocatorBase<FreetypeReporter>
 {
 private:
@@ -407,12 +410,96 @@ gfxAndroidPlatform::GetScreenDepth() const
 bool
 gfxAndroidPlatform::UseAcceleratedSkiaCanvas()
 {
+    return HaveChoiceOfHWAndSWCanvas() && gfxPlatform::UseAcceleratedSkiaCanvas();
+}
+
+bool gfxAndroidPlatform::HaveChoiceOfHWAndSWCanvas()
+{
 #ifdef MOZ_WIDGET_ANDROID
     if (AndroidBridge::Bridge()->GetAPIVersion() < 11) {
         // It's slower than software due to not having a compositing fast path
         return false;
     }
 #endif
+    return gfxPlatform::HaveChoiceOfHWAndSWCanvas();
+}
 
-    return gfxPlatform::UseAcceleratedSkiaCanvas();
+#ifdef MOZ_WIDGET_GONK
+class GonkVsyncSource final : public VsyncSource
+{
+public:
+  GonkVsyncSource()
+  {
+  }
+
+  virtual Display& GetGlobalDisplay() override
+  {
+    return mGlobalDisplay;
+  }
+
+  class GonkDisplay final : public VsyncSource::Display
+  {
+  public:
+    GonkDisplay() : mVsyncEnabled(false)
+    {
+    }
+
+    ~GonkDisplay()
+    {
+      DisableVsync();
+    }
+
+    virtual void EnableVsync() override
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      if (IsVsyncEnabled()) {
+        return;
+      }
+      mVsyncEnabled = HwcComposer2D::GetInstance()->EnableVsync(true);
+    }
+
+    virtual void DisableVsync() override
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      if (!IsVsyncEnabled()) {
+        return;
+      }
+      mVsyncEnabled = HwcComposer2D::GetInstance()->EnableVsync(false);
+    }
+
+    virtual bool IsVsyncEnabled() override
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      return mVsyncEnabled;
+    }
+  private:
+    bool mVsyncEnabled;
+  }; // GonkDisplay
+
+private:
+  virtual ~GonkVsyncSource()
+  {
+  }
+
+  GonkDisplay mGlobalDisplay;
+}; // GonkVsyncSource
+#endif
+
+already_AddRefed<mozilla::gfx::VsyncSource>
+gfxAndroidPlatform::CreateHardwareVsyncSource()
+{
+#ifdef MOZ_WIDGET_GONK
+    nsRefPtr<GonkVsyncSource> vsyncSource = new GonkVsyncSource();
+    VsyncSource::Display& display = vsyncSource->GetGlobalDisplay();
+    display.EnableVsync();
+    if (!display.IsVsyncEnabled()) {
+        NS_WARNING("Error enabling gonk vsync. Falling back to software vsync\n");
+        return gfxPlatform::CreateHardwareVsyncSource();
+    }
+    display.DisableVsync();
+    return vsyncSource.forget();
+#else
+    NS_WARNING("Hardware vsync not supported on android yet");
+    return nullptr;
+#endif
 }

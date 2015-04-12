@@ -40,17 +40,17 @@ size_t ExecutableAllocator::determinePageSize()
     return getpagesize();
 }
 
-void *
-js::jit::AllocateExecutableMemory(void *addr, size_t bytes, unsigned permissions, const char *tag,
+void*
+js::jit::AllocateExecutableMemory(void* addr, size_t bytes, unsigned permissions, const char* tag,
                                   size_t pageSize)
 {
     MOZ_ASSERT(bytes % pageSize == 0);
-    void *p = MozTaggedAnonymousMmap(addr, bytes, permissions, MAP_PRIVATE | MAP_ANON, -1, 0, tag);
+    void* p = MozTaggedAnonymousMmap(addr, bytes, permissions, MAP_PRIVATE | MAP_ANON, -1, 0, tag);
     return p == MAP_FAILED ? nullptr : p;
 }
 
 void
-js::jit::DeallocateExecutableMemory(void *addr, size_t bytes, size_t pageSize)
+js::jit::DeallocateExecutableMemory(void* addr, size_t bytes, size_t pageSize)
 {
     MOZ_ASSERT(bytes % pageSize == 0);
     mozilla::DebugOnly<int> result = munmap(addr, bytes);
@@ -59,7 +59,7 @@ js::jit::DeallocateExecutableMemory(void *addr, size_t bytes, size_t pageSize)
 
 ExecutablePool::Allocation ExecutableAllocator::systemAlloc(size_t n)
 {
-    void *allocation = AllocateExecutableMemory(nullptr, n, INITIAL_PROTECTION_FLAGS,
+    void* allocation = AllocateExecutableMemory(nullptr, n, INITIAL_PROTECTION_FLAGS,
                                                 "js-jit-code", pageSize);
     ExecutablePool::Allocation alloc = { reinterpret_cast<char*>(allocation), n };
     return alloc;
@@ -91,18 +91,3 @@ void ExecutableAllocator::reprotectRegion(void* start, size_t size, ProtectionSe
 }
 #endif
 
-void
-ExecutablePool::toggleAllCodeAsAccessible(bool accessible)
-{
-    char* begin = m_allocation.pages;
-    size_t size = m_freePtr - begin;
-
-    if (size) {
-        // N.B. Some systems, like 32bit Mac OS 10.6, implicitly add PROT_EXEC
-        // when mprotect'ing memory with any flag other than PROT_NONE. Be
-        // sure to use PROT_NONE when making inaccessible.
-        int flags = accessible ? PROT_READ | PROT_WRITE | PROT_EXEC : PROT_NONE;
-        if (mprotect(begin, size, flags))
-            MOZ_CRASH();
-    }
-}

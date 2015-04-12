@@ -162,6 +162,7 @@ public:
   virtual ~GradientStops() {}
 
   virtual BackendType GetBackendType() const = 0;
+  virtual bool IsValid() const { return true; }
 
 protected:
   GradientStops() {}
@@ -187,11 +188,16 @@ protected:
 class ColorPattern : public Pattern
 {
 public:
+  // Explicit because consumers should generally use ToDeviceColor when
+  // creating a ColorPattern.
   explicit ColorPattern(const Color &aColor)
     : mColor(aColor)
   {}
 
-  virtual PatternType GetType() const { return PatternType::COLOR; }
+  virtual PatternType GetType() const override
+  {
+    return PatternType::COLOR;
+  }
 
   Color mColor;
 };
@@ -216,7 +222,10 @@ public:
   {
   }
 
-  virtual PatternType GetType() const { return PatternType::LINEAR_GRADIENT; }
+  virtual PatternType GetType() const override
+  {
+    return PatternType::LINEAR_GRADIENT;
+  }
 
   Point mBegin;                 //!< Start of the linear gradient
   Point mEnd;                   /**< End of the linear gradient - NOTE: In the case
@@ -253,7 +262,10 @@ public:
   {
   }
 
-  virtual PatternType GetType() const { return PatternType::RADIAL_GRADIENT; }
+  virtual PatternType GetType() const override
+  {
+    return PatternType::RADIAL_GRADIENT;
+  }
 
   Point mCenter1; //!< Center of the inner (focal) circle.
   Point mCenter2; //!< Center of the outer circle.
@@ -283,7 +295,10 @@ public:
     , mSamplingRect(aSamplingRect)
   {}
 
-  virtual PatternType GetType() const { return PatternType::SURFACE; }
+  virtual PatternType GetType() const override
+  {
+    return PatternType::SURFACE;
+  }
 
   RefPtr<SourceSurface> mSurface; //!< Surface to use for drawing
   ExtendMode mExtendMode;         /**< This determines how the image is extended
@@ -356,7 +371,7 @@ protected:
 class DataSourceSurface : public SourceSurface
 {
 public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DataSourceSurface)
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DataSourceSurface, override)
   DataSourceSurface()
     : mIsMapped(false)
   {
@@ -380,7 +395,7 @@ public:
     READ_WRITE
   };
 
-  virtual SurfaceType GetType() const { return SurfaceType::DATA; }
+  virtual SurfaceType GetType() const override { return SurfaceType::DATA; }
   /** @deprecated
    * Get the raw bitmap data of the surface.
    * Can return null if there was OOM allocating surface data.
@@ -412,7 +427,7 @@ public:
    * Returns a DataSourceSurface with the same data as this one, but
    * guaranteed to have surface->GetType() == SurfaceType::DATA.
    */
-  virtual TemporaryRef<DataSourceSurface> GetDataSurface();
+  virtual TemporaryRef<DataSourceSurface> GetDataSurface() override;
 
 protected:
   bool mIsMapped;
@@ -597,20 +612,6 @@ protected:
 
   UserData mUserData;
 };
-
-#ifdef MOZ_ENABLE_FREETYPE
-/**
- * Describes a font.
- * Used to pass the key informatin from a gfxFont into Azure
- * @todo Should be replaced by a more long term solution, perhaps Bug 738014
- */
-struct FontOptions
-{
-  std::string mName;
-  FontStyle mStyle;
-};
-#endif
-
 
 /** This class is designed to allow passing additional glyph rendering
  * parameters to the glyph drawing functions. This is an empty wrapper class
@@ -1003,6 +1004,7 @@ public:
 
   virtual bool IsDualDrawTarget() const { return false; }
   virtual bool IsTiledDrawTarget() const { return false; }
+  virtual bool SupportsRegionClipping() const { return true; }
 
   void AddUserData(UserDataKey *key, void *userData, void (*destroy)(void*)) {
     mUserData.Add(key, userData, destroy);
@@ -1088,6 +1090,11 @@ public:
    */
   static bool CheckSurfaceSize(const IntSize &sz, int32_t limit = 0);
 
+  /** Make sure the given dimension satisfies the CheckSurfaceSize and is
+   * within 8k limit.  The 8k value is chosen a bit randomly.
+   */
+  static bool ReasonableSurfaceSize(const IntSize &aSize);
+
   static TemporaryRef<DrawTarget> CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface, const IntSize& aSize, SurfaceFormat* aFormat = nullptr);
 
   static TemporaryRef<DrawTarget>
@@ -1159,6 +1166,8 @@ public:
   // This is a little hacky at the moment, but we want to have this data. Bug 1068613.
   static void SetLogForwarder(LogForwarder* aLogFwd);
 
+  static uint32_t GetMaxSurfaceSize(BackendType aType);
+
   static LogForwarder* GetLogForwarder() { return mLogForwarder; }
 
 private:
@@ -1189,8 +1198,12 @@ public:
    */
   static TemporaryRef<DrawTarget> CreateTiledDrawTarget(const TileSet& aTileSet);
 
+  static bool DoesBackendSupportDataDrawtarget(BackendType aType);
+
 #ifdef XP_MACOSX
   static TemporaryRef<DrawTarget> CreateDrawTargetForCairoCGContext(CGContextRef cg, const IntSize& aSize);
+  static TemporaryRef<GlyphRenderingOptions>
+    CreateCGGlyphRenderingOptions(const Color &aFontSmoothingBackgroundColor);
 #endif
 
 #ifdef WIN32
@@ -1202,14 +1215,12 @@ public:
 
   static void SetDirect3D10Device(ID3D10Device1 *aDevice);
   static ID3D10Device1 *GetDirect3D10Device();
-#ifdef USE_D2D1_1
   static TemporaryRef<DrawTarget> CreateDrawTargetForD3D11Texture(ID3D11Texture2D *aTexture, SurfaceFormat aFormat);
 
   static void SetDirect3D11Device(ID3D11Device *aDevice);
   static ID3D11Device *GetDirect3D11Device();
   static ID2D1Device *GetD2D1Device();
   static bool SupportsD2D1();
-#endif
 
   static TemporaryRef<GlyphRenderingOptions>
     CreateDWriteGlyphRenderingOptions(IDWriteRenderingParams *aParams);
@@ -1219,11 +1230,9 @@ public:
   static void D2DCleanup();
 
 private:
-  static ID3D10Device1 *mD3D10Device;
-#ifdef USE_D2D1_1
-  static ID3D11Device *mD3D11Device;
   static ID2D1Device *mD2D1Device;
-#endif
+  static ID3D10Device1 *mD3D10Device;
+  static ID3D11Device *mD3D11Device;
 #endif
 
   static DrawEventRecorder *mRecorder;
