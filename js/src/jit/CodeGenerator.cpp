@@ -5867,6 +5867,9 @@ CodeGenerator::visitSubstr(LSubstr* lir)
     masm.store32(length, Address(output, JSString::offsetOfLength()));
     Address stringStorage(string, JSInlineString::offsetOfInlineStorage());
     Address outputStorage(output, JSInlineString::offsetOfInlineStorage());
+#if _TAINT_ON_
+    TAINT_STR_ASM_INIT(output);
+#endif
 
     masm.branchTest32(Assembler::NonZero, stringFlags, Imm32(JSString::LATIN1_CHARS_BIT),
                       &isInlinedLatin1);
@@ -5909,6 +5912,9 @@ CodeGenerator::visitSubstr(LSubstr* lir)
     masm.newGCString(output, temp, slowPath);
     masm.store32(length, Address(output, JSString::offsetOfLength()));
     masm.storePtr(string, Address(output, JSDependentString::offsetOfBase()));
+#if _TAINT_ON_
+    TAINT_STR_ASM_INIT(output);
+#endif
 
     masm.branchTest32(Assembler::NonZero, stringFlags, Imm32(JSString::LATIN1_CHARS_BIT), &isLatin1);
     {
