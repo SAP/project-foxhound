@@ -1041,21 +1041,21 @@ taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
 
     TaintStringRef *mod = nullptr;
     TaintStringRef *last_before = nullptr;
-    //find the first affected TaintStringRef
+    //find the first TaintStringRef on/behind position
     for(TaintStringRef *tsr = start; tsr != nullptr; tsr = tsr->next) {
-        if(position >= tsr->end) {
-            last_before = mod;
+        if(position < tsr->end) {
             mod = tsr;
-        } else {
             break;
         }
+
+        last_before = tsr;
     }
 
     //nothing affected, end
     if(!mod)
-        return last_before;
+        return nullptr;
 
-    //at this point mod can either be behind or overlapping position
+    //at this point mod can either be completely behind or overlapping position
     if(position > mod->begin) {
         //so we have to split
         last_before = mod;

@@ -1301,7 +1301,7 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
     if(!aCookie.isTainted() && aCookie.Length() > 0) {
       JSContext *cx = nsContentUtils::GetCurrentJSContext();
       JS::RootedValue stringval(cx);
-      taint_tag_source(&aCookie, "document.cookie", cx);
+      taint_tag_source(aCookie, "document.cookie", cx);
     }
 #endif
   }

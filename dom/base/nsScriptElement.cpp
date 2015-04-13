@@ -77,8 +77,8 @@ nsScriptElement::CharacterDataChanged(nsIDocument *aDocument,
   MaybeProcessScript();
 #if _TAINT_ON_
   nsString aCont;
-  nsContentUtils::GetNodeTextContent(aContent, false, aCont);
-  if(aCont.isTainted()) {
+  bool contResult = nsContentUtils::GetNodeTextContent(aContent, false, aCont);
+  if(contResult && aCont.isTainted()) {
     taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aCont, "script.text");
   }
 #endif
@@ -112,8 +112,8 @@ nsScriptElement::ContentAppended(nsIDocument* aDocument,
   MaybeProcessScript();
 #if _TAINT_ON_
     nsString aContentText;
-    nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
-    if(aContentText.isTainted()) {
+    bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
+    if(contResult && aContentText.isTainted()) {
       taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
     }
 #endif
@@ -128,8 +128,8 @@ nsScriptElement::ContentInserted(nsIDocument *aDocument,
   MaybeProcessScript();
 #if _TAINT_ON_
     nsString aContentText;
-    nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
-    if(aContentText.isTainted()) {
+    bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
+    if(contResult && aContentText.isTainted()) {
       taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
     }
 #endif

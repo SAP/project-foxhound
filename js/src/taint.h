@@ -72,23 +72,27 @@ void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
 
 //set a (new) source
 //str is assumed to not be tainted
+namespace js {
+    mozilla::UniquePtr<char16_t[], JS::FreePolicy> DuplicateString(js::ExclusiveContext* cx, const char16_t* s);
+}
 template <typename TaintedT>
-void taint_tag_source(TaintedT * str, const char* name, JSContext *cx = nullptr,
-    uint32_t begin = 0, uint32_t end = 0)
+void taint_tag_source(TaintedT& str, const char* name, JSContext *cx = nullptr, uint32_t begin = 0)
 {
-    MOZ_ASSERT(!str->isTainted());
+    MOZ_ASSERT(!str.isTainted());
 
-    if(str->Length() == 0) {
+    if(str.Length() == 0) {
         return;
-    }
-
-    if(end == 0) {
-        end = str->Length();
     }
     
     TaintNode *taint_node = taint_str_add_source_node(cx, name);
-    TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
-    str->addTaintRef(newtsr);
+    if(cx) {
+        taint_node->param1 = js::DuplicateString((js::ExclusiveContext*)cx, str.Data()).release();
+        taint_node->param1len = str.Length();
+    }
+
+
+    TaintStringRef *newtsr = taint_str_taintref_build(begin, str.Length(), taint_node);
+    str.addTaintRef(newtsr);
 }
 
 //partial taint copy

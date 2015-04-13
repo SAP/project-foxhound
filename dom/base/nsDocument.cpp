@@ -3384,7 +3384,7 @@ nsIDocument::GetReferrer(nsAString& aReferrer) const
   else
     CopyUTF8toUTF16(mReferrer, aReferrer);
 #if _TAINT_ON_
-  taint_tag_source(&aReferrer, "document.referrer", nsContentUtils::GetCurrentJSContext());
+  taint_tag_source(aReferrer, "document.referrer", nsContentUtils::GetCurrentJSContext());
 #endif
 }
 
@@ -7579,7 +7579,7 @@ nsIDocument::GetDocumentURI(nsString& aDocumentURI) const
     mDocumentURI->GetSpec(uri);
     CopyUTF8toUTF16(uri, aDocumentURI);
 #if _TAINT_ON_
-  taint_tag_source(&aDocumentURI, "document.documentURI", nsContentUtils::GetCurrentJSContext());
+  taint_tag_source(aDocumentURI, "document.documentURI", nsContentUtils::GetCurrentJSContext());
 #endif
   } else {
     aDocumentURI.Truncate();
@@ -7610,7 +7610,7 @@ nsIDocument::GetDocumentURIFromJS(nsString& aDocumentURI) const
   mChromeXHRDocURI->GetSpec(uri);
   CopyUTF8toUTF16(uri, aDocumentURI);
 #if _TAINT_ON_
-  taint_tag_source(&aDocumentURI, "document.documentURI", nsContentUtils::GetCurrentJSContext());
+  taint_tag_source(aDocumentURI, "document.documentURI", nsContentUtils::GetCurrentJSContext());
 #endif
 }
 

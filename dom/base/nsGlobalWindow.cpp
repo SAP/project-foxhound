@@ -4696,7 +4696,7 @@ nsGlobalWindow::GetName(nsAString& aName, ErrorResult& aError)
 
 #if _TAINT_ON_
   if(!aName.isTainted() && aName.Length() > 0)
-    taint_tag_source(&aName, "window.name", nsContentUtils::GetCurrentJSContext());
+    taint_tag_source(aName, "window.name", nsContentUtils::GetCurrentJSContext());
 #endif
 }
 
