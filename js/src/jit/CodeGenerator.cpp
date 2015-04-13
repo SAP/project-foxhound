@@ -1193,6 +1193,13 @@ CreateDependentString(MacroAssembler& masm, const JSAtomState& names,
 
     masm.bind(&nonEmpty);
 
+#if _TAINT_ON_
+    masm.branchPtr(Assembler::NotEqual,
+                   Address(string, JSString::offsetOfStartTaint()),
+                   ImmPtr(nullptr),
+                   failure);
+#endif
+
     Label notInline;
 
     int32_t maxInlineLength = latin1
@@ -1222,22 +1229,9 @@ CreateDependentString(MacroAssembler& masm, const JSAtomState& names,
 
         masm.bind(&stringAllocated);
         masm.store32(temp1, Address(string, JSString::offsetOfLength()));
+
 #if _TAINT_ON_
-        //init with nullptrs
         TAINT_STR_ASM_INIT(string);
-        //call taint_str_substr
-        RegisterSet regs = RegisterSet::Volatile();
-        masm.PushRegsInMask(regs);
-        masm.load32(startIndexAddress, temp3);
-        masm.setupUnalignedABICall(5, temp2);
-        masm.loadJSContext(temp2);
-        masm.passABIArg(string); //string
-        masm.passABIArg(temp2);  //js cx
-        masm.passABIArg(base);   //base
-        masm.passABIArg(temp3);  //start
-        masm.passABIArg(temp1);  //len
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, taint_str_substr));
-        masm.PopRegsInMask(regs);
 #endif
         masm.push(string);
         masm.push(base);
@@ -1282,21 +1276,7 @@ CreateDependentString(MacroAssembler& masm, const JSAtomState& names,
         masm.store32(temp1, Address(string, JSString::offsetOfLength()));
 
 #if _TAINT_ON_
-        //init with nullptrs
         TAINT_STR_ASM_INIT(string);
-        //call taint_str_substr
-        RegisterSet regs = RegisterSet::Volatile();
-        masm.PushRegsInMask(regs);
-        masm.load32(startIndexAddress, temp3);
-        masm.setupUnalignedABICall(5, temp2);
-        masm.loadJSContext(temp2);
-        masm.passABIArg(string); //string
-        masm.passABIArg(temp2);  //js cx
-        masm.passABIArg(base);   //base
-        masm.passABIArg(temp3);  //start
-        masm.passABIArg(temp1);  //len
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, taint_str_substr));
-        masm.PopRegsInMask(regs);
 #endif
 
         masm.loadPtr(Address(base, JSString::offsetOfNonInlineChars()), temp1);
