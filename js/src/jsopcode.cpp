@@ -844,7 +844,7 @@ js_DumpScriptDepth(JSContext* cx, JSScript* scriptArg, jsbytecode* pc)
 
 static char *
 #if _TAINT_ON_
-QuoteString(Sprinter *sp, JSString *str, char16_t quote, TaintStringRef **targetref);
+QuoteString(Sprinter *sp, JSString *str, char16_t quote, TaintStringRef **targetref = nullptr);
 #else
 QuoteString(Sprinter *sp, JSString *str, char16_t quote);
 #endif
@@ -1354,7 +1354,7 @@ template <typename CharT>
 static char *
 #if _TAINT_ON_
 QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote,
-    TaintStringRef **targetref, TaintStringRef *sourceref)
+    TaintStringRef **targetref = nullptr, TaintStringRef *sourceref = nullptr)
 #else
 QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote)
 #endif

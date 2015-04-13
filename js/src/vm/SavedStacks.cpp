@@ -471,7 +471,7 @@ SavedFrame::functionDisplayNameProperty(JSContext* cx, unsigned argc, Value* vp)
 bool
 SavedFrame::lineSourceProperty(JSContext *cx, unsigned argc, Value *vp)
 {
-    THIS_SAVEDFRAME(cx, argc, vp, "(get linesource)", args, frame);
+    THIS_SAVEDFRAME(cx, argc, vp, "(get linesource)", NullValue(), args, frame);
     RootedAtom src(cx, frame->getLineSource());
     if (src)
         args.rval().setString(src);
@@ -659,6 +659,9 @@ SavedStacks::insertFrames(JSContext* cx, FrameIter& iter, MutableHandleSavedFram
             return false;
         new (&stackChain->back()) SavedFrame::Lookup(
           location->source,
+#if _TAINT_ON_
+          location->linesource,
+#endif
           location->line,
           location->column,
           iter.isNonEvalFunctionFrame() ? iter.functionDisplayAtom() : nullptr,
@@ -694,6 +697,22 @@ SavedStacks::insertFrames(JSContext* cx, FrameIter& iter, MutableHandleSavedFram
 
     frame.set(parentFrame);
     return true;
+}
+
+void
+SavedStacks::buildSavedFrame(JSContext *cx, MutableHandleSavedFrame frame, FrameState &state)
+{
+    SavedFrame::Lookup chainlookup(state.location.source,
+#if _TAINT_ON_
+                              state.location.linesource,
+#endif
+                              state.location.line,
+                              state.location.column,
+                              state.name,
+                              frame,
+                              state.principals);
+    SavedFrame::AutoLookupRooter lookup(cx, &chainlookup);
+    frame.set(createFrameFromLookup(cx, lookup));
 }
 
 SavedFrame*
@@ -815,7 +834,6 @@ SavedStacks::getLocation(JSContext* cx, const FrameIter& iter, MutableHandleLoca
         uint32_t scriptline = line - iter.script()->lineno() + 1;
         if(capturesource && sc && sc->hasSourceData()) {
             UncompressedSourceCache::AutoHoldEntry holder;
-            size_t scriptlen = sc->length();
             const char16_t *srcbase = sc->chars(cx, holder);
             const char16_t *srcstart = srcbase + iter.script()->sourceStart();
             const char16_t *srcend = srcbase + iter.script()->sourceEnd();
@@ -873,6 +891,31 @@ SavedStacks::chooseSamplingProbability(JSContext* cx)
         return;
 
     allocationSamplingProbability = allocationTrackingDbg->allocationSamplingProbability;
+}
+
+SavedStacks::FrameState::FrameState(const FrameIter &iter)
+    : principals(iter.compartment()->principals),
+      name(iter.isNonEvalFunctionFrame() ? iter.functionDisplayAtom() : nullptr),
+      location()
+{
+}
+
+SavedStacks::FrameState::FrameState(const FrameState &fs)
+    : principals(fs.principals),
+      name(fs.name),
+      location(fs.location)
+{
+}
+
+SavedStacks::FrameState::~FrameState()
+{
+}
+
+void
+SavedStacks::FrameState::trace(JSTracer *trc) {
+    if (name)
+        gc::MarkStringUnbarriered(trc, &name, "SavedStacks::FrameState::name");
+    location.trace(trc);
 }
 
 bool

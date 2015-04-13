@@ -5850,6 +5850,12 @@ CodeGenerator::visitSubstr(LSubstr* lir)
 
     // Use slow path for ropes.
     masm.bind(&nonZero);
+#if _TAINT_ON_
+    masm.branchPtr(Assembler::NotEqual,
+                   Address(string, JSString::offsetOfStartTaint()),
+                   ImmPtr(nullptr),
+                   slowPath);
+#endif
     static_assert(JSString::ROPE_FLAGS == 0,
                   "rope flags must be zero for (flags & TYPE_FLAGS_MASK) == 0 "
                   "to be a valid is-rope check");

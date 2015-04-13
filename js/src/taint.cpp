@@ -506,7 +506,7 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
 
     AutoValueVector taints(cx);
     for(TaintStringRef *cur = str->getTopTaintRef(); cur != nullptr; cur = cur->next) {
-        RootedObject obj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+        RootedObject obj(cx, JS_NewObject(cx, nullptr));
 
         if(!obj)
             return false;
@@ -522,7 +522,7 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
         RootedString param2val(cx);
         RootedObject stackobj(cx, nullptr);
         for(TaintNode* curnode = cur->thisTaint; curnode != nullptr; curnode = curnode->prev) {
-            taintobj = JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr());
+            taintobj = JS_NewObject(cx, nullptr);
             opname = StringValue(NewStringCopyZ<CanGC>(cx, curnode->op));
             param1val = JS_NewUCStringCopyN(cx, curnode->param1, curnode->param1len);
             param2val = JS_NewUCStringCopyN(cx, curnode->param2, curnode->param2len);
@@ -596,7 +596,7 @@ taint_add_op_single_str(TaintStringRef *dst, const char* name, JSContext *cx, ch
 }
 
 static char16_t*
-taint_add_op_new_int(ThreadSafeContext *cx, uint32_t v, size_t *l)
+taint_add_op_new_int(JSContext *cx, uint32_t v, size_t *l)
 {
     MOZ_ASSERT(l);
 
@@ -1465,8 +1465,9 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
                .setForEval(false)
                .setCompileAndGo(false)
                .setNoScriptRval(false);
-        if(!JS_CompileFunction(cx, global, "taint_dispatch_event", 3, argnames,
-            funbody, strlen(funbody), options, &tofun) || !tofun)
+        JS::AutoObjectVector emptyScopeChain(cx);
+        if(!JS::CompileFunction(cx, emptyScopeChain, options, "taint_dispatch_event",
+            3, argnames, funbody, strlen(funbody), &tofun) || !tofun)
         {
             printf("  Could not compile.\n");
             return true;

@@ -521,9 +521,7 @@ js::ConcatStrings(ExclusiveContext* cx,
         }
 
 #if _TAINT_ON_
-        Rooted<JSFatInlineString*> rootstr(cx, str);
         taint_str_concat(cx->asJSContext(), str, left, right);
-        str = rootstr;
 #endif
 
         return str;
