@@ -1195,7 +1195,7 @@ CreateDependentString(MacroAssembler& masm, const JSAtomState& names,
 
 #if _TAINT_ON_
     masm.branchPtr(Assembler::NotEqual,
-                   Address(string, JSString::offsetOfStartTaint()),
+                   Address(base, JSString::offsetOfStartTaint()),
                    ImmPtr(nullptr),
                    failure);
 #endif
