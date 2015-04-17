@@ -4851,6 +4851,23 @@ JS_DecodeScript(JSContext* cx, const void* data, uint32_t length);
 extern JS_PUBLIC_API(JSObject*)
 JS_DecodeInterpretedFunction(JSContext* cx, const void* data, uint32_t length);
 
+#if _TAINT_ON_
+
+extern JS_PUBLIC_API(void)
+JS_TaintSetDynamicSink(const char *name);
+
+extern JS_PUBLIC_API(const char*)
+JS_TaintGetDynamicSink();
+
+
+class  MOZ_STACK_CLASS JS_PUBLIC_API(TaintSetDynamicSink)
+{
+    public:
+        TaintSetDynamicSink(const char*name);
+        ~TaintSetDynamicSink();
+};
+#endif
+
 namespace JS {
 
 /*

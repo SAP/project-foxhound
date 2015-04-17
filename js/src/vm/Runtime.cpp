@@ -75,6 +75,7 @@ PerThreadData::PerThreadData(JSRuntime* runtime)
     runtime_(runtime),
 #if _TAINT_ON_
     taintStackOptions(TAINT_OPT_MARK_SB),
+    taintDynamicSinkName(nullptr),
 #endif
 #ifdef JS_TRACE_LOGGING
     traceLogger(nullptr),

@@ -89,28 +89,6 @@ taint_str_taintref_build()
     return new (p) TaintStringRef();
 }
 
-static void
-taint_tag_source_internal(HandleString str, const char* name,
-    JSContext *cx = nullptr, uint32_t begin = 0, uint32_t end = 0)
-{
-    if(str->length() == 0)
-        return;
-
-    if(end == 0)
-        end = str->length();
-
-    if(str->isTainted()) {
-        str->removeAllTaint();
-    }
-    
-    TaintNode *taint_node = taint_str_add_source_node(cx, name);
-    TaintStringRef *newtsr = taint_str_taintref_build(begin, end, taint_node);
-
-    VALIDATE_NODE(newtsr);
-
-    str->addTaintRef(newtsr);
-}
-
 //----------------------------------
 // Reference Node
 
@@ -138,6 +116,26 @@ taint_node_stringchars(JSContext *cx, JSString *str, size_t *plength)
     if(plength)
         *plength = len;
     return charbuf;
+}
+
+void taint_tag_source_js(HandleString str, const char* name,
+    JSContext *cx, uint32_t begin)
+{
+    MOZ_ASSERT(!str->isTainted());
+
+    if(str->length() == 0)
+        return;
+    
+    TaintNode *taint_node = taint_str_add_source_node(cx, name);
+    if(cx) {
+        taint_node->param1 = taint_node_stringchars(cx, str,
+            &taint_node->param1len);
+    }
+    TaintStringRef *newtsr = taint_str_taintref_build(begin, str->length(), taint_node);
+
+    VALIDATE_NODE(newtsr);
+
+    str->addTaintRef(newtsr);
 }
 
 static char16_t*
@@ -485,7 +483,7 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
         }
     }
 
-    taint_tag_source_internal(taintedStr, "Manual taint source", cx);
+    taint_tag_source_js(taintedStr, "Manual taint source", cx);
 
     args.rval().setString(taintedStr);
     return true;

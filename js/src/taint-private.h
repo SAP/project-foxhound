@@ -112,6 +112,8 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
 
 bool taint_threadbit_set(uint8_t v);
 
+void taint_tag_source_js(JS::HandleString str, const char* name,
+    JSContext *cx = nullptr, uint32_t begin = 0);
 
 //-----------------------------------
 //call manipulation and augmentation

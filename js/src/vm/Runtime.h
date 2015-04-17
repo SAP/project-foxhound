@@ -504,6 +504,7 @@ class PerThreadData : public PerThreadDataFriendFields
   public:
 #if _TAINT_ON_
     uint8_t             taintStackOptions;
+    const char*         taintDynamicSinkName;
 #endif
 #ifdef JS_TRACE_LOGGING
     TraceLoggerThread*  traceLogger;

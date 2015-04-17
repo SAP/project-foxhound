@@ -8335,6 +8335,12 @@ nsGlobalWindow::PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     }
   }
 
+#if _TAINT_ON_
+    if(aTargetOrigin.isTainted())
+      taint_report_sink_gecko(aCx, aTargetOrigin, "postMessage.target");
+    TaintSetDynamicSink setSink("postMessage.message");
+#endif
+
   // Create and asynchronously dispatch a runnable which will handle actual DOM
   // event creation and dispatch.
   nsRefPtr<PostMessageEvent> event =

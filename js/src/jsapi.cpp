@@ -5757,6 +5757,36 @@ JS_DecodeInterpretedFunction(JSContext* cx, const void* data, uint32_t length)
     return funobj;
 }
 
+#if _TAINT_ON_
+JS_PUBLIC_API(void)
+JS_TaintSetDynamicSink(const char *name)
+{
+    js::PerThreadData *pt = js::TlsPerThreadData.get();
+    if(pt) {
+        pt->taintDynamicSinkName = name;
+    }
+}
+
+JS_PUBLIC_API(const char*)
+JS_TaintGetDynamicSink()
+{
+    js::PerThreadData *pt = js::TlsPerThreadData.get();
+    if(pt) {
+        return pt->taintDynamicSinkName;
+    }
+    return nullptr;
+}
+
+TaintSetDynamicSink::TaintSetDynamicSink(const char* name) {
+    JS_TaintSetDynamicSink(name);
+}
+
+
+TaintSetDynamicSink::~TaintSetDynamicSink() {
+    JS_TaintSetDynamicSink(nullptr);
+}
+#endif
+
 JS_PUBLIC_API(void)
 JS::SetAsmJSCacheOps(JSRuntime* rt, const JS::AsmJSCacheOps* ops)
 {
