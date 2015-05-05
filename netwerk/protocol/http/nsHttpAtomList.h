@@ -90,4 +90,8 @@ HTTP_ATOM(Warning,                   "Warning")
 HTTP_ATOM(X_Firefox_Spdy,            "X-Firefox-Spdy")
 HTTP_ATOM(X_Firefox_Spdy_Proxy,      "X-Firefox-Spdy-Proxy")
 
+#if _TAINT_ON_
+HTTP_ATOM(X_Taint,                   "X-Taint")
+#endif
+
 // methods are case sensitive and do not use atom table

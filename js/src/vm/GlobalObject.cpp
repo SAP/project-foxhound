@@ -330,6 +330,12 @@ GlobalObject::initStandardClasses(JSContext* cx, Handle<GlobalObject*> global)
         if (!ensureConstructor(cx, global, static_cast<JSProtoKey>(k)))
             return false;
     }
+
+#if _TAINT_ON_
+    //init taint specific hooks
+    JS_DefineFunction(cx, global, "__DOMlog__", taint_domlog, 1, JSFUN_GENERIC_NATIVE);
+#endif
+
     return true;
 }
 

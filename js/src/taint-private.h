@@ -35,6 +35,9 @@ JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT
     masm.storePtr(ImmPtr(nullptr), Address(dst, JSString::offsetOfEndTaint())); \
 }
 
+//init global namespace
+bool taint_domlog(JSContext *cx, unsigned argc, JS::Value *vp);
+
 //JavaScript functions
 //JavaScript copy constructor for new all-tainted strings
 bool taint_str_newalltaint(JSContext *cx, unsigned argc, JS::Value *vp);

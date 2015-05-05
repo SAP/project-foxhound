@@ -1419,6 +1419,55 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 
 
 bool
+taint_domlog(JSContext *cx, unsigned argc, Value *vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    args.rval().setUndefined();
+    if(args.length() < 1)
+        return true;
+
+    RootedObject global(cx, cx->global());
+    if(!global)
+        return false;
+
+    RootedValue  fval(cx, UndefinedValue());
+    RootedFunction tofun(cx, nullptr);
+    if(JS_GetProperty(cx, global, "__taint_dispatch_domlog", &fval) &&
+        IsCallable(fval))
+    {
+        tofun = &fval.toObject().as<JSFunction>();
+    } else {
+        printf("Domlog dispatcher not installed. Compiling.");
+        const char* argnames[1] = {"v"};
+        const char* funbody = "if(CustomEvent && window) {var e=new CustomEvent('__domlog',{detail:v}); window.dispatchEvent(e);}";
+        JS::CompileOptions options(cx);
+        options.setFile("taint.cpp")
+               .setCanLazilyParse(false)
+               .setForEval(false)
+               .setCompileAndGo(false)
+               .setNoScriptRval(false);
+        JS::AutoObjectVector emptyScopeChain(cx);
+        if(!JS::CompileFunction(cx, emptyScopeChain, options, "__taint_dispatch_domlog",
+            1, argnames, funbody, strlen(funbody), &tofun) || !tofun)
+        {
+            printf("Could not compile domlog dispatcher\n");
+            return false;
+        }
+    }
+    RootedValue  rval(cx);
+    JS::AutoValueArray<1> domparams(cx);
+    domparams[0].set(args[0]);
+    if(!JS_CallFunction(cx, global, tofun, domparams, &rval))
+    {
+        printf("Could not call domlog dispatcher.\n");
+        return false;
+    }
+
+    return true;
+}
+
+
+bool
 taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
 {
     MOZ_ASSERT(cx);
@@ -1445,13 +1494,15 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
     //the "real" reportTaint is placed by the extension
     RootedObject global(cx, cx->global());
     if(!global)
-        return true;
+        return false;
 
-    RootedValue  timeoutvalue(cx, UndefinedValue());
+    RootedValue  fval(cx, UndefinedValue());
     RootedFunction tofun(cx, nullptr);
-    if(!JS_GetProperty(cx, global, "taint_dispatch_event", &timeoutvalue) ||
-        !IsCallable(timeoutvalue))
+    if(JS_GetProperty(cx, global, "taint_dispatch_event", &fval) &&
+        IsCallable(fval))
     {
+        tofun = &fval.toObject().as<JSFunction>();
+    } else {
         printf("  Event dispatcher not installed. Compiling.\n");
 
         const char* argnames[3] = {"str", "sink", "stack"};
@@ -1468,10 +1519,8 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
             3, argnames, funbody, strlen(funbody), &tofun) || !tofun)
         {
             printf("  Could not compile.\n");
-            return true;
+            return false;
         }
-    } else {
-        tofun = &timeoutvalue.toObject().as<JSFunction>();
     }
 
     RootedValue  rval(cx);
@@ -1482,8 +1531,8 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
     timeoutparams[2].set(args[1]);
     if(!JS_CallFunction(cx, global, tofun, timeoutparams, &rval))
     {
-        printf("  Could not call setTimeout.\n");
-        return true;
+        printf("  Could not call event dispatcher.\n");
+        return false;
     }
 
     return true;
