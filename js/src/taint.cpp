@@ -1439,7 +1439,7 @@ taint_domlog(JSContext *cx, unsigned argc, Value *vp)
     } else {
         printf("Domlog dispatcher not installed. Compiling.");
         const char* argnames[1] = {"v"};
-        const char* funbody = "if(CustomEvent && window) {var e=new CustomEvent('__domlog',{detail:v}); window.dispatchEvent(e);}";
+        const char* funbody = "if(CustomEvent && window) {var e=new window.CustomEvent('__domlog',{detail:v}); window.dispatchEvent(e);}";
         JS::CompileOptions options(cx);
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
@@ -1506,8 +1506,9 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
         printf("  Event dispatcher not installed. Compiling.\n");
 
         const char* argnames[3] = {"str", "sink", "stack"};
-        const char* funbody = "if(window){var t=window; if(location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:'){t=parent.window}" \
-"var pl; try {pl=parent.location.href;} catch(e) {pl='different origin';} var e=new CustomEvent('__taintreport',{bubbles: false, cancelable: false, detail: {subframe: t != window, loc: location.href, parentloc: pl, str: str, sink: sink, stack: stack}}); t.dispatchEvent(e); }";
+        const char* funbody = "if (window) { var t = window; if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') { t = parent.window }" \
+"var pl; try { pl = parent.location.href; } catch (e) { pl = 'different origin'; } var e = new t.CustomEvent('__taintreport', {detail:{subframe: t != window, loc: location.href," \
+"parentloc: pl, str: str, sink: sink, stack: stack}}); t.dispatchEvent(e);}";
         JS::CompileOptions options(cx);
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
@@ -1521,6 +1522,11 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
             printf("  Could not compile.\n");
             return false;
         }
+
+        printf("  OK.\n");
+        fval = ObjectValue(*tofun);
+        if(!JS_SetProperty(cx, global, "taint_dispatch_event", fval))
+            return false;
     }
 
     RootedValue  rval(cx);
