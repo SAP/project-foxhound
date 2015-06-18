@@ -1855,6 +1855,17 @@ typedef enum JSGCParamKey {
     JSGC_COMPACTING_ENABLED = 23
 } JSGCParamKey;
 
+#if _TAINT_ON_
+typedef enum JSTaintParamKey {
+    /* Capture stack during taint tracking */
+    JSTAINT_CAPTURESTACK = 0,
+
+    /* Capture line source when capturing stack */
+    JSTAINT_CAPTURESTACKSOURCE = 1
+} JSTaintParamKey;
+
+#endif
+
 extern JS_PUBLIC_API(void)
 JS_SetGCParameter(JSRuntime* rt, JSGCParamKey key, uint32_t value);
 
@@ -4859,7 +4870,6 @@ JS_TaintSetDynamicSink(const char *name);
 extern JS_PUBLIC_API(const char*)
 JS_TaintGetDynamicSink();
 
-
 class  MOZ_STACK_CLASS JS_PUBLIC_API(TaintSetDynamicSink)
 {
     public:
@@ -4867,6 +4877,9 @@ class  MOZ_STACK_CLASS JS_PUBLIC_API(TaintSetDynamicSink)
         ~TaintSetDynamicSink();
 };
 #endif
+
+extern JS_PUBLIC_API(void)
+JS_SetTaintParameter(JSRuntime* rt, JSTaintParamKey key, uint32_t value);
 
 namespace JS {
 

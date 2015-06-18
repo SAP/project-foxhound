@@ -220,20 +220,20 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
     stack(nullptr)
 {
     
-    if(cx) {
+    if(cx && cx->runtime()->getTaintParameter(JSTAINT_CAPTURESTACK)) {
         JS::AutoCheckCannotGC nogc;
 
         //this is in parts taken from SavedStacks.cpp
         //we need to split up their algorithm to fetch the stack WITHOUT causing GC
         //because we cannot guarantee that all pointer are marked for all calling locations
         //they will be compiled into GCthings later
-        FrameIter iter(cx, FrameIter::ALL_CONTEXTS, FrameIter::GO_THROUGH_SAVED);
+        NonBuiltinScriptFrameIter iter(cx, FrameIter::GO_THROUGH_SAVED);
         FrameStateElement *last = nullptr;
         while(!iter.done()) {
             SavedStacks::AutoLocationValueRooter location(cx);
             {
                 AutoCompartment ac(cx, iter.compartment());
-                if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location, true))
+                if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location, cx->runtime()->getTaintParameter(JSTAINT_CAPTURESTACKSOURCE)))
                     break;
             }
 
@@ -459,6 +459,12 @@ taint_str_untaint(JSContext *cx, unsigned argc, Value *vp)
 
     args.rval().setUndefined();
     return true;
+}
+
+bool
+taint_filter_source_tagging(JSContext *cx, const char *name)
+{
+    return cx && cx->runningWithTrustedPrincipals();
 }
 
 bool
@@ -1504,9 +1510,9 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
         printf("  Event dispatcher not installed. Compiling.\n");
 
         const char* argnames[3] = {"str", "sink", "stack"};
-        const char* funbody = "if (window) { var t = window; if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') { t = parent.window }" \
-"var pl; try { pl = parent.location.href; } catch (e) { pl = 'different origin'; } var e = new t.CustomEvent('__taintreport', {detail:{subframe: t != window, loc: location.href," \
-"parentloc: pl, str: str, sink: sink, stack: stack}}); t.dispatchEvent(e);}";
+        const char* funbody = "if (window && document) { var t = window; if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') { t = parent.window }" \
+"var pl; try { pl = parent.location.href; } catch (e) { pl = 'different origin'; } var e = document.createEvent('CustomEvent'); e.initCustomEvent('__taintreport', true, false, {subframe: t !== window, loc: location.href," \
+"parentloc: pl, str: str, sink: sink, stack: stack}); t.dispatchEvent(e);}";
         JS::CompileOptions options(cx);
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)

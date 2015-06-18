@@ -1387,6 +1387,15 @@ JS_UpdateWeakPointerAfterGCUnbarriered(JSObject** objp)
         *objp = nullptr;
 }
 
+
+#if _TAINT_ON_
+JS_PUBLIC_API(void)
+JS_SetTaintParameter(JSRuntime* rt, JSTaintParamKey key, uint32_t value)
+{
+    rt->setTaintParameter(key, value);
+}
+#endif
+
 JS_PUBLIC_API(void)
 JS_SetGCParameter(JSRuntime* rt, JSGCParamKey key, uint32_t value)
 {

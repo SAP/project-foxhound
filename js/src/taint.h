@@ -67,6 +67,8 @@ TaintStringRef *taint_str_taintref_build();
 TaintStringRef *taint_str_taintref_build(const TaintStringRef &ref);
 TaintStringRef *taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node);
 
+bool taint_filter_source_tagging(JSContext *cx, const char *name);
+
 //wipe out the taint completely (this can free TaintNodes, too)
 void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
 
@@ -79,6 +81,10 @@ template <typename TaintedT>
 void taint_tag_source(TaintedT& str, const char* name, JSContext *cx = nullptr, uint32_t begin = 0)
 {
     MOZ_ASSERT(!str.isTainted());
+    if(cx && taint_filter_source_tagging(cx, name)) {
+        printf("Skipping trusted source tag: %s\n", name);
+        return;
+    }
 
     if(str.Length() == 0) {
         return;

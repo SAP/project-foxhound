@@ -1386,6 +1386,15 @@ struct JSRuntime : public JS::shadow::Runtime,
      * function to assess the size of malloc'd blocks of memory.
      */
     mozilla::MallocSizeOf debuggerMallocSizeOf;
+
+#if _TAINT_ON_
+    bool taintCaptureStack;
+    bool taintCaptureStackSource;
+
+    void setTaintParameter(JSTaintParamKey key, uint32_t value);
+    uint32_t getTaintParameter(JSTaintParamKey key);
+#endif
+
 };
 
 namespace js {

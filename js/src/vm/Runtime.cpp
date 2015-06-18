@@ -215,6 +215,10 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
     largeAllocationFailureCallback(nullptr),
     oomCallback(nullptr),
     debuggerMallocSizeOf(ReturnZeroSize)
+#if _TAINT_ON_
+    , taintCaptureStack(true)
+    , taintCaptureStackSource(true)
+#endif
 {
     setGCStoreBufferPtr(&gc.storeBuffer);
 
@@ -840,6 +844,36 @@ js::AssertCurrentThreadCanLock(RuntimeLock which)
 }
 
 #endif // DEBUG
+
+#if _TAINT_ON_
+void
+JSRuntime::setTaintParameter(JSTaintParamKey key, uint32_t value)
+{
+    switch(key) {
+        case JSTAINT_CAPTURESTACK:
+            taintCaptureStack = value;
+            break;
+        case JSTAINT_CAPTURESTACKSOURCE:
+            taintCaptureStackSource = value;
+            break;
+        default:
+            break;
+    }
+}
+
+uint32_t
+JSRuntime::getTaintParameter(JSTaintParamKey key)
+{
+    switch(key) {
+        case JSTAINT_CAPTURESTACK:
+            return taintCaptureStack;
+        case JSTAINT_CAPTURESTACKSOURCE:
+            return taintCaptureStackSource;
+        default:
+            return -1;
+    }
+}
+#endif
 
 JS_FRIEND_API(bool)
 JS::IsProfilingEnabledForRuntime(JSRuntime* runtime)
