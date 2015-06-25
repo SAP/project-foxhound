@@ -764,6 +764,8 @@ taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
     const char *name, JS::HandleValue param1,
     JS::HandleValue param2)
 {
+    MOZ_ASSERT(dststr && srcstr && !dststr->isTainted());
+
 
     if(!srcstr->isTainted())
         return dststr;

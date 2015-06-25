@@ -1026,12 +1026,10 @@ class StaticStrings
     }
 
     static bool hasUnit(char16_t c) {
-/*
 //TAINT TODO, atoms: losing taint
 #if _TAINT_ON_
         return false;
 #endif
-*/
         return c < UNIT_STATIC_LIMIT;
     }
 
@@ -1055,11 +1053,10 @@ class StaticStrings
     /* Return null if no static atom exists for the given (chars, length). */
     template <typename CharT>
     JSAtom* lookup(const CharT* chars, size_t length) {
-/*
 //TAINT TODO, atoms: losing taint
 #if _TAINT_ON_
         return nullptr;
-#endif */
+#endif
         switch (length) {
           case 1: {
             char16_t c = chars[0];
