@@ -457,14 +457,19 @@ taint_str_untaint(JSContext *cx, unsigned argc, Value *vp)
 
     str->removeAllTaint();
 
-    args.rval().setUndefined();
+    args.rval().setString(str);
     return true;
 }
+
+#define RETURN_IF(x) { if(x) return true; }
 
 bool
 taint_filter_source_tagging(JSContext *cx, const char *name)
 {
-    return cx && cx->runningWithTrustedPrincipals();
+    RETURN_IF(cx && cx->runningWithTrustedPrincipals())
+    //RETURN_IF(name && strncmp(name, "postMessage", 11) == 0)
+
+    return false;
 }
 
 bool
@@ -1494,7 +1499,9 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
     std::string sink_str;
     jsvalue_to_stdstring(cx, args[0], &sink_str);
     printf("[---TAINT---] Flow into %s. Calling event handler.\n", sink_str.c_str());
-        
+#if DEBUG
+    js_DumpBacktrace(cx);
+#endif
 
     //Try to call window.setTimeout with ourselves in a loop until
     //the "real" reportTaint is placed by the extension

@@ -81,8 +81,7 @@ template <typename TaintedT>
 void taint_tag_source(TaintedT& str, const char* name, JSContext *cx = nullptr, uint32_t begin = 0)
 {
     MOZ_ASSERT(!str.isTainted());
-    if(cx && taint_filter_source_tagging(cx, name)) {
-        printf("Skipping trusted source tag: %s\n", name);
+    if(taint_filter_source_tagging(cx, name)) {
         return;
     }
 
