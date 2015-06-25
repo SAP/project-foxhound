@@ -76,11 +76,13 @@ nsScriptElement::CharacterDataChanged(nsIDocument *aDocument,
 {
   MaybeProcessScript();
 #if _TAINT_ON_
+  //TAINT TODO
+  /*
   nsString aCont;
   bool contResult = nsContentUtils::GetNodeTextContent(aContent, false, aCont);
   if(contResult && aCont.isTainted()) {
     taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aCont, "script.text");
-  }
+  }*/
 #endif
 }
 
@@ -93,13 +95,16 @@ nsScriptElement::AttributeChanged(nsIDocument* aDocument,
 {
   MaybeProcessScript();
 #if _TAINT_ON_
+  //TAINT TODO: need to dispatch, because currently script execution is blocked
+  //maybe see ScriptErrorEvent in nsJSEnvironment.cpp?
+  /*
   if(aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::src) {
     nsString aContentText;
     aElement->GetAttr(aNameSpaceID, aAttribute, aContentText);
     if(aContentText.isTainted()) {
       taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.src");
     }
-  }
+  }*/
 #endif
 }
 
@@ -111,11 +116,13 @@ nsScriptElement::ContentAppended(nsIDocument* aDocument,
 {
   MaybeProcessScript();
 #if _TAINT_ON_
+    //TAINT TODO
+  /*
     nsString aContentText;
     bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
     if(contResult && aContentText.isTainted()) {
       taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
-    }
+    }*/
 #endif
 }
 
