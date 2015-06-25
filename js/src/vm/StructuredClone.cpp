@@ -1326,12 +1326,14 @@ JSStructuredCloneReader::readStringImpl(uint32_t nchars)
         chars.forget();
 
 #if _TAINT_ON_
+    //TAIN TODO
+    /*
     RootedString strroot(context(), str);
     if(strroot->isTainted()) {
         taint_add_op(strroot->getTopTaintRef(), "postMessage.message", context());
     } else {
         taint_tag_source_js(strroot, "postMessage.message", context());
-    }
+    }*/
 #endif
 
     return str;
