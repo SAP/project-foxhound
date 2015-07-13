@@ -873,7 +873,7 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
         if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
             continue;
 
-        uint32_t begin = std::max(frombegin, tsr->begin);
+        uint32_t begin = (std::max)(frombegin, tsr->begin);
         uint32_t end   = tsr->end;
         if(fromend > 0 && fromend < end)
             end = fromend;
@@ -921,7 +921,7 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
     if(!source)
         return nullptr;
 
-    if(sidx > std::max((size_t)source->begin, soff)) {
+    if(sidx > (std::max)((size_t)source->begin, soff)) {
         //if we were called every idx a new tsr should've been created in *target
         MOZ_ASSERT(sidx <= source->end); //this will trigger len(str) times //<=
         MOZ_ASSERT(*target);
@@ -938,7 +938,7 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
     }
 
     //new TSR currently not in range -> no more taint to copy
-    if(!source || sidx < std::max((size_t)source->begin, soff))
+    if(!source || sidx < (std::max)((size_t)source->begin, soff))
         return source;
 
     //as we are called for every index
