@@ -4,6 +4,9 @@
 #ifdef _TAINT_ON_
 
 #include "jsapi.h"
+
+class JSAtom;
+
 typedef struct TaintNode
 {
     TaintNode(JSContext *cx, const char* opname);
@@ -77,6 +80,20 @@ void taint_remove_all(TaintStringRef **start, TaintStringRef **end);
 namespace js {
     mozilla::UniquePtr<char16_t[], JS::FreePolicy> DuplicateString(js::ExclusiveContext* cx, const char16_t* s);
 }
+
+
+template <typename TaintedT>
+inline bool taint_filter_addref(TaintedT *str)
+{
+    return false;
+}
+
+template <>
+inline bool taint_filter_addref(JSAtom *str)
+{
+    return true;
+}
+
 template <typename TaintedT>
 void taint_tag_source(TaintedT& str, const char* name, JSContext *cx = nullptr, uint32_t begin = 0)
 {
@@ -85,6 +102,7 @@ void taint_tag_source(TaintedT& str, const char* name, JSContext *cx = nullptr, 
         return;
     }
 
+    //we cannot taint atoms or we pick up false positives and invalid taint
     if(str.Length() == 0) {
         return;
     }
@@ -179,7 +197,11 @@ void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringR
                                                         \
     MOZ_ALWAYS_INLINE                                   \
     void addTaintRef(TaintStringRef *tsr)  {            \
-        taint_addtaintref(tsr, &startTaint, &endTaint); \
+        if(!taint_filter_addref(this)) {                \
+            taint_addtaintref(tsr, &startTaint, &endTaint); \
+        } else if(tsr) {                                \
+            taint_remove_all(&tsr, nullptr);            \
+        }                                               \
     }                                                   \
                                                         \
     MOZ_ALWAYS_INLINE                                   \
