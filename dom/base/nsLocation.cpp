@@ -35,6 +35,24 @@
 #include "ScriptSettings.h"
 #include "mozilla/dom/LocationBinding.h"
 
+#if _TAINT_ON_
+#define TAINT_LOCATION_REPORT(value, sink) \
+  do { \
+    JSContext *cx = nsContentUtils::GetCurrentJSContext();\
+    if(cx && value.isTainted()) \
+    { \
+      taint_report_sink_gecko(cx, value, sink); \
+    } \
+  } while(false)
+  //TAINT TODO: else: we are missing a sink access report here if we
+  //cannot aquire a JSContext, but this means we are not called
+  //by some JS code and thus this is probably not a sink access from JS
+  //in the first place
+#else
+  #define TAINT_LOCATION_REPORT
+#endif
+
+
 using namespace mozilla;
 using namespace mozilla::dom;
 
@@ -331,7 +349,8 @@ nsLocation::GetHash(nsAString& aHash)
   }
 
 #if _TAINT_ON_
-      taint_tag_source(aHash, "location.hash", nsContentUtils::GetCurrentJSContext(), 1);
+      taint_tag_source(aHash, "location.hash",
+        nsContentUtils::GetCurrentJSContext(), 1);
 #endif
 
   if (aHash == mCachedHash) {
@@ -364,6 +383,7 @@ nsLocation::SetHash(const nsAString& aHash)
     return rv;
   }
 
+  TAINT_LOCATION_REPORT(aHash, "location.hash");
   return SetURI(uri);
 }
 
@@ -413,6 +433,7 @@ nsLocation::SetHost(const nsAString& aHost)
     return rv;
   }
 
+  TAINT_LOCATION_REPORT(aHost, "location.host");
   return SetURI(uri);
 }
 
@@ -453,6 +474,7 @@ nsLocation::SetHostname(const nsAString& aHostname)
     return rv;
   }
 
+  TAINT_LOCATION_REPORT(aHostname, "location.hostname");
   return SetURI(uri);
 }
 
@@ -571,6 +593,8 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
       }
     }
 
+    TAINT_LOCATION_REPORT(aHref, "location.href");
+
     return SetURI(newUri, aReplace || inScriptTag);
   }
 
@@ -648,6 +672,7 @@ nsLocation::SetPathname(const nsAString& aPathname)
     return rv;
   }
 
+  TAINT_LOCATION_REPORT(aPathname, "location.pathname");
   return SetURI(uri);
 }
 
@@ -672,6 +697,9 @@ nsLocation::GetPort(nsAString& aPort)
       nsAutoString portStr;
       portStr.AppendInt(port);
       aPort.Append(portStr);
+#if _TAINT_ON_
+      taint_tag_source(aPort, "location.port", nsContentUtils::GetCurrentJSContext());
+#endif
     }
 
     // Don't propagate this exception to caller
@@ -712,6 +740,7 @@ nsLocation::SetPort(const nsAString& aPort)
     return rv;
   }
 
+  TAINT_LOCATION_REPORT(aPort, "location.port");
   return SetURI(uri);
 }
 
@@ -735,6 +764,9 @@ nsLocation::GetProtocol(nsAString& aProtocol)
 
     if (NS_SUCCEEDED(result)) {
       CopyASCIItoUTF16(protocol, aProtocol);
+#if _TAINT_ON_
+      taint_tag_source(aProtocol, "location.protocol", nsContentUtils::GetCurrentJSContext());
+#endif
       aProtocol.Append(char16_t(':'));
     }
   }
@@ -759,6 +791,7 @@ nsLocation::SetProtocol(const nsAString& aProtocol)
     return rv;
   }
 
+  TAINT_LOCATION_REPORT(aProtocol, "location.protocol");
   return SetURI(uri);
 }
 
@@ -778,6 +811,9 @@ nsLocation::GetUsername(nsAString& aUsername, ErrorResult& aError)
     result = uri->GetUsername(username);
     if (NS_SUCCEEDED(result)) {
       CopyUTF8toUTF16(username, aUsername);
+#if _TAINT_ON_
+      taint_tag_source(aUsername, "location.username", nsContentUtils::GetCurrentJSContext());
+#endif
     }
   }
 }
@@ -807,6 +843,7 @@ nsLocation::SetUsername(const nsAString& aUsername, ErrorResult& aError)
     return;
   }
 
+  TAINT_LOCATION_REPORT(aUsername, "location.username");
   rv = SetURI(uri);
 }
 
@@ -826,6 +863,9 @@ nsLocation::GetPassword(nsAString& aPassword, ErrorResult& aError)
     result = uri->GetPassword(password);
     if (NS_SUCCEEDED(result)) {
       CopyUTF8toUTF16(password, aPassword);
+#if _TAINT_ON_
+      taint_tag_source(aPassword, "location.password", nsContentUtils::GetCurrentJSContext());
+#endif
     }
   }
 }
@@ -855,6 +895,7 @@ nsLocation::SetPassword(const nsAString& aPassword, ErrorResult& aError)
     return;
   }
 
+  TAINT_LOCATION_REPORT(aPassword, "location.password");
   rv = SetURI(uri);
 }
 
@@ -882,7 +923,8 @@ nsLocation::GetSearch(nsAString& aSearch)
       aSearch.Assign(char16_t('?'));
       AppendUTF8toUTF16(search, aSearch);
 #if _TAINT_ON_
-      taint_tag_source(aSearch, "location.search", nsContentUtils::GetCurrentJSContext());
+      taint_tag_source(aSearch, "location.search",
+        nsContentUtils::GetCurrentJSContext(), 1);
 #endif
     }
   }
@@ -893,6 +935,7 @@ nsLocation::GetSearch(nsAString& aSearch)
 NS_IMETHODIMP
 nsLocation::SetSearch(const nsAString& aSearch)
 {
+  TAINT_LOCATION_REPORT(aSearch, "location.search");
   nsresult rv = SetSearchInternal(aSearch);
   if (NS_FAILED(rv)) {
     return rv;
