@@ -466,6 +466,9 @@ taint_str_untaint(JSContext *cx, unsigned argc, Value *vp)
 bool
 taint_filter_source_tagging(JSContext *cx, const char *name)
 {
+    if(!cx || !cx->currentlyRunning())
+        printf("!!Taint source access from %s, cx: %u, script running: %u\n", name, (unsigned)!!cx, (unsigned)(cx && cx->currentlyRunning()));
+
     RETURN_IF(cx && cx->runningWithTrustedPrincipals())
     //RETURN_IF(name && strncmp(name, "postMessage", 11) == 0)
 

@@ -10,6 +10,9 @@ taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name)
     MOZ_ASSERT(cx && name);
     MOZ_ASSERT(str.isTainted());
 
+    if(!JS_IsRunning(cx))
+        printf("!!Gecko Sink access to %s, script running: %u\n", name, JS_IsRunning(cx));
+
     if(JS_IsExceptionPending(cx))
         return NS_ERROR_FAILURE;
 
