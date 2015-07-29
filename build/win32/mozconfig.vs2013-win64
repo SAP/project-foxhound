@@ -1,4 +1,4 @@
-_VSPATH="/c/tools/vs2013"
+_VSPATH="/c/Program Files (x86)/Microsoft Visual Studio 12.0/"
 export WIN32_REDIST_DIR=${_VSPATH}/VC/redist/x86/Microsoft.VC120.CRT
 
 ## moz tools location for 64-bit builders ##
