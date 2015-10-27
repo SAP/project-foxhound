@@ -1,0 +1,27 @@
+. $topsrcdir/browser/config/mozconfig
+
+. $topsrcdir/build/mozconfig.common
+. $topsrcdir/build/mozconfig.win-common
+. $topsrcdir/build/win32/mozconfig.vs2013-win64
+
+mk_add_options MOZ_MAKE_FLAGS="-s -j5"
+ac_add_options --enable-taint-tracking
+ac_add_options --enable-installer
+ac_add_options --with-branding=browser/branding/taint
+
+#
+# DEBUG BUILD
+#
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff-dbg
+#ac_add_options --enable-debug
+#ac_add_options --disable-optimize
+
+
+#
+# RELEASE BUILD
+#
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff-release
+ac_add_options --enable-gczeal
+ac_add_options --enable-optimization
+ac_add_options --disable-tests
+
