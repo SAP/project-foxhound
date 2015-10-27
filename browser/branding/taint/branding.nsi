@@ -9,7 +9,7 @@
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
 !define BrandFullNameInternal "Taintfox"
-!define CompanyName           "mozilla.org"
+!define CompanyName           "SAP SE"
 !define URLInfoAbout          "https://www.mozilla.org"
 !define HelpLink              "https://support.mozilla.org"
 
