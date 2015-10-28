@@ -2310,9 +2310,15 @@ mozilla::dom::StartupJSEnvironment()
 #if _TAINT_ON_
 
 static void
-SetTaintBoolPrefChangedCallback(const char* aPrefName, void* aClosure)
+SetTaintBoolPrefChangedCallbackStack(const char* aPrefName, void* aClosure)
 {
   bool pref = Preferences::GetBool(aPrefName, true);
+  JS_SetTaintParameter(sRuntime, (JSTaintParamKey)(intptr_t)aClosure, pref);
+}
+static void
+SetTaintBoolPrefChangedCallbackSource(const char* aPrefName, void* aClosure)
+{
+  bool pref = Preferences::GetBool(aPrefName, false);
   JS_SetTaintParameter(sRuntime, (JSTaintParamKey)(intptr_t)aClosure, pref);
 }
 
@@ -2690,10 +2696,10 @@ nsJSContext::EnsureStatics()
                                        (void *)JSGC_MAX_EMPTY_CHUNK_COUNT);
 
 #if _TAINT_ON_
-  Preferences::RegisterCallbackAndCall(SetTaintBoolPrefChangedCallback,
+  Preferences::RegisterCallbackAndCall(SetTaintBoolPrefChangedCallbackStack,
                                        "javascript.options.taint.capture_stack",
                                        (void *)JSTAINT_CAPTURESTACK);
-  Preferences::RegisterCallbackAndCall(SetTaintBoolPrefChangedCallback,
+  Preferences::RegisterCallbackAndCall(SetTaintBoolPrefChangedCallbackSource,
                                        "javascript.options.taint.capture_source",
                                        (void *)JSTAINT_CAPTURESTACKSOURCE);
 #endif
