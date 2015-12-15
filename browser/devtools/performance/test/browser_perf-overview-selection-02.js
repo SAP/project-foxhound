@@ -4,7 +4,7 @@
 /**
  * Tests that the graphs' selection is correctly disabled or enabled.
  */
-function spawnTest () {
+function* spawnTest() {
   let { panel } = yield initPerformance(SIMPLE_URL);
   let { EVENTS, OverviewView } = panel.panelWin;
 
@@ -20,9 +20,9 @@ function spawnTest () {
     once(OverviewView, EVENTS.OVERVIEW_RENDERED),
   ]);
 
-  let markersOverview = OverviewView.markersOverview;
-  let memoryOverview = OverviewView.memoryOverview;
-  let framerateGraph = OverviewView.framerateGraph;
+  let markersOverview = OverviewView.graphs.get("timeline");
+  let memoryOverview = OverviewView.graphs.get("memory");
+  let framerateGraph = OverviewView.graphs.get("framerate");
 
   ok(markersOverview,
     "The markers graph should have been created now.");

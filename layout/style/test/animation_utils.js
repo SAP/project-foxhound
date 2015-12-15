@@ -55,7 +55,7 @@ function advance_clock(milliseconds) {
     // This function checks that the list of eventsExpected matches
     // the received events -- but it only checks the properties that
     // are present on eventsExpected.
-    is(gEventsReceived.length, gEventsReceived.length,
+    is(gEventsReceived.length, eventsExpected.length,
        "number of events received for " + desc);
     for (var i = 0,
          i_end = Math.min(eventsExpected.length, gEventsReceived.length);
@@ -190,13 +190,21 @@ function findKeyframesRule(name) {
 // Since this function relies on various asynchronous operations, the caller is
 // responsible for calling SimpleTest.waitForExplicitFinish() before calling
 // this and SimpleTest.finish() within aTestFunction and aOnSkip.
-function runOMTATest(aTestFunction, aOnSkip) {
+//
+// specialPowersForPrefs exists because some SpecialPowers objects apparently
+// can get prefs and some can't; callers that would normally have one of the
+// latter but can get their hands on one of the former can pass it in
+// explicitly.
+function runOMTATest(aTestFunction, aOnSkip, specialPowersForPrefs) {
   const OMTAPrefKey = "layers.offmainthreadcomposition.async-animations";
   var utils      = SpecialPowers.DOMWindowUtils;
+  if (!specialPowersForPrefs) {
+      specialPowersForPrefs = SpecialPowers;
+  }
   var expectOMTA = utils.layerManagerRemote &&
                    // ^ Off-main thread animation cannot be used if off-main
                    // thread composition (OMTC) is not available
-                   SpecialPowers.getBoolPref(OMTAPrefKey);
+                   specialPowersForPrefs.getBoolPref(OMTAPrefKey);
 
   isOMTAWorking().then(function(isWorking) {
     if (expectOMTA) {
@@ -396,19 +404,23 @@ const ExpectComparisonTo = {
 };
 
 (function() {
-  window.omta_todo_is = function(elem, property, expected, runningOn, desc) {
+  window.omta_todo_is = function(elem, property, expected, runningOn, desc,
+                                 pseudo) {
     return omta_is_approx(elem, property, expected, 0, runningOn, desc,
-                          ExpectComparisonTo.Fail);
+                          ExpectComparisonTo.Fail, pseudo);
   };
 
-  window.omta_is = function(elem, property, expected, runningOn, desc) {
-    return omta_is_approx(elem, property, expected, 0, runningOn, desc);
+  window.omta_is = function(elem, property, expected, runningOn, desc,
+                            pseudo) {
+    return omta_is_approx(elem, property, expected, 0, runningOn, desc,
+                          ExpectComparisonTo.Pass, pseudo);
   };
 
   // Many callers of this method will pass 'undefined' for
   // expectedComparisonResult.
   window.omta_is_approx = function(elem, property, expected, tolerance,
-                                   runningOn, desc, expectedComparisonResult) {
+                                   runningOn, desc, expectedComparisonResult,
+                                   pseudo) {
     // Check input
     const omtaProperties = [ "transform", "opacity" ];
     if (omtaProperties.indexOf(property) === -1) {
@@ -426,8 +438,8 @@ const ExpectComparisonTo = {
 
     // Get actual values
     var compositorStr =
-      SpecialPowers.DOMWindowUtils.getOMTAStyle(elem, property);
-    var computedStr = window.getComputedStyle(elem)[property];
+      SpecialPowers.DOMWindowUtils.getOMTAStyle(elem, property, pseudo);
+    var computedStr = window.getComputedStyle(elem, pseudo)[property];
 
     // Prepare expected value
     var expectedValue = normalize(expected);

@@ -58,7 +58,6 @@ typedef Observer<SwitchEvent> SwitchObserver;
 enum ProcessPriority {
   PROCESS_PRIORITY_UNKNOWN = -1,
   PROCESS_PRIORITY_BACKGROUND,
-  PROCESS_PRIORITY_BACKGROUND_HOMESCREEN,
   PROCESS_PRIORITY_BACKGROUND_PERCEIVABLE,
   PROCESS_PRIORITY_FOREGROUND_KEYBOARD,
   // The special class for the preallocated process, high memory priority but
@@ -71,12 +70,6 @@ enum ProcessPriority {
   PROCESS_PRIORITY_FOREGROUND_HIGH,
   PROCESS_PRIORITY_MASTER,
   NUM_PROCESS_PRIORITY
-};
-
-enum ProcessCPUPriority {
-  PROCESS_CPU_PRIORITY_LOW,
-  PROCESS_CPU_PRIORITY_NORMAL,
-  NUM_PROCESS_CPU_PRIORITY
 };
 
 /**
@@ -92,19 +85,14 @@ enum ThreadPriority {
 };
 
 /**
- * Convert a ProcessPriority enum value (with an optional ProcessCPUPriority)
- * to a string.  The strings returned by this function are statically
- * allocated; do not attempt to free one!
+ * Convert a ProcessPriority enum value to a string.  The strings returned by
+ * this function are statically allocated; do not attempt to free one!
  *
  * If you pass an unknown process priority, we fatally assert in debug
  * builds and otherwise return "???".
  */
 const char*
 ProcessPriorityToString(ProcessPriority aPriority);
-
-const char*
-ProcessPriorityToString(ProcessPriority aPriority,
-                        ProcessCPUPriority aCPUPriority);
 
 /**
  * Convert a ThreadPriority enum value to a string.  The strings returned by

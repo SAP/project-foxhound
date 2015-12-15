@@ -18,7 +18,6 @@ namespace layers {
 
 class ContainerLayer;
 class Layer;
-class LayerManager;
 
 class CanvasLayerComposite;
 class ColorLayerComposite;
@@ -48,6 +47,8 @@ public:
 
 private:
   virtual void ActorDestroy(ActorDestroyReason why) override;
+
+  void Disconnect();
 
   nsRefPtr<Layer> mLayer;
 };

@@ -56,12 +56,14 @@ class LinkableAccessible : public AccessibleWrap
 public:
   enum { eAction_Jump = 0 };
 
-  LinkableAccessible(nsIContent* aContent, DocAccessible* aDoc);
+  LinkableAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+    AccessibleWrap(aContent, aDoc)
+  {
+  }
 
   NS_DECL_ISUPPORTS_INHERITED
 
   // Accessible
-  virtual void Shutdown() override;
   virtual void Value(nsString& aValue) override;
   virtual uint64_t NativeLinkState() const override;
   virtual void TakeFocus() override;
@@ -72,42 +74,35 @@ public:
   virtual bool DoAction(uint8_t index) override;
   virtual KeyBinding AccessKey() const override;
 
+  // ActionAccessible helpers
+  Accessible* ActionWalk(bool* aIsLink = nullptr,
+                          bool* aIsOnclick = nullptr);
   // HyperLinkAccessible
   virtual already_AddRefed<nsIURI> AnchorURIAt(uint32_t aAnchorIndex) override;
 
 protected:
   virtual ~LinkableAccessible() {}
 
-  // Accessible
-  virtual void BindToParent(Accessible* aParent, uint32_t aIndexInParent) override;
-  virtual void UnbindFromParent() override;
-
-  /**
-   * Parent accessible that provides an action for this linkable accessible.
-   */
-  Accessible* mActionAcc;
-  bool mIsLink;
-  bool mIsOnclick;
 };
 
 /**
- * A simple accessible that gets its enumerated role passed into constructor.
+ * A simple accessible that gets its enumerated role.
  */
+template<a11y::role R>
 class EnumRoleAccessible : public AccessibleWrap
 {
 public:
-  EnumRoleAccessible(nsIContent* aContent, DocAccessible* aDoc, 
-                     a11y::role aRole);
+  EnumRoleAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+    AccessibleWrap(aContent, aDoc) { }
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aPtr) override
+    { return Accessible::QueryInterface(aIID, aPtr); }
 
   // Accessible
-  virtual a11y::role NativeRole() override;
+  virtual a11y::role NativeRole() override { return R; }
 
 protected:
   virtual ~EnumRoleAccessible() { }
-
-  a11y::role mRole;
 };
 
 

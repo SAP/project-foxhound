@@ -21,19 +21,11 @@ public:
   virtual void RemoveInput(MediaInputPort* aPort) override;
   virtual void ProcessInput(GraphTime aFrom, GraphTime aTo, uint32_t aFlags) override;
 
-  // Consumers may specify a filtering callback to apply to every input track.
-  // Returns true to allow the track to act as an input; false to reject it entirely.
-  typedef bool (*TrackIDFilterCallback)(StreamBuffer::Track*);
-
-  void SetTrackIDFilter(TrackIDFilterCallback aCallback);
-
   // Forward SetTrackEnabled(output_track_id, enabled) to the Source MediaStream,
   // translating the output track ID into the correct ID in the source.
   virtual void ForwardTrackEnabled(TrackID aOutputID, bool aEnabled) override;
 
 protected:
-  TrackIDFilterCallback mFilterCallback;
-
   // Only non-ended tracks are allowed to persist in this map.
   struct TrackMapEntry {
     // mEndOfConsumedInputTicks is the end of the input ticks that we've consumed.
@@ -58,6 +50,8 @@ protected:
     nsAutoPtr<MediaSegment> mSegment;
   };
 
+  // Add the track to this stream, retaining its TrackID if it has never
+  // been previously used in this stream, allocating a new TrackID otherwise.
   uint32_t AddTrack(MediaInputPort* aPort, StreamBuffer::Track* aTrack,
                     GraphTime aFrom);
   void EndTrack(uint32_t aIndex);
@@ -66,8 +60,15 @@ protected:
                      bool* aOutputTrackFinished);
 
   nsTArray<TrackMapEntry> mTrackMap;
+
+  // The next available TrackID, starting at 1 and progressing upwards.
+  // All TrackIDs in [1, mNextAvailableTrackID) have implicitly been used.
+  TrackID mNextAvailableTrackID;
+
+  // Sorted array of used TrackIDs that require manual tracking.
+  nsTArray<TrackID> mUsedTracks;
 };
 
-}
+} // namespace mozilla
 
 #endif /* MOZILLA_MEDIASTREAMGRAPH_H_ */

@@ -34,10 +34,8 @@
 
 #include "base/basictypes.h"
 #include "GonkPermission.h"
+#include "libdisplay/BootAnimation.h"
 #include "nscore.h"
-#ifdef MOZ_OMX_DECODER
-#include "MediaResourceManagerService.h"
-#endif
 #include "mozilla/TouchEvents.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/Hal.h"
@@ -49,6 +47,7 @@
 #include "nativewindow/FakeSurfaceComposer.h"
 #endif
 #include "nsAppShell.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/Touch.h"
 #include "nsGkAtoms.h"
 #include "nsIObserverService.h"
@@ -76,6 +75,7 @@
 #include "mozilla/layers/CompositorParent.h"
 #include "GeckoTouchDispatcher.h"
 
+#undef LOG
 #define LOG(args...)                                            \
     __android_log_print(ANDROID_LOG_INFO, "Gonk" , ## args)
 #ifdef VERBOSE_LOG_ENABLED
@@ -243,7 +243,7 @@ private:
 
     void DispatchKeyDownEvent();
     void DispatchKeyUpEvent();
-    nsEventStatus DispatchKeyEventInternal(uint32_t aEventMessage);
+    nsEventStatus DispatchKeyEventInternal(EventMessage aEventMessage);
 };
 
 KeyEventDispatcher::KeyEventDispatcher(const UserInputData& aData,
@@ -295,10 +295,10 @@ KeyEventDispatcher::PrintableKeyValue() const
 }
 
 nsEventStatus
-KeyEventDispatcher::DispatchKeyEventInternal(uint32_t aEventMessage)
+KeyEventDispatcher::DispatchKeyEventInternal(EventMessage aEventMessage)
 {
     WidgetKeyboardEvent event(true, aEventMessage, nullptr);
-    if (aEventMessage == NS_KEY_PRESS) {
+    if (aEventMessage == eKeyPress) {
         // XXX If the charCode is not a printable character, the charCode
         //     should be computed without Ctrl/Alt/Meta modifiers.
         event.charCode = static_cast<uint32_t>(mChar);
@@ -316,7 +316,7 @@ KeyEventDispatcher::DispatchKeyEventInternal(uint32_t aEventMessage)
     event.modifiers = getDOMModifiers(mData.metaState);
     event.location = mDOMKeyLocation;
     event.time = mData.timeMs;
-    return nsWindow::DispatchInputEvent(event);
+    return nsWindow::DispatchKeyInput(event);
 }
 
 void
@@ -342,16 +342,16 @@ KeyEventDispatcher::Dispatch()
 void
 KeyEventDispatcher::DispatchKeyDownEvent()
 {
-    nsEventStatus status = DispatchKeyEventInternal(NS_KEY_DOWN);
+    nsEventStatus status = DispatchKeyEventInternal(eKeyDown);
     if (status != nsEventStatus_eConsumeNoDefault) {
-        DispatchKeyEventInternal(NS_KEY_PRESS);
+        DispatchKeyEventInternal(eKeyPress);
     }
 }
 
 void
 KeyEventDispatcher::DispatchKeyUpEvent()
 {
-    DispatchKeyEventInternal(NS_KEY_UP);
+    DispatchKeyEventInternal(eKeyUp);
 }
 
 class SwitchEventRunnable : public nsRunnable {
@@ -506,7 +506,7 @@ public:
         , mKeyEventsFiltered(false)
         , mPowerWakelock(false)
     {
-        mTouchDispatcher = new GeckoTouchDispatcher();
+        mTouchDispatcher = GeckoTouchDispatcher::GetInstance();
     }
 
     virtual void dump(String8& dump);
@@ -562,31 +562,38 @@ private:
 void
 GeckoInputReaderPolicy::setDisplayInfo()
 {
-    static_assert(nsIScreen::ROTATION_0_DEG ==
-                  DISPLAY_ORIENTATION_0,
+    static_assert(static_cast<int>(nsIScreen::ROTATION_0_DEG) ==
+                  static_cast<int>(DISPLAY_ORIENTATION_0),
                   "Orientation enums not matched!");
-    static_assert(nsIScreen::ROTATION_90_DEG ==
-                  DISPLAY_ORIENTATION_90,
+    static_assert(static_cast<int>(nsIScreen::ROTATION_90_DEG) ==
+                  static_cast<int>(DISPLAY_ORIENTATION_90),
                   "Orientation enums not matched!");
-    static_assert(nsIScreen::ROTATION_180_DEG ==
-                  DISPLAY_ORIENTATION_180,
+    static_assert(static_cast<int>(nsIScreen::ROTATION_180_DEG) ==
+                  static_cast<int>(DISPLAY_ORIENTATION_180),
                   "Orientation enums not matched!");
-    static_assert(nsIScreen::ROTATION_270_DEG ==
-                  DISPLAY_ORIENTATION_270,
+    static_assert(static_cast<int>(nsIScreen::ROTATION_270_DEG) ==
+                  static_cast<int>(DISPLAY_ORIENTATION_270),
                   "Orientation enums not matched!");
+
+    nsRefPtr<nsScreenGonk> screen = nsScreenManagerGonk::GetPrimaryScreen();
+
+    uint32_t rotation = nsIScreen::ROTATION_0_DEG;
+    DebugOnly<nsresult> rv = screen->GetRotation(&rotation);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    nsIntRect screenBounds = screen->GetNaturalBounds();
 
     DisplayViewport viewport;
     viewport.displayId = 0;
-    viewport.orientation = nsScreenGonk::GetRotation();
-    viewport.physicalRight = viewport.deviceWidth = gScreenBounds.width;
-    viewport.physicalBottom = viewport.deviceHeight = gScreenBounds.height;
+    viewport.orientation = rotation;
+    viewport.physicalRight = viewport.deviceWidth = screenBounds.width;
+    viewport.physicalBottom = viewport.deviceHeight = screenBounds.height;
     if (viewport.orientation == DISPLAY_ORIENTATION_90 ||
         viewport.orientation == DISPLAY_ORIENTATION_270) {
-        viewport.logicalRight = gScreenBounds.height;
-        viewport.logicalBottom = gScreenBounds.width;
+        viewport.logicalRight = screenBounds.height;
+        viewport.logicalBottom = screenBounds.width;
     } else {
-        viewport.logicalRight = gScreenBounds.width;
-        viewport.logicalBottom = gScreenBounds.height;
+        viewport.logicalRight = screenBounds.width;
+        viewport.logicalBottom = screenBounds.height;
     }
     mConfig.setDisplayInfo(false, viewport);
 }
@@ -657,6 +664,7 @@ GeckoInputDispatcher::dispatchOnce()
 void
 GeckoInputDispatcher::notifyConfigurationChanged(const NotifyConfigurationChangedArgs*)
 {
+    gAppShell->CheckPowerKey();
 }
 
 void
@@ -837,8 +845,10 @@ nsAppShell::nsAppShell()
     : mNativeCallbackRequest(false)
     , mEnableDraw(false)
     , mHandlers()
+    , mPowerKeyChecked(false)
 {
     gAppShell = this;
+    Preferences::SetCString("b2g.safe_mode", "unset");
 }
 
 nsAppShell::~nsAppShell()
@@ -875,15 +885,12 @@ nsAppShell::Init()
 
     InitGonkMemoryPressureMonitoring();
 
-    if (XRE_GetProcessType() == GeckoProcessType_Default) {
+    if (XRE_IsParentProcess()) {
         printf("*****************************************************************\n");
         printf("***\n");
         printf("*** This is stdout. Most of the useful output will be in logcat.\n");
         printf("***\n");
         printf("*****************************************************************\n");
-#ifdef MOZ_OMX_DECODER
-        android::MediaResourceManagerService::instantiate();
-#endif
 #if ANDROID_VERSION >= 18 && (defined(MOZ_OMX_DECODER) || defined(MOZ_B2G_CAMERA))
         android::FakeSurfaceComposer::instantiate();
 #endif
@@ -910,6 +917,29 @@ nsAppShell::Init()
     return rv;
 }
 
+void
+nsAppShell::CheckPowerKey()
+{
+    if (mPowerKeyChecked) {
+        return;
+    }
+
+    uint32_t deviceId = 0;
+    int32_t powerState = AKEY_STATE_UNKNOWN;
+
+    // EventHub doesn't report the number of devices.
+    while (powerState != AKEY_STATE_DOWN && deviceId < 32) {
+        powerState = mEventHub->getKeyCodeState(deviceId++, AKEYCODE_POWER);
+    }
+
+    // If Power is pressed while we startup, mark safe mode.
+    // Consumers of the b2g.safe_mode preference need to listen on this
+    // preference change to prevent startup races.
+    Preferences::SetCString("b2g.safe_mode",
+                            (powerState == AKEY_STATE_DOWN) ? "yes" : "no");
+    mPowerKeyChecked = true;
+}
+
 NS_IMETHODIMP
 nsAppShell::Observe(nsISupports* aSubject,
                     const char* aTopic,
@@ -928,6 +958,10 @@ nsAppShell::Observe(nsISupports* aSubject,
             updateHeadphoneSwitch();
         }
         mEnableDraw = true;
+
+        // System is almost booting up. Stop the bootAnim now.
+        StopBootAnimation();
+
         NotifyEvent();
         return NS_OK;
     }
@@ -1053,5 +1087,6 @@ nsAppShell::NotifyScreenRotation()
     gAppShell->mReaderPolicy->setDisplayInfo();
     gAppShell->mReader->requestRefreshConfiguration(InputReaderConfiguration::CHANGE_DISPLAY_INFO);
 
-    hal::NotifyScreenConfigurationChange(nsScreenGonk::GetConfiguration());
+    nsRefPtr<nsScreenGonk> screen = nsScreenManagerGonk::GetPrimaryScreen();
+    hal::NotifyScreenConfigurationChange(screen->GetConfiguration());
 }

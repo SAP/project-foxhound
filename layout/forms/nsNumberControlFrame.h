@@ -20,15 +20,15 @@ class WidgetEvent;
 class WidgetGUIEvent;
 namespace dom {
 class HTMLInputElement;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 /**
  * This frame type is used for <input type=number>.
  */
 class nsNumberControlFrame final : public nsContainerFrame
-                                     , public nsIAnonymousContentCreator
-                                     , public nsITextControlFrame
+                                 , public nsIAnonymousContentCreator
+                                 , public nsITextControlFrame
 {
   friend nsIFrame*
   NS_NewNumberControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);

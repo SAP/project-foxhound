@@ -7,6 +7,8 @@
 #include "nsCacheService.h"
 #include "nsApplicationCacheService.h"
 #include "nsCRT.h"
+#include "mozIApplicationClearPrivateDataParams.h"
+#include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIObserverService.h"
 #include "nsILoadContextInfo.h"
@@ -236,19 +238,18 @@ private:
 
 NS_IMPL_ISUPPORTS(AppCacheClearDataObserver, nsIObserver)
 
-} // anonymous namespace
+} // namespace
 
 // Instantiates and registers AppCacheClearDataObserver for notifications
 void
 nsApplicationCacheService::AppClearDataObserverInit()
 {
-    nsCOMPtr<nsIObserverService> observerService =
-        do_GetService("@mozilla.org/observer-service;1");
-    if (observerService) {
-        nsRefPtr<AppCacheClearDataObserver> obs
-            = new AppCacheClearDataObserver();
-        observerService->AddObserver(obs, TOPIC_WEB_APP_CLEAR_DATA,
-                                     /*holdsWeak=*/ false);
-    }
+  nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
+  if (observerService) {
+    nsRefPtr<AppCacheClearDataObserver> obs
+      = new AppCacheClearDataObserver();
+    observerService->AddObserver(obs, TOPIC_WEB_APP_CLEAR_DATA,
+				 /*holdsWeak=*/ false);
+  }
 }
 

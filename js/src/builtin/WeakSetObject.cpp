@@ -21,9 +21,11 @@
 
 using namespace js;
 
+using mozilla::UniquePtr;
+
 const Class WeakSetObject::class_ = {
     "WeakSet",
-    JSCLASS_IMPLEMENTS_BARRIERS | JSCLASS_HAS_CACHED_PROTO(JSProto_WeakSet) |
+    JSCLASS_HAS_CACHED_PROTO(JSProto_WeakSet) |
     JSCLASS_HAS_RESERVED_SLOTS(WeakSetObject::RESERVED_SLOTS)
 };
 
@@ -43,13 +45,11 @@ JSObject*
 WeakSetObject::initClass(JSContext* cx, JSObject* obj)
 {
     Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
-    // Todo: WeakSet.prototype should not be a WeakSet!
-    Rooted<WeakSetObject*> proto(cx, global->createBlankPrototype<WeakSetObject>(cx));
+    RootedPlainObject proto(cx, NewBuiltinClassInstance<PlainObject>(cx));
     if (!proto)
         return nullptr;
-    proto->setReservedSlot(WEAKSET_MAP_SLOT, UndefinedValue());
 
-    Rooted<JSFunction*> ctor(cx, global->createConstructor(cx, construct, ClassName(JSProto_WeakSet, cx), 1));
+    Rooted<JSFunction*> ctor(cx, global->createConstructor(cx, construct, ClassName(JSProto_WeakSet, cx), 0));
     if (!ctor ||
         !LinkConstructorAndPrototype(cx, ctor, proto) ||
         !DefinePropertiesAndFunctions(cx, proto, properties, methods) ||
@@ -86,7 +86,7 @@ WeakSetObject::construct(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     if (!args.isConstructing()) {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_NOT_FUNCTION, "WeakSet");
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_FUNCTION, "WeakSet");
         return false;
     }
 
@@ -123,7 +123,11 @@ WeakSetObject::construct(JSContext* cx, unsigned argc, Value* vp)
 
             if (isOriginalAdder) {
                 if (keyVal.isPrimitive()) {
-                    JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_NOT_NONNULL_OBJECT);
+                    UniquePtr<char[], JS::FreePolicy> bytes =
+                        DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, keyVal, nullptr);
+                    if (!bytes)
+                        return false;
+                    JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_NONNULL_OBJECT, bytes.get());
                     return false;
                 }
 
@@ -150,7 +154,7 @@ WeakSetObject::construct(JSContext* cx, unsigned argc, Value* vp)
 
 
 JSObject*
-js_InitWeakSetClass(JSContext* cx, HandleObject obj)
+js::InitWeakSetClass(JSContext* cx, HandleObject obj)
 {
     return WeakSetObject::initClass(cx, obj);
 }

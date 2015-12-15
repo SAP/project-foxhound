@@ -181,7 +181,9 @@ class MOZ_STACK_CLASS NativeRegExpMacroAssembler : public RegExpMacroAssembler
     jit::Label stack_overflow_label_;
     jit::Label exit_with_exception_label_;
 
-    jit::GeneralRegisterSet savedNonVolatileRegisters;
+    // Set of registers which are used by the code generator, and as such which
+    // are saved.
+    jit::LiveGeneralRegisterSet savedNonVolatileRegisters;
 
     struct LabelPatch {
         // Once it is bound via BindBacktrack, |label| becomes null and
@@ -208,7 +210,7 @@ class MOZ_STACK_CLASS NativeRegExpMacroAssembler : public RegExpMacroAssembler
     // The frame_pointer-relative location of a regexp register.
     jit::Address register_location(int register_index) {
         checkRegister(register_index);
-        return jit::Address(jit::StackPointer, register_offset(register_index));
+        return jit::Address(masm.getStackPointer(), register_offset(register_index));
     }
 
     int32_t register_offset(int register_index) {

@@ -261,7 +261,7 @@ class RegisterAllocator
     LIRGraph& graph;
 
     // Pool of all registers that should be considered allocateable
-    RegisterSet allRegisters_;
+    AllocatableRegisterSet allRegisters_;
 
     // Computed data
     InstructionDataMap insData;
@@ -275,8 +275,12 @@ class RegisterAllocator
         if (mir->compilingAsmJS()) {
 #if defined(JS_CODEGEN_X64)
             allRegisters_.take(AnyRegister(HeapReg));
-#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
+#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS32)
             allRegisters_.take(AnyRegister(HeapReg));
+            allRegisters_.take(AnyRegister(GlobalReg));
+#elif defined(JS_CODEGEN_ARM64)
+            allRegisters_.take(AnyRegister(HeapReg));
+            allRegisters_.take(AnyRegister(HeapLenReg));
             allRegisters_.take(AnyRegister(GlobalReg));
 #endif
         } else {
@@ -334,12 +338,12 @@ class RegisterAllocator
 
     CodePosition minimalDefEnd(LNode* ins) {
         // Compute the shortest interval that captures vregs defined by ins.
-        // Watch for instructions that are followed by an OSI point and/or Nop.
+        // Watch for instructions that are followed by an OSI point.
         // If moves are introduced between the instruction and the OSI point then
         // safepoint information for the instruction may be incorrect.
         while (true) {
             LNode* next = insData[ins->id() + 1];
-            if (!next->isNop() && !next->isOsiPoint())
+            if (!next->isOsiPoint())
                 break;
             ins = next;
         }

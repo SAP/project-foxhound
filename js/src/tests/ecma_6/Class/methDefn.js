@@ -32,6 +32,9 @@ syntaxError("b = {a{}}");
 syntaxError("b = {a({}}");
 syntaxError("b = {a@(){}}");
 syntaxError("b = {a() => 0}");
+syntaxError("b = {a() void 0}");
+syntaxError("b = {a() 1}");
+syntaxError("b = {a() false}");
 
 b = {a(){return 5;}};
 assertEq(b.a(), 5);
@@ -115,6 +118,10 @@ assertEq(b.enumerable, true);
 assertEq(b.writable, true);
 assertEq(b.value(), 4);
 
+// prototype property
+assertEq(a.b.prototype, undefined);
+assertEq(a.b.hasOwnProperty("prototype"), false);
+
 // Defining several methods using eval.
 var code = "({";
 for (i = 0; i < 1000; i++)
@@ -164,6 +171,30 @@ a = {b(c){"use strict";return c;}};
 assertEq(a.b(1), 1);
 a = {["b"](c){"use strict";return c;}};
 assertEq(a.b(1), 1);
+
+// Allow strict-reserved names as methods in objects.
+// (Bug 1124362)
+a = { static() { return 4; } };
+assertEq(a.static(), 4);
+
+a = { get static() { return 4; } };
+assertEq(a.static, 4);
+
+a = { set static(x) { assertEq(x, 4); } };
+a.static = 4;
+
+function testStrictMode() {
+    "use strict";
+    var obj = { static() { return 4; } };
+    assertEq(obj.static(), 4);
+
+    obj = { get static() { return 4; } };
+    assertEq(obj.static, 4);
+
+    obj = { set static(x) { assertEq(x, 4); } };
+    obj.static = 4;
+}
+testStrictMode();
 
 // Tests provided by benvie in the bug to distinguish from ES5 desugar.
 assertEq(({ method() {} }).method.name, "method");

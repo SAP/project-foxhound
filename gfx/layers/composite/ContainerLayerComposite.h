@@ -10,9 +10,8 @@
 #include "mozilla/Attributes.h"         // for override
 #include "mozilla/UniquePtr.h"          // for UniquePtr
 #include "mozilla/layers/LayerManagerComposite.h"
-
-struct nsIntPoint;
-struct nsIntRect;
+#include "mozilla/gfx/Rect.h"
+#include "gfxVR.h"
 
 namespace mozilla {
 namespace layers {
@@ -39,7 +38,7 @@ class ContainerLayerComposite : public ContainerLayer,
   template<class ContainerT>
   friend void RenderIntermediate(ContainerT* aContainer,
                    LayerManagerComposite* aManager,
-                   const nsIntRect& aClipRect,
+                   const gfx::IntRect& aClipRect,
                    RefPtr<CompositingRenderTarget> surface);
   template<class ContainerT>
   friend RefPtr<CompositingRenderTarget>
@@ -52,6 +51,9 @@ class ContainerLayerComposite : public ContainerLayer,
                         LayerManagerComposite* aManager,
                         const RenderTargetIntRect& aClipRect);
 
+  template<class ContainerT>
+  void RenderMinimap(ContainerT* aContainer, LayerManagerComposite* aManager,
+                     const RenderTargetIntRect& aClipRect, Layer* aLayer);
 public:
   explicit ContainerLayerComposite(LayerManagerComposite *aManager);
 
@@ -77,7 +79,7 @@ public:
 
   LayerComposite* GetFirstChildComposite() override;
 
-  virtual void RenderLayer(const nsIntRect& aClipRect) override;
+  virtual void RenderLayer(const gfx::IntRect& aClipRect) override;
   virtual void Prepare(const RenderTargetIntRect& aClipRect) override;
 
   virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) override
@@ -114,6 +116,7 @@ public:
   UniquePtr<PreparedData> mPrepared;
 
   RefPtr<CompositingRenderTarget> mLastIntermediateSurface;
+  RefPtr<gfx::VRHMDRenderingSupport::RenderTargetSet> mVRRenderTargetSet;
 };
 
 class RefLayerComposite : public RefLayer,
@@ -126,26 +129,26 @@ class RefLayerComposite : public RefLayer,
   template<class ContainerT>
   friend void ContainerRender(ContainerT* aContainer,
                               LayerManagerComposite* aManager,
-                              const nsIntRect& aClipRect);
+                              const gfx::IntRect& aClipRect);
   template<class ContainerT>
   friend void RenderLayers(ContainerT* aContainer,
                            LayerManagerComposite* aManager,
-                           const nsIntRect& aClipRect);
+                           const gfx::IntRect& aClipRect);
   template<class ContainerT>
   friend void RenderIntermediate(ContainerT* aContainer,
                    LayerManagerComposite* aManager,
-                   const nsIntRect& aClipRect,
+                   const gfx::IntRect& aClipRect,
                    RefPtr<CompositingRenderTarget> surface);
   template<class ContainerT>
   friend RefPtr<CompositingRenderTarget>
   CreateTemporaryTargetAndCopyFromBackground(ContainerT* aContainer,
                                              LayerManagerComposite* aManager,
-                                             const nsIntRect& aClipRect);
+                                             const gfx::IntRect& aClipRect);
   template<class ContainerT>
   friend RefPtr<CompositingRenderTarget>
   CreateTemporaryTarget(ContainerT* aContainer,
                         LayerManagerComposite* aManager,
-                        const nsIntRect& aClipRect);
+                        const gfx::IntRect& aClipRect);
 
 public:
   explicit RefLayerComposite(LayerManagerComposite *aManager);
@@ -161,7 +164,7 @@ public:
 
   LayerComposite* GetFirstChildComposite() override;
 
-  virtual void RenderLayer(const nsIntRect& aClipRect) override;
+  virtual void RenderLayer(const gfx::IntRect& aClipRect) override;
   virtual void Prepare(const RenderTargetIntRect& aClipRect) override;
 
   virtual void ComputeEffectiveTransforms(const gfx::Matrix4x4& aTransformToSurface) override
@@ -179,9 +182,10 @@ public:
   virtual const char* Name() const override { return "RefLayerComposite"; }
   UniquePtr<PreparedData> mPrepared;
   RefPtr<CompositingRenderTarget> mLastIntermediateSurface;
+  nsRefPtr<gfx::VRHMDRenderingSupport::RenderTargetSet> mVRRenderTargetSet;
 };
 
-} /* layers */
-} /* mozilla */
+} // namespace layers
+} // namespace mozilla
 
 #endif /* GFX_ContainerLayerComposite_H */

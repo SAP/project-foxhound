@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
 * License, v. 2.0. If a copy of the MPL was not distributed with this file,
 * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -114,7 +116,7 @@ MobileConnectionChild::GetSupportedNetworkTypes(int32_t** aTypes,
 
   *aLength = mSupportedNetworkTypes.Length();
   *aTypes =
-    static_cast<int32_t*>(nsMemory::Alloc((*aLength) * sizeof(int32_t)));
+    static_cast<int32_t*>(moz_xmalloc((*aLength) * sizeof(int32_t)));
   NS_ENSURE_TRUE(*aTypes, NS_ERROR_OUT_OF_MEMORY);
 
   for (uint32_t i = 0; i < *aLength; i++) {
@@ -274,9 +276,10 @@ MobileConnectionChild::ChangeCallBarringPassword(const nsAString& aPin,
 
 NS_IMETHODIMP
 MobileConnectionChild::SetCallWaiting(bool aEnabled,
+                                      uint16_t aServiceClass,
                                       nsIMobileConnectionCallback* aCallback)
 {
-  return SendRequest(SetCallWaitingRequest(aEnabled), aCallback)
+  return SendRequest(SetCallWaitingRequest(aEnabled, aServiceClass), aCallback)
     ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -549,6 +552,12 @@ MobileConnectionRequestChild::DoReply(const MobileConnectionReplySuccessCallBarr
 }
 
 bool
+MobileConnectionRequestChild::DoReply(const MobileConnectionReplySuccessCallWaiting& aReply)
+{
+  return NS_SUCCEEDED(mRequestCallback->NotifyGetCallWaitingSuccess(aReply.serviceClass()));
+}
+
+bool
 MobileConnectionRequestChild::DoReply(const MobileConnectionReplySuccessClirStatus& aReply)
 {
   return NS_SUCCEEDED(mRequestCallback->NotifyGetClirStatusSuccess(aReply.n(),
@@ -589,6 +598,8 @@ MobileConnectionRequestChild::Recv__delete__(const MobileConnectionReply& aReply
       return DoReply(aReply.get_MobileConnectionReplySuccessCallForwarding());
     case MobileConnectionReply::TMobileConnectionReplySuccessCallBarring:
       return DoReply(aReply.get_MobileConnectionReplySuccessCallBarring());
+    case MobileConnectionReply::TMobileConnectionReplySuccessCallWaiting:
+      return DoReply(aReply.get_MobileConnectionReplySuccessCallWaiting());
     case MobileConnectionReply::TMobileConnectionReplySuccessClirStatus:
       return DoReply(aReply.get_MobileConnectionReplySuccessClirStatus());
     case MobileConnectionReply::TMobileConnectionReplySuccessPreferredNetworkType:

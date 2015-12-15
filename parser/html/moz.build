@@ -90,8 +90,6 @@ UNIFIED_SOURCES += [
     'nsParserUtils.cpp',
 ]
 
-MSVC_ENABLE_PGO = True
-
 FINAL_LIBRARY = 'xul'
 
 # DEFINES['ENABLE_VOID_MENUITEM'] = True
@@ -99,5 +97,3 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '/dom/base',
 ]
-
-FAIL_ON_WARNINGS = True

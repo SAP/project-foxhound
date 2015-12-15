@@ -33,9 +33,9 @@ Cu.import("resource://gre/modules/systemlibs.js");
 const NFC_ENABLED = libcutils.property_get("ro.moz.nfc.enabled", "false") === "true";
 
 // set to true to in nfc_consts.js to see debug messages
-let DEBUG = NFC.DEBUG_CONTENT_HELPER;
+var DEBUG = NFC.DEBUG_CONTENT_HELPER;
 
-let debug;
+var debug;
 function updateDebug() {
   if (DEBUG || NFC.DEBUG_CONTENT_HELPER) {
     debug = function (s) {
@@ -71,6 +71,8 @@ function NfcContentHelper() {
   Services.obs.addObserver(this, "xpcom-shutdown", false);
 
   this._requestMap = [];
+  this.initDOMRequestHelper(/* window */ null, NFC_IPC_MSG_NAMES);
+  this.eventListeners = {};
 }
 
 NfcContentHelper.prototype = {
@@ -88,78 +90,11 @@ NfcContentHelper.prototype = {
                        Ci.nsINfcBrowserAPI]
   }),
 
-  _window: null,
   _requestMap: null,
-  _rfState: null,
-  _tabId: null,
-  eventListener: null,
-
-  init: function init(aWindow) {
-    if (aWindow == null) {
-      throw Components.Exception("Can't get window object",
-                                  Cr.NS_ERROR_UNEXPECTED);
-    }
-    this._window = aWindow;
-    this.initDOMRequestHelper(this._window, NFC_IPC_MSG_NAMES);
-
-    if (!NFC.DEBUG_CONTENT_HELPER && this._window.navigator.mozSettings) {
-      let lock = this._window.navigator.mozSettings.createLock();
-      var nfcDebug = lock.get(NFC.SETTING_NFC_DEBUG);
-      nfcDebug.onsuccess = function _nfcDebug() {
-        DEBUG = nfcDebug.result[NFC.SETTING_NFC_DEBUG];
-        updateDebug();
-      };
-    }
-
-    let info = cpmm.sendSyncMessage("NFC:QueryInfo")[0];
-    this._rfState = info.rfState;
-
-    // For now, we assume app will run in oop mode so we can get
-    // tab id for each app. Fix bug 1116449 if we are going to
-    // support in-process mode.
-    let docShell = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                          .getInterface(Ci.nsIWebNavigation)
-                          .QueryInterface(Ci.nsIDocShell);
-    try {
-      this._tabId = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                            .getInterface(Ci.nsITabChild)
-                            .tabId;
-    } catch(e) {
-      // Only parent process does not have tab id, so in this case
-      // NfcContentHelper is used by system app. Use -1(tabId) to
-      // indicate its system app.
-      let inParent = Cc["@mozilla.org/xre/app-info;1"]
-                       .getService(Ci.nsIXULRuntime)
-                       .processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-      if (inParent) {
-        this._tabId = Ci.nsINfcBrowserAPI.SYSTEM_APP_ID;
-      } else {
-        throw Components.Exception("Can't get tab id in child process",
-                                   Cr.NS_ERROR_UNEXPECTED);
-      }
-    }
-  },
+  eventListeners: null,
 
   queryRFState: function queryRFState() {
-    return this._rfState;
-  },
-
-  encodeNDEFRecords: function encodeNDEFRecords(records) {
-    if (!Array.isArray(records)) {
-      return null;
-    }
-
-    let encodedRecords = [];
-    for (let i = 0; i < records.length; i++) {
-      let record = records[i];
-      encodedRecords.push({
-        tnf: record.tnf,
-        type: record.type || undefined,
-        id: record.id || undefined,
-        payload: record.payload || undefined,
-      });
-    }
-    return encodedRecords;
+    return cpmm.sendSyncMessage("NFC:QueryInfo")[0].rfState;
   },
 
   setFocusApp: function setFocusApp(tabId, isFocus) {
@@ -180,15 +115,15 @@ NfcContentHelper.prototype = {
     });
   },
 
-  writeNDEF: function writeNDEF(records, sessionToken, callback) {
+  writeNDEF: function writeNDEF(records, isP2P, sessionToken, callback) {
     let requestId = callback.getCallbackId();
     this._requestMap[requestId] = callback;
 
-    let encodedRecords = this.encodeNDEFRecords(records);
     cpmm.sendAsyncMessage("NFC:WriteNDEF", {
       requestId: requestId,
       sessionToken: sessionToken,
-      records: encodedRecords
+      records: records,
+      isP2P: isP2P
     });
   },
 
@@ -242,9 +177,27 @@ NfcContentHelper.prototype = {
     });
   },
 
-  addEventListener: function addEventListener(listener) {
-    this.eventListener = listener;
-    cpmm.sendAsyncMessage("NFC:AddEventListener", { tabId: this._tabId });
+  addEventListener: function addEventListener(listener, tabId) {
+    let _window = listener.window;
+
+    // TODO Bug 1166210 - enable NFC debug for child process.
+    if (!NFC.DEBUG_CONTENT_HELPER && _window.navigator.mozSettings) {
+      let lock = _window.navigator.mozSettings.createLock();
+      var nfcDebug = lock.get(NFC.SETTING_NFC_DEBUG);
+      nfcDebug.onsuccess = function _nfcDebug() {
+        DEBUG = nfcDebug.result[NFC.SETTING_NFC_DEBUG];
+        updateDebug();
+      };
+    }
+
+    this.eventListeners[tabId] = listener;
+    cpmm.sendAsyncMessage("NFC:AddEventListener", { tabId: tabId });
+  },
+
+  removeEventListener: function removeEventListener(tabId) {
+    delete this.eventListeners[tabId];
+
+    cpmm.sendAsyncMessage("NFC:RemoveEventListener", { tabId: tabId });
   },
 
   registerTargetForPeerReady: function registerTargetForPeerReady(appId) {
@@ -283,11 +236,10 @@ NfcContentHelper.prototype = {
   callDefaultFoundHandler: function callDefaultFoundHandler(sessionToken,
                                                             isP2P,
                                                             records) {
-    let encodedRecords = this.encodeNDEFRecords(records);
     cpmm.sendAsyncMessage("NFC:CallDefaultFoundHandler",
                           {sessionToken: sessionToken,
                            isP2P: isP2P,
-                           records: encodedRecords});
+                           records: records});
   },
 
   callDefaultLostHandler: function callDefaultLostHandler(sessionToken, isP2P) {
@@ -336,45 +288,7 @@ NfcContentHelper.prototype = {
         this.handleGeneralResponse(result);
         break;
       case "NFC:DOMEvent":
-        switch (result.event) {
-          case NFC.PEER_EVENT_READY:
-            this.eventListener.notifyPeerFound(result.sessionToken, /* isPeerReady */ true);
-            break;
-          case NFC.PEER_EVENT_FOUND:
-            this.eventListener.notifyPeerFound(result.sessionToken);
-            break;
-          case NFC.PEER_EVENT_LOST:
-            this.eventListener.notifyPeerLost(result.sessionToken);
-            break;
-          case NFC.TAG_EVENT_FOUND:
-            let ndefInfo = null;
-            if (result.tagType !== undefined &&
-                result.maxNDEFSize !== undefined &&
-                result.isReadOnly !== undefined &&
-                result.isFormatable !== undefined) {
-              ndefInfo = new TagNDEFInfo(result.tagType,
-                                         result.maxNDEFSize,
-                                         result.isReadOnly,
-                                         result.isFormatable);
-            }
-
-            let tagInfo = new TagInfo(result.techList, result.tagId);
-            this.eventListener.notifyTagFound(result.sessionToken,
-                                              tagInfo,
-                                              ndefInfo,
-                                              result.records);
-            break;
-          case NFC.TAG_EVENT_LOST:
-            this.eventListener.notifyTagLost(result.sessionToken);
-            break;
-          case NFC.RF_EVENT_STATE_CHANGED:
-            this._rfState = result.rfState;
-            this.eventListener.notifyRFStateChanged(this._rfState);
-            break;
-          case NFC.FOCUS_CHANGED:
-            this.eventListener.notifyFocusChanged(result.focus);
-            break;
-        }
+        this.handleDOMEvent(result);
         break;
     }
   },
@@ -418,16 +332,7 @@ NfcContentHelper.prototype = {
       return;
     }
 
-    let ndefMsg = new this._window.Array();
-    let records = result.records;
-    for (let i = 0; i < records.length; i++) {
-      let record = records[i];
-      ndefMsg.push(new this._window.MozNDEFRecord({tnf: record.tnf,
-                                                   type: record.type,
-                                                   id: record.id,
-                                                   payload: record.payload}));
-    }
-    callback.notifySuccessWithNDEFRecords(ndefMsg);
+    callback.notifySuccessWithNDEFRecords(result.records);
   },
 
   handleCheckP2PRegistrationResponse: function handleCheckP2PRegistrationResponse(result) {
@@ -460,6 +365,53 @@ NfcContentHelper.prototype = {
 
     callback.notifySuccessWithByteArray(result.response);
   },
+
+  handleDOMEvent: function handleDOMEvent(result) {
+    let listener = this.eventListeners[result.tabId];
+    if (!listener) {
+      debug("no listener for tabId " + result.tabId);
+      return;
+    }
+
+    switch (result.event) {
+      case NFC.PEER_EVENT_READY:
+        listener.notifyPeerFound(result.sessionToken, /* isPeerReady */ true);
+        break;
+      case NFC.PEER_EVENT_FOUND:
+        listener.notifyPeerFound(result.sessionToken);
+        break;
+      case NFC.PEER_EVENT_LOST:
+        listener.notifyPeerLost(result.sessionToken);
+        break;
+      case NFC.TAG_EVENT_FOUND:
+        let ndefInfo = null;
+        if (result.tagType !== undefined &&
+            result.maxNDEFSize !== undefined &&
+            result.isReadOnly !== undefined &&
+            result.isFormatable !== undefined) {
+          ndefInfo = new TagNDEFInfo(result.tagType,
+                                     result.maxNDEFSize,
+                                     result.isReadOnly,
+                                     result.isFormatable);
+        }
+
+        let tagInfo = new TagInfo(result.techList, result.tagId);
+        listener.notifyTagFound(result.sessionToken,
+                                          tagInfo,
+                                          ndefInfo,
+                                          result.records);
+        break;
+      case NFC.TAG_EVENT_LOST:
+        listener.notifyTagLost(result.sessionToken);
+        break;
+      case NFC.RF_EVENT_STATE_CHANGED:
+        listener.notifyRFStateChanged(result.rfState);
+        break;
+      case NFC.FOCUS_CHANGED:
+        listener.notifyFocusChanged(result.focus);
+        break;
+    }
+  }
 };
 
 function TagNDEFInfo(tagType, maxNDEFSize, isReadOnly, isFormatable) {

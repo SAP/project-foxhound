@@ -17,7 +17,6 @@
 'use strict';
 
 var host = require('../util/host');
-var Promise = require('../util/promise').Promise;
 var Status = require('./types').Status;
 var Conversion = require('./types').Conversion;
 
@@ -61,7 +60,7 @@ exports.items = [
           }.bind(this));
 
           // Try to create a URL with the current page as a base ref
-          if (context.environment.window) {
+          if ('window' in context.environment) {
             try {
               var base = context.environment.window.location.href;
               var localized = host.createUrl(arg.text, base);

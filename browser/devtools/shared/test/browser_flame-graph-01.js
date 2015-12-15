@@ -3,8 +3,7 @@
 
 // Tests that flame graph widget works properly.
 
-let {FlameGraph} = Cu.import("resource:///modules/devtools/FlameGraph.jsm", {});
-let {Promise} = devtools.require("resource://gre/modules/Promise.jsm");
+var {FlameGraph} = require("devtools/shared/widgets/FlameGraph");
 
 add_task(function*() {
   yield promiseTab("about:blank");
@@ -26,7 +25,7 @@ function* performTest() {
 
   testGraph(host, graph);
 
-  graph.destroy();
+  yield graph.destroy();
   host.destroy();
 }
 

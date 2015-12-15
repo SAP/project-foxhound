@@ -21,9 +21,6 @@
     COMPONENT(CONSOLESERVICE, nsConsoleServiceConstructor)
     COMPONENT(ATOMSERVICE, nsAtomServiceConstructor)
     COMPONENT(OBSERVERSERVICE, nsObserverService::Create)
-#ifdef MOZ_VISUAL_EVENT_TRACER
-    COMPONENT(VISUALEVENTTRACER, VisualEventTracerConstructor)
-#endif
 
     COMPONENT(TIMER, nsTimerImplConstructor)
 
@@ -82,4 +79,3 @@
     COMPONENT(CYCLE_COLLECTOR_LOGGER, nsCycleCollectorLoggerConstructor)
     COMPONENT(MESSAGE_LOOP, nsMessageLoopConstructor)
     COMPONENT(STATUS_REPORTER_MANAGER, nsStatusReporterManagerConstructor)
-    COMPONENT(COMPARTMENT_INFO, nsCompartmentInfoConstructor)

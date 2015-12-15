@@ -37,10 +37,6 @@ using mozilla::dom::NodeInfo;
 NodeInfo::~NodeInfo()
 {
   mOwnerManager->RemoveNodeInfo(this);
-
-  NS_RELEASE(mInner.mName);
-  NS_IF_RELEASE(mInner.mPrefix);
-  NS_IF_RELEASE(mInner.mExtraName);
 }
 
 NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
@@ -51,12 +47,12 @@ NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
   MOZ_ASSERT(aOwnerManager, "Invalid aOwnerManager");
 
   // Initialize mInner
-  NS_ADDREF(mInner.mName = aName);
-  NS_IF_ADDREF(mInner.mPrefix = aPrefix);
+  mInner.mName = aName;
+  mInner.mPrefix = aPrefix;
   mInner.mNamespaceID = aNamespaceID;
   mInner.mNodeType = aNodeType;
   mOwnerManager = aOwnerManager;
-  NS_IF_ADDREF(mInner.mExtraName = aExtraName);
+  mInner.mExtraName = aExtraName;
 
   mDocument = aOwnerManager->GetDocument();
 
@@ -83,7 +79,7 @@ NodeInfo::NodeInfo(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
       // Correct the case for HTML
       if (aNodeType == nsIDOMNode::ELEMENT_NODE &&
           aNamespaceID == kNameSpaceID_XHTML && GetDocument() &&
-          GetDocument()->IsHTML()) {
+          GetDocument()->IsHTMLDocument()) {
         nsContentUtils::ASCIIToUpper(mQualifiedName, mNodeName);
       } else {
         mNodeName = mQualifiedName;
@@ -115,7 +111,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(NodeInfo)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_0(NodeInfo)
 
-static const char* kNSURIs[] = {
+static const char* kNodeInfoNSURIs[] = {
   " ([none])",
   " (xmlns)",
   " (xml)",
@@ -133,8 +129,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(NodeInfo)
     char name[72];
     uint32_t nsid = tmp->NamespaceID();
     nsAtomCString localName(tmp->NameAtom());
-    if (nsid < ArrayLength(kNSURIs)) {
-      PR_snprintf(name, sizeof(name), "NodeInfo%s %s", kNSURIs[nsid],
+    if (nsid < ArrayLength(kNodeInfoNSURIs)) {
+      PR_snprintf(name, sizeof(name), "NodeInfo%s %s", kNodeInfoNSURIs[nsid],
                   localName.get());
     }
     else {

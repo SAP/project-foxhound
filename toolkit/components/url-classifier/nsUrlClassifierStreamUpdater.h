@@ -12,7 +12,7 @@
 #include "nsIObserver.h"
 #include "nsIUrlClassifierStreamUpdater.h"
 #include "nsIStreamListener.h"
-#include "nsNetUtil.h"
+#include "nsIChannel.h"
 #include "nsTArray.h"
 #include "nsITimer.h"
 #include "mozilla/Attributes.h"
@@ -21,11 +21,11 @@
 class nsIURI;
 
 class nsUrlClassifierStreamUpdater final : public nsIUrlClassifierStreamUpdater,
-                                               public nsIUrlClassifierUpdateObserver,
-                                               public nsIStreamListener,
-                                               public nsIObserver,
-                                               public nsIInterfaceRequestor,
-                                               public nsITimerCallback
+                                           public nsIUrlClassifierUpdateObserver,
+                                           public nsIStreamListener,
+                                           public nsIObserver,
+                                           public nsIInterfaceRequestor,
+                                           public nsITimerCallback
 {
 public:
   nsUrlClassifierStreamUpdater();

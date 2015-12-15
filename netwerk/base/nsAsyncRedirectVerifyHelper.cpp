@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
@@ -14,7 +14,6 @@
 #include "nsIAsyncVerifyRedirectCallback.h"
 
 #undef LOG
-#ifdef PR_LOGGING
 static PRLogModuleInfo *
 GetRedirectLog()
 {
@@ -23,10 +22,7 @@ GetRedirectLog()
         sLog = PR_NewLogModule("nsRedirect");
     return sLog;
 }
-#define LOG(args) PR_LOG(GetRedirectLog(), PR_LOG_DEBUG, args)
-#else
-#define LOG(args)
-#endif
+#define LOG(args) MOZ_LOG(GetRedirectLog(), mozilla::LogLevel::Debug, args)
 
 NS_IMPL_ISUPPORTS(nsAsyncRedirectVerifyHelper,
                   nsIAsyncVerifyRedirectCallback,
@@ -182,7 +178,7 @@ nsAsyncRedirectVerifyHelper::ExplicitCallback(nsresult result)
     mWaitingForRedirectCallback = false;
 
     // Now, dispatch the callback on the event-target which called Init()
-    nsRefPtr<nsIRunnable> event =
+    nsCOMPtr<nsIRunnable> event =
         new nsAsyncVerifyRedirectCallbackEvent(callback, result);
     if (!event) {
         NS_WARNING("nsAsyncRedirectVerifyHelper::ExplicitCallback() "

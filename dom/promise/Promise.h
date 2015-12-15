@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +21,16 @@
 #include "js/TypeDecls.h"
 #include "jspubtd.h"
 
+// Bug 1083361 introduces a new mechanism for tracking uncaught
+// rejections. This #define serves to track down the parts of code
+// that need to be removed once clients have been put together
+// to take advantage of the new mechanism. New code should not
+// depend on code #ifdefed to this #define.
+#define DOM_PROMISE_DEPRECATED_REPORTING 1
+
+#if defined(DOM_PROMISE_DEPRECATED_REPORTING)
 #include "mozilla/dom/workers/bindings/WorkerFeature.h"
+#endif // defined(DOM_PROMISE_DEPRECATED_REPORTING)
 
 class nsIGlobalObject;
 
@@ -37,10 +46,13 @@ class PromiseNativeHandler;
 class PromiseDebugging;
 
 class Promise;
+
+#if defined(DOM_PROMISE_DEPRECATED_REPORTING)
 class PromiseReportRejectFeature : public workers::WorkerFeature
 {
-  // The Promise that owns this feature.
-  Promise* mPromise;
+  // PromiseReportRejectFeature is held by an nsAutoPtr on the Promise which
+  // means that this object will be destroyed before the Promise is destroyed.
+  Promise* MOZ_NON_OWNING_REF mPromise;
 
 public:
   explicit PromiseReportRejectFeature(Promise* aPromise)
@@ -52,6 +64,7 @@ public:
   virtual bool
   Notify(JSContext* aCx, workers::Status aStatus) override;
 };
+#endif // defined(DOM_PROMISE_DEPRECATED_REPORTING)
 
 #define NS_PROMISE_IID \
   { 0x1b8d6215, 0x3e67, 0x43ba, \
@@ -62,28 +75,34 @@ class Promise : public nsISupports,
                 public SupportsWeakPtr<Promise>
 {
   friend class NativePromiseCallback;
+  friend class PromiseReactionJob;
   friend class PromiseResolverTask;
   friend class PromiseTask;
+#if defined(DOM_PROMISE_DEPRECATED_REPORTING)
   friend class PromiseReportRejectFeature;
+#endif // defined(DOM_PROMISE_DEPRECATED_REPORTING)
   friend class PromiseWorkerProxy;
   friend class PromiseWorkerProxyRunnable;
   friend class RejectPromiseCallback;
   friend class ResolvePromiseCallback;
-  friend class ThenableResolverTask;
+  friend class PromiseResolveThenableJob;
+  friend class FastPromiseResolveThenableJob;
   friend class WrapperPromiseCallback;
 
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_PROMISE_IID)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Promise)
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(Promise)
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS(Promise)
+  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(Promise)
 
   // Promise creation tries to create a JS reflector for the Promise, so is
   // fallible.  Furthermore, we don't want to do JS-wrapping on a 0-refcount
   // object, so we addref before doing that and return the addrefed pointer
   // here.
   static already_AddRefed<Promise>
-  Create(nsIGlobalObject* aGlobal, ErrorResult& aRv);
+  Create(nsIGlobalObject* aGlobal, ErrorResult& aRv,
+         // Passing null for aDesiredProto will use Promise.prototype.
+         JS::Handle<JSObject*> aDesiredProto = nullptr);
 
   typedef void (Promise::*MaybeFunc)(JSContext* aCx,
                                      JS::Handle<JS::Value> aValue);
@@ -138,11 +157,11 @@ public:
   }
 
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   static already_AddRefed<Promise>
   Constructor(const GlobalObject& aGlobal, PromiseInit& aInit,
-              ErrorResult& aRv);
+              ErrorResult& aRv, JS::Handle<JSObject*> aDesiredProto);
 
   static already_AddRefed<Promise>
   Resolve(const GlobalObject& aGlobal,
@@ -172,6 +191,10 @@ public:
       const Sequence<JS::Value>& aIterable, ErrorResult& aRv);
 
   static already_AddRefed<Promise>
+  All(const GlobalObject& aGlobal,
+      const nsTArray<nsRefPtr<Promise>>& aPromiseList, ErrorResult& aRv);
+
+  static already_AddRefed<Promise>
   Race(const GlobalObject& aGlobal,
        const Sequence<JS::Value>& aIterable, ErrorResult& aRv);
 
@@ -181,6 +204,13 @@ public:
 
   JSCompartment* Compartment() const;
 
+  // Return a unique-to-the-process identifier for this Promise.
+  uint64_t GetID();
+
+  // Queue an async microtask to current main or worker thread.
+  static void
+  DispatchToMicroTask(nsIRunnable* aRunnable);
+
 protected:
   // Do NOT call this unless you're Promise::Create.  I wish we could enforce
   // that from inside this class too, somehow.
@@ -188,12 +218,9 @@ protected:
 
   virtual ~Promise();
 
-  // Queue an async microtask to current main or worker thread.
-  static void
-  DispatchToMicroTask(nsIRunnable* aRunnable);
-
-  // Do JS-wrapping after Promise creation.
-  void CreateWrapper(ErrorResult& aRv);
+  // Do JS-wrapping after Promise creation.  Passing null for aDesiredProto will
+  // use the default prototype for the sort of Promise we have.
+  void CreateWrapper(JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv);
 
   // Create the JS resolving functions of resolve() and reject(). And provide
   // references to the two functions by calling PromiseInit passed from Promise
@@ -207,6 +234,21 @@ protected:
   }
 
   void GetDependentPromises(nsTArray<nsRefPtr<Promise>>& aPromises);
+
+  bool IsLastInChain() const
+  {
+    return mIsLastInChain;
+  }
+
+  void SetNotifiedAsUncaught()
+  {
+    mWasNotifiedAsUncaught = true;
+  }
+
+  bool WasNotifiedAsUncaught() const
+  {
+    return mWasNotifiedAsUncaught;
+  }
 
 private:
   friend class PromiseDebugging;
@@ -232,8 +274,8 @@ private:
   // This method enqueues promise's resolve/reject callbacks with promise's
   // result. It's executed when the resolver.resolve() or resolver.reject() is
   // called or when the promise already has a result and new callbacks are
-  // appended by then(), catch() or done().
-  void EnqueueCallbackTasks();
+  // appended by then() or catch().
+  void TriggerPromiseReactions();
 
   void Settle(JS::Handle<JS::Value> aValue, Promise::PromiseState aState);
   void MaybeSettle(JS::Handle<JS::Value> aValue, Promise::PromiseState aState);
@@ -241,6 +283,7 @@ private:
   void AppendCallbacks(PromiseCallback* aResolveCallback,
                        PromiseCallback* aRejectCallback);
 
+#if defined(DOM_PROMISE_DEPRECATED_REPORTING)
   // If we have been rejected and our mResult is a JS exception,
   // report it to the error console.
   // Use MaybeReportRejectedOnce() for actual calls.
@@ -251,6 +294,7 @@ private:
     RemoveFeature();
     mResult.setUndefined();
   }
+#endif // defined(DOM_PROMISE_DEPRECATED_REPORTING)
 
   void MaybeResolveInternal(JSContext* aCx,
                             JS::Handle<JS::Value> aValue);
@@ -291,15 +335,16 @@ private:
   JSCallbackThenableRejecter(JSContext *aCx, unsigned aArgc, JS::Value *aVp);
 
   static JSObject*
-  CreateFunction(JSContext* aCx, JSObject* aParent, Promise* aPromise,
-                int32_t aTask);
+  CreateFunction(JSContext* aCx, Promise* aPromise, int32_t aTask);
 
   static JSObject*
   CreateThenableFunction(JSContext* aCx, Promise* aPromise, uint32_t aTask);
 
   void HandleException(JSContext* aCx);
 
+#if defined(DOM_PROMISE_DEPRECATED_REPORTING)
   void RemoveFeature();
+#endif // defined(DOM_PROMISE_DEPRECATED_REPORTING)
 
   // Capture the current stack and store it in aTarget.  If false is
   // returned, an exception is presumably pending on aCx.
@@ -325,21 +370,38 @@ private:
   // have a fulfillment stack.
   JS::Heap<JSObject*> mFullfillmentStack;
   PromiseState mState;
-  bool mHadRejectCallback;
 
-  bool mResolvePending;
+#if defined(DOM_PROMISE_DEPRECATED_REPORTING)
+  bool mHadRejectCallback;
 
   // If a rejected promise on a worker has no reject callbacks attached, it
   // needs to know when the worker is shutting down, to report the error on the
   // console before the worker's context is deleted. This feature is used for
   // that purpose.
   nsAutoPtr<PromiseReportRejectFeature> mFeature;
+#endif // defined(DOM_PROMISE_DEPRECATED_REPORTING)
+
+  bool mTaskPending;
+  bool mResolvePending;
+
+  // `true` if this Promise is the last in the chain, or `false` if
+  // another Promise has been created from this one by a call to
+  // `then`, `all`, `race`, etc.
+  bool mIsLastInChain;
+
+  // `true` if PromiseDebugging has already notified at least one observer that
+  // this promise was left uncaught, `false` otherwise.
+  bool mWasNotifiedAsUncaught;
 
   // The time when this promise was created.
   TimeStamp mCreationTimestamp;
 
   // The time when this promise transitioned out of the pending state.
   TimeStamp mSettlementTimestamp;
+
+  // Once `GetID()` has been called, a unique-to-the-process identifier for this
+  // promise. Until then, `0`.
+  uint64_t mID;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Promise, NS_PROMISE_IID)

@@ -13,8 +13,6 @@
 #include "nsDebug.h"                    // for NS_ASSERTION
 #include "nsRegion.h"                   // for nsIntRegion
 
-class gfxContext;
-
 namespace mozilla {
 namespace layers {
 
@@ -44,7 +42,7 @@ protected:
   }
 };
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif

@@ -78,7 +78,7 @@ public:
     mozilla::ErrorResult error;
     nsRefPtr<mozilla::dom::CSSValue> val = GetPropertyCSSValue(aProp, error);
     if (error.Failed()) {
-      return error.ErrorCode();
+      return error.StealNSResult();
     }
 
     nsCOMPtr<nsIDOMCSSValue> xpVal = do_QueryInterface(val);
@@ -155,9 +155,9 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsICSSDeclaration, NS_ICSSDECLARATION_IID)
 
 #define NS_DECL_NSICSSDECLARATION                                   \
   NS_IMETHOD GetPropertyValue(const nsCSSProperty aPropID,          \
-                              nsAString& aValue) override;      \
+                              nsAString& aValue) override;          \
   NS_IMETHOD GetAuthoredPropertyValue(const nsAString& aPropName,   \
-                                      nsAString& aValue) override; \
+                                      nsAString& aValue) override;  \
   NS_IMETHOD SetPropertyValue(const nsCSSProperty aPropID,          \
                               const nsAString& aValue) override;
 

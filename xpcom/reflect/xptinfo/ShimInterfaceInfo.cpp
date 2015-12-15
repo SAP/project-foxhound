@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -32,7 +32,6 @@
 #include "nsIDOMDataChannel.h"
 #endif
 #include "nsIDOMDataTransfer.h"
-#include "nsIDOMDeviceStorage.h"
 #include "nsIDOMDOMCursor.h"
 #include "nsIDOMDOMException.h"
 #include "nsIDOMDOMRequest.h"
@@ -53,14 +52,12 @@
 #include "nsIDOMHTMLAnchorElement.h"
 #include "nsIDOMHTMLAppletElement.h"
 #include "nsIDOMHTMLAreaElement.h"
-#include "nsIDOMHTMLBRElement.h"
 #include "nsIDOMHTMLBaseElement.h"
 #include "nsIDOMHTMLBodyElement.h"
 #include "nsIDOMHTMLButtonElement.h"
 #include "nsIDOMHTMLCanvasElement.h"
 #include "nsIDOMHTMLCollection.h"
 #include "nsIDOMHTMLDirectoryElement.h"
-#include "nsIDOMHTMLDivElement.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsIDOMHTMLEmbedElement.h"
@@ -70,7 +67,6 @@
 #include "nsIDOMHTMLFrameSetElement.h"
 #include "nsIDOMHTMLHRElement.h"
 #include "nsIDOMHTMLHeadElement.h"
-#include "nsIDOMHTMLHeadingElement.h"
 #include "nsIDOMHTMLHtmlElement.h"
 #include "nsIDOMHTMLIFrameElement.h"
 #include "nsIDOMHTMLImageElement.h"
@@ -95,11 +91,8 @@
 #include "nsIDOMHTMLSelectElement.h"
 #include "nsIDOMHTMLSourceElement.h"
 #include "nsIDOMHTMLStyleElement.h"
-#include "nsIDOMHTMLTableCaptionElem.h"
 #include "nsIDOMHTMLTableCellElement.h"
-#include "nsIDOMHTMLTableElement.h"
 #include "nsIDOMHTMLTextAreaElement.h"
-#include "nsIDOMHTMLTitleElement.h"
 #include "nsIDOMHTMLUListElement.h"
 #include "nsIDOMKeyEvent.h"
 #include "nsIDOMMediaError.h"
@@ -193,14 +186,12 @@
 #include "mozilla/dom/HTMLAnchorElementBinding.h"
 #include "mozilla/dom/HTMLAppletElementBinding.h"
 #include "mozilla/dom/HTMLAreaElementBinding.h"
-#include "mozilla/dom/HTMLBRElementBinding.h"
 #include "mozilla/dom/HTMLBaseElementBinding.h"
 #include "mozilla/dom/HTMLBodyElementBinding.h"
 #include "mozilla/dom/HTMLButtonElementBinding.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
 #include "mozilla/dom/HTMLDirectoryElementBinding.h"
-#include "mozilla/dom/HTMLDivElementBinding.h"
 #include "mozilla/dom/HTMLDocumentBinding.h"
 #include "mozilla/dom/HTMLElementBinding.h"
 #include "mozilla/dom/HTMLEmbedElementBinding.h"
@@ -210,7 +201,6 @@
 #include "mozilla/dom/HTMLFrameSetElementBinding.h"
 #include "mozilla/dom/HTMLHRElementBinding.h"
 #include "mozilla/dom/HTMLHeadElementBinding.h"
-#include "mozilla/dom/HTMLHeadingElementBinding.h"
 #include "mozilla/dom/HTMLHtmlElementBinding.h"
 #include "mozilla/dom/HTMLIFrameElementBinding.h"
 #include "mozilla/dom/HTMLImageElementBinding.h"
@@ -235,11 +225,8 @@
 #include "mozilla/dom/HTMLSelectElementBinding.h"
 #include "mozilla/dom/HTMLSourceElementBinding.h"
 #include "mozilla/dom/HTMLStyleElementBinding.h"
-#include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 #include "mozilla/dom/HTMLTableCellElementBinding.h"
-#include "mozilla/dom/HTMLTableElementBinding.h"
 #include "mozilla/dom/HTMLTextAreaElementBinding.h"
-#include "mozilla/dom/HTMLTitleElementBinding.h"
 #include "mozilla/dom/HTMLUListElementBinding.h"
 #include "mozilla/dom/KeyEventBinding.h"
 #include "mozilla/dom/ListBoxObjectBinding.h"
@@ -293,9 +280,14 @@
 using namespace mozilla;
 
 struct ComponentsInterfaceShimEntry {
+  MOZ_CONSTEXPR
+  ComponentsInterfaceShimEntry(const char* aName, const nsIID& aIID,
+                               const dom::NativePropertyHooks* aNativePropHooks)
+    : geckoName(aName), iid(aIID), nativePropHooks(aNativePropHooks) {}
+
   const char *geckoName;
-  nsIID iid;
-  const mozilla::dom::NativePropertyHooks* nativePropHooks;
+  const nsIID& iid;
+  const dom::NativePropertyHooks* nativePropHooks;
 };
 
 #define DEFINE_SHIM_WITH_CUSTOM_INTERFACE(geckoName, domName) \
@@ -365,7 +357,6 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
 #endif
   DEFINE_SHIM(DataContainerEvent),
   DEFINE_SHIM(DataTransfer),
-  DEFINE_SHIM(DeviceStorage),
   DEFINE_SHIM(DOMCursor),
   DEFINE_SHIM(DOMException),
   DEFINE_SHIM(DOMRequest),
@@ -386,14 +377,12 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
   DEFINE_SHIM(HTMLAnchorElement),
   DEFINE_SHIM(HTMLAppletElement),
   DEFINE_SHIM(HTMLAreaElement),
-  DEFINE_SHIM(HTMLBRElement),
   DEFINE_SHIM(HTMLBaseElement),
   DEFINE_SHIM(HTMLBodyElement),
   DEFINE_SHIM(HTMLButtonElement),
   DEFINE_SHIM(HTMLCanvasElement),
   DEFINE_SHIM(HTMLCollection),
   DEFINE_SHIM(HTMLDirectoryElement),
-  DEFINE_SHIM(HTMLDivElement),
   DEFINE_SHIM(HTMLDocument),
   DEFINE_SHIM(HTMLElement),
   DEFINE_SHIM(HTMLEmbedElement),
@@ -403,7 +392,6 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
   DEFINE_SHIM(HTMLFrameSetElement),
   DEFINE_SHIM(HTMLHRElement),
   DEFINE_SHIM(HTMLHeadElement),
-  DEFINE_SHIM(HTMLHeadingElement),
   DEFINE_SHIM(HTMLHtmlElement),
   DEFINE_SHIM(HTMLIFrameElement),
   DEFINE_SHIM(HTMLImageElement),
@@ -428,11 +416,8 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
   DEFINE_SHIM(HTMLSelectElement),
   DEFINE_SHIM(HTMLSourceElement),
   DEFINE_SHIM(HTMLStyleElement),
-  DEFINE_SHIM(HTMLTableCaptionElement),
   DEFINE_SHIM(HTMLTableCellElement),
-  DEFINE_SHIM(HTMLTableElement),
   DEFINE_SHIM(HTMLTextAreaElement),
-  DEFINE_SHIM(HTMLTitleElement),
   DEFINE_SHIM(HTMLUListElement),
   DEFINE_SHIM(KeyEvent),
   DEFINE_SHIM_WITH_CUSTOM_INTERFACE(nsIListBoxObject, ListBoxObject),
@@ -541,6 +526,13 @@ NS_IMETHODIMP
 ShimInterfaceInfo::IsBuiltinClass(bool* aRetVal)
 {
     *aRetVal = true;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+ShimInterfaceInfo::IsMainProcessScriptableOnly(bool* aRetVal)
+{
+    *aRetVal = false;
     return NS_OK;
 }
 

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,8 +33,8 @@
 namespace mozilla {
 namespace dom {
 class Element;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 
 class nsBaseContentList : public nsINodeList
@@ -87,7 +88,7 @@ public:
 
   virtual int32_t IndexOf(nsIContent *aContent, bool aDoFlush);
 
-  virtual JSObject* WrapObject(JSContext *cx)
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
     override = 0;
 
   void SetCapacity(uint32_t aCapacity)
@@ -125,7 +126,7 @@ public:
   {
     return mRoot;
   }
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 protected:
   virtual ~nsSimpleContentList() {}
@@ -251,7 +252,7 @@ public:
 
   // nsWrapperCache
   using nsWrapperCache::GetWrapperPreserveColor;
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 protected:
   virtual ~nsContentList();
 
@@ -536,7 +537,7 @@ public:
 #endif
   }
 
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 #ifdef DEBUG
   static const ContentListType sType;
@@ -560,7 +561,7 @@ public:
 #endif
   }
 
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 #ifdef DEBUG
   static const ContentListType sType;

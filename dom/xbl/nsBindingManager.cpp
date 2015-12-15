@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=79: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +13,6 @@
 #include "nsIURL.h"
 #include "nsIChannel.h"
 #include "nsXPIDLString.h"
-#include "nsNetUtil.h"
 #include "plstr.h"
 #include "nsIContent.h"
 #include "nsIDOMElement.h"
@@ -50,6 +49,7 @@
 #include "nsThreadUtils.h"
 #include "mozilla/dom/NodeListBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/unused.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -250,7 +250,7 @@ nsBindingManager::ResolveTag(nsIContent* aContent, int32_t* aNameSpaceID)
   }
 
   *aNameSpaceID = aContent->GetNameSpaceID();
-  return aContent->Tag();
+  return aContent->NodeInfo()->NameAtom();
 }
 
 nsresult
@@ -405,7 +405,9 @@ nsBindingManager::DoProcessAttachedQueue()
     }
     if (NS_SUCCEEDED(rv)) {
       NS_ADDREF_THIS();
-      NS_ADDREF(timer);
+      // We drop our reference to the timer here, since the timer callback is
+      // responsible for releasing the object.
+      unused << timer.forget().take();
     }
   }
 
@@ -448,38 +450,29 @@ nsBindingManager::ProcessAttachedQueue(uint32_t aSkipSize)
 }
 
 // Keep bindings and bound elements alive while executing detached handlers.
-struct BindingTableReadClosure
-{
-  nsCOMArray<nsIContent> mBoundElements;
-  nsBindingList          mBindings;
-};
-
-static PLDHashOperator
-AccumulateBindingsToDetach(nsRefPtrHashKey<nsIContent> *aKey,
-                           void* aClosure)
-{
-  nsXBLBinding *binding = aKey->GetKey()->GetXBLBinding();
-  BindingTableReadClosure* closure =
-    static_cast<BindingTableReadClosure*>(aClosure);
-  if (binding && closure->mBindings.AppendElement(binding)) {
-    if (!closure->mBoundElements.AppendObject(binding->GetBoundElement())) {
-      closure->mBindings.RemoveElementAt(closure->mBindings.Length() - 1);
-    }
-  }
-  return PL_DHASH_NEXT;
-}
-
 void
 nsBindingManager::ExecuteDetachedHandlers()
 {
   // Walk our hashtable of bindings.
-  if (mBoundContentSet) {
-    BindingTableReadClosure closure;
-    mBoundContentSet->EnumerateEntries(AccumulateBindingsToDetach, &closure);
-    uint32_t i, count = closure.mBindings.Length();
-    for (i = 0; i < count; ++i) {
-      closure.mBindings[i]->ExecuteDetachedHandler();
+  if (!mBoundContentSet) {
+    return;
+  }
+
+  nsCOMArray<nsIContent> boundElements;
+  nsBindingList bindings;
+
+  for (auto iter = mBoundContentSet->Iter(); !iter.Done(); iter.Next()) {
+    nsXBLBinding* binding = iter.Get()->GetKey()->GetXBLBinding();
+    if (binding && bindings.AppendElement(binding)) {
+      if (!boundElements.AppendObject(binding->GetBoundElement())) {
+        bindings.RemoveElementAt(bindings.Length() - 1);
+      }
     }
+  }
+
+  uint32_t i, count = bindings.Length();
+  for (i = 0; i < count; ++i) {
+    bindings[i]->ExecuteDetachedHandler();
   }
 }
 
@@ -545,28 +538,26 @@ nsBindingManager::RemoveLoadingDocListener(nsIURI* aURL)
   }
 }
 
-static PLDHashOperator
-MarkForDeath(nsRefPtrHashKey<nsIContent> *aKey, void* aClosure)
-{
-  nsXBLBinding *binding = aKey->GetKey()->GetXBLBinding();
-
-  if (binding->MarkedForDeath())
-    return PL_DHASH_NEXT; // Already marked for death.
-
-  nsAutoCString path;
-  binding->PrototypeBinding()->DocURI()->GetPath(path);
-
-  if (!strncmp(path.get(), "/skin", 5))
-    binding->MarkForDeath();
-
-  return PL_DHASH_NEXT;
-}
-
 void
 nsBindingManager::FlushSkinBindings()
 {
-  if (mBoundContentSet) {
-    mBoundContentSet->EnumerateEntries(MarkForDeath, nullptr);
+  if (!mBoundContentSet) {
+    return;
+  }
+
+  for (auto iter = mBoundContentSet->Iter(); !iter.Done(); iter.Next()) {
+    nsXBLBinding* binding = iter.Get()->GetKey()->GetXBLBinding();
+
+    if (binding->MarkedForDeath()) {
+      continue;
+    }
+
+    nsAutoCString path;
+    binding->PrototypeBinding()->DocURI()->GetPath(path);
+
+    if (!strncmp(path.get(), "/skin", 5)) {
+      binding->MarkForDeath();
+    }
   }
 }
 
@@ -729,40 +720,27 @@ nsBindingManager::WalkRules(nsIStyleRuleProcessor::EnumFunc aFunc,
 
 typedef nsTHashtable<nsPtrHashKey<nsIStyleRuleProcessor> > RuleProcessorSet;
 
-static PLDHashOperator
-EnumRuleProcessors(nsRefPtrHashKey<nsIContent> *aKey, void* aClosure)
+static RuleProcessorSet*
+GetContentSetRuleProcessors(nsTHashtable<nsRefPtrHashKey<nsIContent>>* aContentSet)
 {
-  nsIContent *boundContent = aKey->GetKey();
-  nsAutoPtr<RuleProcessorSet> *set = static_cast<nsAutoPtr<RuleProcessorSet>*>(aClosure);
-  for (nsXBLBinding *binding = boundContent->GetXBLBinding(); binding;
-       binding = binding->GetBaseBinding()) {
-    nsIStyleRuleProcessor *ruleProc =
-      binding->PrototypeBinding()->GetRuleProcessor();
-    if (ruleProc) {
-      if (!(*set)) {
-        *set = new RuleProcessorSet;
+  RuleProcessorSet* set = nullptr;
+
+  for (auto iter = aContentSet->Iter(); !iter.Done(); iter.Next()) {
+    nsIContent* boundContent = iter.Get()->GetKey();
+    for (nsXBLBinding* binding = boundContent->GetXBLBinding(); binding;
+         binding = binding->GetBaseBinding()) {
+      nsIStyleRuleProcessor* ruleProc =
+        binding->PrototypeBinding()->GetRuleProcessor();
+      if (ruleProc) {
+        if (!set) {
+          set = new RuleProcessorSet;
+        }
+        set->PutEntry(ruleProc);
       }
-      (*set)->PutEntry(ruleProc);
     }
   }
-  return PL_DHASH_NEXT;
-}
 
-struct WalkAllRulesData {
-  nsIStyleRuleProcessor::EnumFunc mFunc;
-  ElementDependentRuleProcessorData* mData;
-};
-
-static PLDHashOperator
-EnumWalkAllRules(nsPtrHashKey<nsIStyleRuleProcessor> *aKey, void* aClosure)
-{
-  nsIStyleRuleProcessor *ruleProcessor = aKey->GetKey();
-
-  WalkAllRulesData *data = static_cast<WalkAllRulesData*>(aClosure);
-
-  (*(data->mFunc))(ruleProcessor, data->mData);
-
-  return PL_DHASH_NEXT;
+  return set;
 }
 
 void
@@ -774,31 +752,15 @@ nsBindingManager::WalkAllRules(nsIStyleRuleProcessor::EnumFunc aFunc,
   }
 
   nsAutoPtr<RuleProcessorSet> set;
-  mBoundContentSet->EnumerateEntries(EnumRuleProcessors, &set);
-  if (!set)
+  set = GetContentSetRuleProcessors(mBoundContentSet);
+  if (!set) {
     return;
+  }
 
-  WalkAllRulesData data = { aFunc, aData };
-  set->EnumerateEntries(EnumWalkAllRules, &data);
-}
-
-struct MediumFeaturesChangedData {
-  nsPresContext *mPresContext;
-  bool *mRulesChanged;
-};
-
-static PLDHashOperator
-EnumMediumFeaturesChanged(nsPtrHashKey<nsIStyleRuleProcessor> *aKey, void* aClosure)
-{
-  nsIStyleRuleProcessor *ruleProcessor = aKey->GetKey();
-
-  MediumFeaturesChangedData *data =
-    static_cast<MediumFeaturesChangedData*>(aClosure);
-
-  bool thisChanged = ruleProcessor->MediumFeaturesChanged(data->mPresContext);
-  *data->mRulesChanged = *data->mRulesChanged || thisChanged;
-
-  return PL_DHASH_NEXT;
+  for (auto iter = set->Iter(); !iter.Done(); iter.Next()) {
+    nsIStyleRuleProcessor* ruleProcessor = iter.Get()->GetKey();
+    (*(aFunc))(ruleProcessor, aData);
+  }
 }
 
 nsresult
@@ -811,34 +773,33 @@ nsBindingManager::MediumFeaturesChanged(nsPresContext* aPresContext,
   }
 
   nsAutoPtr<RuleProcessorSet> set;
-  mBoundContentSet->EnumerateEntries(EnumRuleProcessors, &set);
+  set = GetContentSetRuleProcessors(mBoundContentSet);
   if (!set) {
     return NS_OK;
   }
 
-  MediumFeaturesChangedData data = { aPresContext, aRulesChanged };
-  set->EnumerateEntries(EnumMediumFeaturesChanged, &data);
-  return NS_OK;
-}
-
-static PLDHashOperator
-EnumAppendAllSheets(nsRefPtrHashKey<nsIContent> *aKey, void* aClosure)
-{
-  nsIContent *boundContent = aKey->GetKey();
-  nsTArray<CSSStyleSheet*>* array =
-    static_cast<nsTArray<CSSStyleSheet*>*>(aClosure);
-  for (nsXBLBinding *binding = boundContent->GetXBLBinding(); binding;
-       binding = binding->GetBaseBinding()) {
-    binding->PrototypeBinding()->AppendStyleSheetsTo(*array);
+  for (auto iter = set->Iter(); !iter.Done(); iter.Next()) {
+    nsIStyleRuleProcessor* ruleProcessor = iter.Get()->GetKey();
+    bool thisChanged = ruleProcessor->MediumFeaturesChanged(aPresContext);
+    *aRulesChanged = *aRulesChanged || thisChanged;
   }
-  return PL_DHASH_NEXT;
+
+  return NS_OK;
 }
 
 void
 nsBindingManager::AppendAllSheets(nsTArray<CSSStyleSheet*>& aArray)
 {
-  if (mBoundContentSet) {
-    mBoundContentSet->EnumerateEntries(EnumAppendAllSheets, &aArray);
+  if (!mBoundContentSet) {
+    return;
+  }
+
+  for (auto iter = mBoundContentSet->Iter(); !iter.Done(); iter.Next()) {
+    nsIContent* boundContent = iter.Get()->GetKey();
+    for (nsXBLBinding* binding = boundContent->GetXBLBinding(); binding;
+         binding = binding->GetBaseBinding()) {
+      binding->PrototypeBinding()->AppendStyleSheetsTo(aArray);
+    }
   }
 }
 

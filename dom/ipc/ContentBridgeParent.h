@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,20 +10,25 @@
 #include "mozilla/dom/PContentBridgeParent.h"
 #include "mozilla/dom/nsIContentParent.h"
 #include "mozilla/dom/ipc/IdType.h"
+#include "nsIObserver.h"
 
 namespace mozilla {
 namespace dom {
 
 class ContentBridgeParent : public PContentBridgeParent
                           , public nsIContentParent
+                          , public nsIObserver
 {
 public:
   explicit ContentBridgeParent(Transport* aTransport);
 
   NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
   void DeferredDestroy();
+  virtual bool IsContentBridgeParent() override { return true; }
+  void NotifyTabDestroyed();
 
   static ContentBridgeParent*
   Create(Transport* aTransport, ProcessId aOtherProcess);
@@ -77,7 +82,7 @@ protected:
                                const ClonedMessageData& aData,
                                InfallibleTArray<jsipc::CpowEntry>&& aCpows,
                                const IPC::Principal& aPrincipal,
-                               InfallibleTArray<nsString>* aRetvals) override;
+                               nsTArray<StructuredCloneData>* aRetvals) override;
   virtual bool RecvAsyncMessage(const nsString& aMsg,
                                 const ClonedMessageData& aData,
                                 InfallibleTArray<jsipc::CpowEntry>&& aCpows,
@@ -114,7 +119,7 @@ private:
   friend class ContentParent;
 };
 
-} // dom
-} // mozilla
+} // namespace dom
+} // namespace mozilla
 
 #endif // mozilla_dom_ContentBridgeParent_h

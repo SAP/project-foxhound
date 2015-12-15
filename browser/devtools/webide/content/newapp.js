@@ -12,14 +12,15 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ZipUtils", "resource://gre/modules/ZipUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Downloads", "resource://gre/modules/Downloads.jsm");
 
-const {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools;
+const {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 const {FileUtils} = Cu.import("resource://gre/modules/FileUtils.jsm");
 const {AppProjects} = require("devtools/app-manager/app-projects");
-const APP_CREATOR_LIST = "devtools.webide.templatesURL";
 const {AppManager} = require("devtools/webide/app-manager");
-const {GetTemplatesJSON} = require("devtools/webide/remote-resources");
+const {getJSON} = require("devtools/shared/getjson");
 
-let gTemplateList = null;
+const TEMPLATES_URL = "devtools.webide.templatesURL";
+
+var gTemplateList = null;
 
 // See bug 989619
 console.log = console.log.bind(console);
@@ -30,11 +31,11 @@ window.addEventListener("load", function onLoad() {
   window.removeEventListener("load", onLoad);
   let projectNameNode = document.querySelector("#project-name");
   projectNameNode.addEventListener("input", canValidate, true);
-  getJSON();
+  getTemplatesJSON();
 }, true);
 
-function getJSON() {
-  GetTemplatesJSON().then(list => {
+function getTemplatesJSON() {
+  getJSON(TEMPLATES_URL).then(list => {
     if (!Array.isArray(list)) {
       throw new Error("JSON response not an array");
     }
@@ -128,12 +129,14 @@ function doOK() {
 
   // Create subfolder with fs-friendly name of project
   let subfolder = projectName.replace(/[\\/:*?"<>|]/g, '').toLowerCase();
+  let win = Services.wm.getMostRecentWindow("devtools:webide");
   folder.append(subfolder);
 
   try {
     folder.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   } catch(e) {
-    console.error(e);
+    win.UI.reportError("error_folderCreationFailed");
+    window.close();
     return false;
   }
 
@@ -153,11 +156,11 @@ function doOK() {
     target.remove(false);
     AppProjects.addPackaged(folder).then((project) => {
       window.arguments[0].location = project.location;
-      AppManager.validateProject(project).then(() => {
+      AppManager.validateAndUpdateProject(project).then(() => {
         if (project.manifest) {
           project.manifest.name = projectName;
           AppManager.writeManifest(project).then(() => {
-            AppManager.validateProject(project).then(
+            AppManager.validateAndUpdateProject(project).then(
               () => {window.close()}, bail)
           }, bail)
         } else {

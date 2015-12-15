@@ -13,6 +13,7 @@ const Cc = Components.classes;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Promise", "resource://gre/modules/Promise.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Screenshot", "resource://gre/modules/Screenshot.jsm");
 
 this.EXPORTED_SYMBOLS = ["LogCapture"];
 
@@ -23,7 +24,7 @@ function debug(msg) {
   dump("LogCapture.jsm: " + msg + "\n");
 }
 
-let LogCapture = {
+var LogCapture = {
   ensureLoaded: function() {
     if (!this.ctypes) {
       this.load();
@@ -184,6 +185,35 @@ let LogCapture = {
     dumper.dumpMemoryReportsToNamedFile(file, function() {
       deferred.resolve(file);
     }, null, false);
+
+    return deferred.promise;
+  },
+
+  /**
+   * Dumping screenshot, returning a Promise. Will be resolved with the content
+   * as an ArrayBuffer.
+   */
+  getScreenshot: function() {
+    let deferred = Promise.defer();
+    try {
+      this.ensureLoaded();
+
+      let fr = Cc["@mozilla.org/files/filereader;1"]
+                  .createInstance(Ci.nsIDOMFileReader);
+
+      fr.onload = function(evt) {
+        deferred.resolve(new Uint8Array(evt.target.result));
+      };
+
+      fr.onerror = function(evt) {
+        deferred.reject(evt);
+      };
+
+      fr.readAsArrayBuffer(Screenshot.get());
+    } catch(e) {
+      // We pass any errors through to the deferred Promise
+      deferred.reject(e);
+    }
 
     return deferred.promise;
   }

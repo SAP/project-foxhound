@@ -45,6 +45,15 @@ function prefillAlertInfo() {
       gAlertListener = window.arguments[9];
     case 9:
       gReplacedWindow = window.arguments[8];
+    case 8:
+      if (window.arguments[7]) {
+        document.getElementById('alertTitleLabel').setAttribute('lang', window.arguments[7]);
+        document.getElementById('alertTextLabel').setAttribute('lang', window.arguments[7]);
+      }
+    case 7:
+      if (window.arguments[6]) {
+        document.getElementById('alertNotification').style.direction = window.arguments[6];
+      }
     case 6:
       gOrigin = window.arguments[5];
     case 5:
@@ -88,17 +97,19 @@ function onAlertLoad() {
 
   if (Services.prefs.getBoolPref("alerts.disableSlidingEffect")) {
     setTimeout(function() { window.close(); }, ALERT_DURATION_IMMEDIATE);
-    return;
+  } else {
+    let alertBox = document.getElementById("alertBox");
+    alertBox.addEventListener("animationend", function hideAlert(event) {
+      if (event.animationName == "alert-animation") {
+        alertBox.removeEventListener("animationend", hideAlert, false);
+        window.close();
+      }
+    }, false);
+    alertBox.setAttribute("animate", true);
   }
 
-  let alertBox = document.getElementById("alertBox");
-  alertBox.addEventListener("animationend", function hideAlert(event) {
-    if (event.animationName == "alert-animation") {
-      alertBox.removeEventListener("animationend", hideAlert, false);
-      window.close();
-    }
-  }, false);
-  alertBox.setAttribute("animate", true);
+  let ev = new CustomEvent("AlertActive", {bubbles: true, cancelable: true});
+  document.documentElement.dispatchEvent(ev);
 
   if (gAlertListener) {
     gAlertListener.observe(null, "alertshow", gAlertCookie);

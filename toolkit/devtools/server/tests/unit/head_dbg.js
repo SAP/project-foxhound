@@ -6,23 +6,158 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
+const CC = Components.Constructor;
 
-const { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+const { require, loader } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 const { worker } = Cu.import("resource://gre/modules/devtools/worker-loader.js", {})
-const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
+const promise = require("promise");
 const { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-const { promiseInvoke } = devtools.require("devtools/async-utils");
+const { promiseInvoke } = require("devtools/async-utils");
 
-const Services = devtools.require("Services");
+const Services = require("Services");
 // Always log packets when running tests. runxpcshelltests.py will throw
 // the output away anyway, unless you give it the --verbose flag.
 Services.prefs.setBoolPref("devtools.debugger.log", true);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
-const DevToolsUtils = devtools.require("devtools/toolkit/DevToolsUtils.js");
-const { DebuggerServer } = devtools.require("devtools/server/main");
+const DevToolsUtils = require("devtools/toolkit/DevToolsUtils.js");
+const { DebuggerServer } = require("devtools/server/main");
 const { DebuggerServer: WorkerDebuggerServer } = worker.require("devtools/server/main");
+const { DebuggerClient, ObjectClient } = require("devtools/toolkit/client/main");
+const { MemoryFront } = require("devtools/server/actors/memory");
+
+const { addDebuggerToGlobal } = Cu.import("resource://gre/modules/jsdebugger.jsm", {});
+
+const systemPrincipal = Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal);
+
+var loadSubScript = Cc[
+  '@mozilla.org/moz/jssubscript-loader;1'
+].getService(Ci.mozIJSSubScriptLoader).loadSubScript;
+
+/**
+ * Create a `run_test` function that runs the given generator in a task after
+ * having attached to a memory actor. When done, the memory actor is detached
+ * from, the client is finished, and the test is finished.
+ *
+ * @param {GeneratorFunction} testGeneratorFunction
+ *        The generator function is passed (DebuggerClient, MemoryFront)
+ *        arguments.
+ *
+ * @returns `run_test` function
+ */
+function makeMemoryActorTest(testGeneratorFunction) {
+  const TEST_GLOBAL_NAME = "test_MemoryActor";
+
+  return function run_test() {
+    do_test_pending();
+    startTestDebuggerServer(TEST_GLOBAL_NAME).then(client => {
+      getTestTab(client, TEST_GLOBAL_NAME, function (tabForm) {
+        Task.spawn(function* () {
+          try {
+            const memoryFront = new MemoryFront(client, tabForm);
+            yield memoryFront.attach();
+            yield* testGeneratorFunction(client, memoryFront);
+            yield memoryFront.detach();
+          } catch(err) {
+            DevToolsUtils.reportException("makeMemoryActorTest", err);
+            ok(false, "Got an error: " + err);
+          }
+
+          finishClient(client);
+        });
+      });
+    });
+  };
+}
+
+function createTestGlobal(name) {
+  let sandbox = Cu.Sandbox(
+    Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal)
+  );
+  sandbox.__name = name;
+  return sandbox;
+}
+
+function connect(client) {
+  dump("Connecting client.\n");
+  return new Promise(function (resolve) {
+    client.connect(function () {
+      resolve();
+    });
+  });
+}
+
+function close(client) {
+  dump("Closing client.\n");
+  return new Promise(function (resolve) {
+    client.close(function () {
+      resolve();
+    });
+  });
+}
+
+function listTabs(client) {
+  dump("Listing tabs.\n");
+  return rdpRequest(client, client.listTabs);
+}
+
+function findTab(tabs, title) {
+  dump("Finding tab with title '" + title + "'.\n");
+  for (let tab of tabs) {
+    if (tab.title === title) {
+      return tab;
+    }
+  }
+  return null;
+}
+
+function attachTab(client, tab) {
+  dump("Attaching to tab with title '" + tab.title + "'.\n");
+  return rdpRequest(client, client.attachTab, tab.actor);
+}
+
+function waitForNewSource(threadClient, url) {
+  dump("Waiting for new source with url '" + url + "'.\n");
+  return waitForEvent(threadClient, "newSource", function (packet) {
+    return packet.source.url === url;
+  });
+}
+
+function attachThread(tabClient, options = {}) {
+  dump("Attaching to thread.\n");
+  return rdpRequest(tabClient, tabClient.attachThread, options);
+}
+
+function resume(threadClient) {
+  dump("Resuming thread.\n");
+  return rdpRequest(threadClient, threadClient.resume);
+}
+
+function getSources(threadClient) {
+  dump("Getting sources.\n");
+  return rdpRequest(threadClient, threadClient.getSources);
+}
+
+function findSource(sources, url) {
+  dump("Finding source with url '" + url + "'.\n");
+  for (let source of sources) {
+    if (source.url === url) {
+      return source;
+    }
+  }
+  return null;
+}
+
+function waitForPause(threadClient) {
+  dump("Waiting for pause.\n");
+  return waitForEvent(threadClient, "paused");
+}
+
+function setBreakpoint(sourceClient, location) {
+  dump("Setting breakpoint.\n");
+  return rdpRequest(sourceClient, sourceClient.setBreakpoint, location);
+}
 
 function dumpn(msg) {
   dump("DBG-TEST: " + msg + "\n");
@@ -38,7 +173,6 @@ function tryImport(url) {
   }
 }
 
-tryImport("resource://gre/modules/devtools/dbg-client.jsm");
 tryImport("resource://gre/modules/devtools/Loader.jsm");
 tryImport("resource://gre/modules/devtools/Console.jsm");
 
@@ -76,48 +210,54 @@ function dbg_assert(cond, e) {
 
 // Register a console listener, so console messages don't just disappear
 // into the ether.
-let errorCount = 0;
-let listener = {
+var errorCount = 0;
+var listener = {
   observe: function (aMessage) {
-    errorCount++;
     try {
-      // If we've been given an nsIScriptError, then we can print out
-      // something nicely formatted, for tools like Emacs to pick up.
-      var scriptError = aMessage.QueryInterface(Ci.nsIScriptError);
-      dumpn(aMessage.sourceName + ":" + aMessage.lineNumber + ": " +
-            scriptErrorFlagsToKind(aMessage.flags) + ": " +
-            aMessage.errorMessage);
-      var string = aMessage.errorMessage;
-    } catch (x) {
-      // Be a little paranoid with message, as the whole goal here is to lose
-      // no information.
+      errorCount++;
       try {
-        var string = "" + aMessage.message;
+        // If we've been given an nsIScriptError, then we can print out
+        // something nicely formatted, for tools like Emacs to pick up.
+        var scriptError = aMessage.QueryInterface(Ci.nsIScriptError);
+        dumpn(aMessage.sourceName + ":" + aMessage.lineNumber + ": " +
+              scriptErrorFlagsToKind(aMessage.flags) + ": " +
+              aMessage.errorMessage);
+        var string = aMessage.errorMessage;
       } catch (x) {
-        var string = "<error converting error message to string>";
+        // Be a little paranoid with message, as the whole goal here is to lose
+        // no information.
+        try {
+          var string = "" + aMessage.message;
+        } catch (x) {
+          var string = "<error converting error message to string>";
+        }
       }
-    }
 
-    // Make sure we exit all nested event loops so that the test can finish.
-    while (DebuggerServer.xpcInspector
-           && DebuggerServer.xpcInspector.eventLoopNestLevel > 0) {
-      DebuggerServer.xpcInspector.exitNestedEventLoop();
-    }
+      // Make sure we exit all nested event loops so that the test can finish.
+      while (DebuggerServer
+             && DebuggerServer.xpcInspector
+             && DebuggerServer.xpcInspector.eventLoopNestLevel > 0) {
+        DebuggerServer.xpcInspector.exitNestedEventLoop();
+      }
 
-    // In the world before bug 997440, exceptions were getting lost because of
-    // the arbitrary JSContext being used in nsXPCWrappedJSClass::CallMethod.
-    // In the new world, the wanderers have returned. However, because of the,
-    // currently very-broken, exception reporting machinery in XPCWrappedJSClass
-    // these get reported as errors to the console, even if there's actually JS
-    // on the stack above that will catch them.
-    // If we throw an error here because of them our tests start failing.
-    // So, we'll just dump the message to the logs instead, to make sure the
-    // information isn't lost.
-    dumpn("head_dbg.js observed a console message: " + string);
+      // In the world before bug 997440, exceptions were getting lost because of
+      // the arbitrary JSContext being used in nsXPCWrappedJSClass::CallMethod.
+      // In the new world, the wanderers have returned. However, because of the,
+      // currently very-broken, exception reporting machinery in
+      // XPCWrappedJSClass these get reported as errors to the console, even if
+      // there's actually JS on the stack above that will catch them.  If we
+      // throw an error here because of them our tests start failing.  So, we'll
+      // just dump the message to the logs instead, to make sure the information
+      // isn't lost.
+      dumpn("head_dbg.js observed a console message: " + string);
+    } catch (_) {
+      // Swallow everything to avoid console reentrancy errors. We did our best
+      // to log above, but apparently that didn't cut it.
+    }
   }
 };
 
-let consoleService = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
+var consoleService = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
 consoleService.registerListener(listener);
 
 function check_except(func)
@@ -208,23 +348,49 @@ function initTestDebuggerServer(aServer = DebuggerServer)
   aServer.init(function () { return true; });
 }
 
-function initTestTracerServer(aServer = DebuggerServer)
-{
-  aServer.registerModule("xpcshell-test/testactors");
-  aServer.registerModule("devtools/server/actors/tracer", {
-    prefix: "trace",
-    constructor: "TracerActor",
-    type: { global: true, tab: true }
-  });
-  // Allow incoming connections.
-  aServer.init(function () { return true; });
+/**
+ * Initialize the testing debugger server with a tab whose title is |title|.
+ */
+function startTestDebuggerServer(title, server = DebuggerServer) {
+  initTestDebuggerServer(server);
+  addTestGlobal(title);
+  DebuggerServer.addTabActors();
+
+  let transport = DebuggerServer.connectPipe();
+  let client = new DebuggerClient(transport);
+
+  return connect(client).then(() => client);
 }
 
 function finishClient(aClient)
 {
   aClient.close(function() {
+    DebuggerServer.destroy();
     do_test_finished();
   });
+}
+
+// Create a server, connect to it and fetch tab actors for the parent process;
+// pass |aCallback| the debugger client and tab actor form with all actor IDs.
+function get_chrome_actors(callback)
+{
+  if (!DebuggerServer.initialized) {
+    DebuggerServer.init();
+    DebuggerServer.addBrowserActors();
+  }
+  DebuggerServer.allowChromeProcess = true;
+
+  let client = new DebuggerClient(DebuggerServer.connectPipe());
+  client.connect(() => {
+    client.getProcess().then(response => {
+      callback(client, response.form);
+    });
+  });
+}
+
+function getChromeActors(client, server = DebuggerServer) {
+  server.allowChromeProcess = true;
+  return client.getProcess().then(response => response.form);
 }
 
 /**
@@ -239,7 +405,7 @@ function getFileUrl(aName, aAllowMissing=false) {
  * Returns the full path of the file with the specified name in a
  * platform-independent and URL-like form.
  */
-function getFilePath(aName, aAllowMissing=false)
+function getFilePath(aName, aAllowMissing=false, aUsePlatformPathSeparator=false)
 {
   let file = do_get_file(aName, aAllowMissing);
   let path = Services.io.newFileURI(file).spec;
@@ -248,7 +414,14 @@ function getFilePath(aName, aAllowMissing=false)
       file instanceof Ci.nsILocalFileWin) {
     filePrePath += "/";
   }
-  return path.slice(filePrePath.length);
+
+  path = path.slice(filePrePath.length);
+
+  if (aUsePlatformPathSeparator && path.match(/^\w:/)) {
+    path = path.replace(/\//g, "\\");
+  }
+
+  return path;
 }
 
 Cu.import("resource://gre/modules/NetUtil.jsm");
@@ -375,28 +548,28 @@ function executeSoon(aFunc) {
 //
 // TODO: Remove this once bug 906232 is resolved
 //
-let do_check_true_old = do_check_true;
-let do_check_true = function (condition) {
+var do_check_true_old = do_check_true;
+var do_check_true = function (condition) {
   do_check_true_old(condition);
 };
 
-let do_check_false_old = do_check_false;
-let do_check_false = function (condition) {
+var do_check_false_old = do_check_false;
+var do_check_false = function (condition) {
   do_check_false_old(condition);
 };
 
-let do_check_eq_old = do_check_eq;
-let do_check_eq = function (left, right) {
+var do_check_eq_old = do_check_eq;
+var do_check_eq = function (left, right) {
   do_check_eq_old(left, right);
 };
 
-let do_check_neq_old = do_check_neq;
-let do_check_neq = function (left, right) {
+var do_check_neq_old = do_check_neq;
+var do_check_neq = function (left, right) {
   do_check_neq_old(left, right);
 };
 
-let do_check_matches_old = do_check_matches;
-let do_check_matches = function (pattern, value) {
+var do_check_matches_old = do_check_matches;
+var do_check_matches = function (pattern, value) {
   do_check_matches_old(pattern, value);
 };
 
@@ -425,23 +598,27 @@ const assert = do_check_true;
  *
  * @param DebuggerClient client
  * @param String event
+ * @param Function predicate
  * @returns Promise
  */
-function waitForEvent(client, event) {
-  dumpn("Waiting for event: " + event);
-  return new Promise((resolve, reject) => {
-    client.addOneTimeListener(event, (_, packet) => resolve(packet));
-  });
-}
+function waitForEvent(client, type, predicate) {
+  return new Promise(function (resolve) {
+    function listener(type, packet) {
+      if (!predicate(packet)) {
+        return;
+      }
+      client.removeListener(listener);
+      resolve(packet);
+    }
 
-/**
- * Create a promise that is resolved on the next pause.
- *
- * @param DebuggerClient client
- * @returns Promise
- */
-function waitForPause(client) {
-  return waitForEvent(client, "paused");
+    if (predicate) {
+      client.addListener(type, listener);
+    } else {
+      client.addOneTimeListener(type, function (type, packet) {
+        resolve(packet);
+      });
+    }
+  });
 }
 
 /**
@@ -491,29 +668,6 @@ function rdpRequest(client, method, ...args) {
 }
 
 /**
- * Set a breakpoint over the Remote Debugging Protocol.
- *
- * @param SourceClient sourceClient
- * @param {url, line[, column[, condition]]} breakpointOptions
- * @returns Promise
- */
-function setBreakpoint(sourceClient, breakpointOptions) {
-  dumpn("Setting a breakpoint: " + JSON.stringify(breakpointOptions, null, 2));
-  return rdpRequest(sourceClient, sourceClient.setBreakpoint, breakpointOptions);
-}
-
-/**
- * Resume JS execution for the specified thread.
- *
- * @param ThreadClient threadClient
- * @returns Promise
- */
-function resume(threadClient) {
-  dumpn("Resuming.");
-  return rdpRequest(threadClient, threadClient.resume);
-}
-
-/**
  * Interrupt JS execution for the specified thread.
  *
  * @param ThreadClient threadClient
@@ -535,17 +689,6 @@ function interrupt(threadClient) {
 function resumeAndWaitForPause(client, threadClient) {
   const paused = waitForPause(client);
   return resume(threadClient).then(() => paused);
-}
-
-/**
- * Get the list of sources for the specified thread.
- *
- * @param ThreadClient threadClient
- * @returns Promise
- */
-function getSources(threadClient) {
-  dumpn("Getting sources.");
-  return rdpRequest(threadClient, threadClient.getSources);
 }
 
 /**
@@ -600,6 +743,18 @@ function unBlackBox(sourceClient) {
 }
 
 /**
+ * Perform a "source" RDP request with the given SourceClient to get the source
+ * content and content type.
+ *
+ * @param SourceClient sourceClient
+ * @returns Promise
+ */
+function getSourceContent(sourceClient) {
+  dumpn("Getting source content for " + sourceClient.actor);
+  return rdpRequest(sourceClient, sourceClient.source);
+}
+
+/**
  * Get a source at the specified url.
  *
  * @param ThreadClient threadClient
@@ -632,4 +787,35 @@ function reload(tabClient) {
   let deferred = promise.defer();
   tabClient._reload({}, deferred.resolve);
   return deferred.promise;
+}
+
+/**
+ * Returns an array of stack location strings given a thread and a sample.
+ *
+ * @param object thread
+ * @param object sample
+ * @returns object
+ */
+function getInflatedStackLocations(thread, sample) {
+  let stackTable = thread.stackTable;
+  let frameTable = thread.frameTable;
+  let stringTable = thread.stringTable;
+  let SAMPLE_STACK_SLOT = thread.samples.schema.stack;
+  let STACK_PREFIX_SLOT = stackTable.schema.prefix;
+  let STACK_FRAME_SLOT = stackTable.schema.frame;
+  let FRAME_LOCATION_SLOT = frameTable.schema.location;
+
+  // Build the stack from the raw data and accumulate the locations in
+  // an array.
+  let stackIndex = sample[SAMPLE_STACK_SLOT];
+  let locations = [];
+  while (stackIndex !== null) {
+    let stackEntry = stackTable.data[stackIndex];
+    let frame = frameTable.data[stackEntry[STACK_FRAME_SLOT]];
+    locations.push(stringTable[frame[FRAME_LOCATION_SLOT]]);
+    stackIndex = stackEntry[STACK_PREFIX_SLOT];
+  }
+
+  // The profiler tree is inverted, so reverse the array.
+  return locations.reverse();
 }

@@ -19,6 +19,7 @@ const Cu = Components.utils;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/Preferences.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PromptUtils", "resource://gre/modules/SharedPromptUtils.jsm");
 
@@ -37,7 +38,7 @@ const LOGGER_ID = "addons.weblistener";
 
 // Create a new logger for use by the Addons Web Listener
 // (Requires AddonManager.jsm)
-let logger = Log.repository.getLogger(LOGGER_ID);
+var logger = Log.repository.getLogger(LOGGER_ID);
 
 function notifyObservers(aTopic, aBrowser, aUri, aInstalls) {
   let info = {
@@ -118,8 +119,8 @@ Installer.prototype = {
         if (install.linkedInstalls) {
           install.linkedInstalls.forEach(function(aInstall) {
             aInstall.addListener(this);
-            // App disabled items are not compatible and so fail to install
-            if (aInstall.addon.appDisabled)
+            // Corrupt or incompatible items fail to install
+            if (aInstall.state == AddonManager.STATE_DOWNLOAD_FAILED || aInstall.addon.appDisabled)
               failed.push(aInstall);
             else
               installs.push(aInstall);
@@ -131,7 +132,7 @@ Installer.prototype = {
         break;
       default:
         logger.warn("Download of " + install.sourceURI.spec + " in unexpected state " +
-             install.state);
+                    install.state);
       }
     }
 
@@ -164,6 +165,11 @@ Installer.prototype = {
         return;
       }
       catch (e) {}
+    }
+
+    if (Preferences.get("xpinstall.customConfirmationUI", false)) {
+      notifyObservers("addon-install-confirmation", this.browser, this.url, this.downloads);
+      return;
     }
 
     let args = {};
@@ -286,6 +292,25 @@ extWebInstallListener.prototype = {
   /**
    * @see amIWebInstallListener.idl
    */
+  onWebInstallOriginBlocked: function extWebInstallListener_onWebInstallOriginBlocked(aBrowser, aUri, aInstalls) {
+    let info = {
+      browser: aBrowser,
+      originatingURI: aUri,
+      installs: aInstalls,
+
+      install: function onWebInstallBlocked_install() {
+      },
+
+      QueryInterface: XPCOMUtils.generateQI([Ci.amIWebInstallInfo])
+    };
+    Services.obs.notifyObservers(info, "addon-install-origin-blocked", null);
+
+    return false;
+  },
+
+  /**
+   * @see amIWebInstallListener.idl
+   */
   onWebInstallBlocked: function extWebInstallListener_onWebInstallBlocked(aBrowser, aUri, aInstalls) {
     let info = {
       browser: aBrowser,
@@ -316,7 +341,8 @@ extWebInstallListener.prototype = {
   classDescription: "XPI Install Handler",
   contractID: "@mozilla.org/addons/web-install-listener;1",
   classID: Components.ID("{0f38e086-89a3-40a5-8ffc-9b694de1d04a}"),
-  QueryInterface: XPCOMUtils.generateQI([Ci.amIWebInstallListener])
+  QueryInterface: XPCOMUtils.generateQI([Ci.amIWebInstallListener,
+                                         Ci.amIWebInstallListener2])
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([extWebInstallListener]);

@@ -19,11 +19,6 @@
 class JSAtom;
 class JSAutoByteString;
 
-struct JSIdArray {
-    int length;
-    js::HeapId vector[1];    /* actually, length jsid words */
-};
-
 namespace js {
 
 JS_STATIC_ASSERT(sizeof(HashNumber) == 4);
@@ -67,7 +62,7 @@ class AtomStateEntry
         MOZ_ASSERT((uintptr_t(ptr) & 0x1) == 0);
     }
 
-    bool isTagged() const {
+    bool isPinned() const {
         return bits & 0x1;
     }
 
@@ -75,8 +70,8 @@ class AtomStateEntry
      * Non-branching code sequence. Note that the const_cast is safe because
      * the hash function doesn't consider the tag to be a portion of the key.
      */
-    void setTagged(bool enabled) const {
-        const_cast<AtomStateEntry*>(this)->bits |= uintptr_t(enabled);
+    void setPinned(bool pinned) const {
+        const_cast<AtomStateEntry*>(this)->bits |= uintptr_t(pinned);
     }
 
     JSAtom* asPtr() const;
@@ -117,12 +112,36 @@ struct AtomHasher
 
 typedef HashSet<AtomStateEntry, AtomHasher, SystemAllocPolicy> AtomSet;
 
+// This class is a wrapper for AtomSet that is used to ensure the AtomSet is
+// not modified. It should only expose read-only methods from AtomSet.
+// Note however that the atoms within the table can be marked during GC.
+class FrozenAtomSet
+{
+    AtomSet* mSet;
+
+public:
+    // This constructor takes ownership of the passed-in AtomSet.
+    explicit FrozenAtomSet(AtomSet* set) { mSet = set; }
+
+    ~FrozenAtomSet() { js_delete(mSet); }
+
+    AtomSet::Ptr readonlyThreadsafeLookup(const AtomSet::Lookup& l) const;
+
+    size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+        return mSet->sizeOfIncludingThis(mallocSizeOf);
+    }
+
+    typedef AtomSet::Range Range;
+
+    AtomSet::Range all() const { return mSet->all(); }
+};
+
 class PropertyName;
 
 }  /* namespace js */
 
 extern bool
-AtomIsInterned(JSContext* cx, JSAtom* atom);
+AtomIsPinned(JSContext* cx, JSAtom* atom);
 
 /* Well-known predefined C strings. */
 #define DECLARE_PROTO_STR(name,code,init,clasp) extern const char js_##name##_str[];
@@ -157,7 +176,6 @@ extern const char js_import_str[];
 extern const char js_in_str[];
 extern const char js_instanceof_str[];
 extern const char js_interface_str[];
-extern const char js_new_str[];
 extern const char js_package_str[];
 extern const char js_private_str[];
 extern const char js_protected_str[];
@@ -189,23 +207,23 @@ void
 MarkWellKnownSymbols(JSTracer* trc);
 
 /* N.B. must correspond to boolean tagging behavior. */
-enum InternBehavior
+enum PinningBehavior
 {
-    DoNotInternAtom = false,
-    InternAtom = true
+    DoNotPinAtom = false,
+    PinAtom = true
 };
 
 extern JSAtom*
 Atomize(ExclusiveContext* cx, const char* bytes, size_t length,
-        js::InternBehavior ib = js::DoNotInternAtom);
+        js::PinningBehavior pin = js::DoNotPinAtom);
 
 template <typename CharT>
 extern JSAtom*
 AtomizeChars(ExclusiveContext* cx, const CharT* chars, size_t length,
-             js::InternBehavior ib = js::DoNotInternAtom);
+             js::PinningBehavior pin = js::DoNotPinAtom);
 
 extern JSAtom*
-AtomizeString(ExclusiveContext* cx, JSString* str, js::InternBehavior ib = js::DoNotInternAtom);
+AtomizeString(ExclusiveContext* cx, JSString* str, js::PinningBehavior pin = js::DoNotPinAtom);
 
 template <AllowGC allowGC>
 extern JSAtom*

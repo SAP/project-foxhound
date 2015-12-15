@@ -7,28 +7,28 @@
 #ifndef VideoUtils_h
 #define VideoUtils_h
 
+#include "FlushableTaskQueue.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/CheckedInt.h"
-#include "nsIThread.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/ReentrantMonitor.h"
+#include "mozilla/RefPtr.h"
 
-#if !(defined(XP_WIN) || defined(XP_MACOSX) || defined(LINUX)) || \
-    defined(MOZ_ASAN)
-// For MEDIA_THREAD_STACK_SIZE
-#include "nsIThreadManager.h"
-#endif
+#include "nsIThread.h"
+#include "nsSize.h"
+#include "nsRect.h"
+
 #include "nsThreadUtils.h"
 #include "prtime.h"
 #include "AudioSampleFormat.h"
-#include "mozilla/RefPtr.h"
+#include "TimeUnits.h"
+#include "nsITimer.h"
+#include "nsCOMPtr.h"
 
 using mozilla::CheckedInt64;
 using mozilla::CheckedUint64;
 using mozilla::CheckedInt32;
 using mozilla::CheckedUint32;
-
-struct nsIntSize;
-struct nsIntRect;
 
 // This file contains stuff we'd rather put elsewhere, but which is
 // dependent on other changes which we don't want to wait for. We plan to
@@ -116,25 +116,21 @@ void DeleteOnMainThread(nsAutoPtr<T>& aObject) {
 
 class MediaResource;
 
-namespace dom {
-class TimeRanges;
-}
-
 // Estimates the buffered ranges of a MediaResource using a simple
 // (byteOffset/length)*duration method. Probably inaccurate, but won't
 // do file I/O, and can be used when we don't have detailed knowledge
 // of the byte->time mapping of a resource. aDurationUsecs is the duration
 // of the media in microseconds. Estimated buffered ranges are stored in
 // aOutBuffered. Ranges are 0-normalized, i.e. in the range of (0,duration].
-void GetEstimatedBufferedTimeRanges(mozilla::MediaResource* aStream,
-                                    int64_t aDurationUsecs,
-                                    mozilla::dom::TimeRanges* aOutBuffered);
+media::TimeIntervals GetEstimatedBufferedTimeRanges(mozilla::MediaResource* aStream,
+                                                    int64_t aDurationUsecs);
 
 // Converts from number of audio frames (aFrames) to microseconds, given
-// the specified audio rate (aRate). Stores result in aOutUsecs. Returns true
-// if the operation succeeded, or false if there was an integer overflow
-// while calulating the conversion.
+// the specified audio rate (aRate).
 CheckedInt64 FramesToUsecs(int64_t aFrames, uint32_t aRate);
+// Converts from number of audio frames (aFrames) TimeUnit, given
+// the specified audio rate (aRate).
+media::TimeUnit FramesToTimeUnit(int64_t aFrames, uint32_t aRate);
 
 // Converts from microseconds (aUsecs) to number of audio frames, given the
 // specified audio rate (aRate). Stores the result in aOutFrames. Returns
@@ -142,11 +138,8 @@ CheckedInt64 FramesToUsecs(int64_t aFrames, uint32_t aRate);
 // overflow while calulating the conversion.
 CheckedInt64 UsecsToFrames(int64_t aUsecs, uint32_t aRate);
 
-// Number of microseconds per second. 1e6.
-static const int64_t USECS_PER_S = 1000000;
-
-// Number of microseconds per millisecond.
-static const int64_t USECS_PER_MS = 1000;
+// Format TimeUnit as number of frames at given rate.
+CheckedInt64 TimeUnitToFrames(const media::TimeUnit& aTime, uint32_t aRate);
 
 // Converts milliseconds to seconds.
 #define MS_TO_SECONDS(ms) ((double)(ms) / (PR_MSEC_PER_SEC))
@@ -169,18 +162,6 @@ static const int32_t MAX_VIDEO_HEIGHT = 3000;
 // Note that aDisplay must be validated by IsValidVideoRegion()
 // before being used!
 void ScaleDisplayByAspectRatio(nsIntSize& aDisplay, float aAspectRatio);
-
-// The amount of virtual memory reserved for thread stacks.
-#if defined(MOZ_ASAN)
-// Use the system default in ASAN builds, because the default is assumed to be
-// larger than the size we want to use and is hopefully sufficient for ASAN.
-#define MEDIA_THREAD_STACK_SIZE nsIThreadManager::DEFAULT_STACK_SIZE
-#elif defined(XP_WIN) || defined(XP_MACOSX) || defined(LINUX)
-#define MEDIA_THREAD_STACK_SIZE (256 * 1024)
-#else
-// All other platforms use their system defaults.
-#define MEDIA_THREAD_STACK_SIZE nsIThreadManager::DEFAULT_STACK_SIZE
-#endif
 
 // Downmix multichannel Audio samples to Stereo.
 // Input are the buffer contains multichannel data,
@@ -217,9 +198,22 @@ private:
 
 class SharedThreadPool;
 
+// The MediaDataDecoder API blocks, with implementations waiting on platform
+// decoder tasks.  These platform decoder tasks are queued on a separate
+// thread pool to ensure they can run when the MediaDataDecoder clients'
+// thread pool is blocked.  Tasks on the PLATFORM_DECODER thread pool must not
+// wait on tasks in the PLAYBACK thread pool.
+//
+// No new dependencies on this mechanism should be added, as methods are being
+// made async supported by MozPromise, making this unnecessary and
+// permitting unifying the pool.
+enum class MediaThreadType {
+  PLAYBACK, // MediaDecoderStateMachine and MediaDecoderReader
+  PLATFORM_DECODER
+};
 // Returns the thread pool that is shared amongst all decoder state machines
 // for decoding streams.
-TemporaryRef<SharedThreadPool> GetMediaDecodeThreadPool();
+already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType);
 
 enum H264_PROFILE {
   H264_PROFILE_UNKNOWN                     = 0,
@@ -261,19 +255,83 @@ ExtractH264CodecDetails(const nsAString& aCodecs,
                         int16_t& aLevel);
 
 // Use a cryptographic quality PRNG to generate raw random bytes
-// and convert that to a base64 string suitable for use as a file or URL
+// and convert that to a base64 string.
+nsresult
+GenerateRandomName(nsCString& aOutSalt, uint32_t aLength);
+
+// This version returns a string suitable for use as a file or URL
 // path. This is based on code from nsExternalAppHandler::SetUpTempFile.
 nsresult
 GenerateRandomPathName(nsCString& aOutSalt, uint32_t aLength);
 
-class MediaTaskQueue;
-class FlushableMediaTaskQueue;
-
-already_AddRefed<MediaTaskQueue>
+already_AddRefed<TaskQueue>
 CreateMediaDecodeTaskQueue();
 
-already_AddRefed<FlushableMediaTaskQueue>
+already_AddRefed<FlushableTaskQueue>
 CreateFlushableMediaDecodeTaskQueue();
+
+// Iteratively invokes aWork until aCondition returns true, or aWork returns false.
+// Use this rather than a while loop to avoid bogarting the task queue.
+template<class Work, class Condition>
+nsRefPtr<GenericPromise> InvokeUntil(Work aWork, Condition aCondition) {
+  nsRefPtr<GenericPromise::Private> p = new GenericPromise::Private(__func__);
+
+  if (aCondition()) {
+    p->Resolve(true, __func__);
+  }
+
+  struct Helper {
+    static void Iteration(nsRefPtr<GenericPromise::Private> aPromise, Work aWork, Condition aCondition) {
+      if (!aWork()) {
+        aPromise->Reject(NS_ERROR_FAILURE, __func__);
+      } else if (aCondition()) {
+        aPromise->Resolve(true, __func__);
+      } else {
+        nsCOMPtr<nsIRunnable> r =
+          NS_NewRunnableFunction([aPromise, aWork, aCondition] () { Iteration(aPromise, aWork, aCondition); });
+        AbstractThread::GetCurrent()->Dispatch(r.forget());
+      }
+    }
+  };
+
+  Helper::Iteration(p, aWork, aCondition);
+  return p.forget();
+}
+
+// Simple timer to run a runnable after a timeout.
+class SimpleTimer : public nsITimerCallback
+{
+public:
+  NS_DECL_ISUPPORTS
+
+  // Create a new timer to run aTask after aTimeoutMs milliseconds
+  // on thread aTarget. If aTarget is null, task is run on the main thread.
+  static already_AddRefed<SimpleTimer> Create(nsIRunnable* aTask,
+                                              uint32_t aTimeoutMs,
+                                              nsIThread* aTarget = nullptr);
+  void Cancel();
+
+  NS_IMETHOD Notify(nsITimer *timer) override;
+
+private:
+  virtual ~SimpleTimer() {}
+  nsresult Init(nsIRunnable* aTask, uint32_t aTimeoutMs, nsIThread* aTarget);
+
+  nsRefPtr<nsIRunnable> mTask;
+  nsCOMPtr<nsITimer> mTimer;
+};
+
+void
+LogToBrowserConsole(const nsAString& aMsg);
+
+bool
+ParseCodecsString(const nsAString& aCodecs, nsTArray<nsString>& aOutCodecs);
+
+bool
+IsH264ContentType(const nsAString& aContentType);
+
+bool
+IsAACContentType(const nsAString& aContentType);
 
 } // end namespace mozilla
 

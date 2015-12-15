@@ -7,7 +7,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/MathAlgorithms.h"
-
+#include "mozilla/RuleNodeCacheConditions.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "nsStyleTransformMatrix.h"
 #include "nsCOMArray.h"
@@ -25,6 +25,7 @@
 #include "gfxMatrix.h"
 #include "gfxQuaternion.h"
 #include "nsIDocument.h"
+#include "nsIFrame.h"
 #include "gfx2DGlue.h"
 
 using namespace mozilla;
@@ -1041,9 +1042,16 @@ AddCSSValueAngle(double aCoeff1, const nsCSSValue &aValue1,
                  double aCoeff2, const nsCSSValue &aValue2,
                  nsCSSValue &aResult)
 {
-  aResult.SetFloatValue(aCoeff1 * aValue1.GetAngleValueInRadians() +
-                        aCoeff2 * aValue2.GetAngleValueInRadians(),
-                        eCSSUnit_Radian);
+  if (aValue1.GetUnit() == aValue2.GetUnit()) {
+    // To avoid floating point error, if the units match, maintain the unit.
+    aResult.SetFloatValue(aCoeff1 * aValue1.GetFloatValue() +
+                          aCoeff2 * aValue2.GetFloatValue(),
+                          aValue1.GetUnit());
+  } else {
+    aResult.SetFloatValue(aCoeff1 * aValue1.GetAngleValueInRadians() +
+                          aCoeff2 * aValue2.GetAngleValueInRadians(),
+                          eCSSUnit_Radian);
+  }
 }
 
 static bool
@@ -1355,7 +1363,7 @@ StyleAnimationValue::AppendTransformFunction(nsCSSKeyword aTransformFunction,
 #define YZSHEAR 2
 
 static bool
-Decompose2DMatrix(const gfxMatrix &aMatrix, Point3D &aScale,
+Decompose2DMatrix(const Matrix &aMatrix, Point3D &aScale,
                   float aShear[3], gfxQuaternion &aRotate,
                   Point3D &aTranslate)
 {
@@ -1414,11 +1422,11 @@ Decompose2DMatrix(const gfxMatrix &aMatrix, Point3D &aScale,
  * in http://tog.acm.org/resources/GraphicsGems/AllGems.tar.gz
  */
 static bool
-Decompose3DMatrix(const gfx3DMatrix &aMatrix, Point3D &aScale,
+Decompose3DMatrix(const Matrix4x4 &aMatrix, Point3D &aScale,
                   float aShear[3], gfxQuaternion &aRotate,
                   Point3D &aTranslate, Point4D &aPerspective)
 {
-  Matrix4x4 local = ToMatrix4x4(aMatrix);
+  Matrix4x4 local = aMatrix;
 
   if (local[3][3] == 0) {
     return false;
@@ -1516,9 +1524,9 @@ T InterpolateNumerically(const T& aOne, const T& aTwo, double aCoeff)
 }
 
 
-/* static */ gfx3DMatrix
-StyleAnimationValue::InterpolateTransformMatrix(const gfx3DMatrix &aMatrix1,
-                                                const gfx3DMatrix &aMatrix2,
+/* static */ Matrix4x4
+StyleAnimationValue::InterpolateTransformMatrix(const Matrix4x4 &aMatrix1,
+                                                const Matrix4x4 &aMatrix2,
                                                 double aProgress)
 {
   // Decompose both matrices
@@ -1535,7 +1543,7 @@ StyleAnimationValue::InterpolateTransformMatrix(const gfx3DMatrix &aMatrix1,
   gfxQuaternion rotate2;
   float shear2[3] = { 0.0f, 0.0f, 0.0f};
 
-  gfxMatrix matrix2d1, matrix2d2;
+  Matrix matrix2d1, matrix2d2;
   if (aMatrix1.Is2D(&matrix2d1) && aMatrix2.Is2D(&matrix2d2)) {
     Decompose2DMatrix(matrix2d1, scale1, shear1, rotate1, translate1);
     Decompose2DMatrix(matrix2d2, scale2, shear2, rotate2, translate2);
@@ -1588,7 +1596,7 @@ StyleAnimationValue::InterpolateTransformMatrix(const gfx3DMatrix &aMatrix1,
     result.PreScale(scale.x, scale.y, scale.z);
   }
 
-  return To3DMatrix(result);
+  return result;
 }
 
 static nsCSSValueList*
@@ -2495,14 +2503,13 @@ BuildStyleRule(nsCSSProperty aProperty,
     nsCSSProps::SubpropertyEntryFor(aProperty)[0] : aProperty;
 
   // Get a parser, parse the property, and check for CSS parsing errors.
-  // If any of these steps fails, we bail out and delete the declaration.
-  if (NS_FAILED(parser.ParseProperty(aProperty, aSpecifiedValue,
-                                     doc->GetDocumentURI(), baseURI,
-                                     aTargetElement->NodePrincipal(),
-                                     declaration, &changed, false,
-                                     aUseSVGMode)) ||
-      // check whether property parsed without CSS parsing errors
-      !declaration->HasNonImportantValueFor(propertyToCheck)) {
+  // If this fails, we bail out and delete the declaration.
+  parser.ParseProperty(aProperty, aSpecifiedValue, doc->GetDocumentURI(),
+                       baseURI, aTargetElement->NodePrincipal(), declaration,
+                       &changed, false, aUseSVGMode);
+
+  // check whether property parsed without CSS parsing errors
+  if (!declaration->HasNonImportantValueFor(propertyToCheck)) {
     NS_WARNING("failure in BuildStyleRule");
     return nullptr;
   }
@@ -2584,7 +2591,7 @@ StyleAnimationValue::ComputeValue(nsCSSProperty aProperty,
     // context-sensitive. So if there's nothing cached, it's not context
     // sensitive.
     *aIsContextSensitive =
-      !tmpStyleContext->RuleNode()->NodeHasCachedData(sid);
+      !tmpStyleContext->RuleNode()->NodeHasCachedUnconditionalData(sid);
   }
 
   // If we're not concerned whether the property is context sensitive then just
@@ -2862,11 +2869,11 @@ SubstitutePixelValues(nsStyleContext* aStyleContext,
                       const nsCSSValue& aInput, nsCSSValue& aOutput)
 {
   if (aInput.IsCalcUnit()) {
-    bool canStoreInRuleTree = true;
+    RuleNodeCacheConditions conditions;
     nsRuleNode::ComputedCalc c =
       nsRuleNode::SpecifiedCalcToComputedCalc(aInput, aStyleContext,
                                               aStyleContext->PresContext(),
-                                              canStoreInRuleTree);
+                                              conditions);
     nsStyleCoord::CalcValue c2;
     c2.mLength = c.mLength;
     c2.mPercent = c.mPercent;
@@ -2883,10 +2890,10 @@ SubstitutePixelValues(nsStyleContext* aStyleContext,
     aOutput.SetArrayValue(outputArray, aInput.GetUnit());
   } else if (aInput.IsLengthUnit() &&
              aInput.GetUnit() != eCSSUnit_Pixel) {
-    bool canStoreInRuleTree = true;
+    RuleNodeCacheConditions conditions;
     nscoord len = nsRuleNode::CalcLength(aInput, aStyleContext,
                                          aStyleContext->PresContext(),
-                                         canStoreInRuleTree);
+                                         conditions);
     aOutput.SetFloatValue(nsPresContext::AppUnitsToFloatCSSPixels(len),
                           eCSSUnit_Pixel);
   } else {
@@ -3017,8 +3024,8 @@ StyleAnimationValue::ExtractComputedValue(nsCSSProperty aProperty,
           const nsStyleTableBorder *styleTableBorder =
             static_cast<const nsStyleTableBorder*>(styleStruct);
           nsAutoPtr<nsCSSValuePair> pair(new nsCSSValuePair);
-          nscoordToCSSValue(styleTableBorder->mBorderSpacingX, pair->mXValue);
-          nscoordToCSSValue(styleTableBorder->mBorderSpacingY, pair->mYValue);
+          nscoordToCSSValue(styleTableBorder->mBorderSpacingCol, pair->mXValue);
+          nscoordToCSSValue(styleTableBorder->mBorderSpacingRow, pair->mYValue);
           aComputedValue.SetAndAdoptCSSValuePairValue(pair.forget(),
                                                       eUnit_CSSValuePair);
           break;
@@ -3441,8 +3448,8 @@ StyleAnimationValue::ExtractComputedValue(nsCSSProperty aProperty,
       aComputedValue.SetFloatValue(*static_cast<const float*>(
         StyleDataAtOffset(styleStruct, ssOffset)));
       if (aProperty == eCSSProperty_font_size_adjust &&
-          aComputedValue.GetFloatValue() == 0.0f) {
-        // In nsStyleFont, we set mFont.sizeAdjust to 0 to represent
+          aComputedValue.GetFloatValue() == -1.0f) {
+        // In nsStyleFont, we set mFont.sizeAdjust to -1.0 to represent
         // font-size-adjust: none.  Here, we have to treat this as a keyword
         // instead of a float value, to make sure we don't end up doing
         // interpolation with it.
@@ -3520,6 +3527,32 @@ StyleAnimationValue::ExtractComputedValue(nsCSSProperty aProperty,
   return false;
 }
 
+gfxSize
+StyleAnimationValue::GetScaleValue(const nsIFrame* aForFrame) const
+{
+  MOZ_ASSERT(aForFrame);
+  MOZ_ASSERT(GetUnit() == StyleAnimationValue::eUnit_Transform);
+
+  nsCSSValueSharedList* list = GetCSSValueSharedListValue();
+  MOZ_ASSERT(list->mHead);
+
+  RuleNodeCacheConditions dontCare;
+  nsStyleTransformMatrix::TransformReferenceBox refBox(aForFrame);
+  Matrix4x4 transform = nsStyleTransformMatrix::ReadTransforms(
+                          list->mHead,
+                          aForFrame->StyleContext(),
+                          aForFrame->PresContext(), dontCare, refBox,
+                          aForFrame->PresContext()->AppUnitsPerDevPixel());
+
+  Matrix transform2d;
+  bool canDraw2D = transform.CanDraw2D(&transform2d);
+  if (!canDraw2D) {
+    return gfxSize();
+  }
+
+  return ThebesMatrix(transform2d).ScaleFactors(true);
+}
+
 StyleAnimationValue::StyleAnimationValue(int32_t aInt, Unit aUnit,
                                          IntegerConstructorType)
 {
@@ -3558,6 +3591,10 @@ StyleAnimationValue::StyleAnimationValue(nscolor aColor, ColorConstructorType)
 StyleAnimationValue&
 StyleAnimationValue::operator=(const StyleAnimationValue& aOther)
 {
+  if (this == &aOther) {
+    return *this;
+  }
+
   FreeValue();
 
   mUnit = aOther.mUnit;

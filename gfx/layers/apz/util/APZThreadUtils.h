@@ -6,6 +6,9 @@
 #ifndef mozilla_layers_APZThreadUtils_h
 #define mozilla_layers_APZThreadUtils_h
 
+#include "base/message_loop.h"
+#include "nsITimer.h"
+
 class Task;
 
 namespace mozilla {
@@ -21,6 +24,11 @@ public:
    */
   static void SetThreadAssertionsEnabled(bool aEnabled);
   static bool GetThreadAssertionsEnabled();
+
+  /**
+   * Set the controller thread.
+   */
+  static void SetControllerThread(MessageLoop* aLoop);
 
   /**
    * This can be used to assert that the current thread is the
@@ -43,6 +51,46 @@ public:
    */
   static void RunOnControllerThread(Task* aTask);
 };
+
+// A base class for GenericTimerCallback<Function>.
+// This is necessary because NS_IMPL_ISUPPORTS doesn't work for a class
+// template.
+class GenericTimerCallbackBase : public nsITimerCallback
+{
+public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+protected:
+  virtual ~GenericTimerCallbackBase() {}
+};
+
+// An nsITimerCallback implementation that can be used with any function
+// object that's callable with no arguments.
+template <typename Function>
+class GenericTimerCallback final : public GenericTimerCallbackBase
+{
+public:
+  explicit GenericTimerCallback(const Function& aFunction) : mFunction(aFunction) {}
+
+  NS_IMETHODIMP Notify(nsITimer*) override
+  {
+    mFunction();
+    return NS_OK;
+  }
+private:
+  Function mFunction;
+};
+
+// Convenience function for constructing a GenericTimerCallback.
+// Returns a raw pointer, suitable for passing directly as an argument to
+// nsITimer::InitWithCallback(). The intention is to enable the following
+// terse inline usage:
+//    timer->InitWithCallback(NewTimerCallback([](){ ... }), delay);
+template <typename Function>
+GenericTimerCallback<Function>* NewTimerCallback(const Function& aFunction)
+{
+  return new GenericTimerCallback<Function>(aFunction);
+}
 
 } // namespace layers
 } // namespace mozilla

@@ -6,6 +6,8 @@
 
 "use strict";
 
+window.performance.mark('gecko-settings-loadstart');
+
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
@@ -29,6 +31,10 @@ XPCOMUtils.defineLazyGetter(this, "libcutils", function () {
 XPCOMUtils.defineLazyServiceGetter(this, "uuidgen",
                                    "@mozilla.org/uuid-generator;1",
                                    "nsIUUIDGenerator");
+
+XPCOMUtils.defineLazyServiceGetter(this, "gPACGenerator",
+                                   "@mozilla.org/pac-generator;1",
+                                   "nsIPACGenerator");
 
 // Once Bug 731746 - Allow chrome JS object to implement nsIDOMEventTarget
 // is resolved this helper could be removed.
@@ -142,12 +148,16 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
   // Get the hardware info and firmware revision from device properties.
   let hardware_info = null;
   let firmware_revision = null;
+  let product_manufacturer = null;
   let product_model = null;
+  let product_device = null;
   let build_number = null;
 #ifdef MOZ_WIDGET_GONK
     hardware_info = libcutils.property_get('ro.hardware');
     firmware_revision = libcutils.property_get('ro.firmware_revision');
+    product_manufacturer = libcutils.property_get('ro.product.manufacturer');
     product_model = libcutils.property_get('ro.product.model');
+    product_device = libcutils.property_get('ro.product.device');
     build_number = libcutils.property_get('ro.build.version.incremental');
 #endif
 
@@ -167,7 +177,9 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
       'deviceinfo.platform_build_id': appInfo.platformBuildID,
       'deviceinfo.hardware': hardware_info,
       'deviceinfo.firmware_revision': firmware_revision,
-      'deviceinfo.product_model': product_model
+      'deviceinfo.product_manufacturer': product_manufacturer,
+      'deviceinfo.product_model': product_model,
+      'deviceinfo.product_device': product_device
     }
     lock.set(setting);
   }
@@ -175,7 +187,7 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
 
 // =================== DevTools ====================
 
-let developerHUD;
+var developerHUD;
 SettingsListener.observe('devtools.overlay', false, (value) => {
   if (value) {
     if (!developerHUD) {
@@ -192,19 +204,28 @@ SettingsListener.observe('devtools.overlay', false, (value) => {
 });
 
 #ifdef MOZ_WIDGET_GONK
-let LogShake;
-SettingsListener.observe('devtools.logshake', false, (value) => {
+
+var LogShake;
+(function() {
+  let scope = {};
+  Cu.import('resource://gre/modules/LogShake.jsm', scope);
+  LogShake = scope.LogShake;
+  LogShake.init();
+})();
+
+SettingsListener.observe('devtools.logshake.enabled', false, value => {
   if (value) {
-    if (!LogShake) {
-      let scope = {};
-      Cu.import('resource://gre/modules/LogShake.jsm', scope);
-      LogShake = scope.LogShake;
-    }
-    LogShake.init();
+    LogShake.enableDeviceMotionListener();
   } else {
-    if (LogShake) {
-      LogShake.uninit();
-    }
+    LogShake.disableDeviceMotionListener();
+  }
+});
+
+SettingsListener.observe('devtools.logshake.qa_enabled', false, value => {
+  if (value) {
+    LogShake.enableQAMode();
+  } else {
+    LogShake.disableQAMode();
   }
 });
 #endif
@@ -482,8 +503,84 @@ SettingsListener.observe("theme.selected",
   }
 });
 
+// =================== Proxy server ======================
+(function setupBrowsingProxySettings() {
+  function setPAC() {
+    let usePAC;
+    try {
+      usePAC = Services.prefs.getBoolPref('network.proxy.pac_generator');
+    } catch (ex) {}
+
+    if (usePAC) {
+      Services.prefs.setCharPref('network.proxy.autoconfig_url',
+                                 gPACGenerator.generate());
+      Services.prefs.setIntPref('network.proxy.type',
+                                Ci.nsIProtocolProxyService.PROXYCONFIG_PAC);
+    }
+  }
+
+  SettingsListener.observe('browser.proxy.enabled', false, function(value) {
+    Services.prefs.setBoolPref('network.proxy.browsing.enabled', value);
+    setPAC();
+  });
+
+  SettingsListener.observe('browser.proxy.host', '', function(value) {
+    Services.prefs.setCharPref('network.proxy.browsing.host', value);
+    setPAC();
+  });
+
+  SettingsListener.observe('browser.proxy.port', 0, function(value) {
+    Services.prefs.setIntPref('network.proxy.browsing.port', value);
+    setPAC();
+  });
+
+  setPAC();
+})();
+
+#ifdef MOZ_B2G_RIL
+XPCOMUtils.defineLazyModuleGetter(this, "AppsUtils",
+                                  "resource://gre/modules/AppsUtils.jsm");
+
+// ======================= Dogfooders FOTA ==========================
+SettingsListener.observe('debug.performance_data.dogfooding', false,
+  isDogfooder => {
+    if (!isDogfooder) {
+      dump('AUS:Settings: Not a dogfooder!\n');
+      return;
+    }
+
+    if (!('mozTelephony' in navigator)) {
+      dump('AUS:Settings: There is no mozTelephony!\n');
+      return;
+    }
+
+    if (!('mozMobileConnections' in navigator)) {
+      dump('AUS:Settings: There is no mozMobileConnections!\n');
+      return;
+    }
+
+    let conn = navigator.mozMobileConnections[0];
+    conn.addEventListener('radiostatechange', function onradiostatechange() {
+      if (conn.radioState !== 'enabled') {
+        return;
+      }
+
+      conn.removeEventListener('radiostatechange', onradiostatechange);
+      navigator.mozTelephony.dial('*#06#').then(call => {
+        return call.result.then(res => {
+          if (res.success && res.statusMessage
+              && (res.serviceCode === 'scImei')) {
+            Services.prefs.setCharPref("app.update.imei_hash",
+                                       AppsUtils.computeHash(res.statusMessage, "SHA512"));
+          }
+        });
+      });
+    });
+  });
+#endif
+
 // =================== Various simple mapping  ======================
-let settingsToObserve = {
+var settingsToObserve = {
   'accessibility.screenreader_quicknav_modes': {
     prefName: 'accessibility.accessfu.quicknav_modes',
     resetToPref: true,
@@ -508,12 +605,26 @@ let settingsToObserve = {
     prefName: 'nglayout.debug.paint_flashing',
     defaultValue: false
   },
+  // FIXME: Bug 1185806 - Provide a common device name setting.
+  // Borrow device name from developer's menu to avoid multiple name settings.
+  'devtools.discovery.device': {
+    prefName: 'dom.presentation.device.name',
+    defaultValue: 'Firefox OS'
+  },
   'devtools.eventlooplag.threshold': 100,
   'devtools.remote.wifi.visible': {
     resetToPref: true
   },
+  'devtools.telemetry.supported_performance_marks': {
+    resetToPref: true
+  },
+
   'dom.mozApps.use_reviewer_certs': false,
   'dom.mozApps.signed_apps_installable_from': 'https://marketplace.firefox.com',
+  'dom.presentation.discovery.enabled': false,
+  'dom.presentation.discoverable': false,
+  'dom.serviceWorkers.interception.enabled': true,
+  'dom.serviceWorkers.testing.enabled': false,
   'gfx.layerscope.enabled': false,
   'layers.draw-borders': false,
   'layers.draw-tile-borders': false,
@@ -521,8 +632,12 @@ let settingsToObserve = {
   'layers.enable-tiles': true,
   'layers.effect.invert': false,
   'layers.effect.grayscale': false,
-  'layers.effect.contrast': "0.0",
+  'layers.effect.contrast': '0.0',
+  'layout.display-list.dump': false,
+  'mms.debugging.enabled': false,
+  'network.debugging.enabled': false,
   'privacy.donottrackheader.enabled': false,
+  'ril.debugging.enabled': false,
   'ril.radio.disabled': false,
   'ril.mms.requestReadReport.enabled': {
     prefName: 'dom.mms.requestReadReport',
@@ -617,4 +732,3 @@ for (let key in settingsToObserve) {
     setPref(prefName, value);
   });
 };
-

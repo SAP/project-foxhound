@@ -33,7 +33,7 @@ XPCOMUtils.defineLazyServiceGetter(this, "etld",
  */
 
 // Internal helper methods and state
-let SocialServiceInternal = {
+var SocialServiceInternal = {
   get enabled() this.providerArray.length > 0,
 
   get providerArray() {
@@ -153,7 +153,7 @@ XPCOMUtils.defineLazyGetter(SocialServiceInternal, "providers", function () {
 function getOriginActivationType(origin) {
   // if this is an about uri, treat it as a directory
   let URI = Services.io.newURI(origin, null, null);
-  let principal = Services.scriptSecurityManager.getNoAppCodebasePrincipal(URI);
+  let principal = Services.scriptSecurityManager.createCodebasePrincipal(URI, {});
   if (Services.scriptSecurityManager.isSystemPrincipal(principal) || origin == "moz-safe-about:home") {
     return "internal";
   }
@@ -165,7 +165,7 @@ function getOriginActivationType(origin) {
   return "foreign";
 }
 
-let ActiveProviders = {
+var ActiveProviders = {
   get _providers() {
     delete this._providers;
     this._providers = {};
@@ -439,7 +439,6 @@ this.SocialService = {
       // correctly.
       addon.pendingOperations -= AddonManager.PENDING_DISABLE;
       AddonManagerPrivate.callAddonListeners("onDisabled", addon);
-      AddonManagerPrivate.notifyAddonChanged(addon.id, ADDON_TYPE_SERVICE, false);
     }
 
     this.getOrderedProviderList(function (providers) {
@@ -514,7 +513,7 @@ this.SocialService = {
     }
     // force/fixup origin
     let URI = Services.io.newURI(installOrigin, null, null);
-    principal = Services.scriptSecurityManager.getNoAppCodebasePrincipal(URI);
+    principal = Services.scriptSecurityManager.createCodebasePrincipal(URI, {});
     data.origin = principal.origin;
 
     // iconURL and name are required
@@ -601,10 +600,15 @@ this.SocialService = {
         aAddon.userDisabled = false;
       }
       schedule(function () {
-        this._installProvider(data, options, aManifest => {
-          this._notifyProviderListeners("provider-installed", aManifest.origin);
-          installCallback(aManifest);
-        });
+        try {
+          this._installProvider(data, options, aManifest => {
+              this._notifyProviderListeners("provider-installed", aManifest.origin);
+              installCallback(aManifest);
+          });
+        } catch(e) {
+          Cu.reportError("Activation failed: " + e);
+          installCallback(null);
+        }
       }.bind(this));
     }.bind(this));
   },
@@ -615,6 +619,12 @@ this.SocialService = {
 
     if (data.installType == "foreign" && !Services.prefs.getBoolPref("social.remote-install.enabled"))
       throw new Error("Remote install of services is disabled");
+
+    // if installing from any website, the install must happen over https.
+    // "internal" are installs from about:home or similar
+    if (data.installType != "internal" && !Services.io.newURI(data.origin, null, null).schemeIs("https")) {
+      throw new Error("attempt to activate provider over unsecured channel: " + data.origin);
+    }
 
     let installer = new AddonInstaller(data.url, data.manifest, installCallback);
     let bypassPanel = options.bypassInstallPanel ||
@@ -704,7 +714,7 @@ function SocialProvider(input) {
   this.postActivationURL = input.postActivationURL;
   this.origin = input.origin;
   let originUri = Services.io.newURI(input.origin, null, null);
-  this.principal = Services.scriptSecurityManager.getNoAppCodebasePrincipal(originUri);
+  this.principal = Services.scriptSecurityManager.createCodebasePrincipal(originUri, {});
   this.ambientNotificationIcons = {};
   this.errorState = null;
   this.frecency = 0;

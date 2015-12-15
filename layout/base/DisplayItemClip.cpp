@@ -152,7 +152,7 @@ DisplayItemClip::FillIntersectionOfRoundedRectClips(gfxContext* aContext,
   }
 }
 
-TemporaryRef<Path>
+already_AddRefed<Path>
 DisplayItemClip::MakeRoundedRectPath(DrawTarget& aDrawTarget,
                                      int32_t A2D,
                                      const RoundedRect &aRoundRect) const
@@ -327,7 +327,7 @@ DisplayItemClip::ApplyNonRoundedIntersection(const nsRect& aRect) const
   nsRect result = aRect.Intersect(mClipRect);
   for (uint32_t i = 0, iEnd = mRoundedClipRects.Length();
        i < iEnd; ++i) {
-    result.Intersect(mRoundedClipRects[i].mRect);
+    result = result.Intersect(mRoundedClipRects[i].mRect);
   }
   return result;
 }
@@ -475,4 +475,4 @@ DisplayItemClip::ToString() const
   return str;
 }
 
-}
+} // namespace mozilla

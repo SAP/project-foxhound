@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,16 +70,16 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLengthList)
 NS_INTERFACE_MAP_END
 
 JSObject*
-DOMSVGLengthList::WrapObject(JSContext *cx)
+DOMSVGLengthList::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
 {
-  return mozilla::dom::SVGLengthListBinding::Wrap(cx, this);
+  return mozilla::dom::SVGLengthListBinding::Wrap(cx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Helper class: AutoChangeLengthListNotifier
 // Stack-based helper class to pair calls to WillChangeLengthList and
 // DidChangeLengthList.
-class MOZ_STACK_CLASS AutoChangeLengthListNotifier
+class MOZ_RAII AutoChangeLengthListNotifier
 {
 public:
   explicit AutoChangeLengthListNotifier(DOMSVGLengthList* aLengthList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
@@ -130,7 +131,7 @@ DOMSVGLengthList::InternalListLengthWillChange(uint32_t aNewLength)
     }
   }
 
-  if (!mItems.SetLength(aNewLength)) {
+  if (!mItems.SetLength(aNewLength, fallible)) {
     // We silently ignore SetLength OOM failure since being out of sync is safe
     // so long as we have *fewer* items than our internal list.
     mItems.Clear();
@@ -254,7 +255,7 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
   }
 
   // Ensure we have enough memory so we can avoid complex error handling below:
-  if (!mItems.SetCapacity(mItems.Length() + 1) ||
+  if (!mItems.SetCapacity(mItems.Length() + 1, fallible) ||
       !InternalList().SetCapacity(InternalList().Length() + 1)) {
     error.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
@@ -265,7 +266,7 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
   MaybeInsertNullInAnimValListAt(index);
 
   InternalList().InsertItem(index, domItem->ToSVGLength());
-  mItems.InsertElementAt(index, domItem.get());
+  MOZ_ALWAYS_TRUE(mItems.InsertElementAt(index, domItem.get(), fallible));
 
   // This MUST come after the insertion into InternalList(), or else under the
   // insertion into InternalList() the values read from domItem would be bad
@@ -379,7 +380,7 @@ DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
 
-  animVal->mItems.InsertElementAt(aIndex, static_cast<DOMSVGLength*>(nullptr));
+  MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(aIndex, nullptr, fallible));
 
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
 }

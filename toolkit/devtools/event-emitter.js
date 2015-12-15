@@ -11,10 +11,10 @@
     factory.call(this, require, exports, module);
   } else { // Cu.import
       const Cu = Components.utils;
-      const { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+      const { require } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
       this.isWorker = false;
       this.promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
-      factory.call(this, devtools.require, this, { exports: this });
+      factory.call(this, require, this, { exports: this });
       this.EXPORTED_SYMBOLS = ["EventEmitter"];
   }
 }).call(this, function (require, exports, module) {
@@ -25,6 +25,16 @@ module.exports = EventEmitter;
 const { Cu, components } = require("chrome");
 const Services = require("Services");
 const promise = require("promise");
+var loggingEnabled = true;
+
+if (!isWorker) {
+  loggingEnabled = Services.prefs.getBoolPref("devtools.dump.emit");
+  Services.prefs.addObserver("devtools.dump.emit", {
+    observe: () => {
+      loggingEnabled = Services.prefs.getBoolPref("devtools.dump.emit");
+    }
+  }, false);
+}
 
 /**
  * Decorate an object with event emitter functionality.
@@ -76,10 +86,10 @@ EventEmitter.prototype = {
   once: function EventEmitter_once(aEvent, aListener) {
     let deferred = promise.defer();
 
-    let handler = (aEvent, aFirstArg) => {
+    let handler = (aEvent, aFirstArg, ...aRest) => {
       this.off(aEvent, handler);
       if (aListener) {
-        aListener.apply(null, arguments);
+        aListener.apply(null, [aEvent, aFirstArg, ...aRest]);
       }
       deferred.resolve(aFirstArg);
     };
@@ -132,7 +142,7 @@ EventEmitter.prototype = {
       // If listeners were removed during emission, make sure the
       // event handler we're going to fire wasn't removed.
       if (originalListeners === this._eventEmitterListeners.get(aEvent) ||
-          this._eventEmitterListeners.get(aEvent).some(function(l) l === listener)) {
+          this._eventEmitterListeners.get(aEvent).some(l => l === listener)) {
         try {
           listener.apply(null, arguments);
         }
@@ -147,60 +157,60 @@ EventEmitter.prototype = {
   },
 
   logEvent: function(aEvent, args) {
-    let logging = isWorker ? true : Services.prefs.getBoolPref("devtools.dump.emit");
-
-    if (logging) {
-      let caller, func, path;
-      if (!isWorker) {
-        caller = components.stack.caller.caller;
-        func = caller.name;
-        let file = caller.filename;
-        if (file.contains(" -> ")) {
-          file = caller.filename.split(/ -> /)[1];
-        }
-        path = file + ":" + caller.lineNumber;
-      }
-
-      let argOut = "(";
-      if (args.length === 1) {
-        argOut += aEvent;
-      }
-
-      let out = "EMITTING: ";
-
-      // We need this try / catch to prevent any dead object errors.
-      try {
-        for (let i = 1; i < args.length; i++) {
-          if (i === 1) {
-            argOut = "(" + aEvent + ", ";
-          } else {
-            argOut += ", ";
-          }
-
-          let arg = args[i];
-          argOut += arg;
-
-          if (arg && arg.nodeName) {
-            argOut += " (" + arg.nodeName;
-            if (arg.id) {
-              argOut += "#" + arg.id;
-            }
-            if (arg.className) {
-              argOut += "." + arg.className;
-            }
-            argOut += ")";
-          }
-        }
-      } catch(e) {
-        // Object is dead so the toolbox is most likely shutting down,
-        // do nothing.
-      }
-
-      argOut += ")";
-      out += "emit" + argOut + " from " + func + "() -> " + path + "\n";
-
-      dump(out);
+    if (!loggingEnabled) {
+      return;
     }
+
+    let caller, func, path;
+    if (!isWorker) {
+      caller = components.stack.caller.caller;
+      func = caller.name;
+      let file = caller.filename;
+      if (file.includes(" -> ")) {
+        file = caller.filename.split(/ -> /)[1];
+      }
+      path = file + ":" + caller.lineNumber;
+    }
+
+    let argOut = "(";
+    if (args.length === 1) {
+      argOut += aEvent;
+    }
+
+    let out = "EMITTING: ";
+
+    // We need this try / catch to prevent any dead object errors.
+    try {
+      for (let i = 1; i < args.length; i++) {
+        if (i === 1) {
+          argOut = "(" + aEvent + ", ";
+        } else {
+          argOut += ", ";
+        }
+
+        let arg = args[i];
+        argOut += arg;
+
+        if (arg && arg.nodeName) {
+          argOut += " (" + arg.nodeName;
+          if (arg.id) {
+            argOut += "#" + arg.id;
+          }
+          if (arg.className) {
+            argOut += "." + arg.className;
+          }
+          argOut += ")";
+        }
+      }
+    } catch(e) {
+      // Object is dead so the toolbox is most likely shutting down,
+      // do nothing.
+    }
+
+    argOut += ")";
+    out += "emit" + argOut + " from " + func + "() -> " + path + "\n";
+
+    dump(out);
   },
 };
 

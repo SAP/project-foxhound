@@ -19,7 +19,7 @@
 namespace IPC {
 template<typename T>
 struct ParamTraits;
-}
+} // namespace IPC
 
 //
 // Provides:
@@ -89,7 +89,7 @@ public:
    *
    * @returns A handle that can be shared to another process
    */
-  CrossProcessMutexHandle ShareToProcess(base::ProcessHandle aTarget);
+  CrossProcessMutexHandle ShareToProcess(base::ProcessId aTargetPid);
 
 private:
   friend struct IPC::ParamTraits<CrossProcessMutex>;
@@ -110,5 +110,6 @@ private:
 typedef BaseAutoLock<CrossProcessMutex> CrossProcessMutexAutoLock;
 typedef BaseAutoUnlock<CrossProcessMutex> CrossProcessMutexAutoUnlock;
 
-}
+} // namespace mozilla
+
 #endif

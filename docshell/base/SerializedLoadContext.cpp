@@ -7,6 +7,7 @@
 #include "SerializedLoadContext.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
+#include "nsIPrivateBrowsingChannel.h"
 #include "nsIWebSocketChannel.h"
 
 namespace IPC {
@@ -77,4 +78,3 @@ SerializedLoadContext::Init(nsILoadContext* aLoadContext)
 }
 
 } // namespace IPC
-

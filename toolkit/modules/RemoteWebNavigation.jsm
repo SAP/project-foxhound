@@ -16,14 +16,29 @@ function makeURI(url)
          newURI(url, null, null);
 }
 
+function readInputStreamToString(aStream)
+{
+  Cu.import("resource://gre/modules/NetUtil.jsm");
+  return NetUtil.readInputStreamToString(aStream, aStream.available());
+}
+
 function RemoteWebNavigation(browser)
 {
-  this._browser = browser;
-  this._browser.messageManager.addMessageListener("WebNavigation:setHistory", this);
+  this.swapBrowser(browser);
 }
 
 RemoteWebNavigation.prototype = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebNavigation, Ci.nsISupports]),
+
+  swapBrowser: function(aBrowser) {
+    if (this._messageManager) {
+      this._messageManager.removeMessageListener("WebNavigation:setHistory", this);
+    }
+
+    this._browser = aBrowser;
+    this._messageManager = aBrowser.messageManager;
+    this._messageManager.addMessageListener("WebNavigation:setHistory", this);
+  },
 
   LOAD_FLAGS_MASK: 65535,
   LOAD_FLAGS_NONE: 0,
@@ -64,14 +79,13 @@ RemoteWebNavigation.prototype = {
   },
   loadURIWithOptions: function(aURI, aLoadFlags, aReferrer, aReferrerPolicy,
                                aPostData, aHeaders, aBaseURI) {
-    if (aPostData || aHeaders)
-      throw Components.Exception("RemoteWebNavigation doesn't accept postdata or headers.", Cr.NS_ERROR_INVALID_ARGS);
-
     this._sendMessage("WebNavigation:LoadURI", {
       uri: aURI,
       flags: aLoadFlags,
       referrer: aReferrer ? aReferrer.spec : null,
       referrerPolicy: aReferrerPolicy,
+      postData: aPostData ? readInputStreamToString(aPostData) : null,
+      headers: aHeaders ? readInputStreamToString(aHeaders) : null,
       baseURI: aBaseURI ? aBaseURI.spec : null,
     });
   },

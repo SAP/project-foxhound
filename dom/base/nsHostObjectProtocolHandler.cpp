@@ -5,19 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHostObjectProtocolHandler.h"
-#include "nsHostObjectURI.h"
-#include "nsError.h"
-#include "nsClassHashtable.h"
-#include "nsNetUtil.h"
-#include "nsIPrincipal.h"
-#include "DOMMediaStream.h"
-#include "mozilla/dom/MediaSource.h"
-#include "nsIMemoryReporter.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/LoadInfo.h"
 
-using mozilla::dom::FileImpl;
+#include "DOMMediaStream.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/MediaSource.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/Preferences.h"
+#include "nsClassHashtable.h"
+#include "nsError.h"
+#include "nsHostObjectURI.h"
+#include "nsIMemoryReporter.h"
+#include "nsIPrincipal.h"
+#include "nsIUUIDGenerator.h"
+#include "nsNetUtil.h"
+
+using mozilla::dom::BlobImpl;
 using mozilla::ErrorResult;
 using mozilla::LoadInfo;
 
@@ -163,14 +165,51 @@ class BlobURLsReporter final : public nsIMemoryReporter
     return PL_DHASH_NEXT;
   }
 
+  static void BuildPath(nsAutoCString& path,
+                        nsCStringHashKey::KeyType aKey,
+                        DataInfo* aInfo,
+                        bool anonymize)
+  {
+    nsCOMPtr<nsIURI> principalURI;
+    nsAutoCString url, owner;
+    if (NS_SUCCEEDED(aInfo->mPrincipal->GetURI(getter_AddRefs(principalURI))) &&
+        principalURI != nullptr &&
+        NS_SUCCEEDED(principalURI->GetSpec(owner)) &&
+        !owner.IsEmpty()) {
+      owner.ReplaceChar('/', '\\');
+      path += "owner(";
+      if (anonymize) {
+        path += "<anonymized>";
+      } else {
+        path += owner;
+      }
+      path += ")";
+    } else {
+      path += "owner unknown";
+    }
+    path += "/";
+    if (anonymize) {
+      path += "<anonymized-stack>";
+    } else {
+      path += aInfo->mStack;
+    }
+    url = aKey;
+    url.ReplaceChar('/', '\\');
+    if (anonymize) {
+      path += "<anonymized-url>";
+    } else {
+      path += url;
+    }
+  }
+
   static PLDHashOperator ReportCallback(nsCStringHashKey::KeyType aKey,
                                         DataInfo* aInfo,
                                         void* aUserArg)
   {
     EnumArg* envp = static_cast<EnumArg*>(aUserArg);
-    nsCOMPtr<nsIDOMBlob> blob;
+    nsCOMPtr<nsIDOMBlob> tmp = do_QueryInterface(aInfo->mObject);
+    nsRefPtr<mozilla::dom::Blob> blob = static_cast<mozilla::dom::Blob*>(tmp.get());
 
-    blob = do_QueryInterface(aInfo->mObject);
     if (blob) {
       NS_NAMED_LITERAL_CSTRING
         (desc, "A blob URL allocated with URL.createObjectURL; the referenced "
@@ -189,40 +228,17 @@ class BlobURLsReporter final : public nsIMemoryReporter
       bool isMemoryFile = blob->IsMemoryFile();
 
       if (isMemoryFile) {
-        if (NS_FAILED(blob->GetSize(&size))) {
+        ErrorResult rv;
+        size = blob->GetSize(rv);
+        if (NS_WARN_IF(rv.Failed())) {
+          rv.SuppressException();
           size = 0;
         }
       }
 
       path = isMemoryFile ? "memory-blob-urls/" : "file-blob-urls/";
-      if (NS_SUCCEEDED(aInfo->mPrincipal->GetURI(getter_AddRefs(principalURI))) &&
-          principalURI != nullptr &&
-          NS_SUCCEEDED(principalURI->GetSpec(owner)) &&
-          !owner.IsEmpty()) {
-        owner.ReplaceChar('/', '\\');
-        path += "owner(";
-        if (envp->mAnonymize) {
-          path += "<anonymized>";
-        } else {
-          path += owner;
-        }
-        path += ")";
-      } else {
-        path += "owner unknown";
-      }
-      path += "/";
-      if (envp->mAnonymize) {
-        path += "<anonymized-stack>";
-      } else {
-        path += aInfo->mStack;
-      }
-      url = aKey;
-      url.ReplaceChar('/', '\\');
-      if (envp->mAnonymize) {
-        path += "<anonymized-url>";
-      } else {
-        path += url;
-      }
+      BuildPath(path, aKey, aInfo, envp->mAnonymize);
+
       if (refCount > 1) {
         nsAutoCString addrStr;
 
@@ -268,14 +284,34 @@ class BlobURLsReporter final : public nsIMemoryReporter
             descString,
             envp->mData);
       }
+    } else {
+      // Just report the path for the DOMMediaStream or MediaSource.
+      nsCOMPtr<mozilla::dom::MediaSource> ms(do_QueryInterface(aInfo->mObject));
+      nsAutoCString path;
+      path = ms ? "media-source-urls/" : "dom-media-stream-urls/";
+      BuildPath(path, aKey, aInfo, envp->mAnonymize);
+
+      NS_NAMED_LITERAL_CSTRING
+        (desc, "An object URL allocated with URL.createObjectURL; the referenced "
+               "data cannot be freed until all URLs for it have been explicitly "
+               "invalidated with URL.revokeObjectURL.");
+
+      envp->mCallback->Callback(EmptyCString(),
+          path,
+          KIND_OTHER,
+          UNITS_COUNT,
+          1,
+          desc,
+          envp->mData);
     }
+
     return PL_DHASH_NEXT;
   }
 };
 
 NS_IMPL_ISUPPORTS(BlobURLsReporter, nsIMemoryReporter)
 
-}
+} // namespace mozilla
 
 void
 nsHostObjectProtocolHandler::Init(void)
@@ -360,13 +396,13 @@ nsHostObjectProtocolHandler::GenerateURIString(const nsACString &aScheme,
   aUri.Append(':');
 
   if (aPrincipal) {
-    nsAutoString origin;
-    rv = nsContentUtils::GetUTFOrigin(aPrincipal, origin);
+    nsAutoCString origin;
+    rv = nsContentUtils::GetASCIIOrigin(aPrincipal, origin);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    AppendUTF16toUTF8(origin, aUri);
+    aUri.Append(origin);
     aUri.Append('/');
   }
 
@@ -431,13 +467,18 @@ nsHostObjectProtocolHandler::Traverse(const nsACString& aUri,
 }
 
 static nsISupports*
+GetDataObjectForSpec(const nsACString& aSpec)
+{
+  DataInfo* info = GetDataInfo(aSpec);
+  return info ? info->mObject : nullptr;
+}
+
+static nsISupports*
 GetDataObject(nsIURI* aURI)
 {
   nsCString spec;
   aURI->GetSpec(spec);
-
-  DataInfo* info = GetDataInfo(spec);
-  return info ? info->mObject : nullptr;
+  return GetDataObjectForSpec(spec);
 }
 
 // -----------------------------------------------------------------------
@@ -499,7 +540,7 @@ nsHostObjectProtocolHandler::NewChannel2(nsIURI* uri,
     return NS_ERROR_DOM_BAD_URI;
   }
 
-  nsCOMPtr<FileImpl> blob = do_QueryInterface(info->mObject);
+  nsCOMPtr<BlobImpl> blob = do_QueryInterface(info->mObject);
   if (!blob) {
     return NS_ERROR_DOM_BAD_URI;
   }
@@ -513,9 +554,12 @@ nsHostObjectProtocolHandler::NewChannel2(nsIURI* uri,
   }
 #endif
 
+  ErrorResult rv;
   nsCOMPtr<nsIInputStream> stream;
-  nsresult rv = blob->GetInternalStream(getter_AddRefs(stream));
-  NS_ENSURE_SUCCESS(rv, rv);
+  blob->GetInternalStream(getter_AddRefs(stream), rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
+  }
 
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewInputStreamChannelInternal(getter_AddRefs(channel),
@@ -524,7 +568,9 @@ nsHostObjectProtocolHandler::NewChannel2(nsIURI* uri,
                                         EmptyCString(), // aContentType
                                         EmptyCString(), // aContentCharset
                                         aLoadInfo);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
+  }
 
   nsString type;
   blob->GetType(type);
@@ -535,10 +581,9 @@ nsHostObjectProtocolHandler::NewChannel2(nsIURI* uri,
     channel->SetContentDispositionFilename(filename);
   }
 
-  ErrorResult error;
-  uint64_t size = blob->GetSize(error);
-  if (NS_WARN_IF(error.Failed())) {
-    return error.ErrorCode();
+  uint64_t size = blob->GetSize(rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
   }
 
   channel->SetOriginalURI(uri);
@@ -594,13 +639,27 @@ nsFontTableProtocolHandler::GetScheme(nsACString &result)
 }
 
 nsresult
-NS_GetBlobForBlobURI(nsIURI* aURI, FileImpl** aBlob)
+NS_GetBlobForBlobURI(nsIURI* aURI, BlobImpl** aBlob)
 {
   NS_ASSERTION(IsBlobURI(aURI), "Only call this with blob URIs");
 
   *aBlob = nullptr;
 
-  nsCOMPtr<FileImpl> blob = do_QueryInterface(GetDataObject(aURI));
+  nsCOMPtr<BlobImpl> blob = do_QueryInterface(GetDataObject(aURI));
+  if (!blob) {
+    return NS_ERROR_DOM_BAD_URI;
+  }
+
+  blob.forget(aBlob);
+  return NS_OK;
+}
+
+nsresult
+NS_GetBlobForBlobURISpec(const nsACString& aSpec, BlobImpl** aBlob)
+{
+  *aBlob = nullptr;
+
+  nsCOMPtr<BlobImpl> blob = do_QueryInterface(GetDataObjectForSpec(aSpec));
   if (!blob) {
     return NS_ERROR_DOM_BAD_URI;
   }
@@ -612,13 +671,19 @@ NS_GetBlobForBlobURI(nsIURI* aURI, FileImpl** aBlob)
 nsresult
 NS_GetStreamForBlobURI(nsIURI* aURI, nsIInputStream** aStream)
 {
-  nsRefPtr<FileImpl> blobImpl;
-  nsresult rv = NS_GetBlobForBlobURI(aURI, getter_AddRefs(blobImpl));
-  if (NS_FAILED(rv)) {
-    return rv;
+  nsRefPtr<BlobImpl> blobImpl;
+  ErrorResult rv;
+  rv = NS_GetBlobForBlobURI(aURI, getter_AddRefs(blobImpl));
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
   }
 
-  return blobImpl->GetInternalStream(aStream);
+  blobImpl->GetInternalStream(aStream, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
+  return NS_OK;
 }
 
 nsresult

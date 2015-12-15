@@ -24,9 +24,6 @@
 #include "nsRect.h"
 #include "PluginDataResolver.h"
 
-#ifdef MOZ_X11
-class gfxXlibSurface;
-#endif
 #include "mozilla/unused.h"
 
 class gfxASurface;
@@ -36,8 +33,7 @@ class nsPluginInstanceOwner;
 namespace mozilla {
 namespace layers {
 class ImageContainer;
-class CompositionNotifySink;
-}
+} // namespace layers
 namespace plugins {
 
 class PBrowserStreamParent;
@@ -68,7 +64,8 @@ public:
 
     virtual ~PluginInstanceParent();
 
-    bool Init();
+    bool InitMetadata(const nsACString& aMimeType,
+                      const nsACString& aSrcAttribute);
     NPError Destroy();
 
     virtual void ActorDestroy(ActorDestroyReason why) override;
@@ -131,6 +128,9 @@ public:
     virtual bool
     AnswerNPN_SetValue_NPPVpluginEventModel(const int& eventModel,
                                              NPError* result) override;
+    virtual bool
+    AnswerNPN_SetValue_NPPVpluginIsPlayingAudio(const bool& isAudioPlaying,
+                                                NPError* result) override;
 
     virtual bool
     AnswerNPN_GetURL(const nsCString& url, const nsCString& target,
@@ -221,6 +221,9 @@ public:
     virtual bool
     RecvAsyncNPP_NewResult(const NPError& aResult) override;
 
+    virtual bool
+    RecvSetNetscapeWindowAsParent(const NativeWindowHandle& childWindow) override;
+
     NPError NPP_SetWindow(const NPWindow* aWindow);
 
     NPError NPP_GetValue(NPPVariable variable, void* retval);
@@ -269,6 +272,24 @@ public:
     UseSurrogate() const
     {
         return mUseSurrogate;
+    }
+
+    void
+    GetSrcAttribute(nsACString& aOutput) const
+    {
+        aOutput = mSrcAttribute;
+    }
+
+    /**
+     * This function tells us whether this plugin instance would have been
+     * whitelisted for Shumway if Shumway had been enabled. This is being used
+     * for the purpose of gathering telemetry on Flash hangs that could
+     * potentially be avoided by using Shumway instead.
+     */
+    bool
+    IsWhitelistedForShumway() const
+    {
+        return mIsWhitelistedForShumway;
     }
 
     virtual bool
@@ -323,9 +344,10 @@ private:
     bool mUseSurrogate;
     NPP mNPP;
     const NPNetscapeFuncs* mNPNIface;
+    nsCString mSrcAttribute;
+    bool mIsWhitelistedForShumway;
     NPWindowType mWindowType;
     int16_t            mDrawingModel;
-    nsAutoPtr<mozilla::layers::CompositionNotifySink> mNotifySink;
 
     nsDataHashtable<nsPtrHashKey<NPObject>, PluginScriptableObjectParent*> mScriptableObjects;
 
@@ -342,11 +364,18 @@ private:
     void SubclassPluginWindow(HWND aWnd);
     void UnsubclassPluginWindow();
 
+    bool MaybeCreateAndParentChildPluginWindow();
+    void MaybeCreateChildPopupSurrogate();
+
 private:
     gfx::SharedDIBWin  mSharedSurfaceDib;
     nsIntRect          mPluginPort;
     nsIntRect          mSharedSize;
     HWND               mPluginHWND;
+    // This is used for the normal child plugin HWND for windowed plugins and,
+    // if needed, also the child popup surrogate HWND for windowless plugins.
+    HWND               mChildPluginHWND;
+    HWND               mChildPluginsParentHWND;
     WNDPROC            mPluginWndProc;
     bool               mNestedEventState;
 

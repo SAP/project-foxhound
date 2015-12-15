@@ -21,7 +21,7 @@ const PREF_LOG_LEVEL_DUMP = "identity.fxaccounts.log.appender.dump";
 // identifiable info, credentials, etc) will be logged.
 const PREF_LOG_SENSITIVE_DETAILS = "identity.fxaccounts.log.sensitive";
 
-let exports = Object.create(null);
+var exports = Object.create(null);
 
 XPCOMUtils.defineLazyGetter(exports, 'log', function() {
   let log = Log.repository.getLogger("FirefoxAccounts");
@@ -90,12 +90,17 @@ exports.ONLOGOUT_NOTIFICATION = "fxaccounts:onlogout";
 // Internal to services/fxaccounts only
 exports.ON_FXA_UPDATE_NOTIFICATION = "fxaccounts:update";
 
+exports.ON_PROFILE_CHANGE_NOTIFICATION = "fxaccounts:profilechange";
+
 // UI Requests.
 exports.UI_REQUEST_SIGN_IN_FLOW = "signInFlow";
 exports.UI_REQUEST_REFRESH_AUTH = "refreshAuthentication";
 
 // The OAuth client ID for Firefox Desktop
 exports.FX_OAUTH_CLIENT_ID = "5882386c6d801776";
+
+// Firefox Accounts WebChannel ID
+exports.WEBCHANNEL_ID = "account_updates";
 
 // Server errno.
 // From https://github.com/mozilla/fxa-auth-server/blob/master/docs/api.md#response-format
@@ -125,22 +130,22 @@ exports.ERRNO_NETWORK                        = 998;
 exports.ERRNO_UNKNOWN_ERROR                  = 999;
 
 // Offset oauth server errnos so they don't conflict with auth server errnos
-const OAUTH_SERVER_ERRNO_OFFSET = exports.OAUTH_SERVER_ERRNO_OFFSET = 1000;
+exports.OAUTH_SERVER_ERRNO_OFFSET = 1000;
 
 // OAuth Server errno.
-exports.ERRNO_UNKNOWN_CLIENT_ID              = 101 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INCORRECT_CLIENT_SECRET        = 102 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INCORRECT_REDIRECT_URI         = 103 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INVALID_FXA_ASSERTION          = 104 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_UNKNOWN_CODE                   = 105 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INCORRECT_CODE                 = 106 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_EXPIRED_CODE                   = 107 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_OAUTH_INVALID_TOKEN            = 108 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INVALID_REQUEST_PARAM          = 109 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INVALID_RESPONSE_TYPE          = 110 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_UNAUTHORIZED                   = 111 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_FORBIDDEN                      = 112 + OAUTH_SERVER_ERRNO_OFFSET;
-exports.ERRNO_INVALID_CONTENT_TYPE           = 113 + OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_UNKNOWN_CLIENT_ID              = 101 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INCORRECT_CLIENT_SECRET        = 102 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INCORRECT_REDIRECT_URI         = 103 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INVALID_FXA_ASSERTION          = 104 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_UNKNOWN_CODE                   = 105 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INCORRECT_CODE                 = 106 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_EXPIRED_CODE                   = 107 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_OAUTH_INVALID_TOKEN            = 108 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INVALID_REQUEST_PARAM          = 109 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INVALID_RESPONSE_TYPE          = 110 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_UNAUTHORIZED                   = 111 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_FORBIDDEN                      = 112 + exports.OAUTH_SERVER_ERRNO_OFFSET;
+exports.ERRNO_INVALID_CONTENT_TYPE           = 113 + exports.OAUTH_SERVER_ERRNO_OFFSET;
 
 // Errors.
 exports.ERROR_ACCOUNT_ALREADY_EXISTS         = "ACCOUNT_ALREADY_EXISTS";
@@ -171,6 +176,7 @@ exports.ERROR_OFFLINE                        = "OFFLINE";
 exports.ERROR_PERMISSION_DENIED              = "PERMISSION_DENIED";
 exports.ERROR_REQUEST_BODY_TOO_LARGE         = "REQUEST_BODY_TOO_LARGE";
 exports.ERROR_SERVER_ERROR                   = "SERVER_ERROR";
+exports.ERROR_SYNC_DISABLED                  = "SYNC_DISABLED";
 exports.ERROR_TOO_MANY_CLIENT_REQUESTS       = "TOO_MANY_CLIENT_REQUESTS";
 exports.ERROR_SERVICE_TEMP_UNAVAILABLE       = "SERVICE_TEMPORARY_UNAVAILABLE";
 exports.ERROR_UI_ERROR                       = "UI_ERROR";
@@ -206,12 +212,22 @@ exports.ERROR_MSG_METHOD_NOT_ALLOWED         = "METHOD_NOT_ALLOWED";
 
 // FxAccounts has the ability to "split" the credentials between a plain-text
 // JSON file in the profile dir and in the login manager.
-// These constants relate to that.
+// In order to prevent new fields accidentally ending up in the "wrong" place,
+// all fields stored are listed here.
 
 // The fields we save in the plaintext JSON.
 // See bug 1013064 comments 23-25 for why the sessionToken is "safe"
-exports.FXA_PWDMGR_PLAINTEXT_FIELDS = ["email", "verified", "authAt",
-                                       "sessionToken", "uid"];
+exports.FXA_PWDMGR_PLAINTEXT_FIELDS = new Set(
+  ["email", "verified", "authAt", "sessionToken", "uid", "oauthTokens", "profile"]);
+
+// Fields we store in secure storage if it exists.
+exports.FXA_PWDMGR_SECURE_FIELDS = new Set(
+  ["kA", "kB", "keyFetchToken", "unwrapBKey", "assertion"]);
+
+// Fields we keep in memory and don't persist anywhere.
+exports.FXA_PWDMGR_MEMORY_FIELDS = new Set(
+  ["cert", "keyPair"]);
+
 // The pseudo-host we use in the login manager
 exports.FXA_PWDMGR_HOST = "chrome://FirefoxAccounts";
 // The realm we use in the login manager.

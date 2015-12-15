@@ -9,12 +9,14 @@
 
 #include "Compatibility.h"
 #include "DocAccessible-inl.h"
+#include "mozilla/a11y/DocAccessibleParent.h"
 #include "EnumVariant.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 #include "nsIAccessibleEvent.h"
 #include "nsWinUtils.h"
 #include "mozilla/a11y/ProxyAccessible.h"
+#include "ProxyWrappers.h"
 #include "ServiceProvider.h"
 #include "Relation.h"
 #include "Role.h"
@@ -56,15 +58,45 @@ const uint32_t USE_ROLE_STRING = 0;
 static gAccessibles = 0;
 #endif
 
+#ifdef _WIN64
+IDSet AccessibleWrap::sIDGen;
+#endif
+
 static const int32_t kIEnumVariantDisconnected = -1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // AccessibleWrap
 ////////////////////////////////////////////////////////////////////////////////
+AccessibleWrap::AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc) :
+  Accessible(aContent, aDoc)
+#ifdef _WIN64
+  , mID(kNoID)
+#endif
+{
+}
+
+AccessibleWrap::~AccessibleWrap()
+{
+#ifdef _WIN64
+  if (mID != kNoID)
+    sIDGen.ReleaseID(mID);
+#endif
+}
 
 ITypeInfo* AccessibleWrap::gTypeInfo = nullptr;
 
 NS_IMPL_ISUPPORTS_INHERITED0(AccessibleWrap, Accessible)
+
+void
+AccessibleWrap::Shutdown()
+{
+#ifdef _WIN64
+  if (mID != kNoID)
+    static_cast<DocAccessibleWrap*>(mDoc)->RemoveID(mID);
+#endif
+
+  Accessible::Shutdown();
+}
 
 //-----------------------------------------------------
 // IUnknown interface methods - see iunknown.h for documentation
@@ -83,21 +115,17 @@ AccessibleWrap::QueryInterface(REFIID iid, void** ppv)
 
   if (IID_IUnknown == iid)
     *ppv = static_cast<IAccessible*>(this);
-
-  if (!*ppv && IsProxy())
-    return E_NOINTERFACE;
-
-  if (IID_IDispatch == iid || IID_IAccessible == iid)
+  else if (IID_IDispatch == iid || IID_IAccessible == iid)
     *ppv = static_cast<IAccessible*>(this);
-  else if (IID_IEnumVARIANT == iid) {
+  else if (IID_IEnumVARIANT == iid && !IsProxy()) {
     // Don't support this interface for leaf elements.
     if (!HasChildren() || nsAccUtils::MustPrune(this))
       return E_NOINTERFACE;
 
     *ppv = static_cast<IEnumVARIANT*>(new ChildrenEnumVariant(this));
-  } else if (IID_IServiceProvider == iid)
+  } else if (IID_IServiceProvider == iid && !IsProxy())
     *ppv = new ServiceProvider(this);
-  else if (IID_ISimpleDOMNode == iid) {
+  else if (IID_ISimpleDOMNode == iid && !IsProxy()) {
     if (IsDefunct() || (!HasOwnContent() && !IsDoc()))
       return E_NOINTERFACE;
 
@@ -110,7 +138,7 @@ AccessibleWrap::QueryInterface(REFIID iid, void** ppv)
       return hr;
   }
 
-  if (nullptr == *ppv) {
+  if (nullptr == *ppv && !IsProxy()) {
     HRESULT hr = ia2AccessibleComponent::QueryInterface(iid, ppv);
     if (SUCCEEDED(hr))
       return hr;
@@ -122,7 +150,7 @@ AccessibleWrap::QueryInterface(REFIID iid, void** ppv)
       return hr;
   }
 
-  if (nullptr == *ppv) {
+  if (nullptr == *ppv && !IsProxy()) {
     HRESULT hr = ia2AccessibleValue::QueryInterface(iid, ppv);
     if (SUCCEEDED(hr))
       return hr;
@@ -1171,6 +1199,41 @@ AccessibleWrap::GetNativeInterface(void** aOutAccessible)
   NS_ADDREF_THIS();
 }
 
+void
+AccessibleWrap::FireWinEvent(Accessible* aTarget, uint32_t aEventType)
+{
+  static_assert(sizeof(gWinEventMap)/sizeof(gWinEventMap[0]) == nsIAccessibleEvent::EVENT_LAST_ENTRY,
+                "MSAA event map skewed");
+
+  NS_ASSERTION(aEventType > 0 && aEventType < ArrayLength(gWinEventMap), "invalid event type");
+
+  uint32_t winEvent = gWinEventMap[aEventType];
+  if (!winEvent)
+    return;
+
+  int32_t childID = GetChildIDFor(aTarget);
+  if (!childID)
+    return; // Can't fire an event without a child ID
+
+  HWND hwnd = GetHWNDFor(aTarget);
+  if (!hwnd) {
+    return;
+  }
+
+  // Fire MSAA event for client area window.
+  ::NotifyWinEvent(winEvent, hwnd, OBJID_CLIENT, childID);
+
+  // JAWS announces collapsed combobox navigation based on focus events.
+  if (aEventType == nsIAccessibleEvent::EVENT_SELECTION &&
+      Compatibility::IsJAWS()) {
+    roles::Role role = aTarget->IsProxy() ? aTarget->Proxy()->Role() :
+      aTarget->Role();
+    if (role == roles::COMBOBOX_OPTION) {
+      ::NotifyWinEvent(EVENT_OBJECT_FOCUS, hwnd, OBJID_CLIENT, childID);
+    }
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible
 
@@ -1180,23 +1243,11 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
   nsresult rv = Accessible::HandleAccEvent(aEvent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Don't fire native MSAA events or mess with the system caret
-  // when running in metro mode. This confuses input focus tracking
-  // in metro's UIA implementation.
-  if (XRE_GetWindowsEnvironment() == WindowsEnvironmentType_Metro) {
+  if (IPCAccessibilityActive()) {
     return NS_OK;
   }
 
   uint32_t eventType = aEvent->GetEventType();
-
-  static_assert(sizeof(gWinEventMap)/sizeof(gWinEventMap[0]) == nsIAccessibleEvent::EVENT_LAST_ENTRY,
-                "MSAA event map skewed");
-
-  NS_ENSURE_TRUE(eventType > 0 && eventType < ArrayLength(gWinEventMap), NS_ERROR_FAILURE);
-
-  uint32_t winEvent = gWinEventMap[eventType];
-  if (!winEvent)
-    return NS_OK;
 
   // Means we're not active.
   NS_ENSURE_TRUE(!IsDefunct(), NS_ERROR_FAILURE);
@@ -1210,43 +1261,25 @@ AccessibleWrap::HandleAccEvent(AccEvent* aEvent)
     UpdateSystemCaretFor(accessible);
   }
 
-  int32_t childID = GetChildIDFor(accessible); // get the id for the accessible
-  if (!childID)
-    return NS_OK; // Can't fire an event without a child ID
-
-  HWND hWnd = GetHWNDFor(accessible);
-  NS_ENSURE_TRUE(hWnd, NS_ERROR_FAILURE);
-
-  nsAutoString tag;
-  nsAutoCString id;
-  nsIContent* cnt = accessible->GetContent();
-  if (cnt) {
-    cnt->Tag()->ToString(tag);
-    nsIAtom* aid = cnt->GetID();
-    if (aid)
-      aid->ToUTF8String(id);
-  }
-
-#ifdef A11Y_LOG
-  if (logging::IsEnabled(logging::ePlatforms)) {
-    printf("\n\nMSAA event: event: %d, target: %s@id='%s', childid: %d, hwnd: %p\n\n",
-           eventType, NS_ConvertUTF16toUTF8(tag).get(), id.get(),
-           childID, hWnd);
-  }
-#endif
-
-  // Fire MSAA event for client area window.
-  ::NotifyWinEvent(winEvent, hWnd, OBJID_CLIENT, childID);
-
-  // JAWS announces collapsed combobox navigation based on focus events.
-  if (Compatibility::IsJAWS()) {
-    if (eventType == nsIAccessibleEvent::EVENT_SELECTION &&
-      accessible->Role() == roles::COMBOBOX_OPTION) {
-      ::NotifyWinEvent(EVENT_OBJECT_FOCUS, hWnd, OBJID_CLIENT, childID);
-    }
-  }
+  FireWinEvent(accessible, eventType);
 
   return NS_OK;
+}
+
+DocProxyAccessibleWrap*
+AccessibleWrap::DocProxyWrapper() const
+{
+  MOZ_ASSERT(IsProxy());
+
+  ProxyAccessible* proxy = Proxy();
+  if (!proxy) {
+    return nullptr;
+  }
+
+  AccessibleWrap* acc = WrapperFor(proxy->Document());
+  MOZ_ASSERT(acc->IsDoc());
+
+ return static_cast<DocProxyAccessibleWrap*>(acc);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1261,44 +1294,94 @@ AccessibleWrap::GetChildIDFor(Accessible* aAccessible)
   // so that the 3rd party application can call back and get the IAccessible
   // the event occurred on.
 
-  // Yes, this means we're only compatibible with 32 bit
-  // MSAA is only available for 32 bit windows, so it's okay
-  // XXX: bug 606080
-  return aAccessible ? - NS_PTR_TO_INT32(aAccessible->UniqueID()) : 0;
+  if (!aAccessible) {
+    return 0;
+  }
+
+#ifdef _WIN64
+  if (!aAccessible->Document() && !aAccessible->IsProxy())
+    return 0;
+
+  uint32_t* id = & static_cast<AccessibleWrap*>(aAccessible)->mID;
+  if (*id != kNoID)
+    return *id;
+
+  *id = sIDGen.GetID();
+
+  if (aAccessible->IsProxy()) {
+    DocProxyAccessibleWrap* doc =
+      static_cast<AccessibleWrap*>(aAccessible)->DocProxyWrapper();
+    doc->AddID(*id, static_cast<AccessibleWrap*>(aAccessible));
+  } else {
+    DocAccessibleWrap* doc =
+      static_cast<DocAccessibleWrap*>(aAccessible->Document());
+    doc->AddID(*id, static_cast<AccessibleWrap*>(aAccessible));
+  }
+
+  return *id;
+#else
+  int32_t id = - reinterpret_cast<intptr_t>(aAccessible);
+  if (aAccessible->IsProxy()) {
+    DocProxyAccessibleWrap* doc =
+      static_cast<AccessibleWrap*>(aAccessible)->DocProxyWrapper();
+    doc->AddID(id, static_cast<AccessibleWrap*>(aAccessible));
+  }
+
+  return id;
+#endif
 }
 
 HWND
 AccessibleWrap::GetHWNDFor(Accessible* aAccessible)
 {
-  if (aAccessible) {
-    DocAccessible* document = aAccessible->Document();
-    if(!document)
-      return nullptr;
+  if (!aAccessible) {
+    return nullptr;
+  }
 
-    // Popup lives in own windows, use its HWND until the popup window is
-    // hidden to make old JAWS versions work with collapsed comboboxes (see
-    // discussion in bug 379678).
-    nsIFrame* frame = aAccessible->GetFrame();
-    if (frame) {
-      nsIWidget* widget = frame->GetNearestWidget();
-      if (widget && widget->IsVisible()) {
-        nsIPresShell* shell = document->PresShell();
-        nsViewManager* vm = shell->GetViewManager();
-        if (vm) {
-          nsCOMPtr<nsIWidget> rootWidget;
-          vm->GetRootWidget(getter_AddRefs(rootWidget));
-          // Make sure the accessible belongs to popup. If not then use
-          // document HWND (which might be different from root widget in the
-          // case of window emulation).
-          if (rootWidget != widget)
-            return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
-        }
-      }
+  // Accessibles in child processes are said to have the HWND of the window
+  // their tab is within.  Popups are always in the parent process, and so
+  // never proxied, which means this is basically correct.
+  if (aAccessible->IsProxy()) {
+    ProxyAccessible* proxy = aAccessible->Proxy();
+    if (!proxy) {
+      return nullptr;
     }
 
-    return static_cast<HWND>(document->GetNativeWindow());
+    Accessible* outerDoc = proxy->OuterDocOfRemoteBrowser();
+    NS_ASSERTION(outerDoc, "no outer doc for accessible remote tab!");
+    if (!outerDoc) {
+      return nullptr;
+    }
+
+    return GetHWNDFor(outerDoc);
   }
-  return nullptr;
+
+  DocAccessible* document = aAccessible->Document();
+  if(!document)
+    return nullptr;
+
+  // Popup lives in own windows, use its HWND until the popup window is
+  // hidden to make old JAWS versions work with collapsed comboboxes (see
+  // discussion in bug 379678).
+  nsIFrame* frame = aAccessible->GetFrame();
+  if (frame) {
+    nsIWidget* widget = frame->GetNearestWidget();
+    if (widget && widget->IsVisible()) {
+      nsIPresShell* shell = document->PresShell();
+      nsViewManager* vm = shell->GetViewManager();
+      if (vm) {
+        nsCOMPtr<nsIWidget> rootWidget;
+        vm->GetRootWidget(getter_AddRefs(rootWidget));
+        // Make sure the accessible belongs to popup. If not then use
+        // document HWND (which might be different from root widget in the
+        // case of window emulation).
+        if (rootWidget != widget)
+          return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
+      }
+    }
+  }
+
+  return static_cast<HWND>(document->GetNativeWindow());
 }
 
 IDispatch*
@@ -1313,6 +1396,25 @@ AccessibleWrap::NativeAccessible(Accessible* aAccessible)
   aAccessible->GetNativeInterface(reinterpret_cast<void**>(&msaaAccessible));
   return static_cast<IDispatch*>(msaaAccessible);
 }
+
+#ifdef _WIN64
+static Accessible*
+GetAccessibleInSubtree(DocAccessible* aDoc, uint32_t aID)
+{
+  Accessible* child = static_cast<DocAccessibleWrap*>(aDoc)->GetAccessibleByID(aID);
+  if (child)
+    return child;
+
+  uint32_t childDocCount = aDoc->ChildDocumentCount();
+  for (uint32_t i = 0; i < childDocCount; i++) {
+    child = GetAccessibleInSubtree(aDoc->GetChildDocumentAt(i), aID);
+    if (child)
+      return child;
+  }
+
+    return nullptr;
+  }
+#endif
 
 Accessible*
 AccessibleWrap::GetXPAccessibleFor(const VARIANT& aVarChild)
@@ -1349,7 +1451,11 @@ AccessibleWrap::GetXPAccessibleFor(const VARIANT& aVarChild)
 
     DocAccessible* document = Document();
     Accessible* child =
+#ifdef _WIN64
+    GetAccessibleInSubtree(document, static_cast<uint32_t>(aVarChild.lVal));
+#else
       document->GetAccessibleByUniqueIDInSubtree(uniqueID);
+#endif
 
     // If it is a document then just return an accessible.
     if (IsDoc())

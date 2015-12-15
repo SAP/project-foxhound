@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,15 +21,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-static PLDHashOperator
-IdentifierMapEntryTraverse(nsIdentifierMapEntry *aEntry, void *aArg)
-{
-  nsCycleCollectionTraversalCallback *cb =
-    static_cast<nsCycleCollectionTraversalCallback*>(aArg);
-  aEntry->Traverse(cb);
-  return PL_DHASH_NEXT;
-}
-
 NS_IMPL_CYCLE_COLLECTION_CLASS(ShadowRoot)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ShadowRoot,
@@ -38,7 +30,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ShadowRoot,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOlderShadow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mYoungerShadow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAssociatedBinding)
-  tmp->mIdentifierMap.EnumerateEntries(IdentifierMapEntryTraverse, &cb);
+  for (auto iter = tmp->mIdentifierMap.ConstIter(); !iter.Done();
+       iter.Next()) {
+    iter.Get()->Traverse(&cb);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ShadowRoot,
@@ -104,9 +99,9 @@ ShadowRoot::~ShadowRoot()
 }
 
 JSObject*
-ShadowRoot::WrapObject(JSContext* aCx)
+ShadowRoot::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return mozilla::dom::ShadowRootBinding::Wrap(aCx, this);
+  return mozilla::dom::ShadowRootBinding::Wrap(aCx, this, aGivenProto);
 }
 
 ShadowRoot*
@@ -321,7 +316,7 @@ ShadowRoot::DistributeSingleNode(nsIContent* aContent)
     if (!isIndexFound) {
       // We have still not found an index in the insertion point,
       // thus it must be at the end.
-      MOZ_ASSERT(childIterator.Seek(aContent),
+      MOZ_ASSERT(childIterator.Seek(aContent, nullptr),
                  "Trying to match a node that is not a candidate to be matched");
       insertionPoint->AppendMatchedNode(aContent);
     }
@@ -565,7 +560,7 @@ ShadowRoot::ChangePoolHost(nsIContent* aNewHost)
 bool
 ShadowRoot::IsShadowInsertionPoint(nsIContent* aContent)
 {
-  if (aContent && aContent->IsHTML(nsGkAtoms::shadow)) {
+  if (aContent && aContent->IsHTMLElement(nsGkAtoms::shadow)) {
     HTMLShadowElement* shadowElem = static_cast<HTMLShadowElement*>(aContent);
     return shadowElem->IsInsertionPoint();
   }
@@ -597,7 +592,7 @@ ShadowRoot::IsPooledNode(nsIContent* aContent, nsIContent* aContainer,
     return true;
   }
 
-  if (aContainer && aContainer->IsHTML(nsGkAtoms::content)) {
+  if (aContainer && aContainer->IsHTMLElement(nsGkAtoms::content)) {
     // Fallback content will end up in pool if its parent is a child of the host.
     HTMLContentElement* content = static_cast<HTMLContentElement*>(aContainer);
     return content->IsInsertionPoint() && content->MatchedNodes().IsEmpty() &&
@@ -612,7 +607,8 @@ ShadowRoot::AttributeChanged(nsIDocument* aDocument,
                              Element* aElement,
                              int32_t aNameSpaceID,
                              nsIAtom* aAttribute,
-                             int32_t aModType)
+                             int32_t aModType,
+                             const nsAttrValue* aOldValue)
 {
   if (!IsPooledNode(aElement, aElement->GetParent(), mPoolHost)) {
     return;
@@ -709,6 +705,22 @@ ShadowRoot::ContentRemoved(nsIDocument* aDocument,
   if (IsPooledNode(aChild, aContainer, mPoolHost)) {
     RemoveDistributedNode(aChild);
   }
+}
+
+nsresult
+ShadowRoot::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const
+{
+  *aResult = nullptr;
+  return NS_ERROR_DOM_DATA_CLONE_ERR;
+}
+
+void
+ShadowRoot::DestroyContent()
+{
+  if (mOlderShadow) {
+    mOlderShadow->DestroyContent();
+  }
+  DocumentFragment::DestroyContent();
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ShadowRootStyleSheetList, StyleSheetList,

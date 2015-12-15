@@ -6,7 +6,7 @@
 #include "mozilla/DebugOnly.h"
 #include <algorithm>
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 #include "gfxGDIFontList.h"
 #include "gfxWindowsPlatform.h"
@@ -40,18 +40,15 @@ using namespace mozilla;
 #define CLEARTYPE_QUALITY 5
 #endif
 
-#ifdef PR_LOGGING
-#define LOG_FONTLIST(args) PR_LOG(gfxPlatform::GetLog(eGfxLog_fontlist), \
-                               PR_LOG_DEBUG, args)
-#define LOG_FONTLIST_ENABLED() PR_LOG_TEST( \
+#define LOG_FONTLIST(args) MOZ_LOG(gfxPlatform::GetLog(eGfxLog_fontlist), \
+                               LogLevel::Debug, args)
+#define LOG_FONTLIST_ENABLED() MOZ_LOG_TEST( \
                                    gfxPlatform::GetLog(eGfxLog_fontlist), \
-                                   PR_LOG_DEBUG)
+                                   LogLevel::Debug)
 
-#define LOG_CMAPDATA_ENABLED() PR_LOG_TEST( \
+#define LOG_CMAPDATA_ENABLED() MOZ_LOG_TEST( \
                                    gfxPlatform::GetLog(eGfxLog_cmapdata), \
-                                   PR_LOG_DEBUG)
-
-#endif // PR_LOGGING
+                                   LogLevel::Debug)
 
 static __inline void
 BuildKeyNameFromFontName(nsAString &aName)
@@ -195,7 +192,6 @@ GDIFontEntry::ReadCMAP(FontInfoData *aFontInfoData)
         mCharacterMap->mBuildOnTheFly = true;
     }
 
-#ifdef PR_LOGGING
     LOG_FONTLIST(("(fontlist-cmap) name: %s, size: %d hash: %8.8x%s\n",
                   NS_ConvertUTF16toUTF8(mName).get(),
                   charmap->SizeOfIncludingThis(moz_malloc_size_of),
@@ -206,7 +202,6 @@ GDIFontEntry::ReadCMAP(FontInfoData *aFontInfoData)
                 NS_ConvertUTF16toUTF8(mName).get());
         charmap->Dump(prefix, eGfxLog_cmapdata);
     }
-#endif
 
     return rv;
 }
@@ -250,7 +245,7 @@ GDIFontEntry::CopyFontTable(uint32_t aTableTag,
                           NativeEndian::swapToBigEndian(aTableTag),
                           0, nullptr, 0);
         if (tableSize != GDI_ERROR) {
-            if (aBuffer.SetLength(tableSize)) {
+            if (aBuffer.SetLength(tableSize, fallible)) {
                 ::GetFontData(dc.GetDC(),
                               NativeEndian::swapToBigEndian(aTableTag), 0,
                               aBuffer.Elements(), tableSize);
@@ -501,7 +496,6 @@ GDIFontFamily::FamilyAddStylesProc(const ENUMLOGFONTEXW *lpelfe,
         }
     }
 
-#ifdef PR_LOGGING
     if (LOG_FONTLIST_ENABLED()) {
         LOG_FONTLIST(("(fontlist) added (%s) to family (%s)"
              " with style: %s weight: %d stretch: %d",
@@ -510,7 +504,6 @@ GDIFontFamily::FamilyAddStylesProc(const ENUMLOGFONTEXW *lpelfe,
              (logFont.lfItalic == 0xff) ? "italic" : "normal",
              logFont.lfWeight, fe->Stretch()));
     }
-#endif
     return 1;
 }
 
@@ -534,12 +527,10 @@ GDIFontFamily::FindStyleVariations(FontInfoData *aFontInfoData)
     EnumFontFamiliesExW(hdc, &logFont,
                         (FONTENUMPROCW)GDIFontFamily::FamilyAddStylesProc,
                         (LPARAM)this, 0);
-#ifdef PR_LOGGING
     if (LOG_FONTLIST_ENABLED() && mAvailableFonts.Length() == 0) {
         LOG_FONTLIST(("(fontlist) no styles available in family \"%s\"",
                       NS_ConvertUTF16toUTF8(mName).get()));
     }
-#endif
 
     ReleaseDC(nullptr, hdc);
 
@@ -762,13 +753,13 @@ gfxGDIFontList::MakePlatformFont(const nsAString& aFontName,
                                  const uint8_t* aFontData,
                                  uint32_t aLength)
 {
-    // MakePlatformFont is responsible for deleting the font data with NS_Free
+    // MakePlatformFont is responsible for deleting the font data with free
     // so we set up a stack object to ensure it is freed even if we take an
     // early exit
     struct FontDataDeleter {
         FontDataDeleter(const uint8_t* aFontData)
             : mFontData(aFontData) { }
-        ~FontDataDeleter() { NS_Free((void*)mFontData); }
+        ~FontDataDeleter() { free((void*)mFontData); }
         const uint8_t *mFontData;
     };
     FontDataDeleter autoDelete(aFontData);
@@ -837,7 +828,9 @@ gfxGDIFontList::MakePlatformFont(const nsAString& aFontName,
 }
 
 gfxFontFamily*
-gfxGDIFontList::FindFamily(const nsAString& aFamily, bool aUseSystemFonts)
+gfxGDIFontList::FindFamily(const nsAString& aFamily,
+                           nsIAtom* aLanguage,
+                           bool aUseSystemFonts)
 {
     nsAutoString keyName(aFamily);
     BuildKeyNameFromFontName(keyName);
@@ -860,22 +853,22 @@ gfxGDIFontList::GetDefaultFont(const gfxFontStyle* aStyle)
     gfxFontFamily *ff = nullptr;
 
     // this really shouldn't fail to find a font....
-    HGDIOBJ hGDI = ::GetStockObject(DEFAULT_GUI_FONT);
-    LOGFONTW logFont;
-    if (hGDI && ::GetObjectW(hGDI, sizeof(logFont), &logFont)) {
-        ff = FindFamily(nsDependentString(logFont.lfFaceName));
-        if (ff) {
-            return ff;
-        }
-    }
-
-    // ...but just in case, try another approach as well
     NONCLIENTMETRICSW ncm;
     ncm.cbSize = sizeof(ncm);
     BOOL status = ::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, 
                                           sizeof(ncm), &ncm, 0);
     if (status) {
         ff = FindFamily(nsDependentString(ncm.lfMessageFont.lfFaceName));
+        if (ff) {
+            return ff;
+        }
+    }
+
+    // ...but just in case, try another (long-deprecated) approach as well
+    HGDIOBJ hGDI = ::GetStockObject(DEFAULT_GUI_FONT);
+    LOGFONTW logFont;
+    if (hGDI && ::GetObjectW(hGDI, sizeof(logFont), &logFont)) {
+        ff = FindFamily(nsDependentString(logFont.lfFaceName));
     }
 
     return ff;
@@ -887,10 +880,9 @@ gfxGDIFontList::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
 {
     gfxPlatformFontList::AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
     aSizes->mFontListSize +=
-        mFontSubstitutes.SizeOfExcludingThis(SizeOfFamilyNameEntryExcludingThis,
-                                             aMallocSizeOf);
+        SizeOfFontFamilyTableExcludingThis(mFontSubstitutes, aMallocSizeOf);
     aSizes->mFontListSize +=
-        mNonExistingFonts.SizeOfExcludingThis(aMallocSizeOf);
+        mNonExistingFonts.ShallowSizeOfExcludingThis(aMallocSizeOf);
     for (uint32_t i = 0; i < mNonExistingFonts.Length(); ++i) {
         aSizes->mFontListSize +=
             mNonExistingFonts[i].SizeOfExcludingThisIfUnshared(aMallocSizeOf);
@@ -983,7 +975,7 @@ int CALLBACK GDIFontInfo::EnumerateFontsForFamily(
         nameSize = ::GetFontData(hdc, kNAME, 0, nullptr, 0);
         if (nameSize != GDI_ERROR &&
             nameSize > 0 &&
-            nameData.SetLength(nameSize)) {
+            nameData.SetLength(nameSize, fallible)) {
             ::GetFontData(hdc, kNAME, 0, nameData.Elements(), nameSize);
 
             // face names
@@ -1026,7 +1018,7 @@ int CALLBACK GDIFontInfo::EnumerateFontsForFamily(
         cmapSize = ::GetFontData(hdc, kCMAP, 0, nullptr, 0);
         if (cmapSize != GDI_ERROR &&
             cmapSize > 0 &&
-            cmapData.SetLength(cmapSize)) {
+            cmapData.SetLength(cmapSize, fallible)) {
             ::GetFontData(hdc, kCMAP, 0, cmapData.Elements(), cmapSize);
             bool cmapLoaded = false;
             bool unicodeFont = false, symbolFont = false;

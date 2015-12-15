@@ -14,6 +14,7 @@
 #include "vm/Debugger.h"
 #include "vm/Runtime.h"
 
+#include "jscompartmentinlines.h"
 #include "jsgcinlines.h"
 
 using namespace js;
@@ -23,6 +24,7 @@ Zone * const Zone::NotOnList = reinterpret_cast<Zone*>(1);
 
 JS::Zone::Zone(JSRuntime* rt)
   : JS::shadow::Zone(rt, &rt->gc.marker),
+    debuggers(nullptr),
     arenas(rt),
     types(this),
     compartments(),
@@ -56,6 +58,7 @@ Zone::~Zone()
     if (this == rt->gc.systemZone)
         rt->gc.systemZone = nullptr;
 
+    js_delete(debuggers);
     js_delete(jitZone_);
 }
 
@@ -73,9 +76,7 @@ Zone::setNeedsIncrementalBarrier(bool needs, ShouldUpdateJit updateJit)
         jitUsingBarriers_ = needs;
     }
 
-    if (needs && runtimeFromMainThread()->isAtomsZone(this))
-        MOZ_ASSERT(!runtimeFromMainThread()->exclusiveThreadsPresent());
-
+    MOZ_ASSERT_IF(needs && isAtomsZone(), !runtimeFromMainThread()->exclusiveThreadsPresent());
     MOZ_ASSERT_IF(needs, canCollect());
     needsIncrementalBarrier_ = needs;
 }
@@ -119,6 +120,42 @@ Zone::beginSweepTypes(FreeOp* fop, bool releaseTypes)
     types.beginSweep(fop, releaseTypes, oom);
 }
 
+Zone::DebuggerVector*
+Zone::getOrCreateDebuggers(JSContext* cx)
+{
+    if (debuggers)
+        return debuggers;
+
+    debuggers = js_new<DebuggerVector>();
+    if (!debuggers)
+        ReportOutOfMemory(cx);
+    return debuggers;
+}
+
+void
+Zone::logPromotionsToTenured()
+{
+    auto* dbgs = getDebuggers();
+    if (MOZ_LIKELY(!dbgs))
+        return;
+
+    auto now = JS_GetCurrentEmbedderTime();
+    JSRuntime* rt = runtimeFromAnyThread();
+
+    for (auto** dbgp = dbgs->begin(); dbgp != dbgs->end(); dbgp++) {
+        if (!(*dbgp)->isEnabled() || !(*dbgp)->isTrackingTenurePromotions())
+            continue;
+
+        for (auto range = awaitingTenureLogging.all(); !range.empty(); range.popFront()) {
+            if ((*dbgp)->isDebuggee(range.front()->compartment()))
+                (*dbgp)->logTenurePromotion(rt, *range.front(), now);
+        }
+    }
+
+    awaitingTenureLogging.clear();
+}
+
+
 void
 Zone::sweepBreakpoints(FreeOp* fop)
 {
@@ -131,13 +168,12 @@ Zone::sweepBreakpoints(FreeOp* fop)
      */
 
     MOZ_ASSERT(isGCSweepingOrCompacting());
-    for (ZoneCellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+    for (ZoneCellIterUnderGC i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
         JSScript* script = i.get<JSScript>();
-        MOZ_ASSERT_IF(isGCSweeping(), script->zone()->isGCSweeping());
         if (!script->hasAnyBreakpointsOrStepMode())
             continue;
 
-        bool scriptGone = IsScriptAboutToBeFinalized(&script);
+        bool scriptGone = IsAboutToBeFinalizedUnbarriered(&script);
         MOZ_ASSERT(script == i.get<JSScript>());
         for (unsigned i = 0; i < script->length(); i++) {
             BreakpointSite* site = script->getBreakpointSite(script->offsetToPC(i));
@@ -148,9 +184,17 @@ Zone::sweepBreakpoints(FreeOp* fop)
             for (Breakpoint* bp = site->firstBreakpoint(); bp; bp = nextbp) {
                 nextbp = bp->nextInSite();
                 HeapPtrNativeObject& dbgobj = bp->debugger->toJSObjectRef();
+
+                // If we are sweeping, then we expect the script and the
+                // debugger object to be swept in the same zone group, except if
+                // the breakpoint was added after we computed the zone
+                // groups. In this case both script and debugger object must be
+                // live.
                 MOZ_ASSERT_IF(isGCSweeping() && dbgobj->zone()->isCollecting(),
-                              dbgobj->zone()->isGCSweeping());
-                bool dying = scriptGone || IsObjectAboutToBeFinalized(&dbgobj);
+                              dbgobj->zone()->isGCSweeping() ||
+                              (!scriptGone && dbgobj->asTenured().isMarked()));
+
+                bool dying = scriptGone || IsAboutToBeFinalized(&dbgobj);
                 MOZ_ASSERT_IF(!dying, !IsAboutToBeFinalized(&bp->getHandlerRef()));
                 if (dying)
                     bp->destroy(fop);
@@ -171,7 +215,7 @@ Zone::discardJitCode(FreeOp* fop)
 
 #ifdef DEBUG
         /* Assert no baseline scripts are marked as active. */
-        for (ZoneCellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+        for (ZoneCellIterUnderGC i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
             JSScript* script = i.get<JSScript>();
             MOZ_ASSERT_IF(script->hasBaselineScript(), !script->baselineScript()->active());
         }
@@ -183,7 +227,7 @@ Zone::discardJitCode(FreeOp* fop)
         /* Only mark OSI points if code is being discarded. */
         jit::InvalidateAll(fop, this);
 
-        for (ZoneCellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+        for (ZoneCellIterUnderGC i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
             JSScript* script = i.get<JSScript>();
             jit::FinishInvalidation(fop, script);
 
@@ -225,12 +269,6 @@ Zone::createJitZone(JSContext* cx)
     return jitZone_;
 }
 
-JS::Zone*
-js::ZoneOfObjectFromAnyThread(const JSObject& obj)
-{
-    return obj.zoneFromAnyThread();
-}
-
 bool
 Zone::hasMarkedCompartments()
 {
@@ -248,18 +286,35 @@ Zone::canCollect()
     if (usedByExclusiveThread)
         return false;
     JSRuntime* rt = runtimeFromAnyThread();
-    if (rt->isAtomsZone(this) && rt->exclusiveThreadsPresent())
+    if (isAtomsZone() && rt->exclusiveThreadsPresent())
         return false;
     return true;
 }
 
-JS::Zone*
-js::ZoneOfValue(const JS::Value& value)
+void
+Zone::notifyObservingDebuggers()
 {
-    MOZ_ASSERT(value.isMarkable());
-    if (value.isObject())
-        return value.toObject().zone();
-    return js::gc::TenuredCell::fromPointer(value.toGCThing())->zone();
+    for (CompartmentsInZoneIter comps(this); !comps.done(); comps.next()) {
+        JSRuntime* rt = runtimeFromAnyThread();
+        RootedGlobalObject global(rt, comps->maybeGlobal());
+        if (!global)
+            continue;
+
+        GlobalObject::DebuggerVector* dbgs = global->getDebuggers();
+        if (!dbgs)
+            continue;
+
+        for (GlobalObject::DebuggerVector::Range r = dbgs->all(); !r.empty(); r.popFront()) {
+            if (!r.front()->debuggeeIsBeingCollected(rt->gc.majorGCCount())) {
+#ifdef DEBUG
+                fprintf(stderr,
+                        "OOM while notifying observing Debuggers of a GC: The onGarbageCollection\n"
+                        "hook will not be fired for this GC for some Debuggers!\n");
+#endif
+                return;
+            }
+        }
+    }
 }
 
 bool
@@ -366,4 +421,11 @@ ZoneList::removeFront()
         tail = nullptr;
 
     front->listNext_ = Zone::NotOnList;
+}
+
+void
+ZoneList::clear()
+{
+    while (!isEmpty())
+        removeFront();
 }

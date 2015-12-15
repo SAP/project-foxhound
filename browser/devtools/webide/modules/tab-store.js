@@ -4,17 +4,15 @@
 
 const { Cu } = require("chrome");
 
+const { TargetFactory } = require("devtools/framework/target");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const { Connection } = require("devtools/client/connection-manager");
-const { Promise: promise } =
-  Cu.import("resource://gre/modules/Promise.jsm", {});
+const promise = require("promise");
 const { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-const { devtools } =
-  Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 
 const _knownTabStores = new WeakMap();
 
-let TabStore;
+var TabStore;
 
 module.exports = TabStore = function(connection) {
   // If we already know about this connection,
@@ -82,7 +80,8 @@ TabStore.prototype = {
   },
 
   _onTabListChanged: function() {
-    this.listTabs();
+    this.listTabs().then(() => this.emit("tab-list"))
+                   .catch(console.error);
   },
 
   _onTabNavigated: function(e, { from, title, url }) {
@@ -105,9 +104,13 @@ TabStore.prototype = {
         deferred.reject(response.error);
         return;
       }
+      let tabsChanged = JSON.stringify(this.tabs) !== JSON.stringify(response.tabs);
       this.response = response;
       this.tabs = response.tabs;
       this._checkSelectedTab();
+      if (tabsChanged) {
+        this.emit("tab-list");
+      }
       deferred.resolve(response);
     });
     return deferred.promise;
@@ -158,7 +161,7 @@ TabStore.prototype = {
       // if you try to connect to the same tab again.  To work around this
       // issue, we force a "listTabs" request before connecting to a tab.
       yield store.listTabs();
-      return devtools.TargetFactory.forRemoteTab({
+      return TargetFactory.forRemoteTab({
         form: store._selectedTab,
         client: store._connection.client,
         chrome: false

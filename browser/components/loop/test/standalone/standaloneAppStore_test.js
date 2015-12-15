@@ -1,9 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var expect = chai.expect;
-
 describe("loop.store.StandaloneAppStore", function () {
+  "use strict";
+
+  var expect = chai.expect;
   var sharedActions = loop.shared.actions;
   var sharedUtils = loop.shared.utils;
   var sandbox, dispatcher;
@@ -21,9 +22,8 @@ describe("loop.store.StandaloneAppStore", function () {
     it("should throw an error if the dispatcher is missing", function() {
       expect(function() {
         new loop.store.StandaloneAppStore({
-          sdk: {},
           helper: {},
-          conversation: {}
+          sdk: {}
         });
       }).to.Throw(/dispatcher/);
     });
@@ -32,29 +32,19 @@ describe("loop.store.StandaloneAppStore", function () {
       expect(function() {
         new loop.store.StandaloneAppStore({
           dispatcher: dispatcher,
-          helper: {},
-          conversation: {}
-        });
-      }).to.Throw(/sdk/);
-    });
-
-    it("should throw an error if conversation is missing", function() {
-      expect(function() {
-        new loop.store.StandaloneAppStore({
-          dispatcher: dispatcher,
-          sdk: {},
           helper: {}
         });
-      }).to.Throw(/conversation/);
+      }).to.Throw(/sdk/);
     });
   });
 
   describe("#extractTokenInfo", function() {
-    var store, fakeGetWindowData, fakeSdk, fakeConversation, helper;
+    var store, fakeGetWindowData, fakeSdk, helper;
 
     beforeEach(function() {
       fakeGetWindowData = {
-        windowPath: ""
+        windowPath: "",
+        windowHash: ""
       };
 
       sandbox.stub(loop.shared.utils, "getUnsupportedPlatform").returns();
@@ -64,17 +54,12 @@ describe("loop.store.StandaloneAppStore", function () {
         checkSystemRequirements: sinon.stub().returns(true)
       };
 
-      fakeConversation = {
-        set: sinon.spy()
-      };
-
       sandbox.stub(dispatcher, "dispatch");
 
       store = new loop.store.StandaloneAppStore({
         dispatcher: dispatcher,
-        sdk: fakeSdk,
         helper: helper,
-        conversation: fakeConversation
+        sdk: fakeSdk
       });
     });
 
@@ -124,16 +109,7 @@ describe("loop.store.StandaloneAppStore", function () {
         expect(store.getStoreState().windowType).eql("unsupportedBrowser");
       });
 
-    it("should set windowType to `outgoing` for old style call hashes", function() {
-      fakeGetWindowData.windowPath = "#call/faketoken";
-
-      store.extractTokenInfo(
-        new sharedActions.ExtractTokenInfo(fakeGetWindowData));
-
-      expect(store.getStoreState().windowType).eql("outgoing");
-    });
-
-    it("should set windowType to `outgoing` for new style call paths", function() {
+    it("should set windowType to `outgoing` for call paths", function() {
       fakeGetWindowData.windowPath = "/c/fakecalltoken";
 
       store.extractTokenInfo(
@@ -160,61 +136,7 @@ describe("loop.store.StandaloneAppStore", function () {
       expect(store.getStoreState().windowType).eql("home");
     });
 
-    it("should set the loopToken on the conversation for old style call hashes",
-      function() {
-        fakeGetWindowData.windowPath = "#call/faketoken";
-
-        store.extractTokenInfo(
-          new sharedActions.ExtractTokenInfo(fakeGetWindowData));
-
-        sinon.assert.calledOnce(fakeConversation.set);
-        sinon.assert.calledWithExactly(fakeConversation.set, {
-          loopToken: "faketoken"
-        });
-      });
-
-    it("should set the loopToken on the conversation for new style call paths",
-      function() {
-        fakeGetWindowData.windowPath = "/c/fakecalltoken";
-
-        store.extractTokenInfo(
-          new sharedActions.ExtractTokenInfo(fakeGetWindowData));
-
-        sinon.assert.calledOnce(fakeConversation.set);
-        sinon.assert.calledWithExactly(fakeConversation.set, {
-          loopToken: "fakecalltoken"
-        });
-      });
-
-    it("should set the loopToken on the conversation for room paths",
-      function() {
-        fakeGetWindowData.windowPath = "/c/fakeroomtoken";
-
-        store.extractTokenInfo(
-          new sharedActions.ExtractTokenInfo(fakeGetWindowData));
-
-        sinon.assert.calledOnce(fakeConversation.set);
-        sinon.assert.calledWithExactly(fakeConversation.set, {
-          loopToken: "fakeroomtoken"
-        });
-      });
-
-    it("should dispatch a SetupWindowData action for old style call hashes",
-      function() {
-        fakeGetWindowData.windowPath = "#call/faketoken";
-
-        store.extractTokenInfo(
-          new sharedActions.ExtractTokenInfo(fakeGetWindowData));
-
-        sinon.assert.calledOnce(dispatcher.dispatch);
-        sinon.assert.calledWithExactly(dispatcher.dispatch,
-          new sharedActions.FetchServerData({
-            windowType: "outgoing",
-            token: "faketoken"
-          }));
-      });
-
-    it("should set the loopToken on the conversation for new style call paths",
+    it("should dispatch a FetchServerData action for call paths",
       function() {
         fakeGetWindowData.windowPath = "/c/fakecalltoken";
 
@@ -224,14 +146,15 @@ describe("loop.store.StandaloneAppStore", function () {
         sinon.assert.calledOnce(dispatcher.dispatch);
         sinon.assert.calledWithExactly(dispatcher.dispatch,
           new sharedActions.FetchServerData({
+            cryptoKey: null,
             windowType: "outgoing",
             token: "fakecalltoken"
           }));
       });
 
-    it("should set the loopToken on the conversation for room paths",
+    it("should dispatch a FetchServerData action for room paths",
       function() {
-        fakeGetWindowData.windowPath = "/c/fakeroomtoken";
+        fakeGetWindowData.windowPath = "/fakeroomtoken";
 
         store.extractTokenInfo(
           new sharedActions.ExtractTokenInfo(fakeGetWindowData));
@@ -239,11 +162,29 @@ describe("loop.store.StandaloneAppStore", function () {
         sinon.assert.calledOnce(dispatcher.dispatch);
         sinon.assert.calledWithExactly(dispatcher.dispatch,
           new sharedActions.FetchServerData({
-            windowType: "outgoing",
+            cryptoKey: null,
+            windowType: "room",
             token: "fakeroomtoken"
           }));
       });
 
+    it("should dispatch a FetchServerData action with a crypto key extracted from the hash", function() {
+      fakeGetWindowData = {
+        windowPath: "/fakeroomtoken",
+        windowHash: "#fakeKey"
+      };
+
+      store.extractTokenInfo(
+        new sharedActions.ExtractTokenInfo(fakeGetWindowData));
+
+      sinon.assert.calledOnce(dispatcher.dispatch);
+      sinon.assert.calledWithExactly(dispatcher.dispatch,
+        new sharedActions.FetchServerData({
+          cryptoKey: "fakeKey",
+          windowType: "room",
+          token: "fakeroomtoken"
+        }));
+    });
   });
 
 });

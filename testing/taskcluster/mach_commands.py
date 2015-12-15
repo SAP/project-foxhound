@@ -4,14 +4,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import os
-import os.path
 import json
 import copy
-import datetime
-import subprocess
 import sys
-import urllib2
 
 from mach.decorators import (
     CommandArgument,
@@ -19,13 +17,6 @@ from mach.decorators import (
     Command,
 )
 
-from taskcluster_graph.commit_parser import parse_commit
-from taskcluster_graph.slugid import slugid
-from taskcluster_graph.slugidjar import SlugidJar
-from taskcluster_graph.from_now import json_time_from_now, current_json_time
-from taskcluster_graph.templates import Templates
-
-import taskcluster_graph.build_task
 
 ROOT = os.path.dirname(os.path.realpath(__file__))
 GECKO = os.path.realpath(os.path.join(ROOT, '..', '..'))
@@ -35,51 +26,22 @@ DOCKER_ROOT = os.path.join(ROOT, '..', 'docker')
 ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{}/artifacts/{}'
 REGISTRY = open(os.path.join(DOCKER_ROOT, 'REGISTRY')).read().strip()
 
-DEFINE_TASK = 'queue:define-task:aws-provisioner/{}'
+DEFINE_TASK = 'queue:define-task:aws-provisioner-v1/{}'
 
 TREEHERDER_ROUTE_PREFIX = 'tc-treeherder-stage'
+TREEHERDER_ROUTES = {
+    'staging': 'tc-treeherder-stage',
+    'production': 'tc-treeherder'
+}
 
 DEFAULT_TRY = 'try: -b do -p all -u all'
 DEFAULT_JOB_PATH = os.path.join(
-    ROOT, 'tasks', 'branches', 'mozilla-central', 'job_flags.yml'
+    ROOT, 'tasks', 'branches', 'base_jobs.yml'
 )
-
-def get_hg_url():
-    ''' Determine the url for the mercurial repository'''
-    try:
-        url = subprocess.check_output(
-            ['hg', 'path', 'default'],
-            stderr=subprocess.PIPE
-        )
-    except subprocess.CalledProcessError:
-        sys.stderr.write(
-            "Error: Could not determine the current hg repository url. " \
-            "Ensure command is executed within a hg respository"
-        )
-        sys.exit(1)
-
-    return url
-
-def get_latest_hg_revision(repository):
-    ''' Retrieves the revision number of the latest changed head'''
-    try:
-        revision = subprocess.check_output(
-            ['hg', 'id', '-r', 'tip', repository, '-i'],
-            stderr=subprocess.PIPE
-        ).strip('\n')
-    except subprocess.CalledProcessError:
-        sys.stderr.write(
-            "Error: Could not determine the latest hg revision at {} " \
-            "Ensure command is executed within a cloned hg respository and " \
-            "remote default remote repository is accessible".format(repository)
-        )
-        sys.exit(1)
-
-    return revision
 
 def docker_image(name):
     ''' Determine the docker tag/revision from an in tree docker file '''
-    repository_path = os.path.join(DOCKER_ROOT, name, 'REPOSITORY')
+    repository_path = os.path.join(DOCKER_ROOT, name, 'REGISTRY')
     repository = REGISTRY
 
     version = open(os.path.join(DOCKER_ROOT, name, 'VERSION')).read().strip()
@@ -90,6 +52,7 @@ def docker_image(name):
     return '{}/{}:{}'.format(repository, name, version)
 
 def get_task(task_id):
+    import urllib2
     return json.load(urllib2.urlopen("https://queue.taskcluster.net/v1/task/" + task_id))
 
 
@@ -122,6 +85,123 @@ def gaia_info():
             'gaia_ref': gaia['git']['branch'],
         }
 
+def decorate_task_treeherder_routes(task, suffix):
+    """
+    Decorate the given task with treeherder routes.
+
+    Uses task.extra.treeherderEnv if available otherwise defaults to only
+    staging.
+
+    :param dict task: task definition.
+    :param str suffix: The project/revision_hash portion of the route.
+    """
+
+    if 'extra' not in task:
+        return
+
+    if 'routes' not in task:
+        task['routes'] = []
+
+    treeheder_env = task['extra'].get('treeherderEnv', ['staging'])
+
+    for env in treeheder_env:
+        task['routes'].append('{}.{}'.format(TREEHERDER_ROUTES[env], suffix))
+
+def decorate_task_json_routes(build, task, json_routes, parameters):
+    """
+    Decorate the given task with routes.json routes.
+
+    :param dict task: task definition.
+    :param json_routes: the list of routes to use from routes.json
+    :param parameters: dictionary of parameters to use in route templates
+    """
+    fmt = parameters.copy()
+    fmt.update({
+        'build_product': task['extra']['build_product'],
+        'build_name': build['build_name'],
+        'build_type': build['build_type'],
+    })
+    routes = task.get('routes', [])
+    for route in json_routes:
+        routes.append(route.format(**fmt))
+
+    task['routes'] = routes
+
+def configure_dependent_task(task_path, parameters, taskid, templates, build_treeherder_config):
+    """
+    Configure a build dependent task. This is shared between post-build and test tasks.
+
+    :param task_path: location to the task yaml
+    :param parameters: parameters to load the template
+    :param taskid: taskid of the dependent task
+    :param templates: reference to the template builder
+    :param build_treeherder_config: parent treeherder config
+    :return: the configured task
+    """
+    task = templates.load(task_path, parameters)
+    task['taskId'] = taskid
+
+    if 'requires' not in task:
+        task['requires'] = []
+
+    task['requires'].append(parameters['build_slugid'])
+
+    if 'treeherder' not in task['task']['extra']:
+        task['task']['extra']['treeherder'] = {}
+
+    # Copy over any treeherder configuration from the build so
+    # tests show up under the same platform...
+    treeherder_config = task['task']['extra']['treeherder']
+
+    treeherder_config['collection'] = \
+        build_treeherder_config.get('collection', {})
+
+    treeherder_config['build'] = \
+        build_treeherder_config.get('build', {})
+
+    treeherder_config['machine'] = \
+        build_treeherder_config.get('machine', {})
+
+    if 'routes' not in task['task']:
+        task['task']['routes'] = []
+
+    if 'scopes' not in task['task']:
+        task['task']['scopes'] = []
+
+    return task
+
+def set_interactive_task(task, interactive):
+    r"""Make the task interactive.
+
+    :param task: task definition.
+    :param interactive: True if the task should be interactive.
+    """
+    if not interactive:
+        return
+
+    payload = task["task"]["payload"]
+    if "features" not in payload:
+        payload["features"] = {}
+    payload["features"]["interactive"] = True
+
+def remove_caches_from_task(task):
+    r"""Remove all caches but tc-vcs from the task.
+
+    :param task: task definition.
+    """
+    whitelist = [
+        "tc-vcs",
+        "tc-vcs-public-sources",
+        "tooltool-cache",
+    ]
+    try:
+        caches = task["task"]["payload"]["cache"]
+        for cache in caches.keys():
+            if cache not in whitelist:
+                caches.pop(cache)
+    except KeyError:
+        pass
+
 @CommandProvider
 class DecisionTask(object):
     @Command('taskcluster-decision', category="ci",
@@ -145,6 +225,13 @@ class DecisionTask(object):
         help='email address of who owns this graph')
     @CommandArgument('task', help="Path to decision task to run.")
     def run_task(self, **params):
+        from taskcluster_graph.slugidjar import SlugidJar
+        from taskcluster_graph.from_now import (
+            json_time_from_now,
+            current_json_time,
+        )
+        from taskcluster_graph.templates import Templates
+
         templates = Templates(ROOT)
         # Template parameters used when expanding the graph
         parameters = dict(gaia_info().items() + {
@@ -157,7 +244,7 @@ class DecisionTask(object):
             'owner': params['owner'],
             'as_slugid': SlugidJar(),
             'from_now': json_time_from_now,
-            'now': datetime.datetime.now().isoformat()
+            'now': current_json_time()
         }.items())
         task = templates.load(params['task'], parameters)
         print(json.dumps(task, indent=4))
@@ -169,9 +256,6 @@ class Graph(object):
     @CommandArgument('--base-repository',
         default=os.environ.get('GECKO_BASE_REPOSITORY'),
         help='URL for "base" repository to clone')
-    @CommandArgument('--mozharness-repository',
-        default='https://github.com/lightsofapollo/build-mozharness',
-        help='URL for custom mozharness repo')
     @CommandArgument('--head-repository',
         default=os.environ.get('GECKO_HEAD_REPOSITORY'),
         help='URL for "head" repository to fetch revision from')
@@ -181,9 +265,6 @@ class Graph(object):
     @CommandArgument('--head-rev',
         default=os.environ.get('GECKO_HEAD_REV'),
         help='Commit revision to use from head repository')
-    @CommandArgument('--mozharness-rev',
-        default='emulator-perf',
-        help='Commit revision to use from mozharness repository')
     @CommandArgument('--message',
         help='Commit message to be parsed. Example: "try: -b do -p all -u all"')
     @CommandArgument('--revision-hash',
@@ -192,12 +273,31 @@ class Graph(object):
     @CommandArgument('--project',
         required=True,
         help='Project to use for creating task graph. Example: --project=try')
+    @CommandArgument('--pushlog-id',
+        dest='pushlog_id',
+        required=False,
+        default=0)
     @CommandArgument('--owner',
         required=True,
         help='email address of who owns this graph')
     @CommandArgument('--extend-graph',
         action="store_true", dest="ci", help='Omit create graph arguments')
+    @CommandArgument('--interactive',
+        required=False,
+        default=False,
+        action="store_true",
+        dest="interactive",
+        help="Run the tasks with the interactive feature enabled")
     def create_graph(self, **params):
+        from taskcluster_graph.commit_parser import parse_commit
+        from slugid import nice as slugid
+        from taskcluster_graph.from_now import (
+            json_time_from_now,
+            current_json_time,
+        )
+        from taskcluster_graph.templates import Templates
+        import taskcluster_graph.build_task
+
         project = params['project']
         message = params.get('message', '') if project == 'try' else DEFAULT_TRY
 
@@ -216,8 +316,14 @@ class Graph(object):
         jobs = templates.load(job_path, {})
 
         job_graph = parse_commit(message, jobs)
+
+        cmdline_interactive = params.get('interactive', False)
+
         # Template parameters used when expanding the graph
         parameters = dict(gaia_info().items() + {
+            'index': 'index',
+            'project': project,
+            'pushlog_id': params.get('pushlog_id', 0),
             'docker_image': docker_image,
             'base_repository': params['base_repository'] or \
                 params['head_repository'],
@@ -226,17 +332,20 @@ class Graph(object):
             'head_rev': params['head_rev'],
             'owner': params['owner'],
             'from_now': json_time_from_now,
-            'now': datetime.datetime.now().isoformat(),
-            'mozharness_repository': params['mozharness_repository'],
-            'mozharness_rev': params['mozharness_rev'],
+            'now': current_json_time(),
             'revision_hash': params['revision_hash']
         }.items())
 
-        treeherder_route = '{}.{}.{}'.format(
-            TREEHERDER_ROUTE_PREFIX,
+        treeherder_route = '{}.{}'.format(
             params['project'],
             params.get('revision_hash', '')
         )
+
+        routes_file = os.path.join(ROOT, 'routes.json')
+        with open(routes_file) as f:
+            contents = json.load(f)
+            json_routes = contents['routes']
+            # TODO: Nightly and/or l10n routes
 
         # Task graph we are generating for taskcluster...
         graph = {
@@ -245,7 +354,8 @@ class Graph(object):
         }
 
         if params['revision_hash']:
-            graph['scopes'].append('queue:route:{}'.format(treeherder_route))
+            for env in TREEHERDER_ROUTES:
+                graph['scopes'].append('queue:route:{}.{}'.format(TREEHERDER_ROUTES[env], treeherder_route))
 
         graph['metadata'] = {
             'source': 'http://todo.com/what/goes/here',
@@ -256,34 +366,65 @@ class Graph(object):
         }
 
         for build in job_graph:
+            interactive = cmdline_interactive or build["interactive"]
             build_parameters = dict(parameters)
             build_parameters['build_slugid'] = slugid()
             build_task = templates.load(build['task'], build_parameters)
+            set_interactive_task(build_task, interactive)
 
-            if 'routes' not in build_task['task']:
-                build_task['task']['routes'] = [];
+            # try builds don't use cache
+            if project == "try":
+                remove_caches_from_task(build_task)
 
             if params['revision_hash']:
-                build_task['task']['routes'].append(treeherder_route)
+                decorate_task_treeherder_routes(build_task['task'],
+                                                treeherder_route)
+                decorate_task_json_routes(build,
+                                          build_task['task'],
+                                          json_routes,
+                                          build_parameters)
 
             # Ensure each build graph is valid after construction.
             taskcluster_graph.build_task.validate(build_task)
             graph['tasks'].append(build_task)
 
-            tests_url = ARTIFACT_URL.format(
-                build_parameters['build_slugid'],
-                build_task['task']['extra']['locations']['tests']
-            )
+            test_packages_url, tests_url, mozharness_url = None, None, None
+
+            if 'test_packages' in build_task['task']['extra']['locations']:
+                test_packages_url = ARTIFACT_URL.format(
+                    build_parameters['build_slugid'],
+                    build_task['task']['extra']['locations']['test_packages']
+                )
+
+            if 'tests' in build_task['task']['extra']['locations']:
+                tests_url = ARTIFACT_URL.format(
+                    build_parameters['build_slugid'],
+                    build_task['task']['extra']['locations']['tests']
+                )
+
+            if 'mozharness' in build_task['task']['extra']['locations']:
+                mozharness_url = ARTIFACT_URL.format(
+                    build_parameters['build_slugid'],
+                    build_task['task']['extra']['locations']['mozharness']
+                )
 
             build_url = ARTIFACT_URL.format(
                 build_parameters['build_slugid'],
                 build_task['task']['extra']['locations']['build']
             )
 
+            # img_url is only necessary for device builds
+            img_url = ARTIFACT_URL.format(
+                build_parameters['build_slugid'],
+                build_task['task']['extra']['locations'].get('img', '')
+            )
+
             define_task = DEFINE_TASK.format(build_task['task']['workerType'])
 
             graph['scopes'].append(define_task)
             graph['scopes'].extend(build_task['task'].get('scopes', []))
+            route_scopes = map(lambda route: 'queue:route:' + route, build_task['task'].get('routes', []))
+            graph['scopes'].extend(route_scopes)
 
             # Treeherder symbol configuration for the graph required for each
             # build so tests know which platform they belong to.
@@ -304,55 +445,53 @@ class Graph(object):
                 message = '({}), extra.treeherder.collection must contain one type'
                 raise ValueError(message.fomrat(build['task']))
 
+            for post_build in build['post-build']:
+                # copy over the old parameters to update the template
+                post_parameters = copy.copy(build_parameters)
+                post_task = configure_dependent_task(post_build['task'],
+                                                     post_parameters,
+                                                     slugid(),
+                                                     templates,
+                                                     build_treeherder_config)
+                set_interactive_task(post_task, interactive)
+                graph['tasks'].append(post_task)
+
             for test in build['dependents']:
                 test = test['allowed_build_tasks'][build['task']]
                 test_parameters = copy.copy(build_parameters)
                 test_parameters['build_url'] = build_url
-                test_parameters['tests_url'] = tests_url
-                test_parameters['total_chunks'] = 1
+                test_parameters['img_url'] = img_url
+                if tests_url:
+                    test_parameters['tests_url'] = tests_url
+                if test_packages_url:
+                    test_parameters['test_packages_url'] = test_packages_url
+                if mozharness_url:
+                    test_parameters['mozharness_url'] = mozharness_url
+                test_definition = templates.load(test['task'], {})['task']
+                chunk_config = test_definition['extra']['chunks']
 
+                # Allow branch configs to override task level chunking...
                 if 'chunks' in test:
-                    test_parameters['total_chunks'] = test['chunks']
+                    chunk_config['total'] = test['chunks']
 
-                for chunk in range(1, test_parameters['total_chunks'] + 1):
+                test_parameters['total_chunks'] = chunk_config['total']
+
+                for chunk in range(1, chunk_config['total'] + 1):
                     if 'only_chunks' in test and \
                         chunk not in test['only_chunks']:
-                        continue;
+                        continue
 
                     test_parameters['chunk'] = chunk
-                    test_task = templates.load(test['task'], test_parameters)
-                    test_task['taskId'] = slugid()
-
-                    if 'requires' not in test_task:
-                        test_task['requires'] = []
-
-                    test_task['requires'].append(test_parameters['build_slugid'])
-
-                    if 'treeherder' not in test_task['task']['extra']:
-                        test_task['task']['extra']['treeherder'] = {}
-
-                    # Copy over any treeherder configuration from the build so
-                    # tests show up under the same platform...
-                    test_treeherder_config = test_task['task']['extra']['treeherder']
-
-                    test_treeherder_config['collection'] = \
-                        build_treeherder_config.get('collection', {})
-
-                    test_treeherder_config['build'] = \
-                        build_treeherder_config.get('build', {})
-
-                    test_treeherder_config['machine'] = \
-                        build_treeherder_config.get('machine', {})
-
-                    if 'routes' not in test_task['task']:
-                        test_task['task']['routes'] = []
-
-                    if 'scopes' not in test_task['task']:
-                        test_task['task']['scopes'] = []
+                    test_task = configure_dependent_task(test['task'],
+                                                         test_parameters,
+                                                         slugid(),
+                                                         templates,
+                                                         build_treeherder_config)
+                    set_interactive_task(test_task, interactive)
 
                     if params['revision_hash']:
-                        test_task['task']['routes'].append(treeherder_route)
-                        test_task['task']['scopes'].append('queue:route:{}'.format(treeherder_route))
+                        decorate_task_treeherder_routes(
+                                test_task['task'], treeherder_route)
 
                     graph['tasks'].append(test_task)
 
@@ -378,9 +517,6 @@ class CIBuild(object):
         description="Create taskcluster try server build task")
     @CommandArgument('--base-repository',
         help='URL for "base" repository to clone')
-    @CommandArgument('--mozharness-repository',
-        default='http://hg.mozilla.org/build/mozharness',
-        help='URL for custom mozharness repo')
     @CommandArgument('--head-repository',
         required=True,
         help='URL for "head" repository to fetch revision from')
@@ -389,15 +525,21 @@ class CIBuild(object):
     @CommandArgument('--head-rev',
         required=True,
         help='Commit revision to use')
-    @CommandArgument('--mozharness-rev',
-        default='tip',
-        help='Commit revision to use from mozharness repository')
     @CommandArgument('--owner',
-        required=True,
+        default='foobar@mozilla.com',
         help='email address of who owns this graph')
     @CommandArgument('build_task',
         help='path to build task definition')
+    @CommandArgument('--interactive',
+        required=False,
+        default=False,
+        action="store_true",
+        dest="interactive",
+        help="Run the task with the interactive feature enabled")
     def create_ci_build(self, **params):
+        from taskcluster_graph.templates import Templates
+        import taskcluster_graph.build_task
+
         templates = Templates(ROOT)
         # TODO handle git repos
         head_repository = params['head_repository']
@@ -410,7 +552,11 @@ class CIBuild(object):
 
         head_ref = params['head_ref'] or head_rev
 
-        build_parameters = {
+        from taskcluster_graph.from_now import (
+            json_time_from_now,
+            current_json_time,
+        )
+        build_parameters = dict(gaia_info().items() + {
             'docker_image': docker_image,
             'owner': params['owner'],
             'from_now': json_time_from_now,
@@ -419,12 +565,11 @@ class CIBuild(object):
             'head_repository': head_repository,
             'head_rev': head_rev,
             'head_ref': head_ref,
-            'mozharness_repository': params['mozharness_repository'],
-            'mozharness_rev': params['mozharness_rev']
-        }
+        }.items())
 
         try:
             build_task = templates.load(params['build_task'], build_parameters)
+            set_interactive_task(build_task, params.get('interactive', False))
         except IOError:
             sys.stderr.write(
                 "Could not load build task file.  Ensure path is a relative " \
@@ -435,123 +580,3 @@ class CIBuild(object):
         taskcluster_graph.build_task.validate(build_task)
 
         print(json.dumps(build_task['task'], indent=4))
-
-@CommandProvider
-class CITest(object):
-    @Command('taskcluster-test', category='ci',
-        description='Create taskcluster try server test task')
-    @CommandArgument('--task-id',
-        help='the task id to pick the correct build and tests')
-    @CommandArgument('--total-chunks', type=int,
-        help='total number of chunks')
-    @CommandArgument('--chunk', type=int,
-        help='current chunk')
-    @CommandArgument('--owner',
-        help='email address of who owns this graph')
-    @CommandArgument('test_task',
-        help='path to the test task definition')
-    def create_ci_test(self, test_task, task_id='', total_chunks=1, chunk=1, owner=''):
-        if total_chunks is None:
-            total_chunks = 1
-
-        if chunk is None:
-            chunk = 1
-
-        if chunk < 1 or chunk > total_chunks:
-            raise ValueError(
-                '"chunk" must be a value between 1 and "total_chunks (default 1)"')
-
-        build_url, tests_url = self._get_build_and_tests_url(task_id)
-
-        test_parameters = {
-            'docker_image': docker_image,
-            'build_url': ARTIFACT_URL.format(task_id, build_url),
-            'tests_url': ARTIFACT_URL.format(task_id, tests_url),
-            'total_chunks': total_chunks,
-            'chunk': chunk,
-            'owner': owner,
-            'from_now': json_time_from_now,
-            'now': current_json_time()
-        }
-
-        try:
-            test_task = import_yaml(test_task, test_parameters)
-        except IOError:
-            sys.stderr.write(
-                "Could not load test task file.  Ensure path is a relative " \
-                "path from testing/taskcluster"
-            )
-            sys.exit(1)
-
-        print(json.dumps(test_task['task'], indent=4))
-
-    def _get_build_and_tests_url(self, task_id):
-        task = get_task(task_id)
-        locations = task['extra']['locations']
-        return locations['build'], locations['tests']
-
-@CommandProvider
-class CIDockerRun(object):
-    @Command('taskcluster-docker-run', category='ci',
-        description='Run a docker image and optionally mount local hg repos. ' \
-                    'Repos will be mounted to /home/worker/x/source accordingly. ' \
-                    'For example, to run a centos image and mount local gecko ' \
-                    'and gaia repos: mach ci-docker-run --local-gecko-repo ' \
-                    '/home/user/mozilla-central/ --local-gaia-repo /home/user/gaia/ '\
-                    '--docker-flags="-t -i" centos:centos7 /bin/bash')
-    @CommandArgument('--local-gecko-repo',
-        action='store', dest='local_gecko_repo',
-        help='local gecko hg repository for volume mount')
-    @CommandArgument('--gecko-revision',
-        action='store', dest='gecko_revision',
-        help='local gecko repo revision (defaults to latest)')
-    @CommandArgument('--local-gaia-repo',
-        action='store', dest='local_gaia_repo',
-        help='local gaia hg repository for volume mount')
-    @CommandArgument('--mozconfig',
-        help='The mozconfig file for building gecko')
-    @CommandArgument('--docker-flags',
-        action='store', dest='flags',
-        help='string of run flags (i.e. --docker-flags="-i -t")')
-    @CommandArgument('image',
-        help='name of docker image to run')
-    @CommandArgument('command',
-        nargs='*',
-        help='command to run inside the docker image')
-    def ci_docker_run(self, local_gecko_repo='', gecko_revision='',
-                      local_gaia_repo='', mozconfig="", flags="", **kwargs):
-        ''' Run docker image and optionally volume mount specified local repos '''
-        gecko_mount_point='/home/worker/mozilla-central/source/'
-        gaia_mount_point='/home/worker/gaia/source/'
-        cmd_out = ['docker', 'run']
-        if flags:
-            cmd_out.extend(flags.split())
-        if local_gecko_repo:
-            if not os.path.exists(local_gecko_repo):
-                print("Gecko repository path doesn't exist: %s" % local_gecko_repo)
-                sys.exit(1)
-            if not gecko_revision:
-                gecko_revision = get_latest_hg_revision(local_gecko_repo)
-            cmd_out.extend(['-v', '%s:%s' % (local_gecko_repo, gecko_mount_point)])
-            cmd_out.extend(['-e', 'REPOSITORY=%s' % gecko_mount_point])
-            cmd_out.extend(['-e', 'REVISION=%s' % gecko_revision])
-        if local_gaia_repo:
-            if not os.path.exists(local_gaia_repo):
-                print("Gaia repository path doesn't exist: %s" % local_gaia_repo)
-                sys.exit(1)
-            cmd_out.extend(['-v', '%s:%s' % (local_gaia_repo, gaia_mount_point)])
-            cmd_out.extend(['-e', 'GAIA_REPOSITORY=%s' % gaia_mount_point])
-        if mozconfig:
-            cmd_out.extend(['-e', 'MOZCONFIG=%s' % mozconfig])
-        cmd_out.append(kwargs['image'])
-        for cmd_x in kwargs['command']:
-            cmd_out.append(cmd_x)
-        try:
-            subprocess.check_call(cmd_out)
-        except subprocess.CalledProcessError:
-            sys.stderr.write("Docker run command returned non-zero status. Attempted:\n")
-            cmd_line = ''
-            for x in cmd_out:
-                cmd_line = cmd_line + x + ' '
-            sys.stderr.write(cmd_line + '\n')
-            sys.exit(1)

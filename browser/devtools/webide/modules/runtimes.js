@@ -6,7 +6,7 @@ const {Cu, Ci} = require("chrome");
 const {Devices} = Cu.import("resource://gre/modules/devtools/Devices.jsm");
 const {Services} = Cu.import("resource://gre/modules/Services.jsm");
 const {Connection} = require("devtools/client/connection-manager");
-const {DebuggerServer} = require("resource://gre/modules/devtools/dbg-server.jsm");
+const {DebuggerServer} = require("devtools/server/main");
 const {Simulators} = require("devtools/webide/simulators");
 const discovery = require("devtools/toolkit/discovery/discovery");
 const EventEmitter = require("devtools/toolkit/event-emitter");
@@ -66,6 +66,10 @@ const Strings = Services.strings.createBundle("chrome://browser/locale/devtools/
  * |name| field
  *   A user-visible label to identify the runtime that will be displayed in a
  *   runtime list.
+ * |prolongedConnection| field
+ *   A boolean value which should be |true| if the connection process is
+ *   expected to take a unknown or large amount of time.  A UI may use this as a
+ *   hint to skip timeouts or other time-based code paths.
  * connect()
  *   Configure the passed |connection| object with any settings need to
  *   successfully connect to the runtime, and call the |connection|'s connect()
@@ -74,11 +78,13 @@ const Strings = Services.strings.createBundle("chrome://browser/locale/devtools/
  *           A |Connection| object from the DevTools |ConnectionManager|.
  *   @return Promise
  *           Resolved once you've called the |connection|'s connect() method.
+ * configure() OPTIONAL
+ *   Show a configuration screen if the runtime is configurable.
  */
 
 /* SCANNER REGISTRY */
 
-let RuntimeScanners = {
+var RuntimeScanners = {
 
   _enabledCount: 0,
   _scanners: new Set(),
@@ -187,7 +193,7 @@ exports.RuntimeScanners = RuntimeScanners;
 
 /* SCANNERS */
 
-let SimulatorScanner = {
+var SimulatorScanner = {
 
   _runtimes: [],
 
@@ -206,7 +212,7 @@ let SimulatorScanner = {
   },
 
   _updateRuntimes() {
-    Simulators.getAll().then(simulators => {
+    Simulators.findSimulators().then(simulators => {
       this._runtimes = [];
       for (let simulator of simulators) {
         this._runtimes.push(new SimulatorRuntime(simulator));
@@ -236,7 +242,7 @@ RuntimeScanners.add(SimulatorScanner);
  * not actually connect (since the |DeprecatedUSBRuntime| assumes a Firefox OS
  * device).
  */
-let DeprecatedAdbScanner = {
+var DeprecatedAdbScanner = {
 
   _runtimes: [],
 
@@ -286,7 +292,36 @@ RuntimeScanners.add(DeprecatedAdbScanner);
 // ADB Helper 0.7.0 and later will replace this scanner on startup
 exports.DeprecatedAdbScanner = DeprecatedAdbScanner;
 
-let WiFiScanner = {
+/**
+ * This is a lazy ADB scanner shim which only tells the ADB Helper to start and
+ * stop as needed.  The real scanner that lists devices lives in ADB Helper.
+ * ADB Helper 0.8.0 and later wait until these signals are received before
+ * starting ADB polling.  For earlier versions, they have no effect.
+ */
+var LazyAdbScanner = {
+
+  enable() {
+    Devices.emit("adb-start-polling");
+  },
+
+  disable() {
+    Devices.emit("adb-stop-polling");
+  },
+
+  scan() {
+    return promise.resolve();
+  },
+
+  listRuntimes: function() {
+    return [];
+  }
+
+};
+
+EventEmitter.decorate(LazyAdbScanner);
+RuntimeScanners.add(LazyAdbScanner);
+
+var WiFiScanner = {
 
   _runtimes: [],
 
@@ -359,7 +394,7 @@ WiFiScanner.init();
 
 exports.WiFiScanner = WiFiScanner;
 
-let StaticScanner = {
+var StaticScanner = {
   enable() {},
   disable() {},
   scan() { return promise.resolve(); },
@@ -379,7 +414,7 @@ RuntimeScanners.add(StaticScanner);
 
 // These type strings are used for logging events to Telemetry.
 // You must update Histograms.json if new types are added.
-let RuntimeTypes = exports.RuntimeTypes = {
+var RuntimeTypes = exports.RuntimeTypes = {
   USB: "USB",
   WIFI: "WIFI",
   SIMULATOR: "SIMULATOR",
@@ -446,6 +481,8 @@ function WiFiRuntime(deviceName) {
 
 WiFiRuntime.prototype = {
   type: RuntimeTypes.WIFI,
+  // Mark runtime as taking a long time to connect
+  prolongedConnection: true,
   connect: function(connection) {
     let service = discovery.getRemoteService("devtools", this.deviceName);
     if (!service) {
@@ -453,6 +490,10 @@ WiFiRuntime.prototype = {
     }
     connection.advertisement = service;
     connection.authenticator.sendOOB = this.sendOOB;
+    // Disable the default connection timeout, since QR scanning can take an
+    // unknown amount of time.  This prevents spurious errors (even after
+    // eventual success) from being shown.
+    connection.timeoutDelay = 0;
     connection.connect();
     return promise.resolve();
   },
@@ -519,9 +560,12 @@ WiFiRuntime.prototype = {
 
     // |openDialog| is typically a blocking API, so |executeSoon| to get around this
     DevToolsUtils.executeSoon(() => {
+      // Height determines the size of the QR code.  Force a minimum size to
+      // improve scanability.
+      const MIN_HEIGHT = 600;
       let win = Services.wm.getMostRecentWindow("devtools:webide");
       let width = win.outerWidth * 0.8;
-      let height = win.outerHeight * 0.5;
+      let height = Math.max(win.outerHeight * 0.5, MIN_HEIGHT);
       win.openDialog("chrome://webide/content/wifi-auth.xhtml",
                      WINDOW_ID,
                      "modal=yes,width=" + width + ",height=" + height, session);
@@ -557,6 +601,9 @@ SimulatorRuntime.prototype = {
       connection.connect();
     });
   },
+  configure() {
+    Simulators.emit("configure", this.simulator);
+  },
   get id() {
     return this.simulator.id;
   },
@@ -568,13 +615,14 @@ SimulatorRuntime.prototype = {
 // For testing use only
 exports._SimulatorRuntime = SimulatorRuntime;
 
-let gLocalRuntime = {
+var gLocalRuntime = {
   type: RuntimeTypes.LOCAL,
   connect: function(connection) {
     if (!DebuggerServer.initialized) {
       DebuggerServer.init();
       DebuggerServer.addBrowserActors();
     }
+    DebuggerServer.allowChromeProcess = true;
     connection.host = null; // Force Pipe transport
     connection.port = null;
     connection.connect();
@@ -591,7 +639,7 @@ let gLocalRuntime = {
 // For testing use only
 exports._gLocalRuntime = gLocalRuntime;
 
-let gRemoteRuntime = {
+var gRemoteRuntime = {
   type: RuntimeTypes.REMOTE,
   connect: function(connection) {
     let win = Services.wm.getMostRecentWindow("devtools:webide");

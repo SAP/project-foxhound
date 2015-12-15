@@ -9,14 +9,6 @@ const { utils: Cu, interfaces: Ci, classes: Cc, results: Cr } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyServiceGetter(this, "ppmm",
-                                   "@mozilla.org/parentprocessmessagemanager;1",
-                                   "nsIMessageListenerManager");
-
-XPCOMUtils.defineLazyServiceGetter(this, "globalmm",
-                                   "@mozilla.org/globalmessagemanager;1",
-                                   "nsIMessageBroadcaster");
-
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
                                   "resource://gre/modules/NetUtil.jsm");
 
@@ -85,15 +77,16 @@ MainProcessSingleton.prototype = {
 
       // Load this script early so that console.* is initialized
       // before other frame scripts.
-      globalmm.loadFrameScript("chrome://global/content/browser-content.js", true);
-      ppmm.addMessageListener("Console:Log", this.logConsoleMessage);
-      globalmm.addMessageListener("Search:AddEngine", this.addSearchEngine);
+      Services.mm.loadFrameScript("chrome://global/content/browser-content.js", true);
+      Services.ppmm.loadProcessScript("chrome://global/content/process-content.js", true);
+      Services.ppmm.addMessageListener("Console:Log", this.logConsoleMessage);
+      Services.mm.addMessageListener("Search:AddEngine", this.addSearchEngine);
       break;
     }
 
     case "xpcom-shutdown":
-      ppmm.removeMessageListener("Console:Log", this.logConsoleMessage);
-      globalmm.removeMessageListener("Search:AddEngine", this.addSearchEngine);
+      Services.ppmm.removeMessageListener("Console:Log", this.logConsoleMessage);
+      Services.mm.removeMessageListener("Search:AddEngine", this.addSearchEngine);
       break;
     }
   },

@@ -21,11 +21,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "pkix/pkix.h"
 #include "pkixcheck.h"
 #include "pkixder.h"
 #include "pkixgtest.h"
-#include "pkixtestutil.h"
 #include "pkixutil.h"
 
 namespace mozilla { namespace pkix {
@@ -1550,9 +1548,9 @@ CreateCert(const ByteString& subject, const ByteString& subjectAltName)
 
   ScopedTestKeyPair keyPair(CloneReusedKeyPair());
   return CreateEncodedCertificate(
-                    v3, sha256WithRSAEncryption, serialNumber, issuerDER,
+                    v3, sha256WithRSAEncryption(), serialNumber, issuerDER,
                     oneDayBeforeNow, oneDayAfterNow, Name(subject), *keyPair,
-                    extensions, *keyPair, sha256WithRSAEncryption);
+                    extensions, *keyPair, sha256WithRSAEncryption());
 }
 
 TEST_P(pkixnames_CheckCertHostname, CheckCertHostname)
@@ -1590,10 +1588,10 @@ TEST_F(pkixnames_CheckCertHostname, SANWithoutSequence)
 
   ScopedTestKeyPair keyPair(CloneReusedKeyPair());
   ByteString certDER(CreateEncodedCertificate(
-                       v3, sha256WithRSAEncryption, serialNumber,
+                       v3, sha256WithRSAEncryption(), serialNumber,
                        Name(RDN(CN("issuer"))), oneDayBeforeNow, oneDayAfterNow,
                        Name(RDN(CN("a"))), *keyPair, extensions,
-                       *keyPair, sha256WithRSAEncryption));
+                       *keyPair, sha256WithRSAEncryption()));
   ASSERT_FALSE(ENCODING_FAILED(certDER));
   Input certInput;
   ASSERT_EQ(Success, certInput.Init(certDER.data(), certDER.length()));
@@ -2421,6 +2419,91 @@ static const NameConstraintParams NAME_CONSTRAINT_PARAMS[] =
     GeneralSubtree(RFC822Name("a@example.com")),
     Success, Result::ERROR_CERT_NOT_IN_NAME_SPACE
   },
+
+  /////////////////////////////////////////////////////////////////////////////
+  // DirectoryName name constraint tests
+
+  { // One AVA per RDN
+    RDN(OU("Example Organization")) + RDN(CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization")) +
+                                      RDN(CN("example.com"))))),
+    Success, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // RDNs can have multiple AVAs.
+    RDN(OU("Example Organization") + CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization") +
+                                          CN("example.com"))))),
+    Success, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // The constraint is a prefix of the subject DN.
+    RDN(OU("Example Organization")) + RDN(CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization"))))),
+    Success, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // The name constraint is not a prefix of the subject DN.
+    // Note that for excludedSubtrees, we simply prohibit any non-empty
+    // directoryName constraint to ensure we are not being too lenient.
+    RDN(OU("Other Example Organization")) + RDN(CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization")) +
+                                      RDN(CN("example.com"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // Same as the previous one, but one RDN with multiple AVAs.
+    RDN(OU("Other Example Organization") + CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization") +
+                                          CN("example.com"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // With multiple AVAs per RDN in the subject DN, the constraint is not a
+    // prefix of the subject DN.
+    RDN(OU("Example Organization") + CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // The subject DN RDN has multiple AVAs, but the name constraint has only
+    // one AVA per RDN.
+    RDN(OU("Example Organization") + CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization")) +
+                                      RDN(CN("example.com"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // The name constraint RDN has multiple AVAs, but the subject DN has only
+    // one AVA per RDN.
+    RDN(OU("Example Organization")) + RDN(CN("example.com")), NO_SAN,
+    GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization") +
+                                          CN("example.com"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // In this case, the constraint uses a different encoding from the subject.
+    // We consider them to match because we allow UTF8String and
+    // PrintableString to compare equal when their contents are equal.
+    RDN(OU("Example Organization", der::UTF8String)) + RDN(CN("example.com")),
+    NO_SAN, GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization",
+                                                     der::PrintableString)) +
+                                              RDN(CN("example.com"))))),
+    Success, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // Same as above, but with UTF8String/PrintableString switched.
+    RDN(OU("Example Organization", der::PrintableString)) + RDN(CN("example.com")),
+    NO_SAN, GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization",
+                                                     der::UTF8String)) +
+                                              RDN(CN("example.com"))))),
+    Success, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // If the contents aren't the same, then they shouldn't match.
+    RDN(OU("Other Example Organization", der::UTF8String)) + RDN(CN("example.com")),
+    NO_SAN, GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization",
+                                                     der::PrintableString)) +
+                                              RDN(CN("example.com"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
+  { // Only UTF8String and PrintableString are considered equivalent.
+    RDN(OU("Example Organization", der::PrintableString)) + RDN(CN("example.com")),
+    NO_SAN, GeneralSubtree(DirectoryName(Name(RDN(OU("Example Organization",
+                                                     der::TeletexString)) +
+                                              RDN(CN("example.com"))))),
+    Result::ERROR_CERT_NOT_IN_NAME_SPACE, Result::ERROR_CERT_NOT_IN_NAME_SPACE
+  },
 };
 
 class pkixnames_CheckNameConstraints
@@ -2430,7 +2513,7 @@ class pkixnames_CheckNameConstraints
 };
 
 TEST_P(pkixnames_CheckNameConstraints,
-       NameConstraintsEnforcedforDirectlyIssuedEndEntity)
+       NameConstraintsEnforcedForDirectlyIssuedEndEntity)
 {
   // Test that name constraints are enforced on a certificate directly issued by
   // this certificate.

@@ -26,10 +26,11 @@ function test()
 
     openScratchpad(function () {
       let sw = gScratchpadWindow;
-      let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+      let {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+      let {TargetFactory} = require("devtools/framework/target");
 
       openScratchpad(function () {
-        let target = devtools.TargetFactory.forTab(gBrowser.selectedTab);
+        let target = TargetFactory.forTab(gBrowser.selectedTab);
         gDevTools.showToolbox(target, "webconsole").then((toolbox) => {
           let hud = toolbox.getCurrentPanel().hud;
           hud.jsterm.clearOutput(true);
@@ -51,7 +52,7 @@ function testFocus(sw, hud) {
 
     var loc = node.querySelector(".message-location");
     ok(loc, "location element exists");
-    is(loc.textContent.trim(), sw.Scratchpad.uniqueName + ":1:0",
+    is(loc.textContent.trim(), sw.Scratchpad.uniqueName + ":1:1",
         "location value is correct");
 
     sw.addEventListener("focus", function onFocus() {

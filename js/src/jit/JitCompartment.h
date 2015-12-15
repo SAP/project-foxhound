@@ -14,6 +14,7 @@
 
 #include "builtin/TypedObject.h"
 #include "jit/CompileInfo.h"
+#include "jit/ICStubSpace.h"
 #include "jit/IonCode.h"
 #include "jit/JitFrames.h"
 #include "jit/shared/Assembler-shared.h"
@@ -57,68 +58,7 @@ typedef void (*EnterJitCode)(void* code, unsigned argc, Value* argv, Interpreter
                              CalleeToken calleeToken, JSObject* scopeChain,
                              size_t numStackValues, Value* vp);
 
-class IonBuilder;
 class JitcodeGlobalTable;
-
-// ICStubSpace is an abstraction for allocation policy and storage for stub data.
-// There are two kinds of stubs: optimized stubs and fallback stubs (the latter
-// also includes stubs that can make non-tail calls that can GC).
-//
-// Optimized stubs are allocated per-compartment and are always purged when
-// JIT-code is discarded. Fallback stubs are allocated per BaselineScript and
-// are only destroyed when the BaselineScript is destroyed.
-class ICStubSpace
-{
-  protected:
-    LifoAlloc allocator_;
-
-    explicit ICStubSpace(size_t chunkSize)
-      : allocator_(chunkSize)
-    {}
-
-  public:
-    inline void* alloc(size_t size) {
-        return allocator_.alloc(size);
-    }
-
-    JS_DECLARE_NEW_METHODS(allocate, alloc, inline)
-
-    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-        return allocator_.sizeOfExcludingThis(mallocSizeOf);
-    }
-};
-
-// Space for optimized stubs. Every JitCompartment has a single
-// OptimizedICStubSpace.
-struct OptimizedICStubSpace : public ICStubSpace
-{
-    static const size_t STUB_DEFAULT_CHUNK_SIZE = 4 * 1024;
-
-  public:
-    OptimizedICStubSpace()
-      : ICStubSpace(STUB_DEFAULT_CHUNK_SIZE)
-    {}
-
-    void free() {
-        allocator_.freeAll();
-    }
-};
-
-// Space for fallback stubs. Every BaselineScript has a
-// FallbackICStubSpace.
-struct FallbackICStubSpace : public ICStubSpace
-{
-    static const size_t STUB_DEFAULT_CHUNK_SIZE = 256;
-
-  public:
-    FallbackICStubSpace()
-      : ICStubSpace(STUB_DEFAULT_CHUNK_SIZE)
-    {}
-
-    inline void adoptFrom(FallbackICStubSpace* other) {
-        allocator_.steal(&(other->allocator_));
-    }
-};
 
 // Information about a loop backedge in the runtime, which can be set to
 // point to either the loop header or to an OOL interrupt checking stub,
@@ -229,8 +169,6 @@ class JitRuntime
     // Global table of jitcode native address => bytecode address mappings.
     JitcodeGlobalTable* jitcodeGlobalTable_;
 
-    bool hasIonNurseryObjects_;
-
   private:
     JitCode* generateLazyLinkStub(JSContext* cx);
     JitCode* generateProfilerExitFrameTailStub(JSContext* cx);
@@ -257,6 +195,9 @@ class JitRuntime
     void freeOsrTempData();
 
     static void Mark(JSTracer* trc);
+    static void MarkJitcodeGlobalTableUnconditionally(JSTracer* trc);
+    static bool MarkJitcodeGlobalTableIteratively(JSTracer* trc);
+    static void SweepJitcodeGlobalTable(JSRuntime* rt);
 
     ExecutableAllocator& execAlloc() {
         return execAlloc_;
@@ -375,13 +316,6 @@ class JitRuntime
         ionReturnOverride_ = v;
     }
 
-    bool hasIonNurseryObjects() const {
-        return hasIonNurseryObjects_;
-    }
-    void setHasIonNurseryObjects(bool b)  {
-        hasIonNurseryObjects_ = b;
-    }
-
     bool hasJitcodeGlobalTable() const {
         return jitcodeGlobalTable_ != nullptr;
     }
@@ -421,7 +355,7 @@ class JitCompartment
 
     // Keep track of offset into various baseline stubs' code at return
     // point from called script.
-    void* baselineCallReturnAddr_;
+    void* baselineCallReturnAddrs_[2];
     void* baselineGetPropReturnAddr_;
     void* baselineSetPropReturnAddr_;
 
@@ -448,27 +382,45 @@ class JitCompartment
             tpl.set(TypedObject::createZeroed(cx, descr, 0, gc::TenuredHeap));
         return tpl.get();
     }
+
+    JSObject* maybeGetSimdTemplateObjectFor(SimdTypeDescr::Type type) const {
+        const ReadBarrieredObject& tpl = simdTemplateObjects_[type];
+
+        // This function is used by Eager Simd Unbox phase, so we cannot use the
+        // read barrier. For more information, see the comment above
+        // CodeGenerator::simdRefreshTemplatesDuringLink_ .
+        return tpl.unbarrieredGet();
+    }
+
+    // This function is used to call the read barrier, to mark the SIMD template
+    // type as used. This function can only be called from the main thread.
+    void registerSimdTemplateObjectFor(SimdTypeDescr::Type type) {
+        ReadBarrieredObject& tpl = simdTemplateObjects_[type];
+        MOZ_ASSERT(tpl.unbarrieredGet());
+        tpl.get();
+    }
+
     JitCode* getStubCode(uint32_t key) {
         ICStubCodeMap::AddPtr p = stubCodes_->lookupForAdd(key);
         if (p)
             return p->value();
         return nullptr;
     }
-    bool putStubCode(uint32_t key, Handle<JitCode*> stubCode) {
-        // Make sure to do a lookupForAdd(key) and then insert into that slot, because
-        // that way if stubCode gets moved due to a GC caused by lookupForAdd, then
-        // we still write the correct pointer.
-        MOZ_ASSERT(!stubCodes_->has(key));
-        ICStubCodeMap::AddPtr p = stubCodes_->lookupForAdd(key);
-        return stubCodes_->add(p, key, stubCode.get());
+    bool putStubCode(JSContext* cx, uint32_t key, Handle<JitCode*> stubCode) {
+        MOZ_ASSERT(stubCode);
+        if (!stubCodes_->putNew(key, stubCode.get())) {
+            ReportOutOfMemory(cx);
+            return false;
+        }
+        return true;
     }
-    void initBaselineCallReturnAddr(void* addr) {
-        MOZ_ASSERT(baselineCallReturnAddr_ == nullptr);
-        baselineCallReturnAddr_ = addr;
+    void initBaselineCallReturnAddr(void* addr, bool constructing) {
+        MOZ_ASSERT(baselineCallReturnAddrs_[constructing] == nullptr);
+        baselineCallReturnAddrs_[constructing] = addr;
     }
-    void* baselineCallReturnAddr() {
-        MOZ_ASSERT(baselineCallReturnAddr_ != nullptr);
-        return baselineCallReturnAddr_;
+    void* baselineCallReturnAddr(bool constructing) {
+        MOZ_ASSERT(baselineCallReturnAddrs_[constructing] != nullptr);
+        return baselineCallReturnAddrs_[constructing];
     }
     void initBaselineGetPropReturnAddr(void* addr) {
         MOZ_ASSERT(baselineGetPropReturnAddr_ == nullptr);
@@ -537,6 +489,51 @@ void FinishInvalidation(FreeOp* fop, JSScript* script);
 #ifdef XP_WIN
 const unsigned WINDOWS_BIG_FRAME_TOUCH_INCREMENT = 4096 - 1;
 #endif
+
+// If ExecutableAllocator::nonWritableJitCode is |true|, this class will ensure
+// JIT code is writable (has RW permissions) in its scope. If nonWritableJitCode
+// is |false|, it's a no-op.
+class MOZ_STACK_CLASS AutoWritableJitCode
+{
+    JSRuntime* rt_;
+    void* addr_;
+    size_t size_;
+
+  public:
+    AutoWritableJitCode(JSRuntime* rt, void* addr, size_t size)
+      : rt_(rt), addr_(addr), size_(size)
+    {
+        rt_->toggleAutoWritableJitCodeActive(true);
+        ExecutableAllocator::makeWritable(addr_, size_);
+    }
+    AutoWritableJitCode(void* addr, size_t size)
+      : AutoWritableJitCode(TlsPerThreadData.get()->runtimeFromMainThread(), addr, size)
+    {}
+    explicit AutoWritableJitCode(JitCode* code)
+      : AutoWritableJitCode(code->runtimeFromMainThread(), code->raw(), code->bufferSize())
+    {}
+    ~AutoWritableJitCode() {
+        ExecutableAllocator::makeExecutable(addr_, size_);
+        rt_->toggleAutoWritableJitCodeActive(false);
+    }
+};
+
+enum ReprotectCode { Reprotect = true, DontReprotect = false };
+
+class MOZ_STACK_CLASS MaybeAutoWritableJitCode
+{
+    mozilla::Maybe<AutoWritableJitCode> awjc_;
+
+  public:
+    MaybeAutoWritableJitCode(void* addr, size_t size, ReprotectCode reprotect) {
+        if (reprotect)
+            awjc_.emplace(addr, size);
+    }
+    MaybeAutoWritableJitCode(JitCode* code, ReprotectCode reprotect) {
+        if (reprotect)
+            awjc_.emplace(code);
+    }
+};
 
 } // namespace jit
 } // namespace js

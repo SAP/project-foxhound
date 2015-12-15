@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -143,7 +145,7 @@ convertToBytes(char* buf, uint32_t maxlen, const char* str)
       break;
     default:
       buf[len++] = *pos++;
-	  break;
+      break;
     }
   }
   return len;
@@ -366,10 +368,10 @@ public:
     char command[COMMAND_SIZE];
     if (!strcmp(iface, "p2p0")) {
       // Commands for p2p0 interface don't need prefix
-      snprintf(command, COMMAND_SIZE, "%s", cmd);
+      PR_snprintf(command, COMMAND_SIZE, "%s", cmd);
     }
     else {
-      snprintf(command, COMMAND_SIZE, "IFNAME=%s %s", iface, cmd);
+      PR_snprintf(command, COMMAND_SIZE, "IFNAME=%s %s", iface, cmd);
     }
     USE_DLFUNC(wifi_command)
     return wifi_command(command, buf, len);

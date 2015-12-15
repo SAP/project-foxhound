@@ -20,7 +20,6 @@
 #include "nsTArray.h"
 
 class nsIURI;
-class nsICacheEntryOpenCallback;
 class nsICacheEntryDoomCallback;
 class nsICacheStorageVisitor;
 class nsIRunnable;
@@ -34,7 +33,6 @@ class CacheStorageService;
 class CacheStorage;
 class CacheEntry;
 class CacheEntryHandle;
-class CacheEntryTable;
 
 class CacheMemoryConsumer
 {
@@ -65,8 +63,8 @@ protected:
 };
 
 class CacheStorageService final : public nsICacheStorageService
-                                    , public nsIMemoryReporter
-                                    , public nsITimerCallback
+                                , public nsIMemoryReporter
+                                , public nsITimerCallback
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -280,6 +278,7 @@ private:
                            nsIURI* aURI,
                            const nsACString & aIdExtension,
                            bool aWriteToDisk,
+                           bool aSkipSizeCheck,
                            bool aCreateIfNotExist,
                            bool aReplace,
                            CacheEntryHandle** aResult);
@@ -380,8 +379,8 @@ void ProxyReleaseMainThread(nsCOMPtr<T> &object)
   ProxyRelease(object, mainThread);
 }
 
-} // net
-} // mozilla
+} // namespace net
+} // namespace mozilla
 
 #define NS_CACHE_STORAGE_SERVICE_CID \
   { 0xea70b098, 0x5014, 0x4e21, \

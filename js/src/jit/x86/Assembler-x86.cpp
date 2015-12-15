@@ -97,30 +97,7 @@ Assembler::TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReade
     RelocationIterator iter(reader);
     while (iter.read()) {
         JitCode* child = CodeFromJump(code->raw() + iter.offset());
-        MarkJitCodeUnbarriered(trc, &child, "rel32");
+        TraceManuallyBarrieredEdge(trc, &child, "rel32");
         MOZ_ASSERT(child == CodeFromJump(code->raw() + iter.offset()));
     }
-}
-
-uint32_t
-FloatRegister::GetSizeInBytes(const FloatRegisterSet& s)
-{
-    uint32_t ret = s.size() * sizeof(double);
-    return ret;
-}
-
-FloatRegisterSet
-FloatRegister::ReduceSetForPush(const FloatRegisterSet& s)
-{
-    return s;
-}
-uint32_t
-FloatRegister::GetPushSizeInBytes(const FloatRegisterSet& s)
-{
-    return s.size() * sizeof(double);
-}
-uint32_t
-FloatRegister::getRegisterDumpOffsetInBytes()
-{
-    return code() * sizeof(double);
 }

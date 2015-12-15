@@ -4,24 +4,25 @@
 /**
  * Tests that the memory call tree view renders content after recording.
  */
-function spawnTest () {
-  let { panel } = yield initPerformance(SIMPLE_URL);
-  let { EVENTS, DetailsView, MemoryCallTreeView } = panel.panelWin;
+function* spawnTest() {
+  let { panel } = yield initPerformance(ALLOCS_URL);
+  let { EVENTS, $$, PerformanceController, DetailsView, MemoryCallTreeView } = panel.panelWin;
 
   // Enable memory to test.
-  Services.prefs.setBoolPref(MEMORY_PREF, true);
-
-  yield DetailsView.selectView("memory-calltree");
-  ok(DetailsView.isViewSelected(MemoryCallTreeView), "The call tree is now selected.");
+  Services.prefs.setBoolPref(ALLOCATIONS_PREF, true);
 
   yield startRecording(panel);
-  yield busyWait(100);
+  yield waitUntil(() => PerformanceController.getCurrentRecording().getAllocations().sizes.length);
+  yield stopRecording(panel);
 
   let rendered = once(MemoryCallTreeView, EVENTS.MEMORY_CALL_TREE_RENDERED);
-  yield stopRecording(panel);
+  yield DetailsView.selectView("memory-calltree");
+  ok(DetailsView.isViewSelected(MemoryCallTreeView), "The call tree is now selected.");
   yield rendered;
 
   ok(true, "MemoryCallTreeView rendered after recording is stopped.");
+
+  ok($$("#memory-calltree-view .call-tree-item").length, "there are several allocations rendered.");
 
   yield startRecording(panel);
   yield busyWait(100);

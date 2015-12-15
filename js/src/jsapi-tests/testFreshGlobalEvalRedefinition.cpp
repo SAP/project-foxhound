@@ -25,7 +25,7 @@ BEGIN_TEST(testRedefineGlobalEval)
         "global", JSCLASS_GLOBAL_FLAGS,
         nullptr, nullptr, nullptr, nullptr,
         GlobalEnumerate, GlobalResolve, nullptr,
-        nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr,
         JS_GlobalObjectTraceHook
     };
 
@@ -42,7 +42,7 @@ BEGIN_TEST(testRedefineGlobalEval)
 
     static const char data[] = "Object.defineProperty(this, 'eval', { configurable: false });";
     JS::CompileOptions opts(cx);
-    CHECK(JS::Evaluate(cx, g, opts.setFileAndLine(__FILE__, __LINE__),
+    CHECK(JS::Evaluate(cx, opts.setFileAndLine(__FILE__, __LINE__),
                        data, mozilla::ArrayLength(data) - 1, &v));
 
     return true;

@@ -47,6 +47,9 @@ pref("browser.viewport.defaultZoom", -1);
 /* allow scrollbars to float above chrome ui */
 pref("ui.scrollbarsCanOverlapContent", 1);
 
+/* turn off the caret blink after 10 cycles */
+pref("ui.caretBlinkCount", 10);
+
 /* cache prefs */
 pref("browser.cache.disk.enable", true);
 pref("browser.cache.disk.capacity", 20480); // kilobytes
@@ -66,7 +69,6 @@ pref("browser.cache.memory_limit", 5120); // 5 MB
 
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
-pref("image.high_quality_downscaling.enabled", false);
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", true);
@@ -174,8 +176,10 @@ pref("dom.forms.number", true);
 /* extension manager and xpinstall */
 pref("xpinstall.whitelist.directRequest", false);
 pref("xpinstall.whitelist.fileRequest", false);
-pref("xpinstall.whitelist.add", "addons.mozilla.org");
-pref("xpinstall.whitelist.add.180", "marketplace.firefox.com");
+pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
+pref("xpinstall.whitelist.add.180", "https://marketplace.firefox.com");
+
+pref("xpinstall.signatures.required", false);
 
 pref("extensions.enabledScopes", 1);
 pref("extensions.autoupdate.enabled", true);
@@ -216,9 +220,14 @@ pref("extensions.compatability.locales.buildid", "0");
 
 /* blocklist preferences */
 pref("extensions.blocklist.enabled", true);
+// OneCRL freshness checking depends on this value, so if you change it,
+// please also update security.onecrl.maximum_staleness_in_seconds.
 pref("extensions.blocklist.interval", 86400);
 pref("extensions.blocklist.url", "https://blocklist.addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
 pref("extensions.blocklist.detailsURL", "https://www.mozilla.com/%LOCALE%/blocklist/");
+
+/* Don't let XPIProvider install distribution add-ons; we do our own thing on mobile. */
+pref("extensions.installDistroAddons", false);
 
 /* block popups by default, and notify the user about blocked popups */
 pref("dom.disable_open_during_load", true);
@@ -257,8 +266,11 @@ pref("browser.search.order.1", "chrome://browser/locale/region.properties");
 pref("browser.search.order.2", "chrome://browser/locale/region.properties");
 pref("browser.search.order.3", "chrome://browser/locale/region.properties");
 
-// Market-specific search defaults (US market only)
+// Market-specific search defaults
 pref("browser.search.geoSpecificDefaults", true);
+pref("browser.search.geoSpecificDefaults.url", "https://search.services.mozilla.com/1/%APP%/%VERSION%/%CHANNEL%/%LOCALE%/%REGION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%");
+
+// US specific default (used as a fallback if the geoSpecificDefaults request fails).
 pref("browser.search.defaultenginename.US", "chrome://browser/locale/region.properties");
 pref("browser.search.order.US.1", "chrome://browser/locale/region.properties");
 pref("browser.search.order.US.2", "chrome://browser/locale/region.properties");
@@ -267,13 +279,12 @@ pref("browser.search.order.US.3", "chrome://browser/locale/region.properties");
 // disable updating
 pref("browser.search.update", false);
 
+// enable tracking protection for private browsing
+pref("privacy.trackingprotection.pbmode.enabled", true);
+
 // disable search suggestions by default
 pref("browser.search.suggest.enabled", false);
 pref("browser.search.suggest.prompted", false);
-
-// Tell the search service to load search plugins from the locale JAR
-pref("browser.search.loadFromJars", true);
-pref("browser.search.jarURIs", "chrome://browser/locale/searchplugins/");
 
 // tell the search service that we don't really expose the "current engine"
 pref("browser.search.noCurrentEngine", true);
@@ -281,12 +292,9 @@ pref("browser.search.noCurrentEngine", true);
 // Control media casting & mirroring features
 pref("browser.casting.enabled", true);
 #ifdef RELEASE_BUILD
-// Roku does not yet support mirroring in production
-pref("browser.mirroring.enabled.roku", false);
 // Chromecast mirroring is broken (bug 1131084)
 pref("browser.mirroring.enabled", false);
 #else
-pref("browser.mirroring.enabled.roku", true);
 pref("browser.mirroring.enabled", true);
 #endif
 
@@ -326,6 +334,9 @@ pref("gfx.displayport.strategy_pb.threshold", -1); // velocity threshold in inch
 // Allow 24-bit colour when the hardware supports it
 pref("gfx.android.rgb16.force", false);
 
+// Allow GLContexts to be attached/detached from SurfaceTextures
+pref("gfx.SurfaceTexture.detach.enabled", true);
+
 // don't allow JS to move and resize existing windows
 pref("dom.disable_window_move_resize", true);
 
@@ -344,6 +355,7 @@ pref("privacy.item.cache", true);
 pref("privacy.item.cookies", true);
 pref("privacy.item.offlineApps", true);
 pref("privacy.item.history", true);
+pref("privacy.item.searchHistory", true);
 pref("privacy.item.formdata", true);
 pref("privacy.item.downloads", true);
 pref("privacy.item.passwords", true);
@@ -391,13 +403,19 @@ pref("devtools.errorconsole.enabled", false);
 // to communicate with a usb cable via adb forward.
 pref("devtools.debugger.unix-domain-socket", "/data/data/@ANDROID_PACKAGE_NAME@/firefox-debugger-socket");
 
-pref("font.size.inflation.minTwips", 120);
+pref("devtools.remote.usb.enabled", false);
+pref("devtools.remote.wifi.enabled", false);
+
+pref("font.size.inflation.minTwips", 0);
 
 // When true, zooming will be enabled on all sites, even ones that declare user-scalable=no.
 pref("browser.ui.zoom.force-user-scalable", false);
 
 pref("ui.zoomedview.enabled", false);
-pref("ui.zoomedview.limitReadableSize", 8);  // value in layer pixels
+pref("ui.zoomedview.keepLimitSize", 16); // value in layer pixels, used to not keep the large elements in the cluster list (Bug 1191041)
+pref("ui.zoomedview.limitReadableSize", 8); // value in layer pixels
+pref("ui.zoomedview.defaultZoomFactor", 2);
+pref("ui.zoomedview.simplified", true); // Do not display all the zoomed view controls
 
 pref("ui.touch.radius.enabled", false);
 pref("ui.touch.radius.leftmm", 3);
@@ -414,8 +432,9 @@ pref("ui.mouse.radius.bottommm", 2);
 pref("ui.mouse.radius.visitedWeight", 120);
 pref("ui.mouse.radius.reposition", true);
 
-// The percentage of the screen that needs to be scrolled before margins are exposed.
-pref("browser.ui.show-margins-threshold", 10);
+// The percentage of the screen that needs to be scrolled before toolbar
+// manipulation is allowed.
+pref("browser.ui.scroll-toolbar-threshold", 10);
 
 // Maximum distance from the point where the user pressed where we still
 // look for text to select
@@ -452,7 +471,6 @@ pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/mobile/beta/faq/");
 #else
 pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/mobile/faq/");
 #endif
-pref("app.marketplaceURL", "https://marketplace.firefox.com/");
 
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
 pref("security.alternate_certificate_error_page", "certerror");
@@ -464,6 +482,16 @@ pref("security.mixed_content.block_active_content", true);
 
 // Enable pinning
 pref("security.cert_pinning.enforcement_level", 1);
+
+// Allow SHA-1 certificates only before 2016-01-01
+pref("security.pki.sha1_enforcement_level", 2);
+
+// Required blocklist freshness for OneCRL OCSP bypass
+// (default is 1.25x extensions.blocklist.interval, or 30 hours)
+pref("security.onecrl.maximum_staleness_in_seconds", 108000);
+
+// Only fetch OCSP for EV certificates
+pref("security.OCSP.enabled", 2);
 
 // Override some named colors to avoid inverse OS themes
 pref("ui.-moz-dialog", "#efebe7");
@@ -502,7 +530,7 @@ pref("app.update.timerMinimumDelay", 30); // seconds
 // used by update service to decide whether or not to
 // automatically download an update
 pref("app.update.autodownload", "wifi");
-pref("app.update.url.android", "https://aus4.mozilla.org/update/4/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%MOZ_VERSION%/update.xml");
+pref("app.update.url.android", "https://aus5.mozilla.org/update/4/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%MOZ_VERSION%/update.xml");
 
 #ifdef MOZ_UPDATER
 /* prefs used specifically for updating the app */
@@ -525,6 +553,7 @@ pref("layers.async-video.enabled", true);
 #ifdef MOZ_ANDROID_APZ
 pref("layers.async-pan-zoom.enabled", true);
 #endif
+pref("apz.allow_zooming", true);
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
 pref("layers.low-precision-resolution", "0.25");
@@ -560,13 +589,15 @@ pref("media.cache_readahead_limit", 30);
 pref("media.video-queue.default-size", 3);
 
 // Enable the MediaCodec PlatformDecoderModule by default.
-pref("media.fragmented-mp4.exposed", true);
 pref("media.fragmented-mp4.enabled", true);
 pref("media.fragmented-mp4.android-media-codec.enabled", true);
 pref("media.fragmented-mp4.android-media-codec.preferred", true);
 
+// Enable MSE
+pref("media.mediasource.enabled", true);
+
 // optimize images memory usage
-pref("image.mem.decodeondraw", true);
+pref("image.downscale-during-decode.enabled", true);
 
 #ifdef NIGHTLY_BUILD
 // Shumway component (SWF player) is disabled by default. Also see bug 904346.
@@ -579,18 +610,20 @@ pref("dom.w3c_touch_events.enabled", 1);
 #ifdef MOZ_SAFE_BROWSING
 pref("browser.safebrowsing.enabled", true);
 pref("browser.safebrowsing.malware.enabled", true);
+pref("browser.safebrowsing.downloads.enabled", false);
+pref("browser.safebrowsing.downloads.remote.enabled", false);
+pref("browser.safebrowsing.downloads.remote.timeout_ms", 10000);
 pref("browser.safebrowsing.debug", false);
 
-pref("browser.safebrowsing.updateURL", "https://safebrowsing.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2&key=%GOOGLE_API_KEY%");
-pref("browser.safebrowsing.gethashURL", "https://safebrowsing.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
-pref("browser.safebrowsing.reportURL", "https://safebrowsing.google.com/safebrowsing/report?");
-pref("browser.safebrowsing.reportGenericURL", "http://%LOCALE%.phish-generic.mozilla.com/?hl=%LOCALE%");
-pref("browser.safebrowsing.reportErrorURL", "http://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%");
-pref("browser.safebrowsing.reportPhishURL", "http://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%");
-pref("browser.safebrowsing.reportMalwareURL", "http://%LOCALE%.malware-report.mozilla.com/?hl=%LOCALE%");
-pref("browser.safebrowsing.reportMalwareErrorURL", "http://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%");
+pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-downloadwhite-digest256,goog-phish-shavar,goog-malware-shavar,goog-unwanted-shavar");
+pref("browser.safebrowsing.provider.google.updateURL", "https://safebrowsing.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2&key=%GOOGLE_API_KEY%");
+pref("browser.safebrowsing.provider.google.gethashURL", "https://safebrowsing.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.safebrowsing.provider.google.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
+pref("browser.safebrowsing.provider.google.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
 
-pref("browser.safebrowsing.malware.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
+pref("browser.safebrowsing.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?hl=%LOCALE%&url=");
+pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?hl=%LOCALE%&url=");
+pref("browser.safebrowsing.reportMalwareMistakeURL", "https://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%&url=");
 
 pref("browser.safebrowsing.id", @MOZ_APP_UA_NAME@);
 
@@ -660,8 +693,8 @@ pref("ui.scrolling.overscroll_snap_limit", -1);
 pref("ui.scrolling.min_scrollable_distance", -1);
 // The axis lock mode for panning behaviour - set between standard, free and sticky
 pref("ui.scrolling.axis_lock_mode", "standard");
-// Negate scrollY, true will make the mouse scroll wheel move the screen the same direction as with most desktops or laptops.
-pref("ui.scrolling.negate_wheel_scrollY", true);
+// Negate scroll, true will make the mouse scroll wheel move the screen the same direction as with most desktops or laptops.
+pref("ui.scrolling.negate_wheel_scroll", true);
 // Determine the dead zone for gamepad joysticks. Higher values result in larger dead zones; use a negative value to
 // auto-detect based on reported hardware values
 pref("ui.scrolling.gamepad_dead_zone", 115);
@@ -759,13 +792,11 @@ pref("browser.contentHandlers.types.3.type", "application/vnd.mozilla.maybe.feed
 // WebPayment
 pref("dom.mozPay.enabled", true);
 
-#ifndef RELEASE_BUILD
 pref("dom.payment.provider.0.name", "Firefox Marketplace");
 pref("dom.payment.provider.0.description", "marketplace.firefox.com");
 pref("dom.payment.provider.0.uri", "https://marketplace.firefox.com/mozpay/?req=");
 pref("dom.payment.provider.0.type", "mozilla/payments/pay/v1");
 pref("dom.payment.provider.0.requestMethod", "GET");
-#endif
 
 // Shortnumber matching needed for e.g. Brazil:
 // 01187654321 can be found with 87654321
@@ -773,14 +804,15 @@ pref("dom.phonenumber.substringmatching.BR", 8);
 pref("dom.phonenumber.substringmatching.CO", 10);
 pref("dom.phonenumber.substringmatching.VE", 7);
 
-// Support for the mozAudioChannel attribute on media elements is disabled in non-webapps
-pref("media.useAudioChannelService", false);
-
 // Enable hardware-accelerated Skia canvas
 pref("gfx.canvas.azure.backends", "skia");
 pref("gfx.canvas.azure.accelerated", true);
 
-pref("general.useragent.override.youtube.com", "Android; Tablet;#Android; Mobile;");
+// See ua-update.json.in for the packaged UA override list
+pref("general.useragent.updates.enabled", true);
+pref("general.useragent.updates.url", "https://dynamicua.cdn.mozilla.net/0/%APP_ID%");
+pref("general.useragent.updates.interval", 604800); // 1 week
+pref("general.useragent.updates.retry", 86400); // 1 day
 
 // When true, phone number linkification is enabled.
 pref("browser.ui.linkify.phone", false);
@@ -861,3 +893,65 @@ pref("reader.toolbar.vertical", false);
 
 // Whether or not to display buttons related to reading list in reader view.
 pref("browser.readinglist.enabled", true);
+
+// Telemetry settings.
+// Whether to use the unified telemetry behavior, requires a restart.
+pref("toolkit.telemetry.unified", false);
+
+// Turn off selection caret by default
+pref("selectioncaret.enabled", false);
+
+// Selection carets never fall-back to internal LongTap detector.
+pref("selectioncaret.detects.longtap", false);
+
+// Selection carets override caret visibility.
+pref("selectioncaret.visibility.affectscaret", true);
+
+// Selection caret visibility observes composition
+// selections generated by soft keyboard managers.
+pref("selectioncaret.observes.compositions", true);
+
+// Turn off touch caret by default.
+pref("touchcaret.enabled", false);
+
+// TouchCaret never auto-hides.
+pref("touchcaret.expiration.time", 0);
+
+// Touch caret stays visible under a wider range of conditions
+// than the default b2g. We can display the caret in empty editables
+// for example, and do not auto-hide until loss of focus.
+pref("touchcaret.extendedvisibility", true);
+
+// The TouchCaret and the SelectionCarets will indicate when the
+// TextSelection actionbar is to be openned or closed.
+pref("caret.manages-android-actionbar", true);
+
+// Disable sending console to logcat on release builds.
+#ifdef RELEASE_BUILD
+pref("consoleservice.logcat", false);
+#else
+pref("consoleservice.logcat", true);
+#endif
+
+// Enable Cardboard VR on mobile, assuming VR at all is enabled
+pref("dom.vr.cardboard.enabled", true);
+
+pref("browser.tabs.showAudioPlayingIcon", true);
+
+// Enable service workers and fetch interception on non-release Fennec
+#ifndef RELEASE_BUILD
+pref("dom.serviceWorkers.enabled", true);
+pref("dom.serviceWorkers.interception.enabled", true);
+#endif
+
+// The remote content URL where FxAccountsWebChannel messages originate.  Must use HTTPS.
+pref("identity.fxaccounts.remote.webchannel.uri", "https://accounts.firefox.com");
+
+// The remote URL of the Firefox Account profile server.
+pref("identity.fxaccounts.remote.profile.uri", "https://profile.accounts.firefox.com/v1");
+
+// The remote URL of the Firefox Account oauth server.
+pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com/v1"); 
+
+// Token server used by Firefox Account-authenticated Sync.
+pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sync/1.5");

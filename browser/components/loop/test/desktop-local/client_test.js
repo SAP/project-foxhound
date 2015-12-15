@@ -2,13 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*global loop, sinon, it, beforeEach, afterEach, describe */
-
-var expect = chai.expect;
-
 describe("loop.Client", function() {
   "use strict";
 
+  var expect = chai.expect;
   var sandbox,
       callback,
       client,
@@ -52,42 +49,6 @@ describe("loop.Client", function() {
   });
 
   describe("loop.Client", function() {
-    describe("#deleteCallUrl", function() {
-      it("should make a delete call to /call-url/{fakeToken}", function() {
-        client.deleteCallUrl(fakeToken, mozLoop.LOOP_SESSION_TYPE.GUEST, callback);
-
-        sinon.assert.calledOnce(hawkRequestStub);
-        sinon.assert.calledWith(hawkRequestStub,
-                                mozLoop.LOOP_SESSION_TYPE.GUEST,
-                                "/call-url/" + fakeToken, "DELETE");
-      });
-
-      it("should call the callback with null when the request succeeds",
-         function() {
-
-           // Sets up the hawkRequest stub to trigger the callback with no error
-           // and the url.
-           hawkRequestStub.callsArgWith(4, null);
-
-           client.deleteCallUrl(fakeToken, mozLoop.LOOP_SESSION_TYPE.FXA, callback);
-
-           sinon.assert.calledWithExactly(callback, null);
-         });
-
-      it("should send an error when the request fails", function() {
-        // Sets up the hawkRequest stub to trigger the callback with
-        // an error
-        hawkRequestStub.callsArgWith(4, fakeErrorRes);
-
-        client.deleteCallUrl(fakeToken, mozLoop.LOOP_SESSION_TYPE.FXA, callback);
-
-        sinon.assert.calledOnce(callback);
-        sinon.assert.calledWithMatch(callback, sinon.match(function(err) {
-          return err.code == 400 && "invalid token" == err.message;
-        }));
-      });
-    });
-
     describe("#setupOutgoingCall", function() {
       var calleeIds, callType;
 
@@ -151,7 +112,7 @@ describe("loop.Client", function() {
 
         sinon.assert.calledOnce(callback);
         sinon.assert.calledWithExactly(callback, sinon.match(function(err) {
-          return err.code == 400 && "invalid token" == err.message;
+          return err.code === 400 && err.message === "invalid token";
         }));
       });
 

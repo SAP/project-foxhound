@@ -109,9 +109,9 @@ MediaEngineTabVideoSource::GetName(nsAString_internal& aName)
 }
 
 void
-MediaEngineTabVideoSource::GetUUID(nsAString_internal& aUuid)
+MediaEngineTabVideoSource::GetUUID(nsACString_internal& aUuid)
 {
-  aUuid.AssignLiteral(MOZ_UTF16("uuid"));
+  aUuid.AssignLiteral("tab");
 }
 
 #define DEFAULT_TABSHARE_VIDEO_MAX_WIDTH 4096
@@ -120,7 +120,8 @@ MediaEngineTabVideoSource::GetUUID(nsAString_internal& aUuid)
 
 nsresult
 MediaEngineTabVideoSource::Allocate(const dom::MediaTrackConstraints& aConstraints,
-                                    const MediaEnginePrefs& aPrefs)
+                                    const MediaEnginePrefs& aPrefs,
+                                    const nsString& aDeviceId)
 {
   // windowId and scrollWithPage are not proper constraints, so just read them.
   // They have no well-defined behavior in advanced, so ignore them there.
@@ -199,19 +200,22 @@ MediaEngineTabVideoSource::Draw() {
     return;
   }
 
+  float pixelRatio;
+  win->GetDevicePixelRatio(&pixelRatio);
+  const int deviceInnerWidth = (int)(pixelRatio * innerWidth);
+  const int deviceInnerHeight = (int)(pixelRatio * innerHeight);
+
   IntSize size;
-  // maintain source aspect ratio
-  if (mBufWidthMax/innerWidth < mBufHeightMax/innerHeight) {
-    // mBufWidthMax is quite large by default, so use innerWidth if less.
-    int32_t width = std::min(innerWidth, mBufWidthMax);
-    // adjust width to be divisible by 4 to work around bug 1125393
-    width = width - (width % 4);
-    size = IntSize(width, (width * ((float) innerHeight/innerWidth)));
+
+  if ((deviceInnerWidth <= mBufWidthMax) && (deviceInnerHeight <= mBufHeightMax)) {
+    size = IntSize(deviceInnerWidth, deviceInnerHeight);
   } else {
-    int32_t width = std::min(innerHeight, mBufHeightMax) *
-                     ((float) innerWidth/innerHeight);
-    width =  width - (width % 4);
-    size = IntSize(width, (width * ((float) innerHeight/innerWidth)));
+
+    const float scaleWidth = (float)mBufWidthMax / (float)deviceInnerWidth;
+    const float scaleHeight = (float)mBufHeightMax / (float)deviceInnerHeight;
+    const float scale = scaleWidth < scaleHeight ? scaleWidth : scaleHeight;
+
+    size = IntSize((int)(scale * deviceInnerWidth), (int)(scale * deviceInnerHeight));
   }
 
   gfxImageFormat format = gfxImageFormat::RGB24;
@@ -284,6 +288,15 @@ MediaEngineTabVideoSource::Stop(mozilla::SourceMediaStream*, mozilla::TrackID)
     return NS_OK;
 
   NS_DispatchToMainThread(new StopRunnable(this));
+  return NS_OK;
+}
+
+nsresult
+MediaEngineTabVideoSource::Restart(const dom::MediaTrackConstraints& aConstraints,
+                                   const mozilla::MediaEnginePrefs& aPrefs,
+                                   const nsString& aDeviceId)
+{
+  // TODO
   return NS_OK;
 }
 

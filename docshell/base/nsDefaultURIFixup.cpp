@@ -4,7 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsNetCID.h"
 #include "nsNetUtil.h"
+#include "nsIProtocolHandler.h"
 #include "nsCRT.h"
 
 #include "nsIFile.h"
@@ -20,6 +22,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/Tokenizer.h"
 #include "nsIObserverService.h"
 #include "nsXULAppAPI.h"
 
@@ -45,7 +48,6 @@ nsDefaultURIFixup::~nsDefaultURIFixup()
 {
 }
 
-/* nsIURI createExposableURI (in nsIURI aURI); */
 NS_IMETHODIMP
 nsDefaultURIFixup::CreateExposableURI(nsIURI* aURI, nsIURI** aReturn)
 {
@@ -105,13 +107,10 @@ nsDefaultURIFixup::CreateExposableURI(nsIURI* aURI, nsIURI** aReturn)
     uri->SetUserPass(EmptyCString());
   }
 
-  // return the fixed-up URI
-  *aReturn = uri;
-  NS_ADDREF(*aReturn);
+  uri.forget(aReturn);
   return NS_OK;
 }
 
-/* nsIURI createFixupURI (in nsAUTF8String aURIText, in unsigned long aFixupFlags); */
 NS_IMETHODIMP
 nsDefaultURIFixup::CreateFixupURI(const nsACString& aStringURI,
                                   uint32_t aFixupFlags,
@@ -124,6 +123,35 @@ nsDefaultURIFixup::CreateFixupURI(const nsACString& aStringURI,
 
   fixupInfo->GetPreferredURI(aURI);
   return rv;
+}
+
+// Returns true if the URL contains a user:password@ or user@
+static bool
+HasUserPassword(const nsACString& aStringURI)
+{
+  mozilla::Tokenizer parser(aStringURI);
+  mozilla::Tokenizer::Token token;
+
+  // May start with any of "protocol:", "protocol://",  "//", "://"
+  if (parser.Check(Tokenizer::TOKEN_WORD, token)) { // Skip protocol if any
+  }
+  if (parser.CheckChar(':')) { // Skip colon if found
+  }
+  while (parser.CheckChar('/')) { // Skip all of the following slashes
+  }
+
+  while (parser.Next(token)) {
+    if (token.Type() == Tokenizer::TOKEN_CHAR) {
+      if (token.AsChar() == '/') {
+        return false;
+      }
+      if (token.AsChar() == '@') {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 NS_IMETHODIMP
@@ -160,7 +188,10 @@ nsDefaultURIFixup::GetFixupURIInfo(const nsACString& aStringURI,
 
   if (scheme.LowerCaseEqualsLiteral("view-source")) {
     nsCOMPtr<nsIURIFixupInfo> uriInfo;
-    uint32_t newFixupFlags = aFixupFlags & ~FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+    // We disable keyword lookup and alternate URIs so that small typos don't
+    // cause us to look at very different domains
+    uint32_t newFixupFlags = aFixupFlags & ~FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP
+                                         & ~FIXUP_FLAGS_MAKE_ALTERNATE_URI;
 
     rv = GetFixupURIInfo(Substring(uriString,
                                    sizeof("view-source:") - 1,
@@ -326,7 +357,14 @@ nsDefaultURIFixup::GetFixupURIInfo(const nsACString& aStringURI,
       // It's more likely the user wants to search, and so we
       // chuck this over to their preferred search provider instead:
       if (!handlerExists) {
-        TryKeywordFixupForURIInfo(uriString, info, aPostData);
+        bool hasUserPassword = HasUserPassword(uriString);
+        if (!hasUserPassword) {
+          TryKeywordFixupForURIInfo(uriString, info, aPostData);
+        } else {
+          // If the given URL has a user:password we can't just pass it to the
+          // external protocol handler; we'll try using it with http instead later
+          info->mFixedURI = nullptr;
+        }
       }
     }
   }
@@ -384,28 +422,8 @@ nsDefaultURIFixup::GetFixupURIInfo(const nsACString& aStringURI,
     info->mFixupCreatedAlternateURI = MakeAlternateURI(info->mFixedURI);
   }
 
-  // If there is no relevent dot in the host, do we require the domain to
-  // be whitelisted?
   if (info->mFixedURI) {
-    if (aFixupFlags & FIXUP_FLAG_REQUIRE_WHITELISTED_HOST) {
-      nsAutoCString asciiHost;
-      if (NS_SUCCEEDED(info->mFixedURI->GetAsciiHost(asciiHost)) &&
-          !asciiHost.IsEmpty()) {
-        uint32_t dotLoc = uint32_t(asciiHost.FindChar('.'));
-
-        if ((dotLoc == uint32_t(kNotFound) ||
-             dotLoc == asciiHost.Length() - 1)) {
-          if (IsDomainWhitelisted(asciiHost, dotLoc)) {
-            info->mPreferredURI = info->mFixedURI;
-          }
-        } else {
-          info->mPreferredURI = info->mFixedURI;
-        }
-      }
-    } else {
-      info->mPreferredURI = info->mFixedURI;
-    }
-
+    info->mPreferredURI = info->mFixedURI;
     return NS_OK;
   }
 
@@ -438,7 +456,7 @@ nsDefaultURIFixup::KeywordToURI(const nsACString& aKeyword,
   }
   keyword.Trim(" ");
 
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (XRE_IsContentProcess()) {
     dom::ContentChild* contentChild = dom::ContentChild::GetSingleton();
     if (!contentChild) {
       return NS_ERROR_NOT_AVAILABLE;
@@ -684,7 +702,7 @@ nsDefaultURIFixup::ConvertFileToStringURI(const nsACString& aIn,
 
 #if defined(XP_WIN)
   // Check for \ in the url-string or just a drive (PC)
-  if (kNotFound != aIn.FindChar('\\') ||
+  if (aIn.Contains('\\') ||
       (aIn.Length() == 2 && (aIn.Last() == ':' || aIn.Last() == '|'))) {
     attemptFixup = true;
   }
@@ -768,6 +786,7 @@ nsDefaultURIFixup::FixupURIProtocol(const nsACString& aURIString,
   //   ftp.no-scheme.com
   //   ftp4.no-scheme.com
   //   no-scheme.com/query?foo=http://www.foo.com
+  //   user:pass@no-scheme.com
   //
   int32_t schemeDelim = uriString.Find("://", 0);
   int32_t firstDelim = uriString.FindCharInSet("/:");
@@ -969,6 +988,24 @@ nsDefaultURIFixup::KeywordURIFixup(const nsACString& aURIString,
         looksLikeIpv6 = false;
       }
     }
+
+    // If we're at the end of the string or this is the first slash,
+    // check if the thing before the slash looks like ipv4:
+    if ((iter.size_forward() == 1 ||
+         (lastSlashLoc == uint32_t(kNotFound) && *iter == '/')) &&
+        // Need 2 or 3 dots + only digits
+        (foundDots == 2 || foundDots == 3) &&
+        // and they should be all that came before now:
+        (foundDots + foundDigits == pos ||
+         // or maybe there was also exactly 1 colon that came after the last dot,
+         // and the digits, dots and colon were all that came before now:
+         (foundColons == 1 && firstColonLoc > lastDotLoc &&
+          foundDots + foundDigits + foundColons == pos))) {
+      // Hurray, we got ourselves some ipv4!
+      // At this point, there's no way we will do a keyword lookup, so just bail immediately:
+      return NS_OK;
+    }
+
     if (*iter == '.') {
       ++foundDots;
       lastDotLoc = pos;
@@ -1007,6 +1044,12 @@ nsDefaultURIFixup::KeywordURIFixup(const nsACString& aURIString,
     looksLikeIpv6 = false;
   }
 
+  // If there are only colons and only hexadecimal characters ([a-z][0-9])
+  // enclosed in [], then don't do a keyword lookup
+  if (looksLikeIpv6) {
+    return NS_OK;
+  }
+
   nsAutoCString asciiHost;
   nsAutoCString host;
 
@@ -1019,34 +1062,6 @@ nsDefaultURIFixup::KeywordURIFixup(const nsACString& aURIString,
     aFixupInfo->mFixedURI &&
     NS_SUCCEEDED(aFixupInfo->mFixedURI->GetHost(host)) &&
     !host.IsEmpty();
-
-  // If there are 2 dots and only numbers between them, an optional port number
-  // and a trailing slash, then don't do a keyword lookup
-  if (foundDots == 2 && lastSlashLoc == pos - 1 &&
-      ((foundDots + foundDigits == pos - 1) ||
-       (foundColons == 1 && firstColonLoc > lastDotLoc &&
-        foundDots + foundDigits + foundColons == pos - 1))) {
-    return NS_OK;
-  }
-
-  uint32_t posWithNoTrailingSlash = pos;
-  if (lastSlashLoc == pos - 1) {
-    posWithNoTrailingSlash -= 1;
-  }
-  // If there are 3 dots and only numbers between them, an optional port number
-  // and an optional trailling slash, then don't do a keyword lookup (ipv4)
-  if (foundDots == 3 &&
-      ((foundDots + foundDigits == posWithNoTrailingSlash) ||
-       (foundColons == 1 && firstColonLoc > lastDotLoc &&
-        foundDots + foundDigits + foundColons == posWithNoTrailingSlash))) {
-    return NS_OK;
-  }
-
-  // If there are only colons and only hexadecimal characters ([a-z][0-9])
-  // enclosed in [], then don't do a keyword lookup
-  if (looksLikeIpv6) {
-    return NS_OK;
-  }
 
   nsresult rv = NS_OK;
   // We do keyword lookups if a space or quote preceded the dot, colon
@@ -1115,6 +1130,15 @@ nsDefaultURIFixup::IsDomainWhitelisted(const nsAutoCString aAsciiHost,
   }
 
   return Preferences::GetBool(pref.get(), false);
+}
+
+NS_IMETHODIMP
+nsDefaultURIFixup::IsDomainWhitelisted(const nsACString& aDomain,
+                                       const uint32_t aDotLoc,
+                                       bool* aResult)
+{
+  *aResult = IsDomainWhitelisted(nsAutoCString(aDomain), aDotLoc);
+  return NS_OK;
 }
 
 /* Implementation of nsIURIFixupInfo */

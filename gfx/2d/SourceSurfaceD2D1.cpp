@@ -34,12 +34,15 @@ SourceSurfaceD2D1::IsValid() const
   return mDevice == Factory::GetD2D1Device();
 }
 
-TemporaryRef<DataSourceSurface>
+already_AddRefed<DataSourceSurface>
 SourceSurfaceD2D1::GetDataSurface()
 {
   HRESULT hr;
 
-  EnsureRealizedBitmap();
+  if (!EnsureRealizedBitmap()) {
+    gfxCriticalError() << "Failed to realize a bitmap, device " << hexa(mDevice);
+    return nullptr;
+  }
 
   RefPtr<ID2D1Bitmap1> softwareBitmap;
   D2D1_BITMAP_PROPERTIES1 props;
@@ -66,18 +69,24 @@ SourceSurfaceD2D1::GetDataSurface()
     return nullptr;
   }
 
-  return new DataSourceSurfaceD2D1(softwareBitmap, mFormat);
+  return MakeAndAddRef<DataSourceSurfaceD2D1>(softwareBitmap, mFormat);
 }
 
-void
+bool
 SourceSurfaceD2D1::EnsureRealizedBitmap()
 {
   if (mRealizedBitmap) {
-    return;
+    return true;
+  }
+
+  // Why aren't we using mDevice here or anywhere else?
+  ID2D1Device* device = Factory::GetD2D1Device();
+  if (!device) {
+    return false;
   }
 
   RefPtr<ID2D1DeviceContext> dc;
-  Factory::GetD2D1Device()->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, byRef(dc));
+  device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, byRef(dc));
 
   D2D1_BITMAP_PROPERTIES1 props;
   props.dpiX = 96;
@@ -92,6 +101,8 @@ SourceSurfaceD2D1::EnsureRealizedBitmap()
   dc->BeginDraw();
   dc->DrawImage(mImage);
   dc->EndDraw();
+
+  return true;
 }
 
 void
@@ -182,12 +193,15 @@ DataSourceSurfaceD2D1::Map(MapType aMapType, MappedSurface *aMappedSurface)
   }
 
   D2D1_MAPPED_RECT map;
-  mBitmap->Map(D2D1_MAP_OPTIONS_READ, &map);
+  if (FAILED(mBitmap->Map(D2D1_MAP_OPTIONS_READ, &map))) {
+    gfxCriticalError() << "Failed to map bitmap.";
+    return false;
+  }
   aMappedSurface->mData = map.bits;
   aMappedSurface->mStride = map.pitch;
 
-  mIsMapped = true;
-  return true;
+  mIsMapped = !!aMappedSurface->mData;
+  return mIsMapped;
 }
 
 void
@@ -215,7 +229,10 @@ DataSourceSurfaceD2D1::EnsureMapped()
   if (mMapped) {
     return;
   }
-  mBitmap->Map(D2D1_MAP_OPTIONS_READ, &mMap);
+  if (FAILED(mBitmap->Map(D2D1_MAP_OPTIONS_READ, &mMap))) {
+    gfxCriticalError() << "Failed to map bitmap.";
+    return;
+  }
   mMapped = true;
 }
 

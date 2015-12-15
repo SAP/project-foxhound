@@ -12,14 +12,12 @@
 #include "nsTArray.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/RefPtr.h"
-
-struct nsIntRect;
+#include "mozilla/gfx/Rect.h"
 
 namespace mozilla {
 namespace layers {
 
 class DeviceManagerD3D9;
-class LayerD3D9;
 class Nv3DVUtils;
 class Layer;
 class TextureSourceD3D9;
@@ -102,7 +100,7 @@ public:
    * This function will present the selected rectangle of the swap chain to
    * its associated window.
    */
-  void Present(const nsIntRect &aRect);
+  void Present(const gfx::IntRect &aRect);
   void Present();
 
 private:
@@ -196,7 +194,7 @@ public:
    * If needed, we keep a record of the new texture, so the texture can be
    * released. In this case, aTextureHostIDirect3DTexture9 must be non-null.
    */
-  TemporaryRef<IDirect3DTexture9> CreateTexture(const gfx::IntSize &aSize,
+  already_AddRefed<IDirect3DTexture9> CreateTexture(const gfx::IntSize &aSize,
                                                 _D3DFORMAT aFormat,
                                                 D3DPOOL aPool,
                                                 TextureSourceD3D9* aTextureHostIDirect3DTexture9);

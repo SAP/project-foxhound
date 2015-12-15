@@ -40,7 +40,7 @@ SourceSurfaceD2D::IsValid() const
   return mDevice == Factory::GetDirect3D10Device();
 }
 
-TemporaryRef<DataSourceSurface>
+already_AddRefed<DataSourceSurface>
 SourceSurfaceD2D::GetDataSurface()
 {
   RefPtr<DataSourceSurfaceD2D> result = new DataSourceSurfaceD2D(this);
@@ -279,9 +279,9 @@ DataSourceSurfaceD2D::Map(MapType aMapType, MappedSurface *aMappedSurface)
 
   aMappedSurface->mData = (uint8_t*)map.pData;
   aMappedSurface->mStride = map.RowPitch;
-  mIsMapped = true;
+  mIsMapped = !!aMappedSurface->mData;
 
-  return true;
+  return mIsMapped;
 }
 
 void

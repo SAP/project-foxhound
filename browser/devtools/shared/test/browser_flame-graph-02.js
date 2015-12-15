@@ -3,8 +3,7 @@
 
 // Tests that flame graph widgets may have a fixed width or height.
 
-let {FlameGraph} = Cu.import("resource:///modules/devtools/FlameGraph.jsm", {});
-let {Promise} = devtools.require("resource://gre/modules/Promise.jsm");
+var {FlameGraph} = require("devtools/shared/widgets/FlameGraph");
 
 add_task(function*() {
   yield promiseTab("about:blank");
@@ -23,7 +22,7 @@ function* performTest() {
   yield graph.ready();
   testGraph(host, graph);
 
-  graph.destroy();
+  yield graph.destroy();
   host.destroy();
 }
 

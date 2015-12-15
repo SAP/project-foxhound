@@ -2,16 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let {TargetFactory, require} = devtools;
-let {console} = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
-let {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
+var {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var {TargetFactory} = require("devtools/framework/target");
+var {console} = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
+var {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
 const {DOMHelpers} = Cu.import("resource:///modules/devtools/DOMHelpers.jsm", {});
 const {Hosts} = require("devtools/framework/toolbox-hosts");
+const {defer} = require("promise");
+const DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
 
-gDevTools.testing = true;
+DevToolsUtils.testing = true;
 SimpleTest.registerCleanupFunction(() => {
-  gDevTools.testing = false;
+  DevToolsUtils.testing = false;
 });
 
 const TEST_URI_ROOT = "http://example.com/browser/browser/devtools/shared/test/";
@@ -43,7 +45,10 @@ function promiseTab(aURL) {
     addTab(aURL, resolve));
 }
 
-registerCleanupFunction(function tearDown() {
+registerCleanupFunction(function* tearDown() {
+  let target = TargetFactory.forTab(gBrowser.selectedTab);
+  yield gDevTools.closeToolbox(target);
+
   while (gBrowser.tabs.length > 1) {
     gBrowser.removeCurrentTab();
   }
@@ -122,7 +127,9 @@ function waitForValue(aOptions)
       successFn(aOptions, lastValue);
     }
     else {
-      setTimeout(function() wait(validatorFn, successFn, failureFn), 100);
+      setTimeout(() => {
+        wait(validatorFn, successFn, failureFn);
+      }, 100);
     }
   }
 
@@ -137,7 +144,7 @@ function oneTimeObserve(name, callback) {
   Services.obs.addObserver(func, name, false);
 }
 
-let createHost = Task.async(function*(type = "bottom", src = "data:text/html;charset=utf-8,") {
+var createHost = Task.async(function*(type = "bottom", src = "data:text/html;charset=utf-8,") {
   let host = new Hosts[type](gBrowser.selectedTab);
   let iframe = yield host.create();
 
@@ -237,5 +244,179 @@ function* openAndCloseToolbox(nbOfTimes, usageTime, toolId) {
 
     info("Closing toolbox " + (i + 1));
     yield gDevTools.closeToolbox(target);
+  }
+}
+
+/**
+ * Synthesize a profile for testing.
+ */
+function synthesizeProfileForTest(samples) {
+  const RecordingUtils = require("devtools/toolkit/performance/utils");
+
+  samples.unshift({
+    time: 0,
+    frames: []
+  });
+
+  let uniqueStacks = new RecordingUtils.UniqueStacks();
+  return RecordingUtils.deflateThread({
+    samples: samples,
+    markers: []
+  }, uniqueStacks);
+}
+
+/**
+ * Waits until a predicate returns true.
+ *
+ * @param function predicate
+ *        Invoked once in a while until it returns true.
+ * @param number interval [optional]
+ *        How often the predicate is invoked, in milliseconds.
+ */
+function waitUntil(predicate, interval = 10) {
+  if (predicate()) {
+    return Promise.resolve(true);
+  }
+  return new Promise(resolve => {
+    setTimeout(function() {
+      waitUntil(predicate).then(() => resolve(true));
+    }, interval);
+  });
+}
+
+/**
+ * Show the presets list sidebar in the cssfilter widget popup
+ * @param {CSSFilterWidget} widget
+ * @return {Promise}
+ */
+function showFilterPopupPresets(widget) {
+  let onRender = widget.once("render");
+  widget._togglePresets();
+  return onRender;
+}
+
+/**
+ * Show presets list and create a sample preset with the name and value provided
+ * @param  {CSSFilterWidget} widget
+ * @param  {string} name
+ * @param  {string} value
+ * @return {Promise}
+ */
+var showFilterPopupPresetsAndCreatePreset = Task.async(function*(widget, name, value) {
+  yield showFilterPopupPresets(widget);
+
+  let onRender = widget.once("render");
+  widget.setCssValue(value);
+  yield onRender;
+
+  let footer = widget.el.querySelector(".presets-list .footer");
+  footer.querySelector("input").value = name;
+
+  onRender = widget.once("render");
+  widget._savePreset({
+    preventDefault: () => {}
+  });
+
+  yield onRender;
+});
+
+/**
+ * Utility function for testing CSS code samples that have been
+ * syntax-highlighted.
+ *
+ * The CSS syntax highlighter emits a collection of DOM nodes that have
+ * CSS classes applied to them. This function checks that those nodes
+ * are what we expect.
+ *
+ * @param {array} expectedNodes
+ * A representation of the nodes we expect to see.
+ * Each node is an object containing two properties:
+ * - type: a string which can be one of:
+ *   - text, comment, property-name, property-value
+ * - text: the textContent of the node
+ *
+ * For example, given a string like this:
+ * "<comment> The part we want   </comment>\n this: is-the-part-we-want;"
+ *
+ * we would represent the expected output like this:
+ * [{type: "comment",        text: "<comment> The part we want   </comment>"},
+ *  {type: "text",           text: "\n"},
+ *  {type: "property-name",  text: "this"},
+ *  {type: "text",           text: ":"},
+ *  {type: "text",           text: " "},
+ *  {type: "property-value", text: "is-the-part-we-want"},
+ *  {type: "text",           text: ";"}];
+ *
+ * @param {Node} parent
+ * The DOM node whose children are the output of the syntax highlighter.
+ */
+function checkCssSyntaxHighlighterOutput(expectedNodes, parent) {
+  /**
+   * The classes applied to the output nodes by the syntax highlighter.
+   * These must be same as the definitions in MdnDocsWidget.js.
+   */
+  const PROPERTY_NAME_COLOR = "theme-fg-color5";
+  const PROPERTY_VALUE_COLOR = "theme-fg-color1";
+  const COMMENT_COLOR = "theme-comment";
+
+  /**
+   * Check the type and content of a single node.
+   */
+  function checkNode(expected, actual) {
+    ok(actual.textContent == expected.text, "Check that node has the expected textContent");
+    info("Expected text content: [" + expected.text + "]");
+    info("Actual text content: [" + actual.textContent + "]");
+
+    info("Check that node has the expected type");
+    if (expected.type == "text") {
+      ok(actual.nodeType == 3, "Check that node is a text node");
+    } else {
+      ok(actual.tagName.toUpperCase() == "SPAN", "Check that node is a SPAN");
+    }
+
+    info("Check that node has the expected className");
+
+    let expectedClassName = null;
+    let actualClassName = null;
+
+    switch (expected.type) {
+      case "property-name":
+        expectedClassName = PROPERTY_NAME_COLOR;
+        break;
+      case "property-value":
+        expectedClassName = PROPERTY_VALUE_COLOR;
+        break;
+      case "comment":
+        expectedClassName = COMMENT_COLOR;
+        break;
+      default:
+        ok(!actual.classList, "No className expected");
+        return;
+    }
+
+    ok(actual.classList.length == 1, "One className expected");
+    actualClassName = actual.classList[0];
+
+    ok(expectedClassName == actualClassName, "Check className value");
+    info("Expected className: " + expectedClassName);
+    info("Actual className: " + actualClassName);
+  }
+
+  info("Logging the actual nodes we have:");
+  for (var j = 0; j < parent.childNodes.length; j++) {
+    var n = parent.childNodes[j];
+    info(j + " / " +
+         "nodeType: "+ n.nodeType + " / " +
+         "textContent: " + n.textContent);
+  }
+
+  ok(parent.childNodes.length == parent.childNodes.length,
+    "Check we have the expected number of nodes");
+  info("Expected node count " + expectedNodes.length);
+  info("Actual node count " + expectedNodes.length);
+
+  for (let i = 0; i < expectedNodes.length; i++) {
+    info("Check node " + i);
+    checkNode(expectedNodes[i], parent.childNodes[i]);
   }
 }

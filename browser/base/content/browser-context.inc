@@ -32,7 +32,7 @@
                   command="Browser:Stop"/>
         <menuitem id="context-bookmarkpage"
                   class="menuitem-iconic"
-                  tooltiptext="&bookmarkPageCmd2.label;"
+                  observes="bookmarkThisPageBroadcaster"
                   aria-label="&bookmarkPageCmd2.label;"
                   oncommand="gContextMenu.bookmarkThisPage();"/>
       </menugroup>
@@ -79,6 +79,10 @@
                 label="&saveLinkCmd.label;"
                 accesskey="&saveLinkCmd.accesskey;"
                 oncommand="gContextMenu.saveLink();"/>
+      <menuitem id="context-savelinktopocket"
+                label="&saveLinkToPocketCmd.label;"
+                accesskey="&saveLinkToPocketCmd.accesskey;"
+                oncommand="gContextMenu.saveLinkToPocket();"/>
       <menu id="context-marklinkMenu" label="&social.marklinkMenu.label;"
             accesskey="&social.marklinkMenu.accesskey;">
         <menupopup/>
@@ -266,6 +270,10 @@
                 label="&savePageCmd.label;"
                 accesskey="&savePageCmd.accesskey2;"
                 oncommand="gContextMenu.savePageAs();"/>
+      <menuitem id="context-pocket"
+                label="&saveToPocketCmd.label;"
+                accesskey="&saveToPocketCmd.accesskey;"
+                oncommand="gContextMenu.savePageToPocket();"/>
       <menu id="context-markpageMenu" label="&social.markpageMenu.label;"
             accesskey="&social.markpageMenu.accesskey;">
         <menupopup/>
@@ -312,7 +320,7 @@
       <menuitem id="context-shareselect"
                 label="&shareSelect.label;"
                 accesskey="&shareSelect.accesskey;"
-                oncommand="gContextMenu.shareSelect(getBrowserSelection());"/>
+                oncommand="gContextMenu.shareSelect();"/>
       <menuseparator id="frame-sep"/>
       <menu id="frame" label="&thisFrameMenu.label;" accesskey="&thisFrameMenu.accesskey;">
         <menupopup>
@@ -373,8 +381,8 @@
       <menuitem id="context-viewsource"
                 label="&viewPageSourceCmd.label;"
                 accesskey="&viewPageSourceCmd.accesskey;"
-                oncommand="BrowserViewSourceOfDocument(gContextMenu.browser.contentDocumentAsCPOW);"
-                observes="isImage"/>
+                oncommand="BrowserViewSource(gContextMenu.browser);"
+                observes="canViewSource"/>
       <menuitem id="context-viewinfo"
                 label="&viewPageInfoCmd.label;"
                 accesskey="&viewPageInfoCmd.accesskey;"
@@ -409,6 +417,28 @@
                 label="&bidiSwitchPageDirectionItem.label;"
                 accesskey="&bidiSwitchPageDirectionItem.accesskey;"
                 oncommand="gContextMenu.switchPageDirection();"/>
+      <menuseparator id="fill-login-separator" hidden="true"/>
+      <menu id="fill-login"
+            label="&fillLoginMenu.label;"
+            label-login="&fillLoginMenu.label;"
+            label-password="&fillPasswordMenu.label;"
+            label-username="&fillUsernameMenu.label;"
+            accesskey="&fillLoginMenu.accesskey;"
+            accesskey-login="&fillLoginMenu.accesskey;"
+            accesskey-password="&fillPasswordMenu.accesskey;"
+            accesskey-username="&fillUsernameMenu.accesskey;"
+            hidden="true">
+        <menupopup id="fill-login-popup">
+          <menuitem id="fill-login-no-logins"
+                    label="&noLoginSuggestions.label;"
+                    disabled="true"
+                    hidden="true"/>
+          <menuseparator id="saved-logins-separator"/>
+          <menuitem id="fill-login-saved-passwords"
+                    label="&viewSavedLogins.label;"
+                    oncommand="gContextMenu.openPasswordManager();"/>
+        </menupopup>
+      </menu>
       <menuseparator id="inspect-separator" hidden="true"/>
       <menuitem id="context-inspect"
                 hidden="true"

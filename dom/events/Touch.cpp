@@ -1,4 +1,5 @@
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -130,26 +131,21 @@ Touch::Equals(Touch* aTouch)
 }
 
 JSObject*
-Touch::WrapObject(JSContext* aCx)
+Touch::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return TouchBinding::Wrap(aCx, this);
+  return TouchBinding::Wrap(aCx, this, aGivenProto);
 }
 
-// Parent ourselves to the window of the target. This achieves the desirable
+// Parent ourselves to the global of the target. This achieves the desirable
 // effects of parenting to the target, but avoids making the touch inaccessible
 // when the target happens to be NAC and therefore reflected into the XBL scope.
-EventTarget*
+nsIGlobalObject*
 Touch::GetParentObject()
 {
   if (!mTarget) {
     return nullptr;
   }
-  nsCOMPtr<nsPIDOMWindow> outer = do_QueryInterface(mTarget->GetOwnerGlobal());
-  if (!outer) {
-    return nullptr;
-  }
-  MOZ_ASSERT(outer->IsOuterWindow());
-  return static_cast<nsGlobalWindow*>(outer->GetCurrentInnerWindow());
+  return mTarget->GetOwnerGlobal();
 }
 
 } // namespace dom

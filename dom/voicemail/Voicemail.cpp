@@ -117,9 +117,9 @@ Voicemail::Shutdown()
 }
 
 JSObject*
-Voicemail::WrapObject(JSContext* aCx)
+Voicemail::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return MozVoicemailBinding::Wrap(aCx, this);
+  return MozVoicemailBinding::Wrap(aCx, this, aGivenProto);
 }
 
 already_AddRefed<nsIVoicemailProvider>
@@ -250,7 +250,7 @@ NS_CreateVoicemailService()
 {
   nsCOMPtr<nsIVoicemailService> service;
 
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (XRE_IsContentProcess()) {
     service = new mozilla::dom::voicemail::VoicemailIPCService();
   } else {
 #if defined(MOZ_B2G_RIL)

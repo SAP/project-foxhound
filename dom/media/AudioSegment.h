@@ -8,11 +8,13 @@
 
 #include "MediaSegment.h"
 #include "AudioSampleFormat.h"
+#include "AudioChannelFormat.h"
 #include "SharedBuffer.h"
 #include "WebAudioUtils.h"
 #ifdef MOZILLA_INTERNAL_API
 #include "mozilla/TimeStamp.h"
 #endif
+#include <float.h>
 
 namespace mozilla {
 
@@ -27,9 +29,9 @@ public:
   virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override
   {
     size_t amount = 0;
-    amount += mBuffers.SizeOfExcludingThis(aMallocSizeOf);
+    amount += mBuffers.ShallowSizeOfExcludingThis(aMallocSizeOf);
     for (size_t i = 0; i < mBuffers.Length(); i++) {
-      amount += mBuffers[i].SizeOfExcludingThis(aMallocSizeOf);
+      amount += mBuffers[i].ShallowSizeOfExcludingThis(aMallocSizeOf);
     }
 
     return amount;
@@ -43,7 +45,6 @@ public:
   nsTArray<nsTArray<T> > mBuffers;
 };
 
-class AudioStream;
 class AudioMixer;
 
 /**
@@ -56,21 +57,82 @@ const int GUESS_AUDIO_CHANNELS = 2;
 const uint32_t WEBAUDIO_BLOCK_SIZE_BITS = 7;
 const uint32_t WEBAUDIO_BLOCK_SIZE = 1 << WEBAUDIO_BLOCK_SIZE_BITS;
 
-void InterleaveAndConvertBuffer(const void** aSourceChannels,
-                                AudioSampleFormat aSourceFormat,
-                                int32_t aLength, float aVolume,
-                                int32_t aChannels,
-                                AudioDataValue* aOutput);
+template <typename SrcT, typename DestT>
+static void
+InterleaveAndConvertBuffer(const SrcT* const* aSourceChannels,
+                           uint32_t aLength, float aVolume,
+                           uint32_t aChannels,
+                           DestT* aOutput)
+{
+  DestT* output = aOutput;
+  for (size_t i = 0; i < aLength; ++i) {
+    for (size_t channel = 0; channel < aChannels; ++channel) {
+      float v = AudioSampleToFloat(aSourceChannels[channel][i])*aVolume;
+      *output = FloatToAudioSample<DestT>(v);
+      ++output;
+    }
+  }
+}
+
+template <typename SrcT, typename DestT>
+static void
+DeinterleaveAndConvertBuffer(const SrcT* aSourceBuffer,
+                             uint32_t aFrames, uint32_t aChannels,
+                             DestT** aOutput)
+{
+  for (size_t i = 0; i < aChannels; i++) {
+    size_t interleavedIndex = i;
+    for (size_t j = 0; j < aFrames; j++) {
+      ConvertAudioSample(aSourceBuffer[interleavedIndex],
+                         aOutput[i][j]);
+      interleavedIndex += aChannels;
+    }
+  }
+}
+
+class SilentChannel
+{
+public:
+  static const int AUDIO_PROCESSING_FRAMES = 640; /* > 10ms of 48KHz audio */
+  static const uint8_t gZeroChannel[MAX_AUDIO_SAMPLE_SIZE*AUDIO_PROCESSING_FRAMES];
+  // We take advantage of the fact that zero in float and zero in int have the
+  // same all-zeros bit layout.
+  template<typename T>
+  static const T* ZeroChannel();
+};
+
 
 /**
  * Given an array of input channels (aChannelData), downmix to aOutputChannels,
  * interleave the channel data. A total of aOutputChannels*aDuration
  * interleaved samples will be copied to a channel buffer in aOutput.
  */
-void DownmixAndInterleave(const nsTArray<const void*>& aChannelData,
-                          AudioSampleFormat aSourceFormat, int32_t aDuration,
-                          float aVolume, uint32_t aOutputChannels,
-                          AudioDataValue* aOutput);
+template <typename SrcT, typename DestT>
+void
+DownmixAndInterleave(const nsTArray<const SrcT*>& aChannelData,
+                     int32_t aDuration, float aVolume, uint32_t aOutputChannels,
+                     DestT* aOutput)
+{
+
+  if (aChannelData.Length() == aOutputChannels) {
+    InterleaveAndConvertBuffer(aChannelData.Elements(),
+                               aDuration, aVolume, aOutputChannels, aOutput);
+  } else {
+    nsAutoTArray<SrcT*,GUESS_AUDIO_CHANNELS> outputChannelData;
+    nsAutoTArray<SrcT, SilentChannel::AUDIO_PROCESSING_FRAMES * GUESS_AUDIO_CHANNELS> outputBuffers;
+    outputChannelData.SetLength(aOutputChannels);
+    outputBuffers.SetLength(aDuration * aOutputChannels);
+    for (uint32_t i = 0; i < aOutputChannels; i++) {
+      outputChannelData[i] = outputBuffers.Elements() + aDuration * i;
+    }
+    AudioChannelsDownMix(aChannelData,
+                         outputChannelData.Elements(),
+                         aOutputChannels,
+                         aDuration);
+    InterleaveAndConvertBuffer(outputChannelData.Elements(),
+                               aDuration, aVolume, aOutputChannels, aOutput);
+  }
+}
 
 /**
  * An AudioChunk represents a multi-channel buffer of audio samples.
@@ -129,7 +191,8 @@ struct AudioChunk {
     mVolume = 1.0f;
     mBufferFormat = AUDIO_FORMAT_SILENCE;
   }
-  int ChannelCount() const { return mChannelData.Length(); }
+
+  size_t ChannelCount() const { return mChannelData.Length(); }
 
   bool IsMuted() const { return mVolume == 0.0f; }
 
@@ -150,8 +213,15 @@ struct AudioChunk {
     }
 
     // Memory in the array is owned by mBuffer.
-    amount += mChannelData.SizeOfExcludingThis(aMallocSizeOf);
+    amount += mChannelData.ShallowSizeOfExcludingThis(aMallocSizeOf);
     return amount;
+  }
+
+  template<typename T>
+  const nsTArray<const T*>& ChannelData()
+  {
+    MOZ_ASSERT(AudioSampleTypeToFormat<T>::Format == mBufferFormat);
+    return *reinterpret_cast<nsTArray<const T*>*>(&mChannelData);
   }
 
   StreamTime mDuration; // in frames within the buffer
@@ -163,7 +233,6 @@ struct AudioChunk {
   mozilla::TimeStamp mTimeStamp;           // time at which this has been fetched from the MediaEngine
 #endif
 };
-
 
 /**
  * A list of audio samples consisting of a sequence of slices of SharedBuffers.
@@ -198,20 +267,27 @@ public:
       MOZ_ASSERT(channels == segmentChannelCount);
       output.SetLength(channels);
       bufferPtrs.SetLength(channels);
+#if !defined(MOZILLA_XPCOMRT_API)
+// FIXME Bug 1126414 - XPCOMRT does not support dom::WebAudioUtils::SpeexResamplerProcess
       uint32_t inFrames = c.mDuration;
+#endif // !defined(MOZILLA_XPCOMRT_API)
       // Round up to allocate; the last frame may not be used.
       NS_ASSERTION((UINT32_MAX - aInRate + 1) / c.mDuration >= aOutRate,
                    "Dropping samples");
       uint32_t outSize = (c.mDuration * aOutRate + aInRate - 1) / aInRate;
       for (uint32_t i = 0; i < channels; i++) {
-        const T* in = static_cast<const T*>(c.mChannelData[i]);
         T* out = output[i].AppendElements(outSize);
         uint32_t outFrames = outSize;
 
+#if !defined(MOZILLA_XPCOMRT_API)
+// FIXME Bug 1126414 - XPCOMRT does not support dom::WebAudioUtils::SpeexResamplerProcess
+        const T* in = static_cast<const T*>(c.mChannelData[i]);
         dom::WebAudioUtils::SpeexResamplerProcess(aResampler, i,
                                                   in, &inFrames,
                                                   out, &outFrames);
         MOZ_ASSERT(inFrames == c.mDuration);
+#endif // !defined(MOZILLA_XPCOMRT_API)
+
         bufferPtrs[i] = out;
         output[i].SetLength(outFrames);
       }
@@ -274,7 +350,14 @@ public:
     return chunk;
   }
   void ApplyVolume(float aVolume);
-  void WriteTo(uint64_t aID, AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
+  // Mix the segment into a mixer, interleaved. This is useful to output a
+  // segment to a system audio callback. It up or down mixes to aChannelCount
+  // channels.
+  void WriteTo(uint64_t aID, AudioMixer& aMixer, uint32_t aChannelCount,
+               uint32_t aSampleRate);
+  // Mix the segment into a mixer, keeping it planar, up or down mixing to
+  // aChannelCount channels.
+  void Mix(AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
 
   int ChannelCount() {
     NS_WARN_IF_FALSE(!mChunks.IsEmpty(),
@@ -307,6 +390,34 @@ public:
   }
 };
 
+template<typename SrcT>
+void WriteChunk(AudioChunk& aChunk,
+                uint32_t aOutputChannels,
+                AudioDataValue* aOutputBuffer)
+{
+  nsAutoTArray<const SrcT*,GUESS_AUDIO_CHANNELS> channelData;
+
+  channelData = aChunk.ChannelData<SrcT>();
+
+  if (channelData.Length() < aOutputChannels) {
+    // Up-mix. Note that this might actually make channelData have more
+    // than aOutputChannels temporarily.
+    AudioChannelsUpMix(&channelData, aOutputChannels, SilentChannel::ZeroChannel<SrcT>());
+  }
+  if (channelData.Length() > aOutputChannels) {
+    // Down-mix.
+    DownmixAndInterleave(channelData, aChunk.mDuration,
+        aChunk.mVolume, aOutputChannels, aOutputBuffer);
+  } else {
+    InterleaveAndConvertBuffer(channelData.Elements(),
+        aChunk.mDuration, aChunk.mVolume,
+        aOutputChannels,
+        aOutputBuffer);
+  }
 }
+
+
+
+} // namespace mozilla
 
 #endif /* MOZILLA_AUDIOSEGMENT_H_ */

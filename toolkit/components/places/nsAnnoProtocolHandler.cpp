@@ -23,6 +23,7 @@
 #include "nsISupportsUtils.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
+#include "nsIOutputStream.h"
 #include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStringStream.h"
@@ -130,7 +131,7 @@ public:
                  "Failed to write all of our data out to the stream!");
 
     // Free our favicon array.
-    NS_Free(favicon);
+    free(favicon);
 
     // Handle an error to write if it occurred, but only after we've freed our
     // favicon.
@@ -200,7 +201,7 @@ NS_IMPL_ISUPPORTS_INHERITED(
   nsIRequestObserver
 )
 
-} // anonymous namespace
+} // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 //// nsAnnoProtocolHandler

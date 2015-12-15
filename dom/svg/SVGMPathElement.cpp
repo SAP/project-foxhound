@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,9 +20,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGMPathElement::WrapNode(JSContext *aCx)
+SVGMPathElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return SVGMPathElementBinding::Wrap(aCx, this);
+  return SVGMPathElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsSVGElement::StringInfo SVGMPathElement::sStringInfo[1] =
@@ -164,7 +165,8 @@ SVGMPathElement::AttributeChanged(nsIDocument* aDocument,
                                   Element* aElement,
                                   int32_t aNameSpaceID,
                                   nsIAtom* aAttribute,
-                                  int32_t aModType)
+                                  int32_t aModType,
+                                  const nsAttrValue* aOldValue)
 {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::d) {
@@ -187,7 +189,7 @@ SVGMPathElement::GetReferencedPath()
   }
 
   nsIContent* genericTarget = mHrefTarget.get();
-  if (genericTarget && genericTarget->IsSVG(nsGkAtoms::path)) {
+  if (genericTarget && genericTarget->IsSVGElement(nsGkAtoms::path)) {
     return static_cast<SVGPathElement*>(genericTarget);
   }
   return nullptr;
@@ -246,7 +248,7 @@ SVGMPathElement::UnlinkHrefTarget(bool aNotifyParent)
 void
 SVGMPathElement::NotifyParentOfMpathChange(nsIContent* aParent)
 {
-  if (aParent && aParent->IsSVG(nsGkAtoms::animateMotion)) {
+  if (aParent && aParent->IsSVGElement(nsGkAtoms::animateMotion)) {
 
     SVGAnimateMotionElement* animateMotionParent =
       static_cast<SVGAnimateMotionElement*>(aParent);

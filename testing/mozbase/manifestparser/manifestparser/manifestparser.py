@@ -10,6 +10,7 @@ import fnmatch
 import os
 import shutil
 import sys
+import types
 
 from .ini import read_ini
 from .filters import (
@@ -43,13 +44,13 @@ def denormalize_path(path):
 class ManifestParser(object):
     """read .ini manifests"""
 
-    def __init__(self, manifests=(), defaults=None, strict=True):
+    def __init__(self, manifests=(), defaults=None, strict=True, rootdir=None):
         self._defaults = defaults or {}
         self._ancestor_defaults = {}
         self.tests = []
         self.manifest_defaults = {}
         self.strict = strict
-        self.rootdir = None
+        self.rootdir = rootdir
         self.relativeRoot = None
         if manifests:
             self.read(*manifests)
@@ -710,6 +711,7 @@ class TestManifest(ManifestParser):
     def __init__(self, *args, **kwargs):
         ManifestParser.__init__(self, *args, **kwargs)
         self.filters = filterlist(DEFAULT_FILTERS)
+        self.last_used_filters = []
 
     def active_tests(self, exists=True, disabled=True, filters=None, **values):
         """
@@ -741,9 +743,20 @@ class TestManifest(ManifestParser):
         if filters:
             fltrs += filters
 
+        self.last_used_filters = fltrs[:]
         for fn in fltrs:
             tests = fn(tests, values)
         return list(tests)
 
     def test_paths(self):
         return [test['path'] for test in self.active_tests()]
+
+    def fmt_filters(self, filters=None):
+        filters = filters or self.last_used_filters
+        names = []
+        for f in filters:
+            if isinstance(f, types.FunctionType):
+                names.append(f.__name__)
+            else:
+                names.append(str(f))
+        return ', '.join(names)

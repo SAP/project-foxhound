@@ -17,7 +17,6 @@ class Expr;
 class nsIDocument;
 class nsINode;
 class txResultRecycler;
-class txXPathNode;
 
 namespace mozilla {
 namespace dom {
@@ -34,9 +33,9 @@ public:
                     nsIDocument *aDocument);
     ~XPathExpression();
 
-    bool WrapObject(JSContext* aCx, JS::MutableHandle<JSObject*> aReflector)
+    bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector)
     {
-        return XPathExpressionBinding::Wrap(aCx, this, aReflector);
+        return XPathExpressionBinding::Wrap(aCx, this, aGivenProto, aReflector);
     }
 
     already_AddRefed<XPathResult>

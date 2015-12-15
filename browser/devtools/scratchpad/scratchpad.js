@@ -33,21 +33,26 @@ const NORMAL_FONT_SIZE = 12;
 const SCRATCHPAD_L10N = "chrome://browser/locale/devtools/scratchpad.properties";
 const DEVTOOLS_CHROME_ENABLED = "devtools.chrome.enabled";
 const PREF_RECENT_FILES_MAX = "devtools.scratchpad.recentFilesMax";
+const SHOW_LINE_NUMBERS = "devtools.scratchpad.lineNumbers";
+const WRAP_TEXT = "devtools.scratchpad.wrapText";
 const SHOW_TRAILING_SPACE = "devtools.scratchpad.showTrailingSpace";
+const EDITOR_FONT_SIZE = "devtools.scratchpad.editorFontSize";
 const ENABLE_AUTOCOMPLETION = "devtools.scratchpad.enableAutocompletion";
 const TAB_SIZE = "devtools.editor.tabsize";
 const FALLBACK_CHARSET_LIST = "intl.fallbackCharsetList.ISO-8859-1";
 
 const VARIABLES_VIEW_URL = "chrome://browser/content/devtools/widgets/VariablesView.xul";
 
-const require   = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools.require;
+const {require, loader} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 
 const Telemetry = require("devtools/shared/telemetry");
 const Editor    = require("devtools/sourceeditor/editor");
 const TargetFactory = require("devtools/framework/target").TargetFactory;
 const EventEmitter = require("devtools/toolkit/event-emitter");
+const {DevToolsWorker} = require("devtools/toolkit/shared/worker");
+const DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
+const promise = require("promise");
 
-const { Promise: promise } = Cu.import("resource://gre/modules/Promise.jsm", {});
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
@@ -57,7 +62,6 @@ Cu.import("resource:///modules/devtools/gDevTools.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
 Cu.import("resource:///modules/devtools/ViewHelpers.jsm");
 Cu.import("resource://gre/modules/reflect.jsm");
-Cu.import("resource://gre/modules/devtools/DevToolsUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "VariablesView",
   "resource:///modules/devtools/VariablesView.jsm");
@@ -65,17 +69,11 @@ XPCOMUtils.defineLazyModuleGetter(this, "VariablesView",
 XPCOMUtils.defineLazyModuleGetter(this, "VariablesViewController",
   "resource:///modules/devtools/VariablesViewController.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "EnvironmentClient",
-  "resource://gre/modules/devtools/dbg-client.jsm");
+loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
 
-XPCOMUtils.defineLazyModuleGetter(this, "ObjectClient",
-  "resource://gre/modules/devtools/dbg-client.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "DebuggerServer",
-  "resource://gre/modules/devtools/dbg-server.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "DebuggerClient",
-  "resource://gre/modules/devtools/dbg-client.jsm");
+loader.lazyRequireGetter(this, "DebuggerClient", "devtools/toolkit/client/main", true);
+loader.lazyRequireGetter(this, "EnvironmentClient", "devtools/toolkit/client/main", true);
+loader.lazyRequireGetter(this, "ObjectClient", "devtools/toolkit/client/main", true);
 
 XPCOMUtils.defineLazyGetter(this, "REMOTE_TIMEOUT", () =>
   Services.prefs.getIntPref("devtools.debugger.remote-timeout"));
@@ -88,10 +86,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "Reflect",
 
 // Because we have no constructor / destructor where we can log metrics we need
 // to do so here.
-let telemetry = new Telemetry();
+var telemetry = new Telemetry();
 telemetry.toolOpened("scratchpad");
 
-let WebConsoleUtils = require("devtools/toolkit/webconsole/utils").Utils;
+var WebConsoleUtils = require("devtools/toolkit/webconsole/utils").Utils;
 
 /**
  * The scratchpad object handles the Scratchpad window functionality.
@@ -159,6 +157,12 @@ var Scratchpad = {
    */
   _setupCommandListeners: function SP_setupCommands() {
     let commands = {
+      "cmd_find": () => {
+        goDoCommand('cmd_find');
+      },
+      "cmd_findAgain": () => {
+        goDoCommand('cmd_findAgain');
+      },
       "cmd_gotoLine": () => {
         goDoCommand('cmd_gotoLine');
       },
@@ -220,13 +224,13 @@ var Scratchpad = {
         Scratchpad.sidebar.hide();
       },
       "sp-cmd-line-numbers": () => {
-        Scratchpad.toggleEditorOption('lineNumbers');
+        Scratchpad.toggleEditorOption('lineNumbers', SHOW_LINE_NUMBERS);
       },
       "sp-cmd-wrap-text": () => {
-        Scratchpad.toggleEditorOption('lineWrapping');
+        Scratchpad.toggleEditorOption('lineWrapping', WRAP_TEXT);
       },
       "sp-cmd-highlight-trailing-space": () => {
-        Scratchpad.toggleEditorOption('showTrailingSpace');
+        Scratchpad.toggleEditorOption('showTrailingSpace', SHOW_TRAILING_SPACE);
       },
       "sp-cmd-larger-font": () => {
         Scratchpad.increaseFontSize();
@@ -244,6 +248,39 @@ var Scratchpad = {
       if (elem) {
         elem.addEventListener("command", commands[command]);
       }
+    }
+  },
+
+  /**
+   * Check or uncheck view menu items according to stored preferences.
+   */
+  _updateViewMenuItems: function SP_updateViewMenuItems() {
+    this._updateViewMenuItem(SHOW_LINE_NUMBERS, "sp-menu-line-numbers");
+    this._updateViewMenuItem(WRAP_TEXT, "sp-menu-word-wrap");
+    this._updateViewMenuItem(SHOW_TRAILING_SPACE, "sp-menu-highlight-trailing-space");
+    this._updateViewFontMenuItem(MINIMUM_FONT_SIZE, "sp-cmd-smaller-font");
+    this._updateViewFontMenuItem(MAXIMUM_FONT_SIZE, "sp-cmd-larger-font");
+  },
+
+  /**
+   * Check or uncheck view menu item according to stored preferences.
+   */
+  _updateViewMenuItem: function SP_updateViewMenuItem(preferenceName, menuId) {
+    let checked = Services.prefs.getBoolPref(preferenceName);
+    if (checked) {
+        document.getElementById(menuId).setAttribute('checked', true);
+    } else {
+        document.getElementById(menuId).removeAttribute('checked');
+    }
+  },
+
+  /**
+   * Disable view menu item if the stored font size is equals to the given one.
+   */
+  _updateViewFontMenuItem: function SP_updateViewFontMenuItem(fontSize, commandId) {
+    let prefFontSize = Services.prefs.getIntPref(EDITOR_FONT_SIZE);
+    if (prefFontSize === fontSize) {
+      document.getElementById(commandId).setAttribute('disabled', true);
     }
   },
 
@@ -629,12 +666,11 @@ var Scratchpad = {
    */
   get prettyPrintWorker() {
     if (!this._prettyPrintWorker) {
-      this._prettyPrintWorker = new ChromeWorker(
-        "resource://gre/modules/devtools/server/actors/pretty-print-worker.js");
-
-      this._prettyPrintWorker.addEventListener("error", ({ message, filename, lineno }) => {
-        DevToolsUtils.reportException(message + " @ " + filename + ":" + lineno);
-      }, false);
+      this._prettyPrintWorker = new DevToolsWorker(
+        "resource://gre/modules/devtools/server/actors/pretty-print-worker.js",
+        { name: 'pretty-print',
+          verbose: DevToolsUtils.dumpn.wantLogging }
+      );
     }
     return this._prettyPrintWorker;
   },
@@ -649,34 +685,17 @@ var Scratchpad = {
   prettyPrint: function SP_prettyPrint() {
     const uglyText = this.getText();
     const tabsize = Services.prefs.getIntPref(TAB_SIZE);
-    const id = Math.random();
-    const deferred = promise.defer();
 
-    const onReply = ({ data }) => {
-      if (data.id !== id) {
-        return;
-      }
-      this.prettyPrintWorker.removeEventListener("message", onReply, false);
-
-      if (data.error) {
-        let errorString = DevToolsUtils.safeErrorString(data.error);
-        this.writeAsErrorComment({ exception: errorString });
-        deferred.reject(errorString);
-      } else {
-        this.editor.setText(data.code);
-        deferred.resolve(data.code);
-      }
-    };
-
-    this.prettyPrintWorker.addEventListener("message", onReply, false);
-    this.prettyPrintWorker.postMessage({
-      id: id,
+    return this.prettyPrintWorker.performTask("pretty-print", {
       url: "(scratchpad)",
       indent: tabsize,
       source: uglyText
+    }).then(data => {
+      this.editor.setText(data.code);
+    }).then(null, error => {
+      this.writeAsErrorComment({ exception: error });
+      throw error;
     });
-
-    return deferred.promise;
   },
 
   /**
@@ -743,7 +762,7 @@ var Scratchpad = {
             continue;
           }
           if ((decl.init.type == "FunctionExpression"
-               || decl.init.type == "ArrowExpression")
+               || decl.init.type == "ArrowFunctionExpression")
               && this._containsCursor(decl.loc, aCursorPos)) {
             return decl;
           }
@@ -1133,19 +1152,15 @@ var Scratchpad = {
   importFromFile: function SP_importFromFile(aFile, aSilentError, aCallback)
   {
     // Prevent file type detection.
-    let channel = NetUtil.newChannel2(aFile,
-                                      null,
-                                      null,
-                                      window.document,
-                                      null, // aLoadingPrincipal
-                                      null, // aTriggeringPrincipal
-                                      Ci.nsILoadInfo.SEC_NORMAL,
-                                      Ci.nsIContentPolicy.TYPE_OTHER);
+    let channel = NetUtil.newChannel({
+      uri: NetUtil.newURI(aFile),
+      loadingNode: window.document,
+      contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER});
     channel.contentType = "application/javascript";
 
     this.notificationBox.removeAllNotifications(false);
 
-    NetUtil.asyncFetch2(channel, (aInputStream, aStatus) => {
+    NetUtil.asyncFetch(channel, (aInputStream, aStatus) => {
       let content = null;
 
       if (Components.isSuccessCode(aStatus)) {
@@ -1694,16 +1709,19 @@ var Scratchpad = {
     let config = {
       mode: Editor.modes.js,
       value: initialText,
-      lineNumbers: true,
+      lineNumbers: Services.prefs.getBoolPref(SHOW_LINE_NUMBERS),
       contextMenu: "scratchpad-text-popup",
       showTrailingSpace: Services.prefs.getBoolPref(SHOW_TRAILING_SPACE),
       autocomplete: Services.prefs.getBoolPref(ENABLE_AUTOCOMPLETION),
+      lineWrapping: Services.prefs.getBoolPref(WRAP_TEXT),
     };
 
     this.editor = new Editor(config);
     let editorElement = document.querySelector("#scratchpad-editor");
     this.editor.appendTo(editorElement).then(() => {
       var lines = initialText.split("\n");
+
+      this.editor.setFontSize(Services.prefs.getIntPref(EDITOR_FONT_SIZE));
 
       this.editor.on("change", this._onChanged);
       // Keep a reference to the bound version for use in onUnload.
@@ -1716,7 +1734,7 @@ var Scratchpad = {
                                                       msg, okstring);
       editorElement.addEventListener("paste", this._onPaste);
       editorElement.addEventListener("drop", this._onPaste);
-      this.editor.on("save", () => this.saveFile());
+      this.editor.on("saveRequested", () => this.saveFile());
       this.editor.focus();
       this.editor.setCursor({ line: lines.length, ch: lines.pop().length });
 
@@ -1730,6 +1748,7 @@ var Scratchpad = {
       CloseObserver.init();
     }).then(null, (err) => console.error(err));
     this._setupCommandListeners();
+    this._updateViewMenuItems();
     this._setupPopupShowingListeners();
   },
 
@@ -1804,7 +1823,7 @@ var Scratchpad = {
     }
 
     if (this._prettyPrintWorker) {
-      this._prettyPrintWorker.terminate();
+      this._prettyPrintWorker.destroy();
       this._prettyPrintWorker = null;
     }
 
@@ -1911,10 +1930,11 @@ var Scratchpad = {
   /**
    * Toggle a editor's boolean option.
    */
-  toggleEditorOption: function SP_toggleEditorOption(optionName)
+  toggleEditorOption: function SP_toggleEditorOption(optionName, optionPreference)
   {
     let newOptionValue = !this.editor.getOption(optionName);
     this.editor.setOption(optionName, newOptionValue);
+    Services.prefs.setBoolPref(optionPreference, newOptionValue);
   },
 
   /**
@@ -1925,7 +1945,15 @@ var Scratchpad = {
     let size = this.editor.getFontSize();
 
     if (size < MAXIMUM_FONT_SIZE) {
-      this.editor.setFontSize(size + 1);
+      let newFontSize = size + 1;
+      this.editor.setFontSize(newFontSize);
+      Services.prefs.setIntPref(EDITOR_FONT_SIZE, newFontSize);
+
+      if (newFontSize === MAXIMUM_FONT_SIZE) {
+        document.getElementById("sp-cmd-larger-font").setAttribute('disabled', true);
+      }
+
+      document.getElementById("sp-cmd-smaller-font").removeAttribute('disabled');
     }
   },
 
@@ -1937,8 +1965,16 @@ var Scratchpad = {
     let size = this.editor.getFontSize();
 
     if (size > MINIMUM_FONT_SIZE) {
-      this.editor.setFontSize(size - 1);
+      let newFontSize = size - 1;
+      this.editor.setFontSize(newFontSize);
+      Services.prefs.setIntPref(EDITOR_FONT_SIZE, newFontSize);
+
+      if (newFontSize === MINIMUM_FONT_SIZE) {
+        document.getElementById("sp-cmd-smaller-font").setAttribute('disabled', true);
+      }
     }
+
+    document.getElementById("sp-cmd-larger-font").removeAttribute('disabled');
   },
 
   /**
@@ -1947,6 +1983,10 @@ var Scratchpad = {
   normalFontSize: function SP_normalFontSize()
   {
     this.editor.setFontSize(NORMAL_FONT_SIZE);
+    Services.prefs.setIntPref(EDITOR_FONT_SIZE, NORMAL_FONT_SIZE);
+
+    document.getElementById("sp-cmd-larger-font").removeAttribute('disabled');
+    document.getElementById("sp-cmd-smaller-font").removeAttribute('disabled');
   },
 
   _observers: [],
@@ -2036,7 +2076,7 @@ function ScratchpadTab(aTab)
   this._tab = aTab;
 }
 
-let scratchpadTargets = new WeakMap();
+var scratchpadTargets = new WeakMap();
 
 /**
  * Returns the object containing the DebuggerClient and WebConsoleClient for a
@@ -2152,16 +2192,17 @@ ScratchpadWindow.prototype = Heritage.extend(ScratchpadTab.prototype, {
       DebuggerServer.init();
       DebuggerServer.addBrowserActors();
     }
+    DebuggerServer.allowChromeProcess = true;
 
     let client = new DebuggerClient(DebuggerServer.connectPipe());
     client.connect(() => {
-      client.listTabs(aResponse => {
+      client.getProcess().then(aResponse => {
         if (aResponse.error) {
           reportError("listTabs", aResponse);
           deferred.reject(aResponse);
         }
         else {
-          deferred.resolve({ form: aResponse, client: client });
+          deferred.resolve({ form: aResponse.form, client: client });
         }
       });
     });

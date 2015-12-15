@@ -111,6 +111,8 @@ public:
 #endif // #ifdef DEBUG
 
 private:
+  static InputContextAction::Cause sLastContextActionCause;
+
 #ifdef NS_ENABLE_TSF
   static decltype(SetInputScopes)* sSetInputScopes;
   static void SetInputScopeForIMM32(nsWindow* aWindow,
@@ -120,10 +122,31 @@ private:
   // Additionally, IME context is always disassociated from focused window.
   static bool sIsIMMEnabled;
   static bool sPluginHasFocus;
+  static bool sShowingOnScreenKeyboard;
 
   static bool IsTSFAvailable() { return (sIsInTSFMode && !sPluginHasFocus); }
   static bool IsIMMActive();
 #endif // #ifdef NS_ENABLE_TSF
+
+  static void MaybeShowOnScreenKeyboard();
+  static void MaybeDismissOnScreenKeyboard();
+  static bool WStringStartsWithCaseInsensitive(const std::wstring& aHaystack,
+                                               const std::wstring& aNeedle);
+  static bool IsKeyboardPresentOnSlate();
+  static bool IsInTabletMode();
+  static bool AutoInvokeOnScreenKeyboardInDesktopMode();
+
+  /**
+   * Show the Windows on-screen keyboard. Only allowed for
+   * chrome documents and Windows 8 and higher.
+   */
+  static void ShowOnScreenKeyboard();
+
+  /**
+   * Dismiss the Windows on-screen keyboard. Only allowed for
+   * Windows 8 and higher.
+   */
+  static void DismissOnScreenKeyboard();
 };
 
 } // namespace widget

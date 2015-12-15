@@ -14,8 +14,8 @@
  * make sure "can match" matches anywhere.
  */
 
-let katakana = ["\u30a8", "\u30c9"]; // E, Do
-let ideograph = ["\u4efb", "\u5929", "\u5802"]; // Nin Ten Do
+var katakana = ["\u30a8", "\u30c9"]; // E, Do
+var ideograph = ["\u4efb", "\u5929", "\u5802"]; // Nin Ten Do
 
 add_task(function* test_escape() {
   Services.prefs.setBoolPref("browser.urlbar.autoFill.searchEngines", false);
@@ -43,8 +43,8 @@ add_task(function* test_escape() {
     { uri: uri9, title: ideograph.join("") },
     { uri: uri10, title: "title1" }
   ]);
-  addBookmark( { uri: uri5, title: "title1", tags: [ "matchme2" ] } );
-  addBookmark( { uri: uri6, title: "title1", tags: [ "dontmatchme3" ] } );
+  yield addBookmark( { uri: uri5, title: "title1", tags: [ "matchme2" ] } );
+  yield addBookmark( { uri: uri6, title: "title1", tags: [ "dontmatchme3" ] } );
 
   // match only on word boundaries
   Services.prefs.setIntPref("browser.urlbar.matchBehavior", 2);

@@ -78,76 +78,110 @@ sp<MediaCodecProxy>
 MediaCodecProxy::CreateByType(sp<ALooper> aLooper,
                               const char *aMime,
                               bool aEncoder,
-                              bool aAsync,
                               wp<CodecResourceListener> aListener)
 {
-  sp<MediaCodecProxy> codec = new MediaCodecProxy(aLooper, aMime, aEncoder, aAsync, aListener);
-  if ((!aAsync && codec->allocated()) || codec->requestResource()) {
-    return codec;
-  }
-  return nullptr;
+  sp<MediaCodecProxy> codec = new MediaCodecProxy(aLooper,
+                                                  aMime,
+                                                  aEncoder,
+                                                  aListener);
+  return codec;
 }
 
 MediaCodecProxy::MediaCodecProxy(sp<ALooper> aLooper,
                                  const char *aMime,
                                  bool aEncoder,
-                                 bool aAsync,
                                  wp<CodecResourceListener> aListener)
   : mCodecLooper(aLooper)
   , mCodecMime(aMime)
   , mCodecEncoder(aEncoder)
   , mListener(aListener)
+  , mMediaCodecLock("MediaCodecProxy::mMediaCodecLock")
+  , mPendingRequestMediaResource(false)
 {
   MOZ_ASSERT(mCodecLooper != nullptr, "ALooper should not be nullptr.");
-  if (aAsync) {
-    mResourceHandler = new MediaResourceHandler(this);
-  } else {
-    allocateCodec();
-  }
 }
 
 MediaCodecProxy::~MediaCodecProxy()
 {
-  releaseCodec();
-  cancelResource();
+  ReleaseMediaCodec();
 }
 
 bool
-MediaCodecProxy::requestResource()
+MediaCodecProxy::AskMediaCodecAndWait()
 {
-  if (mResourceHandler == nullptr) {
+  if (mResourceClient || mCodec.get()) {
     return false;
   }
 
   if (strncasecmp(mCodecMime.get(), "video/", 6) == 0) {
-    mResourceHandler->requestResource(mCodecEncoder
-        ? IMediaResourceManagerService::HW_VIDEO_ENCODER
-        : IMediaResourceManagerService::HW_VIDEO_DECODER);
+    mozilla::MediaSystemResourceType type =
+      mCodecEncoder ? mozilla::MediaSystemResourceType::VIDEO_ENCODER :
+                      mozilla::MediaSystemResourceType::VIDEO_DECODER;
+    mResourceClient = new mozilla::MediaSystemResourceClient(type);
+    mResourceClient->SetListener(this);
   } else if (strncasecmp(mCodecMime.get(), "audio/", 6) == 0) {
-    mResourceHandler->requestResource(mCodecEncoder
-        ? IMediaResourceManagerService::HW_AUDIO_ENCODER
-        : IMediaResourceManagerService::HW_AUDIO_DECODER);
-  } else {
+    if (allocateCodec()) {
+      return true;
+    }
+  }
+
+  if (!mResourceClient) {
     return false;
   }
+
+  mozilla::MonitorAutoLock mon(mMediaCodecLock);
+  mPendingRequestMediaResource = true;
+  // request video codec
+  mResourceClient->Acquire();
+
+  while (mPendingRequestMediaResource) {
+    mMediaCodecLock.Wait();
+  }
+  MCP_LOG("AskMediaCodecAndWait complete");
+
+  return true;
+}
+
+bool
+MediaCodecProxy::AsyncAskMediaCodec()
+{
+  if (mResourceClient || mCodec.get()) {
+    return false;
+  }
+
+  if (strncasecmp(mCodecMime.get(), "video/", 6) != 0) {
+    return false;
+  }
+  // request video codec
+  mozilla::MediaSystemResourceType type =
+    mCodecEncoder ? mozilla::MediaSystemResourceType::VIDEO_ENCODER :
+                    mozilla::MediaSystemResourceType::VIDEO_DECODER;
+  mResourceClient = new mozilla::MediaSystemResourceClient(type);
+  mResourceClient->SetListener(this);
+  mResourceClient->Acquire();
 
   return true;
 }
 
 void
-MediaCodecProxy::RequestMediaResources()
+MediaCodecProxy::ReleaseMediaCodec()
 {
-  requestResource();
-}
+  releaseCodec();
 
-void
-MediaCodecProxy::cancelResource()
-{
-  if (mResourceHandler == nullptr) {
+  if (!mResourceClient) {
     return;
   }
 
-  mResourceHandler->cancelResource();
+  mozilla::MonitorAutoLock mon(mMediaCodecLock);
+  if (mPendingRequestMediaResource) {
+    mPendingRequestMediaResource = false;
+    mon.NotifyAll();
+  }
+
+  if (mResourceClient) {
+    mResourceClient->ReleaseResource();
+    mResourceClient = nullptr;
+  }
 }
 
 bool
@@ -458,16 +492,26 @@ MediaCodecProxy::getCapability(uint32_t *aCapability)
   return OK;
 }
 
-// Called on a Binder thread
+// Called on ImageBridge thread
 void
-MediaCodecProxy::resourceReserved()
+MediaCodecProxy::ResourceReserved()
 {
+  MCP_LOG("resourceReserved");
   // Create MediaCodec
-  releaseCodec();
   if (!allocateCodec()) {
-    cancelResource();
+    ReleaseMediaCodec();
+    // Notification
+    sp<CodecResourceListener> listener = mListener.promote();
+    if (listener != nullptr) {
+      listener->codecCanceled();
+    }
     return;
   }
+
+  // Notify initialization waiting.
+  mozilla::MonitorAutoLock mon(mMediaCodecLock);
+  mPendingRequestMediaResource = false;
+  mon.NotifyAll();
 
   // Notification
   sp<CodecResourceListener> listener = mListener.promote();
@@ -476,13 +520,11 @@ MediaCodecProxy::resourceReserved()
   }
 }
 
-// Called on a Binder thread
+// Called on ImageBridge thread
 void
-MediaCodecProxy::resourceCanceled()
+MediaCodecProxy::ResourceReserveFailed()
 {
-  // Release MediaCodec
-  releaseCodec();
-
+  ReleaseMediaCodec();
   // Notification
   sp<CodecResourceListener> listener = mListener.promote();
   if (listener != nullptr) {
@@ -611,23 +653,9 @@ status_t MediaCodecProxy::Output(MediaBuffer** aBuffer, int64_t aTimeoutUs)
   return err;
 }
 
-bool MediaCodecProxy::IsWaitingResources()
-{
-  if (mResourceHandler.get()) {
-    return mResourceHandler->IsWaitingResource();
-  }
-  return false;
-}
-
-bool MediaCodecProxy::IsDormantNeeded()
-{
-  return mCodecLooper.get() ? true : false;
-}
-
 void MediaCodecProxy::ReleaseMediaResources()
 {
-  releaseCodec();
-  cancelResource();
+  ReleaseMediaCodec();
 }
 
 void MediaCodecProxy::ReleaseMediaBuffer(MediaBuffer* aBuffer) {

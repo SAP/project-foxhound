@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,6 +39,7 @@ Response::Response(nsIGlobalObject* aGlobal, InternalResponse* aInternalResponse
   , mOwner(aGlobal)
   , mInternalResponse(aInternalResponse)
 {
+  SetMimeType();
 }
 
 Response::~Response()
@@ -60,21 +62,24 @@ Response::Redirect(const GlobalObject& aGlobal, const nsAString& aUrl,
   nsAutoString parsedURL;
 
   if (NS_IsMainThread()) {
-    nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
-    nsCOMPtr<nsIURI> docURI = window->GetDocumentURI();
-    nsAutoCString spec;
-    aRv = docURI->GetSpec(spec);
+    nsCOMPtr<nsIURI> baseURI;
+    nsIDocument* doc = GetEntryDocument();
+    if (doc) {
+      baseURI = doc->GetBaseURI();
+    }
+    nsCOMPtr<nsIURI> resolvedURI;
+    aRv = NS_NewURI(getter_AddRefs(resolvedURI), aUrl, nullptr, baseURI);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
 
-    nsRefPtr<mozilla::dom::URL> url =
-      dom::URL::Constructor(aGlobal, aUrl, NS_ConvertUTF8toUTF16(spec), aRv);
-    if (aRv.Failed()) {
+    nsAutoCString spec;
+    aRv = resolvedURI->GetSpec(spec);
+    if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
 
-    url->Stringify(parsedURL, aRv);
+    CopyUTF8toUTF16(spec, parsedURL);
   } else {
     workers::WorkerPrivate* worker = workers::GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(worker);
@@ -99,7 +104,7 @@ Response::Redirect(const GlobalObject& aGlobal, const nsAString& aUrl,
     return nullptr;
   }
 
-  Optional<ArrayBufferOrArrayBufferViewOrBlobOrUSVStringOrURLSearchParams> body;
+  Optional<ArrayBufferOrArrayBufferViewOrBlobOrFormDataOrUSVStringOrURLSearchParams> body;
   ResponseInit init;
   init.mStatus = aStatus;
   nsRefPtr<Response> r = Response::Constructor(aGlobal, body, init, aRv);
@@ -112,15 +117,19 @@ Response::Redirect(const GlobalObject& aGlobal, const nsAString& aUrl,
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
+  r->GetInternalHeaders()->SetGuard(HeadersGuardEnum::Immutable, aRv);
+  MOZ_ASSERT(!aRv.Failed());
 
   return r.forget();
 }
 
 /*static*/ already_AddRefed<Response>
 Response::Constructor(const GlobalObject& aGlobal,
-                      const Optional<ArrayBufferOrArrayBufferViewOrBlobOrUSVStringOrURLSearchParams>& aBody,
+                      const Optional<ArrayBufferOrArrayBufferViewOrBlobOrFormDataOrUSVStringOrURLSearchParams>& aBody,
                       const ResponseInit& aInit, ErrorResult& aRv)
 {
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+
   if (aInit.mStatus < 200 || aInit.mStatus > 599) {
     aRv.ThrowRangeError(MSG_INVALID_RESPONSE_STATUSCODE_ERROR);
     return nullptr;
@@ -150,7 +159,25 @@ Response::Constructor(const GlobalObject& aGlobal,
   nsRefPtr<InternalResponse> internalResponse =
     new InternalResponse(aInit.mStatus, statusText);
 
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  // Grab a valid channel info from the global so this response is 'valid' for
+  // interception.
+  if (NS_IsMainThread()) {
+    ChannelInfo info;
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(global);
+    if (window) {
+      nsIDocument* doc = window->GetExtantDoc();
+      MOZ_ASSERT(doc);
+      info.InitFromDocument(doc);
+    } else {
+      info.InitFromChromeGlobal(global);
+    }
+    internalResponse->InitChannelInfo(info);
+  } else {
+    workers::WorkerPrivate* worker = workers::GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(worker);
+    internalResponse->InitChannelInfo(worker->GetChannelInfo());
+  }
+
   nsRefPtr<Response> r = new Response(global, internalResponse);
 
   if (aInit.mHeaders.WasPassed()) {
@@ -159,7 +186,7 @@ Response::Constructor(const GlobalObject& aGlobal,
     // Instead of using Fill, create an object to allow the constructor to
     // unwrap the HeadersInit.
     nsRefPtr<Headers> headers =
-      Headers::Constructor(aGlobal, aInit.mHeaders.Value(), aRv);
+      Headers::Create(global, aInit.mHeaders.Value(), aRv);
     if (aRv.Failed()) {
       return nullptr;
     }
@@ -186,7 +213,7 @@ Response::Constructor(const GlobalObject& aGlobal,
     }
   }
 
-  r->SetMimeType(aRv);
+  r->SetMimeType();
   return r.forget();
 }
 
@@ -210,6 +237,13 @@ Response::SetBody(nsIInputStream* aBody)
   mInternalResponse->SetBody(aBody);
 }
 
+already_AddRefed<InternalResponse>
+Response::GetInternalResponse() const
+{
+  nsRefPtr<InternalResponse> ref = mInternalResponse;
+  return ref.forget();
+}
+
 Headers*
 Response::Headers_()
 {
@@ -220,17 +254,5 @@ Response::Headers_()
   return mHeaders;
 }
 
-void
-Response::SetFinalURL(bool aFinalURL, ErrorResult& aRv)
-{
-  nsCString url;
-  mInternalResponse->GetUrl(url);
-  if (url.IsEmpty()) {
-    aRv.ThrowTypeError(MSG_RESPONSE_URL_IS_NULL);
-    return;
-  }
-
-  mInternalResponse->SetFinalURL(aFinalURL);
-}
 } // namespace dom
 } // namespace mozilla

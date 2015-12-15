@@ -15,8 +15,6 @@ class nsISocketTransport;
 
 namespace mozilla { namespace net {
 
-class nsHttpConnectionInfo;
-
 class ASpdySession : public nsAHttpTransaction
 {
 public:
@@ -99,7 +97,7 @@ public:
   SpdyInformation();
   ~SpdyInformation() {}
 
-  static const uint32_t kCount = 5;
+  static const uint32_t kCount = 2;
 
   // determine the index (0..kCount-1) of the spdy information that
   // correlates to the npn string. NS_FAILED() if no match is found.
@@ -119,6 +117,7 @@ public:
   ALPNCallback ALPNCallbacks[kCount];
 };
 
-}} // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // mozilla_net_ASpdySession_h

@@ -64,6 +64,7 @@ class MacIOSurfaceTextureHostOGL : public TextureHost
 public:
   MacIOSurfaceTextureHostOGL(TextureFlags aFlags,
                              const SurfaceDescriptorMacIOSurface& aDescriptor);
+  virtual ~MacIOSurfaceTextureHostOGL();
 
   // MacIOSurfaceTextureSourceOGL doesn't own any GL texture
   virtual void DeallocateDeviceData() override {}
@@ -74,12 +75,13 @@ public:
 
   virtual gfx::SurfaceFormat GetFormat() const override;
 
-  virtual TextureSource* GetTextureSources() override
+  virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override
   {
-    return mTextureSource;
+    aTexture = mTextureSource;
+    return !!aTexture;
   }
 
-  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() override
+  virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override
   {
     return nullptr; // XXX - implement this (for MOZ_DUMP_PAINTING)
   }
@@ -93,12 +95,14 @@ public:
 #endif
 
 protected:
+  GLTextureSource* CreateTextureSourceForPlane(size_t aPlane);
+
   RefPtr<CompositorOGL> mCompositor;
   RefPtr<GLTextureSource> mTextureSource;
   RefPtr<MacIOSurface> mSurface;
 };
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif // MOZILLA_GFX_MACIOSURFACETEXTUREHOSTOGL_H

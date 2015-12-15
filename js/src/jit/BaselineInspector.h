@@ -92,11 +92,9 @@ class BaselineInspector
     bool dimorphicStub(jsbytecode* pc, ICStub** pfirst, ICStub** psecond);
 
   public:
-    typedef Vector<Shape*, 4, JitAllocPolicy> ShapeVector;
+    typedef Vector<ReceiverGuard, 4, JitAllocPolicy> ReceiverVector;
     typedef Vector<ObjectGroup*, 4, JitAllocPolicy> ObjectGroupVector;
-    bool maybeInfoForPropertyOp(jsbytecode* pc,
-                                ShapeVector& nativeShapes,
-                                ObjectGroupVector& unboxedGroups,
+    bool maybeInfoForPropertyOp(jsbytecode* pc, ReceiverVector& receivers,
                                 ObjectGroupVector& convertUnboxedGroups);
 
     SetElemICInspector setElemICInspector(jsbytecode* pc) {
@@ -106,6 +104,7 @@ class BaselineInspector
     MIRType expectedResultType(jsbytecode* pc);
     MCompare::CompareType expectedCompareType(jsbytecode* pc);
     MIRType expectedBinaryArithSpecialization(jsbytecode* pc);
+    MIRType expectedPropertyAccessInputType(jsbytecode* pc);
 
     bool hasSeenNonNativeGetElement(jsbytecode* pc);
     bool hasSeenNegativeIndexGetElement(jsbytecode* pc);
@@ -114,10 +113,14 @@ class BaselineInspector
     bool hasSeenNonStringIterMore(jsbytecode* pc);
 
     bool isOptimizableCallStringSplit(jsbytecode* pc, JSString** stringOut, JSString** stringArg,
-                                      NativeObject** objOut);
+                                      JSObject** objOut);
     JSObject* getTemplateObject(jsbytecode* pc);
     JSObject* getTemplateObjectForNative(jsbytecode* pc, Native native);
     JSObject* getTemplateObjectForClassHook(jsbytecode* pc, const Class* clasp);
+
+    // Sometimes the group a template object will have is known, even if the
+    // object itself isn't.
+    ObjectGroup* getTemplateObjectGroup(jsbytecode* pc);
 
     JSFunction* getSingleCallee(jsbytecode* pc);
 
@@ -126,10 +129,10 @@ class BaselineInspector
 
     bool commonGetPropFunction(jsbytecode* pc, JSObject** holder, Shape** holderShape,
                                JSFunction** commonGetter, Shape** globalShape, bool* isOwnProperty,
-                               ShapeVector& receiverShapes);
+                               ReceiverVector& receivers, ObjectGroupVector& convertUnboxedGroups);
     bool commonSetPropFunction(jsbytecode* pc, JSObject** holder, Shape** holderShape,
                                JSFunction** commonSetter, bool* isOwnProperty,
-                               ShapeVector& receiverShapes);
+                               ReceiverVector& receivers, ObjectGroupVector& convertUnboxedGroups);
 
     bool instanceOfData(jsbytecode* pc, Shape** shape, uint32_t* slot, JSObject** prototypeObject);
 };

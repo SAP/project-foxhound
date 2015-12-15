@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,7 +45,7 @@ class SVGStringList;
  * string each time any given item is requested.
  */
 class DOMSVGStringList final : public nsISupports
-                                 , public nsWrapperCache
+                             , public nsWrapperCache
 {
   friend class AutoChangeStringListNotifier;
 
@@ -56,7 +57,7 @@ public:
   {
     return mElement;
   }
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   uint32_t NumberOfItems() const;
   uint32_t Length() const;

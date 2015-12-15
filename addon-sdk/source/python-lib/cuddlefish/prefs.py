@@ -53,15 +53,17 @@ DEFAULT_NO_CONNECTIONS_PREFS = {
     'media.gmp-manager.cert.requireBuiltIn' : False,
     'media.gmp-manager.url' : 'http://localhost/media-dummy/gmpmanager',
     'media.gmp-manager.url.override': 'http://localhost/dummy-gmp-manager.xml',
+    'browser.aboutHomeSnippets.updateUrl': 'https://localhost/snippet-dummy',
     'browser.newtab.url' : 'about:blank',
     'browser.search.update': False,
+    'browser.search.suggest.enabled' : False,
     'browser.safebrowsing.enabled' : False,
-    'browser.safebrowsing.updateURL': 'http://localhost/safebrowsing-dummy/update',
-    'browser.safebrowsing.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
-    'browser.safebrowsing.reportURL': 'http://localhost/safebrowsing-dummy/report',
+    'browser.safebrowsing.provider.google.updateURL': 'http://localhost/safebrowsing-dummy/update',
+    'browser.safebrowsing.provider.google.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
     'browser.safebrowsing.malware.reportURL': 'http://localhost/safebrowsing-dummy/malwarereport',
-    'browser.trackingprotection.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
-    'browser.trackingprotection.updateURL': 'http://localhost/safebrowsing-dummy/update',
+    'browser.selfsupport.url': 'https://localhost/selfsupport-dummy',
+    'browser.safebrowsing.provider.mozilla.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
+    'browser.safebrowsing.provider.mozilla.updateURL': 'http://localhost/safebrowsing-dummy/update',
 
     # Disable app update
     'app.update.enabled' : False,
@@ -118,8 +120,10 @@ DEFAULT_FIREFOX_PREFS = {
     # Make url-classifier updates so rare that they won't affect tests.
     'urlclassifier.updateinterval' : 172800,
     # Point the url-classifier to a nonexistent local URL for fast failures.
-    'browser.safebrowsing.provider.0.gethashURL' : 'http://localhost/safebrowsing-dummy/gethash',
-    'browser.safebrowsing.provider.0.updateURL' : 'http://localhost/safebrowsing-dummy/update',
+    'browser.safebrowsing.provider.google.gethashURL' : 'http://localhost/safebrowsing-dummy/gethash',
+    'browser.safebrowsing.provider.google.updateURL' : 'http://localhost/safebrowsing-dummy/update',
+    'browser.safebrowsing.provider.mozilla.gethashURL': 'http://localhost/safebrowsing-dummy/gethash',
+    'browser.safebrowsing.provider.mozilla.updateURL': 'http://localhost/safebrowsing-dummy/update',
 }
 
 # When launching a temporary new Thunderbird profile, use these preferences.

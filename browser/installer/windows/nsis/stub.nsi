@@ -71,6 +71,8 @@ Var CanSetAsDefault
 Var InstallCounterStep
 Var InstallStepSize
 Var InstallTotalSteps
+Var ProgressCompleted
+Var ProgressTotal
 Var TmpVal
 
 Var ExitCode
@@ -258,6 +260,7 @@ Var ControlRightPX
 !insertmacro IsUserAdmin
 !insertmacro RemovePrecompleteEntries
 !insertmacro SetBrandNameVars
+!insertmacro ITBL3Create
 !insertmacro UnloadUAC
 
 VIAddVersionKey "FileDescription" "${BrandShortName} Stub Installer"
@@ -1018,9 +1021,19 @@ Function createOptions
   ${NSD_Check} $CheckboxSendPing
 
 !ifdef MOZ_MAINTENANCE_SERVICE
-  ; Only show the maintenance service checkbox if we have write access to HKLM
+  ; We can only install the maintenance service if the user is an admin.
   Call IsUserAdmin
   Pop $0
+  
+  ; Only show the maintenance service checkbox if we're on XP SP3 or higher;
+  ;  we don't ever want to install it on XP without at least SP3 installed.
+  ${If} $0 == "true"
+  ${AndIf} ${IsWinXP}
+  ${AndIf} ${AtMostServicePack} 2
+    StrCpy $0 "false"
+  ${EndIf}
+  
+  ; Only show the maintenance service checkbox if we have write access to HKLM
   ClearErrors
   WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" \
                    "Write Test"
@@ -1293,6 +1306,9 @@ Function createInstall
     StrCpy $InstallTotalSteps ${InstallCleanTotalSteps}
   ${EndIf}
 
+  ${ITBL3Create}
+  ${ITBL3SetProgressState} "${TBPF_INDETERMINATE}"
+
   ${NSD_CreateTimer} StartDownload ${DownloadIntervalMS}
 
   LockWindow off
@@ -1315,6 +1331,21 @@ Function StartDownload
   ${EndIf}
 FunctionEnd
 
+Function SetProgressBars
+  SendMessage $Progressbar ${PBM_SETPOS} $ProgressCompleted 0
+  ${ITBL3SetProgressValue} "$ProgressCompleted" "$ProgressTotal"
+FunctionEnd
+
+Function RemoveFileProgressCallback
+  IntOp $InstallCounterStep $InstallCounterStep + 2
+  System::Int64Op $ProgressCompleted + $InstallStepSize
+  Pop $ProgressCompleted
+  Call SetProgressBars
+  System::Int64Op $ProgressCompleted + $InstallStepSize
+  Pop $ProgressCompleted
+  Call SetProgressBars
+FunctionEnd
+
 Function OnDownload
   InetBgDL::GetStats
   # $0 = HTTP status code, 0=Completed
@@ -1333,6 +1364,7 @@ Function OnDownload
       ${NSD_AddStyle} $Progressbar ${PBS_MARQUEE}
       SendMessage $Progressbar ${PBM_SETMARQUEE} 1 \
                   $ProgressbarMarqueeIntervalMS ; start=1|stop=0 interval(ms)=+N
+      ${ITBL3SetProgressState} "${TBPF_INDETERMINATE}"
     ${EndIf}
     InetBgDL::Get /RESET /END
     StrCpy $DownloadSizeBytes ""
@@ -1390,8 +1422,9 @@ Function OnDownload
     SendMessage $Progressbar ${PBM_SETMARQUEE} 0 0 ; start=1|stop=0 interval(ms)=+N
     ${RemoveStyle} $Progressbar ${PBS_MARQUEE}
     System::Int64Op $HalfOfDownload + $DownloadSizeBytes
-    Pop $R9
-    SendMessage $Progressbar ${PBM_SETRANGE32} 0 $R9
+    Pop $ProgressTotal
+    StrCpy $ProgressCompleted 0
+    SendMessage $Progressbar ${PBM_SETRANGE32} $ProgressCompleted $ProgressTotal
   ${EndIf}
 
   ; Don't update the status until after the download starts
@@ -1448,12 +1481,13 @@ Function OnDownload
       LockWindow on
       ; Update the progress bars first in the UI change so they take affect
       ; before other UI changes.
-      SendMessage $Progressbar ${PBM_SETPOS} $DownloadSizeBytes 0
+      StrCpy $ProgressCompleted "$DownloadSizeBytes"
+      Call SetProgressBars
       System::Int64Op $InstallStepSize * ${InstallProgressFirstStep}
       Pop $R9
-      SendMessage $Progressbar ${PBM_SETSTEP} $R9 0
-      SendMessage $Progressbar ${PBM_STEPIT} 0 0
-      SendMessage $Progressbar ${PBM_SETSTEP} $InstallStepSize 0
+      System::Int64Op $ProgressCompleted + $R9
+      Pop $ProgressCompleted
+      Call SetProgressBars
       ShowWindow $LabelDownloading ${SW_HIDE}
       ShowWindow $LabelInstalling ${SW_SHOW}
       ShowWindow $LabelBlurb2 ${SW_HIDE}
@@ -1540,7 +1574,8 @@ Function OnDownload
         WriteIniStr "$0" "TASKBAR" "Migrated" "true"
       ${EndIf}
 
-      ${RemovePrecompleteEntries} $Progressbar $InstallCounterStep
+      GetFunctionAddress $0 RemoveFileProgressCallback
+      ${RemovePrecompleteEntries} $0
 
       ; Delete the install.log and let the full installer create it. When the
       ; installer closes it we can detect that it has completed.
@@ -1569,7 +1604,8 @@ Function OnDownload
         LockWindow off
       ${EndIf}
       StrCpy $DownloadedBytes "$3"
-      SendMessage $Progressbar ${PBM_SETPOS} $3 0
+      StrCpy $ProgressCompleted "$DownloadedBytes"
+      Call SetProgressBars
     ${EndIf}
   ${EndIf}
 FunctionEnd
@@ -1608,7 +1644,9 @@ Function CheckInstall
     Return
   ${EndIf}
 
-  SendMessage $Progressbar ${PBM_STEPIT} 0 0
+  System::Int64Op $ProgressCompleted + $InstallStepSize
+  Pop $ProgressCompleted
+  Call SetProgressBars
 
   ${If} ${FileExists} "$INSTDIR\install.log"
     Delete "$INSTDIR\install.tmp"
@@ -1632,7 +1670,6 @@ Function CheckInstall
       Pop $EndInstallPhaseTickCount
       System::Int64Op $InstallStepSize * ${InstallProgressFinishStep}
       Pop $InstallStepSize
-      SendMessage $Progressbar ${PBM_SETSTEP} $InstallStepSize 0
       ${NSD_CreateTimer} FinishInstall ${InstallIntervalMS}
     ${EndUnless}
   ${EndIf}
@@ -1647,14 +1684,16 @@ Function FinishInstall
   ${EndIf}
 
   ${If} $InstallTotalSteps != $InstallCounterStep
-    SendMessage $Progressbar ${PBM_STEPIT} 0 0
+    System::Int64Op $ProgressCompleted + $InstallStepSize
+    Pop $ProgressCompleted
+    Call SetProgressBars
     Return
   ${EndIf}
 
   ${NSD_KillTimer} FinishInstall
 
-  SendMessage $Progressbar ${PBM_GETRANGE} 0 0 $R9
-  SendMessage $Progressbar ${PBM_SETPOS} $R9 0
+  StrCpy $ProgressCompleted "$ProgressTotal"
+  Call SetProgressBars
 
   ${If} "$CheckboxSetAsDefault" == "1"
     ${GetParameters} $0
@@ -1935,6 +1974,10 @@ FunctionEnd
 
 Function DisplayDownloadError
   ${NSD_KillTimer} DisplayDownloadError
+  ; To better display the error state on the taskbar set the progress completed
+  ; value to the total value.
+  ${ITBL3SetProgressValue} "100" "100"
+  ${ITBL3SetProgressState} "${TBPF_ERROR}"
   MessageBox MB_OKCANCEL|MB_ICONSTOP "$(ERROR_DOWNLOAD)" IDCANCEL +2 IDOK +1
   StrCpy $OpenedDownloadPage "1" ; Already initialized to 0
 

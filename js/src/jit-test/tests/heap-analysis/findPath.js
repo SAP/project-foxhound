@@ -1,7 +1,7 @@
 load(libdir + "match.js")
 
 // At the moment, findPath just returns the names as provided by ubi::Node,
-// which just uses JS_TraceChildren for now. However, we have various plans
+// which just uses js::TraceChildren for now. However, we have various plans
 // to improve the quality of ubi::Node's metadata, to improve the precision
 // and clarity of the results here.
 
@@ -37,7 +37,7 @@ print(uneval(findPath(gc, o)));
 
 Match.Pattern([{node: {}, edge: "shape"},
                {node: Match.Pattern.ANY, edge: "base"},
-               {node: Match.Pattern.ANY, edge: "parent"},
+               {node: Match.Pattern.ANY, edge: "global"},
                {node: {}, edge: "o"}])
   .assert(findPath(o, o));
 print(findPath(o, o).map((e) => e.edge).toString());

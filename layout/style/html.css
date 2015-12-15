@@ -256,7 +256,6 @@ xmp, pre, plaintext {
 /* tables */
 
 table {
-  writing-mode: horizontal-tb !important; /* XXX remove when bug 1077521 is fixed */
   display: table;
   border-spacing: 2px;
   border-collapse: separate;
@@ -560,7 +559,7 @@ mark {
 
 /* titles */
 abbr[title], acronym[title] {
-  border-block-end: dotted 1px;
+  text-decoration: dotted underline;
 }
 
 /* lists */
@@ -587,6 +586,7 @@ ol {
 
 li {
   display: list-item;
+  text-align: match-parent;
 }
 
 /* nested lists have no top/bottom margins */
@@ -724,7 +724,8 @@ area {
 
 iframe:-moz-full-screen {
   /* iframes in full-screen mode don't show a border. */
-  border: none;
+  border: none !important;
+  padding: 0 !important;
 }
 
 /* media elements */
@@ -802,8 +803,6 @@ marquee[direction="up"], marquee[direction="down"] {
   }
   rt {
     display: ruby-text;
-    font-variant-east-asian: ruby;
-    text-emphasis: none;
   }
   rtc {
     display: ruby-text-container;
@@ -812,11 +811,28 @@ marquee[direction="up"], marquee[direction="down"] {
     white-space: nowrap;
     font-size: 50%;
     line-height: 1;
+%ifndef XP_WIN
+    /* The widely-used Windows font Meiryo doesn't work fine with this
+     * setting, so disable this on Windows. We should re-enable it once
+     * Microsoft fixes this issue. See bug 1164279. */
+    font-variant-east-asian: ruby;
+%endif
+  }
+  @supports (text-emphasis: none) {
+    rtc, rt {
+      text-emphasis: none;
+    }
+  }
+  rtc:lang(zh), rt:lang(zh) {
+    ruby-align: center;
+  }
+  rtc:lang(zh-TW), rt:lang(zh-TW) {
+    font-size: 30%; /* bopomofo */
   }
   rtc > rt {
     font-size: inherit;
   }
-  ruby, rb, rt, rbc, rtc {
-    unicode-bidi: isolate;
+  ruby, rb, rt, rtc {
+    unicode-bidi: -moz-isolate;
   }
 }

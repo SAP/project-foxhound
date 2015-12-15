@@ -266,7 +266,7 @@ function() {
  * This deferred object contains a promise that is resolved when the
  * ensure_results_internal function has finished its execution.
  */
-let deferEnsureResults;
+var deferEnsureResults;
 
 /**
  * Test adaptive autocomplete
@@ -286,7 +286,7 @@ add_task(function test_frecency()
   prefs.setBoolPref("browser.urlbar.suggest.bookmark", true);
   prefs.setBoolPref("browser.urlbar.suggest.openpage", false);
   for (let [, test] in Iterator(tests)) {
-    remove_all_bookmarks();
+    yield PlacesUtils.bookmarks.eraseEverything();
     yield PlacesTestUtils.clearHistory();
 
     deferEnsureResults = Promise.defer();

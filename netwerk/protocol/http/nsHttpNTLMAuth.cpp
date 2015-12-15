@@ -9,7 +9,9 @@
 #include "nsHttpNTLMAuth.h"
 #include "nsIAuthModule.h"
 #include "nsCOMPtr.h"
+#include "nsServiceManagerUtils.h"
 #include "plbase64.h"
+#include "plstr.h"
 #include "prnetdb.h"
 
 //-----------------------------------------------------------------------------
@@ -19,6 +21,7 @@
 #include "nsIHttpAuthenticableChannel.h"
 #include "nsIURI.h"
 #ifdef XP_WIN
+#include "nsIChannel.h"
 #include "nsIX509Cert.h"
 #include "nsISSLStatus.h"
 #include "nsISSLStatusProvider.h"
@@ -103,7 +106,7 @@ IsNonFqdn(nsIURI *uri)
         return false;
 
     // return true if host does not contain a dot and is not an ip address
-    return !host.IsEmpty() && host.FindChar('.') == kNotFound &&
+    return !host.IsEmpty() && !host.Contains('.') &&
            PR_StringToNetAddr(host.BeginReading(), &addr) != PR_SUCCESS;
 }
 
@@ -157,7 +160,7 @@ TestPref(nsIURI *uri, const char *pref)
         start = end + 1;
     }
 
-    nsMemory::Free(hostList);
+    free(hostList);
     return false;
 }
 
@@ -274,10 +277,8 @@ nsHttpNTLMAuth::ChallengeReceived(nsIHttpAuthenticableChannel *channel,
                 *identityInvalid = true;
             }
 #endif // XP_WIN
-#ifdef PR_LOGGING
             if (!module)
                 LOG(("Native sys-ntlm auth module not found.\n"));
-#endif
         }
 
 #ifdef XP_WIN
@@ -446,12 +447,12 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
 
         // decode into the input secbuffer
         inBufLen = (len * 3)/4;      // sufficient size (see plbase64.h)
-        inBuf = nsMemory::Alloc(inBufLen);
+        inBuf = moz_xmalloc(inBufLen);
         if (!inBuf)
             return NS_ERROR_OUT_OF_MEMORY;
 
         if (PL_Base64Decode(challenge, len, (char *) inBuf) == nullptr) {
-            nsMemory::Free(inBuf);
+            free(inBuf);
             return NS_ERROR_UNEXPECTED; // improper base64 encoding
         }
     }
@@ -460,7 +461,7 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
     if (NS_SUCCEEDED(rv)) {
         // base64 encode data in output buffer and prepend "NTLM "
         int credsLen = 5 + ((outBufLen + 2)/3)*4;
-        *creds = (char *) nsMemory::Alloc(credsLen + 1);
+        *creds = (char *) moz_xmalloc(credsLen + 1);
         if (!*creds)
             rv = NS_ERROR_OUT_OF_MEMORY;
         else {
@@ -469,11 +470,11 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel *authChannel,
             (*creds)[credsLen] = '\0'; // null terminate
         }
         // OK, we are done with |outBuf|
-        nsMemory::Free(outBuf);
+        free(outBuf);
     }
 
     if (inBuf)
-        nsMemory::Free(inBuf);
+        free(inBuf);
 
     return rv;
 }
@@ -485,5 +486,5 @@ nsHttpNTLMAuth::GetAuthFlags(uint32_t *flags)
     return NS_OK;
 }
 
-} // namespace mozilla::net
+} // namespace net
 } // namespace mozilla

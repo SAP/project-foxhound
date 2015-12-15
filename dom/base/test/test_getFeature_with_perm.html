@@ -18,7 +18,7 @@ function testSupported() {
   navigator.getFeature("hardware.memory").then(function(mem) {
 
     var isLinux = (navigator.platform.indexOf('Linux') != -1);
-    var isAndroid = !!navigator.userAgent.contains("Android");
+    var isAndroid = !!navigator.userAgent.includes("Android");
     var isB2G = !isAndroid && /Mobile|Tablet/.test(navigator.userAgent);
 
     if (isLinux) {
@@ -76,13 +76,31 @@ function createManifestTest(aFeature) {
   }
 }
 
+function testDevMode(aExpected) {
+  return function() {
+    navigator.getFeature("dom.apps.developer_mode").then(res => {
+      is(res, aExpected, "dom.apps.developer_mode is " + aExpected);
+      runNextTest();
+    }, function() {
+      ok(false, "The Promise should not be rejected");
+    });
+  }
+}
+
+function enableDevMode() {
+  SpecialPowers.pushPrefEnv({"set": [["dom.apps.developer_mode", true]]}, runNextTest);
+}
+
 var currentTest = -1;
 var tests = [
   testNotSupported,
   testNotSupportedManifest,
   testSupported,
   createManifestTest("manifest.origin"),
-  createManifestTest("manifest.redirects")
+  createManifestTest("manifest.redirects"),
+  testDevMode(false),
+  enableDevMode,
+  testDevMode(true)
 ];
 
 function runNextTest() {
@@ -103,7 +121,7 @@ SpecialPowers.pushPermissions([
   ok('hasFeature' in navigator, "navigator.hasFeature should exist");
   // B2G specific manifest features.
   // Touching navigator before pushPermissions makes it fail.
-  if (!navigator.userAgent.contains("Android") &&
+  if (!navigator.userAgent.includes("Android") &&
         /Mobile|Tablet/.test(navigator.userAgent)) {
     info("Adding B2G specific tests");
     tests.push(createManifestTest("manifest.chrome.navigation"));

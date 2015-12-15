@@ -10,13 +10,12 @@
 #include "nsISupports.h"
 
 class nsIURI;
-class nsString;
 
 namespace mozilla {
 
 namespace dom {
 class Link;
-}
+} // namespace dom
 
 // 0057c9d3-b98e-4933-bdc5-0275d06705e1
 #define IHISTORY_IID \

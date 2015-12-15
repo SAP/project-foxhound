@@ -74,7 +74,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AudioNode,
                                            DOMEventTargetHelper)
 
-  virtual AudioBufferSourceNode* AsAudioBufferSourceNode() {
+  virtual AudioBufferSourceNode* AsAudioBufferSourceNode()
+  {
     return nullptr;
   }
 
@@ -95,6 +96,15 @@ public:
                        ErrorResult& aRv);
 
   virtual void Disconnect(uint32_t aOutput, ErrorResult& aRv);
+
+  // Called after input nodes have been explicitly added or removed through
+  // the Connect() or Disconnect() methods.
+  virtual void NotifyInputsChanged() {}
+  // Indicate that the node should continue indefinitely to behave as if an
+  // input is connected, even though there is no longer a corresponding entry
+  // in mInputNodes.  Called after an input node has been removed because it
+  // is being garbage collected.
+  virtual void NotifyHasPhantomInput() {}
 
   // The following two virtual methods must be implemented by each node type
   // to provide their number of input and output ports. These numbers are
@@ -137,7 +147,8 @@ public:
     SendChannelMixingParametersToStream();
   }
 
-  struct InputNode {
+  struct InputNode final
+  {
     ~InputNode()
     {
       if (mStreamPort) {
@@ -165,7 +176,8 @@ public:
     uint32_t mOutputPort;
   };
 
-  MediaStream* Stream() { return mStream; }
+  // Returns the stream, if any.
+  AudioNodeStream* GetStream() const { return mStream; }
 
   const nsTArray<InputNode>& InputNodes() const
   {
@@ -218,9 +230,8 @@ private:
   nsRefPtr<AudioContext> mContext;
 
 protected:
-  // Must be set in the constructor. Must not be null.
-  // If MaxNumberOfInputs() is > 0, then mStream must be a ProcessedMediaStream.
-  nsRefPtr<MediaStream> mStream;
+  // Must be set in the constructor. Must not be null unless finished.
+  nsRefPtr<AudioNodeStream> mStream;
 
 private:
   // For every InputNode, there is a corresponding entry in mOutputNodes of the
@@ -251,7 +262,7 @@ private:
 #endif
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif

@@ -15,9 +15,7 @@ EXPORTS.mozilla.net += [
     'WyciwygChannelParent.h',
 ]
 
-# These files cannot be built in unified mode because they want to force NSPR
-# logging.
-SOURCES += [
+UNIFIED_SOURCES += [
     'nsWyciwyg.cpp',
     'nsWyciwygChannel.cpp',
     'nsWyciwygProtocolHandler.cpp',
@@ -28,8 +26,6 @@ SOURCES += [
 IPDL_SOURCES += [
     'PWyciwygChannel.ipdl',
 ]
-
-FAIL_ON_WARNINGS = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

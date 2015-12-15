@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +29,7 @@ UIEvent::UIEvent(EventTarget* aOwner,
                  nsPresContext* aPresContext,
                  WidgetGUIEvent* aEvent)
   : Event(aOwner, aPresContext,
-          aEvent ? aEvent : new InternalUIEvent(false, 0))
+          aEvent ? aEvent : new InternalUIEvent(false, eVoidEvent, nullptr))
   , mClientPoint(0, 0)
   , mLayerPoint(0, 0)
   , mPagePoint(0, 0)
@@ -113,7 +114,7 @@ DevPixelsToCSSPixels(const LayoutDeviceIntPoint& aPoint,
 nsIntPoint
 UIEvent::GetMovementPoint()
 {
-  if (mPrivateDataDuplicated) {
+  if (mPrivateDataDuplicated || mEventIsInternal) {
     return mMovementPoint;
   }
 
@@ -455,20 +456,54 @@ UIEvent::GetModifierStateInternal(const nsAString& aKey)
   return ((inputEvent->modifiers & WidgetInputEvent::GetModifier(aKey)) != 0);
 }
 
+void
+UIEvent::InitModifiers(const EventModifierInit& aParam)
+{
+  if (NS_WARN_IF(!mEvent)) {
+    return;
+  }
+  WidgetInputEvent* inputEvent = mEvent->AsInputEvent();
+  MOZ_ASSERT(inputEvent,
+             "This method shouldn't be called if it doesn't have modifiers");
+  if (NS_WARN_IF(!inputEvent)) {
+    return;
+  }
+
+  inputEvent->modifiers = MODIFIER_NONE;
+
+#define SET_MODIFIER(aName, aValue) \
+  if (aParam.m##aName) { \
+    inputEvent->modifiers |= aValue; \
+  } \
+
+  SET_MODIFIER(CtrlKey,                 MODIFIER_CONTROL)
+  SET_MODIFIER(ShiftKey,                MODIFIER_SHIFT)
+  SET_MODIFIER(AltKey,                  MODIFIER_ALT)
+  SET_MODIFIER(MetaKey,                 MODIFIER_META)
+  SET_MODIFIER(ModifierAltGraph,        MODIFIER_ALTGRAPH)
+  SET_MODIFIER(ModifierCapsLock,        MODIFIER_CAPSLOCK)
+  SET_MODIFIER(ModifierFn,              MODIFIER_FN)
+  SET_MODIFIER(ModifierFnLock,          MODIFIER_FNLOCK)
+  SET_MODIFIER(ModifierNumLock,         MODIFIER_NUMLOCK)
+  SET_MODIFIER(ModifierOS,              MODIFIER_OS)
+  SET_MODIFIER(ModifierScrollLock,      MODIFIER_SCROLLLOCK)
+  SET_MODIFIER(ModifierSymbol,          MODIFIER_SYMBOL)
+  SET_MODIFIER(ModifierSymbolLock,      MODIFIER_SYMBOLLOCK)
+
+#undef SET_MODIFIER
+}
+
 } // namespace dom
 } // namespace mozilla
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMUIEvent(nsIDOMEvent** aInstancePtrResult,
-                 EventTarget* aOwner,
+already_AddRefed<UIEvent>
+NS_NewDOMUIEvent(EventTarget* aOwner,
                  nsPresContext* aPresContext,
                  WidgetGUIEvent* aEvent) 
 {
-  UIEvent* it = new UIEvent(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<UIEvent> it = new UIEvent(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

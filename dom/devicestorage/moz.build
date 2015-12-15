@@ -10,22 +10,27 @@ EXPORTS += [
     'nsDeviceStorage.h',
 ]
 
+EXPORTS.mozilla.dom += [
+    'DeviceStorageAreaListener.h',
+]
+
 EXPORTS.mozilla.dom.devicestorage += [
     'DeviceStorageRequestChild.h',
     'DeviceStorageRequestParent.h',
+    'DeviceStorageStatics.h',
 ]
 
 UNIFIED_SOURCES += [
+    'DeviceStorageAreaListener.cpp',
     'DeviceStorageRequestChild.cpp',
     'DeviceStorageRequestParent.cpp',
+    'DeviceStorageStatics.cpp',
     'nsDeviceStorage.cpp',
 ]
 
 IPDL_SOURCES += [
     'PDeviceStorageRequest.ipdl',
 ]
-
-FAIL_ON_WARNINGS = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

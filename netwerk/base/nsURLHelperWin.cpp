@@ -51,6 +51,10 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
 {
     nsresult rv;
 
+    if (aURL.Length() > (uint32_t) net_GetURLMaxLength()) {
+        return NS_ERROR_MALFORMED_URI;
+    }
+
     nsCOMPtr<nsIFile> localFile(
             do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv));
     if (NS_FAILED(rv)) {
@@ -108,6 +112,6 @@ net_GetFileFromURLSpec(const nsACString &aURL, nsIFile **result)
 
     if (NS_FAILED(rv)) return rv;
 
-    NS_ADDREF(*result = localFile);
+    localFile.forget(result);
     return NS_OK;
 }

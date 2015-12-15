@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -87,8 +88,9 @@ public:
   const nsAttrValue* GetAttr(const nsAString& aName,
                              nsCaseTreatment aCaseSensitive) const;
   const nsAttrValue* AttrAt(uint32_t aPos) const;
-  nsresult SetAndTakeAttr(nsIAtom* aLocalName, nsAttrValue& aValue);
-  nsresult SetAndTakeAttr(mozilla::dom::NodeInfo* aName, nsAttrValue& aValue);
+  // SetAndSwapAttr swaps the current attribute value with aValue.
+  nsresult SetAndSwapAttr(nsIAtom* aLocalName, nsAttrValue& aValue);
+  nsresult SetAndSwapAttr(mozilla::dom::NodeInfo* aName, nsAttrValue& aValue);
 
   // Remove the attr at position aPos.  The value of the attr is placed in
   // aValue; any value that was already in aValue is destroyed.

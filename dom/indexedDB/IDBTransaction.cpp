@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,12 +16,9 @@
 #include "mozilla/dom/DOMError.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/ipc/BackgroundChild.h"
-#include "nsIAppShell.h"
-#include "nsIDOMFile.h"
 #include "nsPIDOMWindow.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTHashtable.h"
-#include "nsWidgetsCID.h"
 #include "ProfilerHelpers.h"
 #include "ReportInternalError.h"
 #include "WorkerFeature.h"
@@ -36,36 +33,6 @@ namespace indexedDB {
 
 using namespace mozilla::dom::workers;
 using namespace mozilla::ipc;
-
-namespace {
-
-NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
-
-bool
-RunBeforeNextEvent(IDBTransaction* aTransaction)
-{
-  MOZ_ASSERT(aTransaction);
-
-  if (NS_IsMainThread()) {
-    nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
-    MOZ_ASSERT(appShell);
-
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(appShell->RunBeforeNextEvent(aTransaction)));
-
-    return true;
-  }
-
-  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-  MOZ_ASSERT(workerPrivate);
-
-  if (NS_WARN_IF(!workerPrivate->RunBeforeNextEvent(aTransaction))) {
-    return false;
-  }
-
-  return true;
-}
-
-} // anonymous namespace
 
 class IDBTransaction::WorkerFeature final
   : public mozilla::dom::workers::WorkerFeature
@@ -115,6 +82,7 @@ IDBTransaction::IDBTransaction(IDBDatabase* aDatabase,
   , mAbortCode(NS_OK)
   , mPendingRequestCount(0)
   , mLineNo(0)
+  , mColumn(0)
   , mReadyState(IDBTransaction::INITIAL)
   , mMode(aMode)
   , mCreating(false)
@@ -215,21 +183,16 @@ IDBTransaction::CreateVersionChange(
   nsTArray<nsString> emptyObjectStoreNames;
 
   nsRefPtr<IDBTransaction> transaction =
-    new IDBTransaction(aDatabase, emptyObjectStoreNames, VERSION_CHANGE);
+    new IDBTransaction(aDatabase,
+                       emptyObjectStoreNames,
+                       VERSION_CHANGE);
   aOpenRequest->GetCallerLocation(transaction->mFilename,
-                                  &transaction->mLineNo);
+                                  &transaction->mLineNo, &transaction->mColumn);
 
   transaction->SetScriptOwner(aDatabase->GetScriptOwner());
 
-  if (NS_WARN_IF(!RunBeforeNextEvent(transaction))) {
-    MOZ_ASSERT(!NS_IsMainThread());
-#ifdef DEBUG
-    // Silence assertions.
-    transaction->mSentCommitOrAbort = true;
-#endif
-    aActor->SendDeleteMeInternal(/* aFailedConstructor */ true);
-    return nullptr;
-  }
+  nsCOMPtr<nsIRunnable> runnable = do_QueryObject(transaction);
+  nsContentUtils::RunInMetastableState(runnable.forget());
 
   transaction->mBackgroundActor.mVersionChangeBackgroundActor = aActor;
   transaction->mNextObjectStoreId = aNextObjectStoreId;
@@ -251,18 +214,19 @@ IDBTransaction::Create(IDBDatabase* aDatabase,
   MOZ_ASSERT(aDatabase);
   aDatabase->AssertIsOnOwningThread();
   MOZ_ASSERT(!aObjectStoreNames.IsEmpty());
-  MOZ_ASSERT(aMode == READ_ONLY || aMode == READ_WRITE);
+  MOZ_ASSERT(aMode == READ_ONLY ||
+             aMode == READ_WRITE ||
+             aMode == READ_WRITE_FLUSH);
 
   nsRefPtr<IDBTransaction> transaction =
     new IDBTransaction(aDatabase, aObjectStoreNames, aMode);
-  IDBRequest::CaptureCaller(transaction->mFilename, &transaction->mLineNo);
+  IDBRequest::CaptureCaller(transaction->mFilename, &transaction->mLineNo,
+                            &transaction->mColumn);
 
   transaction->SetScriptOwner(aDatabase->GetScriptOwner());
 
-  if (NS_WARN_IF(!RunBeforeNextEvent(transaction))) {
-    MOZ_ASSERT(!NS_IsMainThread());
-    return nullptr;
-  }
+  nsCOMPtr<nsIRunnable> runnable = do_QueryObject(transaction);
+  nsContentUtils::RunInMetastableState(runnable.forget());
 
   transaction->mCreating = true;
 
@@ -445,7 +409,7 @@ IDBTransaction::SendCommit()
 {
   AssertIsOnOwningThread();
   MOZ_ASSERT(NS_SUCCEEDED(mAbortCode));
-  MOZ_ASSERT(IsFinished());
+  MOZ_ASSERT(IsCommittingOrDone());
   MOZ_ASSERT(!mSentCommitOrAbort);
   MOZ_ASSERT(!mPendingRequestCount);
 
@@ -478,7 +442,7 @@ IDBTransaction::SendAbort(nsresult aResultCode)
 {
   AssertIsOnOwningThread();
   MOZ_ASSERT(NS_FAILED(aResultCode));
-  MOZ_ASSERT(IsFinished());
+  MOZ_ASSERT(IsCommittingOrDone());
   MOZ_ASSERT(!mSentCommitOrAbort);
 
   // Don't do this in the macro because we always need to increment the serial
@@ -530,13 +494,16 @@ IDBTransaction::IsOpen() const
 }
 
 void
-IDBTransaction::GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo) const
+IDBTransaction::GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo,
+                                  uint32_t* aColumn) const
 {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aLineNo);
+  MOZ_ASSERT(aColumn);
 
   aFilename = mFilename;
   *aLineNo = mLineNo;
+  *aColumn = mColumn;
 }
 
 already_AddRefed<IDBObjectStore>
@@ -637,13 +604,9 @@ IDBTransaction::AbortInternal(nsresult aAbortCode,
 {
   AssertIsOnOwningThread();
   MOZ_ASSERT(NS_FAILED(aAbortCode));
+  MOZ_ASSERT(!IsCommittingOrDone());
 
   nsRefPtr<DOMError> error = aError;
-
-  if (IsFinished()) {
-    // Already finished, nothing to do here.
-    return;
-  }
 
   const bool isVersionChange = mMode == VERSION_CHANGE;
   const bool isInvalidated = mDatabase->IsInvalidated();
@@ -737,6 +700,12 @@ IDBTransaction::Abort(IDBRequest* aRequest)
   AssertIsOnOwningThread();
   MOZ_ASSERT(aRequest);
 
+  if (IsCommittingOrDone()) {
+    // Already started (and maybe finished) the commit or abort so there is
+    // nothing to do here.
+    return;
+  }
+
   ErrorResult rv;
   nsRefPtr<DOMError> error = aRequest->GetError(rv);
 
@@ -748,6 +717,12 @@ IDBTransaction::Abort(nsresult aErrorCode)
 {
   AssertIsOnOwningThread();
 
+  if (IsCommittingOrDone()) {
+    // Already started (and maybe finished) the commit or abort so there is
+    // nothing to do here.
+    return;
+  }
+
   nsRefPtr<DOMError> error = new DOMError(GetOwner(), aErrorCode);
   AbortInternal(aErrorCode, error.forget());
 }
@@ -757,7 +732,7 @@ IDBTransaction::Abort(ErrorResult& aRv)
 {
   AssertIsOnOwningThread();
 
-  if (IsFinished()) {
+  if (IsCommittingOrDone()) {
     aRv = NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR;
     return;
   }
@@ -863,6 +838,9 @@ IDBTransaction::GetMode(ErrorResult& aRv) const
     case READ_WRITE:
       return IDBTransactionMode::Readwrite;
 
+    case READ_WRITE_FLUSH:
+      return IDBTransactionMode::Readwriteflush;
+
     case VERSION_CHANGE:
       return IDBTransactionMode::Versionchange;
 
@@ -881,7 +859,7 @@ IDBTransaction::GetError() const
 }
 
 already_AddRefed<DOMStringList>
-IDBTransaction::ObjectStoreNames()
+IDBTransaction::ObjectStoreNames() const
 {
   AssertIsOnOwningThread();
 
@@ -899,7 +877,7 @@ IDBTransaction::ObjectStore(const nsAString& aName, ErrorResult& aRv)
 {
   AssertIsOnOwningThread();
 
-  if (IsFinished()) {
+  if (IsCommittingOrDone()) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return nullptr;
   }
@@ -977,11 +955,11 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBTransaction, IDBWrapperCache)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 JSObject*
-IDBTransaction::WrapObject(JSContext* aCx)
+IDBTransaction::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
   AssertIsOnOwningThread();
 
-  return IDBTransactionBinding::Wrap(aCx, this);
+  return IDBTransactionBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsresult
@@ -1023,11 +1001,12 @@ WorkerFeature::Notify(JSContext* aCx, Status aStatus)
   if (mTransaction && aStatus > Terminating) {
     mTransaction->AssertIsOnOwningThread();
 
-    nsRefPtr<IDBTransaction> transaction = mTransaction;
-    mTransaction = nullptr;
+    nsRefPtr<IDBTransaction> transaction = Move(mTransaction);
 
-    IDB_REPORT_INTERNAL_ERR();
-    transaction->AbortInternal(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR, nullptr);
+    if (!transaction->IsCommittingOrDone()) {
+      IDB_REPORT_INTERNAL_ERR();
+      transaction->AbortInternal(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR, nullptr);
+    }
   }
 
   return true;

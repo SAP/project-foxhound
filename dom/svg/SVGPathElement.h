@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +34,7 @@ friend class nsSVGPathFrame;
 protected:
   friend nsresult (::NS_NewSVGPathElement(nsIContent **aResult,
                                           already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  virtual JSObject* WrapNode(JSContext *cx) override;
+  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
   explicit SVGPathElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
 
 public:
@@ -50,14 +51,14 @@ public:
   virtual bool AttributeDefinesGeometry(const nsIAtom *aName) override;
   virtual bool IsMarkable() override;
   virtual void GetMarkPoints(nsTArray<nsSVGMark> *aMarks) override;
-  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder) override;
+  virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
   /**
    * This returns a path without the extra little line segments that
    * ApproximateZeroLengthSubpathSquareCaps can insert if we have square-caps.
    * See the comment for that function for more info on that.
    */
-  virtual TemporaryRef<Path> GetOrBuildPathForMeasuring() override;
+  virtual already_AddRefed<Path> GetOrBuildPathForMeasuring() override;
 
   // nsIContent interface
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;

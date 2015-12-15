@@ -21,11 +21,7 @@
 #define NS_PORTRAIT  0
 #define NS_LANDSCAPE 1
 
-typedef enum
-{
-  pmInvalid = 0,
-  pmPostScript
-} PrintMethod;
+class nsPrintSettingsGTK;
 
 class nsDeviceContextSpecGTK : public nsIDeviceContextSpec
 {
@@ -44,23 +40,24 @@ public:
   NS_IMETHOD BeginPage() override { return NS_OK; }
   NS_IMETHOD EndPage() override { return NS_OK; }
 
-  static nsresult GetPrintMethod(const char *aPrinter, PrintMethod &aMethod);
-  
 protected:
   virtual ~nsDeviceContextSpecGTK();
-  nsCOMPtr<nsIPrintSettings> mPrintSettings;
+  nsCOMPtr<nsPrintSettingsGTK> mPrintSettings;
   bool mToPrinter : 1;      /* If true, print to printer */
   bool mIsPPreview : 1;     /* If true, is print preview */
   char   mPath[PATH_MAX];     /* If toPrinter = false, dest file */
   char   mPrinter[256];       /* Printer name */
-  GtkPrintJob*      mPrintJob;
-  GtkPrinter*       mGtkPrinter;
   GtkPrintSettings* mGtkPrintSettings;
   GtkPageSetup*     mGtkPageSetup;
 
   nsCString         mSpoolName;
   nsCOMPtr<nsIFile> mSpoolFile;
+  nsCString         mTitle;
 
+private:
+  void EnumeratePrinters();
+  void StartPrintJob();
+  static gboolean PrinterEnumerator(GtkPrinter *aPrinter, gpointer aData);
 };
 
 //-------------------------------------------------------------------------

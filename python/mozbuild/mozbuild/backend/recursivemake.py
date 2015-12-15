@@ -2,10 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
-import errno
-import json
 import logging
 import os
 import re
@@ -16,6 +14,7 @@ from collections import (
     namedtuple,
 )
 from StringIO import StringIO
+from itertools import chain
 
 from reftest import ReftestManifest
 
@@ -27,11 +26,17 @@ import mozpack.path as mozpath
 
 from .common import CommonBackend
 from ..frontend.data import (
+    AndroidAssetsDirs,
+    AndroidResDirs,
+    AndroidExtraResDirs,
+    AndroidExtraPackages,
     AndroidEclipseProjectData,
+    BrandingFiles,
     ConfigFileSubstitution,
     ContextDerived,
     ContextWrapped,
     Defines,
+    DistFiles,
     DirectoryTraversal,
     Exports,
     ExternalLibrary,
@@ -39,6 +44,7 @@ from ..frontend.data import (
     GeneratedFile,
     GeneratedInclude,
     GeneratedSources,
+    HostDefines,
     HostLibrary,
     HostProgram,
     HostSimpleProgram,
@@ -67,6 +73,97 @@ from ..util import (
     FileAvoidWrite,
 )
 from ..makeutil import Makefile
+
+MOZBUILD_VARIABLES = [
+    b'ANDROID_APK_NAME',
+    b'ANDROID_APK_PACKAGE',
+    b'ANDROID_ASSETS_DIRS',
+    b'ANDROID_EXTRA_PACKAGES',
+    b'ANDROID_EXTRA_RES_DIRS',
+    b'ANDROID_GENERATED_RESFILES',
+    b'ANDROID_RES_DIRS',
+    b'ASFLAGS',
+    b'CMSRCS',
+    b'CMMSRCS',
+    b'CPP_UNIT_TESTS',
+    b'DIRS',
+    b'DIST_INSTALL',
+    b'EXTRA_DSO_LDOPTS',
+    b'EXTRA_JS_MODULES',
+    b'EXTRA_PP_COMPONENTS',
+    b'EXTRA_PP_JS_MODULES',
+    b'FORCE_SHARED_LIB',
+    b'FORCE_STATIC_LIB',
+    b'FINAL_LIBRARY',
+    b'HOST_CFLAGS',
+    b'HOST_CSRCS',
+    b'HOST_CMMSRCS',
+    b'HOST_CXXFLAGS',
+    b'HOST_EXTRA_LIBS',
+    b'HOST_LIBRARY_NAME',
+    b'HOST_PROGRAM',
+    b'HOST_SIMPLE_PROGRAMS',
+    b'IS_COMPONENT',
+    b'JAR_MANIFEST',
+    b'JAVA_JAR_TARGETS',
+    b'LD_VERSION_SCRIPT',
+    b'LIBRARY_NAME',
+    b'LIBS',
+    b'MAKE_FRAMEWORK',
+    b'MODULE',
+    b'NO_DIST_INSTALL',
+    b'NO_EXPAND_LIBS',
+    b'NO_INTERFACES_MANIFEST',
+    b'NO_JS_MANIFEST',
+    b'OS_LIBS',
+    b'PARALLEL_DIRS',
+    b'PREF_JS_EXPORTS',
+    b'PROGRAM',
+    b'PYTHON_UNIT_TESTS',
+    b'RESOURCE_FILES',
+    b'SDK_HEADERS',
+    b'SDK_LIBRARY',
+    b'SHARED_LIBRARY_LIBS',
+    b'SHARED_LIBRARY_NAME',
+    b'SIMPLE_PROGRAMS',
+    b'SONAME',
+    b'STATIC_LIBRARY_NAME',
+    b'TEST_DIRS',
+    b'TOOL_DIRS',
+    # XXX config/Makefile.in specifies this in a make invocation
+    #'USE_EXTENSION_MANIFEST',
+    b'XPCSHELL_TESTS',
+    b'XPIDL_MODULE',
+]
+
+DEPRECATED_VARIABLES = [
+    b'ANDROID_RESFILES',
+    b'EXPORT_LIBRARY',
+    b'EXTRA_LIBS',
+    b'HOST_LIBS',
+    b'LIBXUL_LIBRARY',
+    b'MOCHITEST_A11Y_FILES',
+    b'MOCHITEST_BROWSER_FILES',
+    b'MOCHITEST_BROWSER_FILES_PARTS',
+    b'MOCHITEST_CHROME_FILES',
+    b'MOCHITEST_FILES',
+    b'MOCHITEST_FILES_PARTS',
+    b'MOCHITEST_METRO_FILES',
+    b'MOCHITEST_ROBOCOP_FILES',
+    b'MODULE_OPTIMIZE_FLAGS',
+    b'MOZ_CHROME_FILE_FORMAT',
+    b'SHORT_LIBNAME',
+    b'TESTING_JS_MODULES',
+    b'TESTING_JS_MODULE_DIR',
+]
+
+MOZBUILD_VARIABLES_MESSAGE = 'It should only be defined in moz.build files.'
+
+DEPRECATED_VARIABLES_MESSAGE = (
+    'This variable has been deprecated. It does nothing. It must be removed '
+    'in order to build.'
+)
+
 
 class BackendMakeFile(object):
     """Represents a generated backend.mk file.
@@ -114,7 +211,9 @@ class BackendMakeFile(object):
         self.fh.write(buf)
 
     def write_once(self, buf):
-        if '\n' + buf not in self.fh.getvalue():
+        if isinstance(buf, unicode):
+            buf = buf.encode('utf-8')
+        if b'\n' + buf not in self.fh.getvalue():
             self.write(buf)
 
     # For compatibility with makeutil.Makefile
@@ -306,6 +405,7 @@ class RecursiveMakeBackend(CommonBackend):
         self._install_manifests = {
             k: InstallManifest() for k in [
                 'dist_bin',
+                'dist_branding',
                 'dist_idl',
                 'dist_include',
                 'dist_public',
@@ -373,11 +473,19 @@ class RecursiveMakeBackend(CommonBackend):
                 '.m': 'CMSRCS',
                 '.mm': 'CMMSRCS',
                 '.cpp': 'CPPSRCS',
+                '.rs': 'RSSRCS',
                 '.S': 'SSRCS',
             }
-            var = suffix_map[obj.canonical_suffix]
+            variables = [suffix_map[obj.canonical_suffix]]
+            if isinstance(obj, GeneratedSources):
+                variables.append('GARBAGE')
+                base = backend_file.objdir
+            else:
+                base = backend_file.srcdir
             for f in sorted(obj.files):
-                backend_file.write('%s += %s\n' % (var, f))
+                f = mozpath.relpath(f, base)
+                for var in variables:
+                    backend_file.write('%s += %s\n' % (var, f))
         elif isinstance(obj, HostSources):
             suffix_map = {
                 '.c': 'HOST_CSRCS',
@@ -386,7 +494,8 @@ class RecursiveMakeBackend(CommonBackend):
             }
             var = suffix_map[obj.canonical_suffix]
             for f in sorted(obj.files):
-                backend_file.write('%s += %s\n' % (var, f))
+                backend_file.write('%s += %s\n' % (
+                    var, mozpath.relpath(f, backend_file.srcdir)))
         elif isinstance(obj, VariablePassthru):
             # Sorted so output is consistent and we don't bump mtimes.
             for k, v in sorted(obj.variables.items()):
@@ -398,7 +507,8 @@ class RecursiveMakeBackend(CommonBackend):
                         backend_file.write('%s := 1\n' % k)
                 else:
                     backend_file.write('%s := %s\n' % (k, v))
-
+        elif isinstance(obj, HostDefines):
+            self._process_defines(obj, backend_file, which='HOST_DEFINES')
         elif isinstance(obj, Defines):
             self._process_defines(obj, backend_file)
 
@@ -409,17 +519,22 @@ class RecursiveMakeBackend(CommonBackend):
             backend_file.write('GENERATED_FILES += %s\n' % obj.output)
             if obj.script:
                 backend_file.write("""{output}: {script}{inputs}
-\t$(call py_action,file_generate,{script} {output}{inputs})
+\t$(REPORT_BUILD)
+\t$(call py_action,file_generate,{script} {method} {output}{inputs})
 
 """.format(output=obj.output,
            inputs=' ' + ' '.join(obj.inputs) if obj.inputs else '',
-           script=obj.script))
+           script=obj.script,
+           method=obj.method))
 
         elif isinstance(obj, TestHarnessFiles):
             self._process_test_harness_files(obj, backend_file)
 
         elif isinstance(obj, Resources):
             self._process_resources(obj, obj.resources, backend_file)
+
+        elif isinstance(obj, BrandingFiles):
+            self._process_branding_files(obj, obj.files, backend_file)
 
         elif isinstance(obj, JsPreferenceFile):
             if obj.path.startswith('/'):
@@ -488,6 +603,31 @@ class RecursiveMakeBackend(CommonBackend):
 
         elif isinstance(obj, FinalTargetFiles):
             self._process_final_target_files(obj, obj.files, obj.target)
+
+        elif isinstance(obj, DistFiles):
+            # We'd like to install these via manifests as preprocessed files.
+            # But they currently depend on non-standard flags being added via
+            # some Makefiles, so for now we just pass them through to the
+            # underlying Makefile.in.
+            for f in obj.files:
+                backend_file.write('DIST_FILES += %s\n' % f)
+
+        elif isinstance(obj, AndroidResDirs):
+            for p in obj.paths:
+                backend_file.write('ANDROID_RES_DIRS += %s\n' % p.full_path)
+
+        elif isinstance(obj, AndroidAssetsDirs):
+            for p in obj.paths:
+                backend_file.write('ANDROID_ASSETS_DIRS += %s\n' % p.full_path)
+
+        elif isinstance(obj, AndroidExtraResDirs):
+            for p in obj.paths:
+                backend_file.write('ANDROID_EXTRA_RES_DIRS += %s\n' % p.full_path)
+
+        elif isinstance(obj, AndroidExtraPackages):
+            for p in obj.packages:
+                backend_file.write('ANDROID_EXTRA_PACKAGES += %s\n' % p)
+
         else:
             return
         obj.ack()
@@ -622,6 +762,31 @@ class RecursiveMakeBackend(CommonBackend):
             rule = makefile.create_rule(['$(all_absolute_unified_files)'])
             rule.add_dependencies(['$(CURDIR)/%: %'])
 
+    def _check_blacklisted_variables(self, makefile_in, makefile_content):
+        if b'EXTERNALLY_MANAGED_MAKE_FILE' in makefile_content:
+            # Bypass the variable restrictions for externally managed makefiles.
+            return
+
+        for l in makefile_content.splitlines():
+            l = l.strip()
+            # Don't check comments
+            if l.startswith(b'#'):
+                continue
+            for x in chain(MOZBUILD_VARIABLES, DEPRECATED_VARIABLES):
+                if x not in l:
+                    continue
+
+                # Finding the variable name in the Makefile is not enough: it
+                # may just appear as part of something else, like DIRS appears
+                # in GENERATED_DIRS.
+                if re.search(r'\b%s\s*[:?+]?=' % x, l):
+                    if x in MOZBUILD_VARIABLES:
+                        message = MOZBUILD_VARIABLES_MESSAGE
+                    else:
+                        message = DEPRECATED_VARIABLES_MESSAGE
+                    raise Exception('Variable %s is defined in %s. %s'
+                                    % (x, makefile_in, message))
+
     def consume_finished(self):
         CommonBackend.consume_finished(self)
 
@@ -668,6 +833,10 @@ class RecursiveMakeBackend(CommonBackend):
                             continue
                         self._no_skip['tools'].add(mozpath.relpath(objdir,
                             self.environment.topobjdir))
+
+                    # Detect any Makefile.ins that contain variables on the
+                    # moz.build-only list
+                    self._check_blacklisted_variables(makefile_in, content)
 
         self._fill_root_mk()
 
@@ -780,11 +949,11 @@ class RecursiveMakeBackend(CommonBackend):
                 dest = mozpath.join(namespace, path, mozpath.basename(s))
                 yield source, dest, strings.flags_for(s)
 
-    def _process_defines(self, obj, backend_file):
+    def _process_defines(self, obj, backend_file, which='DEFINES'):
         """Output the DEFINES rules to the given backend file."""
         defines = list(obj.get_defines())
         if defines:
-            backend_file.write('DEFINES +=')
+            backend_file.write(which + ' +=')
             for define in defines:
                 backend_file.write(' %s' % define)
             backend_file.write('\n')
@@ -809,7 +978,7 @@ class RecursiveMakeBackend(CommonBackend):
 
         for path, patterns in obj.srcdir_pattern_files.iteritems():
             for p in patterns:
-                self._install_manifests['tests'].add_pattern_symlink(obj.srcdir, p, path)
+                self._install_manifests['tests'].add_pattern_symlink(p[0], p[1], path)
 
         for path, files in obj.objdir_files.iteritems():
             prefix = 'TEST_HARNESS_%s' % path.replace('/', '_')
@@ -819,7 +988,8 @@ class RecursiveMakeBackend(CommonBackend):
 INSTALL_TARGETS += %(prefix)s
 """ % { 'prefix': prefix,
         'dest': '$(DEPTH)/_tests/%s' % path,
-        'files': ' '.join(files) })
+        'files': ' '.join(mozpath.relpath(f, backend_file.objdir)
+                          for f in files) })
 
     def _process_resources(self, obj, resources, backend_file):
         dep_path = mozpath.join(self.environment.topobjdir, '_build_manifests', '.deps', 'install')
@@ -838,6 +1008,22 @@ INSTALL_TARGETS += %(prefix)s
 
             if not os.path.exists(source):
                 raise Exception('File listed in RESOURCE_FILES does not exist: %s' % source)
+
+    def _process_branding_files(self, obj, files, backend_file):
+        for source, dest, flags in self._walk_hierarchy(obj, files):
+            if flags and flags.source:
+                source = mozpath.normpath(mozpath.join(obj.srcdir, flags.source))
+            if not os.path.exists(source):
+                raise Exception('File listed in BRANDING_FILES does not exist: %s' % source)
+
+            self._install_manifests['dist_branding'].add_symlink(source, dest)
+
+        # Also emit the necessary rules to create $(DIST)/branding during partial
+        # tree builds. The locale makefiles rely on this working.
+        backend_file.write('NONRECURSIVE_TARGETS += export\n')
+        backend_file.write('NONRECURSIVE_TARGETS_export += branding\n')
+        backend_file.write('NONRECURSIVE_TARGETS_export_branding_DIRECTORY = $(DEPTH)\n')
+        backend_file.write('NONRECURSIVE_TARGETS_export_branding_TARGETS += install-dist/branding\n')
 
     def _process_installation_target(self, obj, backend_file):
         # A few makefiles need to be able to override the following rules via
@@ -914,6 +1100,7 @@ INSTALL_TARGETS += %(prefix)s
         modules = manager.modules
         xpt_modules = sorted(modules.keys())
         xpt_files = set()
+        registered_xpt_files = set()
 
         mk = Makefile()
 
@@ -945,6 +1132,23 @@ INSTALL_TARGETS += %(prefix)s
         rules = StringIO()
         mk.dump(rules, removal_guard=False)
 
+        interfaces_manifests = []
+        dist_dir = mozpath.join(self.environment.topobjdir, 'dist')
+        for manifest, entries in manager.interface_manifests.items():
+            interfaces_manifests.append(mozpath.join('$(DEPTH)', manifest))
+            for xpt in sorted(entries):
+                registered_xpt_files.add(mozpath.join(
+                    '$(DEPTH)', mozpath.dirname(manifest), xpt))
+
+            if install_target.startswith('dist/'):
+                path = mozpath.join(self.environment.topobjdir, manifest)
+                path = mozpath.relpath(path, dist_dir)
+                prefix, subpath = path.split('/', 1)
+                key = 'dist_%s' % prefix
+                self._install_manifests[key].add_optional_exists(subpath)
+
+        chrome_manifests = [mozpath.join('$(DEPTH)', m) for m in sorted(manager.chrome_manifests)]
+
         # Create dependency for output header so we force regeneration if the
         # header was deleted. This ideally should not be necessary. However,
         # some processes (such as PGO at the time this was implemented) wipe
@@ -959,9 +1163,12 @@ INSTALL_TARGETS += %(prefix)s
         obj.topobjdir = self.environment.topobjdir
         obj.config = self.environment
         self._create_makefile(obj, extra=dict(
+            chrome_manifests = ' '.join(chrome_manifests),
+            interfaces_manifests = ' '.join(interfaces_manifests),
             xpidl_rules=rules.getvalue(),
             xpidl_modules=' '.join(xpt_modules),
-            xpt_files=' '.join(sorted(xpt_files)),
+            xpt_files=' '.join(sorted(xpt_files - registered_xpt_files)),
+            registered_xpt_files=' '.join(sorted(registered_xpt_files)),
         ))
 
     def _process_program(self, program, backend_file):
@@ -1093,6 +1300,8 @@ INSTALL_TARGETS += %(prefix)s
         backend_file.write('REAL_LIBRARY := %s\n' % libdef.lib_name)
         if libdef.is_sdk:
             backend_file.write('SDK_LIBRARY := %s\n' % libdef.import_name)
+        if libdef.no_expand_lib:
+            backend_file.write('NO_EXPAND_LIBS := 1\n')
 
     def _process_host_library(self, libdef, backend_file):
         backend_file.write('HOST_LIBRARY_NAME = %s\n' % libdef.basename)

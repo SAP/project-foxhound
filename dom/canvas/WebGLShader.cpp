@@ -92,6 +92,11 @@ TranslateWithoutValidation(const nsACString& sourceNS, bool isWebGL2,
 
     switch (glesslVersion) {
     case 100:
+        if (!versionStrLen) {
+            /* According to ARB_ES2_compatibility extension glsl
+             * should accept #version 100 for ES 2 shaders. */
+            reversionedSource.insert(versionStrStart, "#version 100\n");
+        }
         break;
     case 300:
         reversionedSource.insert(versionStrStart, "#version 330\n");
@@ -140,6 +145,8 @@ WebGLShader::WebGLShader(WebGLContext* webgl, GLenum type)
     : WebGLContextBoundObject(webgl)
     , mGLName(CreateShader(webgl->GL(), type))
     , mType(type)
+    , mTranslationSuccessful(false)
+    , mCompilationSuccessful(false)
 {
     mContext->mShaders.insertBack(this);
 }
@@ -299,6 +306,16 @@ WebGLShader::CalcNumSamplerUniforms() const
     return 0;
 }
 
+size_t
+WebGLShader::NumAttributes() const
+{
+    if (mValidator)
+        return mValidator->NumAttributes();
+
+    // TODO
+    return 0;
+}
+
 void
 WebGLShader::BindAttribLocation(GLuint prog, const nsCString& userName,
                                 GLuint index) const
@@ -345,13 +362,60 @@ WebGLShader::FindUniformByMappedName(const nsACString& mappedName,
     return true;
 }
 
+bool
+WebGLShader::FindUniformBlockByMappedName(const nsACString& mappedName,
+                                          nsCString* const out_userName,
+                                          bool* const out_isArray) const
+{
+    // TODO: Extract block information from shader validator.
+    return false;
+}
+
+void
+WebGLShader::ApplyTransformFeedbackVaryings(GLuint prog,
+                                            const std::vector<nsCString>& varyings,
+                                            GLenum bufferMode,
+                                            std::vector<std::string>* out_mappedVaryings) const
+{
+    MOZ_ASSERT(mType == LOCAL_GL_VERTEX_SHADER);
+    MOZ_ASSERT(!varyings.empty());
+    MOZ_ASSERT(out_mappedVaryings);
+
+    const size_t varyingsCount = varyings.size();
+    std::vector<std::string> mappedVaryings;
+
+    for (size_t i = 0; i < varyingsCount; i++) {
+        const nsCString& userName = varyings[i];
+        std::string userNameStr(userName.BeginReading());
+
+        const std::string* mappedNameStr = &userNameStr;
+        // TODO: Are vertex->fragment shader varyings listed under attribs?
+        if (mValidator)
+            mValidator->FindAttribMappedNameByUserName(userNameStr, &mappedNameStr);
+
+        mappedVaryings.push_back(*mappedNameStr);
+    }
+
+    // Temporary, tight packed array of string pointers into mappedVaryings.
+    std::vector<const GLchar*> strings;
+    strings.resize(varyingsCount);
+    for (size_t i = 0; i < varyingsCount; i++) {
+        strings[i] = mappedVaryings[i].c_str();
+    }
+
+    mContext->MakeContextCurrent();
+    mContext->gl->fTransformFeedbackVaryings(prog, varyingsCount, &strings[0], bufferMode);
+
+    out_mappedVaryings->swap(mappedVaryings);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Boilerplate
 
 JSObject*
-WebGLShader::WrapObject(JSContext* js)
+WebGLShader::WrapObject(JSContext* js, JS::Handle<JSObject*> givenProto)
 {
-    return dom::WebGLShaderBinding::Wrap(js, this);
+    return dom::WebGLShaderBinding::Wrap(js, this, givenProto);
 }
 
 size_t

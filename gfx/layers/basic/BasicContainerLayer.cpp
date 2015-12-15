@@ -14,7 +14,6 @@
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsISupportsImpl.h"            // for Layer::AddRef, etc
 #include "nsPoint.h"                    // for nsIntPoint
-#include "nsRect.h"                     // for nsIntRect
 #include "nsRegion.h"                   // for nsIntRegion
 #include "ReadbackProcessor.h"
 
@@ -45,7 +44,7 @@ BasicContainerLayer::ComputeEffectiveTransforms(const Matrix4x4& aTransformToSur
   if (!idealTransform.CanDraw2D()) {
     mEffectiveTransform = idealTransform;
     ComputeEffectiveTransformsForChildren(Matrix4x4());
-    ComputeEffectiveTransformForMaskLayer(Matrix4x4());
+    ComputeEffectiveTransformForMaskLayers(Matrix4x4());
     mUseIntermediateSurface = true;
     return;
   }
@@ -55,7 +54,7 @@ BasicContainerLayer::ComputeEffectiveTransforms(const Matrix4x4& aTransformToSur
   // need to apply any compensation using the residual from SnapTransformTranslation.
   ComputeEffectiveTransformsForChildren(idealTransform);
 
-  ComputeEffectiveTransformForMaskLayer(aTransformToSurface);
+  ComputeEffectiveTransformForMaskLayers(aTransformToSurface);
 
   Layer* child = GetFirstChild();
   bool hasSingleBlendingChild = false;
@@ -78,7 +77,7 @@ BasicContainerLayer::ComputeEffectiveTransforms(const Matrix4x4& aTransformToSur
 }
 
 bool
-BasicContainerLayer::ChildrenPartitionVisibleRegion(const nsIntRect& aInRect)
+BasicContainerLayer::ChildrenPartitionVisibleRegion(const gfx::IntRect& aInRect)
 {
   Matrix transform;
   if (!GetEffectiveTransform().CanDraw2D(&transform) ||
@@ -86,7 +85,7 @@ BasicContainerLayer::ChildrenPartitionVisibleRegion(const nsIntRect& aInRect)
     return false;
 
   nsIntPoint offset(int32_t(transform._31), int32_t(transform._32));
-  nsIntRect rect = aInRect.Intersect(GetEffectiveVisibleRegion().GetBounds() + offset);
+  gfx::IntRect rect = aInRect.Intersect(GetEffectiveVisibleRegion().GetBounds() + offset);
   nsIntRegion covered;
 
   for (Layer* l = mFirstChild; l; l = l->GetNextSibling()) {
@@ -102,7 +101,7 @@ BasicContainerLayer::ChildrenPartitionVisibleRegion(const nsIntRect& aInRect)
     childRegion.MoveBy(int32_t(childTransform._31), int32_t(childTransform._32));
     childRegion.And(childRegion, rect);
     if (l->GetClipRect()) {
-      childRegion.And(childRegion, *l->GetClipRect() + offset);
+      childRegion.And(childRegion, ParentLayerIntRect::ToUntyped(*l->GetClipRect()) + offset);
     }
     nsIntRegion intersection;
     intersection.And(covered, childRegion);
@@ -141,5 +140,5 @@ BasicLayerManager::CreateContainerLayer()
   return layer.forget();
 }
 
-}
-}
+} // namespace layers
+} // namespace mozilla

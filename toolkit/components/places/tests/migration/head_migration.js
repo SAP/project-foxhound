@@ -8,7 +8,8 @@ const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 
 // Import common head.
-let (commonFile = do_get_file("../head_common.js", false)) {
+{
+  let commonFile = do_get_file("../head_common.js", false);
   let uri = Services.io.newFileURI(commonFile);
   Services.scriptloader.loadSubScript(uri.spec, this);
 }
@@ -26,7 +27,7 @@ const DB_FILENAME = "places.sqlite";
  *        toolkit/components/places/tests/migration!
  * @return {Promise}
  */
-let setupPlacesDatabase = Task.async(function* (aFileName) {
+var setupPlacesDatabase = Task.async(function* (aFileName) {
   let currentDir = yield OS.File.getCurrentDirectory();
 
   let src = OS.Path.join(currentDir, aFileName);

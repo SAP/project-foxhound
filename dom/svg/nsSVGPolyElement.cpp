@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -121,8 +122,10 @@ nsSVGPolyElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks)
 }
 
 bool
-nsSVGPolyElement::GetGeometryBounds(
-  Rect* aBounds, const StrokeOptions& aStrokeOptions, const Matrix& aTransform)
+nsSVGPolyElement::GetGeometryBounds(Rect* aBounds,
+                                    const StrokeOptions& aStrokeOptions,
+                                    const Matrix& aToBoundsSpace,
+                                    const Matrix* aToNonScalingStrokeSpace)
 {
   const SVGPointList &points = mPoints.GetAnimValue();
 
@@ -132,23 +135,23 @@ nsSVGPolyElement::GetGeometryBounds(
     return true;
   }
 
-  if (aStrokeOptions.mLineWidth > 0) {
-    // We don't handle stroke-miterlimit etc. yet
+  if (aStrokeOptions.mLineWidth > 0 || aToNonScalingStrokeSpace) {
+    // We don't handle non-scaling-stroke or stroke-miterlimit etc. yet
     return false;
   }
 
-  if (aTransform.IsRectilinear()) {
+  if (aToBoundsSpace.IsRectilinear()) {
     // We can avoid transforming each point and just transform the result.
     // Important for large point lists.
     Rect bounds(points[0], Size());
     for (uint32_t i = 1; i < points.Length(); ++i) {
       bounds.ExpandToEnclose(points[i]);
     }
-    *aBounds = aTransform.TransformBounds(bounds);
+    *aBounds = aToBoundsSpace.TransformBounds(bounds);
   } else {
-    *aBounds = Rect(aTransform * points[0], Size());
+    *aBounds = Rect(aToBoundsSpace * points[0], Size());
     for (uint32_t i = 1; i < points.Length(); ++i) {
-      aBounds->ExpandToEnclose(aTransform * points[i]);
+      aBounds->ExpandToEnclose(aToBoundsSpace * points[i]);
     }
   }
   return true;

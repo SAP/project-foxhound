@@ -1,11 +1,11 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_bluetooth_bluetoothdbusservice_h__
-#define mozilla_dom_bluetooth_bluetoothdbusservice_h__
+#ifndef mozilla_dom_bluetooth_bluez_BluetoothDBusService_h
+#define mozilla_dom_bluetooth_bluez_BluetoothDBusService_h
 
 #include "mozilla/Attributes.h"
 #include "BluetoothCommon.h"
@@ -47,23 +47,30 @@ public:
 
   bool IsReady();
 
-  virtual nsresult StartInternal() override;
+  virtual nsresult StartInternal(BluetoothReplyRunnable* aRunnable) override;
 
-  virtual nsresult StopInternal() override;
+  virtual nsresult StopInternal(BluetoothReplyRunnable* aRunnable) override;
 
-  virtual nsresult GetDefaultAdapterPathInternal(
-                                             BluetoothReplyRunnable* aRunnable) override;
+  virtual nsresult
+  GetAdaptersInternal(BluetoothReplyRunnable* aRunnable) override;
 
-  virtual nsresult GetConnectedDevicePropertiesInternal(uint16_t aServiceUuid,
-                                             BluetoothReplyRunnable* aRunnable) override;
+  virtual nsresult
+  GetConnectedDevicePropertiesInternal(
+    uint16_t aServiceUuid, BluetoothReplyRunnable* aRunnable) override;
 
-  virtual nsresult GetPairedDevicePropertiesInternal(
-                                     const nsTArray<nsString>& aDeviceAddresses,
-                                     BluetoothReplyRunnable* aRunnable) override;
+  virtual nsresult
+  GetPairedDevicePropertiesInternal(const nsTArray<nsString>& aDeviceAddresses,
+                                    BluetoothReplyRunnable* aRunnable) override;
 
-  virtual nsresult StartDiscoveryInternal(BluetoothReplyRunnable* aRunnable) override;
+  virtual nsresult
+  FetchUuidsInternal(const nsAString& aDeviceAddress,
+                     BluetoothReplyRunnable* aRunnable) override;
 
-  virtual nsresult StopDiscoveryInternal(BluetoothReplyRunnable* aRunnable) override;
+  virtual void
+  StartDiscoveryInternal(BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  StopDiscoveryInternal(BluetoothReplyRunnable* aRunnable) override;
 
   virtual nsresult
   SetProperty(BluetoothObjectType aType,
@@ -88,15 +95,27 @@ public:
   RemoveDeviceInternal(const nsAString& aDeviceObjectPath,
                        BluetoothReplyRunnable* aRunnable) override;
 
-  virtual bool
+  virtual void
+  PinReplyInternal(const nsAString& aDeviceAddress,
+                   bool aAccept,
+                   const nsAString& aPinCode,
+                   BluetoothReplyRunnable* aRunnable);
+
+  virtual void
+  SspReplyInternal(const nsAString& aDeviceAddress,
+                   BluetoothSspVariant aVariant,
+                   bool aAccept,
+                   BluetoothReplyRunnable* aRunnable);
+
+  virtual void
   SetPinCodeInternal(const nsAString& aDeviceAddress, const nsAString& aPinCode,
                      BluetoothReplyRunnable* aRunnable) override;
 
-  virtual bool
+  virtual void
   SetPasskeyInternal(const nsAString& aDeviceAddress, uint32_t aPasskey,
                      BluetoothReplyRunnable* aRunnable) override;
 
-  virtual bool
+  virtual void
   SetPairingConfirmationInternal(const nsAString& aDeviceAddress, bool aConfirm,
                                  BluetoothReplyRunnable* aRunnable) override;
 
@@ -105,10 +124,6 @@ public:
           uint32_t aCod,
           uint16_t aServiceUuid,
           BluetoothReplyRunnable* aRunnable) override;
-
-  virtual void
-  IsConnected(const uint16_t aServiceUuid,
-              BluetoothReplyRunnable* aRunnable) override;
 
   virtual void
   Disconnect(const nsAString& aDeviceAddress, uint16_t aServiceUuid,
@@ -122,7 +137,7 @@ public:
 
   virtual void
   SendFile(const nsAString& aDeviceAddress,
-           nsIDOMBlob* aBlob,
+           Blob* aBlob,
            BluetoothReplyRunnable* aRunnable) override;
 
   virtual void
@@ -141,6 +156,37 @@ public:
 
   virtual void
   IsScoConnected(BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ReplyTovCardPulling(BlobParent* aBlobParent,
+                      BlobChild* aBlobChild,
+                      BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ReplyTovCardPulling(Blob* aBlob,
+                      BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ReplyToPhonebookPulling(BlobParent* aBlobParent,
+                          BlobChild* aBlobChild,
+                          uint16_t aPhonebookSize,
+                          BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ReplyToPhonebookPulling(Blob* aBlob,
+                          uint16_t aPhonebookSize,
+                          BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ReplyTovCardListing(BlobParent* aBlobParent,
+                      BlobChild* aBlobChild,
+                      uint16_t aPhonebookSize,
+                      BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ReplyTovCardListing(Blob* aBlob,
+                      uint16_t aPhonebookSize,
+                      BluetoothReplyRunnable* aRunnable);
 
 #ifdef MOZ_B2G_RIL
   virtual void
@@ -180,6 +226,101 @@ public:
   virtual nsresult
   SendInputMessage(const nsAString& aDeviceAddresses,
                    const nsAString& aMessage) override;
+
+  virtual void
+  StartLeScanInternal(const nsTArray<nsString>& aServiceUuids,
+                      BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  StopLeScanInternal(const nsAString& aAppUuid,
+                     BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  ConnectGattClientInternal(const nsAString& aAppUuid,
+                            const nsAString& aDeviceAddress,
+                            BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  DisconnectGattClientInternal(const nsAString& aAppUuid,
+                               const nsAString& aDeviceAddress,
+                               BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  DiscoverGattServicesInternal(const nsAString& aAppUuid,
+                               BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientStartNotificationsInternal(
+    const nsAString& aAppUuid,
+    const BluetoothGattServiceId& aServId,
+    const BluetoothGattId& aCharId,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientStopNotificationsInternal(
+    const nsAString& aAppUuid,
+    const BluetoothGattServiceId& aServId,
+    const BluetoothGattId& aCharId,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  UnregisterGattClientInternal(int aClientIf,
+                               BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientReadRemoteRssiInternal(
+    int aClientIf, const nsAString& aDeviceAddress,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientReadCharacteristicValueInternal(
+    const nsAString& aAppUuid,
+    const BluetoothGattServiceId& aServiceId,
+    const BluetoothGattId& aCharacteristicId,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientWriteCharacteristicValueInternal(
+    const nsAString& aAppUuid,
+    const BluetoothGattServiceId& aServiceId,
+    const BluetoothGattId& aCharacteristicId,
+    const BluetoothGattWriteType& aWriteType,
+    const nsTArray<uint8_t>& aValue,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientReadDescriptorValueInternal(
+    const nsAString& aAppUuid,
+    const BluetoothGattServiceId& aServiceId,
+    const BluetoothGattId& aCharacteristicId,
+    const BluetoothGattId& aDescriptorId,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattClientWriteDescriptorValueInternal(
+    const nsAString& aAppUuid,
+    const BluetoothGattServiceId& aServiceId,
+    const BluetoothGattId& aCharacteristicId,
+    const BluetoothGattId& aDescriptorId,
+    const nsTArray<uint8_t>& aValue,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattServerConnectPeripheralInternal(
+    const nsAString& aAppUuid,
+    const nsAString& aAddress,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  GattServerDisconnectPeripheralInternal(
+    const nsAString& aAppUuid,
+    const nsAString& aAddress,
+    BluetoothReplyRunnable* aRunnable) override;
+
+  virtual void
+  UnregisterGattServerInternal(int aServerIf,
+                               BluetoothReplyRunnable* aRunnable) override;
+
 private:
   nsresult SendGetPropertyMessage(const nsAString& aPath,
                                   const char* aInterface,
@@ -203,4 +344,4 @@ private:
 
 END_BLUETOOTH_NAMESPACE
 
-#endif
+#endif // mozilla_dom_bluetooth_bluez_BluetoothDBusService_h

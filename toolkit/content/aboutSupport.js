@@ -10,6 +10,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Troubleshoot.jsm");
 Cu.import("resource://gre/modules/ResetProfile.jsm");
+Cu.import("resource://gre/modules/AppConstants.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
                                   "resource://gre/modules/PluralForm.jsm");
@@ -31,13 +32,13 @@ window.addEventListener("load", function onload(event) {
 // Each property in this object corresponds to a property in Troubleshoot.jsm's
 // snapshot data.  Each function is passed its property's corresponding data,
 // and it's the function's job to update the page with it.
-let snapshotFormatters = {
+var snapshotFormatters = {
 
   application: function application(data) {
     $("application-box").textContent = data.name;
     $("useragent-box").textContent = data.userAgent;
     $("supportLink").href = data.supportURL;
-    let version = data.version;
+    let version = AppConstants.MOZ_APP_VERSION_DISPLAY;
     if (data.vendor)
       version += " (" + data.vendor + ")";
     $("version-box").textContent = version;
@@ -47,6 +48,8 @@ let snapshotFormatters = {
 
     $("multiprocess-box").textContent = stringBundle().formatStringFromName("multiProcessStatus",
       [data.numRemoteWindows, data.numTotalWindows, data.remoteAutoStart], 3);
+
+    $("safemode-box").textContent = data.safeMode;
   },
 
 #ifdef MOZ_CRASHREPORTER
@@ -168,8 +171,65 @@ let snapshotFormatters = {
   },
 
   graphics: function graphics(data) {
+    let strings = stringBundle();
+
+    function localizedMsg(msgArray) {
+      let nameOrMsg = msgArray.shift();
+      if (msgArray.length) {
+        // formatStringFromName logs an NS_ASSERTION failure otherwise that says
+        // "use GetStringFromName".  Lame.
+        try {
+          return strings.formatStringFromName(nameOrMsg, msgArray,
+                                              msgArray.length);
+        }
+        catch (err) {
+          // Throws if nameOrMsg is not a name in the bundle.  This shouldn't
+          // actually happen though, since msgArray.length > 1 => nameOrMsg is a
+          // name in the bundle, not a message, and the remaining msgArray
+          // elements are parameters.
+          return nameOrMsg;
+        }
+      }
+      try {
+        return strings.GetStringFromName(nameOrMsg);
+      }
+      catch (err) {
+        // Throws if nameOrMsg is not a name in the bundle.
+      }
+      return nameOrMsg;
+    }
+
+    // Read APZ info out of data.info, stripping it out in the process.
+    let apzInfo = [];
+    let formatApzInfo = function (info) {
+      let out = [];
+      for (let type of ['Wheel', 'Touch']) {
+        let key = 'Apz' + type + 'Input';
+        let warningKey = key + 'Warning';
+
+        if (!(key in info))
+          continue;
+
+        let badPref = info[warningKey];
+        delete info[key];
+        delete info[warningKey];
+
+        let message;
+        if (badPref)
+          message = localizedMsg([type.toLowerCase() + 'Warning', badPref]);
+        else
+          message = localizedMsg([type.toLowerCase() + 'Enabled']);
+        dump(message + ', ' + (type.toLowerCase() + 'Warning') + ', ' + badPref + '\n');
+        out.push(message);
+      }
+
+      return out;
+    };
+
     // graphics-info-properties tbody
     if ("info" in data) {
+      apzInfo = formatApzInfo(data.info);
+
       let trs = sortedArrayFromObject(data.info).map(function ([prop, val]) {
         return $.new("tr", [
           $.new("th", prop, "column"),
@@ -199,6 +259,7 @@ let snapshotFormatters = {
                    return $.new("tr", [$.new("th", val.header, "column"),
                                        $.new("td", val.message)]);
                  }));
+        delete data.indices;
       } else {
         $.append($("graphics-failures-tbody"),
           [$.new("tr", [$.new("th", "LogFailure", "column"),
@@ -207,39 +268,17 @@ let snapshotFormatters = {
                        }))])]);
       }
 
-	delete data.failures;
+      delete data.failures;
     }
 
     // graphics-tbody tbody
 
-    function localizedMsg(msgArray) {
-      let nameOrMsg = msgArray.shift();
-      if (msgArray.length) {
-        // formatStringFromName logs an NS_ASSERTION failure otherwise that says
-        // "use GetStringFromName".  Lame.
-        try {
-          return strings.formatStringFromName(nameOrMsg, msgArray,
-                                              msgArray.length);
-        }
-        catch (err) {
-          // Throws if nameOrMsg is not a name in the bundle.  This shouldn't
-          // actually happen though, since msgArray.length > 1 => nameOrMsg is a
-          // name in the bundle, not a message, and the remaining msgArray
-          // elements are parameters.
-          return nameOrMsg;
-        }
-      }
-      try {
-        return strings.GetStringFromName(nameOrMsg);
-      }
-      catch (err) {
-        // Throws if nameOrMsg is not a name in the bundle.
-      }
-      return nameOrMsg;
-    }
-
     let out = Object.create(data);
-    let strings = stringBundle();
+
+    if (apzInfo.length == 0)
+      out.asyncPanZoom = localizedMsg(["apzNone"]);
+    else
+      out.asyncPanZoom = apzInfo.join("; ");
 
     out.acceleratedWindows =
       data.numAcceleratedWindows + "/" + data.numTotalWindows;
@@ -343,22 +382,24 @@ let snapshotFormatters = {
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   sandbox: function sandbox(data) {
-    const keys = ["hasSeccompBPF", "canSandboxContent", "canSandboxMedia"];
     let strings = stringBundle();
     let tbody = $("sandbox-tbody");
-    for (let key of keys) {
-      if (key in data) {
-	tbody.appendChild($.new("tr", [
-	  $.new("th", strings.GetStringFromName(key), "column"),
-	  $.new("td", data[key])
-	]));
+    for (let key in data) {
+      // Simplify the display a little in the common case.
+      if (key === "hasPrivilegedUserNamespaces" &&
+          data[key] === data["hasUserNamespaces"]) {
+        continue;
       }
+      tbody.appendChild($.new("tr", [
+        $.new("th", strings.GetStringFromName(key), "column"),
+        $.new("td", data[key])
+      ]));
     }
   },
 #endif
 };
 
-let $ = document.getElementById.bind(document);
+var $ = document.getElementById.bind(document);
 
 $.new = function $_new(tag, textContentOrChildren, className, attributes) {
   let elt = document.createElement(tag);

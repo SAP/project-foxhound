@@ -15,13 +15,13 @@ namespace dom {
 
 class AudioContext;
 
-class StereoPannerNode : public AudioNode
+class StereoPannerNode final : public AudioNode
 {
 public:
   MOZ_DECLARE_REFCOUNTED_TYPENAME(StereoPannerNode)
   explicit StereoPannerNode(AudioContext* aContext);
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   virtual void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override
   {
@@ -64,8 +64,8 @@ private:
   nsRefPtr<AudioParam> mPan;
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif
 

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +15,8 @@ KeyboardEvent::KeyboardEvent(EventTarget* aOwner,
                              nsPresContext* aPresContext,
                              WidgetKeyboardEvent* aEvent)
   : UIEvent(aOwner, aPresContext,
-            aEvent ? aEvent : new WidgetKeyboardEvent(false, 0, nullptr))
+            aEvent ? aEvent :
+                     new WidgetKeyboardEvent(false, eVoidEvent, nullptr))
   , mInitializedByCtor(false)
   , mInitializedWhichValue(0)
 {
@@ -150,16 +152,18 @@ KeyboardEvent::CharCode()
     return mEvent->AsKeyboardEvent()->charCode;
   }
 
-  switch (mEvent->message) {
-  case NS_KEY_BEFORE_DOWN:
-  case NS_KEY_DOWN:
-  case NS_KEY_AFTER_DOWN:
-  case NS_KEY_BEFORE_UP:
-  case NS_KEY_UP:
-  case NS_KEY_AFTER_UP:
+  switch (mEvent->mMessage) {
+  case eBeforeKeyDown:
+  case eKeyDown:
+  case eAfterKeyDown:
+  case eBeforeKeyUp:
+  case eKeyUp:
+  case eAfterKeyUp:
     return 0;
-  case NS_KEY_PRESS:
+  case eKeyPress:
     return mEvent->AsKeyboardEvent()->charCode;
+  default:
+    break;
   }
   return 0;
 }
@@ -194,15 +198,15 @@ KeyboardEvent::Which()
     return mInitializedWhichValue;
   }
 
-  switch (mEvent->message) {
-    case NS_KEY_BEFORE_DOWN:
-    case NS_KEY_DOWN:
-    case NS_KEY_AFTER_DOWN:
-    case NS_KEY_BEFORE_UP:
-    case NS_KEY_UP:
-    case NS_KEY_AFTER_UP:
+  switch (mEvent->mMessage) {
+    case eBeforeKeyDown:
+    case eKeyDown:
+    case eAfterKeyDown:
+    case eBeforeKeyUp:
+    case eKeyUp:
+    case eAfterKeyUp:
       return KeyCode();
-    case NS_KEY_PRESS:
+    case eKeyPress:
       //Special case for 4xp bug 62878.  Try to make value of which
       //more closely mirror the values that 4.x gave for RETURN and BACKSPACE
       {
@@ -212,6 +216,8 @@ KeyboardEvent::Which()
         }
         return CharCode();
       }
+    default:
+      break;
   }
 
   return 0;
@@ -255,9 +261,9 @@ KeyboardEvent::InitWithKeyboardEventInit(EventTarget* aOwner,
 {
   bool trusted = Init(aOwner);
   aRv = InitKeyEvent(aType, aParam.mBubbles, aParam.mCancelable,
-                     aParam.mView, aParam.mCtrlKey, aParam.mAltKey,
-                     aParam.mShiftKey, aParam.mMetaKey,
+                     aParam.mView, false, false, false, false,
                      aParam.mKeyCode, aParam.mCharCode);
+  InitModifiers(aParam);
   SetTrusted(trusted);
   mDetail = aParam.mDetail;
   mInitializedByCtor = true;
@@ -308,14 +314,11 @@ KeyboardEvent::InitKeyEvent(const nsAString& aType,
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMKeyboardEvent(nsIDOMEvent** aInstancePtrResult,
-                       EventTarget* aOwner,
+already_AddRefed<KeyboardEvent>
+NS_NewDOMKeyboardEvent(EventTarget* aOwner,
                        nsPresContext* aPresContext,
                        WidgetKeyboardEvent* aEvent)
 {
-  KeyboardEvent* it = new KeyboardEvent(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<KeyboardEvent> it = new KeyboardEvent(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

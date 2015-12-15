@@ -10,9 +10,7 @@
 #include "GLContext.h"
 #include "GLLibraryEGL.h"
 
-#ifdef MOZ_WIDGET_GONK
-#include "HwcComposer2D.h"
-#endif
+class nsIWidget;
 
 namespace mozilla {
 namespace gl {
@@ -46,6 +44,10 @@ public:
         return static_cast<GLContextEGL*>(gl);
     }
 
+    static EGLSurface CreateSurfaceForWindow(nsIWidget* aWidget);
+
+    static void DestroySurface(EGLSurface aSurface);
+
     bool Init() override;
 
     virtual bool IsDoubleBuffered() const override {
@@ -62,6 +64,10 @@ public:
 
     virtual bool IsANGLE() const override {
         return sEGLLibrary.IsANGLE();
+    }
+
+    virtual bool IsWARP() const override {
+        return sEGLLibrary.IsWARP();
     }
 
     virtual bool BindTexImage() override;
@@ -90,15 +96,23 @@ public:
         return mContext;
     }
 
+    EGLSurface GetEGLSurface() {
+        return mSurface;
+    }
+
+    EGLDisplay GetEGLDisplay() {
+        return EGL_DISPLAY();
+    }
+
     bool BindTex2DOffscreen(GLContext *aOffscreen);
     void UnbindTex2DOffscreen(GLContext *aOffscreen);
     void BindOffscreenFramebuffer();
 
     static already_AddRefed<GLContextEGL>
-    CreateEGLPixmapOffscreenContext(const gfxIntSize& size);
+    CreateEGLPixmapOffscreenContext(const gfx::IntSize& size);
 
     static already_AddRefed<GLContextEGL>
-    CreateEGLPBufferOffscreenContext(const gfxIntSize& size);
+    CreateEGLPBufferOffscreenContext(const gfx::IntSize& size);
 
 protected:
     friend class GLContextProviderEGL;
@@ -114,17 +128,14 @@ protected:
     bool mIsDoubleBuffered;
     bool mCanBindToTexture;
     bool mShareWithEGLImage;
-#ifdef MOZ_WIDGET_GONK
-    nsRefPtr<HwcComposer2D> mHwc;
-#endif
     bool mOwnsContext;
 
     static EGLSurface CreatePBufferSurfaceTryingPowerOfTwo(EGLConfig config,
                                                            EGLenum bindToTextureFormat,
-                                                           gfxIntSize& pbsize);
+                                                           gfx::IntSize& pbsize);
 };
 
-}
-}
+} // namespace gl
+} // namespace mozilla
 
 #endif // GLCONTEXTEGL_H_

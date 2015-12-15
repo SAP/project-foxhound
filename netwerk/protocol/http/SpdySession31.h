@@ -26,9 +26,9 @@ class SpdyStream31;
 class nsHttpTransaction;
 
 class SpdySession31 final : public ASpdySession
-                              , public nsAHttpConnection
-                              , public nsAHttpSegmentReader
-                              , public nsAHttpSegmentWriter
+                          , public nsAHttpConnection
+                          , public nsAHttpSegmentReader
+                          , public nsAHttpSegmentWriter
 {
   ~SpdySession31();
 
@@ -425,6 +425,7 @@ private:
   nsDataHashtable<nsCStringHashKey, uint32_t> mTunnelHash;
 };
 
-}} // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // mozilla_net_SpdySession31_h

@@ -23,7 +23,7 @@ MarkLocals(BaselineFrame* frame, JSTracer* trc, unsigned start, unsigned end)
     if (start < end) {
         // Stack grows down.
         Value* last = frame->valueSlot(end - 1);
-        gc::MarkValueRootRange(trc, end - start, last, "baseline-stack");
+        TraceRootRange(trc, end - start, last, "baseline-stack");
     }
 }
 
@@ -32,49 +32,37 @@ BaselineFrame::trace(JSTracer* trc, JitFrameIterator& frameIterator)
 {
     replaceCalleeToken(MarkCalleeToken(trc, calleeToken()));
 
-    gc::MarkValueRoot(trc, &thisValue(), "baseline-this");
+    TraceRoot(trc, &thisValue(), "baseline-this");
 
     // Mark actual and formal args.
     if (isNonEvalFunctionFrame()) {
         unsigned numArgs = js::Max(numActualArgs(), numFormalArgs());
-        gc::MarkValueRootRange(trc, numArgs, argv(), "baseline-args");
+        TraceRootRange(trc, numArgs + isConstructing(), argv(), "baseline-args");
     }
 
     // Mark scope chain, if it exists.
     if (scopeChain_)
-        gc::MarkObjectRoot(trc, &scopeChain_, "baseline-scopechain");
+        TraceRoot(trc, &scopeChain_, "baseline-scopechain");
 
     // Mark return value.
     if (hasReturnValue())
-        gc::MarkValueRoot(trc, returnValue().address(), "baseline-rval");
+        TraceRoot(trc, returnValue().address(), "baseline-rval");
 
-    if (isEvalFrame())
-        gc::MarkScriptRoot(trc, &evalScript_, "baseline-evalscript");
+    if (isEvalFrame()) {
+        TraceRoot(trc, &evalScript_, "baseline-evalscript");
+        if (isFunctionFrame())
+            TraceRoot(trc, evalNewTargetAddress(), "baseline-evalNewTarget");
+    }
 
     if (hasArgsObj())
-        gc::MarkObjectRoot(trc, &argsObj_, "baseline-args-obj");
+        TraceRoot(trc, &argsObj_, "baseline-args-obj");
 
     // Mark locals and stack values.
     JSScript* script = this->script();
     size_t nfixed = script->nfixed();
-    size_t nlivefixed = script->nbodyfixed();
-
-    if (nfixed != nlivefixed) {
-        jsbytecode* pc;
-        frameIterator.baselineScriptAndPc(nullptr, &pc);
-
-        NestedScopeObject* staticScope = script->getStaticBlockScope(pc);
-        while (staticScope && !staticScope->is<StaticBlockObject>())
-            staticScope = staticScope->enclosingNestedScope();
-
-        if (staticScope) {
-            StaticBlockObject& blockObj = staticScope->as<StaticBlockObject>();
-            nlivefixed = blockObj.localOffset() + blockObj.numVariables();
-        }
-    }
-
-    MOZ_ASSERT(nlivefixed <= nfixed);
-    MOZ_ASSERT(nlivefixed >= script->nbodyfixed());
+    jsbytecode* pc;
+    frameIterator.baselineScriptAndPc(nullptr, &pc);
+    size_t nlivefixed = script->calculateLiveFixed(pc);
 
     // NB: It is possible that numValueSlots() could be zero, even if nfixed is
     // nonzero.  This is the case if the function has an early stack check.
@@ -100,6 +88,13 @@ BaselineFrame::trace(JSTracer* trc, JitFrameIterator& frameIterator)
 }
 
 bool
+BaselineFrame::isDirectEvalFrame() const
+{
+    return isEvalFrame() &&
+           script()->enclosingStaticScope()->as<StaticEvalObject>().isDirect();
+}
+
+bool
 BaselineFrame::copyRawFrameSlots(AutoValueVector* vec) const
 {
     unsigned nfixed = script()->nfixed();
@@ -115,7 +110,7 @@ BaselineFrame::copyRawFrameSlots(AutoValueVector* vec) const
 }
 
 bool
-BaselineFrame::strictEvalPrologue(JSContext* cx)
+BaselineFrame::initStrictEvalScopeObjects(JSContext* cx)
 {
     MOZ_ASSERT(isStrictEvalFrame());
 
@@ -129,16 +124,10 @@ BaselineFrame::strictEvalPrologue(JSContext* cx)
 }
 
 bool
-BaselineFrame::heavyweightFunPrologue(JSContext* cx)
-{
-    return initFunctionScopeObjects(cx);
-}
-
-bool
 BaselineFrame::initFunctionScopeObjects(JSContext* cx)
 {
     MOZ_ASSERT(isNonEvalFunctionFrame());
-    MOZ_ASSERT(fun()->isHeavyweight());
+    MOZ_ASSERT(fun()->needsCallObject());
 
     CallObject* callobj = CallObject::createForFunction(cx, this);
     if (!callobj)

@@ -17,8 +17,10 @@
 # include "jit/x64/Lowering-x64.h"
 #elif defined(JS_CODEGEN_ARM)
 # include "jit/arm/Lowering-arm.h"
-#elif defined(JS_CODEGEN_MIPS)
-# include "jit/mips/Lowering-mips.h"
+#elif defined(JS_CODEGEN_ARM64)
+# include "jit/arm64/Lowering-arm64.h"
+#elif defined(JS_CODEGEN_MIPS32)
+# include "jit/mips32/Lowering-mips32.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/Lowering-none.h"
 #else
@@ -47,9 +49,8 @@ class LIRGenerator : public LIRGeneratorSpecific
   private:
 
     void useBoxAtStart(LInstruction* lir, size_t n, MDefinition* mir,
-                       LUse::Policy policy = LUse::REGISTER) {
-        return useBox(lir, n, mir, policy, true);
-    }
+                       LUse::Policy policy = LUse::REGISTER);
+    void useBoxFixedAtStart(LInstruction* lir, size_t n, MDefinition* mir, ValueOperand op);
 
     void lowerBitOp(JSOp op, MInstruction* ins);
     void lowerShiftOp(JSOp op, MShiftInstruction* ins);
@@ -102,9 +103,10 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitArraySplice(MArraySplice* splice);
     void visitBail(MBail* bail);
     void visitUnreachable(MUnreachable* unreachable);
+    void visitEncodeSnapshot(MEncodeSnapshot* ins);
     void visitAssertFloat32(MAssertFloat32* ins);
+    void visitAssertRecoveredOnBailout(MAssertRecoveredOnBailout* ins);
     void visitGetDynamicName(MGetDynamicName* ins);
-    void visitFilterArgumentsOrEval(MFilterArgumentsOrEval* ins);
     void visitCallDirectEval(MCallDirectEval* ins);
     void visitTest(MTest* test);
     void visitGotoWithFake(MGotoWithFake* ins);
@@ -130,7 +132,6 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitAtan2(MAtan2* ins);
     void visitHypot(MHypot* ins);
     void visitPow(MPow* ins);
-    void visitRandom(MRandom* ins);
     void visitMathFunction(MMathFunction* ins);
     void visitAdd(MAdd* ins);
     void visitSub(MSub* ins);
@@ -140,6 +141,7 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitConcat(MConcat* ins);
     void visitCharCodeAt(MCharCodeAt* ins);
     void visitFromCharCode(MFromCharCode* ins);
+    void visitSinCos(MSinCos *ins);
     void visitStringSplit(MStringSplit* ins);
     void visitStart(MStart* start);
     void visitOsrEntry(MOsrEntry* entry);
@@ -160,8 +162,11 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitRegExpTest(MRegExpTest* ins);
     void visitRegExpReplace(MRegExpReplace* ins);
     void visitStringReplace(MStringReplace* ins);
+    void visitBinarySharedStub(MBinarySharedStub* ins);
+    void visitUnarySharedStub(MUnarySharedStub* ins);
     void visitLambda(MLambda* ins);
     void visitLambdaArrow(MLambdaArrow* ins);
+    void visitKeepAliveObject(MKeepAliveObject* ins);
     void visitSlots(MSlots* ins);
     void visitElements(MElements* ins);
     void visitConstantElements(MConstantElements* ins);
@@ -181,11 +186,16 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitSetArrayLength(MSetArrayLength* ins);
     void visitTypedArrayLength(MTypedArrayLength* ins);
     void visitTypedArrayElements(MTypedArrayElements* ins);
+    void visitSetDisjointTypedElements(MSetDisjointTypedElements* ins);
     void visitTypedObjectElements(MTypedObjectElements* ins);
     void visitSetTypedObjectOffset(MSetTypedObjectOffset* ins);
     void visitTypedObjectDescr(MTypedObjectDescr* ins);
     void visitInitializedLength(MInitializedLength* ins);
     void visitSetInitializedLength(MSetInitializedLength* ins);
+    void visitUnboxedArrayLength(MUnboxedArrayLength* ins);
+    void visitUnboxedArrayInitializedLength(MUnboxedArrayInitializedLength* ins);
+    void visitIncrementUnboxedArrayInitializedLength(MIncrementUnboxedArrayInitializedLength* ins);
+    void visitSetUnboxedArrayInitializedLength(MSetUnboxedArrayInitializedLength* ins);
     void visitNot(MNot* ins);
     void visitBoundsCheck(MBoundsCheck* ins);
     void visitBoundsCheckLower(MBoundsCheckLower* ins);
@@ -202,11 +212,12 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitArrayPopShift(MArrayPopShift* ins);
     void visitArrayPush(MArrayPush* ins);
     void visitArrayConcat(MArrayConcat* ins);
+    void visitArraySlice(MArraySlice* ins);
     void visitArrayJoin(MArrayJoin* ins);
-    void visitLoadTypedArrayElement(MLoadTypedArrayElement* ins);
+    void visitLoadUnboxedScalar(MLoadUnboxedScalar* ins);
     void visitLoadTypedArrayElementHole(MLoadTypedArrayElementHole* ins);
     void visitLoadTypedArrayElementStatic(MLoadTypedArrayElementStatic* ins);
-    void visitStoreTypedArrayElement(MStoreTypedArrayElement* ins);
+    void visitStoreUnboxedScalar(MStoreUnboxedScalar* ins);
     void visitStoreTypedArrayElementHole(MStoreTypedArrayElementHole* ins);
     void visitClampToUint8(MClampToUint8* ins);
     void visitLoadFixedSlot(MLoadFixedSlot* ins);
@@ -220,7 +231,9 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitGuardClass(MGuardClass* ins);
     void visitGuardObject(MGuardObject* ins);
     void visitGuardString(MGuardString* ins);
-    void visitGuardShapePolymorphic(MGuardShapePolymorphic* ins);
+    void visitGuardReceiverPolymorphic(MGuardReceiverPolymorphic* ins);
+    void visitGuardUnboxedExpando(MGuardUnboxedExpando* ins);
+    void visitLoadUnboxedExpando(MLoadUnboxedExpando* ins);
     void visitPolyInlineGuard(MPolyInlineGuard* ins);
     void visitAssertRange(MAssertRange* ins);
     void visitCallGetProperty(MCallGetProperty* ins);
@@ -271,6 +284,7 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitSimdInsertElement(MSimdInsertElement* ins);
     void visitSimdSignMask(MSimdSignMask* ins);
     void visitSimdSwizzle(MSimdSwizzle* ins);
+    void visitSimdGeneralShuffle(MSimdGeneralShuffle* ins);
     void visitSimdShuffle(MSimdShuffle* ins);
     void visitSimdUnaryArith(MSimdUnaryArith* ins);
     void visitSimdBinaryComp(MSimdBinaryComp* ins);
@@ -287,7 +301,9 @@ class LIRGenerator : public LIRGeneratorSpecific
     void visitLexicalCheck(MLexicalCheck* ins);
     void visitThrowUninitializedLexical(MThrowUninitializedLexical* ins);
     void visitDebugger(MDebugger* ins);
-    void visitNurseryObject(MNurseryObject* ins);
+    void visitNewTarget(MNewTarget* ins);
+    void visitArrowNewTarget(MArrowNewTarget* ins);
+    void visitAtomicIsLockFree(MAtomicIsLockFree* ins);
 };
 
 } // namespace jit

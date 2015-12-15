@@ -26,6 +26,7 @@
 <!ENTITY projectMenu_showPrefs_accesskey "e">
 <!ENTITY projectMenu_manageComponents_label "Manage Extra Components">
 <!ENTITY projectMenu_manageComponents_accesskey "M">
+<!ENTITY projectMenu_refreshTabs_label "Refresh Tabs">
 
 <!ENTITY runtimeMenu_label "Runtime">
 <!ENTITY runtimeMenu_accesskey "R">
@@ -195,3 +196,16 @@
 
 <!-- Logs panel -->
 <!ENTITY logs_title "Pre-packaging Command Logs">
+
+<!-- Simulator Options -->
+<!ENTITY simulator_title "Simulator Options">
+<!ENTITY simulator_remove "Delete Simulator">
+<!ENTITY simulator_reset "Restore Defaults">
+<!ENTITY simulator_name "Name">
+<!ENTITY simulator_software "Software">
+<!ENTITY simulator_version "Version">
+<!ENTITY simulator_profile "Profile">
+<!ENTITY simulator_hardware "Hardware">
+<!ENTITY simulator_device "Device">
+<!ENTITY simulator_screenSize "Screen">
+<!ENTITY simulator_pixelRatio "Pixel Ratio">

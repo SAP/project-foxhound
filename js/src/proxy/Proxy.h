@@ -29,20 +29,21 @@ class Proxy
     static bool getOwnPropertyDescriptor(JSContext* cx, HandleObject proxy, HandleId id,
                                          MutableHandle<JSPropertyDescriptor> desc);
     static bool defineProperty(JSContext* cx, HandleObject proxy, HandleId id,
-                               MutableHandle<JSPropertyDescriptor> desc);
+                               Handle<JSPropertyDescriptor> desc, ObjectOpResult& result);
     static bool ownPropertyKeys(JSContext* cx, HandleObject proxy, AutoIdVector& props);
-    static bool delete_(JSContext* cx, HandleObject proxy, HandleId id, bool* bp);
+    static bool delete_(JSContext* cx, HandleObject proxy, HandleId id, ObjectOpResult& result);
     static bool enumerate(JSContext* cx, HandleObject proxy, MutableHandleObject objp);
     static bool isExtensible(JSContext* cx, HandleObject proxy, bool* extensible);
-    static bool preventExtensions(JSContext* cx, HandleObject proxy, bool* succeeded);
-    static bool getPrototypeOf(JSContext* cx, HandleObject proxy, MutableHandleObject protop);
-    static bool setPrototypeOf(JSContext* cx, HandleObject proxy, HandleObject proto, bool* bp);
+    static bool preventExtensions(JSContext* cx, HandleObject proxy, ObjectOpResult& result);
+    static bool getPrototype(JSContext* cx, HandleObject proxy, MutableHandleObject protop);
+    static bool setPrototype(JSContext* cx, HandleObject proxy, HandleObject proto,
+                             ObjectOpResult& result);
     static bool setImmutablePrototype(JSContext* cx, HandleObject proxy, bool* succeeded);
     static bool has(JSContext* cx, HandleObject proxy, HandleId id, bool* bp);
-    static bool get(JSContext* cx, HandleObject proxy, HandleObject receiver, HandleId id,
+    static bool get(JSContext* cx, HandleObject proxy, HandleValue receiver, HandleId id,
                     MutableHandleValue vp);
-    static bool set(JSContext* cx, HandleObject proxy, HandleObject receiver, HandleId id,
-                    bool strict, MutableHandleValue vp);
+    static bool set(JSContext* cx, HandleObject proxy, HandleId id, HandleValue v,
+                    HandleValue receiver, ObjectOpResult& result);
     static bool call(JSContext* cx, HandleObject proxy, const CallArgs& args);
     static bool construct(JSContext* cx, HandleObject proxy, const CallArgs& args);
 
@@ -52,7 +53,8 @@ class Proxy
     static bool hasOwn(JSContext* cx, HandleObject proxy, HandleId id, bool* bp);
     static bool getOwnEnumerablePropertyKeys(JSContext* cx, HandleObject proxy,
                                              AutoIdVector& props);
-    static bool nativeCall(JSContext* cx, IsAcceptableThis test, NativeImpl impl, CallArgs args);
+    static bool nativeCall(JSContext* cx, IsAcceptableThis test, NativeImpl impl,
+                           const CallArgs& args);
     static bool hasInstance(JSContext* cx, HandleObject proxy, MutableHandleValue v, bool* bp);
     static bool objectClassIs(HandleObject obj, ESClassValue classValue, JSContext* cx);
     static const char* className(JSContext* cx, HandleObject proxy);
@@ -70,8 +72,9 @@ class Proxy
     static void trace(JSTracer* trc, JSObject* obj);
 
     /* IC entry path for handling __noSuchMethod__ on access. */
-    static bool callProp(JSContext* cx, HandleObject proxy, HandleObject reveiver, HandleId id,
+    static bool callProp(JSContext* cx, HandleObject proxy, HandleValue reveiver, HandleId id,
                          MutableHandleValue vp);
+
 };
 
 } /* namespace js */

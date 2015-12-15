@@ -56,6 +56,7 @@ public class AppConstants {
         public static final boolean feature16Plus = MIN_SDK_VERSION >= 16 || (MAX_SDK_VERSION >= 16 && Build.VERSION.SDK_INT >= 16);
         public static final boolean feature17Plus = MIN_SDK_VERSION >= 17 || (MAX_SDK_VERSION >= 17 && Build.VERSION.SDK_INT >= 17);
         public static final boolean feature19Plus = MIN_SDK_VERSION >= 19 || (MAX_SDK_VERSION >= 19 && Build.VERSION.SDK_INT >= 19);
+        public static final boolean feature20Plus = MIN_SDK_VERSION >= 20 || (MAX_SDK_VERSION >= 20 && Build.VERSION.SDK_INT >= 20);
         public static final boolean feature21Plus = MIN_SDK_VERSION >= 21 || (MAX_SDK_VERSION >= 21 && Build.VERSION.SDK_INT >= 21);
 
         /*
@@ -63,8 +64,11 @@ public class AppConstants {
          * If our MAX_SDK_VERSION is lower than ICS, we must not be an ICS device.
          * Otherwise, we need a range check.
          */
+	public static final boolean preM = MAX_SDK_VERSION < 23 ||
+                (MIN_SDK_VERSION < 23 && Build.VERSION.SDK_INT < 23 && !Build.VERSION.RELEASE.equals("M"));
         public static final boolean preLollipop = MAX_SDK_VERSION < 21 || (MIN_SDK_VERSION < 21 && Build.VERSION.SDK_INT < 21);
         public static final boolean preJBMR2 = MAX_SDK_VERSION < 18 || (MIN_SDK_VERSION < 18 && Build.VERSION.SDK_INT < 18);
+        public static final boolean preJBMR1 = MAX_SDK_VERSION < 17 || (MIN_SDK_VERSION < 17 && Build.VERSION.SDK_INT < 17);
         public static final boolean preJB = MAX_SDK_VERSION < 16 || (MIN_SDK_VERSION < 16 && Build.VERSION.SDK_INT < 16);
         public static final boolean preICS = MAX_SDK_VERSION < 14 || (MIN_SDK_VERSION < 14 && Build.VERSION.SDK_INT < 14);
         public static final boolean preHCMR2 = MAX_SDK_VERSION < 13 || (MIN_SDK_VERSION < 13 && Build.VERSION.SDK_INT < 13);
@@ -73,10 +77,17 @@ public class AppConstants {
     }
 
     /**
-     * The name of the Java class that launches the browser.
+     * The name of the Java class that represents the android application.
      */
-    public static final String BROWSER_INTENT_CLASS_NAME = "org.mozilla.gecko.BrowserApp";
-    public static final String SEARCH_INTENT_CLASS_NAME = "org.mozilla.search.SearchActivity";
+    public static final String MOZ_ANDROID_APPLICATION_CLASS = "@MOZ_ANDROID_APPLICATION_CLASS@";
+    /**
+     * The name of the Java class that launches the browser activity.
+     */
+    public static final String MOZ_ANDROID_BROWSER_INTENT_CLASS = "@MOZ_ANDROID_BROWSER_INTENT_CLASS@";
+    /**
+     * The name of the Java class that launches the search activity.
+     */
+    public static final String MOZ_ANDROID_SEARCH_INTENT_CLASS = "@MOZ_ANDROID_SEARCH_INTENT_CLASS@";
 
     public static final String GRE_MILESTONE = "@GRE_MILESTONE@";
 
@@ -115,12 +126,14 @@ public class AppConstants {
     public static final String USER_AGENT_BOT_LIKE = "Redirector/" + AppConstants.MOZ_APP_VERSION +
         " (Android; rv:" + AppConstants.MOZ_APP_VERSION + ")";
 
-    public static final String USER_AGENT_FENNEC_MOBILE = "Mozilla/5.0 (Android; Mobile; rv:" +
+    public static final String USER_AGENT_FENNEC_MOBILE = "Mozilla/5.0 (Android " +
+        Build.VERSION.RELEASE + "; Mobile; rv:" +
         AppConstants.MOZ_APP_VERSION + ") Gecko/" +
         AppConstants.MOZ_APP_VERSION + " Firefox/" +
         AppConstants.MOZ_APP_VERSION;
 
-    public static final String USER_AGENT_FENNEC_TABLET = "Mozilla/5.0 (Android; Tablet; rv:" +
+    public static final String USER_AGENT_FENNEC_TABLET = "Mozilla/5.0 (Android " +
+        Build.VERSION.RELEASE + "; Tablet; rv:" +
         AppConstants.MOZ_APP_VERSION + ") Gecko/" +
         AppConstants.MOZ_APP_VERSION + " Firefox/" +
         AppConstants.MOZ_APP_VERSION;
@@ -161,6 +174,13 @@ public class AppConstants {
 
     public static final boolean MOZ_ANDROID_READING_LIST_SERVICE =
 //#ifdef MOZ_ANDROID_READING_LIST_SERVICE
+    true;
+//#else
+    false;
+//#endif
+
+    public static final boolean MOZ_ANDROID_FIREFOX_ACCOUNT_PROFILES =
+//#ifdef MOZ_ANDROID_FIREFOX_ACCOUNT_PROFILES
     true;
 //#else
     false;
@@ -297,4 +317,24 @@ public class AppConstants {
 
     public static final boolean MOZ_DRAGGABLE_URLBAR = false;
 
+    public static final boolean MOZ_INSTALL_TRACKING =
+//#ifdef MOZ_INSTALL_TRACKING
+    true;
+//#else
+    false;
+//#endif
+
+    public static final boolean MOZ_SWITCHBOARD =
+//#ifdef MOZ_SWITCHBOARD
+    true;
+//#else
+    false;
+//#endif
+
+    public static final boolean MOZ_ANDROID_NATIVE_ACCOUNT_UI =
+//#ifdef MOZ_ANDROID_NATIVE_ACCOUNT_UI
+    true;
+//#else
+    false;
+//#endif
 }

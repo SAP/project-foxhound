@@ -40,6 +40,11 @@ struct SPSData
 
   float sample_ratio;
 
+  uint32_t crop_left;
+  uint32_t crop_right;
+  uint32_t crop_top;
+  uint32_t crop_bottom;
+
   /*
     H264 decoding parameters according to ITU-T H.264 (T-REC-H.264-201402-I/en)
    http://www.itu.int/rec/T-REC-H.264-201402-I/en
@@ -68,18 +73,25 @@ struct SPSData
   uint8_t seq_parameter_set_id;
 
   /*
-    When the value of chroma_format_idc is equal to 1, the nominal vertical
-    and horizontal relative locations of luma and chroma samples in frames are
-    shown in Figure 6-1. Alternative chroma sample relative locations may be
-    indicated in video usability information (see Annex E).
+    chroma_format_idc specifies the chroma sampling relative to the luma
+    sampling as specified in clause 6.2. The value of chroma_format_idc shall be
+    in the range of 0 to 3, inclusive. When chroma_format_idc is not present,
+    it shall be inferred to be equal to 1 (4:2:0 chroma format).
+    When profile_idc is equal to 183, chroma_format_idc shall be equal to 0
+    (4:0:0 chroma format).
    */
   uint8_t chroma_format_idc;
 
   /*
-    If separate_colour_plane_flag is equal to 0, each of the two chroma arrays
-    has the same height and width as the luma array. Otherwise
-    (separate_colour_plane_flag is equal to 1), the three colour planes are
-    separately processed as monochrome sampled pictures.
+    separate_colour_plane_flag equal to 1 specifies that the three colour
+    components of the 4:4:4 chroma format are coded separately.
+    separate_colour_plane_flag equal to 0 specifies that the colour components
+    are not coded separately. When separate_colour_plane_flag is not present,
+    it shall be inferred to be equal to 0. When separate_colour_plane_flag is
+    equal to 1, the primary coded picture consists of three separate components,
+    each of which consists of coded samples of one colour plane (Y, Cb or Cr)
+    that each use the monochrome coding syntax. In this case, each colour plane
+    is associated with a specific colour_plane_id value.
    */
   bool separate_colour_plane_flag;
 
@@ -319,14 +331,14 @@ struct SPSData
 class H264
 {
 public:
-  static bool DecodeSPSFromExtraData(const ByteBuffer* aExtraData, SPSData& aDest);
+  static bool DecodeSPSFromExtraData(const mozilla::MediaByteBuffer* aExtraData, SPSData& aDest);
   /* Extract RAW BYTE SEQUENCE PAYLOAD from NAL content.
      Returns nullptr if invalid content.
      This is compliant to ITU H.264 7.3.1 Syntax in tabular form NAL unit syntax
    */
-  static already_AddRefed<ByteBuffer> DecodeNALUnit(const ByteBuffer* aNAL);
+  static already_AddRefed<mozilla::MediaByteBuffer> DecodeNALUnit(const mozilla::MediaByteBuffer* aNAL);
   /* Decode SPS NAL RBSP and fill SPSData structure */
-  static bool DecodeSPS(const ByteBuffer* aSPS, SPSData& aDest);
+  static bool DecodeSPS(const mozilla::MediaByteBuffer* aSPS, SPSData& aDest);
   // Ensure that SPS data makes sense, Return true if SPS data was, and false
   // otherwise. If false, then content will be adjusted accordingly.
   static bool EnsureSPSIsSane(SPSData& aSPS);

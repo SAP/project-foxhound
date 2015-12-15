@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,14 +44,12 @@ using namespace mozilla::dom;
 #define INDENT_STRING "  "
 #define INDENT_STRING_LENGTH 2
 
-nsresult NS_NewXMLContentSerializer(nsIContentSerializer** aSerializer)
+nsresult
+NS_NewXMLContentSerializer(nsIContentSerializer** aSerializer)
 {
-  nsXMLContentSerializer* it = new nsXMLContentSerializer();
-  if (!it) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  return CallQueryInterface(it, aSerializer);
+  nsRefPtr<nsXMLContentSerializer> it = new nsXMLContentSerializer();
+  it.forget(aSerializer);
+  return NS_OK;
 }
 
 nsXMLContentSerializer::nsXMLContentSerializer()
@@ -773,9 +772,9 @@ bool
 nsXMLContentSerializer::IsJavaScript(nsIContent * aContent, nsIAtom* aAttrNameAtom,
                                      int32_t aAttrNamespaceID, const nsAString& aValueString)
 {
-  bool isHtml = aContent->IsHTML();
-  bool isXul = aContent->IsXUL();
-  bool isSvg = aContent->IsSVG();
+  bool isHtml = aContent->IsHTMLElement();
+  bool isXul = aContent->IsXULElement();
+  bool isSvg = aContent->IsSVGElement();
 
   if (aAttrNamespaceID == kNameSpaceID_None &&
       (isHtml || isXul || isSvg) &&
@@ -907,7 +906,7 @@ nsXMLContentSerializer::AppendElementStart(Element* aElement,
   uint32_t skipAttr = ScanNamespaceDeclarations(content,
                           aOriginalElement, tagNamespaceURI);
 
-  nsIAtom *name = content->Tag();
+  nsIAtom *name = content->NodeInfo()->NameAtom();
   bool lineBreakBeforeOpen = LineBreakBeforeOpen(content->GetNameSpaceID(), name);
 
   if ((mDoFormat || forceFormat) && !mDoRaw && !PreLevel()) {
@@ -999,7 +998,7 @@ nsXMLContentSerializer::AppendElementEnd(Element* aElement,
   bool forceFormat = false, outputElementEnd;
   outputElementEnd = CheckElementEnd(content, forceFormat, aStr);
 
-  nsIAtom *name = content->Tag();
+  nsIAtom *name = content->NodeInfo()->NameAtom();
 
   if ((mDoFormat || forceFormat) && !mDoRaw && !PreLevel()) {
     DecrIndentation(name);

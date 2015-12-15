@@ -29,8 +29,10 @@ Notes to self:
 #include "nsDirectoryService.h"
 #include "nsCRT.h" 
 #include "nsNetUtil.h"
+#include "nsIDOMNode.h"
 #include "nsIOutputStream.h"
 #include "nsIInputStream.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsIFile.h"
 #include "nsILoadContext.h"
 #include "nsAutoPtr.h"
@@ -152,7 +154,7 @@ DataStruct::WriteCache(nsISupports* aData, uint32_t aDataLen)
     if ( buff ) {
       uint32_t ignored;
       outStr->Write(reinterpret_cast<char*>(buff), aDataLen, &ignored);
-      nsMemory::Free(buff);
+      free(buff);
       return NS_OK;
     }
   }

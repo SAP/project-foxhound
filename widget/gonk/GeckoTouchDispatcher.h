@@ -22,13 +22,13 @@
 #include "Units.h"
 #include "mozilla/Mutex.h"
 #include <vector>
-#include "nsRefPtr.h"
+#include "mozilla/nsRefPtr.h"
 
 class nsIWidget;
 
 namespace mozilla {
 namespace layers {
-class CompositorVsyncObserver;
+class CompositorVsyncScheduler;
 }
 
 // Used to resample touch events whenever a vsync event occurs. It batches
@@ -41,28 +41,36 @@ class CompositorVsyncObserver;
 // this sample time, we extrapolate the last two touch events to the sample
 // time. The magic numbers defined as constants are taken from android
 // InputTransport.cpp.
-class GeckoTouchDispatcher
+class GeckoTouchDispatcher final
 {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GeckoTouchDispatcher)
 
 public:
-  GeckoTouchDispatcher();
+  static GeckoTouchDispatcher* GetInstance();
   void NotifyTouch(MultiTouchInput& aTouch, TimeStamp aEventTime);
   void DispatchTouchEvent(MultiTouchInput aMultiTouch);
+  void DispatchTouchNonMoveEvent(MultiTouchInput aInput);
   void DispatchTouchMoveEvents(TimeStamp aVsyncTime);
-  static bool NotifyVsync(TimeStamp aVsyncTimestamp);
-  static void SetCompositorVsyncObserver(layers::CompositorVsyncObserver* aObserver);
+  void NotifyVsync(TimeStamp aVsyncTimestamp);
+  void SetCompositorVsyncScheduler(layers::CompositorVsyncScheduler* aObserver);
+
+protected:
+  ~GeckoTouchDispatcher() {}
 
 private:
+  GeckoTouchDispatcher();
   void ResampleTouchMoves(MultiTouchInput& aOutTouch, TimeStamp vsyncTime);
   void SendTouchEvent(MultiTouchInput& aData);
   void DispatchMouseEvent(MultiTouchInput& aMultiTouch,
                           bool aForwardToChildren);
 
-  // mTouchQueueLock are used to protect the vector below
-  // as it is accessed on the vsync thread and main thread
+  // mTouchQueueLock is used to protect the vector and state below
+  // as it is accessed on multiple threads.
   Mutex mTouchQueueLock;
   std::vector<MultiTouchInput> mTouchMoveEvents;
+  bool mHavePendingTouchMoves;
+  int mInflightNonMoveEvents;
+  // end stuff protected by mTouchQueueLock
 
   bool mResamplingEnabled;
   bool mTouchEventsFiltered;
@@ -71,6 +79,7 @@ private:
   // All times below are in nanoseconds
   TimeDuration mVsyncAdjust;     // Time from vsync we create sample times from
   TimeDuration mMaxPredict;      // How far into the future we're allowed to extrapolate
+  TimeDuration mMinDelta;        // Minimal time difference between touches for resampling
 
   // Amount of time between vsync and the last event that is required before we
   // resample
@@ -82,8 +91,9 @@ private:
   // How far ahead can vsync events get ahead of touch events.
   TimeDuration mOldTouchThreshold;
 
-  nsRefPtr<layers::CompositorVsyncObserver> mCompositorVsyncObserver;
+  nsRefPtr<layers::CompositorVsyncScheduler> mCompositorVsyncScheduler;
 };
 
 } // namespace mozilla
+
 #endif // GECKO_TOUCH_INPUT_DISPATCHER_h

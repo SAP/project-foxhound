@@ -27,7 +27,7 @@ public:
 
   HTMLMediaElement* GetParentObject() const;
 
-  JSObject* WrapObject(JSContext* aCx) override;
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   DOMHighResTimeStamp CreationTime() const
   {
@@ -61,4 +61,5 @@ private:
 
 } // namespace dom
 } // namespace mozilla
+
 #endif /* mozilla_dom_VideoPlaybackQuality_h_ */

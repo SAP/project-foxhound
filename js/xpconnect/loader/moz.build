@@ -16,10 +16,6 @@ EXTRA_JS_MODULES += [
     'XPCOMUtils.jsm',
 ]
 
-FAIL_ON_WARNINGS = True
-
-MSVC_ENABLE_PGO = True
-
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [

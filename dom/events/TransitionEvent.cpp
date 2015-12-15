@@ -1,4 +1,5 @@
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +15,7 @@ TransitionEvent::TransitionEvent(EventTarget* aOwner,
                                  nsPresContext* aPresContext,
                                  InternalTransitionEvent* aEvent)
   : Event(aOwner, aPresContext,
-          aEvent ? aEvent : new InternalTransitionEvent(false, 0))
+          aEvent ? aEvent : new InternalTransitionEvent(false, eVoidEvent))
 {
   if (aEvent) {
     mEventIsInternal = false;
@@ -87,14 +88,12 @@ TransitionEvent::GetPseudoElement(nsAString& aPseudoElement)
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMTransitionEvent(nsIDOMEvent** aInstancePtrResult,
-                         EventTarget* aOwner,
+already_AddRefed<TransitionEvent>
+NS_NewDOMTransitionEvent(EventTarget* aOwner,
                          nsPresContext* aPresContext,
                          InternalTransitionEvent* aEvent)
 {
-  TransitionEvent *it = new TransitionEvent(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<TransitionEvent> it =
+    new TransitionEvent(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

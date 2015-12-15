@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +7,13 @@
 /* representation of a SMIL-animatable CSS property on an element */
 
 #include "nsSMILCSSProperty.h"
+
+#include "mozilla/dom/Element.h"
+#include "mozilla/Move.h"
 #include "nsSMILCSSValueType.h"
 #include "nsSMILValue.h"
 #include "nsComputedDOMStyle.h"
 #include "nsCSSProps.h"
-#include "mozilla/dom/Element.h"
 #include "nsIDOMElement.h"
 #include "nsIDocument.h"
 
@@ -80,7 +83,7 @@ nsSMILCSSProperty::GetBaseValue() const
     // In either case, just return a dummy value (initialized with the right
     // type, so as not to indicate failure).
     nsSMILValue tmpVal(&nsSMILCSSValueType::sSingleton);
-    baseValue.Swap(tmpVal);
+    Swap(baseValue, tmpVal);
     return baseValue;
   }
 

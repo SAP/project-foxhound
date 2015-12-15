@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +37,9 @@ struct TranslationParams {  // Simple translation
   float mY;
 };
 struct PathPointParams {  // Point along a path
-  Path* mPath; // NOTE: Refcounted; need to AddRef/Release.
+  // Refcounted: need to AddRef/Release.  This can't be an nsRefPtr because
+  // this struct is used inside a union so it can't have a default constructor.
+  Path* MOZ_OWNING_REF mPath;
   float mDistToPoint; // Distance from path start to the point on the path that
                       // we're interested in.
 };
@@ -194,13 +197,10 @@ SVGMotionSMILType::Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const
 
   const MotionSegmentArray& srcArr = ExtractMotionSegmentArray(aSrc);
   MotionSegmentArray& dstArr = ExtractMotionSegmentArray(aDest);
-
-  // Ensure we have sufficient memory.
-  if (!dstArr.SetCapacity(srcArr.Length())) {
+  if (!dstArr.Assign(srcArr, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  dstArr = srcArr; // Do the assignment.
   return NS_OK;
 }
 
@@ -304,8 +304,7 @@ SVGMotionSMILType::Add(nsSMILValue& aDest, const nsSMILValue& aValueToAdd,
 
   // Replace destination's current value -- a point-on-a-path -- with the
   // translation that results from our addition.
-  dstArr.Clear();
-  dstArr.AppendElement(MotionSegment(newX, newY, rotateAngle));
+  dstArr.ReplaceElementAt(0, MotionSegment(newX, newY, rotateAngle));
   return NS_OK;
 }
 
@@ -323,7 +322,7 @@ SVGMotionSMILType::SandwichAdd(nsSMILValue& aDest,
   MOZ_ASSERT(srcArr.Length() == 1,
              "Trying to do sandwich add of more than one value");
 
-  if (!dstArr.AppendElement(srcArr[0])) {
+  if (!dstArr.AppendElement(srcArr[0], fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   
@@ -438,8 +437,10 @@ SVGMotionSMILType::Interpolate(const nsSMILValue& aStartVal,
 
   // Construct the intermediate result segment, and put it in our outparam.
   // AppendElement has guaranteed success here, since Init() allocates 1 slot.
-  resultArr.AppendElement(MotionSegment(path, resultDist,
-                                        rotateType, rotateAngle));
+  MOZ_ALWAYS_TRUE(resultArr.AppendElement(MotionSegment(path, resultDist,
+                                                        rotateType,
+                                                        rotateAngle),
+                                          fallible));
   return NS_OK;
 }
 
@@ -481,7 +482,9 @@ SVGMotionSMILType::ConstructSMILValue(Path* aPath,
   MotionSegmentArray& arr = ExtractMotionSegmentArray(smilVal);
 
   // AppendElement has guaranteed success here, since Init() allocates 1 slot.
-  arr.AppendElement(MotionSegment(aPath, aDist, aRotateType, aRotateAngle));
+  MOZ_ALWAYS_TRUE(arr.AppendElement(MotionSegment(aPath, aDist,
+                                                  aRotateType, aRotateAngle),
+                                    fallible));
   return smilVal;
 }
 

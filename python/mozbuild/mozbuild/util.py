@@ -5,10 +5,9 @@
 # This file contains miscellaneous utility functions that don't belong anywhere
 # in particular.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 import collections
-import copy
 import difflib
 import errno
 import functools
@@ -18,12 +17,16 @@ import os
 import stat
 import sys
 import time
+import types
 
 from collections import (
     defaultdict,
     OrderedDict,
 )
-from StringIO import StringIO
+from io import (
+    StringIO,
+    BytesIO,
+)
 
 
 if sys.version_info[0] == 3:
@@ -48,6 +51,17 @@ def hash_file(path, hasher=None):
             h.update(data)
 
     return h.hexdigest()
+
+
+class EmptyValue(unicode):
+    """A dummy type that behaves like an empty string and sequence.
+
+    This type exists in order to support
+    :py:class:`mozbuild.frontend.reader.EmptyConfig`. It should likely not be
+    used elsewhere.
+    """
+    def __init__(self):
+        super(EmptyValue, self).__init__()
 
 
 class ReadOnlyDict(dict):
@@ -95,7 +109,26 @@ def ensureParentDir(path):
                 raise
 
 
-class FileAvoidWrite(StringIO):
+def readFileContent(name, mode):
+    """Read the content of file, returns tuple (file existed, file content)"""
+    existed = False
+    old_content = None
+    try:
+        existing = open(name, mode)
+        existed = True
+    except IOError:
+        pass
+    else:
+        try:
+            old_content = existing.read()
+        except IOError:
+            pass
+        finally:
+            existing.close()
+    return existed, old_content
+
+
+class FileAvoidWrite(BytesIO):
     """File-like object that buffers output and only writes if content changed.
 
     We create an instance from an existing filename. New content is written to
@@ -107,11 +140,18 @@ class FileAvoidWrite(StringIO):
     enabled by default because it a) doesn't make sense for binary files b)
     could add unwanted overhead to calls.
     """
-    def __init__(self, filename, capture_diff=False):
-        StringIO.__init__(self)
+    def __init__(self, filename, capture_diff=False, mode='rU'):
+        BytesIO.__init__(self)
         self.name = filename
         self._capture_diff = capture_diff
         self.diff = None
+        self.mode = mode
+        self.force_update = False
+
+    def write(self, buf):
+        if isinstance(buf, unicode):
+            buf = buf.encode('utf-8')
+        BytesIO.write(self, buf)
 
     def close(self):
         """Stop accepting writes, compare file contents, and rewrite if needed.
@@ -125,24 +165,12 @@ class FileAvoidWrite(StringIO):
         of the result.
         """
         buf = self.getvalue()
-        StringIO.close(self)
-        existed = False
-        old_content = None
+        BytesIO.close(self)
 
-        try:
-            existing = open(self.name, 'rU')
-            existed = True
-        except IOError:
-            pass
-        else:
-            try:
-                old_content = existing.read()
-                if old_content == buf:
-                    return True, False
-            except IOError:
-                pass
-            finally:
-                existing.close()
+        existed, old_content = readFileContent(self.name, self.mode)
+        if not self.force_update and old_content == buf:
+            assert existed
+            return existed, False
 
         ensureParentDir(self.name)
         with open(self.name, 'w') as file:
@@ -254,9 +282,9 @@ class ListMixin(object):
         return super(ListMixin, self).__setslice__(i, j, sequence)
 
     def __add__(self, other):
-        # Allow None is a special case because it makes undefined variable
-        # references in moz.build behave better.
-        other = [] if other is None else other
+        # Allow None and EmptyValue is a special case because it makes undefined
+        # variable references in moz.build behave better.
+        other = [] if isinstance(other, (types.NoneType, EmptyValue)) else other
         if not isinstance(other, list):
             raise ValueError('Only lists can be appended to lists.')
 
@@ -265,7 +293,7 @@ class ListMixin(object):
         return new_list
 
     def __iadd__(self, other):
-        other = [] if other is None else other
+        other = [] if isinstance(other, (types.NoneType, EmptyValue)) else other
         if not isinstance(other, list):
             raise ValueError('Only lists can be appended to lists.')
 
@@ -817,6 +845,56 @@ class memoized_property(object):
         return getattr(instance, name)
 
 
+def TypedNamedTuple(name, fields):
+    """Factory for named tuple types with strong typing.
+
+    Arguments are an iterable of 2-tuples. The first member is the
+    the field name. The second member is a type the field will be validated
+    to be.
+
+    Construction of instances varies from ``collections.namedtuple``.
+
+    First, if a single tuple argument is given to the constructor, this is
+    treated as the equivalent of passing each tuple value as a separate
+    argument into __init__. e.g.::
+
+        t = (1, 2)
+        TypedTuple(t) == TypedTuple(1, 2)
+
+    This behavior is meant for moz.build files, so vanilla tuples are
+    automatically cast to typed tuple instances.
+
+    Second, fields in the tuple are validated to be instances of the specified
+    type. This is done via an ``isinstance()`` check. To allow multiple types,
+    pass a tuple as the allowed types field.
+    """
+    cls = collections.namedtuple(name, (name for name, typ in fields))
+
+    class TypedTuple(cls):
+        __slots__ = ()
+
+        def __new__(klass, *args, **kwargs):
+            if len(args) == 1 and not kwargs and isinstance(args[0], tuple):
+                args = args[0]
+
+            return super(TypedTuple, klass).__new__(klass, *args, **kwargs)
+
+        def __init__(self, *args, **kwargs):
+            for i, (fname, ftype) in enumerate(self._fields):
+                value = self[i]
+
+                if not isinstance(value, ftype):
+                    raise TypeError('field in tuple not of proper type: %s; '
+                                    'got %s, expected %s' % (fname,
+                                    type(value), ftype))
+
+            super(TypedTuple, self).__init__(*args, **kwargs)
+
+    TypedTuple._fields = fields
+
+    return TypedTuple
+
+
 class TypedListMixin(object):
     '''Mixin for a list with type coercion. See TypedList.'''
 
@@ -824,12 +902,7 @@ class TypedListMixin(object):
         if isinstance(l, self.__class__):
             return l
 
-        def normalize(e):
-            if not isinstance(e, self.TYPE):
-                e = self.TYPE(e)
-            return e
-
-        return [normalize(e) for e in l]
+        return [self.normalize(e) for e in l]
 
     def __init__(self, iterable=[]):
         iterable = self._ensure_type(iterable)
@@ -874,7 +947,12 @@ def TypedList(type, base_class=List):
        TypedList(unicode, StrictOrderingOnAppendList)
     '''
     class _TypedList(TypedListMixin, base_class):
-        TYPE = type
+        @staticmethod
+        def normalize(e):
+            if not isinstance(e, type):
+                e = type(e)
+            return e
+
     return _TypedList
 
 def group_unified_files(files, unified_prefix, unified_suffix,

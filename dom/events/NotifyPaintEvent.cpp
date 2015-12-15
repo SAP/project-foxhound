@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,15 +18,15 @@ namespace dom {
 NotifyPaintEvent::NotifyPaintEvent(EventTarget* aOwner,
                                    nsPresContext* aPresContext,
                                    WidgetEvent* aEvent,
-                                   uint32_t aEventType,
+                                   EventMessage aEventMessage,
                                    nsInvalidateRequestList* aInvalidateRequests)
   : Event(aOwner, aPresContext, aEvent)
 {
   if (mEvent) {
-    mEvent->message = aEventType;
+    mEvent->mMessage = aEventMessage;
   }
   if (aInvalidateRequests) {
-    mInvalidateRequests.MoveElementsFrom(aInvalidateRequests->mRequests);
+    mInvalidateRequests.AppendElements(Move(aInvalidateRequests->mRequests));
   }
 }
 
@@ -161,17 +162,15 @@ NotifyPaintEvent::Deserialize(const IPC::Message* aMsg, void** aIter)
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMNotifyPaintEvent(nsIDOMEvent** aInstancePtrResult,
-                          EventTarget* aOwner,
+already_AddRefed<NotifyPaintEvent>
+NS_NewDOMNotifyPaintEvent(EventTarget* aOwner,
                           nsPresContext* aPresContext,
                           WidgetEvent* aEvent,
-                          uint32_t aEventType,
+                          EventMessage aEventMessage,
                           nsInvalidateRequestList* aInvalidateRequests) 
 {
-  NotifyPaintEvent* it = new NotifyPaintEvent(aOwner, aPresContext, aEvent,
-                                              aEventType, aInvalidateRequests);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<NotifyPaintEvent> it =
+    new NotifyPaintEvent(aOwner, aPresContext, aEvent, aEventMessage,
+                         aInvalidateRequests);
+  return it.forget();
 }

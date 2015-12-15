@@ -25,6 +25,7 @@
 #include "mozIStorageRow.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStorageStatementCallback.h"
+#include "nsIFile.h"
 
 #include "mozilla/MemoryReporting.h"
 
@@ -42,13 +43,12 @@ class ReadCookieDBListener;
 
 struct nsCookieAttributes;
 struct nsListIter;
-struct nsEnumerationData;
 
 namespace mozilla {
 namespace net {
 class CookieServiceParent;
-}
-}
+} // namespace net
+} // namespace mozilla
 
 // hash key class
 class nsCookieKey : public PLDHashEntryHdr
@@ -239,10 +239,10 @@ enum OpenDBResult
  ******************************************************************************/
 
 class nsCookieService final : public nsICookieService
-                                , public nsICookieManager2
-                                , public nsIObserver
-                                , public nsSupportsWeakReference
-                                , public nsIMemoryReporter
+                            , public nsICookieManager2
+                            , public nsIObserver
+                            , public nsSupportsWeakReference
+                            , public nsIMemoryReporter
 {
   private:
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
@@ -314,12 +314,7 @@ class nsCookieService final : public nsICookieService
     void                          NotifyChanged(nsISupports *aSubject, const char16_t *aData);
     void                          NotifyPurged(nsICookie2* aCookie);
     already_AddRefed<nsIArray>    CreatePurgeList(nsICookie2* aCookie);
-
-    /**
-     * This method is used to iterate the cookie hash table and select the ones
-     * that are part of a specific app.
-     */
-    static PLDHashOperator GetCookiesForApp(nsCookieEntry* entry, void* arg);
+    void                          UpdateCookieOldestTime(DBState* aDBState, nsCookie* aCookie);
 
     /**
      * This method is a helper that allows calling nsICookieManager::Remove()
@@ -332,7 +327,6 @@ class nsCookieService final : public nsICookieService
 
   protected:
     // cached members.
-    nsCOMPtr<nsIObserverService>     mObserverService;
     nsCOMPtr<nsICookiePermission>    mPermissionService;
     nsCOMPtr<mozIThirdPartyUtil>     mThirdPartyUtil;
     nsCOMPtr<nsIEffectiveTLDService> mTLDService;
@@ -356,7 +350,6 @@ class nsCookieService final : public nsICookieService
     int64_t                       mCookiePurgeAge;
 
     // friends!
-    friend PLDHashOperator purgeCookiesCallback(nsCookieEntry *aEntry, void *aArg);
     friend class DBListenerErrorHandler;
     friend class ReadCookieDBListener;
     friend class CloseCookieDBListener;

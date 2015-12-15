@@ -26,11 +26,11 @@ namespace mozilla {
 
 namespace gfx {
 class DrawTarget;
-}
+} // namespace gfx
 
 namespace layers {
 class ImageContainer;
-}
+} // namespace layers
 
 // A CSSSizeOrRatio represents a (possibly partially specified) size for use
 // in computing image sizes. Either or both of the width and height might be
@@ -98,7 +98,7 @@ struct CSSSizeOrRatio
   bool mHasHeight;
 };
 
-}
+} // namespace mozilla
 
 /**
  * This is a small wrapper class to encapsulate image drawing that can draw an
@@ -237,7 +237,19 @@ public:
 
   bool IsRasterImage();
   bool IsAnimatedImage();
-  already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager);
+
+  /**
+   * @return true if this nsImageRenderer wraps an image which has an
+   * ImageContainer available.
+   *
+   * If IsContainerAvailable() returns true, GetImage() will return a non-null
+   * imgIContainer which callers can use to retrieve the ImageContainer.
+   */
+  bool IsContainerAvailable(LayerManager* aManager,
+                            nsDisplayListBuilder* aBuilder);
+
+  /// Retrieves the image associated with this nsImageRenderer, if there is one.
+  already_AddRefed<imgIContainer> GetImage();
 
   bool IsReady() { return mIsReady; }
 
@@ -321,7 +333,9 @@ struct nsBackgroundLayerState {
 struct nsCSSRendering {
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Float Float;
+  typedef mozilla::gfx::Point Point;
   typedef mozilla::gfx::Rect Rect;
+  typedef mozilla::gfx::Size Size;
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
   typedef mozilla::image::DrawResult DrawResult;
   typedef nsIFrame::Sides Sides;
@@ -684,25 +698,20 @@ struct nsCSSRendering {
                                   const gfxFloat aDescentLimit = -1.0);
 
   /**
-   * Adds a path corresponding to the outline of the decoration line to
-   * the specified context.  Arguments have the same meaning as for
+   * Returns a Rect corresponding to the outline of the decoration line for the
+   * given text metrics.  Arguments have the same meaning as for
    * PaintDecorationLine.  Currently this only works for solid
-   * decorations; for other decoration styles, an empty path is added
-   * to the context.
+   * decorations; for other decoration styles the returned Rect will be empty.
    */
-  static void DecorationLineToPath(nsIFrame* aFrame,
-                                   gfxContext* aGfxContext,
-                                   const gfxRect& aDirtyRect,
-                                   const nscolor aColor,
-                                   const gfxPoint& aPt,
-                                   const gfxFloat aICoordInFrame,
-                                   const gfxSize& aLineSize,
-                                   const gfxFloat aAscent,
-                                   const gfxFloat aOffset,
+  static Rect DecorationLineToPath(const Rect& aDirtyRect,
+                                   const Point& aPt,
+                                   const Size& aLineSize,
+                                   const Float aAscent,
+                                   const Float aOffset,
                                    const uint8_t aDecoration,
                                    const uint8_t aStyle,
                                    bool aVertical,
-                                   const gfxFloat aDescentLimit = -1.0);
+                                   const Float aDescentLimit = -1.0);
 
   /**
    * Function for getting the decoration line rect for the text.

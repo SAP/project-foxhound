@@ -206,7 +206,34 @@ AppendDistroSearchDirs(nsIProperties* aDirSvc, nsCOMArray<nsIFile> &array)
 NS_IMETHODIMP
 DirectoryProvider::GetFiles(const char *aKey, nsISimpleEnumerator* *aResult)
 {
+  /**
+   * We want to preserve the following order, since the search service loads
+   * engines in first-loaded-wins order.
+   *   - distro search plugin locations (Loaded by the search service using
+   *     NS_APP_DISTRIBUTION_SEARCH_DIR_LIST)
+   *
+   *   - engines shipped in chrome (Loaded from jar files by the search
+   *     service)
+   *
+   *   Then other locations, from NS_APP_SEARCH_DIR_LIST:
+   *   - extension search plugin locations (prepended below using
+   *     NS_NewUnionEnumerator)
+   *   - user search plugin locations (profile)
+   */
+
   nsresult rv;
+
+  if (!strcmp(aKey, NS_APP_DISTRIBUTION_SEARCH_DIR_LIST)) {
+    nsCOMPtr<nsIProperties> dirSvc
+      (do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID));
+    if (!dirSvc)
+      return NS_ERROR_FAILURE;
+
+    nsCOMArray<nsIFile> distroFiles;
+    AppendDistroSearchDirs(dirSvc, distroFiles);
+
+    return NS_NewArrayEnumerator(aResult, distroFiles);
+  }
 
   if (!strcmp(aKey, NS_APP_SEARCH_DIR_LIST)) {
     nsCOMPtr<nsIProperties> dirSvc
@@ -216,18 +243,7 @@ DirectoryProvider::GetFiles(const char *aKey, nsISimpleEnumerator* *aResult)
 
     nsCOMArray<nsIFile> baseFiles;
 
-    /**
-     * We want to preserve the following order, since the search service loads
-     * engines in first-loaded-wins order.
-     *   - extension search plugin locations (prepended below using
-     *     NS_NewUnionEnumerator)
-     *   - distro search plugin locations
-     *   - user search plugin locations (profile)
-     *   - app search plugin location (shipped engines)
-     */
-    AppendDistroSearchDirs(dirSvc, baseFiles);
     AppendFileKey(NS_APP_USER_SEARCH_DIR, dirSvc, baseFiles);
-    AppendFileKey(NS_APP_SEARCH_DIR, dirSvc, baseFiles);
 
     nsCOMPtr<nsISimpleEnumerator> baseEnum;
     rv = NS_NewArrayEnumerator(getter_AddRefs(baseEnum), baseFiles);

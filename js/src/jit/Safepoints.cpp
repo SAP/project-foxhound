@@ -88,11 +88,11 @@ ReadFloatRegisterMask(CompactBufferReader& stream)
 void
 SafepointWriter::writeGcRegs(LSafepoint* safepoint)
 {
-    GeneralRegisterSet gc = safepoint->gcRegs();
-    GeneralRegisterSet spilledGpr = safepoint->liveRegs().gprs();
-    FloatRegisterSet spilledFloat = safepoint->liveRegs().fpus();
-    GeneralRegisterSet slots = safepoint->slotsOrElementsRegs();
-    GeneralRegisterSet valueRegs;
+    LiveGeneralRegisterSet gc(safepoint->gcRegs());
+    LiveGeneralRegisterSet spilledGpr(safepoint->liveRegs().gprs());
+    LiveFloatRegisterSet spilledFloat(safepoint->liveRegs().fpus());
+    LiveGeneralRegisterSet slots(safepoint->slotsOrElementsRegs());
+    LiveGeneralRegisterSet valueRegs;
 
     WriteRegisterMask(stream_, spilledGpr.bits());
     if (!spilledGpr.empty()) {
@@ -205,12 +205,13 @@ SafepointWriter::writeValueSlots(LSafepoint* safepoint)
 static void
 DumpNunboxPart(const LAllocation& a)
 {
+    Fprinter& out = JitSpewPrinter();
     if (a.isStackSlot()) {
-        fprintf(JitSpewFile, "stack %d", a.toStackSlot()->slot());
+        out.printf("stack %d", a.toStackSlot()->slot());
     } else if (a.isArgument()) {
-        fprintf(JitSpewFile, "arg %d", a.toArgument()->index());
+        out.printf("arg %d", a.toArgument()->index());
     } else {
-        fprintf(JitSpewFile, "reg %s", a.toGeneralReg()->reg().name());
+        out.printf("reg %s", a.toGeneralReg()->reg().name());
     }
 }
 #endif // DEBUG
@@ -295,11 +296,12 @@ SafepointWriter::writeNunboxParts(LSafepoint* safepoint)
             if (entry.type.isUse() || entry.payload.isUse())
                 continue;
             JitSpewHeader(JitSpew_Safepoints);
-            fprintf(JitSpewFile, "    nunbox (type in ");
+            Fprinter& out = JitSpewPrinter();
+            out.printf("    nunbox (type in ");
             DumpNunboxPart(entry.type);
-            fprintf(JitSpewFile, ", payload in ");
+            out.printf(", payload in ");
             DumpNunboxPart(entry.payload);
-            fprintf(JitSpewFile, ")\n");
+            out.printf(")\n");
         }
     }
 # endif

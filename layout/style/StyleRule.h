@@ -22,7 +22,6 @@
 
 class nsIAtom;
 struct nsCSSSelectorList;
-class nsCSSCompressedDataBlock;
 
 namespace mozilla {
 class CSSStyleSheet;
@@ -72,7 +71,7 @@ public:
     //      (if nsCSSPseudoClasses::HasNthPairArg(mType))
     //   d. a selector list, which means mSelectors is non-null
     //      (if nsCSSPseudoClasses::HasSelectorListArg(mType))
-    void*           mMemory; // mString and mNumbers use NS_Alloc/NS_Free
+    void*           mMemory; // mString and mNumbers use moz_xmalloc/free
     char16_t*      mString;
     int32_t*        mNumbers;
     nsCSSSelectorList* mSelectors;
@@ -160,16 +159,27 @@ public:
   void ToString(nsAString& aString, mozilla::CSSStyleSheet* aSheet,
                 bool aAppend = false) const;
 
+  bool IsRestrictedSelector() const {
+    return PseudoType() == nsCSSPseudoElements::ePseudo_NotPseudoElement;
+  }
+
+#ifdef DEBUG
+  nsCString RestrictedSelectorToString() const;
+#endif
+
 private:
   void AddPseudoClassInternal(nsPseudoClassList *aPseudoClass);
   nsCSSSelector* Clone(bool aDeepNext, bool aDeepNegations) const;
 
-  void AppendToStringWithoutCombinators(nsAString& aString,
-                                        mozilla::CSSStyleSheet* aSheet) const;
-  void AppendToStringWithoutCombinatorsOrNegations(nsAString& aString,
-                                                   mozilla::CSSStyleSheet* aSheet,
-                                                   bool aIsNegated)
-                                                        const;
+  void AppendToStringWithoutCombinators(
+      nsAString& aString,
+      mozilla::CSSStyleSheet* aSheet,
+      bool aUseStandardNamespacePrefixes) const;
+  void AppendToStringWithoutCombinatorsOrNegations(
+      nsAString& aString,
+      mozilla::CSSStyleSheet* aSheet,
+      bool aIsNegated,
+      bool aUseStandardNamespacePrefixes) const;
   // Returns true if this selector can have a namespace specified (which
   // happens if and only if the default namespace would apply to this
   // selector).

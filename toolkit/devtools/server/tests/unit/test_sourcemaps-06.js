@@ -10,7 +10,7 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-Components.utils.import("resource:///modules/devtools/SourceMap.jsm");
+const {SourceNode} = require("source-map");
 
 function run_test()
 {
@@ -30,11 +30,11 @@ function test_source_content()
 {
   let numNewSources = 0;
 
-  gClient.addListener("newSource", function _onNewSource(aEvent, aPacket) {
+  gThreadClient.addListener("newSource", function _onNewSource(aEvent, aPacket) {
     if (++numNewSources !== 3) {
       return;
     }
-    gClient.removeListener("newSource", _onNewSource);
+    gThreadClient.removeListener("newSource", _onNewSource);
 
     gThreadClient.getSources(function (aResponse) {
       do_check_true(!aResponse.error, "Should not get an error");
@@ -52,9 +52,9 @@ function test_source_content()
     new SourceNode(1, 0, "c.js", "function c() { return 'c'; }\n"),
   ]);
 
-  node.setSourceContent("a.js", "content for http://example.com/www/js/a.js");
-  node.setSourceContent("b.js", "content for http://example.com/www/js/b.js");
-  node.setSourceContent("c.js", "content for http://example.com/www/js/c.js");
+  node.setSourceContent("a.js", "content for a.js");
+  node.setSourceContent("b.js", "content for b.js");
+  node.setSourceContent("c.js", "content for c.js");
 
   let { code, map } = node.toStringWithSourceMap({
     file: "abc.js"

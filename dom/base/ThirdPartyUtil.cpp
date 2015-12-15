@@ -1,11 +1,13 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 sts=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ThirdPartyUtil.h"
+#include "nsNetCID.h"
 #include "nsNetUtil.h"
+#include "nsIChannel.h"
 #include "nsIServiceManager.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIDOMWindow.h"
@@ -14,7 +16,7 @@
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIURI.h"
 #include "nsThreadUtils.h"
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 
@@ -23,7 +25,7 @@ NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 //
 static PRLogModuleInfo *gThirdPartyLog;
 #undef LOG
-#define LOG(args)     PR_LOG(gThirdPartyLog, PR_LOG_DEBUG, args)
+#define LOG(args)     MOZ_LOG(gThirdPartyLog, mozilla::LogLevel::Debug, args)
 
 nsresult
 ThirdPartyUtil::Init()
@@ -52,6 +54,7 @@ ThirdPartyUtil::IsThirdPartyInternal(const nsCString& aFirstDomain,
   // Get the base domain for aSecondURI.
   nsCString secondDomain;
   nsresult rv = GetBaseDomain(aSecondURI, secondDomain);
+  LOG(("ThirdPartyUtil::IsThirdPartyInternal %s =? %s", aFirstDomain.get(), secondDomain.get()));
   if (NS_FAILED(rv))
     return rv;
 
@@ -180,6 +183,7 @@ ThirdPartyUtil::IsThirdPartyChannel(nsIChannel* aChannel,
                                     nsIURI* aURI,
                                     bool* aResult)
 {
+  LOG(("ThirdPartyUtil::IsThirdPartyChannel [channel=%p]", aChannel));
   NS_ENSURE_ARG(aChannel);
   NS_ASSERTION(aResult, "null outparam pointer");
 
@@ -340,6 +344,10 @@ NS_IMETHODIMP
 ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI,
                               nsACString& aBaseDomain)
 {
+  if (!aHostURI) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   // Get the base domain. this will fail if the host contains a leading dot,
   // more than one trailing dot, or is otherwise malformed.
   nsresult rv = mTLDService->GetBaseDomain(aHostURI, 0, aBaseDomain);
@@ -363,7 +371,9 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI,
   if (aBaseDomain.IsEmpty()) {
     bool isFileURI = false;
     aHostURI->SchemeIs("file", &isFileURI);
-    NS_ENSURE_TRUE(isFileURI, NS_ERROR_INVALID_ARG);
+    if (!isFileURI) {
+     return NS_ERROR_INVALID_ARG;
+    }
   }
 
   return NS_OK;

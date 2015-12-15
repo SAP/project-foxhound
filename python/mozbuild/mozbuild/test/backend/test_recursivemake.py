@@ -260,22 +260,20 @@ class TestRecursiveMakeBackend(BackendTester):
         lines = [l.strip() for l in open(backend_path, 'rt').readlines()[2:]]
 
         expected = {
+            'ALLOW_COMPILER_WARNINGS': [
+                'ALLOW_COMPILER_WARNINGS := 1',
+            ],
             'DISABLE_STL_WRAPPING': [
                 'DISABLE_STL_WRAPPING := 1',
             ],
             'EXTRA_COMPONENTS': [
                 'EXTRA_COMPONENTS += bar.js',
+                'EXTRA_COMPONENTS += dummy.manifest',
                 'EXTRA_COMPONENTS += foo.js',
             ],
             'EXTRA_PP_COMPONENTS': [
                 'EXTRA_PP_COMPONENTS += bar.pp.js',
                 'EXTRA_PP_COMPONENTS += foo.pp.js',
-            ],
-            'FAIL_ON_WARNINGS': [
-                'FAIL_ON_WARNINGS := 1',
-            ],
-            'MSVC_ENABLE_PGO': [
-                'MSVC_ENABLE_PGO := 1',
             ],
             'VISIBILITY_FLAGS': [
                 'VISIBILITY_FLAGS :=',
@@ -308,6 +306,14 @@ class TestRecursiveMakeBackend(BackendTester):
                 'MOZBUILD_LDFLAGS += -x',
                 'MOZBUILD_LDFLAGS += -DELAYLOAD:foo.dll',
                 'MOZBUILD_LDFLAGS += -DELAYLOAD:bar.dll',
+            ],
+            'MOZBUILD_HOST_CFLAGS': [
+                'MOZBUILD_HOST_CFLAGS += -funroll-loops',
+                'MOZBUILD_HOST_CFLAGS += -wall',
+            ],
+            'MOZBUILD_HOST_CXXFLAGS': [
+                'MOZBUILD_HOST_CXXFLAGS += -funroll-loops-harder',
+                'MOZBUILD_HOST_CXXFLAGS += -wall-day-everyday',
             ],
             'WIN32_EXE_LDFLAGS': [
                 'WIN32_EXE_LDFLAGS += -subsystem:console',
@@ -379,11 +385,13 @@ class TestRecursiveMakeBackend(BackendTester):
         expected = [
             'GENERATED_FILES += bar.c',
             'bar.c: %s/generate-bar.py' % env.topsrcdir,
-            '$(call py_action,file_generate,%s/generate-bar.py bar.c)' % env.topsrcdir,
+            '$(REPORT_BUILD)',
+            '$(call py_action,file_generate,%s/generate-bar.py baz bar.c)' % env.topsrcdir,
             '',
             'GENERATED_FILES += foo.c',
             'foo.c: %s/generate-foo.py %s/foo-data' % (env.topsrcdir, env.topsrcdir),
-            '$(call py_action,file_generate,%s/generate-foo.py foo.c %s/foo-data)' % (env.topsrcdir, env.topsrcdir),
+            '$(REPORT_BUILD)',
+            '$(call py_action,file_generate,%s/generate-foo.py main foo.c %s/foo-data)' % (env.topsrcdir, env.topsrcdir),
             '',
             'GENERATED_FILES += quux.c',
         ]
@@ -406,6 +414,19 @@ class TestRecursiveMakeBackend(BackendTester):
         self.assertIn('res/bar.res', m)
         self.assertIn('res/tests/test.manifest', m)
         self.assertIn('res/tests/extra.manifest', m)
+
+    def test_branding_files(self):
+        """Ensure BRANDING_FILES is handled properly."""
+        env = self._consume('branding-files', RecursiveMakeBackend)
+
+        #BRANDING_FILES should appear in the dist_branding install manifest.
+        m = InstallManifest(path=os.path.join(env.topobjdir,
+            '_build_manifests', 'install', 'dist_branding'))
+        self.assertEqual(len(m), 4)
+        self.assertIn('app.ico', m)
+        self.assertIn('bar.ico', m)
+        self.assertIn('quux.png', m)
+        self.assertIn('icons/foo.ico', m)
 
     def test_js_preference_files(self):
         """Ensure PREF_JS_EXPORTS is written out correctly."""
@@ -486,6 +507,7 @@ class TestRecursiveMakeBackend(BackendTester):
 
         m = InstallManifest(path=os.path.join(install_dir, 'dist_bin'))
         self.assertIn('components/my_module.xpt', m)
+        self.assertIn('components/interfaces.manifest', m)
 
         m = InstallManifest(path=mozpath.join(install_dir, 'dist_include'))
         self.assertIn('foo.h', m)
@@ -564,6 +586,19 @@ class TestRecursiveMakeBackend(BackendTester):
         expected = ['DEFINES += -DFOO -DBAZ=\'"ab\'\\\'\'cd"\' -UQUX -DBAR=7 -DVALUE=\'xyz\'']
         self.assertEqual(defines, expected)
 
+    def test_host_defines(self):
+        """Test that HOST_DEFINES are written to backend.mk correctly."""
+        env = self._consume('host-defines', RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, 'backend.mk')
+        lines = [l.strip() for l in open(backend_path, 'rt').readlines()[2:]]
+
+        var = 'HOST_DEFINES'
+        defines = [val for val in lines if val.startswith(var)]
+
+        expected = ['HOST_DEFINES += -DFOO -DBAZ=\'"ab\'\\\'\'cd"\' -UQUX -DBAR=7 -DVALUE=\'xyz\'']
+        self.assertEqual(defines, expected)
+
     def test_local_includes(self):
         """Test that LOCAL_INCLUDES are written to backend.mk correctly."""
         env = self._consume('local_includes', RecursiveMakeBackend)
@@ -626,6 +661,21 @@ class TestRecursiveMakeBackend(BackendTester):
                 str.startswith('FINAL_TARGET') or str.startswith('XPI_NAME') or
                 str.startswith('DIST_SUBDIR')]
             self.assertEqual(found, expected_rules)
+
+    def test_dist_files(self):
+        """Test that DIST_FILES is written to backend.mk correctly."""
+        env = self._consume('dist-files', RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, 'backend.mk')
+        lines = [l.strip() for l in open(backend_path, 'rt').readlines()[2:]]
+
+        expected = [
+            'DIST_FILES += install.rdf',
+            'DIST_FILES += main.js',
+        ]
+
+        found = [str for str in lines if str.startswith('DIST_FILES')]
+        self.assertEqual(found, expected)
 
     def test_config(self):
         """Test that CONFIGURE_SUBST_FILES and CONFIGURE_DEFINE_FILES are

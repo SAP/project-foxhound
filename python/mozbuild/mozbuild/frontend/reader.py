@@ -16,7 +16,7 @@ The BuildReader contains basic logic for traversing a tree of mozbuild files.
 It does this by examining specific variables populated during execution.
 """
 
-from __future__ import print_function, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import ast
 import inspect
@@ -29,13 +29,16 @@ import tokenize
 import traceback
 import types
 
-from collections import OrderedDict
+from collections import (
+    defaultdict,
+    OrderedDict,
+)
 from io import StringIO
 
 from mozbuild.util import (
+    EmptyValue,
     memoize,
     ReadOnlyDefaultDict,
-    ReadOnlyDict,
 )
 
 from mozbuild.backend.configenvironment import ConfigEnvironment
@@ -49,6 +52,7 @@ from .data import (
 )
 
 from .sandbox import (
+    default_finder,
     SandboxError,
     SandboxExecutionError,
     SandboxLoadError,
@@ -58,10 +62,14 @@ from .sandbox import (
 from .context import (
     Context,
     ContextDerivedValue,
+    Files,
     FUNCTIONS,
     VARIABLES,
     DEPRECATION_HINTS,
+    SourcePath,
     SPECIAL_VARIABLES,
+    SUBCONTEXTS,
+    SubContext,
     TemplateContext,
 )
 
@@ -75,6 +83,48 @@ else:
 
 def log(logger, level, action, params, formatter):
     logger.log(level, formatter, extra={'action': action, 'params': params})
+
+
+class EmptyConfig(object):
+    """A config object that is empty.
+
+    This config object is suitable for using with a BuildReader on a vanilla
+    checkout, without any existing configuration. The config is simply
+    bootstrapped from a top source directory path.
+    """
+    class PopulateOnGetDict(ReadOnlyDefaultDict):
+        """A variation on ReadOnlyDefaultDict that populates during .get().
+
+        This variation is needed because CONFIG uses .get() to access members.
+        Without it, None (instead of our EmptyValue types) would be returned.
+        """
+        def get(self, key, default=None):
+            return self[key]
+
+    def __init__(self, topsrcdir):
+        self.topsrcdir = topsrcdir
+        self.topobjdir = ''
+
+        self.substs = self.PopulateOnGetDict(EmptyValue, {
+            # These 2 variables are used semi-frequently and it isn't worth
+            # changing all the instances.
+            b'MOZ_APP_NAME': b'empty',
+            b'MOZ_CHILD_PROCESS_NAME': b'empty',
+            # Set manipulations are performed within the moz.build files. But
+            # set() is not an exposed symbol, so we can't create an empty set.
+            b'NECKO_PROTOCOLS': set(),
+            # Needed to prevent js/src's config.status from loading.
+            b'JS_STANDALONE': b'1',
+        })
+        udict = {}
+        for k, v in self.substs.items():
+            if isinstance(v, str):
+                udict[k.decode('utf-8')] = v.decode('utf-8')
+            else:
+                udict[k] = v
+        self.substs_unicode = self.PopulateOnGetDict(EmptyValue, udict)
+        self.defines = self.substs
+        self.external_source_dir = None
 
 
 def is_read_allowed(path, config):
@@ -96,9 +146,11 @@ def is_read_allowed(path, config):
     if mozpath.basedir(path, [topsrcdir]):
         return True
 
-    if config.external_source_dir and \
-            mozpath.basedir(path, [config.external_source_dir]):
-        return True
+    if config.external_source_dir:
+        external_dir = os.path.normcase(config.external_source_dir)
+        norm_path = os.path.normcase(path)
+        if mozpath.basedir(norm_path, [external_dir]):
+            return True
 
     return False
 
@@ -122,10 +174,10 @@ class MozbuildSandbox(Sandbox):
     metadata is a dict of metadata that can be used during the sandbox
     evaluation.
     """
-    def __init__(self, context, metadata={}):
+    def __init__(self, context, metadata={}, finder=default_finder):
         assert isinstance(context, Context)
 
-        Sandbox.__init__(self, context)
+        Sandbox.__init__(self, context, finder=finder)
 
         self._log = logging.getLogger(__name__)
 
@@ -134,19 +186,34 @@ class MozbuildSandbox(Sandbox):
         self.exports = set(exports.keys())
         context.update(exports)
         self.templates = self.metadata.setdefault('templates', {})
+        self.special_variables = self.metadata.setdefault('special_variables',
+                                                          SPECIAL_VARIABLES)
+        self.functions = self.metadata.setdefault('functions', FUNCTIONS)
+        self.subcontext_types = self.metadata.setdefault('subcontexts',
+                                                         SUBCONTEXTS)
 
     def __getitem__(self, key):
-        if key in SPECIAL_VARIABLES:
-            return SPECIAL_VARIABLES[key][0](self._context)
-        if key in FUNCTIONS:
-            return self._create_function(FUNCTIONS[key])
+        if key in self.special_variables:
+            return self.special_variables[key][0](self._context)
+        if key in self.functions:
+            return self._create_function(self.functions[key])
+        if key in self.subcontext_types:
+            return self._create_subcontext(self.subcontext_types[key])
         if key in self.templates:
-            return self._create_template_function(self.templates[key])
+            return self._create_template_wrapper(self.templates[key])
         return Sandbox.__getitem__(self, key)
 
+    def __contains__(self, key):
+        if any(key in d for d in (self.special_variables, self.functions,
+                                  self.subcontext_types, self.templates)):
+            return True
+
+        return Sandbox.__contains__(self, key)
+
     def __setitem__(self, key, value):
-        if key in SPECIAL_VARIABLES or key in FUNCTIONS:
-            raise KeyError()
+        if key in self.special_variables or key in self.functions or key in self.subcontext_types:
+            raise KeyError('Cannot set "%s" because it is a reserved keyword'
+                           % key)
         if key in self.exports:
             self._context[key] = value
             self.exports.remove(key)
@@ -239,8 +306,8 @@ class MozbuildSandbox(Sandbox):
     def _include(self, path):
         """Include and exec another file within the context of this one."""
 
-        # path is a SourcePath, and needs to be coerced to unicode.
-        self.exec_file(unicode(path))
+        # path is a SourcePath
+        self.exec_file(path.full_path)
 
     def _warning(self, message):
         # FUTURE consider capturing warnings in a variable instead of printing.
@@ -250,14 +317,7 @@ class MozbuildSandbox(Sandbox):
         raise SandboxCalledError(self._context.source_stack, message)
 
     def _template_decorator(self, func):
-        """Registers template as expected by _create_template_function.
-
-        The template data consists of:
-        - the function object as it comes from the sandbox evaluation of the
-          template declaration.
-        - its code, modified as described in the comments of this method.
-        - the path of the file containing the template definition.
-        """
+        """Registers a template function."""
 
         if not inspect.isfunction(func):
             raise Exception('`template` is a function decorator. You must '
@@ -268,47 +328,20 @@ class MozbuildSandbox(Sandbox):
         if name in self.templates:
             raise KeyError(
                 'A template named "%s" was already declared in %s.' % (name,
-                self.templates[name][2]))
+                self.templates[name].path))
 
         if name.islower() or name.isupper() or name[0].islower():
             raise NameError('Template function names must be CamelCase.')
 
-        lines, firstlineno = inspect.getsourcelines(func)
-        first_op = None
-        generator = tokenize.generate_tokens(iter(lines).next)
-        # Find the first indent token in the source of this template function,
-        # which corresponds to the beginning of the function body.
-        for typ, s, begin, end, line in generator:
-            if typ == tokenize.OP:
-                first_op = True
-            if first_op and typ == tokenize.INDENT:
-                break
-        if typ != tokenize.INDENT:
-            # This should never happen.
-            raise Exception('Could not find the first line of the template %s' %
-                func.func_name)
-        # The code of the template in moz.build looks like this:
-        # m      def Foo(args):
-        # n          FOO = 'bar'
-        # n+1        (...)
-        #
-        # where,
-        # - m is firstlineno - 1,
-        # - n is usually m + 1, but in case the function signature takes more
-        # lines, is really m + begin[0] - 1
-        #
-        # We want that to be replaced with:
-        # m       if True:
-        # n           FOO = 'bar'
-        # n+1         (...)
-        #
-        # (this is simpler than trying to deindent the function body)
-        # So we need to prepend with n - 1 newlines so that line numbers
-        # are unchanged.
-        code = '\n' * (firstlineno + begin[0] - 3) + 'if True:\n'
-        code += ''.join(lines[begin[0] - 1:])
+        self.templates[name] = TemplateFunction(func, self)
 
-        self.templates[name] = func, code, self._context.current_path
+    @memoize
+    def _create_subcontext(self, cls):
+        """Return a function object that creates SubContext instances."""
+        def fn(*args, **kwargs):
+            return cls(self._context, *args, **kwargs)
+
+        return fn
 
     @memoize
     def _create_function(self, function_def):
@@ -332,9 +365,9 @@ class MozbuildSandbox(Sandbox):
         return function
 
     @memoize
-    def _create_template_function(self, template):
+    def _create_template_wrapper(self, template):
         """Returns a function object for use within the sandbox for the given
-        template.
+        TemplateFunction instance..
 
         When a moz.build file contains a reference to a template call, the
         sandbox needs a function to execute. This is what this method returns.
@@ -342,21 +375,27 @@ class MozbuildSandbox(Sandbox):
         After the template is executed, the data from its execution is merged
         with the context of the calling sandbox.
         """
-        func, code, path = template
-
-        def template_function(*args, **kwargs):
-            context = TemplateContext(VARIABLES, self._context.config)
+        def template_wrapper(*args, **kwargs):
+            context = TemplateContext(
+                template=template.name,
+                allowed_variables=self._context._allowed_variables,
+                config=self._context.config)
             context.add_source(self._context.current_path)
             for p in self._context.all_paths:
                 context.add_source(p)
 
-            sandbox = MozbuildSandbox(context, {
+            sandbox = MozbuildSandbox(context, metadata={
+                # We should arguably set these defaults to something else.
+                # Templates, for example, should arguably come from the state
+                # of the sandbox from when the template was declared, not when
+                # it was instantiated. Bug 1137319.
+                'functions': self.metadata.get('functions', {}),
+                'special_variables': self.metadata.get('special_variables', {}),
+                'subcontexts': self.metadata.get('subcontexts', {}),
                 'templates': self.metadata.get('templates', {})
-            })
-            for k, v in inspect.getcallargs(func, *args, **kwargs).items():
-                sandbox[k] = v
+            }, finder=self._finder)
 
-            sandbox.exec_source(code, path)
+            template.exec_in_sandbox(sandbox, *args, **kwargs)
 
             # This is gross, but allows the merge to happen. Eventually, the
             # merging will go away and template contexts emitted independently.
@@ -375,7 +414,105 @@ class MozbuildSandbox(Sandbox):
             for p in context.all_paths:
                 self._context.add_source(p)
 
-        return template_function
+        return template_wrapper
+
+
+class TemplateFunction(object):
+    def __init__(self, func, sandbox):
+        self.path = func.func_code.co_filename
+        self.name = func.func_name
+
+        code = func.func_code
+        firstlineno = code.co_firstlineno
+        lines = sandbox._current_source.splitlines(True)
+        lines = inspect.getblock(lines[firstlineno - 1:])
+
+        # The code lines we get out of inspect.getsourcelines look like
+        #   @template
+        #   def Template(*args, **kwargs):
+        #       VAR = 'value'
+        #       ...
+        func_ast = ast.parse(''.join(lines), self.path)
+        # Remove decorators
+        func_ast.body[0].decorator_list = []
+        # Adjust line numbers accordingly
+        ast.increment_lineno(func_ast, firstlineno - 1)
+
+        # When using a custom dictionary for function globals/locals, Cpython
+        # actually never calls __getitem__ and __setitem__, so we need to
+        # modify the AST so that accesses to globals are properly directed
+        # to a dict.
+        self._global_name = b'_data' # AST wants str for this, not unicode
+        # In case '_data' is a name used for a variable in the function code,
+        # prepend more underscores until we find an unused name.
+        while (self._global_name in code.co_names or
+                self._global_name in code.co_varnames):
+            self._global_name += '_'
+        func_ast = self.RewriteName(sandbox, self._global_name).visit(func_ast)
+
+        # Execute the rewritten code. That code now looks like:
+        #   def Template(*args, **kwargs):
+        #       _data['VAR'] = 'value'
+        #       ...
+        # The result of executing this code is the creation of a 'Template'
+        # function object in the global namespace.
+        glob = {'__builtins__': sandbox._builtins}
+        func = types.FunctionType(
+            compile(func_ast, self.path, 'exec'),
+            glob,
+            self.name,
+            func.func_defaults,
+            func.func_closure,
+        )
+        func()
+
+        self._func = glob[self.name]
+
+    def exec_in_sandbox(self, sandbox, *args, **kwargs):
+        """Executes the template function in the given sandbox."""
+        # Create a new function object associated with the execution sandbox
+        glob = {
+            self._global_name: sandbox,
+            '__builtins__': sandbox._builtins
+        }
+        func = types.FunctionType(
+            self._func.func_code,
+            glob,
+            self.name,
+            self._func.func_defaults,
+            self._func.func_closure
+        )
+        sandbox.exec_function(func, args, kwargs, self.path,
+                              becomes_current_path=False)
+
+    class RewriteName(ast.NodeTransformer):
+        """AST Node Transformer to rewrite variable accesses to go through
+        a dict.
+        """
+        def __init__(self, sandbox, global_name):
+            self._sandbox = sandbox
+            self._global_name = global_name
+
+        def visit_Str(self, node):
+            # String nodes we got from the AST parser are str, but we want
+            # unicode literals everywhere, so transform them.
+            node.s = unicode(node.s)
+            return node
+
+        def visit_Name(self, node):
+            # Modify uppercase variable references and names known to the
+            # sandbox as if they were retrieved from a dict instead.
+            if not node.id.isupper() and node.id not in self._sandbox:
+                return node
+
+            def c(new_node):
+                return ast.copy_location(new_node, node)
+
+            return c(ast.Subscript(
+                value=c(ast.Name(id=self._global_name, ctx=ast.Load())),
+                slice=c(ast.Index(value=c(ast.Str(s=node.id)))),
+                ctx=node.ctx
+            ))
 
 
 class SandboxValidationError(Exception):
@@ -513,7 +650,7 @@ class BuildReaderError(Exception):
 
             # Reset if we enter a new execution context. This prevents errors
             # in this module from being attributes to a script.
-            elif frame[0] == __file__ and frame[2] == 'exec_source':
+            elif frame[0] == __file__ and frame[2] == 'exec_function':
                 script_frame = None
 
         if script_frame is not None:
@@ -609,7 +746,7 @@ class BuildReaderError(Exception):
             self._print_exception(inner, s)
 
     def _print_keyerror(self, inner, s):
-        if inner.args[0] not in ('global_ns', 'local_ns'):
+        if not inner.args or inner.args[0] not in ('global_ns', 'local_ns'):
             self._print_exception(inner, s)
             return
 
@@ -668,7 +805,7 @@ class BuildReaderError(Exception):
         s.write('variables and try again.\n')
 
     def _print_valueerror(self, inner, s):
-        if inner.args[0] not in ('global_ns', 'local_ns'):
+        if not inner.args or inner.args[0] not in ('global_ns', 'local_ns'):
             self._print_exception(inner, s)
             return
 
@@ -719,13 +856,13 @@ class BuildReader(object):
     each sandbox evaluation. Its return value is ignored.
     """
 
-    def __init__(self, config, sandbox_post_eval_cb=None):
+    def __init__(self, config, finder=default_finder):
         self.config = config
 
-        self._sandbox_post_eval_cb = sandbox_post_eval_cb
         self._log = logging.getLogger(__name__)
         self._read_files = set()
         self._execution_stack = []
+        self._finder = finder
 
     def read_topsrcdir(self):
         """Read the tree of linked moz.build files.
@@ -737,7 +874,7 @@ class BuildReader(object):
         read, a new Context is created and emitted.
         """
         path = mozpath.join(self.config.topsrcdir, 'moz.build')
-        return self.read_mozbuild(path, self.config, read_tiers=True)
+        return self.read_mozbuild(path, self.config)
 
     def all_mozbuild_paths(self):
         """Iterator over all available moz.build files.
@@ -873,8 +1010,7 @@ class BuildReader(object):
             for name, key, value in assignments:
                 yield p, name, key, value
 
-    def read_mozbuild(self, path, config, read_tiers=False, descend=True,
-            metadata={}):
+    def read_mozbuild(self, path, config, descend=True, metadata={}):
         """Read and process a mozbuild file, descending into children.
 
         This starts with a single mozbuild file, executes it, and descends into
@@ -884,10 +1020,6 @@ class BuildReader(object):
         each element as a relative directory path. For each encountered
         directory, we will open the moz.build file located in that
         directory in a new Sandbox and process it.
-
-        If read_tiers is True (it should only be True for the top-level
-        mozbuild file in a project), the TIERS variable will be used for
-        traversal as well.
 
         If descend is True (the default), we will descend into child
         directories and files per variable values.
@@ -901,8 +1033,8 @@ class BuildReader(object):
         """
         self._execution_stack.append(path)
         try:
-            for s in self._read_mozbuild(path, config, read_tiers=read_tiers,
-                descend=descend, metadata=metadata):
+            for s in self._read_mozbuild(path, config, descend=descend,
+                                         metadata=metadata):
                 yield s
 
         except BuildReaderError as bre:
@@ -928,7 +1060,7 @@ class BuildReader(object):
             raise BuildReaderError(list(self._execution_stack),
                 sys.exc_info()[2], other_error=e)
 
-    def _read_mozbuild(self, path, config, read_tiers, descend, metadata):
+    def _read_mozbuild(self, path, config, descend, metadata):
         path = mozpath.normpath(path)
         log(self._log, logging.DEBUG, 'read_mozbuild', {'path': path},
             'Reading file: {path}')
@@ -963,12 +1095,15 @@ class BuildReader(object):
             config.external_source_dir = None
 
         context = Context(VARIABLES, config)
-        sandbox = MozbuildSandbox(context, metadata=metadata)
+        sandbox = MozbuildSandbox(context, metadata=metadata,
+                                  finder=self._finder)
         sandbox.exec_file(path)
         context.execution_time = time.time() - time_start
 
-        if self._sandbox_post_eval_cb:
-            self._sandbox_post_eval_cb(context)
+        # Yield main context before doing any processing. This gives immediate
+        # consumers an opportunity to change state before our remaining
+        # processing is performed.
+        yield context
 
         # We first collect directories populated in variables.
         dir_vars = ['DIRS']
@@ -981,7 +1116,7 @@ class BuildReader(object):
         curdir = mozpath.dirname(path)
 
         gyp_contexts = []
-        for target_dir in context['GYP_DIRS']:
+        for target_dir in context.get('GYP_DIRS', []):
             gyp_dir = context['GYP_DIRS'][target_dir]
             for v in ('input', 'variables'):
                 if not getattr(gyp_dir, v):
@@ -996,8 +1131,8 @@ class BuildReader(object):
             from .gyp_reader import read_from_gyp
             non_unified_sources = set()
             for s in gyp_dir.non_unified_sources:
-                source = mozpath.normpath(mozpath.join(curdir, s))
-                if not os.path.exists(source):
+                source = SourcePath(context, s)
+                if not self._finder.get(source.full_path):
                     raise SandboxValidationError('Cannot find %s.' % source,
                         context)
                 non_unified_sources.add(source)
@@ -1011,15 +1146,11 @@ class BuildReader(object):
                 gyp_contexts.append(gyp_context)
 
         for gyp_context in gyp_contexts:
-            if self._sandbox_post_eval_cb:
-                self._sandbox_post_eval_cb(gyp_context)
-
             context['DIRS'].append(mozpath.relpath(gyp_context.objdir, context.objdir))
+            sandbox.subcontexts.append(gyp_context)
 
-        yield context
-
-        for gyp_context in gyp_contexts:
-            yield gyp_context
+        for subcontext in sandbox.subcontexts:
+            yield subcontext
 
         # Traverse into referenced files.
 
@@ -1032,18 +1163,18 @@ class BuildReader(object):
                 if d in recurse_info:
                     raise SandboxValidationError(
                         'Directory (%s) registered multiple times in %s' % (
-                            mozpath.relpath(d, context.srcdir), var), context)
+                            mozpath.relpath(d.full_path, context.srcdir), var),
+                        context)
 
                 recurse_info[d] = {}
-                if 'templates' in sandbox.metadata:
-                    recurse_info[d]['templates'] = dict(
-                        sandbox.metadata['templates'])
-                if 'exports' in sandbox.metadata:
-                    sandbox.recompute_exports()
-                    recurse_info[d]['exports'] = dict(sandbox.metadata['exports'])
+                for key in sandbox.metadata:
+                    if key == 'exports':
+                        sandbox.recompute_exports()
+
+                    recurse_info[d][key] = dict(sandbox.metadata[key])
 
         for path, child_metadata in recurse_info.items():
-            child_path = path.join('moz.build')
+            child_path = path.join('moz.build').full_path
 
             # Ensure we don't break out of the topsrcdir. We don't do realpath
             # because it isn't necessary. If there are symlinks in the srcdir,
@@ -1058,7 +1189,163 @@ class BuildReader(object):
                 continue
 
             for res in self.read_mozbuild(child_path, context.config,
-                read_tiers=False, metadata=child_metadata):
+                                          metadata=child_metadata):
                 yield res
 
         self._execution_stack.pop()
+
+    def _find_relevant_mozbuilds(self, paths):
+        """Given a set of filesystem paths, find all relevant moz.build files.
+
+        We assume that a moz.build file in the directory ancestry of a given path
+        is relevant to that path. Let's say we have the following files on disk::
+
+           moz.build
+           foo/moz.build
+           foo/baz/moz.build
+           foo/baz/file1
+           other/moz.build
+           other/file2
+
+        If ``foo/baz/file1`` is passed in, the relevant moz.build files are
+        ``moz.build``, ``foo/moz.build``, and ``foo/baz/moz.build``. For
+        ``other/file2``, the relevant moz.build files are ``moz.build`` and
+        ``other/moz.build``.
+
+        Returns a dict of input paths to a list of relevant moz.build files.
+        The root moz.build file is first and the leaf-most moz.build is last.
+        """
+        root = self.config.topsrcdir
+        result = {}
+
+        @memoize
+        def exists(path):
+            return self._finder.get(path) is not None
+
+        def itermozbuild(path):
+            subpath = ''
+            yield 'moz.build'
+            for part in mozpath.split(path):
+                subpath = mozpath.join(subpath, part)
+                yield mozpath.join(subpath, 'moz.build')
+
+        for path in sorted(paths):
+            path = mozpath.normpath(path)
+            if os.path.isabs(path):
+                if not mozpath.basedir(path, [root]):
+                    raise Exception('Path outside topsrcdir: %s' % path)
+                path = mozpath.relpath(path, root)
+
+            result[path] = [p for p in itermozbuild(path)
+                              if exists(mozpath.join(root, p))]
+
+        return result
+
+    def read_relevant_mozbuilds(self, paths):
+        """Read and process moz.build files relevant for a set of paths.
+
+        For an iterable of relative-to-root filesystem paths ``paths``,
+        find all moz.build files that may apply to them based on filesystem
+        hierarchy and read those moz.build files.
+
+        The return value is a 2-tuple. The first item is a dict mapping each
+        input filesystem path to a list of Context instances that are relevant
+        to that path. The second item is a list of all Context instances. Each
+        Context instance is in both data structures.
+        """
+        relevants = self._find_relevant_mozbuilds(paths)
+
+        topsrcdir = self.config.topsrcdir
+
+        # Source moz.build file to directories to traverse.
+        dirs = defaultdict(set)
+        # Relevant path to absolute paths of relevant contexts.
+        path_mozbuilds = {}
+
+        # There is room to improve this code (and the code in
+        # _find_relevant_mozbuilds) to better handle multiple files in the same
+        # directory. Bug 1136966 tracks.
+        for path, mbpaths in relevants.items():
+            path_mozbuilds[path] = [mozpath.join(topsrcdir, p) for p in mbpaths]
+
+            for i, mbpath in enumerate(mbpaths[0:-1]):
+                source_dir = mozpath.dirname(mbpath)
+                target_dir = mozpath.dirname(mbpaths[i + 1])
+
+                d = mozpath.normpath(mozpath.join(topsrcdir, mbpath))
+                dirs[d].add(mozpath.relpath(target_dir, source_dir))
+
+        # Exporting doesn't work reliably in tree traversal mode. Override
+        # the function to no-op.
+        functions = dict(FUNCTIONS)
+        def export(sandbox):
+            return lambda varname: None
+        functions['export'] = tuple([export] + list(FUNCTIONS['export'][1:]))
+
+        metadata = {
+            'functions': functions,
+        }
+
+        contexts = defaultdict(list)
+        all_contexts = []
+        for context in self.read_mozbuild(mozpath.join(topsrcdir, 'moz.build'),
+                                          self.config, metadata=metadata):
+            # Explicitly set directory traversal variables to override default
+            # traversal rules.
+            if not isinstance(context, SubContext):
+                for v in ('DIRS', 'GYP_DIRS', 'TEST_DIRS'):
+                    context[v][:] = []
+
+                context['DIRS'] = sorted(dirs[context.main_path])
+
+            contexts[context.main_path].append(context)
+            all_contexts.append(context)
+
+        result = {}
+        for path, paths in path_mozbuilds.items():
+            result[path] = reduce(lambda x, y: x + y, (contexts[p] for p in paths), [])
+
+        return result, all_contexts
+
+    def files_info(self, paths):
+        """Obtain aggregate data from Files for a set of files.
+
+        Given a set of input paths, determine which moz.build files may
+        define metadata for them, evaluate those moz.build files, and
+        apply file metadata rules defined within to determine metadata
+        values for each file requested.
+
+        Essentially, for each input path:
+
+        1. Determine the set of moz.build files relevant to that file by
+           looking for moz.build files in ancestor directories.
+        2. Evaluate moz.build files starting with the most distant.
+        3. Iterate over Files sub-contexts.
+        4. If the file pattern matches the file we're seeking info on,
+           apply attribute updates.
+        5. Return the most recent value of attributes.
+        """
+        paths, _ = self.read_relevant_mozbuilds(paths)
+
+        r = {}
+
+        for path, ctxs in paths.items():
+            flags = Files(Context())
+
+            for ctx in ctxs:
+                if not isinstance(ctx, Files):
+                    continue
+
+                relpath = mozpath.relpath(path, ctx.relsrcdir)
+                pattern = ctx.pattern
+
+                # Only do wildcard matching if the '*' character is present.
+                # Otherwise, mozpath.match will match directories, which we've
+                # arbitrarily chosen to not allow.
+                if pattern == relpath or \
+                        ('*' in pattern and mozpath.match(relpath, pattern)):
+                    flags += ctx
+
+            r[path] = flags
+
+        return r

@@ -32,8 +32,8 @@ class nsTreeImageListener;
 namespace mozilla {
 namespace layout {
 class ScrollbarActivity;
-}
-}
+} // namespace layout
+} // namespace mozilla
 
 // An entry in the tree's image cache
 struct nsTreeImageCacheEntry
@@ -133,13 +133,20 @@ public:
   virtual bool PseudoMatches(nsCSSSelector* aSelector) override;
 
   // nsIScrollbarMediator
-  virtual void ScrollByPage(nsScrollbarFrame* aScrollbar, int32_t aDirection) override;
-  virtual void ScrollByWhole(nsScrollbarFrame* aScrollbar, int32_t aDirection) override;
-  virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection) override;
+  virtual void ScrollByPage(nsScrollbarFrame* aScrollbar, int32_t aDirection,
+                            nsIScrollbarMediator::ScrollSnapMode aSnap
+                              = nsIScrollbarMediator::DISABLE_SNAP) override;
+  virtual void ScrollByWhole(nsScrollbarFrame* aScrollbar, int32_t aDirection,
+                             nsIScrollbarMediator::ScrollSnapMode aSnap
+                               = nsIScrollbarMediator::DISABLE_SNAP) override;
+  virtual void ScrollByLine(nsScrollbarFrame* aScrollbar, int32_t aDirection,
+                            nsIScrollbarMediator::ScrollSnapMode aSnap
+                              = nsIScrollbarMediator::DISABLE_SNAP) override;
   virtual void RepeatButtonScroll(nsScrollbarFrame* aScrollbar) override;
   virtual void ThumbMoved(nsScrollbarFrame* aScrollbar,
                           nscoord aOldPos,
                           nscoord aNewPos) override;
+  virtual void ScrollbarReleased(nsScrollbarFrame* aScrollbar) override {}
   virtual void VisibilityChanged(bool aVisible) override { Invalidate(); }
   virtual nsIFrame* GetScrollbarBox(bool aVertical) override {
     ScrollParts parts = GetScrollParts();
@@ -147,6 +154,9 @@ public:
   }
   virtual void ScrollbarActivityStarted() const override;
   virtual void ScrollbarActivityStopped() const override;
+  virtual bool IsScrollbarOnRight() const override {
+    return (StyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR);
+  }
 
   // Overridden from nsIFrame to cache our pres context.
   virtual void Init(nsIContent*       aContent,
@@ -315,7 +325,6 @@ protected:
                           nsRect& aImageRect,
                           nsRect& aTwistyRect,
                           nsPresContext* aPresContext,
-                          nsRenderingContext& aRenderingContext,
                           nsStyleContext* aTwistyContext);
 
   // Fetch an image from the image cache.

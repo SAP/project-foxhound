@@ -5,7 +5,6 @@
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 const kDebuggerPrefs = [
   "devtools.debugger.remote-enabled",
-  "devtools.debugger.chrome-enabled",
   "devtools.chrome.enabled"
 ];
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -40,11 +39,11 @@ devtoolsCommandlineHandler.prototype = {
   handleConsoleFlag: function(cmdLine) {
     let window = Services.wm.getMostRecentWindow("devtools:webconsole");
     if (!window) {
-      let devtools = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools;
+      let { require } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
       // Load the browser devtools main module as the loader's main module.
       Cu.import("resource:///modules/devtools/gDevTools.jsm");
-      let hudservice = devtools.require("devtools/webconsole/hudservice");
-      let console = Cu.import("resource://gre/modules/devtools/Console.jsm", {}).console;
+      let hudservice = require("devtools/webconsole/hudservice");
+      let { console } = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
       hudservice.toggleBrowserConsole().then(null, console.error);
     } else {
       window.focus(); // the Browser Console was already open
@@ -110,6 +109,7 @@ devtoolsCommandlineHandler.prototype = {
       let debuggerServer = serverLoader.DebuggerServer;
       debuggerServer.init();
       debuggerServer.addBrowserActors();
+      debuggerServer.allowChromeProcess = true;
 
       let listener = debuggerServer.createListener();
       listener.portOrPath = portOrPath;

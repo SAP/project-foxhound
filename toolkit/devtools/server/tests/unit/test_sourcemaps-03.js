@@ -9,7 +9,7 @@ var gDebuggee;
 var gClient;
 var gThreadClient;
 
-Components.utils.import('resource:///modules/devtools/SourceMap.jsm');
+const {SourceNode} = require("source-map");
 
 function run_test()
 {
@@ -36,8 +36,7 @@ function testBreakpointMapping(aName, aCallback)
       source.setBreakpoint({
         // Setting the breakpoint on an empty line so that it is pushed down one
         // line and we can check the source mapped actualLocation later.
-        line: 3,
-        column: 0
+        line: 3
       }, function (aResponse) {
         do_check_true(!aResponse.error);
 
@@ -95,12 +94,12 @@ function test_simple_source_map()
     "http://example.com/www/js/c.js"
   ]);
 
-  gClient.addListener("newSource", function _onNewSource(aEvent, aPacket) {
+  gThreadClient.addListener("newSource", function _onNewSource(aEvent, aPacket) {
     expectedSources.delete(aPacket.source.url);
     if (expectedSources.size > 0) {
       return;
     }
-    gClient.removeListener("newSource", _onNewSource);
+    gThreadClient.removeListener("newSource", _onNewSource);
 
     testBreakpointMapping("a", function () {
       testBreakpointMapping("b", function () {

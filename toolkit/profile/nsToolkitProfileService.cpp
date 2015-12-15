@@ -40,6 +40,7 @@
 #include "nsReadableUtils.h"
 #include "nsNativeCharsetUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Snprintf.h"
 
 using namespace mozilla;
 
@@ -676,7 +677,7 @@ NS_LockProfilePath(nsIFile* aPath, nsIFile* aTempPath,
     nsresult rv = lock->Init(aPath, aTempPath, aUnlocker);
     if (NS_FAILED(rv)) return rv;
 
-    NS_ADDREF(*aResult = lock);
+    lock.forget(aResult);
     return NS_OK;
 }
 
@@ -894,7 +895,7 @@ nsToolkitProfileService::CreateProfileInternal(nsIFile* aRootDir,
     rv = CreateTimesInternal(rootDir);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsToolkitProfile* last = aForExternalApp ? nullptr : mFirst;
+    nsToolkitProfile* last = aForExternalApp ? nullptr : mFirst.get();
     if (last) {
         while (last->mNext)
             last = last->mNext;
@@ -904,7 +905,7 @@ nsToolkitProfileService::CreateProfileInternal(nsIFile* aRootDir,
         new nsToolkitProfile(aName, rootDir, localDir, last, aForExternalApp);
     if (!profile) return NS_ERROR_OUT_OF_MEMORY;
 
-    NS_ADDREF(*aResult = profile);
+    profile.forget(aResult);
     return NS_OK;
 }
 
@@ -969,16 +970,18 @@ nsToolkitProfileService::Flush()
         ++pCount;
 
     uint32_t length;
-    nsAutoArrayPtr<char> buffer (new char[100+MAXPATHLEN*pCount]);
+    const int bufsize = 100+MAXPATHLEN*pCount;
+    nsAutoArrayPtr<char> buffer (new char[bufsize]);
 
     NS_ENSURE_TRUE(buffer, NS_ERROR_OUT_OF_MEMORY);
 
-    char *end = buffer;
+    char *pos = buffer;
+    char *end = buffer + bufsize;
 
-    end += sprintf(end,
-                   "[General]\n"
-                   "StartWithLastProfile=%s\n\n",
-                   mStartWithLast ? "1" : "0");
+    pos += snprintf(pos, end - pos,
+                    "[General]\n"
+                    "StartWithLastProfile=%s\n\n",
+                    mStartWithLast ? "1" : "0");
 
     nsAutoCString path;
     cur = mFirst;
@@ -997,21 +1000,21 @@ nsToolkitProfileService::Flush()
             NS_ENSURE_SUCCESS(rv, rv);
         }
 
-        end += sprintf(end,
-                       "[Profile%u]\n"
-                       "Name=%s\n"
-                       "IsRelative=%s\n"
-                       "Path=%s\n",
-                       pCount, cur->mName.get(),
-                       isRelative ? "1" : "0", path.get());
+        pos += snprintf(pos, end - pos,
+                        "[Profile%u]\n"
+                        "Name=%s\n"
+                        "IsRelative=%s\n"
+                        "Path=%s\n",
+                        pCount, cur->mName.get(),
+                        isRelative ? "1" : "0", path.get());
 
         nsCOMPtr<nsIToolkitProfile> profile;
         rv = this->GetDefaultProfile(getter_AddRefs(profile));
         if (NS_SUCCEEDED(rv) && profile == cur) {
-            end += sprintf(end, "Default=1\n");
+            pos += snprintf(pos, end - pos, "Default=1\n");
         }
 
-        end += sprintf(end, "\n");
+        pos += snprintf(pos, end - pos, "\n");
 
         cur = cur->mNext;
         ++pCount;
@@ -1022,7 +1025,7 @@ nsToolkitProfileService::Flush()
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (buffer) {
-        length = end - buffer;
+        length = pos - buffer;
 
         if (fwrite(buffer, sizeof(char), length, writeFile) != length) {
             fclose(writeFile);
@@ -1108,8 +1111,9 @@ XRE_GetFileFromPath(const char *aPath, nsIFile* *aResult)
         nsCOMPtr<nsILocalFileMac> lfMac = do_QueryInterface(lf, &rv);
         if (NS_SUCCEEDED(rv)) {
             rv = lfMac->InitWithCFURL(fullPath);
-            if (NS_SUCCEEDED(rv))
-                NS_ADDREF(*aResult = lf);
+            if (NS_SUCCEEDED(rv)) {
+                lf.forget(aResult);
+            }
         }
     }
     CFRelease(fullPath);

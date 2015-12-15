@@ -316,10 +316,10 @@ SpdyStream31::ParseHttpRequestHeaders(const char *buf,
   // check the push cache for GET
   if (mTransaction->RequestHead()->IsGet()) {
     // from :scheme, :host, :path
-    nsILoadGroupConnectionInfo *loadGroupCI = mTransaction->LoadGroupConnectionInfo();
+    nsISchedulingContext *schedulingContext = mTransaction->SchedulingContext();
     SpdyPushCache *cache = nullptr;
-    if (loadGroupCI)
-      loadGroupCI->GetSpdyPushCache(&cache);
+    if (schedulingContext)
+      schedulingContext->GetSpdyPushCache(&cache);
 
     SpdyPushedStream31 *pushedStream = nullptr;
     // we remove the pushedstream from the push cache so that
@@ -521,9 +521,9 @@ SpdyStream31::GenerateSynFrame()
       return NS_ERROR_UNEXPECTED;
     }
     nsAutoCString route;
-    route = ci->GetHost();
+    route = ci->GetOrigin();
     route.Append(':');
-    route.AppendInt(ci->Port());
+    route.AppendInt(ci->OriginPort());
     CompressToFrame(route);
   }
 
@@ -1535,14 +1535,14 @@ SpdyStream31::OnReadSegment(const char *buf,
     if (dataLength > mSession->RemoteSessionWindow())
       dataLength = static_cast<uint32_t>(mSession->RemoteSessionWindow());
 
-    LOG3(("SpdyStream31 this=%p id 0x%X remote window is stream %ld and "
-          "session %ld. Chunk is %d\n",
-          this, mStreamID, mRemoteWindow, mSession->RemoteSessionWindow(),
-          dataLength));
+    LOG3(("SpdyStream31 this=%p id 0x%X remote window is stream %" PRId64 " and "
+          "session %" PRId64". Chunk is %u\n",
+          this, mStreamID, mRemoteWindow,
+          mSession->RemoteSessionWindow(), dataLength));
     mRemoteWindow -= dataLength;
     mSession->DecrementRemoteSessionWindow(dataLength);
 
-    LOG3(("SpdyStream31 %p id %x request len remaining %u, "
+    LOG3(("SpdyStream31 %p id 0x%x request len remaining %" PRId64 ", "
           "count avail %u, chunk used %u",
           this, mStreamID, mRequestBodyLenRemaining, count, dataLength));
     if (!dataLength && mRequestBodyLenRemaining) {
@@ -1647,5 +1647,5 @@ SpdyStream31::MapStreamToHttpConnection()
                                      mTransaction->ConnectionInfo());
 }
 
-} // namespace mozilla::net
+} // namespace net
 } // namespace mozilla

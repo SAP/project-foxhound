@@ -41,8 +41,7 @@ static const char sPrintOptionsContractID[] = "@mozilla.org/gfx/printsettings-se
 
 //
 
-#include "prlog.h"
-#ifdef PR_LOGGING 
+#include "mozilla/Logging.h"
 PRLogModuleInfo *
 GetLayoutPrintingLog()
 {
@@ -51,10 +50,7 @@ GetLayoutPrintingLog()
     sLog = PR_NewLogModule("printing-layout");
   return sLog;
 }
-#define PR_PL(_p1)  PR_LOG(GetLayoutPrintingLog(), PR_LOG_DEBUG, _p1)
-#else
-#define PR_PL(_p1)
-#endif
+#define PR_PL(_p1)  MOZ_LOG(GetLayoutPrintingLog(), mozilla::LogLevel::Debug, _p1)
 
 nsSimplePageSequenceFrame*
 NS_NewSimplePageSequenceFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
@@ -161,6 +157,7 @@ nsSimplePageSequenceFrame::Reflow(nsPresContext*          aPresContext,
                                   const nsHTMLReflowState& aReflowState,
                                   nsReflowStatus&          aStatus)
 {
+  MarkInReflow();
   NS_PRECONDITION(aPresContext->IsRootPaginatedDocument(),
                   "A Page Sequence is only for real pages");
   DO_GLOBAL_REFLOW_COUNT("nsSimplePageSequenceFrame");
@@ -168,6 +165,32 @@ nsSimplePageSequenceFrame::Reflow(nsPresContext*          aPresContext,
   NS_FRAME_TRACE_REFLOW_IN("nsSimplePageSequenceFrame::Reflow");
 
   aStatus = NS_FRAME_COMPLETE;  // we're always complete
+
+  // Don't do incremental reflow until we've taught tables how to do
+  // it right in paginated mode.
+  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+    // Return our desired size
+    SetDesiredSize(aDesiredSize, aReflowState, mSize.width, mSize.height);
+    aDesiredSize.SetOverflowAreasToDesiredBounds();
+    FinishAndStoreOverflow(&aDesiredSize);
+
+    if (GetRect().Width() != aDesiredSize.Width()) {
+      // Our width is changing; we need to re-center our children (our pages).
+      for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
+        nsIFrame* child = e.get();
+        nsMargin pageCSSMargin = child->GetUsedMargin();
+        nscoord centeringMargin =
+          ComputeCenteringMargin(aReflowState.ComputedWidth(),
+                                 child->GetRect().width,
+                                 pageCSSMargin);
+        nscoord newX = pageCSSMargin.left + centeringMargin;
+
+        // Adjust the child's x-position:
+        child->MovePositionBy(nsPoint(newX - child->GetNormalPosition().x, 0));
+      }
+    }
+    return;
+  }
 
   // See if we can get a Print Settings from the Context
   if (!mPageData->mPrintSettings &&
@@ -622,6 +645,7 @@ nsSimplePageSequenceFrame::PrePrintNextPage(nsITimerCallback* aCallback, bool* a
       mCalledBeginPage = true;
       
       nsRefPtr<gfxContext> renderingContext = dc->CreateRenderingContext();
+      NS_ENSURE_TRUE(renderingContext, NS_ERROR_OUT_OF_MEMORY);
 
       nsRefPtr<gfxASurface> renderingSurface =
           renderingContext->CurrentSurface();
@@ -750,7 +774,11 @@ nsSimplePageSequenceFrame::PrintNextPage()
 
       PR_PL(("SeqFr::PrintNextPage -> %p PageNo: %d", pf, mPageNum));
 
-      nsRenderingContext renderingContext(dc->CreateRenderingContext());
+      // CreateRenderingContext can fail
+      nsRefPtr<gfxContext> gCtx = dc->CreateRenderingContext();
+      NS_ENSURE_TRUE(gCtx, NS_ERROR_OUT_OF_MEMORY);
+
+      nsRenderingContext renderingContext(gCtx);
 
       nsRect drawingRect(nsPoint(0, 0), currentPage->GetSize());
       nsRegion drawingRegion(drawingRect);

@@ -22,38 +22,28 @@
 #include "nsIIdleServiceInternal.h"
 #include "Units.h"
 
-extern nsIntRect gScreenBounds;
-
-namespace mozilla {
-namespace gl {
-class GLContext;
-}
-namespace layers {
-class LayersManager;
-}
-}
-
 class ANativeWindowBuffer;
-
-namespace android {
-class FramebufferNativeWindow;
-}
 
 namespace widget {
 struct InputContext;
 struct InputContextAction;
 }
 
+namespace mozilla {
+class HwcComposer2D;
+}
+
+class nsScreenGonk;
+
 class nsWindow : public nsBaseWidget
 {
 public:
     nsWindow();
-    virtual ~nsWindow();
 
     NS_DECL_ISUPPORTS_INHERITED
 
     static void DoDraw(void);
-    static nsEventStatus DispatchInputEvent(mozilla::WidgetGUIEvent& aEvent);
+    static nsEventStatus DispatchKeyInput(mozilla::WidgetKeyboardEvent& aEvent);
     static void DispatchTouchInput(mozilla::MultiTouchInput& aInput);
 
     NS_IMETHOD Create(nsIWidget *aParent,
@@ -83,6 +73,7 @@ public:
     NS_IMETHOD ConfigureChildren(const nsTArray<nsIWidget::Configuration>&);
     NS_IMETHOD Invalidate(const nsIntRect &aRect);
     virtual void* GetNativeData(uint32_t aDataType);
+    virtual void SetNativeData(uint32_t aDataType, uintptr_t aVal);
     NS_IMETHOD SetTitle(const nsAString& aTitle)
     {
         return NS_OK;
@@ -91,14 +82,16 @@ public:
     void DispatchTouchInputViaAPZ(mozilla::MultiTouchInput& aInput);
     void DispatchTouchEventForAPZ(const mozilla::MultiTouchInput& aInput,
                                   const ScrollableLayerGuid& aGuid,
-                                  const uint64_t aInputBlockId);
+                                  const uint64_t aInputBlockId,
+                                  nsEventStatus aApzResponse);
     NS_IMETHOD DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                              nsEventStatus& aStatus);
     virtual nsresult SynthesizeNativeTouchPoint(uint32_t aPointerId,
                                                 TouchPointerState aPointerState,
                                                 nsIntPoint aPointerScreenPoint,
                                                 double aPointerPressure,
-                                                uint32_t aPointerOrientation) override;
+                                                uint32_t aPointerOrientation,
+                                                nsIObserver* aObserver) override;
 
     NS_IMETHOD CaptureRollupEvents(nsIRollupListener *aListener,
                                    bool aDoCapture)
@@ -109,7 +102,7 @@ public:
 
     NS_IMETHOD MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen = nullptr) /*override*/;
 
-    virtual mozilla::TemporaryRef<mozilla::gfx::DrawTarget>
+    virtual already_AddRefed<mozilla::gfx::DrawTarget>
         StartRemoteDrawing() override;
     virtual void EndRemoteDrawing() override;
 
@@ -120,6 +113,9 @@ public:
                         LayersBackend aBackendHint = mozilla::layers::LayersBackend::LAYERS_NONE,
                         LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                         bool* aAllowRetaining = nullptr);
+    virtual void DestroyCompositor();
+
+    virtual CompositorParent* NewCompositorParent(int aSurfaceWidth, int aSurfaceHeight);
 
     NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
                                       const InputContextAction& aAction);
@@ -131,6 +127,10 @@ public:
     virtual bool NeedsPaint();
 
     virtual Composer2D* GetComposer2D() override;
+
+    void ConfigureAPZControllerThread() override;
+
+    nsScreenGonk* GetScreen();
 
 protected:
     nsWindow* mParent;
@@ -152,6 +152,8 @@ protected:
     // destruction.
     mozilla::RefPtr<mozilla::gfx::DrawTarget> mBackBuffer;
 
+    virtual ~nsWindow();
+
     void BringToTop();
 
     // Call this function when the users activity is the direct cause of an
@@ -162,6 +164,10 @@ private:
     // This is used by SynthesizeNativeTouchPoint to maintain state between
     // multiple synthesized points
     nsAutoPtr<mozilla::MultiTouchInput> mSynthesizedTouchInput;
+
+    nsRefPtr<nsScreenGonk> mScreen;
+
+    nsRefPtr<mozilla::HwcComposer2D> mComposer2D;
 };
 
 #endif /* nsWindow_h */

@@ -10,12 +10,9 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/AppConstants.jsm");
 
-#ifdef MOZ_CRASHREPORTER
-Cu.import("resource://gre/modules/CrashReports.jsm");
-#endif
-
-let Experiments;
+var Experiments;
 try {
   Experiments = Cu.import("resource:///modules/experiments/Experiments.jsm").Experiments;
 }
@@ -28,6 +25,7 @@ catch (e) {
 // under the "accessibility.*" branch.
 const PREFS_WHITELIST = [
   "accessibility.",
+  "apz.",
   "browser.cache.",
   "browser.display.",
   "browser.download.folderList",
@@ -92,6 +90,10 @@ const PREFS_WHITELIST = [
   "storage.vacuum.last.",
   "svg.",
   "toolkit.startup.recent_crashes",
+  "ui.osk.enabled",
+  "ui.osk.detect_physical_keyboard",
+  "ui.osk.require_tablet_mode",
+  "ui.osk.debug.keyboardDisplayReason",
   "webgl.",
 ];
 
@@ -101,6 +103,34 @@ const PREFS_BLACKLIST = [
   /[.]print_to_filename$/,
   /^print[.]macosx[.]pagesetup/,
 ];
+
+// Table of getters for various preference types.
+// It's important to use getComplexValue for strings: it returns Unicode (wchars), getCharPref returns UTF-8 encoded chars.
+const PREFS_GETTERS = {};
+
+PREFS_GETTERS[Ci.nsIPrefBranch.PREF_STRING] = (prefs, name) => prefs.getComplexValue(name, Ci.nsISupportsString).data;
+PREFS_GETTERS[Ci.nsIPrefBranch.PREF_INT] = (prefs, name) => prefs.getIntPref(name);
+PREFS_GETTERS[Ci.nsIPrefBranch.PREF_BOOL] = (prefs, name) => prefs.getBoolPref(name);
+
+// Return the preferences filtered by PREFS_BLACKLIST and PREFS_WHITELIST lists
+// and also by the custom 'filter'-ing function.
+function getPrefList(filter) {
+  filter = filter || (name => true);
+  function getPref(name) {
+    let type = Services.prefs.getPrefType(name);
+    if (!(type in PREFS_GETTERS))
+      throw new Error("Unknown preference type " + type + " for " + name);
+    return PREFS_GETTERS[type](Services.prefs, name);
+  }
+
+  return PREFS_WHITELIST.reduce(function(prefs, branch) {
+    Services.prefs.getChildList(branch).forEach(function(name) {
+      if (filter(name) && !PREFS_BLACKLIST.some(re => re.test(name)))
+        prefs[name] = getPref(name);
+    });
+    return prefs;
+  }, {});
+}
 
 this.Troubleshoot = {
 
@@ -141,21 +171,21 @@ this.Troubleshoot = {
 // generate the provider's data.  The function is passed a "done" callback, and
 // when done, it must pass its data to the callback.  The resulting snapshot
 // object will contain a name => data entry for each provider.
-let dataProviders = {
+var dataProviders = {
 
   application: function application(done) {
     let data = {
       name: Services.appinfo.name,
-      version: Services.appinfo.version,
+      version: AppConstants.MOZ_APP_VERSION_DISPLAY,
       buildID: Services.appinfo.appBuildID,
       userAgent: Cc["@mozilla.org/network/protocol;1?name=http"].
                  getService(Ci.nsIHttpProtocolHandler).
                  userAgent,
+      safeMode: Services.appinfo.inSafeMode,
     };
 
-#ifdef MOZ_UPDATER
-    data.updateChannel = Cu.import("resource://gre/modules/UpdateChannel.jsm", {}).UpdateChannel.get();
-#endif
+    if (AppConstants.MOZ_UPDATER)
+      data.updateChannel = Cu.import("resource://gre/modules/UpdateChannel.jsm", {}).UpdateChannel.get();
 
     try {
       data.vendor = Services.prefs.getCharPref("app.support.vendor");
@@ -187,18 +217,6 @@ let dataProviders = {
 
     done(data);
   },
-
-#ifdef MOZ_CRASHREPORTER
-  crashes: function crashes(done) {
-    let reports = CrashReports.getReports();
-    let now = new Date();
-    let reportsNew = reports.filter(report => (now - report.date < Troubleshoot.kMaxCrashAge));
-    let reportsSubmitted = reportsNew.filter(report => (!report.pending));
-    let reportsPendingCount = reportsNew.length - reportsSubmitted.length;
-    let data = {submitted : reportsSubmitted, pending : reportsPendingCount};
-    done(data);
-  },
-#endif
 
   extensions: function extensions(done) {
     AddonManager.getAddonsByTypes(["extension"], function (extensions) {
@@ -235,45 +253,11 @@ let dataProviders = {
   },
 
   modifiedPreferences: function modifiedPreferences(done) {
-    function getPref(name) {
-      let table = {};
-      table[Ci.nsIPrefBranch.PREF_STRING] = "getCharPref";
-      table[Ci.nsIPrefBranch.PREF_INT] = "getIntPref";
-      table[Ci.nsIPrefBranch.PREF_BOOL] = "getBoolPref";
-      let type = Services.prefs.getPrefType(name);
-      if (!(type in table))
-        throw new Error("Unknown preference type " + type + " for " + name);
-      return Services.prefs[table[type]](name);
-    }
-    done(PREFS_WHITELIST.reduce(function (prefs, branch) {
-      Services.prefs.getChildList(branch).forEach(function (name) {
-        if (Services.prefs.prefHasUserValue(name) &&
-            !PREFS_BLACKLIST.some(function (re) re.test(name)))
-          prefs[name] = getPref(name);
-      });
-      return prefs;
-    }, {}));
+    done(getPrefList(name => Services.prefs.prefHasUserValue(name)));
   },
 
   lockedPreferences: function lockedPreferences(done) {
-    function getPref(name) {
-      let table = {};
-      table[Ci.nsIPrefBranch.PREF_STRING] = "getCharPref";
-      table[Ci.nsIPrefBranch.PREF_INT] = "getIntPref";
-      table[Ci.nsIPrefBranch.PREF_BOOL] = "getBoolPref";
-      let type = Services.prefs.getPrefType(name);
-      if (!(type in table))
-        throw new Error("Unknown preference type " + type + " for " + name);
-      return Services.prefs[table[type]](name);
-    }
-    done(PREFS_WHITELIST.reduce(function (prefs, branch) {
-      Services.prefs.getChildList(branch).forEach(function (name) {
-        if (Services.prefs.prefIsLocked(name) &&
-            !PREFS_BLACKLIST.some(function (re) re.test(name)))
-          prefs[name] = getPref(name);
-      });
-      return prefs;
-    }, {}));
+    done(getPrefList(name => Services.prefs.prefIsLocked(name)));
   },
 
   graphics: function graphics(done) {
@@ -305,6 +289,9 @@ let dataProviders = {
               ["tryNewerDriver", suggestedDriverVersion] :
               ["blockedDriver"];
         break;
+      case Ci.nsIGfxInfo.FEATURE_BLOCKED_MISMATCHED_VERSION:
+        msg = ["blockedMismatchedVersion"];
+        break;
       }
       return msg;
     }
@@ -328,6 +315,7 @@ let dataProviders = {
       try {
         data.windowLayerManagerType = winUtils.layerManagerType;
         data.windowLayerManagerRemote = winUtils.layerManagerRemote;
+        data.supportsHardwareH264 = winUtils.supportsHardwareH264Decoding;
       }
       catch (e) {
         continue;
@@ -337,12 +325,9 @@ let dataProviders = {
     }
 
     if (!data.numAcceleratedWindows && gfxInfo) {
-      let feature =
-#ifdef XP_WIN
-        gfxInfo.FEATURE_DIRECT3D_9_LAYERS;
-#else
-        gfxInfo.FEATURE_OPENGL_LAYERS;
-#endif
+      let win = AppConstants.platform == "win";
+      let feature = win ? gfxInfo.FEATURE_DIRECT3D_9_LAYERS :
+                          gfxInfo.FEATURE_OPENGL_LAYERS;
       data.numAcceleratedWindowsMessage = statusMsgForFeature(feature);
     }
 
@@ -413,20 +398,20 @@ let dataProviders = {
                            + " -- "
                            + gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
     } else {
-      let feature =
-#ifdef XP_WIN
+      let feature;
+      if (AppConstants.platform == "win") {
         // If ANGLE is not available but OpenGL is, we want to report on the
         // OpenGL feature, because that's what's going to get used.  In all
         // other cases we want to report on the ANGLE feature.
-        gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_WEBGL_ANGLE) !=
-          Ci.nsIGfxInfo.FEATURE_STATUS_OK &&
-        gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_WEBGL_OPENGL) ==
-          Ci.nsIGfxInfo.FEATURE_STATUS_OK ?
-        Ci.nsIGfxInfo.FEATURE_WEBGL_OPENGL :
-        Ci.nsIGfxInfo.FEATURE_WEBGL_ANGLE;
-#else
-        Ci.nsIGfxInfo.FEATURE_WEBGL_OPENGL;
-#endif
+        let angle = gfxInfo.getFeatureStatus(gfxInfo.FEATURE_WEBGL_ANGLE) ==
+                    gfxInfo.FEATURE_STATUS_OK;
+        let opengl = gfxInfo.getFeatureStatus(gfxInfo.FEATURE_WEBGL_OPENGL) ==
+                     gfxInfo.FEATURE_STATUS_OK;
+        feature = !angle && opengl ? gfxInfo.FEATURE_WEBGL_OPENGL :
+                                     gfxInfo.FEATURE_WEBGL_ANGLE;
+      } else {
+        feature = gfxInfo.FEATURE_WEBGL_OPENGL;
+      }
       data.webglRendererMessage = statusMsgForFeature(feature);
     }
 
@@ -499,11 +484,27 @@ let dataProviders = {
     done({
       exists: userJSFile.exists() && userJSFile.fileSize > 0,
     });
-  },
+  }
+};
 
-#if defined(XP_LINUX) && defined (MOZ_SANDBOX)
-  sandbox: function sandbox(done) {
-    const keys = ["hasSeccompBPF", "canSandboxContent", "canSandboxMedia"];
+if (AppConstants.MOZ_CRASHREPORTER) {
+  dataProviders.crashes = function crashes(done) {
+    let CrashReports = Cu.import("resource://gre/modules/CrashReports.jsm").CrashReports;
+    let reports = CrashReports.getReports();
+    let now = new Date();
+    let reportsNew = reports.filter(report => (now - report.date < Troubleshoot.kMaxCrashAge));
+    let reportsSubmitted = reportsNew.filter(report => (!report.pending));
+    let reportsPendingCount = reportsNew.length - reportsSubmitted.length;
+    let data = {submitted : reportsSubmitted, pending : reportsPendingCount};
+    done(data);
+  }
+}
+
+if (AppConstants.platform == "linux" && AppConstants.MOZ_SANDBOX) {
+  dataProviders.sandbox = function sandbox(done) {
+    const keys = ["hasSeccompBPF", "hasSeccompTSync",
+                  "hasPrivilegedUserNamespaces", "hasUserNamespaces",
+                  "canSandboxContent", "canSandboxMedia"];
 
     let sysInfo = Cc["@mozilla.org/system-info;1"].
                   getService(Ci.nsIPropertyBag2);
@@ -515,5 +516,4 @@ let dataProviders = {
     }
     done(data);
   }
-#endif
-};
+}

@@ -20,7 +20,7 @@ class nsImageBoxFrame;
 class nsDisplayXULImage;
 
 class nsImageBoxListener final : public imgINotificationObserver,
-                                     public imgIOnloadBlocker
+                                 public imgIOnloadBlocker
 {
 public:
   nsImageBoxListener();
@@ -41,6 +41,7 @@ class nsImageBoxFrame final : public nsLeafBoxFrame
 {
 public:
   typedef mozilla::image::DrawResult DrawResult;
+  typedef mozilla::layers::ImageContainer ImageContainer;
   typedef mozilla::layers::LayerManager LayerManager;
 
   friend class nsDisplayXULImage;
@@ -95,7 +96,10 @@ public:
                         const nsRect& aDirtyRect,
                         nsPoint aPt, uint32_t aFlags);
 
-  already_AddRefed<mozilla::layers::ImageContainer> GetContainer(LayerManager* aManager);
+  bool IsImageContainerAvailable(LayerManager* aManager, uint32_t aFlags);
+  already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager,
+                                                uint32_t aFlags);
+
 protected:
   explicit nsImageBoxFrame(nsStyleContext* aContext);
 
@@ -112,18 +116,17 @@ private:
   nsSize mIntrinsicSize;
   nsSize mImageSize;
 
-  // Boolean variable to determine if the current image request has been
-  // registered with the refresh driver.
-  bool mRequestRegistered;
-
   nsRefPtr<imgRequestProxy> mImageRequest;
   nsCOMPtr<imgINotificationObserver> mListener;
 
   int32_t mLoadFlags;
 
+  // Boolean variable to determine if the current image request has been
+  // registered with the refresh driver.
+  bool mRequestRegistered;
+
   bool mUseSrcAttr; ///< Whether or not the image src comes from an attribute.
   bool mSuppressStyleCheck;
-  bool mFireEventOnDecode;
 }; // class nsImageBoxFrame
 
 class nsDisplayXULImage : public nsDisplayImageContainer {
@@ -139,9 +142,12 @@ public:
   }
 #endif
 
+  virtual bool CanOptimizeToImageLayer(LayerManager* aManager,
+                                       nsDisplayListBuilder* aBuilder) override;
   virtual already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager,
                                                         nsDisplayListBuilder* aBuilder) override;
-  virtual void ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset) override;
+  virtual void ConfigureLayer(ImageLayer* aLayer,
+                              const ContainerLayerParameters& aParameters) override;
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) override
   {
     *aSnap = true;

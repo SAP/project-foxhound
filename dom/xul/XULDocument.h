@@ -35,7 +35,6 @@ class nsPIWindowRoot;
 #if 0 // XXXbe save me, scc (need NSCAP_FORWARD_DECL(nsXULPrototypeScript))
 class nsIObjectInputStream;
 class nsIObjectOutputStream;
-class nsIXULPrototypeScript;
 #else
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
@@ -76,7 +75,7 @@ public:
   bool RemoveElement(mozilla::dom::Element* aElement);
 
 private:
-  nsSmallVoidArray mRefContentList;
+  nsTArray<mozilla::dom::Element*> mRefContentList;
 };
 
 /**
@@ -87,11 +86,11 @@ namespace mozilla {
 namespace dom {
 
 class XULDocument final : public XMLDocument,
-                              public nsIXULDocument,
-                              public nsIDOMXULDocument,
-                              public nsIStreamLoaderObserver,
-                              public nsICSSLoaderObserver,
-                              public nsIOffThreadScriptReceiver
+                          public nsIXULDocument,
+                          public nsIDOMXULDocument,
+                          public nsIStreamLoaderObserver,
+                          public nsICSSLoaderObserver,
+                          public nsIOffThreadScriptReceiver
 {
 public:
     XULDocument();
@@ -299,8 +298,14 @@ protected:
 
     nsresult
     Persist(nsIContent* aElement, int32_t aNameSpaceID, nsIAtom* aAttribute);
+    // Just like Persist but ignores the return value so we can use it
+    // as a runnable method.
+    void DoPersist(nsIContent* aElement, int32_t aNameSpaceID, nsIAtom* aAttribute)
+    {
+        Persist(aElement, aNameSpaceID, aAttribute);
+    }
 
-    virtual JSObject* WrapNode(JSContext *aCx) override;
+    virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 
     // IMPORTANT: The ownership implicit in the following member
     // variables has been explicitly checked and set using nsCOMPtr
@@ -684,8 +689,8 @@ protected:
 
     class CachedChromeStreamListener : public nsIStreamListener {
     protected:
-        XULDocument* mDocument;
-        bool         mProtoLoaded;
+        nsRefPtr<XULDocument> mDocument;
+        bool mProtoLoaded;
 
         virtual ~CachedChromeStreamListener();
 

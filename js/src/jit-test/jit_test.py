@@ -17,7 +17,7 @@ def add_libdir_to_path():
 add_libdir_to_path()
 
 import jittests
-from tests import TBPL_FLAGS
+from tests import get_jitflags
 
 # Python 3.3 added shutil.which, but we can't use that yet.
 def which(name):
@@ -72,8 +72,13 @@ def main(argv):
                   help='set test timeout in seconds')
     op.add_option('--no-progress', dest='hide_progress', action='store_true',
                   help='hide progress bar')
-    op.add_option('--tinderbox', dest='tinderbox', action='store_true',
-                  help='Tinderbox-parseable output format')
+    op.add_option('--tinderbox', dest='format', action='store_const',
+                  const='automation',
+                  help='Use automation-parseable output format')
+    op.add_option('--format', dest='format', default='none', type='choice',
+                  choices=['automation', 'none'],
+                  help='Output format. Either automation or none'
+                  ' (default %default).')
     op.add_option('--args', dest='shell_args', default='',
                   help='extra args to pass to the JS shell')
     op.add_option('-w', '--write-failures', dest='write_failures',
@@ -83,16 +88,17 @@ def main(argv):
                   help='Run test files listed in [FILE]')
     op.add_option('-R', '--retest', dest='retest', metavar='FILE',
                   help='Retest using test list file [FILE]')
-    op.add_option('-g', '--debug', dest='debug', action='store_true',
-                  help='Run test in gdb')
+    op.add_option('-g', '--debug', action='store_const', const='gdb', dest='debugger',
+                  help='Run a single test under the gdb debugger')
+    op.add_option('--debugger', type='string',
+                  help='Run a single test under the specified debugger')
     op.add_option('--valgrind', dest='valgrind', action='store_true',
                   help='Enable the |valgrind| flag, if valgrind is in $PATH.')
     op.add_option('--valgrind-all', dest='valgrind_all', action='store_true',
                   help='Run all tests with valgrind, if valgrind is in $PATH.')
-    op.add_option('--jitflags', dest='jitflags', default='',
-                  help='Example: --jitflags=m,mn to run each test with "-m"'
-                  ' and "-m -n" [default="%default"]. Long flags, such as'
-                  ' "--ion-eager", should be set using --args.')
+    op.add_option('--jitflags', dest='jitflags', default='none', type='string',
+                  help='IonMonkey option combinations. One of all, debug,'
+                  ' ion, and none (default %default).')
     op.add_option('--avoid-stdio', dest='avoid_stdio', action='store_true',
                   help='Use js-shell file indirection instead of piping stdio.')
     op.add_option('--write-failure-output', dest='write_failure_output',
@@ -164,7 +170,7 @@ def main(argv):
     read_all = True
 
     # Forbid running several variants of the same asmjs test, when debugging.
-    options.can_test_also_noasmjs = not options.debug
+    options.can_test_also_noasmjs = not options.debugger
 
     if test_args:
         read_all = False
@@ -203,7 +209,7 @@ def main(argv):
               file=sys.stderr)
         sys.exit(0)
 
-    test_list = [jittests.Test.from_file(_, options) for _ in test_list]
+    test_list = [jittests.JitTest.from_file(_, options) for _ in test_list]
 
     if not options.run_slow:
         test_list = [_ for _ in test_list if not _.slow]
@@ -223,12 +229,11 @@ def main(argv):
     if options.tbpl:
         # Running all bits would take forever. Instead, we test a few
         # interesting combinations.
-        test_flags = TBPL_FLAGS
+        test_flags = get_jitflags('all')
     elif options.ion:
-        test_flags = [['--baseline-eager'],
-                      ['--ion-eager', '--ion-offthread-compile=off']]
+        test_flags = get_jitflags('ion')
     else:
-        test_flags = jittests.parse_jitflags(options)
+        test_flags = get_jitflags(options.jitflags)
 
     job_list = [_ for test in test_list
                 for _ in test.copy_variants(test_flags)]
@@ -245,18 +250,18 @@ def main(argv):
         options.ignore_timeouts = set()
 
     prefix = [which(args[0])] + shlex.split(options.shell_args)
-    prolog = os.path.join(jittests.LIB_DIR, 'prolog.js')
+    prologue = os.path.join(jittests.LIB_DIR, 'prologue.js')
     if options.remote:
-        prolog = posixpath.join(options.remote_test_root,
-                                'jit-tests', 'jit-tests', 'lib', 'prolog.js')
+        prologue = posixpath.join(options.remote_test_root,
+                                'jit-tests', 'jit-tests', 'lib', 'prologue.js')
 
-    prefix += ['-f', prolog]
+    prefix += ['-f', prologue]
 
     # Clean up any remnants from previous crashes etc
     shutil.rmtree(jittests.JS_CACHE_DIR, ignore_errors=True)
     os.mkdir(jittests.JS_CACHE_DIR)
 
-    if options.debug:
+    if options.debugger:
         if len(job_list) > 1:
             print('Multiple tests match command line'
                   ' arguments, debugger can only run one')
@@ -265,8 +270,14 @@ def main(argv):
             sys.exit(1)
 
         tc = job_list[0]
-        cmd = ['gdb', '--args'] + tc.command(prefix, jittests.LIB_DIR)
-        subprocess.call(cmd)
+        if options.debugger == 'gdb':
+            debug_cmd = ['gdb', '--args']
+        elif options.debugger == 'lldb':
+            debug_cmd = ['lldb', '--']
+        else:
+            debug_cmd = options.debugger.split()
+
+        subprocess.call(debug_cmd + tc.command(prefix, jittests.LIB_DIR))
         sys.exit()
 
     try:

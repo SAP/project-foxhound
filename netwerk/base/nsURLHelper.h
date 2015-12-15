@@ -172,11 +172,27 @@ char * net_RFindCharNotInSet(const char *str, const char *end, const char *set);
  * specified), aHadCharset is set to false.  Otherwise, it's set to
  * true.  Note that aContentCharset can be empty even if aHadCharset
  * is true.
+ *
+ * This parsing is suitable for HTTP request.  Use net_ParseContentType
+ * for parsing this header in HTTP responses.
+ */
+void net_ParseRequestContentType(const nsACString &aHeaderStr,
+                                 nsACString       &aContentType,
+                                 nsACString       &aContentCharset,
+                                 bool*          aHadCharset);
+
+/**
+ * Parses a content-type header and returns the content type and
+ * charset (if any).  aCharset is not modified if no charset is
+ * specified in anywhere in aHeaderStr.  In that case (no charset
+ * specified), aHadCharset is set to false.  Otherwise, it's set to
+ * true.  Note that aContentCharset can be empty even if aHadCharset
+ * is true.
  */
 void net_ParseContentType(const nsACString &aHeaderStr,
-                                      nsACString       &aContentType,
-                                      nsACString       &aContentCharset,
-                                      bool*          aHadCharset);
+                          nsACString       &aContentType,
+                          nsACString       &aContentCharset,
+                          bool*          aHadCharset);
 /**
  * As above, but also returns the start and end indexes for the charset
  * parameter in aHeaderStr.  These are indices for the entire parameter, NOT
@@ -187,11 +203,11 @@ void net_ParseContentType(const nsACString &aHeaderStr,
  * *aCharsetStart is nonnegative; this corresponds to charset="".
  */
 void net_ParseContentType(const nsACString &aHeaderStr,
-                                      nsACString       &aContentType,
-                                      nsACString       &aContentCharset,
-                                      bool             *aHadCharset,
-                                      int32_t          *aCharsetStart,
-                                      int32_t          *aCharsetEnd);
+                          nsACString       &aContentType,
+                          nsACString       &aContentCharset,
+                          bool             *aHadCharset,
+                          int32_t          *aCharsetStart,
+                          int32_t          *aCharsetEnd);
 
 /* inline versions */
 
@@ -226,5 +242,12 @@ bool net_IsValidIPv4Addr(const char *addr, int32_t addrLen);
  * Checks whether the IPv6 address is valid according to RFC 3986 section 3.2.2.
  */
 bool net_IsValidIPv6Addr(const char *addr, int32_t addrLen);
+
+
+/**
+ * Returns the max length of a URL. The default is 1048576 (1 MB).
+ * Can be changed by pref "network.standard-url.max-length"
+ */
+int32_t net_GetURLMaxLength();
 
 #endif // !nsURLHelper_h__

@@ -5,23 +5,21 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let RIL = {};
+var RIL = {};
 Cu.import("resource://gre/modules/ril_consts.js", RIL);
 
-XPCOMUtils.defineLazyGetter(this, "gStkCmdFactory", function() {
-  let stk = {};
-  Cu.import("resource://gre/modules/StkProactiveCmdFactory.jsm", stk);
-  return stk.StkProactiveCmdFactory;
-});
+XPCOMUtils.defineLazyServiceGetter(this, "gStkCmdFactory",
+                                   "@mozilla.org/icc/stkcmdfactory;1",
+                                   "nsIStkCmdFactory");
 
 /**
  * Name space for RILSystemMessenger.jsm. Only initialized after first call to
  * newRILSystemMessenger.
  */
-let RSM;
+var RSM;
 
-let gReceivedMsgType = null;
-let gReceivedMessage = null;
+var gReceivedMsgType = null;
+var gReceivedMessage = null;
 
 /**
  * Create a new RILSystemMessenger instance.
@@ -38,6 +36,10 @@ function newRILSystemMessenger() {
   rsm.broadcastMessage = (aType, aMessage) => {
     gReceivedMsgType = aType;
     gReceivedMessage = aMessage;
+  };
+
+  rsm.createCommandMessage = (aStkProactiveCmd) => {
+    return gStkCmdFactory.createCommandMessage(aStkProactiveCmd);
   };
 
   return rsm;
@@ -243,9 +245,75 @@ add_test(function test_sms_messenger_notify_sms() {
       read:              true
     });
 
+  // Verify 'sms-failed' system message.
+  messenger.notifySms(Ci.nsISmsMessenger.NOTIFICATION_TYPE_SENT_FAILED,
+                      7,
+                      8,
+                      "99887766554433221100",
+                      Ci.nsISmsService.DELIVERY_TYPE_ERROR,
+                      Ci.nsISmsService.DELIVERY_STATUS_TYPE_ERROR,
+                      null,
+                      "+0987654321",
+                      "Outgoing message",
+                      Ci.nsISmsService.MESSAGE_CLASS_TYPE_NORMAL,
+                      timestamp,
+                      0,
+                      0,
+                      true);
+
+  equal_received_system_message("sms-failed", {
+      iccId:             "99887766554433221100",
+      type:              "sms",
+      id:                7,
+      threadId:          8,
+      delivery:          "error",
+      deliveryStatus:    "error",
+      sender:            null,
+      receiver:          "+0987654321",
+      body:              "Outgoing message",
+      messageClass:      "normal",
+      timestamp:         timestamp,
+      sentTimestamp:     0,
+      deliveryTimestamp: 0,
+      read:              true
+    });
+
+  // Verify 'sms-delivery-error' system message.
+  messenger.notifySms(Ci.nsISmsMessenger.NOTIFICATION_TYPE_DELIVERY_ERROR,
+                      9,
+                      10,
+                      "99887766554433221100",
+                      Ci.nsISmsService.DELIVERY_TYPE_SENT,
+                      Ci.nsISmsService.DELIVERY_STATUS_TYPE_ERROR,
+                      null,
+                      "+0987654321",
+                      "Outgoing message",
+                      Ci.nsISmsService.MESSAGE_CLASS_TYPE_NORMAL,
+                      timestamp,
+                      0,
+                      0,
+                      true);
+
+  equal_received_system_message("sms-delivery-error", {
+      iccId:             "99887766554433221100",
+      type:              "sms",
+      id:                9,
+      threadId:          10,
+      delivery:          "sent",
+      deliveryStatus:    "error",
+      sender:            null,
+      receiver:          "+0987654321",
+      body:              "Outgoing message",
+      messageClass:      "normal",
+      timestamp:         timestamp,
+      sentTimestamp:     0,
+      deliveryTimestamp: 0,
+      read:              true
+    });
+
   // Verify the protection of invalid nsISmsMessenger.NOTIFICATION_TYPEs.
   try {
-    messenger.notifySms(3,
+    messenger.notifySms(5,
                         1,
                         2,
                         "99887766554433221100",
@@ -541,7 +609,8 @@ add_test(function test_icc_stk_cmd_factory_create_command_error() {
 
     ok(false, "Failed to verify the protection of createCommand()!");
   } catch (e) {
-    equal(e.message, "Unknown Command Type: " + RIL.STK_CMD_MORE_TIME);
+    ok(e.message.indexOf("Unknown Command Type") !== -1,
+       "Invalid typeOfCommand!");
   }
 
   run_next_test();
@@ -567,7 +636,8 @@ add_test(function test_icc_stk_cmd_factory_create_system_msg_invalid_cmd_type() 
 
     ok(false, "Failed to identify invalid typeOfCommand!");
   } catch (e) {
-    equal(e.message, "Unknown Command Type: " + RIL.STK_CMD_MORE_TIME);
+    ok(e.message.indexOf("Unknown Command Type") !== -1,
+       "Invalid typeOfCommand!");
   }
 
   run_next_test();

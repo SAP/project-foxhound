@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,9 +26,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGFEImageElement::WrapNode(JSContext *aCx)
+SVGFEImageElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return SVGFEImageElementBinding::Wrap(aCx, this);
+  return SVGFEImageElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsSVGElement::StringInfo SVGFEImageElement::sStringInfo[2] =
@@ -353,7 +354,7 @@ SVGFEImageElement::Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect*
 void
 SVGFEImageElement::Invalidate()
 {
-  if (GetParent() && GetParent()->IsSVG(nsGkAtoms::filter)) {
+  if (GetParent() && GetParent()->IsSVGElement(nsGkAtoms::filter)) {
     static_cast<SVGFilterElement*>(GetParent())->Invalidate();
   }
 }

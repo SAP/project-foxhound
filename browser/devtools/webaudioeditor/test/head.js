@@ -4,23 +4,25 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
-let { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
+var { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
 
 // Enable logging for all the tests. Both the debugger server and frontend will
 // be affected by this pref.
-let gEnableLogging = Services.prefs.getBoolPref("devtools.debugger.log");
+var gEnableLogging = Services.prefs.getBoolPref("devtools.debugger.log");
 Services.prefs.setBoolPref("devtools.debugger.log", false);
 
-let { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-let { Promise } = Cu.import("resource://gre/modules/Promise.jsm", {});
-let { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
-let { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let { DebuggerServer } = Cu.import("resource://gre/modules/devtools/dbg-server.jsm", {});
-let { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
+var { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
+var { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
+var { require } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var { TargetFactory } = require("devtools/framework/target");
+var { DebuggerServer } = require("devtools/server/main");
+var { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
 
-let { WebAudioFront } = devtools.require("devtools/server/actors/webaudio");
-let TargetFactory = devtools.TargetFactory;
-let mm = null;
+var Promise = require("promise");
+var { WebAudioFront } = require("devtools/server/actors/webaudio");
+var DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
+var audioNodes = require("devtools/server/actors/utils/audionodes.json");
+var mm = null;
 
 const FRAME_SCRIPT_UTILS_URL = "chrome://browser/content/devtools/frame-script-utils.js";
 const EXAMPLE_URL = "http://example.com/browser/browser/devtools/webaudioeditor/test/";
@@ -38,12 +40,12 @@ const AUTOMATION_URL = EXAMPLE_URL + "doc_automation.html";
 // All tests are asynchronous.
 waitForExplicitFinish();
 
-let gToolEnabled = Services.prefs.getBoolPref("devtools.webaudioeditor.enabled");
+var gToolEnabled = Services.prefs.getBoolPref("devtools.webaudioeditor.enabled");
 
-gDevTools.testing = true;
+DevToolsUtils.testing = true;
 
 registerCleanupFunction(() => {
-  gDevTools.testing = false;
+  DevToolsUtils.testing = false;
   info("finish() was called, cleaning up...");
   Services.prefs.setBoolPref("devtools.debugger.log", gEnableLogging);
   Services.prefs.setBoolPref("devtools.webaudioeditor.enabled", gToolEnabled);
@@ -128,6 +130,15 @@ function reload(aTarget, aWaitForTargetEvent = "navigate") {
 function navigate(aTarget, aUrl, aWaitForTargetEvent = "navigate") {
   executeSoon(() => aTarget.activeTab.navigateTo(aUrl));
   return once(aTarget, aWaitForTargetEvent);
+}
+
+/**
+ * Call manually in tests that use frame script utils after initializing
+ * the shader editor. Call after init but before navigating to different pages.
+ */
+function loadFrameScripts () {
+  mm = gBrowser.selectedBrowser.messageManager;
+  mm.loadFrameScript(FRAME_SCRIPT_UTILS_URL, false);
 }
 
 /**
@@ -268,7 +279,7 @@ function checkVariableView (view, index, hash, description = "") {
         "Passing property value of " + value + " for " + variable + " " + description);
     }
     else {
-      ise(value, hash[variable],
+      is(value, hash[variable],
         "Correct property value of " + hash[variable] + " for " + variable + " " + description);
     }
   });
@@ -483,80 +494,51 @@ function evalInDebuggee (script) {
 }
 
 /**
- * List of audio node properties to test against expectations of the AudioNode actor
+ * Takes an AudioNode type and returns it's properties (from audionode.json)
+ * as keys and their default values as keys
  */
+function nodeDefaultValues(nodeName) {
+  let fn = NODE_CONSTRUCTORS[nodeName];
 
-const NODE_DEFAULT_VALUES = {
-  "AudioDestinationNode": {},
-  "MediaElementAudioSourceNode": {},
-  "MediaStreamAudioSourceNode": {},
-  "MediaStreamAudioDestinationNode": {
-    "stream": "MediaStream"
-  },
-  "AudioBufferSourceNode": {
-    "playbackRate": 1,
-    "loop": false,
-    "loopStart": 0,
-    "loopEnd": 0,
-    "buffer": null
-  },
-  "ScriptProcessorNode": {
-    "bufferSize": 4096
-  },
-  "AnalyserNode": {
-    "fftSize": 2048,
-    "minDecibels": -100,
-    "maxDecibels": -30,
-    "smoothingTimeConstant": 0.8,
-    "frequencyBinCount": 1024
-  },
-  "GainNode": {
-    "gain": 1
-  },
-  "DelayNode": {
-    "delayTime": 0
-  },
-  "BiquadFilterNode": {
-    "type": "lowpass",
-    "frequency": 350,
-    "Q": 1,
-    "detune": 0,
-    "gain": 0
-  },
-  "WaveShaperNode": {
-    "curve": null,
-    "oversample": "none"
-  },
-  "PannerNode": {
-    "panningModel": "equalpower",
-    "distanceModel": "inverse",
-    "refDistance": 1,
-    "maxDistance": 10000,
-    "rolloffFactor": 1,
-    "coneInnerAngle": 360,
-    "coneOuterAngle": 360,
-    "coneOuterGain": 0
-  },
-  "ConvolverNode": {
-    "buffer": null,
-    "normalize": true
-  },
-  "ChannelSplitterNode": {},
-  "ChannelMergerNode": {},
-  "DynamicsCompressorNode": {
-    "threshold": -24,
-    "knee": 30,
-    "ratio": 12,
-    "reduction": 0,
-    "attack": 0.003000000026077032,
-    "release": 0.25
-  },
-  "OscillatorNode": {
-    "type": "sine",
-    "frequency": 440,
-    "detune": 0
-  },
-  "StereoPannerNode": {
-    "pan": 0
-  }
+  if(typeof fn === 'undefined') return {};
+
+  let init = nodeName === "AudioDestinationNode" ? "destination" : `create${fn}()`;
+
+  let definition = JSON.stringify(audioNodes[nodeName].properties);
+
+  let evalNode = evalInDebuggee(`
+    let ins = (new AudioContext()).${init};
+    let props = ${definition};
+    let answer = {};
+
+    for(let k in props) {
+      if (props[k].param) {
+        answer[k] = ins[k].defaultValue;
+      } else if (typeof ins[k] === "object" && ins[k] !== null) {
+        answer[k] = ins[k].toString().slice(8, -1);
+      } else {
+        answer[k] = ins[k];
+      }
+    }
+    answer;`);
+
+  return evalNode;
+}
+
+const NODE_CONSTRUCTORS = {
+  "MediaStreamAudioDestinationNode": "MediaStreamDestination",
+  "AudioBufferSourceNode": "BufferSource",
+  "ScriptProcessorNode": "ScriptProcessor",
+  "AnalyserNode": "Analyser",
+  "GainNode": "Gain",
+  "DelayNode": "Delay",
+  "BiquadFilterNode": "BiquadFilter",
+  "WaveShaperNode": "WaveShaper",
+  "PannerNode": "Panner",
+  "ConvolverNode": "Convolver",
+  "ChannelSplitterNode": "ChannelSplitter",
+  "ChannelMergerNode": "ChannelMerger",
+  "DynamicsCompressorNode": "DynamicsCompressor",
+  "OscillatorNode": "Oscillator",
+  "StereoPannerNode": "StereoPanner"
 };

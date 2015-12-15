@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,11 +34,9 @@ static bool IsMoveto(uint16_t aSegType)
 nsresult
 SVGPathData::CopyFrom(const SVGPathData& rhs)
 {
-  if (!mData.SetCapacity(rhs.mData.Length())) {
-    // Yes, we do want fallible alloc here
+  if (!mData.Assign(rhs.mData, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  mData = rhs.mData;
   return NS_OK;
 }
 
@@ -80,7 +79,7 @@ SVGPathData::AppendSeg(uint32_t aType, ...)
 {
   uint32_t oldLength = mData.Length();
   uint32_t newLength = oldLength + 1 + SVGPathSegUtils::ArgCountForType(aType);
-  if (!mData.SetLength(newLength)) {
+  if (!mData.SetLength(newLength, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -174,7 +173,7 @@ SVGPathData::GetDistancesFromOriginToEndsOfVisibleSegments(FallibleTArray<double
 
     if (i == 0 || (segType != PATHSEG_MOVETO_ABS &&
                    segType != PATHSEG_MOVETO_REL)) {
-      if (!aOutput->AppendElement(state.length)) {
+      if (!aOutput->AppendElement(state.length, fallible)) {
         return false;
       }
     }
@@ -256,7 +255,7 @@ ApproximateZeroLengthSubpathSquareCaps(PathBuilder* aPB,
   // line is rather arbitrary, other than being chosen to meet the requirements
   // described in the comment above.
 
-  Float tinyLength = aStrokeWidth / 512;
+  Float tinyLength = aStrokeWidth / SVG_ZERO_LENGTH_PATH_FIX_FACTOR;
 
   aPB->LineTo(aPoint + Point(tinyLength, 0));
   aPB->MoveTo(aPoint);
@@ -272,7 +271,7 @@ ApproximateZeroLengthSubpathSquareCaps(PathBuilder* aPB,
     }                                                                         \
   } while(0)
 
-TemporaryRef<Path>
+already_AddRefed<Path>
 SVGPathData::BuildPath(PathBuilder* builder,
                        uint8_t aStrokeLineCap,
                        Float aStrokeWidth) const
@@ -506,7 +505,7 @@ SVGPathData::BuildPath(PathBuilder* builder,
   return builder->Finish();
 }
 
-TemporaryRef<Path>
+already_AddRefed<Path>
 SVGPathData::BuildPathForMeasuring() const
 {
   // Since the path that we return will not be used for painting it doesn't
@@ -862,7 +861,7 @@ SVGPathData::GetMarkerPositioningData(nsTArray<nsSVGMark> *aMarks) const
 size_t
 SVGPathData::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
-  return mData.SizeOfExcludingThis(aMallocSizeOf);
+  return mData.ShallowSizeOfExcludingThis(aMallocSizeOf);
 }
 
 size_t

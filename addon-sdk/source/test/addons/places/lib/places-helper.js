@@ -33,13 +33,6 @@ function invalidResolve (assert) {
 }
 exports.invalidResolve = invalidResolve;
 
-function invalidReject (assert) {
-  return function (e) {
-    assert.fail('Reject state should not be called: ' + e);
-  };
-}
-exports.invalidReject = invalidReject;
-
 // Removes all children of group
 function clearBookmarks (group) {
   group
@@ -142,6 +135,11 @@ function createBookmark (data) {
   return send('sdk-places-bookmarks-create', item);
 }
 exports.createBookmark = createBookmark;
+
+function historyBatch () {
+  hsrv.runInBatchMode(() => {}, null);
+}
+exports.historyBatch = historyBatch;
 
 function createBookmarkItem (data) {
   let deferred = defer();

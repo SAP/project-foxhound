@@ -7,92 +7,142 @@
 #define WEBGL_FRAMEBUFFER_H_
 
 #include "mozilla/LinkedList.h"
+#include "mozilla/WeakPtr.h"
 #include "nsWrapperCache.h"
-#include "WebGLBindableName.h"
+
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
+#include "WebGLRenderbuffer.h"
+#include "WebGLTexture.h"
 
 namespace mozilla {
 
-class WebGLFramebufferAttachable;
+class WebGLFramebuffer;
 class WebGLRenderbuffer;
 class WebGLTexture;
 
 namespace gl {
     class GLContext;
-}
+} // namespace gl
+
+class WebGLFBAttachPoint
+{
+public:
+    WebGLFramebuffer* const mFB;
+private:
+    WebGLRefPtr<WebGLTexture> mTexturePtr;
+    WebGLRefPtr<WebGLRenderbuffer> mRenderbufferPtr;
+    FBAttachment mAttachmentPoint;
+    TexImageTarget mTexImageTarget;
+    GLint mTexImageLayer;
+    GLint mTexImageLevel;
+
+public:
+    WebGLFBAttachPoint(WebGLFramebuffer* fb, FBAttachment attachmentPoint);
+    ~WebGLFBAttachPoint();
+
+    void Unlink() {
+        mRenderbufferPtr = nullptr;
+        mTexturePtr = nullptr;
+    }
+
+    bool IsDefined() const;
+    bool IsDeleteRequested() const;
+
+    TexInternalFormat EffectiveInternalFormat() const;
+
+    bool HasAlpha() const;
+    bool IsReadableFloat() const;
+
+    void Clear() {
+        SetRenderbuffer(nullptr);
+    }
+
+    void SetTexImage(WebGLTexture* tex, TexImageTarget target, GLint level);
+    void SetTexImageLayer(WebGLTexture* tex, TexImageTarget target, GLint level,
+                          GLint layer);
+    void SetRenderbuffer(WebGLRenderbuffer* rb);
+    
+    const WebGLTexture* Texture() const {
+        return mTexturePtr;
+    }
+    WebGLTexture* Texture() {
+        return mTexturePtr;
+    }
+    const WebGLRenderbuffer* Renderbuffer() const {
+        return mRenderbufferPtr;
+    }
+    WebGLRenderbuffer* Renderbuffer() {
+        return mRenderbufferPtr;
+    }
+    TexImageTarget ImageTarget() const {
+        return mTexImageTarget;
+    }
+    GLint Layer() const {
+        return mTexImageLayer;
+    }
+    GLint MipLevel() const {
+        return mTexImageLevel;
+    }
+
+    bool HasUninitializedImageData() const;
+    void SetImageDataStatus(WebGLImageDataStatus x);
+
+    const WebGLRectangleObject& RectangleObject() const;
+
+    bool HasImage() const;
+    bool IsComplete() const;
+
+    void FinalizeAttachment(gl::GLContext* gl,
+                            FBAttachment attachmentLoc) const;
+};
 
 class WebGLFramebuffer final
     : public nsWrapperCache
-    , public WebGLBindableName<FBTarget>
     , public WebGLRefCountedObject<WebGLFramebuffer>
     , public LinkedListElement<WebGLFramebuffer>
     , public WebGLContextBoundObject
     , public SupportsWeakPtr<WebGLFramebuffer>
 {
+    friend class WebGLContext;
+
 public:
-    MOZ_DECLARE_REFCOUNTED_TYPENAME(WebGLFramebuffer)
+    MOZ_DECLARE_WEAKREFERENCE_TYPENAME(WebGLFramebuffer)
 
-    explicit WebGLFramebuffer(WebGLContext* webgl, GLuint fbo);
+    const GLuint mGLName;
 
-    struct Attachment
-    {
-        // deleting a texture or renderbuffer immediately detaches it
-        WebGLRefPtr<WebGLTexture> mTexturePtr;
-        WebGLRefPtr<WebGLRenderbuffer> mRenderbufferPtr;
-        FBAttachment mAttachmentPoint;
-        TexImageTarget mTexImageTarget;
-        GLint mTexImageLevel;
-        mutable bool mNeedsFinalize;
+private:
+    mutable GLenum mStatus;
 
-        explicit Attachment(FBAttachment attachmentPoint = LOCAL_GL_COLOR_ATTACHMENT0);
-        ~Attachment();
+    GLenum mReadBufferMode;
 
-        bool IsDefined() const;
+    // No need to chase pointers for the oft-used color0.
+    WebGLFBAttachPoint mColorAttachment0;
+    WebGLFBAttachPoint mDepthAttachment;
+    WebGLFBAttachPoint mStencilAttachment;
+    WebGLFBAttachPoint mDepthStencilAttachment;
+    nsTArray<WebGLFBAttachPoint> mMoreColorAttachments;
 
-        bool IsDeleteRequested() const;
+#ifdef ANDROID
+    // Bug 1140459: Some drivers (including our test slaves!) don't
+    // give reasonable answers for IsRenderbuffer, maybe others.
+    // This shows up on Android 2.3 emulator.
+    //
+    // So we track the `is a Framebuffer` state ourselves.
+    bool mIsFB;
+#endif
 
-        TexInternalFormat EffectiveInternalFormat() const;
+public:
+    WebGLFramebuffer(WebGLContext* webgl, GLuint fbo);
 
-        bool HasAlpha() const;
-        bool IsReadableFloat() const;
+private:
+    ~WebGLFramebuffer() {
+        DeleteOnce();
+    }
 
-        void SetTexImage(WebGLTexture* tex, TexImageTarget target, GLint level);
-        void SetRenderbuffer(WebGLRenderbuffer* rb);
+    const WebGLRectangleObject& GetAnyRectObject() const;
 
-        const WebGLTexture* Texture() const {
-            return mTexturePtr;
-        }
-        WebGLTexture* Texture() {
-            return mTexturePtr;
-        }
-        const WebGLRenderbuffer* Renderbuffer() const {
-            return mRenderbufferPtr;
-        }
-        WebGLRenderbuffer* Renderbuffer() {
-            return mRenderbufferPtr;
-        }
-        TexImageTarget ImageTarget() const {
-            return mTexImageTarget;
-        }
-        GLint MipLevel() const {
-            return mTexImageLevel;
-        }
-
-        bool HasUninitializedImageData() const;
-        void SetImageDataStatus(WebGLImageDataStatus x);
-
-        void Reset();
-
-        const WebGLRectangleObject& RectangleObject() const;
-
-        bool HasImage() const;
-        bool IsComplete() const;
-
-        void FinalizeAttachment(gl::GLContext* gl,
-                                FBAttachment attachmentLoc) const;
-    };
-
+public:
     void Delete();
 
     void FramebufferRenderbuffer(FBAttachment attachment, RBTarget rbtarget,
@@ -102,13 +152,9 @@ public:
                               TexImageTarget texImageTarget, WebGLTexture* tex,
                               GLint level);
 
-private:
-    void DetachAttachment(WebGLFramebuffer::Attachment& attachment);
-    void DetachAllAttachments();
-    const WebGLRectangleObject& GetAnyRectObject() const;
-    Attachment* GetAttachmentOrNull(FBAttachment attachment);
+    void FramebufferTextureLayer(FBAttachment attachment, WebGLTexture* tex, GLint level,
+                                 GLint layer);
 
-public:
     bool HasDefinedAttachments() const;
     bool HasIncompleteAttachments() const;
     bool AllImageRectsMatch() const;
@@ -116,7 +162,7 @@ public:
     FBStatus CheckFramebufferStatus() const;
 
     GLenum
-    GetFormatForAttachment(const WebGLFramebuffer::Attachment& attachment) const;
+    GetFormatForAttachment(const WebGLFBAttachPoint& attachment) const;
 
     bool HasDepthStencilConflict() const {
         return int(mDepthAttachment.IsDefined()) +
@@ -125,25 +171,27 @@ public:
     }
 
     size_t ColorAttachmentCount() const {
-        return mColorAttachments.Length();
+        return 1 + mMoreColorAttachments.Length();
     }
-    const Attachment& ColorAttachment(size_t colorAttachmentId) const {
-        return mColorAttachments[colorAttachmentId];
+    const WebGLFBAttachPoint& ColorAttachment(size_t colorAttachmentId) const {
+        MOZ_ASSERT(colorAttachmentId < ColorAttachmentCount());
+        return colorAttachmentId ? mMoreColorAttachments[colorAttachmentId - 1]
+                                 : mColorAttachment0;
     }
 
-    const Attachment& DepthAttachment() const {
+    const WebGLFBAttachPoint& DepthAttachment() const {
         return mDepthAttachment;
     }
 
-    const Attachment& StencilAttachment() const {
+    const WebGLFBAttachPoint& StencilAttachment() const {
         return mStencilAttachment;
     }
 
-    const Attachment& DepthStencilAttachment() const {
+    const WebGLFBAttachPoint& DepthStencilAttachment() const {
         return mDepthStencilAttachment;
     }
 
-    const Attachment& GetAttachment(FBAttachment attachment) const;
+    WebGLFBAttachPoint& GetAttachPoint(FBAttachment attachPointEnum);
 
     void DetachTexture(const WebGLTexture* tex);
 
@@ -157,7 +205,7 @@ public:
 
     void FinalizeAttachments() const;
 
-    virtual JSObject* WrapObject(JSContext* cx) override;
+    virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
 
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLFramebuffer)
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLFramebuffer)
@@ -170,26 +218,13 @@ public:
     bool CheckColorAttachmentNumber(FBAttachment attachment,
                                     const char* funcName) const;
 
-    void EnsureColorAttachments(size_t colorAttachmentId);
+    void EnsureColorAttachPoints(size_t colorAttachmentId);
 
-    void NotifyAttachableChanged() const;
-
-    bool ValidateForRead(const char* info, TexInternalFormat* const out_format);
-
-private:
-    ~WebGLFramebuffer() {
-        DeleteOnce();
+    void InvalidateFramebufferStatus() const {
+        mStatus = 0;
     }
 
-    mutable GLenum mStatus;
-
-    // we only store pointers to attached renderbuffers, not to attached textures, because
-    // we will only need to initialize renderbuffers. Textures are already initialized.
-    nsTArray<Attachment> mColorAttachments;
-    Attachment mDepthAttachment;
-    Attachment mStencilAttachment;
-    Attachment mDepthStencilAttachment;
-    GLenum mReadBufferMode;
+    bool ValidateForRead(const char* info, TexInternalFormat* const out_format);
 };
 
 } // namespace mozilla

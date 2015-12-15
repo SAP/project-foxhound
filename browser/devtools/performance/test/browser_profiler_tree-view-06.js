@@ -6,11 +6,13 @@
  * correctly emits events when certain DOM nodes are clicked.
  */
 
-function spawnTest () {
-  let { ThreadNode } = devtools.require("devtools/shared/profiler/tree-model");
-  let { CallView } = devtools.require("devtools/shared/profiler/tree-view");
+function* spawnTest() {
+  let { ThreadNode } = require("devtools/performance/tree-model");
+  let { CallView } = require("devtools/performance/tree-view");
 
-  let threadNode = new ThreadNode(gSamples);
+  let threadNode = new ThreadNode(gThread, { startTime: 0, endTime: 20 });
+  // Don't display the synthesized (root) and the real (root) node twice.
+  threadNode.calls = threadNode.calls[0].calls;
   let treeRoot = new CallView({ frame: threadNode });
 
   let container = document.createElement("vbox");
@@ -26,15 +28,10 @@ function spawnTest () {
   let eventItem = yield receivedLinkEvent;
   is(eventItem, D, "The 'link' event target is correct.");
 
-  let receivedZoomEvent = treeRoot.once("zoom");
-  EventUtils.sendMouseEvent({ type: "mousedown" }, D.target.querySelector(".call-tree-zoom"));
-
-  eventItem = yield receivedZoomEvent;
-  is(eventItem, D, "The 'zoom' event target is correct.");
   finish();
 }
 
-let gSamples = [{
+var gThread = synthesizeProfileForTest([{
   time: 5,
   frames: [
     { category: 8,  location: "(root)" },
@@ -66,4 +63,4 @@ let gSamples = [{
     { category: 128, location: "E (http://foo/bar/baz:90)" },
     { category: 256, location: "F (http://foo/bar/baz:99)" }
   ]
-}];
+}]);

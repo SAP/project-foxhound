@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,11 +38,11 @@ class AsyncVerifyRedirectCallbackFwr;
 struct EventSourceInit;
 
 class EventSource final : public DOMEventTargetHelper
-                            , public nsIObserver
-                            , public nsIStreamListener
-                            , public nsIChannelEventSink
-                            , public nsIInterfaceRequestor
-                            , public nsSupportsWeakReference
+                        , public nsIObserver
+                        , public nsIStreamListener
+                        , public nsIChannelEventSink
+                        , public nsIInterfaceRequestor
+                        , public nsSupportsWeakReference
 {
 friend class AsyncVerifyRedirectCallbackFwr;
 
@@ -58,7 +59,7 @@ public:
   NS_DECL_NSIINTERFACEREQUESTOR
 
   // nsWrapperCache
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
   nsPIDOMWindow*
@@ -144,7 +145,6 @@ protected:
   nsresult ResetEvent();
   nsresult DispatchCurrentMessageEvent();
   nsresult ParseCharacter(char16_t aChr);
-  bool CheckCanRequestSrc(nsIURI* aSrc = nullptr);  // if null, it tests mSrc
   nsresult CheckHealthOfRequestCallback(nsIRequest *aRequestCallback);
   nsresult OnRedirectVerifyCallback(nsresult result);
 
@@ -255,12 +255,14 @@ protected:
 
   // Event Source owner information:
   // - the script file name
-  // - source code line number where the Event Source object was constructed.
+  // - source code line number and column number where the Event Source object
+  //   was constructed.
   // - the ID of the inner window where the script lives. Note that this may not
   //   be the same as the Event Source owner window.
   // These attributes are used for error reporting.
   nsString mScriptFile;
   uint32_t mScriptLine;
+  uint32_t mScriptColumn;
   uint64_t mInnerWindowID;
 
 private:

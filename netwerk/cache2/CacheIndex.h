@@ -651,6 +651,9 @@ public:
   // Returns cache size in kB.
   static nsresult GetCacheSize(uint32_t *_retval);
 
+  // Returns number of entry files in the cache
+  static nsresult GetEntryFileCount(uint32_t *_retval);
+
   // Synchronously returns the disk occupation and number of entries per-context.
   // Callable on any thread.
   static nsresult GetCacheStats(nsILoadContextInfo *aInfo, uint32_t *aSize, uint32_t *aCount);
@@ -720,8 +723,6 @@ private:
 
   // Merge all pending operations from mPendingUpdates into mIndex.
   void ProcessPendingOperations();
-  static PLDHashOperator UpdateEntryInIndex(CacheIndexEntryUpdate *aEntry,
-                                            void* aClosure);
 
   // Following methods perform writing of the index file.
   //
@@ -742,11 +743,6 @@ private:
   // Finalizes writing process.
   void FinishWrite(bool aSucceeded);
 
-  static PLDHashOperator CopyRecordsToRWBuf(CacheIndexEntry *aEntry,
-                                            void* aClosure);
-  static PLDHashOperator ApplyIndexChanges(CacheIndexEntry *aEntry,
-                                           void* aClosure);
-
   // Following methods perform writing of the journal during shutdown. All these
   // methods must be called only during shutdown since they write/delete files
   // directly on the main thread instead of using CacheFileIOManager that does
@@ -759,9 +755,6 @@ private:
   void     RemoveIndexFromDisk();
   // Writes journal to the disk and clears dirty flag in index header.
   nsresult WriteLogToDisk();
-
-  static PLDHashOperator WriteEntryToLog(CacheIndexEntry *aEntry,
-                                         void* aClosure);
 
   // Following methods perform reading of the index from the disk.
   //
@@ -817,12 +810,8 @@ private:
   // In debug build this method is called after processing pending operations
   // to make sure mIndexStats contains correct information.
   void EnsureCorrectStats();
-  static PLDHashOperator SumIndexStats(CacheIndexEntry *aEntry, void* aClosure);
   // Finalizes reading process.
   void FinishRead(bool aSucceeded);
-
-  static PLDHashOperator ProcessJournalEntry(CacheIndexEntry *aEntry,
-                                             void* aClosure);
 
   // Following methods perform updating and building of the index.
   // Timer callback that starts update or build process.
@@ -850,8 +839,7 @@ private:
   // Finalizes update or build process.
   void FinishUpdate(bool aSucceeded);
 
-  static PLDHashOperator RemoveNonFreshEntries(CacheIndexEntry *aEntry,
-                                               void* aClosure);
+  void RemoveNonFreshEntries();
 
   enum EState {
     // Initial state in which the index is not usable
@@ -903,9 +891,7 @@ private:
     SHUTDOWN = 6
   };
 
-#ifdef PR_LOGGING
   static char const * StateString(EState aState);
-#endif
   void ChangeState(EState aNewState);
 
   // Allocates and releases buffer used for reading and writing index.
@@ -914,9 +900,7 @@ private:
 
   // Methods used by CacheIndexEntryAutoManage to keep the arrays up to date.
   void InsertRecordToFrecencyArray(CacheIndexRecord *aRecord);
-  void InsertRecordToExpirationArray(CacheIndexRecord *aRecord);
   void RemoveRecordFromFrecencyArray(CacheIndexRecord *aRecord);
-  void RemoveRecordFromExpirationArray(CacheIndexRecord *aRecord);
 
   // Methods used by CacheIndexEntryAutoManage to keep the iterators up to date.
   void AddRecordToIterators(CacheIndexRecord *aRecord);
@@ -926,6 +910,8 @@ private:
 
   // Memory reporting (private part)
   size_t SizeOfExcludingThisInternal(mozilla::MallocSizeOf mallocSizeOf) const;
+
+  void ReportHashStats();
 
   static CacheIndex *gInstance;
 
@@ -1018,14 +1004,11 @@ private:
   // of the journal fails or the hash does not match.
   nsTHashtable<CacheIndexEntry> mTmpJournal;
 
-  // Arrays that keep entry records ordered by eviction preference. When looking
-  // for an entry to evict, we first try to find an expired entry. If there is
-  // no expired entry, we take the entry with lowest valid frecency. Zero
-  // frecency is an initial value and such entries are stored at the end of the
-  // array. Uninitialized entries and entries marked as deleted are not present
-  // in these arrays.
+  // An array that keeps entry records ordered by eviction preference; we take
+  // the entry with lowest valid frecency. Zero frecency is an initial value
+  // and such entries are stored at the end of the array. Uninitialized entries
+  // and entries marked as deleted are not present in this array.
   nsTArray<CacheIndexRecord *>  mFrecencyArray;
-  nsTArray<CacheIndexRecord *>  mExpirationArray;
 
   nsTArray<CacheIndexIterator *> mIterators;
 
@@ -1153,7 +1136,7 @@ private:
   bool mLocked;
 };
 
-} // net
-} // mozilla
+} // namespace net
+} // namespace mozilla
 
 #endif

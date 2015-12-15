@@ -23,9 +23,12 @@
 #endif
 #include "mozilla/Attributes.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/PMemoryReportRequestParent.h" // for dom::MemoryReport
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/ipc/FileDescriptorUtils.h"
 
 #ifdef XP_WIN
 #include <process.h>
@@ -45,6 +48,7 @@ using namespace mozilla;
 
 #if defined(XP_LINUX)
 
+#include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -141,7 +145,7 @@ ResidentFastDistinguishedAmount(int64_t* aN)
   return ResidentDistinguishedAmount(aN);
 }
 
-#define HAVE_RESIDENT_UNIQUE_REPORTER
+#define HAVE_RESIDENT_UNIQUE_REPORTER 1
 static nsresult
 ResidentUniqueDistinguishedAmount(int64_t* aN)
 {
@@ -171,6 +175,26 @@ public:
   }
 };
 NS_IMPL_ISUPPORTS(ResidentUniqueReporter, nsIMemoryReporter)
+
+#define HAVE_SYSTEM_HEAP_REPORTER 1
+nsresult
+SystemHeapSize(int64_t* aSizeOut)
+{
+    struct mallinfo info = mallinfo();
+
+    // The documentation in the glibc man page makes it sound like |uordblks|
+    // would suffice, but that only gets the small allocations that are put in
+    // the brk heap. We need |hblkhd| as well to get the larger allocations
+    // that are mmapped.
+    //
+    // The fields in |struct mallinfo| are all |int|, <sigh>, so it is
+    // unreliable if memory usage gets high. However, the system heap size on
+    // Linux should usually be zero (so long as jemalloc is enabled) so that
+    // shouldn't be a problem. Nonetheless, cast the |int|s to |size_t| before
+    // adding them to provide a small amount of extra overflow protection.
+    *aSizeOut = size_t(info.hblkhd) + size_t(info.uordblks);
+    return NS_OK;
+}
 
 #elif defined(__DragonFly__) || defined(__FreeBSD__) \
     || defined(__NetBSD__) || defined(__OpenBSD__) \
@@ -291,7 +315,7 @@ GetKinfoVmentrySelf(int64_t* aPrss, uint64_t* aMaxreg)
   return NS_OK;
 }
 
-#define HAVE_PRIVATE_REPORTER
+#define HAVE_PRIVATE_REPORTER 1
 static nsresult
 PrivateDistinguishedAmount(int64_t* aN)
 {
@@ -433,10 +457,12 @@ static nsresult
 ResidentDistinguishedAmountHelper(int64_t* aN, bool aDoPurge)
 {
 #ifdef HAVE_JEMALLOC_STATS
+#ifndef MOZ_JEMALLOC4
   if (aDoPurge) {
     Telemetry::AutoTimer<Telemetry::MEMORY_FREE_PURGED_PAGES_MS> timer;
     jemalloc_purge_freed_pages();
   }
+#endif
 #endif
 
   task_basic_info ti;
@@ -529,7 +555,7 @@ VsizeMaxContiguousDistinguishedAmount(int64_t* aN)
   return NS_OK;
 }
 
-#define HAVE_PRIVATE_REPORTER
+#define HAVE_PRIVATE_REPORTER 1
 static nsresult
 PrivateDistinguishedAmount(int64_t* aN)
 {
@@ -542,6 +568,57 @@ PrivateDistinguishedAmount(int64_t* aN)
   }
 
   *aN = pmcex.PrivateUsage;
+  return NS_OK;
+}
+
+#define HAVE_SYSTEM_HEAP_REPORTER 1
+// Windows can have multiple separate heaps. During testing there were multiple
+// heaps present but the non-default ones had sizes no more than a few 10s of
+// KiBs. So we combine their sizes into a single measurement.
+nsresult
+SystemHeapSize(int64_t* aSizeOut)
+{
+  // Get the number of heaps.
+  DWORD nHeaps = GetProcessHeaps(0, nullptr);
+  NS_ENSURE_TRUE(nHeaps != 0, NS_ERROR_FAILURE);
+
+  // Get handles to all heaps, checking that the number of heaps hasn't
+  // changed in the meantime.
+  UniquePtr<HANDLE[]> heaps(new HANDLE[nHeaps]);
+  DWORD nHeaps2 = GetProcessHeaps(nHeaps, heaps.get());
+  NS_ENSURE_TRUE(nHeaps2 != 0 && nHeaps2 == nHeaps, NS_ERROR_FAILURE);
+
+  // Lock and iterate over each heap to get its size.
+  int64_t heapsSize = 0;
+  for (DWORD i = 0; i < nHeaps; i++) {
+    HANDLE heap = heaps[i];
+
+    NS_ENSURE_TRUE(HeapLock(heap), NS_ERROR_FAILURE);
+
+    int64_t heapSize = 0;
+    PROCESS_HEAP_ENTRY entry;
+    entry.lpData = nullptr;
+    while (HeapWalk(heap, &entry)) {
+      // We don't count entry.cbOverhead, because we just want to measure the
+      // space available to the program.
+      if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
+        heapSize += entry.cbData;
+      }
+    }
+
+    // Check this result only after unlocking the heap, so that we don't leave
+    // the heap locked if there was an error.
+    DWORD lastError = GetLastError();
+
+    // I have no idea how things would proceed if unlocking this heap failed...
+    NS_ENSURE_TRUE(HeapUnlock(heap), NS_ERROR_FAILURE);
+
+    NS_ENSURE_TRUE(lastError == ERROR_NO_MORE_ITEMS, NS_ERROR_FAILURE);
+
+    heapsSize += heapSize;
+  }
+
+  *aSizeOut = heapsSize;
   return NS_OK;
 }
 
@@ -800,9 +877,84 @@ NS_IMPL_ISUPPORTS(ResidentReporter, nsIMemoryReporter)
 
 #endif  // HAVE_VSIZE_AND_RESIDENT_REPORTERS
 
+#ifdef HAVE_SYSTEM_HEAP_REPORTER
+
+class SystemHeapReporter final : public nsIMemoryReporter
+{
+  ~SystemHeapReporter() {}
+
+public:
+  NS_DECL_ISUPPORTS
+
+  NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
+                           nsISupports* aData, bool aAnonymize) override
+  {
+    int64_t amount;
+    nsresult rv = SystemHeapSize(&amount);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return MOZ_COLLECT_REPORT(
+      "system-heap-allocated", KIND_OTHER, UNITS_BYTES, amount,
+"Memory used by the system allocator that is currently allocated to the "
+"application. This is distinct from the jemalloc heap that Firefox uses for "
+"most or all of its heap allocations. Ideally this number is zero, but "
+"on some platforms we cannot force every heap allocation through jemalloc.");
+  }
+};
+NS_IMPL_ISUPPORTS(SystemHeapReporter, nsIMemoryReporter)
+
+#endif // HAVE_SYSTEM_HEAP_REPORTER
+
 #ifdef XP_UNIX
 
 #include <sys/resource.h>
+
+#define HAVE_RESIDENT_PEAK_REPORTER 1
+
+static nsresult
+ResidentPeakDistinguishedAmount(int64_t* aN)
+{
+  struct rusage usage;
+  if (0 == getrusage(RUSAGE_SELF, &usage)) {
+    // The units for ru_maxrrs:
+    // - Mac: bytes
+    // - Solaris: pages? But some sources it actually always returns 0, so
+    //   check for that
+    // - Linux, {Net/Open/Free}BSD, DragonFly: KiB
+#ifdef XP_MACOSX
+    *aN = usage.ru_maxrss;
+#elif defined(SOLARIS)
+    *aN = usage.ru_maxrss * getpagesize();
+#else
+    *aN = usage.ru_maxrss * 1024;
+#endif
+    if (*aN > 0) {
+      return NS_OK;
+    }
+  }
+  return NS_ERROR_FAILURE;
+}
+
+class ResidentPeakReporter final : public nsIMemoryReporter
+{
+  ~ResidentPeakReporter() {}
+
+public:
+  NS_DECL_ISUPPORTS
+
+  NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
+                           nsISupports* aData, bool aAnonymize) override
+  {
+    int64_t amount = 0;
+    nsresult rv = ResidentPeakDistinguishedAmount(&amount);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return MOZ_COLLECT_REPORT(
+      "resident-peak", KIND_OTHER, UNITS_BYTES, amount,
+"The peak 'resident' value for the lifetime of the process.");
+  }
+};
+NS_IMPL_ISUPPORTS(ResidentPeakReporter, nsIMemoryReporter)
 
 #define HAVE_PAGE_FAULT_REPORTERS 1
 
@@ -880,7 +1032,7 @@ public:
 };
 NS_IMPL_ISUPPORTS(PageFaultsHardReporter, nsIMemoryReporter)
 
-#endif  // HAVE_PAGE_FAULT_REPORTERS
+#endif  // XP_UNIX
 
 /**
  ** memory reporter implementation for jemalloc and OSX malloc,
@@ -1154,6 +1306,10 @@ nsMemoryReporterManager::Init()
   RegisterStrongReporter(new VsizeMaxContiguousReporter());
 #endif
 
+#ifdef HAVE_RESIDENT_PEAK_REPORTER
+  RegisterStrongReporter(new ResidentPeakReporter());
+#endif
+
 #ifdef HAVE_RESIDENT_UNIQUE_REPORTER
   RegisterStrongReporter(new ResidentUniqueReporter());
 #endif
@@ -1165,6 +1321,10 @@ nsMemoryReporterManager::Init()
 
 #ifdef HAVE_PRIVATE_REPORTER
   RegisterStrongReporter(new PrivateReporter());
+#endif
+
+#ifdef HAVE_SYSTEM_HEAP_REPORTER
+  RegisterStrongReporter(new SystemHeapReporter());
 #endif
 
   RegisterStrongReporter(new AtomTablesReporter());
@@ -1195,7 +1355,6 @@ nsMemoryReporterManager::nsMemoryReporterManager()
   , mWeakReporters(new WeakReportersTable())
   , mSavedStrongReporters(nullptr)
   , mSavedWeakReporters(nullptr)
-  , mNumChildProcesses(0)
   , mNextGeneration(1)
   , mGetReportsState(nullptr)
 {
@@ -1209,37 +1368,16 @@ nsMemoryReporterManager::~nsMemoryReporterManager()
   NS_ASSERTION(!mSavedWeakReporters, "failed to restore weak reporters");
 }
 
-//#define DEBUG_CHILD_PROCESS_MEMORY_REPORTING 1
+#ifdef MOZ_WIDGET_GONK
+#define DEBUG_CHILD_PROCESS_MEMORY_REPORTING 1
+#endif
 
 #ifdef DEBUG_CHILD_PROCESS_MEMORY_REPORTING
 #define MEMORY_REPORTING_LOG(format, ...) \
-  fprintf(stderr, "++++ MEMORY REPORTING: " format, ##__VA_ARGS__);
+  printf_stderr("++++ MEMORY REPORTING: " format, ##__VA_ARGS__);
 #else
 #define MEMORY_REPORTING_LOG(...)
 #endif
-
-void
-nsMemoryReporterManager::IncrementNumChildProcesses()
-{
-  if (!NS_IsMainThread()) {
-    MOZ_CRASH();
-  }
-  mNumChildProcesses++;
-  MEMORY_REPORTING_LOG("IncrementNumChildProcesses --> %d\n",
-                       mNumChildProcesses);
-}
-
-void
-nsMemoryReporterManager::DecrementNumChildProcesses()
-{
-  if (!NS_IsMainThread()) {
-    MOZ_CRASH();
-  }
-  MOZ_ASSERT(mNumChildProcesses > 0);
-  mNumChildProcesses--;
-  MEMORY_REPORTING_LOG("DecrementNumChildProcesses --> %d\n",
-                       mNumChildProcesses);
-}
 
 NS_IMETHODIMP
 nsMemoryReporterManager::GetReports(
@@ -1284,52 +1422,23 @@ nsMemoryReporterManager::GetReportsExtended(
     return NS_OK;
   }
 
-  MEMORY_REPORTING_LOG("GetReports (gen=%u, %d child(ren) present)\n",
-                       generation, mNumChildProcesses);
+  MEMORY_REPORTING_LOG("GetReports (gen=%u)\n", generation);
 
-  if (mNumChildProcesses > 0) {
-    // Request memory reports from child processes.  We do this *before*
-    // collecting reports for this process so each process can collect
-    // reports in parallel.
-    nsCOMPtr<nsIObserverService> obs =
-      do_GetService("@mozilla.org/observer-service;1");
-    NS_ENSURE_STATE(obs);
-
-    nsPrintfCString genStr("generation=%x anonymize=%d minimize=%d DMDident=",
-                           generation, aAnonymize ? 1 : 0, aMinimize ? 1 : 0);
-    nsAutoString msg = NS_ConvertUTF8toUTF16(genStr);
-    msg += aDMDDumpIdent;
-
-    obs->NotifyObservers(nullptr, "child-memory-reporter-request",
-                         msg.get());
-
-    nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID);
-    NS_ENSURE_TRUE(timer, NS_ERROR_FAILURE);
-    rv = timer->InitWithFuncCallback(TimeoutCallback,
-                                     this, kTimeoutLengthMS,
-                                     nsITimer::TYPE_ONE_SHOT);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    mGetReportsState = new GetReportsState(generation,
-                                           aAnonymize,
-                                           timer,
-                                           mNumChildProcesses,
-                                           aHandleReport,
-                                           aHandleReportData,
-                                           aFinishReporting,
-                                           aFinishReportingData,
-                                           aDMDDumpIdent);
-  } else {
-    mGetReportsState = new GetReportsState(generation,
-                                           aAnonymize,
-                                           nullptr,
-                                           /* mNumChildProcesses = */ 0,
-                                           aHandleReport,
-                                           aHandleReportData,
-                                           aFinishReporting,
-                                           aFinishReportingData,
-                                           aDMDDumpIdent);
+  uint32_t concurrency = Preferences::GetUint("memory.report_concurrency", 1);
+  MOZ_ASSERT(concurrency >= 1);
+  if (concurrency < 1) {
+    concurrency = 1;
   }
+  mGetReportsState = new GetReportsState(generation,
+                                         aAnonymize,
+                                         aMinimize,
+                                         concurrency,
+                                         aHandleReport,
+                                         aHandleReportData,
+                                         aFinishReporting,
+                                         aFinishReportingData,
+                                         aDMDDumpIdent);
+  mGetReportsState->mChildrenPending = new nsTArray<nsRefPtr<mozilla::dom::ContentParent>>();
 
   if (aMinimize) {
     rv = MinimizeMemoryUsage(NS_NewRunnableMethod(
@@ -1344,12 +1453,13 @@ nsresult
 nsMemoryReporterManager::StartGettingReports()
 {
   GetReportsState* s = mGetReportsState;
+  nsresult rv;
 
   // Get reports for this process.
   FILE* parentDMDFile = nullptr;
 #ifdef MOZ_DMD
   if (!s->mDMDDumpIdent.IsEmpty()) {
-    nsresult rv = nsMemoryInfoDumper::OpenDMDFile(s->mDMDDumpIdent, getpid(),
+    rv = nsMemoryInfoDumper::OpenDMDFile(s->mDMDDumpIdent, getpid(),
                                                   &parentDMDFile);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       // Proceed with the memory report as if DMD were disabled.
@@ -1359,29 +1469,41 @@ nsMemoryReporterManager::StartGettingReports()
 #endif
   GetReportsForThisProcessExtended(s->mHandleReport, s->mHandleReportData,
                                    s->mAnonymize, parentDMDFile);
-  s->mParentDone = true;
 
-  // If there are no remaining child processes, we can finish up immediately.
-  return (s->mNumChildProcessesCompleted >= s->mNumChildProcesses) ?
-    FinishReporting() : NS_OK;
-}
+  nsTArray<ContentParent*> childWeakRefs;
+  ContentParent::GetAll(childWeakRefs);
+  if (!childWeakRefs.IsEmpty()) {
+    // Request memory reports from child processes.  This happens
+    // after the parent report so that the parent's main thread will
+    // be free to process the child reports, instead of causing them
+    // to be buffered and consume (possibly scarce) memory.
 
-typedef nsCOMArray<nsIMemoryReporter> MemoryReporterArray;
+    for (size_t i = 0; i < childWeakRefs.Length(); ++i) {
+      s->mChildrenPending->AppendElement(childWeakRefs[i]);
+    }
 
-static PLDHashOperator
-StrongEnumerator(nsRefPtrHashKey<nsIMemoryReporter>* aElem, void* aData)
-{
-  MemoryReporterArray* allReporters = static_cast<MemoryReporterArray*>(aData);
-  allReporters->AppendElement(aElem->GetKey());
-  return PL_DHASH_NEXT;
-}
+    nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID);
+    // Don't use NS_ENSURE_* here; can't return until the report is finished.
+    if (NS_WARN_IF(!timer)) {
+      FinishReporting();
+      return NS_ERROR_FAILURE;
+    }
+    rv = timer->InitWithFuncCallback(TimeoutCallback,
+                                     this, kTimeoutLengthMS,
+                                     nsITimer::TYPE_ONE_SHOT);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      FinishReporting();
+      return rv;
+    }
 
-static PLDHashOperator
-WeakEnumerator(nsPtrHashKey<nsIMemoryReporter>* aElem, void* aData)
-{
-  MemoryReporterArray* allReporters = static_cast<MemoryReporterArray*>(aData);
-  allReporters->AppendElement(aElem->GetKey());
-  return PL_DHASH_NEXT;
+    MOZ_ASSERT(!s->mTimer);
+    s->mTimer.swap(timer);
+  }
+
+  // The parent's report is done; make note of that, and start
+  // launching child process reports (if any).
+  EndProcessReport(s->mGeneration, true);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1414,11 +1536,17 @@ nsMemoryReporterManager::GetReportsForThisProcessExtended(
   MOZ_ASSERT(!aDMDFile);
 #endif
 
-  MemoryReporterArray allReporters;
+  nsCOMArray<nsIMemoryReporter> allReporters;
   {
     mozilla::MutexAutoLock autoLock(mMutex);
-    mStrongReporters->EnumerateEntries(StrongEnumerator, &allReporters);
-    mWeakReporters->EnumerateEntries(WeakEnumerator, &allReporters);
+    for (auto iter = mStrongReporters->Iter(); !iter.Done(); iter.Next()) {
+      nsRefPtrHashKey<nsIMemoryReporter>* entry = iter.Get();
+      allReporters.AppendElement(entry->GetKey());
+    }
+    for (auto iter = mWeakReporters->Iter(); !iter.Done(); iter.Next()) {
+      nsPtrHashKey<nsIMemoryReporter>* entry = iter.Get();
+      allReporters.AppendElement(entry->GetKey());
+    }
   }
   for (uint32_t i = 0; i < allReporters.Length(); i++) {
     allReporters[i]->CollectReports(aHandleReport, aHandleReportData,
@@ -1434,37 +1562,25 @@ nsMemoryReporterManager::GetReportsForThisProcessExtended(
   return NS_OK;
 }
 
-// This function has no return value.  If something goes wrong, there's no
-// clear place to report the problem to, but that's ok -- we will end up
-// hitting the timeout and executing TimeoutCallback().
-void
-nsMemoryReporterManager::HandleChildReports(
-  const uint32_t& aGeneration,
-  const InfallibleTArray<dom::MemoryReport>& aChildReports)
+nsMemoryReporterManager::GetReportsState*
+nsMemoryReporterManager::GetStateForGeneration(uint32_t aGeneration)
 {
   // Memory reporting only happens on the main thread.
-  if (!NS_IsMainThread()) {
-    MOZ_CRASH();
-  }
+  MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
   GetReportsState* s = mGetReportsState;
 
   if (!s) {
-    // If we reach here, either:
+    // If we reach here, then:
     //
     // - A child process reported back too late, and no subsequent request
     //   is in flight.
     //
-    // - (Unlikely) A "child-memory-reporter-request" notification was
-    //   triggered from somewhere other than GetReports(), causing child
-    //   processes to report back when the nsMemoryReporterManager wasn't
-    //   expecting it.
-    //
-    // Either way, there's nothing to be done.  Just ignore it.
+    // So there's nothing to be done.  Just ignore it.
     MEMORY_REPORTING_LOG(
       "HandleChildReports: no request in flight (aGen=%u)\n",
       aGeneration);
-    return;
+    return nullptr;
   }
 
   if (aGeneration != s->mGeneration) {
@@ -1475,32 +1591,117 @@ nsMemoryReporterManager::HandleChildReports(
     MEMORY_REPORTING_LOG(
       "HandleChildReports: gen mismatch (aGen=%u, s->gen=%u)\n",
       aGeneration, s->mGeneration);
+    return nullptr;
+  }
+
+  return s;
+}
+
+// This function has no return value.  If something goes wrong, there's no
+// clear place to report the problem to, but that's ok -- we will end up
+// hitting the timeout and executing TimeoutCallback().
+void
+nsMemoryReporterManager::HandleChildReport(
+  uint32_t aGeneration,
+  const dom::MemoryReport& aChildReport)
+{
+  GetReportsState* s = GetStateForGeneration(aGeneration);
+  if (!s) {
     return;
   }
 
-  // Process the reports from the child process.
-  for (uint32_t i = 0; i < aChildReports.Length(); i++) {
-    const dom::MemoryReport& r = aChildReports[i];
+  // Child reports should have a non-empty process.
+  MOZ_ASSERT(!aChildReport.process().IsEmpty());
 
-    // Child reports should have a non-empty process.
-    MOZ_ASSERT(!r.process().IsEmpty());
+  // If the call fails, ignore and continue.
+  s->mHandleReport->Callback(aChildReport.process(),
+                             aChildReport.path(),
+                             aChildReport.kind(),
+                             aChildReport.units(),
+                             aChildReport.amount(),
+                             aChildReport.desc(),
+                             s->mHandleReportData);
+}
 
-    // If the call fails, ignore and continue.
-    s->mHandleReport->Callback(r.process(), r.path(), r.kind(),
-                               r.units(), r.amount(), r.desc(),
-                               s->mHandleReportData);
+/* static */ bool
+nsMemoryReporterManager::StartChildReport(mozilla::dom::ContentParent* aChild,
+                                          const GetReportsState* aState)
+{
+#ifdef MOZ_NUWA_PROCESS
+  if (aChild->IsNuwaProcess()) {
+    return false;
+  }
+#endif
+
+  if (!aChild->IsAlive()) {
+    MEMORY_REPORTING_LOG("StartChildReports (gen=%u): child exited before"
+                         " its report was started\n",
+                         aState->mGeneration);
+    return false;
   }
 
-  // If all the child processes have reported, we can cancel the timer and
-  // finish up.  Otherwise, just return.
+  mozilla::dom::MaybeFileDesc dmdFileDesc = void_t();
+#ifdef MOZ_DMD
+  if (!aState->mDMDDumpIdent.IsEmpty()) {
+    FILE *dmdFile = nullptr;
+    nsresult rv = nsMemoryInfoDumper::OpenDMDFile(aState->mDMDDumpIdent,
+                                                  aChild->Pid(), &dmdFile);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      // Proceed with the memory report as if DMD were disabled.
+      dmdFile = nullptr;
+    }
+    if (dmdFile) {
+      dmdFileDesc = mozilla::ipc::FILEToFileDescriptor(dmdFile);
+      fclose(dmdFile);
+    }
+  }
+#endif
+  return aChild->SendPMemoryReportRequestConstructor(
+    aState->mGeneration, aState->mAnonymize, aState->mMinimize, dmdFileDesc);
+}
 
-  s->mNumChildProcessesCompleted++;
-  MEMORY_REPORTING_LOG("HandleChildReports (aGen=%u): completed child %d\n",
-                       aGeneration, s->mNumChildProcessesCompleted);
+void
+nsMemoryReporterManager::EndProcessReport(uint32_t aGeneration, bool aSuccess)
+{
+  GetReportsState* s = GetStateForGeneration(aGeneration);
+  if (!s) {
+    return;
+  }
 
-  if (s->mNumChildProcessesCompleted >= s->mNumChildProcesses &&
-      s->mParentDone) {
-    s->mTimer->Cancel();
+  MOZ_ASSERT(s->mNumProcessesRunning > 0);
+  s->mNumProcessesRunning--;
+  s->mNumProcessesCompleted++;
+  MEMORY_REPORTING_LOG("HandleChildReports (aGen=%u): process %u %s"
+                       " (%u running, %u pending)\n",
+                       aGeneration, s->mNumProcessesCompleted,
+                       aSuccess ? "completed" : "exited during report",
+                       s->mNumProcessesRunning,
+                       static_cast<unsigned>(s->mChildrenPending->Length()));
+
+  // Start pending children up to the concurrency limit.
+  while (s->mNumProcessesRunning < s->mConcurrencyLimit &&
+         !s->mChildrenPending->IsEmpty()) {
+    // Pop last element from s->mChildrenPending
+    nsRefPtr<ContentParent> nextChild;
+    nextChild.swap(s->mChildrenPending->LastElement());
+    s->mChildrenPending->TruncateLength(s->mChildrenPending->Length() - 1);
+    // Start report (if the child is still alive and not Nuwa).
+    if (StartChildReport(nextChild, s)) {
+      ++s->mNumProcessesRunning;
+      MEMORY_REPORTING_LOG("HandleChildReports (aGen=%u): started child report"
+                           " (%u running, %u pending)\n",
+                           aGeneration, s->mNumProcessesRunning,
+                           static_cast<unsigned>(s->mChildrenPending->Length()));
+    }
+  }
+
+  // If all the child processes (if any) have reported, we can cancel
+  // the timer (if started) and finish up.  Otherwise, just return.
+  if (s->mNumProcessesRunning == 0) {
+    MOZ_ASSERT(s->mChildrenPending->IsEmpty());
+    if (s->mTimer) {
+      s->mTimer->Cancel();
+    }
     FinishReporting();
   }
 }
@@ -1511,22 +1712,17 @@ nsMemoryReporterManager::TimeoutCallback(nsITimer* aTimer, void* aData)
   nsMemoryReporterManager* mgr = static_cast<nsMemoryReporterManager*>(aData);
   GetReportsState* s = mgr->mGetReportsState;
 
-  MOZ_ASSERT(mgr->mGetReportsState);
-  MEMORY_REPORTING_LOG("TimeoutCallback (s->gen=%u)\n",
-                       s->mGeneration);
+  // Release assert because: if the pointer is null we're about to
+  // crash regardless of DEBUG, and this way the compiler doesn't
+  // complain about unused variables.
+  MOZ_RELEASE_ASSERT(s, "mgr->mGetReportsState");
+  MEMORY_REPORTING_LOG("TimeoutCallback (s->gen=%u; %u running, %u pending)\n",
+                       s->mGeneration, s->mNumProcessesRunning,
+                       static_cast<unsigned>(s->mChildrenPending->Length()));
 
   // We don't bother sending any kind of cancellation message to the child
   // processes that haven't reported back.
-
-  if (s->mParentDone) {
-    mgr->FinishReporting();
-  } else {
-    // This is unlikely -- the timeout expired during MinimizeMemoryUsage.
-    MEMORY_REPORTING_LOG("Timeout expired before parent report started!");
-    // Let the parent continue with its report, but ensure that
-    // StartGettingReports gives up immediately after that.
-    s->mNumChildProcesses = s->mNumChildProcessesCompleted;
-  }
+  mgr->FinishReporting();
 }
 
 nsresult
@@ -1538,8 +1734,9 @@ nsMemoryReporterManager::FinishReporting()
   }
 
   MOZ_ASSERT(mGetReportsState);
-  MEMORY_REPORTING_LOG("FinishReporting (s->gen=%u)\n",
-                       mGetReportsState->mGeneration);
+  MEMORY_REPORTING_LOG("FinishReporting (s->gen=%u; %u processes reported)\n",
+                       mGetReportsState->mGeneration,
+                       mGetReportsState->mNumProcessesCompleted);
 
   // Call this before deleting |mGetReportsState|.  That way, if
   // |mFinishReportData| calls GetReports(), it will silently abort, as
@@ -1550,6 +1747,11 @@ nsMemoryReporterManager::FinishReporting()
   delete mGetReportsState;
   mGetReportsState = nullptr;
   return rv;
+}
+
+nsMemoryReporterManager::GetReportsState::~GetReportsState()
+{
+  delete mChildrenPending;
 }
 
 static void
@@ -1861,6 +2063,30 @@ nsMemoryReporterManager::ResidentFast()
 }
 
 NS_IMETHODIMP
+nsMemoryReporterManager::GetResidentPeak(int64_t* aAmount)
+{
+#ifdef HAVE_RESIDENT_PEAK_REPORTER
+  return ResidentPeakDistinguishedAmount(aAmount);
+#else
+  *aAmount = 0;
+  return NS_ERROR_NOT_AVAILABLE;
+#endif
+}
+
+/*static*/ int64_t
+nsMemoryReporterManager::ResidentPeak()
+{
+#ifdef HAVE_RESIDENT_PEAK_REPORTER
+  int64_t amount = 0;
+  nsresult rv = ResidentPeakDistinguishedAmount(&amount);
+  NS_ENSURE_SUCCESS(rv, 0);
+  return amount;
+#else
+  return 0;
+#endif
+}
+
+NS_IMETHODIMP
 nsMemoryReporterManager::GetResidentUnique(int64_t* aAmount)
 {
 #ifdef HAVE_RESIDENT_UNIQUE_REPORTER
@@ -2080,7 +2306,7 @@ private:
   uint32_t mRemainingIters;
 };
 
-} // anonymous namespace
+} // namespace
 
 NS_IMETHODIMP
 nsMemoryReporterManager::MinimizeMemoryUsage(nsIRunnable* aCallback)
@@ -2174,6 +2400,17 @@ RegisterWeakMemoryReporter(nsIMemoryReporter* aReporter)
 }
 
 nsresult
+UnregisterStrongMemoryReporter(nsIMemoryReporter* aReporter)
+{
+  nsCOMPtr<nsIMemoryReporterManager> mgr =
+    do_GetService("@mozilla.org/memory-reporter-manager;1");
+  if (!mgr) {
+    return NS_ERROR_FAILURE;
+  }
+  return mgr->UnregisterStrongReporter(aReporter);
+}
+
+nsresult
 UnregisterWeakMemoryReporter(nsIMemoryReporter* aReporter)
 {
   nsCOMPtr<nsIMemoryReporterManager> mgr =
@@ -2245,7 +2482,7 @@ DEFINE_REGISTER_SIZE_OF_TAB(NonJS);
 
 #undef GET_MEMORY_REPORTER_MANAGER
 
-}
+} // namespace mozilla
 
 #if defined(MOZ_DMD)
 
@@ -2260,7 +2497,7 @@ public:
   NS_IMETHOD Callback(const nsACString& aProcess, const nsACString& aPath,
                       int32_t aKind, int32_t aUnits, int64_t aAmount,
                       const nsACString& aDescription,
-                      nsISupports* aData)
+                      nsISupports* aData) override
   {
     // Do nothing;  the reporter has already reported to DMD.
     return NS_OK;

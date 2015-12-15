@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +22,7 @@ class SVGCircleElement final : public SVGCircleElementBase
 {
 protected:
   explicit SVGCircleElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx) override;
+  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
   friend nsresult (::NS_NewSVGCircleElement(nsIContent **aResult,
                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
@@ -31,8 +32,9 @@ public:
 
   // nsSVGPathGeometryElement methods:
   virtual bool GetGeometryBounds(Rect* aBounds, const StrokeOptions& aStrokeOptions,
-                                 const Matrix& aTransform) override;
-  virtual TemporaryRef<Path> BuildPath(PathBuilder* aBuilder) override;
+                                 const Matrix& aToBoundsSpace,
+                                 const Matrix* aToNonScalingStrokeSpace = nullptr) override;
+  virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
 

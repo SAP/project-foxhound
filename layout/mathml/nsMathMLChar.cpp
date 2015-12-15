@@ -734,9 +734,7 @@ InitGlobals(nsPresContext* aPresContext)
   // observer and will be deleted at shutdown. We now add some private
   // per font-family tables for stretchy operators, in order of preference.
   // Do not include the Unicode table in this list.
-  if (!glyphTableList->AddGlyphTable(NS_LITERAL_STRING("MathJax_Main")) ||
-      !glyphTableList->AddGlyphTable(NS_LITERAL_STRING("STIXGeneral")) ||
-      !glyphTableList->AddGlyphTable(NS_LITERAL_STRING("Standard Symbols L"))
+  if (!glyphTableList->AddGlyphTable(NS_LITERAL_STRING("STIXGeneral"))
 #ifdef XP_WIN
       || !glyphTableList->AddGlyphTable(NS_LITERAL_STRING("Symbol"))
 #endif
@@ -1660,8 +1658,10 @@ nsMathMLChar::StretchInternal(nsPresContext*           aPresContext,
 
     // really shouldn't be doing things this way but for now
     // insert fallbacks into the list
-    nsAutoTArray<nsString, 10> mathFallbacks;
-    gfxFontUtils::GetPrefsFontList("font.mathfont-family", mathFallbacks);
+    nsAutoTArray<nsString, 16> mathFallbacks;
+    gfxFontUtils::GetPrefsFontList("font.name.serif.x-math", mathFallbacks);
+    gfxFontUtils::AppendPrefsFontList("font.name-list.serif.x-math",
+                                      mathFallbacks);
     InsertMathFallbacks(font.fontlist, mathFallbacks);
 
 
@@ -1704,6 +1704,11 @@ nsMathMLChar::StretchInternal(nsPresContext*           aPresContext,
     MFR->RecordScript(MOZ_SCRIPT_MATHEMATICAL_NOTATION);
   }
 
+  // If the scale_stretchy_operators option is disabled, we are done.
+  if (!Preferences::GetBool("mathml.scale_stretchy_operators.enabled", true)) {
+    return NS_OK;
+  }
+  
   // stretchy character
   if (stretchy) {
     if (isVertical) {
@@ -1823,8 +1828,7 @@ nscoord
 nsMathMLChar::GetMaxWidth(nsPresContext* aPresContext,
                           nsRenderingContext& aRenderingContext,
                           float aFontSizeInflation,
-                          uint32_t aStretchHint,
-                          float aMaxSize, bool aMaxSizeIsAbsolute)
+                          uint32_t aStretchHint)
 {
   nsBoundingMetrics bm;
   nsStretchDirection direction = NS_STRETCH_DIRECTION_VERTICAL;

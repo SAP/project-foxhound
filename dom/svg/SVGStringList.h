@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,7 +56,7 @@ public:
   }
 
   bool SetCapacity(uint32_t size) {
-    return mStrings.SetCapacity(size);
+    return mStrings.SetCapacity(size, fallible);
   }
 
   void Compact() {
@@ -91,7 +92,7 @@ protected:
    * increased, in which case the list will be left unmodified.
    */
   bool SetLength(uint32_t aStringOfItems) {
-    return mStrings.SetLength(aStringOfItems);
+    return mStrings.SetLength(aStringOfItems, fallible);
   }
 
 private:
@@ -104,7 +105,7 @@ private:
     if (aIndex >= mStrings.Length()) {
       aIndex = mStrings.Length();
     }
-    if (mStrings.InsertElementAt(aIndex, aString)) {
+    if (mStrings.InsertElementAt(aIndex, aString, fallible)) {
       mIsSet = true;
       return true;
     }
@@ -124,7 +125,7 @@ private:
   }
 
   bool AppendItem(const nsAString &aString) {
-    if (mStrings.AppendElement(aString)) {
+    if (mStrings.AppendElement(aString, fallible)) {
       mIsSet = true;
       return true;
     }

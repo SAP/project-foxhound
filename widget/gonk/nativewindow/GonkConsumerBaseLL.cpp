@@ -85,7 +85,11 @@ void GonkConsumerBase::freeBufferLocked(int slotIndex) {
     mSlots[slotIndex].mFrameNumber = 0;
 }
 
+#if ANDROID_VERSION == 21
 void GonkConsumerBase::onFrameAvailable() {
+#else
+void GonkConsumerBase::onFrameAvailable(const ::android::BufferItem& item) {
+#endif
     ALOGV("onFrameAvailable");
 
     sp<FrameAvailableListener> listener;
@@ -162,7 +166,7 @@ void GonkConsumerBase::dumpLocked(String8& result, const char* prefix) const {
     result.appendFormat("%smAbandoned=%d\n", prefix, int(mAbandoned));
 
     if (!mAbandoned) {
-        mConsumer->dump(result, prefix);
+        mConsumer->dumpToString(result, prefix);
     }
 }
 

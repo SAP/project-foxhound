@@ -4,6 +4,7 @@
 
 import os
 import shutil
+import sys
 import uuid
 
 from .. import testloader
@@ -93,6 +94,14 @@ class UpdateCheckout(Step):
         sync_tree.update(state.sync["remote_url"],
                          state.sync["branch"],
                          state.local_branch)
+        sync_path = os.path.abspath(sync_tree.root)
+        if not sync_path in sys.path:
+            from update import setup_paths
+            setup_paths(sync_path)
+
+    def restore(self, state):
+        assert os.path.abspath(state.sync_tree.root) in sys.path
+        Step.restore(self, state)
 
 
 class GetSyncTargetCommit(Step):
@@ -115,24 +124,23 @@ class GetSyncTargetCommit(Step):
 class LoadManifest(Step):
     """Load the test manifest"""
 
-    provides = ["test_manifest"]
+    provides = ["manifest_path", "test_manifest", "old_manifest"]
 
     def create(self, state):
-        state.test_manifest = testloader.ManifestLoader(state.tests_path).load_manifest(
-            state.tests_path, state.metadata_path,
-        )
+        from manifest import manifest
+        state.manifest_path = os.path.join(state.metadata_path, "MANIFEST.json")
+        # Conservatively always rebuild the manifest when doing a sync
+        state.old_manifest = manifest.load(state.tests_path, state.manifest_path)
+        state.test_manifest = manifest.Manifest(None, "/")
 
 
 class UpdateManifest(Step):
     """Update the manifest to match the tests in the sync tree checkout"""
 
-    provides = ["initial_rev"]
     def create(self, state):
-        import manifest
-        test_manifest = state.test_manifest
-        state.initial_rev = test_manifest.rev
-        manifest.update(state.sync["path"], "/", test_manifest)
-        manifest.write(test_manifest, os.path.join(state.metadata_path, "MANIFEST.json"))
+        from manifest import manifest, update
+        update.update(state.sync["path"], "/", state.test_manifest)
+        manifest.write(state.test_manifest, state.manifest_path)
 
 
 class CopyWorkTree(Step):
@@ -154,7 +162,7 @@ class CreateSyncPatch(Step):
         sync_tree = state.sync_tree
 
         local_tree.create_patch("web-platform-tests_update_%s" % sync_tree.rev,
-                                "Update web-platform-tests to revision %s" % sync_tree.rev)
+                                "Update %s to revision %s" % (state.suite_name, sync_tree.rev))
         local_tree.add_new(os.path.relpath(state.tests_path,
                                            local_tree.root))
         updated = local_tree.update_patch(include=[state.tests_path,

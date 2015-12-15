@@ -1,4 +1,5 @@
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +21,7 @@ namespace mozilla {
 namespace dom {
 
 class TouchList final : public nsISupports
-                          , public nsWrapperCache
+                      , public nsWrapperCache
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -44,7 +45,7 @@ public:
     mPoints.AppendElement(aPoint);
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsISupports* GetParentObject() const
   {
@@ -89,9 +90,9 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TouchEvent, UIEvent)
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx) override
+  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
   {
-    return TouchEventBinding::Wrap(aCx, this);
+    return TouchEventBinding::Wrap(aCx, this, aGivenProto);
   }
 
   TouchList* Touches();
@@ -130,5 +131,10 @@ protected:
 
 } // namespace dom
 } // namespace mozilla
+
+already_AddRefed<mozilla::dom::TouchEvent>
+NS_NewDOMTouchEvent(mozilla::dom::EventTarget* aOwner,
+                    nsPresContext* aPresContext,
+                    mozilla::WidgetTouchEvent* aEvent);
 
 #endif // mozilla_dom_TouchEvent_h_

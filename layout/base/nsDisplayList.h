@@ -28,7 +28,6 @@
 #include "FrameMetrics.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/UserData.h"
-#include "gfxVR.h"
 
 #include <stdint.h>
 #include "nsTHashtable.h"
@@ -41,6 +40,7 @@ class nsRenderingContext;
 class nsDisplayTableItem;
 class nsISelection;
 class nsDisplayLayerEventRegions;
+class nsDisplayScrollInfoLayer;
 class nsCaret;
 
 namespace mozilla {
@@ -49,8 +49,11 @@ namespace layers {
 class Layer;
 class ImageLayer;
 class ImageContainer;
-} //namespace
-} //namespace
+} // namespace layers
+namespace gfx {
+class VRHMDInfo;
+} // namespace gfx
+} // namespace mozilla
 
 // A set of blend modes, that never includes OP_OVER (since it's
 // considered the default, rather than a specific blend mode).
@@ -126,8 +129,7 @@ public:
   /**
    * @param aReferenceFrame the frame at the root of the subtree; its origin
    * is the origin of the reference coordinate system for this display list
-   * @param aIsForEvents true if we're creating this list in order to
-   * determine which frame is under the mouse position
+   * @param aMode encodes what the builder is being used for.
    * @param aBuildCaret whether or not we should include the caret in any
    * display lists that we make.
    */
@@ -216,7 +218,7 @@ public:
    * Returns the nearest ancestor frame to aFrame that is considered to have
    * (or will have) animated geometry. This can return aFrame.
    */
-  nsIFrame* FindAnimatedGeometryRootFor(nsIFrame* aFrame, const nsIFrame* aStopAtAncestor = nullptr);
+  nsIFrame* FindAnimatedGeometryRootFor(nsIFrame* aFrame, const nsIFrame* aStopAtAncestor);
 
   /**
    * @return the root of the display list's frame (sub)tree, whose origin
@@ -253,6 +255,13 @@ public:
    * Get the ViewID of the nearest scrolling ancestor frame.
    */
   ViewID GetCurrentScrollParentId() const { return mCurrentScrollParentId; }
+  /**
+   * Get and set the flag that indicates if scroll parents should have layers
+   * forcibly created. This flag is set when a deeply nested scrollframe has
+   * a displayport, and for scroll handoff to work properly the ancestor
+   * scrollframes should also get their own scrollable layers.
+   */
+  void ForceLayerForScrollParent() { mForceLayerForScrollParent = true; }
   /**
    * Get the ViewID and the scrollbar flags corresponding to the scrollbar for
    * which we are building display items at the moment.
@@ -336,10 +345,7 @@ public:
   {
     mLayerEventRegions = aItem;
   }
-  bool IsBuildingLayerEventRegions()
-  {
-    return (gfxPrefs::LayoutEventRegionsEnabled() && mMode == PAINTING);
-  }
+  bool IsBuildingLayerEventRegions();
   bool IsInsidePointerEventsNoneDoc()
   {
     return CurrentPresShellState()->mInsidePointerEventsNoneDoc;
@@ -660,15 +666,41 @@ public:
   class AutoCurrentScrollParentIdSetter {
   public:
     AutoCurrentScrollParentIdSetter(nsDisplayListBuilder* aBuilder, ViewID aScrollId)
-      : mBuilder(aBuilder), mOldValue(aBuilder->mCurrentScrollParentId) {
+      : mBuilder(aBuilder)
+      , mOldValue(aBuilder->mCurrentScrollParentId)
+      , mOldForceLayer(aBuilder->mForceLayerForScrollParent) {
+      // If this AutoCurrentScrollParentIdSetter has the same scrollId as the
+      // previous one on the stack, then that means the scrollframe that
+      // created this isn't actually scrollable and cannot participate in
+      // scroll handoff. We set mCanBeScrollParent to false to indicate this.
+      mCanBeScrollParent = (mOldValue != aScrollId);
       aBuilder->mCurrentScrollParentId = aScrollId;
+      aBuilder->mForceLayerForScrollParent = false;
     }
+    bool ShouldForceLayerForScrollParent() const {
+      // Only scrollframes participating in scroll handoff can be forced to
+      // layerize
+      return mCanBeScrollParent && mBuilder->mForceLayerForScrollParent;
+    };
     ~AutoCurrentScrollParentIdSetter() {
       mBuilder->mCurrentScrollParentId = mOldValue;
+      if (mCanBeScrollParent) {
+        // If this flag is set, caller code is responsible for having dealt
+        // with the current value of mBuilder->mForceLayerForScrollParent, so
+        // we can just restore the old value.
+        mBuilder->mForceLayerForScrollParent = mOldForceLayer;
+      } else {
+        // Otherwise we need to keep propagating the force-layerization flag
+        // upwards to the next ancestor scrollframe that does participate in
+        // scroll handoff.
+        mBuilder->mForceLayerForScrollParent |= mOldForceLayer;
+      }
     }
   private:
     nsDisplayListBuilder* mBuilder;
     ViewID                mOldValue;
+    bool                  mOldForceLayer;
+    bool                  mCanBeScrollParent;
   };
 
   /**
@@ -786,15 +818,19 @@ public:
   DisplayListClipState& ClipState() { return mClipState; }
 
   /**
-   * The will-change budget is calculated during the display list building
-   * phase for all the frames that want will change on a per-document basis.
-   * The cost should be fully calculated during the layer building phase
-   * and a decission to allow or disallow will-change for all frames of
-   * that document will be made by IsInWillChangeBudget.
+   * Add the current frame to the will-change budget if possible and
+   * remeber the outcome. Subsequent calls to IsInWillChangeBudget
+   * will return the same value as return here.
    */
-  void AddToWillChangeBudget(nsIFrame* aFrame, const nsSize& aSize);
+  bool AddToWillChangeBudget(nsIFrame* aFrame, const nsSize& aSize);
 
-  bool IsInWillChangeBudget(nsIFrame* aFrame) const;
+  /**
+   * This will add the current frame to the will-change budget the first
+   * time it is seen. On subsequent calls this will return the same
+   * answer. This effectively implements a first-come, first-served
+   * allocation of the will-change budget.
+   */
+  bool IsInWillChangeBudget(nsIFrame* aFrame, const nsSize& aSize);
 
   /**
    * Look up the cached animated geometry root for aFrame subject to
@@ -804,6 +840,45 @@ public:
   bool GetCachedAnimatedGeometryRoot(const nsIFrame* aFrame,
                                      const nsIFrame* aStopAtAncestor,
                                      nsIFrame** aOutResult);
+
+  void SetCommittedScrollInfoItemList(nsDisplayList* aScrollInfoItemStorage) {
+    mCommittedScrollInfoItems = aScrollInfoItemStorage;
+  }
+  nsDisplayList* CommittedScrollInfoItems() const {
+    return mCommittedScrollInfoItems;
+  }
+  bool ShouldBuildScrollInfoItemsForHoisting() const {
+    return IsPaintingToWindow();
+  }
+
+  // When building display lists for stacking contexts, we append scroll info
+  // items to a temporary list. If the stacking context would create an
+  // inactive layer, we commit these items to the final hoisted scroll items
+  // list. Otherwise, we propagate these items to the parent stacking
+  // context's list of pending scroll info items.
+  //
+  // EnterScrollInfoItemHoisting returns the parent stacking context's pending
+  // item list.
+  nsDisplayList* EnterScrollInfoItemHoisting(nsDisplayList* aScrollInfoItemStorage);
+  void LeaveScrollInfoItemHoisting(nsDisplayList* aScrollInfoItemStorage);
+
+  void AppendNewScrollInfoItemForHoisting(nsDisplayScrollInfoLayer* aScrollInfoItem);
+
+  /**
+   * Store the dirty rect of the scrolled contents of aScrollableFrame. This
+   * is a bound for the extents of the new visible region of the scrolled
+   * layer.
+   * @param aScrollableFrame the scrollable frame
+   * @param aDirty           the dirty rect, relative to aScrollableFrame
+   */
+  void StoreDirtyRectForScrolledContents(const nsIFrame* aScrollableFrame, const nsRect& aDirty);
+
+  /**
+   * Retrieve the stored dirty rect for the scrolled contents of aScrollableFrame.
+   * @param  aScrollableFrame the scroll frame
+   * @return                  the dirty rect, relative to aScrollableFrame's *reference frame*
+   */
+  nsRect GetDirtyRectForScrolledContents(const nsIFrame* aScrollableFrame) const;
 
 private:
   void MarkOutOfFlowFrameForDisplay(nsIFrame* aDirtyFrame, nsIFrame* aFrame,
@@ -879,8 +954,14 @@ private:
   // will-change budget tracker
   nsDataHashtable<nsPtrHashKey<nsPresContext>, DocumentWillChangeBudget>
                                  mWillChangeBudget;
-  // Assert that we never check the budget before its fully calculated.
-  mutable mozilla::DebugOnly<bool> mWillChangeBudgetCalculated;
+
+  // Any frame listed in this set is already counted in the budget
+  // and thus is in-budget.
+  nsTHashtable<nsPtrHashKey<nsIFrame> > mBudgetSet;
+
+  // rects are relative to the frame's reference frame
+  nsDataHashtable<nsPtrHashKey<nsIFrame>, nsRect> mDirtyRectForScrolledContents;
+
   // Relative to mCurrentFrame.
   nsRect                         mDirtyRect;
   nsRegion                       mWindowExcludeGlassRegion;
@@ -888,6 +969,14 @@ private:
   nsIntRegion                    mWindowDraggingRegion;
   // The display item for the Windows window glass background, if any
   nsDisplayItem*                 mGlassDisplayItem;
+  // When encountering inactive layers, we need to hoist scroll info items
+  // above these layers so APZ can deliver events to content. Such scroll
+  // info items are considered "committed" to the final hoisting list. If
+  // no hoisting is needed immediately, it may be needed later if a blend
+  // mode is introduced in a higher stacking context, so we keep all scroll
+  // info items until the end of display list building.
+  nsDisplayList*                 mPendingScrollInfoItems;
+  nsDisplayList*                 mCommittedScrollInfoItems;
   nsTArray<DisplayItemClip*>     mDisplayItemClipsToDestroy;
   Mode                           mMode;
   ViewID                         mCurrentScrollParentId;
@@ -919,6 +1008,8 @@ private:
   bool                           mHaveScrollableDisplayPort;
   bool                           mWindowDraggingAllowed;
   bool                           mIsBuildingForPopup;
+  bool                           mForceLayerForScrollParent;
+  bool                           mAsyncPanZoomEnabled;
 };
 
 class nsDisplayItem;
@@ -943,7 +1034,7 @@ protected:
  * class represents an entity that can be drawn on the screen, e.g., a
  * frame's CSS background, or a frame's text string.
  * 
- * nsDisplayListItems can be containers --- i.e., they can perform hit testing
+ * nsDisplayItems can be containers --- i.e., they can perform hit testing
  * and painting by recursively traversing a list of child items.
  * 
  * These are arena-allocated during display list construction. A typical
@@ -1009,7 +1100,7 @@ public:
   /**
    * Pairing this with the GetUnderlyingFrame() pointer gives a key that
    * uniquely identifies this display item in the display item tree.
-   * XXX check ScrollLayerWrapper/nsOptionEventGrabberWrapper/nsXULEventRedirectorWrapper
+   * XXX check nsOptionEventGrabberWrapper/nsXULEventRedirectorWrapper
    */
   virtual uint32_t GetPerFrameKey() { return uint32_t(GetType()); }
   /**
@@ -1540,8 +1631,8 @@ public:
   }
   
   /**
-   * Append a new item to the top of the list. If the item is null we return
-   * NS_ERROR_OUT_OF_MEMORY. The intended usage is AppendNewToTop(new ...);
+   * Append a new item to the top of the list. The intended usage is
+   * AppendNewToTop(new ...);
    */
   void AppendNewToTop(nsDisplayItem* aItem) {
     if (aItem) {
@@ -1550,8 +1641,8 @@ public:
   }
   
   /**
-   * Append a new item to the bottom of the list. If the item is null we return
-   * NS_ERROR_OUT_OF_MEMORY. The intended usage is AppendNewToBottom(new ...);
+   * Append a new item to the bottom of the list. The intended usage is
+   * AppendNewToBottom(new ...);
    */
   void AppendNewToBottom(nsDisplayItem* aItem) {
     if (aItem) {
@@ -1630,14 +1721,10 @@ public:
   uint32_t Count() const;
   /**
    * Stable sort the list by the z-order of GetUnderlyingFrame() on
-   * each item. 'auto' is counted as zero. Content order is used as the
-   * secondary order.
-   * @param aCommonAncestor a common ancestor of all the content elements
-   * associated with the display items, for speeding up tree order
-   * checks, or nullptr if not known; it's only a hint, if it is not an
-   * ancestor of some elements, then we lose performance but not correctness
+   * each item. 'auto' is counted as zero.
+   * It is assumed that the list is already in content document order.
    */
-  void SortByZOrder(nsDisplayListBuilder* aBuilder, nsIContent* aCommonAncestor);
+  void SortByZOrder(nsDisplayListBuilder* aBuilder);
   /**
    * Stable sort the list by the tree order of the content of
    * GetUnderlyingFrame() on each item. z-index is ignored.
@@ -1647,6 +1734,13 @@ public:
    * ancestor of some elements, then we lose performance but not correctness
    */
   void SortByContentOrder(nsDisplayListBuilder* aBuilder, nsIContent* aCommonAncestor);
+  /**
+   * Stable sort this list by CSS 'order' property order.
+   * http://dev.w3.org/csswg/css-flexbox-1/#order-property
+   * (also applies to CSS Grid although it's in the Flexbox spec ATM)
+   * It is assumed that the list is already in document content order.
+   */
+  void SortByCSSOrder(nsDisplayListBuilder* aBuilder);
 
   /**
    * Generic stable sort. Take care, because some of the items might be nsDisplayLists
@@ -1726,9 +1820,6 @@ public:
    * otherwise we will use a temporary BasicLayerManager and ctx must
    * not be null.
    * 
-   * If PAINT_FLUSH_LAYERS is set, we'll force a completely new layer
-   * tree to be created for this paint *and* the next paint.
-   * 
    * If PAINT_EXISTING_TRANSACTION is set, the reference frame's widget's
    * layer manager has already had BeginTransaction() called on it and
    * we should not call it again.
@@ -1745,7 +1836,6 @@ public:
   enum {
     PAINT_DEFAULT = 0,
     PAINT_USE_WIDGET_LAYERS = 0x01,
-    PAINT_FLUSH_LAYERS = 0x02,
     PAINT_EXISTING_TRANSACTION = 0x04,
     PAINT_NO_COMPOSITE = 0x08,
     PAINT_COMPRESSED = 0x10
@@ -1919,6 +2009,8 @@ private:
 
 class nsDisplayImageContainer : public nsDisplayItem {
 public:
+  typedef mozilla::LayerIntPoint LayerIntPoint;
+  typedef mozilla::LayoutDeviceRect LayoutDeviceRect;
   typedef mozilla::layers::ImageContainer ImageContainer;
   typedef mozilla::layers::ImageLayer ImageLayer;
 
@@ -1926,9 +2018,18 @@ public:
     : nsDisplayItem(aBuilder, aFrame)
   {}
 
+  /**
+   * @return true if this display item can be optimized into an image layer.
+   * It is an error to call GetContainer() unless you've called
+   * CanOptimizeToImageLayer() first and it returned true.
+   */
+  virtual bool CanOptimizeToImageLayer(LayerManager* aManager,
+                                       nsDisplayListBuilder* aBuilder) = 0;
+
   virtual already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager,
                                                         nsDisplayListBuilder* aBuilder) = 0;
-  virtual void ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset) = 0;
+  virtual void ConfigureLayer(ImageLayer* aLayer,
+                              const ContainerLayerParameters& aParameters) = 0;
 
   virtual bool SupportsOptimizingToImage() override { return true; }
 };
@@ -2093,9 +2194,14 @@ public:
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) override;
   virtual void Paint(nsDisplayListBuilder* aBuilder, nsRenderingContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("Caret", TYPE_CARET)
+
+  bool NeedsCustomScrollClip() { return mNeedsCustomScrollClip; }
+  void SetNeedsCustomScrollClip() { mNeedsCustomScrollClip = true; }
+
 protected:
   nsRefPtr<nsCaret> mCaret;
   nsRect mBounds;
+  bool mNeedsCustomScrollClip;
 };
 
 /**
@@ -2103,11 +2209,8 @@ protected:
  */
 class nsDisplayBorder : public nsDisplayItem {
 public:
-  nsDisplayBorder(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame) :
-    nsDisplayItem(aBuilder, aFrame)
-  {
-    MOZ_COUNT_CTOR(nsDisplayBorder);
-  }
+  nsDisplayBorder(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame);
+
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayBorder() {
     MOZ_COUNT_DTOR(nsDisplayBorder);
@@ -2127,6 +2230,8 @@ public:
 
 protected:
   nsRect CalculateBounds(const nsStyleBorder& aStyleBorder);
+
+  nsRect mBounds;
 };
 
 /**
@@ -2140,40 +2245,11 @@ protected:
  * is not yet a frame tree to go in the frame/iframe so we use the subdoc
  * frame of the parent document as a standin.
  */
-class nsDisplaySolidColor : public nsDisplayItem {
+class nsDisplaySolidColorBase : public nsDisplayItem {
 public:
-  nsDisplaySolidColor(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
-                      const nsRect& aBounds, nscolor aColor)
-    : nsDisplayItem(aBuilder, aFrame), mBounds(aBounds), mColor(aColor)
-  {
-    NS_ASSERTION(NS_GET_A(aColor) > 0, "Don't create invisible nsDisplaySolidColors!");
-    MOZ_COUNT_CTOR(nsDisplaySolidColor);
-  }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplaySolidColor() {
-    MOZ_COUNT_DTOR(nsDisplaySolidColor);
-  }
-#endif
-
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) override;
-
-  virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
-                                   bool* aSnap) override {
-    *aSnap = false;
-    nsRegion result;
-    if (NS_GET_A(mColor) == 255) {
-      result = GetBounds(aBuilder, aSnap);
-    }
-    return result;
-  }
-
-  virtual bool IsUniform(nsDisplayListBuilder* aBuilder, nscolor* aColor) override
-  {
-    *aColor = mColor;
-    return true;
-  }
-
-  virtual void Paint(nsDisplayListBuilder* aBuilder, nsRenderingContext* aCtx) override;
+  nsDisplaySolidColorBase(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame, nscolor aColor)
+    : nsDisplayItem(aBuilder, aFrame), mColor(aColor)
+  {}
 
   virtual nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder* aBuilder) override
   {
@@ -2194,13 +2270,51 @@ public:
     ComputeInvalidationRegionDifference(aBuilder, geometry, aInvalidRegion);
   }
 
+  virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
+                                   bool* aSnap) override {
+    *aSnap = false;
+    nsRegion result;
+    if (NS_GET_A(mColor) == 255) {
+      result = GetBounds(aBuilder, aSnap);
+    }
+    return result;
+  }
+
+  virtual bool IsUniform(nsDisplayListBuilder* aBuilder, nscolor* aColor) override
+  {
+    *aColor = mColor;
+    return true;
+  }
+
+protected:
+  nscolor mColor;
+};
+
+class nsDisplaySolidColor : public nsDisplaySolidColorBase {
+public:
+  nsDisplaySolidColor(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
+                      const nsRect& aBounds, nscolor aColor)
+    : nsDisplaySolidColorBase(aBuilder, aFrame, aColor), mBounds(aBounds)
+  {
+    NS_ASSERTION(NS_GET_A(aColor) > 0, "Don't create invisible nsDisplaySolidColors!");
+    MOZ_COUNT_CTOR(nsDisplaySolidColor);
+  }
+#ifdef NS_BUILD_REFCNT_LOGGING
+  virtual ~nsDisplaySolidColor() {
+    MOZ_COUNT_DTOR(nsDisplaySolidColor);
+  }
+#endif
+
+  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) override;
+
+  virtual void Paint(nsDisplayListBuilder* aBuilder, nsRenderingContext* aCtx) override;
+
   virtual void WriteDebugInfo(std::stringstream& aStream) override;
 
   NS_DISPLAY_DECL_NAME("SolidColor", TYPE_SOLID_COLOR)
 
 private:
   nsRect  mBounds;
-  nscolor mColor;
 };
 
 /**
@@ -2274,9 +2388,12 @@ public:
                                          const nsDisplayItemGeometry* aGeometry,
                                          nsRegion* aInvalidRegion) override;
   
+  virtual bool CanOptimizeToImageLayer(LayerManager* aManager,
+                                       nsDisplayListBuilder* aBuilder) override;
   virtual already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager,
                                                         nsDisplayListBuilder *aBuilder) override;
-  virtual void ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset) override;
+  virtual void ConfigureLayer(ImageLayer* aLayer,
+                              const ContainerLayerParameters& aParameters) override;
 
   static nsRegion GetInsideClipRegion(nsDisplayItem* aItem, nsPresContext* aPresContext, uint8_t aClip,
                                       const nsRect& aRect, bool* aSnap);
@@ -2291,6 +2408,7 @@ protected:
   bool IsSingleFixedPositionImage(nsDisplayListBuilder* aBuilder,
                                   const nsRect& aClipRect,
                                   gfxRect* aDestRect);
+  bool IsNonEmptyFixedImage() const;
   nsRect GetBoundsInternal(nsDisplayListBuilder* aBuilder);
 
   void PaintInternal(nsDisplayListBuilder* aBuilder, nsRenderingContext* aCtx,
@@ -2299,9 +2417,9 @@ protected:
   // Cache the result of nsCSSRendering::FindBackground. Always null if
   // mIsThemed is true or if FindBackground returned false.
   const nsStyleBackground* mBackgroundStyle;
-  /* If this background can be a simple image layer, we store the format here. */
+  nsCOMPtr<imgIContainer> mImage;
   nsRefPtr<ImageContainer> mImageContainer;
-  gfxRect mDestRect;
+  LayoutDeviceRect mDestRect;
   /* Bounds of this display item */
   nsRect mBounds;
   uint32_t mLayer;
@@ -2673,6 +2791,9 @@ public:
   const nsRegion& HitRegion() { return mHitRegion; }
   const nsRegion& MaybeHitRegion() { return mMaybeHitRegion; }
   const nsRegion& DispatchToContentHitRegion() { return mDispatchToContentHitRegion; }
+  const nsRegion& NoActionRegion() { return mNoActionRegion; }
+  const nsRegion& HorizontalPanRegion() { return mHorizontalPanRegion; }
+  const nsRegion& VerticalPanRegion() { return mVerticalPanRegion; }
 
   virtual void WriteDebugInfo(std::stringstream& aStream) override;
 
@@ -2686,6 +2807,15 @@ private:
   // These are points that need to be dispatched to the content thread for
   // resolution. Always contained in the union of mHitRegion and mMaybeHitRegion.
   nsRegion mDispatchToContentHitRegion;
+  // These are points where panning is disabled, as determined by the touch-action
+  // property. Always contained in the union of mHitRegion and mMaybeHitRegion.
+  nsRegion mNoActionRegion;
+  // These are points where panning is horizontal, as determined by the touch-action
+  // property. Always contained in the union of mHitRegion and mMaybeHitRegion.
+  nsRegion mHorizontalPanRegion;
+  // These are points where panning is vertical, as determined by the touch-action
+  // property. Always contained in the union of mHitRegion and mMaybeHitRegion.
+  nsRegion mVerticalPanRegion;
 };
 
 /**
@@ -2818,7 +2948,7 @@ protected:
     mBounds.UnionRect(mBounds, aOther->mBounds);
     mVisibleRect.UnionRect(mVisibleRect, aOther->mVisibleRect);
     mMergedFrames.AppendElement(aOther->mFrame);
-    mMergedFrames.MoveElementsFrom(aOther->mMergedFrames);
+    mMergedFrames.AppendElements(mozilla::Move(aOther->mMergedFrames));
   }
 
   nsDisplayList mList;
@@ -2866,7 +2996,7 @@ protected:
 class nsDisplayOpacity : public nsDisplayWrapList {
 public:
   nsDisplayOpacity(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
-                   nsDisplayList* aList);
+                   nsDisplayList* aList, bool aForEventsOnly);
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayOpacity();
 #endif
@@ -2901,6 +3031,7 @@ public:
 
 private:
   float mOpacity;
+  bool mForEventsOnly;
 };
 
 class nsDisplayMixBlendMode : public nsDisplayWrapList {
@@ -3003,7 +3134,8 @@ public:
    */
   nsDisplayOwnLayer(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                     nsDisplayList* aList, uint32_t aFlags = 0,
-                    ViewID aScrollTarget = mozilla::layers::FrameMetrics::NULL_SCROLL_ID);
+                    ViewID aScrollTarget = mozilla::layers::FrameMetrics::NULL_SCROLL_ID,
+                    float aScrollbarThumbRatio = 0.0f);
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayOwnLayer();
 #endif
@@ -3030,6 +3162,7 @@ public:
 protected:
   uint32_t mFlags;
   ViewID mScrollTarget;
+  float mScrollbarThumbRatio;
 };
 
 /**
@@ -3114,58 +3247,28 @@ public:
 };
 
 /**
- * This potentially creates a layer for the given list of items, whose
- * visibility is determined by the displayport for the given frame instead of
- * normal visibility computation.
- *
- * Here in content, we can use this to render more content than is actually
- * visible. Then, the compositing process can manipulate the generated layer
- * through transformations so that asynchronous scrolling can be implemented.
- *
- * Note that setting the displayport will not change any hit testing! The
- * content process will know nothing about what the user is actually seeing,
- * so it can only do hit testing for what is supposed to be the visible region.
- *
- * It is possible for scroll boxes to have content that can be both above and
- * below content outside of the scroll box. We cannot create layers for these
- * cases. This is accomplished by wrapping display items with
- * nsDisplayScrollLayers. nsDisplayScrollLayers with the same scroll frame will
- * be merged together. If more than one nsDisplayScrollLayer exists after
- * merging, all nsDisplayScrollLayers will be flattened out so that no new
- * layer is created at all.
+ * This creates an empty scrollable layer. It has no child layers.
+ * It is used to record the existence of a scrollable frame in the layer
+ * tree.
  */
-class nsDisplayScrollLayer : public nsDisplayWrapList
+class nsDisplayScrollInfoLayer : public nsDisplayWrapList
 {
 public:
-  /**
-   * @param aScrolledFrame This will determine what the displayport is. It should be
-   *                       the root content frame of the scrolled area. Note
-   *                       that nsDisplayScrollLayer will expect for
-   *                       ScrollLayerCount to be defined on aScrolledFrame.
-   * @param aScrollFrame The viewport frame you see this content through.
-   */
-  nsDisplayScrollLayer(nsDisplayListBuilder* aBuilder, nsDisplayList* aList,
-                       nsIFrame* aForFrame, nsIFrame* aScrolledFrame,
-                       nsIFrame* aScrollFrame);
-  nsDisplayScrollLayer(nsDisplayListBuilder* aBuilder, nsDisplayItem* aItem,
-                       nsIFrame* aForFrame, nsIFrame* aScrolledFrame,
-                       nsIFrame* aScrollFrame);
-  nsDisplayScrollLayer(nsDisplayListBuilder* aBuilder,
-                       nsIFrame* aForFrame, nsIFrame* aScrolledFrame,
-                       nsIFrame* aScrollFrame);
-  NS_DISPLAY_DECL_NAME("ScrollLayer", TYPE_SCROLL_LAYER)
+  nsDisplayScrollInfoLayer(nsDisplayListBuilder* aBuilder,
+                           nsIFrame* aScrolledFrame, nsIFrame* aScrollFrame);
+  NS_DISPLAY_DECL_NAME("ScrollInfoLayer", TYPE_SCROLL_INFO_LAYER)
+
 
 #ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayScrollLayer();
+  virtual ~nsDisplayScrollInfoLayer();
 #endif
-
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) override;
 
   virtual already_AddRefed<Layer> BuildLayer(nsDisplayListBuilder* aBuilder,
                                              LayerManager* aManager,
                                              const ContainerLayerParameters& aContainerParameters) override;
 
-  virtual bool ShouldBuildLayerEvenIfInvisible(nsDisplayListBuilder* aBuilder) override;
+  virtual bool ShouldBuildLayerEvenIfInvisible(nsDisplayListBuilder* aBuilder) override
+  { return true; }
 
   virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
                                    bool* aSnap) override {
@@ -3173,93 +3276,32 @@ public:
     return nsRegion();
   }
 
-  virtual bool ComputeVisibility(nsDisplayListBuilder* aBuilder,
-                                 nsRegion* aVisibleRegion) override;
-
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
                                    const ContainerLayerParameters& aParameters) override;
 
-  virtual bool TryMerge(nsDisplayListBuilder* aBuilder,
-                          nsDisplayItem* aItem) override;
-
-  virtual bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override;
-
-  // Get the number of nsDisplayScrollLayers for a scroll frame. Note that this
-  // number does not include nsDisplayScrollInfoLayers. If this number is not 1
-  // after merging, all the nsDisplayScrollLayers should flatten away.
-  intptr_t GetScrollLayerCount();
-
-  virtual nsIFrame* GetScrollFrame() { return mScrollFrame; }
-  virtual nsIFrame* GetScrolledFrame() { return mScrolledFrame; }
+  virtual bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override
+  { return false; }
 
   virtual void WriteDebugInfo(std::stringstream& aStream) override;
-
-  bool IsDisplayPortOpaque() { return mDisplayPortContentsOpaque; }
-
-  static FrameMetrics ComputeFrameMetrics(nsIFrame* aForFrame,
-                                          nsIFrame* aScrollFrame,
-                                          nsIContent* aContent,
-                                          const nsIFrame* aReferenceFrame,
-                                          Layer* aLayer,
-                                          ViewID aScrollParentId,
-                                          const nsRect& aViewport,
-                                          bool aIsRoot,
-                                          const ContainerLayerParameters& aContainerParameters);
 
   mozilla::UniquePtr<FrameMetrics> ComputeFrameMetrics(Layer* aLayer,
                                                        const ContainerLayerParameters& aContainerParameters);
 
-protected:
-  nsRect GetScrolledContentRectToDraw(nsDisplayListBuilder* aBuilder,
-                                      nsRect* aDisplayPort);
+  void IgnoreIfCompositorSupportsBlending(BlendModeSet aBlendModes);
+  void UnsetIgnoreIfCompositorSupportsBlending();
+  bool ContainedInMixBlendMode() const;
 
+protected:
   nsIFrame* mScrollFrame;
   nsIFrame* mScrolledFrame;
   ViewID mScrollParentId;
-  bool mDisplayPortContentsOpaque;
-};
 
-/**
- * Like nsDisplayScrollLayer, but only has metadata on the scroll frame. This
- * creates a layer that has no Thebes child layer, but still allows the
- * compositor process to know of the scroll frame's existence.
- *
- * After visibility computation, nsDisplayScrollInfoLayers should only exist if
- * nsDisplayScrollLayers were all flattened away.
- *
- * Important!! Add info layers to the bottom of the list so they are only
- * considered after the others have flattened out!
- */
-class nsDisplayScrollInfoLayer : public nsDisplayScrollLayer
-{
-public:
-  nsDisplayScrollInfoLayer(nsDisplayListBuilder* aBuilder,
-                           nsIFrame* aScrolledFrame, nsIFrame* aScrollFrame);
-  NS_DISPLAY_DECL_NAME("ScrollInfoLayer", TYPE_SCROLL_INFO_LAYER)
-
-  virtual ~nsDisplayScrollInfoLayer();
-
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) override;
-
-  virtual already_AddRefed<Layer> BuildLayer(nsDisplayListBuilder* aBuilder,
-                                             LayerManager* aManager,
-                                             const ContainerLayerParameters& aContainerParameters) override;
-
-  virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
-                                   LayerManager* aManager,
-                                   const ContainerLayerParameters& aParameters) override;
-  virtual bool ShouldBuildLayerEvenIfInvisible(nsDisplayListBuilder* aBuilder) override
-  { return true; }
-  virtual bool TryMerge(nsDisplayListBuilder* aBuilder,
-                          nsDisplayItem* aItem) override;
-
-  virtual bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override;
-
-  void MarkHoisted() { mHoisted = true; }
-
-private:
-  bool mHoisted;
+  // If the only reason for the ScrollInfoLayer is a blend mode, the blend
+  // mode may be supported in the compositor. We track it here to determine
+  // if so during layer construction.
+  BlendModeSet mContainedBlendModes;
+  bool mIgnoreIfCompositorSupportsBlending;
 };
 
 /**
@@ -3526,22 +3568,6 @@ public:
   static Point3D GetDeltaToPerspectiveOrigin(const nsIFrame* aFrame,
                                              float aAppUnitsPerPixel);
 
-  /**
-   * Returns the bounds of a frame as defined for resolving percentage
-   * <translation-value>s in CSS transforms.  If
-   * UNIFIED_CONTINUATIONS is not defined, this is simply the frame's bounding
-   * rectangle, translated to the origin.  Otherwise, returns the smallest
-   * rectangle containing a frame and all of its continuations.  For example,
-   * if there is a <span> element with several continuations split over
-   * several lines, this function will return the rectangle containing all of
-   * those continuations.  This rectangle is relative to the origin of the
-   * frame's local coordinate space.
-   *
-   * @param aFrame The frame to get the bounding rect for.
-   * @return The frame's bounding rect, as described above.
-   */
-  static nsRect GetFrameBoundsForTransform(const nsIFrame* aFrame);
-
   struct FrameTransformProperties
   {
     FrameTransformProperties(const nsIFrame* aFrame,
@@ -3554,15 +3580,24 @@ public:
       : mFrame(nullptr)
       , mTransformList(aTransformList)
       , mToTransformOrigin(aToTransformOrigin)
-      , mToPerspectiveOrigin(aToPerspectiveOrigin)
       , mChildPerspective(aChildPerspective)
+      , mToPerspectiveOrigin(aToPerspectiveOrigin)
     {}
+
+    const Point3D& GetToPerspectiveOrigin() const
+    {
+      MOZ_ASSERT(mChildPerspective > 0, "Only valid with mChildPerspective > 0");
+      return mToPerspectiveOrigin;
+    }
 
     const nsIFrame* mFrame;
     nsRefPtr<nsCSSValueSharedList> mTransformList;
     const Point3D mToTransformOrigin;
-    const Point3D mToPerspectiveOrigin;
     nscoord mChildPerspective;
+
+  private:
+    // mToPerspectiveOrigin is only valid if mChildPerspective > 0.
+    Point3D mToPerspectiveOrigin;
   };
 
   /**
@@ -3573,24 +3608,24 @@ public:
    * @param aOrigin Relative to which point this transform should be applied.
    * @param aAppUnitsPerPixel The number of app units per graphics unit.
    * @param aBoundsOverride [optional] If this is nullptr (the default), the
-   *        computation will use the value of GetFrameBoundsForTransform(aFrame)
-   *        for the frame's bounding rectangle. Otherwise, it will use the
-   *        value of aBoundsOverride.  This is mostly for internal use and in
-   *        most cases you will not need to specify a value.
+   *        computation will use the value of TransformReferenceBox(aFrame).
+   *        Otherwise, it will use the value of aBoundsOverride.  This is
+   *        mostly for internal use and in most cases you will not need to
+   *        specify a value.
    * @param aOffsetByOrigin If true, the resulting matrix will be translated
    *        by aOrigin. This translation is applied *before* the CSS transform.
    */
-  static gfx3DMatrix GetResultingTransformMatrix(const nsIFrame* aFrame,
-                                                 const nsPoint& aOrigin,
-                                                 float aAppUnitsPerPixel,
-                                                 const nsRect* aBoundsOverride = nullptr,
-                                                 nsIFrame** aOutAncestor = nullptr,
-                                                 bool aOffsetByOrigin = false);
-  static gfx3DMatrix GetResultingTransformMatrix(const FrameTransformProperties& aProperties,
-                                                 const nsPoint& aOrigin,
-                                                 float aAppUnitsPerPixel,
-                                                 const nsRect* aBoundsOverride = nullptr,
-                                                 nsIFrame** aOutAncestor = nullptr);
+  static Matrix4x4 GetResultingTransformMatrix(const nsIFrame* aFrame,
+                                               const nsPoint& aOrigin,
+                                               float aAppUnitsPerPixel,
+                                               const nsRect* aBoundsOverride = nullptr,
+                                               nsIFrame** aOutAncestor = nullptr,
+                                               bool aOffsetByOrigin = false);
+  static Matrix4x4 GetResultingTransformMatrix(const FrameTransformProperties& aProperties,
+                                               const nsPoint& aOrigin,
+                                               float aAppUnitsPerPixel,
+                                               const nsRect* aBoundsOverride = nullptr,
+                                               nsIFrame** aOutAncestor = nullptr);
   /**
    * Return true when we should try to prerender the entire contents of the
    * transformed frame even when it's not completely visible (yet).
@@ -3617,12 +3652,12 @@ private:
   void SetReferenceFrameToAncestor(nsDisplayListBuilder* aBuilder);
   void Init(nsDisplayListBuilder* aBuilder);
 
-  static gfx3DMatrix GetResultingTransformMatrixInternal(const FrameTransformProperties& aProperties,
-                                                         const nsPoint& aOrigin,
-                                                         float aAppUnitsPerPixel,
-                                                         const nsRect* aBoundsOverride,
-                                                         nsIFrame** aOutAncestor,
-                                                         bool aOffsetByOrigin);
+  static Matrix4x4 GetResultingTransformMatrixInternal(const FrameTransformProperties& aProperties,
+                                                       const nsPoint& aOrigin,
+                                                       float aAppUnitsPerPixel,
+                                                       const nsRect* aBoundsOverride,
+                                                       nsIFrame** aOutAncestor,
+                                                       bool aOffsetByOrigin);
 
   nsDisplayWrapList mStoredList;
   Matrix4x4 mTransform;
@@ -3635,11 +3670,12 @@ private:
 };
 
 /**
- * This class adds basic support for limiting the rendering to the part inside
- * the specified edges.  It's a base class for the display item classes that
- * does the actual work.  The two members, mLeftEdge and mRightEdge, are
- * relative to the edges of the frame's scrollable overflow rectangle and is
- * the amount to suppress on each side.
+ * This class adds basic support for limiting the rendering (in the inline axis
+ * of the writing mode) to the part inside the specified edges.  It's a base
+ * class for the display item classes that do the actual work.
+ * The two members, mVisIStartEdge and mVisIEndEdge, are relative to the edges
+ * of the frame's scrollable overflow rectangle and are the amount to suppress
+ * on each side.
  *
  * Setting none, both or only one edge is allowed.
  * The values must be non-negative.
@@ -3648,29 +3684,46 @@ private:
 class nsCharClipDisplayItem : public nsDisplayItem {
 public:
   nsCharClipDisplayItem(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
-    : nsDisplayItem(aBuilder, aFrame), mLeftEdge(0), mRightEdge(0) {}
+    : nsDisplayItem(aBuilder, aFrame), mVisIStartEdge(0), mVisIEndEdge(0) {}
 
   explicit nsCharClipDisplayItem(nsIFrame* aFrame)
     : nsDisplayItem(aFrame) {}
 
+  virtual nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder* aBuilder) override;
+
+  virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
+                                         const nsDisplayItemGeometry* aGeometry,
+                                         nsRegion* aInvalidRegion) override;
+
   struct ClipEdges {
     ClipEdges(const nsDisplayItem& aItem,
-              nscoord aLeftEdge, nscoord aRightEdge) {
+              nscoord aVisIStartEdge, nscoord aVisIEndEdge) {
       nsRect r = aItem.Frame()->GetScrollableOverflowRect() +
                  aItem.ToReferenceFrame();
-      mX = aLeftEdge > 0 ? r.x + aLeftEdge : nscoord_MIN;
-      mXMost = aRightEdge > 0 ? std::max(r.XMost() - aRightEdge, mX) : nscoord_MAX;
+      if (aItem.Frame()->GetWritingMode().IsVertical()) {
+        mVisIStart = aVisIStartEdge > 0 ? r.y + aVisIStartEdge : nscoord_MIN;
+        mVisIEnd =
+          aVisIEndEdge > 0 ? std::max(r.YMost() - aVisIEndEdge, mVisIStart)
+                           : nscoord_MAX;
+      } else {
+        mVisIStart = aVisIStartEdge > 0 ? r.x + aVisIStartEdge : nscoord_MIN;
+        mVisIEnd =
+          aVisIEndEdge > 0 ? std::max(r.XMost() - aVisIEndEdge, mVisIStart)
+                           : nscoord_MAX;
+      }
     }
-    void Intersect(nscoord* aX, nscoord* aWidth) const {
-      nscoord xmost1 = *aX + *aWidth;
-      *aX = std::max(*aX, mX);
-      *aWidth = std::max(std::min(xmost1, mXMost) - *aX, 0);
+    void Intersect(nscoord* aVisIStart, nscoord* aVisISize) const {
+      nscoord end = *aVisIStart + *aVisISize;
+      *aVisIStart = std::max(*aVisIStart, mVisIStart);
+      *aVisISize = std::max(std::min(end, mVisIEnd) - *aVisIStart, 0);
     }
-    nscoord mX;
-    nscoord mXMost;
+    nscoord mVisIStart;
+    nscoord mVisIEnd;
   };
 
-  ClipEdges Edges() const { return ClipEdges(*this, mLeftEdge, mRightEdge); }
+  ClipEdges Edges() const {
+    return ClipEdges(*this, mVisIStartEdge, mVisIEndEdge);
+  }
 
   static nsCharClipDisplayItem* CheckCast(nsDisplayItem* aItem) {
     nsDisplayItem::Type t = aItem->GetType();
@@ -3680,8 +3733,11 @@ public:
       ? static_cast<nsCharClipDisplayItem*>(aItem) : nullptr;
   }
 
-  nscoord mLeftEdge;  // length from the left side
-  nscoord mRightEdge; // length from the right side
+  // Lengths measured from the visual inline start and end sides
+  // (i.e. left and right respectively in horizontal writing modes,
+  // regardless of bidi directionality; top and bottom in vertical modes).
+  nscoord mVisIStartEdge;
+  nscoord mVisIEndEdge;
 };
 
 /**

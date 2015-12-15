@@ -106,9 +106,9 @@ private:
   { 0x455d1d40, 0x1b9b, 0x40e6, { 0xa6, 0x41, 0x8b, 0xb7, 0xe8, 0x82, 0x23, 0x87 } }
 
 class nsNavHistoryResult final : public nsSupportsWeakReference,
-                                     public nsINavHistoryResult,
-                                     public nsINavBookmarkObserver,
-                                     public nsINavHistoryObserver
+                                 public nsINavHistoryResult,
+                                 public nsINavBookmarkObserver,
+                                 public nsINavHistoryObserver
 {
 public:
   static nsresult NewHistoryResult(nsINavHistoryQuery** aQueries,
@@ -175,7 +175,7 @@ public:
                                bool aExpand);
 
   void InvalidateTree();
-  
+
   bool mBatchInProgress;
 
   nsMaybeWeakPtrArray<nsINavHistoryResultObserver> mObservers;
@@ -281,7 +281,8 @@ public:
                            uint16_t aItemType,
                            int64_t aParentId,
                            const nsACString& aGUID,
-                           const nsACString& aParentGUID);
+                           const nsACString& aParentGUID,
+                           const nsACString &aOldValue);
 
 protected:
   virtual ~nsNavHistoryResultNode() {}
@@ -612,8 +613,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryContainerResultNode,
 //    bookmark notifications.
 
 class nsNavHistoryQueryResultNode final : public nsNavHistoryContainerResultNode,
-                                              public nsINavHistoryQueryResultNode,
-                                              public nsINavBookmarkObserver
+                                          public nsINavHistoryQueryResultNode,
+                                          public nsINavBookmarkObserver
 {
 public:
   nsNavHistoryQueryResultNode(const nsACString& aTitle,
@@ -674,7 +675,6 @@ public:
   virtual void RecursiveSort(const char* aData,
                              SortComparator aComparator) override;
 
-  nsCOMPtr<nsIURI> mRemovingURI;
   nsresult NotifyIfTagsChanged(nsIURI* aURI);
 
   uint32_t mBatchChanges;
@@ -693,9 +693,9 @@ protected:
 //    of the folder in sync with the bookmark service.
 
 class nsNavHistoryFolderResultNode final : public nsNavHistoryContainerResultNode,
-                                               public nsINavHistoryQueryResultNode,
-                                               public nsINavBookmarkObserver,
-                                               public mozilla::places::AsyncStatementCallback
+                                           public nsINavHistoryQueryResultNode,
+                                           public nsINavBookmarkObserver,
+                                           public mozilla::places::AsyncStatementCallback
 {
 public:
   nsNavHistoryFolderResultNode(const nsACString& aTitle,

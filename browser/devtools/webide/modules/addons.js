@@ -3,21 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const {Cu} = require("chrome");
-const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm");
+const promise = require("promise");
 const {AddonManager} = Cu.import("resource://gre/modules/AddonManager.jsm");
-const {EventEmitter} = Cu.import("resource://gre/modules/devtools/event-emitter.js");
 const {Services} = Cu.import("resource://gre/modules/Services.jsm");
-const {GetAddonsJSON} = require("devtools/webide/remote-resources");
+const {getJSON} = require("devtools/shared/getjson");
+const EventEmitter = require("devtools/toolkit/event-emitter");
 
-let SIMULATOR_LINK = Services.prefs.getCharPref("devtools.webide.simulatorAddonsURL");
-let ADB_LINK = Services.prefs.getCharPref("devtools.webide.adbAddonURL");
-let ADAPTERS_LINK = Services.prefs.getCharPref("devtools.webide.adaptersAddonURL");
-let SIMULATOR_ADDON_ID = Services.prefs.getCharPref("devtools.webide.simulatorAddonID");
-let ADB_ADDON_ID = Services.prefs.getCharPref("devtools.webide.adbAddonID");
-let ADAPTERS_ADDON_ID = Services.prefs.getCharPref("devtools.webide.adaptersAddonID");
+const ADDONS_URL = "devtools.webide.addonsURL";
 
-let platform = Services.appShell.hiddenDOMWindow.navigator.platform;
-let OS = "";
+var SIMULATOR_LINK = Services.prefs.getCharPref("devtools.webide.simulatorAddonsURL");
+var ADB_LINK = Services.prefs.getCharPref("devtools.webide.adbAddonURL");
+var ADAPTERS_LINK = Services.prefs.getCharPref("devtools.webide.adaptersAddonURL");
+var SIMULATOR_ADDON_ID = Services.prefs.getCharPref("devtools.webide.simulatorAddonID");
+var ADB_ADDON_ID = Services.prefs.getCharPref("devtools.webide.adbAddonID");
+var ADAPTERS_ADDON_ID = Services.prefs.getCharPref("devtools.webide.adaptersAddonID");
+
+var platform = Services.appShell.hiddenDOMWindow.navigator.platform;
+var OS = "";
 if (platform.indexOf("Win") != -1) {
   OS = "win32";
 } else if (platform.indexOf("Mac") != -1) {
@@ -30,7 +32,7 @@ if (platform.indexOf("Win") != -1) {
   }
 }
 
-let addonsListener = {};
+var addonsListener = {};
 addonsListener.onEnabled =
 addonsListener.onDisabled =
 addonsListener.onInstalled =
@@ -45,8 +47,8 @@ addonsListener.onUninstalled = (updatedAddon) => {
 }
 AddonManager.addAddonListener(addonsListener);
 
-let GetAvailableAddons_promise = null;
-let GetAvailableAddons = exports.GetAvailableAddons = function() {
+var GetAvailableAddons_promise = null;
+var GetAvailableAddons = exports.GetAvailableAddons = function() {
   if (!GetAvailableAddons_promise) {
     let deferred = promise.defer();
     GetAvailableAddons_promise = deferred.promise;
@@ -54,7 +56,7 @@ let GetAvailableAddons = exports.GetAvailableAddons = function() {
       simulators: [],
       adb: null
     }
-    GetAddonsJSON(true).then(json => {
+    getJSON(ADDONS_URL, true).then(json => {
       for (let stability in json) {
         for (let version of json[stability]) {
           addons.simulators.push(new SimulatorAddon(stability, version));

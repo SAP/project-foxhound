@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +80,7 @@ SVGMotionSMILPathUtils::PathGenerator::
   return true;
 }
 
-TemporaryRef<Path>
+already_AddRefed<Path>
 SVGMotionSMILPathUtils::PathGenerator::GetResultingPath()
 {
   return mPathBuilder->Finish();
@@ -135,14 +136,14 @@ SVGMotionSMILPathUtils::MotionValueParser::
     // Interpret first value in "values" attribute as the path's initial MoveTo
     success = mPathGenerator->MoveToAbsolute(aValueStr);
     if (success) {
-      success = !!mPointDistances->AppendElement(0.0);
+      success = !!mPointDistances->AppendElement(0.0, fallible);
     }
   } else {
     double dist;
     success = mPathGenerator->LineToAbsolute(aValueStr, dist);
     if (success) {
       mDistanceSoFar += dist;
-      success = !!mPointDistances->AppendElement(mDistanceSoFar);
+      success = !!mPointDistances->AppendElement(mDistanceSoFar, fallible);
     }
   }
   return success;

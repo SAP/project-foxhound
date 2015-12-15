@@ -19,7 +19,7 @@ Our views use [React](http://facebook.github.io/react/) written in JSX files
 and transpiled to JS before we commit. You need to install the JSX compiler
 using npm in order to compile the .jsx files into regular .js ones:
 
-    npm install -g react-tools
+    npm install -g react-tools@0.12.2
 
 Once installed, run build-jsx with the --watch option from
 browser/components/loop, eg.:
@@ -40,6 +40,32 @@ Please be sure to execute
 
 from the top level before requesting review on a patch.
 
+Linting
+=======
+run-all-loop-tests.sh will take care of this for you automatically, after
+you've installed the dependencies by typing:
+
+  ( cd standalone ; make install )
+
+If you install eslint and the react plugin globally:
+
+  npm install -g eslint
+  npm install -g eslint-plugin-react
+
+You can also run it by hand in the browser/components/loop directory:
+
+  eslint --ext .js --ext .jsx --ext .jsm .
+
+Test coverage
+=============
+Initial setup
+  cd test
+  npm install
+
+To run
+  npm run build-coverage
+
+It will create a `coverage` folder under test/
 
 Front-End Unit Tests
 ====================

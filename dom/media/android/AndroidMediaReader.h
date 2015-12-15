@@ -25,10 +25,6 @@ namespace layers {
 class ImageContainer;
 }
 
-namespace dom {
-class TimeRanges;
-}
- 
 class AndroidMediaReader : public MediaDecoderReader
 {
   nsCString mType;
@@ -40,6 +36,8 @@ class AndroidMediaReader : public MediaDecoderReader
   int64_t mVideoSeekTimeUs;
   int64_t mAudioSeekTimeUs;
   nsRefPtr<VideoData> mLastVideoFrame;
+  MozPromiseHolder<MediaDecoderReader::SeekPromise> mSeekPromise;
+  MozPromiseRequestHolder<MediaDecoderReader::VideoDataPromise> mSeekRequest;
 public:
   AndroidMediaReader(AbstractMediaDecoder* aDecoder,
                      const nsACString& aContentType);

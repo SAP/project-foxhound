@@ -13,7 +13,7 @@ const rootGuid = PlacesUtils.bookmarks.rootGuid;
 Components.utils.importGlobalProperties(["URL"]);
 
 // Create and add bookmarks observer.
-let observer = {
+var observer = {
   __proto__: NavBookmarkObserver.prototype,
 
   tagRelatedGuids: new Set(),
@@ -105,7 +105,7 @@ let observer = {
 observer.reset();
 
 // index at which items should begin
-let bmStartIndex = 0;
+var bmStartIndex = 0;
 
 function run_test() {
   bmsvc.addObserver(observer, false);
@@ -739,11 +739,7 @@ add_task(function* test_add_and_remove_bookmarks_with_additional_info() {
    , newValue: ANNO.value },
    { guid: b2_info.guid
    , property: "keyword"
-   , newValue: KEYWORD },
-   { guid: b2_info.guid
-   , isAnnoProperty: true
-   , property: PlacesUtils.POST_DATA_ANNO
-   , newValue: POST_DATA } ];
+   , newValue: KEYWORD } ];
   ensureItemsChanged(...b2_post_creation_changes);
   ensureTags([TAG_1, TAG_2]);
 

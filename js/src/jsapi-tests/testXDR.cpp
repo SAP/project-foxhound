@@ -12,6 +12,8 @@
 
 #include "jsscriptinlines.h"
 
+using mozilla::UniquePtr;
+
 static JSScript*
 FreezeThaw(JSContext* cx, JS::HandleScript script)
 {
@@ -41,7 +43,8 @@ BEGIN_TEST(testXDR_bug506491)
         "function makeClosure(s, name, value) {\n"
         "    eval(s);\n"
         "    Math.sin(value);\n"
-        "    return let (n = name, v = value) function () { return String(v); };\n"
+        "    let n = name, v = value;\n"
+        "    return function () { return String(v); };\n"
         "}\n"
         "var f = makeClosure('0;', 'status', 'ok');\n";
 
@@ -49,7 +52,7 @@ BEGIN_TEST(testXDR_bug506491)
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, __LINE__);
     JS::RootedScript script(cx);
-    CHECK(JS_CompileScript(cx, global, s, strlen(s), options, &script));
+    CHECK(JS_CompileScript(cx, s, strlen(s), options, &script));
     CHECK(script);
 
     script = FreezeThaw(cx, script);
@@ -57,14 +60,14 @@ BEGIN_TEST(testXDR_bug506491)
 
     // execute
     JS::RootedValue v2(cx);
-    CHECK(JS_ExecuteScript(cx, global, script, &v2));
+    CHECK(JS_ExecuteScript(cx, script, &v2));
 
     // try to break the Block object that is the parent of f
     JS_GC(rt);
 
     // confirm
     EVAL("f() === 'ok';\n", &v2);
-    JS::RootedValue trueval(cx, JSVAL_TRUE);
+    JS::RootedValue trueval(cx, JS::TrueValue());
     CHECK_SAME(v2, trueval);
     return true;
 }
@@ -76,14 +79,14 @@ BEGIN_TEST(testXDR_bug516827)
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, __LINE__);
     JS::RootedScript script(cx);
-    CHECK(JS_CompileScript(cx, global, "", 0, options, &script));
+    CHECK(JS_CompileScript(cx, "", 0, options, &script));
     CHECK(script);
 
     script = FreezeThaw(cx, script);
     CHECK(script);
 
     // execute with null result meaning no result wanted
-    CHECK(JS_ExecuteScript(cx, global, script));
+    CHECK(JS_ExecuteScript(cx, script));
     return true;
 }
 END_TEST(testXDR_bug516827)
@@ -100,7 +103,7 @@ BEGIN_TEST(testXDR_source)
         JS::CompileOptions options(cx);
         options.setFileAndLine(__FILE__, __LINE__);
         JS::RootedScript script(cx);
-        CHECK(JS_CompileScript(cx, global, *s, strlen(*s), options, &script));
+        CHECK(JS_CompileScript(cx, *s, strlen(*s), options, &script));
         CHECK(script);
         script = FreezeThaw(cx, script);
         CHECK(script);
@@ -125,11 +128,12 @@ BEGIN_TEST(testXDR_sourceMap)
     for (const char** sm = sourceMaps; *sm; sm++) {
         JS::CompileOptions options(cx);
         options.setFileAndLine(__FILE__, __LINE__);
-        CHECK(JS_CompileScript(cx, global, "", 0, options, &script));
+        CHECK(JS_CompileScript(cx, "", 0, options, &script));
         CHECK(script);
 
         size_t len = strlen(*sm);
-        char16_t* expected = js::InflateString(cx, *sm, &len);
+        UniquePtr<char16_t,JS::FreePolicy> expected_wrapper(js::InflateString(cx, *sm, &len));
+        char16_t *expected = expected_wrapper.get();
         CHECK(expected);
 
         // The script source takes responsibility of free'ing |expected|.

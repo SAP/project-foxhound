@@ -1,6 +1,6 @@
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const { Services } = require("resource://gre/modules/Services.jsm");
-
+const { Preferences } = require("resource://gre/modules/Preferences.jsm");
 const OPTIONS_SHOWN_EVENT = "options-shown";
 const OPTIONS_HIDDEN_EVENT = "options-hidden";
 const PREF_CHANGE_EVENT = "pref-changed";
@@ -20,7 +20,10 @@ const OptionsView = function (options={}) {
   this.window = this.menupopup.ownerDocument.defaultView;
   let { document } = this.window;
   this.$ = document.querySelector.bind(document);
-  this.$$ = document.querySelectorAll.bind(document);
+  this.$$ = (selector, parent=document) => parent.querySelectorAll(selector);
+  // Get the corresponding button that opens the popup by looking
+  // for an element with a `popup` attribute matching the menu's ID
+  this.button = this.$(`[popup=${this.menupopup.getAttribute("id")}]`);
 
   this.prefObserver = new PrefObserver(this.branchName);
 
@@ -126,6 +129,7 @@ OptionsView.prototype = {
    * Fires an event used in tests.
    */
   _onPopupShown: function () {
+    this.button.setAttribute("open", true);
     this.emit(OPTIONS_SHOWN_EVENT);
   },
 
@@ -134,6 +138,7 @@ OptionsView.prototype = {
    * Fires an event used in tests.
    */
   _onPopupHidden: function () {
+    this.button.removeAttribute("open");
     this.emit(OPTIONS_HIDDEN_EVENT);
   }
 };
@@ -157,14 +162,14 @@ PrefObserver.prototype = {
    */
   get: function (prefName) {
     let fullName = this.branchName + prefName;
-    return Services.prefs.getBoolPref(fullName);
+    return Preferences.get(fullName);
   },
   /**
    * Sets `prefName`'s `value`. Does not require the branch name.
    */
   set: function (prefName, value) {
     let fullName = this.branchName + prefName;
-    Services.prefs.setBoolPref(fullName, value);
+    Preferences.set(fullName, value);
   },
   register: function () {
     this.branch.addObserver("", this, false);

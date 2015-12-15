@@ -9,6 +9,8 @@
 #define nsComputedDOMStyle_h__
 
 #include "nsAutoPtr.h"
+#include "mozilla/ArenaRefPtr.h"
+#include "mozilla/ArenaRefPtrInlines.h"
 #include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nscore.h"
@@ -24,8 +26,8 @@
 namespace mozilla {
 namespace dom {
 class Element;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 struct nsComputedStyleMap;
 class nsIFrame;
@@ -34,37 +36,16 @@ class nsDOMCSSValueList;
 struct nsMargin;
 class nsROCSSPrimitiveValue;
 struct nsStyleBackground;
-struct nsStyleBorder;
-struct nsStyleContent;
-struct nsStyleColumn;
-struct nsStyleColor;
 class nsStyleCoord;
 class nsStyleCorners;
-struct nsStyleDisplay;
 struct nsStyleFilter;
-struct nsStyleFont;
 class nsStyleGradient;
 struct nsStyleImage;
-struct nsStyleList;
-struct nsStyleMargin;
-struct nsStyleOutline;
-struct nsStylePadding;
-struct nsStylePosition;
-struct nsStyleQuotes;
 class nsStyleSides;
-struct nsStyleSVG;
-struct nsStyleSVGReset;
-struct nsStyleTable;
-struct nsStyleText;
-struct nsStyleTextReset;
-class nsStyleTimingFunction;
-struct nsStyleUIReset;
-struct nsStyleVisibility;
-struct nsStyleXUL;
 struct nsTimingFunction;
-class gfx3DMatrix;
 
 class nsComputedDOMStyle final : public nsDOMCSSDeclaration
+                               , public nsStubMutationObserver
 {
 public:
   typedef nsCSSProps::KTableValue KTableValue;
@@ -120,15 +101,18 @@ public:
   // nsDOMCSSDeclaration abstract methods which should never be called
   // on a nsComputedDOMStyle object, but must be defined to avoid
   // compile errors.
-  virtual mozilla::css::Declaration* GetCSSDeclaration(bool) override;
+  virtual mozilla::css::Declaration* GetCSSDeclaration(Operation) override;
   virtual nsresult SetCSSDeclaration(mozilla::css::Declaration*) override;
   virtual nsIDocument* DocToUpdate() override;
   virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv) override;
 
-  static nsROCSSPrimitiveValue* MatrixToCSSValue(gfx3DMatrix& aMatrix);
+  static nsROCSSPrimitiveValue* MatrixToCSSValue(const mozilla::gfx::Matrix4x4& aMatrix);
 
   static void RegisterPrefChangeCallbacks();
   static void UnregisterPrefChangeCallbacks();
+
+  // nsIMutationObserver
+  NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
 
 private:
   virtual ~nsComputedDOMStyle();
@@ -144,13 +128,18 @@ private:
   mozilla::dom::CSSValue* CreateTextAlignValue(uint8_t aAlign,
                                                bool aAlignTrue,
                                                const KTableValue aTable[]);
-  // This indicates error by leaving mStyleContextHolder null.
+  // This indicates error by leaving mStyleContext null.
   void UpdateCurrentStyleSources(bool aNeedsLayoutFlush);
   void ClearCurrentStyleSources();
 
+  // Helper functions called by UpdateCurrentStyleSources.
+  void ClearStyleContext();
+  void SetResolvedStyleContext(nsRefPtr<nsStyleContext>&& aContext);
+  void SetFrameStyleContext(nsStyleContext* aContext);
+
 #define STYLE_STRUCT(name_, checkdata_cb_)                              \
   const nsStyle##name_ * Style##name_() {                               \
-    return mStyleContextHolder->Style##name_();                         \
+    return mStyleContext->Style##name_();                               \
   }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
@@ -208,6 +197,7 @@ private:
   void GetImageRectString(nsIURI* aURI,
                           const nsStyleSides& aCropRect,
                           nsString& aString);
+  mozilla::dom::CSSValue* GetScrollSnapPoints(const nsStyleCoord& aCoord);
   void AppendTimingFunction(nsDOMCSSValueList *aValueList,
                             const nsTimingFunction& aTimingFunction);
 
@@ -252,7 +242,7 @@ private:
   mozilla::dom::CSSValue* DoGetFontLanguageOverride();
   mozilla::dom::CSSValue* DoGetFontSize();
   mozilla::dom::CSSValue* DoGetFontSizeAdjust();
-  mozilla::dom::CSSValue* DoGetOSXFontSmoothing();
+  mozilla::dom::CSSValue* DoGetOsxFontSmoothing();
   mozilla::dom::CSSValue* DoGetFontStretch();
   mozilla::dom::CSSValue* DoGetFontStyle();
   mozilla::dom::CSSValue* DoGetFontSynthesis();
@@ -412,6 +402,7 @@ private:
   mozilla::dom::CSSValue* DoGetClear();
   mozilla::dom::CSSValue* DoGetFloat();
   mozilla::dom::CSSValue* DoGetDisplay();
+  mozilla::dom::CSSValue* DoGetContain();
   mozilla::dom::CSSValue* DoGetPosition();
   mozilla::dom::CSSValue* DoGetClip();
   mozilla::dom::CSSValue* DoGetImageOrientation();
@@ -426,6 +417,7 @@ private:
   mozilla::dom::CSSValue* DoGetPageBreakInside();
   mozilla::dom::CSSValue* DoGetTouchAction();
   mozilla::dom::CSSValue* DoGetTransform();
+  mozilla::dom::CSSValue* DoGetTransformBox();
   mozilla::dom::CSSValue* DoGetTransformOrigin();
   mozilla::dom::CSSValue* DoGetPerspective();
   mozilla::dom::CSSValue* DoGetBackfaceVisibility();
@@ -433,6 +425,13 @@ private:
   mozilla::dom::CSSValue* DoGetTransformStyle();
   mozilla::dom::CSSValue* DoGetOrient();
   mozilla::dom::CSSValue* DoGetScrollBehavior();
+  mozilla::dom::CSSValue* DoGetScrollSnapType();
+  mozilla::dom::CSSValue* DoGetScrollSnapTypeX();
+  mozilla::dom::CSSValue* DoGetScrollSnapTypeY();
+  mozilla::dom::CSSValue* DoGetScrollSnapPointsX();
+  mozilla::dom::CSSValue* DoGetScrollSnapPointsY();
+  mozilla::dom::CSSValue* DoGetScrollSnapDestination();
+  mozilla::dom::CSSValue* DoGetScrollSnapCoordinate();
 
   /* User interface properties */
   mozilla::dom::CSSValue* DoGetCursor();
@@ -607,12 +606,23 @@ private:
   nsWeakPtr mDocumentWeak;
   nsCOMPtr<nsIContent> mContent;
 
-  /*
-   * Strong reference to the style context while we're accessing the data from
-   * it.  This can be either a style context we resolved ourselves or a style
-   * context we got from our frame.
+  /**
+   * Strong reference to the style context we access data from.  This can be
+   * either a style context we resolved ourselves or a style context we got
+   * from our frame.
+   *
+   * If we got the style context from the frame, we clear out mStyleContext
+   * in ClearCurrentStyleSources.  If we resolved one ourselves, then
+   * ClearCurrentStyleSources leaves it in mStyleContext for use the next
+   * time this nsComputedDOMStyle object is queried.  UpdateCurrentStyleSources
+   * in this case will check that the style context is still valid to be used,
+   * by checking whether flush styles results in any restyles having been
+   * processed.
+   *
+   * Since an ArenaRefPtr is used to hold the style context, it will be cleared
+   * if the pres arena from which it was allocated goes away.
    */
-  nsRefPtr<nsStyleContext> mStyleContextHolder;
+  mozilla::ArenaRefPtr<nsStyleContext> mStyleContext;
   nsCOMPtr<nsIAtom> mPseudo;
 
   /*
@@ -638,7 +648,19 @@ private:
    */
   StyleType mStyleType;
 
+  /**
+   * The nsComputedDOMStyle generation at the time we last resolved a style
+   * context and stored it in mStyleContext.
+   */
+  uint64_t mStyleContextGeneration;
+
   bool mExposeVisitedStyle;
+
+  /**
+   * Whether we resolved a style context last time we called
+   * UpdateCurrentStyleSources.  Initially false.
+   */
+  bool mResolvedStyleContext;
 
 #ifdef DEBUG
   bool mFlushedPendingReflows;

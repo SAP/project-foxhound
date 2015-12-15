@@ -35,6 +35,7 @@
 #include "nsString.h"               // for nsDependentString
 #include "nsTArray.h"                   // for nsTArray, nsTArray_Impl
 #include "nsThreadUtils.h"              // for NS_IsMainThread
+#include "mozilla/gfx/Logging.h"
 
 #if !XP_MACOSX
 #include "gfxPDFSurface.h"
@@ -393,6 +394,8 @@ nsDeviceContext::Init(nsIWidget *aWidget)
 already_AddRefed<gfxContext>
 nsDeviceContext::CreateRenderingContext()
 {
+    MOZ_ASSERT(mWidth > 0 && mHeight > 0);
+
     nsRefPtr<gfxASurface> printingSurface = mPrintingSurface;
 #ifdef XP_MACOSX
     // CreateRenderingContext() can be called (on reflow) after EndPage()
@@ -409,6 +412,13 @@ nsDeviceContext::CreateRenderingContext()
     RefPtr<gfx::DrawTarget> dt =
       gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(printingSurface,
                                                              gfx::IntSize(mWidth, mHeight));
+
+    // This can legitimately happen - CreateDrawTargetForSurface will fail
+    // to create a draw target if the size is too large, for instance.
+    if (!dt) {
+        gfxCriticalNote << "Failed to create draw target in device context sized " << mWidth << "x" << mHeight << " and pointers " << hexa(mPrintingSurface) << " and " << hexa(printingSurface);
+        return nullptr;
+    }
 
 #ifdef XP_MACOSX
     dt->AddUserData(&gfxContext::sDontUseAsSourceKey, dt, nullptr);
@@ -494,7 +504,9 @@ nsDeviceContext::InitForPrinting(nsIDeviceContextSpec *aDevice)
 
     Init(nullptr);
 
-    CalcPrintingSize();
+    if (!CalcPrintingSize()) {
+        return NS_ERROR_FAILURE;
+    }
 
     return NS_OK;
 }
@@ -662,11 +674,12 @@ nsDeviceContext::FindScreen(nsIScreen** outScreen)
     }
 }
 
-void
+bool
 nsDeviceContext::CalcPrintingSize()
 {
-    if (!mPrintingSurface)
-        return;
+    if (!mPrintingSurface) {
+        return (mWidth > 0 && mHeight > 0);
+    }
 
     bool inPoints = true;
 
@@ -716,6 +729,7 @@ nsDeviceContext::CalcPrintingSize()
 #endif
 
     default:
+        gfxCriticalError() << "Printing to unknown surface type " << (int)mPrintingSurface->GetType();
         NS_ERROR("trying to print to unknown surface type");
     }
 
@@ -728,6 +742,8 @@ nsDeviceContext::CalcPrintingSize()
         mWidth = NSToIntRound(size.width);
         mHeight = NSToIntRound(size.height);
     }
+
+    return (mWidth > 0 && mHeight > 0);
 }
 
 bool nsDeviceContext::CheckDPIChange() {

@@ -16,7 +16,7 @@ namespace mozilla {
 
 namespace gfx {
 class DataSourceSurface;
-}
+} // namespace gfx
 
 namespace gl {
 
@@ -74,7 +74,7 @@ UploadSurfaceToTexture(GLContext* gl,
                        const nsIntRegion& aDstRegion,
                        GLuint& aTexture,
                        bool aOverwrite = false,
-                       const nsIntPoint& aSrcPoint = nsIntPoint(0, 0),
+                       const gfx::IntPoint& aSrcPoint = gfx::IntPoint(0, 0),
                        bool aPixelBuffer = false,
                        GLenum aTextureUnit = LOCAL_GL_TEXTURE0,
                        GLenum aTextureTarget = LOCAL_GL_TEXTURE_2D);
@@ -82,7 +82,7 @@ UploadSurfaceToTexture(GLContext* gl,
 bool CanUploadSubTextures(GLContext* gl);
 bool CanUploadNonPowerOfTwo(GLContext* gl);
 
-}
-}
+} // namespace gl
+} // namespace mozilla
 
 #endif

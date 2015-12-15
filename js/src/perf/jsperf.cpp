@@ -11,6 +11,8 @@
 using namespace js;
 using JS::PerfMeasurement;
 
+using mozilla::UniquePtr;
+
 // You cannot forward-declare a static object in C++, so instead
 // we have to forward-declare the helper function that refers to it.
 static PerfMeasurement* GetPM(JSContext* cx, JS::HandleValue value, const char* fname);
@@ -47,7 +49,7 @@ GETTER(eventsMeasured)
 // Calls
 
 static bool
-pm_start(JSContext* cx, unsigned argc, jsval* vp)
+pm_start(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     PerfMeasurement* p = GetPM(cx, args.thisv(), "start");
@@ -60,7 +62,7 @@ pm_start(JSContext* cx, unsigned argc, jsval* vp)
 }
 
 static bool
-pm_stop(JSContext* cx, unsigned argc, jsval* vp)
+pm_stop(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     PerfMeasurement* p = GetPM(cx, args.thisv(), "stop");
@@ -73,7 +75,7 @@ pm_stop(JSContext* cx, unsigned argc, jsval* vp)
 }
 
 static bool
-pm_reset(JSContext* cx, unsigned argc, jsval* vp)
+pm_reset(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     PerfMeasurement* p = GetPM(cx, args.thisv(), "reset");
@@ -86,7 +88,7 @@ pm_reset(JSContext* cx, unsigned argc, jsval* vp)
 }
 
 static bool
-pm_canMeasureSomething(JSContext* cx, unsigned argc, jsval* vp)
+pm_canMeasureSomething(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     PerfMeasurement* p = GetPM(cx, args.thisv(), "canMeasureSomething");
@@ -156,25 +158,25 @@ static const struct pm_const {
 
 #undef CONSTANT
 
-static bool pm_construct(JSContext* cx, unsigned argc, jsval* vp);
+static bool pm_construct(JSContext* cx, unsigned argc, Value* vp);
 static void pm_finalize(JSFreeOp* fop, JSObject* obj);
 
 static const JSClass pm_class = {
     "PerfMeasurement", JSCLASS_HAS_PRIVATE,
-    nullptr, nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr, pm_finalize
 };
 
 // Constructor and destructor
 
 static bool
-pm_construct(JSContext* cx, unsigned argc, jsval* vp)
+pm_construct(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
     uint32_t mask;
     if (!args.hasDefined(0)) {
-        js_ReportMissingArg(cx, args.calleev(), 0);
+        ReportMissingArg(cx, args.calleev(), 0);
         return false;
     }
     if (!JS::ToUint32(cx, args[0], &mask))
@@ -210,7 +212,11 @@ static PerfMeasurement*
 GetPM(JSContext* cx, JS::HandleValue value, const char* fname)
 {
     if (!value.isObject()) {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, 0, JSMSG_NOT_NONNULL_OBJECT);
+        UniquePtr<char[], JS::FreePolicy> bytes =
+            DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, value, nullptr);
+        if (!bytes)
+            return nullptr;
+        JS_ReportErrorNumber(cx, GetErrorMessage, 0, JSMSG_NOT_NONNULL_OBJECT, bytes.get());
         return nullptr;
     }
     RootedObject obj(cx, &value.toObject());
@@ -221,7 +227,7 @@ GetPM(JSContext* cx, JS::HandleValue value, const char* fname)
 
     // JS_GetInstancePrivate only sets an exception if its last argument
     // is nonzero, so we have to do it by hand.
-    JS_ReportErrorNumber(cx, js_GetErrorMessage, 0, JSMSG_INCOMPATIBLE_PROTO,
+    JS_ReportErrorNumber(cx, GetErrorMessage, 0, JSMSG_INCOMPATIBLE_PROTO,
                          pm_class.name, fname, JS_GetClass(obj)->name);
     return nullptr;
 }
@@ -235,7 +241,7 @@ RegisterPerfMeasurement(JSContext* cx, HandleObject globalArg)
 
     RootedObject global(cx, globalArg);
     RootedObject prototype(cx);
-    prototype = JS_InitClass(cx, global, js::NullPtr() /* parent */,
+    prototype = JS_InitClass(cx, global, nullptr /* parent */,
                              &pm_class, pm_construct, 1,
                              pm_props, pm_fns, 0, 0);
     if (!prototype)
@@ -261,7 +267,7 @@ RegisterPerfMeasurement(JSContext* cx, HandleObject globalArg)
 }
 
 PerfMeasurement*
-ExtractPerfMeasurement(jsval wrapper)
+ExtractPerfMeasurement(Value wrapper)
 {
     if (wrapper.isPrimitive())
         return 0;

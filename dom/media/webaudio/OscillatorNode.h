@@ -18,8 +18,8 @@ namespace dom {
 
 class AudioContext;
 
-class OscillatorNode : public AudioNode,
-                       public MainThreadMediaStreamListener
+class OscillatorNode final : public AudioNode,
+                             public MainThreadMediaStreamListener
 {
 public:
   explicit OscillatorNode(AudioContext* aContext);
@@ -27,15 +27,10 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(OscillatorNode, AudioNode)
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual void DestroyMediaStream() override
-  {
-    if (mStream) {
-      mStream->RemoveMainThreadListener(this);
-    }
-    AudioNode::DestroyMediaStream();
-  }
+  virtual void DestroyMediaStream() override;
+
   virtual uint16_t NumberOfInputs() const final override
   {
     return 0;
@@ -78,7 +73,7 @@ public:
 
   IMPL_EVENT_HANDLER(ended)
 
-  virtual void NotifyMainThreadStateChanged() override;
+  virtual void NotifyMainThreadStreamFinished() override;
 
   virtual const char* NodeType() const override
   {
@@ -103,11 +98,10 @@ private:
   nsRefPtr<AudioParam> mFrequency;
   nsRefPtr<AudioParam> mDetune;
   bool mStartCalled;
-  bool mStopped;
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif
 

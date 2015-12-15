@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,15 +17,16 @@ class nsMediaList;
 namespace mozilla {
 namespace dom {
 
-class ResponsiveImageSelector;
 class HTMLSourceElement final : public nsGenericHTMLElement,
-                                    public nsIDOMHTMLSourceElement
+                                public nsIDOMHTMLSourceElement
 {
 public:
   explicit HTMLSourceElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLSourceElement,
+                                           nsGenericHTMLElement)
 
   NS_IMPL_FROMCONTENT_HTML_WITH_TAG(HTMLSourceElement, source)
 
@@ -49,6 +50,10 @@ public:
   // prior to DOM creation.
   static bool WouldMatchMediaForDocument(const nsAString& aMediaStr,
                                          const nsIDocument *aDocument);
+
+  // Return the MediaSource object if any associated with the src attribute
+  // when it was set.
+  MediaSource* GetSrcMediaSource() { return mSrcMediaSource; };
 
   // WebIDL
   void GetSrc(nsString& aSrc)
@@ -99,7 +104,7 @@ public:
 protected:
   virtual ~HTMLSourceElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx) override;
+  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 protected:
   virtual void GetItemValueText(DOMString& text) override;
@@ -112,6 +117,7 @@ protected:
 
 private:
   nsRefPtr<nsMediaList> mMediaList;
+  nsRefPtr<MediaSource> mSrcMediaSource;
 };
 
 } // namespace dom

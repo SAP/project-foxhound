@@ -33,7 +33,6 @@ PRTimeToSeconds(PRTime t_usec)
 
 #define NowInSeconds() PRTimeToSeconds(PR_Now())
 
-class nsIStorageStream;
 class nsIOutputStream;
 class nsIURI;
 class nsIThread;
@@ -43,13 +42,12 @@ namespace net {
 
 class CacheStorageService;
 class CacheStorage;
-class CacheFileOutputStream;
 class CacheOutputCloseListener;
 class CacheEntryHandle;
 
 class CacheEntry final : public nsICacheEntry
-                           , public nsIRunnable
-                           , public CacheFileListener
+                       , public nsIRunnable
+                       , public CacheFileListener
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -57,7 +55,7 @@ public:
   NS_DECL_NSIRUNNABLE
 
   CacheEntry(const nsACString& aStorageID, nsIURI* aURI, const nsACString& aEnhanceID,
-             bool aUseDisk);
+             bool aUseDisk, bool aSkipSizeCheck);
 
   void AsyncOpen(nsICacheEntryOpenCallback* aCallback, uint32_t aFlags);
 
@@ -152,6 +150,7 @@ private:
     nsCOMPtr<nsICacheEntryOpenCallback> mCallback;
     nsCOMPtr<nsIThread> mTargetThread;
     bool mReadOnly : 1;
+    bool mRevalidating : 1;
     bool mCheckOnAnyThread : 1;
     bool mRecheckAfterWrite : 1;
     bool mNotWanted : 1;
@@ -247,7 +246,7 @@ private:
   // When executed on the management thread directly, the operation(s)
   // is (are) executed immediately.
   void BackgroundOp(uint32_t aOperation, bool aForceAsync = false);
-  void StoreFrecency();
+  void StoreFrecency(double aFrecency);
 
   // Called only from DoomAlreadyRemoved()
   void DoomFile();
@@ -277,6 +276,9 @@ private:
   // Whether it's allowed to persist the data to disk
   bool const mUseDisk;
 
+  // Whether it should skip max size check.
+  bool const mSkipSizeCheck;
+
   // Set when entry is doomed with AsyncDoom() or DoomAlreadyRemoved().
   // Left as a standalone flag to not bother with locking (there is no need).
   bool mIsDoomed;
@@ -295,9 +297,7 @@ private:
   //        fails to open an output stream.
   bool mHasData : 1;
 
-#ifdef PR_LOG
   static char const * StateString(uint32_t aState);
-#endif
 
   enum EState {      // transiting to:
     NOTLOADED = 0,   // -> LOADING | EMPTY
@@ -387,7 +387,7 @@ private:
   nsRefPtr<CacheEntry> mEntry;
 };
 
-} // net
-} // mozilla
+} // namespace net
+} // namespace mozilla
 
 #endif

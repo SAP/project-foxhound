@@ -1,4 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +8,7 @@
 #define mozilla_dom_workers_scriptloader_h__
 
 #include "Workers.h"
+#include "nsIContentPolicyBase.h"
 
 class nsIPrincipal;
 class nsIURI;
@@ -19,15 +21,14 @@ namespace mozilla {
 
 class ErrorResult;
 
-namespace dom {
-
-template <typename T>
-class Sequence;
-
-} // namespace dom
 } // namespace mozilla
 
 BEGIN_WORKERS_NAMESPACE
+
+enum WorkerScriptType {
+  WorkerScript,
+  DebuggerScript
+};
 
 namespace scriptloader {
 
@@ -37,6 +38,7 @@ ChannelFromScriptURLMainThread(nsIPrincipal* aPrincipal,
                                nsIDocument* aParentDoc,
                                nsILoadGroup* aLoadGroup,
                                const nsAString& aScriptURL,
+                               nsContentPolicyType aContentPolicyType,
                                nsIChannel** aChannel);
 
 nsresult
@@ -45,14 +47,16 @@ ChannelFromScriptURLWorkerThread(JSContext* aCx,
                                  const nsAString& aScriptURL,
                                  nsIChannel** aChannel);
 
-void ReportLoadError(JSContext* aCx, const nsAString& aURL,
-                     nsresult aLoadResult, bool aIsMainThread);
+void ReportLoadError(JSContext* aCx, nsresult aLoadResult);
 
-bool LoadWorkerScript(JSContext* aCx);
+void LoadMainScript(JSContext* aCx, const nsAString& aScriptURL,
+                    WorkerScriptType aWorkerScriptType,
+                    ErrorResult& aRv);
 
 void Load(JSContext* aCx,
           WorkerPrivate* aWorkerPrivate,
-          const mozilla::dom::Sequence<nsString>& aScriptURLs,
+          const nsTArray<nsString>& aScriptURLs,
+          WorkerScriptType aWorkerScriptType,
           mozilla::ErrorResult& aRv);
 
 } // namespace scriptloader

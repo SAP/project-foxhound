@@ -24,7 +24,6 @@
 #include "js/ProfilingFrameIterator.h"
 
 class JSAtom;
-struct JSContext;
 
 namespace js {
 
@@ -80,6 +79,13 @@ namespace AsmJSExit
 #if defined(JS_CODEGEN_ARM)
         Builtin_IDivMod,
         Builtin_UDivMod,
+        Builtin_AtomicCmpXchg,
+        Builtin_AtomicXchg,
+        Builtin_AtomicFetchAdd,
+        Builtin_AtomicFetchSub,
+        Builtin_AtomicFetchAnd,
+        Builtin_AtomicFetchOr,
+        Builtin_AtomicFetchXor,
 #endif
         Builtin_ModD,
         Builtin_SinD,
@@ -117,7 +123,7 @@ namespace AsmJSExit
         MOZ_ASSERT(ExtractReasonKind(reason) == Reason_Builtin);
         return BuiltinKind(uint16_t(reason >> 16));
     }
-}
+} // namespace AsmJSExit
 
 // Iterates over the frames of a single AsmJSActivation, given an
 // asynchrously-interrupted thread's state. If the activation's

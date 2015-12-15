@@ -6,9 +6,10 @@
 package org.mozilla.gecko.home;
 
 import org.mozilla.gecko.R;
-import org.mozilla.gecko.animation.BounceAnimator;
-import org.mozilla.gecko.animation.BounceAnimator.Attributes;
+import org.mozilla.gecko.animation.BounceAnimatorBuilder;
+import org.mozilla.gecko.animation.BounceAnimatorBuilder.Attributes;
 import org.mozilla.gecko.animation.TransitionsTracker;
+import org.mozilla.gecko.util.ColorUtils;
 
 import android.content.Context;
 import android.content.res.Resources;
@@ -33,12 +34,11 @@ import com.nineoldandroids.view.ViewHelper;
 class HomePagerTabStrip extends PagerTabStrip {
 
     private static final String LOGTAG = "PagerTabStrip";
-    private static final int ANIMATION_DELAY_MS = 250;
+    private static final int ANIMATION_DELAY_MS = 50;
     private static final int ALPHA_MS = 10;
     private static final int BOUNCE1_MS = 350;
     private static final int BOUNCE2_MS = 200;
     private static final int BOUNCE3_MS = 100;
-    private static final int BOUNCE4_MS = 100;
     private static final int INIT_OFFSET = 100;
 
     private final Paint shadowPaint;
@@ -61,7 +61,7 @@ class HomePagerTabStrip extends PagerTabStrip {
         shadowSize = res.getDimensionPixelSize(R.dimen.tabs_strip_shadow_size);
 
         shadowPaint = new Paint();
-        shadowPaint.setColor(res.getColor(R.color.url_bar_shadow));
+        shadowPaint.setColor(ColorUtils.getColor(context, R.color.url_bar_shadow));
         shadowPaint.setStrokeWidth(0.0f);
 
         getViewTreeObserver().addOnPreDrawListener(new PreDrawListener());
@@ -103,30 +103,33 @@ class HomePagerTabStrip extends PagerTabStrip {
 
         final AnimatorSet alphaAnimatorSet = new AnimatorSet();
         alphaAnimatorSet.playTogether(alpha1, alpha2);
-        alphaAnimatorSet.setStartDelay(ANIMATION_DELAY_MS);
         alphaAnimatorSet.setDuration(ALPHA_MS);
+        alphaAnimatorSet.setStartDelay(ANIMATION_DELAY_MS);
 
         // Bounce animation.
         final float bounceDistance = getWidth()/100f; // Hack: TextFields still have 0 width here.
 
-        final BounceAnimator prevBounceAnimator = new BounceAnimator(prevTextView, "translationX");
-        prevBounceAnimator.queue(new Attributes(bounceDistance, BOUNCE1_MS));
-        prevBounceAnimator.queue(new Attributes(-bounceDistance/4, BOUNCE2_MS));
-        prevBounceAnimator.queue(new Attributes(0, BOUNCE4_MS));
-        prevBounceAnimator.setStartDelay(ANIMATION_DELAY_MS);
+        final BounceAnimatorBuilder prevBounceAnimatorBuilder = new BounceAnimatorBuilder(prevTextView, "translationX");
+        prevBounceAnimatorBuilder.queue(new Attributes(bounceDistance, BOUNCE1_MS));
+        prevBounceAnimatorBuilder.queue(new Attributes(-bounceDistance/4, BOUNCE2_MS));
+        prevBounceAnimatorBuilder.queue(new Attributes(0, BOUNCE3_MS));
 
-        final BounceAnimator nextBounceAnimator = new BounceAnimator(nextTextView, "translationX");
-        nextBounceAnimator.queue(new Attributes(-bounceDistance, BOUNCE1_MS));
-        nextBounceAnimator.queue(new Attributes(bounceDistance/4, BOUNCE2_MS));
-        nextBounceAnimator.queue(new Attributes(0, BOUNCE4_MS));
-        nextBounceAnimator.setStartDelay(ANIMATION_DELAY_MS);
+        final BounceAnimatorBuilder nextBounceAnimatorBuilder = new BounceAnimatorBuilder(nextTextView, "translationX");
+        nextBounceAnimatorBuilder.queue(new Attributes(-bounceDistance, BOUNCE1_MS));
+        nextBounceAnimatorBuilder.queue(new Attributes(bounceDistance/4, BOUNCE2_MS));
+        nextBounceAnimatorBuilder.queue(new Attributes(0, BOUNCE3_MS));
 
-        TransitionsTracker.track(nextBounceAnimator);
+        final AnimatorSet bounceAnimatorSet = new AnimatorSet();
+        bounceAnimatorSet.playTogether(prevBounceAnimatorBuilder.build(), nextBounceAnimatorBuilder.build());
+
+        TransitionsTracker.track(nextBounceAnimatorBuilder);
+
+        final AnimatorSet titlesAnimatorSet = new AnimatorSet();
+        titlesAnimatorSet.playTogether(alphaAnimatorSet, bounceAnimatorSet);
+        titlesAnimatorSet.setStartDelay(ANIMATION_DELAY_MS);
 
         // Start animations.
-        alphaAnimatorSet.start();
-        prevBounceAnimator.start();
-        nextBounceAnimator.start();
+        titlesAnimatorSet.start();
     }
 
     private class PreDrawListener implements ViewTreeObserver.OnPreDrawListener {

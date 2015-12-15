@@ -10,6 +10,7 @@
 #define mozilla_CSSStyleSheet_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/IncrementalClearCOMRuleArray.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Element.h"
 
@@ -19,17 +20,16 @@
 #include "nsIStyleSheet.h"
 #include "nsIDOMCSSStyleSheet.h"
 #include "nsICSSLoaderObserver.h"
-#include "nsCOMArray.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsString.h"
 #include "mozilla/CORSMode.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "mozilla/net/ReferrerPolicy.h"
+#include "mozilla/dom/SRIMetadata.h"
 
 class CSSRuleListImpl;
 class nsCSSRuleProcessor;
-class nsICSSRuleList;
 class nsIPrincipal;
 class nsIURI;
 class nsMediaList;
@@ -45,10 +45,10 @@ namespace css {
 class Rule;
 class GroupRule;
 class ImportRule;
-}
+} // namespace css
 namespace dom {
 class CSSRuleList;
-}
+} // namespace dom
 
 // -------------------------------
 // CSS Style Sheet Inner Data Container
@@ -64,7 +64,8 @@ public:
 private:
   CSSStyleSheetInner(CSSStyleSheet* aPrimarySheet,
                      CORSMode aCORSMode,
-                     ReferrerPolicy aReferrerPolicy);
+                     ReferrerPolicy aReferrerPolicy,
+                     const dom::SRIMetadata& aIntegrity);
   CSSStyleSheetInner(CSSStyleSheetInner& aCopy,
                      CSSStyleSheet* aPrimarySheet);
   ~CSSStyleSheetInner();
@@ -85,7 +86,7 @@ private:
   nsCOMPtr<nsIURI>       mOriginalSheetURI;  // for GetHref.  Can be null.
   nsCOMPtr<nsIURI>       mBaseURI; // for resolving relative URIs
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  nsCOMArray<css::Rule>  mOrderedRules;
+  IncrementalClearCOMRuleArray mOrderedRules;
   nsAutoPtr<nsXMLNameSpaceMap> mNameSpaceMap;
   // Linked list of child sheets.  This is al fundamentally broken, because
   // each of the child sheets has a unique parent... We can only hope (and
@@ -97,6 +98,7 @@ private:
   // The Referrer Policy of a stylesheet is used for its child sheets, so it is
   // stored here.
   ReferrerPolicy         mReferrerPolicy;
+  dom::SRIMetadata       mIntegrity;
   bool                   mComplete;
 
 #ifdef DEBUG
@@ -117,13 +119,15 @@ private:
 
 
 class CSSStyleSheet final : public nsIStyleSheet,
-                                public nsIDOMCSSStyleSheet,
-                                public nsICSSLoaderObserver,
-                                public nsWrapperCache
+                            public nsIDOMCSSStyleSheet,
+                            public nsICSSLoaderObserver,
+                            public nsWrapperCache
 {
 public:
   typedef net::ReferrerPolicy ReferrerPolicy;
   CSSStyleSheet(CORSMode aCORSMode, ReferrerPolicy aReferrerPolicy);
+  CSSStyleSheet(CORSMode aCORSMode, ReferrerPolicy aReferrerPolicy,
+                const dom::SRIMetadata& aIntegrity);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(CSSStyleSheet,
@@ -213,6 +217,9 @@ public:
   nsresult AddRuleProcessor(nsCSSRuleProcessor* aProcessor);
   nsresult DropRuleProcessor(nsCSSRuleProcessor* aProcessor);
 
+  void AddStyleSet(nsStyleSet* aStyleSet);
+  void DropStyleSet(nsStyleSet* aStyleSet);
+
   /**
    * Like the DOM insertRule() method, but doesn't do any security checks
    */
@@ -227,14 +234,7 @@ public:
   NS_IMETHOD StyleSheetLoaded(CSSStyleSheet* aSheet, bool aWasAlternate,
                               nsresult aStatus) override;
 
-  enum EnsureUniqueInnerResult {
-    // No work was needed to ensure a unique inner.
-    eUniqueInner_AlreadyUnique,
-    // A clone was done to ensure a unique inner (which means the style
-    // rules in this sheet have changed).
-    eUniqueInner_ClonedInner
-  };
-  EnsureUniqueInnerResult EnsureUniqueInner();
+  void EnsureUniqueInner();
 
   // Append all of this sheet's child sheets to aArray.
   void AppendAllChildSheets(nsTArray<CSSStyleSheet*>& aArray);
@@ -243,6 +243,8 @@ public:
                             nsMediaQueryResultCacheKey& aKey) const;
 
   nsresult ParseSheet(const nsAString& aInput);
+
+  void SetInRuleProcessorCache() { mInRuleProcessorCache = true; }
 
   // nsIDOMStyleSheet interface
   NS_DECL_NSIDOMSTYLESHEET
@@ -261,6 +263,9 @@ public:
 
   // Get this style sheet's Referrer Policy
   ReferrerPolicy GetReferrerPolicy() const { return mInner->mReferrerPolicy; }
+
+  // Get this style sheet's integrity metadata
+  dom::SRIMetadata GetIntegrity() const { return mInner->mIntegrity; }
 
   dom::Element* GetScopeElement() const { return mScopeElement; }
   void SetScopeElement(dom::Element* aScopeElement)
@@ -310,7 +315,7 @@ public:
 
     return dom::ParentObject(static_cast<nsIStyleSheet*>(mParent), mParent);
   }
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
   CSSStyleSheet(const CSSStyleSheet& aCopy,
@@ -362,11 +367,13 @@ protected:
   nsINode*              mOwningNode; // weak ref
   bool                  mDisabled;
   bool                  mDirty; // has been modified 
+  bool                  mInRuleProcessorCache;
   nsRefPtr<dom::Element> mScopeElement;
 
   CSSStyleSheetInner*   mInner;
 
   nsAutoTArray<nsCSSRuleProcessor*, 8>* mRuleProcessors;
+  nsTArray<nsStyleSet*> mStyleSets;
 
   friend class ::nsMediaList;
   friend class ::nsCSSRuleProcessor;

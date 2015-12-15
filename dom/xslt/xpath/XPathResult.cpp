@@ -80,9 +80,9 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(XPathResult)
 NS_INTERFACE_MAP_END
 
 JSObject*
-XPathResult::WrapObject(JSContext* aCx)
+XPathResult::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-    return XPathResultBinding::Wrap(aCx, this);
+    return XPathResultBinding::Wrap(aCx, this, aGivenProto);
 }
 
 void
@@ -136,7 +136,8 @@ XPathResult::AttributeChanged(nsIDocument* aDocument,
                               Element* aElement,
                               int32_t aNameSpaceID,
                               nsIAtom* aAttribute,
-                              int32_t aModType)
+                              int32_t aModType,
+                              const nsAttrValue* aOldValue)
 {
     Invalidate(aElement);
 }

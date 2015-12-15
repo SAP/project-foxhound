@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +25,6 @@ nsresult NS_NewSVGSVGElement(nsIContent **aResult,
 class nsSMILTimeContainer;
 class nsSVGOuterSVGFrame;
 class nsSVGInnerSVGFrame;
-class nsSVGImageFrame;
 
 namespace mozilla {
 class AutoSVGRenderingState;
@@ -96,7 +96,7 @@ class SVGSVGElement final : public SVGSVGElementBase
 
   SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
                 FromParser aFromParser);
-  virtual JSObject* WrapNode(JSContext *aCx) override;
+  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   friend nsresult (::NS_NewSVGSVGElement(nsIContent **aResult,
                                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -312,8 +312,8 @@ private:
    */
   bool IsInner() const {
     const nsIContent *parent = GetFlattenedTreeParent();
-    return parent && parent->IsSVG() &&
-           parent->Tag() != nsGkAtoms::foreignObject;
+    return parent && parent->IsSVGElement() &&
+           !parent->IsSVGElement(nsGkAtoms::foreignObject);
   }
 
   /* 
@@ -407,7 +407,7 @@ private:
 
 // Helper class to automatically manage temporary changes to an SVG document's
 // state for rendering purposes.
-class MOZ_STACK_CLASS AutoSVGRenderingState
+class MOZ_RAII AutoSVGRenderingState
 {
 public:
   AutoSVGRenderingState(const Maybe<SVGImageContext>& aSVGContext,

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIconChannel_h_
-#define nsIconChannel_h_
+#ifndef mozilla_image_decoders_icon_gtk_nsIconChannel_h
+#define mozilla_image_decoders_icon_gtk_nsIconChannel_h
 
 #include "mozilla/Attributes.h"
 
@@ -37,9 +37,7 @@ class nsIconChannel final : public nsIChannel
     /// Will always be non-null after a successful Init.
     nsCOMPtr<nsIChannel> mRealChannel;
 
-    /// Called by Init if we need to use the gnomeui library.
-    nsresult InitWithGnome(nsIMozIconURI* aURI);
     nsresult InitWithGIO(nsIMozIconURI* aIconURI);
 };
 
-#endif
+#endif // mozilla_image_decoders_icon_gtk_nsIconChannel_h

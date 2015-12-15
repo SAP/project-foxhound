@@ -76,7 +76,6 @@
 #include "nsIWidget.h"
 #include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
-#include "nsNetUtil.h"
 #include "nsNodeInfoManager.h"
 #include "nsNodeUtils.h"
 #include "nsPIBoxObject.h"
@@ -104,15 +103,22 @@
 #include "nsGlobalWindow.h"
 #include "nsDOMMutationObserver.h"
 #include "GeometryUtils.h"
+#include "nsIAnimationObserver.h"
+#include "nsChildContentList.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
+
+nsINode::nsSlots::nsSlots()
+  : mWeakReference(nullptr),
+    mEditableDescendantCount(0)
+{
+}
 
 nsINode::nsSlots::~nsSlots()
 {
   if (mChildNodes) {
     mChildNodes->DropReference();
-    NS_RELEASE(mChildNodes);
   }
 
   if (mWeakReference) {
@@ -132,7 +138,6 @@ nsINode::nsSlots::Unlink()
 {
   if (mChildNodes) {
     mChildNodes->DropReference();
-    NS_RELEASE(mChildNodes);
   }
 }
 
@@ -220,7 +225,7 @@ nsINode::GetTextEditorRootContent(nsIEditor** aEditor)
     *aEditor = nullptr;
   for (nsINode* node = this; node; node = node->GetParentNode()) {
     if (!node->IsElement() ||
-        !node->AsElement()->IsHTML())
+        !node->IsHTMLElement())
       continue;
 
     nsCOMPtr<nsIEditor> editor =
@@ -370,9 +375,6 @@ nsINode::ChildNodes()
   nsSlots* slots = Slots();
   if (!slots->mChildNodes) {
     slots->mChildNodes = new nsChildContentList(this);
-    if (slots->mChildNodes) {
-      NS_ADDREF(slots->mChildNodes);
-    }
   }
 
   return slots->mChildNodes;
@@ -421,13 +423,43 @@ nsINode::IsInAnonymousSubtree() const
   return AsContent()->IsInAnonymousSubtree();
 }
 
+std::ostream&
+operator<<(std::ostream& aStream, const nsINode& aNode)
+{
+  nsAutoString elemDesc;
+  const nsINode* curr = &aNode;
+  while (curr) {
+    const nsString& localName = curr->LocalName();
+    nsString id;
+    if (curr->IsElement()) {
+      curr->AsElement()->GetId(id);
+    }
+
+    if (!elemDesc.IsEmpty()) {
+      elemDesc = elemDesc + NS_LITERAL_STRING(".");
+    }
+
+    elemDesc = elemDesc + localName;
+
+    if (!id.IsEmpty()) {
+      elemDesc = elemDesc + NS_LITERAL_STRING("['") + id +
+                 NS_LITERAL_STRING("']");
+    }
+
+    curr = curr->GetParentNode();
+  }
+
+  NS_ConvertUTF16toUTF8 str(elemDesc);
+  return aStream << str.get();
+}
+
 bool
 nsINode::IsAnonymousContentInSVGUseSubtree() const
 {
   MOZ_ASSERT(IsInAnonymousSubtree());
   nsIContent* parent = AsContent()->GetBindingParent();
   // Watch out for parentless native-anonymous subtrees.
-  return parent && parent->IsSVG(nsGkAtoms::use);
+  return parent && parent->IsSVGElement(nsGkAtoms::use);
 }
 
 nsresult
@@ -555,7 +587,7 @@ nsINode::RemoveChild(nsIDOMNode* aOldChild, nsIDOMNode** aReturn)
   if (!rv.Failed()) {
     NS_ADDREF(*aReturn = aOldChild);
   }
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -1303,11 +1335,50 @@ nsINode::GetContextForEventHandlers(nsresult* aRv)
 }
 
 nsIDOMWindow*
-nsINode::GetOwnerGlobal()
+nsINode::GetOwnerGlobalForBindings()
 {
   bool dummy;
   return nsPIDOMWindow::GetOuterFromCurrentInner(
     static_cast<nsGlobalWindow*>(OwnerDoc()->GetScriptHandlingObject(dummy)));
+}
+
+nsIGlobalObject*
+nsINode::GetOwnerGlobal() const
+{
+  bool dummy;
+  return OwnerDoc()->GetScriptHandlingObject(dummy);
+}
+
+void
+nsINode::ChangeEditableDescendantCount(int32_t aDelta)
+{
+  if (aDelta == 0) {
+    return;
+  }
+
+  nsSlots* s = Slots();
+  MOZ_ASSERT(aDelta > 0 ||
+             s->mEditableDescendantCount >= (uint32_t) (-1 * aDelta));
+  s->mEditableDescendantCount += aDelta;
+}
+
+void
+nsINode::ResetEditableDescendantCount()
+{
+  nsSlots* s = GetExistingSlots();
+  if (s) {
+    s->mEditableDescendantCount = 0;
+  }
+}
+
+uint32_t
+nsINode::EditableDescendantCount()
+{
+  nsSlots* s = GetExistingSlots();
+  if (s) {
+    return s->mEditableDescendantCount;
+  }
+  return 0;
 }
 
 bool
@@ -1542,7 +1613,7 @@ nsINode::doInsertChildAt(nsIContent* aKid, uint32_t aIndex,
 
     if (nsContentUtils::HasMutationListeners(aKid,
           NS_EVENT_BITS_MUTATION_NODEINSERTED, this)) {
-      InternalMutationEvent mutation(true, NS_MUTATION_NODEINSERTED);
+      InternalMutationEvent mutation(true, eLegacyNodeInserted);
       mutation.mRelatedNode = do_QueryInterface(this);
 
       mozAutoSubtreeModified subtree(OwnerDoc(), this);
@@ -1675,7 +1746,7 @@ bool IsAllowedAsChild(nsIContent* aNewChild, nsINode* aParent,
         // HTML template elements and ShadowRoot hosts need
         // to be checked to ensure that they are not inserted into
         // the hosted content.
-        aNewChild->Tag() == nsGkAtoms::_template ||
+        aNewChild->NodeInfo()->NameAtom() == nsGkAtoms::_template ||
         aNewChild->GetShadowRoot()) &&
        nsContentUtils::ContentIsHostIncludingDescendantOf(aParent,
                                                           aNewChild))) {
@@ -2232,7 +2303,7 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsIDOMNode *aNewChild,
   if (result) {
     NS_ADDREF(*aReturn = result->AsDOMNode());
   }
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 nsresult
@@ -2419,7 +2490,7 @@ nsINode::ParseSelectorList(const nsAString& aSelectorString,
     // We hit this for syntax errors, which are quite common, so don't
     // use NS_ENSURE_SUCCESS.  (For example, jQuery has an extended set
     // of selectors, but it sees if we can parse them first.)
-    MOZ_ASSERT(aRv.ErrorCode() == NS_ERROR_DOM_SYNTAX_ERR,
+    MOZ_ASSERT(aRv.ErrorCodeIs(NS_ERROR_DOM_SYNTAX_ERR),
                "Unexpected error, so cached version won't return it");
     cache.CacheList(aSelectorString, nullptr);
     return nullptr;
@@ -2466,7 +2537,7 @@ struct SelectorMatchInfo {
   nsCSSSelectorList* const mSelectorList;
   TreeMatchContext& mMatchContext;
 };
-}
+} // namespace
 
 // Given an id, find elements with that id under aRoot that match aMatchInfo if
 // any is provided.  If no SelectorMatchInfo is provided, just find the ones
@@ -2485,8 +2556,7 @@ FindMatchingElementsWithId(const nsAString& aId, nsINode* aRoot,
              "document if it's in the document.  Note that document fragments "
              "can't be IsInDoc(), so should never show up here.");
 
-  const nsSmallVoidArray* elements = aRoot->OwnerDoc()->GetAllElementsForId(aId);
-
+  const nsTArray<Element*>* elements = aRoot->OwnerDoc()->GetAllElementsForId(aId);
   if (!elements) {
     // Nothing to do; we're done
     return;
@@ -2494,8 +2564,8 @@ FindMatchingElementsWithId(const nsAString& aId, nsINode* aRoot,
 
   // XXXbz: Should we fall back to the tree walk if aRoot is not the
   // document and |elements| is long, for some value of "long"?
-  for (int32_t i = 0; i < elements->Count(); ++i) {
-    Element *element = static_cast<Element*>(elements->ElementAt(i));
+  for (size_t i = 0; i < elements->Length(); ++i) {
+    Element* element = (*elements)[i];
     if (!aRoot->IsElement() ||
         (element != aRoot &&
            nsContentUtils::ContentIsDescendantOf(element, aRoot))) {
@@ -2627,7 +2697,7 @@ nsINode::QuerySelector(const nsAString& aSelector, nsIDOMElement **aReturn)
   ErrorResult rv;
   Element* result = nsINode::QuerySelector(aSelector, rv);
   if (rv.Failed()) {
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   nsCOMPtr<nsIDOMElement> elt = do_QueryInterface(result);
   elt.forget(aReturn);
@@ -2639,7 +2709,7 @@ nsINode::QuerySelectorAll(const nsAString& aSelector, nsIDOMNodeList **aReturn)
 {
   ErrorResult rv;
   *aReturn = nsINode::QuerySelectorAll(aSelector, rv).take();
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 Element*
@@ -2666,7 +2736,7 @@ nsINode::GetElementById(const nsAString& aId)
 }
 
 JSObject*
-nsINode::WrapObject(JSContext *aCx)
+nsINode::WrapObject(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
   // Make sure one of these is true
   // (1) our owner document has a script handling object,
@@ -2685,7 +2755,7 @@ nsINode::WrapObject(JSContext *aCx)
     return nullptr;
   }
 
-  JS::Rooted<JSObject*> obj(aCx, WrapNode(aCx));
+  JS::Rooted<JSObject*> obj(aCx, WrapNode(aCx, aGivenProto));
   MOZ_ASSERT_IF(ChromeOnlyAccess(),
                 xpc::IsInContentXBLScope(obj) || !xpc::UseContentXBLScope(js::GetObjectCompartment(obj)));
   return obj;
@@ -2750,4 +2820,28 @@ nsINode*
 nsINode::GetScopeChainParent() const
 {
   return nullptr;
+}
+
+void
+nsINode::AddAnimationObserver(nsIAnimationObserver* aAnimationObserver)
+{
+  AddMutationObserver(aAnimationObserver);
+  OwnerDoc()->SetMayHaveAnimationObservers();
+}
+
+void
+nsINode::AddAnimationObserverUnlessExists(
+                               nsIAnimationObserver* aAnimationObserver)
+{
+  AddMutationObserverUnlessExists(aAnimationObserver);
+  OwnerDoc()->SetMayHaveAnimationObservers();
+}
+
+bool
+nsINode::HasApzAwareListeners() const
+{
+  if (NodeMayHaveApzAwareListeners()) {
+    return EventTarget::HasApzAwareListeners();
+  }
+  return false;
 }

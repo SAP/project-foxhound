@@ -9,8 +9,6 @@
 
 #include <stddef.h>
 
-struct JSRuntime;
-
 namespace js {
 namespace gc {
 
@@ -44,6 +42,9 @@ void* AllocateMappedContent(int fd, size_t offset, size_t length, size_t alignme
 void DeallocateMappedContent(void* p, size_t length);
 
 void* TestMapAlignedPagesLastDitch(size_t size, size_t alignment);
+
+void ProtectPages(void* p, size_t size);
+void UnprotectPages(void* p, size_t size);
 
 } // namespace gc
 } // namespace js

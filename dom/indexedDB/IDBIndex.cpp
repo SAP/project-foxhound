@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,7 +44,7 @@ GenerateRequest(IDBIndex* aIndex)
   return request.forget();
 }
 
-} // anonymous namespace
+} // namespace
 
 IDBIndex::IDBIndex(IDBObjectStore* aObjectStore, const IndexMetadata* aMetadata)
   : mObjectStore(aObjectStore)
@@ -168,6 +168,15 @@ IDBIndex::MultiEntry() const
   return mMetadata->multiEntry();
 }
 
+bool
+IDBIndex::LocaleAware() const
+{
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mMetadata);
+
+  return mMetadata->locale().IsEmpty();
+}
+
 const KeyPath&
 IDBIndex::GetKeyPath() const
 {
@@ -175,6 +184,37 @@ IDBIndex::GetKeyPath() const
   MOZ_ASSERT(mMetadata);
 
   return mMetadata->keyPath();
+}
+
+void
+IDBIndex::GetLocale(nsString& aLocale) const
+{
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mMetadata);
+
+  if (mMetadata->locale().IsEmpty()) {
+    SetDOMStringToNull(aLocale);
+  } else {
+    aLocale.AssignWithConversion(mMetadata->locale());
+  }
+}
+
+const nsCString&
+IDBIndex::Locale() const
+{
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mMetadata);
+
+  return mMetadata->locale();
+}
+
+bool
+IDBIndex::IsAutoLocale() const
+{
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mMetadata);
+
+  return mMetadata->autoLocale();
 }
 
 nsPIDOMWindow*
@@ -223,6 +263,11 @@ IDBIndex::GetInternal(bool aKeyOnly,
 {
   AssertIsOnOwningThread();
 
+  if (mDeletedMetadata) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
+
   IDBTransaction* transaction = mObjectStore->Transaction();
   if (!transaction->IsOpen()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -244,21 +289,15 @@ IDBIndex::GetInternal(bool aKeyOnly,
   const int64_t objectStoreId = mObjectStore->Id();
   const int64_t indexId = Id();
 
-  OptionalKeyRange optionalKeyRange;
-  if (keyRange) {
-    SerializedKeyRange serializedKeyRange;
-    keyRange->ToSerialized(serializedKeyRange);
-    optionalKeyRange = serializedKeyRange;
-  } else {
-    optionalKeyRange = void_t();
-  }
+  SerializedKeyRange serializedKeyRange;
+  keyRange->ToSerialized(serializedKeyRange);
 
   RequestParams params;
 
   if (aKeyOnly) {
-    params = IndexGetKeyParams(objectStoreId, indexId, optionalKeyRange);
+    params = IndexGetKeyParams(objectStoreId, indexId, serializedKeyRange);
   } else {
-    params = IndexGetParams(objectStoreId, indexId, optionalKeyRange);
+    params = IndexGetParams(objectStoreId, indexId, serializedKeyRange);
   }
 
   nsRefPtr<IDBRequest> request = GenerateRequest(this);
@@ -305,6 +344,11 @@ IDBIndex::GetAllInternal(bool aKeysOnly,
                          ErrorResult& aRv)
 {
   AssertIsOnOwningThread();
+
+  if (mDeletedMetadata) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
 
   IDBTransaction* transaction = mObjectStore->Transaction();
   if (!transaction->IsOpen()) {
@@ -386,6 +430,11 @@ IDBIndex::OpenCursorInternal(bool aKeysOnly,
                              ErrorResult& aRv)
 {
   AssertIsOnOwningThread();
+
+  if (mDeletedMetadata) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
 
   IDBTransaction* transaction = mObjectStore->Transaction();
   if (!transaction->IsOpen()) {
@@ -483,6 +532,11 @@ IDBIndex::Count(JSContext* aCx,
 {
   AssertIsOnOwningThread();
 
+  if (mDeletedMetadata) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
+
   IDBTransaction* transaction = mObjectStore->Transaction();
   if (!transaction->IsOpen()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
@@ -562,9 +616,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBIndex)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 JSObject*
-IDBIndex::WrapObject(JSContext* aCx)
+IDBIndex::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return IDBIndexBinding::Wrap(aCx, this);
+  return IDBIndexBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace indexedDB

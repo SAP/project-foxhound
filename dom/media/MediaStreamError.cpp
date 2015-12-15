@@ -12,10 +12,10 @@ namespace mozilla {
 
 BaseMediaMgrError::BaseMediaMgrError(const nsAString& aName,
                                      const nsAString& aMessage,
-                                     const nsAString& aConstraintName)
+                                     const nsAString& aConstraint)
   : mName(aName)
   , mMessage(aMessage)
-  , mConstraintName(aConstraintName)
+  , mConstraint(aConstraint)
 {
   if (mMessage.IsEmpty()) {
     if (mName.EqualsLiteral("NotFoundError")) {
@@ -27,6 +27,10 @@ BaseMediaMgrError::BaseMediaMgrError(const nsAString& aName,
           "accessed due to a hardware error (e.g. lock from another process).");
     } else if (mName.EqualsLiteral("InternalError")) {
       mMessage.AssignLiteral("Internal error.");
+    } else if (mName.EqualsLiteral("NotSupportedError")) {
+      mMessage.AssignLiteral("The operation is not supported.");
+    } else if (mName.EqualsLiteral("OverconstrainedError")) {
+      mMessage.AssignLiteral("Constraints could be not satisfied.");
     }
   }
 }
@@ -40,8 +44,8 @@ MediaStreamError::MediaStreamError(
     nsPIDOMWindow* aParent,
     const nsAString& aName,
     const nsAString& aMessage,
-    const nsAString& aConstraintName)
-  : BaseMediaMgrError(aName, aMessage, aConstraintName)
+    const nsAString& aConstraint)
+  : BaseMediaMgrError(aName, aMessage, aConstraint)
   , mParent(aParent) {}
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(MediaStreamError, mParent)
@@ -54,9 +58,9 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaStreamError)
 NS_INTERFACE_MAP_END
 
 JSObject*
-MediaStreamError::WrapObject(JSContext* aCx)
+MediaStreamError::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return MediaStreamErrorBinding::Wrap(aCx, this);
+  return MediaStreamErrorBinding::Wrap(aCx, this, aGivenProto);
 }
 
 void
@@ -72,9 +76,9 @@ MediaStreamError::GetMessage(nsAString& aMessage) const
 }
 
 void
-MediaStreamError::GetConstraintName(nsAString& aConstraintName) const
+MediaStreamError::GetConstraint(nsAString& aConstraint) const
 {
-  aConstraintName = mConstraintName;
+  aConstraint = mConstraint;
 }
 
 } // namespace dom

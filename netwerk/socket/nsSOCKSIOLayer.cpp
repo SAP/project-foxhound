@@ -19,8 +19,10 @@
 #include "nsIDNSListener.h"
 #include "nsICancelable.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Logging.h"
 #include "mozilla/net/DNS.h"
 
+using mozilla::LogLevel;
 using namespace mozilla::net;
 
 static PRDescIdentity nsSOCKSIOLayerIdentity;
@@ -28,15 +30,9 @@ static PRIOMethods nsSOCKSIOLayerMethods;
 static bool firstTime = true;
 static bool ipv6Supported = true;
 
-#if defined(PR_LOGGING)
 static PRLogModuleInfo *gSOCKSLog;
-#define LOGDEBUG(args) PR_LOG(gSOCKSLog, PR_LOG_DEBUG, args)
-#define LOGERROR(args) PR_LOG(gSOCKSLog, PR_LOG_ERROR , args)
-
-#else
-#define LOGDEBUG(args)
-#define LOGERROR(args)
-#endif
+#define LOGDEBUG(args) MOZ_LOG(gSOCKSLog, mozilla::LogLevel::Debug, args)
+#define LOGERROR(args) MOZ_LOG(gSOCKSLog, mozilla::LogLevel::Error , args)
 
 class nsSOCKSSocketInfo : public nsISOCKSSocketInfo
                         , public nsIDNSListener
@@ -199,7 +195,7 @@ public:
   : mBuf(aBuf), mLength(aLength) {}
 
   template <size_t Size2>
-  Buffer(const Buffer<Size2>& aBuf) : mBuf(aBuf.mBuf), mLength(aBuf.mLength) {
+  MOZ_IMPLICIT Buffer(const Buffer<Size2>& aBuf) : mBuf(aBuf.mBuf), mLength(aBuf.mLength) {
       static_assert(Size2 > Size, "Cannot cast buffer");
   }
 
@@ -242,7 +238,7 @@ public:
       return mLength;
   }
 
-  operator bool() { return !!mBuf; }
+  explicit operator bool() { return !!mBuf; }
 private:
   template <size_t Size2>
   friend class Buffer;
@@ -429,12 +425,13 @@ nsSOCKSSocketInfo::ConnectToProxy(PRFileDesc *fd)
             return PR_FAILURE;
         }
 
-#if defined(PR_LOGGING)
-        char buf[kIPv6CStrBufSize];
-        NetAddrToString(&mInternalProxyAddr, buf, sizeof(buf));
-        LOGDEBUG(("socks: trying proxy server, %s:%hu",
-                 buf, ntohs(mInternalProxyAddr.inet.port)));
-#endif
+        if (MOZ_LOG_TEST(gSOCKSLog, LogLevel::Debug)) {
+          char buf[kIPv6CStrBufSize];
+          NetAddrToString(&mInternalProxyAddr, buf, sizeof(buf));
+          LOGDEBUG(("socks: trying proxy server, %s:%hu",
+                   buf, ntohs(mInternalProxyAddr.inet.port)));
+        }
+
         NetAddr proxy = mInternalProxyAddr;
         FixupAddressFamily(fd, &proxy);
         PRNetAddr prProxy;
@@ -1311,10 +1308,7 @@ nsSOCKSIOLayerAddToSocket(int32_t family,
 
         firstTime = false;
 
-#if defined(PR_LOGGING)
         gSOCKSLog = PR_NewLogModule("SOCKS");
-#endif
-
     }
 
     LOGDEBUG(("Entering nsSOCKSIOLayerAddToSocket()."));

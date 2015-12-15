@@ -4,22 +4,22 @@
 /**
  * Tests that view states and lazy component intialization works.
  */
-function spawnTest () {
+function* spawnTest() {
   let { panel } = yield initPerformance(SIMPLE_URL);
   let { EVENTS, PerformanceView, OverviewView, DetailsView } = panel.panelWin;
 
   is(PerformanceView.getState(), "empty",
     "The intial state of the performance panel view is correct.");
 
-  ok(!("markersOverview" in OverviewView),
+  ok(!(OverviewView.graphs.get("timeline")),
     "The markers graph should not have been created yet.");
-  ok(!("memoryOverview" in OverviewView),
+  ok(!(OverviewView.graphs.get("memory")),
     "The memory graph should not have been created yet.");
-  ok(!("framerateGraph" in OverviewView),
+  ok(!(OverviewView.graphs.get("framerate")),
     "The framerate graph should not have been created yet.");
 
-  ok(DetailsView.components["waterfall"].initialized,
-    "The waterfall detail view should have been created by default.");
+  ok(!DetailsView.components["waterfall"].initialized,
+    "The waterfall detail view should not have been created yet.");
   ok(!DetailsView.components["js-calltree"].initialized,
     "The js-calltree detail view should not have been created yet.");
   ok(!DetailsView.components["js-flamegraph"].initialized,
@@ -30,12 +30,13 @@ function spawnTest () {
     "The memory-flamegraph detail view should not have been created yet.");
 
   Services.prefs.setBoolPref(MEMORY_PREF, true);
+  Services.prefs.setBoolPref(ALLOCATIONS_PREF, true);
 
-  ok(!("markersOverview" in OverviewView),
+  ok(!(OverviewView.graphs.get("timeline")),
     "The markers graph should still not have been created yet.");
-  ok(!("memoryOverview" in OverviewView),
+  ok(!(OverviewView.graphs.get("memory")),
     "The memory graph should still not have been created yet.");
-  ok(!("framerateGraph" in OverviewView),
+  ok(!(OverviewView.graphs.get("framerate")),
     "The framerate graph should still not have been created yet.");
 
   let stateChanged = once(PerformanceView, EVENTS.UI_STATE_CHANGED);
@@ -44,9 +45,9 @@ function spawnTest () {
 
   is(PerformanceView.getState(), "recording",
     "The current state of the performance panel view is 'recording'.");
-  ok(OverviewView.memoryOverview,
+  ok(OverviewView.graphs.get("memory"),
     "The memory graph should have been created now.");
-  ok(OverviewView.framerateGraph,
+  ok(OverviewView.graphs.get("framerate"),
     "The framerate graph should have been created now.");
 
   stateChanged = once(PerformanceView, EVENTS.UI_STATE_CHANGED);

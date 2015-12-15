@@ -5,14 +5,12 @@
 "use strict";
 
 const {Cc, Ci, Cu} = require("chrome");
-const {Promise: promise} = require("resource://gre/modules/Promise.jsm");
+const promise = require("promise");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DebuggerServer",
-  "resource://gre/modules/devtools/dbg-server.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DebuggerClient",
-  "resource://gre/modules/devtools/dbg-client.jsm");
+loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(this, "DebuggerClient", "devtools/toolkit/client/main", true);
 
 const targets = new WeakMap();
 const promiseTargets = new WeakMap();
@@ -58,6 +56,15 @@ exports.TargetFactory = {
       promiseTargets.set(options, targetPromise);
     }
     return targetPromise;
+  },
+
+  forWorker: function TF_forWorker(workerClient) {
+    let target = targets.get(workerClient);
+    if (target == null) {
+      target = new WorkerTarget(workerClient);
+      targets.set(workerClient, target);
+    }
+    return target;
   },
 
   /**
@@ -165,6 +172,7 @@ function TabTarget(tab) {
   this._handleThreadState = this._handleThreadState.bind(this);
   this.on("thread-resumed", this._handleThreadState);
   this.on("thread-paused", this._handleThreadState);
+  this.activeTab = this.activeConsole = null;
   // Only real tabs need initialization here. Placeholder objects for remote
   // targets will be initialized after a makeRemote method call.
   if (tab && !["client", "form", "chrome"].every(tab.hasOwnProperty, tab)) {
@@ -175,6 +183,8 @@ function TabTarget(tab) {
     this._client = tab.client;
     this._chrome = tab.chrome;
   }
+  // Default isTabActor to true if not explicitely specified
+  this._isTabActor = typeof(tab.isTabActor) == "boolean" ? tab.isTabActor : true;
 }
 
 TabTarget.prototype = {
@@ -184,7 +194,13 @@ TabTarget.prototype = {
    * Returns a promise for the protocol description from the root actor.
    * Used internally with `target.actorHasMethod`. Takes advantage of
    * caching if definition was fetched previously with the corresponding
-   * actor information. Must be a remote target.
+   * actor information. Actors are lazily loaded, so not only must the tool using
+   * a specific actor be in use, the actors are only registered after invoking
+   * a method (for performance reasons, added in bug 988237), so to use these actor
+   * detection methods, one must already be communicating with a specific actor of
+   * that type.
+   *
+   * Must be a remote target.
    *
    * @return {Promise}
    * {
@@ -250,7 +266,8 @@ TabTarget.prototype = {
 
   /**
    * Queries the protocol description to see if an actor has
-   * an available method. The actor must already be lazily-loaded,
+   * an available method. The actor must already be lazily-loaded (read
+   * the restrictions in the `getActorDescription` comments),
    * so this is for use inside of tool. Returns a promise that
    * resolves to a boolean. Must be a remote target.
    *
@@ -308,8 +325,19 @@ TabTarget.prototype = {
     return this._client;
   },
 
+  // Tells us if we are debugging content document
+  // or if we are debugging chrome stuff.
+  // Allows to controls which features are available against
+  // a chrome or a content document.
   get chrome() {
     return this._chrome;
+  },
+
+  // Tells us if the related actor implements TabActor interface
+  // and requires to call `attach` request before being used
+  // and `detach` during cleanup
+  get isTabActor() {
+    return this._isTabActor;
   },
 
   get window() {
@@ -400,42 +428,39 @@ TabTarget.prototype = {
         }
         this.activeTab = aTabClient;
         this.threadActor = aResponse.threadActor;
+        attachConsole();
+      });
+    };
+
+    let attachConsole = () => {
+      this._client.attachConsole(this._form.consoleActor,
+                                 [ "NetworkActivity" ],
+                                 (aResponse, aWebConsoleClient) => {
+        if (!aWebConsoleClient) {
+          this._remote.reject("Unable to attach to the console");
+          return;
+        }
+        this.activeConsole = aWebConsoleClient;
         this._remote.resolve(null);
       });
     };
 
     if (this.isLocalTab) {
       this._client.connect((aType, aTraits) => {
-        this._client.listTabs(aResponse => {
-          this._root = aResponse;
-
-          if (this.window) {
-            let windowUtils = this.window
-              .QueryInterface(Ci.nsIInterfaceRequestor)
-              .getInterface(Ci.nsIDOMWindowUtils);
-            let outerWindow = windowUtils.outerWindowID;
-            aResponse.tabs.some((tab) => {
-              if (tab.outerWindowID === outerWindow) {
-                this._form = tab;
-                return true;
-              }
-              return false;
-            });
-          }
-
-          if (!this._form) {
-            this._form = aResponse.tabs[aResponse.selected];
-          }
+        this._client.getTab({ tab: this.tab })
+            .then(aResponse => {
+          this._form = aResponse.tab;
           attachTab();
         });
       });
-    } else if (!this.chrome) {
+    } else if (this.isTabActor) {
       // In the remote debugging case, the protocol connection will have been
       // already initialized in the connection screen code.
       attachTab();
     } else {
-      // Remote chrome debugging doesn't need anything at this point.
-      this._remote.resolve(null);
+      // AddonActor and chrome debugging on RootActor doesn't inherits from TabActor and
+      // doesn't need to be attached.
+      attachConsole();
     }
 
     return this._remote.promise;
@@ -589,17 +614,15 @@ TabTarget.prototype = {
         // We started with a local tab and created the client ourselves, so we
         // should close it.
         this._client.close(cleanupAndResolve);
-      } else {
+      } else if (this.activeTab) {
         // The client was handed to us, so we are not responsible for closing
         // it. We just need to detach from the tab, if already attached.
-        if (this.activeTab) {
-          // |detach| may fail if the connection is already dead, so proceed
-          // cleanup directly after this.
-          this.activeTab.detach();
-          cleanupAndResolve();
-        } else {
-          cleanupAndResolve();
-        }
+        // |detach| may fail if the connection is already dead, so proceed with
+        // cleanup directly after this.
+        this.activeTab.detach();
+        cleanupAndResolve();
+      } else {
+        cleanupAndResolve();
       }
     }
 
@@ -616,6 +639,7 @@ TabTarget.prototype = {
       promiseTargets.delete(this._form);
     }
     this.activeTab = null;
+    this.activeConsole = null;
     this._client = null;
     this._tab = null;
     this._form = null;
@@ -781,4 +805,65 @@ WindowTarget.prototype = {
   toString: function() {
     return 'WindowTarget:' + this.window;
   },
+};
+
+function WorkerTarget(workerClient) {
+  EventEmitter.decorate(this);
+  this._workerClient = workerClient;
+}
+
+/**
+ * A WorkerTarget represents a worker. Unlike TabTarget, which can represent
+ * either a local or remote tab, WorkerTarget always represents a remote worker.
+ * Moreover, unlike TabTarget, which is constructed with a placeholder object
+ * for remote tabs (from which a TabClient can then be lazily obtained),
+ * WorkerTarget is constructed with a WorkerClient directly.
+ *
+ * The reason for this is that in order to get notifications when a worker
+ * closes/freezes/thaws, the UI needs to attach to each worker anyway, so by
+ * the time a WorkerTarget for a given worker is created, a WorkerClient for
+ * that worker will already be available. Consequently, there is no need to
+ * obtain a WorkerClient lazily.
+ *
+ * WorkerClient is designed to mimic the interface of TabClient as closely as
+ * possible. This allows us to debug workers as if they were ordinary tabs,
+ * requiring only minimal changes to the rest of the frontend.
+ */
+WorkerTarget.prototype = {
+  get isRemote() {
+    return true;
+  },
+
+  get isTabActor() {
+    return true;
+  },
+
+  get form() {
+    return {
+      from: this._workerClient.actor,
+      type: "attached",
+      isFrozen: this._workerClient.isFrozen,
+      url: this._workerClient.url
+    };
+  },
+
+  get activeTab() {
+    return this._workerClient;
+  },
+
+  get client() {
+    return this._workerClient.client;
+  },
+
+  destroy: function () {},
+
+  hasActor: function (name) {
+    return false;
+  },
+
+  getTrait: function (name) {
+    return undefined;
+  },
+
+  makeRemote: function () {}
 };

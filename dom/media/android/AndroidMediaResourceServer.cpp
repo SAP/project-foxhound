@@ -398,6 +398,7 @@ AndroidMediaResourceServer::AndroidMediaResourceServer() :
 NS_IMETHODIMP
 AndroidMediaResourceServer::Run()
 {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   MutexAutoLock lock(mMutex);
 
   nsresult rv;
@@ -420,8 +421,9 @@ AndroidMediaResourceServer::Run()
 already_AddRefed<AndroidMediaResourceServer>
 AndroidMediaResourceServer::Start()
 {
+  MOZ_ASSERT(NS_IsMainThread());
   nsRefPtr<AndroidMediaResourceServer> server = new AndroidMediaResourceServer();
-  NS_DispatchToMainThread(server, NS_DISPATCH_SYNC);
+  server->Run();
   return server.forget();
 }
 
@@ -459,7 +461,7 @@ AndroidMediaResourceServer::AddResource(mozilla::MediaResource* aResource, nsCSt
     MutexAutoLock lock(mMutex);
 
     // Adding a resource URL that already exists is considered an error.
-    if (mResources.find(aUrl) != mResources.end()) return NS_ERROR_FAILURE;
+    if (mResources.find(url) != mResources.end()) return NS_ERROR_FAILURE;
     mResources[url] = aResource;
   }
 

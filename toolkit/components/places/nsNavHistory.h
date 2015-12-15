@@ -51,7 +51,6 @@
 // Fired after frecency has been updated.
 #define TOPIC_FRECENCY_UPDATED "places-frecency-updated"
 
-class mozIAnnotationService;
 class nsNavHistory;
 class QueryKeyValuePair;
 class nsIEffectiveTLDService;
@@ -62,11 +61,11 @@ class nsIAutoCompleteController;
 // nsNavHistory
 
 class nsNavHistory final : public nsSupportsWeakReference
-                             , public nsINavHistoryService
-                             , public nsIObserver
-                             , public nsIBrowserHistory
-                             , public nsPIPlacesDatabase
-                             , public mozIStorageVacuumParticipant
+                         , public nsINavHistoryService
+                         , public nsIObserver
+                         , public nsIBrowserHistory
+                         , public nsPIPlacesDatabase
+                         , public mozIStorageVacuumParticipant
 {
   friend class PlacesSQLQueryBuilder;
 
@@ -510,7 +509,7 @@ protected:
    */
   static void expireNowTimerCallback(nsITimer* aTimer, void* aClosure);
 
-  nsresult ConstructQueryString(const nsCOMArray<nsNavHistoryQuery>& aQueries, 
+  nsresult ConstructQueryString(const nsCOMArray<nsNavHistoryQuery>& aQueries,
                                 nsNavHistoryQueryOptions* aOptions,
                                 nsCString& queryString,
                                 bool& aParamsPresent,

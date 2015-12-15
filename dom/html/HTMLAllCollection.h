@@ -21,16 +21,13 @@ class nsIContent;
 class nsINode;
 
 namespace mozilla {
-
-class ErrorResult;
-
 namespace dom {
 
 class OwningNodeOrHTMLCollection;
 template<typename> struct Nullable;
 
 class HTMLAllCollection final : public nsISupports
-                                  , public nsWrapperCache
+                              , public nsWrapperCache
 {
   ~HTMLAllCollection();
 
@@ -40,7 +37,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HTMLAllCollection)
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
   nsINode* GetParentObject() const;
 
   uint32_t Length();

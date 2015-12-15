@@ -7,6 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id={900533}
   <title>Test for Bug {900533} Packaged app update tests</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <script type="text/javascript" src="test_packaged_app_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -59,6 +60,7 @@ function checkLastAppState(aMiniManifestURL, aExpectedReady, aExpectedDownload,
   info(aExpectedReady ? "App downloaded" : "App download applied");
   var expected = {
     name: PackagedTestHelper.gAppName,
+    short_name: PackagedTestHelper.gAppName,
     manifestURL: aMiniManifestURL,
     installOrigin: PackagedTestHelper.gInstallOrigin,
     progress: 0,
@@ -172,7 +174,7 @@ var steps = [
       };
       PackagedTestHelper.gApp.ondownloadsuccess =
         checkLastAppState.bind(undefined, miniManifestURL, false, false,
-                               2, PackagedTestHelper.next);
+                               "2", PackagedTestHelper.next);
     };
 
     var request = navigator.mozApps.installPackage(miniManifestURL);
@@ -231,7 +233,7 @@ var steps = [
   },
   function() {
     info("== TEST == Update packaged app");
-    updateApp(true, 2, 3);
+    updateApp(true, "2", "3");
   },
   function() {
     info("== TEST == Check that saved permissions were kept");
@@ -243,11 +245,21 @@ var steps = [
     checkForUpdate(false);
   },
   function() {
-    PackagedTestHelper.setAppVersion(4, PackagedTestHelper.next, true);
+    PackagedTestHelper.setAppVersion(4, PackagedTestHelper.next);
+  },
+  function() {
+    PackagedTestHelper.setAppNameSuffix("NEWVERSION", PackagedTestHelper.next);
+  },
+  function() {
+    info("== TEST == Check that name changes in an update are ignored");
+    updateApp(true, "3", "4");
+  },
+  function() {
+    PackagedTestHelper.setAppVersion(5, PackagedTestHelper.next, true);
   },
   function() {
     info("== TEST == Update packaged app - same package");
-    updateApp(false, 3, 3, true);
+    updateApp(false, "4", "4", true);
   },
   function() {
     info("== TEST == Check for Update after getting the same package");
@@ -255,7 +267,7 @@ var steps = [
   },
 
   function() {
-    PackagedTestHelper.setAppVersion(5, PackagedTestHelper.next,
+    PackagedTestHelper.setAppVersion(6, PackagedTestHelper.next,
                                      /* aDontUpdatePackage */ false,
                                      /* aAllowCancel */ false,
                                      /* aRole */ undefined,
@@ -333,9 +345,9 @@ PackagedTestHelper.setSteps(steps);
 // appToUpdate added to the URL so we get a unique URL for this app.
 // Unique in this case meaning different from the ones used on the
 // install tests
-miniManifestURL = PackagedTestHelper.gSJS + "?getManifest=true&appToUpdate";
+miniManifestURL = PackagedTestHelper.gSJS + "?getManifest=true&appToUpdate&testNameChange";
 
-addLoadEvent(PackagedTestHelper.start);
+addLoadEvent(() => prepareEnv(() => PackagedTestHelper.start()));
 
 </script>
 </pre>

@@ -81,19 +81,22 @@
     </style>
 
     <style name="Widget.GeckoMenuListView" parent="Widget.ListView">
-        <item name="android:divider">#FFC9D3DC</item>
+        <item name="android:listSelector">@drawable/menu_item_action_bar_bg</item>
+        <item name="android:divider">@color/divider_light</item>
     </style>
 
     <style name="Widget.MenuItemActionBar">
         <item name="android:padding">8dip</item>
-        <item name="android:background">@drawable/action_bar_button</item>
+        <item name="android:background">@drawable/menu_item_action_bar_bg</item>
         <item name="android:scaleType">fitCenter</item>
+        <item name="drawableTintList">@color/action_bar_menu_item_colors</item>"
     </style>
 
     <style name="Widget.MenuItemSecondaryActionBar">
         <item name="android:padding">8dip</item>
-        <item name="android:background">@drawable/action_bar_button</item>
+        <item name="android:background">@drawable/menu_item_action_bar_bg</item>
         <item name="android:scaleType">centerInside</item>
+        <item name="drawableTintList">@color/action_bar_secondary_menu_item_colors</item>
     </style>
 
     <style name="Widget.MenuItemActionView">
@@ -101,7 +104,7 @@
     </style>
 
     <style name="Widget.MenuItemDefault">
-        <item name="android:paddingLeft">10dip</item>
+        <item name="android:paddingLeft">15dip</item>
         <item name="android:paddingRight">10dip</item>
         <item name="android:drawablePadding">6dip</item>
         <item name="android:gravity">center_vertical</item>
@@ -132,6 +135,14 @@
         <item name="android:ellipsize">end</item>
     </style>
 
+    <style name="Widget.ReadingListRow.Title.Read" parent="Widget.ReadingListRow.Title">
+        <item name="android:textColor">@color/disabled_grey</item>
+    </style>
+
+    <style name="Widget.ReadingListRow.Title.Unread" parent="Widget.ReadingListRow.Title">
+        <item name="android:textColor">@color/text_and_tabs_tray_grey</item>
+    </style>
+
     <style name="Widget.ReadingListRow.Description">
         <item name="android:textAppearance">@style/TextAppearance.Widget.Home.ItemDescription</item>
         <item name="android:maxLines">3</item>
@@ -139,8 +150,16 @@
         <item name="android:lineSpacingMultiplier">1.3</item>
     </style>
 
+    <style name="Widget.ReadingListRow.Description.Read" parent="Widget.ReadingListRow.Description">
+        <item name="android:textColor">@color/disabled_grey</item>
+    </style>
+
+    <style name="Widget.ReadingListRow.Description.Unread" parent="Widget.ReadingListRow.Description">
+        <item name="android:textColor">@color/text_and_tabs_tray_grey</item>
+    </style>
+
     <style name="Widget.ReadingListRow.ReadTime">
-        <item name="android:textColor">@color/text_color_highlight</item>
+        <item name="android:textColor">@color/fennec_ui_orange</item>
     </style>
 
     <style name="Widget.BookmarkFolderView" parent="Widget.TwoLinePageRow.Title">
@@ -179,27 +198,17 @@
       <item name="android:orientation">vertical</item>
     </style>
 
-    <style name="Widget.PanelGridView" parent="Widget.GridView">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">match_parent</item>
-        <item name="android:paddingTop">0dp</item>
-        <item name="android:stretchMode">columnWidth</item>
-        <item name="android:numColumns">auto_fit</item>
-        <item name="android:columnWidth">@dimen/panel_grid_view_column_width</item>
-        <item name="android:horizontalSpacing">2dp</item>
-        <item name="android:verticalSpacing">2dp</item>
-        <item name="android:drawSelectorOnTop">true</item>
-    </style>
-
     <style name="Widget.TabsGridLayout" parent="Widget.GridView">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">match_parent</item>
         <item name="android:paddingTop">0dp</item>
-        <item name="android:stretchMode">columnWidth</item>
+        <item name="android:stretchMode">spacingWidth</item>
+        <item name="android:scrollbarStyle">outsideOverlay</item>
+        <item name="android:gravity">center</item>
         <item name="android:numColumns">auto_fit</item>
-        <item name="android:columnWidth">@dimen/tabs_grid_view_column_width</item>
+        <item name="android:columnWidth">@dimen/tab_panel_column_width</item>
         <item name="android:horizontalSpacing">2dp</item>
-        <item name="android:verticalSpacing">@dimen/new_tablet_tab_panel_grid_vspacing</item>
+        <item name="android:verticalSpacing">@dimen/tab_panel_grid_vspacing</item>
         <item name="android:drawSelectorOnTop">true</item>
         <item name="android:clipToPadding">false</item>
     </style>
@@ -227,7 +236,7 @@
     </style>
 
     <style name="Widget.HomeListView" parent="Widget.ListView">
-        <item name="android:divider">#E7ECF0</item>
+        <item name="android:divider">@color/divider_light</item>
     </style>
 
     <style name="Widget.TopSitesListView" parent="Widget.BookmarksListView"/>
@@ -242,7 +251,7 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">32dp</item>
         <item name="android:textAppearance">@style/TextAppearance.Widget.Home.Header</item>
-        <item name="android:background">@color/background_light</item>
+        <item name="android:background">@color/about_page_header_grey</item>
         <item name="android:focusable">false</item>
         <item name="android:gravity">center|left</item>
         <item name="android:paddingLeft">10dip</item>
@@ -275,8 +284,16 @@
         <item name="android:layout_width">@dimen/firstrun_content_width</item>
         <item name="android:layout_height">60dp</item>
         <item name="android:textColor">@color/android:white</item>
-        <item name="android:background">@color/firstrun_pager_button</item>
+        <item name="android:background">@color/action_orange</item>
         <item name="android:textSize">18sp</item>
+    </style>
+
+    <style name="Widget.Doorhanger.Button" parent="Widget.BaseButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textSize">14sp</item>
     </style>
 
     <!--
@@ -289,7 +306,7 @@
     -->
     <style name="TextAppearance">
         <item name="android:textColor">?android:attr/textColorPrimary</item>
-        <item name="android:textColorHighlight">@color/text_color_highlight</item>
+        <item name="android:textColorHighlight">@color/fennec_ui_orange</item>
         <item name="android:textColorHint">?android:attr/textColorHint</item>
         <item name="android:textColorLink">?android:attr/textColorLink</item>
         <item name="android:textSize">@dimen/menu_item_textsize</item>
@@ -401,21 +418,32 @@
     <style name="TextAppearance.Widget.Home.ItemTitle" parent="TextAppearance.Medium"/>
 
     <style name="TextAppearance.Widget.Home.ItemDescription" parent="TextAppearance.Micro">
-        <item name="android:textColor">#AFB1B3</item>
+        <item name="android:textColor">@color/tabs_tray_icon_grey</item>
     </style>
 
     <style name="TextAppearance.Widget.HomeBanner" parent="TextAppearance.Small">
         <item name="android:textColor">?android:attr/textColorHint</item>
     </style>
 
-    <style name="TextAppearance.Widget.DoorHanger.Medium" parent="TextAppearance.Medium">
-        <item name="android:textColor">@color/doorhanger_text</item>
+    <style name="TextAppearance.DoorHanger">
+        <item name="android:textColor">@color/placeholder_active_grey</item>
         <item name="android:textColorLink">@color/doorhanger_link</item>
     </style>
 
-    <style name="TextAppearance.Widget.DoorHanger.Small" parent="TextAppearance.Small">
-        <item name="android:textColor">@color/doorhanger_text</item>
-        <item name="android:textColorLink">@color/doorhanger_link</item>
+    <style name="TextAppearance.DoorHanger.Medium">
+        <item name="android:textSize">16dp</item>
+    </style>
+
+    <style name="TextAppearance.DoorHanger.Medium.Bold">
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.DoorHanger.Medium.Light">
+        <item name="android:fontFamily">sans-serif-light</item>
+    </style>
+
+    <style name="TextAppearance.DoorHanger.Small">
+        <item name="android:textSize">14sp</item>
     </style>
 
     <style name="TextAppearance.UrlBar.Title" parent="TextAppearance.Small">
@@ -427,13 +455,6 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">@dimen/browser_toolbar_height</item>
         <item name="android:orientation">horizontal</item>
-    </style>
-
-    <style name="UrlBar.ImageButton.TabCount">
-        <item name="android:background">@drawable/tabs_count</item>
-        <item name="android:gravity">center_horizontal</item>
-        <item name="android:clipChildren">false</item>
-        <item name="android:clipToPadding">false</item>
     </style>
 
     <!-- URL bar -->
@@ -454,7 +475,7 @@
         <item name="android:textAppearance">@style/TextAppearance.UrlBar.Title</item>
         <item name="android:textColor">@color/url_bar_title</item>
         <item name="android:textColorHint">@color/url_bar_title_hint</item>
-        <item name="android:textColorHighlight">@color/url_bar_text_highlight</item>
+        <item name="android:textColorHighlight">@color/fennec_ui_orange</item>
         <item name="android:textSelectHandle">@drawable/handle_middle</item>
         <item name="android:textSelectHandleLeft">@drawable/handle_start</item>
         <item name="android:textSelectHandleRight">@drawable/handle_end</item>
@@ -465,18 +486,14 @@
     </style>
 
     <!-- URL bar - Image Button -->
-    <style name="UrlBar.ImageButton" parent="UrlBar.Button">
-        <item name="android:layout_width">@dimen/browser_toolbar_height</item>
+    <style name="UrlBar.ImageButtonBase" parent="UrlBar.Button">
         <item name="android:scaleType">center</item>
         <item name="android:layout_gravity">center_vertical</item>
         <item name="android:background">@android:color/transparent</item>
     </style>
 
-    <!-- URL bar - Image Button - Icon -->
-    <style name="UrlBar.ImageButton.Icon">
-         <item name="android:layout_width">@dimen/browser_toolbar_icon_width</item>
-         <item name="android:layout_height">@dimen/browser_toolbar_height</item>
-         <item name="android:layout_weight">0.0</item>
+    <style name="UrlBar.ImageButton" parent="UrlBar.ImageButtonBase">
+        <item name="android:layout_width">@dimen/browser_toolbar_height</item>
     </style>
 
     <!-- TabsLayout -->
@@ -499,25 +516,6 @@
     </style>
 
     <!-- Tabs panel -->
-    <style name="TabsPanelFrameBase">
-        <item name="android:paddingLeft">16dp</item>
-        <item name="android:paddingRight">16dp</item>
-        <item name="android:paddingTop">32dp</item>
-        <item name="android:orientation">vertical</item>
-    </style>
-
-    <style name="TabsPanelFrame" parent="TabsPanelFrameBase">
-        <!-- We set values in landscape. -->
-    </style>
-
-    <style name="TabsPanelFrame.PrivateTabs">
-        <!-- We set values on tablet. -->
-    </style>
-
-    <style name="TabsPanelFrame.RemoteTabs">
-        <!-- We set values on tablet. -->
-    </style>
-
     <style name="TabsPanelSectionBase">
         <item name="android:orientation">vertical</item>
         <item name="android:layout_marginLeft">40dp</item>
@@ -528,14 +526,6 @@
         <!-- We set values in landscape. -->
     </style>
 
-    <style name="TabsPanelSection.PrivateTabs">
-        <!-- We set values on tablet. -->
-    </style>
-
-    <style name="TabsPanelSection.PrivateTabs.Header">
-        <!-- We set values on landscape and tablet. -->
-    </style>
-
     <style name="TabsPanelItemBase">
         <item name="android:layout_marginBottom">28dp</item>
         <item name="android:layout_gravity">center</item>
@@ -544,20 +534,6 @@
 
     <style name="TabsPanelItem" parent="TabsPanelItemBase">
         <!-- We set values in landscape. -->
-    </style>
-
-    <style name="TabsPanelItem.ButtonBase">
-        <item name="android:background">@drawable/remote_tabs_setup_button_background</item>
-        <item name="android:textColor">#FFFEFF</item>
-        <item name="android:textSize">16sp</item>
-        <item name="android:gravity">center</item>
-    </style>
-
-    <style name="TabsPanelItem.Button" parent="TabsPanelItem.ButtonBase">
-        <item name="android:paddingTop">18dp</item>
-        <item name="android:paddingBottom">18dp</item>
-        <item name="android:paddingLeft">9dp</item>
-        <item name="android:paddingRight">9dp</item>
     </style>
 
     <style name="TabsPanelItem.TextAppearance">
@@ -571,36 +547,25 @@
         <item name="android:layout_marginBottom">16dp</item>
     </style>
 
-    <style name="TabsPanelItem.TextAppearance.Header.FXAccounts">
-        <!-- We change these values on landscape. -->
-    </style>
-
-    <style name="TabsPanelItem.TextAppearance.Header.PrivateTabs">
-        <!-- We change these values on landscape and tablet. -->
-    </style>
-
     <style name="TabsPanelItem.TextAppearance.Linkified">
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
         <item name="android:textColor">#0292D6</item>
     </style>
 
-    <style name="TabsPanelItem.TextAppearance.Linkified.LearnMore">
-        <item name="android:layout_height">wrap_content</item>
-    </style>
-
-    <style name="TabsPanelItem.TextAppearance.Linkified.Resend">
-        <item name="android:layout_height">wrap_content</item>
-    </style>
-
     <style name="Widget.RemoteTabsItemView" parent="Widget.TwoLinePageRow"/>
 
     <style name="Widget.RemoteTabsClientView" parent="Widget.TwoLinePageRow">
-        <item name="android:background">@color/background_light</item>
+        <item name="android:background">@color/about_page_header_grey</item>
     </style>
 
     <style name="Widget.RemoteTabsListView" parent="Widget.HomeListView">
-        <item name="android:childDivider">#E7ECF0</item>
+        <item name="android:childDivider">@color/divider_light</item>
+        <item name="android:drawSelectorOnTop">true</item>
+    </style>
+
+    <style name="Widget.HistoryListView" parent="Widget.HomeListView">
+        <item name="android:childDivider">@color/divider_light</item>
         <item name="android:drawSelectorOnTop">true</item>
     </style>
 
@@ -625,7 +590,7 @@
 
     <!-- Find bar -->
     <style name="FindBar">
-        <item name="android:background">@color/background_tabs</item>
+        <item name="android:background">@color/text_and_tabs_tray_grey</item>
         <item name="android:paddingLeft">3dip</item>
         <item name="android:paddingRight">3dip</item>
         <item name="android:paddingTop">6dip</item>
@@ -652,7 +617,7 @@
     </style>
 
     <style name="WebView.Titlebar.Title">
-        <item name="android:textColor">#ff222222</item>
+        <item name="android:textColor">@color/placeholder_active_grey</item>
     </style>
 
     <style name="GeckoDialogTitle">
@@ -765,14 +730,15 @@
 
     <style name="GeckoActionBar.Button.MenuButton">
         <item name="android:scaleType">center</item>
-        <item name="android:src">@drawable/menu_light</item>
+        <item name="android:src">@drawable/menu</item>
+        <item name="android:tint">@color/toolbar_icon_grey</item>
         <item name="android:contentDescription">@string/actionbar_menu</item>
         <item name="android:background">@android:color/transparent</item>
     </style>
 
     <style name="GeckoActionBar.Buttons">
         <item name="android:background">@android:color/transparent</item>
-        <item name="android:textColor">@color/text_color_primary</item>
+        <item name="android:textColor">@color/placeholder_active_grey</item>
         <item name="android:gravity">right</item>
     </style>
 
@@ -805,7 +771,7 @@
     </style>
 
     <style name="TabInput.Tab">
-        <item name="android:background">@drawable/tabs_panel_indicator</item>
+        <item name="android:background">@drawable/tabs_strip_indicator</item>
         <item name="android:gravity">center</item>
         <item name="android:minHeight">@dimen/menu_item_row_height</item>
     </style>
@@ -814,34 +780,23 @@
         <item name="android:paddingTop">0dp</item>
     </style>
 
-    <!-- Make the share overlay activity appear like an overlay. -->
-    <style name="ShareOverlayActivity" parent="Gecko">
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowIsTranslucent">true</item>
-        <item name="android:backgroundDimEnabled">true</item>
-
-        <!-- We display the overlay on top of other Activities so show their status bar. -->
-        <item name="android:statusBarColor">@android:color/transparent</item>
-    </style>
-
     <style name="TextAppearance.FirstrunLight"/>
     <style name="TextAppearance.FirstrunRegular"/>
 
     <style name="TextAppearance.FirstrunLight.Main">
         <item name="android:textSize">20sp</item>
-        <item name="android:textColor">#363B40</item>
+        <item name="android:textColor">@color/text_and_tabs_tray_grey</item>
     </style>
 
     <style name="TextAppearance.FirstrunRegular.Body">
         <item name="android:textSize">16sp</item>
-        <item name="android:textColor">#777777</item>
+        <item name="android:textColor">@color/placeholder_grey</item>
         <item name="android:lineSpacingMultiplier">1.25</item>
     </style>
 
     <style name="TextAppearance.FirstrunRegular.Link">
         <item name="android:textSize">16sp</item>
-        <item name="android:textColor">#0096DD</item>
+        <item name="android:textColor">@color/link_blue</item>
     </style>
 
     <!-- Remote Tabs home panel -->
@@ -863,7 +818,7 @@
     </style>
 
     <style name="RemoteTabsPanelItem.TextAppearance">
-        <item name="android:textColor">#777777</item>
+        <item name="android:textColor">@color/placeholder_grey</item>
         <item name="android:textSize">16sp</item>
         <item name="android:lineSpacingMultiplier">1.25</item>
         <item name="android:layout_marginLeft">8dp</item>
@@ -871,7 +826,7 @@
     </style>
 
     <style name="RemoteTabsPanelItem.TextAppearance.Header">
-        <item name="android:textColor">#222222</item>
+        <item name="android:textColor">@color/placeholder_active_grey</item>
         <item name="android:textSize">20sp</item>
         <item name="android:layout_marginBottom">8dp</item>
     </style>
@@ -893,4 +848,5 @@
         <item name="android:paddingRight">8dp</item>
     </style>
 
+    <style name="TabQueueActivity" parent="android:style/Theme.NoDisplay" />
 </resources>

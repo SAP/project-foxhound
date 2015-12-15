@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +10,7 @@
 #include "mozilla/dom/HTMLFieldSetElement.h"
 #include "mozilla/dom/HTMLFieldSetElementBinding.h"
 #include "nsContentList.h"
+#include "nsQueryObject.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(FieldSet)
 
@@ -61,7 +63,7 @@ NS_IMPL_STRING_ATTR(HTMLFieldSetElement, Name, name)
 NS_IMPL_NSICONSTRAINTVALIDATION(HTMLFieldSetElement)
 
 bool
-HTMLFieldSetElement::IsDisabledForEvents(uint32_t aMessage)
+HTMLFieldSetElement::IsDisabledForEvents(EventMessage aMessage)
 {
   return IsElementDisabledForEvents(aMessage, nullptr);
 }
@@ -72,7 +74,7 @@ HTMLFieldSetElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
 {
   // Do not process any DOM events if the element is disabled.
   aVisitor.mCanHandle = false;
-  if (IsDisabledForEvents(aVisitor.mEvent->message)) {
+  if (IsDisabledForEvents(aVisitor.mEvent->mMessage)) {
     return NS_OK;
   }
 
@@ -163,7 +165,7 @@ HTMLFieldSetElement::InsertChildAt(nsIContent* aChild, uint32_t aIndex,
 {
   bool firstLegendHasChanged = false;
 
-  if (aChild->IsHTML(nsGkAtoms::legend)) {
+  if (aChild->IsHTMLElement(nsGkAtoms::legend)) {
     if (!mFirstLegend) {
       mFirstLegend = aChild;
       // We do not want to notify the first time mFirstElement is set.
@@ -199,7 +201,7 @@ HTMLFieldSetElement::RemoveChildAt(uint32_t aIndex, bool aNotify)
     firstLegendHasChanged = true;
 
     for (; child; child = child->GetNextSibling()) {
-      if (child->IsHTML(nsGkAtoms::legend)) {
+      if (child->IsHTMLElement(nsGkAtoms::legend)) {
         mFirstLegend = child;
         break;
       }
@@ -370,9 +372,9 @@ HTMLFieldSetElement::IntrinsicState() const
 }
 
 JSObject*
-HTMLFieldSetElement::WrapNode(JSContext* aCx)
+HTMLFieldSetElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLFieldSetElementBinding::Wrap(aCx, this);
+  return HTMLFieldSetElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace dom

@@ -4,7 +4,7 @@
 
 const Cu = Components.utils;
 Cu.import('resource:///modules/devtools/gDevTools.jsm');
-const {require} = Cu.import('resource://gre/modules/devtools/Loader.jsm', {}).devtools;
+const {require} = Cu.import('resource://gre/modules/devtools/Loader.jsm', {});
 const {Services} = Cu.import('resource://gre/modules/Services.jsm');
 const {AppManager} = require('devtools/webide/app-manager');
 const {AppActorFront} = require('devtools/app-actor-front');
@@ -38,7 +38,7 @@ window.addEventListener('load', function onLoad() {
  * or an array of such objects. For more details on the data format, see the
  * `Graph.update(data)` method.
  */
-let Monitor = {
+var Monitor = {
 
   apps: new Map(),
   graphs: new Map(),
@@ -116,7 +116,7 @@ let Monitor = {
    */
   onAppManagerUpdate: function(event, what, details) {
     switch (what) {
-      case 'list-tabs-response':
+      case 'runtime-global-actors':
         Monitor.connectToRuntime();
         break;
       case 'connection':

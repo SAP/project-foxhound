@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +18,7 @@ USING_BLUETOOTH_NAMESPACE
 namespace {
   StaticRefPtr<BluetoothHfpManager> sBluetoothHfpManager;
   bool sInShutdown = false;
-} // anonymous namespace
+} // namespace
 
 /**
  * nsIObserver function
@@ -101,6 +101,12 @@ BluetoothHfpManager::OnUpdateSdpRecords(const nsAString& aDeviceAddress)
  */
 bool
 BluetoothHfpManager::IsScoConnected()
+{
+  return false;
+}
+
+bool
+BluetoothHfpManager::IsNrecEnabled()
 {
   return false;
 }
@@ -199,6 +205,17 @@ BluetoothHfpManager::ConnectSco()
    *   without a HFP connection (e.g., VoIP).
    */
   return false;
+}
+
+void
+BluetoothHfpManager::HandleBackendError()
+{
+  /**
+   * TODO:
+   *   Reset connection state and audio state to DISCONNECTED to handle backend
+   *   error. The state change triggers UI status bar update as ordinary
+   *   bluetooth turn-off sequence.
+   */
 }
 
 bool

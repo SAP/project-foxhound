@@ -12,8 +12,6 @@
 #include "nsDebug.h"                    // for NS_RUNTIMEABORT
 #include "nsRegion.h"                   // for nsIntRegion
 
-class gfxContext;
-
 namespace mozilla {
 namespace layers {
 
@@ -36,7 +34,7 @@ class SpecificLayerAttributes;
  * There is no ContentClient for tiled layers. There is a ContentHost, however.
  */
 class ClientTiledPaintedLayer : public PaintedLayer,
-                               public ClientLayer
+                                public ClientLayer
 {
   typedef PaintedLayer Base;
 
@@ -81,7 +79,10 @@ public:
    * which hold the return values; the values passed in may be null.
    */
   void GetAncestorLayers(LayerMetricsWrapper* aOutScrollAncestor,
-                         LayerMetricsWrapper* aOutDisplayPortAncestor);
+                         LayerMetricsWrapper* aOutDisplayPortAncestor,
+                         bool* aOutHasTransformAnimation);
+
+  virtual bool IsOptimizedFor(LayerManager::PaintedLayerCreationHint aCreationHint) override;
 
 private:
   ClientLayerManager* ClientManager()
@@ -96,15 +97,16 @@ private:
   void BeginPaint();
 
   /**
-   * Determine if we can use a fast path to just do a single high-precision,
-   * non-progressive paint.
-   */
-  bool UseFastPath();
-
-  /**
    * Check if the layer is being scrolled by APZ on the compositor.
    */
   bool IsScrollingOnCompositor(const FrameMetrics& aParentMetrics);
+
+  /**
+   * Check if we should use progressive draw on this layer. We will
+   * disable progressive draw based on a preference or if the layer
+   * is not being scrolled.
+   */
+  bool UseProgressiveDraw();
 
   /**
    * Helper function to do the high-precision paint.
@@ -135,7 +137,7 @@ private:
   BasicTiledLayerPaintData mPaintData;
 };
 
-} // layers
-} // mozilla
+} // namespace layers
+} // namespace mozilla
 
 #endif

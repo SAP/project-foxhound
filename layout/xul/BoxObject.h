@@ -17,10 +17,9 @@
 #include "nsInterfaceHashtable.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
+#include "nsRect.h"
 
 class nsIFrame;
-class nsIDocShell;
-struct nsIntRect;
 class nsIPresShell;
 
 namespace mozilla {
@@ -55,7 +54,7 @@ public:
 
   // WebIDL (wraps old impls)
   nsIContent* GetParentObject() const;
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   Element* GetElement() const;
 
@@ -86,7 +85,7 @@ protected:
   nsIContent* mContent; // [WEAK]
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif

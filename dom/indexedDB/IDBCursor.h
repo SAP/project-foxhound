@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,6 +76,7 @@ private:
   JS::Heap<JS::Value> mCachedValue;
 
   Key mKey;
+  Key mSortKey;
   Key mPrimaryKey;
   StructuredCloneReadInfo mCloneInfo;
 
@@ -102,12 +103,14 @@ public:
   static already_AddRefed<IDBCursor>
   Create(BackgroundCursorChild* aBackgroundActor,
          const Key& aKey,
+         const Key& aSortKey,
          const Key& aPrimaryKey,
          StructuredCloneReadInfo&& aCloneInfo);
 
   static already_AddRefed<IDBCursor>
   Create(BackgroundCursorChild* aBackgroundActor,
          const Key& aKey,
+         const Key& aSortKey,
          const Key& aPrimaryKey);
 
   static Direction
@@ -129,6 +132,8 @@ public:
 
   IDBCursorDirection
   GetDirection() const;
+
+  bool IsContinueCalled() const { return mContinueCalled; }
 
   void
   GetKey(JSContext* aCx,
@@ -167,10 +172,10 @@ public:
   Reset(Key&& aKey);
 
   void
-  Reset(Key&& aKey, Key&& aPrimaryKey, StructuredCloneReadInfo&& aValue);
+  Reset(Key&& aKey, Key&& aSortKey, Key&& aPrimaryKey, StructuredCloneReadInfo&& aValue);
 
   void
-  Reset(Key&& aKey, Key&& aPrimaryKey);
+  Reset(Key&& aKey, Key&& aSortKey, Key&& aPrimaryKey);
 
   void
   ClearBackgroundActor()
@@ -185,7 +190,7 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
   IDBCursor(Type aType,
@@ -194,8 +199,17 @@ private:
 
   ~IDBCursor();
 
+#ifdef ENABLE_INTL_API
+  // Checks if this is a locale aware cursor (ie. the index's sortKey is unset)
+  bool
+  IsLocaleAware() const;
+#endif
+
   void
   DropJSObjects();
+
+  bool
+  IsSourceDeleted() const;
 };
 
 } // namespace indexedDB

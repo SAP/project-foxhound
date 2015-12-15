@@ -15,7 +15,7 @@ namespace mozilla {
 
 namespace dom {
 
-class MediaStreamAudioSourceNodeEngine : public AudioNodeEngine
+class MediaStreamAudioSourceNodeEngine final : public AudioNodeEngine
 {
 public:
   explicit MediaStreamAudioSourceNodeEngine(AudioNode* aNode)
@@ -35,6 +35,7 @@ public:
       NS_ERROR("MediaStreamAudioSourceNodeEngine bad parameter index");
     }
   }
+
 private:
   bool mEnabled;
 };
@@ -48,7 +49,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaStreamAudioSourceNode, AudioNode)
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   virtual void DestroyMediaStream() override;
 
@@ -72,7 +73,7 @@ private:
   nsRefPtr<DOMMediaStream> mInputStream;
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif

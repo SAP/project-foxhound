@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +27,7 @@
 #include "nsID.h"
 #include "nsIDOMEvent.h"
 #include "nsString.h"
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"
@@ -44,34 +44,35 @@ public:
   {
     using mozilla::ipc::BackgroundChildImpl;
 
-    BackgroundChildImpl::ThreadLocal* threadLocal =
-      BackgroundChildImpl::GetThreadLocalForCurrentThread();
-    MOZ_ASSERT(threadLocal);
-
-    ThreadLocal* idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
-    MOZ_ASSERT(idbThreadLocal);
-
-    Init(idbThreadLocal->Id());
+    if (IndexedDatabaseManager::GetLoggingMode() !=
+          IndexedDatabaseManager::Logging_Disabled) {
+      const BackgroundChildImpl::ThreadLocal* threadLocal =
+        BackgroundChildImpl::GetThreadLocalForCurrentThread();
+      if (threadLocal) {
+        const ThreadLocal* idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
+        if (idbThreadLocal) {
+          Assign(idbThreadLocal->IdString());
+        }
+      }
+    }
   }
 
   explicit
   LoggingIdString(const nsID& aID)
   {
-    Init(aID);
-  }
-
-private:
-  void
-  Init(const nsID& aID)
-  {
     static_assert(NSID_LENGTH > 1, "NSID_LENGTH is set incorrectly!");
+    static_assert(NSID_LENGTH <= kDefaultStorageSize,
+                  "nID string won't fit in our storage!");
     MOZ_ASSERT(Capacity() > NSID_LENGTH);
 
-    // NSID_LENGTH counts the null terminator, SetLength() does not.
-    SetLength(NSID_LENGTH - 1);
+    if (IndexedDatabaseManager::GetLoggingMode() !=
+          IndexedDatabaseManager::Logging_Disabled) {
+      // NSID_LENGTH counts the null terminator, SetLength() does not.
+      SetLength(NSID_LENGTH - 1);
 
-    aID.ToProvidedString(
-      *reinterpret_cast<char(*)[NSID_LENGTH]>(BeginWriting()));
+      aID.ToProvidedString(
+        *reinterpret_cast<char(*)[NSID_LENGTH]>(BeginWriting()));
+    }
   }
 };
 
@@ -124,6 +125,9 @@ public:
         break;
       case IDBTransaction::READ_WRITE:
         AppendLiteral("\"readwrite\"");
+        break;
+      case IDBTransaction::READ_WRITE_FLUSH:
+        AppendLiteral("\"readwriteflush\"");
         break;
       case IDBTransaction::VERSION_CHANGE:
         AppendLiteral("\"versionchange\"");
@@ -278,9 +282,9 @@ LoggingHelper(bool aUseProfiler, const char* aFmt, ...)
   PRLogModuleInfo* logModule = IndexedDatabaseManager::GetLoggingModule();
   MOZ_ASSERT(logModule);
 
-  static const PRLogModuleLevel logLevel = PR_LOG_DEBUG;
+  static const mozilla::LogLevel logLevel = LogLevel::Warning;
 
-  if (PR_LOG_TEST(logModule, logLevel) ||
+  if (MOZ_LOG_TEST(logModule, logLevel) ||
       (aUseProfiler && profiler_is_active())) {
     nsAutoCString message;
 
@@ -293,7 +297,7 @@ LoggingHelper(bool aUseProfiler, const char* aFmt, ...)
       va_end(args);
     }
 
-    PR_LOG(logModule, logLevel, ("%s", message.get()));
+    MOZ_LOG(logModule, logLevel, ("%s", message.get()));
 
     if (aUseProfiler) {
       PROFILER_MARKER(message.get());

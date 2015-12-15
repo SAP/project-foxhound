@@ -25,7 +25,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "BinarySearch",
 
 XPCOMUtils.defineLazyGetter(this, "gPrincipal", function () {
   let uri = Services.io.newURI("about:newtab", null, null);
-  return Services.scriptSecurityManager.getNoAppCodebasePrincipal(uri);
+  return Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
 });
 
 XPCOMUtils.defineLazyGetter(this, "gCryptoHash", function () {
@@ -193,7 +193,7 @@ LinksStorage.prototype = {
 /**
  * Singleton that serves as a registry for all open 'New Tab Page's.
  */
-let AllPages = {
+var AllPages = {
   /**
    * The array containing all active pages.
    */
@@ -325,7 +325,7 @@ let AllPages = {
 /**
  * Singleton that keeps Grid preferences
  */
-let GridPrefs = {
+var GridPrefs = {
   /**
    * Cached value that tells the number of rows of newtab grid.
    */
@@ -380,7 +380,7 @@ GridPrefs.init();
  * Singleton that keeps track of all pinned links and their positions in the
  * grid.
  */
-let PinnedLinks = {
+var PinnedLinks = {
   /**
    * The cached list of pinned links.
    */
@@ -400,13 +400,17 @@ let PinnedLinks = {
    * Pins a link at the given position.
    * @param aLink The link to pin.
    * @param aIndex The grid index to pin the cell at.
+   * @return true if link changes, false otherwise
    */
   pin: function PinnedLinks_pin(aLink, aIndex) {
     // Clear the link's old position, if any.
     this.unpin(aLink);
 
+    // change pinned link into a history link
+    let changed = this._makeHistoryLink(aLink);
     this.links[aIndex] = aLink;
     this.save();
+    return changed;
   },
 
   /**
@@ -464,17 +468,59 @@ let PinnedLinks = {
 
     // The given link is unpinned.
     return -1;
-  }
+  },
+
+  /**
+   * Transforms link into a "history" link
+   * @param aLink The link to change
+   * @return true if link changes, false otherwise
+   */
+  _makeHistoryLink: function PinnedLinks_makeHistoryLink(aLink) {
+    if (!aLink.type || aLink.type == "history") {
+      return false;
+    }
+    aLink.type = "history";
+    // always remove targetedSite
+    delete aLink.targetedSite;
+    return true;
+  },
+
+  /**
+   * Replaces existing link with another link.
+   * @param aUrl The url of existing link
+   * @param aLink The replacement link
+   */
+  replace: function PinnedLinks_replace(aUrl, aLink) {
+    let index = this._indexOfLink({url: aUrl});
+    if (index == -1) {
+      return;
+    }
+    this.links[index] = aLink;
+    this.save();
+  },
+
 };
 
 /**
  * Singleton that keeps track of all blocked links in the grid.
  */
-let BlockedLinks = {
+var BlockedLinks = {
+  /**
+   * A list of objects that are observing blocked link changes.
+   */
+  _observers: [],
+
   /**
    * The cached list of blocked links.
    */
   _links: null,
+
+  /**
+   * Registers an object that will be notified when the blocked links change.
+   */
+  addObserver: function (aObserver) {
+    this._observers.push(aObserver);
+  },
 
   /**
    * The list of blocked links.
@@ -487,10 +533,11 @@ let BlockedLinks = {
   },
 
   /**
-   * Blocks a given link.
+   * Blocks a given link. Adjusts siteMap accordingly, and notifies listeners.
    * @param aLink The link to block.
    */
   block: function BlockedLinks_block(aLink) {
+    this._callObservers("onLinkBlocked", aLink);
     this.links[toHash(aLink.url)] = 1;
     this.save();
 
@@ -499,13 +546,14 @@ let BlockedLinks = {
   },
 
   /**
-   * Unblocks a given link.
+   * Unblocks a given link. Adjusts siteMap accordingly, and notifies listeners.
    * @param aLink The link to unblock.
    */
   unblock: function BlockedLinks_unblock(aLink) {
     if (this.isBlocked(aLink)) {
       delete this.links[toHash(aLink.url)];
       this.save();
+      this._callObservers("onLinkUnblocked", aLink);
     }
   },
 
@@ -537,6 +585,18 @@ let BlockedLinks = {
    */
   resetCache: function BlockedLinks_resetCache() {
     this._links = null;
+  },
+
+  _callObservers(methodName, ...args) {
+    for (let obs of this._observers) {
+      if (typeof(obs[methodName]) == "function") {
+        try {
+          obs[methodName](...args);
+        } catch (err) {
+          Cu.reportError(err);
+        }
+      }
+    }
   }
 };
 
@@ -544,7 +604,20 @@ let BlockedLinks = {
  * Singleton that serves as the default link provider for the grid. It queries
  * the history to retrieve the most frequently visited sites.
  */
-let PlacesProvider = {
+var PlacesProvider = {
+  /**
+   * A count of how many batch updates are under way (batches may be nested, so
+   * we keep a counter instead of a simple bool).
+   **/
+  _batchProcessingDepth: 0,
+
+  /**
+   * A flag that tracks whether onFrecencyChanged was notified while a batch
+   * operation was in progress, to tell us whether to take special action after
+   * the batch operation completes.
+   **/
+  _batchCalledFrecencyChanged: false,
+
   /**
    * Set this to change the maximum number of links the provider will provide.
    */
@@ -651,7 +724,40 @@ let PlacesProvider = {
   /**
    * Called by the history service.
    */
+  onBeginUpdateBatch: function() {
+    this._batchProcessingDepth += 1;
+  },
+
+  onEndUpdateBatch: function() {
+    this._batchProcessingDepth -= 1;
+    if (this._batchProcessingDepth == 0 && this._batchCalledFrecencyChanged) {
+      this.onManyFrecenciesChanged();
+      this._batchCalledFrecencyChanged = false;
+    }
+  },
+
+  onDeleteURI: function PlacesProvider_onDeleteURI(aURI, aGUID, aReason) {
+    // let observers remove sensetive data associated with deleted visit
+    this._callObservers("onDeleteURI", {
+      url: aURI.spec,
+    });
+  },
+
+  onClearHistory: function() {
+    this._callObservers("onClearHistory")
+  },
+
+  /**
+   * Called by the history service.
+   */
   onFrecencyChanged: function PlacesProvider_onFrecencyChanged(aURI, aNewFrecency, aGUID, aHidden, aLastVisitDate) {
+    // If something is doing a batch update of history entries we don't want
+    // to do lots of work for each record. So we just track the fact we need
+    // to call onManyFrecenciesChanged() once the batch is complete.
+    if (this._batchProcessingDepth > 0) {
+      this._batchCalledFrecencyChanged = true;
+      return;
+    }
     // The implementation of the query in getLinks excludes hidden and
     // unvisited pages, so it's important to exclude them here, too.
     if (!aHidden && aLastVisitDate) {
@@ -709,7 +815,7 @@ let PlacesProvider = {
  *   lastVisitDate: 1394678824766431,
  * }
  */
-let Links = {
+var Links = {
   /**
    * The maximum number of links returned by getLinks.
    */
@@ -719,6 +825,8 @@ let Links = {
    * A mapping from each provider to an object { sortedLinks, siteMap, linkMap }.
    * sortedLinks is the cached, sorted array of links for the provider.
    * siteMap is a mapping from base domains to URL count associated with the domain.
+   *         The count does not include blocked URLs. siteMap is used to look up a
+   *         user's top sites that can be targeted with a suggested tile.
    * linkMap is a Map from link URLs to link objects.
    */
   _providers: new Map(),
@@ -736,6 +844,18 @@ let Links = {
    * List of callbacks waiting for the cache to be populated.
    */
   _populateCallbacks: [],
+
+  /**
+   * A list of objects that are observing links updates.
+   */
+  _observers: [],
+
+  /**
+   * Registers an object that will be notified when links updates.
+   */
+  addObserver: function (aObserver) {
+    this._observers.push(aObserver);
+  },
 
   /**
    * Adds a link provider.
@@ -828,6 +948,11 @@ let Links = {
     if (links.length)
       pinnedLinks = pinnedLinks.concat(links);
 
+    for (let link of pinnedLinks) {
+      if (link) {
+        link.baseDomain = NewTabUtils.extractSite(link.url);
+      }
+    }
     return pinnedLinks;
   },
 
@@ -861,11 +986,19 @@ let Links = {
   },
 
   _incrementSiteMap: function(map, link) {
+    if (NewTabUtils.blockedLinks.isBlocked(link)) {
+      // Don't count blocked URLs.
+      return;
+    }
     let site = NewTabUtils.extractSite(link.url);
     map.set(site, (map.get(site) || 0) + 1);
   },
 
   _decrementSiteMap: function(map, link) {
+    if (NewTabUtils.blockedLinks.isBlocked(link)) {
+      // Blocked URLs are not included in map.
+      return;
+    }
     let site = NewTabUtils.extractSite(link.url);
     let previousURLCount = map.get(site);
     if (previousURLCount === 1) {
@@ -873,6 +1006,37 @@ let Links = {
     } else {
       map.set(site, previousURLCount - 1);
     }
+  },
+
+  /**
+    * Update the siteMap cache based on the link given and whether we need
+    * to increment or decrement it. We do this by iterating over all stored providers
+    * to find which provider this link already exists in. For providers that
+    * have this link, we will adjust siteMap for them accordingly.
+    *
+    * @param aLink The link that will affect siteMap
+    * @param increment A boolean for whether to increment or decrement siteMap
+    */
+  _adjustSiteMapAndNotify: function(aLink, increment=true) {
+    for (let [provider, cache] of this._providers) {
+      // We only update siteMap if aLink is already stored in linkMap.
+      if (cache.linkMap.get(aLink.url)) {
+        if (increment) {
+          this._incrementSiteMap(cache.siteMap, aLink);
+          continue;
+        }
+        this._decrementSiteMap(cache.siteMap, aLink);
+      }
+    }
+    this._callObservers("onLinkChanged", aLink);
+  },
+
+  onLinkBlocked: function(aLink) {
+    this._adjustSiteMapAndNotify(aLink, false);
+  },
+
+  onLinkUnblocked: function(aLink) {
+    this._adjustSiteMapAndNotify(aLink);
   },
 
   populateProviderCache: function(provider, callback) {
@@ -1095,6 +1259,18 @@ let Links = {
       this.resetCache();
   },
 
+  _callObservers(methodName, ...args) {
+    for (let obs of this._observers) {
+      if (typeof(obs[methodName]) == "function") {
+        try {
+          obs[methodName](this, ...args);
+        } catch (err) {
+          Cu.reportError(err);
+        }
+      }
+    }
+  },
+
   /**
    * Adds a sanitization observer and turns itself into a no-op after the first
    * invokation.
@@ -1114,7 +1290,7 @@ Links.compareLinks = Links.compareLinks.bind(Links);
  * Singleton used to collect telemetry data.
  *
  */
-let Telemetry = {
+var Telemetry = {
   /**
    * Initializes object.
    */
@@ -1129,6 +1305,8 @@ let Telemetry = {
     let probes = [
       { histogram: "NEWTAB_PAGE_ENABLED",
         value: AllPages.enabled },
+      { histogram: "NEWTAB_PAGE_ENHANCED",
+        value: AllPages.enhanced },
       { histogram: "NEWTAB_PAGE_PINNED_SITES_COUNT",
         value: PinnedLinks.links.length },
       { histogram: "NEWTAB_PAGE_BLOCKED_SITES_COUNT",
@@ -1154,7 +1332,7 @@ let Telemetry = {
  * or if we should rather not do it for security reasons. URIs that inherit
  * their caller's principal will be filtered.
  */
-let LinkChecker = {
+var LinkChecker = {
   _cache: {},
 
   get flags() {
@@ -1181,7 +1359,7 @@ let LinkChecker = {
   }
 };
 
-let ExpirationFilter = {
+var ExpirationFilter = {
   init: function ExpirationFilter_init() {
     PageThumbs.addExpirationFilter(this);
   },
@@ -1220,21 +1398,24 @@ this.NewTabUtils = {
    * @return The "site" string or null
    */
   extractSite: function Links_extractSite(url) {
-    let uri;
+    let host;
     try {
-      uri = Services.io.newURI(url, null, null);
+      // Note that nsIURI.asciiHost throws NS_ERROR_FAILURE for some types of
+      // URIs, including jar and moz-icon URIs.
+      host = Services.io.newURI(url, null, null).asciiHost;
     } catch (ex) {
       return null;
     }
 
     // Strip off common subdomains of the same site (e.g., www, load balancer)
-    return uri.asciiHost.replace(/^(m|mobile|www\d*)\./, "");
+    return host.replace(/^(m|mobile|www\d*)\./, "");
   },
 
   init: function NewTabUtils_init() {
     if (this.initWithoutProviders()) {
       PlacesProvider.init();
       Links.addProvider(PlacesProvider);
+      BlockedLinks.addObserver(Links);
     }
   },
 

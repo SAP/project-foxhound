@@ -34,12 +34,12 @@ DirectProxyHandler::getOwnPropertyDescriptor(JSContext* cx, HandleObject proxy, 
 
 bool
 DirectProxyHandler::defineProperty(JSContext* cx, HandleObject proxy, HandleId id,
-                                   MutableHandle<PropertyDescriptor> desc) const
+                                   Handle<PropertyDescriptor> desc,
+                                   ObjectOpResult& result) const
 {
     assertEnteredPolicy(cx, proxy, id, SET);
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    bool ignored;
-    return StandardDefineProperty(cx, target, id, desc, &ignored);
+    return DefineProperty(cx, target, id, desc, result);
 }
 
 bool
@@ -52,11 +52,12 @@ DirectProxyHandler::ownPropertyKeys(JSContext* cx, HandleObject proxy,
 }
 
 bool
-DirectProxyHandler::delete_(JSContext* cx, HandleObject proxy, HandleId id, bool* bp) const
+DirectProxyHandler::delete_(JSContext* cx, HandleObject proxy, HandleId id,
+                            ObjectOpResult& result) const
 {
     assertEnteredPolicy(cx, proxy, id, SET);
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return DeleteProperty(cx, target, id, bp);
+    return DeleteProperty(cx, target, id, result);
 }
 
 bool
@@ -80,13 +81,23 @@ bool
 DirectProxyHandler::construct(JSContext* cx, HandleObject proxy, const CallArgs& args) const
 {
     assertEnteredPolicy(cx, proxy, JSID_VOID, CALL);
+
     RootedValue target(cx, proxy->as<ProxyObject>().private_());
-    return InvokeConstructor(cx, target, args.length(), args.array(), args.rval());
+    if (!IsConstructor(target)) {
+        ReportValueError(cx, JSMSG_NOT_CONSTRUCTOR, JSDVG_IGNORE_STACK, target, nullptr);
+        return false;
+    }
+
+    ConstructArgs cargs(cx);
+    if (!FillArgumentsFromArraylike(cx, cargs, args))
+        return false;
+
+    return Construct(cx, target, cargs, args.newTarget(), args.rval());
 }
 
 bool
 DirectProxyHandler::nativeCall(JSContext* cx, IsAcceptableThis test, NativeImpl impl,
-                               CallArgs args) const
+                               const CallArgs& args) const
 {
     args.setThis(ObjectValue(*args.thisv().toObject().as<ProxyObject>().target()));
     if (!test(args.thisv())) {
@@ -102,26 +113,23 @@ DirectProxyHandler::hasInstance(JSContext* cx, HandleObject proxy, MutableHandle
                                 bool* bp) const
 {
     assertEnteredPolicy(cx, proxy, JSID_VOID, GET);
-    bool b;
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    if (!HasInstance(cx, target, v, &b))
-        return false;
-    *bp = !!b;
-    return true;
+    return HasInstance(cx, target, v, bp);
 }
 
 bool
-DirectProxyHandler::getPrototypeOf(JSContext* cx, HandleObject proxy, MutableHandleObject protop) const
+DirectProxyHandler::getPrototype(JSContext* cx, HandleObject proxy, MutableHandleObject protop) const
 {
     RootedObject target(cx, proxy->as<ProxyObject>().target());
     return GetPrototype(cx, target, protop);
 }
 
 bool
-DirectProxyHandler::setPrototypeOf(JSContext* cx, HandleObject proxy, HandleObject proto, bool* bp) const
+DirectProxyHandler::setPrototype(JSContext* cx, HandleObject proxy, HandleObject proto,
+                                 ObjectOpResult& result) const
 {
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return SetPrototype(cx, target, proto, bp);
+    return SetPrototype(cx, target, proto, result);
 }
 
 bool
@@ -132,10 +140,10 @@ DirectProxyHandler::setImmutablePrototype(JSContext* cx, HandleObject proxy, boo
 }
 
 bool
-DirectProxyHandler::preventExtensions(JSContext* cx, HandleObject proxy, bool* succeeded) const
+DirectProxyHandler::preventExtensions(JSContext* cx, HandleObject proxy, ObjectOpResult& result) const
 {
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return PreventExtensions(cx, target, succeeded);
+    return PreventExtensions(cx, target, result);
 }
 
 bool
@@ -196,12 +204,8 @@ DirectProxyHandler::has(JSContext* cx, HandleObject proxy, HandleId id, bool* bp
 {
     assertEnteredPolicy(cx, proxy, id, GET);
     MOZ_ASSERT(!hasPrototype()); // Should never be called if there's a prototype.
-    bool found;
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    if (!JS_HasPropertyById(cx, target, id, &found))
-        return false;
-    *bp = !!found;
-    return true;
+    return HasProperty(cx, target, id, bp);
 }
 
 bool
@@ -209,11 +213,11 @@ DirectProxyHandler::hasOwn(JSContext* cx, HandleObject proxy, HandleId id, bool*
 {
     assertEnteredPolicy(cx, proxy, id, GET);
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return js::HasOwnProperty(cx, target, id, bp);
+    return HasOwnProperty(cx, target, id, bp);
 }
 
 bool
-DirectProxyHandler::get(JSContext* cx, HandleObject proxy, HandleObject receiver,
+DirectProxyHandler::get(JSContext* cx, HandleObject proxy, HandleValue receiver,
                         HandleId id, MutableHandleValue vp) const
 {
     assertEnteredPolicy(cx, proxy, id, GET);
@@ -222,12 +226,12 @@ DirectProxyHandler::get(JSContext* cx, HandleObject proxy, HandleObject receiver
 }
 
 bool
-DirectProxyHandler::set(JSContext* cx, HandleObject proxy, HandleObject receiver,
-                        HandleId id, bool strict, MutableHandleValue vp) const
+DirectProxyHandler::set(JSContext* cx, HandleObject proxy, HandleId id, HandleValue v,
+                        HandleValue receiver, ObjectOpResult& result) const
 {
     assertEnteredPolicy(cx, proxy, id, SET);
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return SetProperty(cx, target, receiver, id, vp, strict);
+    return SetProperty(cx, target, id, v, receiver, result);
 }
 
 bool

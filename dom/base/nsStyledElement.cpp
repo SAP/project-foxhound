@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set tw=80 expandtab softtabstop=2 ts=2 sw=2: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -138,7 +138,7 @@ nsStyledElementNotElementCSSInlineStyle::ReparseStyleAttribute(bool aForceInData
     ParseStyleAttribute(stringValue, attrValue, aForceInDataDoc);
     // Don't bother going through SetInlineStyleRule, we don't want to fire off
     // mutation events or document notifications anyway
-    nsresult rv = mAttrsAndChildren.SetAndTakeAttr(nsGkAtoms::style, attrValue);
+    nsresult rv = mAttrsAndChildren.SetAndSwapAttr(nsGkAtoms::style, attrValue);
     NS_ENSURE_SUCCESS(rv, rv);
   }
   
@@ -151,8 +151,10 @@ nsStyledElementNotElementCSSInlineStyle::ParseStyleAttribute(const nsAString& aV
                                                              bool aForceInDataDoc)
 {
   nsIDocument* doc = OwnerDoc();
+  bool isNativeAnon = IsInNativeAnonymousSubtree();
 
-  if (!nsStyleUtil::CSPAllowsInlineStyle(nullptr, NodePrincipal(),
+  if (!isNativeAnon &&
+      !nsStyleUtil::CSPAllowsInlineStyle(nullptr, NodePrincipal(),
                                          doc->GetDocumentURI(), 0, aValue,
                                          nullptr))
     return;
@@ -162,8 +164,7 @@ nsStyledElementNotElementCSSInlineStyle::ParseStyleAttribute(const nsAString& aV
       doc->IsStaticDocument()) {
     bool isCSS = true; // assume CSS until proven otherwise
 
-    if (!IsInNativeAnonymousSubtree()) {  // native anonymous content
-                                          // always assumes CSS
+    if (!isNativeAnon) {  // native anonymous content always assumes CSS
       nsAutoString styleType;
       doc->GetHeaderData(nsGkAtoms::headerContentStyleType, styleType);
       if (!styleType.IsEmpty()) {

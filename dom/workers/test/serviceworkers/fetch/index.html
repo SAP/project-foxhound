@@ -24,7 +24,7 @@
       document.currentScript == document.getElementById('intercepted-script');
   }
 
-  function fetch(name, onload, onerror, headers) {
+  function fetchXHR(name, onload, onerror, headers) {
     gExpected++;
 
     onload = onload || function() {
@@ -118,6 +118,33 @@
   });
 
   gExpected++;
+  var xmlDoc = document.implementation.createDocument(null, null, null);
+  xmlDoc.load('load_cross_origin_xml_document_synthetic.xml');
+  xmlDoc.onload = function(evt) {
+    var content = new XMLSerializer().serializeToString(evt.target);
+    my_ok(!content.includes('parsererror'), "Load synthetic cross origin XML Document should be allowed");
+    finish();
+  };
+
+  gExpected++;
+  var xmlDoc = document.implementation.createDocument(null, null, null);
+  xmlDoc.load('load_cross_origin_xml_document_cors.xml');
+  xmlDoc.onload = function(evt) {
+    var content = new XMLSerializer().serializeToString(evt.target);
+    my_ok(!content.includes('parsererror'), "Load CORS cross origin XML Document should be allowed");
+    finish();
+  };
+
+  gExpected++;
+  var xmlDoc = document.implementation.createDocument(null, null, null);
+  xmlDoc.load('load_cross_origin_xml_document_opaque.xml');
+  xmlDoc.onload = function(evt) {
+    var content = new XMLSerializer().serializeToString(evt.target);
+    my_ok(content.includes('parsererror'), "Load opaque cross origin XML Document should not be allowed");
+    finish();
+  };
+
+  gExpected++;
   var worker = new Worker('nonexistent_worker_script.js');
   worker.onmessage = function(e) {
     my_ok(e.data == "worker-intercept-success", "worker load intercepted");
@@ -135,7 +162,7 @@
     } else if (e.data == "expect") {
       gExpected++;
     } else if (e.data.type == "ok") {
-      my_ok(e.data.value, e.data.msg);
+      my_ok(e.data.value, "Fetch test on worker: " + e.data.msg);
     }
   };
   worker.onerror = function() {

@@ -20,8 +20,6 @@ callback AnyCallback = any (any value);
  Exposed=(Window,Worker,System)]
 // Need to escape "Promise" so it's treated as an identifier.
 interface _Promise {
-  // TODO bug 875289 - static Promise fulfill(any value);
-
   // Disable the static methods when the interface object is supposed to be
   // disabled, just in case some code decides to walk over to .constructor from
   // the proto of a promise object or someone screws up and manages to create a
@@ -34,7 +32,7 @@ interface _Promise {
 
   // The [TreatNonCallableAsNull] annotation is required since then() should do
   // nothing instead of throwing errors when non-callable arguments are passed.
-  [NewObject]
+  [NewObject, MethodIdentityTestable]
   Promise<any> then([TreatNonCallableAsNull] optional AnyCallback? fulfillCallback = null,
                     [TreatNonCallableAsNull] optional AnyCallback? rejectCallback = null);
 

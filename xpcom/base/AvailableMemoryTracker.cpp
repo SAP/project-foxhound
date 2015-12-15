@@ -469,7 +469,7 @@ nsMemoryPressureWatcher::Observe(nsISupports* aSubject, const char* aTopic,
   MOZ_ASSERT(!strcmp(aTopic, "memory-pressure"), "Unknown topic");
 
   if (sFreeDirtyPages) {
-    nsRefPtr<nsIRunnable> runnable = new nsJemallocFreeDirtyPagesRunnable();
+    nsCOMPtr<nsIRunnable> runnable = new nsJemallocFreeDirtyPagesRunnable();
 
     NS_DispatchToMainThread(runnable);
   }
@@ -477,7 +477,7 @@ nsMemoryPressureWatcher::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-} // anonymous namespace
+} // namespace
 
 namespace mozilla {
 namespace AvailableMemoryTracker {

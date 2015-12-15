@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +12,6 @@
 #include "mozilla/hal_sandbox/PHalParent.h"
 #include "nsIAppsService.h"
 #include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsPrintfCString.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
@@ -29,8 +27,8 @@ using namespace mozilla::services;
 namespace mozilla {
 namespace dom {
 class PContentParent;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 class nsIPrincipal;
 #endif
@@ -233,21 +231,10 @@ GetAppPrincipal(uint32_t aAppId)
   nsresult rv = appsService->GetAppByLocalId(aAppId, getter_AddRefs(app));
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  nsString origin;
-  rv = app->GetOrigin(origin);
-  NS_ENSURE_SUCCESS(rv, nullptr);
+  nsCOMPtr<nsIPrincipal> principal;
+  app->GetPrincipal(getter_AddRefs(principal));
 
-  nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), origin);
-
-  nsCOMPtr<nsIScriptSecurityManager> secMan =
-    do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID);
-
-  nsCOMPtr<nsIPrincipal> appPrincipal;
-  rv = secMan->GetAppCodebasePrincipal(uri, aAppId, false,
-                                       getter_AddRefs(appPrincipal));
-  NS_ENSURE_SUCCESS(rv, nullptr);
-  return appPrincipal.forget();
+  return principal.forget();
 }
 
 uint32_t

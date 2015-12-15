@@ -14,7 +14,10 @@ using namespace js::jit;
 static inline uint32_t
 DefaultStackSlot(uint32_t vreg)
 {
-    return vreg * sizeof(Value);
+    // On x86/x64, we have to keep the stack aligned on 16 bytes for spilling
+    // SIMD registers.  To avoid complexity in this stupid allocator, we just
+    // allocate 16 bytes stack slot for all vreg.
+    return vreg * 2 * sizeof(Value);
 }
 
 LAllocation*
@@ -73,12 +76,12 @@ StupidAllocator::init()
     // Assign physical registers to the tracked allocation.
     {
         registerCount = 0;
-        RegisterSet remainingRegisters(allRegisters_);
-        while (!remainingRegisters.empty(/* float = */ false))
-            registers[registerCount++].reg = AnyRegister(remainingRegisters.takeGeneral());
+        LiveRegisterSet remainingRegisters(allRegisters_.asLiveSet());
+        while (!remainingRegisters.emptyGeneral())
+            registers[registerCount++].reg = AnyRegister(remainingRegisters.takeAnyGeneral());
 
-        while (!remainingRegisters.empty(/* float = */ true))
-            registers[registerCount++].reg = AnyRegister(remainingRegisters.takeFloat());
+        while (!remainingRegisters.emptyFloat())
+            registers[registerCount++].reg = AnyRegister(remainingRegisters.takeAnyFloat());
 
         MOZ_ASSERT(registerCount <= MAX_REGISTERS);
     }
@@ -183,11 +186,11 @@ StupidAllocator::syncRegister(LInstruction* ins, RegisterIndex index)
 {
     if (registers[index].dirty) {
         LMoveGroup* input = getInputMoveGroup(ins);
-        LAllocation* source = new(alloc()) LAllocation(registers[index].reg);
+        LAllocation source(registers[index].reg);
 
         uint32_t existing = registers[index].vreg;
         LAllocation* dest = stackLocation(existing);
-        input->addAfter(source, dest, registers[index].type);
+        input->addAfter(source, *dest, registers[index].type);
 
         registers[index].dirty = false;
     }
@@ -216,8 +219,8 @@ StupidAllocator::loadRegister(LInstruction* ins, uint32_t vreg, RegisterIndex in
     // Load a vreg from its stack location to a register.
     LMoveGroup* input = getInputMoveGroup(ins);
     LAllocation* source = stackLocation(vreg);
-    LAllocation* dest = new(alloc()) LAllocation(registers[index].reg);
-    input->addAfter(source, dest, type);
+    LAllocation dest(registers[index].reg);
+    input->addAfter(*source, dest, type);
     registers[index].set(vreg, ins);
     registers[index].type = type;
 }
@@ -318,7 +321,7 @@ StupidAllocator::syncForBlockEnd(LBlock* block, LInstruction* ins)
                 }
             }
 
-            group->add(source, dest, phi->getDef(0)->type());
+            group->add(*source, *dest, phi->getDef(0)->type());
         }
     }
 }

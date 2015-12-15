@@ -4,7 +4,7 @@
 
 const Cu = Components.utils;
 const {Services} = Cu.import("resource://gre/modules/Services.jsm");
-const {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools;
+const {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 const {AppManager} = require("devtools/webide/app-manager");
 const {Connection} = require("devtools/client/connection-manager");
 const {RuntimeTypes} = require("devtools/webide/runtimes");
@@ -35,7 +35,7 @@ function CloseUI() {
 }
 
 function OnAppManagerUpdate(event, what) {
-  if (what == "connection" || what == "list-tabs-response") {
+  if (what == "connection" || what == "runtime-global-actors") {
     BuildUI();
     CheckLockState();
   }
@@ -55,7 +55,7 @@ function generateFields(json) {
   };
 }
 
-let getDescriptionPromise; // Used by tests
+var getDescriptionPromise; // Used by tests
 function BuildUI() {
   let table = document.querySelector("table");
   table.innerHTML = "";
@@ -125,7 +125,7 @@ function CheckLockState() {
       }, e => console.error(e));
     } catch(e) {
       // Exception. pref actor is only accessible if forbird-certified-apps is false
-      devtoolsCheckResult.textContent = sYes;
+      devtoolsCheckResult.textContent = sNo;
       flipCertPerfAction.removeAttribute("hidden");
     }
 
@@ -135,10 +135,14 @@ function CheckLockState() {
 
 function EnableCertApps() {
   let device = AppManager.selectedRuntime.device;
+  // TODO: Remove `network.disable.ipc.security` once bug 1125916 is fixed.
   device.shell(
     "stop b2g && " +
     "cd /data/b2g/mozilla/*.default/ && " +
     "echo 'user_pref(\"devtools.debugger.forbid-certified-apps\", false);' >> prefs.js && " +
+    "echo 'user_pref(\"dom.apps.developer_mode\", true);' >> prefs.js && " +
+    "echo 'user_pref(\"network.disable.ipc.security\", true);' >> prefs.js && " +
+    "echo 'user_pref(\"dom.webcomponents.enabled\", true);' >> prefs.js && " +
     "start b2g"
   );
 }

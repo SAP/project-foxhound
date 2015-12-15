@@ -6,7 +6,7 @@
 // https://wiki.mozilla.org/Firefox3.1/PrivateBrowsing/TestPlan#History
 // http://developer.mozilla.org/en/Using_the_Places_history_service
 
-let visitedURIs = [
+var visitedURIs = [
   "http://www.test-link.com/",
   "http://www.test-typed.com/",
   "http://www.test-bookmark.com/",
@@ -67,18 +67,16 @@ add_task(function () {
     let count = getPlacesItemsCount();
 
     // Create Bookmark
-    let bookmarkTitle = "title " + windowsToClose.length;
-    let bookmarkKeyword = "keyword " + windowsToClose.length;
-    let bookmarkUri = NetUtil.newURI("http://test-a-" + windowsToClose.length + ".com/");
+    let title = "title " + windowsToClose.length;
+    let keyword = "keyword " + windowsToClose.length;
+    let url = "http://test-a-" + windowsToClose.length + ".com/";
 
-    let id = PlacesUtils.bookmarks.insertBookmark(PlacesUtils.bookmarksMenuFolderId,
-                                                  bookmarkUri,
-                                                  PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                                  bookmarkTitle);
-    PlacesUtils.bookmarks.setKeywordForBookmark(id, bookmarkKeyword);
+    yield PlacesUtils.bookmarks.insert({ url, title,
+                                         parentGuid: PlacesUtils.bookmarks.menuGuid });
+    yield PlacesUtils.keywords.insert({ url, keyword });
     count++;
 
-    ok(PlacesUtils.bookmarks.isBookmarked(bookmarkUri),
+    ok((yield PlacesUtils.bookmarks.fetch({ url })),
        "Bookmark should be bookmarked, data should be retrievable");
     is(getPlacesItemsCount(), count,
        "Check the new bookmark items count");

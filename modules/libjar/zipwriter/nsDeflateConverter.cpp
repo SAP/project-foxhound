@@ -5,7 +5,7 @@
 
 #include "StreamFunctions.h"
 #include "nsDeflateConverter.h"
-#include "nsIStringStream.h"
+#include "nsStringStream.h"
 #include "nsIInputStreamPump.h"
 #include "nsComponentManagerUtils.h"
 #include "nsMemory.h"
@@ -139,7 +139,6 @@ NS_IMETHODIMP nsDeflateConverter::OnDataAvailable(nsIRequest *aRequest,
     return NS_OK;
 }
 
-/* void onStartRequest (in nsIRequest aRequest, in nsISupports aContext); */
 NS_IMETHODIMP nsDeflateConverter::OnStartRequest(nsIRequest *aRequest,
                                                  nsISupports *aContext)
 {
@@ -180,12 +179,12 @@ nsresult nsDeflateConverter::PushAvailableData(nsIRequest *aRequest,
     if (bytesToWrite == 0)
         return NS_OK;
 
-    nsresult rv;
-    nsCOMPtr<nsIStringInputStream> stream =
-             do_CreateInstance("@mozilla.org/io/string-input-stream;1", &rv);
+    MOZ_ASSERT(bytesToWrite <= INT32_MAX);
+    nsCOMPtr<nsIInputStream> stream;
+    nsresult rv = NS_NewByteInputStream(getter_AddRefs(stream),
+					(char*)mWriteBuffer, bytesToWrite);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    stream->ShareData((char*)mWriteBuffer, bytesToWrite);
     rv = mListener->OnDataAvailable(aRequest, mContext, stream, mOffset,
                                     bytesToWrite);
 

@@ -146,13 +146,16 @@ def precompile_cache(formatter, source_path, gre_path, app_path):
     os.remove(cache)
 
     try:
+        extra_env = {'MOZ_STARTUP_CACHE': cache}
+        if buildconfig.substs.get('MOZ_TSAN'):
+            extra_env['TSAN_OPTIONS'] = 'report_bugs=0'
         if launcher.launch(['xpcshell', '-g', gre_path, '-a', app_path,
                             '-f', os.path.join(os.path.dirname(__file__),
                             'precompile_cache.js'),
                             '-e', 'precompile_startupcache("resource://%s/");'
                                   % resource],
                            extra_linker_path=gre_path,
-                           extra_env={'MOZ_STARTUP_CACHE': cache}):
+                           extra_env=extra_env):
             errors.fatal('Error while running startup cache precompilation')
             return
         from mozpack.mozjar import JarReader
@@ -179,6 +182,8 @@ class RemovedFiles(GeneratedFile):
 
     def handle_line(self, str):
         f = str.strip()
+        if not f:
+            return
         if self.copier.contains(f):
             errors.error('Removal of packaged file(s): %s' % f)
         self.content += f + '\n'
@@ -344,8 +349,7 @@ def main():
         sink.close(args.manifest is not None)
 
         if args.removals:
-            lines = [l.lstrip() for l in open(args.removals).readlines()]
-            removals_in = StringIO(''.join(lines))
+            removals_in = StringIO(open(args.removals).read())
             removals_in.name = args.removals
             removals = RemovedFiles(copier)
             preprocess(removals_in, removals, defines)

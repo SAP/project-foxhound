@@ -9,6 +9,7 @@
 #include "jsopcode.h"
 #include "jit/JitSpewer.h"
 #include "jsopcodeinlines.h"
+#include "jsscriptinlines.h"
 
 using namespace js;
 using namespace js::jit;
@@ -44,6 +45,12 @@ BytecodeAnalysis::init(TempAllocator& alloc, GSNCache& gsn)
 {
     if (!infos_.growByUninitialized(script_->length()))
         return false;
+
+    // Initialize the scope chain slot if either the function needs a CallObject
+    // or the script uses the scope chain. The latter case is handled below.
+    usesScopeChain_ = (script_->functionDelazifying() &&
+                       script_->functionDelazifying()->needsCallObject());
+    MOZ_ASSERT_IF(script_->hasAnyAliasedBindings(), usesScopeChain_);
 
     jsbytecode* end = script_->codeEnd();
 
@@ -125,7 +132,7 @@ BytecodeAnalysis::init(TempAllocator& alloc, GSNCache& gsn)
             jssrcnote* sn = GetSrcNote(gsn, script_, pc);
             MOZ_ASSERT(SN_TYPE(sn) == SRC_TRY);
 
-            jsbytecode* endOfTry = pc + js_GetSrcNoteOffset(sn, 0);
+            jsbytecode* endOfTry = pc + GetSrcNoteOffset(sn, 0);
             MOZ_ASSERT(JSOp(*endOfTry) == JSOP_GOTO);
 
             jsbytecode* afterTry = endOfTry + GET_JUMP_OFFSET(endOfTry);
@@ -151,6 +158,7 @@ BytecodeAnalysis::init(TempAllocator& alloc, GSNCache& gsn)
           case JSOP_GETNAME:
           case JSOP_BINDNAME:
           case JSOP_SETNAME:
+          case JSOP_STRICTSETNAME:
           case JSOP_DELNAME:
           case JSOP_GETALIASEDVAR:
           case JSOP_SETALIASEDVAR:
@@ -161,6 +169,13 @@ BytecodeAnalysis::init(TempAllocator& alloc, GSNCache& gsn)
           case JSOP_DEFCONST:
           case JSOP_SETCONST:
             usesScopeChain_ = true;
+            break;
+
+          case JSOP_GETGNAME:
+          case JSOP_SETGNAME:
+          case JSOP_STRICTSETGNAME:
+            if (script_->hasNonSyntacticScope())
+                usesScopeChain_ = true;
             break;
 
           case JSOP_FINALLY:

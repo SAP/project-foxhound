@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,9 +48,13 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMEventTargetHelper)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(DOMEventTargetHelper)
-  if (tmp->IsBlack()) {
+  if (tmp->IsBlack() || tmp->IsCertainlyAliveForCC()) {
     if (tmp->mListenerManager) {
       tmp->mListenerManager->MarkForCC();
+    }
+    if (!tmp->IsBlack() && tmp->PreservingWrapper()) {
+      // This marks the wrapper black.
+      tmp->GetWrapper();
     }
     return true;
   }
@@ -257,8 +262,7 @@ DOMEventTargetHelper::DispatchEvent(nsIDOMEvent* aEvent, bool* aRetVal)
 nsresult
 DOMEventTargetHelper::DispatchTrustedEvent(const nsAString& aEventName)
 {
-  nsCOMPtr<nsIDOMEvent> event;
-  NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
+  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
   nsresult rv = event->InitEvent(aEventName, false, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -282,7 +286,7 @@ DOMEventTargetHelper::SetEventHandler(nsIAtom* aType,
   nsRefPtr<EventHandlerNonNull> handler;
   JS::Rooted<JSObject*> callable(aCx);
   if (aValue.isObject() && JS::IsCallable(callable = &aValue.toObject())) {
-    handler = new EventHandlerNonNull(callable, dom::GetIncumbentGlobal());
+    handler = new EventHandlerNonNull(aCx, callable, dom::GetIncumbentGlobal());
   }
   SetEventHandler(aType, EmptyString(), handler);
   return NS_OK;

@@ -6,7 +6,7 @@
 
 DIRS += ['profile/extensions']
 
-if CONFIG['OS_ARCH'] == 'WINNT' and (CONFIG['MOZ_METRO'] or CONFIG['MOZ_ASAN']):
+if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['MOZ_ASAN']:
     GeckoProgram(CONFIG['MOZ_APP_NAME'])
 else:
     GeckoProgram(CONFIG['MOZ_APP_NAME'], msvcrt='static')
@@ -26,12 +26,12 @@ SOURCES += [
 
 FINAL_TARGET_FILES += ['blocklist.xml']
 FINAL_TARGET_FILES.defaults.profile += ['profile/prefs.js']
+FINAL_TARGET_FILES.defaults += ['permissions']
 
 DEFINES['APP_VERSION'] = CONFIG['MOZ_APP_VERSION']
 
-for var in ('MOZILLA_OFFICIAL', 'LIBXUL_SDK'):
-    if CONFIG[var]:
-        DEFINES[var] = True
+if CONFIG['LIBXUL_SDK']:
+    DEFINES['LIBXUL_SDK'] = True
 
 DEFINES['_TAINT_NO_TRACK_'] = True
 GENERATED_INCLUDES += [
@@ -44,10 +44,9 @@ LOCAL_INCLUDES += [
     '/xpcom/build',
 ]
 
-if not CONFIG['MOZ_METRO']:
-  DELAYLOAD_DLLS += [
-      'mozglue.dll',
-  ]
+DELAYLOAD_DLLS += [
+    'mozglue.dll',
+]
 
 USE_LIBS += [
     'mozglue',
@@ -61,6 +60,9 @@ if CONFIG['_MSC_VER']:
 if CONFIG['OS_ARCH'] == 'WINNT':
     RCINCLUDE = 'splash.rc'
     DEFINES['MOZ_PHOENIX'] = True
+
+for cdm in CONFIG['MOZ_EME_MODULES']:
+    DEFINES['MOZ_%s_EME' % cdm.upper()] = True
 
 # Control the default heap size.
 # This is the heap returned by GetProcessHeap().
@@ -81,6 +83,5 @@ if CONFIG['MOZ_LINKER']:
 if CONFIG['HAVE_CLOCK_MONOTONIC']:
     OS_LIBS += CONFIG['REALTIME_LIBS']
 
-JAR_MANIFESTS += ['jar.mn']
-
-FAIL_ON_WARNINGS = True
+if CONFIG['GNU_CXX']:
+    CXXFLAGS += ['-Wshadow']

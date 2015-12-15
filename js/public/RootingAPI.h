@@ -11,6 +11,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
+#include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
 
 #include "jspubtd.h"
@@ -76,7 +77,7 @@
  * - MutableHandle<T> is a non-const reference to Rooted<T>. It is used in the
  *   same way as Handle<T> and includes a |set(const T& v)| method to allow
  *   updating the value of the referenced Rooted<T>. A MutableHandle<T> can be
- *   created from a Rooted<T> by using |Rooted<T>::operator&()|.
+ *   created with an implicit cast from a Rooted<T>*.
  *
  * In some cases the small performance overhead of exact rooting (measured to
  * be a few nanoseconds on desktop) is too much. In these cases, try the
@@ -104,7 +105,9 @@
 namespace js {
 
 template <typename T>
-struct GCMethods {};
+struct GCMethods {
+    static T initial() { return T(); }
+};
 
 template <typename T>
 class RootedBase {};
@@ -121,23 +124,7 @@ class HeapBase {};
 template <typename T>
 class PersistentRootedBase {};
 
-/*
- * js::NullPtr acts like a nullptr pointer in contexts that require a Handle.
- *
- * Handle provides an implicit constructor for js::NullPtr so that, given:
- *   foo(Handle<JSObject*> h);
- * callers can simply write:
- *   foo(js::NullPtr());
- * which avoids creating a Rooted<JSObject*> just to pass nullptr.
- *
- * This is the SpiderMonkey internal variant. js::NullPtr should be used in
- * preference to JS::NullPtr to avoid the GOT access required for JS_PUBLIC_API
- * symbols.
- */
-struct NullPtr
-{
-    static void * const constNullValue;
-};
+static void* const ConstNullValue = nullptr;
 
 namespace gc {
 struct Cell;
@@ -190,22 +177,7 @@ template <typename T> class PersistentRooted;
 /* This is exposing internal state of the GC for inlining purposes. */
 JS_FRIEND_API(bool) isGCEnabled();
 
-/*
- * JS::NullPtr acts like a nullptr pointer in contexts that require a Handle.
- *
- * Handle provides an implicit constructor for JS::NullPtr so that, given:
- *   foo(Handle<JSObject*> h);
- * callers can simply write:
- *   foo(JS::NullPtr());
- * which avoids creating a Rooted<JSObject*> just to pass nullptr.
- */
-struct JS_PUBLIC_API(NullPtr)
-{
-    static void * const constNullValue;
-};
-
-JS_FRIEND_API(void) HeapCellPostBarrier(js::gc::Cell** cellp);
-JS_FRIEND_API(void) HeapCellRelocate(js::gc::Cell** cellp);
+JS_FRIEND_API(void) HeapObjectPostBarrier(JSObject** objp, JSObject* prev, JSObject* next);
 
 #ifdef JS_DEBUG
 /*
@@ -214,9 +186,13 @@ JS_FRIEND_API(void) HeapCellRelocate(js::gc::Cell** cellp);
  */
 extern JS_FRIEND_API(void)
 AssertGCThingMustBeTenured(JSObject* obj);
+extern JS_FRIEND_API(void)
+AssertGCThingIsNotAnObjectSubclass(js::gc::Cell* cell);
 #else
 inline void
 AssertGCThingMustBeTenured(JSObject* obj) {}
+inline void
+AssertGCThingIsNotAnObjectSubclass(js::gc::Cell* cell) {}
 #endif
 
 /*
@@ -258,8 +234,7 @@ class Heap : public js::HeapBase<T>
     explicit Heap(const Heap<T>& p) { init(p.ptr); }
 
     ~Heap() {
-        if (js::GCMethods<T>::needsPostBarrier(ptr))
-            relocate();
+        post(ptr, js::GCMethods<T>::initial());
     }
 
     DECLARE_POINTER_CONSTREF_OPS(T);
@@ -282,32 +257,18 @@ class Heap : public js::HeapBase<T>
 
   private:
     void init(T newPtr) {
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(newPtr));
         ptr = newPtr;
-        if (js::GCMethods<T>::needsPostBarrier(ptr))
-            post();
+        post(js::GCMethods<T>::initial(), ptr);
     }
 
     void set(T newPtr) {
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(newPtr));
-        if (js::GCMethods<T>::needsPostBarrier(newPtr)) {
-            ptr = newPtr;
-            post();
-        } else if (js::GCMethods<T>::needsPostBarrier(ptr)) {
-            relocate();  /* Called before overwriting ptr. */
-            ptr = newPtr;
-        } else {
-            ptr = newPtr;
-        }
+        T tmp = ptr;
+        ptr = newPtr;
+        post(tmp, ptr);
     }
 
-    void post() {
-        MOZ_ASSERT(js::GCMethods<T>::needsPostBarrier(ptr));
-        js::GCMethods<T>::postBarrier(&ptr);
-    }
-
-    void relocate() {
-        js::GCMethods<T>::relocate(&ptr);
+    void post(const T& prev, const T& next) {
+        js::GCMethods<T>::postBarrier(&ptr, prev, next);
     }
 
     enum {
@@ -362,7 +323,6 @@ class TenuredHeap : public js::HeapBase<T>
 
     void setPtr(T newPtr) {
         MOZ_ASSERT((reinterpret_cast<uintptr_t>(newPtr) & flagsMask) == 0);
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(newPtr));
         if (newPtr)
             AssertGCThingMustBeTenured(newPtr);
         bits = (bits & flagsMask) | reinterpret_cast<uintptr_t>(newPtr);
@@ -424,26 +384,18 @@ class MOZ_NONHEAP_CLASS Handle : public js::HandleBase<T>
   public:
     /* Creates a handle from a handle of a type convertible to T. */
     template <typename S>
-    Handle(Handle<S> handle,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
+    MOZ_IMPLICIT Handle(Handle<S> handle,
+                        typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
     {
         static_assert(sizeof(Handle<T>) == sizeof(T*),
                       "Handle must be binary compatible with T*.");
         ptr = reinterpret_cast<const T*>(handle.address());
     }
 
-    /* Create a handle for a nullptr pointer. */
-    MOZ_IMPLICIT Handle(js::NullPtr) {
+    MOZ_IMPLICIT Handle(decltype(nullptr)) {
         static_assert(mozilla::IsPointer<T>::value,
-                      "js::NullPtr overload not valid for non-pointer types");
-        ptr = reinterpret_cast<const T*>(&js::NullPtr::constNullValue);
-    }
-
-    /* Create a handle for a nullptr pointer. */
-    MOZ_IMPLICIT Handle(JS::NullPtr) {
-        static_assert(mozilla::IsPointer<T>::value,
-                      "JS::NullPtr overload not valid for non-pointer types");
-        ptr = reinterpret_cast<const T*>(&JS::NullPtr::constNullValue);
+                      "nullptr_t overload not valid for non-pointer types");
+        ptr = reinterpret_cast<const T*>(&js::ConstNullValue);
     }
 
     MOZ_IMPLICIT Handle(MutableHandle<T> handle) {
@@ -476,19 +428,19 @@ class MOZ_NONHEAP_CLASS Handle : public js::HandleBase<T>
      */
     template <typename S>
     inline
-    Handle(const Rooted<S>& root,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
+    MOZ_IMPLICIT Handle(const Rooted<S>& root,
+                        typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
 
     template <typename S>
     inline
-    Handle(const PersistentRooted<S>& root,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
+    MOZ_IMPLICIT Handle(const PersistentRooted<S>& root,
+                        typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
 
     /* Construct a read only handle from a mutable handle. */
     template <typename S>
     inline
-    Handle(MutableHandle<S>& root,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
+    MOZ_IMPLICIT Handle(MutableHandle<S>& root,
+                        typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
 
     DECLARE_POINTER_COMPARISON_OPS(T);
     DECLARE_POINTER_CONSTREF_OPS(T);
@@ -526,7 +478,6 @@ class MOZ_STACK_CLASS MutableHandle : public js::MutableHandleBase<T>
 
   public:
     void set(T v) {
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(v));
         *ptr = v;
     }
 
@@ -559,69 +510,6 @@ class MOZ_STACK_CLASS MutableHandle : public js::MutableHandleBase<T>
 namespace js {
 
 /*
- * InternalHandle is a handle to an internal pointer into a gcthing. Use
- * InternalHandle when you have a pointer to a direct field of a gcthing, or
- * when you need a parameter type for something that *may* be a pointer to a
- * direct field of a gcthing.
- */
-template <typename T>
-class InternalHandle {};
-
-template <typename T>
-class InternalHandle<T*>
-{
-    void * const* holder;
-    size_t offset;
-
-  public:
-    /*
-     * Create an InternalHandle using a Handle to the gcthing containing the
-     * field in question, and a pointer to the field.
-     */
-    template<typename H>
-    InternalHandle(const JS::Handle<H>& handle, T* field)
-      : holder((void**)handle.address()), offset(uintptr_t(field) - uintptr_t(handle.get()))
-    {}
-
-    /*
-     * Create an InternalHandle to a field within a Rooted<>.
-     */
-    template<typename R>
-    InternalHandle(const JS::Rooted<R>& root, T* field)
-      : holder((void**)root.address()), offset(uintptr_t(field) - uintptr_t(root.get()))
-    {}
-
-    InternalHandle(const InternalHandle<T*>& other)
-      : holder(other.holder), offset(other.offset) {}
-
-    T* get() const { return reinterpret_cast<T*>(uintptr_t(*holder) + offset); }
-
-    const T& operator*() const { return *get(); }
-    T* operator->() const { return get(); }
-
-    static InternalHandle<T*> fromMarkedLocation(T* fieldPtr) {
-        return InternalHandle(fieldPtr);
-    }
-
-  private:
-    /*
-     * Create an InternalHandle to something that is not a pointer to a
-     * gcthing, and so does not need to be rooted in the first place. Use these
-     * InternalHandles to pass pointers into functions that also need to accept
-     * regular InternalHandles to gcthing fields.
-     *
-     * Make this private to prevent accidental misuse; this is only for
-     * fromMarkedLocation().
-     */
-    explicit InternalHandle(T* field)
-      : holder(reinterpret_cast<void * const*>(&js::NullPtr::constNullValue)),
-        offset(uintptr_t(field))
-    {}
-
-    void operator=(InternalHandle<T*> other) = delete;
-};
-
-/*
  * By default, things should use the inheritance hierarchy to find their
  * ThingRootKind. Some pointer types are explicitly set in jspubtd.h so that
  * Rooted<T> may be used without the class definition being available.
@@ -642,9 +530,10 @@ template <typename T>
 struct GCMethods<T*>
 {
     static T* initial() { return nullptr; }
-    static bool poisoned(T* v) { return JS::IsPoisonedPtr(v); }
-    static bool needsPostBarrier(T* v) { return false; }
-    static void postBarrier(T** vp) {}
+    static void postBarrier(T** vp, T* prev, T* next) {
+        if (next)
+            JS::AssertGCThingIsNotAnObjectSubclass(reinterpret_cast<js::gc::Cell*>(next));
+    }
     static void relocate(T** vp) {}
 };
 
@@ -652,21 +541,14 @@ template <>
 struct GCMethods<JSObject*>
 {
     static JSObject* initial() { return nullptr; }
-    static bool poisoned(JSObject* v) { return JS::IsPoisonedPtr(v); }
     static gc::Cell* asGCThingOrNull(JSObject* v) {
         if (!v)
             return nullptr;
         MOZ_ASSERT(uintptr_t(v) > 32);
         return reinterpret_cast<gc::Cell*>(v);
     }
-    static bool needsPostBarrier(JSObject* v) {
-        return v != nullptr && gc::IsInsideNursery(reinterpret_cast<gc::Cell*>(v));
-    }
-    static void postBarrier(JSObject** vp) {
-        JS::HeapCellPostBarrier(reinterpret_cast<js::gc::Cell**>(vp));
-    }
-    static void relocate(JSObject** vp) {
-        JS::HeapCellRelocate(reinterpret_cast<js::gc::Cell**>(vp));
+    static void postBarrier(JSObject** vp, JSObject* prev, JSObject* next) {
+        JS::HeapObjectPostBarrier(vp, prev, next);
     }
 };
 
@@ -674,17 +556,90 @@ template <>
 struct GCMethods<JSFunction*>
 {
     static JSFunction* initial() { return nullptr; }
-    static bool poisoned(JSFunction* v) { return JS::IsPoisonedPtr(v); }
-    static bool needsPostBarrier(JSFunction* v) {
-        return v != nullptr && gc::IsInsideNursery(reinterpret_cast<gc::Cell*>(v));
-    }
-    static void postBarrier(JSFunction** vp) {
-        JS::HeapCellPostBarrier(reinterpret_cast<js::gc::Cell**>(vp));
-    }
-    static void relocate(JSFunction** vp) {
-        JS::HeapCellRelocate(reinterpret_cast<js::gc::Cell**>(vp));
+    static void postBarrier(JSFunction** vp, JSFunction* prev, JSFunction* next) {
+        JS::HeapObjectPostBarrier(reinterpret_cast<JSObject**>(vp),
+                                  reinterpret_cast<JSObject*>(prev),
+                                  reinterpret_cast<JSObject*>(next));
     }
 };
+
+} /* namespace js */
+
+namespace JS {
+
+// Non pointer types -- structs or classes that contain GC pointers, either as
+// a member or in a more complex container layout -- can also be stored in a
+// [Persistent]Rooted if it derives from JS::Traceable. A JS::Traceable stored
+// in a [Persistent]Rooted must implement the method:
+//     |static void trace(T*, JSTracer*)|
+class Traceable
+{
+  public:
+    static js::ThingRootKind rootKind() { return js::THING_ROOT_TRACEABLE; }
+};
+
+} /* namespace JS */
+
+namespace js {
+
+template <typename T>
+class DispatchWrapper
+{
+    static_assert(mozilla::IsBaseOf<JS::Traceable, T>::value,
+                  "DispatchWrapper is intended only for usage with a Traceable");
+
+    using TraceFn = void (*)(T*, JSTracer*);
+    TraceFn tracer;
+#if JS_BITS_PER_WORD == 32
+    uint32_t padding; // Ensure the storage fields have CellSize alignment.
+#endif
+    T storage;
+
+  public:
+    template <typename U>
+    MOZ_IMPLICIT DispatchWrapper(U&& initial)
+      : tracer(&T::trace),
+        storage(mozilla::Forward<U>(initial))
+    { }
+
+    // Mimic a pointer type, so that we can drop into Rooted.
+    T* operator &() { return &storage; }
+    const T* operator &() const { return &storage; }
+    operator T&() { return storage; }
+    operator const T&() const { return storage; }
+
+    // Trace the contained storage (of unknown type) using the trace function
+    // we set aside when we did know the type.
+    static void TraceWrapped(JSTracer* trc, JS::Traceable* thingp, const char* name) {
+        auto wrapper = reinterpret_cast<DispatchWrapper*>(
+                           uintptr_t(thingp) - offsetof(DispatchWrapper, storage));
+        wrapper->tracer(&wrapper->storage, trc);
+    }
+};
+
+inline RootLists&
+RootListsForRootingContext(JSContext* cx)
+{
+    return ContextFriendFields::get(cx)->roots;
+}
+
+inline RootLists&
+RootListsForRootingContext(js::ContextFriendFields* cx)
+{
+    return cx->roots;
+}
+
+inline RootLists&
+RootListsForRootingContext(JSRuntime* rt)
+{
+    return PerThreadDataFriendFields::getMainThread(rt)->roots;
+}
+
+inline RootLists&
+RootListsForRootingContext(js::PerThreadDataFriendFields* pt)
+{
+    return pt->roots;
+}
 
 } /* namespace js */
 
@@ -699,82 +654,32 @@ namespace JS {
  * specialization, define a RootedBase<T> specialization containing them.
  */
 template <typename T>
-class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
+class MOZ_RAII Rooted : public js::RootedBase<T>
 {
+    static_assert(!mozilla::IsConvertible<T, Traceable*>::value,
+                  "Rooted takes pointer or Traceable types but not Traceable* type");
+
     /* Note: CX is a subclass of either ContextFriendFields or PerThreadDataFriendFields. */
-    template <typename CX>
-    void init(CX* cx) {
+    void registerWithRootLists(js::RootLists& roots) {
         js::ThingRootKind kind = js::RootKind<T>::rootKind();
-        this->stack = &cx->thingGCRooters[kind];
+        this->stack = &roots.stackRoots_[kind];
         this->prev = *stack;
         *stack = reinterpret_cast<Rooted<void*>*>(this);
-
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(ptr));
     }
 
   public:
-    explicit Rooted(JSContext* cx
-                    MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    template <typename RootingContext>
+    explicit Rooted(const RootingContext& cx)
       : ptr(js::GCMethods<T>::initial())
     {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(js::ContextFriendFields::get(cx));
+        registerWithRootLists(js::RootListsForRootingContext(cx));
     }
 
-    Rooted(JSContext* cx, T initial
-           MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(initial)
+    template <typename RootingContext, typename S>
+    Rooted(const RootingContext& cx, S&& initial)
+      : ptr(mozilla::Forward<S>(initial))
     {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(js::ContextFriendFields::get(cx));
-    }
-
-    explicit Rooted(js::ContextFriendFields* cx
-                    MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(js::GCMethods<T>::initial())
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(cx);
-    }
-
-    Rooted(js::ContextFriendFields* cx, T initial
-           MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(initial)
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(cx);
-    }
-
-    explicit Rooted(js::PerThreadDataFriendFields* pt
-                    MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(js::GCMethods<T>::initial())
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(pt);
-    }
-
-    Rooted(js::PerThreadDataFriendFields* pt, T initial
-           MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(initial)
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(pt);
-    }
-
-    explicit Rooted(JSRuntime* rt
-                    MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(js::GCMethods<T>::initial())
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(js::PerThreadDataFriendFields::getMainThread(rt));
-    }
-
-    Rooted(JSRuntime* rt, T initial
-           MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(initial)
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-        init(js::PerThreadDataFriendFields::getMainThread(rt));
+        registerWithRootLists(js::RootListsForRootingContext(cx));
     }
 
     ~Rooted() {
@@ -789,7 +694,6 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
      * interchangeably with a MutableHandleValue.
      */
     void set(T value) {
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(value));
         ptr = value;
     }
 
@@ -805,15 +709,22 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
      * example, Rooted<JSObject> and Rooted<JSFunction>, which use the same
      * stack head pointer for different classes.
      */
-    Rooted<void*>** stack, *prev;
+    Rooted<void*>** stack;
+    Rooted<void*>* prev;
 
     /*
-     * |ptr| must be the last field in Rooted because the analysis treats all
-     * Rooted as Rooted<void*> during the analysis. See bug 829372.
+     * For pointer types, the TraceKind for tracing is based on the list it is
+     * in (selected via rootKind), so no additional storage is required here.
+     * All Traceable, however, share the same list, so the function to
+     * call for tracing is stored adjacent to the struct. Since C++ cannot
+     * templatize on storage class, this is implemented via the wrapper class
+     * DispatchWrapper.
      */
-    T ptr;
-
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+    using MaybeWrapped = typename mozilla::Conditional<
+        mozilla::IsBaseOf<Traceable, T>::value,
+        js::DispatchWrapper<T>,
+        T>::Type;
+    MaybeWrapped ptr;
 
     Rooted(const Rooted&) = delete;
 };
@@ -860,24 +771,14 @@ class HandleBase<JSObject*>
 
 /* Interface substitute for Rooted<T> which does not root the variable's memory. */
 template <typename T>
-class FakeRooted : public RootedBase<T>
+class MOZ_RAII FakeRooted : public RootedBase<T>
 {
   public:
     template <typename CX>
-    FakeRooted(CX* cx
-               MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(GCMethods<T>::initial())
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    }
+    explicit FakeRooted(CX* cx) : ptr(GCMethods<T>::initial()) {}
 
     template <typename CX>
-    FakeRooted(CX* cx, T initial
-               MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : ptr(initial)
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    }
+    FakeRooted(CX* cx, T initial) : ptr(initial) {}
 
     DECLARE_POINTER_COMPARISON_OPS(T);
     DECLARE_POINTER_CONSTREF_OPS(T);
@@ -889,11 +790,8 @@ class FakeRooted : public RootedBase<T>
     T ptr;
 
     void set(const T& value) {
-        MOZ_ASSERT(!GCMethods<T>::poisoned(value));
         ptr = value;
     }
-
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
     FakeRooted(const FakeRooted&) = delete;
 };
@@ -912,7 +810,6 @@ class FakeMutableHandle : public js::MutableHandleBase<T>
     }
 
     void set(T v) {
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(v));
         *ptr = v;
     }
 
@@ -1078,31 +975,37 @@ class PersistentRooted : public js::PersistentRootedBase<T>,
 
     friend struct js::gc::PersistentRootedMarker<T>;
 
-    friend void js::gc::FinishPersistentRootedChains(JSRuntime* rt);
+    friend void js::gc::FinishPersistentRootedChains(js::RootLists&);
 
-    void registerWithRuntime(JSRuntime* rt) {
+    void registerWithRootLists(js::RootLists& roots) {
         MOZ_ASSERT(!initialized());
-        JS::shadow::Runtime* srt = JS::shadow::Runtime::asShadowRuntime(rt);
-        srt->getPersistentRootedList<T>().insertBack(this);
+        js::ThingRootKind kind = js::RootKind<T>::rootKind();
+        roots.heapRoots_[kind].insertBack(reinterpret_cast<JS::PersistentRooted<void*>*>(this));
+        // Until marking and destruction support the full set, we assert that
+        // we don't try to add any unsupported types.
+        MOZ_ASSERT(kind == js::THING_ROOT_OBJECT ||
+                   kind == js::THING_ROOT_SCRIPT ||
+                   kind == js::THING_ROOT_STRING ||
+                   kind == js::THING_ROOT_ID ||
+                   kind == js::THING_ROOT_VALUE ||
+                   kind == js::THING_ROOT_TRACEABLE);
     }
 
   public:
     PersistentRooted() : ptr(js::GCMethods<T>::initial()) {}
 
-    explicit PersistentRooted(JSContext* cx) {
-        init(cx);
+    template <typename RootingContext>
+    explicit PersistentRooted(const RootingContext& cx)
+      : ptr(js::GCMethods<T>::initial())
+    {
+        registerWithRootLists(js::RootListsForRootingContext(cx));
     }
 
-    PersistentRooted(JSContext* cx, T initial) {
-        init(cx, initial);
-    }
-
-    explicit PersistentRooted(JSRuntime* rt) {
-        init(rt);
-    }
-
-    PersistentRooted(JSRuntime* rt, T initial) {
-        init(rt, initial);
+    template <typename RootingContext, typename U>
+    PersistentRooted(const RootingContext& cx, U&& initial)
+      : ptr(mozilla::Forward<U>(initial))
+    {
+        registerWithRootLists(js::RootListsForRootingContext(cx));
     }
 
     PersistentRooted(const PersistentRooted& rhs)
@@ -1124,22 +1027,15 @@ class PersistentRooted : public js::PersistentRootedBase<T>,
         return ListBase::isInList();
     }
 
-    void init(JSContext* cx) {
+    template <typename RootingContext>
+    void init(const RootingContext& cx) {
         init(cx, js::GCMethods<T>::initial());
     }
 
-    void init(JSContext* cx, T initial) {
-        ptr = initial;
-        registerWithRuntime(js::GetRuntime(cx));
-    }
-
-    void init(JSRuntime* rt) {
-        init(rt, js::GCMethods<T>::initial());
-    }
-
-    void init(JSRuntime* rt, T initial) {
-        ptr = initial;
-        registerWithRuntime(rt);
+    template <typename RootingContext, typename U>
+    void init(const RootingContext& cx, U&& initial) {
+        ptr = mozilla::Forward<U>(initial);
+        registerWithRootLists(js::RootListsForRootingContext(cx));
     }
 
     void reset() {
@@ -1153,16 +1049,32 @@ class PersistentRooted : public js::PersistentRootedBase<T>,
     DECLARE_POINTER_CONSTREF_OPS(T);
     DECLARE_POINTER_ASSIGN_OPS(PersistentRooted, T);
     DECLARE_NONPOINTER_ACCESSOR_METHODS(ptr);
-    DECLARE_NONPOINTER_MUTABLE_ACCESSOR_METHODS(ptr);
+
+    // These are the same as DECLARE_NONPOINTER_MUTABLE_ACCESSOR_METHODS, except
+    // they check that |this| is initialized in case the caller later stores
+    // something in |ptr|.
+    T* address() {
+        MOZ_ASSERT(initialized());
+        return &ptr;
+    }
+    T& get() {
+        MOZ_ASSERT(initialized());
+        return ptr;
+    }
 
   private:
     void set(T value) {
         MOZ_ASSERT(initialized());
-        MOZ_ASSERT(!js::GCMethods<T>::poisoned(value));
         ptr = value;
     }
 
-    T ptr;
+    // See the comment above Rooted::ptr.
+    using MaybeWrapped = typename mozilla::Conditional<
+        mozilla::IsBaseOf<Traceable, T>::value,
+        js::DispatchWrapper<T>,
+        T>::Type;
+
+    MaybeWrapped ptr;
 };
 
 class JS_PUBLIC_API(ObjectPtr)
@@ -1227,8 +1139,30 @@ CallTraceCallbackOnNonHeap(T* v, const TraceCallbacks& aCallbacks, const char* a
 } /* namespace gc */
 } /* namespace js */
 
+// mozilla::Swap uses a stack temporary, which prevents classes like Heap<T>
+// from being declared MOZ_HEAP_CLASS.
+namespace mozilla {
+
+template <typename T>
+inline void
+Swap(JS::Heap<T>& aX, JS::Heap<T>& aY)
+{
+    T tmp = aX;
+    aX = aY;
+    aY = tmp;
+}
+
+template <typename T>
+inline void
+Swap(JS::TenuredHeap<T>& aX, JS::TenuredHeap<T>& aY)
+{
+    T tmp = aX;
+    aX = aY;
+    aY = tmp;
+}
+
+} /* namespace mozilla */
+
 #undef DELETE_ASSIGNMENT_OPS
-#undef DECLARE_NONPOINTER_MUTABLE_ACCESSOR_METHODS
-#undef DECLARE_NONPOINTER_ACCESSOR_METHODS
 
 #endif  /* js_RootingAPI_h */

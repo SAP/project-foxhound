@@ -16,9 +16,10 @@
 #include "nspr.h"
 #include "srtp.h"
 
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
 #include "VideoSegment.h"
 #include "Layers.h"
+#include "LayersLogging.h"
 #include "ImageTypes.h"
 #include "ImageContainer.h"
 #include "VideoUtils.h"
@@ -38,16 +39,18 @@
 #include "transportlayerice.h"
 #include "runnable_utils.h"
 #include "libyuv/convert.h"
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
 #include "mozilla/PeerIdentity.h"
 #endif
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/UniquePtr.h"
 
 #include "logging.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
+using namespace mozilla::layers;
 
 // Logging context
 MOZ_MTLOG_MODULE("mediapipeline")
@@ -104,8 +107,8 @@ MediaPipeline::DetachTransport_s()
 
   disconnect_all();
   transport_->Detach();
-  rtp_.transport_ = nullptr;
-  rtcp_.transport_ = nullptr;
+  rtp_.Detach();
+  rtcp_.Detach();
 }
 
 nsresult
@@ -371,7 +374,7 @@ nsresult MediaPipeline::SendPacket(TransportFlow *flow, const void *data,
     if (res == TE_WOULDBLOCK)
       return NS_OK;
 
-    MOZ_MTLOG(ML_ERROR, "Failed write on stream");
+    MOZ_MTLOG(ML_ERROR, "Failed write on stream " << description_);
     return NS_BASE_STREAM_CLOSED;
   }
 
@@ -543,10 +546,10 @@ void MediaPipeline::RtcpPacketReceived(TransportLayer *layer,
   if (!NS_SUCCEEDED(res))
     return;
 
-  MediaPipelineFilter::Result filter_result = MediaPipelineFilter::PASS;
-  if (filter_) {
-    filter_result = filter_->FilterRTCP(inner_data, out_len);
-    if (filter_result == MediaPipelineFilter::FAIL) {
+  // We do not filter RTCP for send pipelines, since the webrtc.org code for
+  // senders already has logic to ignore RRs that do not apply.
+  if (filter_ && direction_ == RECEIVE) {
+    if (!filter_->FilterSenderReport(inner_data, out_len)) {
       MOZ_MTLOG(ML_NOTICE, "Dropping rtcp packet");
       return;
     }
@@ -630,12 +633,10 @@ void MediaPipelineTransmit::AttachToTrack(const std::string& track_id) {
 
   stream_->AddListener(listener_);
 
- // // Is this a gUM mediastream?  If so, also register the Listener directly with
- // // the SourceMediaStream that's attached to the TrackUnion so we can get direct
- // // unqueued (and not resampled) data
- // if (domstream_->AddDirectListener(listener_)) {
- //   listener_->direct_connect_ = true;
- // }
+  // Is this a gUM mediastream?  If so, also register the Listener directly with
+  // the SourceMediaStream that's attached to the TrackUnion so we can get direct
+  // unqueued (and not resampled) data
+  listener_->direct_connect_ = domstream_->AddDirectListener(listener_);
 
 #ifndef MOZILLA_INTERNAL_API
   // this enables the unit tests that can't fiddle with principals and the like
@@ -643,7 +644,7 @@ void MediaPipelineTransmit::AttachToTrack(const std::string& track_id) {
 #endif
 }
 
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
 void MediaPipelineTransmit::UpdateSinkIdentity_m(nsIPrincipal* principal,
                                                  const PeerIdentity* sinkIdentity) {
   ASSERT_ON_THREAD(main_thread_);
@@ -688,6 +689,8 @@ nsresult MediaPipelineTransmit::ReplaceTrack(DOMMediaStream *domstream,
   }
   domstream_ = domstream; // Detach clears it
   stream_ = domstream->GetStream();
+  // Unsets the track id after RemoveListener() takes effect.
+  listener_->UnsetTrackId(stream_->GraphImpl());
   track_id_ = track_id;
   AttachToTrack(track_id);
   return NS_OK;
@@ -750,109 +753,103 @@ nsresult MediaPipeline::PipelineTransport::SendRtpPacket(
     const void *data, int len) {
 
     nsAutoPtr<DataBuffer> buf(new DataBuffer(static_cast<const uint8_t *>(data),
-                                             len));
+                                             len, len + SRTP_MAX_EXPANSION));
 
     RUN_ON_THREAD(sts_thread_,
                   WrapRunnable(
                       RefPtr<MediaPipeline::PipelineTransport>(this),
-                      &MediaPipeline::PipelineTransport::SendRtpPacket_s,
-                      buf),
+                      &MediaPipeline::PipelineTransport::SendRtpRtcpPacket_s,
+                      buf, true),
                   NS_DISPATCH_NORMAL);
 
     return NS_OK;
 }
 
-nsresult MediaPipeline::PipelineTransport::SendRtpPacket_s(
-    nsAutoPtr<DataBuffer> data) {
-  ASSERT_ON_THREAD(sts_thread_);
-  if (!pipeline_)
-    return NS_OK;  // Detached
+nsresult MediaPipeline::PipelineTransport::SendRtpRtcpPacket_s(
+    nsAutoPtr<DataBuffer> data,
+    bool is_rtp) {
 
-  if (!pipeline_->rtp_.send_srtp_) {
-    MOZ_MTLOG(ML_DEBUG, "Couldn't write RTP packet; SRTP not set up yet");
+  ASSERT_ON_THREAD(sts_thread_);
+  if (!pipeline_) {
+    return NS_OK;  // Detached
+  }
+  TransportInfo& transport = is_rtp ? pipeline_->rtp_ : pipeline_->rtcp_;
+
+  if (!transport.send_srtp_) {
+    MOZ_MTLOG(ML_DEBUG, "Couldn't write RTP/RTCP packet; SRTP not set up yet");
     return NS_OK;
   }
 
-  MOZ_ASSERT(pipeline_->rtp_.transport_);
-  NS_ENSURE_TRUE(pipeline_->rtp_.transport_, NS_ERROR_NULL_POINTER);
+  MOZ_ASSERT(transport.transport_);
+  NS_ENSURE_TRUE(transport.transport_, NS_ERROR_NULL_POINTER);
 
-  // libsrtp enciphers in place, so we need a new, big enough
-  // buffer.
-  // XXX. allocates and deletes one buffer per packet sent.
-  // Bug 822129
-  int max_len = data->len() + SRTP_MAX_EXPANSION;
-  ScopedDeletePtr<unsigned char> inner_data(
-      new unsigned char[max_len]);
-  memcpy(inner_data, data->data(), data->len());
+  // libsrtp enciphers in place, so we need a big enough buffer.
+  MOZ_ASSERT(data->capacity() >= data->len() + SRTP_MAX_EXPANSION);
 
   int out_len;
-  nsresult res = pipeline_->rtp_.send_srtp_->ProtectRtp(inner_data,
-                                                        data->len(),
-                                                        max_len,
-                                                        &out_len);
-  if (!NS_SUCCEEDED(res))
+  nsresult res;
+  if (is_rtp) {
+    res = transport.send_srtp_->ProtectRtp(data->data(),
+                                           data->len(),
+                                           data->capacity(),
+                                           &out_len);
+  } else {
+    res = transport.send_srtp_->ProtectRtcp(data->data(),
+                                            data->len(),
+                                            data->capacity(),
+                                            &out_len);
+  }
+  if (!NS_SUCCEEDED(res)) {
     return res;
+  }
 
-  MOZ_MTLOG(ML_DEBUG, pipeline_->description_ << " sending RTP packet.");
-  pipeline_->increment_rtp_packets_sent(out_len);
-  return pipeline_->SendPacket(pipeline_->rtp_.transport_, inner_data,
-                               out_len);
+  // paranoia; don't have uninitialized bytes included in data->len()
+  data->SetLength(out_len);
+
+  MOZ_MTLOG(ML_DEBUG, pipeline_->description_ << " sending " <<
+            (is_rtp ? "RTP" : "RTCP") << " packet");
+  if (is_rtp) {
+    pipeline_->increment_rtp_packets_sent(out_len);
+  } else {
+    pipeline_->increment_rtcp_packets_sent();
+  }
+  return pipeline_->SendPacket(transport.transport_, data->data(), out_len);
 }
 
 nsresult MediaPipeline::PipelineTransport::SendRtcpPacket(
     const void *data, int len) {
 
     nsAutoPtr<DataBuffer> buf(new DataBuffer(static_cast<const uint8_t *>(data),
-                                             len));
+                                             len, len + SRTP_MAX_EXPANSION));
 
     RUN_ON_THREAD(sts_thread_,
                   WrapRunnable(
                       RefPtr<MediaPipeline::PipelineTransport>(this),
-                      &MediaPipeline::PipelineTransport::SendRtcpPacket_s,
-                      buf),
+                      &MediaPipeline::PipelineTransport::SendRtpRtcpPacket_s,
+                      buf, false),
                   NS_DISPATCH_NORMAL);
 
     return NS_OK;
 }
 
-nsresult MediaPipeline::PipelineTransport::SendRtcpPacket_s(
-    nsAutoPtr<DataBuffer> data) {
-  ASSERT_ON_THREAD(sts_thread_);
-  if (!pipeline_)
-    return NS_OK;  // Detached
-
-  if (!pipeline_->rtcp_.send_srtp_) {
-    MOZ_MTLOG(ML_DEBUG, "Couldn't write RTCP packet; SRTCP not set up yet");
-    return NS_OK;
-  }
-
-  MOZ_ASSERT(pipeline_->rtcp_.transport_);
-  NS_ENSURE_TRUE(pipeline_->rtcp_.transport_, NS_ERROR_NULL_POINTER);
-
-  // libsrtp enciphers in place, so we need a new, big enough
-  // buffer.
-  // XXX. allocates and deletes one buffer per packet sent.
-  // Bug 822129.
-  int max_len = data->len() + SRTP_MAX_EXPANSION;
-  ScopedDeletePtr<unsigned char> inner_data(
-      new unsigned char[max_len]);
-  memcpy(inner_data, data->data(), data->len());
-
-  int out_len;
-  nsresult res = pipeline_->rtcp_.send_srtp_->ProtectRtcp(inner_data,
-                                                          data->len(),
-                                                          max_len,
-                                                          &out_len);
-
-  if (!NS_SUCCEEDED(res))
-    return res;
-
-  MOZ_MTLOG(ML_DEBUG, pipeline_->description_ << " sending RTCP packet.");
-  pipeline_->increment_rtcp_packets_sent();
-  return pipeline_->SendPacket(pipeline_->rtcp_.transport_, inner_data,
-                               out_len);
+void MediaPipelineTransmit::PipelineListener::
+UnsetTrackId(MediaStreamGraphImpl* graph) {
+#ifndef USE_FAKE_MEDIA_STREAMS
+  class Message : public ControlMessage {
+  public:
+    explicit Message(PipelineListener* listener) :
+      ControlMessage(nullptr), listener_(listener) {}
+    virtual void Run() override
+    {
+      listener_->UnsetTrackIdImpl();
+    }
+    nsRefPtr<PipelineListener> listener_;
+  };
+  graph->AppendMessage(new Message(this));
+#else
+  UnsetTrackIdImpl();
+#endif
 }
-
 // Called if we're attached with AddDirectListener()
 void MediaPipelineTransmit::PipelineListener::
 NotifyRealtimeData(MediaStreamGraph* graph, TrackID tid,
@@ -896,19 +893,19 @@ NewData(MediaStreamGraph* graph, TrackID tid,
     return;
   }
 
-  if (track_id_ != TRACK_INVALID) {
-    if (tid != track_id_) {
-      return;
-    }
-  } else if (conduit_->type() !=
-             (media.GetType() == MediaSegment::AUDIO ? MediaSessionConduit::AUDIO :
-                                                       MediaSessionConduit::VIDEO)) {
-    // Ignore data in case we have a muxed stream
+  if (conduit_->type() !=
+      (media.GetType() == MediaSegment::AUDIO ? MediaSessionConduit::AUDIO :
+                                                MediaSessionConduit::VIDEO)) {
+    // Ignore data of wrong kind in case we have a muxed stream
     return;
-  } else {
+  }
+
+  if (track_id_ == TRACK_INVALID) {
     // Don't lock during normal media flow except on first sample
     MutexAutoLock lock(mMutex);
     track_id_ = track_id_external_ = tid;
+  } else if (tid != track_id_) {
+    return;
   }
 
   // TODO(ekr@rtfm.com): For now assume that we have only one
@@ -931,7 +928,7 @@ NewData(MediaStreamGraph* graph, TrackID tid,
       iter.Next();
     }
   } else if (media.GetType() == MediaSegment::VIDEO) {
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
     VideoSegment* video = const_cast<VideoSegment *>(
         static_cast<const VideoSegment *>(&media));
 
@@ -951,104 +948,87 @@ void MediaPipelineTransmit::PipelineListener::ProcessAudioChunk(
     AudioSessionConduit *conduit,
     TrackRate rate,
     AudioChunk& chunk) {
-  // TODO(ekr@rtfm.com): Do more than one channel
-  nsAutoArrayPtr<int16_t> samples(new int16_t[chunk.mDuration]);
 
-  if (enabled_ && chunk.mBuffer) {
-    switch (chunk.mBufferFormat) {
-      case AUDIO_FORMAT_FLOAT32:
-        {
-          const float* buf = static_cast<const float *>(chunk.mChannelData[0]);
-          ConvertAudioSamplesWithScale(buf, static_cast<int16_t*>(samples),
-                                       chunk.mDuration, chunk.mVolume);
-        }
-        break;
-      case AUDIO_FORMAT_S16:
-        {
-          const short* buf = static_cast<const short *>(chunk.mChannelData[0]);
-          ConvertAudioSamplesWithScale(buf, samples, chunk.mDuration, chunk.mVolume);
-        }
-        break;
-      case AUDIO_FORMAT_SILENCE:
-        memset(samples, 0, chunk.mDuration * sizeof(samples[0]));
-        break;
-      default:
-        MOZ_ASSERT(PR_FALSE);
-        return;
-        break;
-    }
+  // Convert to interleaved, 16-bits integer audio, with a maximum of two
+  // channels (since the WebRTC.org code below makes the assumption that the
+  // input audio is either mono or stereo).
+  uint32_t outputChannels = chunk.ChannelCount() == 1 ? 1 : 2;
+  const int16_t* samples = nullptr;
+  nsAutoArrayPtr<int16_t> convertedSamples;
+
+  // If this track is not enabled, simply ignore the data in the chunk.
+  if (!enabled_) {
+    chunk.mBufferFormat = AUDIO_FORMAT_SILENCE;
+  }
+
+  // We take advantage of the fact that the common case (microphone directly to
+  // PeerConnection, that is, a normal call), the samples are already 16-bits
+  // mono, so the representation in interleaved and planar is the same, and we
+  // can just use that.
+  if (outputChannels == 1 && chunk.mBufferFormat == AUDIO_FORMAT_S16) {
+    samples = chunk.ChannelData<int16_t>().Elements()[0];
   } else {
-    // This means silence.
-    memset(samples, 0, chunk.mDuration * sizeof(samples[0]));
+    convertedSamples = new int16_t[chunk.mDuration * outputChannels];
+
+    switch (chunk.mBufferFormat) {
+        case AUDIO_FORMAT_FLOAT32:
+          DownmixAndInterleave(chunk.ChannelData<float>(),
+                               chunk.mDuration, chunk.mVolume, outputChannels,
+                               convertedSamples.get());
+          break;
+        case AUDIO_FORMAT_S16:
+          DownmixAndInterleave(chunk.ChannelData<int16_t>(),
+                               chunk.mDuration, chunk.mVolume, outputChannels,
+                               convertedSamples.get());
+          break;
+        case AUDIO_FORMAT_SILENCE:
+          PodZero(convertedSamples.get(), chunk.mDuration * outputChannels);
+          break;
+    }
+    samples = convertedSamples.get();
   }
 
   MOZ_ASSERT(!(rate%100)); // rate should be a multiple of 100
 
-  // Check if the rate has changed since the last time we came through
-  // I realize it may be overkill to check if the rate has changed, but
-  // I believe it is possible (e.g. if we change sources) and it costs us
-  // very little to handle this case
+  // Check if the rate or the number of channels has changed since the last time
+  // we came through. I realize it may be overkill to check if the rate has
+  // changed, but I believe it is possible (e.g. if we change sources) and it
+  // costs us very little to handle this case.
 
-  if (samplenum_10ms_ !=  rate/100) {
-    // Determine number of samples in 10 ms from the rate:
-    samplenum_10ms_ = rate/100;
-    // If we switch sample rates (e.g. if we switch codecs),
-    // we throw away what was in the sample_10ms_buffer at the old rate
-    samples_10ms_buffer_ = new int16_t[samplenum_10ms_];
-    buffer_current_ = 0;
+  uint32_t audio_10ms = rate / 100;
+
+  if (!packetizer_ ||
+      packetizer_->PacketSize() != audio_10ms ||
+      packetizer_->Channels() != outputChannels) {
+    // It's ok to drop the audio still in the packetizer here.
+    packetizer_ = new AudioPacketizer<int16_t, int16_t>(audio_10ms, outputChannels);
+   }
+
+  packetizer_->Input(samples, chunk.mDuration);
+
+  while (packetizer_->PacketsAvailable()) {
+    uint32_t samplesPerPacket = packetizer_->PacketSize() *
+                                packetizer_->Channels();
+
+    // We know that webrtc.org's code going to copy the samples down the line,
+    // so we can just use a stack buffer here instead of malloc-ing.
+    // Max size given stereo is 480*2*2 = 1920 (10ms of 16-bits stereo audio at
+    // 48KHz)
+    const size_t AUDIO_SAMPLE_BUFFER_MAX = 1920;
+    int16_t packet[AUDIO_SAMPLE_BUFFER_MAX];
+
+    packetizer_->Output(packet);
+    conduit->SendAudioFrame(packet,
+                            samplesPerPacket,
+                            rate, 0);
   }
-
-  // Vars to handle the non-sunny-day case (where the audio chunks
-  // we got are not multiples of 10ms OR there were samples left over
-  // from the last run)
-  int64_t chunk_remaining;
-  int64_t tocpy;
-  int16_t *samples_tmp = samples.get();
-
-  chunk_remaining = chunk.mDuration;
-
-  MOZ_ASSERT(chunk_remaining >= 0);
-
-  if (buffer_current_) {
-    tocpy = std::min(chunk_remaining, samplenum_10ms_ - buffer_current_);
-    memcpy(&samples_10ms_buffer_[buffer_current_], samples_tmp, tocpy * sizeof(int16_t));
-    buffer_current_ += tocpy;
-    samples_tmp += tocpy;
-    chunk_remaining -= tocpy;
-
-    if (buffer_current_ == samplenum_10ms_) {
-      // Send out the audio buffer we just finished filling
-      conduit->SendAudioFrame(samples_10ms_buffer_, samplenum_10ms_, rate, 0);
-      buffer_current_ = 0;
-    } else {
-      // We still don't have enough data to send a buffer
-      return;
-    }
-  }
-
-  // Now send (more) frames if there is more than 10ms of input left
-  tocpy = (chunk_remaining / samplenum_10ms_) * samplenum_10ms_;
-  if (tocpy > 0) {
-    conduit->SendAudioFrame(samples_tmp, tocpy, rate, 0);
-    samples_tmp += tocpy;
-    chunk_remaining -= tocpy;
-  }
-  // Copy what remains for the next run
-
-  MOZ_ASSERT(chunk_remaining < samplenum_10ms_);
-
-  if (chunk_remaining) {
-    memcpy(samples_10ms_buffer_, samples_tmp, chunk_remaining * sizeof(int16_t));
-    buffer_current_ = chunk_remaining;
-  }
-
 }
 
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
 void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
     VideoSessionConduit* conduit,
     VideoChunk& chunk) {
-  layers::Image *img = chunk.mFrame.GetImage();
+  Image *img = chunk.mFrame.GetImage();
 
   // We now need to send the video frame to the other side
   if (!img) {
@@ -1057,7 +1037,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
   }
 
   if (!enabled_ || chunk.mFrame.GetForceBlack()) {
-    gfx::IntSize size = img->GetSize();
+    IntSize size = img->GetSize();
     uint32_t yPlaneLen = YSIZE(size.width, size.height);
     uint32_t cbcrPlaneLen = 2 * CRSIZE(size.width, size.height);
     uint32_t length = yPlaneLen + cbcrPlaneLen;
@@ -1087,7 +1067,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
 
   ImageFormat format = img->GetFormat();
 #ifdef WEBRTC_GONK
-  layers::GrallocImage* nativeImage = img->AsGrallocImage();
+  GrallocImage* nativeImage = img->AsGrallocImage();
   if (nativeImage) {
     android::sp<android::GraphicBuffer> graphicBuffer = nativeImage->GetGraphicBuffer();
     int pixelFormat = graphicBuffer->getPixelFormat(); /* PixelFormat is an enum == int */
@@ -1097,10 +1077,10 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
         // all android must support this
         destFormat = mozilla::kVideoYV12;
         break;
-      case layers::GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_SP:
+      case GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_SP:
         destFormat = mozilla::kVideoNV21;
         break;
-      case layers::GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_P:
+      case GrallocImage::HAL_PIXEL_FORMAT_YCbCr_420_P:
         destFormat = mozilla::kVideoI420;
         break;
       default:
@@ -1121,95 +1101,125 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
                             height,
                             destFormat, 0);
     graphicBuffer->unlock();
+    return;
   } else
 #endif
   if (format == ImageFormat::PLANAR_YCBCR) {
     // Cast away constness b/c some of the accessors are non-const
-    layers::PlanarYCbCrImage* yuv =
-    const_cast<layers::PlanarYCbCrImage *>(
-          static_cast<const layers::PlanarYCbCrImage *>(img));
-    // Big-time assumption here that this is all contiguous data coming
-    // from getUserMedia or other sources.
-    const layers::PlanarYCbCrData *data = yuv->GetData();
+    PlanarYCbCrImage* yuv = const_cast<PlanarYCbCrImage *>(
+        static_cast<const PlanarYCbCrImage *>(img));
 
-    uint8_t *y = data->mYChannel;
-    uint8_t *cb = data->mCbChannel;
-    uint8_t *cr = data->mCrChannel;
-    uint32_t width = yuv->GetSize().width;
-    uint32_t height = yuv->GetSize().height;
-    uint32_t length = yuv->GetDataSize();
-    // NOTE: length may be rounded up or include 'other' data (see
-    // YCbCrImageDataDeserializerBase::ComputeMinBufferSize())
+    const PlanarYCbCrData *data = yuv->GetData();
+    if (data) {
+      uint8_t *y = data->mYChannel;
+      uint8_t *cb = data->mCbChannel;
+      uint8_t *cr = data->mCrChannel;
+      uint32_t width = yuv->GetSize().width;
+      uint32_t height = yuv->GetSize().height;
+      uint32_t length = yuv->GetDataSize();
+      // NOTE: length may be rounded up or include 'other' data (see
+      // YCbCrImageDataDeserializerBase::ComputeMinBufferSize())
 
-    // SendVideoFrame only supports contiguous YCrCb 4:2:0 buffers
-    // Verify it's contiguous and in the right order
-    if (cb != (y + YSIZE(width, height)) ||
-        cr != (cb + CRSIZE(width, height))) {
-      MOZ_ASSERT(false, "Incorrect cb/cr pointers in ProcessVideoChunk()!");
-      return;
+      // XXX Consider modifying these checks if we ever implement
+      // any subclasses of PlanarYCbCrImage that allow disjoint buffers such
+      // that y+3(width*height)/2 might go outside the allocation or there are
+      // pads between y, cr and cb.
+      // GrallocImage can have wider strides, and so in some cases
+      // would encode as garbage.  If we need to encode it we'll either want to
+      // modify SendVideoFrame or copy/move the data in the buffer.
+      if (cb == (y + YSIZE(width, height)) &&
+          cr == (cb + CRSIZE(width, height)) &&
+          length >= I420SIZE(width, height)) {
+        MOZ_MTLOG(ML_DEBUG, "Sending an I420 video frame");
+        conduit->SendVideoFrame(y, I420SIZE(width, height), width, height, mozilla::kVideoI420, 0);
+        return;
+      } else {
+        MOZ_MTLOG(ML_ERROR, "Unsupported PlanarYCbCrImage format: "
+                            "width=" << width << ", height=" << height << ", y=" << y
+                            << "\n  Expected: cb=y+" << YSIZE(width, height)
+                                        << ", cr=y+" << YSIZE(width, height)
+                                                      + CRSIZE(width, height)
+                            << "\n  Observed: cb=y+" << cb - y
+                                        << ", cr=y+" << cr - y
+                            << "\n            ystride=" << data->mYStride
+                                        << ", yskip=" << data->mYSkip
+                            << "\n            cbcrstride=" << data->mCbCrStride
+                                        << ", cbskip=" << data->mCbSkip
+                                        << ", crskip=" << data->mCrSkip
+                            << "\n            ywidth=" << data->mYSize.width
+                                        << ", yheight=" << data->mYSize.height
+                            << "\n            cbcrwidth=" << data->mCbCrSize.width
+                                        << ", cbcrheight=" << data->mCbCrSize.height);
+        NS_ASSERTION(false, "Unsupported PlanarYCbCrImage format");
+      }
     }
-    if (length < I420SIZE(width, height)) {
-      MOZ_ASSERT(false, "Invalid length for ProcessVideoChunk()");
-      return;
-    }
-    // XXX Consider modifying these checks if we ever implement
-    // any subclasses of PlanarYCbCrImage that allow disjoint buffers such
-    // that y+3(width*height)/2 might go outside the allocation or there are
-    // pads between y, cr and cb.
-    // GrallocImage can have wider strides, and so in some cases
-    // would encode as garbage.  If we need to encode it we'll either want to
-    // modify SendVideoFrame or copy/move the data in the buffer.
+  }
 
-    // OK, pass it on to the conduit
-    MOZ_MTLOG(ML_DEBUG, "Sending a video frame");
-    // Not much for us to do with an error
-    conduit->SendVideoFrame(y, I420SIZE(width, height), width, height, mozilla::kVideoI420, 0);
-  } else if(format == ImageFormat::CAIRO_SURFACE) {
-    layers::CairoImage* rgb =
-    const_cast<layers::CairoImage *>(
-          static_cast<const layers::CairoImage *>(img));
-
-    gfx::IntSize size = rgb->GetSize();
-    int half_width = (size.width + 1) >> 1;
-    int half_height = (size.height + 1) >> 1;
-    int c_size = half_width * half_height;
-    int buffer_size = YSIZE(size.width, size.height) + 2 * c_size;
-    uint8* yuv = (uint8*) malloc(buffer_size); // fallible
-    if (!yuv)
-      return;
-
-    int cb_offset = YSIZE(size.width, size.height);
-    int cr_offset = cb_offset + c_size;
-    RefPtr<gfx::SourceSurface> tempSurf = rgb->GetAsSourceSurface();
-    RefPtr<gfx::DataSourceSurface> surf = tempSurf->GetDataSurface();
-
-    switch (surf->GetFormat()) {
-      case gfx::SurfaceFormat::B8G8R8A8:
-      case gfx::SurfaceFormat::B8G8R8X8:
-        libyuv::ARGBToI420(static_cast<uint8*>(surf->GetData()), surf->Stride(),
-                           yuv, size.width,
-                           yuv + cb_offset, half_width,
-                           yuv + cr_offset, half_width,
-                           size.width, size.height);
-        break;
-      case gfx::SurfaceFormat::R5G6B5:
-        libyuv::RGB565ToI420(static_cast<uint8*>(surf->GetData()), surf->Stride(),
-                             yuv, size.width,
-                             yuv + cb_offset, half_width,
-                             yuv + cr_offset, half_width,
-                             size.width, size.height);
-        break;
-      default:
-        MOZ_MTLOG(ML_ERROR, "Unsupported RGB video format");
-        MOZ_ASSERT(PR_FALSE);
-    }
-    conduit->SendVideoFrame(yuv, buffer_size, size.width, size.height, mozilla::kVideoI420, 0);
-    free(yuv);
-  } else {
-    MOZ_MTLOG(ML_ERROR, "Unsupported video format");
-    MOZ_ASSERT(PR_FALSE);
+  RefPtr<SourceSurface> surf = img->GetAsSourceSurface();
+  if (!surf) {
+    MOZ_MTLOG(ML_ERROR, "Getting surface from " << Stringify(format) << " image failed");
     return;
   }
+
+  RefPtr<DataSourceSurface> data = surf->GetDataSurface();
+  if (!data) {
+    MOZ_MTLOG(ML_ERROR, "Getting data surface from " << Stringify(format)
+                        << " image with " << Stringify(surf->GetType()) << "("
+                        << Stringify(surf->GetFormat()) << ") surface failed");
+    return;
+  }
+
+  IntSize size = img->GetSize();
+  int half_width = (size.width + 1) >> 1;
+  int half_height = (size.height + 1) >> 1;
+  int c_size = half_width * half_height;
+  int buffer_size = YSIZE(size.width, size.height) + 2 * c_size;
+  UniquePtr<uint8[]> yuv_scoped(new (fallible) uint8[buffer_size]);
+  if (!yuv_scoped)
+    return;
+  uint8* yuv = yuv_scoped.get();
+
+  DataSourceSurface::ScopedMap map(data, DataSourceSurface::READ);
+  if (!map.IsMapped()) {
+    MOZ_MTLOG(ML_ERROR, "Reading DataSourceSurface from " << Stringify(format)
+                        << " image with " << Stringify(surf->GetType()) << "("
+                        << Stringify(surf->GetFormat()) << ") surface failed");
+    return;
+  }
+
+  int rv;
+  int cb_offset = YSIZE(size.width, size.height);
+  int cr_offset = cb_offset + c_size;
+  switch (surf->GetFormat()) {
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::B8G8R8X8:
+      rv = libyuv::ARGBToI420(static_cast<uint8*>(map.GetData()),
+                              map.GetStride(),
+                              yuv, size.width,
+                              yuv + cb_offset, half_width,
+                              yuv + cr_offset, half_width,
+                              size.width, size.height);
+      break;
+    case SurfaceFormat::R5G6B5:
+      rv = libyuv::RGB565ToI420(static_cast<uint8*>(map.GetData()),
+                                map.GetStride(),
+                                yuv, size.width,
+                                yuv + cb_offset, half_width,
+                                yuv + cr_offset, half_width,
+                                size.width, size.height);
+      break;
+    default:
+      MOZ_MTLOG(ML_ERROR, "Unsupported RGB video format" << Stringify(surf->GetFormat()));
+      MOZ_ASSERT(PR_FALSE);
+      return;
+  }
+  if (rv != 0) {
+    MOZ_MTLOG(ML_ERROR, Stringify(surf->GetFormat()) << " to I420 conversion failed");
+    return;
+  }
+  MOZ_MTLOG(ML_DEBUG, "Sending an I420 video frame converted from " <<
+                      Stringify(surf->GetFormat()));
+  conduit->SendVideoFrame(yuv, buffer_size, size.width, size.height, mozilla::kVideoI420, 0);
 }
 #endif
 
@@ -1234,7 +1244,7 @@ static void AddTrackAndListener(MediaStream* source,
                                 const RefPtr<TrackAddedCallback>& completed,
                                 bool queue_track) {
   // This both adds the listener and the track
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
   class Message : public ControlMessage {
    public:
     Message(MediaStream* stream, TrackID track, TrackRate rate,
@@ -1339,19 +1349,18 @@ NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
   // This comparison is done in total time to avoid accumulated roundoff errors.
   while (source_->TicksToTimeRoundDown(track_rate_, played_ticks_) <
          desired_time) {
-    // TODO(ekr@rtfm.com): Is there a way to avoid mallocating here?  Or reduce the size?
-    // Max size given mono is 480*2*1 = 960 (48KHz)
-#define AUDIO_SAMPLE_BUFFER_MAX 1000
-    MOZ_ASSERT((track_rate_/100)*sizeof(uint16_t) <= AUDIO_SAMPLE_BUFFER_MAX);
+    // Max size given stereo is 480*2*2 = 1920 (48KHz)
+    const size_t AUDIO_SAMPLE_BUFFER_MAX = 1920;
+    MOZ_ASSERT((track_rate_/100)*sizeof(uint16_t) * 2 <= AUDIO_SAMPLE_BUFFER_MAX);
 
-    nsRefPtr<SharedBuffer> samples = SharedBuffer::Create(AUDIO_SAMPLE_BUFFER_MAX);
-    int16_t *samples_data = static_cast<int16_t *>(samples->Data());
+    int16_t scratch_buffer[AUDIO_SAMPLE_BUFFER_MAX];
+
     int samples_length;
 
-    // This fetches 10ms of data
+    // This fetches 10ms of data, either mono or stereo
     MediaConduitErrorCode err =
         static_cast<AudioSessionConduit*>(conduit_.get())->GetAudioFrame(
-            samples_data,
+            scratch_buffer,
             track_rate_,
             0,  // TODO(ekr@rtfm.com): better estimate of "capture" (really playout) delay
             samples_length);
@@ -1362,23 +1371,46 @@ NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
                 << ") to return data @ " << played_ticks_
                 << " (desired " << desired_time << " -> "
                 << source_->StreamTimeToSeconds(desired_time) << ")");
-      samples_length = (track_rate_/100)*sizeof(uint16_t); // if this is not enough we'll loop and provide more
-      memset(samples_data, '\0', samples_length);
+      samples_length = track_rate_/100; // if this is not enough we'll loop and provide more
+      PodArrayZero(scratch_buffer);
     }
 
-    MOZ_ASSERT(samples_length < AUDIO_SAMPLE_BUFFER_MAX);
+    MOZ_ASSERT(samples_length * sizeof(uint16_t) < AUDIO_SAMPLE_BUFFER_MAX);
 
     MOZ_MTLOG(ML_DEBUG, "Audio conduit returned buffer of length "
               << samples_length);
 
+    nsRefPtr<SharedBuffer> samples = SharedBuffer::Create(samples_length * sizeof(uint16_t));
+    int16_t *samples_data = static_cast<int16_t *>(samples->Data());
     AudioSegment segment;
-    nsAutoTArray<const int16_t*,1> channels;
-    channels.AppendElement(samples_data);
-    segment.AppendFrames(samples.forget(), channels, samples_length);
+    // We derive the number of channels of the stream from the number of samples
+    // the AudioConduit gives us, considering it gives us packets of 10ms and we
+    // know the rate.
+    uint32_t channelCount = samples_length / (track_rate_ / 100);
+    nsAutoTArray<int16_t*,2> channels;
+    nsAutoTArray<const int16_t*,2> outputChannels;
+    size_t frames = samples_length / channelCount;
+
+    channels.SetLength(channelCount);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < channelCount; i++) {
+      channels[i] = samples_data + offset;
+      offset += frames;
+    }
+
+    DeinterleaveAndConvertBuffer(scratch_buffer,
+                                 frames,
+                                 channelCount,
+                                 channels.Elements());
+
+    outputChannels.AppendElements(channels);
+
+    segment.AppendFrames(samples.forget(), outputChannels, frames);
 
     // Handle track not actually added yet or removed/finished
     if (source_->AppendToTrack(track_id_, &segment)) {
-      played_ticks_ += track_rate_/100; // 10ms in TrackTicks
+      played_ticks_ += frames;
     } else {
       MOZ_MTLOG(ML_ERROR, "AppendToTrack failed");
       // we can't un-read the data, but that's ok since we don't want to
@@ -1396,7 +1428,7 @@ nsresult MediaPipelineReceiveVideo::Init() {
   description_ += track_id_;
   description_ += "]";
 
-#ifdef MOZILLA_INTERNAL_API
+#if defined(MOZILLA_INTERNAL_API)
   listener_->AddSelf(new VideoSegment());
 #endif
 
@@ -1412,13 +1444,15 @@ MediaPipelineReceiveVideo::PipelineListener::PipelineListener(
   : GenericReceiveListener(source, track_id, source->GraphRate(), queue_track),
     width_(640),
     height_(480),
-#ifdef MOZILLA_INTERNAL_API
+#if defined(MOZILLA_XPCOMRT_API)
+    image_(new SimpleImageBuffer),
+#elif defined(MOZILLA_INTERNAL_API)
     image_container_(),
     image_(),
 #endif
     monitor_("Video PipelineListener") {
-#ifdef MOZILLA_INTERNAL_API
-  image_container_ = layers::LayerManager::CreateImageContainer();
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+  image_container_ = LayerManager::CreateImageContainer();
 #endif
 }
 
@@ -1427,10 +1461,17 @@ void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
     unsigned int buffer_size,
     uint32_t time_stamp,
     int64_t render_time,
-    const RefPtr<layers::Image>& video_image) {
+    const RefPtr<Image>& video_image) {
+
 #ifdef MOZILLA_INTERNAL_API
   ReentrantMonitorAutoEnter enter(monitor_);
+#endif // MOZILLA_INTERNAL_API
 
+#if defined(MOZILLA_XPCOMRT_API)
+  if (buffer) {
+    image_->SetImage(buffer, buffer_size, width_, height_);
+  }
+#elif defined(MOZILLA_INTERNAL_API)
   if (buffer) {
     // Create a video frame using |buffer|.
 #ifdef MOZ_WIDGET_GONK
@@ -1438,11 +1479,11 @@ void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
 #else
     ImageFormat format = ImageFormat::PLANAR_YCBCR;
 #endif
-    nsRefPtr<layers::Image> image = image_container_->CreateImage(format);
-    layers::PlanarYCbCrImage* yuvImage = static_cast<layers::PlanarYCbCrImage*>(image.get());
+    nsRefPtr<Image> image = image_container_->CreateImage(format);
+    PlanarYCbCrImage* yuvImage = static_cast<PlanarYCbCrImage*>(image.get());
     uint8_t* frame = const_cast<uint8_t*>(static_cast<const uint8_t*> (buffer));
 
-    layers::PlanarYCbCrData yuvData;
+    PlanarYCbCrData yuvData;
     yuvData.mYChannel = frame;
     yuvData.mYSize = IntSize(width_, height_);
     yuvData.mYStride = width_;
@@ -1455,7 +1496,10 @@ void MediaPipelineReceiveVideo::PipelineListener::RenderVideoFrame(
     yuvData.mPicSize = IntSize(width_, height_);
     yuvData.mStereoMode = StereoMode::MONO;
 
-    yuvImage->SetData(yuvData);
+    if (!yuvImage->SetData(yuvData)) {
+      MOZ_ASSERT(false);
+      return;
+    }
 
     image_ = image.forget();
   }
@@ -1473,10 +1517,15 @@ void MediaPipelineReceiveVideo::PipelineListener::
 NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
   ReentrantMonitorAutoEnter enter(monitor_);
 
-#ifdef MOZILLA_INTERNAL_API
-  nsRefPtr<layers::Image> image = image_;
+#if defined(MOZILLA_XPCOMRT_API)
+  nsRefPtr<SimpleImageBuffer> image = image_;
+#elif defined(MOZILLA_INTERNAL_API)
+  nsRefPtr<Image> image = image_;
   // our constructor sets track_rate_ to the graph rate
   MOZ_ASSERT(track_rate_ == source_->GraphRate());
+#endif
+
+#if defined(MOZILLA_INTERNAL_API)
   StreamTime delta = desired_time - played_ticks_;
 
   // Don't append if we've already provided a frame that supposedly
@@ -1493,6 +1542,12 @@ NotifyPull(MediaStreamGraph* graph, StreamTime desired_time) {
       return;
     }
   }
+#endif
+#if defined(MOZILLA_XPCOMRT_API)
+  // Clear the image without deleting the memory.
+  // This prevents image_ from being used if it
+  // does not have new content during the next NotifyPull.
+  image_->SetImage(nullptr, 0, 0, 0);
 #endif
 }
 

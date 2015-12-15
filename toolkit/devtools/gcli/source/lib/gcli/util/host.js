@@ -22,7 +22,6 @@ var URL = require('sdk/url').URL;
 
 var Task = require('resource://gre/modules/Task.jsm').Task;
 
-var Promise = require('../util/promise').Promise;
 var util = require('./util');
 
 function Highlighter(document) {
@@ -219,7 +218,7 @@ exports.script.useTarget = function(tgt) {
 /**
  * Execute some JavaScript
  */
-exports.script.eval = function(javascript) {
+exports.script.evaluate = function(javascript) {
   return new Promise(function(resolve, reject) {
     var onResult = function(response) {
       var output = response.result;

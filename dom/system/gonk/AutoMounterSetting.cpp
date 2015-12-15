@@ -61,6 +61,9 @@ public:
     ERR("SettingsCallback::HandleError: %s\n", NS_LossyConvertUTF16toASCII(aName).get());
     return NS_OK;
   }
+
+protected:
+  ~SettingsServiceCallback() {}
 };
 
 NS_IMPL_ISUPPORTS(SettingsServiceCallback, nsISettingsServiceCallback)
@@ -87,6 +90,10 @@ public:
     ERR("CheckVolumeSettingsCallback::HandleError: %s\n", NS_LossyConvertUTF16toASCII(aName).get());
     return NS_OK;
   }
+
+protected:
+  ~CheckVolumeSettingsCallback() {}
+
 private:
   nsCString mVolumeName;
 };
@@ -273,5 +280,5 @@ AutoMounterSetting::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
-}   // namespace system
-}   // namespace mozilla
+} // namespace system
+} // namespace mozilla

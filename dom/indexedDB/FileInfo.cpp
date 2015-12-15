@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,7 +76,7 @@ private:
   NS_DECL_NSIRUNNABLE
 };
 
-} // anonymous namespace
+} // namespace
 
 FileInfo::FileInfo(FileManager* aFileManager)
   : mFileManager(aFileManager)
@@ -133,7 +133,8 @@ FileInfo::UpdateReferences(ThreadSafeAutoRefCnt& aRefCount,
                            int32_t aDelta)
 {
   // XXX This can go away once DOM objects no longer hold FileInfo objects...
-  //     Looking at you, IDBMutableFile...
+  //     Looking at you, BlobImplBase...
+  //     BlobImplBase is being addressed in bug 1068975.
   if (IndexedDatabaseManager::IsClosed()) {
     MOZ_ASSERT(&aRefCount == &mRefCnt);
     MOZ_ASSERT(aDelta == 1 || aDelta == -1);

@@ -30,7 +30,6 @@ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MozMtpDatabase)
 
   MozMtpDatabase();
-  virtual ~MozMtpDatabase();
 
   // called from SendObjectInfo to reserve a database entry for the incoming file
   virtual MtpObjectHandle beginSendObject(const char* aPath,
@@ -120,9 +119,12 @@ public:
                          DeviceStorageFile* aFile,
                          const nsACString& aEventType);
 
+protected:
+  virtual ~MozMtpDatabase();
+
 private:
 
-  struct DbEntry
+  struct DbEntry final
   {
     DbEntry()
       : mHandle(0),
@@ -131,7 +133,8 @@ private:
         mParent(0),
         mObjectSize(0),
         mDateCreated(0),
-        mDateModified(0) {}
+        mDateModified(0),
+        mDateAdded(0) {}
 
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DbEntry)
 
@@ -143,8 +146,12 @@ private:
     uint64_t        mObjectSize;
     nsCString       mDisplayName;
     nsCString       mPath;
-    PRTime          mDateCreated;
-    PRTime          mDateModified;
+    time_t          mDateCreated;
+    time_t          mDateModified;
+    time_t          mDateAdded;
+
+  protected:
+    ~DbEntry() {}
   };
 
   template<class T>
@@ -206,13 +213,16 @@ private:
   typedef nsTArray<mozilla::RefPtr<DbEntry> > UnprotectedDbArray;
   typedef ProtectedTArray<mozilla::RefPtr<DbEntry> > ProtectedDbArray;
 
-  struct StorageEntry
+  struct StorageEntry final
   {
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(StorageEntry)
 
     MtpStorageID  mStorageID;
     nsCString     mStoragePath;
     nsCString     mStorageName;
+
+  protected:
+    ~StorageEntry() {}
   };
   typedef ProtectedTArray<mozilla::RefPtr<StorageEntry> > StorageArray;
 
@@ -235,7 +245,7 @@ private:
   void AddEntryAndNotify(DbEntry* aEntr, RefCountedMtpServer* aMtpServer);
   void DumpEntries(const char* aLabel);
   MtpObjectHandle FindEntryByPath(const nsACString& aPath);
-  mozilla::TemporaryRef<DbEntry> GetEntry(MtpObjectHandle aHandle);
+  already_AddRefed<DbEntry> GetEntry(MtpObjectHandle aHandle);
   void RemoveEntry(MtpObjectHandle aHandle);
   void RemoveEntryAndNotify(MtpObjectHandle aHandle, RefCountedMtpServer* aMtpServer);
   void UpdateEntry(MtpObjectHandle aHandle, DeviceStorageFile* aFile);

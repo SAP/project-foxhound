@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +9,7 @@
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/JSObjectHolder.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
@@ -17,7 +19,8 @@
 #include "nsPIDOMWindow.h"
 
 class nsIConsoleAPIStorage;
-class nsIXPConnectJSObjectHolder;
+class nsIPrincipal;
+class nsIProfiler;
 
 namespace mozilla {
 namespace dom {
@@ -26,7 +29,7 @@ class ConsoleCallData;
 struct ConsoleStackEntry;
 
 class Console final : public nsIObserver
-                        , public nsWrapperCache
+                    , public nsWrapperCache
 {
   ~Console();
 
@@ -44,7 +47,7 @@ public:
   }
 
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   void
   Log(JSContext* aCx, const Sequence<JS::Value>& aData);
@@ -74,6 +77,9 @@ public:
   Dir(JSContext* aCx, const Sequence<JS::Value>& aData);
 
   void
+  Dirxml(JSContext* aCx, const Sequence<JS::Value>& aData);
+
+  void
   Group(JSContext* aCx, const Sequence<JS::Value>& aData);
 
   void
@@ -89,6 +95,9 @@ public:
   TimeEnd(JSContext* aCx, const JS::Handle<JS::Value> aTime);
 
   void
+  TimeStamp(JSContext* aCx, const JS::Handle<JS::Value> aData);
+
+  void
   Profile(JSContext* aCx, const Sequence<JS::Value>& aData);
 
   void
@@ -101,7 +110,7 @@ public:
   Count(JSContext* aCx, const Sequence<JS::Value>& aData);
 
   void
-  __noSuchMethod__();
+  NoopMethod();
 
 private:
   enum MethodName
@@ -115,11 +124,13 @@ private:
     MethodTable,
     MethodTrace,
     MethodDir,
+    MethodDirxml,
     MethodGroup,
     MethodGroupCollapsed,
     MethodGroupEnd,
     MethodTime,
     MethodTimeEnd,
+    MethodTimeStamp,
     MethodAssert,
     MethodCount
   };
@@ -149,7 +160,7 @@ private:
   // finds based the format string. The index of the styles matches the indexes
   // of elements that need the custom styling from aSequence. For elements with
   // no custom styling the array is padded with null elements.
-  void
+  bool
   ProcessArguments(JSContext* aCx, const nsTArray<JS::Heap<JS::Value>>& aData,
                    Sequence<JS::Value>& aSequence,
                    Sequence<JS::Value>& aStyles);
@@ -173,7 +184,7 @@ private:
             DOMHighResTimeStamp aTimestamp);
 
   // The method populates a Sequence from an array of JS::Value.
-  void
+  bool
   ArgumentsToValueList(const nsTArray<JS::Heap<JS::Value>>& aData,
                        Sequence<JS::Value>& aSequence);
 
@@ -188,12 +199,15 @@ private:
   bool
   ShouldIncludeStackTrace(MethodName aMethodName);
 
-  nsIXPConnectJSObjectHolder*
+  JSObject*
   GetOrCreateSandbox(JSContext* aCx, nsIPrincipal* aPrincipal);
 
   nsCOMPtr<nsPIDOMWindow> mWindow;
   nsCOMPtr<nsIConsoleAPIStorage> mStorage;
-  nsCOMPtr<nsIXPConnectJSObjectHolder> mSandbox;
+  nsRefPtr<JSObjectHolder> mSandbox;
+#ifdef MOZ_ENABLE_PROFILER_SPS
+  nsCOMPtr<nsIProfiler> mProfiler;
+#endif
 
   nsDataHashtable<nsStringHashKey, DOMHighResTimeStamp> mTimerRegistry;
   nsDataHashtable<nsStringHashKey, uint32_t> mCounterRegistry;
@@ -207,7 +221,7 @@ private:
   friend class ConsoleProfileRunnable;
 };
 
-} // dom namespace
-} // mozilla namespace
+} // namespace dom
+} // namespace mozilla
 
 #endif /* mozilla_dom_Console_h */

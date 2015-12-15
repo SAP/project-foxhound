@@ -14,15 +14,15 @@
 
 namespace base {
   class Histogram;
-}
+} // namespace base
 
 namespace mozilla {
 namespace HangMonitor {
   class HangAnnotations;
-}
+} // namespace HangMonitor
 namespace Telemetry {
 
-#include "TelemetryHistogramEnums.h"
+#include "mozilla/TelemetryHistogramEnums.h"
 
 enum TimerResolution {
   Millisecond,
@@ -76,6 +76,8 @@ void AccumulateTimeDelta(ID id, TimeStamp start, TimeStamp end = TimeStamp::Now(
  */
 base::Histogram* GetHistogramById(ID id);
 
+const char* GetHistogramName(ID id);
+
 /**
  * Return a raw histogram for keyed histograms.
  */
@@ -116,7 +118,7 @@ struct AccumulateDelta_impl<Microsecond>
 
 
 template<ID id, TimerResolution res = Millisecond>
-class AutoTimer {
+class MOZ_RAII AutoTimer {
 public:
   explicit AutoTimer(TimeStamp aStart = TimeStamp::Now() MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
      : start(aStart)
@@ -146,7 +148,7 @@ private:
 };
 
 template<ID id>
-class AutoCounter {
+class MOZ_RAII AutoCounter {
 public:
   explicit AutoCounter(uint32_t counterStart = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     : counter(counterStart)
@@ -174,11 +176,15 @@ private:
 };
 
 /**
- * Indicates whether Telemetry recording is turned on.  This is intended
- * to guard calls to Accumulate when the statistic being recorded is
- * expensive to compute.
+ * Indicates whether Telemetry base data recording is turned on. Added for future uses.
  */
-bool CanRecord();
+bool CanRecordBase();
+
+/**
+ * Indicates whether Telemetry extended data recording is turned on.  This is intended
+ * to guard calls to Accumulate when the statistic being recorded is expensive to compute.
+ */
+bool CanRecordExtended();
 
 /**
  * Records slow SQL statements for Telemetry reporting.
@@ -233,7 +239,7 @@ class ProcessedStack;
  * @param aFirefoxUptime - Firefox uptime at the time of the hang, in minutes
  * @param aAnnotations - Any annotations to be added to the report
  */
-#if defined(MOZ_ENABLE_PROFILER_SPS)
+#if defined(MOZ_ENABLE_PROFILER_SPS) && !defined(MOZILLA_XPCOMRT_API)
 void RecordChromeHang(uint32_t aDuration,
                       ProcessedStack &aStack,
                       int32_t aSystemUptime,
@@ -265,4 +271,5 @@ void WriteFailedProfileLock(nsIFile* aProfileDir);
 
 } // namespace Telemetry
 } // namespace mozilla
+
 #endif // Telemetry_h__

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:set et sw=2 sts=2 cin:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,9 +19,9 @@ namespace mozilla {
 namespace dom {
 
 class HTMLSharedObjectElement final : public nsGenericHTMLElement
-                                        , public nsObjectLoadingContent
-                                        , public nsIDOMHTMLAppletElement
-                                        , public nsIDOMHTMLEmbedElement
+                                    , public nsObjectLoadingContent
+                                    , public nsIDOMHTMLAppletElement
+                                    , public nsIDOMHTMLEmbedElement
 {
 public:
   explicit HTMLSharedObjectElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
@@ -207,6 +207,8 @@ private:
            nsGkAtoms::src;
   }
 
+  nsContentPolicyType GetContentPolicyType() const override;
+
   // mIsDoneAddingChildren is only really used for <applet>.  This boolean is
   // always true for <embed>, per the documentation in nsIContent.h.
   bool mIsDoneAddingChildren;
@@ -214,7 +216,7 @@ private:
   virtual void GetItemValueText(DOMString& text) override;
   virtual void SetItemValueText(const nsAString& text) override;
 
-  virtual JSObject* WrapNode(JSContext *aCx) override;
+  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
                                     nsRuleData* aData);

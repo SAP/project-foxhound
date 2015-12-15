@@ -84,9 +84,6 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro RegCleanAppHandler
 !insertmacro RegCleanMain
 !insertmacro RegCleanUninstall
-!ifdef MOZ_METRO
-!insertmacro RemoveDEHRegistrationIfMatching
-!endif
 !insertmacro SetAppLSPCategories
 !insertmacro SetBrandNameVars
 !insertmacro UpdateShortcutAppModelIDs
@@ -108,9 +105,6 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro un.RegCleanMain
 !insertmacro un.RegCleanUninstall
 !insertmacro un.RegCleanProtocolHandler
-!ifdef MOZ_METRO
-!insertmacro un.RemoveDEHRegistrationIfMatching
-!endif
 !insertmacro un.RemoveQuotesFromPath
 !insertmacro un.RemovePrecompleteEntries
 !insertmacro un.SetAppLSPCategories
@@ -284,23 +278,12 @@ Section "Uninstall"
     ${un.SetAppLSPCategories}
   ${EndIf}
 
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-    ${un.CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                                           "FirefoxURL" \
-                                           "FirefoxHTML"
-  ${EndIf}
-  ${ResetWin8PromptKeys} "HKCU" ""
-  ${ResetWin8MetroSplash}
-!else
-  ; The metro browser is not enabled by the mozconfig.
   ${If} ${AtLeastWin8}
     ${RemoveDEHRegistration} ${DELEGATE_EXECUTE_HANDLER_ID} \
                              $AppUserModelID \
                              "FirefoxURL" \
                              "FirefoxHTML"
   ${EndIf}
-!endif
 
   ${un.RegCleanAppHandler} "FirefoxURL"
   ${un.RegCleanAppHandler} "FirefoxHTML"
@@ -414,9 +397,7 @@ Section "Uninstall"
     ${UnregisterDLL} "$INSTDIR\AccessibleMarshal.dll"
   ${EndIf}
 
-  StrCpy $R2 "false"
-  StrCpy $R3 "false"
-  ${un.RemovePrecompleteEntries} "$R2" "$R3"
+  ${un.RemovePrecompleteEntries} "false"
 
   ${If} ${FileExists} "$INSTDIR\defaults\pref\channel-prefs.js"
     Delete /REBOOTOK "$INSTDIR\defaults\pref\channel-prefs.js"

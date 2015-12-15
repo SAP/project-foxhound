@@ -12,6 +12,7 @@
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
 #include "nsNetCID.h"
+#include "mozilla/Preferences.h"
 #include "prnetdb.h"
 
 using namespace mozilla;
@@ -24,6 +25,7 @@ static bool gInitialized = false;
 static nsIURLParser *gNoAuthURLParser = nullptr;
 static nsIURLParser *gAuthURLParser = nullptr;
 static nsIURLParser *gStdURLParser = nullptr;
+static int32_t gMaxLength = 1048576; // Default: 1MB
 
 static void
 InitGlobals()
@@ -52,6 +54,10 @@ InitGlobals()
     }
 
     gInitialized = true;
+#if !defined(MOZILLA_XPCOMRT_API)
+    Preferences::AddIntVarCache(&gMaxLength,
+                                "network.standard-url.max-length", 1048576);
+#endif
 }
 
 void
@@ -63,6 +69,11 @@ net_ShutdownURLHelper()
         NS_IF_RELEASE(gStdURLParser);
         gInitialized = false;
     }
+}
+
+int32_t net_GetURLMaxLength()
+{
+    return gMaxLength;
 }
 
 //----------------------------------------------------------------------------
@@ -99,6 +110,10 @@ net_GetStdURLParser()
 nsresult
 net_GetURLSpecFromDir(nsIFile *aFile, nsACString &result)
 {
+#if defined(MOZILLA_XPCOMRT_API)
+    NS_WARNING("net_GetURLSpecFromDir not implemented");
+    return NS_ERROR_NOT_IMPLEMENTED;
+#else
     nsAutoCString escPath;
     nsresult rv = net_GetURLSpecFromActualFile(aFile, escPath);
     if (NS_FAILED(rv))
@@ -110,11 +125,16 @@ net_GetURLSpecFromDir(nsIFile *aFile, nsACString &result)
     
     result = escPath;
     return NS_OK;
+#endif // defined(MOZILLA_XPCOMRT_API)
 }
 
 nsresult
 net_GetURLSpecFromFile(nsIFile *aFile, nsACString &result)
 {
+#if defined(MOZILLA_XPCOMRT_API)
+    NS_WARNING("net_GetURLSpecFromFile not implemented");
+    return NS_ERROR_NOT_IMPLEMENTED;
+#else
     nsAutoCString escPath;
     nsresult rv = net_GetURLSpecFromActualFile(aFile, escPath);
     if (NS_FAILED(rv))
@@ -134,6 +154,7 @@ net_GetURLSpecFromFile(nsIFile *aFile, nsACString &result)
     
     result = escPath;
     return NS_OK;
+#endif // defined(MOZILLA_XPCOMRT_API)
 }
 
 //----------------------------------------------------------------------------
@@ -147,6 +168,10 @@ net_ParseFileURL(const nsACString &inURL,
                  nsACString &outFileExtension)
 {
     nsresult rv;
+
+    if (inURL.Length() > (uint32_t) gMaxLength) {
+        return NS_ERROR_MALFORMED_URI;
+    }
 
     outDirectory.Truncate();
     outFileBaseName.Truncate();
@@ -803,7 +828,8 @@ net_ParseMediaType(const nsACString &aMediaTypeStr,
                    int32_t          aOffset,
                    bool             *aHadCharset,
                    int32_t          *aCharsetStart,
-                   int32_t          *aCharsetEnd)
+                   int32_t          *aCharsetEnd,
+                   bool             aStrict)
 {
     const nsCString& flatStr = PromiseFlatCString(aMediaTypeStr);
     const char* start = flatStr.get();
@@ -819,6 +845,8 @@ net_ParseMediaType(const nsACString &aMediaTypeStr,
     const char* charsetEnd = charset;
     int32_t charsetParamStart = 0;
     int32_t charsetParamEnd = 0;
+
+    uint32_t consumed = typeEnd - type;
 
     // Iterate over parameters
     bool typeHasCharset = false;
@@ -843,6 +871,7 @@ net_ParseMediaType(const nsACString &aMediaTypeStr,
                 charsetParamEnd = curParamEnd;
             }
 
+            consumed = curParamEnd;
             curParamStart = curParamEnd + 1;
         } while (curParamStart < flatStr.Length());
     }
@@ -872,8 +901,10 @@ net_ParseMediaType(const nsACString &aMediaTypeStr,
     // some servers give junk after the charset parameter, which may
     // include a comma, so this check makes us a bit more tolerant.
 
-    if (type != typeEnd && strncmp(type, "*/*", typeEnd - type) != 0 &&
-        memchr(type, '/', typeEnd - type) != nullptr) {
+    if (type != typeEnd &&
+        memchr(type, '/', typeEnd - type) != nullptr &&
+        (aStrict ? (net_FindCharNotInSet(start + consumed, end, HTTP_LWS) == end) :
+                   (strncmp(type, "*/*", typeEnd - type) != 0))) {
         // Common case here is that aContentType is empty
         bool eq = !aContentType.IsEmpty() &&
             aContentType.Equals(Substring(type, typeEnd),
@@ -980,11 +1011,57 @@ net_ParseContentType(const nsACString &aHeaderStr,
         net_ParseMediaType(Substring(flatStr, curTypeStart,
                                      curTypeEnd - curTypeStart),
                            aContentType, aContentCharset, curTypeStart,
-                           aHadCharset, aCharsetStart, aCharsetEnd);
+                           aHadCharset, aCharsetStart, aCharsetEnd, false);
 
         // And let's move on to the next media-type
         curTypeStart = curTypeEnd + 1;
     } while (curTypeStart < flatStr.Length());
+}
+
+void
+net_ParseRequestContentType(const nsACString &aHeaderStr,
+                            nsACString       &aContentType,
+                            nsACString       &aContentCharset,
+                            bool             *aHadCharset)
+{
+    //
+    // Augmented BNF (from RFC 7231 section 3.1.1.1):
+    //
+    //   media-type   = type "/" subtype *( OWS ";" OWS parameter )
+    //   type         = token
+    //   subtype      = token
+    //   parameter    = token "=" ( token / quoted-string )
+    //
+    // Examples:
+    //
+    //   text/html
+    //   text/html; charset=ISO-8859-1
+    //   text/html; charset="ISO-8859-1"
+    //   application/octet-stream
+    //
+
+    aContentType.Truncate();
+    aContentCharset.Truncate();
+    *aHadCharset = false;
+    const nsCString& flatStr = PromiseFlatCString(aHeaderStr);
+
+    // At this point curTypeEnd points to the spot where the media-type
+    // starting at curTypeEnd ends.  Time to parse that!
+    nsAutoCString contentType, contentCharset;
+    bool hadCharset = false;
+    int32_t dummy1, dummy2;
+    uint32_t typeEnd = net_FindMediaDelimiter(flatStr, 0, ',');
+    if (typeEnd != flatStr.Length()) {
+        // We have some stuff left at the end, so this is not a valid
+        // request Content-Type header.
+        return;
+    }
+    net_ParseMediaType(flatStr, contentType, contentCharset, 0,
+                       &hadCharset, &dummy1, &dummy2, true);
+
+    aContentType = contentType;
+    aContentCharset = contentCharset;
+    *aHadCharset = hadCharset;
 }
 
 bool

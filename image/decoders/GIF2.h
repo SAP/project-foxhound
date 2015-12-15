@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GIF2_H
-#define GIF2_H
+#ifndef mozilla_image_decoders_GIF2_H
+#define mozilla_image_decoders_GIF2_H
 
 #define MAX_LZW_BITS          12
 #define MAX_BITS            4097 // 2^MAX_LZW_BITS+1
@@ -31,7 +31,6 @@ typedef enum {
     gif_image_header,
     gif_image_header_continue,
     gif_image_colormap,
-    gif_image_body,
     gif_lzw_start,
     gif_lzw,
     gif_sub_block,
@@ -76,6 +75,8 @@ typedef struct gif_struct {
     // Parameters for image frame currently being decoded
     unsigned x_offset, y_offset; // With respect to "screen" origin
     unsigned height, width;
+    unsigned clamped_height;    // Size of the frame rectangle clamped to the
+    unsigned clamped_width;     //  global logical size after x_ and y_offset.
     int tpixel;                 // Index of transparent pixel
     int32_t disposal_method;    // Restore to background, leave in place, etc.
     uint32_t* local_colormap;   // Per-image colormap
@@ -106,5 +107,4 @@ typedef struct gif_struct {
 
 } gif_struct;
 
-#endif // GIF2_H
-
+#endif // mozilla_image_decoders_GIF2_H

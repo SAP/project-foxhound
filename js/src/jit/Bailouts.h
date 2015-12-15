@@ -104,8 +104,6 @@ static const uint32_t BAILOUT_RETURN_OVERRECURSED = 2;
 // are making an attempt to mark the stack during a bailout.
 static uint8_t * const FAKE_JIT_TOP_FOR_BAILOUT = reinterpret_cast<uint8_t*>(0xba1);
 
-class JitCompartment;
-
 // BailoutStack is an architecture specific pointer to the stack, given by the
 // bailout handler.
 class BailoutStack;
@@ -139,8 +137,8 @@ class BailoutFrameInfo
     SnapshotOffset snapshotOffset() const {
         return snapshotOffset_;
     }
-    const MachineState machineState() const {
-        return machine_;
+    const MachineState* machineState() const {
+        return &machine_;
     }
     size_t topFrameSize() const {
         return topFrameSize_;

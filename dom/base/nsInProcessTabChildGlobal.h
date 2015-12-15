@@ -1,5 +1,5 @@
-/* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8; -*- */
-/* vim: set sw=4 ts=8 et tw=80 : */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,6 +35,8 @@ class nsInProcessTabChildGlobal : public mozilla::DOMEventTargetHelper,
                                   public nsSupportsWeakReference,
                                   public mozilla::dom::ipc::MessageManagerCallback
 {
+  typedef mozilla::dom::ipc::StructuredCloneData StructuredCloneData;
+
 public:
   nsInProcessTabChildGlobal(nsIDocShell* aShell, nsIContent* aOwner,
                             nsFrameMessageManager* aChrome);
@@ -81,14 +83,14 @@ public:
    */
   virtual bool DoSendBlockingMessage(JSContext* aCx,
                                       const nsAString& aMessage,
-                                      const mozilla::dom::StructuredCloneData& aData,
+                                      StructuredCloneData& aData,
                                       JS::Handle<JSObject *> aCpows,
                                       nsIPrincipal* aPrincipal,
-                                      InfallibleTArray<nsString>* aJSONRetVal,
+                                      nsTArray<StructuredCloneData>* aRetVal,
                                       bool aIsSync) override;
   virtual bool DoSendAsyncMessage(JSContext* aCx,
                                   const nsAString& aMessage,
-                                  const mozilla::dom::StructuredCloneData& aData,
+                                  StructuredCloneData& aData,
                                   JS::Handle<JSObject *> aCpows,
                                   nsIPrincipal* aPrincipal) override;
 
@@ -118,6 +120,8 @@ public:
   virtual JSContext* GetJSContextForEventHandlers() override { return nsContentUtils::GetSafeJSContext(); }
   virtual nsIPrincipal* GetPrincipal() override { return mPrincipal; }
   void LoadFrameScript(const nsAString& aURL, bool aRunInGlobalScope);
+  void FireUnloadEvent();
+  void DisconnectEventListeners();
   void Disconnect();
   void SendMessageToParent(const nsString& aMessage, bool aSync,
                            const nsString& aJSON,
@@ -137,8 +141,6 @@ public:
     mChromeMessageManager = aParent;
   }
 
-  void DelayedDisconnect();
-
   virtual JSObject* GetGlobalJSObject() override {
     if (!mGlobal) {
       return nullptr;
@@ -146,10 +148,13 @@ public:
 
     return mGlobal->GetJSObject();
   }
-  virtual JSObject* WrapObject(JSContext* cx) override
+  virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override
   {
     MOZ_CRASH("nsInProcessTabChildGlobal doesn't use DOM bindings!");
   }
+
+  already_AddRefed<nsIFrameLoader> GetFrameLoader();
+
 protected:
   virtual ~nsInProcessTabChildGlobal();
 
@@ -164,10 +169,15 @@ protected:
   // <iframe mozapp>?  This affects where events get sent, so it affects
   // PreHandleEvent.
   bool mIsBrowserOrAppFrame;
+  bool mPreventEventsEscaping;
+
+  // We keep a strong reference to the frameloader after we've started
+  // teardown. This allows us to dispatch message manager messages during this
+  // time.
+  nsCOMPtr<nsIFrameLoader> mFrameLoader;
 public:
   nsIContent* mOwner;
   nsFrameMessageManager* mChromeMessageManager;
-  nsTArray<nsCOMPtr<nsIRunnable> > mASyncMessages;
 };
 
 #endif

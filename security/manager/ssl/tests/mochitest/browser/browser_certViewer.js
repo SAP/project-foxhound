@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let gBugWindow;
+var gBugWindow;
 
 function onLoad() {
   gBugWindow.removeEventListener("load", onLoad);
@@ -20,10 +20,9 @@ function onUnload() {
 // does not cause assertion failures.
 function test() {
   waitForExplicitFinish();
-  let certCache = Cc["@mozilla.org/security/nsscertcache;1"]
-                    .getService(Ci.nsINSSCertCache);
-  certCache.cacheAllCerts();
-  let certList = certCache.getX509CachedCerts();
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"]
+                 .getService(Ci.nsIX509CertDB);
+  let certList = certdb.getCerts();
   let enumerator = certList.getEnumerator();
   ok(enumerator.hasMoreElements(), "we have at least one certificate");
   let cert = enumerator.getNext().QueryInterface(Ci.nsIX509Cert);

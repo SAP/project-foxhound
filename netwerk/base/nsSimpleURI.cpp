@@ -18,7 +18,6 @@
 #include "nsIObjectOutputStream.h"
 #include "nsEscape.h"
 #include "nsError.h"
-#include "nsIProgrammingLanguage.h"
 #include "nsIIPCSerializableURI.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -262,8 +261,6 @@ nsSimpleURI::GetUserPass(nsACString &result)
 NS_IMETHODIMP
 nsSimpleURI::SetUserPass(const nsACString &userPass)
 {
-    NS_ENSURE_STATE(mMutable);
-    
     return NS_ERROR_FAILURE;
 }
 
@@ -300,6 +297,7 @@ nsSimpleURI::GetHostPort(nsACString &result)
 {
     // Note: Audit all callers before changing this to return an empty
     // string -- CAPS and UI code may depend on this throwing.
+    // Note: If this is changed, change GetAsciiHostPort as well.
     return NS_ERROR_FAILURE;
 }
 
@@ -531,6 +529,13 @@ nsSimpleURI::GetAsciiSpec(nsACString &result)
 }
 
 NS_IMETHODIMP
+nsSimpleURI::GetAsciiHostPort(nsACString &result)
+{
+    // XXX This behavior mimics GetHostPort.
+    return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
 nsSimpleURI::GetAsciiHost(nsACString &result)
 {
     result.Truncate();
@@ -557,7 +562,7 @@ nsSimpleURI::GetInterfaces(uint32_t *count, nsIID * **array)
 }
 
 NS_IMETHODIMP 
-nsSimpleURI::GetHelperForLanguage(uint32_t language, nsISupports **_retval)
+nsSimpleURI::GetScriptableHelper(nsIXPCScriptable **_retval)
 {
     *_retval = nullptr;
     return NS_OK;
@@ -584,17 +589,10 @@ nsSimpleURI::GetClassID(nsCID * *aClassID)
 {
     // Make sure to modify any subclasses as needed if this ever
     // changes to not call the virtual GetClassIDNoAlloc.
-    *aClassID = (nsCID*) nsMemory::Alloc(sizeof(nsCID));
+    *aClassID = (nsCID*) moz_xmalloc(sizeof(nsCID));
     if (!*aClassID)
         return NS_ERROR_OUT_OF_MEMORY;
     return GetClassIDNoAlloc(*aClassID);
-}
-
-NS_IMETHODIMP 
-nsSimpleURI::GetImplementationLanguage(uint32_t *aImplementationLanguage)
-{
-    *aImplementationLanguage = nsIProgrammingLanguage::CPLUSPLUS;
-    return NS_OK;
 }
 
 NS_IMETHODIMP 

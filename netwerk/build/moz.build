@@ -12,10 +12,6 @@ SOURCES += [
     'nsNetModule.cpp',
 ]
 
-FAIL_ON_WARNINGS = True
-
-MSVC_ENABLE_PGO = True
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -33,7 +29,8 @@ LOCAL_INCLUDES += [
 ]
 
 protocols = CONFIG['NECKO_PROTOCOLS'].copy()
-protocols.remove("about")
+if 'about' in protocols:
+    protocols.remove('about')
 LOCAL_INCLUDES += sorted([
     '/netwerk/protocol/%s' % d for d in protocols
 ])

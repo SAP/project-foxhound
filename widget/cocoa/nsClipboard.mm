@@ -3,7 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
+
+#include "mozilla/unused.h"
 
 #include "gfxPlatform.h"
 #include "nsCOMPtr.h"
@@ -24,14 +26,13 @@
 
 using mozilla::gfx::DataSourceSurface;
 using mozilla::gfx::SourceSurface;
+using mozilla::LogLevel;
 using mozilla::RefPtr;
 
 // Screenshots use the (undocumented) png pasteboard type.
 #define IMAGE_PASTEBOARD_TYPES NSTIFFPboardType, @"Apple PNG pasteboard type", nil
 
-#ifdef PR_LOGGING
 extern PRLogModuleInfo* sCocoaLog;
-#endif
 
 extern void EnsureLogInitialized();
 
@@ -48,17 +49,18 @@ nsClipboard::~nsClipboard()
 }
 
 // We separate this into its own function because after an @try, all local
-// variables within that function get marked as volatile, and our C++ type 
+// variables within that function get marked as volatile, and our C++ type
 // system doesn't like volatile things.
-static NSData* 
+static NSData*
 GetDataFromPasteboard(NSPasteboard* aPasteboard, NSString* aType)
 {
   NSData *data = nil;
   @try {
     data = [aPasteboard dataForType:aType];
   } @catch (NSException* e) {
-    NS_WARNING(nsPrintfCString("Exception raised while getting data from the pasteboard: \"%s - %s\"", 
+    NS_WARNING(nsPrintfCString("Exception raised while getting data from the pasteboard: \"%s - %s\"",
                                [[e name] UTF8String], [[e reason] UTF8String]).get());
+    mozilla::unused << e;
   }
   return data;
 }
@@ -417,7 +419,7 @@ nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
     nsXPIDLCString flavorStr;
     currentFlavor->ToString(getter_Copies(flavorStr));
 
-    PR_LOG(sCocoaLog, PR_LOG_ALWAYS, ("writing out clipboard data of type %s (%d)\n", flavorStr.get(), i));
+    MOZ_LOG(sCocoaLog, LogLevel::Info, ("writing out clipboard data of type %s (%d)\n", flavorStr.get(), i));
 
     NSString *pboardType = nil;
 
@@ -439,7 +441,7 @@ nsClipboard::PasteboardDictFromTransferable(nsITransferable* aTransferable)
 
       [pasteboardOutputDict setObject:nativeString forKey:pboardType];
       
-      nsMemory::Free(data);
+      free(data);
     }
     else if (flavorStr.EqualsLiteral(kPNGImageMime) || flavorStr.EqualsLiteral(kJPEGImageMime) ||
              flavorStr.EqualsLiteral(kJPGImageMime) || flavorStr.EqualsLiteral(kGIFImageMime) ||

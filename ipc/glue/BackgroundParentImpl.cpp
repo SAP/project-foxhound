@@ -6,11 +6,19 @@
 
 #include "BroadcastChannelParent.h"
 #include "FileDescriptorSetParent.h"
+#ifdef MOZ_WEBRTC
+#include "CamerasParent.h"
+#endif
+#include "mozilla/media/MediaParent.h"
 #include "mozilla/AppProcessChecker.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/NuwaParent.h"
 #include "mozilla/dom/PBlobParent.h"
+#include "mozilla/dom/MessagePortParent.h"
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
+#include "mozilla/dom/asmjscache/AsmJSCache.h"
+#include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/indexedDB/ActorsParent.h"
 #include "mozilla/dom/ipc/BlobParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -18,11 +26,15 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/PBackgroundTestParent.h"
 #include "mozilla/layout/VsyncParent.h"
+#include "mozilla/dom/network/UDPSocketParent.h"
+#include "nsIAppsService.h"
 #include "nsNetUtil.h"
-#include "nsRefPtr.h"
+#include "nsIScriptSecurityManager.h"
+#include "mozilla/nsRefPtr.h"
 #include "nsThreadUtils.h"
 #include "nsTraceRefcnt.h"
 #include "nsXULAppAPI.h"
+#include "ServiceWorkerManagerParent.h"
 
 #ifdef DISABLE_ASSERTS_FOR_FUZZING
 #define ASSERT_UNLESS_FUZZING(...) do { } while (0)
@@ -31,13 +43,22 @@
 #endif
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
+using mozilla::dom::asmjscache::PAsmJSCacheEntryParent;
+using mozilla::dom::cache::PCacheParent;
+using mozilla::dom::cache::PCacheStorageParent;
+using mozilla::dom::cache::PCacheStreamControlParent;
+using mozilla::dom::MessagePortParent;
+using mozilla::dom::PMessagePortParent;
+using mozilla::dom::PNuwaParent;
+using mozilla::dom::NuwaParent;
+using mozilla::dom::UDPSocketParent;
 
 namespace {
 
 void
 AssertIsInMainProcess()
 {
-  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+  MOZ_ASSERT(XRE_IsParentProcess());
 }
 
 void
@@ -66,7 +87,7 @@ public:
   ActorDestroy(ActorDestroyReason aWhy) override;
 };
 
-} // anonymous namespace
+} // namespace
 
 namespace mozilla {
 namespace ipc {
@@ -74,6 +95,7 @@ namespace ipc {
 using mozilla::dom::ContentParent;
 using mozilla::dom::BroadcastChannelParent;
 using mozilla::dom::ServiceWorkerRegistrationData;
+using mozilla::dom::workers::ServiceWorkerManagerParent;
 
 BackgroundParentImpl::BackgroundParentImpl()
 {
@@ -220,6 +242,24 @@ BackgroundParentImpl::DeallocPFileDescriptorSetParent(
   return true;
 }
 
+PNuwaParent*
+BackgroundParentImpl::AllocPNuwaParent()
+{
+  return mozilla::dom::NuwaParent::Alloc();
+}
+
+bool
+BackgroundParentImpl::RecvPNuwaConstructor(PNuwaParent* aActor)
+{
+  return mozilla::dom::NuwaParent::ActorConstructed(aActor);
+}
+
+bool
+BackgroundParentImpl::DeallocPNuwaParent(PNuwaParent *aActor)
+{
+  return mozilla::dom::NuwaParent::Dealloc(aActor);
+}
+
 BackgroundParentImpl::PVsyncParent*
 BackgroundParentImpl::AllocPVsyncParent()
 {
@@ -246,10 +286,125 @@ BackgroundParentImpl::DeallocPVsyncParent(PVsyncParent* aActor)
   return true;
 }
 
+camera::PCamerasParent*
+BackgroundParentImpl::AllocPCamerasParent()
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+#ifdef MOZ_WEBRTC
+  nsRefPtr<mozilla::camera::CamerasParent> actor =
+      mozilla::camera::CamerasParent::Create();
+  return actor.forget().take();
+#else
+  return nullptr;
+#endif
+}
+
+bool
+BackgroundParentImpl::DeallocPCamerasParent(camera::PCamerasParent *aActor)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aActor);
+
+#ifdef MOZ_WEBRTC
+  nsRefPtr<mozilla::camera::CamerasParent> actor =
+      dont_AddRef(static_cast<mozilla::camera::CamerasParent*>(aActor));
+#endif
+  return true;
+}
+
+namespace {
+
+class InitUDPSocketParentCallback final : public nsRunnable
+{
+public:
+  InitUDPSocketParentCallback(UDPSocketParent* aActor,
+                              const nsACString& aFilter)
+    : mActor(aActor)
+    , mFilter(aFilter)
+  {
+    AssertIsInMainProcess();
+    AssertIsOnBackgroundThread();
+  }
+
+  NS_IMETHODIMP
+  Run()
+  {
+    AssertIsInMainProcess();
+
+    IPC::Principal principal;
+    if (!mActor->Init(principal, mFilter)) {
+      MOZ_CRASH("UDPSocketCallback - failed init");
+    }
+    return NS_OK;
+  }
+
+private:
+  ~InitUDPSocketParentCallback() {};
+
+  nsRefPtr<UDPSocketParent> mActor;
+  nsCString mFilter;
+};
+
+} // namespace
+
+auto
+BackgroundParentImpl::AllocPUDPSocketParent(const OptionalPrincipalInfo& /* unused */,
+                                            const nsCString& /* unused */)
+  -> PUDPSocketParent*
+{
+  nsRefPtr<UDPSocketParent> p = new UDPSocketParent(this);
+
+  return p.forget().take();
+}
+
+bool
+BackgroundParentImpl::RecvPUDPSocketConstructor(PUDPSocketParent* aActor,
+                                                const OptionalPrincipalInfo& aOptionalPrincipal,
+                                                const nsCString& aFilter)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  if (aOptionalPrincipal.type() == OptionalPrincipalInfo::TPrincipalInfo) {
+    // Support for checking principals (for non-mtransport use) will be handled in
+    // bug 1167039
+    return false;
+  }
+  // No principal - This must be from mtransport (WebRTC/ICE) - We'd want
+  // to DispatchToMainThread() here, but if we do we must block RecvBind()
+  // until Init() gets run.  Since we don't have a principal, and we verify
+  // we have a filter, we can safely skip the Dispatch and just invoke Init()
+  // to install the filter.
+
+  // For mtransport, this will always be "stun", which doesn't allow outbound packets if
+  // they aren't STUN packets until a STUN response is seen.
+  if (!aFilter.EqualsASCII("stun")) {
+    return false;
+  }
+
+  IPC::Principal principal;
+  if (!static_cast<UDPSocketParent*>(aActor)->Init(principal, aFilter)) {
+    MOZ_CRASH("UDPSocketCallback - failed init");
+  }
+
+  return true;
+}
+
+bool
+BackgroundParentImpl::DeallocPUDPSocketParent(PUDPSocketParent* actor)
+{
+  UDPSocketParent* p = static_cast<UDPSocketParent*>(actor);
+  p->Release();
+  return true;
+}
+
 mozilla::dom::PBroadcastChannelParent*
 BackgroundParentImpl::AllocPBroadcastChannelParent(
                                             const PrincipalInfo& aPrincipalInfo,
-                                            const nsString& aOrigin,
+                                            const nsCString& aOrigin,
                                             const nsString& aChannel,
                                             const bool& aPrivateBrowsing)
 {
@@ -266,7 +421,7 @@ class CheckPrincipalRunnable final : public nsRunnable
 public:
   CheckPrincipalRunnable(already_AddRefed<ContentParent> aParent,
                          const PrincipalInfo& aPrincipalInfo,
-                         const nsString& aOrigin)
+                         const nsCString& aOrigin)
     : mContentParent(aParent)
     , mPrincipalInfo(aPrincipalInfo)
     , mOrigin(aOrigin)
@@ -283,47 +438,61 @@ public:
   {
     MOZ_ASSERT(NS_IsMainThread());
 
+    struct MOZ_STACK_CLASS RunRAII
+    {
+      explicit RunRAII(nsRefPtr<ContentParent>& aContentParent)
+        : mContentParent(aContentParent)
+      {}
+
+      ~RunRAII()
+      {
+        mContentParent = nullptr;
+      }
+
+      nsRefPtr<ContentParent>& mContentParent;
+    };
+
+    RunRAII raii(mContentParent);
+
     nsCOMPtr<nsIPrincipal> principal = PrincipalInfoToPrincipal(mPrincipalInfo);
     AssertAppPrincipal(mContentParent, principal);
 
     bool isNullPrincipal;
     nsresult rv = principal->GetIsNullPrincipal(&isNullPrincipal);
     if (NS_WARN_IF(NS_FAILED(rv)) || isNullPrincipal) {
-      mContentParent->KillHard("PBackground CheckPrincipal 1");
+      mContentParent->KillHard("BroadcastChannel killed: no null principal.");
       return NS_OK;
     }
 
-    nsCOMPtr<nsIURI> uri;
-    rv = NS_NewURI(getter_AddRefs(uri), mOrigin);
-    if (NS_FAILED(rv) || !uri) {
-      mContentParent->KillHard("PBackground CheckPrincipal 2");
-      return NS_OK;
-    }
-
-    rv = principal->CheckMayLoad(uri, false, false);
+    nsAutoCString origin;
+    rv = principal->GetOrigin(origin);
     if (NS_FAILED(rv)) {
-      mContentParent->KillHard("PBackground CheckPrincipal 3");
+      mContentParent->KillHard("BroadcastChannel killed: principal::GetOrigin failed.");
       return NS_OK;
     }
 
-    mContentParent = nullptr;
+    if (NS_WARN_IF(!mOrigin.Equals(origin))) {
+      mContentParent->KillHard("BroadcastChannel killed: origins do not match.");
+      return NS_OK;
+    }
+
     return NS_OK;
   }
 
 private:
   nsRefPtr<ContentParent> mContentParent;
   PrincipalInfo mPrincipalInfo;
-  nsString mOrigin;
+  nsCString mOrigin;
   nsCOMPtr<nsIThread> mBackgroundThread;
 };
 
-} // anonymous namespace
+} // namespace
 
 bool
 BackgroundParentImpl::RecvPBroadcastChannelConstructor(
                                             PBroadcastChannelParent* actor,
                                             const PrincipalInfo& aPrincipalInfo,
-                                            const nsString& aOrigin,
+                                            const nsCString& aOrigin,
                                             const nsString& aChannel,
                                             const bool& aPrivateBrowsing)
 {
@@ -358,176 +527,24 @@ BackgroundParentImpl::DeallocPBroadcastChannelParent(
   return true;
 }
 
-namespace {
-
-class RegisterServiceWorkerCallback final : public nsRunnable
-{
-public:
-  explicit RegisterServiceWorkerCallback(
-                                     const ServiceWorkerRegistrationData& aData)
-    : mData(aData)
-  {
-    AssertIsInMainProcess();
-    AssertIsOnBackgroundThread();
-  }
-
-  NS_IMETHODIMP
-  Run()
-  {
-    AssertIsInMainProcess();
-    AssertIsOnBackgroundThread();
-
-    nsRefPtr<dom::ServiceWorkerRegistrar> service =
-      dom::ServiceWorkerRegistrar::Get();
-    MOZ_ASSERT(service);
-
-    service->RegisterServiceWorker(mData);
-    return NS_OK;
-  }
-
-private:
-  ServiceWorkerRegistrationData mData;
-};
-
-class UnregisterServiceWorkerCallback final : public nsRunnable
-{
-public:
-  explicit UnregisterServiceWorkerCallback(const nsString& aScope)
-    : mScope(aScope)
-  {
-    AssertIsInMainProcess();
-    AssertIsOnBackgroundThread();
-  }
-
-  NS_IMETHODIMP
-  Run()
-  {
-    AssertIsInMainProcess();
-    AssertIsOnBackgroundThread();
-
-    nsRefPtr<dom::ServiceWorkerRegistrar> service =
-      dom::ServiceWorkerRegistrar::Get();
-    MOZ_ASSERT(service);
-
-    service->UnregisterServiceWorker(NS_ConvertUTF16toUTF8(mScope));
-    return NS_OK;
-  }
-
-private:
-  nsString mScope;
-};
-
-class CheckPrincipalWithCallbackRunnable final : public nsRunnable
-{
-public:
-  CheckPrincipalWithCallbackRunnable(already_AddRefed<ContentParent> aParent,
-                                     const PrincipalInfo& aPrincipalInfo,
-                                     nsRunnable* aCallback)
-    : mContentParent(aParent)
-    , mPrincipalInfo(aPrincipalInfo)
-    , mCallback(aCallback)
-    , mBackgroundThread(NS_GetCurrentThread())
-  {
-    AssertIsInMainProcess();
-    AssertIsOnBackgroundThread();
-
-    MOZ_ASSERT(mContentParent);
-    MOZ_ASSERT(mCallback);
-    MOZ_ASSERT(mBackgroundThread);
-  }
-
-  NS_IMETHODIMP Run()
-  {
-    if (NS_IsMainThread()) {
-      nsCOMPtr<nsIPrincipal> principal = PrincipalInfoToPrincipal(mPrincipalInfo);
-      AssertAppPrincipal(mContentParent, principal);
-      mContentParent = nullptr;
-
-      mBackgroundThread->Dispatch(this, NS_DISPATCH_NORMAL);
-      return NS_OK;
-    }
-
-    AssertIsOnBackgroundThread();
-    mCallback->Run();
-    mCallback = nullptr;
-
-    return NS_OK;
-  }
-
-private:
-  nsRefPtr<ContentParent> mContentParent;
-  PrincipalInfo mPrincipalInfo;
-  nsRefPtr<nsRunnable> mCallback;
-  nsCOMPtr<nsIThread> mBackgroundThread;
-};
-
-} // anonymous namespace
-
-bool
-BackgroundParentImpl::RecvRegisterServiceWorker(
-                                     const ServiceWorkerRegistrationData& aData)
+mozilla::dom::PServiceWorkerManagerParent*
+BackgroundParentImpl::AllocPServiceWorkerManagerParent()
 {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
-  // Basic validation.
-  if (aData.scope().IsEmpty() ||
-      aData.scriptSpec().IsEmpty() ||
-      aData.principal().type() == PrincipalInfo::TNullPrincipalInfo) {
-    return false;
-  }
-
-  nsRefPtr<RegisterServiceWorkerCallback> callback =
-    new RegisterServiceWorkerCallback(aData);
-
-  nsRefPtr<ContentParent> parent = BackgroundParent::GetContentParent(this);
-
-  // If the ContentParent is null we are dealing with a same-process actor.
-  if (!parent) {
-    callback->Run();
-    return true;
-  }
-
-  nsRefPtr<CheckPrincipalWithCallbackRunnable> runnable =
-    new CheckPrincipalWithCallbackRunnable(parent.forget(), aData.principal(),
-                                           callback);
-  nsresult rv = NS_DispatchToMainThread(runnable);
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
-
-  return true;
+  return new ServiceWorkerManagerParent();
 }
 
 bool
-BackgroundParentImpl::RecvUnregisterServiceWorker(
-                                            const PrincipalInfo& aPrincipalInfo,
-                                            const nsString& aScope)
+BackgroundParentImpl::DeallocPServiceWorkerManagerParent(
+                                            PServiceWorkerManagerParent* aActor)
 {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aActor);
 
-  // Basic validation.
-  if (aScope.IsEmpty() ||
-      aPrincipalInfo.type() == PrincipalInfo::TNullPrincipalInfo) {
-    return false;
-  }
-
-  nsRefPtr<UnregisterServiceWorkerCallback> callback =
-    new UnregisterServiceWorkerCallback(aScope);
-
-  nsRefPtr<ContentParent> parent = BackgroundParent::GetContentParent(this);
-
-  // If the ContentParent is null we are dealing with a same-process actor.
-  if (!parent) {
-    callback->Run();
-    return true;
-  }
-
-  nsRefPtr<CheckPrincipalWithCallbackRunnable> runnable =
-    new CheckPrincipalWithCallbackRunnable(parent.forget(), aPrincipalInfo,
-                                           callback);
-  nsresult rv = NS_DispatchToMainThread(runnable);
-  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
-
+  delete static_cast<ServiceWorkerManagerParent*>(aActor);
   return true;
 }
 
@@ -546,6 +563,118 @@ BackgroundParentImpl::RecvShutdownServiceWorkerRegistrar()
   MOZ_ASSERT(service);
 
   service->Shutdown();
+  return true;
+}
+
+PCacheStorageParent*
+BackgroundParentImpl::AllocPCacheStorageParent(const Namespace& aNamespace,
+                                               const PrincipalInfo& aPrincipalInfo)
+{
+  return dom::cache::AllocPCacheStorageParent(this, aNamespace, aPrincipalInfo);
+}
+
+bool
+BackgroundParentImpl::DeallocPCacheStorageParent(PCacheStorageParent* aActor)
+{
+  dom::cache::DeallocPCacheStorageParent(aActor);
+  return true;
+}
+
+PCacheParent*
+BackgroundParentImpl::AllocPCacheParent()
+{
+  MOZ_CRASH("CacheParent actor must be provided to PBackground manager");
+  return nullptr;
+}
+
+bool
+BackgroundParentImpl::DeallocPCacheParent(PCacheParent* aActor)
+{
+  dom::cache::DeallocPCacheParent(aActor);
+  return true;
+}
+
+PCacheStreamControlParent*
+BackgroundParentImpl::AllocPCacheStreamControlParent()
+{
+  MOZ_CRASH("CacheStreamControlParent actor must be provided to PBackground manager");
+  return nullptr;
+}
+
+bool
+BackgroundParentImpl::DeallocPCacheStreamControlParent(PCacheStreamControlParent* aActor)
+{
+  dom::cache::DeallocPCacheStreamControlParent(aActor);
+  return true;
+}
+
+PMessagePortParent*
+BackgroundParentImpl::AllocPMessagePortParent(const nsID& aUUID,
+                                              const nsID& aDestinationUUID,
+                                              const uint32_t& aSequenceID)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  return new MessagePortParent(aUUID);
+}
+
+bool
+BackgroundParentImpl::RecvPMessagePortConstructor(PMessagePortParent* aActor,
+                                                  const nsID& aUUID,
+                                                  const nsID& aDestinationUUID,
+                                                  const uint32_t& aSequenceID)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  MessagePortParent* mp = static_cast<MessagePortParent*>(aActor);
+  return mp->Entangle(aDestinationUUID, aSequenceID);
+}
+
+bool
+BackgroundParentImpl::DeallocPMessagePortParent(PMessagePortParent* aActor)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aActor);
+
+  delete static_cast<MessagePortParent*>(aActor);
+  return true;
+}
+
+bool
+BackgroundParentImpl::RecvMessagePortForceClose(const nsID& aUUID,
+                                                const nsID& aDestinationUUID,
+                                                const uint32_t& aSequenceID)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  return MessagePortParent::ForceClose(aUUID, aDestinationUUID, aSequenceID);
+}
+
+PAsmJSCacheEntryParent*
+BackgroundParentImpl::AllocPAsmJSCacheEntryParent(
+                               const dom::asmjscache::OpenMode& aOpenMode,
+                               const dom::asmjscache::WriteParams& aWriteParams,
+                               const PrincipalInfo& aPrincipalInfo)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  return
+    dom::asmjscache::AllocEntryParent(aOpenMode, aWriteParams, aPrincipalInfo);
+}
+
+bool
+BackgroundParentImpl::DeallocPAsmJSCacheEntryParent(
+                                                 PAsmJSCacheEntryParent* aActor)
+{
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  dom::asmjscache::DeallocEntryParent(aActor);
   return true;
 }
 

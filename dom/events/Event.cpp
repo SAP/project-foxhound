@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,7 +64,7 @@ Event::ConstructorInit(EventTarget* aOwner,
                        WidgetEvent* aEvent)
 {
   SetOwner(aOwner);
-  mIsMainThreadEvent = mOwner || NS_IsMainThread();
+  mIsMainThreadEvent = NS_IsMainThread();
 
   if (mIsMainThreadEvent && !sReturnHighResTimeStampIsSet) {
     Preferences::AddBoolVarCache(&sReturnHighResTimeStamp,
@@ -105,7 +106,7 @@ Event::ConstructorInit(EventTarget* aOwner,
           ...
         }
      */
-    mEvent = new WidgetEvent(false, 0);
+    mEvent = new WidgetEvent(false, eVoidEvent);
     mEvent->time = PR_Now();
   }
 
@@ -234,18 +235,18 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 
 JSObject*
-Event::WrapObject(JSContext* aCx)
+Event::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
   if (mIsMainThreadEvent && !GetWrapperPreserveColor()) {
     nsJSContext::LikelyShortLivingObjectCreated();
   }
-  return WrapObjectInternal(aCx);
+  return WrapObjectInternal(aCx, aGivenProto);
 }
 
 JSObject*
-Event::WrapObjectInternal(JSContext* aCx)
+Event::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return EventBinding::Wrap(aCx, this);
+  return EventBinding::Wrap(aCx, this, aGivenProto);
 }
 
 bool
@@ -264,12 +265,12 @@ Event::GetType(nsAString& aType)
     aType = mEvent->typeString;
     return NS_OK;
   }
-  const char* name = GetEventName(mEvent->message);
+  const char* name = GetEventName(mEvent->mMessage);
 
   if (name) {
     CopyASCIItoUTF16(name, aType);
     return NS_OK;
-  } else if (mEvent->message == NS_USER_DEFINED_EVENT && mEvent->userType) {
+  } else if (mEvent->mMessage == eUnidentifiedEvent && mEvent->userType) {
     aType = Substring(nsDependentAtomString(mEvent->userType), 2); // Remove "on"
     mEvent->typeString = aType;
     return NS_OK;
@@ -481,6 +482,13 @@ Event::StopImmediatePropagation()
 }
 
 NS_IMETHODIMP
+Event::StopCrossProcessForwarding()
+{
+  mEvent->mFlags.mNoCrossProcessBoundaryForwarding = true;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 Event::GetIsTrusted(bool* aIsTrusted)
 {
   *aIsTrusted = IsTrusted();
@@ -555,11 +563,11 @@ Event::SetEventType(const nsAString& aEventTypeArg)
   if (mIsMainThreadEvent) {
     mEvent->typeString.Truncate();
     mEvent->userType =
-      nsContentUtils::GetEventIdAndAtom(aEventTypeArg, mEvent->mClass,
-                                        &(mEvent->message));
+      nsContentUtils::GetEventMessageAndAtom(aEventTypeArg, mEvent->mClass,
+                                             &(mEvent->mMessage));
   } else {
     mEvent->userType = nullptr;
-    mEvent->message = NS_USER_DEFINED_EVENT;
+    mEvent->mMessage = eUnidentifiedEvent;
     mEvent->typeString = aEventTypeArg;
   }
 }
@@ -707,16 +715,18 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
     // triggered while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
     if (EventStateManager::IsHandlingUserInput()) {
-      switch(aEvent->message) {
-      case NS_FORM_SELECTED :
+      switch(aEvent->mMessage) {
+      case eFormSelect:
         if (PopupAllowedForEvent("select")) {
           abuse = openControlled;
         }
         break;
-      case NS_FORM_CHANGE :
+      case eFormChange:
         if (PopupAllowedForEvent("change")) {
           abuse = openControlled;
         }
+        break;
+      default:
         break;
       }
     }
@@ -726,11 +736,13 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
     // while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
     if (EventStateManager::IsHandlingUserInput()) {
-      switch(aEvent->message) {
-      case NS_EDITOR_INPUT:
+      switch(aEvent->mMessage) {
+      case eEditorInput:
         if (PopupAllowedForEvent("input")) {
           abuse = openControlled;
         }
+        break;
+      default:
         break;
       }
     }
@@ -740,14 +752,16 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
     // while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
     if (EventStateManager::IsHandlingUserInput()) {
-      switch(aEvent->message) {
-      case NS_FORM_CHANGE :
+      switch(aEvent->mMessage) {
+      case eFormChange:
         if (PopupAllowedForEvent("change")) {
           abuse = openControlled;
         }
         break;
-      case NS_XUL_COMMAND:
+      case eXULCommand:
         abuse = openControlled;
+        break;
+      default:
         break;
       }
     }
@@ -755,43 +769,47 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
   case eKeyboardEventClass:
     if (aEvent->mFlags.mIsTrusted) {
       uint32_t key = aEvent->AsKeyboardEvent()->keyCode;
-      switch(aEvent->message) {
-      case NS_KEY_PRESS :
-        // return key on focused button. see note at NS_MOUSE_CLICK.
+      switch(aEvent->mMessage) {
+      case eKeyPress:
+        // return key on focused button. see note at eMouseClick.
         if (key == nsIDOMKeyEvent::DOM_VK_RETURN) {
           abuse = openAllowed;
         } else if (PopupAllowedForEvent("keypress")) {
           abuse = openControlled;
         }
         break;
-      case NS_KEY_UP :
-        // space key on focused button. see note at NS_MOUSE_CLICK.
+      case eKeyUp:
+        // space key on focused button. see note at eMouseClick.
         if (key == nsIDOMKeyEvent::DOM_VK_SPACE) {
           abuse = openAllowed;
         } else if (PopupAllowedForEvent("keyup")) {
           abuse = openControlled;
         }
         break;
-      case NS_KEY_DOWN :
+      case eKeyDown:
         if (PopupAllowedForEvent("keydown")) {
           abuse = openControlled;
         }
+        break;
+      default:
         break;
       }
     }
     break;
   case eTouchEventClass:
     if (aEvent->mFlags.mIsTrusted) {
-      switch (aEvent->message) {
-      case NS_TOUCH_START :
+      switch (aEvent->mMessage) {
+      case eTouchStart:
         if (PopupAllowedForEvent("touchstart")) {
           abuse = openControlled;
         }
         break;
-      case NS_TOUCH_END :
+      case eTouchEnd:
         if (PopupAllowedForEvent("touchend")) {
           abuse = openControlled;
         }
+        break;
+      default:
         break;
       }
     }
@@ -799,18 +817,18 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
   case eMouseEventClass:
     if (aEvent->mFlags.mIsTrusted &&
         aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
-      switch(aEvent->message) {
-      case NS_MOUSE_BUTTON_UP :
+      switch(aEvent->mMessage) {
+      case eMouseUp:
         if (PopupAllowedForEvent("mouseup")) {
           abuse = openControlled;
         }
         break;
-      case NS_MOUSE_BUTTON_DOWN :
+      case eMouseDown:
         if (PopupAllowedForEvent("mousedown")) {
           abuse = openControlled;
         }
         break;
-      case NS_MOUSE_CLICK :
+      case eMouseClick:
         /* Click events get special treatment because of their
            historical status as a more legitimate event handler. If
            click popups are enabled in the prefs, clear the popup
@@ -819,10 +837,12 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
           abuse = openAllowed;
         }
         break;
-      case NS_MOUSE_DOUBLECLICK :
+      case eMouseDoubleClick:
         if (PopupAllowedForEvent("dblclick")) {
           abuse = openControlled;
         }
+        break;
+      default:
         break;
       }
     }
@@ -832,16 +852,18 @@ Event::GetEventPopupControlState(WidgetEvent* aEvent, nsIDOMEvent* aDOMEvent)
     // triggered while handling user input. See
     // nsPresShell::HandleEventInternal() for details.
     if (EventStateManager::IsHandlingUserInput()) {
-      switch(aEvent->message) {
-      case NS_FORM_SUBMIT :
+      switch(aEvent->mMessage) {
+      case eFormSubmit:
         if (PopupAllowedForEvent("submit")) {
           abuse = openControlled;
         }
         break;
-      case NS_FORM_RESET :
+      case eFormReset:
         if (PopupAllowedForEvent("reset")) {
           abuse = openControlled;
         }
+        break;
+      default:
         break;
       }
     }
@@ -858,7 +880,7 @@ void
 Event::PopupAllowedEventsChanged()
 {
   if (sPopupAllowedEvents) {
-    nsMemory::Free(sPopupAllowedEvents);
+    free(sPopupAllowedEvents);
   }
 
   nsAdoptingCString str = Preferences::GetCString("dom.popup_allowed_events");
@@ -873,7 +895,7 @@ void
 Event::Shutdown()
 {
   if (sPopupAllowedEvents) {
-    nsMemory::Free(sPopupAllowedEvents);
+    free(sPopupAllowedEvents);
   }
 }
 
@@ -882,6 +904,13 @@ Event::GetScreenCoords(nsPresContext* aPresContext,
                        WidgetEvent* aEvent,
                        LayoutDeviceIntPoint aPoint)
 {
+  if (!nsContentUtils::IsCallerChrome() &&
+      nsContentUtils::ResistFingerprinting()) {
+    // When resisting fingerprinting, return client coordinates instead.
+    CSSIntPoint clientCoords = GetClientCoords(aPresContext, aEvent, aPoint, CSSIntPoint(0, 0));
+    return LayoutDeviceIntPoint(clientCoords.x, clientCoords.y);
+  }
+
   if (EventStateManager::sIsPointerLocked) {
     return EventStateManager::sLastScreenPoint;
   }
@@ -959,7 +988,6 @@ Event::GetClientCoords(nsPresContext* aPresContext,
   if (!shell) {
     return CSSIntPoint(0, 0);
   }
-
   nsIFrame* rootFrame = shell->GetRootFrame();
   if (!rootFrame) {
     return CSSIntPoint(0, 0);
@@ -970,17 +998,55 @@ Event::GetClientCoords(nsPresContext* aPresContext,
   return CSSIntPoint::FromAppUnitsRounded(pt);
 }
 
+// static
+CSSIntPoint
+Event::GetOffsetCoords(nsPresContext* aPresContext,
+                       WidgetEvent* aEvent,
+                       LayoutDeviceIntPoint aPoint,
+                       CSSIntPoint aDefaultPoint)
+{
+  if (!aEvent->target) {
+    return GetPageCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
+  }
+  nsCOMPtr<nsIContent> content = do_QueryInterface(aEvent->target);
+  if (!content || !aPresContext) {
+    return CSSIntPoint(0, 0);
+  }
+  nsCOMPtr<nsIPresShell> shell = aPresContext->GetPresShell();
+  if (!shell) {
+    return CSSIntPoint(0, 0);
+  }
+  shell->FlushPendingNotifications(Flush_Layout);
+  nsIFrame* frame = content->GetPrimaryFrame();
+  if (!frame) {
+    return CSSIntPoint(0, 0);
+  }
+  nsIFrame* rootFrame = shell->GetRootFrame();
+  if (!rootFrame) {
+    return CSSIntPoint(0, 0);
+  }
+  CSSIntPoint clientCoords =
+    GetClientCoords(aPresContext, aEvent, aPoint, aDefaultPoint);
+  nsPoint pt = CSSPixel::ToAppUnits(clientCoords);
+  if (nsLayoutUtils::TransformPoint(rootFrame, frame, pt) ==
+      nsLayoutUtils::TRANSFORM_SUCCEEDED) {
+    pt -= frame->GetPaddingRectRelativeToSelf().TopLeft();
+    return CSSPixel::FromAppUnitsRounded(pt);
+  }
+  return CSSIntPoint(0, 0);
+}
+
 // To be called ONLY by Event::GetType (which has the additional
 // logic for handling user-defined events).
 // static
 const char*
-Event::GetEventName(uint32_t aEventType)
+Event::GetEventName(EventMessage aEventType)
 {
   switch(aEventType) {
-#define ID_TO_EVENT(name_, _id, _type, _struct) \
-  case _id: return #name_;
+#define MESSAGE_TO_EVENT(name_, _message, _type, _struct) \
+  case _message: return #name_;
 #include "mozilla/EventNameList.h"
-#undef ID_TO_EVENT
+#undef MESSAGE_TO_EVENT
   default:
     break;
   }
@@ -1026,7 +1092,11 @@ Event::TimeStamp() const
       return 0.0;
     }
 
-    nsPerformance* perf = mOwner->GetPerformance();
+    nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(mOwner);
+    if (NS_WARN_IF(!win)) {
+      return 0.0;
+    }
+    nsPerformance* perf = win->GetPerformance();
     if (NS_WARN_IF(!perf)) {
       return 0.0;
     }
@@ -1049,8 +1119,9 @@ Event::TimeStamp() const
 bool
 Event::GetPreventDefault() const
 {
-  if (mOwner) {
-    if (nsIDocument* doc = mOwner->GetExtantDoc()) {
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryInterface(mOwner));
+  if (win) {
+    if (nsIDocument* doc = win->GetExtantDoc()) {
       doc->WarnOnceAbout(nsIDocument::eGetPreventDefault);
     }
   }
@@ -1130,23 +1201,23 @@ Event::SetOwner(mozilla::dom::EventTarget* aOwner)
 
   nsCOMPtr<nsINode> n = do_QueryInterface(aOwner);
   if (n) {
-    mOwner = do_QueryInterface(n->OwnerDoc()->GetScopeObject());
+    mOwner = n->OwnerDoc()->GetScopeObject();
     return;
   }
 
   nsCOMPtr<nsPIDOMWindow> w = do_QueryInterface(aOwner);
   if (w) {
     if (w->IsOuterWindow()) {
-      mOwner = w->GetCurrentInnerWindow();
+      mOwner = do_QueryInterface(w->GetCurrentInnerWindow());
     } else {
-      mOwner.swap(w);
+      mOwner = do_QueryInterface(w);
     }
     return;
   }
 
   nsCOMPtr<DOMEventTargetHelper> eth = do_QueryInterface(aOwner);
   if (eth) {
-    mOwner = eth->GetOwner();
+    mOwner = eth->GetParentObject();
     return;
   }
 
@@ -1200,14 +1271,11 @@ Event::GetShadowRelatedTarget(nsIContent* aCurrentTarget,
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMEvent(nsIDOMEvent** aInstancePtrResult,
-               EventTarget* aOwner,
+already_AddRefed<Event>
+NS_NewDOMEvent(EventTarget* aOwner,
                nsPresContext* aPresContext,
                WidgetEvent* aEvent) 
 {
-  Event* it = new Event(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<Event> it = new Event(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

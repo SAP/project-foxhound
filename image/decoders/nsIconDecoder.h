@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIconDecoder_h
-#define nsIconDecoder_h
+#ifndef mozilla_image_decoders_nsIconDecoder_h
+#define mozilla_image_decoders_nsIconDecoder_h
 
 #include "Decoder.h"
 
@@ -37,16 +37,21 @@ class RasterImage;
 class nsIconDecoder : public Decoder
 {
 public:
-
-  explicit nsIconDecoder(RasterImage* aImage);
   virtual ~nsIconDecoder();
 
   virtual void WriteInternal(const char* aBuffer, uint32_t aCount) override;
 
-  uint8_t mWidth;
-  uint8_t mHeight;
+private:
+  friend class DecoderFactory;
+
+  // Decoders should only be instantiated via DecoderFactory.
+  explicit nsIconDecoder(RasterImage* aImage);
+
+  uint32_t mExpectedDataLength;
   uint32_t mPixBytesRead;
   uint32_t mState;
+  uint8_t mWidth;
+  uint8_t mHeight;
 };
 
 enum {
@@ -59,4 +64,4 @@ enum {
 } // namespace image
 } // namespace mozilla
 
-#endif // nsIconDecoder_h
+#endif // mozilla_image_decoders_nsIconDecoder_h

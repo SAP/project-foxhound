@@ -29,16 +29,16 @@
         SimpleTest.waitForExplicitFinish();
 
         Task.spawn(function* () {
-          Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
+          const { DebuggerServer } = require("devtools/server/main");
+          Services.prefs.setBoolPref("devtools.webide.sidebars", false);
           win = yield openWebIDE();
-          win.AppManager.update("runtimelist");
+          win.AppManager.update("runtime-list");
 
           yield connectToLocal(win);
 
-          yield waitForUpdate(win, "runtime-apps-found");
-
           // Select main process
           yield win.Cmds.showProjectPanel();
+          yield waitForUpdate(win, "runtime-targets");
           SimpleTest.executeSoon(() => {
             win.document.querySelectorAll("#project-panel-runtimeapps .panel-item")[0].click();
           });
@@ -61,7 +61,6 @@
 
           yield closeWebIDE(win);
 
-          const { DebuggerServer } = Cu.import("resource://gre/modules/devtools/dbg-server.jsm", {});
           DebuggerServer.destroy();
 
           SimpleTest.finish();

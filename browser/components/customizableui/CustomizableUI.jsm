@@ -37,7 +37,6 @@ const kPrefCustomizationState        = "browser.uiCustomization.state";
 const kPrefCustomizationAutoAdd      = "browser.uiCustomization.autoAdd";
 const kPrefCustomizationDebug        = "browser.uiCustomization.debug";
 const kPrefDrawInTitlebar            = "browser.tabs.drawInTitlebar";
-const kPrefDeveditionTheme           = "browser.devedition.theme.enabled";
 const kPrefWebIDEInNavbar            = "devtools.webide.widget.inNavbarByDefault";
 
 /**
@@ -54,43 +53,43 @@ const kSubviewEvents = [
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-let kVersion = 4;
+var kVersion = 4;
 
 /**
  * gPalette is a map of every widget that CustomizableUI.jsm knows about, keyed
  * on their IDs.
  */
-let gPalette = new Map();
+var gPalette = new Map();
 
 /**
  * gAreas maps area IDs to Sets of properties about those areas. An area is a
  * place where a widget can be put.
  */
-let gAreas = new Map();
+var gAreas = new Map();
 
 /**
  * gPlacements maps area IDs to Arrays of widget IDs, indicating that the widgets
  * are placed within that area (either directly in the area node, or in the
  * customizationTarget of the node).
  */
-let gPlacements = new Map();
+var gPlacements = new Map();
 
 /**
  * gFuturePlacements represent placements that will happen for areas that have
  * not yet loaded (due to lazy-loading). This can occur when add-ons register
  * widgets.
  */
-let gFuturePlacements = new Map();
+var gFuturePlacements = new Map();
 
 //XXXunf Temporary. Need a nice way to abstract functions to build widgets
 //       of these types.
-let gSupportedWidgetTypes = new Set(["button", "view", "custom"]);
+var gSupportedWidgetTypes = new Set(["button", "view", "custom"]);
 
 /**
  * gPanelsForWindow is a list of known panels in a window which we may need to close
  * should command events fire which target them.
  */
-let gPanelsForWindow = new WeakMap();
+var gPanelsForWindow = new WeakMap();
 
 /**
  * gSeenWidgets remembers which widgets the user has seen for the first time
@@ -98,7 +97,7 @@ let gPanelsForWindow = new WeakMap();
  * before, it can be put in its default location. Otherwise, it remains in the
  * palette.
  */
-let gSeenWidgets = new Set();
+var gSeenWidgets = new Set();
 
 /**
  * gDirtyAreaCache is a set of area IDs for areas where items have been added,
@@ -106,48 +105,48 @@ let gSeenWidgets = new Set();
  * optimize building of toolbars in the default case where no toolbars should
  * be "dirty".
  */
-let gDirtyAreaCache = new Set();
+var gDirtyAreaCache = new Set();
 
 /**
  * gPendingBuildAreas is a map from area IDs to map from build nodes to their
  * existing children at the time of node registration, that are waiting
  * for the area to be registered
  */
-let gPendingBuildAreas = new Map();
+var gPendingBuildAreas = new Map();
 
-let gSavedState = null;
-let gRestoring = false;
-let gDirty = false;
-let gInBatchStack = 0;
-let gResetting = false;
-let gUndoResetting = false;
+var gSavedState = null;
+var gRestoring = false;
+var gDirty = false;
+var gInBatchStack = 0;
+var gResetting = false;
+var gUndoResetting = false;
 
 /**
  * gBuildAreas maps area IDs to actual area nodes within browser windows.
  */
-let gBuildAreas = new Map();
+var gBuildAreas = new Map();
 
 /**
  * gBuildWindows is a map of windows that have registered build areas, mapped
  * to a Set of known toolboxes in that window.
  */
-let gBuildWindows = new Map();
+var gBuildWindows = new Map();
 
-let gNewElementCount = 0;
-let gGroupWrapperCache = new Map();
-let gSingleWrapperCache = new WeakMap();
-let gListeners = new Set();
+var gNewElementCount = 0;
+var gGroupWrapperCache = new Map();
+var gSingleWrapperCache = new WeakMap();
+var gListeners = new Set();
 
-let gUIStateBeforeReset = {
+var gUIStateBeforeReset = {
   uiCustomizationState: null,
   drawInTitlebar: null,
   gUIStateBeforeReset: null,
 };
 
-let gModuleName = "[CustomizableUI]";
+var gModuleName = "[CustomizableUI]";
 #include logging.js
 
-let CustomizableUIInternal = {
+var CustomizableUIInternal = {
   initialize: function() {
     LOG("Initializing");
 
@@ -172,10 +171,6 @@ let CustomizableUIInternal = {
       "developer-button",
 #endif
     ];
-
-    if (gPalette.has("switch-to-metro-button")) {
-      panelPlacements.push("switch-to-metro-button");
-    }
 
 #ifdef E10S_TESTING_ONLY
     if (gPalette.has("e10s-button")) {
@@ -213,6 +208,15 @@ let CustomizableUIInternal = {
       "loop-button",
     ];
 
+    // Insert the Pocket button after the bookmarks button if it's present.
+    for (let widgetDefinition of CustomizableWidgets) {
+      if (widgetDefinition.id == "pocket-button") {
+        let idx = navbarPlacements.indexOf("bookmarks-menu-button") + 1;
+        navbarPlacements.splice(idx, 0, widgetDefinition.id);
+        break;
+      }
+    }
+
     if (Services.prefs.getBoolPref(kPrefWebIDEInNavbar)) {
       navbarPlacements.push("webide-button");
     }
@@ -241,8 +245,9 @@ let CustomizableUIInternal = {
         return Services.appinfo.OS == "WINNT" &&
                Services.sysinfo.getProperty("version") != "5.1";
 #endif
-#endif
+#else
         return false;
+#endif
       }
     }, true);
 #endif
@@ -292,19 +297,47 @@ let CustomizableUIInternal = {
   },
 
   _introduceNewBuiltinWidgets: function() {
-    if (!gSavedState || gSavedState.currentVersion >= kVersion) {
+    // We should still enter even if gSavedState.currentVersion >= kVersion
+    // because the per-widget pref facility is independent of versioning.
+    if (!gSavedState) {
+      // Flip all the prefs so we don't try to re-introduce later:
+      for (let [id, widget] of gPalette) {
+        if (widget.defaultArea && widget._introducedInVersion === "pref") {
+          let prefId = "browser.toolbarbuttons.introduced." + widget.id;
+          Services.prefs.setBoolPref(prefId, true);
+        }
+      }
       return;
     }
 
     let currentVersion = gSavedState.currentVersion;
     for (let [id, widget] of gPalette) {
-      if (widget._introducedInVersion > currentVersion &&
-          widget.defaultArea) {
-        let futurePlacements = gFuturePlacements.get(widget.defaultArea);
-        if (futurePlacements) {
-          futurePlacements.add(id);
-        } else {
-          gFuturePlacements.set(widget.defaultArea, new Set([id]));
+      if (widget.defaultArea) {
+        let shouldAdd = false;
+        let shouldSetPref = false;
+        let prefId = "browser.toolbarbuttons.introduced." + widget.id;
+        if (widget._introducedInVersion === "pref") {
+          try {
+            shouldAdd = !Services.prefs.getBoolPref(prefId);
+          } catch (ex) {
+            // Pref doesn't exist:
+            shouldAdd = true;
+          }
+          shouldSetPref = shouldAdd;
+        } else if (widget._introducedInVersion > currentVersion) {
+          shouldAdd = true;
+        }
+
+        if (shouldAdd) {
+          let futurePlacements = gFuturePlacements.get(widget.defaultArea);
+          if (futurePlacements) {
+            futurePlacements.add(id);
+          } else {
+            gFuturePlacements.set(widget.defaultArea, new Set([id]));
+          }
+          if (shouldSetPref) {
+            Services.prefs.setBoolPref(prefId, true);
+          }
         }
       }
     }
@@ -317,6 +350,60 @@ let CustomizableUIInternal = {
     if (currentVersion < 4) {
       CustomizableUI.removeWidgetFromArea("loop-button-throttled");
     }
+  },
+
+  _placeNewDefaultWidgetsInArea: function(aArea) {
+    let futurePlacedWidgets = gFuturePlacements.get(aArea);
+    let savedPlacements = gSavedState && gSavedState.placements && gSavedState.placements[aArea];
+    let defaultPlacements = gAreas.get(aArea).get("defaultPlacements");
+    if (!savedPlacements || !savedPlacements.length || !futurePlacedWidgets || !defaultPlacements ||
+        !defaultPlacements.length) {
+      return;
+    }
+    let defaultWidgetIndex = -1;
+
+    for (let widgetId of futurePlacedWidgets) {
+      let widget = gPalette.get(widgetId);
+      if (!widget || widget.source !== CustomizableUI.SOURCE_BUILTIN ||
+          !widget.defaultArea || !widget._introducedInVersion ||
+          savedPlacements.indexOf(widget.id) !== -1) {
+        continue;
+      }
+      defaultWidgetIndex = defaultPlacements.indexOf(widget.id);
+      if (defaultWidgetIndex === -1) {
+        continue;
+      }
+      // Now we know that this widget should be here by default, was newly introduced,
+      // and we have a saved state to insert into, and a default state to work off of.
+      // Try introducing after widgets that come before it in the default placements:
+      for (let i = defaultWidgetIndex; i >= 0; i--) {
+        // Special case: if the defaults list this widget as coming first, insert at the beginning:
+        if (i === 0 && i === defaultWidgetIndex) {
+          savedPlacements.splice(0, 0, widget.id);
+          // Before you ask, yes, deleting things inside a let x of y loop where y is a Set is
+          // safe, and we won't skip any items.
+          futurePlacedWidgets.delete(widget.id);
+          gDirty = true;
+          break;
+        }
+        // Otherwise, if we're somewhere other than the beginning, check if the previous
+        // widget is in the saved placements.
+        if (i) {
+          let previousWidget = defaultPlacements[i - 1];
+          let previousWidgetIndex = savedPlacements.indexOf(previousWidget);
+          if (previousWidgetIndex != -1) {
+            savedPlacements.splice(previousWidgetIndex + 1, 0, widget.id);
+            futurePlacedWidgets.delete(widget.id);
+            gDirty = true;
+            break;
+          }
+        }
+      }
+      // The loop above either inserts the item or doesn't - either way, we can get away
+      // with doing nothing else now; if the item remains in gFuturePlacements, we'll
+      // add it at the end in restoreStateForArea.
+    }
+    this.saveState();
   },
 
   wrapWidget: function(aWidgetId) {
@@ -398,6 +485,9 @@ let CustomizableUIInternal = {
 
     if (!areaIsKnown) {
       gAreas.set(aName, props);
+
+      // Reconcile new default widgets. Have to do this before we start restoring things.
+      this._placeNewDefaultWidgetsInArea(aName);
 
       if (props.get("legacy") && !gPlacements.has(aName)) {
         // Guarantee this area exists in gFuturePlacements, to avoid checking it in
@@ -1417,6 +1507,21 @@ let CustomizableUIInternal = {
     // to the panel if we have to. We bail as soon as we find an input,
     // a toolbarbutton/item, or the panel:
     while (true && target) {
+      // Skip out of iframes etc:
+      if (target.nodeType == target.DOCUMENT_NODE) {
+        if (!target.defaultView) {
+          // Err, we're done.
+          break;
+        }
+        // Cue some voodoo
+        target = target.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+                                   .getInterface(Ci.nsIWebNavigation)
+                                   .QueryInterface(Ci.nsIDocShell)
+                                   .chromeEventHandler;
+        if (!target) {
+          break;
+        }
+      }
       let tagName = target.localName;
       inInput = tagName == "input" || tagName == "textbox";
       inItem = tagName == "toolbaritem" || tagName == "toolbarbutton";
@@ -2091,6 +2196,14 @@ let CustomizableUIInternal = {
     // opened - so we know there's no build areas to handle. Also, builtin
     // widgets are expected to be (mostly) static, so shouldn't affect the
     // current placement settings.
+
+    // This allows a widget to be both built-in by default but also able to be
+    // destroyed and removed from the area based on criteria that may not be
+    // available when the widget is created -- for example, because some other
+    // feature in the browser supersedes the widget.
+    let conditionalDestroyPromise = aData.conditionalDestroyPromise || null;
+    delete aData.conditionalDestroyPromise;
+
     let widget = this.normalizeWidget(aData, CustomizableUI.SOURCE_BUILTIN);
     if (!widget) {
       ERROR("Error creating builtin widget: " + aData.id);
@@ -2099,6 +2212,17 @@ let CustomizableUIInternal = {
 
     LOG("Creating built-in widget with id: " + widget.id);
     gPalette.set(widget.id, widget);
+
+    if (conditionalDestroyPromise) {
+      conditionalDestroyPromise.then(shouldDestroy => {
+        if (shouldDestroy) {
+          this.destroyWidget(widget.id);
+          this.removeWidgetFromArea(widget.id);
+        }
+      }, err => {
+        Cu.reportError(err);
+      });
+    }
   },
 
   // Returns true if the area will eventually lazily restore (but hasn't yet).
@@ -2332,7 +2456,6 @@ let CustomizableUIInternal = {
   _resetUIState: function() {
     try {
       gUIStateBeforeReset.drawInTitlebar = Services.prefs.getBoolPref(kPrefDrawInTitlebar);
-      gUIStateBeforeReset.deveditionTheme = Services.prefs.getBoolPref(kPrefDeveditionTheme);
       gUIStateBeforeReset.uiCustomizationState = Services.prefs.getCharPref(kPrefCustomizationState);
     } catch(e) { }
 
@@ -2340,7 +2463,6 @@ let CustomizableUIInternal = {
 
     Services.prefs.clearUserPref(kPrefCustomizationState);
     Services.prefs.clearUserPref(kPrefDrawInTitlebar);
-    Services.prefs.clearUserPref(kPrefDeveditionTheme);
     LOG("State reset");
 
     // Reset placements to make restoring default placements possible.
@@ -2402,15 +2524,13 @@ let CustomizableUIInternal = {
    */
   undoReset: function() {
     if (gUIStateBeforeReset.uiCustomizationState == null ||
-        gUIStateBeforeReset.drawInTitlebar == null ||
-        gUIStateBeforeReset.deveditionTheme == null) {
+        gUIStateBeforeReset.drawInTitlebar == null) {
       return;
     }
     gUndoResetting = true;
 
     let uiCustomizationState = gUIStateBeforeReset.uiCustomizationState;
     let drawInTitlebar = gUIStateBeforeReset.drawInTitlebar;
-    let deveditionTheme = gUIStateBeforeReset.deveditionTheme;
 
     // Need to clear the previous state before setting the prefs
     // because pref observers may check if there is a previous UI state.
@@ -2418,7 +2538,6 @@ let CustomizableUIInternal = {
 
     Services.prefs.setCharPref(kPrefCustomizationState, uiCustomizationState);
     Services.prefs.setBoolPref(kPrefDrawInTitlebar, drawInTitlebar);
-    Services.prefs.setBoolPref(kPrefDeveditionTheme, deveditionTheme);
     this.loadSavedState();
     // If the user just customizes toolbar/titlebar visibility, gSavedState will be null
     // and we don't need to do anything else here:
@@ -2594,10 +2713,6 @@ let CustomizableUIInternal = {
 
     if (Services.prefs.prefHasUserValue(kPrefDrawInTitlebar)) {
       LOG(kPrefDrawInTitlebar + " pref is non-default");
-      return false;
-    }
-    if (Services.prefs.prefHasUserValue(kPrefDeveditionTheme)) {
-      LOG(kPrefDeveditionTheme + " pref is non-default");
       return false;
     }
 
@@ -3300,8 +3415,7 @@ this.CustomizableUI = {
    */
   get canUndoReset() {
     return gUIStateBeforeReset.uiCustomizationState != null ||
-           gUIStateBeforeReset.drawInTitlebar != null ||
-           gUIStateBeforeReset.deveditionTheme != null;
+           gUIStateBeforeReset.drawInTitlebar != null;
   },
 
   /**
@@ -3560,7 +3674,7 @@ function WidgetGroupWrapper(aWidget) {
   this.isGroup = true;
 
   const kBareProps = ["id", "source", "type", "disabled", "label", "tooltiptext",
-                      "showInPrivateBrowsing"];
+                      "showInPrivateBrowsing", "viewId"];
   for (let prop of kBareProps) {
     let propertyName = prop;
     this.__defineGetter__(propertyName, function() aWidget[propertyName]);

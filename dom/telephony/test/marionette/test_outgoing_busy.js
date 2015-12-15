@@ -6,7 +6,7 @@ MARIONETTE_HEAD_JS = 'head.js';
 
 const outNumber = "5555551111";
 const outInfo = gOutCallStrPool(outNumber);
-let outCall;
+var outCall;
 
 startTest(function() {
   gDial(outNumber)
@@ -17,6 +17,7 @@ startTest(function() {
         .then(event => {
           is(event.call, outCall);
           is(event.call.error.name, "BusyError");
+          is(event.call.disconnectedReason, "Busy");
         });
       let p2 = emulator.runCmd("gsm busy " + outNumber);
       return Promise.all([p1, p2]);

@@ -30,14 +30,13 @@ const unload = require('../system/unload');
 const events = require('../system/events');
 const { getInnerId } = require("../window/utils");
 const { WorkerSandbox } = require('../content/sandbox');
-const { getTabForWindow } = require('../tabs/helpers');
 const { isPrivate } = require('../private-browsing/utils');
 
 // A weak map of workers to hold private attributes that
 // should not be exposed
 const workers = new WeakMap();
 
-let modelFor = (worker) => workers.get(worker);
+var modelFor = (worker) => workers.get(worker);
 
 const ERR_DESTROYED =
   "Couldn't find the worker to receive this message. " +
@@ -90,7 +89,7 @@ const Worker = Class({
    * argument, which represents data to be sent to the worker. The data may
    * be any primitive type value or `JSON`. Call of this method asynchronously
    * emits `message` event with data value in the global scope of this
-   * symbiont.
+   * worker.
    *
    * `message` event listeners can be set either by calling
    * `self.on` with a first argument string `"message"` or by
@@ -116,14 +115,6 @@ const Worker = Class({
   get contentURL () {
     let model = modelFor(this);
     return model.window ? model.window.document.URL : null;
-  },
-
-  get tab () {
-    let model = modelFor(this);
-    // model.window will be null after detach
-    if (model.window)
-      return getTabForWindow(model.window);
-    return null;
   },
 
   // Implemented to provide some of the previous features of exposing sandbox

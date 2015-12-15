@@ -19,7 +19,10 @@ static void
 UpdateUpperBound(uint32_t* const out_upperBound, uint32_t newBound)
 {
     MOZ_ASSERT(out_upperBound);
-    *out_upperBound = std::max(*out_upperBound, newBound);
+    // Move *out_upperBound to a local variable to work around a false positive
+    // -Wuninitialized gcc warning about std::max() in PGO builds.
+    uint32_t upperBound = *out_upperBound;
+    *out_upperBound = std::max(upperBound, newBound);
 }
 
 /* WebGLElementArrayCacheTree contains most of the implementation of
@@ -308,7 +311,8 @@ public:
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const
     {
-        return mallocSizeOf(this) + mTreeData.SizeOfExcludingThis(mallocSizeOf);
+        return mallocSizeOf(this) +
+               mTreeData.ShallowSizeOfExcludingThis(mallocSizeOf);
     }
 };
 
@@ -373,8 +377,8 @@ WebGLElementArrayCacheTree<T>::Update(size_t firstByte, size_t lastByte)
     // Step #0: If needed, resize our tree data storage.
     if (requiredNumLeaves != NumLeaves()) {
         // See class comment for why we the tree storage size is 2 * numLeaves.
-        if (!mTreeData.SetLength(2 * requiredNumLeaves)) {
-            mTreeData.SetLength(0);
+        if (!mTreeData.SetLength(2 * requiredNumLeaves, fallible)) {
+            mTreeData.Clear();
             return false;
         }
         MOZ_ASSERT(NumLeaves() == requiredNumLeaves);
@@ -467,8 +471,8 @@ bool
 WebGLElementArrayCache::BufferData(const void* ptr, size_t byteLength)
 {
     if (mBytes.Length() != byteLength) {
-        if (!mBytes.SetLength(byteLength)) {
-            mBytes.SetLength(0);
+        if (!mBytes.SetLength(byteLength, fallible)) {
+            mBytes.Clear();
             return false;
         }
     }
@@ -621,7 +625,7 @@ size_t
 WebGLElementArrayCache::SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const
 {
     return mallocSizeOf(this) +
-           mBytes.SizeOfExcludingThis(mallocSizeOf) +
+           mBytes.ShallowSizeOfExcludingThis(mallocSizeOf) +
            SizeOfNullable(mallocSizeOf, mUint8Tree) +
            SizeOfNullable(mallocSizeOf, mUint16Tree) +
            SizeOfNullable(mallocSizeOf, mUint32Tree);

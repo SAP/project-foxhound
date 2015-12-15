@@ -2,25 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from marionette_test import MarionetteTestCase, skip_if_e10s
+from marionette import MarionetteTestCase
 from marionette_driver.keys import Keys
 
 
 class TestWindowHandles(MarionetteTestCase):
 
-    @skip_if_e10s # Interactions with about: pages need e10s support (bug 1096488).
     def test_new_tab_window_handles(self):
-        keys = [Keys.SHIFT]
+
+        keys = []
         if self.marionette.session_capabilities['platformName'] == 'DARWIN':
             keys.append(Keys.META)
         else:
             keys.append(Keys.CONTROL)
-        keys.append('a')
-
-        # Put some history in the tab so this results in a fresh tab opening.
-        self.marionette.navigate("about:blank")
-        self.marionette.navigate("data:text/html, <div>Text</div>")
-        self.marionette.navigate("about:blank")
+        keys.append('t')
 
         origin_win = self.marionette.current_window_handle
 
@@ -31,9 +26,9 @@ class TestWindowHandles(MarionetteTestCase):
         self.wait_for_condition(lambda mn: len(mn.window_handles) == 2)
         handles = self.marionette.window_handles
         handles.remove(origin_win)
-        addons_page = handles.pop()
-        self.marionette.switch_to_window(addons_page)
-        self.assertEqual(self.marionette.get_url(), "about:addons")
+        new_tab = handles.pop()
+        self.marionette.switch_to_window(new_tab)
+        self.assertEqual(self.marionette.get_url(), "about:newtab")
         self.marionette.close()
 
         self.marionette.switch_to_window(origin_win)
@@ -65,10 +60,13 @@ class TestWindowHandles(MarionetteTestCase):
         self.assertEqual(self.marionette.get_url(), "about:blank")
 
     def test_chrome_windows(self):
-        start_tab = self.marionette.current_window_handle
         opener_page = self.marionette.absolute_url("windowHandles.html")
 
         self.marionette.navigate(opener_page)
+
+        # Window handles don't persist in cases of remoteness change.
+        start_tab = self.marionette.current_window_handle
+
         self.marionette.find_element("id", "new-window").click()
 
         self.assertEqual(len(self.marionette.window_handles), 2)
@@ -92,8 +90,6 @@ class TestWindowHandles(MarionetteTestCase):
         self.assertEqual(len(self.marionette.window_handles), 1)
         self.marionette.switch_to_window(start_tab)
 
-    # This sequence triggers an exception in Marionette:register with e10s on (bug 1120809).
-    @skip_if_e10s
     def test_tab_and_window_handles(self):
         start_tab = self.marionette.current_window_handle
         start_chrome_window = self.marionette.current_chrome_window_handle

@@ -88,6 +88,7 @@ SessionStore.prototype = {
         observerService.addObserver(this, "ClosedTabs:StopNotifications", true);
         observerService.addObserver(this, "last-pb-context-exited", true);
         observerService.addObserver(this, "Session:RestoreRecentTabs", true);
+        observerService.addObserver(this, "Tabs:OpenMultiple", true);
         break;
       case "final-ui-startup":
         observerService.removeObserver(this, "final-ui-startup");
@@ -154,6 +155,18 @@ SessionStore.prototype = {
         } else {
           // Not doing a restore; just send restore message
           Services.obs.notifyObservers(null, "sessionstore-windows-restored", "");
+        }
+        break;
+      }
+      case "Tabs:OpenMultiple": {
+        let data = JSON.parse(aData);
+
+        this._openTabs(data);
+
+        if (data.shouldNotifyTabsOpenedToJava) {
+          Messaging.sendRequest({
+            type: "Tabs:TabsOpened"
+          });
         }
         break;
       }
@@ -341,8 +354,8 @@ SessionStore.prototype = {
     if (aWindow.BrowserApp.tabs.length > 0) {
       // Bundle this browser's data and extra data and save in the closedTabs
       // window property
-      let data = aBrowser.__SS_data;
-      data.extData = aBrowser.__SS_extdata;
+      let data = aBrowser.__SS_data || {};
+      data.extData = aBrowser.__SS_extdata || {};
 
       this._windows[aWindow.__SSID].closedTabs.unshift(data);
       let length = this._windows[aWindow.__SSID].closedTabs.length;
@@ -910,6 +923,21 @@ SessionStore.prototype = {
     return shEntry;
   },
 
+  // This function iterates through a list of urls opening a new tab for each.
+  _openTabs: function ss_openTabs(aData) {
+    let window = Services.wm.getMostRecentWindow("navigator:browser");
+    for (let i = 0; i < aData.urls.length; i++) {
+      let url = aData.urls[i];
+      let params = {
+        selected: (i == aData.urls.length - 1),
+        isPrivate: false,
+        desktopMode: false,
+      };
+
+      let tab = window.BrowserApp.addTab(url, params);
+    }
+  },
+
   // This function iterates through a list of tab data restoring session for each of them.
   _restoreTabs: function ss_restoreTabs(aData) {
     let window = Services.wm.getMostRecentWindow("navigator:browser");
@@ -1168,19 +1196,19 @@ SessionStore.prototype = {
 
   setTabValue: function ss_setTabValue(aTab, aKey, aStringValue) {
     let browser = aTab.browser;
-
-    if (!browser.__SS_extdata)
+    if (!browser.__SS_extdata) {
       browser.__SS_extdata = {};
+    }
     browser.__SS_extdata[aKey] = aStringValue;
     this.saveStateDelayed();
   },
 
   deleteTabValue: function ss_deleteTabValue(aTab, aKey) {
     let browser = aTab.browser;
-    if (browser.__SS_extdata && browser.__SS_extdata[aKey])
+    if (browser.__SS_extdata && aKey in browser.__SS_extdata) {
       delete browser.__SS_extdata[aKey];
-    else
-      throw (Components.returnCode = Cr.NS_ERROR_INVALID_ARG);
+      this.saveStateDelayed();
+    }
   },
 
   restoreLastSession: Task.async(function* (aSessionString) {

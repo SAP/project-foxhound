@@ -14,7 +14,7 @@
 // without also including PHttpChannelParams.h
 namespace IPC {
     template <typename> struct ParamTraits;
-}
+} // namespace IPC
 
 namespace mozilla { namespace net {
 
@@ -121,6 +121,21 @@ public:
         return ParseDateHeader(nsHttp::Last_Modified, result);
     }
 
+    bool operator==(const nsHttpResponseHead& aOther) const
+    {
+        return mHeaders == aOther.mHeaders &&
+               mVersion == aOther.mVersion &&
+               mStatus == aOther.mStatus &&
+               mStatusText == aOther.mStatusText &&
+               mContentLength == aOther.mContentLength &&
+               mContentType == aOther.mContentType &&
+               mContentCharset == aOther.mContentCharset &&
+               mCacheControlPrivate == aOther.mCacheControlPrivate &&
+               mCacheControlNoCache == aOther.mCacheControlNoCache &&
+               mCacheControlNoStore == aOther.mCacheControlNoStore &&
+               mPragmaNoCache == aOther.mPragmaNoCache;
+    }
+
 private:
     void     AssignDefaultStatusText();
     void     ParseVersion(const char *);
@@ -143,6 +158,8 @@ private:
 
     friend struct IPC::ParamTraits<nsHttpResponseHead>;
 };
-}} // namespace mozilla::net
+
+} // namespace net
+} // namespace mozilla
 
 #endif // nsHttpResponseHead_h__

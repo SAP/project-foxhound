@@ -13,13 +13,11 @@ const nsIDialogParamBlock = Components.interfaces.nsIDialogParamBlock;
 const nsDialogParamBlock = "@mozilla.org/embedcomp/dialogparam;1";
 const nsIPKIParamBlock    = Components.interfaces.nsIPKIParamBlock;
 const nsPKIParamBlock    = "@mozilla.org/security/pkiparamblock;1";
-const nsINSSCertCache = Components.interfaces.nsINSSCertCache;
-const nsNSSCertCache = "@mozilla.org/security/nsscertcache;1";
 
 const gCertFileTypes = "*.p7b; *.crt; *.cert; *.cer; *.pem; *.der";
 
-let { NetUtil } = Components.utils.import("resource://gre/modules/NetUtil.jsm", {});
-let { Services } = Components.utils.import("resource://gre/modules/Services.jsm", {});
+var { NetUtil } = Components.utils.import("resource://gre/modules/NetUtil.jsm", {});
+var { Services } = Components.utils.import("resource://gre/modules/Services.jsm", {});
 
 var key;
 
@@ -52,9 +50,7 @@ function LoadCerts()
   Services.obs.addObserver(smartCardObserver, "smartcard-remove", false);
 
   certdb = Components.classes[nsX509CertDB].getService(nsIX509CertDB);
-  var certcache = Components.classes[nsNSSCertCache].createInstance(nsINSSCertCache);
-  
-  certcache.cacheAllCerts();
+  var certcache = certdb.getCerts();
 
   caTreeView = Components.classes[nsCertTree]
                     .createInstance(nsICertTree);
@@ -273,8 +269,6 @@ function email_enableButtons()
 
   var enableViewButton=document.getElementById('email_viewButton');
   enableViewButton.setAttribute("disabled", disableButtons);
-  var enableEditButton=document.getElementById('email_editButton');
-  enableEditButton.setAttribute("disabled", disableButtons);
   var enableExportButton=document.getElementById('email_exportButton');
   enableExportButton.setAttribute("disabled", disableButtons);
   var enableDeleteButton=document.getElementById('email_deleteButton');
@@ -329,14 +323,8 @@ function editCerts()
     return;
   for (var t=0; t<numcerts; t++) {
     var cert = selected_certs[t];
-    var certkey = cert.dbKey;
-    if (document.getElementById("ca_tab").selected) {
-      window.openDialog('chrome://pippki/content/editcacert.xul', certkey,
-                        'chrome,centerscreen,modal');
-    } else if (document.getElementById("others_tab").selected) {
-      window.openDialog('chrome://pippki/content/editemailcert.xul', certkey,
-                        'chrome,centerscreen,modal');
-    }
+    window.openDialog("chrome://pippki/content/editcacert.xul", cert.dbKey,
+                      "chrome,centerscreen,modal");
   }
 }
 
@@ -386,8 +374,7 @@ function restoreCerts()
       certdb.importPKCS12File(null, fp.file);
     }
 
-    var certcache = Components.classes[nsNSSCertCache].createInstance(nsINSSCertCache);
-    certcache.cacheAllCerts();
+    var certcache = certdb.getCerts();
     userTreeView.loadCertsFromCache(certcache, nsIX509Cert.USER_CERT);
     userTreeView.selection.clearSelection();
     caTreeView.loadCertsFromCache(certcache, nsIX509Cert.CA_CERT);
@@ -529,10 +516,9 @@ function addCACerts()
 
 function onSmartCardChange()
 {
-  var certcache = Components.classes[nsNSSCertCache].createInstance(nsINSSCertCache);
+  var certcache = certdb.getCerts();
   // We've change the state of the smart cards inserted or removed
   // that means the available certs may have changed. Update the display
-  certcache.cacheAllCerts();
   userTreeView.loadCertsFromCache(certcache, nsIX509Cert.USER_CERT);
   userTreeView.selection.clearSelection();
   caTreeView.loadCertsFromCache(certcache, nsIX509Cert.CA_CERT);
@@ -557,8 +543,7 @@ function addEmailCert()
   fp.appendFilters(nsIFilePicker.filterAll);
   if (fp.show() == nsIFilePicker.returnOK) {
     certdb.importCertsFromFile(null, fp.file, nsIX509Cert.EMAIL_CERT);
-    var certcache = Components.classes[nsNSSCertCache].createInstance(nsINSSCertCache);
-    certcache.cacheAllCerts();
+    var certcache = certdb.getCerts();
     emailTreeView.loadCertsFromCache(certcache, nsIX509Cert.EMAIL_CERT);
     emailTreeView.selection.clearSelection();
     caTreeView.loadCertsFromCache(certcache, nsIX509Cert.CA_CERT);
@@ -579,8 +564,7 @@ function addWebSiteCert()
   if (fp.show() == nsIFilePicker.returnOK) {
     certdb.importCertsFromFile(null, fp.file, nsIX509Cert.SERVER_CERT);
 
-    var certcache = Components.classes[nsNSSCertCache].createInstance(nsINSSCertCache);
-    certcache.cacheAllCerts();
+    var certcache = certdb.getCerts();
     serverTreeView.loadCertsFromCache(certcache, nsIX509Cert.SERVER_CERT);
     serverTreeView.selection.clearSelection();
     caTreeView.loadCertsFromCache(certcache, nsIX509Cert.CA_CERT);
@@ -592,8 +576,7 @@ function addException()
 {
   window.openDialog('chrome://pippki/content/exceptionDialog.xul', "",
                     'chrome,centerscreen,modal');
-  var certcache = Components.classes[nsNSSCertCache].createInstance(nsINSSCertCache);
-  certcache.cacheAllCerts();
+  var certcache = certdb.getCerts();
   serverTreeView.loadCertsFromCache(certcache, nsIX509Cert.SERVER_CERT);
   serverTreeView.selection.clearSelection();
   orphanTreeView.loadCertsFromCache(certcache, nsIX509Cert.UNKNOWN_CERT);

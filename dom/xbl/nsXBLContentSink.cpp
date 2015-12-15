@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,13 +39,12 @@ NS_NewXBLContentSink(nsIXMLContentSink** aResult,
 {
   NS_ENSURE_ARG_POINTER(aResult);
 
-  nsXBLContentSink* it = new nsXBLContentSink();
-
-  nsCOMPtr<nsIXMLContentSink> kungFuDeathGrip = it;
+  nsRefPtr<nsXBLContentSink> it = new nsXBLContentSink();
   nsresult rv = it->Init(aDoc, aURI, aContainer);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return CallQueryInterface(it, aResult);
+  it.forget(aResult);
+  return NS_OK;
 }
 
 nsXBLContentSink::nsXBLContentSink()
@@ -137,9 +137,9 @@ nsXBLContentSink::FlushText(bool aReleaseTextNode)
     nsIContent* content = GetCurrentContent();
     if (content &&
         (content->NodeInfo()->NamespaceEquals(kNameSpaceID_XBL) ||
-         (content->NodeInfo()->NamespaceEquals(kNameSpaceID_XUL) &&
-          content->Tag() != nsGkAtoms::label &&
-          content->Tag() != nsGkAtoms::description))) {
+         (content->IsXULElement() &&
+          !content->IsAnyOfXULElements(nsGkAtoms::label,
+                                       nsGkAtoms::description)))) {
 
       bool isWS = true;
       if (mTextLength > 0) {
@@ -884,7 +884,7 @@ nsresult
 nsXBLContentSink::AddAttributes(const char16_t** aAtts,
                                 nsIContent* aContent)
 {
-  if (aContent->IsXUL())
+  if (aContent->IsXULElement())
     return NS_OK; // Nothing to do, since the proto already has the attrs.
 
   return nsXMLContentSink::AddAttributes(aAtts, aContent);

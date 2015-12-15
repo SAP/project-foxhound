@@ -40,11 +40,6 @@
 class gfxASurface;
 
 namespace mozilla {
-
-namespace layers {
-struct RemoteImageData;
-}
-
 namespace plugins {
 
 class PBrowserStreamChild;
@@ -70,7 +65,14 @@ class PluginInstanceChild : public PPluginInstanceChild
 #endif
 
 protected:
-    virtual bool AnswerNPP_SetWindow(const NPRemoteWindow& window) override;
+    virtual bool
+    AnswerCreateChildPluginWindow(NativeWindowHandle* aChildPluginWindow) override;
+
+    virtual bool
+    RecvCreateChildPopupSurrogate(const NativeWindowHandle& aNetscapeWindow) override;
+
+    virtual bool
+    AnswerNPP_SetWindow(const NPRemoteWindow& window) override;
 
     virtual bool
     AnswerNPP_GetValue_NPPVpluginWantsAllNetworkStreams(bool* wantsAllStreams, NPError* rv) override;
@@ -84,6 +86,8 @@ protected:
                                                            NPError* aResult) override;
     virtual bool
     AnswerNPP_SetValue_NPNVprivateModeBool(const bool& value, NPError* result) override;
+    virtual bool
+    AnswerNPP_SetValue_NPNVmuteAudioBool(const bool& value, NPError* result) override;
 
     virtual bool
     AnswerNPP_HandleEvent(const NPRemoteEvent& event, int16_t* handled) override;
@@ -250,6 +254,8 @@ public:
     void UnscheduleTimer(uint32_t id);
 
     void AsyncCall(PluginThreadCallback aFunc, void* aUserData);
+    // This function is a more general version of AsyncCall
+    void PostChildAsyncCall(ChildAsyncCall* aTask);
 
     int GetQuirks();
 
@@ -281,7 +287,6 @@ private:
     static bool RegisterWindowClass();
     bool CreatePluginWindow();
     void DestroyPluginWindow();
-    void ReparentPluginWindow(HWND hWndParent);
     void SizePluginWindow(int width, int height);
     int16_t WinlessHandleEvent(NPEvent& event);
     void CreateWinlessPopupSurrogate();
@@ -290,6 +295,8 @@ private:
     void SetupFlashMsgThrottle();
     void UnhookWinlessFlashThrottle();
     void HookSetWindowLongPtr();
+    void SetUnityHooks();
+    void ClearUnityHooks();
     static inline bool SetWindowLongHookCheck(HWND hWnd,
                                                 int nIndex,
                                                 LONG_PTR newLong);
@@ -309,6 +316,9 @@ private:
                                           int nReserved,
                                           HWND hWnd,
                                           CONST RECT *prcRect);
+    static HWND WINAPI SetCaptureHook(HWND aHwnd);
+    static LRESULT CALLBACK UnityGetMessageHookProc(int aCode, WPARAM aWparam, LPARAM aLParam);
+    static LRESULT CALLBACK UnitySendMessageHookProc(int aCode, WPARAM aWparam, LPARAM aLParam);
     static BOOL CALLBACK EnumThreadWindowsCallback(HWND hWnd,
                                                    LPARAM aParam);
     static LRESULT CALLBACK WinlessHiddenFlashWndProc(HWND hWnd,
@@ -372,7 +382,7 @@ private:
     InfallibleTArray<nsCString> mValues;
     NPP_t mData;
     NPWindow mWindow;
-#if defined(XP_MACOSX)
+#if defined(XP_DARWIN)
     double mContentsScaleFactor;
 #endif
     int16_t               mDrawingModel;
@@ -400,6 +410,8 @@ private:
     nsIntPoint mPluginSize;
     WNDPROC mWinlessThrottleOldWndProc;
     HWND mWinlessHiddenMsgHWND;
+    HHOOK mUnityGetMessageHook;
+    HHOOK mUnitySendMessageHook;
 #endif
 
     friend class ChildAsyncCall;

@@ -2,15 +2,17 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/Task.jsm");
-let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
+"use strict";
 
-const TESTCASE_URI_HTML = TEST_BASE + "sourcemaps-watching.html";
-const TESTCASE_URI_CSS = TEST_BASE + "sourcemap-css/sourcemaps.css";
-const TESTCASE_URI_REG_CSS = TEST_BASE + "simple.css";
-const TESTCASE_URI_SCSS = TEST_BASE + "sourcemap-sass/sourcemaps.scss";
-const TESTCASE_URI_MAP = TEST_BASE + "sourcemap-css/sourcemaps.css.map";
+Components.utils.import("resource://gre/modules/Task.jsm");
+var {require} = Components.utils.import("resource://gre/modules/devtools/Loader.jsm", {});
+var promise = require("promise");
+
+const TESTCASE_URI_HTML = TEST_BASE_HTTP + "sourcemaps-watching.html";
+const TESTCASE_URI_CSS = TEST_BASE_HTTP + "sourcemap-css/sourcemaps.css";
+const TESTCASE_URI_REG_CSS = TEST_BASE_HTTP + "simple.css";
+const TESTCASE_URI_SCSS = TEST_BASE_HTTP + "sourcemap-sass/sourcemaps.scss";
+const TESTCASE_URI_MAP = TEST_BASE_HTTP + "sourcemap-css/sourcemaps.css.map";
 const TESTCASE_SCSS_NAME = "sourcemaps.scss";
 
 const TRANSITIONS_PREF = "devtools.styleeditor.transitions";
@@ -20,22 +22,22 @@ const CSS_TEXT = "* { color: blue }";
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
-let tempScope = {};
+var tempScope = {};
 Components.utils.import("resource://gre/modules/FileUtils.jsm", tempScope);
 Components.utils.import("resource://gre/modules/NetUtil.jsm", tempScope);
-let FileUtils = tempScope.FileUtils;
-let NetUtil = tempScope.NetUtil;
+var FileUtils = tempScope.FileUtils;
+var NetUtil = tempScope.NetUtil;
 
-function test()
-{
+function test() {
   waitForExplicitFinish();
 
   Services.prefs.setBoolPref(TRANSITIONS_PREF, false);
 
-  Task.spawn(function() {
+  Task.spawn(function*() {
     // copy all our files over so we don't screw them up for other tests
     let HTMLFile = yield copy(TESTCASE_URI_HTML, ["sourcemaps.html"]);
-    let CSSFile = yield copy(TESTCASE_URI_CSS, ["sourcemap-css", "sourcemaps.css"]);
+    let CSSFile = yield copy(TESTCASE_URI_CSS,
+      ["sourcemap-css", "sourcemaps.css"]);
     yield copy(TESTCASE_URI_SCSS, ["sourcemap-sass", "sourcemaps.scss"]);
     yield copy(TESTCASE_URI_MAP, ["sourcemap-css", "sourcemaps.css.map"]);
     yield copy(TESTCASE_URI_REG_CSS, ["simple.css"]);
@@ -43,7 +45,19 @@ function test()
     let uri = Services.io.newFileURI(HTMLFile);
     let testcaseURI = uri.resolve("");
 
-    let editor = yield openEditor(testcaseURI);
+    let { ui } = yield openStyleEditorForURL(testcaseURI);
+
+    let editor = ui.editors[1];
+    if (getStylesheetNameFor(editor) != TESTCASE_SCSS_NAME) {
+      editor = ui.editors[2];
+    }
+
+    is(getStylesheetNameFor(editor), TESTCASE_SCSS_NAME, "found scss editor");
+
+    let link = getLinkFor(editor);
+    link.click();
+
+    yield editor.getSourceEditor();
 
     let element = content.document.querySelector("div");
     let style = content.getComputedStyle(element, null);
@@ -66,32 +80,7 @@ function test()
     yield editCSSFile(CSSFile);
 
     info("wrote to CSS file");
-  })
-}
-
-function openEditor(testcaseURI) {
-  let deferred = promise.defer();
-
-  addTabAndOpenStyleEditors(3, panel => {
-    let UI = panel.UI;
-
-    // wait for 5 editors - 1 for first style sheet, 2 for the
-    // generated style sheets, and 2 for original source after it
-    // loads and replaces the generated style sheets.
-    let editor = UI.editors[1];
-    if (getStylesheetNameFor(editor) != TESTCASE_SCSS_NAME) {
-      editor = UI.editors[2];
-    }
-    is(getStylesheetNameFor(editor), TESTCASE_SCSS_NAME, "found scss editor");
-
-    let link = getLinkFor(editor);
-    link.click();
-
-    editor.getSourceEditor().then(deferred.resolve);
   });
-  content.location = testcaseURI;
-
-  return deferred.promise;
 }
 
 function editSCSS(editor) {
@@ -100,7 +89,7 @@ function editSCSS(editor) {
   let pos = {line: 0, ch: 0};
   editor.sourceEditor.replaceText(CSS_TEXT, pos, pos);
 
-  editor.saveToFile(null, function (file) {
+  editor.saveToFile(null, function(file) {
     ok(file, "Scss file should be saved");
     deferred.resolve();
   });
@@ -136,26 +125,25 @@ function getLinkFor(editor) {
 
 function getStylesheetNameFor(editor) {
   return editor.summary.querySelector(".stylesheet-name > label")
-         .getAttribute("value")
+    .getAttribute("value");
 }
 
-function copy(aSrcChromeURL, aDestFilePath)
-{
-  let destFile = FileUtils.getFile("ProfD", aDestFilePath);
-  return write(read(aSrcChromeURL), destFile);
+function copy(srcChromeURL, destFilePath) {
+  let destFile = FileUtils.getFile("ProfD", destFilePath);
+  return write(read(srcChromeURL), destFile);
 }
 
-function read(aSrcChromeURL)
-{
+function read(srcChromeURL) {
   let scriptableStream = Cc["@mozilla.org/scriptableinputstream;1"]
     .getService(Ci.nsIScriptableInputStream);
+  let principal = Services.scriptSecurityManager.getSystemPrincipal();
 
-  let channel = Services.io.newChannel2(aSrcChromeURL,
+  let channel = Services.io.newChannel2(srcChromeURL,
                                         null,
                                         null,
-                                        null,      // aLoadingNode
-                                        Services.scriptSecurityManager.getSystemPrincipal(),
-                                        null,      // aTriggeringPrincipal
+                                        null,
+                                        principal,
+                                        null,
                                         Ci.nsILoadInfo.SEC_NORMAL,
                                         Ci.nsIContentPolicy.TYPE_OTHER);
   let input = channel.open();
@@ -171,8 +159,7 @@ function read(aSrcChromeURL)
   return data;
 }
 
-function write(aData, aFile)
-{
+function write(aData, aFile) {
   let deferred = promise.defer();
 
   let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]

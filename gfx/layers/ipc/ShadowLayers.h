@@ -12,6 +12,7 @@
 #include <stdint.h>                     // for uint64_t
 #include "gfxTypes.h"
 #include "mozilla/Attributes.h"         // for override
+#include "mozilla/gfx/Rect.h"
 #include "mozilla/WidgetUtils.h"        // for ScreenRotation
 #include "mozilla/dom/ScreenOrientation.h"  // for ScreenOrientation
 #include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc
@@ -22,39 +23,20 @@
 #include "nsTArrayForwardDeclare.h"     // for InfallibleTArray
 #include "nsIWidget.h"
 
-struct nsIntPoint;
-struct nsIntRect;
-
 namespace mozilla {
 namespace layers {
 
-class ClientTiledLayerBuffer;
-class CanvasClient;
-class CanvasLayerComposite;
-class CanvasSurface;
-class ColorLayerComposite;
-class CompositableChild;
-class ContainerLayerComposite;
-class ContentClient;
-class ContentClientRemote;
 class EditReply;
-class ImageClient;
-class ImageLayerComposite;
+class ImageContainer;
 class Layer;
-class OptionalThebesBuffer;
 class PLayerChild;
 class PLayerTransactionChild;
-class PLayerTransactionParent;
 class LayerTransactionChild;
-class RefLayerComposite;
 class ShadowableLayer;
-class ShmemTextureClient;
 class SurfaceDescriptor;
 class TextureClient;
-class PaintedLayerComposite;
 class ThebesBuffer;
 class ThebesBufferData;
-class TiledLayerComposer;
 class Transaction;
 
 
@@ -131,9 +113,8 @@ class Transaction;
  * from the content thread. (See CompositableForwarder.h and ImageBridgeChild.h)
  */
 
-class ShadowLayerForwarder : public CompositableForwarder
+class ShadowLayerForwarder final : public CompositableForwarder
 {
-  friend class ContentClientIncremental;
   friend class ClientLayerManager;
 
 public:
@@ -143,14 +124,11 @@ public:
    * Setup the IPDL actor for aCompositable to be part of layers
    * transactions.
    */
-  void Connect(CompositableClient* aCompositable) override;
+  virtual void Connect(CompositableClient* aCompositable,
+                       ImageContainer* aImageContainer) override;
 
   virtual PTextureChild* CreateTexture(const SurfaceDescriptor& aSharedData,
                                        TextureFlags aFlags) override;
-
-  virtual void CreatedIncrementalBuffer(CompositableClient* aCompositable,
-                                        const TextureInfo& aTextureInfo,
-                                        const nsIntRect& aBufferRect) override;
 
   /**
    * Adds an edit in the layers transaction in order to attach
@@ -175,9 +153,9 @@ public:
    * Begin recording a transaction to be forwarded atomically to a
    * LayerManagerComposite.
    */
-  void BeginTransaction(const nsIntRect& aTargetBounds,
+  void BeginTransaction(const gfx::IntRect& aTargetBounds,
                         ScreenRotation aRotation,
-                        mozilla::dom::ScreenOrientation aOrientation);
+                        mozilla::dom::ScreenOrientationInternal aOrientation);
 
   /**
    * The following methods may only be called after BeginTransaction()
@@ -235,13 +213,6 @@ public:
   virtual void UseTiledLayerBuffer(CompositableClient* aCompositable,
                                    const SurfaceDescriptorTiles& aTileLayerDescriptor) override;
 
-  /**
-   * Notify the compositor that a compositable will be updated asynchronously
-   * through ImageBridge, using an ID to connect the protocols on the
-   * compositor side.
-   */
-  void AttachAsyncCompositable(PLayerTransactionChild* aLayer, uint64_t aID);
-
   virtual void RemoveTextureFromCompositable(CompositableClient* aCompositable,
                                              TextureClient* aTexture) override;
 
@@ -259,41 +230,19 @@ public:
                                    const ThebesBufferData& aThebesBufferData,
                                    const nsIntRegion& aUpdatedRegion) override;
 
-  virtual void UpdateTextureIncremental(CompositableClient* aCompositable,
-                                        TextureIdentifier aTextureId,
-                                        SurfaceDescriptor& aDescriptor,
-                                        const nsIntRegion& aUpdatedRegion,
-                                        const nsIntRect& aBufferRect,
-                                        const nsIntPoint& aBufferRotation) override;
-
   /**
-   * Communicate the picture rect of an image to the compositor
+   * See CompositableForwarder::UseTextures
    */
-  void UpdatePictureRect(CompositableClient* aCompositable,
-                         const nsIntRect& aRect) override;
-
-  /**
-   * See CompositableForwarder::UpdatedTexture
-   */
-  virtual void UpdatedTexture(CompositableClient* aCompositable,
-                              TextureClient* aTexture,
-                              nsIntRegion* aRegion) override;
-
-  /**
-   * See CompositableForwarder::UseTexture
-   */
-  virtual void UseTexture(CompositableClient* aCompositable,
-                          TextureClient* aClient) override;
+  virtual void UseTextures(CompositableClient* aCompositable,
+                           const nsTArray<TimedTextureClient>& aTextures) override;
   virtual void UseComponentAlphaTextures(CompositableClient* aCompositable,
                                          TextureClient* aClientOnBlack,
                                          TextureClient* aClientOnWhite) override;
 #ifdef MOZ_WIDGET_GONK
   virtual void UseOverlaySource(CompositableClient* aCompositable,
-                                const OverlaySource& aOverlay) override;
+                                const OverlaySource& aOverlay,
+                                const nsIntRect& aPictureRect) override;
 #endif
-  virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
-                               PTextureChild* aTexture,
-                               const FenceHandle& aFence) override;
 
   /**
    * End the current transaction and forward it to LayerManagerComposite.
@@ -382,6 +331,7 @@ public:
 
   virtual bool IPCOpen() const override;
   virtual bool IsSameProcess() const override;
+  virtual base::ProcessId ParentPid() const override;
 
   /**
    * Construct a shadow of |aLayer| on the "other side", at the
@@ -393,6 +343,8 @@ public:
    * Flag the next paint as the first for a document.
    */
   void SetIsFirstPaint() { mIsFirstPaint = true; }
+
+  void SetPaintSyncId(int32_t aSyncId) { mPaintSyncId = aSyncId; }
 
   static void PlatformSyncBeforeUpdate();
 
@@ -416,6 +368,7 @@ private:
   DiagnosticTypes mDiagnosticTypes;
   bool mIsFirstPaint;
   bool mWindowOverlayChanged;
+  int32_t mPaintSyncId;
   InfallibleTArray<PluginWindowData> mPluginWindowData;
 };
 

@@ -20,6 +20,7 @@ include protocol PDNSRequest;
 include protocol PChannelDiverter;
 include protocol PBlob; //FIXME: bug #792908
 include protocol PFileDescriptorSet;
+include protocol PDataChannel;
 
 include protocol PRtspController;
 include protocol PRtspChannel;
@@ -30,6 +31,7 @@ include PBrowserOrId;
 
 using class IPC::SerializedLoadContext from "SerializedLoadContext.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
+using class IPC::Principal from "mozilla/dom/PermissionMessageUtils.h";
 
 namespace mozilla {
 namespace net {
@@ -48,6 +50,7 @@ prio(normal upto urgent) sync protocol PNecko
   manages PUDPSocket;
   manages PDNSRequest;
   manages PRemoteOpenFile;
+  manages PDataChannel;
   manages PRtspController;
   manages PRtspChannel;
   manages PChannelDiverter;
@@ -64,17 +67,34 @@ parent:
               FTPChannelCreationArgs args);
 
   PWebSocket(PBrowserOrId browser, SerializedLoadContext loadContext);
-  PTCPServerSocket(uint16_t localPort, uint16_t backlog, nsString binaryType);
-  PUDPSocket(nsCString filter);
+  PTCPServerSocket(uint16_t localPort, uint16_t backlog, bool useArrayBuffers);
+  PUDPSocket(Principal principal, nsCString filter);
 
   PDNSRequest(nsCString hostName, uint32_t flags, nsCString networkInterface);
+
+
+  /* Predictor Methods */
+  PredPredict(OptionalURIParams targetURI, OptionalURIParams sourceURI,
+              uint32_t reason, SerializedLoadContext loadContext,
+              bool hasVerifier);
+  PredLearn(URIParams targetURI, OptionalURIParams sourceURI,
+            uint32_t reason, SerializedLoadContext loadContext);
+  PredReset();
 
   PRemoteOpenFile(SerializedLoadContext loadContext,
                   URIParams fileuri,
                   OptionalURIParams appuri);
 
+  SpeculativeConnect(URIParams uri, bool anonymous);
   HTMLDNSPrefetch(nsString hostname, uint16_t flags);
   CancelHTMLDNSPrefetch(nsString hostname, uint16_t flags, nsresult reason);
+
+  /**
+   * channelId is used to establish a connection between redirect channels in
+   * the parent and the child when we're redirecting to a data: URI.
+   */
+  PDataChannel(uint32_t channelId);
+
   PRtspController();
   PRtspChannel(RtspChannelConnectArgs args);
   PChannelDiverter(ChannelDiverterArgs channel);
@@ -88,6 +108,8 @@ parent:
                   nsString password, nsString domain);
   OnAuthCancelled(uint64_t callbackId, bool userCancel);
 
+  RemoveSchedulingContext(nsCString scid);
+
 child:
   /*
    * Bring up the http auth prompt for a nested remote mozbrowser.
@@ -98,6 +120,10 @@ child:
                                 nsString realm, uint64_t callbackId);
   // Notifies child that a given app is now offline (or online)
   AppOfflineStatus(uint32_t appId, bool offline);
+
+  /* Predictor Methods */
+  PredOnPredictPreconnect(URIParams uri);
+  PredOnPredictDNS(URIParams uri);
 
 both:
   // Actually we need PTCPSocket() for parent. But ipdl disallows us having different

@@ -15,12 +15,11 @@ SOURCES += [
 ]
 
 UNIFIED_SOURCES += [
+    'MLSFallback.cpp',
     'nsGeoGridFuzzer.cpp',
     'nsGeolocationSettings.cpp',
     'nsGeoPosition.cpp',
 ]
-
-FAIL_ON_WARNINGS = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

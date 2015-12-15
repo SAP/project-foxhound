@@ -24,8 +24,8 @@ namespace css {
 class Declaration;
 class Loader;
 class Rule;
-}
-}
+} // namespace css
+} // namespace mozilla
 
 class nsDOMCSSDeclaration : public nsICSSDeclaration
 {
@@ -97,13 +97,29 @@ public:
 
   virtual void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName) override;
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 protected:
-  // This method can return null regardless of the value of aAllocate;
-  // however, a null return should only be considered a failure
-  // if aAllocate is true.
-  virtual mozilla::css::Declaration* GetCSSDeclaration(bool aAllocate) = 0;
+  // The reason for calling GetCSSDeclaration.
+  enum Operation {
+    // We are calling GetCSSDeclaration so that we can read from it.  Does not
+    // allocate a new declaration if we don't have one yet; returns nullptr in
+    // this case.
+    eOperation_Read,
+
+    // We are calling GetCSSDeclaration so that we can set a property on it
+    // or re-parse the whole declaration.  Allocates a new declaration if we
+    // don't have one yet and calls AttributeWillChange.  A nullptr return value
+    // indicates an error allocating the declaration.
+    eOperation_Modify,
+
+    // We are calling GetCSSDeclaration so that we can remove a property from
+    // it.  Does not allocates a new declaration if we don't have one yet;
+    // returns nullptr in this case.  If we do have a declaration, calls
+    // AttributeWillChange.
+    eOperation_RemoveProperty
+  };
+  virtual mozilla::css::Declaration* GetCSSDeclaration(Operation aOperation) = 0;
   virtual nsresult SetCSSDeclaration(mozilla::css::Declaration* aDecl) = 0;
   // Document that we must call BeginUpdate/EndUpdate on around the
   // calls to SetCSSDeclaration and the style rule mutation that leads
@@ -118,12 +134,18 @@ protected:
   // fly.  This is why we don't use CSSParsingEnvironment as a return
   // value, to avoid multiple-refcounting of mBaseURI.
   struct CSSParsingEnvironment {
-    nsIURI* mSheetURI;
+    nsIURI* MOZ_UNSAFE_REF("user of CSSParsingEnviroment must hold an owning "
+                           "reference; reference counting here has unacceptable "
+                           "performance overhead (see bug 649163)") mSheetURI;
     nsCOMPtr<nsIURI> mBaseURI;
-    nsIPrincipal* mPrincipal;
-    mozilla::css::Loader* mCSSLoader;
+    nsIPrincipal* MOZ_UNSAFE_REF("user of CSSParsingEnviroment must hold an owning "
+                                 "reference; reference counting here has unacceptable "
+                                 "performance overhead (see bug 649163)") mPrincipal;
+    mozilla::css::Loader* MOZ_UNSAFE_REF("user of CSSParsingEnviroment must hold an owning "
+                                         "reference; reference counting here has unacceptable "
+                                         "performance overhead (see bug 649163)") mCSSLoader;
   };
-  
+
   // On failure, mPrincipal should be set to null in aCSSParseEnv.
   // If mPrincipal is null, the other members may not be set to
   // anything meaningful.

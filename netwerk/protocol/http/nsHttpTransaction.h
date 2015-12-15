@@ -12,13 +12,13 @@
 #include "EventTokenBucket.h"
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
-#include "nsILoadGroup.h"
 #include "nsIInterfaceRequestor.h"
 #include "TimingStruct.h"
 #include "Http2Push.h"
+#include "mozilla/net/DNS.h"
 
 #ifdef MOZ_WIDGET_GONK
-#include "nsINetworkManager.h"
+#include "nsINetworkInterface.h"
 #include "nsProxyRelease.h"
 #endif
 
@@ -28,6 +28,7 @@ class nsIHttpActivityObserver;
 class nsIEventTarget;
 class nsIInputStream;
 class nsIOutputStream;
+class nsISchedulingContext;
 
 namespace mozilla { namespace net {
 
@@ -41,9 +42,9 @@ class nsHttpResponseHead;
 //-----------------------------------------------------------------------------
 
 class nsHttpTransaction final : public nsAHttpTransaction
-                                  , public ATokenBucketEvent
-                                  , public nsIInputStreamCallback
-                                  , public nsIOutputStreamCallback
+                              , public ATokenBucketEvent
+                              , public nsIInputStreamCallback
+                              , public nsIOutputStreamCallback
 {
 public:
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -123,9 +124,9 @@ public:
     const TimeStamp GetPendingTime() { return mPendingTime; }
     bool UsesPipelining() const { return mCaps & NS_HTTP_ALLOW_PIPELINING; }
 
-    // overload of nsAHttpTransaction::LoadGroupConnectionInfo()
-    nsILoadGroupConnectionInfo *LoadGroupConnectionInfo() override { return mLoadGroupCI.get(); }
-    void SetLoadGroupConnectionInfo(nsILoadGroupConnectionInfo *aLoadGroupCI);
+    // overload of nsAHttpTransaction::SchedulingContext()
+    nsISchedulingContext *SchedulingContext() override { return mSchedulingContext.get(); }
+    void SetSchedulingContext(nsISchedulingContext *aSchedulingContext);
     void DispatchedAsBlocking();
     void RemoveDispatchedAsBlocking();
 
@@ -217,7 +218,7 @@ private:
     nsCOMPtr<nsISupports>           mSecurityInfo;
     nsCOMPtr<nsIAsyncInputStream>   mPipeIn;
     nsCOMPtr<nsIAsyncOutputStream>  mPipeOut;
-    nsCOMPtr<nsILoadGroupConnectionInfo> mLoadGroupCI;
+    nsCOMPtr<nsISchedulingContext>  mSchedulingContext;
 
     nsCOMPtr<nsISupports>             mChannel;
     nsCOMPtr<nsIHttpActivityObserver> mActivityDistributor;
@@ -272,6 +273,7 @@ private:
     Atomic<uint32_t>                mCapsToClear;
 
     nsHttpVersion                   mHttpVersion;
+    uint16_t                        mHttpResponseCode;
 
     // state flags, all logically boolean, but not packed together into a
     // bitfield so as to avoid bitfield-induced races.  See bug 560579.
@@ -294,6 +296,9 @@ private:
     bool                            mResponseTimeoutEnabled;
     bool                            mForceRestart;
     bool                            mReuseOnRestart;
+    bool                            mContentDecoding;
+    bool                            mContentDecodingCheck;
+    bool                            mDeferredSendProgress;
 
     // mClosed           := transaction has been explicitly closed
     // mTransactionDone  := transaction ran to completion or was interrupted
@@ -405,7 +410,7 @@ private:
     uint32_t                           mAppId;
     bool                               mIsInBrowser;
 #ifdef MOZ_WIDGET_GONK
-    nsMainThreadPtrHandle<nsINetworkInterface> mActiveNetwork;
+    nsMainThreadPtrHandle<nsINetworkInfo> mActiveNetworkInfo;
 #endif
     nsresult                           SaveNetworkStats(bool);
     void                               CountRecvBytes(uint64_t recvBytes)
@@ -438,8 +443,16 @@ public:
 
 private:
     nsRefPtr<ASpdySession> mTunnelProvider;
+
+public:
+    void GetNetworkAddresses(NetAddr &self, NetAddr &peer);
+
+private:
+    NetAddr                         mSelfAddr;
+    NetAddr                         mPeerAddr;
 };
 
-}} // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // nsHttpTransaction_h__

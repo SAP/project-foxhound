@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set tw=80 expandtab softtabstop=2 ts=2 sw=2: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,8 +49,8 @@ protected:
 };
 
 class HTMLPropertiesCollection final : public nsIHTMLCollection,
-                                           public nsStubMutationObserver,
-                                           public nsWrapperCache
+                                       public nsStubMutationObserver,
+                                       public nsWrapperCache
 {
   friend class PropertyNodeList;
   friend class PropertyStringList;
@@ -59,7 +59,8 @@ public:
 
   // nsWrapperCache
   using nsWrapperCache::GetWrapperPreserveColor;
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  using nsWrapperCache::GetWrapper;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 protected:
   virtual ~HTMLPropertiesCollection();
 
@@ -149,13 +150,13 @@ protected:
 };
 
 class PropertyNodeList final : public nsINodeList,
-                                   public nsStubMutationObserver
+                               public nsStubMutationObserver
 {
 public:
   PropertyNodeList(HTMLPropertiesCollection* aCollection,
                    nsIContent* aRoot, const nsAString& aName);
 
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
   void SetDocument(nsIDocument* aDocument);
 
@@ -218,4 +219,5 @@ protected:
 
 } // namespace dom
 } // namespace mozilla
+
 #endif // HTMLPropertiesCollection_h_

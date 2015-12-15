@@ -13,9 +13,13 @@
 #include "nsHttpChannel.h"
 #include "HttpChannelChild.h"
 #include "nsHttpResponseHead.h"
+#include "mozilla/dom/ChannelInfo.h"
 
 namespace mozilla {
 namespace net {
+
+extern bool
+WillRedirect(const nsHttpResponseHead * response);
 
 extern nsresult
 DoAddCacheEntryHeaders(nsHttpChannel *self,
@@ -56,8 +60,11 @@ void
 InterceptedChannelBase::DoNotifyController()
 {
     nsresult rv = mController->ChannelIntercepted(this);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      rv = ResetInterception();
+      NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Failed to resume intercepted network request");
+    }
     mController = nullptr;
-    NS_ENSURE_SUCCESS_VOID(rv);
 }
 
 NS_IMETHODIMP
@@ -65,6 +72,22 @@ InterceptedChannelBase::GetIsNavigation(bool* aIsNavigation)
 {
   *aIsNavigation = mIsNavigation;
   return NS_OK;
+}
+
+nsresult
+InterceptedChannelBase::DoSynthesizeStatus(uint16_t aStatus, const nsACString& aReason)
+{
+    EnsureSynthesizedResponse();
+
+    // Always assume HTTP 1.1 for synthesized responses.
+    nsAutoCString statusLine;
+    statusLine.AppendLiteral("HTTP/1.1 ");
+    statusLine.AppendInt(aStatus);
+    statusLine.AppendLiteral(" ");
+    statusLine.Append(aReason);
+
+    (*mSynthesizedResponseHead)->ParseStatusLine(statusLine.get());
+    return NS_OK;
 }
 
 nsresult
@@ -86,12 +109,19 @@ InterceptedChannelChrome::InterceptedChannelChrome(nsHttpChannel* aChannel,
 , mChannel(aChannel)
 , mSynthesizedCacheEntry(aEntry)
 {
+  nsresult rv = mChannel->GetApplyConversion(&mOldApplyConversion);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    mOldApplyConversion = false;
+  }
 }
 
 void
 InterceptedChannelChrome::NotifyController()
 {
   nsCOMPtr<nsIOutputStream> out;
+
+  // Intercepted responses should already be decoded.
+  mChannel->SetApplyConversion(false);
 
   nsresult rv = mSynthesizedCacheEntry->OpenOutputStream(0, getter_AddRefs(mResponseBody));
   NS_ENSURE_SUCCESS_VOID(rv);
@@ -116,6 +146,8 @@ InterceptedChannelChrome::ResetInterception()
   mSynthesizedCacheEntry->AsyncDoom(nullptr);
   mSynthesizedCacheEntry = nullptr;
 
+  mChannel->SetApplyConversion(mOldApplyConversion);
+
   nsCOMPtr<nsIURI> uri;
   mChannel->GetURI(getter_AddRefs(uri));
 
@@ -124,6 +156,16 @@ InterceptedChannelChrome::ResetInterception()
 
   mChannel = nullptr;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+InterceptedChannelChrome::SynthesizeStatus(uint16_t aStatus, const nsACString& aReason)
+{
+  if (!mSynthesizedCacheEntry) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return DoSynthesizeStatus(aStatus, aReason);
 }
 
 NS_IMETHODIMP
@@ -144,6 +186,13 @@ InterceptedChannelChrome::FinishSynthesizedResponse()
   }
 
   EnsureSynthesizedResponse();
+
+  // If the synthesized response is a redirect, then we want to respect
+  // the encoding of whatever is loaded as a result.
+  if (WillRedirect(mSynthesizedResponseHead.ref())) {
+    nsresult rv = mChannel->SetApplyConversion(mOldApplyConversion);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   mChannel->MarkIntercepted();
 
@@ -181,17 +230,29 @@ InterceptedChannelChrome::FinishSynthesizedResponse()
 }
 
 NS_IMETHODIMP
-InterceptedChannelChrome::Cancel()
+InterceptedChannelChrome::Cancel(nsresult aStatus)
 {
+  MOZ_ASSERT(NS_FAILED(aStatus));
+
   if (!mChannel) {
     return NS_ERROR_FAILURE;
   }
 
   // we need to use AsyncAbort instead of Cancel since there's no active pump
   // to cancel which will provide OnStart/OnStopRequest to the channel.
-  nsresult rv = mChannel->AsyncAbort(NS_BINDING_ABORTED);
+  nsresult rv = mChannel->AsyncAbort(aStatus);
   NS_ENSURE_SUCCESS(rv, rv);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+InterceptedChannelChrome::SetChannelInfo(dom::ChannelInfo* aChannelInfo)
+{
+  if (!mChannel) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return aChannelInfo->ResurrectInfoOnChannel(mChannel);
 }
 
 InterceptedChannelContent::InterceptedChannelContent(HttpChannelChild* aChannel,
@@ -237,6 +298,16 @@ InterceptedChannelContent::ResetInterception()
 }
 
 NS_IMETHODIMP
+InterceptedChannelContent::SynthesizeStatus(uint16_t aStatus, const nsACString& aReason)
+{
+  if (!mResponseBody) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return DoSynthesizeStatus(aStatus, aReason);
+}
+
+NS_IMETHODIMP
 InterceptedChannelContent::SynthesizeHeader(const nsACString& aName, const nsACString& aValue)
 {
   if (!mResponseBody) {
@@ -255,39 +326,42 @@ InterceptedChannelContent::FinishSynthesizedResponse()
 
   EnsureSynthesizedResponse();
 
-  nsresult rv = nsInputStreamPump::Create(getter_AddRefs(mStoragePump), mSynthesizedInput,
-                                          int64_t(-1), int64_t(-1), 0, 0, true);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    mSynthesizedInput->Close();
-    return rv;
-  }
+  mChannel->OverrideWithSynthesizedResponse(mSynthesizedResponseHead.ref(),
+                                            mSynthesizedInput,
+                                            mStreamListener);
 
   mResponseBody = nullptr;
-
-  rv = mStoragePump->AsyncRead(mStreamListener, nullptr);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  mChannel->OverrideWithSynthesizedResponse(mSynthesizedResponseHead.ref(), mStoragePump);
-
   mChannel = nullptr;
   mStreamListener = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-InterceptedChannelContent::Cancel()
+InterceptedChannelContent::Cancel(nsresult aStatus)
 {
+  MOZ_ASSERT(NS_FAILED(aStatus));
+
   if (!mChannel) {
     return NS_ERROR_FAILURE;
   }
 
   // we need to use AsyncAbort instead of Cancel since there's no active pump
   // to cancel which will provide OnStart/OnStopRequest to the channel.
-  nsresult rv = mChannel->AsyncAbort(NS_BINDING_ABORTED);
+  nsresult rv = mChannel->AsyncAbort(aStatus);
   NS_ENSURE_SUCCESS(rv, rv);
   mChannel = nullptr;
   mStreamListener = nullptr;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+InterceptedChannelContent::SetChannelInfo(dom::ChannelInfo* aChannelInfo)
+{
+  if (!mChannel) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return aChannelInfo->ResurrectInfoOnChannel(mChannel);
 }
 
 } // namespace net

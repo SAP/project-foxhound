@@ -20,6 +20,9 @@
 #include "prerror.h"
 #include "prio.h"
 #include "TunnelUtils.h"
+#include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
+#include "nsComponentManagerUtils.h"
 
 #ifdef DEBUG
 // defined by the socket transport service while active
@@ -1022,9 +1025,6 @@ SpdyConnectTransaction::SpdyConnectTransaction(nsHttpConnectionInfo *ci,
 SpdyConnectTransaction::~SpdyConnectTransaction()
 {
   LOG(("SpdyConnectTransaction dtor %p\n", this));
-  if (mRequestHead) {
-    delete mRequestHead;
-  }
 
   if (mDrivingTransaction) {
     // requeue it I guess. This should be gone.
@@ -1607,6 +1607,18 @@ SocketTransportShim::GetTimeout(uint32_t aType, uint32_t *_retval)
 }
 
 NS_IMETHODIMP
+SocketTransportShim::GetNetworkInterfaceId(nsACString_internal &aNetworkInterfaceId)
+{
+  return mWrapped->GetNetworkInterfaceId(aNetworkInterfaceId);
+}
+
+NS_IMETHODIMP
+SocketTransportShim::SetNetworkInterfaceId(const nsACString_internal &aNetworkInterfaceId)
+{
+  return mWrapped->SetNetworkInterfaceId(aNetworkInterfaceId);
+}
+
+NS_IMETHODIMP
 SocketTransportShim::SetTimeout(uint32_t aType, uint32_t aValue)
 {
   return mWrapped->SetTimeout(aType, aValue);
@@ -1631,5 +1643,5 @@ NS_IMPL_ISUPPORTS(OutputStreamShim, nsIOutputStream, nsIAsyncOutputStream)
 NS_IMPL_ISUPPORTS(SocketInWrapper, nsIAsyncInputStream)
 NS_IMPL_ISUPPORTS(SocketOutWrapper, nsIAsyncOutputStream)
 
-} // namespace mozilla::net
+} // namespace net
 } // namespace mozilla

@@ -15,23 +15,23 @@
 #include "nsRect.h"
 #include "nsPoint.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "nsTArray.h"
 
 // translucency level for drag images
 #define DRAG_TRANSLUCENCY 0.65
 
 class nsIContent;
 class nsIDOMNode;
-class nsIFrame;
 class nsPresContext;
 class nsIImageLoadingContent;
-class nsICanvasElementExternal;
 
 namespace mozilla {
 namespace gfx {
 class SourceSurface;
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 /**
  * XP DragService wrapper base class
@@ -53,9 +53,18 @@ public:
   NS_DECL_NSIDRAGSERVICE
   NS_DECL_NSIDRAGSESSION
 
-  void SetDragEndPoint(nsIntPoint aEndDragPoint) { mEndDragPoint = aEndDragPoint; }
+  void SetDragEndPoint(nsIntPoint aEndDragPoint)
+  {
+    mEndDragPoint = mozilla::LayoutDeviceIntPoint::FromUntyped(aEndDragPoint);
+  }
+  void SetDragEndPoint(mozilla::LayoutDeviceIntPoint aEndDragPoint)
+  {
+    mEndDragPoint = aEndDragPoint;
+  }
 
   uint16_t GetInputSource() { return mInputSource; }
+
+  int32_t TakeChildProcessDragAction();
 
 protected:
   virtual ~nsBaseDragService();
@@ -112,6 +121,15 @@ protected:
    */
   void OpenDragPopup();
 
+  // Returns true if a drag event was dispatched to a child process after
+  // the previous TakeDragEventDispatchedToChildProcess() call.
+  bool TakeDragEventDispatchedToChildProcess()
+  {
+    bool retval = mDragEventDispatchedToChildProcess;
+    mDragEventDispatchedToChildProcess = false;
+    return retval;
+  }
+
   bool mCanDrop;
   bool mOnlyChromeDrop;
   bool mDoingDrag;
@@ -120,7 +138,11 @@ protected:
   // true if the user cancelled the drag operation
   bool mUserCancelled;
 
+  bool mDragEventDispatchedToChildProcess;
+
   uint32_t mDragAction;
+  uint32_t mDragActionFromChildProcess;
+
   nsSize mTargetSize;
   nsCOMPtr<nsIDOMNode> mSourceNode;
   nsCOMPtr<nsIDOMDocument> mSourceDocument;       // the document at the drag source. will be null
@@ -147,12 +169,14 @@ protected:
   int32_t mScreenY;
 
   // the screen position where the drag ended
-  nsIntPoint mEndDragPoint;
+  mozilla::LayoutDeviceIntPoint mEndDragPoint;
 
   uint32_t mSuppressLevel;
 
   // The input source of the drag event. Possible values are from nsIDOMMouseEvent.
   uint16_t mInputSource;
+
+  nsTArray<nsRefPtr<mozilla::dom::ContentParent>> mChildProcesses;
 };
 
 #endif // nsBaseDragService_h__

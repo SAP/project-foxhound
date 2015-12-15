@@ -32,8 +32,8 @@ function run_test() {
   // Launch an existing file so it is in use during the update.
   let args = [getApplyDirPath() + DIR_RESOURCES, "input", "output", "-s",
               HELPER_SLEEP_TIMEOUT];
-  let fileInUseProcess = AUS_Cc["@mozilla.org/process/util;1"].
-                         createInstance(AUS_Ci.nsIProcess);
+  let fileInUseProcess = Cc["@mozilla.org/process/util;1"].
+                         createInstance(Ci.nsIProcess);
   fileInUseProcess.init(fileInUseBin);
   fileInUseProcess.run(false, args, args.length);
 
@@ -52,8 +52,7 @@ function checkUpdateFinished() {
   // Switch the application to the staged application that was updated.
   gStageUpdate = false;
   gSwitchApp = true;
-  gDisableReplaceFallback = true;
-  runUpdate(1, STATE_FAILED_WRITE_ERROR);
+  runUpdate(1, STATE_PENDING, checkUpdateApplied);
 }
 
 function checkUpdateApplied() {
@@ -61,7 +60,9 @@ function checkUpdateApplied() {
 }
 
 function checkUpdate() {
-  checkFilesAfterUpdateFailure(getApplyDirFile, true, false);
+  checkFilesAfterUpdateFailure(getApplyDirFile, false, false);
   checkUpdateLogContains(ERR_RENAME_FILE);
+  checkUpdateLogContains(ERR_MOVE_DESTDIR_7);
+  standardInit();
   checkCallbackAppLog();
 }

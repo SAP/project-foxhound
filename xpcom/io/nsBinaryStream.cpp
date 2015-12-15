@@ -228,7 +228,7 @@ nsBinaryOutputStream::WriteWStringZ(const char16_t* aString)
   if (length <= 64) {
     copy = temp;
   } else {
-    copy = reinterpret_cast<char16_t*>(moz_malloc(byteCount));
+    copy = reinterpret_cast<char16_t*>(malloc(byteCount));
     if (!copy) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -237,7 +237,7 @@ nsBinaryOutputStream::WriteWStringZ(const char16_t* aString)
   mozilla::NativeEndian::copyAndSwapToBigEndian(copy, aString, length);
   rv = WriteBytes(reinterpret_cast<const char*>(copy), byteCount);
   if (copy != temp) {
-    moz_free(copy);
+    free(copy);
   }
 #endif
 
@@ -315,7 +315,7 @@ nsBinaryOutputStream::WriteCompoundObject(nsISupports* aObject,
 
     rv = WriteID(*cidptr);
 
-    NS_Free(cidptr);
+    free(cidptr);
   }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -798,18 +798,18 @@ nsBinaryInputStream::ReadBytes(uint32_t aLength, char** aResult)
   uint32_t bytesRead;
   char* s;
 
-  s = reinterpret_cast<char*>(moz_malloc(aLength));
+  s = reinterpret_cast<char*>(malloc(aLength));
   if (!s) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
   rv = Read(s, aLength, &bytesRead);
   if (NS_FAILED(rv)) {
-    moz_free(s);
+    free(s);
     return rv;
   }
   if (bytesRead != aLength) {
-    moz_free(s);
+    free(s);
     return NS_ERROR_FAILURE;
   }
 
@@ -917,9 +917,16 @@ nsBinaryInputStream::ReadObject(bool aIsStrongRef, nsISupports** aObject)
     { 0x88, 0xcf, 0x6e, 0x08, 0x76, 0x6e, 0x8b, 0x23 }
   };
 
+  // hackaround for bug 1195415
+  static const nsIID oldURIiid4 = {
+    0x395fe045, 0x7d18, 0x4adb,
+    { 0xa3, 0xfd, 0xaf, 0x98, 0xc8, 0xa1, 0xaf, 0x11 }
+  };
+
   if (iid.Equals(oldURIiid) ||
       iid.Equals(oldURIiid2) ||
-      iid.Equals(oldURIiid3)) {
+      iid.Equals(oldURIiid3) ||
+      iid.Equals(oldURIiid4)) {
     const nsIID newURIiid = NS_IURI_IID;
     iid = newURIiid;
   }

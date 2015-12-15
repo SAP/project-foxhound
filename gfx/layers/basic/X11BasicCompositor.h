@@ -47,8 +47,10 @@ public:
 
   explicit X11BasicCompositor(nsIWidget *aWidget) : BasicCompositor(aWidget) {}
 
-  virtual TemporaryRef<DataTextureSource>
+  virtual already_AddRefed<DataTextureSource>
   CreateDataTextureSource(TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
+
+  virtual void EndFrame() override;
 };
 
 } // namespace layers

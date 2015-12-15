@@ -46,6 +46,9 @@ using namespace mozilla::gfx;
 // an insignificant dot
 static const int32_t kMinBidiIndicatorPixels = 2;
 
+/*static*/ bool nsCaret::sSelectionCaretEnabled = false;
+/*static*/ bool nsCaret::sSelectionCaretsAffectCaret = false;
+
 /**
  * Find the first frame in an in-order traversal of the frame subtree rooted
  * at aFrame which is either a text frame logically at the end of a line,
@@ -119,6 +122,8 @@ IsBidiUI()
 
 nsCaret::nsCaret()
 : mOverrideOffset(0)
+, mBlinkCount(-1)
+, mHideCount(0)
 , mIsBlinkOn(false)
 , mVisible(false)
 , mReadOnly(false)
@@ -142,6 +147,15 @@ nsresult nsCaret::Init(nsIPresShell *inPresShell)
   mShowDuringSelection =
     LookAndFeel::GetInt(LookAndFeel::eIntID_ShowCaretDuringSelection,
                         mShowDuringSelection ? 1 : 0) != 0;
+
+  static bool addedCaretPref = false;
+  if (!addedCaretPref) {
+    Preferences::AddBoolVarCache(&sSelectionCaretEnabled,
+      "selectioncaret.enabled");
+    Preferences::AddBoolVarCache(&sSelectionCaretsAffectCaret,
+      "selectioncaret.visibility.affectscaret");
+    addedCaretPref = true;
+  }
 
   // get the selection from the pres shell, and set ourselves up as a selection
   // listener
@@ -248,11 +262,12 @@ void nsCaret::SetVisible(bool inMakeVisible)
 
 bool nsCaret::IsVisible()
 {
-  if (!mVisible) {
+  if (!mVisible || mHideCount) {
     return false;
   }
 
-  if (!mShowDuringSelection) {
+  if (!mShowDuringSelection &&
+      !(sSelectionCaretEnabled && sSelectionCaretsAffectCaret)) {
     Selection* selection = GetSelectionInternal();
     if (!selection) {
       return false;
@@ -263,11 +278,44 @@ bool nsCaret::IsVisible()
     }
   }
 
+  // The Android IME can have a visible caret when there is a composition
+  // selection, due to auto-suggest/auto-correct styling (underlining),
+  // but never when the SelectionCarets are visible.
+  if (sSelectionCaretEnabled && sSelectionCaretsAffectCaret) {
+    nsCOMPtr<nsISelectionController> selCon = do_QueryReferent(mPresShell);
+    if (selCon) {
+      bool visible = false;
+      selCon->GetSelectionCaretsVisibility(&visible);
+      if (visible) {
+        return false;
+      }
+    }
+  }
+
   if (IsMenuPopupHidingCaret()) {
     return false;
   }
 
   return true;
+}
+
+void nsCaret::AddForceHide()
+{
+  MOZ_ASSERT(mHideCount < UINT32_MAX);
+  if (++mHideCount > 1) {
+    return;
+  }
+  ResetBlinking();
+  SchedulePaint();
+}
+
+void nsCaret::RemoveForceHide()
+{
+  if (!mHideCount || --mHideCount) {
+    return;
+  }
+  ResetBlinking();
+  SchedulePaint();
 }
 
 void nsCaret::SetCaretReadOnly(bool inMakeReadonly)
@@ -357,10 +405,10 @@ nsCaret::GetGeometryForFrame(nsIFrame* aFrame,
   return rect;
 }
 
-static nsIFrame*
-GetFrameAndOffset(Selection* aSelection,
-                  nsINode* aOverrideNode, int32_t aOverrideOffset,
-                  int32_t* aFrameOffset)
+nsIFrame*
+nsCaret::GetFrameAndOffset(Selection* aSelection,
+                           nsINode* aOverrideNode, int32_t aOverrideOffset,
+                           int32_t* aFrameOffset)
 {
   nsINode* focusNode;
   int32_t focusOffset;
@@ -551,7 +599,7 @@ NS_IMETHODIMP
 nsCaret::NotifySelectionChanged(nsIDOMDocument *, nsISelection *aDomSel,
                                 int16_t aReason)
 {
-  if (aReason & nsISelectionListener::MOUSEUP_REASON)//this wont do
+  if ((aReason & nsISelectionListener::MOUSEUP_REASON) || !IsVisible())//this wont do
     return NS_OK;
 
   nsCOMPtr<nsISelection> domSel(do_QueryReferent(mDomSelectionWeak));
@@ -577,7 +625,7 @@ void nsCaret::ResetBlinking()
 {
   mIsBlinkOn = true;
 
-  if (mReadOnly || !mVisible) {
+  if (mReadOnly || !mVisible || mHideCount) {
     StopBlinking();
     return;
   }
@@ -594,6 +642,7 @@ void nsCaret::ResetBlinking()
   uint32_t blinkRate = static_cast<uint32_t>(
     LookAndFeel::GetInt(LookAndFeel::eIntID_CaretBlinkTime, 500));
   if (blinkRate > 0) {
+    mBlinkCount = Preferences::GetInt("ui.caretBlinkCount", -1);
     mBlinkTimer->InitWithFuncCallback(CaretBlinkCallback, this, blinkRate,
                                       nsITimer::TYPE_REPEATING_SLACK);
   }
@@ -646,7 +695,7 @@ nsCaret::GetCaretFrameForNodeOffset(nsFrameSelection*    aFrameSelection,
   // ------------------
   // NS_STYLE_DIRECTION_LTR : LTR or Default
   // NS_STYLE_DIRECTION_RTL
-  if (IsBidiUI())
+  if (theFrame->PresContext()->BidiEnabled())
   {
     // If there has been a reflow, take the caret Bidi level to be the level of the current frame
     if (aBidiLevel & BIDI_LEVEL_UNDEFINED)
@@ -875,6 +924,7 @@ nsCaret::ComputeCaretRects(nsIFrame* aFrame, int32_t aFrameOffset,
 
   // Simon -- make a hook to draw to the left or right of the caret to show keyboard language direction
   aHookRect->SetEmpty();
+
   if (!IsBidiUI()) {
     return;
   }
@@ -913,6 +963,19 @@ void nsCaret::CaretBlinkCallback(nsITimer* aTimer, void* aClosure)
   }
   theCaret->mIsBlinkOn = !theCaret->mIsBlinkOn;
   theCaret->SchedulePaint();
+
+  // mBlinkCount of -1 means blink count is not enabled.
+  if (theCaret->mBlinkCount == -1) {
+    return;
+  }
+
+  // Track the blink count, but only at end of a blink cycle.
+  if (!theCaret->mIsBlinkOn) {
+    // If we exceeded the blink count, stop the timer.
+    if (--theCaret->mBlinkCount <= 0) {
+      theCaret->StopBlinking();
+    }
+  }
 }
 
 void

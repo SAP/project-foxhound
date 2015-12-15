@@ -32,6 +32,7 @@
 #include "GeckoProfiler.h"
 #include "nsPluginInstanceOwner.h"
 #include "nsDataHashtable.h"
+#include "nsNullPrincipal.h"
 
 #define MAGIC_REQUEST_CONTEXT 0x01020304
 
@@ -279,7 +280,7 @@ nsPluginStreamListenerPeer::nsPluginStreamListenerPeer()
 nsPluginStreamListenerPeer::~nsPluginStreamListenerPeer()
 {
 #ifdef PLUGIN_LOGGING
-  PR_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NORMAL,
+  MOZ_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NORMAL,
          ("nsPluginStreamListenerPeer::dtor this=%p, url=%s\n",this, mURLSpec.get()));
 #endif
 
@@ -308,7 +309,7 @@ nsresult nsPluginStreamListenerPeer::Initialize(nsIURI *aURL,
   nsAutoCString urlSpec;
   if (aURL != nullptr) aURL->GetSpec(urlSpec);
 
-  PR_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NORMAL,
+  MOZ_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NORMAL,
          ("nsPluginStreamListenerPeer::Initialize instance=%p, url=%s\n", aInstance, urlSpec.get()));
 
   PR_LogFlush();
@@ -554,7 +555,7 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
     mContentType = contentType;
 
 #ifdef PLUGIN_LOGGING
-  PR_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NOISY,
+  MOZ_LOG(nsPluginLogging::gPluginLog, PLUGIN_LOG_NOISY,
          ("nsPluginStreamListenerPeer::OnStartRequest this=%p request=%p mime=%s, url=%s\n",
           this, request, contentType.get(), mURLSpec.get()));
 
@@ -700,9 +701,8 @@ nsPluginStreamListenerPeer::RequestRead(NPByteRange* rangeList)
     // in this else branch we really don't know where the load is coming
     // from and in fact should use something better than just using
     // a nullPrincipal as the loadingPrincipal.
-    nsCOMPtr<nsIPrincipal> principal =
-      do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIPrincipal> principal = nsNullPrincipal::Create();
+    NS_ENSURE_TRUE(principal, NS_ERROR_FAILURE);
     rv = NS_NewChannel(getter_AddRefs(channel),
                        mURL,
                        principal,
@@ -1185,6 +1185,7 @@ nsresult nsPluginStreamListenerPeer::SetUpStreamListener(nsIRequest *request,
 void
 nsPluginStreamListenerPeer::OnStreamTypeSet(const int32_t aStreamType)
 {
+  MOZ_ASSERT(aStreamType != STREAM_TYPE_UNKNOWN);
   MOZ_ASSERT(mRequest);
   mStreamType = aStreamType;
   if (!mUseLocalCache && mStreamType >= NP_ASFILE) {
@@ -1200,8 +1201,6 @@ nsPluginStreamListenerPeer::OnStreamTypeSet(const int32_t aStreamType)
     SetupPluginCacheFile(channel);
   }
 }
-
-const int32_t nsPluginStreamListenerPeer::STREAM_TYPE_UNKNOWN = UINT16_MAX;
 
 nsresult
 nsPluginStreamListenerPeer::OnFileAvailable(nsIFile* aFile)

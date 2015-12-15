@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,7 +59,7 @@ SVGDocument::GetRootElement(ErrorResult& aRv)
   if (!root) {
     return nullptr;
   }
-  if (!root->IsSVG()) {
+  if (!root->IsSVGElement()) {
     aRv.Throw(NS_NOINTERFACE);
     return nullptr;
   }
@@ -68,16 +69,17 @@ SVGDocument::GetRootElement(ErrorResult& aRv)
 nsresult
 SVGDocument::InsertChildAt(nsIContent* aKid, uint32_t aIndex, bool aNotify)
 {
-  nsresult rv = XMLDocument::InsertChildAt(aKid, aIndex, aNotify);
-
-  if (NS_SUCCEEDED(rv) && aKid->IsElement() && !aKid->IsSVG()) {
+  if (aKid->IsElement() && !aKid->IsSVGElement()) {
     // We can get here when well formed XML with a non-SVG root element is
     // served with the SVG MIME type, for example. In that case we need to load
-    // the non-SVG UA sheets or else we can get bugs like bug 1016145.
+    // the non-SVG UA sheets or else we can get bugs like bug 1016145.  Note
+    // that we have to do this _before_ the XMLDocument::InsertChildAt call,
+    // since that can try to construct frames, and we need to have the sheets
+    // loaded by then.
     EnsureNonSVGUserAgentStyleSheetsLoaded();
   }
 
-  return rv;
+  return XMLDocument::InsertChildAt(aKid, aIndex, aNotify);
 }
 
 nsresult
@@ -100,11 +102,21 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
     return;
   }
 
+  if (IsStaticDocument()) {
+    // If we're a static clone of a document, then
+    // nsIDocument::CreateStaticClone will handle cloning the original
+    // document's sheets, including the on-demand non-SVG UA sheets,
+    // for us.
+    return;
+  }
+
   mHasLoadedNonSVGUserAgentStyleSheets = true;
+
+  BeginUpdate(UPDATE_STYLE);
 
   if (IsBeingUsedAsImage()) {
     // nsDocumentViewer::CreateStyleSet skipped loading all user-agent/user
-    // style sheets in this case, but we'll need B2G/Fennec/Metro's
+    // style sheets in this case, but we'll need B2G/Fennec's
     // content.css. We could load all the sheets registered with the
     // nsIStyleSheetService (and maybe we should) but most likely it isn't
     // desirable or necessary for foreignObject in SVG-as-an-image. Instead we
@@ -113,7 +125,7 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
     // SVG-as-an-image down.
     //
     // We do this before adding UASheet() etc. below because
-    // EnsureOnDemandBuiltInUASheet prepends, and B2G/Fennec/Metro's
+    // EnsureOnDemandBuiltInUASheet prepends, and B2G/Fennec's
     // content.css must come after UASheet() etc.
     nsCOMPtr<nsICategoryManager> catMan =
     do_GetService(NS_CATEGORYMANAGER_CONTRACTID);
@@ -163,13 +175,21 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
   EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::FormsSheet());
   EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::CounterStylesSheet());
   EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::HTMLSheet());
+  if (nsLayoutUtils::ShouldUseNoFramesSheet(this)) {
+    EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::NoFramesSheet());
+  }
+  if (nsLayoutUtils::ShouldUseNoScriptSheet(this)) {
+    EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::NoScriptSheet());
+  }
   EnsureOnDemandBuiltInUASheet(nsLayoutStylesheetCache::UASheet());
+
+  EndUpdate(UPDATE_STYLE);
 }
 
 JSObject*
-SVGDocument::WrapNode(JSContext *aCx)
+SVGDocument::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return SVGDocumentBinding::Wrap(aCx, this);
+  return SVGDocumentBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace dom

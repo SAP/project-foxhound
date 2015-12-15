@@ -57,7 +57,7 @@ enum BailoutKind
     Bailout_StringArgumentsEval,
 
     // Bailout on overflow, but don't immediately invalidate.
-    // Used for abs, sub and LoadTypedArrayElement (when loading a uint32 that
+    // Used for abs, sub and LoadUnboxedScalar (when loading a uint32 that
     // doesn't fit in an int32).
     Bailout_Overflow,
 
@@ -147,6 +147,9 @@ enum BailoutKind
     // by the baseline IC.)
     Bailout_ShapeGuard,
 
+    // When we're trying to use an uninitialized lexical.
+    Bailout_UninitializedLexical,
+
     // A bailout to baseline from Ion on exception to handle Debugger hooks.
     Bailout_IonExceptionDebugMode,
 };
@@ -224,6 +227,8 @@ BailoutKindString(BailoutKind kind)
         return "Bailout_Neutered";
       case Bailout_ShapeGuard:
         return "Bailout_ShapeGuard";
+      case Bailout_UninitializedLexical:
+        return "Bailout_UninitializedLexical";
       case Bailout_IonExceptionDebugMode:
         return "Bailout_IonExceptionDebugMode";
       default:
@@ -374,6 +379,7 @@ enum MIRType
     MIRType_MagicIsConstructing,       // JS_IS_CONSTRUCTING magic value.
     MIRType_MagicUninitializedLexical, // JS_UNINITIALIZED_LEXICAL magic value.
     MIRType_Value,
+    MIRType_SinCosDouble,              // Optimizing a sin/cos to sincos.
     MIRType_ObjectOrNull,
     MIRType_None,                      // Invalid, used as a placeholder.
     MIRType_Slots,                     // A slots vector
@@ -487,6 +493,10 @@ StringFromMIRType(MIRType type)
       return "MagicUninitializedLexical";
     case MIRType_Value:
       return "Value";
+    case MIRType_SinCosDouble:
+      return "SinCosDouble";
+    case MIRType_ObjectOrNull:
+      return "ObjectOrNull";
     case MIRType_None:
       return "None";
     case MIRType_Slots:
@@ -495,10 +505,16 @@ StringFromMIRType(MIRType type)
       return "Elements";
     case MIRType_Pointer:
       return "Pointer";
-    case MIRType_Int32x4:
-      return "Int32x4";
+    case MIRType_Shape:
+      return "Shape";
+    case MIRType_ObjectGroup:
+      return "ObjectGroup";
     case MIRType_Float32x4:
       return "Float32x4";
+    case MIRType_Int32x4:
+      return "Int32x4";
+    case MIRType_Doublex2:
+      return "Doublex2";
     default:
       MOZ_CRASH("Unknown MIRType.");
   }
@@ -532,7 +548,19 @@ static inline bool
 IsSimdType(MIRType type)
 {
     return type == MIRType_Int32x4 || type == MIRType_Float32x4;
-};
+}
+
+static inline bool
+IsFloatingPointSimdType(MIRType type)
+{
+    return type == MIRType_Float32x4;
+}
+
+static inline bool
+IsIntegerSimdType(MIRType type)
+{
+    return type == MIRType_Int32x4;
+}
 
 static inline bool
 IsMagicType(MIRType type)
@@ -551,6 +579,32 @@ SimdTypeToLength(MIRType type)
 {
     MOZ_ASSERT(IsSimdType(type));
     return 1 << ((type >> VECTOR_SCALE_SHIFT) & VECTOR_SCALE_MASK);
+}
+
+static inline MIRType
+ScalarTypeToMIRType(Scalar::Type type)
+{
+    switch (type) {
+      case Scalar::Int8:
+      case Scalar::Uint8:
+      case Scalar::Int16:
+      case Scalar::Uint16:
+      case Scalar::Int32:
+      case Scalar::Uint32:
+      case Scalar::Uint8Clamped:
+        return MIRType_Int32;
+      case Scalar::Float32:
+        return MIRType_Float32;
+      case Scalar::Float64:
+        return MIRType_Double;
+      case Scalar::Float32x4:
+        return MIRType_Float32x4;
+      case Scalar::Int32x4:
+        return MIRType_Int32x4;
+      case Scalar::MaxTypedArrayViewType:
+        break;
+    }
+    MOZ_CRASH("unexpected SIMD kind");
 }
 
 static inline unsigned
@@ -666,7 +720,20 @@ enum ABIFunctionType
     Args_Double_DoubleDoubleDouble = Args_Double_DoubleDouble | (ArgType_Double << (ArgType_Shift * 3)),
 
     // double f(double, double, double, double)
-    Args_Double_DoubleDoubleDoubleDouble = Args_Double_DoubleDoubleDouble | (ArgType_Double << (ArgType_Shift * 4))
+    Args_Double_DoubleDoubleDoubleDouble = Args_Double_DoubleDoubleDouble | (ArgType_Double << (ArgType_Shift * 4)),
+
+    // int f(double, int, int)
+    Args_Int_DoubleIntInt = Args_General0 |
+       (ArgType_General << (ArgType_Shift * 1)) |
+       (ArgType_General << (ArgType_Shift * 2)) |
+       (ArgType_Double  << (ArgType_Shift * 3)),
+
+    // int f(int, double, int, int)
+    Args_Int_IntDoubleIntInt = Args_General0 |
+        (ArgType_General << (ArgType_Shift * 1)) |
+        (ArgType_General << (ArgType_Shift * 2)) |
+        (ArgType_Double  << (ArgType_Shift * 3)) |
+        (ArgType_General << (ArgType_Shift * 4))
 
 };
 

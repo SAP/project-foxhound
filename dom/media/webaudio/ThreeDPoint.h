@@ -14,7 +14,8 @@ namespace mozilla {
 
 namespace dom {
 
-struct ThreeDPoint {
+struct ThreeDPoint final
+{
   ThreeDPoint()
     : x(0.)
     , y(0.)
@@ -81,8 +82,8 @@ ThreeDPoint operator*(const ThreeDPoint& lhs, const ThreeDPoint& rhs);
 ThreeDPoint operator*(const ThreeDPoint& lhs, const double rhs);
 bool operator==(const ThreeDPoint& lhs, const ThreeDPoint& rhs);
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif
 

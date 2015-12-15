@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,21 +13,21 @@
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/ResponseBinding.h"
 
+#include "InternalHeaders.h"
 #include "InternalResponse.h"
 
-class nsPIDOMWindow;
-
 namespace mozilla {
+namespace ipc {
+class PrincipalInfo;
+} // namespace ipc
+
 namespace dom {
 
-class ArrayBufferOrArrayBufferViewOrUSVStringOrURLSearchParams;
 class Headers;
-class InternalHeaders;
-class Promise;
 
 class Response final : public nsISupports
-                         , public FetchBody<Response>
-                         , public nsWrapperCache
+                     , public FetchBody<Response>
+                     , public nsWrapperCache
 {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Response)
@@ -37,9 +38,9 @@ public:
   Response(const Response& aOther) = delete;
 
   JSObject*
-  WrapObject(JSContext* aCx) override
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
   {
-    return ResponseBinding::Wrap(aCx, this);
+    return ResponseBinding::Wrap(aCx, this, aGivenProto);
   }
 
   ResponseType
@@ -55,15 +56,6 @@ public:
     mInternalResponse->GetUrl(url);
     aUrl.AsAString() = NS_ConvertUTF8toUTF16(url);
   }
-
-  bool
-  GetFinalURL(ErrorResult& aRv) const
-  {
-    return mInternalResponse->FinalURL();
-  }
-
-  void
-  SetFinalURL(bool aFinalURL, ErrorResult& aRv);
 
   uint16_t
   Status() const
@@ -90,6 +82,24 @@ public:
     return mInternalResponse->Headers();
   }
 
+  void
+  InitChannelInfo(nsIChannel* aChannel)
+  {
+    mInternalResponse->InitChannelInfo(aChannel);
+  }
+
+  const ChannelInfo&
+  GetChannelInfo() const
+  {
+    return mInternalResponse->GetChannelInfo();
+  }
+
+  const UniquePtr<mozilla::ipc::PrincipalInfo>&
+  GetPrincipalInfo() const
+  {
+    return mInternalResponse->GetPrincipalInfo();
+  }
+
   Headers* Headers_();
 
   void
@@ -103,7 +113,7 @@ public:
 
   static already_AddRefed<Response>
   Constructor(const GlobalObject& aGlobal,
-              const Optional<ArrayBufferOrArrayBufferViewOrBlobOrUSVStringOrURLSearchParams>& aBody,
+              const Optional<ArrayBufferOrArrayBufferViewOrBlobOrFormDataOrUSVStringOrURLSearchParams>& aBody,
               const ResponseInit& aInit, ErrorResult& rv);
 
   nsIGlobalObject* GetParentObject() const
@@ -116,6 +126,10 @@ public:
 
   void
   SetBody(nsIInputStream* aBody);
+
+  already_AddRefed<InternalResponse>
+  GetInternalResponse() const;
+
 private:
   ~Response();
 

@@ -16,7 +16,6 @@ module.metadata = {
 
 const { Cc, Ci } = require("chrome");
 const { DataURL } = require("./url");
-const errors = require("./deprecated/errors");
 const apiUtils = require("./deprecated/api-utils");
 /*
 While these data flavors resemble Internet media types, they do
@@ -58,13 +57,13 @@ const kFlavorMap = [
   { short: "image", long: "image/png" }
 ];
 
-let clipboardService = Cc["@mozilla.org/widget/clipboard;1"].
+var clipboardService = Cc["@mozilla.org/widget/clipboard;1"].
                        getService(Ci.nsIClipboard);
 
-let clipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].
+var clipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].
                       getService(Ci.nsIClipboardHelper);
 
-let imageTools = Cc["@mozilla.org/image/tools;1"].
+var imageTools = Cc["@mozilla.org/image/tools;1"].
                getService(Ci.imgITools);
 
 exports.set = function(aData, aDataType) {

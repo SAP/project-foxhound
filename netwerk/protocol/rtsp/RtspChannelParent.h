@@ -34,12 +34,12 @@ public:
   NS_DECL_NSIPARENTCHANNEL
 
   RtspChannelParent(nsIURI *aUri);
-  ~RtspChannelParent();
 
   // nsBaseChannel::nsIChannel
   NS_IMETHOD GetContentType(nsACString & aContentType) override final;
   NS_IMETHOD AsyncOpen(nsIStreamListener *listener,
                        nsISupports *aContext) override final;
+  NS_IMETHOD AsyncOpen2(nsIStreamListener *listener) override final;
 
   // nsBaseChannel::nsIStreamListener::nsIRequestObserver
   NS_IMETHOD OnStartRequest(nsIRequest *aRequest,
@@ -69,6 +69,8 @@ public:
   bool Init(const RtspChannelConnectArgs& aArgs);
 
 protected:
+  ~RtspChannelParent();
+
   // Used to connect redirected-to channel in parent with just created
   // ChildChannel. Used during HTTP->RTSP redirection.
   bool ConnectChannel(const uint32_t& channelId);

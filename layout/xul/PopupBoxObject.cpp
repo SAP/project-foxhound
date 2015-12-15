@@ -39,9 +39,9 @@ nsIContent* PopupBoxObject::GetParentObject() const
   return BoxObject::GetParentObject();
 }
 
-JSObject* PopupBoxObject::WrapObject(JSContext* aCx)
+JSObject* PopupBoxObject::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return PopupBoxObjectBinding::Wrap(aCx, this);
+  return PopupBoxObjectBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsPopupSetFrame*
@@ -107,6 +107,22 @@ PopupBoxObject::OpenPopupAtScreen(int32_t aXPos, int32_t aYPos,
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
   if (pm && mContent)
     pm->ShowPopupAtScreen(mContent, aXPos, aYPos, aIsContextMenu, aTriggerEvent);
+}
+
+void
+PopupBoxObject::OpenPopupAtScreenRect(const nsAString& aPosition,
+                                      int32_t aXPos, int32_t aYPos,
+                                      int32_t aWidth, int32_t aHeight,
+                                      bool aIsContextMenu,
+                                      bool aAttributesOverride,
+                                      Event* aTriggerEvent)
+{
+  nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+  if (pm && mContent) {
+    pm->ShowPopupAtScreenRect(mContent, aPosition,
+                              nsIntRect(aXPos, aYPos, aWidth, aHeight),
+                              aIsContextMenu, aAttributesOverride, aTriggerEvent);
+  }
 }
 
 void
@@ -271,7 +287,7 @@ PopupBoxObject::GetOuterScreenRect()
       widget->GetScreenBounds(screenRect);
 
       int32_t pp = menuPopupFrame->PresContext()->AppUnitsPerDevPixel();
-      rect->SetLayoutRect(screenRect.ToAppUnits(pp));
+      rect->SetLayoutRect(ToAppUnits(screenRect, pp));
     }
   }
   return rect.forget();

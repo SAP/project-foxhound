@@ -40,6 +40,7 @@ GYP_DIRS += ['trunk']
 
 GYP_DIRS['trunk'].input = 'trunk/peerconnection.gyp'
 GYP_DIRS['trunk'].variables = gyp_vars
+GYP_DIRS['trunk'].sandbox_vars['ALLOW_COMPILER_WARNINGS'] = True
 GYP_DIRS['trunk'].sandbox_vars['FINAL_LIBRARY'] = 'webrtc'
 GYP_DIRS['trunk'].non_unified_sources += webrtc_non_unified_sources
 
@@ -48,7 +49,8 @@ if CONFIG['MOZ_WEBRTC_SIGNALING']:
     GYP_DIRS['signaling'].input = 'signaling/signaling.gyp'
     GYP_DIRS['signaling'].variables = gyp_vars.copy()
     GYP_DIRS['signaling'].variables.update(
-        build_for_test=0
+        build_for_test=0,
+        build_for_standalone=0
     )
     GYP_DIRS['signaling'].sandbox_vars['FINAL_LIBRARY'] = 'xul'
     # Excluded for various symbol conflicts
@@ -57,7 +59,9 @@ if CONFIG['MOZ_WEBRTC_SIGNALING']:
         'signaling/src/jsep/JsepSessionImpl.cpp',
         'signaling/src/media-conduit/AudioConduit.cpp',
         'signaling/src/media-conduit/CodecStatistics.cpp',
+        'signaling/src/media-conduit/MediaCodecVideoCodec.cpp',
         'signaling/src/media-conduit/VideoConduit.cpp',
+        'signaling/src/media-conduit/WebrtcMediaCodecVP8VideoCodec.cpp',
         'signaling/src/mediapipeline/MediaPipeline.cpp',
         'signaling/src/mediapipeline/MediaPipelineFilter.cpp',
         'signaling/src/mediapipeline/SrtpFlow.cpp',
@@ -67,7 +71,6 @@ if CONFIG['MOZ_WEBRTC_SIGNALING']:
         'signaling/src/peerconnection/PeerConnectionImpl.cpp',
         'signaling/src/peerconnection/PeerConnectionMedia.cpp',
         'signaling/src/peerconnection/WebrtcGlobalInformation.cpp',
-        'signaling/src/sdp/sipcc/ccsdp.c',
         'signaling/src/sdp/sipcc/cpr_string.c',
         'signaling/src/sdp/sipcc/sdp_access.c',
         'signaling/src/sdp/sipcc/sdp_attr.c',
@@ -86,6 +89,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
     GYP_DIRS += ['trunk/testing']
     GYP_DIRS['trunk/testing'].input = 'trunk/testing/gtest.gyp'
     GYP_DIRS['trunk/testing'].variables = gyp_vars
+    GYP_DIRS['trunk/testing'].sandbox_vars['ALLOW_COMPILER_WARNINGS'] = True
     GYP_DIRS['trunk/testing'].non_unified_sources += webrtc_non_unified_sources
 
     if CONFIG['MOZ_WEBRTC_SIGNALING']:
@@ -93,7 +97,17 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
         GYP_DIRS['signalingtest'].input = 'signaling/signaling.gyp'
         GYP_DIRS['signalingtest'].variables = gyp_vars.copy()
         GYP_DIRS['signalingtest'].variables.update(
-            build_for_test=1
+            build_for_test=1,
+            moz_webrtc_mediacodec=0,
+            build_for_standalone=0
         )
         GYP_DIRS['signalingtest'].non_unified_sources += signaling_non_unified_sources
 
+        GYP_DIRS += ['signalingstandalone']
+        GYP_DIRS['signalingstandalone'].input = 'signaling/signaling.gyp'
+        GYP_DIRS['signalingstandalone'].variables = gyp_vars.copy()
+        GYP_DIRS['signalingstandalone'].variables.update(
+            build_for_test=0,
+            build_for_standalone=1
+        )
+        GYP_DIRS['signalingstandalone'].non_unified_sources += signaling_non_unified_sources

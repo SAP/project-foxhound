@@ -14,8 +14,10 @@
 # include "jit/x64/BaselineCompiler-x64.h"
 #elif defined(JS_CODEGEN_ARM)
 # include "jit/arm/BaselineCompiler-arm.h"
-#elif defined(JS_CODEGEN_MIPS)
-# include "jit/mips/BaselineCompiler-mips.h"
+#elif defined(JS_CODEGEN_ARM64)
+# include "jit/arm64/BaselineCompiler-arm64.h"
+#elif defined(JS_CODEGEN_MIPS32)
+# include "jit/mips32/BaselineCompiler-mips32.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/BaselineCompiler-none.h"
 #else
@@ -78,6 +80,7 @@ namespace jit {
     _(JSOP_MUL)                \
     _(JSOP_DIV)                \
     _(JSOP_MOD)                \
+    _(JSOP_POW)                \
     _(JSOP_LT)                 \
     _(JSOP_LE)                 \
     _(JSOP_GT)                 \
@@ -93,6 +96,7 @@ namespace jit {
     _(JSOP_BITNOT)             \
     _(JSOP_NEG)                \
     _(JSOP_NEWARRAY)           \
+    _(JSOP_SPREADCALLARRAY)    \
     _(JSOP_NEWARRAY_COPYONWRITE) \
     _(JSOP_INITELEM_ARRAY)     \
     _(JSOP_NEWOBJECT)          \
@@ -103,6 +107,8 @@ namespace jit {
     _(JSOP_INITELEM_INC)       \
     _(JSOP_MUTATEPROTO)        \
     _(JSOP_INITPROP)           \
+    _(JSOP_INITLOCKEDPROP)     \
+    _(JSOP_INITHIDDENPROP)     \
     _(JSOP_INITPROP_GETTER)    \
     _(JSOP_INITPROP_SETTER)    \
     _(JSOP_ARRAYPUSH)          \
@@ -157,10 +163,11 @@ namespace jit {
     _(JSOP_SPREADEVAL)         \
     _(JSOP_STRICTSPREADEVAL)   \
     _(JSOP_IMPLICITTHIS)       \
+    _(JSOP_GIMPLICITTHIS)      \
     _(JSOP_INSTANCEOF)         \
     _(JSOP_TYPEOF)             \
     _(JSOP_TYPEOFEXPR)         \
-    _(JSOP_SETCALL)            \
+    _(JSOP_THROWMSG)           \
     _(JSOP_THROW)              \
     _(JSOP_THROWING)           \
     _(JSOP_TRY)                \
@@ -169,6 +176,7 @@ namespace jit {
     _(JSOP_RETSUB)             \
     _(JSOP_PUSHBLOCKSCOPE)     \
     _(JSOP_POPBLOCKSCOPE)      \
+    _(JSOP_FRESHENBLOCKSCOPE)  \
     _(JSOP_DEBUGLEAVEBLOCK)    \
     _(JSOP_EXCEPTION)          \
     _(JSOP_DEBUGGER)           \
@@ -176,6 +184,7 @@ namespace jit {
     _(JSOP_RUNONCE)            \
     _(JSOP_REST)               \
     _(JSOP_TOID)               \
+    _(JSOP_TOSTRING)           \
     _(JSOP_TABLESWITCH)        \
     _(JSOP_ITER)               \
     _(JSOP_MOREITER)           \
@@ -190,7 +199,8 @@ namespace jit {
     _(JSOP_CALLEE)             \
     _(JSOP_SETRVAL)            \
     _(JSOP_RETRVAL)            \
-    _(JSOP_RETURN)
+    _(JSOP_RETURN)             \
+    _(JSOP_NEWTARGET)
 
 class BaselineCompiler : public BaselineCompilerSpecific
 {
@@ -255,6 +265,7 @@ class BaselineCompiler : public BaselineCompilerSpecific
     void emitIsDebuggeeCheck();
     bool emitDebugPrologue();
     bool emitDebugTrap();
+    void emitCoverage(jsbytecode* pc);
     bool emitTraceLoggerEnter();
     bool emitTraceLoggerExit();
 

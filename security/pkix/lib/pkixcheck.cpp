@@ -29,10 +29,107 @@
 
 namespace mozilla { namespace pkix {
 
+// 4.1.1.2 signatureAlgorithm
+// 4.1.2.3 signature
+
+Result
+CheckSignatureAlgorithm(TrustDomain& trustDomain,
+                        EndEntityOrCA endEntityOrCA,
+                        Time notBefore,
+                        const der::SignedDataWithSignature& signedData,
+                        Input signatureValue)
+{
+  // 4.1.1.2. signatureAlgorithm
+  der::PublicKeyAlgorithm publicKeyAlg;
+  DigestAlgorithm digestAlg;
+  Reader signatureAlgorithmReader(signedData.algorithm);
+  Result rv = der::SignatureAlgorithmIdentifierValue(signatureAlgorithmReader,
+                                                     publicKeyAlg, digestAlg);
+  if (rv != Success) {
+    return rv;
+  }
+  rv = der::End(signatureAlgorithmReader);
+  if (rv != Success) {
+    return rv;
+  }
+
+  // 4.1.2.3. Signature
+  der::PublicKeyAlgorithm signedPublicKeyAlg;
+  DigestAlgorithm signedDigestAlg;
+  Reader signedSignatureAlgorithmReader(signatureValue);
+  rv = der::SignatureAlgorithmIdentifierValue(signedSignatureAlgorithmReader,
+                                              signedPublicKeyAlg,
+                                              signedDigestAlg);
+  if (rv != Success) {
+    return rv;
+  }
+  rv = der::End(signedSignatureAlgorithmReader);
+  if (rv != Success) {
+    return rv;
+  }
+
+  // "This field MUST contain the same algorithm identifier as the
+  // signatureAlgorithm field in the sequence Certificate." However, it may
+  // be encoded differently. In particular, one of the fields may have a NULL
+  // parameter while the other one may omit the parameter field altogether, and
+  // these are considered equivalent. Some certificates generation software
+  // actually generates certificates like that, so we compare the parsed values
+  // instead of comparing the encoded values byte-for-byte.
+  //
+  // Along the same lines, we accept two different OIDs for RSA-with-SHA1, and
+  // we consider those OIDs to be equivalent here.
+  if (publicKeyAlg != signedPublicKeyAlg || digestAlg != signedDigestAlg) {
+    return Result::ERROR_SIGNATURE_ALGORITHM_MISMATCH;
+  }
+
+  // During the time of the deprecation of SHA-1 and the deprecation of RSA
+  // keys of less than 2048 bits, we will encounter many certs signed using
+  // SHA-1 and/or too-small RSA keys. With this in mind, we ask the trust
+  // domain early on if it knows it will reject the signature purely based on
+  // the digest algorithm and/or the RSA key size (if an RSA signature). This
+  // is a good optimization because it completely avoids calling
+  // trustDomain.FindIssuers (which may be slow) for such rejected certs, and
+  // more generally it short-circuits any path building with them (which, of
+  // course, is even slower).
+
+  rv = trustDomain.CheckSignatureDigestAlgorithm(digestAlg, endEntityOrCA,
+                                                 notBefore);
+  if (rv != Success) {
+    return rv;
+  }
+
+  switch (publicKeyAlg) {
+    case der::PublicKeyAlgorithm::RSA_PKCS1:
+    {
+      // The RSA computation may give a result that requires fewer bytes to
+      // encode than the public key (since it is modular arithmetic). However,
+      // the last step of generating a PKCS#1.5 signature is the I2OSP
+      // procedure, which pads any such shorter result with zeros so that it
+      // is exactly the same length as the public key.
+      unsigned int signatureSizeInBits = signedData.signature.GetLength() * 8u;
+      return trustDomain.CheckRSAPublicKeyModulusSizeInBits(
+               endEntityOrCA, signatureSizeInBits);
+    }
+
+    case der::PublicKeyAlgorithm::ECDSA:
+      // In theory, we could implement a similar early-pruning optimization for
+      // ECDSA curves. However, since there has been no similar deprecation for
+      // for any curve that we support, the chances of us encountering a curve
+      // during path building is too low to be worth bothering with.
+      break;
+
+    MOZILLA_PKIX_UNREACHABLE_DEFAULT_ENUM
+  }
+
+  return Success;
+}
+
 // 4.1.2.5 Validity
 
 Result
-CheckValidity(Input encodedValidity, Time time)
+ParseValidity(Input encodedValidity,
+              /*optional out*/ Time* notBeforeOut,
+              /*optional out*/ Time* notAfterOut)
 {
   Reader validity(encodedValidity);
   Time notBefore(Time::uninitialized);
@@ -53,6 +150,19 @@ CheckValidity(Input encodedValidity, Time time)
     return Result::ERROR_INVALID_DER_TIME;
   }
 
+  if (notBeforeOut) {
+    *notBeforeOut = notBefore;
+  }
+  if (notAfterOut) {
+    *notAfterOut = notAfter;
+  }
+
+  return Success;
+}
+
+Result
+CheckValidity(Time time, Time notBefore, Time notAfter)
+{
   if (time < notBefore) {
     return Result::ERROR_NOT_YET_VALID_CERTIFICATE;
   }
@@ -386,8 +496,7 @@ CertPolicyId::IsAnyPolicy() const {
     return true;
   }
   return numBytes == sizeof(::mozilla::pkix::anyPolicy) &&
-         !memcmp(bytes, ::mozilla::pkix::anyPolicy,
-                 sizeof(::mozilla::pkix::anyPolicy));
+         std::equal(bytes, bytes + numBytes, ::mozilla::pkix::anyPolicy);
 }
 
 // certificatePolicies ::= SEQUENCE SIZE (1..MAX) OF PolicyInformation
@@ -735,21 +844,57 @@ CheckIssuerIndependentProperties(TrustDomain& trustDomain,
 
   const EndEntityOrCA endEntityOrCA = cert.endEntityOrCA;
 
+  // Check the cert's trust first, because we want to minimize the amount of
+  // processing we do on a distrusted cert, in case it is trying to exploit
+  // some bug in our processing.
   rv = trustDomain.GetCertTrust(endEntityOrCA, requiredPolicy, cert.GetDER(),
                                 trustLevel);
   if (rv != Success) {
     return rv;
   }
-  if (trustLevel == TrustLevel::ActivelyDistrusted) {
-    return Result::ERROR_UNTRUSTED_CERT;
-  }
-  if (trustLevel != TrustLevel::TrustAnchor &&
-      trustLevel != TrustLevel::InheritsTrust) {
-    // The TrustDomain returned a trust level that we weren't expecting.
-    return Result::FATAL_ERROR_INVALID_STATE;
+
+  // IMPORTANT: We parse the validity interval here, so that we can use the
+  // notBefore and notAfter values in checks for things that might be deprecated
+  // over time. However, we must not fail for semantic errors until the end of
+  // this method, in order to preserve error ranking.
+  Time notBefore(Time::uninitialized);
+  Time notAfter(Time::uninitialized);
+  rv = ParseValidity(cert.GetValidity(), &notBefore, &notAfter);
+  if (rv != Success) {
+    return rv;
   }
 
-  // Check the SPKI first, because it is one of the most selective properties
+  if (trustLevel == TrustLevel::TrustAnchor &&
+      endEntityOrCA == EndEntityOrCA::MustBeEndEntity &&
+      requiredEKUIfPresent == KeyPurposeId::id_kp_OCSPSigning) {
+    // OCSP signer certificates can never be trust anchors, especially
+    // since we don't support designated OCSP responders. All of the checks
+    // below that are dependent on trustLevel rely on this overriding of the
+    // trust level for OCSP signers.
+    trustLevel = TrustLevel::InheritsTrust;
+  }
+
+  switch (trustLevel) {
+    case TrustLevel::InheritsTrust:
+      rv = CheckSignatureAlgorithm(trustDomain, endEntityOrCA, notBefore,
+                                   cert.GetSignedData(), cert.GetSignature());
+      if (rv != Success) {
+        return rv;
+      }
+      break;
+
+    case TrustLevel::TrustAnchor:
+      // We don't even bother checking signatureAlgorithm or signature for
+      // syntactic validity for trust anchors, because we don't use those
+      // fields for anything, and because the trust anchor might be signed
+      // with a signature algorithm we don't actually support.
+      break;
+
+    case TrustLevel::ActivelyDistrusted:
+      return Result::ERROR_UNTRUSTED_CERT;
+  }
+
+  // Check the SPKI early, because it is one of the most selective properties
   // of the certificate due to SHA-1 deprecation and the deprecation of
   // certificates with keys weaker than RSA 2048.
   Reader spki(cert.GetSubjectPublicKeyInfo());
@@ -820,9 +965,15 @@ CheckIssuerIndependentProperties(TrustDomain& trustDomain,
   // 4.2.1.14. Inhibit anyPolicy is implicitly supported; see the documentation
   //           about policy enforcement in pkix.h.
 
-  // IMPORTANT: This check must come after the other checks in order for error
-  // ranking to work correctly.
-  rv = CheckValidity(cert.GetValidity(), time);
+  // IMPORTANT: Even though we parse validity above, we wait until this point to
+  // check it, so that error ranking works correctly.
+  rv = CheckValidity(time, notBefore, notAfter);
+  if (rv != Success) {
+    return rv;
+  }
+
+  rv = trustDomain.CheckValidityIsAcceptable(notBefore, notAfter, endEntityOrCA,
+                                             requiredEKUIfPresent);
   if (rv != Success) {
     return rv;
   }

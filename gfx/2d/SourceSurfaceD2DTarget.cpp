@@ -50,7 +50,7 @@ SourceSurfaceD2DTarget::GetFormat() const
   return mFormat;
 }
 
-TemporaryRef<DataSourceSurface>
+already_AddRefed<DataSourceSurface>
 SourceSurfaceD2DTarget::GetDataSurface()
 {
   RefPtr<DataSourceSurfaceD2DTarget> dataSurf =
@@ -63,6 +63,11 @@ SourceSurfaceD2DTarget::GetDataSurface()
   desc.Usage = D3D10_USAGE_STAGING;
   desc.BindFlags = 0;
   desc.MiscFlags = 0;
+
+  if (!Factory::GetDirect3D10Device()) {
+    gfxCriticalError() << "Invalid D3D10 device in D2D target surface";
+    return nullptr;
+  }
 
   HRESULT hr = Factory::GetDirect3D10Device()->CreateTexture2D(&desc, nullptr, byRef(dataSurf->mTexture));
 
@@ -89,6 +94,11 @@ SourceSurfaceD2DTarget::GetSRView()
 {
   if (mSRView) {
     return mSRView;
+  }
+
+  if (!Factory::GetDirect3D10Device()) {
+    gfxCriticalError() << "Invalid D3D10 device in D2D target surface";
+    return nullptr;
   }
 
   HRESULT hr = Factory::GetDirect3D10Device()->CreateShaderResourceView(mTexture, nullptr, byRef(mSRView));
@@ -282,9 +292,9 @@ DataSourceSurfaceD2DTarget::Map(MapType aMapType, MappedSurface *aMappedSurface)
 
   aMappedSurface->mData = (uint8_t*)map.pData;
   aMappedSurface->mStride = map.RowPitch;
-  mIsMapped = true;
+  mIsMapped = !!aMappedSurface->mData;
 
-  return true;
+  return mIsMapped;
 }
 
 void

@@ -7,6 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id={982874}
   <title>Test for Bug {982874}</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <script type="text/javascript" src="test_packaged_app_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -229,7 +230,7 @@ function runTest() {
         size: 0,
         readyToApplyDownload: false
       };
-      PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, 2, expected,
+      PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, "2", expected,
                                        true, false, continueTest);
     };
   };
@@ -299,6 +300,21 @@ function runTest() {
   is(request.result, miniManifestURL, "Packaged App uninstalled.");
   navigator.mozApps.mgmt.onuninstall = null;
 
+
+  // Check that we support memory backed blobs.
+  // The blob here is not a valid app, but that's fine for this test.
+  let blob = new Blob(["This is a test blob."]);
+  navigator.mozApps.mgmt.import(blob)
+    .then(() => {
+      ok(false, "This is not an app!");
+      continueTest();
+    })
+    .catch(aError => {
+      is(aError.name, "InvalidZip", "Memory blob processed.");
+      continueTest();
+    });
+  yield undefined;
+
   // Check that we restored the app registry.
   request = navigator.mozApps.mgmt.getAll();
   request.onerror = cbError;
@@ -307,7 +323,7 @@ function runTest() {
   is(request.result.length, initialAppsCount, "All apps are uninstalled.");
 }
 
-addLoadEvent(go);
+addLoadEvent(() => prepareEnv(go));
 
 </script>
 </pre>

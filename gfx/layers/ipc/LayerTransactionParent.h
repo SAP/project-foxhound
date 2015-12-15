@@ -21,11 +21,11 @@ namespace mozilla {
 
 namespace ipc {
 class Shmem;
-}
+} // namespace ipc
 
 namespace layout {
 class RenderFrameParent;
-}
+} // namespace layout
 
 namespace layers {
 
@@ -35,8 +35,8 @@ class ShadowLayerParent;
 class CompositableParent;
 class ShadowLayersManager;
 
-class LayerTransactionParent : public PLayerTransactionParent,
-                               public CompositableParentManager
+class LayerTransactionParent final : public PLayerTransactionParent,
+                                     public CompositableParentManager
 {
   typedef mozilla::layout::RenderFrameParent RenderFrameParent;
   typedef InfallibleTArray<Edit> EditArray;
@@ -47,8 +47,7 @@ class LayerTransactionParent : public PLayerTransactionParent,
 public:
   LayerTransactionParent(LayerManagerComposite* aManager,
                          ShadowLayersManager* aLayersManager,
-                         uint64_t aId,
-                         ProcessId aOtherProcess);
+                         uint64_t aId);
 
 protected:
   ~LayerTransactionParent();
@@ -90,16 +89,14 @@ public:
   virtual void SendFenceHandleIfPresent(PTextureParent* aTexture,
                                         CompositableHost* aCompositableHost) override;
 
-  virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
-                               PTextureParent* aTexture,
-                               const FenceHandle& aFence) override;
-
   virtual void SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
 
   virtual base::ProcessId GetChildProcessId() override
   {
-    return mChildProcessId;
+    return OtherPid();
   }
+
+  virtual void ReplyRemoveTexture(const OpReplyRemoveTexture& aReply) override;
 
 protected:
   virtual bool RecvShutdown() override;
@@ -113,6 +110,7 @@ protected:
                           const uint32_t& paintSequenceNumber,
                           const bool& isRepeatTransaction,
                           const mozilla::TimeStamp& aTransactionStart,
+                          const int32_t& aPaintSyncId,
                           EditReplyArray* reply) override;
 
   virtual bool RecvUpdateNoSwap(EditArray&& cset,
@@ -123,7 +121,8 @@ protected:
                                 const bool& scheduleComposite,
                                 const uint32_t& paintSequenceNumber,
                                 const bool& isRepeatTransaction,
-                                const mozilla::TimeStamp& aTransactionStart) override;
+                                const mozilla::TimeStamp& aTransactionStart,
+                                const int32_t& aPaintSyncId) override;
 
   virtual bool RecvClearCachedResources() override;
   virtual bool RecvForceComposite() override;
@@ -136,8 +135,13 @@ protected:
                                          override;
   virtual bool RecvSetAsyncScrollOffset(const FrameMetrics::ViewID& aId,
                                         const int32_t& aX, const int32_t& aY) override;
+  virtual bool RecvSetAsyncZoom(const FrameMetrics::ViewID& aId,
+                                const float& aValue) override;
+  virtual bool RecvFlushApzRepaints() override;
   virtual bool RecvGetAPZTestData(APZTestData* aOutData) override;
   virtual bool RecvRequestProperty(const nsString& aProperty, float* aValue) override;
+  virtual bool RecvSetConfirmedTargetAPZC(const uint64_t& aBlockId,
+                                          nsTArray<ScrollableLayerGuid>&& aTargets) override;
 
   virtual PLayerParent* AllocPLayerParent() override;
   virtual bool DeallocPLayerParent(PLayerParent* actor) override;
@@ -161,12 +165,12 @@ protected:
   void AddIPDLReference() {
     MOZ_ASSERT(mIPCOpen == false);
     mIPCOpen = true;
-    AddRef();
+    ADDREF_MANUALLY(this);
   }
   void ReleaseIPDLReference() {
     MOZ_ASSERT(mIPCOpen == true);
     mIPCOpen = false;
-    Release();
+    RELEASE_MANUALLY(this);
   }
   friend class CompositorParent;
   friend class CrossProcessCompositorParent;
@@ -198,9 +202,6 @@ private:
   // called on us but the mLayerManager might not be destroyed, or
   // vice versa.  In both cases though, we want to ignore shadow-layer
   // transactions posted by the child.
-
-  // Child side's process id.
-  base::ProcessId mChildProcessId;
 
   bool mDestroyed;
 

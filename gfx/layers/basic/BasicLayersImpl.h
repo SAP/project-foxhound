@@ -20,12 +20,11 @@
 namespace mozilla {
 namespace gfx {
 class DrawTarget;
-}
+} // namespace gfx
 
 namespace layers {
 
 class AutoMoz2DMaskData;
-class BasicContainerLayer;
 class Layer;
 
 class AutoSetOperator {
@@ -144,7 +143,7 @@ ToData(Layer* aLayer);
 gfx::CompositionOp
 GetEffectiveOperator(Layer* aLayer);
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif

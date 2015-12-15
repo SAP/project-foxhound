@@ -158,7 +158,6 @@ enum AttributeName {
 
 class DrawTarget;
 class SourceSurface;
-class FilterNode;
 struct FilterAttribute;
 
 enum class AttributeType {
@@ -471,7 +470,7 @@ public:
                                 const nsTArray<nsIntRegion>& aInputExtents);
 };
 
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 #endif // __FilterSupport_h

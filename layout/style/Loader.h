@@ -23,21 +23,18 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/net/ReferrerPolicy.h"
 
-class nsIAtom;
 class nsICSSLoaderObserver;
 class nsIContent;
 class nsIDocument;
-class nsCSSParser;
 class nsMediaList;
 class nsIStyleSheetLinkingElement;
-class nsCycleCollectionTraversalCallback;
 
 namespace mozilla {
 class CSSStyleSheet;
 namespace dom {
 class Element;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 namespace mozilla {
 
@@ -226,6 +223,7 @@ public:
                          bool aHasAlternateRel,
                          CORSMode aCORSMode,
                          ReferrerPolicy aReferrerPolicy,
+                         const nsAString& aIntegrity,
                          nsICSSLoaderObserver* aObserver,
                          bool* aIsAlternate);
 
@@ -323,7 +321,8 @@ public:
                      const nsCString& aCharset,
                      nsICSSLoaderObserver* aObserver,
                      CORSMode aCORSMode = CORS_NONE,
-                     ReferrerPolicy aReferrerPolicy = mozilla::net::RP_Default);
+                     ReferrerPolicy aReferrerPolicy = mozilla::net::RP_Default,
+                     const nsAString& aIntegrity = EmptyString());
 
   /**
    * Stop loading all sheets.  All nsICSSLoaderObservers involved will be
@@ -420,6 +419,7 @@ private:
                        nsIPrincipal* aLoaderPrincipal,
                        CORSMode aCORSMode,
                        ReferrerPolicy aReferrerPolicy,
+                       const nsAString& aIntegrity,
                        bool aSyncLoad,
                        bool aHasAlternateRel,
                        const nsAString& aTitle,
@@ -453,7 +453,8 @@ private:
                                         CSSStyleSheet** aSheet,
                                         nsICSSLoaderObserver* aObserver,
                                         CORSMode aCORSMode = CORS_NONE,
-                                        ReferrerPolicy aReferrerPolicy = mozilla::net::RP_Default);
+                                        ReferrerPolicy aReferrerPolicy = mozilla::net::RP_Default,
+                                        const nsAString& aIntegrity = EmptyString());
 
   // Post a load event for aObserver to be notified about aSheet.  The
   // notification will be sent with status NS_OK unless the load event is
@@ -517,8 +518,9 @@ private:
   // Our array of "global" observers
   nsTObserverArray<nsCOMPtr<nsICSSLoaderObserver> > mObservers;
 
-  // the load data needs access to the document...
-  nsIDocument*      mDocument;  // the document we live for
+  // This reference is nulled by the Document in it's destructor through
+  // DropDocumentReference().
+  nsIDocument* MOZ_NON_OWNING_REF mDocument;  // the document we live for
 
 
   // Number of datas still waiting to be notified on if we're notifying on a

@@ -48,8 +48,6 @@ EXTRA_JS_MODULES += [
     'PluralForm.jsm',
 ]
 
-MSVC_ENABLE_PGO = True
-
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
@@ -70,5 +68,3 @@ langgroups.inputs = ['langGroups.properties']
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'qt':
     CXXFLAGS += CONFIG['MOZ_QT_CFLAGS']
-
-FAIL_ON_WARNINGS = True

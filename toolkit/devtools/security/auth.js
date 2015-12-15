@@ -6,15 +6,17 @@
 
 "use strict";
 
-let { Ci, Cc } = require("chrome");
-let Services = require("Services");
-let promise = require("promise");
-let DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
-let { dumpn, dumpv } = DevToolsUtils;
+var { Ci, Cc } = require("chrome");
+var Services = require("Services");
+var promise = require("promise");
+var DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
+var { dumpn, dumpv } = DevToolsUtils;
 loader.lazyRequireGetter(this, "prompt",
   "devtools/toolkit/security/prompt");
 loader.lazyRequireGetter(this, "cert",
   "devtools/toolkit/security/cert");
+loader.lazyRequireGetter(this, "asyncStorage",
+  "devtools/toolkit/shared/async-storage");
 DevToolsUtils.defineLazyModuleGetter(this, "Task",
   "resource://gre/modules/Task.jsm");
 
@@ -36,7 +38,7 @@ function createEnum(obj) {
  * centralize the common actions available, while still allowing embedders to
  * present their UI in whatever way they choose.
  */
-let AuthenticationResult = exports.AuthenticationResult = createEnum({
+var AuthenticationResult = exports.AuthenticationResult = createEnum({
 
   /**
    * Close all listening sockets, and disable them from opening again.
@@ -78,7 +80,7 @@ let AuthenticationResult = exports.AuthenticationResult = createEnum({
  * connection, server listener) in case some methods are customized by the
  * embedder for a given use case.
  */
-let Authenticators = {};
+var Authenticators = {};
 
 /**
  * The Prompt authenticator displays a server-side user prompt that includes
@@ -86,7 +88,7 @@ let Authenticators = {};
  * no cryptographic properties at work here, so it is up to the user to be sure
  * that the client can be trusted.
  */
-let Prompt = Authenticators.Prompt = {};
+var Prompt = Authenticators.Prompt = {};
 
 Prompt.mode = "PROMPT";
 
@@ -250,7 +252,7 @@ Prompt.Server.prototype = {
  *
  * See docs/wifi.md for details of the authentication design.
  */
-let OOBCert = Authenticators.OOBCert = {};
+var OOBCert = Authenticators.OOBCert = {};
 
 OOBCert.mode = "OOB_CERT";
 
@@ -341,7 +343,6 @@ OOBCert.Client.prototype = {
             });
             break;
           case AuthenticationResult.ALLOW:
-          case AuthenticationResult.ALLOW_PERSIST:
             // Step B.12
             // Client verifies received value matches K
             if (packet.k != oobData.k) {
@@ -349,6 +350,13 @@ OOBCert.Client.prototype = {
               return;
             }
             // Step B.13
+            // Debugging begins
+            transport.hooks = null;
+            deferred.resolve(transport);
+            break;
+          case AuthenticationResult.ALLOW_PERSIST:
+            // Server previously persisted Client as allowed
+            // Step C.5
             // Debugging begins
             transport.hooks = null;
             deferred.resolve(transport);
@@ -386,7 +394,7 @@ OOBCert.Client.prototype = {
     let rng = Cc["@mozilla.org/security/random-generator;1"]
               .createInstance(Ci.nsIRandomGenerator);
     let bytes = rng.generateRandomBytes(length);
-    return [for (byte of bytes) byte.toString(16)].join("");
+    return bytes.map(byte => byte.toString(16)).join("");
   },
 
   /**
@@ -488,7 +496,18 @@ OOBCert.Server.prototype = {
   authenticate: Task.async(function*({ client, server, transport }) {
     // Step B.3 / C.3
     // TLS connection established, authentication begins
-    // TODO: Bug 1032128: Consult a list of persisted, approved clients
+    const storageKey = `devtools.auth.${this.mode}.approved-clients`;
+    let approvedClients = (yield asyncStorage.getItem(storageKey)) || {};
+    // Step C.4
+    // Server sees that ClientCert is from a known client via hash(ClientCert)
+    if (approvedClients[client.cert.sha256]) {
+      let authResult = AuthenticationResult.ALLOW_PERSIST;
+      transport.send({ authResult });
+      // Step C.5
+      // Debugging begins
+      return authResult;
+    }
+
     // Step B.4
     // Server sees that ClientCert is from a unknown client
     // Tell client they are unknown and should display OOB client UX
@@ -499,19 +518,18 @@ OOBCert.Server.prototype = {
     // Step B.5
     // User is shown a Allow / Deny / Always Allow prompt on the Server
     // with Client name and hash(ClientCert)
-    let result = yield this.allowConnection({
+    let authResult = yield this.allowConnection({
       authentication: this.mode,
       client,
       server
     });
 
-    switch (result) {
+    switch (authResult) {
       case AuthenticationResult.ALLOW_PERSIST:
-        // TODO: Bug 1032128: Persist the client
       case AuthenticationResult.ALLOW:
         break; // Further processing
       default:
-        return result; // Abort for any negative results
+        return authResult; // Abort for any negative results
     }
 
     // Examine additional data for authentication
@@ -540,14 +558,20 @@ OOBCert.Server.prototype = {
 
     // Step B.11
     // Server sends K to Client over TLS connection
-    transport.send({ authResult: result, k });
+    transport.send({ authResult, k });
+
+    // Persist Client if we want to always allow in the future
+    if (authResult === AuthenticationResult.ALLOW_PERSIST) {
+      approvedClients[client.cert.sha256] = true;
+      yield asyncStorage.setItem(storageKey, approvedClients);
+    }
 
     // Client may decide to abort if K does not match.
     // Server's portion of authentication is now complete.
 
     // Step B.13
     // Debugging begins
-    return result;
+    return authResult;
   }),
 
   /**

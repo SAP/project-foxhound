@@ -5,7 +5,8 @@
 MOZ_APP_BASENAME=Fennec
 MOZ_APP_VENDOR=Mozilla
 
-MOZ_APP_VERSION=38.0
+MOZ_APP_VERSION=$FIREFOX_VERSION
+MOZ_APP_VERSION_DISPLAY=$FIREFOX_VERSION_DISPLAY
 MOZ_APP_UA_NAME=Firefox
 
 MOZ_BRANDING_DIRECTORY=mobile/android/branding/unofficial
@@ -15,6 +16,12 @@ MOZ_OFFICIAL_BRANDING_DIRECTORY=mobile/android/branding/official
 # We support Android SDK version 9 and up by default.
 # See the --enable-android-min-sdk and --enable-android-max-sdk arguments in configure.in.
 MOZ_ANDROID_MIN_SDK_VERSION=9
+
+# There are several entry points into the Firefox application.  These are the names of some of the classes that are
+# listed in the Android manifest.  They are specified in here to avoid hard-coding them in source code files.
+MOZ_ANDROID_APPLICATION_CLASS=org.mozilla.gecko.GeckoApplication
+MOZ_ANDROID_BROWSER_INTENT_CLASS=org.mozilla.gecko.BrowserApp
+MOZ_ANDROID_SEARCH_INTENT_CLASS=org.mozilla.search.SearchActivity
 
 MOZ_SAFE_BROWSING=1
 
@@ -46,17 +53,17 @@ MOZ_APP_ID={aa3c5121-dab2-40e2-81ca-7ea25febc110}
 
 MOZ_APP_STATIC_INI=1
 
-# Enable on-demand decompression
+# Enable on-demand decompression.  This requires a host compile toolchain to
+# build szip to use during packaging.
+if test "$COMPILE_ENVIRONMENT"; then
 MOZ_ENABLE_SZIP=1
+fi
 
 # Enable navigator.mozPay
 MOZ_PAY=1
 
 # Enable UI for healthreporter
 MOZ_SERVICES_HEALTHREPORT=1
-
-# Enable reading list service integration.
-MOZ_ANDROID_READING_LIST_SERVICE=1
 
 # Enable runtime locale switching.
 MOZ_LOCALE_SWITCHER=1
@@ -68,6 +75,14 @@ MOZ_DEVICES=1
 # not resource constrained.
 if test -z "$MOZ_ANDROID_RESOURCE_CONSTRAINED"; then
   MOZ_NATIVE_DEVICES=1
+fi
+
+# Enable install tracking SDK if we have Google Play support; MOZ_NATIVE_DEVICES
+# is a proxy flag for that support.
+if test "$RELEASE_BUILD"; then
+if test "$MOZ_NATIVE_DEVICES"; then
+  MOZ_INSTALL_TRACKING=1
+fi
 fi
 
 # Mark as WebGL conformant
@@ -82,8 +97,25 @@ MOZ_ANDROID_SHARE_OVERLAY=1
 # Enable the Mozilla Location Service stumbler.
 MOZ_ANDROID_MLS_STUMBLER=1
 
-# Enable adding to the system downloads list in pre-release builds.
+# Enable adding to the system downloads list.
 MOZ_ANDROID_DOWNLOADS_INTEGRATION=1
+
+# Enable Tab Queue
+MOZ_ANDROID_TAB_QUEUE=1
 
 # Use the low-memory GC tuning.
 export JS_GC_SMALL_CHUNK_SIZE=1
+
+# Enable Firefox Account avatars.
+MOZ_ANDROID_FIREFOX_ACCOUNT_PROFILES=1
+
+# Enable checking that add-ons are signed by the trusted root
+MOZ_ADDON_SIGNING=1
+
+# Enable the Switchboard A/B framework code.
+# Note: The framework is always included in the app. This flag controls
+# usage of the framework.
+MOZ_SWITCHBOARD=1
+
+# Use native Firefox Accounts UI regardless of channel.
+MOZ_ANDROID_NATIVE_ACCOUNT_UI=1

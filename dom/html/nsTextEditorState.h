@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 et tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +13,7 @@
 #include "nsITextControlFrame.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/WeakPtr.h"
 
 class nsTextInputListener;
@@ -28,8 +29,8 @@ class nsFrame;
 namespace mozilla {
 namespace dom {
 class HTMLInputElement;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 /**
  * nsTextEditorState is a class which is responsible for managing the state of
@@ -127,7 +128,7 @@ class RestoreSelectionState;
 
 class nsTextEditorState : public mozilla::SupportsWeakPtr<nsTextEditorState> {
 public:
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(nsTextEditorState)
+  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(nsTextEditorState)
   explicit nsTextEditorState(nsITextControlElement* aOwningElement);
   ~nsTextEditorState();
 
@@ -142,9 +143,20 @@ public:
   nsresult PrepareEditor(const nsAString *aValue = nullptr);
   void InitializeKeyboardEventListeners();
 
+  enum SetValueFlags
+  {
+    // The call is for internal processing.
+    eSetValue_Internal              = 0,
+    // The value is changed by a call of setUserInput() from chrome.
+    eSetValue_BySetUserInput        = 1 << 0,
+    // The value is changed by changing value attribute of the element or
+    // something like setRangeText().
+    eSetValue_ByContent             = 1 << 1,
+    // Whether the value change should be notified to the frame/contet nor not.
+    eSetValue_Notify                = 1 << 2
+  };
   MOZ_WARN_UNUSED_RESULT bool SetValue(const nsAString& aValue,
-                                       bool aUserInput,
-                                       bool aSetValueAsChanged);
+                                       uint32_t aFlags);
   void GetValue(nsAString& aValue, bool aIgnoreWrap) const;
   void EmptyValue() { if (mValue) mValue->Truncate(); }
   bool IsEmpty() const { return mValue ? mValue->IsEmpty() : true; }
@@ -239,9 +251,11 @@ private:
 
   nsresult InitializeRootNode();
 
-  void FinishedRestoringSelection() { mRestoringSelection = nullptr; }
+  void FinishedRestoringSelection();
 
   mozilla::dom::HTMLInputElement* GetParentNumberControl(nsFrame* aFrame) const;
+
+  bool EditorHasComposition();
 
   class InitializationGuard {
   public:
@@ -269,9 +283,11 @@ private:
   friend class InitializationGuard;
   friend class PrepareEditorEvent;
 
-  nsITextControlElement* const mTextCtrlElement;
+  // The text control element owns this object, and ensures that this object
+  // has a smaller lifetime.
+  nsITextControlElement* const MOZ_NON_OWNING_REF mTextCtrlElement;
   nsRefPtr<nsTextInputSelectionImpl> mSelCon;
-  RestoreSelectionState* mRestoringSelection;
+  nsRefPtr<RestoreSelectionState> mRestoringSelection;
   nsCOMPtr<nsIEditor> mEditor;
   nsCOMPtr<mozilla::dom::Element> mRootNode;
   nsCOMPtr<mozilla::dom::Element> mPlaceholderDiv;
@@ -280,14 +296,20 @@ private:
   nsAutoPtr<nsCString> mValue;
   nsRefPtr<nsAnonDivObserver> mMutationObserver;
   mutable nsString mCachedValue; // Caches non-hard-wrapped value on a multiline control.
+  // mValueBeingSet is available only while SetValue() is requesting to commit
+  // composition.  I.e., this is valid only while mIsCommittingComposition is
+  // true.  While active composition is being committed, GetValue() needs
+  // the latest value which is set by SetValue().  So, this is cache for that.
+  nsString mValueBeingSet;
+  SelectionProperties mSelectionProperties;
   bool mEverInited; // Have we ever been initialized?
   bool mEditorInitialized;
   bool mInitializing; // Whether we're in the process of initialization
   bool mValueTransferInProgress; // Whether a value is being transferred to the frame
   bool mSelectionCached; // Whether mSelectionProperties is valid
   mutable bool mSelectionRestoreEagerInit; // Whether we're eager initing because of selection restore
-  SelectionProperties mSelectionProperties;
   bool mPlaceholderVisibility;
+  bool mIsCommittingComposition;
 };
 
 inline void

@@ -18,22 +18,22 @@
  */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-let {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", {});
+var {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", {});
 
 XPCOMUtils.defineLazyModuleGetter(this, "FormHistory",
                                   "resource://gre/modules/FormHistory.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Downloads",
                                   "resource://gre/modules/Downloads.jsm");
 
-let tempScope = {};
+var tempScope = {};
 Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader)
                                            .loadSubScript("chrome://browser/content/sanitize.js", tempScope);
-let Sanitizer = tempScope.Sanitizer;
+var Sanitizer = tempScope.Sanitizer;
 
 const kMsecPerMin = 60 * 1000;
 const kUsecPerMin = 60 * 1000000;
 
-let formEntries, downloadIDs, olderDownloadIDs;
+var formEntries, downloadIDs, olderDownloadIDs;
 
 // Add tests here.  Each is a function that's called by doNextTest().
 var gAllTests = [
@@ -402,17 +402,22 @@ var gAllTests = [
       // left to clear, the checkbox will be disabled.
       var cb = this.win.document.querySelectorAll(
                  "#itemList > [preference='privacy.cpd.formdata']");
-      ok(cb.length == 1 && cb[0].disabled && !cb[0].checked,
-         "There is no formdata history, checkbox should be disabled and be " +
-         "cleared to reduce user confusion (bug 497664).");
 
-      var cb = this.win.document.querySelectorAll(
-                 "#itemList > [preference='privacy.cpd.history']");
-      ok(cb.length == 1 && !cb[0].disabled && cb[0].checked,
-         "There is no history, but history checkbox should always be enabled " +
-         "and will be checked from previous preference.");
+      // Wait until the checkbox is disabled. This is done asynchronously
+      // from Sanitizer.init() as FormHistory.count() is a purely async API.
+      promiseWaitForCondition(() => cb[0].disabled).then(() => {
+        ok(cb.length == 1 && cb[0].disabled && !cb[0].checked,
+           "There is no formdata history, checkbox should be disabled and be " +
+           "cleared to reduce user confusion (bug 497664).");
 
-      this.acceptDialog();
+        cb = this.win.document.querySelectorAll(
+                   "#itemList > [preference='privacy.cpd.history']");
+        ok(cb.length == 1 && !cb[0].disabled && cb[0].checked,
+           "There is no history, but history checkbox should always be enabled " +
+           "and will be checked from previous preference.");
+
+        this.acceptDialog();
+      });
     }
     wh.open();
   },
@@ -559,7 +564,7 @@ var gAllTests = [
 
     var sm = Cc["@mozilla.org/scriptsecuritymanager;1"]
              .getService(Ci.nsIScriptSecurityManager);
-    var principal = sm.getNoAppCodebasePrincipal(URI);
+    var principal = sm.createCodebasePrincipal(URI, {});
 
     // Give www.example.com privileges to store offline data
     var pm = Cc["@mozilla.org/permissionmanager;1"]
@@ -629,7 +634,7 @@ var gAllTests = [
 
     var sm = Cc["@mozilla.org/scriptsecuritymanager;1"]
              .getService(Ci.nsIScriptSecurityManager);
-    var principal = sm.getNoAppCodebasePrincipal(URI);
+    var principal = sm.createCodebasePrincipal(URI, {});
 
     // Open the dialog
     let wh = new WindowHelper();
@@ -656,8 +661,8 @@ var gAllTests = [
 // test run.  See doNextTest().
 var gCurrTest = 0;
 
-let now_mSec = Date.now();
-let now_uSec = now_mSec * 1000;
+var now_mSec = Date.now();
+var now_uSec = now_mSec * 1000;
 
 ///////////////////////////////////////////////////////////////////////////////
 

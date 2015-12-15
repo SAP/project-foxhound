@@ -12,9 +12,9 @@ const PREF_MIN_PLATFORM_COMPAT        = "extensions.minCompatiblePlatformVersion
 
 Services.prefs.setBoolPref(PREF_STRICT_COMPAT, true);
 // avoid the 'leaked window property' check
-let scope = {};
+var scope = {};
 Components.utils.import("resource://gre/modules/TelemetrySession.jsm", scope);
-let TelemetrySession = scope.TelemetrySession;
+var TelemetrySession = scope.TelemetrySession;
 
 /**
  * Test add-ons:
@@ -194,7 +194,12 @@ function check_telemetry({disabled, metaenabled, metadisabled, upgraded, failed,
 }
 
 add_test(function test_setup() {
-  TelemetrySession.setup().then(run_next_test);
+  let oldCanRecord = Services.telemetry.canRecordExtended;
+  Services.telemetry.canRecordExtended = true;
+  registerCleanupFunction(function () {
+    Services.telemetry.canRecordExtended = oldCanRecord;
+  });
+  run_next_test();
 });
 
 // Tests that the right add-ons show up in the mismatch dialog and updates can
@@ -511,8 +516,4 @@ add_test(function overrides_retrieved() {
       });
     });
   });
-});
-
-add_test(function test_shutdown() {
-  TelemetrySession.shutdown().then(run_next_test);
 });

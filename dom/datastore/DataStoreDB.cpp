@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +23,7 @@
 #include "nsIDOMEvent.h"
 #include "nsIPrincipal.h"
 #include "nsIXPConnect.h"
+#include "nsNullPrincipal.h"
 
 #define DATASTOREDB_VERSION        1
 #define DATASTOREDB_NAME           "DataStoreDB"
@@ -103,26 +104,19 @@ DataStoreDB::CreateFactoryIfNeeded()
 {
   if (!mFactory) {
     nsresult rv;
-    nsCOMPtr<nsIPrincipal> principal =
-      do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    nsCOMPtr<nsIPrincipal> principal = nsNullPrincipal::Create();
+    if (!principal) {
+      return NS_ERROR_FAILURE;
     }
 
     nsIXPConnect* xpc = nsContentUtils::XPConnect();
     MOZ_ASSERT(xpc);
 
     AutoSafeJSContext cx;
-
-    nsCOMPtr<nsIXPConnectJSObjectHolder> globalHolder;
-    rv = xpc->CreateSandbox(cx, principal, getter_AddRefs(globalHolder));
+    JS::Rooted<JSObject*> global(cx);
+    rv = xpc->CreateSandbox(cx, principal, global.address());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
-    }
-
-    JS::Rooted<JSObject*> global(cx, globalHolder->GetJSObject());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return NS_ERROR_UNEXPECTED;
     }
 
     // The CreateSandbox call returns a proxy to the actual sandbox object. We
@@ -154,7 +148,7 @@ DataStoreDB::Open(IDBTransactionMode aMode, const Sequence<nsString>& aDbs,
   ErrorResult error;
   mRequest = mFactory->Open(mDatabaseName, DATASTOREDB_VERSION, error);
   if (NS_WARN_IF(error.Failed())) {
-    return error.ErrorCode();
+    return error.StealNSResult();
   }
 
   rv = AddEventListeners();
@@ -234,7 +228,7 @@ DataStoreDB::UpgradeSchema(nsIDOMEvent* aEvent)
   JS::Rooted<JS::Value> result(cx);
   mRequest->GetResult(&result, error);
   if (NS_WARN_IF(error.Failed())) {
-    return error.ErrorCode();
+    return error.StealNSResult();
   }
 
   MOZ_ASSERT(result.isObject());
@@ -253,7 +247,7 @@ DataStoreDB::UpgradeSchema(nsIDOMEvent* aEvent)
       database->CreateObjectStore(NS_LITERAL_STRING(DATASTOREDB_NAME),
                                   params, error);
     if (NS_WARN_IF(error.Failed())) {
-      return error.ErrorCode();
+      return error.StealNSResult();
     }
   }
 
@@ -267,7 +261,7 @@ DataStoreDB::UpgradeSchema(nsIDOMEvent* aEvent)
       database->CreateObjectStore(NS_LITERAL_STRING(DATASTOREDB_REVISION),
                                   params, error);
     if (NS_WARN_IF(error.Failed())) {
-      return error.ErrorCode();
+      return error.StealNSResult();
     }
   }
 
@@ -278,7 +272,7 @@ DataStoreDB::UpgradeSchema(nsIDOMEvent* aEvent)
       store->CreateIndex(NS_LITERAL_STRING(DATASTOREDB_REVISION_INDEX),
                          NS_LITERAL_STRING("revisionId"), params, error);
     if (NS_WARN_IF(error.Failed())) {
-      return error.ErrorCode();
+      return error.StealNSResult();
     }
   }
 
@@ -296,7 +290,7 @@ DataStoreDB::DatabaseOpened()
   JS::Rooted<JS::Value> result(cx);
   mRequest->GetResult(&result, error);
   if (NS_WARN_IF(error.Failed())) {
-    return error.ErrorCode();
+    return error.StealNSResult();
   }
 
   MOZ_ASSERT(result.isObject());
@@ -315,11 +309,18 @@ DataStoreDB::DatabaseOpened()
     return rv;
   }
 
-  nsRefPtr<IDBTransaction> txn = mDatabase->Transaction(mObjectStores,
-                                                        mTransactionMode,
-                                                        error);
+  StringOrStringSequence objectStores;
+  if (!objectStores.RawSetAsStringSequence().AppendElements(mObjectStores,
+                                                            fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  nsRefPtr<IDBTransaction> txn;
+  error = mDatabase->Transaction(objectStores,
+                                 mTransactionMode,
+                                 getter_AddRefs(txn));
   if (NS_WARN_IF(error.Failed())) {
-    return error.ErrorCode();
+    return error.StealNSResult();
   }
 
   mTransaction = txn.forget();
@@ -347,7 +348,7 @@ DataStoreDB::Delete()
   nsRefPtr<IDBOpenDBRequest> request =
     mFactory->DeleteDatabase(mDatabaseName, IDBOpenDBOptions(), error);
   if (NS_WARN_IF(error.Failed())) {
-    return error.ErrorCode();
+    return error.StealNSResult();
   }
 
   return NS_OK;

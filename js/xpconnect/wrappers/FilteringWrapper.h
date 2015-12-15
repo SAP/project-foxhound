@@ -15,8 +15,10 @@
 struct JSPropertyDescriptor;
 
 namespace JS {
-class AutoIdVector;
-}
+template <typename T>
+class AutoVectorRooter;
+typedef AutoVectorRooter<jsid> AutoIdVector;
+} // namespace JS
 
 namespace xpc {
 
@@ -48,13 +50,13 @@ class FilteringWrapper : public Base {
                            const JS::CallArgs& args) const override;
 
     virtual bool nativeCall(JSContext* cx, JS::IsAcceptableThis test, JS::NativeImpl impl,
-                            JS::CallArgs args) const override;
+                            const JS::CallArgs& args) const override;
 
     virtual bool defaultValue(JSContext* cx, JS::Handle<JSObject*> obj, JSType hint,
                               JS::MutableHandleValue vp) const override;
 
-    virtual bool getPrototypeOf(JSContext* cx, JS::HandleObject wrapper,
-                                JS::MutableHandleObject protop) const override;
+    virtual bool getPrototype(JSContext* cx, JS::HandleObject wrapper,
+                              JS::MutableHandleObject protop) const override;
 
     static const FilteringWrapper singleton;
 };
@@ -73,17 +75,18 @@ class CrossOriginXrayWrapper : public SecurityXrayDOM {
                                           JS::MutableHandle<JSPropertyDescriptor> desc) const override;
     virtual bool defineProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
                                 JS::Handle<jsid> id,
-                                JS::MutableHandle<JSPropertyDescriptor> desc) const override;
+                                JS::Handle<JSPropertyDescriptor> desc,
+                                JS::ObjectOpResult& result) const override;
     virtual bool ownPropertyKeys(JSContext* cx, JS::Handle<JSObject*> wrapper,
                                  JS::AutoIdVector& props) const override;
     virtual bool delete_(JSContext* cx, JS::Handle<JSObject*> wrapper,
-                         JS::Handle<jsid> id, bool* bp) const override;
+                         JS::Handle<jsid> id, JS::ObjectOpResult& result) const override;
 
     virtual bool getPropertyDescriptor(JSContext* cx, JS::Handle<JSObject*> wrapper,
                                        JS::Handle<jsid> id,
                                        JS::MutableHandle<JSPropertyDescriptor> desc) const override;
 };
 
-}
+} // namespace xpc
 
 #endif /* __FilteringWrapper_h__ */

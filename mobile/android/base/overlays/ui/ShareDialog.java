@@ -15,9 +15,9 @@ import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.db.LocalBrowserDB;
+import org.mozilla.gecko.db.RemoteClient;
 import org.mozilla.gecko.overlays.OverlayConstants;
 import org.mozilla.gecko.overlays.service.OverlayActionService;
-import org.mozilla.gecko.overlays.service.sharemethods.ParcelableClientRecord;
 import org.mozilla.gecko.overlays.service.sharemethods.SendTab;
 import org.mozilla.gecko.overlays.service.sharemethods.ShareMethod;
 import org.mozilla.gecko.sync.setup.activities.WebURLFinder;
@@ -30,7 +30,6 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -41,8 +40,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -104,25 +101,25 @@ public class ShareDialog extends Locales.LocaleAwareActivity implements SendTabT
     protected void handleSendTabUIEvent(Intent intent) {
         sendTabOverrideIntent = intent.getParcelableExtra(SendTab.OVERRIDE_INTENT);
 
-        ParcelableClientRecord[] clientrecords = (ParcelableClientRecord[]) intent.getParcelableArrayExtra(SendTab.EXTRA_CLIENT_RECORDS);
+        RemoteClient[] remoteClientRecords = (RemoteClient[]) intent.getParcelableArrayExtra(SendTab.EXTRA_REMOTE_CLIENT_RECORDS);
 
         // Escape hatch: we don't show the option to open this dialog in this state so this should
         // never be run. However, due to potential inconsistencies in synced client state
         // (e.g. bug 1122302 comment 47), we might fail.
         if (state == State.DEVICES_ONLY &&
-                (clientrecords == null || clientrecords.length == 0)) {
+                (remoteClientRecords == null || remoteClientRecords.length == 0)) {
             Log.e(LOGTAG, "In state: " + State.DEVICES_ONLY + " and received 0 synced clients. Finishing...");
-            // We show a toast in 39. The string doesn't exist in 38 so do nothing. It's an extreme
-            // edge case we don't expect to see, so I'm not too concerned.
+            Toast.makeText(this, getResources().getText(R.string.overlay_no_synced_devices), Toast.LENGTH_SHORT)
+                 .show();
             finish();
             return;
         }
 
-        sendTabList.setSyncClients(clientrecords);
+        sendTabList.setSyncClients(remoteClientRecords);
 
         if (state == State.DEVICES_ONLY ||
-                clientrecords == null ||
-                clientrecords.length <= MAXIMUM_INLINE_DEVICES) {
+                remoteClientRecords == null ||
+                remoteClientRecords.length <= MAXIMUM_INLINE_DEVICES) {
             // Show the list of devices in-line.
             sendTabList.switchState(SendTabList.State.LIST);
 
@@ -131,7 +128,7 @@ public class ShareDialog extends Locales.LocaleAwareActivity implements SendTabT
             //
             // Note: a more thorough implementation would add this
             // (and other non-ListView buttons) into a custom ListView.
-            if (clientrecords == null || clientrecords.length == 0) {
+            if (remoteClientRecords == null || remoteClientRecords.length == 0) {
                 readingListButton.setBackgroundResource(
                         R.drawable.overlay_share_button_background_first);
             }
@@ -188,15 +185,8 @@ public class ShareDialog extends Locales.LocaleAwareActivity implements SendTabT
 
         readingListButtonDrawable = readingListButton.getBackground();
 
-        final Resources resources = getResources();
-        final String bookmarkEnabledLabel = resources.getString(R.string.overlay_share_bookmark_btn_label);
-        final Drawable bookmarkEnabledIcon = resources.getDrawable(R.drawable.overlay_bookmark_icon);
-        bookmarkButton.setEnabledLabelAndIcon(bookmarkEnabledLabel, bookmarkEnabledIcon);
-
-        final String bookmarkDisabledLabel = resources.getString(R.string.overlay_share_bookmark_btn_label_already);
-        final Drawable bookmarkDisabledIcon = resources.getDrawable(R.drawable.overlay_bookmarked_already_icon);
-        bookmarkButton.setDisabledLabelAndIcon(bookmarkDisabledLabel, bookmarkDisabledIcon);
-
+        // Bookmark button
+        bookmarkButton = (OverlayDialogButton) findViewById(R.id.overlay_share_bookmark_btn);
         bookmarkButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -204,14 +194,8 @@ public class ShareDialog extends Locales.LocaleAwareActivity implements SendTabT
             }
         });
 
-        final String readingListEnabledLabel = resources.getString(R.string.overlay_share_reading_list_btn_label);
-        final Drawable readingListEnabledIcon = resources.getDrawable(R.drawable.overlay_readinglist_icon);
-        readingListButton.setEnabledLabelAndIcon(readingListEnabledLabel, readingListEnabledIcon);
-
-        final String readingListDisabledLabel = resources.getString(R.string.overlay_share_reading_list_btn_label_already);
-        final Drawable readingListDisabledIcon = resources.getDrawable(R.drawable.overlay_readinglist_already_icon);
-        readingListButton.setDisabledLabelAndIcon(readingListDisabledLabel, readingListDisabledIcon);
-
+        // Reading List button
+        readingListButton = (OverlayDialogButton) findViewById(R.id.overlay_share_reading_list_btn);
         readingListButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -364,10 +348,15 @@ public class ShareDialog extends Locales.LocaleAwareActivity implements SendTabT
 
     @Override
     public void finish() {
-        super.finish();
+        finish(true);
+    }
 
-        // Don't perform an activity-dismiss animation.
-        overridePendingTransition(0, 0);
+    private void finish(final boolean shouldOverrideAnimations) {
+        super.finish();
+        if (shouldOverrideAnimations) {
+            // Don't perform an activity-dismiss animation.
+            overridePendingTransition(0, 0);
+        }
     }
 
     /*
@@ -424,12 +413,13 @@ public class ShareDialog extends Locales.LocaleAwareActivity implements SendTabT
         try {
             // This can launch in the guest profile. Sorry.
             final Intent i = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
-            i.setClassName(AppConstants.ANDROID_PACKAGE_NAME, AppConstants.BROWSER_INTENT_CLASS_NAME);
+            i.setClassName(AppConstants.ANDROID_PACKAGE_NAME, AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS);
             startActivity(i);
         } catch (URISyntaxException e) {
             // Nothing much we can do.
         } finally {
-            slideOut();
+            // Since we're changing apps, users expect the default app switch animations.
+            finish(false);
         }
     }
 

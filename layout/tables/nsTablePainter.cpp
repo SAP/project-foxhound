@@ -12,6 +12,7 @@
 #include "nsTablePainter.h"
 #include "nsCSSRendering.h"
 #include "nsDisplayList.h"
+#include "mozilla/WritingModes.h"
 
 /* ~*~ Table Background Painting ~*~
 
@@ -91,10 +92,11 @@
    painting process, since they were skipped. They call the appropriate
    sub-part of the loop (e.g. PaintRow) which will paint the frame and
    descendants.
-   
-   XXX views are going 
+
+   XXX views are going
  */
 
+using namespace mozilla;
 using namespace mozilla::image;
 
 TableBackgroundPainter::TableBackgroundData::TableBackgroundData()
@@ -206,29 +208,31 @@ TableBackgroundPainter::PaintTableFrame(nsTableFrame*         aTableFrame,
   TableBackgroundData tableData(aTableFrame);
   tableData.mRect.MoveTo(0,0); //using table's coords
   tableData.mRect.Deflate(aDeflate);
+  WritingMode wm = aTableFrame->GetWritingMode();
   if (mIsBorderCollapse && tableData.ShouldSetBCBorder()) {
     if (aFirstRowGroup && aLastRowGroup && mNumCols > 0) {
       //only handle non-degenerate tables; we need a more robust BC model
       //to make degenerate tables' borders reasonable to deal with
-      nsMargin border, tempBorder;
+      LogicalMargin border(wm);
+      LogicalMargin tempBorder(wm);
       nsTableColFrame* colFrame = aTableFrame->GetColFrame(mNumCols - 1);
       if (colFrame) {
-        colFrame->GetContinuousBCBorderWidth(tempBorder);
+        colFrame->GetContinuousBCBorderWidth(wm, tempBorder);
       }
-      border.right = tempBorder.right;
+      border.IEnd(wm) = tempBorder.IEnd(wm);
 
-      aLastRowGroup->GetContinuousBCBorderWidth(tempBorder);
-      border.bottom = tempBorder.bottom;
+      aLastRowGroup->GetContinuousBCBorderWidth(wm, tempBorder);
+      border.BEnd(wm) = tempBorder.BEnd(wm);
 
       nsTableRowFrame* rowFrame = aFirstRowGroup->GetFirstRow();
       if (rowFrame) {
-        rowFrame->GetContinuousBCBorderWidth(tempBorder);
-        border.top = tempBorder.top;
+        rowFrame->GetContinuousBCBorderWidth(wm, tempBorder);
+        border.BStart(wm) = tempBorder.BStart(wm);
       }
 
-      border.left = aTableFrame->GetContinuousLeftBCBorderWidth();
+      border.IStart(wm) = aTableFrame->GetContinuousIStartBCBorderWidth();
 
-      tableData.SetBCBorder(border);
+      tableData.SetBCBorder(border.GetPhysicalMargin(wm));
     }
   }
 
@@ -275,6 +279,7 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
 
   nsTableFrame::RowGroupArray rowGroups;
   aTableFrame->OrderRowGroups(rowGroups);
+  WritingMode wm = aTableFrame->GetWritingMode();
 
   DrawResult result = DrawResult::SUCCESS;
 
@@ -313,21 +318,21 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
     // mColGroups is destroyed as part of TablePainter destruction.
     mColGroups.SetCapacity(colGroupFrames.Length());
 
-    nsMargin border;
-    /* BC left borders aren't stored on cols, but the previous column's
-       right border is the next one's left border.*/
-    //Start with table's left border.
-    nscoord lastLeftBorder = aTableFrame->GetContinuousLeftBCBorderWidth();
+    LogicalMargin border(wm);
+    /* BC iStart borders aren't stored on cols, but the previous column's
+       iEnd border is the next one's iStart border.*/
+    //Start with table's iStart border.
+    nscoord lastIStartBorder = aTableFrame->GetContinuousIStartBCBorderWidth();
 
     for (nsTableColGroupFrame* cgFrame : colGroupFrames) {
       /*Create data struct for column group*/
       TableBackgroundData& cgData = *mColGroups.AppendElement(TableBackgroundData(cgFrame));
       if (mIsBorderCollapse && cgData.ShouldSetBCBorder()) {
-        border.left = lastLeftBorder;
-        cgFrame->GetContinuousBCBorderWidth(border);
-        cgData.SetBCBorder(border);
+        border.IStart(wm) = lastIStartBorder;
+        cgFrame->GetContinuousBCBorderWidth(wm, border);
+        cgData.SetBCBorder(border.GetPhysicalMargin(wm));
       }
-      
+
       /*Loop over columns in this colgroup*/
       for (nsTableColFrame* col = cgFrame->GetFirstColumn(); col;
            col = static_cast<nsTableColFrame*>(col->GetNextSibling())) {
@@ -337,10 +342,10 @@ TableBackgroundPainter::PaintTable(nsTableFrame*   aTableFrame,
         //Bring column mRect into table's coord system
         colData.mCol.mRect.MoveBy(cgData.mRect.x, cgData.mRect.y);
         if (mIsBorderCollapse) {
-          border.left = lastLeftBorder;
-          lastLeftBorder = col->GetContinuousBCBorderWidth(border);
+          border.IStart(wm) = lastIStartBorder;
+          lastIStartBorder = col->GetContinuousBCBorderWidth(wm, border);
           if (colData.mCol.ShouldSetBCBorder()) {
-            colData.mCol.SetBCBorder(border);
+            colData.mCol.SetBCBorder(border.GetPhysicalMargin(wm));
           }
         }
       }
@@ -385,21 +390,22 @@ TableBackgroundPainter::PaintRowGroup(nsTableRowGroupFrame* aFrame,
   MOZ_ASSERT(aFrame, "null frame");
 
   nsTableRowFrame* firstRow = aFrame->GetFirstRow();
+  WritingMode wm = aFrame->GetWritingMode();
 
   /* Load row group data */
   if (aPassThrough) {
     aRowGroupBGData.MakeInvisible();
   } else {
     if (mIsBorderCollapse && aRowGroupBGData.ShouldSetBCBorder()) {
-      nsMargin border;
+      LogicalMargin border(wm);
       if (firstRow) {
-        //pick up first row's top border (= rg top border)
-        firstRow->GetContinuousBCBorderWidth(border);
-        /* (row group doesn't store its top border) */
+        //pick up first row's bstart border (= rg bstart border)
+        firstRow->GetContinuousBCBorderWidth(wm, border);
+        /* (row group doesn't store its bstart border) */
       }
       //overwrite sides+bottom borders with rg's own
-      aFrame->GetContinuousBCBorderWidth(border);
-      aRowGroupBGData.SetBCBorder(border);
+      aFrame->GetContinuousBCBorderWidth(wm, border);
+      aRowGroupBGData.SetBCBorder(border.GetPhysicalMargin(wm));
     }
     aPassThrough = !aRowGroupBGData.IsVisible();
   }
@@ -426,7 +432,7 @@ TableBackgroundPainter::PaintRowGroup(nsTableRowGroupFrame* aFrame,
   }
 
   // It's OK if cursor is null here.
-  nsTableRowFrame* row = static_cast<nsTableRowFrame*>(cursor);  
+  nsTableRowFrame* row = static_cast<nsTableRowFrame*>(cursor);
   if (!row) {
     // No useful cursor; just start at the top.  Don't bother to set up a
     // cursor; if we've gotten this far then we've already built the display
@@ -434,9 +440,9 @@ TableBackgroundPainter::PaintRowGroup(nsTableRowGroupFrame* aFrame,
     // good reason we don't have a cursor and we shouldn't create one here.
     row = firstRow;
   }
-  
+
   DrawResult result = DrawResult::SUCCESS;
-  
+
   /* Finally paint */
   for (; row; row = row->GetNextRow()) {
     TableBackgroundData rowBackgroundData(row);
@@ -451,7 +457,7 @@ TableBackgroundPainter::PaintRowGroup(nsTableRowGroupFrame* aFrame,
       // All done; cells originating in later rows can't intersect mDirtyRect.
       break;
     }
-    
+
     DrawResult rowResult =
       PaintRow(row, aRowGroupBGData, rowBackgroundData,
                aPassThrough || row->IsPseudoStackingContextFromStyle());
@@ -482,23 +488,24 @@ TableBackgroundPainter::PaintRow(nsTableRowFrame* aFrame,
   MOZ_ASSERT(aFrame, "null frame");
 
   /* Load row data */
+  WritingMode wm = aFrame->GetWritingMode();
   if (aPassThrough) {
     aRowBGData.MakeInvisible();
   } else {
     if (mIsBorderCollapse && aRowBGData.ShouldSetBCBorder()) {
-      nsMargin border;
+      LogicalMargin border(wm);
       nsTableRowFrame* nextRow = aFrame->GetNextRow();
-      if (nextRow) { //outer top below us is inner bottom for us
-        border.bottom = nextRow->GetOuterTopContBCBorderWidth();
+      if (nextRow) { //outer bStart after us is inner bEnd for us
+        border.BEnd(wm) = nextRow->GetOuterBStartContBCBorderWidth();
       }
-      else { //acquire rg's bottom border
+      else { //acquire rg's bEnd border
         nsTableRowGroupFrame* rowGroup = static_cast<nsTableRowGroupFrame*>(aFrame->GetParent());
-        rowGroup->GetContinuousBCBorderWidth(border);
+        rowGroup->GetContinuousBCBorderWidth(wm, border);
       }
-      //get the rest of the borders; will overwrite all but bottom
-      aFrame->GetContinuousBCBorderWidth(border);
+      //get the rest of the borders; will overwrite all but bEnd
+      aFrame->GetContinuousBCBorderWidth(wm, border);
 
-      aRowBGData.SetBCBorder(border);
+      aRowBGData.SetBCBorder(border.GetPhysicalMargin(wm));
     }
     aPassThrough = !aRowBGData.IsVisible();
   }
@@ -511,7 +518,7 @@ TableBackgroundPainter::PaintRow(nsTableRowFrame* aFrame,
   //else: Use row group's coord system -> no translation necessary
 
   DrawResult result = DrawResult::SUCCESS;
-  
+
   for (nsTableCellFrame* cell = aFrame->GetFirstCell(); cell; cell = cell->GetNextCell()) {
     nsRect cellBGRect, rowBGRect, rowGroupBGRect, colBGRect;
     ComputeCellBackgrounds(cell, aRowGroupBGData, aRowBGData,

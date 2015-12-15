@@ -12,10 +12,7 @@
 #include "mozilla/RefPtr.h"
 #include "nsSVGPaintServerFrame.h"
 
-class gfxASurface;
-class gfxContext;
 class nsIFrame;
-class nsSVGElement;
 class nsSVGLength2;
 class nsSVGPathGeometryFrame;
 class nsSVGViewBox;
@@ -112,7 +109,7 @@ protected:
     return GetLengthValue(aIndex, mContent);
   }
 
-  mozilla::TemporaryRef<SourceSurface>
+  already_AddRefed<SourceSurface>
   PaintPattern(const DrawTarget* aDrawTarget,
                Matrix *patternMatrix,
                const Matrix &aContextMatrix,

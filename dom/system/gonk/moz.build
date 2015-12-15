@@ -16,11 +16,13 @@
 
 XPIDL_SOURCES += [
     'nsIAudioManager.idl',
+    'nsINetworkInterface.idl',
     'nsINetworkInterfaceListService.idl',
     'nsINetworkManager.idl',
     'nsINetworkService.idl',
     'nsINetworkWorker.idl',
     'nsISystemWorkerManager.idl',
+    'nsITetheringService.idl',
     'nsIVolume.idl',
     'nsIVolumeMountLock.idl',
     'nsIVolumeService.idl',
@@ -31,7 +33,9 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'dom_system_gonk'
 
 EXPORTS += [
+    'GeolocationUtil.h',
     'GonkGPSGeolocationProvider.h',
+    'mozstumbler/MozStumbler.h',
     'nsVolume.h',
     'nsVolumeService.h',
 ]
@@ -40,10 +44,15 @@ UNIFIED_SOURCES += [
     'AudioManager.cpp',
     'AutoMounter.cpp',
     'AutoMounterSetting.cpp',
+    'GeolocationUtil.cpp',
     'GonkGPSGeolocationProvider.cpp',
     'MozMtpDatabase.cpp',
     'MozMtpServer.cpp',
     'MozMtpStorage.cpp',
+    'mozstumbler/MozStumbler.cpp',
+    'mozstumbler/StumblerLogging.cpp',
+    'mozstumbler/UploadStumbleRunnable.cpp',
+    'mozstumbler/WriteStumbleOnThread.cpp',
     'NetIdManager.cpp',
     'NetworkUtils.cpp',
     'NetworkWorker.cpp',
@@ -72,12 +81,12 @@ if CONFIG['ENABLE_TESTS']:
 EXTRA_COMPONENTS += [
     'NetworkInterfaceListService.js',
     'NetworkInterfaceListService.manifest',
+    'NetworkManager.js',
     'NetworkManager.manifest',
     'NetworkService.js',
     'NetworkService.manifest',
-]
-EXTRA_PP_COMPONENTS += [
-    'NetworkManager.js',
+    'TetheringService.js',
+    'TetheringService.manifest',
 ]
 EXTRA_JS_MODULES += [
     'systemlibs.js',
@@ -85,12 +94,14 @@ EXTRA_JS_MODULES += [
 
 if CONFIG['MOZ_B2G_RIL']:
     XPIDL_SOURCES += [
+        'nsIDataCallInterfaceService.idl',
+        'nsIDataCallManager.idl',
+        'nsIGonkDataCallInterfaceService.idl',
         'nsIRadioInterfaceLayer.idl',
     ]
     EXTRA_COMPONENTS += [
-        'RadioInterfaceLayer.js',
-        'RadioInterfaceLayer.manifest',
-        'RILContentHelper.js',
+        'DataCallManager.js',
+        'DataCallManager.manifest',
         'RILSystemMessengerHelper.js',
         'RILSystemMessengerHelper.manifest',
     ]
@@ -98,16 +109,22 @@ if CONFIG['MOZ_B2G_RIL']:
         'ril_consts.js',
         'ril_worker.js',
         'ril_worker_buf_object.js',
+        'ril_worker_telephony_request_queue.js',
         'RILSystemMessenger.jsm',
     ]
-
-FAIL_ON_WARNINGS = True
+    if not CONFIG['DISABLE_MOZ_RIL_GEOLOC']:
+        EXTRA_COMPONENTS += [
+            'DataCallInterfaceService.js',
+            'DataCallInterfaceService.manifest',
+            'RadioInterfaceLayer.js',
+            'RadioInterfaceLayer.manifest',
+        ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
     '/dom/base',
-    '/dom/bluetooth',
+    '/dom/bluetooth/common',
     '/dom/geolocation',
     '/dom/wifi',
 ]

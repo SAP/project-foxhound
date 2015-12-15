@@ -4,7 +4,7 @@
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu, manager: Cm} = Components;
 const URL_HOST = "http://localhost";
 
-let GMPScope = Cu.import("resource://gre/modules/GMPInstallManager.jsm");
+var GMPScope = Cu.import("resource://gre/modules/GMPInstallManager.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
@@ -199,7 +199,7 @@ add_test(function test_checkForAddons_bad_ssl() {
   promise.then(() => {
     do_throw("Defensive timeout should reject");
   }, err => {
-    do_check_true(err.message.contains("SSL is required and URI scheme is " +
+    do_check_true(err.message.includes("SSL is required and URI scheme is " +
                                        "not https."));
     installManager.uninit();
     if (PREF_KEY_URL_OVERRIDE_BACKUP) {
@@ -488,6 +488,9 @@ function* test_checkForAddons_installAddon(id, includeSize, wantInstallReject) {
     do_check_eq(GMPScope.GMPPrefs.get(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, "",
                                       gmpAddon.id),
                 "1.1");
+    do_check_eq(GMPScope.GMPPrefs.get(GMPScope.GMPPrefs.KEY_PLUGIN_ABI, "",
+                                      gmpAddon.id),
+                GMPScope.GMPUtils.ABI());
     // Make sure it reports as being installed
     do_check_true(gmpAddon.isInstalled);
 
@@ -753,8 +756,7 @@ xhr.prototype = {
     eval("this._on" + aEvent + " = aValue");
   },
   flags: Ci.nsIClassInfo.SINGLETON,
-  implementationLanguage: Ci.nsIProgrammingLanguage.JAVASCRIPT,
-  getHelperForLanguage: function(aLanguage) null,
+  getScriptableHelper: function() null,
   getInterfaces: function(aCount) {
     let interfaces = [Ci.nsISupports];
     aCount.value = interfaces.length;

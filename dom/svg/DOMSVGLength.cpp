@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,7 +66,7 @@ NS_INTERFACE_MAP_END
 // Helper class: AutoChangeLengthNotifier
 // Stack-based helper class to pair calls to WillChangeLengthList and
 // DidChangeLengthList.
-class MOZ_STACK_CLASS AutoChangeLengthNotifier
+class MOZ_RAII AutoChangeLengthNotifier
 {
 public:
   explicit AutoChangeLengthNotifier(DOMSVGLength* aLength MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
@@ -245,7 +246,7 @@ DOMSVGLength::GetValue(float* aValue)
 {
   ErrorResult rv;
   *aValue = GetValue(rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -299,7 +300,7 @@ DOMSVGLength::SetValue(float aUserUnitValue)
 
   ErrorResult rv;
   SetValue(aUserUnitValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 float
@@ -359,7 +360,7 @@ DOMSVGLength::SetValueInSpecifiedUnits(float aValue)
 
   ErrorResult rv;
   SetValueInSpecifiedUnits(aValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -371,7 +372,7 @@ DOMSVGLength::SetValueAsString(const nsAString& aValue, ErrorResult& aRv)
   }
 
   if (mVal) {
-    mVal->SetBaseValueString(aValue, mSVGElement, true);
+    aRv = mVal->SetBaseValueString(aValue, mSVGElement, true);
     return;
   }
 
@@ -397,7 +398,7 @@ DOMSVGLength::SetValueAsString(const nsAString& aValue)
 {
   ErrorResult rv;
   SetValueAsString(aValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 NS_IMETHODIMP
@@ -464,7 +465,7 @@ DOMSVGLength::NewValueSpecifiedUnits(uint16_t aUnit, float aValue)
 
   ErrorResult rv;
   NewValueSpecifiedUnits(aUnit, aValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -514,13 +515,13 @@ DOMSVGLength::ConvertToSpecifiedUnits(uint16_t aUnit)
 {
   ErrorResult rv;
   ConvertToSpecifiedUnits(aUnit, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 JSObject*
-DOMSVGLength::WrapObject(JSContext* aCx)
+DOMSVGLength::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return dom::SVGLengthBinding::Wrap(aCx, this);
+  return dom::SVGLengthBinding::Wrap(aCx, this, aGivenProto);
 }
 
 void

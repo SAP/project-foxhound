@@ -7,16 +7,16 @@ const {Cc, Ci, Cu, Cr} = require("chrome");
 
 const Services = require("Services");
 
-const { Promise: promise } = Cu.import("resource://gre/modules/Promise.jsm", {});
 const events = require("sdk/event/core");
+const promise = require("promise");
 const { on: systemOn, off: systemOff } = require("sdk/system/events");
 const protocol = require("devtools/server/protocol");
 const { CallWatcherActor, CallWatcherFront } = require("devtools/server/actors/call-watcher");
-const { ThreadActor } = require("devtools/server/actors/script");
+const { createValueGrip } = require("devtools/server/actors/object");
 const AutomationTimeline = require("./utils/automation-timeline");
 const { on, once, off, emit } = events;
-const { types, method, Arg, Option, RetVal } = protocol;
-
+const { types, method, Arg, Option, RetVal, preEvent } = protocol;
+const AUDIO_NODE_DEFINITION = require("devtools/server/actors/utils/audionodes.json");
 const ENABLE_AUTOMATION = false;
 const AUTOMATION_GRANULARITY = 2000;
 const AUTOMATION_GRANULARITY_MAX = 6000;
@@ -42,125 +42,26 @@ const NODE_ROUTING_METHODS = [
   "connect", "disconnect"
 ];
 
-const NODE_PROPERTIES = {
-  "OscillatorNode": {
-    "properties": {
-      "type": {},
-      "frequency": {
-        "param": true
-      },
-      "detune": {
-        "param": true
-      }
-    }
-  },
-  "GainNode": {
-    "properties": { "gain": { "param": true }}
-  },
-  "DelayNode": {
-    "properties": { "delayTime": { "param": true }}
-  },
-  // TODO deal with figuring out adding `detune` AudioParam
-  // for AudioBufferSourceNode, which is in the spec
-  // but not yet added in implementation
-  // bug 1116852
-  "AudioBufferSourceNode": {
-    "properties": {
-      "buffer": { "Buffer": true },
-      "playbackRate": {
-        "param": true
-      },
-      "loop": {},
-      "loopStart": {},
-      "loopEnd": {}
-    }
-  },
-  "ScriptProcessorNode": {
-    "properties": { "bufferSize": { "readonly": true }}
-  },
-  "PannerNode": {
-    "properties": {
-      "panningModel": {},
-      "distanceModel": {},
-      "refDistance": {},
-      "maxDistance": {},
-      "rolloffFactor": {},
-      "coneInnerAngle": {},
-      "coneOuterAngle": {},
-      "coneOuterGain": {}
-    }
-  },
-  "ConvolverNode": {
-    "properties": {
-      "buffer": { "Buffer": true },
-      "normalize": {},
-    }
-  },
-  "DynamicsCompressorNode": {
-    "properties": {
-      "threshold": { "param": true },
-      "knee": { "param": true },
-      "ratio": { "param": true },
-      "reduction": {},
-      "attack": { "param": true },
-      "release": { "param": true }
-    }
-  },
-  "BiquadFilterNode": {
-    "properties": {
-      "type": {},
-      "frequency": { "param": true },
-      "Q": { "param": true },
-      "detune": { "param": true },
-      "gain": { "param": true }
-    }
-  },
-  "WaveShaperNode": {
-    "properties": {
-      "curve": { "Float32Array": true },
-      "oversample": {}
-    }
-  },
-  "AnalyserNode": {
-    "properties": {
-      "fftSize": {},
-      "minDecibels": {},
-      "maxDecibels": {},
-      "smoothingTimeConstant": {},
-      "frequencyBinCount": { "readonly": true },
-    }
-  },
-  "AudioDestinationNode": {
-    "unbypassable": true
-  },
-  "ChannelSplitterNode": {
-    "unbypassable": true
-  },
-  "ChannelMergerNode": {
-    "unbypassable": true
-  },
-  "MediaElementAudioSourceNode": {},
-  "MediaStreamAudioSourceNode": {},
-  "MediaStreamAudioDestinationNode": {
-    "unbypassable": true,
-    "properties": {
-      "stream": { "MediaStream": true }
-    }
-  },
-  "StereoPannerNode": {
-    "properties": {
-      "pan": {}
-    }
-  }
-};
-
 /**
  * An Audio Node actor allowing communication to a specific audio node in the
  * Audio Context graph.
  */
 types.addActorType("audionode");
-let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
+var AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
   typeName: "audionode",
+
+  form: function (detail) {
+    if (detail === "actorid") {
+      return this.actorID;
+    }
+
+    return {
+      actor: this.actorID, // actorID is set when this is added to a pool
+      type: this.type,
+      source: this.source,
+      bypassable: this.bypassable,
+    };
+  },
 
   /**
    * Create the Audio Node actor.
@@ -188,8 +89,11 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
       this.type = "";
     }
 
+    this.source = !!AUDIO_NODE_DEFINITION[this.type].source;
+    this.bypassable = !AUDIO_NODE_DEFINITION[this.type].unbypassable;
+
     // Create automation timelines for all AudioParams
-    Object.keys(NODE_PROPERTIES[this.type].properties || {})
+    Object.keys(AUDIO_NODE_DEFINITION[this.type].properties || {})
       .filter(isAudioParam.bind(null, node))
       .forEach(paramName => {
         this.automation[paramName] = new AutomationTimeline(node[paramName].defaultValue);
@@ -197,24 +101,13 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
   },
 
   /**
-   * Returns the name of the audio type.
-   * Examples: "OscillatorNode", "MediaElementAudioSourceNode"
+   * Returns the string name of the audio type.
+   *
+   * DEPRECATED: Use `audionode.type` instead, left here for legacy reasons.
    */
   getType: method(function () {
     return this.type;
-  }, {
-    response: { type: RetVal("string") }
-  }),
-
-  /**
-   * Returns a boolean indicating if the node is a source node,
-   * like BufferSourceNode, MediaElementAudioSourceNode, OscillatorNode, etc.
-   */
-  isSource: method(function () {
-    return !!~this.type.indexOf("Source") || this.type === "OscillatorNode";
-  }, {
-    response: { source: RetVal("boolean") }
-  }),
+  }, { response: { type: RetVal("string") }}),
 
   /**
    * Returns a boolean indicating if the AudioNode has been "bypassed",
@@ -252,8 +145,7 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
       return;
     }
 
-    let bypassable = !NODE_PROPERTIES[this.type].unbypassable;
-    if (bypassable) {
+    if (this.bypassable) {
       node.passThrough = enable;
     }
 
@@ -321,13 +213,8 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
     // AudioBuffer or Float32Array references and the like,
     // so this just formats the value to be displayed in the VariablesView,
     // without using real grips and managing via actor pools.
-    let grip;
-    try {
-      grip = ThreadActor.prototype.createValueGrip(value);
-    }
-    catch (e) {
-      grip = createObjectGrip(value);
-    }
+    let grip = createValueGrip(value, null, createObjectGrip);
+
     return grip;
   }, {
     request: {
@@ -345,7 +232,7 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
    *        Name of the AudioParam whose flags are desired.
    */
   getParamFlags: method(function (param) {
-    return ((NODE_PROPERTIES[this.type] || {}).properties || {})[param];
+    return ((AUDIO_NODE_DEFINITION[this.type] || {}).properties || {})[param];
   }, {
     request: { param: Arg(0, "string") },
     response: { flags: RetVal("nullable:primitive") }
@@ -356,7 +243,7 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
    * corresponding to a property name and current value of the audio node.
    */
   getParams: method(function (param) {
-    let props = Object.keys(NODE_PROPERTIES[this.type].properties || {});
+    let props = Object.keys(AUDIO_NODE_DEFINITION[this.type].properties || {});
     return props.map(prop =>
       ({ param: prop, value: this.getParam(prop), flags: this.getParamFlags(prop) }));
   }, {
@@ -573,8 +460,29 @@ let AudioNodeActor = exports.AudioNodeActor = protocol.ActorClass({
 
 /**
  * The corresponding Front object for the AudioNodeActor.
+ *
+ * @attribute {String} type
+ *            The type of audio node, like "OscillatorNode", "MediaElementAudioSourceNode"
+ * @attribute {Boolean} source
+ *            Boolean indicating if the node is a source node, like BufferSourceNode,
+ *            MediaElementAudioSourceNode, OscillatorNode, etc.
+ * @attribute {Boolean} bypassable
+ *            Boolean indicating if the audio node is bypassable (splitter,
+ *            merger and destination nodes, for example, are not)
  */
-let AudioNodeFront = protocol.FrontClass(AudioNodeActor, {
+var AudioNodeFront = protocol.FrontClass(AudioNodeActor, {
+  form: function (form, detail) {
+    if (detail === "actorid") {
+      this.actorID = form;
+      return;
+    }
+
+    this.actorID = form.actor;
+    this.type = form.type;
+    this.source = form.source;
+    this.bypassable = form.bypassable;
+  },
+
   initialize: function (client, form) {
     protocol.Front.prototype.initialize.call(this, client, form);
     // if we were manually passed a form, this was created manually and
@@ -590,7 +498,7 @@ let AudioNodeFront = protocol.FrontClass(AudioNodeActor, {
  * high-level methods. After instantiating this actor, you'll need to set it
  * up by calling setup().
  */
-let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
+var WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
   typeName: "webaudio",
   initialize: function(conn, tabActor) {
     protocol.Actor.prototype.initialize.call(this, conn);
@@ -618,7 +526,7 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
    * flags.
    */
   getDefinition: method(function () {
-    return NODE_PROPERTIES;
+    return AUDIO_NODE_DEFINITION;
   }, {
     response: { definition: RetVal("json") }
   }),
@@ -833,7 +741,7 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
    */
   _instrumentParams: function (node) {
     let type = getConstructorName(node);
-    Object.keys(NODE_PROPERTIES[type].properties || {})
+    Object.keys(AUDIO_NODE_DEFINITION[type].properties || {})
       .filter(isAudioParam.bind(null, node))
       .forEach(paramName => {
         let param = node[paramName];
@@ -978,11 +886,26 @@ let WebAudioActor = exports.WebAudioActor = protocol.ActorClass({
 /**
  * The corresponding Front object for the WebAudioActor.
  */
-let WebAudioFront = exports.WebAudioFront = protocol.FrontClass(WebAudioActor, {
+var WebAudioFront = exports.WebAudioFront = protocol.FrontClass(WebAudioActor, {
   initialize: function(client, { webaudioActor }) {
     protocol.Front.prototype.initialize.call(this, client, { actor: webaudioActor });
     this.manage(this);
-  }
+  },
+
+  /**
+   * If connecting to older geckos (<Fx43), where audio node actor's do not
+   * contain `type`, `source` and `bypassable` properties, fetch
+   * them manually here.
+   */
+  _onCreateNode: preEvent("create-node", function (audionode) {
+    if (!audionode.type) {
+      return audionode.getType().then(type => {
+        audionode.type = type;
+        audionode.source = !!AUDIO_NODE_DEFINITION[type].source;
+        audionode.bypassable = !AUDIO_NODE_DEFINITION[type].unbypassable;
+      });
+    }
+  }),
 });
 
 WebAudioFront.AUTOMATION_METHODS = new Set(AUTOMATION_METHODS);

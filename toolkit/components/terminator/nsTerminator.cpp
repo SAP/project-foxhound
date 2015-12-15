@@ -316,7 +316,7 @@ static ShutdownStep sShutdownSteps[] = {
   ShutdownStep("xpcom-shutdown"),
 };
 
-} // anonymous namespace
+} // namespace
 
 NS_IMPL_ISUPPORTS(nsTerminator, nsIObserver)
 
@@ -392,7 +392,7 @@ void
 nsTerminator::StartWriter()
 {
 
-  if (!Telemetry::CanRecord()) {
+  if (!Telemetry::CanRecordExtended()) {
     return;
   }
   nsCOMPtr<nsIFile> profLD;
@@ -476,7 +476,7 @@ nsTerminator::UpdateHeartbeat(const char* aTopic)
 void
 nsTerminator::UpdateTelemetry()
 {
-  if (!Telemetry::CanRecord() || !gWriteReady) {
+  if (!Telemetry::CanRecordExtended() || !gWriteReady) {
     return;
   }
 

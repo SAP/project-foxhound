@@ -129,24 +129,24 @@ menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
   transform: scaleX(-1);
 }
 
-%ifdef WINDOWS_AERO
 /* Win8 and beyond. */
-@media not all and (-moz-os-version: windows-vista) {
-  @media not all and (-moz-os-version: windows-win7) {
-    panelview .toolbarbutton-1,
-    .subviewbutton,
-    .widget-overflow-list .toolbarbutton-1,
-    .panelUI-grid .toolbarbutton-1 > .toolbarbutton-menubutton-button,
-    #BMB_bookmarksPopup menupopup[placespopup=true] > hbox,
-    #edit-controls@inAnyPanel@,
-    #zoom-controls@inAnyPanel@,
-    #edit-controls@inAnyPanel@ > toolbarbutton,
-    #zoom-controls@inAnyPanel@ > toolbarbutton {
-      border-radius: 0;
+@media not all and (-moz-os-version: windows-xp) {
+  @media not all and (-moz-os-version: windows-vista) {
+    @media not all and (-moz-os-version: windows-win7) {
+      panelview .toolbarbutton-1,
+      .subviewbutton,
+      .widget-overflow-list .toolbarbutton-1,
+      .panelUI-grid .toolbarbutton-1 > .toolbarbutton-menubutton-button,
+      #BMB_bookmarksPopup menupopup[placespopup=true] > hbox,
+      #edit-controls@inAnyPanel@,
+      #zoom-controls@inAnyPanel@,
+      #edit-controls@inAnyPanel@ > toolbarbutton,
+      #zoom-controls@inAnyPanel@ > toolbarbutton {
+        border-radius: 0;
+      }
     }
   }
 }
-%endif
 
 @media not all and (-moz-windows-default-theme) {
   #edit-controls@inAnyPanel@ > #copy-button,
@@ -197,16 +197,16 @@ menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
     text-shadow: none;
   }
 
-  #PanelUI-fxa-status,
+  #PanelUI-fxa-label,
   #PanelUI-help,
   #PanelUI-customize {
     border: 1px solid transparent;
   }
 
-  #PanelUI-fxa-status:not([disabled]):hover,
+  #PanelUI-fxa-label:not([disabled]):hover,
   #PanelUI-help:not([disabled]):hover,
   #PanelUI-customize:hover,
-  #PanelUI-fxa-status:not([disabled]):hover:active,
+  #PanelUI-fxa-label:not([disabled]):hover:active,
   #PanelUI-help:not([disabled]):hover:active,
   #PanelUI-customize:hover:active {
     border-color: ThreeDLightShadow;
@@ -223,7 +223,9 @@ menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
   }
 
   #BMB_bookmarksPopup menupopup[placespopup=true] > hbox {
-    box-shadow: none;
+    /* After fixing of bug 1194480 the box-shadow can be removed again */
+    /* box-shadow: none; */
+    box-shadow: 0 0 4px rgba(0,0,0,0.02);
     background: -moz-field;
     border: 1px solid ThreeDShadow;
   }
@@ -233,13 +235,13 @@ menu.subviewbutton > .menu-right:-moz-locale-dir(rtl) {
     color: ButtonText;
   }
 
-  .subviewbutton@menuStateHover@,
+  .subviewbutton@menuStateMenuActive@,
   menuitem.panel-subview-footer@menuStateHover@,
   .subviewbutton.panel-subview-footer@buttonStateHover@,
   .subviewbutton.panel-subview-footer@buttonStateActive@,
   .subviewbutton@menuStateHover@ > .menu-accel-container,
   .PanelUI-subView .subviewbutton[shortcut]@buttonStateHover@::after,
-  #BMB_bookmarksPopup .panel-subview-footer@menuStateHover@ > .menu-text {
+  #BMB_bookmarksPopup .panel-subview-footer@menuStateMenuActive@ > .menu-text {
     background-color: Highlight;
     color: highlighttext !important;
   }

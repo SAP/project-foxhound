@@ -32,10 +32,6 @@ static const uint32_t kGenericAccType = 0;
  *
  *  When no Role enum mapping exists for an ARIA role, the role will be exposed
  *  via the object attribute "xml-roles".
- *
- *  There are no Role enums for the following landmark roles:
- *    banner, contentinfo, main, navigation, note, search, secondary,
- *    seealso, breadcrumbs.
  */
 
 static nsRoleMapEntry sWAIRoleMaps[] =
@@ -67,7 +63,7 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoValue,
     eNoAction,
     eNoLiveAttr,
-    kGenericAccType,
+    eLandmark,
     kNoReqStates
   },
   { // article
@@ -81,6 +77,16 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     kNoReqStates,
     eReadonlyUntilEditable
   },
+  { // banner
+    &nsGkAtoms::banner,
+    roles::NOTHING,
+    kUseNativeRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eLandmark,
+    kNoReqStates
+  },
   { // button
     &nsGkAtoms::button,
     roles::PUSHBUTTON,
@@ -91,6 +97,16 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eButton,
     kNoReqStates
     // eARIAPressed is auto applied on any button
+  },
+  { // cell
+    &nsGkAtoms::cell,
+    roles::CELL,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eTableCell,
+    kNoReqStates
   },
   { // checkbox
     &nsGkAtoms::checkbox,
@@ -128,6 +144,26 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eARIAAutoComplete,
     eARIAReadonly,
     eARIAOrientation
+  },
+  { // complementary
+    &nsGkAtoms::complementary,
+    roles::NOTHING,
+    kUseNativeRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eLandmark,
+    kNoReqStates
+  },
+  { // contentinfo
+    &nsGkAtoms::contentinfo,
+    roles::NOTHING,
+    kUseNativeRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eLandmark,
+    kNoReqStates
   },
   { // dialog
     &nsGkAtoms::dialog,
@@ -167,7 +203,7 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eNoValue,
     eNoAction,
     eNoLiveAttr,
-    kGenericAccType,
+    eLandmark,
     kNoReqStates
   },
   { // grid
@@ -290,6 +326,16 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     kGenericAccType,
     kNoReqStates
   },
+  { // main
+    &nsGkAtoms::main,
+    roles::NOTHING,
+    kUseNativeRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eLandmark,
+    kNoReqStates
+  },
   { // marquee
     &nsGkAtoms::marquee,
     roles::ANIMATION,
@@ -366,6 +412,16 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     kNoReqStates,
     eARIACheckableBool
   },
+  { // navigation
+    &nsGkAtoms::navigation,
+    roles::NOTHING,
+    kUseNativeRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eLandmark,
+    kNoReqStates
+  },
   { // none
     &nsGkAtoms::none,
     roles::NOTHING,
@@ -432,7 +488,7 @@ static nsRoleMapEntry sWAIRoleMaps[] =
   },
   { // radiogroup
     &nsGkAtoms::radiogroup,
-    roles::GROUPING,
+    roles::RADIO_GROUP,
     kUseMapRole,
     eNoValue,
     eNoAction,
@@ -496,6 +552,29 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eARIAOrientation,
     eARIAReadonly
   },
+  { // search
+    &nsGkAtoms::search,
+    roles::NOTHING,
+    kUseNativeRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eLandmark,
+    kNoReqStates
+  },
+  { // searchbox
+    &nsGkAtoms::searchbox,
+    roles::ENTRY,
+    kUseMapRole,
+    eNoValue,
+    eActivateAction,
+    eNoLiveAttr,
+    kGenericAccType,
+    kNoReqStates,
+    eARIAAutoComplete,
+    eARIAMultiline,
+    eARIAReadonlyOrEditable
+  },
   { // separator
     &nsGkAtoms::separator_,
     roles::SEPARATOR,
@@ -540,6 +619,17 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     kGenericAccType,
     kNoReqStates
   },
+  { // switch
+    &nsGkAtoms::_switch,
+    roles::SWITCH,
+    kUseMapRole,
+    eNoValue,
+    eCheckUncheckAction,
+    eNoLiveAttr,
+    kGenericAccType,
+    kNoReqStates,
+    eARIACheckableBool
+  },
   { // tab
     &nsGkAtoms::tab,
     roles::PAGETAB,
@@ -548,6 +638,17 @@ static nsRoleMapEntry sWAIRoleMaps[] =
     eSwitchAction,
     eNoLiveAttr,
     kGenericAccType,
+    kNoReqStates,
+    eARIASelectable
+  },
+  { // table
+    &nsGkAtoms::table,
+    roles::TABLE,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    eTable,
     kNoReqStates,
     eARIASelectable
   },

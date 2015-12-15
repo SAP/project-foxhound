@@ -49,15 +49,15 @@ nsXPCTestParams::~nsXPCTestParams()
                                                                               \
     /* Copy b into rv. */                                                     \
     *rvLength = *bLength;                                                     \
-    *rv = static_cast<type*>(NS_Alloc(elemSize * (*bLength + padding)));      \
+    *rv = static_cast<type*>(moz_xmalloc(elemSize * (*bLength + padding)));   \
     if (!*rv)                                                                 \
         return NS_ERROR_OUT_OF_MEMORY;                                        \
     memcpy(*rv, *b, elemSize * (*bLength + padding));                         \
                                                                               \
     /* Copy a into b. */                                                      \
     *bLength = aLength;                                                       \
-    NS_Free(*b);                                                              \
-    *b = static_cast<type*>(NS_Alloc(elemSize * (aLength + padding)));        \
+    free(*b);                                                                 \
+    *b = static_cast<type*>(moz_xmalloc(elemSize * (aLength + padding)));     \
     if (!*b)                                                                  \
         return NS_ERROR_OUT_OF_MEMORY;                                        \
     memcpy(*b, a, elemSize * (aLength + padding));                            \
@@ -70,73 +70,61 @@ nsXPCTestParams::~nsXPCTestParams()
     return NS_OK;                                                             \
 }
 
-/* boolean testBoolean (in boolean a, inout boolean b); */
 NS_IMETHODIMP nsXPCTestParams::TestBoolean(bool a, bool* b, bool* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* octet testOctet (in octet a, inout octet b); */
 NS_IMETHODIMP nsXPCTestParams::TestOctet(uint8_t a, uint8_t* b, uint8_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* short testShort (in short a, inout short b); */
 NS_IMETHODIMP nsXPCTestParams::TestShort(int16_t a, int16_t* b, int16_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* long testLong (in long a, inout long b); */
 NS_IMETHODIMP nsXPCTestParams::TestLong(int32_t a, int32_t* b, int32_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* long long testLongLong (in long long a, inout long long b); */
 NS_IMETHODIMP nsXPCTestParams::TestLongLong(int64_t a, int64_t* b, int64_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* unsigned short testUnsignedShort (in unsigned short a, inout unsigned short b); */
 NS_IMETHODIMP nsXPCTestParams::TestUnsignedShort(uint16_t a, uint16_t* b, uint16_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* unsigned long testUnsignedLong (in unsigned long a, inout unsigned long b); */
 NS_IMETHODIMP nsXPCTestParams::TestUnsignedLong(uint32_t a, uint32_t* b, uint32_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* unsigned long long testUnsignedLongLong (in unsigned long long a, inout unsigned long long b); */
 NS_IMETHODIMP nsXPCTestParams::TestUnsignedLongLong(uint64_t a, uint64_t* b, uint64_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* float testFloat (in float a, inout float b); */
 NS_IMETHODIMP nsXPCTestParams::TestFloat(float a, float* b, float* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* double testDouble (in double a, inout float b); */
 NS_IMETHODIMP nsXPCTestParams::TestDouble(double a, float* b, double* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* char testChar (in char a, inout char b); */
 NS_IMETHODIMP nsXPCTestParams::TestChar(char a, char* b, char* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* string testString (in string a, inout string b); */
 NS_IMETHODIMP nsXPCTestParams::TestString(const char * a, char * *b, char * *_retval)
 {
     nsDependentCString aprime(a);
@@ -146,18 +134,16 @@ NS_IMETHODIMP nsXPCTestParams::TestString(const char * a, char * *b, char * *_re
 
     // XPCOM ownership rules dictate that overwritten inout params must be callee-freed.
     // See https://developer.mozilla.org/en/XPIDL
-    NS_Free(const_cast<char*>(bprime.get()));
+    free(const_cast<char*>(bprime.get()));
 
     return NS_OK;
 }
 
-/* wchar testWchar (in wchar a, inout wchar b); */
 NS_IMETHODIMP nsXPCTestParams::TestWchar(char16_t a, char16_t* b, char16_t* _retval)
 {
     GENERIC_METHOD_IMPL;
 }
 
-/* wstring testWstring (in wstring a, inout wstring b); */
 NS_IMETHODIMP nsXPCTestParams::TestWstring(const char16_t * a, char16_t * *b, char16_t * *_retval)
 {
     nsDependentString aprime(a);
@@ -167,37 +153,32 @@ NS_IMETHODIMP nsXPCTestParams::TestWstring(const char16_t * a, char16_t * *b, ch
 
     // XPCOM ownership rules dictate that overwritten inout params must be callee-freed.
     // See https://developer.mozilla.org/en/XPIDL
-    NS_Free((void*)bprime.get());
+    free((void*)bprime.get());
 
     return NS_OK;
 }
 
-/* DOMString testDOMString (in DOMString a, inout DOMString b); */
 NS_IMETHODIMP nsXPCTestParams::TestDOMString(const nsAString & a, nsAString & b, nsAString & _retval)
 {
     STRING_METHOD_IMPL;
 }
 
 
-/* AString testAString (in AString a, inout AString b); */
 NS_IMETHODIMP nsXPCTestParams::TestAString(const nsAString & a, nsAString & b, nsAString & _retval)
 {
     STRING_METHOD_IMPL;
 }
 
-/* AUTF8String testAUTF8String (in AUTF8String a, inout AUTF8String b); */
 NS_IMETHODIMP nsXPCTestParams::TestAUTF8String(const nsACString & a, nsACString & b, nsACString & _retval)
 {
     STRING_METHOD_IMPL;
 }
 
-/* ACString testACString (in ACString a, inout ACString b); */
 NS_IMETHODIMP nsXPCTestParams::TestACString(const nsACString & a, nsACString & b, nsACString & _retval)
 {
     STRING_METHOD_IMPL;
 }
 
-/* jsval testJsval (in jsval a, in jsval b); */
 NS_IMETHODIMP nsXPCTestParams::TestJsval(JS::Handle<JS::Value> a,
                                          JS::MutableHandle<JS::Value> b,
                                          JS::MutableHandle<JS::Value> _retval)
@@ -297,7 +278,7 @@ NS_IMETHODIMP nsXPCTestParams::TestInterfaceIs(const nsIID* aIID, void* a,
 
     // rvIID is out-only, so nobody allocated an IID buffer for us. Do that now,
     // and store b's IID in the new buffer.
-    *rvIID = static_cast<nsIID*>(NS_Alloc(sizeof(nsID)));
+    *rvIID = static_cast<nsIID*>(moz_xmalloc(sizeof(nsID)));
     if (!*rvIID)
         return NS_ERROR_OUT_OF_MEMORY;
     **rvIID = **bIID;
@@ -328,7 +309,7 @@ NS_IMETHODIMP nsXPCTestParams::TestInterfaceIsArray(uint32_t aLength, const nsII
 {
     // Transfer the IIDs. See the comments in TestInterfaceIs (above) for an
     // explanation of what we're doing.
-    *rvIID = static_cast<nsIID*>(NS_Alloc(sizeof(nsID)));
+    *rvIID = static_cast<nsIID*>(moz_xmalloc(sizeof(nsID)));
     if (!*rvIID)
         return NS_ERROR_OUT_OF_MEMORY;
     **rvIID = **bIID;
@@ -340,9 +321,21 @@ NS_IMETHODIMP nsXPCTestParams::TestInterfaceIsArray(uint32_t aLength, const nsII
     BUFFER_METHOD_IMPL(void*, 0, TAKE_OWNERSHIP_INTERFACE);
 }
 
-/* void testOutAString (out AString o); */
 NS_IMETHODIMP nsXPCTestParams::TestOutAString(nsAString & o)
 {
     o.AssignLiteral("out");
     return NS_OK;
+}
+
+/*
+ * ACString testStringArrayOptionalSize([array, size_is(aLength)] in string a, [optional] in unsigned long aLength);
+ */
+NS_IMETHODIMP nsXPCTestParams::TestStringArrayOptionalSize(const char * *a, uint32_t length, nsACString& out)
+{
+  out.Truncate();
+  for (uint32_t i = 0; i < length; ++i) {
+    out.Append(a[i]);
+  }
+
+  return NS_OK;
 }

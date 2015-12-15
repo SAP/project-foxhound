@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=79: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +17,8 @@
 #include "nsIUnicodeDecoder.h"
 #include "nsXPCOMStrings.h"
 #include "nsNetUtil.h"
+#include "nsIURI.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 #include "nsCRTGlue.h"
@@ -186,7 +188,7 @@ nsJSON::EncodeFromJSVal(JS::Value *value, JSContext *cx, nsAString &result)
 
   nsJSONWriter writer;
   JS::Rooted<JS::Value> vp(cx, *value);
-  if (!JS_Stringify(cx, &vp, JS::NullPtr(), JS::NullHandleValue, WriteCallback, &writer)) {
+  if (!JS_Stringify(cx, &vp, nullptr, JS::NullHandleValue, WriteCallback, &writer)) {
     return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
   *value = vp;
@@ -245,7 +247,7 @@ nsJSON::EncodeInternal(JSContext* cx, const JS::Value& aValue,
     return NS_ERROR_INVALID_ARG;
 
   // We're good now; try to stringify
-  if (!JS_Stringify(cx, &val, JS::NullPtr(), JS::NullHandleValue, WriteCallback, writer))
+  if (!JS_Stringify(cx, &val, nullptr, JS::NullHandleValue, WriteCallback, writer))
     return NS_ERROR_FAILURE;
 
   return NS_OK;
@@ -344,7 +346,7 @@ nsJSONWriter::WriteToStream(nsIOutputStream *aStream,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // create the buffer we need
-  char* destBuf = (char *) NS_Alloc(aDestLength);
+  char* destBuf = (char *) moz_xmalloc(aDestLength);
   if (!destBuf)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -352,7 +354,7 @@ nsJSONWriter::WriteToStream(nsIOutputStream *aStream,
   if (NS_SUCCEEDED(rv))
     rv = aStream->Write(destBuf, aDestLength, &bytesWritten);
 
-  NS_Free(destBuf);
+  free(destBuf);
   mDidWrite = true;
 
   return rv;
@@ -411,9 +413,8 @@ nsJSON::DecodeInternal(JSContext* cx,
   }
 
   nsresult rv;
-  nsCOMPtr<nsIPrincipal> nullPrincipal =
-    do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIPrincipal> nullPrincipal = nsNullPrincipal::Create();
+  NS_ENSURE_TRUE(nullPrincipal, NS_ERROR_FAILURE);
 
   rv = NS_NewInputStreamChannel(getter_AddRefs(jsonChannel),
                                 mURI,

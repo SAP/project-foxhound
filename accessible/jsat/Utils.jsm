@@ -301,22 +301,22 @@ this.Utils = { // jshint ignore:line
   },
 
   getContentResolution: function _getContentResolution(aAccessible) {
-    let resX = { value: 1 }, resY = { value: 1 };
+    let res = { value: 1 };
     aAccessible.document.window.QueryInterface(
       Ci.nsIInterfaceRequestor).getInterface(
-      Ci.nsIDOMWindowUtils).getResolution(resX, resY);
-    return [resX.value, resY.value];
+      Ci.nsIDOMWindowUtils).getResolution(res);
+    return res.value;
   },
 
   getBounds: function getBounds(aAccessible, aPreserveContentScale) {
     let objX = {}, objY = {}, objW = {}, objH = {};
     aAccessible.getBounds(objX, objY, objW, objH);
 
-    let [scaleX, scaleY] = aPreserveContentScale ? [1, 1] :
+    let scale = aPreserveContentScale ? 1 :
       this.getContentResolution(aAccessible);
 
     return new Rect(objX.value, objY.value, objW.value, objH.value).scale(
-      scaleX, scaleY);
+      scale, scale);
   },
 
   getTextBounds: function getTextBounds(aAccessible, aStart, aEnd,
@@ -326,11 +326,11 @@ this.Utils = { // jshint ignore:line
     accText.getRangeExtents(aStart, aEnd, objX, objY, objW, objH,
       Ci.nsIAccessibleCoordinateType.COORDTYPE_SCREEN_RELATIVE);
 
-    let [scaleX, scaleY] = aPreserveContentScale ? [1, 1] :
+    let scale = aPreserveContentScale ? 1 :
       this.getContentResolution(aAccessible);
 
     return new Rect(objX.value, objY.value, objW.value, objH.value).scale(
-      scaleX, scaleY);
+      scale, scale);
   },
 
   /**
@@ -415,21 +415,41 @@ this.Utils = { // jshint ignore:line
   },
 
   getLandmarkName: function getLandmarkName(aAccessible) {
-    const landmarks = [
+    return this.matchRoles(aAccessible, [
       'banner',
       'complementary',
       'contentinfo',
       'main',
       'navigation',
       'search'
-    ];
+    ]);
+  },
+
+  getMathRole: function getMathRole(aAccessible) {
+    return this.matchRoles(aAccessible, [
+      'base',
+      'close-fence',
+      'denominator',
+      'numerator',
+      'open-fence',
+      'overscript',
+      'presubscript',
+      'presuperscript',
+      'root-index',
+      'subscript',
+      'superscript',
+      'underscript'
+    ]);
+  },
+
+  matchRoles: function matchRoles(aAccessible, aRoles) {
     let roles = this.getAttributes(aAccessible)['xml-roles'];
     if (!roles) {
       return;
     }
 
-    // Looking up a role that would match a landmark.
-    return this.matchAttributeValue(roles, landmarks);
+    // Looking up a role that would match any in the provided roles.
+    return this.matchAttributeValue(roles, aRoles);
   },
 
   getEmbeddedControl: function getEmbeddedControl(aLabel) {
@@ -848,7 +868,8 @@ PivotContext.prototype = {
         hints.push(hint);
       } else if (aAccessible.actionCount > 0) {
         hints.push({
-          string: Utils.AccRetrieval.getStringRole(aAccessible.role) + '-hint'
+          string: Utils.AccRetrieval.getStringRole(
+            aAccessible.role).replace(/\s/g, '') + '-hint'
         });
       }
     });
@@ -883,8 +904,12 @@ PivotContext.prototype = {
       if (!aAccessible) {
         return null;
       }
-      if ([Roles.CELL, Roles.COLUMNHEADER, Roles.ROWHEADER].indexOf(
-        aAccessible.role) < 0) {
+      if ([
+            Roles.CELL,
+            Roles.COLUMNHEADER,
+            Roles.ROWHEADER,
+            Roles.MATHML_CELL
+          ].indexOf(aAccessible.role) < 0) {
           return null;
       }
       try {
@@ -949,7 +974,9 @@ PivotContext.prototype = {
         cellInfo.current.columnHeaderCells))];
     }
     cellInfo.rowHeaders = [];
-    if (cellInfo.rowChanged && cellInfo.current.role === Roles.CELL) {
+    if (cellInfo.rowChanged &&
+        (cellInfo.current.role === Roles.CELL ||
+         cellInfo.current.role === Roles.MATHML_CELL)) {
       cellInfo.rowHeaders = [headers for (headers of getHeaders( // jshint ignore:line
         cellInfo.current.rowHeaderCells))];
     }

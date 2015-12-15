@@ -24,7 +24,7 @@ class nsIPrefBranch;
 class nsICancelable;
 class nsICookieService;
 class nsIIOService;
-class nsIObserverService;
+class nsISchedulingContextService;
 class nsISiteSecurityService;
 class nsIStreamConverterService;
 class nsITimer;
@@ -39,14 +39,20 @@ class nsHttpConnectionInfo;
 class nsHttpTransaction;
 class AltSvcMapping;
 
+enum FrameCheckLevel {
+    FRAMECHECK_LAX,
+    FRAMECHECK_BARELY,
+    FRAMECHECK_STRICT
+};
+
 //-----------------------------------------------------------------------------
 // nsHttpHandler - protocol handler for HTTP and HTTPS
 //-----------------------------------------------------------------------------
 
 class nsHttpHandler final : public nsIHttpProtocolHandler
-                              , public nsIObserver
-                              , public nsSupportsWeakReference
-                              , public nsISpeculativeConnect
+                          , public nsIObserver
+                          , public nsSupportsWeakReference
+                          , public nsISpeculativeConnect
 {
 public:
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -73,6 +79,7 @@ public:
     uint8_t        ReferrerTrimmingPolicy()  { return mReferrerTrimmingPolicy; }
     uint8_t        ReferrerXOriginPolicy()   { return mReferrerXOriginPolicy; }
     bool           SendSecureXSiteReferrer() { return mSendSecureXSiteReferrer; }
+    bool           PackagedAppsEnabled()     { return mPackagedAppsEnabled; }
     uint8_t        RedirectionLimit()        { return mRedirectionLimit; }
     PRIntervalTime IdleTimeout()             { return mIdleTimeout; }
     PRIntervalTime SpdyTimeout()             { return mSpdyTimeout; }
@@ -97,8 +104,7 @@ public:
 
     bool           IsSpdyEnabled() { return mEnableSpdy; }
     bool           IsSpdyV31Enabled() { return mSpdyV31; }
-    bool           IsHttp2DraftEnabled() { return mHttp2DraftEnabled; }
-    bool           IsHttp2Enabled() { return mHttp2DraftEnabled && mHttp2Enabled; }
+    bool           IsHttp2Enabled() { return mHttp2Enabled; }
     bool           EnforceHttp2TlsProfile() { return mEnforceHttp2TlsProfile; }
     bool           CoalesceSpdy() { return mCoalesceSpdy; }
     bool           UseSpdyPersistentSettings() { return mSpdyPersistentSettings; }
@@ -151,8 +157,9 @@ public:
       return mTCPKeepaliveLongLivedIdleTimeS;
     }
 
-    // returns the network.http.enforce-framing.http1 preference
-    bool GetEnforceH1Framing() { return mEnforceH1Framing; }
+    // returns the HTTP framing check level preference, as controlled with
+    // network.http.enforce-framing.http1 and network.http.enforce-framing.soft
+    FrameCheckLevel GetEnforceH1Framing() { return mEnforceH1Framing; }
 
     nsHttpAuthCache     *AuthCache(bool aPrivate) {
         return aPrivate ? &mPrivateAuthCache : &mAuthCache;
@@ -160,7 +167,6 @@ public:
     nsHttpConnectionMgr *ConnMgr()   { return mConnMgr; }
 
     // cache support
-    bool UseCache() const { return mUseCache; }
     uint32_t GenerateUniqueID() { return ++mLastUniqueID; }
     uint32_t SessionStartTime() { return mSessionStartTime; }
 
@@ -330,6 +336,11 @@ public:
     void SetCacheSkippedUntil(TimeStamp arg) { mCacheSkippedUntil = arg; }
     void ClearCacheSkippedUntil() { mCacheSkippedUntil = TimeStamp(); }
 
+    nsISchedulingContextService *GetSchedulingContextService()
+    {
+        return mSchedulingContextService.get();
+    }
+
 private:
     virtual ~nsHttpHandler();
 
@@ -354,7 +365,6 @@ private:
     // cached services
     nsMainThreadPtrHandle<nsIIOService>              mIOService;
     nsMainThreadPtrHandle<nsIStreamConverterService> mStreamConvSvc;
-    nsMainThreadPtrHandle<nsIObserverService>        mObserverService;
     nsMainThreadPtrHandle<nsICookieService>          mCookieService;
     nsMainThreadPtrHandle<nsISiteSecurityService>    mSSService;
 
@@ -402,6 +412,9 @@ private:
     PRIntervalTime mPipelineReadTimeout;
     nsCOMPtr<nsITimer> mPipelineTestTimer;
 
+    // Whether a URL containing !// should be interpreted as a packaged app channel
+    bool mPackagedAppsEnabled = false;
+
     uint8_t  mRedirectionLimit;
 
     // we'll warn the user if we load an URL containing a userpass field
@@ -444,7 +457,6 @@ private:
     nsXPIDLCString mUserAgentOverride;
     bool           mUserAgentIsDirty; // true if mUserAgent should be rebuilt
 
-    bool           mUseCache;
 
     bool           mPromptTempRedirect;
     // mSendSecureXSiteReferrer: default is false,
@@ -467,12 +479,14 @@ private:
     // The value of network.allow-experiments
     uint32_t           mAllowExperiments : 1;
 
+    // The value of 'hidden' network.http.debug-observations : 1;
+    uint32_t           mDebugObservations : 1;
+
     // true in between init and shutdown states
     uint32_t           mHandlerActive : 1;
 
     uint32_t           mEnableSpdy : 1;
     uint32_t           mSpdyV31 : 1;
-    uint32_t           mHttp2DraftEnabled : 1;
     uint32_t           mHttp2Enabled : 1;
     uint32_t           mUseH2Deps : 1;
     uint32_t           mEnforceHttp2TlsProfile : 1;
@@ -531,7 +545,9 @@ private:
 
     // if true, generate NS_ERROR_PARTIAL_TRANSFER for h1 responses with
     // incorrect content lengths or malformed chunked encodings
-    bool mEnforceH1Framing;
+    FrameCheckLevel mEnforceH1Framing;
+
+    nsCOMPtr<nsISchedulingContextService> mSchedulingContextService;
 
 private:
     // For Rate Pacing Certain Network Events. Only assign this pointer on
@@ -558,6 +574,11 @@ public:
 private:
     nsRefPtr<Tickler> mWifiTickler;
     void TickleWifi(nsIInterfaceRequestor *cb);
+
+private:
+    nsresult SpeculativeConnectInternal(nsIURI *aURI,
+                                        nsIInterfaceRequestor *aCallbacks,
+                                        bool anonymous);
 };
 
 extern nsHttpHandler *gHttpHandler;
@@ -587,6 +608,7 @@ public:
     nsresult Init();
 };
 
-}} // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // nsHttpHandler_h__

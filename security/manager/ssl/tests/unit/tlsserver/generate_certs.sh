@@ -178,6 +178,8 @@ function make_EE {
   SUBJECT_ALT_NAME="${4}"
   EXTRA_ARGS="${5} ${6}"
 
+  [ -z "$SUBJECT_ALT_NAME" ] && SUBJECT_ALT_NAME_PART="" || SUBJECT_ALT_NAME_PART="-8 $SUBJECT_ALT_NAME"
+
   cert_already_exists $NICKNAME
   if [ $ALREADY_EXISTS -eq 1 ]; then
     echo "cert \"$NICKNAME\" already exists - not regenerating it (use --clobber to force regeneration)"
@@ -187,7 +189,7 @@ function make_EE {
   echo -e "$CERT_RESPONSES" | $RUN_MOZILLA $CERTUTIL -d $DB_ARGUMENT -S \
                                                      -n $NICKNAME \
                                                      -s "$SUBJECT" \
-                                                     -8 $SUBJECT_ALT_NAME \
+                                                     $SUBJECT_ALT_NAME_PART \
                                                      -c $CA \
                                                      -t ",," \
                                                      -m $SERIALNO \
@@ -256,10 +258,13 @@ make_CA testCA 'CN=Test CA' test-ca.der
 make_CA otherCA 'CN=Other test CA' other-test-ca.der
 
 make_EE localhostAndExampleCom 'CN=Test End-entity' testCA "localhost,*.example.com,*.pinning.example.com,*.include-subdomains.pinning.example.com,*.exclude-subdomains.pinning.example.com"
+# Make another EE cert using testCA for subject / pubkey revocation
+make_EE sameIssuerEE 'CN=Another Test End-entity' testCA "localhost,*.example.com"
 # Make an EE cert issued by otherCA
 make_EE otherIssuerEE 'CN=Wrong CA Pin Test End-Entity' otherCA "*.include-subdomains.pinning.example.com,*.exclude-subdomains.pinning.example.com,*.pinning.example.com"
 
 export_cert localhostAndExampleCom default-ee.der
+export_cert sameIssuerEE same-issuer-ee.der
 export_cert otherIssuerEE other-issuer-ee.der
 
 # A cert that is like localhostAndExampleCom, but with a different serial number for
@@ -273,7 +278,10 @@ make_EE ocspEEWithIntermediate 'CN=Test End-entity with Intermediate' testINT "l
 make_EE expired 'CN=Expired Test End-entity' testCA "expired.example.com" "-w -400"
 export_cert expired expired-ee.der
 make_EE notYetValid 'CN=Not Yet Valid Test End-entity' testCA "notyetvalid.example.com" "-w 400"
-make_EE mismatch 'CN=Mismatch Test End-entity' testCA "doesntmatch.example.com"
+make_EE mismatch 'CN=Mismatch Test End-entity' testCA "doesntmatch.example.com,*.alsodoesntmatch.example.com"
+make_EE mismatchCN 'CN=doesntmatch.example.com' testCA
+make_EE ipAddressAsDNSNameInSAN 'CN=127.0.0.1' testCA "127.0.0.1"
+make_EE noValidNames 'CN=End-entity with no valid names' testCA
 make_EE selfsigned 'CN=Self-signed Test End-entity' testCA "selfsigned.example.com" "-x"
 # If the certificate 'CN=Test Intermediate' isn't loaded into memory,
 # this certificate will have an unknown issuer.
@@ -281,7 +289,7 @@ make_EE selfsigned 'CN=Self-signed Test End-entity' testCA "selfsigned.example.c
 # That's ok, because if unknownissuer was already in the database, it won't
 # get regenerated. Either way, deletedINT will then be removed again.
 make_INT deletedINT 'CN=Test Intermediate to delete' testCA
-make_EE unknownissuer 'CN=Test End-entity from unknown issuer' deletedINT "unknownissuer.example.com"
+make_EE unknownissuer 'CN=Test End-entity from unknown issuer' deletedINT "unknownissuer.example.com,unknownissuer.include-subdomains.pinning.example.com,unknownissuer.test-mode.pinning.example.com"
 export_cert unknownissuer unknown-issuer.der
 
 $RUN_MOZILLA $CERTUTIL -d $DB_ARGUMENT -D -n deletedINT
@@ -312,6 +320,7 @@ export_cert inadequatekeyusage inadequatekeyusage-ee.der
 make_EE selfsigned-inadequateEKU 'CN=Self-signed Inadequate EKU Test End-entity' unused "selfsigned-inadequateEKU.example.com" "--keyUsage keyEncipherment,dataEncipherment --extKeyUsage serverAuth" "-x"
 
 make_delegated delegatedSigner 'CN=Test Delegated Responder' testCA "--extKeyUsage ocspResponder"
+make_delegated delegatedSHA1Signer 'CN=Test SHA1 Delegated Responder' testCA "--extKeyUsage ocspResponder -Z SHA1"
 make_delegated invalidDelegatedSignerNoExtKeyUsage 'CN=Test Invalid Delegated Responder No extKeyUsage' testCA
 make_delegated invalidDelegatedSignerFromIntermediate 'CN=Test Invalid Delegated Responder From Intermediate' testINT "--extKeyUsage ocspResponder"
 make_delegated invalidDelegatedSignerKeyUsageCrlSigning 'CN=Test Invalid Delegated Responder keyUsage crlSigning' testCA "--keyUsage crlSigning"

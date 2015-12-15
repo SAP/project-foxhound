@@ -4,9 +4,12 @@
 /**
  * Tests that the details view toggles subviews.
  */
-function spawnTest () {
+function* spawnTest() {
   let { panel } = yield initPerformance(SIMPLE_URL);
   let { EVENTS, $, DetailsView, document: doc } = panel.panelWin;
+
+  yield startRecording(panel);
+  yield stopRecording(panel);
 
   info("views on startup");
   checkViews(DetailsView, doc, "waterfall");

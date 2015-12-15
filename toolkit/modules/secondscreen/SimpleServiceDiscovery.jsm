@@ -13,7 +13,7 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
 
-let log = Cu.reportError;
+var log = Cu.reportError;
 
 XPCOMUtils.defineLazyGetter(this, "converter", function () {
   let conv = Cc["@mozilla.org/intl/scriptableunicodeconverter"].createInstance(Ci.nsIScriptableUnicodeConverter);
@@ -144,7 +144,7 @@ var SimpleServiceDiscovery = {
     // Perform a UDP broadcast to search for SSDP devices
     let socket = Cc["@mozilla.org/network/udp-socket;1"].createInstance(Ci.nsIUDPSocket);
     try {
-      socket.init(SSDP_PORT, false);
+      socket.init(SSDP_PORT, false, Services.scriptSecurityManager.getSystemPrincipal());
       socket.joinMulticast(SSDP_ADDRESS);
       socket.asyncListen(this);
     } catch (e) {

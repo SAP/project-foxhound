@@ -111,6 +111,13 @@ SignatureAlgorithmIdentifierValue(Reader& input,
                                  /*out*/ PublicKeyAlgorithm& publicKeyAlgorithm,
                                  /*out*/ DigestAlgorithm& digestAlgorithm)
 {
+  // RFC 5758 Section 3.2 (ECDSA with SHA-2), and RFC 3279 Section 2.2.3
+  // (ECDSA with SHA-1) say that parameters must be omitted.
+  //
+  // RFC 4055 Section 5 and RFC 3279 Section 2.2.1 both say that parameters for
+  // RSA must be encoded as NULL; we relax that requirement by allowing the
+  // NULL to be omitted, to match all the other signature algorithms we support
+  // and for compatibility.
   Reader algorithmID;
   Result rv = AlgorithmIdentifierValue(input, algorithmID);
   if (rv != Success) {
@@ -165,15 +172,6 @@ SignatureAlgorithmIdentifierValue(Reader& input,
   static const uint8_t ecdsa_with_SHA1[] = {
     0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x01
   };
-
-  // RFC 5758 Section 3.1 (DSA with SHA-2), RFC 3279 Section 2.2.2 (DSA with
-  // SHA-1), RFC 5758 Section 3.2 (ECDSA with SHA-2), and RFC 3279
-  // Section 2.2.3 (ECDSA with SHA-1) all say that parameters must be omitted.
-  //
-  // RFC 4055 Section 5 and RFC 3279 Section 2.2.1 both say that parameters for
-  // RSA must be encoded as NULL; we relax that requirement by allowing the
-  // NULL to be omitted, to match all the other signature algorithms we support
-  // and for compatibility.
 
   // Matching is attempted based on a rough estimate of the commonality of the
   // algorithm, to minimize the number of MatchRest calls.
@@ -553,6 +551,58 @@ IntegralBytes(Reader& input, uint8_t tag,
   return Success;
 }
 
+// This parser will only parse values between 0..127. If this range is
+// increased then callers will need to be changed.
+Result
+IntegralValue(Reader& input, uint8_t tag, /*out*/ uint8_t& value)
+{
+  // Conveniently, all the Integers that we actually have to be able to parse
+  // are positive and very small. Consequently, this parser is *much* simpler
+  // than a general Integer parser would need to be.
+  Input valueBytes;
+  Result rv = IntegralBytes(input, tag, IntegralValueRestriction::MustBe0To127,
+                            valueBytes, nullptr);
+  if (rv != Success) {
+    return rv;
+  }
+  Reader valueReader(valueBytes);
+  rv = valueReader.Read(value);
+  if (rv != Success) {
+    return NotReached("IntegralBytes already validated the value.", rv);
+  }
+  rv = End(valueReader);
+  assert(rv == Success); // guaranteed by IntegralBytes's range checks.
+  return rv;
+}
+
 } // namespace internal
+
+Result
+OptionalVersion(Reader& input, /*out*/ Version& version)
+{
+  static const uint8_t TAG = CONTEXT_SPECIFIC | CONSTRUCTED | 0;
+  if (!input.Peek(TAG)) {
+    version = Version::v1;
+    return Success;
+  }
+  return Nested(input, TAG, [&version](Reader& value) -> Result {
+    uint8_t integerValue;
+    Result rv = Integer(value, integerValue);
+    if (rv != Success) {
+      return rv;
+    }
+    // XXX(bug 1031093): We shouldn't accept an explicit encoding of v1,
+    // but we do here for compatibility reasons.
+    switch (integerValue) {
+      case static_cast<uint8_t>(Version::v3): version = Version::v3; break;
+      case static_cast<uint8_t>(Version::v2): version = Version::v2; break;
+      case static_cast<uint8_t>(Version::v1): version = Version::v1; break;
+      case static_cast<uint8_t>(Version::v4): version = Version::v4; break;
+      default:
+        return Result::ERROR_BAD_DER;
+    }
+    return Success;
+  });
+}
 
 } } } // namespace mozilla::pkix::der

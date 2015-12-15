@@ -1,91 +1,96 @@
-/** @jsx React.DOM */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* jshint newcap:false, esnext:true */
-/* global loop:true, React */
 
 var loop = loop || {};
 loop.conversation = (function(mozL10n) {
   "use strict";
 
-  var sharedViews = loop.shared.views;
   var sharedMixins = loop.shared.mixins;
-  var sharedModels = loop.shared.models;
   var sharedActions = loop.shared.actions;
 
-  var IncomingConversationView = loop.conversationViews.IncomingConversationView;
-  var OutgoingConversationView = loop.conversationViews.OutgoingConversationView;
-  var CallIdentifierView = loop.conversationViews.CallIdentifierView;
+  var CallControllerView = loop.conversationViews.CallControllerView;
   var DesktopRoomConversationView = loop.roomViews.DesktopRoomConversationView;
-  var GenericFailureView = loop.conversationViews.GenericFailureView;
+  var FeedbackView = loop.feedbackViews.FeedbackView;
+  var DirectCallFailureView = loop.conversationViews.DirectCallFailureView;
 
   /**
    * Master controller view for handling if incoming or outgoing calls are
    * in progress, and hence, which view to display.
    */
   var AppControllerView = React.createClass({displayName: "AppControllerView",
-    mixins: [Backbone.Events, sharedMixins.WindowCloseMixin],
+    mixins: [
+      Backbone.Events,
+      loop.store.StoreMixin("conversationAppStore"),
+      sharedMixins.DocumentTitleMixin,
+      sharedMixins.WindowCloseMixin
+    ],
 
     propTypes: {
-      // XXX Old types required for incoming call view.
-      client: React.PropTypes.instanceOf(loop.Client).isRequired,
-      conversation: React.PropTypes.instanceOf(sharedModels.ConversationModel)
-                         .isRequired,
-      sdk: React.PropTypes.object.isRequired,
-
-      // XXX New types for flux style
-      conversationAppStore: React.PropTypes.instanceOf(
-        loop.store.ConversationAppStore).isRequired,
-      conversationStore: React.PropTypes.instanceOf(loop.store.ConversationStore)
-                              .isRequired,
       dispatcher: React.PropTypes.instanceOf(loop.Dispatcher).isRequired,
-      roomStore: React.PropTypes.instanceOf(loop.store.RoomStore),
-      mozLoop: React.PropTypes.object.isRequired
+      mozLoop: React.PropTypes.object.isRequired,
+      roomStore: React.PropTypes.instanceOf(loop.store.RoomStore)
     },
 
     getInitialState: function() {
-      return this.props.conversationAppStore.getStoreState();
+      return this.getStoreState();
     },
 
-    componentWillMount: function() {
-      this.listenTo(this.props.conversationAppStore, "change", function() {
-        this.setState(this.props.conversationAppStore.getStoreState());
-      }, this);
+    _renderFeedbackForm: function() {
+      this.setTitle(mozL10n.get("conversation_has_ended"));
+
+      return (React.createElement(FeedbackView, {
+        mozLoop: this.props.mozLoop, 
+        onAfterFeedbackReceived: this.closeWindow}));
     },
 
-    componentWillUnmount: function() {
-      this.stopListening(this.props.conversationAppStore);
+    /**
+     * We only show the feedback for once every 6 months, otherwise close
+     * the window.
+     */
+    handleCallTerminated: function() {
+      var delta = new Date() - new Date(this.state.feedbackTimestamp);
+
+      // Show timestamp if feedback period (6 months) passed.
+      // 0 is default value for pref. Always show feedback form on first use.
+      if (this.state.feedbackTimestamp === 0 ||
+          delta >= this.state.feedbackPeriod) {
+        this.props.dispatcher.dispatch(new sharedActions.ShowFeedbackForm());
+        return;
+      }
+
+      this.closeWindow();
     },
 
     render: function() {
+      if (this.state.showFeedbackForm) {
+        return this._renderFeedbackForm();
+      }
+
       switch(this.state.windowType) {
-        case "incoming": {
-          return (React.createElement(IncomingConversationView, {
-            client: this.props.client, 
-            conversation: this.props.conversation, 
-            sdk: this.props.sdk, 
-            isDesktop: true, 
-            conversationAppStore: this.props.conversationAppStore}
-          ));
-        }
+        // CallControllerView is used for both.
+        case "incoming":
         case "outgoing": {
-          return (React.createElement(OutgoingConversationView, {
-            store: this.props.conversationStore, 
-            dispatcher: this.props.dispatcher}
-          ));
+          return (React.createElement(CallControllerView, {
+            chatWindowDetached: this.state.chatWindowDetached, 
+            dispatcher: this.props.dispatcher, 
+            mozLoop: this.props.mozLoop, 
+            onCallTerminated: this.handleCallTerminated}));
         }
         case "room": {
           return (React.createElement(DesktopRoomConversationView, {
+            chatWindowDetached: this.state.chatWindowDetached, 
             dispatcher: this.props.dispatcher, 
             mozLoop: this.props.mozLoop, 
-            roomStore: this.props.roomStore}
-          ));
+            onCallTerminated: this.handleCallTerminated, 
+            roomStore: this.props.roomStore}));
         }
         case "failed": {
-          return React.createElement(GenericFailureView, {cancelCall: this.closeWindow});
+          return (React.createElement(DirectCallFailureView, {
+            contact: {}, 
+            dispatcher: this.props.dispatcher, 
+            mozLoop: this.props.mozLoop, 
+            outgoing: false}));
         }
         default: {
           // If we don't have a windowType, we don't know what we are yet,
@@ -118,28 +123,23 @@ loop.conversation = (function(mozL10n) {
       }
     });
 
+    // We want data channels only if the text chat preference is enabled.
+    var useDataChannels = loop.shared.utils.getBoolPreference("textChat.enabled");
+
     var dispatcher = new loop.Dispatcher();
     var client = new loop.Client();
     var sdkDriver = new loop.OTSdkDriver({
       isDesktop: true,
+      useDataChannels: useDataChannels,
       dispatcher: dispatcher,
       sdk: OT,
       mozLoop: navigator.mozLoop
     });
-    var appVersionInfo = navigator.mozLoop.appVersionInfo;
-    var feedbackClient = new loop.FeedbackAPIClient(
-      navigator.mozLoop.getLoopPref("feedback.baseUrl"), {
-      product: navigator.mozLoop.getLoopPref("feedback.product"),
-      platform: appVersionInfo.OS,
-      channel: appVersionInfo.channel,
-      version: appVersionInfo.version
-    });
+
+    // expose for functional tests
+    loop.conversation._sdkDriver = sdkDriver;
 
     // Create the stores.
-    var conversationAppStore = new loop.store.ConversationAppStore({
-      dispatcher: dispatcher,
-      mozLoop: navigator.mozLoop
-    });
     var conversationStore = new loop.store.ConversationStore(dispatcher, {
       client: client,
       isDesktop: true,
@@ -151,21 +151,23 @@ loop.conversation = (function(mozL10n) {
       mozLoop: navigator.mozLoop,
       sdkDriver: sdkDriver
     });
+    var conversationAppStore = new loop.store.ConversationAppStore({
+      activeRoomStore: activeRoomStore,
+      dispatcher: dispatcher,
+      mozLoop: navigator.mozLoop
+    });
     var roomStore = new loop.store.RoomStore(dispatcher, {
       mozLoop: navigator.mozLoop,
       activeRoomStore: activeRoomStore
     });
-    var feedbackStore = new loop.store.FeedbackStore(dispatcher, {
-      feedbackClient: feedbackClient
+    var textChatStore = new loop.store.TextChatStore(dispatcher, {
+      sdkDriver: sdkDriver
     });
 
-    loop.store.StoreMixin.register({feedbackStore: feedbackStore});
-
-    // XXX Old class creation for the incoming conversation view, whilst
-    // we transition across (bug 1072323).
-    var conversation = new sharedModels.ConversationModel({}, {
-      sdk: window.OT,
-      mozLoop: navigator.mozLoop
+    loop.store.StoreMixin.register({
+      conversationAppStore: conversationAppStore,
+      conversationStore: conversationStore,
+      textChatStore: textChatStore
     });
 
     // Obtain the windowId and pass it through
@@ -177,27 +179,15 @@ loop.conversation = (function(mozL10n) {
       windowId = hash[1];
     }
 
-    conversation.set({windowId: windowId});
+    React.render(
+      React.createElement(AppControllerView, {
+        dispatcher: dispatcher, 
+        mozLoop: navigator.mozLoop, 
+        roomStore: roomStore}), document.querySelector("#main"));
 
-    window.addEventListener("unload", function(event) {
-      // Handle direct close of dialog box via [x] control.
-      // XXX Move to the conversation models, when we transition
-      // incoming calls to flux (bug 1088672).
-      navigator.mozLoop.calls.clearCallInProgress(windowId);
-
-      dispatcher.dispatch(new sharedActions.WindowUnload());
-    });
-
-    React.render(React.createElement(AppControllerView, {
-      conversationAppStore: conversationAppStore, 
-      roomStore: roomStore, 
-      conversationStore: conversationStore, 
-      client: client, 
-      conversation: conversation, 
-      dispatcher: dispatcher, 
-      sdk: window.OT, 
-      mozLoop: navigator.mozLoop}
-    ), document.querySelector('#main'));
+    document.documentElement.setAttribute("lang", mozL10n.getLanguage());
+    document.documentElement.setAttribute("dir", mozL10n.getDirection());
+    document.body.setAttribute("platform", loop.shared.utils.getPlatform());
 
     dispatcher.dispatch(new sharedActions.GetWindowData({
       windowId: windowId
@@ -206,8 +196,16 @@ loop.conversation = (function(mozL10n) {
 
   return {
     AppControllerView: AppControllerView,
-    init: init
+    init: init,
+
+    /**
+     * Exposed for the use of functional tests to be able to check
+     * metric-related execution as the call sequence progresses.
+     *
+     * @type loop.OTSdkDriver
+     */
+    _sdkDriver: null
   };
 })(document.mozL10n);
 
-document.addEventListener('DOMContentLoaded', loop.conversation.init);
+document.addEventListener("DOMContentLoaded", loop.conversation.init);

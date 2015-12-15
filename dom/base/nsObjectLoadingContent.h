@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:set et cin sw=2 sts=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +17,7 @@
 #include "nsImageLoadingContent.h"
 #include "nsIStreamListener.h"
 #include "nsIChannelEventSink.h"
+#include "nsIContentPolicy.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsIRunnable.h"
 #include "nsIThreadInternal.h"
@@ -35,8 +36,8 @@ namespace mozilla {
 namespace dom {
 template<typename T> class Sequence;
 struct MozPluginParameter;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 class nsObjectLoadingContent : public nsImageLoadingContent
                              , public nsIStreamListener
@@ -93,9 +94,6 @@ class nsObjectLoadingContent : public nsImageLoadingContent
       eFallbackVulnerableUpdatable = nsIObjectLoadingContent::PLUGIN_VULNERABLE_UPDATABLE,
       // The plugin is vulnerable (no update available)
       eFallbackVulnerableNoUpdate = nsIObjectLoadingContent::PLUGIN_VULNERABLE_NO_UPDATE,
-      // The plugin is disabled and play preview content is displayed until
-      // the extension code enables it by sending the MozPlayPlugin event
-      eFallbackPlayPreview = nsIObjectLoadingContent::PLUGIN_PLAY_PREVIEW
     };
 
     nsObjectLoadingContent();
@@ -171,6 +169,10 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     bool DoResolve(JSContext* aCx, JS::Handle<JSObject*> aObject,
                    JS::Handle<jsid> aId,
                    JS::MutableHandle<JSPropertyDescriptor> aDesc);
+    // The return value is whether DoResolve might end up resolving the given
+    // id.  If in doubt, return true.
+    static bool MayResolve(jsid aId);
+
     // Helper for WebIDL enumeration
     void GetOwnPropertyNames(JSContext* aCx, nsTArray<nsString>& /* unused */,
                              mozilla::ErrorResult& aRv);
@@ -220,10 +222,6 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     {
       return !!mInstanceOwner;
     }
-    void CancelPlayPreview(mozilla::ErrorResult& aRv)
-    {
-      aRv = CancelPlayPreview();
-    }
     void SwapFrameLoaders(nsXULElement& aOtherOwner, mozilla::ErrorResult& aRv)
     {
       aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
@@ -232,6 +230,18 @@ class nsObjectLoadingContent : public nsImageLoadingContent
                     const mozilla::dom::Sequence<JS::Value>& aArguments,
                     JS::MutableHandle<JS::Value> aRetval,
                     mozilla::ErrorResult& aRv);
+
+    uint32_t GetRunID(mozilla::ErrorResult& aRv)
+    {
+      uint32_t runID;
+      nsresult rv = GetRunID(&runID);
+      if (NS_FAILED(rv)) {
+        aRv.Throw(rv);
+        return 0;
+      }
+
+      return runID;
+    }
 
   protected:
     /**
@@ -315,6 +325,11 @@ class nsObjectLoadingContent : public nsImageLoadingContent
                         bool aCompileEventHandler);
     void UnbindFromTree(bool aDeep = true,
                         bool aNullParent = true);
+
+    /**
+     * Return the content policy type used for loading the element.
+     */
+    virtual nsContentPolicyType GetContentPolicyType() const = 0;
 
   private:
 
@@ -504,6 +519,8 @@ class nsObjectLoadingContent : public nsImageLoadingContent
      */
     nsPluginFrame* GetExistingFrame();
 
+    bool IsYoutubeEmbed();
+
     // Helper class for SetupProtoChain
     class SetupProtoChainRunner final : public nsIRunnable
     {
@@ -579,6 +596,9 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     // The type of fallback content we're showing (see ObjectState())
     FallbackType                mFallbackType : 8;
 
+    uint32_t                    mRunID;
+    bool                        mHasRunID;
+
     // If true, we have opened a channel as the listener and it has reached
     // OnStartRequest. Does not get set for channels that are passed directly to
     // the plugin listener.
@@ -597,16 +617,13 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     // activated by PlayPlugin(). (see ShouldPlay())
     bool                        mActivated : 1;
 
-    // Used to keep track of whether or not a plugin is blocked by play-preview.
-    bool                        mPlayPreviewCanceled : 1;
-
     // Protects DoStopPlugin from reentry (bug 724781).
     bool                        mIsStopping : 1;
 
     // Protects LoadObject from re-entry
     bool                        mIsLoading : 1;
 
-    // For plugin stand-in types (click-to-play, play preview, ...) tracks
+    // For plugin stand-in types (click-to-play) tracks
     // whether content js has tried to access the plugin script object.
     bool                        mScriptRequested : 1;
 

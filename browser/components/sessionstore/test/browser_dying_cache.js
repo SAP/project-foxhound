@@ -1,5 +1,4 @@
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 /**
  * This test ensures that after closing a window we keep its state data around
@@ -19,8 +18,8 @@ add_task(function* test() {
   // Open a second tab and close the first one.
   let tab = win.gBrowser.addTab("about:mozilla");
   yield promiseBrowserLoaded(tab.linkedBrowser);
-  TabState.flush(tab.linkedBrowser);
-  win.gBrowser.removeTab(win.gBrowser.tabs[0]);
+  yield TabStateFlusher.flush(tab.linkedBrowser);
+  yield promiseRemoveTab(win.gBrowser.tabs[0]);
 
   // Make sure our window is still tracked by sessionstore
   // and the window state is as expected.

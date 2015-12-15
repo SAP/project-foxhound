@@ -4,21 +4,20 @@
 /**
  * Tests that the memory flamegraphs get rerendered when toggling `show-idle-blocks`
  */
-function spawnTest () {
+function* spawnTest() {
   let { panel } = yield initPerformance(SIMPLE_URL);
   let { EVENTS, DetailsView, MemoryFlameGraphView } = panel.panelWin;
 
   // Enable memory to test
-  Services.prefs.setBoolPref(MEMORY_PREF, true);
+  Services.prefs.setBoolPref(ALLOCATIONS_PREF, true);
   Services.prefs.setBoolPref(IDLE_PREF, true);
-
-  yield DetailsView.selectView("memory-flamegraph");
 
   yield startRecording(panel);
   yield busyWait(100);
+  yield stopRecording(panel);
 
   let rendered = once(MemoryFlameGraphView, EVENTS.MEMORY_FLAMEGRAPH_RENDERED);
-  yield stopRecording(panel);
+  yield DetailsView.selectView("memory-flamegraph");
   yield rendered;
 
   rendered = once(MemoryFlameGraphView, EVENTS.MEMORY_FLAMEGRAPH_RENDERED);

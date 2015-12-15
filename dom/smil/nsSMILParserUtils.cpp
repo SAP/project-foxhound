@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -477,7 +478,7 @@ ParseElementBaseTimeValueSpec(const nsAString& aSpec,
   return true;
 }
 
-} // end anonymous namespace block
+} // namespace
 
 //------------------------------------------------------------------------------
 // Implementation
@@ -534,7 +535,8 @@ nsSMILParserUtils::ParseKeySplines(const nsAString& aSpec,
         !aKeySplines.AppendElement(nsSMILKeySpline(values[0],
                                                    values[1],
                                                    values[2],
-                                                   values[3]))) {
+                                                   values[3]),
+                                   fallible)) {
       return false;
     }
   }
@@ -562,7 +564,7 @@ nsSMILParserUtils::ParseSemicolonDelimitedProgressList(const nsAString& aSpec,
       return false;
     }
 
-    if (!aArray.AppendElement(value)) {
+    if (!aArray.AppendElement(value, fallible)) {
       return false;
     }
     previousValue = value;
@@ -593,7 +595,7 @@ public:
                                              tmpPreventCachingOfSandwich)))
       return false;
 
-    if (!mValuesArray->AppendElement(newValue)) {
+    if (!mValuesArray->AppendElement(newValue, fallible)) {
       return false;
     }
     if (tmpPreventCachingOfSandwich) {

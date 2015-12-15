@@ -1,5 +1,5 @@
-
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +24,6 @@
 #include "nsIStyleSheet.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsIURL.h"
-#include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
@@ -147,6 +146,10 @@ HTMLLinkElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
     aDocument->RegisterPendingLinkUpdate(this);
   }
 
+  if (IsInComposedDoc()) {
+    UpdatePreconnect();
+  }
+
   void (HTMLLinkElement::*update)() = &HTMLLinkElement::UpdateStyleSheetInternal;
   nsContentUtils::AddScriptRunner(NS_NewRunnableMethod(this, update));
 
@@ -177,6 +180,8 @@ HTMLLinkElement::UnbindFromTree(bool aDeep, bool aNullParent)
   // be under a different xml:base, so forget the cached state now.
   Link::ResetLinkState(false, Link::ElementHasHref());
 
+  // If this is reinserted back into the document it will not be
+  // from the parser.
   nsCOMPtr<nsIDocument> oldDoc = GetUncomposedDoc();
 
   // Check for a ShadowRoot because link elements are inert in a
@@ -207,6 +212,11 @@ HTMLLinkElement::ParseAttribute(int32_t aNamespaceID,
 
     if (aAttribute == nsGkAtoms::sizes) {
       aResult.ParseAtomArray(aValue);
+      return true;
+    }
+
+    if (aAttribute == nsGkAtoms::integrity) {
+      aResult.ParseStringOrAtom(aValue);
       return true;
     }
   }
@@ -275,7 +285,7 @@ HTMLLinkElement::UpdateImport()
     return;
   }
 
-  if (!nsStyleLinkElement::IsImportEnabled(NodePrincipal())) {
+  if (!nsStyleLinkElement::IsImportEnabled()) {
     // For now imports are hidden behind a pref...
     return;
   }
@@ -292,92 +302,101 @@ HTMLLinkElement::UpdateImport()
   }
 }
 
-nsresult
-HTMLLinkElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                         nsIAtom* aPrefix, const nsAString& aValue,
-                         bool aNotify)
+void
+HTMLLinkElement::UpdatePreconnect()
 {
-  nsresult rv = nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix,
-                                              aValue, aNotify);
-
-  // The ordering of the parent class's SetAttr call and Link::ResetLinkState
-  // is important here!  The attribute is not set until SetAttr returns, and
-  // we will need the updated attribute value because notifying the document
-  // that content states have changed will call IntrinsicState, which will try
-  // to get updated information about the visitedness from Link.
-  if (aName == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID) {
-    Link::ResetLinkState(!!aNotify, true);
-    if (IsInUncomposedDoc()) {
-      CreateAndDispatchEvent(OwnerDoc(), NS_LITERAL_STRING("DOMLinkChanged"));
-    }
+  // rel type should be preconnect
+  nsAutoString rel;
+  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel)) {
+    return;
   }
 
-  if (NS_SUCCEEDED(rv) && aNameSpaceID == kNameSpaceID_None &&
-      (aName == nsGkAtoms::href ||
-       aName == nsGkAtoms::rel ||
-       aName == nsGkAtoms::title ||
-       aName == nsGkAtoms::media ||
-       aName == nsGkAtoms::type)) {
-    bool dropSheet = false;
-    if (aName == nsGkAtoms::rel) {
-      uint32_t linkTypes = nsStyleLinkElement::ParseLinkTypes(aValue,
-                                                              NodePrincipal());
-      if (GetSheet()) {
-        dropSheet = !(linkTypes & nsStyleLinkElement::eSTYLESHEET);
-      } else if (linkTypes & eHTMLIMPORT) {
-        UpdateImport();
-      }
-    }
-
-    if (aName == nsGkAtoms::href) {
-      UpdateImport();
-    }
-    
-    UpdateStyleSheetInternal(nullptr, nullptr,
-                             dropSheet ||
-                             (aName == nsGkAtoms::title ||
-                              aName == nsGkAtoms::media ||
-                              aName == nsGkAtoms::type));
+  uint32_t linkTypes = nsStyleLinkElement::ParseLinkTypes(rel, NodePrincipal());
+  if (!(linkTypes & ePRECONNECT)) {
+    return;
   }
 
-  return rv;
+  nsIDocument *owner = OwnerDoc();
+  if (owner) {
+    nsCOMPtr<nsIURI> uri = GetHrefURI();
+    if (uri) {
+        owner->MaybePreconnect(uri, GetCORSMode());
+    }
+  }
 }
 
 nsresult
-HTMLLinkElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                           bool aNotify)
+HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+                              const nsAttrValue* aValue, bool aNotify)
 {
-  nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute,
-                                                aNotify);
-  // Since removing href or rel makes us no longer link to a
-  // stylesheet, force updates for those too.
-  if (NS_SUCCEEDED(rv) && aNameSpaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::href ||
-        aAttribute == nsGkAtoms::rel ||
-        aAttribute == nsGkAtoms::title ||
-        aAttribute == nsGkAtoms::media ||
-        aAttribute == nsGkAtoms::type) {
-      UpdateStyleSheetInternal(nullptr, nullptr, true);
-    }
-    if (aAttribute == nsGkAtoms::href ||
-        aAttribute == nsGkAtoms::rel) {
-      UpdateImport();
-    }
-  }
-
-  // The ordering of the parent class's UnsetAttr call and Link::ResetLinkState
-  // is important here!  The attribute is not unset until UnsetAttr returns, and
-  // we will need the updated attribute value because notifying the document
-  // that content states have changed will call IntrinsicState, which will try
-  // to get updated information about the visitedness from Link.
-  if (aAttribute == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID) {
-    Link::ResetLinkState(!!aNotify, false);
+  // It's safe to call ResetLinkState here because our new attr value has
+  // already been set or unset.  ResetLinkState needs the updated attribute
+  // value because notifying the document that content states have changed will
+  // call IntrinsicState, which will try to get updated information about the
+  // visitedness from Link.
+  if (aName == nsGkAtoms::href && kNameSpaceID_None == aNameSpaceID) {
+    bool hasHref = aValue;
+    Link::ResetLinkState(!!aNotify, hasHref);
     if (IsInUncomposedDoc()) {
       CreateAndDispatchEvent(OwnerDoc(), NS_LITERAL_STRING("DOMLinkChanged"));
     }
   }
 
-  return rv;
+  if (aValue) {
+    if (aNameSpaceID == kNameSpaceID_None &&
+        (aName == nsGkAtoms::href ||
+         aName == nsGkAtoms::rel ||
+         aName == nsGkAtoms::title ||
+         aName == nsGkAtoms::media ||
+         aName == nsGkAtoms::type)) {
+      bool dropSheet = false;
+      if (aName == nsGkAtoms::rel) {
+        nsAutoString value;
+        aValue->ToString(value);
+        uint32_t linkTypes = nsStyleLinkElement::ParseLinkTypes(value,
+                                                                NodePrincipal());
+        if (GetSheet()) {
+          dropSheet = !(linkTypes & nsStyleLinkElement::eSTYLESHEET);
+        } else if (linkTypes & eHTMLIMPORT) {
+          UpdateImport();
+        } else if ((linkTypes & ePRECONNECT) && IsInComposedDoc()) {
+          UpdatePreconnect();
+        }
+      }
+
+      if (aName == nsGkAtoms::href) {
+        UpdateImport();
+        if (IsInComposedDoc()) {
+          UpdatePreconnect();
+        }
+      }
+
+      UpdateStyleSheetInternal(nullptr, nullptr,
+                               dropSheet ||
+                               (aName == nsGkAtoms::title ||
+                                aName == nsGkAtoms::media ||
+                                aName == nsGkAtoms::type));
+    }
+  } else {
+    // Since removing href or rel makes us no longer link to a
+    // stylesheet, force updates for those too.
+    if (aNameSpaceID == kNameSpaceID_None) {
+      if (aName == nsGkAtoms::href ||
+          aName == nsGkAtoms::rel ||
+          aName == nsGkAtoms::title ||
+          aName == nsGkAtoms::media ||
+          aName == nsGkAtoms::type) {
+        UpdateStyleSheetInternal(nullptr, nullptr, true);
+      }
+      if (aName == nsGkAtoms::href ||
+          aName == nsGkAtoms::rel) {
+        UpdateImport();
+      }
+    }
+  }
+
+  return nsGenericHTMLElement::AfterSetAttr(aNameSpaceID, aName, aValue,
+                                            aNotify);
 }
 
 nsresult
@@ -510,9 +529,9 @@ HTMLLinkElement::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 }
 
 JSObject*
-HTMLLinkElement::WrapNode(JSContext* aCx)
+HTMLLinkElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLLinkElementBinding::Wrap(aCx, this);
+  return HTMLLinkElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 already_AddRefed<nsIDocument>

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -72,7 +72,6 @@
 #include "nsMemory.h"
 
 // includes needed for the prototype chain interfaces
-#include "nsIDOMCSSCharsetRule.h"
 #include "nsIDOMCSSImportRule.h"
 #include "nsIDOMCSSMediaRule.h"
 #include "nsIDOMCSSFontFaceRule.h"
@@ -208,8 +207,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
   // CSS classes
   NS_DEFINE_CLASSINFO_DATA(CSSStyleRule, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(CSSCharsetRule, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CSSImportRule, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CSSMediaRule, nsDOMGenericSH,
@@ -257,11 +254,15 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(CSSFontFaceRule, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CHROME_ONLY_CLASSINFO_DATA(ContentFrameMessageManager, nsEventTargetSH,
+  NS_DEFINE_CHROME_ONLY_CLASSINFO_DATA(ContentFrameMessageManager,
+                                       nsMessageManagerSH<nsEventTargetSH>,
                                        DOM_DEFAULT_SCRIPTABLE_FLAGS |
+                                       nsIXPCScriptable::WANT_ENUMERATE |
                                        nsIXPCScriptable::IS_GLOBAL_OBJECT)
-  NS_DEFINE_CHROME_ONLY_CLASSINFO_DATA(ContentProcessMessageManager, nsDOMGenericSH,
+  NS_DEFINE_CHROME_ONLY_CLASSINFO_DATA(ContentProcessMessageManager,
+                                       nsMessageManagerSH<nsDOMGenericSH>,
                                        DOM_DEFAULT_SCRIPTABLE_FLAGS |
+                                       nsIXPCScriptable::WANT_ENUMERATE |
                                        nsIXPCScriptable::IS_GLOBAL_OBJECT)
   NS_DEFINE_CHROME_ONLY_CLASSINFO_DATA(ChromeMessageBroadcaster, nsDOMGenericSH,
                                        DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -349,7 +350,7 @@ nsresult
 nsDOMClassInfo::DefineStaticJSVals(JSContext *cx)
 {
 #define SET_JSID_TO_STRING(_id, _cx, _str)                                    \
-  if (JSString *str = ::JS_InternString(_cx, _str))                           \
+  if (JSString *str = ::JS_AtomizeAndPinString(_cx, _str))                             \
       _id = INTERNED_STRING_TO_JSID(_cx, str);                                \
   else                                                                        \
       return NS_ERROR_OUT_OF_MEMORY;
@@ -513,7 +514,7 @@ nsDOMClassInfo::RegisterExternalClasses()
     }
 
     rv = nameSpaceManager->RegisterExternalClassName(categoryEntry.get(), *cid);
-    nsMemory::Free(cid);
+    free(cid);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -594,10 +595,6 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(CSSStyleRule, nsIDOMCSSStyleRule)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMCSSStyleRule)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(CSSCharsetRule, nsIDOMCSSCharsetRule)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMCSSCharsetRule)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(CSSImportRule, nsIDOMCSSImportRule)
@@ -687,6 +684,7 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(ChromeMessageBroadcaster, nsISupports)
     DOM_CLASSINFO_MAP_ENTRY(nsIFrameScriptLoader)
     DOM_CLASSINFO_MAP_ENTRY(nsIProcessScriptLoader)
+    DOM_CLASSINFO_MAP_ENTRY(nsIGlobalProcessScriptLoader)
     DOM_CLASSINFO_MAP_ENTRY(nsIMessageListenerManager)
     DOM_CLASSINFO_MAP_ENTRY(nsIMessageBroadcaster)
   DOM_CLASSINFO_MAP_END
@@ -804,7 +802,7 @@ nsDOMClassInfo::GetInterfaces(uint32_t *aCount, nsIID ***aArray)
     return NS_OK;
   }
 
-  *aArray = static_cast<nsIID **>(nsMemory::Alloc(count * sizeof(nsIID *)));
+  *aArray = static_cast<nsIID **>(moz_xmalloc(count * sizeof(nsIID *)));
   NS_ENSURE_TRUE(*aArray, NS_ERROR_OUT_OF_MEMORY);
 
   uint32_t i;
@@ -825,16 +823,10 @@ nsDOMClassInfo::GetInterfaces(uint32_t *aCount, nsIID ***aArray)
 }
 
 NS_IMETHODIMP
-nsDOMClassInfo::GetHelperForLanguage(uint32_t language, nsISupports **_retval)
+nsDOMClassInfo::GetScriptableHelper(nsIXPCScriptable **_retval)
 {
-  if (language == nsIProgrammingLanguage::JAVASCRIPT) {
-    *_retval = static_cast<nsIXPCScriptable *>(this);
-
-    NS_ADDREF(*_retval);
-  } else {
-    *_retval = nullptr;
-  }
-
+  nsCOMPtr<nsIXPCScriptable> rval = this;
+  rval.forget(_retval);
   return NS_OK;
 }
 
@@ -863,14 +855,6 @@ NS_IMETHODIMP
 nsDOMClassInfo::GetClassIDNoAlloc(nsCID *aClassID)
 {
   return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP
-nsDOMClassInfo::GetImplementationLanguage(uint32_t *aImplLanguage)
-{
-  *aImplLanguage = nsIProgrammingLanguage::CPLUSPLUS;
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -908,7 +892,7 @@ nsDOMClassInfo::PreCreate(nsISupports *nativeObj, JSContext *cx,
 
 NS_IMETHODIMP
 nsDOMClassInfo::AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                            JSObject *obj, jsid id, jsval *vp,
+                            JSObject *obj, jsid id, JS::Handle<JS::Value> val,
                             bool *_retval)
 {
   NS_WARNING("nsDOMClassInfo::AddProperty Don't call me!");
@@ -918,7 +902,7 @@ nsDOMClassInfo::AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 
 NS_IMETHODIMP
 nsDOMClassInfo::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                            JSObject *obj, jsid id, jsval *vp,
+                            JSObject *obj, jsid id, JS::Value *vp,
                             bool *_retval)
 {
   NS_WARNING("nsDOMClassInfo::GetProperty Don't call me!");
@@ -928,7 +912,7 @@ nsDOMClassInfo::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 
 NS_IMETHODIMP
 nsDOMClassInfo::SetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                            JSObject *obj, jsid id, jsval *vp,
+                            JSObject *obj, jsid id, JS::Value *vp,
                             bool *_retval)
 {
   NS_WARNING("nsDOMClassInfo::SetProperty Don't call me!");
@@ -1168,16 +1152,12 @@ nsDOMClassInfo::PostCreatePrototype(JSContext * cx, JSObject * aProto)
                                  mData, nullptr, nameSpaceManager, proto,
                                  &desc);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (!contentDefinedProperty && desc.object() && !desc.value().isUndefined() &&
-      !JS_DefineUCProperty(cx, global, mData->mNameUTF16,
-                           NS_strlen(mData->mNameUTF16),
-                           desc.value(),
-                           // Descriptors never store JSNatives for accessors:
-                           // they have either JSFunctions or JSPropertyOps.
-                           desc.attributes() | JSPROP_PROPOP_ACCESSORS,
-                           JS_PROPERTYOP_GETTER(desc.getter()),
-                           JS_PROPERTYOP_SETTER(desc.setter()))) {
-    return NS_ERROR_UNEXPECTED;
+  if (!contentDefinedProperty && desc.object() && !desc.value().isUndefined()) {
+    desc.attributesRef() |= JSPROP_RESOLVING;
+    if (!JS_DefineUCProperty(cx, global, mData->mNameUTF16,
+                             NS_strlen(mData->mNameUTF16), desc)) {
+      return NS_ERROR_UNEXPECTED;
+    }
   }
 
   return NS_OK;
@@ -1359,7 +1339,7 @@ public:
                      bool *_retval);
 
   nsresult HasInstance(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                       JS::Handle<JSObject*> obj, const jsval &val, bool *bp,
+                       JS::Handle<JSObject*> obj, const JS::Value &val, bool *bp,
                        bool *_retval);
 
   nsresult ResolveInterfaceConstants(JSContext *cx, JS::Handle<JSObject*> obj);
@@ -1519,7 +1499,7 @@ nsDOMConstructor::Construct(nsIXPConnectWrappedNative *wrapper, JSContext * cx,
 nsresult
 nsDOMConstructor::HasInstance(nsIXPConnectWrappedNative *wrapper,
                               JSContext * cx, JS::Handle<JSObject*> obj,
-                              const jsval &v, bool *bp, bool *_retval)
+                              const JS::Value &v, bool *bp, bool *_retval)
 
 {
   // No need to look these up in the hash.
@@ -1744,13 +1724,10 @@ GetXPCProto(nsIXPConnect *aXPConnect, JSContext *cx, nsGlobalWindow *aWin,
   }
   NS_ENSURE_TRUE(ci, NS_ERROR_UNEXPECTED);
 
-  nsCOMPtr<nsIXPConnectJSObjectHolder> proto_holder;
   nsresult rv =
-    aXPConnect->GetWrappedNativePrototype(cx, aWin->GetGlobalJSObject(), ci,
-                                          getter_AddRefs(proto_holder));
+    aXPConnect->GetWrappedNativePrototype(cx, aWin->GetGlobalJSObject(), ci, aProto.address());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aProto.set(proto_holder->GetJSObject());
   return JS_WrapObject(cx, aProto) ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -1900,13 +1877,12 @@ ResolvePrototype(nsIXPConnect *aXPConnect, nsGlobalWindow *aWin, JSContext *cx,
       }
       dot_prototype = ::JS_NewObjectWithUniqueType(cx,
                                                    &sDOMConstructorProtoClass,
-                                                   proto,
-                                                   winobj);
+                                                   proto);
       NS_ENSURE_TRUE(dot_prototype, NS_ERROR_OUT_OF_MEMORY);
     }
   }
 
-  v = OBJECT_TO_JSVAL(dot_prototype);
+  v.setObject(*dot_prototype);
 
   JSAutoCompartment ac(cx, class_obj);
 
@@ -2423,7 +2399,8 @@ nsEventTargetSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
 
 NS_IMETHODIMP
 nsEventTargetSH::AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                             JSObject *obj, jsid id, jsval *vp, bool *_retval)
+                             JSObject *obj, jsid id, JS::Handle<JS::Value> val,
+                             bool *_retval)
 {
   nsEventTargetSH::PreserveWrapper(GetNative(wrapper, obj));
 
@@ -2585,5 +2562,43 @@ nsNonDOMObjectSH::GetFlags(uint32_t *aFlags)
   // to do something like implement nsISecurityCheckedComponent in a meaningful
   // way.
   *aFlags = nsIClassInfo::MAIN_THREAD_ONLY | nsIClassInfo::SINGLETON_CLASSINFO;
+  return NS_OK;
+}
+
+// nsContentFrameMessageManagerSH
+
+template<typename Super>
+NS_IMETHODIMP
+nsMessageManagerSH<Super>::Resolve(nsIXPConnectWrappedNative* wrapper,
+                                   JSContext* cx, JSObject* obj_,
+                                   jsid id_, bool* resolvedp,
+                                   bool* _retval)
+{
+  JS::Rooted<JSObject*> obj(cx, obj_);
+  JS::Rooted<jsid> id(cx, id_);
+
+  *_retval = SystemGlobalResolve(cx, obj, id, resolvedp);
+  NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
+
+  if (*resolvedp) {
+    return NS_OK;
+  }
+
+  return Super::Resolve(wrapper, cx, obj, id, resolvedp, _retval);
+}
+
+template<typename Super>
+NS_IMETHODIMP
+nsMessageManagerSH<Super>::Enumerate(nsIXPConnectWrappedNative* wrapper,
+                                     JSContext* cx, JSObject* obj_,
+                                     bool* _retval)
+{
+  JS::Rooted<JSObject*> obj(cx, obj_);
+
+  *_retval = SystemGlobalEnumerate(cx, obj);
+  NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
+
+  // Don't call up to our superclass, since neither nsDOMGenericSH nor
+  // nsEventTargetSH have WANT_ENUMERATE.
   return NS_OK;
 }

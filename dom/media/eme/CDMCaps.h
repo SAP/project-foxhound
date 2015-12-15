@@ -75,6 +75,9 @@ public:
     // GMP_EME_CAP_* flags from gmp-decryption.h.
     void SetCaps(uint64_t aCaps);
 
+    bool CanRenderAudio();
+    bool CanRenderVideo();
+
     bool CanDecryptAndDecodeAudio();
     bool CanDecryptAndDecodeVideo();
 
@@ -112,7 +115,7 @@ private:
 
   nsTArray<WaitForKeys> mWaitForKeys;
 
-  nsTArray<nsRefPtr<nsIRunnable>> mWaitForCaps;
+  nsTArray<nsCOMPtr<nsIRunnable>> mWaitForCaps;
   uint64_t mCaps;
 
   // It is not safe to copy this object.

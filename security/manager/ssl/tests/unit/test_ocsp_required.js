@@ -9,11 +9,12 @@
 // response with a bad signature. With security.OCSP.require set to true,
 // this should fail (but it also shouldn't cause assertion failures).
 
-let gOCSPRequestCount = 0;
+var gOCSPRequestCount = 0;
 
 function run_test() {
   do_get_profile();
   Services.prefs.setBoolPref("security.OCSP.require", true);
+  Services.prefs.setIntPref("security.OCSP.enabled", 1);
 
   // We don't actually make use of stapling in this test. This is just how we
   // get a TLS connection.
@@ -42,11 +43,12 @@ function run_test() {
 function add_tests()
 {
   add_connection_test("ocsp-stapling-none.example.com",
-                      getXPCOMStatusFromNSS(SEC_ERROR_OCSP_BAD_SIGNATURE));
+                      SEC_ERROR_OCSP_BAD_SIGNATURE);
   add_connection_test("ocsp-stapling-none.example.com",
-                      getXPCOMStatusFromNSS(SEC_ERROR_OCSP_BAD_SIGNATURE));
+                      SEC_ERROR_OCSP_BAD_SIGNATURE);
   add_test(function () {
-    do_check_eq(gOCSPRequestCount, 1);
+    equal(gOCSPRequestCount, 1,
+          "OCSP request count should be 1 due to OCSP response caching");
     gOCSPRequestCount = 0;
     run_next_test();
   });

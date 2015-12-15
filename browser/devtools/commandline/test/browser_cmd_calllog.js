@@ -5,10 +5,10 @@
 
 const TEST_URI = "data:text/html;charset=utf-8,gcli-calllog";
 
-let tests = {};
+var tests = {};
 
 function test() {
-  return Task.spawn(function() {
+  return Task.spawn(function*() {
     let options = yield helpers.openTab(TEST_URI);
     yield helpers.openToolbar(options);
 

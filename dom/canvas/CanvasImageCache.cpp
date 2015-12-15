@@ -216,7 +216,7 @@ public:
 };
 
 ImageCache::ImageCache()
-  : nsExpirationTracker<ImageCacheEntryData,4>(GENERATION_MS)
+  : nsExpirationTracker<ImageCacheEntryData,4>(GENERATION_MS, "ImageCache")
   , mTotal(0)
 {
   if (!sPrefsInitialized) {
@@ -299,7 +299,7 @@ CanvasImageCache::Lookup(Element* aImage,
 
   gImageCache->MarkUsed(entry->mData);
 
-  *aSize = gfx::ToIntSize(entry->mData->mSize);
+  *aSize = entry->mData->mSize;
   return entry->mData->mSourceSurface;
 }
 

@@ -9,6 +9,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "nsID.h"
 #include "StreamBuffer.h"
+#include "MediaTrackConstraints.h"
 
 namespace mozilla {
 
@@ -35,7 +36,7 @@ public:
                                            DOMEventTargetHelper)
 
   DOMMediaStream* GetParentObject() const { return mStream; }
-  virtual JSObject* WrapObject(JSContext* aCx) override = 0;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override = 0;
 
   DOMMediaStream* GetStream() const { return mStream; }
   TrackID GetTrackID() const { return mTrackID; }
@@ -49,6 +50,8 @@ public:
   bool Enabled() { return mEnabled; }
   void SetEnabled(bool aEnabled);
   void Stop();
+  already_AddRefed<Promise>
+  ApplyConstraints(const dom::MediaTrackConstraints& aConstraints, ErrorResult &aRv);
 
   // Notifications from the MediaStreamGraph
   void NotifyEnded() { mEnded = true; }
@@ -67,7 +70,7 @@ protected:
   bool mEnabled;
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif /* MEDIASTREAMTRACK_H_ */

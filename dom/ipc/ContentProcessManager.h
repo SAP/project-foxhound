@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,6 +111,13 @@ public:
                                  /*out*/ TabId* aOpenerTabId);
 
   /**
+   * Get all TabParents' Ids managed by the givent content process.
+   * Return empty array when TabParent couldn't be found via aChildCpId
+   */
+  nsTArray<TabId>
+  GetTabParentsByProcessId(const ContentParentId& aChildCpId);
+
+  /**
    * Get the TabParent by the given content process and tab id.
    * Return nullptr when TabParent couldn't be found via aChildCpId
    * and aChildTabId.
@@ -135,6 +142,15 @@ public:
   GetTopLevelTabParentByProcessAndTabId(const ContentParentId& aChildCpId,
                                         const TabId& aChildTabId);
 
+  /**
+   * Return appId by given TabId and ContentParentId.
+   * It will return nsIScriptSecurityManager::NO_APP_ID
+   * if the given tab is not an app.
+   */
+  uint32_t
+  GetAppIdByProcessAndTabId(const ContentParentId& aChildCpId,
+                            const TabId& aChildTabId);
+
 private:
   static StaticAutoPtr<ContentProcessManager> sSingleton;
   TabId mUniqueId;
@@ -145,4 +161,5 @@ private:
 
 } // namespace dom
 } // namespace mozilla
+
 #endif

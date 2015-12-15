@@ -29,14 +29,14 @@ namespace net {
 // nsBaseChannel and have a new class that has only the common logic for
 // nsFTPChannel/FTPChannelChild.
 
-class FTPChannelChild : public PFTPChannelChild
-                      , public nsBaseChannel
-                      , public nsIFTPChannel
-                      , public nsIUploadChannel
-                      , public nsIResumableChannel
-                      , public nsIProxiedChannel
-                      , public nsIChildChannel
-                      , public nsIDivertableChannel
+class FTPChannelChild final : public PFTPChannelChild
+                            , public nsBaseChannel
+                            , public nsIFTPChannel
+                            , public nsIUploadChannel
+                            , public nsIResumableChannel
+                            , public nsIProxiedChannel
+                            , public nsIChildChannel
+                            , public nsIDivertableChannel
 {
 public:
   typedef ::nsIStreamListener nsIStreamListener;
@@ -119,8 +119,7 @@ private:
   bool mCanceled;
   uint32_t mSuspendCount;
   bool mIsPending;
-  bool mWasOpened;
-  
+
   PRTime mLastModifiedTime;
   uint64_t mStartPos;
   nsCString mEntityID;

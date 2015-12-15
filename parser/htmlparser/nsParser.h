@@ -54,7 +54,6 @@
 #include "nsWeakReference.h"
 
 class nsIDTD;
-class nsScanner;
 class nsIRunnable;
 
 #ifdef _MSC_VER
@@ -63,8 +62,8 @@ class nsIRunnable;
 
 
 class nsParser final : public nsIParser,
-                           public nsIStreamListener,
-                           public nsSupportsWeakReference
+                       public nsIStreamListener,
+                       public nsSupportsWeakReference
 {
     /**
      * Destructor

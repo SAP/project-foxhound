@@ -10,13 +10,15 @@ const Cu = Components.utils;
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/devtools/dbg-client.jsm");
-let {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
-let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
+var {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
+var {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var {TargetFactory} = require("devtools/framework/target");
+var {Toolbox} = require("devtools/framework/toolbox")
+var promise = require("promise");
+var {DebuggerClient} = require("devtools/toolkit/client/main");
 
-let gClient;
-let gConnectionTimeout;
+var gClient;
+var gConnectionTimeout;
 
 XPCOMUtils.defineLazyGetter(window, 'l10n', function () {
   return Services.strings.createBundle('chrome://browser/locale/devtools/connection-screen.properties');
@@ -52,7 +54,7 @@ window.addEventListener("DOMContentLoaded", function onDOMReady() {
 /**
  * Called when the "connect" button is clicked.
  */
-let submit = Task.async(function*() {
+var submit = Task.async(function*() {
   // Show the "connecting" screen
   document.body.classList.add("connecting");
 
@@ -85,7 +87,7 @@ function clientConnect() {
 /**
  * Connection is ready. List actors and build buttons.
  */
-let onConnectionReady = Task.async(function*(aType, aTraits) {
+var onConnectionReady = Task.async(function*(aType, aTraits) {
   clearTimeout(gConnectionTimeout);
 
   let deferred = promise.defer();
@@ -129,11 +131,19 @@ let onConnectionReady = Task.async(function*(aType, aTraits) {
   let gParent = document.getElementById("globalActors");
 
   // Build the Remote Process button
-  if (Object.keys(globals).length > 1) {
+  // If Fx<39, tab actors were used to be exposed on RootActor
+  // but in Fx>=39, chrome is debuggable via getProcess() and ChromeActor
+  if (globals.consoleActor || gClient.mainRoot.traits.allowChromeProcess) {
     let a = document.createElement("a");
     a.onclick = function() {
-      openToolbox(globals, true);
-
+      if (gClient.mainRoot.traits.allowChromeProcess) {
+        gClient.getProcess()
+               .then(aResponse => {
+                 openToolbox(aResponse.form, true);
+               });
+      } else if (globals.consoleActor) {
+        openToolbox(globals, true, "webconsole", false);
+      }
     }
     a.title = a.textContent = window.l10n.GetStringFromName("mainProcess");
     a.className = "remote-process";
@@ -162,7 +172,7 @@ let onConnectionReady = Task.async(function*(aType, aTraits) {
 function buildAddonLink(addon, parent) {
   let a = document.createElement("a");
   a.onclick = function() {
-    openToolbox(addon, true, "jsdebugger");
+    openToolbox(addon, true, "jsdebugger", false);
   }
 
   a.textContent = addon.name;
@@ -221,19 +231,20 @@ function handleConnectionTimeout() {
  * The user clicked on one of the buttons.
  * Opens the toolbox.
  */
-function openToolbox(form, chrome=false, tool="webconsole") {
+function openToolbox(form, chrome=false, tool="webconsole", isTabActor) {
   let options = {
     form: form,
     client: gClient,
-    chrome: chrome
+    chrome: chrome,
+    isTabActor: isTabActor
   };
-  devtools.TargetFactory.forRemoteTab(options).then((target) => {
-    let hostType = devtools.Toolbox.HostType.WINDOW;
+  TargetFactory.forRemoteTab(options).then((target) => {
+    let hostType = Toolbox.HostType.WINDOW;
     gDevTools.showToolbox(target, tool, hostType).then((toolbox) => {
       toolbox.once("destroyed", function() {
         gClient.close();
       });
-    });
+    }, console.error.bind(console));
     window.close();
-  });
+  }, console.error.bind(console));
 }

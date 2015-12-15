@@ -4,66 +4,89 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
-let { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
+var { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
+var { Preferences } = Cu.import("resource://gre/modules/Preferences.jsm", {});
+var { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
+var { require } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
+var { console } = require("resource://gre/modules/devtools/Console.jsm");
+var { TargetFactory } = require("devtools/framework/target");
+var Promise = require("promise");
+var DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
+var { DebuggerServer } = require("devtools/server/main");
+var { merge } = require("sdk/util/object");
+var { createPerformanceFront } = require("devtools/server/actors/performance");
+var RecordingUtils = require("devtools/toolkit/performance/utils");
+var {
+  PMM_loadFrameScripts, PMM_isProfilerActive, PMM_stopProfiler,
+  sendProfilerCommand, consoleMethod
+} = require("devtools/toolkit/performance/process-communication");
 
-let { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-let { Promise } = Cu.import("resource://gre/modules/Promise.jsm", {});
-let { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
-let { DevToolsUtils } = Cu.import("resource://gre/modules/devtools/DevToolsUtils.jsm", {});
-let { DebuggerServer } = Cu.import("resource://gre/modules/devtools/dbg-server.jsm", {});
-let { merge } = devtools.require("sdk/util/object");
-let { getPerformanceActorsConnection, PerformanceFront } = devtools.require("devtools/performance/front");
-
-let nsIProfilerModule = Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
-let TargetFactory = devtools.TargetFactory;
-let mm = null;
+var mm = null;
 
 const FRAME_SCRIPT_UTILS_URL = "chrome://browser/content/devtools/frame-script-utils.js"
 const EXAMPLE_URL = "http://example.com/browser/browser/devtools/performance/test/";
 const SIMPLE_URL = EXAMPLE_URL + "doc_simple-test.html";
+const MARKERS_URL = EXAMPLE_URL + "doc_markers.html";
+const ALLOCS_URL = EXAMPLE_URL + "doc_allocs.html";
+
+const MEMORY_SAMPLE_PROB_PREF = "devtools.performance.memory.sample-probability";
+const MEMORY_MAX_LOG_LEN_PREF = "devtools.performance.memory.max-log-length";
+const PROFILER_BUFFER_SIZE_PREF = "devtools.performance.profiler.buffer-size";
+const PROFILER_SAMPLE_RATE_PREF = "devtools.performance.profiler.sample-frequency-khz";
 
 const FRAMERATE_PREF = "devtools.performance.ui.enable-framerate";
 const MEMORY_PREF = "devtools.performance.ui.enable-memory";
+const ALLOCATIONS_PREF = "devtools.performance.ui.enable-allocations";
+
 const PLATFORM_DATA_PREF = "devtools.performance.ui.show-platform-data";
 const IDLE_PREF = "devtools.performance.ui.show-idle-blocks";
 const INVERT_PREF = "devtools.performance.ui.invert-call-tree";
 const INVERT_FLAME_PREF = "devtools.performance.ui.invert-flame-graph";
 const FLATTEN_PREF = "devtools.performance.ui.flatten-tree-recursion";
+const JIT_PREF = "devtools.performance.ui.enable-jit-optimizations";
+const EXPERIMENTAL_PREF = "devtools.performance.ui.experimental";
 
 // All tests are asynchronous.
 waitForExplicitFinish();
 
-gDevTools.testing = true;
+DevToolsUtils.testing = true;
 
-let DEFAULT_PREFS = [
+var DEFAULT_PREFS = [
   "devtools.debugger.log",
   "devtools.performance.ui.invert-call-tree",
   "devtools.performance.ui.flatten-tree-recursion",
+  "devtools.performance.ui.show-triggers-for-gc-types",
   "devtools.performance.ui.show-platform-data",
   "devtools.performance.ui.show-idle-blocks",
   "devtools.performance.ui.enable-memory",
+  "devtools.performance.ui.enable-allocations",
   "devtools.performance.ui.enable-framerate",
-
-  // remove after bug 1075567 is resolved.
-  "devtools.performance_dev.enabled"
+  "devtools.performance.ui.enable-jit-optimizations",
+  "devtools.performance.memory.sample-probability",
+  "devtools.performance.memory.max-log-length",
+  "devtools.performance.profiler.buffer-size",
+  "devtools.performance.profiler.sample-frequency-khz",
+  "devtools.performance.ui.experimental",
+  "devtools.performance.timeline.hidden-markers",
 ].reduce((prefs, pref) => {
-  prefs[pref] = Services.prefs.getBoolPref(pref);
+  prefs[pref] = Preferences.get(pref);
   return prefs;
 }, {});
 
-// Enable the new performance panel for all tests. Remove this after
-// bug 1075567 is resolved.
-Services.prefs.setBoolPref("devtools.performance_dev.enabled", true);
+// Enable the new performance panel for all tests.
+Services.prefs.setBoolPref("devtools.performance.enabled", true);
 // Enable logging for all the tests. Both the debugger server and frontend will
 // be affected by this pref.
 Services.prefs.setBoolPref("devtools.debugger.log", false);
 
+// By default, enable memory flame graphs for tests for now
+// TODO remove when we have flame charts via bug 1148663
+Services.prefs.setBoolPref("devtools.performance.ui.enable-memory-flame", true);
+
 /**
  * Call manually in tests that use frame script utils after initializing
- * the tool. Must be called after initializing so we can detect
- * whether or not `content` is a CPOW or not. Call after init but before navigating
- * to different pages.
+ * the tool. Must be called after initializing (once we have a tab).
  */
 function loadFrameScripts () {
   mm = gBrowser.selectedBrowser.messageManager;
@@ -71,16 +94,13 @@ function loadFrameScripts () {
 }
 
 registerCleanupFunction(() => {
-  gDevTools.testing = false;
+  DevToolsUtils.testing = false;
   info("finish() was called, cleaning up...");
 
   // Rollback any pref changes
   Object.keys(DEFAULT_PREFS).forEach(pref => {
-    Services.prefs.setBoolPref(pref, DEFAULT_PREFS[pref]);
+    Preferences.set(pref, DEFAULT_PREFS[pref]);
   });
-
-  // Make sure the profiler module is stopped when the test finishes.
-  nsIProfilerModule.StopProfiler();
 
   Cu.forceGC();
 });
@@ -129,7 +149,7 @@ function handleError(aError) {
 }
 
 function once(aTarget, aEventName, aUseCapture = false, spread = false) {
-  info("Waiting for event: '" + aEventName + "' on " + aTarget + ".");
+  info(`Waiting for event: '${aEventName}' on ${aTarget}`);
 
   let deferred = Promise.defer();
 
@@ -140,6 +160,7 @@ function once(aTarget, aEventName, aUseCapture = false, spread = false) {
   ]) {
     if ((add in aTarget) && (remove in aTarget)) {
       aTarget[add](aEventName, function onEvent(...aArgs) {
+        info(`Received event: '${aEventName}' on ${aTarget}`);
         aTarget[remove](aEventName, onEvent, aUseCapture);
         deferred.resolve(spread ? aArgs : aArgs[0]);
       }, aUseCapture);
@@ -176,24 +197,21 @@ function initBackend(aUrl, targetOps={}) {
 
     yield target.makeRemote();
 
-    // Attach addition options to `target`. This is used to force mock fronts
+    // Attach addition options to `client`. This is used to force mock fronts
     // to smokescreen test different servers where memory or timeline actors
     // may not exist. Possible options that will actually work:
-    // TEST_MOCK_MEMORY_ACTOR = true
+    // TEST_PERFORMANCE_LEGACY_FRONT = true
     // TEST_MOCK_TIMELINE_ACTOR = true
+    // TEST_PROFILER_FILTER_STATUS = array
     merge(target, targetOps);
 
-    yield gDevTools.showToolbox(target, "performance");
-
-    let connection = getPerformanceActorsConnection(target);
-    yield connection.open();
-
-    let front = new PerformanceFront(connection);
+    let front = createPerformanceFront(target);
+    yield front.connect();
     return { target, front };
   });
 }
 
-function initPerformance(aUrl, selectedTool="performance", targetOps={}) {
+function initPerformance(aUrl, tool="performance", targetOps={}) {
   info("Initializing a performance pane.");
 
   return Task.spawn(function*() {
@@ -202,17 +220,60 @@ function initPerformance(aUrl, selectedTool="performance", targetOps={}) {
 
     yield target.makeRemote();
 
-    // Attach addition options to `target`. This is used to force mock fronts
+    // Attach addition options to `client`. This is used to force mock fronts
     // to smokescreen test different servers where memory or timeline actors
     // may not exist. Possible options that will actually work:
-    // TEST_MOCK_MEMORY_ACTOR = true
+    // TEST_PERFORMANCE_LEGACY_FRONT = true
     // TEST_MOCK_TIMELINE_ACTOR = true
+    // TEST_PROFILER_FILTER_STATUS = array
     merge(target, targetOps);
 
-    let toolbox = yield gDevTools.showToolbox(target, selectedTool);
+    let toolbox = yield gDevTools.showToolbox(target, tool);
+
+    // Wait for the performance tool to be spun up
+    yield toolbox.initPerformance();
+
     let panel = toolbox.getCurrentPanel();
     return { target, panel, toolbox };
   });
+}
+
+/**
+ * Initializes a webconsole panel. Returns a target, panel and toolbox reference.
+ * Also returns a console property that allows calls to `profile` and `profileEnd`.
+ */
+function initConsole(aUrl, options) {
+  return Task.spawn(function*() {
+    let { target, toolbox, panel } = yield initPerformance(aUrl, "webconsole", options);
+    let { hud } = panel;
+    return {
+      target, toolbox, panel, console: {
+        profile: (s) => consoleExecute(hud, "profile", s),
+        profileEnd: (s) => consoleExecute(hud, "profileEnd", s)
+      }
+    };
+  });
+}
+
+function consoleExecute (console, method, val) {
+  let { ui, jsterm } = console;
+  let { promise, resolve } = Promise.defer();
+  let message = `console.${method}("${val}")`;
+
+  ui.on("new-messages", handler);
+  jsterm.execute(message);
+
+  let { console: c } = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
+  function handler (event, messages) {
+    for (let msg of messages) {
+      if (msg.response._message === message) {
+        ui.off("new-messages", handler);
+        resolve();
+        return;
+      }
+    }
+  }
+  return promise;
 }
 
 function* teardown(panel) {
@@ -233,23 +294,16 @@ function busyWait(time) {
   while (Date.now() - start < time) { stack = Components.stack; }
 }
 
-function consoleMethod (...args) {
-  if (!mm) {
-    throw new Error("`loadFrameScripts()` must be called before using frame scripts.");
-  }
-  mm.sendAsyncMessage("devtools:test:console", args);
-}
-
-function* consoleProfile(connection, label) {
-  let notified = connection.once("profile");
+function* consoleProfile(win, label) {
+  let profileStart = once(win.PerformanceController, win.EVENTS.RECORDING_STARTED);
   consoleMethod("profile", label);
-  yield notified;
+  yield profileStart;
 }
 
-function* consoleProfileEnd(connection) {
-  let notified = connection.once("profileEnd");
-  consoleMethod("profileEnd");
-  yield notified;
+function* consoleProfileEnd(win, label) {
+  let ended = once(win.PerformanceController, win.EVENTS.RECORDING_STOPPED);
+  consoleMethod("profileEnd", label);
+  yield ended;
 }
 
 function command (button) {
@@ -266,12 +320,18 @@ function mousedown (win, button) {
   EventUtils.sendMouseEvent({ type: "mousedown" }, button, win);
 }
 
-function* startRecording(panel, options={}) {
+function* startRecording(panel, options = {
+  waitForOverview: true,
+  waitForStateChanged: true
+}) {
   let win = panel.panelWin;
   let clicked = panel.panelWin.PerformanceView.once(win.EVENTS.UI_START_RECORDING);
-  let willStart = panel.panelWin.PerformanceController.once(win.EVENTS.RECORDING_WILL_START);
   let hasStarted = panel.panelWin.PerformanceController.once(win.EVENTS.RECORDING_STARTED);
   let button = win.$("#main-record-button");
+  let stateChanged = options.waitForStateChanged
+    ? once(win.PerformanceView, win.EVENTS.UI_STATE_CHANGED)
+    : Promise.resolve();
+
 
   ok(!button.hasAttribute("checked"),
     "The record button should not be checked yet.");
@@ -286,14 +346,12 @@ function* startRecording(panel, options={}) {
   ok(button.hasAttribute("locked"),
     "The record button should be locked.");
 
-  yield willStart;
-  let stateChanged = once(win.PerformanceView, win.EVENTS.UI_STATE_CHANGED);
-
   yield hasStarted;
-  let overviewRendered = options.waitForOverview ? once(win.OverviewView, win.EVENTS.OVERVIEW_RENDERED) : Promise.resolve();
+  yield options.waitForOverview
+    ? once(win.OverviewView, win.EVENTS.OVERVIEW_RENDERED)
+    : Promise.resolve();
 
   yield stateChanged;
-  yield overviewRendered;
 
   is(win.PerformanceView.getState(), "recording",
     "The current state is 'recording'.");
@@ -304,12 +362,17 @@ function* startRecording(panel, options={}) {
     "The record button should not be locked.");
 }
 
-function* stopRecording(panel, options={}) {
+function* stopRecording(panel, options = {
+  waitForOverview: true,
+  waitForStateChanged: true
+}) {
   let win = panel.panelWin;
   let clicked = panel.panelWin.PerformanceView.once(win.EVENTS.UI_STOP_RECORDING);
   let willStop = panel.panelWin.PerformanceController.once(win.EVENTS.RECORDING_WILL_STOP);
   let hasStopped = panel.panelWin.PerformanceController.once(win.EVENTS.RECORDING_STOPPED);
+  let controllerStopped = panel.panelWin.PerformanceController.once(win.EVENTS.CONTROLLER_STOPPED_RECORDING);
   let button = win.$("#main-record-button");
+  let overviewRendered = null;
 
   ok(button.hasAttribute("checked"),
     "The record button should already be checked.");
@@ -319,19 +382,28 @@ function* stopRecording(panel, options={}) {
   click(win, button);
   yield clicked;
 
+  yield willStop;
   ok(!button.hasAttribute("checked"),
     "The record button should not be checked.");
   ok(button.hasAttribute("locked"),
     "The record button should be locked.");
 
-  yield willStop;
-  let stateChanged = once(win.PerformanceView, win.EVENTS.UI_STATE_CHANGED);
+  let stateChanged = options.waitForStateChanged
+    ? once(win.PerformanceView, win.EVENTS.UI_STATE_CHANGED)
+    : Promise.resolve();
 
   yield hasStopped;
-  let overviewRendered = options.waitForOverview ? once(win.OverviewView, win.EVENTS.OVERVIEW_RENDERED) : Promise.resolve();
+
+  // Wait for the final rendering of the overview, not a low res
+  // incremental rendering and less likely to be from another rendering that was selected
+  while (!overviewRendered && options.waitForOverview) {
+    let [_, res] = yield onceSpread(win.OverviewView, win.EVENTS.OVERVIEW_RENDERED);
+    if (res === win.FRAMERATE_GRAPH_HIGH_RES_INTERVAL) {
+      overviewRendered = true;
+    }
+  }
 
   yield stateChanged;
-  yield overviewRendered;
 
   is(win.PerformanceView.getState(), "recorded",
     "The current state is 'recorded'.");
@@ -340,6 +412,8 @@ function* stopRecording(panel, options={}) {
     "The record button should not be checked.");
   ok(!button.hasAttribute("locked"),
     "The record button should not be locked.");
+
+  yield controllerStopped;
 }
 
 function waitForWidgetsRendered(panel) {
@@ -390,25 +464,20 @@ function waitUntil(predicate, interval = 10) {
 function dragStart(graph, x, y = 1) {
   x /= window.devicePixelRatio;
   y /= window.devicePixelRatio;
-  graph._onMouseMove({ clientX: x, clientY: y });
-  graph._onMouseDown({ clientX: x, clientY: y });
+  graph._onMouseMove({ testX: x, testY: y });
+  graph._onMouseDown({ testX: x, testY: y });
 }
 
 function dragStop(graph, x, y = 1) {
   x /= window.devicePixelRatio;
   y /= window.devicePixelRatio;
-  graph._onMouseMove({ clientX: x, clientY: y });
-  graph._onMouseUp({ clientX: x, clientY: y });
+  graph._onMouseMove({ testX: x, testY: y });
+  graph._onMouseUp({ testX: x, testY: y });
 }
 
 function dropSelection(graph) {
   graph.dropSelection();
   graph.emit("selecting");
-}
-
-function getSourceActor(aSources, aURL) {
-  let item = aSources.getItemForAttachment(a => a.source.url === aURL);
-  return item && item.value;
 }
 
 /**
@@ -421,4 +490,67 @@ function fireKey (e) {
 function reload (aTarget, aEvent = "navigate") {
   aTarget.activeTab.reload();
   return once(aTarget, aEvent);
+}
+
+/**
+* Forces cycle collection and GC, used in AudioNode destruction tests.
+*/
+function forceCC () {
+  info("Triggering GC/CC...");
+  SpecialPowers.DOMWindowUtils.cycleCollect();
+  SpecialPowers.DOMWindowUtils.garbageCollect();
+  SpecialPowers.DOMWindowUtils.garbageCollect();
+}
+
+/**
+ * Inflate a particular sample's stack and return an array of strings.
+ */
+function getInflatedStackLocations(thread, sample) {
+  let stackTable = thread.stackTable;
+  let frameTable = thread.frameTable;
+  let stringTable = thread.stringTable;
+  let SAMPLE_STACK_SLOT = thread.samples.schema.stack;
+  let STACK_PREFIX_SLOT = stackTable.schema.prefix;
+  let STACK_FRAME_SLOT = stackTable.schema.frame;
+  let FRAME_LOCATION_SLOT = frameTable.schema.location;
+
+  // Build the stack from the raw data and accumulate the locations in
+  // an array.
+  let stackIndex = sample[SAMPLE_STACK_SLOT];
+  let locations = [];
+  while (stackIndex !== null) {
+    let stackEntry = stackTable.data[stackIndex];
+    let frame = frameTable.data[stackEntry[STACK_FRAME_SLOT]];
+    locations.push(stringTable[frame[FRAME_LOCATION_SLOT]]);
+    stackIndex = stackEntry[STACK_PREFIX_SLOT];
+  }
+
+  // The profiler tree is inverted, so reverse the array.
+  return locations.reverse();
+}
+
+/**
+ * Synthesize a profile for testing.
+ */
+function synthesizeProfileForTest(samples) {
+  samples.unshift({
+    time: 0,
+    frames: [
+      { location: "(root)" }
+    ]
+  });
+
+  let uniqueStacks = new RecordingUtils.UniqueStacks();
+  return RecordingUtils.deflateThread({
+    samples: samples,
+    markers: []
+  }, uniqueStacks);
+}
+
+function isVisible (element) {
+  return !element.classList.contains("hidden") && !element.hidden;
+}
+
+function within (actual, expected, fuzz, desc) {
+  ok((actual - expected) <= fuzz, `${desc}: Expected ${actual} to be within ${fuzz} of ${expected}`);
 }

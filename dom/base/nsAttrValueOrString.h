@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,6 +49,21 @@ public:
     , mCheapString(nullptr)
   { }
 
+  void TakeParsedValue(nsAttrValue& aValue)
+  {
+    mStoredAttrValue.SwapValueWith(aValue);
+    mAttrValue = &mStoredAttrValue;
+    mStringPtr = nullptr;
+  }
+  /**
+   * If TakeParsedValue has been called, returns the value that it set.
+   */
+  nsAttrValue* GetStoredAttrValue()
+  {
+    return mAttrValue == &mStoredAttrValue ? &mStoredAttrValue : nullptr;
+  }
+  const nsAttrValue* GetAttrValue() { return mAttrValue; }
+
   /**
    * Returns a reference to the string value of the contents of this object.
    *
@@ -73,6 +89,7 @@ protected:
   const nsAttrValue*       mAttrValue;
   mutable const nsAString* mStringPtr;
   mutable nsCheapString    mCheapString;
+  nsAttrValue              mStoredAttrValue;
 };
 
 #endif // nsAttrValueOrString_h___

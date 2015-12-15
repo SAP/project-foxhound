@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +13,8 @@ class nsICSSLoaderObserver;
 class nsIURI;
 
 #define NS_ISTYLESHEETLINKINGELEMENT_IID          \
-{ 0xe5855604, 0x8a9a, 0x4181, \
- { 0xbe, 0x41, 0xdd, 0xf7, 0x08, 0x70, 0x3f, 0xbe } }
+{ 0xa8b79f3b, 0x9d18, 0x4f9c, \
+  { 0xb1, 0xaa, 0x8c, 0x9b, 0x1b, 0xaa, 0xac, 0xad } }
 
 namespace mozilla {
 class CSSStyleSheet;
@@ -96,6 +97,14 @@ public:
   // some types of linking elements, but it's a better place than
   // anywhere else.
   virtual void SetLineNumber(uint32_t aLineNumber) = 0;
+
+  /**
+   * Get the line number, as previously set by SetLineNumber.
+   *
+   * @return the line number of this element; or 1 if no line number
+   *         was set
+   */
+  virtual uint32_t GetLineNumber() = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIStyleSheetLinkingElement,

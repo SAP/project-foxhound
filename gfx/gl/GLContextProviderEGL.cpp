@@ -17,8 +17,9 @@
 #define GET_NATIVE_WINDOW(aWidget) (EGLNativeWindowType)(aWidget->GetNativeData(NS_NATIVE_SHAREABLE_WINDOW))
 #elif defined(MOZ_WIDGET_GONK)
 #define GET_NATIVE_WINDOW(aWidget) ((EGLNativeWindowType)aWidget->GetNativeData(NS_NATIVE_WINDOW))
-#include "HwcComposer2D.h"
 #include "libdisplay/GonkDisplay.h"
+#include "nsWindow.h"
+#include "nsScreenManagerGonk.h"
 #endif
 
 #if defined(ANDROID)
@@ -128,7 +129,7 @@ namespace gl {
 } while (0)
 
 static bool
-CreateConfig(EGLConfig* aConfig);
+CreateConfig(EGLConfig* aConfig, nsIWidget* aWidget);
 
 // append three zeros at the end of attribs list to work around
 // EGL implementation bugs that iterate until they find 0, instead of
@@ -229,17 +230,6 @@ GLContextEGL::GLContextEGL(
 
 #ifdef DEBUG
     printf_stderr("Initializing context %p surface %p on display %p\n", mContext, mSurface, EGL_DISPLAY());
-#endif
-#if defined(MOZ_WIDGET_GONK)
-    if (!mIsOffscreen) {
-        mHwc = HwcComposer2D::GetInstance();
-        MOZ_ASSERT(!mHwc->Initialized());
-
-        if (mHwc->Init(EGL_DISPLAY(), mSurface, this)) {
-            NS_WARNING("HWComposer initialization failed!");
-            mHwc = nullptr;
-        }
-    }
 #endif
 }
 
@@ -360,7 +350,7 @@ GLContextEGL::SetEGLSurfaceOverride(EGLSurface surf) {
         Screen()->AssureBlitted();
     }
 
-    mSurfaceOverride = surf ? (EGLSurface) surf : mSurface;
+    mSurfaceOverride = surf;
     MakeCurrent(true);
 }
 
@@ -444,7 +434,10 @@ GLContextEGL::RenewSurface() {
 void
 GLContextEGL::ReleaseSurface() {
     if (mOwnsContext) {
-        DestroySurface(mSurface);
+        mozilla::gl::DestroySurface(mSurface);
+    }
+    if (mSurface == mSurfaceOverride) {
+        mSurfaceOverride = EGL_NO_SURFACE;
     }
     mSurface = EGL_NO_SURFACE;
 }
@@ -459,17 +452,17 @@ GLContextEGL::SetupLookupFunction()
 bool
 GLContextEGL::SwapBuffers()
 {
-    if (mSurface) {
-#ifdef MOZ_WIDGET_GONK
+    EGLSurface surface = mSurfaceOverride != EGL_NO_SURFACE
+                          ? mSurfaceOverride
+                          : mSurface;
+    if (surface) {
+#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION < 17
         if (!mIsOffscreen) {
-            if (mHwc) {
-                return mHwc->Render(EGL_DISPLAY(), mSurface);
-            } else {
-                return GetGonkDisplay()->SwapBuffers(EGL_DISPLAY(), mSurface);
-            }
-        } else
+            // eglSwapBuffers() is called by hwcomposer.
+            return true;
+        }
 #endif
-            return sEGLLibrary.fSwapBuffers(EGL_DISPLAY(), mSurface);
+        return sEGLLibrary.fSwapBuffers(EGL_DISPLAY(), surface);
     } else {
         return false;
     }
@@ -480,6 +473,32 @@ GLContextEGL::SwapBuffers()
 void
 GLContextEGL::HoldSurface(gfxASurface *aSurf) {
     mThebesSurface = aSurf;
+}
+
+/* static */ EGLSurface
+GLContextEGL::CreateSurfaceForWindow(nsIWidget* aWidget)
+{
+    if (!sEGLLibrary.EnsureInitialized()) {
+        MOZ_CRASH("Failed to load EGL library!\n");
+        return nullptr;
+    }
+
+    EGLConfig config;
+    if (!CreateConfig(&config, aWidget)) {
+        MOZ_CRASH("Failed to create EGLConfig!\n");
+        return nullptr;
+    }
+
+    EGLSurface surface = mozilla::gl::CreateSurfaceForWindow(aWidget, config);
+    return surface;
+}
+
+/* static */ void
+GLContextEGL::DestroySurface(EGLSurface aSurface)
+{
+    if (aSurface != EGL_NO_SURFACE) {
+        sEGLLibrary.fDestroySurface(EGL_DISPLAY(), aSurface);
+    }
 }
 
 already_AddRefed<GLContextEGL>
@@ -531,7 +550,7 @@ GLContextEGL::CreateGLContext(const SurfaceCaps& caps,
 EGLSurface
 GLContextEGL::CreatePBufferSurfaceTryingPowerOfTwo(EGLConfig config,
                                                    EGLenum bindToTextureFormat,
-                                                   gfxIntSize& pbsize)
+                                                   mozilla::gfx::IntSize& pbsize)
 {
     nsTArray<EGLint> pbattrs(16);
     EGLSurface surface = nullptr;
@@ -619,7 +638,7 @@ static const EGLint kEGLConfigAttribsRGBA32[] = {
 };
 
 static bool
-CreateConfig(EGLConfig* aConfig, int32_t depth)
+CreateConfig(EGLConfig* aConfig, int32_t depth, nsIWidget* aWidget)
 {
     EGLConfig configs[64];
     const EGLint* attribs;
@@ -655,12 +674,13 @@ CreateConfig(EGLConfig* aConfig, int32_t depth)
     //  HAL_PIXEL_FORMAT_RGBX_8888
     //  HAL_PIXEL_FORMAT_BGRA_8888
     //  HAL_PIXEL_FORMAT_RGB_565
+    nsWindow* window = static_cast<nsWindow*>(aWidget);
     for (int j = 0; j < ncfg; ++j) {
         EGLConfig config = configs[j];
         EGLint format;
         if (sEGLLibrary.fGetConfigAttrib(EGL_DISPLAY(), config,
                                          LOCAL_EGL_NATIVE_VISUAL_ID, &format) &&
-            format == GetGonkDisplay()->surfaceformat)
+            format == window->GetScreen()->GetSurfaceFormat())
         {
             *aConfig = config;
             return true;
@@ -696,20 +716,20 @@ CreateConfig(EGLConfig* aConfig, int32_t depth)
 // NB: It's entirely legal for the returned EGLConfig to be valid yet
 // have the value null.
 static bool
-CreateConfig(EGLConfig* aConfig)
+CreateConfig(EGLConfig* aConfig, nsIWidget* aWidget)
 {
     int32_t depth = gfxPlatform::GetPlatform()->GetScreenDepth();
-    if (!CreateConfig(aConfig, depth)) {
+    if (!CreateConfig(aConfig, depth, aWidget)) {
 #ifdef MOZ_WIDGET_ANDROID
         // Bug 736005
         // Android doesn't always support 16 bit so also try 24 bit
         if (depth == 16) {
-            return CreateConfig(aConfig, 24);
+            return CreateConfig(aConfig, 24, aWidget);
         }
         // Bug 970096
         // Some devices that have 24 bit screens only support 16 bit OpenGL?
         if (depth == 24) {
-            return CreateConfig(aConfig, 16);
+            return CreateConfig(aConfig, 16, aWidget);
         }
 #endif
         return false;
@@ -754,7 +774,7 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
     bool doubleBuffered = true;
 
     EGLConfig config;
-    if (!CreateConfig(&config)) {
+    if (!CreateConfig(&config, aWidget)) {
         MOZ_CRASH("Failed to create EGLConfig!\n");
         return nullptr;
     }
@@ -774,7 +794,7 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
 
     if (!glContext) {
         MOZ_CRASH("Failed to create EGLContext!\n");
-        DestroySurface(surface);
+        mozilla::gl::DestroySurface(surface);
         return nullptr;
     }
 
@@ -784,8 +804,43 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
     return glContext.forget();
 }
 
+#if defined(ANDROID)
+EGLSurface
+GLContextProviderEGL::CreateEGLSurface(void* aWindow)
+{
+    if (!sEGLLibrary.EnsureInitialized()) {
+        MOZ_CRASH("Failed to load EGL library!\n");
+    }
+
+    EGLConfig config;
+    if (!CreateConfig(&config, static_cast<nsIWidget*>(aWindow))) {
+        MOZ_CRASH("Failed to create EGLConfig!\n");
+    }
+
+    MOZ_ASSERT(aWindow);
+
+    EGLSurface surface = sEGLLibrary.fCreateWindowSurface(EGL_DISPLAY(), config, aWindow, 0);
+
+    if (surface == EGL_NO_SURFACE) {
+        MOZ_CRASH("Failed to create EGLSurface!\n");
+    }
+
+    return surface;
+}
+
+void
+GLContextProviderEGL::DestroyEGLSurface(EGLSurface surface)
+{
+    if (!sEGLLibrary.EnsureInitialized()) {
+        MOZ_CRASH("Failed to load EGL library!\n");
+    }
+
+    sEGLLibrary.fDestroySurface(EGL_DISPLAY(), surface);
+}
+#endif // defined(ANDROID)
+
 already_AddRefed<GLContextEGL>
-GLContextEGL::CreateEGLPBufferOffscreenContext(const gfxIntSize& size)
+GLContextEGL::CreateEGLPBufferOffscreenContext(const mozilla::gfx::IntSize& size)
 {
     EGLConfig config;
     EGLSurface surface;
@@ -808,7 +863,7 @@ GLContextEGL::CreateEGLPBufferOffscreenContext(const gfxIntSize& size)
     if (GLContext::ShouldSpew())
         sEGLLibrary.DumpEGLConfig(config);
 
-    gfxIntSize pbSize(size);
+    mozilla::gfx::IntSize pbSize(size);
     surface = GLContextEGL::CreatePBufferSurfaceTryingPowerOfTwo(config,
                                                                  LOCAL_EGL_NONE,
                                                                  pbSize);
@@ -838,7 +893,7 @@ GLContextEGL::CreateEGLPBufferOffscreenContext(const gfxIntSize& size)
 }
 
 already_AddRefed<GLContextEGL>
-GLContextEGL::CreateEGLPixmapOffscreenContext(const gfxIntSize& size)
+GLContextEGL::CreateEGLPixmapOffscreenContext(const mozilla::gfx::IntSize& size)
 {
     gfxASurface *thebesSurface = nullptr;
     EGLNativePixmapType pixmap = 0;
@@ -878,13 +933,13 @@ GLContextEGL::CreateEGLPixmapOffscreenContext(const gfxIntSize& size)
 }
 
 already_AddRefed<GLContext>
-GLContextProviderEGL::CreateHeadless(bool)
+GLContextProviderEGL::CreateHeadless(CreateContextFlags flags)
 {
-    if (!sEGLLibrary.EnsureInitialized()) {
+    if (!sEGLLibrary.EnsureInitialized(bool(flags & CreateContextFlags::FORCE_ENABLE_HARDWARE))) {
         return nullptr;
     }
 
-    gfxIntSize dummySize = gfxIntSize(16, 16);
+    mozilla::gfx::IntSize dummySize = mozilla::gfx::IntSize(16, 16);
     nsRefPtr<GLContext> glContext;
     glContext = GLContextEGL::CreateEGLPBufferOffscreenContext(dummySize);
     if (!glContext)
@@ -896,15 +951,15 @@ GLContextProviderEGL::CreateHeadless(bool)
 // Under EGL, on Android, pbuffers are supported fine, though
 // often without the ability to texture from them directly.
 already_AddRefed<GLContext>
-GLContextProviderEGL::CreateOffscreen(const gfxIntSize& size,
+GLContextProviderEGL::CreateOffscreen(const mozilla::gfx::IntSize& size,
                                       const SurfaceCaps& caps,
-                                      bool requireCompatProfile)
+                                      CreateContextFlags flags)
 {
-    nsRefPtr<GLContext> glContext = CreateHeadless(requireCompatProfile);
+    nsRefPtr<GLContext> glContext = CreateHeadless(flags);
     if (!glContext)
         return nullptr;
 
-    if (!glContext->InitOffscreen(ToIntSize(size), caps))
+    if (!glContext->InitOffscreen(size, caps))
         return nullptr;
 
     return glContext.forget();

@@ -165,7 +165,7 @@ nsInlineFrame::IsEmpty()
     return false;
   }
 
-  for (nsIFrame *kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
+  for (nsIFrame* kid : mFrames) {
     if (!kid->IsEmpty())
       return false;
   }
@@ -202,6 +202,45 @@ nsInlineFrame::DestroyFrom(nsIFrame* aDestructRoot)
     DrainSelfOverflowListInternal(eForDestroy, lineContainer);
   }
   nsContainerFrame::DestroyFrom(aDestructRoot);
+}
+
+nsresult
+nsInlineFrame::StealFrame(nsIFrame* aChild,
+                          bool      aForceNormal)
+{
+  if (aChild->HasAnyStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER) &&
+      !aForceNormal) {
+    return nsContainerFrame::StealFrame(aChild, aForceNormal);
+  }
+
+  nsInlineFrame* parent = this;
+  bool removed = false;
+  do {
+    removed = parent->mFrames.StartRemoveFrame(aChild);
+    if (removed) {
+      break;
+    }
+
+    // We didn't find the child in our principal child list.
+    // Maybe it's on the overflow list?
+    nsFrameList* frameList = parent->GetOverflowFrames();
+    if (frameList) {
+      removed = frameList->ContinueRemoveFrame(aChild);
+      if (frameList->IsEmpty()) {
+        parent->DestroyOverflowList();
+      }
+      if (removed) {
+        break;
+      }
+    }
+
+    // Due to our "lazy reparenting" optimization 'aChild' might not actually
+    // be on any of our child lists, but instead in one of our next-in-flows.
+    parent = static_cast<nsInlineFrame*>(parent->GetNextInFlow());
+  } while (parent);
+
+  MOZ_ASSERT(removed, "nsInlineFrame::StealFrame: can't find aChild");
+  return removed ? NS_OK : NS_ERROR_UNEXPECTED;
 }
 
 void
@@ -333,6 +372,7 @@ nsInlineFrame::Reflow(nsPresContext*          aPresContext,
                       const nsHTMLReflowState& aReflowState,
                       nsReflowStatus&          aStatus)
 {
+  MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsInlineFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowState, aMetrics, aStatus);
   if (nullptr == aReflowState.mLineLayout) {
@@ -468,7 +508,6 @@ nsInlineFrame::DrainSelfOverflowListInternal(DrainFlags aFlags,
 {
   AutoFrameListPtr overflowFrames(PresContext(), StealOverflowFrames());
   if (overflowFrames) {
-    NS_ASSERTION(mFrames.NotEmpty(), "overflow list w/o frames");
     // The frames on our own overflowlist may have been pushed by a
     // previous lazilySetParentPointer Reflow so we need to ensure the
     // correct parent pointer.  This is sometimes skipped by Reflow.
@@ -978,10 +1017,9 @@ nsInlineFrame::AccessibleType()
 {
   // Broken image accessibles are created here, because layout
   // replaces the image or image control frame with an inline frame
-  nsIAtom *tagAtom = mContent->Tag();
-  if (tagAtom == nsGkAtoms::input)  // Broken <input type=image ... />
+  if (mContent->IsHTMLElement(nsGkAtoms::input))  // Broken <input type=image ... />
     return a11y::eHTMLButtonType;
-  if (tagAtom == nsGkAtoms::img)  // Create accessible for broken <img>
+  if (mContent->IsHTMLElement(nsGkAtoms::img))  // Create accessible for broken <img>
     return a11y::eHyperTextType;
 
   return a11y::eNoType;
@@ -1065,6 +1103,7 @@ nsFirstLineFrame::Reflow(nsPresContext* aPresContext,
                          const nsHTMLReflowState& aReflowState,
                          nsReflowStatus& aStatus)
 {
+  MarkInReflow();
   if (nullptr == aReflowState.mLineLayout) {
     return;  // XXX does this happen? why?
   }
@@ -1160,8 +1199,6 @@ nsFirstLineFrame::DrainSelfOverflowList()
 {
   AutoFrameListPtr overflowFrames(PresContext(), StealOverflowFrames());
   if (overflowFrames) {
-    NS_ASSERTION(mFrames.NotEmpty(), "overflow list w/o frames");
-
     bool result = !overflowFrames->IsEmpty();
     const nsFrameList::Slice& newFrames =
       mFrames.AppendFrames(nullptr, *overflowFrames);

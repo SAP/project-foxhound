@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,7 +59,7 @@ public:
   bool operator==(const SVGLengthList& rhs) const;
 
   bool SetCapacity(uint32_t size) {
-    return mLengths.SetCapacity(size);
+    return mLengths.SetCapacity(size, fallible);
   }
 
   void Compact() {
@@ -89,7 +90,7 @@ protected:
    * increased, in which case the list will be left unmodified.
    */
   bool SetLength(uint32_t aNumberOfItems) {
-    return mLengths.SetLength(aNumberOfItems);
+    return mLengths.SetLength(aNumberOfItems, fallible);
   }
 
 private:
@@ -106,7 +107,7 @@ private:
 
   bool InsertItem(uint32_t aIndex, const SVGLength &aLength) {
     if (aIndex >= mLengths.Length()) aIndex = mLengths.Length();
-    return !!mLengths.InsertElementAt(aIndex, aLength);
+    return !!mLengths.InsertElementAt(aIndex, aLength, fallible);
   }
 
   void ReplaceItem(uint32_t aIndex, const SVGLength &aLength) {
@@ -122,7 +123,7 @@ private:
   }
 
   bool AppendItem(SVGLength aLength) {
-    return !!mLengths.AppendElement(aLength);
+    return !!mLengths.AppendElement(aLength, fallible);
   }
 
 protected:

@@ -33,8 +33,6 @@ const TEST_DATA = [
   ["right", "node7"],
   ["right", "*text*"],
   ["down", "node8"],
-  ["right", "node8"],
-  ["left", "node8"],
   ["down", "node9"],
   ["down", "node10"],
   ["down", "node11"],
@@ -65,7 +63,7 @@ const TEST_DATA = [
   ["pageup", "*doctype*"],
   ["down", "html"],
   ["left", "html"],
-  ["down", "html"]
+  ["down", "head"]
 ];
 
 add_task(function*() {

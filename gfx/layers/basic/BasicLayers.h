@@ -20,18 +20,15 @@
 #include "nsRegion.h"                   // for nsIntRegion
 #include "nscore.h"                     // for nsAString, etc
 
-class gfxPattern;
 class nsIWidget;
 
 namespace mozilla {
 namespace layers {
 
-class BasicShadowableLayer;
 class ImageFactory;
 class ImageLayer;
 class PaintLayerContext;
 class ReadbackLayer;
-class ReadbackProcessor;
 
 /**
  * This is a cairo/Thebes-only, main-thread-only implementation of layers.
@@ -198,7 +195,7 @@ protected:
   bool mCompositorMightResample;
 };
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif /* GFX_BASICLAYERS_H */

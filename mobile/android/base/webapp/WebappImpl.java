@@ -60,9 +60,6 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
     @Override
     public int getLayout() { return R.layout.web_app; }
 
-    @Override
-    public boolean hasTabsSideBar() { return false; }
-
     public WebappImpl() {
         GeckoProfile.setBrowserDBFactory(new BrowserDB.Factory() {
             @Override
@@ -136,7 +133,7 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
         String origin = allocator.getOrigin(index);
         boolean isInstallCompleting = (origin == null);
 
-        if (!GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning) || !isInstalled || isInstallCompleting) {
+        if (!GeckoThread.isRunning() || !isInstalled || isInstallCompleting) {
             // Show the splash screen if we need to start Gecko, or we need to install this.
             overridePendingTransition(R.anim.grow_fade_in_center, android.R.anim.fade_out);
             showSplash();
@@ -188,15 +185,21 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
     }
 
     @Override
-    protected void loadStartupTab(String uri, int flags) {
+    protected void loadStartupTab(final int flags) {
+        loadStartupTab(null, null, flags);
+    }
+
+    // Note: there is no support for loading with intent extras in
+    // Webapps at the moment because I don't have time to debug/test.
+    @Override
+    protected void loadStartupTab(final String uri, final SafeIntent unusedIntent, int flags) {
         // Load a tab so it's available for any code that assumes a tab
         // before the app tab itself is loaded in BrowserApp._loadWebapp.
         flags = Tabs.LOADURL_NEW_TAB | Tabs.LOADURL_USER_ENTERED | Tabs.LOADURL_EXTERNAL;
-        super.loadStartupTab("about:blank", flags);
+        super.loadStartupTab("about:blank", null, flags);
     }
 
     private void showSplash() {
-
         // get the favicon dominant color, stored when the app was installed
         int dominantColor = Allocator.getInstance().getColor(getIndex());
 
@@ -401,5 +404,10 @@ public class WebappImpl extends GeckoApp implements InstallCallback {
         // This is a legacy shortcut, which didn't provide a way to determine
         // that the app is debuggable, so we say the app is not debuggable.
         return false;
+    }
+
+    @Override
+    protected StartupAction getStartupAction(final String passedURL) {
+        return StartupAction.WEBAPP;
     }
 }

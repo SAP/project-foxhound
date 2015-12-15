@@ -14,7 +14,7 @@
 namespace JS {
 class CallArgs;
 class Value;
-}
+} // namespace JS
 
 namespace js {
 
@@ -23,11 +23,14 @@ bool
 obj_construct(JSContext* cx, unsigned argc, JS::Value* vp);
 
 bool
+obj_propertyIsEnumerable(JSContext* cx, unsigned argc, Value* vp);
+
+bool
 obj_valueOf(JSContext* cx, unsigned argc, JS::Value* vp);
 
 PlainObject*
 ObjectCreateImpl(JSContext* cx, HandleObject proto, NewObjectKind newKind = GenericObject,
-                 HandleObjectGroup group = js::NullPtr());
+                 HandleObjectGroup group = nullptr);
 
 PlainObject*
 ObjectCreateWithTemplate(JSContext* cx, HandlePlainObject templateObj);
@@ -50,6 +53,12 @@ obj_getPrototypeOf(JSContext* cx, unsigned argc, JS::Value* vp);
 
 bool
 obj_hasOwnProperty(JSContext* cx, unsigned argc, JS::Value* vp);
+
+bool
+obj_isExtensible(JSContext* cx, unsigned argc, JS::Value* vp);
+
+bool
+obj_toString(JSContext* cx, unsigned argc, JS::Value* vp);
 
 // Exposed so SelfHosting.cpp can use it in the OwnPropertyKeys intrinsic
 bool

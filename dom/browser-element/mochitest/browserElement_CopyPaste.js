@@ -6,8 +6,10 @@
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.requestFlakyTimeout("untriaged");
+SimpleTest.requestLongerTimeout(2); // slow on android
 browserElementTestHelpers.setEnabledPref(true);
-browserElementTestHelpers.setSelectionChangeEnabledPref(true);
+browserElementTestHelpers.setSelectionChangeEnabledPref(false);
+browserElementTestHelpers.setAccessibleCaretEnabledPref(true);
 browserElementTestHelpers.addPermission();
 const { Services } = SpecialPowers.Cu.import('resource://gre/modules/Services.jsm');
 
@@ -21,6 +23,7 @@ var defaultData;
 var pasteData;
 var focusScript;
 var createEmbededFrame = false;
+var testSelectionChange = false;
 
 function copyToClipboard(str) {
   gTextarea.value = str;
@@ -52,7 +55,7 @@ function runTest() {
   iframeOuter = document.createElement('iframe');
   iframeOuter.setAttribute('mozbrowser', 'true');
   if (createEmbededFrame) {
-    iframeOuter.src = "file_NestedFramesOuter_CopyPaste.html";
+    iframeOuter.src = "file_empty.html";
   }
   document.body.appendChild(iframeOuter);
 
@@ -67,7 +70,10 @@ function runTest() {
                              .QueryInterface(SpecialPowers.Ci.nsIFrameLoaderOwner)
                              .frameLoader.docShell.contentViewer.DOMDocument.defaultView;
       var contentDoc = contentWin.document;
-      iframeInner = contentDoc.getElementById('iframeInner');
+      iframeInner = contentDoc.createElement('iframe');
+      iframeInner.setAttribute('mozbrowser', true);
+      iframeInner.setAttribute('remote', 'false');
+      contentDoc.body.appendChild(iframeInner);
       iframeInner.addEventListener("mozbrowserloadend", function onloadendinner(e) {
         iframeInner.removeEventListener("mozbrowserloadend", onloadendinner);
         mm = SpecialPowers.getBrowserFrameMessageManager(iframeInner);
@@ -84,6 +90,14 @@ function runTest() {
 function doCommand(cmd) {
   Services.obs.notifyObservers({wrappedJSObject: SpecialPowers.unwrap(iframeInner)},
                                'copypaste-docommand', cmd);
+}
+
+function rerunTest() {
+  // clean up and run test again.
+  document.body.removeChild(iframeOuter);
+  document.body.removeChild(gTextarea);
+  state = 0;
+  runTest();
 }
 
 function dispatchTest(e) {
@@ -157,15 +171,23 @@ function dispatchTest(e) {
       break;
     default:
       if (createEmbededFrame || browserElementTestHelpers.getOOPByDefaultPref()) {
-        SimpleTest.finish();
+        if (testSelectionChange) {
+          SimpleTest.finish();
+          return;
+        } else {
+          testSelectionChange = true;
+          createEmbededFrame = false;
+          SpecialPowers.pushPrefEnv(
+            {'set':
+              [['selectioncaret.enabled', true],
+               ['layout.accessiblecaret.enabled', false]]},
+            function() {
+              rerunTest();
+          });
+        }
       } else {
         createEmbededFrame = true;
-
-        // clean up and run test again.
-        document.body.removeChild(iframeOuter);
-        document.body.removeChild(gTextarea);
-        state = 0;
-        runTest();
+        rerunTest();
       }
       break;
   }
@@ -180,14 +202,17 @@ function isChildProcess() {
 function testSelectAll(e) {
   // Skip mozbrowser test if we're at child process.
   if (!isChildProcess()) {
-    iframeOuter.addEventListener("mozbrowserselectionstatechanged", function selectchangeforselectall(e) {
-      if (e.detail.states.indexOf('selectall') == 0) {
-        iframeOuter.removeEventListener("mozbrowserselectionstatechanged", selectchangeforselectall, true);
+    let eventName = testSelectionChange ? "mozbrowserselectionstatechanged" : "mozbrowsercaretstatechanged";
+    iframeOuter.addEventListener(eventName, function selectchangeforselectall(e) {
+      if (!e.detail.states || e.detail.states.indexOf('selectall') == 0) {
+        iframeOuter.removeEventListener(eventName, selectchangeforselectall, true);
         ok(true, "got mozbrowserselectionstatechanged event." + stateMeaning);
         ok(e.detail, "event.detail is not null." + stateMeaning);
         ok(e.detail.width != 0, "event.detail.width is not zero" + stateMeaning);
         ok(e.detail.height != 0, "event.detail.height is not zero" + stateMeaning);
-        ok(e.detail.states, "event.detail.state " + e.detail.states);
+        if (testSelectionChange) {
+          ok(e.detail.states, "event.detail.state " + e.detail.states);
+        }
         SimpleTest.executeSoon(function() { testCopy1(e); });
       }
     }, true);

@@ -49,15 +49,22 @@ ABIArgGenerator::next(MIRType type)
         current_ = ABIArg(IntArgRegs[regIndex_++]);
         break;
       case MIRType_Float32:
+        current_ = ABIArg(FloatArgRegs[regIndex_++].asSingle());
+        break;
       case MIRType_Double:
         current_ = ABIArg(FloatArgRegs[regIndex_++]);
         break;
       case MIRType_Int32x4:
+        // On Win64, >64 bit args need to be passed by reference, but asm.js
+        // doesn't allow passing SIMD values to FFIs. The only way to reach
+        // here is asm to asm calls, so we can break the ABI here.
+        current_ = ABIArg(FloatArgRegs[regIndex_++].asInt32x4());
+        break;
       case MIRType_Float32x4:
         // On Win64, >64 bit args need to be passed by reference, but asm.js
         // doesn't allow passing SIMD values to FFIs. The only way to reach
         // here is asm to asm calls, so we can break the ABI here.
-        current_ = ABIArg(FloatArgRegs[regIndex_++]);
+        current_ = ABIArg(FloatArgRegs[regIndex_++].asFloat32x4());
         break;
       default:
         MOZ_CRASH("Unexpected argument type");
@@ -81,7 +88,10 @@ ABIArgGenerator::next(MIRType type)
             stackOffset_ += sizeof(uint64_t);
             break;
         }
-        current_ = ABIArg(FloatArgRegs[floatRegIndex_++]);
+        if (type == MIRType_Float32)
+            current_ = ABIArg(FloatArgRegs[floatRegIndex_++].asSingle());
+        else
+            current_ = ABIArg(FloatArgRegs[floatRegIndex_++]);
         break;
       case MIRType_Int32x4:
       case MIRType_Float32x4:
@@ -91,7 +101,10 @@ ABIArgGenerator::next(MIRType type)
             stackOffset_ += Simd128DataSize;
             break;
         }
-        current_ = ABIArg(FloatArgRegs[floatRegIndex_++]);
+        if (type == MIRType_Int32x4)
+            current_ = ABIArg(FloatArgRegs[floatRegIndex_++].asInt32x4());
+        else
+            current_ = ABIArg(FloatArgRegs[floatRegIndex_++].asFloat32x4());
         break;
       default:
         MOZ_CRASH("Unexpected argument type");
@@ -162,9 +175,10 @@ Assembler::PatchableJumpAddress(JitCode* code, size_t index)
 
 /* static */
 void
-Assembler::PatchJumpEntry(uint8_t* entry, uint8_t* target)
+Assembler::PatchJumpEntry(uint8_t* entry, uint8_t* target, ReprotectCode reprotect)
 {
     uint8_t** index = (uint8_t**) (entry + SizeOfExtendedJump - sizeof(void*));
+    MaybeAutoWritableJitCode awjc(index, sizeof(void*), reprotect);
     *index = target;
 }
 
@@ -175,7 +189,7 @@ Assembler::finish()
         return;
 
     // Emit the jump table.
-    masm.align(SizeOfJumpTableEntry);
+    masm.haltingAlign(SizeOfJumpTableEntry);
     extendedJumpTable_ = masm.size();
 
     // Now that we know the offset to the jump table, squirrel it into the
@@ -191,14 +205,14 @@ Assembler::finish()
         size_t oldSize = masm.size();
 #endif
         masm.jmp_rip(2);
-        MOZ_ASSERT(masm.size() - oldSize == 6);
+        MOZ_ASSERT_IF(!masm.oom(), masm.size() - oldSize == 6);
         // Following an indirect branch with ud2 hints to the hardware that
         // there's no fall-through. This also aligns the 64-bit immediate.
         masm.ud2();
-        MOZ_ASSERT(masm.size() - oldSize == 8);
+        MOZ_ASSERT_IF(!masm.oom(), masm.size() - oldSize == 8);
         masm.immediate64(0);
-        MOZ_ASSERT(masm.size() - oldSize == SizeOfExtendedJump);
-        MOZ_ASSERT(masm.size() - oldSize == SizeOfJumpTableEntry);
+        MOZ_ASSERT_IF(!masm.oom(), masm.size() - oldSize == SizeOfExtendedJump);
+        MOZ_ASSERT_IF(!masm.oom(), masm.size() - oldSize == SizeOfJumpTableEntry);
     }
 }
 
@@ -286,29 +300,7 @@ Assembler::TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReade
     RelocationIterator iter(reader);
     while (iter.read()) {
         JitCode* child = CodeFromJump(code, code->raw() + iter.offset());
-        MarkJitCodeUnbarriered(trc, &child, "rel32");
+        TraceManuallyBarrieredEdge(trc, &child, "rel32");
         MOZ_ASSERT(child == CodeFromJump(code, code->raw() + iter.offset()));
     }
-}
-
-FloatRegisterSet
-FloatRegister::ReduceSetForPush(const FloatRegisterSet& s)
-{
-    return s;
-}
-uint32_t
-FloatRegister::GetSizeInBytes(const FloatRegisterSet& s)
-{
-    uint32_t ret = s.size() * sizeof(double);
-    return ret;
-}
-uint32_t
-FloatRegister::GetPushSizeInBytes(const FloatRegisterSet& s)
-{
-    return s.size() * sizeof(double);
-}
-uint32_t
-FloatRegister::getRegisterDumpOffsetInBytes()
-{
-    return code() * sizeof(double);
 }

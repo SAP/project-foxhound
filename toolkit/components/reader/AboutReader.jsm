@@ -4,10 +4,11 @@
 
 "use strict";
 
-let Ci = Components.interfaces, Cc = Components.classes, Cu = Components.utils;
+var Ci = Components.interfaces, Cc = Components.classes, Cu = Components.utils;
 
 this.EXPORTED_SYMBOLS = [ "AboutReader" ];
 
+Cu.import("resource://gre/modules/ReaderMode.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -17,12 +18,15 @@ XPCOMUtils.defineLazyModuleGetter(this, "UITelemetry", "resource://gre/modules/U
 
 const READINGLIST_COMMAND_ID = "readingListSidebar";
 
-let gStrings = Services.strings.createBundle("chrome://global/locale/aboutReader.properties");
+var gStrings = Services.strings.createBundle("chrome://global/locale/aboutReader.properties");
 
-let AboutReader = function(mm, win, articlePromise) {
+var AboutReader = function(mm, win, articlePromise) {
   let url = this._getOriginalUrl(win);
   if (!(url.startsWith("http://") || url.startsWith("https://"))) {
-    Cu.reportError("Only http:// and https:// URLs can be loaded in about:reader");
+    let errorMsg = "Only http:// and https:// URLs can be loaded in about:reader.";
+    if (Services.prefs.getBoolPref("reader.errors.includeURLs"))
+      errorMsg += " Tried to load: " + url + ".";
+    Cu.reportError(errorMsg);
     win.location.href = "about:blank";
     return;
   }
@@ -76,6 +80,13 @@ let AboutReader = function(mm, win, articlePromise) {
     }
   } catch (e) {
     // Pref doesn't exist.
+  }
+
+  const gIsFirefoxDesktop = Services.appinfo.ID == "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
+  if (gIsFirefoxDesktop) {
+    this._setupPocketButton();
+  } else {
+    this._doc.getElementById("pocket-button").hidden = true;
   }
 
   let colorSchemeValues = JSON.parse(Services.prefs.getCharPref("reader.color_scheme.values"));
@@ -270,8 +281,12 @@ AboutReader.prototype = {
 
           // Display the toolbar when all its initial component states are known
           if (isInitialStateChange) {
-            // Hacks! Delay showing the toolbar to avoid position: fixed; jankiness. See bug 975533.
-            this._win.setTimeout(() => this._setToolbarVisibility(true), 500);
+            // Toolbar display is updated here to avoid it appearing in the middle of the screen on page load. See bug 1145567.
+            this._win.setTimeout(() => {
+              this._toolbarElement.style.display = "block";
+              // Delay showing the toolbar to have a nice slide from bottom animation.
+              this._win.setTimeout(() => this._setToolbarVisibility(true), 200);
+            }, 500);
           }
         }
       }
@@ -298,6 +313,14 @@ AboutReader.prototype = {
     }
   },
 
+  _onPocketToggle: function Reader_onPocketToggle(aMethod) {
+    if (!this._article)
+      return;
+
+    this._mm.sendAsyncMessage("Reader:AddToPocket", { article: this._article });
+    UITelemetry.addEvent("pocket.1", aMethod, null, "reader");
+  },
+
   _onShare: function Reader_onShare() {
     if (!this._article)
       return;
@@ -306,7 +329,7 @@ AboutReader.prototype = {
       url: this._article.url,
       title: this._article.title
     });
-    UITelemetry.addEvent("share.1", "list", null);
+    UITelemetry.addEvent("share.1", "list", null, "reader");
   },
 
   /**
@@ -589,6 +612,24 @@ AboutReader.prototype = {
     this._mm.sendAsyncMessage("Reader:SystemUIVisibility", { visible: visible });
   },
 
+  _setupPocketButton: Task.async(function* () {
+    let pocketEnabledPromise = new Promise((resolve, reject) => {
+      let listener = (message) => {
+        this._mm.removeMessageListener("Reader:PocketEnabledData", listener);
+        resolve(message.data.enabled);
+      };
+      this._mm.addMessageListener("Reader:PocketEnabledData", listener);
+      this._mm.sendAsyncMessage("Reader:PocketEnabledGet");
+    });
+
+    let isPocketEnabled = yield pocketEnabledPromise;
+    if (isPocketEnabled) {
+      this._setupButton("pocket-button", this._onPocketToggle.bind(this, "button"));
+    } else {
+      this._doc.getElementById("pocket-button").hidden = true;
+    }
+  }),
+
   _loadArticle: Task.async(function* () {
     let url = this._getOriginalUrl();
     this._showProgressDelayed();
@@ -730,9 +771,8 @@ AboutReader.prototype = {
 
     this._domainElement.href = article.url;
     let articleUri = Services.io.newURI(article.url, null, null);
-    this._domainElement.innerHTML = this._stripHost(articleUri.host);
-
-    this._creditsElement.innerHTML = article.byline;
+    this._domainElement.textContent = this._stripHost(articleUri.host);
+    this._creditsElement.textContent = article.byline;
 
     this._titleElement.textContent = article.title;
     this._doc.title = article.title;
@@ -754,6 +794,8 @@ AboutReader.prototype = {
     this._showListIntro();
     this._requestFavicon();
     this._doc.body.classList.add("loaded");
+
+    Services.obs.notifyObservers(null, "AboutReader:Ready", "");
   },
 
   _hideContent: function Reader_hideContent() {
@@ -783,12 +825,7 @@ AboutReader.prototype = {
    */
   _getOriginalUrl: function(win) {
     let url = win ? win.location.href : this._win.location.href;
-    let searchParams = new URLSearchParams(url.split("?")[1]);
-    if (!searchParams.has("url")) {
-      Cu.reportError("Error finding original URL for about:reader URL: " + url);
-      return url;
-    }
-    return decodeURIComponent(searchParams.get("url"));
+    return ReaderMode.getOriginalUrl(url) || url;
   },
 
   _setupSegmentedButton: function Reader_setupSegmentedButton(id, options, initialValue, callback) {
@@ -800,10 +837,11 @@ AboutReader.prototype = {
 
       let item = doc.createElement("button");
 
-      // We make this extra span so that we can hide it if necessary.
-      let span = doc.createElement("span");
-      span.textContent = option.name;
-      item.appendChild(span);
+      // Put the name in a div so that Android can hide it.
+      let div = doc.createElement("div");
+      div.textContent = option.name;
+      div.classList.add("name");
+      item.appendChild(div);
 
       if (option.itemClass !== undefined)
         item.classList.add(option.itemClass);
@@ -811,6 +849,7 @@ AboutReader.prototype = {
       if (option.description !== undefined) {
         let description = doc.createElement("div");
         description.textContent = option.description;
+        description.classList.add("description");
         item.appendChild(description);
       }
 
@@ -841,11 +880,14 @@ AboutReader.prototype = {
   },
 
   _setupButton: function(id, callback, titleEntity, textEntity) {
-    this._setButtonTip(id, titleEntity);
+    if (titleEntity) {
+      this._setButtonTip(id, titleEntity);
+    }
 
     let button = this._doc.getElementById(id);
-    if (textEntity)
+    if (textEntity) {
       button.textContent = gStrings.GetStringFromName(textEntity);
+    }
     button.removeAttribute("hidden");
     button.addEventListener("click", function(aEvent) {
       if (!aEvent.isTrusted)

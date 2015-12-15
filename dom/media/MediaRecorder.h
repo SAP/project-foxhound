@@ -39,7 +39,7 @@ class AudioNode;
  */
 
 class MediaRecorder final : public DOMEventTargetHelper,
-                                public nsIDocumentActivity
+                            public nsIDocumentActivity
 {
   class Session;
 
@@ -48,7 +48,7 @@ public:
   MediaRecorder(AudioNode& aSrcAudioNode, uint32_t aSrcOutput, nsPIDOMWindow* aOwnerWindow);
 
   // nsWrapperCache
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsPIDOMWindow* GetParentObject() { return GetOwner(); }
 
@@ -104,6 +104,9 @@ public:
 
   NS_DECL_NSIDOCUMENTACTIVITY
 
+  uint32_t GetAudioBitrate() { return mAudioBitsPerSecond; }
+  uint32_t GetVideoBitrate() { return mVideoBitsPerSecond; }
+  uint32_t GetBitrate() { return mBitsPerSecond; }
 protected:
   virtual ~MediaRecorder();
 
@@ -118,6 +121,7 @@ protected:
   bool CheckPrincipal();
   // Set encoded MIME type.
   void SetMimeType(const nsString &aMimeType);
+  void SetOptions(const MediaRecorderOptions& aInitDict);
 
   MediaRecorder(const MediaRecorder& x) = delete; // prevent bad usage
   // Remove session pointer.
@@ -144,6 +148,9 @@ protected:
   // It specifies the container format as well as the audio and video capture formats.
   nsString mMimeType;
 
+  uint32_t mAudioBitsPerSecond;
+  uint32_t mVideoBitsPerSecond;
+  uint32_t mBitsPerSecond;
 private:
   // Register MediaRecorder into Document to listen the activity changes.
   void RegisterActivityObserver();
@@ -152,7 +159,7 @@ private:
   bool Check3gppPermission();
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif

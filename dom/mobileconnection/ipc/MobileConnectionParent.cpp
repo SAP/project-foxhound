@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
 * License, v. 2.0. If a copy of the MPL was not distributed with this file,
 * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -147,7 +149,7 @@ MobileConnectionParent::RecvInit(nsMobileConnectionInfo* aVoice,
     aSupportedNetworkTypes->AppendElement(types[i]);
   }
 
-  nsMemory::Free(types);
+  free(types);
 
   return true;
 }
@@ -432,7 +434,9 @@ MobileConnectionRequestParent::DoRequest(const SetCallWaitingRequest& aRequest)
 {
   NS_ENSURE_TRUE(mMobileConnection, false);
 
-  return NS_SUCCEEDED(mMobileConnection->SetCallWaiting(aRequest.enabled(), this));
+  return NS_SUCCEEDED(mMobileConnection->SetCallWaiting(aRequest.enabled(),
+                                                        aRequest.serviceClass(),
+                                                        this));
 }
 
 bool
@@ -532,6 +536,12 @@ MobileConnectionRequestParent::NotifyGetCallBarringSuccess(uint16_t aProgram,
 {
   return SendReply(MobileConnectionReplySuccessCallBarring(aProgram, aEnabled,
                                                            aServiceClass));
+}
+
+NS_IMETHODIMP
+MobileConnectionRequestParent::NotifyGetCallWaitingSuccess(uint16_t aServiceClass)
+{
+  return SendReply(MobileConnectionReplySuccessCallWaiting(aServiceClass));
 }
 
 NS_IMETHODIMP

@@ -23,7 +23,7 @@ public:
     Close();
   }
 
-  operator bool() const
+  explicit operator bool() const
   {
     return mPtr;
   }
@@ -70,6 +70,7 @@ private:
   nsCOMPtr<T> mPtr;
 };
 
-} } // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // mozilla_net_AutoClose_h

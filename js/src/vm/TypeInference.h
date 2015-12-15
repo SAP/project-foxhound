@@ -23,6 +23,7 @@
 #include "js/UbiNode.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
+#include "vm/TaggedProto.h"
 
 namespace js {
 
@@ -30,9 +31,8 @@ namespace jit {
     struct IonScript;
     class JitAllocPolicy;
     class TempAllocator;
-}
+} // namespace jit
 
-class TaggedProto;
 struct TypeZone;
 class TypeConstraint;
 class TypeNewScript;
@@ -115,7 +115,14 @@ enum : uint32_t {
     /* Whether this group is associated with some allocation site. */
     OBJECT_FLAG_FROM_ALLOCATION_SITE  = 0x1,
 
-    /* (0x2 and 0x4 are unused) */
+    /* Whether this group is associated with a single object. */
+    OBJECT_FLAG_SINGLETON             = 0x2,
+
+    /*
+     * Whether this group is used by objects whose singleton groups have not
+     * been created yet.
+     */
+    OBJECT_FLAG_LAZY_SINGLETON        = 0x4,
 
     /* Mask/shift for the number of properties in propertySet */
     OBJECT_FLAG_PROPERTY_COUNT_MASK   = 0xfff8,
@@ -265,7 +272,7 @@ class TypeSet
     // Information about a single concrete type. We pack this into one word,
     // where small values are particular primitive or other singleton types and
     // larger values are either specific JS objects or object groups.
-    class Type
+    class Type : public JS::Traceable
     {
         friend class TypeSet;
 
@@ -324,6 +331,9 @@ class TypeSet
         bool isSingleton() const {
             return isObject() && !!(data & 1);
         }
+        bool isSingletonUnchecked() const {
+            return isObjectUnchecked() && !!(data & 1);
+        }
 
         inline JSObject* singleton() const;
         inline JSObject* singletonNoBarrier() const;
@@ -333,14 +343,19 @@ class TypeSet
         bool isGroup() const {
             return isObject() && !(data & 1);
         }
+        bool isGroupUnchecked() const {
+            return isObjectUnchecked() && !(data & 1);
+        }
 
         inline ObjectGroup* group() const;
         inline ObjectGroup* groupNoBarrier() const;
 
+        static void trace(Type* v, JSTracer* trc) {
+            MarkTypeUnbarriered(trc, v, "TypeSet::Type");
+        }
+
         bool operator == (Type o) const { return data == o.data; }
         bool operator != (Type o) const { return data != o.data; }
-
-        static ThingRootKind rootKind() { return THING_ROOT_TYPE; }
     };
 
     static inline Type UndefinedType() { return Type(JSVAL_TYPE_UNDEFINED); }
@@ -386,7 +401,7 @@ class TypeSet
       : flags(0), objectSet(nullptr)
     {}
 
-    void print();
+    void print(FILE* fp = stderr);
 
     /* Whether this set contains a specific type. */
     inline bool hasType(Type type) const;
@@ -420,13 +435,19 @@ class TypeSet
     static TemporaryTypeSet* unionSets(TypeSet* a, TypeSet* b, LifoAlloc* alloc);
     /* Return the intersection of the 2 TypeSets. The result should not be modified further */
     static TemporaryTypeSet* intersectSets(TemporaryTypeSet* a, TemporaryTypeSet* b, LifoAlloc* alloc);
+    /*
+     * Returns a copy of TypeSet a excluding/removing the types in TypeSet b.
+     * TypeSet b can only contain primitives or be any object. No support for
+     * specific objects. The result should not be modified further.
+     */
+    static TemporaryTypeSet* removeSet(TemporaryTypeSet* a, TemporaryTypeSet* b, LifoAlloc* alloc);
 
     /* Add a type to this set using the specified allocator. */
     void addType(Type type, LifoAlloc* alloc);
 
     /* Get a list of all types in this set. */
     typedef Vector<Type, 1, SystemAllocPolicy> TypeList;
-    bool enumerateTypes(TypeList* list) const;
+    template <class TypeListT> bool enumerateTypes(TypeListT* list) const;
 
     /*
      * Iterate through the objects in this set. getObjectCount overapproximates
@@ -473,6 +494,8 @@ class TypeSet
         return this->isSubset(other) && other->isSubset(this);
     }
 
+    bool objectsIntersect(const TypeSet* other) const;
+
     /* Forward all types in this set to the specified constraint. */
     bool addTypesToConstraint(JSContext* cx, TypeConstraint* constraint);
 
@@ -508,6 +531,10 @@ class TypeSet
     static inline Type GetMaybeUntrackedValueType(const Value& val);
 
     static void MarkTypeRoot(JSTracer* trc, Type* v, const char* name);
+    static void MarkTypeUnbarriered(JSTracer* trc, Type* v, const char* name);
+    static bool IsTypeMarked(Type* v);
+    static bool IsTypeAllocatedDuringIncremental(Type v);
+    static bool IsTypeAboutToBeFinalized(Type* v);
 };
 
 /*
@@ -588,10 +615,15 @@ class ConstraintTypeSet : public TypeSet
      */
     void addType(ExclusiveContext* cx, Type type);
 
+    // Trigger a post barrier when writing to this set, if necessary.
+    // addType(cx, type) takes care of this automatically.
+    void postWriteBarrier(ExclusiveContext* cx, Type type);
+
     /* Add a new constraint to this set. */
     bool addConstraint(JSContext* cx, TypeConstraint* constraint, bool callExisting = true);
 
     inline void sweep(JS::Zone* zone, AutoClearTypeInferenceStateOnOOM& oom);
+    inline void trace(JS::Zone* zone, JSTracer* trc);
 };
 
 class StackTypeSet : public ConstraintTypeSet
@@ -741,11 +773,11 @@ bool
 AddClearDefiniteFunctionUsesInScript(JSContext* cx, ObjectGroup* group,
                                      JSScript* script, JSScript* calleeScript);
 
-// For types where only a small number of objects have been allocated, this
-// structure keeps track of all objects with the type in existence. Once
-// COUNT objects have been allocated, this structure is cleared and the objects
-// are analyzed, to perform the new script properties analyses or determine if
-// an unboxed representation can be used.
+// For groups where only a small number of objects have been allocated, this
+// structure keeps track of all objects in the group. Once COUNT objects have
+// been allocated, this structure is cleared and the objects are analyzed, to
+// perform the new script properties analyses or determine if an unboxed
+// representation can be used.
 class PreliminaryObjectArray
 {
   public:
@@ -762,6 +794,7 @@ class PreliminaryObjectArray
     }
 
     void registerNewObject(JSObject* res);
+    void unregisterObject(JSObject* obj);
 
     JSObject* get(size_t i) const {
         MOZ_ASSERT(i < COUNT);
@@ -769,7 +802,32 @@ class PreliminaryObjectArray
     }
 
     bool full() const;
+    bool empty() const;
     void sweep();
+};
+
+class PreliminaryObjectArrayWithTemplate : public PreliminaryObjectArray
+{
+    RelocatablePtrShape shape_;
+
+  public:
+    explicit PreliminaryObjectArrayWithTemplate(Shape* shape)
+      : shape_(shape)
+    {}
+
+    void clear() {
+        shape_.init(nullptr);
+    }
+
+    Shape* shape() {
+        return shape_;
+    }
+
+    void maybeAnalyze(ExclusiveContext* cx, ObjectGroup* group, bool force = false);
+
+    void trace(JSTracer* trc);
+
+    static void writeBarrierPre(PreliminaryObjectArrayWithTemplate* preliminaryObjects);
 };
 
 // New script properties analyses overview.
@@ -827,9 +885,7 @@ class TypeNewScript
 
   private:
     // Scripted function which this information was computed for.
-    // If instances of the associated group are created without calling
-    // 'new' on this function, the new script information is cleared.
-    HeapPtrFunction function_;
+    RelocatablePtrFunction function_;
 
     // Any preliminary objects with the type. The analyses are not performed
     // until this array is cleared.
@@ -841,7 +897,7 @@ class TypeNewScript
     // allocation kind to use. This is null if the new objects have an unboxed
     // layout, in which case the UnboxedLayout provides the initial structure
     // of the object.
-    HeapPtrPlainObject templateObject_;
+    RelocatablePtrPlainObject templateObject_;
 
     // Order in which definite properties become initialized. We need this in
     // case the definite properties are invalidated (such as by adding a setter
@@ -858,11 +914,11 @@ class TypeNewScript
     // shape contains all such additional properties (plus the definite
     // properties). When an object of this group acquires this shape, it is
     // fully initialized and its group can be changed to initializedGroup.
-    HeapPtrShape initializedShape_;
+    RelocatablePtrShape initializedShape_;
 
     // Group with definite properties set for all properties found by
     // both the definite and acquired properties analyses.
-    HeapPtrObjectGroup initializedGroup_;
+    RelocatablePtrObjectGroup initializedGroup_;
 
   public:
     TypeNewScript() { mozilla::PodZero(this); }
@@ -871,7 +927,14 @@ class TypeNewScript
         js_free(initializerList);
     }
 
-    static inline void writeBarrierPre(TypeNewScript* newScript);
+    void clear() {
+        function_.init(nullptr);
+        templateObject_.init(nullptr);
+        initializedShape_.init(nullptr);
+        initializedGroup_.init(nullptr);
+    }
+
+    static void writeBarrierPre(TypeNewScript* newScript);
 
     bool analyzed() const {
         return preliminaryObjects == nullptr;
@@ -901,7 +964,9 @@ class TypeNewScript
 
     bool rollbackPartiallyInitializedObjects(JSContext* cx, ObjectGroup* group);
 
-    static void make(JSContext* cx, ObjectGroup* group, JSFunction* fun);
+    static bool make(JSContext* cx, ObjectGroup* group, JSFunction* fun);
+    static TypeNewScript* makeNativeVersion(JSContext* cx, TypeNewScript* newScript,
+                                            PlainObject* templateObject);
 
     size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 };
@@ -909,16 +974,8 @@ class TypeNewScript
 /* Is this a reasonable PC to be doing inlining on? */
 inline bool isInlinableCall(jsbytecode* pc);
 
-/*
- * Whether Array.prototype, or an object on its proto chain, has an
- * indexed property.
- */
 bool
-ArrayPrototypeHasIndexedProperty(CompilerConstraintList* constraints, JSScript* script);
-
-/* Whether obj or any of its prototypes have an indexed property. */
-bool
-TypeCanHaveExtraIndexedProperties(CompilerConstraintList* constraints, TemporaryTypeSet* types);
+ClassCanHaveExtraProperties(const Class* clasp);
 
 /* Persistent type information for a script, retained across GCs. */
 class TypeScript
@@ -1239,7 +1296,7 @@ PrintTypes(JSContext* cx, JSCompartment* comp, bool force);
 namespace JS {
 namespace ubi {
 template<> struct Concrete<js::ObjectGroup> : TracerConcrete<js::ObjectGroup> { };
-}
-}
+} // namespace ubi
+} // namespace JS
 
 #endif /* vm_TypeInference_h */

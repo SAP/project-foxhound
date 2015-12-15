@@ -6,8 +6,9 @@
 
 "use strict";
 
-let test = asyncTest(function*() {
-  yield loadTab("data:text/html;charset=utf8,test for bug 676722 - inspectable objects for window.console");
+var test = asyncTest(function*() {
+  yield loadTab("data:text/html;charset=utf8,test for bug 676722 - " +
+                "inspectable objects for window.console");
 
   let hud = yield openConsole();
   hud.jsterm.clearOutput(true);
@@ -33,7 +34,7 @@ let test = asyncTest(function*() {
 
   let clickable = result.clickableElements[0];
   ok(clickable, "the console.log() object anchor was found");
-  ok(body.textContent.contains('{ abba: "omgBug676722" }'),
+  ok(body.textContent.includes('{ abba: "omgBug676722" }'),
      "clickable node content is correct");
 
   executeSoon(() => {

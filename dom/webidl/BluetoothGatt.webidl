@@ -4,11 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-[CheckPermissions="bluetooth"]
+[CheckAnyPermissions="bluetooth"]
 interface BluetoothGatt : EventTarget
 {
+  [Cached, Pure]
+  readonly attribute sequence<BluetoothGattService> services;
   readonly attribute BluetoothConnectionState       connectionState;
 
+  // Fired when the value of any characteristic changed
+           attribute EventHandler                   oncharacteristicchanged;
   // Fired when attribute connectionState changed
            attribute EventHandler                   onconnectionstatechanged;
 
@@ -27,6 +31,21 @@ interface BluetoothGatt : EventTarget
   Promise<void>                                     connect();
   [NewObject]
   Promise<void>                                     disconnect();
+
+  /**
+   * Discover services, characteristics, descriptors offered by the remote GATT
+   * server. The promise will be rejected if the connState is not connected or
+   * operation fails.
+   */
+  [NewObject]
+  Promise<void>                                     discoverServices();
+
+  /**
+   * Read RSSI for the remote BLE device if the connectState is connected.
+   * Otherwise, the Promise will be rejected directly.
+   */
+  [NewObject]
+  Promise<short>                                    readRemoteRssi();
 };
 
 enum BluetoothConnectionState

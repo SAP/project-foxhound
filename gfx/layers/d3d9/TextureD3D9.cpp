@@ -46,7 +46,7 @@ TextureSourceD3D9::~TextureSourceD3D9()
   }
 }
 
-TemporaryRef<TextureHost>
+already_AddRefed<TextureHost>
 CreateTextureHostD3D9(const SurfaceDescriptor& aDesc,
                       ISurfaceAllocator* aDeallocator,
                       TextureFlags aFlags)
@@ -64,6 +64,10 @@ CreateTextureHostD3D9(const SurfaceDescriptor& aDesc,
     }
     case SurfaceDescriptor::TSurfaceDescriptorD3D10: {
       result = new DXGITextureHostD3D9(aFlags, aDesc);
+      break;
+    }
+    case SurfaceDescriptor::TSurfaceDescriptorDXGIYCbCr: {
+      result = new DXGIYCbCrTextureHostD3D9(aFlags, aDesc.get_SurfaceDescriptorDXGIYCbCr());
       break;
     }
     default: {
@@ -157,11 +161,11 @@ CompositingRenderTargetD3D9::GetSize() const
 }
 
 /**
- * Helper method for DataToTexture and SurfaceToTexture.
+ * Helper method for DataToTexture.
  * The last three params are out params.
  * Returns the created texture, or null if we fail.
  */
-TemporaryRef<IDirect3DTexture9>
+already_AddRefed<IDirect3DTexture9>
 TextureSourceD3D9::InitTextures(DeviceManagerD3D9* aDeviceManager,
                                 const IntSize &aSize,
                                 _D3DFORMAT aFormat,
@@ -188,17 +192,18 @@ TextureSourceD3D9::InitTextures(DeviceManagerD3D9* aDeviceManager,
   }
 
   tmpTexture->GetSurfaceLevel(0, byRef(aSurface));
-  aSurface->LockRect(&aLockedRect, nullptr, 0);
-  if (!aLockedRect.pBits) {
-    NS_WARNING("Could not lock surface");
+  
+  HRESULT hr = aSurface->LockRect(&aLockedRect, nullptr, 0);
+  if (FAILED(hr) || !aLockedRect.pBits) {
+    gfxCriticalError() << "Failed to lock rect initialize texture in D3D9 " << hexa(hr);
     return nullptr;
   }
 
-  return result;
+  return result.forget();
 }
 
 /**
- * Helper method for DataToTexture and SurfaceToTexture.
+ * Helper method for DataToTexture.
  */
 static void
 FinishTextures(DeviceManagerD3D9* aDeviceManager,
@@ -216,7 +221,7 @@ FinishTextures(DeviceManagerD3D9* aDeviceManager,
                                           nullptr);
 }
 
-TemporaryRef<IDirect3DTexture9>
+already_AddRefed<IDirect3DTexture9>
 TextureSourceD3D9::DataToTexture(DeviceManagerD3D9* aDeviceManager,
                                  unsigned char *aData,
                                  int aStride,
@@ -242,10 +247,10 @@ TextureSourceD3D9::DataToTexture(DeviceManagerD3D9* aDeviceManager,
 
   FinishTextures(aDeviceManager, texture, surface);
 
-  return texture;
+  return texture.forget();
 }
 
-TemporaryRef<IDirect3DTexture9>
+already_AddRefed<IDirect3DTexture9>
 TextureSourceD3D9::TextureToTexture(DeviceManagerD3D9* aDeviceManager,
                                     IDirect3DTexture9* aTexture,
                                     const IntSize& aSize,
@@ -266,46 +271,7 @@ TextureSourceD3D9::TextureToTexture(DeviceManagerD3D9* aDeviceManager,
     return nullptr;
   }
 
-  return texture;
-}
-
-TemporaryRef<IDirect3DTexture9>
-TextureSourceD3D9::SurfaceToTexture(DeviceManagerD3D9* aDeviceManager,
-                                    gfxWindowsSurface* aSurface,
-                                    const IntSize& aSize,
-                                    _D3DFORMAT aFormat)
-{
-  RefPtr<IDirect3DSurface9> surface;
-  D3DLOCKED_RECT lockedRect;
-
-  RefPtr<IDirect3DTexture9> texture = InitTextures(aDeviceManager, aSize, aFormat,
-                                                   surface, lockedRect);
-  if (!texture) {
-    return nullptr;
-  }
-
-  {
-    RefPtr<DrawTarget> dt =
-      Factory::CreateDrawTargetForData(BackendType::CAIRO,
-                                       reinterpret_cast<unsigned char*>(lockedRect.pBits),
-                                       aSize, lockedRect.Pitch,
-                                       gfxPlatform::GetPlatform()->Optimal2DFormatForContent(aSurface->GetContentType()));
-    NativeSurface nativeSurf;
-    nativeSurf.mSize = aSize;
-    nativeSurf.mType = NativeSurfaceType::CAIRO_SURFACE;
-    // We don't know that this is actually the right format, but it's the best
-    // we can get for the content type. In practice this probably always works.
-    nativeSurf.mFormat = dt->GetFormat();
-    nativeSurf.mSurface = aSurface->CairoSurface();
-
-    RefPtr<SourceSurface> surf = dt->CreateSourceSurfaceFromNativeSurface(nativeSurf);
-
-    dt->CopySurface(surf, IntRect(IntPoint(), aSize), IntPoint());
-  }
-
-  FinishTextures(aDeviceManager, texture, surface);
-
-  return texture;
+  return texture.forget();
 }
 
 DataTextureSourceD3D9::DataTextureSourceD3D9(gfx::SurfaceFormat aFormat,
@@ -433,84 +399,10 @@ DataTextureSourceD3D9::Update(gfx::DataSourceSurface* aSurface,
   return true;
 }
 
-bool
-DataTextureSourceD3D9::Update(gfxWindowsSurface* aSurface)
-{
-  MOZ_ASSERT(aSurface);
-  if (!mCompositor || !mCompositor->device()) {
-    NS_WARNING("No D3D device to update the texture.");
-    return false;
-  }
-  mSize = ToIntSize(aSurface->GetSize());
-
-  uint32_t bpp = 0;
-
-  _D3DFORMAT format = D3DFMT_A8R8G8B8;
-  mFormat = ImageFormatToSurfaceFormat(
-    gfxPlatform::GetPlatform()->OptimalFormatForContent(aSurface->GetContentType()));
-  switch (mFormat) {
-  case SurfaceFormat::B8G8R8X8:
-    format = D3DFMT_X8R8G8B8;
-    bpp = 4;
-    break;
-  case SurfaceFormat::B8G8R8A8:
-    format = D3DFMT_A8R8G8B8;
-    bpp = 4;
-    break;
-  case SurfaceFormat::A8:
-    format = D3DFMT_A8;
-    bpp = 1;
-    break;
-  default:
-    NS_WARNING("Bad image format");
-    return false;
-  }
-
-  int32_t maxSize = mCompositor->GetMaxTextureSize();
-  DeviceManagerD3D9* deviceManager = gfxWindowsPlatform::GetPlatform()->GetD3D9DeviceManager();
-  if ((mSize.width <= maxSize && mSize.height <= maxSize) ||
-      (mFlags & TextureFlags::DISALLOW_BIGIMAGE)) {
-    mTexture = SurfaceToTexture(deviceManager, aSurface, mSize, format);
-
-    if (!mTexture) {
-      NS_WARNING("Could not upload texture");
-      Reset();
-      return false;
-    }
-    mIsTiled = false;
-  } else {
-    mIsTiled = true;
-    uint32_t tileCount = GetRequiredTilesD3D9(mSize.width, maxSize) *
-                         GetRequiredTilesD3D9(mSize.height, maxSize);
-    mTileTextures.resize(tileCount);
-    mTexture = nullptr;
-    nsRefPtr<gfxImageSurface> imgSurface = aSurface->GetAsImageSurface();
-
-    for (uint32_t i = 0; i < tileCount; i++) {
-      IntRect tileRect = GetTileRect(i);
-      unsigned char* data = imgSurface->Data() +
-                            tileRect.y * imgSurface->Stride() +
-                            tileRect.x * bpp;
-      mTileTextures[i] = DataToTexture(deviceManager,
-                                       data,
-                                       imgSurface->Stride(),
-                                       IntSize(tileRect.width, tileRect.height),
-                                       format,
-                                       bpp);
-      if (!mTileTextures[i]) {
-        NS_WARNING("Could not upload texture");
-        Reset();
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-
 void
 DataTextureSourceD3D9::SetCompositor(Compositor* aCompositor)
 {
+  MOZ_ASSERT(aCompositor);
   CompositorD3D9* d3dCompositor = static_cast<CompositorD3D9*>(aCompositor);
   if (mCompositor && mCompositor != d3dCompositor) {
     Reset();
@@ -544,15 +436,15 @@ DataTextureSourceD3D9::GetTileRect(uint32_t aTileIndex) const
                  verticalTile < (verticalTiles - 1) ? maxSize : mSize.height % maxSize);
 }
 
-nsIntRect
+IntRect
 DataTextureSourceD3D9::GetTileRect()
 {
-  return ThebesIntRect(GetTileRect(mCurrentTile));
+  return GetTileRect(mCurrentTile);
 }
 
-CairoTextureClientD3D9::CairoTextureClientD3D9(ISurfaceAllocator* aAllocator,
-                                               gfx::SurfaceFormat aFormat,
-                                               TextureFlags aFlags)
+TextureClientD3D9::TextureClientD3D9(ISurfaceAllocator* aAllocator,
+                                     gfx::SurfaceFormat aFormat,
+                                     TextureFlags aFlags)
   : TextureClient(aAllocator, aFlags)
   , mFormat(aFormat)
   , mIsLocked(false)
@@ -560,29 +452,29 @@ CairoTextureClientD3D9::CairoTextureClientD3D9(ISurfaceAllocator* aAllocator,
   , mNeedsClearWhite(false)
   , mLockRect(false)
 {
-  MOZ_COUNT_CTOR(CairoTextureClientD3D9);
+  MOZ_COUNT_CTOR(TextureClientD3D9);
 }
 
-CairoTextureClientD3D9::~CairoTextureClientD3D9()
+TextureClientD3D9::~TextureClientD3D9()
 {
-  MOZ_COUNT_DTOR(CairoTextureClientD3D9);
+  MOZ_COUNT_DTOR(TextureClientD3D9);
 }
 
-TemporaryRef<TextureClient>
-CairoTextureClientD3D9::CreateSimilar(TextureFlags aFlags, TextureAllocationFlags aAllocFlags) const
+already_AddRefed<TextureClient>
+TextureClientD3D9::CreateSimilar(TextureFlags aFlags, TextureAllocationFlags aAllocFlags) const
 {
-  RefPtr<TextureClient> tex = new CairoTextureClientD3D9(mAllocator, mFormat,
-                                                         mFlags | aFlags);
+  RefPtr<TextureClient> tex = new TextureClientD3D9(mAllocator, mFormat,
+                                                    mFlags | aFlags);
 
   if (!tex->AllocateForSurface(mSize, aAllocFlags)) {
     return nullptr;
   }
 
-  return tex;
+  return tex.forget();
 }
 
 bool
-CairoTextureClientD3D9::Lock(OpenMode aMode)
+TextureClientD3D9::Lock(OpenMode aMode)
 {
   MOZ_ASSERT(!mIsLocked);
   if (!IsValid() || !IsAllocated()) {
@@ -606,32 +498,11 @@ CairoTextureClientD3D9::Lock(OpenMode aMode)
 
   mIsLocked = true;
 
-  // Make sure that successful write-lock means we will have a DrawTarget to
-  // write into.
-  if (aMode & OpenMode::OPEN_WRITE) {
-    mDrawTarget = BorrowDrawTarget();
-    if (!mDrawTarget) {
-      Unlock();
-      return false;
-    }
-  }
-
-  if (mNeedsClear) {
-    mDrawTarget = BorrowDrawTarget();
-    mDrawTarget->ClearRect(Rect(0, 0, GetSize().width, GetSize().height));
-    mNeedsClear = false;
-  }
-  if (mNeedsClearWhite) {
-    mDrawTarget = BorrowDrawTarget();
-    mDrawTarget->FillRect(Rect(0, 0, GetSize().width, GetSize().height), ColorPattern(Color(1.0, 1.0, 1.0, 1.0)));
-    mNeedsClearWhite = false;
-  }
-
   return true;
 }
 
 void
-CairoTextureClientD3D9::Unlock()
+TextureClientD3D9::Unlock()
 {
   MOZ_ASSERT(mIsLocked, "Unlocked called while the texture is not locked!");
   if (!mIsLocked) {
@@ -648,14 +519,11 @@ CairoTextureClientD3D9::Unlock()
     mLockRect = false;
   }
 
-  if (mSurface) {
-    mSurface = nullptr;
-  }
   mIsLocked = false;
 }
 
 bool
-CairoTextureClientD3D9::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
+TextureClientD3D9::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
 {
   MOZ_ASSERT(IsValid());
   if (!IsAllocated()) {
@@ -668,7 +536,7 @@ CairoTextureClientD3D9::ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor)
 }
 
 gfx::DrawTarget*
-CairoTextureClientD3D9::BorrowDrawTarget()
+TextureClientD3D9::BorrowDrawTarget()
 {
   MOZ_ASSERT(mIsLocked && mD3D9Surface);
   if (!mIsLocked || !mD3D9Surface) {
@@ -681,31 +549,86 @@ CairoTextureClientD3D9::BorrowDrawTarget()
   }
 
   if (ContentForFormat(mFormat) == gfxContentType::COLOR) {
-    mSurface = new gfxWindowsSurface(mD3D9Surface);
-    if (!mSurface || mSurface->CairoStatus()) {
+    nsRefPtr<gfxASurface> surface = new gfxWindowsSurface(mD3D9Surface);
+    if (!surface || surface->CairoStatus()) {
       NS_WARNING("Could not create surface for d3d9 surface");
-      mSurface = nullptr;
       return nullptr;
     }
+    mDrawTarget =
+      gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(surface, mSize);
   } else {
     // gfxWindowsSurface don't support transparency so we can't use the d3d9
     // windows surface optimization.
     // Instead we have to use a gfxImageSurface and fallback for font drawing.
     D3DLOCKED_RECT rect;
-    mD3D9Surface->LockRect(&rect, nullptr, 0);
-    mSurface = new gfxImageSurface((uint8_t*)rect.pBits, ThebesIntSize(mSize),
-                                   rect.Pitch, SurfaceFormatToImageFormat(mFormat));
+    HRESULT hr = mD3D9Surface->LockRect(&rect, nullptr, 0);
+    if (FAILED(hr) || !rect.pBits) {
+      gfxCriticalError() << "Failed to lock rect borrowing the target in D3D9 " << hexa(hr);
+      return nullptr;
+    }
+    mDrawTarget =
+     gfxPlatform::GetPlatform()->CreateDrawTargetForData((uint8_t*)rect.pBits, mSize,
+                                                         rect.Pitch, mFormat);
     mLockRect = true;
   }
 
-  mDrawTarget =
-    gfxPlatform::GetPlatform()->CreateDrawTargetForSurface(mSurface, mSize);
+  if (mNeedsClear) {
+    mDrawTarget->ClearRect(Rect(0, 0, GetSize().width, GetSize().height));
+    mNeedsClear = false;
+  }
+  if (mNeedsClearWhite) {
+    mDrawTarget->FillRect(Rect(0, 0, GetSize().width, GetSize().height), ColorPattern(Color(1.0, 1.0, 1.0, 1.0)));
+    mNeedsClearWhite = false;
+  }
 
   return mDrawTarget;
 }
 
+void
+TextureClientD3D9::UpdateFromSurface(gfx::SourceSurface* aSurface)
+{
+  MOZ_ASSERT(mIsLocked && mD3D9Surface);
+
+  // gfxWindowsSurface don't support transparency so we can't use the d3d9
+  // windows surface optimization.
+  // Instead we have to use a gfxImageSurface and fallback for font drawing.
+  D3DLOCKED_RECT rect;
+  HRESULT hr = mD3D9Surface->LockRect(&rect, nullptr, 0);
+  if (FAILED(hr) || !rect.pBits) {
+    gfxCriticalError() << "Failed to lock rect borrowing the target in D3D9 " << hexa(hr);
+    return;
+  }
+
+  RefPtr<DataSourceSurface> srcSurf = aSurface->GetDataSurface();
+
+  if (!srcSurf) {
+    gfxCriticalError() << "Failed to GetDataSurface in UpdateFromSurface.";
+    return;
+  }
+
+  if (mSize != srcSurf->GetSize() || mFormat != srcSurf->GetFormat()) {
+    gfxCriticalError() << "Attempt to update texture client from a surface with a different size or format! This: " << mSize << " " << mFormat << " Other: " << srcSurf->GetSize() << " " << srcSurf->GetFormat();
+    return;
+  }
+
+  DataSourceSurface::MappedSurface sourceMap;
+  if (!srcSurf->Map(DataSourceSurface::READ, &sourceMap)) {
+    gfxCriticalError() << "Failed to map source surface for UpdateFromSurface.";
+    return;
+  }
+
+  for (int y = 0; y < srcSurf->GetSize().height; y++) {
+    memcpy((uint8_t*)rect.pBits + rect.Pitch * y,
+           sourceMap.mData + sourceMap.mStride * y,
+           srcSurf->GetSize().width * BytesPerPixel(srcSurf->GetFormat()));
+  }
+
+  srcSurf->Unmap();
+  mD3D9Surface->UnlockRect();
+}
+
 bool
-CairoTextureClientD3D9::AllocateForSurface(gfx::IntSize aSize, TextureAllocationFlags aFlags)
+TextureClientD3D9::AllocateForSurface(gfx::IntSize aSize, TextureAllocationFlags aFlags)
 {
   MOZ_ASSERT(!IsAllocated());
   mSize = aSize;
@@ -738,13 +661,64 @@ SharedTextureClientD3D9::SharedTextureClientD3D9(ISurfaceAllocator* aAllocator,
 
 SharedTextureClientD3D9::~SharedTextureClientD3D9()
 {
+  MOZ_COUNT_DTOR(SharedTextureClientD3D9);
+}
+
+void
+SharedTextureClientD3D9::FinalizeOnIPDLThread()
+{
   if (mTexture && mActor) {
     KeepUntilFullDeallocation(MakeUnique<TKeepAlive<IDirect3DTexture9>>(mTexture));
   }
   if (mTexture) {
     gfxWindowsPlatform::sD3D9SharedTextureUsed -= mDesc.Width * mDesc.Height * 4;
   }
-  MOZ_COUNT_DTOR(SharedTextureClientD3D9);
+}
+
+// static
+already_AddRefed<SharedTextureClientD3D9>
+SharedTextureClientD3D9::Create(ISurfaceAllocator* aAllocator,
+                                gfx::SurfaceFormat aFormat,
+                                TextureFlags aFlags,
+                                IDirect3DDevice9* aDevice,
+                                const gfx::IntSize& aSize)
+{
+  MOZ_ASSERT(aFormat == gfx::SurfaceFormat::B8G8R8X8);
+
+  RefPtr<IDirect3DTexture9> texture;
+  HANDLE shareHandle = nullptr;
+  HRESULT hr = aDevice->CreateTexture(aSize.width,
+                                      aSize.height,
+                                      1,
+                                      D3DUSAGE_RENDERTARGET,
+                                      D3DFMT_X8R8G8B8,
+                                      D3DPOOL_DEFAULT,
+                                      byRef(texture),
+                                      &shareHandle);
+  NS_ENSURE_TRUE(SUCCEEDED(hr) && shareHandle, nullptr);
+
+  RefPtr<SharedTextureClientD3D9> client =
+    new SharedTextureClientD3D9(aAllocator,
+                                aFormat,
+                                aFlags);
+
+  client->mDevice = aDevice;
+  client->mTexture = texture;
+  client->mHandle = shareHandle;
+  texture->GetLevelDesc(0, &client->mDesc);
+
+  gfxWindowsPlatform::sD3D9SharedTextureUsed += aSize.width * aSize.height * 4;
+  return client.forget();
+}
+
+already_AddRefed<IDirect3DSurface9>
+SharedTextureClientD3D9::GetD3D9Surface() const
+{
+  RefPtr<IDirect3DSurface9> textureSurface;
+  HRESULT hr = mTexture->GetSurfaceLevel(0, byRef(textureSurface));
+  NS_ENSURE_TRUE(SUCCEEDED(hr), nullptr);
+
+  return textureSurface.forget();
 }
 
 bool
@@ -784,7 +758,7 @@ TextureHostD3D9::TextureHostD3D9(TextureFlags aFlags,
 {
   mTexture = reinterpret_cast<IDirect3DTexture9*>(aDescriptor.texture());
   MOZ_ASSERT(mTexture);
-  mTexture->Release(); // see AddRef in CairoTextureClientD3D9::ToSurfaceDescriptor
+  mTexture->Release(); // see AddRef in TextureClientD3D9::ToSurfaceDescriptor
   MOZ_ASSERT(mTexture);
   D3DSURFACE_DESC desc;
   HRESULT hr = mTexture->GetLevelDesc(0, &desc);
@@ -815,6 +789,10 @@ DataTextureSourceD3D9::UpdateFromTexture(IDirect3DTexture9* aTexture,
   }
 
   DeviceManagerD3D9* dm = gfxWindowsPlatform::GetPlatform()->GetD3D9DeviceManager();
+  if (!dm || !dm->device()) {
+    return false;
+  }
+
   if (!mTexture) {
     mTexture = dm->CreateTexture(mSize, SurfaceFormatToD3D9Format(mFormat),
                                  D3DPOOL_DEFAULT, this);
@@ -838,7 +816,7 @@ DataTextureSourceD3D9::UpdateFromTexture(IDirect3DTexture9* aTexture,
 
   if (aRegion) {
     nsIntRegionRectIterator iter(*aRegion);
-    const nsIntRect *iterRect;
+    const IntRect *iterRect;
     while ((iterRect = iter.Next())) {
       RECT rect;
       rect.left = iterRect->x;
@@ -867,19 +845,26 @@ DataTextureSourceD3D9::UpdateFromTexture(IDirect3DTexture9* aTexture,
 }
 
 void
-TextureHostD3D9::Updated(const nsIntRegion* aRegion)
+TextureHostD3D9::UpdatedInternal(const nsIntRegion* aRegion)
 {
   MOZ_ASSERT(mTexture);
   if (!mTexture) {
     return;
   }
 
+  const nsIntRegion* regionToUpdate = aRegion;
   if (!mTextureSource) {
     mTextureSource = new DataTextureSourceD3D9(mFormat, mSize, mCompositor,
                                                nullptr, mFlags);
+    if (mFlags & TextureFlags::COMPONENT_ALPHA) {
+      // Update the full region the first time for component alpha textures.
+      regionToUpdate = nullptr;
+    }
   }
 
-  mTextureSource->UpdateFromTexture(mTexture, aRegion);
+  if (!mTextureSource->UpdateFromTexture(mTexture, regionToUpdate)) {
+    gfxCriticalError() << "[D3D9] DataTextureSourceD3D9::UpdateFromTexture failed";
+  }
 }
 
 IDirect3DDevice9*
@@ -897,12 +882,13 @@ TextureHostD3D9::SetCompositor(Compositor* aCompositor)
   }
 }
 
-TextureSource*
-TextureHostD3D9::GetTextureSources()
+bool
+TextureHostD3D9::BindTextureSource(CompositableTextureSourceRef& aTexture)
 {
   MOZ_ASSERT(mIsLocked);
   MOZ_ASSERT(mTextureSource);
-  return mTextureSource;
+  aTexture = mTextureSource;
+  return !!aTexture;
 }
 
 bool
@@ -973,12 +959,13 @@ DXGITextureHostD3D9::OpenSharedHandle()
   return;
 }
 
-TextureSource*
-DXGITextureHostD3D9::GetTextureSources()
+bool
+DXGITextureHostD3D9::BindTextureSource(CompositableTextureSourceRef& aTexture)
 {
   MOZ_ASSERT(mIsLocked);
   MOZ_ASSERT(mTextureSource);
-  return mTextureSource;
+  aTexture = mTextureSource;
+  return !!aTexture;
 }
 
 bool
@@ -1007,6 +994,7 @@ DXGITextureHostD3D9::Unlock()
 void
 DXGITextureHostD3D9::SetCompositor(Compositor* aCompositor)
 {
+  MOZ_ASSERT(aCompositor);
   mCompositor = static_cast<CompositorD3D9*>(aCompositor);
 }
 
@@ -1014,6 +1002,90 @@ void
 DXGITextureHostD3D9::DeallocateDeviceData()
 {
   mTextureSource = nullptr;
+}
+
+DXGIYCbCrTextureHostD3D9::DXGIYCbCrTextureHostD3D9(TextureFlags aFlags,
+                                                   const SurfaceDescriptorDXGIYCbCr& aDescriptor)
+ : TextureHost(aFlags)
+ , mSize(aDescriptor.size())
+ , mSizeY(aDescriptor.sizeY())
+ , mSizeCbCr(aDescriptor.sizeCbCr())
+ , mIsLocked(false)
+{
+  mHandles[0] = reinterpret_cast<HANDLE>(aDescriptor.handleY());
+  mHandles[1] = reinterpret_cast<HANDLE>(aDescriptor.handleCb());
+  mHandles[2] = reinterpret_cast<HANDLE>(aDescriptor.handleCr());
+}
+
+IDirect3DDevice9*
+DXGIYCbCrTextureHostD3D9::GetDevice()
+{
+  return mCompositor ? mCompositor->device() : nullptr;
+}
+
+void
+DXGIYCbCrTextureHostD3D9::SetCompositor(Compositor* aCompositor)
+{
+  MOZ_ASSERT(aCompositor);
+  mCompositor = static_cast<CompositorD3D9*>(aCompositor);
+}
+
+bool
+DXGIYCbCrTextureHostD3D9::Lock()
+{
+  if (!GetDevice()) {
+    NS_WARNING("trying to lock a TextureHost without a D3D device");
+    return false;
+  }
+  if (!mTextureSources[0]) {
+    if (!mHandles[0]) {
+      return false;
+    }
+
+    if (FAILED(GetDevice()->CreateTexture(mSizeY.width, mSizeY.height,
+                                          1, 0, D3DFMT_A8, D3DPOOL_DEFAULT,
+                                          byRef(mTextures[0]), &mHandles[0]))) {
+      return false;
+    }
+
+    if (FAILED(GetDevice()->CreateTexture(mSizeCbCr.width, mSizeCbCr.height,
+                                          1, 0, D3DFMT_A8, D3DPOOL_DEFAULT,
+                                          byRef(mTextures[1]), &mHandles[1]))) {
+      return false;
+    }
+
+    if (FAILED(GetDevice()->CreateTexture(mSizeCbCr.width, mSizeCbCr.height,
+                                          1, 0, D3DFMT_A8, D3DPOOL_DEFAULT,
+                                          byRef(mTextures[2]), &mHandles[2]))) {
+      return false;
+    }
+
+    mTextureSources[0] = new DataTextureSourceD3D9(SurfaceFormat::A8, mSize, mCompositor, mTextures[0]);
+    mTextureSources[1] = new DataTextureSourceD3D9(SurfaceFormat::A8, mSize, mCompositor, mTextures[1]);
+    mTextureSources[2] = new DataTextureSourceD3D9(SurfaceFormat::A8, mSize, mCompositor, mTextures[2]);
+    mTextureSources[0]->SetNextSibling(mTextureSources[1]);
+    mTextureSources[1]->SetNextSibling(mTextureSources[2]);
+  }
+
+  mIsLocked = true;
+  return mIsLocked;
+}
+
+void
+DXGIYCbCrTextureHostD3D9::Unlock()
+{
+  MOZ_ASSERT(mIsLocked);
+  mIsLocked = false;
+}
+
+bool
+DXGIYCbCrTextureHostD3D9::BindTextureSource(CompositableTextureSourceRef& aTexture)
+{
+  MOZ_ASSERT(mIsLocked);
+  // If Lock was successful we must have a valid TextureSource.
+  MOZ_ASSERT(mTextureSources[0] && mTextureSources[1] && mTextureSources[2]);
+  aTexture = mTextureSources[0].get();
+  return !!aTexture;
 }
 
 }

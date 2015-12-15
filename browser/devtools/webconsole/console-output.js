@@ -7,15 +7,17 @@
 
 const {Cc, Ci, Cu} = require("chrome");
 
+const { Services } = require("resource://gre/modules/Services.jsm");
+
 loader.lazyImporter(this, "VariablesView", "resource:///modules/devtools/VariablesView.jsm");
 loader.lazyImporter(this, "escapeHTML", "resource:///modules/devtools/VariablesView.jsm");
 loader.lazyImporter(this, "gDevTools", "resource:///modules/devtools/gDevTools.jsm");
 loader.lazyImporter(this, "Task", "resource://gre/modules/Task.jsm");
 loader.lazyImporter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
-loader.lazyImporter(this, "ObjectClient", "resource://gre/modules/devtools/dbg-client.jsm");
 
 loader.lazyRequireGetter(this, "promise");
 loader.lazyRequireGetter(this, "TableWidget", "devtools/shared/widgets/TableWidget", true);
+loader.lazyRequireGetter(this, "ObjectClient", "devtools/toolkit/client/main", true);
 
 const Heritage = require("sdk/core/heritage");
 const URI = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
@@ -42,6 +44,7 @@ const COMPAT = {
     INPUT: 4,
     OUTPUT: 5,
     SECURITY: 6,
+    SERVER: 7,
   },
 
   // The possible message severities.
@@ -66,11 +69,12 @@ const COMPAT = {
     [ null,         null,         null,   null,          ],  // Input
     [ null,         null,         null,   null,          ],  // Output
     [ "secerror",   "secwarn",    null,   null,          ],  // Security
+    [ "servererror", "serverwarn", "serverinfo", "serverlog",   ],  // Server Logging
   ],
 
   // The fragment of a CSS class name that identifies each category.
   CATEGORY_CLASS_FRAGMENTS: [ "network", "cssparser", "exception", "console",
-                              "input", "output", "security" ],
+                              "input", "output", "security", "server" ],
 
   // The fragment of a CSS class name that identifies each severity.
   SEVERITY_CLASS_FRAGMENTS: [ "error", "warn", "info", "log" ],
@@ -91,6 +95,7 @@ const CONSOLE_API_LEVELS_TO_SEVERITIES = {
   table: "log",
   debug: "log",
   dir: "log",
+  dirxml: "log",
   group: "log",
   groupCollapsed: "log",
   groupEnd: "log",
@@ -339,6 +344,10 @@ ConsoleOutput.prototype = {
     this.owner.owner.openLink.apply(this.owner.owner, arguments);
   },
 
+  openLocationInDebugger: function ({url, line}) {
+    return this.owner.owner.viewSourceInDebugger(url, line);
+  },
+
   /**
    * Open the variables view to inspect an object actor.
    * @see JSTerm.openVariablesView() in webconsole.js
@@ -362,7 +371,7 @@ ConsoleOutput.prototype = {
  * Message objects container.
  * @type object
  */
-let Messages = {};
+var Messages = {};
 
 /**
  * The BaseMessage object is used for all types of messages. Every kind of
@@ -666,6 +675,7 @@ Messages.NavigationMarker.prototype = Heritage.extend(Messages.BaseMessage.proto
  *        handler.
  *        - location: object that tells the message source: url, line, column
  *        and lineText.
+ *        - stack: array that tells the message source stack.
  *        - className: (string) additional element class names for styling
  *        purposes.
  *        - private: (boolean) mark this as a private message.
@@ -679,7 +689,9 @@ Messages.Simple = function(message, options = {})
   this.category = options.category;
   this.severity = options.severity;
   this.location = options.location;
+  this.stack    = options.stack;
   this.timestamp = options.timestamp || Date.now();
+  this.prefix = options.prefix;
   this.private = !!options.private;
 
   this._message = message;
@@ -687,6 +699,8 @@ Messages.Simple = function(message, options = {})
   this._link = options.link;
   this._linkCallback = options.linkCallback;
   this._filterDuplicates = options.filterDuplicates;
+
+  this._onClickCollapsible = this._onClickCollapsible.bind(this);
 };
 
 Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
@@ -708,6 +722,20 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
    * @type object
    */
   location: null,
+
+  /**
+   * Holds the stackframes received from the server.
+   *
+   * @private
+   * @type array
+   */
+  stack: null,
+
+  /**
+   * Message prefix
+   * @type string|null
+   */
+  prefix: null,
 
   /**
    * Tells if this message comes from a private browsing context.
@@ -794,6 +822,20 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
     return this;
   },
 
+  /**
+   * Tells if the message can be expanded/collapsed.
+   * @type boolean
+   */
+  collapsible: false,
+
+  /**
+   * Getter that tells if this message is collapsed - no details are shown.
+   * @type boolean
+   */
+  get collapsed() {
+    return this.collapsible && this.element && !this.element.hasAttribute("open");
+  },
+
   _initRepeatID: function()
   {
     if (!this._filterDuplicates) {
@@ -806,6 +848,7 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
 
     rid.category = this.category;
     rid.severity = this.severity;
+    rid.prefix = this.prefix;
     rid.private = this.private;
     rid.location = this.location;
     rid.link = this._link;
@@ -837,6 +880,16 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
     let icon = this.document.createElementNS(XHTML_NS, "span");
     icon.className = "icon";
     icon.title = l10n.getStr("severity." + this._severityNameCompat);
+    if (this.stack) {
+      icon.addEventListener("click", this._onClickCollapsible);
+    }
+
+    let prefixNode;
+    if (this.prefix) {
+      prefixNode = this.document.createElementNS(XHTML_NS, "span");
+      prefixNode.className = "prefix devtools-monospace";
+      prefixNode.textContent = this.prefix + ":";
+    }
 
     // Apply the current group by indenting appropriately.
     // TODO: remove this once bug 778766 is fixed.
@@ -859,6 +912,21 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
     this.element.appendChild(timestamp.element);
     this.element.appendChild(indentNode);
     this.element.appendChild(icon);
+    if (prefixNode) {
+      this.element.appendChild(prefixNode);
+    }
+
+    if (this.stack) {
+      let twisty = this.document.createElementNS(XHTML_NS, "a");
+      twisty.className = "theme-twisty";
+      twisty.href = "#";
+      twisty.title = l10n.getStr("messageToggleDetails");
+      twisty.addEventListener("click", this._onClickCollapsible);
+      this.element.appendChild(twisty);
+      this.collapsible = true;
+      this.element.setAttribute("collapsible", true);
+    }
+
     this.element.appendChild(body);
     if (repeatNode) {
       this.element.appendChild(repeatNode);
@@ -866,6 +934,7 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
     if (location) {
       this.element.appendChild(location);
     }
+
     this.element.appendChild(this.document.createTextNode("\n"));
 
     this.element.clipboardText = this.element.textContent;
@@ -917,6 +986,12 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
       container.textContent = this._message;
     }
 
+    if (this.stack) {
+      let stack = new Widgets.Stacktrace(this, this.stack).render().element;
+      body.appendChild(this.document.createTextNode("\n"));
+      body.appendChild(stack);
+    }
+
     return body;
   },
 
@@ -960,6 +1035,36 @@ Messages.Simple.prototype = Heritage.extend(Messages.BaseMessage.prototype,
     return this.output.owner.createLocationNode({url: url,
                                                  line: line,
                                                  column: column});
+  },
+
+  /**
+   * The click event handler for the message expander arrow element. This method
+   * toggles the display of message details.
+   *
+   * @private
+   * @param nsIDOMEvent ev
+   *        The DOM event object.
+   * @see this.toggleDetails()
+   */
+  _onClickCollapsible: function(ev)
+  {
+    ev.preventDefault();
+    this.toggleDetails();
+  },
+
+  /**
+   * Expand/collapse message details.
+   */
+  toggleDetails: function()
+  {
+    let twisty = this.element.querySelector(".theme-twisty");
+    if (this.element.hasAttribute("open")) {
+      this.element.removeAttribute("open");
+      twisty.removeAttribute("open");
+    } else {
+      this.element.setAttribute("open", true);
+      twisty.setAttribute("open", true);
+    }
   },
 }); // Messages.Simple.prototype
 
@@ -1059,7 +1164,7 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
    *        DOM node or a function to invoke.
    * @return Element
    */
-  _renderBodyPiece: function(piece)
+  _renderBodyPiece: function(piece, options = {})
   {
     if (piece instanceof Ci.nsIDOMNode) {
       return piece;
@@ -1068,7 +1173,7 @@ Messages.Extended.prototype = Heritage.extend(Messages.Simple.prototype,
       return piece(this);
     }
 
-    return this._renderValueGrip(piece);
+    return this._renderValueGrip(piece, options);
   },
 
   /**
@@ -1275,8 +1380,9 @@ Messages.ConsoleGeneric = function(packet)
   let options = {
     className: "cm-s-mozilla",
     timestamp: packet.timeStamp,
-    category: "webdev",
+    category: packet.category || "webdev",
     severity: CONSOLE_API_LEVELS_TO_SEVERITIES[packet.level],
+    prefix: packet.prefix,
     private: packet.private,
     filterDuplicates: true,
     location: {
@@ -1302,30 +1408,13 @@ Messages.ConsoleGeneric = function(packet)
 
   this._repeatID.consoleApiLevel = packet.level;
   this._repeatID.styles = packet.styles;
-  this._stacktrace = this._repeatID.stacktrace = packet.stacktrace;
+  this.stack = this._repeatID.stacktrace = packet.stacktrace;
   this._styles = packet.styles || [];
-
-  this._onClickCollapsible = this._onClickCollapsible.bind(this);
 };
 
 Messages.ConsoleGeneric.prototype = Heritage.extend(Messages.Extended.prototype,
 {
   _styles: null,
-  _stacktrace: null,
-
-  /**
-   * Tells if the message can be expanded/collapsed.
-   * @type boolean
-   */
-  collapsible: false,
-
-  /**
-   * Getter that tells if this message is collapsed - no details are shown.
-   * @type boolean
-   */
-  get collapsed() {
-    return this.collapsible && this.element && !this.element.hasAttribute("open");
-  },
 
   _renderBodyPieceSeparator: function()
   {
@@ -1345,24 +1434,8 @@ Messages.ConsoleGeneric.prototype = Heritage.extend(Messages.Extended.prototype,
       location.target = "jsdebugger";
     }
 
-    let stack = null;
-    let twisty = null;
-    if (this._stacktrace && this._stacktrace.length > 0) {
-      stack = new Widgets.Stacktrace(this, this._stacktrace).render().element;
-
-      twisty = this.document.createElementNS(XHTML_NS, "a");
-      twisty.className = "theme-twisty";
-      twisty.href = "#";
-      twisty.title = l10n.getStr("messageToggleDetails");
-      twisty.addEventListener("click", this._onClickCollapsible);
-    }
-
     let flex = this.document.createElementNS(XHTML_NS, "span");
     flex.className = "message-flex-body";
-
-    if (twisty) {
-      flex.appendChild(twisty);
-    }
 
     flex.appendChild(msg);
 
@@ -1376,23 +1449,10 @@ Messages.ConsoleGeneric.prototype = Heritage.extend(Messages.Extended.prototype,
     let result = this.document.createDocumentFragment();
     result.appendChild(flex);
 
-    if (stack) {
-      result.appendChild(this.document.createTextNode("\n"));
-      result.appendChild(stack);
-    }
-
     this._message = result;
     this._stacktrace = null;
 
     Messages.Simple.prototype.render.call(this);
-
-    if (stack) {
-      this.collapsible = true;
-      this.element.setAttribute("collapsible", true);
-
-      let icon = this.element.querySelector(".icon");
-      icon.addEventListener("click", this._onClickCollapsible);
-    }
 
     return this;
   },
@@ -1407,20 +1467,21 @@ Messages.ConsoleGeneric.prototype = Heritage.extend(Messages.Extended.prototype,
   _renderBodyPieces: function(container)
   {
     let lastStyle = null;
+    let stylePieces = this._styles.length > 0 ? this._styles.length : 1;
 
     for (let i = 0; i < this._messagePieces.length; i++) {
-      let separator = i > 0 ? this._renderBodyPieceSeparator() : null;
-      if (separator) {
-        container.appendChild(separator);
+      // Pieces with an associated style definition come from "%c" formatting.
+      // For body pieces beyond that, add a separator before each one.
+      if (i >= stylePieces) {
+        container.appendChild(this._renderBodyPieceSeparator());
       }
 
       let piece = this._messagePieces[i];
       let style = this._styles[i];
 
       // No long string support.
-      if (style && typeof style == "string" ) {
-        lastStyle = this.cleanupStyle(style);
-      }
+      lastStyle = (style && typeof style == "string") ?
+                  this.cleanupStyle(style) : null;
 
       container.appendChild(this._renderBodyPiece(piece, lastStyle));
     }
@@ -1431,7 +1492,9 @@ Messages.ConsoleGeneric.prototype = Heritage.extend(Messages.Extended.prototype,
 
   _renderBodyPiece: function(piece, style)
   {
-    let elem = Messages.Extended.prototype._renderBodyPiece.call(this, piece);
+    // Skip quotes for top-level strings.
+    let options = { noStringQuotes: true };
+    let elem = Messages.Extended.prototype._renderBodyPiece.call(this, piece, options);
     let result = elem;
 
     if (style) {
@@ -1452,36 +1515,6 @@ Messages.ConsoleGeneric.prototype = Heritage.extend(Messages.Extended.prototype,
   // |this.render()| handles customized message output.
   _renderLocation: function() { },
   _renderRepeatNode: function() { },
-
-  /**
-   * Expand/collapse message details.
-   */
-  toggleDetails: function()
-  {
-    let twisty = this.element.querySelector(".theme-twisty");
-    if (this.element.hasAttribute("open")) {
-      this.element.removeAttribute("open");
-      twisty.removeAttribute("open");
-    } else {
-      this.element.setAttribute("open", true);
-      twisty.setAttribute("open", true);
-    }
-  },
-
-  /**
-   * The click event handler for the message expander arrow element. This method
-   * toggles the display of message details.
-   *
-   * @private
-   * @param nsIDOMEvent ev
-   *        The DOM event object.
-   * @see this.toggleDetails()
-   */
-  _onClickCollapsible: function(ev)
-  {
-    ev.preventDefault();
-    this.toggleDetails();
-  },
 
   /**
    * Given a style attribute value, return a cleaned up version of the string
@@ -1542,7 +1575,7 @@ Messages.ConsoleTrace = function(packet)
   let options = {
     className: "cm-s-mozilla",
     timestamp: packet.timeStamp,
-    category: "webdev",
+    category: packet.category || "webdev",
     severity: CONSOLE_API_LEVELS_TO_SEVERITIES[packet.level],
     private: packet.private,
     filterDuplicates: true,
@@ -1679,7 +1712,7 @@ Messages.ConsoleTable = function(packet)
   let options = {
     className: "cm-s-mozilla",
     timestamp: packet.timeStamp,
-    category: "webdev",
+    category: packet.category || "webdev",
     severity: CONSOLE_API_LEVELS_TO_SEVERITIES[packet.level],
     private: packet.private,
     filterDuplicates: false,
@@ -2008,7 +2041,7 @@ Messages.ConsoleTable.prototype = Heritage.extend(Messages.Extended.prototype,
   _renderRepeatNode: function() { },
 }); // Messages.ConsoleTable.prototype
 
-let Widgets = {};
+var Widgets = {};
 
 /**
  * The base widget class.
@@ -2471,6 +2504,8 @@ Widgets.JSObject.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
       options.onClick = options.href ? this._onClickAnchor : this._onClick;
     }
 
+    options.onContextMenu = options.onContextMenu || this._onContextMenu;
+
     let anchor = this.el("a", {
       class: options.className,
       draggable: false,
@@ -2478,6 +2513,8 @@ Widgets.JSObject.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
     }, text);
 
     this.message._addLinkCallback(anchor, options.onClick);
+
+    anchor.addEventListener("contextmenu", options.onContextMenu.bind(this));
 
     if (options.appendTo) {
       options.appendTo.appendChild(anchor);
@@ -2488,16 +2525,38 @@ Widgets.JSObject.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
     return anchor;
   },
 
+  openObjectInVariablesView: function()
+  {
+    this.output.openVariablesView({
+      label: VariablesView.getString(this.objectActor, { concise: true }),
+      objectActor: this.objectActor,
+      autofocus: true,
+    });
+  },
+
   /**
    * The click event handler for objects shown inline.
    * @private
    */
   _onClick: function()
   {
-    this.output.openVariablesView({
-      label: VariablesView.getString(this.objectActor, { concise: true }),
-      objectActor: this.objectActor,
-      autofocus: true,
+    this.openObjectInVariablesView();
+  },
+
+  _onContextMenu: function(ev) {
+    // TODO offer a nice API for the context menu.
+    // Probably worth to take a look at Firebug's way
+    // https://github.com/firebug/firebug/blob/master/extension/content/firebug/chrome/menu.js
+    let doc = ev.target.ownerDocument;
+    let cmPopup = doc.getElementById("output-contextmenu");
+    let openInVarViewCmd = doc.getElementById("menu_openInVarView");
+    let openVarView = this.openObjectInVariablesView.bind(this);
+    openInVarViewCmd.addEventListener("command", openVarView);
+    openInVarViewCmd.removeAttribute("disabled");
+    cmPopup.addEventListener("popuphiding", function onPopupHiding() {
+      cmPopup.removeEventListener("popuphiding", onPopupHiding);
+      openInVarViewCmd.removeEventListener("command", openVarView);
+      openInVarViewCmd.setAttribute("disabled", "true");
     });
   },
 
@@ -2665,6 +2724,16 @@ Widgets.ObjectRenderers.add({
 
     this._text(")");
   },
+
+  _onClick: function () {
+    let location = this.objectActor.location;
+    if (location) {
+      this.output.openLocationInDebugger(location);
+    }
+    else {
+      this.openObjectInVariablesView();
+    }
+  }
 }); // Widgets.ObjectRenderers.byClass.Function
 
 /**
@@ -2980,7 +3049,8 @@ Widgets.ObjectRenderers.add({
 
   _renderDocumentNode: function()
   {
-    let fn = Widgets.ObjectRenderers.byKind.ObjectWithURL.prototype._renderElement;
+    let fn =
+      Widgets.ObjectRenderers.byKind.ObjectWithURL.prototype._renderElement;
     this.element = fn.call(this, this.objectActor,
                            this.objectActor.preview.location);
     this.element.classList.add("documentNode");
@@ -3153,6 +3223,12 @@ Widgets.ObjectRenderers.add({
         "message was got cleared away");
     }
 
+    // Check it again as this method is async!
+    if (this._linkedToInspector) {
+      return;
+    }
+    this._linkedToInspector = true;
+
     this.highlightDomNode = this.highlightDomNode.bind(this);
     this.element.addEventListener("mouseover", this.highlightDomNode, false);
     this.unhighlightDomNode = this.unhighlightDomNode.bind(this);
@@ -3163,8 +3239,6 @@ Widgets.ObjectRenderers.add({
       onClick: this.openNodeInInspector.bind(this)
     });
     this._openInspectorNode.title = l10n.getStr("openNodeInInspector");
-
-    this._linkedToInspector = true;
   }),
 
   /**
@@ -3209,9 +3283,10 @@ Widgets.ObjectRenderers.add({
 
     let isAttached = yield this.toolbox.walker.isInDOMTree(this._nodeFront);
     if (isAttached) {
-      let onReady = this.toolbox.inspector.once("inspector-updated");
+      let onReady = promise.defer();
+      this.toolbox.inspector.once("inspector-updated", onReady.resolve);
       yield this.toolbox.selection.setNodeFront(this._nodeFront, "console");
-      yield onReady;
+      yield onReady.promise;
     } else {
       throw null;
     }
@@ -3237,7 +3312,7 @@ Widgets.ObjectRenderers.add({
 
   render: function()
   {
-    let { ownProperties, safeGetterValues } = this.objectActor.preview;
+    let { ownProperties, safeGetterValues } = this.objectActor.preview || {};
     if ((!ownProperties && !safeGetterValues) || this.options.concise) {
       this._renderConciseObject();
       return;
@@ -3273,7 +3348,7 @@ Widgets.ObjectRenderers.add({
 
   render: function()
   {
-    let { ownProperties, safeGetterValues } = this.objectActor.preview;
+    let { ownProperties, safeGetterValues } = this.objectActor.preview || {};
     if ((!ownProperties && !safeGetterValues) || this.options.concise) {
       this._renderConciseObject();
       return;
@@ -3293,11 +3368,16 @@ Widgets.ObjectRenderers.add({
  *        The owning message.
  * @param object longStringActor
  *        The LongStringActor to display.
+ * @param object options
+ *        Options, such as noStringQuotes
  */
-Widgets.LongString = function(message, longStringActor)
+Widgets.LongString = function(message, longStringActor, options)
 {
   Widgets.BaseWidget.call(this, message);
   this.longStringActor = longStringActor;
+  this.noStringQuotes = (options && "noStringQuotes" in options) ?
+    options.noStringQuotes : !this.message._quoteStrings;
+
   this._onClick = this._onClick.bind(this);
   this._onSubstring = this._onSubstring.bind(this);
 };
@@ -3333,7 +3413,7 @@ Widgets.LongString.prototype = Heritage.extend(Widgets.BaseWidget.prototype,
   _renderString: function(str)
   {
     this.element.textContent = VariablesView.getString(str, {
-      noStringQuotes: !this.message._quoteStrings,
+      noStringQuotes: this.noStringQuotes,
       noEllipsis: true,
     });
   },

@@ -37,12 +37,12 @@ public:
   NS_DECL_NSICHILDCHANNEL
 
   RtspChannelChild(nsIURI *aUri);
-  ~RtspChannelChild();
 
   // nsBaseChannel::nsIChannel
   NS_IMETHOD GetContentType(nsACString & aContentType) override final;
   NS_IMETHOD AsyncOpen(nsIStreamListener *listener, nsISupports *aContext)
                        override final;
+  NS_IMETHOD AsyncOpen2(nsIStreamListener *listener) override final;
 
   // nsBaseChannel::nsIStreamListener::nsIRequestObserver
   NS_IMETHOD OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
@@ -75,6 +75,9 @@ public:
   // RtspChannelChild
   nsIStreamingProtocolController* GetController();
   void ReleaseController();
+
+protected:
+  ~RtspChannelChild();
 
 private:
   bool mIPCOpen;

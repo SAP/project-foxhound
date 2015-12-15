@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -113,8 +114,8 @@ private:
  * Implementation of &lt;select&gt;
  */
 class HTMLSelectElement final : public nsGenericHTMLFormElementWithState,
-                                    public nsIDOMHTMLSelectElement,
-                                    public nsIConstraintValidation
+                                public nsIDOMHTMLSelectElement,
+                                public nsIConstraintValidation
 {
 public:
   /**
@@ -272,7 +273,7 @@ public:
 
 
   // nsINode
-  virtual JSObject* WrapNode(JSContext* aCx) override;
+  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // nsIContent
   virtual nsresult PreHandleEvent(EventChainPreVisitor& aVisitor) override;
@@ -290,7 +291,7 @@ public:
   NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission) override;
   NS_IMETHOD SaveState() override;
   virtual bool RestoreState(nsPresState* aState) override;
-  virtual bool IsDisabledForEvents(uint32_t aMessage) override;
+  virtual bool IsDisabledForEvents(EventMessage aMessage) override;
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
@@ -371,7 +372,7 @@ public:
                                bool aCompileEventHandlers) override;
   virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 const nsAttrValueOrString* aValue,
+                                 nsAttrValueOrString* aValue,
                                  bool aNotify) override;
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                 const nsAttrValue* aValue, bool aNotify) override;

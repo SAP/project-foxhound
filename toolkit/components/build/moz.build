@@ -33,4 +33,7 @@ if not CONFIG['MOZ_DISABLE_PARENTAL_CONTROLS']:
         '../parentalcontrols',
     ]
 
-FAIL_ON_WARNINGS = True
+if CONFIG['NIGHTLY_BUILD']:
+    LOCAL_INCLUDES += [
+        '../perfmonitoring',
+    ]

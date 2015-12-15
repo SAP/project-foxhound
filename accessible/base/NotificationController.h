@@ -86,7 +86,7 @@ private:
  * Used to process notifications from core for the document accessible.
  */
 class NotificationController final : public EventQueue,
-                                         public nsARefreshObserver
+                                     public nsARefreshObserver
 {
 public:
   NotificationController(DocAccessible* aDocument, nsIPresShell* aPresShell);
@@ -296,12 +296,6 @@ private:
    * A pending accessible tree update notifications for rendered text changes.
    */
   nsTHashtable<nsCOMPtrHashKey<nsIContent> > mTextHash;
-
-  /**
-   * Update the accessible tree for pending rendered text change notifications.
-   */
-  static PLDHashOperator TextEnumerator(nsCOMPtrHashKey<nsIContent>* aEntry,
-                                        void* aUserArg);
 
   /**
    * Other notifications like DOM events. Don't make this an nsAutoTArray; we

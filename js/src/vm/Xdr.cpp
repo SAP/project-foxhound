@@ -30,19 +30,22 @@ XDRBuffer::grow(size_t n)
     MOZ_ASSERT(n > size_t(limit - cursor));
 
     const size_t MIN_CAPACITY = 8192;
+    const size_t MAX_CAPACITY = size_t(INT32_MAX) + 1;
     size_t offset = cursor - base;
+    MOZ_ASSERT(offset <= MAX_CAPACITY);
+    if (n > MAX_CAPACITY - offset) {
+        js::gc::AutoSuppressGC suppressGC(cx());
+        JS_ReportErrorNumber(cx(), GetErrorMessage, nullptr, JSMSG_TOO_BIG_TO_ENCODE);
+        return false;
+    }
     size_t newCapacity = mozilla::RoundUpPow2(offset + n);
     if (newCapacity < MIN_CAPACITY)
         newCapacity = MIN_CAPACITY;
-    if (isUint32Overflow(newCapacity)) {
-        js::gc::AutoSuppressGC suppressGC(cx());
-        JS_ReportErrorNumber(cx(), js_GetErrorMessage, nullptr, JSMSG_TOO_BIG_TO_ENCODE);
-        return false;
-    }
 
+    MOZ_ASSERT(newCapacity <= MAX_CAPACITY);
     void* data = js_realloc(base, newCapacity);
     if (!data) {
-        js_ReportOutOfMemory(cx());
+        ReportOutOfMemory(cx());
         return false;
     }
     base = static_cast<uint8_t*>(data);
@@ -97,7 +100,7 @@ VersionCheck(XDRState<mode>* xdr)
 
     if (mode == XDR_DECODE && bytecodeVer != XDR_BYTECODE_VERSION) {
         /* We do not provide binary compatibility with older scripts. */
-        JS_ReportErrorNumber(xdr->cx(), js_GetErrorMessage, nullptr, JSMSG_BAD_SCRIPT_MAGIC);
+        JS_ReportErrorNumber(xdr->cx(), GetErrorMessage, nullptr, JSMSG_BAD_SCRIPT_MAGIC);
         return false;
     }
 
@@ -114,7 +117,7 @@ XDRState<mode>::codeFunction(MutableHandleFunction objp)
     if (!VersionCheck(this))
         return false;
 
-    return XDRInterpretedFunction(this, NullPtr(), NullPtr(), objp);
+    return XDRInterpretedFunction(this, nullptr, nullptr, objp);
 }
 
 template<XDRMode mode>
@@ -127,7 +130,7 @@ XDRState<mode>::codeScript(MutableHandleScript scriptp)
     if (!VersionCheck(this))
         return false;
 
-    if (!XDRScript(this, NullPtr(), NullPtr(), NullPtr(), scriptp))
+    if (!XDRScript(this, nullptr, nullptr, nullptr, scriptp))
         return false;
 
     return true;

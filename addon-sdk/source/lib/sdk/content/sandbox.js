@@ -10,6 +10,7 @@ module.metadata = {
 const { Class } = require('../core/heritage');
 const { EventTarget } = require('../event/target');
 const { on, off, emit } = require('../event/core');
+const { events } = require('./sandbox/events');
 const { requiresAddonGlobal } = require('./utils');
 const { delay: async } = require('../lang/functional');
 const { Ci, Cu, Cc } = require('chrome');
@@ -20,7 +21,7 @@ const { merge } = require('../util/object');
 const { getTabForContentWindow } = require('../tabs/utils');
 const { getInnerId } = require('../window/utils');
 const { PlainTextConsole } = require('../console/plain-text');
-const { data } = require('../self');
+const { data } = require('../self');const { isChildLoader } = require('../remote/core');
 // WeakMap of sandboxes so we can access private values
 const sandboxes = new WeakMap();
 
@@ -28,7 +29,7 @@ const sandboxes = new WeakMap();
   require('./content-worker.js');
   Then, retrieve URL of these files in the XPI:
 */
-let prefix = module.uri.split('sandbox.js')[0];
+var prefix = module.uri.split('sandbox.js')[0];
 const CONTENT_WORKER_URL = prefix + 'content-worker.js';
 const metadata = require('@loader/options').metadata;
 
@@ -46,6 +47,19 @@ const secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].
   getService(Ci.nsIScriptSecurityManager);
 
 const JS_VERSION = '1.8';
+
+// Tests whether this window is loaded in a tab
+function isWindowInTab(window) {
+  if (isChildLoader) {
+    let { frames } = require('../remote/child');
+    let frame = frames.getFrameForWindow(window.top);
+    return frame.isTab;
+  }
+  else {
+    // The deprecated sync worker API still does everything in the main process
+    return getTabForContentWindow(window);
+  }
+}
 
 const WorkerSandbox = Class({
   implements: [ EventTarget ],
@@ -102,7 +116,7 @@ const WorkerSandbox = Class({
     // (This behavior can be turned off for now with the unsafe-content-script
     // flag to give addon developers time for making the necessary changes)
     // But prevent it when the Worker isn't used for a content script but for
-    // injecting `addon` object into a Panel, Widget, ... scope.
+    // injecting `addon` object into a Panel scope, for example.
     // That's because:
     // 1/ It is useless to use multiple domains as the worker is only used
     // to communicate with the addon,
@@ -152,6 +166,7 @@ const WorkerSandbox = Class({
       get top() top,
       get parent() parent
     });
+
     // Use the Greasemonkey naming convention to provide access to the
     // unwrapped window object so the content script can access document
     // JavaScript values.
@@ -200,9 +215,9 @@ const WorkerSandbox = Class({
     }
 
     // Inject our `console` into target document if worker doesn't have a tab
-    // (e.g Panel, PageWorker, Widget).
+    // (e.g Panel, PageWorker).
     // `worker.tab` can't be used because bug 804935.
-    if (!getTabForContentWindow(window)) {
+    if (!isWindowInTab(window)) {
       let win = getUnsafeWindow(window);
 
       // export our chrome console to content window, as described here:
@@ -229,8 +244,16 @@ const WorkerSandbox = Class({
         timeEnd: genPropDesc('timeEnd'),
         profile: genPropDesc('profile'),
         profileEnd: genPropDesc('profileEnd'),
-       __noSuchMethod__: { enumerable: true, configurable: true, writable: true,
-                            value: function() {} }
+        exception: genPropDesc('exception'),
+        assert: genPropDesc('assert'),
+        count: genPropDesc('count'),
+        table: genPropDesc('table'),
+        clear: genPropDesc('clear'),
+        dirxml: genPropDesc('dirxml'),
+        markTimeline: genPropDesc('markTimeline'),
+        timeline: genPropDesc('timeline'),
+        timelineEnd: genPropDesc('timelineEnd'),
+        timeStamp: genPropDesc('timeStamp'),
       };
 
       Object.defineProperties(con, properties);
@@ -238,6 +261,11 @@ const WorkerSandbox = Class({
 
       win.console = con;
     };
+
+    emit(events, "content-script-before-inserted", {
+      window: window,
+      worker: worker
+    });
 
     // The order of `contentScriptFile` and `contentScript` evaluation is
     // intentional, so programs can load libraries like jQuery from script URLs
@@ -251,6 +279,7 @@ const WorkerSandbox = Class({
 
     if (contentScriptFile)
       importScripts.apply(null, [this].concat(contentScriptFile));
+
     if (contentScript) {
       evaluateIn(
         this,

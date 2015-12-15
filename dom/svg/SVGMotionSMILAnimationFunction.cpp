@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -134,7 +135,7 @@ GetFirstMPathChild(nsIContent* aElem)
   for (nsIContent* child = aElem->GetFirstChild();
        child;
        child = child->GetNextSibling()) {
-    if (child->IsSVG(nsGkAtoms::mpath)) {
+    if (child->IsSVGElement(nsGkAtoms::mpath)) {
       return static_cast<SVGMPathElement*>(child);
     }
   }
@@ -152,7 +153,7 @@ SVGMotionSMILAnimationFunction::
   MOZ_ASSERT(mPathVertices.IsEmpty(),
              "regenerating when we already have vertices");
 
-  if (!aContextElem->IsSVG()) {
+  if (!aContextElem->IsSVGElement()) {
     NS_ERROR("Uh oh, SVG animateMotion element targeting a non-SVG node");
     return;
   }
@@ -173,7 +174,7 @@ SVGMotionSMILAnimationFunction::
     if (HasAttr(nsGkAtoms::from)) {
       const nsAString& fromStr = GetAttr(nsGkAtoms::from)->GetStringValue();
       success = pathGenerator.MoveToAbsolute(fromStr);
-      mPathVertices.AppendElement(0.0);
+      mPathVertices.AppendElement(0.0, fallible);
     } else {
       // Create dummy 'from' value at 0,0, if we're doing by-animation.
       // (NOTE: We don't add the dummy 0-point to our list for *to-animation*,
@@ -181,7 +182,7 @@ SVGMotionSMILAnimationFunction::
       // expect a dummy value. It only expects one value: the final 'to' value.)
       pathGenerator.MoveToOrigin();
       if (!HasAttr(nsGkAtoms::to)) {
-        mPathVertices.AppendElement(0.0);
+        mPathVertices.AppendElement(0.0, fallible);
       }
       success = true;
     }
@@ -199,7 +200,7 @@ SVGMotionSMILAnimationFunction::
         success = pathGenerator.LineToRelative(byStr, dist);
       }
       if (success) {
-        mPathVertices.AppendElement(dist);
+        mPathVertices.AppendElement(dist, fallible);
       }
     }
   }
@@ -307,7 +308,8 @@ SVGMotionSMILAnimationFunction::
     double curDist = aPointDistances[i] * distanceMultiplier;
     if (!aResult.AppendElement(
           SVGMotionSMILType::ConstructSMILValue(aPath, curDist,
-                                                mRotateType, mRotateAngle))) {
+                                                mRotateType, mRotateAngle),
+          fallible)) {
       return false;
     }
   }

@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,9 +31,9 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMImplementation)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMImplementation)
 
 JSObject*
-DOMImplementation::WrapObject(JSContext* aCx)
+DOMImplementation::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return DOMImplementationBinding::Wrap(aCx, this);
+  return DOMImplementationBinding::Wrap(aCx, this, aGivenProto);
 }
 
 bool
@@ -90,7 +92,7 @@ DOMImplementation::CreateDocumentType(const nsAString& aQualifiedName,
   ErrorResult rv;
   *aReturn =
     CreateDocumentType(aQualifiedName, aPublicId, aSystemId, rv).take();
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 nsresult
@@ -208,25 +210,19 @@ DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIDocument> doc = do_QueryInterface(document);
 
-  nsCOMPtr<nsIContent> root;
-  rv = doc->CreateElem(NS_LITERAL_STRING("html"), nullptr, kNameSpaceID_XHTML,
-                       getter_AddRefs(root));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<Element> root = doc->CreateElem(NS_LITERAL_STRING("html"), nullptr,
+                                           kNameSpaceID_XHTML);
   rv = doc->AppendChildTo(root, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIContent> head;
-  rv = doc->CreateElem(NS_LITERAL_STRING("head"), nullptr, kNameSpaceID_XHTML,
-                       getter_AddRefs(head));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<Element> head = doc->CreateElem(NS_LITERAL_STRING("head"), nullptr,
+                                           kNameSpaceID_XHTML);
   rv = root->AppendChildTo(head, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!DOMStringIsNull(aTitle)) {
-    nsCOMPtr<nsIContent> title;
-    rv = doc->CreateElem(NS_LITERAL_STRING("title"), nullptr,
-                         kNameSpaceID_XHTML, getter_AddRefs(title));
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<Element> title = doc->CreateElem(NS_LITERAL_STRING("title"),
+                                              nullptr, kNameSpaceID_XHTML);
     rv = head->AppendChildTo(title, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -237,10 +233,8 @@ DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  nsCOMPtr<nsIContent> body;
-  rv = doc->CreateElem(NS_LITERAL_STRING("body"), nullptr, kNameSpaceID_XHTML,
-                       getter_AddRefs(body));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<Element> body = doc->CreateElem(NS_LITERAL_STRING("body"), nullptr,
+                                           kNameSpaceID_XHTML);
   rv = root->AppendChildTo(body, false);
   NS_ENSURE_SUCCESS(rv, rv);
 

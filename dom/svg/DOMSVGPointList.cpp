@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -72,7 +73,7 @@ NS_INTERFACE_MAP_END
 // Helper class: AutoChangePointListNotifier
 // Stack-based helper class to pair calls to WillChangePointList and
 // DidChangePointList.
-class MOZ_STACK_CLASS AutoChangePointListNotifier
+class MOZ_RAII AutoChangePointListNotifier
 {
 public:
   explicit AutoChangePointListNotifier(DOMSVGPointList* aPointList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
@@ -130,9 +131,9 @@ DOMSVGPointList::~DOMSVGPointList()
 }
 
 JSObject*
-DOMSVGPointList::WrapObject(JSContext *cx)
+DOMSVGPointList::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
 {
-  return mozilla::dom::SVGPointListBinding::Wrap(cx, this);
+  return mozilla::dom::SVGPointListBinding::Wrap(cx, this, aGivenProto);
 }
 
 void
@@ -165,7 +166,7 @@ DOMSVGPointList::InternalListWillChangeTo(const SVGPointList& aNewValue)
     }
   }
 
-  if (!mItems.SetLength(newLength)) {
+  if (!mItems.SetLength(newLength, fallible)) {
     // We silently ignore SetLength OOM failure since being out of sync is safe
     // so long as we have *fewer* items than our internal list.
     mItems.Clear();
@@ -305,7 +306,7 @@ DOMSVGPointList::InsertItemBefore(nsISVGPoint& aNewItem, uint32_t aIndex,
   }
 
   // Ensure we have enough memory so we can avoid complex error handling below:
-  if (!mItems.SetCapacity(mItems.Length() + 1) ||
+  if (!mItems.SetCapacity(mItems.Length() + 1, fallible) ||
       !InternalList().SetCapacity(InternalList().Length() + 1)) {
     aError.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
@@ -316,7 +317,7 @@ DOMSVGPointList::InsertItemBefore(nsISVGPoint& aNewItem, uint32_t aIndex,
   MaybeInsertNullInAnimValListAt(aIndex);
 
   InternalList().InsertItem(aIndex, domItem->ToSVGPoint());
-  mItems.InsertElementAt(aIndex, domItem);
+  MOZ_ALWAYS_TRUE(mItems.InsertElementAt(aIndex, domItem, fallible));
 
   // This MUST come after the insertion into InternalList(), or else under the
   // insertion into InternalList() the values read from domItem would be bad
@@ -432,7 +433,7 @@ DOMSVGPointList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
 
-  animVal->mItems.InsertElementAt(aIndex, static_cast<nsISVGPoint*>(nullptr));
+  MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(aIndex, nullptr, fallible));
 
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
 }

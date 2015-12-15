@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +17,7 @@
 
 namespace mozilla {
 class ErrorResult;
-}
+} // namespace mozilla
 
 class nsDOMStringMap : public nsStubMutationObserver,
                        public nsWrapperCache
@@ -36,7 +36,7 @@ public:
   explicit nsDOMStringMap(nsGenericHTMLElement* aElement);
 
   // WebIDL API
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
   void NamedGetter(const nsAString& aProp, bool& found,
                    mozilla::dom::DOMString& aResult) const;
   void NamedSetter(const nsAString& aProp, const nsAString& aValue,

@@ -14,9 +14,7 @@
  * - EXPIRE_MONTHS: annotation would be expired after 180 days
  */
 
-let bs = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
-         getService(Ci.nsINavBookmarksService);
-let as = Cc["@mozilla.org/browser/annotation-service;1"].
+var as = Cc["@mozilla.org/browser/annotation-service;1"].
          getService(Ci.nsIAnnotationService);
 
 /**
@@ -29,7 +27,7 @@ let as = Cc["@mozilla.org/browser/annotation-service;1"].
  * @param aAgeInDays Age in days of the annotation.
  * @param [optional] aLastModifiedAgeInDays Age in days of the annotation, for lastModified.
  */
-let now = Date.now();
+var now = Date.now();
 function add_old_anno(aIdentifier, aName, aValue, aExpirePolicy,
                       aAgeInDays, aLastModifiedAgeInDays) {
   let expireDate = (now - (aAgeInDays * 86400 * 1000)) * 1000;
@@ -89,8 +87,12 @@ add_task(function test_annos_expire_policy() {
   for (let i = 0; i < 5; i++) {
     let pageURI = uri("http://item_anno." + i + ".mozilla.org/");
     yield PlacesTestUtils.addVisits({ uri: pageURI, visitDate: now++ });
-    let id = bs.insertBookmark(bs.unfiledBookmarksFolder, pageURI,
-                               bs.DEFAULT_INDEX, null);
+    let bm = yield PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      url: pageURI,
+      title: null
+    });
+    let id = yield PlacesUtils.promiseItemId(bm.guid);
     // Add a 6 days old anno.
     add_old_anno(id, "persist_days", "test", as.EXPIRE_DAYS, 6);
     // Add a 8 days old anno, modified 5 days ago.

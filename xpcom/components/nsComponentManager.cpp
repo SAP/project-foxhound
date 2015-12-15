@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=4 et sw=4 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -58,7 +58,10 @@
 #include "private/pprthred.h"
 #include "nsTArray.h"
 #include "prio.h"
+#if !defined(MOZILLA_XPCOMRT_API)
 #include "ManifestParser.h"
+#include "nsNetUtil.h"
+#endif // !defined(MOZILLA_XPCOMRT_API)
 #include "mozilla/Services.h"
 
 #include "mozilla/GenericFactory.h"
@@ -68,14 +71,13 @@
 #include "nsArrayEnumerator.h"
 #include "nsStringEnumerator.h"
 #include "mozilla/FileUtils.h"
-#include "nsNetUtil.h"
 #include "nsDataHashtable.h"
 
 #include <new>     // for placement new
 
 #include "mozilla/Omnijar.h"
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 using namespace mozilla;
 
@@ -248,8 +250,9 @@ private:
   bool mLocked;
 };
 
-} // anonymous namespace
+} // namespace
 
+#if !defined(MOZILLA_XPCOMRT_API)
 // this is safe to call during InitXPCOM
 static already_AddRefed<nsIFile>
 GetLocationFromDirectoryService(const char* aProp)
@@ -286,6 +289,7 @@ CloneAndAppend(nsIFile* aBase, const nsACString& aAppend)
   f->AppendNative(aAppend);
   return f.forget();
 }
+#endif // !defined(MOZILLA_XPCOMRT_API)
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsComponentManagerImpl
@@ -318,8 +322,10 @@ nsComponentManagerImpl::nsComponentManagerImpl()
 
 nsTArray<const mozilla::Module*>* nsComponentManagerImpl::sStaticModules;
 
+#if !defined(MOZILLA_XPCOMRT_API)
 NSMODULE_DEFN(start_kPStaticModules);
 NSMODULE_DEFN(end_kPStaticModules);
+#endif // !defined(MOZILLA_XPCOMRT_API)
 
 /* The content between start_kPStaticModules and end_kPStaticModules is gathered
  * by the linker from various objects containing symbols in a specific section.
@@ -335,12 +341,14 @@ nsComponentManagerImpl::InitializeStaticModules()
   }
 
   sStaticModules = new nsTArray<const mozilla::Module*>;
+#if !defined(MOZILLA_XPCOMRT_API)
   for (const mozilla::Module * const* staticModules =
          &NSMODULE_NAME(start_kPStaticModules) + 1;
        staticModules < &NSMODULE_NAME(end_kPStaticModules); ++staticModules)
     if (*staticModules) { // ASAN adds padding
       sStaticModules->AppendElement(*staticModules);
     }
+#endif // !defined(MOZILLA_XPCOMRT_API)
 }
 
 nsTArray<nsComponentManagerImpl::ComponentLocation>*
@@ -368,26 +376,37 @@ nsComponentManagerImpl::Init()
   // Initialize our arena
   PL_INIT_ARENA_POOL(&mArena, "ComponentManagerArena", NS_CM_BLOCK_SIZE);
 
+#if !defined(MOZILLA_XPCOMRT_API)
   nsCOMPtr<nsIFile> greDir =
     GetLocationFromDirectoryService(NS_GRE_DIR);
   nsCOMPtr<nsIFile> appDir =
     GetLocationFromDirectoryService(NS_XPCOM_CURRENT_PROCESS_DIR);
+#endif
 
   InitializeStaticModules();
 
+#if !defined(MOZILLA_XPCOMRT_API)
   nsresult rv = mNativeModuleLoader.Init();
   if (NS_FAILED(rv)) {
     return rv;
   }
 
   nsCategoryManager::GetSingleton()->SuppressNotifications(true);
+#endif
 
+#if defined(MOZILLA_XPCOMRT_API)
+  RegisterModule(&kXPCOMRTModule, nullptr);
+  RegisterModule(&kNeckoStandaloneModule, nullptr);
+  RegisterModule(&kStunUDPSocketFilterHandlerModule, nullptr);
+#else
   RegisterModule(&kXPCOMModule, nullptr);
+#endif // defined(MOZILLA_XPCOMRT_API)
 
   for (uint32_t i = 0; i < sStaticModules->Length(); ++i) {
     RegisterModule((*sStaticModules)[i], nullptr);
   }
 
+#if !defined(MOZILLA_XPCOMRT_API)
   // The overall order in which chrome.manifests are expected to be treated
   // is the following:
   // - greDir
@@ -399,14 +418,14 @@ nsComponentManagerImpl::Init()
   ComponentLocation* cl = sModuleLocations->AppendElement();
   nsCOMPtr<nsIFile> lf = CloneAndAppend(greDir,
                                         NS_LITERAL_CSTRING("chrome.manifest"));
-  cl->type = NS_COMPONENT_LOCATION;
+  cl->type = NS_APP_LOCATION;
   cl->location.Init(lf);
 
   nsRefPtr<nsZipArchive> greOmnijar =
     mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE);
   if (greOmnijar) {
     cl = sModuleLocations->AppendElement();
-    cl->type = NS_COMPONENT_LOCATION;
+    cl->type = NS_APP_LOCATION;
     cl->location.Init(greOmnijar, "chrome.manifest");
   }
 
@@ -414,7 +433,7 @@ nsComponentManagerImpl::Init()
   appDir->Equals(greDir, &equals);
   if (!equals) {
     cl = sModuleLocations->AppendElement();
-    cl->type = NS_COMPONENT_LOCATION;
+    cl->type = NS_APP_LOCATION;
     lf = CloneAndAppend(appDir, NS_LITERAL_CSTRING("chrome.manifest"));
     cl->location.Init(lf);
   }
@@ -423,7 +442,7 @@ nsComponentManagerImpl::Init()
     mozilla::Omnijar::GetReader(mozilla::Omnijar::APP);
   if (appOmnijar) {
     cl = sModuleLocations->AppendElement();
-    cl->type = NS_COMPONENT_LOCATION;
+    cl->type = NS_APP_LOCATION;
     cl->location.Init(appOmnijar, "chrome.manifest");
   }
 
@@ -432,6 +451,7 @@ nsComponentManagerImpl::Init()
   nsCategoryManager::GetSingleton()->SuppressNotifications(false);
 
   RegisterWeakMemoryReporter(this);
+#endif
 
   // Unfortunately, we can't register the nsCategoryManager memory reporter
   // in its constructor (which is triggered by the GetSingleton() call
@@ -439,7 +459,7 @@ nsComponentManagerImpl::Init()
   // point.  So we wait until now.
   nsCategoryManager::GetSingleton()->InitMemoryReporter();
 
-  PR_LOG(nsComponentManagerLog, PR_LOG_DEBUG,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Debug,
          ("nsComponentManager: Initialized."));
 
   mStatus = NORMAL;
@@ -540,10 +560,12 @@ nsComponentManagerImpl::RegisterCIDEntryLocked(
       existing = "<unknown module>";
     }
     SafeMutexAutoUnlock unlock(mLock);
+#if !defined(MOZILLA_XPCOMRT_API)
     LogMessage("While registering XPCOM module %s, trying to re-register CID '%s' already registered by %s.",
                aModule->Description().get(),
                idstr,
                existing.get());
+#endif // !defined(MOZILLA_XPCOMRT_API)
     return;
   }
 
@@ -569,9 +591,11 @@ nsComponentManagerImpl::RegisterContractIDLocked(
     aEntry->cid->ToProvidedString(idstr);
 
     SafeMutexAutoUnlock unlock(mLock);
+#if !defined(MOZILLA_XPCOMRT_API)
     LogMessage("Could not map contract ID '%s' to CID %s because no implementation of the CID is registered.",
                aEntry->contractid,
                idstr);
+#endif // !defined(MOZILLA_XPCOMRT_API)
 
     return;
   }
@@ -579,6 +603,7 @@ nsComponentManagerImpl::RegisterContractIDLocked(
   mContractIDs.Put(nsDependentCString(aEntry->contractid), f);
 }
 
+#if !defined(MOZILLA_XPCOMRT_API)
 static void
 CutExtension(nsCString& aPath)
 {
@@ -821,10 +846,12 @@ nsComponentManagerImpl::RereadChromeManifests(bool aChromeOnly)
     RegisterManifest(l.type, l.location, aChromeOnly);
   }
 }
+#endif // !defined(MOZILLA_XPCOMRT_API)
 
 bool
 nsComponentManagerImpl::KnownModule::EnsureLoader()
 {
+#if !defined(MOZILLA_XPCOMRT_API)
   if (!mLoader) {
     nsCString extension;
     mFile.GetURIString(extension);
@@ -832,6 +859,7 @@ nsComponentManagerImpl::KnownModule::EnsureLoader()
     mLoader =
       nsComponentManagerImpl::gComponentManager->LoaderForExtension(extension);
   }
+#endif // !defined(MOZILLA_XPCOMRT_API)
   return !!mLoader;
 }
 
@@ -885,10 +913,12 @@ nsresult nsComponentManagerImpl::Shutdown(void)
   mStatus = SHUTDOWN_IN_PROGRESS;
 
   // Shutdown the component manager
-  PR_LOG(nsComponentManagerLog, PR_LOG_DEBUG,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Debug,
          ("nsComponentManager: Beginning Shutdown."));
 
+#if !defined(MOZILLA_XPCOMRT_API)
   UnregisterWeakMemoryReporter(this);
+#endif
 
   // Release all cached factories
   mContractIDs.Clear();
@@ -904,15 +934,17 @@ nsresult nsComponentManagerImpl::Shutdown(void)
   sXPTIInfosBook = nullptr;
 #endif
 
+#if !defined(MOZILLA_XPCOMRT_API)
   // Unload libraries
   mNativeModuleLoader.UnloadLibraries();
+#endif // !defined(MOZILLA_XPCOMRT_API)
 
   // delete arena for strings and small objects
   PL_FinishArenaPool(&mArena);
 
   mStatus = SHUTDOWN_COMPLETE;
 
-  PR_LOG(nsComponentManagerLog, PR_LOG_DEBUG,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Debug,
          ("nsComponentManager: Shutdown complete."));
 
   return NS_OK;
@@ -920,14 +952,14 @@ nsresult nsComponentManagerImpl::Shutdown(void)
 
 nsComponentManagerImpl::~nsComponentManagerImpl()
 {
-  PR_LOG(nsComponentManagerLog, PR_LOG_DEBUG,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Debug,
          ("nsComponentManager: Beginning destruction."));
 
   if (SHUTDOWN_COMPLETE != mStatus) {
     Shutdown();
   }
 
-  PR_LOG(nsComponentManagerLog, PR_LOG_DEBUG,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Debug,
          ("nsComponentManager: Destroyed."));
 }
 
@@ -999,15 +1031,13 @@ nsComponentManagerImpl::GetClassObject(const nsCID& aClass, const nsIID& aIID,
 {
   nsresult rv;
 
-#ifdef PR_LOGGING
-  if (PR_LOG_TEST(nsComponentManagerLog, PR_LOG_DEBUG)) {
+  if (MOZ_LOG_TEST(nsComponentManagerLog, LogLevel::Debug)) {
     char* buf = aClass.ToString();
     PR_LogPrint("nsComponentManager: GetClassObject(%s)", buf);
     if (buf) {
-      NS_Free(buf);
+      free(buf);
     }
   }
-#endif
 
   PR_ASSERT(aResult != nullptr);
 
@@ -1018,7 +1048,7 @@ nsComponentManagerImpl::GetClassObject(const nsCID& aClass, const nsIID& aIID,
 
   rv = factory->QueryInterface(aIID, aResult);
 
-  PR_LOG(nsComponentManagerLog, PR_LOG_WARNING,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Warning,
          ("\t\tGetClassObject() %s", NS_SUCCEEDED(rv) ? "succeeded" : "FAILED"));
 
   return rv;
@@ -1037,12 +1067,8 @@ nsComponentManagerImpl::GetClassObjectByContractID(const char* aContractID,
 
   nsresult rv;
 
-
-#ifdef PR_LOGGING
-  if (PR_LOG_TEST(nsComponentManagerLog, PR_LOG_DEBUG)) {
-    PR_LogPrint("nsComponentManager: GetClassObject(%s)", aContractID);
-  }
-#endif
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Debug,
+         ("nsComponentManager: GetClassObject(%s)", aContractID));
 
   nsCOMPtr<nsIFactory> factory = FindFactory(aContractID, strlen(aContractID));
   if (!factory) {
@@ -1051,7 +1077,7 @@ nsComponentManagerImpl::GetClassObjectByContractID(const char* aContractID,
 
   rv = factory->QueryInterface(aIID, aResult);
 
-  PR_LOG(nsComponentManagerLog, PR_LOG_WARNING,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Warning,
          ("\t\tGetClassObject() %s", NS_SUCCEEDED(rv) ? "succeeded" : "FAILED"));
 
   return rv;
@@ -1121,17 +1147,15 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
     rv = NS_ERROR_FACTORY_NOT_REGISTERED;
   }
 
-#ifdef PR_LOGGING
-  if (PR_LOG_TEST(nsComponentManagerLog, PR_LOG_WARNING)) {
+  if (MOZ_LOG_TEST(nsComponentManagerLog, LogLevel::Warning)) {
     char* buf = aClass.ToString();
-    PR_LOG(nsComponentManagerLog, PR_LOG_WARNING,
+    MOZ_LOG(nsComponentManagerLog, LogLevel::Warning,
            ("nsComponentManager: CreateInstance(%s) %s", buf,
             NS_SUCCEEDED(rv) ? "succeeded" : "FAILED"));
     if (buf) {
-      NS_Free(buf);
+      free(buf);
     }
   }
-#endif
 
   return rv;
 }
@@ -1206,21 +1230,11 @@ nsComponentManagerImpl::CreateInstanceByContractID(const char* aContractID,
     rv = NS_ERROR_FACTORY_NOT_REGISTERED;
   }
 
-  PR_LOG(nsComponentManagerLog, PR_LOG_WARNING,
+  MOZ_LOG(nsComponentManagerLog, LogLevel::Warning,
          ("nsComponentManager: CreateInstanceByContractID(%s) %s", aContractID,
           NS_SUCCEEDED(rv) ? "succeeded" : "FAILED"));
 
   return rv;
-}
-
-static PLDHashOperator
-FreeFactoryEntries(const nsID& aCID,
-                   nsFactoryEntry* aEntry,
-                   void* aArg)
-{
-  aEntry->mFactory = nullptr;
-  aEntry->mServiceObject = nullptr;
-  return PL_DHASH_NEXT;
 }
 
 nsresult
@@ -1233,7 +1247,12 @@ nsComponentManagerImpl::FreeServices()
     return NS_ERROR_FAILURE;
   }
 
-  mFactories.EnumerateRead(FreeFactoryEntries, nullptr);
+  for (auto iter = mFactories.Iter(); !iter.Done(); iter.Next()) {
+    nsFactoryEntry* entry = iter.UserData();
+    entry->mFactory = nullptr;
+    entry->mServiceObject = nullptr;
+  }
+
   return NS_OK;
 }
 
@@ -1589,6 +1608,7 @@ nsComponentManagerImpl::GetServiceByContractID(const char* aContractID,
   return NS_OK;
 }
 
+#if !defined(MOZILLA_XPCOMRT_API)
 already_AddRefed<mozilla::ModuleLoader>
 nsComponentManagerImpl::LoaderForExtension(const nsACString& aExt)
 {
@@ -1605,6 +1625,7 @@ nsComponentManagerImpl::LoaderForExtension(const nsACString& aExt)
 
   return loader.forget();
 }
+#endif
 
 NS_IMETHODIMP
 nsComponentManagerImpl::RegisterFactory(const nsCID& aClass,
@@ -1677,8 +1698,12 @@ nsComponentManagerImpl::UnregisterFactory(const nsCID& aClass,
 NS_IMETHODIMP
 nsComponentManagerImpl::AutoRegister(nsIFile* aLocation)
 {
-  XRE_AddManifestLocation(NS_COMPONENT_LOCATION, aLocation);
+#if !defined(MOZILLA_XPCOMRT_API)
+  XRE_AddManifestLocation(NS_EXTENSION_LOCATION, aLocation);
   return NS_OK;
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif // !defined(MOZILLA_XPCOMRT_API)
 }
 
 NS_IMETHODIMP
@@ -1727,47 +1752,39 @@ nsComponentManagerImpl::IsContractIDRegistered(const char* aClass,
   nsFactoryEntry* entry = GetFactoryEntry(aClass, strlen(aClass));
 
   if (entry) {
-    *aResult = true;
+    // UnregisterFactory might have left a stale nsFactoryEntry in
+    // mContractIDs, so we should check to see whether this entry has
+    // anything useful.
+    *aResult = (bool(entry->mModule) ||
+                bool(entry->mFactory) ||
+                bool(entry->mServiceObject));
   } else {
     *aResult = false;
   }
   return NS_OK;
 }
 
-static PLDHashOperator
-EnumerateCIDHelper(const nsID& aId, nsFactoryEntry* aEntry, void* aClosure)
-{
-  nsCOMArray<nsISupports>* array =
-    static_cast<nsCOMArray<nsISupports>*>(aClosure);
-  nsCOMPtr<nsISupportsID> wrapper = new nsSupportsIDImpl();
-  wrapper->SetData(&aId);
-  array->AppendObject(wrapper);
-  return PL_DHASH_NEXT;
-}
-
 NS_IMETHODIMP
 nsComponentManagerImpl::EnumerateCIDs(nsISimpleEnumerator** aEnumerator)
 {
   nsCOMArray<nsISupports> array;
-  mFactories.EnumerateRead(EnumerateCIDHelper, &array);
-
+  for (auto iter = mFactories.Iter(); !iter.Done(); iter.Next()) {
+    const nsID& id = iter.Key();
+    nsCOMPtr<nsISupportsID> wrapper = new nsSupportsIDImpl();
+    wrapper->SetData(&id);
+    array.AppendObject(wrapper);
+  }
   return NS_NewArrayEnumerator(aEnumerator, array);
-}
-
-static PLDHashOperator
-EnumerateContractsHelper(const nsACString& aContract, nsFactoryEntry* aEntry,
-                         void* aClosure)
-{
-  nsTArray<nsCString>* array = static_cast<nsTArray<nsCString>*>(aClosure);
-  array->AppendElement(aContract);
-  return PL_DHASH_NEXT;
 }
 
 NS_IMETHODIMP
 nsComponentManagerImpl::EnumerateContractIDs(nsISimpleEnumerator** aEnumerator)
 {
   nsTArray<nsCString>* array = new nsTArray<nsCString>;
-  mContractIDs.EnumerateRead(EnumerateContractsHelper, array);
+  for (auto iter = mContractIDs.Iter(); !iter.Done(); iter.Next()) {
+    const nsACString& contract = iter.Key();
+    array->AppendElement(contract);
+  }
 
   nsCOMPtr<nsIUTF8StringEnumerator> e;
   nsresult rv = NS_NewAdoptingUTF8StringEnumerator(getter_AddRefs(e), array);
@@ -1794,33 +1811,13 @@ nsComponentManagerImpl::ContractIDToCID(const char* aContractID,
     SafeMutexAutoLock lock(mLock);
     nsFactoryEntry* entry = mContractIDs.Get(nsDependentCString(aContractID));
     if (entry) {
-      *aResult = (nsCID*)NS_Alloc(sizeof(nsCID));
+      *aResult = (nsCID*)moz_xmalloc(sizeof(nsCID));
       **aResult = *entry->mCIDEntry->cid;
       return NS_OK;
     }
   }
   *aResult = nullptr;
   return NS_ERROR_FACTORY_NOT_REGISTERED;
-}
-
-static size_t
-SizeOfFactoriesEntryExcludingThis(nsIDHashKey::KeyType aKey,
-                                  nsFactoryEntry* const& aData,
-                                  MallocSizeOf aMallocSizeOf,
-                                  void* aUserArg)
-{
-  return aData->SizeOfIncludingThis(aMallocSizeOf);
-}
-
-static size_t
-SizeOfContractIDsEntryExcludingThis(nsCStringHashKey::KeyType aKey,
-                                    nsFactoryEntry* const& aData,
-                                    MallocSizeOf aMallocSizeOf,
-                                    void* aUserArg)
-{
-  // We don't measure the nsFactoryEntry data because its owned by mFactories
-  // (which measures them in SizeOfFactoriesEntryExcludingThis).
-  return aKey.SizeOfExcludingThisMustBeUnshared(aMallocSizeOf);
 }
 
 MOZ_DEFINE_MALLOC_SIZE_OF(ComponentManagerMallocSizeOf)
@@ -1837,23 +1834,33 @@ nsComponentManagerImpl::CollectReports(nsIHandleReportCallback* aHandleReport,
 
 size_t
 nsComponentManagerImpl::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf)
+  const
 {
   size_t n = aMallocSizeOf(this);
-  n += mLoaderMap.SizeOfExcludingThis(nullptr, aMallocSizeOf);
-  n += mFactories.SizeOfExcludingThis(SizeOfFactoriesEntryExcludingThis,
-                                      aMallocSizeOf);
-  n += mContractIDs.SizeOfExcludingThis(SizeOfContractIDsEntryExcludingThis,
-                                        aMallocSizeOf);
 
-  n += sStaticModules->SizeOfIncludingThis(aMallocSizeOf);
-  n += sModuleLocations->SizeOfIncludingThis(aMallocSizeOf);
+  n += mLoaderMap.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
-  n += mKnownStaticModules.SizeOfExcludingThis(aMallocSizeOf);
-  n += mKnownModules.SizeOfExcludingThis(nullptr, aMallocSizeOf);
+  n += mFactories.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  for (auto iter = mFactories.ConstIter(); !iter.Done(); iter.Next()) {
+    n += iter.Data()->SizeOfIncludingThis(aMallocSizeOf);
+  }
+
+  n += mContractIDs.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  for (auto iter = mContractIDs.ConstIter(); !iter.Done(); iter.Next()) {
+    // We don't measure the nsFactoryEntry data because it's owned by
+    // mFactories (which is measured above).
+    n += iter.Key().SizeOfExcludingThisMustBeUnshared(aMallocSizeOf);
+  }
+
+  n += sStaticModules->ShallowSizeOfIncludingThis(aMallocSizeOf);
+  n += sModuleLocations->ShallowSizeOfIncludingThis(aMallocSizeOf);
+
+  n += mKnownStaticModules.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  n += mKnownModules.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
   n += PL_SizeOfArenaPoolExcludingPool(&mArena, aMallocSizeOf);
 
-  n += mPendingServices.SizeOfExcludingThis(aMallocSizeOf);
+  n += mPendingServices.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
   // Measurement of the following members may be added later if DMD finds it is
   // worthwhile:
@@ -2014,6 +2021,7 @@ XRE_AddStaticComponent(const mozilla::Module* aComponent)
 NS_IMETHODIMP
 nsComponentManagerImpl::AddBootstrappedManifestLocation(nsIFile* aLocation)
 {
+#if !defined(MOZILLA_XPCOMRT_API)
   nsString path;
   nsresult rv = aLocation->GetPath(path);
   if (NS_FAILED(rv)) {
@@ -2027,11 +2035,15 @@ nsComponentManagerImpl::AddBootstrappedManifestLocation(nsIFile* aLocation)
   nsCOMPtr<nsIFile> manifest =
     CloneAndAppend(aLocation, NS_LITERAL_CSTRING("chrome.manifest"));
   return XRE_AddManifestLocation(NS_BOOTSTRAPPED_LOCATION, manifest);
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif // !defined(MOZILLA_XPCOMRT_API)
 }
 
 NS_IMETHODIMP
 nsComponentManagerImpl::RemoveBootstrappedManifestLocation(nsIFile* aLocation)
 {
+#if !defined(MOZILLA_XPCOMRT_API)
   nsCOMPtr<nsIChromeRegistry> cr = mozilla::services::GetChromeRegistryService();
   if (!cr) {
     return NS_ERROR_FAILURE;
@@ -2061,11 +2073,15 @@ nsComponentManagerImpl::RemoveBootstrappedManifestLocation(nsIFile* aLocation)
 
   rv = cr->CheckForNewChrome();
   return rv;
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif // !defined(MOZILLA_XPCOMRT_API)
 }
 
 NS_IMETHODIMP
 nsComponentManagerImpl::GetManifestLocations(nsIArray** aLocations)
 {
+#if !defined(MOZILLA_XPCOMRT_API)
   NS_ENSURE_ARG_POINTER(aLocations);
   *aLocations = nullptr;
 
@@ -2089,6 +2105,9 @@ nsComponentManagerImpl::GetManifestLocations(nsIArray** aLocations)
 
   locations.forget(aLocations);
   return NS_OK;
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif // !defined(MOZILLA_XPCOMRT_API)
 }
 
 #ifdef MOZ_B2G_LOADER
@@ -2101,7 +2120,7 @@ nsComponentManagerImpl::XPTOnlyManifestManifest(
   char* file = aArgv[0];
   FileLocation f(aCx.mFile, file);
 
-  DoRegisterManifest(NS_COMPONENT_LOCATION, f, false, true);
+  DoRegisterManifest(NS_APP_LOCATION, f, false, true);
 }
 
 /* static */
@@ -2125,7 +2144,7 @@ nsComponentManagerImpl::PreloadXPT(nsIFile* aFile)
   MOZ_ASSERT(!nsComponentManagerImpl::gComponentManager);
   FileLocation location(aFile, "chrome.manifest");
 
-  DoRegisterManifest(NS_COMPONENT_LOCATION, location,
+  DoRegisterManifest(NS_APP_LOCATION, location,
                      false, true /* aXPTOnly */);
 }
 
@@ -2137,6 +2156,7 @@ PreloadXPT(nsIFile* aOmnijarFile)
 
 #endif /* MOZ_B2G_LOADER */
 
+#if !defined(MOZILLA_XPCOMRT_API)
 EXPORT_XPCOM_API(nsresult)
 XRE_AddManifestLocation(NSLocationType aType, nsIFile* aLocation)
 {
@@ -2177,4 +2197,5 @@ XRE_AddJarManifestLocation(NSLocationType aType, nsIFile* aLocation)
 
   return NS_OK;
 }
+#endif // !defined(MOZILLA_XPCOMRT_API)
 

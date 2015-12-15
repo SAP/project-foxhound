@@ -29,6 +29,7 @@ if CONFIG['ANDROID_VERSION'] >= '21':
     EXPORTS += [
         'GonkBufferQueueLL/GonkBufferQueueDefs.h',
         'GonkBufferQueueLL/GonkBufferQueueLL.h',
+        'GonkBufferQueueLL/GonkBufferQueueProducer.h',
         'GonkBufferQueueLL/GonkBufferSlot.h',
         'GonkConsumerBaseLL.h',
         'GonkNativeWindowClientLL.h',
@@ -96,8 +97,6 @@ if CONFIG['MOZ_B2G_CAMERA'] or CONFIG['MOZ_OMX_DECODER']:
         SOURCES += [
             'FakeSurfaceComposer.cpp',
         ]
-
-FAIL_ON_WARNINGS = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

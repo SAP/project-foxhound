@@ -1,11 +1,11 @@
 // Test that having two frames that request installs at the same time doesn't
 // cause callback ID conflicts (discussed in bug 926712)
 
-let {Promise} = Cu.import("resource://gre/modules/Promise.jsm");
+var {Promise} = Cu.import("resource://gre/modules/Promise.jsm");
 
-let gConcurrentTabs = [];
-let gQueuedForInstall = [];
-let gResults = [];
+var gConcurrentTabs = [];
+var gQueuedForInstall = [];
+var gResults = [];
 
 function frame_script() {
   addMessageListener("Test:StartInstall", () => {
@@ -21,7 +21,7 @@ function frame_script() {
   }, true);
 }
 
-let gAddonAndWindowListener = {
+var gAddonAndWindowListener = {
   onOpenWindow: function(win) {
     var window = win.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindow);
     info("Window opened");
@@ -81,8 +81,8 @@ function test() {
     Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
     Services.prefs.clearUserPref(PREF_INSTALL_REQUIRESECUREORIGIN);
 
-    Services.perms.remove("example.com", "install");
-    Services.perms.remove("example.org", "install");
+    Services.perms.remove(makeURI("http://example.com"), "install");
+    Services.perms.remove(makeURI("http://example.org"), "install");
 
     while (gConcurrentTabs.length) {
       gBrowser.removeTab(gConcurrentTabs.shift());
@@ -114,10 +114,10 @@ function endThisTest() {
   isnot(gResults[0].xpi, gResults[1].xpi, "Should not have the same XPIs.");
   for (let i = 0; i < 2; i++) {
     let {loc, xpi} = gResults[i];
-    if (loc.contains("example.org")) {
-      ok(xpi.contains("example.org"), "Should get .org XPI for .org loc");
-    } else if (loc.contains("example.com")) {
-      ok(xpi.contains("example.com"), "Should get .com XPI for .com loc");
+    if (loc.includes("example.org")) {
+      ok(xpi.includes("example.org"), "Should get .org XPI for .org loc");
+    } else if (loc.includes("example.com")) {
+      ok(xpi.includes("example.com"), "Should get .com XPI for .com loc");
     } else {
       ok(false, "Should never get anything that isn't from example.org or example.com");
     }

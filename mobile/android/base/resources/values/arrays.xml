@@ -73,13 +73,15 @@
     </string-array>
     <string-array name="pref_private_data_entries">
         <item>@string/pref_private_data_history2</item>
+        <item>@string/pref_private_data_searchHistory</item>
         <item>@string/pref_private_data_downloadFiles2</item>
-        <item>@string/pref_private_data_formdata</item>
+        <item>@string/pref_private_data_formdata2</item>
         <item>@string/pref_private_data_cookies2</item>
         <item>@string/pref_private_data_passwords</item>
         <item>@string/pref_private_data_cache</item>
         <item>@string/pref_private_data_offlineApps</item>
         <item>@string/pref_private_data_siteSettings</item>
+        <item>@string/pref_private_data_syncedTabs</item>
     </string-array>
     <string-array name="pref_private_data_defaults">
         <item>true</item>
@@ -87,12 +89,15 @@
         <item>true</item>
         <item>true</item>
         <item>true</item>
+        <item>false</item>
+        <item>true</item>
         <item>true</item>
         <item>true</item>
         <item>true</item>
     </string-array>
     <string-array name="pref_private_data_values">
         <item>private.data.history</item>
+        <item>private.data.searchHistory</item>
         <item>private.data.downloadFiles</item>
         <item>private.data.formdata</item>
         <item>private.data.cookies_sessions</item>
@@ -100,9 +105,11 @@
         <item>private.data.cache</item>
         <item>private.data.offlineApps</item>
         <item>private.data.siteSettings</item>
+        <item>private.data.syncedTabs</item>
     </string-array>
     <string-array name="pref_private_data_keys">
         <item>private.data.history</item>
+        <item>private.data.searchHistory</item>
         <item>private.data.downloadFiles</item>
         <item>private.data.formdata</item>
         <item>private.data.cookies_sessions</item>
@@ -110,8 +117,11 @@
         <item>private.data.cache</item>
         <item>private.data.offlineApps</item>
         <item>private.data.siteSettings</item>
+        <item>private.data.syncedTabs</item>
     </string-array>
     <string-array name="pref_clear_on_exit_defaults">
+        <item>false</item>
+        <item>false</item>
         <item>false</item>
         <item>false</item>
         <item>false</item>

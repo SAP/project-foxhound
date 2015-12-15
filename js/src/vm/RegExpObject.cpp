@@ -11,6 +11,7 @@
 
 #include "jsstr.h"
 
+#include "builtin/RegExp.h"
 #include "frontend/TokenStream.h"
 #include "irregexp/RegExpParser.h"
 #include "vm/MatchPairs.h"
@@ -67,11 +68,9 @@ RegExpObjectBuilder::getOrCreateClone(HandleObjectGroup group)
     MOZ_ASSERT(!reobj_);
     MOZ_ASSERT(group->clasp() == &RegExpObject::class_);
 
-    RootedObject parent(cx, group->proto().toObject()->getParent());
-
     // Note: RegExp objects are always allocated in the tenured heap. This is
     // not strictly required, but simplifies embedding them in jitcode.
-    reobj_ = NewObjectWithGroup<RegExpObject>(cx->asJSContext(), group, parent, TenuredObject);
+    reobj_ = NewObjectWithGroup<RegExpObject>(cx->asJSContext(), group, TenuredObject);
     if (!reobj_)
         return false;
     reobj_->initPrivate(nullptr);
@@ -113,7 +112,7 @@ RegExpObjectBuilder::clone(Handle<RegExpObject*> other)
      * the clone -- if the |RegExpStatics| provides more flags we'll
      * need a different |RegExpShared|.
      */
-    RegExpStatics* res = other->getProto()->getParent()->as<GlobalObject>().getRegExpStatics(cx);
+    RegExpStatics* res = other->getProto()->global().getRegExpStatics(cx);
     if (!res)
         return nullptr;
 
@@ -134,24 +133,6 @@ RegExpObjectBuilder::clone(Handle<RegExpObject*> other)
 }
 
 /* MatchPairs */
-
-bool
-MatchPairs::initArray(size_t pairCount)
-{
-    MOZ_ASSERT(pairCount > 0);
-
-    /* Guarantee adequate space in buffer. */
-    if (!allocOrExpandArray(pairCount))
-        return false;
-
-    /* Initialize all MatchPair objects to invalid locations. */
-    for (size_t i = 0; i < pairCount; i++) {
-        pairs_[i].start = -1;
-        pairs_[i].limit = -1;
-    }
-
-    return true;
-}
 
 bool
 MatchPairs::initArrayFrom(MatchPairs& copyFrom)
@@ -247,10 +228,10 @@ RegExpObject::trace(JSTracer* trc, JSObject* obj)
     // conditions, since:
     //   1. During TraceRuntime, isHeapBusy() is true, but the tracer might not
     //      be a marking tracer.
-    //   2. When a write barrier executes, IS_GC_MARKING_TRACER is true, but
+    //   2. When a write barrier executes, IsMarkingTracer is true, but
     //      isHeapBusy() will be false.
     if (trc->runtime()->isHeapBusy() &&
-        IS_GC_MARKING_TRACER(trc) &&
+        trc->isMarkingTracer() &&
         !obj->asTenured().zone()->isPreservingCode())
     {
         obj->as<RegExpObject>().NativeObject::setPrivate(nullptr);
@@ -261,7 +242,7 @@ RegExpObject::trace(JSTracer* trc, JSObject* obj)
 
 const Class RegExpObject::class_ = {
     js_RegExp_str,
-    JSCLASS_HAS_PRIVATE | JSCLASS_IMPLEMENTS_BARRIERS |
+    JSCLASS_HAS_PRIVATE |
     JSCLASS_HAS_RESERVED_SLOTS(RegExpObject::RESERVED_SLOTS) |
     JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
     nullptr, /* addProperty */
@@ -270,12 +251,23 @@ const Class RegExpObject::class_ = {
     nullptr, /* setProperty */
     nullptr, /* enumerate */
     nullptr, /* resolve */
+    nullptr, /* mayResolve */
     nullptr, /* convert */
     nullptr, /* finalize */
     nullptr, /* call */
     nullptr, /* hasInstance */
     nullptr, /* construct */
-    RegExpObject::trace
+    RegExpObject::trace,
+
+    // ClassSpec
+    {
+        GenericCreateConstructor<js::regexp_construct, 2, gc::AllocKind::FUNCTION>,
+        CreateRegExpPrototype,
+        nullptr,
+        js::regexp_static_props,
+        js::regexp_methods,
+        js::regexp_properties
+    }
 };
 
 RegExpObject*
@@ -337,15 +329,9 @@ RegExpObject::assignInitialShape(ExclusiveContext* cx, Handle<RegExpObject*> sel
     MOZ_ASSERT(self->empty());
 
     JS_STATIC_ASSERT(LAST_INDEX_SLOT == 0);
-    JS_STATIC_ASSERT(SOURCE_SLOT == LAST_INDEX_SLOT + 1);
 
     /* The lastIndex property alone is writable but non-configurable. */
-    if (!self->addDataProperty(cx, cx->names().lastIndex, LAST_INDEX_SLOT, JSPROP_PERMANENT))
-        return nullptr;
-
-    /* Remaining instance property are non-writable and non-configurable. */
-    unsigned attrs = JSPROP_PERMANENT | JSPROP_READONLY;
-    return self->addDataProperty(cx, cx->names().source, SOURCE_SLOT, attrs);
+    return self->addDataProperty(cx, cx->names().lastIndex, LAST_INDEX_SLOT, JSPROP_PERMANENT);
 }
 
 bool
@@ -358,8 +344,6 @@ RegExpObject::init(ExclusiveContext* cx, HandleAtom source, RegExpFlag flags)
 
     MOZ_ASSERT(self->lookup(cx, NameToId(cx->names().lastIndex))->slot() ==
                LAST_INDEX_SLOT);
-    MOZ_ASSERT(self->lookup(cx, NameToId(cx->names().source))->slot() ==
-               SOURCE_SLOT);
 
     /*
      * If this is a re-initialization with an existing RegExpShared, 'flags'
@@ -576,16 +560,16 @@ RegExpShared::~RegExpShared()
 void
 RegExpShared::trace(JSTracer* trc)
 {
-    if (IS_GC_MARKING_TRACER(trc))
+    if (trc->isMarkingTracer())
         marked_ = true;
 
     if (source)
-        MarkString(trc, &source, "RegExpShared source");
+        TraceEdge(trc, &source, "RegExpShared source");
 
     for (size_t i = 0; i < ArrayLength(compilationArray); i++) {
         RegExpCompilation& compilation = compilationArray[i];
         if (compilation.jitCode)
-            MarkJitCode(trc, &compilation.jitCode, "RegExpShared code");
+            TraceEdge(trc, &compilation.jitCode, "RegExpShared code");
     }
 }
 
@@ -692,8 +676,10 @@ RegExpShared::execute(JSContext* cx, HandleLinearString input, size_t start,
      * Ensure sufficient memory for output vector.
      * No need to initialize it. The RegExp engine fills them in on a match.
      */
-    if (matches && !matches->allocOrExpandArray(pairCount()))
+    if (matches && !matches->allocOrExpandArray(pairCount())) {
+        ReportOutOfMemory(cx);
         return RegExpRunStatus_Error;
+    }
 
     /*
      * |displacement| emulates sticky mode by matching from this offset
@@ -839,7 +825,8 @@ RegExpCompartment::createMatchResultTemplateObject(JSContext* cx)
     MOZ_ASSERT(!matchResultTemplateObject_);
 
     /* Create template array object */
-    RootedArrayObject templateObject(cx, NewDenseUnallocatedArray(cx, 0, NullPtr(), TenuredObject));
+    RootedArrayObject templateObject(cx, NewDenseUnallocatedArray(cx, RegExpObject::MaxPairCount,
+                                     nullptr, TenuredObject));
     if (!templateObject)
         return matchResultTemplateObject_; // = nullptr
 
@@ -888,7 +875,7 @@ RegExpCompartment::init(JSContext* cx)
 {
     if (!set_.init(0)) {
         if (cx)
-            js_ReportOutOfMemory(cx);
+            ReportOutOfMemory(cx);
         return false;
     }
 
@@ -898,6 +885,9 @@ RegExpCompartment::init(JSContext* cx)
 void
 RegExpCompartment::sweep(JSRuntime* rt)
 {
+    if (!set_.initialized())
+        return;
+
     for (Set::Enum e(set_); !e.empty(); e.popFront()) {
         RegExpShared* shared = e.front();
 
@@ -911,16 +901,17 @@ RegExpCompartment::sweep(JSRuntime* rt)
         // the RegExpShared if it was accidentally marked earlier but wasn't
         // marked by the current trace.
         bool keep = shared->marked() &&
-                    IsStringMarkedFromAnyThread(&shared->source);
+                    IsMarked(&shared->source);
         for (size_t i = 0; i < ArrayLength(shared->compilationArray); i++) {
             RegExpShared::RegExpCompilation& compilation = shared->compilationArray[i];
             if (compilation.jitCode &&
-                IsJitCodeAboutToBeFinalizedFromAnyThread(compilation.jitCode.unsafeGet()))
+                IsAboutToBeFinalized(&compilation.jitCode))
             {
                 keep = false;
             }
         }
-        if (keep || rt->isHeapCompacting()) {
+        MOZ_ASSERT(rt->isHeapMajorCollecting());
+        if (keep || rt->gc.isHeapCompacting()) {
             shared->clearMarked();
         } else {
             js_delete(shared);
@@ -929,7 +920,7 @@ RegExpCompartment::sweep(JSRuntime* rt)
     }
 
     if (matchResultTemplateObject_ &&
-        IsObjectAboutToBeFinalizedFromAnyThread(matchResultTemplateObject_.unsafeGet()))
+        IsAboutToBeFinalized(&matchResultTemplateObject_))
     {
         matchResultTemplateObject_.set(nullptr);
     }
@@ -954,7 +945,7 @@ RegExpCompartment::get(JSContext* cx, JSAtom* source, RegExpFlag flags, RegExpGu
         return false;
 
     if (!set_.add(p, shared)) {
-        js_ReportOutOfMemory(cx);
+        ReportOutOfMemory(cx);
         return false;
     }
 
@@ -1064,7 +1055,7 @@ js::ParseRegExpFlags(JSContext* cx, JSString* flagStr, RegExpFlag* flagsOut)
         char charBuf[2];
         charBuf[0] = char(lastParsed);
         charBuf[1] = '\0';
-        JS_ReportErrorFlagsAndNumber(cx, JSREPORT_ERROR, js_GetErrorMessage, nullptr,
+        JS_ReportErrorFlagsAndNumber(cx, JSREPORT_ERROR, GetErrorMessage, nullptr,
                                      JSMSG_BAD_REGEXP_FLAG, charBuf);
         return false;
     }

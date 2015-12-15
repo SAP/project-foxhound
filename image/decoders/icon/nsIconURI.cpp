@@ -10,9 +10,9 @@
 #include "mozilla/ipc/URIUtils.h"
 
 #include "nsIconURI.h"
-#include "nsNetUtil.h"
 #include "nsIIOService.h"
 #include "nsIURL.h"
+#include "nsNetUtil.h"
 #include "prprf.h"
 #include "plstr.h"
 #include <stdlib.h>
@@ -341,7 +341,7 @@ nsMozIconURI::SetHost(const nsACString& aHost)
 }
 
 NS_IMETHODIMP
-nsMozIconURI::GetPort(int32_t *aPort)
+nsMozIconURI::GetPort(int32_t* aPort)
 {
   return NS_ERROR_FAILURE;
 }
@@ -379,7 +379,7 @@ nsMozIconURI::SetRef(const nsACString& aRef)
 }
 
 NS_IMETHODIMP
-nsMozIconURI::Equals(nsIURI *other, bool* result)
+nsMozIconURI::Equals(nsIURI* other, bool* result)
 {
   NS_ENSURE_ARG_POINTER(other);
   NS_PRECONDITION(result, "null pointer");
@@ -467,6 +467,12 @@ nsMozIconURI::GetAsciiSpec(nsACString& aSpecA)
 }
 
 NS_IMETHODIMP
+nsMozIconURI::GetAsciiHostPort(nsACString& aHostPortA)
+{
+  return GetHostPort(aHostPortA);
+}
+
+NS_IMETHODIMP
 nsMozIconURI::GetAsciiHost(nsACString& aHostA)
 {
   return GetHost(aHostA);
@@ -498,7 +504,7 @@ nsMozIconURI::SetIconURL(nsIURL* aFileUrl)
 }
 
 NS_IMETHODIMP
-nsMozIconURI::GetImageSize(uint32_t * aImageSize)
+nsMozIconURI::GetImageSize(uint32_t* aImageSize)
               // measured by # of pixels in a row. defaults to 16.
 {
   *aImageSize = mSize;
@@ -642,3 +648,33 @@ nsMozIconURI::Deserialize(const URIParams& aParams)
 
   return true;
 }
+
+////////////////////////////////////////////////////////////
+// Nested version of nsIconURI
+
+nsNestedMozIconURI::nsNestedMozIconURI()
+{ }
+
+nsNestedMozIconURI::~nsNestedMozIconURI()
+{ }
+
+NS_IMPL_ISUPPORTS_INHERITED(nsNestedMozIconURI, nsMozIconURI, nsINestedURI)
+
+NS_IMETHODIMP
+nsNestedMozIconURI::GetInnerURI(nsIURI** aURI)
+{
+  nsCOMPtr<nsIURI> iconURL = do_QueryInterface(mIconURL);
+  if (iconURL) {
+    iconURL.forget(aURI);
+  } else {
+    *aURI = nullptr;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNestedMozIconURI::GetInnermostURI(nsIURI** aURI)
+{
+  return NS_ImplGetInnermostURI(this, aURI);
+}
+

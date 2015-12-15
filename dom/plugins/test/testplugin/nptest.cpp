@@ -36,6 +36,7 @@
 #include "nptest_utils.h"
 #include "nptest_platform.h"
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/IntentionalCrash.h"
 
 #include <stdlib.h>
@@ -61,9 +62,6 @@
 using namespace std;
 
 #define PLUGIN_VERSION     "1.0.0.0"
-#define ARRAY_LENGTH(a) (sizeof(a)/sizeof(a[0]))
-#define STATIC_ASSERT(condition)                                \
-    extern void np_static_assert(int arg[(condition) ? 1 : -1])
 
 extern const char *sPluginName;
 extern const char *sPluginDescription;
@@ -170,6 +168,10 @@ static bool getNPNVdocumentOrigin(NPObject* npobj, const NPVariant* args, uint32
 static bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool queryContentsScaleFactor(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool echoString(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool startAudioPlayback(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool stopAudioPlayback(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool getAudioMuted(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool nativeWidgetIsVisible(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 
 static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "npnEvaluateTest",
@@ -236,8 +238,12 @@ static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "getMouseUpEventCount",
   "queryContentsScaleFactor",
   "echoString",
+  "startAudioPlayback",
+  "stopAudioPlayback",
+  "audioMuted",
+  "nativeWidgetIsVisible",
 };
-static NPIdentifier sPluginMethodIdentifiers[ARRAY_LENGTH(sPluginMethodIdentifierNames)];
+static NPIdentifier sPluginMethodIdentifiers[MOZ_ARRAY_LENGTH(sPluginMethodIdentifierNames)];
 static const ScriptableFunction sPluginMethodFunctions[] = {
   npnEvaluateTest,
   npnInvokeTest,
@@ -303,16 +309,21 @@ static const ScriptableFunction sPluginMethodFunctions[] = {
   getMouseUpEventCount,
   queryContentsScaleFactor,
   echoString,
+  startAudioPlayback,
+  stopAudioPlayback,
+  getAudioMuted,
+  nativeWidgetIsVisible,
 };
 
-STATIC_ASSERT(ARRAY_LENGTH(sPluginMethodIdentifierNames) ==
-              ARRAY_LENGTH(sPluginMethodFunctions));
+static_assert(MOZ_ARRAY_LENGTH(sPluginMethodIdentifierNames) ==
+              MOZ_ARRAY_LENGTH(sPluginMethodFunctions),
+              "Arrays should have the same size");
 
 static const NPUTF8* sPluginPropertyIdentifierNames[] = {
   "propertyAndMethod"
 };
-static NPIdentifier sPluginPropertyIdentifiers[ARRAY_LENGTH(sPluginPropertyIdentifierNames)];
-static NPVariant sPluginPropertyValues[ARRAY_LENGTH(sPluginPropertyIdentifierNames)];
+static NPIdentifier sPluginPropertyIdentifiers[MOZ_ARRAY_LENGTH(sPluginPropertyIdentifierNames)];
+static NPVariant sPluginPropertyValues[MOZ_ARRAY_LENGTH(sPluginPropertyIdentifierNames)];
 
 struct URLNotifyData
 {
@@ -389,9 +400,9 @@ static void initializeIdentifiers()
 {
   if (!sIdentifiersInitialized) {
     NPN_GetStringIdentifiers(sPluginMethodIdentifierNames,
-        ARRAY_LENGTH(sPluginMethodIdentifierNames), sPluginMethodIdentifiers);
+        MOZ_ARRAY_LENGTH(sPluginMethodIdentifierNames), sPluginMethodIdentifiers);
     NPN_GetStringIdentifiers(sPluginPropertyIdentifierNames,
-        ARRAY_LENGTH(sPluginPropertyIdentifierNames), sPluginPropertyIdentifiers);
+        MOZ_ARRAY_LENGTH(sPluginPropertyIdentifierNames), sPluginPropertyIdentifiers);
 
     sIdentifiersInitialized = true;
 
@@ -405,9 +416,9 @@ static void initializeIdentifiers()
 static void clearIdentifiers()
 {
   memset(sPluginMethodIdentifiers, 0,
-      ARRAY_LENGTH(sPluginMethodIdentifiers) * sizeof(NPIdentifier));
+      MOZ_ARRAY_LENGTH(sPluginMethodIdentifiers) * sizeof(NPIdentifier));
   memset(sPluginPropertyIdentifiers, 0,
-      ARRAY_LENGTH(sPluginPropertyIdentifiers) * sizeof(NPIdentifier));
+      MOZ_ARRAY_LENGTH(sPluginPropertyIdentifiers) * sizeof(NPIdentifier));
 
   sIdentifiersInitialized = false;
 }
@@ -686,7 +697,7 @@ NP_EXPORT(NPError) NP_Initialize(NPNetscapeFuncs* bFuncs, NPPluginFuncs* pFuncs)
 
   initializeIdentifiers();
 
-  for (unsigned int i = 0; i < ARRAY_LENGTH(sPluginPropertyValues); i++) {
+  for (unsigned int i = 0; i < MOZ_ARRAY_LENGTH(sPluginPropertyValues); i++) {
     VOID_TO_NPVARIANT(sPluginPropertyValues[i]);
   }
 
@@ -737,7 +748,7 @@ NPError OSCALL NP_Shutdown()
 {
   clearIdentifiers();
 
-  for (unsigned int i = 0; i < ARRAY_LENGTH(sPluginPropertyValues); i++) {
+  for (unsigned int i = 0; i < MOZ_ARRAY_LENGTH(sPluginPropertyValues); i++) {
     NPN_ReleaseVariantValue(&sPluginPropertyValues[i]);
   }
 
@@ -785,6 +796,8 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->npnNewStream = false;
   instanceData->invalidateDuringPaint = false;
   instanceData->slowPaint = false;
+  instanceData->playingAudio = false;
+  instanceData->audioMuted = false;
   instanceData->writeCount = 0;
   instanceData->writeReadyCount = 0;
   memset(&instanceData->window, 0, sizeof(instanceData->window));
@@ -1441,6 +1454,11 @@ NPP_SetValue(NPP instance, NPNVariable variable, void* value)
     instanceData->lastReportedPrivateModeState = bool(*static_cast<NPBool*>(value));
     return NPERR_NO_ERROR;
   }
+  if (variable == NPNVmuteAudioBool) {
+    InstanceData* instanceData = (InstanceData*)(instance->pdata);
+    instanceData->audioMuted = bool(*static_cast<NPBool*>(value));
+    return NPERR_NO_ERROR;
+  }
   return NPERR_GENERIC_ERROR;
 }
 
@@ -1852,7 +1870,7 @@ scriptableInvalidate(NPObject* npobj)
 bool
 scriptableHasMethod(NPObject* npobj, NPIdentifier name)
 {
-  for (int i = 0; i < int(ARRAY_LENGTH(sPluginMethodIdentifiers)); i++) {
+  for (int i = 0; i < int(MOZ_ARRAY_LENGTH(sPluginMethodIdentifiers)); i++) {
     if (name == sPluginMethodIdentifiers[i])
       return true;
   }
@@ -1878,7 +1896,7 @@ scriptableInvoke(NPObject* npobj, NPIdentifier name, const NPVariant* args, uint
     return false;
   }
 
-  for (int i = 0; i < int(ARRAY_LENGTH(sPluginMethodIdentifiers)); i++) {
+  for (int i = 0; i < int(MOZ_ARRAY_LENGTH(sPluginMethodIdentifiers)); i++) {
     if (name == sPluginMethodIdentifiers[i])
       return sPluginMethodFunctions[i](npobj, args, argCount, result);
   }
@@ -1947,7 +1965,7 @@ scriptableHasProperty(NPObject* npobj, NPIdentifier name)
       Crash();
     }
   }
-  for (int i = 0; i < int(ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
+  for (int i = 0; i < int(MOZ_ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
     if (name == sPluginPropertyIdentifiers[i]) {
       return true;
     }
@@ -1958,7 +1976,7 @@ scriptableHasProperty(NPObject* npobj, NPIdentifier name)
 bool
 scriptableGetProperty(NPObject* npobj, NPIdentifier name, NPVariant* result)
 {
-  for (int i = 0; i < int(ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
+  for (int i = 0; i < int(MOZ_ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
     if (name == sPluginPropertyIdentifiers[i]) {
       DuplicateNPVariant(*result, sPluginPropertyValues[i]);
       return true;
@@ -1970,7 +1988,7 @@ scriptableGetProperty(NPObject* npobj, NPIdentifier name, NPVariant* result)
 bool
 scriptableSetProperty(NPObject* npobj, NPIdentifier name, const NPVariant* value)
 {
-  for (int i = 0; i < int(ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
+  for (int i = 0; i < int(MOZ_ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
     if (name == sPluginPropertyIdentifiers[i]) {
       NPN_ReleaseVariantValue(&sPluginPropertyValues[i]);
       DuplicateNPVariant(sPluginPropertyValues[i], *value);
@@ -1983,7 +2001,7 @@ scriptableSetProperty(NPObject* npobj, NPIdentifier name, const NPVariant* value
 bool
 scriptableRemoveProperty(NPObject* npobj, NPIdentifier name)
 {
-  for (int i = 0; i < int(ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
+  for (int i = 0; i < int(MOZ_ARRAY_LENGTH(sPluginPropertyIdentifiers)); i++) {
     if (name == sPluginPropertyIdentifiers[i]) {
       NPN_ReleaseVariantValue(&sPluginPropertyValues[i]);
 
@@ -1999,14 +2017,14 @@ scriptableRemoveProperty(NPObject* npobj, NPIdentifier name)
 bool
 scriptableEnumerate(NPObject* npobj, NPIdentifier** identifier, uint32_t* count)
 {
-  const int bufsize = sizeof(NPIdentifier) * ARRAY_LENGTH(sPluginMethodIdentifierNames);
+  const int bufsize = sizeof(NPIdentifier) * MOZ_ARRAY_LENGTH(sPluginMethodIdentifierNames);
   NPIdentifier* ids = (NPIdentifier*) NPN_MemAlloc(bufsize);
   if (!ids)
     return false;
 
   memcpy(ids, sPluginMethodIdentifiers, bufsize);
   *identifier = ids;
-  *count = ARRAY_LENGTH(sPluginMethodIdentifierNames);
+  *count = MOZ_ARRAY_LENGTH(sPluginMethodIdentifierNames);
   return true;
 }
 
@@ -3306,6 +3324,27 @@ destroySharedGfxStuff(NPObject* npobj, const NPVariant* args,
 }
 #endif
 
+#if defined(XP_WIN)
+bool
+nativeWidgetIsVisible(NPObject* npobj, const NPVariant* args,
+                        uint32_t argCount, NPVariant* result)
+{
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  bool visible = pluginNativeWidgetIsVisible(id);
+  BOOLEAN_TO_NPVARIANT(visible, *result);
+  return true;
+}
+#else
+bool
+nativeWidgetIsVisible(NPObject* npobj, const NPVariant* args,
+                      uint32_t argCount, NPVariant* result)
+{
+  // XXX Not implemented!
+  return false;
+}
+#endif
+
 bool
 callOnDestroy(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
 {
@@ -3705,6 +3744,48 @@ bool echoString(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVar
   std::copy(arg.UTF8Characters, arg.UTF8Characters + arg.UTF8Length, buffer);
   STRINGN_TO_NPVARIANT(buffer, arg.UTF8Length, *result);
 
+  return true;
+}
+
+static bool
+toggleAudioPlayback(NPObject* npobj, uint32_t argCount, bool playingAudio, NPVariant* result)
+{
+  if (argCount != 0) {
+    return false;
+  }
+
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  id->playingAudio = playingAudio;
+
+  NPN_SetValue(npp, NPPVpluginIsPlayingAudio, (void*)playingAudio);
+
+  VOID_TO_NPVARIANT(*result);
+  return true;
+}
+
+static bool
+startAudioPlayback(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  return toggleAudioPlayback(npobj, argCount, true, result);
+}
+
+static bool
+stopAudioPlayback(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  return toggleAudioPlayback(npobj, argCount, false, result);
+}
+
+static bool
+getAudioMuted(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  if (argCount != 0) {
+    return false;
+  }
+
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  BOOLEAN_TO_NPVARIANT(id->audioMuted, *result);
   return true;
 }
 

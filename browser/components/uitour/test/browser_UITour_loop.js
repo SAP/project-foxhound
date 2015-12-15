@@ -3,13 +3,12 @@
 
 "use strict";
 
-let gTestTab;
-let gContentAPI;
-let gContentWindow;
-let loopButton;
-let loopPanel = document.getElementById("loop-notification-panel");
+var gTestTab;
+var gContentAPI;
+var gContentWindow;
+var loopButton;
+var loopPanel = document.getElementById("loop-notification-panel");
 
-Components.utils.import("resource:///modules/UITour.jsm");
 const { LoopRooms } = Components.utils.import("resource:///modules/loop/LoopRooms.jsm", {});
 const { MozLoopServiceInternal } = Cu.import("resource:///modules/loop/MozLoopService.jsm", {});
 
@@ -27,11 +26,11 @@ function runOffline(fun) {
   }
 }
 
-let tests = [
+var tests = [
   taskify(function* test_gettingStartedClicked_linkOpenedWithExpectedParams() {
     Services.prefs.setBoolPref("loop.gettingStarted.seen", false);
     Services.prefs.setCharPref("loop.gettingStarted.url", "http://example.com");
-    ise(loopButton.open, false, "Menu should initially be closed");
+    is(loopButton.open, false, "Menu should initially be closed");
     loopButton.click();
 
     yield waitForConditionPromise(() => {
@@ -44,6 +43,9 @@ let tests = [
     });
 
     let loopDoc = document.getElementById("loop-notification-panel").children[0].contentDocument;
+    yield waitForConditionPromise(() => {
+      return loopDoc.readyState == 'complete';
+    }, "Loop notification panel document should be fully loaded.");
     let gettingStartedButton = loopDoc.getElementById("fte-button");
     ok(gettingStartedButton, "Getting Started button should be found");
 
@@ -69,7 +71,7 @@ let tests = [
 
     UITour.pageIDsForSession.clear();
     Services.prefs.setCharPref("loop.gettingStarted.url", "http://example.com");
-    ise(loopButton.open, false, "Menu should initially be closed");
+    is(loopButton.open, false, "Menu should initially be closed");
     loopButton.click();
 
     yield waitForConditionPromise(() => {
@@ -106,7 +108,7 @@ let tests = [
   taskify(function* test_menu_show_hide() {
     // The targets to highlight only appear after getting started is launched.
     Services.prefs.setBoolPref("loop.gettingStarted.seen", true);
-    ise(loopButton.open, false, "Menu should initially be closed");
+    is(loopButton.open, false, "Menu should initially be closed");
     gContentAPI.showMenu("loop");
 
     yield waitForConditionPromise(() => {
@@ -196,6 +198,7 @@ let tests = [
     };
     MozLoopServiceInternal.fxAOAuthTokenData = fxASampleToken;
     MozLoopServiceInternal.fxAOAuthProfile = fxASampleProfile;
+    Services.prefs.setCharPref("loop.key.fxa", "fake");
     yield MozLoopServiceInternal.notifyStatusChanged("login");
 
     // Show the Loop menu.
@@ -225,6 +228,7 @@ let tests = [
     // Logout. The panel tab will switch back to 'rooms'.
     MozLoopServiceInternal.fxAOAuthTokenData =
       MozLoopServiceInternal.fxAOAuthProfile = null;
+    Services.prefs.clearUserPref("loop.key.fxa");
     yield MozLoopServiceInternal.notifyStatusChanged();
 
     yield tabChangePromise;
@@ -299,7 +303,7 @@ let tests = [
     LoopRooms.open("fakeTourRoom");
   }),
   taskify(function* test_arrow_panel_position() {
-    ise(loopButton.open, false, "Menu should initially be closed");
+    is(loopButton.open, false, "Menu should initially be closed");
     let popup = document.getElementById("UITourTooltip");
 
     yield showMenuPromise("loop");
@@ -342,7 +346,7 @@ let tests = [
     let observationPromise = new Promise((resolve) => {
       gContentAPI.observe((event, params) => {
         is(event, "Loop:IncomingConversation", "Page should have been notified about incoming conversation");
-        ise(params.conversationOpen, false, "conversationOpen should be false");
+        is(params.conversationOpen, false, "conversationOpen should be false");
         is(gBrowser.selectedTab, gTestTab, "The same tab should be selected");
         resolve();
       });
@@ -391,8 +395,9 @@ function checkLoopPanelIsHidden() {
 
 function setupFakeRoom() {
   let room = {};
-  for (let prop of ["roomToken", "roomName", "roomOwner", "roomUrl", "participants"])
+  for (let prop of ["roomToken", "roomOwner", "roomUrl", "participants"])
     room[prop] = "fakeTourRoom";
+  room.decryptedContext = {roomName: "fakeTourRoom"};
   let roomsMap = new Map([
     [room.roomToken, room]
   ]);

@@ -15,14 +15,13 @@
 namespace js {
 namespace jit {
 
-class MDefinition;
-
 static MOZ_CONSTEXPR_VAR Register StackPointer = { Registers::invalid_reg };
 static MOZ_CONSTEXPR_VAR Register FramePointer = { Registers::invalid_reg };
 static MOZ_CONSTEXPR_VAR Register ReturnReg = { Registers::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ReturnDoubleReg = { FloatRegisters::invalid_reg };
-static MOZ_CONSTEXPR_VAR FloatRegister ReturnSimdReg = { FloatRegisters::invalid_reg };
+static MOZ_CONSTEXPR_VAR FloatRegister ReturnInt32x4Reg = { FloatRegisters::invalid_reg };
+static MOZ_CONSTEXPR_VAR FloatRegister ReturnFloat32x4Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ScratchFloat32Reg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ScratchDoubleReg = { FloatRegisters::invalid_reg };
 static MOZ_CONSTEXPR_VAR FloatRegister ScratchSimdReg = { FloatRegisters::invalid_reg };
@@ -70,9 +69,10 @@ static MOZ_CONSTEXPR_VAR ValueOperand JSReturnOperand(InvalidReg);
 #error "Bad architecture"
 #endif
 
-static const uint32_t ABIStackAlignment = 4;
-static const uint32_t CodeAlignment = 4;
-static const uint32_t JitStackAlignment = 4;
+static MOZ_CONSTEXPR_VAR uint32_t ABIStackAlignment = 4;
+static MOZ_CONSTEXPR_VAR uint32_t CodeAlignment = 4;
+static MOZ_CONSTEXPR_VAR uint32_t JitStackAlignment = 8;
+static MOZ_CONSTEXPR_VAR uint32_t JitStackValueAlignment = JitStackAlignment / sizeof(Value);
 
 static const Scale ScalePointer = TimesOne;
 
@@ -131,12 +131,23 @@ class Assembler : public AssemblerShared
     static void ToggleCall(CodeLocationLabel, bool) { MOZ_CRASH(); }
 
     static uintptr_t GetPointer(uint8_t*) { MOZ_CRASH(); }
+
+    void verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
+                                     const Disassembler::HeapAccess& heapAccess)
+    {
+        MOZ_CRASH();
+    }
 };
 
 class Operand
 {
   public:
     Operand (const Address&) { MOZ_CRASH();}
+    Operand (const Register) { MOZ_CRASH();}
+    Operand (const FloatRegister) { MOZ_CRASH();}
+    Operand (Register, Imm32 ) { MOZ_CRASH(); }
+    Operand (Register, int32_t ) { MOZ_CRASH(); }
+
 
 };
 
@@ -146,10 +157,6 @@ class MacroAssemblerNone : public Assembler
     MacroAssemblerNone() { MOZ_CRASH(); }
 
     MoveResolver moveResolver_;
-    size_t framePushed_;
-
-    uint32_t framePushed() const { MOZ_CRASH(); }
-    void setFramePushed(uint32_t) { MOZ_CRASH(); }
 
     size_t size() const { MOZ_CRASH(); }
     size_t bytesNeeded() const { MOZ_CRASH(); }
@@ -163,12 +170,6 @@ class MacroAssemblerNone : public Assembler
     void trace(JSTracer*) { MOZ_CRASH(); }
     static void TraceJumpRelocations(JSTracer*, JitCode*, CompactBufferReader&) { MOZ_CRASH(); }
     static void TraceDataRelocations(JSTracer*, JitCode*, CompactBufferReader&) { MOZ_CRASH(); }
-
-    static void FixupNurseryObjects(JSContext*, JitCode*, CompactBufferReader&,
-                                    const ObjectVector&)
-    {
-        MOZ_CRASH();
-    }
 
     static bool SupportsFloatingPoint() { return false; }
     static bool SupportsSimd() { return false; }
@@ -184,28 +185,13 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void bind(T) { MOZ_CRASH(); }
     template <typename T> void j(Condition, T) { MOZ_CRASH(); }
     template <typename T> void jump(T) { MOZ_CRASH(); }
-    void align(size_t) { MOZ_CRASH(); }
+    void haltingAlign(size_t) { MOZ_CRASH(); }
+    void nopAlign(size_t) { MOZ_CRASH(); }
     void checkStackAlignment() { MOZ_CRASH(); }
     uint32_t currentOffset() { MOZ_CRASH(); }
     uint32_t actualOffset(uint32_t) { MOZ_CRASH(); }
     uint32_t labelOffsetToPatchOffset(uint32_t) { MOZ_CRASH(); }
     CodeOffsetLabel labelForPatch() { MOZ_CRASH(); }
-
-    template <typename T> void call(T) { MOZ_CRASH(); }
-    template <typename T, typename S> void call(T, S) { MOZ_CRASH(); }
-    template <typename T> void callWithABI(T, MoveOp::Type v = MoveOp::GENERAL) { MOZ_CRASH(); }
-    void callAndPushReturnAddress(Label* label) { MOZ_CRASH(); }
-
-    void setupAlignedABICall(uint32_t) { MOZ_CRASH(); }
-    void setupUnalignedABICall(uint32_t, Register) { MOZ_CRASH(); }
-    template <typename T> void passABIArg(T, MoveOp::Type v = MoveOp::GENERAL) { MOZ_CRASH(); }
-
-    void callWithExitFrame(Label*) { MOZ_CRASH(); }
-    void callWithExitFrame(JitCode*) { MOZ_CRASH(); }
-    void callWithExitFrame(JitCode*, Register) { MOZ_CRASH(); }
-
-    void callJit(Register callee) { MOZ_CRASH(); }
-    void callJitFromAsmJS(Register callee) { MOZ_CRASH(); }
 
     void nop() { MOZ_CRASH(); }
     void breakpoint() { MOZ_CRASH(); }
@@ -234,12 +220,11 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void Push(T) { MOZ_CRASH(); }
     template <typename T> void pop(T) { MOZ_CRASH(); }
     template <typename T> void Pop(T) { MOZ_CRASH(); }
-    template <typename T> CodeOffsetLabel PushWithPatch(T) { MOZ_CRASH(); }
-    void implicitPop(uint32_t) { MOZ_CRASH(); }
+    template <typename T> CodeOffsetLabel pushWithPatch(T) { MOZ_CRASH(); }
 
-    CodeOffsetJump jumpWithPatch(RepatchLabel*) { MOZ_CRASH(); }
-    CodeOffsetJump jumpWithPatch(RepatchLabel*, Condition) { MOZ_CRASH(); }
-    CodeOffsetJump backedgeJump(RepatchLabel* label) { MOZ_CRASH(); }
+    CodeOffsetJump jumpWithPatch(RepatchLabel*, Label* doc = nullptr) { MOZ_CRASH(); }
+    CodeOffsetJump jumpWithPatch(RepatchLabel*, Condition, Label* doc = nullptr) { MOZ_CRASH(); }
+    CodeOffsetJump backedgeJump(RepatchLabel* label, Label* doc = nullptr) { MOZ_CRASH(); }
     template <typename T, typename S>
     CodeOffsetJump branchPtrWithPatch(Condition, T, S, RepatchLabel*) { MOZ_CRASH(); }
 
@@ -251,14 +236,14 @@ class MacroAssemblerNone : public Assembler
     template <typename T, typename S> void cmpPtrSet(Condition, T, S, Register) { MOZ_CRASH(); }
     template <typename T, typename S> void cmp32Set(Condition, T, S, Register) { MOZ_CRASH(); }
 
-    void reserveStack(uint32_t) { MOZ_CRASH(); }
-    template <typename T> void freeStack(T) { MOZ_CRASH(); }
     template <typename T, typename S> void add32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void addPtr(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void add64(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void sub32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void subPtr(T, S) { MOZ_CRASH(); }
     void neg32(Register) { MOZ_CRASH(); }
     void mulBy3(Register, Register) { MOZ_CRASH(); }
+    void mul64(Imm64, const Register64&) { MOZ_CRASH(); }
 
     void negateDouble(FloatRegister) { MOZ_CRASH(); }
     void addDouble(FloatRegister, FloatRegister) { MOZ_CRASH(); }
@@ -276,13 +261,20 @@ class MacroAssemblerNone : public Assembler
     template <typename T, typename S> void branchFloat(DoubleCondition, T, S, Label*) { MOZ_CRASH(); }
     template <typename T, typename S> void branchPrivatePtr(Condition, T, S, Label*) { MOZ_CRASH(); }
     template <typename T, typename S> void decBranchPtr(Condition, T, S, Label*) { MOZ_CRASH(); }
+    template <typename T, typename S> void branchTest64(Condition, T, T, S, Label*) { MOZ_CRASH(); }
     template <typename T, typename S> void mov(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void movq(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void movePtr(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void move32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void moveFloat32(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void moveDouble(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void move64(T, S) { MOZ_CRASH(); }
     template <typename T> CodeOffsetLabel movWithPatch(T, Register) { MOZ_CRASH(); }
+
+    template <typename T> void loadInt32x1(T, FloatRegister dest) { MOZ_CRASH(); }
+    template <typename T> void loadInt32x2(T, FloatRegister dest) { MOZ_CRASH(); }
+    template <typename T> void loadInt32x3(T, FloatRegister dest) { MOZ_CRASH(); }
+    template <typename T> void loadFloat32x3(T, FloatRegister dest) { MOZ_CRASH(); }
 
     template <typename T> void loadPtr(T, Register) { MOZ_CRASH(); }
     template <typename T> void load32(T, Register) { MOZ_CRASH(); }
@@ -297,6 +289,7 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void load8ZeroExtend(T, Register) { MOZ_CRASH(); }
     template <typename T> void load16SignExtend(T, Register) { MOZ_CRASH(); }
     template <typename T> void load16ZeroExtend(T, Register) { MOZ_CRASH(); }
+    template <typename T> void load64(T, Register64 ) { MOZ_CRASH(); }
 
     template <typename T, typename S> void storePtr(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void store32(T, S) { MOZ_CRASH(); }
@@ -309,6 +302,11 @@ class MacroAssemblerNone : public Assembler
     template <typename T, typename S> void storeUnalignedFloat32x4(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void store8(T, S) { MOZ_CRASH(); }
     template <typename T, typename S> void store16(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void storeInt32x1(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void storeInt32x2(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void storeInt32x3(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void storeFloat32x3(T, S) { MOZ_CRASH(); }
+    template <typename T, typename S> void store64(T, S) { MOZ_CRASH(); }
 
     template <typename T> void computeEffectiveAddress(T, Register) { MOZ_CRASH(); }
 
@@ -317,31 +315,51 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void compareExchange16SignExtend(const T& mem, Register oldval, Register newval, Register output) { MOZ_CRASH(); }
     template <typename T> void compareExchange16ZeroExtend(const T& mem, Register oldval, Register newval, Register output) { MOZ_CRASH(); }
     template <typename T> void compareExchange32(const T& mem, Register oldval, Register newval, Register output) { MOZ_CRASH(); }
+    template<typename T> void atomicExchange8SignExtend(const T& mem, Register value, Register output) { MOZ_CRASH(); }
+    template<typename T> void atomicExchange8ZeroExtend(const T& mem, Register value, Register output) { MOZ_CRASH(); }
+    template<typename T> void atomicExchange16SignExtend(const T& mem, Register value, Register output) { MOZ_CRASH(); }
+    template<typename T> void atomicExchange16ZeroExtend(const T& mem, Register value, Register output) { MOZ_CRASH(); }
+    template<typename T> void atomicExchange32(const T& mem, Register value, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAdd8SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAdd8ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAdd16SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAdd16ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAdd32(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicAdd8(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicAdd16(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicAdd32(const T& value, const S& mem) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchSub8SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchSub8ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchSub16SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchSub16ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchSub32(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicSub8(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicSub16(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicSub32(const T& value, const S& mem) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAnd8SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAnd8ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAnd16SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAnd16ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchAnd32(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicAnd8(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicAnd16(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicAnd32(const T& value, const S& mem) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchOr8SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchOr8ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchOr16SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchOr16ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchOr32(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicOr8(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicOr16(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicOr32(const T& value, const S& mem) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchXor8SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchXor8ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchXor16SignExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchXor16ZeroExtend(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
     template <typename T, typename S> void atomicFetchXor32(const T& value, const S& mem, Register temp, Register output) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicXor8(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicXor16(const T& value, const S& mem) { MOZ_CRASH(); }
+    template <typename T, typename S> void atomicXor32(const T& value, const S& mem) { MOZ_CRASH(); }
 
     void clampIntToUint8(Register) { MOZ_CRASH(); }
 
@@ -386,6 +404,8 @@ class MacroAssemblerNone : public Assembler
 
     template <typename T> void convertInt32ToDouble(T, FloatRegister) { MOZ_CRASH(); }
     void convertFloat32ToDouble(FloatRegister, FloatRegister) { MOZ_CRASH(); }
+    void convertUInt64ToDouble(Register64, Register, FloatRegister) { MOZ_CRASH(); }
+    void mulDoublePtr(ImmPtr, Register, FloatRegister) { MOZ_CRASH(); }
 
     void branchTruncateDouble(FloatRegister, Register, Label*) { MOZ_CRASH(); }
     void branchTruncateFloat32(FloatRegister, Register, Label*) { MOZ_CRASH(); }
@@ -410,23 +430,12 @@ class MacroAssemblerNone : public Assembler
     template <typename T> void storeUnboxedValue(ConstantOrRegister, MIRType, T, MIRType) { MOZ_CRASH(); }
     template <typename T> void storeUnboxedPayload(ValueOperand value, T, size_t) { MOZ_CRASH(); }
 
-    void rshiftPtr(Imm32, Register) { MOZ_CRASH(); }
-    void rshiftPtrArithmetic(Imm32, Register) { MOZ_CRASH(); }
-    void lshiftPtr(Imm32, Register) { MOZ_CRASH(); }
-    template <typename T, typename S> void xorPtr(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void xor32(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void orPtr(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void or32(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void andPtr(T, S) { MOZ_CRASH(); }
-    template <typename T, typename S> void and32(T, S) { MOZ_CRASH(); }
-    template <typename T> void not32(T) { MOZ_CRASH(); }
     void convertUInt32ToDouble(Register, FloatRegister) { MOZ_CRASH(); }
     void convertUInt32ToFloat32(Register, FloatRegister) { MOZ_CRASH(); }
     void inc64(AbsoluteAddress) { MOZ_CRASH(); }
     void incrementInt32Value(Address) { MOZ_CRASH(); }
     void ensureDouble(ValueOperand, FloatRegister, Label*) { MOZ_CRASH(); }
     void handleFailureWithHandlerTail(void*) { MOZ_CRASH(); }
-    void makeFrameDescriptor(Register, FrameType) { MOZ_CRASH(); }
 
     void branchPtrInNurseryRange(Condition, Register, Register, Label*) { MOZ_CRASH(); }
     void branchValueIsNurseryObject(Condition, ValueOperand, Register, Label*) { MOZ_CRASH(); }
@@ -439,6 +448,8 @@ class MacroAssemblerNone : public Assembler
 
     void setPrinter(Sprinter*) { MOZ_CRASH(); }
     Operand ToPayload(Operand base) { MOZ_CRASH(); }
+
+    static const Register getStackPointer() { MOZ_CRASH(); }
 
     // Instrumentation for entering and leaving the profiler.
     void profilerEnterFrame(Register , Register ) { MOZ_CRASH(); }
@@ -467,8 +478,14 @@ class ABIArgGenerator
     static const Register NonReturn_VolatileReg1;
 };
 
-static inline void PatchJump(CodeLocationJump&, CodeLocationLabel) { MOZ_CRASH(); }
+static inline void
+PatchJump(CodeLocationJump&, CodeLocationLabel, ReprotectCode reprotect = DontReprotect)
+{
+    MOZ_CRASH();
+}
+
 static inline bool GetTempRegForIntArg(uint32_t, uint32_t, Register*) { MOZ_CRASH(); }
+
 static inline
 void PatchBackedge(CodeLocationJump& jump_, CodeLocationLabel label, JitRuntime::BackedgeTarget target)
 {

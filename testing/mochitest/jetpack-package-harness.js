@@ -134,11 +134,6 @@ function testInit() {
         fileNames = skipTests(fileNames, config.startAt, config.endAt);
       }
 
-      if (config.totalChunks && config.thisChunk) {
-        fileNames = chunkifyTests(fileNames, config.totalChunks,
-                                  config.thisChunk, config.chunkByDir);
-      }
-
       // The SDK assumes it is being run from resource URIs
       let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChromeRegistry);
       let realPath = chromeReg.convertChromeURL(Services.io.newURI(TEST_PACKAGE, null, null));
@@ -223,7 +218,7 @@ function testInit() {
         function finish() {
           if (passed + failed == 0) {
             dump("TEST-UNEXPECTED-FAIL | jetpack-package-harness.js | " +
-                 "No tests to run. Did you pass an invalid --test-path?\n");
+                 "No tests to run. Did you pass invalid test_paths?\n");
           }
           else {
             dump("Jetpack Package Test Summary\n");
@@ -234,6 +229,9 @@ function testInit() {
 
           if (config.closeWhenDone) {
             require("sdk/system").exit(failed == 0 ? 0 : 1);
+          }
+          else {
+            loaderModule.unload(loader, "shutdown");
           }
         }
 

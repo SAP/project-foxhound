@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,13 +65,6 @@ namespace exceptions {
 // value is -1, a default maximal depth will be selected.
 already_AddRefed<nsIStackFrame>
 CreateStack(JSContext* aCx, int32_t aMaxDepth = -1);
-
-already_AddRefed<nsIStackFrame>
-CreateStackFrameLocation(uint32_t aLanguage,
-                         const char* aFilename,
-                         const char* aFunctionName,
-                         int32_t aLineNumber,
-                         nsIStackFrame* aCaller);
 
 } // namespace exceptions
 } // namespace dom

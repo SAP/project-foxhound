@@ -94,7 +94,7 @@ DocAccessible::
   mPresShell->SetDocAccessible(this);
 
   // If this is a XUL Document, it should not implement nsHyperText
-  if (mDocumentNode && mDocumentNode->IsXUL())
+  if (mDocumentNode && mDocumentNode->IsXULDocument())
     mGenericTypes &= ~eHyperText;
 }
 
@@ -455,8 +455,9 @@ DocAccessible::Shutdown()
   mChildDocuments.Clear();
 
   // XXX thinking about ordering?
-  if (IPCAccessibilityActive()) {
-    DocAccessibleChild::Send__delete__(mIPCDoc);
+  if (mIPCDoc) {
+    MOZ_ASSERT(IPCAccessibilityActive());
+    mIPCDoc->Shutdown();
     MOZ_ASSERT(!mIPCDoc);
   }
 
@@ -691,7 +692,8 @@ void
 DocAccessible::AttributeWillChange(nsIDocument* aDocument,
                                    dom::Element* aElement,
                                    int32_t aNameSpaceID,
-                                   nsIAtom* aAttribute, int32_t aModType)
+                                   nsIAtom* aAttribute, int32_t aModType,
+                                   const nsAttrValue* aNewValue)
 {
   Accessible* accessible = GetAccessible(aElement);
   if (!accessible) {
@@ -732,7 +734,8 @@ void
 DocAccessible::AttributeChanged(nsIDocument* aDocument,
                                 dom::Element* aElement,
                                 int32_t aNameSpaceID, nsIAtom* aAttribute,
-                                int32_t aModType)
+                                int32_t aModType,
+                                const nsAttrValue* aOldValue)
 {
   NS_ASSERTION(!IsDefunct(),
                "Attribute changed called on defunct document accessible!");
@@ -875,7 +878,8 @@ DocAccessible::AttributeChangedImpl(Accessible* aAccessible,
   }
 
   // ARIA or XUL selection
-  if ((aAccessible->GetContent()->IsXUL() && aAttribute == nsGkAtoms::selected) ||
+  if ((aAccessible->GetContent()->IsXULElement() &&
+       aAttribute == nsGkAtoms::selected) ||
       aAttribute == nsGkAtoms::aria_selected) {
     Accessible* widget =
       nsAccUtils::GetSelectableContainer(aAccessible, aAccessible->State());
@@ -1288,10 +1292,12 @@ DocAccessible::ContentInserted(nsIContent* aContainerNode,
     // null (document element is inserted or removed).
     Accessible* container = aContainerNode ?
       GetAccessibleOrContainer(aContainerNode) : this;
-
-    mNotificationController->ScheduleContentInsertion(container,
-                                                      aStartChildNode,
-                                                      aEndChildNode);
+    if (container) {
+      // Ignore notification if the container node is no longer in the DOM tree.
+      mNotificationController->ScheduleContentInsertion(container,
+                                                        aStartChildNode,
+                                                        aEndChildNode);
+    }
   }
 }
 
@@ -1337,7 +1343,7 @@ DocAccessible::ProcessInvalidationList()
 Accessible*
 DocAccessible::GetAccessibleEvenIfNotInMap(nsINode* aNode) const
 {
-if (!aNode->IsContent() || !aNode->AsContent()->IsHTML(nsGkAtoms::area))
+if (!aNode->IsContent() || !aNode->AsContent()->IsHTMLElement(nsGkAtoms::area))
     return GetAccessible(aNode);
 
   // XXX Bug 135040, incorrect when multiple images use the same map.
@@ -1499,15 +1505,13 @@ DocAccessible::AddDependentIDsFor(dom::Element* aRelProviderElm,
       continue;
 
     if (relAttr == nsGkAtoms::_for) {
-      if (!aRelProviderElm->IsHTML() ||
-          (aRelProviderElm->Tag() != nsGkAtoms::label &&
-           aRelProviderElm->Tag() != nsGkAtoms::output))
+      if (!aRelProviderElm->IsAnyOfHTMLElements(nsGkAtoms::label,
+                                                nsGkAtoms::output))
         continue;
 
     } else if (relAttr == nsGkAtoms::control) {
-      if (!aRelProviderElm->IsXUL() ||
-          (aRelProviderElm->Tag() != nsGkAtoms::label &&
-           aRelProviderElm->Tag() != nsGkAtoms::description))
+      if (!aRelProviderElm->IsAnyOfXULElements(nsGkAtoms::label,
+                                               nsGkAtoms::description))
         continue;
     }
 
@@ -1607,8 +1611,7 @@ DocAccessible::UpdateAccessibleOnAttrChange(dom::Element* aElement,
     return true;
   }
 
-  if (aAttribute == nsGkAtoms::href ||
-      aAttribute == nsGkAtoms::onclick) {
+  if (aAttribute == nsGkAtoms::href) {
     // Not worth the expense to ensure which namespace these are in. It doesn't
     // kill use to recreate the accessible even if the attribute was used in
     // the wrong namespace or an element that doesn't support it.

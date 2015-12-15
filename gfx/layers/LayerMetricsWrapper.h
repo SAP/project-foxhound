@@ -309,6 +309,16 @@ public:
     return EventRegions();
   }
 
+  bool HasTransformAnimation() const
+  {
+    MOZ_ASSERT(IsValid());
+
+    if (AtBottomLayer()) {
+      return mLayer->HasTransformAnimation();
+    }
+    return false;
+  }
+
   RefLayer* AsRefLayer() const
   {
     MOZ_ASSERT(IsValid());
@@ -327,15 +337,21 @@ public:
       return mLayer->GetVisibleRegion();
     }
     nsIntRegion region = mLayer->GetVisibleRegion();
-    region.Transform(gfx::To3DMatrix(mLayer->GetTransform()));
+    region.Transform(mLayer->GetTransform());
     return region;
   }
 
-  const nsIntRect* GetClipRect() const
+  const Maybe<ParentLayerIntRect>& GetClipRect() const
   {
     MOZ_ASSERT(IsValid());
 
-    return mLayer->GetClipRect();
+    static const Maybe<ParentLayerIntRect> sNoClipRect = Nothing();
+
+    if (AtBottomLayer()) {
+      return mLayer->GetClipRect();
+    }
+
+    return sNoClipRect;
   }
 
   EventRegionsOverride GetEventRegionsOverride() const
@@ -413,7 +429,7 @@ private:
   uint32_t mIndex;
 };
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif /* GFX_LAYERMETRICSWRAPPER_H */

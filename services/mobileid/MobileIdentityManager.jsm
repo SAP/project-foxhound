@@ -56,9 +56,9 @@ XPCOMUtils.defineLazyServiceGetter(this, "Ril",
                                    "@mozilla.org/ril;1",
                                    "nsIRadioInterfaceLayer");
 
-XPCOMUtils.defineLazyServiceGetter(this, "IccProvider",
-                                   "@mozilla.org/ril/content-helper;1",
-                                   "nsIIccProvider");
+XPCOMUtils.defineLazyServiceGetter(this, "IccService",
+                                   "@mozilla.org/icc/iccservice;1",
+                                   "nsIIccService");
 
 XPCOMUtils.defineLazyServiceGetter(this, "MobileConnectionService",
                                    "@mozilla.org/mobileconnection/mobileconnectionservice;1",
@@ -116,11 +116,11 @@ this.MobileIdentityManager = {
     return Ril;
   },
 
-  get iccProvider() {
-    if (this._iccProvider) {
-      return this._iccProvider;
+  get iccService() {
+    if (this._iccService) {
+      return this._iccService;
     }
-    return IccProvider;
+    return IccService;
   },
 
   get mobileConnectionService() {
@@ -153,8 +153,10 @@ this.MobileIdentityManager = {
         // We don't need to keep listening for changes until we rebuild the
         // cache again.
         for (let i = 0; i < self._iccInfo.length; i++) {
-          self.iccProvider.unregisterIccMsg(self._iccInfo[i].clientId,
-                                            iccListener);
+          let icc = self.iccService.getIccByServiceId(i);
+          if (icc) {
+            icc.unregisterListener(iccListener);
+          }
         }
 
         self._iccInfo = null;
@@ -169,18 +171,32 @@ this.MobileIdentityManager = {
     this._iccInfo = [];
 
     for (let i = 0; i < this.ril.numRadioInterfaces; i++) {
-      let rilContext = this.ril.getRadioInterface(i).rilContext;
-      if (!rilContext) {
-        log.warn("Tried to get the RIL context for an invalid service ID " + i);
+      let icc = this.iccService.getIccByServiceId(i);
+      if (!icc) {
+        log.warn("Tried to get the Icc instance for an invalid service ID " + i);
         continue;
       }
 
-      let info = rilContext.iccInfo;
+      let info = icc.iccInfo;
       if (!info || !info.iccid ||
           !info.mcc || !info.mcc.length ||
           !info.mnc || !info.mnc.length) {
         log.warn("Absent or invalid ICC info");
         continue;
+      }
+
+      // GSM SIMs may have MSISDN while CDMA SIMs may have MDN
+      let phoneNumber = null;
+      try {
+        if (info.iccType === "sim" || info.iccType === "usim") {
+          let gsmInfo = info.QueryInterface(Ci.nsIGsmIccInfo);
+          phoneNumber = gsmInfo.msisdn;
+        } else if (info.iccType === "ruim" || info.iccType === "csim") {
+          let cdmaInfo = info.QueryInterface(Ci.nsICdmaIccInfo);
+          phoneNumber = cdmaInfo.mdn;
+        }
+      } catch (e) {
+        log.error("Failed to retrieve phoneNumber: " + e);
       }
 
       let connection = this.mobileConnectionService.getItemByServiceId(i);
@@ -206,20 +222,20 @@ this.MobileIdentityManager = {
         iccId: info.iccid,
         mcc: info.mcc,
         mnc: info.mnc,
-        // GSM SIMs may have MSISDN while CDMA SIMs may have MDN
-        msisdn: info.msisdn || info.mdn || null,
+        msisdn: phoneNumber,
         operator: operator,
         roaming: voice && voice.roaming
       });
 
       // We need to subscribe to ICC change notifications so we can refresh
       // the cache if any change is observed.
-      this.iccProvider.registerIccMsg(i, iccListener);
+      icc.registerListener(iccListener);
     }
 
     return this._iccInfo;
-#endif
+#else
     return null;
+#endif
   },
 
   get iccIds() {
@@ -238,8 +254,9 @@ this.MobileIdentityManager = {
     }
 
     return this._iccIds;
-#endif
+#else
     return null;
+#endif
   },
 
   get credStore() {
@@ -769,7 +786,7 @@ this.MobileIdentityManager = {
         if (promptResult.serviceId) {
           let creds = this.iccInfo[promptResult.serviceId].credentials;
           if (creds) {
-            this.credStore.add(creds.iccId, creds.msisdn, aPrincipal.origin,
+            this.credStore.add(creds.iccId, creds.msisdn, aPrincipal.originNoSuffix,
                                creds.sessionToken, this.iccIds);
             return creds;
           }
@@ -782,13 +799,13 @@ this.MobileIdentityManager = {
         .then(
           (creds) => {
             if (creds) {
-              this.credStore.add(creds.iccId, creds.msisdn, aPrincipal.origin,
+              this.credStore.add(creds.iccId, creds.msisdn, aPrincipal.originNoSuffix,
                                  creds.sessionToken, this.iccIds);
               return creds;
             }
             // Otherwise, we need to verify the new number selected by the
             // user.
-            return this.verificationFlow(promptResult, aPrincipal.origin);
+            return this.verificationFlow(promptResult, aPrincipal.originNoSuffix);
           }
         );
       }
@@ -880,9 +897,7 @@ this.MobileIdentityManager = {
   getMobileIdAssertion: function(aPrincipal, aPromiseId, aOptions) {
     log.debug("getMobileIdAssertion ${}", aPrincipal);
 
-    let uri = Services.io.newURI(aPrincipal.origin, null, null);
-    let principal = securityManager.getAppCodebasePrincipal(
-      uri, aPrincipal.appId, aPrincipal.isInBrowserElement);
+    let principal = aPrincipal;
     let manifestURL = appsService.getManifestURLByLocalId(aPrincipal.appId);
 
     let permission = permissionManager.testPermissionFromPrincipal(
@@ -901,11 +916,11 @@ this.MobileIdentityManager = {
     // First of all we look if we already have credentials for this origin.
     // If we don't have credentials it means that it is the first time that
     // the caller requested an assertion.
-    this.credStore.getByOrigin(aPrincipal.origin)
+    this.credStore.getByOrigin(aPrincipal.originNoSuffix)
     .then(
       (creds) => {
         log.debug("creds ${creds} - ${origin}", { creds: creds,
-                                                  origin: aPrincipal.origin });
+                                                  origin: aPrincipal.originNoSuffix });
         if (!creds || !creds.sessionToken) {
           log.debug("No credentials");
           return;
@@ -920,7 +935,7 @@ this.MobileIdentityManager = {
           .then(
             (newCreds) => {
               return this.checkNewCredentials(creds, newCreds,
-                                              principal.origin);
+                                              principal.originNoSuffix);
             }
           );
         }
@@ -964,7 +979,7 @@ this.MobileIdentityManager = {
         .then(
           (newCreds) => {
             return this.checkNewCredentials(creds, newCreds,
-                                            principal.origin);
+                                            principal.originNoSuffix);
           }
         );
       }
@@ -994,7 +1009,7 @@ this.MobileIdentityManager = {
     .then(
       (creds) => {
         if (creds) {
-          return this.generateAssertion(creds, principal.origin);
+          return this.generateAssertion(creds, principal.originNoSuffix);
         }
         return Promise.reject(ERROR_INTERNAL_CANNOT_GENERATE_ASSERTION);
       }

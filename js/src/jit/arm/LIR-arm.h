@@ -10,27 +10,6 @@
 namespace js {
 namespace jit {
 
-class LBox : public LInstructionHelper<2, 1, 0>
-{
-    MIRType type_;
-
-  public:
-    LIR_HEADER(Box);
-
-    LBox(const LAllocation& in_payload, MIRType type)
-      : type_(type)
-    {
-        setOperand(0, in_payload);
-    }
-
-    MIRType type() const {
-        return type_;
-    }
-    const char* extraName() const {
-        return StringFromMIRType(type_);
-    }
-};
-
 class LBoxFloatingPoint : public LInstructionHelper<2, 1, 1>
 {
     MIRType type_;
@@ -288,22 +267,6 @@ class LModMaskI : public LInstructionHelper<1, 1, 2>
     }
 };
 
-class LPowHalfD : public LInstructionHelper<1, 1, 0>
-{
-  public:
-    LIR_HEADER(PowHalfD);
-    LPowHalfD(const LAllocation& input) {
-        setOperand(0, input);
-    }
-
-    const LAllocation* input() {
-        return getOperand(0);
-    }
-    const LDefinition* output() {
-        return getDef(0);
-    }
-};
-
 // Takes a tableswitch with an integer to decide.
 class LTableSwitch : public LInstructionHelper<0, 1, 1>
 {
@@ -462,6 +425,75 @@ class LAsmJSLoadFuncPtr : public LInstructionHelper<1, 1, 1>
     }
     const LDefinition* temp() {
         return getTemp(0);
+    }
+};
+
+class LAsmJSCompareExchangeCallout : public LCallInstructionHelper<1, 3, 0>
+{
+  public:
+    LIR_HEADER(AsmJSCompareExchangeCallout)
+    LAsmJSCompareExchangeCallout(const LAllocation& ptr, const LAllocation& oldval,
+                                 const LAllocation& newval)
+    {
+        setOperand(0, ptr);
+        setOperand(1, oldval);
+        setOperand(2, newval);
+    }
+    const LAllocation* ptr() {
+        return getOperand(0);
+    }
+    const LAllocation* oldval() {
+        return getOperand(1);
+    }
+    const LAllocation* newval() {
+        return getOperand(2);
+    }
+
+    const MAsmJSCompareExchangeHeap* mir() const {
+        return mir_->toAsmJSCompareExchangeHeap();
+    }
+};
+
+class LAsmJSAtomicExchangeCallout : public LCallInstructionHelper<1, 2, 0>
+{
+  public:
+    LIR_HEADER(AsmJSAtomicExchangeCallout)
+
+    LAsmJSAtomicExchangeCallout(const LAllocation& ptr, const LAllocation& value)
+    {
+        setOperand(0, ptr);
+        setOperand(1, value);
+    }
+    const LAllocation* ptr() {
+        return getOperand(0);
+    }
+    const LAllocation* value() {
+        return getOperand(1);
+    }
+
+    const MAsmJSAtomicExchangeHeap* mir() const {
+        return mir_->toAsmJSAtomicExchangeHeap();
+    }
+};
+
+class LAsmJSAtomicBinopCallout : public LCallInstructionHelper<1, 2, 0>
+{
+  public:
+    LIR_HEADER(AsmJSAtomicBinopCallout)
+    LAsmJSAtomicBinopCallout(const LAllocation& ptr, const LAllocation& value)
+    {
+        setOperand(0, ptr);
+        setOperand(1, value);
+    }
+    const LAllocation* ptr() {
+        return getOperand(0);
+    }
+    const LAllocation* value() {
+        return getOperand(1);
+    }
+
+    const MAsmJSAtomicBinopHeap* mir() const {
+        return mir_->toAsmJSAtomicBinopHeap();
     }
 };
 

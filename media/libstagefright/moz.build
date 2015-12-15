@@ -1,4 +1,4 @@
-# /*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
 # vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -57,10 +57,17 @@ EXPORTS.mp4_demuxer += [
     'binding/include/mp4_demuxer/ByteWriter.h',
     'binding/include/mp4_demuxer/DecoderData.h',
     'binding/include/mp4_demuxer/H264.h',
+    'binding/include/mp4_demuxer/Index.h',
     'binding/include/mp4_demuxer/Interval.h',
     'binding/include/mp4_demuxer/MoofParser.h',
-    'binding/include/mp4_demuxer/mp4_demuxer.h',
+    'binding/include/mp4_demuxer/MP4Metadata.h',
+    'binding/include/mp4_demuxer/ResourceStream.h',
     'binding/include/mp4_demuxer/SinfParser.h',
+    'binding/include/mp4_demuxer/Stream.h',
+]
+
+EXPORTS.demuxer += [
+    'binding/include/demuxer/TrackDemuxer.h',
 ]
 
 SOURCES += [
@@ -72,6 +79,11 @@ SOURCES += [
     'system/core/libutils/VectorImpl.cpp',
 ]
 
+if CONFIG['MOZ_RUST']:
+    SOURCES += [
+        'binding/MP4Metadata.rs',
+    ]
+
 UNIFIED_SOURCES += [
     'binding/Adts.cpp',
     'binding/AnnexB.cpp',
@@ -81,7 +93,8 @@ UNIFIED_SOURCES += [
     'binding/H264.cpp',
     'binding/Index.cpp',
     'binding/MoofParser.cpp',
-    'binding/mp4_demuxer.cpp',
+    'binding/MP4Metadata.cpp',
+    'binding/ResourceStream.cpp',
     'binding/SinfParser.cpp',
     'frameworks/av/media/libstagefright/DataSource.cpp',
     'frameworks/av/media/libstagefright/ESDS.cpp',
@@ -117,6 +130,8 @@ TEST_DIRS += [
     'gtest',
 ]
 
+ALLOW_COMPILER_WARNINGS = True
+
 FINAL_LIBRARY = 'xul'
 
 # Suppress warnings in third-party code.
@@ -137,11 +152,11 @@ if CONFIG['_MSC_VER']:
 elif CONFIG['GNU_CXX']:
     CFLAGS += [
         '-Wno-comment',
-        '-Wno-declaration-after-statement',
         '-Wno-sign-compare'
     ]
     CXXFLAGS += [
         '-Wno-format',
+        '-Wno-format-security',
         '-Wno-multichar',
         '-Wno-sign-compare',
         '-Wno-unused',
@@ -150,4 +165,5 @@ elif CONFIG['GNU_CXX']:
         CXXFLAGS += [
             '-Wno-mismatched-tags',
             '-Wno-tautological-constant-out-of-range-compare',
+            '-Wno-unreachable-code-return',
         ]

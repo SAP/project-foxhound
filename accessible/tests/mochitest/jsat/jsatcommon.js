@@ -391,6 +391,20 @@ var ContentMessages = {
     }
   },
 
+  androidScrollForward: function adjustUp() {
+    return {
+      name: 'AccessFu:AndroidScroll',
+      json: { origin: 'top', direction: 'forward' }
+    };
+  },
+
+  androidScrollBackward: function adjustDown() {
+    return {
+      name: 'AccessFu:AndroidScroll',
+      json: { origin: 'top', direction: 'backward' }
+    };
+  },
+
   focusSelector: function focusSelector(aSelector, aBlur) {
     return {
       name: 'AccessFuTest:Focus',
@@ -617,6 +631,18 @@ function ExpectedCheckAction(aChecked, aOptions) {
 
 ExpectedCheckAction.prototype = Object.create(ExpectedPresent.prototype);
 
+function ExpectedSwitchAction(aSwitched, aOptions) {
+  ExpectedPresent.call(this, {
+    eventType: 'action',
+    data: [{ string: aSwitched ? 'onAction' : 'offAction' }]
+  }, [{
+    eventType: AndroidEvent.VIEW_CLICKED,
+    checked: aSwitched
+  }], aOptions);
+}
+
+ExpectedSwitchAction.prototype = Object.create(ExpectedPresent.prototype);
+
 function ExpectedNameChange(aName, aOptions) {
   ExpectedPresent.call(this, {
     eventType: 'name-change',
@@ -629,7 +655,7 @@ ExpectedNameChange.prototype = Object.create(ExpectedPresent.prototype);
 function ExpectedValueChange(aValue, aOptions) {
   ExpectedPresent.call(this, {
     eventType: 'value-change',
-    data: [aValue]
+    data: aValue
   }, null, aOptions);
 }
 

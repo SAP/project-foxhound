@@ -11,11 +11,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 
 import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.background.ReadingListConstants;
 import org.mozilla.gecko.background.common.GlobalConstants;
 import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.background.fxa.FxAccountUtils;
@@ -25,18 +27,24 @@ import org.mozilla.gecko.fxa.FxAccountConstants;
 import org.mozilla.gecko.fxa.login.State;
 import org.mozilla.gecko.fxa.login.State.StateLabel;
 import org.mozilla.gecko.fxa.login.StateFactory;
+import org.mozilla.gecko.fxa.sync.FxAccountProfileService;
 import org.mozilla.gecko.sync.ExtendedJSONObject;
 import org.mozilla.gecko.sync.Utils;
 import org.mozilla.gecko.sync.setup.Constants;
+import org.mozilla.gecko.util.ThreadUtils;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
+import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.ResultReceiver;
 import android.util.Log;
+import android.support.v4.content.LocalBroadcastManager;
 
 /**
  * A Firefox Account that stores its details and state as user data attached to
@@ -57,31 +65,42 @@ public class AndroidFxAccount {
   public static final String ACCOUNT_KEY_ACCOUNT_VERSION = "version";
   public static final String ACCOUNT_KEY_PROFILE = "profile";
   public static final String ACCOUNT_KEY_IDP_SERVER = "idpServerURI";
+  private static final String ACCOUNT_KEY_PROFILE_SERVER = "profileServerURI";
 
   public static final String ACCOUNT_KEY_TOKEN_SERVER = "tokenServerURI";       // Sync-specific.
   public static final String ACCOUNT_KEY_DESCRIPTOR = "descriptor";
-
-  // The set of authorities to sync automatically changes over time. The first
-  // new authority is the Reading List. This tracks if we've enabled syncing,
-  // and opted in (or out) of syncing automatically, for the new Reading List
-  // authority. This happens either on when the account is created or when
-  // upgrading.
-  public static final String ACCOUNT_KEY_READING_LIST_AUTHORITY_INITIALIZED = "readingListAuthorityInitialized";
 
   public static final int CURRENT_BUNDLE_VERSION = 2;
   public static final String BUNDLE_KEY_BUNDLE_VERSION = "version";
   public static final String BUNDLE_KEY_STATE_LABEL = "stateLabel";
   public static final String BUNDLE_KEY_STATE = "state";
+  public static final String BUNDLE_KEY_PROFILE_JSON = "profile";
+
+  // Account authentication token type for fetching account profile.
+  public static final String PROFILE_OAUTH_TOKEN_TYPE = "oauth::profile";
+
+  // Services may request OAuth tokens from the Firefox Account dynamically.
+  // Each such token is prefixed with "oauth::" and a service-dependent scope.
+  // Such tokens should be destroyed when the account is removed from the device.
+  // This list collects all the known "oauth::" token types in order to delete them when necessary.
+  private static final List<String> KNOWN_OAUTH_TOKEN_TYPES;
+
+  static {
+    final List<String> list = new ArrayList<>();
+    if (AppConstants.MOZ_ANDROID_READING_LIST_SERVICE) {
+      list.add(ReadingListConstants.AUTH_TOKEN_TYPE);
+    }
+    if (AppConstants.MOZ_ANDROID_FIREFOX_ACCOUNT_PROFILES) {
+      list.add(PROFILE_OAUTH_TOKEN_TYPE);
+    }
+    KNOWN_OAUTH_TOKEN_TYPES = Collections.unmodifiableList(list);
+  }
 
   public static final Map<String, Boolean> DEFAULT_AUTHORITIES_TO_SYNC_AUTOMATICALLY_MAP;
   static {
     final HashMap<String, Boolean> m = new HashMap<String, Boolean>();
     // By default, Firefox Sync is enabled.
     m.put(BrowserContract.AUTHORITY, true);
-    if (AppConstants.MOZ_ANDROID_READING_LIST_SERVICE) {
-      // Sync the Reading List.
-      m.put(BrowserContract.READING_LIST_AUTHORITY, true);
-    }
     DEFAULT_AUTHORITIES_TO_SYNC_AUTOMATICALLY_MAP = Collections.unmodifiableMap(m);
   }
 
@@ -281,6 +300,19 @@ public class AndroidFxAccount {
     return accountManager.getUserData(account, ACCOUNT_KEY_TOKEN_SERVER);
   }
 
+  public String getProfileServerURI() {
+    return accountManager.getUserData(account, ACCOUNT_KEY_PROFILE_SERVER);
+  }
+
+  public String getOAuthServerURI() {
+    // Allow testing against stage.
+    if (FxAccountConstants.STAGE_AUTH_SERVER_ENDPOINT.equals(getAccountServerURI())) {
+      return FxAccountConstants.STAGE_OAUTH_SERVER_ENDPOINT;
+    } else {
+      return FxAccountConstants.DEFAULT_OAUTH_SERVER_ENDPOINT;
+    }
+  }
+
   private String constructPrefsPath(String product, long version, String extra) throws GeneralSecurityException, UnsupportedEncodingException {
     String profile = getProfile();
     String username = account.name;
@@ -357,10 +389,11 @@ public class AndroidFxAccount {
       String profile,
       String idpServerURI,
       String tokenServerURI,
+      String profileServerURI,
       State state,
       final Map<String, Boolean> authoritiesToSyncAutomaticallyMap)
           throws UnsupportedEncodingException, GeneralSecurityException, URISyntaxException {
-    return addAndroidAccount(context, email, profile, idpServerURI, tokenServerURI, state,
+    return addAndroidAccount(context, email, profile, idpServerURI, tokenServerURI, profileServerURI, state,
         authoritiesToSyncAutomaticallyMap,
         CURRENT_ACCOUNT_VERSION, false, null);
   }
@@ -371,6 +404,7 @@ public class AndroidFxAccount {
       String profile,
       String idpServerURI,
       String tokenServerURI,
+      String profileServerURI,
       State state,
       final Map<String, Boolean> authoritiesToSyncAutomaticallyMap,
       final int accountVersion,
@@ -389,6 +423,9 @@ public class AndroidFxAccount {
     if (tokenServerURI == null) {
       throw new IllegalArgumentException("tokenServerURI must not be null");
     }
+    if (profileServerURI == null) {
+      throw new IllegalArgumentException("profileServerURI must not be null");
+    }
     if (state == null) {
       throw new IllegalArgumentException("state must not be null");
     }
@@ -405,11 +442,8 @@ public class AndroidFxAccount {
     userdata.putString(ACCOUNT_KEY_ACCOUNT_VERSION, "" + CURRENT_ACCOUNT_VERSION);
     userdata.putString(ACCOUNT_KEY_IDP_SERVER, idpServerURI);
     userdata.putString(ACCOUNT_KEY_TOKEN_SERVER, tokenServerURI);
+    userdata.putString(ACCOUNT_KEY_PROFILE_SERVER, profileServerURI);
     userdata.putString(ACCOUNT_KEY_PROFILE, profile);
-    if (DEFAULT_AUTHORITIES_TO_SYNC_AUTOMATICALLY_MAP.containsKey(BrowserContract.READING_LIST_AUTHORITY)) {
-      // Have we initialized the Reading List authority?
-      userdata.putString(ACCOUNT_KEY_READING_LIST_AUTHORITY_INITIALIZED, "1");
-    }
 
     if (bundle == null) {
       bundle = new ExtendedJSONObject();
@@ -599,18 +633,42 @@ public class AndroidFxAccount {
   /**
    * Create an intent announcing that a Firefox account will be deleted.
    *
-   * @param context
-   *          Android context.
-   * @param account
-   *          Android account being removed.
    * @return <code>Intent</code> to broadcast.
    */
-  public static Intent makeDeletedAccountIntent(final Context context, final Account account) {
+  public Intent makeDeletedAccountIntent() {
     final Intent intent = new Intent(FxAccountConstants.ACCOUNT_DELETED_ACTION);
+    final List<String> tokens = new ArrayList<>();
 
     intent.putExtra(FxAccountConstants.ACCOUNT_DELETED_INTENT_VERSION_KEY,
         Long.valueOf(FxAccountConstants.ACCOUNT_DELETED_INTENT_VERSION));
     intent.putExtra(FxAccountConstants.ACCOUNT_DELETED_INTENT_ACCOUNT_KEY, account.name);
+
+    // Get the tokens from AccountManager. Note: currently, only reading list service supports OAuth. The following logic will
+    // be extended in future to support OAuth for other services.
+    for (String tokenKey : KNOWN_OAUTH_TOKEN_TYPES) {
+      final String authToken = accountManager.peekAuthToken(account, tokenKey);
+      if (authToken != null) {
+        tokens.add(authToken);
+      }
+    }
+
+    // Update intent with tokens and service URI.
+    intent.putExtra(FxAccountConstants.ACCOUNT_OAUTH_SERVICE_ENDPOINT_KEY, getOAuthServerURI());
+    // Deleted broadcasts are package-private, so there's no security risk include the tokens in the extras
+    intent.putExtra(FxAccountConstants.ACCOUNT_DELETED_INTENT_ACCOUNT_AUTH_TOKENS, tokens.toArray(new String[tokens.size()]));
+    return intent;
+  }
+
+  /**
+   * Create an intent announcing that the profile JSON attached to this Firefox Account has been updated.
+   * <p>
+   * It is not guaranteed that the profile JSON has changed.
+   *
+   * @return <code>Intent</code> to broadcast.
+   */
+  private Intent makeProfileJSONUpdatedIntent() {
+    final Intent intent = new Intent();
+    intent.setAction(FxAccountConstants.ACCOUNT_PROFILE_JSON_UPDATED_ACTION);
     return intent;
   }
 
@@ -636,17 +694,19 @@ public class AndroidFxAccount {
   public void unsafeTransitionToDefaultEndpoints() {
     unsafeTransitionToStageEndpoints(
         FxAccountConstants.DEFAULT_AUTH_SERVER_ENDPOINT,
-        FxAccountConstants.DEFAULT_TOKEN_SERVER_ENDPOINT);
+        FxAccountConstants.DEFAULT_TOKEN_SERVER_ENDPOINT,
+        FxAccountConstants.DEFAULT_PROFILE_SERVER_ENDPOINT);
     }
 
   // Debug only!  This is dangerous!
   public void unsafeTransitionToStageEndpoints() {
     unsafeTransitionToStageEndpoints(
         FxAccountConstants.STAGE_AUTH_SERVER_ENDPOINT,
-        FxAccountConstants.STAGE_TOKEN_SERVER_ENDPOINT);
+        FxAccountConstants.STAGE_TOKEN_SERVER_ENDPOINT,
+        FxAccountConstants.STAGE_PROFILE_SERVER_ENDPOINT);
   }
 
-  protected void unsafeTransitionToStageEndpoints(String authServerEndpoint, String tokenServerEndpoint) {
+  protected void unsafeTransitionToStageEndpoints(String authServerEndpoint, String tokenServerEndpoint, String profileServerEndpoint) {
     try {
       getReadingListPrefs().edit().clear().commit();
     } catch (UnsupportedEncodingException | GeneralSecurityException e) {
@@ -661,7 +721,84 @@ public class AndroidFxAccount {
     setState(state.makeSeparatedState());
     accountManager.setUserData(account, ACCOUNT_KEY_IDP_SERVER, authServerEndpoint);
     accountManager.setUserData(account, ACCOUNT_KEY_TOKEN_SERVER, tokenServerEndpoint);
+    accountManager.setUserData(account, ACCOUNT_KEY_PROFILE_SERVER, profileServerEndpoint);
     ContentResolver.setIsSyncable(account, BrowserContract.READING_LIST_AUTHORITY, 1);
+  }
+
+  /**
+   * Returns the current profile JSON if available, or null.
+   *
+   * @return profile JSON object.
+   */
+  public ExtendedJSONObject getProfileJSON() {
+    final String profileString = getBundleData(BUNDLE_KEY_PROFILE_JSON);
+    if (profileString == null) {
+      return null;
+    }
+
+    try {
+      return new ExtendedJSONObject(profileString);
+    } catch (Exception e) {
+      Logger.error(LOG_TAG, "Failed to parse profile JSON; ignoring and returning null.", e);
+    }
+    return null;
+  }
+
+  /**
+   * Fetch the profile JSON associated to the underlying Firefox Account from the server and update the local store.
+   * <p>
+   * The LocalBroadcastManager is used to notify the receivers asynchronously after a successful fetch.
+   */
+  public void fetchProfileJSON() {
+    ThreadUtils.postToBackgroundThread(new Runnable() {
+      @Override
+      public void run() {
+        // Fetch profile information from server.
+        String authToken;
+        try {
+          authToken = accountManager.blockingGetAuthToken(account, AndroidFxAccount.PROFILE_OAUTH_TOKEN_TYPE, true);
+          if (authToken == null) {
+            throw new RuntimeException("Couldn't get oauth token!  Aborting profile fetch.");
+          }
+        } catch (Exception e) {
+          Logger.error(LOG_TAG, "Error fetching profile information; ignoring.", e);
+          return;
+        }
+
+        Logger.info(LOG_TAG, "Intent service launched to fetch profile.");
+        final Intent intent = new Intent(context, FxAccountProfileService.class);
+        intent.putExtra(FxAccountProfileService.KEY_AUTH_TOKEN, authToken);
+        intent.putExtra(FxAccountProfileService.KEY_PROFILE_SERVER_URI, getProfileServerURI());
+        intent.putExtra(FxAccountProfileService.KEY_RESULT_RECEIVER, new ProfileResultReceiver(new Handler()));
+        context.startService(intent);
+      }
+    });
+  }
+
+  private class ProfileResultReceiver extends ResultReceiver {
+    public ProfileResultReceiver(Handler handler) {
+      super(handler);
+    }
+
+    @Override
+    protected void onReceiveResult(int resultCode, Bundle bundle) {
+      super.onReceiveResult(resultCode, bundle);
+      switch (resultCode) {
+        case Activity.RESULT_OK:
+          final String resultData = bundle.getString(FxAccountProfileService.KEY_RESULT_STRING);
+          updateBundleValues(BUNDLE_KEY_PROFILE_JSON, resultData);
+          Logger.info(LOG_TAG, "Profile JSON fetch succeeeded!");
+          FxAccountUtils.pii(LOG_TAG, "Profile JSON fetch returned: " + resultData);
+          LocalBroadcastManager.getInstance(context).sendBroadcast(makeProfileJSONUpdatedIntent());
+          break;
+        case Activity.RESULT_CANCELED:
+          Logger.warn(LOG_TAG, "Failed to fetch profile JSON; ignoring.");
+          break;
+        default:
+          Logger.warn(LOG_TAG, "Invalid result code received; ignoring.");
+          break;
+      }
+    }
   }
 
   /**

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,7 +44,7 @@ public:
     MOZ_ASSERT(mParent);
     return mParent;
   }
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   virtual double X() const = 0;
   virtual double Y() const = 0;
@@ -76,7 +77,7 @@ protected:
 };
 
 class DOMRect final : public DOMRectReadOnly
-                        , public nsIDOMClientRect
+                    , public nsIDOMClientRect
 {
 public:
   explicit DOMRect(nsISupports* aParent, double aX = 0, double aY = 0,
@@ -98,7 +99,7 @@ public:
   Constructor(const GlobalObject& aGlobal, double aX, double aY,
               double aWidth, double aHeight, ErrorResult& aRV);
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   void SetRect(float aX, float aY, float aWidth, float aHeight) {
     mX = aX; mY = aY; mWidth = aWidth; mHeight = aHeight;
@@ -147,7 +148,7 @@ private:
 };
 
 class DOMRectList final : public nsIDOMClientRectList,
-                              public nsWrapperCache
+                          public nsWrapperCache
 {
   ~DOMRectList() {}
 
@@ -161,7 +162,7 @@ public:
 
   NS_DECL_NSIDOMCLIENTRECTLIST
   
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsISupports* GetParentObject()
   {
@@ -209,8 +210,7 @@ protected:
   nsCOMPtr<nsISupports> mParent;
 };
 
-}
-
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif /*MOZILLA_DOMRECT_H_*/

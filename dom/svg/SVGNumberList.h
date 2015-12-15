@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,7 +60,7 @@ public:
   }
 
   bool SetCapacity(uint32_t size) {
-    return mNumbers.SetCapacity(size);
+    return mNumbers.SetCapacity(size, fallible);
   }
 
   void Compact() {
@@ -90,7 +91,7 @@ protected:
    * increased, in which case the list will be left unmodified.
    */
   bool SetLength(uint32_t aNumberOfItems) {
-    return mNumbers.SetLength(aNumberOfItems);
+    return mNumbers.SetLength(aNumberOfItems, fallible);
   }
 
 private:
@@ -109,7 +110,7 @@ private:
     if (aIndex >= mNumbers.Length()) {
       aIndex = mNumbers.Length();
     }
-    return !!mNumbers.InsertElementAt(aIndex, aNumber);
+    return !!mNumbers.InsertElementAt(aIndex, aNumber, fallible);
   }
 
   void ReplaceItem(uint32_t aIndex, const float &aNumber) {
@@ -125,7 +126,7 @@ private:
   }
 
   bool AppendItem(float aNumber) {
-    return !!mNumbers.AppendElement(aNumber);
+    return !!mNumbers.AppendElement(aNumber, fallible);
   }
 
 protected:

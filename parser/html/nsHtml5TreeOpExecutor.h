@@ -25,16 +25,14 @@
 #include "mozilla/net/ReferrerPolicy.h"
 
 class nsHtml5Parser;
-class nsHtml5TreeBuilder;
-class nsHtml5Tokenizer;
 class nsHtml5StreamParser;
 class nsIContent;
 class nsIDocument;
 
 class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
-                                        public nsIContentSink,
-                                        public nsAHtml5TreeOpSink,
-                                        public mozilla::LinkedListElement<nsHtml5TreeOpExecutor>
+                                    public nsIContentSink,
+                                    public nsAHtml5TreeOpSink,
+                                    public mozilla::LinkedListElement<nsHtml5TreeOpExecutor>
 {
   friend class nsHtml5FlushLoopGuard;
   typedef mozilla::net::ReferrerPolicy ReferrerPolicy;
@@ -70,9 +68,8 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
     nsCOMPtr<nsIURI> mSpeculationBaseURI;
 
     /**
-     * Need to keep track of whether the referrer policy was already set.
+     * Speculative referrer policy
      */
-    bool             mSpeculationReferrerPolicyWasSet;
     ReferrerPolicy   mSpeculationReferrerPolicy;
 
     nsCOMPtr<nsIURI> mViewSourceBaseURI;
@@ -251,15 +248,18 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
                        const nsAString& aCharset,
                        const nsAString& aType,
                        const nsAString& aCrossOrigin,
+                       const nsAString& aIntegrity,
                        bool aScriptFromHead);
 
     void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
-                      const nsAString& aCrossOrigin);
+                      const nsAString& aCrossOrigin,
+                      const nsAString& aIntegrity);
 
     void PreloadImage(const nsAString& aURL,
                       const nsAString& aCrossOrigin,
                       const nsAString& aSrcset,
-                      const nsAString& aSizes);
+                      const nsAString& aSizes,
+                      const nsAString& aImageReferrerPolicy);
 
     void PreloadOpenPicture();
 

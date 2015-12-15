@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,18 +27,19 @@
 
 namespace mozilla {
 namespace dom {
-class File;
-}
-}
+class Blob;
+} // namespace dom
+} // namespace mozilla
 
-class nsDOMFileReader : public mozilla::dom::FileIOObject,
-                        public nsIDOMFileReader,
-                        public nsIInterfaceRequestor,
-                        public nsSupportsWeakReference
+class nsDOMFileReader final : public mozilla::dom::FileIOObject,
+                              public nsIDOMFileReader,
+                              public nsIInterfaceRequestor,
+                              public nsSupportsWeakReference
 {
   typedef mozilla::ErrorResult ErrorResult;
   typedef mozilla::dom::GlobalObject GlobalObject;
-  typedef mozilla::dom::File File;
+  typedef mozilla::dom::Blob Blob;
+
 public:
   nsDOMFileReader();
 
@@ -62,22 +64,22 @@ public:
   {
     return GetOwner();
   }
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
   static already_AddRefed<nsDOMFileReader>
   Constructor(const GlobalObject& aGlobal, ErrorResult& aRv);
-  void ReadAsArrayBuffer(JSContext* aCx, File& aBlob, ErrorResult& aRv)
+  void ReadAsArrayBuffer(JSContext* aCx, Blob& aBlob, ErrorResult& aRv)
   {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_ARRAYBUFFER, aRv);
   }
 
-  void ReadAsText(File& aBlob, const nsAString& aLabel, ErrorResult& aRv)
+  void ReadAsText(Blob& aBlob, const nsAString& aLabel, ErrorResult& aRv)
   {
     ReadFileContent(aBlob, aLabel, FILE_AS_TEXT, aRv);
   }
 
-  void ReadAsDataURL(File& aBlob, ErrorResult& aRv)
+  void ReadAsDataURL(Blob& aBlob, ErrorResult& aRv)
   {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_DATAURL, aRv);
   }
@@ -101,7 +103,7 @@ public:
   using FileIOObject::SetOnerror;
   IMPL_EVENT_HANDLER(loadend)
 
-  void ReadAsBinaryString(File& aBlob, ErrorResult& aRv)
+  void ReadAsBinaryString(Blob& aBlob, ErrorResult& aRv)
   {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_BINARY, aRv);
   }
@@ -123,21 +125,23 @@ protected:
     FILE_AS_DATAURL
   };
 
-  void ReadFileContent(File& aBlob,
+  void ReadFileContent(Blob& aBlob,
                        const nsAString &aCharset, eDataFormat aDataFormat,
                        ErrorResult& aRv);
-  nsresult GetAsText(nsIDOMBlob *aFile, const nsACString &aCharset,
-                     const char *aFileData, uint32_t aDataLen, nsAString &aResult);
-  nsresult GetAsDataURL(nsIDOMBlob *aFile, const char *aFileData, uint32_t aDataLen, nsAString &aResult);
+  nsresult GetAsText(Blob *aBlob, const nsACString &aCharset,
+                     const char *aFileData, uint32_t aDataLen,
+                     nsAString &aResult);
+  nsresult GetAsDataURL(Blob *aBlob, const char *aFileData,
+                        uint32_t aDataLen, nsAString &aResult);
 
   void FreeFileData() {
-    moz_free(mFileData);
+    free(mFileData);
     mFileData = nullptr;
     mDataLen = 0;
   }
 
   char *mFileData;
-  nsCOMPtr<nsIDOMBlob> mFile;
+  nsRefPtr<Blob> mBlob;
   nsCString mCharset;
   uint32_t mDataLen;
 

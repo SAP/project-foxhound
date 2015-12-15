@@ -42,12 +42,12 @@ function test() {
   /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore **/
   waitForExplicitFinish();
   // Preemptively extend the timeout to prevent [orange]
-  requestLongerTimeout(2);
+  requestLongerTimeout(4);
   runNextTest();
 }
 
 
-let tests = [
+var tests = [
   test_setTabState,
   test_duplicateTab,
   test_undoCloseTab,

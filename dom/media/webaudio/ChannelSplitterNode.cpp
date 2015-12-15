@@ -14,7 +14,7 @@ namespace dom {
 
 NS_IMPL_ISUPPORTS_INHERITED0(ChannelSplitterNode, AudioNode)
 
-class ChannelSplitterNodeEngine : public AudioNodeEngine
+class ChannelSplitterNodeEngine final : public AudioNodeEngine
 {
 public:
   explicit ChannelSplitterNodeEngine(ChannelSplitterNode* aNode)
@@ -32,13 +32,13 @@ public:
 
     aOutput.SetLength(OutputCount());
     for (uint16_t i = 0; i < OutputCount(); ++i) {
-      if (i < aInput[0].mChannelData.Length()) {
+      if (i < aInput[0].ChannelCount()) {
         // Split out existing channels
-        AllocateAudioBlock(1, &aOutput[i]);
+        aOutput[i].AllocateChannels(1);
         AudioBlockCopyChannelWithScale(
             static_cast<const float*>(aInput[0].mChannelData[i]),
             aInput[0].mVolume,
-            static_cast<float*>(const_cast<void*>(aOutput[i].mChannelData[0])));
+            aOutput[i].ChannelFloatsForWrite(0));
       } else {
         // Pad with silent channels if needed
         aOutput[i].SetNull(WEBAUDIO_BLOCK_SIZE);
@@ -60,8 +60,9 @@ ChannelSplitterNode::ChannelSplitterNode(AudioContext* aContext,
               ChannelInterpretation::Speakers)
   , mOutputCount(aOutputCount)
 {
-  mStream = aContext->Graph()->CreateAudioNodeStream(new ChannelSplitterNodeEngine(this),
-                                                     MediaStreamGraph::INTERNAL_STREAM);
+  mStream = AudioNodeStream::Create(aContext,
+                                    new ChannelSplitterNodeEngine(this),
+                                    AudioNodeStream::NO_STREAM_FLAGS);
 }
 
 ChannelSplitterNode::~ChannelSplitterNode()
@@ -69,11 +70,11 @@ ChannelSplitterNode::~ChannelSplitterNode()
 }
 
 JSObject*
-ChannelSplitterNode::WrapObject(JSContext* aCx)
+ChannelSplitterNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return ChannelSplitterNodeBinding::Wrap(aCx, this);
+  return ChannelSplitterNodeBinding::Wrap(aCx, this, aGivenProto);
 }
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 

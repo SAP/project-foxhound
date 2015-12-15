@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +24,7 @@ DeviceStorageRequestParent::DeviceStorageRequestParent(
   const DeviceStorageParams& aParams)
   : mParams(aParams)
   , mMutex("DeviceStorageRequestParent::mMutex")
-  , mActorDestoryed(false)
+  , mActorDestroyed(false)
 {
   MOZ_COUNT_CTOR(DeviceStorageRequestParent);
 
@@ -44,10 +45,12 @@ DeviceStorageRequestParent::Dispatch()
         new DeviceStorageFile(p.type(), p.storageName(), p.relpath());
 
       BlobParent* bp = static_cast<BlobParent*>(p.blobParent());
-      nsRefPtr<FileImpl> blobImpl = bp->GetBlobImpl();
+      nsRefPtr<BlobImpl> blobImpl = bp->GetBlobImpl();
 
+      ErrorResult rv;
       nsCOMPtr<nsIInputStream> stream;
-      blobImpl->GetInternalStream(getter_AddRefs(stream));
+      blobImpl->GetInternalStream(getter_AddRefs(stream), rv);
+      MOZ_ASSERT(!rv.Failed());
 
       nsRefPtr<CancelableRunnable> r = new WriteFileEvent(this, dsf, stream,
                                                           DEVICE_STORAGE_REQUEST_CREATE);
@@ -67,10 +70,12 @@ DeviceStorageRequestParent::Dispatch()
         new DeviceStorageFile(p.type(), p.storageName(), p.relpath());
 
       BlobParent* bp = static_cast<BlobParent*>(p.blobParent());
-      nsRefPtr<FileImpl> blobImpl = bp->GetBlobImpl();
+      nsRefPtr<BlobImpl> blobImpl = bp->GetBlobImpl();
 
+      ErrorResult rv;
       nsCOMPtr<nsIInputStream> stream;
-      blobImpl->GetInternalStream(getter_AddRefs(stream));
+      blobImpl->GetInternalStream(getter_AddRefs(stream), rv);
+      MOZ_ASSERT(!rv.Failed());
 
       nsRefPtr<CancelableRunnable> r = new WriteFileEvent(this, dsf, stream,
                                                           DEVICE_STORAGE_REQUEST_APPEND);
@@ -413,7 +418,7 @@ void
 DeviceStorageRequestParent::ActorDestroy(ActorDestroyReason)
 {
   MutexAutoLock lock(mMutex);
-  mActorDestoryed = true;
+  mActorDestroyed = true;
   int32_t count = mRunnables.Length();
   for (int32_t index = 0; index < count; index++) {
     mRunnables[index]->Cancel();
@@ -522,12 +527,12 @@ DeviceStorageRequestParent::PostBlobSuccessEvent::CancelableRun() {
 
   nsString fullPath;
   mFile->GetFullPath(fullPath);
-  nsRefPtr<File> blob = new File(nullptr,
-    new FileImplFile(fullPath, mime, mLength, mFile->mFile,
-                     mLastModificationDate));
+  nsRefPtr<BlobImpl> blob =
+    new BlobImplFile(fullPath, mime, mLength, mFile->mFile,
+                     mLastModificationDate);
 
   ContentParent* cp = static_cast<ContentParent*>(mParent->Manager());
-  BlobParent* actor = cp->GetOrCreateActorForBlob(blob);
+  BlobParent* actor = cp->GetOrCreateActorForBlobImpl(blob);
   if (!actor) {
     ErrorResponse response(NS_LITERAL_STRING(POST_ERROR_EVENT_UNKNOWN));
     unused << mParent->Send__delete__(mParent, response);
@@ -723,7 +728,7 @@ DeviceStorageRequestParent::FreeSpaceFileEvent::CancelableRun()
 
   int64_t freeSpace = 0;
   if (mFile) {
-    mFile->GetDiskFreeSpace(&freeSpace);
+    mFile->GetStorageFreeSpace(&freeSpace);
   }
 
   nsCOMPtr<nsIRunnable> r;

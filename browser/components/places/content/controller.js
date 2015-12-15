@@ -129,15 +129,6 @@ PlacesController.prototype = {
   },
 
   isCommandEnabled: function PC_isCommandEnabled(aCommand) {
-    if (PlacesUIUtils.useAsyncTransactions) {
-      switch (aCommand) {
-      case "placesCmd_new:folder":
-      case "placesCmd_new:bookmark":
-      case "placesCmd_createBookmark":
-        return false;
-      }
-    }
-
     switch (aCommand) {
     case "cmd_undo":
       if (!PlacesUIUtils.useAsyncTransactions)
@@ -279,7 +270,7 @@ PlacesController.prototype = {
       this.newItem("bookmark");
       break;
     case "placesCmd_new:separator":
-      this.newSeparator().then(null, Components.utils.reportError);
+      this.newSeparator().catch(Cu.reportError);
       break;
     case "placesCmd_show:info":
       this.showBookmarkPropertiesForSelection();
@@ -666,27 +657,13 @@ PlacesController.prototype = {
   /**
    * Opens the bookmark properties for the selected URI Node.
    */
-  showBookmarkPropertiesForSelection:
-  function PC_showBookmarkPropertiesForSelection() {
-    var node = this._view.selectedNode;
+  showBookmarkPropertiesForSelection() {
+    let node = this._view.selectedNode;
     if (!node)
       return;
 
-    var itemType = PlacesUtils.nodeIsFolder(node) ||
-                   PlacesUtils.nodeIsTagQuery(node) ? "folder" : "bookmark";
-    var concreteId = PlacesUtils.getConcreteItemId(node);
-    var isRootItem = PlacesUtils.isRootItem(concreteId);
-    var itemId = node.itemId;
-    if (isRootItem || PlacesUtils.nodeIsTagQuery(node)) {
-      // If this is a root or the Tags query we use the concrete itemId to catch
-      // the correct title for the node.
-      itemId = concreteId;
-    }
-
     PlacesUIUtils.showBookmarkDialog({ action: "edit"
-                                     , type: itemType
-                                     , itemId: itemId
-                                     , readOnly: isRootItem
+                                     , node
                                      , hiddenRows: [ "folderPicker" ]
                                      }, window.top);
   },
@@ -1078,15 +1055,15 @@ PlacesController.prototype = {
     if (!didSuppressNotifications)
       result.suppressNotifications = true;
 
-    function addData(type, index, overrideURI) {
-      let wrapNode = PlacesUtils.wrapNode(node, type, overrideURI);
+    function addData(type, index, feedURI) {
+      let wrapNode = PlacesUtils.wrapNode(node, type, feedURI);
       dt.mozSetDataAt(type, wrapNode, index);
     }
 
-    function addURIData(index, overrideURI) {
-      addData(PlacesUtils.TYPE_X_MOZ_URL, index, overrideURI);
-      addData(PlacesUtils.TYPE_UNICODE, index, overrideURI);
-      addData(PlacesUtils.TYPE_HTML, index, overrideURI);
+    function addURIData(index, feedURI) {
+      addData(PlacesUtils.TYPE_X_MOZ_URL, index, feedURI);
+      addData(PlacesUtils.TYPE_UNICODE, index, feedURI);
+      addData(PlacesUtils.TYPE_HTML, index, feedURI);
     }
 
     try {
@@ -1178,11 +1155,11 @@ PlacesController.prototype = {
         copiedFolders.push(node);
 
       let livemarkInfo = this.getCachedLivemarkInfo(node);
-      let overrideURI = livemarkInfo ? livemarkInfo.feedURI.spec : null;
+      let feedURI = livemarkInfo && livemarkInfo.feedURI.spec;
 
       contents.forEach(function (content) {
         content.entries.push(
-          PlacesUtils.wrapNode(node, content.type, overrideURI)
+          PlacesUtils.wrapNode(node, content.type, feedURI)
         );
       });
     }, this);
@@ -1431,7 +1408,7 @@ PlacesController.prototype = {
  * the view that the item(s) have been dropped on was not necessarily active.
  * Drop functions are passed the view that is being dropped on.
  */
-let PlacesControllerDragHelper = {
+var PlacesControllerDragHelper = {
   /**
    * DOM Element currently being dragged over
    */
@@ -1522,7 +1499,7 @@ let PlacesControllerDragHelper = {
       }
 
       // Only bookmarks and urls can be dropped into tag containers.
-      if (ip.isTag && ip.orientation == Ci.nsITreeView.DROP_ON &&
+      if (ip.isTag &&
           dragged.type != PlacesUtils.TYPE_X_MOZ_URL &&
           (dragged.type != PlacesUtils.TYPE_X_MOZ_PLACE ||
            (dragged.uri && dragged.uri.startsWith("place:")) ))
@@ -1628,8 +1605,7 @@ let PlacesControllerDragHelper = {
         index+= movedCount++;
 
       // If dragging over a tag container we should tag the item.
-      if (insertionPoint.isTag &&
-          insertionPoint.orientation == Ci.nsITreeView.DROP_ON) {
+      if (insertionPoint.isTag) {
         let uri = NetUtil.newURI(unwrapped.uri);
         let tagItemId = insertionPoint.itemId;
         if (PlacesUIUtils.useAsyncTransactions)

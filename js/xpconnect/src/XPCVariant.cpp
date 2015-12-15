@@ -29,10 +29,9 @@ NS_IMPL_CI_INTERFACE_GETTER(XPCVariant, XPCVariant, nsIVariant)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(XPCVariant)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(XPCVariant)
 
-XPCVariant::XPCVariant(JSContext* cx, jsval aJSVal)
+XPCVariant::XPCVariant(JSContext* cx, Value aJSVal)
     : mJSVal(aJSVal), mCCGeneration(0)
 {
-    nsVariant::Initialize(&mData);
     if (!mJSVal.isPrimitive()) {
         // XXXbholley - The innerization here was from bug 638026. Blake says
         // the basic problem was that we were storing the C++ inner but the JS
@@ -55,11 +54,11 @@ XPCVariant::XPCVariant(JSContext* cx, jsval aJSVal)
 
 XPCTraceableVariant::~XPCTraceableVariant()
 {
-    jsval val = GetJSValPreserveColor();
+    Value val = GetJSValPreserveColor();
 
     MOZ_ASSERT(val.isGCThing(), "Must be traceable or unlinked");
 
-    nsVariant::Cleanup(&mData);
+    mData.Cleanup();
 
     if (!val.isNull())
         RemoveFromRootSet();
@@ -68,15 +67,7 @@ XPCTraceableVariant::~XPCTraceableVariant()
 void XPCTraceableVariant::TraceJS(JSTracer* trc)
 {
     MOZ_ASSERT(mJSVal.isMarkable());
-    trc->setTracingDetails(GetTraceName, this, 0);
     JS_CallValueTracer(trc, &mJSVal, "XPCTraceableVariant::mJSVal");
-}
-
-// static
-void
-XPCTraceableVariant::GetTraceName(JSTracer* trc, char* buf, size_t bufsize)
-{
-    JS_snprintf(buf, bufsize, "XPCVariant[0x%p].mJSVal", trc->debugPrintArg());
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(XPCVariant)
@@ -88,13 +79,13 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(XPCVariant)
         cb.NoteJSObject(&val.toObject());
     }
 
-    nsVariant::Traverse(tmp->mData, cb);
+    tmp->mData.Traverse(cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(XPCVariant)
     JS::Value val = tmp->GetJSValPreserveColor();
 
-    nsVariant::Cleanup(&tmp->mData);
+    tmp->mData.Cleanup();
 
     if (val.isMarkable()) {
         XPCTraceableVariant* v = static_cast<XPCTraceableVariant*>(tmp);
@@ -105,7 +96,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 // static
 already_AddRefed<XPCVariant>
-XPCVariant::newVariant(JSContext* cx, jsval aJSVal)
+XPCVariant::newVariant(JSContext* cx, Value aJSVal)
 {
     nsRefPtr<XPCVariant> variant;
 
@@ -190,7 +181,7 @@ XPCArrayHomogenizer::GetTypeForArray(JSContext* cx, HandleObject array,
             type = tDbl;
         } else if (val.isBoolean()) {
             type = tBool;
-        } else if (val.isUndefined()) {
+        } else if (val.isUndefined() || val.isSymbol()) {
             state = tVar;
             break;
         } else if (val.isNull()) {
@@ -268,25 +259,26 @@ bool XPCVariant::InitializeData(JSContext* cx)
     RootedValue val(cx, GetJSVal());
 
     if (val.isInt32())
-        return NS_SUCCEEDED(nsVariant::SetFromInt32(&mData, val.toInt32()));
+        return NS_SUCCEEDED(mData.SetFromInt32(val.toInt32()));
     if (val.isDouble())
-        return NS_SUCCEEDED(nsVariant::SetFromDouble(&mData, val.toDouble()));
+        return NS_SUCCEEDED(mData.SetFromDouble(val.toDouble()));
     if (val.isBoolean())
-        return NS_SUCCEEDED(nsVariant::SetFromBool(&mData, val.toBoolean()));
-    if (val.isUndefined())
-        return NS_SUCCEEDED(nsVariant::SetToVoid(&mData));
+        return NS_SUCCEEDED(mData.SetFromBool(val.toBoolean()));
+    // We can't represent symbol on C++ side, so pretend it is void.
+    if (val.isUndefined() || val.isSymbol())
+        return NS_SUCCEEDED(mData.SetToVoid());
     if (val.isNull())
-        return NS_SUCCEEDED(nsVariant::SetToEmpty(&mData));
+        return NS_SUCCEEDED(mData.SetToEmpty());
     if (val.isString()) {
         JSString* str = val.toString();
         if (!str)
             return false;
 
-        MOZ_ASSERT(mData.mType == nsIDataType::VTYPE_EMPTY,
+        MOZ_ASSERT(mData.GetType() == nsIDataType::VTYPE_EMPTY,
                    "Why do we already have data?");
 
         size_t length = JS_GetStringLength(str);
-        if (!NS_SUCCEEDED(nsVariant::AllocateWStringWithSize(&mData, length)))
+        if (!NS_SUCCEEDED(mData.AllocateWStringWithSize(length)))
             return false;
 
         mozilla::Range<char16_t> destChars(mData.u.wstr.mWStringValue, length);
@@ -306,7 +298,7 @@ bool XPCVariant::InitializeData(JSContext* cx)
 
     const nsID* id = xpc_JSObjectToID(cx, jsobj);
     if (id)
-        return NS_SUCCEEDED(nsVariant::SetFromID(&mData, *id));
+        return NS_SUCCEEDED(mData.SetFromID(*id));
 
     // Let's see if it is a js array object.
 
@@ -315,7 +307,7 @@ bool XPCVariant::InitializeData(JSContext* cx)
     if (JS_IsArrayObject(cx, jsobj) && JS_GetArrayLength(cx, jsobj, &len)) {
         if (!len) {
             // Zero length array
-            nsVariant::SetToEmptyArray(&mData);
+            mData.SetToEmptyArray();
             return true;
         }
 
@@ -346,7 +338,7 @@ bool XPCVariant::InitializeData(JSContext* cx)
 
     return NS_SUCCEEDED(xpc->WrapJS(cx, jsobj,
                                     iid, getter_AddRefs(wrapper))) &&
-           NS_SUCCEEDED(nsVariant::SetFromInterface(&mData, iid, wrapper));
+           NS_SUCCEEDED(mData.SetFromInterface(iid, wrapper));
 }
 
 NS_IMETHODIMP
@@ -494,7 +486,7 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
                 return false;
             bool success = XPCConvert::NativeData2JS(pJSVal, (const void*)&pc,
                                                      TD_PSTRING, &iid, pErr);
-            nsMemory::Free(pc);
+            free(pc);
             return success;
         }
         case nsIDataType::VTYPE_STRING_SIZE_IS:
@@ -505,7 +497,7 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
                 return false;
             bool success = XPCConvert::NativeStringWithSize2JS(pJSVal, (const void*)&pc,
                                                                TD_PSTRING_SIZE_IS, size, pErr);
-            nsMemory::Free(pc);
+            free(pc);
             return success;
         }
         case nsIDataType::VTYPE_WCHAR_STR:
@@ -515,7 +507,7 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
                 return false;
             bool success = XPCConvert::NativeData2JS(pJSVal, (const void*)&pwc,
                                                      TD_PSTRING, &iid, pErr);
-            nsMemory::Free(pwc);
+            free(pwc);
             return success;
         }
         case nsIDataType::VTYPE_WSTRING_SIZE_IS:
@@ -526,7 +518,7 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
                 return false;
             bool success = XPCConvert::NativeStringWithSize2JS(pJSVal, (const void*)&pwc,
                                                                TD_PWSTRING_SIZE_IS, size, pErr);
-            nsMemory::Free(pwc);
+            free(pwc);
             return success;
         }
         case nsIDataType::VTYPE_INTERFACE:
@@ -538,7 +530,7 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
                 return false;
 
             iid = *piid;
-            nsMemory::Free((char*)piid);
+            free((char*)piid);
 
             bool success = XPCConvert::NativeData2JS(pJSVal, (const void*)&pi,
                                                      TD_INTERFACE_IS_TYPE, &iid, pErr);
@@ -549,7 +541,6 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
         case nsIDataType::VTYPE_ARRAY:
         {
             nsDiscriminatedUnion du;
-            nsVariant::Initialize(&du);
             nsresult rv;
 
             rv = variant->GetAsArray(&du.u.array.mArrayType,
@@ -561,7 +552,6 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
 
             // must exit via VARIANT_DONE from here on...
             du.mType = nsIDataType::VTYPE_ARRAY;
-            bool success = false;
 
             nsXPTType conversionType;
             uint16_t elementType = du.u.array.mArrayType;
@@ -613,17 +603,15 @@ XPCVariant::VariantDataToJS(nsIVariant* variant,
                 case nsIDataType::VTYPE_EMPTY:
                 default:
                     NS_ERROR("bad type in array!");
-                    goto VARIANT_DONE;
+                    return false;
             }
 
-            success =
+            bool success =
                 XPCConvert::NativeArray2JS(pJSVal,
                                            (const void**)&du.u.array.mArrayValue,
                                            conversionType, pid,
                                            du.u.array.mArrayCount, pErr);
 
-VARIANT_DONE:
-            nsVariant::Cleanup(&du);
             return success;
         }
         case nsIDataType::VTYPE_EMPTY_ARRAY:
@@ -652,162 +640,136 @@ VARIANT_DONE:
 // some more interesting conversions.
 
 
-/* readonly attribute uint16_t dataType; */
 NS_IMETHODIMP XPCVariant::GetDataType(uint16_t* aDataType)
 {
-    *aDataType = mData.mType;
+    *aDataType = mData.GetType();
     return NS_OK;
 }
 
-/* uint8_t getAsInt8 (); */
 NS_IMETHODIMP XPCVariant::GetAsInt8(uint8_t* _retval)
 {
-    return nsVariant::ConvertToInt8(mData, _retval);
+    return mData.ConvertToInt8(_retval);
 }
 
-/* int16_t getAsInt16 (); */
 NS_IMETHODIMP XPCVariant::GetAsInt16(int16_t* _retval)
 {
-    return nsVariant::ConvertToInt16(mData, _retval);
+    return mData.ConvertToInt16(_retval);
 }
 
-/* int32_t getAsInt32 (); */
 NS_IMETHODIMP XPCVariant::GetAsInt32(int32_t* _retval)
 {
-    return nsVariant::ConvertToInt32(mData, _retval);
+    return mData.ConvertToInt32(_retval);
 }
 
-/* int64_t getAsInt64 (); */
 NS_IMETHODIMP XPCVariant::GetAsInt64(int64_t* _retval)
 {
-    return nsVariant::ConvertToInt64(mData, _retval);
+    return mData.ConvertToInt64(_retval);
 }
 
-/* uint8_t getAsUint8 (); */
 NS_IMETHODIMP XPCVariant::GetAsUint8(uint8_t* _retval)
 {
-    return nsVariant::ConvertToUint8(mData, _retval);
+    return mData.ConvertToUint8(_retval);
 }
 
-/* uint16_t getAsUint16 (); */
 NS_IMETHODIMP XPCVariant::GetAsUint16(uint16_t* _retval)
 {
-    return nsVariant::ConvertToUint16(mData, _retval);
+    return mData.ConvertToUint16(_retval);
 }
 
-/* uint32_t getAsUint32 (); */
 NS_IMETHODIMP XPCVariant::GetAsUint32(uint32_t* _retval)
 {
-    return nsVariant::ConvertToUint32(mData, _retval);
+    return mData.ConvertToUint32(_retval);
 }
 
-/* uint64_t getAsUint64 (); */
 NS_IMETHODIMP XPCVariant::GetAsUint64(uint64_t* _retval)
 {
-    return nsVariant::ConvertToUint64(mData, _retval);
+    return mData.ConvertToUint64(_retval);
 }
 
-/* float getAsFloat (); */
 NS_IMETHODIMP XPCVariant::GetAsFloat(float* _retval)
 {
-    return nsVariant::ConvertToFloat(mData, _retval);
+    return mData.ConvertToFloat(_retval);
 }
 
-/* double getAsDouble (); */
 NS_IMETHODIMP XPCVariant::GetAsDouble(double* _retval)
 {
-    return nsVariant::ConvertToDouble(mData, _retval);
+    return mData.ConvertToDouble(_retval);
 }
 
-/* bool getAsBool (); */
 NS_IMETHODIMP XPCVariant::GetAsBool(bool* _retval)
 {
-    return nsVariant::ConvertToBool(mData, _retval);
+    return mData.ConvertToBool(_retval);
 }
 
-/* char getAsChar (); */
 NS_IMETHODIMP XPCVariant::GetAsChar(char* _retval)
 {
-    return nsVariant::ConvertToChar(mData, _retval);
+    return mData.ConvertToChar(_retval);
 }
 
-/* wchar getAsWChar (); */
 NS_IMETHODIMP XPCVariant::GetAsWChar(char16_t* _retval)
 {
-    return nsVariant::ConvertToWChar(mData, _retval);
+    return mData.ConvertToWChar(_retval);
 }
 
-/* [notxpcom] nsresult getAsID (out nsID retval); */
 NS_IMETHODIMP_(nsresult) XPCVariant::GetAsID(nsID* retval)
 {
-    return nsVariant::ConvertToID(mData, retval);
+    return mData.ConvertToID(retval);
 }
 
-/* AString getAsAString (); */
 NS_IMETHODIMP XPCVariant::GetAsAString(nsAString & _retval)
 {
-    return nsVariant::ConvertToAString(mData, _retval);
+    return mData.ConvertToAString(_retval);
 }
 
-/* DOMString getAsDOMString (); */
 NS_IMETHODIMP XPCVariant::GetAsDOMString(nsAString & _retval)
 {
     // A DOMString maps to an AString internally, so we can re-use
     // ConvertToAString here.
-    return nsVariant::ConvertToAString(mData, _retval);
+    return mData.ConvertToAString(_retval);
 }
 
-/* ACString getAsACString (); */
 NS_IMETHODIMP XPCVariant::GetAsACString(nsACString & _retval)
 {
-    return nsVariant::ConvertToACString(mData, _retval);
+    return mData.ConvertToACString(_retval);
 }
 
-/* AUTF8String getAsAUTF8String (); */
 NS_IMETHODIMP XPCVariant::GetAsAUTF8String(nsAUTF8String & _retval)
 {
-    return nsVariant::ConvertToAUTF8String(mData, _retval);
+    return mData.ConvertToAUTF8String(_retval);
 }
 
-/* string getAsString (); */
 NS_IMETHODIMP XPCVariant::GetAsString(char** _retval)
 {
-    return nsVariant::ConvertToString(mData, _retval);
+    return mData.ConvertToString(_retval);
 }
 
-/* wstring getAsWString (); */
 NS_IMETHODIMP XPCVariant::GetAsWString(char16_t** _retval)
 {
-    return nsVariant::ConvertToWString(mData, _retval);
+    return mData.ConvertToWString(_retval);
 }
 
-/* nsISupports getAsISupports (); */
 NS_IMETHODIMP XPCVariant::GetAsISupports(nsISupports** _retval)
 {
-    return nsVariant::ConvertToISupports(mData, _retval);
+    return mData.ConvertToISupports(_retval);
 }
 
-/* void getAsInterface (out nsIIDPtr iid, [iid_is (iid), retval] out nsQIResult iface); */
-NS_IMETHODIMP XPCVariant::GetAsInterface(nsIID * *iid, void * *iface)
+NS_IMETHODIMP XPCVariant::GetAsInterface(nsIID** iid, void** iface)
 {
-    return nsVariant::ConvertToInterface(mData, iid, iface);
+    return mData.ConvertToInterface(iid, iface);
 }
 
 
-/* [notxpcom] nsresult getAsArray (out uint16_t type, out nsIID iid, out uint32_t count, out voidPtr ptr); */
 NS_IMETHODIMP_(nsresult) XPCVariant::GetAsArray(uint16_t* type, nsIID* iid, uint32_t* count, void * *ptr)
 {
-    return nsVariant::ConvertToArray(mData, type, iid, count, ptr);
+    return mData.ConvertToArray(type, iid, count, ptr);
 }
 
-/* void getAsStringWithSize (out uint32_t size, [size_is (size), retval] out string str); */
 NS_IMETHODIMP XPCVariant::GetAsStringWithSize(uint32_t* size, char** str)
 {
-    return nsVariant::ConvertToStringWithSize(mData, size, str);
+    return mData.ConvertToStringWithSize(size, str);
 }
 
-/* void getAsWStringWithSize (out uint32_t size, [size_is (size), retval] out wstring str); */
 NS_IMETHODIMP XPCVariant::GetAsWStringWithSize(uint32_t* size, char16_t** str)
 {
-    return nsVariant::ConvertToWStringWithSize(mData, size, str);
+    return mData.ConvertToWStringWithSize(size, str);
 }

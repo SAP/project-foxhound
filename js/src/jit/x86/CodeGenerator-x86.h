@@ -7,7 +7,7 @@
 #ifndef jit_x86_CodeGenerator_x86_h
 #define jit_x86_CodeGenerator_x86_h
 
-#include "jit/shared/CodeGenerator-x86-shared.h"
+#include "jit/x86-shared/CodeGenerator-x86-shared.h"
 #include "jit/x86/Assembler-x86.h"
 
 namespace js {
@@ -28,25 +28,14 @@ class CodeGeneratorX86 : public CodeGeneratorX86Shared
     ValueOperand ToOutValue(LInstruction* ins);
     ValueOperand ToTempValue(LInstruction* ins, size_t pos);
 
-    template<typename T>
-    void loadAndNoteViewTypeElement(Scalar::Type vt, const T& srcAddr, const LDefinition* out);
-    template<typename T>
-    void load(Scalar::Type vt, const T& srcAddr, const LDefinition* out);
-    template<typename T>
-    void storeAndNoteViewTypeElement(Scalar::Type vt, const LAllocation* value, const T& dstAddr);
-    template<typename T>
-    void store(Scalar::Type vt, const LAllocation* value, const T& dstAddr);
+    void load(Scalar::Type vt, const Operand& srcAddr, const LDefinition* out);
+    void store(Scalar::Type vt, const LAllocation* value, const Operand& dstAddr);
 
-    template<typename T>
-    void loadSimd(Scalar::Type type, unsigned numElems, T srcAddr, FloatRegister out);
-    void emitSimdLoad(Scalar::Type type, unsigned numElems, const LAllocation* ptr,
-                      FloatRegister out, bool needsBoundsCheck = false, Label* oobLabel = nullptr);
+    void loadSimd(Scalar::Type type, unsigned numElems, const Operand& srcAddr, FloatRegister out);
+    void emitSimdLoad(LAsmJSLoadHeap* ins);
 
-    template<typename T>
-    void storeSimd(Scalar::Type type, unsigned numElems, FloatRegister in, T destAddr);
-    void emitSimdStore(Scalar::Type type, unsigned numElems, FloatRegister in,
-                       const LAllocation* ptr, bool needsBoundsCheck = false,
-                       Label* oobLabel = nullptr);
+    void storeSimd(Scalar::Type type, unsigned numElems, FloatRegister in, const Operand& dstAddr);
+    void emitSimdStore(LAsmJSStoreHeap* ins);
 
     void memoryBarrier(MemoryBarrierBits barrier);
 
@@ -60,8 +49,8 @@ class CodeGeneratorX86 : public CodeGeneratorX86Shared
     void visitValue(LValue* value);
     void visitCompareB(LCompareB* lir);
     void visitCompareBAndBranch(LCompareBAndBranch* lir);
-    void visitCompareV(LCompareV* lir);
-    void visitCompareVAndBranch(LCompareVAndBranch* lir);
+    void visitCompareBitwise(LCompareBitwise* lir);
+    void visitCompareBitwiseAndBranch(LCompareBitwiseAndBranch* lir);
     void visitAsmJSUInt32ToDouble(LAsmJSUInt32ToDouble* lir);
     void visitAsmJSUInt32ToFloat32(LAsmJSUInt32ToFloat32* lir);
     void visitTruncateDToInt32(LTruncateDToInt32* ins);
@@ -72,7 +61,9 @@ class CodeGeneratorX86 : public CodeGeneratorX86Shared
     void visitAsmJSLoadHeap(LAsmJSLoadHeap* ins);
     void visitAsmJSStoreHeap(LAsmJSStoreHeap* ins);
     void visitAsmJSCompareExchangeHeap(LAsmJSCompareExchangeHeap* ins);
+    void visitAsmJSAtomicExchangeHeap(LAsmJSAtomicExchangeHeap* ins);
     void visitAsmJSAtomicBinopHeap(LAsmJSAtomicBinopHeap* ins);
+    void visitAsmJSAtomicBinopHeapForEffect(LAsmJSAtomicBinopHeapForEffect* ins);
     void visitAsmJSLoadGlobalVar(LAsmJSLoadGlobalVar* ins);
     void visitAsmJSStoreGlobalVar(LAsmJSStoreGlobalVar* ins);
     void visitAsmJSLoadFuncPtr(LAsmJSLoadFuncPtr* ins);
@@ -80,6 +71,10 @@ class CodeGeneratorX86 : public CodeGeneratorX86Shared
 
     void visitOutOfLineTruncate(OutOfLineTruncate* ool);
     void visitOutOfLineTruncateFloat32(OutOfLineTruncateFloat32* ool);
+
+  private:
+    void asmJSAtomicComputeAddress(Register addrTemp, Register ptrReg, bool boundsCheck,
+                                   int32_t offset, int32_t endOffset);
 };
 
 typedef CodeGeneratorX86 CodeGeneratorSpecific;

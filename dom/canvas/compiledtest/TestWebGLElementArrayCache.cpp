@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +12,6 @@
 #include <iostream>
 #include "nscore.h"
 #include "nsTArray.h"
-
-using namespace mozilla;
 
 int gTestsPassed = 0;
 
@@ -64,7 +63,7 @@ GLType()
 }
 
 void
-CheckValidate(bool expectSuccess, WebGLElementArrayCache& c, GLenum type,
+CheckValidate(bool expectSuccess, mozilla::WebGLElementArrayCache& c, GLenum type,
               uint32_t maxAllowed, size_t first, size_t count)
 {
   uint32_t out_upperBound = 0;
@@ -79,7 +78,8 @@ CheckValidate(bool expectSuccess, WebGLElementArrayCache& c, GLenum type,
 
 template<typename T>
 void
-CheckValidateOneTypeVariousBounds(WebGLElementArrayCache& c, size_t firstByte, size_t countBytes)
+CheckValidateOneTypeVariousBounds(mozilla::WebGLElementArrayCache& c, size_t firstByte,
+                                  size_t countBytes)
 {
   size_t first = firstByte / sizeof(T);
   size_t count = countBytes / sizeof(T);
@@ -100,7 +100,8 @@ CheckValidateOneTypeVariousBounds(WebGLElementArrayCache& c, size_t firstByte, s
   }
 }
 
-void CheckValidateAllTypes(WebGLElementArrayCache& c, size_t firstByte, size_t countBytes)
+void CheckValidateAllTypes(mozilla::WebGLElementArrayCache& c, size_t firstByte,
+                           size_t countBytes)
 {
   CheckValidateOneTypeVariousBounds<uint8_t>(c, firstByte, countBytes);
   CheckValidateOneTypeVariousBounds<uint16_t>(c, firstByte, countBytes);
@@ -115,11 +116,11 @@ CheckSanity()
                         // ensure we exercise some nontrivial tree-walking
   T data[numElems] = {1,0,3,1,2,6,5,4}; // intentionally specify only 8 elements for now
   size_t numBytes = numElems * sizeof(T);
-  MOZ_ASSERT(numBytes == sizeof(data));
+  MOZ_RELEASE_ASSERT(numBytes == sizeof(data));
 
   GLenum type = GLType<T>();
 
-  WebGLElementArrayCache c;
+  mozilla::WebGLElementArrayCache c;
   c.BufferData(data, numBytes);
   CheckValidate(true,  c, type, 6, 0, 8);
   CheckValidate(false, c, type, 5, 0, 8);
@@ -139,7 +140,7 @@ CheckSanity()
   CheckValidate(true,  c, type, numElems,     0, numElems);
   CheckValidate(false, c, type, numElems - 1, 0, numElems);
 
-  MOZ_ASSERT(numElems > 10);
+  MOZ_RELEASE_ASSERT(numElems > 10);
   CheckValidate(true,  c, type, numElems - 10, 10, numElems - 10);
   CheckValidate(false, c, type, numElems - 11, 10, numElems - 10);
 }
@@ -156,11 +157,11 @@ CheckUintOverflow()
                               // ensure we exercise some nontrivial tree-walking
   T data[numElems];
   size_t numBytes = numElems * sizeof(T);
-  MOZ_ASSERT(numBytes == sizeof(data));
+  MOZ_RELEASE_ASSERT(numBytes == sizeof(data));
 
   GLenum type = GLType<T>();
 
-  WebGLElementArrayCache c;
+  mozilla::WebGLElementArrayCache c;
 
   for(size_t i = 0; i < numElems; i++)
     data[i] = numElems - i;
@@ -186,7 +187,7 @@ main(int argc, char* argv[])
   CheckUintOverflow<uint16_t>();
 
   nsTArray<uint8_t> v, vsub;
-  WebGLElementArrayCache b;
+  mozilla::WebGLElementArrayCache b;
 
   for (int maxBufferSize = 1; maxBufferSize <= 4096; maxBufferSize *= 2) {
     // See bug 800612. We originally had | repeat = min(maxBufferSize, 20) |
@@ -228,3 +229,4 @@ main(int argc, char* argv[])
   std::cerr << argv[0] << ": all " << gTestsPassed << " tests passed" << std::endl;
   return 0;
 }
+

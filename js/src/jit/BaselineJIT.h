@@ -119,11 +119,12 @@ struct BaselineScript
 
   private:
     // Code pointer containing the actual method.
-    HeapPtrJitCode method_;
+    RelocatablePtrJitCode method_;
 
-    // For heavyweight scripts, template objects to use for the call object and
-    // decl env object (linked via the call object's enclosing scope).
-    HeapPtrObject templateScope_;
+    // For functions with a call object, template objects to use for the call
+    // object and decl env object (linked via the call object's enclosing
+    // scope).
+    RelocatablePtrObject templateScope_;
 
     // Allocated space for fallback stubs.
     FallbackICStubSpace fallbackStubSpace_;
@@ -211,6 +212,21 @@ struct BaselineScript
     // For generator scripts, we store the native code address for each yield
     // instruction.
     uint32_t yieldEntriesOffset_;
+
+    // The total bytecode length of all scripts we inlined when we Ion-compiled
+    // this script. 0 if Ion did not compile this script or if we didn't inline
+    // anything.
+    uint16_t inlinedBytecodeLength_;
+
+    // The max inlining depth where we can still inline all functions we inlined
+    // when we Ion-compiled this script. This starts as UINT8_MAX, since we have
+    // no data yet, and won't affect inlining heuristics in that case. The value
+    // is updated when we Ion-compile this script. See makeInliningDecision for
+    // more info.
+    uint8_t maxInliningDepth_;
+
+    // An ion compilation that is ready, but isn't linked yet.
+    IonBuilder *pendingBuilder_;
 
   public:
     // Do not call directly, use BaselineScript::New. This is public for cx->new_.
@@ -386,6 +402,7 @@ struct BaselineScript
 
     bool addDependentAsmJSModule(JSContext* cx, DependentAsmJSModuleExit exit);
     void unlinkDependentAsmJSModules(FreeOp* fop);
+    void clearDependentAsmJSModules();
     void removeDependentAsmJSModule(DependentAsmJSModuleExit exit);
 
     // Toggle debug traps (used for breakpoints and step mode) in the script.
@@ -424,6 +441,55 @@ struct BaselineScript
         MOZ_ASSERT(bytecodeTypeMapOffset_);
         return reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(this) + bytecodeTypeMapOffset_);
     }
+
+    uint8_t maxInliningDepth() const {
+        return maxInliningDepth_;
+    }
+    void setMaxInliningDepth(uint32_t depth) {
+        MOZ_ASSERT(depth <= UINT8_MAX);
+        maxInliningDepth_ = depth;
+    }
+    void resetMaxInliningDepth() {
+        maxInliningDepth_ = UINT8_MAX;
+    }
+
+    uint16_t inlinedBytecodeLength() const {
+        return inlinedBytecodeLength_;
+    }
+    void setInlinedBytecodeLength(uint32_t len) {
+        if (len > UINT16_MAX)
+            len = UINT16_MAX;
+        inlinedBytecodeLength_ = len;
+    }
+
+    bool hasPendingIonBuilder() const {
+        return !!pendingBuilder_;
+    }
+
+    js::jit::IonBuilder* pendingIonBuilder() {
+        MOZ_ASSERT(hasPendingIonBuilder());
+        return pendingBuilder_;
+    }
+    void setPendingIonBuilder(JSContext* maybecx, JSScript* script, js::jit::IonBuilder* builder) {
+        MOZ_ASSERT(script->baselineScript() == this);
+        MOZ_ASSERT(!builder || !hasPendingIonBuilder());
+
+        if (script->isIonCompilingOffThread())
+            script->setIonScript(maybecx, ION_PENDING_SCRIPT);
+
+        pendingBuilder_ = builder;
+
+        // lazy linking cannot happen during asmjs to ion.
+        clearDependentAsmJSModules();
+
+        script->updateBaselineOrIonRaw(maybecx);
+    }
+    void removePendingIonBuilder(JSScript* script) {
+        setPendingIonBuilder(nullptr, script, nullptr);
+        if (script->maybeIonScript() == ION_PENDING_SCRIPT)
+            script->setIonScript(nullptr, nullptr);
+    }
+
 };
 static_assert(sizeof(BaselineScript) % sizeof(uintptr_t) == 0,
               "The data attached to the script must be aligned for fast JIT access.");

@@ -11,7 +11,7 @@ import pkg_resources
 import sys
 import time
 
-from mozlog.structured.structuredlog import get_default_logger
+from mozlog import get_default_logger
 import mozversion
 from xmlgen import html
 from xmlgen import raw
@@ -223,15 +223,14 @@ class HTMLReportingTestRunnerMixin(object):
         return doc.unicode(indent=2)
 
 
-class HTMLReportingOptionsMixin(object):
-
-    def __init__(self, **kwargs):
-        group = self.add_option_group('htmlreporting')
-        group.add_option('--html-output',
-                         action='store',
-                         dest='html_output',
-                         help='html output',
-                         metavar='path')
+class HTMLReportingArguments(object):
+    name = 'htmlreporting'
+    args = [
+        [['--html-output'],
+         {'help': 'html output',
+          'metavar': 'path',
+          }],
+    ]
 
 
 class HTMLReportingTestResultMixin(object):
@@ -255,13 +254,13 @@ class HTMLReportingTestResultMixin(object):
                 self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
                 debug['source'] = self.marionette.page_source
                 self.marionette.switch_to_frame()
+                self.marionette.push_permission('settings-read', True)
+                self.marionette.push_permission('settings-api-read', True)
                 debug['settings'] = json.dumps(self.marionette.execute_async_script("""
-SpecialPowers.addPermission('settings-read', true, document);
-SpecialPowers.addPermission('settings-api-read', true, document);
 var req = window.navigator.mozSettings.createLock().get('*');
 req.onsuccess = function() {
   marionetteScriptFinished(req.result);
-}""", special_powers=True), sort_keys=True, indent=4, separators=(',', ': '))
+}""", sandbox='system'), sort_keys=True, indent=4, separators=(',', ': '))
             except:
                 logger = get_default_logger()
                 logger.warning('Failed to gather test failure debug.', exc_info=True)

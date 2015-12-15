@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 /*
  * ManifestProcessor
  * Implementation of processing algorithms from:
@@ -11,347 +10,238 @@
  * or individual parts of a manifest object. A manifest is just a
  * standard JS object that has been cleaned up.
  *
- *   .process(jsonText, manifestURL, docURL);
+ *   .process({jsonText,manifestURL,docURL});
+ *
+ * Depends on ImageObjectProcessor to process things like
+ * icons and splash_screens.
  *
  * TODO: The constructor should accept the UA's supported orientations.
  * TODO: The constructor should accept the UA's supported display modes.
- * TODO: hook up developer tools to issueDeveloperWarning (1086997).
+ * TODO: hook up developer tools to console. (1086997).
  */
-/*globals Components*/
-/*exported EXPORTED_SYMBOLS */
+/*globals Components, ValueExtractor, ImageObjectProcessor, ConsoleAPI*/
 'use strict';
-
-this.EXPORTED_SYMBOLS = ['ManifestProcessor'];
 const {
-  utils: Cu,
-  classes: Cc,
-  interfaces: Ci
+  utils: Cu
 } = Components;
-const imports = {};
-Cu.import('resource://gre/modules/Services.jsm', imports);
 Cu.importGlobalProperties(['URL']);
-const securityManager = imports.Services.scriptSecurityManager;
-const netutil = Cc['@mozilla.org/network/util;1'].getService(Ci.nsINetUtil);
-const defaultDisplayMode = 'browser';
-const displayModes = new Set([
-  'fullscreen',
-  'standalone',
-  'minimal-ui',
+const displayModes = new Set(['fullscreen', 'standalone', 'minimal-ui',
   'browser'
 ]);
-const orientationTypes = new Set([
-  'any',
-  'natural',
-  'landscape',
-  'portrait',
-  'portrait-primary',
-  'portrait-secondary',
-  'landscape-primary',
+const orientationTypes = new Set(['any', 'natural', 'landscape', 'portrait',
+  'portrait-primary', 'portrait-secondary', 'landscape-primary',
   'landscape-secondary'
 ]);
+Cu.import('resource://gre/modules/devtools/Console.jsm');
+// ValueExtractor is used by the various processors to get values
+// from the manifest and to report errors.
+Cu.import('resource://gre/modules/ValueExtractor.jsm');
+// ImageObjectProcessor is used to process things like icons and images
+Cu.import('resource://gre/modules/ImageObjectProcessor.jsm');
 
-this.ManifestProcessor = function ManifestProcessor() {};
-/**
- * process method: processes json text into a clean manifest
- * that conforms with the W3C specification.
- * @param jsonText - the JSON string to be processd.
- * @param manifestURL - the URL of the manifest, to resolve URLs.
- * @param docURL - the URL of the owner doc, for security checks
- */
-this.ManifestProcessor.prototype.process = function({
-  jsonText: jsonText,
-  manifestURL: manifestURL,
-  docLocation: docURL
-}) {
-  /*
-   * This helper function is used to extract values from manifest members.
-   * It also reports conformance violations.
-   */
-  function extractValue(obj) {
-    let value = obj.object[obj.property];
-    //we need to special-case "array", as it's not a JS primitive
-    const type = (Array.isArray(value)) ? 'array' : typeof value;
-
-    if (type !== obj.expectedType) {
-      if (type !== 'undefined') {
-        let msg = `Expected the ${obj.objectName}'s ${obj.property}`;
-        msg += `member to a be a ${obj.expectedType}.`;
-        issueDeveloperWarning(msg);
-      }
-      value = undefined;
+this.ManifestProcessor = { // jshint ignore:line
+  get defaultDisplayMode() {
+    return 'browser';
+  },
+  get displayModes() {
+    return displayModes;
+  },
+  get orientationTypes() {
+    return orientationTypes;
+  },
+  // process() method processes JSON text into a clean manifest
+  // that conforms with the W3C specification. Takes an object
+  // expecting the following dictionary items:
+  //  * jsonText: the JSON string to be processed.
+  //  * manifestURL: the URL of the manifest, to resolve URLs.
+  //  * docURL: the URL of the owner doc, for security checks
+  process({
+    jsonText,
+    manifestURL: aManifestURL,
+    docURL: aDocURL
+  }) {
+    const console = new ConsoleAPI({
+      prefix: 'Web Manifest: '
+    });
+    const manifestURL = new URL(aManifestURL);
+    const docURL = new URL(aDocURL);
+    let rawManifest = {};
+    try {
+      rawManifest = JSON.parse(jsonText);
+    } catch (e) {}
+    if (typeof rawManifest !== 'object' || rawManifest === null) {
+      let msg = 'Manifest needs to be an object.';
+      console.warn(msg);
+      rawManifest = {};
     }
-    return value;
-  }
-
-  function issueDeveloperWarning(msg) {
-    //https://bugzilla.mozilla.org/show_bug.cgi?id=1086997
-  }
-
-  function processNameMember(manifest) {
-    const obj = {
-      objectName: 'manifest',
-      object: manifest,
-      property: 'name',
-      expectedType: 'string'
+    const extractor = new ValueExtractor(console);
+    const imgObjProcessor = new ImageObjectProcessor(console, extractor);
+    const processedManifest = {
+      'lang': processLangMember(),
+      'start_url': processStartURLMember(),
+      'display': processDisplayMember.call(this),
+      'orientation': processOrientationMember.call(this),
+      'name': processNameMember(),
+      'icons': imgObjProcessor.process(
+        rawManifest, manifestURL, 'icons'
+      ),
+      'splash_screens': imgObjProcessor.process(
+        rawManifest, manifestURL, 'splash_screens'
+      ),
+      'short_name': processShortNameMember(),
+      'theme_color': processThemeColorMember(),
     };
-    let value = extractValue(obj);
-    return (value) ? value.trim() : value;
-  }
+    processedManifest.scope = processScopeMember();
+    return processedManifest;
 
-  function processShortNameMember(manifest) {
-    const obj = {
-      objectName: 'manifest',
-      object: manifest,
-      property: 'short_name',
-      expectedType: 'string'
-    };
-    let value = extractValue(obj);
-    return (value) ? value.trim() : value;
-  }
-
-  function processOrientationMember(manifest) {
-    const obj = {
-      objectName: 'manifest',
-      object: manifest,
-      property: 'orientation',
-      expectedType: 'string'
-    };
-    let value = extractValue(obj);
-    value = (value) ? value.trim() : undefined;
-    //The spec special-cases orientation to return the empty string
-    return (orientationTypes.has(value)) ? value : '';
-  }
-
-  function processDisplayMember(manifest) {
-    const obj = {
-      objectName: 'manifest',
-      object: manifest,
-      property: 'display',
-      expectedType: 'string'
-    };
-
-    let value = extractValue(obj);
-    value = (value) ? value.trim() : value;
-    return (displayModes.has(value)) ? value : defaultDisplayMode;
-  }
-
-  function processScopeMember(manifest, manifestURL, docURL, startURL) {
-    const spec = {
+    function processNameMember() {
+      const spec = {
         objectName: 'manifest',
-        object: manifest,
+        object: rawManifest,
+        property: 'name',
+        expectedType: 'string',
+        trim: true
+      };
+      return extractor.extractValue(spec);
+    }
+
+    function processShortNameMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
+        property: 'short_name',
+        expectedType: 'string',
+        trim: true
+      };
+      return extractor.extractValue(spec);
+    }
+
+    function processOrientationMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
+        property: 'orientation',
+        expectedType: 'string',
+        trim: true
+      };
+      const value = extractor.extractValue(spec);
+      if (this.orientationTypes.has(value)) {
+        return value;
+      }
+      // The spec special-cases orientation to return the empty string.
+      return '';
+    }
+
+    function processDisplayMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
+        property: 'display',
+        expectedType: 'string',
+        trim: true
+      };
+      const value = extractor.extractValue(spec);
+      if (displayModes.has(value)) {
+        return value;
+      }
+      return this.defaultDisplayMode;
+    }
+
+    function processScopeMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
         property: 'scope',
         expectedType: 'string',
-        dontTrim: true
-      },
-      value = extractValue(spec);
-    let scopeURL;
-    try {
-      scopeURL = new URL(value, manifestURL);
-    } catch (e) {
-      let msg = 'The URL of scope is invalid.';
-      issueDeveloperWarning(msg);
-      return undefined;
+        trim: false
+      };
+      let scopeURL;
+      const startURL = new URL(processedManifest.start_url);
+      const value = extractor.extractValue(spec);
+      if (value === undefined || value === '') {
+        return undefined;
+      }
+      try {
+        scopeURL = new URL(value, manifestURL);
+      } catch (e) {
+        let msg = 'The URL of scope is invalid.';
+        console.warn(msg);
+        return undefined;
+      }
+      if (scopeURL.origin !== docURL.origin) {
+        let msg = 'Scope needs to be same-origin as Document.';
+        console.warn(msg);
+        return undefined;
+      }
+      // If start URL is not within scope of scope URL:
+      let isSameOrigin = startURL && startURL.origin !== scopeURL.origin;
+      if (isSameOrigin || !startURL.pathname.startsWith(scopeURL.pathname)) {
+        let msg =
+          'The start URL is outside the scope, so scope is invalid.';
+        console.warn(msg);
+        return undefined;
+      }
+      return scopeURL.href;
     }
 
-    if (scopeURL.origin !== docURL.origin) {
-      let msg = 'Scope needs to be same-origin as Document.';
-      issueDeveloperWarning(msg);
-      return undefined;
-    }
-
-    //If start URL is not within scope of scope URL:
-    if (startURL && startURL.origin !== scopeURL.origin || !startURL.pathname.startsWith(scopeURL.pathname)) {
-      let msg = 'The start URL is outside the scope, so scope is invalid.';
-      issueDeveloperWarning(msg);
-      return undefined;
-    }
-    return scopeURL;
-  }
-
-  function processStartURLMember(manifest, manifestURL, docURL) {
-    const obj = {
-      objectName: 'manifest',
-      object: manifest,
-      property: 'start_url',
-      expectedType: 'string'
-    };
-
-    let value = extractValue(obj),
-      result = new URL(docURL),
-      targetURI = makeURI(result),
-      sameOrigin = false,
-      potentialResult,
-      referrerURI;
-
-    if (value === undefined || value === '') {
-      return result;
-    }
-
-    try {
-      potentialResult = new URL(value, manifestURL);
-    } catch (e) {
-      issueDeveloperWarning('Invalid URL.');
-      return result;
-    }
-    referrerURI = makeURI(potentialResult);
-    try {
-      securityManager.checkSameOriginURI(referrerURI, targetURI, false);
-      sameOrigin = true;
-    } catch (e) {}
-    if (!sameOrigin) {
-      let msg = 'start_url must be same origin as document.';
-      issueDeveloperWarning(msg);
-    } else {
-      result = potentialResult;
-    }
-    return result;
-
-    //Converts a URL to a Gecko URI
-    function makeURI(webURL) {
-      return imports.Services.io.newURI(webURL.toString(), null, null);
-    }
-  }
-
-  //Constants used by IconsProcessor
-  const onlyDecimals = /^\d+$/,
-    anyRegEx = new RegExp('any', 'i');
-
-  function IconsProcessor() {}
-  IconsProcessor.prototype.processIcons = function(manifest, baseURL) {
-    const obj = {
+    function processStartURLMember() {
+      const spec = {
         objectName: 'manifest',
-        object: manifest,
-        property: 'icons',
-        expectedType: 'array'
-      },
-      icons = [];
-    let value = extractValue(obj);
-
-    if (Array.isArray(value)) {
-      //filter out icons with no "src" or src is empty string
-      let processableIcons = value.filter(
-        icon => icon && Object.prototype.hasOwnProperty.call(icon, 'src') && icon.src !== ''
-      );
-      for (let potentialIcon of processableIcons) {
-        let src = processSrcMember(potentialIcon, baseURL)
-        if(src !== undefined){
-          let icon = {
-            src: src,
-            type: processTypeMember(potentialIcon),
-            sizes: processSizesMember(potentialIcon),
-            density: processDensityMember(potentialIcon)
-          };
-          icons.push(icon);
-        }
+        object: rawManifest,
+        property: 'start_url',
+        expectedType: 'string',
+        trim: false
+      };
+      let result = new URL(docURL).href;
+      const value = extractor.extractValue(spec);
+      if (value === undefined || value === '') {
+        return result;
       }
-    }
-    return icons;
-
-    function processTypeMember(icon) {
-      const charset = {},
-        hadCharset = {},
-        obj = {
-          objectName: 'icon',
-          object: icon,
-          property: 'type',
-          expectedType: 'string'
-        };
-      let value = extractValue(obj),
-        isParsable = (typeof value === 'string' && value.length > 0);
-      value = (isParsable) ? netutil.parseContentType(value.trim(), charset, hadCharset) : undefined;
-      return (value === '') ? undefined : value;
-    }
-
-    function processDensityMember(icon) {
-      const hasDensity = Object.prototype.hasOwnProperty.call(icon, 'density'),
-        rawValue = (hasDensity) ? icon.density : undefined,
-        value = parseFloat(rawValue),
-        result = (Number.isNaN(value) || value === +Infinity || value <= 0) ? 1.0 : value;
+      let potentialResult;
+      try {
+        potentialResult = new URL(value, manifestURL);
+      } catch (e) {
+        console.warn('Invalid URL.');
+        return result;
+      }
+      if (potentialResult.origin !== docURL.origin) {
+        let msg = 'start_url must be same origin as document.';
+        console.warn(msg);
+      } else {
+        result = potentialResult.href;
+      }
       return result;
     }
 
-    function processSrcMember(icon, baseURL) {
-      const obj = {
-          objectName: 'icon',
-          object: icon,
-          property: 'src',
-          expectedType: 'string'
-        },
-        value = extractValue(obj);
-      let url;
-      if (typeof value === 'string' && value.trim() !== '') {
-        try {
-          url = new URL(value, baseURL);
-        } catch (e) {}
-      }
-      return url;
+    function processThemeColorMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
+        property: 'theme_color',
+        expectedType: 'string',
+        trim: true
+      };
+      return extractor.extractColorValue(spec);
     }
 
-    function processSizesMember(icon) {
-      const sizes = new Set(),
-        obj = {
-          objectName: 'icon',
-          object: icon,
-          property: 'sizes',
-          expectedType: 'string'
-        };
-      let value = extractValue(obj);
-      value = (value) ? value.trim() : value;
-      if (value) {
-        //split on whitespace and filter out invalid values
-        let validSizes = value.split(/\s+/).filter(isValidSizeValue);
-        validSizes.forEach((size) => sizes.add(size));
-      }
-      return sizes;
-
-      /*
-       * Implementation of HTML's link@size attribute checker
-       */
-      function isValidSizeValue(size) {
-        if (anyRegEx.test(size)) {
-          return true;
-        }
-        size = size.toLowerCase();
-        if (!size.contains('x') || size.indexOf('x') !== size.lastIndexOf('x')) {
-          return false;
-        }
-
-        //split left of x for width, after x for height
-        const width = size.substring(0, size.indexOf('x'));
-        const height = size.substring(size.indexOf('x') + 1, size.length);
-        const isValid = !(height.startsWith('0') || width.startsWith('0') || !onlyDecimals.test(width + height));
-        return isValid;
-      }
+    function processLangMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
+        property: 'lang',
+        expectedType: 'string', trim: true
+      };
+      let tag = extractor.extractValue(spec);
+      // TODO: Check if tag is structurally valid.
+      //       Cannot do this because we don't support Intl API on Android.
+      //       https://bugzilla.mozilla.org/show_bug.cgi?id=864843
+      //       https://github.com/tc39/ecma402/issues/5
+      // TODO: perform canonicalization on the tag.
+      //       Can't do this today because there is no direct means to
+      //       access canonicalization algorithms through Intl API.
+      //       https://github.com/tc39/ecma402/issues/5
+      return tag;
     }
-  };
-
-  function processIconsMember(manifest, manifestURL) {
-    const iconsProcessor = new IconsProcessor();
-    return iconsProcessor.processIcons(manifest, manifestURL);
   }
-
-  //Processing starts here!
-  let manifest = {};
-
-  try {
-    manifest = JSON.parse(jsonText);
-    if (typeof manifest !== 'object' || manifest === null) {
-      let msg = 'Manifest needs to be an object.';
-      issueDeveloperWarning(msg);
-      manifest = {};
-    }
-  } catch (e) {
-    issueDeveloperWarning(e);
-  }
-
-  const processedManifest = {
-    start_url: processStartURLMember(manifest, manifestURL, docURL),
-    display: processDisplayMember(manifest),
-    orientation: processOrientationMember(manifest),
-    name: processNameMember(manifest),
-    icons: processIconsMember(manifest, manifestURL),
-    short_name: processShortNameMember(manifest)
-  };
-  processedManifest.scope = processScopeMember(manifest, manifestURL, docURL, processedManifest.start_url);
-  return processedManifest;
 };
+this.EXPORTED_SYMBOLS = ['ManifestProcessor']; // jshint ignore:line

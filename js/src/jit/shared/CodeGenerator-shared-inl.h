@@ -10,6 +10,8 @@
 #include "jit/shared/CodeGenerator-shared.h"
 #include "jit/Disassembler.h"
 
+#include "jit/MacroAssembler-inl.h"
+
 namespace js {
 namespace jit {
 
@@ -142,6 +144,98 @@ GetTempValue(Register type, Register payload)
 #endif
 }
 
+int32_t
+CodeGeneratorShared::ArgToStackOffset(int32_t slot) const
+{
+    return masm.framePushed() +
+           (gen->compilingAsmJS() ? sizeof(AsmJSFrame) : sizeof(JitFrameLayout)) +
+           slot;
+}
+
+int32_t
+CodeGeneratorShared::CalleeStackOffset() const
+{
+    return masm.framePushed() + JitFrameLayout::offsetOfCalleeToken();
+}
+
+int32_t
+CodeGeneratorShared::SlotToStackOffset(int32_t slot) const
+{
+    MOZ_ASSERT(slot > 0 && slot <= int32_t(graph.localSlotCount()));
+    int32_t offset = masm.framePushed() - frameInitialAdjustment_ - slot;
+    MOZ_ASSERT(offset >= 0);
+    return offset;
+}
+
+int32_t
+CodeGeneratorShared::StackOffsetToSlot(int32_t offset) const
+{
+    // See: SlotToStackOffset. This is used to convert pushed arguments
+    // to a slot index that safepoints can use.
+    //
+    // offset = framePushed - frameInitialAdjustment - slot
+    // offset + slot = framePushed - frameInitialAdjustment
+    // slot = framePushed - frameInitialAdjustement - offset
+    return masm.framePushed() - frameInitialAdjustment_ - offset;
+}
+
+// For argument construction for calls. Argslots are Value-sized.
+int32_t
+CodeGeneratorShared::StackOffsetOfPassedArg(int32_t slot) const
+{
+    // A slot of 0 is permitted only to calculate %esp offset for calls.
+    MOZ_ASSERT(slot >= 0 && slot <= int32_t(graph.argumentSlotCount()));
+    int32_t offset = masm.framePushed() -
+                     graph.paddedLocalSlotsSize() -
+                     (slot * sizeof(Value));
+
+    // Passed arguments go below A function's local stack storage.
+    // When arguments are being pushed, there is nothing important on the stack.
+    // Therefore, It is safe to push the arguments down arbitrarily.  Pushing
+    // by sizeof(Value) is desirable since everything on the stack is a Value.
+    // Note that paddedLocalSlotCount() aligns to at least a Value boundary
+    // specifically to support this.
+    MOZ_ASSERT(offset >= 0);
+    MOZ_ASSERT(offset % sizeof(Value) == 0);
+    return offset;
+}
+
+int32_t
+CodeGeneratorShared::ToStackOffset(LAllocation a) const
+{
+    if (a.isArgument())
+        return ArgToStackOffset(a.toArgument()->index());
+    return SlotToStackOffset(a.toStackSlot()->slot());
+}
+
+int32_t
+CodeGeneratorShared::ToStackOffset(const LAllocation* a) const
+{
+    return ToStackOffset(*a);
+}
+
+Operand
+CodeGeneratorShared::ToOperand(const LAllocation& a)
+{
+    if (a.isGeneralReg())
+        return Operand(a.toGeneralReg()->reg());
+    if (a.isFloatReg())
+        return Operand(a.toFloatReg()->reg());
+    return Operand(masm.getStackPointer(), ToStackOffset(&a));
+}
+
+Operand
+CodeGeneratorShared::ToOperand(const LAllocation* a)
+{
+    return ToOperand(*a);
+}
+
+Operand
+CodeGeneratorShared::ToOperand(const LDefinition* def)
+{
+    return ToOperand(def->output());
+}
+
 void
 CodeGeneratorShared::saveLive(LInstruction* ins)
 {
@@ -159,7 +253,7 @@ CodeGeneratorShared::restoreLive(LInstruction* ins)
 }
 
 void
-CodeGeneratorShared::restoreLiveIgnore(LInstruction* ins, RegisterSet ignore)
+CodeGeneratorShared::restoreLiveIgnore(LInstruction* ins, LiveRegisterSet ignore)
 {
     MOZ_ASSERT(!ins->isCall());
     LSafepoint* safepoint = ins->safepoint();
@@ -171,7 +265,8 @@ CodeGeneratorShared::saveLiveVolatile(LInstruction* ins)
 {
     MOZ_ASSERT(!ins->isCall());
     LSafepoint* safepoint = ins->safepoint();
-    RegisterSet regs = RegisterSet::Intersect(safepoint->liveRegs(), RegisterSet::Volatile());
+    LiveRegisterSet regs;
+    regs.set() = RegisterSet::Intersect(safepoint->liveRegs().set(), RegisterSet::Volatile());
     masm.PushRegsInMask(regs);
 }
 
@@ -180,14 +275,15 @@ CodeGeneratorShared::restoreLiveVolatile(LInstruction* ins)
 {
     MOZ_ASSERT(!ins->isCall());
     LSafepoint* safepoint = ins->safepoint();
-    RegisterSet regs = RegisterSet::Intersect(safepoint->liveRegs(), RegisterSet::Volatile());
+    LiveRegisterSet regs;
+    regs.set() = RegisterSet::Intersect(safepoint->liveRegs().set(), RegisterSet::Volatile());
     masm.PopRegsInMask(regs);
 }
 
 void
 CodeGeneratorShared::verifyHeapAccessDisassembly(uint32_t begin, uint32_t end, bool isLoad,
-                                                 Scalar::Type type, const Operand& mem,
-                                                 LAllocation alloc)
+                                                 Scalar::Type type, unsigned numElems,
+                                                 const Operand& mem, LAllocation alloc)
 {
 #ifdef DEBUG
     using namespace Disassembler;
@@ -205,7 +301,7 @@ CodeGeneratorShared::verifyHeapAccessDisassembly(uint32_t begin, uint32_t end, b
       case Scalar::Int32:
       case Scalar::Uint32:
         if (!alloc.isConstant()) {
-            op = OtherOperand(ToRegister(alloc).code());
+            op = OtherOperand(ToRegister(alloc).encoding());
         } else {
             int32_t i = ToInt32(&alloc);
 
@@ -222,20 +318,22 @@ CodeGeneratorShared::verifyHeapAccessDisassembly(uint32_t begin, uint32_t end, b
       case Scalar::Float64:
       case Scalar::Float32x4:
       case Scalar::Int32x4:
-        op = OtherOperand(ToFloatRegister(alloc).code());
+        op = OtherOperand(ToFloatRegister(alloc).encoding());
         break;
       case Scalar::Uint8Clamped:
       case Scalar::MaxTypedArrayViewType:
         MOZ_CRASH("Unexpected array type");
     }
 
+    size_t size = Scalar::isSimdType(type)
+                  ? Scalar::scalarByteSize(type) * numElems
+                  : TypedArrayElemSize(type);
     masm.verifyHeapAccessDisassembly(begin, end,
-                                     HeapAccess(kind, TypedArrayElemSize(type),
-                                     ComplexAddress(mem), op));
+                                     HeapAccess(kind, size, ComplexAddress(mem), op));
 #endif
 }
 
-} // ion
-} // js
+} // namespace jit
+} // namespace js
 
 #endif /* jit_shared_CodeGenerator_shared_inl_h */

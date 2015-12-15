@@ -55,9 +55,9 @@
 #include "nsGkAtoms.h"
 #include "nsXULElement.h"
 #include "jsapi.h"
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "rdf.h"
-#include "pldhash.h"
+#include "PLDHashTable.h"
 #include "plhash.h"
 #include "nsDOMClassInfoID.h"
 #include "nsPIDOMWindow.h"
@@ -86,9 +86,7 @@ nsIScriptSecurityManager* nsXULTemplateBuilder::gScriptSecurityManager;
 nsIPrincipal*             nsXULTemplateBuilder::gSystemPrincipal;
 nsIObserverService*       nsXULTemplateBuilder::gObserverService;
 
-#ifdef PR_LOGGING
 PRLogModuleInfo* gXULTemplateLog;
-#endif
 
 #define NS_QUERY_PROCESSOR_CONTRACTID_PREFIX "@mozilla.org/xul/xul-query-processor;1?name="
 
@@ -167,10 +165,8 @@ nsXULTemplateBuilder::InitGlobals()
             return rv;
     }
 
-#ifdef PR_LOGGING
     if (! gXULTemplateLog)
         gXULTemplateLog = PR_NewLogModule("nsXULTemplateBuilder");
-#endif
 
     return NS_OK;
 }
@@ -506,7 +502,7 @@ nsXULTemplateBuilder::UpdateResult(nsIXULTemplateResult* aOldResult,
                                    nsIXULTemplateResult* aNewResult,
                                    nsIDOMNode* aQueryNode)
 {
-    PR_LOG(gXULTemplateLog, PR_LOG_ALWAYS,
+    MOZ_LOG(gXULTemplateLog, LogLevel::Info,
            ("nsXULTemplateBuilder::UpdateResult %p %p %p",
            aOldResult, aNewResult, aQueryNode));
 
@@ -773,7 +769,8 @@ nsXULTemplateBuilder::UpdateResultInContainer(nsIXULTemplateResult* aOldResult,
     if (aNewResult) {
         // only allow a result to be inserted into containers with a matching tag
         nsIAtom* tag = aQuerySet->GetTag();
-        if (aInsertionPoint && tag && tag != aInsertionPoint->Tag())
+        if (aInsertionPoint && tag &&
+            tag != aInsertionPoint->NodeInfo()->NameAtom())
             return NS_OK;
 
         int32_t findpriority = aQuerySet->Priority();
@@ -1096,7 +1093,8 @@ nsXULTemplateBuilder::AttributeChanged(nsIDocument* aDocument,
                                        Element*     aElement,
                                        int32_t      aNameSpaceID,
                                        nsIAtom*     aAttribute,
-                                       int32_t      aModType)
+                                       int32_t      aModType,
+                                       const nsAttrValue* aOldValue)
 {
     if (aElement == mRoot && aNameSpaceID == kNameSpaceID_None) {
         // Check for a change to the 'ref' attribute on an atom, in which
@@ -1243,7 +1241,7 @@ nsXULTemplateBuilder::LoadDataSources(nsIDocument* aDocument,
     if (xuldoc)
         xuldoc->SetTemplateBuilderFor(mRoot, this);
 
-    if (!mRoot->IsXUL()) {
+    if (!mRoot->IsXULElement()) {
         // Hmm. This must be an HTML element. Try to set it as a
         // JS property "by hand".
         InitHTMLTemplateRoot();
@@ -1384,7 +1382,7 @@ nsXULTemplateBuilder::InitHTMLTemplateRoot()
 
     // We are going to run script via JS_SetProperty, so we need a script entry
     // point, but as this is XUL related it does not appear in the HTML spec.
-    AutoEntryScript entryScript(innerWin, true);
+    AutoEntryScript entryScript(innerWin, "nsXULTemplateBuilder creation", true);
     JSContext* jscontext = entryScript.cx();
 
     JS::Rooted<JS::Value> v(jscontext);
@@ -1438,7 +1436,8 @@ nsXULTemplateBuilder::DetermineMatchedRule(nsIContent *aContainer,
         // If a tag was specified, it must match the tag of the container
         // where content is being inserted.
         nsIAtom* tag = rule->GetTag();
-        if ((!aContainer || !tag || tag == aContainer->Tag()) &&
+        if ((!aContainer || !tag ||
+             tag == aContainer->NodeInfo()->NameAtom()) &&
             rule->CheckMatch(aResult)) {
             *aMatchedRule = rule;
             *aRuleIndex = r;
@@ -1712,11 +1711,9 @@ nsXULTemplateBuilder::CompileQueries()
         mFlags |= eLoggingEnabled;
     }
 
-#ifdef PR_LOGGING
     // always enable logging if the debug setting is used
-    if (PR_LOG_TEST(gXULTemplateLog, PR_LOG_DEBUG))
+    if (MOZ_LOG_TEST(gXULTemplateLog, LogLevel::Debug))
         mFlags |= eLoggingEnabled;
-#endif
 
     nsCOMPtr<nsIDOMNode> rootnode = do_QueryInterface(mRoot);
     nsresult rv =

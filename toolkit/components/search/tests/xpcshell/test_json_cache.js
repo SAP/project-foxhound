@@ -8,14 +8,14 @@
 "use strict";
 
 // Metadata to write to search-metadata.json for the test.
-let gMetadata = {"[profile]/test-search-engine.xml":{"used":true}};
+var gMetadata = {"[profile]/test-search-engine.xml":{"used":true}};
 
 /**
  * Gets a directory from the directory service.
  * @param aKey
  *        The directory service key indicating the directory to get.
  */
-let _dirSvc = null;
+var _dirSvc = null;
 function getDir(aKey, aIFace) {
   if (!aKey) {
     FAIL("getDir requires a directory key!");
@@ -28,7 +28,11 @@ function getDir(aKey, aIFace) {
   return _dirSvc.get(aKey, aIFace || Ci.nsIFile);
 }
 
-let cacheTemplate, appPluginsPath, profPlugins;
+function makeURI(uri) {
+  return Services.io.newURI(uri, null, null);
+}
+
+var cacheTemplate, appPluginsPath, profPlugins;
 
 /**
  * Test reading from search.json
@@ -51,12 +55,57 @@ function run_test() {
   let engineTemplateFile = do_get_file("data/engine.xml");
   engineTemplateFile.copyTo(engineFile.parent, "test-search-engine.xml");
 
-  // Add the app's searchplugins directory to the cache so it won't be ignored.
-  let appSearchPlugins = getDir(NS_APP_SEARCH_DIR);
-  appPluginsPath = appSearchPlugins.path;
-  cacheTemplate.directories[appPluginsPath] = {};
-  cacheTemplate.directories[appPluginsPath].lastModifiedTime = appSearchPlugins.lastModifiedTime;
-  cacheTemplate.directories[appPluginsPath].engines = [];
+  // Add the application's built-in plugin locations to the cache so it won't be ignored.
+  let filesToIgnore = []
+  let chan = NetUtil.ioService.newChannel2("resource://search-plugins/list.txt",
+                                           null, // aOriginCharset
+                                           null, // aBaseURI
+                                           null, // aLoadingNode
+                                           Services.scriptSecurityManager.getSystemPrincipal(),
+                                           null, // aTriggeringPrincipal
+                                           Ci.nsILoadInfo.SEC_NORMAL,
+                                           Ci.nsIContentPolicy.TYPE_OTHER);
+  let visibleDefaultEngines = [];
+  let sis = Cc["@mozilla.org/scriptableinputstream;1"].
+              createInstance(Ci.nsIScriptableInputStream);
+  sis.init(chan.open());
+  let list = sis.read(sis.available());
+  let names = list.split("\n").filter(n => !!n);
+  for (let name of names) {
+    if (name.endsWith(":hidden"))
+      continue;
+    visibleDefaultEngines.push(name);
+  }
+  let chromeURI = chan.URI;
+  if (chromeURI instanceof Ci.nsIJARURI) {
+    // JAR packaging, we only need the parent jar file.
+    let fileURI = chromeURI; // flat packaging
+    while (fileURI instanceof Ci.nsIJARURI)
+      fileURI = fileURI.JARFile;
+    fileURI.QueryInterface(Ci.nsIFileURL);
+    filesToIgnore.push(fileURI.file);
+  } else {
+    // flat packaging, we need to find each .xml file.
+    for (let name of names) {
+      let url = "resource://search-plugins/" + name + ".xml";
+      let chan = NetUtil.ioService.newChannel2(url,
+                                               null, // aOriginCharset
+                                               null, // aBaseURI
+                                               null, // aLoadingNode
+                                               Services.scriptSecurityManager.getSystemPrincipal(),
+                                               null, // aTriggeringPrincipal
+                                               Ci.nsILoadInfo.SEC_NORMAL,
+                                               Ci.nsIContentPolicy.TYPE_OTHER);
+      filesToIgnore.push(chan.URI.QueryInterface(Ci.nsIFileURL).file);
+    }
+  }
+
+  for (let file of filesToIgnore) {
+    cacheTemplate.directories[file.path] = {
+      lastModifiedTime: file.lastModifiedTime,
+      engines: []
+    };
+  }
 
   // Replace the profile placeholder with the correct path.
   profPlugins = engineFile.parent.path;
@@ -64,6 +113,8 @@ function run_test() {
   delete cacheTemplate.directories["[profile]/searchplugins"];
   cacheTemplate.directories[profPlugins].engines[0].filePath = engineFile.path;
   cacheTemplate.directories[profPlugins].lastModifiedTime = engineFile.parent.lastModifiedTime;
+
+  cacheTemplate.visibleDefaultEngines = visibleDefaultEngines;
 
   run_next_test();
 }
@@ -160,8 +211,12 @@ add_test(function test_cache_write() {
         // Check that the search.json cache matches the template
 
         let cacheWritten = readJSONFile(cache);
-        // Delete the app search plugins directory from the template since it's not currently written out.
-        delete cacheTemplate.directories[appPluginsPath];
+
+        // Delete the empty dirs from the template since they are not written out.
+        for (let dir of Object.keys(cacheTemplate.directories)) {
+          if (!cacheTemplate.directories[dir].engines.length)
+            delete cacheTemplate.directories[dir];
+        }
 
         do_print("Check search.json");
         isSubObjectOf(cacheTemplate, cacheWritten);
@@ -175,7 +230,7 @@ add_test(function test_cache_write() {
   });
 });
 
-let EXPECTED_ENGINE = {
+var EXPECTED_ENGINE = {
   engine: {
     name: "Test search engine",
     alias: null,

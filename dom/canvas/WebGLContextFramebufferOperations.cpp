@@ -8,8 +8,9 @@
 #include "WebGLRenderbuffer.h"
 #include "WebGLFramebuffer.h"
 #include "GLContext.h"
+#include "GLScreenBuffer.h"
 
-using namespace mozilla;
+namespace mozilla {
 
 void
 WebGLContext::Clear(GLbitfield mask)
@@ -49,8 +50,8 @@ WebGLContext::Clear(GLbitfield mask)
     mShouldPresent = true;
 }
 
-static GLclampf
-GLClampFloat(GLclampf val)
+static GLfloat
+GLClampFloat(GLfloat val)
 {
     if (val < 0.0)
         return 0.0;
@@ -62,18 +63,28 @@ GLClampFloat(GLclampf val)
 }
 
 void
-WebGLContext::ClearColor(GLclampf r, GLclampf g,
-                             GLclampf b, GLclampf a)
+WebGLContext::ClearColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a)
 {
     if (IsContextLost())
         return;
 
     MakeContextCurrent();
-    mColorClearValue[0] = GLClampFloat(r);
-    mColorClearValue[1] = GLClampFloat(g);
-    mColorClearValue[2] = GLClampFloat(b);
-    mColorClearValue[3] = GLClampFloat(a);
+
+    const bool supportsFloatColorBuffers = (IsExtensionEnabled(WebGLExtensionID::EXT_color_buffer_half_float) ||
+                                            IsExtensionEnabled(WebGLExtensionID::WEBGL_color_buffer_float));
+    if (!supportsFloatColorBuffers) {
+        r = GLClampFloat(r);
+        g = GLClampFloat(g);
+        b = GLClampFloat(b);
+        a = GLClampFloat(a);
+    }
+
     gl->fClearColor(r, g, b, a);
+
+    mColorClearValue[0] = r;
+    mColorClearValue[1] = g;
+    mColorClearValue[2] = b;
+    mColorClearValue[3] = a;
 }
 
 void
@@ -84,7 +95,7 @@ WebGLContext::ClearDepth(GLclampf v)
 
     MakeContextCurrent();
     mDepthClearValue = GLClampFloat(v);
-    gl->fClearDepth(v);
+    gl->fClearDepth(mDepthClearValue);
 }
 
 void
@@ -150,16 +161,8 @@ WebGLContext::DrawBuffers(const dom::Sequence<GLenum>& buffers)
             return ErrorInvalidValue("drawBuffers: invalid <buffers> (main framebuffer: buffers.length must be 1)");
         }
 
-        MakeContextCurrent();
-
-        if (buffers[0] == LOCAL_GL_NONE) {
-            const GLenum drawBuffersCommand = LOCAL_GL_NONE;
-            gl->fDrawBuffers(1, &drawBuffersCommand);
-            return;
-        }
-        else if (buffers[0] == LOCAL_GL_BACK) {
-            const GLenum drawBuffersCommand = LOCAL_GL_COLOR_ATTACHMENT0;
-            gl->fDrawBuffers(1, &drawBuffersCommand);
+        if (buffers[0] == LOCAL_GL_NONE || buffers[0] == LOCAL_GL_BACK) {
+            gl->Screen()->SetDrawBuffer(buffers[0]);
             return;
         }
         return ErrorInvalidOperation("drawBuffers: invalid operation (main framebuffer: buffers[0] must be GL_NONE or GL_BACK)");
@@ -240,6 +243,4 @@ WebGLContext::StencilMaskSeparate(GLenum face, GLuint mask)
     gl->fStencilMaskSeparate(face, mask);
 }
 
-
-
-
+} // namespace mozilla

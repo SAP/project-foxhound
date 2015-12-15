@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -167,7 +168,7 @@ Attr::GetNameAtom(nsIContent* aContent)
   if (!mNsAware &&
       mNodeInfo->NamespaceID() == kNameSpaceID_None &&
       aContent->IsInHTMLDocument() &&
-      aContent->IsHTML()) {
+      aContent->IsHTMLElement()) {
     nsString name;
     mNodeInfo->GetName(name);
     nsAutoString lowercaseName;
@@ -183,7 +184,7 @@ Attr::GetValue(nsAString& aValue)
 {
   Element* element = GetElement();
   if (element) {
-    nsCOMPtr<nsIAtom> nameAtom = mNodeInfo->NameAtom();
+    nsCOMPtr<nsIAtom> nameAtom = GetNameAtom(element);
     element->GetAttr(mNodeInfo->NamespaceID(), nameAtom, aValue);
   }
   else {
@@ -202,7 +203,7 @@ Attr::SetValue(const nsAString& aValue, ErrorResult& aRv)
     return;
   }
 
-  nsCOMPtr<nsIAtom> nameAtom = mNodeInfo->NameAtom();
+  nsCOMPtr<nsIAtom> nameAtom = GetNameAtom(element);
   aRv = element->SetAttr(mNodeInfo->NamespaceID(),
                          nameAtom,
                          mNodeInfo->GetPrefixAtom(),
@@ -215,7 +216,7 @@ Attr::SetValue(const nsAString& aValue)
 {
   ErrorResult rv;
   SetValue(aValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 bool
@@ -384,9 +385,9 @@ Attr::Shutdown()
 }
 
 JSObject*
-Attr::WrapNode(JSContext* aCx)
+Attr::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return AttrBinding::Wrap(aCx, this);
+  return AttrBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace dom

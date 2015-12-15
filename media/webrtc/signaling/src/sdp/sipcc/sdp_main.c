@@ -119,7 +119,7 @@ const sdp_attrarray_t sdp_attr[SDP_MAX_ATTR_TYPES] =
     {"TC2WindowSize", sizeof("TC2WindowSize"),
      sdp_parse_attr_simple_u32, sdp_build_attr_simple_u32 },
     {"rtcp", sizeof("rtcp"),
-     sdp_parse_attr_simple_u32, sdp_build_attr_simple_u32 },
+     sdp_parse_attr_rtcp, sdp_build_attr_rtcp },
     {"rtr", sizeof("rtr"),
      sdp_parse_attr_rtr, sdp_build_attr_rtr},
     {"silenceSupp", sizeof("silenceSupp"),
@@ -194,6 +194,10 @@ const sdp_attrarray_t sdp_attr[SDP_MAX_ATTR_TYPES] =
       sdp_parse_attr_complete_line, sdp_build_attr_simple_string},
     {"ssrc", sizeof("ssrc"),
       sdp_parse_attr_ssrc, sdp_build_attr_ssrc},
+    {"imageattr", sizeof("imageattr"),
+      sdp_parse_attr_complete_line, sdp_build_attr_simple_string},
+    {"simulcast", sizeof("simulcast"),
+      sdp_parse_attr_complete_line, sdp_build_attr_simple_string},
 };
 
 /* Note: These *must* be in the same order as the enum types. */
@@ -786,25 +790,6 @@ const char *sdp_get_rtcp_unicast_mode_name (sdp_rtcp_unicast_mode_e type)
     }
 }
 
-/* Function:    sdp_verify_sdp_ptr
- * Description: Verify the SDP pointer is valid by checking for
- *              the SDP magic number.  If not valid, display an error.
- *              Note that we can't keep a statistic of this because we
- *              track stats inside the config structure which is stored
- *              in the SDP structure.
- * Parameters:	sdp_p    The SDP structure handle.
- * Returns:	TRUE or FALSE.
- */
-tinybool sdp_verify_sdp_ptr (sdp_t *sdp_p)
-{
-    if ((sdp_p != NULL) && (sdp_p->magic_num == SDP_MAGIC_NUM)) {
-        return (TRUE);
-    } else {
-        CSFLogError(logTag, "SDP: Invalid SDP pointer.");
-        return (FALSE);
-    }
-}
-
 /* Function:    sdp_init_description
  * Description:	Allocates a new SDP structure that can be used for either
  *              parsing or building an SDP description.  This routine
@@ -820,7 +805,7 @@ sdp_t *sdp_init_description (sdp_conf_options_t *conf_p)
     int i;
     sdp_t *sdp_p;
 
-    if (sdp_verify_conf_ptr(conf_p) == FALSE) {
+    if (!conf_p) {
         return (NULL);
     }
 
@@ -828,9 +813,6 @@ sdp_t *sdp_init_description (sdp_conf_options_t *conf_p)
     if (sdp_p == NULL) {
         return (NULL);
     }
-
-    /* Initialize magic number. */
-    sdp_p->magic_num = SDP_MAGIC_NUM;
 
     sdp_p->conf_p             = conf_p;
     sdp_p->version            = SDP_CURRENT_VERSION;
@@ -883,7 +865,7 @@ sdp_t *sdp_init_description (sdp_conf_options_t *conf_p)
  */
 void sdp_debug (sdp_t *sdp_p, sdp_debug_e debug_type, tinybool debug_flag)
 {
-    if (sdp_verify_sdp_ptr(sdp_p) == FALSE) {
+    if (!sdp_p) {
         return;
     }
 
@@ -905,7 +887,7 @@ void sdp_debug (sdp_t *sdp_p, sdp_debug_e debug_type, tinybool debug_flag)
  */
 void sdp_set_string_debug (sdp_t *sdp_p, const char *debug_str)
 {
-    if (sdp_verify_sdp_ptr(sdp_p) == FALSE) {
+    if (!sdp_p) {
         return;
     }
 
@@ -993,7 +975,7 @@ sdp_result_e sdp_parse (sdp_t *sdp_p, const char *buf, size_t len)
     tinybool     unrec_token = FALSE;
     const char   **bufp = &buf;
 
-    if (sdp_verify_sdp_ptr(sdp_p) == FALSE) {
+    if (!sdp_p) {
         return (SDP_INVALID_SDP_PTR);
     }
 
@@ -1200,7 +1182,7 @@ sdp_result_e sdp_build (sdp_t *sdp_p, flex_string *fs)
     int i, j;
     sdp_result_e        result = SDP_SUCCESS;
 
-    if (sdp_verify_sdp_ptr(sdp_p) == FALSE) {
+    if (!sdp_p) {
         return (SDP_INVALID_SDP_PTR);
     }
 
@@ -1259,7 +1241,7 @@ sdp_result_e sdp_free_description (sdp_t *sdp_p)
     sdp_bw_t        *bw_p;
     sdp_bw_data_t   *bw_data_p;
 
-    if (sdp_verify_sdp_ptr(sdp_p) == FALSE) {
+    if (!sdp_p) {
         return (SDP_INVALID_SDP_PTR);
     }
 

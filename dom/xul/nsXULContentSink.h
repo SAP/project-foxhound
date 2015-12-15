@@ -23,7 +23,7 @@ class nsXULPrototypeElement;
 class nsXULPrototypeNode;
 
 class XULContentSinkImpl final : public nsIXMLContentSink,
-                                     public nsIExpatSink
+                                 public nsIExpatSink
 {
 public:
     XULContentSinkImpl();
@@ -144,8 +144,7 @@ protected:
 
     nsRefPtr<nsXULPrototypeDocument> mPrototype;  // [OWNER]
 
-    // We use regular pointer b/c of funky exports on nsIParser:
-    nsParserBase*         mParser;               // [OWNER]
+    nsRefPtr<nsParserBase> mParser;
     nsCOMPtr<nsIScriptSecurityManager> mSecMan;
 };
 

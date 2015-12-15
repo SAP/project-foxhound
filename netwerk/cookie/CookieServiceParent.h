@@ -10,7 +10,6 @@
 #include "SerializedLoadContext.h"
 
 class nsCookieService;
-class nsIIOService;
 
 namespace mozilla {
 namespace net {
@@ -52,8 +51,8 @@ protected:
   nsRefPtr<nsCookieService> mCookieService;
 };
 
-}
-}
+} // namespace net
+} // namespace mozilla
 
 #endif // mozilla_net_CookieServiceParent_h
 

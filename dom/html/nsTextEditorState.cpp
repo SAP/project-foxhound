@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 et tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +27,7 @@
 #include "nsAttrValueInlines.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMEventListener.h"
+#include "nsIEditorIMESupport.h"
 #include "nsIEditorObserver.h"
 #include "nsIWidget.h"
 #include "nsIDocumentEncoder.h"
@@ -92,6 +93,9 @@ public:
       return NS_OK;
     }
 
+    AutoHideSelectionChanges hideSelectionChanges
+      (mFrame->GetConstFrameSelection());
+
     if (mFrame) {
       // SetSelectionRange leads to Selection::AddRange which flushes Layout -
       // need to block script to avoid nested PrepareEditor calls (bug 642800).
@@ -133,7 +137,7 @@ nsITextControlElement::GetWrapPropertyEnum(nsIContent* aContent,
   aWrapProp = eHTMLTextWrap_Soft; // the default
 
   nsAutoString wrap;
-  if (aContent->IsHTML()) {
+  if (aContent->IsHTMLElement()) {
     static nsIContent::AttrValuesArray strings[] =
       {&nsGkAtoms::HARD, &nsGkAtoms::OFF, nullptr};
 
@@ -199,7 +203,7 @@ private:
 };
 
 class nsTextInputSelectionImpl final : public nsSupportsWeakReference
-                                         , public nsISelectionController
+                                     , public nsISelectionController
 {
   ~nsTextInputSelectionImpl(){}
 
@@ -244,6 +248,9 @@ public:
   NS_IMETHOD SelectAll(void) override;
   NS_IMETHOD CheckVisibility(nsIDOMNode *node, int16_t startOffset, int16_t EndOffset, bool* _retval) override;
   virtual nsresult CheckVisibilityContent(nsIContent* aNode, int16_t aStartOffset, int16_t aEndOffset, bool* aRetval) override;
+
+  NS_IMETHOD GetSelectionCaretsVisibility(bool* aOutVisibility) override;
+  NS_IMETHOD SetSelectionCaretsVisibility(bool aVisibility) override;
 
 private:
   nsRefPtr<nsFrameSelection> mFrameSelection;
@@ -567,7 +574,7 @@ nsTextInputSelectionImpl::CompleteMove(bool aForward, bool aExtend)
     {
       nsIContent *child = parentDIV->GetLastChild();
 
-      if (child->Tag() == nsGkAtoms::br)
+      if (child->IsHTMLElement(nsGkAtoms::br))
       {
         --offset;
         hint = CARET_ASSOCIATE_AFTER; // for Bug 106855
@@ -638,6 +645,36 @@ nsTextInputSelectionImpl::CheckVisibility(nsIDOMNode *node, int16_t startOffset,
   }
   return NS_ERROR_FAILURE;
 
+}
+
+NS_IMETHODIMP
+nsTextInputSelectionImpl::GetSelectionCaretsVisibility(bool* aOutVisibility)
+{
+  if (!mPresShellWeak) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
+  nsresult result;
+  nsCOMPtr<nsISelectionController> shell = do_QueryReferent(mPresShellWeak, &result);
+  if (shell) {
+    return shell->GetSelectionCaretsVisibility(aOutVisibility);
+  }
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsTextInputSelectionImpl::SetSelectionCaretsVisibility(bool aVisibility)
+{
+  if (!mPresShellWeak) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
+  nsresult result;
+  nsCOMPtr<nsISelectionController> shell = do_QueryReferent(mPresShellWeak, &result);
+  if (shell) {
+    return shell->SetSelectionCaretsVisibility(aVisibility);
+  }
+  return NS_ERROR_FAILURE;
 }
 
 nsresult
@@ -785,7 +822,7 @@ nsTextInputListener::NotifySelectionChanged(nsIDOMDocument* aDoc, nsISelection* 
         if (presShell) 
         {
           nsEventStatus status = nsEventStatus_eIgnore;
-          WidgetEvent event(true, NS_FORM_SELECTED);
+          WidgetEvent event(true, eFormSelect);
 
           presShell->HandleEventWithTarget(&event, mFrame, content, &status);
         }
@@ -870,7 +907,7 @@ nsTextInputListener::HandleEvent(nsIDOMEvent* aEvent)
     return NS_ERROR_UNEXPECTED;
   }
 
-  if (keyEvent->message != NS_KEY_PRESS) {
+  if (keyEvent->mMessage != eKeyPress) {
     return NS_OK;
   }
 
@@ -897,6 +934,12 @@ nsTextInputListener::HandleEvent(nsIDOMEvent* aEvent)
 NS_IMETHODIMP
 nsTextInputListener::EditAction()
 {
+  if (!mFrame) {
+    // We've been disconnected from the nsTextEditorState object, nothing to do
+    // here.
+    return NS_OK;
+  }
+
   nsWeakFrame weakFrame = mFrame;
 
   nsITextControlFrame* frameBase = do_QueryFrame(mFrame);
@@ -976,16 +1019,16 @@ nsTextInputListener::UpdateTextInputCommands(const nsAString& commandsToUpdate,
 // nsTextEditorState
 
 nsTextEditorState::nsTextEditorState(nsITextControlElement* aOwningElement)
-  : mTextCtrlElement(aOwningElement),
-    mRestoringSelection(nullptr),
-    mBoundFrame(nullptr),
-    mEverInited(false),
-    mEditorInitialized(false),
-    mInitializing(false),
-    mValueTransferInProgress(false),
-    mSelectionCached(true),
-    mSelectionRestoreEagerInit(false),
-    mPlaceholderVisibility(false)
+  : mTextCtrlElement(aOwningElement)
+  , mBoundFrame(nullptr)
+  , mEverInited(false)
+  , mEditorInitialized(false)
+  , mInitializing(false)
+  , mValueTransferInProgress(false)
+  , mSelectionCached(true)
+  , mSelectionRestoreEagerInit(false)
+  , mPlaceholderVisibility(false)
+  , mIsCommittingComposition(false)
 {
   MOZ_COUNT_CTOR(nsTextEditorState);
 }
@@ -1208,6 +1251,8 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     return NS_OK;
   }
 
+  AutoHideSelectionChanges hideSelectionChanges(GetConstFrameSelection());
+
   // Don't attempt to initialize recursively!
   InitializationGuard guard(*this);
   if (guard.IsInitializingRecursively()) {
@@ -1260,6 +1305,13 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     }
 
     newEditor = mEditor; // just pretend that we have a new editor!
+
+    // Don't lose application flags in the process.
+    uint32_t originalFlags = 0;
+    newEditor->GetFlags(&originalFlags);
+    if (originalFlags & nsIPlaintextEditor::eEditorMailMask) {
+      editorFlags |= nsIPlaintextEditor::eEditorMailMask;
+    }
   }
 
   // Get the current value of the textfield from the content.
@@ -1396,7 +1448,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     rv = newEditor->EnableUndo(false);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    bool success = SetValue(defaultValue, false, false);
+    bool success = SetValue(defaultValue, eSetValue_Internal);
     NS_ENSURE_TRUE(success, NS_ERROR_OUT_OF_MEMORY);
 
     rv = newEditor->EnableUndo(true);
@@ -1450,6 +1502,12 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
   }
 
   return rv;
+}
+
+void
+nsTextEditorState::FinishedRestoringSelection()
+{
+  mRestoringSelection = nullptr;
 }
 
 bool
@@ -1654,7 +1712,7 @@ nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
   // Now that we don't have a frame any more, store the value in the text buffer.
   // The only case where we don't do this is if a value transfer is in progress.
   if (!mValueTransferInProgress) {
-    bool success = SetValue(value, false, false);
+    bool success = SetValue(value, eSetValue_Internal);
     // TODO Find something better to do if this fails...
     NS_ENSURE_TRUE_VOID(success);
   }
@@ -1809,6 +1867,15 @@ nsTextEditorState::GetMaxLength(int32_t* aMaxLength)
 void
 nsTextEditorState::GetValue(nsAString& aValue, bool aIgnoreWrap) const
 {
+  // While SetValue() is being called and requesting to commit composition to
+  // IME, GetValue() may be called for appending text or something.  Then, we
+  // need to return the latest aValue of SetValue() since the value hasn't
+  // been set to the editor yet.
+  if (mIsCommittingComposition) {
+    aValue = mValueBeingSet;
+    return;
+  }
+
   if (mEditor && mBoundFrame && (mEditorInitialized || !IsSingleLineTextControl())) {
     bool canCache = aIgnoreWrap && !IsSingleLineTextControl();
     if (canCache && !mCachedValue.IsEmpty()) {
@@ -1870,9 +1937,73 @@ nsTextEditorState::GetValue(nsAString& aValue, bool aIgnoreWrap) const
 }
 
 bool
-nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
-                            bool aSetValueChanged)
+nsTextEditorState::SetValue(const nsAString& aValue, uint32_t aFlags)
 {
+  nsAutoString newValue(aValue);
+
+  // While mIsCommittingComposition is true (that means that some event
+  // handlers which are fired during committing composition are the caller of
+  // this method), GetValue() uses mValueBeingSet for its result because the
+  // first calls of this methods hasn't set the value yet.  So, when it's true,
+  // we need to modify mValueBeingSet.  In this case, we will back to the first
+  // call of this method, then, mValueBeingSet will be truncated when
+  // mIsCommittingComposition is set false.  See below.
+  if (mIsCommittingComposition) {
+    mValueBeingSet = aValue;
+  }
+
+  // Note that if this may be called during reframe of the editor.  In such
+  // case, we shouldn't commit composition.  Therefore, when this is called
+  // for internal processing, we shouldn't commit the composition.
+  if (aFlags & (eSetValue_BySetUserInput | eSetValue_ByContent)) {
+    if (EditorHasComposition()) {
+      // When this is called recursively, there shouldn't be composition.
+      if (NS_WARN_IF(mIsCommittingComposition)) {
+        // Don't request to commit composition again.  But if it occurs,
+        // we should skip to set the new value to the editor here.  It should
+        // be set later with the updated mValueBeingSet.
+        return true;
+      }
+      // If there is composition, need to commit composition first because
+      // other browsers do that.
+      // NOTE: We don't need to block nested calls of this because input nor
+      //       other events won't be fired by setting values and script blocker
+      //       is used during setting the value to the editor.  IE also allows
+      //       to set the editor value on the input event which is caused by
+      //       forcibly committing composition.
+      if (nsContentUtils::IsSafeToRunScript()) {
+        WeakPtr<nsTextEditorState> self(this);
+        // WARNING: During this call, compositionupdate, compositionend, input
+        // events will be fired.  Therefore, everything can occur.  E.g., the
+        // document may be unloaded.
+        mValueBeingSet = aValue;
+        mIsCommittingComposition = true;
+        nsCOMPtr<nsIEditorIMESupport> editorIMESupport =
+                                        do_QueryInterface(mEditor);
+        MOZ_RELEASE_ASSERT(editorIMESupport);
+        nsresult rv = editorIMESupport->ForceCompositionEnd();
+        if (!self.get()) {
+          return true;
+        }
+        mIsCommittingComposition = false;
+        // If this is called recursively during committing composition and
+        // some of them may be skipped above.  Therefore, we need to set
+        // value to the editor with the aValue of the latest call.
+        newValue = mValueBeingSet;
+        // When mIsCommittingComposition is false, mValueBeingSet won't be
+        // used.  Therefore, let's clear it.
+        mValueBeingSet.Truncate();
+        if (NS_FAILED(rv)) {
+          NS_WARNING("nsTextEditorState failed to commit composition");
+          return true;
+        }
+      } else {
+        NS_WARNING("SetValue() is called when there is composition but "
+                   "it's not safe to request to commit the composition");
+      }
+    }
+  }
+
   if (mEditor && mBoundFrame) {
     // The InsertText call below might flush pending notifications, which
     // could lead into a scheduled PrepareEditor to be called.  That will
@@ -1894,19 +2025,13 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
     nsWeakFrame weakFrame(mBoundFrame);
 
     // this is necessary to avoid infinite recursion
-    if (!currentValue.Equals(aValue))
+    if (!currentValue.Equals(newValue))
     {
       ValueSetter valueSetter(mEditor);
 
       // \r is an illegal character in the dom, but people use them,
       // so convert windows and mac platform linebreaks to \n:
-      // Unfortunately aValue is declared const, so we have to copy
-      // in order to do this substitution.
-      nsString newValue;
-      if (!newValue.Assign(aValue, fallible)) {
-        return false;
-      }
-      if (aValue.FindChar(char16_t('\r')) != -1) {
+      if (newValue.FindChar(char16_t('\r')) != -1) {
         if (!nsContentUtils::PlatformToDOMLineBreaks(newValue, fallible)) {
           return false;
         }
@@ -1969,7 +2094,8 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
         mEditor->SetFlags(flags);
 
         mTextListener->SettingValue(true);
-        mTextListener->SetValueChanged(aSetValueChanged);
+        bool notifyValueChanged = !!(aFlags & eSetValue_Notify);
+        mTextListener->SetValueChanged(notifyValueChanged);
 
         // Also don't enforce max-length here
         int32_t savedMaxLength;
@@ -1992,7 +2118,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
           // the existing selection -- see bug 574558), in which case we don't
           // need to reset the value here.
           if (!mBoundFrame) {
-            return SetValue(newValue, false, aSetValueChanged);
+            return SetValue(newValue, aFlags & eSetValue_Notify);
           }
           return true;
         }
@@ -2014,7 +2140,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
       mValue = new nsCString;
     }
     nsString value;
-    if (!value.Assign(aValue, fallible)) {
+    if (!value.Assign(newValue, fallible)) {
       return false;
     }
     if (!nsContentUtils::PlatformToDOMLineBreaks(value, fallible)) {
@@ -2112,6 +2238,16 @@ nsTextEditorState::HideSelectionIfBlurred()
   if (!nsContentUtils::IsFocusedContent(content)) {
     mSelCon->SetDisplaySelection(nsISelectionController::SELECTION_HIDDEN);
   }
+}
+
+bool
+nsTextEditorState::EditorHasComposition()
+{
+  bool isComposing = false;
+  nsCOMPtr<nsIEditorIMESupport> editorIMESupport = do_QueryInterface(mEditor);
+  return editorIMESupport &&
+         NS_SUCCEEDED(editorIMESupport->GetComposing(&isComposing)) &&
+         isComposing;
 }
 
 NS_IMPL_ISUPPORTS(nsAnonDivObserver, nsIMutationObserver)

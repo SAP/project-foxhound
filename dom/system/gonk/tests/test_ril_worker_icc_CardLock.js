@@ -16,7 +16,6 @@ add_test(function test_icc_get_card_lock_enabled() {
   let buf = context.Buf;
   let ril = context.RIL;
   ril.aid = "123456789";
-  ril.v5Legacy = false;
 
   function do_test(aLock) {
     const serviceClass = ICC_SERVICE_CLASS_VOICE |
@@ -25,20 +24,18 @@ add_test(function test_icc_get_card_lock_enabled() {
 
     buf.sendParcel = function fakeSendParcel() {
       // Request Type.
-      do_check_eq(this.readInt32(), REQUEST_QUERY_FACILITY_LOCK)
+      equal(this.readInt32(), REQUEST_QUERY_FACILITY_LOCK)
 
       // Token : we don't care.
       this.readInt32();
 
       // Data
       let parcel = this.readStringList();
-      do_check_eq(parcel.length, ril.v5Legacy ? 3 : 4);
-      do_check_eq(parcel[0], GECKO_CARDLOCK_TO_FACILITY[aLock]);
-      do_check_eq(parcel[1], "");
-      do_check_eq(parcel[2], serviceClass.toString());
-      if (!ril.v5Legacy) {
-        do_check_eq(parcel[3], ril.aid);
-      }
+      equal(parcel.length, 4);
+      equal(parcel[0], GECKO_CARDLOCK_TO_FACILITY[aLock]);
+      equal(parcel[1], "");
+      equal(parcel[2], serviceClass.toString());
+      equal(parcel[3], ril.aid);
     };
 
     ril.iccGetCardLockEnabled({lockType: aLock});
@@ -64,16 +61,16 @@ add_test(function test_path_id_for_spid_and_spn() {
 
   // Test SIM
   RIL.appType = CARD_APPTYPE_SIM;
-  do_check_eq(ICCFileHelper.getEFPath(ICC_EF_SPDI),
+  equal(ICCFileHelper.getEFPath(ICC_EF_SPDI),
               EF_PATH_MF_SIM + EF_PATH_DF_GSM);
-  do_check_eq(ICCFileHelper.getEFPath(ICC_EF_SPN),
+  equal(ICCFileHelper.getEFPath(ICC_EF_SPN),
               EF_PATH_MF_SIM + EF_PATH_DF_GSM);
 
   // Test USIM
   RIL.appType = CARD_APPTYPE_USIM;
-  do_check_eq(ICCFileHelper.getEFPath(ICC_EF_SPDI),
+  equal(ICCFileHelper.getEFPath(ICC_EF_SPDI),
               EF_PATH_MF_SIM + EF_PATH_ADF_USIM);
-  do_check_eq(ICCFileHelper.getEFPath(ICC_EF_SPDI),
+  equal(ICCFileHelper.getEFPath(ICC_EF_SPDI),
               EF_PATH_MF_SIM + EF_PATH_ADF_USIM);
   run_next_test();
 });
@@ -87,7 +84,6 @@ add_test(function test_icc_set_card_lock_enabled() {
   let buf = context.Buf;
   let ril = context.RIL;
   ril.aid = "123456789";
-  ril.v5Legacy = false;
 
   function do_test(aLock, aPassword, aEnabled) {
     const serviceClass = ICC_SERVICE_CLASS_VOICE |
@@ -96,21 +92,19 @@ add_test(function test_icc_set_card_lock_enabled() {
 
     buf.sendParcel = function fakeSendParcel() {
       // Request Type.
-      do_check_eq(this.readInt32(), REQUEST_SET_FACILITY_LOCK);
+      equal(this.readInt32(), REQUEST_SET_FACILITY_LOCK);
 
       // Token : we don't care
       this.readInt32();
 
       // Data
       let parcel = this.readStringList();
-      do_check_eq(parcel.length, ril.v5Legacy ? 4 : 5);
-      do_check_eq(parcel[0], GECKO_CARDLOCK_TO_FACILITY[aLock]);
-      do_check_eq(parcel[1], aEnabled ? "1" : "0");
-      do_check_eq(parcel[2], aPassword);
-      do_check_eq(parcel[3], serviceClass.toString());
-      if (!ril.v5Legacy) {
-        do_check_eq(parcel[4], ril.aid);
-      }
+      equal(parcel.length, 5);
+      equal(parcel[0], GECKO_CARDLOCK_TO_FACILITY[aLock]);
+      equal(parcel[1], aEnabled ? "1" : "0");
+      equal(parcel[2], aPassword);
+      equal(parcel[3], serviceClass.toString());
+      equal(parcel[4], ril.aid);
     };
 
     ril.iccSetCardLockEnabled({
@@ -144,19 +138,17 @@ add_test(function test_icc_change_card_lock_password() {
 
     buf.sendParcel = function fakeSendParcel() {
       // Request Type.
-      do_check_eq(this.readInt32(), GECKO_CARDLOCK_TO_REQUEST[aLock]);
+      equal(this.readInt32(), GECKO_CARDLOCK_TO_REQUEST[aLock]);
 
       // Token : we don't care
       this.readInt32();
 
       // Data
       let parcel = this.readStringList();
-      do_check_eq(parcel.length, ril.v5Legacy ? 2 : 3);
-      do_check_eq(parcel[0], aPassword);
-      do_check_eq(parcel[1], aNewPassword);
-      if (!ril.v5Legacy) {
-        do_check_eq(parcel[2], ril.aid);
-      }
+      equal(parcel.length, 3);
+      equal(parcel[0], aPassword);
+      equal(parcel[1], aNewPassword);
+      equal(parcel[2], ril.aid);
     };
 
     ril.iccChangeCardLockPassword({
@@ -180,7 +172,6 @@ add_test(function test_icc_unlock_card_lock_pin() {
   let ril = context.RIL;
   let buf = context.Buf;
   ril.aid = "123456789";
-  ril.v5Legacy = false;
 
   function do_test(aLock, aPassword) {
     let GECKO_CARDLOCK_TO_REQUEST = {};
@@ -189,18 +180,16 @@ add_test(function test_icc_unlock_card_lock_pin() {
 
     buf.sendParcel = function fakeSendParcel() {
       // Request Type.
-      do_check_eq(this.readInt32(), GECKO_CARDLOCK_TO_REQUEST[aLock]);
+      equal(this.readInt32(), GECKO_CARDLOCK_TO_REQUEST[aLock]);
 
       // Token : we don't care
       this.readInt32();
 
       // Data
       let parcel = this.readStringList();
-      do_check_eq(parcel.length, ril.v5Legacy ? 1 : 2);
-      do_check_eq(parcel[0], aPassword);
-      if (!ril.v5Legacy) {
-        do_check_eq(parcel[1], ril.aid);
-      }
+      equal(parcel.length, 2);
+      equal(parcel[0], aPassword);
+      equal(parcel[1], ril.aid);
     };
 
     ril.iccUnlockCardLock({
@@ -224,7 +213,6 @@ add_test(function test_icc_unlock_card_lock_puk() {
   let ril = context.RIL;
   let buf = context.Buf;
   ril.aid = "123456789";
-  ril.v5Legacy = false;
 
   function do_test(aLock, aPassword, aNewPin) {
     let GECKO_CARDLOCK_TO_REQUEST = {};
@@ -233,19 +221,17 @@ add_test(function test_icc_unlock_card_lock_puk() {
 
     buf.sendParcel = function fakeSendParcel() {
       // Request Type.
-      do_check_eq(this.readInt32(), GECKO_CARDLOCK_TO_REQUEST[aLock]);
+      equal(this.readInt32(), GECKO_CARDLOCK_TO_REQUEST[aLock]);
 
       // Token : we don't care
       this.readInt32();
 
       // Data
       let parcel = this.readStringList();
-      do_check_eq(parcel.length, ril.v5Legacy ? 2 : 3);
-      do_check_eq(parcel[0], aPassword);
-      do_check_eq(parcel[1], aNewPin);
-      if (!ril.v5Legacy) {
-        do_check_eq(parcel[2], ril.aid);
-      }
+      equal(parcel.length, 3);
+      equal(parcel[0], aPassword);
+      equal(parcel[1], aNewPin);
+      equal(parcel[2], ril.aid);
     };
 
     ril.iccUnlockCardLock({
@@ -273,15 +259,15 @@ add_test(function test_icc_unlock_card_lock_depersonalization() {
   function do_test(aPassword) {
     buf.sendParcel = function fakeSendParcel() {
       // Request Type.
-      do_check_eq(this.readInt32(), REQUEST_ENTER_NETWORK_DEPERSONALIZATION_CODE);
+      equal(this.readInt32(), REQUEST_ENTER_NETWORK_DEPERSONALIZATION_CODE);
 
       // Token : we don't care
       this.readInt32();
 
       // Data
       let parcel = this.readStringList();
-      do_check_eq(parcel.length, 1);
-      do_check_eq(parcel[0], aPassword);
+      equal(parcel.length, 1);
+      equal(parcel[0], aPassword);
     };
 
     ril.iccUnlockCardLock({

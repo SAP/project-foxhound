@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -293,7 +294,6 @@ Exception::StowJSVal(JS::Value& aVp)
   }
 }
 
-/* readonly attribute AUTF8String message; */
 NS_IMETHODIMP
 Exception::GetMessageMoz(nsACString& aMessage)
 {
@@ -303,7 +303,6 @@ Exception::GetMessageMoz(nsACString& aMessage)
   return NS_OK;
 }
 
-/* readonly attribute nsresult result; */
 NS_IMETHODIMP
 Exception::GetResult(nsresult* aResult)
 {
@@ -314,7 +313,6 @@ Exception::GetResult(nsresult* aResult)
   return NS_OK;
 }
 
-/* readonly attribute AUTF8String name; */
 NS_IMETHODIMP
 Exception::GetName(nsACString& aName)
 {
@@ -336,7 +334,6 @@ Exception::GetName(nsACString& aName)
   return NS_OK;
 }
 
-/* readonly attribute AString filename; */
 NS_IMETHODIMP
 Exception::GetFilename(nsAString& aFilename)
 {
@@ -350,7 +347,6 @@ Exception::GetFilename(nsAString& aFilename)
   return NS_OK;
 }
 
-/* readonly attribute uint32_t lineNumber; */
 NS_IMETHODIMP
 Exception::GetLineNumber(uint32_t *aLineNumber)
 {
@@ -368,7 +364,6 @@ Exception::GetLineNumber(uint32_t *aLineNumber)
   return NS_OK;
 }
 
-/* readonly attribute uint32_t columnNumber; */
 NS_IMETHODIMP
 Exception::GetColumnNumber(uint32_t* aColumnNumber)
 {
@@ -379,7 +374,6 @@ Exception::GetColumnNumber(uint32_t* aColumnNumber)
   return NS_OK;
 }
 
-/* readonly attribute nsIStackFrame location; */
 NS_IMETHODIMP
 Exception::GetLocation(nsIStackFrame** aLocation)
 {
@@ -391,7 +385,6 @@ Exception::GetLocation(nsIStackFrame** aLocation)
   return NS_OK;
 }
 
-/* readonly attribute nsISupports data; */
 NS_IMETHODIMP
 Exception::GetData(nsISupports** aData)
 {
@@ -403,7 +396,6 @@ Exception::GetData(nsISupports** aData)
   return NS_OK;
 }
 
-/* readonly attribute nsIException inner; */
 NS_IMETHODIMP
 Exception::GetInner(nsIException** aException)
 {
@@ -415,7 +407,6 @@ Exception::GetInner(nsIException** aException)
   return NS_OK;
 }
 
-/* AUTF8String toString (); */
 NS_IMETHODIMP
 Exception::ToString(nsACString& _retval)
 {
@@ -490,9 +481,9 @@ Exception::Initialize(const nsACString& aMessage, nsresult aResult,
 }
 
 JSObject*
-Exception::WrapObject(JSContext* cx)
+Exception::WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto)
 {
-  return ExceptionBinding::Wrap(cx, this);
+  return ExceptionBinding::Wrap(cx, this, aGivenProto);
 }
 
 void
@@ -706,9 +697,9 @@ DOMException::Constructor(GlobalObject& /* unused */,
 }
 
 JSObject*
-DOMException::WrapObject(JSContext* aCx)
+DOMException::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return DOMExceptionBinding::Wrap(aCx, this);
+  return DOMExceptionBinding::Wrap(aCx, this, aGivenProto);
 }
 
 /* static */already_AddRefed<DOMException>
@@ -723,30 +714,16 @@ DOMException::Create(nsresult aRv)
   return inst.forget();
 }
 
-bool
-DOMException::Sanitize(JSContext* aCx,
-                       JS::MutableHandle<JS::Value> aSanitizedValue)
+/* static */already_AddRefed<DOMException>
+DOMException::Create(nsresult aRv, const nsACString& aMessage)
 {
-  nsRefPtr<DOMException> retval = this;
-  if (mLocation && !mLocation->CallerSubsumes(aCx)) {
-    nsString message;
-    GetMessageMoz(message);
-    nsString name;
-    GetName(name);
-    retval = new dom::DOMException(nsresult(Result()),
-                                   NS_ConvertUTF16toUTF8(message),
-                                   NS_ConvertUTF16toUTF8(name),
-                                   Code());
-    // Now it's possible that the stack on retval still starts with
-    // stuff aCx is not supposed to touch; it depends on what's on the
-    // stack right this second.  Walk past all of that.
-    nsCOMPtr<nsIStackFrame> stack;
-    nsresult rv = retval->mLocation->GetSanitized(aCx, getter_AddRefs(stack));
-    NS_ENSURE_SUCCESS(rv, false);
-    retval->mLocation.swap(stack);
-  }
-
-  return ToJSValue(aCx, retval, aSanitizedValue);
+  nsCString name;
+  nsCString message;
+  uint16_t code;
+  NSResultToNameAndMessage(aRv, name, message, &code);
+  nsRefPtr<DOMException> inst =
+    new DOMException(aRv, aMessage, name, code);
+  return inst.forget();
 }
 
 } // namespace dom

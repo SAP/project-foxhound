@@ -7,7 +7,7 @@
 #define GFX_PaintedLayerComposite_H
 
 #include "Layers.h"                     // for Layer (ptr only), etc
-#include "gfxRect.h"                    // for gfxRect
+#include "mozilla/gfx/Rect.h"
 #include "mozilla/Attributes.h"         // for override
 #include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/layers/LayerManagerComposite.h"  // for LayerComposite, etc
@@ -15,9 +15,6 @@
 #include "nsDebug.h"                    // for NS_RUNTIMEABORT
 #include "nsRegion.h"                   // for nsIntRegion
 #include "nscore.h"                     // for nsACString
-
-struct nsIntPoint;
-struct nsIntRect;
 
 
 namespace mozilla {
@@ -31,10 +28,9 @@ namespace layers {
 
 class CompositableHost;
 class ContentHost;
-class TiledLayerComposer;
 
 class PaintedLayerComposite : public PaintedLayer,
-                             public LayerComposite
+                              public LayerComposite
 {
 public:
   explicit PaintedLayerComposite(LayerManagerComposite *aManager);
@@ -55,9 +51,7 @@ public:
 
   virtual void SetLayerManager(LayerManagerComposite* aManager) override;
 
-  virtual TiledLayerComposer* GetTiledLayerComposer() override;
-
-  virtual void RenderLayer(const nsIntRect& aClipRect) override;
+  virtual void RenderLayer(const gfx::IntRect& aClipRect) override;
 
   virtual void CleanupResources() override;
 
@@ -92,6 +86,7 @@ private:
   RefPtr<ContentHost> mBuffer;
 };
 
-} /* layers */
-} /* mozilla */
+} // namespace layers
+} // namespace mozilla
+
 #endif /* GFX_PaintedLayerComposite_H */

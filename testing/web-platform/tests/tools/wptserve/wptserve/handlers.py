@@ -51,10 +51,17 @@ class DirectoryHandler(object):
         self.base_path = base_path
         self.url_base = url_base
 
+    def __repr__(self):
+        return "<%s base_path:%s url_base:%s>" % (self.__class__.__name__, self.base_path, self.url_base)
+
     def __call__(self, request, response):
+        if not request.url_parts.path.endswith("/"):
+            raise HTTPException(404)
+
         path = filesystem_path(self.base_path, request, self.url_base)
 
-        assert os.path.isdir(path)
+        if not os.path.isdir(path):
+            raise HTTPException(404, "%s is not a directory" % path)
 
         response.headers = [("Content-Type", "text/html")]
         response.content = """<!doctype html>
@@ -99,7 +106,10 @@ class FileHandler(object):
     def __init__(self, base_path=None, url_base="/"):
         self.base_path = base_path
         self.url_base = url_base
-        self.directory_handler = DirectoryHandler(self.base_path)
+        self.directory_handler = DirectoryHandler(self.base_path, self.url_base)
+
+    def __repr__(self):
+        return "<%s base_path:%s url_base:%s>" % (self.__class__.__name__, self.base_path, self.url_base)
 
     def __call__(self, request, response):
         path = filesystem_path(self.base_path, request, self.url_base)
@@ -206,6 +216,9 @@ class PythonScriptHandler(object):
         self.base_path = base_path
         self.url_base = url_base
 
+    def __repr__(self):
+        return "<%s base_path:%s url_base:%s>" % (self.__class__.__name__, self.base_path, self.url_base)
+
     def __call__(self, request, response):
         path = filesystem_path(self.base_path, request, self.url_base)
 
@@ -222,10 +235,13 @@ class PythonScriptHandler(object):
 
 python_script_handler = PythonScriptHandler()
 
-def FunctionHandler(func):
-    def inner(request, response):
+class FunctionHandler(object):
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, request, response):
         try:
-            rv = func(request, response)
+            rv = self.func(request, response)
         except Exception:
             msg = traceback.format_exc()
             raise HTTPException(500, message=msg)
@@ -242,16 +258,22 @@ def FunctionHandler(func):
             else:
                 content = rv
             response.content = content
-    return inner
 
 
 #The generic name here is so that this can be used as a decorator
-handler = FunctionHandler
+def handler(func):
+    return FunctionHandler(func)
 
 
-def json_handler(func):
-    def inner(request, response):
-        rv = func(request, response)
+class JsonHandler(object):
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, request, response):
+        return FunctionHandler(self.handle_request)(request, response)
+
+    def handle_request(self, request, response):
+        rv = self.func(request, response)
         response.headers.set("Content-Type", "application/json")
         enc = json.dumps
         if isinstance(rv, tuple):
@@ -263,8 +285,9 @@ def json_handler(func):
             length = len(value)
         response.headers.set("Content-Length", length)
         return value
-    return FunctionHandler(inner)
 
+def json_handler(func):
+    return JsonHandler(func)
 
 class AsIsHandler(object):
     def __init__(self, base_path=None, url_base="/"):
@@ -317,3 +340,29 @@ class ErrorHandler(object):
 
     def __call__(self, request, response):
         response.set_error(self.status)
+
+
+class StaticHandler(object):
+    def __init__(self, path, format_args, content_type, **headers):
+        """Hander that reads a file from a path and substitutes some fixed data
+
+        :param path: Path to the template file to use
+        :param format_args: Dictionary of values to substitute into the template file
+        :param content_type: Content type header to server the response with
+        :param headers: List of headers to send with responses"""
+
+        with open(path) as f:
+            self.data = f.read() % format_args
+
+        self.resp_headers = [("Content-Type", content_type)]
+        for k, v in headers.iteritems():
+            resp_headers.append((k.replace("_", "-"), v))
+
+        self.handler = handler(self.handle_request)
+
+    def handle_request(self, request, response):
+        return self.resp_headers, self.data
+
+    def __call__(self, request, response):
+        rv = self.handler(request, response)
+        return rv

@@ -22,7 +22,7 @@ const gReferenceTimeMs = new Date("2000-01-01T00:00:00").getTime();
 // Returns a milliseconds value to use with nsILoginMetaInfo properties, falling
 // approximately in the middle of the specified number of days before the
 // reference time, where zero days indicates a time within the past 24 hours.
-let daysBeforeMs = days => gReferenceTimeMs - (days + 0.5) * MS_PER_DAY;
+var daysBeforeMs = days => gReferenceTimeMs - (days + 0.5) * MS_PER_DAY;
 
 /**
  * Contains metadata that will be attached to test logins in order to verify
@@ -41,6 +41,8 @@ const StatisticsTestData = [
   },
   {
     timeLastUsed: daysBeforeMs(7),
+    formSubmitURL: null,
+    httpRealm: "The HTTP Realm",
   },
   {
     username: "",
@@ -108,10 +110,10 @@ function testHistogram(histogramId, expectedNonZeroRanges) {
  * the test data that will be used by the following tests.
  */
 add_task(function test_initialize() {
-  let oldCanRecord = Services.telemetry.canRecord;
-  Services.telemetry.canRecord = true;
+  let oldCanRecord = Services.telemetry.canRecordExtended;
+  Services.telemetry.canRecordExtended = true;
   do_register_cleanup(function () {
-    Services.telemetry.canRecord = oldCanRecord;
+    Services.telemetry.canRecordExtended = oldCanRecord;
   });
 
   let uniqueNumber = 1;
@@ -132,6 +134,10 @@ add_task(function test_logins_statistics() {
     // Should record 1 in the bucket corresponding to the number of passwords.
     testHistogram("PWMGR_NUM_SAVED_PASSWORDS",
                   { 10: 1 });
+
+    // Should record 1 in the bucket corresponding to the number of passwords.
+    testHistogram("PWMGR_NUM_HTTPAUTH_PASSWORDS",
+                  { 1: 1 });
 
     // For each saved login, should record 1 in the bucket corresponding to the
     // age in days since the login was last used.

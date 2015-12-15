@@ -37,8 +37,9 @@ namespace android {
 // ----------------------------------------------------------------------------
 
 class GonkBufferQueue : public BnGraphicBufferProducer,
-                    public BnGonkGraphicBufferConsumer,
-                    private IBinder::DeathRecipient {
+                        public BnGonkGraphicBufferConsumer,
+                        private IBinder::DeathRecipient
+{
     typedef mozilla::layers::TextureClient TextureClient;
 
 public:
@@ -323,7 +324,7 @@ public:
     // dump our state in a String
     virtual void dumpToString(String8& result, const char* prefix) const;
 
-     mozilla::TemporaryRef<TextureClient> getTextureClientFromBuffer(ANativeWindowBuffer* buffer);
+     already_AddRefed<TextureClient> getTextureClientFromBuffer(ANativeWindowBuffer* buffer);
 
     int getSlotFromTextureClientLocked(TextureClient* client) const;
 

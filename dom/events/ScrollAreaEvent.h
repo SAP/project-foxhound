@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,9 +39,9 @@ public:
   NS_IMETHOD_(void) Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType) override;
   NS_IMETHOD_(bool) Deserialize(const IPC::Message* aMsg, void** aIter) override;
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx) override
+  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
   {
-    return ScrollAreaEventBinding::Wrap(aCx, this);
+    return ScrollAreaEventBinding::Wrap(aCx, this, aGivenProto);
   }
 
   float X() const
@@ -84,5 +85,10 @@ protected:
 
 } // namespace dom
 } // namespace mozilla
+
+already_AddRefed<mozilla::dom::ScrollAreaEvent>
+NS_NewDOMScrollAreaEvent(mozilla::dom::EventTarget* aOwner,
+                         nsPresContext* aPresContext,
+                         mozilla::InternalScrollAreaEvent* aEvent);
 
 #endif // mozilla_dom_ScrollAreaEvent_h_

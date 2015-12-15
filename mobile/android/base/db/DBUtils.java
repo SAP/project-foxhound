@@ -5,6 +5,7 @@
 package org.mozilla.gecko.db;
 
 import android.annotation.TargetApi;
+import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteStatement;
 import android.os.Build;
@@ -18,8 +19,8 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.util.Log;
+import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.Telemetry;
-import org.mozilla.gecko.mozglue.RobocopTarget;
 
 import java.util.Map;
 
@@ -111,6 +112,50 @@ public class DBUtils {
         // Failures are indicated by a lower frequency of UNLOCKED than LOCKED.
         if (attempt > 1) {
             Telemetry.addToHistogram(HISTOGRAM_DATABASE_UNLOCKED, attempt - 1);
+        }
+    }
+
+    /**
+     * Copies a table <b>between</b> database files.
+     *
+     * This method assumes that the source table and destination table already exist in the
+     * source and destination databases, respectively.
+     *
+     * The table is copied row-by-row in a single transaction.
+     *
+     * @param source The source database that the table will be copied from.
+     * @param sourceTableName The name of the source table.
+     * @param destination The destination database that the table will be copied to.
+     * @param destinationTableName The name of the destination table.
+     * @return true if all rows were copied; false otherwise.
+     */
+    public static boolean copyTable(SQLiteDatabase source, String sourceTableName,
+                                    SQLiteDatabase destination, String destinationTableName) {
+        Cursor cursor = null;
+        try {
+            destination.beginTransaction();
+
+            cursor = source.query(sourceTableName, null, null, null, null, null, null);
+            Log.d(LOGTAG, "Trying to copy " + cursor.getCount() + " rows from " + sourceTableName + " to " + destinationTableName);
+
+            final ContentValues contentValues = new ContentValues();
+            while (cursor.moveToNext()) {
+                contentValues.clear();
+                DatabaseUtils.cursorRowToContentValues(cursor, contentValues);
+                destination.insert(destinationTableName, null, contentValues);
+            }
+
+            destination.setTransactionSuccessful();
+            Log.d(LOGTAG, "Successfully copied " + cursor.getCount() + " rows from " + sourceTableName + " to " + destinationTableName);
+            return true;
+        } catch (Exception e) {
+            Log.w(LOGTAG, "Got exception copying rows from " + sourceTableName + " to " + destinationTableName + "; ignoring.", e);
+            return false;
+        } finally {
+            destination.endTransaction();
+            if (cursor != null) {
+                cursor.close();
+            }
         }
     }
 
@@ -211,8 +256,29 @@ public class DBUtils {
 
     @RobocopTarget
     public enum UpdateOperation {
+        /**
+         * ASSIGN is the usual update: replaces the value in the named column with the provided value.
+         *
+         * foo = ?
+         */
         ASSIGN,
+
+        /**
+         * BITWISE_OR applies the provided value to the existing value with a bitwise OR. This is useful for adding to flags.
+         *
+         * foo |= ?
+         */
         BITWISE_OR,
+
+        /**
+         * EXPRESSION is an end-run around the API: it allows callers to specify a fragment of SQL to splice into the
+         * SET part of the query.
+         *
+         * foo = $value
+         *
+         * Be very careful not to use user input in this.
+         */
+        EXPRESSION,
     }
 
     /**
@@ -245,7 +311,10 @@ public class DBUtils {
         // move all bind args to one array
         int setValuesSize = 0;
         for (int i = 0; i < values.length; i++) {
-            setValuesSize += values[i].size();
+            // EXPRESSION types don't contribute any placeholders.
+            if (ops[i] != UpdateOperation.EXPRESSION) {
+                setValuesSize += values[i].size();
+            }
         }
 
         int bindArgsSize = (whereArgs == null) ? setValuesSize : (setValuesSize + whereArgs.length);
@@ -275,6 +344,16 @@ public class DBUtils {
                         bindArgs[arg++] = entry.getValue();
                         sql.append("= ? | ");
                         sql.append(colName);
+                    }
+                    break;
+                case EXPRESSION:
+                    // Treat each value as a literal SQL string.
+                    for (Map.Entry<String, Object> entry : v.valueSet()) {
+                        final String colName = entry.getKey();
+                        sql.append((arg > 0) ? "," : "");
+                        sql.append(colName);
+                        sql.append(" = ");
+                        sql.append(entry.getValue());
                     }
                     break;
             }

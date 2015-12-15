@@ -9,11 +9,19 @@ The environment data may also be submitted by other ping types.
 
 *Note:* This is not submitted with all ping types due to privacy concerns. This and other data is inspected under the `data collection policy <https://wiki.mozilla.org/Firefox/Data_Collection>`_.
 
+Some parts of the environment must be fetched asynchronously at startup. We don't want other Telemetry components to block on waiting for the environment, so some items may be missing from it until the async fetching finished.
+This currently affects the following sections:
+
+- profile
+- addons
+
+
 Structure::
 
     {
       build: {
         applicationId: <string>, // nsIXULAppInfo.ID
+        applicationName: <string>, // "Firefox"
         architecture: <string>, // e.g. "x86", build architecture for the active build
         architecturesInBinary: <string>, // e.g. "i386-x86_64", from nsIMacUtils.architecturesInBinary, only present for mac universal builds
         buildId: <string>, // e.g. "20141126041045"
@@ -24,26 +32,38 @@ Structure::
         hotfixVersion: <string>, // e.g. "20141211.01"
       },
       settings: {
-        blocklistEnabled: <bool>, // false on failure
-        isDefaultBrowser: <bool>, // null on failure
-        e10sEnabled: <bool>, // false on failure
+        addonCompatibilityCheckEnabled: <bool>, // Whether application compatibility is respected for add-ons
+        blocklistEnabled: <bool>, // true on failure
+        isDefaultBrowser: <bool>, // null on failure, not available on Android
+        defaultSearchEngine: <string>, // e.g. "yahoo"
+        defaultSearchEngineData: {, // data about the current default engine
+          name: <string>, // engine name, e.g. "Yahoo"; or "NONE" if no default
+          loadPath: <string>, // where the engine line is located; missing if no default
+          submissionURL: <string> // missing if no default or for user-installed engines
+        },
+        searchCohort: <string>, // optional, contains an identifier for any active search A/B experiments
+        e10sEnabled: <bool>, // whether e10s is on, i.e. browser tabs open by default in a different process
         telemetryEnabled: <bool>, // false on failure
+        isInOptoutSample: <bool>, // whether this client is part of the opt-out sample
         locale: <string>, // e.g. "it", null on failure
         update: {
           channel: <string>, // e.g. "release", null on failure
-          enabled: <bool>, // false on failure
-          autoDownload: <bool>, // false on failure
+          enabled: <bool>, // true on failure
+          autoDownload: <bool>, // true on failure
         },
         userPrefs: {
-          // Two possible behaviours: values of the whitelisted prefs, or for some prefs we
-          // only record they are present with value being set to null.
+          // Only prefs which are changed from the default value are listed
+          // in this block
+          "pref.name.value": value // some prefs send the value
+          "pref.name.url": "<user-set>" // For some privacy-sensitive prefs
+            // only the fact that the value has been changed is recorded
         },
       },
-      profile: {
+      profile: { // This section is not available on Android.
         creationDate: <integer>, // integer days since UNIX epoch, e.g. 16446
         resetDate: <integer>, // integer days since UNIX epoch, e.g. 16446 - optional
       },
-      partner: {
+      partner: { // This section may not be immediately available on startup
         distributionId: <string>, // pref "distribution.id", null on failure
         distributionVersion: <string>, // pref "distribution.version", null on failure
         partnerId: <string>, // pref mozilla.partner.id, null on failure
@@ -55,13 +75,18 @@ Structure::
       },
       system: {
         memoryMB: <number>,
+        virtualMaxMB: <number>, // windows-only
         isWow64: <bool>, // windows-only
         cpu: {
-            count: <number>,  // e.g. 8, or null on failure
-            vendor: <string>, // e.g. "GenuineIntel", or null on failure
-            family: <string>, // null on failure
-            model: <string>, // null on failure
-            stepping: <string>, // null on failure
+            count: <number>,  // desktop only, e.g. 8, or null on failure - logical cpus
+            cores: <number>, // desktop only, e.g., 4, or null on failure - physical cores
+            vendor: <string>, // desktop only, e.g. "GenuineIntel", or null on failure
+            family: <string>, // desktop only, null on failure
+            model: <string>, // desktop only, null on failure
+            stepping: <string>, // desktop only, null on failure
+            l2cacheKB: <number>, // L2 cache size in KB, only on windows & mac
+            l3cacheKB: <number>, // desktop only, L3 cache size in KB
+            speedMHz: <number>, // desktop only, cpu clock speed in MHz
             extensions: [
               <string>,
               ...
@@ -86,22 +111,22 @@ Structure::
         },
         hdd: {
           profile: { // hdd where the profile folder is located
-              model: <string>, // null on failure
-              revision: <string>, // null on failure
+              model: <string>, // windows only or null on failure
+              revision: <string>, // windows only or null on failure
           },
           binary:  { // hdd where the application binary is located
-              model: <string>, // null on failure
-              revision: <string>, // null on failure
+              model: <string>, // windows only or null on failure
+              revision: <string>, // windows only or null on failure
           },
           system:  { // hdd where the system files are located
-              model: <string>, // null on failure
-              revision: <string>, // null on failure
+              model: <string>, // windows only or null on failure
+              revision: <string>, // windows only or null on failure
           },
         },
         gfx: {
             D2DEnabled: <bool>, // null on failure
             DWriteEnabled: <bool>, // null on failure
-            DWriteVersion: <string>, // null on failure
+            //DWriteVersion: <string>, // temporarily removed, pending bug 1154500
             adapters: [
               {
                 description: <string>, // e.g. "Intel(R) HD Graphics 4600", null on failure
@@ -116,13 +141,50 @@ Structure::
               },
               ...
             ],
+            // Note: currently only added on Desktop. On Linux, only a single
+            // monitor is returned representing the entire virtual screen.
+            monitors: [
+              {
+                screenWidth: <number>,  // screen width in pixels
+                screenHeight: <number>, // screen height in pixels
+                refreshRate: <number>,  // refresh rate in hertz (present on Windows only).
+                                        //  (values <= 1 indicate an unknown value)
+                pseudoDisplay: <bool>,  // networked screen (present on Windows only)
+                scale: <number>,        // backing scale factor (present on Mac only)
+              },
+              ...
+            ],
+            features: {
+              compositor: <string>,     // Layers backend for compositing (eg "d3d11", "none", "opengl")
+
+              // Each the following features can have one of the following statuses:
+              //   "unused"      - This feature has not been requested.
+              //   "unavailable" - Safe Mode or OS restriction prevents use.
+              //   "blocked"     - Blocked due to an internal condition such as safe mode.
+              //   "blacklisted" - Blocked due to a blacklist restriction.
+              //   "disabled"    - User explicitly disabled this default feature.
+              //   "failed"      - This feature was attempted but failed to initialize.
+              //   "available"   - User has this feature available.
+              "d3d11" { // This feature is Windows-only.
+                status: <string>,
+                warp: <bool>,           // Software rendering (WARP) mode was chosen.
+                textureSharing: <bool>  // Whether or not texture sharing works.
+                version: <number>,      // The D3D11 device feature level.
+                blacklisted: <bool>,    // Whether D3D11 is blacklisted; use to see whether WARP
+                                        // was blacklist induced or driver-failure induced.
+              },
+              "d2d" { // This feature is Windows-only.
+                status: <string>,
+                version: <string>,      // Either "1.0" or "1.1".
+              },
+            },
           },
       },
       addons: {
         activeAddons: { // the currently enabled addons
           <addon id>: {
             blocklisted: <bool>,
-            description: <string>,
+            description: <string>, // null if not available
             name: <string>,
             userDisabled: <bool>,
             appDisabled: <bool>,
@@ -131,8 +193,9 @@ Structure::
             type: <string>, // "extension", "service", ...
             foreignInstall: <bool>,
             hasBinaryComponents: <bool>
-            installDay: <number>, // days since UNIX epoch
-            updateDay: <number>, // days since UNIX epoch
+            installDay: <number>, // days since UNIX epoch, 0 on failure
+            updateDay: <number>, // days since UNIX epoch, 0 on failure
+            signedState: <integer>, // whether the add-on is signed by AMO, only present for extensions
           },
           ...
         },
@@ -147,8 +210,8 @@ Structure::
           scope: <integer>,
           foreignInstall: <bool>,
           hasBinaryComponents: <bool>
-          installDay: <number>, // days since UNIX epoch
-          updateDay: <number>, // days since UNIX epoch
+          installDay: <number>, // days since UNIX epoch, 0 on failure
+          updateDay: <number>, // days since UNIX epoch, 0 on failure
         },
         activePlugins: [
           {
@@ -159,7 +222,7 @@ Structure::
             disabled: <bool>,
             clicktoplay: <bool>,
             mimeTypes: [<string>, ...],
-            updateDay: <number>, // days since UNIX epoch
+            updateDay: <number>, // days since UNIX epoch, 0 on failure
           },
           ...
         ],
@@ -178,3 +241,71 @@ Structure::
         persona: <string>, // id of the current persona, null on GONK
       },
     }
+
+Settings
+--------
+
+defaultSearchEngine
+~~~~~~~~~~~~~~~~~~~
+Note: Deprecated, use defaultSearchEngineData instead.
+
+Contains the string identifier or name of the default search engine provider. This will not be present in environment data collected before the Search Service initialization.
+
+The special value ``NONE`` could occur if there is no default search engine.
+
+The special value ``UNDEFINED`` could occur if a default search engine exists but its identifier could not be determined.
+
+This field's contents are ``Services.search.defaultEngine.identifier`` (if defined) or ``"other-"`` + ``Services.search.defaultEngine.name`` if not. In other words, search engines without an ``.identifier`` are prefixed with ``other-``.
+
+defaultSearchEngineData
+~~~~~~~~~~~~~~~~~~~~~~~
+Contains data identifying the engine currently set as the default.
+
+The object contains:
+
+- a ``name`` property with the name of the engine, or ``NONE`` if no
+  engine is currently set as the default.
+
+- a ``loadPath`` property: an anonymized path of the engine xml file, e.g.
+ jar:[app]/omni.ja!browser/engine.xml
+  (where 'browser' is the name of the chrome package, not a folder)
+ [profile]/searchplugins/engine.xml
+ [distribution]/searchplugins/common/engine.xml
+ [other]/engine.xml
+
+- a ``submissionURL`` property with the HTTP url we would use to search.
+  For privacy, we don't record this for user-installed engines.
+
+``loadPath`` and ``submissionURL`` are not present if ``name`` is ``NONE``.
+
+searchCohort
+~~~~~~~~~~~~
+
+If the user has been enrolled into a search default change experiment, this contains the string identifying the experiment the user is taking part in. Most user profiles will never be part of any search default change experiment, and will not send this value.
+
+userPrefs
+~~~~~~~~~
+
+This object contains user preferences.
+
+Each key in the object is the name of a preference. A key's value depends on the policy with which the preference was collected. There are two such policies, "value" and "state". For preferences collected under the "value" policy, the value will be the preference's value. For preferences collected under the "state" policy, the value will be an opaque marker signifying only that the preference has a user value. The "state" policy is therefore used when user privacy is a concern.
+
+The following is a partial list of collected preferences.
+
+- ``browser.search.suggest.enabled``: The "master switch" for search suggestions everywhere in Firefox (search bar, urlbar, etc.). Defaults to true.
+
+- ``browser.urlbar.suggest.searches``: True if search suggestions are enabled in the urlbar. Defaults to false.
+
+- ``browser.urlbar.unifiedcomplete``: True if the urlbar's UnifiedComplete back-end is enabled.
+
+- ``browser.urlbar.userMadeSearchSuggestionsChoice``: True if the user has clicked Yes or No in the urlbar's opt-in notification. Defaults to false.
+
+partner
+~~~~~~~
+
+If the user is using a partner repack, this contains information identifying the repack being used, otherwise "partnerNames" will be an empty array and other entries will be null. The information may be missing when the profile just becomes available. In Firefox for desktop, the information along with other customizations defined in distribution.ini are processed later in the startup phase, and will be fully applied when "distribution-customization-complete" notification is sent.
+
+activeAddons
+~~~~~~~~~~~~
+
+Starting from Firefox 44, the length of the following string fields: ``name``, ``description`` and ``version`` is limited to 100 characters. The same limitation applies to the same fields in ``theme`` and ``activePlugins``.

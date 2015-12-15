@@ -12,8 +12,10 @@
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
+if (typeof(Cc) == "undefined") {
+  const Cc = Components.classes;
+  const Ci = Components.interfaces;
+}
 
 const CHILD_SCRIPT = "chrome://specialpowers/content/specialpowers.js"
 const CHILD_SCRIPT_API = "chrome://specialpowers/content/specialpowersAPI.js"
@@ -86,6 +88,11 @@ SpecialPowersObserver.prototype = new SpecialPowersObserverAPI();
       this._messageManager.addMessageListener("SPChromeScriptMessage", this);
       this._messageManager.addMessageListener("SPQuotaManager", this);
       this._messageManager.addMessageListener("SPSetTestPluginEnabledState", this);
+      this._messageManager.addMessageListener("SPPeriodicServiceWorkerUpdates", this);
+      this._messageManager.addMessageListener("SPLoadExtension", this);
+      this._messageManager.addMessageListener("SPStartupExtension", this);
+      this._messageManager.addMessageListener("SPUnloadExtension", this);
+      this._messageManager.addMessageListener("SPExtensionMessage", this);
 
       this._messageManager.loadFrameScript(CHILD_LOGGER_SCRIPT, true);
       this._messageManager.loadFrameScript(CHILD_SCRIPT_API, true);
@@ -113,6 +120,20 @@ SpecialPowersObserver.prototype = new SpecialPowersObserverAPI();
     var obs = Services.obs;
     obs.addObserver(this, "xpcom-shutdown", false);
     obs.addObserver(this, "chrome-document-global-created", false);
+
+    // Register special testing modules.
+    var testsURI = Cc["@mozilla.org/file/directory_service;1"].
+                     getService(Ci.nsIProperties).
+                     get("ProfD", Ci.nsILocalFile);
+    testsURI.append("tests.manifest");
+    var ioSvc = Cc["@mozilla.org/network/io-service;1"].
+                  getService(Ci.nsIIOService);
+    var manifestFile = ioSvc.newFileURI(testsURI).
+                         QueryInterface(Ci.nsIFileURL).file;
+
+    Components.manager.QueryInterface(Ci.nsIComponentRegistrar).
+                   autoRegister(manifestFile);
+
     obs.addObserver(this, "http-on-modify-request", false);
 
     if (messageManager) {
@@ -128,7 +149,40 @@ SpecialPowersObserver.prototype = new SpecialPowersObserverAPI();
     var obs = Services.obs;
     obs.removeObserver(this, "chrome-document-global-created");
     obs.removeObserver(this, "http-on-modify-request");
+    obs.removeObserver(this, "xpcom-shutdown");
+    this._registerObservers._topics.forEach(function(element) {
+      obs.removeObserver(this._registerObservers, element);
+    });
     this._removeProcessCrashObservers();
+
+    if (this._isFrameScriptLoaded) {
+      this._messageManager.removeMessageListener("SPPrefService", this);
+      this._messageManager.removeMessageListener("SPProcessCrashService", this);
+      this._messageManager.removeMessageListener("SPPingService", this);
+      this._messageManager.removeMessageListener("SpecialPowers.Quit", this);
+      this._messageManager.removeMessageListener("SpecialPowers.Focus", this);
+      this._messageManager.removeMessageListener("SPPermissionManager", this);
+      this._messageManager.removeMessageListener("SPWebAppService", this);
+      this._messageManager.removeMessageListener("SPObserverService", this);
+      this._messageManager.removeMessageListener("SPLoadChromeScript", this);
+      this._messageManager.removeMessageListener("SPChromeScriptMessage", this);
+      this._messageManager.removeMessageListener("SPQuotaManager", this);
+      this._messageManager.removeMessageListener("SPSetTestPluginEnabledState", this);
+      this._messageManager.removeMessageListener("SPPeriodicServiceWorkerUpdates", this);
+      this._messageManager.removeMessageListener("SPLoadExtension", this);
+      this._messageManager.removeMessageListener("SPStartupExtension", this);
+      this._messageManager.removeMessageListener("SPUnloadExtension", this);
+      this._messageManager.removeMessageListener("SPExtensionMessage", this);
+
+      this._messageManager.removeDelayedFrameScript(CHILD_LOGGER_SCRIPT);
+      this._messageManager.removeDelayedFrameScript(CHILD_SCRIPT_API);
+      this._messageManager.removeDelayedFrameScript(CHILD_SCRIPT);
+      this._isFrameScriptLoaded = false;
+    }
+
+    this._mmIsGlobal = true;
+    this._messageManager = Cc["@mozilla.org/globalmessagemanager;1"].
+      getService(Ci.nsIMessageBroadcaster);
   };
 
   SpecialPowersObserver.prototype._addProcessCrashObservers = function() {
@@ -155,6 +209,36 @@ SpecialPowersObserver.prototype = new SpecialPowersObserverAPI();
     obs.removeObserver(this, "plugin-crashed");
     obs.removeObserver(this, "ipc:content-shutdown");
     this._processCrashObserversRegistered = false;
+  };
+
+  SpecialPowersObserver.prototype._registerObservers = {
+    _self: null,
+    _topics: [],
+    _add: function(topic) {
+      if (this._topics.indexOf(topic) < 0) {
+        this._topics.push(topic);
+        Services.obs.addObserver(this, topic, false);
+      }
+    },
+    observe: function (aSubject, aTopic, aData) {
+      var msg = { aData: aData };
+      switch (aTopic) {
+        case "perm-changed":
+          var permission = aSubject.QueryInterface(Ci.nsIPermission);
+
+          // specialPowersAPI will consume this value, and it is used as a
+          // fake permission, but only type and principal.appId will be used.
+          //
+          // We need to ensure that it looks the same as a real permission,
+          // so we fake these properties.
+          msg.permission = {
+            principal: { appId: permission.principal.appId },
+            type: permission.type
+          };
+        default:
+          this._self._sendAsyncMessage("specialpowers-" + aTopic, msg);
+      }
+    }
   };
 
   /**

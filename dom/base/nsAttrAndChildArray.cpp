@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +11,7 @@
 
 #include "nsAttrAndChildArray.h"
 
+#include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 
@@ -21,6 +23,8 @@
 #include "nsUnicharUtils.h"
 #include "nsAutoPtr.h"
 #include "nsContentUtils.h" // nsAutoScriptBlocker
+
+using mozilla::CheckedUint32;
 
 /*
 CACHE_POINTER_SHIFT indicates how many steps to downshift the |this| pointer.
@@ -102,7 +106,7 @@ nsAttrAndChildArray::~nsAttrAndChildArray()
 
   Clear();
 
-  moz_free(mImpl);
+  free(mImpl);
 }
 
 nsIContent*
@@ -386,14 +390,12 @@ nsAttrAndChildArray::AttrAt(uint32_t aPos) const
 }
 
 nsresult
-nsAttrAndChildArray::SetAndTakeAttr(nsIAtom* aLocalName, nsAttrValue& aValue)
+nsAttrAndChildArray::SetAndSwapAttr(nsIAtom* aLocalName, nsAttrValue& aValue)
 {
   uint32_t i, slotCount = AttrSlotCount();
   for (i = 0; i < slotCount && AttrSlotIsTaken(i); ++i) {
     if (ATTRS(mImpl)[i].mName.Equals(aLocalName)) {
-      ATTRS(mImpl)[i].mValue.Reset();
       ATTRS(mImpl)[i].mValue.SwapValueWith(aValue);
-
       return NS_OK;
     }
   }
@@ -413,12 +415,12 @@ nsAttrAndChildArray::SetAndTakeAttr(nsIAtom* aLocalName, nsAttrValue& aValue)
 }
 
 nsresult
-nsAttrAndChildArray::SetAndTakeAttr(mozilla::dom::NodeInfo* aName, nsAttrValue& aValue)
+nsAttrAndChildArray::SetAndSwapAttr(mozilla::dom::NodeInfo* aName, nsAttrValue& aValue)
 {
   int32_t namespaceID = aName->NamespaceID();
   nsIAtom* localName = aName->NameAtom();
   if (namespaceID == kNameSpaceID_None) {
-    return SetAndTakeAttr(localName, aValue);
+    return SetAndSwapAttr(localName, aValue);
   }
 
   uint32_t i, slotCount = AttrSlotCount();
@@ -635,11 +637,11 @@ nsAttrAndChildArray::Compact()
   // Then resize or free buffer
   uint32_t newSize = attrCount * ATTRSIZE + childCount;
   if (!newSize && !mImpl->mMappedAttrs) {
-    moz_free(mImpl);
+    free(mImpl);
     mImpl = nullptr;
   }
   else if (newSize < mImpl->mBufferSize) {
-    mImpl = static_cast<Impl*>(moz_realloc(mImpl, (newSize + NS_IMPL_EXTRA_SIZE) * sizeof(nsIContent*)));
+    mImpl = static_cast<Impl*>(realloc(mImpl, (newSize + NS_IMPL_EXTRA_SIZE) * sizeof(nsIContent*)));
     NS_ASSERTION(mImpl, "failed to reallocate to smaller buffer");
 
     mImpl->mBufferSize = newSize;
@@ -763,20 +765,41 @@ nsAttrAndChildArray::MakeMappedUnique(nsMappedAttributes* aAttributes)
 bool
 nsAttrAndChildArray::GrowBy(uint32_t aGrowSize)
 {
-  uint32_t size = mImpl ? mImpl->mBufferSize + NS_IMPL_EXTRA_SIZE : 0;
-  uint32_t minSize = size + aGrowSize;
+  CheckedUint32 size = 0;
+  if (mImpl) {
+    size += mImpl->mBufferSize;
+    size += NS_IMPL_EXTRA_SIZE;
+    if (!size.isValid()) {
+      return false;
+    }
+  }
 
-  if (minSize <= ATTRCHILD_ARRAY_LINEAR_THRESHOLD) {
+  CheckedUint32 minSize = size.value();
+  minSize += aGrowSize;
+  if (!minSize.isValid()) {
+    return false;
+  }
+
+  if (minSize.value() <= ATTRCHILD_ARRAY_LINEAR_THRESHOLD) {
     do {
       size += ATTRCHILD_ARRAY_GROWSIZE;
-    } while (size < minSize);
+      if (!size.isValid()) {
+        return false;
+      }
+    } while (size.value() < minSize.value());
   }
   else {
-    size = 1u << mozilla::CeilingLog2(minSize);
+    size = 1u << mozilla::CeilingLog2(minSize.value());
   }
 
   bool needToInitialize = !mImpl;
-  Impl* newImpl = static_cast<Impl*>(moz_realloc(mImpl, size * sizeof(void*)));
+  CheckedUint32 neededSize = size;
+  neededSize *= sizeof(void*);
+  if (!neededSize.isValid()) {
+    return false;
+  }
+
+  Impl* newImpl = static_cast<Impl*>(realloc(mImpl, neededSize.value()));
   NS_ENSURE_TRUE(newImpl, false);
 
   mImpl = newImpl;
@@ -787,7 +810,7 @@ nsAttrAndChildArray::GrowBy(uint32_t aGrowSize)
     SetAttrSlotAndChildCount(0, 0);
   }
 
-  mImpl->mBufferSize = size - NS_IMPL_EXTRA_SIZE;
+  mImpl->mBufferSize = size.value() - NS_IMPL_EXTRA_SIZE;
 
   return true;
 }
@@ -798,11 +821,20 @@ nsAttrAndChildArray::AddAttrSlot()
   uint32_t slotCount = AttrSlotCount();
   uint32_t childCount = ChildCount();
 
+  CheckedUint32 size = slotCount;
+  size += 1;
+  size *= ATTRSIZE;
+  size += childCount;
+  if (!size.isValid()) {
+    return false;
+  }
+
   // Grow buffer if needed
-  if (!(mImpl && mImpl->mBufferSize >= (slotCount + 1) * ATTRSIZE + childCount) &&
+  if (!(mImpl && mImpl->mBufferSize >= size.value()) &&
       !GrowBy(ATTRSIZE)) {
     return false;
   }
+
   void** offset = mImpl->mBuffer + slotCount * ATTRSIZE;
 
   if (childCount > 0) {

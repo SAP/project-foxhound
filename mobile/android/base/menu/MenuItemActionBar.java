@@ -4,14 +4,12 @@
 
 package org.mozilla.gecko.menu;
 
-import org.mozilla.gecko.NewTabletUI;
 import org.mozilla.gecko.R;
-import org.mozilla.gecko.widget.ThemedImageButton;
+import org.mozilla.gecko.widget.themed.ThemedImageButton;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
-import android.widget.ImageButton;
 
 public class MenuItemActionBar extends ThemedImageButton
                                implements GeckoMenuItem.Layout {
@@ -56,12 +54,6 @@ public class MenuItemActionBar extends ThemedImageButton
     void setTitle(CharSequence title) {
         // set accessibility contentDescription here
         setContentDescription(title);
-    }
-
-    @Override
-    public void setEnabled(boolean enabled) {
-        super.setEnabled(enabled);
-        setColorFilter(enabled ? 0 : 0xFF999999);
     }
 
     @Override

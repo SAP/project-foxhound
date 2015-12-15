@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,8 +24,8 @@ namespace dom {
 
 class ResponsiveImageSelector;
 class HTMLImageElement final : public nsGenericHTMLElement,
-                                   public nsImageLoadingContent,
-                                   public nsIDOMHTMLImageElement
+                               public nsImageLoadingContent,
+                               public nsIDOMHTMLImageElement
 {
   friend class HTMLSourceElement;
   friend class HTMLPictureElement;
@@ -188,6 +189,20 @@ public:
   {
     SetHTMLAttr(nsGkAtoms::border, aBorder, aError);
   }
+  void SetReferrer(const nsAString& aReferrer, ErrorResult& aError)
+  {
+    SetHTMLAttr(nsGkAtoms::referrer, aReferrer, aError);
+  }
+  void GetReferrer(nsAString& aReferrer)
+  {
+    GetHTMLAttr(nsGkAtoms::referrer, aReferrer);
+  }
+
+  net::ReferrerPolicy
+  GetImageReferrerPolicy() override
+  {
+    return GetReferrerPolicy();
+  }
 
   int32_t X();
   int32_t Y();
@@ -204,6 +219,8 @@ public:
   void ClearForm(bool aRemoveFromForm);
 
   virtual void DestroyContent() override;
+
+  void MediaFeatureValuesChanged();
 
   /**
    * Given a hypothetical <img> or <source> tag with the given parameters,
@@ -247,6 +264,12 @@ public:
                                 const nsAString& aTypeAttr,
                                 const nsAString& aMediaAttr,
                                 nsAString& aResult);
+
+  /**
+   * If this image's src pointers to an SVG document, flush the SVG document's
+   * use counters to telemetry.  Only used for testing purposes.
+   */
+  void FlushUseCounters();
 
 protected:
   virtual ~HTMLImageElement();
@@ -313,11 +336,11 @@ protected:
   CSSIntPoint GetXY();
   virtual void GetItemValueText(DOMString& text) override;
   virtual void SetItemValueText(const nsAString& text) override;
-  virtual JSObject* WrapNode(JSContext *aCx) override;
+  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
   void UpdateFormOwner();
 
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 const nsAttrValueOrString* aValue,
+                                 nsAttrValueOrString* aValue,
                                  bool aNotify) override;
 
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
@@ -331,6 +354,8 @@ protected:
   nsRefPtr<ResponsiveImageSelector> mResponsiveSelector;
 
 private:
+  bool SourceElementMatches(nsIContent* aSourceNode);
+
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
                                     nsRuleData* aData);
 

@@ -8,10 +8,13 @@ this.EXPORTED_SYMBOLS = ["UITour", "UITourMetricsProvider"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
+Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Promise.jsm");
+Cu.import("resource:///modules/RecentWindow.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
+Cu.import("resource://gre/modules/TelemetryController.jsm");
 
 Cu.importGlobalProperties(["URL"]);
 
@@ -27,13 +30,21 @@ XPCOMUtils.defineLazyModuleGetter(this, "BrowserUITelemetry",
   "resource:///modules/BrowserUITelemetry.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Metrics",
   "resource://gre/modules/Metrics.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ReaderMode",
+  "resource://gre/modules/ReaderMode.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ReaderParent",
+  "resource:///modules/ReaderParent.jsm");
 
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
 const PREF_LOG_LEVEL      = "browser.uitour.loglevel";
 const PREF_SEENPAGEIDS    = "browser.uitour.seenPageIDs";
+const PREF_READERVIEW_TRIGGER = "browser.uitour.readerViewTrigger";
 
 const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
   "endUrlbarCapture",
+  "forceShowReaderIcon",
   "getConfiguration",
   "getTreatmentTag",
   "hideHighlight",
@@ -64,8 +75,7 @@ const TARGET_SEARCHENGINE_PREFIX = "searchEngine-";
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let ConsoleAPI = Cu.import("resource://gre/modules/devtools/Console.jsm", {}).ConsoleAPI;
   let consoleOptions = {
-    // toLowerCase is because the loglevel values use title case to be compatible with Log.jsm.
-    maxLogLevel: Services.prefs.getCharPref(PREF_LOG_LEVEL).toLowerCase(),
+    maxLogLevelPref: PREF_LOG_LEVEL,
     prefix: "UITour",
   };
   return new ConsoleAPI(consoleOptions);
@@ -90,12 +100,21 @@ this.UITour = {
   targets: new Map([
     ["accountStatus", {
       query: (aDocument) => {
-        let statusButton = aDocument.getElementById("PanelUI-fxa-status");
+        // If the user is logged in, use the avatar element.
+        let fxAFooter = aDocument.getElementById("PanelUI-footer-fxa");
+        if (fxAFooter.getAttribute("fxastatus")) {
+          return aDocument.getElementById("PanelUI-fxa-avatar");
+        }
+
+        // Otherwise use the sync setup icon.
+        let statusButton = aDocument.getElementById("PanelUI-fxa-label");
         return aDocument.getAnonymousElementByAttribute(statusButton,
                                                         "class",
                                                         "toolbarbutton-icon");
       },
-      widgetName: "PanelUI-fxa-status",
+      // This is a fake widgetName starting with the "PanelUI-" prefix so we know
+      // to automatically open the appMenu when annotating this target.
+      widgetName: "PanelUI-fxa-label",
     }],
     ["addons",      {query: "#add-ons-button"}],
     ["appMenu",     {
@@ -114,6 +133,8 @@ this.UITour = {
       widgetName: "urlbar-container",
     }],
     ["bookmarks",   {query: "#bookmarks-menu-button"}],
+    ["controlCenter-trackingUnblock", controlCenterTrackingToggleTarget(true)],
+    ["controlCenter-trackingBlock", controlCenterTrackingToggleTarget(false)],
     ["customize",   {
       query: (aDocument) => {
         let customizeButton = aDocument.getElementById("PanelUI-customize");
@@ -185,32 +206,23 @@ this.UITour = {
         return loopBrowser.contentDocument.querySelector(".signin-link");
       },
     }],
+    ["pocket", {
+      allowAdd: true,
+      query: "#pocket-button",
+      widgetName: "pocket-button",
+    }],
     ["privateWindow",  {query: "#privatebrowsing-button"}],
     ["quit",        {query: "#PanelUI-quit"}],
+    ["readerMode-urlBar", {query: "#reader-mode-button"}],
     ["search",      {
       infoPanelOffsetX: 18,
       infoPanelPosition: "after_start",
       query: "#searchbar",
       widgetName: "search-container",
     }],
-    ["searchProvider", {
-      query: (aDocument) => {
-        let searchbar = aDocument.getElementById("searchbar");
-        if (searchbar.hasAttribute("oneoffui")) {
-          return null;
-        }
-        return aDocument.getAnonymousElementByAttribute(searchbar,
-                                                        "anonid",
-                                                        "searchbar-engine-button");
-      },
-      widgetName: "search-container",
-    }],
     ["searchIcon", {
       query: (aDocument) => {
         let searchbar = aDocument.getElementById("searchbar");
-        if (!searchbar.hasAttribute("oneoffui")) {
-          return null;
-        }
         return aDocument.getAnonymousElementByAttribute(searchbar,
                                                         "anonid",
                                                         "searchbar-search-button");
@@ -221,18 +233,12 @@ this.UITour = {
       query: (aDocument) => {
         let element = null;
         let searchbar = aDocument.getElementById("searchbar");
-        if (searchbar.hasAttribute("oneoffui")) {
-          let popup = aDocument.getElementById("PopupSearchAutoComplete");
-          if (popup.state != "open")
-            return null;
-          element = aDocument.getAnonymousElementByAttribute(popup,
-                                                             "anonid",
-                                                             "search-settings");
-        } else {
-          element = aDocument.getAnonymousElementByAttribute(searchbar,
-                                                             "anonid",
-                                                             "open-engine-manager");
-        }
+        let popup = aDocument.getElementById("PopupSearchAutoComplete");
+        if (popup.state != "open")
+          return null;
+        element = aDocument.getAnonymousElementByAttribute(popup,
+                                                           "anonid",
+                                                           "search-settings");
         if (!element || !UITour.isElementVisible(element)) {
           return null;
         }
@@ -250,6 +256,9 @@ this.UITour = {
         }
         return element;
       },
+    }],
+    ["trackingProtection", {
+      query: "#tracking-protection-icon",
     }],
     ["urlbar",      {
       query: "#urlbar",
@@ -341,6 +350,23 @@ this.UITour = {
                                JSON.stringify([...this.seenPageIDs]));
   },
 
+  get _readerViewTriggerRegEx() {
+    delete this._readerViewTriggerRegEx;
+    let readerViewUITourTrigger = Services.prefs.getCharPref(PREF_READERVIEW_TRIGGER);
+    return this._readerViewTriggerRegEx = new RegExp(readerViewUITourTrigger, "i");
+  },
+
+  onLocationChange: function(aLocation) {
+    // The ReaderView tour page is expected to run in Reader View,
+    // which disables JavaScript on the page. To get around that, we
+    // automatically start a pre-defined tour on page load (for hysterical
+    // raisins the ReaderView tour is known as "readinglist")
+    let originalUrl = ReaderMode.getOriginalUrl(aLocation);
+    if (this._readerViewTriggerRegEx.test(originalUrl)) {
+      this.startSubTour("readinglist");
+    }
+  },
+
   onPageEvent: function(aMessage, aEvent) {
     let browser = aMessage.target;
     let window = browser.ownerDocument.defaultView;
@@ -353,7 +379,6 @@ this.UITour = {
       window = Services.wm.getMostRecentWindow("navigator:browser");
     }
 
-    let tab = window.gBrowser.getTabForBrowser(browser);
     let messageManager = browser.messageManager;
 
     log.debug("onPageEvent:", aEvent.detail, aMessage);
@@ -382,9 +407,6 @@ this.UITour = {
       return false;
     }
 
-    // Do this before bailing if there's no tab, so later we can pick up the pieces:
-    window.gBrowser.tabContainer.addEventListener("TabSelect", this);
-
     switch (action) {
       case "registerPageID": {
         if (typeof data.pageID != "string") {
@@ -402,7 +424,7 @@ this.UITour = {
 
         // We don't want to allow BrowserUITelemetry.BUCKET_SEPARATOR in the
         // pageID, as it could make parsing the telemetry bucket name difficult.
-        if (data.pageID.contains(BrowserUITelemetry.BUCKET_SEPARATOR)) {
+        if (data.pageID.includes(BrowserUITelemetry.BUCKET_SEPARATOR)) {
           log.warn("registerPageID: Invalid page ID specified");
           break;
         }
@@ -418,21 +440,35 @@ this.UITour = {
         // Validate the input parameters.
         if (typeof data.message !== "string" || data.message === "") {
           log.error("showHeartbeat: Invalid message specified.");
-          break;
+          return false;
         }
 
         if (typeof data.thankyouMessage !== "string" || data.thankyouMessage === "") {
           log.error("showHeartbeat: Invalid thank you message specified.");
-          break;
+          return false;
         }
 
         if (typeof data.flowId !== "string" || data.flowId === "") {
           log.error("showHeartbeat: Invalid flowId specified.");
-          break;
+          return false;
+        }
+
+        if (data.engagementButtonLabel && typeof data.engagementButtonLabel != "string") {
+          log.error("showHeartbeat: Invalid engagementButtonLabel specified");
+          return false;
+        }
+
+        let heartbeatWindow = window;
+        if (data.privateWindowsOnly && !PrivateBrowsingUtils.isWindowPrivate(heartbeatWindow)) {
+          heartbeatWindow = RecentWindow.getMostRecentBrowserWindow({ private: true });
+          if (!heartbeatWindow) {
+            log.debug("showHeartbeat: No private window found");
+            return false;
+          }
         }
 
         // Finally show the Heartbeat UI.
-        this.showHeartbeat(window, messageManager, data);
+        this.showHeartbeat(heartbeatWindow, data);
         break;
       }
 
@@ -475,9 +511,12 @@ this.UITour = {
               if (typeof buttonData == "object" &&
                   typeof buttonData.label == "string" &&
                   typeof buttonData.callbackID == "string") {
+                let callback = buttonData.callbackID;
                 let button = {
                   label: buttonData.label,
-                  callbackID: buttonData.callbackID,
+                  callback: event => {
+                    this.sendPageCallback(messageManager, callback);
+                  },
                 };
 
                 if (typeof buttonData.icon == "string")
@@ -587,7 +626,17 @@ this.UITour = {
           return false;
         }
 
-        this.setConfiguration(data.configuration, data.value);
+        this.setConfiguration(window, data.configuration, data.value);
+        break;
+      }
+
+      case "openPreferences": {
+        if (typeof data.pane != "string" && typeof data.pane != "undefined") {
+          log.warn("openPreferences: Invalid pane specified");
+          return false;
+        }
+
+        window.openPreferences(data.pane);
         break;
       }
 
@@ -677,18 +726,41 @@ this.UITour = {
           this.sendPageCallback(messageManager, data.callbackID);
         break;
       }
+
+      case "forceShowReaderIcon": {
+        ReaderParent.forceShowReaderIcon(browser);
+        break;
+      }
+
+      case "toggleReaderMode": {
+        let targetPromise = this.getTarget(window, "readerMode-urlBar");
+        targetPromise.then(target => {
+          ReaderParent.toggleReaderMode({target: target.node});
+        });
+        break;
+      }
+    }
+
+    this.initForBrowser(browser, window);
+
+    return true;
+  },
+
+  initForBrowser(aBrowser, window) {
+    let gBrowser = window.gBrowser;
+
+    if (gBrowser) {
+        gBrowser.tabContainer.addEventListener("TabSelect", this);
     }
 
     if (!this.tourBrowsersByWindow.has(window)) {
       this.tourBrowsersByWindow.set(window, new Set());
     }
-    this.tourBrowsersByWindow.get(window).add(browser);
+    this.tourBrowsersByWindow.get(window).add(aBrowser);
 
-    Services.obs.addObserver(this, "message-manager-disconnect", false);
+    Services.obs.addObserver(this, "message-manager-close", false);
 
     window.addEventListener("SSWindowClosing", this);
-
-    return true;
   },
 
   handleEvent: function(aEvent) {
@@ -736,7 +808,7 @@ this.UITour = {
     switch (aTopic) {
       // The browser message manager is disconnected when the <browser> is
       // destroyed and we want to teardown at that point.
-      case "message-manager-disconnect": {
+      case "message-manager-close": {
         let winEnum = Services.wm.getEnumerator("navigator:browser");
         while (winEnum.hasMoreElements()) {
           let window = winEnum.getNext();
@@ -804,6 +876,7 @@ this.UITour = {
     // Ensure the menu panel is hidden before calling recreatePopup so popup events occur.
     this.hideMenu(aWindow, "appMenu");
     this.hideMenu(aWindow, "loop");
+    this.hideMenu(aWindow, "controlCenter");
 
     // Clean up panel listeners after calling hideMenu above.
     aWindow.PanelUI.panel.removeEventListener("popuphiding", this.hideAppMenuAnnotations);
@@ -812,6 +885,9 @@ this.UITour = {
     let loopPanel = aWindow.document.getElementById("loop-notification-panel");
     loopPanel.removeEventListener("popuphidden", this.onPanelHidden);
     loopPanel.removeEventListener("popuphiding", this.hideLoopPanelAnnotations);
+    let controlCenterPanel = aWindow.gIdentityHandler._identityPopup;
+    controlCenterPanel.removeEventListener("popuphidden", this.onPanelHidden);
+    controlCenterPanel.removeEventListener("popuphiding", this.hideControlCenterAnnotations);
 
     this.endUrlbarCapture(aWindow);
     this.resetTheme();
@@ -902,11 +978,6 @@ this.UITour = {
       log.warn("getTarget: Invalid target name specified");
       deferred.reject("Invalid target name specified");
       return deferred.promise;
-    }
-
-    if (aTargetName.startsWith(TARGET_SEARCHENGINE_PREFIX)) {
-      let engineID = aTargetName.slice(TARGET_SEARCHENGINE_PREFIX.length);
-      return this.getSearchEngineTarget(aWindow, engineID);
     }
 
     let targetObject = this.targets.get(aTargetName);
@@ -1021,14 +1092,13 @@ this.UITour = {
    * Show the Heartbeat UI to request user feedback. This function reports back to the
    * caller using |notify|. The notification event name reflects the current status the UI
    * is in (either "Heartbeat:NotificationOffered", "Heartbeat:NotificationClosed",
-   * "Heartbeat:LearnMore" or "Heartbeat:Voted"). When a "Heartbeat:Voted" event is notified
+   * "Heartbeat:LearnMore", "Heartbeat:Engaged" or "Heartbeat:Voted").
+   * When a "Heartbeat:Voted" event is notified
    * the data payload contains a |score| field which holds the rating picked by the user.
    * Please note that input parameters are already validated by the caller.
    *
    * @param aChromeWindow
    *        The chrome window that the heartbeat notification is displayed in.
-   * @param aMessageManager
-   *        The message manager to communicate with the API caller.
    * @param {Object} aOptions Options object.
    * @param {String} aOptions.message
    *        The message, or question, to display on the notification.
@@ -1037,24 +1107,56 @@ this.UITour = {
    * @param {String} aOptions.flowId
    *        An identifier for this rating flow. Please note that this is only used to
    *        identify the notification box.
+   * @param {String} [aOptions.engagementButtonLabel=null]
+   *        The text of the engagement button to use instad of stars. If this is null
+   *        or invalid, rating stars are used.
    * @param {String} [aOptions.engagementURL=null]
-   *        The engagement URL to open in a new tab once user has voted. If this is null
+   *        The engagement URL to open in a new tab once user has engaged. If this is null
    *        or invalid, no new tab is opened.
    * @param {String} [aOptions.learnMoreLabel=null]
    *        The label of the learn more link. No link will be shown if this is null.
    * @param {String} [aOptions.learnMoreURL=null]
    *        The learn more URL to open when clicking on the learn more link. No learn more
    *        will be shown if this is an invalid URL.
+   * @param {String} [aOptions.privateWindowsOnly=false]
+   *        Whether the heartbeat UI should only be targeted at a private window (if one exists).
+   *        No notifications should be fired when this is true.
    */
-  showHeartbeat: function(aChromeWindow, aMessageManager, aOptions) {
-    let nb = aChromeWindow.document.getElementById("high-priority-global-notificationbox");
+  showHeartbeat(aChromeWindow, aOptions) {
+    let maybeNotifyHeartbeat = (...aParams) => {
+      if (aOptions.privateWindowsOnly) {
+        return;
+      }
+      this.notify(...aParams);
+    };
 
+    let nb = aChromeWindow.document.getElementById("high-priority-global-notificationbox");
+    let buttons = null;
+
+    if (aOptions.engagementButtonLabel) {
+      buttons = [{
+        label: aOptions.engagementButtonLabel,
+        callback: () => {
+          // Let the consumer know user engaged.
+          maybeNotifyHeartbeat("Heartbeat:Engaged", { flowId: aOptions.flowId, timestamp: Date.now() });
+
+          userEngaged(new Map([
+            ["type", "button"],
+            ["flowid", aOptions.flowId]
+          ]));
+
+          // Return true so that the notification bar doesn't close itself since
+          // we have a thank you message to show.
+          return true;
+        },
+      }];
+    }
     // Create the notification. Prefix its ID to decrease the chances of collisions.
     let notice = nb.appendNotification(aOptions.message, "heartbeat-" + aOptions.flowId,
-      "chrome://browser/skin/heartbeat-icon.svg", nb.PRIORITY_INFO_HIGH, null, function() {
+      "chrome://browser/skin/heartbeat-icon.svg", nb.PRIORITY_INFO_HIGH, buttons, function() {
         // Let the consumer know the notification bar was closed. This also happens
         // after voting.
-        this.notify("Heartbeat:NotificationClosed", { flowId: aOptions.flowId, timestamp: Date.now() });
+        maybeNotifyHeartbeat("Heartbeat:NotificationClosed", { flowId: aOptions.flowId, timestamp: Date.now() });
     }.bind(this));
 
     // Get the elements we need to style.
@@ -1063,11 +1165,51 @@ this.UITour = {
     let messageText =
       aChromeWindow.document.getAnonymousElementByAttribute(notice, "anonid", "messageText");
 
+    function userEngaged(aEngagementParams) {
+      // Make the heartbeat icon pulse twice.
+      notice.label = aOptions.thankyouMessage;
+      messageImage.classList.remove("pulse-onshow");
+      messageImage.classList.add("pulse-twice");
+
+      // Remove all the children of the notice (rating container
+      // and the flex).
+      while (notice.firstChild) {
+        notice.removeChild(notice.firstChild);
+      }
+
+      // Make sure that we have a valid URL. If we haven't, do not open the engagement page.
+      let engagementURL = null;
+      try {
+        engagementURL = new URL(aOptions.engagementURL);
+      } catch (error) {
+        log.error("showHeartbeat: Invalid URL specified.");
+      }
+
+      // Just open the engagement tab if we have a valid engagement URL.
+      if (engagementURL) {
+        for (let [param, value] of aEngagementParams) {
+          engagementURL.searchParams.append(param, value);
+        }
+
+        // Open the engagement URL in a new tab.
+        aChromeWindow.gBrowser.selectedTab =
+          aChromeWindow.gBrowser.addTab(engagementURL.toString(), {
+            owner: aChromeWindow.gBrowser.selectedTab,
+            relatedToCurrent: true
+          });
+      }
+
+      // Remove the notification bar after 3 seconds.
+      aChromeWindow.setTimeout(() => {
+        nb.removeNotification(notice);
+      }, 3000);
+    }
+
     // Create the fragment holding the rating UI.
     let frag = aChromeWindow.document.createDocumentFragment();
 
     // Build the Heartbeat star rating.
-    const numStars = 5;
+    const numStars = aOptions.engagementButtonLabel ? 0 : 5;
     let ratingContainer = aChromeWindow.document.createElement("hbox");
     ratingContainer.id = "star-rating-container";
 
@@ -1086,46 +1228,18 @@ this.UITour = {
         let rating = Number(evt.target.getAttribute("data-score"), 10);
 
         // Let the consumer know user voted.
-        this.notify("Heartbeat:Voted", { flowId: aOptions.flowId, score: rating, timestamp: Date.now() });
+        maybeNotifyHeartbeat("Heartbeat:Voted", {
+          flowId: aOptions.flowId,
+          score: rating,
+          timestamp: Date.now(),
+        });
 
-        // Make the heartbeat icon pulse twice.
-        notice.label = aOptions.thankyouMessage;
-        messageImage.classList.remove("pulse-onshow");
-        messageImage.classList.add("pulse-twice");
-
-        // Remove all the children of the notice (rating container
-        // and the flex).
-        while (notice.firstChild) {
-          notice.removeChild(notice.firstChild);
-        }
-
-        // Make sure that we have a valid URL. If we haven't, do not open the engagement page.
-        let engagementURL = null;
-        try {
-          engagementURL = new URL(aOptions.engagementURL);
-        } catch (error) {
-          log.error("showHeartbeat: Invalid URL specified.");
-        }
-
-        // Just open the engagement tab if we have a valid engagement URL.
-        if (engagementURL) {
-          // Append the score data to the engagement URL.
-          engagementURL.searchParams.append("type", "stars");
-          engagementURL.searchParams.append("score", rating);
-          engagementURL.searchParams.append("flowid", aOptions.flowId);
-
-          // Open the engagement URL in a new tab.
-          aChromeWindow.gBrowser.selectedTab =
-            aChromeWindow.gBrowser.addTab(engagementURL.toString(), {
-              owner: aChromeWindow.gBrowser.selectedTab,
-              relatedToCurrent: true
-            });
-        }
-
-        // Remove the notification bar after 3 seconds.
-        aChromeWindow.setTimeout(() => {
-          nb.removeNotification(notice);
-        }, 3000);
+        // Append the score data to the engagement URL.
+        userEngaged(new Map([
+          ["type", "stars"],
+          ["score", rating],
+          ["flowid", aOptions.flowId]
+        ]));
       }.bind(this));
 
       // Add it to the container.
@@ -1157,7 +1271,7 @@ this.UITour = {
       learnMore.className = "text-link";
       learnMore.href = learnMoreURL.toString();
       learnMore.setAttribute("value", aOptions.learnMoreLabel);
-      learnMore.addEventListener("click", () => this.notify("Heartbeat:LearnMore",
+      learnMore.addEventListener("click", () => maybeNotifyHeartbeat("Heartbeat:LearnMore",
         { flowId: aOptions.flowId, timestamp: Date.now() }));
       frag.appendChild(learnMore);
     }
@@ -1169,7 +1283,10 @@ this.UITour = {
     messageText.classList.add("heartbeat");
 
     // Let the consumer know the notification was shown.
-    this.notify("Heartbeat:NotificationOffered", { flowId: aOptions.flowId, timestamp: Date.now() });
+    maybeNotifyHeartbeat("Heartbeat:NotificationOffered", {
+      flowId: aOptions.flowId,
+      timestamp: Date.now(),
+    });
   },
 
   /**
@@ -1202,18 +1319,6 @@ this.UITour = {
    */
   showHighlight: function(aChromeWindow, aTarget, aEffect = "none") {
     function showHighlightPanel() {
-      if (aTarget.targetName.startsWith(TARGET_SEARCHENGINE_PREFIX)) {
-        // This won't affect normal higlights done via the panel, so we need to
-        // manually hide those.
-        this.hideHighlight(aChromeWindow);
-        aTarget.node.setAttribute("_moz-menuactive", true);
-        return;
-      }
-
-      // Conversely, highlights for search engines are highlighted via CSS
-      // rather than a panel, so need to be manually removed.
-      this._hideSearchEngineHighlight(aChromeWindow);
-
       let highlighter = aChromeWindow.document.getElementById("UITourHighlight");
 
       let effect = aEffect;
@@ -1290,24 +1395,6 @@ this.UITour = {
     highlighter.removeAttribute("active");
 
     this._setAppMenuStateForAnnotation(aWindow, "highlight", false);
-    this._hideSearchEngineHighlight(aWindow);
-  },
-
-  _hideSearchEngineHighlight: function(aWindow) {
-    // We special case highlighting items in the search engines dropdown,
-    // so just blindly remove any highlight there.
-    let searchMenuBtn = null;
-    try {
-      searchMenuBtn = this.targets.get("searchProvider").query(aWindow.document);
-    } catch (e) { /* This is ok to fail. */ }
-    if (searchMenuBtn) {
-      let searchPopup = aWindow.document
-                               .getAnonymousElementByAttribute(searchMenuBtn,
-                                                               "anonid",
-                                                               "searchbar-popup");
-      for (let menuItem of searchPopup.children)
-        menuItem.removeAttribute("_moz-menuactive");
-    }
   },
 
   /**
@@ -1349,22 +1436,28 @@ this.UITour = {
         tooltipButtons.firstChild.remove();
 
       for (let button of aButtons) {
-        let el = document.createElement("button");
-        el.setAttribute("label", button.label);
-        if (button.iconURL)
-          el.setAttribute("image", button.iconURL);
+        let isButton = button.style != "text";
+        let el = document.createElement(isButton ? "button" : "label");
+        el.setAttribute(isButton ? "label" : "value", button.label);
 
-        if (button.style == "link")
-          el.setAttribute("class", "button-link");
+        if (isButton) {
+          if (button.iconURL)
+            el.setAttribute("image", button.iconURL);
 
-        if (button.style == "primary")
-          el.setAttribute("class", "button-primary");
+          if (button.style == "link")
+            el.setAttribute("class", "button-link");
 
-        let callbackID = button.callbackID;
-        el.addEventListener("command", event => {
-          tooltip.hidePopup();
-          this.sendPageCallback(aMessageManager, callbackID);
-        });
+          if (button.style == "primary")
+            el.setAttribute("class", "button-primary");
+
+          // Don't close the popup or call the callback for style=text as they
+          // aren't links/buttons.
+          let callback = button.callback;
+          el.addEventListener("command", event => {
+            tooltip.hidePopup();
+            callback(event);
+          });
+        }
 
         tooltipButtons.appendChild(el);
       }
@@ -1423,14 +1516,15 @@ this.UITour = {
       return;
     }
 
-    // Due to a platform limitation, we can't anchor a panel to an element in a
-    // <menupopup>. So we can't support showing info panels for search engines.
-    if (aAnchor.targetName.startsWith(TARGET_SEARCHENGINE_PREFIX))
-      return;
-
     this._setAppMenuStateForAnnotation(aChromeWindow, "info",
                                        this.targetIsInAppMenu(aAnchor),
                                        showInfoPanel.bind(this, this._correctAnchor(aAnchor.node)));
+  },
+
+  isInfoOnTarget(aChromeWindow, aTargetName) {
+    let document = aChromeWindow.document;
+    let tooltip = document.getElementById("UITourTooltip");
+    return tooltip.getAttribute("targetName") == aTargetName && tooltip.state != "closed";
   },
 
   hideInfo: function(aWindow) {
@@ -1479,6 +1573,31 @@ this.UITour = {
     } else if (aMenuName == "bookmarks") {
       let menuBtn = aWindow.document.getElementById("bookmarks-menu-button");
       openMenuButton(menuBtn);
+    } else if (aMenuName == "controlCenter") {
+      let popup = aWindow.gIdentityHandler._identityPopup;
+
+      // Add the listener even if the panel is already open since it will still
+      // only get registered once even if it was UITour that opened it.
+      popup.addEventListener("popuphiding", this.hideControlCenterAnnotations);
+      popup.addEventListener("popuphidden", this.onPanelHidden);
+
+      popup.setAttribute("noautohide", true);
+      this.availableTargetsCache.clear();
+
+      if (popup.state == "open") {
+        if (aOpenCallback) {
+          aOpenCallback();
+        }
+        return;
+      }
+
+      this.recreatePopup(popup);
+
+      // Open the control center
+      if (aOpenCallback) {
+        popup.addEventListener("popupshown", onPopupShown);
+      }
+      aWindow.document.getElementById("identity-box").click();
     } else if (aMenuName == "loop") {
       let toolbarButton = aWindow.LoopUI.toolbarButton;
       // It's possible to have a node that isn't placed anywhere
@@ -1504,10 +1623,46 @@ this.UITour = {
       });
       panel.addEventListener("popuphidden", this.onPanelHidden);
       panel.addEventListener("popuphiding", this.hideLoopPanelAnnotations);
-    } else if (aMenuName == "searchEngines") {
-      this.getTarget(aWindow, "searchProvider").then(target => {
-        openMenuButton(target.node);
-      }).catch(log.error);
+    } else if (aMenuName == "pocket") {
+      this.getTarget(aWindow, "pocket").then(Task.async(function* onPocketTarget(target) {
+        let widgetGroupWrapper = CustomizableUI.getWidget(target.widgetName);
+        if (widgetGroupWrapper.type != "view" || !widgetGroupWrapper.viewId) {
+          log.error("Can't open the pocket menu without a view");
+          return;
+        }
+        let placement = CustomizableUI.getPlacementOfWidget(target.widgetName);
+        if (!placement || !placement.area) {
+          log.error("Can't open the pocket menu without a placement");
+          return;
+        }
+
+        if (placement.area == CustomizableUI.AREA_PANEL) {
+          // Open the appMenu and wait for it if it's not already opened or showing a subview.
+          yield new Promise((resolve, reject) => {
+            if (aWindow.PanelUI.panel.state != "closed") {
+              if (aWindow.PanelUI.multiView.showingSubView) {
+                reject("A subview is already showing");
+                return;
+              }
+
+              resolve();
+              return;
+            }
+
+            aWindow.PanelUI.panel.addEventListener("popupshown", function onShown() {
+              aWindow.PanelUI.panel.removeEventListener("popupshown", onShown);
+              resolve();
+            });
+
+            aWindow.PanelUI.show();
+          });
+        }
+
+        let widgetWrapper = widgetGroupWrapper.forWindow(aWindow);
+        aWindow.PanelUI.showSubView(widgetGroupWrapper.viewId,
+                                    widgetWrapper.anchor,
+                                    placement.area);
+      })).catch(log.error);
     }
   },
 
@@ -1523,12 +1678,12 @@ this.UITour = {
     } else if (aMenuName == "bookmarks") {
       let menuBtn = aWindow.document.getElementById("bookmarks-menu-button");
       closeMenuButton(menuBtn);
+    } else if (aMenuName == "controlCenter") {
+      let panel = aWindow.gIdentityHandler._identityPopup;
+      panel.hidePopup();
     } else if (aMenuName == "loop") {
       let panel = aWindow.document.getElementById("loop-notification-panel");
       panel.hidePopup();
-    } else if (aMenuName == "searchEngines") {
-      let menuBtn = this.targets.get("searchProvider").query(aWindow.document);
-      closeMenuButton(menuBtn);
     }
   },
 
@@ -1567,9 +1722,16 @@ this.UITour = {
     });
   },
 
+  hideControlCenterAnnotations(aEvent) {
+    UITour.hideAnnotationsForPanel(aEvent, (aTarget) => {
+      return aTarget.targetName.startsWith("controlCenter-");
+    });
+  },
+
   onPanelHidden: function(aEvent) {
     aEvent.target.removeAttribute("noautohide");
     UITour.recreatePopup(aEvent.target);
+    UITour.availableTargetsCache.clear();
   },
 
   recreatePopup: function(aPanel) {
@@ -1627,6 +1789,35 @@ this.UITour = {
         let props = ["defaultUpdateChannel", "version"];
         let appinfo = {};
         props.forEach(property => appinfo[property] = Services.appinfo[property]);
+        let isDefaultBrowser = null;
+        try {
+          let shell = aWindow.getShellService();
+          if (shell) {
+            isDefaultBrowser = shell.isDefaultBrowser(false);
+          }
+        } catch (e) {}
+        appinfo["defaultBrowser"] = isDefaultBrowser;
+
+        let canSetDefaultBrowserInBackground = true;
+        if (AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
+          let prefBranch =
+            Services.prefs.getBranch("browser.shell.associationHash");
+          let prefChildren = prefBranch.getChildList("");
+          canSetDefaultBrowserInBackground = prefChildren.length > 0;
+        } else if (AppConstants.isPlatformAndVersionAtLeast("macosx", "10.10")) {
+          canSetDefaultBrowserInBackground = false;
+        } else if (AppConstants.platform == "linux") {
+          // The ShellService may not exist on some versions of Linux.
+          try {
+            let shell = aWindow.getShellService();
+          } catch (e) {
+            canSetDefaultBrowserInBackground = null;
+          }
+        }
+
+        appinfo["canSetDefaultBrowserInBackground"] =
+          canSetDefaultBrowserInBackground;
+
         this.sendPageCallback(aMessageManager, aCallbackID, appinfo);
         break;
       case "availableTargets":
@@ -1637,17 +1828,22 @@ this.UITour = {
           gettingStartedSeen: Services.prefs.getBoolPref("loop.gettingStarted.seen"),
         });
         break;
+      case "search":
       case "selectedSearchEngine":
         Services.search.init(rv => {
-          let engine;
+          let data;
           if (Components.isSuccessCode(rv)) {
-            engine = Services.search.defaultEngine;
+            let engines = Services.search.getVisibleEngines();
+            data = {
+              searchEngineIdentifier: Services.search.defaultEngine.identifier,
+              engines: [TARGET_SEARCHENGINE_PREFIX + engine.identifier
+                        for (engine of engines)
+                          if (engine.identifier)]
+            };
           } else {
-            engine = { identifier: "" };
+            data = {engines: [], searchEngineIdentifier: ""};
           }
-          this.sendPageCallback(aMessageManager, aCallbackID, {
-            searchEngineIdentifier: engine.identifier
-          });
+          this.sendPageCallback(aMessageManager, aCallbackID, data);
         });
         break;
       case "sync":
@@ -1661,8 +1857,18 @@ this.UITour = {
     }
   },
 
-  setConfiguration: function(aConfiguration, aValue) {
+  setConfiguration: function(aWindow, aConfiguration, aValue) {
     switch (aConfiguration) {
+      case "defaultBrowser":
+        // Ignore aValue in this case because the default browser can only
+        // be set, not unset.
+        try {
+          let shell = aWindow.getShellService();
+          if (shell) {
+            shell.setDefaultBrowser(true, false);
+          }
+        } catch (e) {}
+        break;
       case "Loop:ResumeTourOnFirstJoin":
         // Ignore aValue in this case to avoid accidentally setting it to false.
         Services.prefs.setBoolPref("loop.gettingStarted.resumeOnFirstJoin", true);
@@ -1695,10 +1901,6 @@ this.UITour = {
           targetNames.push(targetObject.targetName);
       }
 
-      targetNames = targetNames.concat(
-        yield this.getAvailableSearchEngineTargets(window)
-      );
-
       data = {
         targets: targetNames,
       };
@@ -1710,6 +1912,20 @@ this.UITour = {
         targets: [],
       });
     });
+  },
+
+  startSubTour: function (aFeature) {
+    if (aFeature != "string") {
+      log.error("startSubTour: No feature option specified");
+      return;
+    }
+
+    if (aFeature == "readinglist") {
+      ReaderParent.showReaderModeInfoPanel(browser);
+    } else {
+      log.error("startSubTour: Unknown feature option specified");
+      return;
+    }
   },
 
   addNavBarWidget: function (aTarget, aMessageManager, aCallbackID) {
@@ -1731,30 +1947,30 @@ this.UITour = {
   },
 
   _addAnnotationPanelMutationObserver: function(aPanelEl) {
-#ifdef XP_LINUX
-    let observer = this._annotationPanelMutationObservers.get(aPanelEl);
-    if (observer) {
-      return;
+    if (AppConstants.platform == "linux") {
+      let observer = this._annotationPanelMutationObservers.get(aPanelEl);
+      if (observer) {
+        return;
+      }
+      let win = aPanelEl.ownerDocument.defaultView;
+      observer = new win.MutationObserver(this._annotationMutationCallback);
+      this._annotationPanelMutationObservers.set(aPanelEl, observer);
+      let observerOptions = {
+        attributeFilter: ["height", "width"],
+        attributes: true,
+      };
+      observer.observe(aPanelEl, observerOptions);
     }
-    let win = aPanelEl.ownerDocument.defaultView;
-    observer = new win.MutationObserver(this._annotationMutationCallback);
-    this._annotationPanelMutationObservers.set(aPanelEl, observer);
-    let observerOptions = {
-      attributeFilter: ["height", "width"],
-      attributes: true,
-    };
-    observer.observe(aPanelEl, observerOptions);
-#endif
   },
 
   _removeAnnotationPanelMutationObserver: function(aPanelEl) {
-#ifdef XP_LINUX
-    let observer = this._annotationPanelMutationObservers.get(aPanelEl);
-    if (observer) {
-      observer.disconnect();
-      this._annotationPanelMutationObservers.delete(aPanelEl);
+    if (AppConstants.platform == "linux") {
+      let observer = this._annotationPanelMutationObservers.get(aPanelEl);
+      if (observer) {
+        observer.disconnect();
+        this._annotationPanelMutationObservers.delete(aPanelEl);
+      }
     }
-#endif
   },
 
 /**
@@ -1791,55 +2007,6 @@ this.UITour = {
     });
   },
 
-  getAvailableSearchEngineTargets(aWindow) {
-    return new Promise(resolve => {
-      this.getTarget(aWindow, "search").then(searchTarget => {
-        if (!searchTarget.node || this.targetIsInAppMenu(searchTarget))
-          return resolve([]);
-
-        Services.search.init(() => {
-          let engines = Services.search.getVisibleEngines();
-          resolve([TARGET_SEARCHENGINE_PREFIX + engine.identifier
-                   for (engine of engines)
-                   if (engine.identifier)]);
-        });
-      }).catch(() => resolve([]));
-    });
-  },
-
-  // We only allow matching based on a search engine's identifier - this gives
-  // us a non-changing ID and guarentees we only match against app-provided
-  // engines.
-  getSearchEngineTarget(aWindow, aIdentifier) {
-    return new Promise((resolve, reject) => {
-      Task.spawn(function*() {
-        let searchTarget = yield this.getTarget(aWindow, "search");
-        // We're not supporting having the searchbar in the app-menu, because
-        // popups within popups gets crazy. This restriction should be lifted
-        // once bug 988151 is implemented, as the page can then be responsible
-        // for opening each menu when appropriate.
-        if (!searchTarget.node || this.targetIsInAppMenu(searchTarget))
-          return reject("Search engine not available");
-
-        yield Services.search.init();
-
-        let searchPopup = searchTarget.node._popup;
-        for (let engineNode of searchPopup.children) {
-          let engine = engineNode.engine;
-          if (engine && engine.identifier == aIdentifier) {
-            return resolve({
-              targetName: TARGET_SEARCHENGINE_PREFIX + engine.identifier,
-              node: engineNode,
-            });
-          }
-        }
-        reject("Search engine not available");
-      }.bind(this)).catch(() => {
-        reject("Search engine not available");
-      });
-    });
-  },
-
   notify(eventName, params) {
     let winEnum = Services.wm.getEnumerator("navigator:browser");
     while (winEnum.hasMoreElements()) {
@@ -1867,77 +2034,72 @@ this.UITour = {
   },
 };
 
+function controlCenterTrackingToggleTarget(aUnblock) {
+  return {
+    infoPanelPosition: "rightcenter topleft",
+    query(aDocument) {
+      let popup = aDocument.defaultView.gIdentityHandler._identityPopup;
+      if (popup.state != "open") {
+        return null;
+      }
+      let buttonId = null;
+      if (aUnblock) {
+        if (PrivateBrowsingUtils.isWindowPrivate(aDocument.defaultView)) {
+          buttonId = "tracking-action-unblock-private";
+        } else {
+          buttonId = "tracking-action-unblock";
+        }
+      } else {
+        buttonId = "tracking-action-block";
+      }
+      let element = aDocument.getElementById(buttonId);
+      return UITour.isElementVisible(element) ? element : null;
+    },
+  };
+}
+
 this.UITour.init();
 
 /**
  * UITour Health Report
  */
-const DAILY_DISCRETE_TEXT_FIELD = Metrics.Storage.FIELD_DAILY_DISCRETE_TEXT;
-
 /**
  * Public API to be called by the UITour code
  */
 const UITourHealthReport = {
   recordTreatmentTag: function(tag, value) {
-#ifdef MOZ_SERVICES_HEALTHREPORT
-    Task.spawn(function*() {
-      let reporter = Cc["@mozilla.org/datareporting/service;1"]
-                       .getService()
-                       .wrappedJSObject
-                       .healthReporter;
-
-      // This can happen if the FHR component of the data reporting service is
-      // disabled. This is controlled by a pref that most will never use.
-      if (!reporter) {
-        return;
-      }
-
-      yield reporter.onInit();
-
-      // Get the UITourMetricsProvider instance from the Health Reporter
-      reporter.getProvider("org.mozilla.uitour").recordTreatmentTag(tag, value);
+  TelemetryController.submitExternalPing("uitour-tag",
+    {
+      version: 1,
+      tagName: tag,
+      tagValue: value,
+    },
+    {
+      addClientId: true,
+      addEnvironment: true,
     });
-#endif
+
+    if (AppConstants.MOZ_SERVICES_HEALTHREPORT) {
+      Task.spawn(function*() {
+        let reporter = Cc["@mozilla.org/datareporting/service;1"]
+                         .getService()
+                         .wrappedJSObject
+                         .healthReporter;
+
+        // This can happen if the FHR component of the data reporting service is
+        // disabled. This is controlled by a pref that most will never use.
+        if (!reporter) {
+          return;
+        }
+
+        yield reporter.onInit();
+
+        // Get the UITourMetricsProvider instance from the Health Reporter
+        reporter.getProvider("org.mozilla.uitour").recordTreatmentTag(tag, value);
+      });
+    }
   }
 };
-
-this.UITourMetricsProvider = function() {
-  Metrics.Provider.call(this);
-}
-
-UITourMetricsProvider.prototype = Object.freeze({
-  __proto__: Metrics.Provider.prototype,
-
-  name: "org.mozilla.uitour",
-
-  measurementTypes: [
-    UITourTreatmentMeasurement1,
-  ],
-
-  recordTreatmentTag: function(tag, value) {
-    let m = this.getMeasurement(UITourTreatmentMeasurement1.prototype.name,
-                                UITourTreatmentMeasurement1.prototype.version);
-    let field = tag;
-
-    if (this.storage.hasFieldFromMeasurement(m.id, field,
-                                             DAILY_DISCRETE_TEXT_FIELD)) {
-      let fieldID = this.storage.fieldIDFromMeasurement(m.id, field);
-      return this.enqueueStorageOperation(function recordKnownField() {
-        return this.storage.addDailyDiscreteTextFromFieldID(fieldID, value);
-      }.bind(this));
-    }
-
-    // Otherwise, we first need to create the field.
-    return this.enqueueStorageOperation(function recordField() {
-      // This function has to return a promise.
-      return Task.spawn(function () {
-        let fieldID = yield this.storage.registerField(m.id, field,
-                                                       DAILY_DISCRETE_TEXT_FIELD);
-        yield this.storage.addDailyDiscreteTextFromFieldID(fieldID, value);
-      }.bind(this));
-    }.bind(this));
-  },
-});
 
 function UITourTreatmentMeasurement1() {
   Metrics.Measurement.call(this);
@@ -1950,23 +2112,66 @@ function UITourTreatmentMeasurement1() {
 
 }
 
-UITourTreatmentMeasurement1.prototype = Object.freeze({
-  __proto__: Metrics.Measurement.prototype,
+if (AppConstants.MOZ_SERVICES_HEALTHREPORT) {
 
-  name: "treatment",
-  version: 1,
+  const DAILY_DISCRETE_TEXT_FIELD = Metrics.Storage.FIELD_DAILY_DISCRETE_TEXT;
 
-  // our fields are dynamic
-  fields: { },
-
-  // We need a custom serializer because the default one doesn't accept unknown fields
-  _serializeJSONDaily: function(data) {
-    let result = {_v: this.version };
-
-    for (let [field, data] of data) {
-      result[field] = data;
-    }
-
-    return result;
+  this.UITourMetricsProvider = function() {
+    Metrics.Provider.call(this);
   }
-});
+
+  UITourMetricsProvider.prototype = Object.freeze({
+    __proto__: Metrics.Provider.prototype,
+
+    name: "org.mozilla.uitour",
+
+    measurementTypes: [
+      UITourTreatmentMeasurement1,
+    ],
+
+    recordTreatmentTag: function(tag, value) {
+      let m = this.getMeasurement(UITourTreatmentMeasurement1.prototype.name,
+                                  UITourTreatmentMeasurement1.prototype.version);
+      let field = tag;
+
+      if (this.storage.hasFieldFromMeasurement(m.id, field,
+                                               DAILY_DISCRETE_TEXT_FIELD)) {
+        let fieldID = this.storage.fieldIDFromMeasurement(m.id, field);
+        return this.enqueueStorageOperation(function recordKnownField() {
+          return this.storage.addDailyDiscreteTextFromFieldID(fieldID, value);
+        }.bind(this));
+      }
+
+      // Otherwise, we first need to create the field.
+      return this.enqueueStorageOperation(function recordField() {
+        // This function has to return a promise.
+        return Task.spawn(function () {
+          let fieldID = yield this.storage.registerField(m.id, field,
+                                                         DAILY_DISCRETE_TEXT_FIELD);
+          yield this.storage.addDailyDiscreteTextFromFieldID(fieldID, value);
+        }.bind(this));
+      }.bind(this));
+    },
+  });
+
+  UITourTreatmentMeasurement1.prototype = Object.freeze({
+    __proto__: Metrics.Measurement.prototype,
+
+    name: "treatment",
+    version: 1,
+
+    // our fields are dynamic
+    fields: { },
+
+    // We need a custom serializer because the default one doesn't accept unknown fields
+    _serializeJSONDaily: function(data) {
+      let result = {_v: this.version };
+
+      for (let [field, data] of data) {
+        result[field] = data;
+      }
+
+      return result;
+    }
+  });
+}

@@ -28,15 +28,18 @@ struct LoopUnroller
     TempAllocator& alloc;
 
     // Header and body of the original loop.
-    MBasicBlock* header, *backedge;
+    MBasicBlock* header;
+    MBasicBlock* backedge;
 
     // Header and body of the unrolled loop.
-    MBasicBlock* unrolledHeader, *unrolledBackedge;
+    MBasicBlock* unrolledHeader;
+    MBasicBlock* unrolledBackedge;
 
     // Old and new preheaders. The old preheader starts out associated with the
     // original loop, but becomes the preheader of the new loop. The new
     // preheader will be given to the original loop.
-    MBasicBlock* oldPreheader, *newPreheader;
+    MBasicBlock* oldPreheader;
+    MBasicBlock* newPreheader;
 
     // Map terms in the original loop to terms in the current unrolled iteration.
     DefinitionMap unrolledDefinitions;
@@ -48,7 +51,7 @@ struct LoopUnroller
     void go(LoopIterationBound* bound);
 };
 
-} // anonymous namespace
+} // namespace
 
 MDefinition*
 LoopUnroller::getReplacementDefinition(MDefinition* def)
@@ -184,6 +187,8 @@ LoopUnroller::go(LoopIterationBound* bound)
     // the original header.
     for (size_t i = 0; i < remainingIterationsInequality.numTerms(); i++) {
         MDefinition* def = remainingIterationsInequality.term(i).term;
+        if (def->isDiscarded())
+            return;
         if (def->block()->id() < header->id())
             continue;
         if (def->block() == header && def->isPhi())

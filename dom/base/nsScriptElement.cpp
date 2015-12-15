@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,10 +59,10 @@ nsScriptElement::ScriptEvaluated(nsresult aResult,
       nsContentUtils::GetContextForContent(cont);
 
     nsEventStatus status = nsEventStatus_eIgnore;
-    uint32_t type = NS_SUCCEEDED(aResult) ? NS_LOAD : NS_LOAD_ERROR;
-    WidgetEvent event(true, type);
+    EventMessage message = NS_SUCCEEDED(aResult) ? eLoad : eLoadError;
+    WidgetEvent event(true, message);
     // Load event doesn't bubble.
-    event.mFlags.mBubbles = (type != NS_LOAD);
+    event.mFlags.mBubbles = (message != eLoad);
 
     EventDispatcher::Dispatch(cont, presContext, &event, nullptr, &status);
   }
@@ -91,7 +92,8 @@ nsScriptElement::AttributeChanged(nsIDocument* aDocument,
                                   Element* aElement,
                                   int32_t aNameSpaceID,
                                   nsIAtom* aAttribute,
-                                  int32_t aModType)
+                                  int32_t aModType,
+                                  const nsAttrValue* aOldValue)
 {
   MaybeProcessScript();
 #if _TAINT_ON_
@@ -134,11 +136,12 @@ nsScriptElement::ContentInserted(nsIDocument *aDocument,
 {
   MaybeProcessScript();
 #if _TAINT_ON_
-    nsString aContentText;
-    bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
-    if(contResult && aContentText.isTainted()) {
-      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
-    }
+    //TAINT TODO
+    /*nsString aContentText;*/
+    //bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
+    //if(contResult && aContentText.isTainted()) {
+      //taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
+    /*}*/
 #endif
 }
 

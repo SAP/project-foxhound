@@ -14,6 +14,22 @@
 
 #include "js/Conversions.h"
 
+
+// This macro is should be `one' if current compiler supports builtin functions
+// like __builtin_sadd_overflow.
+#if __GNUC__ >= 5
+    // GCC 5 and above supports these functions.
+    #define BUILTIN_CHECKED_ARITHMETIC_SUPPORTED(x) 1
+#else
+    // For CLANG, we use its own function to check for this.
+    #ifdef __has_builtin
+        #define BUILTIN_CHECKED_ARITHMETIC_SUPPORTED(x) __has_builtin(x)
+    #endif
+#endif
+#ifndef BUILTIN_CHECKED_ARITHMETIC_SUPPORTED
+    #define BUILTIN_CHECKED_ARITHMETIC_SUPPORTED(x) 0
+#endif
+
 namespace js {
 
 class StringBuffer;
@@ -26,11 +42,11 @@ extern void
 FinishRuntimeNumberState(JSRuntime* rt);
 #endif
 
-} /* namespace js */
-
 /* Initialize the Number class, returning its prototype object. */
 extern JSObject*
-js_InitNumberClass(JSContext* cx, js::HandleObject obj);
+InitNumberClass(JSContext* cx, HandleObject obj);
+
+} /* namespace js */
 
 /*
  * String constants for global function names, used in jsapi.c and jsnum.c.
@@ -101,7 +117,7 @@ struct ToCStringBuf
  * Convert a number to a C string.  When base==10, this function implements
  * ToString() as specified by ECMA-262-5 section 9.8.1.  It handles integral
  * values cheaply.  Return nullptr if we ran out of memory.  See also
- * js_NumberToCString().
+ * NumberToCString().
  */
 extern char*
 NumberToCString(JSContext* cx, ToCStringBuf* cbuf, double d, int base = 10);
@@ -187,13 +203,13 @@ extern bool
 js_strtod(js::ExclusiveContext* cx, const CharT* begin, const CharT* end,
           const CharT** dEnd, double* d);
 
-extern bool
-js_num_toString(JSContext* cx, unsigned argc, js::Value* vp);
-
-extern bool
-js_num_valueOf(JSContext* cx, unsigned argc, js::Value* vp);
-
 namespace js {
+
+extern bool
+num_toString(JSContext* cx, unsigned argc, Value* vp);
+
+extern bool
+num_valueOf(JSContext* cx, unsigned argc, Value* vp);
 
 static MOZ_ALWAYS_INLINE bool
 ValueFitsInInt32(const Value& v, int32_t* pi)
@@ -262,27 +278,40 @@ bool ToLengthClamped(T* cx, HandleValue v, uint32_t* out, bool* overflow);
 inline bool
 SafeAdd(int32_t one, int32_t two, int32_t* res)
 {
+#if BUILTIN_CHECKED_ARITHMETIC_SUPPORTED(__builtin_sadd_overflow)
+    // Using compiler's builtin function.
+    return !__builtin_sadd_overflow(one, two, res);
+#else
     // Use unsigned for the 32-bit operation since signed overflow gets
     // undefined behavior.
     *res = uint32_t(one) + uint32_t(two);
     int64_t ores = (int64_t)one + (int64_t)two;
     return ores == (int64_t)*res;
+#endif
 }
 
 inline bool
 SafeSub(int32_t one, int32_t two, int32_t* res)
 {
+#if BUILTIN_CHECKED_ARITHMETIC_SUPPORTED(__builtin_ssub_overflow)
+    return !__builtin_ssub_overflow(one, two, res);
+#else
     *res = uint32_t(one) - uint32_t(two);
     int64_t ores = (int64_t)one - (int64_t)two;
     return ores == (int64_t)*res;
+#endif
 }
 
 inline bool
 SafeMul(int32_t one, int32_t two, int32_t* res)
 {
+#if BUILTIN_CHECKED_ARITHMETIC_SUPPORTED(__builtin_smul_overflow)
+    return !__builtin_smul_overflow(one, two, res);
+#else
     *res = uint32_t(one) * uint32_t(two);
     int64_t ores = (int64_t)one * (int64_t)two;
     return ores == (int64_t)*res;
+#endif
 }
 
 extern bool

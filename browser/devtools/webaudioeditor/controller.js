@@ -6,7 +6,7 @@
  * A collection of `AudioNodeModel`s used throughout the editor
  * to keep track of audio nodes within the audio context.
  */
-let gAudioNodes = new AudioNodesCollection();
+var gAudioNodes = new AudioNodesCollection();
 
 /**
  * Initializes the web audio editor views
@@ -37,7 +37,7 @@ function shutdownWebAudioEditor() {
 /**
  * Functions handling target-related lifetime events.
  */
-let WebAudioEditorController = {
+var WebAudioEditorController = {
   /**
    * Listen for events emitted by the current tab target.
    */
@@ -61,8 +61,15 @@ let WebAudioEditorController = {
     // with CSS
     gDevTools.on("pref-changed", this._onThemeChange);
 
-    // Store the AudioNode definitions from the WebAudioFront
-    AUDIO_NODE_DEFINITION = yield gFront.getDefinition();
+    // Store the AudioNode definitions from the WebAudioFront, if the method exists.
+    // If not, get the JSON directly. Using the actor method is preferable so the client
+    // knows exactly what methods are supported on the server.
+    let actorHasDefinition = yield gTarget.actorHasMethod("webaudio", "getDefinition");
+    if (actorHasDefinition) {
+      AUDIO_NODE_DEFINITION = yield gFront.getDefinition();
+    } else {
+      AUDIO_NODE_DEFINITION = require("devtools/server/actors/utils/audionodes.json");
+    }
   }),
 
   /**
@@ -178,9 +185,9 @@ let WebAudioEditorController = {
    * Called when a new node is created. Creates an `AudioNodeView` instance
    * for tracking throughout the editor.
    */
-  _onCreateNode: Task.async(function* (nodeActor) {
-    yield gAudioNodes.add(nodeActor);
-  }),
+  _onCreateNode: function (nodeActor) {
+    gAudioNodes.add(nodeActor);
+  },
 
   /**
    * Called on `destroy-node` when an AudioNode is GC'd. Removes

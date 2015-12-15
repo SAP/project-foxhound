@@ -18,8 +18,8 @@
 namespace mozilla {
 namespace gfx {
 class DrawTarget;
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 class gfxContext;
 class nsDisplaySVGPathGeometry;
@@ -30,9 +30,7 @@ class nsStyleContext;
 class nsSVGMarkerFrame;
 class nsSVGMarkerProperty;
 
-struct nsPoint;
 struct nsRect;
-struct nsIntRect;
 
 typedef nsFrame nsSVGPathGeometryFrameBase;
 

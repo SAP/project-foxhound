@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -113,6 +114,7 @@ private:
   bool PopBool(nsTArray<bool>& aStack);
 
   bool ShouldReplaceContainerWithPlaceholder(nsIAtom* aTag);
+  bool IsIgnorableRubyAnnotation(nsIAtom* aTag);
 
   bool IsElementPreformatted(mozilla::dom::Element* aElement);
   bool IsElementBlock(mozilla::dom::Element* aElement);
@@ -174,6 +176,9 @@ private:
   bool             mLineBreakDue;
 
   bool             mPreformattedBlockBoundary;
+
+  // Whether the output should include ruby annotations.
+  bool             mWithRubyAnnotation;
 
   nsString         mURL;
   int32_t          mHeaderStrategy;    /* Header strategy (pref)

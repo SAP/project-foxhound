@@ -23,14 +23,14 @@ struct JSRuntime;
 
 namespace JS {
     class ReadOnlyCompileOptions;
-}
+} // namespace JS
 
 namespace js {
 class PerThreadData;
 
 namespace jit {
     class CompileRuntime;
-}
+} // namespace jit
 
 /*
  * Tracelogging overview.
@@ -195,6 +195,10 @@ class TraceLoggerThread
     bool enable(JSContext* cx);
     bool disable();
 
+  private:
+    bool fail(JSContext* cx, const char* error);
+
+  public:
     // Given the previous iteration and lastEntryId, return an array of events
     // (there could be lost events). At the same time update the iteration and
     // lastEntry and gives back how many events there are.
@@ -435,7 +439,7 @@ inline void TraceLogStopEventPrivate(TraceLoggerThread* logger, uint32_t id) {
 }
 
 // Automatic logging at the start and end of function call.
-class AutoTraceLog
+class MOZ_RAII AutoTraceLog
 {
 #ifdef JS_TRACE_LOGGING
     TraceLoggerThread* logger;
@@ -517,6 +521,6 @@ class AutoTraceLog
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-}  /* namedata js */
+} // namespace js
 
 #endif /* TraceLogging_h */

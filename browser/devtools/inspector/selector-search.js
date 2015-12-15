@@ -6,7 +6,7 @@
 
 const { Cu } = require("chrome");
 
-const promise = require("resource://gre/modules/Promise.jsm").Promise;
+const promise = require("promise");
 loader.lazyGetter(this, "EventEmitter", () => require("devtools/toolkit/event-emitter"));
 loader.lazyGetter(this, "AutocompletePopup", () => require("devtools/shared/autocomplete-popup").AutocompletePopup);
 
@@ -46,6 +46,7 @@ function SelectorSearch(aInspector, aInputNode) {
   this._onHTMLSearch = this._onHTMLSearch.bind(this);
   this._onSearchKeypress = this._onSearchKeypress.bind(this);
   this._onListBoxKeypress = this._onListBoxKeypress.bind(this);
+  this._onMarkupMutation = this._onMarkupMutation.bind(this);
 
   // Options for the AutocompletePopup.
   let options = {
@@ -63,6 +64,7 @@ function SelectorSearch(aInspector, aInputNode) {
   // event listeners.
   this.searchBox.addEventListener("command", this._onHTMLSearch, true);
   this.searchBox.addEventListener("keypress", this._onSearchKeypress, true);
+  this.inspector.on("markupmutation", this._onMarkupMutation);
 
   // For testing, we need to be able to wait for the most recent node request
   // to finish.  Tests can watch this promise for that.
@@ -73,8 +75,9 @@ function SelectorSearch(aInspector, aInputNode) {
 exports.SelectorSearch = SelectorSearch;
 
 SelectorSearch.prototype = {
-
-  get walker() this.inspector.walker,
+  get walker() {
+    return this.inspector.walker;
+  },
 
   // The possible states of the query.
   States: {
@@ -169,6 +172,7 @@ SelectorSearch.prototype = {
     // event listeners.
     this.searchBox.removeEventListener("command", this._onHTMLSearch, true);
     this.searchBox.removeEventListener("keypress", this._onSearchKeypress, true);
+    this.inspector.off("markupmutation", this._onMarkupMutation);
     this.searchPopup.destroy();
     this.searchPopup = null;
     this.searchBox = null;
@@ -182,6 +186,20 @@ SelectorSearch.prototype = {
       this.inspector.selection.setNodeFront(node, "selectorsearch");
     });
   },
+
+  _queryNodes: Task.async(function*(query) {
+    if (typeof this.hasMultiFrameSearch === "undefined") {
+      let target = this.inspector.toolbox.target;
+      this.hasMultiFrameSearch = yield target.actorHasMethod("domwalker",
+        "multiFrameQuerySelectorAll");
+    }
+
+    if (this.hasMultiFrameSearch) {
+      return yield this.walker.multiFrameQuerySelectorAll(query);
+    } else {
+      return yield this.walker.querySelectorAll(this.walker.rootNode, query);
+    }
+  }),
 
   /**
    * The command callback for the input box. This function is automatically
@@ -211,7 +229,7 @@ SelectorSearch.prototype = {
     this.searchBox.setAttribute("filled", true);
     let queryList = null;
 
-    this._lastQuery = this.walker.querySelectorAll(this.walker.rootNode, query).then(list => {
+    this._lastQuery = this._queryNodes(query).then(list => {
       return list;
     }, (err) => {
       // Failures are ok here, just use a null item list;
@@ -409,18 +427,23 @@ SelectorSearch.prototype = {
   },
 
   /**
+   * Reset previous search results on markup-mutations to make sure we search
+   * again after nodes have been added/removed/changed.
+   */
+  _onMarkupMutation: function() {
+    this._searchResults = null;
+    this._lastSearched = null;
+  },
+
+  /**
    * Populates the suggestions list and show the suggestion popup.
    */
-  _showPopup: function(aList, aFirstPart) {
+  _showPopup: function(aList, aFirstPart, aState) {
     let total = 0;
     let query = this.searchBox.value;
-    let toLowerCase = false;
     let items = [];
-    // In case of tagNames, change the case to small.
-    if (query.match(/.*[\.#][^\.#]{0,}$/) == null) {
-      toLowerCase = true;
-    }
-    for (let [value, count] of aList) {
+
+    for (let [value, count, state] of aList) {
       // for cases like 'div ' or 'div >' or 'div+'
       if (query.match(/[\s>+]$/)) {
         value = query + value;
@@ -435,14 +458,27 @@ SelectorSearch.prototype = {
         let lastPart = query.match(/[a-zA-Z][#\.][^#\.\s>+]*$/)[0];
         value = query.slice(0, -1 * lastPart.length + 1) + value;
       }
+
       let item = {
         preLabel: query,
         label: value,
         count: count
       };
-      if (toLowerCase) {
+
+      // In case of tagNames, change the case to small
+      if (value.match(/.*[\.#][^\.#]{0,}$/) == null) {
         item.label = value.toLowerCase();
       }
+
+      // In case the query's state is tag and the item's state is id or class
+      // adjust the preLabel
+      if (aState === this.States.TAG && state === this.States.CLASS) {
+        item.preLabel = "." + item.preLabel;
+      }
+      if (aState === this.States.TAG && state === this.States.ID) {
+        item.preLabel = "#" + item.preLabel;
+      }
+
       items.unshift(item);
       if (++total > MAX_SUGGESTIONS - 1) {
         break;
@@ -463,19 +499,21 @@ SelectorSearch.prototype = {
    */
   showSuggestions: function() {
     let query = this.searchBox.value;
+    let state = this.state;
     let firstPart = "";
-    if (this.state == this.States.TAG) {
+
+    if (state == this.States.TAG) {
       // gets the tag that is being completed. For ex. 'div.foo > s' returns 's',
       // 'di' returns 'di' and likewise.
       firstPart = (query.match(/[\s>+]?([a-zA-Z]*)$/) || ["", query])[1];
       query = query.slice(0, query.length - firstPart.length);
     }
-    else if (this.state == this.States.CLASS) {
+    else if (state == this.States.CLASS) {
       // gets the class that is being completed. For ex. '.foo.b' returns 'b'
       firstPart = query.match(/\.([^\.]*)$/)[1];
       query = query.slice(0, query.length - firstPart.length - 1);
     }
-    else if (this.state == this.States.ID) {
+    else if (state == this.States.ID) {
       // gets the id that is being completed. For ex. '.foo#b' returns 'b'
       firstPart = query.match(/#([^#]*)$/)[1];
       query = query.slice(0, query.length - firstPart.length - 1);
@@ -485,21 +523,24 @@ SelectorSearch.prototype = {
     if (/[\s+>~]$/.test(query)) {
       query += "*";
     }
+
     this._currentSuggesting = query;
-    return this.walker.getSuggestionsForQuery(query, firstPart, this.state).then(result => {
+    return this.walker.getSuggestionsForQuery(query, firstPart, state).then(result => {
       if (this._currentSuggesting != result.query) {
         // This means that this response is for a previous request and the user
         // as since typed something extra leading to a new request.
         return;
       }
       this._lastToLastValidSearch = this._lastValidSearch;
-      if (this.state == this.States.CLASS) {
+
+      if (state == this.States.CLASS) {
         firstPart = "." + firstPart;
       }
-      else if (this.state == this.States.ID) {
+      else if (state == this.States.ID) {
         firstPart = "#" + firstPart;
       }
-      this._showPopup(result.suggestions, firstPart);
+
+      this._showPopup(result.suggestions, firstPart, state);
     });
   }
 };

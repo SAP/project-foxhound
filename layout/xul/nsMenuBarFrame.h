@@ -35,7 +35,9 @@ public:
   virtual nsMenuFrame* GetCurrentMenuItem() override;
   NS_IMETHOD SetCurrentMenuItem(nsMenuFrame* aMenuItem) override;
   virtual void CurrentMenuIsBeingDestroyed() override;
-  NS_IMETHOD ChangeMenuItem(nsMenuFrame* aMenuItem, bool aSelectFirstItem) override;
+  NS_IMETHOD ChangeMenuItem(nsMenuFrame* aMenuItem,
+                            bool aSelectFirstItem,
+                            bool aFromKey) override;
 
   NS_IMETHOD SetActive(bool aActiveFlag) override; 
 
@@ -101,7 +103,7 @@ public:
 #endif
 
 protected:
-  nsMenuBarListener* mMenuBarListener; // The listener that tells us about key and mouse events.
+  nsRefPtr<nsMenuBarListener> mMenuBarListener; // The listener that tells us about key and mouse events.
 
   // flag that is temporarily set when switching from one menu on the menubar to another
   // to indicate that the menubar should not be deactivated.

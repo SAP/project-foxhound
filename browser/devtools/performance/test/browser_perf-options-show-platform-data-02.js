@@ -4,19 +4,18 @@
 /**
  * Tests that the js flamegraphs get rerendered when toggling `show-platform-data`
  */
-function spawnTest () {
+function* spawnTest() {
   let { panel } = yield initPerformance(SIMPLE_URL);
   let { EVENTS, DetailsView, JsFlameGraphView } = panel.panelWin;
 
   Services.prefs.setBoolPref(PLATFORM_DATA_PREF, false);
 
-  yield DetailsView.selectView("js-flamegraph");
-
   yield startRecording(panel);
   yield busyWait(100);
+  yield stopRecording(panel);
 
   let rendered = once(JsFlameGraphView, EVENTS.JS_FLAMEGRAPH_RENDERED);
-  yield stopRecording(panel);
+  yield DetailsView.selectView("js-flamegraph");
   yield rendered;
 
   rendered = once(JsFlameGraphView, EVENTS.JS_FLAMEGRAPH_RENDERED);

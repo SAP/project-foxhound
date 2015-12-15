@@ -5,34 +5,59 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG['MOZ_B2G_BT']:
-    SOURCES += [
-        'BluetoothAdapter.cpp',
-        'BluetoothDevice.cpp',
-        'BluetoothHidManager.cpp',
-        'BluetoothInterface.cpp',
-        'BluetoothManager.cpp',
-        'BluetoothProfileController.cpp',
-        'BluetoothPropertyContainer.cpp',
-        'BluetoothReplyRunnable.cpp',
-        'BluetoothService.cpp',
-        'BluetoothUtils.cpp',
-        'BluetoothUuid.cpp',
-        'ipc/BluetoothChild.cpp',
-        'ipc/BluetoothParent.cpp',
-        'ipc/BluetoothServiceChildProcess.cpp',
-        'ObexBase.cpp'
-    ]
+
+    #
+    # Generic code
+    #
 
     if CONFIG['MOZ_B2G_RIL']:
         SOURCES += [
-            'BluetoothRilListener.cpp',
+            'common/BluetoothRilListener.cpp'
         ]
+
+    SOURCES += [
+        'common/BluetoothHidManager.cpp',
+        'common/BluetoothInterface.cpp',
+        'common/BluetoothProfileController.cpp',
+        'common/BluetoothReplyRunnable.cpp',
+        'common/BluetoothService.cpp',
+        'common/BluetoothUtils.cpp',
+        'common/BluetoothUuid.cpp',
+        'common/ObexBase.cpp',
+        'common/webapi/BluetoothAdapter.cpp',
+        'common/webapi/BluetoothClassOfDevice.cpp',
+        'common/webapi/BluetoothDevice.cpp',
+        'common/webapi/BluetoothDiscoveryHandle.cpp',
+        'common/webapi/BluetoothGatt.cpp',
+        'common/webapi/BluetoothGattCharacteristic.cpp',
+        'common/webapi/BluetoothGattDescriptor.cpp',
+        'common/webapi/BluetoothGattServer.cpp',
+        'common/webapi/BluetoothGattService.cpp',
+        'common/webapi/BluetoothLeDeviceEvent.cpp',
+        'common/webapi/BluetoothManager.cpp',
+        'common/webapi/BluetoothPairingHandle.cpp',
+        'common/webapi/BluetoothPairingListener.cpp',
+        'common/webapi/BluetoothPbapRequestHandle.cpp',
+        'ipc/BluetoothChild.cpp',
+        'ipc/BluetoothParent.cpp',
+        'ipc/BluetoothServiceChildProcess.cpp'
+    ]
+    LOCAL_INCLUDES += [
+        'common',
+        'common/webapi',
+        'ipc'
+    ]
+
+    #
+    # Bluetooth backends
+    #
 
     if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
         if CONFIG['MOZ_B2G_BT_BLUEZ']:
             CXXFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
             SOURCES += [
                 'bluez/BluetoothA2dpManager.cpp',
+                'bluez/BluetoothAvrcpManager.cpp',
                 'bluez/BluetoothDBusService.cpp',
                 'bluez/BluetoothHfpManager.cpp',
                 'bluez/BluetoothOppManager.cpp',
@@ -43,25 +68,26 @@ if CONFIG['MOZ_B2G_BT']:
                 'bluez',
             ]
             DEFINES['MOZ_B2G_BT_BLUEZ'] = True
-        elif CONFIG['MOZ_B2G_BT_BLUEDROID']:
+        elif CONFIG['MOZ_B2G_BT_DAEMON']:
             SOURCES += [
-                'bluedroid/BluetoothA2dpHALInterface.cpp',
                 'bluedroid/BluetoothA2dpManager.cpp',
-                'bluedroid/BluetoothAvrcpHALInterface.cpp',
+                'bluedroid/BluetoothAvrcpManager.cpp',
                 'bluedroid/BluetoothDaemonA2dpInterface.cpp',
                 'bluedroid/BluetoothDaemonAvrcpInterface.cpp',
+                'bluedroid/BluetoothDaemonCoreInterface.cpp',
+                'bluedroid/BluetoothDaemonGattInterface.cpp',
                 'bluedroid/BluetoothDaemonHandsfreeInterface.cpp',
                 'bluedroid/BluetoothDaemonHelpers.cpp',
                 'bluedroid/BluetoothDaemonInterface.cpp',
                 'bluedroid/BluetoothDaemonSetupInterface.cpp',
                 'bluedroid/BluetoothDaemonSocketInterface.cpp',
-                'bluedroid/BluetoothHALHelpers.cpp',
-                'bluedroid/BluetoothHALInterface.cpp',
-                'bluedroid/BluetoothHandsfreeHALInterface.cpp',
+                'bluedroid/BluetoothGattManager.cpp',
+                'bluedroid/BluetoothMapFolder.cpp',
+                'bluedroid/BluetoothMapSmsManager.cpp',
                 'bluedroid/BluetoothOppManager.cpp',
+                'bluedroid/BluetoothPbapManager.cpp',
                 'bluedroid/BluetoothServiceBluedroid.cpp',
                 'bluedroid/BluetoothSocket.cpp',
-                'bluedroid/BluetoothSocketHALInterface.cpp',
                 'bluedroid/BluetoothSocketMessageWatcher.cpp'
             ]
             LOCAL_INCLUDES += [
@@ -83,9 +109,7 @@ if CONFIG['MOZ_B2G_BT']:
                     'bluedroid/hfp-fallback',
                 ]
 
-            DEFINES['MOZ_B2G_BT_BLUEDROID'] = True
-            if CONFIG['MOZ_B2G_BT_DAEMON']:
-                DEFINES['MOZ_B2G_BT_DAEMON'] = True
+            DEFINES['MOZ_B2G_BT_DAEMON'] = True
     elif CONFIG['MOZ_ENABLE_DBUS']:
         CFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
         CFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
@@ -103,33 +127,40 @@ if CONFIG['MOZ_B2G_BT']:
 
     FINAL_LIBRARY = 'xul'
 
-    LOCAL_INCLUDES += [
-        'ipc',
-    ]
+#
+# Exported interfaces
+#
 
 EXPORTS.mozilla.dom.bluetooth.ipc += [
     'ipc/BluetoothMessageUtils.h',
 ]
-
 EXPORTS.mozilla.dom.bluetooth += [
-    'BluetoothAdapter.h',
-    'BluetoothCommon.h',
-    'BluetoothDevice.h',
-    'BluetoothManager.h',
+    'common/BluetoothCommon.h',
+    'common/webapi/BluetoothAdapter.h',
+    'common/webapi/BluetoothClassOfDevice.h',
+    'common/webapi/BluetoothDevice.h',
+    'common/webapi/BluetoothDiscoveryHandle.h',
+    'common/webapi/BluetoothGatt.h',
+    'common/webapi/BluetoothGattCharacteristic.h',
+    'common/webapi/BluetoothGattDescriptor.h',
+    'common/webapi/BluetoothGattServer.h',
+    'common/webapi/BluetoothGattService.h',
+    'common/webapi/BluetoothLeDeviceEvent.h',
+    'common/webapi/BluetoothManager.h',
+    'common/webapi/BluetoothPairingHandle.h',
+    'common/webapi/BluetoothPairingListener.h',
+    'common/webapi/BluetoothPbapRequestHandle.h'
 ]
-
 IPDL_SOURCES += [
     'ipc/BluetoothTypes.ipdlh',
     'ipc/PBluetooth.ipdl',
-    'ipc/PBluetoothRequest.ipdl',
+    'ipc/PBluetoothRequest.ipdl'
 ]
-
-FAIL_ON_WARNINGS = True
 
 LOCAL_INCLUDES += [
     '../base',
     '../network',
-    '../system/gonk',
+    '../system/gonk'
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

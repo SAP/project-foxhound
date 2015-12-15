@@ -20,7 +20,7 @@ IsCustomClass(JS::Handle<JS::Value> v)
 }
 
 static bool
-CustomMethodImpl(JSContext* cx, CallArgs args)
+CustomMethodImpl(JSContext* cx, const CallArgs& args)
 {
   MOZ_RELEASE_ASSERT(IsCustomClass(args.thisv()));
   args.rval().set(JS_GetReservedSlot(&args.thisv().toObject(), CUSTOM_SLOT));
@@ -45,7 +45,7 @@ BEGIN_TEST(test_CallNonGenericMethodOnProxy)
   JS_SetReservedSlot(customA, CUSTOM_SLOT, Int32Value(17));
 
   JS::RootedFunction customMethodA(cx, JS_NewFunction(cx, CustomMethod, 0, 0,
-                                                      customA, "customMethodA"));
+                                                      "customMethodA"));
   CHECK(customMethodA);
 
   JS::RootedValue rval(cx);
@@ -64,7 +64,8 @@ BEGIN_TEST(test_CallNonGenericMethodOnProxy)
     CHECK(customB);
     JS_SetReservedSlot(customB, CUSTOM_SLOT, Int32Value(42));
 
-    JS::RootedFunction customMethodB(cx, JS_NewFunction(cx, CustomMethod, 0, 0, customB, "customMethodB"));
+    JS::RootedFunction customMethodB(cx, JS_NewFunction(cx, CustomMethod, 0, 0,
+							"customMethodB"));
     CHECK(customMethodB);
 
     JS::RootedValue rval(cx);

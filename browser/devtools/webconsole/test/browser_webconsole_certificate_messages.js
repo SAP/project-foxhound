@@ -4,17 +4,17 @@
 
 // Tests that the Web Console shows weak crypto warnings (SHA-1 Certificate, SSLv3, and RC4)
 
-const TEST_URI = "data:text/html;charset=utf8,Web Console weak crypto warnings test";
-const TEST_URI_PATH = "/browser/browser/devtools/webconsole/test/test-certificate-messages.html";
+"use strict";
 
-let gWebconsoleTests = [
+const TEST_URI = "data:text/html;charset=utf8,Web Console weak crypto " +
+                 "warnings test";
+const TEST_URI_PATH = "/browser/browser/devtools/webconsole/test/" +
+                      "test-certificate-messages.html";
+
+var gWebconsoleTests = [
   {url: "https://sha1ee.example.com" + TEST_URI_PATH,
    name: "SHA1 warning displayed successfully",
    warning: ["SHA-1"], nowarning: ["SSL 3.0", "RC4"]},
-  {url: "https://ssl3.example.com" + TEST_URI_PATH,
-   name: "SSL3 warning displayed successfully",
-   pref: [["security.tls.version.min", 0]],
-   warning: ["SSL 3.0"], nowarning: ["SHA-1", "RC4"]},
   {url: "https://rc4.example.com" + TEST_URI_PATH,
    name: "RC4 warning displayed successfully",
    pref: [["security.tls.insecure_fallback_hosts", "rc4.example.com"]],
@@ -23,22 +23,17 @@ let gWebconsoleTests = [
    name: "Unrestricted RC4 fallback worked",
    pref: [["security.tls.unrestricted_rc4_fallback", true]],
    warning: ["RC4"], nowarning: ["SHA-1", "SSL 3.0"]},
-  {url: "https://ssl3rc4.example.com" + TEST_URI_PATH,
-   name: "SSL3 and RC4 warning displayed successfully",
-   pref: [["security.tls.version.min", 0],
-          ["security.tls.insecure_fallback_hosts", "ssl3rc4.example.com"]],
-   warning: ["SSL 3.0", "RC4"], nowarning: ["SHA-1"]},
   {url: "https://sha256ee.example.com" + TEST_URI_PATH,
    name: "SSL warnings appropriately not present",
    warning: [], nowarning: ["SHA-1", "SSL 3.0", "RC4"]},
 ];
 const TRIGGER_MSG = "If you haven't seen ssl warnings yet, you won't";
 
-let gHud = undefined, gContentBrowser;
-let gCurrentTest;
+var gHud = undefined, gContentBrowser;
+var gCurrentTest;
 
 function test() {
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     gHud = gContentBrowser = null;
   });
 
@@ -69,9 +64,8 @@ function runTestLoop(theHud) {
   }
 }
 
-function onLoad(aEvent) {
+function onLoad() {
   gContentBrowser.removeEventListener("load", onLoad, true);
-  let aOutputNode = gHud.outputNode;
 
   waitForSuccess({
       name: gCurrentTest.name,

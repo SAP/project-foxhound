@@ -8,7 +8,7 @@
 
 #include <cstdarg>
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #ifdef ANDROID
 #include <android/log.h>
 #endif
@@ -36,6 +36,7 @@
 #include "xpcprivate.h"
 #include "xpcpublic.h"
 #include "nsContentUtils.h"
+#include "nsXULAppAPI.h"
 #include "WrapperFactory.h"
 
 #include "mozilla/AddonPathService.h"
@@ -68,12 +69,10 @@ static const char kJSCachePrefix[] = "jsloader";
 #define XPC_SERIALIZATION_BUFFER_SIZE   (64 * 1024)
 #define XPC_DESERIALIZATION_BUFFER_SIZE (12 * 8192)
 
-#ifdef PR_LOGGING
 // NSPR_LOG_MODULES=JSComponentLoader:5
 static PRLogModuleInfo* gJSCLLog;
-#endif
 
-#define LOG(args) PR_LOG(gJSCLLog, PR_LOG_DEBUG, args)
+#define LOG(args) MOZ_LOG(gJSCLLog, mozilla::LogLevel::Debug, args)
 
 // Components.utils.import error messages
 #define ERROR_SCOPE_OBJ "%s - Second argument must be an object."
@@ -117,7 +116,7 @@ Dump(JSContext* cx, unsigned argc, Value* vp)
 }
 
 static bool
-Debug(JSContext* cx, unsigned argc, jsval* vp)
+Debug(JSContext* cx, unsigned argc, Value* vp)
 {
 #ifdef DEBUG
     return Dump(cx, argc, vp);
@@ -198,11 +197,9 @@ mozJSComponentLoader::mozJSComponentLoader()
 {
     MOZ_ASSERT(!sSelf, "mozJSComponentLoader should be a singleton");
 
-#ifdef PR_LOGGING
     if (!gJSCLLog) {
         gJSCLLog = PR_NewLogModule("JSComponentLoader");
     }
-#endif
 
     sSelf = this;
 }
@@ -372,35 +369,7 @@ mozJSComponentLoader::LoadModule(FileLocation& aFile)
         return nullptr;
 
     JSAutoCompartment ac(cx, entry->obj);
-
-    nsCOMPtr<nsIXPConnectJSObjectHolder> cm_holder;
-    rv = xpc->WrapNative(cx, entry->obj, cm,
-                         NS_GET_IID(nsIComponentManager),
-                         getter_AddRefs(cm_holder));
-
-    if (NS_FAILED(rv)) {
-        return nullptr;
-    }
-
-    JSObject* cm_jsobj = cm_holder->GetJSObject();
-    if (!cm_jsobj) {
-        return nullptr;
-    }
-
-    nsCOMPtr<nsIXPConnectJSObjectHolder> file_holder;
     RootedObject entryObj(cx, entry->obj);
-    rv = xpc->WrapNative(cx, entryObj, file,
-                         NS_GET_IID(nsIFile),
-                         getter_AddRefs(file_holder));
-
-    if (NS_FAILED(rv)) {
-        return nullptr;
-    }
-
-    JSObject* file_jsobj = file_holder->GetJSObject();
-    if (!file_jsobj) {
-        return nullptr;
-    }
 
     RootedValue NSGetFactory_val(cx);
     if (!JS_GetProperty(cx, entryObj, "NSGetFactory", &NSGetFactory_val) ||
@@ -472,34 +441,28 @@ mozJSComponentLoader::FindTargetObject(JSContext* aCx,
     return NS_OK;
 }
 
-/* static */ size_t
-mozJSComponentLoader::DataEntrySizeOfExcludingThis(const nsACString& aKey,
-                                                   ModuleEntry* const& aData,
-                                                   MallocSizeOf aMallocSizeOf, void*)
+// This requires that the keys be strings and the values be pointers.
+template <class Key, class Data, class UserData>
+static size_t
+SizeOfTableExcludingThis(const nsBaseHashtable<Key, Data, UserData>& aTable,
+                         MallocSizeOf aMallocSizeOf)
 {
-    return aKey.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
-        aData->SizeOfIncludingThis(aMallocSizeOf);
-}
-
-/* static */ size_t
-mozJSComponentLoader::ClassEntrySizeOfExcludingThis(const nsACString& aKey,
-                                                    const nsAutoPtr<ModuleEntry>& aData,
-                                                    MallocSizeOf aMallocSizeOf, void*)
-{
-    return aKey.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
-        aData->SizeOfIncludingThis(aMallocSizeOf);
+    size_t n = aTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (auto iter = aTable.ConstIter(); !iter.Done(); iter.Next()) {
+        n += iter.Key().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+        n += iter.Data()->SizeOfIncludingThis(aMallocSizeOf);
+    }
+    return n;
 }
 
 size_t
 mozJSComponentLoader::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf)
 {
-    size_t amount = aMallocSizeOf(this);
-
-    amount += mModules.SizeOfExcludingThis(DataEntrySizeOfExcludingThis, aMallocSizeOf);
-    amount += mImports.SizeOfExcludingThis(ClassEntrySizeOfExcludingThis, aMallocSizeOf);
-    amount += mInProgressImports.SizeOfExcludingThis(DataEntrySizeOfExcludingThis, aMallocSizeOf);
-
-    return amount;
+    size_t n = aMallocSizeOf(this);
+    n += SizeOfTableExcludingThis(mModules, aMallocSizeOf);
+    n += SizeOfTableExcludingThis(mImports, aMallocSizeOf);
+    n += SizeOfTableExcludingThis(mInProgressImports, aMallocSizeOf);
+    return n;
 }
 
 // Some stack based classes for cleaning up on early return
@@ -614,17 +577,18 @@ mozJSComponentLoader::PrepareObjectForLocation(JSContext* aCx,
     if (testFile) {
         *aRealFile = true;
 
-        nsCOMPtr<nsIXPConnectJSObjectHolder> locationHolder;
-        rv = xpc->WrapNative(aCx, obj, aComponentFile,
-                             NS_GET_IID(nsIFile),
-                             getter_AddRefs(locationHolder));
-        NS_ENSURE_SUCCESS(rv, nullptr);
+        if (XRE_IsParentProcess()) {
+            RootedObject locationObj(aCx);
 
-        RootedObject locationObj(aCx, locationHolder->GetJSObject());
-        NS_ENSURE_TRUE(locationObj, nullptr);
+            rv = xpc->WrapNative(aCx, obj, aComponentFile,
+                                 NS_GET_IID(nsIFile),
+                                 locationObj.address());
+            NS_ENSURE_SUCCESS(rv, nullptr);
+            NS_ENSURE_TRUE(locationObj, nullptr);
 
-        if (!JS_DefineProperty(aCx, obj, "__LOCATION__", locationObj, 0))
-            return nullptr;
+            if (!JS_DefineProperty(aCx, obj, "__LOCATION__", locationObj, 0))
+                return nullptr;
+        }
     }
 
     nsAutoCString nativePath;
@@ -642,7 +606,8 @@ mozJSComponentLoader::PrepareObjectForLocation(JSContext* aCx,
     if (createdNewGlobal) {
         // AutoEntryScript required to invoke debugger hook, which is a
         // Gecko-specific concept at present.
-        dom::AutoEntryScript aes(NativeGlobal(holder->GetJSObject()));
+        dom::AutoEntryScript aes(NativeGlobal(holder->GetJSObject()),
+                                 "component loader report global");
         RootedObject global(aes.cx(), holder->GetJSObject());
         JS_FireOnNewGlobalObject(aes.cx(), global);
     }
@@ -671,6 +636,7 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
     RootedObject obj(cx, PrepareObjectForLocation(cx, aComponentFile, aInfo.URI(),
                                                   mReuseLoaderGlobal, &realFile));
     NS_ENSURE_TRUE(obj, NS_ERROR_FAILURE);
+    MOZ_ASSERT(JS_IsGlobalObject(obj) == !mReuseLoaderGlobal);
 
     JSAutoCompartment ac(cx, obj);
 
@@ -778,7 +744,7 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             }
 
             if (!mReuseLoaderGlobal) {
-                Compile(cx, obj, options, buf, fileSize32, &script);
+                Compile(cx, options, buf, fileSize32, &script);
             } else {
                 // Note: exceptions will get handled further down;
                 // don't early return for them here.
@@ -828,8 +794,7 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             }
 
             if (!mReuseLoaderGlobal) {
-                script = Compile(cx, obj, options, buf,
-                                     fileSize32);
+                script = Compile(cx, options, buf, fileSize32);
             } else {
                 // Note: exceptions will get handled further down;
                 // don't early return for them here.
@@ -874,7 +839,7 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             buf[len] = '\0';
 
             if (!mReuseLoaderGlobal) {
-                Compile(cx, obj, options, buf, bytesRead, &script);
+                Compile(cx, options, buf, bytesRead, &script);
             } else {
                 // Note: exceptions will get handled further down;
                 // don't early return for them here.
@@ -897,6 +862,12 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
     if (!script && !function) {
         return NS_ERROR_FAILURE;
     }
+
+    // We must have a script or a function (but not both!) here.  We have a
+    // script when we're not reusing the loader global, and a function
+    // otherwise.
+    MOZ_ASSERT(!!script != !!function);
+    MOZ_ASSERT(!!script == JS_IsGlobalObject(obj));
 
     if (writeToCache) {
         // We successfully compiled the script, so cache it.
@@ -935,12 +906,13 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
         // We're going to run script via JS_ExecuteScript or
         // JS_CallFunction, so we need an AutoEntryScript.
         // This is Gecko-specific and not in any spec.
-        dom::AutoEntryScript aes(NativeGlobal(CurrentGlobalOrNull(cx)));
+        dom::AutoEntryScript aes(NativeGlobal(CurrentGlobalOrNull(cx)),
+                                 "component loader load module");
         AutoSaveContextOptions asco(cx);
         if (aPropagateExceptions)
             ContextOptionsRef(cx).setDontReportUncaught(true);
         if (script) {
-            ok = JS_ExecuteScript(cx, obj, script);
+            ok = JS_ExecuteScript(cx, script);
         } else {
             RootedValue rval(cx);
             ok = JS_CallFunction(cx, obj, function, JS::HandleValueArray::empty(), &rval);
@@ -1079,7 +1051,6 @@ mozJSComponentLoader::ImportInto(const nsACString& aLocation,
     return NS_OK;
 }
 
-/* boolean isModuleLoaded (in AUTF8String registryLocation); */
 NS_IMETHODIMP
 mozJSComponentLoader::IsModuleLoaded(const nsACString& aLocation,
                                      bool* retval)

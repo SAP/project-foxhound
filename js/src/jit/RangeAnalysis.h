@@ -81,7 +81,7 @@ struct SymbolicBound : public TempObject
     // Computed symbolic bound, see above.
     LinearSum sum;
 
-    void print(Sprinter& sp) const;
+    void dump(GenericPrinter& out) const;
     void dump() const;
 };
 
@@ -106,6 +106,7 @@ class RangeAnalysis
     bool addRangeAssertions();
     bool removeBetaNodes();
     bool prepareForUCE(bool* shouldRemoveDeadCode);
+    bool tryRemovingGuards();
     bool truncate();
 
     // Any iteration bounds discovered for loops in the graph.
@@ -449,8 +450,7 @@ class Range : public TempObject {
         return r;
     }
 
-    void print(Sprinter& sp) const;
-    void dump(FILE* fp) const;
+    void dump(GenericPrinter& out) const;
     void dump() const;
     bool update(const Range* other);
 

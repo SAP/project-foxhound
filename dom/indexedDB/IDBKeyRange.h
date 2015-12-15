@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,9 +31,10 @@ namespace indexedDB {
 
 class SerializedKeyRange;
 
-class IDBKeyRange final
+class IDBKeyRange
   : public nsISupports
 {
+protected:
   nsCOMPtr<nsISupports> mGlobal;
   Key mLower;
   Key mUpper;
@@ -141,7 +142,7 @@ public:
 
   // WebIDL
   bool
-  WrapObject(JSContext* aCx, JS::MutableHandle<JSObject*> aReflector);
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector);
 
   nsISupports*
   GetParentObject() const
@@ -169,13 +170,39 @@ public:
     return mUpperOpen;
   }
 
-private:
+protected:
   IDBKeyRange(nsISupports* aGlobal,
               bool aLowerOpen,
               bool aUpperOpen,
               bool aIsOnly);
 
-  ~IDBKeyRange();
+  virtual ~IDBKeyRange();
+};
+
+class IDBLocaleAwareKeyRange final
+  : public IDBKeyRange
+{
+  IDBLocaleAwareKeyRange(nsISupports* aGlobal,
+                         bool aLowerOpen,
+                         bool aUpperOpen,
+                         bool aIsOnly);
+
+  ~IDBLocaleAwareKeyRange();
+
+public:
+  static already_AddRefed<IDBLocaleAwareKeyRange>
+  Bound(const GlobalObject& aGlobal,
+        JS::Handle<JS::Value> aLower,
+        JS::Handle<JS::Value> aUpper,
+        bool aLowerOpen,
+        bool aUpperOpen,
+        ErrorResult& aRv);
+
+  NS_DECL_ISUPPORTS_INHERITED
+
+  // WebIDL
+  bool
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector);
 };
 
 } // namespace indexedDB

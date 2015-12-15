@@ -23,7 +23,9 @@ enum MyTestEnum {
              object obj1,
              object? obj2, sequence<Dict> seq, optional any any2,
              optional object obj3,
-             optional object? obj4),
+             optional object? obj4,
+             Uint8Array typedArr,
+             ArrayBuffer arrayBuf),
  JSImplementation="@mozilla.org/test-js-impl-interface;1"]
 interface TestJSImplInterface {
   // Integer types
@@ -551,6 +553,17 @@ interface TestJSImplInterface {
   Date receiveDate();
   Date? receiveNullableDate();
 
+  // Promise types
+  void passPromise(Promise<any> arg);
+  void passNullablePromise(Promise<any>? arg);
+  void passOptionalPromise(optional Promise<any> arg);
+  void passOptionalNullablePromise(optional Promise<any>? arg);
+  void passOptionalNullablePromiseWithDefaultValue(optional Promise<any>? arg = null);
+  void passPromiseSequence(sequence<Promise<any>> arg);
+  void passNullablePromiseSequence(sequence<Promise<any>?> arg);
+  Promise<any> receivePromise();
+  Promise<any> receiveAddrefedPromise();
+
   // binaryNames tests
   void methodRenamedFrom();
   [BinaryName="otherMethodRenamedTo"]
@@ -562,6 +575,7 @@ interface TestJSImplInterface {
   attribute byte otherAttributeRenamedFrom;
 
   void passDictionary(optional Dict x);
+  void passDictionary2(Dict x);
   [Cached, Pure]
   readonly attribute Dict readonlyDictionary;
   [Cached, Pure]
@@ -602,12 +616,28 @@ interface TestJSImplInterface {
   AnotherNameForTestJSImplInterface exerciseTypedefInterfaces2(NullableTestJSImplInterface arg);
   void exerciseTypedefInterfaces3(YetAnotherNameForTestJSImplInterface arg);
 
+  // Deprecated methods and attributes
+  [Deprecated="GetAttributeNode"]
+  attribute byte deprecatedAttribute;
+  [Deprecated="GetAttributeNode"]
+  byte deprecatedMethod();
+  [Deprecated="GetAttributeNode"]
+  void deprecatedMethodWithContext(any arg);
+
   // Static methods and attributes
   // FIXME: Bug 863952 Static things are not supported yet
   /*
   static attribute boolean staticAttribute;
   static void staticMethod(boolean arg);
   static void staticMethodWithContext(any arg);
+
+  // Deprecated static methods and attributes
+  [Deprecated="GetAttributeNode"]
+  static attribute byte staticDeprecatedAttribute;
+  [Deprecated="GetAttributeNode"]
+  static byte staticDeprecatedMethod();
+  [Deprecated="GetAttributeNode"]
+  static byte staticDeprecatedMethodWithContext();
   */
 
   // Overload resolution tests

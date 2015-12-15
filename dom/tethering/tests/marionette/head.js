@@ -38,7 +38,7 @@ function Deferred()  {
   Object.freeze(this);
 }
 
-let gTestSuite = (function() {
+var gTestSuite = (function() {
   let suite = {};
 
   let tetheringManager;
@@ -216,6 +216,14 @@ let gTestSuite = (function() {
    */
   function setDataApnSettings(aApnSettings, aAllowError) {
     return setSettings1(SETTINGS_KEY_DATA_APN_SETTINGS, aApnSettings, aAllowError);
+  }
+
+  /**
+   * Set 'ro.tethering.dun_required' system property to 1. Note that this is a
+   * 'ro' property, it can only be set once.
+   */
+  function setTetheringDunRequired() {
+    return runEmulatorShellSafe(['setprop', 'ro.tethering.dun_required', '1']);
   }
 
   /**
@@ -704,6 +712,7 @@ let gTestSuite = (function() {
   suite.setWifiTetheringEnabled = setWifiTetheringEnabled;
   suite.getDataApnSettings = getDataApnSettings;
   suite.setDataApnSettings = setDataApnSettings;
+  suite.setTetheringDunRequired = setTetheringDunRequired;
 
 
   /**

@@ -29,7 +29,7 @@ const Cu = Components.utils;
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
 
-let PdfjsContentUtils = {
+var PdfjsContentUtils = {
   _mm: null,
 
   /*
@@ -112,7 +112,7 @@ let PdfjsContentUtils = {
    * Request the display of a notification warning in the associated window
    * when the renderer isn't sure a pdf displayed correctly.
    */
-  displayWarning: function (aWindow, aMessage, aCallback, aLabel, accessKey) {
+  displayWarning: function (aWindow, aMessage, aLabel, accessKey) {
     // the child's dom frame mm associated with the window.
     let winmm = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
                        .getInterface(Ci.nsIDocShell)
@@ -122,8 +122,6 @@ let PdfjsContentUtils = {
       message: aMessage,
       label: aLabel,
       accessKey: accessKey
-    }, {
-      callback: aCallback
     });
   },
 
@@ -149,56 +147,6 @@ let PdfjsContentUtils = {
         }
         break;
     }
-  },
-
-  /*
-   * CPOWs
-   */
-
-  getChromeWindow: function (aWindow) {
-    let winmm = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIDocShell)
-                        .sameTypeRootTreeItem
-                        .QueryInterface(Ci.nsIDocShell)
-                        .QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIContentFrameMessageManager);
-    // Sync calls don't support cpow wrapping of returned results, so we
-    // send over a small container for the object we want.
-    let suitcase = {
-      _window: null,
-      setChromeWindow: function (aObj) {
-        this._window = aObj;
-      }
-    };
-    if (!winmm.sendSyncMessage('PDFJS:Parent:getChromeWindow', {},
-                               { suitcase: suitcase })[0]) {
-      Cu.reportError('A request for a CPOW wrapped chrome window ' +
-                     'failed for unknown reasons.');
-      return null;
-    }
-    return suitcase._window;
-  },
-
-  getFindBar: function (aWindow) {
-    let winmm = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIDocShell)
-                        .sameTypeRootTreeItem
-                        .QueryInterface(Ci.nsIDocShell)
-                        .QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIContentFrameMessageManager);
-    let suitcase = {
-      _findbar: null,
-      setFindBar: function (aObj) {
-        this._findbar = aObj;
-      }
-    };
-    if (!winmm.sendSyncMessage('PDFJS:Parent:getFindBar', {},
-                               { suitcase: suitcase })[0]) {
-      Cu.reportError('A request for a CPOW wrapped findbar ' +
-                     'failed for unknown reasons.');
-      return null;
-    }
-    return suitcase._findbar;
   }
 };
 

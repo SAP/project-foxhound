@@ -226,24 +226,7 @@ nsChromeRegistryChrome::IsLocaleRTL(const nsACString& package, bool *aResult)
   if (locale.Length() < 2)
     return NS_OK;
 
-  // first check the intl.uidirection.<locale> preference, and if that is not
-  // set, check the same preference but with just the first two characters of
-  // the locale. If that isn't set, default to left-to-right.
-  nsAutoCString prefString = NS_LITERAL_CSTRING("intl.uidirection.") + locale;
-  nsCOMPtr<nsIPrefBranch> prefBranch (do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (!prefBranch)
-    return NS_OK;
-
-  nsXPIDLCString dir;
-  prefBranch->GetCharPref(prefString.get(), getter_Copies(dir));
-  if (dir.IsEmpty()) {
-    int32_t hyphen = prefString.FindChar('-');
-    if (hyphen >= 1) {
-      nsAutoCString shortPref(Substring(prefString, 0, hyphen));
-      prefBranch->GetCharPref(shortPref.get(), getter_Copies(dir));
-    }
-  }
-  *aResult = dir.EqualsLiteral("rtl");
+  *aResult = GetDirectionForLocale(locale);
   return NS_OK;
 }
 
@@ -445,7 +428,7 @@ nsChromeRegistryChrome::SendRegisteredChrome(
     mozilla::dom::PContentParent* aParent)
 {
   InfallibleTArray<ChromePackage> packages;
-  InfallibleTArray<ResourceMapping> resources;
+  InfallibleTArray<SubstitutionMapping> resources;
   InfallibleTArray<OverrideMapping> overrides;
 
   EnumerationArgs args = {
@@ -945,6 +928,29 @@ nsChromeRegistryChrome::ManifestOverride(ManifestProcessingContext& cx, int line
     LogMessageWithContext(cx.GetManifestURI(), lineno, nsIScriptError::warningFlag,
                           "During chrome registration, unable to create URI.");
     return;
+  }
+
+  if (cx.mType == NS_SKIN_LOCATION) {
+    bool chromeSkinOnly = false;
+    nsresult rv = chromeuri->SchemeIs("chrome", &chromeSkinOnly);
+    chromeSkinOnly = chromeSkinOnly && NS_SUCCEEDED(rv);
+    if (chromeSkinOnly) {
+      rv = resolveduri->SchemeIs("chrome", &chromeSkinOnly);
+      chromeSkinOnly = chromeSkinOnly && NS_SUCCEEDED(rv);
+    }
+    if (chromeSkinOnly) {
+      nsAutoCString chromePath, resolvedPath;
+      chromeuri->GetPath(chromePath);
+      resolveduri->GetPath(resolvedPath);
+      chromeSkinOnly = StringBeginsWith(chromePath, NS_LITERAL_CSTRING("/skin/")) &&
+                       StringBeginsWith(resolvedPath, NS_LITERAL_CSTRING("/skin/"));
+    }
+    if (!chromeSkinOnly) {
+      LogMessageWithContext(cx.GetManifestURI(), lineno, nsIScriptError::warningFlag,
+                            "Cannot register non-chrome://.../skin/ URIs '%s' and '%s' as overrides and/or to be overridden from a skin manifest.",
+                            chrome, resolved);
+      return;
+    }
   }
 
   if (!CanLoadResource(resolveduri)) {

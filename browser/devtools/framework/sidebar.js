@@ -10,7 +10,6 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 
-var {Promise: promise} = require("resource://gre/modules/Promise.jsm");
 var EventEmitter = require("devtools/toolkit/event-emitter");
 var Telemetry = require("devtools/shared/telemetry");
 
@@ -119,22 +118,24 @@ ToolSidebar.prototype = {
 
     let tabs = this._tabbox.tabs;
 
-    // Create a toolbar and insert it first in the tabbox
-    let allTabsToolbar = this._panelDoc.createElementNS(XULNS, "toolbar");
-    this._tabbox.insertBefore(allTabsToolbar, tabs);
+    // Create a container and insert it first in the tabbox
+    let allTabsContainer = this._panelDoc.createElementNS(XULNS, "stack");
+    this._tabbox.insertBefore(allTabsContainer, tabs);
 
     // Move the tabs inside and make them flex
-    allTabsToolbar.appendChild(tabs);
+    allTabsContainer.appendChild(tabs);
     tabs.setAttribute("flex", "1");
 
     // Create the dropdown menu next to the tabs
     this._allTabsBtn = this._panelDoc.createElementNS(XULNS, "toolbarbutton");
     this._allTabsBtn.setAttribute("class", "devtools-sidebar-alltabs");
+    this._allTabsBtn.setAttribute("right", "0");
+    this._allTabsBtn.setAttribute("top", "0");
+    this._allTabsBtn.setAttribute("width", "15");
     this._allTabsBtn.setAttribute("type", "menu");
-    this._allTabsBtn.setAttribute("label", l10n("sidebar.showAllTabs.label"));
     this._allTabsBtn.setAttribute("tooltiptext", l10n("sidebar.showAllTabs.tooltip"));
     this._allTabsBtn.setAttribute("hidden", "true");
-    allTabsToolbar.appendChild(this._allTabsBtn);
+    allTabsContainer.appendChild(this._allTabsBtn);
 
     let menuPopup = this._panelDoc.createElementNS(XULNS, "menupopup");
     this._allTabsBtn.appendChild(menuPopup);
@@ -162,7 +163,7 @@ ToolSidebar.prototype = {
 
     // Moving back the tabs as a first child of the tabbox
     this._tabbox.insertBefore(tabs, this._tabbox.tabpanels);
-    this._tabbox.querySelector("toolbar").remove();
+    this._tabbox.querySelector("stack").remove();
 
     this._allTabsBtn = null;
   },
@@ -327,14 +328,11 @@ ToolSidebar.prototype = {
   }),
 
   /**
-   * Show or hide a specific tab and tabpanel.
+   * Show or hide a specific tab.
    * @param {Boolean} isVisible True to show the tab/tabpanel, False to hide it.
    * @param {String} id The ID of the tab to be hidden.
-   * @param {String} tabPanelId Optionally pass the ID for the tabPanel if it
-   * can't be retrieved using the tab ID. This is useful when tabs and tabpanels
-   * existed before the widget was created.
    */
-  toggleTab: function(isVisible, id, tabPanelId) {
+  toggleTab: function(isVisible, id) {
     // Toggle the tab.
     let tab = this.getTab(id);
     if (!tab) {
@@ -345,16 +343,6 @@ ToolSidebar.prototype = {
     // Toggle the item in the allTabs menu.
     if (this._allTabsBtn) {
       this._allTabsBtn.querySelector("#sidebar-alltabs-item-" + id).hidden = !isVisible;
-    }
-
-    // Toggle the corresponding tabPanel, if one can be found either with the id
-    // or the provided tabPanelId.
-    let tabPanel = this.getTabPanel(id);
-    if (!tabPanel && tabPanelId) {
-      tabPanel = this.getTabPanel(tabPanelId);
-    }
-    if (tabPanel) {
-      tabPanel.hidden = !isVisible;
     }
   },
 

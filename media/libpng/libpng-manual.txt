@@ -1,9 +1,9 @@
 libpng-manual.txt - A description on how to use and modify libpng
 
- libpng version 1.6.16 - December 22, 2014
+ libpng version 1.6.18 - July 23, 2015
  Updated and distributed by Glenn Randers-Pehrson
  <glennrp at users.sourceforge.net>
- Copyright (c) 1998-2014 Glenn Randers-Pehrson
+ Copyright (c) 1998-2015 Glenn Randers-Pehrson
 
  This document is released under the libpng license.
  For conditions of distribution and use, see the disclaimer
@@ -11,9 +11,9 @@ libpng-manual.txt - A description on how to use and modify libpng
 
  Based on:
 
- libpng versions 0.97, January 1998, through 1.6.16 - December 22, 2014
+ libpng versions 0.97, January 1998, through 1.6.18 - July 23, 2015
  Updated and distributed by Glenn Randers-Pehrson
- Copyright (c) 1998-2014 Glenn Randers-Pehrson
+ Copyright (c) 1998-2015 Glenn Randers-Pehrson
 
  libpng 1.0 beta 6 - version 0.96 - May 28, 1997
  Updated and distributed by Andreas Dilger
@@ -336,7 +336,7 @@ prediction.
 
 If you are intending to keep the file pointer open for use in libpng,
 you must ensure you don't read more than 8 bytes from the beginning
-of the file, and you also have to make a call to png_set_sig_bytes_read()
+of the file, and you also have to make a call to png_set_sig_bytes()
 with the number of bytes you read from the beginning.  Libpng will
 then only check the bytes (if any) that your program didn't read.
 
@@ -344,21 +344,22 @@ then only check the bytes (if any) that your program didn't read.
 to replace them with custom functions.  See the discussion under
 Customizing libpng.
 
-
     FILE *fp = fopen(file_name, "rb");
     if (!fp)
     {
        return (ERROR);
     }
 
-    fread(header, 1, number, fp);
-    is_png = !png_sig_cmp(header, 0, number);
+    if (fread(header, 1, number, fp) != number)
+    {
+       return (ERROR);
+    }
 
+    is_png = !png_sig_cmp(header, 0, number);
     if (!is_png)
     {
        return (NOT_PNG);
     }
-
 
 Next, png_struct and png_info need to be allocated and initialized.  In
 order to ensure that the size of these structures is correct even with a
@@ -649,7 +650,7 @@ User limits
 The PNG specification allows the width and height of an image to be as
 large as 2^31-1 (0x7fffffff), or about 2.147 billion rows and columns.
 Larger images will be rejected immediately with a png_error() call. If
-you wish to reduce these limits, you can use
+you wish to change these limits, you can use
 
    png_set_user_limits(png_ptr, width_max, height_max);
 
@@ -1264,13 +1265,13 @@ in until png_read_end() has read the chunk data following the image.
                      the PNG datastream is embedded in
                      a MNG-1.0 datastream)
 
-    Any or all of interlace_type, compression_type, or
-    filter_method can be NULL if you are
-    not interested in their values.
+    Any of width, height, color_type, bit_depth,
+    interlace_type, compression_type, or filter_method can
+    be NULL if you are not interested in their values.
 
     Note that png_get_IHDR() returns 32-bit data into
     the application's width and height variables.
-    This is an unsafe situation if these are 16-bit
+    This is an unsafe situation if these are not png_uint_32
     variables.  In such situations, the
     png_get_image_width() and png_get_image_height()
     functions described below are safer.
@@ -1993,7 +1994,7 @@ value when you call it in this position:
       png_set_gamma(png_ptr, screen_gamma, 0.45455);
 
 If you need to reduce an RGB file to a paletted file, or if a paletted
-file has more entries then will fit on your screen, png_set_quantize()
+file has more entries than will fit on your screen, png_set_quantize()
 will do that.  Note that this is a simple match quantization that merely
 finds the closest color available.  This should work fairly well with
 optimized palettes, but fairly badly with linear color cubes.  If you
@@ -2546,7 +2547,7 @@ png_infop info_ptr;
        64K.  The library seems to run fine with sizes
        of 4K. Although you can give it much less if
        necessary (I assume you can give it chunks of
-       1 byte, I haven't tried less then 256 bytes
+       1 byte, I haven't tried less than 256 bytes
        yet).  When this function returns, you may
        want to display any rows that were generated
        in the row callback if you don't already do
@@ -4064,10 +4065,11 @@ a 16-bit linear encoded PNG file is written.
 
 With all APIs row_stride is handled as in the read APIs - it is the spacing
 from one row to the next in component sized units (float) and if negative
-indicates a bottom-up row layout in the buffer.
+indicates a bottom-up row layout in the buffer.  If you pass zero, libpng will
+calculate the row_stride for you from the width and number of channels.
 
 Note that the write API does not support interlacing, sub-8-bit pixels,
-and indexed (paletted) images.
+indexed (paletted) images, or most ancillary chunks.
 
 VI. Modifying/Customizing libpng
 
@@ -4354,41 +4356,6 @@ is called for the first time.)
               datastream.  This parameter must be the
               same as the value of filter_method used
               in png_set_IHDR().
-
-It is also possible to influence how libpng chooses from among the
-available filters.  This is done in one or both of two ways - by
-telling it how important it is to keep the same filter for successive
-rows, and by telling it the relative computational costs of the filters.
-
-    double weights[3] = {1.5, 1.3, 1.1},
-       costs[PNG_FILTER_VALUE_LAST] =
-       {1.0, 1.3, 1.3, 1.5, 1.7};
-
-    png_set_filter_heuristics(png_ptr,
-       PNG_FILTER_HEURISTIC_WEIGHTED, 3,
-       weights, costs);
-
-The weights are multiplying factors that indicate to libpng that the
-row filter should be the same for successive rows unless another row filter
-is that many times better than the previous filter.  In the above example,
-if the previous 3 filters were SUB, SUB, NONE, the SUB filter could have a
-"sum of absolute differences" 1.5 x 1.3 times higher than other filters
-and still be chosen, while the NONE filter could have a sum 1.1 times
-higher than other filters and still be chosen.  Unspecified weights are
-taken to be 1.0, and the specified weights should probably be declining
-like those above in order to emphasize recent filters over older filters.
-
-The filter costs specify for each filter type a relative decoding cost
-to be considered when selecting row filters.  This means that filters
-with higher costs are less likely to be chosen over filters with lower
-costs, unless their "sum of absolute differences" is that much smaller.
-The costs do not necessarily reflect the exact computational speeds of
-the various filters, since this would unduly influence the final image
-size.
-
-Note that the numbers above were invented purely for this example and
-are given only to help explain the function usage.  Little testing has
-been done to find optimum values for either the costs or the weights.
 
 Requesting debug printout
 
@@ -5031,6 +4998,10 @@ The signatures of many exported functions were changed, such that
    png_infop became png_inforp or png_const_inforp
 where "rp" indicates a "restricted pointer".
 
+The support for FAR/far types has been eliminated and the definition of
+png_alloc_size_t is now controlled by a flag so that 'small size_t' systems
+can select it if necessary.
+
 Error detection in some chunks has improved; in particular the iCCP chunk
 reader now does pretty complete validation of the basic format.  Some bad
 profiles that were previously accepted are now accepted with a warning or
@@ -5045,7 +5016,7 @@ means of
            PNG_OPTION_ON);
     #endif
 
-It's not a good idea to do this if you are using the new "simplified API",
+It's not a good idea to do this if you are using the "simplified API",
 which needs to be able to recognize sRGB profiles conveyed via the iCCP
 chunk.
 
@@ -5103,6 +5074,23 @@ Libpng-1.6.0 and libpng-1.6.1 wrote uncompressed iTXt chunks with the wrong
 length, which resulted in PNG files that cannot be read beyond the bad iTXt
 chunk.  This error was fixed in libpng-1.6.3, and a tool (called
 contrib/tools/png-fix-itxt) has been added to the libpng distribution.
+
+Starting with libpng-1.6.17, the PNG_SAFE_LIMITS macro was eliminated
+and safe limits are used by default (users who need larger limits
+can still override them at compile time or run time, as described above).
+
+The new limits are
+                                default   spec limit
+   png_user_width_max         1,000,000  2,147,483,647
+   png_user_height_max        1,000,000  2,147,483,647
+   png_user_chunk_cache_max         128  unlimited
+   png_user_chunk_malloc_max  8,000,000  unlimited
+
+Starting with libpng-1.6.18, a PNG_RELEASE_BUILD macro was added, which allows
+library builders to control compilation for an installed system (a release build).
+It can be set for testing debug or beta builds to ensure that they will compile
+when the build type is switched to RC or STABLE. In essence this overrides the
+PNG_LIBPNG_BUILD_BASE_TYPE definition which is not directly user controllable.
 
 XIII.  Detecting libpng
 
@@ -5274,13 +5262,13 @@ Other rules can be inferred by inspecting the libpng source.
 
 XVI. Y2K Compliance in libpng
 
-December 22, 2014
+July 23, 2015
 
 Since the PNG Development group is an ad-hoc body, we can't make
 an official declaration.
 
 This is your unofficial assurance that libpng from version 0.71 and
-upward through 1.6.16 are Y2K compliant.  It is my belief that earlier
+upward through 1.6.18 are Y2K compliant.  It is my belief that earlier
 versions were also Y2K compliant.
 
 Libpng only has two year fields.  One is a 2-byte unsigned integer

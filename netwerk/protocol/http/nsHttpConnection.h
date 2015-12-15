@@ -37,12 +37,12 @@ class ASpdySession;
 //-----------------------------------------------------------------------------
 
 class nsHttpConnection final : public nsAHttpSegmentReader
-                                 , public nsAHttpSegmentWriter
-                                 , public nsIInputStreamCallback
-                                 , public nsIOutputStreamCallback
-                                 , public nsITransportEventSink
-                                 , public nsIInterfaceRequestor
-                                 , public NudgeTunnelCallback
+                             , public nsAHttpSegmentWriter
+                             , public nsIInputStreamCallback
+                             , public nsIOutputStreamCallback
+                             , public nsITransportEventSink
+                             , public nsIInterfaceRequestor
+                             , public NudgeTunnelCallback
 {
     virtual ~nsHttpConnection();
 
@@ -349,6 +349,7 @@ private:
     nsCOMPtr<nsITimer>              mTCPKeepaliveTransitionTimer;
 };
 
-}} // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // nsHttpConnection_h__

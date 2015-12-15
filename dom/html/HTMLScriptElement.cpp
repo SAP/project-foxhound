@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,9 +29,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-HTMLScriptElement::WrapNode(JSContext *aCx)
+HTMLScriptElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLScriptElementBinding::Wrap(aCx, this);
+  return HTMLScriptElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 HTMLScriptElement::HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
@@ -75,10 +75,16 @@ HTMLScriptElement::ParseAttribute(int32_t aNamespaceID,
                                   const nsAString& aValue,
                                   nsAttrValue& aResult)
 {
-  if (aNamespaceID == kNameSpaceID_None &&
-      aAttribute == nsGkAtoms::crossorigin) {
-    ParseCORSValue(aValue, aResult);
-    return true;
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aAttribute == nsGkAtoms::crossorigin) {
+      ParseCORSValue(aValue, aResult);
+      return true;
+    }
+
+    if (aAttribute == nsGkAtoms::integrity) {
+      aResult.ParseStringOrAtom(aValue);
+      return true;
+    }
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
@@ -110,7 +116,7 @@ HTMLScriptElement::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) c
 NS_IMETHODIMP
 HTMLScriptElement::GetText(nsAString& aValue)
 {
-  if (!nsContentUtils::GetNodeTextContent(this, false, aValue)) {
+  if (!nsContentUtils::GetNodeTextContent(this, false, aValue, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   return NS_OK;
@@ -121,7 +127,7 @@ HTMLScriptElement::SetText(const nsAString& aValue)
 {
   ErrorResult rv;
   SetText(aValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -198,7 +204,7 @@ HTMLScriptElement::SetAsync(bool aValue)
 {
   ErrorResult rv;
   SetAsync(aValue, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -222,7 +228,7 @@ HTMLScriptElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
 NS_IMETHODIMP
 HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML)
 {
-  if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML)) {
+  if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   return NS_OK;

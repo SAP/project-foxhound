@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS.mozilla.dom += [
+    'GMPVideoDecoderTrialCreator.h',
     'MediaEncryptedEvent.h',
     'MediaKeyError.h',
     'MediaKeyMessageEvent.h',
@@ -19,14 +20,17 @@ EXPORTS.mozilla += [
     'CDMCallbackProxy.h',
     'CDMCaps.h',
     'CDMProxy.h',
-    'EMEUtils.h'
+    'DetailedPromise.h',
+    'EMEUtils.h',
 ]
 
 UNIFIED_SOURCES += [
     'CDMCallbackProxy.cpp',
     'CDMCaps.cpp',
     'CDMProxy.cpp',
+    'DetailedPromise.cpp',
     'EMEUtils.cpp',
+    'GMPVideoDecoderTrialCreator.cpp',
     'MediaEncryptedEvent.cpp',
     'MediaKeyError.cpp',
     'MediaKeyMessageEvent.cpp',
@@ -37,6 +41,6 @@ UNIFIED_SOURCES += [
     'MediaKeySystemAccessManager.cpp',
 ]
 
-FINAL_LIBRARY = 'xul'
+include('/ipc/chromium/chromium-config.mozbuild')
 
-FAIL_ON_WARNINGS = True
+FINAL_LIBRARY = 'xul'

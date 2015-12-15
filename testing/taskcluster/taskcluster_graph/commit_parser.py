@@ -23,13 +23,47 @@ BUILD_TYPE_ALIASES = {
 class InvalidCommitException(Exception):
     pass
 
-def normalize_platform_list(all_builds, build_list):
+def escape_whitspace_in_brackets(input_str):
+    '''
+    In tests you may restrict them by platform [] inside of the brackets
+    whitespace may occur this is typically invalid shell syntax so we escape it
+    with backslash sequences    .
+    '''
+    result = ""
+    in_brackets = False
+    for char in input_str:
+        if char == '[':
+            in_brackets = True
+            result += char
+            continue
+
+        if char == ']':
+            in_brackets = False
+            result += char
+            continue
+
+        if char == ' ' and in_brackets:
+            result += '\ '
+            continue
+
+        result += char
+
+    return result
+
+
+def normalize_platform_list(alias, all_builds, build_list):
     if build_list == 'all':
         return all_builds
 
-    return [ build.strip() for build in build_list.split(',') ]
+    results = []
+    for build in build_list.split(','):
+        if build in alias:
+            build = alias[build]
+        results.append(build)
 
-def normalize_test_list(all_tests, job_list):
+    return results
+
+def normalize_test_list(aliases, all_tests, job_list):
     '''
     Normalize a set of jobs (builds or tests) there are three common cases:
 
@@ -37,6 +71,7 @@ def normalize_test_list(all_tests, job_list):
         - job_list is == 'all' (meaning use the list of jobs for that job type)
         - job_list is comma delimited string which needs to be split
 
+    :param dict aliases: Alias mapping for jobs...
     :param list all_tests: test flags from job_flags.yml structure.
     :param str job_list: see above examples.
     :returns: List of jobs
@@ -61,31 +96,36 @@ def normalize_test_list(all_tests, job_list):
             if 'platforms' in all_entry:
                 entry['platforms'] = list(all_entry['platforms'])
             results.append(entry)
-        return parse_test_chunks(results)
+        return parse_test_chunks(aliases, results)
     else:
-        return parse_test_chunks(tests)
+        return parse_test_chunks(aliases, tests)
 
-def parse_test_chunks(tests):
+def parse_test_chunks(aliases, tests):
     '''
     Test flags may include parameters to narrow down the number of chunks in a
     given push. We don't model 1 chunk = 1 job in taskcluster so we must check
     each test flag to see if it is actually specifying a chunk.
 
+    :param dict aliases: Dict of alias name -> real name.
     :param list tests: Result from normalize_test_list
     :returns: List of jobs
     '''
-
     results = []
     seen_chunks = {}
     for test in tests:
         matches = TEST_CHUNK_SUFFIX.match(test['test'])
 
         if not matches:
+            if test['test'] in aliases:
+                test['test'] = aliases[test['test']]
             results.append(test)
             continue
 
         name = matches.group(1)
         chunk = int(matches.group(2))
+
+        if name in aliases:
+            name = aliases[name]
 
         if name in seen_chunks:
             seen_chunks[name].add(chunk)
@@ -166,18 +206,24 @@ def parse_commit(message, jobs):
     '''
 
     # shlex used to ensure we split correctly when giving values to argparse.
-    parts = shlex.split(message)
+    parts = shlex.split(escape_whitspace_in_brackets(message))
+    try_idx = None
+    for idx, part in enumerate(parts):
+        if part == TRY_DELIMITER:
+            try_idx = idx
+            break
 
-    if parts[0] != TRY_DELIMITER:
-        raise InvalidCommitException('Invalid commit format must start with' +
+    if try_idx is None:
+        raise InvalidCommitException('Invalid commit format contain ' +
                 TRY_DELIMITER)
 
     # Argument parser based on try flag flags
     parser = argparse.ArgumentParser()
-    parser.add_argument('-b', dest='build_types')
-    parser.add_argument('-p', nargs='?', dest='platforms', const='all', default='all')
-    parser.add_argument('-u', nargs='?', dest='tests', const='all', default='all')
-    args, unknown = parser.parse_known_args(parts[1:])
+    parser.add_argument('-b', '--build', dest='build_types')
+    parser.add_argument('-p', '--platform', nargs='?', dest='platforms', const='all', default='all')
+    parser.add_argument('-u', '--unittests', nargs='?', dest='tests', const='all', default='all')
+    parser.add_argument('-i', '--interactive', dest='interactive', action='store_true', default=False)
+    args, unknown = parser.parse_known_args(parts[try_idx:])
 
     # Then builds...
     if args.build_types is None:
@@ -186,8 +232,10 @@ def parse_commit(message, jobs):
     build_types = [ BUILD_TYPE_ALIASES.get(build_type, build_type) for
             build_type in args.build_types ]
 
-    platforms = normalize_platform_list(jobs['flags']['builds'], args.platforms)
-    tests = normalize_test_list(jobs['flags']['tests'], args.tests)
+    aliases = jobs['flags'].get('aliases', {})
+
+    platforms = normalize_platform_list(aliases, jobs['flags']['builds'], args.platforms)
+    tests = normalize_test_list(aliases, jobs['flags']['tests'], args.tests)
 
     result = []
 
@@ -212,13 +260,26 @@ def parse_commit(message, jobs):
             else:
                 additional_parameters = {}
 
+            # Generate list of post build tasks that run on this build
+            post_build_jobs = []
+            for job_flag in jobs['flags'].get('post-build', []):
+                job = jobs['post-build'][job_flag]
+                if ('allowed_build_tasks' in job and
+                        build_task not in job['allowed_build_tasks']):
+                    continue
+                post_build_jobs.append(copy.deepcopy(job))
+
             # Node for this particular build type
             result.append({
                 'task': build_task,
+                'post-build': post_build_jobs,
                 'dependents': extract_tests_from_platform(
                     jobs['tests'], platform_builds, build_task, tests
                 ),
-                'additional-parameters': additional_parameters
+                'additional-parameters': additional_parameters,
+                'build_name': platform,
+                'build_type': build_type,
+                'interactive': args.interactive,
             })
 
     return result

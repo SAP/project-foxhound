@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set tw=80 expandtab softtabstop=2 ts=2 sw=2: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,6 +43,13 @@ HTMLAnchorElement::~HTMLAnchorElement()
 {
 }
 
+bool
+HTMLAnchorElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
+{
+  return HasAttr(kNameSpaceID_None, nsGkAtoms::href) ||
+         nsGenericHTMLElement::IsInteractiveHTMLContent(aIgnoreTabindex);
+}
+
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLAnchorElement)
   NS_INTERFACE_TABLE_INHERITED(HTMLAnchorElement,
                                nsIDOMHTMLAnchorElement,
@@ -69,9 +76,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_ELEMENT_CLONE(HTMLAnchorElement)
 
 JSObject*
-HTMLAnchorElement::WrapNode(JSContext *aCx)
+HTMLAnchorElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLAnchorElementBinding::Wrap(aCx, this);
+  return HTMLAnchorElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMPL_STRING_ATTR(HTMLAnchorElement, Charset, charset)
@@ -344,7 +351,7 @@ IMPL_URI_PART(Hash)
 NS_IMETHODIMP    
 HTMLAnchorElement::GetText(nsAString& aText)
 {
-  if(!nsContentUtils::GetNodeTextContent(this, true, aText)) {
+  if(!nsContentUtils::GetNodeTextContent(this, true, aText, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   return NS_OK;
@@ -464,5 +471,5 @@ HTMLAnchorElement::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) cons
          Link::SizeOfExcludingThis(aMallocSizeOf);
 }
 
-} // namespace mozilla
 } // namespace dom
+} // namespace mozilla

@@ -3,13 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // the "exported" symbols
-let LoopUI;
-
-XPCOMUtils.defineLazyModuleGetter(this, "injectLoopAPI", "resource:///modules/loop/MozLoopAPI.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoopRooms", "resource:///modules/loop/LoopRooms.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "MozLoopService", "resource:///modules/loop/MozLoopService.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/PanelFrame.jsm");
-
+var LoopUI;
 
 (function() {
   const kNSXUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -134,15 +128,16 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
             return;
           }
 
-          iframe.addEventListener("DOMContentLoaded", function documentDOMLoaded() {
+          let documentDOMLoaded = () => {
             iframe.removeEventListener("DOMContentLoaded", documentDOMLoaded, true);
-            injectLoopAPI(iframe.contentWindow);
-            iframe.contentWindow.addEventListener("loopPanelInitialized", function loopPanelInitialized() {
+  	    this.injectLoopAPI(iframe.contentWindow);
+  	    iframe.contentWindow.addEventListener("loopPanelInitialized", function loopPanelInitialized() {
               iframe.contentWindow.removeEventListener("loopPanelInitialized",
                                                        loopPanelInitialized);
               showTab();
-            });
-          }, true);
+	    });
+	  };
+	  iframe.addEventListener("DOMContentLoaded", documentDOMLoaded, true); 
         };
 
         // Used to clear the temporary "login" state from the button.
@@ -153,13 +148,16 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
             // Assume the conversation with the visitor wasn't open since we would
             // have resumed the tour as soon as the visitor joined if it was (and
             // the pref would have been set to false already.
-            MozLoopService.resumeTour("waiting");
+            this.MozLoopService.resumeTour("waiting");
             resolve();
             return;
           }
 
-          PanelFrame.showPopup(window, event ? event.target : this.toolbarButton.node,
-                               "loop", null, "about:looppanel", null, callback);
+          this.PanelFrame.showPopup(window, event ? event.target : this.toolbarButton.node,
+            "loop", null, "about:looppanel",
+            // Loop wants a fixed size for the panel. This also stops it dynamically resizing.
+            { width: 330, height: 410 },
+            callback);
         });
       });
     },
@@ -179,7 +177,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
         return false;
       }
 
-      if (!LoopRooms.participantsCount) {
+      if (!this.LoopRooms.participantsCount) {
         // Nobody is in the rooms
         return false;
       }
@@ -198,7 +196,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
      */
     roomsWithNonOwners: function() {
       return new Promise(resolve => {
-        LoopRooms.getAll((error, rooms) => {
+        this.LoopRooms.getAll((error, rooms) => {
           let roomsWithNonOwners = [];
           for (let room of rooms) {
             if (!("participants" in room)) {
@@ -223,7 +221,15 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
       // Add observer notifications before the service is initialized
       Services.obs.addObserver(this, "loop-status-changed", false);
 
-      MozLoopService.initialize();
+      // This is a promise for test purposes, but we don't want to be logging
+      // expected errors to the console, so we catch them here.
+      this.MozLoopService.initialize().catch(ex => {
+        if (!ex.message ||
+            (!ex.message.contains("not enabled") &&
+             !ex.message.contains("not needed"))) {
+          console.error(ex);
+        }
+      });
       this.updateToolbarState();
     },
 
@@ -254,15 +260,15 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
         return;
       }
       let state = "";
-      if (MozLoopService.errors.size) {
+      if (this.MozLoopService.errors.size) {
         state = "error";
-      } else if (MozLoopService.screenShareActive) {
+      } else if (this.MozLoopService.screenShareActive) {
         state = "action";
-      } else if (aReason == "login" && MozLoopService.userProfile) {
+      } else if (aReason == "login" && this.MozLoopService.userProfile) {
         state = "active";
-      } else if (MozLoopService.doNotDisturb) {
+      } else if (this.MozLoopService.doNotDisturb) {
         state = "disabled";
-      } else if (MozLoopService.roomsParticipantsCount > 0) {
+      } else if (this.MozLoopService.roomsParticipantsCount > 0) {
         state = "active";
       }
       this.toolbarButton.node.setAttribute("state", state);
@@ -285,7 +291,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
      *                                                  Opens the panel by default.
      */
     showNotification: function(options) {
-      if (MozLoopService.doNotDisturb) {
+      if (this.MozLoopService.doNotDisturb) {
         return;
       }
 
@@ -336,7 +342,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
      * @param {String} name Name of the sound, like 'ringtone' or 'room-joined'
      */
     playSound: function(name) {
-      if (this.ActiveSound || MozLoopService.doNotDisturb) {
+      if (this.ActiveSound || this.MozLoopService.doNotDisturb) {
         return;
       }
 
@@ -362,14 +368,14 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
     addBrowserSharingListener: function(listener) {
       if (!this._tabChangeListeners) {
         this._tabChangeListeners = new Set();
-        gBrowser.addEventListener("select", this);
+        gBrowser.tabContainer.addEventListener("TabSelect", this);
       }
 
       this._tabChangeListeners.add(listener);
       this._maybeShowBrowserSharingInfoBar();
 
       // Get the first window Id for the listener.
-      listener(null, gBrowser.selectedTab.linkedBrowser.outerWindowID);
+      listener(null, gBrowser.selectedBrowser.outerWindowID);
     },
 
     /**
@@ -388,7 +394,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
 
       if (!this._tabChangeListeners.size) {
         this._hideBrowserSharingInfoBar();
-        gBrowser.removeEventListener("select", this);
+        gBrowser.tabContainer.removeEventListener("TabSelect", this);
         delete this._tabChangeListeners;
       }
     },
@@ -401,7 +407,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
      * @return {String}
      */
     _getString: function(key) {
-      let str = MozLoopService.getStrings(key);
+      let str = this.MozLoopService.getStrings(key);
       if (str) {
         str = JSON.parse(str).textContent;
       }
@@ -417,7 +423,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
       this._hideBrowserSharingInfoBar();
 
       // Don't show the infobar if it's been permanently disabled from the menu.
-      if (!MozLoopService.getLoopPref(kPrefBrowserSharingInfoBar)) {
+      if (!this.MozLoopService.getLoopPref(kPrefBrowserSharingInfoBar)) {
         return;
       }
 
@@ -463,7 +469,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
      * @return {Boolean} |true| if the infobar was hidden here.
      */
     _hideBrowserSharingInfoBar: function(permanently = false, browser) {
-      browser = browser || gBrowser.selectedTab.linkedBrowser;
+      browser = browser || gBrowser.selectedBrowser;
       let box = gBrowser.getNotificationBox(browser);
       let notification = box.getNotificationWithValue(kBrowserSharingNotificationId);
       let removed = false;
@@ -473,7 +479,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
       }
 
       if (permanently) {
-        MozLoopService.setLoopPref(kPrefBrowserSharingInfoBar, false);
+        this.MozLoopService.setLoopPref(kPrefBrowserSharingInfoBar, false);
       }
 
       return removed;
@@ -484,20 +490,20 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
      */
     handleEvent: function(event) {
       // We only should get "select" events.
-      if (event.type != "select") {
+      if (event.type != "TabSelect") {
         return;
       }
 
       let wasVisible = false;
       // Hide the infobar from the previous tab.
-      if (event.fromTab) {
-        wasVisible = this._hideBrowserSharingInfoBar(false, event.fromTab.linkedBrowser);
+      if (event.detail.previousTab) {
+        wasVisible = this._hideBrowserSharingInfoBar(false, event.detail.previousTab.linkedBrowser);
       }
 
       // We've changed the tab, so get the new window id.
       for (let listener of this._tabChangeListeners) {
         try {
-          listener(null, gBrowser.selectedTab.linkedBrowser.outerWindowID);
+          listener(null, gBrowser.selectedBrowser.outerWindowID);
         } catch (ex) {
           Cu.reportError("Tab switch caused an error: " + ex.message);
         }
@@ -509,5 +515,54 @@ XPCOMUtils.defineLazyModuleGetter(this, "PanelFrame", "resource:///modules/Panel
         this._maybeShowBrowserSharingInfoBar();
       }
     },
+
+    /**
+     * Fetch the favicon of the currently selected tab in the format of a data-uri.
+     *
+     * @param  {Function} callback Function to be invoked with an error object as
+     *                             its first argument when an error occurred or
+     *                             a string as second argument when the favicon
+     *                             has been fetched.
+     */
+    getFavicon: function(callback) {
+      let pageURI = gBrowser.selectedTab.linkedBrowser.currentURI.spec;
+      // If the tab page’s url starts with http(s), fetch icon.
+      if (!/^https?:/.test(pageURI)) {
+        callback();
+        return;
+      }
+
+      this.PlacesUtils.promiseFaviconLinkUrl(pageURI).then(uri => {
+        uri = this.PlacesUtils.getImageURLForResolution(window, uri.spec);
+
+        // We XHR the favicon to get a File object, which we can pass to the FileReader
+        // object. The FileReader turns the File object into a data-uri.
+        let xhr = new XMLHttpRequest();
+        xhr.open("get", uri, true);
+        xhr.responseType = "blob";
+        xhr.overrideMimeType("image/x-icon");
+        xhr.onload = () => {
+          if (xhr.status != 200) {
+            callback(new Error("Invalid status code received for favicon XHR: " + xhr.status));
+            return;
+          }
+
+          let reader = new FileReader();
+          reader.onload = reader.onload = () => callback(null, reader.result);
+          reader.onerror = callback;
+          reader.readAsDataURL(xhr.response);
+        };
+        xhr.onerror = callback;
+        xhr.send();
+      }).catch(err => {
+        callback(err || new Error("No favicon found"));
+      });
+    }
   };
 })();
+
+XPCOMUtils.defineLazyModuleGetter(LoopUI, "injectLoopAPI", "resource:///modules/loop/MozLoopAPI.jsm");
+XPCOMUtils.defineLazyModuleGetter(LoopUI, "LoopRooms", "resource:///modules/loop/LoopRooms.jsm");
+XPCOMUtils.defineLazyModuleGetter(LoopUI, "MozLoopService", "resource:///modules/loop/MozLoopService.jsm");
+XPCOMUtils.defineLazyModuleGetter(LoopUI, "PanelFrame", "resource:///modules/PanelFrame.jsm");
+XPCOMUtils.defineLazyModuleGetter(LoopUI, "PlacesUtils", "resource://gre/modules/PlacesUtils.jsm");

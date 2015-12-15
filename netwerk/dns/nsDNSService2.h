@@ -16,14 +16,12 @@
 #include "nsString.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
-#include "nsIObserverService.h"
-#include "nsProxyRelease.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Attributes.h"
 
 class nsDNSService final : public nsPIDNSService
-                             , public nsIObserver
-                             , public nsIMemoryReporter
+                         , public nsIObserver
+                         , public nsIMemoryReporter
 {
 public:
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -60,7 +58,7 @@ private:
     bool                                      mFirstTime;
     bool                                      mOffline;
     bool                                      mNotifyResolution;
-    nsMainThreadPtrHandle<nsIObserverService> mObserverService;
+    bool                                      mOfflineLocalhost;
     nsTHashtable<nsCStringHashKey>            mLocalDomains;
 };
 

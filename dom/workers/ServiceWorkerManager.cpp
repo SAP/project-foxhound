@@ -1,9 +1,12 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerManager.h"
 
+#include "mozIApplication.h"
 #include "nsIAppsService.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDocument.h"
@@ -12,43 +15,66 @@
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIHttpHeaderVisitor.h"
+#include "nsIJARChannel.h"
 #include "nsINetworkInterceptController.h"
+#include "nsIMutableArray.h"
+#include "nsIUploadChannel2.h"
 #include "nsPIDOMWindow.h"
+#include "nsScriptLoader.h"
 #include "nsDebug.h"
 
 #include "jsapi.h"
 
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ErrorNames.h"
 #include "mozilla/LoadContext.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMError.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/Headers.h"
-#include "mozilla/dom/InstallEventBinding.h"
+#include "mozilla/dom/indexedDB/IndexedDatabaseManager.h"
+#include "mozilla/dom/indexedDB/IDBFactory.h"
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/Navigator.h"
+#include "mozilla/dom/NotificationEvent.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/unused.h"
+#include "mozilla/EnumSet.h"
 
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
 #include "nsNetUtil.h"
+#include "nsIURL.h"
 #include "nsProxyRelease.h"
+#include "nsQueryObject.h"
 #include "nsTArray.h"
 
 #include "RuntimeService.h"
 #include "ServiceWorker.h"
 #include "ServiceWorkerClient.h"
 #include "ServiceWorkerContainer.h"
+#include "ServiceWorkerManagerChild.h"
+#include "ServiceWorkerRegistrar.h"
 #include "ServiceWorkerRegistration.h"
+#include "ServiceWorkerScriptCache.h"
 #include "ServiceWorkerEvents.h"
+#include "SharedWorker.h"
 #include "WorkerInlines.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 #include "WorkerScope.h"
+
+#ifndef MOZ_SIMPLEPUSH
+#include "mozilla/dom/TypedArray.h"
+#endif
 
 #ifdef PostMessage
 #undef PostMessage
@@ -60,6 +86,63 @@ using namespace mozilla::ipc;
 
 BEGIN_WORKERS_NAMESPACE
 
+#define PURGE_DOMAIN_DATA "browser:purge-domain-data"
+#define PURGE_SESSION_HISTORY "browser:purge-session-history"
+#define CLEAR_ORIGIN_DATA "clear-origin-data"
+
+static_assert(nsIHttpChannelInternal::CORS_MODE_SAME_ORIGIN == static_cast<uint32_t>(RequestMode::Same_origin),
+              "RequestMode enumeration value should match Necko CORS mode value.");
+static_assert(nsIHttpChannelInternal::CORS_MODE_NO_CORS == static_cast<uint32_t>(RequestMode::No_cors),
+              "RequestMode enumeration value should match Necko CORS mode value.");
+static_assert(nsIHttpChannelInternal::CORS_MODE_CORS == static_cast<uint32_t>(RequestMode::Cors),
+              "RequestMode enumeration value should match Necko CORS mode value.");
+static_assert(nsIHttpChannelInternal::CORS_MODE_CORS_WITH_FORCED_PREFLIGHT == static_cast<uint32_t>(RequestMode::Cors_with_forced_preflight),
+              "RequestMode enumeration value should match Necko CORS mode value.");
+
+static_assert(nsIHttpChannelInternal::REDIRECT_MODE_FOLLOW == static_cast<uint32_t>(RequestRedirect::Follow),
+              "RequestRedirect enumeration value should make Necko Redirect mode value.");
+static_assert(nsIHttpChannelInternal::REDIRECT_MODE_ERROR == static_cast<uint32_t>(RequestRedirect::Error),
+              "RequestRedirect enumeration value should make Necko Redirect mode value.");
+static_assert(nsIHttpChannelInternal::REDIRECT_MODE_MANUAL == static_cast<uint32_t>(RequestRedirect::Manual),
+              "RequestRedirect enumeration value should make Necko Redirect mode value.");
+static_assert(3 == static_cast<uint32_t>(RequestRedirect::EndGuard_),
+              "RequestRedirect enumeration value should make Necko Redirect mode value.");
+
+static StaticRefPtr<ServiceWorkerManager> gInstance;
+
+// Tracks the "dom.disable_open_click_delay" preference.  Modified on main
+// thread, read on worker threads. This is set once in the ServiceWorkerManager
+// constructor before any service workers are spawned.
+// It is updated every time a "notificationclick" event is dispatched. While
+// this is done without synchronization, at the worst, the thread will just get
+// an older value within which a popup is allowed to be displayed, which will
+// still be a valid value since it was set in the constructor. I (:nsm) don't
+// think this needs to be synchronized.
+Atomic<uint32_t> gDOMDisableOpenClickDelay(0);
+
+struct ServiceWorkerManager::RegistrationDataPerPrincipal
+{
+  // Ordered list of scopes for glob matching.
+  // Each entry is an absolute URL representing the scope.
+  // Each value of the hash table is an array of an absolute URLs representing
+  // the scopes.
+  //
+  // An array is used for now since the number of controlled scopes per
+  // domain is expected to be relatively low. If that assumption was proved
+  // wrong this should be replaced with a better structure to avoid the
+  // memmoves associated with inserting stuff in the middle of the array.
+  nsTArray<nsCString> mOrderedScopes;
+
+  // Scope to registration.
+  // The scope should be a fully qualified valid URL.
+  nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo> mInfos;
+
+  // Maps scopes to job queues.
+  nsClassHashtable<nsCStringHashKey, ServiceWorkerJobQueue> mJobQueues;
+
+  nsDataHashtable<nsCStringHashKey, bool> mSetOfScopesBeingUpdated;
+};
+
 struct ServiceWorkerManager::PendingOperation
 {
   nsCOMPtr<nsIRunnable> mRunnable;
@@ -68,6 +151,108 @@ struct ServiceWorkerManager::PendingOperation
   nsRefPtr<ServiceWorkerJob> mJob;
 
   ServiceWorkerRegistrationData mRegistration;
+};
+
+class ServiceWorkerJob : public nsISupports
+{
+protected:
+  // The queue keeps the jobs alive, so they can hold a rawptr back to the
+  // queue.
+  ServiceWorkerJobQueue* mQueue;
+
+public:
+  NS_DECL_ISUPPORTS
+
+  virtual void Start() = 0;
+
+  virtual bool
+  IsRegisterJob() const { return false; }
+
+protected:
+  explicit ServiceWorkerJob(ServiceWorkerJobQueue* aQueue)
+    : mQueue(aQueue)
+  {
+  }
+
+  virtual ~ServiceWorkerJob()
+  { }
+
+  void
+  Done(nsresult aStatus);
+};
+
+class ServiceWorkerJobQueue final
+{
+  friend class ServiceWorkerJob;
+
+  nsTArray<nsRefPtr<ServiceWorkerJob>> mJobs;
+  const nsCString mOriginAttributesSuffix;
+  bool mPopping;
+
+public:
+  explicit ServiceWorkerJobQueue(const nsACString& aScopeKey)
+    : mOriginAttributesSuffix(aScopeKey)
+    , mPopping(false)
+  {}
+
+  ~ServiceWorkerJobQueue()
+  {
+    if (!mJobs.IsEmpty()) {
+      NS_WARNING("Pending/running jobs still around on shutdown!");
+    }
+  }
+
+  void
+  Append(ServiceWorkerJob* aJob)
+  {
+    MOZ_ASSERT(aJob);
+    MOZ_ASSERT(!mJobs.Contains(aJob));
+    bool wasEmpty = mJobs.IsEmpty();
+    mJobs.AppendElement(aJob);
+    if (wasEmpty) {
+      aJob->Start();
+    }
+  }
+
+  void
+  CancelJobs();
+
+  // Only used by HandleError, keep it that way!
+  ServiceWorkerJob*
+  Peek()
+  {
+    if (mJobs.IsEmpty()) {
+      return nullptr;
+    }
+    return mJobs[0];
+  }
+
+private:
+  void
+  Pop()
+  {
+    MOZ_ASSERT(!mPopping,
+               "Pop() called recursively, did you write a job which calls Done() synchronously from Start()?");
+    AutoRestore<bool> savePopping(mPopping);
+    mPopping = true;
+    MOZ_ASSERT(!mJobs.IsEmpty());
+    mJobs.RemoveElementAt(0);
+    if (!mJobs.IsEmpty()) {
+      mJobs[0]->Start();
+    } else {
+      nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+      MOZ_ASSERT(swm);
+      swm->MaybeRemoveRegistrationInfo(mOriginAttributesSuffix);
+    }
+  }
+
+  void
+  Done(ServiceWorkerJob* aJob)
+  {
+    MOZ_ASSERT(!mJobs.IsEmpty());
+    MOZ_ASSERT(mJobs[0] == aJob);
+    Pop();
+  }
 };
 
 namespace {
@@ -80,18 +265,11 @@ PopulateRegistrationData(nsIPrincipal* aPrincipal,
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aRegistration);
 
-  bool isNullPrincipal = true;
-  nsresult rv = aPrincipal->GetIsNullPrincipal(&isNullPrincipal);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  // No null principals.
-  if (NS_WARN_IF(isNullPrincipal)) {
+  if (NS_WARN_IF(!BasePrincipal::Cast(aPrincipal)->IsCodebasePrincipal())) {
     return NS_ERROR_FAILURE;
   }
 
-  rv = PrincipalToPrincipalInfo(aPrincipal, &aData.principal());
+  nsresult rv = PrincipalToPrincipalInfo(aPrincipal, &aData.principal());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -101,12 +279,39 @@ PopulateRegistrationData(nsIPrincipal* aPrincipal,
 
   if (aRegistration->mActiveWorker) {
     aData.currentWorkerURL() = aRegistration->mActiveWorker->ScriptSpec();
+    aData.activeCacheName() = aRegistration->mActiveWorker->CacheName();
+  }
+
+  if (aRegistration->mWaitingWorker) {
+    aData.waitingCacheName() = aRegistration->mWaitingWorker->CacheName();
   }
 
   return NS_OK;
 }
 
-} // Anonymous namespace
+class TeardownRunnable final : public nsRunnable
+{
+public:
+  explicit TeardownRunnable(ServiceWorkerManagerChild* aActor)
+    : mActor(aActor)
+  {
+    MOZ_ASSERT(mActor);
+  }
+
+  NS_IMETHODIMP Run() override
+  {
+    MOZ_ASSERT(mActor);
+    mActor->SendShutdown();
+    return NS_OK;
+  }
+
+private:
+  ~TeardownRunnable() {}
+
+  nsRefPtr<ServiceWorkerManagerChild> mActor;
+};
+
+} // namespace
 
 NS_IMPL_ISUPPORTS0(ServiceWorkerJob)
 NS_IMPL_ISUPPORTS0(ServiceWorkerRegistrationInfo)
@@ -115,7 +320,12 @@ void
 ServiceWorkerJob::Done(nsresult aStatus)
 {
   if (NS_WARN_IF(NS_FAILED(aStatus))) {
-    // Windows builds complain if the return value of NS_WARN_IF isn't used.
+#ifdef DEBUG
+    nsAutoCString errorName;
+    GetErrorName(aStatus, errorName);
+#endif
+    NS_WARNING(nsPrintfCString("ServiceWorkerJob failed with error: %s\n",
+                               errorName.get()).get());
   }
 
   if (mQueue) {
@@ -135,12 +345,25 @@ ServiceWorkerRegistrationInfo::Clear()
 
   if (mWaitingWorker) {
     mWaitingWorker->UpdateState(ServiceWorkerState::Redundant);
-    // Fire statechange.
+
+    nsresult rv = serviceWorkerScriptCache::PurgeCache(mPrincipal,
+                                                       mWaitingWorker->CacheName());
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Failed to purge the waiting cache.");
+    }
+
     mWaitingWorker = nullptr;
   }
 
   if (mActiveWorker) {
     mActiveWorker->UpdateState(ServiceWorkerState::Redundant);
+
+    nsresult rv = serviceWorkerScriptCache::PurgeCache(mPrincipal,
+                                                       mActiveWorker->CacheName());
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Failed to purge the active cache.");
+    }
+
     mActiveWorker = nullptr;
   }
 
@@ -177,32 +400,55 @@ NS_IMPL_RELEASE(ServiceWorkerManager)
 NS_INTERFACE_MAP_BEGIN(ServiceWorkerManager)
   NS_INTERFACE_MAP_ENTRY(nsIServiceWorkerManager)
   NS_INTERFACE_MAP_ENTRY(nsIIPCBackgroundChildCreateCallback)
-  if (aIID.Equals(NS_GET_IID(ServiceWorkerManager)))
-    foundInterface = static_cast<nsIServiceWorkerManager*>(this);
-  else
+  NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIServiceWorkerManager)
 NS_INTERFACE_MAP_END
 
 ServiceWorkerManager::ServiceWorkerManager()
   : mActor(nullptr)
+  , mShuttingDown(false)
 {
   // Register this component to PBackground.
   MOZ_ALWAYS_TRUE(BackgroundChild::GetOrCreateForCurrentThread(this));
 
-  if (XRE_GetProcessType() == GeckoProcessType_Default) {
+  gDOMDisableOpenClickDelay = Preferences::GetInt("dom.disable_open_click_delay");
+}
+
+ServiceWorkerManager::~ServiceWorkerManager()
+{
+  // The map will assert if it is not empty when destroyed.
+  mRegistrationInfos.Clear();
+  MOZ_ASSERT(!mActor);
+}
+
+void
+ServiceWorkerManager::Init()
+{
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    DebugOnly<nsresult> rv;
+    rv = obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false /* ownsWeak */);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+  }
+
+  if (XRE_IsParentProcess()) {
     nsRefPtr<ServiceWorkerRegistrar> swr = ServiceWorkerRegistrar::Get();
     MOZ_ASSERT(swr);
 
     nsTArray<ServiceWorkerRegistrationData> data;
     swr->GetRegistrations(data);
     LoadRegistrations(data);
-  }
-}
 
-ServiceWorkerManager::~ServiceWorkerManager()
-{
-  // The map will assert if it is not empty when destroyed.
-  mServiceWorkerRegistrationInfos.Clear();
+    if (obs) {
+      DebugOnly<nsresult> rv;
+      rv = obs->AddObserver(this, PURGE_SESSION_HISTORY, false /* ownsWeak */);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      rv = obs->AddObserver(this, PURGE_DOMAIN_DATA, false /* ownsWeak */);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      rv = obs->AddObserver(this, CLEAR_ORIGIN_DATA, false /* ownsWeak */);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+  }
 }
 
 class ContinueLifecycleTask : public nsISupports
@@ -282,18 +528,19 @@ public:
 class LifecycleEventWorkerRunnable final : public WorkerRunnable
 {
   nsString mEventName;
-  nsMainThreadPtrHandle<ContinueLifecycleTask> mTask;
+  const nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
+  const nsMainThreadPtrHandle<ContinueLifecycleTask> mTask;
 
 public:
-  LifecycleEventWorkerRunnable(WorkerPrivate* aWorkerPrivate,
+  LifecycleEventWorkerRunnable(nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
                                const nsString& aEventName,
                                const nsMainThreadPtrHandle<ContinueLifecycleTask>& aTask)
-      : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
+      : WorkerRunnable(aServiceWorker->GetWorkerPrivate(), WorkerThreadModifyBusyCount)
       , mEventName(aEventName)
+      , mServiceWorker(aServiceWorker)
       , mTask(aTask)
   {
     AssertIsOnMainThread();
-    MOZ_ASSERT(aWorkerPrivate);
   }
 
   bool
@@ -307,28 +554,6 @@ private:
   bool
   DispatchLifecycleEvent(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
 
-};
-
-class ServiceWorkerUpdateFinishCallback
-{
-protected:
-  virtual ~ServiceWorkerUpdateFinishCallback()
-  { }
-
-public:
-  NS_INLINE_DECL_REFCOUNTING(ServiceWorkerUpdateFinishCallback)
-
-  virtual
-  void UpdateSucceeded(ServiceWorkerRegistrationInfo* aInfo)
-  { }
-
-  virtual
-  void UpdateFailed(nsresult aStatus)
-  { }
-
-  virtual
-  void UpdateFailed(const ErrorEventInit& aDesc)
-  { }
 };
 
 class ServiceWorkerResolveWindowPromiseOnUpdateCallback final : public ServiceWorkerUpdateFinishCallback
@@ -351,9 +576,9 @@ public:
   void
   UpdateSucceeded(ServiceWorkerRegistrationInfo* aInfo) override
   {
-    nsRefPtr<ServiceWorkerRegistration> swr =
-      new ServiceWorkerRegistration(mWindow,
-          NS_ConvertUTF8toUTF16(aInfo->mScope));
+    nsRefPtr<ServiceWorkerRegistrationMainThread> swr =
+      new ServiceWorkerRegistrationMainThread(mWindow,
+                                              NS_ConvertUTF8toUTF16(aInfo->mScope));
     mPromise->MaybeResolve(swr);
   }
 
@@ -364,14 +589,12 @@ public:
   }
 
   void
-  UpdateFailed(const ErrorEventInit& aErrorDesc) override
+  UpdateFailed(JSExnType aExnType, const ErrorEventInit& aErrorDesc) override
   {
     AutoJSAPI jsapi;
     jsapi.Init(mWindow);
 
     JSContext* cx = jsapi.cx();
-
-    JS::Rooted<JSString*> stack(cx, JS_GetEmptyString(JS_GetRuntime(cx)));
 
     JS::Rooted<JS::Value> fnval(cx);
     if (!ToJSValue(cx, aErrorDesc.mFilename, &fnval)) {
@@ -390,7 +613,8 @@ public:
     JS::Rooted<JSString*> msg(cx, msgval.toString());
 
     JS::Rooted<JS::Value> error(cx);
-    if (!JS::CreateError(cx, JSEXN_ERR, stack, fn, aErrorDesc.mLineno,
+    if ((aExnType < JSEXN_ERR) ||
+        !JS::CreateError(cx, aExnType, nullptr, fn, aErrorDesc.mLineno,
                          aErrorDesc.mColno, nullptr, msg, &error)) {
       JS_ClearPendingException(cx);
       mPromise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
@@ -416,13 +640,15 @@ public:
 
 class CheckWorkerEvaluationAndContinueUpdateWorkerRunnable final : public WorkerRunnable
 {
+  const nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
   const nsMainThreadPtrHandle<nsISupports> mJob;
 public:
-  CheckWorkerEvaluationAndContinueUpdateWorkerRunnable(WorkerPrivate* aWorkerPrivate,
+  CheckWorkerEvaluationAndContinueUpdateWorkerRunnable(nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
                                                        const nsMainThreadPtrHandle<nsISupports> aJob)
-    : WorkerRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount)
+    : WorkerRunnable(aServiceWorker->GetWorkerPrivate(), WorkerThreadUnchangedBusyCount)
+    , mServiceWorker(aServiceWorker)
     , mJob(aJob)
-  { 
+  {
     AssertIsOnMainThread();
   }
 
@@ -442,8 +668,207 @@ public:
   }
 };
 
+namespace {
+
+/**
+ * The spec mandates slightly different behaviors for computing the scope
+ * prefix string in case a Service-Worker-Allowed header is specified versus
+ * when it's not available.
+ *
+ * With the header:
+ *   "Set maxScopeString to "/" concatenated with the strings in maxScope's
+ *    path (including empty strings), separated from each other by "/"."
+ * Without the header:
+ *   "Set maxScopeString to "/" concatenated with the strings, except the last
+ *    string that denotes the script's file name, in registration's registering
+ *    script url's path (including empty strings), separated from each other by
+ *    "/"."
+ *
+ * In simpler terms, if the header is not present, we should only use the
+ * "directory" part of the pathname, and otherwise the entire pathname should be
+ * used.  ScopeStringPrefixMode allows the caller to specify the desired
+ * behavior.
+ */
+enum ScopeStringPrefixMode {
+  eUseDirectory,
+  eUsePath
+};
+
+nsresult
+GetRequiredScopeStringPrefix(nsIURI* aScriptURI, nsACString& aPrefix,
+                             ScopeStringPrefixMode aPrefixMode)
+{
+  nsresult rv = aScriptURI->GetPrePath(aPrefix);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (aPrefixMode == eUseDirectory) {
+    nsCOMPtr<nsIURL> scriptURL(do_QueryInterface(aScriptURI));
+    if (NS_WARN_IF(!scriptURL)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    nsAutoCString dir;
+    rv = scriptURL->GetDirectory(dir);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    aPrefix.Append(dir);
+  } else if (aPrefixMode == eUsePath) {
+    nsAutoCString path;
+    rv = aScriptURI->GetPath(path);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    aPrefix.Append(path);
+  } else {
+    MOZ_ASSERT_UNREACHABLE("Invalid value for aPrefixMode");
+  }
+  return NS_OK;
+}
+
+class PropagateSoftUpdateRunnable final : public nsRunnable
+{
+public:
+  PropagateSoftUpdateRunnable(const OriginAttributes& aOriginAttributes,
+                              const nsAString& aScope)
+    : mOriginAttributes(aOriginAttributes)
+    , mScope(aScope)
+  {}
+
+  NS_IMETHOD Run() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    MOZ_ASSERT(swm);
+
+    swm->PropagateSoftUpdate(mOriginAttributes, mScope);
+    return NS_OK;
+  }
+
+private:
+  ~PropagateSoftUpdateRunnable()
+  {}
+
+  const OriginAttributes mOriginAttributes;
+  const nsString mScope;
+};
+
+class PropagateUnregisterRunnable final : public nsRunnable
+{
+public:
+  PropagateUnregisterRunnable(nsIPrincipal* aPrincipal,
+                              nsIServiceWorkerUnregisterCallback* aCallback,
+                              const nsAString& aScope)
+    : mPrincipal(aPrincipal)
+    , mCallback(aCallback)
+    , mScope(aScope)
+  {
+    MOZ_ASSERT(aPrincipal);
+  }
+
+  NS_IMETHOD Run() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    MOZ_ASSERT(swm);
+
+    nsresult rv = swm->PropagateUnregister(mPrincipal, mCallback, mScope);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    return NS_OK;
+  }
+
+private:
+  ~PropagateUnregisterRunnable()
+  {}
+
+  nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsCOMPtr<nsIServiceWorkerUnregisterCallback> mCallback;
+  const nsString mScope;
+};
+
+class RemoveRunnable final : public nsRunnable
+{
+public:
+  explicit RemoveRunnable(const nsACString& aHost)
+  {}
+
+  NS_IMETHOD Run() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    MOZ_ASSERT(swm);
+
+    swm->Remove(mHost);
+    return NS_OK;
+  }
+
+private:
+  ~RemoveRunnable()
+  {}
+
+  const nsCString mHost;
+};
+
+class PropagateRemoveRunnable final : public nsRunnable
+{
+public:
+  explicit PropagateRemoveRunnable(const nsACString& aHost)
+  {}
+
+  NS_IMETHOD Run() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    MOZ_ASSERT(swm);
+
+    swm->PropagateRemove(mHost);
+    return NS_OK;
+  }
+
+private:
+  ~PropagateRemoveRunnable()
+  {}
+
+  const nsCString mHost;
+};
+
+class PropagateRemoveAllRunnable final : public nsRunnable
+{
+public:
+  PropagateRemoveAllRunnable()
+  {}
+
+  NS_IMETHOD Run() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    MOZ_ASSERT(swm);
+
+    swm->PropagateRemoveAll();
+    return NS_OK;
+  }
+
+private:
+  ~PropagateRemoveAllRunnable()
+  {}
+};
+
+} // namespace
+
 class ServiceWorkerRegisterJob final : public ServiceWorkerJob,
-                                           public nsIStreamLoaderObserver
+                                       public serviceWorkerScriptCache::CompareCallback
 {
   friend class ContinueInstallTask;
 
@@ -452,6 +877,8 @@ class ServiceWorkerRegisterJob final : public ServiceWorkerJob,
   nsRefPtr<ServiceWorkerRegistrationInfo> mRegistration;
   nsRefPtr<ServiceWorkerUpdateFinishCallback> mCallback;
   nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsRefPtr<ServiceWorkerInfo> mUpdateAndInstallInfo;
+  nsCOMPtr<nsILoadGroup> mLoadGroup;
 
   ~ServiceWorkerRegisterJob()
   { }
@@ -462,22 +889,29 @@ class ServiceWorkerRegisterJob final : public ServiceWorkerJob,
     UPDATE_JOB = 1,
   } mJobType;
 
+  bool mCanceled;
+
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
 
   // [[Register]]
   ServiceWorkerRegisterJob(ServiceWorkerJobQueue* aQueue,
                            const nsCString& aScope,
                            const nsCString& aScriptSpec,
                            ServiceWorkerUpdateFinishCallback* aCallback,
-                           nsIPrincipal* aPrincipal)
+                           nsIPrincipal* aPrincipal,
+                           nsILoadGroup* aLoadGroup)
     : ServiceWorkerJob(aQueue)
     , mScope(aScope)
     , mScriptSpec(aScriptSpec)
     , mCallback(aCallback)
     , mPrincipal(aPrincipal)
+    , mLoadGroup(aLoadGroup)
     , mJobType(REGISTER_JOB)
-  { }
+    , mCanceled(false)
+  {
+    MOZ_ASSERT(mLoadGroup);
+  }
 
   // [[Update]]
   ServiceWorkerRegisterJob(ServiceWorkerJobQueue* aQueue,
@@ -487,12 +921,27 @@ public:
     , mRegistration(aRegistration)
     , mCallback(aCallback)
     , mJobType(UPDATE_JOB)
+    , mCanceled(false)
   { }
+
+  bool
+  IsRegisterJob() const override
+  {
+    return true;
+  }
+
+  void
+  Cancel()
+  {
+    mQueue = nullptr;
+    mCanceled = true;
+  }
 
   void
   Start() override
   {
     MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(!mCanceled);
 
     nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
     if (!swm->HasBackgroundActor()) {
@@ -503,15 +952,24 @@ public:
     }
 
     if (mJobType == REGISTER_JOB) {
-      mRegistration = swm->GetRegistration(mScope);
+      mRegistration = swm->GetRegistration(mPrincipal, mScope);
 
       if (mRegistration) {
         nsRefPtr<ServiceWorkerInfo> newest = mRegistration->Newest();
         if (newest && mScriptSpec.Equals(newest->ScriptSpec()) &&
             mScriptSpec.Equals(mRegistration->mScriptSpec)) {
           mRegistration->mPendingUninstall = false;
+          swm->StoreRegistration(mPrincipal, mRegistration);
           Succeed();
-          Done(NS_OK);
+
+          // Done() must always be called async from Start()
+          nsCOMPtr<nsIRunnable> runnable =
+            NS_NewRunnableMethodWithArg<nsresult>(
+              this,
+              &ServiceWorkerRegisterJob::Done,
+              NS_OK);
+          MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToCurrentThread(runnable)));
+
           return;
         }
       } else {
@@ -527,82 +985,153 @@ public:
     Update();
   }
 
-  NS_IMETHOD
-  OnStreamComplete(nsIStreamLoader* aLoader, nsISupports* aContext,
-                   nsresult aStatus, uint32_t aLen,
-                   const uint8_t* aString) override
+  void
+  ComparisonResult(nsresult aStatus, bool aInCacheAndEqual,
+                   const nsAString& aNewCacheName,
+                   const nsACString& aMaxScope) override
   {
+    nsRefPtr<ServiceWorkerRegisterJob> kungFuDeathGrip = this;
+    if (NS_WARN_IF(mCanceled)) {
+      Fail(NS_ERROR_DOM_TYPE_ERR);
+      return;
+    }
+
     if (NS_WARN_IF(NS_FAILED(aStatus))) {
-      Fail(NS_ERROR_DOM_NETWORK_ERR);
-      return aStatus;
+      if (aStatus == NS_ERROR_DOM_SECURITY_ERR) {
+        Fail(aStatus);
+      } else {
+        Fail(NS_ERROR_DOM_TYPE_ERR);
+      }
+      return;
     }
 
-    nsCOMPtr<nsIRequest> request;
-    nsresult rv = aLoader->GetRequest(getter_AddRefs(request));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      Fail(NS_ERROR_DOM_NETWORK_ERR);
-      return rv;
+    if (aInCacheAndEqual) {
+      Succeed();
+      Done(NS_OK);
+      return;
     }
 
-    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(request);
-    if (!httpChannel) {
-      Fail(NS_ERROR_DOM_NETWORK_ERR);
-      return NS_ERROR_FAILURE;
-    }
+    AssertIsOnMainThread();
+    Telemetry::Accumulate(Telemetry::SERVICE_WORKER_UPDATED, 1);
 
-    bool requestSucceeded;
-    rv = httpChannel->GetRequestSucceeded(&requestSucceeded);
-    if (NS_WARN_IF(NS_FAILED(rv) || !requestSucceeded)) {
-      Fail(NS_ERROR_DOM_NETWORK_ERR);
-      return rv;
-    }
-
-
-    // FIXME(nsm): "Extract mime type..."
-    // FIXME(nsm): Byte match to aString.
-    NS_WARNING("Byte wise check is disabled, just using new one");
     nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
 
+    nsCOMPtr<nsIURI> scriptURI;
+    nsresult rv = NS_NewURI(getter_AddRefs(scriptURI), mRegistration->mScriptSpec);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      Fail(NS_ERROR_DOM_SECURITY_ERR);
+      return;
+    }
+    nsCOMPtr<nsIURI> maxScopeURI;
+    if (!aMaxScope.IsEmpty()) {
+      rv = NS_NewURI(getter_AddRefs(maxScopeURI), aMaxScope,
+                     nullptr, scriptURI);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        Fail(NS_ERROR_DOM_SECURITY_ERR);
+        return;
+      }
+    }
+
+    nsAutoCString defaultAllowedPrefix;
+    rv = GetRequiredScopeStringPrefix(scriptURI, defaultAllowedPrefix,
+                                      eUseDirectory);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      Fail(NS_ERROR_DOM_SECURITY_ERR);
+      return;
+    }
+    nsAutoCString maxPrefix(defaultAllowedPrefix);
+    if (maxScopeURI) {
+      rv = GetRequiredScopeStringPrefix(maxScopeURI, maxPrefix, eUsePath);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        Fail(NS_ERROR_DOM_SECURITY_ERR);
+        return;
+      }
+    }
+
+    if (!StringBeginsWith(mRegistration->mScope, maxPrefix)) {
+      NS_WARNING("By default a service worker's scope is restricted to at or below it's script's location.");
+      Fail(NS_ERROR_DOM_SECURITY_ERR);
+      return;
+    }
+
+    nsAutoCString scopeKey;
+    rv = swm->PrincipalToScopeKey(mRegistration->mPrincipal, scopeKey);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return Fail(NS_ERROR_FAILURE);
+    }
+
+    ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+    if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
+      return Fail(NS_ERROR_FAILURE);
+    }
+
+    nsAutoString cacheName;
     // We have to create a ServiceWorker here simply to ensure there are no
     // errors. Ideally we should just pass this worker on to ContinueInstall.
-    MOZ_ASSERT(!swm->mSetOfScopesBeingUpdated.Contains(mRegistration->mScope));
-    swm->mSetOfScopesBeingUpdated.Put(mRegistration->mScope, true);
+    MOZ_ASSERT(!data->mSetOfScopesBeingUpdated.Contains(mRegistration->mScope));
+    data->mSetOfScopesBeingUpdated.Put(mRegistration->mScope, true);
+
+    // Call FailScopeUpdate on main thread if the SW script load fails below.
+    nsCOMPtr<nsIRunnable> failRunnable = NS_NewRunnableMethodWithArgs
+      <StorensRefPtrPassByPtr<ServiceWorkerManager>, nsCString>
+      (this, &ServiceWorkerRegisterJob::FailScopeUpdate, swm, scopeKey);
+
+    MOZ_ASSERT(!mUpdateAndInstallInfo);
+    mUpdateAndInstallInfo =
+      new ServiceWorkerInfo(mRegistration, mRegistration->mScriptSpec,
+                            aNewCacheName);
     nsRefPtr<ServiceWorker> serviceWorker;
     rv = swm->CreateServiceWorker(mRegistration->mPrincipal,
-                                  mRegistration->mScriptSpec,
-                                  mRegistration->mScope,
+                                  mUpdateAndInstallInfo,
+                                  failRunnable,
                                   getter_AddRefs(serviceWorker));
 
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      swm->mSetOfScopesBeingUpdated.Remove(mRegistration->mScope);
-      Fail(NS_ERROR_DOM_ABORT_ERR);
-      return rv;
+      return FailScopeUpdate(swm, scopeKey);
     }
 
     nsRefPtr<ServiceWorkerJob> upcasted = this;
     nsMainThreadPtrHandle<nsISupports> handle(
         new nsMainThreadPtrHolder<nsISupports>(upcasted));
 
+    nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
+      new nsMainThreadPtrHolder<ServiceWorker>(serviceWorker));
     nsRefPtr<CheckWorkerEvaluationAndContinueUpdateWorkerRunnable> r =
-      new CheckWorkerEvaluationAndContinueUpdateWorkerRunnable(serviceWorker->GetWorkerPrivate(), handle);
+      new CheckWorkerEvaluationAndContinueUpdateWorkerRunnable(serviceWorkerHandle, handle);
     AutoJSAPI jsapi;
     jsapi.Init();
     bool ok = r->Dispatch(jsapi.cx());
     if (NS_WARN_IF(!ok)) {
-      swm->mSetOfScopesBeingUpdated.Remove(mRegistration->mScope);
-      Fail(NS_ERROR_DOM_ABORT_ERR);
-      return rv;
+      return FailScopeUpdate(swm, scopeKey);
     }
+  }
 
-    return NS_OK;
+  void
+  FailScopeUpdate(ServiceWorkerManager* aSwm, const nsACString& aScopeKey)
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(aSwm);
+    ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+    if (aSwm->mRegistrationInfos.Get(aScopeKey, &data)) {
+      data->mSetOfScopesBeingUpdated.Remove(aScopeKey);
+    }
+    Fail(NS_ERROR_DOM_ABORT_ERR);
   }
 
   // Public so our error handling code can use it.
+  // Callers MUST hold a strong ref before calling this!
   void
-  Fail(const ErrorEventInit& aError)
+  Fail(JSExnType aExnType, const ErrorEventInit& aError)
   {
     MOZ_ASSERT(mCallback);
-    mCallback->UpdateFailed(aError);
+    nsRefPtr<ServiceWorkerUpdateFinishCallback> callback = mCallback.forget();
+    // With cancellation support, we may only be running with one reference
+    // from another object like a stream loader or something.
+    // UpdateFailed may do something with that, so hold a ref to ourself since
+    // FailCommon relies on it.
+    // FailCommon does check for cancellation, but let's be safe here.
+    nsRefPtr<ServiceWorkerRegisterJob> kungFuDeathGrip = this;
+    callback->UpdateFailed(aExnType, aError);
     FailCommon(NS_ERROR_DOM_JS_EXCEPTION);
   }
 
@@ -610,11 +1139,35 @@ public:
   void
   ContinueInstall()
   {
+    // mRegistration will be null if we have already Fail()ed.
+    if (!mRegistration) {
+      return;
+    }
+
+    // Even if we are canceled, ensure integrity of mSetOfScopesBeingUpdated
+    // first.
     nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
-    MOZ_ASSERT(swm->mSetOfScopesBeingUpdated.Contains(mRegistration->mScope));
-    swm->mSetOfScopesBeingUpdated.Remove(mRegistration->mScope);
+
+    nsAutoCString scopeKey;
+    nsresult rv = swm->PrincipalToScopeKey(mRegistration->mPrincipal, scopeKey);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return Fail(NS_ERROR_FAILURE);
+    }
+
+    ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+    if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
+      return Fail(NS_ERROR_FAILURE);
+    }
+
+    MOZ_ASSERT(data->mSetOfScopesBeingUpdated.Contains(mRegistration->mScope));
+    data->mSetOfScopesBeingUpdated.Remove(mRegistration->mScope);
     // This is effectively the end of Step 4.3 of the [[Update]] algorithm.
     // The invocation of [[Install]] is not part of the atomic block.
+
+    nsRefPtr<ServiceWorkerRegisterJob> kungFuDeathGrip = this;
+    if (mCanceled) {
+      return Fail(NS_ERROR_DOM_ABORT_ERR);
+    }
 
     // Begin [[Install]] atomic step 4.
     if (mRegistration->mInstallingWorker) {
@@ -624,24 +1177,32 @@ public:
 
     swm->InvalidateServiceWorkerRegistrationWorker(mRegistration,
                                                    WhichServiceWorker::INSTALLING_WORKER);
-    mRegistration->mInstallingWorker = new ServiceWorkerInfo(mRegistration, mRegistration->mScriptSpec);
+
+    mRegistration->mInstallingWorker = mUpdateAndInstallInfo.forget();
     mRegistration->mInstallingWorker->UpdateState(ServiceWorkerState::Installing);
 
     Succeed();
+    // The job should NOT call fail from this point on.
 
     // Step 4.6 "Queue a task..." for updatefound.
     nsCOMPtr<nsIRunnable> upr =
-      NS_NewRunnableMethodWithArg<ServiceWorkerRegistrationInfo*>(swm,
-                                                                  &ServiceWorkerManager::FireUpdateFound,
-                                                                  mRegistration);
+      NS_NewRunnableMethodWithArg<ServiceWorkerRegistrationInfo*>(
+        swm,
+        &ServiceWorkerManager::FireUpdateFoundOnServiceWorkerRegistrations,
+        mRegistration);
+
     NS_DispatchToMainThread(upr);
 
+    // Call ContinueAfterInstallEvent(false, false) on main thread if the SW
+    // script fails to load.
+    nsCOMPtr<nsIRunnable> failRunnable = NS_NewRunnableMethodWithArgs<bool, bool>
+      (this, &ServiceWorkerRegisterJob::ContinueAfterInstallEvent, false, false);
+
     nsRefPtr<ServiceWorker> serviceWorker;
-    nsresult rv =
-      swm->CreateServiceWorker(mRegistration->mPrincipal,
-                               mRegistration->mInstallingWorker->ScriptSpec(),
-                               mRegistration->mScope,
-                               getter_AddRefs(serviceWorker));
+    rv = swm->CreateServiceWorker(mRegistration->mPrincipal,
+                                  mRegistration->mInstallingWorker,
+                                  failRunnable,
+                                  getter_AddRefs(serviceWorker));
 
     if (NS_WARN_IF(NS_FAILED(rv))) {
       ContinueAfterInstallEvent(false /* aSuccess */, false /* aActivateImmediately */);
@@ -651,8 +1212,10 @@ public:
     nsMainThreadPtrHandle<ContinueLifecycleTask> handle(
         new nsMainThreadPtrHolder<ContinueLifecycleTask>(new ContinueInstallTask(this)));
 
+    nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
+      new nsMainThreadPtrHolder<ServiceWorker>(serviceWorker));
     nsRefPtr<LifecycleEventWorkerRunnable> r =
-      new LifecycleEventWorkerRunnable(serviceWorker->GetWorkerPrivate(), NS_LITERAL_STRING("install"), handle);
+      new LifecycleEventWorkerRunnable(serviceWorkerHandle, NS_LITERAL_STRING("install"), handle);
 
     AutoJSAPI jsapi;
     jsapi.Init();
@@ -666,6 +1229,8 @@ private:
   void
   Update()
   {
+    // Since Update() is called synchronously from Start(), we can assert this.
+    MOZ_ASSERT(!mCanceled);
     MOZ_ASSERT(mRegistration);
     nsCOMPtr<nsIRunnable> r =
       NS_NewRunnableMethod(this, &ServiceWorkerRegisterJob::ContinueUpdate);
@@ -678,51 +1243,31 @@ private:
   ContinueUpdate()
   {
     AssertIsOnMainThread();
+    nsRefPtr<ServiceWorkerRegisterJob> kungFuDeathGrip = this;
+    if (mCanceled) {
+      return Fail(NS_ERROR_DOM_ABORT_ERR);
+    }
+
     if (mRegistration->mInstallingWorker) {
       // FIXME(nsm): "Terminate installing worker".
       mRegistration->mInstallingWorker->UpdateState(ServiceWorkerState::Redundant);
       mRegistration->mInstallingWorker = nullptr;
     }
 
-    // FIXME(nsm): Plug in FetchDriver when it is ready.
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv = NS_NewURI(getter_AddRefs(uri), mRegistration->mScriptSpec, nullptr, nullptr);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return Fail(rv);
+    nsRefPtr<ServiceWorkerInfo> workerInfo = mRegistration->Newest();
+    nsAutoString cacheName;
+
+    // 9.2.20 If newestWorker is not null, and newestWorker's script url is
+    // equal to registration's registering script url and response is a
+    // byte-for-byte match with the script resource of newestWorker...
+    if (workerInfo && workerInfo->ScriptSpec().Equals(mRegistration->mScriptSpec)) {
+      cacheName = workerInfo->CacheName();
     }
 
-    nsCOMPtr<nsIPrincipal> principal;
-    nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-    rv = ssm->GetNoAppCodebasePrincipal(uri, getter_AddRefs(principal));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return Fail(rv);
-    }
-
-
-    nsCOMPtr<nsIChannel> channel;
-    rv = NS_NewChannel(getter_AddRefs(channel),
-                       uri,
-                       principal,
-                       nsILoadInfo::SEC_NORMAL,
-                       nsIContentPolicy::TYPE_SCRIPT); // FIXME(nsm): TYPE_SERVICEWORKER
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return Fail(rv);
-    }
-    // FIXME(nsm): Set redirect limit.
-
-    // Don't let serviceworker intercept.
-    nsCOMPtr<nsIHttpChannelInternal> internalChannel = do_QueryInterface(channel);
-    if (internalChannel) {
-      internalChannel->ForceNoIntercept();
-    }
-
-    nsCOMPtr<nsIStreamLoader> loader;
-    rv = NS_NewStreamLoader(getter_AddRefs(loader), this);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return Fail(rv);
-    }
-
-    rv = channel->AsyncOpen(loader, nullptr);
+    nsresult rv =
+      serviceWorkerScriptCache::Compare(mRegistration->mPrincipal, cacheName,
+                                        NS_ConvertUTF8toUTF16(mRegistration->mScriptSpec),
+                                        this, mLoadGroup);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return Fail(rv);
     }
@@ -739,28 +1284,49 @@ private:
   void
   FailCommon(nsresult aRv)
   {
-    mCallback = nullptr;
+    mUpdateAndInstallInfo = nullptr;
+    if (mRegistration->mInstallingWorker) {
+      nsresult rv = serviceWorkerScriptCache::PurgeCache(mRegistration->mPrincipal,
+                                                         mRegistration->mInstallingWorker->CacheName());
+      if (NS_FAILED(rv)) {
+        NS_WARNING("Failed to purge the installing worker cache.");
+      }
+    }
+
     nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
     swm->MaybeRemoveRegistration(mRegistration);
     // Ensures that the job can't do anything useful from this point on.
     mRegistration = nullptr;
+    unused << NS_WARN_IF(NS_FAILED(aRv));
     Done(aRv);
   }
 
   // This MUST only be called when the job is still performing actions related
   // to registration or update. After the spec resolves the update promise, use
   // Done() with the failure code instead.
+  // Callers MUST hold a strong ref before calling this!
   void
   Fail(nsresult aRv)
   {
     MOZ_ASSERT(mCallback);
-    mCallback->UpdateFailed(aRv);
+    nsRefPtr<ServiceWorkerUpdateFinishCallback> callback = mCallback.forget();
+    // With cancellation support, we may only be running with one reference
+    // from another object like a stream loader or something.
+    // UpdateFailed may do something with that, so hold a ref to ourself since
+    // FailCommon relies on it.
+    // FailCommon does check for cancellation, but let's be safe here.
+    nsRefPtr<ServiceWorkerRegisterJob> kungFuDeathGrip = this;
+    callback->UpdateFailed(aRv);
     FailCommon(aRv);
   }
 
   void
   ContinueAfterInstallEvent(bool aInstallEventSuccess, bool aActivateImmediately)
   {
+    if (mCanceled) {
+      return Done(NS_ERROR_DOM_ABORT_ERR);
+    }
+
     if (!mRegistration->mInstallingWorker) {
       NS_WARNING("mInstallingWorker was null.");
       return Done(NS_ERROR_DOM_ABORT_ERR);
@@ -769,7 +1335,7 @@ private:
     nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
 
     // "If installFailed is true"
-    if (!aInstallEventSuccess) {
+    if (NS_WARN_IF(!aInstallEventSuccess)) {
       mRegistration->mInstallingWorker->UpdateState(ServiceWorkerState::Redundant);
       mRegistration->mInstallingWorker = nullptr;
       swm->InvalidateServiceWorkerRegistrationWorker(mRegistration,
@@ -782,27 +1348,53 @@ private:
     if (mRegistration->mWaitingWorker) {
       // FIXME(nsm): Terminate
       mRegistration->mWaitingWorker->UpdateState(ServiceWorkerState::Redundant);
+
+      nsresult rv = serviceWorkerScriptCache::PurgeCache(mRegistration->mPrincipal,
+                                                         mRegistration->mWaitingWorker->CacheName());
+      if (NS_FAILED(rv)) {
+        NS_WARNING("Failed to purge the old waiting cache.");
+      }
     }
 
-    // Although the spec first sets waiting worker and then updates its state,
-    // our ServiceWorkerInfo does not hold a list of associated ServiceWorker
-    // objects in content JS. This means if we want to fire an event on
-    // ServiceWorkerRegistration.installing, we need to do it first, before
-    // swapping it with waiting worker.
-    mRegistration->mInstallingWorker->UpdateState(ServiceWorkerState::Installed);
     mRegistration->mWaitingWorker = mRegistration->mInstallingWorker.forget();
+    mRegistration->mWaitingWorker->UpdateState(ServiceWorkerState::Installed);
     swm->InvalidateServiceWorkerRegistrationWorker(mRegistration,
                                                    WhichServiceWorker::INSTALLING_WORKER | WhichServiceWorker::WAITING_WORKER);
 
-    // FIXME(nsm): Bug 982711 Deal with activateImmediately.
-    NS_WARN_IF_FALSE(!aActivateImmediately, "Immediate activation using replace() is not supported yet");
+    // "If registration's waiting worker's skip waiting flag is set"
+    if (mRegistration->mWaitingWorker->SkipWaitingFlag()) {
+      mRegistration->PurgeActiveWorker();
+    }
+
     Done(NS_OK);
     // Activate() is invoked out of band of atomic.
     mRegistration->TryToActivate();
   }
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(ServiceWorkerRegisterJob, ServiceWorkerJob, nsIStreamLoaderObserver);
+NS_IMPL_ISUPPORTS_INHERITED0(ServiceWorkerRegisterJob, ServiceWorkerJob);
+
+void
+ServiceWorkerJobQueue::CancelJobs()
+{
+  if (mJobs.IsEmpty()) {
+    return;
+  }
+
+  // We have to treat the first job specially. It is the running job and needs
+  // to be notified correctly.
+  nsRefPtr<ServiceWorkerJob> runningJob = mJobs[0];
+  // We can just let an Unregister job run to completion.
+  if (runningJob->IsRegisterJob()) {
+    ServiceWorkerRegisterJob* job = static_cast<ServiceWorkerRegisterJob*>(runningJob.get());
+    job->Cancel();
+  }
+
+  // Get rid of everything. Non-main thread objects may still be holding a ref
+  // to the running register job. Since we called Cancel() on it, the job's
+  // main thread functions will just exit.
+  mJobs.Clear();
+}
 
 NS_IMETHODIMP
 ContinueUpdateRunnable::Run()
@@ -822,41 +1414,18 @@ ContinueInstallTask::ContinueAfterWorkerEvent(bool aSuccess, bool aActivateImmed
   mJob->ContinueAfterInstallEvent(aSuccess, aActivateImmediately);
 }
 
-// If we return an error code here, the ServiceWorkerContainer will
-// automatically reject the Promise.
-NS_IMETHODIMP
-ServiceWorkerManager::Register(nsIDOMWindow* aWindow,
-                               const nsAString& aScope,
-                               const nsAString& aScriptURL,
-                               nsISupports** aPromise)
+static bool
+IsFromAuthenticatedOriginInternal(nsIDocument* aDoc)
 {
-  AssertIsOnMainThread();
-
-  // XXXnsm Don't allow chrome callers for now, we don't support chrome
-  // ServiceWorkers.
-  MOZ_ASSERT(!nsContentUtils::IsCallerChrome());
-
-  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
-
-  nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
-  if (!doc) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIURI> documentURI = doc->GetBaseURI();
+  nsCOMPtr<nsIURI> documentURI = aDoc->GetDocumentURI();
 
   bool authenticatedOrigin = false;
-  // FIXME(nsm): Bug 1003991. Disable check when devtools are open.
-  if (Preferences::GetBool("dom.serviceWorkers.testing.enabled")) {
-    authenticatedOrigin = true;
-  }
-
   nsresult rv;
   if (!authenticatedOrigin) {
     nsAutoCString scheme;
     rv = documentURI->GetScheme(scheme);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return false;
     }
 
     if (scheme.EqualsLiteral("https") ||
@@ -870,7 +1439,7 @@ ServiceWorkerManager::Register(nsIDOMWindow* aWindow,
     nsAutoCString host;
     rv = documentURI->GetHost(host);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return false;
     }
 
     if (host.Equals("127.0.0.1") ||
@@ -884,54 +1453,101 @@ ServiceWorkerManager::Register(nsIDOMWindow* aWindow,
     bool isFile;
     rv = documentURI->SchemeIs("file", &isFile);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return false;
     }
 
     if (!isFile) {
       bool isHttps;
       rv = documentURI->SchemeIs("https", &isHttps);
-      if (NS_WARN_IF(NS_FAILED(rv)) || !isHttps) {
-        NS_WARNING("ServiceWorker registration from insecure websites is not allowed.");
-        return NS_ERROR_DOM_SECURITY_ERR;
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
       }
+      authenticatedOrigin = isHttps;
     }
   }
 
-  nsCOMPtr<nsIURI> scriptURI;
-  rv = NS_NewURI(getter_AddRefs(scriptURI), aScriptURL, nullptr, documentURI);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  return authenticatedOrigin;
+}
+
+// This function implements parts of the step 3 of the following algorithm:
+// https://w3c.github.io/webappsec/specs/powerfulfeatures/#settings-secure
+static bool
+IsFromAuthenticatedOrigin(nsIDocument* aDoc)
+{
+  MOZ_ASSERT(aDoc);
+  nsCOMPtr<nsIDocument> doc(aDoc);
+  while (doc && !nsContentUtils::IsChromeDoc(doc)) {
+    if (!IsFromAuthenticatedOriginInternal(doc)) {
+      return false;
+    }
+
+    doc = doc->GetParentDocument();
+  }
+  return true;
+}
+
+// If we return an error code here, the ServiceWorkerContainer will
+// automatically reject the Promise.
+NS_IMETHODIMP
+ServiceWorkerManager::Register(nsIDOMWindow* aWindow,
+                               nsIURI* aScopeURI,
+                               nsIURI* aScriptURI,
+                               nsISupports** aPromise)
+{
+  AssertIsOnMainThread();
+
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
+  MOZ_ASSERT(window);
+
+  nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
+  if (!doc) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // Don't allow service workers to register when the *document* is chrome for
+  // now.
+  MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()));
+
+  nsCOMPtr<nsPIDOMWindow> outerWindow = window->GetOuterWindow();
+  bool serviceWorkersTestingEnabled =
+    outerWindow->GetServiceWorkersTestingEnabled();
+
+  bool authenticatedOrigin;
+  if (Preferences::GetBool("dom.serviceWorkers.testing.enabled") ||
+      serviceWorkersTestingEnabled) {
+    authenticatedOrigin = true;
+  } else {
+    authenticatedOrigin = IsFromAuthenticatedOrigin(doc);
+  }
+
+  if (!authenticatedOrigin) {
+    NS_WARNING("ServiceWorker registration from insecure websites is not allowed.");
+    return NS_ERROR_DOM_SECURITY_ERR;
   }
 
   // Data URLs are not allowed.
   nsCOMPtr<nsIPrincipal> documentPrincipal = doc->NodePrincipal();
 
-  rv = documentPrincipal->CheckMayLoad(scriptURI, true /* report */,
-                                       false /* allowIfInheritsPrincipal */);
+  nsresult rv = documentPrincipal->CheckMayLoad(aScriptURI, true /* report */,
+                                                false /* allowIfInheritsPrincipal */);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
-  nsCOMPtr<nsIURI> scopeURI;
-  rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, documentURI);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return NS_ERROR_DOM_SECURITY_ERR;
-  }
-
-  rv = documentPrincipal->CheckMayLoad(scopeURI, true /* report */,
+  rv = documentPrincipal->CheckMayLoad(aScopeURI, true /* report */,
                                        false /* allowIfInheritsPrinciple */);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
   nsCString cleanedScope;
-  rv = scopeURI->GetSpecIgnoringRef(cleanedScope);
+  rv = aScopeURI->GetSpecIgnoringRef(cleanedScope);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_FAILURE;
   }
 
   nsAutoCString spec;
-  rv = scriptURI->GetSpec(spec);
+  rv = aScriptURI->GetSpec(spec);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -940,18 +1556,39 @@ ServiceWorkerManager::Register(nsIDOMWindow* aWindow,
   ErrorResult result;
   nsRefPtr<Promise> promise = Promise::Create(sgo, result);
   if (result.Failed()) {
-    return result.ErrorCode();
+    return result.StealNSResult();
   }
 
-  ServiceWorkerJobQueue* queue = GetOrCreateJobQueue(cleanedScope);
+  nsAutoCString originSuffix;
+  rv = PrincipalToScopeKey(documentPrincipal, originSuffix);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  ServiceWorkerJobQueue* queue = GetOrCreateJobQueue(originSuffix, cleanedScope);
   MOZ_ASSERT(queue);
 
   nsRefPtr<ServiceWorkerResolveWindowPromiseOnUpdateCallback> cb =
     new ServiceWorkerResolveWindowPromiseOnUpdateCallback(window, promise);
 
+  nsCOMPtr<nsILoadGroup> docLoadGroup = doc->GetDocumentLoadGroup();
+  nsRefPtr<WorkerLoadInfo::InterfaceRequestor> ir =
+    new WorkerLoadInfo::InterfaceRequestor(documentPrincipal, docLoadGroup);
+  ir->MaybeAddTabChild(docLoadGroup);
+
+  // Create a load group that is separate from, yet related to, the document's load group.
+  // This allows checks for interfaces like nsILoadContext to yield the values used by the
+  // the document, yet will not cancel the update job if the document's load group is cancelled.
+  nsCOMPtr<nsILoadGroup> loadGroup = do_CreateInstance(NS_LOADGROUP_CONTRACTID);
+  rv = loadGroup->SetNotificationCallbacks(ir);
+  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(rv));
+
   nsRefPtr<ServiceWorkerRegisterJob> job =
-    new ServiceWorkerRegisterJob(queue, cleanedScope, spec, cb, documentPrincipal);
+    new ServiceWorkerRegisterJob(queue, cleanedScope, spec, cb, documentPrincipal, loadGroup);
   queue->Append(job);
+
+  AssertIsOnMainThread();
+  Telemetry::Accumulate(Telemetry::SERVICE_WORKER_REGISTRATIONS, 1);
 
   promise.forget(aPromise);
   return NS_OK;
@@ -965,9 +1602,11 @@ ServiceWorkerManager::AppendPendingOperation(ServiceWorkerJobQueue* aQueue,
   MOZ_ASSERT(aQueue);
   MOZ_ASSERT(aJob);
 
-  PendingOperation* opt = mPendingOperations.AppendElement();
-  opt->mQueue = aQueue;
-  opt->mJob = aJob;
+  if (!mShuttingDown) {
+    PendingOperation* opt = mPendingOperations.AppendElement();
+    opt->mQueue = aQueue;
+    opt->mJob = aJob;
+  }
 }
 
 void
@@ -976,9 +1615,230 @@ ServiceWorkerManager::AppendPendingOperation(nsIRunnable* aRunnable)
   MOZ_ASSERT(!mActor);
   MOZ_ASSERT(aRunnable);
 
-  PendingOperation* opt = mPendingOperations.AppendElement();
-  opt->mRunnable = aRunnable;
+  if (!mShuttingDown) {
+    PendingOperation* opt = mPendingOperations.AppendElement();
+    opt->mRunnable = aRunnable;
+  }
 }
+
+namespace {
+// Just holds a ref to a ServiceWorker until the Promise is fulfilled.
+class KeepAliveHandler : public PromiseNativeHandler
+{
+  nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
+
+protected:
+  virtual ~KeepAliveHandler()
+  {}
+
+public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  explicit KeepAliveHandler(const nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker)
+    : mServiceWorker(aServiceWorker)
+  {}
+
+  void
+  ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
+  {
+#ifdef DEBUG
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+    workerPrivate->AssertIsOnWorkerThread();
+#endif
+  }
+
+  void
+  RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
+  {
+#ifdef DEBUG
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+    workerPrivate->AssertIsOnWorkerThread();
+#endif
+  }
+};
+
+NS_IMPL_ISUPPORTS0(KeepAliveHandler)
+
+void
+DummyCallback(nsITimer* aTimer, void* aClosure)
+{
+  // Nothing.
+}
+
+class AllowWindowInteractionKeepAliveHandler;
+
+class ClearWindowAllowedRunnable final : public WorkerRunnable
+{
+public:
+  ClearWindowAllowedRunnable(WorkerPrivate* aWorkerPrivate,
+                             AllowWindowInteractionKeepAliveHandler* aHandler)
+  : WorkerRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount)
+  , mHandler(aHandler)
+  { }
+
+private:
+  bool
+  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  {
+    // WorkerRunnable asserts that the dispatch is from parent thread if
+    // the busy count modification is WorkerThreadUnchangedBusyCount.
+    // Since this runnable will be dispatched from the timer thread, we override
+    // PreDispatch and PostDispatch to skip the check.
+    return true;
+  }
+
+  void
+  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+               bool aDispatchResult) override
+  {
+    // Silence bad assertions.
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override;
+
+  nsRefPtr<AllowWindowInteractionKeepAliveHandler> mHandler;
+};
+
+class AllowWindowInteractionKeepAliveHandler final : public KeepAliveHandler
+{
+  friend class ClearWindowAllowedRunnable;
+  nsCOMPtr<nsITimer> mTimer;
+
+  ~AllowWindowInteractionKeepAliveHandler()
+  {
+    MOZ_ASSERT(!mTimer);
+  }
+
+  void
+  ClearWindowAllowed(WorkerPrivate* aWorkerPrivate)
+  {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+
+    if (mTimer) {
+      aWorkerPrivate->GlobalScope()->ConsumeWindowInteraction();
+      mTimer->Cancel();
+      mTimer = nullptr;
+      MOZ_ALWAYS_TRUE(aWorkerPrivate->ModifyBusyCountFromWorker(aWorkerPrivate->GetJSContext(), false));
+    }
+  }
+
+  void
+  StartClearWindowTimer(WorkerPrivate* aWorkerPrivate)
+  {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+    MOZ_ASSERT(!mTimer);
+
+    nsresult rv;
+    nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID, &rv);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
+
+    nsRefPtr<ClearWindowAllowedRunnable> r =
+      new ClearWindowAllowedRunnable(aWorkerPrivate, this);
+
+    nsRefPtr<TimerThreadEventTarget> target =
+      new TimerThreadEventTarget(aWorkerPrivate, r);
+
+    rv = timer->SetTarget(target);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
+
+    // The important stuff that *has* to be reversed.
+    if (NS_WARN_IF(!aWorkerPrivate->ModifyBusyCountFromWorker(aWorkerPrivate->GetJSContext(), true))) {
+      return;
+    }
+    aWorkerPrivate->GlobalScope()->AllowWindowInteraction();
+    timer.swap(mTimer);
+
+    // We swap first and then initialize the timer so that even if initializing
+    // fails, we still clean the busy count and interaction count correctly.
+    // The timer can't be initialized before modifying the busy count since the
+    // timer thread could run and call the timeout but the worker may
+    // already be terminating and modifying the busy count could fail.
+    rv = mTimer->InitWithFuncCallback(DummyCallback, nullptr, gDOMDisableOpenClickDelay, nsITimer::TYPE_ONE_SHOT);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      ClearWindowAllowed(aWorkerPrivate);
+      return;
+    }
+  }
+
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  AllowWindowInteractionKeepAliveHandler(const nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
+                                         WorkerPrivate* aWorkerPrivate)
+    : KeepAliveHandler(aServiceWorker)
+  {
+    StartClearWindowTimer(aWorkerPrivate);
+  }
+
+  void
+  ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
+  {
+    WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
+    ClearWindowAllowed(worker);
+    KeepAliveHandler::ResolvedCallback(aCx, aValue);
+  }
+
+  void
+  RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
+  {
+    WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
+    ClearWindowAllowed(worker);
+    KeepAliveHandler::RejectedCallback(aCx, aValue);
+  }
+};
+
+NS_IMPL_ISUPPORTS_INHERITED0(AllowWindowInteractionKeepAliveHandler, KeepAliveHandler)
+
+bool
+ClearWindowAllowedRunnable::WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+{
+  mHandler->ClearWindowAllowed(aWorkerPrivate);
+  return true;
+}
+
+// Returns a Promise if the event was successfully dispatched and no exceptions
+// were raised, otherwise returns null.
+already_AddRefed<Promise>
+DispatchExtendableEventOnWorkerScope(JSContext* aCx,
+                                     WorkerGlobalScope* aWorkerScope,
+                                     ExtendableEvent* aEvent)
+{
+  MOZ_ASSERT(aWorkerScope);
+  MOZ_ASSERT(aEvent);
+  nsCOMPtr<nsIGlobalObject> sgo = aWorkerScope;
+  WidgetEvent* internalEvent = aEvent->GetInternalNSEvent();
+
+  ErrorResult result;
+  result = aWorkerScope->DispatchDOMEvent(nullptr, aEvent, nullptr, nullptr);
+  if (result.Failed() || internalEvent->mFlags.mExceptionHasBeenRisen) {
+    result.SuppressException();
+    return nullptr;
+  }
+
+  nsRefPtr<Promise> waitUntilPromise = aEvent->GetPromise();
+  if (!waitUntilPromise) {
+    ErrorResult result;
+    waitUntilPromise =
+      Promise::Resolve(sgo, aCx, JS::UndefinedHandleValue, result);
+    if (NS_WARN_IF(result.Failed())) {
+      result.SuppressException();
+      return nullptr;
+    }
+  }
+
+  MOZ_ASSERT(waitUntilPromise);
+  return waitUntilPromise.forget();
+}
+} // namespace
 
 /*
  * Used to handle ExtendableEvent::waitUntil() and proceed with
@@ -987,6 +1847,7 @@ ServiceWorkerManager::AppendPendingOperation(nsIRunnable* aRunnable)
 class LifecycleEventPromiseHandler final : public PromiseNativeHandler
 {
   nsMainThreadPtrHandle<ContinueLifecycleTask> mTask;
+  nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
   bool mActivateImmediately;
 
   virtual
@@ -994,9 +1855,13 @@ class LifecycleEventPromiseHandler final : public PromiseNativeHandler
   { }
 
 public:
+  NS_DECL_ISUPPORTS
+
   LifecycleEventPromiseHandler(const nsMainThreadPtrHandle<ContinueLifecycleTask>& aTask,
+                               const nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
                                bool aActivateImmediately)
     : mTask(aTask)
+    , mServiceWorker(aServiceWorker)
     , mActivateImmediately(aActivateImmediately)
   {
     MOZ_ASSERT(!NS_IsMainThread());
@@ -1024,8 +1889,26 @@ public:
     nsRefPtr<ContinueLifecycleRunnable> r =
       new ContinueLifecycleRunnable(mTask, false /* success */, mActivateImmediately);
     NS_DispatchToMainThread(r);
+
+    JS::Rooted<JSObject*> obj(aCx, workerPrivate->GlobalScope()->GetWrapper());
+    JS::ExposeValueToActiveJS(aValue);
+
+    js::ErrorReport report(aCx);
+    if (NS_WARN_IF(!report.init(aCx, aValue))) {
+      JS_ClearPendingException(aCx);
+      return;
+    }
+
+    nsRefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
+    xpcReport->Init(report.report(), report.message(), /* aIsChrome = */ false, /* aWindowID = */ 0);
+
+    nsRefPtr<AsyncErrorReporter> aer =
+      new AsyncErrorReporter(CycleCollectedJSRuntime::Get()->Runtime(), xpcReport);
+    NS_DispatchToMainThread(aer);
   }
 };
+
+NS_IMPL_ISUPPORTS0(LifecycleEventPromiseHandler)
 
 bool
 LifecycleEventWorkerRunnable::DispatchLifecycleEvent(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
@@ -1036,16 +1919,11 @@ LifecycleEventWorkerRunnable::DispatchLifecycleEvent(JSContext* aCx, WorkerPriva
   nsRefPtr<ExtendableEvent> event;
   nsRefPtr<EventTarget> target = aWorkerPrivate->GlobalScope();
 
-  if (mEventName.EqualsASCII("install")) {
+  if (mEventName.EqualsASCII("install") || mEventName.EqualsASCII("activate")) {
     // FIXME(nsm): Bug 982787 pass previous active worker.
-    InstallEventInit init;
-    init.mBubbles = false;
-    init.mCancelable = true;
-    event = InstallEvent::Constructor(target, mEventName, init);
-  } else if (mEventName.EqualsASCII("activate")) {
     ExtendableEventInit init;
     init.mBubbles = false;
-    init.mCancelable = true;
+    init.mCancelable = false;
     event = ExtendableEvent::Constructor(target, mEventName, init);
   } else {
     MOZ_CRASH("Unexpected lifecycle event");
@@ -1053,55 +1931,29 @@ LifecycleEventWorkerRunnable::DispatchLifecycleEvent(JSContext* aCx, WorkerPriva
 
   event->SetTrusted(true);
 
-  nsRefPtr<Promise> waitUntilPromise;
-
-  ErrorResult result;
-  result = target->DispatchDOMEvent(nullptr, event, nullptr, nullptr);
-
-  nsCOMPtr<nsIGlobalObject> sgo = aWorkerPrivate->GlobalScope();
-  WidgetEvent* internalEvent = event->GetInternalNSEvent();
-  if (!result.Failed() && !internalEvent->mFlags.mExceptionHasBeenRisen) {
-    waitUntilPromise = event->GetPromise();
-    if (!waitUntilPromise) {
-      ErrorResult result;
-      waitUntilPromise =
-        Promise::Resolve(sgo, aCx, JS::UndefinedHandleValue, result);
-      if (NS_WARN_IF(result.Failed())) {
-        return true;
-      }
-    }
+  nsRefPtr<Promise> waitUntilPromise =
+    DispatchExtendableEventOnWorkerScope(aCx, aWorkerPrivate->GlobalScope(), event);
+  if (waitUntilPromise) {
+    nsRefPtr<LifecycleEventPromiseHandler> handler =
+      new LifecycleEventPromiseHandler(mTask, mServiceWorker, false /* activateImmediately */);
+    waitUntilPromise->AppendNativeHandler(handler);
   } else {
     // Continue with a canceled install.
     // Although the spec has different routines to deal with popping stuff
     // off it's internal queues, we can reuse the ContinueAfterInstallEvent()
     // logic.
-    waitUntilPromise = Promise::Reject(sgo, aCx,
-                                       JS::UndefinedHandleValue, result);
+    nsRefPtr<ContinueLifecycleRunnable> r =
+      new ContinueLifecycleRunnable(mTask, false /* success */, false /* activate immediately */);
+    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(r)));
   }
 
-  if (result.Failed()) {
-    return false;
-  }
-
-  // activateimmediately is only relevant to "install" event.
-  bool activateImmediately = false;
-  InstallEvent* installEvent = event->AsInstallEvent();
-  if (installEvent) {
-    activateImmediately = installEvent->ActivateImmediately();
-    // FIXME(nsm): Set activeWorker to the correct thing.
-    // FIXME(nsm): Install error handler for any listener errors.
-  }
-
-  nsRefPtr<LifecycleEventPromiseHandler> handler =
-    new LifecycleEventPromiseHandler(mTask, activateImmediately);
-  waitUntilPromise->AppendNativeHandler(handler);
   return true;
 }
 
 void
 ServiceWorkerRegistrationInfo::TryToActivate()
 {
-  if (!IsControllingDocuments()) {
+  if (!IsControllingDocuments() || mWaitingWorker->SkipWaitingFlag()) {
     Activate();
   }
 }
@@ -1113,23 +1965,35 @@ ContinueActivateTask::ContinueAfterWorkerEvent(bool aSuccess, bool aActivateImme
 }
 
 void
+ServiceWorkerRegistrationInfo::PurgeActiveWorker()
+{
+  nsRefPtr<ServiceWorkerInfo> exitingWorker = mActiveWorker.forget();
+  if (!exitingWorker)
+    return;
+
+  // FIXME(jaoo): Bug 1170543 - Wait for exitingWorker to finish and terminate it.
+  exitingWorker->UpdateState(ServiceWorkerState::Redundant);
+  nsresult rv = serviceWorkerScriptCache::PurgeCache(mPrincipal,
+                                                     exitingWorker->CacheName());
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Failed to purge the activating cache.");
+  }
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  swm->InvalidateServiceWorkerRegistrationWorker(this, WhichServiceWorker::ACTIVE_WORKER);
+}
+
+void
 ServiceWorkerRegistrationInfo::Activate()
 {
   nsRefPtr<ServiceWorkerInfo> activatingWorker = mWaitingWorker;
-  nsRefPtr<ServiceWorkerInfo> exitingWorker = mActiveWorker;
-
-  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
-  swm->InvalidateServiceWorkerRegistrationWorker(this, WhichServiceWorker::WAITING_WORKER | WhichServiceWorker::ACTIVE_WORKER);
   if (!activatingWorker) {
-    NS_WARNING("No activatingWorker!");
     return;
   }
 
-  if (exitingWorker) {
-    // FIXME(nsm): Wait for worker.
-    // Terminate worker
-    exitingWorker->UpdateState(ServiceWorkerState::Redundant);
-  }
+  PurgeActiveWorker();
+
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  swm->InvalidateServiceWorkerRegistrationWorker(this, WhichServiceWorker::WAITING_WORKER);
 
   mActiveWorker = activatingWorker.forget();
   mWaitingWorker = nullptr;
@@ -1138,7 +2002,6 @@ ServiceWorkerRegistrationInfo::Activate()
   // FIXME(nsm): Unlink appcache if there is one.
 
   swm->CheckPendingReadyPromises();
-  swm->StoreRegistration(mPrincipal, this);
 
   // "Queue a task to fire a simple event named controllerchange..."
   nsCOMPtr<nsIRunnable> controllerChangeRunnable =
@@ -1147,27 +2010,30 @@ ServiceWorkerRegistrationInfo::Activate()
                                                                 this);
   NS_DispatchToMainThread(controllerChangeRunnable);
 
+  nsCOMPtr<nsIRunnable> failRunnable =
+    NS_NewRunnableMethodWithArg<bool>(this,
+                                      &ServiceWorkerRegistrationInfo::FinishActivate,
+                                      false /* success */);
+
   MOZ_ASSERT(mActiveWorker);
   nsRefPtr<ServiceWorker> serviceWorker;
   nsresult rv =
     swm->CreateServiceWorker(mPrincipal,
-                             mActiveWorker->ScriptSpec(),
-                             mScope,
+                             mActiveWorker,
+                             failRunnable,
                              getter_AddRefs(serviceWorker));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    nsCOMPtr<nsIRunnable> r =
-      NS_NewRunnableMethodWithArg<bool>(this,
-                                        &ServiceWorkerRegistrationInfo::FinishActivate,
-                                        false /* success */);
-    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(r)));
+    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(failRunnable)));
     return;
   }
 
   nsMainThreadPtrHandle<ContinueLifecycleTask> handle(
     new nsMainThreadPtrHolder<ContinueLifecycleTask>(new ContinueActivateTask(this)));
 
+  nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
+    new nsMainThreadPtrHolder<ServiceWorker>(serviceWorker));
   nsRefPtr<LifecycleEventWorkerRunnable> r =
-    new LifecycleEventWorkerRunnable(serviceWorker->GetWorkerPrivate(), NS_LITERAL_STRING("activate"), handle);
+    new LifecycleEventWorkerRunnable(serviceWorkerHandle, NS_LITERAL_STRING("activate"), handle);
 
   AutoJSAPI jsapi;
   jsapi.Init();
@@ -1209,21 +2075,26 @@ public:
       return NS_OK;
     }
 
-    nsTArray<nsRefPtr<ServiceWorkerRegistration>> array;
+    nsTArray<nsRefPtr<ServiceWorkerRegistrationMainThread>> array;
 
-    bool isNullPrincipal = true;
-    nsresult rv = principal->GetIsNullPrincipal(&isNullPrincipal);
+    if (NS_WARN_IF(!BasePrincipal::Cast(principal)->IsCodebasePrincipal())) {
+      return NS_OK;
+    }
+
+    nsAutoCString scopeKey;
+    nsresult rv = swm->PrincipalToScopeKey(principal, scopeKey);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    if (nsContentUtils::IsSystemPrincipal(principal) || isNullPrincipal) {
+    ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+    if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
       mPromise->MaybeResolve(array);
       return NS_OK;
     }
 
-    for (uint32_t i = 0; i < swm->mOrderedScopes.Length(); ++i) {
-      NS_ConvertUTF8toUTF16 scope(swm->mOrderedScopes[i]);
+    for (uint32_t i = 0; i < data->mOrderedScopes.Length(); ++i) {
+      NS_ConvertUTF8toUTF16 scope(data->mOrderedScopes[i]);
 
       nsCOMPtr<nsIURI> scopeURI;
       nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), scope, nullptr, nullptr);
@@ -1238,8 +2109,8 @@ public:
         continue;
       }
 
-      nsRefPtr<ServiceWorkerRegistration> swr =
-        new ServiceWorkerRegistration(mWindow, scope);
+      nsRefPtr<ServiceWorkerRegistrationMainThread> swr =
+        new ServiceWorkerRegistrationMainThread(mWindow, scope);
 
       array.AppendElement(swr);
     }
@@ -1258,23 +2129,26 @@ ServiceWorkerManager::GetRegistrations(nsIDOMWindow* aWindow,
   AssertIsOnMainThread();
   MOZ_ASSERT(aWindow);
 
-  // XXXnsm Don't allow chrome callers for now, we don't support chrome
-  // ServiceWorkers.
-  MOZ_ASSERT(!nsContentUtils::IsCallerChrome());
-
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
-  if (!window) {
+  MOZ_ASSERT(window);
+
+  nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
+  if (!doc) {
     return NS_ERROR_FAILURE;
   }
+
+  // Don't allow service workers to register when the *document* is chrome for
+  // now.
+  MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()));
 
   nsCOMPtr<nsIGlobalObject> sgo = do_QueryInterface(window);
   ErrorResult result;
   nsRefPtr<Promise> promise = Promise::Create(sgo, result);
   if (result.Failed()) {
-    return result.ErrorCode();
+    return result.StealNSResult();
   }
 
-  nsRefPtr<nsIRunnable> runnable =
+  nsCOMPtr<nsIRunnable> runnable =
     new GetRegistrationsRunnable(window, promise);
   promise.forget(aPromise);
   return NS_DispatchToCurrentThread(runnable);
@@ -1333,7 +2207,7 @@ public:
     }
 
     nsRefPtr<ServiceWorkerRegistrationInfo> registration =
-      swm->GetServiceWorkerRegistrationInfo(uri);
+      swm->GetServiceWorkerRegistrationInfo(principal, uri);
 
     if (!registration) {
       mPromise->MaybeResolve(JS::UndefinedHandleValue);
@@ -1341,8 +2215,8 @@ public:
     }
 
     NS_ConvertUTF8toUTF16 scope(registration->mScope);
-    nsRefPtr<ServiceWorkerRegistration> swr =
-      new ServiceWorkerRegistration(mWindow, scope);
+    nsRefPtr<ServiceWorkerRegistrationMainThread> swr =
+      new ServiceWorkerRegistrationMainThread(mWindow, scope);
     mPromise->MaybeResolve(swr);
 
     return NS_OK;
@@ -1359,23 +2233,26 @@ ServiceWorkerManager::GetRegistration(nsIDOMWindow* aWindow,
   AssertIsOnMainThread();
   MOZ_ASSERT(aWindow);
 
-  // XXXnsm Don't allow chrome callers for now, we don't support chrome
-  // ServiceWorkers.
-  MOZ_ASSERT(!nsContentUtils::IsCallerChrome());
-
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
-  if (!window) {
+  MOZ_ASSERT(window);
+
+  nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
+  if (!doc) {
     return NS_ERROR_FAILURE;
   }
+
+  // Don't allow service workers to register when the *document* is chrome for
+  // now.
+  MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()));
 
   nsCOMPtr<nsIGlobalObject> sgo = do_QueryInterface(window);
   ErrorResult result;
   nsRefPtr<Promise> promise = Promise::Create(sgo, result);
   if (result.Failed()) {
-    return result.ErrorCode();
+    return result.StealNSResult();
   }
 
-  nsRefPtr<nsIRunnable> runnable =
+  nsCOMPtr<nsIRunnable> runnable =
     new GetRegistrationRunnable(window, promise, aDocumentURL);
   promise.forget(aPromise);
   return NS_DispatchToCurrentThread(runnable);
@@ -1416,6 +2293,339 @@ public:
   }
 };
 
+#ifndef MOZ_SIMPLEPUSH
+
+class SendPushEventRunnable final : public WorkerRunnable
+{
+  Maybe<nsTArray<uint8_t>> mData;
+  nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
+
+public:
+  SendPushEventRunnable(
+    WorkerPrivate* aWorkerPrivate,
+    nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker)
+      : SendPushEventRunnable(aWorkerPrivate, aServiceWorker,
+                              Nothing()) {}
+
+  SendPushEventRunnable(
+    WorkerPrivate* aWorkerPrivate,
+    const nsTArray<uint8_t>& aData,
+    nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker)
+      : SendPushEventRunnable(aWorkerPrivate, aServiceWorker,
+                              Some(aData)) {}
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  {
+    MOZ_ASSERT(aWorkerPrivate);
+    GlobalObject globalObj(aCx, aWorkerPrivate->GlobalScope()->GetWrapper());
+
+
+    PushEventInit pei;
+    if (mData) {
+      const nsTArray<uint8_t>& bytes = mData.ref();
+      JSObject* data = Uint8Array::Create(aCx, bytes.Length(), bytes.Elements());
+      if (!data) {
+        return false;
+      }
+      pei.mData.Construct().SetAsArrayBufferView().Init(data);
+    }
+    pei.mBubbles = false;
+    pei.mCancelable = false;
+
+    ErrorResult result;
+    nsRefPtr<PushEvent> event =
+      PushEvent::Constructor(globalObj, NS_LITERAL_STRING("push"), pei, result);
+    if (NS_WARN_IF(result.Failed())) {
+      result.SuppressException();
+      return false;
+    }
+
+    event->SetTrusted(true);
+    event->PostInit(mServiceWorker);
+
+    nsRefPtr<Promise> waitUntilPromise =
+      DispatchExtendableEventOnWorkerScope(aCx, aWorkerPrivate->GlobalScope(), event);
+    if (waitUntilPromise) {
+      nsRefPtr<KeepAliveHandler> handler = new KeepAliveHandler(mServiceWorker);
+      waitUntilPromise->AppendNativeHandler(handler);
+    }
+
+    return true;
+  }
+
+private:
+  SendPushEventRunnable(
+    WorkerPrivate* aWorkerPrivate,
+    nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
+    Maybe<nsTArray<uint8_t>> aData)
+      : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
+      , mData(aData)
+      , mServiceWorker(aServiceWorker)
+  {
+    AssertIsOnMainThread();
+    MOZ_ASSERT(aWorkerPrivate);
+    MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
+  }
+};
+
+class SendPushSubscriptionChangeEventRunnable final : public WorkerRunnable
+{
+  nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
+
+public:
+  SendPushSubscriptionChangeEventRunnable(
+    WorkerPrivate* aWorkerPrivate,
+    nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker)
+      : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
+      , mServiceWorker(aServiceWorker)
+  {
+    AssertIsOnMainThread();
+    MOZ_ASSERT(aWorkerPrivate);
+    MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  {
+    MOZ_ASSERT(aWorkerPrivate);
+
+    WorkerGlobalScope* globalScope = aWorkerPrivate->GlobalScope();
+
+    nsRefPtr<Event> event = NS_NewDOMEvent(globalScope, nullptr, nullptr);
+
+    nsresult rv = event->InitEvent(NS_LITERAL_STRING("pushsubscriptionchange"),
+                                   false, false);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return false;
+    }
+
+    event->SetTrusted(true);
+
+    globalScope->DispatchDOMEvent(nullptr, event, nullptr, nullptr);
+    return true;
+  }
+};
+
+#endif /* ! MOZ_SIMPLEPUSH */
+
+NS_IMETHODIMP
+ServiceWorkerManager::SendPushEvent(const nsACString& aOriginAttributes,
+                                    const nsACString& aScope,
+                                    uint32_t aDataLength,
+                                    uint8_t* aDataBytes,
+                                    uint8_t optional_argc)
+{
+#ifdef MOZ_SIMPLEPUSH
+  return NS_ERROR_NOT_AVAILABLE;
+#else
+  OriginAttributes attrs;
+  if (!attrs.PopulateFromSuffix(aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsRefPtr<ServiceWorker> serviceWorker =
+    CreateServiceWorkerForScope(attrs, aScope, nullptr /* failure runnable */);
+  if (NS_WARN_IF(!serviceWorker)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
+    new nsMainThreadPtrHolder<ServiceWorker>(serviceWorker));
+
+  nsRefPtr<SendPushEventRunnable> r;
+  if (optional_argc == 2) {
+    nsTArray<uint8_t> data;
+    if (!data.InsertElementsAt(0, aDataBytes, aDataLength, fallible)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    r = new SendPushEventRunnable(serviceWorker->GetWorkerPrivate(), data,
+                                  serviceWorkerHandle);
+  } else {
+    MOZ_ASSERT(optional_argc == 0);
+    r = new SendPushEventRunnable(serviceWorker->GetWorkerPrivate(),
+                                  serviceWorkerHandle);
+  }
+
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  if (NS_WARN_IF(!r->Dispatch(jsapi.cx()))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+#endif
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::SendPushSubscriptionChangeEvent(const nsACString& aOriginAttributes,
+                                                      const nsACString& aScope)
+{
+#ifdef MOZ_SIMPLEPUSH
+  return NS_ERROR_NOT_AVAILABLE;
+#else
+  OriginAttributes attrs;
+  if (!attrs.PopulateFromSuffix(aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsRefPtr<ServiceWorker> serviceWorker =
+    CreateServiceWorkerForScope(attrs, aScope, nullptr /* fail runnable */);
+  if (!serviceWorker) {
+    return NS_ERROR_FAILURE;
+  }
+  nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
+    new nsMainThreadPtrHolder<ServiceWorker>(serviceWorker));
+
+  nsRefPtr<SendPushSubscriptionChangeEventRunnable> r =
+    new SendPushSubscriptionChangeEventRunnable(
+      serviceWorker->GetWorkerPrivate(), serviceWorkerHandle);
+
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  if (NS_WARN_IF(!r->Dispatch(jsapi.cx()))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+#endif
+}
+
+class SendNotificationClickEventRunnable final : public WorkerRunnable
+{
+  nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
+  const nsString mID;
+  const nsString mTitle;
+  const nsString mDir;
+  const nsString mLang;
+  const nsString mBody;
+  const nsString mTag;
+  const nsString mIcon;
+  const nsString mData;
+  const nsString mBehavior;
+  const nsString mScope;
+
+public:
+  SendNotificationClickEventRunnable(
+    WorkerPrivate* aWorkerPrivate,
+    nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
+    const nsAString& aID,
+    const nsAString& aTitle,
+    const nsAString& aDir,
+    const nsAString& aLang,
+    const nsAString& aBody,
+    const nsAString& aTag,
+    const nsAString& aIcon,
+    const nsAString& aData,
+    const nsAString& aBehavior,
+    const nsAString& aScope)
+      : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
+      , mServiceWorker(aServiceWorker)
+      , mID(aID)
+      , mTitle(aTitle)
+      , mDir(aDir)
+      , mLang(aLang)
+      , mBody(aBody)
+      , mTag(aTag)
+      , mIcon(aIcon)
+      , mData(aData)
+      , mBehavior(aBehavior)
+      , mScope(aScope)
+  {
+    AssertIsOnMainThread();
+    MOZ_ASSERT(aWorkerPrivate);
+    MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override
+  {
+    MOZ_ASSERT(aWorkerPrivate);
+
+    nsRefPtr<EventTarget> target = do_QueryObject(aWorkerPrivate->GlobalScope());
+
+    ErrorResult result;
+    nsRefPtr<Notification> notification =
+      Notification::ConstructFromFields(aWorkerPrivate->GlobalScope(), mID,
+                                        mTitle, mDir, mLang, mBody, mTag, mIcon,
+                                        mData, mScope, result);
+    if (NS_WARN_IF(result.Failed())) {
+      return false;
+    }
+
+    NotificationEventInit nei;
+    nei.mNotification = notification;
+    nei.mBubbles = false;
+    nei.mCancelable = false;
+
+    nsRefPtr<NotificationEvent> event =
+      NotificationEvent::Constructor(target, NS_LITERAL_STRING("notificationclick"), nei, result);
+    if (NS_WARN_IF(result.Failed())) {
+      return false;
+    }
+
+    aWorkerPrivate->GlobalScope()->AllowWindowInteraction();
+    event->SetTrusted(true);
+    nsRefPtr<Promise> waitUntilPromise =
+      DispatchExtendableEventOnWorkerScope(aCx, aWorkerPrivate->GlobalScope(), event);
+    // If the handler calls WaitUntil(), that will manage its own interaction
+    // 'stack'.
+    aWorkerPrivate->GlobalScope()->ConsumeWindowInteraction();
+
+    if (waitUntilPromise) {
+      nsRefPtr<AllowWindowInteractionKeepAliveHandler> handler =
+        new AllowWindowInteractionKeepAliveHandler(mServiceWorker, aWorkerPrivate);
+      waitUntilPromise->AppendNativeHandler(handler);
+    }
+
+    return true;
+  }
+};
+
+NS_IMETHODIMP
+ServiceWorkerManager::SendNotificationClickEvent(const nsACString& aOriginSuffix,
+                                                 const nsACString& aScope,
+                                                 const nsAString& aID,
+                                                 const nsAString& aTitle,
+                                                 const nsAString& aDir,
+                                                 const nsAString& aLang,
+                                                 const nsAString& aBody,
+                                                 const nsAString& aTag,
+                                                 const nsAString& aIcon,
+                                                 const nsAString& aData,
+                                                 const nsAString& aBehavior)
+{
+  OriginAttributes attrs;
+  if (!attrs.PopulateFromSuffix(aOriginSuffix)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  gDOMDisableOpenClickDelay = Preferences::GetInt("dom.disable_open_click_delay");
+
+  nsRefPtr<ServiceWorker> serviceWorker =
+    CreateServiceWorkerForScope(attrs, aScope, nullptr);
+  if (!serviceWorker) {
+    return NS_ERROR_FAILURE;
+  }
+  nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
+    new nsMainThreadPtrHolder<ServiceWorker>(serviceWorker));
+
+  nsRefPtr<SendNotificationClickEventRunnable> r =
+    new SendNotificationClickEventRunnable(serviceWorker->GetWorkerPrivate(),
+                                           serviceWorkerHandle, aID, aTitle,
+                                           aDir, aLang, aBody, aTag, aIcon,
+                                           aData, aBehavior,
+                                           NS_ConvertUTF8toUTF16(aScope));
+
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  if (NS_WARN_IF(!r->Dispatch(jsapi.cx()))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 ServiceWorkerManager::GetReadyPromise(nsIDOMWindow* aWindow,
                                       nsISupports** aPromise)
@@ -1423,14 +2633,17 @@ ServiceWorkerManager::GetReadyPromise(nsIDOMWindow* aWindow,
   AssertIsOnMainThread();
   MOZ_ASSERT(aWindow);
 
-  // XXXnsm Don't allow chrome callers for now, we don't support chrome
-  // ServiceWorkers.
-  MOZ_ASSERT(!nsContentUtils::IsCallerChrome());
-
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
-  if (!window) {
+  MOZ_ASSERT(window);
+
+  nsCOMPtr<nsIDocument> doc = window->GetExtantDoc();
+  if (!doc) {
     return NS_ERROR_FAILURE;
   }
+
+  // Don't allow service workers to register when the *document* is chrome for
+  // now.
+  MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()));
 
   MOZ_ASSERT(!mPendingReadyPromises.Contains(window));
 
@@ -1438,10 +2651,10 @@ ServiceWorkerManager::GetReadyPromise(nsIDOMWindow* aWindow,
   ErrorResult result;
   nsRefPtr<Promise> promise = Promise::Create(sgo, result);
   if (result.Failed()) {
-    return result.ErrorCode();
+    return result.StealNSResult();
   }
 
-  nsRefPtr<nsIRunnable> runnable =
+  nsCOMPtr<nsIRunnable> runnable =
     new GetReadyPromiseRunnable(window, promise);
   promise.forget(aPromise);
   return NS_DispatchToCurrentThread(runnable);
@@ -1503,13 +2716,22 @@ bool
 ServiceWorkerManager::CheckReadyPromise(nsPIDOMWindow* aWindow,
                                         nsIURI* aURI, Promise* aPromise)
 {
+  MOZ_ASSERT(aWindow);
+  MOZ_ASSERT(aURI);
+
+  nsCOMPtr<nsIDocument> doc = aWindow->GetExtantDoc();
+  MOZ_ASSERT(doc);
+
+  nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
+  MOZ_ASSERT(principal);
+
   nsRefPtr<ServiceWorkerRegistrationInfo> registration =
-    GetServiceWorkerRegistrationInfo(aURI);
+    GetServiceWorkerRegistrationInfo(principal, aURI);
 
   if (registration && registration->mActiveWorker) {
     NS_ConvertUTF8toUTF16 scope(registration->mScope);
-    nsRefPtr<ServiceWorkerRegistration> swr =
-      new ServiceWorkerRegistration(aWindow, scope);
+    nsRefPtr<ServiceWorkerRegistrationMainThread> swr =
+      new ServiceWorkerRegistrationMainThread(aWindow, scope);
     aPromise->MaybeResolve(swr);
     return true;
   }
@@ -1517,12 +2739,47 @@ ServiceWorkerManager::CheckReadyPromise(nsPIDOMWindow* aWindow,
   return false;
 }
 
+already_AddRefed<ServiceWorker>
+ServiceWorkerManager::CreateServiceWorkerForScope(const OriginAttributes& aOriginAttributes,
+                                                  const nsACString& aScope,
+                                                  nsIRunnable* aLoadFailedRunnable)
+{
+  AssertIsOnMainThread();
+
+  nsCOMPtr<nsIURI> scopeURI;
+  nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, nullptr);
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetServiceWorkerRegistrationInfo(aOriginAttributes, scopeURI);
+  if (!registration) {
+    return nullptr;
+  }
+
+  if (!registration->mActiveWorker) {
+    return nullptr;
+  }
+
+  nsRefPtr<ServiceWorker> sw;
+  rv = CreateServiceWorker(registration->mPrincipal,
+                           registration->mActiveWorker,
+                           aLoadFailedRunnable,
+                           getter_AddRefs(sw));
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  return sw.forget();
+}
+
 class ServiceWorkerUnregisterJob final : public ServiceWorkerJob
 {
   nsRefPtr<ServiceWorkerRegistrationInfo> mRegistration;
   const nsCString mScope;
   nsCOMPtr<nsIServiceWorkerUnregisterCallback> mCallback;
-  PrincipalInfo mPrincipalInfo;
+  nsCOMPtr<nsIPrincipal> mPrincipal;
 
   ~ServiceWorkerUnregisterJob()
   { }
@@ -1531,11 +2788,11 @@ public:
   ServiceWorkerUnregisterJob(ServiceWorkerJobQueue* aQueue,
                              const nsACString& aScope,
                              nsIServiceWorkerUnregisterCallback* aCallback,
-                             PrincipalInfo& aPrincipalInfo)
+                             nsIPrincipal* aPrincipal)
     : ServiceWorkerJob(aQueue)
     , mScope(aScope)
     , mCallback(aCallback)
-    , mPrincipalInfo(aPrincipalInfo)
+    , mPrincipal(aPrincipal)
   {
     AssertIsOnMainThread();
   }
@@ -1556,14 +2813,37 @@ private:
   {
     AssertIsOnMainThread();
 
+    PrincipalInfo principalInfo;
+    if (NS_WARN_IF(NS_FAILED(PrincipalToPrincipalInfo(mPrincipal,
+                                                      &principalInfo)))) {
+      return mCallback ? mCallback->UnregisterSucceeded(false) : NS_OK;
+    }
+
     nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+
+    // Could it be that we are shutting down.
+    if (swm->mActor) {
+      swm->mActor->SendUnregister(principalInfo, NS_ConvertUTF8toUTF16(mScope));
+    }
+
+    nsAutoCString scopeKey;
+    nsresult rv = swm->PrincipalToScopeKey(mPrincipal, scopeKey);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return mCallback ? mCallback->UnregisterSucceeded(false) : NS_OK;
+    }
 
     // "Let registration be the result of running [[Get Registration]]
     // algorithm passing scope as the argument."
-    nsRefPtr<ServiceWorkerRegistrationInfo> registration;
-    if (!swm->mServiceWorkerRegistrationInfos.Get(mScope, getter_AddRefs(registration))) {
+    ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+    if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
       // "If registration is null, then, resolve promise with false."
-      return mCallback->UnregisterSucceeded(false);
+      return mCallback ? mCallback->UnregisterSucceeded(false) : NS_OK;
+    }
+
+    nsRefPtr<ServiceWorkerRegistrationInfo> registration;
+    if (!data->mInfos.Get(mScope, getter_AddRefs(registration))) {
+      // "If registration is null, then, resolve promise with false."
+      return mCallback ? mCallback->UnregisterSucceeded(false) : NS_OK;
     }
 
     MOZ_ASSERT(registration);
@@ -1571,7 +2851,7 @@ private:
     // "Set registration's uninstalling flag."
     registration->mPendingUninstall = true;
     // "Resolve promise with true"
-    nsresult rv = mCallback->UnregisterSucceeded(true);
+    rv = mCallback ? mCallback->UnregisterSucceeded(true) : NS_OK;
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -1588,9 +2868,6 @@ private:
       swm->RemoveRegistration(registration);
     }
 
-    MOZ_ASSERT(swm->mActor);
-    swm->mActor->SendUnregisterServiceWorker(mPrincipalInfo,
-                                             NS_ConvertUTF8toUTF16(mScope));
     return NS_OK;
   }
 
@@ -1598,7 +2875,9 @@ private:
   void
   UnregisterAndDone()
   {
-    Done(Unregister());
+    nsresult rv = Unregister();
+    unused << NS_WARN_IF(NS_FAILED(rv));
+    Done(rv);
   }
 };
 
@@ -1608,31 +2887,35 @@ ServiceWorkerManager::Unregister(nsIPrincipal* aPrincipal,
                                  const nsAString& aScope)
 {
   AssertIsOnMainThread();
-  MOZ_ASSERT(aPrincipal);
-  MOZ_ASSERT(aCallback);
+
+  if (!aPrincipal) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv;
 
 // This is not accessible by content, and callers should always ensure scope is
 // a correct URI, so this is wrapped in DEBUG
 #ifdef DEBUG
   nsCOMPtr<nsIURI> scopeURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, nullptr);
+  rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, nullptr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 #endif
 
-  NS_ConvertUTF16toUTF8 scope(aScope);
-  ServiceWorkerJobQueue* queue = GetOrCreateJobQueue(scope);
-  MOZ_ASSERT(queue);
-
-  PrincipalInfo principalInfo;
-  if (NS_WARN_IF(NS_FAILED(PrincipalToPrincipalInfo(aPrincipal,
-                                                    &principalInfo)))) {
-    return NS_ERROR_DOM_SECURITY_ERR;
+  nsAutoCString originSuffix;
+  rv = PrincipalToScopeKey(aPrincipal, originSuffix);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
+  NS_ConvertUTF16toUTF8 scope(aScope);
+  ServiceWorkerJobQueue* queue = GetOrCreateJobQueue(originSuffix, scope);
+  MOZ_ASSERT(queue);
+
   nsRefPtr<ServiceWorkerUnregisterJob> job =
-    new ServiceWorkerUnregisterJob(queue, scope, aCallback, principalInfo);
+    new ServiceWorkerUnregisterJob(queue, scope, aCallback, aPrincipal);
 
   if (mActor) {
     queue->Append(job);
@@ -1643,13 +2926,43 @@ ServiceWorkerManager::Unregister(nsIPrincipal* aPrincipal,
   return NS_OK;
 }
 
+ServiceWorkerJobQueue*
+ServiceWorkerManager::GetOrCreateJobQueue(const nsACString& aKey,
+                                          const nsACString& aScope)
+{
+  ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(aKey, &data)) {
+    data = new RegistrationDataPerPrincipal();
+    mRegistrationInfos.Put(aKey, data);
+  }
+
+  ServiceWorkerJobQueue* queue;
+  if (!data->mJobQueues.Get(aScope, &queue)) {
+    queue = new ServiceWorkerJobQueue(aKey);
+    data->mJobQueues.Put(aScope, queue);
+  }
+
+  return queue;
+}
+
 /* static */
 already_AddRefed<ServiceWorkerManager>
 ServiceWorkerManager::GetInstance()
 {
-  nsCOMPtr<nsIServiceWorkerManager> swm = mozilla::services::GetServiceWorkerManager();
-  nsRefPtr<ServiceWorkerManager> concrete = do_QueryObject(swm);
-  return concrete.forget();
+  // Note: We don't simply check gInstance for null-ness here, since otherwise
+  // this can resurrect the ServiceWorkerManager pretty late during shutdown.
+  static bool firstTime = true;
+  if (firstTime) {
+    firstTime = false;
+
+    AssertIsOnMainThread();
+
+    gInstance = new ServiceWorkerManager();
+    gInstance->Init();
+    ClearOnShutdown(&gInstance);
+  }
+  nsRefPtr<ServiceWorkerManager> copy = gInstance.get();
+  return copy.forget();
 }
 
 void
@@ -1659,6 +2972,7 @@ ServiceWorkerManager::FinishFetch(ServiceWorkerRegistrationInfo* aRegistration)
 
 bool
 ServiceWorkerManager::HandleError(JSContext* aCx,
+                                  nsIPrincipal* aPrincipal,
                                   const nsCString& aScope,
                                   const nsString& aWorkerURL,
                                   nsString aMessage,
@@ -1666,29 +2980,50 @@ ServiceWorkerManager::HandleError(JSContext* aCx,
                                   nsString aLine,
                                   uint32_t aLineNumber,
                                   uint32_t aColumnNumber,
-                                  uint32_t aFlags)
+                                  uint32_t aFlags,
+                                  JSExnType aExnType)
 {
   AssertIsOnMainThread();
+  MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(!JSREPORT_IS_WARNING(aFlags));
 
-  if (!mSetOfScopesBeingUpdated.Contains(aScope)) {
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
 
-  mSetOfScopesBeingUpdated.Remove(aScope);
+  ServiceWorkerManager::RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(scopeKey, &data)) {
+    return false;
+  }
 
-  ServiceWorkerJobQueue* queue = mJobQueues.Get(aScope);
+  if (!data->mSetOfScopesBeingUpdated.Contains(aScope)) {
+    return false;
+  }
+
+  data->mSetOfScopesBeingUpdated.Remove(aScope);
+
+  ServiceWorkerJobQueue* queue = data->mJobQueues.Get(aScope);
   MOZ_ASSERT(queue);
   ServiceWorkerJob* job = queue->Peek();
-  ServiceWorkerRegisterJob* regJob = static_cast<ServiceWorkerRegisterJob*>(job);
-  MOZ_ASSERT(regJob);
+  if (job) {
+    MOZ_ASSERT(job->IsRegisterJob());
+    nsRefPtr<ServiceWorkerRegisterJob> regJob = static_cast<ServiceWorkerRegisterJob*>(job);
 
-  RootedDictionary<ErrorEventInit> init(aCx);
-  init.mMessage = aMessage;
-  init.mFilename = aFilename;
-  init.mLineno = aLineNumber;
-  init.mColno = aColumnNumber;
+    RootedDictionary<ErrorEventInit> init(aCx);
+    init.mMessage = aMessage;
+    init.mFilename = aFilename;
+    init.mLineno = aLineNumber;
+    init.mColno = aColumnNumber;
 
-  regJob->Fail(init);
+  NS_WARNING(nsPrintfCString(
+              "Script error caused ServiceWorker registration to fail: %s:%u '%s'",
+              NS_ConvertUTF16toUTF8(aFilename).get(), aLineNumber,
+              NS_ConvertUTF16toUTF8(aMessage).get()).get());
+    regJob->Fail(aExnType, init);
+  }
+
   return true;
 }
 
@@ -1699,81 +3034,94 @@ ServiceWorkerRegistrationInfo::FinishActivate(bool aSuccess)
     return;
   }
 
-  if (aSuccess) {
-    mActiveWorker->UpdateState(ServiceWorkerState::Activated);
-  } else {
-    mActiveWorker->UpdateState(ServiceWorkerState::Redundant);
-    mActiveWorker = nullptr;
-  }
-}
-
-void
-ServiceWorkerRegistrationInfo::QueueStateChangeEvent(ServiceWorkerInfo* aInfo,
-                                                     ServiceWorkerState aState) const
-{
-  AssertIsOnMainThread();
-  MOZ_ASSERT(aInfo);
-  MOZ_ASSERT(aInfo == mInstallingWorker ||
-             aInfo == mWaitingWorker ||
-             aInfo == mActiveWorker);
-
+  // Activation never fails, so aSuccess is ignored.
+  mActiveWorker->UpdateState(ServiceWorkerState::Activated);
   nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
-  WhichServiceWorker whichOne;
-  if (aInfo == mInstallingWorker) {
-    whichOne = WhichServiceWorker::INSTALLING_WORKER;
-  } else if (aInfo == mWaitingWorker) {
-    whichOne = WhichServiceWorker::WAITING_WORKER;
-  } else if (aInfo == mActiveWorker) {
-    whichOne = WhichServiceWorker::ACTIVE_WORKER;
-  } else {
-    MOZ_CRASH("Hit unexpected case");
-  }
-
-  // Refactor this iteration pattern across this and 2 other call-sites.
-  nsTObserverArray<ServiceWorkerRegistration*>::ForwardIterator it(swm->mServiceWorkerRegistrations);
-  while (it.HasMore()) {
-    nsRefPtr<ServiceWorkerRegistration> target = it.GetNext();
-    nsAutoString regScope;
-    target->GetScope(regScope);
-    MOZ_ASSERT(!regScope.IsEmpty());
-
-    NS_ConvertUTF16toUTF8 utf8Scope(regScope);
-    if (utf8Scope.Equals(mScope)) {
-      target->QueueStateChangeEvent(whichOne, aState);
-    }
-  }
+  swm->StoreRegistration(mPrincipal, this);
 }
 
 NS_IMETHODIMP
 ServiceWorkerManager::CreateServiceWorkerForWindow(nsPIDOMWindow* aWindow,
-                                                   const nsACString& aScriptSpec,
-                                                   const nsACString& aScope,
+                                                   ServiceWorkerInfo* aInfo,
+                                                   nsIRunnable* aLoadFailedRunnable,
                                                    ServiceWorker** aServiceWorker)
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(aWindow);
-
-  RuntimeService* rs = RuntimeService::GetOrCreateService();
-  nsRefPtr<ServiceWorker> serviceWorker;
+  MOZ_ASSERT(aInfo);
 
   AutoJSAPI jsapi;
   jsapi.Init(aWindow);
   JSContext* cx = jsapi.cx();
 
-  nsCOMPtr<nsIGlobalObject> sgo = do_QueryInterface(aWindow);
-  JS::Rooted<JSObject*> jsGlobal(cx, sgo->GetGlobalJSObject());
-  GlobalObject global(cx, jsGlobal);
-  nsresult rv = rs->CreateServiceWorker(global,
-                                        NS_ConvertUTF8toUTF16(aScriptSpec),
-                                        aScope,
-                                        getter_AddRefs(serviceWorker));
-
+  WorkerLoadInfo loadInfo;
+  nsresult rv = WorkerPrivate::GetLoadInfo(cx, aWindow, nullptr,
+                                           NS_ConvertUTF8toUTF16(aInfo->ScriptSpec()),
+                                           false,
+                                           WorkerPrivate::OverrideLoadGroup,
+                                           WorkerTypeService,
+                                           &loadInfo);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
+  MOZ_ASSERT(!aInfo->CacheName().IsEmpty());
+  loadInfo.mServiceWorkerCacheName = aInfo->CacheName();
+  loadInfo.mServiceWorkerID = aInfo->ID();
+  loadInfo.mLoadFailedAsyncRunnable = aLoadFailedRunnable;
+
+  RuntimeService* rs = RuntimeService::GetOrCreateService();
+  if (!rs) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsRefPtr<SharedWorker> sharedWorker;
+  rv = rs->CreateSharedWorkerForServiceWorkerFromLoadInfo(cx, &loadInfo,
+                                                          NS_ConvertUTF8toUTF16(aInfo->ScriptSpec()),
+                                                          aInfo->Scope(),
+                                                          getter_AddRefs(sharedWorker));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  nsRefPtr<ServiceWorker> serviceWorker =
+    new ServiceWorker(aWindow, aInfo, sharedWorker);
+
   serviceWorker.forget(aServiceWorker);
   return rv;
+}
+
+void
+ServiceWorkerManager::LoadRegistration(
+                             const ServiceWorkerRegistrationData& aRegistration)
+{
+  AssertIsOnMainThread();
+
+  nsCOMPtr<nsIPrincipal> principal =
+    PrincipalInfoToPrincipal(aRegistration.principal());
+  if (!principal) {
+    return;
+  }
+
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetRegistration(principal, aRegistration.scope());
+  if (!registration) {
+    registration = CreateNewRegistration(aRegistration.scope(), principal);
+  } else if (registration->mScriptSpec == aRegistration.scriptSpec() &&
+             !!registration->mActiveWorker == aRegistration.currentWorkerURL().IsEmpty()) {
+    // No needs for updates.
+    return;
+  }
+
+  registration->mScriptSpec = aRegistration.scriptSpec();
+
+  const nsCString& currentWorkerURL = aRegistration.currentWorkerURL();
+  if (!currentWorkerURL.IsEmpty()) {
+    registration->mActiveWorker =
+      new ServiceWorkerInfo(registration, currentWorkerURL,
+                            aRegistration.activeCacheName());
+    registration->mActiveWorker->SetActivateStateUncheckedWithoutEvent(ServiceWorkerState::Activated);
+  }
 }
 
 void
@@ -1783,19 +3131,7 @@ ServiceWorkerManager::LoadRegistrations(
   AssertIsOnMainThread();
 
   for (uint32_t i = 0, len = aRegistrations.Length(); i < len; ++i) {
-    nsCOMPtr<nsIPrincipal> principal =
-      PrincipalInfoToPrincipal(aRegistrations[i].principal());
-    if (!principal) {
-      continue;
-    }
-
-    ServiceWorkerRegistrationInfo* registration =
-      CreateNewRegistration(aRegistrations[i].scope(), principal);
-
-    registration->mScriptSpec = aRegistrations[i].scriptSpec();
-
-    registration->mActiveWorker =
-      new ServiceWorkerInfo(registration, aRegistrations[i].currentWorkerURL());
+    LoadRegistration(aRegistrations[i]);
   }
 }
 
@@ -1810,7 +3146,11 @@ ServiceWorkerManager::ActorCreated(mozilla::ipc::PBackgroundChild* aActor)
 {
   MOZ_ASSERT(aActor);
   MOZ_ASSERT(!mActor);
-  mActor = aActor;
+
+  PServiceWorkerManagerChild* actor =
+    aActor->SendPServiceWorkerManagerConstructor();
+
+  mActor = static_cast<ServiceWorkerManagerChild*>(actor);
 
   // Flush the pending requests.
   for (uint32_t i = 0, len = mPendingOperations.Length(); i < len; ++i) {
@@ -1836,9 +3176,14 @@ ServiceWorkerManager::StoreRegistration(
                                    nsIPrincipal* aPrincipal,
                                    ServiceWorkerRegistrationInfo* aRegistration)
 {
-  MOZ_ASSERT(mActor);
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aRegistration);
+
+  if (mShuttingDown) {
+    return;
+  }
+
+  MOZ_ASSERT(mActor);
 
   ServiceWorkerRegistrationData data;
   nsresult rv = PopulateRegistrationData(aPrincipal, aRegistration, data);
@@ -1852,12 +3197,13 @@ ServiceWorkerManager::StoreRegistration(
     return;
   }
 
-  mActor->SendRegisterServiceWorker(data);
+  mActor->SendRegister(data);
 }
 
 already_AddRefed<ServiceWorkerRegistrationInfo>
 ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsPIDOMWindow* aWindow)
 {
+  MOZ_ASSERT(aWindow);
   nsCOMPtr<nsIDocument> document = aWindow->GetExtantDoc();
   return GetServiceWorkerRegistrationInfo(document);
 }
@@ -1865,28 +3211,75 @@ ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsPIDOMWindow* aWindow)
 already_AddRefed<ServiceWorkerRegistrationInfo>
 ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsIDocument* aDoc)
 {
+  MOZ_ASSERT(aDoc);
   nsCOMPtr<nsIURI> documentURI = aDoc->GetDocumentURI();
-  return GetServiceWorkerRegistrationInfo(documentURI);
+  nsCOMPtr<nsIPrincipal> principal = aDoc->NodePrincipal();
+  return GetServiceWorkerRegistrationInfo(principal, documentURI);
 }
 
 already_AddRefed<ServiceWorkerRegistrationInfo>
-ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsIURI* aURI)
+ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsIPrincipal* aPrincipal,
+                                                       nsIURI* aURI)
 {
-  nsCString spec;
+  MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(aURI);
+
+  //XXXnsm Temporary fix until Bug 1171432 is fixed.
+  if (NS_WARN_IF(BasePrincipal::Cast(aPrincipal)->AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID)) {
+    return nullptr;
+  }
+
+  nsAutoCString originAttributesSuffix;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, originAttributesSuffix);
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
+
+  return GetServiceWorkerRegistrationInfo(originAttributesSuffix, aURI);
+}
+
+already_AddRefed<ServiceWorkerRegistrationInfo>
+ServiceWorkerManager::GetServiceWorkerRegistrationInfo(const OriginAttributes& aOriginAttributes,
+                                                       nsIURI* aURI)
+{
+  MOZ_ASSERT(aURI);
+
+  nsAutoCString originAttributesSuffix;
+  aOriginAttributes.CreateSuffix(originAttributesSuffix);
+  return GetServiceWorkerRegistrationInfo(originAttributesSuffix, aURI);
+}
+
+already_AddRefed<ServiceWorkerRegistrationInfo>
+ServiceWorkerManager::GetServiceWorkerRegistrationInfo(const nsACString& aScopeKey,
+                                                       nsIURI* aURI)
+{
+  MOZ_ASSERT(aURI);
+
+  nsAutoCString spec;
   nsresult rv = aURI->GetSpec(spec);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
 
-  nsCString scope = FindScopeForPath(mOrderedScopes, spec);
-  if (scope.IsEmpty()) {
+  nsAutoCString scope;
+  RegistrationDataPerPrincipal* data;
+  if (!FindScopeForPath(aScopeKey, spec, &data, scope)) {
     return nullptr;
   }
 
+  MOZ_ASSERT(data);
+
   nsRefPtr<ServiceWorkerRegistrationInfo> registration;
-  mServiceWorkerRegistrationInfos.Get(scope, getter_AddRefs(registration));
+  data->mInfos.Get(scope, getter_AddRefs(registration));
   // ordered scopes and registrations better be in sync.
   MOZ_ASSERT(registration);
+
+#ifdef DEBUG
+  nsAutoCString originSuffix;
+  rv = registration->mPrincipal->GetOriginSuffix(originSuffix);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  MOZ_ASSERT(originSuffix.Equals(aScopeKey));
+#endif
 
   if (registration->mPendingUninstall) {
     return nullptr;
@@ -1894,14 +3287,52 @@ ServiceWorkerManager::GetServiceWorkerRegistrationInfo(nsIURI* aURI)
   return registration.forget();
 }
 
-/* static */ void
-ServiceWorkerManager::AddScope(nsTArray<nsCString>& aList, const nsACString& aScope)
+/* static */ nsresult
+ServiceWorkerManager::PrincipalToScopeKey(nsIPrincipal* aPrincipal,
+                                          nsACString& aKey)
 {
-  for (uint32_t i = 0; i < aList.Length(); ++i) {
-    const nsCString& current = aList[i];
+  MOZ_ASSERT(aPrincipal);
+
+  if (!BasePrincipal::Cast(aPrincipal)->IsCodebasePrincipal()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv = aPrincipal->GetOriginSuffix(aKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+/* static */ void
+ServiceWorkerManager::AddScopeAndRegistration(const nsACString& aScope,
+                                              ServiceWorkerRegistrationInfo* aInfo)
+{
+  MOZ_ASSERT(aInfo);
+  MOZ_ASSERT(aInfo->mPrincipal);
+
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  MOZ_ASSERT(swm);
+
+  nsAutoCString scopeKey;
+  nsresult rv = swm->PrincipalToScopeKey(aInfo->mPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  RegistrationDataPerPrincipal* data;
+  if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
+    data = new RegistrationDataPerPrincipal();
+    swm->mRegistrationInfos.Put(scopeKey, data);
+  }
+
+  for (uint32_t i = 0; i < data->mOrderedScopes.Length(); ++i) {
+    const nsCString& current = data->mOrderedScopes[i];
 
     // Perfect match!
     if (aScope.Equals(current)) {
+      data->mInfos.Put(aScope, aInfo);
       return;
     }
 
@@ -1909,48 +3340,116 @@ ServiceWorkerManager::AddScope(nsTArray<nsCString>& aList, const nsACString& aSc
     // /foo/bar should be before /foo/
     // Similarly /foo/b is between the two.
     if (StringBeginsWith(aScope, current)) {
-      aList.InsertElementAt(i, aScope);
+      data->mOrderedScopes.InsertElementAt(i, aScope);
+      data->mInfos.Put(aScope, aInfo);
       return;
     }
   }
 
-  aList.AppendElement(aScope);
+  data->mOrderedScopes.AppendElement(aScope);
+  data->mInfos.Put(aScope, aInfo);
 }
 
-/* static */ nsCString
-ServiceWorkerManager::FindScopeForPath(nsTArray<nsCString>& aList, const nsACString& aPath)
+/* static */ bool
+ServiceWorkerManager::FindScopeForPath(const nsACString& aScopeKey,
+                                       const nsACString& aPath,
+                                       RegistrationDataPerPrincipal** aData,
+                                       nsACString& aMatch)
 {
-  nsCString match;
+  MOZ_ASSERT(aData);
 
-  for (uint32_t i = 0; i < aList.Length(); ++i) {
-    const nsCString& current = aList[i];
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  MOZ_ASSERT(swm);
+
+  if (!swm->mRegistrationInfos.Get(aScopeKey, aData)) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < (*aData)->mOrderedScopes.Length(); ++i) {
+    const nsCString& current = (*aData)->mOrderedScopes[i];
     if (StringBeginsWith(aPath, current)) {
-      match = current;
-      break;
+      aMatch = current;
+      return true;
     }
   }
 
-  return match;
+  return false;
 }
 
-/* static */ void
-ServiceWorkerManager::RemoveScope(nsTArray<nsCString>& aList, const nsACString& aScope)
+#ifdef DEBUG
+/* static */ bool
+ServiceWorkerManager::HasScope(nsIPrincipal* aPrincipal,
+                               const nsACString& aScope)
 {
-  aList.RemoveElement(aScope);
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  MOZ_ASSERT(swm);
+
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+
+  RegistrationDataPerPrincipal* data;
+  if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
+    return false;
+  }
+
+  return data->mOrderedScopes.Contains(aScope);
+}
+#endif
+
+/* static */ void
+ServiceWorkerManager::RemoveScopeAndRegistration(ServiceWorkerRegistrationInfo* aRegistration)
+{
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  MOZ_ASSERT(swm);
+
+  nsAutoCString scopeKey;
+  nsresult rv = swm->PrincipalToScopeKey(aRegistration->mPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  RegistrationDataPerPrincipal* data;
+  if (!swm->mRegistrationInfos.Get(scopeKey, &data)) {
+    return;
+  }
+
+  data->mInfos.Remove(aRegistration->mScope);
+  data->mOrderedScopes.RemoveElement(aRegistration->mScope);
+
+  swm->MaybeRemoveRegistrationInfo(scopeKey);
+}
+
+void
+ServiceWorkerManager::MaybeRemoveRegistrationInfo(const nsACString& aScopeKey)
+{
+  RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(aScopeKey, &data)) {
+    return;
+  }
+
+  if (data->mOrderedScopes.IsEmpty() && data->mJobQueues.Count() == 0) {
+    mRegistrationInfos.Remove(aScopeKey);
+  }
 }
 
 void
 ServiceWorkerManager::MaybeStartControlling(nsIDocument* aDoc)
 {
   AssertIsOnMainThread();
+
+  // We keep a set of documents that service workers may choose to start
+  // controlling using claim().
+  MOZ_ASSERT(!mAllDocuments.Contains(aDoc));
+  mAllDocuments.PutEntry(aDoc);
+
   nsRefPtr<ServiceWorkerRegistrationInfo> registration =
     GetServiceWorkerRegistrationInfo(aDoc);
   if (registration) {
     MOZ_ASSERT(!mControlledDocuments.Contains(aDoc));
-    registration->StartControllingADocument();
-    // Use the already_AddRefed<> form of Put to avoid the addref-deref since
-    // we don't need the registration pointer in this function anymore.
-    mControlledDocuments.Put(aDoc, registration.forget());
+    StartControllingADocument(registration, aDoc);
   }
 }
 
@@ -1964,28 +3463,54 @@ ServiceWorkerManager::MaybeStopControlling(nsIDocument* aDoc)
   // it will always call MaybeStopControlling() even if there isn't an
   // associated registration. So this check is required.
   if (registration) {
-    registration->StopControllingADocument();
-    if (!registration->IsControllingDocuments()) {
-      if (registration->mPendingUninstall) {
-        registration->Clear();
-        RemoveRegistration(registration);
-      } else {
-        registration->TryToActivate();
-      }
+    StopControllingADocument(registration);
+  }
+
+  if (mAllDocuments.Contains(aDoc)) {
+    mAllDocuments.RemoveEntry(aDoc);
+  }
+}
+
+void
+ServiceWorkerManager::StartControllingADocument(ServiceWorkerRegistrationInfo* aRegistration,
+                                                nsIDocument* aDoc)
+{
+  MOZ_ASSERT(aRegistration);
+  MOZ_ASSERT(aDoc);
+
+  aRegistration->StartControllingADocument();
+  mControlledDocuments.Put(aDoc, aRegistration);
+  Telemetry::Accumulate(Telemetry::SERVICE_WORKER_CONTROLLED_DOCUMENTS, 1);
+}
+
+void
+ServiceWorkerManager::StopControllingADocument(ServiceWorkerRegistrationInfo* aRegistration)
+{
+  aRegistration->StopControllingADocument();
+  if (!aRegistration->IsControllingDocuments()) {
+    if (aRegistration->mPendingUninstall) {
+      aRegistration->Clear();
+      RemoveRegistration(aRegistration);
+    } else {
+      aRegistration->TryToActivate();
     }
   }
 }
 
 NS_IMETHODIMP
-ServiceWorkerManager::GetScopeForUrl(const nsAString& aUrl, nsAString& aScope)
+ServiceWorkerManager::GetScopeForUrl(nsIPrincipal* aPrincipal,
+                                     const nsAString& aUrl, nsAString& aScope)
 {
+  MOZ_ASSERT(aPrincipal);
+
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), aUrl, nullptr, nullptr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_FAILURE;
   }
 
-  nsRefPtr<ServiceWorkerRegistrationInfo> r = GetServiceWorkerRegistrationInfo(uri);
+  nsRefPtr<ServiceWorkerRegistrationInfo> r =
+    GetServiceWorkerRegistrationInfo(aPrincipal, uri);
   if (!r) {
       return NS_ERROR_FAILURE;
   }
@@ -1995,63 +3520,59 @@ ServiceWorkerManager::GetScopeForUrl(const nsAString& aUrl, nsAString& aScope)
 }
 
 NS_IMETHODIMP
-ServiceWorkerManager::AddRegistrationEventListener(const nsAString& aScope, nsIDOMEventTarget* aListener)
+ServiceWorkerManager::AddRegistrationEventListener(const nsAString& aScope,
+                                                   ServiceWorkerRegistrationListener* aListener)
 {
   AssertIsOnMainThread();
-  nsAutoCString scope = NS_ConvertUTF16toUTF8(aScope);
-
-  // TODO: this is very very bad:
-  ServiceWorkerRegistration* registration = static_cast<ServiceWorkerRegistration*>(aListener);
-  MOZ_ASSERT(!mServiceWorkerRegistrations.Contains(registration));
+  MOZ_ASSERT(aListener);
 #ifdef DEBUG
   // Ensure a registration is only listening for it's own scope.
   nsAutoString regScope;
-  registration->GetScope(regScope);
+  aListener->GetScope(regScope);
   MOZ_ASSERT(!regScope.IsEmpty());
-  MOZ_ASSERT(scope.Equals(NS_ConvertUTF16toUTF8(regScope)));
+  MOZ_ASSERT(aScope.Equals(regScope));
 #endif
-  mServiceWorkerRegistrations.AppendElement(registration);
+
+  MOZ_ASSERT(!mServiceWorkerRegistrationListeners.Contains(aListener));
+  mServiceWorkerRegistrationListeners.AppendElement(aListener);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-ServiceWorkerManager::RemoveRegistrationEventListener(const nsAString& aScope, nsIDOMEventTarget* aListener)
+ServiceWorkerManager::RemoveRegistrationEventListener(const nsAString& aScope,
+                                                      ServiceWorkerRegistrationListener* aListener)
 {
   AssertIsOnMainThread();
-  nsCString scope = NS_ConvertUTF16toUTF8(aScope);
-  ServiceWorkerRegistration* registration = static_cast<ServiceWorkerRegistration*>(aListener);
-  MOZ_ASSERT(mServiceWorkerRegistrations.Contains(registration));
+  MOZ_ASSERT(aListener);
 #ifdef DEBUG
   // Ensure a registration is unregistering for it's own scope.
   nsAutoString regScope;
-  registration->GetScope(regScope);
+  aListener->GetScope(regScope);
   MOZ_ASSERT(!regScope.IsEmpty());
-  MOZ_ASSERT(scope.Equals(NS_ConvertUTF16toUTF8(regScope)));
+  MOZ_ASSERT(aScope.Equals(regScope));
 #endif
-  mServiceWorkerRegistrations.RemoveElement(registration);
+
+  MOZ_ASSERT(mServiceWorkerRegistrationListeners.Contains(aListener));
+  mServiceWorkerRegistrationListeners.RemoveElement(aListener);
   return NS_OK;
 }
 
 void
-ServiceWorkerManager::FireEventOnServiceWorkerRegistrations(
-  ServiceWorkerRegistrationInfo* aRegistration,
-  const nsAString& aName)
+ServiceWorkerManager::FireUpdateFoundOnServiceWorkerRegistrations(
+  ServiceWorkerRegistrationInfo* aRegistration)
 {
   AssertIsOnMainThread();
 
-  nsTObserverArray<ServiceWorkerRegistration*>::ForwardIterator it(mServiceWorkerRegistrations);
+  nsTObserverArray<ServiceWorkerRegistrationListener*>::ForwardIterator it(mServiceWorkerRegistrationListeners);
   while (it.HasMore()) {
-    nsRefPtr<ServiceWorkerRegistration> target = it.GetNext();
+    nsRefPtr<ServiceWorkerRegistrationListener> target = it.GetNext();
     nsAutoString regScope;
     target->GetScope(regScope);
     MOZ_ASSERT(!regScope.IsEmpty());
 
     NS_ConvertUTF16toUTF8 utf8Scope(regScope);
     if (utf8Scope.Equals(aRegistration->mScope)) {
-      nsresult rv = target->DispatchTrustedEvent(aName);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        // Warn only.
-      }
+      target->UpdateFound();
     }
   }
 }
@@ -2068,7 +3589,7 @@ ServiceWorkerManager::GetServiceWorkerForScope(nsIDOMWindow* aWindow,
   AssertIsOnMainThread();
 
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
-  if (!window) {
+  if (NS_WARN_IF(!window)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2094,8 +3615,9 @@ ServiceWorkerManager::GetServiceWorkerForScope(nsIDOMWindow* aWindow,
   }
   ////////////////////////////////////////////
 
-  nsRefPtr<ServiceWorkerRegistrationInfo> registration = GetRegistration(scope);
-  if (!registration) {
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetRegistration(documentPrincipal, scope);
+  if (NS_WARN_IF(!registration)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2110,14 +3632,17 @@ ServiceWorkerManager::GetServiceWorkerForScope(nsIDOMWindow* aWindow,
     MOZ_CRASH("Invalid worker type");
   }
 
-  if (!info) {
+  if (NS_WARN_IF(!info)) {
     return NS_ERROR_DOM_NOT_FOUND_ERR;
   }
 
+  // TODO: How should we handle async failure of SW load for getters?  In
+  //       theory getting a handle to the DOM ServiceWorker object should not
+  //       require the worker thread to actually be running.
   nsRefPtr<ServiceWorker> serviceWorker;
   rv = CreateServiceWorkerForWindow(window,
-                                    info->ScriptSpec(),
-                                    registration->mScope,
+                                    info,
+                                    nullptr, // load failed runnable
                                     getter_AddRefs(serviceWorker));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -2134,19 +3659,36 @@ class FetchEventRunnable : public WorkerRunnable
   nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
   nsTArray<nsCString> mHeaderNames;
   nsTArray<nsCString> mHeaderValues;
-  uint64_t mWindowId;
+  nsAutoPtr<ServiceWorkerClientInfo> mClientInfo;
   nsCString mSpec;
   nsCString mMethod;
   bool mIsReload;
+  DebugOnly<bool> mIsHttpChannel;
+  RequestMode mRequestMode;
+  RequestRedirect mRequestRedirect;
+  RequestCredentials mRequestCredentials;
+  nsContentPolicyType mContentPolicyType;
+  nsCOMPtr<nsIInputStream> mUploadStream;
+  nsCString mReferrer;
 public:
   FetchEventRunnable(WorkerPrivate* aWorkerPrivate,
                      nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
                      nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
-                     uint64_t aWindowId)
+                     nsAutoPtr<ServiceWorkerClientInfo>& aClientInfo,
+                     bool aIsReload)
     : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
     , mInterceptedChannel(aChannel)
     , mServiceWorker(aServiceWorker)
-    , mWindowId(aWindowId)
+    , mClientInfo(aClientInfo)
+    , mIsReload(aIsReload)
+    , mIsHttpChannel(false)
+    , mRequestMode(RequestMode::No_cors)
+    , mRequestRedirect(RequestRedirect::Follow)
+    // By default we set it to same-origin since normal HTTP fetches always
+    // send credentials to same-origin websites unless explicitly forbidden.
+    , mRequestCredentials(RequestCredentials::Same_origin)
+    , mContentPolicyType(nsIContentPolicy::TYPE_INVALID)
+    , mReferrer(kFETCH_CLIENT_REFERRER_STR)
   {
     MOZ_ASSERT(aWorkerPrivate);
   }
@@ -2164,6 +3706,7 @@ public:
   nsresult
   Init()
   {
+    AssertIsOnMainThread();
     nsCOMPtr<nsIChannel> channel;
     nsresult rv = mInterceptedChannel->GetChannel(getter_AddRefs(channel));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -2175,21 +3718,74 @@ public:
     rv = uri->GetSpec(mSpec);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel);
-    NS_ENSURE_TRUE(httpChannel, NS_ERROR_NOT_AVAILABLE);
-
-    rv = httpChannel->GetRequestMethod(mMethod);
-    NS_ENSURE_SUCCESS(rv, rv);
-
     uint32_t loadFlags;
     rv = channel->GetLoadFlags(&loadFlags);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    //TODO(jdm): we should probably include reload-ness in the loadinfo or as a separate load flag
-    mIsReload = false;
-
-    rv = httpChannel->VisitRequestHeaders(this);
+    nsCOMPtr<nsILoadInfo> loadInfo;
+    rv = channel->GetLoadInfo(getter_AddRefs(loadInfo));
     NS_ENSURE_SUCCESS(rv, rv);
+
+    mContentPolicyType = loadInfo->InternalContentPolicyType();
+
+    nsCOMPtr<nsIURI> referrerURI;
+    rv = NS_GetReferrerFromChannel(channel, getter_AddRefs(referrerURI));
+    // We can't bail on failure since certain non-http channels like JAR
+    // channels are intercepted but don't have referrers.
+    if (NS_SUCCEEDED(rv) && referrerURI) {
+      rv = referrerURI->GetSpec(mReferrer);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel);
+    if (httpChannel) {
+      mIsHttpChannel = true;
+
+      rv = httpChannel->GetRequestMethod(mMethod);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      nsCOMPtr<nsIHttpChannelInternal> internalChannel = do_QueryInterface(httpChannel);
+      NS_ENSURE_TRUE(internalChannel, NS_ERROR_NOT_AVAILABLE);
+
+      mRequestMode = InternalRequest::MapChannelToRequestMode(channel);
+
+      // This is safe due to static_asserts at top of file.
+      uint32_t redirectMode;
+      internalChannel->GetRedirectMode(&redirectMode);
+      mRequestRedirect = static_cast<RequestRedirect>(redirectMode);
+
+      if (loadFlags & nsIRequest::LOAD_ANONYMOUS) {
+        mRequestCredentials = RequestCredentials::Omit;
+      } else {
+        bool includeCrossOrigin;
+        internalChannel->GetCorsIncludeCredentials(&includeCrossOrigin);
+        if (includeCrossOrigin) {
+          mRequestCredentials = RequestCredentials::Include;
+        }
+      }
+
+      rv = httpChannel->VisitNonDefaultRequestHeaders(this);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      nsCOMPtr<nsIUploadChannel2> uploadChannel = do_QueryInterface(httpChannel);
+      if (uploadChannel) {
+        MOZ_ASSERT(!mUploadStream);
+        rv = uploadChannel->CloneUploadStream(getter_AddRefs(mUploadStream));
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+    } else {
+      nsCOMPtr<nsIJARChannel> jarChannel = do_QueryInterface(channel);
+      // If it is not an HTTP channel it must be a JAR one.
+      NS_ENSURE_TRUE(jarChannel, NS_ERROR_NOT_AVAILABLE);
+
+      mMethod = "GET";
+
+      mRequestMode = InternalRequest::MapChannelToRequestMode(channel);
+
+      if (loadFlags & nsIRequest::LOAD_ANONYMOUS) {
+        mRequestCredentials = RequestCredentials::Omit;
+      }
+    }
 
     return NS_OK;
   }
@@ -2229,8 +3825,9 @@ private:
     MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
     GlobalObject globalObj(aCx, aWorkerPrivate->GlobalScope()->GetWrapper());
 
+    NS_ConvertUTF8toUTF16 local(mSpec);
     RequestOrUSVString requestInfo;
-    *requestInfo.SetAsUSVString().ToAStringPtr() = NS_ConvertUTF8toUTF16(mSpec);
+    requestInfo.SetAsUSVString().Rebind(local.Data(), local.Length());
 
     RootedDictionary<RequestInit> reqInit(aCx);
     reqInit.mMethod.Construct(mMethod);
@@ -2238,9 +3835,10 @@ private:
     nsRefPtr<InternalHeaders> internalHeaders = new InternalHeaders(HeadersGuardEnum::Request);
     MOZ_ASSERT(mHeaderNames.Length() == mHeaderValues.Length());
     for (uint32_t i = 0; i < mHeaderNames.Length(); i++) {
-      ErrorResult rv;
-      internalHeaders->Set(mHeaderNames[i], mHeaderValues[i], rv);
-      if (NS_WARN_IF(rv.Failed())) {
+      ErrorResult result;
+      internalHeaders->Set(mHeaderNames[i], mHeaderValues[i], result);
+      if (NS_WARN_IF(result.Failed())) {
+        result.SuppressException();
         return false;
       }
     }
@@ -2249,14 +3847,30 @@ private:
     reqInit.mHeaders.Construct();
     reqInit.mHeaders.Value().SetAsHeaders() = headers;
 
-    //TODO(jdm): set request body
-    //TODO(jdm): set request same-origin mode and credentials
+    reqInit.mMode.Construct(mRequestMode);
+    reqInit.mRedirect.Construct(mRequestRedirect);
+    reqInit.mCredentials.Construct(mRequestCredentials);
 
-    ErrorResult rv;
-    nsRefPtr<Request> request = Request::Constructor(globalObj, requestInfo, reqInit, rv);
-    if (NS_WARN_IF(rv.Failed())) {
+    ErrorResult result;
+    nsRefPtr<Request> request = Request::Constructor(globalObj, requestInfo, reqInit, result);
+    if (NS_WARN_IF(result.Failed())) {
+      result.SuppressException();
       return false;
     }
+    // For Telemetry, note that this Request object was created by a Fetch event.
+    nsRefPtr<InternalRequest> internalReq = request->GetInternalRequest();
+    MOZ_ASSERT(internalReq);
+    internalReq->SetCreatedByFetchEvent();
+
+    internalReq->SetBody(mUploadStream);
+    internalReq->SetReferrer(NS_ConvertUTF8toUTF16(mReferrer));
+
+    request->SetContentPolicyType(mContentPolicyType);
+
+    // TODO: remove conditional on http here once app protocol support is
+    //       removed from service worker interception
+    MOZ_ASSERT_IF(mIsHttpChannel && internalReq->IsNavigationRequest(),
+                  request->Redirect() == RequestRedirect::Manual);
 
     RootedDictionary<FetchEventInit> init(aCx);
     init.mRequest.Construct();
@@ -2265,110 +3879,230 @@ private:
     init.mCancelable = true;
     init.mIsReload.Construct(mIsReload);
     nsRefPtr<FetchEvent> event =
-      FetchEvent::Constructor(globalObj, NS_LITERAL_STRING("fetch"), init, rv);
-    if (NS_WARN_IF(rv.Failed())) {
+      FetchEvent::Constructor(globalObj, NS_LITERAL_STRING("fetch"), init, result);
+    if (NS_WARN_IF(result.Failed())) {
+      result.SuppressException();
       return false;
     }
 
-    event->PostInit(mInterceptedChannel, mServiceWorker, mWindowId);
+    event->PostInit(mInterceptedChannel, mServiceWorker, mClientInfo);
     event->SetTrusted(true);
 
     nsRefPtr<EventTarget> target = do_QueryObject(aWorkerPrivate->GlobalScope());
     nsresult rv2 = target->DispatchDOMEvent(nullptr, event, nullptr, nullptr);
     if (NS_WARN_IF(NS_FAILED(rv2)) || !event->WaitToRespond()) {
-      nsCOMPtr<nsIRunnable> runnable = new ResumeRequest(mInterceptedChannel);
+      nsCOMPtr<nsIRunnable> runnable;
+      if (event->DefaultPrevented(aCx)) {
+        runnable = new CancelChannelRunnable(mInterceptedChannel, NS_ERROR_INTERCEPTION_CANCELED);
+      } else {
+        runnable = new ResumeRequest(mInterceptedChannel);
+      }
+
       MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(runnable)));
     }
     return true;
   }
 };
 
+namespace {
+
+class ContinueDispatchFetchEventRunnable : public nsRunnable
+{
+  WorkerPrivate* mWorkerPrivate;
+  nsMainThreadPtrHandle<nsIInterceptedChannel> mChannel;
+  nsMainThreadPtrHandle<ServiceWorker> mServiceWorker;
+  nsAutoPtr<ServiceWorkerClientInfo> mClientInfo;
+  bool mIsReload;
+public:
+  ContinueDispatchFetchEventRunnable(WorkerPrivate* aWorkerPrivate,
+                                     nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
+                                     nsMainThreadPtrHandle<ServiceWorker>& aServiceWorker,
+                                     nsAutoPtr<ServiceWorkerClientInfo>& aClientInfo,
+                                     bool aIsReload)
+    : mWorkerPrivate(aWorkerPrivate)
+    , mChannel(aChannel)
+    , mServiceWorker(aServiceWorker)
+    , mClientInfo(aClientInfo)
+    , mIsReload(aIsReload)
+  {
+  }
+
+  void
+  HandleError()
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    NS_WARNING("Unexpected error while dispatching fetch event!");
+    DebugOnly<nsresult> rv = mChannel->ResetInterception();
+    NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Failed to resume intercepted network request");
+  }
+
+  NS_IMETHOD
+  Run() override
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    nsCOMPtr<nsIChannel> channel;
+    nsresult rv = mChannel->GetChannel(getter_AddRefs(channel));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      HandleError();
+      return NS_OK;
+    }
+
+    // The channel might have encountered an unexpected error while ensuring
+    // the upload stream is cloneable.  Check here and reset the interception
+    // if that happens.
+    nsresult status;
+    rv = channel->GetStatus(&status);
+    if (NS_WARN_IF(NS_FAILED(rv) || NS_FAILED(status))) {
+      HandleError();
+      return NS_OK;
+    }
+
+    nsRefPtr<FetchEventRunnable> event =
+      new FetchEventRunnable(mWorkerPrivate, mChannel, mServiceWorker,
+                             mClientInfo, mIsReload);
+    rv = event->Init();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      HandleError();
+      return NS_OK;
+    }
+
+    AutoJSAPI jsapi;
+    jsapi.Init();
+    if (NS_WARN_IF(!event->Dispatch(jsapi.cx()))) {
+      HandleError();
+      return NS_OK;
+    }
+
+    return NS_OK;
+  }
+};
+
+} // anonymous namespace
+
 NS_IMPL_ISUPPORTS_INHERITED(FetchEventRunnable, WorkerRunnable, nsIHttpHeaderVisitor)
 
-NS_IMETHODIMP
-ServiceWorkerManager::DispatchFetchEvent(nsIDocument* aDoc, nsIInterceptedChannel* aChannel)
+void
+ServiceWorkerManager::DispatchFetchEvent(const OriginAttributes& aOriginAttributes,
+                                         nsIDocument* aDoc,
+                                         nsIInterceptedChannel* aChannel,
+                                         bool aIsReload,
+                                         ErrorResult& aRv)
 {
   MOZ_ASSERT(aChannel);
   nsCOMPtr<nsISupports> serviceWorker;
 
   bool isNavigation = false;
-  nsresult rv = aChannel->GetIsNavigation(&isNavigation);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aRv = aChannel->GetIsNavigation(&isNavigation);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  // if the ServiceWorker script fails to load for some reason, just resume
+  // the original channel.
+  nsCOMPtr<nsIRunnable> failRunnable =
+    NS_NewRunnableMethod(aChannel, &nsIInterceptedChannel::ResetInterception);
+
+  nsAutoPtr<ServiceWorkerClientInfo> clientInfo;
 
   if (!isNavigation) {
     MOZ_ASSERT(aDoc);
-    rv = GetDocumentController(aDoc->GetWindow(), getter_AddRefs(serviceWorker));
+    aRv = GetDocumentController(aDoc->GetInnerWindow(), failRunnable,
+                                getter_AddRefs(serviceWorker));
+    clientInfo = new ServiceWorkerClientInfo(aDoc);
   } else {
     nsCOMPtr<nsIChannel> internalChannel;
-    rv = aChannel->GetChannel(getter_AddRefs(internalChannel));
-    NS_ENSURE_SUCCESS(rv, rv);
+    aRv = aChannel->GetChannel(getter_AddRefs(internalChannel));
+    if (NS_WARN_IF(aRv.Failed())) {
+      return;
+    }
 
     nsCOMPtr<nsIURI> uri;
-    rv = internalChannel->GetURI(getter_AddRefs(uri));
-    NS_ENSURE_SUCCESS(rv, rv);
+    aRv = internalChannel->GetURI(getter_AddRefs(uri));
+    if (NS_WARN_IF(aRv.Failed())) {
+      return;
+    }
 
     nsRefPtr<ServiceWorkerRegistrationInfo> registration =
-      GetServiceWorkerRegistrationInfo(uri);
-    // This should only happen if IsAvailableForURI() returned true.
-    MOZ_ASSERT(registration);
+      GetServiceWorkerRegistrationInfo(aOriginAttributes, uri);
+    if (!registration) {
+      NS_WARNING("No registration found when dispatching the fetch event");
+      aRv.Throw(NS_ERROR_FAILURE);
+      return;
+    }
+
+    // This should only happen if IsAvailable() returned true.
     MOZ_ASSERT(registration->mActiveWorker);
 
     nsRefPtr<ServiceWorker> sw;
-    rv = CreateServiceWorker(registration->mPrincipal,
-                             registration->mActiveWorker->ScriptSpec(),
-                             registration->mScope,
-                             getter_AddRefs(sw));
+    aRv = CreateServiceWorker(registration->mPrincipal,
+                              registration->mActiveWorker,
+                              failRunnable,
+                              getter_AddRefs(sw));
     serviceWorker = sw.forget();
   }
 
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
   }
 
   nsMainThreadPtrHandle<nsIInterceptedChannel> handle(
     new nsMainThreadPtrHolder<nsIInterceptedChannel>(aChannel, false));
 
-  uint64_t windowId = aDoc ? aDoc->GetInnerWindow()->WindowID() : 0;
-
   nsRefPtr<ServiceWorker> sw = static_cast<ServiceWorker*>(serviceWorker.get());
   nsMainThreadPtrHandle<ServiceWorker> serviceWorkerHandle(
     new nsMainThreadPtrHolder<ServiceWorker>(sw));
 
-  nsRefPtr<FetchEventRunnable> event =
-    new FetchEventRunnable(sw->GetWorkerPrivate(), handle, serviceWorkerHandle, windowId);
-  rv = event->Init();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIRunnable> continueRunnable =
+    new ContinueDispatchFetchEventRunnable(sw->GetWorkerPrivate(), handle,
+                                           serviceWorkerHandle, clientInfo,
+                                           aIsReload);
 
-  AutoJSAPI api;
-  api.Init();
-  if (NS_WARN_IF(!event->Dispatch(api.cx()))) {
-    return NS_ERROR_FAILURE;
+  nsCOMPtr<nsIChannel> innerChannel;
+  aRv = aChannel->GetChannel(getter_AddRefs(innerChannel));
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
   }
 
-  return NS_OK;
+  nsCOMPtr<nsIUploadChannel2> uploadChannel = do_QueryInterface(innerChannel);
+
+  // If there is no upload stream, then continue immediately
+  if (!uploadChannel) {
+    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(continueRunnable->Run()));
+    return;
+  }
+
+  // Otherwise, ensure the upload stream can be cloned directly.  This may
+  // require some async copying, so provide a callback.
+  aRv = uploadChannel->EnsureUploadStreamIsCloneable(continueRunnable);
 }
 
-NS_IMETHODIMP
-ServiceWorkerManager::IsAvailableForURI(nsIURI* aURI, bool* aIsAvailable)
+bool
+ServiceWorkerManager::IsAvailable(const OriginAttributes& aOriginAttributes,
+                                  nsIURI* aURI)
 {
   MOZ_ASSERT(aURI);
-  MOZ_ASSERT(aIsAvailable);
+
   nsRefPtr<ServiceWorkerRegistrationInfo> registration =
-    GetServiceWorkerRegistrationInfo(aURI);
-  *aIsAvailable = registration && registration->mActiveWorker;
-  return NS_OK;
+    GetServiceWorkerRegistrationInfo(aOriginAttributes, aURI);
+  return registration && registration->mActiveWorker;
 }
 
-NS_IMETHODIMP
-ServiceWorkerManager::IsControlled(nsIDocument* aDoc, bool* aIsControlled)
+bool
+ServiceWorkerManager::IsControlled(nsIDocument* aDoc, ErrorResult& aRv)
 {
   MOZ_ASSERT(aDoc);
-  MOZ_ASSERT(aIsControlled);
+  MOZ_ASSERT(!nsContentUtils::IsInPrivateBrowsing(aDoc));
+
   nsRefPtr<ServiceWorkerRegistrationInfo> registration;
   nsresult rv = GetDocumentRegistration(aDoc, getter_AddRefs(registration));
-  NS_ENSURE_SUCCESS(rv, rv);
-  *aIsControlled = !!registration;
-  return NS_OK;
+  if (NS_WARN_IF(NS_FAILED(rv) && rv != NS_ERROR_NOT_AVAILABLE)) {
+    // It's OK to ignore the case where we don't have a registration.
+    aRv.Throw(rv);
+    return false;
+  }
+
+  return !!registration;
 }
 
 nsresult
@@ -2377,7 +4111,7 @@ ServiceWorkerManager::GetDocumentRegistration(nsIDocument* aDoc,
 {
   nsRefPtr<ServiceWorkerRegistrationInfo> registration;
   if (!mControlledDocuments.Get(aDoc, getter_AddRefs(registration))) {
-    return NS_ERROR_FAILURE;
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // If the document is controlled, the current worker MUST be non-null.
@@ -2394,7 +4128,9 @@ ServiceWorkerManager::GetDocumentRegistration(nsIDocument* aDoc,
  * the document was loaded.
  */
 NS_IMETHODIMP
-ServiceWorkerManager::GetDocumentController(nsIDOMWindow* aWindow, nsISupports** aServiceWorker)
+ServiceWorkerManager::GetDocumentController(nsIDOMWindow* aWindow,
+                                            nsIRunnable* aLoadFailedRunnable,
+                                            nsISupports** aServiceWorker)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
   MOZ_ASSERT(window);
@@ -2412,8 +4148,8 @@ ServiceWorkerManager::GetDocumentController(nsIDOMWindow* aWindow, nsISupports**
 
   nsRefPtr<ServiceWorker> serviceWorker;
   rv = CreateServiceWorkerForWindow(window,
-                                    registration->mActiveWorker->ScriptSpec(),
-                                    registration->mScope,
+                                    registration->mActiveWorker,
+                                    aLoadFailedRunnable,
                                     getter_AddRefs(serviceWorker));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -2455,20 +4191,27 @@ ServiceWorkerManager::GetActive(nsIDOMWindow* aWindow,
 
 NS_IMETHODIMP
 ServiceWorkerManager::CreateServiceWorker(nsIPrincipal* aPrincipal,
-                                          const nsACString& aScriptSpec,
-                                          const nsACString& aScope,
+                                          ServiceWorkerInfo* aInfo,
+                                          nsIRunnable* aLoadFailedRunnable,
                                           ServiceWorker** aServiceWorker)
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(aPrincipal);
 
-  WorkerPrivate::LoadInfo info;
-  nsresult rv = NS_NewURI(getter_AddRefs(info.mBaseURI), aScriptSpec, nullptr, nullptr);
+  // Ensure that the IndexedDatabaseManager is initialized
+  NS_WARN_IF(!indexedDB::IndexedDatabaseManager::GetOrCreate());
+
+  WorkerLoadInfo info;
+  nsresult rv = NS_NewURI(getter_AddRefs(info.mBaseURI), aInfo->ScriptSpec(),
+                          nullptr, nullptr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   info.mResolvedScriptURI = info.mBaseURI;
+  MOZ_ASSERT(!aInfo->CacheName().IsEmpty());
+  info.mServiceWorkerCacheName = aInfo->CacheName();
+  info.mServiceWorkerID = aInfo->ID();
 
   rv = info.mBaseURI->GetHost(info.mDomain);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -2476,6 +4219,31 @@ ServiceWorkerManager::CreateServiceWorker(nsIPrincipal* aPrincipal,
   }
 
   info.mPrincipal = aPrincipal;
+
+  nsContentUtils::StorageAccess access =
+    nsContentUtils::StorageAllowedForPrincipal(aPrincipal);
+  info.mStorageAllowed =
+    access > nsContentUtils::StorageAccess::ePrivateBrowsing;
+
+  info.mPrivateBrowsing = false;
+
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  rv = aPrincipal->GetCsp(getter_AddRefs(csp));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  info.mCSP = csp;
+  if (info.mCSP) {
+    rv = info.mCSP->GetAllowsEval(&info.mReportCSPViolations,
+                                  &info.mEvalAllowed);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+  } else {
+    info.mEvalAllowed = true;
+    info.mReportCSPViolations = false;
+  }
 
   // NOTE: this defaults the SW load context to:
   //  - private browsing = false
@@ -2485,7 +4253,8 @@ ServiceWorkerManager::CreateServiceWorker(nsIPrincipal* aPrincipal,
   // them here.
   WorkerPrivate::OverrideLoadInfoLoadGroup(info);
 
-  nsRefPtr<ServiceWorker> serviceWorker;
+  info.mLoadFailedAsyncRunnable = aLoadFailedRunnable;
+
   RuntimeService* rs = RuntimeService::GetOrCreateService();
   if (!rs) {
     return NS_ERROR_FAILURE;
@@ -2493,14 +4262,18 @@ ServiceWorkerManager::CreateServiceWorker(nsIPrincipal* aPrincipal,
 
   AutoJSAPI jsapi;
   jsapi.Init();
-  rv = rs->CreateServiceWorkerFromLoadInfo(jsapi.cx(), &info,
-                                           NS_ConvertUTF8toUTF16(aScriptSpec),
-                                           aScope,
-                                           getter_AddRefs(serviceWorker));
+  nsRefPtr<SharedWorker> sharedWorker;
+  rv = rs->CreateSharedWorkerForServiceWorkerFromLoadInfo(jsapi.cx(), &info,
+                                                          NS_ConvertUTF8toUTF16(aInfo->ScriptSpec()),
+                                                          aInfo->Scope(),
+                                                          getter_AddRefs(sharedWorker));
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+
+  nsRefPtr<ServiceWorker> serviceWorker =
+    new ServiceWorker(nullptr, aInfo, sharedWorker);
 
   serviceWorker.forget(aServiceWorker);
   return NS_OK;
@@ -2511,9 +4284,9 @@ ServiceWorkerManager::InvalidateServiceWorkerRegistrationWorker(ServiceWorkerReg
                                                                 WhichServiceWorker aWhichOnes)
 {
   AssertIsOnMainThread();
-  nsTObserverArray<ServiceWorkerRegistration*>::ForwardIterator it(mServiceWorkerRegistrations);
+  nsTObserverArray<ServiceWorkerRegistrationListener*>::ForwardIterator it(mServiceWorkerRegistrationListeners);
   while (it.HasMore()) {
-    nsRefPtr<ServiceWorkerRegistration> target = it.GetNext();
+    nsRefPtr<ServiceWorkerRegistrationListener> target = it.GetNext();
     nsAutoString regScope;
     target->GetScope(regScope);
     MOZ_ASSERT(!regScope.IsEmpty());
@@ -2521,41 +4294,83 @@ ServiceWorkerManager::InvalidateServiceWorkerRegistrationWorker(ServiceWorkerReg
     NS_ConvertUTF16toUTF8 utf8Scope(regScope);
 
     if (utf8Scope.Equals(aRegistration->mScope)) {
-      target->InvalidateWorkerReference(aWhichOnes);
+      target->InvalidateWorkers(aWhichOnes);
     }
   }
 }
 
-NS_IMETHODIMP
-ServiceWorkerManager::Update(const nsAString& aScope)
+void
+ServiceWorkerManager::SoftUpdate(nsIPrincipal* aPrincipal,
+                                 const nsACString& aScope,
+                                 ServiceWorkerUpdateFinishCallback* aCallback)
 {
-  NS_ConvertUTF16toUTF8 scope(aScope);
+  MOZ_ASSERT(aPrincipal);
 
-  nsRefPtr<ServiceWorkerRegistrationInfo> registration;
-  mServiceWorkerRegistrationInfos.Get(scope, getter_AddRefs(registration));
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  SoftUpdate(scopeKey, aScope, aCallback);
+}
+
+void
+ServiceWorkerManager::SoftUpdate(const OriginAttributes& aOriginAttributes,
+                                 const nsACString& aScope,
+                                 ServiceWorkerUpdateFinishCallback* aCallback)
+{
+  nsAutoCString scopeKey;
+  aOriginAttributes.CreateSuffix(scopeKey);
+  SoftUpdate(scopeKey, aScope, aCallback);
+}
+
+void
+ServiceWorkerManager::SoftUpdate(const nsACString& aScopeKey,
+                                 const nsACString& aScope,
+                                 ServiceWorkerUpdateFinishCallback* aCallback)
+{
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetRegistration(aScopeKey, aScope);
   if (NS_WARN_IF(!registration)) {
-    return NS_OK;
+    return;
   }
 
-  // FIXME(nsm): Bug 1089889 Refactor this into SoftUpdate.
+  // "If registration's uninstalling flag is set, abort these steps."
   if (registration->mPendingUninstall) {
-    return NS_OK;
+    return;
   }
 
+  // "If registration's installing worker is not null, abort these steps."
   if (registration->mInstallingWorker) {
-    return NS_OK;
+    return;
   }
 
-  ServiceWorkerJobQueue* queue = GetOrCreateJobQueue(scope);
+  // "Let newestWorker be the result of running Get Newest Worker algorithm
+  // passing registration as its argument.
+  // If newestWorker is null, abort these steps."
+  nsRefPtr<ServiceWorkerInfo> newest = registration->Newest();
+  if (!newest) {
+    return;
+  }
+
+  // "Set registration's registering script url to newestWorker's script url."
+  registration->mScriptSpec = newest->ScriptSpec();
+
+  ServiceWorkerJobQueue* queue =
+    GetOrCreateJobQueue(aScopeKey, aScope);
   MOZ_ASSERT(queue);
 
-  nsRefPtr<ServiceWorkerUpdateFinishCallback> cb =
-    new ServiceWorkerUpdateFinishCallback();
+  nsRefPtr<ServiceWorkerUpdateFinishCallback> cb(aCallback);
+  if (!cb) {
+    cb = new ServiceWorkerUpdateFinishCallback();
+  }
 
+  // "Invoke Update algorithm, or its equivalent, with client, registration as
+  // its argument."
   nsRefPtr<ServiceWorkerRegisterJob> job =
     new ServiceWorkerRegisterJob(queue, registration, cb);
   queue->Append(job);
-  return NS_OK;
 }
 
 namespace {
@@ -2563,14 +4378,14 @@ namespace {
 class MOZ_STACK_CLASS FilterRegistrationData
 {
 public:
-  FilterRegistrationData(nsTArray<uint64_t>* aDocuments,
-                     ServiceWorkerRegistrationInfo* aRegistration)
+  FilterRegistrationData(nsTArray<ServiceWorkerClientInfo>& aDocuments,
+                         ServiceWorkerRegistrationInfo* aRegistration)
   : mDocuments(aDocuments),
     mRegistration(aRegistration)
   {
   }
 
-  nsTArray<uint64_t>* mDocuments;
+  nsTArray<ServiceWorkerClientInfo>& mDocuments;
   nsRefPtr<ServiceWorkerRegistrationInfo> mRegistration;
 };
 
@@ -2580,16 +4395,47 @@ EnumControlledDocuments(nsISupports* aKey,
                         void* aData)
 {
   FilterRegistrationData* data = static_cast<FilterRegistrationData*>(aData);
-  if (data->mRegistration != aRegistration) {
+  MOZ_ASSERT(data->mRegistration);
+  MOZ_ASSERT(aRegistration);
+  if (!data->mRegistration->mScope.Equals(aRegistration->mScope)) {
     return PL_DHASH_NEXT;
   }
+
   nsCOMPtr<nsIDocument> document = do_QueryInterface(aKey);
-  if (!document || !document->GetInnerWindow()) {
-      return PL_DHASH_NEXT;
+
+  if (!document || !document->GetWindow()) {
+    return PL_DHASH_NEXT;
   }
 
-  data->mDocuments->AppendElement(document->GetInnerWindow()->WindowID());
+  ServiceWorkerClientInfo clientInfo(document);
+  data->mDocuments.AppendElement(clientInfo);
+
   return PL_DHASH_NEXT;
+}
+
+static void
+FireControllerChangeOnDocument(nsIDocument* aDocument)
+{
+  AssertIsOnMainThread();
+  MOZ_ASSERT(aDocument);
+
+  nsCOMPtr<nsPIDOMWindow> w = aDocument->GetWindow();
+  MOZ_ASSERT(w);
+  w = w->GetCurrentInnerWindow();
+  auto* window = static_cast<nsGlobalWindow*>(w.get());
+
+  ErrorResult result;
+  dom::Navigator* navigator = window->GetNavigator(result);
+  if (NS_WARN_IF(result.Failed())) {
+    result.SuppressException();
+    return;
+  }
+
+  nsRefPtr<ServiceWorkerContainer> container = navigator->ServiceWorker();
+  container->ControllerChanged(result);
+  if (result.Failed()) {
+    NS_WARNING("Failed to dispatch controllerchange event");
+  }
 }
 
 static PLDHashOperator
@@ -2609,35 +4455,22 @@ FireControllerChangeOnMatchingDocument(nsISupports* aKey,
     return PL_DHASH_NEXT;
   }
 
-  nsCOMPtr<nsPIDOMWindow> w = doc->GetWindow();
-  MOZ_ASSERT(w);
-  auto* window = static_cast<nsGlobalWindow*>(w.get());
-  if (NS_WARN_IF(!window)) {
-    NS_WARNING("No valid nsGlobalWindow");
-    return PL_DHASH_NEXT;
-  }
-
-  ErrorResult result;
-  dom::Navigator* navigator = window->GetNavigator(result);
-  if (NS_WARN_IF(result.Failed())) {
-    return PL_DHASH_NEXT;
-  }
-
-  nsRefPtr<ServiceWorkerContainer> container = navigator->ServiceWorker();
-  result = container->DispatchTrustedEvent(NS_LITERAL_STRING("controllerchange"));
-  if (result.Failed()) {
-    NS_WARNING("Failed to dispatch controllerchange event");
-  }
+  FireControllerChangeOnDocument(doc);
 
   return PL_DHASH_NEXT;
 }
+
 } // anonymous namespace
 
 void
-ServiceWorkerManager::GetAllClients(const nsCString& aScope,
-                                    nsTArray<uint64_t>* aControlledDocuments)
+ServiceWorkerManager::GetAllClients(nsIPrincipal* aPrincipal,
+                                    const nsCString& aScope,
+                                    nsTArray<ServiceWorkerClientInfo>& aControlledDocuments)
 {
-  nsRefPtr<ServiceWorkerRegistrationInfo> registration = GetRegistration(aScope);
+  MOZ_ASSERT(aPrincipal);
+
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetRegistration(aPrincipal, aScope);
 
   if (!registration) {
     // The registration was removed, leave the array empty.
@@ -2650,9 +4483,121 @@ ServiceWorkerManager::GetAllClients(const nsCString& aScope,
 }
 
 void
+ServiceWorkerManager::MaybeClaimClient(nsIDocument* aDocument,
+                                       ServiceWorkerRegistrationInfo* aWorkerRegistration)
+{
+  MOZ_ASSERT(aWorkerRegistration);
+  MOZ_ASSERT(aWorkerRegistration->mActiveWorker);
+
+  // Same origin check
+  if (!aWorkerRegistration->mPrincipal->Equals(aDocument->NodePrincipal())) {
+    return;
+  }
+
+  // The registration that should be controlling the client
+  nsRefPtr<ServiceWorkerRegistrationInfo> matchingRegistration =
+    GetServiceWorkerRegistrationInfo(aDocument);
+
+  // The registration currently controlling the client
+  nsRefPtr<ServiceWorkerRegistrationInfo> controllingRegistration;
+  GetDocumentRegistration(aDocument, getter_AddRefs(controllingRegistration));
+
+  if (aWorkerRegistration != matchingRegistration ||
+        aWorkerRegistration == controllingRegistration) {
+    return;
+  }
+
+  if (controllingRegistration) {
+    StopControllingADocument(controllingRegistration);
+  }
+
+  StartControllingADocument(aWorkerRegistration, aDocument);
+  FireControllerChangeOnDocument(aDocument);
+}
+
+nsresult
+ServiceWorkerManager::ClaimClients(nsIPrincipal* aPrincipal,
+                                   const nsCString& aScope, uint64_t aId)
+{
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetRegistration(aPrincipal, aScope);
+
+  if (!registration || !registration->mActiveWorker ||
+      !(registration->mActiveWorker->ID() == aId)) {
+    // The worker is not active.
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
+  }
+
+  nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  for (auto iter = mAllDocuments.Iter(); !iter.Done(); iter.Next()) {
+    nsCOMPtr<nsIDocument> document = do_QueryInterface(iter.Get()->GetKey());
+    swm->MaybeClaimClient(document, registration);
+  }
+
+  return NS_OK;
+}
+
+nsresult
+ServiceWorkerManager::SetSkipWaitingFlag(nsIPrincipal* aPrincipal,
+                                         const nsCString& aScope,
+                                         uint64_t aServiceWorkerID)
+{
+  nsRefPtr<ServiceWorkerRegistrationInfo> registration =
+    GetRegistration(aPrincipal, aScope);
+  if (!registration) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (registration->mInstallingWorker &&
+      (registration->mInstallingWorker->ID() == aServiceWorkerID)) {
+    registration->mInstallingWorker->SetSkipWaitingFlag();
+  } else if (registration->mWaitingWorker &&
+             (registration->mWaitingWorker->ID() == aServiceWorkerID)) {
+    registration->mWaitingWorker->SetSkipWaitingFlag();
+    if (registration->mWaitingWorker->State() == ServiceWorkerState::Installed) {
+      registration->TryToActivate();
+    }
+  } else {
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
+void
 ServiceWorkerManager::FireControllerChange(ServiceWorkerRegistrationInfo* aRegistration)
 {
   mControlledDocuments.EnumerateRead(FireControllerChangeOnMatchingDocument, aRegistration);
+}
+
+already_AddRefed<ServiceWorkerRegistrationInfo>
+ServiceWorkerManager::GetRegistration(nsIPrincipal* aPrincipal,
+                                      const nsACString& aScope) const
+{
+  MOZ_ASSERT(aPrincipal);
+
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  return GetRegistration(scopeKey, aScope);
+}
+
+already_AddRefed<ServiceWorkerRegistrationInfo>
+ServiceWorkerManager::GetRegistration(const nsACString& aScopeKey,
+                                      const nsACString& aScope) const
+{
+  nsRefPtr<ServiceWorkerRegistrationInfo> reg;
+
+  RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(aScopeKey, &data)) {
+    return reg.forget();
+  }
+
+  data->mInfos.Get(aScope, getter_AddRefs(reg));
+  return reg.forget();
 }
 
 ServiceWorkerRegistrationInfo*
@@ -2664,12 +4609,16 @@ ServiceWorkerManager::CreateNewRegistration(const nsCString& aScope,
   nsCOMPtr<nsIURI> scopeURI;
   nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, nullptr);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  nsRefPtr<ServiceWorkerRegistrationInfo> tmp =
+    GetRegistration(aPrincipal, aScope);
+  MOZ_ASSERT(!tmp);
 #endif
+
   ServiceWorkerRegistrationInfo* registration = new ServiceWorkerRegistrationInfo(aScope, aPrincipal);
   // From now on ownership of registration is with
   // mServiceWorkerRegistrationInfos.
-  mServiceWorkerRegistrationInfos.Put(aScope, registration);
-  AddScope(mOrderedScopes, aScope);
+  AddScopeAndRegistration(aScope, registration);
   return registration;
 }
 
@@ -2681,6 +4630,664 @@ ServiceWorkerManager::MaybeRemoveRegistration(ServiceWorkerRegistrationInfo* aRe
   if (!newest) {
     RemoveRegistration(aRegistration);
   }
+}
+
+void
+ServiceWorkerManager::RemoveRegistrationInternal(ServiceWorkerRegistrationInfo* aRegistration)
+{
+  MOZ_ASSERT(aRegistration);
+  MOZ_ASSERT(!aRegistration->IsControllingDocuments());
+
+  if (mShuttingDown) {
+    return;
+  }
+
+  // All callers should be either from a job in which case the actor is
+  // available, or from MaybeStopControlling(), in which case, this will only be
+  // called if a valid registration is found. If a valid registration exists,
+  // it means the actor is available since the original map of registrations is
+  // populated by it, and any new registrations wait until the actor is
+  // available before proceeding (See ServiceWorkerRegisterJob::Start).
+  MOZ_ASSERT(mActor);
+
+  PrincipalInfo principalInfo;
+  if (NS_WARN_IF(NS_FAILED(PrincipalToPrincipalInfo(aRegistration->mPrincipal,
+                                                    &principalInfo)))) {
+    //XXXnsm I can't think of any other reason a stored principal would fail to
+    //convert.
+    NS_WARNING("Unable to unregister serviceworker due to possible OOM");
+    return;
+  }
+
+  mActor->SendUnregister(principalInfo, NS_ConvertUTF8toUTF16(aRegistration->mScope));
+}
+
+class ServiceWorkerDataInfo final : public nsIServiceWorkerInfo
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSISERVICEWORKERINFO
+
+  static already_AddRefed<ServiceWorkerDataInfo>
+  Create(const ServiceWorkerRegistrationInfo* aData);
+
+private:
+  ServiceWorkerDataInfo()
+  {}
+
+  ~ServiceWorkerDataInfo()
+  {}
+
+  nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsString mScope;
+  nsString mScriptSpec;
+  nsString mCurrentWorkerURL;
+  nsString mActiveCacheName;
+  nsString mWaitingCacheName;
+};
+
+void
+ServiceWorkerManager::RemoveRegistration(ServiceWorkerRegistrationInfo* aRegistration)
+{
+  RemoveRegistrationInternal(aRegistration);
+  MOZ_ASSERT(HasScope(aRegistration->mPrincipal, aRegistration->mScope));
+  RemoveScopeAndRegistration(aRegistration);
+}
+
+namespace {
+/**
+ * See browser/components/sessionstore/Utils.jsm function hasRootDomain().
+ *
+ * Returns true if the |url| passed in is part of the given root |domain|.
+ * For example, if |url| is "www.mozilla.org", and we pass in |domain| as
+ * "mozilla.org", this will return true. It would return false the other way
+ * around.
+ */
+bool
+HasRootDomain(nsIURI* aURI, const nsACString& aDomain)
+{
+  AssertIsOnMainThread();
+  MOZ_ASSERT(aURI);
+
+  nsAutoCString host;
+  nsresult rv = aURI->GetHost(host);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+
+  nsACString::const_iterator start, end;
+  host.BeginReading(start);
+  host.EndReading(end);
+  if (!FindInReadable(aDomain, start, end)) {
+    return false;
+  }
+
+  if (host.Equals(aDomain)) {
+    return true;
+  }
+
+  // Beginning of the string matches, can't look at the previous char.
+  if (start.get() == host.BeginReading()) {
+    // Equals failed so this is fine.
+    return false;
+  }
+
+  char prevChar = *(--start);
+  return prevChar == '.';
+}
+
+struct UnregisterIfMatchesUserData final
+{
+  UnregisterIfMatchesUserData(
+    ServiceWorkerManager::RegistrationDataPerPrincipal* aRegistrationData,
+    void* aUserData)
+    : mRegistrationData(aRegistrationData)
+    , mUserData(aUserData)
+  {}
+
+  ServiceWorkerManager::RegistrationDataPerPrincipal* mRegistrationData;
+  void *mUserData;
+};
+
+// If host/aData is null, unconditionally unregisters.
+PLDHashOperator
+UnregisterIfMatchesHost(const nsACString& aScope,
+                        ServiceWorkerRegistrationInfo* aReg,
+                        void* aPtr)
+{
+  UnregisterIfMatchesUserData* data =
+    static_cast<UnregisterIfMatchesUserData*>(aPtr);
+
+  // We avoid setting toRemove = aReg by default since there is a possibility
+  // of failure when data->mUserData is passed, in which case we don't want to
+  // remove the registration.
+  ServiceWorkerRegistrationInfo* toRemove = nullptr;
+  if (data->mUserData) {
+    const nsACString& domain = *static_cast<nsACString*>(data->mUserData);
+    nsCOMPtr<nsIURI> scopeURI;
+    nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, nullptr);
+    // This way subdomains are also cleared.
+    if (NS_SUCCEEDED(rv) && HasRootDomain(scopeURI, domain)) {
+      toRemove = aReg;
+    }
+  } else {
+    toRemove = aReg;
+  }
+
+  if (toRemove) {
+    nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+    swm->ForceUnregister(data->mRegistrationData, toRemove);
+  }
+
+  return PL_DHASH_NEXT;
+}
+
+// If host/aData is null, unconditionally unregisters.
+PLDHashOperator
+UnregisterIfMatchesHostPerPrincipal(const nsACString& aKey,
+                                    ServiceWorkerManager::RegistrationDataPerPrincipal* aData,
+                                    void* aUserData)
+{
+  UnregisterIfMatchesUserData data(aData, aUserData);
+  aData->mInfos.EnumerateRead(UnregisterIfMatchesHost, &data);
+  return PL_DHASH_NEXT;
+}
+
+PLDHashOperator
+UnregisterIfMatchesClearOriginParams(const nsACString& aScope,
+                                     ServiceWorkerRegistrationInfo* aReg,
+                                     void* aPtr)
+{
+  UnregisterIfMatchesUserData* data =
+    static_cast<UnregisterIfMatchesUserData*>(aPtr);
+  MOZ_ASSERT(data);
+
+  if (data->mUserData) {
+    OriginAttributes* params = static_cast<OriginAttributes*>(data->mUserData);
+    MOZ_ASSERT(params);
+    MOZ_ASSERT(aReg);
+    MOZ_ASSERT(aReg->mPrincipal);
+
+    bool equals = false;
+
+    if (params->mInBrowser) {
+      // When we do a system wide "clear cookies and stored data" on B2G we get
+      // the "clear-origin-data" notification with the System app appID and
+      // the browserOnly flag set to true.
+      // Web sites registering a service worker on B2G have a principal with the
+      // following information: web site origin + System app appId + inBrowser=1
+      // So we need to check if the service worker registration info contains
+      // the System app appID and the enabled inBrowser flag and in that case
+      // remove it from the registry.
+      OriginAttributes attrs =
+        mozilla::BasePrincipal::Cast(aReg->mPrincipal)->OriginAttributesRef();
+      equals = attrs == *params;
+    } else {
+      // If we get the "clear-origin-data" notification because of an app
+      // uninstallation, we need to check the full principal to get the match
+      // in the service workers registry. If we find a match, we unregister the
+      // worker.
+      nsCOMPtr<nsIAppsService> appsService =
+        do_GetService(APPS_SERVICE_CONTRACTID);
+      if (NS_WARN_IF(!appsService)) {
+        return PL_DHASH_NEXT;
+      }
+
+      nsCOMPtr<mozIApplication> app;
+      appsService->GetAppByLocalId(params->mAppId, getter_AddRefs(app));
+      if (NS_WARN_IF(!app)) {
+        return PL_DHASH_NEXT;
+      }
+
+      nsCOMPtr<nsIPrincipal> principal;
+      app->GetPrincipal(getter_AddRefs(principal));
+      if (NS_WARN_IF(!principal)) {
+        return PL_DHASH_NEXT;
+      }
+
+      aReg->mPrincipal->Equals(principal, &equals);
+    }
+
+    if (equals) {
+      nsRefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+      swm->ForceUnregister(data->mRegistrationData, aReg);
+    }
+  }
+
+  return PL_DHASH_NEXT;
+}
+
+PLDHashOperator
+UnregisterIfMatchesClearOriginParams(const nsACString& aKey,
+                             ServiceWorkerManager::RegistrationDataPerPrincipal* aData,
+                             void* aUserData)
+{
+  UnregisterIfMatchesUserData data(aData, aUserData);
+  // We can use EnumerateRead because ForceUnregister (and Unregister) are async.
+  // Otherwise doing some R/W operations on an hashtable during an EnumerateRead
+  // will crash.
+  aData->mInfos.EnumerateRead(UnregisterIfMatchesClearOriginParams,
+                              &data);
+  return PL_DHASH_NEXT;
+}
+
+PLDHashOperator
+GetAllRegistrationsEnumerator(const nsACString& aScope,
+                              ServiceWorkerRegistrationInfo* aReg,
+                              void* aData)
+{
+  nsIMutableArray* array = static_cast<nsIMutableArray*>(aData);
+  MOZ_ASSERT(aReg);
+
+  if (aReg->mPendingUninstall) {
+    return PL_DHASH_NEXT;
+  }
+
+  nsCOMPtr<nsIServiceWorkerInfo> info = ServiceWorkerDataInfo::Create(aReg);
+  if (NS_WARN_IF(!info)) {
+    return PL_DHASH_NEXT;
+  }
+
+  array->AppendElement(info, false);
+  return PL_DHASH_NEXT;
+}
+
+PLDHashOperator
+GetAllRegistrationsPerPrincipalEnumerator(const nsACString& aKey,
+                                          ServiceWorkerManager::RegistrationDataPerPrincipal* aData,
+                                          void* aUserData)
+{
+  aData->mInfos.EnumerateRead(GetAllRegistrationsEnumerator, aUserData);
+  return PL_DHASH_NEXT;
+}
+
+} // namespace
+
+NS_IMPL_ISUPPORTS(ServiceWorkerDataInfo, nsIServiceWorkerInfo)
+
+/* static */ already_AddRefed<ServiceWorkerDataInfo>
+ServiceWorkerDataInfo::Create(const ServiceWorkerRegistrationInfo* aData)
+{
+  AssertIsOnMainThread();
+  MOZ_ASSERT(aData);
+
+  nsRefPtr<ServiceWorkerDataInfo> info = new ServiceWorkerDataInfo();
+
+  info->mPrincipal = aData->mPrincipal;
+  CopyUTF8toUTF16(aData->mScope, info->mScope);
+  CopyUTF8toUTF16(aData->mScriptSpec, info->mScriptSpec);
+
+  if (aData->mActiveWorker) {
+    CopyUTF8toUTF16(aData->mActiveWorker->ScriptSpec(),
+                    info->mCurrentWorkerURL);
+    info->mActiveCacheName = aData->mActiveWorker->CacheName();
+  }
+
+  if (aData->mWaitingWorker) {
+    info->mWaitingCacheName = aData->mWaitingWorker->CacheName();
+  }
+
+  return info.forget();
+}
+
+NS_IMETHODIMP
+ServiceWorkerDataInfo::GetPrincipal(nsIPrincipal** aPrincipal)
+{
+  AssertIsOnMainThread();
+  NS_ADDREF(*aPrincipal = mPrincipal);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerDataInfo::GetScope(nsAString& aScope)
+{
+  AssertIsOnMainThread();
+  aScope = mScope;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerDataInfo::GetScriptSpec(nsAString& aScriptSpec)
+{
+  AssertIsOnMainThread();
+  aScriptSpec = mScriptSpec;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerDataInfo::GetCurrentWorkerURL(nsAString& aCurrentWorkerURL)
+{
+  AssertIsOnMainThread();
+  aCurrentWorkerURL = mCurrentWorkerURL;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerDataInfo::GetActiveCacheName(nsAString& aActiveCacheName)
+{
+  AssertIsOnMainThread();
+  aActiveCacheName = mActiveCacheName;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerDataInfo::GetWaitingCacheName(nsAString& aWaitingCacheName)
+{
+  AssertIsOnMainThread();
+  aWaitingCacheName = mWaitingCacheName;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::GetAllRegistrations(nsIArray** aResult)
+{
+  AssertIsOnMainThread();
+
+  nsCOMPtr<nsIMutableArray> array(do_CreateInstance(NS_ARRAY_CONTRACTID));
+  if (!array) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  mRegistrationInfos.EnumerateRead(GetAllRegistrationsPerPrincipalEnumerator, array);
+  array.forget(aResult);
+  return NS_OK;
+}
+
+// MUST ONLY BE CALLED FROM UnregisterIfMatchesHost!
+void
+ServiceWorkerManager::ForceUnregister(RegistrationDataPerPrincipal* aRegistrationData,
+                                      ServiceWorkerRegistrationInfo* aRegistration)
+{
+  MOZ_ASSERT(aRegistrationData);
+  MOZ_ASSERT(aRegistration);
+
+  ServiceWorkerJobQueue* queue;
+  aRegistrationData->mJobQueues.Get(aRegistration->mScope, &queue);
+  if (queue) {
+    queue->CancelJobs();
+  }
+
+  // Since Unregister is async, it is ok to call it in an enumeration.
+  Unregister(aRegistration->mPrincipal, nullptr, NS_ConvertUTF8toUTF16(aRegistration->mScope));
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::RemoveAndPropagate(const nsACString& aHost)
+{
+  Remove(aHost);
+  PropagateRemove(aHost);
+  return NS_OK;
+}
+
+void
+ServiceWorkerManager::Remove(const nsACString& aHost)
+{
+  AssertIsOnMainThread();
+
+  // We need to postpone this operation in case we don't have an actor because
+  // this is needed by the ForceUnregister.
+  if (!mActor) {
+    nsRefPtr<nsIRunnable> runnable = new RemoveRunnable(aHost);
+    AppendPendingOperation(runnable);
+    return;
+  }
+
+  mRegistrationInfos.EnumerateRead(UnregisterIfMatchesHostPerPrincipal,
+                                   &const_cast<nsACString&>(aHost));
+}
+
+void
+ServiceWorkerManager::PropagateRemove(const nsACString& aHost)
+{
+  AssertIsOnMainThread();
+
+  if (!mActor) {
+    nsRefPtr<nsIRunnable> runnable = new PropagateRemoveRunnable(aHost);
+    AppendPendingOperation(runnable);
+    return;
+  }
+
+  mActor->SendPropagateRemove(nsCString(aHost));
+}
+
+void
+ServiceWorkerManager::RemoveAll()
+{
+  AssertIsOnMainThread();
+  mRegistrationInfos.EnumerateRead(UnregisterIfMatchesHostPerPrincipal, nullptr);
+}
+
+void
+ServiceWorkerManager::PropagateRemoveAll()
+{
+  AssertIsOnMainThread();
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mActor) {
+    nsRefPtr<nsIRunnable> runnable = new PropagateRemoveAllRunnable();
+    AppendPendingOperation(runnable);
+    return;
+  }
+
+  mActor->SendPropagateRemoveAll();
+}
+
+static PLDHashOperator
+UpdateEachRegistration(const nsACString& aKey,
+                       ServiceWorkerRegistrationInfo* aInfo,
+                       void* aUserArg) {
+  auto This = static_cast<ServiceWorkerManager*>(aUserArg);
+  MOZ_ASSERT(!aInfo->mScope.IsEmpty());
+
+  This->SoftUpdate(aInfo->mPrincipal, aInfo->mScope);
+  return PL_DHASH_NEXT;
+}
+
+void
+ServiceWorkerManager::RemoveAllRegistrations(OriginAttributes* aParams)
+{
+  AssertIsOnMainThread();
+
+  MOZ_ASSERT(aParams);
+
+  mRegistrationInfos.EnumerateRead(UnregisterIfMatchesClearOriginParams,
+                                   aParams);
+}
+
+static PLDHashOperator
+UpdateEachRegistrationPerPrincipal(const nsACString& aKey,
+                                   ServiceWorkerManager::RegistrationDataPerPrincipal* aData,
+                                   void* aUserArg) {
+  aData->mInfos.EnumerateRead(UpdateEachRegistration, aUserArg);
+  return PL_DHASH_NEXT;
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::UpdateAllRegistrations()
+{
+  AssertIsOnMainThread();
+
+  mRegistrationInfos.EnumerateRead(UpdateEachRegistrationPerPrincipal, this);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::Observe(nsISupports* aSubject,
+                              const char* aTopic,
+                              const char16_t* aData)
+{
+  if (strcmp(aTopic, PURGE_SESSION_HISTORY) == 0) {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    RemoveAll();
+    PropagateRemoveAll();
+    return NS_OK;
+  }
+
+  if (strcmp(aTopic, PURGE_DOMAIN_DATA) == 0) {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    nsAutoString domain(aData);
+    RemoveAndPropagate(NS_ConvertUTF16toUTF8(domain));
+    return NS_OK;
+  }
+
+  if (strcmp(aTopic, CLEAR_ORIGIN_DATA) == 0) {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    OriginAttributes attrs;
+    MOZ_ALWAYS_TRUE(attrs.Init(nsAutoString(aData)));
+
+    RemoveAllRegistrations(&attrs);
+    return NS_OK;
+  }
+
+  if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
+    mShuttingDown = true;
+
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+
+      if (XRE_IsParentProcess()) {
+        obs->RemoveObserver(this, PURGE_SESSION_HISTORY);
+        obs->RemoveObserver(this, PURGE_DOMAIN_DATA);
+        obs->RemoveObserver(this, CLEAR_ORIGIN_DATA);
+      }
+    }
+
+    if (mActor) {
+      mActor->ManagerShuttingDown();
+
+      nsRefPtr<TeardownRunnable> runnable = new TeardownRunnable(mActor);
+      nsresult rv = NS_DispatchToMainThread(runnable);
+      unused << NS_WARN_IF(NS_FAILED(rv));
+      mActor = nullptr;
+    }
+    return NS_OK;
+  }
+
+  MOZ_CRASH("Received message we aren't supposed to be registered for!");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::PropagateSoftUpdate(JS::Handle<JS::Value> aOriginAttributes,
+                                          const nsAString& aScope,
+                                          JSContext* aCx)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  OriginAttributes attrs;
+  if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  PropagateSoftUpdate(attrs, aScope);
+  return NS_OK;
+}
+
+void
+ServiceWorkerManager::PropagateSoftUpdate(const OriginAttributes& aOriginAttributes,
+                                          const nsAString& aScope)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!mActor) {
+    nsRefPtr<nsIRunnable> runnable =
+      new PropagateSoftUpdateRunnable(aOriginAttributes, aScope);
+    AppendPendingOperation(runnable);
+    return;
+  }
+
+  mActor->SendPropagateSoftUpdate(aOriginAttributes, nsString(aScope));
+}
+
+NS_IMETHODIMP
+ServiceWorkerManager::PropagateUnregister(nsIPrincipal* aPrincipal,
+                                          nsIServiceWorkerUnregisterCallback* aCallback,
+                                          const nsAString& aScope)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aPrincipal);
+
+  if (!mActor) {
+    nsRefPtr<nsIRunnable> runnable =
+      new PropagateUnregisterRunnable(aPrincipal, aCallback, aScope);
+    AppendPendingOperation(runnable);
+    return NS_OK;
+  }
+
+  PrincipalInfo principalInfo;
+  if (NS_WARN_IF(NS_FAILED(PrincipalToPrincipalInfo(aPrincipal,
+                                                    &principalInfo)))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mActor->SendPropagateUnregister(principalInfo, nsString(aScope));
+
+  nsresult rv = Unregister(aPrincipal, aCallback, aScope);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+void
+ServiceWorkerInfo::AppendWorker(ServiceWorker* aWorker)
+{
+  MOZ_ASSERT(aWorker);
+#ifdef DEBUG
+  nsAutoString workerURL;
+  aWorker->GetScriptURL(workerURL);
+  MOZ_ASSERT(workerURL.Equals(NS_ConvertUTF8toUTF16(mScriptSpec)));
+#endif
+  MOZ_ASSERT(!mInstances.Contains(aWorker));
+
+  mInstances.AppendElement(aWorker);
+  aWorker->SetState(State());
+}
+
+void
+ServiceWorkerInfo::RemoveWorker(ServiceWorker* aWorker)
+{
+  MOZ_ASSERT(aWorker);
+#ifdef DEBUG
+  nsAutoString workerURL;
+  aWorker->GetScriptURL(workerURL);
+  MOZ_ASSERT(workerURL.Equals(NS_ConvertUTF8toUTF16(mScriptSpec)));
+#endif
+  MOZ_ASSERT(mInstances.Contains(aWorker));
+
+  mInstances.RemoveElement(aWorker);
+}
+
+void
+ServiceWorkerInfo::UpdateState(ServiceWorkerState aState)
+{
+#ifdef DEBUG
+  // Any state can directly transition to redundant, but everything else is
+  // ordered.
+  if (aState != ServiceWorkerState::Redundant) {
+    MOZ_ASSERT_IF(mState == ServiceWorkerState::EndGuard_, aState == ServiceWorkerState::Installing);
+    MOZ_ASSERT_IF(mState == ServiceWorkerState::Installing, aState == ServiceWorkerState::Installed);
+    MOZ_ASSERT_IF(mState == ServiceWorkerState::Installed, aState == ServiceWorkerState::Activating);
+    MOZ_ASSERT_IF(mState == ServiceWorkerState::Activating, aState == ServiceWorkerState::Activated);
+  }
+  // Activated can only go to redundant.
+  MOZ_ASSERT_IF(mState == ServiceWorkerState::Activated, aState == ServiceWorkerState::Redundant);
+#endif
+  mState = aState;
+  for (uint32_t i = 0; i < mInstances.Length(); ++i) {
+    mInstances[i]->QueueStateChangeEvent(mState);
+  }
+}
+
+static uint64_t gServiceWorkerInfoCurrentID = 0;
+
+uint64_t
+ServiceWorkerInfo::GetNextID() const
+{
+  return ++gServiceWorkerInfoCurrentID;
 }
 
 END_WORKERS_NAMESPACE

@@ -10,9 +10,9 @@
 thisTestLeaksUncaughtRejectionsAndShouldBeFixed("TypeError: Assert is null");
 
 
-let SocialService = Cu.import("resource://gre/modules/SocialService.jsm", {}).SocialService;
+var SocialService = Cu.import("resource://gre/modules/SocialService.jsm", {}).SocialService;
 
-let tabsToRemove = [];
+var tabsToRemove = [];
 
 
 function removeAllProviders(callback) {
@@ -62,17 +62,12 @@ function addTab(url, callback) {
 function sendActivationEvent(tab, callback, nullManifest) {
   // hack Social.lastEventReceived so we don't hit the "too many events" check.
   Social.lastEventReceived = 0;
-  let doc = tab.linkedBrowser.contentDocument;
-  // if our test has a frame, use it
-  if (doc.defaultView.frames[0])
-    doc = doc.defaultView.frames[0].document;
-  let button = doc.getElementById(nullManifest ? "activation-old" : "activation");
-  EventUtils.synthesizeMouseAtCenter(button, {}, doc.defaultView);
+  BrowserTestUtils.synthesizeMouseAtCenter("#activation", {}, tab.linkedBrowser);
   executeSoon(callback);
 }
 
 function activateProvider(domain, callback, nullManifest) {
-  let activationURL = domain+"/browser/browser/base/content/test/social/social_activate.html"
+  let activationURL = domain+"/browser/browser/base/content/test/social/social_activate_basic.html"
   addTab(activationURL, function(tab) {
     sendActivationEvent(tab, callback, nullManifest);
   });
@@ -89,18 +84,15 @@ function waitForProviderLoad(cb) {
     waitForCondition(function() {
       let sbrowser = document.getElementById("social-sidebar-browser");
       let provider = SocialSidebar.provider;
-      let postActivation = provider && gBrowser.contentDocument.location.href == provider.origin + "/browser/browser/base/content/test/social/social_postActivation.html";
+      let postActivation = provider && gBrowser.currentURI &&
+                            gBrowser.currentURI.spec == provider.origin + "/browser/browser/base/content/test/social/social_postActivation.html";
 
-      return provider &&
-             provider.profile &&
-             provider.profile.displayName &&
-             postActivation &&
-             sbrowser.docShellIsActive;
+      return postActivation && sbrowser.docShellIsActive;
     }, function() {
       // executeSoon to let the browser UI observers run first
       executeSoon(cb);
     },
-    "waitForProviderLoad: provider profile was not set");
+    "waitForProviderLoad: provider was not loaded");
 }
 
 
@@ -120,24 +112,22 @@ function clickAddonRemoveButton(tab, aCallback) {
   AddonManager.getAddonsByTypes(["service"], function(aAddons) {
     let addon = aAddons[0];
 
-    let doc = tab.linkedBrowser.contentDocument;
+    let doc = tab.linkedBrowser.contentDocument;;
     let list = doc.getElementById("addon-list");
 
     let item = getAddonItemInList(addon.id, list);
-    isnot(item, null, "Should have found the add-on in the list");
-
-    var button = doc.getAnonymousElementByAttribute(item, "anonid", "remove-btn");
+    let button = item._removeBtn;
     isnot(button, null, "Should have a remove button");
     ok(!button.disabled, "Button should not be disabled");
 
-    EventUtils.synthesizeMouseAtCenter(button, { }, doc.defaultView);
+    // uninstall happens after about:addons tab is closed, so we wait on
+    // disabled
+    promiseObserverNotified("social:provider-disabled").then(() => {
+      is(item.getAttribute("pending"), "uninstall", "Add-on should be uninstalling");
+      executeSoon(function() { aCallback(addon); });
+    });
 
-    // Force XBL to apply
-    item.clientTop;
-
-    is(item.getAttribute("pending"), "uninstall", "Add-on should be uninstalling");
-
-    executeSoon(function() { aCallback(addon); });
+    BrowserTestUtils.synthesizeMouseAtCenter(button, {}, tab.linkedBrowser);
   });
 }
 
@@ -173,27 +163,24 @@ function activateOneProvider(manifest, finishActivation, aCallback) {
   });
 }
 
-let gTestDomains = ["https://example.com", "https://test1.example.com", "https://test2.example.com"];
-let gProviders = [
+var gTestDomains = ["https://example.com", "https://test1.example.com", "https://test2.example.com"];
+var gProviders = [
   {
     name: "provider 1",
     origin: "https://example.com",
-    sidebarURL: "https://example.com/browser/browser/base/content/test/social/social_sidebar.html?provider1",
-    workerURL: "https://example.com/browser/browser/base/content/test/social/social_worker.js#no-profile,no-recommend",
+    sidebarURL: "https://example.com/browser/browser/base/content/test/social/social_sidebar_empty.html?provider1",
     iconURL: "chrome://branding/content/icon48.png"
   },
   {
     name: "provider 2",
     origin: "https://test1.example.com",
-    sidebarURL: "https://test1.example.com/browser/browser/base/content/test/social/social_sidebar.html?provider2",
-    workerURL: "https://test1.example.com/browser/browser/base/content/test/social/social_worker.js#no-profile,no-recommend",
+    sidebarURL: "https://test1.example.com/browser/browser/base/content/test/social/social_sidebar_empty.html?provider2",
     iconURL: "chrome://branding/content/icon64.png"
   },
   {
     name: "provider 3",
     origin: "https://test2.example.com",
-    sidebarURL: "https://test2.example.com/browser/browser/base/content/test/social/social_sidebar.html?provider2",
-    workerURL: "https://test2.example.com/browser/browser/base/content/test/social/social_worker.js#no-profile,no-recommend",
+    sidebarURL: "https://test2.example.com/browser/browser/base/content/test/social/social_sidebar_empty.html?provider2",
     iconURL: "chrome://branding/content/about-logo.png"
   }
 ];
@@ -276,7 +263,7 @@ var tests = {
         info("first activation completed");
         is(gBrowser.contentDocument.location.href, gProviders[0].origin + "/browser/browser/base/content/test/social/social_postActivation.html", "postActivationURL loaded");
         gBrowser.removeTab(gBrowser.selectedTab);
-        is(gBrowser.contentDocument.location.href, gProviders[0].origin + "/browser/browser/base/content/test/social/social_activate.html", "activation page selected");
+        is(gBrowser.contentDocument.location.href, gProviders[0].origin + "/browser/browser/base/content/test/social/social_activate_basic.html", "activation page selected");
         gBrowser.removeTab(gBrowser.selectedTab);
         tabsToRemove.pop();
         // uninstall the provider

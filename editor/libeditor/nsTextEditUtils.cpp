@@ -25,7 +25,7 @@ using namespace mozilla;
 
 ///////////////////////////////////////////////////////////////////////////
 // IsBody: true if node an html body node
-bool 
+bool
 nsTextEditUtils::IsBody(nsIDOMNode *node)
 {
   return nsEditor::NodeIsType(node, nsGkAtoms::body);
@@ -34,24 +34,24 @@ nsTextEditUtils::IsBody(nsIDOMNode *node)
 
 ///////////////////////////////////////////////////////////////////////////
 // IsBreak: true if node an html break node
-bool 
+bool
 nsTextEditUtils::IsBreak(nsIDOMNode *node)
 {
   return nsEditor::NodeIsType(node, nsGkAtoms::br);
 }
- 
-bool 
+
+bool
 nsTextEditUtils::IsBreak(nsINode* aNode)
 {
   MOZ_ASSERT(aNode);
-  return aNode->IsElement() && aNode->AsElement()->IsHTML(nsGkAtoms::br);
+  return aNode->IsHTMLElement(nsGkAtoms::br);
 }
 
 
 ///////////////////////////////////////////////////////////////////////////
 // IsMozBR: true if node an html br node with type = _moz
-//                  
-bool 
+//
+bool
 nsTextEditUtils::IsMozBR(nsIDOMNode *node)
 {
   NS_PRECONDITION(node, "null node passed to nsHTMLEditUtils::IsMozBR");
@@ -63,8 +63,7 @@ bool
 nsTextEditUtils::IsMozBR(nsINode* aNode)
 {
   MOZ_ASSERT(aNode);
-  return aNode->IsElement() &&
-         aNode->AsElement()->IsHTML(nsGkAtoms::br) &&
+  return aNode->IsHTMLElement(nsGkAtoms::br) &&
          aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                          NS_LITERAL_STRING("_moz"),
                                          eIgnoreCase);
@@ -74,8 +73,8 @@ nsTextEditUtils::IsMozBR(nsINode* aNode)
 // HasMozAttr: true if node has type attribute = _moz
 //             (used to indicate the div's and br's we use in
 //              mail compose rules)
-//                  
-bool 
+//
+bool
 nsTextEditUtils::HasMozAttr(nsIDOMNode *node)
 {
   NS_PRECONDITION(node, "null parent passed to nsHTMLEditUtils::HasMozAttr");

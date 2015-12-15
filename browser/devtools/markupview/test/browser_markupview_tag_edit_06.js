@@ -14,8 +14,8 @@
 
 loadHelperScript("helper_attributes_test_runner.js");
 
-let TEST_URL = "data:text/html,<div>markup-view attributes addition test</div>";
-let TEST_DATA = [{
+var TEST_URL = "data:text/html,<div>markup-view attributes addition test</div>";
+var TEST_DATA = [{
   desc: "Mixed single and double quotes",
   text: "name=\"hi\" maxlength='not a number'",
   expectedAttributes: {
@@ -66,8 +66,8 @@ let TEST_DATA = [{
   desc: "Object attribute names",
   text: "toString=\"true\" hasOwnProperty=\"false\"",
   expectedAttributes: {
-    toString: "true",
-    hasOwnProperty: "false"
+    tostring: "true",
+    hasownproperty: "false"
   }
 }, {
   desc: "Add event handlers",

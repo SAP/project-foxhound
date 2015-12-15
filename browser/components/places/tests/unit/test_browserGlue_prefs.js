@@ -14,7 +14,7 @@ const PREF_AUTO_EXPORT_HTML = "browser.bookmarks.autoExportHTML";
 const TOPIC_BROWSERGLUE_TEST = "browser-glue-test";
 const TOPICDATA_FORCE_PLACES_INIT = "force-places-init";
 
-let bg = Cc["@mozilla.org/browser/browserglue;1"].
+var bg = Cc["@mozilla.org/browser/browserglue;1"].
          getService(Ci.nsIObserver);
 
 function run_test() {
@@ -38,11 +38,9 @@ do_register_cleanup(function () {
 
 function simulatePlacesInit() {
   do_print("Simulate Places init");
-  let promise = waitForImportAndSmartBookmarks();
-
   // Force nsBrowserGlue::_initPlaces().
   bg.observe(null, TOPIC_BROWSERGLUE_TEST, TOPICDATA_FORCE_PLACES_INIT);
-  return promise;
+  return promiseTopicObserved("places-browser-init-complete");
 }
 
 add_task(function* test_checkPreferences() {

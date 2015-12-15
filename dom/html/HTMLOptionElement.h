@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +18,7 @@ namespace dom {
 class HTMLSelectElement;
 
 class HTMLOptionElement final : public nsGenericHTMLElement,
-                                    public nsIDOMHTMLOptionElement
+                                public nsIDOMHTMLOptionElement
 {
 public:
   explicit HTMLOptionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
@@ -47,7 +47,7 @@ public:
                                               int32_t aModType) const override;
 
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsIAtom* aName,
-                                 const nsAttrValueOrString* aValue,
+                                 nsAttrValueOrString* aValue,
                                  bool aNotify) override;
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                 const nsAttrValue* aValue, bool aNotify) override;
@@ -118,7 +118,7 @@ public:
 protected:
   virtual ~HTMLOptionElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx) override;
+  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   /**
    * Get the select content element that contains this option, this

@@ -24,8 +24,6 @@ UNIFIED_SOURCES += [
     'nsChromeRegistryContent.cpp',
 ]
 
-MSVC_ENABLE_PGO = True
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -42,5 +40,3 @@ LOCAL_INCLUDES += [
 
 if CONFIG['MOZ_ENABLE_GTK']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
-
-FAIL_ON_WARNINGS = True

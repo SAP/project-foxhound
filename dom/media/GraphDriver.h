@@ -13,6 +13,7 @@
 #include "AudioSegment.h"
 #include "SelfRef.h"
 #include "mozilla/Atomics.h"
+#include "AudioContext.h"
 
 struct cubeb_stream;
 
@@ -49,23 +50,7 @@ static const int SCHEDULE_SAFETY_MARGIN_MS = 10;
 static const int AUDIO_TARGET_MS = 2*MEDIA_GRAPH_TARGET_PERIOD_MS +
     SCHEDULE_SAFETY_MARGIN_MS;
 
-/**
- * Try have this much video buffered. Video frames are set
- * near the end of the iteration of the control loop. The maximum delay
- * to the setting of the next video frame is 2*MEDIA_GRAPH_TARGET_PERIOD_MS +
- * SCHEDULE_SAFETY_MARGIN_MS. This is not optimal yet.
- */
-static const int VIDEO_TARGET_MS = 2*MEDIA_GRAPH_TARGET_PERIOD_MS +
-    SCHEDULE_SAFETY_MARGIN_MS;
-
 class MediaStreamGraphImpl;
-class MessageBlock;
-
-/**
- * Microseconds relative to the start of the graph timeline.
- */
-typedef int64_t GraphTime;
-const GraphTime GRAPH_TIME_MAX = MEDIA_TIME_MAX;
 
 class AudioCallbackDriver;
 class OfflineClockDriver;
@@ -84,13 +69,6 @@ public:
   explicit GraphDriver(MediaStreamGraphImpl* aGraphImpl);
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GraphDriver);
-  /* When the graph wakes up to do an iteration, this returns the range of time
-   * that will be processed. */
-  virtual void GetIntervalForIteration(GraphTime& aFrom,
-                                       GraphTime& aTo) = 0;
-  /* Returns the current time for this graph. This is the end of the current
-   * iteration. */
-  virtual GraphTime GetCurrentTime() = 0;
   /* For real-time graphs, this waits until it's time to process more data. For
    * offline graphs, this is a no-op. */
   virtual void WaitForNextIteration() = 0;
@@ -119,6 +97,11 @@ public:
     return mNextDriver || mPreviousDriver;
   }
 
+  GraphDriver* NextDriver()
+  {
+    return mNextDriver;
+  }
+
   /**
    * If we are running a real time graph, get the current time stamp to schedule
    * video frames. This has to be reimplemented by real time drivers.
@@ -142,10 +125,6 @@ public:
 
   GraphTime IterationEnd() {
     return mIterationEnd;
-  }
-
-  GraphTime StateComputedTime() {
-    return mStateComputedTime;
   }
 
   virtual void GetAudioBuffer(float** aBuffer, long& aFrames) {
@@ -172,16 +151,7 @@ public:
    */
   void SetGraphTime(GraphDriver* aPreviousDriver,
                     GraphTime aLastSwitchNextIterationStart,
-                    GraphTime aLastSwitchNextIterationEnd,
-                    GraphTime aLastSwitchNextStateComputedTime,
-                    GraphTime aLastSwitchStateComputedTime);
-
-  /**
-   * Whenever the graph has computed the time until it has all state
-   * (mStateComputedState), it calls this to indicate the new time until which
-   * we have computed state.
-   */
-  void UpdateStateComputedTime(GraphTime aStateComputedTime);
+                    GraphTime aLastSwitchNextIterationEnd);
 
   /**
    * Call this to indicate that another iteration of the control loop is
@@ -208,13 +178,12 @@ public:
   virtual bool OnThread() = 0;
 
 protected:
+  GraphTime StateComputedTime() const;
+
   // Time of the start of this graph iteration.
   GraphTime mIterationStart;
   // Time of the end of this graph iteration.
   GraphTime mIterationEnd;
-  // Time, in the future, for which blocking has been computed.
-  GraphTime mStateComputedTime;
-  GraphTime mNextStateComputedTime;
   // The MediaStreamGraphImpl that owns this driver. This has a lifetime longer
   // than the driver, and will never be null.
   MediaStreamGraphImpl* mGraphImpl;
@@ -272,6 +241,11 @@ public:
 
   virtual bool OnThread() override { return !mThread || NS_GetCurrentThread() == mThread; }
 
+  /* When the graph wakes up to do an iteration, implementations return the
+   * range of time that will be processed.  This is called only once per
+   * iteration; it may determine the interval from state in a previous
+   * call. */
+  virtual MediaTime GetIntervalForIteration() = 0;
 protected:
   nsCOMPtr<nsIThread> mThread;
 };
@@ -285,9 +259,7 @@ class SystemClockDriver : public ThreadedDriver
 public:
   explicit SystemClockDriver(MediaStreamGraphImpl* aGraphImpl);
   virtual ~SystemClockDriver();
-  virtual void GetIntervalForIteration(GraphTime& aFrom,
-                                       GraphTime& aTo) override;
-  virtual GraphTime GetCurrentTime() override;
+  virtual MediaTime GetIntervalForIteration() override;
   virtual void WaitForNextIteration() override;
   virtual void WakeUp() override;
 
@@ -306,9 +278,7 @@ class OfflineClockDriver : public ThreadedDriver
 public:
   OfflineClockDriver(MediaStreamGraphImpl* aGraphImpl, GraphTime aSlice);
   virtual ~OfflineClockDriver();
-  virtual void GetIntervalForIteration(GraphTime& aFrom,
-                                       GraphTime& aTo) override;
-  virtual GraphTime GetCurrentTime() override;
+  virtual MediaTime GetIntervalForIteration() override;
   virtual void WaitForNextIteration() override;
   virtual void WakeUp() override;
   virtual TimeStamp GetCurrentTimeStamp() override;
@@ -319,6 +289,21 @@ public:
 private:
   // Time, in GraphTime, for each iteration
   GraphTime mSlice;
+};
+
+struct StreamAndPromiseForOperation
+{
+  StreamAndPromiseForOperation(MediaStream* aStream,
+                               void* aPromise,
+                               dom::AudioContextOperation aOperation);
+  nsRefPtr<MediaStream> mStream;
+  void* mPromise;
+  dom::AudioContextOperation mOperation;
+};
+
+enum AsyncCubebOperation {
+  INIT,
+  SHUTDOWN
 };
 
 /**
@@ -345,8 +330,7 @@ class AudioCallbackDriver : public GraphDriver,
                             public MixerCallbackReceiver
 {
 public:
-  explicit AudioCallbackDriver(MediaStreamGraphImpl* aGraphImpl,
-                               dom::AudioChannel aChannel = dom::AudioChannel::Normal);
+  explicit AudioCallbackDriver(MediaStreamGraphImpl* aGraphImpl);
   virtual ~AudioCallbackDriver();
 
   virtual void Destroy() override;
@@ -354,9 +338,6 @@ public:
   virtual void Stop() override;
   virtual void Resume() override;
   virtual void Revive() override;
-  virtual void GetIntervalForIteration(GraphTime& aFrom,
-                                       GraphTime& aTo) override;
-  virtual GraphTime GetCurrentTime() override;
   virtual void WaitForNextIteration() override;
   virtual void WakeUp() override;
 
@@ -392,6 +373,12 @@ public:
     return this;
   }
 
+  /* Enqueue a promise that is going to be resolved when a specific operation
+   * occurs on the cubeb stream. */
+  void EnqueueStreamAndPromiseForOperation(MediaStream* aStream,
+                                         void* aPromise,
+                                         dom::AudioContextOperation aOperation);
+
   bool IsSwitchingDevice() {
 #ifdef XP_MACOSX
     return mSelfReference;
@@ -414,6 +401,8 @@ public:
   /* Tell the driver whether this process is using a microphone or not. This is
    * thread safe. */
   void SetMicrophoneActive(bool aActive);
+
+  void CompleteAudioContextOperations(AsyncCubebOperation aOperation);
 private:
   /**
    * On certain MacBookPro, the microphone is located near the left speaker.
@@ -471,6 +460,7 @@ private:
   /* Thread for off-main-thread initialization and
    * shutdown of the audio stream. */
   nsCOMPtr<nsIThread> mInitShutdownThread;
+  nsAutoTArray<StreamAndPromiseForOperation, 1> mPromisesForOperation;
   dom::AudioChannel mAudioChannel;
   Atomic<bool> mInCallback;
   /* A thread has been created to be able to pause and restart the audio thread,
@@ -498,12 +488,6 @@ private:
 class AsyncCubebTask : public nsRunnable
 {
 public:
-  enum AsyncCubebOperation {
-    INIT,
-    SHUTDOWN,
-    SLEEP
-  };
-
 
   AsyncCubebTask(AudioCallbackDriver* aDriver, AsyncCubebOperation aOperation);
 
@@ -529,6 +513,6 @@ private:
   nsRefPtr<MediaStreamGraphImpl> mShutdownGrip;
 };
 
-}
+} // namespace mozilla
 
 #endif // GRAPHDRIVER_H_

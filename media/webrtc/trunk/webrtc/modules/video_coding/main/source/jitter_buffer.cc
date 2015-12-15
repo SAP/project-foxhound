@@ -643,14 +643,12 @@ VCMFrameBufferEnum VCMJitterBuffer::GetFrame(const VCMPacket& packet,
   // slices of the same lower-case frame (timestamp), the more complete
   // solution for FindFrame that uses the seqNum and can move packets
   // between sessions would be needed.
-  if (packet.completeNALU != kNaluComplete) {
-    *frame = incomplete_frames_.FindFrame(packet.seqNum, packet.timestamp);
-    if (*frame)
-      return kNoError;
-    *frame = decodable_frames_.FindFrame(packet.seqNum, packet.timestamp);
-    if (*frame && (*frame)->GetState() != kStateComplete)
-      return kNoError;
-  }
+  *frame = incomplete_frames_.FindFrame(packet.seqNum, packet.timestamp);
+  if (*frame)
+    return kNoError;
+  *frame = decodable_frames_.FindFrame(packet.seqNum, packet.timestamp);
+  if (*frame && (*frame)->GetState() != kStateComplete)
+    return kNoError;
 
   // No match, return empty frame.
   *frame = GetEmptyFrame();
@@ -660,8 +658,10 @@ VCMFrameBufferEnum VCMJitterBuffer::GetFrame(const VCMPacket& packet,
     LOG(LS_WARNING) << "Unable to get empty frame; Recycling.";
     bool found_key_frame = RecycleFramesUntilKeyFrame();
     *frame = GetEmptyFrame();
-    assert(*frame);
-    if (!found_key_frame) {
+    if (!*frame) {
+      LOG(LS_ERROR) << "GetEmptyFrame returned NULL.";
+      return kGeneralError;
+    } else if (!found_key_frame) {
       ret = kFlushIndicator;
     }
   }

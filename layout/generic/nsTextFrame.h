@@ -7,6 +7,7 @@
 #define nsTextFrame_h__
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/gfx/2D.h"
 #include "nsFrame.h"
 #include "nsSplittableFrame.h"
@@ -15,6 +16,7 @@
 #include "gfxTextRun.h"
 #include "nsDisplayList.h"
 #include "JustificationUtils.h"
+#include "RubyUtils.h"
 
 // Undo the windows.h damage
 #if defined(XP_WIN) && defined(DrawText)
@@ -38,6 +40,7 @@ public:
 };
 
 class nsTextFrame : public nsTextFrameBase {
+  typedef mozilla::TextRangeStyle TextRangeStyle;
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Rect Rect;
 
@@ -74,8 +77,6 @@ public:
   
   virtual nsresult CharacterDataChanged(CharacterDataChangeInfo* aInfo) override;
                                   
-  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) override;
-  
   virtual nsIFrame* GetNextContinuation() const override {
     return mNextContinuation;
   }
@@ -122,6 +123,18 @@ public:
     // XXX kipp: temporary
     return nsFrame::IsFrameOfType(aFlags & ~(nsIFrame::eReplaced |
                                              nsIFrame::eLineParticipant));
+  }
+
+  bool ShouldSuppressLineBreak() const
+  {
+    // If the parent frame of the text frame is ruby content box, it must
+    // suppress line break inside. This check is necessary, because when
+    // a whitespace is only contained by pseudo ruby frames, its style
+    // context won't have SuppressLineBreak bit set.
+    if (mozilla::RubyUtils::IsRubyContentBox(GetParent()->GetType())) {
+      return true;
+    }
+    return StyleContext()->ShouldSuppressLineBreak();
   }
 
   virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0) override;
@@ -254,8 +267,7 @@ public:
                                    uint32_t aSkippedStartOffset = 0,
                                    uint32_t aSkippedMaxLength = UINT32_MAX) override;
 
-  nsOverflowAreas
-    RecomputeOverflow(const nsHTMLReflowState& aBlockReflowState);
+  nsOverflowAreas RecomputeOverflow(nsIFrame* aBlockFrame);
 
   enum TextRunType {
     // Anything in reflow (but not intrinsic width calculation) or
@@ -276,15 +288,15 @@ public:
 
   /**
    * Calculate the horizontal bounds of the grapheme clusters that fit entirely
-   * inside the given left/right edges (which are positive lengths from the
-   * respective frame edge).  If an input value is zero it is ignored and the
-   * result for that edge is zero.  All out parameter values are undefined when
-   * the method returns false.
+   * inside the given left[top]/right[bottom] edges (which are positive lengths
+   * from the respective frame edge).  If an input value is zero it is ignored
+   * and the result for that edge is zero.  All out parameter values are
+   * undefined when the method returns false.
    * @return true if at least one whole grapheme cluster fit between the edges
    */
-  bool MeasureCharClippedText(nscoord aLeftEdge, nscoord aRightEdge,
-                              nscoord* aSnappedLeftEdge,
-                              nscoord* aSnappedRightEdge);
+  bool MeasureCharClippedText(nscoord aVisIStartEdge, nscoord aVisIEndEdge,
+                              nscoord* aSnappedStartEdge,
+                              nscoord* aSnappedEndEdge);
   /**
    * Same as above; this method also the returns the corresponding text run
    * offset and number of characters that fit.  All out parameter values are
@@ -292,10 +304,10 @@ public:
    * @return true if at least one whole grapheme cluster fit between the edges
    */
   bool MeasureCharClippedText(PropertyProvider& aProvider,
-                              nscoord aLeftEdge, nscoord aRightEdge,
+                              nscoord aVisIStartEdge, nscoord aVisIEndEdge,
                               uint32_t* aStartOffset, uint32_t* aMaxLength,
-                              nscoord* aSnappedLeftEdge,
-                              nscoord* aSnappedRightEdge);
+                              nscoord* aSnappedStartEdge,
+                              nscoord* aSnappedEndEdge);
 
   /**
    * Object with various callbacks for PaintText() to invoke for different parts
@@ -304,14 +316,13 @@ public:
    *
    * Callbacks are invoked in the following order:
    *
-   *   (NotifySelectionBackgroundNeedsFill)?
-   *   (NotifyBeforeDecorationLine NotifyDecorationLinePathEmitted)*
+   *   NotifySelectionBackgroundNeedsFill?
+   *   PaintDecorationLine*
    *   NotifyBeforeText
-   *   (NotifyGlyphPathEmitted |
-   *    (NotifyBeforeSVGGlyphPainted NotifyAfterSVGGlyphPainted))*
+   *   NotifyGlyphPathEmitted*
    *   NotifyAfterText
-   *   (NotifyBeforeDecorationLine NotifyDecorationLinePathEmitted)*
-   *   (NotifyBeforeSelectionDecorationLine NotifySelectionDecorationLinePathEmitted)*
+   *   PaintDecorationLine*
+   *   PaintSelectionDecorationLine*
    *
    * The color of each part of the frame's text rendering is passed as an argument
    * to the NotifyBefore* callback for that part.  The nscolor can take on one of
@@ -338,6 +349,19 @@ public:
                                                     DrawTarget& aDrawTarget) { }
 
     /**
+     * Called before (for under/over-line) or after (for line-through) the text
+     * is drawn to have a text decoration line drawn.
+     */
+    virtual void PaintDecorationLine(Rect aPath, nscolor aColor) { }
+
+    /**
+     * Called after selected text is drawn to have a decoration line drawn over
+     * the text. (All types of text decoration are drawn after the text when
+     * text is selected.)
+     */
+    virtual void PaintSelectionDecorationLine(Rect aPath, nscolor aColor) { }
+
+    /**
      * Called just before any paths have been emitted to the gfxContext
      * for the glyphs of the frame's text.
      */
@@ -348,18 +372,6 @@ public:
      * for the glyphs of the frame's text.
      */
     virtual void NotifyAfterText() { }
-
-    /**
-     * Called just before a path corresponding to a text decoration line
-     * has been emitted to the gfxContext.
-     */
-    virtual void NotifyBeforeDecorationLine(nscolor aColor) { }
-
-    /**
-     * Called just after a path corresponding to a text decoration line
-     * has been emitted to the gfxContext.
-     */
-    virtual void NotifyDecorationLinePathEmitted() { }
 
     /**
      * Called just before a path corresponding to a selection decoration line
@@ -718,6 +730,74 @@ protected:
   // If the result rect is larger than the given rect, this returns true.
   bool CombineSelectionUnderlineRect(nsPresContext* aPresContext,
                                        nsRect& aRect);
+
+  /**
+   * Utility methods to paint selection.
+   */
+  void DrawSelectionDecorations(gfxContext* aContext,
+                                const gfxRect& aDirtyRect,
+                                SelectionType aType,
+                                nsTextPaintStyle& aTextPaintStyle,
+                                const TextRangeStyle &aRangeStyle,
+                                const gfxPoint& aPt,
+                                gfxFloat aICoordInFrame,
+                                gfxFloat aWidth,
+                                gfxFloat aAscent,
+                                const gfxFont::Metrics& aFontMetrics,
+                                DrawPathCallbacks* aCallbacks,
+                                bool aVertical,
+                                uint8_t aDecoration);
+  enum DecorationType
+  {
+    eNormalDecoration,
+    eSelectionDecoration
+  };
+  void PaintDecorationLine(gfxContext* const aCtx,
+                           const gfxRect& aDirtyRect,
+                           nscolor aColor,
+                           const nscolor* aOverrideColor,
+                           const gfxPoint& aPt,
+                           gfxFloat aICoordInFrame,
+                           const gfxSize& aLineSize,
+                           gfxFloat aAscent,
+                           gfxFloat aOffset,
+                           uint8_t aDecoration,
+                           uint8_t aStyle,
+                           DecorationType aDecorationType,
+                           DrawPathCallbacks* aCallbacks,
+                           bool aVertical,
+                           gfxFloat aDescentLimit = -1.0);
+  /**
+   * ComputeDescentLimitForSelectionUnderline() computes the most far position
+   * where we can put selection underline.
+   *
+   * @return The maximum underline offset from the baseline (positive value
+   *         means that the underline can put below the baseline).
+   */
+  gfxFloat ComputeDescentLimitForSelectionUnderline(
+             nsPresContext* aPresContext,
+             const gfxFont::Metrics& aFontMetrics);
+  /**
+   * This function encapsulates all knowledge of how selections affect
+   * foreground and background colors.
+   * @param aForeground the foreground color to use
+   * @param aBackground the background color to use, or RGBA(0,0,0,0) if no
+   *                    background should be painted
+   * @return            true if the selection affects colors, false otherwise
+   */
+  static bool GetSelectionTextColors(SelectionType aType,
+                                     nsTextPaintStyle& aTextPaintStyle,
+                                     const TextRangeStyle &aRangeStyle,
+                                     nscolor* aForeground,
+                                     nscolor* aBackground);
+  /**
+   * ComputeSelectionUnderlineHeight() computes selection underline height of
+   * the specified selection type from the font metrics.
+   */
+  static gfxFloat ComputeSelectionUnderlineHeight(
+                    nsPresContext* aPresContext,
+                    const gfxFont::Metrics& aFontMetrics,
+                    SelectionType aSelectionType);
 
   ContentOffsets GetCharacterOffsetAtFramePointInternal(nsPoint aPoint,
                    bool aForInsertionPoint);

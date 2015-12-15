@@ -28,9 +28,13 @@ XPCOMUtils.defineLazyServiceGetter(this, "gSettingsService",
                                    "@mozilla.org/settingsService;1",
                                    "nsISettingsService");
 
-XPCOMUtils.defineLazyServiceGetter(this, "gRadioInterfaceLayer",
-                                   "@mozilla.org/ril;1",
-                                   "nsIRadioInterfaceLayer");
+XPCOMUtils.defineLazyGetter(this, "gRadioInterfaceLayer", function() {
+  let ril = { numRadioInterfaces: 0 };
+  try {
+    ril = Cc["@mozilla.org/ril;1"].getService(Ci.nsIRadioInterfaceLayer);
+  } catch(e) {}
+  return ril;
+});
 
 const GONK_CELLBROADCAST_SERVICE_CONTRACTID =
   "@mozilla.org/cellbroadcast/gonkservice;1";
@@ -43,7 +47,7 @@ const CELLBROADCASTETWSINFO_CID =
 
 const NS_XPCOM_SHUTDOWN_OBSERVER_ID = "xpcom-shutdown";
 
-let DEBUG;
+var DEBUG;
 function debug(s) {
   dump("CellBroadcastService: " + s);
 }
@@ -152,7 +156,7 @@ CellBroadcastService.prototype = {
         .getRadioInterface(clientId).sendWorkerMessage("setCellBroadcastSearchList",
                                                        { searchList: newSearchList },
                                                        (function callback(aResponse) {
-        if (DEBUG && !aResponse.success) {
+        if (DEBUG && aResponse.errorMsg) {
           debug("Failed to set new search list: " + newSearchList +
                 " to client id: " + clientId);
         }
@@ -161,7 +165,7 @@ CellBroadcastService.prototype = {
         if (responses.length == numOfRilClients) {
           let successCount = 0;
           for (let i = 0; i < responses.length; i++) {
-            if (responses[i].success) {
+            if (!responses[i].errorMsg) {
               successCount++;
             }
           }

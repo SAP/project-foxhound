@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,12 +82,15 @@ namespace
   {
   protected:
     nsRefPtr<nsIContent> mTarget;
-    uint32_t             mMsg;
+    EventMessage         mMsg;
     int32_t              mDetail;
 
   public:
-    AsyncTimeEventRunner(nsIContent* aTarget, uint32_t aMsg, int32_t aDetail)
-      : mTarget(aTarget), mMsg(aMsg), mDetail(aDetail)
+    AsyncTimeEventRunner(nsIContent* aTarget, EventMessage aMsg,
+                         int32_t aDetail)
+      : mTarget(aTarget)
+      , mMsg(aMsg)
+      , mDetail(aDetail)
     {
     }
 
@@ -107,7 +111,7 @@ namespace
       return EventDispatcher::Dispatch(mTarget, context, &event);
     }
   };
-}
+} // namespace
 
 //----------------------------------------------------------------------
 // Helper class: AutoIntervalUpdateBatcher
@@ -491,7 +495,7 @@ namespace
   private:
     const nsSMILTimeValueSpec* mCreator;
   };
-}
+} // namespace
 
 void
 nsSMILTimedElement::RemoveInstanceTimesForCreator(
@@ -639,7 +643,7 @@ nsSMILTimedElement::DoSampleAt(nsSMILTime aContainerTime, bool aEndOnly)
             mClient->Activate(mCurrentInterval->Begin()->Time().GetMillis());
           }
           if (mSeekState == SEEK_NOT_SEEKING) {
-            FireTimeEventAsync(NS_SMIL_BEGIN, 0);
+            FireTimeEventAsync(eSMILBeginEvent, 0);
           }
           if (HasPlayed()) {
             Reset(); // Apply restart behaviour
@@ -675,7 +679,7 @@ nsSMILTimedElement::DoSampleAt(nsSMILTime aContainerTime, bool aEndOnly)
           }
           mCurrentInterval->FixEnd();
           if (mSeekState == SEEK_NOT_SEEKING) {
-            FireTimeEventAsync(NS_SMIL_END, 0);
+            FireTimeEventAsync(eSMILEndEvent, 0);
           }
           mCurrentRepeatIteration = 0;
           mOldIntervals.AppendElement(mCurrentInterval.forget());
@@ -723,7 +727,7 @@ nsSMILTimedElement::DoSampleAt(nsSMILTime aContainerTime, bool aEndOnly)
               mCurrentRepeatIteration != prevRepeatIteration &&
               mCurrentRepeatIteration &&
               mSeekState == SEEK_NOT_SEEKING) {
-              FireTimeEventAsync(NS_SMIL_REPEAT,
+              FireTimeEventAsync(eSMILRepeatEvent,
                             static_cast<int32_t>(mCurrentRepeatIteration));
             }
           }
@@ -775,7 +779,7 @@ namespace
                "Dynamic instance time should be unlinked from its creator");
     return !aInstanceTime->IsDynamic() && !aInstanceTime->ShouldPreserve();
   }
-}
+} // namespace
 
 void
 nsSMILTimedElement::Rewind()
@@ -817,7 +821,7 @@ namespace
   {
     return true;
   }
-}
+} // namespace
 
 bool
 nsSMILTimedElement::SetIsDisabled(bool aIsDisabled)
@@ -842,7 +846,7 @@ namespace
   {
     return !aInstanceTime->FromDOM() && !aInstanceTime->ShouldPreserve();
   }
-}
+} // namespace
 
 bool
 nsSMILTimedElement::SetAttr(nsIAtom* aAttribute, const nsAString& aValue,
@@ -1348,7 +1352,7 @@ namespace
   private:
     nsSMILTimedElement::RemovalTestFunction mFunction;
   };
-}
+} // namespace
 
 void
 nsSMILTimedElement::ClearSpecs(TimeValueSpecList& aSpecs,
@@ -1434,7 +1438,7 @@ namespace
   private:
     const nsSMILInstanceTime* mCurrentIntervalBegin;
   };
-}
+} // namespace
 
 void
 nsSMILTimedElement::Reset()
@@ -1514,14 +1518,14 @@ nsSMILTimedElement::DoPostSeek()
   case SEEK_FORWARD_FROM_ACTIVE:
   case SEEK_BACKWARD_FROM_ACTIVE:
     if (mElementState != STATE_ACTIVE) {
-      FireTimeEventAsync(NS_SMIL_END, 0);
+      FireTimeEventAsync(eSMILEndEvent, 0);
     }
     break;
 
   case SEEK_FORWARD_FROM_INACTIVE:
   case SEEK_BACKWARD_FROM_INACTIVE:
     if (mElementState == STATE_ACTIVE) {
-      FireTimeEventAsync(NS_SMIL_BEGIN, 0);
+      FireTimeEventAsync(eSMILBeginEvent, 0);
     }
     break;
 
@@ -1647,7 +1651,7 @@ namespace
     uint32_t mThreshold;
     nsTArray<const nsSMILInstanceTime *>& mTimesToKeep;
   };
-}
+} // namespace
 
 void
 nsSMILTimedElement::FilterInstanceTimes(InstanceTimeList& aList)
@@ -2325,8 +2329,18 @@ nsSMILTimedElement::NotifyNewInterval()
     container->SyncPauseTime();
   }
 
-  NotifyTimeDependentsParams params = { this, container };
-  mTimeDependents.EnumerateEntries(NotifyNewIntervalCallback, &params);
+  for (auto iter = mTimeDependents.Iter(); !iter.Done(); iter.Next()) {
+    nsSMILInterval* interval = mCurrentInterval;
+    // It's possible that in notifying one new time dependent of a new interval
+    // that a chain reaction is triggered which results in the original
+    // interval disappearing. If that's the case we can skip sending further
+    // notifications.
+    if (!interval) {
+      break;
+    }
+    nsSMILTimeValueSpec* spec = iter.Get()->GetKey();
+    spec->HandleNewInterval(*interval, container);
+  }
 }
 
 void
@@ -2354,7 +2368,7 @@ nsSMILTimedElement::NotifyChangedInterval(nsSMILInterval* aInterval,
 }
 
 void
-nsSMILTimedElement::FireTimeEventAsync(uint32_t aMsg, int32_t aDetail)
+nsSMILTimedElement::FireTimeEventAsync(EventMessage aMsg, int32_t aDetail)
 {
   if (!mAnimationElement)
     return;
@@ -2427,28 +2441,3 @@ nsSMILTimedElement::AreEndTimesDependentOn(
   return true;
 }
 
-//----------------------------------------------------------------------
-// Hashtable callback functions
-
-/* static */ PLDHashOperator
-nsSMILTimedElement::NotifyNewIntervalCallback(TimeValueSpecPtrKey* aKey,
-                                              void* aData)
-{
-  MOZ_ASSERT(aKey, "Null hash key for time container hash table");
-  MOZ_ASSERT(aKey->GetKey(),
-             "null nsSMILTimeValueSpec in set of time dependents");
-
-  NotifyTimeDependentsParams* params =
-    static_cast<NotifyTimeDependentsParams*>(aData);
-  MOZ_ASSERT(params, "null data ptr while enumerating hashtable");
-  nsSMILInterval* interval = params->mTimedElement->mCurrentInterval;
-  // It's possible that in notifying one new time dependent of a new interval
-  // that a chain reaction is triggered which results in the original interval
-  // disappearing. If that's the case we can skip sending further notifications.
-  if (!interval)
-    return PL_DHASH_STOP;
-
-  nsSMILTimeValueSpec* spec = aKey->GetKey();
-  spec->HandleNewInterval(*interval, params->mTimeContainer);
-  return PL_DHASH_NEXT;
-}

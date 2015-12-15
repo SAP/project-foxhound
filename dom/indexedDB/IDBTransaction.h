@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +27,6 @@ namespace dom {
 
 class DOMError;
 class DOMStringList;
-class PBlobChild;
 
 namespace indexedDB {
 
@@ -42,7 +41,6 @@ class IDBRequest;
 class IndexMetadata;
 class ObjectStoreSpec;
 class OpenCursorParams;
-class PBackgroundIDBDatabaseFileChild;
 class RequestParams;
 
 class IDBTransaction final
@@ -60,6 +58,7 @@ public:
   {
     READ_ONLY = 0,
     READ_WRITE,
+    READ_WRITE_FLUSH,
     VERSION_CHANGE,
 
     // Only needed for IPC serialization helper, should never be used in code.
@@ -101,6 +100,7 @@ private:
 
   nsString mFilename;
   uint32_t mLineNo;
+  uint32_t mColumn;
 
   ReadyState mReadyState;
   Mode mMode;
@@ -167,17 +167,28 @@ public:
   IsOpen() const;
 
   bool
-  IsFinished() const
+  IsCommittingOrDone() const
   {
     AssertIsOnOwningThread();
-    return mReadyState > LOADING;
+
+    return mReadyState == COMMITTING || mReadyState == DONE;
+  }
+
+  bool
+  IsDone() const
+  {
+    AssertIsOnOwningThread();
+
+    return mReadyState == DONE;
   }
 
   bool
   IsWriteAllowed() const
   {
     AssertIsOnOwningThread();
-    return mMode == READ_WRITE || mMode == VERSION_CHANGE;
+    return mMode == READ_WRITE ||
+           mMode == READ_WRITE_FLUSH ||
+           mMode == VERSION_CHANGE;
   }
 
   bool
@@ -195,7 +206,8 @@ public:
   }
 
   void
-  GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo) const;
+  GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo,
+                    uint32_t* aColumn) const;
 
   // 'Get' prefix is to avoid name collisions with the enum
   Mode
@@ -271,7 +283,7 @@ public:
   IMPL_EVENT_HANDLER(error)
 
   already_AddRefed<DOMStringList>
-  ObjectStoreNames();
+  ObjectStoreNames() const;
 
   void
   FireCompleteOrAbortEvents(nsresult aResult);
@@ -290,7 +302,7 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // nsIDOMEventTarget
   virtual nsresult

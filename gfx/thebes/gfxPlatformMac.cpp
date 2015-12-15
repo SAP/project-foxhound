@@ -8,6 +8,7 @@
 #include "gfxQuartzSurface.h"
 #include "gfxQuartzImageSurface.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/MacIOSurface.h"
 
 #include "gfxMacPlatformFontList.h"
 #include "gfxMacFont.h"
@@ -78,7 +79,8 @@ gfxPlatformMac::gfxPlatformMac()
     uint32_t canvasMask = BackendTypeBit(BackendType::CAIRO) |
                           BackendTypeBit(BackendType::SKIA) |
                           BackendTypeBit(BackendType::COREGRAPHICS);
-    uint32_t contentMask = BackendTypeBit(BackendType::COREGRAPHICS);
+    uint32_t contentMask = BackendTypeBit(BackendType::COREGRAPHICS) |
+                           BackendTypeBit(BackendType::SKIA);
     InitBackendPrefs(canvasMask, BackendType::COREGRAPHICS,
                      contentMask, BackendType::COREGRAPHICS);
 
@@ -93,6 +95,8 @@ gfxPlatformMac::gfxPlatformMac()
             NS_WARNING("Unable to bump RLIMIT_NOFILE to the maximum number on this OS");
         }
     }
+
+    MacIOSurfaceLib::LoadLibrary();
 }
 
 gfxPlatformMac::~gfxPlatformMac()
@@ -112,16 +116,15 @@ gfxPlatformMac::CreatePlatformFontList()
 }
 
 already_AddRefed<gfxASurface>
-gfxPlatformMac::CreateOffscreenSurface(const IntSize& size,
-                                       gfxContentType contentType)
+gfxPlatformMac::CreateOffscreenSurface(const IntSize& aSize,
+                                       gfxImageFormat aFormat)
 {
     nsRefPtr<gfxASurface> newSurface =
-      new gfxQuartzSurface(ThebesIntSize(size),
-                           OptimalFormatForContent(contentType));
+      new gfxQuartzSurface(aSize, aFormat);
     return newSurface.forget();
 }
 
-TemporaryRef<ScaledFont>
+already_AddRefed<ScaledFont>
 gfxPlatformMac::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
     gfxMacFont *font = static_cast<gfxMacFont*>(aFont);
@@ -138,9 +141,10 @@ gfxPlatformMac::GetStandardFamilyName(const nsAString& aFontName, nsAString& aFa
 gfxFontGroup *
 gfxPlatformMac::CreateFontGroup(const FontFamilyList& aFontFamilyList,
                                 const gfxFontStyle *aStyle,
+                                gfxTextPerfMetrics* aTextPerf,
                                 gfxUserFontSet *aUserFontSet)
 {
-    return new gfxFontGroup(aFontFamilyList, aStyle, aUserFontSet);
+    return new gfxFontGroup(aFontFamilyList, aStyle, aTextPerf, aUserFontSet);
 }
 
 // these will move to gfxPlatform once all platforms support the fontlist
@@ -166,7 +170,7 @@ gfxPlatformMac::MakePlatformFont(const nsAString& aFontName,
 {
     // Ownership of aFontData is received here, and passed on to
     // gfxPlatformFontList::MakePlatformFont(), which must ensure the data
-    // is released with NS_Free when no longer needed
+    // is released with free when no longer needed
     return gfxPlatformFontList::PlatformFontList()->MakePlatformFont(aFontName,
                                                                      aWeight,
                                                                      aStretch,
@@ -384,6 +388,17 @@ gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
     aFontList.AppendElement(kFontArialUnicodeMS);
 }
 
+/*static*/ void
+gfxPlatformMac::LookupSystemFont(mozilla::LookAndFeel::FontID aSystemFontID,
+                                 nsAString& aSystemFontName,
+                                 gfxFontStyle& aFontStyle,
+                                 float aDevPixPerCSSPixel)
+{
+    gfxMacPlatformFontList* pfl = gfxMacPlatformFontList::PlatformFontList();
+    return pfl->LookupSystemFont(aSystemFontID, aSystemFontName, aFontStyle,
+                                 aDevPixPerCSSPixel);
+}
+
 uint32_t
 gfxPlatformMac::ReadAntiAliasingThreshold()
 {
@@ -424,6 +439,17 @@ gfxPlatformMac::UseProgressivePaint()
   return nsCocoaFeatures::OnLionOrLater() && gfxPlatform::UseProgressivePaint();
 }
 
+bool
+gfxPlatformMac::AccelerateLayersByDefault()
+{
+  // 10.6.2 and lower have a bug involving textures and pixel buffer objects
+  // that caused bug 629016, so we don't allow OpenGL-accelerated layers on
+  // those versions of the OS.
+  // This will still let full-screen video be accelerated on OpenGL, because
+  // that XUL widget opts in to acceleration, but that's probably OK.
+  return nsCocoaFeatures::AccelerateByDefault();
+}
+
 // This is the renderer output callback function, called on the vsync thread
 static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
                               const CVTimeStamp* aNow,
@@ -450,11 +476,24 @@ public:
     OSXDisplay()
       : mDisplayLink(nullptr)
     {
+      MOZ_ASSERT(NS_IsMainThread());
+      mTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
     }
 
     ~OSXDisplay()
     {
+      MOZ_ASSERT(NS_IsMainThread());
+      mTimer->Cancel();
+      mTimer = nullptr;
       DisableVsync();
+    }
+
+    static void RetryEnableVsync(nsITimer* aTimer, void* aOsxDisplay)
+    {
+      MOZ_ASSERT(NS_IsMainThread());
+      OSXDisplay* osxDisplay = static_cast<OSXDisplay*>(aOsxDisplay);
+      MOZ_ASSERT(osxDisplay);
+      osxDisplay->EnableVsync();
     }
 
     virtual void EnableVsync() override
@@ -469,18 +508,38 @@ public:
       // situations. According to the docs, it is compatible with all displays running on the computer
       // But if we have different monitors at different display rates, we may hit issues.
       if (CVDisplayLinkCreateWithActiveCGDisplays(&mDisplayLink) != kCVReturnSuccess) {
-        NS_WARNING("Could not create a display link, returning");
+        NS_WARNING("Could not create a display link with all active displays. Retrying");
+        CVDisplayLinkRelease(mDisplayLink);
+        mDisplayLink = nullptr;
+
+        // bug 1142708 - When coming back from sleep,
+        // or when changing displays, active displays may not be ready yet,
+        // even if listening for the kIOMessageSystemHasPoweredOn event
+        // from OS X sleep notifications.
+        // Active displays are those that are drawable.
+        // bug 1144638 - When changing display configurations and getting
+        // notifications from CGDisplayReconfigurationCallBack, the
+        // callback gets called twice for each active display
+        // so it's difficult to know when all displays are active.
+        // Instead, try again soon. The delay is arbitrary. 100ms chosen
+        // because on a late 2013 15" retina, it takes about that
+        // long to come back up from sleep.
+        uint32_t delay = 100;
+        mTimer->InitWithFuncCallback(RetryEnableVsync, this, delay, nsITimer::TYPE_ONE_SHOT);
         return;
       }
 
       if (CVDisplayLinkSetOutputCallback(mDisplayLink, &VsyncCallback, this) != kCVReturnSuccess) {
         NS_WARNING("Could not set displaylink output callback");
+        CVDisplayLinkRelease(mDisplayLink);
+        mDisplayLink = nullptr;
         return;
       }
 
       mPreviousTimestamp = TimeStamp::Now();
       if (CVDisplayLinkStart(mDisplayLink) != kCVReturnSuccess) {
         NS_WARNING("Could not activate the display link");
+        CVDisplayLinkRelease(mDisplayLink);
         mDisplayLink = nullptr;
       }
     }
@@ -515,6 +574,7 @@ public:
   private:
     // Manages the display link render thread
     CVDisplayLinkRef   mDisplayLink;
+    nsRefPtr<nsITimer> mTimer;
   }; // OSXDisplay
 
 private:
@@ -535,11 +595,25 @@ static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
   // Executed on OS X hardware vsync thread
   OSXVsyncSource::OSXDisplay* display = (OSXVsyncSource::OSXDisplay*) aDisplayLinkContext;
   int64_t nextVsyncTimestamp = aOutputTime->hostTime;
-  mozilla::TimeStamp nextVsync = mozilla::TimeStamp::FromSystemTime(nextVsyncTimestamp);
 
+  mozilla::TimeStamp nextVsync = mozilla::TimeStamp::FromSystemTime(nextVsyncTimestamp);
   mozilla::TimeStamp previousVsync = display->mPreviousTimestamp;
+  mozilla::TimeStamp now = TimeStamp::Now();
+
+  // Snow leopard sometimes sends vsync timestamps very far in the past.
+  // Normalize the vsync timestamps to now.
+  if (nextVsync <= previousVsync) {
+    nextVsync = now;
+    previousVsync = now;
+  } else if (now < previousVsync) {
+    // Bug 1158321 - The VsyncCallback can sometimes execute before the reported
+    // vsync time. In those cases, normalize the timestamp to Now() as sending
+    // timestamps in the future has undefined behavior. See the comment above
+    // OSXDisplay::mPreviousTimestamp
+    previousVsync = now;
+  }
+
   display->mPreviousTimestamp = nextVsync;
-  MOZ_ASSERT(TimeStamp::Now() > previousVsync);
 
   display->NotifyVsync(previousVsync);
   return kCVReturnSuccess;
@@ -549,6 +623,14 @@ already_AddRefed<mozilla::gfx::VsyncSource>
 gfxPlatformMac::CreateHardwareVsyncSource()
 {
   nsRefPtr<VsyncSource> osxVsyncSource = new OSXVsyncSource();
+  VsyncSource::Display& primaryDisplay = osxVsyncSource->GetGlobalDisplay();
+  primaryDisplay.EnableVsync();
+  if (!primaryDisplay.IsVsyncEnabled()) {
+    NS_WARNING("OS X Vsync source not enabled. Falling back to software vsync.");
+    return gfxPlatform::CreateHardwareVsyncSource();
+  }
+
+  primaryDisplay.DisableVsync();
   return osxVsyncSource.forget();
 }
 

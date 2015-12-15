@@ -1,6 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
-/*global XPCOMUtils, Services, Assert */
+
+"use strict";
 
 var fakeCharPrefName = "color";
 var fakeBoolPrefName = "boolean";
@@ -63,7 +64,7 @@ function test_setLoopPref_non_coercible_type()
 {
   MozLoopService.setLoopPref(fakeCharPrefName, true);
 
-  ok(true, "Setting non-coercible type should not fail");
+  Assert.ok(true, "Setting non-coercible type should not fail");
 }
 
 

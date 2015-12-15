@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,13 +42,13 @@ SVGContentUtils::GetOuterSVGElement(nsSVGElement *aSVGElement)
   nsIContent *element = nullptr;
   nsIContent *ancestor = aSVGElement->GetFlattenedTreeParent();
 
-  while (ancestor && ancestor->IsSVG() &&
-                     ancestor->Tag() != nsGkAtoms::foreignObject) {
+  while (ancestor && ancestor->IsSVGElement() &&
+                     !ancestor->IsSVGElement(nsGkAtoms::foreignObject)) {
     element = ancestor;
     ancestor = element->GetFlattenedTreeParent();
   }
 
-  if (element && element->Tag() == nsGkAtoms::svg) {
+  if (element && element->IsSVGElement(nsGkAtoms::svg)) {
     return static_cast<SVGSVGElement*>(element);
   }
   return nullptr;
@@ -76,6 +77,7 @@ GetStrokeDashData(SVGContentUtils::AutoStrokeOptions* aStrokeOptions,
 {
   size_t dashArrayLength;
   Float totalLengthOfDashes = 0.0, totalLengthOfGaps = 0.0;
+  Float pathScale = 1.0;
 
   if (aContextPaint && aStyleSVG->mStrokeDasharrayFromObject) {
     const FallibleTArray<gfxFloat>& dashSrc = aContextPaint->GetStrokeDashArray();
@@ -100,8 +102,7 @@ GetStrokeDashData(SVGContentUtils::AutoStrokeOptions* aStrokeOptions,
     if (dashArrayLength <= 0) {
       return eContinuousStroke;
     }
-    Float pathScale = 1.0;
-    if (aElement->Tag() == nsGkAtoms::path) {
+    if (aElement->IsSVGElement(nsGkAtoms::path)) {
       pathScale = static_cast<SVGPathElement*>(aElement)->
         GetPathLengthScale(SVGPathElement::eForStroking);
       if (pathScale <= 0) {
@@ -158,7 +159,8 @@ GetStrokeDashData(SVGContentUtils::AutoStrokeOptions* aStrokeOptions,
     aStrokeOptions->mDashOffset = Float(aContextPaint->GetStrokeDashOffset());
   } else {
     aStrokeOptions->mDashOffset =
-      SVGContentUtils::CoordToFloat(aElement, aStyleSVG->mStrokeDashoffset);
+      SVGContentUtils::CoordToFloat(aElement, aStyleSVG->mStrokeDashoffset) *
+      pathScale;
   }
 
   return eDashedStroke;
@@ -218,16 +220,21 @@ SVGContentUtils::GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
     break;
   }
 
-  switch (styleSVG->mStrokeLinecap) {
-  case NS_STYLE_STROKE_LINECAP_BUTT:
+  if (ShapeTypeHasNoCorners(aElement)) {
     aStrokeOptions->mLineCap = CapStyle::BUTT;
-    break;
-  case NS_STYLE_STROKE_LINECAP_ROUND:
-    aStrokeOptions->mLineCap = CapStyle::ROUND;
-    break;
-  case NS_STYLE_STROKE_LINECAP_SQUARE:
-    aStrokeOptions->mLineCap = CapStyle::SQUARE;
-    break;
+  }
+  else {
+    switch (styleSVG->mStrokeLinecap) {
+      case NS_STYLE_STROKE_LINECAP_BUTT:
+        aStrokeOptions->mLineCap = CapStyle::BUTT;
+        break;
+      case NS_STYLE_STROKE_LINECAP_ROUND:
+        aStrokeOptions->mLineCap = CapStyle::ROUND;
+        break;
+      case NS_STYLE_STROKE_LINECAP_SQUARE:
+        aStrokeOptions->mLineCap = CapStyle::SQUARE;
+        break;
+    }
   }
 }
 
@@ -362,10 +369,9 @@ SVGContentUtils::EstablishesViewport(nsIContent *aContent)
   // Although SVG 1.1 states that <image> is an element that establishes a
   // viewport, this is really only for the document it references, not
   // for any child content, which is what this function is used for.
-  return aContent && aContent->IsSVG() &&
-           (aContent->Tag() == nsGkAtoms::svg ||
-            aContent->Tag() == nsGkAtoms::foreignObject ||
-            aContent->Tag() == nsGkAtoms::symbol);
+  return aContent && aContent->IsAnyOfSVGElements(nsGkAtoms::svg,
+                                                  nsGkAtoms::foreignObject,
+                                                  nsGkAtoms::symbol);
 }
 
 nsSVGElement*
@@ -373,9 +379,9 @@ SVGContentUtils::GetNearestViewportElement(nsIContent *aContent)
 {
   nsIContent *element = aContent->GetFlattenedTreeParent();
 
-  while (element && element->IsSVG()) {
+  while (element && element->IsSVGElement()) {
     if (EstablishesViewport(element)) {
-      if (element->Tag() == nsGkAtoms::foreignObject) {
+      if (element->IsSVGElement(nsGkAtoms::foreignObject)) {
         return nullptr;
       }
       return static_cast<nsSVGElement*>(element);
@@ -393,8 +399,8 @@ GetCTMInternal(nsSVGElement *aElement, bool aScreenCTM, bool aHaveRecursed)
   nsSVGElement *element = aElement;
   nsIContent *ancestor = aElement->GetFlattenedTreeParent();
 
-  while (ancestor && ancestor->IsSVG() &&
-                     ancestor->Tag() != nsGkAtoms::foreignObject) {
+  while (ancestor && ancestor->IsSVGElement() &&
+                     !ancestor->IsSVGElement(nsGkAtoms::foreignObject)) {
     element = static_cast<nsSVGElement*>(ancestor);
     matrix *= element->PrependLocalTransformsTo(gfxMatrix()); // i.e. *A*ppend
     if (!aScreenCTM && SVGContentUtils::EstablishesViewport(element)) {
@@ -412,7 +418,7 @@ GetCTMInternal(nsSVGElement *aElement, bool aScreenCTM, bool aHaveRecursed)
     // didn't find a nearestViewportElement
     return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0); // singular
   }
-  if (element->Tag() != nsGkAtoms::svg) {
+  if (!element->IsSVGElement(nsGkAtoms::svg)) {
     // Not a valid SVG fragment
     return gfx::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0); // singular
   }
@@ -428,7 +434,7 @@ GetCTMInternal(nsSVGElement *aElement, bool aScreenCTM, bool aHaveRecursed)
   if (!ancestor || !ancestor->IsElement()) {
     return gfx::ToMatrix(matrix);
   }
-  if (ancestor->IsSVG()) {
+  if (ancestor->IsSVGElement()) {
     return
       gfx::ToMatrix(matrix) * GetCTMInternal(static_cast<nsSVGElement*>(ancestor), true, true);
   }
@@ -456,6 +462,45 @@ gfx::Matrix
 SVGContentUtils::GetCTM(nsSVGElement *aElement, bool aScreenCTM)
 {
   return GetCTMInternal(aElement, aScreenCTM, false);
+}
+
+void
+SVGContentUtils::RectilinearGetStrokeBounds(const Rect& aRect,
+                                            const Matrix& aToBoundsSpace,
+                                            const Matrix& aToNonScalingStrokeSpace,
+                                            float aStrokeWidth,
+                                            Rect* aBounds)
+{
+  MOZ_ASSERT(aToBoundsSpace.IsRectilinear(),
+             "aToBoundsSpace must be rectilinear");
+  MOZ_ASSERT(aToNonScalingStrokeSpace.IsRectilinear(),
+             "aToNonScalingStrokeSpace must be rectilinear");
+
+  Matrix nonScalingToSource = aToNonScalingStrokeSpace.Inverse();
+  Matrix nonScalingToBounds = nonScalingToSource * aToBoundsSpace;
+
+  *aBounds = aToBoundsSpace.TransformBounds(aRect);
+
+  // Compute the amounts dx and dy that nonScalingToBounds scales a half-width
+  // stroke in the x and y directions, and then inflate aBounds by those amounts
+  // so that when aBounds is transformed back to non-scaling-stroke space
+  // it will map onto the correct stroked bounds.
+
+  Float dx = 0.0f;
+  Float dy = 0.0f;
+  // nonScalingToBounds is rectilinear, so either _12 and _21 are zero or _11
+  // and _22 are zero, and in each case the non-zero entries (from among _11,
+  // _12, _21, _22) simply scale the stroke width in the x and y directions.
+  if (FuzzyEqual(nonScalingToBounds._12, 0) &&
+      FuzzyEqual(nonScalingToBounds._21, 0)) {
+    dx = (aStrokeWidth / 2.0f) * std::abs(nonScalingToBounds._11);
+    dy = (aStrokeWidth / 2.0f) * std::abs(nonScalingToBounds._22);
+  } else {
+    dx = (aStrokeWidth / 2.0f) * std::abs(nonScalingToBounds._21);
+    dy = (aStrokeWidth / 2.0f) * std::abs(nonScalingToBounds._12);
+  }
+
+  aBounds->Inflate(dx, dy);
 }
 
 double
@@ -791,7 +836,7 @@ SVGContentUtils::CoordToFloat(nsSVGElement *aContent,
   }
 }
 
-TemporaryRef<gfx::Path>
+already_AddRefed<gfx::Path>
 SVGContentUtils::GetPath(const nsAString& aPathString)
 {
   SVGPathData pathData;
@@ -806,4 +851,10 @@ SVGContentUtils::GetPath(const nsAString& aPathString)
     drawTarget->CreatePathBuilder(FillRule::FILL_WINDING);
 
   return pathData.BuildPath(builder, NS_STYLE_STROKE_LINECAP_BUTT, 1);
+}
+
+bool
+SVGContentUtils::ShapeTypeHasNoCorners(const nsIContent* aContent) {
+  return aContent && aContent->IsAnyOfSVGElements(nsGkAtoms::circle,
+                                                  nsGkAtoms::ellipse);
 }

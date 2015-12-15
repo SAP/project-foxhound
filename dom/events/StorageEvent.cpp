@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,9 +45,9 @@ StorageEvent::AsStorageEvent()
 }
 
 JSObject*
-StorageEvent::WrapObjectInternal(JSContext* aCx)
+StorageEvent::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return StorageEventBinding::Wrap(aCx, this);
+  return StorageEventBinding::Wrap(aCx, this, aGivenProto);
 }
 
 already_AddRefed<StorageEvent>
@@ -103,16 +103,15 @@ StorageEvent::InitStorageEvent(const nsAString& aType, bool aCanBubble,
 } // namespace dom
 } // namespace mozilla
 
-nsresult
-NS_NewDOMStorageEvent(nsIDOMEvent** aDOMEvent,
-                      mozilla::dom::EventTarget* aOwner)
+using namespace mozilla;
+using namespace mozilla::dom;
+
+already_AddRefed<StorageEvent>
+NS_NewDOMStorageEvent(EventTarget* aOwner)
 {
-  nsRefPtr<mozilla::dom::StorageEvent> e =
-    new mozilla::dom::StorageEvent(aOwner);
+  nsRefPtr<StorageEvent> e = new StorageEvent(aOwner);
 
   e->SetTrusted(e->Init(aOwner));
-  e.forget(aDOMEvent);
-
-  return NS_OK;
+  return e.forget();
 }
 

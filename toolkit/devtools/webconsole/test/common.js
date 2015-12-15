@@ -8,22 +8,25 @@ const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 Cu.import("resource://gre/modules/Services.jsm");
+const {Task} = Cu.import("resource://gre/modules/Task.jsm", {});
 
-let devtools = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools;
-let WebConsoleUtils = devtools.require("devtools/toolkit/webconsole/utils").Utils;
+// This gives logging to stdout for tests
+var {console} = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
 
-let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"]
+var {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var WebConsoleUtils = require("devtools/toolkit/webconsole/utils").Utils;
+
+var ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"]
                           .getService(Ci.nsIConsoleAPIStorage);
+var {DebuggerServer} = require("devtools/server/main");
+var {DebuggerClient, ObjectClient} = require("devtools/toolkit/client/main");
 
-let {ConsoleServiceListener, ConsoleAPIListener} =
-  devtools.require("devtools/toolkit/webconsole/utils");
+var {ConsoleServiceListener, ConsoleAPIListener} =
+  require("devtools/toolkit/webconsole/utils");
 
 function initCommon()
 {
   //Services.prefs.setBoolPref("devtools.debugger.log", true);
-
-  Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
-  Cu.import("resource://gre/modules/devtools/dbg-client.jsm");
 }
 
 function initDebuggerServer()
@@ -32,6 +35,7 @@ function initDebuggerServer()
     DebuggerServer.init();
     DebuggerServer.addBrowserActors();
   }
+  DebuggerServer.allowChromeProcess = true;
 }
 
 function connectToDebugger(aCallback)
@@ -68,20 +72,32 @@ function attachConsole(aListeners, aCallback, aAttachToTab)
       return;
     }
 
-    aState.dbgClient.listTabs(function _onListTabs(aResponse) {
-      if (aResponse.error) {
-        Cu.reportError("listTabs failed: " + aResponse.error + " " +
-                       aResponse.message);
-        aCallback(aState, aResponse);
-        return;
-      }
-      let consoleActor = aAttachToTab ?
-                         aResponse.tabs[aResponse.selected].consoleActor :
-                         aResponse.consoleActor;
-      aState.actor = consoleActor;
-      aState.dbgClient.attachConsole(consoleActor, aListeners,
-                                     _onAttachConsole.bind(null, aState));
-    });
+    if (aAttachToTab) {
+      aState.dbgClient.listTabs(function _onListTabs(aResponse) {
+        if (aResponse.error) {
+          Cu.reportError("listTabs failed: " + aResponse.error + " " +
+                         aResponse.message);
+          aCallback(aState, aResponse);
+          return;
+        }
+        let tab = aResponse.tabs[aResponse.selected];
+        let consoleActor = tab.consoleActor;
+        aState.dbgClient.attachTab(tab.actor, function () {
+          aState.actor = consoleActor;
+          aState.dbgClient.attachConsole(consoleActor, aListeners,
+                                         _onAttachConsole.bind(null, aState));
+        });
+      });
+    } else {
+      aState.dbgClient.getProcess().then(response => {
+        aState.dbgClient.attachTab(response.form.actor, function () {
+          let consoleActor = response.form.consoleActor;
+          aState.actor = consoleActor;
+          aState.dbgClient.attachConsole(consoleActor, aListeners,
+                                         _onAttachConsole.bind(null, aState));
+        });
+      });
+    }
   });
 }
 
@@ -182,7 +198,7 @@ var gTestState = {};
 
 function runTests(aTests, aEndCallback)
 {
-  function driver()
+  function* driver()
   {
     let lastResult, sendToNext;
     for (let i = 0; i < aTests.length; i++) {
@@ -200,5 +216,5 @@ function runTests(aTests, aEndCallback)
 
 function nextTest(aMessage)
 {
-  return gTestState.driver.send(aMessage);
+  return gTestState.driver.next(aMessage);
 }

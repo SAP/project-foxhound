@@ -1,26 +1,26 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_bluetooth_bluetoothoppmanager_h__
-#define mozilla_dom_bluetooth_bluetoothoppmanager_h__
+#ifndef mozilla_dom_bluetooth_bluez_BluetoothOppManager_h
+#define mozilla_dom_bluetooth_bluez_BluetoothOppManager_h
 
 #include "BluetoothCommon.h"
 #include "BluetoothProfileManagerBase.h"
 #include "BluetoothSocketObserver.h"
 #include "DeviceStorage.h"
-#include "mozilla/ipc/UnixSocket.h"
+#include "mozilla/ipc/SocketBase.h"
 #include "nsCOMArray.h"
 
-class nsIDOMBlob;
 class nsIOutputStream;
 class nsIInputStream;
 class nsIVolumeMountLock;
 
 namespace mozilla {
 namespace dom {
+class Blob;
 class BlobParent;
 }
 }
@@ -36,6 +36,7 @@ class BluetoothOppManager : public BluetoothSocketObserver
 {
 public:
   BT_DECL_PROFILE_MGR_BASE
+  BT_DECL_SOCKET_OBSERVER
   virtual void GetName(nsACString& aName)
   {
     aName.AssignLiteral("OPP");
@@ -43,15 +44,14 @@ public:
 
   static const int MAX_PACKET_LENGTH = 0xFFFE;
 
-  virtual ~BluetoothOppManager();
   static BluetoothOppManager* Get();
-  void ClientDataHandler(mozilla::ipc::UnixSocketRawData* aMessage);
-  void ServerDataHandler(mozilla::ipc::UnixSocketRawData* aMessage);
+  void ClientDataHandler(mozilla::ipc::UnixSocketBuffer* aMessage);
+  void ServerDataHandler(mozilla::ipc::UnixSocketBuffer* aMessage);
 
   bool Listen();
 
   bool SendFile(const nsAString& aDeviceAddress, BlobParent* aActor);
-  bool SendFile(const nsAString& aDeviceAddress, nsIDOMBlob* aBlob);
+  bool SendFile(const nsAString& aDeviceAddress, Blob* aBlob);
   bool StopSendingFile();
   bool ConfirmReceivingFile(bool aConfirm);
 
@@ -65,13 +65,8 @@ public:
   bool ExtractBlobHeaders();
   void CheckPutFinal(uint32_t aNumRead);
 
-  // The following functions are inherited from BluetoothSocketObserver
-  void ReceiveSocketData(
-    BluetoothSocket* aSocket,
-    nsAutoPtr<mozilla::ipc::UnixSocketRawData>& aMessage) override;
-  virtual void OnSocketConnectSuccess(BluetoothSocket* aSocket) override;
-  virtual void OnSocketConnectError(BluetoothSocket* aSocket) override;
-  virtual void OnSocketDisconnect(BluetoothSocket* aSocket) override;
+protected:
+  virtual ~BluetoothOppManager();
 
 private:
   BluetoothOppManager();
@@ -101,7 +96,7 @@ private:
   void NotifyAboutFileChange();
   bool AcquireSdcardMountLock();
   void SendObexData(uint8_t* aData, uint8_t aOpcode, int aSize);
-  void AppendBlobToSend(const nsAString& aDeviceAddress, nsIDOMBlob* aBlob);
+  void AppendBlobToSend(const nsAString& aDeviceAddress, Blob* aBlob);
   void DiscardBlobsToSend();
   bool ProcessNextBatch();
   void ConnectInternal(const nsAString& aDeviceAddress);
@@ -116,7 +111,7 @@ private:
    *         length.
    */
   bool ComposePacket(uint8_t aOpCode,
-                     mozilla::ipc::UnixSocketRawData* aMessage);
+                     mozilla::ipc::UnixSocketBuffer* aMessage);
 
   /**
    * OBEX session status.
@@ -198,7 +193,7 @@ private:
   nsAutoArrayPtr<uint8_t> mReceivedDataBuffer;
 
   int mCurrentBlobIndex;
-  nsCOMPtr<nsIDOMBlob> mBlob;
+  nsRefPtr<Blob> mBlob;
   nsTArray<SendFileBatch> mBatches;
 
   /**
@@ -224,6 +219,8 @@ private:
   nsRefPtr<BluetoothSocket> mRfcommSocket;
   nsRefPtr<BluetoothSocket> mL2capSocket;
 
+  BluetoothSocketType mSocketType;
+
   // This holds the time when OPP manager fail to get service channel and
   // prepare to refresh SDP records.
   mozilla::TimeStamp mLastServiceChannelCheck;
@@ -231,4 +228,4 @@ private:
 
 END_BLUETOOTH_NAMESPACE
 
-#endif
+#endif // mozilla_dom_bluetooth_bluez_BluetoothOppManager_h

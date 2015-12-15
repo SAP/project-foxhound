@@ -14,10 +14,10 @@
 #include "MediaResource.h"
 #include "VideoUtils.h"
 
+using namespace mozilla::media;
+
 namespace mozilla {
 
-
-#ifdef PR_LOGGING
 
 PRLogModuleInfo*
 GetDirectShowLog() {
@@ -28,11 +28,7 @@ GetDirectShowLog() {
   return log;
 }
 
-#define LOG(...) PR_LOG(GetDirectShowLog(), PR_LOG_DEBUG, (__VA_ARGS__))
-
-#else
-#define LOG(...)
-#endif
+#define LOG(...) MOZ_LOG(GetDirectShowLog(), mozilla::LogLevel::Debug, (__VA_ARGS__))
 
 DirectShowReader::DirectShowReader(AbstractMediaDecoder* aDecoder)
   : MediaDecoderReader(aDecoder),
@@ -88,7 +84,7 @@ ParseMP3Headers(MP3FrameParser *aParser, MediaResource *aResource)
       return NS_ERROR_FAILURE;
     }
 
-    aParser->Parse(buffer, bytesRead, offset);
+    aParser->Parse(reinterpret_cast<uint8_t*>(buffer), bytesRead, offset);
     offset += bytesRead;
   }
 
@@ -104,7 +100,7 @@ nsresult
 DirectShowReader::ReadMetadata(MediaInfo* aInfo,
                                MetadataTags** aTags)
 {
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
   HRESULT hr;
   nsresult rv;
 
@@ -197,12 +193,8 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
 
   mInfo.mAudio.mChannels = mNumChannels = format.nChannels;
   mInfo.mAudio.mRate = mAudioRate = format.nSamplesPerSec;
+  mInfo.mAudio.mBitDepth = format.wBitsPerSample;
   mBytesPerSample = format.wBitsPerSample / 8;
-  mInfo.mAudio.mHasAudio = true;
-
-  *aInfo = mInfo;
-  // Note: The SourceFilter strips ID3v2 tags out of the stream.
-  *aTags = nullptr;
 
   // Begin decoding!
   hr = mControl->Run();
@@ -213,8 +205,7 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
 
   int64_t duration = mMP3FrameParser.GetDuration();
   if (SUCCEEDED(hr)) {
-    ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    mDecoder->SetMediaDuration(duration);
+    mInfo.mMetadataDuration.emplace(TimeUnit::FromMicroseconds(duration));
   }
 
   LOG("Successfully initialized DirectShow MP3 decoder.");
@@ -223,6 +214,10 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
       mInfo.mAudio.mRate,
       RefTimeToUsecs(duration),
       mBytesPerSample);
+
+  *aInfo = mInfo;
+  // Note: The SourceFilter strips ID3v2 tags out of the stream.
+  *aTags = nullptr;
 
   return NS_OK;
 }
@@ -245,7 +240,7 @@ UnsignedByteToAudioSample(uint8_t aValue)
 bool
 DirectShowReader::Finish(HRESULT aStatus)
 {
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
 
   LOG("DirectShowReader::Finish(0x%x)", aStatus);
   // Notify the filter graph of end of stream.
@@ -302,7 +297,7 @@ private:
 bool
 DirectShowReader::DecodeAudioData()
 {
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
   HRESULT hr;
 
   SampleSink* sink = mAudioSinkFilter->GetSampleSink();
@@ -349,21 +344,21 @@ bool
 DirectShowReader::DecodeVideoFrame(bool &aKeyframeSkip,
                                    int64_t aTimeThreshold)
 {
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
   return false;
 }
 
 bool
 DirectShowReader::HasAudio()
 {
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
   return true;
 }
 
 bool
 DirectShowReader::HasVideo()
 {
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
   return false;
 }
 
@@ -382,7 +377,7 @@ nsresult
 DirectShowReader::SeekInternal(int64_t aTargetUs)
 {
   HRESULT hr;
-  MOZ_ASSERT(mDecoder->OnDecodeThread(), "Should be on decode thread.");\
+  MOZ_ASSERT(OnTaskQueue());
 
   LOG("DirectShowReader::Seek() target=%lld", aTargetUs);
 
@@ -406,19 +401,39 @@ DirectShowReader::SeekInternal(int64_t aTargetUs)
 }
 
 void
-DirectShowReader::NotifyDataArrived(const char* aBuffer, uint32_t aLength, int64_t aOffset)
+DirectShowReader::NotifyDataArrivedInternal(uint32_t aLength, int64_t aOffset)
 {
-  MOZ_ASSERT(NS_IsMainThread());
-  if (!mMP3FrameParser.IsMP3()) {
+  MOZ_ASSERT(OnTaskQueue());
+  if (!mMP3FrameParser.NeedsData()) {
     return;
   }
-  mMP3FrameParser.Parse(aBuffer, aLength, aOffset);
+
+  AutoPinned<MediaResource> resource(mDecoder->GetResource());
+  nsTArray<MediaByteRange> byteRanges;
+  nsresult rv = resource->GetCachedRanges(byteRanges);
+
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  IntervalSet<int64_t> intervals;
+  for (auto& range : byteRanges) {
+    intervals += mFilter.NotifyDataArrived(range.Length(), range.mStart);
+  }
+  for (const auto& interval : intervals) {
+    nsRefPtr<MediaByteBuffer> bytes =
+      resource->MediaReadAt(interval.mStart, interval.Length());
+    NS_ENSURE_TRUE_VOID(bytes);
+    mMP3FrameParser.Parse(bytes->Elements(), interval.Length(), interval.mStart);
+    if (!mMP3FrameParser.IsMP3()) {
+      return;
+    }
+  }
   int64_t duration = mMP3FrameParser.GetDuration();
   if (duration != mDuration) {
-    mDuration = duration;
     MOZ_ASSERT(mDecoder);
-    ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    mDecoder->UpdateEstimatedMediaDuration(mDuration);
+    mDuration = duration;
+    mDecoder->DispatchUpdateEstimatedMediaDuration(mDuration);
   }
 }
 

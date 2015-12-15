@@ -21,9 +21,9 @@
 #include "nsCycleCollectionParticipant.h"
 
 class nsAutoCompleteController final : public nsIAutoCompleteController,
-                                           public nsIAutoCompleteObserver,
-                                           public nsITimerCallback,
-                                           public nsITreeView
+                                       public nsIAutoCompleteObserver,
+                                       public nsITimerCallback,
+                                       public nsITreeView
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -139,8 +139,19 @@ protected:
   nsString mSearchString;
   nsString mPlaceholderCompletionString;
   bool mDefaultIndexCompleted;
-  bool mBackspaced;
   bool mPopupClosedByCompositionStart;
+
+  // Whether autofill is allowed for the next search. May be retrieved by the
+  // search through the "prohibit-autofill" searchParam.
+  bool mProhibitAutoFill;
+
+  // Indicates whether the user cleared the autofilled part, returning to the
+  // originally entered search string.
+  bool mUserClearedAutoFill;
+
+  // Indicates whether clearing the autofilled string should issue a new search.
+  bool mClearingAutoFillSearchesAgain;
+
   enum CompositionState {
     eCompositionState_None,
     eCompositionState_Composing,

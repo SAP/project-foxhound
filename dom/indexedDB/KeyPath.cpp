@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,8 +89,8 @@ GetJSValFromKeyPathString(JSContext* aCx,
 
   nsString targetObjectPropName;
   JS::Rooted<JSObject*> targetObject(aCx, nullptr);
-  JS::Rooted<JSObject*> obj(aCx,
-    aValue.isPrimitive() ? nullptr : aValue.toObjectOrNull());
+  JS::Rooted<JS::Value> currentVal(aCx, aValue);
+  JS::Rooted<JSObject*> obj(aCx);
 
   while (tokenizer.hasMoreTokens()) {
     const nsDependentSubstring& token = tokenizer.nextToken();
@@ -103,9 +103,18 @@ GetJSValFromKeyPathString(JSContext* aCx,
     bool hasProp;
     if (!targetObject) {
       // We're still walking the chain of existing objects
-      if (!obj) {
+      // http://w3c.github.io/IndexedDB/#dfn-evaluate-a-key-path-on-a-value
+      // step 4 substep 1: check for .length on a String value.
+      if (currentVal.isString() && !tokenizer.hasMoreTokens() &&
+          token.EqualsLiteral("length") && aOptions == DoNotCreateProperties) {
+        aKeyJSVal->setNumber(double(JS_GetStringLength(currentVal.toString())));
+        break;
+      }
+
+      if (!currentVal.isObject()) {
         return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
       }
+      obj = &currentVal.toObject();
 
       bool ok = JS_HasUCProperty(aCx, obj, keyPathChars, keyPathLen,
                                  &hasProp);
@@ -123,10 +132,7 @@ GetJSValFromKeyPathString(JSContext* aCx,
         }
         if (tokenizer.hasMoreTokens()) {
           // ...and walk to it if there are more steps...
-          if (intermediate.isPrimitive()) {
-            return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
-          }
-          obj = intermediate.toObjectOrNull();
+          currentVal = intermediate;
         }
         else {
           // ...otherwise use it as key
@@ -200,11 +206,11 @@ GetJSValFromKeyPathString(JSContext* aCx,
   if (targetObject) {
     // If this fails, we lose, and the web page sees a magical property
     // appear on the object :-(
-    bool succeeded;
-    if (!JS_DeleteUCProperty2(aCx, targetObject,
-                              targetObjectPropName.get(),
-                              targetObjectPropName.Length(),
-                              &succeeded)) {
+    JS::ObjectOpResult succeeded;
+    if (!JS_DeleteUCProperty(aCx, targetObject,
+                             targetObjectPropName.get(),
+                             targetObjectPropName.Length(),
+                             succeeded)) {
       IDB_REPORT_INTERNAL_ERR();
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
     }
@@ -215,7 +221,7 @@ GetJSValFromKeyPathString(JSContext* aCx,
   return rv;
 }
 
-} // anonymous namespace
+} // namespace
 
 // static
 nsresult
@@ -359,13 +365,13 @@ KeyPath::ExtractKeyAsJSVal(JSContext* aCx, const JS::Value& aValue,
       return rv;
     }
 
-    if (!JS_SetElement(aCx, arrayObj, i, value)) {
+    if (!JS_DefineElement(aCx, arrayObj, i, value, JSPROP_ENUMERATE)) {
       IDB_REPORT_INTERNAL_ERR();
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
     }
   }
 
-  *aOutVal = OBJECT_TO_JSVAL(arrayObj);
+  aOutVal->setObject(*arrayObj);
   return NS_OK;
 }
 
@@ -471,7 +477,7 @@ KeyPath::ToJSVal(JSContext* aCx, JS::MutableHandle<JS::Value> aValue) const
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }
 
-      if (!JS_SetElement(aCx, array, i, val)) {
+      if (!JS_DefineElement(aCx, array, i, val, JSPROP_ENUMERATE)) {
         IDB_REPORT_INTERNAL_ERR();
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }

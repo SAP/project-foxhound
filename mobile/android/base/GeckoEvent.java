@@ -25,8 +25,8 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import org.mozilla.gecko.mozglue.JNITarget;
-import org.mozilla.gecko.mozglue.RobocopTarget;
+import org.mozilla.gecko.annotation.JNITarget;
+import org.mozilla.gecko.annotation.RobocopTarget;
 
 /**
  * We're not allowed to hold on to most events given to us
@@ -179,6 +179,7 @@ public class GeckoEvent {
     private double mX;
     private double mY;
     private double mZ;
+    private double mW;
 
     private int mMetaState;
     private int mFlags;
@@ -211,6 +212,7 @@ public class GeckoEvent {
     private int mNativeWindow;
 
     private short mScreenOrientation;
+    private short mScreenAngle;
 
     private ByteBuffer mBuffer;
 
@@ -243,9 +245,9 @@ public class GeckoEvent {
         return GeckoEvent.get(NativeGeckoEvent.NOOP);
     }
 
-    public static GeckoEvent createKeyEvent(KeyEvent k, int metaState) {
+    public static GeckoEvent createKeyEvent(KeyEvent k, int action, int metaState) {
         GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.KEY_EVENT);
-        event.initKeyEvent(k, metaState);
+        event.initKeyEvent(k, action, metaState);
         return event;
     }
 
@@ -264,8 +266,11 @@ public class GeckoEvent {
         return GeckoEvent.get(NativeGeckoEvent.COMPOSITOR_RESUME);
     }
 
-    private void initKeyEvent(KeyEvent k, int metaState) {
-        mAction = k.getAction();
+    private void initKeyEvent(KeyEvent k, int action, int metaState) {
+        // Use a separate action argument so we can override the key's original action,
+        // e.g. change ACTION_MULTIPLE to ACTION_DOWN. That way we don't have to allocate
+        // a new key event just to change its action field.
+        mAction = action;
         mTime = k.getEventTime();
         // Normally we expect k.getMetaState() to reflect the current meta-state; however,
         // some software-generated key events may not have k.getMetaState() set, e.g. key
@@ -509,7 +514,7 @@ public class GeckoEvent {
             event.mZ = s.values[2];
             break;
 
-        case 10 /* Requires API Level 9, so just use the raw value - Sensor.TYPE_LINEAR_ACCELEROMETER*/ :
+        case Sensor.TYPE_LINEAR_ACCELERATION:
             event = GeckoEvent.get(NativeGeckoEvent.SENSOR_EVENT);
             event.mFlags = GeckoHalDefines.SENSOR_LINEAR_ACCELERATION;
             event.mMetaState = HalSensorAccuracyFor(s.accuracy);
@@ -551,6 +556,35 @@ public class GeckoEvent {
             event.mMetaState = HalSensorAccuracyFor(s.accuracy);
             event.mX = s.values[0];
             break;
+
+        case Sensor.TYPE_ROTATION_VECTOR:
+            event = GeckoEvent.get(NativeGeckoEvent.SENSOR_EVENT);
+            event.mFlags = GeckoHalDefines.SENSOR_ROTATION_VECTOR;
+            event.mMetaState = HalSensorAccuracyFor(s.accuracy);
+            event.mX = s.values[0];
+            event.mY = s.values[1];
+            event.mZ = s.values[2];
+            if (s.values.length >= 4) {
+                event.mW = s.values[3];
+            } else {
+                // s.values[3] was optional in API <= 18, so we need to compute it
+                // The values form a unit quaternion, so we can compute the angle of
+                // rotation purely based on the given 3 values.
+                event.mW = 1 - s.values[0]*s.values[0] - s.values[1]*s.values[1] - s.values[2]*s.values[2];
+                event.mW = (event.mW > 0.0) ? Math.sqrt(event.mW) : 0.0;
+            }
+            break;
+
+        // case Sensor.TYPE_GAME_ROTATION_VECTOR: // API >= 18
+        case 15:
+            event = GeckoEvent.get(NativeGeckoEvent.SENSOR_EVENT);
+            event.mFlags = GeckoHalDefines.SENSOR_GAME_ROTATION_VECTOR;
+            event.mMetaState = HalSensorAccuracyFor(s.accuracy);
+            event.mX = s.values[0];
+            event.mY = s.values[1];
+            event.mZ = s.values[2];
+            event.mW = s.values[3];
+            break;
         }
         return event;
     }
@@ -576,7 +610,7 @@ public class GeckoEvent {
 
     public static GeckoEvent createIMEKeyEvent(KeyEvent k) {
         GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.IME_KEY_EVENT);
-        event.initKeyEvent(k, 0);
+        event.initKeyEvent(k, k.getAction(), 0);
         return event;
     }
 
@@ -658,10 +692,6 @@ public class GeckoEvent {
         sb.append("{ \"x\" : ").append(metrics.viewportRectLeft)
           .append(", \"y\" : ").append(metrics.viewportRectTop)
           .append(", \"zoom\" : ").append(metrics.zoomFactor)
-          .append(", \"fixedMarginLeft\" : ").append(metrics.marginLeft)
-          .append(", \"fixedMarginTop\" : ").append(metrics.marginTop)
-          .append(", \"fixedMarginRight\" : ").append(metrics.marginRight)
-          .append(", \"fixedMarginBottom\" : ").append(metrics.marginBottom)
           .append(", \"displayPort\" :").append(displayPort.toJSON())
           .append('}');
         event.mCharactersExtra = sb.toString();
@@ -716,9 +746,10 @@ public class GeckoEvent {
         return event;
     }
 
-    public static GeckoEvent createScreenOrientationEvent(short aScreenOrientation) {
+    public static GeckoEvent createScreenOrientationEvent(short aScreenOrientation, short aScreenAngle) {
         GeckoEvent event = GeckoEvent.get(NativeGeckoEvent.SCREENORIENTATION_CHANGED);
         event.mScreenOrientation = aScreenOrientation;
+        event.mScreenAngle = aScreenAngle;
         return event;
     }
 

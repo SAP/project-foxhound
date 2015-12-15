@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #endif
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "prmem.h"
 #include "nscore.h"
 #include "prenv.h"
@@ -40,6 +40,7 @@
 #include "mozilla/unused.h"
 #include "nsILoadContext.h"
 #include "mozilla/dom/HTMLObjectElementBinding.h"
+#include "AudioChannelService.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -91,8 +92,7 @@ static nsRefPtr<GLContext> sPluginContext = nullptr;
 static bool EnsureGLContext()
 {
   if (!sPluginContext) {
-    bool requireCompatProfile = true;
-    sPluginContext = GLContextProvider::CreateHeadless(requireCompatProfile);
+    sPluginContext = GLContextProvider::CreateHeadless(CreateContextFlags::REQUIRE_COMPAT_PROFILE);
   }
 
   return sPluginContext != nullptr;
@@ -169,7 +169,7 @@ using namespace mozilla::layers;
 
 static NS_DEFINE_IID(kIOutputStreamIID, NS_IOUTPUTSTREAM_IID);
 
-NS_IMPL_ISUPPORTS0(nsNPAPIPluginInstance)
+NS_IMPL_ISUPPORTS(nsNPAPIPluginInstance, nsIAudioChannelAgentCallback)
 
 nsNPAPIPluginInstance::nsNPAPIPluginInstance()
   : mDrawingModel(kDefaultDrawingModel)
@@ -230,19 +230,19 @@ nsNPAPIPluginInstance::~nsNPAPIPluginInstance()
 
   for (uint32_t i = 0; i < mCachedParamLength; i++) {
     if (mCachedParamNames[i]) {
-      NS_Free(mCachedParamNames[i]);
+      free(mCachedParamNames[i]);
       mCachedParamNames[i] = nullptr;
     }
     if (mCachedParamValues[i]) {
-      NS_Free(mCachedParamValues[i]);
+      free(mCachedParamValues[i]);
       mCachedParamValues[i] = nullptr;
     }
   }
 
-  NS_Free(mCachedParamNames);
+  free(mCachedParamNames);
   mCachedParamNames = nullptr;
 
-  NS_Free(mCachedParamValues);
+  free(mCachedParamValues);
   mCachedParamValues = nullptr;
 }
 
@@ -253,6 +253,7 @@ nsNPAPIPluginInstance::Destroy()
 {
   Stop();
   mPlugin = nullptr;
+  mAudioChannelAgent = nullptr;
 
 #if MOZ_WIDGET_ANDROID
   if (mContentSurface)
@@ -277,7 +278,7 @@ nsNPAPIPluginInstance::StopTime()
   return mStopTime;
 }
 
-nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsPluginInstanceOwner* aOwner, const char* aMIMEType)
+nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsPluginInstanceOwner* aOwner, const nsACString& aMIMEType)
 {
   PLUGIN_LOG(PLUGIN_LOG_NORMAL, ("nsNPAPIPluginInstance::Initialize this=%p\n",this));
 
@@ -287,11 +288,8 @@ nsresult nsNPAPIPluginInstance::Initialize(nsNPAPIPlugin *aPlugin, nsPluginInsta
   mPlugin = aPlugin;
   mOwner = aOwner;
 
-  if (aMIMEType) {
-    mMIMEType = (char*)PR_Malloc(strlen(aMIMEType) + 1);
-    if (mMIMEType) {
-      PL_strcpy(mMIMEType, aMIMEType);
-    }
+  if (!aMIMEType.IsEmpty()) {
+    mMIMEType = ToNewCString(aMIMEType);
   }
 
   return Start();
@@ -457,8 +455,8 @@ nsNPAPIPluginInstance::Start()
   uint32_t quirkParamLength = params.Length() ?
                                 mCachedParamLength : attributes.Length();
 
-  mCachedParamNames = (char**)NS_Alloc(sizeof(char*) * mCachedParamLength);
-  mCachedParamValues = (char**)NS_Alloc(sizeof(char*) * mCachedParamLength);
+  mCachedParamNames = (char**)moz_xmalloc(sizeof(char*) * mCachedParamLength);
+  mCachedParamValues = (char**)moz_xmalloc(sizeof(char*) * mCachedParamLength);
 
   for (uint32_t i = 0; i < attributes.Length(); i++) {
     mCachedParamNames[i] = ToNewUTF8String(attributes[i].mName);
@@ -958,7 +956,7 @@ void nsNPAPIPluginInstance::ReleaseContentTexture(nsNPAPIPluginInstance::Texture
   mContentTexture->Release(aTextureInfo);
 }
 
-TemporaryRef<AndroidSurfaceTexture> nsNPAPIPluginInstance::CreateSurfaceTexture()
+already_AddRefed<AndroidSurfaceTexture> nsNPAPIPluginInstance::CreateSurfaceTexture()
 {
   if (!EnsureGLContext())
     return nullptr;
@@ -981,7 +979,7 @@ TemporaryRef<AndroidSurfaceTexture> nsNPAPIPluginInstance::CreateSurfaceTexture(
 void nsNPAPIPluginInstance::OnSurfaceTextureFrameAvailable()
 {
   if (mRunning == RUNNING && mOwner)
-    AndroidBridge::Bridge()->ScheduleComposite();
+    AndroidBridge::Bridge()->InvalidateAndScheduleComposite();
 }
 
 void* nsNPAPIPluginInstance::AcquireContentWindow()
@@ -1170,7 +1168,7 @@ public:
     if (plugin)
       mLibrary = plugin->GetLibrary();
   }
-  operator bool() { return !!mLibrary; }
+  explicit operator bool() { return !!mLibrary; }
   PluginLibrary* operator->() { return mLibrary; }
 
 private:
@@ -1296,7 +1294,7 @@ nsNPAPIPluginInstance::GetFormValue(nsAString& aValue)
 
   // NPPVformValue allocates with NPN_MemAlloc(), which uses
   // nsMemory.
-  nsMemory::Free(value);
+  free(value);
 
   return NS_OK;
 }
@@ -1609,15 +1607,6 @@ nsNPAPIPluginInstance::SetOwner(nsPluginInstanceOwner *aOwner)
 }
 
 nsresult
-nsNPAPIPluginInstance::ShowStatus(const char* message)
-{
-  if (mOwner)
-    return mOwner->ShowStatus(message);
-
-  return NS_ERROR_FAILURE;
-}
-
-nsresult
 nsNPAPIPluginInstance::AsyncSetWindow(NPWindow& window)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -1685,8 +1674,8 @@ nsNPAPIPluginInstance::CarbonNPAPIFailure()
 static bool
 GetJavaVersionFromMimetype(nsPluginTag* pluginTag, nsCString& version)
 {
-  for (uint32_t i = 0; i < pluginTag->mMimeTypes.Length(); ++i) {
-    nsCString type = pluginTag->mMimeTypes[i];
+  for (uint32_t i = 0; i < pluginTag->MimeTypes().Length(); ++i) {
+    nsCString type = pluginTag->MimeTypes()[i];
     nsAutoCString jpi("application/x-java-applet;jpi-version=");
 
     int32_t idx = type.Find(jpi, false, 0, -1);
@@ -1780,4 +1769,91 @@ nsNPAPIPluginInstance::GetContentsScaleFactor()
     mOwner->GetContentsScaleFactor(&scaleFactor);
   }
   return scaleFactor;
+}
+
+nsresult
+nsNPAPIPluginInstance::GetRunID(uint32_t* aRunID)
+{
+  if (NS_WARN_IF(!aRunID)) {
+    return NS_ERROR_INVALID_POINTER;
+  }
+
+  if (NS_WARN_IF(!mPlugin)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  PluginLibrary* library = mPlugin->GetLibrary();
+  if (!library) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return library->GetRunID(aRunID);
+}
+
+nsresult
+nsNPAPIPluginInstance::GetOrCreateAudioChannelAgent(nsIAudioChannelAgent** aAgent)
+{
+  if (!mAudioChannelAgent) {
+    nsresult rv;
+    mAudioChannelAgent = do_CreateInstance("@mozilla.org/audiochannelagent;1", &rv);
+    if (NS_WARN_IF(!mAudioChannelAgent)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    nsCOMPtr<nsPIDOMWindow> window = GetDOMWindow();
+    if (NS_WARN_IF(!window)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    rv = mAudioChannelAgent->Init(window->GetCurrentInnerWindow(),
+                                 (int32_t)AudioChannelService::GetDefaultAudioChannel(),
+                                 this);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+  }
+
+  nsCOMPtr<nsIAudioChannelAgent> agent = mAudioChannelAgent;
+  agent.forget(aAgent);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNPAPIPluginInstance::WindowVolumeChanged(float aVolume, bool aMuted)
+{
+  // We just support mute/unmute
+  nsresult rv = SetMuted(aMuted);
+  NS_WARN_IF(NS_FAILED(rv));
+  return rv;
+}
+
+NS_IMETHODIMP
+nsNPAPIPluginInstance::WindowAudioCaptureChanged()
+{
+  return NS_OK;
+}
+
+nsresult
+nsNPAPIPluginInstance::SetMuted(bool aIsMuted)
+{
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  PLUGIN_LOG(PLUGIN_LOG_NORMAL, ("nsNPAPIPluginInstance informing plugin of mute state change this=%p\n",this));
+
+  if (!mPlugin || !mPlugin->GetLibrary())
+    return NS_ERROR_FAILURE;
+
+  NPPluginFuncs* pluginFunctions = mPlugin->PluginFuncs();
+
+  if (!pluginFunctions->setvalue)
+    return NS_ERROR_FAILURE;
+
+  PluginDestructionGuard guard(this);
+
+  NPError error;
+  NPBool value = static_cast<NPBool>(aIsMuted);
+  NS_TRY_SAFE_CALL_RETURN(error, (*pluginFunctions->setvalue)(&mNPP, NPNVmuteAudioBool, &value), this,
+                          NS_PLUGIN_CALL_UNSAFE_TO_REENTER_GECKO);
+  return (error == NPERR_NO_ERROR) ? NS_OK : NS_ERROR_FAILURE;
 }

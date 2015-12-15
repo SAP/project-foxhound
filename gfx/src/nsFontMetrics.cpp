@@ -105,7 +105,7 @@ public:
     }
 };
 
-} // anon namespace
+} // namespace
 
 nsFontMetrics::nsFontMetrics()
     : mDeviceContext(nullptr), mP2A(0), mTextRunRTL(false)
@@ -151,8 +151,7 @@ nsFontMetrics::Init(const nsFont& aFont,
     aFont.AddFontFeaturesToStyle(&style);
 
     mFontGroup = gfxPlatform::GetPlatform()->
-        CreateFontGroup(aFont.fontlist, &style, aUserFontSet);
-    mFontGroup->SetTextPerfMetrics(aTextPerf);
+        CreateFontGroup(aFont.fontlist, &style, aTextPerf, aUserFontSet);
     return NS_OK;
 }
 
@@ -216,8 +215,8 @@ static gfxFloat ComputeMaxDescent(const gfxFont::Metrics& aMetrics,
 {
     gfxFloat offset = floor(-aFontGroup->GetUnderlineOffset() + 0.5);
     gfxFloat size = NS_round(aMetrics.underlineSize);
-    gfxFloat minDescent = floor(offset + size + 0.5);
-    return std::max(minDescent, aMetrics.maxDescent);
+    gfxFloat minDescent = offset + size;
+    return floor(std::max(minDescent, aMetrics.maxDescent) + 0.5);
 }
 
 static gfxFloat ComputeMaxAscent(const gfxFont::Metrics& aMetrics)

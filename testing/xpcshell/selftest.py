@@ -5,7 +5,7 @@
 #
 
 from __future__ import with_statement
-import sys, os, unittest, tempfile, shutil
+import sys, os, unittest, tempfile, shutil, re, pprint
 import mozinfo
 
 from StringIO import StringIO
@@ -219,6 +219,10 @@ let error = {
 function run_test() {do_report_unexpected_exception(error)};
 '''
 
+ADD_TEST_VERBOSE = '''
+function run_test() {do_print("a message from do_print")};
+'''
+
 # A test for genuine JS-generated Error objects
 ADD_TEST_REPORT_REF_ERROR = '''
 function run_test() {
@@ -287,7 +291,79 @@ function run_test() {
 }
 '''
 
+# A test to check that add_test() tests run without run_test()
+NO_RUN_TEST_ADD_TEST = '''
+add_test(function no_run_test_add_test() {
+  do_check_true(true);
+  run_next_test();
+});
+'''
 
+# A test to check that add_task() tests run without run_test()
+NO_RUN_TEST_ADD_TASK = '''
+add_task(function no_run_test_add_task() {
+  do_check_true(true);
+});
+'''
+
+# A test to check that both add_task() and add_test() work without run_test()
+NO_RUN_TEST_ADD_TEST_ADD_TASK = '''
+add_test(function no_run_test_add_test() {
+  do_check_true(true);
+  run_next_test();
+});
+
+add_task(function no_run_test_add_task() {
+  do_check_true(true);
+});
+'''
+
+# A test to check that an empty test file without run_test(),
+# add_test() or add_task() works.
+NO_RUN_TEST_EMPTY_TEST = '''
+// This is an empty test file.
+'''
+
+NO_RUN_TEST_ADD_TEST_FAIL = '''
+add_test(function no_run_test_add_test_fail() {
+  do_check_true(false);
+  run_next_test();
+});
+'''
+
+NO_RUN_TEST_ADD_TASK_FAIL = '''
+add_task(function no_run_test_add_task_fail() {
+  do_check_true(false);
+});
+'''
+
+NO_RUN_TEST_ADD_TASK_MULTIPLE = '''
+Components.utils.import("resource://gre/modules/Promise.jsm");
+
+add_task(function test_task() {
+  yield Promise.resolve(true);
+});
+
+add_task(function test_2() {
+  yield Promise.resolve(true);
+});
+'''
+
+LOAD_MOZINFO = '''
+function run_test() {
+  do_check_neq(typeof mozinfo, undefined);
+  do_check_neq(typeof mozinfo.os, undefined);
+}
+'''
+
+CHILD_MOZINFO = '''
+function run_test () { run_next_test(); }
+
+add_test(function test_child_mozinfo () {
+  run_test_in_child("test_mozinfo.js");
+  run_next_test();
+});
+'''
 class XPCShellTestsTests(unittest.TestCase):
     """
     Yes, these are unit tests for a unit test harness.
@@ -295,6 +371,7 @@ class XPCShellTestsTests(unittest.TestCase):
     def setUp(self):
         self.log = StringIO()
         self.tempdir = tempfile.mkdtemp()
+        self.utility_path = os.path.join(objdir, 'dist', 'bin')
         logger = structured.commandline.setup_logging("selftest%s" % id(self),
                                                       {},
                                                       {"tbpl": self.log})
@@ -345,9 +422,9 @@ tail =
                                           manifest=self.manifest,
                                           mozInfo=mozinfo.info,
                                           shuffle=shuffle,
-                                          testsRootDir=self.tempdir,
                                           verbose=verbose,
-                                          sequential=True),
+                                          sequential=True,
+                                          utility_path=self.utility_path),
                           msg="""Tests should have %s, log:
 ========
 %s
@@ -403,6 +480,34 @@ tail =
         self.assertEquals(0, self.x.todoCount)
         self.assertInLog(TEST_FAIL_STRING)
         self.assertNotInLog(TEST_PASS_STRING)
+
+    @unittest.skipIf(mozinfo.isWin or not mozinfo.info.get('debug'),
+                     'We don\'t have a stack fixer on hand for windows.')
+    def testAssertStack(self):
+        """
+        When an assertion is hit, we should produce a useful stack.
+        """
+        self.writeFile("test_assert.js", '''
+          add_test(function test_asserts_immediately() {
+            Components.classes["@mozilla.org/xpcom/debug;1"]
+                      .getService(Components.interfaces.nsIDebug2)
+                      .assertion("foo", "assertion failed", "test.js", 1)
+            run_next_test();
+          });
+        ''')
+
+        self.writeManifest(["test_assert.js"])
+
+        self.assertTestResult(False)
+
+        self.assertInLog("###!!! ASSERTION")
+        log_lines = self.log.getvalue().splitlines()
+        line_pat = "#\d\d:"
+        unknown_pat = "#\d\d\: \?\?\?\[.* \+0x[a-f0-9]+\]"
+        self.assertFalse(any(re.search(unknown_pat, line) for line in log_lines),
+                         "An stack frame without symbols was found in\n%s" % pprint.pformat(log_lines))
+        self.assertTrue(any(re.search(line_pat, line) for line in log_lines),
+                        "No line resembling a stack frame was found in\n%s" % pprint.pformat(log_lines))
 
     @unittest.skipIf(build_obj.defines.get('MOZ_B2G'),
                      'selftests with child processes fail on b2g desktop builds')
@@ -483,6 +588,92 @@ tail =
         self.assertEquals(0, self.x.failCount)
         self.assertEquals(0, self.x.todoCount)
         self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testSkipForAddTest(self):
+        """
+        Check that add_test is skipped if |skip_if| condition is true
+        """
+        self.writeFile("test_skip.js", """
+add_test({
+  skip_if: () => true,
+}, function test_should_be_skipped() {
+  do_check_true(false);
+  run_next_test();
+});
+""")
+        self.writeManifest(["test_skip.js"])
+        self.assertTestResult(True, verbose=True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertEquals(0, self.x.todoCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertInLog("TEST-SKIP")
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testNotSkipForAddTask(self):
+        """
+        Check that add_task is not skipped if |skip_if| condition is false
+        """
+        self.writeFile("test_not_skip.js", """
+add_task({
+  skip_if: () => false,
+}, function test_should_not_be_skipped() {
+  do_check_true(true);
+});
+""")
+        self.writeManifest(["test_not_skip.js"])
+        self.assertTestResult(True, verbose=True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertEquals(0, self.x.todoCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog("TEST-SKIP")
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testSkipForAddTask(self):
+        """
+        Check that add_task is skipped if |skip_if| condition is true
+        """
+        self.writeFile("test_skip.js", """
+add_task({
+  skip_if: () => true,
+}, function test_should_be_skipped() {
+  do_check_true(false);
+});
+""")
+        self.writeManifest(["test_skip.js"])
+        self.assertTestResult(True, verbose=True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertEquals(0, self.x.todoCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertInLog("TEST-SKIP")
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testNotSkipForAddTest(self):
+        """
+        Check that add_test is not skipped if |skip_if| condition is false
+        """
+        self.writeFile("test_not_skip.js", """
+add_test({
+  skip_if: () => false,
+}, function test_should_not_be_skipped() {
+  do_check_true(true);
+  run_next_test();
+});
+""")
+        self.writeManifest(["test_not_skip.js"])
+        self.assertTestResult(True, verbose=True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertEquals(0, self.x.todoCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog("TEST-SKIP")
         self.assertNotInLog(TEST_FAIL_STRING)
 
     def testSyntaxError(self):
@@ -880,6 +1071,39 @@ tail =
         self.assertInLog("test_error.js:4")
         self.assertNotInLog(TEST_PASS_STRING)
 
+    def testDoPrintWhenVerboseNotExplicit(self):
+        """
+        Check that do_print() and similar calls that generate output do
+        not have the output when not run verbosely.
+        """
+        self.writeFile("test_verbose.js", ADD_TEST_VERBOSE)
+        self.writeManifest(["test_verbose.js"])
+
+        self.assertTestResult(True)
+        self.assertNotInLog("a message from do_print")
+
+    def testDoPrintWhenVerboseExplicit(self):
+        """
+        Check that do_print() and similar calls that generate output have the
+        output shown when run verbosely.
+        """
+        self.writeFile("test_verbose.js", ADD_TEST_VERBOSE)
+        self.writeManifest(["test_verbose.js"])
+        self.assertTestResult(True, verbose=True)
+        self.assertInLog("a message from do_print")
+
+    def testDoPrintWhenVerboseInManifest(self):
+        """
+        Check that do_print() and similar calls that generate output have the
+        output shown when 'verbose = true' is in the manifest, even when
+        not run verbosely.
+        """
+        self.writeFile("test_verbose.js", ADD_TEST_VERBOSE)
+        self.writeManifest([("test_verbose.js", "verbose = true")])
+
+        self.assertTestResult(True)
+        self.assertInLog("a message from do_print")
+
     def testAsyncCleanup(self):
         """
         Check that do_register_cleanup handles nicely cleanup tasks that
@@ -891,6 +1115,135 @@ tail =
         self.assertInLog("\"1234\" == \"1234\"")
         self.assertInLog("At this stage, the test has succeeded")
         self.assertInLog("Throwing an error to force displaying the log")
+
+    def testNoRunTestAddTest(self):
+        """
+        Check that add_test() works fine without run_test() in the test file.
+        """
+        self.writeFile("test_noRunTestAddTest.js", NO_RUN_TEST_ADD_TEST)
+        self.writeManifest(["test_noRunTestAddTest.js"])
+
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testNoRunTestAddTask(self):
+        """
+        Check that add_task() works fine without run_test() in the test file.
+        """
+        self.writeFile("test_noRunTestAddTask.js", NO_RUN_TEST_ADD_TASK)
+        self.writeManifest(["test_noRunTestAddTask.js"])
+
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testNoRunTestAddTestAddTask(self):
+        """
+        Check that both add_test() and add_task() work without run_test()
+        in the test file.
+        """
+        self.writeFile("test_noRunTestAddTestAddTask.js", NO_RUN_TEST_ADD_TEST_ADD_TASK)
+        self.writeManifest(["test_noRunTestAddTestAddTask.js"])
+
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testNoRunTestEmptyTest(self):
+        """
+        Check that the test passes on an empty file that contains neither
+        run_test() nor add_test(), add_task().
+        """
+        self.writeFile("test_noRunTestEmptyTest.js", NO_RUN_TEST_EMPTY_TEST)
+        self.writeManifest(["test_noRunTestEmptyTest.js"])
+
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testNoRunTestAddTestFail(self):
+        """
+        Check that test fails on using add_test() without run_test().
+        """
+        self.writeFile("test_noRunTestAddTestFail.js", NO_RUN_TEST_ADD_TEST_FAIL)
+        self.writeManifest(["test_noRunTestAddTestFail.js"])
+
+        self.assertTestResult(False)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(0, self.x.passCount)
+        self.assertEquals(1, self.x.failCount)
+        self.assertInLog(TEST_FAIL_STRING)
+        self.assertNotInLog(TEST_PASS_STRING)
+
+    def testNoRunTestAddTaskFail(self):
+        """
+        Check that test fails on using add_task() without run_test().
+        """
+        self.writeFile("test_noRunTestAddTaskFail.js", NO_RUN_TEST_ADD_TASK_FAIL)
+        self.writeManifest(["test_noRunTestAddTaskFail.js"])
+
+        self.assertTestResult(False)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(0, self.x.passCount)
+        self.assertEquals(1, self.x.failCount)
+        self.assertInLog(TEST_FAIL_STRING)
+        self.assertNotInLog(TEST_PASS_STRING)
+
+    def testNoRunTestAddTaskMultiple(self):
+        """
+        Check that multple add_task() tests work without run_test().
+        """
+        self.writeFile("test_noRunTestAddTaskMultiple.js", NO_RUN_TEST_ADD_TASK_MULTIPLE)
+        self.writeManifest(["test_noRunTestAddTaskMultiple.js"])
+
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testMozinfo(self):
+        """
+        Check that mozinfo.json is loaded
+        """
+        self.writeFile("test_mozinfo.js", LOAD_MOZINFO)
+        self.writeManifest(["test_mozinfo.js"])
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertEquals(0, self.x.todoCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
+
+    def testChildMozinfo(self):
+        """
+        Check that mozinfo.json is loaded in child process
+        """
+        self.writeFile("test_mozinfo.js", LOAD_MOZINFO)
+        self.writeFile("test_child_mozinfo.js", CHILD_MOZINFO)
+        self.writeManifest(["test_child_mozinfo.js"])
+        self.assertTestResult(True)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(1, self.x.passCount)
+        self.assertEquals(0, self.x.failCount)
+        self.assertEquals(0, self.x.todoCount)
+        self.assertInLog(TEST_PASS_STRING)
+        self.assertNotInLog(TEST_FAIL_STRING)
 
 if __name__ == "__main__":
     unittest.main(verbosity=3)

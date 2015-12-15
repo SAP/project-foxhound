@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -146,9 +147,7 @@ HTMLOutputElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 void
 HTMLOutputElement::GetValue(nsAString& aValue)
 {
-  if (!nsContentUtils::GetNodeTextContent(this, true, aValue)) {
-    NS_RUNTIMEABORT("OOM");
-  }
+  nsContentUtils::GetNodeTextContent(this, true, aValue);
 }
 
 void
@@ -179,9 +178,7 @@ HTMLOutputElement::HtmlFor()
 void HTMLOutputElement::DescendantsChanged()
 {
   if (mIsDoneAddingChildren && mValueModeFlag == eModeDefault) {
-    if (!nsContentUtils::GetNodeTextContent(this, true, mDefaultValue)) {
-      NS_RUNTIMEABORT("OOM");
-    }
+    nsContentUtils::GetNodeTextContent(this, true, mDefaultValue);
   }
 }
 
@@ -220,9 +217,9 @@ void HTMLOutputElement::ContentRemoved(nsIDocument* aDocument,
 }
 
 JSObject*
-HTMLOutputElement::WrapNode(JSContext* aCx)
+HTMLOutputElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLOutputElementBinding::Wrap(aCx, this);
+  return HTMLOutputElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace dom

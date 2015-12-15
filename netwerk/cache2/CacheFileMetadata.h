@@ -121,6 +121,7 @@ public:
   nsresult GetKey(nsACString &_retval);
 
   nsresult ReadMetadata(CacheFileMetadataListener *aListener);
+  uint32_t CalcMetadataSize(uint32_t aElementsSize, uint32_t aHashCount);
   nsresult WriteMetadata(uint32_t aOffset,
                          CacheFileMetadataListener *aListener);
   nsresult SyncReadMetadata(nsIFile *aFile);
@@ -171,7 +172,7 @@ private:
   void     InitEmptyMetadata();
   nsresult ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset, bool aHaveKey);
   nsresult CheckElements(const char *aBuf, uint32_t aSize);
-  void     EnsureBuffer(uint32_t aSize);
+  nsresult EnsureBuffer(uint32_t aSize);
   nsresult ParseKey(const nsACString &aKey);
 
   nsRefPtr<CacheFileHandle>           mHandle;
@@ -186,15 +187,18 @@ private:
   char                               *mWriteBuf;
   CacheFileMetadataHeader             mMetaHdr;
   uint32_t                            mElementsSize;
-  bool                                mIsDirty;
-  bool                                mAnonymous;
-  bool                                mInBrowser;
+  bool                                mIsDirty        : 1;
+  bool                                mAnonymous      : 1;
+  bool                                mInBrowser      : 1;
+  bool                                mAllocExactSize : 1;
+  bool                                mFirstRead      : 1;
+  mozilla::TimeStamp                  mReadStart;
   uint32_t                            mAppId;
   nsCOMPtr<CacheFileMetadataListener> mListener;
 };
 
 
-} // net
-} // mozilla
+} // namespace net
+} // namespace mozilla
 
 #endif

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,9 +26,9 @@ namespace mozilla {
 namespace dom {
 
 JSObject*
-SVGMarkerElement::WrapNode(JSContext *aCx)
+SVGMarkerElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return SVGMarkerElementBinding::Wrap(aCx, this);
+  return SVGMarkerElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsSVGElement::LengthInfo SVGMarkerElement::sLengthInfo[4] =
@@ -176,6 +177,7 @@ SVGMarkerElement::SetOrientToAngle(SVGAngle& angle, ErrorResult& rv)
     rv.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
     return;
   }
+  mOrientType.SetBaseValue(SVG_MARKER_ORIENT_ANGLE);
   mAngleAttributes[ORIENT].SetBaseValue(f, this, true);
 }
 
@@ -215,12 +217,14 @@ SVGMarkerElement::ParseAttribute(int32_t aNameSpaceID, nsIAtom* aName,
     if (aValue.EqualsLiteral("auto")) {
       mOrientType.SetBaseValue(SVG_MARKER_ORIENT_AUTO);
       aResult.SetTo(aValue);
+      mAngleAttributes[ORIENT].SetBaseValue(0.f, this, false);
       return true;
     }
     if (aValue.EqualsLiteral("auto-start-reverse") &&
         MarkerImprovementsPrefEnabled()) {
       mOrientType.SetBaseValue(SVG_MARKER_ORIENT_AUTO_START_REVERSE);
       aResult.SetTo(aValue);
+      mAngleAttributes[ORIENT].SetBaseValue(0.f, this, false);
       return true;
     }
     mOrientType.SetBaseValue(SVG_MARKER_ORIENT_ANGLE);

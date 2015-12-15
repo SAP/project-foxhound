@@ -8,7 +8,7 @@ const Cu = Components.utils;
 Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let modules = {
+var modules = {
   // about:
   "": {
     uri: "chrome://browser/content/about.xhtml",
@@ -22,7 +22,9 @@ let modules = {
     privileged: true,
     hide: true
   },
-  get firefox() this.fennec,
+  get firefox() {
+    return this.fennec
+  },
 
   // about:blank has some bad loading behavior we can avoid, if we use an alias
   empty: {
@@ -34,7 +36,7 @@ let modules = {
   rights: {
     uri: AppConstants.MOZ_OFFICIAL_BRANDING ?
       "chrome://browser/content/aboutRights.xhtml" :
-      "chrome://global/content/aboutRights-unbranded.xhtml",
+      "chrome://global/content/aboutRights.xhtml",
     privileged: false
   },
   blocked: {
@@ -51,10 +53,6 @@ let modules = {
     uri: "chrome://browser/content/aboutHome.xhtml",
     privileged: false
   },
-  apps: {
-    uri: "chrome://browser/content/aboutApps.xhtml",
-    privileged: true
-  },
   downloads: {
     uri: "chrome://browser/content/aboutDownloads.xhtml",
     privileged: true
@@ -62,6 +60,7 @@ let modules = {
   reader: {
     uri: "chrome://global/content/reader/aboutReader.html",
     privileged: false,
+    dontLink: true,
     hide: true
   },
   feedback: {
@@ -70,6 +69,10 @@ let modules = {
   },
   privatebrowsing: {
     uri: "chrome://browser/content/aboutPrivateBrowsing.xhtml",
+    privileged: true
+  },
+  logins: {
+    uri: "chrome://browser/content/aboutLogins.xhtml",
     privileged: true
   },
 }
@@ -86,9 +89,9 @@ if (AppConstants.MOZ_DEVICES) {
     privileged: true
   };
 }
-if (AppConstants.NIGHTLY_BUILD) {
-  modules['passwords'] = {
-    uri: "chrome://browser/content/aboutPasswords.xhtml",
+if (!AppConstants.MOZ_ANDROID_NATIVE_ACCOUNT_UI) {
+  modules['accounts'] = {
+    uri: "chrome://browser/content/aboutAccounts.xhtml",
     privileged: true
   };
 }
@@ -109,6 +112,8 @@ AboutRedirector.prototype = {
     let moduleInfo = this._getModuleInfo(aURI);
     if (moduleInfo.hide)
       flags = Ci.nsIAboutModule.HIDE_FROM_ABOUTABOUT;
+    if (moduleInfo.dontLink)
+      flags = flags | Ci.nsIAboutModule.MAKE_UNLINKABLE;
 
     return flags | Ci.nsIAboutModule.ALLOW_SCRIPT;
   },

@@ -3,11 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const Cu = Components.utils;
-
-const { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-devtools.lazyImporter(this, "promise", "resource://gre/modules/Promise.jsm", "Promise");
-devtools.lazyImporter(this, "Task", "resource://gre/modules/Task.jsm", "Task");
+const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+const {require, loader} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+const promise = require("promise");
+loader.lazyImporter(this, "Task", "resource://gre/modules/Task.jsm", "Task");
+const subScriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
+                          .getService(Ci.mozIJSSubScriptLoader);
+var EventUtils = {};
+subScriptLoader.loadSubScript("chrome://marionette/content/EventUtils.js", EventUtils);
+loader.lazyGetter(this, "nsIProfilerModule", () => {
+  return Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
+});
 
 addMessageListener("devtools:test:history", function ({ data }) {
   content.history[data.direction]();
@@ -100,6 +106,15 @@ addMessageListener("devtools:test:xhr", Task.async(function* ({ data }) {
   sendAsyncMessage("devtools:test:xhr", responses);
 }));
 
+addMessageListener("devtools:test:profiler", function ({ data: { method, args, id }}) {
+  let result = nsIProfilerModule[method](...args);
+  sendAsyncMessage("devtools:test:profiler:response", {
+    data: result,
+    id: id
+  });
+});
+
+
 // To eval in content, look at `evalInDebuggee` in the head.js of canvasdebugger
 // for an example.
 addMessageListener("devtools:test:eval", function ({ data }) {
@@ -112,3 +127,119 @@ addMessageListener("devtools:test:eval", function ({ data }) {
 addEventListener("load", function() {
   sendAsyncMessage("devtools:test:load");
 }, true);
+
+/**
+ * Set a given style property value on a node.
+ * @param {Object} data
+ * - {String} selector The CSS selector to get the node (can be a "super"
+ *   selector).
+ * - {String} propertyName The name of the property to set.
+ * - {String} propertyValue The value for the property.
+ */
+addMessageListener("devtools:test:setStyle", function(msg) {
+  let {selector, propertyName, propertyValue} = msg.data;
+  let node = superQuerySelector(selector);
+  if (!node) {
+    return;
+  }
+
+  node.style[propertyName] = propertyValue;
+
+  sendAsyncMessage("devtools:test:setStyle");
+});
+
+/**
+ * Get information about a DOM element, identified by a selector.
+ * @param {Object} data
+ * - {String} selector The CSS selector to get the node (can be a "super"
+ *   selector).
+ * @return {Object} data Null if selector didn't match any node, otherwise:
+ * - {String} tagName.
+ * - {String} namespaceURI.
+ * - {Number} numChildren The number of children in the element.
+ * - {Array} attributes An array of {name, value, namespaceURI} objects.
+ * - {String} outerHTML.
+ * - {String} innerHTML.
+ * - {String} textContent.
+ */
+addMessageListener("devtools:test:getDomElementInfo", function(msg) {
+  let {selector} = msg.data;
+  let node = superQuerySelector(selector);
+
+  let info = null;
+  if (node) {
+    info = {
+      tagName: node.tagName,
+      namespaceURI: node.namespaceURI,
+      numChildren: node.children.length,
+      attributes: [...node.attributes].map(({name, value, namespaceURI}) => {
+        return {name, value, namespaceURI};
+      }),
+      outerHTML: node.outerHTML,
+      innerHTML: node.innerHTML,
+      textContent: node.textContent
+    };
+  }
+
+  sendAsyncMessage("devtools:test:getDomElementInfo", info);
+});
+
+/**
+ * Set a given attribute value on a node.
+ * @param {Object} data
+ * - {String} selector The CSS selector to get the node (can be a "super"
+ *   selector).
+ * - {String} attributeName The name of the attribute to set.
+ * - {String} attributeValue The value for the attribute.
+ */
+addMessageListener("devtools:test:setAttribute", function(msg) {
+  let {selector, attributeName, attributeValue} = msg.data;
+  let node = superQuerySelector(selector);
+  if (!node) {
+    return;
+  }
+
+  node.setAttribute(attributeName, attributeValue);
+
+  sendAsyncMessage("devtools:test:setAttribute");
+});
+
+/**
+ * Synthesize a key event for an element. This handler doesn't send a message
+ * back. Consumers should listen to specific events on the inspector/highlighter
+ * to know when the event got synthesized.
+ * @param  {Object} msg The msg.data part expects the following properties:
+ * - {String} key
+ * - {Object} options
+ */
+addMessageListener("Test:SynthesizeKey", function(msg) {
+  let {key, options} = msg.data;
+
+  EventUtils.synthesizeKey(key, options, content);
+});
+
+/**
+ * Like document.querySelector but can go into iframes too.
+ * ".container iframe || .sub-container div" will first try to find the node
+ * matched by ".container iframe" in the root document, then try to get the
+ * content document inside it, and then try to match ".sub-container div" inside
+ * this document.
+ * Any selector coming before the || separator *MUST* match a frame node.
+ * @param {String} superSelector.
+ * @return {DOMNode} The node, or null if not found.
+ */
+function superQuerySelector(superSelector, root=content.document) {
+  let frameIndex = superSelector.indexOf("||");
+  if (frameIndex === -1) {
+    return root.querySelector(superSelector);
+  } else {
+    let rootSelector = superSelector.substring(0, frameIndex).trim();
+    let childSelector = superSelector.substring(frameIndex+2).trim();
+    root = root.querySelector(rootSelector);
+    if (!root || !root.contentWindow) {
+      return null;
+    }
+
+    return superQuerySelector(childSelector, root.contentWindow.document);
+  }
+}

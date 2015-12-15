@@ -111,8 +111,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsImageControlFrameSuper)
 a11y::AccType
 nsImageControlFrame::AccessibleType()
 {
-  if (mContent->Tag() == nsGkAtoms::button ||
-      mContent->Tag() == nsGkAtoms::input) {
+  if (mContent->IsAnyOfHTMLElements(nsGkAtoms::button, nsGkAtoms::input)) {
     return a11y::eHTMLButtonType;
   }
 
@@ -127,10 +126,10 @@ nsImageControlFrame::GetType() const
 }
 
 void
-nsImageControlFrame::Reflow(nsPresContext*         aPresContext,
-                           nsHTMLReflowMetrics&     aDesiredSize,
-                           const nsHTMLReflowState& aReflowState,
-                           nsReflowStatus&          aStatus)
+nsImageControlFrame::Reflow(nsPresContext*           aPresContext,
+                            nsHTMLReflowMetrics&     aDesiredSize,
+                            const nsHTMLReflowState& aReflowState,
+                            nsReflowStatus&          aStatus)
 {
   DO_GLOBAL_REFLOW_COUNT("nsImageControlFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowState, aDesiredSize, aStatus);
@@ -163,7 +162,7 @@ nsImageControlFrame::HandleEvent(nsPresContext* aPresContext,
 
   *aEventStatus = nsEventStatus_eIgnore;
 
-  if (aEvent->message == NS_MOUSE_BUTTON_UP &&
+  if (aEvent->mMessage == eMouseUp &&
       aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) {
     // Store click point for HTMLInputElement::SubmitNamesValues
     // Do this on MouseUp because the specs don't say and that's what IE does

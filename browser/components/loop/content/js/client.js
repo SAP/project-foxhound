@@ -2,11 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* jshint esnext:true */
-/* global loop:true, hawk, deriveHawkCredentials */
-
 var loop = loop || {};
-loop.Client = (function($) {
+loop.Client = (function() {
   "use strict";
 
   // THe expected properties to be returned from the POST /calls request.
@@ -56,7 +53,7 @@ loop.Client = (function($) {
         }
       });
 
-      if (properties.length == 1) {
+      if (properties.length === 1) {
         return data[properties[0]];
       }
 
@@ -73,37 +70,6 @@ loop.Client = (function($) {
       var message = "HTTP " + error.code + " " + error.error + "; " + error.message;
       console.error(message);
       cb(error);
-    },
-
-    /**
-     * Block call URL based on the token identifier
-     *
-     * @param {string} token Conversation identifier used to block the URL
-     * @param {mozLoop.LOOP_SESSION_TYPE} sessionType The type of session which
-     *                                                the url belongs to.
-     * @param {function} cb Callback function used for handling an error
-     *                      response. XXX The incoming call panel does not
-     *                      exist after the block button is clicked therefore
-     *                      it does not make sense to display an error.
-     **/
-    deleteCallUrl: function(token, sessionType, cb) {
-      function deleteRequestCallback(error, responseText) {
-        if (error) {
-          this._failureHandler(cb, error);
-          return;
-        }
-
-        try {
-          cb(null);
-        } catch (err) {
-          console.log("Error deleting call info", err);
-          cb(err);
-        }
-      }
-
-      this.mozLoop.hawkRequest(sessionType,
-                               "/call-url/" + token, "DELETE", null,
-                               deleteRequestCallback.bind(this));
     },
 
     /**
@@ -140,14 +106,14 @@ loop.Client = (function($) {
               expectedPostCallProperties);
 
             cb(null, outgoingCallData);
-          } catch (err) {
-            console.log("Error requesting call info", err);
-            cb(err);
+          } catch (ex) {
+            console.log("Error requesting call info", ex);
+            cb(ex);
           }
         }.bind(this)
       );
-    },
+    }
   };
 
   return Client;
-})(jQuery);
+})();

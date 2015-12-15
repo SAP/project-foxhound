@@ -17,15 +17,14 @@
 #include "nscore.h"                     // for nsACString, etc
 
 struct gfxRGBA;
-struct nsIntPoint;
-struct nsIntRect;
-struct nsIntSize;
 
 namespace mozilla {
 namespace gfx {
 class Matrix4x4;
-template <class units> struct RectTyped;
-}
+template <class units, class F> struct RectTyped;
+} // namespace gfx
+
+enum class ImageFormat;
 
 namespace layers {
 
@@ -53,10 +52,6 @@ void
 AppendToString(std::stringstream& aStream, const nsRect& r,
                const char* pfx="", const char* sfx="");
 
-void
-AppendToString(std::stringstream& aStream, const nsIntPoint& p,
-               const char* pfx="", const char* sfx="");
-
 template<class T>
 void
 AppendToString(std::stringstream& aStream, const mozilla::gfx::PointTyped<T>& p,
@@ -72,10 +67,6 @@ AppendToString(std::stringstream& aStream, const mozilla::gfx::IntPointTyped<T>&
 {
   aStream << pfx << p << sfx;
 }
-
-void
-AppendToString(std::stringstream& aStream, const nsIntRect& r,
-               const char* pfx="", const char* sfx="");
 
 template<class T>
 void
@@ -109,12 +100,28 @@ void
 AppendToString(std::stringstream& aStream, const nsIntRegion& r,
                const char* pfx="", const char* sfx="");
 
+template <typename units>
 void
-AppendToString(std::stringstream& aStream, const EventRegions& e,
-               const char* pfx="", const char* sfx="");
+AppendToString(std::stringstream& aStream, const mozilla::gfx::IntRegionTyped<units>& r,
+               const char* pfx="", const char* sfx="")
+{
+  typedef mozilla::gfx::IntRegionTyped<units> RegionType;
+
+  aStream << pfx;
+
+  typename RegionType::RectIterator it(r);
+  aStream << "< ";
+  while (const typename RegionType::RectType* sr = it.Next()) {
+    AppendToString(aStream, *sr);
+    aStream << "; ";
+  }
+  aStream << ">";
+
+  aStream << sfx;
+}
 
 void
-AppendToString(std::stringstream& aStream, const nsIntSize& sz,
+AppendToString(std::stringstream& aStream, const EventRegions& e,
                const char* pfx="", const char* sfx="");
 
 void
@@ -123,6 +130,10 @@ AppendToString(std::stringstream& aStream, const FrameMetrics& m,
 
 void
 AppendToString(std::stringstream& aStream, const ScrollableLayerGuid& s,
+               const char* pfx="", const char* sfx="");
+
+void
+AppendToString(std::stringstream& aStream, const ZoomConstraints& z,
                const char* pfx="", const char* sfx="");
 
 template<class T>
@@ -161,6 +172,26 @@ AppendToString(std::stringstream& aStream, const mozilla::gfx::IntSizeTyped<T>& 
   aStream << sfx;
 }
 
+template<class src, class dst>
+void
+AppendToString(std::stringstream& aStream, const mozilla::gfx::ScaleFactors2D<src, dst>& scale,
+               const char* pfx="", const char* sfx="")
+{
+  aStream << pfx;
+  std::streamsize oldPrecision = aStream.precision(3);
+  if (scale.AreScalesSame()) {
+    aStream << scale.xScale;
+  } else {
+    aStream << '(' << scale.xScale << ',' << scale.yScale << ')';
+  }
+  aStream.precision(oldPrecision);
+  aStream << sfx;
+}
+
+void
+AppendToString(std::stringstream& aStream, const mozilla::gfx::Matrix& m,
+               const char* pfx="", const char* sfx="");
+
 void
 AppendToString(std::stringstream& aStream, const mozilla::gfx::Matrix4x4& m,
                const char* pfx="", const char* sfx="");
@@ -181,6 +212,14 @@ void
 AppendToString(std::stringstream& aStream, mozilla::gfx::SurfaceFormat format,
                const char* pfx="", const char* sfx="");
 
+void
+AppendToString(std::stringstream& aStream, gfx::SurfaceType format,
+               const char* pfx="", const char* sfx="");
+
+void
+AppendToString(std::stringstream& aStream, ImageFormat format,
+               const char* pfx="", const char* sfx="");
+
 // Sometimes, you just want a string from a single value.
 template <typename T>
 std::string
@@ -191,8 +230,8 @@ Stringify(const T& obj)
   return ss.str();
 }
 
-} // namespace
-} // namespace
+} // namespace layers
+} // namespace mozilla
 
 // versions of printf_stderr and fprintf_stderr that deal with line
 // truncation on android by printing individual lines out of the

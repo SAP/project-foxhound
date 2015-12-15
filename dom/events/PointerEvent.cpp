@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -16,7 +17,8 @@ PointerEvent::PointerEvent(EventTarget* aOwner,
                            nsPresContext* aPresContext,
                            WidgetPointerEvent* aEvent)
   : MouseEvent(aOwner, aPresContext,
-               aEvent ? aEvent : new WidgetPointerEvent(false, 0, nullptr))
+               aEvent ? aEvent :
+                        new WidgetPointerEvent(false, eVoidEvent, nullptr))
 {
   NS_ASSERTION(mEvent->mClass == ePointerEventClass,
                "event type mismatch ePointerEventClass");
@@ -79,9 +81,9 @@ PointerEvent::Constructor(EventTarget* aOwner,
   e->InitMouseEvent(aType, aParam.mBubbles, aParam.mCancelable,
                     aParam.mView, aParam.mDetail, aParam.mScreenX,
                     aParam.mScreenY, aParam.mClientX, aParam.mClientY,
-                    aParam.mCtrlKey, aParam.mAltKey, aParam.mShiftKey,
-                    aParam.mMetaKey, aParam.mButton,
+                    false, false, false, false, aParam.mButton,
                     aParam.mRelatedTarget);
+  e->InitializeExtraMouseEventDictionaryMembers(aParam);
 
   WidgetPointerEvent* widgetEvent = e->mEvent->AsPointerEvent();
   widgetEvent->pointerId = aParam.mPointerId;
@@ -163,14 +165,11 @@ PointerEvent::IsPrimary()
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMPointerEvent(nsIDOMEvent** aInstancePtrResult,
-                      EventTarget* aOwner,
+already_AddRefed<PointerEvent>
+NS_NewDOMPointerEvent(EventTarget* aOwner,
                       nsPresContext* aPresContext,
                       WidgetPointerEvent *aEvent)
 {
-  PointerEvent *it = new PointerEvent(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<PointerEvent> it = new PointerEvent(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

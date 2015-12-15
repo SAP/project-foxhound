@@ -3,23 +3,46 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
+                                  "resource://gre/modules/AppConstants.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
+                                  "resource://gre/modules/PlacesUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Task",
+                                  "resource://gre/modules/Task.jsm");
 
 const ENGINE_FLAVOR = "text/x-moz-search-engine";
+
+document.addEventListener("Initialized", () => {
+  if (!AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
+    document.getElementById("redirectSearchCheckbox").hidden = true;
+  }
+});
 
 var gEngineView = null;
 
 var gSearchPane = {
 
+  /**
+   * Initialize autocomplete to ensure prefs are in sync.
+   */
+  _initAutocomplete: function () {
+    let unifiedCompletePref = false;
+    try {
+      unifiedCompletePref =
+        Services.prefs.getBoolPref("browser.urlbar.unifiedcomplete");
+    } catch (ex) {}
+
+    if (unifiedCompletePref) {
+      Components.classes["@mozilla.org/autocomplete/search;1?name=unifiedcomplete"]
+                .getService(Components.interfaces.mozIPlacesAutoComplete);
+    } else {
+      Components.classes["@mozilla.org/autocomplete/search;1?name=history"]
+                .getService(Components.interfaces.mozIPlacesAutoComplete);
+    }
+  },
+
   init: function ()
   {
-    if (!Services.prefs.getBoolPref("browser.search.showOneOffButtons")) {
-      document.getElementById("category-search").hidden = true;
-      if (document.location.hash == "#search")
-        document.location.hash = "";
-      return;
-    }
-
     gEngineView = new EngineView(new EngineStore());
     document.getElementById("engineList").view = gEngineView;
     this.buildDefaultEngineDropDown();
@@ -35,6 +58,38 @@ var gSearchPane = {
     window.addEventListener("unload", () => {
       Services.obs.removeObserver(this, "browser-search-engine-modified", false);
     });
+
+    this._initAutocomplete();
+
+    let suggestsPref =
+      document.getElementById("browser.search.suggest.enabled");
+    suggestsPref.addEventListener("change", () => {
+      this.updateSuggestsCheckbox();
+    });
+    this.updateSuggestsCheckbox();
+  },
+
+  updateSuggestsCheckbox() {
+    let urlbarSuggests = document.getElementById("urlBarSuggestion");
+    urlbarSuggests.hidden =
+      !Services.prefs.getBoolPref("browser.urlbar.unifiedcomplete");
+
+    let suggestsPref =
+      document.getElementById("browser.search.suggest.enabled");
+    let permanentPB =
+      Services.prefs.getBoolPref("browser.privatebrowsing.autostart");
+    urlbarSuggests.disabled = !suggestsPref.value || permanentPB;
+
+    let urlbarSuggestsPref =
+      document.getElementById("browser.urlbar.suggest.searches");
+    urlbarSuggests.checked = urlbarSuggestsPref.value;
+    if (urlbarSuggests.disabled) {
+      urlbarSuggests.checked = false;
+    }
+
+    let permanentPBLabel =
+      document.getElementById("urlBarSuggestionPermanentPBLabel");
+    permanentPBLabel.hidden = urlbarSuggests.hidden || !permanentPB;
   },
 
   buildDefaultEngineDropDown: function() {
@@ -191,19 +246,13 @@ var gSearchPane = {
     document.getElementById("engineList").focus();
   },
 
-  editKeyword: function(aEngine, aNewKeyword) {
+  editKeyword: Task.async(function* (aEngine, aNewKeyword) {
     if (aNewKeyword) {
-      let bduplicate = false;
       let eduplicate = false;
       let dupName = "";
 
-      try {
-        let bmserv =
-          Components.classes["@mozilla.org/browser/nav-bookmarks-service;1"]
-                    .getService(Components.interfaces.nsINavBookmarksService);
-        if (bmserv.getURIForKeyword(aNewKeyword))
-          bduplicate = true;
-      } catch(ex) {}
+      // Check for duplicates in Places keywords.
+      let bduplicate = !!(yield PlacesUtils.keywords.fetch(aNewKeyword));
 
       // Check for duplicates in changes we haven't committed yet
       let engines = gEngineView._engineStore.engines;
@@ -231,7 +280,7 @@ var gSearchPane = {
     gEngineView._engineStore.changeEngine(aEngine, "alias", aNewKeyword);
     gEngineView.invalidate();
     return true;
-  },
+  }),
 
   saveOneClickEnginesList: function () {
     let hiddenList = [];
@@ -519,11 +568,11 @@ EngineView.prototype = {
   },
   setCellText: function(index, column, value) {
     if (column.id == "engineKeyword") {
-      if (!gSearchPane.editKeyword(this._engineStore.engines[index], value)) {
-        setTimeout(() => {
+      gSearchPane.editKeyword(this._engineStore.engines[index], value)
+                 .then(valid => {
+        if (!valid)
           document.getElementById("engineList").startEditing(index, column);
-        }, 0);
-      }
+      });
     }
   },
   performAction: function(action) { },

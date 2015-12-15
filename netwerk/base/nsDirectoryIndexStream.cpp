@@ -16,11 +16,9 @@
 
 #include "nsEscape.h"
 #include "nsDirectoryIndexStream.h"
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "prtime.h"
-#ifdef PR_LOGGING
 static PRLogModuleInfo* gLog;
-#endif
 
 #include "nsISimpleEnumerator.h"
 #ifdef THREADSAFE_I18N
@@ -46,12 +44,10 @@ static PRLogModuleInfo* gLog;
 nsDirectoryIndexStream::nsDirectoryIndexStream()
     : mOffset(0), mStatus(NS_OK), mPos(0)
 {
-#ifdef PR_LOGGING
     if (! gLog)
         gLog = PR_NewLogModule("nsDirectoryIndexStream");
-#endif
 
-    PR_LOG(gLog, PR_LOG_DEBUG,
+    MOZ_LOG(gLog, LogLevel::Debug,
            ("nsDirectoryIndexStream[%p]: created", this));
 }
 
@@ -96,15 +92,13 @@ nsDirectoryIndexStream::Init(nsIFile* aDir)
     if (!isDir)
         return NS_ERROR_ILLEGAL_VALUE;
 
-#ifdef PR_LOGGING
-    if (PR_LOG_TEST(gLog, PR_LOG_DEBUG)) {
+    if (MOZ_LOG_TEST(gLog, LogLevel::Debug)) {
         nsAutoCString path;
         aDir->GetNativePath(path);
-        PR_LOG(gLog, PR_LOG_DEBUG,
+        MOZ_LOG(gLog, LogLevel::Debug,
                ("nsDirectoryIndexStream[%p]: initialized on %s",
                 this, path.get()));
     }
-#endif
 
     // Sigh. We have to allocate on the heap because there are no
     // assignment operators defined.
@@ -163,26 +157,23 @@ nsDirectoryIndexStream::Init(nsIFile* aDir)
 
 nsDirectoryIndexStream::~nsDirectoryIndexStream()
 {
-    PR_LOG(gLog, PR_LOG_DEBUG,
+    MOZ_LOG(gLog, LogLevel::Debug,
            ("nsDirectoryIndexStream[%p]: destroyed", this));
 }
 
 nsresult
 nsDirectoryIndexStream::Create(nsIFile* aDir, nsIInputStream** aResult)
 {
-    nsDirectoryIndexStream* result = new nsDirectoryIndexStream();
+    nsRefPtr<nsDirectoryIndexStream> result = new nsDirectoryIndexStream();
     if (! result)
         return NS_ERROR_OUT_OF_MEMORY;
 
-    nsresult rv;
-    rv = result->Init(aDir);
+    nsresult rv = result->Init(aDir);
     if (NS_FAILED(rv)) {
-        delete result;
         return rv;
     }
 
-    *aResult = result;
-    NS_ADDREF(*aResult);
+    result.forget(aResult);
     return NS_OK;
 }
 
@@ -248,15 +239,13 @@ nsDirectoryIndexStream::Read(char* aBuf, uint32_t aCount, uint32_t* aReadCount)
             nsIFile* current = mArray.ObjectAt(mPos);
             ++mPos;
 
-#ifdef PR_LOGGING
-            if (PR_LOG_TEST(gLog, PR_LOG_DEBUG)) {
+            if (MOZ_LOG_TEST(gLog, LogLevel::Debug)) {
                 nsAutoCString path;
                 current->GetNativePath(path);
-                PR_LOG(gLog, PR_LOG_DEBUG,
+                MOZ_LOG(gLog, LogLevel::Debug,
                        ("nsDirectoryIndexStream[%p]: iterated %s",
                         this, path.get()));
             }
-#endif
 
             // rjc: don't return hidden files/directories!
             // bbaetz: why not?
@@ -265,7 +254,7 @@ nsDirectoryIndexStream::Read(char* aBuf, uint32_t aCount, uint32_t* aReadCount)
             bool hidden = false;
             current->IsHidden(&hidden);
             if (hidden) {
-                PR_LOG(gLog, PR_LOG_DEBUG,
+                MOZ_LOG(gLog, LogLevel::Debug,
                        ("nsDirectoryIndexStream[%p]: skipping hidden file/directory",
                         this));
                 continue;
@@ -299,7 +288,7 @@ nsDirectoryIndexStream::Read(char* aBuf, uint32_t aCount, uint32_t* aReadCount)
             if (escaped) {
                 mBuf += escaped;
                 mBuf.Append(' ');
-                nsMemory::Free(escaped);
+                free(escaped);
             }
 
             // The "content-length" field

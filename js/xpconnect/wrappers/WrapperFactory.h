@@ -37,6 +37,13 @@ class WrapperFactory {
     static JSObject* CreateXrayWaiver(JSContext* cx, JS::HandleObject obj);
     static JSObject* WaiveXray(JSContext* cx, JSObject* obj);
 
+    // Computes whether we should allow the creation of an Xray waiver from
+    // |target| to |origin|.
+    static bool AllowWaiver(JSCompartment* target, JSCompartment* origin);
+
+    // Convenience method for the above, operating on a wrapper.
+    static bool AllowWaiver(JSObject* wrapper);
+
     // Prepare a given object for wrapping in a new compartment.
     static JSObject* PrepareForWrapping(JSContext* cx,
                                         JS::HandleObject scope,
@@ -46,8 +53,7 @@ class WrapperFactory {
     // Rewrap an object that is about to cross compartment boundaries.
     static JSObject* Rewrap(JSContext* cx,
                             JS::HandleObject existing,
-                            JS::HandleObject obj,
-                            JS::HandleObject parent);
+                            JS::HandleObject obj);
 
     // Wrap wrapped object into a waiver wrapper and then re-wrap it.
     static bool WaiveXrayAndWrap(JSContext* cx, JS::MutableHandleValue vp);
@@ -56,6 +62,6 @@ class WrapperFactory {
 
 extern const js::Wrapper XrayWaiver;
 
-}
+} // namespace xpc
 
 #endif /* _xpc_WRAPPERFACTORY_H */

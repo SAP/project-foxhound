@@ -27,7 +27,7 @@
 #endif
 
 #include "nscore.h"
-#include "nsStackWalk.h"
+#include "mozilla/StackWalk.h"
 
 #include "js/HashTable.h"
 #include "js/Vector.h"
@@ -51,6 +51,8 @@
 // and rarely used) valloc.
 #define MOZ_REPLACE_ONLY_MEMALIGN 1
 
+#ifndef PAGE_SIZE
+#define DMD_DEFINED_PAGE_SIZE
 #ifdef XP_WIN
 #define PAGE_SIZE GetPageSize()
 static long GetPageSize()
@@ -59,12 +61,16 @@ static long GetPageSize()
   GetSystemInfo(&si);
   return si.dwPageSize;
 }
-#else
+#else // XP_WIN
 #define PAGE_SIZE sysconf(_SC_PAGESIZE)
-#endif
+#endif // XP_WIN
+#endif // PAGE_SIZE
 #include "replace_malloc.h"
 #undef MOZ_REPLACE_ONLY_MEMALIGN
+#ifdef DMD_DEFINED_PAGE_SIZE
+#undef DMD_DEFINED_PAGE_SIZE
 #undef PAGE_SIZE
+#endif // DMD_DEFINED_PAGE_SIZE
 
 #include "DMD.h"
 
@@ -76,13 +82,13 @@ class DMDBridge : public ReplaceMallocBridge
   virtual DMDFuncs* GetDMDFuncs() override;
 };
 
-static DMDBridge sDMDBridge;
-static DMDFuncs sDMDFuncs;
+static DMDBridge* gDMDBridge;
+static DMDFuncs gDMDFuncs;
 
 DMDFuncs*
 DMDBridge::GetDMDFuncs()
 {
-  return &sDMDFuncs;
+  return &gDMDFuncs;
 }
 
 inline void
@@ -90,7 +96,7 @@ StatusMsg(const char* aFmt, ...)
 {
   va_list ap;
   va_start(ap, aFmt);
-  sDMDFuncs.StatusMsg(aFmt, ap);
+  gDMDFuncs.StatusMsg(aFmt, ap);
   va_end(ap);
 }
 
@@ -117,7 +123,7 @@ static bool gIsDMDInitialized = false;
 // - Indirect allocations in js::{Vector,HashSet,HashMap} -- this class serves
 //   as their AllocPolicy.
 //
-// - Other indirect allocations (e.g. NS_StackWalk) -- see the comments on
+// - Other indirect allocations (e.g. MozStackWalk) -- see the comments on
 //   Thread::mBlockIntercepts and in replace_malloc for how these work.
 //
 // It would be nice if we could use the InfallibleAllocPolicy from mozalloc,
@@ -341,7 +347,13 @@ class Options
     // Like "Live", but also outputs the same data for dead blocks. This mode
     // does cumulative heap profiling, which is good for identifying where large
     // amounts of short-lived allocations occur.
-    Cumulative
+    Cumulative,
+
+    // Like "Live", but this mode also outputs for each live block the address
+    // of the block and the values contained in the blocks. This mode is useful
+    // for investigating leaks, by helping to figure out which blocks refer to
+    // other blocks. This mode disables sampling.
+    Scan
   };
 
   char* mDMDEnvVar;   // a saved copy, for later printing
@@ -363,6 +375,9 @@ public:
   bool IsLiveMode()       const { return mMode == Live; }
   bool IsDarkMatterMode() const { return mMode == DarkMatter; }
   bool IsCumulativeMode() const { return mMode == Cumulative; }
+  bool IsScanMode()       const { return mMode == Scan; }
+
+  const char* ModeString() const;
 
   const char* DMDEnvVar() const { return mDMDEnvVar; }
 
@@ -504,7 +519,7 @@ class Thread
   // When true, this blocks intercepts, which allows malloc interception
   // functions to themselves call malloc.  (Nb: for direct calls to malloc we
   // can just use InfallibleAllocPolicy::{malloc_,new_}, but we sometimes
-  // indirectly call vanilla malloc via functions like NS_StackWalk.)
+  // indirectly call vanilla malloc via functions like MozStackWalk.)
   bool mBlockIntercepts;
 
   Thread()
@@ -727,40 +742,23 @@ StackTrace::Get(Thread* aT)
   MOZ_ASSERT(gStateLock->IsLocked());
   MOZ_ASSERT(aT->InterceptsAreBlocked());
 
-  // On Windows, NS_StackWalk can acquire a lock from the shared library
+  // On Windows, MozStackWalk can acquire a lock from the shared library
   // loader.  Another thread might call malloc while holding that lock (when
   // loading a shared library).  So we can't be in gStateLock during the call
-  // to NS_StackWalk.  For details, see
+  // to MozStackWalk.  For details, see
   // https://bugzilla.mozilla.org/show_bug.cgi?id=374829#c8
   // On Linux, something similar can happen;  see bug 824340.
   // So let's just release it on all platforms.
-  nsresult rv;
   StackTrace tmp;
   {
     AutoUnlockState unlock;
     uint32_t skipFrames = 2;
-    rv = NS_StackWalk(StackWalkCallback, skipFrames,
-                      gOptions->MaxFrames(), &tmp, 0, nullptr);
-  }
-
-  if (rv == NS_OK) {
-    // Handle the common case first.  All is ok.  Nothing to do.
-  } else if (rv == NS_ERROR_NOT_IMPLEMENTED || rv == NS_ERROR_FAILURE) {
-    tmp.mLength = 0;
-  } else if (rv == NS_ERROR_UNEXPECTED) {
-    // XXX: This |rv| only happens on Mac, and it indicates that we're handling
-    // a call to malloc that happened inside a mutex-handling function.  Any
-    // attempt to create a semaphore (which can happen in printf) could
-    // deadlock.
-    //
-    // However, the most complex thing DMD does after Get() returns is to put
-    // something in a hash table, which might call
-    // InfallibleAllocPolicy::malloc_.  I'm not yet sure if this needs special
-    // handling, hence the forced abort.  Sorry.  If you hit this, please file
-    // a bug and CC nnethercote.
-    MOZ_CRASH("unexpected case in StackTrace::Get()");
-  } else {
-    MOZ_CRASH("impossible case in StackTrace::Get()");
+    if (MozStackWalk(StackWalkCallback, skipFrames,
+                      gOptions->MaxFrames(), &tmp, 0, nullptr)) {
+      // Handle the common case first.  All is ok.  Nothing to do.
+    } else {
+      tmp.mLength = 0;
+    }
   }
 
   StackTraceTable::AddPtr p = gStackTraceTable->lookupForAdd(&tmp);
@@ -1193,8 +1191,8 @@ FreeCallback(void* aPtr, Thread* aT, DeadBlock* aDeadBlock)
 
 static void Init(const malloc_table_t* aMallocTable);
 
-}   // namespace dmd
-}   // namespace mozilla
+} // namespace dmd
+} // namespace mozilla
 
 void
 replace_init(const malloc_table_t* aMallocTable)
@@ -1205,7 +1203,7 @@ replace_init(const malloc_table_t* aMallocTable)
 ReplaceMallocBridge*
 replace_get_bridge()
 {
-  return &mozilla::dmd::sDMDBridge;
+  return mozilla::dmd::gDMDBridge;
 }
 
 void*
@@ -1224,7 +1222,7 @@ replace_malloc(size_t aSize)
   Thread* t = Thread::Fetch();
   if (t->InterceptsAreBlocked()) {
     // Intercepts are blocked, which means this must be a call to malloc
-    // triggered indirectly by DMD (e.g. via NS_StackWalk).  Be infallible.
+    // triggered indirectly by DMD (e.g. via MozStackWalk).  Be infallible.
     return InfallibleAllocPolicy::malloc_(aSize);
   }
 
@@ -1443,6 +1441,8 @@ Options::Options(const char* aDMDEnvVar)
         mMode = Options::DarkMatter;
       } else if (strcmp(arg, "--mode=cumulative") == 0) {
         mMode = Options::Cumulative;
+      } else if (strcmp(arg, "--mode=scan") == 0) {
+        mMode = Options::Scan;
 
       } else if (GetLong(arg, "--sample-below", 1, mSampleBelowSize.mMax,
                  &myLong)) {
@@ -1465,6 +1465,10 @@ Options::Options(const char* aDMDEnvVar)
       // Undo the temporary isolation.
       *e = replacedChar;
     }
+  }
+
+  if (mMode == Options::Scan) {
+    mSampleBelowSize.mActual = 1;
   }
 }
 
@@ -1492,6 +1496,24 @@ Options::BadArg(const char* aArg)
   exit(1);
 }
 
+const char*
+Options::ModeString() const
+{
+  switch (mMode) {
+  case Live:
+    return "live";
+  case DarkMatter:
+    return "dark-matter";
+  case Cumulative:
+    return "cumulative";
+  case Scan:
+    return "scan";
+  default:
+    MOZ_ASSERT(false);
+    return "(unknown DMD mode)";
+  }
+}
+
 //---------------------------------------------------------------------------
 // DMD start-up
 //---------------------------------------------------------------------------
@@ -1512,6 +1534,7 @@ static void
 Init(const malloc_table_t* aMallocTable)
 {
   gMallocTable = aMallocTable;
+  gDMDBridge = InfallibleAllocPolicy::new_<DMDBridge>();
 
   // DMD is controlled by the |DMD| environment variable.
   const char* e = getenv("DMD");
@@ -1530,9 +1553,9 @@ Init(const malloc_table_t* aMallocTable)
   // (prior to the creation of any mutexes, apparently) otherwise we can get
   // hangs when getting stack traces (bug 821577).  But
   // StackWalkInitCriticalAddress() isn't exported from xpcom/, so instead we
-  // just call NS_StackWalk, because that calls StackWalkInitCriticalAddress().
+  // just call MozStackWalk, because that calls StackWalkInitCriticalAddress().
   // See the comment above StackWalkInitCriticalAddress() for more details.
-  (void)NS_StackWalk(NopStackWalkCallback, /* skipFrames */ 0,
+  (void)MozStackWalk(NopStackWalkCallback, /* skipFrames */ 0,
                      /* maxFrames */ 1, nullptr, 0, nullptr);
 #endif
 
@@ -1739,6 +1762,41 @@ private:
   char mIdBuf[kIdBufLen];
 };
 
+// Helper class for converting a pointer value to a string.
+class ToStringConverter
+{
+public:
+  const char* ToPtrString(const void* aPtr)
+  {
+    snprintf(kPtrBuf, sizeof(kPtrBuf) - 1, "%" PRIxPTR, (uintptr_t)aPtr);
+    return kPtrBuf;
+  }
+
+private:
+  char kPtrBuf[32];
+};
+
+static void
+WriteBlockContents(JSONWriter& aWriter, const LiveBlock& aBlock)
+{
+  MOZ_ASSERT(!aBlock.IsSampled(), "Sampled blocks do not have accurate sizes");
+
+  size_t numWords = aBlock.ReqSize() / sizeof(uintptr_t*);
+  if (numWords == 0) {
+    return;
+  }
+
+  aWriter.StartArrayProperty("contents", aWriter.SingleLineStyle);
+  {
+    const uintptr_t** block = (const uintptr_t**)aBlock.Address();
+    ToStringConverter sc;
+    for (size_t i = 0; i < numWords; ++i) {
+      aWriter.StringElement(sc.ToPtrString(block[i]));
+    }
+  }
+  aWriter.EndArray();
+}
+
 static void
 AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
 {
@@ -1773,19 +1831,7 @@ AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
         writer.NullProperty("dmdEnvVar");
       }
 
-      const char* mode;
-      if (gOptions->IsLiveMode()) {
-        mode = "live";
-      } else if (gOptions->IsDarkMatterMode()) {
-        mode = "dark-matter";
-      } else if (gOptions->IsCumulativeMode()) {
-        mode = "cumulative";
-      } else {
-        MOZ_ASSERT(false);
-        mode = "(unknown DMD mode)";
-      }
-      writer.StringProperty("mode", mode);
-
+      writer.StringProperty("mode", gOptions->ModeString());
       writer.IntProperty("sampleBelowSize", gOptions->SampleBelowSize());
     }
     writer.EndObject();
@@ -1793,6 +1839,7 @@ AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
     StatusMsg("  Constructing the heap block list...\n");
 
     ToIdStringConverter isc;
+    ToStringConverter sc;
 
     writer.StartArrayProperty("blockList");
     {
@@ -1804,6 +1851,10 @@ AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
         writer.StartObjectElement(writer.SingleLineStyle);
         {
           if (!b.IsSampled()) {
+            if (gOptions->IsScanMode()) {
+              writer.StringProperty("addr", sc.ToPtrString(b.Address()));
+              WriteBlockContents(writer, b);
+            }
             writer.IntProperty("req", b.ReqSize());
             if (b.SlopSize() > 0) {
               writer.IntProperty("slop", b.SlopSize());
@@ -1811,7 +1862,6 @@ AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter)
           }
           writer.StringProperty("alloc", isc.ToIdString(b.AllocStackTrace()));
           if (gOptions->IsDarkMatterMode() && b.NumReports() > 0) {
-            MOZ_ASSERT(gOptions->IsDarkMatterMode());
             writer.StartArrayProperty("reps");
             {
               if (b.ReportStackTrace1()) {
@@ -1991,5 +2041,5 @@ DMDFuncs::ResetEverything(const char* aOptions)
   gSmallBlockActualSizeCounter = 0;
 }
 
-}   // namespace dmd
-}   // namespace mozilla
+} // namespace dmd
+} // namespace mozilla

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +19,7 @@ namespace dom {
 class DOMRect;
 
 class PaintRequest final : public nsIDOMPaintRequest
-                             , public nsWrapperCache
+                         , public nsWrapperCache
 {
 public:
   explicit PaintRequest(nsIDOMEvent* aParent)
@@ -31,7 +32,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PaintRequest)
   NS_DECL_NSIDOMPAINTREQUEST
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsIDOMEvent* GetParentObject() const
   {
@@ -55,7 +56,7 @@ private:
 };
 
 class PaintRequestList final : public nsISupports,
-                                   public nsWrapperCache
+                               public nsWrapperCache
 {
 public:
   explicit PaintRequestList(nsIDOMEvent *aParent) : mParent(aParent)
@@ -65,7 +66,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PaintRequestList)
   
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
   nsISupports* GetParentObject()
   {
     return mParent;
@@ -88,7 +89,10 @@ public:
   PaintRequest* IndexedGetter(uint32_t aIndex, bool& aFound)
   {
     aFound = aIndex < mArray.Length();
-    return aFound ? mArray.ElementAt(aIndex) : nullptr;
+    if (!aFound) {
+      return nullptr;
+    }
+    return mArray.ElementAt(aIndex);
   }
 
 private:

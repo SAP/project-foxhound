@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +12,7 @@
 #include "nsIIPCBackgroundChildCreateCallback.h"
 #include "nsIObserver.h"
 #include "nsTArray.h"
-#include "nsRefPtr.h"
+#include "mozilla/nsRefPtr.h"
 
 class nsPIDOMWindow;
 
@@ -19,13 +20,13 @@ namespace mozilla {
 
 namespace ipc {
 class PrincipalInfo;
-}
+} // namespace ipc
 
 namespace dom {
 
 namespace workers {
 class WorkerFeature;
-}
+} // namespace workers
 
 class BroadcastChannelChild;
 class BroadcastChannelMessage;
@@ -46,10 +47,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(BroadcastChannel,
                                            DOMEventTargetHelper)
 
-  static bool IsEnabled(JSContext* aCx, JSObject* aGlobal);
-
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   static already_AddRefed<BroadcastChannel>
   Constructor(const GlobalObject& aGlobal, const nsAString& aChannel,
@@ -91,7 +90,7 @@ public:
 private:
   BroadcastChannel(nsPIDOMWindow* aWindow,
                    const PrincipalInfo& aPrincipalInfo,
-                   const nsAString& aOrigin,
+                   const nsACString& aOrigin,
                    const nsAString& aChannel,
                    bool aPrivateBrowsing);
 
@@ -104,6 +103,11 @@ private:
 
   void UpdateMustKeepAlive();
 
+  bool IsCertainlyAliveForCC() const override
+  {
+    return mIsKeptAlive;
+  }
+
   nsRefPtr<BroadcastChannelChild> mActor;
   nsTArray<nsRefPtr<BroadcastChannelMessage>> mPendingMessages;
 
@@ -111,7 +115,7 @@ private:
 
   nsAutoPtr<PrincipalInfo> mPrincipalInfo;
 
-  nsString mOrigin;
+  nsCString mOrigin;
   nsString mChannel;
   bool mPrivateBrowsing;
 

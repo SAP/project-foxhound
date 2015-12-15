@@ -12,7 +12,7 @@
 #include "nsWrapperCache.h"
 #include "js/TypeDecls.h"
 #include "nsPIDOMWindow.h"
-#include "nsRefPtr.h"
+#include "mozilla/nsRefPtr.h"
 
 #if defined(XP_WIN) && defined(GetMessage)
 #undef GetMessage
@@ -26,7 +26,7 @@ namespace dom {
  { 0x9d, 0xa9, 0xf2, 0xeb, 0x03, 0x91, 0x0b, 0xd1 } }
 
 class MediaStreamError;
-}
+} // namespace dom
 
 class BaseMediaMgrError
 {
@@ -34,20 +34,20 @@ class BaseMediaMgrError
 protected:
   BaseMediaMgrError(const nsAString& aName,
                     const nsAString& aMessage,
-                    const nsAString& aConstraintName);
+                    const nsAString& aConstraint);
   const nsString mName;
   nsString mMessage;
-  const nsString mConstraintName;
+  const nsString mConstraint;
 };
 
 class MediaMgrError final : public nsISupports,
-                                public BaseMediaMgrError
+                            public BaseMediaMgrError
 {
 public:
   explicit MediaMgrError(const nsAString& aName,
                          const nsAString& aMessage =  EmptyString(),
-                         const nsAString& aConstraintName =  EmptyString())
-  : BaseMediaMgrError(aName, aMessage, aConstraintName) {}
+                         const nsAString& aConstraint =  EmptyString())
+  : BaseMediaMgrError(aName, aMessage, aConstraint) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
@@ -57,25 +57,25 @@ private:
 
 namespace dom {
 class MediaStreamError final : public nsISupports,
-                                   public BaseMediaMgrError,
-                                   public nsWrapperCache
+                               public BaseMediaMgrError,
+                               public nsWrapperCache
 {
 public:
   MediaStreamError(nsPIDOMWindow* aParent,
                    const nsAString& aName,
                    const nsAString& aMessage = EmptyString(),
-                   const nsAString& aConstraintName =  EmptyString());
+                   const nsAString& aConstraint =  EmptyString());
 
   MediaStreamError(nsPIDOMWindow* aParent,
                    const BaseMediaMgrError& aOther)
-  : BaseMediaMgrError(aOther.mName, aOther.mMessage, aOther.mConstraintName)
+  : BaseMediaMgrError(aOther.mName, aOther.mMessage, aOther.mConstraint)
   , mParent(aParent) {}
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaStreamError)
   NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_DOM_MEDIASTREAMERROR_IMPLEMENTATION_IID)
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsPIDOMWindow* GetParentObject() const
   {
@@ -83,7 +83,7 @@ public:
   }
   void GetName(nsAString& aName) const;
   void GetMessage(nsAString& aMessage) const;
-  void GetConstraintName(nsAString& aConstraintName) const;
+  void GetConstraint(nsAString& aConstraint) const;
 
 private:
   virtual ~MediaStreamError() {}

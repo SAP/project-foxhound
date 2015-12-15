@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,21 +27,17 @@ class ErrorResult;
 namespace dom {
 
 class DOMStringList;
-class nsIContentParent;
 template <typename> class Sequence;
 
 namespace indexedDB {
 
-class FileManager;
 class IDBCursor;
-class IDBKeyRange;
 class IDBRequest;
 class IDBTransaction;
 class IndexUpdateInfo;
 class Key;
 class KeyPath;
 class ObjectStoreSpec;
-struct StructuredCloneFile;
 struct StructuredCloneReadInfo;
 
 class IDBObjectStore final
@@ -79,6 +75,7 @@ public:
                         const KeyPath& aKeyPath,
                         bool aUnique,
                         bool aMultiEntry,
+                        const nsCString& aLocale,
                         JSContext* aCx,
                         JS::Handle<JS::Value> aObject,
                         nsTArray<IndexUpdateInfo>& aUpdateInfoArray);
@@ -95,6 +92,13 @@ public:
   DeserializeIndexValue(JSContext* aCx,
                         StructuredCloneReadInfo& aCloneReadInfo,
                         JS::MutableHandle<JS::Value> aValue);
+
+#if !defined(MOZ_B2G)
+  static bool
+  DeserializeUpgradeValue(JSContext* aCx,
+                          StructuredCloneReadInfo& aCloneReadInfo,
+                          JS::MutableHandle<JS::Value> aValue);
+#endif
 
   static const JSClass*
   DummyPropClass()
@@ -272,12 +276,20 @@ public:
   void
   NoteDeletion();
 
+  bool
+  IsDeleted() const
+  {
+    AssertIsOnOwningThread();
+
+    return !!mDeletedSpec;
+  }
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(IDBObjectStore)
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
   IDBObjectStore(IDBTransaction* aTransaction, const ObjectStoreSpec* aSpec);

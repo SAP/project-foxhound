@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +16,7 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsISerializable.h"
 #include "nsIStreamListener.h"
-#include "nsWeakPtr.h"
+#include "nsWeakReference.h"
 #include "nsXPCOM.h"
 
 #define NS_CSPCONTEXT_CONTRACTID "@mozilla.org/cspcontext;1"
@@ -23,6 +24,8 @@
 #define NS_CSPCONTEXT_CID \
 { 0x09d9ed1a, 0xe5d4, 0x4004, \
   { 0xbf, 0xe0, 0x27, 0xce, 0xb9, 0x23, 0xd9, 0xac } }
+
+class nsINetworkInterceptController;
 
 class nsCSPContext : public nsIContentSecurityPolicy
 {
@@ -55,12 +58,6 @@ class nsCSPContext : public nsIContentSecurityPolicy
                                   uint32_t aLineNum);
 
   private:
-    NS_IMETHODIMP getAllowsInternal(nsContentPolicyType aContentType,
-                                    enum CSPKeyword aKeyword,
-                                    const nsAString& aNonceOrContent,
-                                    bool* outShouldReportViolations,
-                                    bool* outIsAllowed) const;
-
     bool permitsInternal(CSPDirective aDir,
                          nsIURI* aContentLocation,
                          nsIURI* aOriginalURI,
@@ -70,6 +67,14 @@ class nsCSPContext : public nsIContentSecurityPolicy
                          bool aSpecific,
                          bool aSendViolationReports,
                          bool aSendContentLocationInViolationReports);
+
+    // helper to report inline script/style violations
+    void reportInlineViolation(nsContentPolicyType aContentType,
+                               const nsAString& aNonce,
+                               const nsAString& aContent,
+                               const nsAString& aViolatedDirective,
+                               uint32_t aViolatedPolicyIndex,
+                               uint32_t aLineNumber);
 
     nsCOMPtr<nsIURI>                           mReferrer;
     uint64_t                                   mInnerWindowID; // used for web console logging
@@ -99,7 +104,7 @@ class CSPViolationReportListener : public nsIStreamListener
 // redirects, per the spec. hence, we implement an nsIChannelEventSink
 // with an object so we can tell XHR to abort if a redirect happens.
 class CSPReportRedirectSink final : public nsIChannelEventSink,
-                                        public nsIInterfaceRequestor
+                                    public nsIInterfaceRequestor
 {
   public:
     NS_DECL_NSICHANNELEVENTSINK
@@ -109,8 +114,13 @@ class CSPReportRedirectSink final : public nsIChannelEventSink,
   public:
     CSPReportRedirectSink();
 
+    void SetInterceptController(nsINetworkInterceptController* aInterceptController);
+
   protected:
     virtual ~CSPReportRedirectSink();
+
+  private:
+    nsCOMPtr<nsINetworkInterceptController> mInterceptController;
 };
 
 #endif /* nsCSPContext_h___ */

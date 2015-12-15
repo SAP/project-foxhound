@@ -15,7 +15,7 @@ SOURCES += [
     'simd_detect.cpp',
 ]
 
-MSVC_ENABLE_PGO = True
+ALLOW_COMPILER_WARNINGS = True
 
 FINAL_LIBRARY = 'gkmedias'
 

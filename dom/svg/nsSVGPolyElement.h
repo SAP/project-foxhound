@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +15,7 @@ typedef nsSVGPathGeometryElement nsSVGPolyElementBase;
 
 namespace mozilla {
 class DOMSVGPointList;
-}
+} // namespace mozilla
 
 class nsSVGPolyElement : public nsSVGPolyElementBase
 {
@@ -46,7 +47,8 @@ public:
   virtual bool IsMarkable() override { return true; }
   virtual void GetMarkPoints(nsTArray<nsSVGMark> *aMarks) override;
   virtual bool GetGeometryBounds(Rect* aBounds, const StrokeOptions& aStrokeOptions,
-                                 const Matrix& aTransform) override;
+                                 const Matrix& aToBoundsSpace,
+                                 const Matrix* aToNonScalingStrokeSpace = nullptr) override;
 
   // WebIDL
   already_AddRefed<mozilla::DOMSVGPointList> Points();

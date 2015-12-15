@@ -321,11 +321,13 @@ nsTreeColumn::Invalidate()
   // Figure out our column type. Default type is text.
   mType = nsITreeColumn::TYPE_TEXT;
   static nsIContent::AttrValuesArray typestrings[] =
-    {&nsGkAtoms::checkbox, &nsGkAtoms::progressmeter, nullptr};
+    {&nsGkAtoms::checkbox, &nsGkAtoms::progressmeter, &nsGkAtoms::password,
+     nullptr};
   switch (mContent->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::type,
                                     typestrings, eCaseMatters)) {
     case 0: mType = nsITreeColumn::TYPE_CHECKBOX; break;
     case 1: mType = nsITreeColumn::TYPE_PROGRESSMETER; break;
+    case 2: mType = nsITreeColumn::TYPE_PASSWORD; break;
   }
 
   // Fetch the crop style.
@@ -353,9 +355,9 @@ nsTreeColumn::GetParentObject() const
 }
 
 /* virtual */ JSObject*
-nsTreeColumn::WrapObject(JSContext* aCx)
+nsTreeColumn::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return dom::TreeColumnBinding::Wrap(aCx, this);
+  return dom::TreeColumnBinding::Wrap(aCx, this, aGivenProto);
 }
 
 mozilla::dom::Element*
@@ -393,8 +395,7 @@ nsTreeColumn::Invalidate(mozilla::ErrorResult& aRv)
 }
 
 nsTreeColumns::nsTreeColumns(nsTreeBodyFrame* aTree)
-  : mTree(aTree),
-    mFirstColumn(nullptr)
+  : mTree(aTree)
 {
 }
 
@@ -422,9 +423,9 @@ nsTreeColumns::GetParentObject() const
 }
 
 /* virtual */ JSObject*
-nsTreeColumns::WrapObject(JSContext* aCx)
+nsTreeColumns::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return dom::TreeColumnsBinding::Wrap(aCx, this);
+  return dom::TreeColumnsBinding::Wrap(aCx, this, aGivenProto);
 }
 
 dom::TreeBoxObject*
@@ -669,7 +670,7 @@ nsTreeColumns::InvalidateColumns()
        currCol = currCol->GetNext()) {
     currCol->SetColumns(nullptr);
   }
-  NS_IF_RELEASE(mFirstColumn);
+  mFirstColumn = nullptr;
   return NS_OK;
 }
 
@@ -759,7 +760,7 @@ nsTreeColumns::EnsureColumns()
           col->SetPrevious(currCol);
         }
         else {
-          NS_ADDREF(mFirstColumn = col);
+          mFirstColumn = col;
         }
         currCol = col;
       }

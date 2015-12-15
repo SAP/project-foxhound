@@ -15,17 +15,20 @@
  */
 
 #include "GonkGPSGeolocationProvider.h"
+#include "mozstumbler/MozStumbler.h"
 
 #include <pthread.h>
 #include <hardware/gps.h>
 
+#include "GeolocationUtil.h"
+#include "mozstumbler/MozStumbler.h"
 #include "mozilla/Constants.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "nsContentUtils.h"
 #include "nsGeoPosition.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsINetworkManager.h"
+#include "nsINetworkInterface.h"
 #include "nsIObserverService.h"
 #include "nsJSUtils.h"
 #include "nsPrintfCString.h"
@@ -43,6 +46,8 @@
 #include "nsIMobileCellInfo.h"
 #include "nsIMobileNetworkInfo.h"
 #include "nsIRadioInterfaceLayer.h"
+#include "nsIIccService.h"
+#include "nsIDataCallManager.h"
 #endif
 
 #ifdef AGPS_TYPE_INVALID
@@ -85,6 +90,7 @@ AGpsCallbacks GonkGPSGeolocationProvider::mAGPSCallbacks;
 AGpsRilCallbacks GonkGPSGeolocationProvider::mAGPSRILCallbacks;
 #endif // MOZ_B2G_RIL
 
+
 void
 GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
 {
@@ -113,6 +119,11 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
 
   MOZ_ASSERT(location);
 
+  const float kImpossibleAccuracy_m = 0.001;
+  if (location->accuracy < kImpossibleAccuracy_m) {
+    return;
+  }
+
   nsRefPtr<nsGeoPosition> somewhere = new nsGeoPosition(location->latitude,
                                                         location->longitude,
                                                         location->altitude,
@@ -127,18 +138,94 @@ GonkGPSGeolocationProvider::LocationCallback(GpsLocation* location)
   // current time, most notably: the geolocation service which respects maximumAge
   // set in the DOM JS.
 
+  if (gDebug_isLoggingEnabled) {
+    nsContentUtils::LogMessageToConsole("geo: GPS got a fix (%f, %f). accuracy: %f",
+                                        location->latitude,
+                                        location->longitude,
+                                        location->accuracy);
+  }
 
-  NS_DispatchToMainThread(new UpdateLocationEvent(somewhere));
+  nsRefPtr<UpdateLocationEvent> event = new UpdateLocationEvent(somewhere);
+  NS_DispatchToMainThread(event);
+
+  MozStumble(somewhere);
 }
 
 void
 GonkGPSGeolocationProvider::StatusCallback(GpsStatus* status)
 {
+  if (gDebug_isLoggingEnabled) {
+    switch (status->status) {
+      case GPS_STATUS_NONE:
+        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_NONE\n");
+        break;
+      case GPS_STATUS_SESSION_BEGIN:
+        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_SESSION_BEGIN\n");
+        break;
+      case GPS_STATUS_SESSION_END:
+        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_SESSION_END\n");
+        break;
+      case GPS_STATUS_ENGINE_ON:
+        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_ENGINE_ON\n");
+        break;
+      case GPS_STATUS_ENGINE_OFF:
+        nsContentUtils::LogMessageToConsole("geo: GPS_STATUS_ENGINE_OFF\n");
+        break;
+      default:
+        nsContentUtils::LogMessageToConsole("geo: Unknown GPS status\n");
+        break;
+    }
+  }
 }
 
 void
 GonkGPSGeolocationProvider::SvStatusCallback(GpsSvStatus* sv_info)
 {
+  if (gDebug_isLoggingEnabled) {
+    static int numSvs = 0;
+    static uint32_t numEphemeris = 0;
+    static uint32_t numAlmanac = 0;
+    static uint32_t numUsedInFix = 0;
+
+    unsigned int i = 1;
+    uint32_t svAlmanacCount = 0;
+    for (i = 1; i > 0; i <<= 1) {
+      if (i & sv_info->almanac_mask) {
+        svAlmanacCount++;
+      }
+    }
+
+    uint32_t svEphemerisCount = 0;
+    for (i = 1; i > 0; i <<= 1) {
+      if (i & sv_info->ephemeris_mask) {
+        svEphemerisCount++;
+      }
+    }
+
+    uint32_t svUsedCount = 0;
+    for (i = 1; i > 0; i <<= 1) {
+      if (i & sv_info->used_in_fix_mask) {
+        svUsedCount++;
+      }
+    }
+
+    // Log the message only if the the status changed.
+    if (sv_info->num_svs != numSvs ||
+        svAlmanacCount != numAlmanac ||
+        svEphemerisCount != numEphemeris ||
+        svUsedCount != numUsedInFix) {
+
+      nsContentUtils::LogMessageToConsole(
+        "geo: Number of SVs have (visibility, almanac, ephemeris): (%d, %d, %d)."
+        "  %d of these SVs were used in fix.\n",
+        sv_info->num_svs, svAlmanacCount, svEphemerisCount, svUsedCount);
+
+      numSvs = sv_info->num_svs;
+      numAlmanac = svAlmanacCount;
+      numEphemeris = svEphemerisCount;
+      numUsedInFix = svUsedCount;
+    }
+  }
 }
 
 void
@@ -352,12 +439,12 @@ int32_t
 GonkGPSGeolocationProvider::GetDataConnectionState()
 {
   if (!mRadioInterface) {
-    return nsINetworkInterface::NETWORK_STATE_UNKNOWN;
+    return nsINetworkInfo::NETWORK_STATE_UNKNOWN;
   }
 
   int32_t state;
   mRadioInterface->GetDataCallStateByType(
-    nsINetworkInterface::NETWORK_TYPE_MOBILE_SUPL, &state);
+    nsINetworkInfo::NETWORK_TYPE_MOBILE_SUPL, &state);
   return state;
 }
 
@@ -376,7 +463,7 @@ GonkGPSGeolocationProvider::SetAGpsDataConn(nsAString& aApn)
 
   int32_t connectionState = GetDataConnectionState();
   NS_ConvertUTF16toUTF8 apn(aApn);
-  if (connectionState == nsINetworkInterface::NETWORK_STATE_CONNECTED) {
+  if (connectionState == nsINetworkInfo::NETWORK_STATE_CONNECTED) {
     // The definition of availability is
     // 1. The device is connected to the home network
     // 2. The device is connected to a foreign network and data
@@ -393,7 +480,7 @@ GonkGPSGeolocationProvider::SetAGpsDataConn(nsAString& aApn)
 #else
     mAGpsInterface->data_conn_open(apn.get());
 #endif
-  } else if (connectionState == nsINetworkInterface::NETWORK_STATE_DISCONNECTED) {
+  } else if (connectionState == nsINetworkInfo::NETWORK_STATE_DISCONNECTED) {
     if (hasUpdateNetworkAvailability) {
       mAGpsRilInterface->update_network_availability(false, apn.get());
     }
@@ -443,12 +530,12 @@ GonkGPSGeolocationProvider::RequestDataConnection()
     return;
   }
 
-  if (GetDataConnectionState() == nsINetworkInterface::NETWORK_STATE_CONNECTED) {
+  if (GetDataConnectionState() == nsINetworkInfo::NETWORK_STATE_CONNECTED) {
     // Connection is already established, we don't need to setup again.
     // We just get supl APN and make AGPS data connection state updated.
     RequestSettingValue("ril.supl.apn");
   } else {
-    mRadioInterface->SetupDataCallByType(nsINetworkInterface::NETWORK_TYPE_MOBILE_SUPL);
+    mRadioInterface->SetupDataCallByType(nsINetworkInfo::NETWORK_TYPE_MOBILE_SUPL);
   }
 }
 
@@ -461,7 +548,7 @@ GonkGPSGeolocationProvider::ReleaseDataConnection()
     return;
   }
 
-  mRadioInterface->DeactivateDataCallByType(nsINetworkInterface::NETWORK_TYPE_MOBILE_SUPL);
+  mRadioInterface->DeactivateDataCallByType(nsINetworkInfo::NETWORK_TYPE_MOBILE_SUPL);
 }
 
 void
@@ -476,32 +563,63 @@ GonkGPSGeolocationProvider::RequestSetID(uint32_t flags)
 
   AGpsSetIDType type = AGPS_SETID_TYPE_NONE;
 
-  nsCOMPtr<nsIRilContext> rilCtx;
-  mRadioInterface->GetRilContext(getter_AddRefs(rilCtx));
+  nsCOMPtr<nsIIccService> iccService =
+    do_GetService(ICC_SERVICE_CONTRACTID);
+  NS_ENSURE_TRUE_VOID(iccService);
 
-  if (rilCtx) {
-    nsAutoString id;
-    if (flags & AGPS_RIL_REQUEST_SETID_IMSI) {
-      type = AGPS_SETID_TYPE_IMSI;
-      rilCtx->GetImsi(id);
-    }
+  nsCOMPtr<nsIIcc> icc;
+  iccService->GetIccByServiceId(mRilDataServiceId, getter_AddRefs(icc));
+  NS_ENSURE_TRUE_VOID(icc);
 
-    if (flags & AGPS_RIL_REQUEST_SETID_MSISDN) {
-      nsCOMPtr<nsIIccInfo> iccInfo;
-      rilCtx->GetIccInfo(getter_AddRefs(iccInfo));
-      if (iccInfo) {
-        nsCOMPtr<nsIGsmIccInfo> gsmIccInfo = do_QueryInterface(iccInfo);
-        if (gsmIccInfo) {
-          type = AGPS_SETID_TYPE_MSISDN;
-          gsmIccInfo->GetMsisdn(id);
-        }
+  nsAutoString id;
+
+  if (flags & AGPS_RIL_REQUEST_SETID_IMSI) {
+    type = AGPS_SETID_TYPE_IMSI;
+    icc->GetImsi(id);
+  }
+
+  if (flags & AGPS_RIL_REQUEST_SETID_MSISDN) {
+    nsCOMPtr<nsIIccInfo> iccInfo;
+    icc->GetIccInfo(getter_AddRefs(iccInfo));
+    if (iccInfo) {
+      nsCOMPtr<nsIGsmIccInfo> gsmIccInfo = do_QueryInterface(iccInfo);
+      if (gsmIccInfo) {
+        type = AGPS_SETID_TYPE_MSISDN;
+        gsmIccInfo->GetMsisdn(id);
       }
     }
-
-    NS_ConvertUTF16toUTF8 idBytes(id);
-    mAGpsRilInterface->set_set_id(type, idBytes.get());
   }
+
+  NS_ConvertUTF16toUTF8 idBytes(id);
+  mAGpsRilInterface->set_set_id(type, idBytes.get());
 }
+
+namespace {
+int
+ConvertToGpsRefLocationType(const nsAString& aConnectionType)
+{
+  const char* GSM_TYPES[] = { "gsm", "gprs", "edge" };
+  const char* UMTS_TYPES[] = { "umts", "hspda", "hsupa", "hspa", "hspa+" };
+
+  for (auto type: GSM_TYPES) {
+    if (aConnectionType.EqualsASCII(type)) {
+        return AGPS_REF_LOCATION_TYPE_GSM_CELLID;
+    }
+  }
+
+  for (auto type: UMTS_TYPES) {
+    if (aConnectionType.EqualsASCII(type)) {
+      return AGPS_REF_LOCATION_TYPE_UMTS_CELLID;
+    }
+  }
+
+  if (gDebug_isLoggingEnabled) {
+    nsContentUtils::LogMessageToConsole("geo: Unsupported connection type %s\n",
+                                        NS_ConvertUTF16toUTF8(aConnectionType).get());
+  }
+  return AGPS_REF_LOCATION_TYPE_GSM_CELLID;
+}
+} // namespace
 
 void
 GonkGPSGeolocationProvider::SetReferenceLocation()
@@ -515,9 +633,6 @@ GonkGPSGeolocationProvider::SetReferenceLocation()
 
   AGpsRefLocation location;
 
-  // TODO: Bug 772750 - get mobile connection technology from rilcontext
-  location.type = AGPS_REF_LOCATION_TYPE_UMTS_CELLID;
-
   nsCOMPtr<nsIMobileConnectionService> service =
     do_GetService(NS_MOBILE_CONNECTION_SERVICE_CONTRACTID);
   if (!service) {
@@ -526,14 +641,19 @@ GonkGPSGeolocationProvider::SetReferenceLocation()
   }
 
   nsCOMPtr<nsIMobileConnection> connection;
-  // TODO: Bug 878748 - B2G GPS: acquire correct RadioInterface instance in
-  // MultiSIM configuration
-  service->GetItemByServiceId(0 /* Client Id */, getter_AddRefs(connection));
+  service->GetItemByServiceId(mRilDataServiceId, getter_AddRefs(connection));
   NS_ENSURE_TRUE_VOID(connection);
 
   nsCOMPtr<nsIMobileConnectionInfo> voice;
   connection->GetVoice(getter_AddRefs(voice));
   if (voice) {
+    nsAutoString connectionType;
+    nsresult rv = voice->GetType(connectionType);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
+    location.type = ConvertToGpsRefLocationType(connectionType);
+
     nsCOMPtr<nsIMobileNetworkInfo> networkInfo;
     voice->GetNetwork(getter_AddRefs(networkInfo));
     if (networkInfo) {
@@ -773,23 +893,7 @@ GonkGPSGeolocationProvider::NetworkLocationUpdate::Update(nsIDOMGeoPosition *pos
   static double sLastMLSPosLon = 0;
 
   if (0 != sLastMLSPosLon || 0 != sLastMLSPosLat) {
-    // Use spherical law of cosines to calculate difference
-    // Not quite as correct as the Haversine but simpler and cheaper
-    // Should the following be a utility function? Others might need this calc.
-    const double radsInDeg = M_PI / 180.0;
-    const double rNewLat = lat * radsInDeg;
-    const double rNewLon = lon * radsInDeg;
-    const double rOldLat = sLastMLSPosLat * radsInDeg;
-    const double rOldLon = sLastMLSPosLon * radsInDeg;
-    // WGS84 equatorial radius of earth = 6378137m
-    double cosDelta = (sin(rNewLat) * sin(rOldLat)) +
-                      (cos(rNewLat) * cos(rOldLat) * cos(rOldLon - rNewLon));
-    if (cosDelta > 1.0) {
-      cosDelta = 1.0;
-    } else if (cosDelta < -1.0) {
-      cosDelta = -1.0;
-    }
-    delta = acos(cosDelta) * 6378137;
+    delta = CalculateDeltaInMeter(lat, lon, sLastMLSPosLat, sLastMLSPosLon);
   }
 
   sLastMLSPosLat = lat;
@@ -970,15 +1074,15 @@ int
 ConvertToGpsNetworkType(int aNetworkInterfaceType)
 {
   switch (aNetworkInterfaceType) {
-    case nsINetworkInterface::NETWORK_TYPE_WIFI:
+    case nsINetworkInfo::NETWORK_TYPE_WIFI:
       return AGPS_RIL_NETWORK_TYPE_WIFI;
-    case nsINetworkInterface::NETWORK_TYPE_MOBILE:
+    case nsINetworkInfo::NETWORK_TYPE_MOBILE:
       return AGPS_RIL_NETWORK_TYPE_MOBILE;
-    case nsINetworkInterface::NETWORK_TYPE_MOBILE_MMS:
+    case nsINetworkInfo::NETWORK_TYPE_MOBILE_MMS:
       return AGPS_RIL_NETWORK_TYPE_MOBILE_MMS;
-    case nsINetworkInterface::NETWORK_TYPE_MOBILE_SUPL:
+    case nsINetworkInfo::NETWORK_TYPE_MOBILE_SUPL:
       return AGPS_RIL_NETWORK_TYPE_MOBILE_SUPL;
-    case nsINetworkInterface::NETWORK_TYPE_MOBILE_DUN:
+    case nsINetworkInfo::NETWORK_TYPE_MOBILE_DUN:
       return AGPS_RIL_NETWORK_TTYPE_MOBILE_DUN;
     default:
       NS_WARNING(nsPrintfCString("Unknown network type mapping %d",
@@ -986,7 +1090,7 @@ ConvertToGpsNetworkType(int aNetworkInterfaceType)
       return -1;
   }
 }
-} // anonymous namespace
+} // namespace
 
 NS_IMETHODIMP
 GonkGPSGeolocationProvider::Observe(nsISupports* aSubject,
@@ -997,21 +1101,21 @@ GonkGPSGeolocationProvider::Observe(nsISupports* aSubject,
 
 #ifdef MOZ_B2G_RIL
   if (!strcmp(aTopic, kNetworkConnStateChangedTopic)) {
-    nsCOMPtr<nsINetworkInterface> iface = do_QueryInterface(aSubject);
-    if (!iface) {
+    nsCOMPtr<nsINetworkInfo> info = do_QueryInterface(aSubject);
+    if (!info) {
       return NS_OK;
     }
-    nsCOMPtr<nsIRilNetworkInterface> rilface = do_QueryInterface(aSubject);
+    nsCOMPtr<nsIRilNetworkInfo> rilInfo = do_QueryInterface(aSubject);
     if (mAGpsRilInterface && mAGpsRilInterface->update_network_state) {
       int32_t state;
       int32_t type;
-      iface->GetState(&state);
-      iface->GetType(&type);
-      bool connected = (state == nsINetworkInterface::NETWORK_STATE_CONNECTED);
+      info->GetState(&state);
+      info->GetType(&type);
+      bool connected = (state == nsINetworkInfo::NETWORK_STATE_CONNECTED);
       bool roaming = false;
       int gpsNetworkType = ConvertToGpsNetworkType(type);
       if (gpsNetworkType >= 0) {
-        if (rilface) {
+        if (rilInfo) {
           do {
             nsCOMPtr<nsIMobileConnectionService> service =
               do_GetService(NS_MOBILE_CONNECTION_SERVICE_CONTRACTID);
@@ -1020,9 +1124,7 @@ GonkGPSGeolocationProvider::Observe(nsISupports* aSubject,
             }
 
             nsCOMPtr<nsIMobileConnection> connection;
-            // TODO: Bug 878748 - B2G GPS: acquire correct RadioInterface instance in
-            // MultiSIM configuration
-            service->GetItemByServiceId(0 /* Client Id */, getter_AddRefs(connection));
+            service->GetItemByServiceId(mRilDataServiceId, getter_AddRefs(connection));
             if (!connection) {
               break;
             }
@@ -1042,7 +1144,7 @@ GonkGPSGeolocationProvider::Observe(nsISupports* aSubject,
       }
     }
     // No data connection
-    if (!rilface) {
+    if (!rilInfo) {
       return NS_OK;
     }
 

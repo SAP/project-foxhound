@@ -48,9 +48,9 @@ MobileConnectionArray::GetParentObject() const
 }
 
 JSObject*
-MobileConnectionArray::WrapObject(JSContext* aCx)
+MobileConnectionArray::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return MozMobileConnectionArrayBinding::Wrap(aCx, this);
+  return MozMobileConnectionArrayBinding::Wrap(aCx, this, aGivenProto);
 }
 
 MobileConnection*
@@ -101,7 +101,7 @@ NS_CreateMobileConnectionService()
 {
   nsCOMPtr<nsIMobileConnectionService> service;
 
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (XRE_IsContentProcess()) {
     service = new mozilla::dom::mobileconnection::MobileConnectionIPCService();
   } else {
 #if defined(MOZ_WIDGET_GONK) && defined(MOZ_B2G_RIL)

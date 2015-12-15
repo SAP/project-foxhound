@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,8 +24,8 @@ namespace dom {
  * This class provides a late-bound collection of rows in a table.
  * mParent is NOT ref-counted to avoid circular references
  */
-class TableRowsCollection : public nsIHTMLCollection,
-                            public nsWrapperCache
+class TableRowsCollection final : public nsIHTMLCollection,
+                                  public nsWrapperCache
 {
 public:
   explicit TableRowsCollection(HTMLTableElement* aParent);
@@ -49,7 +50,7 @@ public:
 
   // nsWrapperCache
   using nsWrapperCache::GetWrapperPreserveColor;
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 protected:
   virtual ~TableRowsCollection();
 
@@ -83,9 +84,9 @@ TableRowsCollection::~TableRowsCollection()
 }
 
 JSObject*
-TableRowsCollection::WrapObject(JSContext* aCx)
+TableRowsCollection::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLCollectionBinding::Wrap(aCx, this);
+  return HTMLCollectionBinding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TableRowsCollection, mOrphanRows)
@@ -119,7 +120,7 @@ NS_INTERFACE_MAP_END
       /* TBodies */                                                  \
       for (nsIContent* _node = mParent->nsINode::GetFirstChild();    \
            _node; _node = _node->GetNextSibling()) {                 \
-        if (_node->IsHTML(nsGkAtoms::tbody)) {                       \
+        if (_node->IsHTMLElement(nsGkAtoms::tbody)) {                \
           rowGroup = static_cast<HTMLTableSectionElement*>(_node);   \
           rows = rowGroup->Rows();                                   \
           do { /* gives scoping */                                   \
@@ -302,9 +303,9 @@ HTMLTableElement::~HTMLTableElement()
 }
 
 JSObject*
-HTMLTableElement::WrapNode(JSContext *aCx)
+HTMLTableElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLTableElementBinding::Wrap(aCx, this);
+  return HTMLTableElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLTableElement)
@@ -326,9 +327,8 @@ NS_IMPL_ADDREF_INHERITED(HTMLTableElement, Element)
 NS_IMPL_RELEASE_INHERITED(HTMLTableElement, Element)
 
 // QueryInterface implementation for HTMLTableElement
-NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLTableElement)
-  NS_INTERFACE_TABLE_INHERITED(HTMLTableElement, nsIDOMHTMLTableElement)
-NS_INTERFACE_TABLE_TAIL_INHERITING(nsGenericHTMLElement)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(HTMLTableElement)
+NS_INTERFACE_MAP_END_INHERITING(nsGenericHTMLElement)
 
 
 NS_IMPL_ELEMENT_CLONE(HTMLTableElement)
@@ -474,7 +474,7 @@ HTMLTableElement::CreateTBody()
   for (nsIContent* child = nsINode::GetLastChild();
        child;
        child = child->GetPreviousSibling()) {
-    if (child->IsHTML(nsGkAtoms::tbody)) {
+    if (child->IsHTMLElement(nsGkAtoms::tbody)) {
       referenceNode = child->GetNextSibling();
       break;
     }
@@ -552,7 +552,7 @@ HTMLTableElement::InsertRow(int32_t aIndex, ErrorResult& aError)
     for (nsIContent* child = nsINode::GetLastChild();
          child;
          child = child->GetPreviousSibling()) {
-      if (child->IsHTML(nsGkAtoms::tbody)) {
+      if (child->IsHTMLElement(nsGkAtoms::tbody)) {
         rowGroup = child;
         break;
       }
@@ -954,7 +954,7 @@ HTMLTableElement::UnbindFromTree(bool aDeep, bool aNullParent)
 
 nsresult
 HTMLTableElement::BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                const nsAttrValueOrString* aValue,
+                                nsAttrValueOrString* aValue,
                                 bool aNotify)
 {
   if (aName == nsGkAtoms::cellpadding && aNameSpaceID == kNameSpaceID_None) {

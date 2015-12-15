@@ -16,7 +16,7 @@ interface nsIPresentationChannelDescription: nsISupports
   // Type of transport channel.
   readonly attribute uint8_t type;
 
-  // Addresses for TCP channel.
+  // Addresses for TCP channel (as a list of nsISupportsCString).
   // Should only be used while type == TYPE_TCP.
   readonly attribute nsIArray tcpAddress;
 
@@ -63,7 +63,7 @@ interface nsIPresentationControlChannelListener: nsISupports
  * The control channel for establishing RTCPeerConnection for a presentation
  * session. SDP Offer/Answer will be exchanged through this interface.
  */
-[scriptable, uuid(6bff04b9-8e79-466f-9446-f969de646fd3)]
+[scriptable, uuid(2c8ec493-4e5b-4df7-bedc-7ab25af323f0)]
 interface nsIPresentationControlChannel: nsISupports
 {
   // The listener for handling events of this control channel.
@@ -74,6 +74,7 @@ interface nsIPresentationControlChannel: nsISupports
    * Send offer to remote endpiont. |onOffer| should be invoked
    * on remote endpoint.
    * @param offer The offer to send.
+   * @throws  NS_ERROR_FAILURE on failure
    */
   void sendOffer(in nsIPresentationChannelDescription offer);
 
@@ -81,11 +82,19 @@ interface nsIPresentationControlChannel: nsISupports
    * Send answer to remote endpiont. |onAnswer| should
    * be invoked on remote endpoint.
    * @param answer The answer to send.
+   * @throws  NS_ERROR_FAILURE on failure
    */
   void sendAnswer(in nsIPresentationChannelDescription answer);
 
   /*
-   * Close the transport channel.
+   * Notify the app-to-app connection is fully established. (Only used at the
+   * receiver side.)
    */
-  void close();
+  void sendReceiverReady();
+
+  /*
+   * Close the transport channel.
+   * @param reason The reason of channel close; NS_OK represents normal.
+   */
+  void close(in nsresult reason);
 };

@@ -9,6 +9,7 @@
 #include "nsIPrintSettings.h"
 #include "nsPrintSettingsX.h"
 #include "nsCOMPtr.h"
+#include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIWebProgressListener.h"
 #include "nsIStringBundle.h"
@@ -60,9 +61,9 @@ nsPrintDialogServiceX::Show(nsIDOMWindow *aParent, nsIPrintSettings *aSettings,
       CFRelease(cfTitleString);
     }
     for (int32_t i = titleCount - 1; i >= 0; i--) {
-      NS_Free(docTitles[i]);
+      free(docTitles[i]);
     }
-    NS_Free(docTitles);
+    free(docTitles);
     docTitles = NULL;
     titleCount = 0;
   }
@@ -77,6 +78,11 @@ nsPrintDialogServiceX::Show(nsIDOMWindow *aParent, nsIPrintSettings *aSettings,
   [NSPrintOperation setCurrentOperation:printOperation];
 
   NSPrintPanel* panel = [NSPrintPanel printPanel];
+  [panel setOptions:NSPrintPanelShowsCopies
+    | NSPrintPanelShowsPageRange
+    | NSPrintPanelShowsPaperSize
+    | NSPrintPanelShowsOrientation
+    | NSPrintPanelShowsScaling ];
   PrintPanelAccessoryController* viewController =
     [[PrintPanelAccessoryController alloc] initWithSettings:aSettings];
   [panel addAccessoryController:viewController];
@@ -87,9 +93,14 @@ nsPrintDialogServiceX::Show(nsIDOMWindow *aParent, nsIPrintSettings *aSettings,
   int button = [panel runModal];
   nsCocoaUtils::CleanUpAfterNativeAppModalDialog();
 
-  settingsX->SetCocoaPrintInfo([[[NSPrintOperation currentOperation] printInfo] copy]);
+  NSPrintInfo* copy = [[[NSPrintOperation currentOperation] printInfo] copy];
+  if (!copy) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  settingsX->SetCocoaPrintInfo(copy);
+  [copy release];
+
   [NSPrintOperation setCurrentOperation:nil];
-  [printInfo release];
   [tmpView release];
 
   if (button != NSOKButton)

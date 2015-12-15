@@ -16,8 +16,6 @@ class nsBlockReflowState;
 struct nsHTMLReflowState;
 class nsLineBox;
 class nsPresContext;
-class nsLineLayout;
-struct nsBlockHorizontalAlign;
 
 /**
  * An encapsulation of the state and algorithm for reflowing block frames.
@@ -85,7 +83,8 @@ protected:
   nsIFrame* mFrame;
   mozilla::LogicalRect mSpace;
 
-  nscoord mICoord, mBCoord, mContainerWidth;
+  nscoord mICoord, mBCoord;
+  nsSize mContainerSize;
   mozilla::WritingMode mWritingMode;
   nsHTMLReflowMetrics mMetrics;
   nsCollapsingMargin mBStartMargin;

@@ -26,6 +26,7 @@
 #include "plbase64.h"
 #include "nsIClassInfoImpl.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/Preferences.h"
 #include "nsILoadInfo.h"
 #include "nsIContentPolicy.h"
@@ -148,18 +149,6 @@ nsFaviconService::ExpireAllFavicons()
 ////////////////////////////////////////////////////////////////////////////////
 //// nsITimerCallback
 
-static PLDHashOperator
-ExpireNonrecentUnassociatedIconsEnumerator(
-  UnassociatedIconHashKey* aIconKey,
-  void* aNow)
-{
-  PRTime now = *(reinterpret_cast<PRTime*>(aNow));
-  if (now - aIconKey->created >= UNASSOCIATED_ICON_EXPIRY_INTERVAL) {
-    return PL_DHASH_REMOVE;
-  }
-  return PL_DHASH_NEXT;
-}
-
 NS_IMETHODIMP
 nsFaviconService::Notify(nsITimer* timer)
 {
@@ -168,8 +157,13 @@ nsFaviconService::Notify(nsITimer* timer)
   }
 
   PRTime now = PR_Now();
-  mUnassociatedIcons.EnumerateEntries(
-    ExpireNonrecentUnassociatedIconsEnumerator, &now);
+  for (auto iter = mUnassociatedIcons.Iter(); !iter.Done(); iter.Next()) {
+    UnassociatedIconHashKey* iconKey = iter.Get();
+    if (now - iconKey->created >= UNASSOCIATED_ICON_EXPIRY_INTERVAL) {
+      iter.Remove();
+    }
+  }
+
   // Re-init the expiry timer if the cache isn't empty.
   if (mUnassociatedIcons.Count() > 0) {
     mExpireUnassociatedIconsTimer->InitWithCallback(
@@ -356,26 +350,26 @@ nsFaviconService::ReplaceFaviconDataFromDataURL(nsIURI* aFaviconURI,
 
   // Read all the decoded data.
   uint8_t* buffer = static_cast<uint8_t*>
-                               (nsMemory::Alloc(sizeof(uint8_t) * available));
+                               (moz_xmalloc(sizeof(uint8_t) * available));
   if (!buffer)
     return NS_ERROR_OUT_OF_MEMORY;
   uint32_t numRead;
   rv = stream->Read(TO_CHARBUFFER(buffer), available, &numRead);
   if (NS_FAILED(rv) || numRead != available) {
-    nsMemory::Free(buffer);
+    free(buffer);
     return rv;
   }
 
   nsAutoCString mimeType;
   rv = channel->GetContentType(mimeType);
   if (NS_FAILED(rv)) {
-    nsMemory::Free(buffer);
+    free(buffer);
     return rv;
   }
 
   // ReplaceFaviconData can now do the dirty work.
   rv = ReplaceFaviconData(aFaviconURI, buffer, available, mimeType, aExpiration);
-  nsMemory::Free(buffer);
+  free(buffer);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

@@ -21,13 +21,13 @@ class nsIEditor;
 namespace mozilla {
 namespace dom {
 class Element;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 class nsTextControlFrame final : public nsContainerFrame,
-                                     public nsIAnonymousContentCreator,
-                                     public nsITextControlFrame,
-                                     public nsIStatefulFrame
+                                 public nsIAnonymousContentCreator,
+                                 public nsITextControlFrame,
+                                 public nsIStatefulFrame
 {
 public:
   NS_DECL_FRAMEARENA_HELPERS

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +34,7 @@ static dom::SVGViewElement*
 GetViewElement(nsIDocument* aDocument, const nsAString& aId)
 {
   dom::Element* element = aDocument->GetElementById(aId);
-  return (element && element->IsSVG(nsGkAtoms::view)) ?
+  return (element && element->IsSVGElement(nsGkAtoms::view)) ?
             static_cast<dom::SVGViewElement*>(element) : nullptr;
 }
 
@@ -238,7 +239,7 @@ bool
 SVGFragmentIdentifier::ProcessFragmentIdentifier(nsIDocument* aDocument,
                                                  const nsAString& aAnchorName)
 {
-  MOZ_ASSERT(aDocument->GetRootElement()->IsSVG(nsGkAtoms::svg),
+  MOZ_ASSERT(aDocument->GetRootElement()->IsSVGElement(nsGkAtoms::svg),
              "expecting an SVG root element");
 
   dom::SVGSVGElement* rootElement =
@@ -259,7 +260,9 @@ SVGFragmentIdentifier::ProcessFragmentIdentifier(nsIDocument* aDocument,
     *rootElement->mCurrentViewID = aAnchorName;
     rootElement->mUseCurrentView = true;
     rootElement->InvalidateTransformNotifyFrame();
-    return true;
+    // not an svgView()-style fragment identifier, return false so the caller
+    // continues processing to match any :target pseudo elements
+    return false;
   }
 
   bool wasOverridden = !!rootElement->mCurrentViewID;

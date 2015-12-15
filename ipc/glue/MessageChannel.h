@@ -15,6 +15,9 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WeakPtr.h"
+#if defined(OS_WIN)
+#include "mozilla/ipc/Neutering.h"
+#endif // defined(OS_WIN)
 #include "mozilla/ipc/Transport.h"
 #include "MessageLink.h"
 #include "nsAutoPtr.h"
@@ -88,7 +91,7 @@ class MessageChannel : HasResultCodes
 
     void SetAbortOnError(bool abort)
     {
-        mAbortOnError = true;
+        mAbortOnError = abort;
     }
 
     // Misc. behavioral traits consumers can request for this channel
@@ -129,11 +132,26 @@ class MessageChannel : HasResultCodes
 
     bool CanSend() const;
 
+    // Currently only for debugging purposes, doesn't aquire mMonitor.
+    ChannelState GetChannelState__TotallyRacy() const {
+        return mChannelState;
+    }
+
     void SetReplyTimeoutMs(int32_t aTimeoutMs);
 
     bool IsOnCxxStack() const {
         return !mCxxStackFrames.empty();
     }
+
+    void CancelCurrentTransaction();
+
+    /**
+     * This function is used by hang annotation code to determine which IPDL
+     * actor is highest in the call stack at the time of the hang. It should
+     * be called from the main thread when a sync or intr message is about to
+     * be sent.
+     */
+    int32_t GetTopmostMessageRoutingId() const;
 
     void FlushPendingInterruptQueue();
 
@@ -156,6 +174,16 @@ class MessageChannel : HasResultCodes
     static void SetIsPumpingMessages(bool aIsPumping) {
         sIsPumpingMessages = aIsPumping;
     }
+
+#ifdef MOZ_NUWA_PROCESS
+    void Block() {
+        mLink->Block();
+    }
+
+    void Unblock() {
+        mLink->Unblock();
+    }
+#endif
 
 #ifdef OS_WIN
     struct MOZ_STACK_CLASS SyncStackFrame
@@ -207,7 +235,7 @@ class MessageChannel : HasResultCodes
 
     void PostErrorNotifyTask();
     void OnNotifyMaybeChannelError();
-    void ReportConnectionError(const char* aChannelName) const;
+    void ReportConnectionError(const char* aChannelName, Message* aMsg = nullptr) const;
     void ReportMessageRouteError(const char* channelName) const;
     bool MaybeHandleError(Result code, const Message& aMsg, const char* channelName);
 
@@ -219,6 +247,7 @@ class MessageChannel : HasResultCodes
     bool InterruptEventOccurred();
     bool HasPendingEvents();
 
+    void ProcessPendingRequests();
     bool ProcessPendingRequest(const Message &aUrgent);
 
     void MaybeUndeferIncall();
@@ -233,7 +262,7 @@ class MessageChannel : HasResultCodes
 
     // DispatchMessage will route to one of these functions depending on the
     // protocol type of the message.
-    void DispatchSyncMessage(const Message &aMsg);
+    void DispatchSyncMessage(const Message &aMsg, Message*& aReply);
     void DispatchUrgentMessage(const Message &aMsg);
     void DispatchAsyncMessage(const Message &aMsg);
     void DispatchRPCMessage(const Message &aMsg);
@@ -255,6 +284,8 @@ class MessageChannel : HasResultCodes
     bool WaitResponse(bool aWaitTimedOut);
 
     bool ShouldContinueFromTimeout();
+
+    void CancelCurrentTransactionInternal();
 
     // The "remote view of stack depth" can be different than the
     // actual stack depth when there are out-of-turn replies.  When we
@@ -392,6 +423,7 @@ class MessageChannel : HasResultCodes
     // Tell the IO thread to close the channel and wait for it to ACK.
     void SynchronouslyClose();
 
+    bool WasTransactionCanceled(int transaction, int prio);
     bool ShouldDeferMessage(const Message& aMsg);
     void OnMessageReceivedFromLink(const Message& aMsg);
     void OnChannelErrorFromLink();
@@ -405,8 +437,8 @@ class MessageChannel : HasResultCodes
     // Can be run on either thread
     void AssertWorkerThread() const
     {
-        MOZ_ASSERT(mWorkerLoopID == MessageLoop::current()->id(),
-                   "not on worker thread!");
+        MOZ_RELEASE_ASSERT(mWorkerLoopID == MessageLoop::current()->id(),
+                           "not on worker thread!");
     }
 
     // The "link" thread is either the I/O thread (ProcessLink) or the
@@ -414,8 +446,8 @@ class MessageChannel : HasResultCodes
     // NOT our worker thread.
     void AssertLinkThread() const
     {
-        MOZ_ASSERT(mWorkerLoopID != MessageLoop::current()->id(),
-                   "on worker thread but should not be!");
+        MOZ_RELEASE_ASSERT(mWorkerLoopID != MessageLoop::current()->id(),
+                           "on worker thread but should not be!");
     }
 
   private:
@@ -537,17 +569,21 @@ class MessageChannel : HasResultCodes
 
     class AutoEnterTransaction
     {
-      public:
+     public:
        explicit AutoEnterTransaction(MessageChannel *aChan, int32_t aMsgSeqno)
         : mChan(aChan),
+          mNewTransaction(INT32_MAX),
           mOldTransaction(mChan->mCurrentTransaction)
        {
            mChan->mMonitor->AssertCurrentThreadOwns();
-           if (mChan->mCurrentTransaction == 0)
+           if (mChan->mCurrentTransaction == 0) {
+               mNewTransaction = aMsgSeqno;
                mChan->mCurrentTransaction = aMsgSeqno;
+           }
        }
        explicit AutoEnterTransaction(MessageChannel *aChan, const Message &aMessage)
         : mChan(aChan),
+          mNewTransaction(aMessage.transaction_id()),
           mOldTransaction(mChan->mCurrentTransaction)
        {
            mChan->mMonitor->AssertCurrentThreadOwns();
@@ -561,12 +597,14 @@ class MessageChannel : HasResultCodes
        }
        ~AutoEnterTransaction() {
            mChan->mMonitor->AssertCurrentThreadOwns();
-           mChan->mCurrentTransaction = mOldTransaction;
+           if (mChan->mCurrentTransaction == mNewTransaction) {
+               mChan->mCurrentTransaction = mOldTransaction;
+           }
        }
 
       private:
        MessageChannel *mChan;
-       int32_t mOldTransaction;
+       int32_t mNewTransaction, mOldTransaction;
     };
 
     // If a sync message times out, we store its sequence number here. Any
@@ -583,6 +621,7 @@ class MessageChannel : HasResultCodes
     // hitting a lot of corner cases with message nesting that we don't really
     // care about.
     int32_t mTimedOutMessageSeqno;
+    int mTimedOutMessagePriority;
 
     // If waiting for the reply to a sync out-message, it will be saved here
     // on the I/O thread and then read and cleared by the worker thread.
@@ -711,8 +750,8 @@ class MessageChannel : HasResultCodes
     int32_t mPeerPid;
 };
 
-bool
-ParentProcessIsBlocked();
+void
+CancelCPOWs();
 
 } // namespace ipc
 } // namespace mozilla

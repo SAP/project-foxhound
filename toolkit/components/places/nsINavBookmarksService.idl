@@ -13,7 +13,7 @@ interface nsINavHistoryBatchCallback;
 /**
  * Observer for bookmarks changes.
  */
-[scriptable, uuid(8ab925f8-af9b-4837-afa0-ffed507212ce)]
+[scriptable, uuid(cff3efcc-e144-490d-9f23-8b6f6dd09e7f)]
 interface nsINavBookmarkObserver : nsISupports
 {
   /**
@@ -122,17 +122,30 @@ interface nsINavBookmarkObserver : nsISupports
    *        The unique ID associated with the item.
    * @param aParentGuid
    *        The unique ID associated with the item's parent.
+   * @param aOldValue
+   *        For certain properties, this is set to the new value of the
+   *        property (see the list below).
    *
    * @note List of values that may be associated with properties:
    *       aProperty     | aNewValue
    *       =====================================================================
-   *       cleartime      | Empty string (all visits to this item were removed).
+   *       cleartime     | Empty string (all visits to this item were removed).
    *       title         | The new title.
    *       favicon       | The "moz-anno" URL of the new favicon.
    *       uri           | new URL.
    *       tags          | Empty string (tags for this item changed)
    *       dateAdded     | PRTime (as string) when the item was first added.
    *       lastModified  | PRTime (as string) when the item was last modified.
+   *
+   *       aProperty     | aOldValue
+   *       =====================================================================
+   *       cleartime     | Empty string (currently unused).
+   *       title         | Empty string (currently unused).
+   *       favicon       | Empty string (currently unused).
+   *       uri           | old URL.
+   *       tags          | Empty string (currently unused).
+   *       dateAdded     | Empty string (currently unused).
+   *       lastModified  | Empty string (currently unused).
    */
   void onItemChanged(in long long aItemId,
                      in ACString aProperty,
@@ -142,7 +155,8 @@ interface nsINavBookmarkObserver : nsISupports
                      in unsigned short aItemType,
                      in long long aParentId,
                      in ACString aGuid,
-                     in ACString aParentGuid);
+                     in ACString aParentGuid,
+                     in AUTF8String aOldValue);
 
   /**
    * Notifies that the item was visited.  Can be invoked only for TYPE_BOOKMARK
@@ -222,7 +236,7 @@ interface nsINavBookmarkObserver : nsISupports
  * folders.  A URI in history can be contained in one or more such folders.
  */
 
-[scriptable, uuid(b0f9a80a-d7f0-4421-8513-444125f0d828)]
+[scriptable, uuid(24533891-afa6-4663-b72d-3143d03f1b04)]
 interface nsINavBookmarksService : nsISupports
 {
   /**
@@ -533,24 +547,24 @@ interface nsINavBookmarksService : nsISupports
    *
    * Use an empty keyword to clear the keyword associated with the URI.
    * In both of these cases, succeeds but does nothing if the URL/keyword is not found.
+   *
+   * @deprecated Use PlacesUtils.keywords.insert() API instead.
    */
   void setKeywordForBookmark(in long long aItemId, in AString aKeyword);
 
   /**
-   * Retrieves the keyword for the given URI. Will be void string
-   * (null in JS) if no such keyword is found.
-   */
-  AString getKeywordForURI(in nsIURI aURI);
-
-  /**
    * Retrieves the keyword for the given bookmark. Will be void string
    * (null in JS) if no such keyword is found.
+   *
+   * @deprecated Use PlacesUtils.keywords.fetch() API instead.
    */
   AString getKeywordForBookmark(in long long aItemId);
 
   /**
    * Returns the URI associated with the given keyword. Empty if no such
    * keyword is found.
+   *
+   * @deprecated Use PlacesUtils.keywords.fetch() API instead.
    */
   nsIURI getURIForKeyword(in AString keyword);
 

@@ -32,7 +32,7 @@ class MessageLoopIdleTask
   , public SupportsWeakPtr<MessageLoopIdleTask>
 {
 public:
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(MessageLoopIdleTask)
+  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(MessageLoopIdleTask)
   MessageLoopIdleTask(nsIRunnable* aTask, uint32_t aEnsureRunsAfterMS);
   virtual void Run();
 
@@ -141,7 +141,7 @@ MessageLoopTimerCallback::Notify(nsITimer* aTimer)
 
 NS_IMPL_ISUPPORTS(MessageLoopTimerCallback, nsITimerCallback)
 
-} // anonymous namespace
+} // namespace
 
 NS_IMPL_ISUPPORTS(nsMessageLoop, nsIMessageLoop)
 

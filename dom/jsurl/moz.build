@@ -12,13 +12,13 @@ UNIFIED_SOURCES += [
     'nsJSProtocolHandler.cpp',
 ]
 
-FAIL_ON_WARNINGS = True
-
 LOCAL_INCLUDES += [
     "/dom/base",
     "/netwerk/base",
 ]
 
 FINAL_LIBRARY = 'xul'
+
+include('/ipc/chromium/chromium-config.mozbuild')
 
 MOCHITEST_MANIFESTS += ['test/mochitest.ini']

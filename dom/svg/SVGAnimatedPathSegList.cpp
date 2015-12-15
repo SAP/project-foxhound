@@ -1,10 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedPathSegList.h"
+
 #include "DOMSVGPathSegList.h"
+#include "mozilla/Move.h"
 #include "nsSVGElement.h"
 #include "nsSVGAttrTearoffTable.h"
 #include "nsSMILValue.h"
@@ -159,7 +162,7 @@ SVGAnimatedPathSegList::
   nsresult rv = list->SetValueFromString(aStr);
   if (NS_SUCCEEDED(rv)) {
     list->SetElement(mElement);
-    aValue.Swap(val);
+    aValue = Move(val);
   }
   aPreventCachingOfSandwich = false;
   return rv;
@@ -178,7 +181,7 @@ SVGAnimatedPathSegList::SMILAnimatedPathSegList::GetBaseValue() const
   nsresult rv = list->CopyFrom(mVal->mBaseVal);
   if (NS_SUCCEEDED(rv)) {
     list->SetElement(mElement);
-    val.Swap(tmp);
+    val = Move(tmp);
   }
   return val;
 }

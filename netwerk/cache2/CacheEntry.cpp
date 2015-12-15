@@ -82,6 +82,7 @@ CacheEntry::Callback::Callback(CacheEntry* aEntry,
 , mCallback(aCallback)
 , mTargetThread(do_GetCurrentThread())
 , mReadOnly(aReadOnly)
+, mRevalidating(false)
 , mCheckOnAnyThread(aCheckOnAnyThread)
 , mRecheckAfterWrite(false)
 , mNotWanted(false)
@@ -100,6 +101,7 @@ CacheEntry::Callback::Callback(CacheEntry::Callback const &aThat)
 , mCallback(aThat.mCallback)
 , mTargetThread(aThat.mTargetThread)
 , mReadOnly(aThat.mReadOnly)
+, mRevalidating(aThat.mRevalidating)
 , mCheckOnAnyThread(aThat.mCheckOnAnyThread)
 , mRecheckAfterWrite(aThat.mRecheckAfterWrite)
 , mNotWanted(aThat.mNotWanted)
@@ -161,7 +163,8 @@ NS_IMPL_ISUPPORTS(CacheEntry,
 CacheEntry::CacheEntry(const nsACString& aStorageID,
                        nsIURI* aURI,
                        const nsACString& aEnhanceID,
-                       bool aUseDisk)
+                       bool aUseDisk,
+                       bool aSkipSizeCheck)
 : mFrecency(0)
 , mSortingExpirationTime(uint32_t(-1))
 , mLock("CacheEntry")
@@ -170,6 +173,7 @@ CacheEntry::CacheEntry(const nsACString& aStorageID,
 , mEnhanceID(aEnhanceID)
 , mStorageID(aStorageID)
 , mUseDisk(aUseDisk)
+, mSkipSizeCheck(aSkipSizeCheck)
 , mIsDoomed(false)
 , mSecurityInfoLoaded(false)
 , mPreventCallbacks(false)
@@ -197,8 +201,6 @@ CacheEntry::~CacheEntry()
   MOZ_COUNT_DTOR(CacheEntry);
 }
 
-#ifdef PR_LOG
-
 char const * CacheEntry::StateString(uint32_t aState)
 {
   switch (aState) {
@@ -212,8 +214,6 @@ char const * CacheEntry::StateString(uint32_t aState)
 
   return "?";
 }
-
-#endif
 
 nsresult CacheEntry::HashingKeyWithStorage(nsACString &aResult) const
 {
@@ -249,7 +249,7 @@ nsresult CacheEntry::HashingKey(nsCSubstring const& aStorageID,
    * Changing it will cause we will not be able to find files on disk.
    */
 
-  aResult.Append(aStorageID);
+  aResult.Assign(aStorageID);
 
   if (!aEnhanceID.IsEmpty()) {
     CacheFileUtils::AppendTagWithValue(aResult, '~', aEnhanceID);
@@ -335,6 +335,8 @@ bool CacheEntry::Load(bool aTruncate, bool aPriority)
   nsAutoCString fileKey;
   rv = HashingKeyWithStorage(fileKey);
 
+  bool reportMiss = false;
+
   // Check the index under two conditions for two states and take appropriate action:
   // 1. When this is a disk entry and not told to truncate, check there is a disk file.
   //    If not, set the 'truncate' flag to true so that this entry will open instantly
@@ -349,6 +351,9 @@ bool CacheEntry::Load(bool aTruncate, bool aPriority)
       switch (status) {
       case CacheIndex::DOES_NOT_EXIST:
         LOG(("  entry doesn't exist according information from the index, truncating"));
+        if (!aTruncate && mUseDisk) {
+          reportMiss = true;
+        }
         aTruncate = true;
         break;
       case CacheIndex::EXISTS:
@@ -378,11 +383,17 @@ bool CacheEntry::Load(bool aTruncate, bool aPriority)
   {
     mozilla::MutexAutoUnlock unlock(mLock);
 
+    if (reportMiss) {
+      CacheFileUtils::DetailedCacheHitTelemetry::AddRecord(
+        CacheFileUtils::DetailedCacheHitTelemetry::MISS, mLoadStart);
+    }
+
     LOG(("  performing load, file=%p", mFile.get()));
     if (NS_SUCCEEDED(rv)) {
       rv = mFile->Init(fileKey,
                        aTruncate,
                        !mUseDisk,
+                       mSkipSizeCheck,
                        aPriority,
                        directLoad ? nullptr : this);
     }
@@ -412,14 +423,11 @@ NS_IMETHODIMP CacheEntry::OnFileReady(nsresult aResult, bool aIsNew)
 
   if (NS_SUCCEEDED(aResult)) {
     if (aIsNew) {
-      mozilla::Telemetry::AccumulateTimeDelta(
-        mozilla::Telemetry::NETWORK_CACHE_V2_MISS_TIME_MS,
-        mLoadStart);
-    }
-    else {
-      mozilla::Telemetry::AccumulateTimeDelta(
-        mozilla::Telemetry::NETWORK_CACHE_V2_HIT_TIME_MS,
-        mLoadStart);
+      CacheFileUtils::DetailedCacheHitTelemetry::AddRecord(
+        CacheFileUtils::DetailedCacheHitTelemetry::MISS, mLoadStart);
+    } else {
+      CacheFileUtils::DetailedCacheHitTelemetry::AddRecord(
+        CacheFileUtils::DetailedCacheHitTelemetry::HIT, mLoadStart);
     }
   }
 
@@ -481,6 +489,7 @@ already_AddRefed<CacheEntryHandle> CacheEntry::ReopenTruncated(bool aMemoryOnly,
     nsresult rv = CacheStorageService::Self()->AddStorageEntry(
       GetStorageID(), GetURI(), GetEnhanceID(),
       mUseDisk && !aMemoryOnly,
+      mSkipSizeCheck,
       true, // always create
       true, // truncate existing (this one)
       getter_AddRefs(handle));
@@ -677,6 +686,8 @@ bool CacheEntry::InvokeCallback(Callback & aCallback)
             checkResult = ENTRY_NOT_WANTED;
         }
 
+        aCallback.mRevalidating = checkResult == ENTRY_NEEDS_REVALIDATION;
+
         switch (checkResult) {
         case ENTRY_WANTED:
           // Nothing more to do here, the consumer is responsible to handle
@@ -791,7 +802,8 @@ void CacheEntry::InvokeAvailableCallback(Callback const & aCallback)
     return;
   }
 
-  if (aCallback.mReadOnly) {
+  // R/O callbacks may do revalidation, let them fall through
+  if (aCallback.mReadOnly && !aCallback.mRevalidating) {
     LOG(("  r/o and not ready, notifying OCEA with NS_ERROR_CACHE_KEY_NOT_FOUND"));
     aCallback.mCallback->OnCacheEntryAvailable(
       nullptr, false, nullptr, NS_ERROR_CACHE_KEY_NOT_FOUND);
@@ -1134,7 +1146,7 @@ NS_IMETHODIMP CacheEntry::SetPredictedDataSize(int64_t aPredictedDataSize)
 {
   mPredictedDataSize = aPredictedDataSize;
 
-  if (CacheObserver::EntryIsTooBig(mPredictedDataSize, mUseDisk)) {
+  if (!mSkipSizeCheck && CacheObserver::EntryIsTooBig(mPredictedDataSize, mUseDisk)) {
     LOG(("CacheEntry::SetPredictedDataSize [this=%p] too big, dooming", this));
     AsyncDoom(nullptr);
 
@@ -1592,7 +1604,7 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
       // Because CacheFile::Set*() are not thread-safe to use (uses WeakReference that
       // is not thread-safe) we must post to the main thread...
       nsRefPtr<nsRunnableMethod<CacheEntry> > event =
-        NS_NewRunnableMethod(this, &CacheEntry::StoreFrecency);
+        NS_NewRunnableMethodWithArg<double>(this, &CacheEntry::StoreFrecency, mFrecency);
       NS_DispatchToMainThread(event);
     }
 
@@ -1616,14 +1628,12 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
   }
 }
 
-void CacheEntry::StoreFrecency()
+void CacheEntry::StoreFrecency(double aFrecency)
 {
-  // No need for thread safety over mFrecency, it will be rewriten
-  // correctly on following invocation if broken by concurrency.
   MOZ_ASSERT(NS_IsMainThread());
 
   if (NS_SUCCEEDED(mFileStatus)) {
-    mFile->SetFrecency(FRECENCY2INT(mFrecency));
+    mFile->SetFrecency(FRECENCY2INT(aFrecency));
   }
 }
 
@@ -1661,7 +1671,7 @@ size_t CacheEntry::SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const
   size_t n = 0;
   nsCOMPtr<nsISizeOf> sizeOf;
 
-  n += mCallbacks.SizeOfExcludingThis(mallocSizeOf);
+  n += mCallbacks.ShallowSizeOfExcludingThis(mallocSizeOf);
   if (mFile) {
     n += mFile->SizeOfIncludingThis(mallocSizeOf);
   }
@@ -1689,5 +1699,5 @@ size_t CacheEntry::SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const
   return mallocSizeOf(this) + SizeOfExcludingThis(mallocSizeOf);
 }
 
-} // net
-} // mozilla
+} // namespace net
+} // namespace mozilla

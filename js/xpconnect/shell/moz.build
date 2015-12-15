@@ -15,8 +15,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'xpcshellMacUtils.mm',
     ]
 
-if CONFIG['MOZ_SHARK']:
-    DEFINES['MOZ_SHARK'] = True
 if CONFIG['MOZ_CALLGRIND']:
     DEFINES['MOZ_CALLGRIND'] = True
 
@@ -35,4 +33,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     RCINCLUDE = 'xpcshell.rc'
     DEFINES['_TAINT_NO_TRACK_'] = True
 
-FAIL_ON_WARNINGS = True
+CFLAGS += CONFIG['TK_CFLAGS']
+CXXFLAGS += CONFIG['TK_CFLAGS']
+OS_LIBS += CONFIG['TK_LIBS']

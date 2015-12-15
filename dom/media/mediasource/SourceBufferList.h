@@ -22,7 +22,6 @@ class JSObject;
 
 namespace mozilla {
 
-class ErrorResult;
 template <typename T> class AsyncEventRunner;
 
 namespace dom {
@@ -46,7 +45,7 @@ public:
 
   MediaSource* GetParentObject() const;
 
-  JSObject* WrapObject(JSContext* aCx) override;
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // Append a SourceBuffer and fire "addsourcebuffer" at the list.
   void Append(SourceBuffer* aSourceBuffer);
@@ -103,4 +102,5 @@ private:
 } // namespace dom
 
 } // namespace mozilla
+
 #endif /* mozilla_dom_SourceBufferList_h_ */

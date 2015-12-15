@@ -6,20 +6,24 @@
  * creates the correct column structure after expanding some of the nodes.
  */
 
-let { CATEGORY_MASK } = devtools.require("devtools/shared/profiler/global");
+var { CATEGORY_MASK } = require("devtools/performance/global");
 
 function test() {
-  let { ThreadNode } = devtools.require("devtools/shared/profiler/tree-model");
-  let { CallView } = devtools.require("devtools/shared/profiler/tree-view");
+  let { ThreadNode } = require("devtools/performance/tree-model");
+  let { CallView } = require("devtools/performance/tree-view");
 
-  let threadNode = new ThreadNode(gSamples);
+  let threadNode = new ThreadNode(gThread, { startTime: 0, endTime: 20 });
+  // Don't display the synthesized (root) and the real (root) node twice.
+  threadNode.calls = threadNode.calls[0].calls;
   let treeRoot = new CallView({ frame: threadNode });
 
   let container = document.createElement("vbox");
   treeRoot.autoExpandDepth = 0;
   treeRoot.attachTo(container);
 
-  let $$fun = node => container.querySelectorAll(".call-tree-cell[type=function] > " + node);
+  let $$ = node => container.querySelectorAll(node);
+  let $fun = (node, ancestor) => (ancestor || container).querySelector(".call-tree-cell[type=function] > " + node);
+  let $$fun = (node, ancestor) => (ancestor || container).querySelectorAll(".call-tree-cell[type=function] > " + node);
   let $$dur = i => container.querySelectorAll(".call-tree-cell[type=duration]")[i];
   let $$perc = i => container.querySelectorAll(".call-tree-cell[type=percentage]")[i];
   let $$sampl = i => container.querySelectorAll(".call-tree-cell[type=samples]")[i];
@@ -29,21 +33,21 @@ function test() {
   is(container.childNodes[0].className, "call-tree-item",
     "The root node in the tree has the correct class name.");
 
-  is($$dur(0).getAttribute("value"), "15 ms",
+  is($$dur(0).getAttribute("value"), "20 ms",
     "The root's duration cell displays the correct value.");
   is($$perc(0).getAttribute("value"), "100%",
     "The root's percentage cell displays the correct value.");
-  is($$sampl(0).getAttribute("value"), "4",
+  is($$sampl(0).getAttribute("value"), "0",
     "The root's samples cell displays the correct value.");
   is($$fun(".call-tree-name")[0].getAttribute("value"), "(root)",
     "The root's function cell displays the correct name.");
-  is($$fun(".call-tree-url")[0].getAttribute("value"), "",
-    "The root's function cell displays the correct url.");
-  is($$fun(".call-tree-line")[0].getAttribute("value"), "",
-    "The root's function cell displays the correct line.");
-  is($$fun(".call-tree-host")[0].getAttribute("value"), "",
+  is($$fun(".call-tree-url")[0], null,
+    "The root's function cell displays no url.");
+  is($$fun(".call-tree-line")[0], null,
+    "The root's function cell displays no line.");
+  is($$fun(".call-tree-host")[0], null,
     "The root's function cell displays the correct host.");
-  is($$fun(".call-tree-category")[0].getAttribute("value"), "",
+  is($$fun(".call-tree-category")[0], null,
     "The root's function cell displays the correct category.");
 
   treeRoot.expand();
@@ -55,23 +59,23 @@ function test() {
   is(container.childNodes[1].className, "call-tree-item",
     "The .A node in the tree has the correct class name.");
 
-  is($$dur(1).getAttribute("value"), "15 ms",
+  is($$dur(1).getAttribute("value"), "20 ms",
     "The .A node's duration cell displays the correct value.");
   is($$perc(1).getAttribute("value"), "100%",
     "The .A node's percentage cell displays the correct value.");
-  is($$sampl(1).getAttribute("value"), "4",
+  is($$sampl(1).getAttribute("value"), "0",
     "The .A node's samples cell displays the correct value.");
-  is($$fun(".call-tree-name")[1].getAttribute("value"), "A",
+  is($fun(".call-tree-name", $$(".call-tree-item")[1]).getAttribute("value"), "A",
     "The .A node's function cell displays the correct name.");
-  is($$fun(".call-tree-url")[1].getAttribute("value"), "baz",
+  is($fun(".call-tree-url", $$(".call-tree-item")[1]).getAttribute("value"), "baz",
     "The .A node's function cell displays the correct url.");
-  ok($$fun(".call-tree-url")[1].getAttribute("tooltiptext").contains("http://foo/bar/baz"),
+  ok($fun(".call-tree-url", $$(".call-tree-item")[1]).getAttribute("tooltiptext").includes("http://foo/bar/baz"),
     "The .A node's function cell displays the correct url tooltiptext.");
-  is($$fun(".call-tree-line")[1].getAttribute("value"), ":12",
+  is($fun(".call-tree-line", $$(".call-tree-item")[1]).getAttribute("value"), ":12",
     "The .A node's function cell displays the correct line.");
-  is($$fun(".call-tree-host")[1].getAttribute("value"), "foo",
+  is($fun(".call-tree-host", $$(".call-tree-item")[1]).getAttribute("value"), "foo",
     "The .A node's function cell displays the correct host.");
-  is($$fun(".call-tree-category")[1].getAttribute("value"), "Gecko",
+  is($fun(".call-tree-category", $$(".call-tree-item")[1]).getAttribute("value"), "Gecko",
     "The .A node's function cell displays the correct category.");
 
   let A = treeRoot.getChild();
@@ -84,48 +88,48 @@ function test() {
   is(container.childNodes[3].className, "call-tree-item",
     "The .E node in the tree has the correct class name.");
 
-  is($$dur(2).getAttribute("value"), "8 ms",
+  is($$dur(2).getAttribute("value"), "15 ms",
     "The .A.B node's duration cell displays the correct value.");
   is($$perc(2).getAttribute("value"), "75%",
     "The .A.B node's percentage cell displays the correct value.");
-  is($$sampl(2).getAttribute("value"), "3",
+  is($$sampl(2).getAttribute("value"), "0",
     "The .A.B node's samples cell displays the correct value.");
-  is($$fun(".call-tree-name")[2].getAttribute("value"), "B",
+  is($fun(".call-tree-name", $$(".call-tree-item")[2]).getAttribute("value"), "B",
     "The .A.B node's function cell displays the correct name.");
-  is($$fun(".call-tree-url")[2].getAttribute("value"), "baz",
+  is($fun(".call-tree-url", $$(".call-tree-item")[2]).getAttribute("value"), "baz",
     "The .A.B node's function cell displays the correct url.");
-  ok($$fun(".call-tree-url")[2].getAttribute("tooltiptext").contains("http://foo/bar/baz"),
+  ok($fun(".call-tree-url", $$(".call-tree-item")[2]).getAttribute("tooltiptext").includes("http://foo/bar/baz"),
     "The .A.B node's function cell displays the correct url tooltiptext.");
-  is($$fun(".call-tree-line")[2].getAttribute("value"), ":34",
+  is($fun(".call-tree-line", $$(".call-tree-item")[2]).getAttribute("value"), ":34",
     "The .A.B node's function cell displays the correct line.");
-  is($$fun(".call-tree-host")[2].getAttribute("value"), "foo",
+  is($fun(".call-tree-host", $$(".call-tree-item")[2]).getAttribute("value"), "foo",
     "The .A.B node's function cell displays the correct host.");
-  is($$fun(".call-tree-category")[2].getAttribute("value"), "Styles",
+  is($fun(".call-tree-category", $$(".call-tree-item")[2]).getAttribute("value"), "Styles",
     "The .A.B node's function cell displays the correct category.");
 
-  is($$dur(3).getAttribute("value"), "7 ms",
+  is($$dur(3).getAttribute("value"), "5 ms",
     "The .A.E node's duration cell displays the correct value.");
   is($$perc(3).getAttribute("value"), "25%",
     "The .A.E node's percentage cell displays the correct value.");
-  is($$sampl(3).getAttribute("value"), "1",
+  is($$sampl(3).getAttribute("value"), "0",
     "The .A.E node's samples cell displays the correct value.");
-  is($$fun(".call-tree-name")[3].getAttribute("value"), "E",
+  is($fun(".call-tree-name", $$(".call-tree-item")[3]).getAttribute("value"), "E",
     "The .A.E node's function cell displays the correct name.");
-  is($$fun(".call-tree-url")[3].getAttribute("value"), "baz",
+  is($fun(".call-tree-url", $$(".call-tree-item")[3]).getAttribute("value"), "baz",
     "The .A.E node's function cell displays the correct url.");
-  ok($$fun(".call-tree-url")[3].getAttribute("tooltiptext").contains("http://foo/bar/baz"),
+  ok($fun(".call-tree-url", $$(".call-tree-item")[3]).getAttribute("tooltiptext").includes("http://foo/bar/baz"),
     "The .A.E node's function cell displays the correct url tooltiptext.");
-  is($$fun(".call-tree-line")[3].getAttribute("value"), ":90",
+  is($fun(".call-tree-line", $$(".call-tree-item")[3]).getAttribute("value"), ":90",
     "The .A.E node's function cell displays the correct line.");
-  is($$fun(".call-tree-host")[3].getAttribute("value"), "foo",
+  is($fun(".call-tree-host", $$(".call-tree-item")[3]).getAttribute("value"), "foo",
     "The .A.E node's function cell displays the correct host.");
-  is($$fun(".call-tree-category")[3].getAttribute("value"), "GC",
+  is($fun(".call-tree-category", $$(".call-tree-item")[3]).getAttribute("value"), "GC",
     "The .A.E node's function cell displays the correct category.");
 
   finish();
 }
 
-let gSamples = [{
+var gThread = synthesizeProfileForTest([{
   time: 5,
   frames: [
     { category: CATEGORY_MASK('other'),  location: "(root)" },
@@ -157,4 +161,4 @@ let gSamples = [{
     { category: CATEGORY_MASK('gc', 2),   location: "E (http://foo/bar/baz:90)" },
     { category: CATEGORY_MASK('network'), location: "F (http://foo/bar/baz:99)" }
   ]
-}];
+}]);

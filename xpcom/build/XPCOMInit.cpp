@@ -1,13 +1,15 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 ci et: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
 
+#include "mozilla/AbstractThread.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Poison.h"
+#include "mozilla/SharedThreadPool.h"
 #include "mozilla/XPCOM.h"
 #include "nsXULAppAPI.h"
 
@@ -49,8 +51,6 @@
 
 #include "nsThreadManager.h"
 #include "nsThreadPool.h"
-
-#include "nsCompartmentInfo.h"
 
 #include "xptinfo.h"
 #include "nsIInterfaceInfoManager.h"
@@ -95,6 +95,7 @@ extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 #include "SpecialSystemDirectory.h"
 
 #if defined(XP_WIN)
+#include "mozilla/WindowsVersion.h"
 #include "nsWindowsRegKey.h"
 #endif
 
@@ -137,10 +138,6 @@ extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 
-#ifdef MOZ_VISUAL_EVENT_TRACER
-#include "mozilla/VisualEventTracer.h"
-#endif
-
 #include "ogg/ogg.h"
 #if defined(MOZ_VPX) && !defined(MOZ_VPX_NO_MEM_REPORTING)
 #if defined(HAVE_STDINT_H)
@@ -164,9 +161,6 @@ extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 using namespace mozilla;
 using base::AtExitManager;
 using mozilla::ipc::BrowserProcessSubThread;
-#ifdef MOZ_VISUAL_EVENT_TRACER
-using mozilla::eventtracer::VisualEventTracer;
-#endif
 
 namespace {
 
@@ -218,9 +212,6 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsBinaryInputStream)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsStorageStream)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsVersionComparatorImpl)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsScriptableBase64Encoder)
-#ifdef MOZ_VISUAL_EVENT_TRACER
-NS_GENERIC_FACTORY_CONSTRUCTOR(VisualEventTracer)
-#endif
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsVariant)
 
@@ -241,8 +232,6 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsMemoryReporterManager, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMemoryInfoDumper)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsStatusReporterManager, Init)
-
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsCompartmentInfo)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsIOUtil)
 
@@ -351,12 +340,12 @@ const mozilla::Module kXPCOMModule = {
 };
 
 // gDebug will be freed during shutdown.
-static nsIDebug* gDebug = nullptr;
+static nsIDebug2* gDebug = nullptr;
 
 EXPORT_XPCOM_API(nsresult)
-NS_GetDebug(nsIDebug** aResult)
+NS_GetDebug(nsIDebug2** aResult)
 {
-  return nsDebugImpl::Create(nullptr,  NS_GET_IID(nsIDebug), (void**)aResult);
+  return nsDebugImpl::Create(nullptr,  NS_GET_IID(nsIDebug2), (void**)aResult);
 }
 
 EXPORT_XPCOM_API(nsresult)
@@ -485,6 +474,13 @@ NS_IMPL_ISUPPORTS(NesteggReporter, nsIMemoryReporter)
 CountingAllocatorBase<NesteggReporter>::sAmount(0);
 #endif /* MOZ_WEBM */
 
+static double
+TimeSinceProcessCreation()
+{
+  bool ignore;
+  return (TimeStamp::Now() - TimeStamp::ProcessCreation(ignore)).ToMilliseconds();
+}
+
 // Note that on OSX, aBinDirectory will point to .app/Contents/Resources/browser
 EXPORT_XPCOM_API(nsresult)
 NS_InitXPCOM2(nsIServiceManager** aResult,
@@ -499,6 +495,10 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   sInitialized = true;
 
   mozPoisonValueInit();
+
+  NS_LogInit();
+
+  JS_SetCurrentEmbedderTimeFunction(TimeSinceProcessCreation);
 
   char aLocal;
   profiler_init(&aLocal);
@@ -522,8 +522,6 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   ::umask(nsSystemInfo::gUserUmask);
 #endif
 
-  NS_LogInit();
-
   // Set up chromium libs
   NS_ASSERTION(!sExitManager && !sMessageLoop, "Bad logic!");
 
@@ -535,11 +533,11 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
     sMessageLoop = new MessageLoopForUI(MessageLoop::TYPE_MOZILLA_UI);
     sMessageLoop->set_thread_name("Gecko");
     // Set experimental values for main thread hangs:
-    // 512ms for transient hangs and 8192ms for permanent hangs
-    sMessageLoop->set_hang_timeouts(512, 8192);
+    // 128ms for transient hangs and 8192ms for permanent hangs
+    sMessageLoop->set_hang_timeouts(128, 8192);
   }
 
-  if (XRE_GetProcessType() == GeckoProcessType_Default &&
+  if (XRE_IsParentProcess() &&
       !BrowserProcessSubThread::GetMessageLoop(BrowserProcessSubThread::IO)) {
     UniquePtr<BrowserProcessSubThread> ioThread = MakeUnique<BrowserProcessSubThread>(BrowserProcessSubThread::IO);
 
@@ -718,6 +716,12 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   // to the directory service.
   nsDirectoryService::gService->RegisterCategoryProviders();
 
+  // Init SharedThreadPool (which needs the service manager).
+  SharedThreadPool::InitStatics();
+
+  // Init AbstractThread.
+  AbstractThread::InitStatics();
+
   // Force layout to spin up so that nsContentUtils is available for cx stack
   // munging.
   nsCOMPtr<nsISupports> componentLoader =
@@ -737,7 +741,7 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   // We only want the SystemMemoryReporter running in one process, because it
   // profiles the entire system.  The main process is the obvious place for
   // it.
-  if (XRE_GetProcessType() == GeckoProcessType_Default) {
+  if (XRE_IsParentProcess()) {
     mozilla::SystemMemoryReporter::Init();
   }
 
@@ -761,10 +765,6 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
     loop->thread_name().c_str(),
     loop->transient_hang_timeout(),
     loop->permanent_hang_timeout());
-
-#ifdef MOZ_VISUAL_EVENT_TRACER
-  mozilla::eventtracer::Init();
-#endif
 
   return NS_OK;
 }
@@ -921,7 +921,7 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
   // Release the directory service
   NS_IF_RELEASE(nsDirectoryService::gService);
 
-  NS_Free(gGREBinPath);
+  free(gGREBinPath);
   gGREBinPath = nullptr;
 
   if (moduleLoaders) {
@@ -972,7 +972,7 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
   // On Windows XP debug, there are intermittent failures in
   // dom/media/tests/mochitest/test_peerConnection_basicH264Video.html
   // if we don't exit early in a child process. See bug 1073310.
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (XRE_IsContentProcess() && !IsVistaOrLater()) {
       NS_WARNING("Exiting child process early!");
       exit(0);
   }
@@ -1047,10 +1047,6 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
 
   BackgroundHangMonitor::Shutdown();
 
-#ifdef MOZ_VISUAL_EVENT_TRACER
-  eventtracer::Shutdown();
-#endif
-
   profiler_shutdown();
 
   NS_LogTerm();
@@ -1060,7 +1056,7 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
   // checking working on Linux.
   // On debug B2G, the child process crashes very late.  Instead, just
   // give up so at least we exit cleanly. See bug 1071866.
-  if (XRE_GetProcessType() == GeckoProcessType_Content) {
+  if (XRE_IsContentProcess()) {
       NS_WARNING("Exiting child process early!");
       exit(0);
   }

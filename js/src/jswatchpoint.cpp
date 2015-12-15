@@ -68,7 +68,7 @@ WatchpointMap::watch(JSContext* cx, HandleObject obj, HandleId id,
 
     Watchpoint w(handler, closure, false);
     if (!map.put(WatchKey(obj, id), w)) {
-        js_ReportOutOfMemory(cx);
+        ReportOutOfMemory(cx);
         return false;
     }
     /*
@@ -145,14 +145,6 @@ WatchpointMap::triggerWatchpoint(JSContext* cx, HandleObject obj, HandleId id, M
 }
 
 bool
-WatchpointMap::markCompartmentIteratively(JSCompartment* c, JSTracer* trc)
-{
-    if (!c->watchpointMap)
-        return false;
-    return c->watchpointMap->markIteratively(trc);
-}
-
-bool
 WatchpointMap::markIteratively(JSTracer* trc)
 {
     bool marked = false;
@@ -161,10 +153,10 @@ WatchpointMap::markIteratively(JSTracer* trc)
         JSObject* priorKeyObj = entry.key().object;
         jsid priorKeyId(entry.key().id.get());
         bool objectIsLive =
-            IsObjectMarked(const_cast<PreBarrieredObject*>(&entry.key().object));
+            IsMarked(const_cast<PreBarrieredObject*>(&entry.key().object));
         if (objectIsLive || entry.value().held) {
             if (!objectIsLive) {
-                MarkObject(trc, const_cast<PreBarrieredObject*>(&entry.key().object),
+                TraceEdge(trc, const_cast<PreBarrieredObject*>(&entry.key().object),
                            "held Watchpoint object");
                 marked = true;
             }
@@ -172,10 +164,10 @@ WatchpointMap::markIteratively(JSTracer* trc)
             MOZ_ASSERT(JSID_IS_STRING(priorKeyId) ||
                        JSID_IS_INT(priorKeyId) ||
                        JSID_IS_SYMBOL(priorKeyId));
-            MarkId(trc, const_cast<PreBarrieredId*>(&entry.key().id), "WatchKey::id");
+            TraceEdge(trc, const_cast<PreBarrieredId*>(&entry.key().id), "WatchKey::id");
 
-            if (entry.value().closure && !IsObjectMarked(&entry.value().closure)) {
-                MarkObject(trc, &entry.value().closure, "Watchpoint::closure");
+            if (entry.value().closure && !IsMarked(&entry.value().closure)) {
+                TraceEdge(trc, &entry.value().closure, "Watchpoint::closure");
                 marked = true;
             }
 
@@ -196,10 +188,10 @@ WatchpointMap::markAll(JSTracer* trc)
         WatchKey prior = key;
         MOZ_ASSERT(JSID_IS_STRING(prior.id) || JSID_IS_INT(prior.id) || JSID_IS_SYMBOL(prior.id));
 
-        MarkObject(trc, const_cast<PreBarrieredObject*>(&key.object),
+        TraceEdge(trc, const_cast<PreBarrieredObject*>(&key.object),
                    "held Watchpoint object");
-        MarkId(trc, const_cast<PreBarrieredId*>(&key.id), "WatchKey::id");
-        MarkObject(trc, &entry.value().closure, "Watchpoint::closure");
+        TraceEdge(trc, const_cast<PreBarrieredId*>(&key.id), "WatchKey::id");
+        TraceEdge(trc, &entry.value().closure, "Watchpoint::closure");
 
         if (prior.object != key.object || prior.id != key.id)
             e.rekeyFront(key);
@@ -221,7 +213,7 @@ WatchpointMap::sweep()
     for (Map::Enum e(map); !e.empty(); e.popFront()) {
         Map::Entry& entry = e.front();
         JSObject* obj(entry.key().object);
-        if (IsObjectAboutToBeFinalized(&obj)) {
+        if (IsAboutToBeFinalizedUnbarriered(&obj)) {
             MOZ_ASSERT(!entry.value().held);
             e.removeFront();
         } else if (obj != entry.key().object) {
@@ -245,8 +237,8 @@ WatchpointMap::trace(WeakMapTracer* trc)
 {
     for (Map::Range r = map.all(); !r.empty(); r.popFront()) {
         Map::Entry& entry = r.front();
-        trc->callback(trc, nullptr,
-                      JS::GCCellPtr(entry.key().object.get()),
-                      JS::GCCellPtr(entry.value().closure.get()));
+        trc->trace(nullptr,
+                   JS::GCCellPtr(entry.key().object.get()),
+                   JS::GCCellPtr(entry.value().closure.get()));
     }
 }

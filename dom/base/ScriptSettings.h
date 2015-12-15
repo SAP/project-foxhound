@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim: ft=cpp tw=78 sw=2 et ts=2
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +16,7 @@
 #include "mozilla/Maybe.h"
 
 #include "jsapi.h"
+#include "js/Debug.h"
 
 class nsPIDOMWindow;
 class nsGlobalWindow;
@@ -273,6 +274,9 @@ public:
   // while keeping the old behavior as the default.
   void TakeOwnershipOfErrorReporting();
   bool OwnsErrorReporting() { return mOwnErrorReporting; }
+  // If HasException, report it.  Otherwise, a no-op.  This must be
+  // called only if OwnsErrorReporting().
+  void ReportException();
 
   bool HasException() const {
     MOZ_ASSERT(CxPusherIsStackTop());
@@ -318,11 +322,16 @@ private:
 
 /*
  * A class that represents a new script entry point.
+ *
+ * |aReason| should be a statically-allocated C string naming the reason we're
+ * invoking JavaScript code: "setTimeout", "event", and so on. The devtools use
+ * these strings to label JS execution in timeline and profiling displays.
  */
 class MOZ_STACK_CLASS AutoEntryScript : public AutoJSAPI,
                                         protected ScriptSettingsStackEntry {
 public:
-  explicit AutoEntryScript(nsIGlobalObject* aGlobalObject,
+  AutoEntryScript(nsIGlobalObject* aGlobalObject,
+                  const char *aReason,
                   bool aIsMainThread = NS_IsMainThread(),
                   // Note: aCx is mandatory off-main-thread.
                   JSContext* aCx = nullptr);
@@ -334,6 +343,30 @@ public:
   }
 
 private:
+  // A subclass of AutoEntryMonitor that notifies the docshell.
+  class DocshellEntryMonitor : public JS::dbg::AutoEntryMonitor
+  {
+  public:
+    DocshellEntryMonitor(JSContext* aCx, const char* aReason);
+
+    void Entry(JSContext* aCx, JSFunction* aFunction) override
+    {
+      Entry(aCx, aFunction, nullptr);
+    }
+
+    void Entry(JSContext* aCx, JSScript* aScript) override
+    {
+      Entry(aCx, nullptr, aScript);
+    }
+
+    void Exit(JSContext* aCx) override;
+
+  private:
+    void Entry(JSContext* aCx, JSFunction* aFunction, JSScript* aScript);
+
+    const char* mReason;
+  };
+
   // It's safe to make this a weak pointer, since it's the subject principal
   // when we go on the stack, so can't go away until after we're gone.  In
   // particular, this is only used from the CallSetup constructor, and only in
@@ -344,9 +377,7 @@ private:
   nsIPrincipal* MOZ_NON_OWNING_REF mWebIDLCallerPrincipal;
   friend nsIPrincipal* GetWebIDLCallerPrincipal();
 
-  nsCOMPtr<nsIDocShell> mDocShellForJSRunToCompletion;
-
-  bool mIsMainThread;
+  Maybe<DocshellEntryMonitor> mDocShellEntryMonitor;
 };
 
 /*
@@ -381,7 +412,7 @@ private:
  * passed as a parameter. AutoJSContext will take care of finding the most
  * appropriate JS context and release it when leaving the stack.
  */
-class MOZ_STACK_CLASS AutoJSContext {
+class MOZ_RAII AutoJSContext {
 public:
   explicit AutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
   operator JSContext*() const;
@@ -403,7 +434,7 @@ protected:
  * Use ThreadsafeAutoJSContext when you want an AutoJSContext but might be
  * running on a worker thread.
  */
-class MOZ_STACK_CLASS ThreadsafeAutoJSContext {
+class MOZ_RAII ThreadsafeAutoJSContext {
 public:
   explicit ThreadsafeAutoJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
   operator JSContext*() const;
@@ -421,7 +452,7 @@ private:
  *
  * Note - This is deprecated. Please use AutoJSAPI instead.
  */
-class MOZ_STACK_CLASS AutoSafeJSContext : public AutoJSContext {
+class MOZ_RAII AutoSafeJSContext : public AutoJSContext {
 public:
   explicit AutoSafeJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
 private:
@@ -431,7 +462,7 @@ private:
 /**
  * Like AutoSafeJSContext but can be used safely on worker threads.
  */
-class MOZ_STACK_CLASS ThreadsafeAutoSafeJSContext {
+class MOZ_RAII ThreadsafeAutoSafeJSContext {
 public:
   explicit ThreadsafeAutoSafeJSContext(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
   operator JSContext*() const;

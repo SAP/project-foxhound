@@ -278,21 +278,6 @@ struct ParamTraits<mozilla::layers::TextureFlags>
 {};
 
 template <>
-struct ParamTraits<mozilla::layers::TextureIdentifier>
-  : public ContiguousEnumSerializer<
-             mozilla::layers::TextureIdentifier,
-             mozilla::layers::TextureIdentifier::Front,
-             mozilla::layers::TextureIdentifier::HighBound>
-{};
-
-template <>
-struct ParamTraits<mozilla::layers::DeprecatedTextureHostFlags>
-  : public BitFlagsEnumSerializer<
-             mozilla::layers::DeprecatedTextureHostFlags,
-             mozilla::layers::DeprecatedTextureHostFlags::ALL_BITS>
-{};
-
-template <>
 struct ParamTraits<mozilla::layers::DiagnosticTypes>
   : public BitFlagsEnumSerializer<
              mozilla::layers::DiagnosticTypes,
@@ -406,28 +391,6 @@ struct ParamTraits<mozilla::gfx::IntSizeTyped<T> >
   }
 };
 
-template<>
-struct ParamTraits<nsIntRect>
-{
-  typedef nsIntRect paramType;
-
-  static void Write(Message* msg, const paramType& param)
-  {
-    WriteParam(msg, param.x);
-    WriteParam(msg, param.y);
-    WriteParam(msg, param.width);
-    WriteParam(msg, param.height);
-  }
-
-  static bool Read(const Message* msg, void** iter, paramType* result)
-  {
-    return (ReadParam(msg, iter, &result->x) &&
-            ReadParam(msg, iter, &result->y) &&
-            ReadParam(msg, iter, &result->width) &&
-            ReadParam(msg, iter, &result->height));
-  }
-};
-
 template<typename Region, typename Rect, typename Iter>
 struct RegionParamTraits
 {
@@ -459,13 +422,13 @@ struct RegionParamTraits
 
 template<>
 struct ParamTraits<nsIntRegion>
-  : RegionParamTraits<nsIntRegion, nsIntRect, nsIntRegionRectIterator>
+  : RegionParamTraits<nsIntRegion, mozilla::gfx::IntRect, nsIntRegionRectIterator>
 {};
 
 template<>
-struct ParamTraits<nsIntSize>
+struct ParamTraits<mozilla::gfx::IntSize>
 {
-  typedef nsIntSize paramType;
+  typedef mozilla::gfx::IntSize paramType;
 
   static void Write(Message* msg, const paramType& param)
   {
@@ -528,6 +491,24 @@ struct ParamTraits< mozilla::gfx::ScaleFactor<T, U> >
   }
 };
 
+template<class T, class U>
+struct ParamTraits< mozilla::gfx::ScaleFactors2D<T, U> >
+{
+  typedef mozilla::gfx::ScaleFactors2D<T, U> paramType;
+
+  static void Write(Message* msg, const paramType& param)
+  {
+    WriteParam(msg, param.xScale);
+    WriteParam(msg, param.yScale);
+  }
+
+  static bool Read(const Message* msg, void** iter, paramType* result)
+  {
+    return (ReadParam(msg, iter, &result->xScale) &&
+            ReadParam(msg, iter, &result->yScale));
+  }
+};
+
 template<class T>
 struct ParamTraits< mozilla::gfx::PointTyped<T> >
 {
@@ -546,10 +527,10 @@ struct ParamTraits< mozilla::gfx::PointTyped<T> >
   }
 };
 
-template<class T>
-struct ParamTraits< mozilla::gfx::Point3DTyped<T> >
+template<class F, class T>
+struct ParamTraits< mozilla::gfx::Point3DTyped<F, T> >
 {
-  typedef mozilla::gfx::Point3DTyped<T> paramType;
+  typedef mozilla::gfx::Point3DTyped<F, T> paramType;
 
   static void Write(Message* msg, const paramType& param)
   {
@@ -739,10 +720,8 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
     WriteParam(aMsg, aParam.mCumulativeResolution);
     WriteParam(aMsg, aParam.mZoom);
     WriteParam(aMsg, aParam.mDevPixelsPerCSSPixel);
-    WriteParam(aMsg, aParam.mMayHaveTouchListeners);
-    WriteParam(aMsg, aParam.mMayHaveTouchCaret);
     WriteParam(aMsg, aParam.mPresShellId);
-    WriteParam(aMsg, aParam.mIsRoot);
+    WriteParam(aMsg, aParam.mIsRootContent);
     WriteParam(aMsg, aParam.mHasScrollgrab);
     WriteParam(aMsg, aParam.mUpdateScrollOffset);
     WriteParam(aMsg, aParam.mScrollGeneration);
@@ -751,6 +730,12 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
     WriteParam(aMsg, aParam.mDoSmoothScroll);
     WriteParam(aMsg, aParam.mSmoothScrollOffset);
     WriteParam(aMsg, aParam.GetLineScrollAmount());
+    WriteParam(aMsg, aParam.GetPageScrollAmount());
+    WriteParam(aMsg, aParam.AllowVerticalScrollWithWheel());
+    WriteParam(aMsg, aParam.mClipRect);
+    WriteParam(aMsg, aParam.mMaskLayerIndex);
+    WriteParam(aMsg, aParam.mIsLayersIdRoot);
+    WriteParam(aMsg, aParam.mUsesContainerScrolling);
     WriteParam(aMsg, aParam.GetContentDescription());
   }
 
@@ -781,10 +766,8 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
             ReadParam(aMsg, aIter, &aResult->mCumulativeResolution) &&
             ReadParam(aMsg, aIter, &aResult->mZoom) &&
             ReadParam(aMsg, aIter, &aResult->mDevPixelsPerCSSPixel) &&
-            ReadParam(aMsg, aIter, &aResult->mMayHaveTouchListeners) &&
-            ReadParam(aMsg, aIter, &aResult->mMayHaveTouchCaret) &&
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
-            ReadParam(aMsg, aIter, &aResult->mIsRoot) &&
+            ReadParam(aMsg, aIter, &aResult->mIsRootContent) &&
             ReadParam(aMsg, aIter, &aResult->mHasScrollgrab) &&
             ReadParam(aMsg, aIter, &aResult->mUpdateScrollOffset) &&
             ReadParam(aMsg, aIter, &aResult->mScrollGeneration) &&
@@ -793,6 +776,12 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
             ReadParam(aMsg, aIter, &aResult->mDoSmoothScroll) &&
             ReadParam(aMsg, aIter, &aResult->mSmoothScrollOffset) &&
             ReadParam(aMsg, aIter, &aResult->mLineScrollAmount) &&
+            ReadParam(aMsg, aIter, &aResult->mPageScrollAmount) &&
+            ReadParam(aMsg, aIter, &aResult->mAllowVerticalScrollWithWheel) &&
+            ReadParam(aMsg, aIter, &aResult->mClipRect) &&
+            ReadParam(aMsg, aIter, &aResult->mMaskLayerIndex) &&
+            ReadParam(aMsg, aIter, &aResult->mIsLayersIdRoot) &&
+            ReadParam(aMsg, aIter, &aResult->mUsesContainerScrolling) &&
             ReadContentDescription(aMsg, aIter, aResult));
   }
 };
@@ -834,14 +823,12 @@ struct ParamTraits<mozilla::layers::TextureInfo>
   static void Write(Message* aMsg, const paramType& aParam)
   {
     WriteParam(aMsg, aParam.mCompositableType);
-    WriteParam(aMsg, aParam.mDeprecatedTextureHostFlags);
     WriteParam(aMsg, aParam.mTextureFlags);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
   {
     return ReadParam(aMsg, aIter, &aResult->mCompositableType) &&
-           ReadParam(aMsg, aIter, &aResult->mDeprecatedTextureHostFlags) &&
            ReadParam(aMsg, aIter, &aResult->mTextureFlags);
   }
 };
@@ -913,12 +900,18 @@ struct ParamTraits<mozilla::layers::EventRegions>
   {
     WriteParam(aMsg, aParam.mHitRegion);
     WriteParam(aMsg, aParam.mDispatchToContentHitRegion);
+    WriteParam(aMsg, aParam.mNoActionRegion);
+    WriteParam(aMsg, aParam.mHorizontalPanRegion);
+    WriteParam(aMsg, aParam.mVerticalPanRegion);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
   {
     return (ReadParam(aMsg, aIter, &aResult->mHitRegion) &&
-            ReadParam(aMsg, aIter, &aResult->mDispatchToContentHitRegion));
+            ReadParam(aMsg, aIter, &aResult->mDispatchToContentHitRegion) &&
+            ReadParam(aMsg, aIter, &aResult->mNoActionRegion) &&
+            ReadParam(aMsg, aIter, &aResult->mHorizontalPanRegion) &&
+            ReadParam(aMsg, aIter, &aResult->mVerticalPanRegion));
   }
 };
 

@@ -27,7 +27,7 @@ namespace jsipc {
 #define LOG_STACK()		                                               \
     PR_BEGIN_MACRO                                                             \
     if (StackLoggingEnabled()) {                                               \
-        js_DumpBacktrace(cx);	                                               \
+        js::DumpBacktrace(cx);                                                 \
     }                                                                          \
     PR_END_MACRO
 
@@ -98,7 +98,8 @@ class Logging
     }
 
     void formatObject(bool incoming, bool local, ObjectId id, nsCString& out) {
-        const char* side, *objDesc;
+        const char* side;
+        const char* objDesc;
         void* ptr;
 
         if (local == incoming) {
@@ -106,7 +107,7 @@ class Logging
             obj = shared->objects_.find(id);
             if (obj) {
                 JSAutoCompartment ac(cx, obj);
-                objDesc = js_ObjectClassName(cx, obj);
+                objDesc = js::ObjectClassName(cx, obj);
             } else {
                 objDesc = "<dead object>";
             }
@@ -224,7 +225,7 @@ class Logging
     JSContext* cx;
 };
 
-}
-}
+} // namespace jsipc
+} // namespace mozilla
 
 #endif

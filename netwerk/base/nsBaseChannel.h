@@ -25,7 +25,6 @@
 #include "nsIThreadRetargetableStreamListener.h"
 #include "PrivateBrowsingChannel.h"
 #include "nsThreadUtils.h"
-#include "nsNetUtil.h"
 
 class nsIInputStream;
 
@@ -270,7 +269,6 @@ private:
   nsCOMPtr<nsIProgressEventSink>      mProgressSink;
   nsCOMPtr<nsIURI>                    mOriginalURI;
   nsCOMPtr<nsISupports>               mOwner;
-  nsCOMPtr<nsILoadInfo>               mLoadInfo;
   nsCOMPtr<nsISupports>               mSecurityInfo;
   nsCOMPtr<nsIChannel>                mRedirectChannel;
   nsCString                           mContentType;
@@ -279,7 +277,6 @@ private:
   bool                                mQueriedProgressSink;
   bool                                mSynthProgressEvents;
   bool                                mAllowThreadRetargeting;
-  bool                                mWasOpened;
   bool                                mWaitingOnAsyncRedirect;
   bool                                mOpenRedirectChannel;
   uint32_t                            mRedirectFlags;
@@ -287,6 +284,7 @@ private:
 protected:
   nsCOMPtr<nsIURI>                    mURI;
   nsCOMPtr<nsILoadGroup>              mLoadGroup;
+  nsCOMPtr<nsILoadInfo>               mLoadInfo;
   nsCOMPtr<nsIInterfaceRequestor>     mCallbacks;
   nsCOMPtr<nsIStreamListener>         mListener;
   nsCOMPtr<nsISupports>               mListenerContext;
@@ -294,6 +292,7 @@ protected:
   uint32_t                            mContentDispositionHint;
   nsAutoPtr<nsString>                 mContentDispositionFilename;
   int64_t                             mContentLength;
+  bool                                mWasOpened;
 
   friend class mozilla::net::PrivateBrowsingChannel<nsBaseChannel>;
 };

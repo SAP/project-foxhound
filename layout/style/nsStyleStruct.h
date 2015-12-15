@@ -11,6 +11,7 @@
 #ifndef nsStyleStruct_h___
 #define nsStyleStruct_h___
 
+#include "mozilla/ArenaObjectID.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CSSVariableValues.h"
 #include "nsColor.h"
@@ -31,6 +32,8 @@
 
 class nsIFrame;
 class nsIURI;
+class nsStyleContext;
+class nsTextFrame;
 class imgIContainer;
 
 // Includes nsStyleStructID.
@@ -39,6 +42,14 @@ class imgIContainer;
 // Bits for each struct.
 // NS_STYLE_INHERIT_BIT defined in nsStyleStructFwd.h
 #define NS_STYLE_INHERIT_MASK              0x000ffffff
+
+// Bits for inherited structs.
+#define NS_STYLE_INHERITED_STRUCT_MASK \
+  ((nsStyleStructID_size_t(1) << nsStyleStructID_Inherited_Count) - 1)
+// Bits for reset structs.
+#define NS_STYLE_RESET_STRUCT_MASK \
+  (((nsStyleStructID_size_t(1) << nsStyleStructID_Reset_Count) - 1) \
+   << nsStyleStructID_Inherited_Count)
 
 // Additional bits for nsStyleContext's mBits:
 // See nsStyleContext::HasTextDecorationLines
@@ -56,17 +67,27 @@ class imgIContainer;
 // See nsStyleContext::AssertStructsNotUsedElsewhere
 // (This bit is currently only used in #ifdef DEBUG code.)
 #define NS_STYLE_IS_GOING_AWAY             0x040000000
-// See nsStyleContext::IsInlineDescendantOfRuby
-#define NS_STYLE_IS_INLINE_DESCENDANT_OF_RUBY 0x080000000
+// See nsStyleContext::ShouldSuppressLineBreak
+#define NS_STYLE_SUPPRESS_LINEBREAK        0x080000000
+// See nsStyleContext::IsInDisplayNoneSubtree
+#define NS_STYLE_IN_DISPLAY_NONE_SUBTREE   0x100000000
+// See nsStyleContext::FindChildWithRules
+#define NS_STYLE_INELIGIBLE_FOR_SHARING    0x200000000
+// See nsStyleContext::HasChildThatUsesResetStyle
+#define NS_STYLE_HAS_CHILD_THAT_USES_RESET_STYLE 0x400000000
 // See nsStyleContext::GetPseudoEnum
-#define NS_STYLE_CONTEXT_TYPE_SHIFT        32
+#define NS_STYLE_CONTEXT_TYPE_SHIFT        35
 
 // Additional bits for nsRuleNode's mDependentBits:
+#define NS_RULE_NODE_IS_ANIMATION_RULE      0x01000000
 #define NS_RULE_NODE_GC_MARK                0x02000000
 #define NS_RULE_NODE_USED_DIRECTLY          0x04000000
 #define NS_RULE_NODE_IS_IMPORTANT           0x08000000
 #define NS_RULE_NODE_LEVEL_MASK             0xf0000000
 #define NS_RULE_NODE_LEVEL_SHIFT            28
+
+// Additional bits for nsRuleNode's mNoneBits:
+#define NS_RULE_NODE_HAS_ANIMATION_DATA     0x80000000
 
 // The lifetime of these objects is managed by the presshell's arena.
 
@@ -86,11 +107,12 @@ public:
     return NS_CombineHint(NS_STYLE_HINT_REFLOW,
                           nsChangeHint_NeutralChange);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
   static nsChangeHint CalcFontDifference(const nsFont& aFont1, const nsFont& aFont2);
 
@@ -99,7 +121,7 @@ public:
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleFont_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleFont, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -333,20 +355,20 @@ struct nsStyleColor {
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_VISUAL;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics at all.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants at all.
     return nsChangeHint(0);
   }
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleColor_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleColor, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleColor();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleColor_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleColor, this);
   }
 
   // Don't add ANY members to this struct!  We can achieve caching in the rule
@@ -361,7 +383,7 @@ struct nsStyleBackground {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleBackground_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleBackground, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -371,9 +393,9 @@ struct nsStyleBackground {
                           NS_CombineHint(NS_STYLE_HINT_VISUAL,
                                          nsChangeHint_NeutralChange));
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics at all.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants at all.
     return nsChangeHint(0);
   }
 
@@ -389,6 +411,10 @@ struct nsStyleBackground {
     // Sets both mXPosition and mYPosition to the given percent value for the
     // initial property-value (e.g. 0.0f for "0% 0%", or 0.5f for "50% 50%")
     void SetInitialPercentValues(float aPercentVal);
+
+    // Sets both mXPosition and mYPosition to 0 (app units) for the
+    // initial property-value as a length with no percentage component.
+    void SetInitialZeroValues();
 
     // True if the effective background image position described by this depends
     // on the size of the corresponding frame.
@@ -462,12 +488,12 @@ struct nsStyleBackground {
       return !(*this == aOther);
     }
   };
-  
+
   struct Repeat;
   friend struct Repeat;
   struct Repeat {
     uint8_t mXRepeat, mYRepeat;
-    
+
     // Initialize nothing
     Repeat() {}
 
@@ -592,19 +618,20 @@ struct nsStyleMargin {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleMargin_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleMargin, sz);
   }
   void Destroy(nsPresContext* aContext);
 
   void RecalcData();
   nsChangeHint CalcDifference(const nsStyleMargin& aOther) const;
   static nsChangeHint MaxDifference() {
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference can return both nsChangeHint_ClearAncestorIntrinsics and
-    // nsChangeHint_NeedReflow as inherited hints.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference can return all of the reflow hints sometimes not
+    // handled for descendants as hints not handled for descendants.
     return nsChangeHint(0);
   }
 
@@ -635,7 +662,7 @@ struct nsStylePadding {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStylePadding_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStylePadding, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -645,9 +672,15 @@ struct nsStylePadding {
     return NS_SubtractHint(NS_STYLE_HINT_REFLOW,
                            nsChangeHint_ClearDescendantIntrinsics);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference can return nsChangeHint_ClearAncestorIntrinsics as an
-    // inherited hint.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference can return nsChangeHint_ClearAncestorIntrinsics as
+    // a hint not handled for descendants.  We could (and perhaps
+    // should) return nsChangeHint_NeedReflow and
+    // nsChangeHint_ReflowChangesSizeOrPosition as always handled for
+    // descendants, but since they're always returned in conjunction
+    // with nsChangeHint_ClearAncestorIntrinsics (which is not), it
+    // won't ever lead to any optimization in
+    // nsStyleContext::CalcStyleDifference.
     return nsChangeHint(0);
   }
 
@@ -825,7 +858,7 @@ struct nsStyleBorder {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleBorder_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleBorder, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -835,11 +868,12 @@ struct nsStyleBorder {
                           NS_CombineHint(nsChangeHint_BorderStyleNoneChange,
                                          nsChangeHint_NeutralChange));
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   void EnsureBorderColors() {
@@ -1054,12 +1088,12 @@ struct nsStyleOutline {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleOutline_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleOutline, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleOutline();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleOutline_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleOutline, this);
   }
 
   void RecalcData(nsPresContext* aContext);
@@ -1070,9 +1104,9 @@ struct nsStyleOutline {
                           NS_CombineHint(nsChangeHint_RepaintFrame,
                                          nsChangeHint_NeutralChange));
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics at all.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants at all.
     return nsChangeHint(0);
   }
 
@@ -1150,12 +1184,12 @@ struct nsStyleList {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleList_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleList, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleList();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleList_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleList, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleList& aOther) const;
@@ -1163,11 +1197,12 @@ struct nsStyleList {
     return NS_CombineHint(NS_STYLE_HINT_FRAMECHANGE,
                           nsChangeHint_NeutralChange);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   imgRequestProxy* GetListStyleImage() const { return mListStyleImage; }
@@ -1250,7 +1285,8 @@ struct nsStyleGridTemplate {
   }
 
   inline bool operator!=(const nsStyleGridTemplate& aOther) const {
-    return mLineNameLists != aOther.mLineNameLists ||
+    return mIsSubgrid != aOther.mIsSubgrid ||
+           mLineNameLists != aOther.mLineNameLists ||
            mMinTrackSizingFunctions != aOther.mMinTrackSizingFunctions ||
            mMaxTrackSizingFunctions != aOther.mMaxTrackSizingFunctions;
   }
@@ -1258,9 +1294,14 @@ struct nsStyleGridTemplate {
 
 struct nsStyleGridLine {
   // http://dev.w3.org/csswg/css-grid/#typedef-grid-line
+  // XXXmats we could optimize memory size here
   bool mHasSpan;
   int32_t mInteger;  // 0 means not provided
   nsString mLineName;  // Empty string means not provided.
+
+  // mInteger is clamped to this range:
+  static const int32_t kMinLine;
+  static const int32_t kMaxLine;
 
   nsStyleGridLine()
     : mHasSpan(false)
@@ -1319,23 +1360,26 @@ struct nsStylePosition {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStylePosition_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStylePosition, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStylePosition();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStylePosition_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStylePosition, this);
   }
 
-  nsChangeHint CalcDifference(const nsStylePosition& aOther) const;
+  nsChangeHint CalcDifference(const nsStylePosition& aOther,
+                              nsStyleContext* aContext) const;
   static nsChangeHint MaxDifference() {
     return NS_CombineHint(NS_STYLE_HINT_REFLOW,
                           nsChangeHint(nsChangeHint_RecomputePosition |
-                                       nsChangeHint_UpdateParentOverflow));
+                                       nsChangeHint_UpdateParentOverflow |
+                                       nsChangeHint_UpdateComputedBSize));
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference can return both nsChangeHint_ClearAncestorIntrinsics and
-    // nsChangeHint_NeedReflow as inherited hints.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference can return all of the reflow hints that are
+    // sometimes handled for descendants as hints not handled for
+    // descendants.
     return nsChangeHint(0);
   }
 
@@ -1380,6 +1424,11 @@ struct nsStylePosition {
   nsStyleGridLine mGridRowStart;
   nsStyleGridLine mGridRowEnd;
 
+  // FIXME: Logical-coordinate equivalents to these WidthDepends... and
+  // HeightDepends... methods have been introduced (see below); we probably
+  // want to work towards removing the physical methods, and using the logical
+  // ones in all cases.
+
   bool WidthDependsOnContainer() const
     {
       return mWidth.GetUnit() == eStyleUnit_Auto ||
@@ -1405,6 +1454,7 @@ struct nsStylePosition {
   // for it, since it is the most common case.
   // FIXME: We should probably change the assumption to be the other way
   // around.
+  // Consider this as part of moving to the logical-coordinate APIs.
   bool HeightDependsOnContainer() const
     {
       return mHeight.GetUnit() == eStyleUnit_Auto || // CSS 2.1, 10.6.4, item (5)
@@ -1422,6 +1472,29 @@ struct nsStylePosition {
   {
     return mOffset.Get(aSide).HasPercent();
   }
+
+  // Logical-coordinate accessors for width and height properties,
+  // given a WritingMode value. The definitions of these methods are
+  // found in WritingModes.h (after the WritingMode class is fully
+  // declared).
+  inline nsStyleCoord& ISize(mozilla::WritingMode aWM);
+  inline nsStyleCoord& MinISize(mozilla::WritingMode aWM);
+  inline nsStyleCoord& MaxISize(mozilla::WritingMode aWM);
+  inline nsStyleCoord& BSize(mozilla::WritingMode aWM);
+  inline nsStyleCoord& MinBSize(mozilla::WritingMode aWM);
+  inline nsStyleCoord& MaxBSize(mozilla::WritingMode aWM);
+  inline const nsStyleCoord& ISize(mozilla::WritingMode aWM) const;
+  inline const nsStyleCoord& MinISize(mozilla::WritingMode aWM) const;
+  inline const nsStyleCoord& MaxISize(mozilla::WritingMode aWM) const;
+  inline const nsStyleCoord& BSize(mozilla::WritingMode aWM) const;
+  inline const nsStyleCoord& MinBSize(mozilla::WritingMode aWM) const;
+  inline const nsStyleCoord& MaxBSize(mozilla::WritingMode aWM) const;
+  inline bool ISizeDependsOnContainer(mozilla::WritingMode aWM) const;
+  inline bool MinISizeDependsOnContainer(mozilla::WritingMode aWM) const;
+  inline bool MaxISizeDependsOnContainer(mozilla::WritingMode aWM) const;
+  inline bool BSizeDependsOnContainer(mozilla::WritingMode aWM) const;
+  inline bool MinBSizeDependsOnContainer(mozilla::WritingMode aWM) const;
+  inline bool MaxBSizeDependsOnContainer(mozilla::WritingMode aWM) const;
 
 private:
   static bool WidthCoordDependsOnContainer(const nsStyleCoord &aCoord);
@@ -1492,12 +1565,12 @@ struct nsStyleTextReset {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleTextReset_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleTextReset, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleTextReset();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleTextReset_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleTextReset, this);
   }
 
   uint8_t GetDecorationStyle() const
@@ -1540,14 +1613,15 @@ struct nsStyleTextReset {
   nsChangeHint CalcDifference(const nsStyleTextReset& aOther) const;
   static nsChangeHint MaxDifference() {
     return nsChangeHint(
-        NS_STYLE_HINT_REFLOW | 
+        NS_STYLE_HINT_REFLOW |
         nsChangeHint_UpdateSubtreeOverflow);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   nsStyleCoord  mVerticalAlign;         // [reset] coord, percent, calc, enum (see nsStyleConsts.h)
@@ -1568,23 +1642,24 @@ struct nsStyleText {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleText_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleText, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleText();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleText_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleText, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleText& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   uint8_t mTextAlign;                   // [inherited] see nsStyleConsts.h
@@ -1616,7 +1691,7 @@ struct nsStyleText {
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_SPACE;
   }
 
-  bool NewlineIsSignificant() const {
+  bool NewlineIsSignificantStyle() const {
     return mWhiteSpace == NS_STYLE_WHITESPACE_PRE ||
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_WRAP ||
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_LINE;
@@ -1650,9 +1725,10 @@ struct nsStyleText {
   inline nsCSSShadowArray* GetTextShadow() const;
 
   // The aContextFrame argument on each of these is the frame this
-  // style struct is for.  If the frame is for SVG text, the return
-  // value will be massaged to be something that makes sense for
-  // SVG text.
+  // style struct is for.  If the frame is for SVG text or inside ruby,
+  // the return value will be massaged to be something that makes sense
+  // for those cases.
+  inline bool NewlineIsSignificant(const nsTextFrame* aContextFrame) const;
   inline bool WhiteSpaceCanWrap(const nsIFrame* aContextFrame) const;
   inline bool WordCanWrap(const nsIFrame* aContextFrame) const;
 };
@@ -1758,23 +1834,24 @@ struct nsStyleVisibility {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleVisibility_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleVisibility, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleVisibility();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleVisibility_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleVisibility, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleVisibility& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   nsStyleImageOrientation mImageOrientation;  // [inherited]
@@ -1986,12 +2063,12 @@ struct nsStyleDisplay {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleDisplay_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleDisplay, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleDisplay();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleDisplay_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleDisplay, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleDisplay& aOther) const;
@@ -2002,14 +2079,20 @@ struct nsStyleDisplay {
                         nsChangeHint_UpdateTransformLayer |
                         nsChangeHint_UpdateOverflow |
                         nsChangeHint_UpdatePostTransformOverflow |
-                        nsChangeHint_AddOrRemoveTransform |
+                        nsChangeHint_UpdateContainingBlock |
                         nsChangeHint_NeutralChange);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference can return both nsChangeHint_ClearAncestorIntrinsics and
-    // nsChangeHint_NeedReflow as inherited hints.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference can return all of the reflow hints that are
+    // sometimes handled for descendants as hints not handled for
+    // descendants.
     return nsChangeHint(0);
   }
+
+  // XXXdholbert, XXXkgilbert nsStyleBackground::Position should probably be
+  // moved to a different scope, since we're now using it in multiple style
+  // structs.
+  typedef nsStyleBackground::Position Position;
 
   // We guarantee that if mBinding is non-null, so are mBinding->GetURI() and
   // mBinding->mOriginPrincipal.
@@ -2020,6 +2103,7 @@ struct nsStyleDisplay {
   uint8_t mOriginalDisplay;     // [reset] saved mDisplay for position:absolute/fixed
                                 //         and float:left/right; otherwise equal
                                 //         to mDisplay
+  uint8_t mContain;             // [reset] see nsStyleConsts.h NS_STYLE_CONTAIN_*
   uint8_t mAppearance;          // [reset]
   uint8_t mPosition;            // [reset] see nsStyleConsts.h
   uint8_t mFloats;              // [reset] see nsStyleConsts.h NS_STYLE_FLOAT_*
@@ -2047,6 +2131,12 @@ struct nsStyleDisplay {
 
   uint8_t mTouchAction;         // [reset] see nsStyleConsts.h
   uint8_t mScrollBehavior;      // [reset] see nsStyleConsts.h NS_STYLE_SCROLL_BEHAVIOR_*
+  uint8_t mScrollSnapTypeX;     // [reset] see nsStyleConsts.h NS_STYLE_SCROLL_SNAP_TYPE_*
+  uint8_t mScrollSnapTypeY;     // [reset] see nsStyleConsts.h NS_STYLE_SCROLL_SNAP_TYPE_*
+  nsStyleCoord mScrollSnapPointsX; // [reset]
+  nsStyleCoord mScrollSnapPointsY; // [reset]
+  Position mScrollSnapDestination; // [reset]
+  nsTArray<Position> mScrollSnapCoordinate; // [reset]
 
   // mSpecifiedTransform is the list of transform functions as
   // specified, or null to indicate there is no transform.  (inherit or
@@ -2054,9 +2144,10 @@ struct nsStyleDisplay {
   // null, as appropriate.)
   uint8_t mBackfaceVisibility;
   uint8_t mTransformStyle;
+  uint8_t mTransformBox;        // [reset] see nsStyleConsts.h
   nsRefPtr<nsCSSValueSharedList> mSpecifiedTransform; // [reset]
   nsStyleCoord mTransformOrigin[3]; // [reset] percent, coord, calc, 3rd param is coord, calc only
-  nsStyleCoord mChildPerspective; // [reset] coord
+  nsStyleCoord mChildPerspective; // [reset] none, coord
   nsStyleCoord mPerspectiveOrigin[2]; // [reset] percent, coord, calc
 
   nsAutoTArray<mozilla::StyleTransition, 1> mTransitions; // [reset]
@@ -2205,13 +2296,25 @@ struct nsStyleDisplay {
   inline bool IsOriginalDisplayInlineOutside(const nsIFrame* aContextFrame) const;
   inline uint8_t GetDisplay(const nsIFrame* aContextFrame) const;
   inline bool IsFloating(const nsIFrame* aContextFrame) const;
-  inline bool IsPositioned(const nsIFrame* aContextFrame) const;
+  inline bool IsAbsPosContainingBlock(const nsIFrame* aContextFrame) const;
   inline bool IsRelativelyPositioned(const nsIFrame* aContextFrame) const;
   inline bool IsAbsolutelyPositioned(const nsIFrame* aContextFrame) const;
 
-  /* Returns whether the element has the -moz-transform property
-   * or a related property, and supports CSS transforms. */
+  // These methods are defined in nsStyleStructInlines.h.
+
+  /**
+   * Returns true when the element has the transform property
+   * or a related property, and supports CSS transforms.
+   * aContextFrame is the frame for which this is the nsStylePosition.
+   */
   inline bool HasTransform(const nsIFrame* aContextFrame) const;
+
+  /**
+   * Returns true when the element is a containing block for its fixed-pos
+   * descendants.
+   * aContextFrame is the frame for which this is the nsStylePosition.
+   */
+  inline bool IsFixedPosContainingBlock(const nsIFrame* aContextFrame) const;
 };
 
 struct nsStyleTable {
@@ -2221,23 +2324,24 @@ struct nsStyleTable {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleTable_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleTable, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleTable();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleTable_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleTable, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleTable& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   uint8_t       mLayoutStrategy;// [reset] see nsStyleConsts.h NS_STYLE_TABLE_LAYOUT_*
@@ -2251,27 +2355,28 @@ struct nsStyleTableBorder {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleTableBorder_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleTableBorder, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleTableBorder();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleTableBorder_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleTableBorder, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleTableBorder& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
-  nscoord       mBorderSpacingX;// [inherited]
-  nscoord       mBorderSpacingY;// [inherited]
+  nscoord       mBorderSpacingCol;// [inherited]
+  nscoord       mBorderSpacingRow;// [inherited]
   uint8_t       mBorderCollapse;// [inherited]
   uint8_t       mCaptionSide;   // [inherited]
   uint8_t       mEmptyCells;    // [inherited]
@@ -2346,12 +2451,12 @@ struct nsStyleQuotes {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleQuotes_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleQuotes, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleQuotes();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleQuotes_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleQuotes, this);
   }
 
   void SetInitial();
@@ -2361,11 +2466,12 @@ struct nsStyleQuotes {
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   uint32_t  QuotesCount(void) const { return mQuotesCount; } // [inherited]
@@ -2427,7 +2533,7 @@ struct nsStyleContent {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleContent_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleContent, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -2435,11 +2541,12 @@ struct nsStyleContent {
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   uint32_t  ContentCount(void) const  { return mContentCount; } // [reset]
@@ -2535,23 +2642,24 @@ struct nsStyleUIReset {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleUIReset_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleUIReset, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleUIReset();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleUIReset_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleUIReset, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleUIReset& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   uint8_t   mUserSelect;      // [reset] (selection-style)
@@ -2596,12 +2704,12 @@ struct nsStyleUserInterface {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleUserInterface_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleUserInterface, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleUserInterface();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleUserInterface_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleUserInterface, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleUserInterface& aOther) const;
@@ -2610,11 +2718,12 @@ struct nsStyleUserInterface {
                           NS_CombineHint(nsChangeHint_UpdateCursor,
                                          nsChangeHint_NeutralChange));
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   uint8_t   mUserInput;       // [inherited]
@@ -2642,23 +2751,24 @@ struct nsStyleXUL {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleXUL_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleXUL, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleXUL();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleXUL_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleXUL, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleXUL& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_STYLE_HINT_FRAMECHANGE;
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   float         mBoxFlex;               // [reset] see nsStyleConsts.h
@@ -2677,12 +2787,12 @@ struct nsStyleColumn {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleColumn_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleColumn, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleColumn();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleColumn_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleColumn, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleColumn& aOther) const;
@@ -2690,11 +2800,12 @@ struct nsStyleColumn {
     return NS_CombineHint(NS_STYLE_HINT_FRAMECHANGE,
                           nsChangeHint_NeutralChange);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   /**
@@ -2769,12 +2880,12 @@ struct nsStyleSVG {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleSVG_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleSVG, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleSVG();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleSVG_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleSVG, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleSVG& aOther) const;
@@ -2783,9 +2894,10 @@ struct nsStyleSVG {
              NS_CombineHint(nsChangeHint_NeedReflow, nsChangeHint_NeedDirtyReflow)), // XXX remove nsChangeHint_NeedDirtyReflow: bug 876085
                                          nsChangeHint_RepaintFrame);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow as an inherited hint
-    // and never returns nsChangeHint_ClearAncestorIntrinsics at all.
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns nsChangeHint_NeedReflow as a hint
+    // not handled for descendants, and never returns
+    // nsChangeHint_ClearAncestorIntrinsics at all.
     return nsChangeHint_NeedReflow;
   }
 
@@ -3050,12 +3162,12 @@ struct nsStyleSVGReset {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleSVGReset_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleSVGReset, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleSVGReset();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleSVGReset_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleSVGReset, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleSVGReset& aOther) const;
@@ -3063,15 +3175,16 @@ struct nsStyleSVGReset {
     return NS_CombineHint(nsChangeHint_UpdateEffects,
             NS_CombineHint(nsChangeHint_UpdateOverflow, NS_STYLE_HINT_REFLOW));
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
-    // CalcDifference never returns nsChangeHint_NeedReflow or
-    // nsChangeHint_ClearAncestorIntrinsics as inherited hints.
-    return NS_CombineHint(nsChangeHint_NeedReflow,
-                          nsChangeHint_ClearAncestorIntrinsics);
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
+    // CalcDifference never returns the reflow hints that are sometimes
+    // handled for descendants as hints not handled for descendants.
+    return nsChangeHint_NeedReflow |
+           nsChangeHint_ReflowChangesSizeOrPosition |
+           nsChangeHint_ClearAncestorIntrinsics;
   }
 
   bool HasFilters() const {
-    return mFilters.Length() > 0;
+    return !mFilters.IsEmpty();
   }
 
   bool HasNonScalingStroke() const {
@@ -3100,19 +3213,19 @@ struct nsStyleVariables {
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
     return aContext->PresShell()->
-      AllocateByObjectID(nsPresArena::nsStyleVariables_id, sz);
+      AllocateByObjectID(mozilla::eArenaObjectID_nsStyleVariables, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleVariables();
     aContext->PresShell()->
-      FreeByObjectID(nsPresArena::nsStyleVariables_id, this);
+      FreeByObjectID(mozilla::eArenaObjectID_nsStyleVariables, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleVariables& aOther) const;
   static nsChangeHint MaxDifference() {
     return nsChangeHint(0);
   }
-  static nsChangeHint MaxDifferenceNeverInherited() {
+  static nsChangeHint DifferenceAlwaysHandledForDescendants() {
     // CalcDifference never returns nsChangeHint_NeedReflow or
     // nsChangeHint_ClearAncestorIntrinsics at all.
     return nsChangeHint(0);

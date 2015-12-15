@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,11 +10,10 @@
 #include "nsINode.h"
 
 class nsDOMAttributeMap;
-class nsIContent;
 
 #define NS_IATTRIBUTE_IID  \
-{ 0x233a9c4d, 0xb27f, 0x4662, \
-    { 0xbd, 0x90, 0xba, 0xd6, 0x2e, 0x76, 0xc8, 0xe1 } }
+{ 0x84d43da7, 0xb45d, 0x47ae, \
+  { 0x8f, 0xbf, 0x95, 0x26, 0x78, 0x4d, 0x5e, 0x47 } }
 
 class nsIAttribute : public nsINode
 {

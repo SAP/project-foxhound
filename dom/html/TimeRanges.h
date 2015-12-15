@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +19,7 @@ namespace dom {
 
 class TimeRanges;
 
-}
+} // namespace dom
 
 namespace dom {
 
@@ -50,7 +50,7 @@ public:
   // Mutate this TimeRange to be the intersection of this and aOtherRanges.
   void Intersection(const TimeRanges* aOtherRanges);
 
-  bool WrapObject(JSContext* aCx, JS::MutableHandle<JSObject*> aReflector);
+  bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector);
 
   uint32_t Length() const
   {

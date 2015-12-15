@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -288,7 +289,7 @@ DOMStorageDBParent::ReleaseIPDLReference()
   Release();
 }
 
-namespace { // anon
+namespace {
 
 class SendInitialChildDataRunnable : public nsRunnable
 {
@@ -332,7 +333,7 @@ private:
   nsRefPtr<DOMStorageDBParent> mParent;
 };
 
-} // anon
+} // namespace
 
 DOMStorageDBParent::DOMStorageDBParent()
 : mIPCOpen(false)
@@ -410,7 +411,7 @@ DOMStorageDBParent::RecvAsyncGetUsage(const nsCString& aScope)
   return true;
 }
 
-namespace { // anon
+namespace {
 
 // We need another implementation of DOMStorageCacheBridge to do
 // synchronous IPC preload.  This class just receives Load* notifications
@@ -480,7 +481,7 @@ private:
   uint32_t mLoadedCount;
 };
 
-} // anon
+} // namespace
 
 bool
 DOMStorageDBParent::RecvPreload(const nsCString& aScope,
@@ -603,7 +604,7 @@ DOMStorageDBParent::Observe(const char* aTopic,
   return NS_OK;
 }
 
-namespace { // anon
+namespace {
 
 // Results must be sent back on the main thread
 class LoadRunnable : public nsRunnable
@@ -664,7 +665,7 @@ private:
   }
 };
 
-} // anon
+} // namespace
 
 // DOMStorageDBParent::CacheParentBridge
 
@@ -707,7 +708,7 @@ DOMStorageDBParent::CacheParentBridge::LoadWait()
 
 // DOMStorageDBParent::UsageParentBridge
 
-namespace { // anon
+namespace {
 
 class UsageRunnable : public nsRunnable
 {
@@ -734,7 +735,7 @@ private:
   int64_t mUsage;
 };
 
-} // anon
+} // namespace
 
 void
 DOMStorageDBParent::UsageParentBridge::LoadUsage(const int64_t aUsage)
@@ -743,5 +744,5 @@ DOMStorageDBParent::UsageParentBridge::LoadUsage(const int64_t aUsage)
   NS_DispatchToMainThread(r);
 }
 
-} // ::dom
-} // ::mozilla
+} // namespace dom
+} // namespace mozilla

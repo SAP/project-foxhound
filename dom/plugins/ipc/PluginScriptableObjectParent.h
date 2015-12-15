@@ -16,19 +16,23 @@
 namespace mozilla {
 namespace plugins {
 
-class PluginAsyncSurrogate;
 class PluginInstanceParent;
 class PluginScriptableObjectParent;
 
 struct ParentNPObject : NPObject
 {
   ParentNPObject()
-    : NPObject(), parent(nullptr), invalidated(false) { }
+    : NPObject()
+    , parent(nullptr)
+    , invalidated(false)
+    , asyncWrapperCount(0)
+  {}
 
   // |parent| is always valid as long as the actor is alive. Once the actor is
   // destroyed this will be set to null.
   PluginScriptableObjectParent* parent;
   bool invalidated;
+  int32_t asyncWrapperCount;
 };
 
 class PluginScriptableObjectParent : public PPluginScriptableObjectParent

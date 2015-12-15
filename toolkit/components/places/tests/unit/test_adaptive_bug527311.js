@@ -10,13 +10,13 @@ const SUGGEST_TYPES = ["history", "bookmark", "openpage"];
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let hs = Cc["@mozilla.org/browser/nav-history-service;1"].
+var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
          getService(Ci.nsINavHistoryService);
-let bs = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
+var bs = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
          getService(Ci.nsINavBookmarksService);
-let os = Cc["@mozilla.org/observer-service;1"].
+var os = Cc["@mozilla.org/observer-service;1"].
          getService(Ci.nsIObserverService);
-let ps = Cc["@mozilla.org/preferences-service;1"].
+var ps = Cc["@mozilla.org/preferences-service;1"].
          getService(Ci.nsIPrefBranch);
 
 const PLACES_AUTOCOMPLETE_FEEDBACK_UPDATED_TOPIC =
@@ -89,9 +89,10 @@ function check_results() {
                 Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH);
     do_check_eq(controller.matchCount, 0);
 
-    remove_all_bookmarks();
-    cleanup();
-    do_test_finished();
+    PlacesUtils.bookmarks.eraseEverything().then(() => {
+      cleanup();
+      do_test_finished();
+    });
  };
 
   controller.startSearch(SEARCH_STRING);

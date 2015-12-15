@@ -33,13 +33,13 @@ EGLImageImage::~EGLImageImage()
   }
 }
 
-TemporaryRef<gfx::SourceSurface>
+already_AddRefed<gfx::SourceSurface>
 GLImage::GetAsSourceSurface()
 {
   MOZ_ASSERT(NS_IsMainThread(), "Should be on the main thread");
 
   if (!sSnapshotContext) {
-    sSnapshotContext = GLContextProvider::CreateHeadless(false);
+    sSnapshotContext = GLContextProvider::CreateHeadless(CreateContextFlags::NONE);
     if (!sSnapshotContext) {
       NS_WARNING("Failed to create snapshot GLContext");
       return nullptr;
@@ -57,11 +57,17 @@ GLImage::GetAsSourceSurface()
                                 LOCAL_GL_UNSIGNED_BYTE,
                                 nullptr);
 
-  ScopedFramebufferForTexture fb(sSnapshotContext, scopedTex.Texture());
+  ScopedFramebufferForTexture autoFBForTex(sSnapshotContext, scopedTex.Texture());
+  if (!autoFBForTex.IsComplete()) {
+      MOZ_CRASH("ScopedFramebufferForTexture failed.");
+  }
 
-  GLBlitHelper helper(sSnapshotContext);
+  const gl::OriginPos destOrigin = gl::OriginPos::TopLeft;
 
-  if (!helper.BlitImageToFramebuffer(this, size, fb.FB(), true)) {
+  if (!sSnapshotContext->BlitHelper()->BlitImageToFramebuffer(this, size,
+                                                              autoFBForTex.FB(),
+                                                              destOrigin))
+  {
     return nullptr;
   }
 
@@ -71,10 +77,10 @@ GLImage::GetAsSourceSurface()
     return nullptr;
   }
 
-  ScopedBindFramebuffer bind(sSnapshotContext, fb.FB());
+  ScopedBindFramebuffer bind(sSnapshotContext, autoFBForTex.FB());
   ReadPixelsIntoDataSurface(sSnapshotContext, source);
   return source.forget();
 }
 
-} // layers
-} // mozilla
+} // namespace layers
+} // namespace mozilla

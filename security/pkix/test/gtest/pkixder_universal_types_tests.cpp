@@ -23,19 +23,16 @@
  */
 
 #include <limits>
+#include <stdint.h>
 #include <vector>
-#include "pkixgtest.h"
 
 #include "pkixder.h"
-#include "pkixtestutil.h"
-#include "stdint.h"
+#include "pkixgtest.h"
 
 using namespace mozilla::pkix;
 using namespace mozilla::pkix::der;
 using namespace mozilla::pkix::test;
 using namespace std;
-
-namespace {
 
 class pkixder_universal_types_tests : public ::testing::Test { };
 
@@ -1162,5 +1159,3 @@ TEST_F(pkixder_universal_types_tests, OID)
 
   ASSERT_EQ(Success, OID(reader, expectedOID));
 }
-
-} // unnamed namespace

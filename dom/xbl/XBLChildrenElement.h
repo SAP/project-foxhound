@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=79: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,8 +16,6 @@ class nsAnonymousContentList;
 
 namespace mozilla {
 namespace dom {
-
-class ExplicitChildIterator;
 
 class XBLChildrenElement : public nsXMLElement
 {
@@ -133,7 +131,7 @@ public:
   {
     NS_ASSERTION(!mIncludes.IsEmpty(),
                  "Shouldn't check for includes on default insertion point");
-    return mIncludes.Contains(aChild->Tag());
+    return mIncludes.Contains(aChild->NodeInfo()->NameAtom());
   }
 
   bool IsDefaultInsertion()
@@ -176,7 +174,7 @@ public:
   virtual nsINode* GetParentObject() override { return mParent; }
   virtual nsIContent* Item(uint32_t aIndex) override;
 
-  virtual JSObject* WrapObject(JSContext *cx) override;
+  virtual JSObject* WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
   bool IsListFor(nsIContent* aContent) {
     return mParent == aContent;

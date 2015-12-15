@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
-/* vim: set ts=2 sw=2 et tw=79: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,10 +28,16 @@ ToJSValue(JSContext* aCx,
           const nsAString& aArgument,
           JS::MutableHandle<JS::Value> aValue);
 
-// Accept booleans.
-MOZ_WARN_UNUSED_RESULT inline bool
+// Accept booleans.  But be careful here: if we just have a function that takes
+// a boolean argument, then any pointer that doesn't match one of our other
+// signatures/templates will get treated as a boolean, which is clearly not
+// desirable.  So make this a template that only gets used if the argument type
+// is actually boolean
+template<typename T>
+MOZ_WARN_UNUSED_RESULT
+typename EnableIf<IsSame<T, bool>::value, bool>::Type
 ToJSValue(JSContext* aCx,
-          bool aArgument,
+          T aArgument,
           JS::MutableHandle<JS::Value> aValue)
 {
   // Make sure we're called in a compartment
@@ -54,14 +60,6 @@ ToJSValue(JSContext* aCx,
   return true;
 }
 
-// The uint32_t version is disabled for now because on the super-old b2g
-// compiler nsresult and uint32_t are the same type.  If someone needs this at
-// some point we'll need to figure out how to make it work (e.g. by switching to
-// traits structs and using the trick IPC's ParamTraits uses, where a traits
-// struct templated on the type inherits from a base traits struct of some sort,
-// templated on the same type, or something).  Maybe b2g will update to a modern
-// compiler before that happens....
-#if 0
 inline bool
 ToJSValue(JSContext* aCx,
           uint32_t aArgument,
@@ -73,7 +71,6 @@ ToJSValue(JSContext* aCx,
   aValue.setNumber(aArgument);
   return true;
 }
-#endif
 
 inline bool
 ToJSValue(JSContext* aCx,
@@ -174,17 +171,8 @@ ToJSValue(JSContext* aCx,
   return true;
 }
 
-// We don't want to include nsContentUtils here, so use a helper
-// function for the nsISupports case.
-namespace tojsvalue_detail {
-bool
-ISupportsToJSValue(JSContext* aCx,
-                   nsISupports* aArgument,
-                   JS::MutableHandle<JS::Value> aValue);
-} // namespace tojsvalue_detail
-
 // Accept objects that inherit from nsISupports but not nsWrapperCache (e.g.
-// nsIDOMFile).
+// DOM File).
 template <class T>
 MOZ_WARN_UNUSED_RESULT
 typename EnableIf<!IsBaseOf<nsWrapperCache, T>::value &&
@@ -197,7 +185,9 @@ ToJSValue(JSContext* aCx,
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-  return tojsvalue_detail::ISupportsToJSValue(aCx, &aArgument, aValue);
+  qsObjectHelper helper(ToSupports(&aArgument), nullptr);
+  JS::Rooted<JSObject*> scope(aCx, JS::CurrentGlobalOrNull(aCx));
+  return XPCOMObjectToJsval(aCx, scope, helper, nullptr, true, aValue);
 }
 
 // Accept nsRefPtr/nsCOMPtr
@@ -214,6 +204,15 @@ template <typename T>
 MOZ_WARN_UNUSED_RESULT bool
 ToJSValue(JSContext* aCx,
           const nsRefPtr<T>& aArgument,
+          JS::MutableHandle<JS::Value> aValue)
+{
+  return ToJSValue(aCx, *aArgument.get(), aValue);
+}
+
+template <typename T>
+MOZ_WARN_UNUSED_RESULT bool
+ToJSValue(JSContext* aCx,
+          const NonNull<T>& aArgument,
           JS::MutableHandle<JS::Value> aValue)
 {
   return ToJSValue(aCx, *aArgument.get(), aValue);
@@ -257,6 +256,16 @@ ToJSValue(JSContext* aCx, const JS::Rooted<JS::Value>& aArgument,
   return MaybeWrapValue(aCx, aValue);
 }
 
+// Accept existing rooted JS objects (which may not be same-compartment with
+// us).
+MOZ_WARN_UNUSED_RESULT inline bool
+ToJSValue(JSContext* aCx, const JS::Rooted<JSObject*>& aArgument,
+          JS::MutableHandle<JS::Value> aValue)
+{
+  aValue.setObjectOrNull(aArgument);
+  return MaybeWrapObjectOrNullValue(aCx, aValue);
+}
+
 // Accept nsresult, for use in rejections, and create an XPCOM
 // exception object representing that nsresult.
 MOZ_WARN_UNUSED_RESULT bool
@@ -271,6 +280,18 @@ MOZ_WARN_UNUSED_RESULT bool
 ToJSValue(JSContext* aCx,
           ErrorResult& aArgument,
           JS::MutableHandle<JS::Value> aValue);
+
+// Accept owning WebIDL unions.
+template <typename T>
+MOZ_WARN_UNUSED_RESULT
+typename EnableIf<IsBaseOf<AllOwningUnionBase, T>::value, bool>::Type
+ToJSValue(JSContext* aCx,
+          const T& aArgument,
+          JS::MutableHandle<JS::Value> aValue)
+{
+  JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
+  return aArgument.ToJSVal(aCx, global, aValue);
+}
 
 // Accept pointers to other things we accept
 template <typename T>

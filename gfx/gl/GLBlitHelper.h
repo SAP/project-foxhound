@@ -20,8 +20,9 @@ class Image;
 class PlanarYCbCrImage;
 class GrallocImage;
 class SurfaceTextureImage;
+class MacIOSurfaceImage;
 class EGLImageImage;
-}
+} // namespace layers
 
 namespace gl {
 
@@ -100,7 +101,8 @@ class GLBlitHelper final
         ConvertGralloc,
         ConvertPlanarYCbCr,
         ConvertSurfaceTexture,
-        ConvertEGLImage
+        ConvertEGLImage,
+        ConvertMacIOSurfaceImage
     };
     // The GLContext is the sole owner of the GLBlitHelper.
     GLContext* mGL;
@@ -119,8 +121,10 @@ class GLBlitHelper final
     // Data for image blit path
     GLuint mTexExternalBlit_FragShader;
     GLuint mTexYUVPlanarBlit_FragShader;
+    GLuint mTexNV12PlanarBlit_FragShader;
     GLuint mTexExternalBlit_Program;
     GLuint mTexYUVPlanarBlit_Program;
+    GLuint mTexNV12PlanarBlit_Program;
     GLuint mFBO;
     GLuint mSrcTexY;
     GLuint mSrcTexCb;
@@ -145,18 +149,23 @@ class GLBlitHelper final
     void BindAndUploadEGLImage(EGLImage image, GLuint target);
 
 #ifdef MOZ_WIDGET_GONK
-    bool BlitGrallocImage(layers::GrallocImage* grallocImage, bool yflip);
+    bool BlitGrallocImage(layers::GrallocImage* grallocImage);
 #endif
-    bool BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yflip);
+    bool BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage);
 #ifdef MOZ_WIDGET_ANDROID
     // Blit onto the current FB.
-    bool BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage, bool yflip);
-    bool BlitEGLImageImage(layers::EGLImageImage* eglImage, bool yflip);
+    bool BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage);
+    bool BlitEGLImageImage(layers::EGLImageImage* eglImage);
+#endif
+#ifdef XP_MACOSX
+    bool BlitMacIOSurfaceImage(layers::MacIOSurfaceImage* ioImage);
 #endif
 
-public:
-
     explicit GLBlitHelper(GLContext* gl);
+
+    friend class GLContext;
+
+public:
     ~GLBlitHelper();
 
     // If you don't have |srcFormats| for the 2nd definition,
@@ -187,12 +196,9 @@ public:
                               GLenum srcTarget = LOCAL_GL_TEXTURE_2D,
                               GLenum destTarget = LOCAL_GL_TEXTURE_2D);
     bool BlitImageToFramebuffer(layers::Image* srcImage, const gfx::IntSize& destSize,
-                                GLuint destFB, bool yflip = false, GLuint xoffset = 0,
-                                GLuint yoffset = 0, GLuint width = 0, GLuint height = 0);
+                                GLuint destFB, OriginPos destOrigin);
     bool BlitImageToTexture(layers::Image* srcImage, const gfx::IntSize& destSize,
-                            GLuint destTex, GLenum destTarget, bool yflip = false,
-                            GLuint xoffset = 0, GLuint yoffset = 0, GLuint width = 0,
-                            GLuint height = 0);
+                            GLuint destTex, GLenum destTarget, OriginPos destOrigin);
 };
 
 } // namespace gl

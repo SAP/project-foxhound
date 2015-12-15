@@ -86,10 +86,6 @@ this.FormData = Object.freeze({
     return FormDataInternal.collect(frame);
   },
 
-  restore: function (frame, data) {
-    FormDataInternal.restore(frame, data);
-  },
-
   restoreTree: function (root, data) {
     FormDataInternal.restoreTree(root, data);
   }
@@ -98,7 +94,7 @@ this.FormData = Object.freeze({
 /**
  * This module's internal API.
  */
-let FormDataInternal = {
+var FormDataInternal = {
   /**
    * Collect form data for a given |frame| *not* including any subframes.
    *
@@ -332,7 +328,12 @@ let FormDataInternal = {
       }
     } else if (aValue && aValue.fileList && aValue.type == "file" &&
       aNode.type == "file") {
-      aNode.mozSetFileNameArray(aValue.fileList, aValue.fileList.length);
+      try {
+        // FIXME (bug 1122855): This won't work in content processes.
+        aNode.mozSetFileNameArray(aValue.fileList, aValue.fileList.length);
+      } catch (e) {
+        Cu.reportError("mozSetFileNameArray: " + e);
+      }
       eventType = "input";
     } else if (Array.isArray(aValue) && aNode.options) {
       Array.forEach(aNode.options, function(opt, index) {

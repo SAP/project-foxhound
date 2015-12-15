@@ -10,7 +10,8 @@ const Cu = Components.utils;
 Cu.import("resource://gre/modules/Services.jsm");
 
 // Import common head.
-let (commonFile = do_get_file("../head_common.js", false)) {
+{
+  let commonFile = do_get_file("../head_common.js", false);
   let uri = Services.io.newFileURI(commonFile);
   Services.scriptloader.loadSubScript(uri.spec, this);
 }
@@ -23,7 +24,7 @@ let (commonFile = do_get_file("../head_common.js", false)) {
  * titles, tags and tests that a given search term matches certain pages.
  */
 
-let current_test = 0;
+var current_test = 0;
 
 function AutoCompleteInput(aSearches) {
   this.searches = aSearches;
@@ -54,7 +55,7 @@ function toURI(aSpec) {
   return uri(aSpec);
 }
 
-let appendTags = true;
+var appendTags = true;
 // Helper to turn off tag matching in results
 function ignoreTags()
 {
@@ -156,12 +157,12 @@ var prefs = Cc["@mozilla.org/preferences-service;1"].
             getService(Ci.nsIPrefBranch);
 
 // Some date not too long ago
-let gDate = new Date(Date.now() - 1000 * 60 * 60) * 1000;
+var gDate = new Date(Date.now() - 1000 * 60 * 60) * 1000;
 // Store the page info for each uri
-let gPages = [];
+var gPages = [];
 
 // Initialization tasks to be run before the next test
-let gNextTestSetupTasks = [];
+var gNextTestSetupTasks = [];
 
 /**
  * Adds a page, and creates various properties for it depending on the
@@ -197,7 +198,7 @@ function addPageBook(aURI, aTitle, aBook, aTags, aKey, aTransitionType, aNoVisit
   gNextTestSetupTasks.push([task_addPageBook, arguments]);
 }
 
-function task_addPageBook(aURI, aTitle, aBook, aTags, aKey, aTransitionType, aNoVisit)
+function* task_addPageBook(aURI, aTitle, aBook, aTags, aKey, aTransitionType, aNoVisit)
 {
   // Add a page entry for the current uri
   gPages[aURI] = [aURI, aBook != undefined ? aBook : aTitle, aTags];
@@ -229,7 +230,7 @@ function task_addPageBook(aURI, aTitle, aBook, aTags, aKey, aTransitionType, aNo
 
     // Add a keyword to the bookmark if we need to
     if (aKey != undefined)
-      bmsvc.setKeywordForBookmark(bmid, aKey);
+      yield PlacesUtils.keywords.insert({url: uri.spec, keyword: aKey});
 
     // Add tags if we need to
     if (aTags != undefined && aTags.length > 0) {

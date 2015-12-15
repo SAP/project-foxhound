@@ -133,6 +133,15 @@ class CompartmentChecker
     void check(InterpreterFrame* fp);
     void check(AbstractFramePtr frame);
     void check(SavedStacks* stacks);
+
+    void check(Handle<JSPropertyDescriptor> desc) {
+        check(desc.object());
+        if (desc.hasGetterObject())
+            check(desc.getterObject());
+        if (desc.hasSetterObject())
+            check(desc.setterObject());
+        check(desc.value());
+    }
 };
 #endif /* JS_CRASH_DIAGNOSTICS */
 
@@ -289,56 +298,48 @@ CallJSNativeConstructor(JSContext* cx, Native native, const CallArgs& args)
 }
 
 MOZ_ALWAYS_INLINE bool
-CallJSPropertyOp(JSContext* cx, PropertyOp op, HandleObject receiver, HandleId id, MutableHandleValue vp)
+CallJSGetterOp(JSContext* cx, GetterOp op, HandleObject obj, HandleId id,
+               MutableHandleValue vp)
 {
     JS_CHECK_RECURSION(cx, return false);
 
-    assertSameCompartment(cx, receiver, id, vp);
-    bool ok = op(cx, receiver, id, vp);
+    assertSameCompartment(cx, obj, id, vp);
+    bool ok = op(cx, obj, id, vp);
     if (ok)
         assertSameCompartment(cx, vp);
     return ok;
 }
 
 MOZ_ALWAYS_INLINE bool
-CallJSPropertyOpSetter(JSContext* cx, StrictPropertyOp op, HandleObject obj, HandleId id,
-                       bool strict, MutableHandleValue vp)
+CallJSSetterOp(JSContext* cx, SetterOp op, HandleObject obj, HandleId id, MutableHandleValue vp,
+               ObjectOpResult& result)
 {
     JS_CHECK_RECURSION(cx, return false);
 
     assertSameCompartment(cx, obj, id, vp);
-    return op(cx, obj, id, strict, vp);
+    return op(cx, obj, id, vp, result);
 }
 
-static inline bool
+inline bool
+CallJSAddPropertyOp(JSContext* cx, JSAddPropertyOp op, HandleObject obj, HandleId id,
+                    HandleValue v)
+{
+    JS_CHECK_RECURSION(cx, return false);
+
+    assertSameCompartment(cx, obj, id, v);
+    return op(cx, obj, id, v);
+}
+
+inline bool
 CallJSDeletePropertyOp(JSContext* cx, JSDeletePropertyOp op, HandleObject receiver, HandleId id,
-                       bool* succeeded)
+                       ObjectOpResult& result)
 {
     JS_CHECK_RECURSION(cx, return false);
 
     assertSameCompartment(cx, receiver, id);
     if (op)
-        return op(cx, receiver, id, succeeded);
-    *succeeded = true;
-    return true;
-}
-
-inline bool
-CallSetter(JSContext* cx, HandleObject obj, HandleId id, StrictPropertyOp op, unsigned attrs,
-           bool strict, MutableHandleValue vp)
-{
-    if (attrs & JSPROP_SETTER) {
-        RootedValue opv(cx, CastAsObjectJsval(op));
-        return InvokeGetterOrSetter(cx, obj, opv, 1, vp.address(), vp);
-    }
-
-    if (attrs & JSPROP_GETTER)
-        return js_ReportGetterOnlyAssignment(cx, strict);
-
-    if (!op)
-        return true;
-
-    return CallJSPropertyOpSetter(cx, op, obj, id, strict, vp);
+        return op(cx, receiver, id, result);
+    return result.succeed();
 }
 
 inline uintptr_t
@@ -367,8 +368,7 @@ ExclusiveContext::typeLifoAlloc()
 inline void
 JSContext::setPendingException(js::Value v)
 {
-    MOZ_ASSERT(!IsPoisonedValue(v));
-    // overRecursed_ is set after the fact by js_ReportOverRecursed.
+    // overRecursed_ is set after the fact by ReportOverRecursed.
     this->overRecursed_ = false;
     this->throwing = true;
     this->unwrappedException_ = v;
@@ -380,7 +380,7 @@ JSContext::setPendingException(js::Value v)
 inline bool
 JSContext::runningWithTrustedPrincipals() const
 {
-    return !compartment() || compartment()->principals == runtime()->trustedPrincipals();
+    return !compartment() || compartment()->principals() == runtime()->trustedPrincipals();
 }
 
 inline void
@@ -429,7 +429,7 @@ js::ExclusiveContext::setCompartment(JSCompartment* comp)
 
     // Make sure that the atoms compartment has its own zone.
     MOZ_ASSERT_IF(comp && !runtime_->isAtomsCompartment(comp),
-                  !runtime_->isAtomsZone(comp->zone()));
+                  !comp->zone()->isAtomsZone());
 
     // Both the current and the new compartment should be properly marked as
     // entered at this point.

@@ -12,7 +12,7 @@ const { Class } = require("sdk/core/heritage");
 const { EventTarget } = require("sdk/event/target");
 const { emit } = require("sdk/event/core");
 const URL = require("sdk/url");
-const promise = require("projecteditor/helpers/promise");
+const promise = require("promise");
 const { OS } = Cu.import("resource://gre/modules/osfile.jsm", {});
 const { FileUtils } = Cu.import("resource://gre/modules/FileUtils.jsm", {});
 const mimeService = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
@@ -46,11 +46,6 @@ var Resource = Class({
     }
     this.uri = uri;
   },
-
-  /**
-   * Return the trailing name component of this.uri.
-   */
-  get basename() { return this.uri.path.replace(/\/+$/, '').replace(/\\/g,'/').replace( /.*\//, '' ); },
 
   /**
    * Is there more than 1 child Resource?
@@ -236,6 +231,13 @@ var FileResource = Class({
       }
     });
     return this._refreshDeferred.promise;
+  },
+
+  /**
+   * Return the trailing name component of this Resource
+   */
+  get basename() {
+    return this.path.replace(/\/+$/, '').replace(/\\/g,'/').replace( /.*\//, '' );
   },
 
   /**

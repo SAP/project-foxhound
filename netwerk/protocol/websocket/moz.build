@@ -18,9 +18,7 @@ EXPORTS.mozilla.net += [
     'WebSocketChannelParent.h',
 ]
 
-# These files cannot be built in unified mode because they want to force NSPR
-# logging.
-SOURCES += [
+UNIFIED_SOURCES += [
     'BaseWebSocketChannel.cpp',
     'WebSocketChannel.cpp',
     'WebSocketChannelChild.cpp',
@@ -30,10 +28,6 @@ SOURCES += [
 IPDL_SOURCES += [
     'PWebSocket.ipdl',
 ]
-
-FAIL_ON_WARNINGS = True
-
-MSVC_ENABLE_PGO = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

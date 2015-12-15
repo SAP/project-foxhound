@@ -26,6 +26,7 @@ EXTRA_COMPONENTS += [
 EXTRA_PP_COMPONENTS += [
     'extensions.manifest',
     'nsBlocklistService.js',
+    'nsBlocklistServiceContent.js',
 ]
 
 EXTRA_JS_MODULES += [
@@ -55,6 +56,7 @@ UNIFIED_SOURCES += [
     'AddonPathService.cpp'
 ]
 
-FAIL_ON_WARNINGS = True
-
 FINAL_LIBRARY = 'xul'
+
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'Add-ons Manager')

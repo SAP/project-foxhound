@@ -56,16 +56,16 @@ ValueIsLength(const Value& v, uint32_t* len)
     return false;
 }
 
-template<typename NativeType> static inline Scalar::Type TypeIDOfType();
-template<> inline Scalar::Type TypeIDOfType<int8_t>() { return Scalar::Int8; }
-template<> inline Scalar::Type TypeIDOfType<uint8_t>() { return Scalar::Uint8; }
-template<> inline Scalar::Type TypeIDOfType<int16_t>() { return Scalar::Int16; }
-template<> inline Scalar::Type TypeIDOfType<uint16_t>() { return Scalar::Uint16; }
-template<> inline Scalar::Type TypeIDOfType<int32_t>() { return Scalar::Int32; }
-template<> inline Scalar::Type TypeIDOfType<uint32_t>() { return Scalar::Uint32; }
-template<> inline Scalar::Type TypeIDOfType<float>() { return Scalar::Float32; }
-template<> inline Scalar::Type TypeIDOfType<double>() { return Scalar::Float64; }
-template<> inline Scalar::Type TypeIDOfType<uint8_clamped>() { return Scalar::Uint8Clamped; }
+template<typename NativeType> struct TypeIDOfType;
+template<> struct TypeIDOfType<int8_t> { static const Scalar::Type id = Scalar::Int8; };
+template<> struct TypeIDOfType<uint8_t> { static const Scalar::Type id = Scalar::Uint8; };
+template<> struct TypeIDOfType<int16_t> { static const Scalar::Type id = Scalar::Int16; };
+template<> struct TypeIDOfType<uint16_t> { static const Scalar::Type id = Scalar::Uint16; };
+template<> struct TypeIDOfType<int32_t> { static const Scalar::Type id = Scalar::Int32; };
+template<> struct TypeIDOfType<uint32_t> { static const Scalar::Type id = Scalar::Uint32; };
+template<> struct TypeIDOfType<float> { static const Scalar::Type id = Scalar::Float32; };
+template<> struct TypeIDOfType<double> { static const Scalar::Type id = Scalar::Float64; };
+template<> struct TypeIDOfType<uint8_clamped> { static const Scalar::Type id = Scalar::Uint8Clamped; };
 
 inline bool
 IsAnyTypedArray(JSObject* obj)
@@ -481,9 +481,14 @@ class TypedArrayMethods
     typedef typename SomeTypedArray::template OfType<uint8_clamped>::Type Uint8ClampedArrayType;
 
   public:
-    /* subarray(start[, end]) */
+    // subarray(start[, end])
+    // %TypedArray%.prototype.subarray is a self-hosted method, so this code is
+    // only used for shared typed arrays.  We should self-host both methods
+    // eventually (but note TypedArraySubarray will require changes to be used
+    // with shared typed arrays), but we need to rejigger the shared typed
+    // array prototype chain before we can do that.
     static bool
-    subarray(JSContext* cx, CallArgs args)
+    subarray(JSContext* cx, const CallArgs& args)
     {
         MOZ_ASSERT(SomeTypedArray::is(args.thisv()));
 
@@ -507,7 +512,7 @@ class TypedArrayMethods
             begin = end;
 
         if (begin > tarray->length() || end > tarray->length() || begin > end) {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_BAD_INDEX);
+            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_BAD_INDEX);
             return false;
         }
 
@@ -569,8 +574,13 @@ class TypedArrayMethods
 
     /* copyWithin(target, start[, end]) */
     // ES6 draft rev 26, 22.2.3.5
+    // %TypedArray%.prototype.copyWithin is a self-hosted method, so this code
+    // is only used for shared typed arrays.  We should self-host both methods
+    // eventually (but note TypedArrayCopyWithin will require changes to be
+    // usable for shared typed arrays), but we need to rejigger the shared
+    // typed array prototype chain before we can do that.
     static bool
-    copyWithin(JSContext* cx, CallArgs args)
+    copyWithin(JSContext* cx, const CallArgs& args)
     {
         MOZ_ASSERT(SomeTypedArray::is(args.thisv()));
 
@@ -622,7 +632,7 @@ class TypedArrayMethods
             count > lengthDuringMove - from ||
             count > lengthDuringMove - to)
         {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_BAD_ARGS);
+            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_BAD_ARGS);
             return false;
         }
 
@@ -657,7 +667,7 @@ class TypedArrayMethods
 
     /* set(array[, offset]) */
     static bool
-    set(JSContext* cx, CallArgs args)
+    set(JSContext* cx, const CallArgs& args)
     {
         MOZ_ASSERT(SomeTypedArray::is(args.thisv()));
 
@@ -665,7 +675,7 @@ class TypedArrayMethods
 
         // The first argument must be either a typed array or arraylike.
         if (args.length() == 0 || !args[0].isObject()) {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_BAD_ARGS);
+            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_BAD_ARGS);
             return false;
         }
 
@@ -676,8 +686,7 @@ class TypedArrayMethods
 
             if (offset < 0 || uint32_t(offset) > target->length()) {
                 // the given offset is bogus
-                JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr,
-                                     JSMSG_TYPED_ARRAY_BAD_INDEX, "2");
+                JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_BAD_INDEX);
                 return false;
             }
         }
@@ -685,7 +694,7 @@ class TypedArrayMethods
         RootedObject arg0(cx, &args[0].toObject());
         if (IsAnyTypedArray(arg0)) {
             if (AnyTypedArrayLength(arg0) > target->length() - offset) {
-                JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_BAD_ARRAY_LENGTH);
+                JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_BAD_ARRAY_LENGTH);
                 return false;
             }
 
@@ -697,7 +706,7 @@ class TypedArrayMethods
                 return false;
 
             if (uint32_t(offset) > target->length() || len > target->length() - offset) {
-                JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_BAD_ARRAY_LENGTH);
+                JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_BAD_ARRAY_LENGTH);
                 return false;
             }
 

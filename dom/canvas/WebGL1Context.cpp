@@ -7,6 +7,7 @@
 
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/Telemetry.h"
+#include "WebGLFormats.h"
 
 namespace mozilla {
 
@@ -25,10 +26,23 @@ WebGL1Context::~WebGL1Context()
 {
 }
 
-JSObject*
-WebGL1Context::WrapObject(JSContext* cx)
+UniquePtr<webgl::FormatUsageAuthority>
+WebGL1Context::CreateFormatUsage() const
 {
-    return dom::WebGLRenderingContextBinding::Wrap(cx, this);
+    return webgl::FormatUsageAuthority::CreateForWebGL1();
+}
+
+JSObject*
+WebGL1Context::WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto)
+{
+    return dom::WebGLRenderingContextBinding::Wrap(cx, this, givenProto);
+}
+
+bool
+WebGL1Context::ValidateQueryTarget(GLenum target, const char* info)
+{
+    // TODO: Implement this for EXT_disjoint_timer
+    return false;
 }
 
 } // namespace mozilla

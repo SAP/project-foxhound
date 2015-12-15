@@ -21,19 +21,19 @@ class RegExpStatics
 {
     /* The latest RegExp output, set after execution. */
     VectorMatchPairs        matches;
-    HeapPtrLinearString     matchesInput;
+    RelocatablePtrLinearString matchesInput;
 
     /*
      * The previous RegExp input, used to resolve lazy state.
      * A raw RegExpShared cannot be stored because it may be in
      * a different compartment via evalcx().
      */
-    HeapPtrAtom             lazySource;
+    RelocatablePtrAtom      lazySource;
     RegExpFlag              lazyFlags;
     size_t                  lazyIndex;
 
     /* The latest RegExp input, set before execution. */
-    HeapPtrString           pendingInput;
+    RelocatablePtrString    pendingInput;
     RegExpFlag              flags;
 
     /*
@@ -62,7 +62,7 @@ class RegExpStatics
         buffer->bufferLink = bufferLink;
         bufferLink = buffer;
         if (!buffer->matches.allocOrExpandArray(matches.length())) {
-            js_ReportOutOfMemory(cx);
+            ReportOutOfMemory(cx);
             return false;
         }
         return true;
@@ -133,11 +133,11 @@ class RegExpStatics
          * RegExpStatics::AutoRooter::trace().
          */
         if (matchesInput)
-            MarkString(trc, &matchesInput, "res->matchesInput");
+            TraceEdge(trc, &matchesInput, "res->matchesInput");
         if (lazySource)
-            MarkString(trc, &lazySource, "res->lazySource");
+            TraceEdge(trc, &lazySource, "res->lazySource");
         if (pendingInput)
-            MarkString(trc, &pendingInput, "res->pendingInput");
+            TraceEdge(trc, &pendingInput, "res->pendingInput");
     }
 
     /* Value creators. */
@@ -186,7 +186,7 @@ class RegExpStatics
     }
 };
 
-class AutoRegExpStaticsBuffer : private JS::CustomAutoRooter
+class MOZ_RAII AutoRegExpStaticsBuffer : private JS::CustomAutoRooter
 {
   public:
     explicit AutoRegExpStaticsBuffer(JSContext* cx
@@ -201,16 +201,16 @@ class AutoRegExpStaticsBuffer : private JS::CustomAutoRooter
   private:
     virtual void trace(JSTracer* trc) {
         if (statics.matchesInput) {
-            MarkStringRoot(trc, reinterpret_cast<JSString**>(&statics.matchesInput),
-                                "AutoRegExpStaticsBuffer matchesInput");
+            TraceRoot(trc, reinterpret_cast<JSString**>(&statics.matchesInput),
+                      "AutoRegExpStaticsBuffer matchesInput");
         }
         if (statics.lazySource) {
-            MarkStringRoot(trc, reinterpret_cast<JSString**>(&statics.lazySource),
-                                "AutoRegExpStaticsBuffer lazySource");
+            TraceRoot(trc, reinterpret_cast<JSString**>(&statics.lazySource),
+                      "AutoRegExpStaticsBuffer lazySource");
         }
         if (statics.pendingInput) {
-            MarkStringRoot(trc, reinterpret_cast<JSString**>(&statics.pendingInput),
-                                "AutoRegExpStaticsBuffer pendingInput");
+            TraceRoot(trc, reinterpret_cast<JSString**>(&statics.pendingInput),
+                      "AutoRegExpStaticsBuffer pendingInput");
         }
     }
 
@@ -486,7 +486,7 @@ RegExpStatics::updateFromMatchPairs(JSContext* cx, JSLinearString* input, MatchP
                                                matchesInput, input);
 
     if (!matches.initArrayFrom(newPairs)) {
-        js_ReportOutOfMemory(cx);
+        ReportOutOfMemory(cx);
         return false;
     }
 

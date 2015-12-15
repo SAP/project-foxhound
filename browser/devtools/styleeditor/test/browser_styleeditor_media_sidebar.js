@@ -2,6 +2,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 // https rather than chrome to improve coverage
 const TESTCASE_URI = TEST_BASE_HTTPS + "media-rules.html";
 const MEDIA_PREF = "devtools.styleeditor.showMediaSidebar";
@@ -14,31 +16,31 @@ const NEW_RULE = "\n@media (max-width: 600px) { div { color: blue; } }";
 waitForExplicitFinish();
 
 add_task(function*() {
-  let {UI} = yield addTabAndOpenStyleEditors(2, null, TESTCASE_URI);
+  let { ui } = yield openStyleEditorForURL(TESTCASE_URI);
 
-  is(UI.editors.length, 2, "correct number of editors");
+  is(ui.editors.length, 2, "correct number of editors");
 
   // Test first plain css editor
-  let plainEditor = UI.editors[0];
+  let plainEditor = ui.editors[0];
   yield openEditor(plainEditor);
   testPlainEditor(plainEditor);
 
   // Test editor with @media rules
-  let mediaEditor = UI.editors[1];
+  let mediaEditor = ui.editors[1];
   yield openEditor(mediaEditor);
   testMediaEditor(mediaEditor);
 
   // Test that sidebar hides when flipping pref
-  yield testShowHide(UI, mediaEditor);
+  yield testShowHide(ui, mediaEditor);
 
   // Test adding a rule updates the list
-  yield testMediaRuleAdded(UI, mediaEditor);
+  yield testMediaRuleAdded(ui, mediaEditor);
 
   // Test resizing and seeing @media matching state change
   let originalWidth = window.outerWidth;
   let originalHeight = window.outerHeight;
 
-  let onMatchesChange = listenForMediaChange(UI);
+  let onMatchesChange = listenForMediaChange(ui);
   window.resizeTo(RESIZE, RESIZE);
   yield onMatchesChange;
 
@@ -68,7 +70,8 @@ function testMediaMatchChanged(editor) {
   let sidebar = editor.details.querySelector(".stylesheet-sidebar");
 
   let cond = sidebar.querySelectorAll(".media-rule-condition")[2];
-  is(cond.textContent, "(max-width: 400px)", "third rule condition text is correct");
+  is(cond.textContent, "(max-width: 400px)",
+     "third rule condition text is correct");
   ok(!cond.classList.contains("media-condition-unmatched"),
      "media rule is now matched after resizing");
 }
@@ -128,7 +131,7 @@ function listenForMediaChange(UI) {
   let deferred = promise.defer();
   UI.once("media-list-changed", () => {
     deferred.resolve();
-  })
+  });
   return deferred.promise;
 }
 

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +9,6 @@
 #include "nsIDocument.h"
 #include "nsContentUtils.h"
 #include "nsPresContext.h"
-#include "nsNetUtil.h"
 
 #include "nsCSSParser.h"
 #include "nsCSSProps.h"
@@ -39,7 +39,8 @@ ParseInteger(const nsAString& aString, int32_t& aInt)
   return !(parseResult &
            ( nsContentUtils::eParseHTMLInteger_Error |
              nsContentUtils::eParseHTMLInteger_DidNotConsumeAllInput |
-             nsContentUtils::eParseHTMLInteger_IsPercent ));
+             nsContentUtils::eParseHTMLInteger_IsPercent |
+             nsContentUtils::eParseHTMLInteger_NonStandard ));
 }
 
 ResponsiveImageSelector::ResponsiveImageSelector(nsIContent *aContent)
@@ -620,11 +621,13 @@ ResponsiveImageCandidate::ConsumeDescriptors(nsAString::const_iterator& aIter,
         // End of current descriptor, consume it, skip spaces
         // ("After descriptor" state in spec) before continuing
         descriptors.AddDescriptor(Substring(currentDescriptor, iter));
-        for (; iter != end && *iter == char16_t(' '); ++iter);
+        for (; iter != end && nsContentUtils::IsHTMLWhitespace(*iter); ++iter);
         if (iter == end) {
           break;
         }
         currentDescriptor = iter;
+        // Leave one whitespace so the loop advances to this position next iteration
+        iter--;
       } else if (*iter == char16_t('(')) {
         inParens = true;
       }
@@ -700,8 +703,8 @@ ResponsiveImageCandidate::Density(int32_t aMatchingWidth) const
   if (mType == eCandidateType_Density) {
     return mValue.mDensity;
   } else if (mType == eCandidateType_ComputedFromWidth) {
-    if (aMatchingWidth <= 0) {
-      MOZ_ASSERT(false, "0 or negative matching width is invalid per spec");
+    if (aMatchingWidth < 0) {
+      MOZ_ASSERT(false, "Don't expect to have a negative matching width at this point");
       return 1.0;
     }
     double density = double(mValue.mWidth) / double(aMatchingWidth);

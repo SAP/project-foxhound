@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +34,7 @@ const int kRightStickXAxis = 2;
 const int kRightStickYAxis = 3;
 
 class Gamepad final : public nsISupports,
-                          public nsWrapperCache
+                      public nsWrapperCache
 {
 public:
   Gamepad(nsISupports* aParent,
@@ -59,7 +61,7 @@ public:
     return mParent;
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   void GetId(nsAString& aID) const
   {

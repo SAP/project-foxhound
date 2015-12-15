@@ -19,8 +19,8 @@ protected:
     typedef mozilla::ipc::ProcessChild ProcessChild;
 
 public:
-    explicit PluginProcessChild(ProcessHandle aParentHandle)
-      : ProcessChild(aParentHandle), mPlugin(true)
+    explicit PluginProcessChild(ProcessId aParentPid)
+      : ProcessChild(aParentPid), mPlugin(true)
     { }
 
     virtual ~PluginProcessChild()
@@ -40,7 +40,7 @@ private:
     DISALLOW_EVIL_CONSTRUCTORS(PluginProcessChild);
 };
 
-}  // namespace plugins
-}  // namespace mozilla
+} // namespace plugins
+} // namespace mozilla
 
 #endif  // ifndef dom_plugins_PluginProcessChild_h

@@ -9,7 +9,8 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-const { DevToolsUtils } = Cu.import("resource://gre/modules/devtools/DevToolsUtils.jsm", {});
+const { require } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+const DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
 
 XPCOMUtils.defineLazyModuleGetter(this,
   "Reflect", "resource://gre/modules/reflect.jsm");
@@ -22,6 +23,7 @@ this.EXPORTED_SYMBOLS = ["Parser", "ParserHelpers", "SyntaxTreeVisitor"];
 this.Parser = function Parser() {
   this._cache = new Map();
   this.errors = [];
+  this.logExceptions = true;
 };
 
 Parser.prototype = {
@@ -66,7 +68,9 @@ Parser.prototype = {
         syntaxTrees.push(new SyntaxTree(nodes, aUrl, length));
       } catch (e) {
         this.errors.push(e);
-        DevToolsUtils.reportException(aUrl, e);
+        if (this.logExceptions) {
+          DevToolsUtils.reportException(aUrl, e);
+        }
       }
     }
     // Generate the AST nodes for each script.
@@ -80,7 +84,9 @@ Parser.prototype = {
           syntaxTrees.push(new SyntaxTree(nodes, aUrl, length, offset));
         } catch (e) {
           this.errors.push(e);
-          DevToolsUtils.reportException(aUrl, e);
+          if (this.logExceptions) {
+            DevToolsUtils.reportException(aUrl, e);
+          }
         }
       }
     }
@@ -327,7 +333,7 @@ SyntaxTree.prototype = {
        */
       onFunctionDeclaration: function(aNode) {
         let functionName = aNode.id.name;
-        if (functionName.toLowerCase().contains(lowerCaseToken)) {
+        if (functionName.toLowerCase().includes(lowerCaseToken)) {
           store.push({
             functionName: functionName,
             functionLocation: ParserHelpers.getNodeLocation(aNode)
@@ -355,8 +361,8 @@ SyntaxTree.prototype = {
           this.onFunctionExpression(aNode._parent);
         }
 
-        if ((functionName && functionName.toLowerCase().contains(lowerCaseToken)) ||
-            (inferredName && inferredName.toLowerCase().contains(lowerCaseToken))) {
+        if ((functionName && functionName.toLowerCase().includes(lowerCaseToken)) ||
+            (inferredName && inferredName.toLowerCase().includes(lowerCaseToken))) {
           store.push({
             functionName: functionName,
             functionLocation: functionLocation,
@@ -371,7 +377,7 @@ SyntaxTree.prototype = {
        * Callback invoked for each arrow expression node.
        * @param Node aNode
        */
-      onArrowExpression: function(aNode) {
+      onArrowFunctionExpression: function(aNode) {
         // Infer the function's name from an enclosing syntax tree node.
         let inferredInfo = ParserHelpers.inferFunctionExpressionInfo(aNode);
         let inferredName = inferredInfo.name;
@@ -383,7 +389,7 @@ SyntaxTree.prototype = {
           this.onFunctionExpression(aNode._parent);
         }
 
-        if (inferredName && inferredName.toLowerCase().contains(lowerCaseToken)) {
+        if (inferredName && inferredName.toLowerCase().includes(lowerCaseToken)) {
           store.push({
             inferredName: inferredName,
             inferredChain: inferredChain,
@@ -405,7 +411,7 @@ SyntaxTree.prototype = {
 /**
  * Parser utility methods.
  */
-let ParserHelpers = {
+var ParserHelpers = {
   /**
    * Gets the location information for a node. Not all nodes have a
    * location property directly attached, or the location information
@@ -726,7 +732,7 @@ let ParserHelpers = {
  *   loc: SourceLocation | null;
  * }
  */
-let SyntaxTreeVisitor = {
+var SyntaxTreeVisitor = {
   /**
    * Walks a syntax tree.
    *
@@ -1617,8 +1623,8 @@ let SyntaxTreeVisitor = {
   /**
    * An arrow expression.
    *
-   * interface ArrowExpression <: Function, Expression {
-   *   type: "ArrowExpression";
+   * interface ArrowFunctionExpression <: Function, Expression {
+   *   type: "ArrowFunctionExpression";
    *   params: [ Pattern ];
    *   defaults: [ Expression ];
    *   rest: Identifier | null;
@@ -1627,7 +1633,7 @@ let SyntaxTreeVisitor = {
    *   expression: boolean;
    * }
    */
-  ArrowExpression: function(aNode, aParent, aCallbacks) {
+  ArrowFunctionExpression: function(aNode, aParent, aCallbacks) {
     aNode._parent = aParent;
 
     if (this.break) {
@@ -1638,8 +1644,8 @@ let SyntaxTreeVisitor = {
         return;
       }
     }
-    if (aCallbacks.onArrowExpression) {
-      aCallbacks.onArrowExpression(aNode);
+    if (aCallbacks.onArrowFunctionExpression) {
+      aCallbacks.onArrowFunctionExpression(aNode);
     }
     for (let param of aNode.params) {
       this[param.type](param, aNode, aCallbacks);

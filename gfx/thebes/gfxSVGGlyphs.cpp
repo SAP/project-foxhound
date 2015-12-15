@@ -19,10 +19,10 @@
 #include "nsStringStream.h"
 #include "nsStreamUtils.h"
 #include "nsIPrincipal.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/LoadInfo.h"
 #include "nsSVGUtils.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsHostObjectProtocolHandler.h"
 #include "nsContentUtils.h"
 #include "gfxFont.h"
@@ -147,7 +147,7 @@ gfxSVGGlyphsDocument::SetupPresentation()
     rv = docLoaderFactory->CreateInstanceForDocument(nullptr, mDocument, nullptr, getter_AddRefs(viewer));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = viewer->Init(nullptr, nsIntRect(0, 0, 1000, 1000));
+    rv = viewer->Init(nullptr, gfx::IntRect(0, 0, 1000, 1000));
     if (NS_SUCCEEDED(rv)) {
         rv = viewer->Open(nullptr, nullptr);
         NS_ENSURE_SUCCESS(rv, rv);
@@ -348,9 +348,10 @@ gfxSVGGlyphsDocument::ParseDocument(const uint8_t *aBuffer, uint32_t aBufLen)
     rv = NS_NewURI(getter_AddRefs(uri), mSVGGlyphsDocumentURI);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCOMPtr<nsIPrincipal> principal;
-    nsContentUtils::GetSecurityManager()->
-        GetNoAppCodebasePrincipal(uri, getter_AddRefs(principal));
+    OriginAttributes attrs;
+    nsCOMPtr<nsIPrincipal> principal =
+        BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+    NS_ENSURE_TRUE(principal, NS_ERROR_FAILURE);
 
     nsCOMPtr<nsIDOMDocument> domDoc;
     rv = NS_NewDOMDocument(getter_AddRefs(domDoc),

@@ -12,8 +12,13 @@
 #include "nsIUDPSocket.h"
 #include "nsIUDPSocketFilter.h"
 #include "mozilla/net/OfflineObserver.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
 
 namespace mozilla {
+namespace net {
+class PNeckoParent;
+} // namespace net
+
 namespace dom {
 
 class UDPSocketParent : public mozilla::net::PUDPSocketParent
@@ -24,9 +29,10 @@ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
 
-  UDPSocketParent();
+  explicit UDPSocketParent(PBackgroundParent* aManager);
+  explicit UDPSocketParent(PNeckoParent* aManager);
 
-  bool Init(const nsACString& aFilter);
+  bool Init(const IPC::Principal& aPrincipal, const nsACString& aFilter);
 
   virtual bool RecvBind(const UDPAddressInfo& aAddressInfo,
                         const bool& aAddressReuse, const bool& aLoopback) override;
@@ -53,10 +59,15 @@ private:
 
   void FireInternalError(uint32_t aLineNo);
 
+  // One of these will be null and the other non-null.
+  PBackgroundParent* mBackgroundManager;
+  PNeckoParent* mNeckoManager;
+
   bool mIPCOpen;
   nsCOMPtr<nsIUDPSocket> mSocket;
   nsCOMPtr<nsIUDPSocketFilter> mFilter;
   nsRefPtr<mozilla::net::OfflineObserver> mObserver;
+  nsCOMPtr<nsIPrincipal> mPrincipal;
 };
 
 } // namespace dom

@@ -21,7 +21,11 @@ public:
 
   virtual ~MacIOSurfaceTextureClientOGL();
 
-  void InitWith(MacIOSurface* aSurface);
+  // Creates a TextureClient and init width.
+  static already_AddRefed<MacIOSurfaceTextureClientOGL>
+  Create(ISurfaceAllocator* aAllocator,
+         TextureFlags aFlags,
+         MacIOSurface* aSurface);
 
   virtual bool Lock(OpenMode aMode) override;
 
@@ -37,20 +41,22 @@ public:
 
   virtual bool HasInternalBuffer() const override { return false; }
 
-  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() override;
+  virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
 
   // This TextureClient should not be used in a context where we use CreateSimilar
   // (ex. component alpha) because the underlying texture data is always created by
   // an external producer.
-  virtual TemporaryRef<TextureClient>
+  virtual already_AddRefed<TextureClient>
   CreateSimilar(TextureFlags, TextureAllocationFlags) const override { return nullptr; }
 
 protected:
+  virtual void FinalizeOnIPDLThread() override;
+
   RefPtr<MacIOSurface> mSurface;
   bool mIsLocked;
 };
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif // MOZILLA_GFX_MACIOSURFACETEXTURECLIENTOGL_H

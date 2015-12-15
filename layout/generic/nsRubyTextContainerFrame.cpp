@@ -7,10 +7,11 @@
 /* rendering object for CSS "display: ruby-text-container" */
 
 #include "nsRubyTextContainerFrame.h"
+
+#include "mozilla/UniquePtr.h"
+#include "mozilla/WritingModes.h"
 #include "nsPresContext.h"
 #include "nsStyleContext.h"
-#include "WritingModes.h"
-#include "mozilla/UniquePtr.h"
 
 using namespace mozilla;
 
@@ -121,6 +122,7 @@ nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
                                  const nsHTMLReflowState& aReflowState,
                                  nsReflowStatus& aStatus)
 {
+  MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsRubyTextContainerFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowState, aDesiredSize, aStatus);
 
@@ -133,11 +135,14 @@ nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
 
   nscoord minBCoord = nscoord_MAX;
   nscoord maxBCoord = nscoord_MIN;
+  // The container size is not yet known, so we use a dummy (0, 0) size.
+  // The block-dir position will be corrected below after containerSize
+  // is finalized.
+  const nsSize dummyContainerSize;
   for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
     nsIFrame* child = e.get();
     MOZ_ASSERT(child->GetType() == nsGkAtoms::rubyTextFrame);
-    // The container width is still unknown yet.
-    LogicalRect rect = child->GetLogicalRect(lineWM, 0);
+    LogicalRect rect = child->GetLogicalRect(lineWM, dummyContainerSize);
     LogicalMargin margin = child->GetLogicalUsedMargin(lineWM);
     nscoord blockStart = rect.BStart(lineWM) - margin.BStart(lineWM);
     minBCoord = std::min(minBCoord, blockStart);
@@ -145,26 +150,27 @@ nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
     maxBCoord = std::max(maxBCoord, blockEnd);
   }
 
-  MOZ_ASSERT(minBCoord <= maxBCoord || mFrames.IsEmpty());
   LogicalSize size(lineWM, mISize, 0);
   if (!mFrames.IsEmpty()) {
-    size.BSize(lineWM) = maxBCoord - minBCoord;
-    nscoord deltaBCoord = -minBCoord;
-    if (lineWM.IsVerticalRL()) {
-      deltaBCoord -= size.BSize(lineWM);
+    if (MOZ_UNLIKELY(minBCoord > maxBCoord)) {
+      // XXX When bug 765861 gets fixed, this warning should be upgraded.
+      NS_WARNING("bad block coord");
+      minBCoord = maxBCoord = 0;
     }
-
-    if (deltaBCoord != 0) {
-      nscoord containerWidth = size.Width(lineWM);
-      for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
-        nsIFrame* child = e.get();
-        LogicalPoint pos = child->GetLogicalPosition(lineWM, containerWidth);
-        pos.B(lineWM) += deltaBCoord;
-        // Relative positioning hasn't happened yet.
-        // So MovePositionBy should be used here.
-        child->SetPosition(lineWM, pos, containerWidth);
-        nsContainerFrame::PlaceFrameView(child);
-      }
+    size.BSize(lineWM) = maxBCoord - minBCoord;
+    nsSize containerSize = size.GetPhysicalSize(lineWM);
+    for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
+      nsIFrame* child = e.get();
+      // We reflowed the child with a dummy container size, as the true size
+      // was not yet known at that time.
+      LogicalPoint pos = child->GetLogicalPosition(lineWM, dummyContainerSize);
+      // Adjust block position to account for minBCoord,
+      // then reposition child based on the true container width.
+      pos.B(lineWM) -= minBCoord;
+      // Relative positioning hasn't happened yet.
+      // So MovePositionBy should not be used here.
+      child->SetPosition(lineWM, pos, containerSize);
+      nsContainerFrame::PlaceFrameView(child);
     }
   }
 

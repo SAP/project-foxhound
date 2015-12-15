@@ -16,44 +16,11 @@
 
 'use strict';
 
-var Promise = require('../util/promise').Promise;
 var l10n = require('../util/l10n');
 
 var Conversion = require('./types').Conversion;
 var Type = require('./types').Type;
 var Status = require('./types').Status;
-
-/**
- * The object against which we complete, which is usually 'window' if it exists
- * but could be something else in non-web-content environments.
- */
-var globalObject;
-if (typeof window !== 'undefined') {
-  globalObject = window;
-}
-
-/**
- * Setter for the object against which JavaScript completions happen
- */
-exports.setGlobalObject = function(obj) {
-  globalObject = obj;
-};
-
-/**
- * Getter for the object against which JavaScript completions happen, for use
- * in testing
- */
-exports.getGlobalObject = function() {
-  return globalObject;
-};
-
-/**
- * Remove registration of object against which JavaScript completions happen
- */
-exports.unsetGlobalObject = function() {
-  globalObject = undefined;
-};
-
 
 /**
  * 'javascript' handles scripted input
@@ -63,8 +30,11 @@ function JavascriptType(typeSpec) {
 
 JavascriptType.prototype = Object.create(Type.prototype);
 
-JavascriptType.prototype.getSpec = function() {
-  return 'javascript';
+JavascriptType.prototype.getSpec = function(commandName, paramName) {
+  return {
+    name: 'remote',
+    paramName: paramName
+  };
 };
 
 JavascriptType.prototype.stringify = function(value, context) {
@@ -82,7 +52,8 @@ JavascriptType.MAX_COMPLETION_MATCHES = 10;
 
 JavascriptType.prototype.parse = function(arg, context) {
   var typed = arg.text;
-  var scope = globalObject;
+  var scope = (context.environment.window == null) ?
+              null : context.environment.window;
 
   // No input is undefined
   if (typed === '') {

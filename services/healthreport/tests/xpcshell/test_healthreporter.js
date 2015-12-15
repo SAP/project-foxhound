@@ -11,7 +11,7 @@ Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/Metrics.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
 Cu.import("resource://gre/modules/Preferences.jsm");
-let bsp = Cu.import("resource://gre/modules/services/healthreport/healthreporter.jsm");
+var bsp = Cu.import("resource://gre/modules/services/healthreport/healthreporter.jsm");
 Cu.import("resource://gre/modules/services/healthreport/providers.jsm");
 Cu.import("resource://gre/modules/services/datareporting/policy.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
@@ -758,9 +758,9 @@ add_task(function test_request_remote_data_deletion() {
     do_check_false(reporter.haveRemoteData());
     do_check_false(server.hasDocument(reporter.serverNamespace, id));
 
-     // Client ID should be updated.
+    // Client ID should stay the same.
     do_check_neq(reporter._state.clientID, null);
-    do_check_neq(reporter._state.clientID, clientID);
+    do_check_eq(reporter._state.clientID, clientID);
     do_check_eq(reporter._state.clientIDVersion, 1);
 
     // And it should be persisted to disk.
@@ -917,7 +917,7 @@ add_task(function test_failure_if_not_initialized() {
     yield reporter.requestDataUpload();
   } catch (ex) {
     error = true;
-    do_check_true(ex.message.contains("Not initialized."));
+    do_check_true(ex.message.includes("Not initialized."));
   } finally {
     do_check_true(error);
     error = false;
@@ -927,7 +927,7 @@ add_task(function test_failure_if_not_initialized() {
     yield reporter.collectMeasurements();
   } catch (ex) {
     error = true;
-    do_check_true(ex.message.contains("Not initialized."));
+    do_check_true(ex.message.includes("Not initialized."));
   } finally {
     do_check_true(error);
     error = false;
@@ -984,7 +984,7 @@ add_task(function test_upload_on_init_failure() {
   do_check_eq(doc.notInitialized, 1);
   do_check_true("errors" in doc);
   do_check_eq(doc.errors.length, 1);
-  do_check_true(doc.errors[0].contains(MESSAGE));
+  do_check_true(doc.errors[0].includes(MESSAGE));
 
   yield reporter._shutdown();
   yield shutdownServer(server);

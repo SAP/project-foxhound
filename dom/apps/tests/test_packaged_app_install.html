@@ -7,6 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id={821589}
   <title>Test for Bug {821589} Packaged apps installation and update</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
   <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <script type="text/javascript" src="test_packaged_app_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -55,24 +56,6 @@ function checkUninstallApp(aApp) {
   req.onerror = function(evt) {
     ok(false, "Got unexpected " + evt.target.error.name);
     PackagedTestHelper.finish();
-  };
-}
-
-function checkInstalledApp(aMiniManifestURL,
-                           aVersion,
-                           aExpectedApp,
-                           aLaunchable,
-                           aCb) {
-  var req = navigator.mozApps.checkInstalled(aMiniManifestURL);
-  req.onsuccess = function(evt) {
-    ok(req.result, "The app is installed");
-
-    if (!req.result) {
-      PackagedTestHelper.finish();
-    }
-
-    PackagedTestHelper.checkAppState(evt.application, aVersion, aExpectedApp,
-                                     aLaunchable, false, aCb);
   };
 }
 
@@ -240,7 +223,7 @@ var steps = [
           size: 0,
           readyToApplyDownload: false
         };
-        PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, 2, expected,
+        PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, "2", expected,
                                          true, false, PackagedTestHelper.next);
       };
     };
@@ -327,7 +310,7 @@ var steps = [
           size: 0,
           readyToApplyDownload: alreadyCanceled
         };
-        PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, 3, expected,
+        PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, "3", expected,
                                          true, false, function() {});
       };
 
@@ -345,7 +328,7 @@ var steps = [
           size: 0,
           readyToApplyDownload: false
         };
-        PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, 3, expected,
+        PackagedTestHelper.checkAppState(PackagedTestHelper.gApp, "3", expected,
                                          true, false, PackagedTestHelper.next);
       }
 
@@ -365,7 +348,7 @@ var steps = [
 
 PackagedTestHelper.setSteps(steps);
 
-addLoadEvent(PackagedTestHelper.start);
+addLoadEvent(() => prepareEnv(() => PackagedTestHelper.start()));
 
 </script>
 </pre>

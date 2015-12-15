@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/Preferences.h"
-#include "mozilla/dom/TimeRanges.h"
 #include "MediaResource.h"
 #include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/Services.h"
 #include "AndroidMediaPluginHost.h"
 #include "nsXPCOMStrings.h"
 #include "nsISeekableStream.h"
-#include "AndroidMediaReader.h"
 #include "nsIGfxInfo.h"
 #include "gfxCrashReporterUtils.h"
 #include "prmem.h"
@@ -112,7 +111,7 @@ static bool IsOmxSupported()
   ScopedGfxFeatureReporter reporter("Stagefright", forceEnabled);
 
   if (!forceEnabled) {
-    nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
+    nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
     if (gfxInfo) {
       int32_t status;
       if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_STAGEFRIGHT, &status))) {
@@ -211,6 +210,7 @@ static const char* GetOmxLibraryName()
 
 AndroidMediaPluginHost::AndroidMediaPluginHost() {
   MOZ_COUNT_CTOR(AndroidMediaPluginHost);
+  MOZ_ASSERT(NS_IsMainThread());
 
   mResourceServer = AndroidMediaResourceServer::Start();
 
@@ -287,7 +287,6 @@ MPAPI::Decoder *AndroidMediaPluginHost::CreateDecoder(MediaResource *aResource, 
 
     decoder->mResource = strdup(url.get());
     if (plugin->CreateDecoder(&sPluginHost, decoder, chars, len)) {
-      aResource->AddRef();
       return decoder.forget();
     }
   }
@@ -309,11 +308,18 @@ void AndroidMediaPluginHost::DestroyDecoder(Decoder *aDecoder)
 }
 
 AndroidMediaPluginHost *sAndroidMediaPluginHost = nullptr;
-AndroidMediaPluginHost *GetAndroidMediaPluginHost()
+AndroidMediaPluginHost *EnsureAndroidMediaPluginHost()
 {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   if (!sAndroidMediaPluginHost) {
     sAndroidMediaPluginHost = new AndroidMediaPluginHost();
   }
+  return sAndroidMediaPluginHost;
+}
+
+AndroidMediaPluginHost *GetAndroidMediaPluginHost()
+{
+  MOZ_ASSERT(sAndroidMediaPluginHost);
   return sAndroidMediaPluginHost;
 }
 

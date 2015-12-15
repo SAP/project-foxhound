@@ -16,6 +16,8 @@
 
 #include "jsscriptinlines.h"
 
+#include "vm/ScopeObject-inl.h"
+
 namespace js {
 namespace jit {
 
@@ -43,6 +45,13 @@ BaselineFrame::popWith(JSContext* cx)
     popOffScopeChain();
 }
 
+inline void
+BaselineFrame::replaceInnermostScope(ScopeObject& scope)
+{
+    MOZ_ASSERT(scope.enclosingScope() == scopeChain_->as<ScopeObject>().enclosingScope());
+    scopeChain_ = &scope;
+}
+
 inline bool
 BaselineFrame::pushBlock(JSContext* cx, Handle<StaticBlockObject*> block)
 {
@@ -64,11 +73,23 @@ BaselineFrame::popBlock(JSContext* cx)
     popOffScopeChain();
 }
 
+inline bool
+BaselineFrame::freshenBlock(JSContext* cx)
+{
+    Rooted<ClonedBlockObject*> current(cx, &scopeChain_->as<ClonedBlockObject>());
+    ClonedBlockObject* clone = ClonedBlockObject::clone(cx, current);
+    if (!clone)
+        return false;
+
+    replaceInnermostScope(*clone);
+    return true;
+}
+
 inline CallObject&
 BaselineFrame::callObj() const
 {
     MOZ_ASSERT(hasCallObj());
-    MOZ_ASSERT(fun()->isHeavyweight());
+    MOZ_ASSERT(fun()->needsCallObject());
 
     JSObject* obj = scopeChain();
     while (!obj->is<CallObject>())

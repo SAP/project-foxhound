@@ -4,8 +4,29 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'CSS Parsing and Computation')
+
+with Files('nsComputedDOMStyle.*'):
+    BUG_COMPONENT = ('Core', 'DOM: CSS Object Model')
+
+with Files('nsROCSSPrimitiveValue.*'):
+    BUG_COMPONENT = ('Core', 'DOM: CSS Object Model')
+
+with Files('CSSRuleList.*'):
+    BUG_COMPONENT = ('Core', 'DOM: CSS Object Model')
+
+with Files('nsDOM*'):
+    BUG_COMPONENT = ('Core', 'DOM: CSS Object Model')
+
 DIRS += ['xbl-marquee']
 TEST_DIRS += ['test']
+
+XPIDL_SOURCES += [
+    'nsICSSUnprefixingService.idl',
+]
+
+XPIDL_MODULE = 'layout_base'
 
 EXPORTS += [
     'AnimationCommon.h',
@@ -63,15 +84,21 @@ EXPORTS.mozilla += [
     'CSSVariableDeclarations.h',
     'CSSVariableResolver.h',
     'CSSVariableValues.h',
+    'IncrementalClearCOMRuleArray.h',
+    'LayerAnimationInfo.h',
+    'RuleNodeCacheConditions.h',
+    'RuleProcessorCache.h',
     'StyleAnimationValue.h',
 ]
 
 EXPORTS.mozilla.dom += [
     'CSS.h',
+    'CSSLexer.h',
     'CSSRuleList.h',
     'CSSValue.h',
     'FontFace.h',
     'FontFaceSet.h',
+    'FontFaceSetIterator.h',
     'MediaQueryList.h',
 ]
 
@@ -91,6 +118,7 @@ UNIFIED_SOURCES += [
     'AnimationCommon.cpp',
     'CounterStyleManager.cpp',
     'CSS.cpp',
+    'CSSLexer.cpp',
     'CSSRuleList.cpp',
     'CSSStyleSheet.cpp',
     'CSSVariableDeclarations.cpp',
@@ -99,7 +127,11 @@ UNIFIED_SOURCES += [
     'Declaration.cpp',
     'ErrorReporter.cpp',
     'FontFace.cpp',
+    'FontFaceSet.cpp',
+    'FontFaceSetIterator.cpp',
     'ImageLoader.cpp',
+    'IncrementalClearCOMRuleArray.cpp',
+    'LayerAnimationInfo.cpp',
     'Loader.cpp',
     'MediaQueryList.cpp',
     'nsAnimationManager.cpp',
@@ -120,6 +152,7 @@ UNIFIED_SOURCES += [
     'nsDOMCSSRGBColor.cpp',
     'nsDOMCSSValueList.cpp',
     'nsFontFaceLoader.cpp',
+    'nsFontFaceUtils.cpp',
     'nsHTMLCSSStyleSheet.cpp',
     'nsHTMLStyleSheet.cpp',
     'nsLayoutStylesheetCache.cpp',
@@ -135,21 +168,22 @@ UNIFIED_SOURCES += [
     'nsStyleTransformMatrix.cpp',
     'nsStyleUtil.cpp',
     'nsTransitionManager.cpp',
+    'RuleNodeCacheConditions.cpp',
+    'RuleProcessorCache.cpp',
     'StyleAnimationValue.cpp',
     'StyleRule.cpp',
     'SVGAttrAnimationRuleProcessor.cpp',
 ]
 
-# FontFaceSet.cpp needs to be built separately because it redefines LOG.
 # nsCSSRuleProcessor.cpp needs to be built separately because it uses plarena.h.
 SOURCES += [
-    'FontFaceSet.cpp',
     'nsCSSRuleProcessor.cpp',
 ]
 
-FAIL_ON_WARNINGS = True
-
-MSVC_ENABLE_PGO = True
+EXTRA_COMPONENTS += [
+    'CSSUnprefixingService.js',
+    'CSSUnprefixingService.manifest',
+]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
@@ -158,11 +192,13 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '../base',
     '../generic',
+    '../svg',
     '../xul',
     '/dom/base',
     '/dom/html',
     '/dom/xbl',
     '/dom/xul',
+    '/image',
 ]
 
 JAR_MANIFESTS += ['jar.mn']

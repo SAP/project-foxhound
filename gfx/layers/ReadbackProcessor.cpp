@@ -7,6 +7,8 @@
 #include <sys/types.h>                  // for int32_t
 #include "Layers.h"                     // for Layer, PaintedLayer, etc
 #include "ReadbackLayer.h"              // for ReadbackLayer, ReadbackSink
+#include "UnitTransforms.h"             // for ViewAs
+#include "Units.h"                      // for ParentLayerIntRect
 #include "gfxColor.h"                   // for gfxRGBA
 #include "gfxContext.h"                 // for gfxContext
 #include "gfxUtils.h"
@@ -14,12 +16,12 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BasePoint.h"      // for BasePoint
 #include "mozilla/gfx/BaseRect.h"       // for BaseRect
+#include "mozilla/gfx/Point.h"          // for Intsize
 #include "nsAutoPtr.h"                  // for nsRefPtr, nsAutoPtr
 #include "nsDebug.h"                    // for NS_ASSERTION
 #include "nsISupportsImpl.h"            // for gfxContext::Release, etc
 #include "nsPoint.h"                    // for nsIntPoint
 #include "nsRegion.h"                   // for nsIntRegion
-#include "nsSize.h"                     // for nsIntSize
 
 using namespace mozilla::gfx;
 
@@ -61,7 +63,7 @@ FindBackgroundLayer(ReadbackLayer* aLayer, nsIntPoint* aOffset)
       return nullptr;
 
     nsIntPoint backgroundOffset(int32_t(backgroundTransform._31), int32_t(backgroundTransform._32));
-    nsIntRect rectInBackground(transformOffset - backgroundOffset, aLayer->GetSize());
+    IntRect rectInBackground(transformOffset - backgroundOffset, aLayer->GetSize());
     const nsIntRegion& visibleRegion = l->GetEffectiveVisibleRegion();
     if (!visibleRegion.Intersects(rectInBackground))
       continue;
@@ -71,13 +73,15 @@ FindBackgroundLayer(ReadbackLayer* aLayer, nsIntPoint* aOffset)
       return nullptr;
 
     if (l->GetEffectiveOpacity() != 1.0 ||
-        l->GetMaskLayer() ||
+        l->HasMaskLayers() ||
         !(l->GetContentFlags() & Layer::CONTENT_OPAQUE))
+    {
       return nullptr;
+    }
 
     // cliprects are post-transform
-    const nsIntRect* clipRect = l->GetEffectiveClipRect();
-    if (clipRect && !clipRect->Contains(nsIntRect(transformOffset, aLayer->GetSize())))
+    const Maybe<ParentLayerIntRect>& clipRect = l->GetEffectiveClipRect();
+    if (clipRect && !clipRect->Contains(ViewAs<ParentLayerPixel>(IntRect(transformOffset, aLayer->GetSize()))))
       return nullptr;
 
     Layer::LayerType type = l->GetType();
@@ -116,7 +120,7 @@ ReadbackProcessor::BuildUpdatesForLayer(ReadbackLayer* aLayer)
                                      aLayer->AllocateSequenceNumber());
       if (ctx) {
         ColorPattern color(ToDeviceColor(aLayer->mBackgroundColor));
-        nsIntSize size = aLayer->GetSize();
+        IntSize size = aLayer->GetSize();
         ctx->GetDrawTarget()->FillRect(Rect(0, 0, size.width, size.height),
                                        color);
         aLayer->mSink->EndUpdate(ctx, aLayer->GetRect());
@@ -126,7 +130,7 @@ ReadbackProcessor::BuildUpdatesForLayer(ReadbackLayer* aLayer)
     NS_ASSERTION(newBackground->AsPaintedLayer(), "Must be PaintedLayer");
     PaintedLayer* paintedLayer = static_cast<PaintedLayer*>(newBackground);
     // updateRect is relative to the PaintedLayer
-    nsIntRect updateRect = aLayer->GetRect() - offset;
+    IntRect updateRect = aLayer->GetRect() - offset;
     if (paintedLayer != aLayer->mBackgroundLayer ||
         offset != aLayer->mBackgroundLayerOffset) {
       aLayer->mBackgroundLayer = paintedLayer;
@@ -181,5 +185,5 @@ ReadbackProcessor::~ReadbackProcessor()
   }
 }
 
-}
-}
+} // namespace layers
+} // namespace mozilla

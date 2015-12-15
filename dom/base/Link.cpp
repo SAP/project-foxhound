@@ -1,6 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -40,8 +40,10 @@ Link::~Link()
 bool
 Link::ElementHasHref() const
 {
-  return ((!mElement->IsSVG() && mElement->HasAttr(kNameSpaceID_None, nsGkAtoms::href))
-        || (!mElement->IsHTML() && mElement->HasAttr(kNameSpaceID_XLink, nsGkAtoms::href)));
+  return ((!mElement->IsSVGElement() &&
+           mElement->HasAttr(kNameSpaceID_None, nsGkAtoms::href))
+        || (!mElement->IsHTMLElement() &&
+            mElement->HasAttr(kNameSpaceID_XLink, nsGkAtoms::href)));
 }
 
 void
@@ -442,7 +444,7 @@ Link::GetHash(nsAString &_hash, ErrorResult& aError)
   nsresult rv = uri->GetRef(ref);
   if (NS_SUCCEEDED(rv) && !ref.IsEmpty()) {
     _hash.Assign(char16_t('#'));
-    if (nsContentUtils::EncodeDecodeURLHash()) {
+    if (nsContentUtils::GettersDecodeURLHash()) {
       NS_UnescapeURL(ref); // XXX may result in random non-ASCII bytes!
     }
     AppendUTF8toUTF16(ref, _hash);
@@ -577,21 +579,6 @@ Link::SearchParams()
 }
 
 void
-Link::SetSearchParams(URLSearchParams& aSearchParams)
-{
-  if (mSearchParams) {
-    mSearchParams->RemoveObserver(this);
-  }
-
-  mSearchParams = &aSearchParams;
-  mSearchParams->AddObserver(this);
-
-  nsAutoString search;
-  mSearchParams->Serialize(search);
-  SetSearchInternal(search);
-}
-
-void
 Link::URLSearchParamsUpdated(URLSearchParams* aSearchParams)
 {
   MOZ_ASSERT(mSearchParams);
@@ -619,15 +606,14 @@ Link::UpdateURLSearchParams()
     }
   }
 
-  mSearchParams->ParseInput(search, this);
+  mSearchParams->ParseInput(search);
 }
 
 void
 Link::CreateSearchParamsIfNeeded()
 {
   if (!mSearchParams) {
-    mSearchParams = new URLSearchParams();
-    mSearchParams->AddObserver(this);
+    mSearchParams = new URLSearchParams(this, this);
     UpdateURLSearchParams();
   }
 }
@@ -636,7 +622,6 @@ void
 Link::Unlink()
 {
   if (mSearchParams) {
-    mSearchParams->RemoveObserver(this);
     mSearchParams = nullptr;
   }
 }

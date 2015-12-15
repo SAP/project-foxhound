@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Mozilla Foundation
+ * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,84 +15,81 @@
  */
 
 Components.utils.import('resource://gre/modules/Services.jsm');
-Components.utils.import('chrome://shumway/content/SpecialInflate.jsm');
-Components.utils.import('chrome://shumway/content/RtmpUtils.jsm');
+Components.utils.import('resource://gre/modules/Promise.jsm');
+
+Components.utils.import('chrome://shumway/content/ShumwayCom.jsm');
+
+var messageManager, viewerReady;
+// Checking if we loading content.js in the OOP/mozbrowser or jsplugins.
+// TODO remove mozbrowser logic when we switch to jsplugins only support
+if (typeof document === 'undefined') { // mozbrowser OOP frame script
+  messageManager = this;
+  viewerReady = Promise.resolve(content);
+  messageManager.sendAsyncMessage('Shumway:constructed', null);
+} else { // jsplugins instance
+  messageManager = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                .getInterface(Components.interfaces.nsIDocShell)
+                .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                .getInterface(Components.interfaces.nsIContentFrameMessageManager);
+
+  var viewer = document.getElementById('viewer');
+  viewerReady = new Promise(function (resolve) {
+    viewer.addEventListener('load', function () {
+      messageManager.sendAsyncMessage('Shumway:constructed', null);
+      resolve(viewer.contentWindow);
+    });
+  });
+}
+
 
 var externalInterfaceWrapper = {
   callback: function (call) {
-    if (!shumwayComAdapter.onExternalCallback) {
+    if (!shumwayComAdapterHooks.onExternalCallback) {
       return undefined;
     }
-    return shumwayComAdapter.onExternalCallback(
+    return shumwayComAdapterHooks.onExternalCallback(
       Components.utils.cloneInto(JSON.parse(call), content));
   }
 };
 
-// The object allows resending of external interface, clipboard and other
-// control messages between unprivileged content and ShumwayStreamConverter.
-var shumwayComAdapter;
+var shumwayComAdapterHooks = {};
 
-function sendMessage(action, data, sync, callbackCookie) {
+function sendMessage(action, data, sync) {
   var detail = {action: action, data: data, sync: sync};
-  if (callbackCookie !== undefined) {
-    detail.callback = true;
-    detail.cookie = callbackCookie;
-  }
   if (!sync) {
-    sendAsyncMessage('Shumway:message', detail);
+    messageManager.sendAsyncMessage('Shumway:message', detail);
     return;
   }
-  var result = sendSyncMessage('Shumway:message', detail);
+  var result = String(messageManager.sendSyncMessage('Shumway:message', detail));
+  result = result == 'undefined' ? undefined : JSON.parse(result);
   return Components.utils.cloneInto(result, content);
 }
 
-addMessageListener('Shumway:init', function (message) {
-  sendAsyncMessage('Shumway:running', {}, {
+function enableDebug() {
+  messageManager.sendAsyncMessage('Shumway:enableDebug', null);
+}
+
+messageManager.addMessageListener('Shumway:init', function (message) {
+  var environment = message.data;
+
+  messageManager.sendAsyncMessage('Shumway:running', {}, {
     externalInterface: externalInterfaceWrapper
   });
 
-  // Exposing ShumwayCom object/adapter to the unprivileged content -- setting
-  // up Xray wrappers.
-  shumwayComAdapter = Components.utils.createObjectIn(content, {defineAs: 'ShumwayCom'});
-  Components.utils.exportFunction(sendMessage, shumwayComAdapter, {defineAs: 'sendMessage'});
-  Object.defineProperties(shumwayComAdapter, {
-    onLoadFileCallback: { value: null, writable: true },
-    onExternalCallback: { value: null, writable: true },
-    onMessageCallback: { value: null, writable: true }
+  viewerReady.then(function (viewerWindow) {
+    ShumwayCom.createAdapter(viewerWindow.wrappedJSObject, {
+      sendMessage: sendMessage,
+      enableDebug: enableDebug,
+      getEnvironment: function () { return environment; }
+    }, shumwayComAdapterHooks);
+
+    viewerWindow.wrappedJSObject.runViewer();
   });
-  Components.utils.makeObjectPropsNormal(shumwayComAdapter);
-
-  // Exposing createSpecialInflate function for DEFLATE stream decoding using
-  // Gecko API.
-  if (SpecialInflateUtils.isSpecialInflateEnabled) {
-    Components.utils.exportFunction(function () {
-      return SpecialInflateUtils.createWrappedSpecialInflate(content);
-    }, content, {defineAs: 'createSpecialInflate'});
-  }
-
-  if (RtmpUtils.isRtmpEnabled) {
-    Components.utils.exportFunction(function (params) {
-      return RtmpUtils.createSocket(content, params);
-    }, content, {defineAs: 'createRtmpSocket'});
-    Components.utils.exportFunction(function () {
-      return RtmpUtils.createXHR(content);
-    }, content, {defineAs: 'createRtmpXHR'});
-  }
-
-  content.wrappedJSObject.runViewer();
 });
 
-addMessageListener('Shumway:loadFile', function (message) {
-  if (!shumwayComAdapter.onLoadFileCallback) {
+messageManager.addMessageListener('Shumway:loadFile', function (message) {
+  if (!shumwayComAdapterHooks.onLoadFileCallback) {
     return;
   }
-  shumwayComAdapter.onLoadFileCallback(Components.utils.cloneInto(message.data, content));
-});
-
-addMessageListener('Shumway:messageCallback', function (message) {
-  if (!shumwayComAdapter.onMessageCallback) {
-    return;
-  }
-  shumwayComAdapter.onMessageCallback(message.data.cookie,
-    Components.utils.cloneInto(message.data.response, content));
+  shumwayComAdapterHooks.onLoadFileCallback(Components.utils.cloneInto(message.data, content));
 });

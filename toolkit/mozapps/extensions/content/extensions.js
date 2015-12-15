@@ -51,7 +51,7 @@ const UPDATES_RELEASENOTES_TRANSFORMFILE = "chrome://mozapps/content/extensions/
 
 const XMLURI_PARSE_ERROR = "http://www.mozilla.org/newlayout/xml/parsererror.xml"
 
-const VIEW_DEFAULT = "addons://discover/";
+var gViewDefault = "addons://discover/";
 
 var gStrings = {};
 XPCOMUtils.defineLazyServiceGetter(gStrings, "bundleSvc",
@@ -124,6 +124,10 @@ function initialize(event) {
     gHeader.onKeyPress(event);
   });
 
+  if (!isDiscoverEnabled()) {
+    gViewDefault = "addons://list/extension";
+  }
+
   gViewController.initialize();
   gCategories.initialize();
   gHeader.initialize();
@@ -193,6 +197,14 @@ function loadView(aViewId) {
   } else {
     gViewController.loadView(aViewId);
   }
+}
+
+function isCorrectlySigned(aAddon) {
+  if (aAddon.signedState <= AddonManager.SIGNEDSTATE_MISSING)
+    return false;
+  if (aAddon.foreignInstall && aAddon.signedState < AddonManager.SIGNEDSTATE_SIGNED)
+    return false;
+  return true;
 }
 
 function isDiscoverEnabled() {
@@ -456,6 +468,31 @@ var gEventManager = {
       menuSep.hidden = (countMenuItemsBeforeSep == 0);
 
     }, false);
+
+    let addonTooltip = document.getElementById("addonitem-tooltip");
+    addonTooltip.addEventListener("popupshowing", function() {
+      let addonItem = addonTooltip.triggerNode;
+      // The way the test triggers the tooltip the richlistitem is the
+      // tooltipNode but in normal use it is the anonymous node. This allows
+      // any case
+      if (addonItem.localName != "richlistitem")
+        addonItem = document.getBindingParent(addonItem);
+
+      let tiptext = addonItem.getAttribute("name");
+
+      if (addonItem.mAddon) {
+        if (shouldShowVersionNumber(addonItem.mAddon)) {
+          tiptext += " " + (addonItem.hasAttribute("upgrade") ? addonItem.mManualUpdate.version
+                                                              : addonItem.mAddon.version);
+        }
+      }
+      else {
+        if (shouldShowVersionNumber(addonItem.mInstall))
+          tiptext += " " + addonItem.mInstall.version;
+      }
+
+      addonTooltip.label = tiptext;
+    }, false);
   },
 
   shutdown: function gEM_shutdown() {
@@ -641,12 +678,12 @@ var gViewController = {
         if (gHistory.canGoBack)
           gHistory.back();
         else
-          gViewController.replaceView(VIEW_DEFAULT);
+          gViewController.replaceView(gViewDefault);
       } else {
         if (gHistory.canGoForward)
           gHistory.forward();
         else
-          gViewController.replaceView(VIEW_DEFAULT);
+          gViewController.replaceView(gViewDefault);
       }
     }
   },
@@ -1221,8 +1258,11 @@ var gViewController = {
           if (!files.hasMoreElements()) {
             if (installs.length > 0) {
               // Display the normal install confirmation for the installs
-              AddonManager.installAddonsFromWebpage("application/x-xpinstall",
-                                                    getBrowserElement(), null, installs);
+              let webInstaller = Cc["@mozilla.org/addons/web-install-listener;1"].
+                                 getService(Ci.amIWebInstallListener);
+              webInstaller.onWebInstallRequested(getBrowserElement(),
+                                                 document.documentURIObject,
+                                                 installs);
             }
             return;
           }
@@ -1329,6 +1369,24 @@ var gViewController = {
         mainWindow.openAdvancedPreferences("dataChoicesTab");
       },
     },
+
+    cmd_showUnsignedExtensions: {
+      isEnabled: function cmd_showUnsignedExtensions_isEnabled() {
+        return true;
+      },
+      doCommand: function cmd_showUnsignedExtensions_doCommand() {
+        gViewController.loadView("addons://list/extension?unsigned=true");
+      },
+    },
+
+    cmd_showAllExtensions: {
+      isEnabled: function cmd_showUnsignedExtensions_isEnabled() {
+        return true;
+      },
+      doCommand: function cmd_showUnsignedExtensions_doCommand() {
+        gViewController.loadView("addons://list/extension");
+      },
+    },
   },
 
   supportsCommand: function gVC_supportsCommand(aCommand) {
@@ -1424,6 +1482,10 @@ function isInState(aInstall, aState) {
 
 function shouldShowVersionNumber(aAddon) {
   if (!aAddon.version)
+    return false;
+
+  // The version number is hidden for experiments.
+  if (aAddon.type == "experiment")
     return false;
 
   // The version number is hidden for lightweight themes.
@@ -1673,7 +1735,7 @@ var gCategories = {
     // then the list will default to selecting the search category and we never
     // want to show that as the first view so switch to the default category
     if (!this.node.selectedItem || this.node.selectedItem == this._search)
-      this.node.value = VIEW_DEFAULT;
+      this.node.value = gViewDefault;
 
     var self = this;
     this.node.addEventListener("select", function node_onSelected() {
@@ -1741,7 +1803,7 @@ var gCategories = {
 
     // If this category is currently selected then switch to the default view
     if (this.node.selectedItem == category)
-      gViewController.replaceView(VIEW_DEFAULT);
+      gViewController.replaceView(gViewDefault);
 
     this.node.removeChild(category);
   },
@@ -1772,7 +1834,7 @@ var gCategories = {
 
         // Don't load view that is becoming hidden
         if (hidden && aViewId == gViewController.currentViewId)
-          gViewController.loadView(VIEW_DEFAULT);
+          gViewController.loadView(gViewDefault);
 
         item.hidden = hidden;
         Services.prefs.setBoolPref(prefName, hidden);
@@ -1830,6 +1892,7 @@ var gCategories = {
       aId = aPreviousView;
       view = gViewController.parseViewId(aPreviousView);
     }
+    aId = aId.replace(/\?.*/, "");
 
     Services.prefs.setCharPref(PREF_UI_LASTCATEGORY, aId);
 
@@ -1912,18 +1975,6 @@ var gHeader = {
 
   onKeyPress: function gHeader_onKeyPress(aEvent) {
     if (String.fromCharCode(aEvent.charCode) == "/") {
-      this.focusSearchBox();
-      return;
-    }
-
-    // XXXunf Temporary until bug 371900 is fixed.
-    let key = document.getElementById("focusSearch").getAttribute("key");
-#ifdef XP_MACOSX
-    let keyModifier = aEvent.metaKey;
-#else
-    let keyModifier = aEvent.ctrlKey;
-#endif
-    if (String.fromCharCode(aEvent.charCode) == key && keyModifier) {
       this.focusSearchBox();
       return;
     }
@@ -2585,9 +2636,33 @@ var gListView = {
           item.showInDetailView();
       }
     }, false);
+
+    document.getElementById("signing-learn-more").setAttribute("href",
+      Services.urlFormatter.formatURLPref("app.support.baseURL") + "unsigned-addons");
+
+    let findSignedAddonsLink = document.getElementById("find-alternative-addons");
+    try {
+      findSignedAddonsLink.setAttribute("href",
+        Services.urlFormatter.formatURLPref("extensions.getAddons.link.url"));
+    } catch (e) {
+      findSignedAddonsLink.classList.remove("text-link");
+    }
+
+    try {
+      document.getElementById("signing-dev-manual-link").setAttribute("href",
+        Services.prefs.getCharPref("xpinstall.signatures.devInfoURL"));
+    } catch (e) {
+      document.getElementById("signing-dev-info").hidden = true;
+    }
   },
 
   show: function gListView_show(aType, aRequest) {
+    let showOnlyDisabledUnsigned = false;
+    if (aType.endsWith("?unsigned=true")) {
+      aType = aType.replace(/\?.*/, "");
+      showOnlyDisabledUnsigned = true;
+    }
+
     if (!(aType in AddonManager.addonTypes))
       throw Components.Exception("Attempting to show unknown type " + aType, Cr.NS_ERROR_INVALID_ARG);
 
@@ -2602,8 +2677,7 @@ var gListView = {
       navigator.plugins.refresh(false);
     }
 
-    var self = this;
-    getAddonsAndInstalls(aType, function show_getAddonsAndInstalls(aAddonsList, aInstallsList) {
+    getAddonsAndInstalls(aType, (aAddonsList, aInstallsList) => {
       if (gViewController && aRequest != gViewController.currentViewRequest)
         return;
 
@@ -2615,14 +2689,16 @@ var gListView = {
       for (let installItem of aInstallsList)
         elements.push(createItem(installItem, true));
 
-      self.showEmptyNotice(elements.length == 0);
+      this.showEmptyNotice(elements.length == 0);
       if (elements.length > 0) {
         sortElements(elements, ["uiState", "name"], true);
         for (let element of elements)
-          self._listBox.appendChild(element);
+          this._listBox.appendChild(element);
       }
 
-      gEventManager.registerInstallListener(self);
+      this.filterDisabledUnsigned(showOnlyDisabledUnsigned);
+
+      gEventManager.registerInstallListener(this);
       gViewController.updateCommands();
       gViewController.notifyViewChanged();
     });
@@ -2633,8 +2709,28 @@ var gListView = {
     doPendingUninstalls(this._listBox);
   },
 
+  filterDisabledUnsigned: function gListView_filterDisabledUnsigned(aFilter = true) {
+    let foundDisabledUnsigned = false;
+
+    if (SIGNING_REQUIRED) {
+      for (let item of this._listBox.childNodes) {
+        if (!isCorrectlySigned(item.mAddon))
+          foundDisabledUnsigned = true;
+        else
+          item.hidden = aFilter;
+      }
+    }
+
+    document.getElementById("show-disabled-unsigned-extensions").hidden =
+      aFilter || !foundDisabledUnsigned;
+
+    document.getElementById("show-all-extensions").hidden = !aFilter;
+    document.getElementById("disabled-unsigned-addons-info").hidden = !aFilter;
+  },
+
   showEmptyNotice: function gListView_showEmptyNotice(aShow) {
     this._emptyNotice.hidden = !aShow;
+    this._listBox.hidden = aShow;
   },
 
   onSortChanged: function gListView_onSortChanged(aSortBy, aAscending) {
@@ -2781,6 +2877,7 @@ var gDetailView = {
       version.hidden = true;
     }
 
+    var screenshotbox = document.getElementById("detail-screenshot-box");
     var screenshot = document.getElementById("detail-screenshot");
     if (aAddon.screenshots && aAddon.screenshots.length > 0) {
       if (aAddon.screenshots[0].thumbnailURL) {
@@ -2793,9 +2890,9 @@ var gDetailView = {
         screenshot.height = aAddon.screenshots[0].height;
       }
       screenshot.setAttribute("loading", "true");
-      screenshot.hidden = false;
+      screenshotbox.hidden = false;
     } else {
-      screenshot.hidden = true;
+      screenshotbox.hidden = true;
     }
 
     var desc = document.getElementById("detail-desc");
@@ -3011,7 +3108,7 @@ var gDetailView = {
         // This might happen due to session restore restoring us back to an
         // add-on that doesn't exist but otherwise shouldn't normally happen.
         // Either way just revert to the default view.
-        gViewController.replaceView(VIEW_DEFAULT);
+        gViewController.replaceView(gViewDefault);
       });
     });
   },
@@ -3069,6 +3166,15 @@ var gDetailView = {
         errorLink.value = gStrings.ext.GetStringFromName("details.notification.blocked.link");
         errorLink.href = this._addon.blocklistURL;
         errorLink.hidden = false;
+      } else if (!isCorrectlySigned(this._addon) && SIGNING_REQUIRED) {
+        this.node.setAttribute("notification", "error");
+        document.getElementById("detail-error").textContent = gStrings.ext.formatStringFromName(
+          "details.notification.unsignedAndDisabled", [this._addon.name, gStrings.brandShortName], 2
+        );
+        var errorLink = document.getElementById("detail-error-link");
+        errorLink.value = gStrings.ext.GetStringFromName("details.notification.unsigned.link");
+        errorLink.href = Services.urlFormatter.formatURLPref("app.support.baseURL") + "unsigned-addons";
+        errorLink.hidden = false;
       } else if (!this._addon.isCompatible && (AddonManager.checkCompatibility ||
         (this._addon.blocklistState != Ci.nsIBlocklistService.STATE_SOFTBLOCKED))) {
         this.node.setAttribute("notification", "warning");
@@ -3077,6 +3183,15 @@ var gDetailView = {
           [this._addon.name, gStrings.brandShortName, gStrings.appVersion], 3
         );
         document.getElementById("detail-warning-link").hidden = true;
+      } else if (!isCorrectlySigned(this._addon)) {
+        this.node.setAttribute("notification", "warning");
+        document.getElementById("detail-warning").textContent = gStrings.ext.formatStringFromName(
+          "details.notification.unsigned", [this._addon.name, gStrings.brandShortName], 2
+        );
+        var warningLink = document.getElementById("detail-warning-link");
+        warningLink.value = gStrings.ext.GetStringFromName("details.notification.unsigned.link");
+        warningLink.href = Services.urlFormatter.formatURLPref("app.support.baseURL") + "unsigned-addons";
+        warningLink.hidden = false;
       } else if (this._addon.blocklistState == Ci.nsIBlocklistService.STATE_SOFTBLOCKED) {
         this.node.setAttribute("notification", "warning");
         document.getElementById("detail-warning").textContent = gStrings.ext.formatStringFromName(
@@ -3333,6 +3448,7 @@ var gDetailView = {
     }
 
     if (aProperties.indexOf("appDisabled") != -1 ||
+        aProperties.indexOf("signedState") != -1 ||
         aProperties.indexOf("userDisabled") != -1)
       this.updateState();
   },
@@ -3451,8 +3567,8 @@ var gUpdatesView = {
         self.showEmptyNotice(false);
         self._updateSelected.hidden = true;
 
-        while (self._listBox.itemCount > 0)
-          self._listBox.removeItemAt(0);
+        while (self._listBox.childNodes.length > 0)
+          self._listBox.removeChild(self._listBox.firstChild);
       }
 
       var elements = [];
@@ -3486,6 +3602,7 @@ var gUpdatesView = {
 
   showEmptyNotice: function gUpdatesView_showEmptyNotice(aShow) {
     this._emptyNotice.hidden = !aShow;
+    this._listBox.hidden = aShow;
   },
 
   isManualUpdate: function gUpdatesView_isManualUpdate(aInstall, aOnlyAvailable) {
@@ -3627,8 +3744,11 @@ var gDragDrop = {
       if (pos == urls.length) {
         if (installs.length > 0) {
           // Display the normal install confirmation for the installs
-          AddonManager.installAddonsFromWebpage("application/x-xpinstall",
-                                                getBrowserElement(), null, installs);
+          let webInstaller = Cc["@mozilla.org/addons/web-install-listener;1"].
+                             getService(Ci.amIWebInstallListener);
+          webInstaller.onWebInstallRequested(getBrowserElement(),
+                                             document.documentURIObject,
+                                             installs);
         }
         return;
       }
@@ -3644,3 +3764,9 @@ var gDragDrop = {
     aEvent.preventDefault();
   }
 };
+
+#ifdef MOZ_REQUIRE_SIGNING
+const SIGNING_REQUIRED = true;
+#else
+const SIGNING_REQUIRED = Services.prefs.getBoolPref("xpinstall.signatures.required");
+#endif

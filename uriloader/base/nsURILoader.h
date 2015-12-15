@@ -16,7 +16,7 @@
 #include "nsIWeakReference.h"
 #include "mozilla/Attributes.h"
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 class nsDocumentOpenInfo;
 
@@ -48,12 +48,10 @@ protected:
    */
   nsCOMArray<nsIWeakReference> m_listeners;
 
-#ifdef PR_LOGGING
   /**
    * NSPR logging.  The module is called "URILoader"
    */
   static PRLogModuleInfo* mLog;
-#endif
   
   friend class nsDocumentOpenInfo;
 };

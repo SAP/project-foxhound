@@ -69,6 +69,11 @@
       var worker = wr.installing;
       ok(worker && wr.scope.match(/realworker$/) &&
          worker.scriptURL.match(/worker.js$/), "Valid worker instance should be available.");
+      return wr.unregister().then(function(success) {
+        ok(success, "The worker should be unregistered successfully");
+      }, function(e) {
+        dump("Error unregistering the worker: " + e + "\n");
+      });
     }, function(e) {
       info("Error: " + e.name);
       ok(false, "realWorker Registration should have succeeded!");
@@ -77,9 +82,17 @@
 
   function networkError404() {
     return navigator.serviceWorker.register("404.js", { scope: "network_error/"}).then(function(w) {
-        ok(false, "Should fail with NetworkError");
+        ok(false, "404 response should fail with TypeError");
       }, function(e) {
-        ok(e.name === "NetworkError", "Should fail with NetworkError");
+        ok(e.name === "TypeError", "404 response should fail with TypeError");
+      });
+  }
+
+  function redirectError() {
+    return navigator.serviceWorker.register("redirect_serviceworker.sjs", { scope: "redirect_error/" }).then(function(swr) {
+        ok(false, "redirection should fail");
+      }, function (e) {
+        ok(e.name === "SecurityError", "redirection should fail with SecurityError");
       });
   }
 
@@ -109,8 +122,12 @@
       reject = rej;
     });
 
+    var reg;
     function continueTest() {
-      navigator.serviceWorker.register("worker2.js", { scope: "simpleregister/" });
+      navigator.serviceWorker.register("worker2.js", { scope: "simpleregister/" })
+        .then(function(r) {
+          reg = r;
+        });;
     }
 
     window.onmessage = function(e) {
@@ -122,7 +139,12 @@
         // MaybeStopControlling() when this document is unloaded. At that point
         // the pref has been disabled, so the ServiceWorkerManager is not available.
         frame.setAttribute("src", new URL("about:blank").href);
-        resolve();
+        reg.unregister().then(function(success) {
+          ok(success, "The worker should be unregistered successfully");
+          resolve();
+        }, function(e) {
+          dump("Error unregistering the worker: " + e + "\n");
+        });
       } else if (e.data.type == "check") {
         ok(e.data.status, e.data.msg);
       }
@@ -163,6 +185,7 @@
       .then(httpsOnly)
       .then(realWorker)
       .then(networkError404)
+      .then(redirectError)
       .then(parseError)
       .then(updatefound)
       .then(checkReadyPromise)
@@ -177,9 +200,11 @@
 
   SimpleTest.waitForExplicitFinish();
   SpecialPowers.pushPrefEnv({"set": [
-    ["dom.messageChannel.enabled", true],
+    ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+    ["dom.serviceWorkers.interception.enabled", true],
     ["dom.serviceWorkers.enabled", true],
-    ["dom.serviceWorkers.testing.enabled", true]
+    ["dom.serviceWorkers.testing.enabled", true],
+    ["dom.caches.testing.enabled", true],
   ]}, runTest);
 </script>
 </pre>

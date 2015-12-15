@@ -31,6 +31,7 @@ public:
   enum {
     eThemeGeometryTypeTitlebar = eThemeGeometryTypeUnknown + 1,
     eThemeGeometryTypeToolbar,
+    eThemeGeometryTypeToolbox,
     eThemeGeometryTypeWindowButtons,
     eThemeGeometryTypeFullscreenButton,
     eThemeGeometryTypeMenu,
@@ -38,6 +39,7 @@ public:
     eThemeGeometryTypeVibrancyLight,
     eThemeGeometryTypeVibrancyDark,
     eThemeGeometryTypeTooltip,
+    eThemeGeometryTypeSheet,
   };
 
   nsNativeThemeCocoa();
@@ -65,7 +67,7 @@ public:
 
   NS_IMETHOD GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
                                   uint8_t aWidgetType,
-                                  nsIntSize* aResult, bool* aIsOverridable) override;
+                                  mozilla::LayoutDeviceIntSize* aResult, bool* aIsOverridable) override;
   NS_IMETHOD WidgetStateChanged(nsIFrame* aFrame, uint8_t aWidgetType, 
                                 nsIAtom* aAttribute, bool* aShouldRepaint) override;
   NS_IMETHOD ThemeChanged() override;
@@ -74,7 +76,8 @@ public:
   bool ThemeDrawsFocusForWidget(uint8_t aWidgetType) override;
   bool ThemeNeedsComboboxDropmarker() override;
   virtual bool WidgetAppearanceDependsOnWindowFocus(uint8_t aWidgetType) override;
-  virtual bool NeedToClearBackgroundBehindWidget(uint8_t aWidgetType) override;
+  virtual bool NeedToClearBackgroundBehindWidget(nsIFrame* aFrame,
+                                                 uint8_t aWidgetType) override;
   virtual bool WidgetProvidesFontSmoothingBackgroundColor(nsIFrame* aFrame, uint8_t aWidgetType,
                                                           nscolor* aColor) override;
   virtual ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame* aFrame,
@@ -91,10 +94,11 @@ public:
 protected:
   virtual ~nsNativeThemeCocoa();
 
-  nsIntMargin RTLAwareMargin(const nsIntMargin& aMargin, nsIFrame* aFrame);
+  nsIntMargin DirectionAwareMargin(const nsIntMargin& aMargin, nsIFrame* aFrame);
   nsIFrame* SeparatorResponsibility(nsIFrame* aBefore, nsIFrame* aAfter);
   CGRect SeparatorAdjustedRect(CGRect aRect, nsIFrame* aLeft,
                                nsIFrame* aCurrent, nsIFrame* aRight);
+  bool IsWindowSheet(nsIFrame* aFrame);
 
   // HITheme drawing routines
   void DrawFrame(CGContextRef context, HIThemeFrameKind inKind,
@@ -120,7 +124,7 @@ protected:
                       nsIFrame* aFrame);
   void DrawMenuIcon(CGContextRef cgContext, const CGRect& aRect,
                     mozilla::EventStates inState, nsIFrame* aFrame,
-                    const NSSize& aIconSize, const NSString* aImageName,
+                    const NSSize& aIconSize, NSString* aImageName,
                     bool aCenterHorizontally);
   void DrawButton(CGContextRef context, ThemeButtonKind inKind,
                   const HIRect& inBoxRect, bool inIsDefault, 

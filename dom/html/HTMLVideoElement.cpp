@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +13,6 @@
 #include "nsError.h"
 #include "nsNodeInfoManager.h"
 #include "plbase64.h"
-#include "nsNetUtil.h"
 #include "nsXPCOMStrings.h"
 #include "prlock.h"
 #include "nsThreadUtils.h"
@@ -43,6 +42,7 @@ NS_IMPL_ELEMENT_CLONE(HTMLVideoElement)
 
 HTMLVideoElement::HTMLVideoElement(already_AddRefed<NodeInfo>& aNodeInfo)
   : HTMLMediaElement(aNodeInfo)
+  , mUseScreenWakeLock(true)
 {
 }
 
@@ -52,7 +52,7 @@ HTMLVideoElement::~HTMLVideoElement()
 
 nsresult HTMLVideoElement::GetVideoSize(nsIntSize* size)
 {
-  if (mMediaSize.width == -1 && mMediaSize.height == -1) {
+  if (!mMediaInfo.HasVideo()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -60,8 +60,8 @@ nsresult HTMLVideoElement::GetVideoSize(nsIntSize* size)
     return NS_ERROR_FAILURE;
   }
 
-  size->height = mMediaSize.height;
-  size->width = mMediaSize.width;
+  size->height = mMediaInfo.mVideo.mDisplay.height;
+  size->width = mMediaInfo.mVideo.mDisplay.width;
   return NS_OK;
 }
 
@@ -129,7 +129,8 @@ nsresult HTMLVideoElement::SetAcceptHeader(nsIHttpChannel* aChannel)
 bool
 HTMLVideoElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
 {
-  return HasAttr(kNameSpaceID_None, nsGkAtoms::controls);
+  return HasAttr(kNameSpaceID_None, nsGkAtoms::controls) ||
+         HTMLMediaElement::IsInteractiveHTMLContent(aIgnoreTabindex);
 }
 
 uint32_t HTMLVideoElement::MozParsedFrames() const
@@ -173,7 +174,11 @@ double HTMLVideoElement::MozFrameDelay()
 {
   MOZ_ASSERT(NS_IsMainThread(), "Should be on main thread.");
   VideoFrameContainer* container = GetVideoFrameContainer();
-  return container ?  container->GetFrameDelay() : 0;
+  // Hide negative delays. Frame timing tweaks in the compositor (e.g.
+  // adding a bias value to prevent multiple dropped/duped frames when
+  // frame times are aligned with composition times) may produce apparent
+  // negative delay, but we shouldn't report that.
+  return container ? std::max(0.0, container->GetFrameDelay()) : 0.0;
 }
 
 bool HTMLVideoElement::MozHasAudio() const
@@ -182,17 +187,31 @@ bool HTMLVideoElement::MozHasAudio() const
   return HasAudio();
 }
 
-JSObject*
-HTMLVideoElement::WrapNode(JSContext* aCx)
+bool HTMLVideoElement::MozUseScreenWakeLock() const
 {
-  return HTMLVideoElementBinding::Wrap(aCx, this);
+  MOZ_ASSERT(NS_IsMainThread(), "Should be on main thread.");
+  return mUseScreenWakeLock;
 }
 
-void
-HTMLVideoElement::NotifyOwnerDocumentActivityChanged()
+void HTMLVideoElement::SetMozUseScreenWakeLock(bool aValue)
 {
-  HTMLMediaElement::NotifyOwnerDocumentActivityChanged();
+  MOZ_ASSERT(NS_IsMainThread(), "Should be on main thread.");
+  mUseScreenWakeLock = aValue;
   UpdateScreenWakeLock();
+}
+
+JSObject*
+HTMLVideoElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
+{
+  return HTMLVideoElementBinding::Wrap(aCx, this, aGivenProto);
+}
+
+bool
+HTMLVideoElement::NotifyOwnerDocumentActivityChangedInternal()
+{
+  bool pauseElement = HTMLMediaElement::NotifyOwnerDocumentActivityChangedInternal();
+  UpdateScreenWakeLock();
+  return pauseElement;
 }
 
 already_AddRefed<VideoPlaybackQuality>
@@ -208,12 +227,12 @@ HTMLVideoElement::GetVideoPlaybackQuality()
     if (window) {
       nsPerformance* perf = window->GetPerformance();
       if (perf) {
-        creationTime = perf->GetDOMTiming()->TimeStampToDOMHighRes(TimeStamp::Now());
+        creationTime = perf->Now();
       }
     }
 
     if (mDecoder) {
-      MediaDecoder::FrameStatistics& stats = mDecoder->GetFrameStatistics();
+      FrameStatistics& stats = mDecoder->GetFrameStatistics();
       totalFrames = stats.GetParsedFrames();
       droppedFrames = stats.GetDroppedFrames();
       corruptedFrames = 0;
@@ -245,15 +264,15 @@ HTMLVideoElement::UpdateScreenWakeLock()
 {
   bool hidden = OwnerDoc()->Hidden();
 
-  if (mScreenWakeLock && (mPaused || hidden)) {
+  if (mScreenWakeLock && (mPaused || hidden || !mUseScreenWakeLock)) {
     ErrorResult rv;
     mScreenWakeLock->Unlock(rv);
-    NS_WARN_IF_FALSE(!rv.Failed(), "Failed to unlock the wakelock.");
     mScreenWakeLock = nullptr;
     return;
   }
 
-  if (!mScreenWakeLock && !mPaused && !hidden && HasVideo()) {
+  if (!mScreenWakeLock && !mPaused && !hidden &&
+      mUseScreenWakeLock && HasVideo()) {
     nsRefPtr<power::PowerManagerService> pmService =
       power::PowerManagerService::GetInstance();
     NS_ENSURE_TRUE_VOID(pmService);

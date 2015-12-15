@@ -71,6 +71,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MouseEvents.h"
 
+#include "nsPIWindowRoot.h"
+
 #ifdef XP_MACOSX
 #include "nsINativeMenuService.h"
 #define USE_NATIVE_MENUS
@@ -257,6 +259,15 @@ nsWebShellWindow::WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y)
     pm->AdjustPopupsOnWindowChange(window);
   }
 
+  // Notify all tabs that the widget moved.
+  if (mDocShell && mDocShell->GetWindow()) {
+    nsCOMPtr<EventTarget> eventTarget = mDocShell->GetWindow()->GetTopWindowRoot();
+    nsContentUtils::DispatchChromeEvent(mDocShell->GetDocument(),
+                                        eventTarget,
+                                        NS_LITERAL_STRING("MozUpdateWindowPos"),
+                                        false, false, nullptr);
+  }
+
   // Persist position, but not immediately, in case this OS is firing
   // repeated move events as the user drags the window
   SetPersistenceTimer(PAD_POSITION);
@@ -295,7 +306,7 @@ nsWebShellWindow::RequestWindowClose(nsIWidget* aWidget)
     nsRefPtr<nsPresContext> presContext = presShell->GetPresContext();
 
     nsEventStatus status = nsEventStatus_eIgnore;
-    WidgetMouseEvent event(true, NS_XUL_CLOSE, nullptr,
+    WidgetMouseEvent event(true, eWindowClose, nullptr,
                            WidgetMouseEvent::eReal);
     if (NS_SUCCEEDED(eventTarget->DispatchDOMEvent(&event, nullptr, presContext, &status)) &&
         status == nsEventStatus_eConsumeNoDefault)
@@ -330,8 +341,8 @@ nsWebShellWindow::SizeModeChanged(nsSizeMode sizeMode)
   if (ourWindow) {
     MOZ_ASSERT(ourWindow->IsOuterWindow());
 
-    // Let the application know if it's in fullscreen mode so it
-    // can update its UI.
+    // Ensure that the fullscreen state is synchronized between
+    // the widget and the outer window object.
     if (sizeMode == nsSizeMode_Fullscreen) {
       ourWindow->SetFullScreen(true);
     }
@@ -348,6 +359,16 @@ nsWebShellWindow::SizeModeChanged(nsSizeMode sizeMode)
   // the state and pass the event on to the OS. The day is coming
   // when we'll handle the event here, and the return result will
   // then need to be different.
+}
+
+void
+nsWebShellWindow::FullscreenChanged(bool aInFullscreen)
+{
+  if (mDocShell) {
+    if (nsCOMPtr<nsPIDOMWindow> ourWindow = mDocShell->GetWindow()) {
+      ourWindow->FinishFullscreenChange(aInFullscreen);
+    }
+  }
 }
 
 void
@@ -662,7 +683,7 @@ void nsWebShellWindow::LoadContentAreas() {
                           nullptr,
                           nullptr,
                           nullptr);
-            nsMemory::Free(urlChar);
+            free(urlChar);
           }
         }
       }
@@ -696,7 +717,7 @@ bool nsWebShellWindow::ExecuteCloseHandler()
       contentViewer->GetPresContext(getter_AddRefs(presContext));
 
       nsEventStatus status = nsEventStatus_eIgnore;
-      WidgetMouseEvent event(true, NS_XUL_CLOSE, nullptr,
+      WidgetMouseEvent event(true, eWindowClose, nullptr,
                              WidgetMouseEvent::eReal);
 
       nsresult rv =

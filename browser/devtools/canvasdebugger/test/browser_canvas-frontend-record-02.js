@@ -5,7 +5,7 @@
  * Tests whether the frontend displays a placeholder snapshot while recording.
  */
 
-function ifTestingSupported() {
+function* ifTestingSupported() {
   let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
   let { window, EVENTS, L10N, $, SnapshotsListView } = panel.panelWin;
 
@@ -36,8 +36,8 @@ function ifTestingSupported() {
     "The reload notice should now be hidden.");
   is($("#empty-notice").getAttribute("hidden"), "true",
     "The empty notice should now be hidden.");
-  is($("#import-notice").hasAttribute("hidden"), false,
-    "The import notice should now be visible.");
+  is($("#waiting-notice").hasAttribute("hidden"), false,
+    "The waiting notice should now be visible.");
 
   is($("#screenshot-container").getAttribute("hidden"), "true",
     "The screenshot container should still be hidden.");
@@ -57,8 +57,8 @@ function ifTestingSupported() {
     "The reload notice should now be hidden.");
   is($("#empty-notice").getAttribute("hidden"), "true",
     "The empty notice should now be hidden.");
-  is($("#import-notice").getAttribute("hidden"), "true",
-    "The import notice should now be hidden.");
+  is($("#waiting-notice").getAttribute("hidden"), "true",
+    "The waiting notice should now be hidden.");
 
   is($("#screenshot-container").hasAttribute("hidden"), false,
     "The screenshot container should now be visible.");

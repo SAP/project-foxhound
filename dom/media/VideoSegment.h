@@ -10,17 +10,25 @@
 #include "nsCOMPtr.h"
 #include "gfxPoint.h"
 #include "nsAutoPtr.h"
+#if defined(MOZILLA_XPCOMRT_API)
+#include "SimpleImageBuffer.h"
+#else
 #include "ImageContainer.h"
+#endif
 
 namespace mozilla {
 
 namespace layers {
 class Image;
-}
+} // namespace layers
 
 class VideoFrame {
 public:
+#if defined(MOZILLA_XPCOMRT_API)
+  typedef mozilla::SimpleImageBuffer Image;
+#else
   typedef mozilla::layers::Image Image;
+#endif
 
   VideoFrame(already_AddRefed<Image>& aImage, const gfxIntSize& aIntrinsicSize);
   VideoFrame();
@@ -44,8 +52,10 @@ public:
   void SetNull();
   void TakeFrom(VideoFrame* aFrame);
 
+#if !defined(MOZILLA_XPCOMRT_API)
   // Create a planar YCbCr black image.
   static already_AddRefed<Image> CreateBlackImage(const gfxIntSize& aSize);
+#endif // !defined(MOZILLA_XPCOMRT_API)
 
 protected:
   // mImage can be null to indicate "no video" (aka "empty frame"). It can
@@ -93,7 +103,11 @@ struct VideoChunk {
 
 class VideoSegment : public MediaSegmentBase<VideoSegment, VideoChunk> {
 public:
+#if defined(MOZILLA_XPCOMRT_API)
+  typedef mozilla::SimpleImageBuffer Image;
+#else
   typedef mozilla::layers::Image Image;
+#endif
   typedef mozilla::gfx::IntSize IntSize;
 
   VideoSegment();
@@ -103,14 +117,6 @@ public:
                    StreamTime aDuration,
                    const IntSize& aIntrinsicSize,
                    bool aForceBlack = false);
-  const VideoFrame* GetFrameAt(StreamTime aOffset, StreamTime* aStart = nullptr)
-  {
-    VideoChunk* c = FindChunkContaining(aOffset, aStart);
-    if (!c) {
-      return nullptr;
-    }
-    return &c->mFrame;
-  }
   const VideoFrame* GetLastFrame(StreamTime* aStart = nullptr)
   {
     VideoChunk* c = GetLastChunk();
@@ -140,6 +146,6 @@ public:
   }
 };
 
-}
+} // namespace mozilla
 
 #endif /* MOZILLA_VIDEOSEGMENT_H_ */

@@ -17,7 +17,6 @@ class nsIContent;
 class nsIFrame;
 class nsIPresShell;
 class nsStyleContext;
-class nsSVGIntegerPair;
 class nsSVGLength2;
 
 struct nsRect;
@@ -25,8 +24,8 @@ struct nsRect;
 namespace mozilla {
 namespace dom {
 class SVGFilterElement;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 typedef nsSVGContainerFrame nsSVGFilterFrameBase;
 

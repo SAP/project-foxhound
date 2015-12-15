@@ -29,7 +29,6 @@ class nsAXPCNativeCallContext;
 [ptr] native JSFreeOpPtr(JSFreeOp);
 [ptr] native JSObjectPtr(JSObject);
 [ptr] native JSValConstPtr(const JS::Value);
-      native JSPropertyOp(JSPropertyOp);
       native JSEqualityOp(JSEqualityOp);
 [ptr] native JSScriptPtr(JSScript);
 [ptr] native voidPtrPtr(void*);
@@ -55,13 +54,13 @@ interface nsIObjectInputStream;
 interface nsIObjectOutputStream;
 
 /***************************************************************************/
-[uuid(909e8641-7c54-4dff-9b94-ba631f057b33)]
+[uuid(73e6ff4a-ab99-4d99-ac00-ba39ccb8e4d7)]
 interface nsIXPConnectJSObjectHolder : nsISupports
 {
     [notxpcom, nostdcall] JSObjectPtr GetJSObject();
 };
 
-[uuid(cf6b00de-8ff4-443a-932c-b72ff341367a)]
+[uuid(e787be29-db5d-4a45-a3d6-1de1d6b85c30)]
 interface nsIXPConnectWrappedNative : nsIXPConnectJSObjectHolder
 {
     /* attribute 'JSObject' inherited from nsIXPConnectJSObjectHolder */
@@ -116,7 +115,7 @@ do_QueryWrappedNative(nsIXPConnectWrappedNative *aWrappedNative,
 
 %}
 
-[uuid(BED52030-BCA6-11d2-BA79-00805F8A5DD7)]
+[uuid(3a01b0d6-074b-49ed-bac3-08c76366cae4)]
 interface nsIXPConnectWrappedJS : nsIXPConnectJSObjectHolder
 {
     /* attribute 'JSObject' inherited from nsIXPConnectJSObjectHolder */
@@ -267,7 +266,7 @@ interface nsIXPCFunctionThisTranslator : nsISupports
     { 0xbd, 0xd6, 0x0, 0x0, 0x64, 0x65, 0x73, 0x74 } }
 %}
 
-[noscript, uuid(6872bfd6-660b-4aa3-b54b-41ce1d2d69e3)]
+[noscript, uuid(f339ea52-10ce-4103-b1f2-fd9659040e3c)]
 interface nsIXPConnect : nsISupports
 {
 %{ C++
@@ -304,13 +303,6 @@ interface nsIXPConnect : nsISupports
     /**
     * wrapNative will create a new JSObject or return an existing one.
     *
-    * The JSObject is returned inside a refcounted nsIXPConnectJSObjectHolder.
-    * As long as this holder is held the JSObject will be protected from
-    * collection by JavaScript's garbage collector. It is a good idea to
-    * transfer the JSObject to some equally protected place before releasing
-    * the holder (i.e. use JS_SetProperty to make this object a property of
-    * some other JSObject).
-    *
     * This method now correctly deals with cases where the passed in xpcom
     * object already has an associated JSObject for the cases:
     *  1) The xpcom object has already been wrapped for use in the same scope
@@ -333,11 +325,20 @@ interface nsIXPConnect : nsISupports
     *       NS_ERROR_XPC_CANT_GET_JSOBJECT_OF_DOM_OBJECT
     *       NS_ERROR_FAILURE
     */
-    nsIXPConnectJSObjectHolder
+    JSObjectPtr
     wrapNative(in JSContextPtr aJSContext,
                in JSObjectPtr  aScope,
                in nsISupports  aCOMObj,
                in nsIIDRef     aIID);
+
+    /**
+     * Same as wrapNative, but it returns the JSObject in an nsIXPConnectJSObjectHolder.
+     */
+    nsIXPConnectJSObjectHolder
+    wrapNativeHolder(in JSContextPtr aJSContext,
+                     in JSObjectPtr  aScope,
+                     in nsISupports  aCOMObj,
+                     in nsIIDRef     aIID);
 
     /**
      * Same as wrapNative, but it returns the JSObject in aVal. C++ callers
@@ -408,14 +409,6 @@ interface nsIXPConnect : nsISupports
     getNativeOfWrapper(in JSContextPtr aJSContext,
                        in JSObjectPtr  aJSObj);
 
-    nsIStackFrame
-    createStackFrameLocation(in uint32_t       aLanguage,
-                             in string         aFilename,
-                             in string         aFunctionName,
-                             in int32_t        aLineNumber,
-                             in nsIStackFrame  aCaller);
-
-
     [noscript,notxpcom,nostdcall] JSContextPtr getCurrentJSContext();
     [noscript,notxpcom,nostdcall] JSContextPtr getSafeJSContext();
 
@@ -465,7 +458,7 @@ interface nsIXPConnect : nsISupports
     setFunctionThisTranslator(in nsIIDRef aIID,
                               in nsIXPCFunctionThisTranslator aTranslator);
 
-    nsIXPConnectJSObjectHolder
+    JSObjectPtr
     getWrappedNativePrototype(in JSContextPtr aJSContext,
                               in JSObjectPtr  aScope,
                               in nsIClassInfo aClassInfo);
@@ -481,8 +474,7 @@ interface nsIXPConnect : nsISupports
      * @param principal The principal (or NULL to use the null principal)
      *                  to use when evaluating code in this sandbox.
      */
-    [noscript] nsIXPConnectJSObjectHolder createSandbox(in JSContextPtr cx,
-                                                        in nsIPrincipal principal);
+    [noscript] JSObjectPtr createSandbox(in JSContextPtr cx, in nsIPrincipal principal);
 
     /**
      * Evaluate script in a sandbox, completely isolated from all
@@ -494,6 +486,8 @@ interface nsIXPConnect : nsISupports
      *           the script. The actual evaluation will happen on a new
      *           temporary context.
      * @param sandbox The sandbox object to evaluate the script in.
+     * @param version The JavaScript version to use for evaluating the script.
+     *                Should be a valid JSVersion from jspubtd.h.
      * @return The result of the evaluation as a jsval. If the caller
      *         intends to use the return value from this call the caller
      *         is responsible for rooting the jsval before making a call
@@ -501,7 +495,8 @@ interface nsIXPConnect : nsISupports
      */
     [noscript] jsval evalInSandboxObject(in AString source, in string filename,
                                          in JSContextPtr cx,
-                                         in JSObjectPtr sandbox);
+                                         in JSObjectPtr sandbox,
+                                         in int32_t version);
 
     /**
      * Whether or not XPConnect should report all JS exceptions when returning

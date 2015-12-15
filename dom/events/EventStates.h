@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -261,8 +262,6 @@ private:
 #define NS_EVENT_STATE_LTR NS_DEFINE_EVENT_STATE_MACRO(42)
 // Element is rtl (for :dir pseudo-class)
 #define NS_EVENT_STATE_RTL NS_DEFINE_EVENT_STATE_MACRO(43)
-// Handler for play preview plugin
-#define NS_EVENT_STATE_TYPE_PLAY_PREVIEW NS_DEFINE_EVENT_STATE_MACRO(44)
 // Element is highlighted (devtools inspector)
 #define NS_EVENT_STATE_DEVTOOLS_HIGHLIGHTED NS_DEFINE_EVENT_STATE_MACRO(45)
 // Element is an unresolved custom element candidate

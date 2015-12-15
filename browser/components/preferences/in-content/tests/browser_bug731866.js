@@ -9,25 +9,26 @@ function test() {
   open_preferences(runTest);
 }
 
-let gElements;
+var gElements;
 
 function checkElements(expectedPane) {
   for (let element of gElements) {
     // preferences elements fail is_element_visible checks because they are never visible.
-    if (element.nodeName == "preferences") {
+    // special-case the drmGroup item because its visibility depends on pref + OS version
+    if (element.nodeName == "preferences" || element.id === "drmGroup") {
       continue;
     }
     let attributeValue = element.getAttribute("data-category");
+    let suffix = " (id=" + element.id + ")";
     if (attributeValue == "pane" + expectedPane) {
-      is_element_visible(element, expectedPane + " elements should be visible");
+      is_element_visible(element, expectedPane + " elements should be visible" + suffix);
     } else {
-      is_element_hidden(element, "Elements not in " + expectedPane + " should be hidden");
+      is_element_hidden(element, "Elements not in " + expectedPane + " should be hidden" + suffix);
     }
   }
 }
 
 function runTest(win) {
-  Services.prefs.setBoolPref("browser.eme.ui.enabled", true);
   is(gBrowser.currentURI.spec, "about:preferences", "about:preferences loaded");
 
   let tab = win.document;
@@ -45,6 +46,5 @@ function runTest(win) {
 
   gBrowser.removeCurrentTab();
   win.close();
-  Services.prefs.clearUserPref("browser.eme.ui.enabled");
   finish();
 }

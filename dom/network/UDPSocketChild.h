@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,6 +42,8 @@ public:
   UDPSocketChild();
   virtual ~UDPSocketChild();
 
+  nsresult CreatePBackgroundSpinUntilDone();
+
   virtual bool RecvCallbackOpened(const UDPAddressInfo& aAddressInfo) override;
   virtual bool RecvCallbackClosed() override;
   virtual bool RecvCallbackReceivedData(const UDPAddressInfo& aAddressInfo,
@@ -53,6 +57,7 @@ private:
                             const uint8_t* aData,
                             const uint32_t aByteLength);
 
+  mozilla::ipc::PBackgroundChild* mBackgroundManager;
   uint16_t mLocalPort;
   nsCString mLocalAddress;
   nsCString mFilterName;

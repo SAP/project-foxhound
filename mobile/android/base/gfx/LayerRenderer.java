@@ -17,6 +17,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
@@ -27,7 +28,7 @@ import android.opengl.GLES20;
 import android.os.SystemClock;
 import android.util.Log;
 
-import org.mozilla.gecko.mozglue.JNITarget;
+import org.mozilla.gecko.annotation.JNITarget;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import java.nio.ByteBuffer;
@@ -70,7 +71,6 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
     private RenderContext mLastPageContext;
     private int mMaxTextureSize;
     private int mBackgroundColor;
-    private int mOverscrollColor;
 
     private long mLastFrameTime;
     private final CopyOnWriteArrayList<RenderTask> mTasks;
@@ -145,9 +145,11 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
 
     public LayerRenderer(LayerView view) {
         mView = view;
-        setOverscrollColor(R.color.background_normal);
 
-        Bitmap scrollbarImage = view.getScrollbarImage();
+        final BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
+        bitmapOptions.inScaled = false;
+        Bitmap scrollbarImage =
+                BitmapUtils.decodeResource(view.getContext(), R.drawable.scrollbar, bitmapOptions);
         IntSize size = new IntSize(scrollbarImage.getWidth(), scrollbarImage.getHeight());
         scrollbarImage = expandCanvasToPowerOfTwo(scrollbarImage, size);
 
@@ -160,12 +162,6 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
 
         mFrameTimings = new int[60];
         mCurrentFrame = mFrameTimingsSum = mDroppedFrames = 0;
-
-        // Initialize the FloatBuffer that will be used to store all vertices and texture
-        // coordinates in draw() commands.
-        mCoordByteBuffer = DirectBufferAllocator.allocate(COORD_BUFFER_SIZE * 4);
-        mCoordByteBuffer.order(ByteOrder.nativeOrder());
-        mCoordBuffer = mCoordByteBuffer.asFloatBuffer();
 
         Tabs.registerOnTabsChangedListener(this);
         mZoomedViewListeners = new ArrayList<LayerView.ZoomedViewListener>();
@@ -190,9 +186,11 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
     }
 
     public void destroy() {
-        DirectBufferAllocator.free(mCoordByteBuffer);
-        mCoordByteBuffer = null;
-        mCoordBuffer = null;
+        if (mCoordByteBuffer != null) {
+            DirectBufferAllocator.free(mCoordByteBuffer);
+            mCoordByteBuffer = null;
+            mCoordBuffer = null;
+        }
         mHorizScrollLayer.destroy();
         mVertScrollLayer.destroy();
         Tabs.unregisterOnTabsChangedListener(this);
@@ -203,12 +201,6 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
         checkMonitoringEnabled();
         createDefaultProgram();
         activateDefaultProgram();
-    }
-
-    void setOverscrollColor(int colorId) {
-        try {
-            mOverscrollColor = mView.getContext().getResources().getColor(colorId);
-        } catch (Resources.NotFoundException nfe) { mOverscrollColor = Color.BLACK; }
     }
 
     public void createDefaultProgram() {
@@ -331,27 +323,34 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
         return pixelBuffer;
     }
 
-    private RenderContext createScreenContext(ImmutableViewportMetrics metrics, PointF offset) {
+    private RenderContext createScreenContext(ImmutableViewportMetrics metrics) {
         RectF viewport = new RectF(0.0f, 0.0f, metrics.getWidth(), metrics.getHeight());
         RectF pageRect = metrics.getPageRect();
 
-        return createContext(viewport, pageRect, 1.0f, offset);
+        return createContext(viewport, pageRect, 1.0f);
     }
 
-    private RenderContext createPageContext(ImmutableViewportMetrics metrics, PointF offset) {
+    private RenderContext createPageContext(ImmutableViewportMetrics metrics) {
         RectF viewport = metrics.getViewport();
         RectF pageRect = metrics.getPageRect();
         float zoomFactor = metrics.zoomFactor;
 
-        return createContext(new RectF(RectUtils.round(viewport)), pageRect, zoomFactor, offset);
+        return createContext(new RectF(RectUtils.round(viewport)), pageRect, zoomFactor);
     }
 
-    private RenderContext createContext(RectF viewport, RectF pageRect, float zoomFactor, PointF offset) {
+    private RenderContext createContext(RectF viewport, RectF pageRect, float zoomFactor) {
         if (mCoordBuffer == null) {
-            throw new IllegalStateException();
+            // Initialize the FloatBuffer that will be used to store all vertices and texture
+            // coordinates in draw() commands.
+            mCoordByteBuffer = DirectBufferAllocator.allocate(COORD_BUFFER_SIZE * 4);
+            mCoordByteBuffer.order(ByteOrder.nativeOrder());
+            mCoordBuffer = mCoordByteBuffer.asFloatBuffer();
+            if (mCoordBuffer == null) {
+                throw new IllegalStateException();
+            }
         }
-        return new RenderContext(viewport, pageRect, zoomFactor, offset, mPositionHandle, mTextureHandle,
-                                 mCoordBuffer);
+        return new RenderContext(viewport, pageRect, zoomFactor,
+                                 mPositionHandle, mTextureHandle, mCoordBuffer);
     }
 
     private void updateDroppedFrames(long frameStartTime) {
@@ -390,7 +389,7 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
 
     class FadeRunnable implements Runnable {
         private boolean mStarted;
-        private long mRunAt;
+        long mRunAt; // Would be private but we need both file access and high performance.
 
         void scheduleStartFade(long delay) {
             mRunAt = SystemClock.elapsedRealtime() + delay;
@@ -436,16 +435,14 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
         private boolean mUpdated;
         private final Rect mPageRect;
         private final Rect mAbsolutePageRect;
-        private final PointF mRenderOffset;
 
         public Frame(ImmutableViewportMetrics metrics) {
             mFrameMetrics = metrics;
 
             // Work out the offset due to margins
             Layer rootLayer = mView.getLayerClient().getRoot();
-            mRenderOffset = mFrameMetrics.getMarginOffset();
-            mPageContext = createPageContext(metrics, mRenderOffset);
-            mScreenContext = createScreenContext(metrics, mRenderOffset);
+            mPageContext = createPageContext(metrics);
+            mScreenContext = createScreenContext(metrics);
 
             RectF pageRect = mFrameMetrics.getPageRect();
             mAbsolutePageRect = RectUtils.round(pageRect);
@@ -453,28 +450,6 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
             PointF origin = mFrameMetrics.getOrigin();
             pageRect.offset(-origin.x, -origin.y);
             mPageRect = RectUtils.round(pageRect);
-        }
-
-        private void setScissorRect() {
-            Rect scissorRect = transformToScissorRect(mPageRect);
-            GLES20.glEnable(GLES20.GL_SCISSOR_TEST);
-            GLES20.glScissor(scissorRect.left, scissorRect.top,
-                             scissorRect.width(), scissorRect.height());
-        }
-
-        private Rect transformToScissorRect(Rect rect) {
-            IntSize screenSize = new IntSize(mFrameMetrics.getSize());
-
-            int left = Math.max(0, rect.left);
-            int top = Math.max(0, rect.top);
-            int right = Math.min(screenSize.width, rect.right);
-            int bottom = Math.min(screenSize.height, rect.bottom);
-
-            Rect scissorRect = new Rect(left, screenSize.height - bottom, right,
-                                        (screenSize.height - bottom) + (bottom - top));
-            scissorRect.offset(Math.round(-mRenderOffset.x), Math.round(-mRenderOffset.y));
-
-            return scissorRect;
         }
 
         /** This function is invoked via JNI; be careful when modifying signature. */
@@ -501,7 +476,9 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
                 mHorizScrollLayer.unfade();
                 mFadeRunnable.scheduleStartFade(ScrollbarLayer.FADE_DELAY);
             } else if (mFadeRunnable.timeToFade()) {
-                boolean stillFading = mVertScrollLayer.fade() | mHorizScrollLayer.fade();
+                final long currentMillis = SystemClock.elapsedRealtime();
+                final boolean stillFading = mVertScrollLayer.fade(mFadeRunnable.mRunAt, currentMillis) |
+                        mHorizScrollLayer.fade(mFadeRunnable.mRunAt, currentMillis);
                 if (stillFading) {
                     mFadeRunnable.scheduleNextFadeFrame();
                 }
@@ -541,16 +518,11 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
 
             GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
 
-            // Draw the overscroll background area as a solid color
-            clear(mOverscrollColor);
-
             // Update background color.
             mBackgroundColor = mView.getBackgroundColor();
 
             // Clear the page area to the page background colour.
-            setScissorRect();
             clear(mBackgroundColor);
-            GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
         }
 
         @JNITarget
@@ -608,8 +580,8 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
             // When scrolling fast, do not request zoomed view render to avoid to slow down
             // the scroll in the main view.
             // Speed is estimated using the offset changes between 2 display frame calls
-            final float viewLeft = context.viewport.left - context.offset.x;
-            final float viewTop = context.viewport.top - context.offset.y;
+            final float viewLeft = context.viewport.left;
+            final float viewTop = context.viewport.top;
             boolean shouldWaitToRender = false;
 
             if (Math.abs(mLastViewLeft - viewLeft) > MAX_SCROLL_SPEED_TO_REQUEST_ZOOM_RENDER ||
@@ -664,7 +636,8 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
                 mView.post(new Runnable() {
                     @Override
                     public void run() {
-                        mView.getChildAt(0).setBackgroundColor(Color.TRANSPARENT);
+                        mView.setSurfaceBackgroundColor(Color.TRANSPARENT);
+                        Log.i("GeckoBug1151102", "Cleared bg color");
                     }
                 });
                 mView.setPaintState(LayerView.PAINT_AFTER_FIRST);
@@ -681,13 +654,8 @@ public class LayerRenderer implements Tabs.OnTabsChangedListener {
         // thread, so this may need to be changed if any problems appear.
         if (msg == Tabs.TabEvents.SELECTED) {
             if (mView != null) {
-                final int overscrollColor =
-                        (tab.isPrivate() ? R.color.background_private : R.color.background_normal);
-                setOverscrollColor(overscrollColor);
-
-                if (mView.getChildAt(0) != null) {
-                    mView.getChildAt(0).setBackgroundColor(tab.getBackgroundColor());
-                }
+                Log.i("GeckoBug1151102", "Tab switch; entering PAINT_START");
+                mView.setSurfaceBackgroundColor(tab.getBackgroundColor());
                 mView.setPaintState(LayerView.PAINT_START);
             }
         }

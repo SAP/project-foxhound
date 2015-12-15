@@ -1,4 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,9 +45,9 @@ WorkerNavigator::Create(bool aOnLine)
 }
 
 JSObject*
-WorkerNavigator::WrapObject(JSContext* aCx)
+WorkerNavigator::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return WorkerNavigatorBinding_workers::Wrap(aCx, this);
+  return WorkerNavigatorBinding_workers::Wrap(aCx, this, aGivenProto);
 }
 
 // A WorkerMainThreadRunnable to synchronously add DataStoreChangeEventProxy on
@@ -93,11 +94,11 @@ public:
 #define WORKER_DATA_STORES_TAG JS_SCTAG_USER_MIN
 
 static JSObject*
-GetDataStoresStructuredCloneCallbacksRead(JSContext* aCx,
-                                          JSStructuredCloneReader* aReader,
-                                          uint32_t aTag,
-                                          uint32_t aData,
-                                          void* aClosure)
+GetDataStoresProxyCloneCallbacksRead(JSContext* aCx,
+                                     JSStructuredCloneReader* aReader,
+                                     const PromiseWorkerProxy* aProxy,
+                                     uint32_t aTag,
+                                     uint32_t aData)
 {
   WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(workerPrivate);
@@ -142,7 +143,7 @@ GetDataStoresStructuredCloneCallbacksRead(JSContext* aCx,
     if (!global) {
       MOZ_ASSERT(false, "cannot get global!");
     } else {
-      workerStoreObj = workerStore->WrapObject(aCx);
+      workerStoreObj = workerStore->WrapObject(aCx, nullptr);
       if (!JS_WrapObject(aCx, &workerStoreObj)) {
         MOZ_ASSERT(false, "cannot wrap object for workerStoreObj!");
         workerStoreObj = nullptr;
@@ -154,15 +155,12 @@ GetDataStoresStructuredCloneCallbacksRead(JSContext* aCx,
 }
 
 static bool
-GetDataStoresStructuredCloneCallbacksWrite(JSContext* aCx,
-                                           JSStructuredCloneWriter* aWriter,
-                                           JS::Handle<JSObject*> aObj,
-                                           void* aClosure)
+GetDataStoresProxyCloneCallbacksWrite(JSContext* aCx,
+                                      JSStructuredCloneWriter* aWriter,
+                                      PromiseWorkerProxy* aProxy,
+                                      JS::Handle<JSObject*> aObj)
 {
   AssertIsOnMainThread();
-
-  PromiseWorkerProxy* proxy = static_cast<PromiseWorkerProxy*>(aClosure);
-  NS_ASSERTION(proxy, "must have proxy!");
 
   if (!JS_WriteUint32Pair(aWriter, WORKER_DATA_STORES_TAG, 0)) {
     MOZ_ASSERT(false, "cannot write pair for WORKER_DATA_STORES_TAG!");
@@ -179,7 +177,7 @@ GetDataStoresStructuredCloneCallbacksWrite(JSContext* aCx,
   }
 
   // We keep the data store alive here.
-  proxy->StoreISupports(store);
+  aProxy->StoreISupports(store);
 
   // Construct the nsMainThreadPtrHolder pointing to the data store.
   nsMainThreadPtrHolder<DataStore>* dataStoreholder =
@@ -194,10 +192,10 @@ GetDataStoresStructuredCloneCallbacksWrite(JSContext* aCx,
   return true;
 }
 
-static const JSStructuredCloneCallbacks kGetDataStoresStructuredCloneCallbacks = {
-  GetDataStoresStructuredCloneCallbacksRead,
-  GetDataStoresStructuredCloneCallbacksWrite,
-  nullptr
+static const PromiseWorkerProxy::PromiseWorkerProxyStructuredCloneCallbacks
+kGetDataStoresCloneCallbacks= {
+  GetDataStoresProxyCloneCallbacksRead,
+  GetDataStoresProxyCloneCallbacksWrite
 };
 
 // A WorkerMainThreadRunnable to run WorkerNavigator::GetDataStores(...) on the
@@ -227,7 +225,7 @@ public:
     mPromiseWorkerProxy =
       PromiseWorkerProxy::Create(aWorkerPrivate,
                                  aWorkerPromise,
-                                 &kGetDataStoresStructuredCloneCallbacks);
+                                 &kGetDataStoresCloneCallbacks);
   }
 
   bool Dispatch(JSContext* aCx)
@@ -380,7 +378,7 @@ public:
   }
 };
 
-} // anonymous namespace
+} // namespace
 
 void
 WorkerNavigator::GetUserAgent(nsString& aUserAgent) const

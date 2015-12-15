@@ -5,7 +5,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "AndroidMediaReader.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/dom/TimeRanges.h"
 #include "mozilla/gfx/Point.h"
 #include "MediaResource.h"
 #include "VideoUtils.h"
@@ -19,6 +18,7 @@
 namespace mozilla {
 
 using namespace mozilla::gfx;
+using namespace mozilla::media;
 
 typedef mozilla::layers::Image Image;
 typedef mozilla::layers::PlanarYCbCrImage PlanarYCbCrImage;
@@ -43,7 +43,7 @@ nsresult AndroidMediaReader::Init(MediaDecoderReader* aCloneDonor)
 nsresult AndroidMediaReader::ReadMetadata(MediaInfo* aInfo,
                                           MetadataTags** aTags)
 {
-  NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
 
   if (!mPlugin) {
     mPlugin = GetAndroidMediaPluginHost()->CreateDecoder(mDecoder->GetResource(), mType);
@@ -56,8 +56,7 @@ nsresult AndroidMediaReader::ReadMetadata(MediaInfo* aInfo,
   int64_t durationUs;
   mPlugin->GetDuration(mPlugin, &durationUs);
   if (durationUs) {
-    ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    mDecoder->SetMediaDuration(durationUs);
+    mInfo.mMetadataDuration.emplace(TimeUnit::FromMicroseconds(durationUs));
   }
 
   if (mPlugin->HasVideo(mPlugin)) {
@@ -74,22 +73,20 @@ nsresult AndroidMediaReader::ReadMetadata(MediaInfo* aInfo,
     }
 
     // Video track's frame sizes will not overflow. Activate the video track.
-    mHasVideo = mInfo.mVideo.mHasVideo = true;
+    mHasVideo = true;
     mInfo.mVideo.mDisplay = displaySize;
     mPicture = pictureRect;
     mInitialFrame = frameSize;
     VideoFrameContainer* container = mDecoder->GetVideoFrameContainer();
     if (container) {
-      container->SetCurrentFrame(gfxIntSize(displaySize.width, displaySize.height),
-                                 nullptr,
-                                 mozilla::TimeStamp::Now());
+      container->ClearCurrentFrame(gfxIntSize(displaySize.width, displaySize.height));
     }
   }
 
   if (mPlugin->HasAudio(mPlugin)) {
     int32_t numChannels, sampleRate;
     mPlugin->GetAudioParameters(mPlugin, &numChannels, &sampleRate);
-    mHasAudio = mInfo.mAudio.mHasAudio = true;
+    mHasAudio = true;
     mInfo.mAudio.mChannels = numChannels;
     mInfo.mAudio.mRate = sampleRate;
   }
@@ -117,6 +114,8 @@ nsresult AndroidMediaReader::ResetDecode()
   if (mLastVideoFrame) {
     mLastVideoFrame = nullptr;
   }
+  mSeekRequest.DisconnectIfExists();
+  mSeekPromise.RejectIfExists(NS_OK, __func__);
   return MediaDecoderReader::ResetDecode();
 }
 
@@ -174,7 +173,7 @@ bool AndroidMediaReader::DecodeVideoFrame(bool &aKeyframeSkip,
 
     currentImage = bufferCallback.GetImage();
     int64_t pos = mDecoder->GetResource()->Tell();
-    IntRect picture = ToIntRect(mPicture);
+    IntRect picture = mPicture;
 
     nsRefPtr<VideoData> v;
     if (currentImage) {
@@ -289,7 +288,7 @@ bool AndroidMediaReader::DecodeVideoFrame(bool &aKeyframeSkip,
 
 bool AndroidMediaReader::DecodeAudioData()
 {
-  NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
 
   // This is the approximate byte position in the stream.
   int64_t pos = mDecoder->GetResource()->Tell();
@@ -322,8 +321,9 @@ bool AndroidMediaReader::DecodeAudioData()
 nsRefPtr<MediaDecoderReader::SeekPromise>
 AndroidMediaReader::Seek(int64_t aTarget, int64_t aEndTime)
 {
-  NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
+  MOZ_ASSERT(OnTaskQueue());
 
+  nsRefPtr<SeekPromise> p = mSeekPromise.Ensure(__func__);
   if (mHasAudio && mHasVideo) {
     // The decoder seeks/demuxes audio and video streams separately. So if
     // we seek both audio and video to aTarget, the audio stream can typically
@@ -334,13 +334,23 @@ AndroidMediaReader::Seek(int64_t aTarget, int64_t aEndTime)
     // seek the audio stream to match the video stream's time. Otherwise, the
     // audio and video streams won't be in sync after the seek.
     mVideoSeekTimeUs = aTarget;
-    const VideoData* v = DecodeToFirstVideoData();
-    mAudioSeekTimeUs = v ? v->mTime : aTarget;
+
+    nsRefPtr<AndroidMediaReader> self = this;
+    mSeekRequest.Begin(DecodeToFirstVideoData()->Then(OwnerThread(), __func__, [self] (MediaData* v) {
+      self->mSeekRequest.Complete();
+      self->mAudioSeekTimeUs = v->mTime;
+      self->mSeekPromise.Resolve(self->mAudioSeekTimeUs, __func__);
+    }, [self, aTarget] () {
+      self->mSeekRequest.Complete();
+      self->mAudioSeekTimeUs = aTarget;
+      self->mSeekPromise.Resolve(aTarget, __func__);
+    }));
   } else {
     mAudioSeekTimeUs = mVideoSeekTimeUs = aTarget;
+    mSeekPromise.Resolve(aTarget, __func__);
   }
 
-  return SeekPromise::CreateAndResolve(mAudioSeekTimeUs, __func__);
+  return p;
 }
 
 AndroidMediaReader::ImageBufferCallback::ImageBufferCallback(mozilla::layers::ImageContainer *aImageContainer) :

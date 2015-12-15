@@ -37,7 +37,7 @@ public:
 
   nsISupports* GetParentObject() const;
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   static
   already_AddRefed<SpeechSynthesisUtterance> Constructor(GlobalObject& aGlobal,
@@ -70,6 +70,8 @@ public:
   float Pitch() const;
 
   void SetPitch(float aPitch);
+
+  void GetChosenVoiceURI(nsString& aResult) const;
 
   enum {
     STATE_NONE,
@@ -106,6 +108,8 @@ private:
   float mRate;
 
   float mPitch;
+
+  nsString mChosenVoiceURI;
 
   uint32_t mState;
 

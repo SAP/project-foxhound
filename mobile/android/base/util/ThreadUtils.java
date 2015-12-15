@@ -5,7 +5,7 @@
 
 package org.mozilla.gecko.util;
 
-import org.mozilla.gecko.mozglue.RobocopTarget;
+import org.mozilla.gecko.annotation.RobocopTarget;
 
 import java.util.Map;
 
@@ -36,7 +36,6 @@ public final class ThreadUtils {
     // Once Bug 709230 is resolved we should reconsider this as ProGuard should be able to optimise
     // this out at compile time.
     public static Handler sGeckoHandler;
-    public static MessageQueue sGeckoQueue;
     public static volatile Thread sGeckoThread;
 
     // Delayed Runnable that resets the Gecko thread priority.

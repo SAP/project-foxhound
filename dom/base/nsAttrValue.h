@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +25,9 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/BindingDeclarations.h"
 
+// Undefine LoadImage to prevent naming conflict with Windows.
+#undef LoadImage
+
 class nsAString;
 class nsIDocument;
 class nsStyledElementNotElementCSSInlineStyle;
@@ -34,8 +38,8 @@ namespace css {
 class StyleRule;
 struct URLValue;
 struct ImageValue;
-}
-}
+} // namespace css
+} // namespace mozilla
 
 #define NS_ATTRVALUE_MAX_STRINGLENGTH_ATOM 12
 
@@ -126,6 +130,12 @@ public:
   static void Shutdown();
 
   ValueType Type() const;
+  // Returns true when this value is self-contained and does not depend on
+  // the state of its associated element.
+  // Returns false when this value depends on the state of its associated
+  // element and may be invalid if that state has been changed by changes to
+  // that element state outside of attribute setting.
+  inline bool StoresOwnData() const;
 
   void Reset();
 

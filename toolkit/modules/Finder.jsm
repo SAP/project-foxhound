@@ -103,8 +103,7 @@ Finder.prototype = {
       return;
 
     ClipboardHelper.copyStringToClipboard(aSearchString,
-                                          Ci.nsIClipboard.kFindClipboard,
-                                          this._getWindow().document);
+                                          Ci.nsIClipboard.kFindClipboard);
   },
 
   set caseSensitive(aSensitive) {
@@ -824,6 +823,7 @@ Finder.prototype = {
     }
 
     const XLink_NS = "http://www.w3.org/1999/xlink";
+    const HTMLAnchorElement = (node.ownerDocument || node).defaultView.HTMLAnchorElement;
     do {
       if (node instanceof HTMLAnchorElement) {
         isInsideLink = node.hasAttribute("href");
@@ -1048,3 +1048,6 @@ function GetClipboardSearchString(aLoadContext) {
 
   return searchString;
 }
+
+this.Finder = Finder;
+this.GetClipboardSearchString = GetClipboardSearchString;

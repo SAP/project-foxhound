@@ -21,9 +21,13 @@
 #include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsISupportsImpl.h"            // for Layer::AddRef, etc
-#include "nsRect.h"                     // for nsIntRect
+#include "nsRect.h"                     // for mozilla::gfx::IntRect
 #include "gfx2DGlue.h"
 #include "ReadbackProcessor.h"
+
+#ifdef XP_WIN
+#include "gfxWindowsPlatform.h"
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -33,6 +37,13 @@ using namespace mozilla::gfx;
 void
 ClientPaintedLayer::PaintThebes()
 {
+#ifdef XP_WIN
+  if (gfxWindowsPlatform::GetPlatform()->DidRenderingDeviceReset()) {
+    // If our rendering device has reset simply avoid rendering completely.
+    return;
+  }
+#endif
+
   PROFILER_LABEL("ClientPaintedLayer", "PaintThebes",
     js::ProfileEntry::Category::GRAPHICS);
 
@@ -69,12 +80,20 @@ ClientPaintedLayer::PaintThebes()
   bool didUpdate = false;
   RotatedContentBuffer::DrawIterator iter;
   while (DrawTarget* target = mContentClient->BorrowDrawTargetForPainting(state, &iter)) {
+    if (!target || !target->IsValid()) {
+      if (target) {
+        mContentClient->ReturnDrawTargetToBuffer(target);
+      }
+      continue;
+    }
+    
     SetAntialiasingFlags(this, target);
 
     nsRefPtr<gfxContext> ctx = gfxContext::ContextForDrawTarget(target);
 
     ClientManager()->GetPaintedLayerCallback()(this,
                                               ctx,
+                                              iter.mDrawRegion,
                                               iter.mDrawRegion,
                                               state.mClip,
                                               state.mRegionToInvalidate,
@@ -106,9 +125,7 @@ ClientPaintedLayer::PaintThebes()
 void
 ClientPaintedLayer::RenderLayerWithReadback(ReadbackProcessor *aReadback)
 {
-  if (GetMaskLayer()) {
-    ToClientLayer(GetMaskLayer())->RenderLayer();
-  }
+  RenderMaskLayers(this);
   
   if (!mContentClient) {
     mContentClient = ContentClient::CreateContentClient(ClientManager()->AsShadowForwarder());
@@ -132,22 +149,6 @@ ClientPaintedLayer::RenderLayerWithReadback(ReadbackProcessor *aReadback)
   mContentClient->EndPaint(&readbackUpdates);
 }
 
-bool
-ClientLayerManager::IsOptimizedFor(PaintedLayer* aLayer, PaintedLayerCreationHint aHint)
-{
-#ifdef MOZ_B2G
-  // The only creation hint is whether the layer is scrollable or not, and this
-  // is only respected on B2G, where it's used to determine whether to use
-  // tiled layers or not.
-  // There are pretty nasty performance consequences for not using tiles on
-  // large, scrollable layers, so we want the layer to be recreated in this
-  // situation.
-  return aHint == aLayer->GetCreationHint();
-#else
-  return LayerManager::IsOptimizedFor(aLayer, aHint);
-#endif
-}
-
 already_AddRefed<PaintedLayer>
 ClientLayerManager::CreatePaintedLayer()
 {
@@ -158,11 +159,7 @@ already_AddRefed<PaintedLayer>
 ClientLayerManager::CreatePaintedLayerWithHint(PaintedLayerCreationHint aHint)
 {
   NS_ASSERTION(InConstruction(), "Only allowed in construction phase");
-  if (
-#ifdef MOZ_B2G
-      aHint == SCROLLABLE &&
-#endif
-      gfxPrefs::LayersTilesEnabled()
+  if (gfxPrefs::LayersTilesEnabled()
 #ifndef MOZ_X11
       && (AsShadowForwarder()->GetCompositorBackendType() == LayersBackend::LAYERS_OPENGL ||
           AsShadowForwarder()->GetCompositorBackendType() == LayersBackend::LAYERS_D3D9 ||
@@ -191,5 +188,5 @@ ClientPaintedLayer::PrintInfo(std::stringstream& aStream, const char* aPrefix)
   }
 }
 
-}
-}
+} // namespace layers
+} // namespace mozilla

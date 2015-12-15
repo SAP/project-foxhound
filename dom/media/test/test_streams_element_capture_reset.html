@@ -17,44 +17,56 @@ SimpleTest.waitForExplicitFinish();
 var v = document.getElementById('v');
 var vout = document.getElementById('vout');
 var vout_untilended = document.getElementById('vout_untilended');
-vout.mozSrcObject = v.mozCaptureStream();
-vout_untilended.mozSrcObject = v.mozCaptureStreamUntilEnded();
+vout.srcObject = v.mozCaptureStream();
+vout_untilended.srcObject = v.mozCaptureStreamUntilEnded();
 
 function dumpEvent(event) {
-  dump("GOT EVENT " + event.type + " currentTime=" + event.target.currentTime +
-       " paused=" + event.target.paused + " ended=" + event.target.ended +
-       " readyState=" + event.target.readyState + "\n");
+  var v = event.target;
+  info(v.name + " GOT EVENT " + event.type +
+       " currentTime=" + v.currentTime +
+       " paused=" + v.paused +
+       " ended=" + v.ended +
+       " readyState=" + v.readyState);
 }
+
 var events = ["timeupdate", "seeking", "seeked", "ended", "playing", "pause"];
 for (var i = 0; i < events.length; ++i) {
   v.addEventListener(events[i], dumpEvent, false);
 }
+
 function isWithinEps(a, b, msg) {
   ok(Math.abs(a - b) < 0.01,
      "Got " + a + ", expected " + b + "; " + msg);
+}
+
+function isGreaterThanOrEqualEps(a, b, msg) {
+  ok(a >= b - 0.01,
+     "Got " + a + ", expected at least " + b + "; " + msg);
 }
 
 function startTest(test) {
   var seekTime = test.duration/2;
 
   function endedAfterReplay() {
-    isWithinEps(v.currentTime, test.duration, "checking v.currentTime at third 'ended' event");
-    isWithinEps(vout.currentTime, (test.duration - seekTime) + test.duration*2,
+    isGreaterThanOrEqualEps(v.currentTime, test.duration, "checking v.currentTime at third 'ended' event");
+    isGreaterThanOrEqualEps(vout.currentTime, (test.duration - seekTime) + test.duration*2,
 	            "checking vout.currentTime after seeking, playing through and reloading");
     SimpleTest.finish();
   };
+
   function endedAfterSeek() {
-    isWithinEps(v.currentTime, test.duration, "checking v.currentTime at second 'ended' event");
-    isWithinEps(vout.currentTime, (test.duration - seekTime) + test.duration,
+    isGreaterThanOrEqualEps(v.currentTime, test.duration, "checking v.currentTime at second 'ended' event");
+    isGreaterThanOrEqualEps(vout.currentTime, (test.duration - seekTime) + test.duration,
                 "checking vout.currentTime after seeking and playing through again");
     v.removeEventListener("ended", endedAfterSeek, false);
     v.addEventListener("ended", endedAfterReplay, false);
     v.src = test.name + "?1";
     v.play();
   };
+
   function seeked() {
-    isWithinEps(v.currentTime, seekTime, "Finished seeking");
-    isWithinEps(vout.currentTime, test.duration,
+    isGreaterThanOrEqualEps(v.currentTime, seekTime, "Finished seeking");
+    isGreaterThanOrEqualEps(vout.currentTime, test.duration,
                 "checking vout.currentTime has not changed after seeking");
     v.removeEventListener("seeked", seeked, false);
     function dontPlayAgain() {
@@ -65,23 +77,38 @@ function startTest(test) {
     v.addEventListener("ended", endedAfterSeek, false);
     v.play();
   };
+
   function ended() {
-    isWithinEps(vout.currentTime, test.duration, "checking vout.currentTime at first 'ended' event");
-    isWithinEps(v.currentTime, test.duration, "checking v.currentTime at first 'ended' event");
+    // Don't compare current time until both v and vout_untilended are ended,
+    // otherwise, current time could be smaller than the duration.
+    if (!v.ended || !vout_untilended.ended) {
+      return;
+    }
+
+    isGreaterThanOrEqualEps(vout.currentTime, test.duration, "checking vout.currentTime at first 'ended' event");
+    isGreaterThanOrEqualEps(v.currentTime, test.duration, "checking v.currentTime at first 'ended' event");
     is(vout.ended, false, "checking vout has not ended");
     is(vout_untilended.ended, true, "checking vout_untilended has actually ended");
+
+    v.removeEventListener("ended", ended, false);
     vout_untilended.removeEventListener("ended", ended, false);
+
     v.pause();
     v.currentTime = seekTime;
     v.addEventListener("seeked", seeked, false);
   };
+
+  v.addEventListener("ended", ended, false);
   vout_untilended.addEventListener("ended", ended, false);
 
   v.src = test.name;
+  v.name = test.name;
   v.play();
+
   function checkNoEnded() {
     ok(false, "ended event received unexpectedly");
   };
+
   vout.addEventListener("ended", checkNoEnded, false);
   vout.play();
   vout_untilended.play();

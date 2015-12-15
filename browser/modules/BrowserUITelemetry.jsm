@@ -49,6 +49,7 @@ XPCOMUtils.defineLazyGetter(this, "DEFAULT_AREA_PLACEMENTS", function() {
       "urlbar-container",
       "search-container",
       "bookmarks-menu-button",
+      "pocket-button",
       "downloads-button",
       "home-button",
       "social-share-button",
@@ -75,10 +76,6 @@ XPCOMUtils.defineLazyGetter(this, "DEFAULT_AREA_PLACEMENTS", function() {
   ).data;
   if (showCharacterEncoding == "true") {
     result["PanelUI-contents"].push("characterencoding-button");
-  }
-
-  if (Services.metro && Services.metro.supported) {
-    result["PanelUI-contents"].push("switch-to-metro-button");
   }
 
   return result;
@@ -287,9 +284,11 @@ this.BrowserUITelemetry = {
     });
 
     Services.search.init(rv => {
-      // If there are no such windows, we're out of luck. :(
-      this._firstWindowMeasurements = win ? this._getWindowMeasurements(win, rv)
-                                          : {};
+      // If there are no such windows (or we've just about found one
+      // but it's closed already), we're out of luck. :(
+      let hasWindow = win && !win.closed;
+      this._firstWindowMeasurements = hasWindow ? this._getWindowMeasurements(win, rv)
+                                                : {};
     });
   },
 
@@ -442,6 +441,12 @@ this.BrowserUITelemetry = {
   _checkForBuiltinItem: function(aEvent) {
     let item = aEvent.originalTarget;
 
+    // We don't want to count clicks on the private browsing
+    // button for privacy reasons. See bug 1176391.
+    if (item.id == "privatebrowsing-button") {
+      return;
+    }
+
     // We special-case the bookmarks-menu-button, since we want to
     // monitor more than just clicks on it.
     if (item.id == "bookmarks-menu-button" ||
@@ -566,7 +571,7 @@ this.BrowserUITelemetry = {
     if (Components.isSuccessCode(searchResult)) {
       result.currentSearchEngine = Services.search.currentEngine.name;
     }
-    result.oneOffSearchEnabled = Services.prefs.getBoolPref("browser.search.showOneOffButtons");
+
     return result;
   },
 
@@ -652,7 +657,9 @@ this.BrowserUITelemetry = {
     "navigation", "back", "forward", "reload", "stop", "bookmarkpage",
     "spell-no-suggestions", "spell-add-to-dictionary",
     "spell-undo-add-to-dictionary", "openlinkincurrent", "openlinkintab",
-    "openlink", "openlinkprivate", "bookmarklink", "sharelink", "savelink",
+    "openlink",
+    // "openlinkprivate" intentionally omitted for privacy reasons. See bug 1176391.
+    "bookmarklink", "sharelink", "savelink",
     "marklinkMenu", "copyemail", "copylink", "media-play", "media-pause",
     "media-mute", "media-unmute", "media-playbackrate",
     "media-playbackrate-050x", "media-playbackrate-100x",
@@ -663,7 +670,7 @@ this.BrowserUITelemetry = {
     "copyvideourl", "copyaudiourl", "saveimage", "shareimage", "sendimage",
     "setDesktopBackground", "viewimageinfo", "viewimagedesc", "savevideo",
     "sharevideo", "saveaudio", "video-saveimage", "sendvideo", "sendaudio",
-    "ctp-play", "ctp-hide", "sharepage", "savepage", "markpageMenu",
+    "ctp-play", "ctp-hide", "sharepage", "savepage", "pocket", "markpageMenu",
     "viewbgimage", "undo", "cut", "copy", "paste", "delete", "selectall",
     "keywordfield", "searchselect", "shareselect", "frame", "showonlythisframe",
     "openframeintab", "openframe", "reloadframe", "bookmarkframe", "saveframe",
@@ -680,6 +687,13 @@ this.BrowserUITelemetry = {
 
   registerContextMenuInteraction: function(keys, itemID) {
     if (itemID) {
+      if (itemID == "openlinkprivate") {
+        // Don't record anything, not even an other-item count
+        // if the user chose to open in a private window. See
+        // bug 1176391.
+        return;
+      }
+
       if (!this._contextMenuItemWhitelist.has(itemID)) {
         itemID = "other-item";
       }

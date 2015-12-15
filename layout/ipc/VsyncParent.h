@@ -9,7 +9,7 @@
 #include "mozilla/layout/PVsyncParent.h"
 #include "mozilla/VsyncDispatcher.h"
 #include "nsCOMPtr.h"
-#include "nsRefPtr.h"
+#include "mozilla/nsRefPtr.h"
 
 class nsIThread;
 
@@ -17,7 +17,7 @@ namespace mozilla {
 
 namespace ipc {
 class BackgroundParentImpl;
-}
+} // namespace ipc
 
 namespace layout {
 
@@ -25,7 +25,7 @@ namespace layout {
 // content process. This actor will be released when its parent protocol calls
 // DeallocPVsyncParent().
 class VsyncParent final : public PVsyncParent,
-                              public VsyncObserver
+                          public VsyncObserver
 {
   friend class mozilla::ipc::BackgroundParentImpl;
 
@@ -49,7 +49,7 @@ private:
   nsRefPtr<RefreshTimerVsyncDispatcher> mVsyncDispatcher;
 };
 
-} //layout
-} //mozilla
+} // namespace layout
+} // namespace mozilla
 
 #endif  //mozilla_layout_ipc_VsyncParent_h

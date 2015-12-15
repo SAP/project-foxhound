@@ -6,11 +6,11 @@
 // Tests that NetworkHelper.getReasonsForWeakness returns correct reasons for
 // weak requests.
 
-const { devtools } = Components.utils.import("resource://gre/modules/devtools/Loader.jsm", {});
+const { require } = Components.utils.import("resource://gre/modules/devtools/Loader.jsm", {});
 
 Object.defineProperty(this, "NetworkHelper", {
   get: function() {
-    return devtools.require("devtools/toolkit/webconsole/network-helper");
+    return require("devtools/toolkit/webconsole/network-helper");
   },
   configurable: true,
   writeable: false,
@@ -24,14 +24,6 @@ const TEST_CASES = [
     description: "weak cipher",
     input: wpl.STATE_IS_BROKEN | wpl.STATE_USES_WEAK_CRYPTO,
     expected: ["cipher"]
-  }, {
-    description: "weak sslv3 protocol",
-    input: wpl.STATE_IS_BROKEN | wpl.STATE_USES_SSL_3,
-    expected: ["sslv3"]
-  }, {
-    description: "weak cipher + sslv3",
-    input: wpl.STATE_IS_BROKEN | wpl.STATE_USES_WEAK_CRYPTO | wpl.STATE_USES_SSL_3,
-    expected: ["sslv3", "cipher"] // order matters for deepEqual
   }, {
     description: "only STATE_IS_BROKEN flag",
     input: wpl.STATE_IS_BROKEN,

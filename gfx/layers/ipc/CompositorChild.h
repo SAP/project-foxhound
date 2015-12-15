@@ -20,13 +20,11 @@
 #include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 #include "nsWeakReference.h"
 
-class nsIObserver;
-
 namespace mozilla {
 
 namespace dom {
   class TabChild;
-}
+} // namespace dom
 
 namespace layers {
 
@@ -60,6 +58,12 @@ public:
   static PCompositorChild*
   Create(Transport* aTransport, ProcessId aOtherProcess);
 
+  /**
+   * Initialize the CompositorChild and open the connection in the non-multi-process
+   * case.
+   */
+  bool OpenSameProcess(CompositorParent* aParent);
+
   static CompositorChild* Get();
 
   static bool ChildProcessHasCompositor() { return sCompositor != nullptr; }
@@ -67,7 +71,12 @@ public:
   void AddOverfillObserver(ClientLayerManager* aLayerManager);
 
   virtual bool
-  RecvDidComposite(const uint64_t& aId, const uint64_t& aTransactionId) override;
+  RecvClearCachedResources(const uint64_t& id) override;
+
+  virtual bool
+  RecvDidComposite(const uint64_t& aId, const uint64_t& aTransactionId,
+                   const TimeStamp& aCompositeStart,
+                   const TimeStamp& aCompositeEnd) override;
 
   virtual bool
   RecvInvalidateAll() override;
@@ -79,6 +88,9 @@ public:
   RecvUpdatePluginConfigurations(const nsIntPoint& aContentOffset,
                                  const nsIntRegion& aVisibleRegion,
                                  nsTArray<PluginWindowData>&& aPlugins) override;
+
+  virtual bool
+  RecvHideAllPlugins(const uintptr_t& aParentWidget) override;
 
   /**
    * Request that the parent tell us when graphics are ready on GPU.
@@ -99,9 +111,11 @@ public:
   bool SendWillStop();
   bool SendPause();
   bool SendResume();
+  bool SendNotifyHidden(const uint64_t& id);
+  bool SendNotifyVisible(const uint64_t& id);
   bool SendNotifyChildCreated(const uint64_t& id);
   bool SendAdoptChild(const uint64_t& id);
-  bool SendMakeSnapshot(const SurfaceDescriptor& inSnapshot, const nsIntRect& dirtyRect);
+  bool SendMakeSnapshot(const SurfaceDescriptor& inSnapshot, const gfx::IntRect& dirtyRect);
   bool SendFlushRendering();
   bool SendGetTileSize(int32_t* tileWidth, int32_t* tileHeight);
   bool SendStartFrameTimeRecording(const int32_t& bufferSize, uint32_t* startIndex);
@@ -125,6 +139,7 @@ private:
 
   virtual bool RecvSharedCompositorFrameMetrics(const mozilla::ipc::SharedMemoryBasic::Handle& metrics,
                                                 const CrossProcessMutexHandle& handle,
+                                                const uint64_t& aLayersId,
                                                 const uint32_t& aAPZCId) override;
 
   virtual bool RecvReleaseSharedCompositorFrameMetrics(const ViewID& aId,
@@ -139,12 +154,14 @@ private:
     SharedFrameMetricsData(
         const mozilla::ipc::SharedMemoryBasic::Handle& metrics,
         const CrossProcessMutexHandle& handle,
+        const uint64_t& aLayersId,
         const uint32_t& aAPZCId);
 
     ~SharedFrameMetricsData();
 
     void CopyFrameMetrics(FrameMetrics* aFrame);
     FrameMetrics::ViewID GetViewID();
+    uint64_t GetLayersId() const;
     uint32_t GetAPZCId();
 
   private:
@@ -152,11 +169,19 @@ private:
     // the shared FrameMetrics
     nsRefPtr<mozilla::ipc::SharedMemoryBasic> mBuffer;
     CrossProcessMutex* mMutex;
+    uint64_t mLayersId;
     // Unique ID of the APZC that is sharing the FrameMetrics
     uint32_t mAPZCId;
   };
 
+  static PLDHashOperator RemoveSharedMetricsForLayersId(const uint64_t& aKey,
+                                                        nsAutoPtr<SharedFrameMetricsData>& aData,
+                                                        void* aLayerTransactionChild);
+
   nsRefPtr<ClientLayerManager> mLayerManager;
+  // When not multi-process, hold a reference to the CompositorParent to keep it
+  // alive. This reference should be null in multi-process.
+  nsRefPtr<CompositorParent> mCompositorParent;
 
   // The ViewID of the FrameMetrics is used as the key for this hash table.
   // While this should be safe to use since the ViewID is unique
@@ -180,7 +205,7 @@ private:
   bool mCanSend;
 };
 
-} // layers
-} // mozilla
+} // namespace layers
+} // namespace mozilla
 
 #endif // mozilla_layers_CompositorChild_h

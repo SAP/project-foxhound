@@ -13,8 +13,11 @@
 #include "nsID.h"
 #include "nsJARURI.h"
 #include "nsIIconURI.h"
+#include "nsHostObjectURI.h"
+#include "nsNullPrincipalURI.h"
+#include "nsJSProtocolHandler.h"
 #include "nsNetCID.h"
-#include "nsNetUtil.h"
+#include "nsSimpleNestedURI.h"
 #include "nsThreadUtils.h"
 
 using namespace mozilla::ipc;
@@ -27,7 +30,7 @@ NS_DEFINE_CID(kStandardURLCID, NS_STANDARDURL_CID);
 NS_DEFINE_CID(kJARURICID, NS_JARURI_CID);
 NS_DEFINE_CID(kIconURICID, NS_MOZICONURI_CID);
 
-} // anonymous namespace
+} // namespace
 
 namespace mozilla {
 namespace ipc {
@@ -41,7 +44,7 @@ SerializeURI(nsIURI* aURI,
 
   nsCOMPtr<nsIIPCSerializableURI> serializable = do_QueryInterface(aURI);
   if (!serializable) {
-    MOZ_CRASH("All IPDL URIs must be serializable scheme!");
+    MOZ_CRASH("All IPDL URIs must be serializable!");
   }
 
   serializable->Serialize(aParams);
@@ -86,8 +89,24 @@ DeserializeURI(const URIParams& aParams)
       serializable = do_CreateInstance(kJARURICID);
       break;
 
+    case URIParams::TJSURIParams:
+      serializable = new nsJSURI();
+      break;
+
     case URIParams::TIconURIParams:
       serializable = do_CreateInstance(kIconURICID);
+      break;
+
+    case URIParams::TNullPrincipalURIParams:
+      serializable = new nsNullPrincipalURI();
+      break;
+
+    case URIParams::TSimpleNestedURIParams:
+      serializable = new nsSimpleNestedURI();
+      break;
+
+    case URIParams::THostObjectURIParams:
+      serializable = new nsHostObjectURI();
       break;
 
     default:

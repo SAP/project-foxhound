@@ -1,6 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,7 +17,7 @@
 
 namespace {
   const double kRadPerDegree = 2.0 * M_PI / 360.0;
-}
+} // namespace
 
 namespace mozilla {
 namespace dom {
@@ -62,16 +62,16 @@ NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(SVGTransform, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(SVGTransform, Release)
 
 JSObject*
-SVGTransform::WrapObject(JSContext* aCx)
+SVGTransform::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return SVGTransformBinding::Wrap(aCx, this);
+  return SVGTransformBinding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Helper class: AutoChangeTransformNotifier
 // Stack-based helper class to pair calls to WillChangeTransformList
 // and DidChangeTransformList.
-class MOZ_STACK_CLASS AutoChangeTransformNotifier
+class MOZ_RAII AutoChangeTransformNotifier
 {
 public:
   explicit AutoChangeTransformNotifier(SVGTransform* aTransform MOZ_GUARD_OBJECT_NOTIFIER_PARAM)

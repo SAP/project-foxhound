@@ -36,9 +36,6 @@
 
 class nsOfflineCacheUpdate;
 
-class nsIUTF8StringEnumerator;
-class nsILoadContext;
-
 class nsOfflineCacheUpdateItem : public nsIStreamListener
                                , public nsIRunnable
                                , public nsIInterfaceRequestor
@@ -188,18 +185,17 @@ class nsOfflineCacheUpdateOwner
   : public mozilla::SupportsWeakPtr<nsOfflineCacheUpdateOwner>
 {
 public:
-    MOZ_DECLARE_REFCOUNTED_TYPENAME(nsOfflineCacheUpdateOwner)
+    MOZ_DECLARE_WEAKREFERENCE_TYPENAME(nsOfflineCacheUpdateOwner)
     virtual ~nsOfflineCacheUpdateOwner() {}
     virtual nsresult UpdateFinished(nsOfflineCacheUpdate *aUpdate) = 0;
 };
 
 class nsOfflineCacheUpdate final : public nsIOfflineCacheUpdate
-                                     , public nsIOfflineCacheUpdateObserver
-                                     , public nsIRunnable
-                                     , public nsOfflineCacheUpdateOwner
+                                 , public nsIOfflineCacheUpdateObserver
+                                 , public nsIRunnable
+                                 , public nsOfflineCacheUpdateOwner
 {
 public:
-    MOZ_DECLARE_REFCOUNTED_TYPENAME(nsOfflineCacheUpdate)
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOFFLINECACHEUPDATE
     NS_DECL_NSIOFFLINECACHEUPDATEOBSERVER
@@ -320,9 +316,9 @@ private:
 };
 
 class nsOfflineCacheUpdateService final : public nsIOfflineCacheUpdateService
-                                            , public nsIObserver
-                                            , public nsOfflineCacheUpdateOwner
-                                            , public nsSupportsWeakReference
+                                        , public nsIObserver
+                                        , public nsOfflineCacheUpdateOwner
+                                        , public nsSupportsWeakReference
 {
 public:
     NS_DECL_ISUPPORTS

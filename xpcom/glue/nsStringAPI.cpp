@@ -1135,7 +1135,7 @@ nsDependentSubstring::nsDependentSubstring(const abstract_string_type& aStr,
   NS_StringContainerInit2(*this, data + aStartPos, aLength,
                           NS_STRING_CONTAINER_INIT_DEPEND |
                             NS_STRING_CONTAINER_INIT_SUBSTRING);
-#if 0 
+#if 0
 # _TAINT_ON_
   if(TAINT_NS_StringTainted(aStr)) {
     TAINT_NS_StringAddTaintRef(*this, taint_duplicate_range(
@@ -1404,3 +1404,5 @@ void nsAString::removeAllTaint() {
   TAINT_NS_StringRemoveAll(*this);
 }
 #endif
+
+#undef snprintf

@@ -7,6 +7,7 @@
 #define GFX_USER_FONT_SET_H
 
 #include "gfxFont.h"
+#include "gfxFontFamilyList.h"
 #include "nsRefPtrHashtable.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
@@ -139,7 +140,9 @@ public:
         nsRefPtr<gfxFontEntry> fe = aFontEntry;
         // remove existing entry, if already present
         mAvailableFonts.RemoveElement(aFontEntry);
-        mAvailableFonts.AppendElement(aFontEntry);
+        // insert at the beginning so that the last-defined font is the first
+        // one in the fontlist used for matching, as per CSS Fonts spec
+        mAvailableFonts.InsertElementAt(0, aFontEntry);
 
         if (aFontEntry->mFamilyName.IsEmpty()) {
             aFontEntry->mFamilyName = Name();
@@ -238,6 +241,9 @@ public:
     // the given name
     gfxUserFontFamily* LookupFamily(const nsAString& aName) const;
 
+    // Look up names in a fontlist and return true if any are in the set
+    bool ContainsUserFontSetFonts(const mozilla::FontFamilyList& aFontList) const;
+
     // Lookup a font entry for a given style, returns null if not loaded.
     // aFamily must be a family returned by our LookupFamily method.
     // (only used by gfxPangoFontGroup for now)
@@ -334,7 +340,9 @@ public:
         struct Key {
             nsCOMPtr<nsIURI>        mURI;
             nsCOMPtr<nsIPrincipal>  mPrincipal; // use nullptr with data: URLs
-            gfxFontEntry*           mFontEntry;
+            // The font entry MUST notify the cache when it is destroyed
+            // (by calling ForgetFont()).
+            gfxFontEntry* MOZ_NON_OWNING_REF mFontEntry;
             uint32_t                mCRC32;
             uint32_t                mLength;
             bool                    mPrivate;
@@ -418,17 +426,11 @@ public:
 
             gfxFontEntry* GetFontEntry() const { return mFontEntry; }
 
-            static PLDHashOperator
-            RemoveUnlessPersistent(Entry* aEntry, void* aUserData);
-            static PLDHashOperator
-            RemoveIfPrivate(Entry* aEntry, void* aUserData);
-            static PLDHashOperator
-            RemoveIfMatches(Entry* aEntry, void* aUserData);
-            static PLDHashOperator
-            DisconnectSVG(Entry* aEntry, void* aUserData);
+            bool IsPersistent() const { return mPersistence == kPersistent; }
+            bool IsPrivate() const { return mPrivate; }
 
 #ifdef DEBUG_USERFONT_CACHE
-            static PLDHashOperator DumpEntry(Entry* aEntry, void* aUserData);
+            void Dump();
 #endif
 
         private:
@@ -446,8 +448,8 @@ public:
 
             // The "real" font entry corresponding to this downloaded font.
             // The font entry MUST notify the cache when it is destroyed
-            // (by calling Forget()).
-            gfxFontEntry*          mFontEntry;
+            // (by calling ForgetFont()).
+            gfxFontEntry* MOZ_NON_OWNING_REF mFontEntry;
 
             // Whether this font was loaded from a private window.
             bool                   mPrivate;
@@ -463,9 +465,7 @@ public:
         mLocalRulesUsed = true;
     }
 
-#ifdef PR_LOGGING
     static PRLogModuleInfo* GetUserFontsLog();
-#endif
 
 protected:
     // Protected destructor, to discourage deletion outside of Release():
@@ -553,7 +553,7 @@ public:
     virtual gfxFont* CreateFontInstance(const gfxFontStyle* aFontStyle,
                                         bool aNeedsBold);
 
-    gfxFontEntry* GetPlatformFontEntry() { return mPlatformFontEntry; }
+    gfxFontEntry* GetPlatformFontEntry() const { return mPlatformFontEntry; }
 
     // is the font loading or loaded, or did it fail?
     UserFontLoadState LoadState() const { return mUserFontLoadState; }
@@ -607,14 +607,14 @@ protected:
     // returns true if platform font creation sucessful (or local()
     // reference was next in line)
     // Ownership of aFontData is passed in here; the font set must
-    // ensure that it is eventually deleted with NS_Free().
+    // ensure that it is eventually deleted with free().
     bool FontDataDownloadComplete(const uint8_t* aFontData, uint32_t aLength,
                                   nsresult aDownloadStatus);
 
     // helper method for creating a platform font
     // returns true if platform font creation successful
     // Ownership of aFontData is passed in here; the font must
-    // ensure that it is eventually deleted with NS_Free().
+    // ensure that it is eventually deleted with free().
     bool LoadPlatformFont(const uint8_t* aFontData, uint32_t& aLength);
 
     // store metadata and src details for current src into aFontEntry
@@ -647,7 +647,9 @@ protected:
     nsRefPtr<gfxFontEntry>   mPlatformFontEntry;
     nsTArray<gfxFontFaceSrc> mSrcList;
     uint32_t                 mSrcIndex; // index of loading src item
-    nsFontFaceLoader*        mLoader; // current loader for this entry, if any
+    // This field is managed by the nsFontFaceLoader. In the destructor and Cancel()
+    // methods of nsFontFaceLoader this reference is nulled out.
+    nsFontFaceLoader* MOZ_NON_OWNING_REF mLoader; // current loader for this entry, if any
     gfxUserFontSet*          mFontSet; // font-set to which the userfont entry belongs
     nsCOMPtr<nsIPrincipal>   mPrincipal;
 };

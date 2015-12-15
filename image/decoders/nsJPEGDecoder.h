@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsJPEGDecoder_h
-#define nsJPEGDecoder_h
+#ifndef mozilla_image_decoders_nsJPEGDecoder_h
+#define mozilla_image_decoders_nsJPEGDecoder_h
 
 #include "RasterImage.h"
 // On Windows systems, RasterImage.h brings in 'windows.h', which defines INT32.
@@ -15,7 +15,6 @@
 
 #include "Decoder.h"
 
-#include "Downscaler.h"
 #include "nsAutoPtr.h"
 
 #include "nsIInputStream.h"
@@ -53,10 +52,12 @@ struct Orientation;
 class nsJPEGDecoder : public Decoder
 {
 public:
-  nsJPEGDecoder(RasterImage* aImage, Decoder::DecodeStyle aDecodeStyle);
   virtual ~nsJPEGDecoder();
 
-  virtual nsresult SetTargetSize(const nsIntSize& aSize) override;
+  virtual void SetSampleSize(int aSampleSize) override
+  {
+    mSampleSize = aSampleSize;
+  }
 
   virtual void InitInternal() override;
   virtual void WriteInternal(const char* aBuffer, uint32_t aCount) override;
@@ -69,7 +70,11 @@ protected:
   Orientation ReadOrientationFromEXIF();
   void OutputScanlines(bool* suspend);
 
-  Maybe<Downscaler> mDownscaler;
+private:
+  friend class DecoderFactory;
+
+  // Decoders should only be instantiated via DecoderFactory.
+  nsJPEGDecoder(RasterImage* aImage, Decoder::DecodeStyle aDecodeStyle);
 
 public:
   struct jpeg_decompress_struct mInfo;
@@ -98,9 +103,11 @@ public:
   const Decoder::DecodeStyle mDecodeStyle;
 
   uint32_t mCMSMode;
+
+  int mSampleSize;
 };
 
 } // namespace image
 } // namespace mozilla
 
-#endif // nsJPEGDecoder_h
+#endif // mozilla_image_decoders_nsJPEGDecoder_h

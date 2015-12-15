@@ -12,6 +12,7 @@
 #include "nsAutoPtr.h"
 
 using namespace mozilla;
+using namespace mozilla::image;
 
 NS_IMPL_ISUPPORTS(nsBMPEncoder, imgIEncoder, nsIInputStream,
                   nsIAsyncInputStream)
@@ -30,7 +31,7 @@ nsBMPEncoder::nsBMPEncoder() : mImageBufferStart(nullptr),
 nsBMPEncoder::~nsBMPEncoder()
 {
   if (mImageBufferStart) {
-    moz_free(mImageBufferStart);
+    free(mImageBufferStart);
     mImageBufferStart = nullptr;
     mImageBufferCurr = nullptr;
   }
@@ -133,7 +134,7 @@ nsBMPEncoder::StartImageEncode(uint32_t aWidth,
   InitInfoHeader(version, bpp, aWidth, aHeight);
 
   mImageBufferSize = mBMPFileHeader.filesize;
-  mImageBufferStart = static_cast<uint8_t*>(moz_malloc(mImageBufferSize));
+  mImageBufferStart = static_cast<uint8_t*>(malloc(mImageBufferSize));
   if (!mImageBufferStart) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -206,7 +207,7 @@ nsBMPEncoder::AddImageFrame(const uint8_t* aData,
     }
   } else if (aInputFormat == INPUT_FORMAT_RGBA) {
     // simple RGBA, no conversion needed
-    for (int32_t y = 0; y < mBMPInfoHeader.height; y ++) {
+    for (int32_t y = 0; y < mBMPInfoHeader.height; y++) {
       if (mBMPInfoHeader.bpp == 24) {
         EncodeImageDataRow24(row);
       } else {
@@ -215,7 +216,7 @@ nsBMPEncoder::AddImageFrame(const uint8_t* aData,
     }
   } else if (aInputFormat == INPUT_FORMAT_RGB) {
     // simple RGB, no conversion needed
-    for (int32_t y = 0; y < mBMPInfoHeader.height; y ++) {
+    for (int32_t y = 0; y < mBMPInfoHeader.height; y++) {
       if (mBMPInfoHeader.bpp == 24) {
         EncodeImageDataRow24(&aData[y * aStride]);
       } else {
@@ -316,7 +317,7 @@ NS_IMETHODIMP
 nsBMPEncoder::Close()
 {
   if (mImageBufferStart) {
-    moz_free(mImageBufferStart);
+    free(mImageBufferStart);
     mImageBufferStart = nullptr;
     mImageBufferSize = 0;
     mImageBufferReadPoint = 0;
@@ -484,9 +485,9 @@ nsBMPEncoder::InitFileHeader(Version aVersion, uint32_t aBPP, uint32_t aWidth,
   mBMPFileHeader.signature[1] = 'M';
 
   if (aVersion == VERSION_3) {
-    mBMPFileHeader.dataoffset = WIN_V3_HEADER_LENGTH;
+    mBMPFileHeader.dataoffset = BMP_HEADER_LENGTH::WIN_V3;
   } else { // aVersion == 5
-    mBMPFileHeader.dataoffset = WIN_V5_HEADER_LENGTH;
+    mBMPFileHeader.dataoffset = BMP_HEADER_LENGTH::WIN_V5;
   }
 
   // The color table is present only if BPP is <= 8
@@ -502,9 +503,9 @@ nsBMPEncoder::InitFileHeader(Version aVersion, uint32_t aBPP, uint32_t aWidth,
   mBMPFileHeader.reserved = 0;
 
   if (aVersion == VERSION_3) {
-    mBMPFileHeader.bihsize = WIN_V3_BIH_LENGTH;
+    mBMPFileHeader.bihsize = BIH_LENGTH::WIN_V3;
   } else { // aVersion == VERSION_5
-    mBMPFileHeader.bihsize = WIN_V5_BIH_LENGTH;
+    mBMPFileHeader.bihsize = BIH_LENGTH::WIN_V5;
   }
 }
 
@@ -538,7 +539,7 @@ nsBMPEncoder::InitInfoHeader(Version aVersion, uint32_t aBPP, uint32_t aWidth,
       mBMPInfoHeader.green_mask = 0x0000FF00;
       mBMPInfoHeader.blue_mask  = 0x00FF0000;
       mBMPInfoHeader.alpha_mask = 0xFF000000;
-      mBMPInfoHeader.color_space = LCS_sRGB;
+      mBMPInfoHeader.color_space = BITMAPV5HEADER::COLOR_SPACE_LCS_SRGB;
       mBMPInfoHeader.white_point.r.x = 0;
       mBMPInfoHeader.white_point.r.y = 0;
       mBMPInfoHeader.white_point.r.z = 0;
@@ -612,7 +613,7 @@ nsBMPEncoder::EncodeInfoHeader()
   NativeEndian::swapToLittleEndianInPlace(&littleEndianmBIH.profile_offset, 1);
   NativeEndian::swapToLittleEndianInPlace(&littleEndianmBIH.profile_size, 1);
 
-  if (mBMPFileHeader.bihsize == OS2_BIH_LENGTH) {
+  if (mBMPFileHeader.bihsize == BIH_LENGTH::OS2) {
       uint16_t width = (uint16_t) littleEndianmBIH.width;
       ENCODE(&mImageBufferCurr, width);
       uint16_t height = (uint16_t) littleEndianmBIH.width;
@@ -625,7 +626,7 @@ nsBMPEncoder::EncodeInfoHeader()
   ENCODE(&mImageBufferCurr, littleEndianmBIH.planes);
   ENCODE(&mImageBufferCurr, littleEndianmBIH.bpp);
 
-  if (mBMPFileHeader.bihsize > OS2_BIH_LENGTH) {
+  if (mBMPFileHeader.bihsize > BIH_LENGTH::OS2) {
     ENCODE(&mImageBufferCurr, littleEndianmBIH.compression);
     ENCODE(&mImageBufferCurr, littleEndianmBIH.image_size);
     ENCODE(&mImageBufferCurr, littleEndianmBIH.xppm);
@@ -634,7 +635,7 @@ nsBMPEncoder::EncodeInfoHeader()
     ENCODE(&mImageBufferCurr, littleEndianmBIH.important_colors);
   }
 
-  if (mBMPFileHeader.bihsize > WIN_V3_BIH_LENGTH) {
+  if (mBMPFileHeader.bihsize > BIH_LENGTH::WIN_V3) {
     ENCODE(&mImageBufferCurr, littleEndianmBIH.red_mask);
     ENCODE(&mImageBufferCurr, littleEndianmBIH.green_mask);
     ENCODE(&mImageBufferCurr, littleEndianmBIH.blue_mask);
@@ -700,7 +701,7 @@ nsBMPEncoder::EncodeImageDataRow24(const uint8_t* aData)
 void
 nsBMPEncoder::EncodeImageDataRow32(const uint8_t* aData)
 {
-  for (int32_t x = 0; x < mBMPInfoHeader.width; x ++) {
+  for (int32_t x = 0; x < mBMPInfoHeader.width; x++) {
     uint32_t pos = x * BytesPerPixel(mBMPInfoHeader.bpp);
     SetPixel32(mImageBufferCurr, aData[pos], aData[pos + 1],
                aData[pos + 2], aData[pos + 3]);
@@ -708,7 +709,7 @@ nsBMPEncoder::EncodeImageDataRow32(const uint8_t* aData)
   }
 
   for (uint32_t x = 0; x < PaddingBytes(mBMPInfoHeader.bpp,
-                                        mBMPInfoHeader.width); x ++) {
+                                        mBMPInfoHeader.width); x++) {
     *mImageBufferCurr++ = 0;
   }
 }

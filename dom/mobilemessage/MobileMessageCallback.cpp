@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +18,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsTArrayHelpers.h"
 #include "DOMMobileMessageError.h"
+#include "mozilla/dom/Promise.h"
 
 namespace mozilla {
 namespace dom {
@@ -60,6 +62,24 @@ ConvertErrorCodeToErrorString(int32_t aError)
     case nsIMobileMessageCallback::SIM_NOT_MATCHED_ERROR:
       errorStr = NS_LITERAL_STRING("SimNotMatchedError");
       break;
+    case nsIMobileMessageCallback::NETWORK_PROBLEMS_ERROR:
+      errorStr = NS_LITERAL_STRING("NetworkProblemsError");
+      break;
+    case nsIMobileMessageCallback::GENERAL_PROBLEMS_ERROR:
+      errorStr = NS_LITERAL_STRING("GeneralProblemsError");
+      break;
+    case nsIMobileMessageCallback::SERVICE_NOT_AVAILABLE_ERROR:
+      errorStr = NS_LITERAL_STRING("ServiceNotAvailableError");
+      break;
+    case nsIMobileMessageCallback::MESSAGE_TOO_LONG_FOR_NETWORK_ERROR:
+      errorStr = NS_LITERAL_STRING("MessageTooLongForNetworkError");
+      break;
+    case nsIMobileMessageCallback::SERVICE_NOT_SUPPORTED_ERROR:
+      errorStr = NS_LITERAL_STRING("ServiceNotSupportedError");
+      break;
+    case nsIMobileMessageCallback::RETRY_REQUIRED_ERROR:
+      errorStr = NS_LITERAL_STRING("RetryRequiredError");
+      break;
     default: // SUCCESS_NO_ERROR is handled above.
       MOZ_CRASH("Should never get here!");
   }
@@ -80,6 +100,11 @@ MobileMessageCallback::MobileMessageCallback(DOMRequest* aDOMRequest)
 {
 }
 
+MobileMessageCallback::MobileMessageCallback(Promise* aPromise)
+  : mPromise(aPromise)
+{
+}
+
 MobileMessageCallback::~MobileMessageCallback()
 {
 }
@@ -88,6 +113,10 @@ MobileMessageCallback::~MobileMessageCallback()
 nsresult
 MobileMessageCallback::NotifySuccess(JS::Handle<JS::Value> aResult, bool aAsync)
 {
+  if (NS_WARN_IF(!mDOMRequest->GetOwner())) {
+    return NS_ERROR_FAILURE;
+  }
+
   if (aAsync) {
     nsCOMPtr<nsIDOMRequestService> rs =
       do_GetService(DOMREQUEST_SERVICE_CONTRACTID);
@@ -119,6 +148,10 @@ MobileMessageCallback::NotifySuccess(nsISupports *aMessage, bool aAsync)
 nsresult
 MobileMessageCallback::NotifyError(int32_t aError, DOMError *aDetailedError, bool aAsync)
 {
+  if (NS_WARN_IF(!mDOMRequest->GetOwner())) {
+    return NS_ERROR_FAILURE;
+  }
+
   if (aAsync) {
     NS_ASSERTION(!aDetailedError,
       "No Support to FireDetailedErrorAsync() in nsIDOMRequestService!");
@@ -149,18 +182,23 @@ MobileMessageCallback::NotifyMessageSent(nsISupports *aMessage)
 NS_IMETHODIMP
 MobileMessageCallback::NotifySendMessageFailed(int32_t aError, nsISupports *aMessage)
 {
+  nsCOMPtr<nsPIDOMWindow> window = mDOMRequest->GetOwner();
+  if (NS_WARN_IF(!window)) {
+    return NS_ERROR_FAILURE;
+  }
+
   nsRefPtr<DOMMobileMessageError> domMobileMessageError;
   if (aMessage) {
     nsAutoString errorStr = ConvertErrorCodeToErrorString(aError);
     nsCOMPtr<nsIDOMMozSmsMessage> smsMsg = do_QueryInterface(aMessage);
     if (smsMsg) {
       domMobileMessageError =
-        new DOMMobileMessageError(mDOMRequest->GetOwner(), errorStr, smsMsg);
+        new DOMMobileMessageError(window, errorStr, smsMsg);
     }
     else {
       nsCOMPtr<nsIDOMMozMmsMessage> mmsMsg = do_QueryInterface(aMessage);
       domMobileMessageError =
-        new DOMMobileMessageError(mDOMRequest->GetOwner(), errorStr, mmsMsg);
+        new DOMMobileMessageError(window, errorStr, mmsMsg);
     }
     NS_ASSERTION(domMobileMessageError, "Invalid DOMMobileMessageError!");
   }
@@ -185,7 +223,7 @@ MobileMessageCallback::NotifyMessageDeleted(bool *aDeleted, uint32_t aSize)
 {
   if (aSize == 1) {
     AutoJSContext cx;
-    JS::Rooted<JS::Value> val(cx, aDeleted[0] ? JSVAL_TRUE : JSVAL_FALSE);
+    JS::Rooted<JS::Value> val(cx, JS::BooleanValue(*aDeleted));
     return NotifySuccess(val);
   }
 
@@ -197,7 +235,7 @@ MobileMessageCallback::NotifyMessageDeleted(bool *aDeleted, uint32_t aSize)
 
   JS::Rooted<JSObject*> deleteArrayObj(cx, JS_NewArrayObject(cx, aSize));
   for (uint32_t i = 0; i < aSize; i++) {
-    JS_SetElement(cx, deleteArrayObj, i, aDeleted[i]);
+    JS_DefineElement(cx, deleteArrayObj, i, aDeleted[i], JSPROP_ENUMERATE);
   }
 
   JS::Rooted<JS::Value> deleteArrayVal(cx, JS::ObjectValue(*deleteArrayObj));
@@ -214,7 +252,7 @@ NS_IMETHODIMP
 MobileMessageCallback::NotifyMessageMarkedRead(bool aRead)
 {
   AutoJSContext cx;
-  JS::Rooted<JS::Value> val(cx, aRead ? JSVAL_TRUE : JSVAL_FALSE);
+  JS::Rooted<JS::Value> val(cx, JS::BooleanValue(aRead));
   return NotifySuccess(val);
 }
 
@@ -256,30 +294,55 @@ MobileMessageCallback::NotifyGetSegmentInfoForTextFailed(int32_t aError)
 }
 
 NS_IMETHODIMP
-MobileMessageCallback::NotifyGetSmscAddress(const nsAString& aSmscAddress)
+MobileMessageCallback::NotifyGetSmscAddress(const nsAString& aSmscAddress,
+                                            uint32_t aTypeOfNumber,
+                                            uint32_t aNumberPlanIdentification)
 {
-  AutoJSAPI jsapi;
-  if (NS_WARN_IF(!jsapi.Init(mDOMRequest->GetOwner()))) {
-    return NotifyError(nsIMobileMessageCallback::INTERNAL_ERROR);
-  }
-  JSContext* cx = jsapi.cx();
-  JSString* smsc = JS_NewUCStringCopyN(cx, aSmscAddress.BeginReading(),
-                                       aSmscAddress.Length());
+  TypeOfAddress toa;
 
-  if (!smsc) {
-    return NotifyError(nsIMobileMessageCallback::INTERNAL_ERROR);
-  }
+  // Check the value is valid and set TON accordingly.
+  bool isTonValid = aTypeOfNumber < uint32_t(TypeOfNumber::EndGuard_);
+  toa.mTypeOfNumber = (isTonValid) ?
+    static_cast<TypeOfNumber>(aTypeOfNumber) : TypeOfNumber::Unknown;
 
-  JS::Rooted<JS::Value> val(cx, STRING_TO_JSVAL(smsc));
-  return NotifySuccess(val);
+  // Check the value is valid and set NPI accordingly.
+  bool isNpiValid =
+    aNumberPlanIdentification < uint32_t(NumberPlanIdentification::EndGuard_);
+  toa.mNumberPlanIdentification = (isNpiValid) ?
+    static_cast<NumberPlanIdentification>(aNumberPlanIdentification) :
+    NumberPlanIdentification::Unknown;
+
+  SmscAddress smsc;
+  smsc.mTypeOfAddress = toa;
+  smsc.mAddress.Construct(nsString(aSmscAddress));
+
+  mPromise->MaybeResolve(smsc);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 MobileMessageCallback::NotifyGetSmscAddressFailed(int32_t aError)
 {
-  return NotifyError(aError);
+  const nsAString& errorStr = ConvertErrorCodeToErrorString(aError);
+  mPromise->MaybeRejectBrokenly(errorStr);
+  return NS_OK;
 }
 
-} // namesapce mobilemessage
+NS_IMETHODIMP
+MobileMessageCallback::NotifySetSmscAddress()
+{
+  mPromise->MaybeResolve(JS::UndefinedHandleValue);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MobileMessageCallback::NotifySetSmscAddressFailed(int32_t aError)
+{
+  const nsAString& errorStr = ConvertErrorCodeToErrorString(aError);
+  mPromise->MaybeRejectBrokenly(errorStr);
+  return NS_OK;
+}
+
+} // namespace mobilemessage
 } // namespace dom
 } // namespace mozilla

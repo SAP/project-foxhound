@@ -33,8 +33,6 @@ BEGIN_TEST(testTypedArrays)
     RootedObject proto(cx);
     JS_GetPrototype(cx, buffer, &proto);
     CHECK(!JS_IsArrayBufferObject(proto));
-    RootedObject dummy(cx, JS_GetParent(proto));
-    CHECK(!JS_IsArrayBufferObject(dummy));
 
     {
         JS::AutoCheckCannotGC nogc;
@@ -72,8 +70,6 @@ TestPlainTypedArray(JSContext* cx)
     RootedObject proto(cx);
     JS_GetPrototype(cx, array, &proto);
     CHECK(!JS_IsTypedArrayObject(proto));
-    RootedObject dummy(cx, JS_GetParent(proto));
-    CHECK(!JS_IsTypedArrayObject(dummy));
 
     CHECK_EQUAL(JS_GetTypedArrayLength(array), 7u);
     CHECK_EQUAL(JS_GetTypedArrayByteOffset(array), 0u);
@@ -87,7 +83,7 @@ TestPlainTypedArray(JSContext* cx)
     }
     RootedValue v(cx);
     CHECK(JS_GetElement(cx, array, 0, &v));
-    CHECK_SAME(v, INT_TO_JSVAL(13));
+    CHECK_SAME(v, Int32Value(13));
 
     return true;
 }
@@ -139,7 +135,7 @@ TestArrayFromBuffer(JSContext* cx)
     CHECK_EQUAL(JS_GetTypedArrayByteLength(ofsArray), nbytes / 2);
 
     // Make sure all 3 views reflect the same buffer at the expected locations
-    JS::RootedValue v(cx, INT_TO_JSVAL(39));
+    JS::RootedValue v(cx, JS::Int32Value(39));
     JS_SetElement(cx, array, 0, v);
     JS::RootedValue v2(cx);
     CHECK(JS_GetElement(cx, array, 0, &v2));
@@ -153,7 +149,7 @@ TestArrayFromBuffer(JSContext* cx)
         CHECK_EQUAL(long(v.toInt32()), long(reinterpret_cast<Element*>(data)[0]));
     }
 
-    v = INT_TO_JSVAL(40);
+    v.setInt32(40);
     JS_SetElement(cx, array, elts / 2, v);
     CHECK(JS_GetElement(cx, array, elts / 2, &v2));
     CHECK_SAME(v, v2);
@@ -166,7 +162,7 @@ TestArrayFromBuffer(JSContext* cx)
         CHECK_EQUAL(long(v.toInt32()), long(reinterpret_cast<Element*>(data)[elts / 2]));
     }
 
-    v = INT_TO_JSVAL(41);
+    v.setInt32(41);
     JS_SetElement(cx, array, elts - 1, v);
     CHECK(JS_GetElement(cx, array, elts - 1, &v2));
     CHECK_SAME(v, v2);
@@ -185,7 +181,7 @@ TestArrayFromBuffer(JSContext* cx)
     CHECK_SAME(v, v2);
 
     /* The copy should not see changes in the original */
-    v2 = INT_TO_JSVAL(42);
+    v2.setInt32(42);
     JS_SetElement(cx, array, 0, v2);
     CHECK(JS_GetElement(cx, copy, 0, &v2));
     CHECK_SAME(v2, v); /* v is still the original value from 'array' */

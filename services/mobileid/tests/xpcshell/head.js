@@ -46,16 +46,37 @@ const MCC = "aMcc";
 const ANOTHER_MCC = "anotherMcc";
 const OPERATOR = "aOperator";
 const ANOTHER_OPERATOR = "anotherOperator";
+const ICC_INFO = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIGsmIccInfo,
+                                         Ci.nsIIccInfo]),
+  iccType: "usim",
+  iccid: ICC_ID,
+  mcc: MCC,
+  mnc: MNC,
+  msisdn: PHONE_NUMBER,
+  operator: OPERATOR
+};
+const ANOTHER_ICC_INFO = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIGsmIccInfo,
+                                         Ci.nsIIccInfo]),
+  iccType: "usim",
+  iccid: ANOTHER_ICC_ID,
+  mcc: ANOTHER_MCC,
+  mnc: ANOTHER_MNC,
+  msisdn: ANOTHER_PHONE_NUMBER,
+  operator: ANOTHER_OPERATOR
+};
+const INVALID_ICC_INFO = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIGsmIccInfo,
+                                         Ci.nsIIccInfo]),
+  iccType: "usim",
+  iccid: null,
+  mcc: "",
+  mnc: "",
+  msisdn: "",
+  operator: ""
+};
 const RADIO_INTERFACE = {
-  rilContext: {
-    iccInfo: {
-      iccid: ICC_ID,
-      mcc: MCC,
-      mnc: MNC,
-      msisdn: PHONE_NUMBER,
-      operator: OPERATOR
-    }
-  },
   voice: {
     network: {
       shortName: OPERATOR
@@ -69,15 +90,6 @@ const RADIO_INTERFACE = {
   }
 };
 const ANOTHER_RADIO_INTERFACE = {
-  rilContext: {
-    iccInfo: {
-      iccid: ANOTHER_ICC_ID,
-      mcc: ANOTHER_MCC,
-      mnc: ANOTHER_MNC,
-      msisdn: ANOTHER_PHONE_NUMBER,
-      operator: ANOTHER_OPERATOR
-    }
-  },
   voice: {
     network: {
       shortName: ANOTHER_OPERATOR
@@ -92,15 +104,6 @@ const ANOTHER_RADIO_INTERFACE = {
 };
 
 const INVALID_RADIO_INTERFACE = {
-  rilContext: {
-    iccInfo: {
-      iccid: null,
-      mcc: "",
-      mnc: "",
-      msisdn: "",
-      operator: ""
-    }
-  },
   voice: {
     network: {
       shortName: ""
@@ -122,9 +125,10 @@ function addPermission(aAction) {
   let uri = Cc["@mozilla.org/network/io-service;1"]
               .getService(Ci.nsIIOService)
               .newURI(ORIGIN, null, null);
+  let attrs = {appId: APP_ID};
   let _principal = Cc["@mozilla.org/scriptsecuritymanager;1"]
                      .getService(Ci.nsIScriptSecurityManager)
-                     .getAppCodebasePrincipal(uri, APP_ID, false);
+                     .createCodebasePrincipal(uri, attrs);
   let pm = Cc["@mozilla.org/permissionmanager;1"]
              .getService(Ci.nsIPermissionManager);
   pm.addFromPrincipal(_principal, MOBILEID_PERM, aAction);
@@ -134,9 +138,10 @@ function removePermission() {
   let uri = Cc["@mozilla.org/network/io-service;1"]
               .getService(Ci.nsIIOService)
               .newURI(ORIGIN, null, null);
+  let attrs = {appId: APP_ID};
   let _principal = Cc["@mozilla.org/scriptsecuritymanager;1"]
                      .getService(Ci.nsIScriptSecurityManager)
-                     .getAppCodebasePrincipal(uri, APP_ID, false);
+                     .createCodebasePrincipal(uri, attrs);
   let pm = Cc["@mozilla.org/permissionmanager;1"]
              .getService(Ci.nsIPermissionManager);
   pm.removeFromPrincipal(_principal, MOBILEID_PERM);
@@ -144,7 +149,7 @@ function removePermission() {
 
 // === Mocks ===
 
-let Mock = function(aOptions) {
+var Mock = function(aOptions) {
   if (!aOptions) {
     aOptions = {};
   }
@@ -202,7 +207,7 @@ Mock.prototype = {
 };
 
 // UI Glue mock up.
-let MockUi = function(aOptions) {
+var MockUi = function(aOptions) {
   Mock.call(this, aOptions);
 };
 
@@ -250,7 +255,7 @@ MockUi.prototype = {
 };
 
 // Credentials store mock up.
-let MockCredStore = function(aOptions) {
+var MockCredStore = function(aOptions) {
   Mock.call(this, aOptions);
 };
 
@@ -311,7 +316,7 @@ MockCredStore.prototype = {
 };
 
 // Client mock up.
-let MockClient = function(aOptions) {
+var MockClient = function(aOptions) {
   Mock.call(this, aOptions);
 };
 
@@ -403,14 +408,14 @@ const kMobileIdentityUIGlueContractID =
 /*const kMobileIdentityUIGlueFactory =
   Cm.getClassObject(Cc[kMobileIdentityUIGlueContractID], Ci.nsIFactory);*/
 
-let fakeMobileIdentityUIGlueFactory = {
+var fakeMobileIdentityUIGlueFactory = {
   createInstance: function(aOuter, aIid) {
     return MobileIdentityUIGlue.QueryInterface(aIid);
   }
 };
 
 // MobileIdentityUIGlue fake component.
-let MobileIdentityUIGlue = {
+var MobileIdentityUIGlue = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIMobileIdentityUIGlue]),
 
 };
@@ -428,7 +433,7 @@ let MobileIdentityUIGlue = {
 const XUL_APP_INFO_UUID = Components.ID("{84fdc459-d96d-421c-9bff-a8193233ae75}");
 const XUL_APP_INFO_CONTRACT_ID = "@mozilla.org/xre/app-info;1";
 
-let XULAppInfo = {
+var XULAppInfo = {
   vendor: "Mozilla",
   name: "MobileIdTest",
   ID: "{230de50e-4cd1-11dc-8314-0800200b9a66}",
@@ -447,7 +452,7 @@ let XULAppInfo = {
   ])
 };
 
-let XULAppInfoFactory = {
+var XULAppInfoFactory = {
   createInstance: function (outer, iid) {
     if (outer != null) {
       throw Cr.NS_ERROR_NO_AGGREGATION;

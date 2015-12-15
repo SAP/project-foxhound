@@ -1,5 +1,5 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8; -*- */
-/* vim: set sw=4 ts=8 et tw=80 : */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +7,8 @@
 #include "ProcessGlobal.h"
 
 #include "nsContentCID.h"
+#include "nsDOMClassInfoID.h"
+#include "mozilla/HoldDropJSObjects.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -35,12 +37,12 @@ ProcessGlobal::Get()
   return static_cast<ProcessGlobal*>(service.get());
 }
 
-/* [notxpcom] boolean markForCC (); */
 // This method isn't automatically forwarded safely because it's notxpcom, so
 // the IDL binding doesn't know what value to return.
 NS_IMETHODIMP_(bool)
 ProcessGlobal::MarkForCC()
 {
+  MarkScopesForCC();
   return mMessageManager ? mMessageManager->MarkForCC() : false;
 }
 
@@ -49,6 +51,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(ProcessGlobal)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ProcessGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMessageManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
+  tmp->TraverseHostObjectURIs(cb);
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -64,6 +67,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ProcessGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mMessageManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mAnonymousGlobalScopes)
+  tmp->UnlinkHostObjectURIs();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ProcessGlobal)
@@ -99,4 +103,10 @@ ProcessGlobal::LoadScript(const nsAString& aURL)
 {
   Init();
   LoadScriptInternal(aURL, false);
+}
+
+void
+ProcessGlobal::SetInitialProcessData(JS::HandleValue aInitialData)
+{
+  mMessageManager->SetInitialProcessData(aInitialData);
 }

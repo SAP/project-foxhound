@@ -9,6 +9,7 @@ import org.mozilla.gecko.AppConstants.Versions;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserContract;
 import org.mozilla.gecko.favicons.Favicons;
+import org.mozilla.gecko.home.ImageLoader;
 import org.mozilla.gecko.util.ThreadUtils;
 
 import android.content.BroadcastReceiver;
@@ -94,18 +95,33 @@ class MemoryMonitor extends BroadcastReceiver {
             return;
         }
 
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
-            increaseMemoryPressure(MEMORY_PRESSURE_HIGH);
-        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
-            increaseMemoryPressure(MEMORY_PRESSURE_MEDIUM);
-        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-            // includes TRIM_MEMORY_BACKGROUND
-            increaseMemoryPressure(MEMORY_PRESSURE_CLEANUP);
-        } else {
-            // levels down here mean gecko is the foreground process so we
-            // should be less aggressive with wiping memory as it may impact
-            // user experience.
-            increaseMemoryPressure(MEMORY_PRESSURE_LOW);
+        if (level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            // We seem to get this just by entering the task switcher or hitting the home button.
+            // Seems bogus, because we are the foreground app, or at least not at the end of the LRU list.
+            // Just ignore it, and if there is a real memory pressure event (CRITICAL, MODERATE, etc),
+            // we'll respond appropriately.
+            return;
+        }
+
+        switch (level) {
+            case ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL:
+            case ComponentCallbacks2.TRIM_MEMORY_MODERATE:
+                // TRIM_MEMORY_MODERATE is the highest level we'll respond to while backgrounded
+                increaseMemoryPressure(MEMORY_PRESSURE_HIGH);
+                break;
+            case ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE:
+                increaseMemoryPressure(MEMORY_PRESSURE_MEDIUM);
+                break;
+            case ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW:
+                increaseMemoryPressure(MEMORY_PRESSURE_LOW);
+                break;
+            case ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN:
+            case ComponentCallbacks2.TRIM_MEMORY_BACKGROUND:
+                increaseMemoryPressure(MEMORY_PRESSURE_CLEANUP);
+                break;
+            default:
+                Log.d(LOGTAG, "Unhandled onTrimMemory() level " + level);
+                break;
         }
     }
 
@@ -140,6 +156,8 @@ class MemoryMonitor extends BroadcastReceiver {
             mMemoryPressure = level;
         }
 
+        Log.d(LOGTAG, "increasing memory pressure to " + level);
+
         // since we don't get notifications for when memory pressure is off,
         // we schedule our own timer to slowly back off the memory pressure level.
         // note that this will reset the time to next decrement if the decrementer
@@ -157,11 +175,12 @@ class MemoryMonitor extends BroadcastReceiver {
         // TODO hook in memory-reduction stuff for different levels here
         if (level >= MEMORY_PRESSURE_MEDIUM) {
             //Only send medium or higher events because that's all that is used right now
-            if (GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning)) {
+            if (GeckoThread.isRunning()) {
                 GeckoAppShell.dispatchMemoryPressure();
             }
 
             Favicons.clearMemCache();
+            ImageLoader.clearLruCache();
         }
         return true;
     }
@@ -234,7 +253,7 @@ class MemoryMonitor extends BroadcastReceiver {
         @Override
         public void run() {
             // this might get run right on startup, if so wait 10 seconds and try again
-            if (!GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning)) {
+            if (!GeckoThread.isRunning()) {
                 ThreadUtils.getBackgroundHandler().postDelayed(this, 10000);
                 return;
             }

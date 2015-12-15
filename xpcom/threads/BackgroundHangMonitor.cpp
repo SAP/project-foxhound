@@ -29,7 +29,19 @@
 #include <algorithm>
 
 // Activate BHR only for one every BHR_BETA_MOD users.
-#define BHR_BETA_MOD 100;
+#define BHR_BETA_MOD 2;
+
+// Maximum depth of the call stack in the reported thread hangs. This value represents
+// the 99.9th percentile of the thread hangs stack depths reported by Telemetry.
+static const size_t kMaxThreadHangStackDepth = 30;
+
+// An utility comparator function used by std::unique to collapse "(* script)" entries in
+// a vector representing a call stack.
+bool StackScriptEntriesCollapser(const char* aStackEntry, const char *aAnotherStackEntry)
+{
+  return !strcmp(aStackEntry, aAnotherStackEntry) &&
+         (!strcmp(aStackEntry, "(chrome script)") || !strcmp(aStackEntry, "(content script)"));
+}
 
 namespace mozilla {
 
@@ -164,6 +176,10 @@ public:
   Telemetry::HangStack mHangStack;
   // Statistics for telemetry
   Telemetry::ThreadHangStats mStats;
+  // Annotations for the current hang
+  UniquePtr<HangMonitor::HangAnnotations> mAnnotations;
+  // Annotators registered for this thread
+  HangMonitor::Observer::Annotators mAnnotators;
 
   BackgroundHangThread(const char* aName,
                        uint32_t aTimeoutMs,
@@ -299,6 +315,8 @@ BackgroundHangManager::RunMonitorThread()
           currentThread->mStackHelper.GetStack(currentThread->mHangStack);
           currentThread->mHangStart = interval;
           currentThread->mHanging = true;
+          currentThread->mAnnotations =
+            currentThread->mAnnotators.GatherAnnotations();
         }
       } else {
         if (MOZ_LIKELY(interval != currentThread->mHangStart)) {
@@ -392,17 +410,31 @@ BackgroundHangThread::ReportHang(PRIntervalTime aHangTime)
     }
   }
 
+  // Collapse duplicated "(chrome script)" and "(content script)" entries in the stack.
+  auto it = std::unique(mHangStack.begin(), mHangStack.end(), StackScriptEntriesCollapser);
+  mHangStack.erase(it, mHangStack.end());
+
+  // Limit the depth of the reported stack if greater than our limit. Only keep its
+  // last entries, since the most recent frames are at the end of the vector.
+  if (mHangStack.length() > kMaxThreadHangStackDepth) {
+    const int elementsToRemove = mHangStack.length() - kMaxThreadHangStackDepth;
+    // Replace the oldest frame with a known label so that we can tell this stack
+    // was limited.
+    mHangStack[0] = "(reduced stack)";
+    mHangStack.erase(mHangStack.begin() + 1, mHangStack.begin() + elementsToRemove);
+  }
+
   Telemetry::HangHistogram newHistogram(Move(mHangStack));
   for (Telemetry::HangHistogram* oldHistogram = mStats.mHangs.begin();
        oldHistogram != mStats.mHangs.end(); oldHistogram++) {
     if (newHistogram == *oldHistogram) {
       // New histogram matches old one
-      oldHistogram->Add(aHangTime);
+      oldHistogram->Add(aHangTime, Move(mAnnotations));
       return *oldHistogram;
     }
   }
   // Add new histogram
-  newHistogram.Add(aHangTime);
+  newHistogram.Add(aHangTime, Move(mAnnotations));
   mStats.mHangs.append(Move(newHistogram));
   return mStats.mHangs.back();
 }
@@ -599,7 +631,7 @@ BackgroundHangMonitor::NotifyActivity()
     return;
   }
 
-  if (Telemetry::CanRecord()) {
+  if (Telemetry::CanRecordExtended()) {
     mThread->NotifyActivity();
   }
 #endif
@@ -616,7 +648,7 @@ BackgroundHangMonitor::NotifyWait()
     return;
   }
 
-  if (Telemetry::CanRecord()) {
+  if (Telemetry::CanRecordExtended()) {
     mThread->NotifyWait();
   }
 #endif
@@ -642,6 +674,33 @@ BackgroundHangMonitor::Allow()
 #endif
 }
 
+bool
+BackgroundHangMonitor::RegisterAnnotator(HangMonitor::Annotator& aAnnotator)
+{
+#ifdef MOZ_ENABLE_BACKGROUND_HANG_MONITOR
+  BackgroundHangThread* thisThread = BackgroundHangThread::FindThread();
+  if (!thisThread) {
+    return false;
+  }
+  return thisThread->mAnnotators.Register(aAnnotator);
+#else
+  return false;
+#endif
+}
+
+bool
+BackgroundHangMonitor::UnregisterAnnotator(HangMonitor::Annotator& aAnnotator)
+{
+#ifdef MOZ_ENABLE_BACKGROUND_HANG_MONITOR
+  BackgroundHangThread* thisThread = BackgroundHangThread::FindThread();
+  if (!thisThread) {
+    return false;
+  }
+  return thisThread->mAnnotators.Unregister(aAnnotator);
+#else
+  return false;
+#endif
+}
 
 /* Because we are iterating through the BackgroundHangThread linked list,
    we need to take a lock. Using MonitorAutoLock as a base class makes

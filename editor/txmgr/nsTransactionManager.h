@@ -18,13 +18,12 @@
 
 class nsITransaction;
 class nsITransactionListener;
-class nsTransactionItem;
 
 /** implementation of a transaction manager object.
  *
  */
 class nsTransactionManager final : public nsITransactionManager
-                                     , public nsSupportsWeakReference
+                                 , public nsSupportsWeakReference
 {
 private:
 

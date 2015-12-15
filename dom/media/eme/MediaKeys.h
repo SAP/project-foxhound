@@ -18,6 +18,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/MediaKeysBinding.h"
 #include "mozIGeckoMediaPluginService.h"
+#include "mozilla/DetailedPromise.h"
 
 namespace mozilla {
 
@@ -30,7 +31,7 @@ class MediaKeySession;
 class HTMLMediaElement;
 
 typedef nsRefPtrHashtable<nsStringHashKey, MediaKeySession> KeySessionHashMap;
-typedef nsRefPtrHashtable<nsUint32HashKey, dom::Promise> PromiseHashMap;
+typedef nsRefPtrHashtable<nsUint32HashKey, dom::DetailedPromise> PromiseHashMap;
 typedef nsRefPtrHashtable<nsUint32HashKey, MediaKeySession> PendingKeySessionsHashMap;
 typedef uint32_t PromiseId;
 
@@ -43,7 +44,7 @@ CopyArrayBufferViewOrArrayBufferData(const ArrayBufferViewOrArrayBuffer& aBuffer
 // This class is used on the main thread only.
 // Note: it's addref/release is not (and can't be) thread safe!
 class MediaKeys final : public nsISupports,
-                            public nsWrapperCache
+                        public nsWrapperCache
 {
   ~MediaKeys();
 
@@ -51,13 +52,13 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MediaKeys)
 
-  MediaKeys(nsPIDOMWindow* aParentWindow, const nsAString& aKeySystem);
+  MediaKeys(nsPIDOMWindow* aParentWindow, const nsAString& aKeySystem, const nsAString& aCDMVersion);
 
-  already_AddRefed<Promise> Init(ErrorResult& aRv);
+  already_AddRefed<DetailedPromise> Init(ErrorResult& aRv);
 
   nsPIDOMWindow* GetParentObject() const;
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsresult Bind(HTMLMediaElement* aElement);
 
@@ -70,8 +71,9 @@ public:
                                                   ErrorResult& aRv);
 
   // JavaScript: MediaKeys.SetServerCertificate()
-  already_AddRefed<Promise> SetServerCertificate(const ArrayBufferViewOrArrayBuffer& aServerCertificate,
-                                                 ErrorResult& aRv);
+  already_AddRefed<DetailedPromise>
+    SetServerCertificate(const ArrayBufferViewOrArrayBuffer& aServerCertificate,
+                         ErrorResult& aRv);
 
   already_AddRefed<MediaKeySession> GetSession(const nsAString& aSessionId);
 
@@ -81,7 +83,7 @@ public:
 
   // Called once a Init() operation succeeds.
   void OnCDMCreated(PromiseId aId,
-                    const nsACString& aNodeId, const nsACString& aPluginId);
+                    const nsACString& aNodeId, const uint32_t aPluginId);
 
   // Called once the CDM generates a sessionId while servicing a
   // MediaKeySession.generateRequest() or MediaKeySession.load() call,
@@ -97,14 +99,16 @@ public:
   CDMProxy* GetCDMProxy() { return mProxy; }
 
   // Makes a new promise, or nullptr on failure.
-  already_AddRefed<Promise> MakePromise(ErrorResult& aRv);
+  already_AddRefed<DetailedPromise> MakePromise(ErrorResult& aRv,
+                                                const nsACString& aName);
   // Stores promise in mPromises, returning an ID that can be used to retrieve
   // it later. The ID is passed to the CDM, so that it can signal specific
   // promises to be resolved.
-  PromiseId StorePromise(Promise* aPromise);
+  PromiseId StorePromise(DetailedPromise* aPromise);
 
   // Reject promise with DOMException corresponding to aExceptionCode.
-  void RejectPromise(PromiseId aId, nsresult aExceptionCode);
+  void RejectPromise(PromiseId aId, nsresult aExceptionCode,
+                     const nsCString& aReason);
   // Resolves promise with "undefined".
   void ResolvePromise(PromiseId aId);
 
@@ -124,7 +128,7 @@ private:
   bool IsInPrivateBrowsing();
 
   // Removes promise from mPromises, and returns it.
-  already_AddRefed<Promise> RetrievePromise(PromiseId aId);
+  already_AddRefed<DetailedPromise> RetrievePromise(PromiseId aId);
 
   // Owning ref to proxy. The proxy has a weak reference back to the MediaKeys,
   // and the MediaKeys destructor clears the proxy's reference to the MediaKeys.
@@ -133,7 +137,8 @@ private:
   nsRefPtr<HTMLMediaElement> mElement;
 
   nsCOMPtr<nsPIDOMWindow> mParent;
-  nsString mKeySystem;
+  const nsString mKeySystem;
+  const nsString mCDMVersion;
   nsCString mNodeId;
   KeySessionHashMap mKeySessions;
   PromiseHashMap mPromises;

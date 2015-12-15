@@ -13,6 +13,7 @@
 #include "mozilla/net/WyciwygChannelParent.h"
 #include "mozilla/net/FTPChannelParent.h"
 #include "mozilla/net/WebSocketChannelParent.h"
+#include "mozilla/net/DataChannelParent.h"
 #ifdef NECKO_PROTOCOL_rtsp
 #include "mozilla/net/RtspControllerParent.h"
 #include "mozilla/net/RtspChannelParent.h"
@@ -39,7 +40,9 @@
 #include "nsIAuthPromptCallback.h"
 #include "nsPrincipal.h"
 #include "nsIOService.h"
+#include "nsINetworkPredictor.h"
 #include "mozilla/net/OfflineObserver.h"
+#include "nsISpeculativeConnect.h"
 
 using mozilla::dom::ContentParent;
 using mozilla::dom::TabContext;
@@ -54,6 +57,8 @@ using IPC::SerializedLoadContext;
 
 namespace mozilla {
 namespace net {
+
+PNeckoParent *gNeckoParent = nullptr;
 
 // C++ file contents
 NeckoParent::NeckoParent()
@@ -80,6 +85,7 @@ NeckoParent::NeckoParent()
   }
 
   mObserver = new OfflineObserver(this);
+  gNeckoParent = this;
 }
 
 NeckoParent::~NeckoParent()
@@ -265,7 +271,7 @@ NeckoParent::AllocPFTPChannelParent(const PBrowserOrId& aBrowser,
     return nullptr;
   }
   PBOverrideStatus overrideStatus = PBOverrideStatusFromLoadContext(aSerialized);
-  FTPChannelParent *p = new FTPChannelParent(loadContext, overrideStatus);
+  FTPChannelParent *p = new FTPChannelParent(aBrowser, loadContext, overrideStatus);
   p->AddRef();
   return p;
 }
@@ -345,6 +351,29 @@ NeckoParent::DeallocPWebSocketParent(PWebSocketParent* actor)
 {
   WebSocketChannelParent* p = static_cast<WebSocketChannelParent*>(actor);
   p->Release();
+  return true;
+}
+
+PDataChannelParent*
+NeckoParent::AllocPDataChannelParent(const uint32_t &channelId)
+{
+  nsRefPtr<DataChannelParent> p = new DataChannelParent();
+  return p.forget().take();
+}
+
+bool
+NeckoParent::DeallocPDataChannelParent(PDataChannelParent* actor)
+{
+  nsRefPtr<DataChannelParent> p = dont_AddRef(static_cast<DataChannelParent*>(actor));
+  return true;
+}
+
+bool
+NeckoParent::RecvPDataChannelConstructor(PDataChannelParent* actor,
+                                         const uint32_t& channelId)
+{
+  DataChannelParent* p = static_cast<DataChannelParent*>(actor);
+  p->Init(channelId);
   return true;
 }
 
@@ -428,10 +457,10 @@ NeckoParent::DeallocPTCPSocketParent(PTCPSocketParent* actor)
 
 PTCPServerSocketParent*
 NeckoParent::AllocPTCPServerSocketParent(const uint16_t& aLocalPort,
-                                   const uint16_t& aBacklog,
-                                   const nsString& aBinaryType)
+                                         const uint16_t& aBacklog,
+                                         const bool& aUseArrayBuffers)
 {
-  TCPServerSocketParent* p = new TCPServerSocketParent();
+  TCPServerSocketParent* p = new TCPServerSocketParent(this, aLocalPort, aBacklog, aUseArrayBuffers);
   p->AddIPDLReference();
   return p;
 }
@@ -440,10 +469,10 @@ bool
 NeckoParent::RecvPTCPServerSocketConstructor(PTCPServerSocketParent* aActor,
                                              const uint16_t& aLocalPort,
                                              const uint16_t& aBacklog,
-                                             const nsString& aBinaryType)
+                                             const bool& aUseArrayBuffers)
 {
-  return static_cast<TCPServerSocketParent*>(aActor)->
-      Init(this, aLocalPort, aBacklog, aBinaryType);
+  static_cast<TCPServerSocketParent*>(aActor)->Init();
+  return true;
 }
 
 bool
@@ -455,18 +484,20 @@ NeckoParent::DeallocPTCPServerSocketParent(PTCPServerSocketParent* actor)
 }
 
 PUDPSocketParent*
-NeckoParent::AllocPUDPSocketParent(const nsCString& /* unused */)
+NeckoParent::AllocPUDPSocketParent(const Principal& /* unused */,
+                                   const nsCString& /* unused */)
 {
-  nsRefPtr<UDPSocketParent> p = new UDPSocketParent();
+  nsRefPtr<UDPSocketParent> p = new UDPSocketParent(this);
 
   return p.forget().take();
 }
 
 bool
 NeckoParent::RecvPUDPSocketConstructor(PUDPSocketParent* aActor,
+                                       const Principal& aPrincipal,
                                        const nsCString& aFilter)
 {
-  return static_cast<UDPSocketParent*>(aActor)->Init(aFilter);
+  return static_cast<UDPSocketParent*>(aActor)->Init(aPrincipal, aFilter);
 }
 
 bool
@@ -549,7 +580,17 @@ NeckoParent::AllocPRemoteOpenFileParent(const SerializedLoadContext& aSerialized
       }
     }
 
+    nsCOMPtr<nsIURI> appUri = DeserializeURI(aAppURI);
+
     if (!haveValidBrowser) {
+      // Extension loads come from chrome and have no valid browser, so we check
+      // for these early on.
+      bool fromExtension = false;
+      if (NS_SUCCEEDED(appsService->IsExtensionResource(appUri, &fromExtension)) &&
+          fromExtension) {
+        RemoteOpenFileParent* parent = new RemoteOpenFileParent(fileURL);
+        return parent;
+      }
       return nullptr;
     }
 
@@ -560,7 +601,6 @@ NeckoParent::AllocPRemoteOpenFileParent(const SerializedLoadContext& aSerialized
     // Check if we load the whitelisted app uri for the neterror page.
     bool netErrorWhiteList = false;
 
-    nsCOMPtr<nsIURI> appUri = DeserializeURI(aAppURI);
     if (appUri) {
       nsAdoptingString netErrorURI;
       netErrorURI = Preferences::GetString("b2g.neterror.url");
@@ -576,7 +616,7 @@ NeckoParent::AllocPRemoteOpenFileParent(const SerializedLoadContext& aSerialized
     bool themeWhitelist = false;
     if (Preferences::GetBool("dom.mozApps.themable") && appUri) {
       nsAutoCString origin;
-      nsPrincipal::GetOriginForURI(appUri, getter_Copies(origin));
+      nsPrincipal::GetOriginForURI(appUri, origin);
       nsAutoCString themeOrigin;
       themeOrigin = Preferences::GetCString("b2g.theme.origin");
       themeWhitelist = origin.Equals(themeOrigin);
@@ -669,6 +709,22 @@ NeckoParent::DeallocPRemoteOpenFileParent(PRemoteOpenFileParent* actor)
 }
 
 bool
+NeckoParent::RecvSpeculativeConnect(const URIParams& aURI, const bool& aAnonymous)
+{
+  nsCOMPtr<nsISpeculativeConnect> speculator(gIOService);
+  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+  if (uri && speculator) {
+    if (aAnonymous) {
+      speculator->SpeculativeAnonymousConnect(uri, nullptr);
+    } else {
+      speculator->SpeculativeConnect(uri, nullptr);
+    }
+
+  }
+  return true;
+}
+
+bool
 NeckoParent::RecvHTMLDNSPrefetch(const nsString& hostname,
                                  const uint16_t& flags)
 {
@@ -735,7 +791,7 @@ CallbackMap()
   static std::map<uint64_t, nsCOMPtr<nsIAuthPromptCallback> > sCallbackMap;
   return sCallbackMap;
 }
-} // anonymous namespace
+} // namespace
 
 NS_IMPL_ISUPPORTS(NeckoParent::NestedFrameAuthPrompt, nsIAuthPrompt2)
 
@@ -752,7 +808,7 @@ NeckoParent::NestedFrameAuthPrompt::AsyncPromptAuth(
   nsIAuthInformation* aInfo, nsICancelable**)
 {
   static uint64_t callbackId = 0;
-  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+  MOZ_ASSERT(XRE_IsParentProcess());
   nsCOMPtr<nsIURI> uri;
   nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -810,6 +866,79 @@ NeckoParent::RecvOnAuthCancelled(const uint64_t& aCallbackId,
   return true;
 }
 
+/* Predictor Messages */
+bool
+NeckoParent::RecvPredPredict(const ipc::OptionalURIParams& aTargetURI,
+                             const ipc::OptionalURIParams& aSourceURI,
+                             const uint32_t& aReason,
+                             const SerializedLoadContext& aLoadContext,
+                             const bool& hasVerifier)
+{
+  nsCOMPtr<nsIURI> targetURI = DeserializeURI(aTargetURI);
+  nsCOMPtr<nsIURI> sourceURI = DeserializeURI(aSourceURI);
+
+  // We only actually care about the loadContext.mPrivateBrowsing, so we'll just
+  // pass dummy params for nestFrameId, inBrowser and appId
+  uint64_t nestedFrameId = 0;
+  nsCOMPtr<nsILoadContext> loadContext;
+  if (aLoadContext.IsNotNull()) {
+    loadContext = new LoadContext(aLoadContext, nestedFrameId, NECKO_UNKNOWN_APP_ID, false);
+  }
+
+  // Get the current predictor
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsINetworkPredictor> predictor =
+    do_GetService("@mozilla.org/network/predictor;1", &rv);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  nsCOMPtr<nsINetworkPredictorVerifier> verifier;
+  if (hasVerifier) {
+    verifier = do_QueryInterface(predictor);
+  }
+  predictor->Predict(targetURI, sourceURI, aReason, loadContext, verifier);
+  return true;
+}
+
+bool
+NeckoParent::RecvPredLearn(const ipc::URIParams& aTargetURI,
+                           const ipc::OptionalURIParams& aSourceURI,
+                           const uint32_t& aReason,
+                           const SerializedLoadContext& aLoadContext)
+{
+  nsCOMPtr<nsIURI> targetURI = DeserializeURI(aTargetURI);
+  nsCOMPtr<nsIURI> sourceURI = DeserializeURI(aSourceURI);
+
+  // We only actually care about the loadContext.mPrivateBrowsing, so we'll just
+  // pass dummy params for nestFrameId, inBrowser and appId
+  uint64_t nestedFrameId = 0;
+  nsCOMPtr<nsILoadContext> loadContext;
+  if (aLoadContext.IsNotNull()) {
+    loadContext = new LoadContext(aLoadContext, nestedFrameId, NECKO_UNKNOWN_APP_ID, false);
+  }
+
+  // Get the current predictor
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsINetworkPredictor> predictor =
+    do_GetService("@mozilla.org/network/predictor;1", &rv);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  predictor->Learn(targetURI, sourceURI, aReason, loadContext);
+  return true;
+}
+
+bool
+NeckoParent::RecvPredReset()
+{
+  // Get the current predictor
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsINetworkPredictor> predictor =
+    do_GetService("@mozilla.org/network/predictor;1", &rv);
+  NS_ENSURE_SUCCESS(rv, false);
+
+  predictor->Reset();
+  return true;
+}
+
 nsresult
 NeckoParent::OfflineNotification(nsISupports *aSubject)
 {
@@ -850,4 +979,21 @@ NeckoParent::OfflineNotification(nsISupports *aSubject)
   return NS_OK;
 }
 
-}} // mozilla::net
+bool
+NeckoParent::RecvRemoveSchedulingContext(const nsCString& scid)
+{
+  nsCOMPtr<nsISchedulingContextService> scsvc =
+    do_GetService("@mozilla.org/network/scheduling-context-service;1");
+  if (!scsvc) {
+    return true;
+  }
+
+  nsID id;
+  id.Parse(scid.BeginReading());
+  scsvc->RemoveSchedulingContext(id);
+
+  return true;
+}
+
+} // namespace net
+} // namespace mozilla

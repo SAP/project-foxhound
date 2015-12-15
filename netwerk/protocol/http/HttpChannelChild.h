@@ -39,16 +39,16 @@ class InterceptedChannelContent;
 class InterceptStreamListener;
 
 class HttpChannelChild final : public PHttpChannelChild
-                                 , public HttpBaseChannel
-                                 , public HttpAsyncAborter<HttpChannelChild>
-                                 , public nsICacheInfoChannel
-                                 , public nsIProxiedChannel
-                                 , public nsIApplicationCacheChannel
-                                 , public nsIAsyncVerifyRedirectCallback
-                                 , public nsIAssociatedContentSecurity
-                                 , public nsIChildChannel
-                                 , public nsIHttpChannelChild
-                                 , public nsIDivertableChannel
+                             , public HttpBaseChannel
+                             , public HttpAsyncAborter<HttpChannelChild>
+                             , public nsICacheInfoChannel
+                             , public nsIProxiedChannel
+                             , public nsIApplicationCacheChannel
+                             , public nsIAsyncVerifyRedirectCallback
+                             , public nsIAssociatedContentSecurity
+                             , public nsIChildChannel
+                             , public nsIHttpChannelChild
+                             , public nsIDivertableChannel
 {
   virtual ~HttpChannelChild();
 public:
@@ -74,10 +74,13 @@ public:
   // nsIChannel
   NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo) override;
   NS_IMETHOD AsyncOpen(nsIStreamListener *listener, nsISupports *aContext) override;
+  NS_IMETHOD AsyncOpen2(nsIStreamListener *aListener) override;
+
   // HttpBaseChannel::nsIHttpChannel
   NS_IMETHOD SetRequestHeader(const nsACString& aHeader,
                               const nsACString& aValue,
                               bool aMerge) override;
+  NS_IMETHOD SetEmptyRequestHeader(const nsACString& aHeader) override;
   NS_IMETHOD RedirectTo(nsIURI *newURI) override;
   // nsIHttpChannelInternal
   NS_IMETHOD SetupFallbackChannel(const char *aFallbackKey) override;
@@ -117,7 +120,8 @@ protected:
                           const nsCString& securityInfoSerialization,
                           const NetAddr& selfAddr,
                           const NetAddr& peerAddr,
-                          const int16_t& redirectCount) override;
+                          const int16_t& redirectCount,
+                          const uint32_t& cacheKey) override;
   bool RecvOnTransportAndData(const nsresult& channelStatus,
                               const nsresult& status,
                               const uint64_t& progress,
@@ -132,7 +136,8 @@ protected:
   bool RecvRedirect1Begin(const uint32_t& newChannel,
                           const URIParams& newURI,
                           const uint32_t& redirectFlags,
-                          const nsHttpResponseHead& responseHead) override;
+                          const nsHttpResponseHead& responseHead,
+                          const nsCString& securityInfoSerialization) override;
   bool RecvRedirect3Complete() override;
   bool RecvAssociateApplicationCache(const nsCString& groupID,
                                      const nsCString& clientID) override;
@@ -140,8 +145,13 @@ protected:
   bool RecvDivertMessages() override;
   bool RecvDeleteSelf() override;
 
+  bool RecvReportSecurityMessage(const nsString& messageTag,
+                                 const nsString& messageCategory) override;
+
   bool GetAssociatedContentSecurity(nsIAssociatedContentSecurity** res = nullptr);
   virtual void DoNotifyListenerCleanup() override;
+
+  NS_IMETHOD GetResponseSynthesized(bool* aSynthesized) override;
 
 private:
   nsresult ContinueAsyncOpen();
@@ -159,18 +169,21 @@ private:
 
   // Override this channel's pending response with a synthesized one. The content will be
   // asynchronously read from the pump.
-  void OverrideWithSynthesizedResponse(nsAutoPtr<nsHttpResponseHead>& aResponseHead, nsInputStreamPump* aPump);
+  void OverrideWithSynthesizedResponse(nsAutoPtr<nsHttpResponseHead>& aResponseHead,
+                                       nsIInputStream* aSynthesizedInput,
+                                       nsIStreamListener* aStreamListener);
 
   RequestHeaderTuples mClientSetRequestHeaders;
   nsCOMPtr<nsIChildChannel> mRedirectChannelChild;
-  nsCOMPtr<nsISupports> mSecurityInfo;
   nsRefPtr<InterceptStreamListener> mInterceptListener;
   nsRefPtr<nsInputStreamPump> mSynthesizedResponsePump;
+  int64_t mSynthesizedStreamLength;
 
   bool mIsFromCache;
   bool mCacheEntryAvailable;
   uint32_t     mCacheExpirationTime;
   nsCString    mCachedCharset;
+  nsCOMPtr<nsISupports> mCacheKey;
 
   // If ResumeAt is called before AsyncOpen, we need to send extra data upstream
   bool mSendResumeAt;
@@ -188,6 +201,14 @@ private:
   // diverting callbacks to parent.
   bool mSuspendSent;
 
+  // Set if a response was synthesized, indicating that any forthcoming redirects
+  // should be intercepted.
+  bool mSynthesizedResponse;
+
+  // Set if the corresponding parent channel should force an interception to occur
+  // before the network transaction is initiated.
+  bool mShouldParentIntercept;
+
   // true after successful AsyncOpen until OnStopRequest completes.
   bool RemoteChannelExists() { return mIPCOpen && !mKeptAlive; }
 
@@ -203,7 +224,8 @@ private:
                       const nsCString& cachedCharset,
                       const nsCString& securityInfoSerialization,
                       const NetAddr& selfAddr,
-                      const NetAddr& peerAddr);
+                      const NetAddr& peerAddr,
+                      const uint32_t& cacheKey);
   void OnTransportAndData(const nsresult& channelStatus,
                           const nsresult& status,
                           const uint64_t progress,
@@ -219,7 +241,8 @@ private:
   void Redirect1Begin(const uint32_t& newChannelId,
                       const URIParams& newUri,
                       const uint32_t& redirectFlags,
-                      const nsHttpResponseHead& responseHead);
+                      const nsHttpResponseHead& responseHead,
+                      const nsACString& securityInfoSerialization);
   void Redirect3Complete();
   void DeleteSelf();
 

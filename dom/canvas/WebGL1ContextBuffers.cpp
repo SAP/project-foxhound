@@ -4,11 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGL1Context.h"
-#include "WebGLBuffer.h"
-#include "GLContext.h"
 
-using namespace mozilla;
-using namespace mozilla::dom;
+namespace mozilla {
 
 // -------------------------------------------------------------------------
 // Buffer objects
@@ -35,18 +32,20 @@ WebGL1Context::ValidateBufferIndexedTarget(GLenum target, const char* info)
     return false;
 }
 
-/** Buffer and Target validation for BindBuffer */
 bool
-WebGL1Context::ValidateBufferForTarget(GLenum target, WebGLBuffer* buffer,
-                                       const char* info)
+WebGL1Context::ValidateBufferUsageEnum(GLenum usage, const char* info)
 {
-    if (!buffer)
+    switch (usage) {
+    case LOCAL_GL_STREAM_DRAW:
+    case LOCAL_GL_STATIC_DRAW:
+    case LOCAL_GL_DYNAMIC_DRAW:
         return true;
-
-    if (buffer->HasEverBeenBound() && target != buffer->Target()) {
-        ErrorInvalidOperation("%s: buffer already bound to a different target", info);
-        return false;
+    default:
+        break;
     }
 
-    return true;
+    ErrorInvalidEnumInfo(info, usage);
+    return false;
 }
+
+} // namespace mozilla

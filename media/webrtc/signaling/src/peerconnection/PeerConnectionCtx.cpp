@@ -12,7 +12,7 @@
 
 #include "mozilla/Telemetry.h"
 
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/Preferences.h"
 #include <mozilla/Types.h>
@@ -100,6 +100,12 @@ PeerConnectionCtx* PeerConnectionCtx::gInstance;
 nsIThread* PeerConnectionCtx::gMainThread;
 StaticRefPtr<PeerConnectionCtxShutdown> PeerConnectionCtx::gPeerConnectionCtxShutdown;
 
+const std::map<const std::string, PeerConnectionImpl *>&
+PeerConnectionCtx::mGetPeerConnections()
+{
+  return mPeerConnections;
+}
+
 nsresult PeerConnectionCtx::InitializeGlobal(nsIThread *mainThread,
   nsIEventTarget* stsThread) {
   if (!gMainThread) {
@@ -151,7 +157,7 @@ void PeerConnectionCtx::Destroy() {
   }
 }
 
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
 typedef Vector<nsAutoPtr<RTCStatsQuery>> RTCStatsQueries;
 
 // Telemetry reporting every second after start of first call.
@@ -199,6 +205,7 @@ EverySecondTelemetryCallback_s(nsAutoPtr<RTCStatsQueries> aQueryList) {
   for (auto q = aQueryList->begin(); q != aQueryList->end(); ++q) {
     PeerConnectionImpl::ExecuteStatsQuery_s(*q);
     auto& r = *(*q)->report;
+    bool isHello = (*q)->isHello;
     if (r.mInboundRTPStreamStats.WasPassed()) {
       // First, get reports from a second ago, if any, for calculations below
       const Sequence<RTCInboundRTPStreamStats> *lastInboundStats = nullptr;
@@ -213,27 +220,43 @@ EverySecondTelemetryCallback_s(nsAutoPtr<RTCStatsQueries> aQueryList) {
       for (decltype(array.Length()) i = 0; i < array.Length(); i++) {
         auto& s = array[i];
         bool isAudio = (s.mId.Value().Find("audio") != -1);
-        if (s.mPacketsLost.WasPassed()) {
-          Accumulate(s.mIsRemote?
-                     (isAudio? WEBRTC_AUDIO_QUALITY_OUTBOUND_PACKETLOSS :
-                               WEBRTC_VIDEO_QUALITY_OUTBOUND_PACKETLOSS) :
-                     (isAudio? WEBRTC_AUDIO_QUALITY_INBOUND_PACKETLOSS :
-                               WEBRTC_VIDEO_QUALITY_INBOUND_PACKETLOSS),
-                      s.mPacketsLost.Value());
+        if (s.mPacketsLost.WasPassed() && s.mPacketsReceived.WasPassed() &&
+            (s.mPacketsLost.Value() + s.mPacketsReceived.Value()) != 0) {
+          ID id;
+          if (s.mIsRemote) {
+            id = isAudio ? WEBRTC_AUDIO_QUALITY_OUTBOUND_PACKETLOSS_RATE :
+                           WEBRTC_VIDEO_QUALITY_OUTBOUND_PACKETLOSS_RATE;
+          } else {
+            id = isAudio ? WEBRTC_AUDIO_QUALITY_INBOUND_PACKETLOSS_RATE :
+                           WEBRTC_VIDEO_QUALITY_INBOUND_PACKETLOSS_RATE;
+          }
+          // *1000 so we can read in 10's of a percent (permille)
+          Accumulate(id,
+                     (s.mPacketsLost.Value() * 1000) /
+                     (s.mPacketsLost.Value() + s.mPacketsReceived.Value()));
         }
         if (s.mJitter.WasPassed()) {
-          Accumulate(s.mIsRemote?
-                     (isAudio? WEBRTC_AUDIO_QUALITY_OUTBOUND_JITTER :
-                               WEBRTC_VIDEO_QUALITY_OUTBOUND_JITTER) :
-                     (isAudio? WEBRTC_AUDIO_QUALITY_INBOUND_JITTER :
-                               WEBRTC_VIDEO_QUALITY_INBOUND_JITTER),
-                      s.mJitter.Value());
+          ID id;
+          if (s.mIsRemote) {
+            id = isAudio ? WEBRTC_AUDIO_QUALITY_OUTBOUND_JITTER :
+                           WEBRTC_VIDEO_QUALITY_OUTBOUND_JITTER;
+          } else {
+            id = isAudio ? WEBRTC_AUDIO_QUALITY_INBOUND_JITTER :
+                           WEBRTC_VIDEO_QUALITY_INBOUND_JITTER;
+          }
+          Accumulate(id, s.mJitter.Value());
         }
         if (s.mMozRtt.WasPassed()) {
           MOZ_ASSERT(s.mIsRemote);
-          Accumulate(isAudio? WEBRTC_AUDIO_QUALITY_OUTBOUND_RTT :
-                              WEBRTC_VIDEO_QUALITY_OUTBOUND_RTT,
-                      s.mMozRtt.Value());
+          ID id;
+          if (isAudio) {
+            id = isHello ? LOOP_AUDIO_QUALITY_OUTBOUND_RTT :
+                           WEBRTC_AUDIO_QUALITY_OUTBOUND_RTT;
+          } else {
+            id = isHello ? LOOP_VIDEO_QUALITY_OUTBOUND_RTT :
+                           WEBRTC_VIDEO_QUALITY_OUTBOUND_RTT;
+          }
+          Accumulate(id, s.mMozRtt.Value());
         }
         if (lastInboundStats && s.mBytesReceived.WasPassed()) {
           auto& laststats = *lastInboundStats;
@@ -243,15 +266,32 @@ EverySecondTelemetryCallback_s(nsAutoPtr<RTCStatsQueries> aQueryList) {
             if (lasts.mBytesReceived.WasPassed()) {
               auto delta_ms = int32_t(s.mTimestamp.Value() -
                                       lasts.mTimestamp.Value());
-              if (delta_ms > 0 && delta_ms < 60000) {
-                Accumulate(s.mIsRemote?
-                           (isAudio? WEBRTC_AUDIO_QUALITY_OUTBOUND_BANDWIDTH_KBITS :
-                                     WEBRTC_VIDEO_QUALITY_OUTBOUND_BANDWIDTH_KBITS) :
-                           (isAudio? WEBRTC_AUDIO_QUALITY_INBOUND_BANDWIDTH_KBITS :
-                                     WEBRTC_VIDEO_QUALITY_INBOUND_BANDWIDTH_KBITS),
-                           ((s.mBytesReceived.Value() -
-                             lasts.mBytesReceived.Value()) * 8) / delta_ms);
+              // In theory we're called every second, so delta *should* be in that range.
+              // Small deltas could cause errors due to division
+              if (delta_ms > 500 && delta_ms < 60000) {
+                ID id;
+                if (s.mIsRemote) {
+                  if (isAudio) {
+                    id = isHello ? LOOP_AUDIO_QUALITY_OUTBOUND_BANDWIDTH_KBITS :
+                                   WEBRTC_AUDIO_QUALITY_OUTBOUND_BANDWIDTH_KBITS;
+                  } else {
+                    id = isHello ? LOOP_VIDEO_QUALITY_OUTBOUND_BANDWIDTH_KBITS :
+                                   WEBRTC_VIDEO_QUALITY_OUTBOUND_BANDWIDTH_KBITS;
+                  }
+                } else {
+                  if (isAudio) {
+                    id = isHello ? LOOP_AUDIO_QUALITY_INBOUND_BANDWIDTH_KBITS :
+                                   WEBRTC_AUDIO_QUALITY_INBOUND_BANDWIDTH_KBITS;
+                  } else {
+                    id = isHello ? LOOP_VIDEO_QUALITY_INBOUND_BANDWIDTH_KBITS :
+                                   WEBRTC_VIDEO_QUALITY_INBOUND_BANDWIDTH_KBITS;
+                  }
+                }
+                Accumulate(id, ((s.mBytesReceived.Value() -
+                                 lasts.mBytesReceived.Value()) * 8) / delta_ms);
               }
+              // We could accumulate values until enough time has passed
+              // and then Accumulate() but this isn't that important.
             }
           }
         }
@@ -309,7 +349,7 @@ PeerConnectionCtx::EverySecondTelemetryCallback_m(nsITimer* timer, void *closure
 nsresult PeerConnectionCtx::Initialize() {
   initGMP();
 
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
   mConnectionCounter = 0;
   Telemetry::GetHistogramById(Telemetry::WEBRTC_CALL_COUNT)->Add(0);
 
@@ -319,6 +359,10 @@ nsresult PeerConnectionCtx::Initialize() {
   NS_ENSURE_SUCCESS(rv, rv);
   mTelemetryTimer->InitWithFuncCallback(EverySecondTelemetryCallback_m, this, 1000,
                                         nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP);
+
+  if (XRE_IsContentProcess()) {
+    WebrtcGlobalChild::Create();
+  }
 #endif // MOZILLA_INTERNAL_API
 
   return NS_OK;
@@ -372,14 +416,14 @@ nsresult PeerConnectionCtx::Cleanup() {
 PeerConnectionCtx::~PeerConnectionCtx() {
     // ensure mTelemetryTimer ends on main thread
   MOZ_ASSERT(NS_IsMainThread());
-#ifdef MOZILLA_INTERNAL_API
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
   if (mTelemetryTimer) {
     mTelemetryTimer->Cancel();
   }
 #endif
 };
 
-void PeerConnectionCtx::queueJSEPOperation(nsRefPtr<nsIRunnable> aOperation) {
+void PeerConnectionCtx::queueJSEPOperation(nsIRunnable* aOperation) {
   mQueuedJSEPOperations.AppendElement(aOperation);
 }
 
@@ -420,4 +464,4 @@ bool PeerConnectionCtx::gmpHasH264() {
   return true;
 }
 
-}  // namespace mozilla
+} // namespace mozilla

@@ -18,6 +18,7 @@ Cu.import("resource://gre/modules/osfile.jsm");
 Cu.import("resource://gre/modules/Log.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/GMPUtils.jsm");
+Cu.import("resource://gre/modules/AppConstants.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(
   this, "GMPInstallManager", "resource://gre/modules/GMPInstallManager.jsm");
@@ -36,39 +37,51 @@ const CLEARKEY_PLUGIN_ID     = "gmp-clearkey";
 const CLEARKEY_VERSION       = "0.1";
 
 const GMP_LICENSE_INFO       = "gmp_license_info";
+const GMP_LEARN_MORE         = "learn_more_label";
 
 const GMP_PLUGINS = [
   {
     id:              OPEN_H264_ID,
     name:            "openH264_name",
-    description:     "openH264_description",
+    description:     "openH264_description2",
     // The following licenseURL is part of an awful hack to include the OpenH264
     // license without having bug 624602 fixed yet, and intentionally ignores
     // localisation.
     licenseURL:      "chrome://mozapps/content/extensions/OpenH264-license.txt",
     homepageURL:     "http://www.openh264.org/",
-    optionsURL:      "chrome://mozapps/content/extensions/gmpPrefs.xul"
+    optionsURL:      "chrome://mozapps/content/extensions/gmpPrefs.xul",
+    missingKey:      "VIDEO_OPENH264_GMP_DISAPPEARED",
+    missingFilesKey: "VIDEO_OPENH264_GMP_MISSING_FILES",
   },
   {
     id:              EME_ADOBE_ID,
     name:            "eme-adobe_name",
     description:     "eme-adobe_description",
+    // The following learnMoreURL is another hack to be able to support a SUMO page for this
+    // feature.
+    get learnMoreURL() {
+      return Services.urlFormatter.formatURLPref("app.support.baseURL") + "drm-content";
+    },
     licenseURL:      "http://help.adobe.com/en_US/primetime/drm/HTML5_CDM_EULA/index.html",
-    homepageURL:     "https://www.adobe.com/marketing-cloud/primetime-tv-platform.html",
+    homepageURL:     "http://help.adobe.com/en_US/primetime/drm/HTML5_CDM",
     optionsURL:      "chrome://mozapps/content/extensions/gmpPrefs.xul",
-    isEME:           true
+    isEME:           true,
+    missingKey:      "VIDEO_ADOBE_GMP_DISAPPEARED",
+    missingFilesKey: "VIDEO_ADOBE_GMP_MISSING_FILES",
   }];
 
 XPCOMUtils.defineLazyGetter(this, "pluginsBundle",
   () => Services.strings.createBundle("chrome://global/locale/plugins.properties"));
 XPCOMUtils.defineLazyGetter(this, "gmpService",
-  () => Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(Ci.mozIGeckoMediaPluginService));
+  () => Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(Ci.mozIGeckoMediaPluginChromeService));
 
-let messageManager = Cc["@mozilla.org/globalmessagemanager;1"]
+XPCOMUtils.defineLazyGetter(this, "telemetryService", () => Services.telemetry);
+
+var messageManager = Cc["@mozilla.org/globalmessagemanager;1"]
                        .getService(Ci.nsIMessageListenerManager);
 
-let gLogger;
-let gLogAppenderDump = null;
+var gLogger;
+var gLogAppenderDump = null;
 
 function configureLogging() {
   if (!gLogger) {
@@ -132,6 +145,13 @@ GMPWrapper.prototype = {
                                                 null, this._plugin.id));
     }
     return this._gmpPath;
+  },
+
+  get missingKey() {
+    return this._plugin.missingKey;
+  },
+  get missingFilesKey() {
+    return this._plugin.missingFilesKey;
   },
 
   get id() { return this._plugin.id; },
@@ -394,7 +414,7 @@ GMPWrapper.prototype = {
     if (this._gmpPath) {
       this._log.info("onPrefVersionChanged() - unregistering gmp directory " +
                      this._gmpPath);
-      gmpService.removeAndDeletePluginDirectory(this._gmpPath);
+      gmpService.removeAndDeletePluginDirectory(this._gmpPath, true /* can defer */);
     }
     AddonManagerPrivate.callAddonListeners("onUninstalled", this);
 
@@ -424,6 +444,9 @@ GMPWrapper.prototype = {
       gmpService.removeAndDeletePluginDirectory(this.gmpPath);
     }
     GMPPrefs.reset(GMPPrefs.KEY_PLUGIN_VERSION, this.id);
+    GMPPrefs.reset(GMPPrefs.KEY_PLUGIN_TRIAL_CREATE, this.id);
+    GMPPrefs.reset(GMPPrefs.KEY_PLUGIN_ABI, this.id);
+    GMPPrefs.reset(GMPPrefs.KEY_PLUGIN_LAST_UPDATE, this.id);
     AddonManagerPrivate.callAddonListeners("onUninstalled", this);
   },
 
@@ -441,9 +464,72 @@ GMPWrapper.prototype = {
     }
     return this._updateTask;
   },
+
+  _arePluginFilesOnDisk: function () {
+    let fileExists = function(aGmpPath, aFileName) {
+      let f = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+      let path = OS.Path.join(aGmpPath, aFileName);
+      f.initWithPath(path);
+      return f.exists();
+    };
+
+    let id = this._plugin.id.substring(4);
+    let libName = AppConstants.DLL_PREFIX + id + AppConstants.DLL_SUFFIX;
+
+    return {
+      libraryMissing: !fileExists(this.gmpPath, libName),
+      infoMissing: !fileExists(this.gmpPath, id + ".info"),
+      voucherMissing: this._plugin.id == EME_ADOBE_ID
+                      && !fileExists(this.gmpPath, id + ".voucher"),
+    };
+  },
+
+  validate: function() {
+    if (!this.isInstalled) {
+      // Not installed -> Valid.
+      return { installed: false, valid: true };
+    }
+
+    let abi = GMPPrefs.get(GMPPrefs.KEY_PLUGIN_ABI, GMPUtils.ABI(), this._plugin.id);
+    if (abi != GMPUtils.ABI()) {
+      // ABI doesn't match. Possibly this is a profile migrated across platforms
+      // or from 32 -> 64 bit.
+      return {
+        installed: true,
+        mismatchedABI: true,
+        valid: false
+      };
+    }
+
+    // Installed -> Check if files are missing.
+    let status = this._arePluginFilesOnDisk();
+    status.installed = true;
+    status.mismatchedABI = false;
+    status.valid = true;
+    status.missing = [];
+    status.telemetry = 0;
+
+    if (status.libraryMissing) {
+      status.valid = false;
+      status.missing.push('library');
+      status.telemetry += 1;
+    }
+    if (status.infoMissing) {
+      status.valid = false;
+      status.missing.push('info');
+      status.telemetry += 2;
+    }
+    if (status.voucherMissing) {
+      status.valid = false;
+      status.missing.push('voucher');
+      status.telemetry += 4;
+    }
+
+    return status;
+  },
 };
 
-let GMPProvider = {
+var GMPProvider = {
   get name() { return "GMPProvider"; },
 
   _plugins: null,
@@ -466,6 +552,23 @@ let GMPProvider = {
                       gmpPath);
 
       if (gmpPath && isEnabled) {
+        let validation = wrapper.validate();
+        if (validation.mismatchedABI) {
+          this._log.info("startup - gmp " + plugin.id +
+                         " mismatched ABI, uninstalling");
+          wrapper.uninstallPlugin();
+          continue;
+        }
+        if (validation.installed) {
+          telemetryService.getHistogramById(wrapper.missingFilesKey).add(validation.telemetry);
+        }
+        if (!validation.valid) {
+          this._log.info("startup - gmp " + plugin.id +
+                         " missing [" + validation.missing + "], uninstalling");
+          telemetryService.getHistogramById(wrapper.missingKey).add(true);
+          wrapper.uninstallPlugin();
+          continue;
+        }
         this._log.info("startup - adding gmp directory " + gmpPath);
         try {
           gmpService.addPluginDirectory(gmpPath);
@@ -484,7 +587,8 @@ let GMPProvider = {
       }
     }
 
-    if (Preferences.get(GMPPrefs.KEY_EME_ENABLED, false)) {
+    var emeEnabled = Preferences.get(GMPPrefs.KEY_EME_ENABLED, false);
+    if (emeEnabled) {
       try {
         let greDir = Services.dirsvc.get(NS_GRE_DIR,
                                          Ci.nsILocalFile);
@@ -497,6 +601,12 @@ let GMPProvider = {
       } catch (e) {
         this._log.warn("startup - adding clearkey CDM failed", e);
       }
+    }
+
+    if (Preferences.get("media.gmp-adobe-eme.enabled", false)) {
+      // Gather telemetry on how many Adobe-compatible installs have
+      // disabled EME.
+      telemetryService.getHistogramById("VIDEO_EME_DISABLED").add(!emeEnabled);
     }
 
     AddonManagerPrivate.setTelemetryDetails("GMP", telemetry);
@@ -558,14 +668,19 @@ let GMPProvider = {
     return GMPPrefs.get(GMPPrefs.KEY_PROVIDER_ENABLED, false);
   },
 
-  generateFullDescription: function(aLicenseURL, aLicenseInfo) {
-    return "<xhtml:a href=\"" + aLicenseURL + "\" target=\"_blank\">" +
-           aLicenseInfo + "</xhtml:a>."
+  generateFullDescription: function(aPlugin) {
+    let rv = [];
+    for (let [urlProp, labelId] of [["learnMoreURL", GMP_LEARN_MORE],
+                                    ["licenseURL", GMP_LICENSE_INFO]]) {
+      if (aPlugin[urlProp]) {
+        let label = pluginsBundle.GetStringFromName(labelId);
+        rv.push(`<xhtml:a href="${aPlugin[urlProp]}" target="_blank">${label}</xhtml:a>.`);
+      }
+    }
+    return rv.length ? rv.join("<xhtml:br /><xhtml:br />") : undefined;
   },
 
   buildPluginList: function() {
-    let licenseInfo = pluginsBundle.GetStringFromName(GMP_LICENSE_INFO);
-
     this._plugins = new Map();
     for (let aPlugin of GMP_PLUGINS) {
       let plugin = {
@@ -576,11 +691,10 @@ let GMPProvider = {
         optionsURL: aPlugin.optionsURL,
         wrapper: null,
         isEME: aPlugin.isEME,
+        missingKey: aPlugin.missingKey,
+        missingFilesKey: aPlugin.missingFilesKey,
       };
-      if (aPlugin.licenseURL) {
-        plugin.fullDescription =
-          this.generateFullDescription(aPlugin.licenseURL, licenseInfo);
-      }
+      plugin.fullDescription = this.generateFullDescription(aPlugin);
       plugin.wrapper = new GMPWrapper(plugin);
       this._plugins.set(plugin.id, plugin);
     }

@@ -37,13 +37,16 @@ SamplerState Linear
   AddressV = Clamp;
 };
 
-VS_VR_OUTPUT OculusVRDistortionVS(const VS_VR_INPUT aVertex)
+/*
+ * Oculus050 basic distortion, with chroma aberration correction
+ */
+VS_VR_OUTPUT Oculus050VRDistortionVS(const VS_VR_INPUT aVertex)
 {
   VS_VR_OUTPUT res;
 
-  float2 tc0 = VREyeToSource.xy * aVertex.vTexCoord0 + VREyeToSource.zw;
-  float2 tc1 = VREyeToSource.xy * aVertex.vTexCoord1 + VREyeToSource.zw;
-  float2 tc2 = VREyeToSource.xy * aVertex.vTexCoord2 + VREyeToSource.zw;
+  float2 tc0 = aVertex.vTexCoord0 * VREyeToSource.zw + VREyeToSource.xy;
+  float2 tc1 = aVertex.vTexCoord1 * VREyeToSource.zw + VREyeToSource.xy;
+  float2 tc2 = aVertex.vTexCoord2 * VREyeToSource.zw + VREyeToSource.xy;
 
   //res.vPosition.xy = aVertex.vPosition.xy;
   res.vPosition.xy = aVertex.vPosition.xy * VRDestinationScaleAndOffset.zw + VRDestinationScaleAndOffset.xy;
@@ -58,7 +61,7 @@ VS_VR_OUTPUT OculusVRDistortionVS(const VS_VR_INPUT aVertex)
   return res;
 }
 
-float4 OculusVRDistortionPS(const VS_VR_OUTPUT aVertex) : SV_Target
+float4 Oculus050VRDistortionPS(const VS_VR_OUTPUT aVertex) : SV_Target
 {
   float resR = Texture.Sample(Linear, aVertex.vTexCoord0.xy).r;
   float resG = Texture.Sample(Linear, aVertex.vTexCoord1.xy).g;

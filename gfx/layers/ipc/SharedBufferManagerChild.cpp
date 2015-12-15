@@ -96,10 +96,11 @@ SharedBufferManagerChild::StartUp()
 
 static void
 ConnectSharedBufferManagerInChildProcess(mozilla::ipc::Transport* aTransport,
-                                         base::ProcessHandle aOtherProcess)
+                                         base::ProcessId aOtherPid)
 {
   // Bind the IPC channel to the shared buffer manager thread.
-  SharedBufferManagerChild::sSharedBufferManagerChildSingleton->Open(aTransport, aOtherProcess,
+  SharedBufferManagerChild::sSharedBufferManagerChildSingleton->Open(aTransport,
+                                                                     aOtherPid,
                                                                      XRE_GetIOMessageLoop(),
                                                                      ipc::ChildSide);
 
@@ -116,14 +117,9 @@ ConnectSharedBufferManagerInChildProcess(mozilla::ipc::Transport* aTransport,
 
 PSharedBufferManagerChild*
 SharedBufferManagerChild::StartUpInChildProcess(Transport* aTransport,
-                                                base::ProcessId aOtherProcess)
+                                                base::ProcessId aOtherPid)
 {
   NS_ASSERTION(NS_IsMainThread(), "Should be on the main Thread!");
-
-  ProcessHandle processHandle;
-  if (!base::OpenProcessHandle(aOtherProcess, &processHandle)) {
-    return nullptr;
-  }
 
   sSharedBufferManagerChildThread = new base::Thread("BufferMgrChild");
   if (!sSharedBufferManagerChildThread->Start()) {
@@ -134,7 +130,7 @@ SharedBufferManagerChild::StartUpInChildProcess(Transport* aTransport,
   sSharedBufferManagerChildSingleton->GetMessageLoop()->PostTask(
     FROM_HERE,
     NewRunnableFunction(ConnectSharedBufferManagerInChildProcess,
-                        aTransport, processHandle));
+                        aTransport, aOtherPid));
 
   return sSharedBufferManagerChildSingleton;
 }
@@ -275,7 +271,9 @@ SharedBufferManagerChild::AllocGrallocBufferNow(const IntSize& aSize,
 
 #ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
   mozilla::layers::MaybeMagicGrallocBufferHandle handle;
-  SendAllocateGrallocBuffer(aSize, aFormat, aUsage, &handle);
+  if (!SendAllocateGrallocBuffer(aSize, aFormat, aUsage, &handle)) {
+    return false;
+  }
   if (handle.type() != mozilla::layers::MaybeMagicGrallocBufferHandle::TMagicGrallocBufferHandle) {
     return false;
   }
@@ -283,6 +281,7 @@ SharedBufferManagerChild::AllocGrallocBufferNow(const IntSize& aSize,
 
   {
     MutexAutoLock lock(mBufferMutex);
+    MOZ_ASSERT(mBuffers.count(handle.get_MagicGrallocBufferHandle().mRef.mKey)==0);
     mBuffers[handle.get_MagicGrallocBufferHandle().mRef.mKey] = handle.get_MagicGrallocBufferHandle().mGraphicBuffer;
   }
   return true;
@@ -364,17 +363,6 @@ SharedBufferManagerChild::GetGraphicBuffer(int64_t key)
   return mBuffers[key];
 }
 #endif
-
-bool
-SharedBufferManagerChild::IsValidKey(int64_t key)
-{
-#ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
-  if (mBuffers.count(key) != 1) {
-    return false;
-  }
-#endif
-  return true;
-}
 
 } /* namespace layers */
 } /* namespace mozilla */

@@ -8,12 +8,14 @@
 
 "use strict";
 
-const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/test/test-bug-869003-top-window.html";
+const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/" +
+                 "test/test-bug-869003-top-window.html";
 
-let test = asyncTest(function* () {
+var test = asyncTest(function* () {
   // This test is slightly more involved: it opens the web console, then the
   // variables view for a given object, it updates a property in the view and
-  // checks the result. We can get a timeout with debug builds on slower machines.
+  // checks the result. We can get a timeout with debug builds on slower
+  // machines.
   requestLongerTimeout(2);
 
   yield loadTab("data:text/html;charset=utf8,<p>hello");
@@ -40,10 +42,10 @@ let test = asyncTest(function* () {
 
   let clickable = result.clickableElements[0];
   ok(clickable, "clickable object found");
-  ok(body.textContent.contains('{ hello: "world!",'), "message text check");
+  ok(body.textContent.includes('{ hello: "world!",'), "message text check");
 
   executeSoon(() => {
-    EventUtils.synthesizeMouse(clickable, 2, 2, {}, hud.iframeWindow)
+    EventUtils.synthesizeMouse(clickable, 2, 2, {}, hud.iframeWindow);
   });
 
   let aVar = yield hud.jsterm.once("variablesview-fetched");

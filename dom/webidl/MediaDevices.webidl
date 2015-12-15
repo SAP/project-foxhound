@@ -12,12 +12,12 @@
 
 [Func="Navigator::HasUserMediaSupport"]
 interface MediaDevices : EventTarget {
-//    attribute EventHandler ondevicechange;
-//
-//    void enumerateDevices (MediaDeviceInfoCallback resultCallback);
-//
-//  static Dictionary getSupportedConstraints (DOMString kind);
+//  attribute EventHandler ondevicechange;
+  MediaTrackSupportedConstraints getSupportedConstraints();
 
-  [Throws, Func="Navigator::HasUserMediaSupport"]
+  [Throws]
+  Promise<sequence<MediaDeviceInfo>> enumerateDevices();
+
+  [Throws]
   Promise<MediaStream> getUserMedia(optional MediaStreamConstraints constraints);
 };

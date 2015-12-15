@@ -7,23 +7,21 @@
 #include "vm/ProxyObject.h"
 
 #include "jscompartment.h"
-#include "jsgcinlines.h"
 #include "jsobjinlines.h"
 
 using namespace js;
 
 /* static */ ProxyObject*
 ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler, HandleValue priv, TaggedProto proto_,
-                 JSObject* parent_, const ProxyOptions& options)
+                 const ProxyOptions& options)
 {
     Rooted<TaggedProto> proto(cx, proto_);
-    RootedObject parent(cx, parent_);
 
     const Class* clasp = options.clasp();
 
     MOZ_ASSERT(isValidProxyClass(clasp));
+    MOZ_ASSERT(clasp->shouldDelayMetadataCallback());
     MOZ_ASSERT_IF(proto.isObject(), cx->compartment() == proto.toObject()->compartment());
-    MOZ_ASSERT_IF(parent, cx->compartment() == parent->compartment());
 
     /*
      * Eagerly mark properties unknown for proxies, so we don't try to track
@@ -45,12 +43,15 @@ ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler, HandleValue pri
         allocKind = GetBackgroundAllocKind(allocKind);
 
     ProxyValueArray* values = cx->zone()->new_<ProxyValueArray>();
-    if (!values)
+    if (!values) {
+        ReportOutOfMemory(cx);
         return nullptr;
+    }
 
+    AutoSetNewObjectMetadata metadata(cx);
     // Note: this will initialize the object's |data| to strange values, but we
     // will immediately overwrite those below.
-    RootedObject obj(cx, NewObjectWithGivenTaggedProto(cx, clasp, proto, parent, allocKind,
+    RootedObject obj(cx, NewObjectWithGivenTaggedProto(cx, clasp, proto, allocKind,
                                                        newKind));
     if (!obj) {
         js_free(values);

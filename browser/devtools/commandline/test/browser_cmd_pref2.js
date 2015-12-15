@@ -3,7 +3,7 @@
 
 // Tests that the pref commands work
 
-let prefBranch = Cc["@mozilla.org/preferences-service;1"]
+var prefBranch = Cc["@mozilla.org/preferences-service;1"]
                     .getService(Ci.nsIPrefService).getBranch(null)
                     .QueryInterface(Ci.nsIPrefBranch2);
 
@@ -13,7 +13,7 @@ function test() {
   return Task.spawn(spawnTest).then(finish, helpers.handleError);
 }
 
-function spawnTest() {
+function* spawnTest() {
   let options = yield helpers.openTab(TEST_URI);
   yield helpers.openToolbar(options);
 

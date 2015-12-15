@@ -23,6 +23,9 @@ const EVENTS = {
   // more information about what each packet is supposed to deliver.
   NETWORK_EVENT: "NetMonitor:NetworkEvent",
 
+  // When a network event is added to the view
+  REQUEST_ADDED: "NetMonitor:RequestAdded",
+
   // When request headers begin and finish receiving.
   UPDATING_REQUEST_HEADERS: "NetMonitor:NetworkEventUpdating:RequestHeaders",
   RECEIVED_REQUEST_HEADERS: "NetMonitor:NetworkEventUpdated:RequestHeaders",
@@ -114,12 +117,13 @@ Cu.import("resource:///modules/devtools/VariablesView.jsm");
 Cu.import("resource:///modules/devtools/VariablesViewController.jsm");
 Cu.import("resource:///modules/devtools/ViewHelpers.jsm");
 
-const require = Cu.import("resource://gre/modules/devtools/Loader.jsm", {}).devtools.require;
-const promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
+const {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+const promise = require("promise");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const Editor = require("devtools/sourceeditor/editor");
 const {Tooltip} = require("devtools/shared/widgets/Tooltip");
 const {ToolSidebar} = require("devtools/framework/sidebar");
+const DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Chart",
   "resource:///modules/devtools/Chart.jsm");
@@ -135,9 +139,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "Task",
 
 XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
   "resource://gre/modules/PluralForm.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "DevToolsUtils",
-  "resource://gre/modules/devtools/DevToolsUtils.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1", "nsIClipboardHelper");
@@ -156,7 +157,7 @@ Object.defineProperty(this, "NetworkHelper", {
 /**
  * Object defining the network monitor controller components.
  */
-let NetMonitorController = {
+var NetMonitorController = {
   /**
    * Initializes the view.
    *
@@ -196,7 +197,9 @@ let NetMonitorController = {
 
   /**
    * Initiates remote or chrome network monitoring based on the current target,
-   * wiring event handlers as necessary.
+   * wiring event handlers as necessary. Since the TabTarget will have already
+   * started listening to network requests by now, this is largely
+   * netmonitor-specific initialization.
    *
    * @return object
    *         A promise that is resolved when the monitor finishes connecting.
@@ -209,13 +212,18 @@ let NetMonitorController = {
     let deferred = promise.defer();
     this._connection = deferred.promise;
 
-    let target = this._target;
-    let { client, form } = target;
-    if (target.chrome) {
-      this._startChromeMonitoring(client, form.consoleActor, deferred.resolve);
-    } else {
-      this._startMonitoringTab(client, form, deferred.resolve);
+    this.client = this._target.client;
+    // Some actors like AddonActor or RootActor for chrome debugging
+    // aren't actual tabs.
+    if (this._target.isTabActor) {
+      this.tabClient = this._target.activeTab;
     }
+    this.webConsoleClient = this._target.activeConsole;
+    this.webConsoleClient.setPreferences(NET_PREFS, () => {
+      this.TargetEventsHandler.connect();
+      this.NetworkEventsHandler.connect();
+      deferred.resolve();
+    });
 
     yield deferred.promise;
     window.emit(EVENTS.CONNECTED);
@@ -239,82 +247,6 @@ let NetMonitorController = {
    */
   isConnected: function() {
     return !!this.client;
-  },
-
-  /**
-   * Sets up a monitoring session.
-   *
-   * @param DebuggerClient aClient
-   *        The debugger client.
-   * @param object aTabGrip
-   *        The remote protocol grip of the tab.
-   * @param function aCallback
-   *        A function to invoke once the client attached to the console client.
-   */
-  _startMonitoringTab: function(aClient, aTabGrip, aCallback) {
-    if (!aClient) {
-      Cu.reportError("No client found!");
-      return;
-    }
-    this.client = aClient;
-
-    aClient.attachTab(aTabGrip.actor, (aResponse, aTabClient) => {
-      if (!aTabClient) {
-        Cu.reportError("No tab client found!");
-        return;
-      }
-      this.tabClient = aTabClient;
-
-      aClient.attachConsole(aTabGrip.consoleActor, LISTENERS, (aResponse, aWebConsoleClient) => {
-        if (!aWebConsoleClient) {
-          Cu.reportError("Couldn't attach to console: " + aResponse.error);
-          return;
-        }
-        this.webConsoleClient = aWebConsoleClient;
-        this.webConsoleClient.setPreferences(NET_PREFS, () => {
-          this.TargetEventsHandler.connect();
-          this.NetworkEventsHandler.connect();
-
-          if (aCallback) {
-            aCallback();
-          }
-        });
-      });
-    });
-  },
-
-  /**
-   * Sets up a chrome monitoring session.
-   *
-   * @param DebuggerClient aClient
-   *        The debugger client.
-   * @param object aConsoleActor
-   *        The remote protocol grip of the chrome debugger.
-   * @param function aCallback
-   *        A function to invoke once the client attached to the console client.
-   */
-  _startChromeMonitoring: function(aClient, aConsoleActor, aCallback) {
-    if (!aClient) {
-      Cu.reportError("No client found!");
-      return;
-    }
-    this.client = aClient;
-
-    aClient.attachConsole(aConsoleActor, LISTENERS, (aResponse, aWebConsoleClient) => {
-      if (!aWebConsoleClient) {
-        Cu.reportError("Couldn't attach to console: " + aResponse.error);
-        return;
-      }
-      this.webConsoleClient = aWebConsoleClient;
-      this.webConsoleClient.setPreferences(NET_PREFS, () => {
-        this.TargetEventsHandler.connect();
-        this.NetworkEventsHandler.connect();
-
-        if (aCallback) {
-          aCallback();
-        }
-      });
-    });
   },
 
   /**
@@ -391,6 +323,44 @@ let NetMonitorController = {
   },
 
   /**
+   * Selects the specified request in the waterfall and opens the details view.
+   *
+   * @param string requestId
+   *        The actor ID of the request to inspect.
+   * @return object
+   *         A promise resolved once the task finishes.
+   */
+  inspectRequest: function(requestId) {
+    // Look for the request in the existing ones or wait for it to appear, if
+    // the network monitor is still loading.
+    let deferred = promise.defer();
+    let request = null;
+    let inspector = function() {
+      let predicate = i => i.value === requestId;
+      request = NetMonitorView.RequestsMenu.getItemForPredicate(predicate);
+      if (!request) {
+        // Reset filters so that the request is visible.
+        NetMonitorView.RequestsMenu.filterOn("all");
+        request = NetMonitorView.RequestsMenu.getItemForPredicate(predicate);
+      }
+
+      // If the request was found, select it. Otherwise this function will be
+      // called again once new requests arrive.
+      if (request) {
+        window.off(EVENTS.REQUEST_ADDED, inspector);
+        NetMonitorView.RequestsMenu.selectedItem = request;
+        deferred.resolve();
+      }
+    }
+
+    inspector();
+    if (!request) {
+      window.on(EVENTS.REQUEST_ADDED, inspector);
+    }
+    return deferred.promise;
+  },
+
+  /**
    * Getter that tells if the server supports sending custom network requests.
    * @type boolean
    */
@@ -437,8 +407,9 @@ function TargetEventsHandler() {
 }
 
 TargetEventsHandler.prototype = {
-  get target() NetMonitorController._target,
-  get webConsoleClient() NetMonitorController.webConsoleClient,
+  get target() {
+    return NetMonitorController._target;
+  },
 
   /**
    * Listen for events emitted by the current tab target.
@@ -518,16 +489,41 @@ function NetworkEventsHandler() {
 }
 
 NetworkEventsHandler.prototype = {
-  get client() NetMonitorController._target.client,
-  get webConsoleClient() NetMonitorController.webConsoleClient,
+  get client() {
+    return NetMonitorController._target.client;
+  },
+
+  get webConsoleClient() {
+    return NetMonitorController.webConsoleClient;
+  },
 
   /**
    * Connect to the current target client.
    */
   connect: function() {
     dumpn("NetworkEventsHandler is connecting...");
-    this.client.addListener("networkEvent", this._onNetworkEvent);
-    this.client.addListener("networkEventUpdate", this._onNetworkEventUpdate);
+    this.webConsoleClient.on("networkEvent", this._onNetworkEvent);
+    this.webConsoleClient.on("networkEventUpdate", this._onNetworkEventUpdate);
+    this._displayCachedEvents();
+  },
+
+  /**
+   * Display any network events already in the cache.
+   */
+  _displayCachedEvents: function() {
+    for (let cachedEvent of this.webConsoleClient.getNetworkEvents()) {
+      // First add the request to the timeline.
+      this._onNetworkEvent("networkEvent", cachedEvent);
+      // Then replay any updates already received.
+      for (let update of cachedEvent.updates) {
+        this._onNetworkEventUpdate("networkEventUpdate", {
+          packet: {
+            updateType: update
+          },
+          networkInfo: cachedEvent
+        });
+      }
+    }
   },
 
   /**
@@ -538,45 +534,40 @@ NetworkEventsHandler.prototype = {
       return;
     }
     dumpn("NetworkEventsHandler is disconnecting...");
-    this.client.removeListener("networkEvent", this._onNetworkEvent);
-    this.client.removeListener("networkEventUpdate", this._onNetworkEventUpdate);
+    this.webConsoleClient.off("networkEvent", this._onNetworkEvent);
+    this.webConsoleClient.off("networkEventUpdate", this._onNetworkEventUpdate);
   },
 
   /**
    * The "networkEvent" message type handler.
    *
-   * @param string aType
+   * @param string type
    *        Message type.
-   * @param object aPacket
-   *        The message received from the server.
+   * @param object networkInfo
+   *        The network request information.
    */
-  _onNetworkEvent: function(aType, aPacket) {
-    if (aPacket.from != this.webConsoleClient.actor) {
-      // Skip events from different console actors.
-      return;
-    }
+  _onNetworkEvent: function(type, networkInfo) {
+    let { actor, startedDateTime, request: { method, url }, isXHR, fromCache } = networkInfo;
 
-    let { actor, startedDateTime, method, url, isXHR } = aPacket.eventActor;
-    NetMonitorView.RequestsMenu.addRequest(actor, startedDateTime, method, url, isXHR);
+    NetMonitorView.RequestsMenu.addRequest(
+      actor, startedDateTime, method, url, isXHR, fromCache
+    );
     window.emit(EVENTS.NETWORK_EVENT, actor);
   },
 
   /**
    * The "networkEventUpdate" message type handler.
    *
-   * @param string aType
+   * @param string type
    *        Message type.
-   * @param object aPacket
+   * @param object packet
    *        The message received from the server.
+   * @param object networkInfo
+   *        The network request information.
    */
-  _onNetworkEventUpdate: function(aType, aPacket) {
-    let actor = aPacket.from;
-    if (!NetMonitorView.RequestsMenu.getItemByValue(actor)) {
-      // Skip events from unknown actors.
-      return;
-    }
-
-    switch (aPacket.updateType) {
+  _onNetworkEventUpdate: function(type, { packet, networkInfo }) {
+    let { actor, request: { url } } = networkInfo;
+    switch (packet.updateType) {
       case "requestHeaders":
         this.webConsoleClient.getRequestHeaders(actor, this._onRequestHeaders);
         window.emit(EVENTS.UPDATING_REQUEST_HEADERS, actor);
@@ -590,8 +581,8 @@ NetworkEventsHandler.prototype = {
         window.emit(EVENTS.UPDATING_REQUEST_POST_DATA, actor);
         break;
       case "securityInfo":
-        NetMonitorView.RequestsMenu.updateRequest(aPacket.from, {
-          securityState: aPacket.state,
+        NetMonitorView.RequestsMenu.updateRequest(actor, {
+          securityState: networkInfo.securityInfo,
         });
         this.webConsoleClient.getSecurityInfo(actor, this._onSecurityInfo);
         window.emit(EVENTS.UPDATING_SECURITY_INFO, actor);
@@ -605,26 +596,28 @@ NetworkEventsHandler.prototype = {
         window.emit(EVENTS.UPDATING_RESPONSE_COOKIES, actor);
         break;
       case "responseStart":
-        NetMonitorView.RequestsMenu.updateRequest(aPacket.from, {
-          httpVersion: aPacket.response.httpVersion,
-          status: aPacket.response.status,
-          statusText: aPacket.response.statusText,
-          headersSize: aPacket.response.headersSize
+        NetMonitorView.RequestsMenu.updateRequest(actor, {
+          httpVersion: networkInfo.response.httpVersion,
+          remoteAddress: networkInfo.response.remoteAddress,
+          remotePort: networkInfo.response.remotePort,
+          status: networkInfo.response.status,
+          statusText: networkInfo.response.statusText,
+          headersSize: networkInfo.response.headersSize
         });
         window.emit(EVENTS.STARTED_RECEIVING_RESPONSE, actor);
         break;
       case "responseContent":
-        NetMonitorView.RequestsMenu.updateRequest(aPacket.from, {
-          contentSize: aPacket.contentSize,
-          transferredSize: aPacket.transferredSize,
-          mimeType: aPacket.mimeType
+        NetMonitorView.RequestsMenu.updateRequest(actor, {
+          contentSize: networkInfo.response.bodySize,
+          transferredSize: networkInfo.response.transferredSize,
+          mimeType: networkInfo.response.content.mimeType
         });
         this.webConsoleClient.getResponseContent(actor, this._onResponseContent);
         window.emit(EVENTS.UPDATING_RESPONSE_CONTENT, actor);
         break;
       case "eventTimings":
-        NetMonitorView.RequestsMenu.updateRequest(aPacket.from, {
-          totalTime: aPacket.totalTime
+        NetMonitorView.RequestsMenu.updateRequest(actor, {
+          totalTime: networkInfo.totalTime
         });
         this.webConsoleClient.getEventTimings(actor, this._onEventTimings);
         window.emit(EVENTS.UPDATING_EVENT_TIMINGS, actor);
@@ -641,8 +634,9 @@ NetworkEventsHandler.prototype = {
   _onRequestHeaders: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       requestHeaders: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_REQUEST_HEADERS, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_REQUEST_HEADERS, aResponse.from);
   },
 
   /**
@@ -654,8 +648,9 @@ NetworkEventsHandler.prototype = {
   _onRequestCookies: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       requestCookies: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_REQUEST_COOKIES, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_REQUEST_COOKIES, aResponse.from);
   },
 
   /**
@@ -667,8 +662,9 @@ NetworkEventsHandler.prototype = {
   _onRequestPostData: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       requestPostData: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_REQUEST_POST_DATA, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_REQUEST_POST_DATA, aResponse.from);
   },
 
   /**
@@ -680,9 +676,9 @@ NetworkEventsHandler.prototype = {
    _onSecurityInfo: function(aResponse) {
      NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
        securityInfo: aResponse.securityInfo
+     }, () => {
+       window.emit(EVENTS.RECEIVED_SECURITY_INFO, aResponse.from);
      });
-
-     window.emit(EVENTS.RECEIVED_SECURITY_INFO, aResponse.from);
    },
 
   /**
@@ -694,8 +690,9 @@ NetworkEventsHandler.prototype = {
   _onResponseHeaders: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       responseHeaders: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_RESPONSE_HEADERS, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_RESPONSE_HEADERS, aResponse.from);
   },
 
   /**
@@ -707,8 +704,9 @@ NetworkEventsHandler.prototype = {
   _onResponseCookies: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       responseCookies: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_RESPONSE_COOKIES, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_RESPONSE_COOKIES, aResponse.from);
   },
 
   /**
@@ -720,8 +718,9 @@ NetworkEventsHandler.prototype = {
   _onResponseContent: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       responseContent: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_RESPONSE_CONTENT, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_RESPONSE_CONTENT, aResponse.from);
   },
 
   /**
@@ -733,8 +732,9 @@ NetworkEventsHandler.prototype = {
   _onEventTimings: function(aResponse) {
     NetMonitorView.RequestsMenu.updateRequest(aResponse.from, {
       eventTimings: aResponse
+    }, () => {
+      window.emit(EVENTS.RECEIVED_EVENT_TIMINGS, aResponse.from);
     });
-    window.emit(EVENTS.RECEIVED_EVENT_TIMINGS, aResponse.from);
   },
 
   /**
@@ -749,42 +749,20 @@ NetworkEventsHandler.prototype = {
    *         are available, or rejected if something goes wrong.
    */
   getString: function(aStringGrip) {
-    // Make sure this is a long string.
-    if (typeof aStringGrip != "object" || aStringGrip.type != "longString") {
-      return promise.resolve(aStringGrip); // Go home string, you're drunk.
-    }
-    // Fetch the long string only once.
-    if (aStringGrip._fullText) {
-      return aStringGrip._fullText.promise;
-    }
-
-    let deferred = aStringGrip._fullText = promise.defer();
-    let { actor, initial, length } = aStringGrip;
-    let longStringClient = this.webConsoleClient.longString(aStringGrip);
-
-    longStringClient.substring(initial.length, length, aResponse => {
-      if (aResponse.error) {
-        Cu.reportError(aResponse.error + ": " + aResponse.message);
-        deferred.reject(aResponse);
-        return;
-      }
-      deferred.resolve(initial + aResponse.substring);
-    });
-
-    return deferred.promise;
+    return this.webConsoleClient.getString(aStringGrip);
   }
 };
 
 /**
  * Localization convenience methods.
  */
-let L10N = new ViewHelpers.L10N(NET_STRINGS_URI);
-let PKI_L10N = new ViewHelpers.L10N(PKI_STRINGS_URI);
+var L10N = new ViewHelpers.L10N(NET_STRINGS_URI);
+var PKI_L10N = new ViewHelpers.L10N(PKI_STRINGS_URI);
 
 /**
  * Shortcuts for accessing various network monitor preferences.
  */
-let Prefs = new ViewHelpers.Prefs("devtools.netmonitor", {
+var Prefs = new ViewHelpers.Prefs("devtools.netmonitor", {
   networkDetailsWidth: ["Int", "panes-network-details-width"],
   networkDetailsHeight: ["Int", "panes-network-details-height"],
   statistics: ["Bool", "statistics"],
@@ -815,7 +793,9 @@ NetMonitorController.NetworkEventsHandler = new NetworkEventsHandler();
  */
 Object.defineProperties(window, {
   "gNetwork": {
-    get: function() NetMonitorController.NetworkEventsHandler,
+    get: function() {
+      return NetMonitorController.NetworkEventsHandler;
+    },
     configurable: true
   }
 });
@@ -851,7 +831,12 @@ function whenDataAvailable(aDataStore, aMandatoryFields) {
 };
 
 const WDA_DEFAULT_VERIFY_INTERVAL = 50; // ms
-const WDA_DEFAULT_GIVE_UP_TIMEOUT = 2000; // ms
+
+// Use longer timeout during testing as the tests need this process to succeed
+// and two seconds is quite short on slow debug builds. The timeout here should
+// be at least equal to the general mochitest timeout of 45 seconds so that this
+// never gets hit during testing.
+const WDA_DEFAULT_GIVE_UP_TIMEOUT = DevToolsUtils.testing ? 45000 : 2000; // ms
 
 /**
  * Helper method for debugging.
@@ -863,4 +848,4 @@ function dumpn(str) {
   }
 }
 
-let wantLogging = Services.prefs.getBoolPref("devtools.debugger.log");
+var wantLogging = Services.prefs.getBoolPref("devtools.debugger.log");

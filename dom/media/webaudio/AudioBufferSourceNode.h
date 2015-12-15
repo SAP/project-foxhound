@@ -15,19 +15,14 @@ namespace dom {
 
 class AudioParam;
 
-class AudioBufferSourceNode : public AudioNode,
-                              public MainThreadMediaStreamListener
+class AudioBufferSourceNode final : public AudioNode,
+                                    public MainThreadMediaStreamListener
 {
 public:
   explicit AudioBufferSourceNode(AudioContext* aContext);
 
-  virtual void DestroyMediaStream() override
-  {
-    if (mStream) {
-      mStream->RemoveMainThreadListener(this);
-    }
-    AudioNode::DestroyMediaStream();
-  }
+  virtual void DestroyMediaStream() override;
+
   virtual uint16_t NumberOfInputs() const final override
   {
     return 0;
@@ -39,7 +34,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AudioBufferSourceNode, AudioNode)
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   void Start(double aWhen, double aOffset,
              const Optional<double>& aDuration, ErrorResult& aRv);
@@ -58,6 +53,10 @@ public:
   AudioParam* PlaybackRate() const
   {
     return mPlaybackRate;
+  }
+  AudioParam* Detune() const
+  {
+    return mDetune;
   }
   bool Loop() const
   {
@@ -90,7 +89,7 @@ public:
 
   IMPL_EVENT_HANDLER(ended)
 
-  virtual void NotifyMainThreadStateChanged() override;
+  virtual void NotifyMainThreadStreamFinished() override;
 
   virtual const char* NodeType() const override
   {
@@ -123,6 +122,7 @@ private:
     LOOPSTART,
     LOOPEND,
     PLAYBACKRATE,
+    DETUNE,
     DOPPLERSHIFT
   };
 
@@ -130,6 +130,7 @@ private:
   void SendBufferParameterToStream(JSContext* aCx);
   void SendOffsetAndDurationParametersToStream(AudioNodeStream* aStream);
   static void SendPlaybackRateToStream(AudioNode* aNode);
+  static void SendDetuneToStream(AudioNode* aNode);
 
 private:
   double mLoopStart;
@@ -138,13 +139,13 @@ private:
   double mDuration;
   nsRefPtr<AudioBuffer> mBuffer;
   nsRefPtr<AudioParam> mPlaybackRate;
+  nsRefPtr<AudioParam> mDetune;
   bool mLoop;
   bool mStartCalled;
-  bool mStopped;
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif
 

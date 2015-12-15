@@ -37,8 +37,8 @@ namespace dom {
 namespace gonk {
 
 class SystemWorkerManager final : public nsIObserver,
-                                      public nsIInterfaceRequestor,
-                                      public nsISystemWorkerManager
+                                  public nsIInterfaceRequestor,
+                                  public nsISystemWorkerManager
 {
 public:
   NS_DECL_ISUPPORTS
@@ -64,7 +64,7 @@ private:
 
   nsCOMPtr<nsIWorkerHolder> mWifiWorker;
 
-  nsRefPtr<ipc::KeyStore> mKeyStore;
+  nsRefPtr<mozilla::ipc::KeyStore> mKeyStore;
 
   bool mShutdown;
 };

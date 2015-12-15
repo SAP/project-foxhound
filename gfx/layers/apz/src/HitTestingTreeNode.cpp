@@ -18,22 +18,28 @@ namespace mozilla {
 namespace layers {
 
 HitTestingTreeNode::HitTestingTreeNode(AsyncPanZoomController* aApzc,
-                                       bool aIsPrimaryHolder)
+                                       bool aIsPrimaryHolder,
+                                       uint64_t aLayersId)
   : mApzc(aApzc)
   , mIsPrimaryApzcHolder(aIsPrimaryHolder)
+  , mLayersId(aLayersId)
   , mOverride(EventRegionsOverride::NoOverride)
 {
   if (mIsPrimaryApzcHolder) {
     MOZ_ASSERT(mApzc);
   }
+  MOZ_ASSERT(!mApzc || mApzc->GetLayersId() == mLayersId);
 }
 
 void
-HitTestingTreeNode::RecycleWith(AsyncPanZoomController* aApzc)
+HitTestingTreeNode::RecycleWith(AsyncPanZoomController* aApzc,
+                                uint64_t aLayersId)
 {
   MOZ_ASSERT(!mIsPrimaryApzcHolder);
   Destroy(); // clear out tree pointers
   mApzc = aApzc;
+  mLayersId = aLayersId;
+  MOZ_ASSERT(!mApzc || mApzc->GetLayersId() == mLayersId);
   // The caller is expected to call SetHitTestData to repopulate the hit-test
   // fields.
 }
@@ -57,6 +63,8 @@ HitTestingTreeNode::Destroy()
     }
     mApzc = nullptr;
   }
+
+  mLayersId = 0;
 }
 
 void
@@ -147,16 +155,35 @@ HitTestingTreeNode::GetNearestContainingApzc() const
   return nullptr;
 }
 
+AsyncPanZoomController*
+HitTestingTreeNode::GetNearestContainingApzcWithSameLayersId() const
+{
+  for (const HitTestingTreeNode* n = this;
+       n && n->mLayersId == mLayersId;
+       n = n->GetParent()) {
+    if (n->GetApzc()) {
+      return n->GetApzc();
+    }
+  }
+  return nullptr;
+}
+
 bool
 HitTestingTreeNode::IsPrimaryHolder() const
 {
   return mIsPrimaryApzcHolder;
 }
 
+uint64_t
+HitTestingTreeNode::GetLayersId() const
+{
+  return mLayersId;
+}
+
 void
 HitTestingTreeNode::SetHitTestData(const EventRegions& aRegions,
                                    const gfx::Matrix4x4& aTransform,
-                                   const Maybe<nsIntRegion>& aClipRegion,
+                                   const Maybe<ParentLayerIntRegion>& aClipRegion,
                                    const EventRegionsOverride& aOverride)
 {
   mEventRegions = aRegions;
@@ -180,10 +207,7 @@ HitTestingTreeNode::Untransform(const ParentLayerPoint& aPoint) const
   if (mApzc) {
     localTransform = localTransform * mApzc->GetCurrentAsyncTransformWithOverscroll();
   }
-  gfx::Point4D point = localTransform.Inverse().ProjectPoint(aPoint.ToUnknownPoint());
-  return point.HasPositiveWCoord()
-        ? Some(ViewAs<LayerPixel>(point.As2DPoint()))
-        : Nothing();
+  return UntransformTo<LayerPixel>(localTransform.Inverse(), aPoint);
 }
 
 HitTestResult
@@ -195,15 +219,6 @@ HitTestingTreeNode::HitTest(const ParentLayerPoint& aPoint) const
 
   if (mOverride & EventRegionsOverride::ForceEmptyHitRegion) {
     return HitTestResult::HitNothing;
-  }
-
-  // When event regions are disabled and we have an APZC on this node, we are
-  // actually storing the touch-sensitive section of the composition bounds in
-  // the clip region, and we don't need to check against the mEventRegions.
-  // If there's no APZC, then we do need to check against the mEventRegions
-  // (which contains the layer's visible region) for obscuration purposes.
-  if (!gfxPrefs::LayoutEventRegionsEnabled() && GetApzc()) {
-    return HitTestResult::HitLayer;
   }
 
   // convert into Layer coordinate space
@@ -238,7 +253,8 @@ HitTestingTreeNode::Dump(const char* aPrefix) const
     mPrevSibling->Dump(aPrefix);
   }
   printf_stderr("%sHitTestingTreeNode (%p) APZC (%p) g=(%s) %s%sr=(%s) t=(%s) c=(%s)\n",
-    aPrefix, this, mApzc.get(), mApzc ? Stringify(mApzc->GetGuid()).c_str() : "",
+    aPrefix, this, mApzc.get(),
+    mApzc ? Stringify(mApzc->GetGuid()).c_str() : nsPrintfCString("l=%" PRIu64, mLayersId).get(),
     (mOverride & EventRegionsOverride::ForceDispatchToContent) ? "fdtc " : "",
     (mOverride & EventRegionsOverride::ForceEmptyHitRegion) ? "fehr " : "",
     Stringify(mEventRegions).c_str(), Stringify(mTransform).c_str(),

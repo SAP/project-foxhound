@@ -6,6 +6,8 @@
 #ifndef NSDOMMEDIASTREAM_H_
 #define NSDOMMEDIASTREAM_H_
 
+#include "ImageContainer.h"
+
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "StreamBuffer.h"
@@ -14,8 +16,6 @@
 #include "mozilla/PeerIdentity.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/CORSMode.h"
-
-class nsXPCClassInfo;
 
 // GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
 // GetTickCount() and conflicts with NS_DECL_NSIDOMMEDIASTREAM, containing
@@ -31,12 +31,15 @@ class nsXPCClassInfo;
 
 namespace mozilla {
 
+class DOMHwMediaStream;
 class DOMLocalMediaStream;
 class MediaStream;
 class MediaEngineSource;
+class MediaStreamGraph;
 
 namespace dom {
 class AudioNode;
+class HTMLCanvasElement;
 class MediaStreamTrack;
 class AudioStreamTrack;
 class VideoStreamTrack;
@@ -45,7 +48,13 @@ class VideoTrack;
 class AudioTrackList;
 class VideoTrackList;
 class MediaTrackListListener;
-}
+struct MediaTrackConstraints;
+} // namespace dom
+
+namespace layers {
+class ImageContainer;
+class OverlayImage;
+} // namespace layers
 
 class MediaStreamDirectListener;
 
@@ -69,6 +78,7 @@ class DOMMediaStream : public DOMEventTargetHelper
   typedef dom::MediaTrackListListener MediaTrackListListener;
 
 public:
+  typedef dom::MediaTrackConstraints MediaTrackConstraints;
   typedef uint8_t TrackTypeHints;
 
   DOMMediaStream();
@@ -83,7 +93,7 @@ public:
   {
     return mWindow;
   }
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
   double CurrentTime();
@@ -113,7 +123,13 @@ public:
 
   virtual void StopTrack(TrackID aTrackID);
 
+  virtual already_AddRefed<dom::Promise>
+  ApplyConstraintsToTrack(TrackID aTrackID,
+                          const MediaTrackConstraints& aConstraints,
+                          ErrorResult &aRv);
+
   virtual DOMLocalMediaStream* AsDOMLocalMediaStream() { return nullptr; }
+  virtual DOMHwMediaStream* AsDOMHwMediaStream() { return nullptr; }
 
   bool IsFinished();
   /**
@@ -169,9 +185,9 @@ public:
    */
   void NotifyMediaStreamGraphShutdown();
   /**
-   * Called when the main-thread state of the MediaStream changed.
+   * Called when the main-thread state of the MediaStream goes to finished.
    */
-  void NotifyStreamStateChanged();
+  void NotifyStreamFinished();
 
   // Webrtc allows the remote side to name a stream whatever it wants, and we
   // need to surface this to content.
@@ -180,14 +196,21 @@ public:
   /**
    * Create an nsDOMMediaStream whose underlying stream is a SourceMediaStream.
    */
-  static already_AddRefed<DOMMediaStream>
-  CreateSourceStream(nsIDOMWindow* aWindow);
+  static already_AddRefed<DOMMediaStream> CreateSourceStream(nsIDOMWindow* aWindow,
+                                                             MediaStreamGraph* aGraph);
 
   /**
    * Create an nsDOMMediaStream whose underlying stream is a TrackUnionStream.
    */
-  static already_AddRefed<DOMMediaStream>
-  CreateTrackUnionStream(nsIDOMWindow* aWindow);
+  static already_AddRefed<DOMMediaStream> CreateTrackUnionStream(nsIDOMWindow* aWindow,
+                                                                 MediaStreamGraph* aGraph);
+
+  /**
+   * Create an nsDOMMediaStream whose underlying stream is an
+   * AudioCaptureStream
+   */
+  static already_AddRefed<DOMMediaStream> CreateAudioCaptureStream(
+    nsIDOMWindow* aWindow, MediaStreamGraph* aGraph);
 
   void SetLogicalStreamStartTime(StreamTime aTime)
   {
@@ -205,15 +228,14 @@ public:
     virtual ~OnTracksAvailableCallback() {}
     virtual void NotifyTracksAvailable(DOMMediaStream* aStream) = 0;
   };
-  // When one track of the appropriate type has been added for each bit set
-  // in aCallback->GetExpectedTracks(), run aCallback->NotifyTracksAvailable.
+  // When the initial set of tracks has been added, run
+  // aCallback->NotifyTracksAvailable.
   // It is allowed to do anything, including run script.
   // aCallback may run immediately during this call if tracks are already
   // available!
   // We only care about track additions, we'll fire the notification even if
   // some of the tracks have been removed.
   // Takes ownership of aCallback.
-  // If GetExpectedTracks() returns 0, the callback will be fired as soon as there are any tracks.
   void OnTracksAvailable(OnTracksAvailableCallback* aCallback);
 
   /**
@@ -249,8 +271,12 @@ protected:
   virtual ~DOMMediaStream();
 
   void Destroy();
-  void InitSourceStream(nsIDOMWindow* aWindow);
-  void InitTrackUnionStream(nsIDOMWindow* aWindow);
+  void InitSourceStream(nsIDOMWindow* aWindow,
+                        MediaStreamGraph* aGraph);
+  void InitTrackUnionStream(nsIDOMWindow* aWindow,
+                            MediaStreamGraph* aGraph);
+  void InitAudioCaptureStream(nsIDOMWindow* aWindow,
+                              MediaStreamGraph* aGraph);
   void InitStreamCommon(MediaStream* aStream);
   already_AddRefed<AudioTrack> CreateAudioTrack(AudioStreamTrack* aStreamTrack);
   already_AddRefed<VideoTrack> CreateVideoTrack(VideoStreamTrack* aStreamTrack);
@@ -321,7 +347,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOMLOCALMEDIASTREAM_IID)
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   virtual void Stop();
 
@@ -331,13 +357,21 @@ public:
    * Create an nsDOMLocalMediaStream whose underlying stream is a SourceMediaStream.
    */
   static already_AddRefed<DOMLocalMediaStream>
-  CreateSourceStream(nsIDOMWindow* aWindow);
+  CreateSourceStream(nsIDOMWindow* aWindow,
+                     MediaStreamGraph* aGraph);
 
   /**
    * Create an nsDOMLocalMediaStream whose underlying stream is a TrackUnionStream.
    */
   static already_AddRefed<DOMLocalMediaStream>
-  CreateTrackUnionStream(nsIDOMWindow* aWindow);
+  CreateTrackUnionStream(nsIDOMWindow* aWindow,
+                         MediaStreamGraph* aGraph);
+
+  /**
+   * Create an nsDOMLocalMediaStream whose underlying stream is an
+   * AudioCaptureStream. */
+  static already_AddRefed<DOMLocalMediaStream> CreateAudioCaptureStream(
+    nsIDOMWindow* aWindow, MediaStreamGraph* aGraph);
 
 protected:
   virtual ~DOMLocalMediaStream();
@@ -360,7 +394,8 @@ public:
    */
   static already_AddRefed<DOMAudioNodeMediaStream>
   CreateTrackUnionStream(nsIDOMWindow* aWindow,
-                         AudioNode* aNode);
+                         AudioNode* aNode,
+                         MediaStreamGraph* aGraph);
 
 protected:
   ~DOMAudioNodeMediaStream();
@@ -371,6 +406,40 @@ private:
   nsRefPtr<AudioNode> mStreamNode;
 };
 
-}
+class DOMHwMediaStream : public DOMLocalMediaStream
+{
+  typedef mozilla::gfx::IntSize IntSize;
+  typedef layers::ImageContainer ImageContainer;
+#ifdef MOZ_WIDGET_GONK
+  typedef layers::OverlayImage OverlayImage;
+  typedef layers::OverlayImage::Data Data;
+#endif
+
+public:
+  DOMHwMediaStream();
+
+  static already_AddRefed<DOMHwMediaStream> CreateHwStream(nsIDOMWindow* aWindow);
+  virtual DOMHwMediaStream* AsDOMHwMediaStream() override { return this; }
+  int32_t RequestOverlayId();
+  void SetOverlayId(int32_t aOverlayId);
+  void SetImageSize(uint32_t width, uint32_t height);
+
+protected:
+  ~DOMHwMediaStream();
+
+private:
+  void Init(MediaStream* aStream);
+
+#ifdef MOZ_WIDGET_GONK
+  nsRefPtr<ImageContainer> mImageContainer;
+  const int DEFAULT_IMAGE_ID = 0x01;
+  const int DEFAULT_IMAGE_WIDTH = 400;
+  const int DEFAULT_IMAGE_HEIGHT = 300;
+  nsRefPtr<OverlayImage> mOverlayImage;
+  Data mImageData;
+#endif
+};
+
+} // namespace mozilla
 
 #endif /* NSDOMMEDIASTREAM_H_ */

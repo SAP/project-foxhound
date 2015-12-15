@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +15,9 @@
 #include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 
+#define PRIVATE_IDBREQUEST_IID \
+  {0xe68901e5, 0x1d50, 0x4ee9, {0xaf, 0x49, 0x90, 0x99, 0x4a, 0xff, 0xc8, 0x39}}
+
 class nsPIDOMWindow;
 struct PRThread;
 
@@ -25,7 +28,6 @@ class ErrorResult;
 namespace dom {
 
 class DOMError;
-struct ErrorEventInit;
 template <typename> struct Nullable;
 class OwningIDBObjectStoreOrIDBIndexOrIDBCursor;
 
@@ -61,6 +63,7 @@ protected:
   uint64_t mLoggingSerialNumber;
   nsresult mErrorCode;
   uint32_t mLineNo;
+  uint32_t mColumn;
   bool mHaveResultOrErrorCode;
 
 public:
@@ -80,7 +83,7 @@ public:
          IDBTransaction* aTransaction);
 
   static void
-  CaptureCaller(nsAString& aFilename, uint32_t* aLineNo);
+  CaptureCaller(nsAString& aFilename, uint32_t* aLineNo, uint32_t* aColumn);
 
   static uint64_t
   NextSerialNumber();
@@ -128,7 +131,8 @@ public:
   GetError(ErrorResult& aRv);
 
   void
-  GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo) const;
+  GetCallerLocation(nsAString& aFilename, uint32_t* aLineNo,
+                    uint32_t* aColumn) const;
 
   bool
   IsPending() const
@@ -194,7 +198,7 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 protected:
   explicit IDBRequest(IDBDatabase* aDatabase);
@@ -229,6 +233,8 @@ class IDBOpenDBRequest final
 
   nsAutoPtr<WorkerFeature> mWorkerFeature;
 
+  const bool mFileHandleDisabled;
+
 public:
   static already_AddRefed<IDBOpenDBRequest>
   CreateForWindow(IDBFactory* aFactory,
@@ -238,6 +244,12 @@ public:
   static already_AddRefed<IDBOpenDBRequest>
   CreateForJS(IDBFactory* aFactory,
               JS::Handle<JSObject*> aScriptOwner);
+
+  bool
+  IsFileHandleDisabled() const
+  {
+    return mFileHandleDisabled;
+  }
 
   void
   SetTransaction(IDBTransaction* aTransaction);
@@ -263,10 +275,12 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
-  IDBOpenDBRequest(IDBFactory* aFactory, nsPIDOMWindow* aOwner);
+  IDBOpenDBRequest(IDBFactory* aFactory,
+                   nsPIDOMWindow* aOwner,
+                   bool aFileHandleDisabled);
 
   ~IDBOpenDBRequest();
 };

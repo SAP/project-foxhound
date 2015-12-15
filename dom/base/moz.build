@@ -11,10 +11,10 @@ XPIDL_SOURCES += [
     'nsIContentPolicy.idl',
     'nsIContentPolicyBase.idl',
     'nsIDocumentEncoder.idl',
+    'nsIDOMBlob.idl',
     'nsIDOMDataChannel.idl',
     'nsIDOMDOMCursor.idl',
     'nsIDOMDOMRequest.idl',
-    'nsIDOMFile.idl',
     'nsIDOMFileList.idl',
     'nsIDOMFileReader.idl',
     'nsIDOMFormData.idl',
@@ -53,6 +53,7 @@ EXPORTS += [
     'nsAttrValue.h',
     'nsAttrValueInlines.h',
     'nsCaseTreatment.h',
+    'nsChildContentList.h',
     'nsContentCID.h',
     'nsContentCreatorFunctions.h',
     'nsContentList.h',
@@ -74,11 +75,14 @@ EXPORTS += [
     'nsDOMNavigationTiming.h',
     'nsDOMString.h',
     'nsFocusManager.h',
+    'nsFormData.h',
     'nsFrameMessageManager.h',
     'nsGenericDOMDataNode.h',
     'nsGkAtomList.h',
     'nsGkAtoms.h',
     'nsHostObjectProtocolHandler.h',
+    'nsHostObjectURI.h',
+    'nsIAnimationObserver.h',
     'nsIAttribute.h',
     'nsIContent.h',
     'nsIContentInlines.h',
@@ -117,6 +121,7 @@ EXPORTS += [
     'nsSandboxFlags.h',
     'nsScriptLoader.h',
     'nsStructuredCloneContainer.h',
+    'nsStubAnimationObserver.h',
     'nsStubDocumentObserver.h',
     'nsStubMutationObserver.h',
     'nsStyledElement.h',
@@ -140,6 +145,7 @@ EXPORTS.mozilla += [
     'CORSMode.h',
     'FeedWriterEnabled.h',
     'TextInputProcessor.h',
+    'UseCounter.h',
 ]
 
 EXPORTS.mozilla.dom += [
@@ -148,6 +154,7 @@ EXPORTS.mozilla.dom += [
     'BarProps.h',
     'BlobSet.h',
     'ChildIterator.h',
+    'ChromeUtils.h',
     'Comment.h',
     'Console.h',
     'DirectionalityUtils.h',
@@ -168,28 +175,32 @@ EXPORTS.mozilla.dom += [
     'ElementInlines.h',
     'EventSource.h',
     'File.h',
+    'FileList.h',
     'FragmentOrElement.h',
     'FromParser.h',
     'ImageEncoder.h',
     'ImportManager.h',
     'Link.h',
-    'MessageChannel.h',
-    'MessagePort.h',
-    'MessagePortList.h',
     'NameSpaceConstants.h',
     'Navigator.h',
     'NodeInfo.h',
     'NodeInfoInlines.h',
     'NodeIterator.h',
+    'PerformanceCompositeTiming.h',
     'PerformanceEntry.h',
     'PerformanceMark.h',
     'PerformanceMeasure.h',
+    'PerformanceObserver.h',
+    'PerformanceObserverEntryList.h',
+    'PerformanceRenderTiming.h',
     'PerformanceResourceTiming.h',
     'ProcessGlobal.h',
     'ResponsiveImageSelector.h',
+    'SameProcessMessageQueue.h',
     'ScreenOrientation.h',
     'ScriptSettings.h',
     'ShadowRoot.h',
+    'StructuredCloneHelper.h',
     'StructuredCloneTags.h',
     'StyleSheetList.h',
     'SubtleCrypto.h',
@@ -205,6 +216,7 @@ UNIFIED_SOURCES += [
     'Attr.cpp',
     'BarProps.cpp',
     'ChildIterator.cpp',
+    'ChromeUtils.cpp',
     'Comment.cpp',
     'Console.cpp',
     'Crypto.cpp',
@@ -226,13 +238,12 @@ UNIFIED_SOURCES += [
     'EventSource.cpp',
     'File.cpp',
     'FileIOObject.cpp',
+    'FileList.cpp',
     'FragmentOrElement.cpp',
     'ImageEncoder.cpp',
     'ImportManager.cpp',
     'Link.cpp',
-    'MessageChannel.cpp',
-    'MessagePortList.cpp',
-    'MultipartFileImpl.cpp',
+    'MultipartBlobImpl.cpp',
     'Navigator.cpp',
     'NodeInfo.cpp',
     'NodeIterator.cpp',
@@ -300,6 +311,7 @@ UNIFIED_SOURCES += [
     'nsScriptLoader.cpp',
     'nsScriptNameSpaceManager.cpp',
     'nsStructuredCloneContainer.cpp',
+    'nsStubAnimationObserver.cpp',
     'nsStubDocumentObserver.cpp',
     'nsStubMutationObserver.cpp',
     'nsStyledElement.cpp',
@@ -317,14 +329,22 @@ UNIFIED_SOURCES += [
     'nsXMLContentSerializer.cpp',
     'nsXMLHttpRequest.cpp',
     'nsXMLNameSpaceMap.cpp',
+    'PerformanceCompositeTiming.cpp',
     'PerformanceEntry.cpp',
     'PerformanceMark.cpp',
     'PerformanceMeasure.cpp',
+    'PerformanceObserver.cpp',
+    'PerformanceObserverEntryList.cpp',
+    'PerformanceRenderTiming.cpp',
     'PerformanceResourceTiming.cpp',
+    'PostMessageEvent.cpp',
     'ProcessGlobal.cpp',
     'ResponsiveImageSelector.cpp',
+    'SameProcessMessageQueue.cpp',
+    'ScreenOrientation.cpp',
     'ScriptSettings.cpp',
     'ShadowRoot.cpp',
+    'StructuredCloneHelper.cpp',
     'StyleSheetList.cpp',
     'SubtleCrypto.cpp',
     'Text.cpp',
@@ -344,8 +364,6 @@ if CONFIG['MOZ_WEBRTC']:
 
 # these files couldn't be in UNIFIED_SOURCES for now for reasons given below:
 SOURCES += [
-    # this file doesn't like windows.h
-    'MessagePort.cpp',
     # Because of OS X headers.
     'nsContentUtils.cpp',
     # this file doesn't like windows.h
@@ -375,24 +393,26 @@ EXTRA_COMPONENTS += [
     'contentAreaDropListener.manifest',
     'messageWakeupService.js',
     'messageWakeupService.manifest',
-    'SiteSpecificUserAgent.js',
-    'SiteSpecificUserAgent.manifest',
     'SlowScriptDebug.js',
     'SlowScriptDebug.manifest',
 ]
+
+# Firefox for Android provides an alternate version of this component
+if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
+    EXTRA_COMPONENTS += [
+        'SiteSpecificUserAgent.js',
+        'SiteSpecificUserAgent.manifest',
+    ]
 
 EXTRA_JS_MODULES += [
     'DOMRequestHelper.jsm',
     'IndexedDBHelper.jsm',
 ]
 
-FAIL_ON_WARNINGS = True
-
-MSVC_ENABLE_PGO = True
-
 LOCAL_INCLUDES += [
     '../battery',
-    '../bluetooth',
+    '../bluetooth/common',
+    '../bluetooth/common/webapi',
     '../events',
     '../media',
     '../network',
@@ -410,7 +430,8 @@ LOCAL_INCLUDES += [
     '/dom/xml',
     '/dom/xslt/xpath',
     '/dom/xul',
-    '/image/src',
+    '/gfx/2d',
+    '/image',
     '/js/xpconnect/src',
     '/js/xpconnect/wrappers',
     '/layout/base',
@@ -419,6 +440,7 @@ LOCAL_INCLUDES += [
     '/layout/svg',
     '/layout/xul',
     '/netwerk/base',
+    '/security/manager/ssl',
     '/widget',
     '/xpcom/ds',
 ]
@@ -447,3 +469,16 @@ if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
 
 if CONFIG['MOZ_X11']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
+
+GENERATED_FILES += [
+    'PropertyUseCounterMap.inc',
+    'UseCounterList.h',
+]
+
+countermap = GENERATED_FILES['PropertyUseCounterMap.inc']
+countermap.script = 'gen-usecounters.py:property_map'
+countermap.inputs = ['UseCounters.conf']
+
+counterlist = GENERATED_FILES['UseCounterList.h']
+counterlist.script = 'gen-usecounters.py:use_counter_list'
+counterlist.inputs = ['UseCounters.conf']

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set tw=80 expandtab softtabstop=2 ts=2 sw=2: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,14 +73,6 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(HTMLPropertiesCollection)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(HTMLPropertiesCollection)
 
-
-static PLDHashOperator
-SetPropertyListDocument(const nsAString& aKey, PropertyNodeList* aEntry, void* aData)
-{
-  aEntry->SetDocument(static_cast<nsIDocument*>(aData));
-  return PL_DHASH_NEXT;
-}
-
 void
 HTMLPropertiesCollection::SetDocument(nsIDocument* aDocument) {
   if (mDoc) {
@@ -90,14 +82,16 @@ HTMLPropertiesCollection::SetDocument(nsIDocument* aDocument) {
   if (mDoc) {
     mDoc->AddMutationObserver(this);
   }
-  mNamedItemEntries.EnumerateRead(SetPropertyListDocument, aDocument);
+  for (auto iter = mNamedItemEntries.Iter(); !iter.Done(); iter.Next()) {
+    iter.UserData()->SetDocument(aDocument);
+  }
   mIsDirty = true;
 }
 
 JSObject*
-HTMLPropertiesCollection::WrapObject(JSContext* cx)
+HTMLPropertiesCollection::WrapObject(JSContext* cx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLPropertiesCollectionBinding::Wrap(cx, this);
+  return HTMLPropertiesCollectionBinding::Wrap(cx, this, aGivenProto);
 }
 
 NS_IMETHODIMP
@@ -159,7 +153,8 @@ HTMLPropertiesCollection::NamedItem(const nsAString& aName)
 void
 HTMLPropertiesCollection::AttributeChanged(nsIDocument *aDocument, Element* aElement,
                                            int32_t aNameSpaceID, nsIAtom* aAttribute,
-                                           int32_t aModType)
+                                           int32_t aModType,
+                                           const nsAttrValue* aOldValue)
 {
   mIsDirty = true;
 }
@@ -191,13 +186,6 @@ HTMLPropertiesCollection::ContentRemoved(nsIDocument *aDocument,
   mIsDirty = true;
 }
 
-static PLDHashOperator
-MarkDirty(const nsAString& aKey, PropertyNodeList* aEntry, void* aData)
-{
-  aEntry->SetDirty();
-  return PL_DHASH_NEXT;
-}
-
 void
 HTMLPropertiesCollection::EnsureFresh()
 {
@@ -209,7 +197,9 @@ HTMLPropertiesCollection::EnsureFresh()
   mProperties.Clear();
   mNames->Clear();
   // We don't clear NamedItemEntries because the PropertyNodeLists must be live.
-  mNamedItemEntries.EnumerateRead(MarkDirty, nullptr);
+  for (auto iter = mNamedItemEntries.Iter(); !iter.Done(); iter.Next()) {
+    iter.UserData()->SetDirty();
+  }
   if (!mRoot->HasAttr(kNameSpaceID_None, nsGkAtoms::itemscope)) {
     return;
   }
@@ -277,11 +267,11 @@ HTMLPropertiesCollection::CrawlSubtree(Element* aElement)
   while (aContent) {
     // We must check aContent against mRoot because 
     // an element must not be its own property
-    if (aContent == mRoot || !aContent->IsHTML()) {
+    if (aContent == mRoot || !aContent->IsHTMLElement()) {
       // Move on to the next node in the tree
       aContent = aContent->GetNextNode(aElement);
     } else {
-      MOZ_ASSERT(aContent->IsElement(), "IsHTML() returned true!");
+      MOZ_ASSERT(aContent->IsElement(), "IsHTMLElement() returned true!");
       Element* element = aContent->AsElement();
       if (element->HasAttr(kNameSpaceID_None, nsGkAtoms::itemprop) &&
           !mProperties.Contains(element)) {
@@ -378,9 +368,9 @@ PropertyNodeList::GetParentObject()
 }
 
 JSObject*
-PropertyNodeList::WrapObject(JSContext *cx)
+PropertyNodeList::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
 {
-  return PropertyNodeListBinding::Wrap(cx, this);
+  return PropertyNodeListBinding::Wrap(cx, this, aGivenProto);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PropertyNodeList)
@@ -438,7 +428,8 @@ PropertyNodeList::GetValues(JSContext* aCx, nsTArray<JS::Value >& aResult,
 void
 PropertyNodeList::AttributeChanged(nsIDocument* aDocument, Element* aElement,
                                    int32_t aNameSpaceID, nsIAtom* aAttribute,
-                                   int32_t aModType)
+                                   int32_t aModType,
+                                   const nsAttrValue* aOldValue)
 {
   mIsDirty = true;
 }

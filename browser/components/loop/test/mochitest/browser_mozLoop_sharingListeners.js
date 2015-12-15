@@ -6,10 +6,10 @@
  */
 "use strict";
 
-const {injectLoopAPI} = Cu.import("resource:///modules/loop/MozLoopAPI.jsm");
+const {injectLoopAPI} = Cu.import("resource:///modules/loop/MozLoopAPI.jsm", {});
 gMozLoopAPI = injectLoopAPI({});
 
-let handlers = [
+var handlers = [
   {
     resolve: null,
     windowId: null,
@@ -33,30 +33,40 @@ function promiseWindowIdReceivedOnAdd(handler) {
     handler.resolve = resolve;
     gMozLoopAPI.addBrowserSharingListener(handler.listener);
   });
-};
+}
 
-let createdTabs = [];
+var createdTabs = [];
 
-function promiseWindowIdReceivedNewTab(handlers = []) {
+function promiseWindowIdReceivedNewTab(handlersParam = []) {
   let promiseHandlers = [];
 
-  handlers.forEach(handler => {
+  handlersParam.forEach(handler => {
     promiseHandlers.push(new Promise(resolve => {
       handler.resolve = resolve;
     }));
   });
 
-  let createdTab = gBrowser.selectedTab = gBrowser.addTab();
+  let createdTab = gBrowser.selectedTab = gBrowser.addTab("about:mozilla");
   createdTabs.push(createdTab);
 
-  promiseHandlers.push(promiseTabLoadEvent(createdTab, "about:mozilla"));
+  promiseHandlers.push(BrowserTestUtils.browserLoaded(createdTab.linkedBrowser));
 
   return Promise.all(promiseHandlers);
-};
+}
 
-function removeTabs() {
+function promiseRemoveTab(tab) {
+  return new Promise(resolve => {
+    gBrowser.tabContainer.addEventListener("TabClose", function onTabClose() {
+      gBrowser.tabContainer.removeEventListener("TabClose", onTabClose);
+      resolve();
+    });
+    gBrowser.removeTab(tab);
+  });
+}
+
+function* removeTabs() {
   for (let createdTab of createdTabs) {
-    gBrowser.removeTab(createdTab);
+    yield promiseRemoveTab(createdTab);
   }
 
   createdTabs = [];
@@ -79,7 +89,7 @@ add_task(function* test_singleListener() {
   // Now remove the listener.
   gMozLoopAPI.removeBrowserSharingListener(handlers[0].listener);
 
-  removeTabs();
+  yield removeTabs();
 });
 
 add_task(function* test_multipleListener() {
@@ -122,7 +132,7 @@ add_task(function* test_multipleListener() {
   // Cleanup.
   gMozLoopAPI.removeBrowserSharingListener(handlers[1].listener);
 
-  removeTabs();
+  yield removeTabs();
 });
 
 add_task(function* test_infoBar() {
@@ -142,7 +152,7 @@ add_task(function* test_infoBar() {
   yield promiseWindowIdReceivedOnAdd(handlers[0]);
 
   let getInfoBar = function() {
-    let box = gBrowser.getNotificationBox(gBrowser.selectedTab.linkedBrowser);
+    let box = gBrowser.getNotificationBox(gBrowser.selectedBrowser);
     return box.getNotificationWithValue(kBrowserSharingNotificationId);
   };
 
@@ -160,7 +170,7 @@ add_task(function* test_infoBar() {
       "The popup should be opening anchored to the dropmarker");
     Assert.strictEqual(button.getElementsByTagNameNS(kNSXUL, "menupopup").length, 1,
       "There should be a popup attached to the button");
-  }
+  };
 
   testBarProps();
 
@@ -186,6 +196,6 @@ add_task(function* test_infoBar() {
 
   // Cleanup.
   gMozLoopAPI.removeBrowserSharingListener(handlers[0].listener);
-  removeTabs();
+  yield removeTabs();
   Services.prefs.clearUserPref(kPrefBrowserSharingInfoBar);
 });

@@ -37,7 +37,7 @@ IsBoolean(HandleValue v)
 
 #if JS_HAS_TOSOURCE
 MOZ_ALWAYS_INLINE bool
-bool_toSource_impl(JSContext* cx, CallArgs args)
+bool_toSource_impl(JSContext* cx, const CallArgs& args)
 {
     HandleValue thisv = args.thisv();
     MOZ_ASSERT(IsBoolean(thisv));
@@ -64,13 +64,13 @@ bool_toSource(JSContext* cx, unsigned argc, Value* vp)
 #endif
 
 MOZ_ALWAYS_INLINE bool
-bool_toString_impl(JSContext* cx, CallArgs args)
+bool_toString_impl(JSContext* cx, const CallArgs& args)
 {
     HandleValue thisv = args.thisv();
     MOZ_ASSERT(IsBoolean(thisv));
 
     bool b = thisv.isBoolean() ? thisv.toBoolean() : thisv.toObject().as<BooleanObject>().unbox();
-    args.rval().setString(js_BooleanToString(cx, b));
+    args.rval().setString(BooleanToString(cx, b));
     return true;
 }
 
@@ -82,7 +82,7 @@ bool_toString(JSContext* cx, unsigned argc, Value* vp)
 }
 
 MOZ_ALWAYS_INLINE bool
-bool_valueOf_impl(JSContext* cx, CallArgs args)
+bool_valueOf_impl(JSContext* cx, const CallArgs& args)
 {
     HandleValue thisv = args.thisv();
     MOZ_ASSERT(IsBoolean(thisv));
@@ -127,7 +127,7 @@ Boolean(JSContext* cx, unsigned argc, Value* vp)
 }
 
 JSObject*
-js_InitBooleanClass(JSContext* cx, HandleObject obj)
+js::InitBooleanClass(JSContext* cx, HandleObject obj)
 {
     MOZ_ASSERT(obj->isNative());
 
@@ -155,7 +155,7 @@ js_InitBooleanClass(JSContext* cx, HandleObject obj)
 }
 
 JSString*
-js_BooleanToString(ExclusiveContext* cx, bool b)
+js::BooleanToString(ExclusiveContext* cx, bool b)
 {
     return b ? cx->names().true_ : cx->names().false_;
 }

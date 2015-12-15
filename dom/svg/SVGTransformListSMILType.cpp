@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,12 +48,9 @@ SVGTransformListSMILType::Assign(nsSMILValue& aDest,
   const TransformArray* srcTransforms =
     static_cast<const TransformArray*>(aSrc.mU.mPtr);
   TransformArray* dstTransforms = static_cast<TransformArray*>(aDest.mU.mPtr);
-
-  // Before we assign, ensure we have sufficient memory
-  bool result = dstTransforms->SetCapacity(srcTransforms->Length());
-  NS_ENSURE_TRUE(result,NS_ERROR_OUT_OF_MEMORY);
-
-  *dstTransforms = *srcTransforms;
+  if (!dstTransforms->Assign(*srcTransforms, fallible)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
 
   return NS_OK;
 }
@@ -117,7 +115,7 @@ SVGTransformListSMILType::Add(nsSMILValue& aDest,
   const SVGTransformSMILData& srcTransform = srcTransforms[0];
   if (dstTransforms.IsEmpty()) {
     SVGTransformSMILData* result = dstTransforms.AppendElement(
-      SVGTransformSMILData(srcTransform.mTransformType));
+      SVGTransformSMILData(srcTransform.mTransformType), fallible);
     NS_ENSURE_TRUE(result,NS_ERROR_OUT_OF_MEMORY);
   }
   SVGTransformSMILData& dstTransform = dstTransforms[0];
@@ -169,7 +167,8 @@ SVGTransformListSMILType::SandwichAdd(nsSMILValue& aDest,
 
   // Stick the src on the end of the array
   const SVGTransformSMILData& srcTransform = srcTransforms[0];
-  SVGTransformSMILData* result = dstTransforms.AppendElement(srcTransform);
+  SVGTransformSMILData* result =
+    dstTransforms.AppendElement(srcTransform, fallible);
   NS_ENSURE_TRUE(result,NS_ERROR_OUT_OF_MEMORY);
 
   return NS_OK;
@@ -304,7 +303,7 @@ SVGTransformListSMILType::Interpolate(const nsSMILValue& aStartVal,
 
   // Assign the result
   SVGTransformSMILData* transform =
-    dstTransforms.AppendElement(resultTransform);
+    dstTransforms.AppendElement(resultTransform, fallible);
   NS_ENSURE_TRUE(transform,NS_ERROR_OUT_OF_MEMORY);
 
   return NS_OK;
@@ -322,7 +321,7 @@ SVGTransformListSMILType::AppendTransform(
   NS_PRECONDITION(aValue.mType == Singleton(), "Unexpected SMIL value type");
 
   TransformArray& transforms = *static_cast<TransformArray*>(aValue.mU.mPtr);
-  return transforms.AppendElement(aTransform) ?
+  return transforms.AppendElement(aTransform, fallible) ?
     NS_OK : NS_ERROR_OUT_OF_MEMORY;
 }
 
@@ -335,13 +334,14 @@ SVGTransformListSMILType::AppendTransforms(const SVGTransformList& aList,
 
   TransformArray& transforms = *static_cast<TransformArray*>(aValue.mU.mPtr);
 
-  if (!transforms.SetCapacity(transforms.Length() + aList.Length()))
+  if (!transforms.SetCapacity(transforms.Length() + aList.Length(), fallible))
     return false;
 
   for (uint32_t i = 0; i < aList.Length(); ++i) {
     // No need to check the return value below since we have already allocated
     // the necessary space
-    transforms.AppendElement(SVGTransformSMILData(aList[i]));
+    MOZ_ALWAYS_TRUE(transforms.AppendElement(SVGTransformSMILData(aList[i]),
+                                             fallible));
   }
   return true;
 }
@@ -357,13 +357,13 @@ SVGTransformListSMILType::GetTransforms(const nsSMILValue& aValue,
     *static_cast<const TransformArray*>(aValue.mU.mPtr);
 
   aTransforms.Clear();
-  if (!aTransforms.SetCapacity(smilTransforms.Length()))
+  if (!aTransforms.SetCapacity(smilTransforms.Length(), fallible))
       return false;
 
   for (uint32_t i = 0; i < smilTransforms.Length(); ++i) {
     // No need to check the return value below since we have already allocated
     // the necessary space
-    aTransforms.AppendElement(smilTransforms[i].ToSVGTransform());
+    aTransforms.AppendElement(smilTransforms[i].ToSVGTransform(), fallible);
   }
   return true;
 }

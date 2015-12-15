@@ -5,18 +5,18 @@
 // Each test will wait for a write to the Session Store
 // before executing.
 
-let OS = Cu.import("resource://gre/modules/osfile.jsm", {}).OS;
-let {File, Constants, Path} = OS;
+var OS = Cu.import("resource://gre/modules/osfile.jsm", {}).OS;
+var {File, Constants, Path} = OS;
 
 const PREF_SS_INTERVAL = "browser.sessionstore.interval";
 const Paths = SessionFile.Paths;
 
 // A text decoder.
-let gDecoder = new TextDecoder();
+var gDecoder = new TextDecoder();
 // Global variables that contain sessionstore.js and sessionstore.bak data for
 // comparison between tests.
-let gSSData;
-let gSSBakData;
+var gSSData;
+var gSSBakData;
 
 function promiseRead(path) {
   return File.read(path, {encoding: "utf-8"});
@@ -30,7 +30,6 @@ add_task(function* init() {
 });
 
 add_task(function* test_creation() {
-
   let OLD_BACKUP = Path.join(Constants.Path.profileDir, "sessionstore.bak");
   let OLD_UPGRADE_BACKUP = Path.join(Constants.Path.profileDir, "sessionstore.bak-0000000");
 
@@ -51,7 +50,7 @@ add_task(function* test_creation() {
 
   info("Testing situation after a single write");
   yield promiseBrowserLoaded(tab.linkedBrowser);
-  TabState.flush(tab.linkedBrowser);
+  yield TabStateFlusher.flush(tab.linkedBrowser);
   yield SessionSaver.run();
 
   ok((yield File.exists(Paths.recovery)), "After write, recovery sessionstore file exists again");
@@ -63,7 +62,7 @@ add_task(function* test_creation() {
   let URL2 = URL_BASE + "?second_write";
   tab.linkedBrowser.loadURI(URL2);
   yield promiseBrowserLoaded(tab.linkedBrowser);
-  TabState.flush(tab.linkedBrowser);
+  yield TabStateFlusher.flush(tab.linkedBrowser);
   yield SessionSaver.run();
 
   ok((yield File.exists(Paths.recovery)), "After second write, recovery sessionstore file still exists");
@@ -85,12 +84,12 @@ add_task(function* test_creation() {
   yield SessionFile.wipe();
 });
 
-let promiseSource = Task.async(function*(name) {
+var promiseSource = Task.async(function*(name) {
   let URL = "http://example.com/?atomic_backup_test_recovery=" + Math.random() + "&name=" + name;
   let tab = gBrowser.addTab(URL);
 
   yield promiseBrowserLoaded(tab.linkedBrowser);
-  TabState.flush(tab.linkedBrowser);
+  yield TabStateFlusher.flush(tab.linkedBrowser);
   yield SessionSaver.run();
   gBrowser.removeTab(tab);
 
@@ -115,6 +114,27 @@ add_task(function* test_recovery() {
   yield File.writeAtomic(Paths.recoveryBackup, SOURCE);
   yield File.writeAtomic(Paths.recovery, "<Invalid JSON>");
   is((yield SessionFile.read()).source, SOURCE, "Recovered the correct source from the recovery file");
+  yield SessionFile.wipe();
+});
+
+add_task(function* test_recovery_inaccessible() {
+  // Can't do chmod() on non-UNIX platforms, we need that for this test.
+  if (AppConstants.platform != "macosx" && AppConstants.platform != "linux") {
+    return;
+  }
+
+  info("Making recovery file inaccessible, attempting to recover from recovery backup");
+  let SOURCE_RECOVERY = yield promiseSource("Paths.recovery");
+  let SOURCE = yield promiseSource("Paths.recoveryBackup");
+  yield File.makeDir(Paths.backups);
+  yield File.writeAtomic(Paths.recoveryBackup, SOURCE);
+
+  // Write a valid recovery file but make it inaccessible.
+  yield File.writeAtomic(Paths.recovery, SOURCE_RECOVERY);
+  yield File.setPermissions(Paths.recovery, { unixMode: 0 });
+
+  is((yield SessionFile.read()).source, SOURCE, "Recovered the correct source from the recovery file");
+  yield File.setPermissions(Paths.recovery, { unixMode: 0644 });
 });
 
 add_task(function* test_clean() {

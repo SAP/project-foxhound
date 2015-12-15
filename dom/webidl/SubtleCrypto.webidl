@@ -100,6 +100,10 @@ dictionary EcdsaParams : Algorithm {
   required AlgorithmIdentifier hash;
 };
 
+dictionary EcKeyImportParams : Algorithm {
+  NamedCurve namedCurve;
+};
+
 /***** JWK *****/
 
 dictionary RsaOtherPrimesInfo {
@@ -138,7 +142,6 @@ dictionary JsonWebKey {
 
 /***** The Main API *****/
 
-[Pref="dom.webcrypto.enabled"]
 interface CryptoKey {
   readonly attribute KeyType type;
   readonly attribute boolean extractable;
@@ -155,7 +158,6 @@ typedef DOMString KeyFormat;
 typedef (ArrayBufferView or ArrayBuffer) CryptoOperationData;
 typedef (object or DOMString) AlgorithmIdentifier;
 
-[Pref="dom.webcrypto.enabled"]
 interface SubtleCrypto {
   [Throws]
   Promise<any> encrypt(AlgorithmIdentifier algorithm,

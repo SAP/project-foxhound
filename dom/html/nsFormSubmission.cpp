@@ -1,6 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -18,7 +18,6 @@
 #include "nsAttrValueInlines.h"
 #include "nsISaveAsCharset.h"
 #include "nsIFile.h"
-#include "nsIDOMFile.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsStringStream.h"
 #include "nsIURI.h"
@@ -38,6 +37,7 @@
 #include "nsContentUtils.h"
 
 #include "mozilla/dom/EncodingUtils.h"
+#include "mozilla/dom/File.h"
 
 using namespace mozilla;
 using mozilla::dom::EncodingUtils;
@@ -76,19 +76,19 @@ public:
   }
 
   virtual nsresult AddNameValuePair(const nsAString& aName,
-                                    const nsAString& aValue);
+                                    const nsAString& aValue) override;
   virtual nsresult AddNameFilePair(const nsAString& aName,
-                                   nsIDOMBlob* aBlob,
-                                   const nsString& aFilename);
+                                   File* aFile) override;
   virtual nsresult GetEncodedSubmission(nsIURI* aURI,
-                                        nsIInputStream** aPostDataStream);
+                                        nsIInputStream** aPostDataStream)
+                                                                       override;
 
-  virtual bool SupportsIsindexSubmission()
+  virtual bool SupportsIsindexSubmission() override
   {
     return true;
   }
 
-  virtual nsresult AddIsindex(const nsAString& aValue);
+  virtual nsresult AddIsindex(const nsAString& aValue) override;
 
 protected:
 
@@ -165,8 +165,7 @@ nsFSURLEncoded::AddIsindex(const nsAString& aValue)
 
 nsresult
 nsFSURLEncoded::AddNameFilePair(const nsAString& aName,
-                                nsIDOMBlob* aBlob,
-                                const nsString& aFilename)
+                                File* aFile)
 {
   if (!mWarnedFileControl) {
     SendJSWarning(mDocument, "ForgotFileEnctypeWarning", nullptr, 0);
@@ -174,9 +173,8 @@ nsFSURLEncoded::AddNameFilePair(const nsAString& aName,
   }
 
   nsAutoString filename;
-  nsCOMPtr<nsIDOMFile> file = do_QueryInterface(aBlob);
-  if (file) {
-    file->GetName(filename);
+  if (aFile) {
+    aFile->GetName(filename);
   }
 
   return AddNameValuePair(aName, filename);
@@ -362,7 +360,7 @@ nsFSURLEncoded::URLEncode(const nsAString& aStr, nsCString& aEncoded)
 
   nsAutoCString encodedBuf;
   nsresult rv = EncodeVal(nsDependentString(convertedBuf), encodedBuf, false);
-  nsMemory::Free(convertedBuf);
+  free(convertedBuf);
   NS_ENSURE_SUCCESS(rv, rv);
 
   char* escapedBuf = nsEscape(encodedBuf.get(), url_XPAlphas);
@@ -441,8 +439,7 @@ nsFSMultipartFormData::AddNameValuePair(const nsAString& aName,
 
 nsresult
 nsFSMultipartFormData::AddNameFilePair(const nsAString& aName,
-                                       nsIDOMBlob* aBlob,
-                                       const nsString& aFilename)
+                                       File* aFile)
 {
   // Encode the control name
   nsAutoCString nameStr;
@@ -451,40 +448,29 @@ nsFSMultipartFormData::AddNameFilePair(const nsAString& aName,
 
   nsCString filename, contentType;
   nsCOMPtr<nsIInputStream> fileStream;
-  if (aBlob) {
-    // We prefer the explicitly passed filename
-    if (!aFilename.IsVoid()) {
-      rv = EncodeVal(aFilename, filename, true);
-      NS_ENSURE_SUCCESS(rv, rv);
-    } else {
-      // Get and encode the filename
-      nsAutoString filename16;
-      nsCOMPtr<nsIDOMFile> file = do_QueryInterface(aBlob);
-      if (file) {
-        rv = file->GetName(filename16);
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
+  if (aFile) {
+    nsAutoString filename16;
+    aFile->GetName(filename16);
 
-      if (filename16.IsEmpty()) {
-        filename16.AssignLiteral("blob");
-      } else {
-        nsAutoString filepath16;
-        rv = file->GetPath(filepath16);
-        NS_ENSURE_SUCCESS(rv, rv);
-        if (!filepath16.IsEmpty()) {
-          // File.path includes trailing "/"
-          filename16 = filepath16 + filename16;
-        }
-      }
-
-      rv = EncodeVal(filename16, filename, true);
-      NS_ENSURE_SUCCESS(rv, rv);
+    ErrorResult error;
+    nsAutoString filepath16;
+    aFile->GetPath(filepath16, error);
+    if (NS_WARN_IF(error.Failed())) {
+      return error.StealNSResult();
     }
+
+    if (!filepath16.IsEmpty()) {
+      // File.path includes trailing "/"
+      filename16 = filepath16 + filename16;
+    }
+
+    rv = EncodeVal(filename16, filename, true);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     // Get content type
     nsAutoString contentType16;
-    rv = aBlob->GetType(contentType16);
-    if (NS_FAILED(rv) || contentType16.IsEmpty()) {
+    aFile->GetType(contentType16);
+    if (contentType16.IsEmpty()) {
       contentType16.AssignLiteral("application/octet-stream");
     }
     contentType.Adopt(nsLinebreakConverter::
@@ -493,8 +479,11 @@ nsFSMultipartFormData::AddNameFilePair(const nsAString& aName,
                                         nsLinebreakConverter::eLinebreakSpace));
 
     // Get input stream
-    rv = aBlob->GetInternalStream(getter_AddRefs(fileStream));
-    NS_ENSURE_SUCCESS(rv, rv);
+    aFile->GetInternalStream(getter_AddRefs(fileStream), error);
+    if (NS_WARN_IF(error.Failed())) {
+      return error.StealNSResult();
+    }
+
     if (fileStream) {
       // Create buffered stream (for efficiency)
       nsCOMPtr<nsIInputStream> bufferedStream;
@@ -527,14 +516,19 @@ nsFSMultipartFormData::AddNameFilePair(const nsAString& aName,
 
   // We should not try to append an invalid stream. That will happen for example
   // if we try to update a file that actually do not exist.
-  uint64_t size;
-  if (fileStream && NS_SUCCEEDED(aBlob->GetSize(&size))) {
-    // We need to dump the data up to this point into the POST data stream here,
-    // since we're about to add the file input stream
-    AddPostDataStream();
+  if (fileStream) {
+    ErrorResult error;
+    uint64_t size = aFile->GetSize(error);
+    if (error.Failed()) {
+      error.SuppressException();
+    } else {
+      // We need to dump the data up to this point into the POST data stream
+      // here, since we're about to add the file input stream
+      AddPostDataStream();
 
-    mPostDataStream->AppendStream(fileStream);
-    mTotalLength += size;
+      mPostDataStream->AppendStream(fileStream);
+      mTotalLength += size;
+    }
   }
 
   // CRLF after file
@@ -596,12 +590,12 @@ public:
   }
 
   virtual nsresult AddNameValuePair(const nsAString& aName,
-                                    const nsAString& aValue);
+                                    const nsAString& aValue) override;
   virtual nsresult AddNameFilePair(const nsAString& aName,
-                                   nsIDOMBlob* aBlob,
-                                   const nsString& aFilename);
+                                   File* aFile) override;
   virtual nsresult GetEncodedSubmission(nsIURI* aURI,
-                                        nsIInputStream** aPostDataStream);
+                                        nsIInputStream** aPostDataStream)
+                                                                       override;
 
 private:
   nsString mBody;
@@ -622,13 +616,11 @@ nsFSTextPlain::AddNameValuePair(const nsAString& aName,
 
 nsresult
 nsFSTextPlain::AddNameFilePair(const nsAString& aName,
-                               nsIDOMBlob* aBlob,
-                               const nsString& aFilename)
+                               File* aFile)
 {
   nsAutoString filename;
-  nsCOMPtr<nsIDOMFile> file = do_QueryInterface(aBlob);
-  if (file) {
-    file->GetName(filename);
+  if (aFile) {
+    aFile->GetName(filename);
   }
 
   AddNameValuePair(aName, filename);

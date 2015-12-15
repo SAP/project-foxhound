@@ -36,6 +36,10 @@ assertEq(buf.byteLength, 0);
 buf = XF(buf, Math.pow(2,32) + 10);
 assertEq(buf.byteLength, 10);
 
+assertThrowsInstanceOf(()=>XF(buf, {valueOf() { neuter(buf, "change-data"); return 10; }}), TypeError);
+var buf = new ArrayBuffer(100);
+assertThrowsInstanceOf(()=>XF(buf, {valueOf() { ArrayBuffer.transfer(buf, 0); return 100; }}), TypeError);
+
 // on undefined second argument, stay the same size:
 var buf1 = new ArrayBuffer(0);
 var buf2 = XF(buf1);
@@ -54,6 +58,12 @@ var buf2 = XF(buf1, undefined);
 assertEq(buf1.byteLength, 0);
 assertEq(buf2.byteLength, 9);
 assertThrowsInstanceOf(()=>XF(buf1), TypeError);
+
+// cross-compartment wrapper
+var buf3 = newGlobal().eval("new ArrayBuffer(10)");
+var buf4 = XF(buf3, 20);
+assertEq(buf4.byteLength, 20);
+assertThrowsInstanceOf(()=>XF(buf3), TypeError);
 
 // test going to from various sizes
 function test(N1, N2) {

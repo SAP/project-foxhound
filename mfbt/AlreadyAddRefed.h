@@ -29,7 +29,7 @@ struct unused_t;
  * because of the sheer number of usages of already_AddRefed.
  */
 template<class T>
-struct already_AddRefed
+struct MOZ_MUST_USE MOZ_NON_AUTOABLE already_AddRefed
 {
   /*
    * We want to allow returning nullptr from functions returning
@@ -66,10 +66,17 @@ struct already_AddRefed
 
   explicit already_AddRefed(T* aRawPtr) : mRawPtr(aRawPtr) {}
 
-  // Disallowed. Use move semantics instead.
+  // Disallow copy constructor and copy assignment operator: move semantics used instead.
   already_AddRefed(const already_AddRefed<T>& aOther) = delete;
+  already_AddRefed<T>& operator=(const already_AddRefed<T>& aOther) = delete;
 
   already_AddRefed(already_AddRefed<T>&& aOther) : mRawPtr(aOther.take()) {}
+
+  already_AddRefed<T>& operator=(already_AddRefed<T>&& aOther)
+  {
+    mRawPtr = aOther.take();
+    return *this;
+  }
 
   /**
    * This helper is useful in cases like
@@ -89,7 +96,7 @@ struct already_AddRefed
    * Note that nsRefPtr is the XPCOM reference counting smart pointer class.
    */
   template <typename U>
-  already_AddRefed(already_AddRefed<U>&& aOther) : mRawPtr(aOther.take()) {}
+  MOZ_IMPLICIT already_AddRefed(already_AddRefed<U>&& aOther) : mRawPtr(aOther.take()) {}
 
   ~already_AddRefed() { MOZ_ASSERT(!mRawPtr); }
 

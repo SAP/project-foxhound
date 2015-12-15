@@ -8,13 +8,9 @@
 
 #include "nsContentUtils.h"
 #include "BackstagePass.h"
-#include "nsIProgrammingLanguage.h"
 #include "nsDOMClassInfo.h"
 #include "nsIPrincipal.h"
-
-#include "mozilla/dom/ResolveSystemBinding.h"
-
-using mozilla::dom::ResolveSystemBinding;
+#include "mozilla/dom/BindingUtils.h"
 
 NS_INTERFACE_MAP_BEGIN(BackstagePass)
   NS_INTERFACE_MAP_ENTRY(nsIGlobalObject)
@@ -69,25 +65,8 @@ BackstagePass::Resolve(nsIXPConnectWrappedNative* wrapper,
 {
     JS::RootedObject obj(cx, objArg);
     JS::RootedId id(cx, idArg);
-
-    bool resolved;
-    *_retval = !!JS_ResolveStandardClass(cx, obj, id, &resolved);
-    NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
-
-    if (resolved) {
-        *resolvedp = true;
-        return NS_OK;
-    }
-
-    *_retval = ResolveSystemBinding(cx, obj, id, &resolved);
-    NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
-
-    if (resolved) {
-        *resolvedp = true;
-        return NS_OK;
-    }
-
-    return NS_OK;
+    *_retval = mozilla::dom::SystemGlobalResolve(cx, obj, id, resolvedp);
+    return *_retval ? NS_OK : NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
@@ -95,15 +74,8 @@ BackstagePass::Enumerate(nsIXPConnectWrappedNative* wrapper, JSContext* cx,
                          JSObject* objArg, bool* _retval)
 {
     JS::RootedObject obj(cx, objArg);
-
-    *_retval = JS_EnumerateStandardClasses(cx, obj);
-    NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
-
-    bool ignored = false;
-    *_retval = ResolveSystemBinding(cx, obj, JSID_VOIDHANDLE, &ignored);
-    NS_ENSURE_TRUE(*_retval, NS_ERROR_FAILURE);
-
-    return NS_OK;
+    *_retval = mozilla::dom::SystemGlobalEnumerate(cx, obj);
+    return *_retval ? NS_OK : NS_ERROR_FAILURE;
 }
 
 /***************************************************************************/
@@ -115,7 +87,7 @@ BackstagePass::GetInterfaces(uint32_t* aCount, nsIID * **aArray)
     const uint32_t count = 2;
     *aCount = count;
     nsIID** array;
-    *aArray = array = static_cast<nsIID**>(nsMemory::Alloc(count * sizeof(nsIID*)));
+    *aArray = array = static_cast<nsIID**>(moz_xmalloc(count * sizeof(nsIID*)));
     if (!array)
         return NS_ERROR_OUT_OF_MEMORY;
 
@@ -135,24 +107,20 @@ BackstagePass::GetInterfaces(uint32_t* aCount, nsIID * **aArray)
     return NS_OK;
 oom:
     while (index)
-        nsMemory::Free(array[--index]);
-    nsMemory::Free(array);
+        free(array[--index]);
+    free(array);
     *aArray = nullptr;
     return NS_ERROR_OUT_OF_MEMORY;
 }
 
-/* nsISupports getHelperForLanguage (in uint32_t language); */
 NS_IMETHODIMP
-BackstagePass::GetHelperForLanguage(uint32_t language,
-                                    nsISupports** retval)
+BackstagePass::GetScriptableHelper(nsIXPCScriptable** retval)
 {
-    nsCOMPtr<nsISupports> supports =
-        do_QueryInterface(static_cast<nsIGlobalObject*>(this));
-    supports.forget(retval);
+    nsCOMPtr<nsIXPCScriptable> scriptable = this;
+    scriptable.forget(retval);
     return NS_OK;
 }
 
-/* readonly attribute string contractID; */
 NS_IMETHODIMP
 BackstagePass::GetContractID(char * *aContractID)
 {
@@ -160,7 +128,6 @@ BackstagePass::GetContractID(char * *aContractID)
     return NS_ERROR_NOT_AVAILABLE;
 }
 
-/* readonly attribute string classDescription; */
 NS_IMETHODIMP
 BackstagePass::GetClassDescription(char * *aClassDescription)
 {
@@ -169,7 +136,6 @@ BackstagePass::GetClassDescription(char * *aClassDescription)
     return *aClassDescription ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
 }
 
-/* readonly attribute nsCIDPtr classID; */
 NS_IMETHODIMP
 BackstagePass::GetClassID(nsCID * *aClassID)
 {
@@ -177,15 +143,6 @@ BackstagePass::GetClassID(nsCID * *aClassID)
     return NS_OK;
 }
 
-/* readonly attribute uint32_t implementationLanguage; */
-NS_IMETHODIMP
-BackstagePass::GetImplementationLanguage(uint32_t* aImplementationLanguage)
-{
-    *aImplementationLanguage = nsIProgrammingLanguage::CPLUSPLUS;
-    return NS_OK;
-}
-
-/* readonly attribute uint32_t flags; */
 NS_IMETHODIMP
 BackstagePass::GetFlags(uint32_t* aFlags)
 {
@@ -193,7 +150,6 @@ BackstagePass::GetFlags(uint32_t* aFlags)
     return NS_OK;
 }
 
-/* [notxpcom] readonly attribute nsCID classIDNoAlloc; */
 NS_IMETHODIMP
 BackstagePass::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc)
 {

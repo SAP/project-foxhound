@@ -140,8 +140,7 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
   if (!targetContent) {
     return NS_OK;
   }
-  if (targetContent->Tag() == nsGkAtoms::browser &&
-      targetContent->IsXUL() &&
+  if (targetContent->IsXULElement(nsGkAtoms::browser) &&
       EventStateManager::IsRemoteTarget(targetContent)) {
     return NS_OK;
   }
@@ -191,16 +190,19 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
   // to show, we know (guaranteed) that we're dealing with a menu or
   // submenu of an already-showing popup.  We don't need to do anything at all.
   if (!mIsContext) {
-    nsIAtom *tag = targetContent ? targetContent->Tag() : nullptr;
-    if (tag == nsGkAtoms::menu || tag == nsGkAtoms::menuitem)
+    if (targetContent &&
+        targetContent->IsAnyOfXULElements(nsGkAtoms::menu, nsGkAtoms::menuitem))
       return NS_OK;
   }
 
   if (mIsContext) {
 #ifndef NS_CONTEXT_MENU_IS_MOUSEUP
+    uint16_t inputSource = nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN;
+    mouseEvent->GetMozInputSource(&inputSource);
+    bool isTouch = inputSource == nsIDOMMouseEvent::MOZ_SOURCE_TOUCH;
     // If the context menu launches on mousedown,
     // we have to fire focus on the content we clicked on
-    FireFocusOnTargetContent(targetNode);
+    FireFocusOnTargetContent(targetNode, isTouch);
 #endif
   }
   else {
@@ -219,7 +221,7 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
 
 #ifndef NS_CONTEXT_MENU_IS_MOUSEUP
 nsresult
-nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode)
+nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode, bool aIsTouch)
 {
   nsresult rv;
   nsCOMPtr<nsIDOMDocument> domDoc;
@@ -265,8 +267,12 @@ nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode)
     nsIFocusManager* fm = nsFocusManager::GetFocusManager();
     if (fm) {
       if (element) {
-        fm->SetFocus(element, nsIFocusManager::FLAG_BYMOUSE |
-                              nsIFocusManager::FLAG_NOSCROLL);
+        uint32_t focusFlags = nsIFocusManager::FLAG_BYMOUSE |
+                              nsIFocusManager::FLAG_NOSCROLL;
+        if (aIsTouch) {
+          focusFlags |= nsIFocusManager::FLAG_BYTOUCH;
+        }
+        fm->SetFocus(element, focusFlags);
       } else if (!suppressBlur) {
         nsPIDOMWindow *window = doc->GetWindow();
         fm->ClearFocus(window);
@@ -307,7 +313,7 @@ GetImmediateChild(nsIContent* aContent, nsIAtom *aTag)
   for (nsIContent* child = aContent->GetFirstChild();
        child;
        child = child->GetNextSibling()) {
-    if (child->Tag() == aTag) {
+    if (child->IsXULElement(aTag)) {
       nsCOMPtr<nsIContent> ret = child;
       return ret.forget();
     }

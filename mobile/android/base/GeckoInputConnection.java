@@ -17,8 +17,8 @@ import org.mozilla.gecko.util.GamepadUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.ThreadUtils.AssertBehavior;
 
-import android.R;
 import android.content.Context;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -227,7 +227,6 @@ class GeckoInputConnection
     private final ExtractedText mUpdateExtract = new ExtractedText();
     private boolean mBatchSelectionChanged;
     private boolean mBatchTextChanged;
-    private long mLastRestartInputTime;
     private final InputConnection mKeyInputConnection;
 
     public static GeckoEditableListener create(View targetView,
@@ -250,7 +249,7 @@ class GeckoInputConnection
     @Override
     public synchronized boolean beginBatchEdit() {
         mBatchEditCount++;
-        mEditableClient.setUpdateGecko(false, false);
+        mEditableClient.setUpdateGecko(false);
         return true;
     }
 
@@ -259,10 +258,6 @@ class GeckoInputConnection
         if (mBatchEditCount > 0) {
             mBatchEditCount--;
             if (mBatchEditCount == 0) {
-                // Force Gecko update for cancelled auto-correction of single-
-                // character words to prevent character duplication. (bug 1133802)
-                boolean forceUpdate = !mBatchTextChanged && !mBatchSelectionChanged;
-
                 if (mBatchTextChanged) {
                     notifyTextChange();
                     mBatchTextChanged = false;
@@ -273,7 +268,7 @@ class GeckoInputConnection
                                            Selection.getSelectionEnd(editable));
                     mBatchSelectionChanged = false;
                 }
-                mEditableClient.setUpdateGecko(true, forceUpdate);
+                mEditableClient.setUpdateGecko(true);
             }
         } else {
             Log.w(LOGTAG, "endBatchEdit() called, but mBatchEditCount == 0?!");
@@ -296,10 +291,10 @@ class GeckoInputConnection
         int selEnd = Selection.getSelectionEnd(editable);
 
         switch (id) {
-            case R.id.selectAll:
+            case android.R.id.selectAll:
                 setSelection(0, editable.length());
                 break;
-            case R.id.cut:
+            case android.R.id.cut:
                 // If selection is empty, we'll select everything
                 if (selStart == selEnd) {
                     // Fill the clipboard
@@ -313,10 +308,10 @@ class GeckoInputConnection
                     editable.delete(selStart, selEnd);
                 }
                 break;
-            case R.id.paste:
+            case android.R.id.paste:
                 commitText(Clipboard.getText(), 1);
                 break;
-            case R.id.copy:
+            case android.R.id.copy:
                 // Copy the current selection or the empty string if nothing is selected.
                 String copiedText = selStart == selEnd ? "" :
                                     editable.toString().substring(
@@ -326,6 +321,29 @@ class GeckoInputConnection
                 break;
         }
         return true;
+    }
+
+    @Override
+    public boolean performPrivateCommand(final String action, final Bundle data) {
+        switch (action) {
+            case "process-gecko-events":
+                // Process all currently pending Gecko thread events before returning.
+
+                final Editable editable = getEditable();
+                if (editable == null) {
+                    return false;
+                }
+
+                // Removing an invalid span is essentially a no-op, but it does force the
+                // current thread to wait for the Gecko thread when we call length(), in order
+                // to process the removeSpan event. Once Gecko thread processes the removeSpan
+                // event, all previous events in the Gecko event queue would have been
+                // processed as well.
+                editable.removeSpan(null);
+                editable.length();
+                return true;
+        }
+        return false;
     }
 
     @Override
@@ -375,8 +393,26 @@ class GeckoInputConnection
         final InputMethodManager imm = getInputMethodManager();
         if (imm != null) {
             final View v = getView();
-            imm.showSoftInput(v, 0);
+
+            if (v.hasFocus() && !imm.isActive(v)) {
+                // Workaround: The view has focus but it is not the active view for the input method. (Bug 1211848)
+                refocusAndShowSoftInput(imm, v);
+            } else {
+                imm.showSoftInput(v, 0);
+            }
         }
+    }
+
+    private static void refocusAndShowSoftInput(final InputMethodManager imm, final View v) {
+        ThreadUtils.postToUiThread(new Runnable() {
+            @Override
+            public void run() {
+                v.clearFocus();
+                v.requestFocus();
+
+                imm.showSoftInput(v, 0);
+            }
+        });
     }
 
     private static void hideSoftInput() {
@@ -387,18 +423,7 @@ class GeckoInputConnection
         }
     }
 
-    private void tryRestartInput() {
-        // Coalesce restartInput calls because InputMethodManager.restartInput()
-        // is expensive and successive calls to it can lock up the keyboard
-        if (SystemClock.uptimeMillis() < mLastRestartInputTime + 200) {
-            return;
-        }
-        restartInput();
-    }
-
     private void restartInput() {
-
-        mLastRestartInputTime = SystemClock.uptimeMillis();
 
         final InputMethodManager imm = getInputMethodManager();
         if (imm == null) {
@@ -419,7 +444,11 @@ class GeckoInputConnection
             // reasonable, deterministic value
             notifySelectionChange(-1, -1);
         }
-        imm.restartInput(v);
+        try {
+            imm.restartInput(v);
+        } catch(RuntimeException e) {
+            Log.e(LOGTAG, "Error restarting input", e);
+        }
     }
 
     private void resetInputConnection() {
@@ -594,8 +623,6 @@ class GeckoInputConnection
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_URI;
         else if (mIMETypeHint.equalsIgnoreCase("email"))
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
-        else if (mIMETypeHint.equalsIgnoreCase("search"))
-            outAttrs.imeOptions = EditorInfo.IME_ACTION_SEARCH;
         else if (mIMETypeHint.equalsIgnoreCase("tel"))
             outAttrs.inputType = InputType.TYPE_CLASS_PHONE;
         else if (mIMETypeHint.equalsIgnoreCase("number") ||
@@ -640,7 +667,8 @@ class GeckoInputConnection
             outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE;
         else if (mIMEActionHint.equalsIgnoreCase("next"))
             outAttrs.imeOptions = EditorInfo.IME_ACTION_NEXT;
-        else if (mIMEActionHint.equalsIgnoreCase("search"))
+        else if (mIMEActionHint.equalsIgnoreCase("search") ||
+                 mIMETypeHint.equalsIgnoreCase("search"))
             outAttrs.imeOptions = EditorInfo.IME_ACTION_SEARCH;
         else if (mIMEActionHint.equalsIgnoreCase("send"))
             outAttrs.imeOptions = EditorInfo.IME_ACTION_SEND;
@@ -820,13 +848,14 @@ class GeckoInputConnection
             !shouldProcessKey(keyCode, event)) {
             return false;
         }
+        final int action = down ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP;
         event = translateKey(keyCode, event);
         keyCode = event.getKeyCode();
 
         View view = getView();
         if (view == null) {
             InputThreadUtils.sInstance.sendEventFromUiThread(ThreadUtils.getUiHandler(),
-                mEditableClient, GeckoEvent.createKeyEvent(event, 0));
+                mEditableClient, GeckoEvent.createKeyEvent(event, action, 0));
             return true;
         }
 
@@ -844,7 +873,7 @@ class GeckoInputConnection
             (down && !keyListener.onKeyDown(view, uiEditable, keyCode, event)) ||
             (!down && !keyListener.onKeyUp(view, uiEditable, keyCode, event))) {
             InputThreadUtils.sInstance.sendEventFromUiThread(uiHandler, mEditableClient,
-                GeckoEvent.createKeyEvent(event, TextKeyListener.getMetaState(uiEditable)));
+                GeckoEvent.createKeyEvent(event, action, TextKeyListener.getMetaState(uiEditable)));
             if (skip && down) {
                 // Usually, the down key listener call above adjusts meta states for us.
                 // However, if we skip that call above, we have to manually adjust meta
@@ -868,27 +897,43 @@ class GeckoInputConnection
         return processKey(keyCode, event, false);
     }
 
+    /**
+     * Get a key that represents a given character.
+     */
+    private KeyEvent getCharKeyEvent(final char c) {
+        final long time = SystemClock.uptimeMillis();
+        return new KeyEvent(time, time, KeyEvent.ACTION_MULTIPLE,
+                            KeyEvent.KEYCODE_UNKNOWN, /* repeat */ 0) {
+            @Override
+            public int getUnicodeChar() {
+                return c;
+            }
+
+            @Override
+            public int getUnicodeChar(int metaState) {
+                return c;
+            }
+        };
+    }
+
     @Override
     public boolean onKeyMultiple(int keyCode, int repeatCount, final KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_UNKNOWN) {
             // KEYCODE_UNKNOWN means the characters are in KeyEvent.getCharacters()
-            View view = getView();
-            if (view != null) {
-                InputThreadUtils.sInstance.runOnIcThread(
-                    view.getRootView().getHandler(), mEditableClient,
-                    new Runnable() {
-                        @Override public void run() {
-                            // Don't call GeckoInputConnection.commitText because it can
-                            // post a key event back to onKeyMultiple, causing a loop
-                            GeckoInputConnection.super.commitText(event.getCharacters(), 1);
-                        }
-                    });
+            final String str = event.getCharacters();
+            for (int i = 0; i < str.length(); i++) {
+                final KeyEvent charEvent = getCharKeyEvent(str.charAt(i));
+                if (!processKey(KeyEvent.KEYCODE_UNKNOWN, charEvent, /* down */ true) ||
+                    !processKey(KeyEvent.KEYCODE_UNKNOWN, charEvent, /* down */ false)) {
+                    return false;
+                }
             }
             return true;
         }
+
         while ((repeatCount--) != 0) {
-            if (!processKey(keyCode, event, true) ||
-                !processKey(keyCode, event, false)) {
+            if (!processKey(keyCode, event, /* down */ true) ||
+                !processKey(keyCode, event, /* down */ false)) {
                 return false;
             }
         }
@@ -919,17 +964,6 @@ class GeckoInputConnection
     @Override
     public void notifyIME(int type) {
         switch (type) {
-
-            case NOTIFY_IME_TO_CANCEL_COMPOSITION:
-                // Set composition to empty and end composition
-                setComposingText("", 0);
-                // Fall through
-
-            case NOTIFY_IME_TO_COMMIT_COMPOSITION:
-                // Commit and end composition
-                finishComposingText();
-                tryRestartInput();
-                break;
 
             case NOTIFY_IME_OF_FOCUS:
             case NOTIFY_IME_OF_BLUR:

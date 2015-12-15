@@ -6,15 +6,15 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyGetter(this, "DebuggerServer", function() {
-  Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
-  return DebuggerServer;
-});
-
 XPCOMUtils.defineLazyGetter(this, "devtools", function() {
   const { devtools } =
     Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
   return devtools;
+});
+
+XPCOMUtils.defineLazyGetter(this, "DebuggerServer", function() {
+  const { DebuggerServer } = devtools.require("devtools/server/main");
+  return DebuggerServer;
 });
 
 XPCOMUtils.defineLazyGetter(this, "B2GTabList", function() {
@@ -23,7 +23,12 @@ XPCOMUtils.defineLazyGetter(this, "B2GTabList", function() {
   return B2GTabList;
 });
 
-let RemoteDebugger = {
+// Load the discovery module eagerly, so that it can set a device name at
+// startup.  This does not cause discovery to start listening for packets, as
+// that only happens once DevTools is enabled.
+devtools.require("devtools/toolkit/discovery/discovery");
+
+var RemoteDebugger = {
   _listening: false,
 
   /**
@@ -59,7 +64,11 @@ let RemoteDebugger = {
       this._handleAllowResult = detail => {
         this._handleAllowResult = null;
         this._promptingForAllow = null;
-        if (detail.value) {
+        // Newer Gaia supplies |authResult|, which is one of the
+        // AuthenticationResult values.
+        if (detail.authResult) {
+          resolve(detail.authResult);
+        } else if (detail.value) {
           resolve(DebuggerServer.AuthenticationResult.ALLOW);
         } else {
           resolve(DebuggerServer.AuthenticationResult.DENY);
@@ -178,6 +187,11 @@ let RemoteDebugger = {
     let restrictPrivileges = Services.prefs.getBoolPref("devtools.debugger.forbid-certified-apps");
     DebuggerServer.addBrowserActors("navigator:browser", restrictPrivileges);
 
+    // Allow debugging of chrome for any process
+    if (!restrictPrivileges) {
+      DebuggerServer.allowChromeProcess = true;
+    }
+
     /**
      * Construct a root actor appropriate for use in a server running in B2G.
      * The returned root actor respects the factories registered with
@@ -218,7 +232,7 @@ RemoteDebugger.allowConnection =
 RemoteDebugger.receiveOOB =
   RemoteDebugger.receiveOOB.bind(RemoteDebugger);
 
-let USBRemoteDebugger = {
+var USBRemoteDebugger = {
 
   get isDebugging() {
     if (!this._listener) {
@@ -272,7 +286,7 @@ let USBRemoteDebugger = {
 
 };
 
-let WiFiRemoteDebugger = {
+var WiFiRemoteDebugger = {
 
   start: function() {
     if (this._listener) {

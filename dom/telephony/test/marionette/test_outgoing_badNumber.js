@@ -5,7 +5,7 @@ MARIONETTE_TIMEOUT = 60000;
 MARIONETTE_HEAD_JS = 'head.js';
 
 const number = "****5555552368****";
-let outCall;
+var outCall;
 
 function testDialOutInvalidNumber() {
   log("Make an outCall call to an invalid number.");
@@ -16,7 +16,7 @@ function testDialOutInvalidNumber() {
   return telephony.dial(number).then(call => {
     outCall = call;
     ok(outCall);
-    is(outCall.id.number, number);
+    is(outCall.id.number, "");  // Emulator returns empty number for this call.
     is(outCall.state, "dialing");
 
     is(outCall, telephony.active);
@@ -27,6 +27,7 @@ function testDialOutInvalidNumber() {
       is(event.call, outCall);
       ok(event.call.error);
       is(event.call.error.name, "BadNumberError");
+      is(event.call.disconnectedReason, "BadNumber");
     })
     .then(() => gCheckAll(null, [], "", [], []));
   });

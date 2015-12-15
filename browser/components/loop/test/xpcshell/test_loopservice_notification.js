@@ -2,29 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 XPCOMUtils.defineLazyModuleGetter(this, "Chat",
                                   "resource:///modules/Chat.jsm");
 
-let openChatOrig = Chat.open;
+var openChatOrig = Chat.open;
 
 add_test(function test_openChatWindow_on_notification() {
-  Services.prefs.setCharPref("loop.seenToS", "unseen");
-
   mockPushHandler.registrationPushURL = kEndPointUrl;
 
-  MozLoopService.promiseRegisteredWithServers().then(() => {
+  MozLoopService.promiseRegisteredWithServers(LOOP_SESSION_TYPE.FXA).then(() => {
     let opened = false;
     Chat.open = function() {
       opened = true;
     };
 
-    mockPushHandler.notify(1, MozLoopService.channelIDs.callsGuest);
+    mockPushHandler.notify(1, MozLoopService.channelIDs.callsFxA);
 
-    waitForCondition(function() opened).then(() => {
+    waitForCondition(() => opened).then(() => {
       do_check_true(opened, "should open a chat window");
-
-      do_check_eq(Services.prefs.getCharPref("loop.seenToS"), "seen",
-                  "should set the pref to 'seen'");
 
       run_next_test();
     }, () => {
@@ -36,6 +33,8 @@ add_test(function test_openChatWindow_on_notification() {
 
 function run_test() {
   setupFakeLoopServer();
+
+  setupFakeFxAUserProfile();
 
   loopServer.registerPathHandler("/registration", (request, response) => {
     response.setStatusLine(null, 200, "OK");
@@ -52,9 +51,6 @@ function run_test() {
   do_register_cleanup(function() {
     // Revert original Chat.open implementation
     Chat.open = openChatOrig;
-
-    // clear test pref
-    Services.prefs.clearUserPref("loop.seenToS");
   });
 
   run_next_test();

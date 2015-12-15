@@ -112,13 +112,11 @@ ReleaseData(void* aData, uint32_t aFlags)
   if (aFlags & nsSubstring::F_SHARED) {
     nsStringBuffer::FromData(aData)->Release();
   } else if (aFlags & nsSubstring::F_OWNED) {
-    nsMemory::Free(aData);
+    free(aData);
     STRING_STAT_INCREMENT(AdoptFree);
-#ifdef NS_BUILD_REFCNT_LOGGING
     // Treat this as destruction of a "StringAdopt" object for leak
     // tracking purposes.
-    NS_LogDtor(aData, "StringAdopt", 1);
-#endif // NS_BUILD_REFCNT_LOGGING
+    MOZ_LOG_DTOR(aData, "StringAdopt", 1);
   }
   // otherwise, nothing to do.
 }
@@ -430,7 +428,7 @@ nsStringBuffer::SizeOfIncludingThisEvenIfShared(mozilla::MallocSizeOf aMallocSiz
 // Check that internal and external strings have the same size.
 // See https://bugzilla.mozilla.org/show_bug.cgi?id=430581
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "nsXPCOMStrings.h"
 
 static_assert(sizeof(nsStringContainer_base) == sizeof(nsSubstring),

@@ -48,7 +48,7 @@ var gShuffle = false;
 var gTotalChunks = 0;
 var gThisChunk = 0;
 var gContainingWindow = null;
-var gURLFilterRegex = null;
+var gURLFilterRegex = {};
 const FOCUS_FILTER_ALL_TESTS = "all";
 const FOCUS_FILTER_NEEDS_FOCUS_TESTS = "needs-focus";
 const FOCUS_FILTER_NON_NEEDS_FOCUS_TESTS = "non-needs-focus";
@@ -60,6 +60,7 @@ const BLANK_URL_FOR_CLEARING = "data:text/html;charset=UTF-8,%3C%21%2D%2DCLEAR%2
 var gBrowser;
 // Are we testing web content loaded in a separate process?
 var gBrowserIsRemote;           // bool
+var gB2GisMulet;                // bool
 // Are we using <iframe mozbrowser>?
 var gBrowserIsIframe;           // bool
 var gBrowserMessageManager;
@@ -68,6 +69,7 @@ var gCanvas1, gCanvas2;
 // RecordResult.
 var gCurrentCanvas = null;
 var gURLs;
+var gManifestsLoaded = {};
 // Map from URI spec to the number of times it remains to be used
 var gURIUseCounts;
 // Map from URI spec to the canvas rendered for that URI
@@ -112,6 +114,10 @@ var gExpectedCrashDumpFiles = [];
 var gUnexpectedCrashDumpFiles = { };
 var gCrashDumpDir;
 var gFailedNoPaint = false;
+var gFailedOpaqueLayer = false;
+var gFailedOpaqueLayerMessages = [];
+var gFailedAssignedLayer = false;
+var gFailedAssignedLayerMessages = [];
 
 // The enabled-state of the test-plugins, stored so they can be reset later
 var gTestPluginEnabledStates = null;
@@ -249,6 +255,12 @@ this.OnRefTestLoad = function OnRefTestLoad(win)
     }
 
     try {
+        gB2GisMulet = prefs.getBoolPref("b2g.is_mulet");
+    } catch (e) {
+        gB2GisMulet = false;
+    }
+
+    try {
       gBrowserIsIframe = prefs.getBoolPref("reftest.browser.iframe.enabled");
     } catch (e) {
       gBrowserIsIframe = false;
@@ -271,7 +283,6 @@ this.OnRefTestLoad = function OnRefTestLoad(win)
     gBrowser.setAttribute("id", "browser");
     gBrowser.setAttribute("type", "content-primary");
     gBrowser.setAttribute("remote", gBrowserIsRemote ? "true" : "false");
-    gBrowser.setAttribute("mozasyncpanzoom", "true");
     // Make sure the browser element is exactly 800x1000, no matter
     // what size our window is
     gBrowser.setAttribute("style", "padding: 0px; margin: 0px; border:none; min-width: 800px; min-height: 1000px; max-width: 800px; max-height: 1000px");
@@ -380,10 +391,6 @@ function InitAndStartRefTests()
     }
 
     try {
-        gURLFilterRegex = new RegExp(prefs.getCharPref("reftest.filter"));
-    } catch(e) {}
-
-    try {
         gFocusFilterMode = prefs.getCharPref("reftest.focusFilterMode");
     } catch(e) {}
 
@@ -439,8 +446,7 @@ function Shuffle(array)
 
 function StartTests()
 {
-    var uri;
-#if BOOTSTRAP
+    var manifests;
     /* These prefs are optional, so we don't need to spit an error to the log */
     try {
         var prefs = Components.classes["@mozilla.org/preferences-service;1"].
@@ -467,41 +473,32 @@ function StartTests()
         gRunSlowTests = false;
     }
 
-    try {
-        uri = prefs.getCharPref("reftest.uri");
-    } catch(e) {
-        uri = "";
-    }
-
-    if (uri == "") {
-        gDumpLog("REFTEST TEST-UNEXPECTED-FAIL | | Unable to find reftest.uri pref.  Please ensure your profile is setup properly\n");
-        DoneTests();
-    }
-#else
-    try {
-        // Need to read the manifest once we have gHttpServerPort..
-        var args = window.arguments[0].wrappedJSObject;
-
-        if ("nocache" in args && args["nocache"])
-            gNoCanvasCache = true;
-
-        if ("skipslowtests" in args && args.skipslowtests)
-            gRunSlowTests = false;
-
-        uri = args.uri;
-    } catch (e) {
-        ++gTestResults.Exception;
-        gDumpLog("REFTEST TEST-UNEXPECTED-FAIL | | EXCEPTION: " + ex + "\n");
-        DoneTests();
-    }
-#endif
-
     if (gShuffle) {
         gNoCanvasCache = true;
     }
 
+    gURLs = [];
+
     try {
-        ReadTopManifest(uri);
+        var manifests = JSON.parse(prefs.getCharPref("reftest.manifests"));
+        gURLFilterRegex = manifests[null];
+    } catch(e) {
+        gDumpLog("REFTEST TEST-UNEXPECTED-FAIL | | Unable to find reftest.manifests pref.  Please ensure your profile is setup properly\n");
+        DoneTests();
+    }
+
+    try {
+        var globalFilter = manifests.hasOwnProperty("") ? new RegExp(manifests[""]) : null;
+        var manifestURLs = Object.keys(manifests);
+
+        // Ensure we read manifests from higher up the directory tree first so that we
+        // process includes before reading the included manifest again
+        manifestURLs.sort(function(a,b) {return a.length - b.length})
+        manifestURLs.forEach(function(manifestURL) {
+            gDumpLog("Readings manifest" + manifestURL + "\n");
+            var filter = manifests[manifestURL] ? new RegExp(manifests[manifestURL]) : null;
+            ReadTopManifest(manifestURL, [globalFilter, filter, false]);
+        });
         BuildUseCounts();
 
         // Filter tests which will be skipped to get a more even distribution when chunking
@@ -636,9 +633,13 @@ function BuildConditionSandbox(aURL) {
     sandbox.B2GDT = appInfo.name.toLowerCase() == "b2g" && !sandbox.B2G;
     sandbox.Android = xr.OS == "Android" && !sandbox.B2G;
     sandbox.cocoaWidget = xr.widgetToolkit == "cocoa";
-    sandbox.gtk2Widget = xr.widgetToolkit == "gtk2";
+    sandbox.gtkWidget = xr.widgetToolkit == "gtk2"
+                        || xr.widgetToolkit == "gtk3";
     sandbox.qtWidget = xr.widgetToolkit == "qt";
     sandbox.winWidget = xr.widgetToolkit == "windows";
+
+    // Scrollbars that are semi-transparent. See bug 1169666.
+    sandbox.transparentScrollbars = xr.widgetToolkit == "gtk3";
 
     if (sandbox.Android) {
         var sysInfo = CC["@mozilla.org/system-info;1"].getService(CI.nsIPropertyBag2);
@@ -697,45 +698,20 @@ function BuildConditionSandbox(aURL) {
         getIntPref:  function(p) { return prefs.getIntPref(p); }
     }, sandbox, { cloneFunctions: true });
 
-    sandbox.testPluginIsOOP = function () {
-        var prefservice = Components.classes["@mozilla.org/preferences-service;1"]
-                                    .getService(CI.nsIPrefBranch);
-
-        var testPluginIsOOP = false;
-        if (navigator.platform.indexOf("Mac") == 0) {
-            var xulRuntime = Components.classes["@mozilla.org/xre/app-info;1"]
-                                       .getService(CI.nsIXULAppInfo)
-                                       .QueryInterface(CI.nsIXULRuntime);
-            if (xulRuntime.XPCOMABI.match(/x86-/)) {
-                try {
-                    testPluginIsOOP = prefservice.getBoolPref("dom.ipc.plugins.enabled.i386.test.plugin");
-                } catch (e) {
-                    testPluginIsOOP = prefservice.getBoolPref("dom.ipc.plugins.enabled.i386");
-                }
-            }
-            else if (xulRuntime.XPCOMABI.match(/x86_64-/)) {
-                try {
-                    testPluginIsOOP = prefservice.getBoolPref("dom.ipc.plugins.enabled.x86_64.test.plugin");
-                } catch (e) {
-                    testPluginIsOOP = prefservice.getBoolPref("dom.ipc.plugins.enabled.x86_64");
-                }
-            }
-        }
-        else {
-            testPluginIsOOP = prefservice.getBoolPref("dom.ipc.plugins.enabled");
-        }
-
-        return testPluginIsOOP;
-    };
-
     // Tests shouldn't care about this except for when they need to
     // crash the content process
     sandbox.browserIsRemote = gBrowserIsRemote;
+    sandbox.Mulet = gB2GisMulet;
 
     try {
-        sandbox.asyncPanZoom = prefs.getBoolPref("layers.async-pan-zoom.enabled");
+        sandbox.asyncPan = gContainingWindow.document.docShell.asyncPanZoomEnabled;
     } catch (e) {
-        sandbox.asyncPanZoom = false;
+        sandbox.asyncPan = false;
+    }
+    try {
+        sandbox.asyncZoom = sandbox.asyncPan && prefs.getBoolPref("apz.allow_zooming");
+    } catch (e) {
+        sandbox.asyncZoom = false;
     }
 
     if (!gDumpedConditionSandbox) {
@@ -743,6 +719,9 @@ function BuildConditionSandbox(aURL) {
         dump("REFTEST INFO | " + JSON.stringify(CU.waiveXrays(sandbox)) + " \n");
         gDumpedConditionSandbox = true;
     }
+
+    // Graphics features
+    sandbox.usesRepeatResampling = sandbox.d2d;
     return sandbox;
 }
 
@@ -772,18 +751,25 @@ function AddPrefSettings(aWhere, aPrefName, aPrefValExpression, aSandbox, aTestP
     return true;
 }
 
-function ReadTopManifest(aFileURL)
+function ReadTopManifest(aFileURL, aFilter)
 {
-    gURLs = new Array();
     var url = gIOService.newURI(aFileURL, null, null);
     if (!url)
         throw "Expected a file or http URL for the manifest.";
-    ReadManifest(url, EXPECTED_PASS);
+    ReadManifest(url, EXPECTED_PASS, aFilter);
 }
 
-function AddTestItem(aTest)
+function AddTestItem(aTest, aFilter)
 {
-    if (gURLFilterRegex && !gURLFilterRegex.test(aTest.url1.spec))
+    if (!aFilter)
+        aFilter = [null, [], false];
+
+    globalFilter = aFilter[0];
+    manifestFilter = aFilter[1];
+    invertManifest = aFilter[2];
+    if ((globalFilter && !globalFilter.test(aTest.url1.spec)) ||
+        (manifestFilter &&
+         !(invertManifest ^ manifestFilter.test(aTest.url1.spec))))
         return;
     if (gFocusFilterMode == FOCUS_FILTER_NEEDS_FOCUS_TESTS &&
         !aTest.needsFocus)
@@ -796,8 +782,19 @@ function AddTestItem(aTest)
 
 // Note: If you materially change the reftest manifest parsing,
 // please keep the parser in print-manifest-dirs.py in sync.
-function ReadManifest(aURL, inherited_status)
+function ReadManifest(aURL, inherited_status, aFilter)
 {
+    // Ensure each manifest is only read once. This assumes that manifests that are
+    // included with an unusual inherited_status or filters will be read via their
+    // include before they are read directly in the case of a duplicate
+    if (gManifestsLoaded.hasOwnProperty(aURL.spec)) {
+        if (gManifestsLoaded[aURL.spec] === null)
+            return;
+        else
+            aFilter = [aFilter[0], aFilter[1], true];
+    }
+    gManifestsLoaded[aURL.spec] = aFilter[1];
+
     var secMan = CC[NS_SCRIPTSECURITYMANAGER_CONTRACTID]
                      .getService(CI.nsIScriptSecurityManager);
 
@@ -823,7 +820,7 @@ function ReadManifest(aURL, inherited_status)
     var lineNo = 0;
     var urlprefix = "";
     var defaultTestPrefSettings = [], defaultRefPrefSettings = [];
-    for each (var str in lines) {
+    for (var str of lines) {
         ++lineNo;
         if (str.charAt(0) == "#")
             continue; // entire line was a comment
@@ -870,8 +867,9 @@ function ReadManifest(aURL, inherited_status)
         var refPrefSettings = defaultRefPrefSettings.concat();
         var fuzzy_max_delta = 2;
         var fuzzy_max_pixels = 1;
+        var chaosMode = false;
 
-        while (items[0].match(/^(fails|needs-focus|random|skip|asserts|slow|require-or|silentfail|pref|test-pref|ref-pref|fuzzy)/)) {
+        while (items[0].match(/^(fails|needs-focus|random|skip|asserts|slow|require-or|silentfail|pref|test-pref|ref-pref|fuzzy|chaos-mode)/)) {
             var item = items.shift();
             var stat;
             var cond;
@@ -910,7 +908,7 @@ function ReadManifest(aURL, inherited_status)
                 var [precondition_str, fallback_action] = args;
                 var preconditions = precondition_str.split(/&&/);
                 cond = false;
-                for each (var precondition in preconditions) {
+                for (var precondition of preconditions) {
                     if (precondition === "debugMode") {
                         // Currently unimplemented. Requires asynchronous
                         // JSD call + getting an event while no JS is running
@@ -950,6 +948,9 @@ function ReadManifest(aURL, inherited_status)
                 fuzzy_max_delta = Number(m[2]);
                 fuzzy_max_pixels = Number(m[3]);
               }
+            } else if (item == "chaos-mode") {
+                cond = false;
+                chaosMode = true;
             } else {
                 throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unexpected item " + item;
             }
@@ -1009,7 +1010,7 @@ function ReadManifest(aURL, inherited_status)
             var incURI = gIOService.newURI(items[1], null, listURL);
             secMan.checkLoadURIWithPrincipal(principal, incURI,
                                              CI.nsIScriptSecurityManager.DISALLOW_SCRIPT);
-            ReadManifest(incURI, expected_status);
+            ReadManifest(incURI, expected_status, aFilter);
         } else if (items[0] == TYPE_LOAD) {
             if (items.length != 2)
                 throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to load";
@@ -1038,7 +1039,8 @@ function ReadManifest(aURL, inherited_status)
                           fuzzyMaxDelta: fuzzy_max_delta,
                           fuzzyMaxPixels: fuzzy_max_pixels,
                           url1: testURI,
-                          url2: null });
+                          url2: null,
+                          chaosMode: chaosMode }, aFilter);
         } else if (items[0] == TYPE_SCRIPT) {
             if (items.length != 2)
                 throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to script";
@@ -1064,7 +1066,8 @@ function ReadManifest(aURL, inherited_status)
                           fuzzyMaxDelta: fuzzy_max_delta,
                           fuzzyMaxPixels: fuzzy_max_pixels,
                           url1: testURI,
-                          url2: null });
+                          url2: null,
+                          chaosMode: chaosMode }, aFilter);
         } else if (items[0] == TYPE_REFTEST_EQUAL || items[0] == TYPE_REFTEST_NOTEQUAL) {
             if (items.length != 3)
                 throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": incorrect number of arguments to " + items[0];
@@ -1093,7 +1096,8 @@ function ReadManifest(aURL, inherited_status)
                           fuzzyMaxDelta: fuzzy_max_delta,
                           fuzzyMaxPixels: fuzzy_max_pixels,
                           url1: testURI,
-                          url2: refURI });
+                          url2: refURI,
+                          chaosMode: chaosMode }, aFilter);
         } else {
             throw "Error in manifest file " + aURL.spec + " line " + lineNo + ": unknown test type " + items[0];
         }
@@ -1154,6 +1158,9 @@ function ServeFiles(manifestPrincipal, depth, aURL, files)
 
     var testbase = gIOService.newURI("http://localhost:" + gHttpServerPort +
                                      path + dirPath, null, null);
+
+    // Give the testbase URI access to XUL and XBL
+    Services.perms.add(testbase, "allowXULXBL", Services.perms.ALLOW_ACTION);
 
     function FileToURI(file)
     {
@@ -1227,6 +1234,9 @@ function StartCurrentTest()
     }
     else {
         gDumpLog("REFTEST TEST-START | " + gURLs[0].prettyPath + "\n");
+        if (gURLs[0].chaosMode) {
+            gWindowUtils.enterChaosMode();
+        }
         if (!gURLs[0].needsFocus) {
             Blur();
         }
@@ -1651,20 +1661,34 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
                 gDumpLog("REFTEST fuzzy match\n");
             }
 
+            var failedExtraCheck = gFailedNoPaint || gFailedOpaqueLayer || gFailedAssignedLayer;
+
             // whether the comparison result matches what is in the manifest
-            var test_passed = (equal == (gURLs[0].type == TYPE_REFTEST_EQUAL)) && !gFailedNoPaint;
+            var test_passed = (equal == (gURLs[0].type == TYPE_REFTEST_EQUAL)) && !failedExtraCheck;
 
             output = outputs[expected][test_passed];
 
             ++gTestResults[output.n];
 
-            // It's possible that we failed both reftest-no-paint and the normal comparison, but we don't
-            // have a way to annotate these separately, so just print an error for the no-paint failure.
-            if (gFailedNoPaint) {
+            // It's possible that we failed both an "extra check" and the normal comparison, but we don't
+            // have a way to annotate these separately, so just print an error for the extra check failures.
+            if (failedExtraCheck) {
+                var failures = [];
+                if (gFailedNoPaint) {
+                    failures.push("failed reftest-no-paint");
+                }
+                // The gFailed*Messages arrays will contain messages from both the test and the reference.
+                if (gFailedOpaqueLayer) {
+                    failures.push("failed reftest-opaque-layer: " + gFailedOpaqueLayerMessages.join(", "));
+                }
+                if (gFailedAssignedLayer) {
+                    failures.push("failed reftest-assigned-layer: " + gFailedAssignedLayerMessages.join(", "));
+                }
+                var failureString = failures.join(", ");
                 if (expected == EXPECTED_FAIL) {
-                    gDumpLog("REFTEST TEST-KNOWN-FAIL | " + gURLs[0].prettyPath + " | failed reftest-no-paint\n");
+                    gDumpLog("REFTEST TEST-KNOWN-FAIL | " + gURLs[0].prettyPath + " | " + failureString + "\n");
                 } else {
-                    gDumpLog("REFTEST TEST-UNEXPECTED-FAIL | " + gURLs[0].prettyPath + " | failed reftest-no-paint\n");
+                    gDumpLog("REFTEST TEST-UNEXPECTED-FAIL | " + gURLs[0].prettyPath + " | " + failureString + "\n");
                 }
             } else {
                 var result = "REFTEST " + output.s + " | " +
@@ -1694,17 +1718,17 @@ function RecordResult(testRunTime, errorMsg, scriptResults)
                 }
 
                 gDumpLog(result);
+
+                if (gURLs[0].prefSettings1.length == 0) {
+                    UpdateCanvasCache(gURLs[0].url1, gCanvas1);
+                }
+                if (gURLs[0].prefSettings2.length == 0) {
+                    UpdateCanvasCache(gURLs[0].url2, gCanvas2);
+                }
             }
 
             if ((!test_passed && expected == EXPECTED_PASS) || (test_passed && expected == EXPECTED_FAIL)) {
                 FlushTestLog();
-            }
-
-            if (gURLs[0].prefSettings1.length == 0) {
-                UpdateCanvasCache(gURLs[0].url1, gCanvas1);
-            }
-            if (gURLs[0].prefSettings2.length == 0) {
-                UpdateCanvasCache(gURLs[0].url2, gCanvas2);
             }
 
             CleanUpCrashDumpFiles();
@@ -1732,7 +1756,7 @@ function LoadFailed(why)
 function RemoveExpectedCrashDumpFiles()
 {
     if (gExpectingProcessCrash) {
-        for each (let crashFilename in gExpectedCrashDumpFiles) {
+        for (let crashFilename of gExpectedCrashDumpFiles) {
             let file = gCrashDumpDir.clone();
             file.append(crashFilename);
             if (file.exists()) {
@@ -1788,6 +1812,10 @@ function FinishTestItem()
     // and tests will continue.
     SendClear();
     gFailedNoPaint = false;
+    gFailedOpaqueLayer = false;
+    gFailedOpaqueLayerMessages = [];
+    gFailedAssignedLayer = false;
+    gFailedAssignedLayerMessages = [];
 }
 
 function DoAssertionCheck(numAsserts)
@@ -1830,6 +1858,9 @@ function DoAssertionCheck(numAsserts)
         }
     }
 
+    if (gURLs[0].chaosMode) {
+        gWindowUtils.leaveChaosMode();
+    }
     gDumpLog("REFTEST TEST-END | " + gURLs[0].prettyPath + "\n");
 
     // And start the next test.
@@ -1888,6 +1919,14 @@ function RegisterMessageListenersAndLoadContentScript()
         function (m) { RecvFailedNoPaint(); }
     );
     gBrowserMessageManager.addMessageListener(
+        "reftest:FailedOpaqueLayer",
+        function (m) { RecvFailedOpaqueLayer(m.json.why); }
+    );
+    gBrowserMessageManager.addMessageListener(
+        "reftest:FailedAssignedLayer",
+        function (m) { RecvFailedAssignedLayer(m.json.why); }
+    );
+    gBrowserMessageManager.addMessageListener(
         "reftest:InitCanvasWithSnapshot",
         function (m) { return RecvInitCanvasWithSnapshot(); }
     );
@@ -1944,6 +1983,16 @@ function RecvFailedLoad(why)
 function RecvFailedNoPaint()
 {
     gFailedNoPaint = true;
+}
+
+function RecvFailedOpaqueLayer(why) {
+    gFailedOpaqueLayer = true;
+    gFailedOpaqueLayerMessages.push(why);
+}
+
+function RecvFailedAssignedLayer(why) {
+    gFailedAssignedLayer = true;
+    gFailedAssignedLayerMessages.push(why);
 }
 
 function RecvInitCanvasWithSnapshot()

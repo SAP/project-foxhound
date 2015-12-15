@@ -7,6 +7,7 @@
 #ifndef jsapi_tests_tests_h
 #define jsapi_tests_tests_h
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/TypeTraits.h"
 
 #include <errno.h>
@@ -181,7 +182,7 @@ class JSAPITest
             return false; \
     } while (false)
 
-    bool checkSame(jsval actualArg, jsval expectedArg,
+    bool checkSame(JS::Value actualArg, JS::Value expectedArg,
                    const char* actualExpr, const char* expectedExpr,
                    const char* filename, int lineno) {
         bool same;
@@ -229,7 +230,7 @@ class JSAPITest
             "global", JSCLASS_GLOBAL_FLAGS,
             nullptr, nullptr, nullptr, nullptr,
             nullptr, nullptr, nullptr, nullptr,
-            nullptr, nullptr, nullptr,
+            nullptr, nullptr, nullptr, nullptr,
             JS_GlobalObjectTraceHook
         };
         return &c;
@@ -237,7 +238,7 @@ class JSAPITest
 
   protected:
     static bool
-    print(JSContext* cx, unsigned argc, jsval* vp)
+    print(JSContext* cx, unsigned argc, JS::Value* vp)
     {
         JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
 
@@ -284,7 +285,6 @@ class JSAPITest
             return nullptr;
         JS_SetErrorReporter(rt, &reportError);
         setNativeStackQuota(rt);
-        JS::RuntimeOptionsRef(rt).setVarObjFix(true);
         return rt;
     }
 
@@ -316,7 +316,7 @@ class JSAPITest
 #define BEGIN_TEST(testname)                                            \
     class cls_##testname : public JSAPITest {                           \
       public:                                                           \
-        virtual const char * name() override { return #testname; }  \
+        virtual const char * name() override { return #testname; }      \
         virtual bool run(JS::HandleObject global) override
 
 #define END_TEST(testname)                                              \
@@ -334,7 +334,7 @@ class JSAPITest
 #define BEGIN_FIXTURE_TEST(fixture, testname)                           \
     class cls_##testname : public fixture {                             \
       public:                                                           \
-        virtual const char * name() override { return #testname; }  \
+        virtual const char * name() override { return #testname; }      \
         virtual bool run(JS::HandleObject global) override
 
 #define END_FIXTURE_TEST(fixture, testname)                             \

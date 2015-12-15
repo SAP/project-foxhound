@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -152,7 +152,7 @@ ReadBuffer(JSStructuredCloneReader* aReader, CryptoBuffer& aBuffer)
   }
 
   if (length > 0) {
-    if (!aBuffer.SetLength(length)) {
+    if (!aBuffer.SetLength(length, fallible)) {
       return false;
     }
     ret = JS_ReadBytes(aReader, aBuffer.Elements(), aBuffer.Length());
@@ -161,13 +161,19 @@ ReadBuffer(JSStructuredCloneReader* aReader, CryptoBuffer& aBuffer)
 }
 
 inline bool
-WriteBuffer(JSStructuredCloneWriter* aWriter, const CryptoBuffer& aBuffer)
+WriteBuffer(JSStructuredCloneWriter* aWriter, const uint8_t* aBuffer, size_t aLength)
 {
-  bool ret = JS_WriteUint32Pair(aWriter, aBuffer.Length(), 0);
-  if (ret && aBuffer.Length() > 0) {
-    ret = JS_WriteBytes(aWriter, aBuffer.Elements(), aBuffer.Length());
+  bool ret = JS_WriteUint32Pair(aWriter, aLength, 0);
+  if (ret && aLength > 0) {
+    ret = JS_WriteBytes(aWriter, aBuffer, aLength);
   }
   return ret;
+}
+
+inline bool
+WriteBuffer(JSStructuredCloneWriter* aWriter, const CryptoBuffer& aBuffer)
+{
+  return WriteBuffer(aWriter, aBuffer.Elements(), aBuffer.Length());
 }
 
 inline CK_MECHANISM_TYPE
@@ -287,6 +293,7 @@ CheckEncodedECParameters(const SECItem* aEcParams)
 inline SECItem*
 CreateECParamsForCurve(const nsString& aNamedCurve, PLArenaPool* aArena)
 {
+  MOZ_ASSERT(aArena);
   SECOidTag curveOIDTag;
 
   if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P256)) {

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +24,7 @@ namespace {
 
 BroadcastChannelService* sInstance = nullptr;
 
-} // anonymous namespace
+} // namespace
 
 BroadcastChannelService::BroadcastChannelService()
 {
@@ -76,74 +77,10 @@ BroadcastChannelService::UnregisterActor(BroadcastChannelParent* aParent)
   mAgents.RemoveEntry(aParent);
 }
 
-namespace {
-
-struct MOZ_STACK_CLASS PostMessageData final
-{
-  PostMessageData(BroadcastChannelParent* aParent,
-                  const ClonedMessageData& aData,
-                  const nsAString& aOrigin,
-                  const nsAString& aChannel,
-                  bool aPrivateBrowsing)
-    : mParent(aParent)
-    , mData(aData)
-    , mOrigin(aOrigin)
-    , mChannel(aChannel)
-    , mPrivateBrowsing(aPrivateBrowsing)
-  {
-    MOZ_ASSERT(aParent);
-    MOZ_COUNT_CTOR(PostMessageData);
-
-    // We need to keep the array alive for the life-time of this
-    // PostMessageData.
-    if (!aData.blobsParent().IsEmpty()) {
-      mFiles.SetCapacity(aData.blobsParent().Length());
-
-      for (uint32_t i = 0, len = aData.blobsParent().Length(); i < len; ++i) {
-        nsRefPtr<FileImpl> impl =
-          static_cast<BlobParent*>(aData.blobsParent()[i])->GetBlobImpl();
-       MOZ_ASSERT(impl);
-       mFiles.AppendElement(impl);
-      }
-    }
-  }
-
-  ~PostMessageData()
-  {
-    MOZ_COUNT_DTOR(PostMessageData);
-  }
-
-  BroadcastChannelParent* mParent;
-  const ClonedMessageData& mData;
-  nsTArray<nsRefPtr<FileImpl>> mFiles;
-  const nsString mOrigin;
-  const nsString mChannel;
-  bool mPrivateBrowsing;
-};
-
-PLDHashOperator
-PostMessageEnumerator(nsPtrHashKey<BroadcastChannelParent>* aKey, void* aPtr)
-{
-  AssertIsOnBackgroundThread();
-
-  auto* data = static_cast<PostMessageData*>(aPtr);
-  BroadcastChannelParent* parent = aKey->GetKey();
-  MOZ_ASSERT(parent);
-
-  if (parent != data->mParent) {
-    parent->CheckAndDeliver(data->mData, data->mOrigin, data->mChannel,
-                            data->mPrivateBrowsing);
-  }
-
-  return PL_DHASH_NEXT;
-}
-
-} // anonymous namespace
-
 void
 BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
                                      const ClonedMessageData& aData,
-                                     const nsAString& aOrigin,
+                                     const nsACString& aOrigin,
                                      const nsAString& aChannel,
                                      bool aPrivateBrowsing)
 {
@@ -151,9 +88,29 @@ BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
   MOZ_ASSERT(aParent);
   MOZ_ASSERT(mAgents.Contains(aParent));
 
-  PostMessageData data(aParent, aData, aOrigin, aChannel, aPrivateBrowsing);
-  mAgents.EnumerateEntries(PostMessageEnumerator, &data);
+  // We need to keep the array alive for the life-time of this operation.
+  nsTArray<nsRefPtr<BlobImpl>> blobs;
+  if (!aData.blobsParent().IsEmpty()) {
+    blobs.SetCapacity(aData.blobsParent().Length());
+
+    for (uint32_t i = 0, len = aData.blobsParent().Length(); i < len; ++i) {
+      nsRefPtr<BlobImpl> impl =
+        static_cast<BlobParent*>(aData.blobsParent()[i])->GetBlobImpl();
+     MOZ_ASSERT(impl);
+     blobs.AppendElement(impl);
+    }
+  }
+
+  for (auto iter = mAgents.Iter(); !iter.Done(); iter.Next()) {
+    BroadcastChannelParent* parent = iter.Get()->GetKey();
+    MOZ_ASSERT(parent);
+
+    if (parent != aParent) {
+      parent->CheckAndDeliver(aData, PromiseFlatCString(aOrigin),
+                              PromiseFlatString(aChannel), aPrivateBrowsing);
+    }
+  }
 }
 
-} // dom namespace
-} // mozilla namespace
+} // namespace dom
+} // namespace mozilla

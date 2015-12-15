@@ -41,6 +41,7 @@ namespace js {
 struct MatchPair;
 class MatchPairs;
 class RegExpShared;
+class RegExpStatics;
 
 namespace frontend { class TokenStream; }
 
@@ -119,7 +120,7 @@ class RegExpShared
 
     struct RegExpCompilation
     {
-        HeapPtrJitCode jitCode;
+        RelocatablePtrJitCode jitCode;
         uint8_t* byteCode;
 
         RegExpCompilation() : byteCode(nullptr) {}
@@ -131,7 +132,7 @@ class RegExpShared
     };
 
     /* Source to the RegExp, for lazy compilation. */
-    HeapPtrAtom        source;
+    RelocatablePtrAtom source;
 
     RegExpFlag         flags;
     size_t             parenCount;
@@ -359,6 +360,10 @@ class RegExpObject : public NativeObject
 
     static const Class class_;
 
+    // The maximum number of pairs a MatchResult can have, without having to
+    // allocate a bigger MatchResult.
+    static const size_t MaxPairCount = 14;
+
     /*
      * Note: The regexp statics flags are OR'd into the provided flags,
      * so this function is really meant for object creation during code
@@ -375,6 +380,14 @@ class RegExpObject : public NativeObject
     static RegExpObject*
     createNoStatics(ExclusiveContext* cx, HandleAtom atom, RegExpFlag flags,
                     frontend::TokenStream* ts, LifoAlloc& alloc);
+
+    /*
+     * Compute the initial shape to associate with fresh RegExp objects,
+     * encoding their initial properties. Return the shape after
+     * changing |obj|'s last property to it.
+     */
+    static Shape*
+    assignInitialShape(ExclusiveContext* cx, Handle<RegExpObject*> obj);
 
     /* Accessors. */
 
@@ -446,19 +459,6 @@ class RegExpObject : public NativeObject
   private:
     friend class RegExpObjectBuilder;
 
-    /* For access to assignInitialShape. */
-    friend bool
-    EmptyShape::ensureInitialCustomShape<RegExpObject>(ExclusiveContext* cx,
-                                                       Handle<RegExpObject*> obj);
-
-    /*
-     * Compute the initial shape to associate with fresh RegExp objects,
-     * encoding their initial properties. Return the shape after
-     * changing |obj|'s last property to it.
-     */
-    static Shape*
-    assignInitialShape(ExclusiveContext* cx, Handle<RegExpObject*> obj);
-
     bool init(ExclusiveContext* cx, HandleAtom source, RegExpFlag flags);
 
     /*
@@ -473,6 +473,10 @@ class RegExpObject : public NativeObject
     /* Call setShared in preference to setPrivate. */
     void setPrivate(void* priv) = delete;
 };
+
+JSString*
+str_replace_regexp_raw(JSContext* cx, HandleString string, Handle<RegExpObject*> regexp,
+                       HandleString replacement);
 
 /*
  * Parse regexp flags. Report an error and return false if an invalid

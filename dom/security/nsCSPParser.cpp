@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +19,6 @@
 
 using namespace mozilla;
 
-#if defined(PR_LOGGING)
 static PRLogModuleInfo*
 GetCspParserLog()
 {
@@ -27,9 +27,9 @@ GetCspParserLog()
     gCspParserPRLog = PR_NewLogModule("CSPParser");
   return gCspParserPRLog;
 }
-#endif
 
-#define CSPPARSERLOG(args) PR_LOG(GetCspParserLog(), 4, args)
+#define CSPPARSERLOG(args) MOZ_LOG(GetCspParserLog(), mozilla::LogLevel::Debug, args)
+#define CSPPARSERLOGENABLED() MOZ_LOG_TEST(GetCspParserLog(), mozilla::LogLevel::Debug)
 
 static const char16_t COLON        = ':';
 static const char16_t SEMICOLON    = ';';
@@ -123,7 +123,9 @@ nsCSPTokenizer::tokenizeCSPPolicy(const nsAString &aPolicyString,
 nsCSPParser::nsCSPParser(cspTokens& aTokens,
                          nsIURI* aSelfURI,
                          uint64_t aInnerWindowID)
- : mTokens(aTokens)
+ : mHasHashOrNonce(false)
+ , mUnsafeInlineKeywordSrc(nullptr)
+ , mTokens(aTokens)
  , mSelfURI(aSelfURI)
  , mInnerWindowID(aInnerWindowID)
 {
@@ -570,8 +572,22 @@ nsCSPParser::keywordSource()
     return CSP_CreateHostSrcFromURI(mSelfURI);
   }
 
-  if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_INLINE) ||
-      CSP_IsKeyword(mCurToken, CSP_UNSAFE_EVAL)) {
+  if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_INLINE)) {
+    // make sure script-src only contains 'unsafe-inline' once;
+    // ignore duplicates and log warning
+    if (mUnsafeInlineKeywordSrc) {
+      const char16_t* params[] = { mCurToken.get() };
+      logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringDuplicateSrc",
+                               params, ArrayLength(params));
+      return nullptr;
+    }
+    // cache if we encounter 'unsafe-inline' so we can invalidate (ignore) it in
+    // case that script-src directive also contains hash- or nonce-.
+    mUnsafeInlineKeywordSrc = new nsCSPKeywordSrc(CSP_KeywordToEnum(mCurToken));
+    return mUnsafeInlineKeywordSrc;
+  }
+
+  if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_EVAL)) {
     return new nsCSPKeywordSrc(CSP_KeywordToEnum(mCurToken));
   }
   return nullptr;
@@ -676,6 +692,8 @@ nsCSPParser::nonceSource()
   if (dashIndex < 0) {
     return nullptr;
   }
+  // cache if encountering hash or nonce to invalidate unsafe-inline
+  mHasHashOrNonce = true;
   return new nsCSPNonceSrc(Substring(expr,
                                      dashIndex + 1,
                                      expr.Length() - dashIndex + 1));
@@ -708,6 +726,8 @@ nsCSPParser::hashSource()
 
   for (uint32_t i = 0; i < kHashSourceValidFnsLen; i++) {
     if (algo.LowerCaseEqualsASCII(kHashSourceValidFns[i])) {
+      // cache if encountering hash or nonce to invalidate unsafe-inline
+      mHasHashOrNonce = true;
       return new nsCSPHashSrc(algo, hash);
     }
   }
@@ -784,10 +804,7 @@ nsCSPParser::sourceExpression()
   resetCurValue();
 
   // If mCurToken does not provide a scheme (scheme-less source), we apply the scheme
-  // from selfURI but we also need to remember if the protected resource is http, in
-  // which case we should allow https loads, see:
-  // http://www.w3.org/TR/CSP2/#match-source-expression
-  bool allowHttps = false;
+  // from selfURI
   if (parsedScheme.IsEmpty()) {
     // Resetting internal helpers, because we might already have parsed some of the host
     // when trying to parse a scheme.
@@ -795,14 +812,13 @@ nsCSPParser::sourceExpression()
     nsAutoCString selfScheme;
     mSelfURI->GetScheme(selfScheme);
     parsedScheme.AssignASCII(selfScheme.get());
-    allowHttps = selfScheme.EqualsASCII("http");
   }
 
   // At this point we are expecting a host to be parsed.
   // Trying to create a new nsCSPHost.
   if (nsCSPHostSrc *cspHost = hostSource()) {
     // Do not forget to set the parsed scheme.
-    cspHost->setScheme(parsedScheme, allowHttps);
+    cspHost->setScheme(parsedScheme);
     return cspHost;
   }
   // Error was reported in hostSource()
@@ -972,6 +988,12 @@ nsCSPParser::directiveName()
                              params, ArrayLength(params));
     return nullptr;
   }
+
+  // special case handling for upgrade-insecure-requests
+  if (CSP_IsDirective(mCurToken, nsIContentSecurityPolicy::UPGRADE_IF_INSECURE_DIRECTIVE)) {
+    return new nsUpgradeInsecureDirective(CSP_StringToCSPDirective(mCurToken));
+  }
+
   return new nsCSPDirective(CSP_StringToCSPDirective(mCurToken));
 }
 
@@ -1003,6 +1025,25 @@ nsCSPParser::directive()
     return;
   }
 
+  // special case handling for upgrade-insecure-requests, which is only specified
+  // by a directive name but does not include any srcs.
+  if (cspDir->equals(nsIContentSecurityPolicy::UPGRADE_IF_INSECURE_DIRECTIVE)) {
+    if (mCurDir.Length() > 1) {
+      const char16_t* params[] = { NS_LITERAL_STRING("upgrade-insecure-requests").get() };
+      logWarningErrorToConsole(nsIScriptError::warningFlag,
+                               "ignoreSrcForDirective",
+                               params, ArrayLength(params));
+    }
+    // add the directive and return
+    mPolicy->addUpgradeInsecDir(static_cast<nsUpgradeInsecureDirective*>(cspDir));
+    return;
+  }
+
+  // make sure to reset cache variables when trying to invalidate unsafe-inline;
+  // unsafe-inline might not only appear in script-src, but also in default-src
+  mHasHashOrNonce = false;
+  mUnsafeInlineKeywordSrc = nullptr;
+
   // Try to parse all the srcs by handing the array off to directiveValue
   nsTArray<nsCSPBaseSrc*> srcs;
   directiveValue(srcs);
@@ -1012,6 +1053,18 @@ nsCSPParser::directive()
   if (srcs.Length() == 0) {
     nsCSPKeywordSrc *keyword = new nsCSPKeywordSrc(CSP_NONE);
     srcs.AppendElement(keyword);
+  }
+
+  // if a hash or nonce is specified within script-src, then
+  // unsafe-inline should be ignored, see:
+  // http://www.w3.org/TR/CSP2/#directive-script-src
+  if (cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) &&
+      mHasHashOrNonce && mUnsafeInlineKeywordSrc) {
+    mUnsafeInlineKeywordSrc->invalidate();
+    // log to the console that unsafe-inline will be ignored
+    const char16_t* params[] = { NS_LITERAL_STRING("'unsafe-inline'").get() };
+    logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringSrcWithinScriptSrc",
+                             params, ArrayLength(params));
   }
 
   // Add the newly created srcs to the directive and add the directive to the policy
@@ -1042,8 +1095,7 @@ nsCSPParser::parseContentSecurityPolicy(const nsAString& aPolicyString,
                                         bool aReportOnly,
                                         uint64_t aInnerWindowID)
 {
-#ifdef PR_LOGGING
-  {
+  if (CSPPARSERLOGENABLED()) {
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, policy: %s",
                  NS_ConvertUTF16toUTF8(aPolicyString).get()));
     nsAutoCString spec;
@@ -1052,7 +1104,6 @@ nsCSPParser::parseContentSecurityPolicy(const nsAString& aPolicyString,
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, reportOnly: %s",
                  (aReportOnly ? "true" : "false")));
   }
-#endif
 
   NS_ASSERTION(aSelfURI, "Can not parseContentSecurityPolicy without aSelfURI");
 
@@ -1090,14 +1141,12 @@ nsCSPParser::parseContentSecurityPolicy(const nsAString& aPolicyString,
     return nullptr;
   }
 
-#ifdef PR_LOGGING
-  {
+  if (CSPPARSERLOGENABLED()) {
     nsString parsedPolicy;
     policy->toString(parsedPolicy);
     CSPPARSERLOG(("nsCSPParser::parseContentSecurityPolicy, parsedPolicy: %s",
                  NS_ConvertUTF16toUTF8(parsedPolicy).get()));
   }
-#endif
 
   return policy;
 }

@@ -16,7 +16,7 @@ const { open: openWindow, close: closeWindow } = require('sdk/window/helpers');
 
 const openBrowserWindow = partial(openWindow, null, {features: {toolbar: true}});
 
-let when = curry(function(options, tab) {
+var when = curry(function(options, tab) {
   let type = options.type || options;
   let capture = options.capture || false;
   let target = getBrowserForTab(tab);
@@ -32,11 +32,11 @@ let when = curry(function(options, tab) {
   return promise;
 });
 
-let use = function(value) function() value;
+var use = function(value) function() value;
 
 
-let open = curry(function(url, window) openTab(window, url));
-let close = function(tab) {
+var open = curry(function(url, window) openTab(window, url));
+var close = function(tab) {
   let promise = when("pagehide", tab);
   closeTab(tab);
   return promise;
@@ -134,7 +134,7 @@ exports["test dead object errors"] = function(assert, done) {
     let { level } = message;
     let text = String(message.arguments[0]);
 
-    if (level === "error" && text.contains("can't access dead object"))
+    if (level === "error" && text.includes("can't access dead object"))
       fail(text);
   }
 

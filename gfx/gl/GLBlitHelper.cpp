@@ -6,6 +6,7 @@
 
 #include "GLBlitHelper.h"
 #include "GLContext.h"
+#include "GLScreenBuffer.h"
 #include "ScopedGLHelpers.h"
 #include "mozilla/Preferences.h"
 #include "ImageContainer.h"
@@ -21,6 +22,11 @@
 #include "AndroidSurfaceTexture.h"
 #include "GLImages.h"
 #include "GLLibraryEGL.h"
+#endif
+
+#ifdef XP_MACOSX
+#include "MacIOSurfaceImage.h"
+#include "GLContextCGL.h"
 #endif
 
 using mozilla::layers::PlanarYCbCrImage;
@@ -154,8 +160,10 @@ GLBlitHelper::GLBlitHelper(GLContext* gl)
     , mTextureTransformLoc(-1)
     , mTexExternalBlit_FragShader(0)
     , mTexYUVPlanarBlit_FragShader(0)
+    , mTexNV12PlanarBlit_FragShader(0)
     , mTexExternalBlit_Program(0)
     , mTexYUVPlanarBlit_Program(0)
+    , mTexNV12PlanarBlit_Program(0)
     , mFBO(0)
     , mSrcTexY(0)
     , mSrcTexCb(0)
@@ -277,7 +285,7 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
     */
     const char kTexYUVPlanarBlit_FragShaderSource[] = "\
         #ifdef GL_ES                                                        \n\
-        precision mediump float                                             \n\
+        precision mediump float;                                            \n\
         #endif                                                              \n\
         varying vec2 vTexCoord;                                             \n\
         uniform sampler2D uYTexture;                                        \n\
@@ -287,9 +295,9 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
         uniform vec2 uCbCrTexScale;                                         \n\
         void main()                                                         \n\
         {                                                                   \n\
-            float y = texture2D(uYTexture, vTexCoord * uYTexScale).r;       \n\
-            float cb = texture2D(uCbTexture, vTexCoord * uCbCrTexScale).r;  \n\
-            float cr = texture2D(uCrTexture, vTexCoord * uCbCrTexScale).r;  \n\
+            float y = texture2D(uYTexture, vTexCoord * uYTexScale).a;       \n\
+            float cb = texture2D(uCbTexture, vTexCoord * uCbCrTexScale).a;  \n\
+            float cr = texture2D(uCrTexture, vTexCoord * uCbCrTexScale).a;  \n\
             y = (y - 0.06275) * 1.16438;                                    \n\
             cb = cb - 0.50196;                                              \n\
             cr = cr - 0.50196;                                              \n\
@@ -299,6 +307,33 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
             gl_FragColor.a = 1.0;                                           \n\
         }                                                                   \n\
     ";
+
+#ifdef XP_MACOSX
+    const char kTexNV12PlanarBlit_FragShaderSource[] = "\
+        #extension GL_ARB_texture_rectangle : require                            \n\
+        #ifdef GL_ES                                                             \n\
+        precision mediump float                                                  \n\
+        #endif                                                                   \n\
+        varying vec2 vTexCoord;                                                  \n\
+        uniform sampler2DRect uYTexture;                                         \n\
+        uniform sampler2DRect uCbCrTexture;                                      \n\
+        uniform vec2 uYTexScale;                                                 \n\
+        uniform vec2 uCbCrTexScale;                                              \n\
+        void main()                                                              \n\
+        {                                                                        \n\
+            float y = texture2DRect(uYTexture, vTexCoord * uYTexScale).r;        \n\
+            float cb = texture2DRect(uCbCrTexture, vTexCoord * uCbCrTexScale).r; \n\
+            float cr = texture2DRect(uCbCrTexture, vTexCoord * uCbCrTexScale).a; \n\
+            y = (y - 0.06275) * 1.16438;                                         \n\
+            cb = cb - 0.50196;                                                   \n\
+            cr = cr - 0.50196;                                                   \n\
+            gl_FragColor.r = y + cr * 1.59603;                                   \n\
+            gl_FragColor.g = y - 0.81297 * cr - 0.39176 * cb;                    \n\
+            gl_FragColor.b = y + cb * 2.01723;                                   \n\
+            gl_FragColor.a = 1.0;                                                \n\
+        }                                                                        \n\
+    ";
+#endif
 
     bool success = false;
 
@@ -330,6 +365,13 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
         fragShaderPtr = &mTexYUVPlanarBlit_FragShader;
         fragShaderSource = kTexYUVPlanarBlit_FragShaderSource;
         break;
+#ifdef XP_MACOSX
+    case ConvertMacIOSurfaceImage:
+        programPtr = &mTexNV12PlanarBlit_Program;
+        fragShaderPtr = &mTexNV12PlanarBlit_FragShader;
+        fragShaderSource = kTexNV12PlanarBlit_FragShaderSource;
+        break;
+#endif
     default:
         return false;
     }
@@ -482,6 +524,24 @@ GLBlitHelper::InitTexQuadProgram(BlitType target)
                 mGL->fUniform1i(texCr, Channel_Cr);
                 break;
             }
+            case ConvertMacIOSurfaceImage: {
+#ifdef XP_MACOSX
+                GLint texY = mGL->fGetUniformLocation(program, "uYTexture");
+                GLint texCbCr = mGL->fGetUniformLocation(program, "uCbCrTexture");
+                mYTexScaleLoc = mGL->fGetUniformLocation(program, "uYTexScale");
+                mCbCrTexScaleLoc= mGL->fGetUniformLocation(program, "uCbCrTexScale");
+
+                DebugOnly<bool> hasUniformLocations = texY != -1 &&
+                                                      texCbCr != -1 &&
+                                                      mYTexScaleLoc != -1 &&
+                                                      mCbCrTexScaleLoc != -1;
+                MOZ_ASSERT(hasUniformLocations, "uniforms not found");
+
+                mGL->fUniform1i(texY, Channel_Y);
+                mGL->fUniform1i(texCbCr, Channel_Cb);
+#endif
+                break;
+            }
         }
         MOZ_ASSERT(mGL->fGetAttribLocation(program, "aPosition") == 0);
         mYFlipLoc = mGL->fGetUniformLocation(program, "uYflip");
@@ -564,6 +624,10 @@ GLBlitHelper::DeleteTexBlitProgram()
         mGL->fDeleteShader(mTexYUVPlanarBlit_FragShader);
         mTexYUVPlanarBlit_FragShader = 0;
     }
+    if (mTexNV12PlanarBlit_FragShader) {
+        mGL->fDeleteShader(mTexNV12PlanarBlit_FragShader);
+        mTexNV12PlanarBlit_FragShader = 0;
+    }
     if (mTexExternalBlit_Program) {
         mGL->fDeleteProgram(mTexExternalBlit_Program);
         mTexExternalBlit_Program = 0;
@@ -571,6 +635,10 @@ GLBlitHelper::DeleteTexBlitProgram()
     if (mTexYUVPlanarBlit_Program) {
         mGL->fDeleteProgram(mTexYUVPlanarBlit_Program);
         mTexYUVPlanarBlit_Program = 0;
+    }
+    if (mTexNV12PlanarBlit_Program) {
+        mGL->fDeleteProgram(mTexNV12PlanarBlit_Program);
+        mTexNV12PlanarBlit_Program = 0;
     }
 }
 
@@ -640,7 +708,7 @@ GLBlitHelper::BindAndUploadYUVTexture(Channel which,
     GLuint& tex = *srcTexArr[which];
     if (!tex) {
         MOZ_ASSERT(needsAllocation);
-        tex = CreateTexture(mGL, LOCAL_GL_LUMINANCE, LOCAL_GL_LUMINANCE, LOCAL_GL_UNSIGNED_BYTE,
+        tex = CreateTexture(mGL, LOCAL_GL_ALPHA, LOCAL_GL_ALPHA, LOCAL_GL_UNSIGNED_BYTE,
                             gfx::IntSize(width, height), false);
     }
     mGL->fActiveTexture(LOCAL_GL_TEXTURE0 + which);
@@ -653,17 +721,17 @@ GLBlitHelper::BindAndUploadYUVTexture(Channel which,
                             0,
                             width,
                             height,
-                            LOCAL_GL_LUMINANCE,
+                            LOCAL_GL_ALPHA,
                             LOCAL_GL_UNSIGNED_BYTE,
                             data);
     } else {
         mGL->fTexImage2D(LOCAL_GL_TEXTURE_2D,
                          0,
-                         LOCAL_GL_LUMINANCE,
+                         LOCAL_GL_ALPHA,
                          width,
                          height,
                          0,
-                         LOCAL_GL_LUMINANCE,
+                         LOCAL_GL_ALPHA,
                          LOCAL_GL_UNSIGNED_BYTE,
                          data);
     }
@@ -690,7 +758,7 @@ GLBlitHelper::BindAndUploadEGLImage(EGLImage image, GLuint target)
 #ifdef MOZ_WIDGET_GONK
 
 bool
-GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yflip)
+GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage)
 {
     ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
     mGL->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
@@ -711,8 +779,6 @@ GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yflip)
 
     BindAndUploadEGLImage(image, LOCAL_GL_TEXTURE_EXTERNAL_OES);
 
-    mGL->fUniform1f(mYFlipLoc, yflip ? (float)1.0f : (float)0.0f);
-
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 
     sEGLLibrary.fDestroyImage(sEGLLibrary.Display(), image);
@@ -726,7 +792,7 @@ GLBlitHelper::BlitGrallocImage(layers::GrallocImage* grallocImage, bool yflip)
 #define ATTACH_WAIT_MS 50
 
 bool
-GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage, bool yflip)
+GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage)
 {
     AndroidSurfaceTexture* surfaceTexture = stImage->GetData()->mSurfTex;
 
@@ -746,7 +812,6 @@ GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage, bool
     surfaceTexture->GetTransformMatrix(transform);
 
     mGL->fUniformMatrix4fv(mTextureTransformLoc, 1, false, &transform._11);
-    mGL->fUniform1f(mYFlipLoc, yflip ? 1.0f : 0.0f);
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 
     surfaceTexture->Detach();
@@ -756,7 +821,7 @@ GLBlitHelper::BlitSurfaceTextureImage(layers::SurfaceTextureImage* stImage, bool
 }
 
 bool
-GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image, bool yflip)
+GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image)
 {
     EGLImage eglImage = image->GetData()->mImage;
     EGLSync eglSync = image->GetData()->mSync;
@@ -775,8 +840,6 @@ GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image, bool yflip)
 
     BindAndUploadEGLImage(eglImage, LOCAL_GL_TEXTURE_2D);
 
-    mGL->fUniform1f(mYFlipLoc, yflip ? 1.0f : 0.0f);
-
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 
     mGL->fBindTexture(LOCAL_GL_TEXTURE_EXTERNAL_OES, oldBinding);
@@ -786,7 +849,7 @@ GLBlitHelper::BlitEGLImageImage(layers::EGLImageImage* image, bool yflip)
 #endif
 
 bool
-GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yflip)
+GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage)
 {
     ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
     const PlanarYCbCrData* yuvData = yuvImage->GetData();
@@ -807,8 +870,6 @@ GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yfli
     BindAndUploadYUVTexture(Channel_Cb, yuvData->mCbCrStride, yuvData->mCbCrSize.height, yuvData->mCbChannel, needsAllocation);
     BindAndUploadYUVTexture(Channel_Cr, yuvData->mCbCrStride, yuvData->mCbCrSize.height, yuvData->mCrChannel, needsAllocation);
 
-    mGL->fUniform1f(mYFlipLoc, yflip ? (float)1.0 : (float)0.0);
-
     if (needsAllocation) {
         mGL->fUniform2f(mYTexScaleLoc, (float)yuvData->mYSize.width/yuvData->mYStride, 1.0f);
         mGL->fUniform2f(mCbCrTexScaleLoc, (float)yuvData->mCbCrSize.width/yuvData->mCbCrStride, 1.0f);
@@ -822,36 +883,90 @@ GLBlitHelper::BlitPlanarYCbCrImage(layers::PlanarYCbCrImage* yuvImage, bool yfli
     return true;
 }
 
+#ifdef XP_MACOSX
+bool
+GLBlitHelper::BlitMacIOSurfaceImage(layers::MacIOSurfaceImage* ioImage)
+{
+    ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
+    MacIOSurface* surf = ioImage->GetSurface();
+
+    GLint oldTex[2];
+    for (int i = 0; i < 2; i++) {
+        mGL->fActiveTexture(LOCAL_GL_TEXTURE0 + i);
+        mGL->fGetIntegerv(LOCAL_GL_TEXTURE_BINDING_2D, &oldTex[i]);
+    }
+
+    GLuint textures[2];
+    mGL->fGenTextures(2, textures);
+
+    mGL->fActiveTexture(LOCAL_GL_TEXTURE0);
+    mGL->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, textures[0]);
+    mGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+    mGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+    surf->CGLTexImageIOSurface2D(gl::GLContextCGL::Cast(mGL)->GetCGLContext(), 0);
+    mGL->fUniform2f(mYTexScaleLoc, surf->GetWidth(0), surf->GetHeight(0));
+
+    mGL->fActiveTexture(LOCAL_GL_TEXTURE1);
+    mGL->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, textures[1]);
+    mGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+    mGL->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+    surf->CGLTexImageIOSurface2D(gl::GLContextCGL::Cast(mGL)->GetCGLContext(), 1);
+    mGL->fUniform2f(mCbCrTexScaleLoc, surf->GetWidth(1), surf->GetHeight(1));
+
+    mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
+    for (int i = 0; i < 2; i++) {
+        mGL->fActiveTexture(LOCAL_GL_TEXTURE0 + i);
+        mGL->fBindTexture(LOCAL_GL_TEXTURE_2D, oldTex[i]);
+    }
+
+    mGL->fDeleteTextures(2, textures);
+    return true;
+}
+#endif
+
 bool
 GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
                                      const gfx::IntSize& destSize,
                                      GLuint destFB,
-                                     bool yflip,
-                                     GLuint xoffset,
-                                     GLuint yoffset,
-                                     GLuint cropWidth,
-                                     GLuint cropHeight)
+                                     OriginPos destOrigin)
 {
     ScopedGLDrawState autoStates(mGL);
 
     BlitType type;
+    OriginPos srcOrigin;
+
     switch (srcImage->GetFormat()) {
     case ImageFormat::PLANAR_YCBCR:
         type = ConvertPlanarYCbCr;
+        srcOrigin = OriginPos::TopLeft;
         break;
-    case ImageFormat::GRALLOC_PLANAR_YCBCR:
+
 #ifdef MOZ_WIDGET_GONK
+    case ImageFormat::GRALLOC_PLANAR_YCBCR:
         type = ConvertGralloc;
+        srcOrigin = OriginPos::TopLeft;
         break;
 #endif
+
 #ifdef MOZ_WIDGET_ANDROID
     case ImageFormat::SURFACE_TEXTURE:
         type = ConvertSurfaceTexture;
+        srcOrigin = static_cast<layers::SurfaceTextureImage*>(srcImage)->GetData()
+                                                                       ->mOriginPos;
         break;
+
     case ImageFormat::EGLIMAGE:
         type = ConvertEGLImage;
+        srcOrigin = static_cast<layers::EGLImageImage*>(srcImage)->GetData()->mOriginPos;
         break;
 #endif
+#ifdef XP_MACOSX
+    case ImageFormat::MAC_IOSURFACE:
+        type = ConvertMacIOSurfaceImage;
+        srcOrigin = OriginPos::TopLeft;
+        break;
+#endif
+
     default:
         return false;
     }
@@ -861,37 +976,39 @@ GLBlitHelper::BlitImageToFramebuffer(layers::Image* srcImage,
         return false;
     }
 
+    const bool needsYFlip = (srcOrigin != destOrigin);
+    mGL->fUniform1f(mYFlipLoc, needsYFlip ? (float)1.0 : (float)0.0);
+
     ScopedBindFramebuffer boundFB(mGL, destFB);
     mGL->fColorMask(LOCAL_GL_TRUE, LOCAL_GL_TRUE, LOCAL_GL_TRUE, LOCAL_GL_TRUE);
     mGL->fViewport(0, 0, destSize.width, destSize.height);
-    if (xoffset != 0 && yoffset != 0 && cropWidth != 0 && cropHeight != 0) {
-        mGL->fEnable(LOCAL_GL_SCISSOR_TEST);
-        mGL->fScissor(xoffset, yoffset, (GLsizei)cropWidth, (GLsizei)cropHeight);
-    }
 
+    switch (type) {
 #ifdef MOZ_WIDGET_GONK
-    if (type == ConvertGralloc) {
-        layers::GrallocImage* grallocImage = static_cast<layers::GrallocImage*>(srcImage);
-        return BlitGrallocImage(grallocImage, yflip);
-    }
-#endif
-    if (type == ConvertPlanarYCbCr) {
-        mGL->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);
-        PlanarYCbCrImage* yuvImage = static_cast<PlanarYCbCrImage*>(srcImage);
-        return BlitPlanarYCbCrImage(yuvImage, yflip);
-    }
-#ifdef MOZ_WIDGET_ANDROID
-    if (type == ConvertSurfaceTexture) {
-        layers::SurfaceTextureImage* stImage = static_cast<layers::SurfaceTextureImage*>(srcImage);
-        return BlitSurfaceTextureImage(stImage, yflip);
-    }
-    if (type == ConvertEGLImage) {
-        layers::EGLImageImage* eglImage = static_cast<layers::EGLImageImage*>(srcImage);
-        return BlitEGLImageImage(eglImage, yflip);
-    }
+    case ConvertGralloc:
+        return BlitGrallocImage(static_cast<layers::GrallocImage*>(srcImage));
 #endif
 
-    return false;
+    case ConvertPlanarYCbCr:
+        mGL->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);
+        return BlitPlanarYCbCrImage(static_cast<PlanarYCbCrImage*>(srcImage));
+
+#ifdef MOZ_WIDGET_ANDROID
+    case ConvertSurfaceTexture:
+        return BlitSurfaceTextureImage(static_cast<layers::SurfaceTextureImage*>(srcImage));
+
+    case ConvertEGLImage:
+        return BlitEGLImageImage(static_cast<layers::EGLImageImage*>(srcImage));
+#endif
+
+#ifdef XP_MACOSX
+    case ConvertMacIOSurfaceImage:
+        return BlitMacIOSurfaceImage(static_cast<layers::MacIOSurfaceImage*>(srcImage));
+#endif
+
+    default:
+        return false;
+    }
 }
 
 bool
@@ -899,22 +1016,13 @@ GLBlitHelper::BlitImageToTexture(layers::Image* srcImage,
                                  const gfx::IntSize& destSize,
                                  GLuint destTex,
                                  GLenum destTarget,
-                                 bool yflip,
-                                 GLuint xoffset,
-                                 GLuint yoffset,
-                                 GLuint cropWidth,
-                                 GLuint cropHeight)
+                                 OriginPos destOrigin)
 {
-    ScopedGLDrawState autoStates(mGL);
+    ScopedFramebufferForTexture autoFBForTex(mGL, destTex, destTarget);
+    if (!autoFBForTex.IsComplete())
+        return false;
 
-    if (!mFBO)
-        mGL->fGenFramebuffers(1, &mFBO);
-
-    ScopedBindFramebuffer boundFB(mGL, mFBO);
-    mGL->fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
-                               destTarget, destTex, 0);
-    return BlitImageToFramebuffer(srcImage, destSize, mFBO, yflip, xoffset, yoffset,
-                                  cropWidth, cropHeight);
+    return BlitImageToFramebuffer(srcImage, destSize, autoFBForTex.FB(), destOrigin);
 }
 
 void
@@ -929,7 +1037,7 @@ GLBlitHelper::BlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
 
     if (mGL->IsSupported(GLFeature::framebuffer_blit)) {
         ScopedFramebufferForTexture srcWrapper(mGL, srcTex, srcTarget);
-        MOZ_ASSERT(srcWrapper.IsComplete());
+        MOZ_DIAGNOSTIC_ASSERT(srcWrapper.IsComplete());
 
         BlitFramebufferToFramebuffer(srcWrapper.FB(), destFB,
                                      srcSize, destSize,
@@ -938,8 +1046,7 @@ GLBlitHelper::BlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
     }
 
     BlitType type;
-    switch (srcTarget)
-    {
+    switch (srcTarget) {
     case LOCAL_GL_TEXTURE_2D:
         type = BlitTex2D;
         break;
@@ -947,8 +1054,7 @@ GLBlitHelper::BlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
         type = BlitTexRect;
         break;
     default:
-        printf_stderr("Fatal Error: Failed to prepare to blit texture->framebuffer.\n");
-        MOZ_CRASH();
+        MOZ_CRASH("Fatal Error: Bad `srcTarget`.");
         break;
     }
 
@@ -963,10 +1069,14 @@ GLBlitHelper::BlitTextureToFramebuffer(GLuint srcTex, GLuint destFB,
     bool good = UseTexQuadProgram(type, srcSize);
     if (!good) {
         // We're up against the wall, so bail.
-        // This should really be MOZ_CRASH(why) or MOZ_RUNTIME_ASSERT(good).
-        printf_stderr("Fatal Error: Failed to prepare to blit texture->framebuffer.\n");
-        MOZ_CRASH();
+        MOZ_DIAGNOSTIC_ASSERT(false,
+                              "Error: Failed to prepare to blit texture->framebuffer.\n");
+        mGL->fScissor(0, 0, destSize.width, destSize.height);
+        mGL->fColorMask(1, 1, 1, 1);
+        mGL->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
+        return;
     }
+
     mGL->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
 }
 
@@ -977,7 +1087,8 @@ GLBlitHelper::BlitFramebufferToTexture(GLuint srcFB, GLuint destTex,
                                        GLenum destTarget,
                                        bool internalFBs)
 {
-    MOZ_ASSERT(!srcFB || mGL->fIsFramebuffer(srcFB));
+    // On the Android 4.3 emulator, IsFramebuffer may return false incorrectly.
+    MOZ_ASSERT_IF(mGL->Renderer() != GLRenderer::AndroidEmulator, !srcFB || mGL->fIsFramebuffer(srcFB));
     MOZ_ASSERT(mGL->fIsTexture(destTex));
 
     if (mGL->IsSupported(GLFeature::framebuffer_blit)) {

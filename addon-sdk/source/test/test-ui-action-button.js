@@ -18,7 +18,7 @@ const { getMostRecentBrowserWindow } = require('sdk/window/utils');
 const { partial } = require('sdk/lang/functional');
 const { wait } = require('./event/helpers');
 const { gc } = require('sdk/test/memory');
-const packaging = require("@loader/options");
+const { emit, once } = require("sdk/event/core");
 
 const openBrowserWindow = partial(open, null, {features: {toolbar: true}});
 const openPrivateBrowserWindow = partial(open, null,
@@ -130,6 +130,7 @@ exports['test basic constructor validation'] = function(assert) {
 exports['test button added'] = function(assert) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require('sdk/self');
 
   let button = ActionButton({
     id: 'my-button-1',
@@ -163,6 +164,7 @@ exports['test button added'] = function(assert) {
 exports['test button is not garbaged'] = function (assert, done) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require('sdk/self');
 
   ActionButton({
     id: 'my-button-1',
@@ -193,6 +195,7 @@ exports['test button is not garbaged'] = function (assert, done) {
 exports['test button added with resource URI'] = function(assert) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require('sdk/self');
 
   let button = ActionButton({
     id: 'my-button-1',
@@ -288,12 +291,14 @@ exports['test button removed on dispose'] = function(assert, done) {
 exports['test button global state updated'] = function(assert) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require("sdk/self");
 
   let button = ActionButton({
     id: 'my-button-4',
     label: 'my button',
     icon: './icon.png',
   });
+  assert.pass('the button was created.');
 
   // Tried to use `getWidgetIdsInArea` but seems undefined, not sure if it
   // was removed or it's not in the UX build yet
@@ -397,16 +402,19 @@ exports['test button global state set and get with state method'] = function(ass
 exports['test button global state updated on multiple windows'] = function*(assert) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require('sdk/self');
 
   let button = ActionButton({
     id: 'my-button-5',
     label: 'my button',
     icon: './icon.png'
   });
+  assert.pass('the button was created');
 
-  let nodes = [getWidget(button.id).node];
+  let nodes = [ getWidget(button.id).node ];
 
   let window = yield openBrowserWindow();
+  assert.pass('the window was created');
 
   nodes.push(getWidget(button.id, window).node);
 
@@ -451,6 +459,7 @@ exports['test button window state'] = function*(assert) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
   let { browserWindows } = loader.require('sdk/windows');
+  let { data } = loader.require('sdk/self');
 
   let button = ActionButton({
     id: 'my-button-6',
@@ -597,6 +606,7 @@ exports['test button tab state'] = function*(assert) {
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
   let { browserWindows } = loader.require('sdk/windows');
+  let { data } = loader.require('sdk/self');
   let tabs = loader.require('sdk/tabs');
 
   let button = ActionButton({
@@ -707,7 +717,11 @@ exports['test button tab state'] = function*(assert) {
     'tab badgeColor inherited from global');
 
   // check the node properties
-  yield wait();
+  yield new Promise(resolve => {
+    let target = {};
+    once(target, "ready", resolve);
+    emit(target, "ready");
+  });
 
   assert.equal(node.getAttribute('label'), state.label,
     'node label is correct');
@@ -728,7 +742,11 @@ exports['test button tab state'] = function*(assert) {
 
   // This is made in order to avoid to check the node before it
   // is updated, need a better check
-  yield wait();
+  yield new Promise(resolve => {
+    let target = {};
+    once(target, "ready", resolve);
+    emit(target, "ready");
+  });
 
   state = button.state(mainTab);
 
@@ -791,6 +809,7 @@ exports['test button icon set'] = function(assert) {
   const { CustomizableUI } = Cu.import('resource:///modules/CustomizableUI.jsm', {});
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require('sdk/self');
 
   // Test remote icon set
   assert.throws(
@@ -844,6 +863,7 @@ exports['test button icon set with only one option'] = function(assert) {
   const { CustomizableUI } = Cu.import('resource:///modules/CustomizableUI.jsm', {});
   let loader = Loader(module);
   let { ActionButton } = loader.require('sdk/ui');
+  let { data } = loader.require('sdk/self');
 
   // Test remote icon set
   assert.throws(
@@ -1157,12 +1177,6 @@ exports['test button badge color'] = function(assert) {
     'badge color overrides the default one');
 
   loader.unload();
-}
-
-if (packaging.isNative) {
-  module.exports = {
-    "test skip on jpm": (assert) => assert.pass("skipping this file with jpm")
-  };
 }
 
 require("sdk/test").run(module.exports);

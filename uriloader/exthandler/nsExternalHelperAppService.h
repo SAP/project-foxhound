@@ -6,7 +6,7 @@
 #ifndef nsExternalHelperAppService_h__
 #define nsExternalHelperAppService_h__
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "prtime.h"
 
 #include "nsIExternalHelperAppService.h"
@@ -141,7 +141,6 @@ protected:
   bool GetTypeFromExtras(const nsACString& aExtension,
                                        nsACString& aMIMEType);
 
-#ifdef PR_LOGGING
   /**
    * NSPR Logging Module. Usage: set NSPR_LOG_MODULES=HelperAppService:level,
    * where level should be 2 for errors, 3 for debug messages from the cross-
@@ -149,7 +148,6 @@ protected:
    */
   static PRLogModuleInfo* mLog;
 
-#endif
   // friend, so that it can access the nspr log module.
   friend class nsExternalAppHandler;
 
@@ -202,9 +200,9 @@ private:
  * data using a helper app.
  */
 class nsExternalAppHandler final : public nsIStreamListener,
-                                       public nsIHelperAppLauncher,
-                                       public nsITimerCallback,
-                                       public nsIBackgroundFileSaverObserver
+                                   public nsIHelperAppLauncher,
+                                   public nsITimerCallback,
+                                   public nsIBackgroundFileSaverObserver
 {
 public:
   NS_DECL_THREADSAFE_ISUPPORTS

@@ -15,15 +15,14 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsRefPtrHashtable.h"
+#include "nsRect.h"
 
 struct nsRoleMapEntry;
 
 struct nsRect;
 class nsIFrame;
 class nsIAtom;
-struct nsIntRect;
 class nsIPersistentProperties;
-class nsView;
 
 namespace mozilla {
 namespace a11y {
@@ -39,6 +38,7 @@ class HTMLLIAccessible;
 class HyperTextAccessible;
 class ImageAccessible;
 class KeyBinding;
+class OuterDocAccessible;
 class ProxyAccessible;
 class Relation;
 class RootAccessible;
@@ -82,6 +82,8 @@ enum ENameValueFlag {
 struct GroupPos
 {
   GroupPos() : level(0), posInSet(0), setSize(0) { }
+  GroupPos(int32_t aLevel, int32_t aPosInSet, int32_t aSetSize) :
+    level(aLevel), posInSet(aPosInSet), setSize(aSetSize) { }
 
   int32_t level;
   int32_t posInSet;
@@ -229,6 +231,11 @@ public:
    * roles).
    */
   mozilla::a11y::role ARIARole();
+
+  /**
+   * Return a landmark role if applied.
+   */
+  virtual nsIAtom* LandmarkRole() const;
 
   /**
    * Returns enumerated accessible role from native markup (see constants in
@@ -560,8 +567,7 @@ public:
 
   inline bool IsAbbreviation() const
   {
-    return mContent->IsHTML() &&
-      (mContent->Tag() == nsGkAtoms::abbr || mContent->Tag() == nsGkAtoms::acronym);
+    return mContent->IsAnyOfHTMLElements(nsGkAtoms::abbr, nsGkAtoms::acronym);
   }
 
   bool IsApplication() const { return mType == eApplicationType; }
@@ -616,10 +622,15 @@ public:
     return mBits.proxy;
   }
 
+  bool IsOuterDoc() const { return mType == eOuterDocType; }
+  OuterDocAccessible* AsOuterDoc();
+
   bool IsProgress() const { return mType == eProgressType; }
 
   bool IsRoot() const { return mType == eRootType; }
   a11y::RootAccessible* AsRoot();
+
+  bool IsSearchbox() const;
 
   bool IsSelect() const { return HasGenericType(eSelect); }
 
@@ -934,8 +945,8 @@ protected:
   /**
    * Set accessible parent and index in parent.
    */
-  virtual void BindToParent(Accessible* aParent, uint32_t aIndexInParent);
-  virtual void UnbindFromParent();
+  void BindToParent(Accessible* aParent, uint32_t aIndexInParent);
+  void UnbindFromParent();
 
   /**
    * Return sibling accessible at the given offset.
@@ -1098,7 +1109,7 @@ protected:
   static const uint8_t kStateFlagsBits = 9;
   static const uint8_t kContextFlagsBits = 2;
   static const uint8_t kTypeBits = 6;
-  static const uint8_t kGenericTypesBits = 13;
+  static const uint8_t kGenericTypesBits = 14;
 
   /**
    * Keep in sync with ChildrenFlags, StateFlags, ContextFlags, and AccTypes.

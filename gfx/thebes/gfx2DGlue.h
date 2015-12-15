@@ -9,20 +9,11 @@
 #include "gfxPlatform.h"
 #include "gfxRect.h"
 #include "gfxMatrix.h"
-#include "gfx3DMatrix.h"
 #include "gfxContext.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxColor.h"
-
-namespace mozilla {
-namespace gfx {
-class DrawTarget;
-class SourceSurface;
-class ScaledFont;
-}
-}
 
 namespace mozilla {
 namespace gfx {
@@ -33,14 +24,14 @@ inline Rect ToRect(const gfxRect &aRect)
               Float(aRect.width), Float(aRect.height));
 }
 
-inline Rect ToRect(const nsIntRect &aRect)
+inline RectDouble ToRectDouble(const gfxRect &aRect)
 {
-  return Rect(aRect.x, aRect.y, aRect.width, aRect.height);
+  return RectDouble(aRect.x, aRect.y, aRect.width, aRect.height);
 }
 
-inline IntRect ToIntRect(const nsIntRect &aRect)
+inline Rect ToRect(const IntRect &aRect)
 {
-  return IntRect(aRect.x, aRect.y, aRect.width, aRect.height);
+  return Rect(aRect.x, aRect.y, aRect.width, aRect.height);
 }
 
 inline Color ToColor(const gfxRGBA &aRGBA)
@@ -71,19 +62,14 @@ inline Point ToPoint(const gfxPoint &aPoint)
   return Point(Float(aPoint.x), Float(aPoint.y));
 }
 
-inline IntPoint ToIntPoint(const nsIntPoint &aPoint)
+inline IntMargin ToIntMargin(const nsIntMargin& aMargin)
 {
-  return IntPoint(aPoint.x, aPoint.y);
+  return IntMargin(aMargin.top, aMargin.right, aMargin.bottom, aMargin.left);
 }
 
 inline Size ToSize(const gfxSize &aSize)
 {
   return Size(Float(aSize.width), Float(aSize.height));
-}
-
-inline IntSize ToIntSize(const gfxIntSize &aSize)
-{
-  return IntSize(aSize.width, aSize.height);
 }
 
 inline Filter ToFilter(GraphicsFilter aFilter)
@@ -157,19 +143,14 @@ inline gfxSize ThebesSize(const Size &aSize)
   return gfxSize(aSize.width, aSize.height);
 }
 
-inline gfxIntSize ThebesIntSize(const IntSize &aSize)
-{
-  return gfxIntSize(aSize.width, aSize.height);
-}
-
 inline gfxRect ThebesRect(const Rect &aRect)
 {
   return gfxRect(aRect.x, aRect.y, aRect.width, aRect.height);
 }
 
-inline nsIntRect ThebesIntRect(const IntRect &aRect)
+inline gfxRect ThebesRect(const RectDouble &aRect)
 {
-  return nsIntRect(aRect.x, aRect.y, aRect.width, aRect.height);
+  return gfxRect(aRect.x, aRect.y, aRect.width, aRect.height);
 }
 
 inline gfxRGBA ThebesRGBA(const Color &aColor)
@@ -338,53 +319,7 @@ inline gfxContext::GraphicsOperator ThebesOp(CompositionOp aOp)
   }
 }
 
-inline Matrix4x4
-ToMatrix4x4(const gfx3DMatrix& aIn)
-{
-  Matrix4x4 m;
-  m._11 = aIn._11;
-  m._12 = aIn._12;
-  m._13 = aIn._13;
-  m._14 = aIn._14;
-  m._21 = aIn._21;
-  m._22 = aIn._22;
-  m._23 = aIn._23;
-  m._24 = aIn._24;
-  m._31 = aIn._31;
-  m._32 = aIn._32;
-  m._33 = aIn._33;
-  m._34 = aIn._34;
-  m._41 = aIn._41;
-  m._42 = aIn._42;
-  m._43 = aIn._43;
-  m._44 = aIn._44;
-  return m;
-}
-
-inline gfx3DMatrix
-To3DMatrix(const Matrix4x4& aIn)
-{
-  gfx3DMatrix m;
-  m._11 = aIn._11;
-  m._12 = aIn._12;
-  m._13 = aIn._13;
-  m._14 = aIn._14;
-  m._21 = aIn._21;
-  m._22 = aIn._22;
-  m._23 = aIn._23;
-  m._24 = aIn._24;
-  m._31 = aIn._31;
-  m._32 = aIn._32;
-  m._33 = aIn._33;
-  m._34 = aIn._34;
-  m._41 = aIn._41;
-  m._42 = aIn._42;
-  m._43 = aIn._43;
-  m._44 = aIn._44;
-  return m;
-}
-
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 #endif

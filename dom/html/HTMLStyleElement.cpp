@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +9,6 @@
 #include "nsStyleConsts.h"
 #include "nsIDOMStyleSheet.h"
 #include "nsIStyleSheet.h"
-#include "nsNetUtil.h"
 #include "nsIDocument.h"
 #include "nsUnicharUtils.h"
 #include "nsThreadUtils.h"
@@ -172,48 +172,28 @@ HTMLStyleElement::UnbindFromTree(bool aDeep, bool aNullParent)
 }
 
 nsresult
-HTMLStyleElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                          nsIAtom* aPrefix, const nsAString& aValue,
-                          bool aNotify)
+HTMLStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
+                               const nsAttrValue* aValue, bool aNotify)
 {
-  nsresult rv = nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix,
-                                              aValue, aNotify);
-  if (NS_SUCCEEDED(rv) && aNameSpaceID == kNameSpaceID_None) {
+  if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::title ||
         aName == nsGkAtoms::media ||
         aName == nsGkAtoms::type) {
       UpdateStyleSheetInternal(nullptr, nullptr, true);
     } else if (aName == nsGkAtoms::scoped) {
-      UpdateStyleSheetScopedness(true);
+      bool isScoped = aValue;
+      UpdateStyleSheetScopedness(isScoped);
     }
   }
 
-  return rv;
-}
-
-nsresult
-HTMLStyleElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                            bool aNotify)
-{
-  nsresult rv = nsGenericHTMLElement::UnsetAttr(aNameSpaceID, aAttribute,
-                                                aNotify);
-  if (NS_SUCCEEDED(rv) && aNameSpaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::title ||
-        aAttribute == nsGkAtoms::media ||
-        aAttribute == nsGkAtoms::type) {
-      UpdateStyleSheetInternal(nullptr, nullptr, true);
-    } else if (aAttribute == nsGkAtoms::scoped) {
-      UpdateStyleSheetScopedness(false);
-    }
-  }
-
-  return rv;
+  return nsGenericHTMLElement::AfterSetAttr(aNameSpaceID, aName, aValue,
+                                            aNotify);
 }
 
 NS_IMETHODIMP
 HTMLStyleElement::GetInnerHTML(nsAString& aInnerHTML)
 {
-  if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML)) {
+  if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
   return NS_OK;
@@ -278,9 +258,9 @@ HTMLStyleElement::GetStyleSheetInfo(nsAString& aTitle,
 }
 
 JSObject*
-HTMLStyleElement::WrapNode(JSContext *aCx)
+HTMLStyleElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return HTMLStyleElementBinding::Wrap(aCx, this);
+  return HTMLStyleElementBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace dom

@@ -15,6 +15,7 @@
 #include "ia2AccessibleHyperlink.h"
 #include "ia2AccessibleValue.h"
 #include "mozilla/a11y/ProxyAccessible.h"
+#include "mozilla/a11y/IDSet.h"
 
 #ifdef __GNUC__
 // Inheriting from both XPCOM and MSCOM interfaces causes a lot of warnings
@@ -25,6 +26,7 @@
 
 namespace mozilla {
 namespace a11y {
+class DocProxyAccessibleWrap;
 
 class AccessibleWrap : public Accessible,
                        public ia2Accessible,
@@ -33,8 +35,7 @@ class AccessibleWrap : public Accessible,
                        public ia2AccessibleValue
 {
 public: // construction, destruction
-  AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc) :
-    Accessible(aContent, aDoc) { }
+  AccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -152,10 +153,13 @@ public: // construction, destruction
 
   // Accessible
   virtual nsresult HandleAccEvent(AccEvent* aEvent);
+  virtual void Shutdown() override;
 
   // Helper methods
   static int32_t GetChildIDFor(Accessible* aAccessible);
   static HWND GetHWNDFor(Accessible* aAccessible);
+
+  static void FireWinEvent(Accessible* aTarget, uint32_t aEventType);
 
   /**
    * System caret support: update the Windows caret position. 
@@ -175,8 +179,22 @@ public: // construction, destruction
 
   static IDispatch* NativeAccessible(Accessible* aAccessible);
 
+#ifdef _WIN64
+  uint32_t GetExistingID() const { return mID; }
+  static const uint32_t kNoID = 0;
+#endif
+
 protected:
-  virtual ~AccessibleWrap() { }
+  virtual ~AccessibleWrap();
+
+#ifdef _WIN64
+  uint32_t mID;
+#endif
+
+  /**
+   * Return the wrapper for the document's proxy.
+   */
+  DocProxyAccessibleWrap* DocProxyWrapper() const;
 
   /**
    * Creates ITypeInfo for LIBID_Accessibility if it's needed and returns it.
@@ -185,6 +203,9 @@ protected:
 
   static ITypeInfo* gTypeInfo;
 
+#ifdef _WIN64
+  static IDSet sIDGen;
+#endif
 
   enum navRelations {
     NAVRELATION_CONTROLLED_BY = 0x1000,
@@ -215,6 +236,7 @@ WrapperFor(ProxyAccessible* aProxy)
 {
   return reinterpret_cast<AccessibleWrap*>(aProxy->GetWrapper());
 }
+
 } // namespace a11y
 } // namespace mozilla
 

@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +7,6 @@
 #include "mozilla/dom/ContentBridgeChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/dom/StructuredCloneUtils.h"
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/dom/ipc/BlobChild.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
@@ -19,7 +18,8 @@ using namespace mozilla::jsipc;
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_ISUPPORTS(ContentBridgeChild, nsIContentChild)
+NS_IMPL_ISUPPORTS(ContentBridgeChild,
+                  nsIContentChild)
 
 ContentBridgeChild::ContentBridgeChild(Transport* aTransport)
   : mTransport(aTransport)
@@ -39,19 +39,15 @@ ContentBridgeChild::ActorDestroy(ActorDestroyReason aWhy)
 }
 
 /*static*/ ContentBridgeChild*
-ContentBridgeChild::Create(Transport* aTransport, ProcessId aOtherProcess)
+ContentBridgeChild::Create(Transport* aTransport, ProcessId aOtherPid)
 {
   nsRefPtr<ContentBridgeChild> bridge =
     new ContentBridgeChild(aTransport);
-  ProcessHandle handle;
-  if (!base::OpenProcessHandle(aOtherProcess, &handle)) {
-    // XXX need to kill |aOtherProcess|, it's boned
-    return nullptr;
-  }
   bridge->mSelfRef = bridge;
 
-  DebugOnly<bool> ok = bridge->Open(aTransport, handle, XRE_GetIOMessageLoop());
+  DebugOnly<bool> ok = bridge->Open(aTransport, aOtherPid, XRE_GetIOMessageLoop());
   MOZ_ASSERT(ok);
+
   return bridge;
 }
 

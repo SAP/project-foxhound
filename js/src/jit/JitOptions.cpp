@@ -43,14 +43,10 @@ T overrideDefault(const char* param, T dflt) {
     if (!str)
         return dflt;
     if (IsBool<T>::value) {
-        if (strcmp(str, "true") == 0 ||
-            strcmp(str, "yes")) {
+        if (strcmp(str, "true") == 0 || strcmp(str, "yes") == 0)
             return true;
-        }
-        if (strcmp(str, "false") == 0 ||
-            strcmp(str, "no")) {
+        if (strcmp(str, "false") == 0 || strcmp(str, "no") == 0)
             return false;
-        }
         Warn(param, str);
     } else {
         Maybe<int> value = ParseInt(str);
@@ -78,35 +74,89 @@ JitOptions::JitOptions()
     // RangeAnalysis results.
     SET_DEFAULT(checkRangeAnalysis, false);
 
-    // Toggle whether eager scalar replacement is globally disabled.
-    SET_DEFAULT(disableScalarReplacement, false);
-
-    // Toggle whether global value numbering is globally disabled.
-    SET_DEFAULT(disableGvn, false);
-
-    // Toggles whether loop invariant code motion is globally disabled.
-    SET_DEFAULT(disableLicm, false);
-
-    // Toggles whether inlining is globally disabled.
-    SET_DEFAULT(disableInlining, false);
-
-    // Toggles whether Edge Case Analysis is gobally disabled.
-    SET_DEFAULT(disableEdgeCaseAnalysis, false);
-
-    // Toggles whether Range Analysis is globally disabled.
-    SET_DEFAULT(disableRangeAnalysis, false);
-
-    // Toggles whether sink code motion is globally disabled.
-    SET_DEFAULT(disableSink, true);
-
-    // Toggles whether Loop Unrolling is globally disabled.
-    SET_DEFAULT(disableLoopUnrolling, true);
+    // Toggles whether Alignment Mask Analysis is globally disabled.
+    SET_DEFAULT(disableAma, false);
 
     // Toggles whether Effective Address Analysis is globally disabled.
     SET_DEFAULT(disableEaa, false);
 
+    // Toggle whether eager simd unboxing is globally disabled.
+    SET_DEFAULT(disableEagerSimdUnbox, false);
+
+    // Toggles whether Edge Case Analysis is gobally disabled.
+    SET_DEFAULT(disableEdgeCaseAnalysis, false);
+
+    // Toggle whether global value numbering is globally disabled.
+    SET_DEFAULT(disableGvn, false);
+
+    // Toggles whether inlining is globally disabled.
+    SET_DEFAULT(disableInlining, false);
+
+    // Toggles whether loop invariant code motion is globally disabled.
+    SET_DEFAULT(disableLicm, false);
+
+    // Toggles whether Loop Unrolling is globally disabled.
+    SET_DEFAULT(disableLoopUnrolling, true);
+
+    // Toggles whether instruction reordering is globally disabled.
+    SET_DEFAULT(disableInstructionReordering, false);
+
+    // Toggles whether Range Analysis is globally disabled.
+    SET_DEFAULT(disableRangeAnalysis, false);
+
+    // Toggle whether eager scalar replacement is globally disabled.
+    SET_DEFAULT(disableScalarReplacement, false);
+
+    // Toggles whether shared stubs are used in Ionmonkey.
+    SET_DEFAULT(disableSharedStubs, true);
+
+    // Toggles whether sincos optimization is globally disabled.
+    // See bug984018: The MacOS is the only one that has the sincos fast.
+    #if defined(XP_MACOSX)
+        SET_DEFAULT(disableSincos, false);
+    #else
+        SET_DEFAULT(disableSincos, true);
+    #endif
+
+    // Toggles whether sink code motion is globally disabled.
+    SET_DEFAULT(disableSink, true);
+
     // Whether functions are compiled immediately.
     SET_DEFAULT(eagerCompilation, false);
+
+    // Whether IonBuilder should prefer IC generation above specialized MIR.
+    SET_DEFAULT(forceInlineCaches, false);
+
+    // Toggles whether large scripts are rejected.
+    SET_DEFAULT(limitScriptSize, true);
+
+    // Toggles whether functions may be entered at loop headers.
+    SET_DEFAULT(osr, true);
+
+    // Whether to enable extra code to perform dynamic validations.
+    SET_DEFAULT(runExtraChecks, false);
+
+    // How many invocations or loop iterations are needed before functions
+    // are compiled with the baseline compiler.
+    SET_DEFAULT(baselineWarmUpThreshold, 10);
+
+    // Number of exception bailouts (resuming into catch/finally block) before
+    // we invalidate and forbid Ion compilation.
+    SET_DEFAULT(exceptionBailoutThreshold, 10);
+
+    // Number of bailouts without invalidation before we set
+    // JSScript::hadFrequentBailouts and invalidate.
+    SET_DEFAULT(frequentBailoutThreshold, 10);
+
+    // How many actual arguments are accepted on the C stack.
+    SET_DEFAULT(maxStackArgs, 4096);
+
+    // How many times we will try to enter a script via OSR before
+    // invalidating the script.
+    SET_DEFAULT(osrPcMismatchesBeforeRecompile, 6000);
+
+    // The bytecode length limit for small function.
+    SET_DEFAULT(smallFunctionMaxBytecodeLength_, 100);
 
     // Force how many invocation or loop iterations are needed before compiling
     // a function with the highest ionmonkey optimization level.
@@ -129,37 +179,8 @@ JitOptions::JitOptions()
             Warn(forcedRegisterAllocatorEnv, env);
     }
 
-    // Toggles whether large scripts are rejected.
-    SET_DEFAULT(limitScriptSize, true);
-
-    // Toggles whether functions may be entered at loop headers.
-    SET_DEFAULT(osr, true);
-
-    // How many invocations or loop iterations are needed before functions
-    // are compiled with the baseline compiler.
-    SET_DEFAULT(baselineWarmUpThreshold, 10);
-
-    // Number of exception bailouts (resuming into catch/finally block) before
-    // we invalidate and forbid Ion compilation.
-    SET_DEFAULT(exceptionBailoutThreshold, 10);
-
-    // Number of bailouts without invalidation before we set
-    // JSScript::hadFrequentBailouts and invalidate.
-    SET_DEFAULT(frequentBailoutThreshold, 10);
-
-    // How many actual arguments are accepted on the C stack.
-    SET_DEFAULT(maxStackArgs, 4096);
-
-    // How many times we will try to enter a script via OSR before
-    // invalidating the script.
-    SET_DEFAULT(osrPcMismatchesBeforeRecompile, 6000);
-
-    // The bytecode length limit for small function.
-    //
-    // The default for this was arrived at empirically via benchmarking.
-    // We may want to tune it further after other optimizations have gone
-    // in.
-    SET_DEFAULT(smallFunctionMaxBytecodeLength_, 100);
+    // Toggles whether unboxed plain objects can be created by the VM.
+    SET_DEFAULT(disableUnboxedObjects, false);
 }
 
 bool

@@ -253,14 +253,14 @@ this.Utils = {
    */
   base32ToFriendly: function base32ToFriendly(input) {
     return input.toLowerCase()
-                .replace("l", '8', "g")
-                .replace("o", '9', "g");
+                .replace(/l/g, '8')
+                .replace(/o/g, '9');
   },
 
   base32FromFriendly: function base32FromFriendly(input) {
     return input.toUpperCase()
-                .replace("8", 'L', "g")
-                .replace("9", 'O', "g");
+                .replace(/8/g, 'L')
+                .replace(/9/g, 'O');
   },
 
   /**
@@ -690,7 +690,7 @@ Svc.Prefs = new Preferences(PREFS_BRANCH);
 Svc.DefaultPrefs = new Preferences({branch: PREFS_BRANCH, defaultBranch: true});
 Svc.Obs = Observers;
 
-let _sessionCID = Services.appinfo.ID == SEAMONKEY_ID ?
+var _sessionCID = Services.appinfo.ID == SEAMONKEY_ID ?
   "@mozilla.org/suite/sessionstore;1" :
   "@mozilla.org/browser/sessionstore;1";
 

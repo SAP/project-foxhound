@@ -19,18 +19,14 @@
 #include "mozilla/net/RtspChannelChild.h"
 #endif
 using namespace mozilla::net;
+using namespace mozilla::media;
 
-#ifdef PR_LOGGING
 PRLogModuleInfo* gRtspMediaResourceLog;
-#define RTSP_LOG(msg, ...) PR_LOG(gRtspMediaResourceLog, PR_LOG_DEBUG, \
+#define RTSP_LOG(msg, ...) MOZ_LOG(gRtspMediaResourceLog, mozilla::LogLevel::Debug, \
                                   (msg, ##__VA_ARGS__))
 // Debug logging macro with object pointer and class name.
 #define RTSPMLOG(msg, ...) \
         RTSP_LOG("%p [RtspMediaResource]: " msg, this, ##__VA_ARGS__)
-#else
-#define RTSP_LOG(msg, ...)
-#define RTSPMLOG(msg, ...)
-#endif
 
 namespace mozilla {
 
@@ -243,7 +239,10 @@ nsresult RtspTrackBuffer::ReadBuffer(uint8_t* aToBuffer, uint32_t aToBufferSize,
         aFrameSize = mBufferSlotData[mConsumerIdx].mLength;
         break;
       }
-      uint32_t slots = (mBufferSlotData[mConsumerIdx].mLength / mSlotSize) + 1;
+      uint32_t slots = mBufferSlotData[mConsumerIdx].mLength / mSlotSize;
+      if (mBufferSlotData[mConsumerIdx].mLength % mSlotSize > 0) {
+        slots++;
+      }
       // we have data, copy to aToBuffer
       MOZ_ASSERT(mBufferSlotData[mConsumerIdx].mLength <=
                  (int32_t)((BUFFER_SLOT_NUM - mConsumerIdx) * mSlotSize));
@@ -335,13 +334,15 @@ void RtspTrackBuffer::WriteBuffer(const char *aFromBuffer, uint32_t aWriteCount,
   // The flag is true if the incoming data is larger than remainder free slots
   bool returnToHead = false;
   // Calculate how many slots the incoming data needed.
-  int32_t slots = 1;
+  int32_t slots = aWriteCount / mSlotSize;
+  if (aWriteCount % mSlotSize > 0) {
+    slots++;
+  }
   int32_t i;
   RTSPMLOG("WriteBuffer mTrackIdx %d mProducerIdx %d mConsumerIdx %d",
            mTrackIdx, mProducerIdx,mConsumerIdx);
   if (aWriteCount > mSlotSize) {
     isMultipleSlots = true;
-    slots = (aWriteCount / mSlotSize) + 1;
   }
   if (isMultipleSlots &&
       (aWriteCount > (BUFFER_SLOT_NUM - mProducerIdx) * mSlotSize)) {
@@ -504,11 +505,9 @@ RtspMediaResource::RtspMediaResource(MediaDecoder* aDecoder,
   MOZ_ASSERT(mMediaStreamController);
   mListener = new Listener(this);
   mMediaStreamController->AsyncOpen(mListener);
-#ifdef PR_LOGGING
   if (!gRtspMediaResourceLog) {
     gRtspMediaResourceLog = PR_NewLogModule("RtspMediaResource");
   }
-#endif
 #endif
 }
 
@@ -547,7 +546,7 @@ size_t
 RtspMediaResource::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
 {
   size_t size = BaseMediaResource::SizeOfExcludingThis(aMallocSizeOf);
-  size += mTrackBuffer.SizeOfExcludingThis(aMallocSizeOf);
+  size += mTrackBuffer.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
   // Include the size of each track buffer.
   for (size_t i = 0; i < mTrackBuffer.Length(); i++) {
@@ -727,7 +726,6 @@ RtspMediaResource::OnConnected(uint8_t aTrackIdx,
     // Not live stream.
     mIsLiveStream = false;
     mDecoder->SetInfinite(false);
-    mDecoder->SetDuration((double)(durationUs) / USECS_PER_S);
   } else {
     // Live stream.
     // Check the preference "media.realtime_decoder.enabled".

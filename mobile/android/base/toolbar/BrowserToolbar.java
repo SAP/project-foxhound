@@ -29,11 +29,13 @@ import org.mozilla.gecko.toolbar.ToolbarDisplayLayout.OnStopListener;
 import org.mozilla.gecko.toolbar.ToolbarDisplayLayout.OnTitleChangeListener;
 import org.mozilla.gecko.toolbar.ToolbarDisplayLayout.UpdateFlags;
 import org.mozilla.gecko.util.Clipboard;
+import org.mozilla.gecko.util.ColorUtils;
 import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.MenuUtils;
-import org.mozilla.gecko.widget.ThemedImageButton;
-import org.mozilla.gecko.widget.ThemedImageView;
-import org.mozilla.gecko.widget.ThemedRelativeLayout;
+import org.mozilla.gecko.widget.themed.ThemedFrameLayout;
+import org.mozilla.gecko.widget.themed.ThemedImageButton;
+import org.mozilla.gecko.widget.themed.ThemedImageView;
+import org.mozilla.gecko.widget.themed.ThemedRelativeLayout;
 
 import android.content.Context;
 import android.content.res.Resources;
@@ -49,6 +51,7 @@ import android.view.LayoutInflater;
 import android.view.MenuInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewTreeObserver.OnGlobalLayoutListener;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -115,7 +118,7 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
 
     private ToolbarProgressView progressBar;
     protected final TabCounter tabsCounter;
-    protected final ThemedImageButton menuButton;
+    protected final ThemedFrameLayout menuButton;
     protected final ThemedImageView menuIcon;
     private MenuPopup menuPopup;
     protected final List<View> focusOrder;
@@ -132,6 +135,8 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
     protected TabHistoryController tabHistoryController;
 
     private final Paint shadowPaint;
+    private final int shadowColor;
+    private final int shadowPrivateColor;
     private final int shadowSize;
 
     private final ToolbarPrefs prefs;
@@ -188,7 +193,7 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
             tabsCounter.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         }
 
-        menuButton = (ThemedImageButton) findViewById(R.id.menu);
+        menuButton = (ThemedFrameLayout) findViewById(R.id.menu);
         menuIcon = (ThemedImageView) findViewById(R.id.menu_icon);
         hasSoftMenuButton = !HardwareUtils.hasMenuButton();
 
@@ -199,7 +204,9 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
         shadowSize = res.getDimensionPixelSize(R.dimen.browser_toolbar_shadow_size);
 
         shadowPaint = new Paint();
-        shadowPaint.setColor(res.getColor(R.color.url_bar_shadow));
+        shadowColor = ColorUtils.getColor(context, R.color.url_bar_shadow);
+        shadowPrivateColor = ColorUtils.getColor(context, R.color.url_bar_shadow_private);
+        shadowPaint.setColor(shadowColor);
         shadowPaint.setStrokeWidth(0.0f);
 
         setUIMode(UIMode.DISPLAY);
@@ -318,8 +325,6 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
 
         if (hasSoftMenuButton) {
             menuButton.setVisibility(View.VISIBLE);
-            menuIcon.setVisibility(View.VISIBLE);
-
             menuButton.setOnClickListener(new Button.OnClickListener() {
                 @Override
                 public void onClick(View view) {
@@ -344,6 +349,10 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
 
         final int height = getHeight();
         canvas.drawRect(0, height - shadowSize, getWidth(), height, shadowPaint);
+    }
+
+    public void onParentFocus() {
+        urlEditLayout.onParentFocus();
     }
 
     public void setProgressBar(ToolbarProgressView progressBar) {
@@ -525,6 +534,7 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
     private void updateProgressVisibility(Tab selectedTab, int progress) {
         if (!isEditing() && selectedTab.getState() == Tab.STATE_LOADING) {
             progressBar.setProgress(progress);
+            progressBar.setPrivateMode(selectedTab.isPrivate());
             progressBar.setVisibility(View.VISIBLE);
         } else {
             progressBar.setVisibility(View.GONE);
@@ -543,26 +553,37 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
         menuButton.setNextFocusDownId(nextId);
     }
 
-    public void hideVirtualKeyboard() {
+    public boolean hideVirtualKeyboard() {
         InputMethodManager imm =
                 (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-        imm.hideSoftInputFromWindow(tabsButton.getWindowToken(), 0);
+        return imm.hideSoftInputFromWindow(tabsButton.getWindowToken(), 0);
+    }
+
+    private void showSelectedTabs() {
+        Tab tab = Tabs.getInstance().getSelectedTab();
+        if (tab != null) {
+            if (!tab.isPrivate())
+                activity.showNormalTabs();
+            else
+                activity.showPrivateTabs();
+        }
     }
 
     private void toggleTabs() {
         if (activity.areTabsShown()) {
-            if (activity.hasTabsSideBar())
-                activity.hideTabs();
-        } else {
+            return;
+        }
 
-            hideVirtualKeyboard();
-            Tab tab = Tabs.getInstance().getSelectedTab();
-            if (tab != null) {
-                if (!tab.isPrivate())
-                    activity.showNormalTabs();
-                else
-                    activity.showPrivateTabs();
-            }
+        if (hideVirtualKeyboard()) {
+            getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
+                @Override
+                public void onGlobalLayout() {
+                    getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                    showSelectedTabs();
+                }
+            });
+        } else {
+            showSelectedTabs();
         }
     }
 
@@ -824,8 +845,9 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
 
         tabsButton.setPrivateMode(isPrivate);
         menuButton.setPrivateMode(isPrivate);
-        menuIcon.setPrivateMode(isPrivate);
         urlEditLayout.setPrivateMode(isPrivate);
+
+        shadowPaint.setColor(isPrivate ? shadowPrivateColor : shadowColor);
     }
 
     public void show() {
@@ -837,11 +859,12 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
     }
 
     public View getDoorHangerAnchor() {
-        return urlDisplayLayout.getDoorHangerAnchor();
+        return urlDisplayLayout;
     }
 
     public void onDestroy() {
         Tabs.unregisterOnTabsChangedListener(this);
+        urlDisplayLayout.destroy();
     }
 
     public boolean openOptionsMenu() {
@@ -891,7 +914,7 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
         }
 
         final StateListDrawable stateList = new StateListDrawable();
-        stateList.addState(PRIVATE_STATE_SET, getColorDrawable(R.color.background_private));
+        stateList.addState(PRIVATE_STATE_SET, getColorDrawable(R.color.tabs_tray_grey_pressed));
         stateList.addState(EMPTY_STATE_SET, drawable);
 
         setBackgroundDrawable(stateList);
@@ -903,8 +926,8 @@ public abstract class BrowserToolbar extends ThemedRelativeLayout
     }
 
     public static LightweightThemeDrawable getLightweightThemeDrawable(final View view,
-            final Resources res, final LightweightTheme theme, final int colorResID) {
-        final int color = res.getColor(colorResID);
+            final LightweightTheme theme, final int colorResID) {
+        final int color = ColorUtils.getColor(view.getContext(), colorResID);
 
         final LightweightThemeDrawable drawable = theme.getColorDrawable(view, color);
         if (drawable != null) {

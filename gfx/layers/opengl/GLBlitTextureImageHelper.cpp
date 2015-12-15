@@ -14,6 +14,7 @@
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
 #include "CompositorOGL.h"
+#include "mozilla/gfx/Point.h"
 
 using namespace mozilla::gl;
 
@@ -37,8 +38,8 @@ GLBlitTextureImageHelper::~GLBlitTextureImageHelper()
 }
 
 void
-GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const nsIntRect& aSrcRect,
-                                           TextureImage *aDst, const nsIntRect& aDstRect)
+GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const gfx::IntRect& aSrcRect,
+                                           TextureImage *aDst, const gfx::IntRect& aDstRect)
 {
     GLContext *gl = mCompositor->gl();
     NS_ASSERTION(!aSrc->InUpdate(), "Source texture is in update!");
@@ -61,8 +62,8 @@ GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const nsIntRect& 
     aDst->BeginBigImageIteration();
     do {
         // calculate portion of the tile that is going to be painted to
-        nsIntRect dstSubRect;
-        nsIntRect dstTextureRect = ThebesIntRect(aDst->GetTileRect());
+        gfx::IntRect dstSubRect;
+        gfx::IntRect dstTextureRect = aDst->GetTileRect();
         dstSubRect.IntersectRect(aDstRect, dstTextureRect);
 
         // this tile is not part of the destination rectangle aDstRect
@@ -70,7 +71,7 @@ GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const nsIntRect& 
             continue;
 
         // (*) transform the rect of this tile into the rectangle defined by aSrcRect...
-        nsIntRect dstInSrcRect(dstSubRect);
+        gfx::IntRect dstInSrcRect(dstSubRect);
         dstInSrcRect.MoveBy(-aDstRect.TopLeft());
         // ...which might be of different size, hence scale accordingly
         dstInSrcRect.ScaleRoundOut(1.0f / blitScaleX, 1.0f / blitScaleY);
@@ -83,8 +84,8 @@ GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const nsIntRect& 
         // now iterate over all tiles in the source Image...
         do {
             // calculate portion of the source tile that is in the source rect
-            nsIntRect srcSubRect;
-            nsIntRect srcTextureRect = ThebesIntRect(aSrc->GetTileRect());
+            gfx::IntRect srcSubRect;
+            gfx::IntRect srcTextureRect = aSrc->GetTileRect();
             srcSubRect.IntersectRect(aSrcRect, srcTextureRect);
 
             // this tile is not part of the source rect
@@ -104,14 +105,14 @@ GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const nsIntRect& 
             // and the desired destination rectange
             // in destination space.
             // We need to transform this back into destination space, inverting the transform from (*)
-            nsIntRect srcSubInDstRect(srcSubRect);
+            gfx::IntRect srcSubInDstRect(srcSubRect);
             srcSubInDstRect.MoveBy(-aSrcRect.TopLeft());
             srcSubInDstRect.ScaleRoundOut(blitScaleX, blitScaleY);
             srcSubInDstRect.MoveBy(aDstRect.TopLeft());
 
             // we transform these rectangles to be relative to the current src and dst tiles, respectively
-            nsIntSize srcSize = srcTextureRect.Size();
-            nsIntSize dstSize = dstTextureRect.Size();
+            gfx::IntSize srcSize = srcTextureRect.Size();
+            gfx::IntSize dstSize = dstTextureRect.Size();
             srcSubRect.MoveBy(-srcTextureRect.x, -srcTextureRect.y);
             srcSubInDstRect.MoveBy(-dstTextureRect.x, -dstTextureRect.y);
 
@@ -123,10 +124,10 @@ GLBlitTextureImageHelper::BlitTextureImage(TextureImage *aSrc, const nsIntRect& 
 
             RectTriangles rects;
 
-            nsIntSize realTexSize = srcSize;
+            gfx::IntSize realTexSize = srcSize;
             if (!CanUploadNonPowerOfTwo(gl)) {
-                realTexSize = nsIntSize(gfx::NextPowerOfTwo(srcSize.width),
-                                        gfx::NextPowerOfTwo(srcSize.height));
+                realTexSize = gfx::IntSize(gfx::NextPowerOfTwo(srcSize.width),
+                                           gfx::NextPowerOfTwo(srcSize.height));
             }
 
             if (aSrc->GetWrapMode() == LOCAL_GL_REPEAT) {
@@ -277,5 +278,5 @@ GLBlitTextureImageHelper::UseBlitProgram()
     gl->fUniform1i(gl->fGetUniformLocation(mBlitProgram, "uSrcTexture"), 0);
 }
 
-}
-}
+} // namespace layers
+} // namespace mozilla

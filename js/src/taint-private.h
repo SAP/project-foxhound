@@ -71,7 +71,7 @@ taint_report_sink_js(JSContext *cx, JS::HandleString str, const char* name);
 void
 taint_add_op(TaintStringRef *dst, const char* name,
     JSContext *cx = nullptr,
-    JS::HandleValue param1 = JS::UndefinedHandleValue, 
+    JS::HandleValue param1 = JS::UndefinedHandleValue,
     JS::HandleValue param2 = JS::UndefinedHandleValue);
 
 //defs for in place use of primitives
@@ -110,7 +110,7 @@ taint_copy_and_op(JSContext *cx, JSString * dststr, JSString * srcstr,
 //last is the last TaintRef before taint was copied
 //offset/begin are the values passed into taint_copy_range
 void
-taint_inject_substring_op(JSContext *cx, TaintStringRef *last, 
+taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     uint32_t offset, uint32_t begin);
 
 bool taint_threadbit_set(uint8_t v);
@@ -141,10 +141,10 @@ void taint_tag_source_js(JS::HandleString str, const char* name,
         if(fun->displayAtom()) \
             funnamearg = StringValue(fun->displayAtom()); \
         for(unsigned i = 0; i < args.length(); i++) { \
-            RootedValue argn(cx, INT_TO_JSVAL(i)); \
+            RootedValue argn(cx, JS::Int32Value(i)); \
             TAINT_CALL_MARK_ARG(args.get(i), argn, funnamearg); \
         } \
-        RootedValue thisn(cx, INT_TO_JSVAL(-1)); \
+        RootedValue thisn(cx, JS::Int32Value(-1)); \
         TAINT_CALL_MARK_ARG(args.thisv(), thisn, funnamearg); \
     } while(false)
 
@@ -156,7 +156,7 @@ void taint_tag_source_js(JS::HandleString str, const char* name,
     if(obj) { \
         RootedValue patVal(cx, StringValue(g.regExp().getSource())); \
         for(uint32_t ki = 0; ki < obj->getDenseInitializedLength(); ki++) { \
-            RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
+            RootedValue resultIdx(cx, JS::Int32Value(ki)); \
             Value vstr = obj->getDenseElement(ki); \
             if(vstr.isString()) {\
                 taint_add_op(vstr.toString()->getTopTaintRef(), "match", cx, patVal, resultIdx); \
@@ -170,7 +170,7 @@ void taint_tag_source_js(JS::HandleString str, const char* name,
     if(nobj) { \
         RootedValue splitVal(cx, args[0]); \
         for(uint32_t ki = 0; ki < nobj->getDenseInitializedLength(); ki++) { \
-            RootedValue resultIdx(cx, INT_TO_JSVAL(ki)); \
+            RootedValue resultIdx(cx, JS::Int32Value(ki)); \
             Value vstr = nobj->getDenseElement(ki); \
             if(vstr.isString()) { \
                 taint_add_op(vstr.toString()->getTopTaintRef(), "split", cx, splitVal, resultIdx); \

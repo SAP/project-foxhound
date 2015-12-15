@@ -69,6 +69,10 @@ struct BasePoint {
     return Sub(-x, -y);
   }
 
+  T DotProduct(const Sub& aPoint) const {
+      return x * aPoint.x + y * aPoint.y;
+  }
+
   T Length() const {
     return hypot(x, y);
   }
@@ -90,13 +94,19 @@ struct BasePoint {
     return true;
   }
 
+  void Clamp(T aMaxAbsValue)
+  {
+    x = std::max(std::min(x, aMaxAbsValue), -aMaxAbsValue);
+    y = std::max(std::min(y, aMaxAbsValue), -aMaxAbsValue);
+  }
+
   friend std::ostream& operator<<(std::ostream& stream, const BasePoint<T, Sub, Coord>& aPoint) {
     return stream << '(' << aPoint.x << ',' << aPoint.y << ')';
   }
 
 };
 
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 #endif /* MOZILLA_GFX_BASEPOINT_H_ */

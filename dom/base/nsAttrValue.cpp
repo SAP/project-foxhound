@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +28,11 @@
 #include "nsIURI.h"
 #include "nsIDocument.h"
 #include <algorithm>
+
+#ifdef LoadImage
+// Undefine LoadImage to prevent naming conflict with Windows.
+#undef LoadImage
+#endif
 
 using namespace mozilla;
 
@@ -1932,7 +1938,7 @@ nsAttrValue::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
         //n += container->mCSSStyleRule->SizeOfIncludingThis(aMallocSizeOf);
       } else if (Type() == eAtomArray && container->mValue.mAtomArray) {
         // Don't measure each nsIAtom, they are measured separatly.
-        n += container->mValue.mAtomArray->SizeOfIncludingThis(aMallocSizeOf);
+        n += container->mValue.mAtomArray->ShallowSizeOfIncludingThis(aMallocSizeOf);
       }
       break;
     }

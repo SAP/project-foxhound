@@ -38,8 +38,8 @@ namespace layers {
   class ImageContainer;
   class ImageLayer;
   class LayerManager;
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 class nsImageListener : public imgINotificationObserver
 {
@@ -143,10 +143,10 @@ public:
   static bool ShouldCreateImageFrameFor(mozilla::dom::Element* aElement,
                                           nsStyleContext* aStyleContext);
   
-  void DisplayAltFeedback(nsRenderingContext& aRenderingContext,
-                          const nsRect&        aDirtyRect,
-                          imgIRequest*         aRequest,
-                          nsPoint              aPt);
+  DrawResult DisplayAltFeedback(nsRenderingContext& aRenderingContext,
+                                const nsRect& aDirtyRect,
+                                nsPoint aPt,
+                                uint32_t aFlags);
 
   nsRect GetInnerArea() const;
 
@@ -219,6 +219,14 @@ protected:
                         const nsRect& aDirtyRect, imgIContainer* aImage,
                         uint32_t aFlags);
 
+  /**
+   * If we're ready to decode - that is, if our current request's image is
+   * available and our decoding heuristics are satisfied - then trigger a decode
+   * for our image at the size we predict it will be drawn next time it's
+   * painted.
+   */
+  void MaybeDecodeForPredictedSize();
+
 protected:
   friend class nsImageListener;
   friend class nsImageLoadingContent;
@@ -231,6 +239,16 @@ protected:
    * Notification that aRequest will now be the current request.
    */
   void NotifyNewCurrentRequest(imgIRequest *aRequest, nsresult aStatus);
+
+  /// Always sync decode our image when painting if @aForce is true.
+  void SetForceSyncDecoding(bool aForce) { mForceSyncDecoding = aForce; }
+
+  /**
+   * Computes the predicted dest rect that we'll draw into, in app units, based
+   * upon the provided frame content box. (The content box is what
+   * nsDisplayImage::GetBounds() returns.)
+   */
+  nsRect PredictedDestRect(const nsRect& aFrameContentBox);
 
 private:
   // random helpers
@@ -295,7 +313,7 @@ private:
   void InvalidateSelf(const nsIntRect* aLayerInvalidRect,
                       const nsRect* aFrameInvalidRect);
 
-  nsImageMap*         mImageMap;
+  nsRefPtr<nsImageMap> mImageMap;
 
   nsCOMPtr<imgINotificationObserver> mListener;
 
@@ -307,6 +325,7 @@ private:
   bool mDisplayingIcon;
   bool mFirstFrameComplete;
   bool mReflowCallbackPosted;
+  bool mForceSyncDecoding;
 
   static nsIIOService* sIOService;
   
@@ -323,7 +342,8 @@ private:
                     imgRequestProxy **aRequest);
 
   class IconLoad final : public nsIObserver,
-                             public imgINotificationObserver {
+                         public imgINotificationObserver
+  {
     // private class that wraps the data and logic needed for
     // broken image and loading image icons
   public:
@@ -358,6 +378,7 @@ private:
     nsRefPtr<imgRequestProxy> mBrokenImage;
     bool             mPrefForceInlineAltText;
     bool             mPrefShowPlaceholders;
+    bool             mPrefShowLoadingPlaceholder;
   };
   
 public:
@@ -392,6 +413,9 @@ public:
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      nsRenderingContext* aCtx) override;
 
+  virtual bool CanOptimizeToImageLayer(LayerManager* aManager,
+                                       nsDisplayListBuilder* aBuilder) override;
+
   /**
    * Returns an ImageContainer for this image if the image type
    * supports it (TYPE_RASTER only).
@@ -399,7 +423,10 @@ public:
   virtual already_AddRefed<ImageContainer> GetContainer(LayerManager* aManager,
                                                         nsDisplayListBuilder* aBuilder) override;
 
-  gfxRect GetDestRect();
+  /**
+   * @return the dest rect we'll use when drawing this image, in app units.
+   */
+  nsRect GetDestRect(bool* aSnap = nullptr);
 
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
@@ -429,7 +456,8 @@ public:
    * Configure an ImageLayer for this display item.
    * Set the required filter and scaling transform.
    */
-  virtual void ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset) override;
+  virtual void ConfigureLayer(ImageLayer* aLayer,
+                              const ContainerLayerParameters& aParameters) override;
 
   NS_DISPLAY_DECL_NAME("Image", TYPE_IMAGE)
 private:

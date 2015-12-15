@@ -11,13 +11,12 @@
 #include "nsIPipe.h"
 #include "nsIEventTarget.h"
 #include "nsISeekableStream.h"
-#include "nsIProgrammingLanguage.h"
-#include "nsRefPtr.h"
+#include "mozilla/nsRefPtr.h"
 #include "nsSegmentedBuffer.h"
 #include "nsStreamUtils.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "nsIClassInfoImpl.h"
 #include "nsAlgorithm.h"
 #include "nsMemory.h"
@@ -29,7 +28,6 @@ using namespace mozilla;
 #ifdef LOG
 #undef LOG
 #endif
-#if defined(PR_LOGGING)
 //
 // set NSPR_LOG_MODULES=nsPipe:5
 //
@@ -42,10 +40,7 @@ GetPipeLog()
   }
   return sLog;
 }
-#define LOG(args) PR_LOG(GetPipeLog(), PR_LOG_DEBUG, args)
-#else
-#define LOG(args)
-#endif
+#define LOG(args) MOZ_LOG(GetPipeLog(), mozilla::LogLevel::Debug, args)
 
 #define DEFAULT_SEGMENT_SIZE  4096
 #define DEFAULT_SEGMENT_COUNT 16
@@ -70,7 +65,7 @@ enum SegmentChangeResult
   SegmentDeleted
 };
 
-} // anonymous namespace
+} // namespace
 
 //-----------------------------------------------------------------------------
 
@@ -86,9 +81,7 @@ public:
   inline void NotifyInputReady(nsIAsyncInputStream* aStream,
                                nsIInputStreamCallback* aCallback)
   {
-    NS_ASSERTION(!mInputCallback, "already have an input event");
-    mInputStream = aStream;
-    mInputCallback = aCallback;
+    mInputList.AppendElement(InputEntry(aStream, aCallback));
   }
 
   inline void NotifyOutputReady(nsIAsyncOutputStream* aStream,
@@ -100,8 +93,22 @@ public:
   }
 
 private:
-  nsCOMPtr<nsIAsyncInputStream>     mInputStream;
-  nsCOMPtr<nsIInputStreamCallback>  mInputCallback;
+  struct InputEntry
+  {
+    InputEntry(nsIAsyncInputStream* aStream, nsIInputStreamCallback* aCallback)
+      : mStream(aStream)
+      , mCallback(aCallback)
+    {
+      MOZ_ASSERT(mStream);
+      MOZ_ASSERT(mCallback);
+    }
+
+    nsCOMPtr<nsIAsyncInputStream> mStream;
+    nsCOMPtr<nsIInputStreamCallback> mCallback;
+  };
+
+  nsTArray<InputEntry> mInputList;
+
   nsCOMPtr<nsIAsyncOutputStream>    mOutputStream;
   nsCOMPtr<nsIOutputStreamCallback> mOutputCallback;
 };
@@ -139,7 +146,7 @@ struct nsPipeReadState
 //-----------------------------------------------------------------------------
 
 // an input end of a pipe (maintained as a list of refs within the pipe)
-class nsPipeInputStream
+class nsPipeInputStream final
   : public nsIAsyncInputStream
   , public nsISeekableStream
   , public nsISearchableInputStream
@@ -1087,15 +1094,15 @@ nsPipeEvents::~nsPipeEvents()
 {
   // dispatch any pending events
 
-  if (mInputCallback) {
-    mInputCallback->OnInputStreamReady(mInputStream);
-    mInputCallback = 0;
-    mInputStream = 0;
+  for (uint32_t i = 0; i < mInputList.Length(); ++i) {
+    mInputList[i].mCallback->OnInputStreamReady(mInputList[i].mStream);
   }
+  mInputList.Clear();
+
   if (mOutputCallback) {
     mOutputCallback->OnOutputStreamReady(mOutputStream);
-    mOutputCallback = 0;
-    mOutputStream = 0;
+    mOutputCallback = nullptr;
+    mOutputStream = nullptr;
   }
 }
 
@@ -1382,10 +1389,12 @@ nsPipeInputStream::SetEOF()
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-#define COMPARE(s1, s2, i)                                               \
-  (aIgnoreCase                                                           \
-   ? nsCRT::strncasecmp((const char *)s1, (const char *)s2, (uint32_t)i) \
-   : nsCRT::strncmp((const char *)s1, (const char *)s2, (uint32_t)i))
+static bool strings_equal(bool aIgnoreCase,
+                          const char* aS1, const char* aS2, uint32_t aLen)
+{
+  return aIgnoreCase
+    ? !nsCRT::strncasecmp(aS1, aS2, aLen) : !nsCRT::strncmp(aS1, aS2, aLen);
+}
 
 NS_IMETHODIMP
 nsPipeInputStream::Search(const char* aForString,
@@ -1415,7 +1424,7 @@ nsPipeInputStream::Search(const char* aForString,
 
     // check if the string is in the buffer segment
     for (i = 0; i < len1 - strLen + 1; i++) {
-      if (COMPARE(&cursor1[i], aForString, strLen) == 0) {
+      if (strings_equal(aIgnoreCase, &cursor1[i], aForString, strLen)) {
         *aFound = true;
         *aOffsetSearchedTo = offset + i;
         LOG(("  result [aFound=%u offset=%u]\n", *aFound, *aOffsetSearchedTo));
@@ -1447,8 +1456,8 @@ nsPipeInputStream::Search(const char* aForString,
       uint32_t strPart2Len = strLen - strPart1Len;
       const char* strPart2 = &aForString[strLen - strPart2Len];
       uint32_t bufSeg1Offset = len1 - strPart1Len;
-      if (COMPARE(&cursor1[bufSeg1Offset], aForString, strPart1Len) == 0 &&
-          COMPARE(cursor2, strPart2, strPart2Len) == 0) {
+      if (strings_equal(aIgnoreCase, &cursor1[bufSeg1Offset], aForString, strPart1Len) &&
+          strings_equal(aIgnoreCase, cursor2, strPart2, strPart2Len)) {
         *aFound = true;
         *aOffsetSearchedTo = offset - strPart1Len;
         LOG(("  result [aFound=%u offset=%u]\n", *aFound, *aOffsetSearchedTo));
@@ -1812,10 +1821,6 @@ NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
   nsresult rv;
 
   nsPipe* pipe = new nsPipe();
-  if (!pipe) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
   rv = pipe->Init(aNonBlockingInput,
                   aNonBlockingOutput,
                   aSegmentSize,
@@ -1838,9 +1843,6 @@ nsPipeConstructor(nsISupports* aOuter, REFNSIID aIID, void** aResult)
     return NS_ERROR_NO_AGGREGATION;
   }
   nsPipe* pipe = new nsPipe();
-  if (!pipe) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
   NS_ADDREF(pipe);
   nsresult rv = pipe->QueryInterface(aIID, aResult);
   NS_RELEASE(pipe);

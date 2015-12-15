@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +11,14 @@
 #include "nsISupportsImpl.h"
 
 #include "mozilla/dom/ResponseBinding.h"
+#include "mozilla/dom/ChannelInfo.h"
+#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
+namespace ipc {
+class PrincipalInfo;
+} // namespace ipc
+
 namespace dom {
 
 class InternalHeaders;
@@ -31,31 +38,34 @@ public:
   NetworkError()
   {
     nsRefPtr<InternalResponse> response = new InternalResponse(0, EmptyCString());
+    ErrorResult result;
+    response->Headers()->SetGuard(HeadersGuardEnum::Immutable, result);
+    MOZ_ASSERT(!result.Failed());
     response->mType = ResponseType::Error;
     return response.forget();
   }
 
-  static already_AddRefed<InternalResponse>
-  OpaqueResponse()
-  {
-    nsRefPtr<InternalResponse> response = new InternalResponse(0, EmptyCString());
-    response->mType = ResponseType::Opaque;
-    return response.forget();
-  }
+  already_AddRefed<InternalResponse>
+  OpaqueResponse();
 
-  // DO NOT use the inner response after filtering it since the filtered
-  // response will adopt the inner response's body.
-  static already_AddRefed<InternalResponse>
-  BasicResponse(InternalResponse* aInner);
+  already_AddRefed<InternalResponse>
+  OpaqueRedirectResponse();
 
-  // DO NOT use the inner response after filtering it since the filtered
-  // response will adopt the inner response's body.
-  static already_AddRefed<InternalResponse>
-  CORSResponse(InternalResponse* aInner);
+  already_AddRefed<InternalResponse>
+  BasicResponse();
+
+  already_AddRefed<InternalResponse>
+  CORSResponse();
 
   ResponseType
   Type() const
   {
+    MOZ_ASSERT_IF(mType == ResponseType::Error, !mWrappedResponse);
+    MOZ_ASSERT_IF(mType == ResponseType::Default, !mWrappedResponse);
+    MOZ_ASSERT_IF(mType == ResponseType::Basic, mWrappedResponse);
+    MOZ_ASSERT_IF(mType == ResponseType::Cors, mWrappedResponse);
+    MOZ_ASSERT_IF(mType == ResponseType::Opaque, mWrappedResponse);
+    MOZ_ASSERT_IF(mType == ResponseType::Opaqueredirect, mWrappedResponse);
     return mType;
   }
 
@@ -73,21 +83,20 @@ public:
   }
 
   void
+  GetUnfilteredUrl(nsCString& aURL) const
+  {
+    if (mWrappedResponse) {
+      return mWrappedResponse->GetUrl(aURL);
+    }
+
+    return GetUrl(aURL);
+  }
+
+  // SetUrl should only be called when the fragment has alredy been stripped
+  void
   SetUrl(const nsACString& aURL)
   {
     mURL.Assign(aURL);
-  }
-
-  bool
-  FinalURL() const
-  {
-    return mFinalURL;
-  }
-
-  void
-  SetFinalURL(bool aFinalURL)
-  {
-    mFinalURL = aFinalURL;
   }
 
   uint16_t
@@ -96,10 +105,30 @@ public:
     return mStatus;
   }
 
+  uint16_t
+  GetUnfilteredStatus() const
+  {
+    if (mWrappedResponse) {
+      return mWrappedResponse->GetStatus();
+    }
+
+    return GetStatus();
+  }
+
   const nsCString&
   GetStatusText() const
   {
     return mStatusText;
+  }
+
+  const nsCString&
+  GetUnfilteredStatusText() const
+  {
+    if (mWrappedResponse) {
+      return mWrappedResponse->GetStatusText();
+    }
+
+    return GetStatusText();
   }
 
   InternalHeaders*
@@ -108,38 +137,113 @@ public:
     return mHeaders;
   }
 
-  void
-  GetBody(nsIInputStream** aStream)
+  InternalHeaders*
+  UnfilteredHeaders()
   {
+    if (mWrappedResponse) {
+      return mWrappedResponse->Headers();
+    };
+
+    return Headers();
+  }
+
+  void
+  GetUnfilteredBody(nsIInputStream** aStream)
+  {
+    if (mWrappedResponse) {
+      MOZ_ASSERT(!mBody);
+      return mWrappedResponse->GetBody(aStream);
+    }
     nsCOMPtr<nsIInputStream> stream = mBody;
     stream.forget(aStream);
   }
 
   void
+  GetBody(nsIInputStream** aStream)
+  {
+    if (Type() == ResponseType::Opaque ||
+        Type() == ResponseType::Opaqueredirect) {
+      *aStream = nullptr;
+      return;
+    }
+
+    return GetUnfilteredBody(aStream);
+  }
+
+  void
   SetBody(nsIInputStream* aBody)
   {
+    if (mWrappedResponse) {
+      return mWrappedResponse->SetBody(aBody);
+    }
     // A request's body may not be reset once set.
     MOZ_ASSERT(!mBody);
     mBody = aBody;
   }
 
-private:
-  ~InternalResponse()
-  { }
+  void
+  InitChannelInfo(nsIChannel* aChannel)
+  {
+    mChannelInfo.InitFromChannel(aChannel);
+  }
 
-  // Used to create filtered and cloned responses.
-  // Does not copy headers or body stream.
-  explicit InternalResponse(const InternalResponse& aOther);
+  void
+  InitChannelInfo(const mozilla::ipc::IPCChannelInfo& aChannelInfo)
+  {
+    mChannelInfo.InitFromIPCChannelInfo(aChannelInfo);
+  }
+
+  void
+  InitChannelInfo(const ChannelInfo& aChannelInfo)
+  {
+    mChannelInfo = aChannelInfo;
+  }
+
+  const ChannelInfo&
+  GetChannelInfo() const
+  {
+    return mChannelInfo;
+  }
+
+  const UniquePtr<mozilla::ipc::PrincipalInfo>&
+  GetPrincipalInfo() const
+  {
+    return mPrincipalInfo;
+  }
+
+  // Takes ownership of the principal info.
+  void
+  SetPrincipalInfo(UniquePtr<mozilla::ipc::PrincipalInfo> aPrincipalInfo);
+
+  nsresult
+  StripFragmentAndSetUrl(const nsACString& aUrl);
+
+private:
+  ~InternalResponse();
+
+  explicit InternalResponse(const InternalResponse& aOther) = delete;
+  InternalResponse& operator=(const InternalResponse&) = delete;
+
+  // Returns an instance of InternalResponse which is a copy of this
+  // InternalResponse, except headers, body and wrapped response (if any) which
+  // are left uninitialized. Used for cloning and filtering.
+  already_AddRefed<InternalResponse> CreateIncompleteCopy();
 
   ResponseType mType;
   nsCString mTerminationReason;
   nsCString mURL;
-  bool mFinalURL;
   const uint16_t mStatus;
   const nsCString mStatusText;
   nsRefPtr<InternalHeaders> mHeaders;
   nsCOMPtr<nsIInputStream> mBody;
-  nsCString mContentType;
+  ChannelInfo mChannelInfo;
+  UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
+
+  // For filtered responses.
+  // Cache, and SW interception should always serialize/access the underlying
+  // unfiltered headers and when deserializing, create an InternalResponse
+  // with the unfiltered headers followed by wrapping it.
+  nsRefPtr<InternalResponse> mWrappedResponse;
 };
 
 } // namespace dom

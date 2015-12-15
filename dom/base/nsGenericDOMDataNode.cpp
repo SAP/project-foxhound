@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +33,7 @@
 #include "nsCCUncollectableMarker.h"
 #include "mozAutoDocUpdate.h"
 
-#include "pldhash.h"
+#include "PLDHashTable.h"
 #include "prprf.h"
 #include "nsWrapperCacheInlines.h"
 
@@ -222,7 +223,7 @@ nsGenericDOMDataNode::SubstringData(uint32_t aStart, uint32_t aCount,
 {
   ErrorResult rv;
   SubstringData(aStart, aCount, aReturn, rv);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -478,7 +479,7 @@ nsGenericDOMDataNode::SetTextInternal(uint32_t aOffset, uint32_t aCount,
     nsNodeUtils::CharacterDataChanged(this, &info);
 
     if (haveMutationListeners) {
-      InternalMutationEvent mutation(true, NS_MUTATION_CHARACTERDATAMODIFIED);
+      InternalMutationEvent mutation(true, eLegacyCharacterDataModified);
 
       mutation.mPrevAttrValue = oldValue;
       if (aLength > 0) {
@@ -787,7 +788,10 @@ ShadowRoot *
 nsGenericDOMDataNode::GetContainingShadow() const
 {
   nsDataSlots *slots = GetExistingDataSlots();
-  return slots ? slots->mContainingShadow : nullptr;
+  if (!slots) {
+    return nullptr;
+  }
+  return slots->mContainingShadow;
 }
 
 void

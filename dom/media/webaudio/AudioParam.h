@@ -21,7 +21,7 @@ namespace mozilla {
 namespace dom {
 
 class AudioParam final : public nsWrapperCache,
-                             public AudioParamTimeline
+                         public AudioParamTimeline
 {
   virtual ~AudioParam();
 
@@ -30,7 +30,8 @@ public:
 
   AudioParam(AudioNode* aNode,
              CallbackType aCallback,
-             float aDefaultValue);
+             float aDefaultValue,
+             const char* aName);
 
   NS_IMETHOD_(MozExternalRefCountType) AddRef(void);
   NS_IMETHOD_(MozExternalRefCountType) Release(void);
@@ -46,7 +47,7 @@ public:
     return mNode->Context()->DOMTimeToStreamTime(aTime);
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // We override SetValueCurveAtTime to convert the Float32Array to the wrapper
   // object.
@@ -121,6 +122,16 @@ public:
     mCallback(mNode);
   }
 
+  uint32_t ParentNodeId()
+  {
+    return mNode->Id();
+  }
+
+  void GetName(nsAString& aName)
+  {
+    aName.AssignASCII(mName);
+  }
+
   float DefaultValue() const
   {
     return mDefaultValue;
@@ -158,7 +169,7 @@ public:
     // - mNode
 
     // Just count the array, actual nodes are counted in mNode.
-    amount += mInputNodes.SizeOfExcludingThis(aMallocSizeOf);
+    amount += mInputNodes.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
     if (mNodeStreamPort) {
       amount += mNodeStreamPort->SizeOfIncludingThis(aMallocSizeOf);
@@ -183,12 +194,13 @@ private:
   nsTArray<AudioNode::InputNode> mInputNodes;
   CallbackType mCallback;
   const float mDefaultValue;
+  const char* mName;
   // The input port used to connect the AudioParam's stream to its node's stream
   nsRefPtr<MediaInputPort> mNodeStreamPort;
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif
 

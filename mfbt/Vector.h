@@ -473,7 +473,6 @@ public:
     }
 
   public:
-    Range() {}
     bool empty() const { return mCur == mEnd; }
     size_t remain() const { return PointerRangeSize(mCur, mEnd); }
     T& front() const { MOZ_ASSERT(!empty()); return *mCur; }
@@ -481,7 +480,28 @@ public:
     T popCopyFront() { MOZ_ASSERT(!empty()); return *mCur++; }
   };
 
+  class ConstRange
+  {
+    friend class VectorBase;
+    const T* mCur;
+    const T* mEnd;
+    ConstRange(const T* aCur, const T* aEnd)
+      : mCur(aCur)
+      , mEnd(aEnd)
+    {
+      MOZ_ASSERT(aCur <= aEnd);
+    }
+
+  public:
+    bool empty() const { return mCur == mEnd; }
+    size_t remain() const { return PointerRangeSize(mCur, mEnd); }
+    const T& front() const { MOZ_ASSERT(!empty()); return *mCur; }
+    void popFront() { MOZ_ASSERT(!empty()); ++mCur; }
+    T popCopyFront() { MOZ_ASSERT(!empty()); return *mCur++; }
+  };
+
   Range all() { return Range(begin(), end()); }
+  ConstRange all() const { return ConstRange(begin(), end()); }
 
   /* mutators */
 
@@ -543,6 +563,18 @@ public:
    * not amused.")
    */
   template<typename U> bool append(U&& aU);
+
+  /**
+   * Construct a T in-place as a new entry at the end of this vector.
+   */
+  template<typename... Args>
+  bool emplaceBack(Args&&... aArgs)
+  {
+    if (!growByUninitialized(1))
+      return false;
+    new (&back()) T(Forward<Args>(aArgs)...);
+    return true;
+  }
 
   template<typename U, size_t O, class BP, class UV>
   bool appendAll(const VectorBase<U, O, BP, UV>& aU);

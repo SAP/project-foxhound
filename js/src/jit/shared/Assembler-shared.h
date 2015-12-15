@@ -18,21 +18,23 @@
 #include "jit/RegisterSets.h"
 #include "vm/HelperThreads.h"
 
-#if defined(JS_CODEGEN_ARM)
-#define JS_USE_LINK_REGISTER
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64)
+// Push return addresses callee-side.
+# define JS_USE_LINK_REGISTER
 #endif
 
-#if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_ARM)
+#if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64)
 // JS_SMALL_BRANCH means the range on a branch instruction
 // is smaller than the whole address space
-#    define JS_SMALL_BRANCH
+# define JS_SMALL_BRANCH
 #endif
+
 namespace js {
 namespace jit {
 
 namespace Disassembler {
 class HeapAccess;
-};
+} // namespace Disassembler
 
 static const uint32_t Simd128DataSize = 4 * sizeof(int32_t);
 static_assert(Simd128DataSize == 4 * sizeof(int32_t), "SIMD data should be able to contain int32x4");
@@ -120,6 +122,15 @@ struct ImmWord
     uintptr_t value;
 
     explicit ImmWord(uintptr_t value) : value(value)
+    { }
+};
+
+// Used for 64-bit immediates which do not require relocation.
+struct Imm64
+{
+    uint64_t value;
+
+    explicit Imm64(uint64_t value) : value(value)
     { }
 };
 
@@ -214,41 +225,6 @@ struct PatchedImmPtr {
 class AssemblerShared;
 class ImmGCPtr;
 
-// Used for immediates which require relocation and may be traced during minor GC.
-class ImmMaybeNurseryPtr
-{
-    friend class AssemblerShared;
-    friend class ImmGCPtr;
-    const gc::Cell* value;
-
-    ImmMaybeNurseryPtr() : value(0) {}
-
-  public:
-    explicit ImmMaybeNurseryPtr(const gc::Cell* ptr) : value(ptr)
-    {
-        MOZ_ASSERT(!IsPoisonedPtr(ptr));
-
-        // asm.js shouldn't be creating GC things
-        MOZ_ASSERT(!IsCompilingAsmJS());
-    }
-};
-
-// Dummy value used for nursery pointers during Ion compilation, see
-// LNurseryObject.
-class IonNurseryPtr
-{
-    const gc::Cell* ptr;
-
-  public:
-    friend class ImmGCPtr;
-
-    explicit IonNurseryPtr(const gc::Cell* ptr) : ptr(ptr)
-    {
-        MOZ_ASSERT(ptr);
-        MOZ_ASSERT(uintptr_t(ptr) & 0x1);
-    }
-};
-
 // Used for immediates which require relocation.
 class ImmGCPtr
 {
@@ -257,17 +233,10 @@ class ImmGCPtr
 
     explicit ImmGCPtr(const gc::Cell* ptr) : value(ptr)
     {
-        MOZ_ASSERT(!IsPoisonedPtr(ptr));
-        MOZ_ASSERT_IF(ptr, ptr->isTenured());
-
-        // asm.js shouldn't be creating GC things
-        MOZ_ASSERT(!IsCompilingAsmJS());
-    }
-
-    explicit ImmGCPtr(IonNurseryPtr ptr) : value(ptr.ptr)
-    {
-        MOZ_ASSERT(!IsPoisonedPtr(value));
-        MOZ_ASSERT(value);
+        // Nursery pointers can't be used if the main thread might be currently
+        // performing a minor GC.
+        MOZ_ASSERT_IF(ptr && !ptr->isTenured(),
+                      !CurrentThreadIsIonCompilingSafeForMinorGC());
 
         // asm.js shouldn't be creating GC things
         MOZ_ASSERT(!IsCompilingAsmJS());
@@ -275,15 +244,6 @@ class ImmGCPtr
 
   private:
     ImmGCPtr() : value(0) {}
-
-    friend class AssemblerShared;
-    explicit ImmGCPtr(ImmMaybeNurseryPtr ptr) : value(ptr.value)
-    {
-        MOZ_ASSERT(!IsPoisonedPtr(ptr.value));
-
-        // asm.js shouldn't be creating GC things
-        MOZ_ASSERT(!IsCompilingAsmJS());
-    }
 };
 
 // Pointer to be embedded as an immediate that is loaded/stored from by an
@@ -315,6 +275,9 @@ struct PatchedAbsoluteAddress
     { }
     explicit PatchedAbsoluteAddress(const void* addr)
       : addr(const_cast<void*>(addr))
+    { }
+    explicit PatchedAbsoluteAddress(uintptr_t addr)
+      : addr(reinterpret_cast<void*>(addr))
     { }
 };
 
@@ -764,14 +727,25 @@ static const unsigned AsmJSNaN32GlobalDataOffset = 2 * sizeof(void*) + sizeof(do
 // #ifdefery.
 class AsmJSHeapAccess
 {
+#if defined(JS_CODEGEN_X64)
+  public:
+    enum WhatToDoOnOOB {
+        CarryOn, // loads return undefined, stores do nothing.
+        Throw    // throw a RangeError
+    };
+#endif
+
   private:
-    uint32_t offset_;
+    uint32_t insnOffset_;
+#if defined(JS_CODEGEN_X86)
+    uint8_t opLength_;  // the length of the load/store instruction
+#endif
+#if defined(JS_CODEGEN_X64)
+    uint8_t offsetWithinWholeSimdVector_; // if is this e.g. the Z of an XYZ
+    bool throwOnOOB_;   // should we throw on OOB?
+#endif
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
     uint8_t cmpDelta_;  // the number of bytes from the cmp to the load/store instruction
-    uint8_t opLength_;  // the length of the load/store instruction
-    uint8_t numSimdElems_; // the number of SIMD lanes to load/store at once
-    Scalar::Type type_;
-    AnyRegister::Code loadedReg_ : 8;
 #endif
 
     JS_STATIC_ASSERT(AnyRegister::Total < UINT8_MAX);
@@ -780,63 +754,55 @@ class AsmJSHeapAccess
     AsmJSHeapAccess() {}
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
     static const uint32_t NoLengthCheck = UINT32_MAX;
-
-    // If 'cmp' equals 'offset' or if it is not supplied then the
-    // cmpDelta_ is zero indicating that there is no length to patch.
-    AsmJSHeapAccess(uint32_t offset, uint32_t after, Scalar::Type type, AnyRegister loadedReg,
-                    uint32_t cmp = NoLengthCheck)
-      : offset_(offset),
-        cmpDelta_(cmp == NoLengthCheck ? 0 : offset - cmp),
-        opLength_(after - offset),
-        numSimdElems_(UINT8_MAX),
-        type_(type),
-        loadedReg_(loadedReg.code())
-    {
-        MOZ_ASSERT(!Scalar::isSimdType(type));
-    }
-    AsmJSHeapAccess(uint32_t offset, uint8_t after, Scalar::Type type, uint32_t cmp = NoLengthCheck)
-      : offset_(offset),
-        cmpDelta_(cmp == NoLengthCheck ? 0 : offset - cmp),
-        opLength_(after - offset),
-        numSimdElems_(UINT8_MAX),
-        type_(type),
-        loadedReg_(UINT8_MAX)
-    {
-        MOZ_ASSERT(!Scalar::isSimdType(type));
-    }
-    // SIMD loads / stores
-    AsmJSHeapAccess(uint32_t offset, uint32_t after, unsigned numSimdElems, Scalar::Type type,
-                    uint32_t cmp = NoLengthCheck)
-      : offset_(offset),
-        cmpDelta_(cmp == NoLengthCheck ? 0 : offset - cmp),
-        opLength_(after - offset),
-        numSimdElems_(numSimdElems),
-        type_(type),
-        loadedReg_(UINT8_MAX)
-    {
-        MOZ_ASSERT(Scalar::isSimdType(type));
-    }
-#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
-    explicit AsmJSHeapAccess(uint32_t offset)
-      : offset_(offset)
-    {}
 #endif
 
-    uint32_t offset() const { return offset_; }
-    void setOffset(uint32_t offset) { offset_ = offset; }
 #if defined(JS_CODEGEN_X86)
-    void* patchOffsetAt(uint8_t* code) const { return code + (offset_ + opLength_); }
+    // If 'cmp' equals 'insnOffset' or if it is not supplied then the
+    // cmpDelta_ is zero indicating that there is no length to patch.
+    AsmJSHeapAccess(uint32_t insnOffset, uint32_t after, uint32_t cmp = NoLengthCheck)
+    {
+        mozilla::PodZero(this);  // zero padding for Valgrind
+        insnOffset_ = insnOffset;
+        opLength_ = after - insnOffset;
+        cmpDelta_ = cmp == NoLengthCheck ? 0 : insnOffset - cmp;
+    }
+#elif defined(JS_CODEGEN_X64)
+    // If 'cmp' equals 'insnOffset' or if it is not supplied then the
+    // cmpDelta_ is zero indicating that there is no length to patch.
+    AsmJSHeapAccess(uint32_t insnOffset, WhatToDoOnOOB oob,
+                    uint32_t cmp = NoLengthCheck,
+                    uint32_t offsetWithinWholeSimdVector = 0)
+    {
+        mozilla::PodZero(this);  // zero padding for Valgrind
+        insnOffset_ = insnOffset;
+        offsetWithinWholeSimdVector_ = offsetWithinWholeSimdVector;
+        throwOnOOB_ = oob == Throw;
+        cmpDelta_ = cmp == NoLengthCheck ? 0 : insnOffset - cmp;
+        MOZ_ASSERT(offsetWithinWholeSimdVector_ == offsetWithinWholeSimdVector);
+    }
+#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_MIPS32)
+    explicit AsmJSHeapAccess(uint32_t insnOffset)
+    {
+        mozilla::PodZero(this);  // zero padding for Valgrind
+        insnOffset_ = insnOffset;
+    }
+#endif
+
+    uint32_t insnOffset() const { return insnOffset_; }
+    void setInsnOffset(uint32_t insnOffset) { insnOffset_ = insnOffset; }
+#if defined(JS_CODEGEN_X86)
+    void* patchHeapPtrImmAt(uint8_t* code) const { return code + (insnOffset_ + opLength_); }
 #endif
 #if defined(JS_CODEGEN_X64)
-    unsigned opLength() const { MOZ_ASSERT(!Scalar::isSimdType(type_)); return opLength_; }
-    bool isLoad() const { MOZ_ASSERT(!Scalar::isSimdType(type_)); return loadedReg_ != UINT8_MAX; }
+    bool throwOnOOB() const { return throwOnOOB_; }
+    uint32_t offsetWithinWholeSimdVector() const { return offsetWithinWholeSimdVector_; }
 #endif
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
     bool hasLengthCheck() const { return cmpDelta_ > 0; }
-    void* patchLengthAt(uint8_t* code) const { return code + (offset_ - cmpDelta_); }
-    unsigned numSimdElems() const { MOZ_ASSERT(Scalar::isSimdType(type_)); return numSimdElems_; }
-    Scalar::Type type() const { return type_; }
-    AnyRegister loadedReg() const { return AnyRegister::FromCode(loadedReg_); }
+    void* patchLengthAt(uint8_t* code) const {
+        MOZ_ASSERT(hasLengthCheck());
+        return code + (insnOffset_ - cmpDelta_);
+    }
 #endif
 };
 
@@ -861,6 +827,13 @@ enum AsmJSImmKind
 #if defined(JS_CODEGEN_ARM)
     AsmJSImm_aeabi_idivmod   = AsmJSExit::Builtin_IDivMod,
     AsmJSImm_aeabi_uidivmod  = AsmJSExit::Builtin_UDivMod,
+    AsmJSImm_AtomicCmpXchg   = AsmJSExit::Builtin_AtomicCmpXchg,
+    AsmJSImm_AtomicXchg      = AsmJSExit::Builtin_AtomicXchg,
+    AsmJSImm_AtomicFetchAdd  = AsmJSExit::Builtin_AtomicFetchAdd,
+    AsmJSImm_AtomicFetchSub  = AsmJSExit::Builtin_AtomicFetchSub,
+    AsmJSImm_AtomicFetchAnd  = AsmJSExit::Builtin_AtomicFetchAnd,
+    AsmJSImm_AtomicFetchOr   = AsmJSExit::Builtin_AtomicFetchOr,
+    AsmJSImm_AtomicFetchXor  = AsmJSExit::Builtin_AtomicFetchXor,
 #endif
     AsmJSImm_ModD            = AsmJSExit::Builtin_ModD,
     AsmJSImm_SinD            = AsmJSExit::Builtin_SinD,
@@ -883,6 +856,7 @@ enum AsmJSImmKind
     AsmJSImm_ReportOverRecursed,
     AsmJSImm_OnDetached,
     AsmJSImm_OnOutOfBounds,
+    AsmJSImm_OnImpreciseConversion,
     AsmJSImm_HandleExecutionInterrupt,
     AsmJSImm_InvokeFromAsmJS_Ignore,
     AsmJSImm_InvokeFromAsmJS_ToInt32,
@@ -949,7 +923,6 @@ class AssemblerShared
     Vector<AsmJSAbsoluteLink, 0, SystemAllocPolicy> asmJSAbsoluteLinks_;
 
   protected:
-    Vector<CodeOffsetLabel, 0, SystemAllocPolicy> profilerCallSites_;
     bool enoughMemory_;
     bool embedsNurseryPointers_;
 
@@ -971,24 +944,8 @@ class AssemblerShared
         return !enoughMemory_;
     }
 
-    void appendProfilerCallSite(CodeOffsetLabel label) {
-        enoughMemory_ &= profilerCallSites_.append(label);
-    }
-
     bool embedsNurseryPointers() const {
         return embedsNurseryPointers_;
-    }
-
-    ImmGCPtr noteMaybeNurseryPtr(ImmMaybeNurseryPtr ptr) {
-        if (ptr.value && gc::IsInsideNursery(ptr.value)) {
-            // noteMaybeNurseryPtr can be reached from off-thread compilation,
-            // though not with an actual nursery pointer argument in that case.
-            MOZ_ASSERT(GetJitContext()->runtime->onMainThread());
-            // Do not be ion-compiling on the main thread.
-            MOZ_ASSERT(!GetJitContext()->runtime->mainThread()->ionCompiling);
-            embedsNurseryPointers_ = true;
-        }
-        return ImmGCPtr(ptr);
     }
 
     void append(const CallSiteDesc& desc, size_t currentOffset, size_t framePushed) {

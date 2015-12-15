@@ -37,7 +37,6 @@ CompositorVsyncDispatcher::~CompositorVsyncDispatcher()
 {
   MOZ_ASSERT(XRE_IsParentProcess());
   // We auto remove this vsync dispatcher from the vsync source in the nsBaseWidget
-  MOZ_ASSERT(NS_IsMainThread());
 }
 
 void
@@ -45,9 +44,7 @@ CompositorVsyncDispatcher::NotifyVsync(TimeStamp aVsyncTimestamp)
 {
   // In vsync thread
 #ifdef MOZ_ENABLE_PROFILER_SPS
-    if (profiler_is_active()) {
-        layers::CompositorParent::PostInsertVsyncProfilerMarker(aVsyncTimestamp);
-    }
+  layers::CompositorParent::PostInsertVsyncProfilerMarker(aVsyncTimestamp);
 #endif
 
   MutexAutoLock lock(mCompositorObserverLock);

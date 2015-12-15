@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +24,7 @@
 #include "nsITimer.h"
 #include "nsStubDocumentObserver.h"
 #include "nsIContentSink.h"
-#include "prlog.h"
+#include "mozilla/Logging.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsThreadUtils.h"
 
@@ -31,11 +32,9 @@ class nsIDocument;
 class nsIURI;
 class nsIChannel;
 class nsIDocShell;
-class nsIParser;
 class nsIAtom;
 class nsIChannel;
 class nsIContent;
-class nsViewManager;
 class nsNodeInfoManager;
 class nsScriptLoader;
 class nsIApplicationCache;
@@ -43,8 +42,8 @@ class nsIApplicationCache;
 namespace mozilla {
 namespace css {
 class Loader;
-}
-}
+} // namespace css
+} // namespace mozilla
 
 #ifdef DEBUG
 
@@ -152,7 +151,7 @@ protected:
   nsresult ProcessLink(const nsSubstring& aAnchor,
                        const nsSubstring& aHref, const nsSubstring& aRel,
                        const nsSubstring& aTitle, const nsSubstring& aType,
-                       const nsSubstring& aMedia);
+                       const nsSubstring& aMedia, const nsSubstring& aCrossOrigin);
 
   virtual nsresult ProcessStyleLink(nsIContent* aElement,
                                     const nsSubstring& aHref,
@@ -164,8 +163,8 @@ protected:
   void PrefetchHref(const nsAString &aHref, nsINode *aSource,
                     bool aExplicit);
 
-  // aHref can either be the usual URI format or of the form "//www.hostname.com"
-  // without a scheme.
+  // For PrefetchDNS() aHref can either be the usual
+  // URI format or of the form "//www.hostname.com" without a scheme.
   void PrefetchDNS(const nsAString &aHref);
 
   // Gets the cache key (used to identify items in a cache) of the channel.
@@ -223,6 +222,10 @@ public:
   // Extracts the manifest attribute from the element if it is the root 
   // element and calls the above method.
   void ProcessOfflineManifest(nsIContent *aElement);
+
+  // For Preconnect() aHref can either be the usual
+  // URI format or of the form "//www.hostname.com" without a scheme.
+  void Preconnect(const nsAString& aHref, const nsAString& aCrossOrigin);
 
 protected:
   // Tries to scroll to the URI's named anchor. Once we've successfully

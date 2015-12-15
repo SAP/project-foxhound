@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -98,8 +99,7 @@ private:
   bool mLowDiskSpace;
   bool IsLowDiskSpace() const { return mLowDiskSpace; };
 
-  static PLDHashOperator ClearCacheEnumerator(DOMStorageCacheHashKey* aCache,
-                                              void* aClosure);
+  void ClearCaches(uint32_t aUnloadFlags, const nsACString& aKeyPrefix);
 
 protected:
   // Keeps usage cache objects for eTLD+1 scopes we have touched.
@@ -125,6 +125,9 @@ public:
   // Global getter of localStorage manager service
   static DOMLocalStorageManager* Self() { return sSelf; }
 
+  // Like Self, but creates an instance if we're not yet initialized.
+  static DOMLocalStorageManager* Ensure();
+
 private:
   static DOMLocalStorageManager* sSelf;
 };
@@ -135,7 +138,7 @@ public:
   DOMSessionStorageManager();
 };
 
-} // ::dom
-} // ::mozilla
+} // namespace dom
+} // namespace mozilla
 
 #endif /* nsDOMStorageManager_h__ */

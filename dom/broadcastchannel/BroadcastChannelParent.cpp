@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +10,7 @@
 #include "mozilla/dom/ipc/BlobParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/unused.h"
+#include "nsIScriptSecurityManager.h"
 
 namespace mozilla {
 
@@ -16,10 +18,9 @@ using namespace ipc;
 
 namespace dom {
 
-BroadcastChannelParent::BroadcastChannelParent(
-                                            const nsAString& aOrigin,
-                                            const nsAString& aChannel,
-                                            bool aPrivateBrowsing)
+BroadcastChannelParent::BroadcastChannelParent(const nsACString& aOrigin,
+                                               const nsAString& aChannel,
+                                               bool aPrivateBrowsing)
   : mService(BroadcastChannelService::GetOrCreate())
   , mOrigin(aOrigin)
   , mChannel(aChannel)
@@ -78,7 +79,7 @@ BroadcastChannelParent::ActorDestroy(ActorDestroyReason aWhy)
 
 void
 BroadcastChannelParent::CheckAndDeliver(const ClonedMessageData& aData,
-                                        const nsString& aOrigin,
+                                        const nsCString& aOrigin,
                                         const nsString& aChannel,
                                         bool aPrivateBrowsing)
 {
@@ -87,20 +88,12 @@ BroadcastChannelParent::CheckAndDeliver(const ClonedMessageData& aData,
   if (aOrigin == mOrigin &&
       aChannel == mChannel &&
       aPrivateBrowsing == mPrivateBrowsing) {
-    // We need to duplicate data only if we have blobs or if the manager of
-    // them is different than the manager of this parent actor.
-    if (aData.blobsParent().IsEmpty() ||
-        static_cast<BlobParent*>(aData.blobsParent()[0])->GetBackgroundManager() == Manager()) {
-      unused << SendNotify(aData);
-      return;
-    }
-
     // Duplicate the data for this parent.
     ClonedMessageData newData(aData);
 
     // Ricreate the BlobParent for this new message.
     for (uint32_t i = 0, len = newData.blobsParent().Length(); i < len; ++i) {
-      nsRefPtr<FileImpl> impl =
+      nsRefPtr<BlobImpl> impl =
         static_cast<BlobParent*>(newData.blobsParent()[i])->GetBlobImpl();
 
       PBlobParent* blobParent =
@@ -116,5 +109,5 @@ BroadcastChannelParent::CheckAndDeliver(const ClonedMessageData& aData,
   }
 }
 
-} // dom namespace
-} // mozilla namespace
+} // namespace dom
+} // namespace mozilla

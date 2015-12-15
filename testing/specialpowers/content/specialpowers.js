@@ -31,12 +31,17 @@ function SpecialPowers(window) {
                            "SPPrefService",
                            "SPProcessCrashService",
                            "SPSetTestPluginEnabledState",
-                           "SPWebAppService"];
+                           "SPWebAppService",
+                           "SPPeriodicServiceWorkerUpdates"];
 
   this.SP_ASYNC_MESSAGES = ["SpecialPowers.Focus",
                             "SpecialPowers.Quit",
                             "SPPingService",
-                            "SPQuotaManager"];
+                            "SPQuotaManager",
+                            "SPLoadExtension",
+                            "SPStartupExtension",
+                            "SPUnloadExtension",
+                            "SPExtensionMessage"];
   addMessageListener("SPPingService", this._messageListener);
   let self = this;
   Services.obs.addObserver(function onInnerWindowDestroyed(subject, topic, data) {

@@ -14,6 +14,7 @@ const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const DEBUG_CONTRACTID = "@mozilla.org/xpcom/debug;1";
 const PRINTSETTINGS_CONTRACTID = "@mozilla.org/gfx/printsettings-service;1";
 const ENVIRONMENT_CONTRACTID = "@mozilla.org/process/environment;1";
+const NS_OBSERVER_SERVICE_CONTRACTID = "@mozilla.org/observer-service;1";
 
 // "<!--CLEAR-->"
 const BLANK_URL_FOR_CLEARING = "data:text/html;charset=UTF-8,%3C%21%2D%2DCLEAR%2D%2D%3E";
@@ -140,7 +141,7 @@ function StartTestURI(type, uri, timeout)
     LoadURI(gCurrentURL);
 }
 
-function setupZoom(contentRootElement) {
+function setupFullZoom(contentRootElement) {
     if (!contentRootElement || !contentRootElement.hasAttribute('reftest-zoom'))
         return;
     markupDocumentViewer().fullZoom =
@@ -195,11 +196,11 @@ function setupViewport(contentRootElement) {
         return;
     }
 
-    var vw = attrOrDefault(contentRootElement, "reftest-viewport-w", 0);
-    var vh = attrOrDefault(contentRootElement, "reftest-viewport-h", 0);
-    if (vw !== 0 || vh !== 0) {
-        LogInfo("Setting viewport to <w="+ vw +", h="+ vh +">");
-        windowUtils().setCSSViewport(vw, vh);
+    var sw = attrOrDefault(contentRootElement, "reftest-scrollport-w", 0);
+    var sh = attrOrDefault(contentRootElement, "reftest-scrollport-h", 0);
+    if (sw !== 0 || sh !== 0) {
+        LogInfo("Setting scrollport to <w=" + sw + ", h=" + sh + ">");
+        windowUtils().setScrollPositionClampingScrollPortSize(sw, sh);
     }
 
     // XXX support resolution when needed
@@ -242,12 +243,13 @@ function setupDisplayport(contentRootElement) {
     }
 }
 
+// Returns whether any offsets were updated
 function setupAsyncScrollOffsets(options) {
     var currentDoc = content.document;
     var contentRootElement = currentDoc ? currentDoc.documentElement : null;
 
     if (!contentRootElement) {
-        return;
+        return false;
     }
 
     function setupAsyncScrollOffsetsForElement(element, winUtils) {
@@ -258,31 +260,61 @@ function setupAsyncScrollOffsets(options) {
                 // This might fail when called from RecordResult since layers
                 // may not have been constructed yet
                 winUtils.setAsyncScrollOffset(element, sx, sy);
+                return true;
             } catch (e) {
                 if (!options.allowFailure) {
                     throw e;
                 }
             }
         }
+        return false;
     }
 
     function setupAsyncScrollOffsetsForElementSubtree(element, winUtils) {
-        setupAsyncScrollOffsetsForElement(element, winUtils);
+        var updatedAny = setupAsyncScrollOffsetsForElement(element, winUtils);
         for (var c = element.firstElementChild; c; c = c.nextElementSibling) {
-            setupAsyncScrollOffsetsForElementSubtree(c, winUtils);
+            if (setupAsyncScrollOffsetsForElementSubtree(c, winUtils)) {
+                updatedAny = true;
+            }
         }
         if (element.contentDocument) {
             LogInfo("Descending into subdocument (async offsets)");
-            setupAsyncScrollOffsetsForElementSubtree(element.contentDocument.documentElement,
-                                                     windowUtilsForWindow(element.contentWindow));
+            if (setupAsyncScrollOffsetsForElementSubtree(element.contentDocument.documentElement,
+                                                         windowUtilsForWindow(element.contentWindow))) {
+                updatedAny = true;
+            }
         }
+        return updatedAny;
     }
 
     var asyncScroll = contentRootElement.hasAttribute("reftest-async-scroll");
     if (asyncScroll) {
-        setupAsyncScrollOffsetsForElementSubtree(contentRootElement, windowUtils());
+        return setupAsyncScrollOffsetsForElementSubtree(contentRootElement, windowUtils());
     }
+    return false;
 }
+
+function setupAsyncZoom(options) {
+    var currentDoc = content.document;
+    var contentRootElement = currentDoc ? currentDoc.documentElement : null;
+
+    if (!contentRootElement || !contentRootElement.hasAttribute('reftest-async-zoom'))
+        return false;
+
+    var zoom = attrOrDefault(contentRootElement, "reftest-async-zoom", 1);
+    if (zoom != 1) {
+        try {
+            windowUtils().setAsyncZoom(contentRootElement, zoom);
+            return true;
+        } catch (e) {
+            if (!options.allowFailure) {
+                throw e;
+            }
+        }
+    }
+    return false;
+}
+
 
 function resetDisplayportAndViewport() {
     // XXX currently the displayport configuration lives on the
@@ -316,7 +348,25 @@ function shouldSnapshotWholePage(contentRootElement) {
 }
 
 function getNoPaintElements(contentRootElement) {
-  return contentRootElement.getElementsByClassName('reftest-no-paint');
+    return contentRootElement.getElementsByClassName('reftest-no-paint');
+}
+
+function getOpaqueLayerElements(contentRootElement) {
+    return contentRootElement.getElementsByClassName('reftest-opaque-layer');
+}
+
+function getAssignedLayerMap(contentRootElement) {
+    var layerNameToElementsMap = {};
+    var elements = contentRootElement.querySelectorAll('[reftest-assigned-layer]');
+    for (var i = 0; i < elements.length; ++i) {
+        var element = elements[i];
+        var layerName = element.getAttribute('reftest-assigned-layer');
+        if (!(layerName in layerNameToElementsMap)) {
+            layerNameToElementsMap[layerName] = [];
+        }
+        layerNameToElementsMap[layerName].push(element);
+    }
+    return layerNameToElementsMap;
 }
 
 // Initial state. When the document has loaded and all MozAfterPaint events and
@@ -329,10 +379,13 @@ const STATE_WAITING_FOR_REFTEST_WAIT_REMOVAL = 1;
 // When spell checking is done on all spell-checked elements, we can move to the
 // next state.
 const STATE_WAITING_FOR_SPELL_CHECKS = 2;
+// When any pending compositor-side repaint requests have been flushed, we can
+// move to the next state.
+const STATE_WAITING_FOR_APZ_FLUSH = 3;
 // When all MozAfterPaint events and all explicit paint waits are flushed, we're
 // done and can move to the COMPLETED state.
-const STATE_WAITING_TO_FINISH = 3;
-const STATE_COMPLETED = 4;
+const STATE_WAITING_TO_FINISH = 4;
+const STATE_COMPLETED = 5;
 
 function FlushRendering() {
     var anyPendingPaintsGeneratedInDescendants = false;
@@ -342,10 +395,11 @@ function FlushRendering() {
                     .getInterface(CI.nsIDOMWindowUtils);
         var afterPaintWasPending = utils.isMozAfterPaintPending;
 
-        if (win.document.documentElement) {
+        var root = win.document.documentElement;
+        if (root && !root.classList.contains("reftest-no-flush")) {
             try {
                 // Flush pending restyles and reflows for this window
-                win.document.documentElement.getBoundingClientRect();
+                root.getBoundingClientRect();
             } catch (e) {
                 LogWarning("flushWindow failed: " + e + "\n");
             }
@@ -498,9 +552,31 @@ function WaitForTestEnd(contentRootElement, inPrintMode, spellCheckedElements) {
                 return;
             }
 
-            state = STATE_WAITING_TO_FINISH;
-            // Try next state
-            MakeProgress();
+            state = STATE_WAITING_FOR_APZ_FLUSH;
+            LogInfo("MakeProgress: STATE_WAITING_FOR_APZ_FLUSH");
+            gFailureReason = "timed out waiting for APZ flush to complete";
+
+            var os = CC[NS_OBSERVER_SERVICE_CONTRACTID].getService(CI.nsIObserverService);
+            var flushWaiter = function(aSubject, aTopic, aData) {
+                if (aTopic) LogInfo("MakeProgress: apz-repaints-flushed fired");
+                os.removeObserver(flushWaiter, "apz-repaints-flushed");
+                state = STATE_WAITING_TO_FINISH;
+                MakeProgress();
+            };
+            os.addObserver(flushWaiter, "apz-repaints-flushed", false);
+
+            if (windowUtils().flushApzRepaints()) {
+                LogInfo("MakeProgress: done requesting APZ flush");
+            } else {
+                LogInfo("MakeProgress: APZ flush not required");
+                flushWaiter(null, null, null);
+            }
+            return;
+
+        case STATE_WAITING_FOR_APZ_FLUSH:
+            LogInfo("MakeProgress: STATE_WAITING_FOR_APZ_FLUSH");
+            // Nothing to do here; once we get the apz-repaints-flushed event
+            // we will go to STATE_WAITING_TO_FINISH
             return;
 
         case STATE_WAITING_TO_FINISH:
@@ -525,6 +601,7 @@ function WaitForTestEnd(contentRootElement, inPrintMode, spellCheckedElements) {
                       SendFailedNoPaint();
                   }
               }
+              CheckLayerAssertions(contentRootElement);
             }
             LogInfo("MakeProgress: Completed");
             state = STATE_COMPLETED;
@@ -602,7 +679,7 @@ function OnDocumentLoad(event)
 
     var contentRootElement = currentDoc ? currentDoc.documentElement : null;
     currentDoc = null;
-    setupZoom(contentRootElement);
+    setupFullZoom(contentRootElement);
     setupViewport(contentRootElement);
     setupDisplayport(contentRootElement);
     var inPrintMode = false;
@@ -631,7 +708,8 @@ function OnDocumentLoad(event)
             // Go into reftest-wait mode belatedly.
             WaitForTestEnd(contentRootElement, inPrintMode, []);
         } else {
-            CheckForProcessCrashExpectation();
+            CheckLayerAssertions(contentRootElement);
+            CheckForProcessCrashExpectation(contentRootElement);
             RecordResult();
         }
     }
@@ -661,9 +739,60 @@ function OnDocumentLoad(event)
     }
 }
 
-function CheckForProcessCrashExpectation()
+function CheckLayerAssertions(contentRootElement)
 {
-    var contentRootElement = content.document.documentElement;
+    if (!contentRootElement) {
+        return;
+    }
+
+    var opaqueLayerElements = getOpaqueLayerElements(contentRootElement);
+    for (var i = 0; i < opaqueLayerElements.length; ++i) {
+        var elem = opaqueLayerElements[i];
+        try {
+            if (!windowUtils().isPartOfOpaqueLayer(elem)) {
+                SendFailedOpaqueLayer(elementDescription(elem) + ' is not part of an opaque layer');
+            }
+        } catch (e) {
+            SendFailedOpaqueLayer('got an exception while checking whether ' + elementDescription(elem) + ' is part of an opaque layer');
+        }
+    }
+    var layerNameToElementsMap = getAssignedLayerMap(contentRootElement);
+    var oneOfEach = [];
+    // Check that elements with the same reftest-assigned-layer share the same PaintedLayer.
+    for (var layerName in layerNameToElementsMap) {
+        try {
+            var elements = layerNameToElementsMap[layerName];
+            oneOfEach.push(elements[0]);
+            var numberOfLayers = windowUtils().numberOfAssignedPaintedLayers(elements, elements.length);
+            if (numberOfLayers !== 1) {
+                SendFailedAssignedLayer('these elements are assigned to ' + numberOfLayers +
+                                        ' different layers, instead of sharing just one layer: ' +
+                                        elements.map(elementDescription).join(', '));
+            }
+        } catch (e) {
+            SendFailedAssignedLayer('got an exception while checking whether these elements share a layer: ' +
+                                    elements.map(elementDescription).join(', '));
+        }
+    }
+    // Check that elements with different reftest-assigned-layer are assigned to different PaintedLayers.
+    if (oneOfEach.length > 0) {
+        try {
+            var numberOfLayers = windowUtils().numberOfAssignedPaintedLayers(oneOfEach, oneOfEach.length);
+            if (numberOfLayers !== oneOfEach.length) {
+                SendFailedAssignedLayer('these elements are assigned to ' + numberOfLayers +
+                                        ' different layers, instead of having none in common (expected ' +
+                                        oneOfEach.length + ' different layers): ' +
+                                        oneOfEach.map(elementDescription).join(', '));
+            }
+        } catch (e) {
+            SendFailedAssignedLayer('got an exception while checking whether these elements are assigned to different layers: ' +
+                                    oneOfEach.map(elementDescription).join(', '));
+        }
+    }
+}
+
+function CheckForProcessCrashExpectation(contentRootElement)
+{
     if (contentRootElement &&
         contentRootElement.hasAttribute('class') &&
         contentRootElement.getAttribute('class').split(/\s+/)
@@ -723,8 +852,19 @@ function RecordResult()
     }
 
     // Setup async scroll offsets now in case SynchronizeForSnapshot is not
-    // called (due to reftest-no-sync-layers being supplied).
-    setupAsyncScrollOffsets({allowFailure:true});
+    // called (due to reftest-no-sync-layers being supplied, or in the single
+    // process case).
+    var changedAsyncScrollZoom = false;
+    if (setupAsyncScrollOffsets({allowFailure:true})) {
+        changedAsyncScrollZoom = true;
+    }
+    if (setupAsyncZoom({allowFailure:true})) {
+        changedAsyncScrollZoom = true;
+    }
+    if (changedAsyncScrollZoom && !gBrowserIsRemote) {
+        sendAsyncMessage("reftest:UpdateWholeCanvasForInvalidation");
+    }
+
     SendTestDone(currentTestRunTime);
     FinishTestItem();
 }
@@ -803,6 +943,7 @@ function SynchronizeForSnapshot(flags)
     // Setup async scroll offsets now, because any scrollable layers should
     // have had their AsyncPanZoomControllers created.
     setupAsyncScrollOffsets({allowFailure:false});
+    setupAsyncZoom({allowFailure:false});
 }
 
 function RegisterMessageListeners()
@@ -872,6 +1013,16 @@ function SendFailedNoPaint()
     sendAsyncMessage("reftest:FailedNoPaint");
 }
 
+function SendFailedOpaqueLayer(why)
+{
+    sendAsyncMessage("reftest:FailedOpaqueLayer", { why: why });
+}
+
+function SendFailedAssignedLayer(why)
+{
+    sendAsyncMessage("reftest:FailedAssignedLayer", { why: why });
+}
+
 // Return true if a snapshot was taken.
 function SendInitCanvasWithSnapshot()
 {
@@ -916,6 +1067,14 @@ function SendTestDone(runtimeMs)
 function roundTo(x, fraction)
 {
     return Math.round(x/fraction)*fraction;
+}
+
+function elementDescription(element)
+{
+    return '<' + element.localName +
+        [].slice.call(element.attributes).map((attr) =>
+            ` ${attr.nodeName}="${attr.value}"`).join('') +
+        '>';
 }
 
 function SendUpdateCanvasForEvent(event, contentRootElement)

@@ -54,7 +54,7 @@ public:
 
   virtual void SetVolume(double aVolume) {}
 
-  virtual double GetMediaTimeSecs() { return 0; }
+  virtual int64_t GetMediaTimeUs() { return 0; }
 
   // To update progress bar when the element is visible
   virtual void SetElementVisibility(bool aIsVisible) {}
@@ -66,6 +66,8 @@ public:
   {
     return MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE;
   }
+
+  virtual nsRefPtr<MediaDecoder::SeekPromise> Seek(SeekTarget aTarget) = 0;
 };
 
 } // namespace mozilla

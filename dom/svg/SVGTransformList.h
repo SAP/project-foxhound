@@ -1,6 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,7 +16,7 @@ namespace mozilla {
 
 namespace dom {
 class SVGTransform;
-}
+} // namespace dom
 
 /**
  * ATTENTION! WARNING! WATCH OUT!!
@@ -60,7 +60,7 @@ public:
   }
 
   bool SetCapacity(uint32_t size) {
-    return mItems.SetCapacity(size);
+    return mItems.SetCapacity(size, fallible);
   }
 
   void Compact() {
@@ -94,7 +94,7 @@ protected:
    * increased, in which case the list will be left unmodified.
    */
   bool SetLength(uint32_t aNumberOfItems) {
-    return mItems.SetLength(aNumberOfItems);
+    return mItems.SetLength(aNumberOfItems, fallible);
   }
 
 private:
@@ -113,7 +113,7 @@ private:
     if (aIndex >= mItems.Length()) {
       aIndex = mItems.Length();
     }
-    return !!mItems.InsertElementAt(aIndex, aTransform);
+    return !!mItems.InsertElementAt(aIndex, aTransform, fallible);
   }
 
   void ReplaceItem(uint32_t aIndex, const nsSVGTransform& aTransform) {
@@ -129,7 +129,7 @@ private:
   }
 
   bool AppendItem(const nsSVGTransform& aTransform) {
-    return !!mItems.AppendElement(aTransform);
+    return !!mItems.AppendElement(aTransform, fallible);
   }
 
 protected:

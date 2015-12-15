@@ -3,8 +3,8 @@
 // http://creativecommons.org/publicdomain/zero/1.0/
 
 "use strict";
-const { devtools } = Components.utils.import("resource://gre/modules/devtools/Loader.jsm", {});
-let JSPropertyProvider = devtools.require("devtools/toolkit/webconsole/utils").JSPropertyProvider;
+const { require } = Components.utils.import("resource://gre/modules/devtools/Loader.jsm", {});
+const { JSPropertyProvider } = require("devtools/toolkit/webconsole/utils");
 
 Components.utils.import("resource://gre/modules/jsdebugger.jsm");
 addDebuggerToGlobal(this);
@@ -24,12 +24,14 @@ function run_test() {
   ];'
 
   const testObject = 'var testObject = {"propA": [{"propB": "B"}]}';
+  const testHyphenated = 'var testHyphenated = {"prop-A": "res-A"}';
 
   let sandbox = Components.utils.Sandbox("http://example.com");
   let dbg = new Debugger;
   let dbgObject = dbg.addDebuggee(sandbox);
   Components.utils.evalInSandbox(testArray, sandbox);
   Components.utils.evalInSandbox(testObject, sandbox);
+  Components.utils.evalInSandbox(testHyphenated, sandbox);
 
   let results = JSPropertyProvider(dbgObject, null, "testArray[0].");
   do_print("Test that suggestions are given for 'foo[n]' where n is an integer.");
@@ -54,6 +56,10 @@ function run_test() {
   do_check_null(results);
 
   results = JSPropertyProvider(dbgObject, null, "testArray[][1].");
+  do_check_null(results);
+
+  do_print("Test that suggestions are not given if there is an hyphen in the chain.");
+  results = JSPropertyProvider(dbgObject, null, "testHyphenated['prop-A'].");
   do_check_null(results);
 }
 

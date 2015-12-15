@@ -15,7 +15,7 @@
 #include "mozilla/layers/Effects.h"     // for Effect, EffectChain, etc
 #include "mozilla/TimeStamp.h"          // for TimeStamp, TimeDuration
 #include "nsPoint.h"                    // for nsIntPoint
-#include "nsRect.h"                     // for nsIntRect
+#include "nsRect.h"                     // for mozilla::gfx::IntRect
 #include "nsIFile.h"                    // for nsIFile
 #include "nsDirectoryServiceDefs.h"     // for NS_OS_TMP_DIR
 #include "prprf.h"                      // for PR_snprintf
@@ -25,10 +25,10 @@ namespace mozilla {
 namespace layers {
 
 using namespace mozilla::gfx;
-using namespace mozilla::gl;
 
 FPSCounter::FPSCounter(const char* aName)
   : mWriteIndex(0)
+  , mIteratorIndex(-1)
   , mFPSName(aName)
 {
   Init();
@@ -395,7 +395,7 @@ static void DrawDigits(unsigned int aValue,
     Rect drawRect = Rect(aOffsetX + n * FontWidth, aOffsetY, FontWidth, FontHeight);
     Rect clipRect = Rect(0, 0, 300, 100);
     aCompositor->DrawQuad(drawRect, clipRect,
-	aEffectChain, opacity, transform);
+  aEffectChain, opacity, transform);
   }
 }
 

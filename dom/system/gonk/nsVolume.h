@@ -14,7 +14,6 @@ namespace mozilla {
 namespace system {
 
 class Volume;
-class VolumeMountLock;
 
 class nsVolume : public nsIVolume
 {
@@ -24,6 +23,9 @@ public:
 
   // This constructor is used by the UpdateVolumeRunnable constructor
   nsVolume(const Volume* aVolume);
+
+  // This constructor is used by nsVolumeService::SetFakeVolumeState
+  nsVolume(const nsVolume* aVolume);
 
   // This constructor is used by ContentChild::RecvFileSystemUpdate which is
   // used to update the volume cache maintained in the child process.
@@ -48,30 +50,15 @@ public:
   {
   }
 
-  // This constructor is used by nsVolumeService::FindAddVolumeByName, and
-  // will be followed shortly by a Set call.
-  nsVolume(const nsAString& aName)
-    : mName(aName),
-      mState(STATE_INIT),
-      mMountGeneration(-1),
-      mMountLocked(true),  // Needs to agree with Volume::Volume
-      mIsFake(false),
-      mIsMediaPresent(false),
-      mIsSharing(false),
-      mIsFormatting(false),
-      mIsUnmounting(false),
-      mIsRemovable(false),
-      mIsHotSwappable(false)
-  {
-  }
-
   bool Equals(nsIVolume* aVolume);
-  void Set(nsIVolume* aVolume);
+  void UpdateMountLock(nsVolume* aOldVolume);
 
   void LogState() const;
 
   const nsString& Name() const        { return mName; }
   nsCString NameStr() const           { return NS_LossyConvertUTF16toASCII(mName); }
+
+  void Dump(const char* aLabel) const;
 
   int32_t MountGeneration() const     { return mMountGeneration; }
   bool IsMountLocked() const          { return mMountLocked; }

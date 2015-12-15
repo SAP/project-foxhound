@@ -32,25 +32,29 @@
 #include "mozilla/dom/OscillatorNodeBinding.h"
 #include <nsAutoPtr.h>
 #include <nsTArray.h>
+#include "AlignedTArray.h"
 #include "mozilla/MemoryReporting.h"
 
 namespace WebCore {
 
+typedef AlignedTArray<float> AlignedAudioFloatArray;
 typedef nsTArray<float> AudioFloatArray;
 
 class PeriodicWave {
 public:
-    static PeriodicWave* createSine(float sampleRate);
-    static PeriodicWave* createSquare(float sampleRate);
-    static PeriodicWave* createSawtooth(float sampleRate);
-    static PeriodicWave* createTriangle(float sampleRate);
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebCore::PeriodicWave);
+
+    static already_AddRefed<PeriodicWave> createSine(float sampleRate);
+    static already_AddRefed<PeriodicWave> createSquare(float sampleRate);
+    static already_AddRefed<PeriodicWave> createSawtooth(float sampleRate);
+    static already_AddRefed<PeriodicWave> createTriangle(float sampleRate);
 
     // Creates an arbitrary periodic wave given the frequency components
     // (Fourier coefficients).
-    static PeriodicWave* create(float sampleRate,
-                                const float* real,
-                                const float* imag,
-                                size_t numberOfComponents);
+    static already_AddRefed<PeriodicWave> create(float sampleRate,
+                                                 const float* real,
+                                                 const float* imag,
+                                                 size_t numberOfComponents);
 
     // Returns pointers to the lower and higher wave data for the pitch range
     // containing the given fundamental frequency. These two tables are in
@@ -73,6 +77,7 @@ public:
 
 private:
     explicit PeriodicWave(float sampleRate);
+    ~PeriodicWave() {}
 
     void generateBasicWaveform(mozilla::dom::OscillatorType);
 
@@ -98,7 +103,7 @@ private:
 
     // Creates tables based on numberOfComponents Fourier coefficients.
     void createBandLimitedTables(const float* real, const float* imag, unsigned numberOfComponents);
-    nsTArray<nsAutoPtr<AudioFloatArray> > m_bandLimitedTables;
+    nsTArray<nsAutoPtr<AlignedAudioFloatArray> > m_bandLimitedTables;
 };
 
 } // namespace WebCore

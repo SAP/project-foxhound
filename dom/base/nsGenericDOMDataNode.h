@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,12 +26,7 @@
 #include "taint-gecko.h"
 
 class nsIDocument;
-class nsIDOMAttr;
-class nsIDOMEventListener;
-class nsIDOMNodeList;
-class nsIFrame;
 class nsIDOMText;
-class nsURI;
 
 #define DATA_NODE_FLAG_BIT(n_) NODE_FLAG_BIT(NODE_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
@@ -152,8 +148,9 @@ public:
   virtual bool TextIsOnlyWhitespace() override;
   virtual bool HasTextForTranslation() override;
   virtual void AppendTextTo(nsAString& aResult) override;
+  MOZ_WARN_UNUSED_RESULT
   virtual bool AppendTextTo(nsAString& aResult,
-                            const mozilla::fallible_t&) override NS_WARN_UNUSED_RESULT;
+                            const mozilla::fallible_t&) override;
   virtual void DestroyContent() override;
   virtual void SaveSubtreeState() override;
 

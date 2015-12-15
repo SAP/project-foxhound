@@ -1,10 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedLengthList.h"
+
 #include "DOMSVGAnimatedLengthList.h"
+#include "mozilla/Move.h"
 #include "nsSVGElement.h"
 #include "nsSVGAttrTearoffTable.h"
 #include "nsSMILValue.h"
@@ -137,7 +140,7 @@ SVGAnimatedLengthList::
   nsresult rv = llai->SetValueFromString(aStr);
   if (NS_SUCCEEDED(rv)) {
     llai->SetInfo(mElement, mAxis, mCanZeroPadList);
-    aValue.Swap(val);
+    aValue = Move(val);
 
     // If any of the lengths in the list depend on their context, then we must
     // prevent caching of the entire animation sandwich. This is because the
@@ -180,7 +183,7 @@ SVGAnimatedLengthList::SMILAnimatedLengthList::GetBaseValue() const
   nsresult rv = llai->CopyFrom(mVal->mBaseVal);
   if (NS_SUCCEEDED(rv)) {
     llai->SetInfo(mElement, mAxis, mCanZeroPadList);
-    val.Swap(tmp);
+    val = Move(tmp);
   }
   return val;
 }

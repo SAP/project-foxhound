@@ -22,21 +22,18 @@
  * limitations under the License.
  */
 
-#include "pkix/pkix.h"
 #include "pkixgtest.h"
-#include "pkixtestutil.h"
 
 using namespace mozilla::pkix;
 using namespace mozilla::pkix::test;
 
 const uint16_t END_ENTITY_MAX_LIFETIME_IN_DAYS = 10;
 
-class OCSPTestTrustDomain : public TrustDomain
+// Note that CheckRevocation is never called for OCSP signing certificates.
+class OCSPTestTrustDomain : public DefaultCryptoTrustDomain
 {
 public:
-  OCSPTestTrustDomain()
-  {
-  }
+  OCSPTestTrustDomain() { }
 
   Result GetCertTrust(EndEntityOrCA endEntityOrCA, const CertPolicyId&,
                       Input, /*out*/ TrustLevel& trustLevel)
@@ -46,62 +43,6 @@ public:
     trustLevel = TrustLevel::InheritsTrust;
     return Success;
   }
-
-  Result FindIssuer(Input, IssuerChecker&, Time) final override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result CheckRevocation(EndEntityOrCA, const CertID&, Time,
-                         /*optional*/ const Input*, /*optional*/ const Input*)
-                         final override
-  {
-    // TODO: I guess mozilla::pkix should support revocation of designated
-    // OCSP responder eventually, but we don't now, so this function should
-    // never get called.
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result IsChainValid(const DERArray&, Time) final override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result DigestBuf(Input item, DigestAlgorithm digestAlg,
-                   /*out*/ uint8_t* digestBuf, size_t digestBufLen)
-                   final override
-  {
-    return TestDigestBuf(item, digestAlg, digestBuf, digestBufLen);
-  }
-
-  Result CheckRSAPublicKeyModulusSizeInBits(EndEntityOrCA, unsigned int)
-                                            final override
-  {
-    return Success;
-  }
-
-  Result VerifyRSAPKCS1SignedDigest(const SignedDigest& signedDigest,
-                                    Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyRSAPKCS1SignedDigest(signedDigest, subjectPublicKeyInfo);
-  }
-
-  Result CheckECDSACurveIsAcceptable(EndEntityOrCA, NamedCurve) final override
-  {
-    return Success;
-  }
-
-  Result VerifyECDSASignedDigest(const SignedDigest& signedDigest,
-                                 Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyECDSASignedDigest(signedDigest, subjectPublicKeyInfo);
-  }
-
-  OCSPTestTrustDomain(const OCSPTestTrustDomain&) = delete;
-  void operator=(const OCSPTestTrustDomain&) = delete;
 };
 
 namespace {
@@ -114,7 +55,7 @@ class pkixocsp_VerifyEncodedResponse : public ::testing::Test
 public:
   static void SetUpTestCase()
   {
-    rootKeyPair = GenerateKeyPair();
+    rootKeyPair.reset(GenerateKeyPair());
     if (!rootKeyPair) {
       abort();
     }
@@ -149,8 +90,8 @@ public:
           != Success) {
       abort();
     }
-    endEntityCertID = new (std::nothrow) CertID(rootNameDERInput, rootSPKIDER,
-                                                serialNumberDERInput);
+    endEntityCertID.reset(new (std::nothrow) CertID(rootNameDERInput, rootSPKIDER,
+                                                    serialNumberDERInput));
     if (!endEntityCertID) {
       abort();
     }
@@ -234,7 +175,7 @@ namespace {
 // Alias for nullptr to aid readability in the code below.
 static const char* byKey = nullptr;
 
-} // unnamed namespcae
+} // namespace
 
 class pkixocsp_VerifyEncodedResponse_successful
   : public pkixocsp_VerifyEncodedResponse
@@ -257,7 +198,7 @@ public:
                     const TestKeyPair& signerKeyPair,
                     time_t producedAt, time_t thisUpdate,
        /*optional*/ const time_t* nextUpdate,
-                    const ByteString& signatureAlgorithm,
+                    const TestSignatureAlgorithm& signatureAlgorithm,
        /*optional*/ const ByteString* certs = nullptr)
   {
     OCSPResponseContext context(certID, producedAt);
@@ -265,8 +206,8 @@ public:
       context.signerNameDER = CNToDERName(signerName);
       EXPECT_FALSE(ENCODING_FAILED(context.signerNameDER));
     }
-    context.signerKeyPair = signerKeyPair.Clone();
-    EXPECT_TRUE(context.signerKeyPair);
+    context.signerKeyPair.reset(signerKeyPair.Clone());
+    EXPECT_TRUE(context.signerKeyPair.get());
     context.responseStatus = OCSPResponseContext::successful;
     context.producedAt = producedAt;
     context.signatureAlgorithm = signatureAlgorithm;
@@ -288,7 +229,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful, good_byKey)
                          OCSPResponseContext::good, *endEntityCertID, byKey,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -307,7 +248,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful, good_byName)
                          OCSPResponseContext::good, *endEntityCertID, rootName,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -326,7 +267,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful, good_byKey_without_nextUpdate)
                          OCSPResponseContext::good, *endEntityCertID, byKey,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, nullptr,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -345,7 +286,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful, revoked)
                          OCSPResponseContext::revoked, *endEntityCertID, byKey,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -364,7 +305,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful, unknown)
                          OCSPResponseContext::unknown, *endEntityCertID, byKey,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -384,7 +325,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful,
                          OCSPResponseContext::good, *endEntityCertID, byKey,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         md5WithRSAEncryption));
+                         md5WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -407,7 +348,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_successful, check_validThrough)
                          OCSPResponseContext::good, *endEntityCertID, byKey,
                          *rootKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Time validThrough(Time::uninitialized);
   {
     Input response;
@@ -484,7 +425,7 @@ protected:
                const char* certSubjectName,
                OCSPResponseContext::CertStatus certStatus,
                const char* signerName,
-               const ByteString& certSignatureAlgorithm,
+               const TestSignatureAlgorithm& certSignatureAlgorithm,
                /*optional*/ const Input* signerEKUDER = &OCSPSigningEKUDER,
                /*optional, out*/ ByteString* signerDEROut = nullptr)
   {
@@ -519,12 +460,12 @@ protected:
                                                oneDayBeforeNow,
                                                oneDayBeforeNow,
                                                &oneDayAfterNow,
-                                               sha256WithRSAEncryption,
+                                               sha256WithRSAEncryption(),
                                                certs);
   }
 
   static ByteString CreateEncodedCertificate(uint32_t serialNumber,
-                                             const ByteString& signatureAlg,
+                                             const TestSignatureAlgorithm& signatureAlg,
                                              const char* issuer,
                                              time_t notBefore,
                                              time_t notAfter,
@@ -564,7 +505,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_byKey)
   ByteString responseString(
                CreateEncodedIndirectOCSPSuccessfulResponse(
                          "good_indirect_byKey", OCSPResponseContext::good,
-                         byKey, sha256WithRSAEncryption));
+                         byKey, sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -581,7 +522,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_byName)
   ByteString responseString(
                CreateEncodedIndirectOCSPSuccessfulResponse(
                          "good_indirect_byName", OCSPResponseContext::good,
-                         "good_indirect_byName", sha256WithRSAEncryption));
+                         "good_indirect_byName", sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -597,14 +538,14 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
        good_byKey_missing_signer)
 {
   ScopedTestKeyPair missingSignerKeyPair(GenerateKeyPair());
-  ASSERT_TRUE(missingSignerKeyPair);
+  ASSERT_TRUE(missingSignerKeyPair.get());
 
   ByteString responseString(
                CreateEncodedOCSPSuccessfulResponse(
                          OCSPResponseContext::good, *endEntityCertID, byKey,
                          *missingSignerKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, nullptr,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -620,13 +561,13 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
        good_byName_missing_signer)
 {
   ScopedTestKeyPair missingSignerKeyPair(GenerateKeyPair());
-  ASSERT_TRUE(missingSignerKeyPair);
+  ASSERT_TRUE(missingSignerKeyPair.get());
   ByteString responseString(
                CreateEncodedOCSPSuccessfulResponse(
                          OCSPResponseContext::good, *endEntityCertID,
                          "missing", *missingSignerKeyPair,
                          oneDayBeforeNow, oneDayBeforeNow, nullptr,
-                         sha256WithRSAEncryption));
+                         sha256WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -649,7 +590,8 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_expired)
 
   ScopedTestKeyPair signerKeyPair(GenerateKeyPair());
   ByteString signerDER(CreateEncodedCertificate(
-                          ++rootIssuedCount, sha256WithRSAEncryption, rootName,
+                          ++rootIssuedCount, sha256WithRSAEncryption(),
+                          rootName,
                           now - (10 * ONE_DAY_IN_SECONDS_AS_TIME_T),
                           now - (2 * ONE_DAY_IN_SECONDS_AS_TIME_T),
                           signerName, *signerKeyPair, extensions,
@@ -662,7 +604,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_expired)
                          OCSPResponseContext::good, *endEntityCertID,
                          signerName, *signerKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption, certs));
+                         sha256WithRSAEncryption(), certs));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -684,7 +626,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_future)
 
   ScopedTestKeyPair signerKeyPair(GenerateKeyPair());
   ByteString signerDER(CreateEncodedCertificate(
-                         ++rootIssuedCount, sha256WithRSAEncryption,
+                         ++rootIssuedCount, sha256WithRSAEncryption(),
                          rootName,
                          now + (2 * ONE_DAY_IN_SECONDS_AS_TIME_T),
                          now + (10 * ONE_DAY_IN_SECONDS_AS_TIME_T),
@@ -698,7 +640,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_future)
                          OCSPResponseContext::good, *endEntityCertID,
                          signerName, *signerKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption, certs));
+                         sha256WithRSAEncryption(), certs));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -716,7 +658,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_no_eku)
                CreateEncodedIndirectOCSPSuccessfulResponse(
                          "good_indirect_wrong_eku",
                          OCSPResponseContext::good, byKey,
-                         sha256WithRSAEncryption, nullptr));
+                         sha256WithRSAEncryption(), nullptr));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -737,7 +679,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
                CreateEncodedIndirectOCSPSuccessfulResponse(
                         "good_indirect_wrong_eku",
                         OCSPResponseContext::good, byKey,
-                        sha256WithRSAEncryption, &serverAuthEKUDER));
+                        sha256WithRSAEncryption(), &serverAuthEKUDER));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -756,7 +698,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_tampered_eku)
                CreateEncodedIndirectOCSPSuccessfulResponse(
                          "good_indirect_tampered_eku",
                          OCSPResponseContext::good, byKey,
-                         sha256WithRSAEncryption, &serverAuthEKUDER));
+                         sha256WithRSAEncryption(), &serverAuthEKUDER));
   ASSERT_EQ(Success,
             TamperOnce(tamperedResponse,
                        ByteString(tlv_id_kp_serverAuth,
@@ -781,7 +723,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_unknown_issuer)
 
   // unknown issuer
   ScopedTestKeyPair unknownKeyPair(GenerateKeyPair());
-  ASSERT_TRUE(unknownKeyPair);
+  ASSERT_TRUE(unknownKeyPair.get());
 
   // Delegated responder cert signed by unknown issuer
   const ByteString extensions[] = {
@@ -790,7 +732,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_unknown_issuer)
   };
   ScopedTestKeyPair signerKeyPair(GenerateKeyPair());
   ByteString signerDER(CreateEncodedCertificate(
-                         1, sha256WithRSAEncryption, subCAName,
+                         1, sha256WithRSAEncryption(), subCAName,
                          oneDayBeforeNow, oneDayAfterNow, signerName,
                          *signerKeyPair, extensions, *unknownKeyPair));
   ASSERT_FALSE(ENCODING_FAILED(signerDER));
@@ -802,7 +744,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder, good_unknown_issuer)
                          OCSPResponseContext::good, *endEntityCertID,
                          signerName, *signerKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption, certs));
+                         sha256WithRSAEncryption(), certs));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -830,7 +772,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
   };
   ScopedTestKeyPair subCAKeyPair(GenerateKeyPair());
   ByteString subCADER(CreateEncodedCertificate(
-                        ++rootIssuedCount, sha256WithRSAEncryption, rootName,
+                        ++rootIssuedCount, sha256WithRSAEncryption(), rootName,
                         oneDayBeforeNow, oneDayAfterNow, subCAName,
                         *subCAKeyPair, subCAExtensions, *rootKeyPair));
   ASSERT_FALSE(ENCODING_FAILED(subCADER));
@@ -842,7 +784,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
   };
   ScopedTestKeyPair signerKeyPair(GenerateKeyPair());
   ByteString signerDER(CreateEncodedCertificate(
-                         1, sha256WithRSAEncryption, subCAName,
+                         1, sha256WithRSAEncryption(), subCAName,
                          oneDayBeforeNow, oneDayAfterNow, signerName,
                          *signerKeyPair, extensions, *subCAKeyPair));
   ASSERT_FALSE(ENCODING_FAILED(signerDER));
@@ -855,7 +797,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
                          OCSPResponseContext::good, *endEntityCertID,
                          signerName, *signerKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption, certs));
+                         sha256WithRSAEncryption(), certs));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -883,7 +825,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
   };
   ScopedTestKeyPair subCAKeyPair(GenerateKeyPair());
   ByteString subCADER(CreateEncodedCertificate(++rootIssuedCount,
-                                               sha256WithRSAEncryption,
+                                               sha256WithRSAEncryption(),
                                                rootName,
                                                oneDayBeforeNow, oneDayAfterNow,
                                                subCAName, *subCAKeyPair,
@@ -897,7 +839,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
   };
   ScopedTestKeyPair signerKeyPair(GenerateKeyPair());
   ByteString signerDER(CreateEncodedCertificate(
-                         1, sha256WithRSAEncryption, subCAName,
+                         1, sha256WithRSAEncryption(), subCAName,
                          oneDayBeforeNow, oneDayAfterNow, signerName,
                          *signerKeyPair, extensions, *subCAKeyPair));
   ASSERT_FALSE(ENCODING_FAILED(signerDER));
@@ -910,7 +852,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
                          OCSPResponseContext::good, *endEntityCertID,
                          signerName, *signerKeyPair, oneDayBeforeNow,
                          oneDayBeforeNow, &oneDayAfterNow,
-                         sha256WithRSAEncryption, certs));
+                         sha256WithRSAEncryption(), certs));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -932,7 +874,7 @@ TEST_F(pkixocsp_VerifyEncodedResponse_DelegatedResponder,
                CreateEncodedIndirectOCSPSuccessfulResponse(
                          "good_indirect_unsupportedSignatureAlgorithm",
                          OCSPResponseContext::good, byKey,
-                         md5WithRSAEncryption));
+                         md5WithRSAEncryption()));
   Input response;
   ASSERT_EQ(Success,
             response.Init(responseString.data(), responseString.length()));
@@ -953,7 +895,7 @@ public:
     responseString =
         CreateEncodedIndirectOCSPSuccessfulResponse(
           "OCSPGetCertTrustTest Signer", OCSPResponseContext::good,
-          byKey, sha256WithRSAEncryption, &OCSPSigningEKUDER,
+          byKey, sha256WithRSAEncryption(), &OCSPSigningEKUDER,
           &signerCertDER);
     if (ENCODING_FAILED(responseString)) {
       abort();

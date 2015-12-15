@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-#ifndef nsBMPDecoder_h
-#define nsBMPDecoder_h
+#ifndef mozilla_image_decoders_nsBMPDecoder_h
+#define mozilla_image_decoders_nsBMPDecoder_h
 
 #include "BMPFileHeaders.h"
 #include "Decoder.h"
@@ -22,8 +22,6 @@ class RasterImage;
 class nsBMPDecoder : public Decoder
 {
 public:
-
-    explicit nsBMPDecoder(RasterImage* aImage);
     ~nsBMPDecoder();
 
     // Specifies whether or not the BMP file will contain alpha data
@@ -42,19 +40,29 @@ public:
 
     // Obtains the internal output image buffer
     uint32_t* GetImageData();
+    size_t GetImageDataLength() const { return mImageDataLength; }
 
     // Obtains the size of the compressed image resource
     int32_t GetCompressedImageSize() const;
 
     // Obtains whether or not a BMP file had alpha data in its 4th byte
     // for 32BPP bitmaps.  Only use after the bitmap has been processed.
-    bool HasAlphaData() const;
+    bool HasAlphaData() const { return mHaveAlphaData; }
+
+    /// Marks this BMP as having alpha data (due to e.g. an ICO alpha mask).
+    void SetHasAlphaData() { mHaveAlphaData = true; }
 
     virtual void WriteInternal(const char* aBuffer,
                                uint32_t aCount) override;
     virtual void FinishInternal() override;
 
 private:
+    friend class DecoderFactory;
+    friend class nsICODecoder;
+
+    // Decoders should only be instantiated via DecoderFactory.
+    // XXX(seth): nsICODecoder is temporarily an exception to this rule.
+    explicit nsBMPDecoder(RasterImage* aImage);
 
     /// Calculates the red-, green- and blueshift in mBitFields using
     /// the bitmasks from mBitFields
@@ -64,8 +72,8 @@ private:
 
     BMPFILEHEADER mBFH;
     BITMAPV5HEADER mBIH;
-    char mRawBuf[WIN_V3_INTERNAL_BIH_LENGTH]; //< If this is changed,
-                                              // WriteInternal() MUST be updated
+    char mRawBuf[BIH_INTERNAL_LENGTH::WIN_V3]; //< If this is changed,
+                                               // WriteInternal() MUST be updated
 
     uint32_t mLOH; //< Length of the header
 
@@ -114,14 +122,15 @@ private:
 /// Sets the pixel data in aDecoded to the given values.
 /// @param aDecoded pointer to pixel to be set, will be incremented to point to
 /// the next pixel.
-static inline void SetPixel(uint32_t*& aDecoded, uint8_t aRed, uint8_t aGreen,
-                            uint8_t aBlue, uint8_t aAlpha = 0xFF)
+static inline void
+SetPixel(uint32_t*& aDecoded, uint8_t aRed, uint8_t aGreen,
+         uint8_t aBlue, uint8_t aAlpha = 0xFF)
 {
     *aDecoded++ = gfxPackedPixel(aAlpha, aRed, aGreen, aBlue);
 }
 
-static inline void SetPixel(uint32_t*& aDecoded, uint8_t idx, colorTable*
-                            aColors)
+static inline void
+SetPixel(uint32_t*& aDecoded, uint8_t idx, colorTable* aColors)
 {
     SetPixel(aDecoded, aColors[idx].red, aColors[idx].green, aColors[idx].blue);
 }
@@ -131,8 +140,9 @@ static inline void SetPixel(uint32_t*& aDecoded, uint8_t idx, colorTable*
 /// depending on whether one or two pixels are written.
 /// @param aData The values for the two pixels
 /// @param aCount Current count. Is decremented by one or two.
-inline void Set4BitPixel(uint32_t*& aDecoded, uint8_t aData,
-                         uint32_t& aCount, colorTable* aColors)
+inline void
+Set4BitPixel(uint32_t*& aDecoded, uint8_t aData, uint32_t& aCount,
+             colorTable* aColors)
 {
     uint8_t idx = aData >> 4;
     SetPixel(aDecoded, idx, aColors);
@@ -146,4 +156,4 @@ inline void Set4BitPixel(uint32_t*& aDecoded, uint8_t aData,
 } // namespace image
 } // namespace mozilla
 
-#endif // nsBMPDecoder_h
+#endif // mozilla_image_decoders_nsBMPDecoder_h

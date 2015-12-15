@@ -164,7 +164,7 @@ function serializeFeatures(options) {
     let value = options[name];
 
     // the chrome and private features are special
-    if ((name == 'private' || name == 'chrome'))
+    if ((name == 'private' || name == 'chrome' || name == 'all'))
       return result + ((value === true) ? ',' + name : '');
 
     return result + ',' + name + '=' +
@@ -221,7 +221,7 @@ function onFocus(window) {
 }
 exports.onFocus = onFocus;
 
-let isFocused = dispatcher("window-isFocused");
+var isFocused = dispatcher("window-isFocused");
 isFocused.when(x => x instanceof Ci.nsIDOMWindow, (window) => {
   const FM = Cc["@mozilla.org/focus-manager;1"].
                 getService(Ci.nsIFocusManager);

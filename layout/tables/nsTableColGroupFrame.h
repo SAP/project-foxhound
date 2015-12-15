@@ -8,16 +8,10 @@
 #include "mozilla/Attributes.h"
 #include "nscore.h"
 #include "nsContainerFrame.h"
-#include "nsTableColFrame.h"
+#include "nsTableFrame.h"
+#include "mozilla/WritingModes.h"
 
-class nsTableFrame;
 class nsTableColFrame;
-
-enum nsTableColGroupType {
-  eColGroupContent            = 0, // there is real col group content associated   
-  eColGroupAnonymousCol       = 1, // the result of a col
-  eColGroupAnonymousCell      = 2  // the result of a cell alone
-};
 
 /**
  * nsTableColGroupFrame
@@ -39,6 +33,15 @@ public:
     */
   friend nsTableColGroupFrame* NS_NewTableColGroupFrame(nsIPresShell* aPresShell,
                                                         nsStyleContext* aContext);
+
+  nsTableFrame* GetTableFrame() const
+  {
+    nsIFrame* parent = GetParent();
+    MOZ_ASSERT(parent && parent->GetType() == nsGkAtoms::tableFrame);
+    MOZ_ASSERT(!parent->GetPrevInFlow(),
+               "Col group should always be in a first-in-flow table frame");
+    return static_cast<nsTableFrame*>(parent);
+  }
 
   /**
    * ColGroups never paint anything, nor receive events.
@@ -113,6 +116,9 @@ public:
    */
   virtual nsIAtom* GetType() const override;
 
+  virtual mozilla::WritingMode GetWritingMode() const override
+    { return GetTableFrame()->GetWritingMode(); }
+
   /** Add column frames to the table storages: colframe cache and cellmap
     * this doesn't change the mFrames of the colgroup frame.
     * @param aFirstColIndex - the index at which aFirstFrame should be inserted
@@ -180,16 +186,17 @@ public:
 
   /**
    * Gets inner border widths before collapsing with cell borders
-   * Caller must get left border from previous column
-   * GetContinuousBCBorderWidth will not overwrite aBorder.left
+   * Caller must get istart border from previous column
+   * GetContinuousBCBorderWidth will not overwrite aBorder.IStart
    * see nsTablePainter about continuous borders
    */
-  void GetContinuousBCBorderWidth(nsMargin& aBorder);
+  void GetContinuousBCBorderWidth(mozilla::WritingMode aWM,
+                                  mozilla::LogicalMargin& aBorder);
   /**
    * Set full border widths before collapsing with cell borders
-   * @param aForSide - side to set; only accepts top and bottom
+   * @param aForSide - side to set; only accepts bstart and bend
    */
-  void SetContinuousBCBorderWidth(uint8_t     aForSide,
+  void SetContinuousBCBorderWidth(mozilla::LogicalSide aForSide,
                                   BCPixelSize aPixelValue);
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override
@@ -215,8 +222,8 @@ protected:
   int32_t mStartColIndex;
 
   // border width in pixels
-  BCPixelSize mTopContBorderWidth;
-  BCPixelSize mBottomContBorderWidth;
+  BCPixelSize mBStartContBorderWidth;
+  BCPixelSize mBEndContBorderWidth;
 };
 
 inline nsTableColGroupFrame::nsTableColGroupFrame(nsStyleContext *aContext)

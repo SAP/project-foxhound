@@ -11,7 +11,7 @@
 #include "gfxTypes.h"
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/Attributes.h"         // for override
-#include "mozilla/RefPtr.h"             // for RefPtr, TemporaryRef, etc
+#include "mozilla/RefPtr.h"             // for RefPtr, already_AddRefed, etc
 #include "mozilla/gfx/2D.h"             // for DataSourceSurface
 #include "mozilla/gfx/Point.h"          // for IntSize, IntPoint
 #include "mozilla/gfx/Types.h"          // for SurfaceFormat, etc
@@ -28,27 +28,18 @@
 #include "nsTraceRefcnt.h"              // for MOZ_COUNT_CTOR, etc
 #include "nscore.h"                     // for nsACString
 #include "mozilla/layers/AtomicRefCountedWithFinalize.h"
-
-class gfxReusableSurfaceWrapper;
-struct nsIntPoint;
-struct nsIntSize;
-struct nsIntRect;
+#include "mozilla/gfx/Rect.h"
 
 namespace mozilla {
-namespace gl {
-class SharedSurface;
-}
 namespace ipc {
 class Shmem;
-}
+} // namespace ipc
 
 namespace layers {
 
 class Compositor;
-class CompositableHost;
 class CompositableParentManager;
 class SurfaceDescriptor;
-class SharedSurfaceDescriptor;
 class ISurfaceAllocator;
 class TextureHostOGL;
 class TextureSourceOGL;
@@ -72,7 +63,7 @@ class BigImageIterator
 public:
   virtual void BeginBigImageIteration() = 0;
   virtual void EndBigImageIteration() {};
-  virtual nsIntRect GetTileRect() = 0;
+  virtual gfx::IntRect GetTileRect() = 0;
   virtual size_t GetTileCount() = 0;
   virtual bool NextTile() = 0;
 };
@@ -204,19 +195,6 @@ public:
     return *this;
   }
 
-  CompositableTextureRef& operator=(const TemporaryRef<T>& aOther)
-  {
-    RefPtr<T> temp = aOther;
-    if (temp) {
-      temp->AddCompositableRef();
-    }
-    if (mRef) {
-      mRef->ReleaseCompositableRef();
-    }
-    mRef = temp;
-    return *this;
-  }
-
   CompositableTextureRef& operator=(T* aOther)
   {
     if (aOther) {
@@ -290,7 +268,7 @@ public:
    * This is expected to be very slow and should be used for mostly debugging.
    * XXX - implement everywhere and make it pure virtual.
    */
-  virtual TemporaryRef<gfx::DataSourceSurface> ReadBack() { return nullptr; };
+  virtual already_AddRefed<gfx::DataSourceSurface> ReadBack() { return nullptr; };
 #endif
 
 private:
@@ -347,7 +325,7 @@ public:
   /**
    * Factory method.
    */
-  static TemporaryRef<TextureHost> Create(const SurfaceDescriptor& aDesc,
+  static already_AddRefed<TextureHost> Create(const SurfaceDescriptor& aDesc,
                                           ISurfaceAllocator* aDeallocator,
                                           TextureFlags aFlags);
 
@@ -379,15 +357,6 @@ public:
   virtual gfx::SurfaceFormat GetFormat() const = 0;
 
   /**
-   * Return a list of TextureSources for use with a Compositor.
-   *
-   * This can trigger texture uploads, so do not call it inside transactions
-   * so as to not upload textures while the main thread is blocked.
-   * Must not be called while this TextureHost is not sucessfully Locked.
-   */
-  virtual TextureSource* GetTextureSources() = 0;
-
-  /**
    * Called during the transaction. The TextureSource may or may not be composited.
    *
    * Note that this is called outside of lock/unlock.
@@ -399,7 +368,7 @@ public:
    *
    * Note that this is called only withing lock/unlock.
    */
-  virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture);
+  virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) = 0;
 
   /**
    * Called when another TextureHost will take over.
@@ -415,7 +384,7 @@ public:
    * @param aRegion The region that has been changed, if nil, it means that the
    * entire surface should be updated.
    */
-  virtual void Updated(const nsIntRegion* aRegion = nullptr) {}
+   void Updated(const nsIntRegion* aRegion = nullptr);
 
   /**
    * Sets this TextureHost's compositor.
@@ -449,10 +418,15 @@ public:
   virtual gfx::IntSize GetSize() const = 0;
 
   /**
+   * Should be overridden if TextureHost supports crop rect.
+   */
+  virtual void SetCropRect(nsIntRect aCropRect) {}
+
+  /**
    * Debug facility.
    * XXX - cool kids use Moz2D. See bug 882113.
    */
-  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() = 0;
+  virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() = 0;
 
   /**
    * XXX - Flags should only be set at creation time, this will be removed.
@@ -497,8 +471,6 @@ public:
    */
   PTextureParent* GetIPDLActor();
 
-  FenceHandle GetAndResetReleaseFenceHandle();
-
   /**
    * Specific to B2G's Composer2D
    * XXX - more doc here
@@ -527,11 +499,6 @@ public:
    */
   virtual bool HasInternalBuffer() const { return false; }
 
-  /**
-   * Cast to a TextureHost for each backend.
-   */
-  virtual TextureHostOGL* AsHostOGL() { return nullptr; }
-
   void AddCompositableRef() { ++mCompositableCount; }
 
   void ReleaseCompositableRef()
@@ -545,8 +512,34 @@ public:
 
   int NumCompositableRefs() const { return mCompositableCount; }
 
+  /**
+   * Store a fence that will signal when the current buffer is no longer being read.
+   * Similar to android's GLConsumer::setReleaseFence()
+   */
+  bool SetReleaseFenceHandle(const FenceHandle& aReleaseFenceHandle);
+
+  /**
+   * Return a releaseFence's Fence and clear a reference to the Fence.
+   */
+  FenceHandle GetAndResetReleaseFenceHandle();
+
+  void SetAcquireFenceHandle(const FenceHandle& aAcquireFenceHandle);
+
+  /**
+   * Return a acquireFence's Fence and clear a reference to the Fence.
+   */
+  FenceHandle GetAndResetAcquireFenceHandle();
+
+  virtual void WaitAcquireFenceHandleSyncComplete() {};
+
 protected:
+  FenceHandle mReleaseFenceHandle;
+
+  FenceHandle mAcquireFenceHandle;
+
   void RecycleTexture(TextureFlags aFlags);
+
+  virtual void UpdatedInternal(const nsIntRegion *Region) {}
 
   PTextureParent* mActor;
   TextureFlags mFlags;
@@ -580,13 +573,11 @@ public:
 
   virtual size_t GetBufferSize() = 0;
 
-  virtual void Updated(const nsIntRegion* aRegion = nullptr) override;
-
   virtual bool Lock() override;
 
   virtual void Unlock() override;
 
-  virtual TextureSource* GetTextureSources() override;
+  virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
 
   virtual void DeallocateDeviceData() override;
 
@@ -594,7 +585,7 @@ public:
 
   /**
    * Return the format that is exposed to the compositor when calling
-   * GetTextureSources.
+   * BindTextureSource.
    *
    * If the shared format is YCbCr and the compositor does not support it,
    * GetFormat will be RGB32 (even though mFormat is SurfaceFormat::YUV).
@@ -603,7 +594,7 @@ public:
 
   virtual gfx::IntSize GetSize() const override { return mSize; }
 
-  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() override;
+  virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
 
   virtual bool HasInternalBuffer() const override { return true; }
 
@@ -612,6 +603,8 @@ protected:
   bool MaybeUpload(nsIntRegion *aRegion = nullptr);
 
   void InitSize();
+
+  virtual void UpdatedInternal(const nsIntRegion* aRegion = nullptr) override;
 
   RefPtr<Compositor> mCompositor;
   RefPtr<DataTextureSource> mFirstSource;
@@ -689,63 +682,6 @@ protected:
   uint8_t* mBuffer;
 };
 
-/**
- * A TextureHost for SharedSurfaces
- */
-class SharedSurfaceTextureHost : public TextureHost
-{
-public:
-  SharedSurfaceTextureHost(TextureFlags aFlags,
-                           const SharedSurfaceDescriptor& aDesc);
-
-  virtual ~SharedSurfaceTextureHost() {
-    MOZ_ASSERT(!mIsLocked);
-  }
-
-  virtual void DeallocateDeviceData() override {};
-
-  virtual TemporaryRef<gfx::DataSourceSurface> GetAsSurface() override {
-    return nullptr; // XXX - implement this (for MOZ_DUMP_PAINTING)
-  }
-
-  virtual void SetCompositor(Compositor* aCompositor) override {
-    MOZ_ASSERT(!mIsLocked);
-
-    if (aCompositor == mCompositor)
-      return;
-
-    mTexSource = nullptr;
-    mCompositor = aCompositor;
-  }
-
-public:
-
-  virtual bool Lock() override;
-  virtual void Unlock() override;
-
-  virtual TextureSource* GetTextureSources() override {
-    MOZ_ASSERT(mIsLocked);
-    MOZ_ASSERT(mTexSource);
-    return mTexSource;
-  }
-
-  virtual gfx::SurfaceFormat GetFormat() const override;
-
-  virtual gfx::IntSize GetSize() const override;
-
-#ifdef MOZ_LAYERS_HAVE_LOG
-  virtual const char* Name() override { return "SharedSurfaceTextureHost"; }
-#endif
-
-protected:
-  void EnsureTexSource();
-
-  bool mIsLocked;
-  gl::SharedSurface* const mSurf;
-  RefPtr<Compositor> mCompositor;
-  RefPtr<TextureSource> mTexSource;
-};
-
 class MOZ_STACK_CLASS AutoLockTextureHost
 {
 public:
@@ -780,11 +716,12 @@ public:
   explicit CompositingRenderTarget(const gfx::IntPoint& aOrigin)
     : mClearOnBind(false)
     , mOrigin(aOrigin)
+    , mHasComplexProjection(false)
   {}
   virtual ~CompositingRenderTarget() {}
 
 #ifdef MOZ_DUMP_PAINTING
-  virtual TemporaryRef<gfx::DataSourceSurface> Dump(Compositor* aCompositor) { return nullptr; }
+  virtual already_AddRefed<gfx::DataSourceSurface> Dump(Compositor* aCompositor) { return nullptr; }
 #endif
 
   /**
@@ -795,26 +732,57 @@ public:
     mClearOnBind = true;
   }
 
-  const gfx::IntPoint& GetOrigin() { return mOrigin; }
+  const gfx::IntPoint& GetOrigin() const { return mOrigin; }
   gfx::IntRect GetRect() { return gfx::IntRect(GetOrigin(), GetSize()); }
 
+  /**
+   * If a Projection matrix is set, then it is used for rendering to
+   * this render target instead of generating one.  If no explicit
+   * projection is set, Compositors are expected to generate an
+   * orthogonal maaping that maps 0..1 to the full size of the render
+   * target.
+   */
+  bool HasComplexProjection() const { return mHasComplexProjection; }
+  void ClearProjection() { mHasComplexProjection = false; }
+  void SetProjection(const gfx::Matrix4x4& aNewMatrix, bool aEnableDepthBuffer,
+                     float aZNear, float aZFar)
+  {
+    mProjectionMatrix = aNewMatrix;
+    mEnableDepthBuffer = aEnableDepthBuffer;
+    mZNear = aZNear;
+    mZFar = aZFar;
+    mHasComplexProjection = true;
+  }
+  void GetProjection(gfx::Matrix4x4& aMatrix, bool& aEnableDepth, float& aZNear, float& aZFar)
+  {
+    MOZ_ASSERT(mHasComplexProjection);
+    aMatrix = mProjectionMatrix;
+    aEnableDepth = mEnableDepthBuffer;
+    aZNear = mZNear;
+    aZFar = mZFar;
+  }
 protected:
   bool mClearOnBind;
 
 private:
   gfx::IntPoint mOrigin;
+
+  gfx::Matrix4x4 mProjectionMatrix;
+  float mZNear, mZFar;
+  bool mHasComplexProjection;
+  bool mEnableDepthBuffer;
 };
 
 /**
  * Creates a TextureHost that can be used with any of the existing backends
  * Not all SurfaceDescriptor types are supported
  */
-TemporaryRef<TextureHost>
+already_AddRefed<TextureHost>
 CreateBackendIndependentTextureHost(const SurfaceDescriptor& aDesc,
                                     ISurfaceAllocator* aDeallocator,
                                     TextureFlags aFlags);
 
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 #endif

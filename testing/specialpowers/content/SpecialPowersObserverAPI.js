@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 Components.utils.import("resource://gre/modules/Services.jsm");
@@ -13,24 +14,23 @@ if (typeof(Cc) == 'undefined') {
   var Cc = Components.classes;
 }
 
-/**
- * Special Powers Exception - used to throw exceptions nicely
- **/
-this.SpecialPowersException = function SpecialPowersException(aMsg) {
+this.SpecialPowersError = function(aMsg) {
+  Error.call(this);
+  let {stack} = new Error();
   this.message = aMsg;
-  this.name = "SpecialPowersException";
+  this.name = "SpecialPowersError";
 }
+SpecialPowersError.prototype = Object.create(Error.prototype);
 
-SpecialPowersException.prototype = {
-  toString: function SPE_toString() {
-    return this.name + ': "' + this.message + '"';
-  }
+SpecialPowersError.prototype.toString = function() {
+  return `${this.name}: ${this.message}`;
 };
 
 this.SpecialPowersObserverAPI = function SpecialPowersObserverAPI() {
   this._crashDumpDir = null;
   this._processCrashObserversRegistered = false;
   this._chromeScriptListeners = [];
+  this._extensions = new Map();
 }
 
 function parseKeyValuePairs(text) {
@@ -221,13 +221,21 @@ SpecialPowersObserverAPI.prototype = {
     }
 
     if (status == 404) {
-      throw new SpecialPowersException(
+      throw new SpecialPowersError(
         "Error while executing chrome script '" + aUrl + "':\n" +
         "The script doesn't exists. Ensure you have registered it in " +
         "'support-files' in your mochitest.ini.");
     }
 
     return output;
+  },
+
+  _sendReply: function(aMessage, aReplyName, aReplyMsg) {
+    let mm = aMessage.target
+                     .QueryInterface(Ci.nsIFrameLoaderOwner)
+                     .frameLoader
+                     .messageManager;
+    mm.sendAsyncMessage(aReplyName, aReplyMsg);
   },
 
   /**
@@ -247,19 +255,19 @@ SpecialPowersObserverAPI.prototype = {
 
         if (aMessage.json.op == "get") {
           if (!prefName || !prefType)
-            throw new SpecialPowersException("Invalid parameters for get in SPPrefService");
+            throw new SpecialPowersError("Invalid parameters for get in SPPrefService");
 
           // return null if the pref doesn't exist
           if (prefs.getPrefType(prefName) == prefs.PREF_INVALID)
             return null;
         } else if (aMessage.json.op == "set") {
           if (!prefName || !prefType  || prefValue === null)
-            throw new SpecialPowersException("Invalid parameters for set in SPPrefService");
+            throw new SpecialPowersError("Invalid parameters for set in SPPrefService");
         } else if (aMessage.json.op == "clear") {
           if (!prefName)
-            throw new SpecialPowersException("Invalid parameters for clear in SPPrefService");
+            throw new SpecialPowersError("Invalid parameters for clear in SPPrefService");
         } else {
-          throw new SpecialPowersException("Invalid operation for SPPrefService");
+          throw new SpecialPowersError("Invalid operation for SPPrefService");
         }
 
         // Now we make the call
@@ -306,7 +314,7 @@ SpecialPowersObserverAPI.prototype = {
           case "find-crash-dump-files":
             return this._findCrashDumpFiles(aMessage.json.crashDumpFilesToIgnore);
           default:
-            throw new SpecialPowersException("Invalid operation for SPProcessCrashService");
+            throw new SpecialPowersError("Invalid operation for SPProcessCrashService");
         }
         return undefined;	// See comment at the beginning of this function.
       }
@@ -315,11 +323,13 @@ SpecialPowersObserverAPI.prototype = {
         let msg = aMessage.json;
 
         let secMan = Services.scriptSecurityManager;
-        let principal = secMan.getAppCodebasePrincipal(this._getURI(msg.url), msg.appId, msg.isInBrowserElement);
+        // TODO: Bug 1196665 - Add originAttributes into SpecialPowers
+        let attrs = {appId: msg.appId, inBrowser: msg.isInBrowserElement};
+        let principal = secMan.createCodebasePrincipal(this._getURI(msg.url), attrs);
 
         switch (msg.op) {
           case "add":
-            Services.perms.addFromPrincipal(principal, msg.type, msg.permission);
+            Services.perms.addFromPrincipal(principal, msg.type, msg.permission, msg.expireType, msg.expireTime);
             break;
           case "remove":
             Services.perms.removeFromPrincipal(principal, msg.type);
@@ -338,8 +348,8 @@ SpecialPowersObserverAPI.prototype = {
             return false;
             break;
           default:
-            throw new SpecialPowersException("Invalid operation for " +
-                                             "SPPermissionManager");
+            throw new SpecialPowersError(
+              "Invalid operation for SPPermissionManager");
         }
         return undefined;	// See comment at the beginning of this function.
       }
@@ -376,21 +386,52 @@ SpecialPowersObserverAPI.prototype = {
               scope.UserCustomizations._debug = aMessage.json.value;
               return;
             }
+          case "inject-app":
+            {
+              let aAppId = aMessage.json.appId;
+              let aApp   = aMessage.json.app;
+
+              let keys = Object.keys(Webapps.DOMApplicationRegistry.webapps);
+              let exists = keys.indexOf(aAppId) !== -1;
+              if (exists) {
+                return false;
+              }
+
+              Webapps.DOMApplicationRegistry.webapps[aAppId] = aApp;
+              return true;
+            }
+          case "reject-app":
+            {
+              let aAppId = aMessage.json.appId;
+
+              let keys = Object.keys(Webapps.DOMApplicationRegistry.webapps);
+              let exists = keys.indexOf(aAppId) !== -1;
+              if (!exists) {
+                return false;
+              }
+
+              delete Webapps.DOMApplicationRegistry.webapps[aAppId];
+              return true;
+            }
           default:
-            throw new SpecialPowersException("Invalid operation for SPWebAppsService");
+            throw new SpecialPowersError("Invalid operation for SPWebAppsService");
         }
         return undefined;	// See comment at the beginning of this function.
       }
 
       case "SPObserverService": {
+        let topic = aMessage.json.observerTopic;
         switch (aMessage.json.op) {
           case "notify":
-            let topic = aMessage.json.observerTopic;
             let data = aMessage.json.observerData
             Services.obs.notifyObservers(null, topic, data);
             break;
+          case "add":
+            this._registerObservers._self = this;
+            this._registerObservers._add(topic);
+            break;
           default:
-            throw new SpecialPowersException("Invalid operation for SPObserverervice");
+            throw new SpecialPowersError("Invalid operation for SPObserverervice");
         }
         return undefined;	// See comment at the beginning of this function.
       }
@@ -443,9 +484,10 @@ SpecialPowersObserverAPI.prototype = {
         try {
           Components.utils.evalInSandbox(jsScript, sb, "1.8", url, 1);
         } catch(e) {
-          throw new SpecialPowersException("Error while executing chrome " +
-                                           "script '" + url + "':\n" + e + "\n" +
-                                           e.fileName + ":" + e.lineNumber);
+          throw new SpecialPowersError(
+            "Error while executing chrome script '" + url + "':\n" +
+            e + "\n" +
+            e.fileName + ":" + e.lineNumber);
         }
         return undefined;	// See comment at the beginning of this function.
       }
@@ -470,26 +512,26 @@ SpecialPowersObserverAPI.prototype = {
         let msg = aMessage.data;
         let op = msg.op;
 
-        if (op != 'clear' && op != 'getUsage') {
-          throw new SpecialPowersException('Invalid operation for SPQuotaManager');
+        if (op != 'clear' && op != 'getUsage' && op != 'reset') {
+          throw new SpecialPowersError('Invalid operation for SPQuotaManager');
         }
 
-        let uri = this._getURI(msg.uri);
+        let secMan = Services.scriptSecurityManager;
+        let principal = secMan.createCodebasePrincipal(this._getURI(msg.uri), {
+          appId: msg.appId,
+          inBrowser: msg.inBrowser,
+        });
 
         if (op == 'clear') {
-          if (('inBrowser' in msg) && msg.inBrowser !== undefined) {
-            qm.clearStoragesForURI(uri, msg.appId, msg.inBrowser);
-          } else if (('appId' in msg) && msg.appId !== undefined) {
-            qm.clearStoragesForURI(uri, msg.appId);
-          } else {
-            qm.clearStoragesForURI(uri);
-          }
+          qm.clearStoragesForPrincipal(principal);
+        } else if (op == 'reset') {
+          qm.reset();
         }
 
-        // We always use the getUsageForURI callback even if we're clearing
-        // since we know that clear and getUsageForURI are synchronized by the
+        // We always use the getUsageForPrincipal callback even if we're clearing
+        // since we know that clear and getUsageForPrincipal are synchronized by the
         // QuotaManager.
-        let callback = function(uri, usage, fileUsage) {
+        let callback = function(principal, usage, fileUsage) {
           let reply = { id: msg.id };
           if (op == 'getUsage') {
             reply.usage = usage;
@@ -498,25 +540,97 @@ SpecialPowersObserverAPI.prototype = {
           mm.sendAsyncMessage(aMessage.name, reply);
         };
 
-        if (('inBrowser' in msg) && msg.inBrowser !== undefined) {
-          qm.getUsageForURI(uri, callback, msg.appId, msg.inBrowser);
-        } else if (('appId' in msg) && msg.appId !== undefined) {
-          qm.getUsageForURI(uri, callback, msg.appId);
-        } else {
-          qm.getUsageForURI(uri, callback);
-        }
+        qm.getUsageForPrincipal(principal, callback);
 
         return undefined;	// See comment at the beginning of this function.
       }
 
+      case "SPPeriodicServiceWorkerUpdates": {
+        // We could just dispatch a generic idle-daily notification here, but
+        // this is better since it avoids invoking other idle daily observers
+        // at the cost of hard-coding the usage of PeriodicServiceWorkerUpdater.
+        Cc["@mozilla.org/service-worker-periodic-updater;1"].
+          getService(Ci.nsIObserver).
+          observe(null, "idle-daily", "Caller:SpecialPowers");
+
+        return undefined;	// See comment at the beginning of this function.
+      }
+
+      case "SPLoadExtension": {
+        let {Extension} = Components.utils.import("resource://gre/modules/Extension.jsm", {});
+
+        let id = aMessage.data.id;
+        let ext = aMessage.data.ext;
+        let extension;
+        if (typeof(ext) == "string") {
+          let target = "resource://testing-common/extensions/" + ext + "/";
+          let resourceHandler = Services.io.getProtocolHandler("resource")
+                                        .QueryInterface(Ci.nsISubstitutingProtocolHandler);
+          let resURI = Services.io.newURI(target, null, null);
+          let uri = Services.io.newURI(resourceHandler.resolveURI(resURI), null, null);
+          extension = new Extension({
+            id,
+            resourceURI: uri
+          });
+        } else {
+          extension = Extension.generate(ext);
+        }
+
+        let resultListener = (...args) => {
+          this._sendReply(aMessage, "SPExtensionMessage", {id, type: "testResult", args});
+        };
+
+        let messageListener = (...args) => {
+          args.shift();
+          this._sendReply(aMessage, "SPExtensionMessage", {id, type: "testMessage", args});
+        };
+
+        // Register pass/fail handlers.
+        extension.on("test-result", resultListener);
+        extension.on("test-eq", resultListener);
+        extension.on("test-log", resultListener);
+        extension.on("test-done", resultListener);
+
+        extension.on("test-message", messageListener);
+
+        this._extensions.set(id, extension);
+        return undefined;
+      }
+
+      case "SPStartupExtension": {
+        let id = aMessage.data.id;
+        let extension = this._extensions.get(id);
+        extension.startup().then(() => {
+          this._sendReply(aMessage, "SPExtensionMessage", {id, type: "extensionStarted", args: []});
+        }).catch(e => {
+          this._sendReply(aMessage, "SPExtensionMessage", {id, type: "extensionFailed", args: []});
+        });
+        return undefined;
+      }
+
+      case "SPExtensionMessage": {
+        let id = aMessage.data.id;
+        let extension = this._extensions.get(id);
+        extension.testMessage(...aMessage.data.args);
+        return undefined;
+      }
+
+      case "SPUnloadExtension": {
+        let id = aMessage.data.id;
+        let extension = this._extensions.get(id);
+        this._extensions.delete(id);
+        extension.shutdown();
+        this._sendReply(aMessage, "SPExtensionMessage", {id, type: "extensionUnloaded", args: []});
+        return undefined;
+      }
+
       default:
-        throw new SpecialPowersException("Unrecognized Special Powers API");
+        throw new SpecialPowersError("Unrecognized Special Powers API");
     }
 
     // We throw an exception before reaching this explicit return because
     // we should never be arriving here anyway.
-    throw new SpecialPowersException("Unreached code");
+    throw new SpecialPowersError("Unreached code");
     return undefined;
   }
 };
-

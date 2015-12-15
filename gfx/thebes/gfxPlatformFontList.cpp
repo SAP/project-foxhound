@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 #include "gfxPlatformFontList.h"
 #include "gfxTextRun.h"
@@ -23,20 +23,16 @@
 
 using namespace mozilla;
 
-#ifdef PR_LOGGING
-
-#define LOG_FONTLIST(args) PR_LOG(gfxPlatform::GetLog(eGfxLog_fontlist), \
-                               PR_LOG_DEBUG, args)
-#define LOG_FONTLIST_ENABLED() PR_LOG_TEST( \
+#define LOG_FONTLIST(args) MOZ_LOG(gfxPlatform::GetLog(eGfxLog_fontlist), \
+                               LogLevel::Debug, args)
+#define LOG_FONTLIST_ENABLED() MOZ_LOG_TEST( \
                                    gfxPlatform::GetLog(eGfxLog_fontlist), \
-                                   PR_LOG_DEBUG)
-#define LOG_FONTINIT(args) PR_LOG(gfxPlatform::GetLog(eGfxLog_fontinit), \
-                               PR_LOG_DEBUG, args)
-#define LOG_FONTINIT_ENABLED() PR_LOG_TEST( \
+                                   LogLevel::Debug)
+#define LOG_FONTINIT(args) MOZ_LOG(gfxPlatform::GetLog(eGfxLog_fontinit), \
+                               LogLevel::Debug, args)
+#define LOG_FONTINIT_ENABLED() MOZ_LOG_TEST( \
                                    gfxPlatform::GetLog(eGfxLog_fontinit), \
-                                   PR_LOG_DEBUG)
-
-#endif // PR_LOGGING
+                                   LogLevel::Debug)
 
 gfxPlatformFontList *gfxPlatformFontList::sPlatformFontList = nullptr;
 
@@ -167,7 +163,7 @@ gfxPlatformFontList::MemoryReporter::CollectReports(
 gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
     : mFontFamilies(64), mOtherFamilyNames(16),
       mPrefFonts(8), mBadUnderlineFamilyNames(8), mSharedCmaps(8),
-      mStartIndex(0), mIncrement(1), mNumFamilies(0)
+      mStartIndex(0), mIncrement(1), mNumFamilies(0), mFontlistInitCount(0)
 {
     mOtherFamilyNamesInitialized = false;
 
@@ -199,6 +195,12 @@ gfxPlatformFontList::~gfxPlatformFontList()
 nsresult
 gfxPlatformFontList::InitFontList()
 {
+    mFontlistInitCount++;
+
+    if (LOG_FONTINIT_ENABLED()) {
+        LOG_FONTINIT(("(fontinit) system fontlist initialization\n"));
+    }
+
     // rebuilding fontlist so clear out font/word caches
     gfxFontCache *fontCache = gfxFontCache::GetCache();
     if (fontCache) {
@@ -268,14 +270,12 @@ gfxPlatformFontList::InitOtherFamilyNames()
     Telemetry::AccumulateTimeDelta(Telemetry::FONTLIST_INITOTHERFAMILYNAMES,
                                    start, end);
 
-#ifdef PR_LOGGING
     if (LOG_FONTINIT_ENABLED()) {
         TimeDuration elapsed = end - start;
         LOG_FONTINIT(("(fontinit) InitOtherFamilyNames took %8.2f ms %s",
                       elapsed.ToMilliseconds(),
                       (otherNamesData.mTimedOut ? "timeout" : "")));
     }
-#endif
 }
 
 #define OTHERNAMES_TIMEOUT 200
@@ -328,7 +328,6 @@ gfxPlatformFontList::SearchFamiliesForFaceName(const nsAString& aFaceName)
     TimeStamp end = TimeStamp::Now();
     Telemetry::AccumulateTimeDelta(Telemetry::FONTLIST_INITFACENAMELISTS,
                                    start, end);
-#ifdef PR_LOGGING
     if (LOG_FONTINIT_ENABLED()) {
         TimeDuration elapsed = end - start;
         LOG_FONTINIT(("(fontinit) SearchFamiliesForFaceName took %8.2f ms %s %s",
@@ -336,7 +335,6 @@ gfxPlatformFontList::SearchFamiliesForFaceName(const nsAString& aFaceName)
                       (lookup ? "found name" : ""),
                       (faceNameListsData.mTimedOut ? "timeout" : "")));
     }
-#endif
 
     return lookup;
 }
@@ -444,19 +442,11 @@ gfxPlatformFontList::LoadBadUnderlineList()
     }
 }
 
-static PLDHashOperator
-RebuildLocalFonts(nsPtrHashKey<gfxUserFontSet>* aKey,
-                  void* aClosure)
-{
-    aKey->GetKey()->RebuildLocalRules();
-    return PL_DHASH_NEXT;
-}
-
 void
 gfxPlatformFontList::UpdateFontList()
 {
     InitFontList();
-    mUserFontSetList.EnumerateEntries(RebuildLocalFonts, nullptr);
+    RebuildLocalFonts();
 }
 
 struct FontListData {
@@ -586,13 +576,12 @@ gfxPlatformFontList::SystemFindFontForChar(uint32_t aCh, uint32_t aNextCh,
     }
     TimeDuration elapsed = TimeStamp::Now() - start;
 
-#ifdef PR_LOGGING
     PRLogModuleInfo *log = gfxPlatform::GetLog(eGfxLog_textrun);
 
-    if (MOZ_UNLIKELY(PR_LOG_TEST(log, PR_LOG_WARNING))) {
+    if (MOZ_UNLIKELY(MOZ_LOG_TEST(log, LogLevel::Warning))) {
         uint32_t unicodeRange = FindCharUnicodeRange(aCh);
         int32_t script = mozilla::unicode::GetScriptCode(aCh);
-        PR_LOG(log, PR_LOG_WARNING,\
+        MOZ_LOG(log, LogLevel::Warning,\
                ("(textrun-systemfallback-%s) char: u+%6.6x "
                  "unicode-range: %d script: %d match: [%s]"
                 " time: %dus cmaps: %d\n",
@@ -603,7 +592,6 @@ gfxPlatformFontList::SystemFindFontForChar(uint32_t aCh, uint32_t aNextCh,
                 int32_t(elapsed.ToMicroseconds()),
                 cmapCount));
     }
-#endif
 
     // no match? add to set of non-matching codepoints
     if (!fontEntry) {
@@ -660,8 +648,7 @@ gfxPlatformFontList::CommonFontFallback(uint32_t aCh, uint32_t aNextCh,
         const char *fallbackFamily = defaultFallbacks[i];
 
         familyName.AppendASCII(fallbackFamily);
-        gfxFontFamily *fallback =
-                gfxPlatformFontList::PlatformFontList()->FindFamily(familyName);
+        gfxFontFamily *fallback = FindFamilyByCanonicalName(familyName);
         if (!fallback)
             continue;
 
@@ -735,8 +722,10 @@ gfxPlatformFontList::CheckFamily(gfxFontFamily *aFamily)
     return aFamily;
 }
 
-gfxFontFamily* 
-gfxPlatformFontList::FindFamily(const nsAString& aFamily, bool aUseSystemFonts)
+gfxFontFamily*
+gfxPlatformFontList::FindFamily(const nsAString& aFamily,
+                                nsIAtom* aLanguage,
+                                bool aUseSystemFonts)
 {
     nsAutoString key;
     gfxFontFamily *familyEntry;
@@ -748,15 +737,6 @@ gfxPlatformFontList::FindFamily(const nsAString& aFamily, bool aUseSystemFonts)
     if ((familyEntry = mFontFamilies.GetWeak(key))) {
         return CheckFamily(familyEntry);
     }
-
-#if defined(XP_MACOSX)
-    // for system font types allow hidden system fonts to be referenced
-    if (aUseSystemFonts) {
-        if ((familyEntry = mSystemFontFamilies.GetWeak(key)) != nullptr) {
-            return CheckFamily(familyEntry);
-        }
-    }
-#endif
 
     // lookup in other family names list (mostly localized names)
     if ((familyEntry = mOtherFamilyNames.GetWeak(key)) != nullptr) {
@@ -818,12 +798,10 @@ gfxPlatformFontList::AddOtherFamilyName(gfxFontFamily *aFamilyEntry, nsAString& 
 
     if (!mOtherFamilyNames.GetWeak(key)) {
         mOtherFamilyNames.Put(key, aFamilyEntry);
-#ifdef PR_LOGGING
         LOG_FONTLIST(("(fontlist-otherfamily) canonical family: %s, "
                       "other family: %s\n",
                       NS_ConvertUTF16toUTF8(aFamilyEntry->Name()).get(),
                       NS_ConvertUTF16toUTF8(aOtherFamilyName).get()));
-#endif
         if (mBadUnderlineFamilyNames.Contains(key))
             aFamilyEntry->SetBadUnderlineFamily();
     }
@@ -834,11 +812,9 @@ gfxPlatformFontList::AddFullname(gfxFontEntry *aFontEntry, nsAString& aFullname)
 {
     if (!mExtraNames->mFullnames.GetWeak(aFullname)) {
         mExtraNames->mFullnames.Put(aFullname, aFontEntry);
-#ifdef PR_LOGGING
         LOG_FONTLIST(("(fontlist-fullname) name: %s, fullname: %s\n",
                       NS_ConvertUTF16toUTF8(aFontEntry->Name()).get(),
                       NS_ConvertUTF16toUTF8(aFullname).get()));
-#endif
     }
 }
 
@@ -847,11 +823,9 @@ gfxPlatformFontList::AddPostscriptName(gfxFontEntry *aFontEntry, nsAString& aPos
 {
     if (!mExtraNames->mPostscriptNames.GetWeak(aPostscriptName)) {
         mExtraNames->mPostscriptNames.Put(aPostscriptName, aFontEntry);
-#ifdef PR_LOGGING
         LOG_FONTLIST(("(fontlist-postscript) name: %s, psname: %s\n",
                       NS_ConvertUTF16toUTF8(aFontEntry->Name()).get(),
                       NS_ConvertUTF16toUTF8(aPostscriptName).get()));
-#endif
     }
 }
 
@@ -967,13 +941,11 @@ gfxPlatformFontList::LoadFontInfo()
     mStartIndex = endIndex;
     bool done = mStartIndex >= mNumFamilies;
 
-#ifdef PR_LOGGING
     if (LOG_FONTINIT_ENABLED()) {
         TimeDuration elapsed = TimeStamp::Now() - start;
         LOG_FONTINIT(("(fontinit) fontloader load pass %8.2f ms done %s\n",
                       elapsed.ToMilliseconds(), (done ? "true" : "false")));
     }
-#endif
 
     if (done) {
         mOtherFamilyNamesInitialized = true;
@@ -981,50 +953,6 @@ gfxPlatformFontList::LoadFontInfo()
     }
 
     return done;
-}
-
-struct LookupMissedFaceNamesData {
-    explicit LookupMissedFaceNamesData(gfxPlatformFontList *aFontList)
-        : mFontList(aFontList), mFoundName(false) {}
-
-    gfxPlatformFontList *mFontList;
-    bool mFoundName;
-};
-
-/*static*/ PLDHashOperator
-gfxPlatformFontList::LookupMissedFaceNamesProc(nsStringHashKey *aKey,
-                                               void *aUserArg)
-{
-    LookupMissedFaceNamesData *data =
-        reinterpret_cast<LookupMissedFaceNamesData*>(aUserArg);
-
-    if (data->mFontList->FindFaceName(aKey->GetKey())) {
-        data->mFoundName = true;
-        return PL_DHASH_STOP;
-    }
-    return PL_DHASH_NEXT;
-}
-
-struct LookupMissedOtherNamesData {
-    explicit LookupMissedOtherNamesData(gfxPlatformFontList *aFontList)
-        : mFontList(aFontList), mFoundName(false) {}
-
-    gfxPlatformFontList *mFontList;
-    bool mFoundName;
-};
-
-/*static*/ PLDHashOperator
-gfxPlatformFontList::LookupMissedOtherNamesProc(nsStringHashKey *aKey,
-                                                void *aUserArg)
-{
-    LookupMissedOtherNamesData *data =
-        reinterpret_cast<LookupMissedOtherNamesData*>(aUserArg);
-
-    if (data->mFontList->FindFamily(aKey->GetKey())) {
-        data->mFoundName = true;
-        return PL_DHASH_STOP;
-    }
-    return PL_DHASH_NEXT;
 }
 
 void 
@@ -1035,29 +963,28 @@ gfxPlatformFontList::CleanupLoader()
     bool rebuilt = false, forceReflow = false;
 
     // if had missed face names that are now available, force reflow all
-    if (mFaceNamesMissed &&
-        mFaceNamesMissed->Count() != 0) {
-        LookupMissedFaceNamesData namedata(this);
-        mFaceNamesMissed->EnumerateEntries(LookupMissedFaceNamesProc, &namedata);
-        if (namedata.mFoundName) {
-            rebuilt = true;
-            mUserFontSetList.EnumerateEntries(RebuildLocalFonts, nullptr);
+    if (mFaceNamesMissed) {
+        for (auto it = mFaceNamesMissed->Iter(); !it.Done(); it.Next()) {
+            if (FindFaceName(it.Get()->GetKey())) {
+                rebuilt = true;
+                RebuildLocalFonts();
+                break;
+            }
         }
         mFaceNamesMissed = nullptr;
     }
 
     if (mOtherNamesMissed) {
-        LookupMissedOtherNamesData othernamesdata(this);
-        mOtherNamesMissed->EnumerateEntries(LookupMissedOtherNamesProc,
-                                            &othernamesdata);
-        mOtherNamesMissed = nullptr;
-        if (othernamesdata.mFoundName) {
-            forceReflow = true;
-            ForceGlobalReflow();
+        for (auto it = mOtherNamesMissed->Iter(); !it.Done(); it.Next()) {
+            if (FindFamily(it.Get()->GetKey())) {
+                forceReflow = true;
+                ForceGlobalReflow();
+                break;
+            }
         }
+        mOtherNamesMissed = nullptr;
     }
 
-#ifdef PR_LOGGING
     if (LOG_FONTINIT_ENABLED() && mFontInfo) {
         LOG_FONTINIT(("(fontinit) fontloader load thread took %8.2f ms "
                       "%d families %d fonts %d cmaps "
@@ -1071,7 +998,6 @@ gfxPlatformFontList::CleanupLoader()
                       (rebuilt ? "(userfont sets rebuilt)" : ""),
                       (forceReflow ? "(global reflow)" : "")));
     }
-#endif
 
     gfxFontInfoLoader::CleanupLoader();
 }
@@ -1099,74 +1025,44 @@ gfxPlatformFontList::ForceGlobalReflow()
     Preferences::SetBool(kPrefName, !fontInternalChange);
 }
 
+void
+gfxPlatformFontList::RebuildLocalFonts()
+{
+    for (auto it = mUserFontSetList.Iter(); !it.Done(); it.Next()) {
+        it.Get()->GetKey()->RebuildLocalRules();
+    }
+}
+
 // Support for memory reporting
 
-static size_t
-SizeOfFamilyEntryExcludingThis(const nsAString&               aKey,
-                               const nsRefPtr<gfxFontFamily>& aFamily,
-                               MallocSizeOf                   aMallocSizeOf,
-                               void*                          aUserArg)
-{
-    FontListSizes *sizes = static_cast<FontListSizes*>(aUserArg);
-    aFamily->AddSizeOfExcludingThis(aMallocSizeOf, sizes);
-
-    sizes->mFontListSize += aKey.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-
-    // we return zero here because the measurements have been added directly
-    // to the relevant fields of the FontListSizes record
-    return 0;
-}
-
-// this is also used by subclasses that hold additional hashes of family names
+// this is also used by subclasses that hold additional font tables
 /*static*/ size_t
-gfxPlatformFontList::SizeOfFamilyNameEntryExcludingThis
-    (const nsAString&               aKey,
-     const nsRefPtr<gfxFontFamily>& aFamily,
-     MallocSizeOf                   aMallocSizeOf,
-     void*                          aUserArg)
+gfxPlatformFontList::SizeOfFontFamilyTableExcludingThis(
+    const FontFamilyTable& aTable,
+    MallocSizeOf aMallocSizeOf)
 {
-    // we don't count the size of the family here, because this is an *extra*
-    // reference to a family that will have already been counted in the main list
-    return aKey.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+    size_t n = aTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (auto iter = aTable.ConstIter(); !iter.Done(); iter.Next()) {
+        // We don't count the size of the family here, because this is an
+        // *extra* reference to a family that will have already been counted in
+        // the main list.
+        n += iter.Key().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+    }
+    return n;
 }
 
-static size_t
-SizeOfFontNameEntryExcludingThis(const nsAString&              aKey,
-                                 const nsRefPtr<gfxFontEntry>& aFont,
-                                 MallocSizeOf                  aMallocSizeOf,
-                                 void*                         aUserArg)
+/*static*/ size_t
+gfxPlatformFontList::SizeOfFontEntryTableExcludingThis(
+    const FontEntryTable& aTable,
+    MallocSizeOf aMallocSizeOf)
 {
-    // the font itself is counted by its owning family; here we only care about
-    // the name stored in the hashtable key
-    return aKey.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-}
-
-static size_t
-SizeOfPrefFontEntryExcludingThis
-    (const uint32_t&                           aKey,
-     const nsTArray<nsRefPtr<gfxFontFamily> >& aList,
-     MallocSizeOf                              aMallocSizeOf,
-     void*                                     aUserArg)
-{
-    // again, we only care about the size of the array itself; we don't follow
-    // the refPtrs stored in it, because they point to entries already owned
-    // and accounted-for by the main font list
-    return aList.SizeOfExcludingThis(aMallocSizeOf);
-}
-
-static size_t
-SizeOfSharedCmapExcludingThis(CharMapHashKey*   aHashEntry,
-                              MallocSizeOf      aMallocSizeOf,
-                              void*             aUserArg)
-{
-    FontListSizes *sizes = static_cast<FontListSizes*>(aUserArg);
-
-    uint32_t size = aHashEntry->GetKey()->SizeOfIncludingThis(aMallocSizeOf);
-    sizes->mCharMapsSize += size;
-
-    // we return zero here because the measurements have been added directly
-    // to the relevant fields of the FontListSizes record
-    return 0;
+    size_t n = aTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (auto iter = aTable.ConstIter(); !iter.Done(); iter.Next()) {
+        // The font itself is counted by its owning family; here we only care
+        // about the names stored in the hashtable keys.
+        n += iter.Key().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+    }
+    return n;
 }
 
 void
@@ -1174,37 +1070,49 @@ gfxPlatformFontList::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                             FontListSizes* aSizes) const
 {
     aSizes->mFontListSize +=
-        mFontFamilies.SizeOfExcludingThis(SizeOfFamilyEntryExcludingThis,
-                                          aMallocSizeOf, aSizes);
+        mFontFamilies.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (auto iter = mFontFamilies.ConstIter(); !iter.Done(); iter.Next()) {
+        aSizes->mFontListSize +=
+            iter.Key().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+        iter.Data()->AddSizeOfIncludingThis(aMallocSizeOf, aSizes);
+    }
 
     aSizes->mFontListSize +=
-        mOtherFamilyNames.SizeOfExcludingThis(SizeOfFamilyNameEntryExcludingThis,
-                                              aMallocSizeOf);
+        SizeOfFontFamilyTableExcludingThis(mOtherFamilyNames, aMallocSizeOf);
 
     if (mExtraNames) {
         aSizes->mFontListSize +=
-            mExtraNames->mFullnames.SizeOfExcludingThis(SizeOfFontNameEntryExcludingThis,
-                                                        aMallocSizeOf);
+            SizeOfFontEntryTableExcludingThis(mExtraNames->mFullnames,
+                                              aMallocSizeOf);
         aSizes->mFontListSize +=
-            mExtraNames->mPostscriptNames.SizeOfExcludingThis(SizeOfFontNameEntryExcludingThis,
-                                                              aMallocSizeOf);
+            SizeOfFontEntryTableExcludingThis(mExtraNames->mPostscriptNames,
+                                              aMallocSizeOf);
     }
 
     aSizes->mFontListSize +=
         mCodepointsWithNoFonts.SizeOfExcludingThis(aMallocSizeOf);
     aSizes->mFontListSize +=
-        mFontFamiliesToLoad.SizeOfExcludingThis(aMallocSizeOf);
+        mFontFamiliesToLoad.ShallowSizeOfExcludingThis(aMallocSizeOf);
 
     aSizes->mFontListSize +=
-        mPrefFonts.SizeOfExcludingThis(SizeOfPrefFontEntryExcludingThis,
-                                       aMallocSizeOf);
+        mPrefFonts.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (auto iter = mPrefFonts.ConstIter(); !iter.Done(); iter.Next()) {
+        // Again, we only care about the size of the array itself; we don't
+        // follow the refPtrs stored in it, because they point to entries
+        // already owned and accounted-for by the main font list.
+        aSizes->mFontListSize +=
+            iter.Data().ShallowSizeOfExcludingThis(aMallocSizeOf);
+    }
 
     aSizes->mFontListSize +=
         mBadUnderlineFamilyNames.SizeOfExcludingThis(aMallocSizeOf);
 
     aSizes->mFontListSize +=
-        mSharedCmaps.SizeOfExcludingThis(SizeOfSharedCmapExcludingThis,
-                                         aMallocSizeOf, aSizes);
+        mSharedCmaps.ShallowSizeOfExcludingThis(aMallocSizeOf);
+    for (auto iter = mSharedCmaps.ConstIter(); !iter.Done(); iter.Next()) {
+        aSizes->mCharMapsSize +=
+            iter.Get()->GetKey()->SizeOfIncludingThis(aMallocSizeOf);
+    }
 }
 
 void

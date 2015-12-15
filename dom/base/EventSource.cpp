@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +15,9 @@
 #include "mozilla/dom/ScriptSettings.h"
 
 #include "nsNetUtil.h"
+#include "nsIAuthPrompt.h"
+#include "nsIAuthPrompt2.h"
+#include "nsIInterfaceRequestorUtils.h"
 #include "nsMimeTypes.h"
 #include "nsIPromptFactory.h"
 #include "nsIWindowWatcher.h"
@@ -31,7 +35,6 @@
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 #include "xpcpublic.h"
-#include "nsCORSListenerProxy.h"
 #include "nsWrapperCacheInlines.h"
 #include "mozilla/Attributes.h"
 #include "nsError.h"
@@ -65,6 +68,7 @@ EventSource::EventSource(nsPIDOMWindow* aOwnerWindow) :
   mLastConvertionResult(NS_OK),
   mReadyState(CONNECTING),
   mScriptLine(0),
+  mScriptColumn(0),
   mInnerWindowID(0)
 {
 }
@@ -201,7 +205,8 @@ EventSource::Init(nsISupports* aOwner,
 
   // The conditional here is historical and not necessarily sane.
   if (JSContext *cx = nsContentUtils::GetCurrentJSContext()) {
-    nsJSUtils::GetCallingLocation(cx, mScriptFile, &mScriptLine);
+    nsJSUtils::GetCallingLocation(cx, mScriptFile, &mScriptLine,
+                                  &mScriptColumn);
     mInnerWindowID = nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(cx);
   }
 
@@ -265,9 +270,9 @@ EventSource::Init(nsISupports* aOwner,
 }
 
 /* virtual */ JSObject*
-EventSource::WrapObject(JSContext* aCx)
+EventSource::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return EventSourceBinding::Wrap(aCx, this);
+  return EventSourceBinding::Wrap(aCx, this, aGivenProto);
 }
 
 /* static */ already_AddRefed<EventSource>
@@ -548,9 +553,14 @@ EventSource::AsyncOnChannelRedirect(nsIChannel *aOldChannel,
   rv = NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!CheckCanRequestSrc(newURI)) {
-    DispatchFailConnection();
-    return NS_ERROR_DOM_SECURITY_ERR;
+  bool isValidScheme =
+    (NS_SUCCEEDED(newURI->SchemeIs("http", &isValidScheme)) && isValidScheme) ||
+    (NS_SUCCEEDED(newURI->SchemeIs("https", &isValidScheme)) && isValidScheme);
+
+  rv = CheckInnerWindowCorrectness();
+  if (NS_FAILED(rv) || !isValidScheme) {
+     DispatchFailConnection();
+     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
   // Prepare to receive callback
@@ -741,9 +751,12 @@ EventSource::InitChannelAndRequestEventSource()
     return NS_ERROR_ABORT;
   }
 
-  // eventsource validation
+  bool isValidScheme =
+    (NS_SUCCEEDED(mSrc->SchemeIs("http", &isValidScheme)) && isValidScheme) ||
+    (NS_SUCCEEDED(mSrc->SchemeIs("https", &isValidScheme)) && isValidScheme);
 
-  if (!CheckCanRequestSrc()) {
+  nsresult rv = CheckInnerWindowCorrectness();
+  if (NS_FAILED(rv) || !isValidScheme) {
     DispatchFailConnection();
     return NS_ERROR_DOM_SECURITY_ERR;
   }
@@ -751,10 +764,16 @@ EventSource::InitChannelAndRequestEventSource()
   nsLoadFlags loadFlags;
   loadFlags = nsIRequest::LOAD_BACKGROUND | nsIRequest::LOAD_BYPASS_CACHE;
 
-  nsresult rv;
   nsIScriptContext* sc = GetContextForEventHandlers(&rv);
   nsCOMPtr<nsIDocument> doc =
     nsContentUtils::GetDocumentFromScriptContext(sc);
+
+  nsSecurityFlags securityFlags =
+    nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+
+  if (mWithCredentials) {
+    securityFlags |= nsILoadInfo::SEC_REQUIRE_CORS_WITH_CREDENTIALS;
+  }
 
   nsCOMPtr<nsIChannel> channel;
   // If we have the document, use it
@@ -762,8 +781,8 @@ EventSource::InitChannelAndRequestEventSource()
     rv = NS_NewChannel(getter_AddRefs(channel),
                        mSrc,
                        doc,
-                       nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
-                       nsIContentPolicy::TYPE_DATAREQUEST,
+                       securityFlags,
+                       nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE,
                        mLoadGroup,       // loadGroup
                        nullptr,          // aCallbacks
                        loadFlags);       // aLoadFlags
@@ -772,8 +791,8 @@ EventSource::InitChannelAndRequestEventSource()
     rv = NS_NewChannel(getter_AddRefs(channel),
                        mSrc,
                        mPrincipal,
-                       nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
-                       nsIContentPolicy::TYPE_DATAREQUEST,
+                       securityFlags,
+                       nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE,
                        mLoadGroup,       // loadGroup
                        nullptr,          // aCallbacks
                        loadFlags);       // aLoadFlags
@@ -794,16 +813,13 @@ EventSource::InitChannelAndRequestEventSource()
     mHttpChannel->SetNotificationCallbacks(this);
   }
 
-  nsRefPtr<nsCORSListenerProxy> listener =
-    new nsCORSListenerProxy(this, mPrincipal, mWithCredentials);
-  rv = listener->Init(mHttpChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Start reading from the channel
-  rv = mHttpChannel->AsyncOpen(listener, nullptr);
-  if (NS_SUCCEEDED(rv)) {
-    mWaitingForOnStopRequest = true;
+  rv = mHttpChannel->AsyncOpen2(this);
+  if (NS_FAILED(rv)) {
+    DispatchFailConnection();
+    return rv;
   }
+  mWaitingForOnStopRequest = true;
   return rv;
 }
 
@@ -830,12 +846,7 @@ EventSource::AnnounceConnection()
     return;
   }
 
-  nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Failed to create the open event!!!");
-    return;
-  }
+  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
 
   // it doesn't bubble, and it isn't cancelable
   rv = event->InitEvent(NS_LITERAL_STRING("open"), false, false);
@@ -895,12 +906,7 @@ EventSource::ReestablishConnection()
     return;
   }
 
-  nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Failed to create the error event!!!");
-    return;
-  }
+  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
 
   // it doesn't bubble, and it isn't cancelable
   rv = event->InitEvent(NS_LITERAL_STRING("error"), false, false);
@@ -982,7 +988,7 @@ EventSource::PrintErrorOnConsole(const char *aBundleURI,
   rv = errObj->InitWithWindowID(message,
                                 mScriptFile,
                                 EmptyString(),
-                                mScriptLine, 0,
+                                mScriptLine, mScriptColumn,
                                 nsIScriptError::errorFlag,
                                 "Event Source", mInnerWindowID);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1051,12 +1057,7 @@ EventSource::FailConnection()
     return;
   }
 
-  nsCOMPtr<nsIDOMEvent> event;
-  rv = NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Failed to create the error event!!!");
-    return;
-  }
+  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
 
   // it doesn't bubble, and it isn't cancelable
   rv = event->InitEvent(NS_LITERAL_STRING("error"), false, false);
@@ -1072,63 +1073,6 @@ EventSource::FailConnection()
     NS_WARNING("Failed to dispatch the error event!!!");
     return;
   }
-}
-
-bool
-EventSource::CheckCanRequestSrc(nsIURI* aSrc)
-{
-  if (mReadyState == CLOSED) {
-    return false;
-  }
-
-  bool isValidURI = false;
-  bool isValidContentLoadPolicy = false;
-  bool isValidProtocol = false;
-
-  nsCOMPtr<nsIURI> srcToTest = aSrc ? aSrc : mSrc.get();
-  NS_ENSURE_TRUE(srcToTest, false);
-
-  uint32_t aCheckURIFlags =
-    nsIScriptSecurityManager::DISALLOW_INHERIT_PRINCIPAL |
-    nsIScriptSecurityManager::DISALLOW_SCRIPT;
-
-  nsresult rv = nsContentUtils::GetSecurityManager()->
-    CheckLoadURIWithPrincipal(mPrincipal,
-                              srcToTest,
-                              aCheckURIFlags);
-  isValidURI = NS_SUCCEEDED(rv);
-
-  // After the security manager, the content-policy check
-
-  nsIScriptContext* sc = GetContextForEventHandlers(&rv);
-  nsCOMPtr<nsIDocument> doc =
-    nsContentUtils::GetDocumentFromScriptContext(sc);
-
-  // mScriptContext should be initialized because of GetBaseURI() above.
-  // Still need to consider the case that doc is nullptr however.
-  rv = CheckInnerWindowCorrectness();
-  NS_ENSURE_SUCCESS(rv, false);
-  int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_DATAREQUEST,
-                                 srcToTest,
-                                 mPrincipal,
-                                 doc,
-                                 NS_LITERAL_CSTRING(TEXT_EVENT_STREAM),
-                                 nullptr,    // extra
-                                 &shouldLoad,
-                                 nsContentUtils::GetContentPolicy(),
-                                 nsContentUtils::GetSecurityManager());
-  isValidContentLoadPolicy = NS_SUCCEEDED(rv) && NS_CP_ACCEPTED(shouldLoad);
-
-  nsAutoCString targetURIScheme;
-  rv = srcToTest->GetScheme(targetURIScheme);
-  if (NS_SUCCEEDED(rv)) {
-    // We only have the http support for now
-    isValidProtocol = targetURIScheme.EqualsLiteral("http") ||
-                      targetURIScheme.EqualsLiteral("https");
-  }
-
-  return isValidURI && isValidContentLoadPolicy && isValidProtocol;
 }
 
 // static
@@ -1270,33 +1214,26 @@ EventSource::DispatchAllMessageEvents()
                                      message->mData.Length());
       NS_ENSURE_TRUE_VOID(jsString);
 
-      jsData = STRING_TO_JSVAL(jsString);
+      jsData.setString(jsString);
     }
 
     // create an event that uses the MessageEvent interface,
     // which does not bubble, is not cancelable, and has no default action
 
-    nsCOMPtr<nsIDOMEvent> event;
-    rv = NS_NewDOMMessageEvent(getter_AddRefs(event), this, nullptr, nullptr);
-    if (NS_FAILED(rv)) {
-      NS_WARNING("Failed to create the message event!!!");
-      return;
-    }
+    nsRefPtr<MessageEvent> event =
+      NS_NewDOMMessageEvent(this, nullptr, nullptr);
 
-    nsCOMPtr<nsIDOMMessageEvent> messageEvent = do_QueryInterface(event);
-    rv = messageEvent->InitMessageEvent(message->mEventName,
-                                        false, false,
-                                        jsData,
-                                        mOrigin,
-                                        message->mLastEventID, nullptr);
+    rv = event->InitMessageEvent(message->mEventName, false, false, jsData,
+                                 mOrigin, message->mLastEventID, nullptr);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to init the message event!!!");
       return;
     }
 
-    messageEvent->SetTrusted(true);
+    event->SetTrusted(true);
 
-    rv = DispatchDOMEvent(nullptr, event, nullptr, nullptr);
+    rv = DispatchDOMEvent(nullptr, static_cast<Event*>(event), nullptr,
+                          nullptr);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to dispatch the message event!!!");
       return;

@@ -11,7 +11,6 @@
 #include "GLContext.h"                  // for GLContext
 #include "Layers.h"                     // for Layer
 #include "RenderTrace.h"                // for RenderTraceInvalidateEnd, etc
-#include "TiledLayerBuffer.h"           // for TiledLayerComposer
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/layers/CompositorTypes.h"
@@ -23,6 +22,7 @@
 #include "mozilla/layers/LayersTypes.h"  // for MOZ_LAYERS_LOG
 #include "mozilla/layers/TextureHost.h"  // for TextureHost
 #include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
+#include "mozilla/layers/TiledContentHost.h"
 #include "mozilla/layers/PaintedLayerComposite.h"
 #include "mozilla/mozalloc.h"           // for operator delete
 #include "mozilla/unused.h"
@@ -68,25 +68,20 @@ bool ScheduleComposition(const T& op)
   return true;
 }
 
+#if defined(DEBUG) || defined(MOZ_WIDGET_GONK)
+static bool ValidatePictureRect(const mozilla::gfx::IntSize& aSize,
+                                const nsIntRect& aPictureRect)
+{
+  return nsIntRect(0, 0, aSize.width, aSize.height).Contains(aPictureRect) &&
+      !aPictureRect.IsEmpty();
+}
+#endif
+
 bool
 CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation& aEdit,
                                                      EditReplyVector& replyv)
 {
   switch (aEdit.type()) {
-    case CompositableOperation::TOpCreatedIncrementalTexture: {
-      MOZ_LAYERS_LOG(("[ParentSide] Created texture"));
-      const OpCreatedIncrementalTexture& op = aEdit.get_OpCreatedIncrementalTexture();
-      CompositableHost* compositable = AsCompositable(op);
-
-      bool success =
-        compositable->CreatedIncrementalTexture(this,
-                                                op.textureInfo(),
-                                                op.bufferRect());
-      if (!success) {
-        return false;
-      }
-      break;
-    }
     case CompositableOperation::TOpPaintTextureRegion: {
       MOZ_LAYERS_LOG(("[ParentSide] Paint PaintedLayer"));
 
@@ -116,39 +111,15 @@ CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation
       RenderTraceInvalidateEnd(thebes, "FF00FF");
       break;
     }
-    case CompositableOperation::TOpPaintTextureIncremental: {
-      MOZ_LAYERS_LOG(("[ParentSide] Paint PaintedLayer"));
-
-      const OpPaintTextureIncremental& op = aEdit.get_OpPaintTextureIncremental();
-
-      CompositableHost* compositable = AsCompositable(op);
-
-      SurfaceDescriptor desc = op.image();
-
-      compositable->UpdateIncremental(op.textureId(),
-                                      desc,
-                                      op.updatedRegion(),
-                                      op.bufferRect(),
-                                      op.bufferRotation());
-      break;
-    }
-    case CompositableOperation::TOpUpdatePictureRect: {
-      const OpUpdatePictureRect& op = aEdit.get_OpUpdatePictureRect();
-      CompositableHost* compositable = AsCompositable(op);
-      MOZ_ASSERT(compositable);
-      compositable->SetPictureRect(op.picture());
-      break;
-    }
     case CompositableOperation::TOpUseTiledLayerBuffer: {
       MOZ_LAYERS_LOG(("[ParentSide] Paint TiledLayerBuffer"));
       const OpUseTiledLayerBuffer& op = aEdit.get_OpUseTiledLayerBuffer();
-      CompositableHost* compositable = AsCompositable(op);
+      TiledContentHost* compositable = AsCompositable(op)->AsTiledContentHost();
 
-      TiledLayerComposer* tileComposer = compositable->AsTiledLayerComposer();
-      NS_ASSERTION(tileComposer, "compositable is not a tile composer");
+      NS_ASSERTION(compositable, "The compositable is not tiled");
 
       const SurfaceDescriptorTiles& tileDesc = op.tileLayerDescriptor();
-      bool success = tileComposer->UseTiledLayerBuffer(this, tileDesc);
+      bool success = compositable->UseTiledLayerBuffer(this, tileDesc);
       if (!success) {
         return false;
       }
@@ -173,9 +144,9 @@ CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation
       MOZ_ASSERT(tex.get());
       compositable->RemoveTextureHost(tex);
 
-      if (!IsAsync() && GetChildProcessId()) {
+      if (!IsAsync() && ImageBridgeParent::GetInstance(GetChildProcessId())) {
         // send FenceHandle if present via ImageBridge.
-        ImageBridgeParent::SendFenceHandleToTrackerIfPresent(
+        ImageBridgeParent::AppendDeliverFenceMessage(
                              GetChildProcessId(),
                              op.holderId(),
                              op.transactionId(),
@@ -186,15 +157,13 @@ CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation
         // Send message back via PImageBridge.
         ImageBridgeParent::ReplyRemoveTexture(
                              GetChildProcessId(),
-                             OpReplyRemoveTexture(true, // isMain
-                                                  op.holderId(),
+                             OpReplyRemoveTexture(op.holderId(),
                                                   op.transactionId()));
       } else {
         // send FenceHandle if present.
         SendFenceHandleIfPresent(op.textureParent(), compositable);
 
-        ReplyRemoveTexture(OpReplyRemoveTexture(false, // isMain
-                                                op.holderId(),
+        ReplyRemoveTexture(OpReplyRemoveTexture(op.holderId(),
                                                 op.transactionId()));
       }
       break;
@@ -202,16 +171,31 @@ CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation
     case CompositableOperation::TOpUseTexture: {
       const OpUseTexture& op = aEdit.get_OpUseTexture();
       CompositableHost* compositable = AsCompositable(op);
-      RefPtr<TextureHost> tex = TextureHost::AsTextureHost(op.textureParent());
 
-      MOZ_ASSERT(tex.get());
-      compositable->UseTextureHost(tex);
+      nsAutoTArray<CompositableHost::TimedTexture,4> textures;
+      for (auto& timedTexture : op.textures()) {
+        CompositableHost::TimedTexture* t = textures.AppendElement();
+        t->mTexture =
+            TextureHost::AsTextureHost(timedTexture.textureParent());
+        MOZ_ASSERT(t->mTexture);
+        t->mTimeStamp = timedTexture.timeStamp();
+        t->mPictureRect = timedTexture.picture();
+        t->mFrameID = timedTexture.frameID();
+        t->mProducerID = timedTexture.producerID();
+        MOZ_ASSERT(ValidatePictureRect(t->mTexture->GetSize(), t->mPictureRect));
+
+        MaybeFence maybeFence = timedTexture.fence();
+        if (maybeFence.type() == MaybeFence::TFenceHandle) {
+          FenceHandle fence = maybeFence.get_FenceHandle();
+          if (fence.IsValid()) {
+            t->mTexture->SetAcquireFenceHandle(fence);
+          }
+        }
+      }
+      compositable->UseTextureHost(textures);
 
       if (IsAsync() && compositable->GetLayer()) {
         ScheduleComposition(op);
-        // Async layer updates don't trigger invalidation, manually tell the layer
-        // that its content have changed.
-        compositable->GetLayer()->SetInvalidRectToVisibleRegion();
       }
       break;
     }
@@ -234,21 +218,13 @@ CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation
       const OpUseOverlaySource& op = aEdit.get_OpUseOverlaySource();
       CompositableHost* compositable = AsCompositable(op);
       MOZ_ASSERT(compositable->GetType() == CompositableType::IMAGE_OVERLAY, "Invalid operation!");
-      compositable->UseOverlaySource(op.overlay());
+      if (!ValidatePictureRect(op.overlay().size(), op.picture())) {
+        return false;
+      }
+      compositable->UseOverlaySource(op.overlay(), op.picture());
       break;
     }
 #endif
-    case CompositableOperation::TOpUpdateTexture: {
-      const OpUpdateTexture& op = aEdit.get_OpUpdateTexture();
-      RefPtr<TextureHost> texture = TextureHost::AsTextureHost(op.textureParent());
-      MOZ_ASSERT(texture);
-
-      texture->Updated(op.region().type() == MaybeRegion::TnsIntRegion
-                       ? &op.region().get_nsIntRegion()
-                       : nullptr); // no region means invalidate the entire surface
-      break;
-    }
-
     default: {
       MOZ_ASSERT(false, "bad type");
     }
@@ -258,7 +234,7 @@ CompositableParentManager::ReceiveCompositableUpdate(const CompositableOperation
 }
 
 void
-CompositableParentManager::SendPendingAsyncMessges()
+CompositableParentManager::SendPendingAsyncMessages()
 {
   if (mPendingAsyncMessage.empty()) {
     return;
@@ -293,6 +269,6 @@ CompositableParentManager::SendPendingAsyncMessges()
   mPendingAsyncMessage.clear();
 }
 
-} // namespace
-} // namespace
+} // namespace layers
+} // namespace mozilla
 

@@ -5,26 +5,27 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-let { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
-let { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
-let { DebuggerClient } =
-  Cu.import("resource://gre/modules/devtools/dbg-client.jsm", {});
-let { ViewHelpers } =
+var { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
+var { require } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var { TargetFactory } = require("devtools/framework/target");
+var { Toolbox } = require("devtools/framework/toolbox");
+var { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
+var { DebuggerClient } = require("devtools/toolkit/client/main");
+var { ViewHelpers } =
   Cu.import("resource:///modules/devtools/ViewHelpers.jsm", {});
-let { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
+var { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
 
 /**
  * Shortcuts for accessing various debugger preferences.
  */
-let Prefs = new ViewHelpers.Prefs("devtools.debugger", {
+var Prefs = new ViewHelpers.Prefs("devtools.debugger", {
   chromeDebuggingHost: ["Char", "chrome-debugging-host"],
   chromeDebuggingPort: ["Int", "chrome-debugging-port"]
 });
 
-let gToolbox, gClient;
+var gToolbox, gClient;
 
-let connect = Task.async(function*() {
+var connect = Task.async(function*() {
   window.removeEventListener("load", connect);
   // Initiate the connection
   let transport = yield DebuggerClient.socketConnect({
@@ -38,10 +39,12 @@ let connect = Task.async(function*() {
     if (addonID) {
       gClient.listAddons(({addons}) => {
         let addonActor = addons.filter(addon => addon.id === addonID).pop();
-        openToolbox(addonActor);
+        openToolbox({ form: addonActor, chrome: true, isTabActor: false });
       });
     } else {
-      gClient.listTabs(openToolbox);
+      gClient.getProcess().then(aResponse => {
+        openToolbox({ form: aResponse.form, chrome: true });
+      });
     }
   });
 });
@@ -49,29 +52,36 @@ let connect = Task.async(function*() {
 // Certain options should be toggled since we can assume chrome debugging here
 function setPrefDefaults() {
   Services.prefs.setBoolPref("devtools.inspector.showUserAgentStyles", true);
-  Services.prefs.setBoolPref("devtools.profiler.ui.show-platform-data", true);
-  Services.prefs.setBoolPref("browser.devedition.theme.showCustomizeButton", false);
+  Services.prefs.setBoolPref("devtools.performance.ui.show-platform-data", true);
   Services.prefs.setBoolPref("devtools.inspector.showAllAnonymousContent", true);
+  Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
 }
 
 window.addEventListener("load", function() {
   let cmdClose = document.getElementById("toolbox-cmd-close");
   cmdClose.addEventListener("command", onCloseCommand);
   setPrefDefaults();
-  connect().catch(Cu.reportError);
+  connect().catch(e => {
+    let errorMessageContainer = document.getElementById("error-message-container");
+    let errorMessage = document.getElementById("error-message");
+    errorMessage.value = e;
+    errorMessageContainer.hidden = false;
+    Cu.reportError(e);
+  });
 });
 
 function onCloseCommand(event) {
   window.close();
 }
 
-function openToolbox(form) {
+function openToolbox({ form, chrome, isTabActor }) {
   let options = {
     form: form,
     client: gClient,
-    chrome: true
+    chrome: chrome,
+    isTabActor: isTabActor
   };
-  devtools.TargetFactory.forRemoteTab(options).then(target => {
+  TargetFactory.forRemoteTab(options).then(target => {
     let frame = document.getElementById("toolbox-iframe");
     let selectedTool = "jsdebugger";
 
@@ -88,7 +98,7 @@ function openToolbox(form) {
     let options = { customIframe: frame };
     gDevTools.showToolbox(target,
                           selectedTool,
-                          devtools.Toolbox.HostType.CUSTOM,
+                          Toolbox.HostType.CUSTOM,
                           options)
              .then(onNewToolbox);
   });

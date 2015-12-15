@@ -105,20 +105,24 @@ class GonkNativeWindow: public GonkConsumerBase
     status_t setDefaultBufferFormat(uint32_t defaultFormat);
 
     // Get next frame from the queue, caller owns the returned buffer.
-    mozilla::TemporaryRef<TextureClient> getCurrentBuffer();
+    already_AddRefed<TextureClient> getCurrentBuffer();
 
     // Return the buffer to the queue and mark it as FREE. After that
     // the buffer is useable again for the decoder.
     void returnBuffer(TextureClient* client);
 
-    mozilla::TemporaryRef<TextureClient> getTextureClientFromBuffer(ANativeWindowBuffer* buffer);
+    already_AddRefed<TextureClient> getTextureClientFromBuffer(ANativeWindowBuffer* buffer);
 
     void setNewFrameCallback(GonkNativeWindowNewFrameCallback* callback);
 
     static void RecycleCallback(TextureClient* client, void* closure);
 
 protected:
+#if ANDROID_VERSION == 21
     virtual void onFrameAvailable();
+#else
+    virtual void onFrameAvailable(const ::android::BufferItem &item);
+#endif
 
 private:
     GonkNativeWindowNewFrameCallback* mNewFrameCallback;

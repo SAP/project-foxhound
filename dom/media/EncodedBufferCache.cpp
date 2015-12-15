@@ -20,9 +20,24 @@ EncodedBufferCache::AppendBuffer(nsTArray<uint8_t> & aBuf)
   mEncodedBuffers.AppendElement()->SwapElements(aBuf);
 
   if (!mTempFileEnabled && mDataSize > mMaxMemoryStorage) {
-    nsresult rv = NS_OpenAnonymousTemporaryFile(&mFD);
+    nsresult rv;
+    PRFileDesc* tempFD = nullptr;
+    {
+      // Release the mMutex because there is a sync dispatch to mainthread in
+      // NS_OpenAnonymousTemporaryFile.
+      MutexAutoUnlock unlock(mMutex);
+      rv = NS_OpenAnonymousTemporaryFile(&tempFD);
+    }
     if (!NS_FAILED(rv)) {
-      mTempFileEnabled = true;
+      // Check the mDataSize again since we release the mMutex before.
+      if (mDataSize > mMaxMemoryStorage) {
+        mFD = tempFD;
+        mTempFileEnabled = true;
+      } else {
+        // Close the tempFD because the data had been taken during the
+        // MutexAutoUnlock.
+        PR_Close(tempFD);
+      }
     }
   }
 
@@ -39,22 +54,22 @@ EncodedBufferCache::AppendBuffer(nsTArray<uint8_t> & aBuf)
 
 }
 
-already_AddRefed<dom::File>
+already_AddRefed<dom::Blob>
 EncodedBufferCache::ExtractBlob(nsISupports* aParent,
                                 const nsAString &aContentType)
 {
   MutexAutoLock lock(mMutex);
-  nsRefPtr<dom::File> blob;
+  nsRefPtr<dom::Blob> blob;
   if (mTempFileEnabled) {
     // generate new temporary file to write
-    blob = dom::File::CreateTemporaryFileBlob(aParent, mFD, 0, mDataSize,
-                                              aContentType);
+    blob = dom::Blob::CreateTemporaryBlob(aParent, mFD, 0, mDataSize,
+                                          aContentType);
     // fallback to memory blob
     mTempFileEnabled = false;
     mDataSize = 0;
     mFD = nullptr;
   } else {
-    void* blobData = moz_malloc(mDataSize);
+    void* blobData = malloc(mDataSize);
     NS_ASSERTION(blobData, "out of memory!!");
 
     if (blobData) {
@@ -63,7 +78,7 @@ EncodedBufferCache::ExtractBlob(nsISupports* aParent,
                mEncodedBuffers.ElementAt(i).Length());
         offset += mEncodedBuffers.ElementAt(i).Length();
       }
-      blob = dom::File::CreateMemoryFile(aParent, blobData, mDataSize,
+      blob = dom::Blob::CreateMemoryBlob(aParent, blobData, mDataSize,
                                          aContentType);
       mEncodedBuffers.Clear();
     } else
@@ -73,4 +88,4 @@ EncodedBufferCache::ExtractBlob(nsISupports* aParent,
   return blob.forget();
 }
 
-} //end namespace
+} // namespace mozilla

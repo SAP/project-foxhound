@@ -27,10 +27,13 @@ const metadata = options.metadata || {};
 const permissions = metadata.permissions || {};
 const isPacked = rootURI && rootURI.indexOf("jar:") === 0;
 
-const uri = (path="") =>
-  path.contains(":") ? path : addonDataURI + path.replace(/^\.\//, "");
+const isPrivateBrowsingSupported = 'private-browsing' in permissions &&
+                                   permissions['private-browsing'] === true;
 
-let preferencesBranch = ("preferences-branch" in metadata)
+const uri = (path="") =>
+  path.includes(":") ? path : addonDataURI + path.replace(/^\.\//, "");
+
+var preferencesBranch = ("preferences-branch" in metadata)
                             ? metadata["preferences-branch"]
                             : options.preferencesBranch
 
@@ -55,4 +58,4 @@ exports.data = Object.freeze({
     return readURISync(uri(path));
   }
 });
-exports.isPrivateBrowsingSupported = permissions['private-browsing'] === true;
+exports.isPrivateBrowsingSupported = isPrivateBrowsingSupported;

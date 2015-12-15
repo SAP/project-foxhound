@@ -31,10 +31,11 @@ public:
 
   static already_AddRefed<TVTuner> Create(nsPIDOMWindow* aWindow,
                                           nsITVTunerData* aData);
+  nsresult NotifyImageSizeChanged(uint32_t aWidth, uint32_t aHeight);
 
   // WebIDL (internal functions)
 
-  virtual JSObject* WrapObject(JSContext *aCx) override;
+  virtual JSObject* WrapObject(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsresult SetCurrentSource(TVSourceType aSourceType);
 

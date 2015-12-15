@@ -12,7 +12,6 @@ interfaces = [
     'core',
     'html',
     'events',
-    'devicestorage',
     'settings',
     'stylesheets',
     'sidebar',
@@ -35,18 +34,23 @@ interfaces = [
     'gamepad',
 ]
 
+if not CONFIG['MOZ_SIMPLEPUSH']:
+    interfaces += ['push']
+
 DIRS += ['interfaces/' + i for i in interfaces]
 
 DIRS += [
     'animation',
     'apps',
     'base',
+    'bluetooth',
     'activities',
     'archivereader',
     'requestsync',
     'bindings',
     'battery',
     'browser-element',
+    'cache',
     'canvas',
     'cellbroadcast',
     'contacts',
@@ -63,6 +67,8 @@ DIRS += [
     'fmradio',
     'geolocation',
     'html',
+    'icc',
+    'inputport',
     'json',
     'jsurl',
     'asmjscache',
@@ -73,7 +79,6 @@ DIRS += [
     'notification',
     'offline',
     'power',
-    'push',
     'quota',
     'security',
     'settings',
@@ -89,11 +94,11 @@ DIRS += [
     'indexedDB',
     'system',
     'ipc',
-    'identity',
     'workers',
     'camera',
     'audiochannel',
     'broadcastchannel',
+    'messagechannel',
     'promise',
     'smil',
     'telephony',
@@ -122,7 +127,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
 
 if CONFIG['MOZ_B2G_RIL']:
     DIRS += [
-        'icc',
         'wappush',
     ]
 
@@ -135,20 +139,21 @@ if CONFIG['MOZ_GAMEPAD']:
 if CONFIG['MOZ_NFC']:
     DIRS += ['nfc']
 
+if CONFIG['MOZ_SIMPLEPUSH']:
+    DIRS += ['simplepush']
+else:
+    DIRS += ['push']
+
 if CONFIG['MOZ_SECUREELEMENT']:
     DIRS += ['secureelement']
 
 if CONFIG['MOZ_B2G']:
     DIRS += [
         'downloads',
+        'identity',
         'mobileid',
         'engineeringmode'
     ]
-
-if CONFIG['MOZ_B2G_BT_API_V2']:
-    DIRS += ['bluetooth2']
-else:
-    DIRS += ['bluetooth']
 
 DIRS += ['presentation']
 

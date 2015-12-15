@@ -16,20 +16,14 @@
 #include "nsCOMPtr.h"                   // for already_AddRefed
 
 namespace mozilla {
-namespace ipc {
-class Shmem;
-}
-
 namespace layers {
 
 class BufferTextureClient;
 class ImageClient;
-class ISurfaceAllocator;
 class TextureClient;
-class SurfaceDescriptor;
 
 already_AddRefed<Image> CreateSharedRGBImage(ImageContainer* aImageContainer,
-                                             nsIntSize aSize,
+                                             gfx::IntSize aSize,
                                              gfxImageFormat aImageFormat);
 
 /**
@@ -53,7 +47,7 @@ public:
 
   size_t GetBufferSize();
 
-  TemporaryRef<gfx::SourceSurface> GetAsSourceSurface() override;
+  already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
 
   bool Allocate(gfx::IntSize aSize, gfx::SurfaceFormat aFormat);
 private:

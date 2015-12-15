@@ -206,23 +206,6 @@ StartUpdateProcess(int argc,
     si.wShowWindow = SW_HIDE;
   }
 
-  // We move the updater.ini file out of the way because we will handle
-  // executing PostUpdate through the service.  We handle PostUpdate from
-  // the service because there are some per user things that happen that
-  // can't run in session 0 which we run updater.exe in.
-  // Once we are done running updater.exe we rename updater.ini back so
-  // that if there were any errors the next updater.exe will run correctly.
-  WCHAR updaterINI[MAX_PATH + 1];
-  WCHAR updaterINITemp[MAX_PATH + 1];
-  BOOL selfHandlePostUpdate = FALSE;
-  // We use the updater.ini from the same directory as the updater.exe
-  // because of background updates.
-  if (PathGetSiblingFilePath(updaterINI, argv[0], L"updater.ini") &&
-      PathGetSiblingFilePath(updaterINITemp, argv[0], L"updater.tmp")) {
-    selfHandlePostUpdate = MoveFileExW(updaterINI, updaterINITemp,
-                                       MOVEFILE_REPLACE_EXISTING);
-  }
-
   // Add an env var for MOZ_USING_SERVICE so the updater.exe can
   // do anything special that it needs to do for service updates.
   // Search in updater.cpp for more info on MOZ_USING_SERVICE.
@@ -233,11 +216,11 @@ StartUpdateProcess(int argc,
                                   CREATE_DEFAULT_ERROR_MODE,
                                   nullptr,
                                   nullptr, &si, &pi);
-  // Empty value on putenv is how you remove an env variable in Windows
-  putenv(const_cast<char*>("MOZ_USING_SERVICE="));
 
   BOOL updateWasSuccessful = FALSE;
   if (processStarted) {
+    BOOL processTerminated = FALSE;
+    BOOL noProcessExitCode = FALSE;
     // Wait for the updater process to finish
     LOG(("Process was started... waiting on result."));
     DWORD waitRes = WaitForSingleObject(pi.hProcess, TIME_TO_WAIT_ON_UPDATER);
@@ -245,6 +228,7 @@ StartUpdateProcess(int argc,
       // We waited a long period of time for updater.exe and it never finished
       // so kill it.
       TerminateProcess(pi.hProcess, 1);
+      processTerminated = TRUE;
     } else {
       // Check the return code of updater.exe to make sure we get 0
       DWORD returnCode;
@@ -254,6 +238,7 @@ StartUpdateProcess(int argc,
         updateWasSuccessful = (returnCode == 0);
       } else {
         LOG_WARN(("Process finished but could not obtain return code."));
+        noProcessExitCode = TRUE;
       }
     }
     CloseHandle(pi.hProcess);
@@ -264,22 +249,27 @@ StartUpdateProcess(int argc,
     BOOL isApplying = FALSE;
     if (IsStatusApplying(argv[1], isApplying) && isApplying) {
       if (updateWasSuccessful) {
-        LOG(("update.status is still applying even know update "
-             " was successful."));
+        LOG(("update.status is still applying even though update was "
+             "successful."));
         if (!WriteStatusFailure(argv[1],
                                 SERVICE_STILL_APPLYING_ON_SUCCESS)) {
-          LOG_WARN(("Could not write update.status still applying on"
-                    " success error."));
+          LOG_WARN(("Could not write update.status still applying on "
+                    "success error."));
         }
         // Since we still had applying we know updater.exe didn't do its
         // job correctly.
         updateWasSuccessful = FALSE;
       } else {
         LOG_WARN(("update.status is still applying and update was not successful."));
-        if (!WriteStatusFailure(argv[1],
-                                SERVICE_STILL_APPLYING_ON_FAILURE)) {
-          LOG_WARN(("Could not write update.status still applying on"
-                    " success error."));
+        int failcode = SERVICE_STILL_APPLYING_ON_FAILURE;
+        if (noProcessExitCode) {
+          failcode = SERVICE_STILL_APPLYING_NO_EXIT_CODE;
+        } else if (processTerminated) {
+          failcode = SERVICE_STILL_APPLYING_TERMINATED;
+        }
+        if (!WriteStatusFailure(argv[1], failcode)) {
+          LOG_WARN(("Could not write update.status still applying on "
+                    "failure error."));
         }
       }
     }
@@ -290,37 +280,8 @@ StartUpdateProcess(int argc,
               argv[0], cmdLine, lastError));
   }
 
-  // Now that we're done with the update, restore back the updater.ini file
-  // We use it ourselves, and also we want it back in case we had any type
-  // of error so that the normal update process can use it.
-  if (selfHandlePostUpdate) {
-    MoveFileExW(updaterINITemp, updaterINI, MOVEFILE_REPLACE_EXISTING);
-
-    // Only run the PostUpdate if the update was successful
-    if (updateWasSuccessful && argc > index) {
-      LPCWSTR updateInfoDir = argv[1];
-      bool stagingUpdate = IsUpdateBeingStaged(argc, argv);
-
-      // Launch the PostProcess with admin access in session 0.  This is
-      // actually launching the post update process but it takes in the
-      // callback app path to figure out where to apply to.
-      // The PostUpdate process with user only access will be done inside
-      // the unelevated updater.exe after the update process is complete
-      // from the service.  We don't know here which session to start
-      // the user PostUpdate process from.
-      // Note that we don't need to do this if we're just staging the
-      // update in the background, as the PostUpdate step runs when
-      // performing the replacing in that case.
-      if (!stagingUpdate) {
-        LOG(("Launching post update process as the service in session 0."));
-        if (!LaunchWinPostProcess(installDir, updateInfoDir, true, nullptr)) {
-          LOG_WARN(("The post update process could not be launched."
-                    " installDir: %ls, updateInfoDir: %ls",
-                    installDir, updateInfoDir));
-        }
-      }
-    }
-  }
+  // Empty value on putenv is how you remove an env variable in Windows
+  putenv(const_cast<char*>("MOZ_USING_SERVICE="));
 
   free(cmdLine);
   return updateWasSuccessful;

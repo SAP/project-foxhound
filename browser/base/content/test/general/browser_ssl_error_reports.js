@@ -1,12 +1,12 @@
 "use strict";
 
-let badChainURL = "https://badchain.include-subdomains.pinning.example.com";
-let noCertURL = "https://fail-handshake.example.com";
-let enabledPref = false;
-let automaticPref = false;
-let urlPref = "security.ssl.errorReporting.url";
-let enforcement_level = 1;
-let ROOT = getRootDirectory(gTestPath);
+var badChainURL = "https://badchain.include-subdomains.pinning.example.com";
+var noCertURL = "https://fail-handshake.example.com";
+var enabledPref = false;
+var automaticPref = false;
+var urlPref = "security.ssl.errorReporting.url";
+var enforcement_level = 1;
+var ROOT = getRootDirectory(gTestPath);
 
 SimpleTest.requestCompleteLog();
 
@@ -20,62 +20,31 @@ add_task(function* test_send_report_manual_nocert() {
 
 // creates a promise of the message in an error page
 function createNetworkErrorMessagePromise(aBrowser) {
-  let progressListener;
   let promise = new Promise(function(resolve, reject) {
-    // Error pages do not fire "load" events, so use a progressListener.
     let originalDocumentURI = aBrowser.contentDocument.documentURI;
 
-    progressListener = {
-      onLocationChange: function(aWebProgress, aRequest, aLocation, aFlags) {
-        // Make sure nothing other than an error page is loaded.
-        if (!(aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE)) {
-          reject("location change was not to an error page");
-        }
-      },
+    let loadedListener = function() {
+      let doc = aBrowser.contentDocument;
 
-      onStateChange: function(aWebProgress, aRequest, aStateFlags, aStatus) {
-        let doc = aBrowser.contentDocument;
+      if (doc && doc.getElementById("reportCertificateError")) {
+        let documentURI = doc.documentURI;
 
-        if (doc && doc.getElementById("reportCertificateError")) {
-          // Wait until the documentURI changes (from about:blank) this should
-          // be the error page URI.
-          let documentURI = doc.documentURI;
-          if (documentURI == originalDocumentURI) {
-            return;
-          }
-
-          aWebProgress.removeProgressListener(progressListener,
-            Ci.nsIWebProgress.NOTIFY_LOCATION |
-            Ci.nsIWebProgress.NOTIFY_STATE_REQUEST);
-          let matchArray = /about:neterror\?.*&d=([^&]*)/.exec(documentURI);
-          if (!matchArray) {
-            reject("no network error message found in URI")
+        aBrowser.removeEventListener("DOMContentLoaded", loadedListener, true);
+        let matchArray = /about:neterror\?.*&d=([^&]*)/.exec(documentURI);
+        if (!matchArray) {
+          reject("no network error message found in URI");
           return;
-          }
-
-          let errorMsg = matchArray[1];
-          resolve(decodeURIComponent(errorMsg));
         }
-      },
 
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                          Ci.nsISupportsWeakReference])
+        let errorMsg = matchArray[1];
+        resolve(decodeURIComponent(errorMsg));
+      }
     };
-
-    aBrowser.addProgressListener(progressListener,
-            Ci.nsIWebProgress.NOTIFY_LOCATION |
-            Ci.nsIWebProgress.NOTIFY_STATE_REQUEST);
+    aBrowser.addEventListener("DOMContentLoaded", loadedListener, true);
   });
-
-  // Ensure the weak progress listener is kept alive as long as the promise.
-  createNetworkErrorMessagePromise.listeners.set(promise, progressListener);
 
   return promise;
 }
-
-// Keep a map of promises to their progress listeners so
-// the weak progress listeners aren't GCed too early.
-createNetworkErrorMessagePromise.listeners = new WeakMap();
 
 // check we can set the 'automatically send' pref
 add_task(function* test_set_automatic() {
@@ -130,7 +99,7 @@ add_task(function* test_set_automatic() {
 });
 
 // test that manual report sending (with button clicks) works
-let testSendReportManual = function*(testURL, suffix) {
+var testSendReportManual = function*(testURL, suffix) {
   setup();
   Services.prefs.setBoolPref("security.ssl.errorReporting.enabled", true);
   Services.prefs.setCharPref("security.ssl.errorReporting.url",

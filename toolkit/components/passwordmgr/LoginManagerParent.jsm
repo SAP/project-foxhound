@@ -1,55 +1,33 @@
-/* vim: set ts=2 sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const Cu = Components.utils;
-const Ci = Components.interfaces;
-const Cc = Components.classes;
+const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 
+Cu.importGlobalProperties(["URL"]);
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/Task.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "UserAutoCompleteResult",
                                   "resource://gre/modules/LoginManagerContent.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "AutoCompleteE10S",
                                   "resource://gre/modules/AutoCompleteE10S.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "DeferredTask",
+                                  "resource://gre/modules/DeferredTask.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LoginDoorhangers",
+                                  "resource://gre/modules/LoginDoorhangers.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
+                                  "resource://gre/modules/LoginHelper.jsm");
+
+XPCOMUtils.defineLazyGetter(this, "log", () => {
+  let logger = LoginHelper.createLogger("LoginManagerParent");
+  return logger.log.bind(logger);
+});
 
 this.EXPORTED_SYMBOLS = [ "LoginManagerParent", "PasswordsMetricsProvider" ];
-
-var gDebug;
-
-function log(...pieces) {
-  function generateLogMessage(args) {
-    let strings = ['Login Manager (parent):'];
-
-    args.forEach(function(arg) {
-      if (typeof arg === 'string') {
-        strings.push(arg);
-      } else if (typeof arg === 'undefined') {
-        strings.push('undefined');
-      } else if (arg === null) {
-        strings.push('null');
-      } else {
-        try {
-          strings.push(JSON.stringify(arg, null, 2));
-        } catch(err) {
-          strings.push("<<something>>");
-        }
-      }
-    });
-    return strings.join(' ');
-  }
-
-  if (!gDebug)
-    return;
-
-  let message = generateLogMessage(pieces);
-  dump(message + "\n");
-  Services.console.logStringMessage(message);
-}
 
 #ifndef ANDROID
 #ifdef MOZ_SERVICES_HEALTHREPORT
@@ -58,8 +36,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "Metrics",
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
                                   "resource://gre/modules/Task.jsm");
 
-const PasswordsHealthReport = {
-  recordDailyCounter: function(aField) {
+function recordFHRDailyCounter(aField) {
     let reporter = Cc["@mozilla.org/datareporting/service;1"]
                       .getService()
                       .wrappedJSObject
@@ -70,14 +47,12 @@ const PasswordsHealthReport = {
       return;
     }
       reporter.onInit().then(() => reporter.getProvider("org.mozilla.passwordmgr")
-                                           .recordDailyCounter(aField));
-
+        .recordDailyCounter(aField));
   }
-};
 
 this.PasswordsMetricsProvider = function() {
   Metrics.Provider.call(this);
-}
+};
 
 PasswordsMetricsProvider.prototype = Object.freeze({
   __proto__: Metrics.Provider.prototype,
@@ -114,8 +89,8 @@ PasswordsMetricsProvider.prototype = Object.freeze({
     }
 
     // Otherwise, we first need to create the field.
-    return this.storage.registerField(m.id, aField, Metrics.Storage.FIELD_DAILY_COUNTER)
-           .then(() => m.incrementDailyCounter(aField));
+    return this.enqueueStorageOperation (() => this.storage.registerField(m.id, aField, 
+      Metrics.Storage.FIELD_DAILY_COUNTER).then(() => m.incrementDailyCounter(aField)));
   },
 });
 
@@ -152,30 +127,44 @@ PasswordsMeasurement2.prototype = Object.freeze({
 #endif
 #endif
 
-function prefChanged() {
-  gDebug = Services.prefs.getBoolPref("signon.debug");
-}
-
-Services.prefs.addObserver("signon.debug", prefChanged, false);
-prefChanged();
-
 var LoginManagerParent = {
+  /**
+   * Reference to the default LoginRecipesParent (instead of the initialization promise) for
+   * synchronous access. This is a temporary hack and new consumers should yield on
+   * recipeParentPromise instead.
+   *
+   * @type LoginRecipesParent
+   * @deprecated
+   */
+  _recipeManager: null,
+
   init: function() {
     let mm = Cc["@mozilla.org/globalmessagemanager;1"]
                .getService(Ci.nsIMessageListenerManager);
     mm.addMessageListener("RemoteLogins:findLogins", this);
+    mm.addMessageListener("RemoteLogins:findRecipes", this);
     mm.addMessageListener("RemoteLogins:onFormSubmit", this);
     mm.addMessageListener("RemoteLogins:autoCompleteLogins", this);
+    mm.addMessageListener("RemoteLogins:updateLoginFormPresence", this);
     mm.addMessageListener("LoginStats:LoginEncountered", this);
     mm.addMessageListener("LoginStats:LoginFillSuccessful", this);
     Services.obs.addObserver(this, "LoginStats:NewSavedPassword", false);
+
+    XPCOMUtils.defineLazyGetter(this, "recipeParentPromise", () => {
+      const { LoginRecipesParent } = Cu.import("resource://gre/modules/LoginRecipes.jsm", {});
+      this._recipeManager = new LoginRecipesParent({
+        defaults: Services.prefs.getComplexValue("signon.recipes.path", Ci.nsISupportsString).data,
+      });
+      return this._recipeManager.initializationPromise;
+    });
+
   },
 
   observe: function (aSubject, aTopic, aData) {
 #ifndef ANDROID
 #ifdef MOZ_SERVICES_HEALTHREPORT
     if (aTopic == "LoginStats:NewSavedPassword") {
-      PasswordsHealthReport.recordDailyCounter("numNewSavedPasswordsInSession");
+      recordFHRDailyCounter("numNewSavedPasswordsInSession");
 
     }
 #endif
@@ -187,12 +176,17 @@ var LoginManagerParent = {
     switch (msg.name) {
       case "RemoteLogins:findLogins": {
         // TODO Verify msg.target's principals against the formOrigin?
-        this.findLogins(data.options.showMasterPassword,
-                        data.formOrigin,
-                        data.actionOrigin,
-                        data.requestId,
-                        msg.target.messageManager);
+        this.sendLoginDataToChild(data.options.showMasterPassword,
+                                  data.formOrigin,
+                                  data.actionOrigin,
+                                  data.requestId,
+                                  msg.target.messageManager);
         break;
+      }
+
+      case "RemoteLogins:findRecipes": {
+        let formHost = (new URL(data.formOrigin)).host;
+        return this._recipeManager.getRecipesForHost(formHost);
       }
 
       case "RemoteLogins:onFormSubmit": {
@@ -207,6 +201,11 @@ var LoginManagerParent = {
         break;
       }
 
+      case "RemoteLogins:updateLoginFormPresence": {
+        this.updateLoginFormPresence(msg.target, data);
+        break;
+      }
+
       case "RemoteLogins:autoCompleteLogins": {
         this.doAutocompleteSearch(data, msg.target);
         break;
@@ -215,7 +214,7 @@ var LoginManagerParent = {
       case "LoginStats:LoginFillSuccessful": {
 #ifndef ANDROID
 #ifdef MOZ_SERVICES_HEALTHREPORT
-        PasswordsHealthReport.recordDailyCounter("numSuccessfulFills");
+        recordFHRDailyCounter("numSuccessfulFills");
 #endif
 #endif
         break;
@@ -224,7 +223,7 @@ var LoginManagerParent = {
       case "LoginStats:LoginEncountered": {
 #ifndef ANDROID
 #ifdef MOZ_SERVICES_HEALTHREPORT
-        PasswordsHealthReport.recordDailyCounter("numTotalLoginsEncountered");
+        recordFHRDailyCounter("numTotalLoginsEncountered");
 #endif
 #endif
         break;
@@ -232,44 +231,105 @@ var LoginManagerParent = {
     }
   },
 
-  findLogins: function(showMasterPassword, formOrigin, actionOrigin,
-                       requestId, target) {
+  /**
+   * Trigger a login form fill and send relevant data (e.g. logins and recipes)
+   * to the child process (LoginManagerContent).
+   */
+  fillForm: Task.async(function* ({ browser, loginFormOrigin, login, inputElement }) {
+    let recipes = [];
+    if (loginFormOrigin) {
+      let formHost;
+      try {
+        formHost = (new URL(loginFormOrigin)).host;
+        let recipeManager = yield this.recipeParentPromise;
+        recipes = recipeManager.getRecipesForHost(formHost);
+      } catch (ex) {
+        // Some schemes e.g. chrome aren't supported by URL
+      }
+    }
+
+    // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
+    // doesn't support structured cloning.
+    let jsLogins = JSON.parse(JSON.stringify([login]));
+
+    let objects = inputElement ? {inputElement} : null;
+    browser.messageManager.sendAsyncMessage("RemoteLogins:fillForm", {
+      loginFormOrigin,
+      logins: jsLogins,
+      recipes,
+    }, objects);
+  }),
+
+  /**
+   * Send relevant data (e.g. logins and recipes) to the child process (LoginManagerContent).
+   */
+  sendLoginDataToChild: Task.async(function*(showMasterPassword, formOrigin, actionOrigin,
+                                             requestId, target) {
+    let recipes = [];
+    if (formOrigin) {
+      let formHost;
+      try {
+        formHost = (new URL(formOrigin)).host;
+        let recipeManager = yield this.recipeParentPromise;
+        recipes = recipeManager.getRecipesForHost(formHost);
+      } catch (ex) {
+        // Some schemes e.g. chrome aren't supported by URL
+      }
+    }
+
     if (!showMasterPassword && !Services.logins.isLoggedIn) {
-      target.sendAsyncMessage("RemoteLogins:loginsFound",
-                              { requestId: requestId, logins: [] });
+      try {
+        target.sendAsyncMessage("RemoteLogins:loginsFound", {
+          requestId: requestId,
+          logins: [],
+          recipes,
+        });
+      } catch (e) {
+        log("error sending message to target", e);
+      }
       return;
     }
 
     let allLoginsCount = Services.logins.countLogins(formOrigin, "", null);
     // If there are no logins for this site, bail out now.
     if (!allLoginsCount) {
-      target.sendAsyncMessage("RemoteLogins:loginsFound",
-                              { requestId: requestId, logins: [] });
+      try {
+        target.sendAsyncMessage("RemoteLogins:loginsFound", {
+          requestId: requestId,
+          logins: [],
+          recipes,
+        });
+      } catch (e) {
+        log("error sending message to target", e);
+      }
       return;
     }
 
     // If we're currently displaying a master password prompt, defer
     // processing this form until the user handles the prompt.
     if (Services.logins.uiBusy) {
-      log("deferring onFormPassword for", formOrigin);
+      log("deferring sendLoginDataToChild for", formOrigin);
       let self = this;
       let observer = {
         QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
                                                Ci.nsISupportsWeakReference]),
 
         observe: function (subject, topic, data) {
-          log("Got deferred onFormPassword notification:", topic);
+          log("Got deferred sendLoginDataToChild notification:", topic);
           // Only run observer once.
           Services.obs.removeObserver(this, "passwordmgr-crypto-login");
           Services.obs.removeObserver(this, "passwordmgr-crypto-loginCanceled");
           if (topic == "passwordmgr-crypto-loginCanceled") {
-            target.sendAsyncMessage("RemoteLogins:loginsFound",
-                                    { requestId: requestId, logins: [] });
+            target.sendAsyncMessage("RemoteLogins:loginsFound", {
+              requestId: requestId,
+              logins: [],
+              recipes,
+            });
             return;
           }
 
-          self.findLogins(showMasterPassword, formOrigin, actionOrigin,
-                          requestId, target);
+          self.sendLoginDataToChild(showMasterPassword, formOrigin, actionOrigin,
+                                    requestId, target);
         },
       };
 
@@ -284,8 +344,14 @@ var LoginManagerParent = {
     }
 
     var logins = Services.logins.findLogins({}, formOrigin, actionOrigin, null);
-    target.sendAsyncMessage("RemoteLogins:loginsFound",
-                            { requestId: requestId, logins: logins });
+    // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
+    // doesn't support structured cloning.
+    var jsLogins = JSON.parse(JSON.stringify(logins));
+    target.sendAsyncMessage("RemoteLogins:loginsFound", {
+      requestId: requestId,
+      logins: jsLogins,
+      recipes,
+    });
 
     const PWMGR_FORM_ACTION_EFFECT =  Services.telemetry.getHistogramById("PWMGR_FORM_ACTION_EFFECT");
     if (logins.length == 0) {
@@ -296,7 +362,7 @@ var LoginManagerParent = {
       // logins.length < allLoginsCount
       PWMGR_FORM_ACTION_EFFECT.add(1);
     }
-  },
+  }),
 
   doAutocompleteSearch: function({ formOrigin, actionOrigin,
                                    searchString, previousResult,
@@ -339,9 +405,13 @@ var LoginManagerParent = {
       AutoCompleteE10S.showPopupWithResults(target.ownerDocument.defaultView, rect, result);
     }
 
-    target.messageManager.sendAsyncMessage("RemoteLogins:loginsAutoCompleted",
-                                           { requestId: requestId,
-                                             logins: matchingLogins });
+    // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
+    // doesn't support structured cloning.
+    var jsLogins = JSON.parse(JSON.stringify(matchingLogins));
+    target.messageManager.sendAsyncMessage("RemoteLogins:loginsAutoCompleted", {
+      requestId: requestId,
+      logins: jsLogins,
+    });
   },
 
   onFormSubmit: function(hostname, formSubmitURL,
@@ -364,6 +434,15 @@ var LoginManagerParent = {
       return prompterSvc;
     }
 
+    function recordLoginUse(login) {
+      // Update the lastUsed timestamp and increment the use count.
+      let propBag = Cc["@mozilla.org/hash-property-bag;1"].
+                    createInstance(Ci.nsIWritablePropertyBag);
+      propBag.setProperty("timeLastUsed", Date.now());
+      propBag.setProperty("timesUsedIncrement", 1);
+      Services.logins.modifyLogin(login, propBag);
+    }
+
     if (!Services.logins.getLoginSavingEnabled(hostname)) {
       log("(form submission ignored -- saving is disabled for:", hostname, ")");
       return;
@@ -377,24 +456,24 @@ var LoginManagerParent = {
                    (usernameField ? usernameField.name  : ""),
                    newPasswordField.name);
 
+    let logins = Services.logins.findLogins({}, hostname, formSubmitURL, null);
+
     // If we didn't find a username field, but seem to be changing a
     // password, allow the user to select from a list of applicable
     // logins to update the password for.
-    if (!usernameField && oldPasswordField) {
-
-      var logins = Services.logins.findLogins({}, hostname, formSubmitURL, null);
-
-      if (logins.length == 0) {
-        // Could prompt to save this as a new password-only login.
-        // This seems uncommon, and might be wrong, so ignore.
-        log("(no logins for this host -- pwchange ignored)");
-        return;
-      }
-
+    if (!usernameField && oldPasswordField && logins.length > 0) {
       var prompter = getPrompter();
 
       if (logins.length == 1) {
         var oldLogin = logins[0];
+
+        if (oldLogin.password == formLogin.password) {
+          recordLoginUse(oldLogin);
+          log("(Not prompting to save/change since we have no username and the " +
+              "only saved password matches the new password)");
+          return;
+        }
+
         formLogin.username      = oldLogin.username;
         formLogin.usernameField = oldLogin.usernameField;
 
@@ -408,10 +487,8 @@ var LoginManagerParent = {
     }
 
 
-    // Look for an existing login that matches the form login.
     var existingLogin = null;
-    var logins = Services.logins.findLogins({}, hostname, formSubmitURL, null);
-
+    // Look for an existing login that matches the form login.
     for (var i = 0; i < logins.length; i++) {
       var same, login = logins[i];
 
@@ -446,13 +523,12 @@ var LoginManagerParent = {
         log("...passwords differ, prompting to change.");
         prompter = getPrompter();
         prompter.promptToChangePassword(existingLogin, formLogin);
+      } else if (!existingLogin.username && formLogin.username) {
+        log("...empty username update, prompting to change.");
+        prompter = getPrompter();
+        prompter.promptToChangePassword(existingLogin, formLogin);
       } else {
-        // Update the lastUsed timestamp.
-        var propBag = Cc["@mozilla.org/hash-property-bag;1"].
-                      createInstance(Ci.nsIWritablePropertyBag);
-        propBag.setProperty("timeLastUsed", Date.now());
-        propBag.setProperty("timesUsedIncrement", 1);
-        Services.logins.modifyLogin(existingLogin, propBag);
+        recordLoginUse(existingLogin);
       }
 
       return;
@@ -462,5 +538,104 @@ var LoginManagerParent = {
     // Prompt user to save login (via dialog or notification bar)
     prompter = getPrompter();
     prompter.promptToSavePassword(formLogin);
-  }
+  },
+
+  /**
+   * Maps all the <browser> elements for tabs in the parent process to the
+   * current state used to display tab-specific UI.
+   *
+   * This mapping is not updated in case a web page is moved to a different
+   * chrome window by the swapDocShells method. In this case, it is possible
+   * that a UI update just requested for the login fill doorhanger and then
+   * delayed by a few hundred milliseconds will be lost. Later requests would
+   * use the new browser reference instead.
+   *
+   * Given that the case above is rare, and it would not cause any origin
+   * mismatch at the time of filling because the origin is checked later in the
+   * content process, this case is left unhandled.
+   */
+  loginFormStateByBrowser: new WeakMap(),
+
+  /**
+   * Retrieves a reference to the state object associated with the given
+   * browser. This is initialized to an empty object.
+   */
+  stateForBrowser(browser) {
+    let loginFormState = this.loginFormStateByBrowser.get(browser);
+    if (!loginFormState) {
+      loginFormState = {};
+      this.loginFormStateByBrowser.set(browser, loginFormState);
+    }
+    return loginFormState;
+  },
+
+  /**
+   * Called to indicate whether a login form on the currently loaded page is
+   * present or not. This is one of the factors used to control the visibility
+   * of the password fill doorhanger.
+   */
+  updateLoginFormPresence(browser, { loginFormOrigin, loginFormPresent }) {
+    const ANCHOR_DELAY_MS = 200;
+
+    let state = this.stateForBrowser(browser);
+
+    // Update the data to use to the latest known values. Since messages are
+    // processed in order, this will always be the latest version to use.
+    state.loginFormOrigin = loginFormOrigin;
+    state.loginFormPresent = loginFormPresent;
+
+    // Apply the data to the currently displayed icon later.
+    if (!state.anchorDeferredTask) {
+      state.anchorDeferredTask = new DeferredTask(
+        () => this.updateLoginAnchor(browser),
+        ANCHOR_DELAY_MS
+      );
+    }
+    state.anchorDeferredTask.arm();
+  },
+  updateLoginAnchor: Task.async(function* (browser) {
+    // Copy the state to use for this execution of the task. These will not
+    // change during this execution of the asynchronous function, but in case a
+    // change happens in the state, the function will be retriggered.
+    let { loginFormOrigin, loginFormPresent } = this.stateForBrowser(browser);
+
+    yield Services.logins.initializationPromise;
+
+    // Check if there are form logins for the site, ignoring formSubmitURL.
+    let hasLogins = loginFormOrigin &&
+                    Services.logins.countLogins(loginFormOrigin, "", null) > 0;
+
+    // Once this preference is removed, this version of the fill doorhanger
+    // should be enabled for Desktop only, and not for Android or B2G.
+    if (!Services.prefs.getBoolPref("signon.ui.experimental")) {
+      return;
+    }
+
+    let showLoginAnchor = loginFormPresent || hasLogins;
+
+    let fillDoorhanger = LoginDoorhangers.FillDoorhanger.find({ browser });
+    if (fillDoorhanger) {
+      if (!showLoginAnchor) {
+        fillDoorhanger.remove();
+        return;
+      }
+      // We should only update the state of the doorhanger while it is hidden.
+      yield fillDoorhanger.promiseHidden;
+      fillDoorhanger.loginFormPresent = loginFormPresent;
+      fillDoorhanger.loginFormOrigin = loginFormOrigin;
+      fillDoorhanger.filterString = hasLogins ? loginFormOrigin : "";
+      fillDoorhanger.detailLogin = null;
+      fillDoorhanger.autoDetailLogin = true;
+      return;
+    }
+    if (showLoginAnchor) {
+      fillDoorhanger = new LoginDoorhangers.FillDoorhanger({
+        browser,
+        loginFormPresent,
+        loginFormOrigin,
+        filterString: hasLogins ? loginFormOrigin : "",
+        autoDetailLogin: true,
+      });
+    }
+  }),
 };

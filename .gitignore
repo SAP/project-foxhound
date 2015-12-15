@@ -10,6 +10,7 @@ ID
 .DS_Store*
 *.xcscheme
 *.plist
+*.pdb
 
 # Vim swap files.
 .*.sw[a-z]
@@ -52,8 +53,8 @@ parser/html/java/javaparser/
 .settings/
 
 # Python virtualenv artifacts.
-python/psutil/*.so
-python/psutil/*.pyd
+python/psutil/**/*.so
+python/psutil/**/*.pyd
 python/psutil/build/
 
 # Ignore chrome.manifest files from the devtools loader

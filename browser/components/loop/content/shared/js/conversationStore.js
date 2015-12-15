@@ -2,16 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global loop:true */
-
 var loop = loop || {};
 loop.store = loop.store || {};
 
 (function() {
+  "use strict";
+
   var sharedActions = loop.shared.actions;
   var CALL_TYPES = loop.shared.utils.CALL_TYPES;
   var REST_ERRNOS = loop.shared.utils.REST_ERRNOS;
   var FAILURE_DETAILS = loop.shared.utils.FAILURE_DETAILS;
+  var WEBSOCKET_REASONS = loop.shared.utils.WEBSOCKET_REASONS;
 
   /**
    * Websocket states taken from:
@@ -95,6 +96,8 @@ loop.store = loop.store || {};
         callId: undefined,
         // The caller id of the contacting side
         callerId: undefined,
+        // True if media has been connected both-ways.
+        mediaConnected: false,
         // The connection progress url to connect the websocket
         progressURL: undefined,
         // The websocket token that allows connection to the progress url
@@ -105,10 +108,11 @@ loop.store = loop.store || {};
         sessionId: undefined,
         // SDK session token
         sessionToken: undefined,
-        // If the audio is muted
+        // If the local audio is muted
         audioMuted: false,
-        // If the video is muted
-        videoMuted: false
+        // If the local video is muted
+        videoMuted: false,
+        remoteVideoEnabled: false
       };
     },
 
@@ -143,21 +147,6 @@ loop.store = loop.store || {};
      * @param {sharedActions.ConnectionFailure} actionData The action data.
      */
     connectionFailure: function(actionData) {
-      /**
-       * XXX This is a workaround for desktop machines that do not have a
-       * camera installed. As we don't yet have device enumeration, when
-       * we do, this can be removed (bug 1138851), and the sdk should handle it.
-       */
-      if (this._isDesktop &&
-          actionData.reason === FAILURE_DETAILS.UNABLE_TO_PUBLISH_MEDIA &&
-          this.getStoreState().videoMuted === false) {
-        // We failed to publish with media, so due to the bug, we try again without
-        // video.
-        this.setStoreState({videoMuted: true});
-        this.sdkDriver.retryPublishWithoutVideo();
-        return;
-      }
-
       this._endSession();
       this.setStoreState({
         callState: CALL_STATES.TERMINATED,
@@ -186,21 +175,24 @@ loop.store = loop.store || {};
           break;
         }
         case WS_STATES.CONNECTING: {
-          this.sdkDriver.connectSession({
-            apiKey: state.apiKey,
-            sessionId: state.sessionId,
-            sessionToken: state.sessionToken
-          });
-          this.mozLoop.addConversationContext(
-            state.windowId,
-            state.sessionId,
-            state.callId);
-          this.setStoreState({callState: CALL_STATES.ONGOING});
+          if (state.outgoing) {
+            // We can start the connection right away if we're the outgoing
+            // call because this is the only way we know the other peer has
+            // accepted.
+            this._startCallConnection();
+          } else if (state.callState !== CALL_STATES.ONGOING) {
+            console.error("Websocket unexpectedly changed to next state whilst waiting for call acceptance.");
+            // Abort and close the window.
+            this.declineCall(new sharedActions.DeclineCall({blockCaller: false}));
+          }
           break;
         }
         case WS_STATES.HALF_CONNECTED:
         case WS_STATES.CONNECTED: {
-          this.setStoreState({callState: CALL_STATES.ONGOING});
+          if (this.getStoreState("callState") !== CALL_STATES.ONGOING) {
+            console.error("Unexpected websocket state received in wrong callState");
+            this.setStoreState({callState: CALL_STATES.ONGOING});
+          }
           break;
         }
         default: {
@@ -221,6 +213,8 @@ loop.store = loop.store || {};
       this.dispatcher.register(this, [
         "connectionFailure",
         "connectionProgress",
+        "acceptCall",
+        "declineCall",
         "connectCall",
         "hangupCall",
         "remotePeerDisconnected",
@@ -228,21 +222,98 @@ loop.store = loop.store || {};
         "retryCall",
         "mediaConnected",
         "setMute",
-        "fetchRoomEmailLink"
+        "fetchRoomEmailLink",
+        "mediaStreamCreated",
+        "mediaStreamDestroyed",
+        "remoteVideoStatus",
+        "windowUnload"
       ]);
 
       this.setStoreState({
+        apiKey: actionData.apiKey,
+        callerId: actionData.callerId,
+        callId: actionData.callId,
+        callState: CALL_STATES.GATHER,
+        callType: actionData.callType,
         contact: actionData.contact,
         outgoing: windowType === "outgoing",
-        windowId: actionData.windowId,
-        callType: actionData.callType,
-        callState: CALL_STATES.GATHER,
-        videoMuted: actionData.callType === CALL_TYPES.AUDIO_ONLY
+        progressURL: actionData.progressURL,
+        sessionId: actionData.sessionId,
+        sessionToken: actionData.sessionToken,
+        videoMuted: actionData.callType === CALL_TYPES.AUDIO_ONLY,
+        websocketToken: actionData.websocketToken,
+        windowId: actionData.windowId
       });
 
       if (this.getStoreState("outgoing")) {
         this._setupOutgoingCall();
-      } // XXX Else, other types aren't supported yet.
+      } else {
+        this._setupIncomingCall();
+      }
+    },
+
+    /**
+     * Handles starting a call connection - connecting the session on the
+     * sdk, and setting the state appropriately.
+     */
+    _startCallConnection: function() {
+      var state = this.getStoreState();
+
+      this.sdkDriver.connectSession({
+        apiKey: state.apiKey,
+        sessionId: state.sessionId,
+        sessionToken: state.sessionToken,
+        sendTwoWayMediaTelemetry: state.outgoing // only one side of the call
+      });
+      this.mozLoop.addConversationContext(
+        state.windowId,
+        state.sessionId,
+        state.callId);
+      this.setStoreState({callState: CALL_STATES.ONGOING});
+    },
+
+    /**
+     * Accepts an incoming call.
+     *
+     * @param {sharedActions.AcceptCall} actionData
+     */
+    acceptCall: function(actionData) {
+      if (this.getStoreState("outgoing")) {
+        console.error("Received AcceptCall action in outgoing call state");
+        return;
+      }
+
+      this.setStoreState({
+        callType: actionData.callType,
+        videoMuted: actionData.callType === CALL_TYPES.AUDIO_ONLY
+      });
+
+      this._websocket.accept();
+
+      this._startCallConnection();
+    },
+
+    /**
+     * Declines an incoming call.
+     *
+     * @param {sharedActions.DeclineCall} actionData
+     */
+    declineCall: function(actionData) {
+      if (actionData.blockCaller) {
+        this.mozLoop.calls.blockDirectCaller(this.getStoreState("callerId"),
+          function(err) {
+            // XXX The conversation window will be closed when this cb is triggered
+            // figure out if there is a better way to report the error to the user
+            // (bug 1103150).
+            console.log(err.fileName + ":" + err.lineNumber + ": " + err.message);
+          });
+      }
+
+      this._websocket.decline();
+
+      // Now we've declined, end the session and close the window.
+      this._endSession();
+      this.setStoreState({callState: CALL_STATES.CLOSE});
     },
 
     /**
@@ -267,7 +338,10 @@ loop.store = loop.store || {};
       }
 
       this._endSession();
-      this.setStoreState({callState: CALL_STATES.FINISHED});
+      this.setStoreState({
+        callState: this._storeState.callState === CALL_STATES.ONGOING ?
+                   CALL_STATES.FINISHED : CALL_STATES.CLOSE
+      });
     },
 
     /**
@@ -291,15 +365,19 @@ loop.store = loop.store || {};
     },
 
     /**
-     * Cancels a call
+     * Cancels a call. This can happen for incoming or outgoing calls.
+     * Although the user doesn't "cancel" an incoming call, it may be that
+     * the remote peer cancelled theirs before the incoming call was accepted.
      */
     cancelCall: function() {
-      var callState = this.getStoreState("callState");
-      if (this._websocket &&
-          (callState === CALL_STATES.CONNECTING ||
-           callState === CALL_STATES.ALERTING)) {
-         // Let the server know the user has hung up.
-        this._websocket.cancel();
+      if (this.getStoreState("outgoing")) {
+        var callState = this.getStoreState("callState");
+        if (this._websocket &&
+            (callState === CALL_STATES.CONNECTING ||
+             callState === CALL_STATES.ALERTING)) {
+          // Let the server know the user has hung up.
+          this._websocket.cancel();
+        }
       }
 
       this._endSession();
@@ -327,6 +405,7 @@ loop.store = loop.store || {};
      */
     mediaConnected: function() {
       this._websocket.mediaUp();
+      this.setStoreState({mediaConnected: true});
     },
 
     /**
@@ -346,17 +425,94 @@ loop.store = loop.store || {};
      */
     fetchRoomEmailLink: function(actionData) {
       this.mozLoop.rooms.create({
-        roomName: actionData.roomName,
-        roomOwner: actionData.roomOwner,
-        maxSize:   loop.store.MAX_ROOM_CREATION_SIZE,
+        decryptedContext: {
+          roomName: actionData.roomName
+        },
+        maxSize: loop.store.MAX_ROOM_CREATION_SIZE,
         expiresIn: loop.store.DEFAULT_EXPIRES_IN
       }, function(err, createdRoomData) {
+        var buckets = this.mozLoop.ROOM_CREATE;
         if (err) {
           this.trigger("error:emailLink");
+          this.mozLoop.telemetryAddValue("LOOP_ROOM_CREATE", buckets.CREATE_FAIL);
           return;
         }
         this.setStoreState({"emailLink": createdRoomData.roomUrl});
+        this.mozLoop.telemetryAddValue("LOOP_ROOM_CREATE", buckets.CREATE_SUCCESS);
       }.bind(this));
+    },
+
+    /**
+     * Handles a media stream being created. This may be a local or a remote stream.
+     *
+     * @param {sharedActions.MediaStreamCreated} actionData
+     */
+    mediaStreamCreated: function(actionData) {
+      if (actionData.isLocal) {
+        this.setStoreState({
+          localVideoEnabled: actionData.hasVideo,
+          localSrcMediaElement: actionData.srcMediaElement
+        });
+        return;
+      }
+
+      this.setStoreState({
+        remoteVideoEnabled: actionData.hasVideo,
+        remoteSrcMediaElement: actionData.srcMediaElement
+      });
+    },
+
+    /**
+     * Handles a media stream being destroyed. This may be a local or a remote stream.
+     *
+     * @param {sharedActions.MediaStreamDestroyed} actionData
+     */
+    mediaStreamDestroyed: function(actionData) {
+      if (actionData.isLocal) {
+        this.setStoreState({
+          localSrcMediaElement: null
+        });
+        return;
+      }
+
+      this.setStoreState({
+        remoteSrcMediaElement: null
+      });
+    },
+
+    /**
+     * Handles a remote stream having video enabled or disabled.
+     *
+     * @param {sharedActions.RemoteVideoStatus} actionData
+     */
+    remoteVideoStatus: function(actionData) {
+      this.setStoreState({
+        remoteVideoEnabled: actionData.videoEnabled
+      });
+    },
+
+    /**
+     * Called when the window is unloaded, either by code, or by the user
+     * explicitly closing it.  Expected to do any necessary housekeeping, such
+     * as shutting down the call cleanly and adding any relevant telemetry data.
+     */
+    windowUnload: function() {
+      if (!this.getStoreState("outgoing") &&
+          this.getStoreState("callState") === CALL_STATES.ALERTING &&
+          this._websocket) {
+        this._websocket.decline();
+      }
+
+      this._endSession();
+    },
+
+    /**
+     * Sets up an incoming call. All we really need to do here is
+     * to connect the websocket, as we've already got all the information
+     * when the window opened.
+     */
+    _setupIncomingCall: function() {
+      this._connectWebSocket();
     },
 
     /**
@@ -392,9 +548,9 @@ loop.store = loop.store || {};
         function(err, result) {
           if (err) {
             console.error("Failed to get outgoing call data", err);
-            var failureReason = "setup";
-            if (err.errno == REST_ERRNOS.USER_UNAVAILABLE) {
-              failureReason = REST_ERRNOS.USER_UNAVAILABLE;
+            var failureReason = FAILURE_DETAILS.UNKNOWN;
+            if (err.errno === REST_ERRNOS.USER_UNAVAILABLE) {
+              failureReason = FAILURE_DETAILS.USER_UNAVAILABLE;
             }
             this.dispatcher.dispatch(
               new sharedActions.ConnectionFailure({reason: failureReason}));
@@ -457,28 +613,64 @@ loop.store = loop.store || {};
     },
 
     /**
+     * If we hit any of the termination reasons, and the user hasn't accepted
+     * then it seems reasonable to close the window/abort the incoming call.
+     *
+     * If the user has accepted the call, and something's happened, display
+     * the call failed view.
+     *
+     * https://wiki.mozilla.org/Loop/Architecture/MVP#Termination_Reasons
+     *
+     * For outgoing calls, we treat all terminations as failures.
+     *
+     * @param {Object} progressData  The progress data received from the websocket.
+     * @param {String} previousState The previous state the websocket was in.
+     */
+    _handleWebSocketStateTerminated: function(progressData, previousState) {
+      if (this.getStoreState("outgoing") ||
+          (previousState !== WS_STATES.INIT &&
+           previousState !== WS_STATES.ALERTING)) {
+        // For outgoing calls we can treat everything as connection failure.
+
+        // XXX We currently fallback to the websocket reason, but really these should
+        // be fully migrated to use FAILURE_DETAILS, so as not to expose websocket
+        // states outside of this store. Bug 1124384 should help to fix this.
+        var reason = progressData.reason;
+
+        if (reason === WEBSOCKET_REASONS.REJECT ||
+            reason === WEBSOCKET_REASONS.BUSY) {
+          reason = FAILURE_DETAILS.USER_UNAVAILABLE;
+        }
+
+        this.dispatcher.dispatch(new sharedActions.ConnectionFailure({
+          reason: reason
+        }));
+        return;
+      }
+
+      this.dispatcher.dispatch(new sharedActions.CancelCall());
+    },
+
+    /**
      * Used to handle any progressed received from the websocket. This will
      * dispatch new actions so that the data can be handled appropriately.
+     *
+     * @param {Object} progressData  The progress data received from the websocket.
+     * @param {String} previousState The previous state the websocket was in.
      */
-    _handleWebSocketProgress: function(progressData) {
-      var action;
-
+    _handleWebSocketProgress: function(progressData, previousState) {
       switch(progressData.state) {
         case WS_STATES.TERMINATED: {
-          action = new sharedActions.ConnectionFailure({
-            reason: progressData.reason
-          });
+          this._handleWebSocketStateTerminated(progressData, previousState);
           break;
         }
         default: {
-          action = new sharedActions.ConnectionProgress({
+          this.dispatcher.dispatch(new sharedActions.ConnectionProgress({
             wsState: progressData.state
-          });
+          }));
           break;
         }
       }
-
-      this.dispatcher.dispatch(action);
     }
   });
 })();

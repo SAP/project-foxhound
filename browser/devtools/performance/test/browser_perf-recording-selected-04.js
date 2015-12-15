@@ -6,16 +6,20 @@
  * Tests that all components can get rerendered for a profile when switching.
  */
 
-let test = Task.async(function*() {
+var test = Task.async(function*() {
   let { target, panel, toolbox } = yield initPerformance(SIMPLE_URL);
   let { $, EVENTS, PerformanceController, DetailsView, DetailsSubview, RecordingsView } = panel.panelWin;
 
-  // Enable memory to test the memory-calltree and memory-flamegraph.
+  // Enable allocations to test the memory-calltree and memory-flamegraph.
   Services.prefs.setBoolPref(MEMORY_PREF, true);
+  Services.prefs.setBoolPref(ALLOCATIONS_PREF, true);
 
   // Need to allow widgets to be updated while hidden, otherwise we can't use
   // `waitForWidgetsRendered`.
   DetailsSubview.canUpdateWhileHidden = true;
+
+  yield startRecording(panel);
+  yield stopRecording(panel);
 
   // Cycle through all the views to initialize them, otherwise we can't use
   // `waitForWidgetsRendered`. The waterfall is shown by default, but all the
@@ -24,9 +28,6 @@ let test = Task.async(function*() {
   yield DetailsView.selectView("js-flamegraph");
   yield DetailsView.selectView("memory-calltree");
   yield DetailsView.selectView("memory-flamegraph");
-
-  yield startRecording(panel);
-  yield stopRecording(panel);
 
   yield startRecording(panel);
   yield stopRecording(panel);

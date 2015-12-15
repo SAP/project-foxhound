@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,12 +13,15 @@
 #include "nsCPrefetchService.h"
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
+#include "nsIInterfaceRequestorUtils.h"
 #include "nsIOfflineCacheUpdate.h"
 #include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsIObserverService.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIWebNavigation.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/OfflineResourceListBinding.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Preferences.h"
@@ -95,9 +99,9 @@ nsDOMOfflineResourceList::~nsDOMOfflineResourceList()
 }
 
 JSObject*
-nsDOMOfflineResourceList::WrapObject(JSContext* aCx)
+nsDOMOfflineResourceList::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return OfflineResourceListBinding::Wrap(aCx, this);
+  return OfflineResourceListBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsresult
@@ -224,7 +228,7 @@ nsDOMOfflineResourceList::GetMozItems(nsISupports** aItems)
   ErrorResult rv;
   nsRefPtr<DOMStringList> items = GetMozItems(rv);
   items.forget(aItems);
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 NS_IMETHODIMP
@@ -544,11 +548,7 @@ nsDOMOfflineResourceList::SendEvent(const nsAString &aEventName)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIDOMEvent> event;
-  nsresult rv = EventDispatcher::CreateEvent(this, nullptr, nullptr,
-                                             NS_LITERAL_STRING("Events"),
-                                             getter_AddRefs(event));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsRefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
   event->InitEvent(aEventName, false, true);
 
   // We assume anyone that managed to call SendEvent is trusted

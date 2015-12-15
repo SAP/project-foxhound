@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -86,9 +86,9 @@ public:
                   IDBFactory** aFactory);
 
   static nsresult
-  CreateForChromeJS(JSContext* aCx,
-                    JS::Handle<JSObject*> aOwningObject,
-                    IDBFactory** aFactory);
+  CreateForMainThreadJS(JSContext* aCx,
+                        JS::Handle<JSObject*> aOwningObject,
+                        IDBFactory** aFactory);
 
   static nsresult
   CreateForDatastore(JSContext* aCx,
@@ -105,11 +105,19 @@ public:
   static bool
   AllowedForWindow(nsPIDOMWindow* aWindow);
 
+  static bool
+  AllowedForPrincipal(nsIPrincipal* aPrincipal,
+                      bool* aIsSystemPrincipal = nullptr);
+
+#ifdef DEBUG
+  void
+  AssertIsOnOwningThread() const;
+
+  PRThread*
+  OwningThread() const;
+#else
   void
   AssertIsOnOwningThread() const
-#ifdef DEBUG
-  ;
-#else
   { }
 #endif
 
@@ -202,7 +210,7 @@ public:
 
   // nsWrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
   IDBFactory();

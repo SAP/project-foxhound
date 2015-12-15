@@ -19,7 +19,6 @@ namespace dom {
 class TextTrackList;
 class TextTrackCue;
 class TextTrackCueList;
-class TextTrackRegion;
 class HTMLTrackElement;
 
 enum TextTrackSource {
@@ -60,7 +59,7 @@ public:
 
   void SetDefaultSettings();
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   TextTrackKind Kind() const
   {

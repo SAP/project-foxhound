@@ -4,18 +4,37 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('*'):
+    BUG_COMPONENT = ('Core', 'Video/Audio')
+
+component_signaling = ('Core', 'WebRTC: Signaling')
+with Files('IdpSandbox.jsm'):
+    BUG_COMPONENT = component_signaling
+with Files('PeerConnection*'):
+    BUG_COMPONENT = component_signaling
+with Files('RTC*'):
+    BUG_COMPONENT = component_signaling
+
+component_av = ('Core', 'WebRTC: Audio/Video')
+with Files('GetUserMedia*'):
+    BUG_COMPONENT = component_av
+
 DIRS += [
     'encoder',
     'gmp',
     'gmp-plugin',
+    'gmp-plugin-openh264',
     'imagecapture',
+    'mediasink',
     'mediasource',
     'ogg',
+    'platforms',
     'systemservices',
     'webaudio',
     'webrtc',
     'webspeech',
     'webvtt',
+    'standalone',
 ]
 
 if CONFIG['MOZ_RAW']:
@@ -36,9 +55,6 @@ if CONFIG['MOZ_DIRECTSHOW']:
 if CONFIG['MOZ_ANDROID_OMX']:
     DIRS += ['android']
 
-if CONFIG['MOZ_WMF']:
-    DIRS += ['wmf']
-
 if CONFIG['MOZ_FMP4']:
     DIRS += ['fmp4']
 
@@ -50,7 +66,6 @@ if CONFIG['MOZ_WEBRTC']:
 
 if CONFIG['MOZ_OMX_DECODER']:
     DIRS += ['omx']
-    DIRS += ['omx/mediaresourcemanager']
 
 if CONFIG['MOZ_EME']:
     DIRS += ['eme']
@@ -71,6 +86,7 @@ MOCHITEST_MANIFESTS += [
 if CONFIG['MOZ_WEBRTC']:
     MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']
     WEBRTC_SIGNALLING_TEST_MANIFESTS += ['tests/mochitest/steeplechase.ini']
+    WEBRTC_SIGNALLING_TEST_MANIFESTS += ['tests/mochitest/steeplechase_long/steeplechase_long.ini']
 
 XPIDL_SOURCES += [
     'nsIDOMNavigatorUserMedia.idl',
@@ -85,6 +101,7 @@ EXPORTS += [
     'AudioChannelFormat.h',
     'AudioCompactor.h',
     'AudioMixer.h',
+    'AudioPacketizer.h',
     'AudioSampleFormat.h',
     'AudioSegment.h',
     'AudioStream.h',
@@ -94,45 +111,58 @@ EXPORTS += [
     'DOMMediaStream.h',
     'EncodedBufferCache.h',
     'FileBlockCache.h',
-    'GraphDriver.h',
+    'FlushableTaskQueue.h',
+    'FrameStatistics.h',
+    'Intervals.h',
     'Latency.h',
     'MediaCache.h',
     'MediaData.h',
+    'MediaDataDemuxer.h',
     'MediaDecoder.h',
     'MediaDecoderOwner.h',
     'MediaDecoderReader.h',
     'MediaDecoderStateMachine.h',
-    'MediaDecoderStateMachineScheduler.h',
+    'MediaEventSource.h',
+    'MediaFormatReader.h',
     'MediaInfo.h',
     'MediaMetadataManager.h',
-    'MediaPromise.h',
     'MediaQueue.h',
     'MediaRecorder.h',
     'MediaResource.h',
     'MediaSegment.h',
+    'MediaStatistics.h',
     'MediaStreamGraph.h',
-    'MediaTaskQueue.h',
+    'MediaTimer.h',
     'MediaTrack.h',
     'MediaTrackList.h',
+    'MP3Decoder.h',
+    'MP3Demuxer.h',
     'MP3FrameParser.h',
     'nsIDocumentActivity.h',
     'RtspMediaResource.h',
     'SelfRef.h',
     'SharedBuffer.h',
-    'SharedThreadPool.h',
     'StreamBuffer.h',
     'ThreadPoolCOMListener.h',
     'TimeUnits.h',
-    'TimeVarying.h',
     'TrackUnionStream.h',
     'VideoFrameContainer.h',
     'VideoSegment.h',
     'VideoUtils.h',
     'VorbisUtils.h',
+    'XiphExtradata.h',
 ]
 
 EXPORTS.mozilla += [
     'MediaManager.h',
+]
+
+EXPORTS.mozilla.media.webrtc += [
+    'webrtc/WebrtcGlobal.h',
+]
+
+IPDL_SOURCES += [
+    'webrtc/PWebrtcGlobal.ipdl'
 ]
 
 if CONFIG['MOZ_B2G']:
@@ -144,11 +174,12 @@ EXPORTS.mozilla.dom += [
     'AudioStreamTrack.h',
     'AudioTrack.h',
     'AudioTrackList.h',
+    'CanvasCaptureMediaStream.h',
     'GetUserMediaRequest.h',
+    'MediaDeviceInfo.h',
     'MediaDevices.h',
     'MediaStreamError.h',
     'MediaStreamTrack.h',
-    'RTCIdentityProviderRegistrar.h',
     'TextTrack.h',
     'TextTrackCue.h',
     'TextTrackCueList.h',
@@ -161,18 +192,20 @@ EXPORTS.mozilla.dom += [
 ]
 
 UNIFIED_SOURCES += [
+    'AudioCaptureStream.cpp',
     'AudioChannelFormat.cpp',
     'AudioCompactor.cpp',
     'AudioSegment.cpp',
-    'AudioSink.cpp',
     'AudioStream.cpp',
     'AudioStreamTrack.cpp',
     'AudioTrack.cpp',
     'AudioTrackList.cpp',
+    'CanvasCaptureMediaStream.cpp',
     'CubebUtils.cpp',
     'DOMMediaStream.cpp',
     'EncodedBufferCache.cpp',
     'FileBlockCache.cpp',
+    'FlushableTaskQueue.cpp',
     'GetUserMediaRequest.cpp',
     'GraphDriver.cpp',
     'Latency.cpp',
@@ -181,23 +214,23 @@ UNIFIED_SOURCES += [
     'MediaDecoder.cpp',
     'MediaDecoderReader.cpp',
     'MediaDecoderStateMachine.cpp',
-    'MediaDecoderStateMachineScheduler.cpp',
+    'MediaDeviceInfo.cpp',
     'MediaDevices.cpp',
+    'MediaFormatReader.cpp',
     'MediaManager.cpp',
-    'MediaPromise.cpp',
     'MediaRecorder.cpp',
     'MediaResource.cpp',
     'MediaShutdownManager.cpp',
     'MediaStreamError.cpp',
     'MediaStreamGraph.cpp',
     'MediaStreamTrack.cpp',
-    'MediaTaskQueue.cpp',
+    'MediaTimer.cpp',
     'MediaTrack.cpp',
     'MediaTrackList.cpp',
+    'MP3Decoder.cpp',
+    'MP3Demuxer.cpp',
     'MP3FrameParser.cpp',
-    'RTCIdentityProviderRegistrar.cpp',
     'RtspMediaResource.cpp',
-    'SharedThreadPool.cpp',
     'StreamBuffer.cpp',
     'TextTrack.cpp',
     'TextTrackCue.cpp',
@@ -213,6 +246,7 @@ UNIFIED_SOURCES += [
     'VideoTrackList.cpp',
     'VideoUtils.cpp',
     'WebVTTListener.cpp',
+    'XiphExtradata.cpp',
 ]
 
 if CONFIG['OS_TARGET'] == 'WINNT':
@@ -244,10 +278,6 @@ EXTRA_JS_MODULES.media += [
     'RTCStatsReport.jsm',
 ]
 
-FAIL_ON_WARNINGS = True
-
-MSVC_ENABLE_PGO = True
-
 LOCAL_INCLUDES += [
     '/caps',
     '/dom/base',
@@ -275,6 +305,9 @@ if CONFIG['MOZ_OMX_DECODER']:
 
 if CONFIG['ANDROID_VERSION'] > '15':
     DEFINES['MOZ_OMX_WEBM_DECODER'] = True
+
+if CONFIG['MOZ_GONK_MEDIACODEC']:
+    DEFINES['MOZ_GONK_MEDIACODEC'] = True
 
 CFLAGS += CONFIG['GSTREAMER_CFLAGS']
 CXXFLAGS += CONFIG['GSTREAMER_CFLAGS']

@@ -34,7 +34,7 @@ TextureClientX11::~TextureClientX11()
   MOZ_COUNT_DTOR(TextureClientX11);
 }
 
-TemporaryRef<TextureClient>
+already_AddRefed<TextureClient>
 TextureClientX11::CreateSimilar(TextureFlags aFlags,
                                 TextureAllocationFlags aAllocFlags) const
 {
@@ -46,7 +46,7 @@ TextureClientX11::CreateSimilar(TextureFlags aFlags,
     return nullptr;
   }
 
-  return tex;
+  return tex.forget();
 }
 
 bool
@@ -112,12 +112,14 @@ TextureClientX11::AllocateForSurface(IntSize aSize, TextureAllocationFlags aText
   //MOZ_ASSERT(mFormat != gfx::FORMAT_YUV, "This TextureClient cannot use YCbCr data");
 
   MOZ_ASSERT(aSize.width >= 0 && aSize.height >= 0);
-  if (aSize.width <= 0 || aSize.height <= 0) {
+  if (aSize.width <= 0 || aSize.height <= 0 ||
+      aSize.width > XLIB_IMAGE_SIDE_SIZE_LIMIT ||
+      aSize.height > XLIB_IMAGE_SIDE_SIZE_LIMIT) {
     gfxDebug() << "Asking for X11 surface of invalid size " << aSize.width << "x" << aSize.height;
     return false;
   }
-  gfxContentType contentType = ContentForFormat(mFormat);
-  nsRefPtr<gfxASurface> surface = gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, contentType);
+  gfxImageFormat imageFormat = SurfaceFormatToImageFormat(mFormat);
+  nsRefPtr<gfxASurface> surface = gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, imageFormat);
   if (!surface || surface->GetType() != gfxSurfaceType::Xlib) {
     NS_ERROR("creating Xlib surface failed!");
     return false;
@@ -144,9 +146,24 @@ TextureClientX11::BorrowDrawTarget()
   }
 
   if (!mDrawTarget) {
-    IntSize size = ToIntSize(mSurface->GetSize());
+    IntSize size = mSurface->GetSize();
     mDrawTarget = Factory::CreateDrawTargetForCairoSurface(mSurface->CairoSurface(), size);
   }
 
   return mDrawTarget;
+}
+
+void
+TextureClientX11::UpdateFromSurface(gfx::SourceSurface* aSurface)
+{
+  MOZ_ASSERT(CanExposeDrawTarget());
+
+  DrawTarget* dt = BorrowDrawTarget();
+
+  if (!dt) {
+    gfxCriticalError() << "Failed to borrow drawtarget for TextureClientX11::UpdateFromSurface";
+    return;
+  }
+
+  dt->CopySurface(aSurface, IntRect(IntPoint(), aSurface->GetSize()), IntPoint());
 }

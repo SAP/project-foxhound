@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,14 +10,17 @@
 #include "mozilla/dom/MozIccBinding.h"
 #include "mozilla/DOMEventTargetHelper.h"
 
+class nsIIcc;
 class nsIIccInfo;
 class nsIIccProvider;
+class nsIStkProactiveCmd;
 
 namespace mozilla {
 namespace dom {
 
 class DOMRequest;
 class OwningMozIccInfoOrMozGsmIccInfoOrMozCdmaIccInfo;
+class mozContact;
 class Promise;
 
 class Icc final : public DOMEventTargetHelper
@@ -25,7 +30,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Icc, DOMEventTargetHelper)
   NS_REALLY_FORWARD_NSIDOMEVENTTARGET(DOMEventTargetHelper)
 
-  Icc(nsPIDOMWindow* aWindow, long aClientId, nsIIccInfo* aIccInfo);
+  Icc(nsPIDOMWindow* aWindow, nsIIcc* aHandler, nsIIccInfo* aIccInfo);
 
   void
   Shutdown();
@@ -34,7 +39,7 @@ public:
   NotifyEvent(const nsAString& aName);
 
   nsresult
-  NotifyStkEvent(const nsAString& aName, const nsAString& aMessage);
+  NotifyStkEvent(const nsAString& aName, nsIStkProactiveCmd* aStkProactiveCmd);
 
   nsString
   GetIccId()
@@ -53,7 +58,7 @@ public:
 
   // WrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // MozIcc WebIDL
   void
@@ -94,9 +99,8 @@ public:
   ReadContacts(IccContactType aContactType, ErrorResult& aRv);
 
   already_AddRefed<DOMRequest>
-  UpdateContact(const JSContext* aCx, IccContactType aContactType,
-                JS::Handle<JS::Value> aContact, const nsAString& aPin2,
-                ErrorResult& aRv);
+  UpdateContact(IccContactType aContactType, mozContact& aContact,
+                const nsAString& aPin2, ErrorResult& aRv);
 
   already_AddRefed<DOMRequest>
   MatchMvno(IccMvnoType aMvnoType, const nsAString& aMatchData,
@@ -111,12 +115,16 @@ public:
   IMPL_EVENT_HANDLER(stksessionend)
 
 private:
+  // Put definition of the destructor in Icc.cpp to ensure forward declaration
+  // of nsIIccProvider, nsIIcc for the auto-generated .cpp file (i.e.,
+  // MozIccManagerBinding.cpp) that includes this header.
+  ~Icc();
+
   bool mLive;
-  uint32_t mClientId;
   nsString mIccId;
-  // mProvider is a xpcom service and will be released at shutdown, so it
-  // doesn't need to be cycle collected.
-  nsCOMPtr<nsIIccProvider> mProvider;
+  // mHandler will be released at Shutdown(), so there is no need to join cycle
+  // collection.
+  nsCOMPtr<nsIIcc> mHandler;
   Nullable<OwningMozIccInfoOrMozGsmIccInfoOrMozCdmaIccInfo> mIccInfo;
 };
 

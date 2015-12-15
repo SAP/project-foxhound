@@ -70,13 +70,6 @@
   <preference id="app.update.auto"
               name="app.update.auto"
               type="bool"/>
-#ifdef XP_WIN
-#ifdef MOZ_METRO
-  <preference id="app.update.metro.enabled"
-              name="app.update.metro.enabled"
-              type="bool"/>
-#endif
-#endif
   <preference id="app.update.mode"
               name="app.update.mode"
               type="int"/>
@@ -278,10 +271,8 @@
             &limitCacheSizeBefore.label;
           </label>
           <textbox id="cacheSize" type="number" size="4" max="1024"
-                  preference="browser.cache.disk.capacity"
-                  onsyncfrompreference="return gAdvancedPane.readCacheSize();"
-                  onsynctopreference="return gAdvancedPane.writeCacheSize();"
-                  aria-labelledby="useCacheBefore cacheSize useCacheAfter"/>
+                   onchange="gAdvancedPane.updateCacheSizePref();"
+                   aria-labelledby="useCacheBefore cacheSize useCacheAfter"/>
           <label id="useCacheAfter" flex="1">&limitCacheSizeAfter.label;</label>
         </hbox>
       </groupbox>
@@ -329,18 +320,6 @@
       <groupbox id="updateApp" align="start">
         <caption><label>&updateApp.label;</label></caption>
         <radiogroup id="updateRadioGroup" align="start">
-#ifdef XP_WIN
-#ifdef MOZ_METRO
-              <radio id="autoMetro"
-                     value="autoMetro"
-                     label="&updateAutoMetro.label;"
-                     accesskey="&updateAutoMetro.accesskey;"/>
-              <hbox id="autoMetroIndent"
-                    class="indent">
-                <label>&updateAutoMetroWarn.label;</label>
-              </hbox>
-#endif
-#endif
           <radio id="autoDesktop"
                  value="auto"
                  label="&updateAuto1.label;"
@@ -388,6 +367,7 @@
     <!-- Certificates -->
     <tabpanel id="encryptionPanel" orient="vertical">
       <groupbox id="certSelection" align="start">
+        <caption><label>&certSelection.label;</label></caption>
         <description id="CertSelectionDesc" control="certSelection">&certSelection.description;</description>
 
         <!--

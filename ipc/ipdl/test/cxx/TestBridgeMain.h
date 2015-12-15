@@ -42,7 +42,7 @@ class TestBridgeMainSubParent :
     public PTestBridgeMainSubParent
 {
 public:
-    TestBridgeMainSubParent(Transport* aTransport)
+    explicit TestBridgeMainSubParent(Transport* aTransport)
         : mTransport(aTransport)
     {}
     virtual ~TestBridgeMainSubParent() {}
@@ -71,6 +71,16 @@ public:
 
 protected:
     virtual bool RecvStart() override;
+
+    virtual PTestBridgeMainSubChild*
+    AllocPTestBridgeMainSubChild(Transport* transport,
+                                 ProcessId otherProcess) override
+    {
+        // This shouldn't be called. It's just a byproduct of testing that
+        // the right code is generated for a bridged protocol that's also
+        // opened, but we only test bridging here.
+        MOZ_CRASH();
+    }
 
     virtual void ActorDestroy(ActorDestroyReason why) override;
 
@@ -116,7 +126,7 @@ class TestBridgeMainSubChild :
     public PTestBridgeMainSubChild
 {
 public:
-    TestBridgeMainSubChild(Transport* aTransport)
+    explicit TestBridgeMainSubChild(Transport* aTransport)
         : mGotHi(false)
         , mTransport(aTransport)
     {}

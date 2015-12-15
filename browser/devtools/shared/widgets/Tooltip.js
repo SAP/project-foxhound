@@ -4,20 +4,23 @@
 
 "use strict";
 
-const {Cc, Cu, Ci} = require("chrome");
-const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
-const IOService = Cc["@mozilla.org/network/io-service;1"]
-  .getService(Ci.nsIIOService);
+/* globals beautify, setNamedTimeout, clearNamedTimeout, VariablesView,
+   VariablesViewController, Task */
+
+const {Cu, Ci} = require("chrome");
+const promise = require("promise");
 const {Spectrum} = require("devtools/shared/widgets/Spectrum");
-const {CubicBezierWidget} = require("devtools/shared/widgets/CubicBezierWidget");
+const {CubicBezierWidget} =
+      require("devtools/shared/widgets/CubicBezierWidget");
+const {MdnDocsWidget} = require("devtools/shared/widgets/MdnDocsWidget");
+const {CSSFilterEditorWidget} = require("devtools/shared/widgets/FilterWidget");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 const {colorUtils} = require("devtools/css-color");
 const Heritage = require("sdk/core/heritage");
 const {Eyedropper} = require("devtools/eyedropper/eyedropper");
 const Editor = require("devtools/sourceeditor/editor");
-const {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 
-devtools.lazyRequireGetter(this, "beautify", "devtools/jsbeautify");
+loader.lazyRequireGetter(this, "beautify", "devtools/jsbeautify");
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -33,12 +36,12 @@ XPCOMUtils.defineLazyModuleGetter(this, "VariablesViewController",
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
   "resource://gre/modules/Task.jsm");
 
-const GRADIENT_RE = /\b(repeating-)?(linear|radial)-gradient\(((rgb|hsl)a?\(.+?\)|[^\)])+\)/gi;
-const BORDERCOLOR_RE = /^border-[-a-z]*color$/ig;
-const BORDER_RE = /^border(-(top|bottom|left|right))?$/ig;
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const SPECTRUM_FRAME = "chrome://browser/content/devtools/spectrum-frame.xhtml";
-const CUBIC_BEZIER_FRAME = "chrome://browser/content/devtools/cubic-bezier-frame.xhtml";
+const CUBIC_BEZIER_FRAME =
+      "chrome://browser/content/devtools/cubic-bezier-frame.xhtml";
+const MDN_DOCS_FRAME = "chrome://browser/content/devtools/mdn-docs-frame.xhtml";
+const FILTER_FRAME = "chrome://browser/content/devtools/filter-frame.xhtml";
 const ESCAPE_KEYCODE = Ci.nsIDOMKeyEvent.DOM_VK_ESCAPE;
 const RETURN_KEYCODE = Ci.nsIDOMKeyEvent.DOM_VK_RETURN;
 const POPUP_EVENTS = ["shown", "hidden", "showing", "hiding"];
@@ -86,16 +89,15 @@ OptionsStore.prototype = {
   get: function(name) {
     if (typeof this.options[name] !== "undefined") {
       return this.options[name];
-    } else {
-      return this.defaults[name];
     }
+    return this.defaults[name];
   }
 };
 
 /**
  * The low level structure of a tooltip is a XUL element (a <panel>).
  */
-let PanelFactory = {
+var PanelFactory = {
   /**
    * Get a new XUL panel instance.
    * @param {XULDocument} doc
@@ -110,7 +112,8 @@ let PanelFactory = {
     panel.setAttribute("ignorekeys", true);
     panel.setAttribute("animate", false);
 
-    panel.setAttribute("consumeoutsideclicks", options.get("consumeOutsideClick"));
+    panel.setAttribute("consumeoutsideclicks",
+                       options.get("consumeOutsideClick"));
     panel.setAttribute("noautofocus", options.get("noAutoFocus"));
     panel.setAttribute("type", "arrow");
     panel.setAttribute("level", "top");
@@ -151,11 +154,13 @@ let PanelFactory = {
  *        Defaults to false.
  *        - closeOnKeys {Array} An array of key codes that should close the
  *        tooltip. Defaults to [27] (escape key).
- *        - closeOnEvents [{emitter: {Object}, event: {String}, useCapture: {Boolean}}]
+ *        - closeOnEvents [{emitter: {Object}, event: {String},
+ *                          useCapture: {Boolean}}]
  *        Provide an optional list of emitter objects and event names here to
  *        trigger the closing of the tooltip when these events are fired by the
- *        emitters. The emitter objects should either implement on/off(event, cb)
- *        or addEventListener/removeEventListener(event, cb). Defaults to [].
+ *        emitters. The emitter objects should either implement
+ *        on/off(event, cb) or addEventListener/removeEventListener(event, cb).
+ *        Defaults to [].
  *        For instance, the following would close the tooltip whenever the
  *        toolbox selects a new tool and when a DOM node gets scrolled:
  *        new Tooltip(doc, {
@@ -189,13 +194,17 @@ function Tooltip(doc, options) {
   // Used for namedTimeouts in the mouseover handling
   this.uid = "tooltip-" + Date.now();
 
-  // Emit show/hide events
-  for (let event of POPUP_EVENTS) {
-    this["_onPopup" + event] = ((e) => {
-      return () => this.emit(e);
-    })(event);
-    this.panel.addEventListener("popup" + event,
-      this["_onPopup" + event], false);
+  // Emit show/hide events when the panel does.
+  for (let eventName of POPUP_EVENTS) {
+    this["_onPopup" + eventName] = (name => {
+      return e => {
+        if (e.target === this.panel) {
+          this.emit(name);
+        }
+      };
+    })(eventName);
+    this.panel.addEventListener("popup" + eventName,
+      this["_onPopup" + eventName], false);
   }
 
   // Listen to keypress events to close the tooltip if configured to do so
@@ -206,7 +215,8 @@ function Tooltip(doc, options) {
     }
 
     this.emit("keypress", event.keyCode);
-    if (this.options.get("closeOnKeys").indexOf(event.keyCode) !== -1) {
+    if (this.options.get("closeOnKeys").indexOf(event.keyCode) !== -1 &&
+        this.isShown()) {
       event.stopPropagation();
       this.hide();
     }
@@ -230,9 +240,12 @@ module.exports.Tooltip = Tooltip;
 
 Tooltip.prototype = {
   defaultPosition: "before_start",
-  defaultOffsetX: 0, // px
-  defaultOffsetY: 0, // px
-  defaultShowDelay: 50, // ms
+  // px
+  defaultOffsetX: 0,
+  // px
+  defaultOffsetY: 0,
+  // px
+  defaultShowDelay: 50,
 
   /**
    * Show the tooltip. It might be wise to append some content first if you
@@ -300,12 +313,12 @@ Tooltip.prototype = {
   /**
    * Get rid of references and event listeners
    */
-  destroy: function () {
+  destroy: function() {
     this.hide();
 
-    for (let event of POPUP_EVENTS) {
-      this.panel.removeEventListener("popup" + event,
-        this["_onPopup" + event], false);
+    for (let eventName of POPUP_EVENTS) {
+      this.panel.removeEventListener("popup" + eventName,
+        this["_onPopup" + eventName], false);
     }
 
     let win = this.doc.querySelector("window");
@@ -359,6 +372,8 @@ Tooltip.prototype = {
    *        A function that accepts a node argument and returns true or false
    *        (or a promise that resolves or rejects) to signify if the tooltip
    *        should be shown on that node or not.
+   *        If the promise rejects, it must reject `false` as value.
+   *        Any other value is going to be logged as unexpected error.
    *        Additionally, the function receives a second argument which is the
    *        tooltip instance itself, to be used to add/modify the content of the
    *        tooltip if needed. If omitted, the tooltip will be shown everytime.
@@ -366,7 +381,8 @@ Tooltip.prototype = {
    *        An optional delay that will be observed before showing the tooltip.
    *        Defaults to this.defaultShowDelay.
    */
-  startTogglingOnHover: function(baseNode, targetNodeCb, showDelay=this.defaultShowDelay) {
+  startTogglingOnHover: function(baseNode, targetNodeCb,
+                                 showDelay=this.defaultShowDelay) {
     if (this._basedNode) {
       this.stopTogglingOnHover();
     }
@@ -446,13 +462,10 @@ Tooltip.prototype = {
     if (res && res.then) {
       return res.then(arg => {
         return arg instanceof Ci.nsIDOMNode ? arg : target;
-      }, () => {
-        return false;
       });
-    } else {
-      let newTarget = res instanceof Ci.nsIDOMNode ? res : target;
-      return res ? promise.resolve(newTarget) : promise.reject(false);
     }
+    let newTarget = res instanceof Ci.nsIDOMNode ? res : target;
+    return res ? promise.resolve(newTarget) : promise.reject(false);
   },
 
   _onBaseNodeMouseLeave: function() {
@@ -579,14 +592,12 @@ Tooltip.prototype = {
    *        Pass the instance of the current toolbox if you want the variables
    *        view widget to allow highlighting and selection of DOM nodes
    */
-  setVariableContent: function(
-    objectActor,
-    viewOptions = {},
-    controllerOptions = {},
-    relayEvents = {},
-    extraButtons = [],
-    toolbox = null) {
-
+  setVariableContent: function(objectActor,
+                               viewOptions = {},
+                               controllerOptions = {},
+                               relayEvents = {},
+                               extraButtons = [],
+                               toolbox = null) {
     let vbox = this.doc.createElement("vbox");
     vbox.className = "devtools-tooltip-variables-view-box";
     vbox.setAttribute("flex", "1");
@@ -637,13 +648,15 @@ Tooltip.prototype = {
    * @return a promise that resolves when the image is shown in the tooltip or
    * resolves when the broken image tooltip content is ready, but never rejects.
    */
-  setRelativeImageContent: Task.async(function*(imageUrl, inspectorFront, maxDim) {
+  setRelativeImageContent: Task.async(function*(imageUrl, inspectorFront,
+                                                maxDim) {
     if (imageUrl.startsWith("data:")) {
       // If the imageUrl already is a data-url, save ourselves a round-trip
       this.setImageContent(imageUrl, {maxDim: maxDim});
     } else if (inspectorFront) {
       try {
-        let {data, size} = yield inspectorFront.getImageDataFromURL(imageUrl, maxDim);
+        let {data, size} = yield inspectorFront.getImageDataFromURL(imageUrl,
+                                                                    maxDim);
         size.maxDim = maxDim;
         let str = yield data.string();
         this.setImageContent(str, size);
@@ -710,12 +723,13 @@ Tooltip.prototype = {
           options.naturalHeight);
       } else {
         // If no dimensions were provided, load the image to get them
-        label.textContent = l10n.strings.GetStringFromName("previewTooltip.image.brokenImage");
+        label.textContent =
+          l10n.strings.GetStringFromName("previewTooltip.image.brokenImage");
         let imgObj = new this.doc.defaultView.Image();
         imgObj.src = imageUrl;
         imgObj.onload = () => {
           imgObj.onload = null;
-            label.textContent = this._getImageDimensionLabel(imgObj.naturalWidth,
+          label.textContent = this._getImageDimensionLabel(imgObj.naturalWidth,
               imgObj.naturalHeight);
         };
       }
@@ -729,29 +743,69 @@ Tooltip.prototype = {
   _getImageDimensionLabel: (w, h) => w + " \u00D7 " + h,
 
   /**
+   * Load a document into an iframe, and set the iframe
+   * to be the tooltip's content.
+   *
+   * Used by tooltips that want to load their interface
+   * into an iframe from a URL.
+   *
+   * @param {string} width
+   *        Width of the iframe.
+   * @param {string} height
+   *        Height of the iframe.
+   * @param {string} url
+   *        URL of the document to load into the iframe.
+   *
+   * @return {promise} A promise which is resolved with
+   * the iframe.
+   *
+   * This function creates an iframe, loads the specified document
+   * into it, sets the tooltip's content to the iframe, and returns
+   * a promise.
+   *
+   * When the document is loaded, the function gets the content window
+   * and resolves the promise with the content window.
+   */
+  setIFrameContent: function({width, height}, url) {
+    let def = promise.defer();
+
+    // Create an iframe
+    let iframe = this.doc.createElementNS(XHTML_NS, "iframe");
+    iframe.setAttribute("transparent", true);
+    iframe.setAttribute("width", width);
+    iframe.setAttribute("height", height);
+    iframe.setAttribute("flex", "1");
+    iframe.setAttribute("class", "devtools-tooltip-iframe");
+
+    // Wait for the load to initialize the widget
+    function onLoad() {
+      iframe.removeEventListener("load", onLoad, true);
+      def.resolve(iframe);
+    }
+    iframe.addEventListener("load", onLoad, true);
+
+    // load the document from url into the iframe
+    iframe.setAttribute("src", url);
+
+    // Put the iframe in the tooltip
+    this.content = iframe;
+
+    return def.promise;
+  },
+
+  /**
    * Fill the tooltip with a new instance of the spectrum color picker widget
    * initialized with the given color, and return a promise that resolves to
    * the instance of spectrum
    */
   setColorPickerContent: function(color) {
-    let def = promise.defer();
-
-    // Create an iframe to contain spectrum
-    let iframe = this.doc.createElementNS(XHTML_NS, "iframe");
-    iframe.setAttribute("transparent", true);
-    iframe.setAttribute("width", "210");
-    iframe.setAttribute("height", "216");
-    iframe.setAttribute("flex", "1");
-    iframe.setAttribute("class", "devtools-tooltip-iframe");
-
+    let dimensions = {width: "210", height: "216"};
     let panel = this.panel;
-    let xulWin = this.doc.ownerGlobal;
+    return this.setIFrameContent(dimensions, SPECTRUM_FRAME).then(onLoaded);
 
-    // Wait for the load to initialize spectrum
-    function onLoad() {
-      iframe.removeEventListener("load", onLoad, true);
+    function onLoaded(iframe) {
       let win = iframe.contentWindow.wrappedJSObject;
-
+      let def = promise.defer();
       let container = win.document.getElementById("spectrum");
       let spectrum = new Spectrum(container, color);
 
@@ -763,21 +817,14 @@ Tooltip.prototype = {
       // Finalize spectrum's init when the tooltip becomes visible
       if (panel.state == "open") {
         finalizeSpectrum();
-      }
-      else {
+      } else {
         panel.addEventListener("popupshown", function shown() {
           panel.removeEventListener("popupshown", shown, true);
           finalizeSpectrum();
         }, true);
       }
+      return def.promise;
     }
-    iframe.addEventListener("load", onLoad, true);
-    iframe.setAttribute("src", SPECTRUM_FRAME);
-
-    // Put the iframe in the tooltip
-    this.content = iframe;
-
-    return def.promise;
   },
 
   /**
@@ -786,24 +833,13 @@ Tooltip.prototype = {
    * the instance of the widget
    */
   setCubicBezierContent: function(bezier) {
-    let def = promise.defer();
-
-    // Create an iframe to host the cubic-bezier widget
-    let iframe = this.doc.createElementNS(XHTML_NS, "iframe");
-    iframe.setAttribute("transparent", true);
-    iframe.setAttribute("width", "200");
-    iframe.setAttribute("height", "415");
-    iframe.setAttribute("flex", "1");
-    iframe.setAttribute("class", "devtools-tooltip-iframe");
-
+    let dimensions = {width: "410", height: "360"};
     let panel = this.panel;
-    let xulWin = this.doc.ownerGlobal;
+    return this.setIFrameContent(dimensions, CUBIC_BEZIER_FRAME).then(onLoaded);
 
-    // Wait for the load to initialize the widget
-    function onLoad() {
-      iframe.removeEventListener("load", onLoad, true);
+    function onLoaded(iframe) {
       let win = iframe.contentWindow.wrappedJSObject;
-
+      let def = promise.defer();
       let container = win.document.getElementById("container");
       let widget = new CubicBezierWidget(container, bezier);
 
@@ -816,19 +852,45 @@ Tooltip.prototype = {
           def.resolve(widget);
         }, true);
       }
+      return def.promise;
     }
-    iframe.addEventListener("load", onLoad, true);
-    iframe.setAttribute("src", CUBIC_BEZIER_FRAME);
+  },
 
-    // Put the iframe in the tooltip
-    this.content = iframe;
+  /**
+   * Fill the tooltip with a new instance of the CSSFilterEditorWidget
+   * widget initialized with the given filter value, and return a promise
+   * that resolves to the instance of the widget when ready.
+   */
+  setFilterContent: function(filter) {
+    let dimensions = {width: "500", height: "200"};
+    let panel = this.panel;
 
-    return def.promise;
+    return this.setIFrameContent(dimensions, FILTER_FRAME).then(onLoaded);
+
+    function onLoaded(iframe) {
+      let win = iframe.contentWindow.wrappedJSObject;
+      let doc = win.document.documentElement;
+      let def = promise.defer();
+      let container = win.document.getElementById("container");
+      let widget = new CSSFilterEditorWidget(container, filter);
+
+      // Resolve to the widget instance whenever the popup becomes visible
+      if (panel.state === "open") {
+        def.resolve(widget);
+      } else {
+        panel.addEventListener("popupshown", function shown() {
+          panel.removeEventListener("popupshown", shown, true);
+          def.resolve(widget);
+        }, true);
+      }
+      return def.promise;
+    }
   },
 
   /**
    * Set the content of the tooltip to display a font family preview.
-   * This is based on Lea Verou's Dablet. See https://github.com/LeaVerou/dabblet
+   * This is based on Lea Verou's Dablet.
+   * See https://github.com/LeaVerou/dabblet
    * for more info.
    * @param {String} font The font family value.
    * @param {object} nodeFront
@@ -839,7 +901,7 @@ Tooltip.prototype = {
    */
   setFontFamilyContent: Task.async(function*(font, nodeFront) {
     if (!font || !nodeFront) {
-      throw "Missing font";
+      throw new Error("Missing font");
     }
 
     if (typeof nodeFront.getFontFamilyDataURL === "function") {
@@ -847,14 +909,41 @@ Tooltip.prototype = {
       font = font.replace("!important", "");
       font = font.trim();
 
-      let fillStyle = (Services.prefs.getCharPref("devtools.theme") === "light") ?
-        "black" : "white";
+      let fillStyle =
+          (Services.prefs.getCharPref("devtools.theme") === "light") ?
+          "black" : "white";
 
       let {data, size} = yield nodeFront.getFontFamilyDataURL(font, fillStyle);
       let str = yield data.string();
       this.setImageContent(str, { hideDimensionLabel: true, maxDim: size });
     }
-  })
+  }),
+
+  /**
+   * Set the content of this tooltip to the MDN docs widget.
+   *
+   * This is called when the tooltip is first constructed.
+   *
+   * @return {promise} A promise which is resolved with an MdnDocsWidget.
+   *
+   * It loads the tooltip's structure from a separate XHTML file
+   * into an iframe. When the iframe is loaded it constructs
+   * an MdnDocsWidget and passes that into resolve.
+   *
+   * The caller can use the MdnDocsWidget to update the tooltip's
+   * UI with new content each time the tooltip is shown.
+   */
+  setMdnDocsContent: function() {
+    let dimensions = {width: "410", height: "300"};
+    return this.setIFrameContent(dimensions, MDN_DOCS_FRAME).then(onLoaded);
+
+    function onLoaded(iframe) {
+      let win = iframe.contentWindow.wrappedJSObject;
+      // create an MdnDocsWidget, initializing it with the content document
+      let widget = new MdnDocsWidget(win.document);
+      return widget;
+    }
+  }
 };
 
 /**
@@ -903,7 +992,8 @@ SwatchBasedEditorTooltip.prototype = {
 
       // When the tooltip is closed by clicking outside the panel we want to
       // commit any changes. Because the "hidden" event destroys the tooltip we
-      // need to do this before the tooltip is destroyed (in the "hiding" event).
+      // need to do this before the tooltip is destroyed (in the "hiding"
+      // event).
       this.tooltip.once("hiding", () => {
         if (!this._reverted && !this.eyedropperOpen) {
           this.commit();
@@ -934,15 +1024,26 @@ SwatchBasedEditorTooltip.prototype = {
    * @param {object} callbacks
    *        Callbacks that will be executed when the editor wants to preview a
    *        value change, or revert a change, or commit a change.
-   *        - onPreview: will be called when one of the sub-classes calls preview
+   *        - onShow: will be called when one of the swatch tooltip is shown
+   *        - onPreview: will be called when one of the sub-classes calls
+   *        preview
    *        - onRevert: will be called when the user ESCapes out of the tooltip
    *        - onCommit: will be called when the user presses ENTER or clicks
    *        outside the tooltip.
    */
   addSwatch: function(swatchEl, callbacks={}) {
-    if (!callbacks.onPreview) callbacks.onPreview = function() {};
-    if (!callbacks.onRevert) callbacks.onRevert = function() {};
-    if (!callbacks.onCommit) callbacks.onCommit = function() {};
+    if (!callbacks.onShow) {
+      callbacks.onShow = function() {};
+    }
+    if (!callbacks.onPreview) {
+      callbacks.onPreview = function() {};
+    }
+    if (!callbacks.onRevert) {
+      callbacks.onRevert = function() {};
+    }
+    if (!callbacks.onCommit) {
+      callbacks.onCommit = function() {};
+    }
 
     this.swatches.set(swatchEl, {
       callbacks: callbacks
@@ -963,9 +1064,15 @@ SwatchBasedEditorTooltip.prototype = {
 
   _onSwatchClick: function(event) {
     let swatch = this.swatches.get(event.target);
+
+    if (event.shiftKey) {
+      event.stopPropagation();
+      return;
+    }
     if (swatch) {
       this.activeSwatch = event.target;
       this.show();
+      swatch.callbacks.onShow();
       event.stopPropagation();
     }
   },
@@ -1173,7 +1280,8 @@ EventTooltip.prototype = {
         let debuggerIcon = doc.createElement("image");
         debuggerIcon.className = "event-tooltip-debugger-icon";
         debuggerIcon.setAttribute("src", "chrome://browser/skin/devtools/tool-debugger.svg");
-        let openInDebugger = l10n.strings.GetStringFromName("eventsTooltip.openInDebugger");
+        let openInDebugger =
+            l10n.strings.GetStringFromName("eventsTooltip.openInDebugger");
         debuggerIcon.setAttribute("tooltiptext", openInDebugger);
         header.appendChild(debuggerIcon);
       }
@@ -1196,7 +1304,8 @@ EventTooltip.prototype = {
       }
 
       let attributesContainer = doc.createElement("hbox");
-      attributesContainer.setAttribute("class", "event-tooltip-attributes-container");
+      attributesContainer.setAttribute("class",
+                                       "event-tooltip-attributes-container");
       header.appendChild(attributesContainer);
 
       if (!listener.hide.capturing) {
@@ -1256,7 +1365,8 @@ EventTooltip.prototype = {
     }
 
     this._tooltip.content = container;
-    this._tooltip.panel.setAttribute("clamped-dimensions-no-max-or-min-height", "");
+    this._tooltip.panel.setAttribute("clamped-dimensions-no-max-or-min-height",
+                                     "");
     this._tooltip.panel.setAttribute("wide", "");
 
     this._tooltip.panel.addEventListener("popuphiding", () => {
@@ -1362,11 +1472,11 @@ EventTooltip.prototype = {
               // there is only one possible match in the file.
               if (index !== -1 && index === lastIndex) {
                 text = text.substr(0, index);
-                let matches = text.match(/\n/g);
+                let newlineMatches = text.match(/\n/g);
 
-                if (matches) {
+                if (newlineMatches) {
                   DebuggerView.editor.setCursor({
-                    line: matches.length
+                    line: newlineMatches.length
                   });
                 }
               }
@@ -1388,7 +1498,8 @@ EventTooltip.prototype = {
 
   destroy: function(container) {
     if (this._tooltip) {
-      this._tooltip.panel.removeEventListener("popuphiding", this.destroy, false);
+      this._tooltip.panel.removeEventListener("popuphiding", this.destroy,
+                                              false);
 
       let boxes = container.querySelectorAll(".event-tooltip-content-box");
 
@@ -1407,7 +1518,8 @@ EventTooltip.prototype = {
       node.removeEventListener("click", this._headerClicked);
     }
 
-    let sourceNodes = container.querySelectorAll(".event-tooltip-debugger-icon");
+    let sourceNodes =
+        container.querySelectorAll(".event-tooltip-debugger-icon");
     for (let node of sourceNodes) {
       node.removeEventListener("click", this._debugClicked);
     }
@@ -1442,12 +1554,11 @@ SwatchCubicBezierTooltip.prototype = Heritage.extend(SwatchBasedEditorTooltip.pr
    * bezier curve in the widget
    */
   show: function() {
-    // Call then parent class' show function
+    // Call the parent class' show function
     SwatchBasedEditorTooltip.prototype.show.call(this);
     // Then set the curve and listen to changes to preview them
     if (this.activeSwatch) {
       this.currentBezierValue = this.activeSwatch.nextSibling;
-      let swatch = this.swatches.get(this.activeSwatch);
       this.widget.then(widget => {
         widget.off("updated", this._onUpdate);
         widget.cssCubicBezierValue = this.currentBezierValue.textContent;
@@ -1476,12 +1587,134 @@ SwatchCubicBezierTooltip.prototype = Heritage.extend(SwatchBasedEditorTooltip.pr
 });
 
 /**
+ * Tooltip for displaying docs for CSS properties from MDN.
+ *
+ * @param {XULDocument} doc
+ */
+function CssDocsTooltip(doc) {
+  this.tooltip = new Tooltip(doc, {
+    consumeOutsideClick: true,
+    closeOnKeys: [ESCAPE_KEYCODE, RETURN_KEYCODE],
+    noAutoFocus: false
+  });
+  this.widget = this.tooltip.setMdnDocsContent();
+}
+
+module.exports.CssDocsTooltip = CssDocsTooltip;
+
+CssDocsTooltip.prototype = {
+  /**
+   * Load CSS docs for the given property,
+   * then display the tooltip.
+   */
+  show: function(anchor, propertyName) {
+    function loadCssDocs(widget) {
+      return widget.loadCssDocs(propertyName);
+    }
+
+    this.widget.then(loadCssDocs);
+    this.tooltip.show(anchor, "topcenter bottomleft");
+  },
+
+  hide: function() {
+    this.tooltip.hide();
+  },
+
+  destroy: function() {
+    this.tooltip.destroy();
+  }
+};
+
+/**
+ * The swatch-based css filter tooltip class is a specific class meant to be
+ * used along with rule-view's generated css filter swatches.
+ * It extends the parent SwatchBasedEditorTooltip class.
+ * It just wraps a standard Tooltip and sets its content with an instance of a
+ * CSSFilterEditorWidget.
+ *
+ * @param {XULDocument} doc
+ */
+function SwatchFilterTooltip(doc) {
+  SwatchBasedEditorTooltip.call(this, doc);
+
+  // Creating a filter editor instance.
+  // this.widget will always be a promise that resolves to the widget instance
+  this.widget = this.tooltip.setFilterContent("none");
+  this._onUpdate = this._onUpdate.bind(this);
+}
+
+exports.SwatchFilterTooltip = SwatchFilterTooltip;
+
+SwatchFilterTooltip.prototype = Heritage.extend(SwatchBasedEditorTooltip.prototype, {
+  show: function() {
+    // Call the parent class' show function
+    SwatchBasedEditorTooltip.prototype.show.call(this);
+    // Then set the filter value and listen to changes to preview them
+    if (this.activeSwatch) {
+      this.currentFilterValue = this.activeSwatch.nextSibling;
+      this.widget.then(widget => {
+        widget.off("updated", this._onUpdate);
+        widget.on("updated", this._onUpdate);
+        widget.setCssValue(this.currentFilterValue.textContent);
+        widget.render();
+      });
+    }
+  },
+
+  _onUpdate: function(event, filters) {
+    if (!this.activeSwatch) {
+      return;
+    }
+
+    // Remove the old children and reparse the property value to
+    // recompute them.
+    while (this.currentFilterValue.firstChild) {
+      this.currentFilterValue.firstChild.remove();
+    }
+    let node = this._parser.parseCssProperty("filter", filters, this._options);
+    this.currentFilterValue.appendChild(node);
+
+    this.preview();
+  },
+
+  destroy: function() {
+    SwatchBasedEditorTooltip.prototype.destroy.call(this);
+    this.currentFilterValue = null;
+    this.widget.then(widget => {
+      widget.off("updated", this._onUpdate);
+      widget.destroy();
+    });
+  },
+
+  /**
+   * Like SwatchBasedEditorTooltip.addSwatch, but accepts a parser object
+   * to use when previewing the updated property value.
+   *
+   * @param {node} swatchEl
+   *        @see SwatchBasedEditorTooltip.addSwatch
+   * @param {object} callbacks
+   *        @see SwatchBasedEditorTooltip.addSwatch
+   * @param {object} parser
+   *        A parser object; @see OutputParser object
+   * @param {object} options
+   *        options to pass to the output parser, with
+   *          the option |filterSwatch| set.
+   */
+  addSwatch: function(swatchEl, callbacks, parser, options) {
+    SwatchBasedEditorTooltip.prototype.addSwatch.call(this, swatchEl,
+                                                      callbacks);
+    this._parser = parser;
+    this._options = options;
+  }
+});
+
+/**
  * L10N utility class
  */
 function L10N() {}
 L10N.prototype = {};
 
-let l10n = new L10N();
+var l10n = new L10N();
 
 loader.lazyGetter(L10N.prototype, "strings", () => {
   return Services.strings.createBundle(

@@ -33,22 +33,25 @@
 #import <Cocoa/Cocoa.h>
 #import <AppKit/NSOpenGL.h>
 
-class gfxASurface;
 class nsChildView;
 class nsCocoaWindow;
 
 namespace {
 class GLPresenter;
 class RectTextureImage;
-}
+} // namespace
 
 namespace mozilla {
+class InputData;
+class PanGestureInput;
+class SwipeTracker;
+struct SwipeEventQueue;
 class VibrancyManager;
 namespace layers {
 class GLManager;
 class APZCTreeManager;
-}
-}
+} // namespace layers
+} // namespace mozilla
 
 @interface NSEvent (Undocumented)
 
@@ -240,7 +243,6 @@ typedef NSInteger NSEventGestureAxis;
 #ifdef __LP64__
   // Support for fluid swipe tracking.
   BOOL* mCancelSwipeAnimation;
-  uint32_t mCurrentSwipeDir;
 #endif
 
   // Whether this uses off-main-thread compositing.
@@ -263,7 +265,7 @@ typedef NSInteger NSEventGestureAxis;
 // Stop NSView hierarchy being changed during [ChildView drawRect:]
 - (void)delayedTearDown;
 
-- (void)sendFocusEvent:(uint32_t)eventType;
+- (void)sendFocusEvent:(mozilla::EventMessage)eventMessage;
 
 - (void)handleMouseMoved:(NSEvent*)aEvent;
 
@@ -279,6 +281,9 @@ typedef NSInteger NSEventGestureAxis;
 - (void)postRender:(NSOpenGLContext *)aGLContext;
 
 - (BOOL)isCoveringTitlebar;
+
+- (void)viewWillStartLiveResize;
+- (void)viewDidEndLiveResize;
 
 - (NSColor*)vibrancyFillColorForThemeGeometryType:(nsITheme::ThemeGeometryType)aThemeGeometryType;
 - (NSColor*)vibrancyFontSmoothingBackgroundColorForThemeGeometryType:(nsITheme::ThemeGeometryType)aThemeGeometryType;
@@ -305,14 +310,6 @@ typedef NSInteger NSEventGestureAxis;
 
 // Helper function for Lion smart magnify events
 + (BOOL)isLionSmartMagnifyEvent:(NSEvent*)anEvent;
-
-// Support for fluid swipe tracking.
-#ifdef __LP64__
-- (void)maybeTrackScrollEventAsSwipe:(NSEvent *)anEvent
-                     scrollOverflowX:(double)anOverflowX
-                     scrollOverflowY:(double)anOverflowY
-              viewPortIsOverscrolled:(BOOL)aViewPortIsOverscrolled;
-#endif
 
 - (void)setUsingOMTCompositor:(BOOL)aUseOMTC;
 
@@ -413,7 +410,7 @@ public:
   NS_IMETHOD              DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                                         nsEventStatus& aStatus) override;
 
-  virtual bool            ComputeShouldAccelerate(bool aDefault) override;
+  virtual bool            ComputeShouldAccelerate() override;
   virtual bool            ShouldUseOffMainThreadCompositing() override;
 
   NS_IMETHOD        SetCursor(nsCursor aCursor) override;
@@ -456,14 +453,25 @@ public:
                                             int32_t aNativeKeyCode,
                                             uint32_t aModifierFlags,
                                             const nsAString& aCharacters,
-                                            const nsAString& aUnmodifiedCharacters) override;
+                                            const nsAString& aUnmodifiedCharacters,
+                                            nsIObserver* aObserver) override;
 
   virtual nsresult SynthesizeNativeMouseEvent(mozilla::LayoutDeviceIntPoint aPoint,
                                               uint32_t aNativeMessage,
-                                              uint32_t aModifierFlags) override;
+                                              uint32_t aModifierFlags,
+                                              nsIObserver* aObserver) override;
 
-  virtual nsresult SynthesizeNativeMouseMove(mozilla::LayoutDeviceIntPoint aPoint) override
-  { return SynthesizeNativeMouseEvent(aPoint, NSMouseMoved, 0); }
+  virtual nsresult SynthesizeNativeMouseMove(mozilla::LayoutDeviceIntPoint aPoint,
+                                             nsIObserver* aObserver) override
+  { return SynthesizeNativeMouseEvent(aPoint, NSMouseMoved, 0, aObserver); }
+  virtual nsresult SynthesizeNativeMouseScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
+                                                    uint32_t aNativeMessage,
+                                                    double aDeltaX,
+                                                    double aDeltaY,
+                                                    double aDeltaZ,
+                                                    uint32_t aModifierFlags,
+                                                    uint32_t aAdditionalFlags,
+                                                    nsIObserver* aObserver) override;
 
   // Mac specific methods
   
@@ -487,6 +495,8 @@ public:
 
   virtual void UpdateWindowDraggingRegion(const nsIntRegion& aRegion) override;
   const nsIntRegion& GetDraggableRegion() { return mDraggableRegion; }
+
+  virtual void ReportSwipeStarted(uint64_t aInputBlockId, bool aStartSwipe) override;
 
   void              ResetParent();
 
@@ -526,9 +536,10 @@ public:
     return nsCocoaUtils::DevPixelsToCocoaPoints(aRect, BackingScaleFactor());
   }
 
-  mozilla::TemporaryRef<mozilla::gfx::DrawTarget> StartRemoteDrawing() override;
+  already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawing() override;
   void EndRemoteDrawing() override;
   void CleanupRemoteDrawing() override;
+  bool InitCompositor(mozilla::layers::Compositor* aCompositor) override;
 
   APZCTreeManager* APZCTM() { return mAPZC ; }
 
@@ -536,9 +547,15 @@ public:
                             int32_t aPanelX, int32_t aPanelY,
                             nsString& aCommitted) override;
 
-  NS_IMETHOD SetPluginFocused(bool& aFocused);
+  NS_IMETHOD SetPluginFocused(bool& aFocused) override;
 
   bool IsPluginFocused() { return mPluginFocused; }
+
+  virtual nsIntPoint GetClientOffset() override;
+
+  void DispatchAPZWheelInputEvent(mozilla::InputData& aEvent, bool aCanTriggerSwipe);
+
+  void SwipeFinished();
 
 protected:
   virtual ~nsChildView();
@@ -560,6 +577,7 @@ protected:
   }
 
   void ConfigureAPZCTreeManager() override;
+  void ConfigureAPZControllerThread() override;
 
   void DoRemoteComposition(const nsIntRect& aRenderRect);
 
@@ -581,6 +599,15 @@ protected:
 
   virtual nsresult NotifyIMEInternal(
                      const IMENotification& aIMENotification) override;
+
+  struct SwipeInfo {
+    bool wantsSwipe;
+    uint32_t allowedDirections;
+  };
+
+  SwipeInfo SendMayStartSwipe(const mozilla::PanGestureInput& aSwipeStartEvent);
+  void TrackScrollEventAsSwipe(const mozilla::PanGestureInput& aSwipeStartEvent,
+                               uint32_t aAllowedDirections);
 
 protected:
 
@@ -647,6 +674,16 @@ protected:
   nsAutoPtr<GLPresenter> mGLPresenter;
 
   mozilla::UniquePtr<mozilla::VibrancyManager> mVibrancyManager;
+  nsRefPtr<mozilla::SwipeTracker> mSwipeTracker;
+  mozilla::UniquePtr<mozilla::SwipeEventQueue> mSwipeEventQueue;
+
+  // This flag is only used when APZ is off. It indicates that the current pan
+  // gesture was processed as a swipe. Sometimes the swipe animation can finish
+  // before momentum events of the pan gesture have stopped firing, so this
+  // flag tells us that we shouldn't allow the remaining events to cause
+  // scrolling. It is reset to false once a new gesture starts (as indicated by
+  // a PANGESTURE_(MAY)START event).
+  bool mCurrentPanGestureBelongsToSwipe;
 
   static uint32_t sLastInputEventCount;
 

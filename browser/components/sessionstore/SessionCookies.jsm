@@ -30,13 +30,17 @@ this.SessionCookies = Object.freeze({
 
   getHostsForWindow: function (window, checkPrivacy = false) {
     return SessionCookiesInternal.getHostsForWindow(window, checkPrivacy);
+  },
+
+  restore(cookies) {
+    SessionCookiesInternal.restore(cookies);
   }
 });
 
 /**
  * The internal API.
  */
-let SessionCookiesInternal = {
+var SessionCookiesInternal = {
   /**
    * Stores whether we're initialized, yet.
    */
@@ -105,6 +109,18 @@ let SessionCookiesInternal = {
     }
 
     return hosts;
+  },
+
+  /**
+   * Restores a given list of session cookies.
+   */
+  restore(cookies) {
+    for (let cookie of cookies) {
+      let expiry = "expiry" in cookie ? cookie.expiry : MAX_EXPIRY;
+      Services.cookies.add(cookie.host, cookie.path || "", cookie.name || "",
+                           cookie.value, !!cookie.secure, !!cookie.httponly,
+                           /* isSession = */ true, expiry);
+    }
   },
 
   /**
@@ -298,7 +314,7 @@ function* getPossibleSubdomainVariants(host) {
  * The internal cookie storage that keeps track of every active session cookie.
  * These are stored using maps per host, path, and cookie name.
  */
-let CookieStore = {
+var CookieStore = {
   /**
    * The internal structure holding all known cookies.
    *

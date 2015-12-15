@@ -15,7 +15,7 @@
 #include "mozilla/Attributes.h"
 
 class nsXREDirProvider final : public nsIDirectoryServiceProvider2,
-                                   public nsIProfileStartup
+                               public nsIProfileStartup
 {
 public:
   // we use a custom isupports implementation (no refcount)
@@ -127,8 +127,10 @@ protected:
   // Calculate and register extension and theme bundle directories.
   void LoadExtensionBundleDirectories();
 
+#ifdef MOZ_B2G
   // Calculate and register app-bundled extension directories.
   void LoadAppBundleDirs();
+#endif
 
   void Append(nsIFile* aDirectory);
 

@@ -11,14 +11,14 @@
 // * it does a sanity check to ensure other cert verifier behavior is
 //   unmodified
 
-let { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
+var { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
 
 // First, we need to setup appInfo for the blocklist service to work
-let id = "xpcshell@tests.mozilla.org";
-let appName = "XPCShell";
-let version = "1";
-let platformVersion = "1.9.2";
-let appInfo = {
+var id = "xpcshell@tests.mozilla.org";
+var appName = "XPCShell";
+var version = "1";
+var platformVersion = "1.9.2";
+var appInfo = {
   // nsIXULAppInfo
   vendor: "Mozilla",
   name: appName,
@@ -50,7 +50,7 @@ let appInfo = {
                                          Ci.nsISupports])
 };
 
-let XULAppInfoFactory = {
+var XULAppInfoFactory = {
   createInstance: function (outer, iid) {
     appInfo.QueryInterface(iid);
     if (outer != null) {
@@ -60,7 +60,7 @@ let XULAppInfoFactory = {
   }
 };
 
-let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
+var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 const XULAPPINFO_CONTRACTID = "@mozilla.org/xre/app-info;1";
 const XULAPPINFO_CID = Components.ID("{c763b610-9d49-455a-bbd2-ede71682a1ac}");
 registrar.registerFactory(XULAPPINFO_CID, "XULAppInfo",
@@ -68,21 +68,21 @@ registrar.registerFactory(XULAPPINFO_CID, "XULAppInfo",
 
 // we need to ensure we setup revocation data before certDB, or we'll start with
 // no revocation.txt in the profile
-let profile = do_get_profile();
-let revocations = profile.clone();
+var profile = do_get_profile();
+var revocations = profile.clone();
 revocations.append("revocations.txt");
 if (!revocations.exists()) {
   let existing = do_get_file("test_onecrl/sample_revocations.txt", false);
   existing.copyTo(profile,"revocations.txt");
 }
 
-let certDB = Cc["@mozilla.org/security/x509certdb;1"]
+var certDB = Cc["@mozilla.org/security/x509certdb;1"]
                .getService(Ci.nsIX509CertDB);
 
 // set up a test server to serve the blocklist.xml
-let testserver = new HttpServer();
+var testserver = new HttpServer();
 
-let blocklist_contents =
+var blocklist_contents =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
     "<blocklist xmlns=\"http://www.mozilla.org/2006/addons-blocklist\">" +
     // test with some bad data ...
@@ -113,6 +113,8 @@ let blocklist_contents =
     "<certItem issuerName='YW5vdGhlciBpbWFnaW5hcnkgaXNzdWVy'>" +
     "<serialNumber>c2VyaWFsMi4=</serialNumber>" +
     "<serialNumber>YW5vdGhlciBzZXJpYWwu</serialNumber>" +
+    "</certItem><certItem subject='MCIxIDAeBgNVBAMTF0Fub3RoZXIgVGVzdCBFbmQtZW50aXR5'"+
+    " pubKeyHash='2ETEb0QP574JkM+35JVwS899PLUmt1rrJyWOV6GRfAE='>" +
     "</certItem></certItems></blocklist>";
 testserver.registerPathHandler("/push_blocked_cert/",
   function serveResponse(request, response) {
@@ -121,23 +123,22 @@ testserver.registerPathHandler("/push_blocked_cert/",
 
 // start the test server
 testserver.start(-1);
-let port = testserver.identity.primaryPort;
+var port = testserver.identity.primaryPort;
 
 // Setup the addonManager
-let addonManager = Cc["@mozilla.org/addons/integration;1"]
+var addonManager = Cc["@mozilla.org/addons/integration;1"]
                      .getService(Ci.nsIObserver)
                      .QueryInterface(Ci.nsITimerCallback);
 addonManager.observe(null, "addons-startup", null);
 
-let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
                   .createInstance(Ci.nsIScriptableUnicodeConverter);
 converter.charset = "UTF-8";
 
 function verify_cert(file, expectedError) {
   let cert_der = readFile(do_get_file(file));
   let ee = certDB.constructX509(cert_der, cert_der.length);
-  equal(expectedError, certDB.verifyCertNow(ee, certificateUsageSSLServer,
-                                            NO_FLAGS, {}, {}));
+  checkCertErrorGeneric(certDB, ee, expectedError, certificateUsageSSLServer);
 }
 
 function load_cert(cert, trust) {
@@ -145,13 +146,28 @@ function load_cert(cert, trust) {
   addCertFromFile(certDB, file, trust);
 }
 
-function test_is_revoked(certList, issuerString, serialString) {
-  let issuer = converter.convertToByteArray(issuerString, {});
-  let serial = converter.convertToByteArray(serialString, {});
+function test_is_revoked(certList, issuerString, serialString, subjectString,
+                         pubKeyString) {
+  let issuer = converter.convertToByteArray(issuerString ? issuerString : '',
+                                            {});
+
+  let serial = converter.convertToByteArray(serialString ? serialString : '',
+                                            {});
+
+  let subject = converter.convertToByteArray(subjectString ? subjectString : '',
+                                             {});
+
+  let pubKey = converter.convertToByteArray(pubKeyString ? pubKeyString : '',
+                                            {});
+
   return certList.isCertRevoked(issuer,
-                                issuerString.length,
+                                issuerString ? issuerString.length : 0,
                                 serial,
-                                serialString.length);
+                                serialString ? serialString.length : 0,
+                                subject,
+                                subjectString ? subjectString.length : 0,
+                                pubKey,
+                                pubKeyString ? pubKeyString.length : 0);
 }
 
 function run_test() {
@@ -189,12 +205,17 @@ function run_test() {
   // test-int-ee.der.
   // Check the cert validates before we load the blocklist
   let file = "tlsserver/test-int-ee.der";
-  verify_cert(file, Cr.NS_OK);
+  verify_cert(file, PRErrorCodeSuccess);
 
   // The blocklist also revokes other-test-ca.der, which issued other-ca-ee.der.
   // Check the cert validates before we load the blocklist
-  file = "tlsserver/default-ee.der";
-  verify_cert(file, Cr.NS_OK);
+  file = "tlsserver/other-issuer-ee.der";
+  verify_cert(file, PRErrorCodeSuccess);
+
+  // The blocklist will revoke same-issuer-ee.der via subject / pubKeyHash.
+  // Check the cert validates before we load the blocklist
+  file = "tlsserver/same-issuer-ee.der";
+  verify_cert(file, PRErrorCodeSuccess);
 
   // blocklist load is async so we must use add_test from here
   add_test(function() {
@@ -227,6 +248,11 @@ function run_test() {
     ok(test_is_revoked(certList, "another imaginary issuer", "another serial."),
        "issuer / serial pair should be blocked");
 
+    // test a subject / pubKey revocation
+    ok(test_is_revoked(certList, "nonsense", "more nonsense",
+       "some imaginary subject", "some imaginary pubkey"),
+       "issuer / serial pair should be blocked");
+
     // Check the blocklist entry has been persisted properly to the backing
     // file
     let profile = do_get_profile();
@@ -245,6 +271,8 @@ function run_test() {
       contents = contents + (contents.length == 0 ? "" : "\n") + line.value;
     } while (hasmore);
     let expected = "# Auto generated contents. Do not edit.\n" +
+                  "MCIxIDAeBgNVBAMTF0Fub3RoZXIgVGVzdCBFbmQtZW50aXR5\n"+
+                  "\t2ETEb0QP574JkM+35JVwS899PLUmt1rrJyWOV6GRfAE=\n"+
                   "MBgxFjAUBgNVBAMTDU90aGVyIHRlc3QgQ0E=\n" +
                   " AKEIivg=\n" +
                   "MBIxEDAOBgNVBAMTB1Rlc3QgQ0E=\n" +
@@ -262,9 +290,13 @@ function run_test() {
     file = "tlsserver/other-issuer-ee.der";
     verify_cert(file, SEC_ERROR_REVOKED_CERTIFICATE);
 
+    // Check the ee blocked by subject / pubKey causes a failure
+    file = "tlsserver/same-issuer-ee.der";
+    verify_cert(file, SEC_ERROR_REVOKED_CERTIFICATE);
+
     // Check a non-blocklisted chain still validates OK
     file = "tlsserver/default-ee.der";
-    verify_cert(file, Cr.NS_OK);
+    verify_cert(file, PRErrorCodeSuccess);
 
     // Check a bad cert is still bad (unknown issuer)
     file = "tlsserver/unknown-issuer.der";
@@ -273,7 +305,8 @@ function run_test() {
     // check that save with no further update is a no-op
     let lastModified = revocations.lastModifiedTime;
     // add an already existing entry
-    certList.addRevokedCert("YW5vdGhlciBpbWFnaW5hcnkgaXNzdWVy","c2VyaWFsMi4=");
+    certList.revokeCertByIssuerAndSerial("YW5vdGhlciBpbWFnaW5hcnkgaXNzdWVy",
+                                         "c2VyaWFsMi4=");
     certList.saveEntries();
     let newModified = revocations.lastModifiedTime;
     equal(lastModified, newModified,

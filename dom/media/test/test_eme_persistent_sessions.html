@@ -74,7 +74,6 @@ function startTest(test, token)
       onsessionupdated: function(session) {
         Log(token, "Session created");
         var sessionId;
-        initialSession = session;
 
         // Once the session has loaded and has all its keys usable, close
         // all sessions without calling remove() on them.
@@ -87,7 +86,7 @@ function startTest(test, token)
 
         // Once the session is closed, reload the MediaKeys and reload the session
         .then(function() {
-          return navigator.requestMediaKeySystemAccess(KEYSYSTEM_TYPE);
+          return navigator.requestMediaKeySystemAccess(KEYSYSTEM_TYPE, [{initDataTypes:["cenc"]}]);
         })
 
         .then(function(requestedKeySystemAccess) {
@@ -147,27 +146,20 @@ function startTest(test, token)
     }
   );
 
-  PlayFragmented(test, v, token);
+  LoadTestWithManagedLoadToken(test, v, manager, token,
+                               { onlyLoadFirstFragments:2, noEndOfStream:false });
 }
 
 function beginTest() {
-  manager.runTests(gEMETests, startTest);
+  manager.runTests(gEMETests.filter(t => t.sessionCount === 1), startTest);
 }
 
-var prefs = [
-  [ "media.mediasource.enabled", true ],
-  [ "media.mediasource.mp4.enabled", true ],
-];
-
-if (/Linux/.test(navigator.userAgent) ||
-    !document.createElement('video').canPlayType("video/mp4")) {
-  // XXX remove once we have mp4 PlatformDecoderModules on all platforms.
-  prefs.push([ "media.fragmented-mp4.exposed", true ]);
-  prefs.push([ "media.fragmented-mp4.use-blank-decoder", true ]);
+if (!IsMacOSSnowLeopardOrEarlier()) {
+  SimpleTest.waitForExplicitFinish();
+  SetupEMEPref(beginTest);
+} else {
+  todo(false, "Test disabled on this platform.");
 }
-
-SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPrefEnv({ "set" : prefs }, beginTest);
 </script>
 </pre>
 </body>

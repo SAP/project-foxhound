@@ -5,7 +5,7 @@
  * Tests that the frontend UI is properly reconfigured after reloading.
  */
 
-function ifTestingSupported() {
+function* ifTestingSupported() {
   let { target, panel } = yield initCanvasDebuggerFrontend(SIMPLE_CANVAS_URL);
   let { window, $, EVENTS } = panel.panelWin;
 
@@ -39,8 +39,8 @@ function ifTestingSupported() {
     "The reload notice should now be hidden.");
   is($("#empty-notice").hasAttribute("hidden"), false,
     "The empty notice should now be visible.");
-  is($("#import-notice").getAttribute("hidden"), "true",
-    "The import notice should now be hidden.");
+  is($("#waiting-notice").getAttribute("hidden"), "true",
+    "The waiting notice should now be hidden.");
 
   is($("#snapshot-filmstrip").getAttribute("hidden"), "true",
     "The snapshot filmstrip should still be hidden.");

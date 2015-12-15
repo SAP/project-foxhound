@@ -31,6 +31,7 @@ function* testButton(toolbox, Telemetry) {
   ok(button, "Captain, we have the button");
 
   yield delayedClicks(button, 4);
+
   checkResults("_RESPONSIVE_", Telemetry);
 }
 
@@ -41,14 +42,17 @@ function delayedClicks(node, clicks) {
     // See TOOL_DELAY for why we need setTimeout here
     setTimeout(function delayedClick() {
       info("Clicking button " + node.id);
-      node.click();
-      clicked++;
-
       if (clicked >= clicks) {
-        resolve(node);
+        node.addEventListener("click", function listener() {
+          node.removeEventListener("click", listener);
+          resolve();
+        });
       } else {
         setTimeout(delayedClick, TOOL_DELAY);
       }
+
+      node.click();
+      clicked++;
     }, TOOL_DELAY);
   });
 }
@@ -58,7 +62,7 @@ function checkResults(histIdFocus, Telemetry) {
 
   for (let [histId, value] of Iterator(result)) {
     if (histId.startsWith("DEVTOOLS_INSPECTOR_") ||
-        !histId.contains(histIdFocus)) {
+        !histId.includes(histIdFocus)) {
       // Inspector stats are tested in
       // browser_telemetry_toolboxtabs_{toolname}.js so we skip them here
       // because we only open the inspector once for this test.

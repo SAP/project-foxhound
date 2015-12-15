@@ -7,6 +7,7 @@
 #ifndef SelectionCarets_h__
 #define SelectionCarets_h__
 
+#include "nsDirection.h"
 #include "nsIReflowObserver.h"
 #include "nsIScrollObserver.h"
 #include "nsISelectionListener.h"
@@ -17,22 +18,17 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/WeakPtr.h"
 
-class nsCanvasFrame;
 class nsDocShell;
 class nsFrameSelection;
 class nsIContent;
-class nsIDocument;
-class nsIFrame;
 class nsIPresShell;
 class nsITimer;
-class nsIWidget;
-class nsPresContext;
 
 namespace mozilla {
 
 namespace dom {
 class Selection;
-}
+} // namespace dom
 
 /**
  * The SelectionCarets draw a pair of carets when the selection is not
@@ -56,9 +52,9 @@ class Selection;
  *          caret becomes tilt.
  */
 class SelectionCarets final : public nsIReflowObserver,
-                                  public nsISelectionListener,
-                                  public nsIScrollObserver,
-                                  public nsSupportsWeakReference
+                              public nsISelectionListener,
+                              public nsIScrollObserver,
+                              public nsSupportsWeakReference
 {
 public:
   /**
@@ -83,8 +79,8 @@ public:
   virtual void ScrollPositionChanged() override;
 
   // AsyncPanZoom started/stopped callbacks from nsIScrollObserver
-  virtual void AsyncPanZoomStarted(const mozilla::CSSIntPoint aScrollPos) override;
-  virtual void AsyncPanZoomStopped(const mozilla::CSSIntPoint aScrollPos) override;
+  virtual void AsyncPanZoomStarted() override;
+  virtual void AsyncPanZoomStopped() override;
 
   void Init();
   void Terminate();
@@ -105,11 +101,6 @@ public:
     return sSelectionCaretsInflateSize;
   }
 
-private:
-  virtual ~SelectionCarets();
-
-  SelectionCarets() = delete;
-
   /**
    * Set visibility for selection caret.
    */
@@ -119,6 +110,11 @@ private:
    * Update selection caret position base on current selection range.
    */
   void UpdateSelectionCarets();
+
+private:
+  virtual ~SelectionCarets();
+
+  SelectionCarets() = delete;
 
   /**
    * Select a word base on current position, which activates only if element is
@@ -143,19 +139,19 @@ private:
    */
   void SetSelectionDragState(bool aState);
 
-  void SetSelectionDirection(bool aForward);
+  void SetSelectionDirection(nsDirection aDir);
 
   /**
-   * Move start frame of selection caret to given position.
+   * Move start frame of selection caret based on current caret pos.
    * In app units.
    */
-  void SetStartFramePos(const nsPoint& aPosition);
+  void SetStartFramePos(const nsRect& aCaretRect);
 
   /**
-   * Move end frame of selection caret to given position.
+   * Move end frame of selection caret based on current caret pos.
    * In app units.
    */
-  void SetEndFramePos(const nsPoint& aPosition);
+  void SetEndFramePos(const nsRect& aCaretRect);
 
   /**
    * Check if aPosition is on the start or end frame of the
@@ -258,8 +254,8 @@ private:
 
   DragMode mDragMode;
 
-  // True if AsyncPanZoom is enabled
-  bool mAsyncPanZoomEnabled;
+  // True if async-pan-zoom should be used for selection carets.
+  bool mUseAsyncPanZoom;
   // True if AsyncPanZoom is started
   bool mInAsyncPanZoomGesture;
 
@@ -270,7 +266,14 @@ private:
 
   // Preference
   static int32_t sSelectionCaretsInflateSize;
+  static bool sSelectionCaretDetectsLongTap;
+  static bool sCaretManagesAndroidActionbar;
+  static bool sSelectionCaretObservesCompositions;
+
+  // Unique ID of current Mobile ActionBar view.
+  uint32_t mActionBarViewID;
 };
+
 } // namespace mozilla
 
 #endif //SelectionCarets_h__

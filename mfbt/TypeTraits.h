@@ -162,21 +162,34 @@ template<typename T>
 struct IsArray : detail::IsArrayHelper<typename RemoveCV<T>::Type>
 {};
 
+namespace detail {
+
+template<typename T>
+struct IsPointerHelper : FalseType {};
+
+template<typename T>
+struct IsPointerHelper<T*> : TrueType {};
+
+} // namespace detail
+
 /**
- * IsPointer determines whether a type is a pointer type (but not a pointer-to-
- * member type).
+ * IsPointer determines whether a type is a possibly-CV-qualified pointer type
+ * (but not a pointer-to-member type).
  *
  * mozilla::IsPointer<struct S*>::value is true;
+ * mozilla::IsPointer<int*>::value is true;
  * mozilla::IsPointer<int**>::value is true;
+ * mozilla::IsPointer<const int*>::value is true;
+ * mozilla::IsPointer<int* const>::value is true;
+ * mozilla::IsPointer<int* volatile>::value is true;
  * mozilla::IsPointer<void (*)(void)>::value is true;
  * mozilla::IsPointer<int>::value is false;
  * mozilla::IsPointer<struct S>::value is false.
+ * mozilla::IsPointer<int(struct S::*)>::value is false
  */
 template<typename T>
-struct IsPointer : FalseType {};
-
-template<typename T>
-struct IsPointer<T*> : TrueType {};
+struct IsPointer : detail::IsPointerHelper<typename RemoveCV<T>::Type>
+{};
 
 /**
  * IsLvalueReference determines whether a type is an lvalue reference.
@@ -624,10 +637,29 @@ public:
  * For obscure reasons, you can't use IsConvertible when the types being tested
  * are related through private inheritance, and you'll get a compile error if
  * you try.  Just don't do it!
+ *
+ * Note - we need special handling for void, which ConvertibleTester doesn't
+ * handle. The void handling here doesn't handle const/volatile void correctly,
+ * which could be easily fixed if the need arises.
  */
 template<typename From, typename To>
 struct IsConvertible
   : IntegralConstant<bool, detail::ConvertibleTester<From, To>::value>
+{};
+
+template<typename B>
+struct IsConvertible<void, B>
+  : IntegralConstant<bool, IsVoid<B>::value>
+{};
+
+template<typename A>
+struct IsConvertible<A, void>
+  : IntegralConstant<bool, IsVoid<A>::value>
+{};
+
+template<>
+struct IsConvertible<void, void>
+  : TrueType
 {};
 
 /* 20.9.7 Transformations between types [meta.trans] */
@@ -742,8 +774,8 @@ struct AddLvalueReferenceHelper<T, TIsNotVoid>
 
 /**
  * AddLvalueReference adds an lvalue & reference to T if one isn't already
- * present.  (Note: adding an lvalue reference to an rvalue && reference in
- * essence replaces the && with a &&, per C+11 reference collapsing rules.  For
+ * present. (Note: adding an lvalue reference to an rvalue && reference in
+ * essence replaces the && with a &&, per C+11 reference collapsing rules. For
  * example, int&& would become int&.)
  *
  * The final computed type will only *not* be an lvalue reference if T is void.
@@ -758,6 +790,56 @@ template<typename T>
 struct AddLvalueReference
   : detail::AddLvalueReferenceHelper<T>
 {};
+
+namespace detail {
+
+template<typename T, Voidness V = IsVoid<T>::value ? TIsVoid : TIsNotVoid>
+struct AddRvalueReferenceHelper;
+
+template<typename T>
+struct AddRvalueReferenceHelper<T, TIsVoid>
+{
+  typedef void Type;
+};
+
+template<typename T>
+struct AddRvalueReferenceHelper<T, TIsNotVoid>
+{
+  typedef T&& Type;
+};
+
+} // namespace detail
+
+/**
+ * AddRvalueReference adds an rvalue && reference to T if one isn't already
+ * present. (Note: adding an rvalue reference to an lvalue & reference in
+ * essence keeps the &, per C+11 reference collapsing rules. For example,
+ * int& would remain int&.)
+ *
+ * The final computed type will only *not* be a reference if T is void.
+ *
+ * mozilla::AddRvalueReference<int>::Type is int&&;
+ * mozilla::AddRvalueRference<volatile int&>::Type is volatile int&;
+ * mozilla::AddRvalueRference<const int&&>::Type is const int&&;
+ * mozilla::AddRvalueReference<void*>::Type is void*&&;
+ * mozilla::AddRvalueReference<void>::Type is void;
+ * mozilla::AddRvalueReference<struct S&>::Type is struct S&.
+ */
+template<typename T>
+struct AddRvalueReference
+  : detail::AddRvalueReferenceHelper<T>
+{};
+
+/* 20.2.4 Function template declval [declval] */
+
+/**
+ * DeclVal simplifies the definition of expressions which occur as unevaluated
+ * operands. It converts T to a reference type, making it possible to use in
+ * decltype expressions even if T does not have a default constructor, e.g.:
+ * decltype(DeclVal<TWithNoDefaultConstructor>().foo())
+ */
+template<typename T>
+typename AddRvalueReference<T>::Type DeclVal();
 
 /* 20.9.7.3 Sign modifications [meta.trans.sign] */
 
@@ -944,6 +1026,42 @@ struct RemoveExtent<T[N]>
 };
 
 /* 20.9.7.5 Pointer modifications [meta.trans.ptr] */
+
+namespace detail {
+
+template<typename T, typename CVRemoved>
+struct RemovePointerHelper
+{
+  typedef T Type;
+};
+
+template<typename T, typename Pointee>
+struct RemovePointerHelper<T, Pointee*>
+{
+  typedef Pointee Type;
+};
+
+} // namespace detail
+
+/**
+ * Produces the pointed-to type if a pointer is provided, else returns the input
+ * type.  Note that this does not dereference pointer-to-member pointers.
+ *
+ * struct S { bool m; void f(); };
+ * mozilla::RemovePointer<int>::Type is int;
+ * mozilla::RemovePointer<int*>::Type is int;
+ * mozilla::RemovePointer<int* const>::Type is int;
+ * mozilla::RemovePointer<int* volatile>::Type is int;
+ * mozilla::RemovePointer<const long*>::Type is const long;
+ * mozilla::RemovePointer<void* const>::Type is void;
+ * mozilla::RemovePointer<void (S::*)()>::Type is void (S::*)();
+ * mozilla::RemovePointer<void (*)()>::Type is void();
+ * mozilla::RemovePointer<bool S::*>::Type is bool S::*.
+ */
+template<typename T>
+struct RemovePointer
+  : detail::RemovePointerHelper<T, typename RemoveCV<T>::Type>
+{};
 
 /* 20.9.7.6 Other transformations [meta.trans.other] */
 

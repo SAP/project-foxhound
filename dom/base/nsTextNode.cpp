@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +29,7 @@ using namespace mozilla::dom;
  * class used to implement attr() generated content
  */
 class nsAttributeTextNode final : public nsTextNode,
-                                      public nsStubMutationObserver
+                                  public nsStubMutationObserver
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -100,9 +101,9 @@ NS_IMPL_ISUPPORTS_INHERITED(nsTextNode, nsGenericDOMDataNode, nsIDOMNode,
                             nsIDOMText, nsIDOMCharacterData)
 
 JSObject*
-nsTextNode::WrapNode(JSContext *aCx)
+nsTextNode::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return TextBinding::Wrap(aCx, this);
+  return TextBinding::Wrap(aCx, this, aGivenProto);
 }
 
 bool
@@ -149,7 +150,7 @@ nsTextNode::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 
 void nsTextNode::UnbindFromTree(bool aDeep, bool aNullParent)
 {
-  ResetDirectionSetByTextNode(this, aNullParent);
+  ResetDirectionSetByTextNode(this);
 
   nsGenericDOMDataNode::UnbindFromTree(aDeep, aNullParent);
 }
@@ -267,7 +268,8 @@ nsAttributeTextNode::AttributeChanged(nsIDocument* aDocument,
                                       Element* aElement,
                                       int32_t aNameSpaceID,
                                       nsIAtom* aAttribute,
-                                      int32_t aModType)
+                                      int32_t aModType,
+                                      const nsAttrValue* aOldValue)
 {
   if (aNameSpaceID == mNameSpaceID && aAttribute == mAttrName &&
       aElement == mGrandparent) {

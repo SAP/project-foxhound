@@ -156,7 +156,7 @@ class BitSet::Iterator
     inline bool more() const {
         return word_ < set_.numWords();
     }
-    inline operator bool() const {
+    explicit operator bool() const {
         return more();
     }
 
@@ -176,7 +176,7 @@ class BitSet::Iterator
     }
 };
 
-}
-}
+} // namespace jit
+} // namespace js
 
 #endif /* jit_BitSet_h */

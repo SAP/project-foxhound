@@ -6,12 +6,15 @@
 #include "mozilla/layers/APZThreadUtils.h"
 
 #include "mozilla/layers/Compositor.h"
+#ifdef MOZ_ANDROID_APZ
+#include "AndroidBridge.h"
+#endif
 
 namespace mozilla {
 namespace layers {
 
 static bool sThreadAssertionsEnabled = true;
-static PRThread* sControllerThread;
+static MessageLoop* sControllerThread;
 
 /*static*/ void
 APZThreadUtils::SetThreadAssertionsEnabled(bool aEnabled) {
@@ -24,21 +27,21 @@ APZThreadUtils::GetThreadAssertionsEnabled() {
 }
 
 /*static*/ void
+APZThreadUtils::SetControllerThread(MessageLoop* aLoop)
+{
+  // We must either be setting the initial controller thread, or removing it,
+  // or re-using an existing controller thread.
+  MOZ_ASSERT(!sControllerThread || !aLoop || sControllerThread == aLoop);
+  sControllerThread = aLoop;
+}
+
+/*static*/ void
 APZThreadUtils::AssertOnControllerThread() {
   if (!GetThreadAssertionsEnabled()) {
     return;
   }
 
-  static bool sControllerThreadDetermined = false;
-  if (!sControllerThreadDetermined) {
-    // Technically this may not actually pick up the correct controller thread,
-    // if the first call to this method happens from a non-controller thread.
-    // If the assertion below fires, it is possible that it is because
-    // sControllerThread is not actually the controller thread.
-    sControllerThread = PR_GetCurrentThread();
-    sControllerThreadDetermined = true;
-  }
-  MOZ_ASSERT(sControllerThread == PR_GetCurrentThread());
+  MOZ_ASSERT(sControllerThread == MessageLoop::current());
 }
 
 /*static*/ void
@@ -52,20 +55,33 @@ APZThreadUtils::AssertOnCompositorThread()
 /*static*/ void
 APZThreadUtils::RunOnControllerThread(Task* aTask)
 {
-#ifdef MOZ_WIDGET_GONK
-  // On B2G the controller thread is the compositor thread, and this function
-  // is always called from the libui thread or the main thread.
-  MessageLoop* loop = CompositorParent::CompositorLoop();
-  MOZ_ASSERT(MessageLoop::current() != loop);
-  loop->PostTask(FROM_HERE, aTask);
+#ifdef MOZ_ANDROID_APZ
+  // This is needed while nsWindow::ConfigureAPZControllerThread is not propper
+  // implemented.
+  if (AndroidBridge::IsJavaUiThread()) {
+    aTask->Run();
+    delete aTask;
+  } else {
+    AndroidBridge::Bridge()->PostTaskToUiThread(aTask, 0);
+  }
 #else
-  // On non-B2G platforms this is only ever called from the controller thread
-  // itself.
-  AssertOnControllerThread();
-  aTask->Run();
-  delete aTask;
+  if (!sControllerThread) {
+    // Could happen on startup
+    NS_WARNING("Dropping task posted to controller thread");
+    delete aTask;
+    return;
+  }
+
+  if (sControllerThread == MessageLoop::current()) {
+    aTask->Run();
+    delete aTask;
+  } else {
+    sControllerThread->PostTask(FROM_HERE, aTask);
+  }
 #endif
 }
+
+NS_IMPL_ISUPPORTS(GenericTimerCallbackBase, nsITimerCallback)
 
 } // namespace layers
 } // namespace mozilla

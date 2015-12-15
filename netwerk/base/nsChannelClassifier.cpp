@@ -8,7 +8,6 @@
 
 #include "mozIThirdPartyUtil.h"
 #include "nsContentUtils.h"
-#include "nsNetUtil.h"
 #include "nsICacheEntry.h"
 #include "nsICachingChannel.h"
 #include "nsIChannel.h"
@@ -20,30 +19,30 @@
 #include "nsIIOService.h"
 #include "nsIParentChannel.h"
 #include "nsIPermissionManager.h"
+#include "nsIPrivateBrowsingTrackingProtectionWhitelist.h"
 #include "nsIProtocolHandler.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsISecureBrowserUI.h"
 #include "nsISecurityEventSink.h"
+#include "nsIURL.h"
 #include "nsIWebProgressListener.h"
 #include "nsPIDOMWindow.h"
 #include "nsXULAppAPI.h"
 
 #include "mozilla/Preferences.h"
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 using mozilla::ArrayLength;
 using mozilla::Preferences;
 
-#if defined(PR_LOGGING)
 //
 // NSPR_LOG_MODULES=nsChannelClassifier:5
 //
 static PRLogModuleInfo *gChannelClassifierLog;
-#endif
 #undef LOG
-#define LOG(args)     PR_LOG(gChannelClassifierLog, PR_LOG_DEBUG, args)
+#define LOG(args)     MOZ_LOG(gChannelClassifierLog, mozilla::LogLevel::Debug, args)
 
 NS_IMPL_ISUPPORTS(nsChannelClassifier,
                   nsIURIClassifierCallback)
@@ -52,10 +51,8 @@ nsChannelClassifier::nsChannelClassifier()
   : mIsAllowListed(false),
     mSuspendedChannel(false)
 {
-#if defined(PR_LOGGING)
     if (!gChannelClassifierLog)
         gChannelClassifierLog = PR_NewLogModule("nsChannelClassifier");
-#endif
 }
 
 nsresult
@@ -63,12 +60,14 @@ nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
                                                     bool *result)
 {
     // Should only be called in the parent process.
-    MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+    MOZ_ASSERT(XRE_IsParentProcess());
 
     NS_ENSURE_ARG(result);
     *result = false;
 
-    if (!Preferences::GetBool("privacy.trackingprotection.enabled", false)) {
+    if (!Preferences::GetBool("privacy.trackingprotection.enabled", false) &&
+        (!Preferences::GetBool("privacy.trackingprotection.pbmode.enabled",
+                               false) || !NS_UsePrivateBrowsing(aChannel))) {
       return NS_OK;
     }
 
@@ -76,43 +75,64 @@ nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
     nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
         do_GetService(THIRDPARTYUTIL_CONTRACTID, &rv);
     NS_ENSURE_SUCCESS(rv, rv);
-    // Third party checks don't work for chrome:// URIs in mochitests, so just
-    // default to isThirdParty = true
-    bool isThirdParty = true;
-    (void)thirdPartyUtil->IsThirdPartyChannel(aChannel, nullptr, &isThirdParty);
-    if (!isThirdParty) {
-        *result = false;
-        return NS_OK;
-    }
-
-
-    nsCOMPtr<nsIIOService> ios = do_GetService(NS_IOSERVICE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIHttpChannelInternal> chan = do_QueryInterface(aChannel, &rv);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCOMPtr<nsIURI> uri;
-    rv = chan->GetTopWindowURI(getter_AddRefs(uri));
+    nsCOMPtr<nsIURI> topWinURI;
+    rv = chan->GetTopWindowURI(getter_AddRefs(topWinURI));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (!uri) {
+    if (!topWinURI) {
       LOG(("nsChannelClassifier[%p]: No window URI\n", this));
     }
 
+    nsCOMPtr<nsIURI> chanURI;
+    rv = aChannel->GetURI(getter_AddRefs(chanURI));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Third party checks don't work for chrome:// URIs in mochitests, so just
+    // default to isThirdParty = true. We check isThirdPartyWindow to expand
+    // the list of domains that are considered first party (e.g., if
+    // facebook.com includes an iframe from fatratgames.com, all subsources
+    // included in that iframe are considered third-party with
+    // isThirdPartyChannel, even if they are not third-party w.r.t.
+    // facebook.com), and isThirdPartyChannel to prevent top-level navigations
+    // from being detected as third-party.
+    bool isThirdPartyChannel = true;
+    bool isThirdPartyWindow = true;
+    thirdPartyUtil->IsThirdPartyURI(chanURI, topWinURI, &isThirdPartyWindow);
+    thirdPartyUtil->IsThirdPartyChannel(aChannel, nullptr, &isThirdPartyChannel);
+    if (!isThirdPartyWindow || !isThirdPartyChannel) {
+        *result = false;
+#ifdef DEBUG
+        nsCString spec;
+        chanURI->GetSpec(spec);
+        LOG(("nsChannelClassifier[%p]: Skipping tracking protection checks for "
+             "first party or top-level load channel[%p] with uri %s", this, aChannel,
+             spec.get()));
+#endif
+        return NS_OK;
+    }
+
+    nsCOMPtr<nsIIOService> ios = do_GetService(NS_IOSERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
     const char ALLOWLIST_EXAMPLE_PREF[] = "channelclassifier.allowlist_example";
-    if (!uri && Preferences::GetBool(ALLOWLIST_EXAMPLE_PREF, false)) {
+    if (!topWinURI && Preferences::GetBool(ALLOWLIST_EXAMPLE_PREF, false)) {
       LOG(("nsChannelClassifier[%p]: Allowlisting test domain\n", this));
       rv = ios->NewURI(NS_LITERAL_CSTRING("http://allowlisted.example.com"),
-                       nullptr, nullptr, getter_AddRefs(uri));
+                       nullptr, nullptr, getter_AddRefs(topWinURI));
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
     // Take the host/port portion so we can allowlist by site. Also ignore the
     // scheme, since users who put sites on the allowlist probably don't expect
     // allowlisting to depend on scheme.
-    nsCOMPtr<nsIURL> url = do_QueryInterface(uri, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIURL> url = do_QueryInterface(topWinURI, &rv);
+    if (NS_FAILED(rv)) {
+      return rv; // normal for some loads, no need to print a warning
+    }
 
     nsCString escaped(NS_LITERAL_CSTRING("https://"));
     nsAutoCString temp;
@@ -121,7 +141,7 @@ nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
     escaped.Append(temp);
 
     // Stuff the whole thing back into a URI for the permission manager.
-    rv = ios->NewURI(escaped, nullptr, nullptr, getter_AddRefs(uri));
+    rv = ios->NewURI(escaped, nullptr, nullptr, getter_AddRefs(topWinURI));
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIPermissionManager> permMgr =
@@ -129,7 +149,7 @@ nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
     NS_ENSURE_SUCCESS(rv, rv);
 
     uint32_t permissions = nsIPermissionManager::UNKNOWN_ACTION;
-    rv = permMgr->TestPermission(uri, "trackingprotection", &permissions);
+    rv = permMgr->TestPermission(topWinURI, "trackingprotection", &permissions);
     NS_ENSURE_SUCCESS(rv, rv);
 
 #ifdef DEBUG
@@ -146,6 +166,25 @@ nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
       *result = true;
     }
 
+    // In Private Browsing Mode we also check against an in-memory list.
+    if (NS_UsePrivateBrowsing(aChannel)) {
+      nsCOMPtr<nsIPrivateBrowsingTrackingProtectionWhitelist> pbmtpWhitelist =
+          do_GetService(NS_PBTRACKINGPROTECTIONWHITELIST_CONTRACTID, &rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      bool exists = false;
+      rv = pbmtpWhitelist->ExistsInAllowList(topWinURI, &exists);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (exists) {
+        mIsAllowListed = true;
+        LOG(("nsChannelClassifier[%p]: Allowlisting channel[%p] in PBM for %s",
+             this, aChannel, escaped.get()));
+      }
+
+      *result = !exists;
+    }
+
     // Tracking protection will be enabled so return without updating
     // the security state. If any channels are subsequently cancelled
     // (page elements blocked) the state will be then updated.
@@ -153,9 +192,8 @@ nsChannelClassifier::ShouldEnableTrackingProtection(nsIChannel *aChannel,
 #ifdef DEBUG
       nsCString topspec;
       nsCString spec;
-      uri->GetSpec(topspec);
-      aChannel->GetURI(getter_AddRefs(uri));
-      uri->GetSpec(spec);
+      topWinURI->GetSpec(topspec);
+      chanURI->GetSpec(spec);
       LOG(("nsChannelClassifier[%p]: Enabling tracking protection checks on channel[%p] "
            "with uri %s for toplevel window %s", this, aChannel, spec.get(),
            topspec.get()));
@@ -221,12 +259,9 @@ nsChannelClassifier::NotifyTrackingProtectionDisabled(nsIChannel *aChannel)
 }
 
 void
-nsChannelClassifier::Start(nsIChannel *aChannel, bool aContinueBeginConnect)
+nsChannelClassifier::Start(nsIChannel *aChannel)
 {
   mChannel = aChannel;
-  if (aContinueBeginConnect) {
-    mChannelInternal = do_QueryInterface(aChannel);
-  }
 
   nsresult rv = StartInternal();
   if (NS_FAILED(rv)) {
@@ -240,7 +275,7 @@ nsresult
 nsChannelClassifier::StartInternal()
 {
     // Should only be called in the parent process.
-    MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+    MOZ_ASSERT(XRE_IsParentProcess());
 
     // Don't bother to run the classifier on a load that has already failed.
     // (this might happen after a redirect)
@@ -353,7 +388,7 @@ void
 nsChannelClassifier::MarkEntryClassified(nsresult status)
 {
     // Should only be called in the parent process.
-    MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+    MOZ_ASSERT(XRE_IsParentProcess());
 
     // Don't cache tracking classifications because we support allowlisting.
     if (status == NS_ERROR_TRACKING_URI || mIsAllowListed) {
@@ -385,7 +420,7 @@ bool
 nsChannelClassifier::HasBeenClassified(nsIChannel *aChannel)
 {
     // Should only be called in the parent process.
-    MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+    MOZ_ASSERT(XRE_IsParentProcess());
 
     nsCOMPtr<nsICachingChannel> cachingChannel =
         do_QueryInterface(aChannel);
@@ -417,6 +452,29 @@ nsChannelClassifier::HasBeenClassified(nsIChannel *aChannel)
     return tag.EqualsLiteral("1");
 }
 
+//static
+bool
+nsChannelClassifier::SameLoadingURI(nsIDocument *aDoc, nsIChannel *aChannel)
+{
+  nsCOMPtr<nsIURI> docURI = aDoc->GetDocumentURI();
+  nsCOMPtr<nsILoadInfo> channelLoadInfo = aChannel->GetLoadInfo();
+  if (!channelLoadInfo || !docURI) {
+    return false;
+  }
+  nsCOMPtr<nsIPrincipal> channelLoadingPrincipal = channelLoadInfo->LoadingPrincipal();
+  if (!channelLoadingPrincipal) {
+    return false;
+  }
+  nsCOMPtr<nsIURI> channelLoadingURI;
+  channelLoadingPrincipal->GetURI(getter_AddRefs(channelLoadingURI));
+  if (!channelLoadingURI) {
+    return false;
+  }
+  bool equals = false;
+  nsresult rv = docURI->EqualsExceptRef(channelLoadingURI, &equals);
+  return NS_SUCCEEDED(rv) && equals;
+}
+
 // static
 nsresult
 nsChannelClassifier::SetBlockedTrackingContent(nsIChannel *channel)
@@ -446,6 +504,14 @@ nsChannelClassifier::SetBlockedTrackingContent(nsIChannel *channel)
   }
   nsCOMPtr<nsIDocument> doc = do_GetInterface(docShell, &rv);
   NS_ENSURE_SUCCESS(rv, NS_OK);
+
+  // This event might come after the user has navigated to another page.
+  // To prevent showing the TrackingProtection UI on the wrong page, we need to
+  // check that the loading URI for the channel is the same as the URI currently
+  // loaded in the document.
+  if (!SameLoadingURI(doc, channel)) {
+    return NS_OK;
+  }
 
   // Notify nsIWebProgressListeners of this security event.
   // Can be used to change the UI state.
@@ -479,14 +545,86 @@ nsChannelClassifier::SetBlockedTrackingContent(nsIChannel *channel)
   return NS_OK;
 }
 
+nsresult
+nsChannelClassifier::IsTrackerWhitelisted()
+{
+  nsresult rv;
+  nsCOMPtr<nsIURIClassifier> uriClassifier =
+    do_GetService(NS_URICLASSIFIERSERVICE_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoCString tables;
+  Preferences::GetCString("urlclassifier.trackingWhitelistTable", &tables);
+
+  if (tables.IsEmpty()) {
+    LOG(("nsChannelClassifier[%p]:IsTrackerWhitelisted whitelist disabled",
+         this));
+    return NS_ERROR_TRACKING_URI;
+  }
+
+  nsCOMPtr<nsIHttpChannelInternal> chan = do_QueryInterface(mChannel, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> topWinURI;
+  rv = chan->GetTopWindowURI(getter_AddRefs(topWinURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!topWinURI) {
+    LOG(("nsChannelClassifier[%p]: No window URI", this));
+    return NS_ERROR_TRACKING_URI;
+  }
+
+  nsCOMPtr<nsIScriptSecurityManager> securityManager =
+    do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIPrincipal> chanPrincipal;
+  rv = securityManager->GetChannelURIPrincipal(mChannel,
+                                               getter_AddRefs(chanPrincipal));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Craft a whitelist URL like "toplevel.page/?resource=third.party.domain"
+  nsAutoCString pageHostname, resourceDomain;
+  rv = topWinURI->GetHost(pageHostname);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = chanPrincipal->GetBaseDomain(resourceDomain);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoCString whitelistEntry = NS_LITERAL_CSTRING("http://") +
+    pageHostname + NS_LITERAL_CSTRING("/?resource=") + resourceDomain;
+  LOG(("nsChannelClassifier[%p]: Looking for %s in the whitelist",
+       this, whitelistEntry.get()));
+
+  nsCOMPtr<nsIURI> whitelistURI;
+  rv = NS_NewURI(getter_AddRefs(whitelistURI), whitelistEntry);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Check whether or not the tracker is in the entity whitelist
+  nsAutoCString results;
+  rv = uriClassifier->ClassifyLocalWithTables(whitelistURI, tables, results);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!results.IsEmpty()) {
+    return NS_OK; // found it on the whitelist, must not be blocked
+  }
+
+  LOG(("nsChannelClassifier[%p]: %s is not in the whitelist",
+       this, whitelistEntry.get()));
+  return NS_ERROR_TRACKING_URI;
+}
+
 NS_IMETHODIMP
 nsChannelClassifier::OnClassifyComplete(nsresult aErrorCode)
 {
     // Should only be called in the parent process.
-    MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+    MOZ_ASSERT(XRE_IsParentProcess());
 
-    LOG(("nsChannelClassifier[%p]:OnClassifyComplete %d", this, aErrorCode));
+    if (aErrorCode == NS_ERROR_TRACKING_URI &&
+        NS_SUCCEEDED(IsTrackerWhitelisted())) {
+      LOG(("nsChannelClassifier[%p]:OnClassifyComplete tracker found "
+           "in whitelist so we won't block it", this));
+      aErrorCode = NS_OK;
+    }
+
     if (mSuspendedChannel) {
+        LOG(("nsChannelClassifier[%p]:OnClassifyComplete %d (suspended channel)",
+             this, aErrorCode));
         MarkEntryClassified(aErrorCode);
 
         if (NS_FAILED(aErrorCode)) {
@@ -514,13 +652,7 @@ nsChannelClassifier::OnClassifyComplete(nsresult aErrorCode)
         mChannel->Resume();
     }
 
-    // Even if we have cancelled the channel, we may need to call
-    // ContinueBeginConnect so that we abort appropriately.
-    if (mChannelInternal) {
-        mChannelInternal->ContinueBeginConnect();
-    }
     mChannel = nullptr;
-    mChannelInternal = nullptr;
 
     return NS_OK;
 }

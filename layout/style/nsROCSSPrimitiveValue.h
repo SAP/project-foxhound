@@ -35,7 +35,7 @@ class nsDOMCSSRGBColor;
  * computed style.
  */
 class nsROCSSPrimitiveValue final : public mozilla::dom::CSSValue,
-  public nsIDOMCSSPrimitiveValue
+                                    public nsIDOMCSSPrimitiveValue
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -104,7 +104,7 @@ public:
     return nullptr;
   }
 
-  virtual JSObject *WrapObject(JSContext *cx) override;
+  virtual JSObject *WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
   ~nsROCSSPrimitiveValue();
@@ -116,10 +116,11 @@ private:
     float           mFloat;
     int32_t         mInt32;
     uint32_t        mUint32;
-    nsDOMCSSRGBColor* mColor;
-    nsDOMCSSRect*     mRect;
+    // These can't be nsCOMPtr/nsRefPtr's because they are used inside a union.
+    nsDOMCSSRGBColor* MOZ_OWNING_REF mColor;
+    nsDOMCSSRect* MOZ_OWNING_REF mRect;
     char16_t*      mString;
-    nsIURI*         mURI;
+    nsIURI* MOZ_OWNING_REF mURI;
     nsCSSKeyword    mKeyword;
   } mValue;
 };

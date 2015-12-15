@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,9 +55,9 @@ CustomEvent::Constructor(const GlobalObject& aGlobal,
 }
 
 JSObject*
-CustomEvent::WrapObjectInternal(JSContext* aCx)
+CustomEvent::WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return mozilla::dom::CustomEventBinding::Wrap(aCx, this);
+  return mozilla::dom::CustomEventBinding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMETHODIMP
@@ -109,14 +111,12 @@ CustomEvent::GetDetail(JSContext* aCx,
   VariantToJsval(aCx, mDetail, aRetval);
 }
 
-nsresult
-NS_NewDOMCustomEvent(nsIDOMEvent** aInstancePtrResult,
-                     mozilla::dom::EventTarget* aOwner,
+already_AddRefed<CustomEvent>
+NS_NewDOMCustomEvent(EventTarget* aOwner,
                      nsPresContext* aPresContext,
                      mozilla::WidgetEvent* aEvent)
 {
-  CustomEvent* it = new CustomEvent(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<CustomEvent> it =
+    new CustomEvent(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

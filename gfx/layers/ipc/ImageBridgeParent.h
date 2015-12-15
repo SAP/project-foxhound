@@ -9,6 +9,7 @@
 #include <stddef.h>                     // for size_t
 #include <stdint.h>                     // for uint32_t, uint64_t
 #include "CompositableTransactionParent.h"
+#include "ImageContainerParent.h"
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
 #include "mozilla/Attributes.h"         // for override
 #include "mozilla/ipc/ProtocolUtils.h"
@@ -23,12 +24,12 @@ class MessageLoop;
 
 namespace base {
 class Thread;
-}
+} // namespace base
 
 namespace mozilla {
 namespace ipc {
 class Shmem;
-}
+} // namespace ipc
 
 namespace layers {
 
@@ -38,7 +39,7 @@ namespace layers {
  * interesting stuff is in ImageContainerParent.
  */
 class ImageBridgeParent final : public PImageBridgeParent,
-                                    public CompositableParentManager
+                                public CompositableParentManager
 {
 public:
   typedef InfallibleTArray<CompositableOperation> EditArray;
@@ -59,30 +60,33 @@ public:
   virtual void SendFenceHandleIfPresent(PTextureParent* aTexture,
                                         CompositableHost* aCompositableHost) override;
 
-  virtual void SendFenceHandle(AsyncTransactionTracker* aTracker,
-                               PTextureParent* aTexture,
-                               const FenceHandle& aFence) override;
-
   virtual void SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
 
   virtual base::ProcessId GetChildProcessId() override
   {
-    return mChildProcessId;
+    return OtherPid();
   }
 
   // PImageBridge
+  virtual bool RecvImageBridgeThreadId(const PlatformThreadId& aThreadId) override;
   virtual bool RecvUpdate(EditArray&& aEdits, EditReplyArray* aReply) override;
   virtual bool RecvUpdateNoSwap(EditArray&& aEdits) override;
 
   virtual bool IsAsync() const override { return true; }
 
   PCompositableParent* AllocPCompositableParent(const TextureInfo& aInfo,
+                                                PImageContainerParent* aImageContainer,
                                                 uint64_t*) override;
   bool DeallocPCompositableParent(PCompositableParent* aActor) override;
 
   virtual PTextureParent* AllocPTextureParent(const SurfaceDescriptor& aSharedData,
                                               const TextureFlags& aFlags) override;
   virtual bool DeallocPTextureParent(PTextureParent* actor) override;
+
+  PMediaSystemResourceManagerParent* AllocPMediaSystemResourceManagerParent() override;
+  bool DeallocPMediaSystemResourceManagerParent(PMediaSystemResourceManagerParent* aActor) override;
+  virtual PImageContainerParent* AllocPImageContainerParent() override;
+  virtual bool DeallocPImageContainerParent(PImageContainerParent* actor) override;
 
   virtual bool
   RecvChildAsyncMessages(InfallibleTArray<AsyncChildMessageData>&& aMessages) override;
@@ -123,21 +127,23 @@ public:
   static void ReplyRemoveTexture(base::ProcessId aChildProcessId,
                                  const OpReplyRemoveTexture& aReply);
 
-  void SendFenceHandleToTrackerIfPresent(uint64_t aDestHolderId,
-                                         uint64_t aTransactionId,
-                                         PTextureParent* aTexture,
-                                         CompositableHost* aCompositableHost);
+  void AppendDeliverFenceMessage(uint64_t aDestHolderId,
+                                 uint64_t aTransactionId,
+                                 PTextureParent* aTexture,
+                                 CompositableHost* aCompositableHost);
 
-  static void SendFenceHandleToTrackerIfPresent(base::ProcessId aChildProcessId,
-                                                uint64_t aDestHolderId,
-                                                uint64_t aTransactionId,
-                                                PTextureParent* aTexture,
-                                                CompositableHost* aCompositableHost);
+  static void AppendDeliverFenceMessage(base::ProcessId aChildProcessId,
+                                        uint64_t aDestHolderId,
+                                        uint64_t aTransactionId,
+                                        PTextureParent* aTexture,
+                                        CompositableHost* aCompositableHost);
 
-  using CompositableParentManager::SendPendingAsyncMessges;
-  static void SendPendingAsyncMessges(base::ProcessId aChildProcessId);
+  using CompositableParentManager::SendPendingAsyncMessages;
+  static void SendPendingAsyncMessages(base::ProcessId aChildProcessId);
 
   static ImageBridgeParent* GetInstance(ProcessId aId);
+
+  static bool NotifyImageComposites(nsTArray<ImageCompositeNotification>& aNotifications);
 
   // Overriden from IToplevelProtocol
   IToplevelProtocol*
@@ -145,16 +151,18 @@ public:
                 base::ProcessHandle aPeerProcess,
                 mozilla::ipc::ProtocolCloneContext* aCtx) override;
 
+protected:
+  void OnChannelConnected(int32_t pid) override;
+
 private:
   void DeferredDestroy();
-
   MessageLoop* mMessageLoop;
   Transport* mTransport;
-  // Child side's process id.
-  base::ProcessId mChildProcessId;
   // This keeps us alive until ActorDestroy(), at which point we do a
   // deferred destruction of ourselves.
   nsRefPtr<ImageBridgeParent> mSelfRef;
+
+  bool mSetChildThreadPriority;
 
   /**
    * Map of all living ImageBridgeParent instances
@@ -166,7 +174,7 @@ private:
   nsRefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 };
 
-} // layers
-} // mozilla
+} // namespace layers
+} // namespace mozilla
 
 #endif // gfx_layers_ipc_ImageBridgeParent_h_

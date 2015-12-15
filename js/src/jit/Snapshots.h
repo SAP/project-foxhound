@@ -19,6 +19,8 @@
 #include "js/HashTable.h"
 
 namespace js {
+class GenericPrinter;
+
 namespace jit {
 
 class RValueAllocation;
@@ -43,8 +45,8 @@ class RValueAllocation
         CST_UNDEFINED       = 0x01,
         CST_NULL            = 0x02,
         DOUBLE_REG          = 0x03,
-        FLOAT32_REG         = 0x04,
-        FLOAT32_STACK       = 0x05,
+        ANY_FLOAT_REG       = 0x04,
+        ANY_FLOAT_STACK     = 0x05,
 #if defined(JS_NUNBOX32)
         UNTYPED_REG_REG     = 0x06,
         UNTYPED_REG_STACK   = 0x07,
@@ -165,7 +167,7 @@ class RValueAllocation
     static void writePayload(CompactBufferWriter& writer, PayloadType t,
                              Payload p);
     static void writePadding(CompactBufferWriter& writer);
-    static void dumpPayload(FILE* fp, PayloadType t, Payload p);
+    static void dumpPayload(GenericPrinter& out, PayloadType t, Payload p);
     static bool equalPayloads(PayloadType t, Payload lhs, Payload rhs);
 
     RValueAllocation(Mode mode, Payload a1, Payload a2)
@@ -196,12 +198,12 @@ class RValueAllocation
         return RValueAllocation(DOUBLE_REG, payloadOfFloatRegister(reg));
     }
 
-    // FLOAT32_REG or FLOAT32_STACK
-    static RValueAllocation Float32(FloatRegister reg) {
-        return RValueAllocation(FLOAT32_REG, payloadOfFloatRegister(reg));
+    // ANY_FLOAT_REG or ANY_FLOAT_STACK
+    static RValueAllocation AnyFloat(FloatRegister reg) {
+        return RValueAllocation(ANY_FLOAT_REG, payloadOfFloatRegister(reg));
     }
-    static RValueAllocation Float32(int32_t offset) {
-        return RValueAllocation(FLOAT32_STACK, payloadOfStackOffset(offset));
+    static RValueAllocation AnyFloat(int32_t offset) {
+        return RValueAllocation(ANY_FLOAT_STACK, payloadOfStackOffset(offset));
     }
 
     // TYPED_REG or TYPED_STACK
@@ -334,7 +336,7 @@ class RValueAllocation
     }
 
   public:
-    void dump(FILE* fp) const;
+    void dump(GenericPrinter& out) const;
 
   public:
     bool operator==(const RValueAllocation& rhs) const {
@@ -553,7 +555,7 @@ class RecoverReader
     }
 };
 
-}
-}
+} // namespace jit
+} // namespace js
 
 #endif /* jit_Snapshot_h */

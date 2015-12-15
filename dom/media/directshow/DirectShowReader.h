@@ -15,16 +15,11 @@
 struct IGraphBuilder;
 struct IMediaControl;
 struct IMediaSeeking;
-struct IMediaEventEx;
 
 namespace mozilla {
 
 class AudioSinkFilter;
 class SourceFilter;
-
-namespace dom {
-class TimeRanges;
-}
 
 // Decoder backend for decoding MP3 using DirectShow. DirectShow operates as
 // a filter graph. The basic design of the DirectShowReader is that we have
@@ -63,9 +58,10 @@ public:
   nsRefPtr<SeekPromise>
   Seek(int64_t aTime, int64_t aEndTime) override;
 
-  void NotifyDataArrived(const char* aBuffer,
-                         uint32_t aLength,
-                         int64_t aOffset) override;
+protected:
+  void NotifyDataArrivedInternal(uint32_t aLength,
+                                 int64_t aOffset) override;
+public:
 
   bool IsMediaSeekable() override;
 
@@ -114,6 +110,8 @@ private:
 
   // Duration of the stream, in microseconds.
   int64_t mDuration;
+
+  NotifyDataArrivedFilter mFilter;
 };
 
 } // namespace mozilla

@@ -18,25 +18,15 @@ using namespace js::jit;
 using mozilla::FloorLog2;
 
 void
-LIRGeneratorARM::useBox(LInstruction* lir, size_t n, MDefinition* mir,
-                        LUse::Policy policy, bool useAtStart)
-{
-    MOZ_ASSERT(mir->type() == MIRType_Value);
-    ensureDefined(mir);
-    lir->setOperand(n, LUse(mir->virtualRegister(), policy, useAtStart));
-    lir->setOperand(n + 1, LUse(VirtualRegisterOfPayload(mir), policy, useAtStart));
-}
-
-void
 LIRGeneratorARM::useBoxFixed(LInstruction* lir, size_t n, MDefinition* mir, Register reg1,
-                             Register reg2)
+                             Register reg2, bool useAtStart)
 {
     MOZ_ASSERT(mir->type() == MIRType_Value);
     MOZ_ASSERT(reg1 != reg2);
 
     ensureDefined(mir);
-    lir->setOperand(n, LUse(reg1, mir->virtualRegister()));
-    lir->setOperand(n + 1, LUse(reg2, VirtualRegisterOfPayload(mir)));
+    lir->setOperand(n, LUse(reg1, mir->virtualRegister(), useAtStart));
+    lir->setOperand(n + 1, LUse(reg2, VirtualRegisterOfPayload(mir), useAtStart));
 }
 
 LAllocation
@@ -55,31 +45,6 @@ LDefinition
 LIRGeneratorARM::tempByteOpRegister()
 {
     return temp();
-}
-
-void
-LIRGeneratorARM::lowerConstantDouble(double d, MInstruction* mir)
-{
-    define(new(alloc()) LDouble(d), mir);
-}
-
-void
-LIRGeneratorARM::lowerConstantFloat32(float d, MInstruction* mir)
-{
-    define(new(alloc()) LFloat32(d), mir);
-}
-
-void
-LIRGeneratorARM::visitConstant(MConstant* ins)
-{
-    if (ins->type() == MIRType_Double)
-        lowerConstantDouble(ins->value().toDouble(), ins);
-    else if (ins->type() == MIRType_Float32)
-        lowerConstantFloat32(ins->value().toDouble(), ins);
-    else if (ins->canEmitAtUses())
-        emitAtUses(ins);
-    else
-        LIRGeneratorShared::visitConstant(ins);
 }
 
 void
@@ -584,6 +549,34 @@ LIRGeneratorARM::visitSimdValueX4(MSimdValueX4* ins)
 }
 
 void
+LIRGeneratorARM::visitAtomicExchangeTypedArrayElement(MAtomicExchangeTypedArrayElement* ins)
+{
+    MOZ_ASSERT(HasLDSTREXBHD());
+    MOZ_ASSERT(ins->arrayType() <= Scalar::Uint32);
+
+    MOZ_ASSERT(ins->elements()->type() == MIRType_Elements);
+    MOZ_ASSERT(ins->index()->type() == MIRType_Int32);
+
+    const LUse elements = useRegister(ins->elements());
+    const LAllocation index = useRegisterOrConstant(ins->index());
+
+    // If the target is a floating register then we need a temp at the
+    // CodeGenerator level for creating the result.
+
+    const LAllocation value = useRegister(ins->value());
+    LDefinition tempDef = LDefinition::BogusTemp();
+    if (ins->arrayType() == Scalar::Uint32) {
+        MOZ_ASSERT(ins->type() == MIRType_Double);
+        tempDef = temp();
+    }
+
+    LAtomicExchangeTypedArrayElement* lir =
+        new(alloc()) LAtomicExchangeTypedArrayElement(elements, index, value, tempDef);
+
+    define(lir, ins);
+}
+
+void
 LIRGeneratorARM::visitAtomicTypedArrayElementBinop(MAtomicTypedArrayElementBinop* ins)
 {
     MOZ_ASSERT(ins->arrayType() != Scalar::Uint8Clamped);
@@ -595,27 +588,33 @@ LIRGeneratorARM::visitAtomicTypedArrayElementBinop(MAtomicTypedArrayElementBinop
 
     const LUse elements = useRegister(ins->elements());
     const LAllocation index = useRegisterOrConstant(ins->index());
+    const LAllocation value = useRegister(ins->value());
 
-    // For most operations we don't need any temps because there are
-    // enough scratch registers.  tempDef2 is never needed on ARM.
-    //
+    if (!ins->hasUses()) {
+        LAtomicTypedArrayElementBinopForEffect* lir =
+            new(alloc()) LAtomicTypedArrayElementBinopForEffect(elements, index, value,
+                                                                /* flagTemp= */ temp());
+        add(lir, ins);
+        return;
+    }
+
     // For a Uint32Array with a known double result we need a temp for
-    // the intermediate output, this is tempDef1.
+    // the intermediate output.
     //
     // Optimization opportunity (bug 1077317): We can do better by
     // allowing 'value' to remain as an imm32 if it is small enough to
     // fit in an instruction.
 
-    LDefinition tempDef1 = LDefinition::BogusTemp();
-    LDefinition tempDef2 = LDefinition::BogusTemp();
+    LDefinition flagTemp = temp();
+    LDefinition outTemp = LDefinition::BogusTemp();
 
-    const LAllocation value = useRegister(ins->value());
     if (ins->arrayType() == Scalar::Uint32 && IsFloatingPointType(ins->type()))
-        tempDef1 = temp();
+        outTemp = temp();
+
+    // On arm, map flagTemp to temp1 and outTemp to temp2, at least for now.
 
     LAtomicTypedArrayElementBinop* lir =
-        new(alloc()) LAtomicTypedArrayElementBinop(elements, index, value, tempDef1, tempDef2);
-
+        new(alloc()) LAtomicTypedArrayElementBinop(elements, index, value, flagTemp, outTemp);
     define(lir, ins);
 }
 
@@ -658,12 +657,39 @@ LIRGeneratorARM::visitAsmJSCompareExchangeHeap(MAsmJSCompareExchangeHeap* ins)
     MDefinition* ptr = ins->ptr();
     MOZ_ASSERT(ptr->type() == MIRType_Int32);
 
+    if (byteSize(ins->accessType()) != 4 && !HasLDSTREXBHD()) {
+        LAsmJSCompareExchangeCallout* lir =
+            new(alloc()) LAsmJSCompareExchangeCallout(useRegisterAtStart(ptr),
+                                                      useRegisterAtStart(ins->oldValue()),
+                                                      useRegisterAtStart(ins->newValue()));
+        defineReturn(lir, ins);
+        return;
+    }
+
     LAsmJSCompareExchangeHeap* lir =
         new(alloc()) LAsmJSCompareExchangeHeap(useRegister(ptr),
                                                useRegister(ins->oldValue()),
                                                useRegister(ins->newValue()));
 
     define(lir, ins);
+}
+
+void
+LIRGeneratorARM::visitAsmJSAtomicExchangeHeap(MAsmJSAtomicExchangeHeap* ins)
+{
+    MOZ_ASSERT(ins->ptr()->type() == MIRType_Int32);
+    MOZ_ASSERT(ins->accessType() < Scalar::Float32);
+
+    const LAllocation ptr = useRegisterAtStart(ins->ptr());
+    const LAllocation value = useRegisterAtStart(ins->value());
+
+    if (byteSize(ins->accessType()) < 4 && !HasLDSTREXBHD()) {
+        // Call out on ARMv6.
+        defineReturn(new(alloc()) LAsmJSAtomicExchangeCallout(ptr, value), ins);
+        return;
+    }
+
+    define(new(alloc()) LAsmJSAtomicExchangeHeap(ptr, value), ins);
 }
 
 void
@@ -674,11 +700,28 @@ LIRGeneratorARM::visitAsmJSAtomicBinopHeap(MAsmJSAtomicBinopHeap* ins)
     MDefinition* ptr = ins->ptr();
     MOZ_ASSERT(ptr->type() == MIRType_Int32);
 
+    if (byteSize(ins->accessType()) != 4 && !HasLDSTREXBHD()) {
+        LAsmJSAtomicBinopCallout* lir =
+            new(alloc()) LAsmJSAtomicBinopCallout(useRegisterAtStart(ptr),
+                                                  useRegisterAtStart(ins->value()));
+        defineReturn(lir, ins);
+        return;
+    }
+
+    if (!ins->hasUses()) {
+        LAsmJSAtomicBinopHeapForEffect* lir =
+            new(alloc()) LAsmJSAtomicBinopHeapForEffect(useRegister(ptr),
+                                                        useRegister(ins->value()),
+                                                        /* flagTemp= */ temp());
+        add(lir, ins);
+        return;
+    }
+
     LAsmJSAtomicBinopHeap* lir =
         new(alloc()) LAsmJSAtomicBinopHeap(useRegister(ptr),
                                            useRegister(ins->value()),
-                                           LDefinition::BogusTemp());
-
+                                           /* temp = */ LDefinition::BogusTemp(),
+                                           /* flagTemp= */ temp());
     define(lir, ins);
 }
 
@@ -693,4 +736,15 @@ LIRGeneratorARM::visitSubstr(MSubstr* ins)
                                          tempByteOpRegister());
     define(lir, ins);
     assignSafepoint(lir, ins);
+}
+
+void
+LIRGeneratorARM::visitRandom(MRandom* ins)
+{
+    LRandom *lir = new(alloc()) LRandom(temp(),
+                                        temp(),
+                                        temp(),
+                                        temp(),
+                                        temp());
+    defineFixed(lir, ins, LFloatReg(ReturnDoubleReg));
 }

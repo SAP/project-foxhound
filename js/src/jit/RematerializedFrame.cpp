@@ -6,12 +6,15 @@
 
 #include "jit/RematerializedFrame.h"
 
+#include "mozilla/SizePrintfMacros.h"
+
 #include "jit/JitFrames.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/Debugger.h"
 
 #include "jsscriptinlines.h"
 #include "jit/JitFrames-inl.h"
+#include "vm/ScopeObject-inl.h"
 
 using namespace js;
 using namespace jit;
@@ -33,12 +36,19 @@ RematerializedFrame::RematerializedFrame(JSContext* cx, uint8_t* top, unsigned n
                                          InlineFrameIterator& iter, MaybeReadFallback& fallback)
   : prevUpToDate_(false),
     isDebuggee_(iter.script()->isDebuggee()),
+    isConstructing_(iter.isConstructing()),
+    hasCachedSavedFrame_(false),
     top_(top),
     pc_(iter.pc()),
     frameNo_(iter.frameNo()),
     numActualArgs_(numActualArgs),
     script_(iter.script())
 {
+    if (iter.isFunctionFrame())
+        callee_ = iter.callee(fallback);
+    else
+        callee_ = nullptr;
+
     CopyValueToRematerializedFrame op(slots_);
     iter.readFrameArgsAndLocals(cx, op, op, &scopeChain_, &hasCallObj_, &returnValue_,
                                 &argsObj_, &thisValue_, ReadFrame_Actuals,
@@ -50,7 +60,7 @@ RematerializedFrame::New(JSContext* cx, uint8_t* top, InlineFrameIterator& iter,
                          MaybeReadFallback& fallback)
 {
     unsigned numFormals = iter.isFunctionFrame() ? iter.calleeTemplate()->nargs() : 0;
-    unsigned argSlots = Max(numFormals, iter.numActualArgs());
+    unsigned argSlots = Max(numFormals, iter.numActualArgs()) + iter.isConstructing();
     size_t numBytes = sizeof(RematerializedFrame) +
         (argSlots + iter.script()->nfixed()) * sizeof(Value) -
         sizeof(Value); // 1 Value included in sizeof(RematerializedFrame)
@@ -96,7 +106,7 @@ RematerializedFrame::FreeInVector(Vector<RematerializedFrame*>& frames)
 {
     for (size_t i = 0; i < frames.length(); i++) {
         RematerializedFrame* f = frames[i];
-        Debugger::assertNotInFrameMaps(f);
+        MOZ_ASSERT(!Debugger::inFrameMaps(f));
         f->RematerializedFrame::~RematerializedFrame();
         js_free(f);
     }
@@ -133,7 +143,7 @@ bool
 RematerializedFrame::initFunctionScopeObjects(JSContext* cx)
 {
     MOZ_ASSERT(isNonEvalFunctionFrame());
-    MOZ_ASSERT(fun()->isHeavyweight());
+    MOZ_ASSERT(fun()->needsCallObject());
     CallObject* callobj = CallObject::createForFunction(cx, this);
     if (!callobj)
         return false;
@@ -145,12 +155,16 @@ RematerializedFrame::initFunctionScopeObjects(JSContext* cx)
 void
 RematerializedFrame::mark(JSTracer* trc)
 {
-    gc::MarkScriptRoot(trc, &script_, "remat ion frame script");
-    gc::MarkObjectRoot(trc, &scopeChain_, "remat ion frame scope chain");
-    gc::MarkValueRoot(trc, &returnValue_, "remat ion frame return value");
-    gc::MarkValueRoot(trc, &thisValue_, "remat ion frame this");
-    gc::MarkValueRootRange(trc, slots_, slots_ + numActualArgs_ + script_->nfixed(),
-                           "remat ion frame stack");
+    TraceRoot(trc, &script_, "remat ion frame script");
+    TraceRoot(trc, &scopeChain_, "remat ion frame scope chain");
+    if (callee_)
+        TraceRoot(trc, &callee_, "remat ion frame callee");
+    if (argsObj_)
+        TraceRoot(trc, &argsObj_, "remat ion frame argsobj");
+    TraceRoot(trc, &returnValue_, "remat ion frame return value");
+    TraceRoot(trc, &thisValue_, "remat ion frame this");
+    TraceRootRange(trc, numActualArgs_ + isConstructing_ + script_->nfixed(),
+                   slots_, "remat ion frame stack");
 }
 
 void
@@ -160,7 +174,7 @@ RematerializedFrame::dump()
     if (isFunctionFrame()) {
         fprintf(stderr, "  callee fun: ");
 #ifdef DEBUG
-        js_DumpValue(ObjectValue(*callee()));
+        DumpValue(ObjectValue(*callee()));
 #else
         fprintf(stderr, "?\n");
 #endif
@@ -168,8 +182,8 @@ RematerializedFrame::dump()
         fprintf(stderr, "  global frame, no callee\n");
     }
 
-    fprintf(stderr, "  file %s line %u offset %zu\n",
-            script()->filename(), (unsigned) script()->lineno(),
+    fprintf(stderr, "  file %s line %" PRIuSIZE " offset %" PRIuSIZE "\n",
+            script()->filename(), script()->lineno(),
             script()->pcToOffset(pc()));
 
     fprintf(stderr, "  script = %p\n", (void*) script());
@@ -177,7 +191,7 @@ RematerializedFrame::dump()
     if (isFunctionFrame()) {
         fprintf(stderr, "  scope chain: ");
 #ifdef DEBUG
-        js_DumpValue(ObjectValue(*scopeChain()));
+        DumpValue(ObjectValue(*scopeChain()));
 #else
         fprintf(stderr, "?\n");
 #endif
@@ -185,7 +199,7 @@ RematerializedFrame::dump()
         if (hasArgsObj()) {
             fprintf(stderr, "  args obj: ");
 #ifdef DEBUG
-            js_DumpValue(ObjectValue(argsObj()));
+            DumpValue(ObjectValue(argsObj()));
 #else
             fprintf(stderr, "?\n");
 #endif
@@ -193,7 +207,7 @@ RematerializedFrame::dump()
 
         fprintf(stderr, "  this: ");
 #ifdef DEBUG
-        js_DumpValue(thisValue());
+        DumpValue(thisValue());
 #else
         fprintf(stderr, "?\n");
 #endif
@@ -204,7 +218,7 @@ RematerializedFrame::dump()
             else
                 fprintf(stderr, "  overflown (arg %d): ", i);
 #ifdef DEBUG
-            js_DumpValue(argv()[i]);
+            DumpValue(argv()[i]);
 #else
             fprintf(stderr, "?\n");
 #endif
@@ -213,7 +227,7 @@ RematerializedFrame::dump()
         for (unsigned i = 0; i < script()->nfixed(); i++) {
             fprintf(stderr, "  local %d: ", i);
 #ifdef DEBUG
-            js_DumpValue(locals()[i]);
+            DumpValue(locals()[i]);
 #else
             fprintf(stderr, "?\n");
 #endif

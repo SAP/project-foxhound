@@ -58,7 +58,7 @@ RunTest(JSRuntime* rt, JSContext* cx, ArrayT* array)
     ASSERT_FALSE(JS::ObjectIsTenured(obj));
     value = Int32Value(i);
     ASSERT_TRUE(JS_SetProperty(cx, obj, property, value));
-    array->AppendElement(obj);
+    ASSERT_TRUE(array->AppendElement(obj, fallible));
   }
 
   /*
@@ -88,7 +88,7 @@ CreateGlobalAndRunTest(JSRuntime* rt, JSContext* cx)
     "global", JSCLASS_GLOBAL_FLAGS,
     nullptr, nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr, nullptr,
-    nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr, nullptr,
     JS_GlobalObjectTraceHook
   };
 

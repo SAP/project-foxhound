@@ -47,6 +47,8 @@
 
       <field name="_controller">null</field>
 
+      <field name="_selectParentHelper">null</field>
+
       <field name="_remoteWebNavigation">null</field>
 
       <property name="webNavigation"
@@ -79,7 +81,7 @@
       <property name="finder" readonly="true">
         <getter><![CDATA[
           if (!this._remoteFinder) {
-            // Don't attempt to create the remote web progress if the
+            // Don't attempt to create the remote finder if the
             // messageManager has already gone away
             if (!this.messageManager)
               return null;
@@ -163,12 +165,6 @@
                 onget="return this.contentWindowAsCPOW ? this.contentWindowAsCPOW.document : null"
                 readonly="true"/>
 
-      <field name="_syncHandler">null</field>
-
-      <property name="syncHandler"
-                onget="return this._syncHandler"
-                readonly="true"/>
-
       <field name="_imageDocument">null</field>
 
       <property name="imageDocument"
@@ -204,6 +200,18 @@
         ]]></getter>
       </property>
 
+      <property name="hasContentOpener">
+        <getter><![CDATA[
+          let {frameLoader} = this.QueryInterface(Ci.nsIFrameLoaderOwner);
+          return frameLoader.tabParent.hasContentOpener;
+        ]]></getter>
+      </property>
+
+      <field name="_outerWindowID">null</field>
+      <property name="outerWindowID"
+                onget="return this._outerWindowID"
+                readonly="true"/>
+
       <property name="autoCompletePopup"
                 onget="return document.getElementById(this.getAttribute('autocompletepopup'))"
                 readonly="true"/>
@@ -211,13 +219,14 @@
       <property name="docShellIsActive">
         <getter>
           <![CDATA[
-            throw new Error("not supported");
+            let {frameLoader} = this.QueryInterface(Ci.nsIFrameLoaderOwner);
+            return frameLoader.tabParent.docShellIsActive;
           ]]>
         </getter>
         <setter>
           <![CDATA[
             let {frameLoader} = this.QueryInterface(Ci.nsIFrameLoaderOwner);
-            frameLoader.tabParent.setIsDocShellActive(val);
+            frameLoader.tabParent.docShellIsActive = val;
             return val;
           ]]>
         </setter>
@@ -239,7 +248,6 @@
           this.messageManager.addMessageListener("Browser:Init", this);
           this.messageManager.addMessageListener("DOMTitleChanged", this);
           this.messageManager.addMessageListener("ImageDocumentLoaded", this);
-          this.messageManager.addMessageListener("SetSyncHandler", this);
           this.messageManager.addMessageListener("DocumentInserted", this);
           this.messageManager.addMessageListener("FullZoomChange", this);
           this.messageManager.addMessageListener("TextZoomChange", this);
@@ -254,12 +262,14 @@
             this.messageManager.loadFrameScript("chrome://global/content/select-child.js", true);
           }
 
+          if (!this.hasAttribute("disablehistory")) {
+            Services.obs.addObserver(this, "browser:purge-session-history", false)
+          }
+
           jsm = "resource://gre/modules/RemoteController.jsm";
           let RemoteController = Components.utils.import(jsm, {}).RemoteController;
           this._controller = new RemoteController(this);
           this.controllers.appendController(this._controller);
-
-          Services.obs.addObserver(this, "ask-children-to-exit-fullscreen", false);
         ]]>
       </constructor>
 
@@ -270,7 +280,9 @@
       </destructor>
 
       <!-- This is necessary because the destructor doesn't always get called when
-           we are removed from a tabbrowser. This will be explicitly called by tabbrowser -->
+           we are removed from a tabbrowser. This will be explicitly called by tabbrowser.
+
+           Note: This overrides the destroy() method from browser.xml. -->
       <method name="destroy">
         <body><![CDATA[
           if (this.mDestroyed)
@@ -279,7 +291,13 @@
 
           this.controllers.removeController(this._controller);
 
-          Services.obs.removeObserver(this, "ask-children-to-exit-fullscreen");
+          if (!this.hasAttribute("disablehistory")) {
+            try {
+              Services.obs.removeObserver(this, "browser:purge-session-history");
+            } catch (ex) {
+              // It's not clear why this sometimes throws an exception.
+            }
+          }
         ]]></body>
       </method>
 
@@ -289,6 +307,7 @@
           let data = aMessage.data;
           switch (aMessage.name) {
             case "Browser:Init":
+              this._outerWindowID = data.outerWindowID;
               let result = {};
               result.useGlobalHistory = !this.hasAttribute("disableglobalhistory");
               result.initPopup = this.autoCompletePopup != null;
@@ -304,21 +323,18 @@
               };
               break;
 
-            case "SetSyncHandler":
-              this._syncHandler = aMessage.objects.handler;
-              break;
-
             case "Forms:ShowDropDown": {
-              Cu.import("resource://gre/modules/SelectParentHelper.jsm");
+              if (!this._selectParentHelper) {
+                this._selectParentHelper =
+                  Cu.import("resource://gre/modules/SelectParentHelper.jsm", {}).SelectParentHelper;
+              }
+
               let menulist = document.getElementById(this.getAttribute("selectmenulist"));
-              SelectParentHelper.populate(menulist, data.options, data.selectedIndex);
-              SelectParentHelper.open(this, menulist, data.rect);
+              menulist.menupopup.style.direction = data.direction;
+              this._selectParentHelper.populate(menulist, data.options, data.selectedIndex, this._fullZoom);
+              this._selectParentHelper.open(this, menulist, data.rect);
               break;
             }
-
-            case "DocumentInserted":
-              this._isSyntheticDocument = data.synthetic;
-              break;
 
             case "FullZoomChange": {
               this._fullZoom = data.value;
@@ -344,9 +360,10 @@
             }
 
             case "Forms:HideDropDown": {
-              Cu.import("resource://gre/modules/SelectParentHelper.jsm");
-              let menulist = document.getElementById(this.getAttribute("selectmenulist"));
-              SelectParentHelper.hide(menulist);
+              if (this._selectParentHelper) {
+                let menulist = document.getElementById(this.getAttribute("selectmenulist"));
+                this._selectParentHelper.hide(menulist);
+              }
               break;
             }
 
@@ -372,40 +389,6 @@
         ]]></body>
       </method>
 
-      <method name="observe">
-        <parameter name="aSubject"/>
-        <parameter name="aTopic"/>
-        <parameter name="aData"/>
-        <body><![CDATA[
-          if (aTopic == "ask-children-to-exit-fullscreen") {
-            if (aSubject == window.document) {
-              this.messageManager.sendAsyncMessage("DOMFullscreen:ChildrenMustExit");
-            }
-          }
-        ]]></body>
-      </method>
-
-      <!--
-        For out-of-process code, event.screen[XY] is relative to the
-        left/top of the content view. For in-process code,
-        event.screen[XY] is relative to the left/top of the screen. We
-        use this method to map screen coordinates received from a
-        (possibly out-of-process) <browser> element to coordinates
-        that are relative to the screen. This code handles the
-        out-of-process case, where we need to translate by the screen
-        position of the <browser> element.
-      -->
-      <method name="mapScreenCoordinatesFromContent">
-        <parameter name="aScreenX"/>
-        <parameter name="aScreenY"/>
-        <body>
-        <![CDATA[
-          return { x: aScreenX + this.boxObject.screenX,
-                   y: aScreenY + this.boxObject.screenY };
-        ]]>
-        </body>
-      </method>
-
       <method name="enableDisableCommands">
         <parameter name="aAction"/>
         <parameter name="aEnabledLength"/>
@@ -421,6 +404,19 @@
         </body>
       </method>
 
+      <method name="purgeSessionHistory">
+        <body>
+          <![CDATA[
+            try {
+              this.messageManager.sendAsyncMessage("Browser:PurgeSessionHistory");
+            } catch (ex if ex.result == Components.results.NS_ERROR_NOT_INITIALIZED) {
+              // This can throw if the browser has started to go away.
+            }
+            this.webNavigation.canGoBack = false;
+            this.webNavigation.canGoForward = false;
+          ]]>
+        </body>
+      </method>
     </implementation>
 
   </binding>

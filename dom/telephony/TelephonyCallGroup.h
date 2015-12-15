@@ -30,6 +30,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TelephonyCallGroup,
                                            DOMEventTargetHelper)
 
+  friend class Telephony;
+
   nsPIDOMWindow*
   GetParentObject() const
   {
@@ -38,7 +40,7 @@ public:
 
   // WrapperCache
   virtual JSObject*
-  WrapObject(JSContext* aCx) override;
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL interface
   already_AddRefed<CallsList>
@@ -70,9 +72,7 @@ public:
 
   IMPL_EVENT_HANDLER(statechange)
   IMPL_EVENT_HANDLER(connected)
-  IMPL_EVENT_HANDLER(holding)
   IMPL_EVENT_HANDLER(held)
-  IMPL_EVENT_HANDLER(resuming)
   IMPL_EVENT_HANDLER(callschanged)
   IMPL_EVENT_HANDLER(error)
 
@@ -109,6 +109,12 @@ public:
 private:
   explicit TelephonyCallGroup(nsPIDOMWindow* aOwner);
   ~TelephonyCallGroup();
+
+  nsresult
+  Hold(nsITelephonyCallback* aCallback);
+
+  nsresult
+  Resume(nsITelephonyCallback* aCallback);
 
   nsresult
   NotifyCallsChanged(TelephonyCall* aCall);

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,16 +28,18 @@ namespace mozilla {
 namespace dom {
 class AutoJSAPI;
 class Element;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 class nsJSUtils
 {
 public:
   static bool GetCallingLocation(JSContext* aContext, nsACString& aFilename,
-                                 uint32_t* aLineno);
+                                 uint32_t* aLineno = nullptr,
+                                 uint32_t* aColumn = nullptr);
   static bool GetCallingLocation(JSContext* aContext, nsAString& aFilename,
-                                 uint32_t* aLineno);
+                                 uint32_t* aLineno = nullptr,
+                                 uint32_t* aColumn = nullptr);
 
   static nsIScriptGlobalObject *GetStaticScriptGlobal(JSObject* aObj);
 
@@ -52,13 +55,6 @@ public:
    */
   static uint64_t GetCurrentlyRunningCodeInnerWindowID(JSContext *aContext);
 
-  /**
-   * Report a pending exception on aContext, if any.  Note that this
-   * can be called when the context has a JS stack.  If that's the
-   * case, the stack will be set aside before reporting the exception.
-   */
-  static void ReportPendingException(JSContext *aContext);
-
   static nsresult CompileFunction(mozilla::dom::AutoJSAPI& jsapi,
                                   JS::AutoObjectVector& aScopeChain,
                                   JS::CompileOptions& aOptions,
@@ -70,12 +66,10 @@ public:
 
   struct MOZ_STACK_CLASS EvaluateOptions {
     bool coerceToString;
-    bool reportUncaught;
     JS::AutoObjectVector scopeChain;
 
     explicit EvaluateOptions(JSContext* cx)
       : coerceToString(false)
-      , reportUncaught(true)
       , scopeChain(cx)
     {}
 
@@ -83,16 +77,13 @@ public:
       coerceToString = aCoerce;
       return *this;
     }
-
-    EvaluateOptions& setReportUncaught(bool aReport) {
-      reportUncaught = aReport;
-      return *this;
-    }
   };
 
   // aEvaluationGlobal is the global to evaluate in.  The return value
   // will then be wrapped back into the compartment aCx is in when
-  // this function is called.
+  // this function is called.  For all the EvaluateString overloads,
+  // the JSContext must come from an AutoJSAPI that has had
+  // TakeOwnershipOfErrorReporting() called on it.
   static nsresult EvaluateString(JSContext* aCx,
                                  const nsAString& aScript,
                                  JS::Handle<JSObject*> aEvaluationGlobal,
@@ -124,6 +115,9 @@ public:
   static bool GetScopeChainForElement(JSContext* aCx,
                                       mozilla::dom::Element* aElement,
                                       JS::AutoObjectVector& aScopeChain);
+
+  static void ResetTimeZone();
+
 private:
   // Implementation for our EvaluateString bits
   static nsresult EvaluateString(JSContext* aCx,

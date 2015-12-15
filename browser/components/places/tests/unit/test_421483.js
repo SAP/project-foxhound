@@ -7,9 +7,8 @@
 
 const SMART_BOOKMARKS_PREF = "browser.places.smartBookmarksVersion";
 
-let gluesvc = Cc["@mozilla.org/browser/browserglue;1"].
-                getService(Ci.nsIBrowserGlue).
-                QueryInterface(Ci.nsIObserver);
+var gluesvc = Cc["@mozilla.org/browser/browserglue;1"].
+                getService(Ci.nsIObserver);
 // Avoid default bookmarks import.
 gluesvc.observe(null, "initial-migration-will-import-default-bookmarks", "");
 
@@ -19,7 +18,7 @@ function run_test() {
 
 add_task(function* smart_bookmarks_disabled() {
   Services.prefs.setIntPref("browser.places.smartBookmarksVersion", -1);
-  gluesvc.ensurePlacesDefaultQueriesInitialized();
+  yield rebuildSmartBookmarks();
 
   let smartBookmarkItemIds =
     PlacesUtils.annotations.getItemsWithAnnotation(SMART_BOOKMARKS_ANNO);
@@ -31,7 +30,7 @@ add_task(function* smart_bookmarks_disabled() {
 
 add_task(function* create_smart_bookmarks() {
   Services.prefs.setIntPref("browser.places.smartBookmarksVersion", 0);
-  gluesvc.ensurePlacesDefaultQueriesInitialized();
+  yield rebuildSmartBookmarks();
 
   let smartBookmarkItemIds =
     PlacesUtils.annotations.getItemsWithAnnotation(SMART_BOOKMARKS_ANNO);
@@ -51,7 +50,7 @@ add_task(function* remove_smart_bookmark_and_restore() {
   yield PlacesUtils.bookmarks.remove(guid);
   Services.prefs.setIntPref("browser.places.smartBookmarksVersion", 0);
 
-  gluesvc.ensurePlacesDefaultQueriesInitialized();
+  yield rebuildSmartBookmarks();
   smartBookmarkItemIds =
     PlacesUtils.annotations.getItemsWithAnnotation(SMART_BOOKMARKS_ANNO);
   Assert.equal(smartBookmarkItemIds.length, smartBookmarksCount);
@@ -88,7 +87,7 @@ add_task(function* move_smart_bookmark_rename_and_restore() {
 
   // restore
   Services.prefs.setIntPref("browser.places.smartBookmarksVersion", 0);
-  gluesvc.ensurePlacesDefaultQueriesInitialized();
+  yield rebuildSmartBookmarks();
 
   smartBookmarkItemIds =
     PlacesUtils.annotations.getItemsWithAnnotation(SMART_BOOKMARKS_ANNO);

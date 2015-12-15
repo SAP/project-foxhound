@@ -17,7 +17,7 @@ public:
   VideoStreamTrack(DOMMediaStream* aStream, TrackID aTrackID)
     : MediaStreamTrack(aStream, aTrackID) {}
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   virtual VideoStreamTrack* AsVideoStreamTrack() override { return this; }
 
@@ -25,7 +25,7 @@ public:
   virtual void GetKind(nsAString& aKind) override { aKind.AssignLiteral("video"); }
 };
 
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #endif /* VIDEOSTREAMTRACK_H_ */

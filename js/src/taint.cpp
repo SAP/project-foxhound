@@ -125,7 +125,7 @@ void taint_tag_source_js(HandleString str, const char* name,
 
     if(str->length() == 0)
         return;
-    
+
     TaintNode *taint_node = taint_str_add_source_node(cx, name);
     if(cx) {
         taint_node->param1 = taint_node_stringchars(cx, str,
@@ -142,7 +142,7 @@ static char16_t*
 taint_node_stringify(JSContext *cx, HandleValue value, size_t *plength) {
 
     MOZ_ASSERT(cx);
-    
+
     JSString *str = nullptr;
 
     if(!value.isString()) {
@@ -154,60 +154,60 @@ taint_node_stringify(JSContext *cx, HandleValue value, size_t *plength) {
         return nullptr;
 
     return taint_node_stringchars(cx, str, plength);
-    
 
-    //JS_Stringify(cx, &val, JS::NullPtr(), JS::NullHandleValue, taint_node_stringify_callback, strval);
+
+    //JS_Stringify(cx, &val, nullptr, JS::NullHandleValue, taint_node_stringify_callback, strval);
     //value = vp;
 }
 
-struct TaintNode::FrameStateElement
-{
-    FrameStateElement(JSContext *cx, const FrameIter &iter, const
-        SavedStacks::LocationValue &loc):
-        name(nullptr),
-        source(nullptr),
-        linesource(nullptr),
-        line(loc.line),
-        column(loc.column),
-        next(nullptr),
-        prev(nullptr)
-        {
-            if(iter.isNonEvalFunctionFrame())
-                name = taint_node_stringchars(cx, iter.functionDisplayAtom(), nullptr);
+/*struct TaintNode::FrameStateElement*/
+//{
+    //FrameStateElement(JSContext *cx, const FrameIter &iter, const
+        //SavedStacks::LocationValue &loc):
+        //name(nullptr),
+        //source(nullptr),
+        //linesource(nullptr),
+        //line(loc.line),
+        //column(loc.column),
+        //next(nullptr),
+        //prev(nullptr)
+        //{
+            //if(iter.isNonEvalFunctionFrame())
+                //name = taint_node_stringchars(cx, iter.functionDisplayAtom(), nullptr);
 
-            if(loc.source)
-                source = taint_node_stringchars(cx, loc.source, nullptr);
+            //if(loc.source)
+                //source = taint_node_stringchars(cx, loc.source, nullptr);
 
-            if(loc.linesource)
-                linesource = taint_node_stringchars(cx, loc.linesource, nullptr);
-        }
+            //if(loc.linesource)
+                //linesource = taint_node_stringchars(cx, loc.linesource, nullptr);
+        //}
 
-    ~FrameStateElement() {
-        if(name) {
-            js_free(name);
-            name = nullptr;
-        }
+    //~FrameStateElement() {
+        //if(name) {
+            //js_free(name);
+            //name = nullptr;
+        //}
 
-        if(source) {
-            js_free(source);
-            source = nullptr;
-        }
+        //if(source) {
+            //js_free(source);
+            //source = nullptr;
+        //}
 
-        if(linesource) {
-            js_free(linesource);
-            linesource = nullptr;
-        }
-    }
+        //if(linesource) {
+            //js_free(linesource);
+            //linesource = nullptr;
+        //}
+    //}
 
-    //state is compiled into frame on every access
-    char16_t *name;
-    char16_t *source;
-    char16_t *linesource;
-    size_t line;
-    uint32_t column;
-    struct FrameStateElement *next;
-    struct FrameStateElement *prev;
-};
+    ////state is compiled into frame on every access
+    //char16_t *name;
+    //char16_t *source;
+    //char16_t *linesource;
+    //size_t line;
+    //uint32_t column;
+    //struct FrameStateElement *next;
+    //struct FrameStateElement *prev;
+//};
 
 TaintNode::TaintNode(JSContext *cx, const char* opname) :
     op(opname),
@@ -219,90 +219,92 @@ TaintNode::TaintNode(JSContext *cx, const char* opname) :
     param2len(0),
     stack(nullptr)
 {
-    
-    if(cx && cx->runtime()->getTaintParameter(JSTAINT_CAPTURESTACK)) {
-        JS::AutoCheckCannotGC nogc;
 
-        //this is in parts taken from SavedStacks.cpp
-        //we need to split up their algorithm to fetch the stack WITHOUT causing GC
-        //because we cannot guarantee that all pointer are marked for all calling locations
-        //they will be compiled into GCthings later
-        NonBuiltinScriptFrameIter iter(cx, FrameIter::GO_THROUGH_SAVED);
-        FrameStateElement *last = nullptr;
-        while(!iter.done()) {
-            SavedStacks::AutoLocationValueRooter location(cx);
-            {
-                AutoCompartment ac(cx, iter.compartment());
-                if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location, cx->runtime()->getTaintParameter(JSTAINT_CAPTURESTACKSOURCE)))
-                    break;
-            }
+    // TODO fix
+/*    if(cx && cx->runtime()->getTaintParameter(JSTAINT_CAPTURESTACK)) {*/
+        //JS::AutoCheckCannotGC nogc;
 
-            JS::AutoCheckCannotGC nogc;
+        ////this is in parts taken from SavedStacks.cpp
+        ////we need to split up their algorithm to fetch the stack WITHOUT causing GC
+        ////because we cannot guarantee that all pointer are marked for all calling locations
+        ////they will be compiled into GCthings later
+        //NonBuiltinScriptFrameIter iter(cx, FrameIter::GO_THROUGH_SAVED);
+        //FrameStateElement *last = nullptr;
+        //while(!iter.done()) {
+            //SavedStacks::AutoLocationValueRooter location(cx);
+            //{
+                //AutoCompartment ac(cx, iter.compartment());
+                //if (!cx->compartment()->savedStacks().getLocation(cx, iter, &location, cx->runtime()->getTaintParameter(JSTAINT_CAPTURESTACKSOURCE)))
+                    //break;
+            //}
 
-            FrameStateElement *e;
-            {
-                void *p = js_malloc(sizeof(FrameStateElement));
-                e = new (p) FrameStateElement(cx, iter, location.get());
-            }
-            //e->state.location = location.get();
+            //JS::AutoCheckCannotGC nogc;
 
-            e->next = last;
-            if(last)
-                last->prev = e;
-            if(!stack)
-                stack = e;
-            last = e;
-            
+            //FrameStateElement *e;
+            //{
+                //void *p = js_malloc(sizeof(FrameStateElement));
+                //e = new (p) FrameStateElement(cx, iter, location.get());
+            //}
+            ////e->state.location = location.get();
 
-            ++iter;
-        }
-    }
+            //e->next = last;
+            //if(last)
+                //last->prev = e;
+            //if(!stack)
+                //stack = e;
+            //last = e;
+
+
+            //++iter;
+        //}
+    /*}*/
 }
-    
-void
-TaintNode::compileFrame(JSContext *cx, MutableHandleObject obj)
-{
-    //first compiled? all compiled!
-    if(!stack) {
-        return;
-    }
 
-    SavedStacks &sstack = cx->compartment()->savedStacks();
+/*void*/
+//TaintNode::compileFrame(JSContext *cx, MutableHandleObject obj)
+//{
+    ////first compiled? all compiled!
+    //if(!stack) {
+        //return;
+    //}
 
-    //find last first
-    FrameStateElement *last = stack;
-    for(;last && last->prev; last = last->prev);
-    MOZ_ASSERT(last);
+    //SavedStacks &sstack = cx->compartment()->savedStacks();
 
-    RootedSavedFrame frame(cx, nullptr);
-    for(FrameStateElement *itr = last; itr != nullptr; itr = itr->next) {
-        //build fake FrameState
-        SavedStacks::FrameState fstate;
-        fstate.principals = cx->compartment()->principals;
-        if(itr->name)
-            fstate.name = AtomizeChars(cx, itr->name, std::char_traits<char16_t>::length(itr->name));
-        if(itr->source)
-            fstate.location.source = AtomizeChars(cx, itr->source, std::char_traits<char16_t>::length(itr->source));
-        if(itr->linesource)
-            fstate.location.linesource = AtomizeChars(cx, itr->linesource, std::char_traits<char16_t>::length(itr->linesource));
-        fstate.location.line = itr->line;
-        fstate.location.column = itr->column;
-        sstack.buildSavedFrame(cx, &frame, fstate);
-        MOZ_ASSERT(frame);
-    }
+    ////find last first
+    //FrameStateElement *last = stack;
+    //for(;last && last->prev; last = last->prev);
+    //MOZ_ASSERT(last);
 
-    obj.set(frame);
-}
+    //RootedSavedFrame frame(cx, nullptr);
+    //for(FrameStateElement *itr = last; itr != nullptr; itr = itr->next) {
+        ////build fake FrameState
+        //SavedStacks::FrameState fstate;
+        //fstate.principals = cx->compartment()->principals;
+        //if(itr->name)
+            //fstate.name = AtomizeChars(cx, itr->name, std::char_traits<char16_t>::length(itr->name));
+        //if(itr->source)
+            //fstate.location.source = AtomizeChars(cx, itr->source, std::char_traits<char16_t>::length(itr->source));
+        //if(itr->linesource)
+            //fstate.location.linesource = AtomizeChars(cx, itr->linesource, std::char_traits<char16_t>::length(itr->linesource));
+        //fstate.location.line = itr->line;
+        //fstate.location.column = itr->column;
+        //sstack.buildSavedFrame(cx, &frame, fstate);
+        //MOZ_ASSERT(frame);
+    //}
+
+    //obj.set(frame);
+//}
 
 TaintNode::~TaintNode()
 {
     if(stack) {
-        for(FrameStateElement *itr = stack; itr != nullptr;) {
-            FrameStateElement *n = itr->prev;
-            itr->~FrameStateElement();
-            js_free(itr);
-            itr = n;
-        }
+        //TODO fix
+        /*for(FrameStateElement *itr = stack; itr != nullptr;) {*/
+            //FrameStateElement *n = itr->prev;
+            //itr->~FrameStateElement();
+            //js_free(itr);
+            //itr = n;
+        /*}*/
         stack = nullptr;
     }
 
@@ -328,7 +330,7 @@ TaintNode::decrease()
         old->refCount--;
         if(old->refCount > 0)
             break;
-        
+
         old->~TaintNode();
         js_free(old);
 
@@ -488,11 +490,11 @@ taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
         JS::AutoCheckCannotGC nogc;
         JSLinearString *linear = str->ensureLinear(cx);
         if(linear->hasLatin1Chars()) {
-            taintedStr = NewStringCopyN<NoGC>(cx, 
+            taintedStr = NewStringCopyN<NoGC>(cx,
                 linear->latin1Chars(nogc), str->length());
         }
         else {
-            taintedStr = NewStringCopyN<NoGC>(cx, 
+            taintedStr = NewStringCopyN<NoGC>(cx,
                 linear->twoByteChars(nogc), str->length());
         }
     }
@@ -538,9 +540,9 @@ taint_str_prop(JSContext *cx, unsigned argc, Value *vp)
             opname = StringValue(NewStringCopyZ<CanGC>(cx, curnode->op));
             param1val = JS_NewUCStringCopyN(cx, curnode->param1, curnode->param1len);
             param2val = JS_NewUCStringCopyN(cx, curnode->param2, curnode->param2len);
-            
+
             if(curnode->stack) {
-                curnode->compileFrame(cx, &stackobj);
+                //curnode->compileFrame(cx, &stackobj);
             }
 
             if(stackobj)
@@ -639,7 +641,7 @@ taint_add_op_single(TaintStringRef *dst, const char* name, JSContext *cx, Handle
 }
 
 void
-taint_inject_substring_op(JSContext *cx, TaintStringRef *last, 
+taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     uint32_t offset, uint32_t begin)
 {
     MOZ_ASSERT(cx && last);
@@ -653,8 +655,8 @@ taint_inject_substring_op(JSContext *cx, TaintStringRef *last,
     //as they follow the "last" var captured _before_ the call
     for(TaintStringRef *tsr = last; tsr != nullptr; tsr = tsr->next)
     {
-        //RootedValue startval(cx, INT_TO_JSVAL(tsr->begin - offset + begin));
-        //RootedValue endval(cx, INT_TO_JSVAL(tsr->end - offset + begin));
+        //RootedValue startval(cx, Int32Value(tsr->begin - offset + begin));
+        //RootedValue endval(cx, Int32Value(tsr->end - offset + begin));
         size_t param1len = 0;
         size_t param2len = 0;
         char16_t *p1 = taint_add_op_new_int(cx, tsr->begin - offset + begin, &param1len);
@@ -731,7 +733,7 @@ taint_str_substr(JSString *str, JSContext *cx, JSString *base,
             param2len
         );
     }
-        
+
     return str;
 }
 
@@ -867,7 +869,7 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
 
     TaintStringRef *start = nullptr;
     TaintStringRef *last = nullptr;
-    
+
     for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
     {
         if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
@@ -877,7 +879,7 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
         uint32_t end   = tsr->end;
         if(fromend > 0 && fromend < end)
             end = fromend;
-        
+
         TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
         newtsr->begin = begin - frombegin + offset;
         newtsr->end   = end - frombegin + offset;
@@ -904,7 +906,7 @@ TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **tain
 
 
 TaintStringRef *
-taint_copy_exact(TaintStringRef **target, TaintStringRef *source, 
+taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
     size_t sidx, size_t tidx, size_t soff)
 {
     MOZ_ASSERT(target);
@@ -997,7 +999,7 @@ taint_copy_merge(TaintStringRef **dst_start, TaintStringRef **dst_end,
 
     TaintStringRef *current_src =  src_start;
     TaintStringRef *last_dst = nullptr;
-    TaintStringRef *current_dst = *dst_start;    
+    TaintStringRef *current_dst = *dst_start;
 
     for(;current_src != nullptr; ) {
         TaintStringRef *insert = taint_str_taintref_build(*current_src);
@@ -1208,7 +1210,7 @@ taint_jsval_writecallback(const char16_t *buf, uint32_t len, void *data)
 {
     std::string *writer = static_cast<std::string*>(data);
     taint_write_string_buffer(buf, len, writer);
-    
+
     return true;
 }
 
@@ -1226,7 +1228,7 @@ jsvalue_to_stdstring(JSContext *cx, HandleValue value, std::string *strval) {
         val = value;
     }
 
-    JS_Stringify(cx, &val, JS::NullPtr(), JS::NullHandleValue, taint_jsval_writecallback, strval);
+    JS_Stringify(cx, &val, nullptr, JS::NullHandleValue, taint_jsval_writecallback, strval);
     //value = vp;
 }
 
@@ -1347,7 +1349,7 @@ taint_report_sink_internal(JSContext *cx, JS::HandleValue str, TaintStringRef *s
                 //JS_WrapValue(cx, &convertValue);
                 //jsvalue_to_stdstring(cx, convertValue, &param2);
             }
-            
+
             // if(node->stack) {
             //     RootedObject stackObj(cx, nullptr);
             //     node->compileFrame(cx, &stackObj);
@@ -1456,7 +1458,6 @@ taint_domlog(JSContext *cx, unsigned argc, Value *vp)
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
                .setForEval(false)
-               .setCompileAndGo(false)
                .setNoScriptRval(false);
         JS::AutoObjectVector emptyScopeChain(cx);
         if(!JS::CompileFunction(cx, emptyScopeChain, options, "__taint_dispatch_domlog",
@@ -1529,7 +1530,6 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
                .setForEval(false)
-               .setCompileAndGo(false)
                .setNoScriptRval(false);
         JS::AutoObjectVector emptyScopeChain(cx);
         if(!JS::CompileFunction(cx, emptyScopeChain, options, "__taint_dispatch_report",
@@ -1571,15 +1571,15 @@ taint_report_sink_js(JSContext *cx, HandleString str, const char* name)
     RootedObject strobj(cx);
     RootedObject stack(cx);
     JS::AutoValueArray<2> params(cx);
-    
+
     params[0].setString(NewStringCopyZ<CanGC>(cx, name));
-    
+
     JS::CaptureCurrentStack(cx, &stack);
     params[1].setObject(*stack);
-    
+
     strobj = StringObject::create(cx, str);
 
     JS_CallFunctionName(cx, strobj, "reportTaint", params, &rval);
-} 
+}
 
 #endif

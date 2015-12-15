@@ -61,9 +61,7 @@ DIRS += [
 if CONFIG['MOZ_WEBRTC']:
     DIRS += [
         '/media/webrtc',
-        '/media/mtransport/third_party',
-        '/media/mtransport/build',
-        '/media/mtransport/standalone',
+        '/media/mtransport',
     ]
 
 if CONFIG['MOZ_OMX_PLUGIN']:
@@ -96,7 +94,6 @@ DIRS += [
     '/dom',
     '/view',
     '/widget',
-    '/content',
     '/editor',
     '/layout',
     '/docshell',
@@ -120,14 +117,14 @@ else:
 
 # toolkit
 
-DIRS += ['/profile']
-
 # This must precede xpfe.
 if CONFIG['MOZ_JPROF']:
     DIRS += ['/tools/jprof']
 
 DIRS += [
+    '/tools/power',
     '/tools/profiler',
+    '/tools/memory-profiler',
     '/xpfe/components',
 ]
 
@@ -163,10 +160,6 @@ DIRS += [
 if CONFIG['MOZ_ENABLE_GNOME_COMPONENT']:
     DIRS += ['/toolkit/system/gnome']
 
-# if QtNetwork is present, it will do its own network monitoring
-if not CONFIG['MOZ_ENABLE_QTNETWORK'] and CONFIG['MOZ_ENABLE_DBUS']:
-    DIRS += ['/toolkit/system/dbus']
-
 DIRS += ['/addon-sdk']
 
 if CONFIG['ENABLE_MARIONETTE'] or CONFIG['MOZ_WIDGET_TOOLKIT'] not in ('gonk', 'android'):
@@ -185,11 +178,13 @@ if CONFIG['ENABLE_TESTS']:
         '/testing/profiles',
         '/testing/mozbase',
         '/testing/modules',
+        '/testing/runtimes',
         '/testing/web-platform',
     ]
 
     if CONFIG['MOZ_WEBRTC'] and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
             DIRS += [
                 '/media/webrtc/signaling/test',
+                '/media/webrtc/signaling/test/standalone',
                 '/media/mtransport/test',
             ]

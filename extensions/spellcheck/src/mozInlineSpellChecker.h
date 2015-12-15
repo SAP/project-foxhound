@@ -24,7 +24,6 @@
 #undef KeyPress
 #endif
 
-class nsIDOMMouseEventListener;
 class mozInlineSpellWordUtil;
 class mozInlineSpellChecker;
 class mozInlineSpellResume;
@@ -117,9 +116,9 @@ protected:
 };
 
 class mozInlineSpellChecker final : public nsIInlineSpellChecker,
-                                        public nsIEditActionListener,
-                                        public nsIDOMEventListener,
-                                        public nsSupportsWeakReference
+                                    public nsIEditActionListener,
+                                    public nsIDOMEventListener,
+                                    public nsSupportsWeakReference
 {
 private:
   friend class mozInlineSpellStatus;

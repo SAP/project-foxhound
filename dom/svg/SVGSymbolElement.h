@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,14 +21,14 @@ namespace dom {
 typedef nsSVGElement SVGSymbolElementBase;
 
 class SVGSymbolElement final : public SVGSymbolElementBase,
-                                   public SVGTests
+                               public SVGTests
 {
 protected:
   friend nsresult (::NS_NewSVGSymbolElement(nsIContent **aResult,
                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
   explicit SVGSymbolElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   ~SVGSymbolElement();
-  virtual JSObject* WrapNode(JSContext *cx) override;
+  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
 
 public:
   // interfaces:

@@ -9,16 +9,36 @@
 #define CPOWTIMER_H
 
 #include "prinrval.h"
+#include "jsapi.h"
 
-class JSObject;
-
-class MOZ_STACK_CLASS CPOWTimer {
+/**
+ * A stopwatch measuring the duration of a CPOW call.
+ *
+ * As the process is consuming neither user time nor system time
+ * during a CPOW call, we measure such durations using wallclock time.
+ *
+ * This stopwatch is active iff JSRuntime::stopwatch.isActive is set.
+ * Upon destruction, update JSRuntime::stopwatch.data.totalCPOWTime.
+ */
+class MOZ_RAII CPOWTimer final {
   public:
-    CPOWTimer(): startInterval(PR_IntervalNow()) {}
+    explicit inline CPOWTimer(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
     ~CPOWTimer();
 
   private:
-    PRIntervalTime startInterval;
+    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+
+    /**
+     * The context in which this timer was created, or `nullptr` if
+     * CPOW monitoring was off when the timer was created.
+     */
+    JSContext* cx_;
+
+    /**
+     * The instant at which the stopwatch was started. Undefined
+     * if CPOW monitoring was off when the timer was created.
+     */
+    int64_t startInterval_;
 };
 
 #endif

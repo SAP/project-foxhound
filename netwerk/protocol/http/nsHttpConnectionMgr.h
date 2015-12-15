@@ -31,8 +31,8 @@ struct HttpRetParams;
 
 //-----------------------------------------------------------------------------
 
-class nsHttpConnectionMgr : public nsIObserver
-                          , public AltSvcCache
+class nsHttpConnectionMgr final : public nsIObserver
+                                , public AltSvcCache
 {
 public:
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -242,11 +242,6 @@ public:
     // bit different.
     void ReportSpdyConnection(nsHttpConnection *, bool usingSpdy);
 
-    // A spdy server can supply cwnd information for the session that is used
-    // in future sessions to speed up the opening portions of the connection.
-    void ReportSpdyCWNDSetting(nsHttpConnectionInfo *host, uint32_t cwndValue);
-    uint32_t GetSpdyCWNDSetting(nsHttpConnectionInfo *host);
-
     bool     SupportsPipelining(nsHttpConnectionInfo *);
 
     bool GetConnectionData(nsTArray<HttpRetParams> *);
@@ -366,11 +361,6 @@ private:
         //
         nsTArray<nsCString> mCoalescingKeys;
 
-        // The value of a recevied SPDY settings type 5 previously received
-        // for this connection entry and the time it was set.
-        uint32_t            mSpdyCWND;
-        TimeStamp  mSpdyCWNDTimeStamp;
-
         // To have the UsingSpdy flag means some host with the same connection
         // entry has done NPN=spdy/* at some point. It does not mean every
         // connection is currently using spdy.
@@ -431,9 +421,9 @@ private:
     // while we wait for it to establish and bind it to a connection
 
     class nsHalfOpenSocket final : public nsIOutputStreamCallback,
-                                       public nsITransportEventSink,
-                                       public nsIInterfaceRequestor,
-                                       public nsITimerCallback
+                                   public nsITransportEventSink,
+                                   public nsIInterfaceRequestor,
+                                   public nsITimerCallback
     {
         ~nsHalfOpenSocket();
 
@@ -728,6 +718,7 @@ private:
     nsCString mLogData;
 };
 
-}} // namespace mozilla::net
+} // namespace net
+} // namespace mozilla
 
 #endif // !nsHttpConnectionMgr_h__

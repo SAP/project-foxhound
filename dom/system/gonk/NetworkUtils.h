@@ -110,7 +110,6 @@ public:
     COPY_OPT_STRING_FIELD(mIfname, EmptyString())
     COPY_OPT_STRING_FIELD(mIp, EmptyString())
     COPY_OPT_FIELD(mPrefixLength, 0)
-    COPY_OPT_STRING_FIELD(mOldIfname, EmptyString())
     COPY_OPT_STRING_FIELD(mMode, EmptyString())
     COPY_OPT_FIELD(mReport, false)
     COPY_OPT_FIELD(mEnabled, false)
@@ -146,6 +145,8 @@ public:
     COPY_OPT_FIELD(mDns1_long, 0)
     COPY_OPT_FIELD(mDns2_long, 0)
 
+    mLoopIndex = 0;
+
 #undef COPY_SEQUENCE_FIELD
 #undef COPY_OPT_STRING_FIELD
 #undef COPY_OPT_FIELD
@@ -161,7 +162,6 @@ public:
   nsString mIfname;
   nsString mIp;
   uint32_t mPrefixLength;
-  nsString mOldIfname;
   nsString mMode;
   bool mReport;
   bool mEnabled;
@@ -198,7 +198,8 @@ public:
   long mDns2_long;
 
   // Auxiliary information required to carry accros command chain.
-  int mNetId;     // A locally defined id per interface.
+  int mNetId; // A locally defined id per interface.
+  uint32_t mLoopIndex; // Loop index for adding/removing multiple gateways.
 };
 
 // CommandChain store the necessary information to execute command one by one.
@@ -284,6 +285,7 @@ private:
    */
   CommandResult configureInterface(NetworkParams& aOptions);
   CommandResult dhcpRequest(NetworkParams& aOptions);
+  CommandResult stopDhcp(NetworkParams& aOptions);
   CommandResult enableInterface(NetworkParams& aOptions);
   CommandResult disableInterface(NetworkParams& aOptions);
   CommandResult resetConnections(NetworkParams& aOptions);
@@ -298,6 +300,9 @@ private:
   CommandResult setNetworkInterfaceAlarm(NetworkParams& aOptions);
   CommandResult enableNetworkInterfaceAlarm(NetworkParams& aOptions);
   CommandResult disableNetworkInterfaceAlarm(NetworkParams& aOptions);
+  CommandResult setTetheringAlarm(NetworkParams& aOptions);
+  CommandResult removeTetheringAlarm(NetworkParams& aOptions);
+  CommandResult getTetheringStatus(NetworkParams& aOptions);
   CommandResult setWifiOperationMode(NetworkParams& aOptions);
   CommandResult setDhcpServer(NetworkParams& aOptions);
   CommandResult setWifiTethering(NetworkParams& aOptions);
@@ -306,6 +311,7 @@ private:
   CommandResult updateUpStream(NetworkParams& aOptions);
   CommandResult createNetwork(NetworkParams& aOptions);
   CommandResult destroyNetwork(NetworkParams& aOptions);
+  CommandResult getNetId(NetworkParams& aOptions);
 
   CommandResult addHostRouteLegacy(NetworkParams& aOptions);
   CommandResult removeHostRouteLegacy(NetworkParams& aOptions);
@@ -332,7 +338,9 @@ private:
   static const CommandFunc sNetworkInterfaceEnableAlarmChain[];
   static const CommandFunc sNetworkInterfaceDisableAlarmChain[];
   static const CommandFunc sNetworkInterfaceSetAlarmChain[];
-
+  static const CommandFunc sTetheringInterfaceSetAlarmChain[];
+  static const CommandFunc sTetheringInterfaceRemoveAlarmChain[];
+  static const CommandFunc sTetheringGetStatusChain[];
   /**
    * Individual netd command stored in command chain.
    */
@@ -352,12 +360,17 @@ private:
   static void setQuota(PARAMS);
   static void removeQuota(PARAMS);
   static void setAlarm(PARAMS);
+  static void removeAlarm(PARAMS);
+  static void setGlobalAlarm(PARAMS);
+  static void removeGlobalAlarm(PARAMS);
   static void setInterfaceUp(PARAMS);
   static void tetherInterface(PARAMS);
   static void addInterfaceToLocalNetwork(PARAMS);
   static void addRouteToLocalNetwork(PARAMS);
   static void preTetherInterfaceList(PARAMS);
   static void postTetherInterfaceList(PARAMS);
+  static void addUpstreamInterface(PARAMS);
+  static void removeUpstreamInterface(PARAMS);
   static void setIpForwardingEnabled(PARAMS);
   static void tetheringStatus(PARAMS);
   static void stopTethering(PARAMS);

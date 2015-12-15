@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
-/* vim: set ts=2 sw=2 et tw=79: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,15 +13,18 @@
 #ifndef mozilla_dom_BindingDeclarations_h__
 #define mozilla_dom_BindingDeclarations_h__
 
-#include "nsStringGlue.h"
-#include "js/Value.h"
 #include "js/RootingAPI.h"
+#include "js/Value.h"
+
 #include "mozilla/Maybe.h"
-#include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsAutoPtr.h" // for nsRefPtr member variables
+#include "mozilla/OwningNonNull.h"
+
 #include "mozilla/dom/DOMString.h"
-#include "mozilla/dom/OwningNonNull.h"
+
+#include "nsAutoPtr.h" // for nsRefPtr member variables
+#include "nsCOMPtr.h"
+#include "nsStringGlue.h"
+#include "nsTArray.h"
 
 class nsWrapperCache;
 
@@ -117,6 +120,11 @@ public:
   explicit Optional_base(const T& aValue)
   {
     mImpl.emplace(aValue);
+  }
+
+  bool operator==(const Optional_base<T, InternalType>& aOther) const
+  {
+    return mImpl == aOther.mImpl;
   }
 
   template<typename T1, typename T2>
@@ -471,14 +479,14 @@ GetWrapperCache(const SmartPtr<T>& aObject)
 
 struct MOZ_STACK_CLASS ParentObject {
   template<class T>
-  ParentObject(T* aObject) :
+  MOZ_IMPLICIT ParentObject(T* aObject) :
     mObject(aObject),
     mWrapperCache(GetWrapperCache(aObject)),
     mUseXBLScope(false)
   {}
 
   template<class T, template<typename> class SmartPtr>
-  ParentObject(const SmartPtr<T>& aObject) :
+  MOZ_IMPLICIT ParentObject(const SmartPtr<T>& aObject) :
     mObject(aObject.get()),
     mWrapperCache(GetWrapperCache(aObject.get())),
     mUseXBLScope(false)

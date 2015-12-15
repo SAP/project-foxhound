@@ -3,7 +3,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-let gEMEHandler = {
+var gEMEHandler = {
+  get uiEnabled() {
+    let emeUIEnabled = Services.prefs.getBoolPref("browser.eme.ui.enabled");
+    // Force-disable on WinXP:
+    if (navigator.platform.toLowerCase().startsWith("win")) {
+      emeUIEnabled = emeUIEnabled && parseFloat(Services.sysinfo.get("version")) >= 6;
+    }
+    return emeUIEnabled;
+  },
   ensureEMEEnabled: function(browser, keySystem) {
     Services.prefs.setBoolPref("media.eme.enabled", true);
     if (keySystem) {
@@ -45,7 +53,7 @@ let gEMEHandler = {
     }
     let {status: status, keySystem: keySystem} = parsedData;
     // Don't need to show if disabled
-    if (!Services.prefs.getBoolPref("browser.eme.ui.enabled")) {
+    if (!this.uiEnabled) {
       return;
     }
 
@@ -198,6 +206,7 @@ let gEMEHandler = {
     let options = {
       dismissed: true,
       eventCallback: aTopic => aTopic == "swapping",
+      learnMoreURL: Services.urlFormatter.formatURLPref("app.support.baseURL") + "drm-content",
     };
     PopupNotifications.show(browser, "drmContentPlaying", message, anchorId, mainAction, null, options);
   },

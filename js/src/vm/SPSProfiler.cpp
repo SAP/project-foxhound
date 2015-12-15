@@ -14,6 +14,7 @@
 
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineJIT.h"
+#include "jit/JitcodeMap.h"
 #include "jit/JitFrameIterator.h"
 #include "jit/JitFrames.h"
 #include "vm/StringBuffer.h"
@@ -87,6 +88,15 @@ SPSProfiler::enable(bool enabled)
      */
     ReleaseAllJITCode(rt->defaultFreeOp());
 
+    // This function is called when the Gecko profiler makes a new TableTicker
+    // (and thus, a new circular buffer). Set all current entries in the
+    // JitcodeGlobalTable as expired and reset the buffer generation and lap
+    // count.
+    if (rt->hasJitRuntime() && rt->jitRuntime()->hasJitcodeGlobalTable())
+        rt->jitRuntime()->getJitcodeGlobalTable()->setAllEntriesAsExpired(rt);
+    rt->resetProfilerSampleBufferGen();
+    rt->resetProfilerSampleBufferLapCount();
+
     // Ensure that lastProfilingFrame is null before 'enabled' becomes true.
     if (rt->jitActivation) {
         rt->jitActivation->setLastProfilingFrame(nullptr);
@@ -106,8 +116,25 @@ SPSProfiler::enable(bool enabled)
      * stack.
      */
     if (rt->jitActivation) {
-        void* lastProfilingFrame = GetTopProfilingJitFrame(rt->jitTop);
-        rt->jitActivation->setLastProfilingFrame(lastProfilingFrame);
+        // Walk through all activations, and set their lastProfilingFrame appropriately.
+        if (enabled) {
+            void* lastProfilingFrame = GetTopProfilingJitFrame(rt->jitTop);
+            jit::JitActivation* jitActivation = rt->jitActivation;
+            while (jitActivation) {
+                jitActivation->setLastProfilingFrame(lastProfilingFrame);
+                jitActivation->setLastProfilingCallSite(nullptr);
+
+                lastProfilingFrame = GetTopProfilingJitFrame(jitActivation->prevJitTop());
+                jitActivation = jitActivation->prevJitActivation();
+            }
+        } else {
+            jit::JitActivation* jitActivation = rt->jitActivation;
+            while (jitActivation) {
+                jitActivation->setLastProfilingFrame(nullptr);
+                jitActivation->setLastProfilingCallSite(nullptr);
+                jitActivation = jitActivation->prevJitActivation();
+            }
+        }
     }
 }
 
@@ -226,14 +253,15 @@ SPSProfiler::beginPseudoJS(const char* string, void* sp)
     MOZ_ASSERT(installed());
     if (current < max_) {
         stack[current].setLabel(string);
-        stack[current].setCppFrame(sp, 0);
+        stack[current].initCppFrame(sp, 0);
         stack[current].setFlag(ProfileEntry::BEGIN_PSEUDO_JS);
     }
     *size = current + 1;
 }
 
 void
-SPSProfiler::push(const char* string, void* sp, JSScript* script, jsbytecode* pc, bool copy)
+SPSProfiler::push(const char* string, void* sp, JSScript* script, jsbytecode* pc, bool copy,
+                  ProfileEntry::Category category)
 {
     MOZ_ASSERT_IF(sp != nullptr, script == nullptr && pc == nullptr);
     MOZ_ASSERT_IF(sp == nullptr, script != nullptr && pc != nullptr);
@@ -246,16 +274,18 @@ SPSProfiler::push(const char* string, void* sp, JSScript* script, jsbytecode* pc
     MOZ_ASSERT(installed());
     if (current < max_) {
         volatile ProfileEntry& entry = stack[current];
-        entry.setLabel(string);
 
         if (sp != nullptr) {
-            entry.setCppFrame(sp, 0);
+            entry.initCppFrame(sp, 0);
             MOZ_ASSERT(entry.flags() == js::ProfileEntry::IS_CPP_ENTRY);
         }
         else {
-            entry.setJsFrame(script, pc);
+            entry.initJsFrame(script, pc);
             MOZ_ASSERT(entry.flags() == 0);
         }
+
+        entry.setLabel(string);
+        entry.setCategory(category);
 
         // Track if mLabel needs a copy.
         if (copy)
@@ -302,8 +332,9 @@ SPSProfiler::allocProfileString(JSScript* script, JSFunction* maybeFun)
 
     // Determine the required buffer size.
     size_t len = lenFilename + lenLineno + 1; // +1 for the ":" separating them.
-    if (atom)
-        len += atom->length() + 3; // +3 for the " (" and ")" it adds.
+    if (atom) {
+        len += JS::GetDeflatedUTF8StringLength(atom) + 3; // +3 for the " (" and ")" it adds.
+    }
 
     // Allocate the buffer.
     char* cstr = js_pod_malloc<char>(len + 1);
@@ -314,10 +345,13 @@ SPSProfiler::allocProfileString(JSScript* script, JSFunction* maybeFun)
     DebugOnly<size_t> ret;
     if (atom) {
         JS::AutoCheckCannotGC nogc;
-        if (atom->hasLatin1Chars())
-            ret = JS_snprintf(cstr, len + 1, "%s (%s:%llu)", atom->latin1Chars(nogc), filename, lineno);
-        else
-            ret = JS_snprintf(cstr, len + 1, "%hs (%s:%llu)", atom->twoByteChars(nogc), filename, lineno);
+        auto atomStr = mozilla::UniquePtr<char, JS::FreePolicy>(
+            atom->hasLatin1Chars()
+            ? JS::CharsToNewUTF8CharsZ(nullptr, atom->latin1Range(nogc)).c_str()
+            : JS::CharsToNewUTF8CharsZ(nullptr, atom->twoByteRange(nogc)).c_str());
+        if (!atomStr)
+            return nullptr;
+        ret = JS_snprintf(cstr, len + 1, "%s (%s:%llu)", atomStr.get(), filename, lineno);
     } else {
         ret = JS_snprintf(cstr, len + 1, "%s:%llu", filename, lineno);
     }
@@ -353,12 +387,38 @@ SPSEntryMarker::~SPSEntryMarker()
     MOZ_ASSERT(size_before == *profiler->size_);
 }
 
+AutoSPSEntry::AutoSPSEntry(JSRuntime* rt, const char* label, ProfileEntry::Category category
+                           MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+    : profiler_(&rt->spsProfiler)
+{
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+    if (!profiler_->installed()) {
+        profiler_ = nullptr;
+        return;
+    }
+    sizeBefore_ = *profiler_->size_;
+    profiler_->beginPseudoJS(label, this);
+    profiler_->push(label, this, nullptr, nullptr, /* copy = */ false, category);
+}
+
+AutoSPSEntry::~AutoSPSEntry()
+{
+    if (!profiler_)
+        return;
+
+    profiler_->pop();
+    profiler_->endPseudoJS();
+    MOZ_ASSERT(sizeBefore_ == *profiler_->size_);
+}
+
 SPSBaselineOSRMarker::SPSBaselineOSRMarker(JSRuntime* rt, bool hasSPSFrame
                                            MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
     : profiler(&rt->spsProfiler)
 {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    if (!hasSPSFrame || !profiler->enabled()) {
+    if (!hasSPSFrame || !profiler->enabled() ||
+        profiler->size() >= profiler->maxSize())
+    {
         profiler = nullptr;
         return;
     }
@@ -447,8 +507,8 @@ AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(JSRuntime* rt
 
 AutoSuppressProfilerSampling::~AutoSuppressProfilerSampling()
 {
-        if (previouslyEnabled_)
-            rt_->enableProfilerSampling();
+    if (previouslyEnabled_)
+        rt_->enableProfilerSampling();
 }
 
 void*

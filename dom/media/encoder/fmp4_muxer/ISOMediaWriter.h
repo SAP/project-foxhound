@@ -13,7 +13,6 @@ namespace mozilla {
 
 class ISOControl;
 class FragmentBuffer;
-class ISOMediaWriterRunnable;
 
 class ISOMediaWriter : public ContainerWriter
 {
@@ -100,4 +99,5 @@ private:
 };
 
 } // namespace mozilla
+
 #endif // ISOMediaWriter_h_

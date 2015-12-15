@@ -24,6 +24,7 @@
 
 class gfxContext;
 class gfxFontGroup;
+class gfxUserFontEntry;
 class gfxUserFontSet;
 class gfxTextContextPaint;
 class nsIAtom;
@@ -39,10 +40,9 @@ struct gfxTextRunDrawCallbacks {
     /**
      * Constructs a new DrawCallbacks object.
      *
-     * @param aShouldPaintSVGGlyphs If true, SVG glyphs will be
-     *   painted and the NotifyBeforeSVGGlyphPainted/NotifyAfterSVGGlyphPainted
-     *   callbacks will be invoked for each SVG glyph.  If false, SVG glyphs
-     *   will not be painted; fallback plain glyphs are not emitted either.
+     * @param aShouldPaintSVGGlyphs If true, SVG glyphs will be painted.  If
+     *   false, SVG glyphs will not be painted; fallback plain glyphs are not
+     *   emitted either.
      */
     explicit gfxTextRunDrawCallbacks(bool aShouldPaintSVGGlyphs = false)
       : mShouldPaintSVGGlyphs(aShouldPaintSVGGlyphs)
@@ -55,16 +55,6 @@ struct gfxTextRunDrawCallbacks {
      * due to partial ligatures and intervening SVG glyphs.
      */
     virtual void NotifyGlyphPathEmitted() = 0;
-
-    /**
-     * Called just before an SVG glyph has been painted to the gfxContext.
-     */
-    virtual void NotifyBeforeSVGGlyphPainted() { }
-
-    /**
-     * Called just after an SVG glyph has been painted to the gfxContext.
-     */
-    virtual void NotifyAfterSVGGlyphPainted() { }
 
     bool mShouldPaintSVGGlyphs;
 };
@@ -92,9 +82,9 @@ class gfxTextRun : public gfxShapedText {
 public:
 
     // Override operator delete to properly free the object that was
-    // allocated via moz_malloc.
+    // allocated via malloc.
     void operator delete(void* p) {
-        moz_free(p);
+        free(p);
     }
 
     virtual ~gfxTextRun();
@@ -742,8 +732,9 @@ public:
     static void Shutdown(); // platform must call this to release the languageAtomService
 
     gfxFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
-                 const gfxFontStyle *aStyle,
-                 gfxUserFontSet *aUserFontSet = nullptr);
+                 const gfxFontStyle* aStyle,
+                 gfxTextPerfMetrics* aTextPerf,
+                 gfxUserFontSet* aUserFontSet = nullptr);
 
     virtual ~gfxFontGroup();
 
@@ -841,18 +832,6 @@ public:
                         int32_t aRunScript, gfxFont *aPrevMatchedFont,
                         uint8_t *aMatchType);
 
-    // search through pref fonts for a character, return nullptr if no matching pref font
-    virtual already_AddRefed<gfxFont> WhichPrefFontSupportsChar(uint32_t aCh);
-
-    already_AddRefed<gfxFont>
-        WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
-                                    int32_t aRunScript);
-
-    template<typename T>
-    void ComputeRanges(nsTArray<gfxTextRange>& mRanges,
-                       const T *aString, uint32_t aLength,
-                       int32_t aRunScript, uint16_t aOrientation);
-
     gfxUserFontSet* GetUserFontSet();
 
     // With downloadable fonts, the composition of the font group can change as fonts are downloaded
@@ -866,7 +845,6 @@ public:
 
     // used when logging text performance
     gfxTextPerfMetrics *GetTextPerfMetrics() { return mTextPerf; }
-    void SetTextPerfMetrics(gfxTextPerfMetrics *aTextPerf) { mTextPerf = aTextPerf; }
 
     // This will call UpdateUserFonts() if the user font set is changed.
     void SetUserFontSet(gfxUserFontSet *aUserFontSet);
@@ -874,6 +852,9 @@ public:
     // If there is a user font set, check to see whether the font list or any
     // caches need updating.
     virtual void UpdateUserFonts();
+
+    // search for a specific userfont in the list of fonts
+    bool ContainsUserFont(const gfxUserFontEntry* aUserFont);
 
     bool ShouldSkipDrawing() const {
         return mSkipDrawing;
@@ -885,10 +866,10 @@ public:
     };
     // The gfxFontGroup keeps ownership of this textrun.
     // It is only guaranteed to exist until the next call to GetEllipsisTextRun
-    // (which might use a different appUnitsPerDev value) for the font group,
-    // or until UpdateUserFonts is called, or the fontgroup is destroyed.
+    // (which might use a different appUnitsPerDev value or flags) for the font
+    // group, or until UpdateUserFonts is called, or the fontgroup is destroyed.
     // Get it/use it/forget it :) - don't keep a reference that might go stale.
-    gfxTextRun* GetEllipsisTextRun(int32_t aAppUnitsPerDevPixel,
+    gfxTextRun* GetEllipsisTextRun(int32_t aAppUnitsPerDevPixel, uint32_t aFlags,
                                    LazyReferenceContextGetter& aRefContextGetter);
 
     // helper method for resolving generic font families
@@ -898,6 +879,18 @@ public:
                             nsTArray<nsString>& aGenericFamilies);
 
 protected:
+    // search through pref fonts for a character, return nullptr if no matching pref font
+    already_AddRefed<gfxFont> WhichPrefFontSupportsChar(uint32_t aCh);
+
+    already_AddRefed<gfxFont>
+        WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
+                                    int32_t aRunScript);
+
+    template<typename T>
+    void ComputeRanges(nsTArray<gfxTextRange>& mRanges,
+                       const T *aString, uint32_t aLength,
+                       int32_t aRunScript, uint16_t aOrientation);
+
     class FamilyFace {
     public:
         FamilyFace() : mFamily(nullptr), mFontEntry(nullptr),
@@ -1013,6 +1006,8 @@ protected:
             mLoading = false;
         }
 
+        bool EqualsUserFont(const gfxUserFontEntry* aUserFont) const;
+
     private:
         nsRefPtr<gfxFontFamily> mFamily;
         // either a font or a font entry exists
@@ -1047,7 +1042,7 @@ protected:
     gfxTextPerfMetrics *mTextPerf;
 
     // Cache a textrun representing an ellipsis (useful for CSS text-overflow)
-    // at a specific appUnitsPerDevPixel size
+    // at a specific appUnitsPerDevPixel size and orientation
     nsAutoPtr<gfxTextRun>   mCachedEllipsisTextRun;
 
     // cache the most recent pref font to avoid general pref font lookup
@@ -1060,6 +1055,9 @@ protected:
     bool                    mSkipDrawing; // hide text while waiting for a font
                                           // download to complete (or fallback
                                           // timer to fire)
+
+    // xxx - gfxPangoFontGroup skips UpdateUserFonts
+    bool                    mSkipUpdateUserFonts;
 
     /**
      * Textrun creation short-cuts for special cases where we don't need to

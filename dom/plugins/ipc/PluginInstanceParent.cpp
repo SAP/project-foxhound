@@ -7,6 +7,7 @@
 #include "mozilla/DebugOnly.h"
 #include <stdint.h> // for intptr_t
 
+#include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 #include "PluginInstanceParent.h"
 #include "BrowserStreamParent.h"
@@ -21,6 +22,7 @@
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include "gfxSharedImageSurface.h"
+#include "nsNetUtil.h"
 #include "nsNPAPIPluginInstance.h"
 #include "nsPluginInstanceOwner.h"
 #include "nsFocusManager.h"
@@ -47,12 +49,19 @@
 #include "mozilla/plugins/PluginSurfaceParent.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "nsIWidget.h"
+#include "nsPluginNativeWindow.h"
+#include "PluginQuirks.h"
 extern const wchar_t* kFlashFullscreenClass;
 #elif defined(MOZ_WIDGET_GTK)
 #include <gdk/gdk.h>
 #elif defined(XP_MACOSX)
 #include <ApplicationServices/ApplicationServices.h>
 #endif // defined(XP_MACOSX)
+
+// This is the pref used to determine whether to use Shumway on a Flash object
+// (when Shumway is enabled).
+static const char kShumwayWhitelistPref[] = "shumway.swf.whitelist";
 
 using namespace mozilla::plugins;
 using namespace mozilla::layers;
@@ -104,10 +113,13 @@ PluginInstanceParent::PluginInstanceParent(PluginModuleParent* parent,
     , mUseSurrogate(true)
     , mNPP(npp)
     , mNPNIface(npniface)
+    , mIsWhitelistedForShumway(false)
     , mWindowType(NPWindowTypeWindow)
     , mDrawingModel(kDefaultDrawingModel)
 #if defined(OS_WIN)
     , mPluginHWND(nullptr)
+    , mChildPluginHWND(nullptr)
+    , mChildPluginsParentHWND(nullptr)
     , mPluginWndProc(nullptr)
     , mNestedEventState(false)
 #endif // defined(XP_WIN)
@@ -143,9 +155,19 @@ PluginInstanceParent::~PluginInstanceParent()
 }
 
 bool
-PluginInstanceParent::Init()
+PluginInstanceParent::InitMetadata(const nsACString& aMimeType,
+                                   const nsACString& aSrcAttribute)
 {
-    return true;
+    if (aSrcAttribute.IsEmpty()) {
+        return false;
+    }
+    // Ensure that the src attribute is absolute
+    nsRefPtr<nsPluginInstanceOwner> owner = GetOwner();
+    if (!owner) {
+        return false;
+    }
+    nsCOMPtr<nsIURI> baseUri(owner->GetBaseURI());
+    return NS_SUCCEEDED(NS_MakeAbsoluteURI(mSrcAttribute, aSrcAttribute, baseUri));
 }
 
 void
@@ -159,13 +181,10 @@ PluginInstanceParent::ActorDestroy(ActorDestroyReason why)
         UnsubclassPluginWindow();
     }
 #endif
-    // After this method, the data backing the remote surface may no
-    // longer be valid. The X surface may be destroyed, or the shared
-    // memory backing this surface may no longer be valid.
     if (mFrontSurface) {
         mFrontSurface = nullptr;
         if (mImageContainer) {
-            mImageContainer->SetCurrentImage(nullptr);
+            mImageContainer->ClearAllImages();
         }
 #ifdef MOZ_X11
         FinishX(DefaultXDisplay());
@@ -234,7 +253,7 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVnetscapeWindow(NativeWindowHandle* 
     HWND id;
 #elif defined(MOZ_X11)
     XID id;
-#elif defined(XP_MACOSX)
+#elif defined(XP_DARWIN)
     intptr_t id;
 #elif defined(ANDROID)
     // TODO: Need Android impl
@@ -355,17 +374,6 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginUsesDOMForCursor(
     return true;
 }
 
-class NotificationSink : public CompositionNotifySink
-{
-public:
-  explicit NotificationSink(PluginInstanceParent* aInstance) : mInstance(aInstance)
-  { }
-
-  virtual void DidComposite() { mInstance->DidComposite(); }
-private:
-  PluginInstanceParent *mInstance;
-};
-
 bool
 PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
     const int& drawingModel, NPError* result)
@@ -414,6 +422,15 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginEventModel(
     *result = NPERR_GENERIC_ERROR;
     return true;
 #endif
+}
+
+bool
+PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginIsPlayingAudio(
+    const bool& isAudioPlaying, NPError* result)
+{
+    *result = mNPNIface->setvalue(mNPP, NPPVpluginIsPlayingAudio,
+                                  (void*)(intptr_t)isAudioPlaying);
+    return true;
 }
 
 bool
@@ -605,14 +622,17 @@ PluginInstanceParent::RecvShow(const NPRect& updatedRect,
         NS_ASSERTION(image->GetFormat() == ImageFormat::CAIRO_SURFACE, "Wrong format?");
         CairoImage* cairoImage = static_cast<CairoImage*>(image.get());
         CairoImage::Data cairoData;
-        cairoData.mSize = surface->GetSize().ToIntSize();
+        cairoData.mSize = surface->GetSize();
         cairoData.mSourceSurface = gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(nullptr, surface);
         cairoImage->SetData(cairoData);
 
-        container->SetCurrentImage(cairoImage);
+        nsAutoTArray<ImageContainer::NonOwningImage,1> imageList;
+        imageList.AppendElement(
+            ImageContainer::NonOwningImage(image));
+        container->SetCurrentImages(imageList);
     }
     else if (mImageContainer) {
-        mImageContainer->SetCurrentImage(nullptr);
+        mImageContainer->ClearAllImages();
     }
 
     mFrontSurface = surface;
@@ -641,6 +661,11 @@ PluginInstanceParent::AsyncSetWindow(NPWindow* aWindow)
     mNPNIface->getvalue(mNPP, NPNVcontentsScaleFactor, &scaleFactor);
     window.contentsScaleFactor = scaleFactor;
 #endif
+
+#if defined(OS_WIN)
+    MaybeCreateChildPopupSurrogate();
+#endif
+
     if (!SendAsyncSetWindow(gfxPlatform::GetPlatform()->ScreenReferenceSurface()->GetType(),
                             window))
         return NS_ERROR_FAILURE;
@@ -929,9 +954,16 @@ PluginInstanceParent::NPP_SetWindow(const NPWindow* aWindow)
         if (!SharedSurfaceSetWindow(aWindow, window)) {
           return NPERR_OUT_OF_MEMORY_ERROR;
         }
-    }
-    else {
+
+        MaybeCreateChildPopupSurrogate();
+    } else {
         SubclassPluginWindow(reinterpret_cast<HWND>(aWindow->window));
+
+        // Skip SetWindow call for hidden QuickTime plugins.
+        if ((mParent->GetQuirks() & QUIRK_QUICKTIME_AVOID_SETWINDOW) &&
+            aWindow->width == 0 && aWindow->height == 0) {
+            return NPERR_NO_ERROR;
+        }
 
         window.window = reinterpret_cast<uint64_t>(aWindow->window);
         window.x = aWindow->x;
@@ -939,6 +971,12 @@ PluginInstanceParent::NPP_SetWindow(const NPWindow* aWindow)
         window.width = aWindow->width;
         window.height = aWindow->height;
         window.type = aWindow->type;
+
+        // On Windows we need to create and set the parent before we set the
+        // window on the plugin, or keyboard interaction will not work.
+        if (!MaybeCreateAndParentChildPluginWindow()) {
+            return NPERR_GENERIC_ERROR;
+        }
     }
 #else
     window.window = reinterpret_cast<uint64_t>(aWindow->window);
@@ -989,8 +1027,9 @@ PluginInstanceParent::NPP_SetWindow(const NPWindow* aWindow)
     window.colormap = ws_info->colormap;
 #endif
 
-    if (!CallNPP_SetWindow(window))
+    if (!CallNPP_SetWindow(window)) {
         return NPERR_GENERIC_ERROR;
+    }
 
     return NPERR_NO_ERROR;
 }
@@ -1083,7 +1122,7 @@ PluginInstanceParent::NPP_GetValue(NPPVariable aVariable,
 #endif
 
     default:
-        PR_LOG(GetPluginLog(), PR_LOG_WARNING,
+        MOZ_LOG(GetPluginLog(), LogLevel::Warning,
                ("In PluginInstanceParent::NPP_GetValue: Unhandled NPPVariable %i (%s)",
                 (int) aVariable, NPPVariableToString(aVariable)));
         return NPERR_GENERIC_ERROR;
@@ -1093,18 +1132,25 @@ PluginInstanceParent::NPP_GetValue(NPPVariable aVariable,
 NPError
 PluginInstanceParent::NPP_SetValue(NPNVariable variable, void* value)
 {
+    NPError result;
     switch (variable) {
     case NPNVprivateModeBool:
-        NPError result;
         if (!CallNPP_SetValue_NPNVprivateModeBool(*static_cast<NPBool*>(value),
                                                   &result))
             return NPERR_GENERIC_ERROR;
 
         return result;
 
+    case NPNVmuteAudioBool:
+        if (!CallNPP_SetValue_NPNVmuteAudioBool(*static_cast<NPBool*>(value),
+                                                &result))
+            return NPERR_GENERIC_ERROR;
+
+        return result;
+
     default:
         NS_ERROR("Unhandled NPNVariable in NPP_SetValue");
-        PR_LOG(GetPluginLog(), PR_LOG_WARNING,
+        MOZ_LOG(GetPluginLog(), LogLevel::Warning,
                ("In PluginInstanceParent::NPP_SetValue: Unhandled NPNVariable %i (%s)",
                 (int) variable, NPNVariableToString(variable)));
         return NPERR_GENERIC_ERROR;
@@ -1359,7 +1405,7 @@ PluginInstanceParent::NPP_NewStream(NPMIMEType type, NPStream* stream,
         MOZ_ASSERT(mSurrogate);
         mSurrogate->AsyncCallDeparting();
         if (SendAsyncNPP_NewStream(bs, NullableString(type), seekable)) {
-            *stype = UINT16_MAX;
+            *stype = nsPluginStreamListenerPeer::STREAM_TYPE_UNKNOWN;
         } else {
             err = NPERR_GENERIC_ERROR;
         }
@@ -1383,6 +1429,12 @@ PluginInstanceParent::NPP_DestroyStream(NPStream* stream, NPReason reason)
                       FULLFUNCTION, (void*) stream, (int) reason));
 
     AStream* s = static_cast<AStream*>(stream->pdata);
+    if (!s) {
+        // The stream has already been deleted by other means.
+        // With async plugin init this could happen if async NPP_NewStream
+        // returns an error code.
+        return NPERR_NO_ERROR;
+    }
     if (s->IsBrowserStream()) {
         BrowserStreamParent* sp =
             static_cast<BrowserStreamParent*>(s);
@@ -1438,7 +1490,7 @@ ActorSearch(NPObject* aKey,
     return PL_DHASH_NEXT;
 }
 
-} // anonymous namespace
+} // namespace
 #endif // DEBUG
 
 bool
@@ -1703,10 +1755,17 @@ PluginInstanceParent::RecvAsyncNPP_NewResult(const NPError& aResult)
         mSurrogate->SetAcceptingCalls(true);
     }
 
+    // It is possible for a plugin instance to outlive its owner (eg. When a
+    // PluginDestructionGuard was on the stack at the time the owner was being
+    // destroyed). We need to handle that case.
     nsPluginInstanceOwner* owner = GetOwner();
-    // It is possible for a plugin instance to outlive its owner when async
-    // plugin init is turned on, so we need to handle that case.
-    if (aResult != NPERR_NO_ERROR || !owner) {
+    if (!owner) {
+        // We can't do anything at this point, just return. Any pending browser
+        // streams will be cleaned up when the plugin instance is destroyed.
+        return true;
+    }
+
+    if (aResult != NPERR_NO_ERROR) {
         mSurrogate->NotifyAsyncInitFailed();
         return true;
     }
@@ -1718,6 +1777,22 @@ PluginInstanceParent::RecvAsyncNPP_NewResult(const NPError& aResult)
     mSurrogate->OnInstanceCreated(this);
 
     return true;
+}
+
+bool
+PluginInstanceParent::RecvSetNetscapeWindowAsParent(const NativeWindowHandle& childWindow)
+{
+#if defined(XP_WIN)
+    nsPluginInstanceOwner* owner = GetOwner();
+    if (!owner || NS_FAILED(owner->SetNetscapeWindowAsParent(childWindow))) {
+        NS_WARNING("Failed to set Netscape window as parent.");
+    }
+
+    return true;
+#else
+    NS_NOTREACHED("PluginInstanceParent::RecvSetNetscapeWindowAsParent not implemented!");
+    return false;
+#endif
 }
 
 #if defined(OS_WIN)
@@ -1783,7 +1858,7 @@ PluginInstanceParent::SubclassPluginWindow(HWND aWnd)
         return;
     }
 
-    if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    if (XRE_IsContentProcess()) {
         if (!aWnd) {
             NS_WARNING("PluginInstanceParent::SubclassPluginWindow unexpected null window");
             return;
@@ -1813,7 +1888,7 @@ PluginInstanceParent::SubclassPluginWindow(HWND aWnd)
 void
 PluginInstanceParent::UnsubclassPluginWindow()
 {
-    if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    if (XRE_IsContentProcess()) {
         if (mPluginHWND) {
             // Remove 'this' from the plugin list safely
             nsAutoPtr<PluginInstanceParent> tmp;
@@ -1904,8 +1979,9 @@ PluginInstanceParent::SharedSurfaceSetWindow(const NPWindow* aWindow,
     mSharedSize = newPort;
 
     base::SharedMemoryHandle handle;
-    if (NS_FAILED(mSharedSurfaceDib.ShareToProcess(OtherProcess(), &handle)))
+    if (NS_FAILED(mSharedSurfaceDib.ShareToProcess(OtherPid(), &handle))) {
       return false;
+    }
 
     aRemoteWindow.surfaceHandle = handle;
 
@@ -1961,6 +2037,65 @@ PluginInstanceParent::SharedSurfaceAfterPaint(NPEvent* npevent)
              dirtyRect.x,
              dirtyRect.y,
              SRCCOPY);
+}
+
+bool
+PluginInstanceParent::MaybeCreateAndParentChildPluginWindow()
+{
+    // On Windows we need to create and set the parent before we set the
+    // window on the plugin, or keyboard interaction will not work.
+    if (!mChildPluginHWND) {
+        if (!CallCreateChildPluginWindow(&mChildPluginHWND) ||
+            !mChildPluginHWND) {
+            return false;
+        }
+    }
+
+    // It's not clear if the parent window would ever change, but when this
+    // was done in the NPAPI child it used to allow for this.
+    if (mPluginHWND == mChildPluginsParentHWND) {
+        return true;
+    }
+
+    nsPluginInstanceOwner* owner = GetOwner();
+    if (!owner) {
+        // We can't reparent without an owner, the plugin is probably shutting
+        // down, just return true to allow any calls to continue.
+        return true;
+    }
+
+    // Note that this call will probably cause a sync native message to the
+    // process that owns the child window.
+    owner->SetWidgetWindowAsParent(mChildPluginHWND);
+    mChildPluginsParentHWND = mPluginHWND;
+    return true;
+}
+
+void
+PluginInstanceParent::MaybeCreateChildPopupSurrogate()
+{
+    // Already created or not required for this plugin.
+    if (mChildPluginHWND || mWindowType != NPWindowTypeDrawable ||
+        !(mParent->GetQuirks() & QUIRK_WINLESS_TRACKPOPUP_HOOK)) {
+        return;
+    }
+
+    // We need to pass the netscape window down to be cached as part of the call
+    // to create the surrogate, because the reparenting of the surrogate in the
+    // main process can cause sync Windows messages to the plugin process, which
+    // then cause sync messages from the plugin child for the netscape window
+    // which causes a deadlock.
+    NativeWindowHandle netscapeWindow;
+    NPError result = mNPNIface->getvalue(mNPP, NPNVnetscapeWindow,
+                                         &netscapeWindow);
+    if (NPERR_NO_ERROR != result) {
+        NS_WARNING("Can't get netscape window to pass to plugin child.");
+        return;
+    }
+
+    if (!SendCreateChildPopupSurrogate(netscapeWindow)) {
+        NS_WARNING("Failed to create popup surrogate in child.");
+    }
 }
 
 #endif // defined(OS_WIN)

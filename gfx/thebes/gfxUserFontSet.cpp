@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "prlog.h"
+#include "mozilla/Logging.h"
 
 #include "gfxUserFontSet.h"
 #include "gfxPlatform.h"
@@ -24,7 +24,6 @@
 
 using namespace mozilla;
 
-#ifdef PR_LOGGING
 PRLogModuleInfo*
 gfxUserFontSet::GetUserFontsLog()
 {
@@ -33,10 +32,9 @@ gfxUserFontSet::GetUserFontsLog()
         sLog = PR_NewLogModule("userfonts");
     return sLog;
 }
-#endif /* PR_LOGGING */
 
-#define LOG(args) PR_LOG(gfxUserFontSet::GetUserFontsLog(), PR_LOG_DEBUG, args)
-#define LOG_ENABLED() PR_LOG_TEST(gfxUserFontSet::GetUserFontsLog(), PR_LOG_DEBUG)
+#define LOG(args) MOZ_LOG(gfxUserFontSet::GetUserFontsLog(), mozilla::LogLevel::Debug, args)
+#define LOG_ENABLED() MOZ_LOG_TEST(gfxUserFontSet::GetUserFontsLog(), mozilla::LogLevel::Debug)
 
 static uint64_t sFontSetGeneration = 0;
 
@@ -47,15 +45,15 @@ class ExpandingMemoryStream : public ots::OTSStream {
 public:
     ExpandingMemoryStream(size_t initial, size_t limit)
         : mLength(initial), mLimit(limit), mOff(0) {
-        mPtr = NS_Alloc(mLength);
+        mPtr = moz_xmalloc(mLength);
     }
 
     ~ExpandingMemoryStream() {
-        NS_Free(mPtr);
+        free(mPtr);
     }
 
     // return the buffer, and give up ownership of it
-    // so the caller becomes responsible to call NS_Free
+    // so the caller becomes responsible to call free
     // when finished with it
     void* forget() {
         void* p = mPtr;
@@ -76,7 +74,7 @@ public:
             if (newLength > mLimit) {
                 newLength = mLimit;
             }
-            mPtr = NS_Realloc(mPtr, newLength);
+            mPtr = moz_xrealloc(mPtr, newLength);
             mLength = newLength;
             return WriteRaw(data, length);
         }
@@ -372,7 +370,7 @@ CopyWOFFMetadata(const uint8_t* aFontData,
     if (metaOffset >= aLength || metaCompLen > aLength - metaOffset) {
         return;
     }
-    if (!aMetadata->SetLength(woff->metaCompLen)) {
+    if (!aMetadata->SetLength(woff->metaCompLen, fallible)) {
         return;
     }
     memcpy(aMetadata->Elements(), aFontData + metaOffset, metaCompLen);
@@ -501,7 +499,6 @@ gfxUserFontEntry::LoadNextSrc()
                         bool loadOK = NS_SUCCEEDED(rv);
 
                         if (loadOK) {
-#ifdef PR_LOGGING
                             if (LOG_ENABLED()) {
                                 nsAutoCString fontURI;
                                 currSrc.mURI->GetSpec(fontURI);
@@ -509,7 +506,6 @@ gfxUserFontEntry::LoadNextSrc()
                                      mFontSet, mSrcIndex, fontURI.get(),
                                      NS_ConvertUTF16toUTF8(mFamilyName).get()));
                             }
-#endif
                             return;
                         } else {
                             mFontSet->LogMessage(this,
@@ -646,7 +642,6 @@ gfxUserFontEntry::LoadPlatformFont(const uint8_t* aFontData, uint32_t& aLength)
         fe->mFamilyName = mFamilyName;
         StoreUserFontData(fe, mFontSet->GetPrivateBrowsing(), originalFullName,
                           &metadata, metaOrigLen, compression);
-#ifdef PR_LOGGING
         if (LOG_ENABLED()) {
             nsAutoCString fontURI;
             mSrcList[mSrcIndex].mURI->GetSpec(fontURI);
@@ -656,12 +651,10 @@ gfxUserFontEntry::LoadPlatformFont(const uint8_t* aFontData, uint32_t& aLength)
                  this,
                  uint32_t(mFontSet->mGeneration)));
         }
-#endif
         mPlatformFontEntry = fe;
         SetLoadState(STATUS_LOADED);
         gfxUserFontSet::UserFontCache::CacheFont(fe);
     } else {
-#ifdef PR_LOGGING
         if (LOG_ENABLED()) {
             nsAutoCString fontURI;
             mSrcList[mSrcIndex].mURI->GetSpec(fontURI);
@@ -670,12 +663,11 @@ gfxUserFontEntry::LoadPlatformFont(const uint8_t* aFontData, uint32_t& aLength)
                  mFontSet, mSrcIndex, fontURI.get(),
                  NS_ConvertUTF16toUTF8(mFamilyName).get()));
         }
-#endif
     }
 
     // The downloaded data can now be discarded; the font entry is using the
     // sanitized copy
-    moz_free((void*)aFontData);
+    free((void*)aFontData);
 
     return fe != nullptr;
 }
@@ -690,7 +682,7 @@ gfxUserFontEntry::Load()
 
 // This is called when a font download finishes.
 // Ownership of aFontData passes in here, and the font set must
-// ensure that it is eventually deleted via moz_free().
+// ensure that it is eventually deleted via free().
 bool
 gfxUserFontEntry::FontDataDownloadComplete(const uint8_t* aFontData,
                                            uint32_t aLength,
@@ -718,7 +710,7 @@ gfxUserFontEntry::FontDataDownloadComplete(const uint8_t* aFontData,
     }
 
     if (aFontData) {
-        moz_free((void*)aFontData);
+        free((void*)aFontData);
     }
 
     // error occurred, load next src
@@ -740,11 +732,6 @@ gfxUserFontSet::gfxUserFontSet()
     if (fp) {
         fp->AddUserFontSet(this);
     }
-
-    // This is a one-time global switch for OTS. However, as long as we use
-    // a preference to control the availability of WOFF2 support, we will
-    // not actually pass any WOFF2 data to OTS unless the pref is on.
-    ots::EnableWOFF2();
 }
 
 gfxUserFontSet::~gfxUserFontSet()
@@ -853,7 +840,6 @@ gfxUserFontSet::AddUserFontEntry(const nsAString& aFamilyName,
     gfxUserFontFamily* family = GetFamily(aFamilyName);
     family->AddFontEntry(aUserFontEntry);
 
-#ifdef PR_LOGGING
     if (LOG_ENABLED()) {
         LOG(("userfonts (%p) added to \"%s\" (%p) style: %s weight: %d "
              "stretch: %d",
@@ -861,7 +847,6 @@ gfxUserFontSet::AddUserFontEntry(const nsAString& aFamilyName,
              (aUserFontEntry->IsItalic() ? "italic" : "normal"),
              aUserFontEntry->Weight(), aUserFontEntry->Stretch()));
     }
-#endif
 }
 
 gfxUserFontEntry*
@@ -920,6 +905,21 @@ gfxUserFontSet::LookupFamily(const nsAString& aFamilyName) const
     return mFontFamilies.GetWeak(key);
 }
 
+bool
+gfxUserFontSet::ContainsUserFontSetFonts(const FontFamilyList& aFontList) const
+{
+    for (const FontFamilyName& name : aFontList.GetFontlist()) {
+        if (name.mType != eFamily_named &&
+            name.mType != eFamily_named_quoted) {
+            continue;
+        }
+        if (LookupFamily(name.mName)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 gfxUserFontFamily*
 gfxUserFontSet::GetFamily(const nsAString& aFamilyName)
 {
@@ -953,37 +953,6 @@ nsTHashtable<gfxUserFontSet::UserFontCache::Entry>*
 
 NS_IMPL_ISUPPORTS(gfxUserFontSet::UserFontCache::Flusher, nsIObserver)
 
-PLDHashOperator
-gfxUserFontSet::UserFontCache::Entry::RemoveUnlessPersistent(Entry* aEntry,
-                                                             void* aUserData)
-{
-    return aEntry->mPersistence == kPersistent ? PL_DHASH_NEXT :
-                                                 PL_DHASH_REMOVE;
-}
-
-PLDHashOperator
-gfxUserFontSet::UserFontCache::Entry::RemoveIfPrivate(Entry* aEntry,
-                                                      void* aUserData)
-{
-    return aEntry->mPrivate ? PL_DHASH_REMOVE : PL_DHASH_NEXT;
-}
-
-PLDHashOperator
-gfxUserFontSet::UserFontCache::Entry::RemoveIfMatches(Entry* aEntry,
-                                                      void* aUserData)
-{
-    return aEntry->GetFontEntry() == static_cast<gfxFontEntry*>(aUserData) ?
-        PL_DHASH_REMOVE : PL_DHASH_NEXT;
-}
-
-PLDHashOperator
-gfxUserFontSet::UserFontCache::Entry::DisconnectSVG(Entry* aEntry,
-                                                    void* aUserData)
-{
-    aEntry->GetFontEntry()->DisconnectSVG();
-    return PL_DHASH_NEXT;
-}
-
 NS_IMETHODIMP
 gfxUserFontSet::UserFontCache::Flusher::Observe(nsISupports* aSubject,
                                                 const char* aTopic,
@@ -994,11 +963,21 @@ gfxUserFontSet::UserFontCache::Flusher::Observe(nsISupports* aSubject,
     }
 
     if (!strcmp(aTopic, "cacheservice:empty-cache")) {
-        sUserFonts->EnumerateEntries(Entry::RemoveUnlessPersistent, nullptr);
+        for (auto i = sUserFonts->Iter(); !i.Done(); i.Next()) {
+            if (!i.Get()->IsPersistent()) {
+                i.Remove();
+            }
+        }
     } else if (!strcmp(aTopic, "last-pb-context-exited")) {
-        sUserFonts->EnumerateEntries(Entry::RemoveIfPrivate, nullptr);
+        for (auto i = sUserFonts->Iter(); !i.Done(); i.Next()) {
+            if (i.Get()->IsPrivate()) {
+                i.Remove();
+            }
+        }
     } else if (!strcmp(aTopic, "xpcom-shutdown")) {
-        sUserFonts->EnumerateEntries(Entry::DisconnectSVG, nullptr);
+        for (auto i = sUserFonts->Iter(); !i.Done(); i.Next()) {
+            i.Get()->GetFontEntry()->DisconnectSVG();
+        }
     } else {
         NS_NOTREACHED("unexpected topic");
     }
@@ -1067,6 +1046,11 @@ gfxUserFontSet::UserFontCache::CacheFont(gfxFontEntry* aFontEntry,
     NS_ASSERTION(aFontEntry->mFamilyName.Length() != 0,
                  "caching a font associated with no family yet");
 
+    // if caching is disabled, simply return
+    if (Preferences::GetBool("gfx.downloadable_fonts.disable_cache")) {
+        return;
+    }
+
     gfxUserFontData* data = aFontEntry->mUserFontData;
     if (data->mIsBuffer) {
 #ifdef DEBUG_USERFONT_CACHE
@@ -1128,8 +1112,11 @@ gfxUserFontSet::UserFontCache::ForgetFont(gfxFontEntry* aFontEntry)
     // We can't simply use RemoveEntry here because it's possible the principal
     // may have changed since the font was cached, in which case the lookup
     // would no longer find the entry (bug 838105).
-    sUserFonts->EnumerateEntries(
-        gfxUserFontSet::UserFontCache::Entry::RemoveIfMatches, aFontEntry);
+    for (auto i = sUserFonts->Iter(); !i.Done(); i.Next()) {
+        if (i.Get()->GetFontEntry() == aFontEntry)  {
+            i.Remove();
+        }
+    }
 
 #ifdef DEBUG_USERFONT_CACHE
     printf("userfontcache removed fontentry: %p\n", aFontEntry);
@@ -1143,7 +1130,8 @@ gfxUserFontSet::UserFontCache::GetFont(nsIURI* aSrcURI,
                                        gfxUserFontEntry* aUserFontEntry,
                                        bool aPrivate)
 {
-    if (!sUserFonts) {
+    if (!sUserFonts ||
+        Preferences::GetBool("gfx.downloadable_fonts.disable_cache")) {
         return nullptr;
     }
 
@@ -1203,38 +1191,37 @@ gfxUserFontSet::UserFontCache::Shutdown()
 
 #ifdef DEBUG_USERFONT_CACHE
 
-PLDHashOperator
-gfxUserFontSet::UserFontCache::Entry::DumpEntry(Entry* aEntry, void* aUserData)
+void
+gfxUserFontSet::UserFontCache::Entry::Dump()
 {
     nsresult rv;
 
     nsAutoCString principalURISpec("(null)");
     bool setDomain = false;
 
-    if (aEntry->mPrincipal) {
+    if (mPrincipal) {
         nsCOMPtr<nsIURI> principalURI;
-        rv = aEntry->mPrincipal->GetURI(getter_AddRefs(principalURI));
+        rv = mPrincipal->GetURI(getter_AddRefs(principalURI));
         if (NS_SUCCEEDED(rv)) {
             principalURI->GetSpec(principalURISpec);
         }
 
         nsCOMPtr<nsIURI> domainURI;
-        aEntry->mPrincipal->GetDomain(getter_AddRefs(domainURI));
+        mPrincipal->GetDomain(getter_AddRefs(domainURI));
         if (domainURI) {
             setDomain = true;
         }
     }
 
-    NS_ASSERTION(aEntry->mURI, "null URI in userfont cache entry");
+    NS_ASSERTION(mURI, "null URI in userfont cache entry");
 
-    printf("userfontcache fontEntry: %p fonturihash: %8.8x family: %s domainset: %s principal: [%s]\n",
-            aEntry->mFontEntry,
-            nsURIHashKey::HashKey(aEntry->mURI),
-            NS_ConvertUTF16toUTF8(aEntry->mFontEntry->FamilyName()).get(),
-            (setDomain ? "true" : "false"),
-            principalURISpec.get()
-           );
-    return PL_DHASH_NEXT;
+    printf("userfontcache fontEntry: %p fonturihash: %8.8x "
+           "family: %s domainset: %s principal: [%s]\n",
+           mFontEntry,
+           nsURIHashKey::HashKey(mURI),
+           NS_ConvertUTF16toUTF8(mFontEntry->FamilyName()).get(),
+           setDomain ? "true" : "false",
+           principalURISpec.get());
 }
 
 void
@@ -1245,7 +1232,9 @@ gfxUserFontSet::UserFontCache::Dump()
     }
 
     printf("userfontcache dump count: %d ========\n", sUserFonts->Count());
-    sUserFonts->EnumerateEntries(Entry::DumpEntry, nullptr);
+    for (auto it = sUserFonts->Iter(); !it.Done(); it.Next()) {
+        it.Get()->Dump();
+    }
     printf("userfontcache dump ==================\n");
 }
 

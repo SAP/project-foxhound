@@ -57,6 +57,8 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
     // This block cannot be reached by any means.
     bool unreachable_;
 
+    MResumePoint* callerResumePoint_;
+
     // Pushes a copy of a local variable or argument.
     void pushVariable(uint32_t slot);
 
@@ -545,11 +547,11 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
         discardResumePoint(outerResumePoint_);
         outerResumePoint_ = nullptr;
     }
-    MResumePoint* callerResumePoint() {
-        return entryResumePoint() ? entryResumePoint()->caller() : nullptr;
+    MResumePoint* callerResumePoint() const {
+        return callerResumePoint_;
     }
     void setCallerResumePoint(MResumePoint* caller) {
-        entryResumePoint()->setCaller(caller);
+        callerResumePoint_ = caller;
     }
     size_t numEntrySlots() const {
         return entryResumePoint()->stackDepth();
@@ -597,9 +599,10 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
         return info_.script()->strict();
     }
 
-    void dumpStack(FILE* fp);
+    void dumpStack(GenericPrinter& out);
+    void dumpStack();
 
-    void dump(FILE* fp);
+    void dump(GenericPrinter& out);
     void dump();
 
     // Track bailouts by storing the current pc in MIR instruction added at
@@ -807,7 +810,7 @@ class MIRGraph
         hasTryBlock_ = true;
     }
 
-    void dump(FILE* fp);
+    void dump(GenericPrinter& out);
     void dump();
 };
 
@@ -857,7 +860,7 @@ class MDefinitionIterator
         return old;
     }
 
-    operator bool() const {
+    explicit operator bool() const {
         return more();
     }
 
@@ -945,7 +948,7 @@ class MNodeIterator
         return old;
     }
 
-    operator bool() const {
+    explicit operator bool() const {
         return more();
     }
 

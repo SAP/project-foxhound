@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +79,6 @@ nsLocation::nsLocation(nsPIDOMWindow* aWindow, nsIDocShell *aDocShell)
 
 nsLocation::~nsLocation()
 {
-  RemoveURLSearchParams();
 }
 
 // QueryInterface implementation for nsLocation
@@ -92,14 +91,11 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsLocation)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsLocation)
-  tmp->RemoveURLSearchParams();
-
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mInnerWindow);
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsLocation)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSearchParams)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInnerWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -317,7 +313,7 @@ nsLocation::GetHash(nsAString& aHash)
 
   rv = uri->GetRef(ref);
 
-  if (nsContentUtils::EncodeDecodeURLHash()) {
+  if (nsContentUtils::GettersDecodeURLHash()) {
     if (NS_SUCCEEDED(rv)) {
       nsCOMPtr<nsITextToSubURI> textToSubURI(
           do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv));
@@ -1118,123 +1114,7 @@ nsLocation::CallerSubsumes()
 }
 
 JSObject*
-nsLocation::WrapObject(JSContext* aCx)
+nsLocation::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return LocationBinding::Wrap(aCx, this);
-}
-
-URLSearchParams*
-nsLocation::GetDocShellSearchParams()
-{
-  nsCOMPtr<nsIDocShell> docShell = GetDocShell();
-  if (!docShell) {
-    return nullptr;
-  }
-
-  return docShell->GetURLSearchParams();
-}
-
-URLSearchParams*
-nsLocation::SearchParams()
-{
-  if (!mSearchParams) {
-    // We must register this object to the URLSearchParams of the docshell in
-    // order to receive updates.
-    nsRefPtr<URLSearchParams> searchParams = GetDocShellSearchParams();
-    if (searchParams) {
-      searchParams->AddObserver(this);
-    }
-
-    mSearchParams = new URLSearchParams();
-    mSearchParams->AddObserver(this);
-    UpdateURLSearchParams();
-  }
-
-  return mSearchParams;
-}
-
-void
-nsLocation::SetSearchParams(URLSearchParams& aSearchParams)
-{
-  if (mSearchParams) {
-    mSearchParams->RemoveObserver(this);
-  }
-
-  // the observer will be cleared using the cycle collector.
-  mSearchParams = &aSearchParams;
-  mSearchParams->AddObserver(this);
-
-  nsAutoString search;
-  mSearchParams->Serialize(search);
-  SetSearchInternal(search);
-
-  // We don't need to inform the docShell about this new SearchParams because
-  // setting the new value the docShell will refresh its value automatically.
-}
-
-void
-nsLocation::URLSearchParamsUpdated(URLSearchParams* aSearchParams)
-{
-  MOZ_ASSERT(mSearchParams);
-
-  // This change comes from content.
-  if (aSearchParams == mSearchParams) {
-    nsAutoString search;
-    mSearchParams->Serialize(search);
-    SetSearchInternal(search);
-    return;
-  }
-
-  // This change comes from the docShell.
-#ifdef DEBUG
-  {
-    nsRefPtr<URLSearchParams> searchParams = GetDocShellSearchParams();
-    MOZ_ASSERT(searchParams);
-    MOZ_ASSERT(aSearchParams == searchParams);
-  }
-#endif
-
-  nsAutoString search;
-  aSearchParams->Serialize(search);
-  mSearchParams->ParseInput(NS_ConvertUTF16toUTF8(search), this);
-}
-
-void
-nsLocation::UpdateURLSearchParams()
-{
-  if (!mSearchParams) {
-    return;
-  }
-
-  nsAutoCString search;
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = GetURI(getter_AddRefs(uri));
-  if (NS_WARN_IF(NS_FAILED(rv)) || NS_WARN_IF(!uri)) {
-    return;
-  }
-
-  nsCOMPtr<nsIURL> url(do_QueryInterface(uri));
-  if (url) {
-    nsresult rv = url->GetQuery(search);
-    if (NS_FAILED(rv)) {
-      NS_WARNING("Failed to get the query from a nsIURL.");
-    }
-  }
-
-  mSearchParams->ParseInput(search, this);
-}
-
-void
-nsLocation::RemoveURLSearchParams()
-{
-  if (mSearchParams) {
-    mSearchParams->RemoveObserver(this);
-    mSearchParams = nullptr;
-
-    nsRefPtr<URLSearchParams> docShellSearchParams = GetDocShellSearchParams();
-    if (docShellSearchParams) {
-      docShellSearchParams->RemoveObserver(this);
-    }
-  }
+  return LocationBinding::Wrap(aCx, this, aGivenProto);
 }

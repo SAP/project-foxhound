@@ -14,14 +14,14 @@ import traceback
 here = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, here)
 
-from automationutils import processLeakLog
 from runtests import Mochitest
 from runtests import MochitestUtilsMixin
-from mochitest_options import B2GOptions, MochitestOptions
+from mochitest_options import MochitestArgumentParser
 from marionette import Marionette
 from mozprofile import Profile, Preferences
-from mozlog import structured
+from mozrunner.utils import get_stack_fixer_function
 import mozinfo
+import mozleak
 
 
 class B2GMochitest(MochitestUtilsMixin):
@@ -73,12 +73,7 @@ class B2GMochitest(MochitestUtilsMixin):
 
     def buildTestPath(self, options, testsToFilter=None):
         if options.manifestFile != 'tests.json':
-            super(
-                B2GMochitest,
-                self).buildTestPath(
-                options,
-                testsToFilter,
-                disabled=False)
+            super(B2GMochitest, self).buildTestPath(options, testsToFilter, disabled=False)
         return self.buildTestURL(options)
 
     def build_profile(self, options):
@@ -125,6 +120,8 @@ class B2GMochitest(MochitestUtilsMixin):
 
     def run_tests(self, options):
         """ Prepare, configure, run tests and cleanup """
+
+        self.setTestRoot(options)
 
         manifest = self.build_profile(options)
         self.logPreamble(self.getActiveTests(options))
@@ -190,8 +187,26 @@ class B2GMochitest(MochitestUtilsMixin):
                 del self.browserEnv['MOZ_DISABLE_NONLOCAL_CONNECTIONS']
             self.runner.env.update(self.browserEnv)
 
+            # Despite our efforts to clean up servers started by this script, in practice
+            # we still see infrequent cases where a process is orphaned and interferes
+            # with future tests, typically because the old server is keeping the port in use.
+            # Try to avoid those failures by checking for and killing orphan servers before
+            # trying to start new ones.
+            self.killNamedOrphans('ssltunnel')
+            self.killNamedOrphans('xpcshell')
+
             self.startServers(options, None)
+
+            # In desktop mochitests buildTestPath is called before buildURLOptions. This
+            # means options.manifestFile has already been converted to the proper json
+            # style manifest. Not so with B2G, that conversion along with updating the URL
+            # option will happen later. So backup and restore options.manifestFile to
+            # prevent us from trying to pass in an instance of TestManifest via url param.
+            manifestFile = options.manifestFile
+            options.manifestFile = None
             self.buildURLOptions(options, {'MOZ_HIDE_RESULTS_TABLE': '1'})
+            options.manifestFile = manifestFile
+
             self.test_script_args.append(not options.emulator)
             self.test_script_args.append(options.wifi)
             self.test_script_args.append(options.chrome)
@@ -210,6 +225,21 @@ class B2GMochitest(MochitestUtilsMixin):
                 Components.utils.import("resource://gre/modules/Services.jsm");
                 Services.io.manageOfflineStatus = false;
                 Services.io.offline = false;
+                """)
+
+            self.marionette.execute_script("""
+                let SECURITY_PREF = "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer";
+                Services.prefs.setBoolPref(SECURITY_PREF, true);
+
+                if (!testUtils.hasOwnProperty("specialPowersObserver")) {
+                  let loader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
+                    .getService(Components.interfaces.mozIJSSubScriptLoader);
+                  loader.loadSubScript("chrome://specialpowers/content/SpecialPowersObserver.js",
+                    testUtils);
+                  testUtils.specialPowersObserver = new testUtils.SpecialPowersObserver();
+                  testUtils.specialPowersObserver.init();
+                  testUtils.specialPowersObserver._loadFrameScript();
+                }
                 """)
 
             if options.chrome:
@@ -244,7 +274,14 @@ class B2GMochitest(MochitestUtilsMixin):
                 local_leak_file.name)
             self.app_ctx.dm.removeFile(self.leak_report_file)
 
-            processLeakLog(local_leak_file.name, options)
+            mozleak.process_leak_log(
+                local_leak_file.name,
+                leak_thresholds=options.leakThresholds,
+                ignore_missing_leaks=options.ignoreMissingLeaks,
+                log=self.log,
+                stack_fixer=get_stack_fixer_function(options.utilityPath,
+                                                     options.symbolsPath),
+            )
         except KeyboardInterrupt:
             self.log.info("runtests.py | Received keyboard interrupt.\n")
             status = -1
@@ -265,8 +302,9 @@ class B2GMochitest(MochitestUtilsMixin):
         return status
 
     def getGMPPluginPath(self, options):
-        # TODO: bug 1043403
-        return None
+        if options.gmp_path:
+            return options.gmp_path
+        return '/system/b2g/gmp-clearkey/0.1'
 
     def getChromeTestDir(self, options):
         # The chrome test directory returned here is the remote location
@@ -408,7 +446,7 @@ class B2GDesktopMochitest(B2GMochitest, Mochitest):
         return self.build_profile(options)
 
 
-def run_remote_mochitests(parser, options):
+def run_remote_mochitests(options):
     # create our Marionette instance
     marionette_args = {
         'adb_path': options.adbPath,
@@ -425,7 +463,6 @@ def run_remote_mochitests(parser, options):
         marionette_args['host'] = host
         marionette_args['port'] = int(port)
 
-    options = parser.verifyRemoteOptions(options)
     if (options is None):
         print "ERROR: Invalid options specified, use --help for a list of valid options"
         sys.exit(1)
@@ -437,7 +474,6 @@ def run_remote_mochitests(parser, options):
         options.xrePath,
         remote_log_file=options.remoteLogFile)
 
-    options = parser.verifyOptions(options, mochitest)
     if (options is None):
         sys.exit(1)
 
@@ -457,10 +493,10 @@ def run_remote_mochitests(parser, options):
 
     mochitest.message_logger.finish()
 
-    sys.exit(retVal)
+    return retVal
 
 
-def run_desktop_mochitests(parser, options):
+def run_desktop_mochitests(options):
     # create our Marionette instance
     marionette_args = {}
     if options.marionette:
@@ -477,7 +513,6 @@ def run_desktop_mochitests(parser, options):
         marionette_args,
         options,
         options.profile_data_dir)
-    options = MochitestOptions.verifyOptions(parser, options, mochitest)
     if options is None:
         sys.exit(1)
 
@@ -485,22 +520,21 @@ def run_desktop_mochitests(parser, options):
         raise Exception("must specify --profile when specifying --desktop")
 
     options.browserArgs += ['-marionette']
-
+    options.runByDir = False
     retVal = mochitest.runTests(options, onLaunch=mochitest.startTests)
     mochitest.message_logger.finish()
 
-    sys.exit(retVal)
+    return retVal
 
 
 def main():
-    parser = B2GOptions()
-    structured.commandline.add_logging_group(parser)
-    options, args = parser.parse_args()
+    parser = MochitestArgumentParser(app='b2g')
+    options = parser.parse_args()
 
     if options.desktop:
-        run_desktop_mochitests(parser, options)
+        return run_desktop_mochitests(options)
     else:
-        run_remote_mochitests(parser, options)
+        return run_remote_mochitests(options)
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

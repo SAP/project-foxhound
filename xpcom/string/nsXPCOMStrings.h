@@ -243,7 +243,7 @@ XPCOM_API(uint32_t) NS_StringGetMutableData(nsAString& aStr,
  *
  * @param aStr          abstract string reference
  * @return              null-terminated copy of the string's internal buffer
- *                      (it must be free'd using using nsMemory::Free)
+ *                      (it must be free'd using using free)
  */
 XPCOM_API(char16_t*) NS_StringCloneData(const nsAString& aStr);
 
@@ -539,7 +539,7 @@ XPCOM_API(uint32_t) NS_CStringGetMutableData(nsACString& aStr,
  *
  * @param aStr          abstract string reference
  * @return              null-terminated copy of the string's internal buffer
- *                      (it must be free'd using using nsMemory::Free)
+ *                      (it must be free'd using using free)
  */
 XPCOM_API(char*) NS_CStringCloneData(const nsACString& aStr);
 

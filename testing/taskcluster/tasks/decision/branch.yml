@@ -2,7 +2,7 @@
 metadata:
   name: 'Task graph used to build {{project}} specific jobs'
   description: |
-    {{project}} push for {{owner}} with comment: {{comment}}.
+    {{project}} push for {{owner}}
   owner: mozilla-taskcluster-maintenance@mozilla.com
   source: "{{{source}}}"
 
@@ -14,12 +14,16 @@ scopes:
   - scheduler:*
 tasks:
   - taskId: '{{#as_slugid}}decision task{{/as_slugid}}'
+    reruns: 3
     task:
+      routes:
+        - tc-treeherder-stage.{{project}}.{{revision_hash}}
+        - tc-treeherder.{{project}}.{{revision_hash}}
       created: '{{now}}'
       deadline: '{{#from_now}}1 day{{/from_now}}'
       metadata:
         owner: mozilla-taskcluster-maintenance@mozilla.com
-        source: {{source}}
+        source: {{{source}}}
         name: Initial decision task for {{project}} specific graphs
         description: |
           This is the single most important task as it decides how all other tasks
@@ -29,7 +33,7 @@ tasks:
         createdForUser: {{owner}}
 
       workerType: "gecko-decision"
-      provisionerId: "aws-provisioner"
+      provisionerId: "aws-provisioner-v1"
 
       scopes:
         - "docker-worker:cache:tc-vcs-public-sources"
@@ -64,6 +68,7 @@ tasks:
           - >
             source ./bin/decision.sh &&
             ./mach taskcluster-graph
+            --pushlog-id='{{pushlog_id}}'
             --message='{{comment}}'
             --project='{{project}}'
             --owner='{{owner}}'
@@ -75,4 +80,3 @@ tasks:
       extra:
         treeherder:
           symbol: D
-

@@ -158,6 +158,8 @@ const GfxDeviceFamily* GfxDriverInfo::GetDeviceFamily(DeviceFamily id)
       APPEND_DEVICE(0x2e23); /* IntelG45_2 */
       APPEND_DEVICE(0x2e12); /* IntelQ45_1 */
       APPEND_DEVICE(0x2e13); /* IntelQ45_2 */
+      break;
+    case IntelHDGraphicsToIvyBridge:
       APPEND_DEVICE(0x0042); /* IntelHDGraphics */
       APPEND_DEVICE(0x0046); /* IntelMobileHDGraphics */
       APPEND_DEVICE(0x0102); /* IntelSandyBridge_1 */
@@ -218,6 +220,9 @@ const GfxDeviceFamily* GfxDriverInfo::GetDeviceFamily(DeviceFamily id)
     case Nvidia310M:
       APPEND_DEVICE(0x0A70);
       break;
+    case Nvidia8800GTS:
+      APPEND_DEVICE(0x0193);
+      break;
     case Bug1137716:
       APPEND_DEVICE(0x0a29);
       APPEND_DEVICE(0x0a2b);
@@ -257,6 +262,15 @@ const GfxDeviceFamily* GfxDriverInfo::GetDeviceFamily(DeviceFamily id)
     case Bug1116812:
       APPEND_DEVICE(0x2e32);
       APPEND_DEVICE(0x2a02);
+      break;
+    case Bug1155608:
+      APPEND_DEVICE(0x2e22); /* IntelG45_1 */
+      break;
+    case Bug1207665:
+      APPEND_DEVICE(0xa001); /* Intel Media Accelerator 3150 */
+      APPEND_DEVICE(0xa002);
+      APPEND_DEVICE(0xa011);
+      APPEND_DEVICE(0xa012);
       break;
     case AMDRadeonHD5800:
       APPEND_DEVICE(0x6899);

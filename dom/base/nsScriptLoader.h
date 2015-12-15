@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,20 +18,178 @@
 #include "nsAutoPtr.h"
 #include "nsIDocument.h"
 #include "nsIStreamLoader.h"
+#include "mozilla/CORSMode.h"
+#include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/net/ReferrerPolicy.h"
 
-class nsScriptLoadRequest;
+class nsScriptLoadRequestList;
 class nsIURI;
 
 namespace JS {
   class SourceBufferHolder;
-}
+} // namespace JS
 
 namespace mozilla {
 namespace dom {
 class AutoJSAPI;
-}
-}
+} // namespace dom
+} // namespace mozilla
+
+//////////////////////////////////////////////////////////////
+// Per-request data structure
+//////////////////////////////////////////////////////////////
+
+class nsScriptLoadRequest final : public nsISupports,
+                                  private mozilla::LinkedListElement<nsScriptLoadRequest>
+{
+  ~nsScriptLoadRequest()
+  {
+    js_free(mScriptTextBuf);
+  }
+
+  typedef LinkedListElement<nsScriptLoadRequest> super;
+
+  // Allow LinkedListElement<nsScriptLoadRequest> to cast us to itself as needed.
+  friend class mozilla::LinkedListElement<nsScriptLoadRequest>;
+  friend class nsScriptLoadRequestList;
+
+public:
+  nsScriptLoadRequest(nsIScriptElement* aElement,
+                      uint32_t aVersion,
+                      mozilla::CORSMode aCORSMode,
+                      const mozilla::dom::SRIMetadata &aIntegrity)
+    : mElement(aElement),
+      mProgress(Progress_Loading),
+      mIsInline(true),
+      mHasSourceMapURL(false),
+      mIsDefer(false),
+      mIsAsync(false),
+      mIsNonAsyncScriptInserted(false),
+      mIsXSLT(false),
+      mIsCanceled(false),
+      mOffThreadToken(nullptr),
+      mScriptTextBuf(nullptr),
+      mScriptTextLength(0),
+      mJSVersion(aVersion),
+      mLineNo(1),
+      mCORSMode(aCORSMode),
+      mIntegrity(aIntegrity),
+      mReferrerPolicy(mozilla::net::RP_Default)
+  {
+  }
+
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  void FireScriptAvailable(nsresult aResult)
+  {
+    mElement->ScriptAvailable(aResult, mElement, mIsInline, mURI, mLineNo);
+  }
+  void FireScriptEvaluated(nsresult aResult)
+  {
+    mElement->ScriptEvaluated(aResult, mElement, mIsInline);
+  }
+
+  bool IsPreload()
+  {
+    return mElement == nullptr;
+  }
+
+  void Cancel()
+  {
+    mIsCanceled = true;
+  }
+
+  bool IsCanceled() const
+  {
+    return mIsCanceled;
+  }
+
+  void** OffThreadTokenPtr()
+  {
+    return mOffThreadToken ?  &mOffThreadToken : nullptr;
+  }
+
+  enum Progress {
+    Progress_Loading,
+    Progress_DoneLoading,
+    Progress_Compiling,
+    Progress_DoneCompiling
+  };
+  bool IsReadyToRun() {
+    return mProgress == Progress_DoneLoading ||
+           mProgress == Progress_DoneCompiling;
+  }
+  bool IsDoneLoading() {
+    return mProgress == Progress_DoneLoading;
+  }
+  bool InCompilingStage() {
+    return (mProgress == Progress_Compiling) || (mProgress == Progress_DoneCompiling);
+  }
+
+  using super::getNext;
+  using super::isInList;
+
+  nsCOMPtr<nsIScriptElement> mElement;
+  Progress mProgress;     // Are we still waiting for a load to complete?
+  bool mIsInline;         // Is the script inline or loaded?
+  bool mHasSourceMapURL;  // Does the HTTP header have a source map url?
+  bool mIsDefer;          // True if we live in mDeferRequests.
+  bool mIsAsync;          // True if we live in mLoadingAsyncRequests or mLoadedAsyncRequests.
+  bool mIsNonAsyncScriptInserted; // True if we live in mNonAsyncExternalScriptInsertedRequests
+  bool mIsXSLT;           // True if we live in mXSLTRequests.
+  bool mIsCanceled;       // True if we have been explicitly canceled.
+  void* mOffThreadToken;  // Off-thread parsing token.
+  nsString mSourceMapURL; // Holds source map url for loaded scripts
+  char16_t* mScriptTextBuf; // Holds script text for non-inline scripts. Don't
+  size_t mScriptTextLength; // use nsString so we can give ownership to jsapi.
+  uint32_t mJSVersion;
+  nsCOMPtr<nsIURI> mURI;
+  nsCOMPtr<nsIPrincipal> mOriginPrincipal;
+  nsAutoCString mURL;   // Keep the URI's filename alive during off thread parsing.
+  int32_t mLineNo;
+  const mozilla::CORSMode mCORSMode;
+  const mozilla::dom::SRIMetadata mIntegrity;
+  mozilla::net::ReferrerPolicy mReferrerPolicy;
+};
+
+class nsScriptLoadRequestList : private mozilla::LinkedList<nsScriptLoadRequest>
+{
+  typedef mozilla::LinkedList<nsScriptLoadRequest> super;
+
+public:
+  ~nsScriptLoadRequestList();
+
+  void Clear();
+
+#ifdef DEBUG
+  bool Contains(nsScriptLoadRequest* aElem);
+#endif // DEBUG
+
+  using super::getFirst;
+  using super::isEmpty;
+
+  void AppendElement(nsScriptLoadRequest* aElem)
+  {
+    MOZ_ASSERT(!aElem->isInList());
+    NS_ADDREF(aElem);
+    insertBack(aElem);
+  }
+
+  MOZ_WARN_UNUSED_RESULT
+  already_AddRefed<nsScriptLoadRequest> Steal(nsScriptLoadRequest* aElem)
+  {
+    aElem->removeFrom(*this);
+    return dont_AddRef(aElem);
+  }
+
+  MOZ_WARN_UNUSED_RESULT
+  already_AddRefed<nsScriptLoadRequest> StealFirst()
+  {
+    MOZ_ASSERT(!isEmpty());
+    return Steal(getFirst());
+  }
+};
 
 //////////////////////////////////////////////////////////////
 // Script loader implementation
@@ -236,11 +395,13 @@ public:
    * @param aType The type parameter for the script.
    * @param aCrossOrigin The crossorigin attribute for the script.
    *                     Void if not present.
+   * @param aIntegrity The expect hash url, if avail, of the request
    * @param aScriptFromHead Whether or not the script was a child of head
    */
   virtual void PreloadURI(nsIURI *aURI, const nsAString &aCharset,
                           const nsAString &aType,
                           const nsAString &aCrossOrigin,
+                          const nsAString& aIntegrity,
                           bool aScriptFromHead,
                           const mozilla::net::ReferrerPolicy aReferrerPolicy);
 
@@ -248,8 +409,7 @@ public:
    * Process a request that was deferred so that the script could be compiled
    * off thread.
    */
-  nsresult ProcessOffThreadRequest(nsScriptLoadRequest *aRequest,
-                                   void **aOffThreadToken);
+  nsresult ProcessOffThreadRequest(nsScriptLoadRequest *aRequest);
 
   bool AddPendingChildLoader(nsScriptLoader* aChild) {
     return mPendingChildLoaders.AppendElement(aChild) != nullptr;
@@ -309,15 +469,14 @@ private:
   }
 
   nsresult AttemptAsyncScriptParse(nsScriptLoadRequest* aRequest);
-  nsresult ProcessRequest(nsScriptLoadRequest* aRequest,
-                          void **aOffThreadToken = nullptr);
+  nsresult ProcessRequest(nsScriptLoadRequest* aRequest);
+  nsresult CompileOffThreadOrProcessRequest(nsScriptLoadRequest* aRequest);
   void FireScriptAvailable(nsresult aResult,
                            nsScriptLoadRequest* aRequest);
   void FireScriptEvaluated(nsresult aResult,
                            nsScriptLoadRequest* aRequest);
   nsresult EvaluateScript(nsScriptLoadRequest* aRequest,
-                          JS::SourceBufferHolder& aSrcBuf,
-                          void **aOffThreadToken);
+                          JS::SourceBufferHolder& aSrcBuf);
 
   already_AddRefed<nsIScriptGlobalObject> GetScriptGlobalObject();
   void FillCompileOptionsForRequest(const mozilla::dom::AutoJSAPI &jsapi,
@@ -336,10 +495,13 @@ private:
 
   nsIDocument* mDocument;                   // [WEAK]
   nsCOMArray<nsIScriptLoaderObserver> mObservers;
-  nsTArray<nsRefPtr<nsScriptLoadRequest> > mNonAsyncExternalScriptInsertedRequests;
-  nsTArray<nsRefPtr<nsScriptLoadRequest> > mAsyncRequests;
-  nsTArray<nsRefPtr<nsScriptLoadRequest> > mDeferRequests;
-  nsTArray<nsRefPtr<nsScriptLoadRequest> > mXSLTRequests;
+  nsScriptLoadRequestList mNonAsyncExternalScriptInsertedRequests;
+  // mLoadingAsyncRequests holds async requests while they're loading; when they
+  // have been loaded they are moved to mLoadedAsyncRequests.
+  nsScriptLoadRequestList mLoadingAsyncRequests;
+  nsScriptLoadRequestList mLoadedAsyncRequests;
+  nsScriptLoadRequestList mDeferRequests;
+  nsScriptLoadRequestList mXSLTRequests;
   nsRefPtr<nsScriptLoadRequest> mParserBlockingRequest;
 
   // In mRequests, the additional information here is stored by the element.

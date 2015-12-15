@@ -27,7 +27,6 @@
 //#define FORCE_ALOG 1
 
 class nsIAndroidDisplayport;
-class nsIAndroidViewport;
 class nsIWidget;
 
 namespace mozilla {
@@ -35,15 +34,6 @@ namespace mozilla {
 class AutoLocalJNIFrame;
 
 void InitAndroidJavaWrappers(JNIEnv *jEnv);
-
-/*
- * Note: do not store global refs to any WrappedJavaObject;
- * these are live only during a particular JNI method, as
- * NewGlobalRef is -not- called on the jobject.
- *
- * If this is needed, WrappedJavaObject can be extended to
- * handle it.
- */
 
 class RefCountedJavaObject {
 public:
@@ -66,6 +56,14 @@ private:
     jobject mObject;
 };
 
+/*
+ * Note: do not store global refs to any WrappedJavaObject;
+ * these are live only during a particular JNI method, as
+ * NewGlobalRef is -not- called on the jobject.
+ *
+ * If this is needed, WrappedJavaObject can be extended to
+ * handle it.
+ */
 class WrappedJavaObject {
 public:
     WrappedJavaObject() :
@@ -373,16 +371,16 @@ class nsAndroidDisplayport final : public nsIAndroidDisplayport
 {
 public:
     NS_DECL_ISUPPORTS
-    virtual nsresult GetLeft(float *aLeft) { *aLeft = mLeft; return NS_OK; }
-    virtual nsresult GetTop(float *aTop) { *aTop = mTop; return NS_OK; }
-    virtual nsresult GetRight(float *aRight) { *aRight = mRight; return NS_OK; }
-    virtual nsresult GetBottom(float *aBottom) { *aBottom = mBottom; return NS_OK; }
-    virtual nsresult GetResolution(float *aResolution) { *aResolution = mResolution; return NS_OK; }
-    virtual nsresult SetLeft(float aLeft) { mLeft = aLeft; return NS_OK; }
-    virtual nsresult SetTop(float aTop) { mTop = aTop; return NS_OK; }
-    virtual nsresult SetRight(float aRight) { mRight = aRight; return NS_OK; }
-    virtual nsresult SetBottom(float aBottom) { mBottom = aBottom; return NS_OK; }
-    virtual nsresult SetResolution(float aResolution) { mResolution = aResolution; return NS_OK; }
+    virtual nsresult GetLeft(float *aLeft) override { *aLeft = mLeft; return NS_OK; }
+    virtual nsresult GetTop(float *aTop) override { *aTop = mTop; return NS_OK; }
+    virtual nsresult GetRight(float *aRight) override { *aRight = mRight; return NS_OK; }
+    virtual nsresult GetBottom(float *aBottom) override { *aBottom = mBottom; return NS_OK; }
+    virtual nsresult GetResolution(float *aResolution) override { *aResolution = mResolution; return NS_OK; }
+    virtual nsresult SetLeft(float aLeft) override { mLeft = aLeft; return NS_OK; }
+    virtual nsresult SetTop(float aTop) override { mTop = aTop; return NS_OK; }
+    virtual nsresult SetRight(float aRight) override { mRight = aRight; return NS_OK; }
+    virtual nsresult SetBottom(float aBottom) override { mBottom = aBottom; return NS_OK; }
+    virtual nsresult SetResolution(float aResolution) override { mResolution = aResolution; return NS_OK; }
 
     nsAndroidDisplayport(AndroidRectF aRect, float aResolution):
         mLeft(aRect.Left()), mTop(aRect.Top()), mRight(aRect.Right()), mBottom(aRect.Bottom()), mResolution(aResolution) {}
@@ -496,13 +494,24 @@ public:
         return event;
     }
 
-    static AndroidGeckoEvent* MakeApzInputEvent(const MultiTouchInput& aInput, const mozilla::layers::ScrollableLayerGuid& aGuid, uint64_t aInputBlockId) {
+    static AndroidGeckoEvent* MakeApzInputEvent(const MultiTouchInput& aInput, const mozilla::layers::ScrollableLayerGuid& aGuid, uint64_t aInputBlockId, nsEventStatus aEventStatus) {
         AndroidGeckoEvent* event = new AndroidGeckoEvent();
         event->Init(APZ_INPUT_EVENT);
         event->mApzInput = aInput;
         event->mApzGuid = aGuid;
         event->mApzInputBlockId = aInputBlockId;
+        event->mApzEventStatus = aEventStatus;
         return event;
+    }
+
+    bool IsInputEvent() const {
+        return mType == AndroidGeckoEvent::MOTION_EVENT ||
+            mType == AndroidGeckoEvent::NATIVE_GESTURE_EVENT ||
+            mType == AndroidGeckoEvent::LONG_PRESS ||
+            mType == AndroidGeckoEvent::KEY_EVENT ||
+            mType == AndroidGeckoEvent::IME_EVENT ||
+            mType == AndroidGeckoEvent::IME_KEY_EVENT ||
+            mType == AndroidGeckoEvent::APZ_INPUT_EVENT;
     }
 
     int Action() { return mAction; }
@@ -519,6 +528,7 @@ public:
     double X() { return mX; }
     double Y() { return mY; }
     double Z() { return mZ; }
+    double W() { return mW; }
     const nsIntRect& Rect() { return mRect; }
     nsAString& Characters() { return mCharacters; }
     nsAString& CharactersExtra() { return mCharactersExtra; }
@@ -552,6 +562,7 @@ public:
     bool IsWifi() { return mIsWifi; }
     int DHCPGateway() { return mDHCPGateway; }
     short ScreenOrientation() { return mScreenOrientation; }
+    short ScreenAngle() { return mScreenAngle; }
     RefCountedJavaObject* ByteBuffer() { return mByteBuffer; }
     int Width() { return mWidth; }
     int Height() { return mHeight; }
@@ -570,6 +581,7 @@ public:
     nsIObserver *Observer() { return mObserver; }
     mozilla::layers::ScrollableLayerGuid ApzGuid();
     uint64_t ApzInputBlockId();
+    nsEventStatus ApzEventStatus();
 
 protected:
     int mAction;
@@ -592,7 +604,7 @@ protected:
     int mRangeType, mRangeStyles, mRangeLineStyle;
     bool mRangeBoldLine;
     int mRangeForeColor, mRangeBackColor, mRangeLineColor;
-    double mX, mY, mZ;
+    double mX, mY, mZ, mW;
     int mPointerIndex;
     nsString mCharacters, mCharactersExtra, mData;
     nsRefPtr<nsGeoPosition> mGeoPosition;
@@ -600,6 +612,7 @@ protected:
     bool mIsWifi;
     int mDHCPGateway;
     short mScreenOrientation;
+    short mScreenAngle;
     nsRefPtr<RefCountedJavaObject> mByteBuffer;
     int mWidth, mHeight;
     int mID;
@@ -612,6 +625,7 @@ protected:
     MultiTouchInput mApzInput;
     mozilla::layers::ScrollableLayerGuid mApzGuid;
     uint64_t mApzInputBlockId;
+    nsEventStatus mApzEventStatus;
     AutoGlobalWrappedJavaObject mObject;
 
     void ReadIntArray(nsTArray<int> &aVals,
@@ -649,6 +663,7 @@ protected:
     static jfieldID jXField;
     static jfieldID jYField;
     static jfieldID jZField;
+    static jfieldID jWField;
     static jfieldID jDistanceField;
     static jfieldID jRectField;
     static jfieldID jNativeWindowField;
@@ -683,6 +698,7 @@ protected:
     static jfieldID jDHCPGatewayField;
 
     static jfieldID jScreenOrientationField;
+    static jfieldID jScreenAngleField;
     static jfieldID jByteBufferField;
 
     static jfieldID jWidthField;

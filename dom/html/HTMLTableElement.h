@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +8,6 @@
 
 #include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIDOMHTMLTableElement.h"
 #include "mozilla/dom/HTMLTableCaptionElement.h"
 #include "mozilla/dom/HTMLTableSectionElement.h"
 
@@ -18,8 +18,7 @@ namespace dom {
 
 class TableRowsCollection;
 
-class HTMLTableElement final : public nsGenericHTMLElement,
-                                   public nsIDOMHTMLTableElement
+class HTMLTableElement final : public nsGenericHTMLElement
 {
 public:
   explicit HTMLTableElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
@@ -54,7 +53,7 @@ public:
   }
   void SetTHead(HTMLTableSectionElement* aTHead, ErrorResult& aError)
   {
-    if (aTHead && !aTHead->IsHTML(nsGkAtoms::thead)) {
+    if (aTHead && !aTHead->IsHTMLElement(nsGkAtoms::thead)) {
       aError.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
       return;
     }
@@ -74,7 +73,7 @@ public:
   }
   void SetTFoot(HTMLTableSectionElement* aTFoot, ErrorResult& aError)
   {
-    if (aTFoot && !aTFoot->IsHTML(nsGkAtoms::tfoot)) {
+    if (aTFoot && !aTFoot->IsHTMLElement(nsGkAtoms::tfoot)) {
       aError.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
       return;
     }
@@ -191,7 +190,7 @@ public:
    * Called when an attribute is about to be changed
    */
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 const nsAttrValueOrString* aValue,
+                                 nsAttrValueOrString* aValue,
                                  bool aNotify) override;
   /**
    * Called when an attribute has just been changed
@@ -206,13 +205,13 @@ public:
 protected:
   virtual ~HTMLTableElement();
 
-  virtual JSObject* WrapNode(JSContext *aCx) override;
+  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   nsIContent* GetChild(nsIAtom *aTag) const
   {
     for (nsIContent* cur = nsINode::GetFirstChild(); cur;
          cur = cur->GetNextSibling()) {
-      if (cur->IsHTML(aTag)) {
+      if (cur->IsHTMLElement(aTag)) {
         return cur;
       }
     }

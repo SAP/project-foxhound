@@ -171,7 +171,7 @@ MappedAttrTable_MatchEntry(PLDHashTable *table, const PLDHashEntryHdr *hdr,
 static const PLDHashTableOps MappedAttrTable_Ops = {
   MappedAttrTable_HashKey,
   MappedAttrTable_MatchEntry,
-  PL_DHashMoveEntryStub,
+  PLDHashTable::MoveEntryStub,
   MappedAttrTable_ClearEntry,
   nullptr
 };
@@ -222,7 +222,7 @@ LangRuleTable_InitEntry(PLDHashEntryHdr *hdr, const void *key)
 static const PLDHashTableOps LangRuleTable_Ops = {
   LangRuleTable_HashKey,
   LangRuleTable_MatchEntry,
-  PL_DHashMoveEntryStub,
+  PLDHashTable::MoveEntryStub,
   LangRuleTable_ClearEntry,
   LangRuleTable_InitEntry
 };
@@ -233,18 +233,10 @@ nsHTMLStyleSheet::nsHTMLStyleSheet(nsIDocument* aDocument)
   : mDocument(aDocument)
   , mTableQuirkColorRule(new TableQuirkColorRule())
   , mTableTHRule(new TableTHRule())
+  , mMappedAttrTable(&MappedAttrTable_Ops, sizeof(MappedAttrTableEntry))
+  , mLangRuleTable(&LangRuleTable_Ops, sizeof(LangRuleTableEntry))
 {
   MOZ_ASSERT(aDocument);
-}
-
-nsHTMLStyleSheet::~nsHTMLStyleSheet()
-{
-  if (mLangRuleTable.IsInitialized()) {
-    PL_DHashTableFinish(&mLangRuleTable);
-  }
-  if (mMappedAttrTable.IsInitialized()) {
-    PL_DHashTableFinish(&mMappedAttrTable);
-  }
 }
 
 NS_IMPL_ISUPPORTS(nsHTMLStyleSheet, nsIStyleRuleProcessor)
@@ -253,11 +245,9 @@ NS_IMPL_ISUPPORTS(nsHTMLStyleSheet, nsIStyleRuleProcessor)
 nsHTMLStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
 {
   nsRuleWalker *ruleWalker = aData->mRuleWalker;
-  if (aData->mElement->IsHTML() && !ruleWalker->AuthorStyleDisabled()) {
-    nsIAtom* tag = aData->mElement->Tag();
-
+  if (!ruleWalker->AuthorStyleDisabled()) {
     // if we have anchor colors, check if this is an anchor with an href
-    if (tag == nsGkAtoms::a) {
+    if (aData->mElement->IsHTMLElement(nsGkAtoms::a)) {
       if (mLinkRule || mVisitedRule || mActiveRule) {
         EventStates state =
           nsCSSRuleProcessor::GetContentStateForVisitedHandling(
@@ -284,10 +274,10 @@ nsHTMLStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
       } // end link/visited/active rules
     } // end A tag
     // add the rule to handle text-align for a <th>
-    else if (tag == nsGkAtoms::th) {
+    else if (aData->mElement->IsHTMLElement(nsGkAtoms::th)) {
       ruleWalker->Forward(mTableTHRule);
     }
-    else if (tag == nsGkAtoms::table) {
+    else if (aData->mElement->IsHTMLElement(nsGkAtoms::table)) {
       if (aData->mTreeMatchContext.mCompatMode == eCompatibility_NavQuirks) {
         ruleWalker->Forward(mTableQuirkColorRule);
       }
@@ -297,7 +287,7 @@ nsHTMLStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
   // just get the style rules from the content.  For SVG we do this even if
   // author style is disabled, because SVG presentational hints aren't
   // considered style.
-  if (!ruleWalker->AuthorStyleDisabled() || aData->mElement->IsSVG()) {
+  if (!ruleWalker->AuthorStyleDisabled() || aData->mElement->IsSVGElement()) {
     aData->mElement->WalkContentStyleRules(ruleWalker);
   }
 
@@ -308,13 +298,20 @@ nsHTMLStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
   if (aData->mElement->GetAttr(kNameSpaceID_XML, nsGkAtoms::lang, lang)) {
     ruleWalker->Forward(LangRuleFor(lang));
   }
+
+  // Set the language to "x-math" on the <math> element, so that appropriate
+  // font settings are used for MathML.
+  if (aData->mElement->IsMathMLElement(nsGkAtoms::math)) {
+    nsGkAtoms::x_math->ToString(lang);
+    ruleWalker->Forward(LangRuleFor(lang));
+  }
 }
 
 // Test if style is dependent on content state
 /* virtual */ nsRestyleHint
 nsHTMLStyleSheet::HasStateDependentStyle(StateRuleProcessorData* aData)
 {
-  if (aData->mElement->IsHTML(nsGkAtoms::a) &&
+  if (aData->mElement->IsHTMLElement(nsGkAtoms::a) &&
       nsCSSRuleProcessor::IsLink(aData->mElement) &&
       ((mActiveRule && aData->mStateMask.HasState(NS_EVENT_STATE_ACTIVE)) ||
        (mLinkRule && aData->mStateMask.HasState(NS_EVENT_STATE_VISITED)) ||
@@ -338,7 +335,9 @@ nsHTMLStyleSheet::HasDocumentStateDependentStyle(StateRuleProcessorData* aData)
 }
 
 /* virtual */ nsRestyleHint
-nsHTMLStyleSheet::HasAttributeDependentStyle(AttributeRuleProcessorData* aData)
+nsHTMLStyleSheet::HasAttributeDependentStyle(
+    AttributeRuleProcessorData* aData,
+    RestyleHintData& aRestyleHintDataResult)
 {
   // Do nothing on before-change checks
   if (!aData->mAttrHasChanged) {
@@ -353,7 +352,7 @@ nsHTMLStyleSheet::HasAttributeDependentStyle(AttributeRuleProcessorData* aData)
   Element *element = aData->mElement;
   if (aData->mAttribute == nsGkAtoms::href &&
       (mLinkRule || mVisitedRule || mActiveRule) &&
-      element->IsHTML(nsGkAtoms::a)) {
+      element->IsHTMLElement(nsGkAtoms::a)) {
     return eRestyle_Self;
   }
 
@@ -365,7 +364,7 @@ nsHTMLStyleSheet::HasAttributeDependentStyle(AttributeRuleProcessorData* aData)
     // cellpadding on tables is special and requires reresolving all
     // the cells in the table
     if (aData->mAttribute == nsGkAtoms::cellpadding &&
-        element->IsHTML(nsGkAtoms::table)) {
+        element->IsHTMLElement(nsGkAtoms::table)) {
       return eRestyle_Subtree;
     }
     return eRestyle_Self;
@@ -422,12 +421,8 @@ nsHTMLStyleSheet::Reset()
   mVisitedRule       = nullptr;
   mActiveRule        = nullptr;
 
-  if (mLangRuleTable.IsInitialized()) {
-    PL_DHashTableFinish(&mLangRuleTable);
-  }
-  if (mMappedAttrTable.IsInitialized()) {
-    PL_DHashTableFinish(&mMappedAttrTable);
-  }
+  mLangRuleTable.Clear();
+  mMappedAttrTable.Clear();
 }
 
 nsresult
@@ -476,13 +471,8 @@ nsHTMLStyleSheet::SetVisitedLinkColor(nscolor aColor)
 already_AddRefed<nsMappedAttributes>
 nsHTMLStyleSheet::UniqueMappedAttributes(nsMappedAttributes* aMapped)
 {
-  if (!mMappedAttrTable.IsInitialized()) {
-    PL_DHashTableInit(&mMappedAttrTable, &MappedAttrTable_Ops,
-                      sizeof(MappedAttrTableEntry));
-  }
-  MappedAttrTableEntry *entry =
-    static_cast<MappedAttrTableEntry*>
-               (PL_DHashTableAdd(&mMappedAttrTable, aMapped, fallible));
+  auto entry = static_cast<MappedAttrTableEntry*>
+                          (mMappedAttrTable.Add(aMapped, fallible));
   if (!entry)
     return nullptr;
   if (!entry->mAttributes) {
@@ -498,12 +488,11 @@ nsHTMLStyleSheet::DropMappedAttributes(nsMappedAttributes* aMapped)
 {
   NS_ENSURE_TRUE_VOID(aMapped);
 
-  NS_ASSERTION(mMappedAttrTable.IsInitialized(), "table uninitialized");
 #ifdef DEBUG
   uint32_t entryCount = mMappedAttrTable.EntryCount() - 1;
 #endif
 
-  PL_DHashTableRemove(&mMappedAttrTable, aMapped);
+  mMappedAttrTable.Remove(aMapped);
 
   NS_ASSERTION(entryCount == mMappedAttrTable.EntryCount(), "not removed");
 }
@@ -511,12 +500,8 @@ nsHTMLStyleSheet::DropMappedAttributes(nsMappedAttributes* aMapped)
 nsIStyleRule*
 nsHTMLStyleSheet::LangRuleFor(const nsString& aLanguage)
 {
-  if (!mLangRuleTable.IsInitialized()) {
-    PL_DHashTableInit(&mLangRuleTable, &LangRuleTable_Ops,
-                      sizeof(LangRuleTableEntry));
-  }
-  LangRuleTableEntry *entry = static_cast<LangRuleTableEntry*>
-    (PL_DHashTableAdd(&mLangRuleTable, &aLanguage, fallible));
+  auto entry =
+    static_cast<LangRuleTableEntry*>(mLangRuleTable.Add(&aLanguage, fallible));
   if (!entry) {
     NS_ASSERTION(false, "out of memory");
     return nullptr;
@@ -524,27 +509,15 @@ nsHTMLStyleSheet::LangRuleFor(const nsString& aLanguage)
   return entry->mRule;
 }
 
-static size_t
-SizeOfAttributesEntryExcludingThis(PLDHashEntryHdr* aEntry,
-                                   MallocSizeOf aMallocSizeOf,
-                                   void* aArg)
-{
-  NS_PRECONDITION(aEntry, "The entry should not be null!");
-
-  MappedAttrTableEntry* entry = static_cast<MappedAttrTableEntry*>(aEntry);
-  NS_ASSERTION(entry->mAttributes, "entry->mAttributes should not be null!");
-  return entry->mAttributes->SizeOfIncludingThis(aMallocSizeOf);
-}
-
 size_t
 nsHTMLStyleSheet::DOMSizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
 {
   size_t n = aMallocSizeOf(this);
 
-  if (mMappedAttrTable.IsInitialized()) {
-    n += PL_DHashTableSizeOfExcludingThis(&mMappedAttrTable,
-                                          SizeOfAttributesEntryExcludingThis,
-                                          aMallocSizeOf);
+  n += mMappedAttrTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  for (auto iter = mMappedAttrTable.ConstIter(); !iter.Done(); iter.Next()) {
+    auto entry = static_cast<MappedAttrTableEntry*>(iter.Get());
+    n += entry->mAttributes->SizeOfIncludingThis(aMallocSizeOf);
   }
 
   // Measurement of the following members may be added later if DMD finds it is

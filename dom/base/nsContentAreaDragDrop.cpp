@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,6 +33,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsNetUtil.h"
 #include "nsIFile.h"
+#include "nsFrameLoader.h"
 #include "nsIWebNavigation.h"
 #include "nsIDocShell.h"
 #include "nsIContent.h"
@@ -52,6 +54,7 @@
 #include "mozilla/dom/DataTransfer.h"
 #include "nsIMIMEInfo.h"
 #include "nsRange.h"
+#include "TabParent.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLAreaElement.h"
 
@@ -414,8 +417,21 @@ DragDataProducer::Produce(DataTransfer* aDataTransfer,
     dsti && dsti->ItemType() == nsIDocShellTreeItem::typeChrome;
 
   // In chrome shells, only allow dragging inside editable areas.
-  if (isChromeShell && !editingElement)
+  if (isChromeShell && !editingElement) {
+    nsCOMPtr<nsIFrameLoaderOwner> flo = do_QueryInterface(mTarget);
+    if (flo) {
+      nsRefPtr<nsFrameLoader> fl = flo->GetFrameLoader();
+      if (fl) {
+        TabParent* tp = static_cast<TabParent*>(fl->GetRemoteBrowser());
+        if (tp) {
+          // We have a TabParent, so it may have data for dnd in case the child
+          // process started a dnd session.
+          tp->AddInitialDnDDataTo(aDataTransfer);
+        }
+      }
+    }
     return NS_OK;
+  }
 
   if (isChromeShell && textControl) {
     // Only use the selection if the target node is in the selection.
@@ -518,6 +534,14 @@ DragDataProducer::Produce(DataTransfer* aDataTransfer,
         // grab the href as the url, use alt text as the title of the
         // area if it's there.  the drag data is the image tag and src
         // attribute.
+        nsCOMPtr<nsIURI> imageURI;
+        image->GetCurrentURI(getter_AddRefs(imageURI));
+        if (imageURI) {
+          nsAutoCString spec;
+          imageURI->GetSpec(spec);
+          CopyUTF8toUTF16(spec, mUrlString);
+        }
+
         nsCOMPtr<nsIDOMElement> imageElement(do_QueryInterface(image));
         // XXXbz Shouldn't we use the "title" attr for title?  Using
         // "alt" seems very wrong....
@@ -525,10 +549,13 @@ DragDataProducer::Produce(DataTransfer* aDataTransfer,
           imageElement->GetAttribute(NS_LITERAL_STRING("alt"), mTitleString);
         }
 
-        mUrlString.Truncate();
+        if (mTitleString.IsEmpty()) {
+          mTitleString = mUrlString;
+        }
+
+        nsCOMPtr<imgIRequest> imgRequest;
 
         // grab the image data, and its request.
-        nsCOMPtr<imgIRequest> imgRequest;
         nsCOMPtr<imgIContainer> img =
           nsContentUtils::GetImageFromContent(image,
                                               getter_AddRefs(imgRequest));
@@ -539,7 +566,7 @@ DragDataProducer::Produce(DataTransfer* aDataTransfer,
         // Fix the file extension in the URL if necessary
         if (imgRequest && mimeService) {
           nsCOMPtr<nsIURI> imgUri;
-          imgRequest->GetCurrentURI(getter_AddRefs(imgUri));
+          imgRequest->GetURI(getter_AddRefs(imgUri));
 
           nsCOMPtr<nsIURL> imgUrl(do_QueryInterface(imgUri));
 
@@ -560,7 +587,6 @@ DragDataProducer::Produce(DataTransfer* aDataTransfer,
 
               // pass out the image source string
               CopyUTF8toUTF16(spec, mImageSourceString);
-              mUrlString = mImageSourceString;
 
               bool validExtension;
               if (extension.IsEmpty() || 
@@ -594,18 +620,6 @@ DragDataProducer::Produce(DataTransfer* aDataTransfer,
               mImage = img;
             }
           }
-        }
-        if (mUrlString.IsEmpty()) {
-          nsCOMPtr<nsIURI> imageURI;
-          image->GetCurrentURI(getter_AddRefs(imageURI));
-          if (imageURI) {
-            nsAutoCString spec;
-            imageURI->GetSpec(spec);
-            CopyUTF8toUTF16(spec, mUrlString);
-          }
-        }
-        if (mTitleString.IsEmpty()) {
-          mTitleString = mUrlString;
         }
 
         if (parentLink) {

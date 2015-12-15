@@ -10,9 +10,7 @@
 #include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
 
-#if defined(PR_LOGGING)
 extern PRLogModuleInfo* gFTPLog;
-#endif /* PR_LOGGING */
 
 // There are two transport connections established for an 
 // ftp connection. One is used for the command channel , and
@@ -185,7 +183,7 @@ FTPEventSinkProxy::OnFTPControlLogRunnable::Run()
     return NS_OK;
 }
 
-} // anonymous namespace
+} // namespace
 
 void
 nsFtpChannel::GetFTPEventSink(nsCOMPtr<nsIFTPEventSink> &aResult)

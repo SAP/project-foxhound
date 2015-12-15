@@ -20,16 +20,13 @@ class nsIContent;
 class nsIDOMDocument;
 class nsIAtom;
 class nsIDOMDocumentFragment;
-class nsIDOMElement;
-class nsIStyleSheet;
-class nsIDOMNode;
 class nsITransformObserver;
 class nsNodeInfoManager;
 class nsIDocument;
 class nsINode;
 
 class txTransformNotifier final : public nsIScriptLoaderObserver,
-                                      public nsICSSLoaderObserver
+                                  public nsICSSLoaderObserver
 {
 public:
     txTransformNotifier();

@@ -16,6 +16,8 @@ namespace js {
 // instantiated.
 class ProxyObject : public JSObject
 {
+    HeapPtrShape shape;
+
     // GetProxyDataLayout computes the address of this field.
     ProxyDataLayout data;
 
@@ -28,8 +30,7 @@ class ProxyObject : public JSObject
 
   public:
     static ProxyObject* New(JSContext* cx, const BaseProxyHandler* handler, HandleValue priv,
-                            TaggedProto proto_, JSObject* parent_,
-                            const ProxyOptions& options);
+                            TaggedProto proto_, const ProxyOptions& options);
 
     const Value& private_() {
         return GetProxyPrivate(this);
@@ -90,7 +91,6 @@ class ProxyObject : public JSObject
         // Proxy classes are not allowed to have call or construct hooks directly. Their
         // callability is instead decided by handler()->isCallable().
         return clasp->isProxy() &&
-               (clasp->flags & JSCLASS_IMPLEMENTS_BARRIERS) &&
                clasp->trace == proxy_Trace &&
                !clasp->call && !clasp->construct;
     }

@@ -9,6 +9,7 @@
 #include "mozilla/layers/CompositableClient.h"  // for CompositableChild
 #include "mozilla/layers/PCompositableChild.h"  // for PCompositableChild
 #include "mozilla/layers/PLayerChild.h"  // for PLayerChild
+#include "mozilla/layers/PImageContainerChild.h"
 #include "mozilla/layers/ShadowLayers.h"  // for ShadowLayerForwarder
 #include "mozilla/mozalloc.h"           // for operator delete, etc
 #include "nsDebug.h"                    // for NS_RUNTIMEABORT, etc
@@ -90,19 +91,13 @@ LayerTransactionChild::RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessa
         if (texture) {
           texture->SetReleaseFenceHandle(fence);
         }
-        if (mForwarder) {
-          mForwarder->HoldTransactionsToRespond(op.transactionId());
-        } else {
-          // Send back a response.
-          InfallibleTArray<AsyncChildMessageData> replies;
-          replies.AppendElement(OpReplyDeliverFence(op.transactionId()));
-          SendChildAsyncMessages(replies);
-        }
         break;
       }
-      case AsyncParentMessageData::TOpReplyDeliverFence: {
-        const OpReplyDeliverFence& op = message.get_OpReplyDeliverFence();
-        TransactionCompleteted(op.transactionId());
+      case AsyncParentMessageData::TOpReplyRemoveTexture: {
+        const OpReplyRemoveTexture& op = message.get_OpReplyRemoveTexture();
+
+        AsyncTransactionTrackersHolder::TransactionCompleteted(op.holderId(),
+                                                               op.transactionId());
         break;
       }
       default:
@@ -111,19 +106,6 @@ LayerTransactionChild::RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessa
     }
   }
   return true;
-}
-
-void
-LayerTransactionChild::SendFenceHandle(AsyncTransactionTracker* aTracker,
-                                       PTextureChild* aTexture,
-                                       const FenceHandle& aFence)
-{
-  HoldUntilComplete(aTracker);
-  InfallibleTArray<AsyncChildMessageData> messages;
-  messages.AppendElement(OpDeliverFenceFromChild(aTracker->GetId(),
-                                                 nullptr, aTexture,
-                                                 FenceHandleFromChild(aFence)));
-  SendChildAsyncMessages(messages);
 }
 
 void
@@ -156,5 +138,5 @@ LayerTransactionChild::DeallocPTextureChild(PTextureChild* actor)
   return TextureClient::DestroyIPDLActor(actor);
 }
 
-}  // namespace layers
-}  // namespace mozilla
+} // namespace layers
+} // namespace mozilla

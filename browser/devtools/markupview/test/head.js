@@ -3,12 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const Cu = Components.utils;
-let {devtools} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
-let TargetFactory = devtools.TargetFactory;
-let {console} = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
-let promise = devtools.require("resource://gre/modules/Promise.jsm").Promise;
-let {getInplaceEditorForSpan: inplaceEditor} = devtools.require("devtools/shared/inplace-editor");
-let clipboard = devtools.require("sdk/clipboard");
+var {require} = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+var {TargetFactory} = require("devtools/framework/target");
+var {console} = Cu.import("resource://gre/modules/devtools/Console.jsm", {});
+var promise = require("promise");
+var {getInplaceEditorForSpan: inplaceEditor} = require("devtools/shared/inplace-editor");
+var clipboard = require("sdk/clipboard");
+var {setTimeout, clearTimeout} = require("sdk/timers");
+var {promiseInvoke} = require("devtools/async-utils");
+var DevToolsUtils = require("devtools/toolkit/DevToolsUtils");
 
 // All test are asynchronous
 waitForExplicitFinish();
@@ -20,9 +23,9 @@ SimpleTest.requestCompleteLog();
 // Uncomment this pref to dump all devtools emitted events to the console.
 // Services.prefs.setBoolPref("devtools.dump.emit", true);
 
-// Set the testing flag on gDevTools and reset it when the test ends
-gDevTools.testing = true;
-registerCleanupFunction(() => gDevTools.testing = false);
+// Set the testing flag on DevToolsUtils and reset it when the test ends
+DevToolsUtils.testing = true;
+registerCleanupFunction(() => DevToolsUtils.testing = false);
 
 // Clear preferences that may be set during the course of tests.
 registerCleanupFunction(() => {
@@ -47,6 +50,8 @@ registerCleanupFunction(function*() {
 
 const TEST_URL_ROOT = "http://mochi.test:8888/browser/browser/devtools/markupview/test/";
 const CHROME_BASE = "chrome://mochitests/content/browser/browser/devtools/markupview/test/";
+const COMMON_FRAME_SCRIPT_URL = "chrome://browser/content/devtools/frame-script-utils.js";
+const MARKUPVIEW_FRAME_SCRIPT_URL = CHROME_BASE + "frame-script-utils.js";
 
 /**
  * Add a new test tab in the browser and load the given url.
@@ -64,6 +69,10 @@ function addTab(url) {
 
   let tab = window.gBrowser.selectedTab = window.gBrowser.addTab(url);
   let linkedBrowser = tab.linkedBrowser;
+
+  info("Loading the helper frame script " + COMMON_FRAME_SCRIPT_URL);
+  linkedBrowser.messageManager.loadFrameScript(COMMON_FRAME_SCRIPT_URL, false);
+  linkedBrowser.messageManager.loadFrameScript(MARKUPVIEW_FRAME_SCRIPT_URL, false);
 
   linkedBrowser.addEventListener("load", function onload() {
     linkedBrowser.removeEventListener("load", onload, true);
@@ -103,24 +112,87 @@ function reloadPage(inspector) {
 }
 
 /**
+ * Open the toolbox, with given tool visible.
+ * @param {string} toolId ID of the tool that should be visible by default.
+ * @return a promise that resolves when the tool is ready.
+ */
+function openToolbox(toolId) {
+  info("Opening the inspector panel");
+  let deferred = promise.defer();
+
+  let target = TargetFactory.forTab(gBrowser.selectedTab);
+  gDevTools.showToolbox(target, toolId).then(function(toolbox) {
+    info("The toolbox is open");
+    deferred.resolve({toolbox: toolbox});
+  }).then(null, console.error);
+
+  return deferred.promise;
+}
+
+/**
  * Open the toolbox, with the inspector tool visible.
  * @return a promise that resolves when the inspector is ready
  */
 function openInspector() {
-  info("Opening the inspector panel");
-  let def = promise.defer();
-
-  let target = TargetFactory.forTab(gBrowser.selectedTab);
-  gDevTools.showToolbox(target, "inspector").then(function(toolbox) {
-    info("The toolbox is open");
+  return openToolbox("inspector").then(({toolbox}) => {
     let inspector = toolbox.getCurrentPanel();
-    inspector.once("inspector-updated", () => {
+    let eventId = "inspector-updated";
+    return inspector.once("inspector-updated").then(() => {
       info("The inspector panel is active and ready");
-      def.resolve({toolbox: toolbox, inspector: inspector});
+      return {toolbox: toolbox, inspector: inspector};
     });
-  }).then(null, console.error);
+  });
+}
 
+/**
+ * Wait for a content -> chrome message on the message manager (the window
+ * messagemanager is used).
+ * @param {String} name The message name
+ * @return {Promise} A promise that resolves to the response data when the
+ * message has been received
+ */
+function waitForContentMessage(name) {
+  info("Expecting message " + name + " from content");
+
+  let mm = gBrowser.selectedBrowser.messageManager;
+
+  let def = promise.defer();
+  mm.addMessageListener(name, function onMessage(msg) {
+    mm.removeMessageListener(name, onMessage);
+    def.resolve(msg.data);
+  });
   return def.promise;
+}
+
+/**
+ * Send an async message to the frame script (chrome -> content) and wait for a
+ * response message with the same name (content -> chrome).
+ * @param {String} name The message name. Should be one of the messages defined
+ * in doc_frame_script.js
+ * @param {Object} data Optional data to send along
+ * @param {Object} objects Optional CPOW objects to send along
+ * @param {Boolean} expectResponse If set to false, don't wait for a response
+ * with the same name from the content script. Defaults to true.
+ * @return {Promise} Resolves to the response data if a response is expected,
+ * immediately resolves otherwise
+ */
+function executeInContent(name, data={}, objects={}, expectResponse=true) {
+  info("Sending message " + name + " to content");
+  let mm = gBrowser.selectedBrowser.messageManager;
+
+  mm.sendAsyncMessage(name, data, objects);
+  if (expectResponse) {
+    return waitForContentMessage(name);
+  } else {
+    return promise.resolve();
+  }
+}
+
+/**
+ * Reload the current tab location.
+ */
+function reloadTab() {
+  return executeInContent("devtools:test:reload", {}, {}, false);
 }
 
 /**
@@ -152,6 +224,27 @@ function getNodeFront(selector, {walker}) {
 }
 
 /**
+ * Get information about a DOM element, identified by its selector.
+ * @param {String} selector.
+ * @return {Promise} a promise that resolves to the element's information.
+ */
+function getNodeInfo(selector) {
+  return executeInContent("devtools:test:getDomElementInfo", {selector});
+}
+
+/**
+ * Set the value of an attribute of a DOM element, identified by its selector.
+ * @param {String} selector.
+ * @param {String} attributeName.
+ * @param {String} attributeValue.
+ * @param {Promise} resolves when done.
+ */
+function setNodeAttribute(selector, attributeName, attributeValue) {
+  return executeInContent("devtools:test:setAttribute",
+                          {selector, attributeName, attributeValue});
+}
+
+/**
  * Highlight a node and set the inspector's current selection to the node or
  * the first match of the given css selector.
  * @param {String|DOMNode} nodeOrSelector
@@ -179,7 +272,7 @@ function selectAndHighlightNode(nodeOrSelector, inspector) {
  * to highlight the node upon selection
  * @return {Promise} Resolves when the inspector is updated with the new node
  */
-let selectNode = Task.async(function*(selector, inspector, reason="test") {
+var selectNode = Task.async(function*(selector, inspector, reason="test") {
   info("Selecting the node for '" + selector + "'");
   let nodeFront = yield getNodeFront(selector, inspector);
   let updated = inspector.once("inspector-updated");
@@ -207,7 +300,7 @@ function getContainerForNodeFront(nodeFront, {markup}) {
  * loaded in the toolbox
  * @return {MarkupContainer}
  */
-let getContainerForSelector = Task.async(function*(selector, inspector) {
+var getContainerForSelector = Task.async(function*(selector, inspector) {
   info("Getting the markup-container for node " + selector);
   let nodeFront = yield getNodeFront(selector, inspector);
   let container = getContainerForNodeFront(nodeFront, inspector);
@@ -240,7 +333,7 @@ function waitForChildrenUpdated({markup}) {
  * loaded in the toolbox
  * @return {Promise} Resolves when the node has been selected.
  */
-let clickContainer = Task.async(function*(selector, inspector) {
+var clickContainer = Task.async(function*(selector, inspector) {
   info("Clicking on the markup-container for node " + selector);
 
   let nodeFront = yield getNodeFront(selector, inspector);
@@ -291,7 +384,7 @@ function setEditableFieldValue(field, value, inspector) {
  * loaded in the toolbox
  * @return a promise that resolves when the node has mutated
  */
-let addNewAttributes = Task.async(function*(selector, text, inspector) {
+var addNewAttributes = Task.async(function*(selector, text, inspector) {
   info("Entering text '" + text + "' in node '" + selector + "''s new attribute field");
 
   let container = yield getContainerForSelector(selector, inspector);
@@ -304,25 +397,28 @@ let addNewAttributes = Task.async(function*(selector, text, inspector) {
 });
 
 /**
- * Checks that a node has the given attributes
+ * Checks that a node has the given attributes.
  *
- * @param {String} selector The node or node selector to check.
- * @param {Object} attrs An object containing the attributes to check.
+ * @param {String} selector The selector for the node to check.
+ * @param {Object} expected An object containing the attributes to check.
  *        e.g. {id: "id1", class: "someclass"}
  *
  * Note that node.getAttribute() returns attribute values provided by the HTML
  * parser. The parser only provides unescaped entities so &amp; will return &.
  */
-function assertAttributes(selector, attrs) {
-  let node = getNode(selector);
+var assertAttributes = Task.async(function*(selector, expected) {
+  let {attributes: actual} = yield getNodeInfo(selector);
 
-  is(node.attributes.length, Object.keys(attrs).length,
-    "Node has the correct number of attributes.");
-  for (let attr in attrs) {
-    is(node.getAttribute(attr), attrs[attr],
-      "Node has the correct " + attr + " attribute.");
+  is(actual.length, Object.keys(expected).length,
+    "The node " + selector + " has the expected number of attributes.");
+  for (let attr in expected) {
+    let foundAttr = actual.find(({name, value}) => name === attr);
+    let foundValue = foundAttr ? foundAttr.value : undefined;
+    ok(foundAttr, "The node " + selector + " has the attribute " + attr);
+    is(foundValue, expected[attr],
+      "The node " + selector + " has the correct " + attr + " attribute value");
   }
-}
+});
 
 /**
  * Undo the last markup-view action and wait for the corresponding mutation to
@@ -439,7 +535,7 @@ function once(target, eventName, useCapture=false) {
  * @return A promise that resolves with a boolean indicating whether
  *         the menu items are disabled once the menu has been checked.
  */
-let isEditingMenuDisabled = Task.async(function*(nodeFront, inspector, assert=true) {
+var isEditingMenuDisabled = Task.async(function*(nodeFront, inspector, assert=true) {
   let deleteMenuItem = inspector.panelDoc.getElementById("node-menu-delete");
   let editHTMLMenuItem = inspector.panelDoc.getElementById("node-menu-edithtml");
   let pasteHTMLMenuItem = inspector.panelDoc.getElementById("node-menu-pasteouterhtml");
@@ -473,7 +569,7 @@ let isEditingMenuDisabled = Task.async(function*(nodeFront, inspector, assert=tr
  * @return A promise that resolves with a boolean indicating whether
  *         the menu items are enabled once the menu has been checked.
  */
-let isEditingMenuEnabled = Task.async(function*(nodeFront, inspector, assert=true) {
+var isEditingMenuEnabled = Task.async(function*(nodeFront, inspector, assert=true) {
   let deleteMenuItem = inspector.panelDoc.getElementById("node-menu-delete");
   let editHTMLMenuItem = inspector.panelDoc.getElementById("node-menu-edithtml");
   let pasteHTMLMenuItem = inspector.panelDoc.getElementById("node-menu-pasteouterhtml");
@@ -503,7 +599,7 @@ let isEditingMenuEnabled = Task.async(function*(nodeFront, inspector, assert=tru
  * @param {DOMNode} menu A menu that implements hidePopup/openPopup
  * @return a promise that resolves once the menu is opened.
  */
-let reopenMenu = Task.async(function*(menu) {
+var reopenMenu = Task.async(function*(menu) {
   // First close it is if it is already opened.
   if (menu.state == "closing" || menu.state == "open") {
     let popuphidden = once(menu, "popuphidden", true);
@@ -560,4 +656,123 @@ function checkFocusedAttribute(attrName, editMode) {
   is(focusedAttr ? focusedAttr.tagName : undefined,
     editMode ? "input": "span",
     editMode ? attrName + " is in edit mode" : attrName + " is not in edit mode");
+}
+
+// The expand all operation of the markup-view calls itself recursively and
+// there's not one event we can wait for to know when it's done
+// so use this helper function to wait until all recursive children updates are done.
+function* waitForMultipleChildrenUpdates(inspector) {
+  // As long as child updates are queued up while we wait for an update already
+  // wait again
+  if (inspector.markup._queuedChildUpdates &&
+      inspector.markup._queuedChildUpdates.size) {
+    yield waitForChildrenUpdated(inspector);
+    return yield waitForMultipleChildrenUpdates(inspector);
+  }
+}
+
+/**
+ * Create an HTTP server that can be used to simulate custom requests within
+ * a test.  It is automatically cleaned up when the test ends, so no need to
+ * call `destroy`.
+ *
+ * See https://developer.mozilla.org/en-US/docs/Httpd.js/HTTP_server_for_unit_tests
+ * for more information about how to register handlers.
+ *
+ * The server can be accessed like:
+ *
+ *   const server = createTestHTTPServer();
+ *   let url = "http://localhost: " + server.identity.primaryPort + "/path";
+ *
+ * @returns {HttpServer}
+ */
+function createTestHTTPServer() {
+  const {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
+  let server = new HttpServer();
+
+  registerCleanupFunction(function* cleanup() {
+    let destroyed = promise.defer();
+    server.stop(() => {
+      destroyed.resolve();
+    });
+    yield destroyed.promise;
+  });
+
+  server.start(-1);
+  return server;
+}
+
+/**
+ * A helper that simulates a contextmenu event on the given chrome DOM element.
+ */
+function contextMenuClick(element) {
+  let evt = element.ownerDocument.createEvent('MouseEvents');
+  let button = 2;  // right click
+
+  evt.initMouseEvent('contextmenu', true, true,
+       element.ownerDocument.defaultView, 1, 0, 0, 0, 0, false,
+       false, false, false, button, null);
+
+  element.dispatchEvent(evt);
+}
+
+/**
+ * Registers new backend tab actor.
+ *
+ * @param {DebuggerClient} client RDP client object (toolbox.target.client)
+ * @param {Object} options Configuration object with the following options:
+ *
+ * - moduleUrl {String}: URL of the module that contains actor implementation.
+ * - prefix {String}: prefix of the actor.
+ * - actorClass {ActorClass}: Constructor object for the actor.
+ * - frontClass {FrontClass}: Constructor object for the front part
+ * of the registered actor.
+ *
+ * @returns {Promise} A promise that is resolved when the actor is registered.
+ * The resolved value has two properties:
+ *
+ * - registrar {ActorActor}: A handle to the registered actor that allows
+ * unregistration.
+ * - form {Object}: The JSON actor form provided by the server.
+ */
+function registerTabActor(client, options) {
+  let moduleUrl = options.moduleUrl;
+
+  // Since client.listTabs doesn't use promises we need to
+  // 'promisify' it using 'promiseInvoke' helper method.
+  // This helps us to chain all promises and catch errors.
+  return promiseInvoke(client, client.listTabs).then(response => {
+    let config = {
+      prefix: options.prefix,
+      constructor: options.actorClass,
+      type: { tab: true },
+    };
+
+    // Register the custom actor on the backend.
+    let registry = ActorRegistryFront(client, response);
+    return registry.registerActor(moduleUrl, config).then(registrar => {
+      return client.getTab().then(response => {
+        return {
+          registrar: registrar,
+          form: response.tab
+        };
+      });
+    });
+  });
+}
+
+/**
+ * A helper for unregistering an existing backend actor.
+ *
+ * @param {ActorActor} registrar A handle to the registered actor
+ * that has been received after registration.
+ * @param {Front} Corresponding front object.
+ *
+ * @returns A promise that is resolved when the unregistration
+ * has finished.
+ */
+function unregisterActor(registrar, front) {
+  return front.detach().then(() => {
+    return registrar.unregister();
+  });
 }

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,19 +17,16 @@
 // files.
 #include "mozilla/dom/RequestBinding.h"
 
-class nsPIDOMWindow;
-
 namespace mozilla {
 namespace dom {
 
 class Headers;
 class InternalHeaders;
-class Promise;
 class RequestOrUSVString;
 
 class Request final : public nsISupports
-                        , public FetchBody<Request>
-                        , public nsWrapperCache
+                    , public FetchBody<Request>
+                    , public nsWrapperCache
 {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Request)
@@ -36,16 +34,21 @@ class Request final : public nsISupports
 public:
   Request(nsIGlobalObject* aOwner, InternalRequest* aRequest);
 
+  static bool
+  RequestContextEnabled(JSContext* aCx, JSObject* aObj);
+  static bool
+  RequestCacheEnabled(JSContext* aCx, JSObject* aObj);
+
   JSObject*
-  WrapObject(JSContext* aCx) override
+  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
   {
-    return RequestBinding::Wrap(aCx, this);
+    return RequestBinding::Wrap(aCx, this, aGivenProto);
   }
 
   void
-  GetUrl(DOMString& aUrl) const
+  GetUrl(nsAString& aUrl) const
   {
-    aUrl.AsAString() = NS_ConvertUTF8toUTF16(mRequest->mURL);
+    CopyUTF8toUTF16(mRequest->mURL, aUrl);
   }
 
   void
@@ -75,17 +78,22 @@ public:
     return mRequest->GetCacheMode();
   }
 
+  RequestRedirect
+  Redirect() const
+  {
+    return mRequest->GetRedirectMode();
+  }
+
   RequestContext
   Context() const
   {
-    return mContext;
+    return mRequest->Context();
   }
 
-  // [ChromeOnly]
   void
-  SetContext(RequestContext aContext)
+  SetContentPolicyType(nsContentPolicyType aContentPolicyType)
   {
-    mContext = aContext;
+    mRequest->SetContentPolicyType(aContentPolicyType);
   }
 
   void
@@ -104,6 +112,9 @@ public:
 
   void
   GetBody(nsIInputStream** aStream) { return mRequest->GetBody(aStream); }
+
+  void
+  SetBody(nsIInputStream* aStream) { return mRequest->SetBody(aStream); }
 
   static already_AddRefed<Request>
   Constructor(const GlobalObject& aGlobal, const RequestOrUSVString& aInput,
@@ -126,7 +137,6 @@ private:
   nsRefPtr<InternalRequest> mRequest;
   // Lazily created.
   nsRefPtr<Headers> mHeaders;
-  RequestContext mContext;
 };
 
 } // namespace dom

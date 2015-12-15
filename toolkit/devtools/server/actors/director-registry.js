@@ -109,9 +109,9 @@ const DirectorRegistry = exports.DirectorRegistry = {
  * E10S parent/child setup helpers
  */
 
-let gTrackedMessageManager = new Set();
+var gTrackedMessageManager = new Set();
 
-exports.setupParentProcess = function setupParentProcess({mm, childID}) {
+exports.setupParentProcess = function setupParentProcess({mm, prefix}) {
   // prevents multiple subscriptions on the same messagemanager
   if (gTrackedMessageManager.has(mm)) {
     return;
@@ -121,7 +121,7 @@ exports.setupParentProcess = function setupParentProcess({mm, childID}) {
   // listen for director-script requests from the child process
   mm.addMessageListener("debug:director-registry-request", handleChildRequest);
 
-  DebuggerServer.once("disconnected-from-child:" + childID, handleMessageManagerDisconnected);
+  DebuggerServer.once("disconnected-from-child:" + prefix, handleMessageManagerDisconnected);
 
   /* parent process helpers */
 

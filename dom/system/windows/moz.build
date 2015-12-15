@@ -9,6 +9,8 @@ SOURCES += [
     'WindowsLocationProvider.cpp'
 ]
 
-FAIL_ON_WARNINGS = True
+LOCAL_INCLUDES += [
+    '/dom/geolocation'
+]
 
 FINAL_LIBRARY = 'xul'

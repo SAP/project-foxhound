@@ -5,7 +5,7 @@
 
 const {Cc, Ci, Cu, Cr} = require("chrome");
 const events = require("sdk/event/core");
-const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
+const promise = require("promise");
 const protocol = require("devtools/server/protocol");
 const {CallWatcherActor, CallWatcherFront} = require("devtools/server/actors/call-watcher");
 const DevToolsUtils = require("devtools/toolkit/DevToolsUtils.js");
@@ -19,8 +19,11 @@ const CANVAS_CONTEXTS = [
 ];
 
 const ANIMATION_GENERATORS = [
-  "requestAnimationFrame",
-  "mozRequestAnimationFrame"
+  "requestAnimationFrame"
+];
+
+const LOOP_GENERATORS = [
+  "setTimeout"
 ];
 
 const DRAW_CALLS = [
@@ -95,7 +98,7 @@ protocol.types.addDictType("snapshot-overview", {
  * all the corresponding canvas' context methods invoked in that frame,
  * thumbnails for each draw call and a screenshot of the end result.
  */
-let FrameSnapshotActor = protocol.ActorClass({
+var FrameSnapshotActor = protocol.ActorClass({
   typeName: "frame-snapshot",
 
   /**
@@ -183,7 +186,7 @@ let FrameSnapshotActor = protocol.ActorClass({
 /**
  * The corresponding Front object for the FrameSnapshotActor.
  */
-let FrameSnapshotFront = protocol.FrontClass(FrameSnapshotActor, {
+var FrameSnapshotFront = protocol.FrontClass(FrameSnapshotActor, {
   initialize: function(client, form) {
     protocol.Front.prototype.initialize.call(this, client, form);
     this._animationFrameEndScreenshot = null;
@@ -208,7 +211,8 @@ let FrameSnapshotFront = protocol.FrontClass(FrameSnapshotActor, {
    * was already generated and retrieved once.
    */
   generateScreenshotFor: custom(function(functionCall) {
-    if (CanvasFront.ANIMATION_GENERATORS.has(functionCall.name)) {
+    if (CanvasFront.ANIMATION_GENERATORS.has(functionCall.name) ||
+        CanvasFront.LOOP_GENERATORS.has(functionCall.name)) {
       return promise.resolve(this._animationFrameEndScreenshot);
     }
     let cachedScreenshot = this._cachedScreenshots.get(functionCall);
@@ -228,7 +232,7 @@ let FrameSnapshotFront = protocol.FrontClass(FrameSnapshotActor, {
  * of a 2D or WebGL context, to provide information regarding all the calls
  * made when drawing frame inside an animation loop.
  */
-let CanvasActor = exports.CanvasActor = protocol.ActorClass({
+var CanvasActor = exports.CanvasActor = protocol.ActorClass({
   // Reset for each recording, boolean indicating whether or not
   // any draw calls were called for a recording.
   _animationContainsDrawCall: false,
@@ -257,7 +261,7 @@ let CanvasActor = exports.CanvasActor = protocol.ActorClass({
     this._callWatcher.onCall = this._onContentFunctionCall;
     this._callWatcher.setup({
       tracedGlobals: CANVAS_CONTEXTS,
-      tracedFunctions: ANIMATION_GENERATORS,
+      tracedFunctions: [...ANIMATION_GENERATORS, ...LOOP_GENERATORS],
       performReload: reload,
       storeCalls: true
     });
@@ -303,11 +307,7 @@ let CanvasActor = exports.CanvasActor = protocol.ActorClass({
   /**
    * Records a snapshot of all the calls made during the next animation frame.
    * The animation should be implemented via the de-facto requestAnimationFrame
-   * utility, not inside a `setInterval` or recursive `setTimeout`.
-   *
-   * XXX: Currently only supporting requestAnimationFrame. When this isn't used,
-   * it'd be a good idea to display a huge red flashing banner telling people to
-   * STOP USING `setInterval` OR `setTimeout` FOR ANIMATION. Bug 978948.
+   * utility, or inside recursive `setTimeout`s. `setInterval` at this time are not supported.
    */
   recordAnimationFrame: method(function() {
     if (this._callWatcher.isRecording()) {
@@ -316,12 +316,29 @@ let CanvasActor = exports.CanvasActor = protocol.ActorClass({
 
     this._recordingContainsDrawCall = false;
     this._callWatcher.eraseRecording();
+    this._callWatcher.initFrameStartTimestamp();
     this._callWatcher.resumeRecording();
 
     let deferred = this._currentAnimationFrameSnapshot = promise.defer();
     return deferred.promise;
   }, {
-    response: { snapshot: RetVal("frame-snapshot") }
+    response: { snapshot: RetVal("nullable:frame-snapshot") }
+  }),
+
+  /**
+   * Cease attempts to record an animation frame.
+   */
+  stopRecordingAnimationFrame: method(function() {
+   if (!this._callWatcher.isRecording()) {
+      return;
+    }
+    this._animationStarted = false;
+    this._callWatcher.pauseRecording();
+    this._callWatcher.eraseRecording();
+    this._currentAnimationFrameSnapshot.resolve(null);
+    this._currentAnimationFrameSnapshot = null;
+  }, {
+    oneway: true
   }),
 
   /**
@@ -339,7 +356,15 @@ let CanvasActor = exports.CanvasActor = protocol.ActorClass({
     // They need to be cloned.
     inplaceShallowCloneArrays(args, window);
 
+    // Handle animations generated using requestAnimationFrame
     if (CanvasFront.ANIMATION_GENERATORS.has(name)) {
+      this._handleAnimationFrame(functionCall);
+      return;
+    }
+    // Handle animations generated using setTimeout. While using
+    // those timers is considered extremely poor practice, they're still widely
+    // used on the web, especially for old demos; it's nice to support them as well.
+    if (CanvasFront.LOOP_GENERATORS.has(name)) {
       this._handleAnimationFrame(functionCall);
       return;
     }
@@ -457,7 +482,7 @@ let CanvasActor = exports.CanvasActor = protocol.ActorClass({
 /**
  * A collection of methods for manipulating canvas contexts.
  */
-let ContextUtils = {
+var ContextUtils = {
   /**
    * WebGL contexts are sensitive to how they're queried. Use this function
    * to make sure the right context is always retrieved, if available.
@@ -800,7 +825,7 @@ let ContextUtils = {
 /**
  * The corresponding Front object for the CanvasActor.
  */
-let CanvasFront = exports.CanvasFront = protocol.FrontClass(CanvasActor, {
+var CanvasFront = exports.CanvasFront = protocol.FrontClass(CanvasActor, {
   initialize: function(client, { canvasActor }) {
     protocol.Front.prototype.initialize.call(this, client, { actor: canvasActor });
     this.manage(this);
@@ -812,6 +837,7 @@ let CanvasFront = exports.CanvasFront = protocol.FrontClass(CanvasActor, {
  */
 CanvasFront.CANVAS_CONTEXTS = new Set(CANVAS_CONTEXTS);
 CanvasFront.ANIMATION_GENERATORS = new Set(ANIMATION_GENERATORS);
+CanvasFront.LOOP_GENERATORS = new Set(LOOP_GENERATORS);
 CanvasFront.DRAW_CALLS = new Set(DRAW_CALLS);
 CanvasFront.INTERESTING_CALLS = new Set(INTERESTING_CALLS);
 CanvasFront.THUMBNAIL_SIZE = 50; // px

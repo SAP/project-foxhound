@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global loop:true */
-
 var loop = loop || {};
 loop.store = loop.store || {};
 
 /**
- * Manages the conversation window app controller view. Used to get
+ * Manages the standalone app controller view. Used to get
  * the window data and store the window type.
  */
 loop.store.StandaloneAppStore = (function() {
@@ -17,14 +15,14 @@ loop.store.StandaloneAppStore = (function() {
   var sharedActions = loop.shared.actions;
   var sharedUtils = loop.shared.utils;
 
-  var OLD_STYLE_CALL_REGEXP = /\#call\/(.*)/;
-  var NEW_STYLE_CALL_REGEXP = /\/c\/([\w\-]+)$/;
+  var CALL_REGEXP = /\/c\/([\w\-]+)$/;
   var ROOM_REGEXP = /\/([\w\-]+)$/;
 
   /**
    * Constructor
    *
-   * @param {Object} options Options for the store. Should contain the dispatcher.
+   * @param {Object} options Options for the store. Should contain the
+   *                         dispatcher.
    */
   var StandaloneAppStore = function(options) {
     if (!options.dispatcher) {
@@ -33,14 +31,10 @@ loop.store.StandaloneAppStore = (function() {
     if (!options.sdk) {
       throw new Error("Missing option sdk");
     }
-    if (!options.conversation) {
-      throw new Error("Missing option conversation");
-    }
 
     this._dispatcher = options.dispatcher;
     this._storeState = {};
     this._sdk = options.sdk;
-    this._conversation = options.conversation;
 
     this._dispatcher.register(this, [
       "extractTokenInfo"
@@ -72,17 +66,15 @@ loop.store.StandaloneAppStore = (function() {
       var windowType = "home";
 
       function extractId(path, regexp) {
-        var match = path.match(regexp);
-        if (match && match[1]) {
-          return match;
+        var pathMatch = path.match(regexp);
+        if (pathMatch && pathMatch[1]) {
+          return pathMatch;
         }
         return null;
       }
 
       if (windowPath) {
-        // Is this a call url (the hash is a backwards-compatible url)?
-        match = extractId(windowPath, OLD_STYLE_CALL_REGEXP) ||
-                extractId(windowPath, NEW_STYLE_CALL_REGEXP);
+        match = extractId(windowPath, CALL_REGEXP);
 
         if (match) {
           windowType = "outgoing";
@@ -99,8 +91,20 @@ loop.store.StandaloneAppStore = (function() {
     },
 
     /**
+     * Extracts the crypto key from the hash for the page.
+     */
+    _extractCryptoKey: function(windowHash) {
+      if (windowHash && windowHash[0] === "#") {
+        return windowHash.substring(1, windowHash.length);
+      }
+
+      return null;
+    },
+
+    /**
      * Handles the extract token info action - obtains the token information
-     * and its type; updates the store and notifies interested components.
+     * and its type; extracts any crypto information; updates the store and
+     * notifies interested components.
      *
      * @param {sharedActions.GetWindowData} actionData The action data
      */
@@ -124,20 +128,17 @@ loop.store.StandaloneAppStore = (function() {
       }
       // Else type is home.
 
-      if (token) {
-        this._conversation.set({loopToken: token});
-      }
-
       this.setStoreState({
         windowType: windowType,
         isFirefox: sharedUtils.isFirefox(navigator.userAgent),
         unsupportedPlatform: unsupportedPlatform
       });
 
-      // If we've not got a window ID, don't dispatch the action, as we don't need
-      // it.
+      // If we've not got a window ID, don't dispatch the action, as we don't
+      // need it.
       if (token) {
         this._dispatcher.dispatch(new loop.shared.actions.FetchServerData({
+          cryptoKey: this._extractCryptoKey(actionData.windowHash),
           token: token,
           windowType: windowType
         }));

@@ -36,9 +36,7 @@
 #pragma warning(pop)
 #endif
 
-#include "pkix/pkix.h"
 #include "pkixgtest.h"
-#include "pkixtestutil.h"
 
 using namespace mozilla::pkix;
 using namespace mozilla::pkix::test;
@@ -67,10 +65,10 @@ CreateCert(const char* issuerCN, // null means "empty name"
 
   ScopedTestKeyPair reusedKey(CloneReusedKeyPair());
   ByteString certDER(CreateEncodedCertificate(
-                       v3, sha256WithRSAEncryption, serialNumber, issuerDER,
+                       v3, sha256WithRSAEncryption(), serialNumber, issuerDER,
                        oneDayBeforeNow, oneDayAfterNow, subjectDER,
                        *reusedKey, extensions, *reusedKey,
-                       sha256WithRSAEncryption));
+                       sha256WithRSAEncryption()));
   EXPECT_FALSE(ENCODING_FAILED(certDER));
 
   if (subjectDERToCertDER) {
@@ -80,7 +78,7 @@ CreateCert(const char* issuerCN, // null means "empty name"
   return certDER;
 }
 
-class TestTrustDomain final : public TrustDomain
+class TestTrustDomain final : public DefaultCryptoTrustDomain
 {
 public:
   // The "cert chain tail" is a longish chain of certificates that is used by
@@ -141,7 +139,7 @@ private:
     return Success;
   }
 
-  Result CheckRevocation(EndEntityOrCA, const CertID&, Time,
+  Result CheckRevocation(EndEntityOrCA, const CertID&, Time, Duration,
                          /*optional*/ const Input*, /*optional*/ const Input*)
                          override
   {
@@ -152,36 +150,6 @@ private:
   {
     return Success;
   }
-
-  Result DigestBuf(Input input, DigestAlgorithm digestAlg,
-                   /*out*/ uint8_t* digestBuf, size_t digestLen) override
-  {
-    return TestDigestBuf(input, digestAlg, digestBuf, digestLen);
-  }
-
-  Result CheckRSAPublicKeyModulusSizeInBits(EndEntityOrCA, unsigned int)
-                                            override
-  {
-    return Success;
-  }
-
-  Result VerifyRSAPKCS1SignedDigest(const SignedDigest& signedDigest,
-                                    Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyRSAPKCS1SignedDigest(signedDigest, subjectPublicKeyInfo);
-  }
-
-  Result CheckECDSACurveIsAcceptable(EndEntityOrCA, NamedCurve) override
-  {
-    return Success;
-  }
-
-  Result VerifyECDSASignedDigest(const SignedDigest& signedDigest,
-                                 Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyECDSASignedDigest(signedDigest, subjectPublicKeyInfo);
-  }
-
 
   std::map<ByteString, ByteString> subjectDERToCertDER;
   ByteString leafCACertDER;
@@ -276,7 +244,7 @@ TEST_F(pkixbuild, BeyondMaxAcceptableCertChainLength)
 // is treated as a trust anchor and is assumed to have issued all certificates
 // (i.e. FindIssuer always attempts to build the next step in the chain with
 // it).
-class ExpiredCertTrustDomain final : public TrustDomain
+class ExpiredCertTrustDomain final : public DefaultCryptoTrustDomain
 {
 public:
   explicit ExpiredCertTrustDomain(ByteString rootDER)
@@ -315,46 +283,9 @@ public:
     return checker.Check(rootCert, nullptr, keepGoing);
   }
 
-  Result CheckRevocation(EndEntityOrCA, const CertID&, Time,
-                         /*optional*/ const Input*,
-                         /*optional*/ const Input*) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
   Result IsChainValid(const DERArray&, Time) override
   {
     return Success;
-  }
-
-  Result DigestBuf(Input input, DigestAlgorithm digestAlg,
-                   /*out*/ uint8_t* digestBuf, size_t digestLen) override
-  {
-    return TestDigestBuf(input, digestAlg, digestBuf, digestLen);
-  }
-
-  Result CheckRSAPublicKeyModulusSizeInBits(EndEntityOrCA, unsigned int)
-                                            override
-  {
-    return Success;
-  }
-
-  Result VerifyRSAPKCS1SignedDigest(const SignedDigest& signedDigest,
-                                    Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyRSAPKCS1SignedDigest(signedDigest, subjectPublicKeyInfo);
-  }
-
-  Result CheckECDSACurveIsAcceptable(EndEntityOrCA, NamedCurve) override
-  {
-    return Success;
-  }
-
-  Result VerifyECDSASignedDigest(const SignedDigest& signedDigest,
-                                    Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyECDSASignedDigest(signedDigest, subjectPublicKeyInfo);
   }
 
 private:
@@ -375,12 +306,12 @@ TEST_F(pkixbuild, NoRevocationCheckingForExpiredCert)
   ByteString subjectDER(CNToDERName("Expired End-Entity Cert"));
   ScopedTestKeyPair reusedKey(CloneReusedKeyPair());
   ByteString certDER(CreateEncodedCertificate(
-                       v3, sha256WithRSAEncryption,
+                       v3, sha256WithRSAEncryption(),
                        serialNumber, issuerDER,
                        oneDayBeforeNow - ONE_DAY_IN_SECONDS_AS_TIME_T,
                        oneDayBeforeNow,
                        subjectDER, *reusedKey, nullptr, *reusedKey,
-                       sha256WithRSAEncryption));
+                       sha256WithRSAEncryption()));
   EXPECT_FALSE(ENCODING_FAILED(certDER));
 
   Input cert;
@@ -394,7 +325,7 @@ TEST_F(pkixbuild, NoRevocationCheckingForExpiredCert)
                            nullptr));
 }
 
-class DSSTrustDomain final : public TrustDomain
+class DSSTrustDomain final : public EverythingFailsByDefaultTrustDomain
 {
 public:
   Result GetCertTrust(EndEntityOrCA, const CertPolicyId&,
@@ -402,56 +333,6 @@ public:
   {
     trustLevel = TrustLevel::TrustAnchor;
     return Success;
-  }
-
-  Result FindIssuer(Input, IssuerChecker&, Time) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result CheckRevocation(EndEntityOrCA, const CertID&, Time,
-                         /*optional*/ const Input*,
-                         /*optional*/ const Input*) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result IsChainValid(const DERArray&, Time) override
-  {
-    return Success;
-  }
-
-  Result DigestBuf(Input, DigestAlgorithm, /*out*/uint8_t*, size_t) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result CheckRSAPublicKeyModulusSizeInBits(EndEntityOrCA, unsigned int)
-                                            override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result VerifyRSAPKCS1SignedDigest(const SignedDigest&, Input) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result CheckECDSACurveIsAcceptable(EndEntityOrCA, NamedCurve) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
-  Result VerifyECDSASignedDigest(const SignedDigest&, Input) override
-  {
-    ADD_FAILURE();
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
 };
 
@@ -467,18 +348,18 @@ TEST_F(pkixbuild_DSS, DSSEndEntityKeyNotAccepted)
   ByteString subjectDER(CNToDERName("DSS"));
   ASSERT_FALSE(ENCODING_FAILED(subjectDER));
   ScopedTestKeyPair subjectKey(GenerateDSSKeyPair());
-  ASSERT_TRUE(subjectKey);
+  ASSERT_TRUE(subjectKey.get());
 
   ByteString issuerDER(CNToDERName("RSA"));
   ASSERT_FALSE(ENCODING_FAILED(issuerDER));
   ScopedTestKeyPair issuerKey(CloneReusedKeyPair());
-  ASSERT_TRUE(issuerKey);
+  ASSERT_TRUE(issuerKey.get());
 
-  ByteString cert(CreateEncodedCertificate(v3, sha256WithRSAEncryption,
+  ByteString cert(CreateEncodedCertificate(v3, sha256WithRSAEncryption(),
                                            serialNumber, issuerDER,
                                            oneDayBeforeNow, oneDayAfterNow,
                                            subjectDER, *subjectKey, nullptr,
-                                           *issuerKey, sha256WithRSAEncryption));
+                                           *issuerKey, sha256WithRSAEncryption()));
   ASSERT_FALSE(ENCODING_FAILED(cert));
   Input certDER;
   ASSERT_EQ(Success, certDER.Init(cert.data(), cert.length()));
@@ -492,7 +373,7 @@ TEST_F(pkixbuild_DSS, DSSEndEntityKeyNotAccepted)
                            nullptr/*stapledOCSPResponse*/));
 }
 
-class IssuerNameCheckTrustDomain final : public TrustDomain
+class IssuerNameCheckTrustDomain final : public DefaultCryptoTrustDomain
 {
 public:
   IssuerNameCheckTrustDomain(const ByteString& issuer, bool expectedKeepGoing)
@@ -522,7 +403,7 @@ public:
     return Success;
   }
 
-  Result CheckRevocation(EndEntityOrCA, const CertID&, Time,
+  Result CheckRevocation(EndEntityOrCA, const CertID&, Time, Duration,
                          /*optional*/ const Input*, /*optional*/ const Input*)
                          override
   {
@@ -532,35 +413,6 @@ public:
   Result IsChainValid(const DERArray&, Time) override
   {
     return Success;
-  }
-
-  Result DigestBuf(Input input, DigestAlgorithm digestAlg,
-                   /*out*/ uint8_t* digestBuf, size_t digestLen) override
-  {
-    return TestDigestBuf(input, digestAlg, digestBuf, digestLen);
-  }
-
-  Result CheckRSAPublicKeyModulusSizeInBits(EndEntityOrCA, unsigned int)
-                                            override
-  {
-    return Success;
-  }
-
-  Result VerifyRSAPKCS1SignedDigest(const SignedDigest& signedDigest,
-                                    Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyRSAPKCS1SignedDigest(signedDigest, subjectPublicKeyInfo);
-  }
-
-  Result CheckECDSACurveIsAcceptable(EndEntityOrCA, NamedCurve) override
-  {
-    return Success;
-  }
-
-  Result VerifyECDSASignedDigest(const SignedDigest& signedDigest,
-                                    Input subjectPublicKeyInfo) override
-  {
-    return TestVerifyECDSASignedDigest(signedDigest, subjectPublicKeyInfo);
   }
 
 private:

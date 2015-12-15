@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,7 +37,7 @@ GetKeyFromJSVal(JSContext* aCx,
   return NS_OK;
 }
 
-} // anonymous namespace
+} // namespace
 
 IDBKeyRange::IDBKeyRange(nsISupports* aGlobal,
                          bool aLowerOpen,
@@ -60,6 +60,23 @@ IDBKeyRange::IDBKeyRange(nsISupports* aGlobal,
 }
 
 IDBKeyRange::~IDBKeyRange()
+{
+  DropJSObjects();
+}
+
+IDBLocaleAwareKeyRange::IDBLocaleAwareKeyRange(nsISupports* aGlobal,
+                                               bool aLowerOpen,
+                                               bool aUpperOpen,
+                                               bool aIsOnly)
+  : IDBKeyRange(aGlobal, aLowerOpen, aUpperOpen, aIsOnly)
+{
+#ifdef DEBUG
+  mOwningThread = PR_GetCurrentThread();
+#endif
+  AssertIsOnOwningThread();
+}
+
+IDBLocaleAwareKeyRange::~IDBLocaleAwareKeyRange()
 {
   DropJSObjects();
 }
@@ -233,6 +250,8 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(IDBKeyRange)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(IDBKeyRange)
 
+NS_IMPL_ISUPPORTS_INHERITED0(IDBLocaleAwareKeyRange, IDBKeyRange)
+
 void
 IDBKeyRange::DropJSObjects()
 {
@@ -248,9 +267,15 @@ IDBKeyRange::DropJSObjects()
 }
 
 bool
-IDBKeyRange::WrapObject(JSContext* aCx, JS::MutableHandle<JSObject*> aReflector)
+IDBKeyRange::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector)
 {
-  return IDBKeyRangeBinding::Wrap(aCx, this, aReflector);
+  return IDBKeyRangeBinding::Wrap(aCx, this, aGivenProto, aReflector);
+}
+
+bool
+IDBLocaleAwareKeyRange::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector)
+{
+  return IDBLocaleAwareKeyRangeBinding::Wrap(aCx, this, aGivenProto, aReflector);
 }
 
 void
@@ -378,6 +403,36 @@ IDBKeyRange::Bound(const GlobalObject& aGlobal,
 
   if (keyRange->Lower() > keyRange->Upper() ||
       (keyRange->Lower() == keyRange->Upper() && (aLowerOpen || aUpperOpen))) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
+    return nullptr;
+  }
+
+  return keyRange.forget();
+}
+
+// static
+already_AddRefed<IDBLocaleAwareKeyRange>
+IDBLocaleAwareKeyRange::Bound(const GlobalObject& aGlobal,
+                              JS::Handle<JS::Value> aLower,
+                              JS::Handle<JS::Value> aUpper,
+                              bool aLowerOpen,
+                              bool aUpperOpen,
+                              ErrorResult& aRv)
+{
+  nsRefPtr<IDBLocaleAwareKeyRange> keyRange =
+    new IDBLocaleAwareKeyRange(aGlobal.GetAsSupports(), aLowerOpen, aUpperOpen, false);
+
+  aRv = GetKeyFromJSVal(aGlobal.Context(), aLower, keyRange->Lower());
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  aRv = GetKeyFromJSVal(aGlobal.Context(), aUpper, keyRange->Upper());
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  if (keyRange->Lower() == keyRange->Upper() && (aLowerOpen || aUpperOpen)) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
     return nullptr;
   }

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +16,7 @@ ClipboardEvent::ClipboardEvent(EventTarget* aOwner,
                                nsPresContext* aPresContext,
                                InternalClipboardEvent* aEvent)
   : Event(aOwner, aPresContext,
-          aEvent ? aEvent : new InternalClipboardEvent(false, 0))
+          aEvent ? aEvent : new InternalClipboardEvent(false, eVoidEvent))
 {
   if (aEvent) {
     mEventIsInternal = false;
@@ -44,7 +45,7 @@ ClipboardEvent::InitClipboardEvent(const nsAString& aType,
   ErrorResult rv;
   InitClipboardEvent(aType, aCanBubble, aCancelable, clipboardData, rv);
 
-  return rv.ErrorCode();
+  return rv.StealNSResult();
 }
 
 void
@@ -78,7 +79,7 @@ ClipboardEvent::Constructor(const GlobalObject& aGlobal,
       // Always create a clipboardData for the copy event. If this is changed to
       // support other types of events, make sure that read/write privileges are
       // checked properly within DataTransfer.
-      clipboardData = new DataTransfer(ToSupports(e), NS_COPY, false, -1);
+      clipboardData = new DataTransfer(ToSupports(e), eCopy, false, -1);
       clipboardData->SetData(aParam.mDataType, aParam.mData);
     }
   }
@@ -104,11 +105,11 @@ ClipboardEvent::GetClipboardData()
   if (!event->clipboardData) {
     if (mEventIsInternal) {
       event->clipboardData =
-        new DataTransfer(ToSupports(this), NS_COPY, false, -1);
+        new DataTransfer(ToSupports(this), eCopy, false, -1);
     } else {
       event->clipboardData =
-        new DataTransfer(ToSupports(this), event->message,
-                         event->message == NS_PASTE,
+        new DataTransfer(ToSupports(this), event->mMessage,
+                         event->mMessage == ePaste,
                          nsIClipboard::kGlobalClipboard);
     }
   }
@@ -122,14 +123,12 @@ ClipboardEvent::GetClipboardData()
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult
-NS_NewDOMClipboardEvent(nsIDOMEvent** aInstancePtrResult,
-                        EventTarget* aOwner,
+already_AddRefed<ClipboardEvent>
+NS_NewDOMClipboardEvent(EventTarget* aOwner,
                         nsPresContext* aPresContext,
                         InternalClipboardEvent* aEvent)
 {
-  ClipboardEvent* it = new ClipboardEvent(aOwner, aPresContext, aEvent);
-  NS_ADDREF(it);
-  *aInstancePtrResult = static_cast<Event*>(it);
-  return NS_OK;
+  nsRefPtr<ClipboardEvent> it =
+    new ClipboardEvent(aOwner, aPresContext, aEvent);
+  return it.forget();
 }

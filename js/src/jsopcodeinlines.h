@@ -111,9 +111,10 @@ class BytecodeRange {
 
   private:
     RootedScript script;
-    jsbytecode* pc, *end;
+    jsbytecode* pc;
+    jsbytecode* end;
 };
 
-}
+} // namespace js
 
 #endif /* jsopcodeinlines_h */

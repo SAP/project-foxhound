@@ -8,10 +8,10 @@ function debug(msg) {
   Services.console.logStringMessage("SessionStoreContent: " + msg);
 }
 
-let Cu = Components.utils;
-let Cc = Components.classes;
-let Ci = Components.interfaces;
-let Cr = Components.results;
+var Cu = Components.utils;
+var Cc = Components.classes;
+var Ci = Components.interfaces;
+var Cr = Components.results;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 Cu.import("resource://gre/modules/Timer.jsm", this);
@@ -34,11 +34,14 @@ XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
                                    "nsISyncMessageSender");
 
 Cu.import("resource:///modules/sessionstore/FrameTree.jsm", this);
-let gFrameTree = new FrameTree(this);
+var gFrameTree = new FrameTree(this);
 
 Cu.import("resource:///modules/sessionstore/ContentRestore.jsm", this);
 XPCOMUtils.defineLazyGetter(this, 'gContentRestore',
                             () => { return new ContentRestore(this) });
+
+// The current epoch.
+var gCurrentEpoch = 0;
 
 /**
  * Returns a lazy function that will evaluate the given
@@ -76,7 +79,7 @@ function isSessionStorageEvent(event) {
  * Listens for and handles content events that we need for the
  * session store service to be notified of state changes in content.
  */
-let EventListener = {
+var EventListener = {
 
   init: function () {
     addEventListener("load", this, true);
@@ -88,14 +91,8 @@ let EventListener = {
       return;
     }
 
-    // If we're in the process of restoring, this load may signal
-    // the end of the restoration.
-    let epoch = gContentRestore.getRestoreEpoch();
-    if (!epoch) {
-      return;
-    }
-
-    // Restore the form data and scroll position.
+    // Restore the form data and scroll position. If we're not currently
+    // restoring a tab state then this call will simply be a noop.
     gContentRestore.restoreDocument();
   }
 };
@@ -103,12 +100,13 @@ let EventListener = {
 /**
  * Listens for and handles messages sent by the session store service.
  */
-let MessageListener = {
+var MessageListener = {
 
   MESSAGES: [
     "SessionStore:restoreHistory",
     "SessionStore:restoreTabContent",
     "SessionStore:resetRestore",
+    "SessionStore:flush",
   ],
 
   init: function () {
@@ -116,48 +114,88 @@ let MessageListener = {
   },
 
   receiveMessage: function ({name, data}) {
+    // The docShell might be gone. Don't process messages,
+    // that will just lead to errors anyway.
+    if (!docShell) {
+      return;
+    }
+
+    // A fresh tab always starts with epoch=0. The parent has the ability to
+    // override that to signal a new era in this tab's life. This enables it
+    // to ignore async messages that were already sent but not yet received
+    // and would otherwise confuse the internal tab state.
+    if (data.epoch && data.epoch != gCurrentEpoch) {
+      gCurrentEpoch = data.epoch;
+    }
+
     switch (name) {
       case "SessionStore:restoreHistory":
-        let reloadCallback = () => {
-          // Inform SessionStore.jsm about the reload. It will send
-          // restoreTabContent in response.
-          sendAsyncMessage("SessionStore:reloadPendingTab", {epoch: data.epoch});
-        };
-        gContentRestore.restoreHistory(data.epoch, data.tabData, reloadCallback);
-
-        // When restoreHistory finishes, we send a synchronous message to
-        // SessionStore.jsm so that it can run SSTabRestoring. Users of
-        // SSTabRestoring seem to get confused if chrome and content are out of
-        // sync about the state of the restore (particularly regarding
-        // docShell.currentURI). Using a synchronous message is the easiest way
-        // to temporarily synchronize them.
-        sendSyncMessage("SessionStore:restoreHistoryComplete", {epoch: data.epoch});
+        this.restoreHistory(data);
         break;
       case "SessionStore:restoreTabContent":
-        let epoch = gContentRestore.getRestoreEpoch();
-        let finishCallback = () => {
-          // Tell SessionStore.jsm that it may want to restore some more tabs,
-          // since it restores a max of MAX_CONCURRENT_TAB_RESTORES at a time.
-          sendAsyncMessage("SessionStore:restoreTabContentComplete", {epoch: epoch});
-        };
-
-        // We need to pass the value of didStartLoad back to SessionStore.jsm.
-        let didStartLoad = gContentRestore.restoreTabContent(data.loadArguments, finishCallback);
-
-        sendAsyncMessage("SessionStore:restoreTabContentStarted", {epoch: epoch});
-
-        if (!didStartLoad) {
-          // Pretend that the load succeeded so that event handlers fire correctly.
-          sendAsyncMessage("SessionStore:restoreTabContentComplete", {epoch: epoch});
-        }
+        this.restoreTabContent(data);
         break;
       case "SessionStore:resetRestore":
         gContentRestore.resetRestore();
+        break;
+      case "SessionStore:flush":
+        this.flush(data);
         break;
       default:
         debug("received unknown message '" + name + "'");
         break;
     }
+  },
+
+  restoreHistory({epoch, tabData, loadArguments}) {
+    gContentRestore.restoreHistory(tabData, loadArguments, {
+      // Note: The callbacks passed here will only be used when a load starts
+      // that was not initiated by sessionstore itself. This can happen when
+      // some code calls browser.loadURI() or browser.reload() on a pending
+      // browser/tab.
+
+      onLoadStarted() {
+        // Notify the parent that the tab is no longer pending.
+        sendSyncMessage("SessionStore:restoreTabContentStarted", {epoch});
+      },
+
+      onLoadFinished() {
+        // Tell SessionStore.jsm that it may want to restore some more tabs,
+        // since it restores a max of MAX_CONCURRENT_TAB_RESTORES at a time.
+        sendAsyncMessage("SessionStore:restoreTabContentComplete", {epoch});
+      }
+    });
+
+    // When restoreHistory finishes, we send a synchronous message to
+    // SessionStore.jsm so that it can run SSTabRestoring. Users of
+    // SSTabRestoring seem to get confused if chrome and content are out of
+    // sync about the state of the restore (particularly regarding
+    // docShell.currentURI). Using a synchronous message is the easiest way
+    // to temporarily synchronize them.
+    sendSyncMessage("SessionStore:restoreHistoryComplete", {epoch});
+  },
+
+  restoreTabContent({loadArguments}) {
+    let epoch = gCurrentEpoch;
+
+    // We need to pass the value of didStartLoad back to SessionStore.jsm.
+    let didStartLoad = gContentRestore.restoreTabContent(loadArguments, () => {
+      // Tell SessionStore.jsm that it may want to restore some more tabs,
+      // since it restores a max of MAX_CONCURRENT_TAB_RESTORES at a time.
+      sendAsyncMessage("SessionStore:restoreTabContentComplete", {epoch});
+    });
+
+    sendAsyncMessage("SessionStore:restoreTabContentStarted", {epoch});
+
+    if (!didStartLoad) {
+      // Pretend that the load succeeded so that event handlers fire correctly.
+      sendAsyncMessage("SessionStore:restoreTabContentComplete", {epoch});
+    }
+  },
+
+  flush({id}) {
+    // Flush the message queue, send the latest updates.
+    MessageQueue.send({flushID: id});
   }
 };
 
@@ -169,7 +207,7 @@ let MessageListener = {
  * This will hopefully not be needed in the future once we have async APIs for
  * closing windows and tabs.
  */
-let SyncHandler = {
+var SyncHandler = {
   init: function () {
     // Send this object as a CPOW to chrome. In single-process mode,
     // the synchronous send ensures that the handler object is
@@ -199,7 +237,11 @@ let SyncHandler = {
    * can occur by sending data shortly before flushing synchronously.
    */
   flushAsync: function () {
-    MessageQueue.flushAsync();
+    if (!Services.prefs.getBoolPref("browser.sessionstore.debug")) {
+      throw new Error("flushAsync() must be used for testing, only.");
+    }
+
+    MessageQueue.send();
   }
 };
 
@@ -213,7 +255,7 @@ let SyncHandler = {
  * Example:
  *   {entries: [{url: "about:mozilla", ...}, ...], index: 1}
  */
-let SessionHistoryListener = {
+var SessionHistoryListener = {
   init: function () {
     // The frame tree observer is needed to handle initial subframe loads.
     // It will redundantly invalidate with the SHistoryListener in some cases
@@ -232,6 +274,9 @@ let SessionHistoryListener = {
     if (!SessionHistory.isEmpty(docShell)) {
       this.collect();
     }
+
+    // Listen for page title changes.
+    addEventListener("DOMTitleChanged", this);
   },
 
   uninit: function () {
@@ -245,6 +290,10 @@ let SessionHistoryListener = {
     if (docShell) {
       MessageQueue.push("history", () => SessionHistory.collect(docShell));
     }
+  },
+
+  handleEvent(event) {
+    this.collect();
   },
 
   onFrameTreeCollected: function () {
@@ -306,7 +355,7 @@ let SessionHistoryListener = {
  * Example:
  *   {scroll: "100,100", children: [null, null, {scroll: "200,200"}]}
  */
-let ScrollPositionListener = {
+var ScrollPositionListener = {
   init: function () {
     addEventListener("scroll", this);
     gFrameTree.addObserver(this);
@@ -352,7 +401,7 @@ let ScrollPositionListener = {
  *     ]
  *   }
  */
-let FormDataListener = {
+var FormDataListener = {
   init: function () {
     addEventListener("input", this, true);
     addEventListener("change", this, true);
@@ -391,7 +440,7 @@ let FormDataListener = {
  * Example:
  *   {pageStyle: "Dusk", children: [null, {pageStyle: "Mozilla"}]}
  */
-let PageStyleListener = {
+var PageStyleListener = {
   init: function () {
     Services.obs.addObserver(this, "author-style-disabled-changed", false);
     Services.obs.addObserver(this, "style-sheet-applicable-state-changed", false);
@@ -433,7 +482,7 @@ let PageStyleListener = {
  * disabled docShell capabilities (all nsIDocShell.allow* properties set to
  * false) as a string - i.e. capability names separate by commas.
  */
-let DocShellCapabilitiesListener = {
+var DocShellCapabilitiesListener = {
   /**
    * This field is used to compare the last docShell capabilities to the ones
    * that have just been collected. If nothing changed we won't send a message.
@@ -469,7 +518,7 @@ let DocShellCapabilitiesListener = {
  * DOMSessionStorage contents. The data is a nested object using host names
  * as keys and per-host DOMSessionStorage data as values.
  */
-let SessionStorageListener = {
+var SessionStorageListener = {
   init: function () {
     addEventListener("MozStorageChanged", this, true);
     Services.obs.addObserver(this, "browser:purge-domain-data", false);
@@ -518,7 +567,7 @@ let SessionStorageListener = {
  *  |null| if the tab is now public - the field is therefore
  *  not saved.
  */
-let PrivacyListener = {
+var PrivacyListener = {
   init: function() {
     docShell.addWeakPrivacyTransitionObserver(this);
 
@@ -545,7 +594,7 @@ let PrivacyListener = {
  * will be batched if they're pushed in quick succession to avoid a message
  * flood.
  */
-let MessageQueue = {
+var MessageQueue = {
   /**
    * A unique, monotonically increasing ID used for outgoing messages. This is
    * important to make it possible to reuse tabs and allow sync flushes before
@@ -606,6 +655,8 @@ let MessageQueue = {
    * @param options (object)
    *        {id: 123} to override the update ID used to accumulate data to send.
    *        {sync: true} to send data to the parent process synchronously.
+   *        {flushID: 123} to specify that this is a flush
+   *        {isFinal: true} to signal this is the final message sent on unload
    */
   send: function (options = {}) {
     // Looks like we have been called off a timeout after the tab has been
@@ -622,6 +673,7 @@ let MessageQueue = {
 
     let sync = options && options.sync;
     let startID = (options && options.id) || this._id;
+    let flushID = (options && options.flushID) || 0;
 
     // We use sendRpcMessage in the sync case because we may have been called
     // through a CPOW. RPC messages are the only synchronous messages that the
@@ -657,9 +709,9 @@ let MessageQueue = {
 
     // Send all data to the parent process.
     sendMessage("SessionStore:update", {
-      id: this._id,
-      data: data,
-      telemetry: telemetry
+      id: this._id, data, telemetry, flushID,
+      isFinal: options.isFinal || false,
+      epoch: gCurrentEpoch
     });
 
     // Increase our unique message ID.
@@ -683,20 +735,6 @@ let MessageQueue = {
 
     this._data.clear();
     this._lastUpdated.clear();
-  },
-
-  /**
-   * DO NOT USE - DEBUGGING / TESTING ONLY
-   *
-   * This function is used to simulate certain situations where race conditions
-   * can occur by sending data shortly before flushing synchronously.
-   */
-  flushAsync: function () {
-    if (!Services.prefs.getBoolPref("browser.sessionstore.debug")) {
-      throw new Error("flushAsync() must be used for testing, only.");
-    }
-
-    this.send();
   }
 };
 
@@ -726,12 +764,8 @@ function handleRevivedTab() {
 
     removeEventListener("pagehide", handleRevivedTab);
 
-    // We can't send a message using the frame message manager because by
-    // the time we reach the unload event handler, it's "too late", and messages
-    // won't be sent or received. The child-process message manager works though,
-    // despite the fact that we're really running in the parent process.
-    let browser = docShell.chromeEventHandler;
-    cpmm.sendSyncMessage("SessionStore:RemoteTabRevived", null, {browser: browser});
+    // Notify the parent.
+    sendAsyncMessage("SessionStore:crashedTabRevived");
   }
 }
 
@@ -740,6 +774,10 @@ function handleRevivedTab() {
 addEventListener("pagehide", handleRevivedTab);
 
 addEventListener("unload", () => {
+  // Upon frameLoader destruction, send a final update message to
+  // the parent and flush all data currently held in the child.
+  MessageQueue.send({isFinal: true});
+
   // If we're browsing from the tab crashed UI to a URI that causes the tab
   // to go remote again, we catch this in the unload event handler, because
   // swapping out the non-remote browser for a remote one in

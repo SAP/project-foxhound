@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set tw=80 expandtab softtabstop=2 ts=2 sw=2: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +7,7 @@
 #define nsGenericHTMLElement_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EventForwards.h"
 #include "nsMappedAttributeElement.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsNameSpaceManager.h"  // for kNameSpaceID_None
@@ -39,8 +40,8 @@ namespace dom {
 class HTMLFormElement;
 class HTMLPropertiesCollection;
 class HTMLMenuElement;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 typedef nsMappedAttributeElement nsGenericHTMLElementBase;
 
@@ -215,6 +216,13 @@ public:
     }
     return false;
   }
+
+  /**
+   * Returns the count of descendants (inclusive of this node) in
+   * the uncomposed document that are explicitly set as editable.
+   */
+  uint32_t EditableInclusiveDescendantCount();
+
   mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError)
@@ -291,6 +299,25 @@ public:
     return rcFrame.height;
   }
 
+  // These methods are already implemented in nsIContent but we want something
+  // faster for HTMLElements ignoring the namespace checking.
+  // This is safe because we already know that we are in the HTML namespace.
+  inline bool IsHTMLElement() const
+  {
+    return true;
+  }
+
+  inline bool IsHTMLElement(nsIAtom* aTag) const
+  {
+    return mNodeInfo->Equals(aTag);
+  }
+
+  template<typename First, typename... Args>
+  inline bool IsAnyOfHTMLElements(First aFirst, Args... aArgs) const
+  {
+    return IsNodeInternal(aFirst, aArgs...);
+  }
+
 protected:
   virtual ~nsGenericHTMLElement() {}
 
@@ -338,7 +365,7 @@ public:
   NS_IMETHOD SetDir(const nsAString& aDir) final override {
     mozilla::ErrorResult rv;
     SetDir(aDir, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetDOMClassName(nsAString& aClassName) final {
     GetHTMLAttr(nsGkAtoms::_class, aClassName);
@@ -356,12 +383,12 @@ public:
   NS_IMETHOD SetHidden(bool aHidden) final override {
     mozilla::ErrorResult rv;
     SetHidden(aHidden, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD DOMBlur() final override {
     mozilla::ErrorResult rv;
     Blur(rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetItemScope(bool* aItemScope) final override {
     *aItemScope = ItemScope();
@@ -370,7 +397,7 @@ public:
   NS_IMETHOD SetItemScope(bool aItemScope) final override {
     mozilla::ErrorResult rv;
     SetItemScope(aItemScope, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetItemType(nsIVariant** aType) final override {
     GetTokenList(nsGkAtoms::itemtype, aType);
@@ -388,7 +415,7 @@ public:
   NS_IMETHOD SetItemId(const nsAString& aId) final override {
     mozilla::ErrorResult rv;
     SetItemId(aId, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetProperties(nsISupports** aReturn) final override;
   NS_IMETHOD GetItemValue(nsIVariant** aValue) final override;
@@ -416,7 +443,7 @@ public:
   NS_IMETHOD SetAccessKey(const nsAString& aAccessKey) final override {
     mozilla::ErrorResult rv;
     SetAccessKey(aAccessKey, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetAccessKeyLabel(nsAString& aAccessKeyLabel)
     final override {
@@ -428,7 +455,7 @@ public:
   NS_IMETHOD SetDraggable(bool aDraggable) final override {
     mozilla::ErrorResult rv;
     SetDraggable(aDraggable, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetContentEditable(nsAString& aContentEditable)
     final override {
@@ -441,7 +468,7 @@ public:
     final override {
     mozilla::ErrorResult rv;
     SetContentEditable(aContentEditable, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetIsContentEditable(bool* aIsContentEditable)
     final override {
@@ -457,7 +484,7 @@ public:
   NS_IMETHOD SetSpellcheck(bool aSpellcheck) final override {
     mozilla::ErrorResult rv;
     SetSpellcheck(aSpellcheck, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetOuterHTML(nsAString& aOuterHTML) final override {
     mozilla::dom::Element::GetOuterHTML(aOuterHTML);
@@ -466,8 +493,8 @@ public:
   NS_IMETHOD SetOuterHTML(const nsAString& aOuterHTML) final override {
     mozilla::ErrorResult rv;
     mozilla::dom::Element::SetOuterHTML(aOuterHTML, rv);
-    return rv.ErrorCode();
-  }                                                                            \
+    return rv.StealNSResult();
+  }
   NS_IMETHOD InsertAdjacentHTML(const nsAString& position,
                                 const nsAString& text) final override;
   NS_IMETHOD ScrollIntoView(bool top, uint8_t _argc) final override {
@@ -513,12 +540,12 @@ public:
   NS_IMETHOD SetTabIndex(int32_t aTabIndex) final override {
     mozilla::ErrorResult rv;
     SetTabIndex(aTabIndex, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD Focus() final override {
     mozilla::ErrorResult rv;
     Focus(rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
   NS_IMETHOD GetDraggable(bool* aDraggable) final override {
     *aDraggable = Draggable();
@@ -531,7 +558,7 @@ public:
   NS_IMETHOD SetInnerHTML(const nsAString& aInnerHTML) final override {
     mozilla::ErrorResult rv;
     SetInnerHTML(aInnerHTML, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
 
   using nsGenericHTMLElementBase::GetOwnerDocument;
@@ -570,7 +597,7 @@ public:
   virtual bool IsHTMLFocusable(bool aWithMouse,
                                bool *aIsFocusable,
                                int32_t *aTabIndex);
-  virtual void PerformAccesskey(bool aKeyCausesActivation,
+  virtual bool PerformAccesskey(bool aKeyCausesActivation,
                                 bool aIsTrustedEvent) override;
 
   /**
@@ -692,6 +719,10 @@ public:
   static bool ParseImageAttribute(nsIAtom* aAttribute,
                                     const nsAString& aString,
                                     nsAttrValue& aResult);
+
+  static bool ParseReferrerAttribute(const nsAString& aString,
+                                     nsAttrValue& aResult);
+
   /**
    * Convert a frameborder string to value (yes/no/1/0)
    *
@@ -920,19 +951,16 @@ public:
   static inline bool
   ShouldExposeNameAsHTMLDocumentProperty(Element* aElement)
   {
-    return aElement->IsHTML() && CanHaveName(aElement->Tag());
+    return aElement->IsHTMLElement() &&
+           CanHaveName(aElement->NodeInfo()->NameAtom());
   }
   static inline bool
   ShouldExposeIdAsHTMLDocumentProperty(Element* aElement)
   {
-    if (!aElement->IsHTML()) {
-      return false;
-    }
-    nsIAtom* tag = aElement->Tag();
-    return tag == nsGkAtoms::img ||
-           tag == nsGkAtoms::applet ||
-           tag == nsGkAtoms::embed ||
-           tag == nsGkAtoms::object;
+    return aElement->IsAnyOfHTMLElements(nsGkAtoms::img,
+                                         nsGkAtoms::applet,
+                                         nsGkAtoms::embed,
+                                         nsGkAtoms::object);
   }
 
   static bool
@@ -995,7 +1023,7 @@ protected:
    * Returns INVALID_STATE_ERR and nulls *aURI if aURISpec is empty
    * and the document's URI matches the element's base URI.
    */
-  nsresult NewURIFromString(const nsAutoString& aURISpec, nsIURI** aURI);
+  nsresult NewURIFromString(const nsAString& aURISpec, nsIURI** aURI);
 
   void GetHTMLAttr(nsIAtom* aName, nsAString& aResult) const
   {
@@ -1213,8 +1241,8 @@ private:
 namespace mozilla {
 namespace dom {
 class HTMLFieldSetElement;
-}
-}
+} // namespace dom
+} // namespace mozilla
 
 #define FORM_ELEMENT_FLAG_BIT(n_) NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
@@ -1335,7 +1363,7 @@ protected:
   virtual ~nsGenericHTMLFormElement();
 
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                                 const nsAttrValueOrString* aValue,
+                                 nsAttrValueOrString* aValue,
                                  bool aNotify) override;
 
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
@@ -1381,7 +1409,8 @@ protected:
                               void* aData);
 
   // Returns true if the event should not be handled from PreHandleEvent
-  bool IsElementDisabledForEvents(uint32_t aMessage, nsIFrame* aFrame);
+  bool IsElementDisabledForEvents(mozilla::EventMessage aMessage,
+                                  nsIFrame* aFrame);
 
   // The focusability state of this form control.  eUnfocusable means that it
   // shouldn't be focused at all, eInactiveWindow means it's in an inactive
@@ -1511,7 +1540,7 @@ protected:
   {                                                                       \
     mozilla::ErrorResult rv;                                              \
     SetUnsignedIntAttr(nsGkAtoms::_atom, aValue, rv);                     \
-    return rv.ErrorCode();                                                \
+    return rv.StealNSResult();                                            \
   }
 
 /**
@@ -1538,7 +1567,7 @@ protected:
     }                                                                     \
     mozilla::ErrorResult rv;                                              \
     SetUnsignedIntAttr(nsGkAtoms::_atom, aValue, rv);                     \
-    return rv.ErrorCode();                                                \
+    return rv.StealNSResult();                                            \
   }
 
 /**
@@ -1726,6 +1755,7 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Mod)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Data)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(DataList)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Div)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(ExtApp)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(FieldSet)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Font)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Form)

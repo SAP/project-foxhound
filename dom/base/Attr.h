@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +30,7 @@ namespace dom {
 // Attribute helper class used to wrap up an attribute with a dom
 // object that implements nsIDOMAttr and nsIDOMNode
 class Attr final : public nsIAttribute,
-                       public nsIDOMAttr
+                   public nsIDOMAttr
 {
   virtual ~Attr() {}
 
@@ -82,7 +83,7 @@ public:
   virtual nsIDOMNode* AsDOMNode() override { return this; }
 
   // WebIDL
-  virtual JSObject* WrapNode(JSContext* aCx) override;
+  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // XPCOM GetName() is OK
   // XPCOM GetValue() is OK

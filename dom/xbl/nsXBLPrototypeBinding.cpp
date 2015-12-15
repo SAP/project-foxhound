@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -360,9 +361,7 @@ nsXBLPrototypeBinding::AttributeChanged(nsIAtom* aAttribute,
         // Check to see if the src attribute is xbl:text.  If so, then we need to obtain the
         // children of the real element and get the text nodes' values.
         if (aAttribute == nsGkAtoms::text && aNameSpaceID == kNameSpaceID_XBL) {
-          if (!nsContentUtils::GetNodeTextContent(aChangedElement, false, value)) {
-            NS_RUNTIMEABORT("OOM");
-          }
+          nsContentUtils::GetNodeTextContent(aChangedElement, false, value);
           value.StripChar(char16_t('\n'));
           value.StripChar(char16_t('\r'));
           nsAutoString stripVal(value);
@@ -452,7 +451,7 @@ nsXBLPrototypeBinding::GetImmediateChild(nsIAtom* aTag)
 }
 
 nsresult
-nsXBLPrototypeBinding::InitClass(const nsCString& aClassName,
+nsXBLPrototypeBinding::InitClass(const nsString& aClassName,
                                  JSContext * aContext,
                                  JS::Handle<JSObject*> aScriptObject,
                                  JS::MutableHandle<JSObject*> aClassObject,
@@ -513,10 +512,8 @@ SetAttrs(nsISupports* aKey, nsXBLAttributeEntry* aEntry, void* aClosure)
   bool attrPresent = true;
 
   if (src == nsGkAtoms::text && srcNs == kNameSpaceID_XBL) {
-    if (!nsContentUtils::GetNodeTextContent(changeData->mBoundElement, false,
-                                       value)) {
-      NS_RUNTIMEABORT("OOM");
-    }
+    nsContentUtils::GetNodeTextContent(changeData->mBoundElement, false,
+                                       value);
     value.StripChar(char16_t('\n'));
     value.StripChar(char16_t('\r'));
     nsAutoString stripVal(value);
@@ -701,7 +698,7 @@ nsXBLPrototypeBinding::ConstructAttributeTable(nsIContent* aElement)
         token = nsCRT::strtok( newStr, ", ", &newStr );
       }
 
-      nsMemory::Free(str);
+      free(str);
     }
   }
 
@@ -883,8 +880,8 @@ nsXBLPrototypeBinding::Read(nsIObjectInputStream* aStream,
     mBaseTag = do_GetAtom(baseTag);
   }
 
-  aDocument->CreateElem(NS_LITERAL_STRING("binding"), nullptr, kNameSpaceID_XBL,
-                        getter_AddRefs(mBinding));
+  mBinding = aDocument->CreateElem(NS_LITERAL_STRING("binding"), nullptr,
+                                   kNameSpaceID_XBL);
 
   nsCOMPtr<nsIContent> child;
   rv = ReadContentNode(aStream, aDocument, aDocument->NodeInfoManager(), getter_AddRefs(child));
@@ -904,7 +901,8 @@ nsXBLPrototypeBinding::Read(nsIObjectInputStream* aStream,
 
   for (; interfaceCount > 0; interfaceCount--) {
     nsIID iid;
-    aStream->ReadID(&iid);
+    rv = aStream->ReadID(&iid);
+    NS_ENSURE_SUCCESS(rv, rv);
     mInterfaceTable.Put(iid, mBinding);
   }
 
@@ -1131,7 +1129,7 @@ nsXBLPrototypeBinding::Write(nsIObjectOutputStream* aStream)
   else {
     // Write out an empty classname. This indicates that the binding does not
     // define an implementation.
-    rv = aStream->WriteWStringZ(EmptyString().get());
+    rv = aStream->WriteUtf8Z(EmptyString().get());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1480,7 +1478,7 @@ nsXBLPrototypeBinding::WriteContentNode(nsIObjectOutputStream* aStream,
   rv = aStream->WriteWStringZ(prefixStr.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = aStream->WriteWStringZ(nsDependentAtomString(aNode->Tag()).get());
+  rv = aStream->WriteWStringZ(nsDependentAtomString(aNode->NodeInfo()->NameAtom()).get());
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Write attributes

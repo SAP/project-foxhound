@@ -8,10 +8,8 @@
 
 #include "2D.h"
 #include <vector>
-#include "skia/SkCanvas.h"
-#include "skia/SkBitmap.h"
-
-class GrContext;
+#include "skia/include/core/SkCanvas.h"
+#include "skia/include/core/SkBitmap.h"
 
 namespace mozilla {
 
@@ -68,7 +66,7 @@ private:
   bool mLocked;
 };
 
-}
-}
+} // namespace gfx
+} // namespace mozilla
 
 #endif /* MOZILLA_GFX_SOURCESURFACESKIA_H_ */

@@ -367,8 +367,8 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue,
     case eCSSProperty_border_right:
     case eCSSProperty_border_bottom:
     case eCSSProperty_border_left:
-    case eCSSProperty_border_start:
-    case eCSSProperty_border_end:
+    case eCSSProperty_border_inline_start:
+    case eCSSProperty_border_inline_end:
     case eCSSProperty_border_block_start:
     case eCSSProperty_border_block_end:
     case eCSSProperty__moz_column_rule:
@@ -583,9 +583,7 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue,
       } else {
         // properties reset by this shorthand property to their
         // initial values but not represented in its syntax
-        if (stretch->GetUnit() != eCSSUnit_Enumerated ||
-            stretch->GetIntValue() != NS_STYLE_FONT_STRETCH_NORMAL ||
-            sizeAdjust->GetUnit() != eCSSUnit_None ||
+        if (sizeAdjust->GetUnit() != eCSSUnit_None ||
             featureSettings->GetUnit() != eCSSUnit_Normal ||
             languageOverride->GetUnit() != eCSSUnit_Normal ||
             fontKerning->GetIntValue() != NS_FONT_KERNING_AUTO ||
@@ -623,6 +621,12 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue,
             weight->GetIntValue() != NS_FONT_WEIGHT_NORMAL) {
           weight->AppendToString(eCSSProperty_font_weight, aValue,
                                  aSerialization);
+          aValue.Append(char16_t(' '));
+        }
+        if (stretch->GetUnit() != eCSSUnit_Enumerated ||
+            stretch->GetIntValue() != NS_FONT_STRETCH_NORMAL) {
+          stretch->AppendToString(eCSSProperty_font_stretch, aValue,
+                                  aSerialization);
           aValue.Append(char16_t(' '));
         }
         size->AppendToString(eCSSProperty_font_size, aValue, aSerialization);
@@ -1040,10 +1044,10 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue,
 
         } else if (unit == eCSSUnit_List || unit == eCSSUnit_ListDep) {
           // Non-empty <line-names>
-          aValue.Append('(');
+          aValue.Append('[');
           rowsItem->mValue.AppendToString(eCSSProperty_grid_template_rows,
                                           aValue, aSerialization);
-          aValue.Append(')');
+          aValue.Append(']');
 
         } else {
           nsStyleUtil::AppendEscapedCSSString(areas->mTemplates[row++], aValue);
@@ -1078,6 +1082,19 @@ Declaration::GetValue(nsCSSProperty aProperty, nsAString& aValue,
       MOZ_ASSERT(subprops[1] == eCSSProperty_UNKNOWN,
                  "must have exactly one subproperty");
       AppendValueToString(subprops[0], aValue, aSerialization);
+      break;
+    }
+    case eCSSProperty_scroll_snap_type: {
+      const nsCSSValue& xValue =
+        *data->ValueFor(eCSSProperty_scroll_snap_type_x);
+      const nsCSSValue& yValue =
+        *data->ValueFor(eCSSProperty_scroll_snap_type_y);
+      if (xValue == yValue) {
+        AppendValueToString(eCSSProperty_scroll_snap_type_x, aValue,
+                            aSerialization);
+      }
+      // If scroll-snap-type-x and scroll-snap-type-y are not equal,
+      // we don't have a shorthand that can express. Bail.
       break;
     }
     case eCSSProperty_all:
@@ -1158,8 +1175,10 @@ void
 Declaration::AppendVariableAndValueToString(const nsAString& aName,
                                             nsAString& aResult) const
 {
-  aResult.AppendLiteral("--");
-  aResult.Append(aName);
+  nsAutoString localName;
+  localName.AppendLiteral("--");
+  localName.Append(aName);
+  nsStyleUtil::AppendEscapedCSSIdent(localName, aResult);
   CSSVariableDeclarations::Type type;
   nsString value;
   bool important;
@@ -1377,7 +1396,7 @@ size_t
 Declaration::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
   size_t n = aMallocSizeOf(this);
-  n += mOrder.SizeOfExcludingThis(aMallocSizeOf);
+  n += mOrder.ShallowSizeOfExcludingThis(aMallocSizeOf);
   n += mData          ? mData         ->SizeOfIncludingThis(aMallocSizeOf) : 0;
   n += mImportantData ? mImportantData->SizeOfIncludingThis(aMallocSizeOf) : 0;
   if (mVariables) {
@@ -1519,5 +1538,5 @@ Declaration::GetVariableValueIsImportant(const nsAString& aName) const
   return mImportantVariables && mImportantVariables->Has(aName);
 }
 
-} // namespace mozilla::css
+} // namespace css
 } // namespace mozilla

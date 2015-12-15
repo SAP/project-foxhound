@@ -161,12 +161,15 @@ As we saw in a previous section, the input event needs to be untransformed by th
 But, because of the preventDefault problem, we cannot fully process the touch event in the APZ code until content has had a chance to handle it.
 Web browsers in general solve this problem by inserting a delay of up to 300ms before processing the input - that is, web content is allowed up to 300ms to process the event and call preventDefault on it.
 If web content takes longer than 300ms, or if it completes handling of the event without calling preventDefault, then the browser immediately starts processing the events.
-The touch-action CSS property from the pointer-events spec is intended to allow eliminating this 300ms delay, although for backwards compatibility it will still be needed for a while.
 
 The way the APZ implementation deals with this is that upon receiving a touch event, it immediately returns an untransformed version that can be dispatched to content.
 It also schedules a 300ms timeout during which content is allowed to prevent scrolling.
 There is an API that allows the main-thread event dispatching code to notify the APZ as to whether or not the default action should be prevented.
 If the APZ content response timeout expires, or if the main-thread event dispatching code notifies the APZ of the preventDefault status, then the APZ continues with the processing of the events (which may involve discarding the events).
+
+The touch-action CSS property from the pointer-events spec is intended to allow eliminating this 300ms delay in many cases (although for backwards compatibility it will still be needed for a while).
+Note that even with touch-action implemented, there may be cases where the APZ code does not know the touch-action behaviour of the point the user touched.
+In such cases, the APZ code will still wait up to 300ms for the main thread to provide it with the touch-action behaviour information.
 
 ## Technical details
 
@@ -263,7 +266,7 @@ If the CSS touch-action property is enabled, the above steps are modified as fol
 The bulk of the input processing in the APZ code happens on what we call "the input thread".
 In practice the input thread could be the Gecko main thread, the compositor thread, or some other thread.
 There are obvious downsides to using the Gecko main thread - that is, "asynchronous" panning and zooming is not really asynchronous as input events can only be processed while Gecko is idle.
-However, this is the current state of things on B2G and Metro.
+However, this is the current state of things on B2G.
 Using the compositor thread as the input thread could work on some platforms, but may be inefficient on others.
 For example, on Android (Fennec) we receive input events from the system on a dedicated UI thread.
 We would have to redispatch the input events to the compositor thread if we wanted to the input thread to be the same as the compositor thread.

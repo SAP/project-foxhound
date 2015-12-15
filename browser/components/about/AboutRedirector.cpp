@@ -7,6 +7,8 @@
 
 #include "AboutRedirector.h"
 #include "nsNetUtil.h"
+#include "nsIChannel.h"
+#include "nsIURI.h"
 #include "nsIScriptSecurityManager.h"
 #include "mozilla/ArrayUtils.h"
 #include "nsDOMString.h"
@@ -31,12 +33,13 @@ struct RedirEntry {
   required before adding new map entries without
   URI_SAFE_FOR_UNTRUSTED_CONTENT.  Also note, however, that adding
   URI_SAFE_FOR_UNTRUSTED_CONTENT will allow random web sites to link to that
-  URI.  Perhaps we should separate the two concepts out...
+  URI.  If you want to prevent this, add MAKE_UNLINKABLE as well.
  */
 static RedirEntry kRedirMap[] = {
 #ifdef MOZ_SAFE_BROWSING
   { "blocked", "chrome://browser/content/blockedSite.xhtml",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+    nsIAboutModule::URI_CAN_LOAD_IN_CHILD |
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
 #endif
@@ -60,13 +63,10 @@ static RedirEntry kRedirMap[] = {
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
   { "privatebrowsing", "chrome://browser/content/aboutPrivateBrowsing.xhtml",
+    nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
     nsIAboutModule::ALLOW_SCRIPT },
   { "rights",
-#ifdef MOZ_OFFICIAL_BRANDING
     "chrome://global/content/aboutRights.xhtml",
-#else
-    "chrome://global/content/aboutRights-unbranded.xhtml",
-#endif
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT },
   { "robots", "chrome://browser/content/aboutRobots.xhtml",
@@ -77,8 +77,6 @@ static RedirEntry kRedirMap[] = {
   { "welcomeback", "chrome://browser/content/aboutWelcomeBack.xhtml",
     nsIAboutModule::ALLOW_SCRIPT },
 #ifdef MOZ_SERVICES_SYNC
-  { "sync-progress", "chrome://browser/content/sync/progress.xhtml",
-    nsIAboutModule::ALLOW_SCRIPT },
   { "sync-tabs", "chrome://browser/content/sync/aboutSyncTabs.xul",
     nsIAboutModule::ALLOW_SCRIPT },
 #endif
@@ -87,7 +85,7 @@ static RedirEntry kRedirMap[] = {
     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::ENABLE_INDEXED_DB },
-  { "newtab", "chrome://browser/content/newtab/newTab.xul",
+  { "newtab", "chrome://browser/content/newtab/newTab.xhtml",
     nsIAboutModule::ALLOW_SCRIPT },
   { "permissions", "chrome://browser/content/preferences/aboutPermissions.xul",
     nsIAboutModule::ALLOW_SCRIPT },
@@ -121,7 +119,20 @@ static RedirEntry kRedirMap[] = {
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
+    nsIAboutModule::MAKE_UNLINKABLE |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
+  {
+    "pocket-saved", "chrome://browser/content/pocket/panels/saved.html",
+    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+    nsIAboutModule::ALLOW_SCRIPT |
+    nsIAboutModule::HIDE_FROM_ABOUTABOUT |
+    nsIAboutModule::MAKE_UNLINKABLE },
+  {
+    "pocket-signup", "chrome://browser/content/pocket/panels/signup.html",
+    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+    nsIAboutModule::ALLOW_SCRIPT |
+    nsIAboutModule::HIDE_FROM_ABOUTABOUT |
+    nsIAboutModule::MAKE_UNLINKABLE },
 };
 static const int kRedirTotal = ArrayLength(kRedirMap);
 

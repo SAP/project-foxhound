@@ -1,15 +1,13 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const COLOR_UNIT_PREF = "devtools.defaultColorUnit";
 const TEST_URI = "data:text/html;charset=utf-8,browser_css_color.js";
-let {colorUtils} = devtools.require("devtools/css-color");
-let origColorUnit;
+var {colorUtils} = require("devtools/css-color");
+var origColorUnit;
 
 add_task(function*() {
   yield promiseTab("about:blank");
   let [host, win, doc] = yield createHost("bottom", TEST_URI);
-  origColorUnit = Services.prefs.getCharPref(COLOR_UNIT_PREF);
 
   info("Creating a test canvas element to test colors");
   let canvas = createTestCanvas(doc);
@@ -44,26 +42,21 @@ function testColorUtils(canvas) {
     testColorMatch(name, hex, hsl, rgb, color.rgba, canvas);
   }
 
-  testProcessCSSString();
   testSetAlpha();
 }
 
 function testToString(color, name, hex, hsl, rgb) {
-  switchColorUnit(colorUtils.CssColor.COLORUNIT.name);
+  color.colorUnit = colorUtils.CssColor.COLORUNIT.name;
   is(color.toString(), name, "toString() with authored type");
 
-  switchColorUnit(colorUtils.CssColor.COLORUNIT.hex);
+  color.colorUnit = colorUtils.CssColor.COLORUNIT.hex;
   is(color.toString(), hex, "toString() with hex type");
 
-  switchColorUnit(colorUtils.CssColor.COLORUNIT.hsl);
+  color.colorUnit = colorUtils.CssColor.COLORUNIT.hsl;
   is(color.toString(), hsl, "toString() with hsl type");
 
-  switchColorUnit(colorUtils.CssColor.COLORUNIT.rgb);
+  color.colorUnit = colorUtils.CssColor.COLORUNIT.rgb;
   is(color.toString(), rgb, "toString() with rgb type");
-}
-
-function switchColorUnit(unit) {
-  Services.prefs.setCharPref(COLOR_UNIT_PREF, unit);
 }
 
 function testColorMatch(name, hex, hsl, rgb, rgba, canvas) {
@@ -110,21 +103,6 @@ function testColorMatch(name, hex, hsl, rgb, rgba, canvas) {
   test(hex, "hex");
   test(hsl, "hsl");
   test(rgb, "rgb");
-  switchColorUnit(origColorUnit);
-}
-
-function testProcessCSSString() {
-  let before = "border: 1px solid red; border-radius: 5px; " +
-               "color rgb(0, 255, 0); font-weight: bold; " +
-               "background-color: transparent; " +
-               "border-top-color: rgba(0, 0, 255, 0.5);";
-  let expected = "border: 1px solid #F00; border-radius: 5px; " +
-                 "color #0F0; font-weight: bold; " +
-                 "background-color: transparent; " +
-                 "border-top-color: rgba(0, 0, 255, 0.5);";
-  let after = colorUtils.processCSSString(before);
-
-  is(after, expected, "CSS string processed correctly");
 }
 
 function testSetAlpha() {

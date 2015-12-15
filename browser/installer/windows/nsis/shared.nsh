@@ -23,39 +23,6 @@
   !define HKEY_USERS              0x80000003
 !endif
 
-; Does metro registration for the command execute handler
-Function RegisterCEH
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-    ${CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                                        "FirefoxURL" \
-                                        "FirefoxHTML"
-    ${AddMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                                    "$INSTDIR\CommandExecuteHandler.exe" \
-                                    $AppUserModelID \
-                                    "FirefoxURL" \
-                                    "FirefoxHTML"
-  ${EndIf}
-!endif
-FunctionEnd
-
-; If we're in Win8 make sure we have a start menu shortcut and that it has
-; the correct AppuserModelID so that the Metro browser has a Metro tile.
-Function RegisterStartMenuTile
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-    CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-    ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                             "$INSTDIR"
-      ${If} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
-      ${EndIf}
-    ${EndIf}
-  ${EndIf}
-!endif
-FunctionEnd
-
 !macro PostUpdate
 
   ; PostUpdate is called from both session 0 and from the user session
@@ -75,10 +42,6 @@ FunctionEnd
     ${GetParent} "$0" $0
     ${If} ${FileExists} "$0"
       ${GetLongPath} "$0" $0
-    ${EndIf}
-    ${If} "$0" == "$INSTDIR"
-      ; Win8 specific registration
-      Call RegisterStartMenuTile
     ${EndIf}
   ${EndIf}
 
@@ -223,28 +186,12 @@ FunctionEnd
 !endif
 
 ; Register the DEH
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-  ${AndIf} $9 != 0 ; We're not running in session 0
-    ; If RegisterCEH is called too close to changing the shortcut AppUserModelID
-    ; and if the tile image is not already in cache.  Then Windows won't refresh
-    ; the tile image on the start screen.  So wait before calling RegisterCEH.
-    ; We only need to do this when the DEH doesn't already exist.
-    ReadRegStr $0 HKCU "Software\Classes\FirefoxURL\shell\open\command" "DelegateExecute"
-    ${If} $0 != ${DELEGATE_EXECUTE_HANDLER_ID}
-      Sleep 3000
-    ${EndIf}
-    Call RegisterCEH
-  ${EndIf}
-!else
-  ; The metro browser is not enabled by the mozconfig.
-  ${If} ${AtLeastWin8}
-    ${RemoveDEHRegistration} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                             $AppUserModelID \
-                             "FirefoxURL" \
-                             "FirefoxHTML"
-  ${EndIf}
-!endif
+${If} ${AtLeastWin8}
+  ${RemoveDEHRegistration} ${DELEGATE_EXECUTE_HANDLER_ID} \
+                           $AppUserModelID \
+                           "FirefoxURL" \
+                           "FirefoxHTML"
+${EndIf}
 !macroend
 !define PostUpdate "!insertmacro PostUpdate"
 
@@ -456,8 +403,6 @@ FunctionEnd
 
   ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" "${AppRegName} URL" \
                                  "true"
-  Call RegisterCEH
-
   ; An empty string is used for the 4th & 5th params because the following
   ; protocol handlers already have a display name and the additional keys
   ; required for a protocol handler.
@@ -889,18 +834,6 @@ FunctionEnd
 !macroend
 !define ResetWin8PromptKeys "!insertmacro ResetWin8PromptKeys"
 
-!ifdef MOZ_METRO
-; Resets Win8+ Metro specific splash screen info. Relies
-; on AppUserModelID.
-!macro ResetWin8MetroSplash
-  ${If} ${AtLeastWin8}
-  ${AndIf} "$AppUserModelID" != ""
-    DeleteRegKey HKCR "Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\DefaultBrowser_NOPUBLISHERID\SplashScreen\DefaultBrowser_NOPUBLISHERID!$AppUserModelID"
-  ${EndIf}
-!macroend
-!define ResetWin8MetroSplash "!insertmacro ResetWin8MetroSplash"
-!endif
-
 ; Adds SE_RESTORE_NAME privs
 !macro AcquireSERestoreName
   StrCpy $R1 0
@@ -1062,147 +995,21 @@ FunctionEnd
     RmDir /r /REBOOTOK "$INSTDIR\extensions\talkback@mozilla.org"
   ${EndIf}
 
-  ; Remove the Java Console extension (bug 597235)
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0012-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0012-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0013-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0013-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0014-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0014-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0015-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0015-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0016-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0016-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0017-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0017-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0018-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0018-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0019-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0019-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0020-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0020-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0021-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0021-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0022-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0015-0000-0022-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0000-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0000-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0001-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0001-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0002-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0002-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0003-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0003-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0004-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0004-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0005-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0005-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0006-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0006-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0007-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0007-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0010-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0010-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0011-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0011-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0012-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0012-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0013-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0013-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0014-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0014-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0015-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0015-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0016-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0016-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0017-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0017-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0018-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0018-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0019-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0019-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0020-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0020-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0021-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0021-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0022-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0022-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0023-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0023-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0024-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0024-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0025-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0025-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0026-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0026-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0027-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0027-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0028-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0028-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0029-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0029-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0030-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0030-ABCDEFFEDCBA}"
-  ${EndIf}
+  ; Remove the Java Console extension (bug 1165156)
   ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0031-ABCDEFFEDCBA}"
     RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0031-ABCDEFFEDCBA}"
   ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0032-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0032-ABCDEFFEDCBA}"
+  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0034-ABCDEFFEDCBA}"
+    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0034-ABCDEFFEDCBA}"
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0039-ABCDEFFEDCBA}"
+    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0039-ABCDEFFEDCBA}"
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0045-ABCDEFFEDCBA}"
+    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0016-0000-0045-ABCDEFFEDCBA}"
   ${EndIf}
   ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0000-ABCDEFFEDCBA}"
     RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0000-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0001-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0001-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0002-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0002-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0003-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0003-ABCDEFFEDCBA}"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0004-ABCDEFFEDCBA}"
-    RmDir /r /REBOOTOK "$INSTDIR\extensions\{CAFEEFAC-0017-0000-0004-ABCDEFFEDCBA}"
   ${EndIf}
 !macroend
 !define RemoveDeprecatedFiles "!insertmacro RemoveDeprecatedFiles"
@@ -1655,7 +1462,6 @@ Function SetAsDefaultAppUserHKCU
     ${SetStartMenuInternet} "HKCU"
     ${FixShellIconHandler} "HKCU"
     ${FixClassKeys} ; Does not use SHCTX
-    Call RegisterStartMenuTile
   ${EndIf}
 
   ${SetHandlers}

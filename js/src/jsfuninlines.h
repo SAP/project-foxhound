@@ -53,6 +53,7 @@ CanReuseFunctionForClone(JSContext* cx, HandleFunction fun)
 
 inline JSFunction*
 CloneFunctionObjectIfNotSingleton(JSContext* cx, HandleFunction fun, HandleObject parent,
+                                  HandleObject proto = nullptr,
                                   NewObjectKind newKind = GenericObject)
 {
     /*
@@ -69,20 +70,30 @@ CloneFunctionObjectIfNotSingleton(JSContext* cx, HandleFunction fun, HandleObjec
      */
     if (CanReuseFunctionForClone(cx, fun)) {
         RootedObject obj(cx, SkipScopeParent(parent));
-        if (!JSObject::setParent(cx, fun, obj))
+        ObjectOpResult succeeded;
+        if (proto && !SetPrototype(cx, fun, proto, succeeded))
             return nullptr;
+        MOZ_ASSERT(!proto || succeeded);
         fun->setEnvironment(parent);
         return fun;
     }
 
     // These intermediate variables are needed to avoid link errors on some
     // platforms.  Sigh.
-    gc::AllocKind finalizeKind = JSFunction::FinalizeKind;
-    gc::AllocKind extendedFinalizeKind = JSFunction::ExtendedFinalizeKind;
+    gc::AllocKind finalizeKind = gc::AllocKind::FUNCTION;
+    gc::AllocKind extendedFinalizeKind = gc::AllocKind::FUNCTION_EXTENDED;
     gc::AllocKind kind = fun->isExtended()
                          ? extendedFinalizeKind
                          : finalizeKind;
-    return CloneFunctionObject(cx, fun, parent, kind, newKind);
+
+    if (CanReuseScriptForClone(cx->compartment(), fun, parent))
+        return CloneFunctionReuseScript(cx, fun, parent, kind, newKind, proto);
+
+    RootedScript script(cx, fun->getOrCreateScript(cx));
+    if (!script)
+        return nullptr;
+    RootedObject staticScope(cx, script->enclosingStaticScope());
+    return CloneFunctionAndScript(cx, fun, parent, staticScope, kind, proto);
 }
 
 } /* namespace js */

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +16,7 @@ namespace mozilla {
 namespace dom {
 
 class HTMLIFrameElement final : public nsGenericHTMLFrameElement
-                                  , public nsIDOMHTMLIFrameElement
+                              , public nsIDOMHTMLIFrameElement
 {
 public:
   explicit HTMLIFrameElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
@@ -158,6 +159,15 @@ public:
   {
     SetHTMLAttr(nsGkAtoms::marginheight, aMarginHeight, aError);
   }
+  void SetReferrer(const nsAString& aReferrer, ErrorResult& aError)
+  {
+    SetHTMLAttr(nsGkAtoms::referrer, aReferrer, aError);
+  }
+  void GetReferrer(nsAString& aReferrer)
+  {
+    GetHTMLAttr(nsGkAtoms::referrer, aReferrer);
+  }
+
   nsIDocument* GetSVGDocument()
   {
     return GetContentDocument();
@@ -180,7 +190,7 @@ protected:
   virtual void GetItemValueText(DOMString& text) override;
   virtual void SetItemValueText(const nsAString& text) override;
 
-  virtual JSObject* WrapNode(JSContext* aCx) override;
+  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
 private:
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,

@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +10,7 @@
 #include "ArchiveZipEvent.h"
 
 #include "nsIURI.h"
-#include "nsNetUtil.h"
+#include "nsNetCID.h"
 
 #include "mozilla/dom/ArchiveReaderBinding.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -24,7 +24,7 @@ USING_ARCHIVEREADER_NAMESPACE
 
 /* static */ already_AddRefed<ArchiveReader>
 ArchiveReader::Constructor(const GlobalObject& aGlobal,
-                           File& aBlob,
+                           Blob& aBlob,
                            const ArchiveReaderOptions& aOptions,
                            ErrorResult& aError)
 {
@@ -46,9 +46,9 @@ ArchiveReader::Constructor(const GlobalObject& aGlobal,
   return reader.forget();
 }
 
-ArchiveReader::ArchiveReader(File& aBlob, nsPIDOMWindow* aWindow,
+ArchiveReader::ArchiveReader(Blob& aBlob, nsPIDOMWindow* aWindow,
                              const nsACString& aEncoding)
-  : mFileImpl(aBlob.Impl())
+  : mBlobImpl(aBlob.Impl())
   , mWindow(aWindow)
   , mStatus(NOT_STARTED)
   , mEncoding(aEncoding)
@@ -61,9 +61,9 @@ ArchiveReader::~ArchiveReader()
 }
 
 /* virtual */ JSObject*
-ArchiveReader::WrapObject(JSContext* aCx)
+ArchiveReader::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
-  return ArchiveReaderBinding::Wrap(aCx, this);
+  return ArchiveReaderBinding::Wrap(aCx, this, aGivenProto);
 }
 
 nsresult
@@ -95,8 +95,12 @@ nsresult
 ArchiveReader::GetInputStream(nsIInputStream** aInputStream)
 {
   // Getting the input stream
-  mFileImpl->GetInternalStream(aInputStream);
-  NS_ENSURE_TRUE(*aInputStream, NS_ERROR_UNEXPECTED);
+  ErrorResult rv;
+  mBlobImpl->GetInternalStream(aInputStream, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
   return NS_OK;
 }
 
@@ -104,8 +108,8 @@ nsresult
 ArchiveReader::GetSize(uint64_t* aSize)
 {
   ErrorResult rv;
-  *aSize = mFileImpl->GetSize(rv);
-  return rv.ErrorCode();
+  *aSize = mBlobImpl->GetSize(rv);
+  return rv.StealNSResult();
 }
 
 // Here we open the archive:
@@ -136,7 +140,7 @@ ArchiveReader::OpenArchive()
 
 // Data received from the dispatched event:
 void
-ArchiveReader::Ready(nsTArray<nsCOMPtr<nsIDOMFile> >& aFileList,
+ArchiveReader::Ready(nsTArray<nsRefPtr<File>>& aFileList,
                      nsresult aStatus)
 {
   mStatus = READY;
@@ -199,7 +203,7 @@ ArchiveReader::GenerateArchiveRequest()
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ArchiveReader,
-                                      mFileImpl,
+                                      mBlobImpl,
                                       mWindow,
                                       mData.fileList,
                                       mRequests)

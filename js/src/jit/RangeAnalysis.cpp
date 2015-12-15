@@ -115,9 +115,10 @@ SpewRange(MDefinition* def)
 #ifdef DEBUG
     if (JitSpewEnabled(JitSpew_Range) && def->type() != MIRType_None && def->range()) {
         JitSpewHeader(JitSpew_Range);
-        def->printName(JitSpewFile);
-        fprintf(JitSpewFile, " has range ");
-        def->range()->dump(JitSpewFile);
+        Fprinter& out = JitSpewPrinter();
+        def->printName(out);
+        out.printf(" has range ");
+        def->range()->dump(out);
     }
 #endif
 }
@@ -157,7 +158,7 @@ RangeAnalysis::addBetaNodes()
         MCompare* compare = test->getOperand(0)->toCompare();
 
         if (compare->compareType() == MCompare::Compare_Unknown ||
-            compare->compareType() == MCompare::Compare_Value)
+            compare->compareType() == MCompare::Compare_Bitwise)
         {
             continue;
         }
@@ -281,8 +282,9 @@ RangeAnalysis::addBetaNodes()
 
         if (JitSpewEnabled(JitSpew_Range)) {
             JitSpewHeader(JitSpew_Range);
-            fprintf(JitSpewFile, "Adding beta node for %d with range ", val->id());
-            comp.dump(JitSpewFile);
+            Fprinter& out = JitSpewPrinter();
+            out.printf("Adding beta node for %d with range ", val->id());
+            comp.dump(out);
         }
 
         MBeta* beta = MBeta::New(alloc(), val, new(alloc()) Range(comp));
@@ -320,20 +322,20 @@ RangeAnalysis::removeBetaNodes()
 }
 
 void
-SymbolicBound::print(Sprinter& sp) const
+SymbolicBound::dump(GenericPrinter& out) const
 {
     if (loop)
-        sp.printf("[loop] ");
-    sum.print(sp);
+        out.printf("[loop] ");
+    sum.dump(out);
 }
 
 void
 SymbolicBound::dump() const
 {
-    Sprinter sp(GetJitContext()->cx);
-    sp.init();
-    print(sp);
-    fprintf(stderr, "%s\n", sp.string());
+    Fprinter out(stderr);
+    dump(out);
+    out.printf("\n");
+    out.finish();
 }
 
 // Test whether the given range's exponent tells us anything that its lower
@@ -356,41 +358,41 @@ IsExponentInteresting(const Range* r)
 }
 
 void
-Range::print(Sprinter& sp) const
+Range::dump(GenericPrinter& out) const
 {
     assertInvariants();
 
     // Floating-point or Integer subset.
     if (canHaveFractionalPart_)
-        sp.printf("F");
+        out.printf("F");
     else
-        sp.printf("I");
+        out.printf("I");
 
-    sp.printf("[");
+    out.printf("[");
 
     if (!hasInt32LowerBound_)
-        sp.printf("?");
+        out.printf("?");
     else
-        sp.printf("%d", lower_);
+        out.printf("%d", lower_);
     if (symbolicLower_) {
-        sp.printf(" {");
-        symbolicLower_->print(sp);
-        sp.printf("}");
+        out.printf(" {");
+        symbolicLower_->dump(out);
+        out.printf("}");
     }
 
-    sp.printf(", ");
+    out.printf(", ");
 
     if (!hasInt32UpperBound_)
-        sp.printf("?");
+        out.printf("?");
     else
-        sp.printf("%d", upper_);
+        out.printf("%d", upper_);
     if (symbolicUpper_) {
-        sp.printf(" {");
-        symbolicUpper_->print(sp);
-        sp.printf("}");
+        out.printf(" {");
+        symbolicUpper_->dump(out);
+        out.printf("}");
     }
 
-    sp.printf("]");
+    out.printf("]");
 
     bool includesNaN = max_exponent_ == IncludesInfinityAndNaN;
     bool includesNegativeInfinity = max_exponent_ >= IncludesInfinity && !hasInt32LowerBound_;
@@ -402,55 +404,49 @@ Range::print(Sprinter& sp) const
         includesPositiveInfinity ||
         includesNegativeZero)
     {
-        sp.printf(" (");
+        out.printf(" (");
         bool first = true;
         if (includesNaN) {
             if (first)
                 first = false;
             else
-                sp.printf(" ");
-            sp.printf("U NaN");
+                out.printf(" ");
+            out.printf("U NaN");
         }
         if (includesNegativeInfinity) {
             if (first)
                 first = false;
             else
-                sp.printf(" ");
-            sp.printf("U -Infinity");
+                out.printf(" ");
+            out.printf("U -Infinity");
         }
         if (includesPositiveInfinity) {
             if (first)
                 first = false;
             else
-                sp.printf(" ");
-            sp.printf("U Infinity");
+                out.printf(" ");
+            out.printf("U Infinity");
         }
         if (includesNegativeZero) {
             if (first)
                 first = false;
             else
-                sp.printf(" ");
-            sp.printf("U -0");
+                out.printf(" ");
+            out.printf("U -0");
         }
-        sp.printf(")");
+        out.printf(")");
     }
     if (max_exponent_ < IncludesInfinity && IsExponentInteresting(this))
-        sp.printf(" (< pow(2, %d+1))", max_exponent_);
-}
-
-void
-Range::dump(FILE* fp) const
-{
-    Sprinter sp(GetJitContext()->cx);
-    sp.init();
-    print(sp);
-    fprintf(fp, "%s\n", sp.string());
+        out.printf(" (< pow(2, %d+1))", max_exponent_);
 }
 
 void
 Range::dump() const
 {
-    dump(stderr);
+    Fprinter out(stderr);
+    dump(out);
+    out.printf("\n");
+    out.finish();
 }
 
 Range*
@@ -576,9 +572,16 @@ Range::Range(const MDefinition* def)
         *this = *other;
 
         // Simulate the effect of converting the value to its type.
+        // Note: we cannot clamp here, since ranges aren't allowed to shrink
+        // and truncation can increase range again. So doing wrapAround to
+        // mimick a possible truncation.
         switch (def->type()) {
           case MIRType_Int32:
-            wrapAroundToInt32();
+            // MToInt32 cannot truncate. So we can safely clamp.
+            if (def->isToInt32())
+                clampToInt32();
+            else
+                wrapAroundToInt32();
             break;
           case MIRType_Boolean:
             wrapAroundToBoolean();
@@ -1028,7 +1031,32 @@ Range::rsh(TempAllocator& alloc, const Range* lhs, const Range* rhs)
 {
     MOZ_ASSERT(lhs->isInt32());
     MOZ_ASSERT(rhs->isInt32());
-    return Range::NewInt32Range(alloc, Min(lhs->lower(), 0), Max(lhs->upper(), 0));
+
+    // Canonicalize the shift range to 0 to 31.
+    int32_t shiftLower = rhs->lower();
+    int32_t shiftUpper = rhs->upper();
+    if ((int64_t(shiftUpper) - int64_t(shiftLower)) >= 31) {
+        shiftLower = 0;
+        shiftUpper = 31;
+    } else {
+        shiftLower &= 0x1f;
+        shiftUpper &= 0x1f;
+        if (shiftLower > shiftUpper) {
+            shiftLower = 0;
+            shiftUpper = 31;
+        }
+    }
+    MOZ_ASSERT(shiftLower >= 0 && shiftUpper <= 31);
+
+    // The lhs bounds are signed, thus the minimum is either the lower bound
+    // shift by the smallest shift if negative or the lower bound shifted by the
+    // biggest shift otherwise.  And the opposite for the maximum.
+    int32_t lhsLower = lhs->lower();
+    int32_t min = lhsLower < 0 ? lhsLower >> shiftLower : lhsLower >> shiftUpper;
+    int32_t lhsUpper = lhs->upper();
+    int32_t max = lhsUpper >= 0 ? lhsUpper >> shiftLower : lhsUpper >> shiftUpper;
+
+    return Range::NewInt32Range(alloc, min, max);
 }
 
 Range*
@@ -1630,9 +1658,8 @@ MTruncateToInt32::computeRange(TempAllocator& alloc)
 void
 MToInt32::computeRange(TempAllocator& alloc)
 {
-    Range* output = new(alloc) Range(getOperand(0));
-    output->clampToInt32();
-    setRange(output);
+    // No clamping since this computes the range *before* bailouts.
+    setRange(new(alloc) Range(getOperand(0)));
 }
 
 void
@@ -1642,7 +1669,14 @@ MLimitedTruncate::computeRange(TempAllocator& alloc)
     setRange(output);
 }
 
-static Range* GetTypedArrayRange(TempAllocator& alloc, int type)
+void
+MFilterTypeSet::computeRange(TempAllocator& alloc)
+{
+    setRange(new(alloc) Range(getOperand(0)));
+}
+
+static Range*
+GetTypedArrayRange(TempAllocator& alloc, Scalar::Type type)
 {
     switch (type) {
       case Scalar::Uint8Clamped:
@@ -1662,18 +1696,20 @@ static Range* GetTypedArrayRange(TempAllocator& alloc, int type)
 
       case Scalar::Float32:
       case Scalar::Float64:
+      case Scalar::Float32x4:
+      case Scalar::Int32x4:
+      case Scalar::MaxTypedArrayViewType:
         break;
     }
-
-  return nullptr;
+    return nullptr;
 }
 
 void
-MLoadTypedArrayElement::computeRange(TempAllocator& alloc)
+MLoadUnboxedScalar::computeRange(TempAllocator& alloc)
 {
     // We have an Int32 type and if this is a UInt32 load it may produce a value
     // outside of our range, but we have a bailout to handle those cases.
-    setRange(GetTypedArrayRange(alloc, arrayType()));
+    setRange(GetTypedArrayRange(alloc, readType()));
 }
 
 void
@@ -1831,7 +1867,7 @@ RangeAnalysis::analyzeLoop(MBasicBlock* header)
     if (JitSpewEnabled(JitSpew_Range)) {
         Sprinter sp(GetJitContext()->cx);
         sp.init();
-        iterationBound->boundSum.print(sp);
+        iterationBound->boundSum.dump(sp);
         JitSpew(JitSpew_Range, "computed symbolic bound on backedges: %s",
                 sp.string());
     }
@@ -1880,6 +1916,16 @@ RangeAnalysis::analyzeLoop(MBasicBlock* header)
     return true;
 }
 
+// Unbox beta nodes in order to hoist instruction properly, and not be limited
+// by the beta nodes which are added after each branch.
+static inline MDefinition*
+DefinitionOrBetaInputDefinition(MDefinition* ins)
+{
+    while (ins->isBeta())
+        ins = ins->toBeta()->input();
+    return ins;
+}
+
 LoopIterationBound*
 RangeAnalysis::analyzeLoopIterationCount(MBasicBlock* header,
                                          MTest* test, BranchDirection direction)
@@ -1925,9 +1971,8 @@ RangeAnalysis::analyzeLoopIterationCount(MBasicBlock* header,
 
     // The second operand of the phi should be a value written by an add/sub
     // in every loop iteration, i.e. in a block which dominates the backedge.
-    MDefinition* lhsWrite = lhs.term->toPhi()->getLoopBackedgeOperand();
-    if (lhsWrite->isBeta())
-        lhsWrite = lhsWrite->getOperand(0);
+    MDefinition* lhsWrite =
+        DefinitionOrBetaInputDefinition(lhs.term->toPhi()->getLoopBackedgeOperand());
     if (!lhsWrite->isAdd() && !lhsWrite->isSub())
         return nullptr;
     if (!lhsWrite->block()->isMarked())
@@ -2092,7 +2137,8 @@ bool
 RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header, MBoundsCheck* ins)
 {
     // The bounds check's length must be loop invariant.
-    if (ins->length()->block()->isMarked())
+    MDefinition *length = DefinitionOrBetaInputDefinition(ins->length());
+    if (length->block()->isMarked())
         return false;
 
     // The bounds check's index should not be loop invariant (else we would
@@ -2145,20 +2191,22 @@ RangeAnalysis::tryHoistBoundsCheck(MBasicBlock* header, MBoundsCheck* ins)
     if (!SafeAdd(upper->sum.constant(), upperConstant, &upperConstant))
         return false;
 
+    // Hoist the loop invariant lower bounds checks.
     MBoundsCheckLower* lowerCheck = MBoundsCheckLower::New(alloc(), lowerTerm);
     lowerCheck->setMinimum(lowerConstant);
     lowerCheck->computeRange(alloc());
     lowerCheck->collectRangeInfoPreTrunc();
-
-    MBoundsCheck* upperCheck = MBoundsCheck::New(alloc(), upperTerm, ins->length());
-    upperCheck->setMinimum(upperConstant);
-    upperCheck->setMaximum(upperConstant);
-    upperCheck->computeRange(alloc());
-    upperCheck->collectRangeInfoPreTrunc();
-
-    // Hoist the loop invariant upper and lower bounds checks.
     preLoop->insertBefore(preLoop->lastIns(), lowerCheck);
-    preLoop->insertBefore(preLoop->lastIns(), upperCheck);
+
+    // Hoist the loop invariant upper bounds checks.
+    if (upperTerm != length || upperConstant >= 0) {
+        MBoundsCheck* upperCheck = MBoundsCheck::New(alloc(), upperTerm, length);
+        upperCheck->setMinimum(upperConstant);
+        upperCheck->setMaximum(upperConstant);
+        upperCheck->computeRange(alloc());
+        upperCheck->collectRangeInfoPreTrunc();
+        preLoop->insertBefore(preLoop->lastIns(), upperCheck);
+    }
 
     return true;
 }
@@ -2200,32 +2248,8 @@ RangeAnalysis::analyze()
 
         // First pass at collecting range info - while the beta nodes are still
         // around and before truncation.
-        for (MInstructionIterator iter(block->begin()); iter != block->end(); iter++) {
+        for (MInstructionIterator iter(block->begin()); iter != block->end(); iter++)
             iter->collectRangeInfoPreTrunc();
-
-            // Would have been nice to implement this using collectRangeInfoPreTrunc()
-            // methods but it needs the minAsmJSHeapLength().
-            if (mir->compilingAsmJS()) {
-                uint32_t minHeapLength = mir->minAsmJSHeapLength();
-                if (iter->isAsmJSLoadHeap()) {
-                    MAsmJSLoadHeap* ins = iter->toAsmJSLoadHeap();
-                    Range* range = ins->ptr()->range();
-                    uint32_t elemSize = TypedArrayElemSize(ins->accessType());
-                    if (range && range->hasInt32LowerBound() && range->lower() >= 0 &&
-                        range->hasInt32UpperBound() && uint32_t(range->upper()) + elemSize <= minHeapLength) {
-                        ins->removeBoundsCheck();
-                    }
-                } else if (iter->isAsmJSStoreHeap()) {
-                    MAsmJSStoreHeap* ins = iter->toAsmJSStoreHeap();
-                    Range* range = ins->ptr()->range();
-                    uint32_t elemSize = TypedArrayElemSize(ins->accessType());
-                    if (range && range->hasInt32LowerBound() && range->lower() >= 0 &&
-                        range->hasInt32UpperBound() && uint32_t(range->upper()) + elemSize <= minHeapLength) {
-                        ins->removeBoundsCheck();
-                    }
-                }
-            }
-        }
     }
 
     return true;
@@ -2466,8 +2490,10 @@ MDiv::truncate()
 
     // Divisions where the lhs and rhs are unsigned and the result is
     // truncated can be lowered more efficiently.
-    if (tryUseUnsignedOperands())
+    if (unsignedOperands()) {
+        replaceWithUnsignedOperands();
         unsigned_ = true;
+    }
 }
 
 bool
@@ -2487,8 +2513,10 @@ MMod::truncate()
     specialization_ = MIRType_Int32;
     setResultType(MIRType_Int32);
 
-    if (tryUseUnsignedOperands())
+    if (unsignedOperands()) {
+        replaceWithUnsignedOperands();
         unsigned_ = true;
+    }
 }
 
 bool
@@ -2633,24 +2661,24 @@ MToDouble::operandTruncateKind(size_t index) const
 }
 
 MDefinition::TruncateKind
-MStoreTypedArrayElement::operandTruncateKind(size_t index) const
+MStoreUnboxedScalar::operandTruncateKind(size_t index) const
 {
-    // An integer store truncates the stored value.
-    return index == 2 && !isFloatArray() ? Truncate : NoTruncate;
+    // Some receiver objects, such as typed arrays, will truncate out of range integer inputs.
+    return (truncateInput() && index == 2 && isIntegerWrite()) ? Truncate : NoTruncate;
 }
 
 MDefinition::TruncateKind
 MStoreTypedArrayElementHole::operandTruncateKind(size_t index) const
 {
     // An integer store truncates the stored value.
-    return index == 3 && !isFloatArray() ? Truncate : NoTruncate;
+    return index == 3 && isIntegerWrite() ? Truncate : NoTruncate;
 }
 
 MDefinition::TruncateKind
 MStoreTypedArrayElementStatic::operandTruncateKind(size_t index) const
 {
     // An integer store truncates the stored value.
-    return index == 1 && !isFloatArray() ? Truncate : NoTruncate;
+    return index == 1 && isIntegerWrite() ? Truncate : NoTruncate;
 }
 
 MDefinition::TruncateKind
@@ -2800,6 +2828,10 @@ ComputeRequestedTruncateKind(MDefinition* candidate, bool* shouldClone)
             break;
     }
 
+    // We cannot do full trunction on guarded instructions.
+    if (candidate->isGuard() || candidate->isGuardRangeBailouts())
+        kind = Min(kind, MDefinition::TruncateAfterBailouts);
+
     // If the value naturally produces an int32 value (before bailout checks)
     // that needs no conversion, we don't have to worry about resume points
     // seeing truncated values.
@@ -2850,10 +2882,13 @@ ComputeTruncateKind(MDefinition* candidate, bool* shouldClone)
     const Range* r = candidate->range();
     bool canHaveRoundingErrors = !r || r->canHaveRoundingErrors();
 
-    // Special case integer division: the result of a/b can be infinite
-    // but cannot actually have rounding errors induced by truncation.
-    if (candidate->isDiv() && candidate->toDiv()->specialization() == MIRType_Int32)
+    // Special case integer division and modulo: a/b can be infinite, and a%b
+    // can be NaN but cannot actually have rounding errors induced by truncation.
+    if ((candidate->isDiv() || candidate->isMod()) &&
+        static_cast<const MBinaryArithInstruction *>(candidate)->specialization() == MIRType_Int32)
+    {
         canHaveRoundingErrors = false;
+    }
 
     if (canHaveRoundingErrors)
         return MDefinition::NoTruncate;
@@ -3025,8 +3060,10 @@ RangeAnalysis::truncate()
     for (size_t i = 0; i < bitops.length(); i++) {
         MBinaryBitwiseInstruction* ins = bitops[i];
         MDefinition* folded = ins->foldUnnecessaryBitop();
-        if (folded != ins)
-            ins->replaceAllUsesWith(folded);
+        if (folded != ins) {
+            ins->replaceAllLiveUsesWith(folded);
+            ins->setRecoveredOnBailout();
+        }
     }
 
     return true;
@@ -3048,19 +3085,21 @@ void
 MLoadElementHole::collectRangeInfoPreTrunc()
 {
     Range indexRange(index());
-    if (indexRange.isFiniteNonNegative())
+    if (indexRange.isFiniteNonNegative()) {
         needsNegativeIntCheck_ = false;
+        setNotGuard();
+    }
 }
 
 void
 MLoadTypedArrayElementStatic::collectRangeInfoPreTrunc()
 {
-    Range* range = ptr()->range();
+    Range range(ptr());
 
-    if (range && range->hasInt32LowerBound() && range->hasInt32UpperBound()) {
+    if (range.hasInt32LowerBound() && range.hasInt32UpperBound()) {
         int64_t offset = this->offset();
-        int64_t lower = range->lower() + offset;
-        int64_t upper = range->upper() + offset;
+        int64_t lower = range.lower() + offset;
+        int64_t upper = range.upper() + offset;
         int64_t length = this->length();
         if (lower >= 0 && upper < length)
             setNeedsBoundsCheck(false);
@@ -3070,12 +3109,12 @@ MLoadTypedArrayElementStatic::collectRangeInfoPreTrunc()
 void
 MStoreTypedArrayElementStatic::collectRangeInfoPreTrunc()
 {
-    Range* range = ptr()->range();
+    Range range(ptr());
 
-    if (range && range->hasInt32LowerBound() && range->hasInt32UpperBound()) {
+    if (range.hasInt32LowerBound() && range.hasInt32UpperBound()) {
         int64_t offset = this->offset();
-        int64_t lower = range->lower() + offset;
-        int64_t upper = range->upper() + offset;
+        int64_t lower = range.lower() + offset;
+        int64_t upper = range.upper() + offset;
         int64_t length = this->length();
         if (lower >= 0 && upper < length)
             setNeedsBoundsCheck(false);
@@ -3168,6 +3207,26 @@ MToInt32::collectRangeInfoPreTrunc()
 }
 
 void
+MBoundsCheck::collectRangeInfoPreTrunc()
+{
+    Range indexRange(index());
+    Range lengthRange(length());
+    if (!indexRange.hasInt32LowerBound() || !indexRange.hasInt32UpperBound())
+        return;
+    if (!lengthRange.hasInt32LowerBound() || lengthRange.canBeNaN())
+        return;
+
+    int64_t indexLower = indexRange.lower();
+    int64_t indexUpper = indexRange.upper();
+    int64_t lengthLower = lengthRange.lower();
+    int64_t min = minimum();
+    int64_t max = maximum();
+
+    if (indexLower + min >= 0 && indexUpper + max < lengthLower)
+        fallible_ = false;
+}
+
+void
 MBoundsCheckLower::collectRangeInfoPreTrunc()
 {
     Range indexRange(index());
@@ -3221,8 +3280,6 @@ RangeAnalysis::prepareForUCE(bool* shouldRemoveDeadCode)
 {
     *shouldRemoveDeadCode = false;
 
-    MDefinitionVector deadConditions(alloc());
-
     for (ReversePostorderIterator iter(graph_.rpoBegin()); iter != graph_.rpoEnd(); iter++) {
         MBasicBlock* block = *iter;
 
@@ -3246,11 +3303,8 @@ RangeAnalysis::prepareForUCE(bool* shouldRemoveDeadCode)
             constant = MConstant::New(alloc(), BooleanValue(true));
         }
 
-        if (DeadIfUnused(condition) && !condition->isInWorklist()) {
-            condition->setInWorklist();
-            if (!deadConditions.append(condition))
-                return false;
-        }
+        if (DeadIfUnused(condition))
+            condition->setGuardRangeBailoutsUnchecked();
 
         test->block()->insertBefore(test, constant);
 
@@ -3261,54 +3315,83 @@ RangeAnalysis::prepareForUCE(bool* shouldRemoveDeadCode)
         *shouldRemoveDeadCode = true;
     }
 
+    return tryRemovingGuards();
+}
+
+bool RangeAnalysis::tryRemovingGuards()
+{
+    MDefinitionVector guards(alloc());
+
+    for (ReversePostorderIterator block = graph_.rpoBegin(); block != graph_.rpoEnd(); block++) {
+        for (MDefinitionIterator iter(*block); iter; iter++) {
+            if (!iter->isGuardRangeBailouts())
+                continue;
+
+            iter->setInWorklist();
+            if (!guards.append(*iter))
+                return false;
+        }
+    }
+
     // Flag all fallible instructions which were indirectly used in the
     // computation of the condition, such that we do not ignore
     // bailout-paths which are used to shrink the input range of the
     // operands of the condition.
-    for (size_t i = 0; i < deadConditions.length(); i++) {
-        MDefinition* cond = deadConditions[i];
+    for (size_t i = 0; i < guards.length(); i++) {
+        MDefinition* guard = guards[i];
 
-        // If this instruction is a guard, then there is not need to continue on
-        // this instruction.
-        if (cond->isGuard())
-            continue;
+#ifdef DEBUG
+        // There is no need to mark an instructions if there is
+        // already a more restrictive flag on it.
+        guard->setNotGuardRangeBailouts();
+        MOZ_ASSERT(DeadIfUnused(guard));
+        guard->setGuardRangeBailouts();
+#endif
 
-        if (cond->range()) {
+        if (!guard->isPhi()) {
+            if (!guard->range())
+                continue;
+
             // Filter the range of the instruction based on its MIRType.
-            Range typeFilteredRange(cond);
+            Range typeFilteredRange(guard);
 
-            // If the filtered range is updated by adding the original range,
+            // If the output range is updated by adding the inner range,
             // then the MIRType act as an effectful filter. As we do not know if
             // this filtered Range might change or not the result of the
             // previous comparison, we have to keep this instruction as a guard
             // because it has to bailout in order to restrict the Range to its
             // MIRType.
-            if (typeFilteredRange.update(cond->range())) {
-                cond->setGuard();
+            if (typeFilteredRange.update(guard->range()))
                 continue;
-            }
         }
 
-        for (size_t op = 0, e = cond->numOperands(); op < e; op++) {
-            MDefinition* operand = cond->getOperand(op);
-            if (!DeadIfUnused(operand) || operand->isInWorklist())
+        guard->setNotGuardRangeBailouts();
+
+        // Propagate the guard to its operands.
+        for (size_t op = 0, e = guard->numOperands(); op < e; op++) {
+            MDefinition* operand = guard->getOperand(op);
+
+            // Already marked.
+            if (operand->isInWorklist())
                 continue;
 
-            // If the operand has no range, then its range is always infered
-            // from its MIRType, so it cannot be used change the result deduced
-            // by Range Analysis.
-            if (!operand->range())
+            MOZ_ASSERT(!operand->isGuardRangeBailouts());
+
+            // No need to mark as a guard, since it is has already an even more
+            // restrictive flag set.
+            if (!DeadIfUnused(operand))
                 continue;
 
             operand->setInWorklist();
-            if (!deadConditions.append(operand))
+            operand->setGuardRangeBailouts();
+            if (!guards.append(operand))
                 return false;
         }
     }
 
-    while (!deadConditions.empty()) {
-        MDefinition* cond = deadConditions.popCopy();
-        cond->setNotInWorklist();
+    for (size_t i = 0; i < guards.length(); i++) {
+        MDefinition* guard = guards[i];
+        guard->setNotInWorklist();
     }
 
     return true;

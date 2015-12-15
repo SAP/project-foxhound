@@ -26,8 +26,8 @@ namespace mozilla {
 namespace dom {
 
 class MediaQueryList final : public nsISupports,
-                                 public nsWrapperCache,
-                                 public PRCList
+                             public nsWrapperCache,
+                             public PRCList
 {
 public:
   // The caller who constructs is responsible for calling Evaluate
@@ -48,17 +48,14 @@ public:
     nsRefPtr<mozilla::dom::MediaQueryListListener> callback;
   };
 
-  typedef FallibleTArray< nsRefPtr<mozilla::dom::MediaQueryListListener> > CallbackList;
-  typedef FallibleTArray<HandleChangeData> NotifyList;
-
   // Appends listeners that need notification to aListenersToNotify
-  void MediumFeaturesChanged(NotifyList &aListenersToNotify);
+  void MediumFeaturesChanged(nsTArray<HandleChangeData>& aListenersToNotify);
 
   bool HasListeners() const { return !mCallbacks.IsEmpty(); }
 
   void RemoveAllListeners();
 
-  JSObject* WrapObject(JSContext* aCx) override;
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL methods
   void GetMedia(nsAString& aMedia);
@@ -88,7 +85,7 @@ private:
   nsRefPtr<nsMediaList> mMediaList;
   bool mMatches;
   bool mMatchesValid;
-  CallbackList mCallbacks;
+  nsTArray<nsRefPtr<mozilla::dom::MediaQueryListListener>> mCallbacks;
 };
 
 } // namespace dom

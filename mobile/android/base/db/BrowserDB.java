@@ -97,17 +97,19 @@ public interface BrowserDB {
      */
     public abstract Cursor getRecentHistory(ContentResolver cr, int limit);
 
+    public abstract Cursor getRecentHistoryBetweenTime(ContentResolver cr, int historyLimit, long start, long end);
+
     public abstract void expireHistory(ContentResolver cr, ExpirePriority priority);
 
     public abstract void removeHistoryEntry(ContentResolver cr, String url);
 
-    public abstract void clearHistory(ContentResolver cr);
+    public abstract void clearHistory(ContentResolver cr, boolean clearSearchHistory);
 
 
     public abstract String getUrlForKeyword(ContentResolver cr, String keyword);
 
     public abstract boolean isBookmark(ContentResolver cr, String uri);
-    public abstract void addBookmark(ContentResolver cr, String title, String uri);
+    public abstract boolean addBookmark(ContentResolver cr, String title, String uri);
     public abstract Cursor getBookmarkForUrl(ContentResolver cr, String url);
     public abstract void removeBookmarksWithURL(ContentResolver cr, String uri);
     public abstract void registerBookmarkObserver(ContentResolver cr, ContentObserver observer);

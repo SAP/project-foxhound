@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 const prefs = {
   "net": [
     "network",
@@ -22,11 +24,14 @@ const prefs = {
      "error",
      "warn",
      "info",
-     "log"
+     "log",
+     "serviceworkers",
+     "sharedworkers",
+     "windowlessworkers"
   ]
 };
 
-let test = asyncTest(function* () {
+var test = asyncTest(function* () {
   // Set all prefs to true
   for (let category in prefs) {
     prefs[category].forEach(function(pref) {
@@ -59,7 +64,8 @@ function onConsoleOpen(hud) {
   for (let category in prefs) {
     let button = hudBox.querySelector(".webconsole-filter-button[category=\""
                                       + category + "\"]");
-    ok(isChecked(button), "main button for " + category + " category is checked");
+    ok(isChecked(button), "main button for " + category +
+       " category is checked");
 
     prefs[category].forEach(function(pref) {
       let menuitem = hudBox.querySelector("menuitem[prefKey=" + pref + "]");
@@ -74,7 +80,7 @@ function onConsoleOpen(hud) {
     });
   }
 
-  //Re-init the console
+  // Re-init the console
   closeConsole().then(() => {
     openConsole().then(deferred.resolve);
   });
@@ -92,7 +98,8 @@ function onConsoleReopen1(hud) {
   for (let category in prefs) {
     let button = hudBox.querySelector(".webconsole-filter-button[category=\""
                                            + category + "\"]");
-    ok(isUnchecked(button), "main button for " + category + " category is not checked");
+    ok(isUnchecked(button), "main button for " + category +
+       " category is not checked");
 
     prefs[category].forEach(function(pref) {
       let menuitem = hudBox.querySelector("menuitem[prefKey=" + pref + "]");
@@ -120,9 +127,10 @@ function onConsoleReopen2(hud) {
 
   // Check the main category button is checked and first menuitem is checked
   for (let category in prefs) {
-    let button = hudBox.querySelector(".webconsole-filter-button[category=\""
-                                           + category + "\"]");
-    ok(isChecked(button), category  + " button is checked when first pref is true");
+    let button = hudBox.querySelector(".webconsole-filter-button[category=\"" +
+                                      category + "\"]");
+    ok(isChecked(button), category +
+       " button is checked when first pref is true");
 
     let pref = prefs[category][0];
     let menuitem = hudBox.querySelector("menuitem[prefKey=" + pref + "]");

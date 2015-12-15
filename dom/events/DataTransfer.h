@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +18,9 @@
 
 #include "nsAutoPtr.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/Promise.h"
 
 class nsINode;
 class nsITransferable;
@@ -32,6 +35,7 @@ namespace dom {
 
 class DOMStringList;
 class Element;
+class FileList;
 template<typename T> class Optional;
 
 /**
@@ -52,7 +56,7 @@ struct TransferItem {
   { 0x9b, 0xd0, 0xf1, 0x79, 0x09, 0x69, 0xf2, 0xfb } }
 
 class DataTransfer final : public nsIDOMDataTransfer,
-                               public nsWrapperCache
+                           public nsWrapperCache
 {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DATATRANSFER_IID)
@@ -72,7 +76,7 @@ protected:
   // this constructor is used only by the Clone method to copy the fields as
   // needed to a new data transfer.
   DataTransfer(nsISupports* aParent,
-               uint32_t aEventType,
+               EventMessage aEventMessage,
                const uint32_t aEffectAllowed,
                bool aCursorState,
                bool aIsExternal,
@@ -92,8 +96,6 @@ public:
 
   // Constructor for DataTransfer.
   //
-  // aEventType is an event constant (such as NS_DRAGDROP_START)
-  //
   // aIsExternal must only be true when used to create a dataTransfer for a
   // paste or a drag that was started without using a data transfer. The
   // latter will occur when an external drag occurs, that is, a drag where the
@@ -101,10 +103,10 @@ public:
   // service directly. For clipboard operations, aClipboardType indicates
   // which clipboard to use, from nsIClipboard, or -1 for non-clipboard operations,
   // or if access to the system clipboard should not be allowed.
-  DataTransfer(nsISupports* aParent, uint32_t aEventType, bool aIsExternal,
-               int32_t aClipboardType);
+  DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
+               bool aIsExternal, int32_t aClipboardType);
 
-  virtual JSObject* WrapObject(JSContext* aCx) override;
+  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
   nsISupports* GetParentObject()
   {
     return mParent;
@@ -144,6 +146,9 @@ public:
   void ClearData(const mozilla::dom::Optional<nsAString>& aFormat,
                  mozilla::ErrorResult& aRv);
   FileList* GetFiles(mozilla::ErrorResult& aRv);
+
+  already_AddRefed<Promise> GetFilesAndDirectories(ErrorResult& aRv);
+
   void AddElement(Element& aElement, mozilla::ErrorResult& aRv);
   uint32_t MozItemCount()
   {
@@ -185,6 +190,7 @@ public:
   // converts the data into an array of nsITransferable objects to be used for
   // drag and drop or clipboard operations.
   already_AddRefed<nsISupportsArray> GetTransferables(nsIDOMNode* aDragTarget);
+  already_AddRefed<nsISupportsArray> GetTransferables(nsILoadContext* aLoadContext);
 
   // converts the data for a single item at aIndex into an nsITransferable object.
   already_AddRefed<nsITransferable> GetTransferable(uint32_t aIndex,
@@ -215,8 +221,9 @@ public:
     return mDragImage;
   }
 
-  nsresult Clone(nsISupports* aParent, uint32_t aEventType, bool aUserCancelled,
-                 bool aIsCrossDomainSubFrameDrop, DataTransfer** aResult);
+  nsresult Clone(nsISupports* aParent, EventMessage aEventMessage,
+                 bool aUserCancelled, bool aIsCrossDomainSubFrameDrop,
+                 DataTransfer** aResult);
 
 protected:
 
@@ -239,18 +246,22 @@ protected:
   // clipboard for a given index.
   void FillInExternalData(TransferItem& aItem, uint32_t aIndex);
 
+  friend class ContentParent;
+  void FillAllExternalData();
+
   void MozClearDataAtHelper(const nsAString& aFormat, uint32_t aIndex,
                             mozilla::ErrorResult& aRv);
 
   nsCOMPtr<nsISupports> mParent;
 
-  // the event type this data transfer is for. This will correspond to an
-  // event->message value.
-  uint32_t mEventType;
 
   // the drop effect and effect allowed
   uint32_t mDropEffect;
   uint32_t mEffectAllowed;
+
+  // the event message this data transfer is for. This will correspond to an
+  // event->mMessage value.
+  EventMessage mEventMessage;
 
   // Indicates the behavior of the cursor during drag operations
   bool mCursorState;

@@ -47,12 +47,12 @@ JSONParserBase::trace(JSTracer* trc)
         if (stack[i].state == FinishArrayElement) {
             ElementVector& elements = stack[i].elements();
             for (size_t j = 0; j < elements.length(); j++)
-                gc::MarkValueRoot(trc, &elements[j], "JSONParser element");
+                TraceRoot(trc, &elements[j], "JSONParser element");
         } else {
             PropertyVector& properties = stack[i].properties();
             for (size_t j = 0; j < properties.length(); j++) {
-                gc::MarkValueRoot(trc, &properties[j].value, "JSONParser property value");
-                gc::MarkIdRoot(trc, &properties[j].id, "JSONParser property id");
+                TraceRoot(trc, &properties[j].value, "JSONParser property value");
+                TraceRoot(trc, &properties[j].id, "JSONParser property id");
             }
         }
     }
@@ -94,7 +94,7 @@ JSONParser<CharT>::error(const char* msg)
         char lineNumber[MaxWidth];
         JS_snprintf(lineNumber, sizeof lineNumber, "%lu", line);
 
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_JSON_BAD_PARSE,
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_JSON_BAD_PARSE,
                              msg, lineNumber, columnNumber);
     }
 }
@@ -623,55 +623,12 @@ JSONParser<CharT>::advanceAfterProperty()
     return token(Error);
 }
 
-JSObject*
-JSONParserBase::createFinishedObject(PropertyVector& properties)
-{
-    /*
-     * Look for an existing cached group and shape for objects with this set of
-     * properties.
-     */
-    {
-        JSObject* obj = ObjectGroup::newPlainObject(cx, properties.begin(),
-                                                    properties.length());
-        if (obj)
-            return obj;
-    }
-
-    /*
-     * Make a new object sized for the given number of properties and fill its
-     * shape in manually.
-     */
-    gc::AllocKind allocKind = gc::GetGCObjectKind(properties.length());
-    RootedPlainObject obj(cx, NewBuiltinClassInstance<PlainObject>(cx, allocKind));
-    if (!obj)
-        return nullptr;
-
-    RootedId propid(cx);
-    RootedValue value(cx);
-
-    for (size_t i = 0; i < properties.length(); i++) {
-        propid = properties[i].id;
-        value = properties[i].value;
-        if (!NativeDefineProperty(cx, obj, propid, value, nullptr, nullptr, JSPROP_ENUMERATE))
-            return nullptr;
-    }
-
-    /*
-     * Try to assign a new group to the object with type information for its
-     * properties, and update the initializer object group cache with this
-     * object's final shape.
-     */
-    ObjectGroup::fixPlainObjectGroup(cx, obj);
-
-    return obj;
-}
-
 inline bool
 JSONParserBase::finishObject(MutableHandleValue vp, PropertyVector& properties)
 {
     MOZ_ASSERT(&properties == &stack.back().properties());
 
-    JSObject* obj = createFinishedObject(properties);
+    JSObject* obj = ObjectGroup::newPlainObject(cx, properties.begin(), properties.length(), GenericObject);
     if (!obj)
         return false;
 
@@ -679,6 +636,13 @@ JSONParserBase::finishObject(MutableHandleValue vp, PropertyVector& properties)
     if (!freeProperties.append(&properties))
         return false;
     stack.popBack();
+
+    if (!stack.empty() && stack.back().state == FinishArrayElement) {
+        const ElementVector& elements = stack.back().elements();
+        if (!CombinePlainObjectPropertyTypes(cx, obj, elements.begin(), elements.length()))
+            return false;
+    }
+
     return true;
 }
 
@@ -687,17 +651,22 @@ JSONParserBase::finishArray(MutableHandleValue vp, ElementVector& elements)
 {
     MOZ_ASSERT(&elements == &stack.back().elements());
 
-    ArrayObject* obj = NewDenseCopiedArray(cx, elements.length(), elements.begin());
+    JSObject* obj = ObjectGroup::newArrayObject(cx, elements.begin(), elements.length(),
+                                                GenericObject);
     if (!obj)
         return false;
-
-    /* Try to assign a new group to the array according to its elements. */
-    ObjectGroup::fixArrayGroup(cx, obj);
 
     vp.setObject(*obj);
     if (!freeElements.append(&elements))
         return false;
     stack.popBack();
+
+    if (!stack.empty() && stack.back().state == FinishArrayElement) {
+        const ElementVector& elements = stack.back().elements();
+        if (!CombineArrayElementTypes(cx, obj, elements.begin(), elements.length()))
+            return false;
+    }
+
     return true;
 }
 

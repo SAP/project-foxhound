@@ -108,74 +108,6 @@ function check_cookie_exists(aDomain, aExists)
 }
 
 /**
- * Adds a download to download history.
- *
- * @param aURIString
- *        The string of the URI to add.
- * @param aIsActive
- *        If it should be set to an active state in the database.  This does not
- *        make it show up in the list of active downloads however!
- */
-function add_download(aURIString, aIsActive)
-{
-  function makeGUID() {
-    let guid = "";
-    for (var i = 0; i < 12; i++)
-      guid += Math.floor(Math.random() * 10);
-    return guid;
-  }
-
-  check_downloaded(aURIString, false);
-  let db = Cc["@mozilla.org/download-manager;1"].
-           getService(Ci.nsIDownloadManager).
-           DBConnection;
-  let stmt = db.createStatement(
-    "INSERT INTO moz_downloads (source, state, guid) " +
-    "VALUES (:source, :state, :guid)"
-  );
-  stmt.params.source = aURIString;
-  stmt.params.state = aIsActive ? Ci.nsIDownloadManager.DOWNLOAD_DOWNLOADING :
-                                  Ci.nsIDownloadManager.DOWNLOAD_FINISHED;
-  stmt.params.guid = makeGUID();
-  try {
-    stmt.execute();
-  }
-  finally {
-    stmt.finalize();
-  }
-  check_downloaded(aURIString, true);
-}
-
-/**
- * Checks to ensure a URI string is in download history or not.
- *
- * @param aURIString
- *        The string of the URI to check.
- * @param aIsDownloaded
- *        True if the URI should be downloaded, false otherwise.
- */
-function check_downloaded(aURIString, aIsDownloaded)
-{
-  let db = Cc["@mozilla.org/download-manager;1"].
-           getService(Ci.nsIDownloadManager).
-           DBConnection;
-  let stmt = db.createStatement(
-    "SELECT * " +
-    "FROM moz_downloads " +
-    "WHERE source = :source"
-  );
-  stmt.params.source = aURIString;
-
-  let checker = aIsDownloaded ? do_check_true : do_check_false;
-  try {
-    checker(stmt.executeStep());
-  }
-  finally {
-    stmt.finalize();
-  }
-}
-
-/**
  * Adds a disabled host to the login manager.
  *
  * @param aHost
@@ -253,9 +185,9 @@ function add_permission(aURI)
   check_permission_exists(aURI, false);
   let pm = Cc["@mozilla.org/permissionmanager;1"].
            getService(Ci.nsIPermissionManager);
-  let principal = Cc["@mozilla.org/scriptsecuritymanager;1"]
-                    .getService(Ci.nsIScriptSecurityManager)
-                    .getNoAppCodebasePrincipal(aURI);
+  let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"]
+              .getService(Ci.nsIScriptSecurityManager);
+  let principal = ssm.createCodebasePrincipal(aURI, {});
 
   pm.addFromPrincipal(principal, PERMISSION_TYPE, PERMISSION_VALUE);
   check_permission_exists(aURI, true);
@@ -273,9 +205,9 @@ function check_permission_exists(aURI, aExists)
 {
   let pm = Cc["@mozilla.org/permissionmanager;1"].
            getService(Ci.nsIPermissionManager);
-  let principal = Cc["@mozilla.org/scriptsecuritymanager;1"]
-                    .getService(Ci.nsIScriptSecurityManager)
-                    .getNoAppCodebasePrincipal(aURI);
+  let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"]
+              .getService(Ci.nsIScriptSecurityManager);
+  let principal = ssm.createCodebasePrincipal(aURI, {});
 
   let perm = pm.testExactPermissionFromPrincipal(principal, PERMISSION_TYPE);
   let checker = aExists ? do_check_eq : do_check_neq;
@@ -378,51 +310,6 @@ function test_cookie_not_cleared_with_uri_contains_domain()
   add_cookie(TEST_DOMAIN);
   ForgetAboutSite.removeDataFromDomain("mozilla.org");
   check_cookie_exists(TEST_DOMAIN, true);
-}
-
-// Download Manager
-function test_download_history_cleared_with_direct_match()
-{
-  if (oldDownloadManagerDisabled()) {
-    return;
-  }
-
-  const TEST_URI = "http://mozilla.org/foo";
-  add_download(TEST_URI, false);
-  ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_downloaded(TEST_URI, false);
-}
-
-function test_download_history_cleared_with_subdomain()
-{
-  if (oldDownloadManagerDisabled()) {
-    return;
-  }
-
-  const TEST_URI = "http://www.mozilla.org/foo";
-  add_download(TEST_URI, false);
-  ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_downloaded(TEST_URI, false);
-}
-
-function test_download_history_not_cleared_with_active_direct_match()
-{
-  if (oldDownloadManagerDisabled()) {
-    return;
-  }
-
-  // Tests that downloads marked as active in the db are not deleted from the db
-  const TEST_URI = "http://mozilla.org/foo";
-  add_download(TEST_URI, true);
-  ForgetAboutSite.removeDataFromDomain("mozilla.org");
-  check_downloaded(TEST_URI, true);
-
-  // Reset state
-  let db = Cc["@mozilla.org/download-manager;1"].
-           getService(Ci.nsIDownloadManager).
-           DBConnection;
-  db.executeSimpleSQL("DELETE FROM moz_downloads");
-  check_downloaded(TEST_URI, false);
 }
 
 // Login Manager
@@ -575,6 +462,67 @@ function test_content_preferences_not_cleared_with_uri_contains_domain()
   do_check_false(yield preference_exists(TEST_URI));
 }
 
+// Push
+function test_push_cleared()
+{
+  let ps;
+  try {
+    ps = Cc["@mozilla.org/push/NotificationService;1"].
+           getService(Ci.nsIPushNotificationService);
+  } catch(e) {
+    // No push service, skip test.
+    return;
+  }
+
+  do_get_profile();
+  setPrefs();
+  const {PushDB, PushService, PushServiceWebSocket} = serviceExports;
+  const userAgentID = 'bd744428-f125-436a-b6d0-dd0c9845837f';
+  const channelID = '0ef2ad4a-6c49-41ad-af6e-95d2425276bf';
+
+  let db = PushServiceWebSocket.newPushDB();
+  do_register_cleanup(() => {return db.drop().then(_ => db.close());});
+
+  PushService.init({
+    serverURI: "wss://push.example.org/",
+    networkInfo: new MockDesktopNetworkInfo(),
+    db,
+    makeWebSocket(uri) {
+      return new MockWebSocket(uri, {
+        onHello(request) {
+          this.serverSendMsg(JSON.stringify({
+            messageType: 'hello',
+            status: 200,
+            uaid: userAgentID,
+          }));
+        },
+      });
+    }
+  });
+
+  function push_registration_exists(aURL, ps)
+  {
+    return ps.registration(aURL, ChromeUtils.originAttributesToSuffix({ appId: Ci.nsIScriptSecurityManager.NO_APP_ID, inBrowser: false }))
+      .then(record => !!record)
+      .catch(_ => false);
+  }
+
+  const TEST_URL = "https://www.mozilla.org/scope/";
+  do_check_false(yield push_registration_exists(TEST_URL, ps));
+  yield db.put({
+    channelID,
+    pushEndpoint: 'https://example.org/update/clear-success',
+    scope: TEST_URL,
+    version: 1,
+    originAttributes: '',
+    quota: Infinity,
+  });
+  do_check_true(yield push_registration_exists(TEST_URL, ps));
+  ForgetAboutSite.removeDataFromDomain("mozilla.org");
+  yield waitForPurgeNotification();
+  do_check_false(yield push_registration_exists(TEST_URL, ps));
+}
+
 // Cache
 function test_cache_cleared()
 {
@@ -606,9 +554,10 @@ function test_storage_cleared()
 {
   function getStorageForURI(aURI)
   {
-    let principal = Cc["@mozilla.org/scriptsecuritymanager;1"].
-                    getService(Ci.nsIScriptSecurityManager).
-                    getNoAppCodebasePrincipal(aURI);
+    let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"]
+              .getService(Ci.nsIScriptSecurityManager);
+    let principal = ssm.createCodebasePrincipal(aURI, {});
+
     let dsm = Cc["@mozilla.org/dom/localStorage-manager;1"].
               getService(Ci.nsIDOMStorageManager);
     return dsm.createStorage(null, principal, "");
@@ -639,7 +588,7 @@ function test_storage_cleared()
   do_check_eq(s[2].length, 1);
 }
 
-let tests = [
+var tests = [
   // History
   test_history_cleared_with_direct_match,
   test_history_cleared_with_subdomain,
@@ -649,12 +598,6 @@ let tests = [
   test_cookie_cleared_with_direct_match,
   test_cookie_cleared_with_subdomain,
   test_cookie_not_cleared_with_uri_contains_domain,
-
-  // Download Manager
-  // Note: active downloads tested in test_removeDataFromDomain_activeDownloads.js
-  test_download_history_cleared_with_direct_match,
-  test_download_history_cleared_with_subdomain,
-  test_download_history_not_cleared_with_active_direct_match,
 
   // Login Manager
   test_login_manager_disabled_hosts_cleared_with_direct_match,
@@ -673,6 +616,9 @@ let tests = [
   test_content_preferences_cleared_with_direct_match,
   test_content_preferences_cleared_with_subdomain,
   test_content_preferences_not_cleared_with_uri_contains_domain,
+
+  // Push
+  test_push_cleared,
 
   // Storage
   test_storage_cleared,

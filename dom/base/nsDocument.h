@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +18,6 @@
 #include "nsCRT.h"
 #include "nsWeakReference.h"
 #include "nsWeakPtr.h"
-#include "nsVoidArray.h"
 #include "nsTArray.h"
 #include "nsIDOMXMLDocument.h"
 #include "nsIDOMDocumentXBL.h"
@@ -46,7 +45,7 @@
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsStyleSet.h"
-#include "pldhash.h"
+#include "PLDHashTable.h"
 #include "nsAttrAndChildArray.h"
 #include "nsDOMAttributeMap.h"
 #include "nsIContentViewer.h"
@@ -59,7 +58,7 @@
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/PendingPlayerTracker.h"
+#include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/dom/DOMImplementation.h"
 #include "mozilla/dom/StyleSheetList.h"
 #include "nsDataHashtable.h"
@@ -68,6 +67,7 @@
 #include "nsIDOMXPathEvaluator.h"
 #include "jsfriendapi.h"
 #include "ImportManager.h"
+#include "mozilla/LinkedList.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -76,22 +76,16 @@
 
 
 class nsDOMStyleSheetSetList;
-class nsIOutputStream;
 class nsDocument;
-class nsIDTD;
 class nsIRadioVisitor;
 class nsIFormControl;
 struct nsRadioGroupStruct;
 class nsOnloadBlocker;
 class nsUnblockOnloadEvent;
-class nsChildContentList;
-class nsHTMLStyleSheet;
-class nsHTMLCSSStyleSheet;
 class nsDOMNavigationTiming;
 class nsWindowSizes;
 class nsHtml5TreeOpExecutor;
 class nsDocumentOnStack;
-class nsPointerLockPermissionRequest;
 class nsISecurityConsoleMessage;
 class nsPIBoxObject;
 
@@ -102,8 +96,36 @@ class BoxObject;
 class UndoManager;
 struct LifecycleCallbacks;
 class CallbackFunction;
-}
-}
+
+struct FullscreenRequest : public LinkedListElement<FullscreenRequest>
+{
+  explicit FullscreenRequest(Element* aElement);
+  FullscreenRequest(const FullscreenRequest&) = delete;
+  ~FullscreenRequest();
+
+  Element* GetElement() const { return mElement; }
+  nsDocument* GetDocument() const { return mDocument; }
+
+private:
+  nsRefPtr<Element> mElement;
+  nsRefPtr<nsDocument> mDocument;
+
+public:
+  nsRefPtr<gfx::VRHMDInfo> mVRHMDDevice;
+  // This value should be true if the fullscreen request is
+  // originated from chrome code.
+  bool mIsCallerChrome = false;
+  // This value denotes whether we should trigger a NewOrigin event if
+  // requesting fullscreen in its document causes the origin which is
+  // fullscreen to change. We may want *not* to trigger that event if
+  // we're calling RequestFullScreen() as part of a continuation of a
+  // request in a subdocument in different process, whereupon the caller
+  // need to send some notification itself with the real origin.
+  bool mShouldNotifyNewOrigin = true;
+};
+
+} // namespace dom
+} // namespace mozilla
 
 /**
  * Right now our identifier map entries contain information for 'name'
@@ -156,8 +178,8 @@ public:
   /**
    * Returns the list of all elements associated with this id.
    */
-  const nsSmallVoidArray* GetIdElements() const {
-    return &mIdContentList;
+  const nsTArray<Element*>& GetIdElements() const {
+    return mIdContentList;
   }
   /**
    * If this entry has a non-null image element set (using SetImageElement),
@@ -233,7 +255,7 @@ private:
 
   // empty if there are no elements with this ID.
   // The elements are stored as weak pointers.
-  nsSmallVoidArray mIdContentList;
+  nsTArray<Element*> mIdContentList;
   nsRefPtr<nsBaseContentList> mNameContentList;
   nsAutoPtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
   nsRefPtr<Element> mImageElement;
@@ -409,7 +431,8 @@ protected:
     CandidateMap;
 
   // Hashtable for custom element definitions in web components.
-  // Custom prototypes are in the document's compartment.
+  // Custom prototypes are stored in the compartment where
+  // registerElement was called.
   DefinitionMap mCustomDefinitions;
 
   // The "upgrade candidates map" from the web components spec. Maps from a
@@ -596,8 +619,8 @@ protected:
     
     // XXXbz I wish we could just derive the _allcaps thing from _i
 #define DECL_SHIM(_i, _allcaps)                                              \
-    class _i##Shim final : public nsIInterfaceRequestor,                 \
-                               public _i                                     \
+    class _i##Shim final : public nsIInterfaceRequestor,                     \
+                           public _i                                         \
     {                                                                        \
       ~_i##Shim() {}                                                         \
     public:                                                                  \
@@ -784,7 +807,7 @@ public:
   virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() override;
 
   static bool IsWebAnimationsEnabled(JSContext* aCx, JSObject* aObject);
-  virtual mozilla::dom::AnimationTimeline* Timeline() override;
+  virtual mozilla::dom::DocumentTimeline* Timeline() override;
 
   virtual nsresult SetSubDocumentFor(Element* aContent,
                                      nsIDocument* aSubDoc) override;
@@ -950,6 +973,8 @@ public:
    */
   void OnAppThemeChanged();
 
+  void ReportUseCounters();
+
 private:
   void AddOnDemandBuiltInUASheet(mozilla::CSSStyleSheet* aSheet);
   nsRadioGroupStruct* GetRadioGroupInternal(const nsAString& aName) const;
@@ -989,9 +1014,9 @@ public:
 
   virtual nsresult Init();
 
-  virtual nsresult CreateElem(const nsAString& aName, nsIAtom *aPrefix,
-                              int32_t aNamespaceID,
-                              nsIContent **aResult) override;
+  virtual already_AddRefed<Element> CreateElem(const nsAString& aName,
+                                               nsIAtom* aPrefix,
+                                               int32_t aNamespaceID) override;
 
   virtual void Sanitize() override;
 
@@ -1034,9 +1059,8 @@ public:
   virtual void FlushSkinBindings() override;
 
   virtual nsresult InitializeFrameLoader(nsFrameLoader* aLoader) override;
-  virtual nsresult FinalizeFrameLoader(nsFrameLoader* aLoader) override;
+  virtual nsresult FinalizeFrameLoader(nsFrameLoader* aLoader, nsIRunnable* aFinalizer) override;
   virtual void TryCancelFrameLoaderInitialization(nsIDocShell* aShell) override;
-  virtual bool FrameLoaderScheduledToBeFinalized(nsIDocShell* aShell) override;
   virtual nsIDocument*
     RequestExternalResource(nsIURI* aURI,
                             nsINode* aRequestingNode,
@@ -1044,20 +1068,18 @@ public:
   virtual void
     EnumerateExternalResources(nsSubDocEnumFunc aCallback, void* aData) override;
 
-  nsTArray<nsCString> mHostObjectURIs;
-
   // Returns our (lazily-initialized) animation controller.
   // If HasAnimationController is true, this is guaranteed to return non-null.
   nsSMILAnimationController* GetAnimationController() override;
 
-  virtual mozilla::PendingPlayerTracker*
-  GetPendingPlayerTracker() final override
+  virtual mozilla::PendingAnimationTracker*
+  GetPendingAnimationTracker() final override
   {
-    return mPendingPlayerTracker;
+    return mPendingAnimationTracker;
   }
 
-  virtual mozilla::PendingPlayerTracker*
-  GetOrCreatePendingPlayerTracker() override;
+  virtual mozilla::PendingAnimationTracker*
+  GetOrCreatePendingAnimationTracker() override;
 
   void SetImagesNeedAnimating(bool aAnimating) override;
 
@@ -1123,9 +1145,13 @@ public:
                                  ReferrerPolicy aReferrerPolicy) override;
   virtual void ForgetImagePreload(nsIURI* aURI) override;
 
+  virtual void MaybePreconnect(nsIURI* uri,
+                               mozilla::CORSMode aCORSMode) override;
+
   virtual void PreloadStyle(nsIURI* uri, const nsAString& charset,
                             const nsAString& aCrossOriginAttr,
-                            ReferrerPolicy aReferrerPolicy) override;
+                            ReferrerPolicy aReferrerPolicy,
+                            const nsAString& aIntegrity) override;
 
   virtual nsresult LoadChromeSheetSync(nsIURI* uri, bool isAgentSheet,
                                        mozilla::CSSStyleSheet** sheet) override;
@@ -1133,9 +1159,6 @@ public:
   virtual nsISupports* GetCurrentContentSink() override;
 
   virtual mozilla::EventStates GetDocumentState() override;
-
-  virtual void RegisterHostObjectUri(const nsACString& aUri) override;
-  virtual void UnregisterHostObjectUri(const nsACString& aUri) override;
 
   // Only BlockOnload should call this!
   void AsyncBlockOnload();
@@ -1146,7 +1169,7 @@ public:
   virtual void SetChangeScrollPosWhenScrollingToRef(bool aValue) override;
 
   virtual Element *GetElementById(const nsAString& aElementId) override;
-  virtual const nsSmallVoidArray* GetAllElementsForId(const nsAString& aElementId) const override;
+  virtual const nsTArray<Element*>* GetAllElementsForId(const nsAString& aElementId) const override;
 
   virtual Element *LookupImageElement(const nsAString& aElementId) override;
   virtual void MozSetImageElement(const nsAString& aImageElementId,
@@ -1166,6 +1189,16 @@ public:
   // the frame and any subframes.
   virtual void GetPlugins(nsTArray<nsIObjectLoadingContent*>& aPlugins) override;
 
+  // Adds an element to mResponsiveContent when the element is
+  // added to the tree.
+  virtual nsresult AddResponsiveContent(nsIContent* aContent) override;
+  // Removes an element from mResponsiveContent when the element is
+  // removed from the tree.
+  virtual void RemoveResponsiveContent(nsIContent* aContent) override;
+  // Notifies any responsive content added by AddResponsiveContent upon media
+  // features values changing.
+  virtual void NotifyMediaFeatureValuesChanged() override;
+
   virtual nsresult GetStateObject(nsIVariant** aResult) override;
 
   virtual nsDOMNavigationTiming* GetNavigationTiming() const override;
@@ -1174,14 +1207,13 @@ public:
   virtual Element* FindImageMap(const nsAString& aNormalizedMapName) override;
 
   virtual Element* GetFullScreenElement() override;
-  virtual void AsyncRequestFullScreen(Element* aElement,
-                                      mozilla::dom::FullScreenOptions& aOptions) override;
+  virtual void AsyncRequestFullScreen(
+    mozilla::UniquePtr<FullscreenRequest>&& aRequest) override;
   virtual void RestorePreviousFullScreenState() override;
   virtual bool IsFullscreenLeaf() override;
   virtual bool IsFullScreenDoc() override;
-  virtual void SetApprovedForFullscreen(bool aIsApproved) override;
-  virtual nsresult RemoteFrameFullscreenChanged(nsIDOMElement* aFrameElement,
-                                                const nsAString& aNewOrigin) override;
+  virtual nsresult
+    RemoteFrameFullscreenChanged(nsIDOMElement* aFrameElement) override;
 
   virtual nsresult RemoteFrameFullscreenReverted() override;
   virtual nsIDocument* GetFullscreenRoot() override;
@@ -1213,33 +1245,17 @@ public:
   //
   already_AddRefed<nsSimpleContentList> BlockedTrackingNodes() const;
 
-  static void ExitFullscreen(nsIDocument* aDoc);
+  // Do the "fullscreen element ready check" from the fullscreen spec.
+  // It returns true if the given element is allowed to go into fullscreen.
+  bool FullscreenElementReadyCheck(Element* aElement, bool aWasCallerChrome);
 
   // This is called asynchronously by nsIDocument::AsyncRequestFullScreen()
-  // to move this document into full-screen mode if allowed. aWasCallerChrome
-  // should be true when nsIDocument::AsyncRequestFullScreen() was called
-  // by chrome code. aNotifyOnOriginChange denotes whether we should send a
-  // fullscreen-origin-change notification if requesting fullscreen in this
-  // document causes the origin which is fullscreen to change. We may want to
-  // *not* send this notification if we're calling RequestFullscreen() as part
-  // of a continuation of a request in a subdocument, whereupon the caller will
-  // need to send the notification with the origin of the document which
-  // originally requested fullscreen, not *this* document's origin.
-  void RequestFullScreen(Element* aElement,
-                         mozilla::dom::FullScreenOptions& aOptions,
-                         bool aWasCallerChrome,
-                         bool aNotifyOnOriginChange);
+  // to move this document into full-screen mode if allowed.
+  void RequestFullScreen(mozilla::UniquePtr<FullscreenRequest>&& aRequest);
 
   // Removes all elements from the full-screen stack, removing full-scren
   // styles from the top element in the stack.
   void CleanupFullscreenState();
-
-  // Add/remove "fullscreen-approved" observer service notification listener.
-  // Chrome sends us a notification when fullscreen is approved for a
-  // document, with the notification subject as the document that was approved.
-  // We maintain this listener while in fullscreen mode.
-  nsresult AddFullscreenApprovedObserver();
-  nsresult RemoveFullscreenApprovedObserver();
 
   // Pushes aElement onto the full-screen stack, and removes full-screen styles
   // from the former full-screen stack top, and its ancestors, and applies the
@@ -1264,6 +1280,13 @@ public:
   bool SetPointerLock(Element* aElement, int aCursorStyle);
   static void UnlockPointer(nsIDocument* aDoc = nullptr);
 
+  void SetCurrentOrientation(mozilla::dom::OrientationType aType,
+                             uint16_t aAngle) override;
+  uint16_t CurrentOrientationAngle() const override;
+  mozilla::dom::OrientationType CurrentOrientationType() const override;
+  void SetOrientationPendingPromise(mozilla::dom::Promise* aPromise) override;
+  mozilla::dom::Promise* GetOrientationPendingPromise() const override;
+
   // This method may fire a DOM event; if it does so it will happen
   // synchronously.
   void UpdateVisibilityState();
@@ -1280,7 +1303,7 @@ public:
                                         mozilla::dom::LifecycleCallbackArgs* aArgs = nullptr,
                                         mozilla::dom::CustomElementDefinition* aDefinition = nullptr) override;
 
-  static void ProcessTopElementQueue(bool aIsBaseQueue = false);
+  static void ProcessTopElementQueue();
 
   void GetCustomPrototype(int32_t aNamespaceID,
                           nsIAtom* aAtom,
@@ -1465,11 +1488,14 @@ public:
 
   static void XPCOMShutdown();
 
-  bool mIsTopLevelContentDocument:1;
+  bool mIsTopLevelContentDocument: 1;
+  bool mIsContentDocument: 1;
 
   bool IsTopLevelContentDocument();
-
   void SetIsTopLevelContentDocument(bool aIsTopLevelContentDocument);
+
+  bool IsContentDocument() const;
+  void SetIsContentDocument(bool aIsContentDocument);
 
   js::ExpandoAndGeneration mExpandoAndGeneration;
 
@@ -1502,6 +1528,8 @@ protected:
   virtual nsIScriptGlobalObject* GetScriptHandlingObjectInternal() const override;
   virtual bool InternalAllowXULXBL() override;
 
+  void UpdateScreenOrientation();
+
 #define NS_DOCUMENT_NOTIFY_OBSERVERS(func_, params_)                        \
   NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mObservers, nsIDocumentObserver, \
                                            func_, params_);
@@ -1516,6 +1544,11 @@ protected:
   void EnsureOnloadBlocker();
 
   void NotifyStyleSheetApplicableStateChanged();
+
+  // Apply the fullscreen state to the document, and trigger related
+  // events. It returns false if the fullscreen element ready check
+  // fails and nothing gets changed.
+  bool ApplyFullscreen(const FullscreenRequest& aRequest);
 
   nsTArray<nsIObserver*> mCharSetObservers;
 
@@ -1540,9 +1573,9 @@ protected:
   // Array of observers
   nsTObserverArray<nsIDocumentObserver*> mObservers;
 
-  // Tracker for animation players that are waiting to start.
-  // nullptr until GetOrCreatePendingPlayerTracker is called.
-  nsRefPtr<mozilla::PendingPlayerTracker> mPendingPlayerTracker;
+  // Tracker for animations that are waiting to start.
+  // nullptr until GetOrCreatePendingAnimationTracker is called.
+  nsRefPtr<mozilla::PendingAnimationTracker> mPendingAnimationTracker;
 
   // Weak reference to the scope object (aka the script global object)
   // that, unlike mScriptGlobalObject, is never unset once set. This
@@ -1567,15 +1600,9 @@ private:
   // queue in the stack is the base element queue.
   static mozilla::Maybe<nsTArray<nsRefPtr<mozilla::dom::CustomElementData>>> sProcessingStack;
 
-  // Flag to prevent re-entrance into base element queue as described in the
-  // custom elements speicification.
-  static bool sProcessingBaseElementQueue;
-
   static bool CustomElementConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp);
 
 public:
-  static void ProcessBaseElementQueue();
-
   // Enqueue created callback or register upgrade candidate for
   // newly created custom elements, possibly extending an existing type.
   // ex. <x-button>, <button is="x-button> (type extension)
@@ -1638,33 +1665,18 @@ public:
   // terminated instead of letting it finish at its own pace.
   bool mParserAborted:1;
 
-  // Whether this document has been approved for fullscreen, either by explicit
-  // approval via the fullscreen-approval UI, or because it received
-  // approval because its document's host already had the "fullscreen"
-  // permission granted when the document requested fullscreen.
-  // 
-  // Note if a document's principal doesn't have a host, the permission manager
-  // can't store permissions for it, so we can only manage approval using this
-  // flag.
-  //
-  // Note we must track this separately from the "fullscreen" permission,
-  // so that pending pointer lock requests can determine whether documents
-  // whose principal doesn't have a host (i.e. those which can't store
-  // permissions in the permission manager) have been approved for fullscreen.
-  bool mIsApprovedForFullscreen:1;
-
-  // Whether this document has a fullscreen approved observer. Only documents
-  // which request fullscreen and which don't have a pre-existing approval for
-  // fullscreen will have an observer.
-  bool mHasFullscreenApprovedObserver:1;
-
   friend class nsPointerLockPermissionRequest;
   friend class nsCallRequestFullScreen;
   // When set, trying to lock the pointer doesn't require permission from the
   // user.
   bool mAllowRelocking:1;
 
-  bool mAsyncFullscreenPending:1;
+  // ScreenOrientation "pending promise" as described by
+  // http://www.w3.org/TR/screen-orientation/
+  nsRefPtr<mozilla::dom::Promise> mOrientationPendingPromise;
+
+  uint16_t mCurrentOrientationAngle;
+  mozilla::dom::OrientationType mCurrentOrientationType;
 
   // Whether we're observing the "app-theme-changed" observer service
   // notification.  We need to keep track of this because we might get multiple
@@ -1676,7 +1688,19 @@ public:
   // 'style-sheet-applicable-state-changed' notification.
   bool mSSApplicableStateNotificationPending:1;
 
-  uint32_t mCancelledPointerLockRequests;
+  // The number of pointer lock requests which are cancelled by the user.
+  // The value is saturated to kPointerLockRequestLimit+1 = 3.
+  uint8_t mCancelledPointerLockRequests:2;
+
+  // Whether we have reported use counters for this document with Telemetry yet.
+  // Normally this is only done at document destruction time, but for image
+  // documents (SVG documents) that are not guaranteed to be destroyed, we
+  // report use counters when the image cache no longer has any imgRequestProxys
+  // pointing to them.  We track whether we ever reported use counters so
+  // that we only report them once for the document.
+  bool mReportedUseCounters:1;
+
+  uint8_t mPendingFullscreenRequests;
 
   uint8_t mXMLDeclarationBits;
 
@@ -1734,11 +1758,14 @@ private:
   void EnableStyleSheetsForSetInternal(const nsAString& aSheetSet,
                                        bool aUpdateCSSLoader);
 
-  // Revoke any pending notifications due to mozRequestAnimationFrame calls
+  // Revoke any pending notifications due to requestAnimationFrame calls
   void RevokeAnimationFrameNotifications();
   // Reschedule any notifications we need to handle
-  // mozRequestAnimationFrame, if it's OK to do so.
+  // requestAnimationFrame, if it's OK to do so.
   void MaybeRescheduleAnimationFrameNotifications();
+
+  // Returns true if the scheme for the url for this document is "about"
+  bool IsAboutPage();
 
   // These are not implemented and not supported.
   nsDocument(const nsDocument& aOther);
@@ -1765,11 +1792,14 @@ private:
   bool mStyledLinksCleared;
 #endif
 
+  // A set of responsive images keyed by address pointer.
+  nsTHashtable< nsPtrHashKey<nsIContent> > mResponsiveContent;
+
   // Member to store out last-selected stylesheet set.
   nsString mLastStyleSheetSet;
 
   nsTArray<nsRefPtr<nsFrameLoader> > mInitializableFrameLoaders;
-  nsTArray<nsRefPtr<nsFrameLoader> > mFinalizableFrameLoaders;
+  nsTArray<nsCOMPtr<nsIRunnable> > mFrameLoaderFinalizers;
   nsRefPtr<nsRunnableMethod<nsDocument> > mFrameLoaderRunner;
 
   nsRevocableEventPtr<nsRunnableMethod<nsDocument, void, false> >
@@ -1782,6 +1812,11 @@ private:
   // make sure to not keep the image load going when no one cares
   // about it anymore.
   nsRefPtrHashtable<nsURIHashKey, imgIRequest> mPreloadingImages;
+
+  // A list of preconnects initiated by the preloader. This prevents
+  // the same uri from being used more than once, and allows the dom
+  // builder to not repeat the work of the preloader.
+  nsDataHashtable< nsURIHashKey, bool> mPreloadedPreconnects;
 
   // Current depth of picture elements from parser
   int32_t mPreloadPictureDepth;
@@ -1805,11 +1840,10 @@ private:
 
   nsRefPtr<mozilla::dom::UndoManager> mUndoManager;
 
-  nsRefPtr<mozilla::dom::AnimationTimeline> mAnimationTimeline;
+  nsRefPtr<mozilla::dom::DocumentTimeline> mDocumentTimeline;
 
   enum ViewportType {
     DisplayWidthHeight,
-    DisplayWidthHeightNoZoom,
     Specified,
     Unknown
   };
