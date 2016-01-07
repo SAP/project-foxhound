@@ -231,6 +231,9 @@ class MOZ_STACK_CLASS JSONParser : public JSONParserBase,
         current(other.current),
         begin(other.begin),
         end(other.end)
+#if _TAINT_ON_
+        , sourceRef(other.sourceRef)
+#endif
     {}
 
     /*
