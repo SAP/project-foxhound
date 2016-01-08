@@ -1504,7 +1504,7 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
     jsvalue_to_stdstring(cx, args[0], &sink_str);
     printf("[---TAINT---] Flow into %s. Calling event handler.\n", sink_str.c_str());
 #if DEBUG
-    js_DumpBacktrace(cx);
+    js::DumpBacktrace(cx);
 #endif
 
     //Try to call window.setTimeout with ourselves in a loop until

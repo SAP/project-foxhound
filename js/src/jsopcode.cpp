@@ -746,7 +746,11 @@ ToDisassemblySource(JSContext* cx, HandleValue v, JSAutoByteString* bytes)
         Sprinter sprinter(cx);
         if (!sprinter.init())
             return false;
+#if _TAINT_ON_
+        char* nbytes = QuoteString(&sprinter, v.toString(), '"', nullptr);
+#else
         char* nbytes = QuoteString(&sprinter, v.toString(), '"');
+#endif
         if (!nbytes)
             return false;
         nbytes = JS_sprintf_append(nullptr, "%s", nbytes);
@@ -1247,7 +1251,11 @@ ExpressionDecompiler::write(JSString* str)
 bool
 ExpressionDecompiler::quote(JSString* s, uint32_t quote)
 {
+#if _TAINT_ON_
     return QuoteString(&sprinter, s, quote, nullptr) != nullptr;
+#else
+    return QuoteString(&sprinter, s, quote) != nullptr;
+#endif
 }
 
 JSAtom*

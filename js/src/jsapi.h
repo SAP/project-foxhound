@@ -5101,10 +5101,11 @@ class  MOZ_STACK_CLASS JS_PUBLIC_API(TaintSetDynamicSink)
         TaintSetDynamicSink(const char*name);
         ~TaintSetDynamicSink();
 };
-#endif
 
 extern JS_PUBLIC_API(void)
 JS_SetTaintParameter(JSRuntime* rt, JSTaintParamKey key, uint32_t value);
+
+#endif
 
 namespace JS {
 

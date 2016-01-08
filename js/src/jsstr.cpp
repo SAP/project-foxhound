@@ -2547,12 +2547,20 @@ js::str_match(JSContext* cx, unsigned argc, Value* vp)
     if (!linearStr)
         return false;
 
+#if _TAINT_ON_
     /* Steps 5-6, 7. */
     if (!g.regExp().global())
         return TAINT_MARK_MATCH(DoMatchLocal(cx, args, res, linearStr, g.regExp()));
 
     /* Steps 6, 8. */
     return TAINT_MARK_MATCH(DoMatchGlobal(cx, args, res, linearStr, g));
+#else
+    if (!g.regExp().global())
+        return DoMatchLocal(cx, args, res, linearStr, g.regExp());
+
+    /* Steps 6, 8. */
+    return DoMatchGlobal(cx, args, res, linearStr, g);
+#endif
 }
 
 bool

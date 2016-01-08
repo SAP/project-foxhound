@@ -88,7 +88,7 @@ public:
    */
   const char16_t *Get2b() const
   {
-    NS_ASSERTION(Is2b(), "not 2b text"); 
+    NS_ASSERTION(Is2b(), "not 2b text");
     return m2b;
   }
 
@@ -97,7 +97,7 @@ public:
    */
   const char *Get1b() const
   {
-    NS_ASSERTION(!Is2b(), "not 1b text"); 
+    NS_ASSERTION(!Is2b(), "not 1b text");
     return (const char *)m1b;
   }
 
@@ -151,13 +151,17 @@ public:
         return false;
       }
 
+#if _TAINT_ON_
       TAINT_APPEND_TAINT(aString, startTaint);
+#endif
 
       return true;
     } else {
       nsDependentCSubstring sub = Substring(m1b, mState.mLength);
 
+#if _TAINT_ON_
       TAINT_APPEND_TAINT(sub, startTaint);
+#endif
 
       return AppendASCIItoUTF16(sub, aString, aFallible);
     }
@@ -191,13 +195,19 @@ public:
         return false;
       }
 
+#if _TAINT_ON_
       TAINT_APPEND_TAINT(aString, startTaint);
+#endif
 
       return true;
     } else {
       auto substr = Substring(m1b + aOffset, aLength);
+#if _TAINT_ON_
       return AppendASCIItoUTF16(TAINT_APPEND_TAINT(substr, startTaint), aString,
                                                    aFallible);
+#else
+      return AppendASCIItoUTF16(substr, aString, aFallible);
+#endif
     }
   }
 
@@ -245,7 +255,7 @@ private:
    * includes any Bidi characters.
    */
   void UpdateBidiFlag(const char16_t* aBuffer, uint32_t aLength);
- 
+
 #if _TAINT_ON_
   TaintStringRef* startTaint;
   TaintStringRef* endTaint;

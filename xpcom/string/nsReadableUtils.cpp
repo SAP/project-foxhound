@@ -104,8 +104,10 @@ LossyAppendUTF16toASCII(const nsAString& aSource, nsACString& aDest)
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
 
+#if _TAINT_ON_
   //Lossy does not need any special handling
   TAINT_APPEND_TAINT(aDest, aSource.getTopTaintRef());
+#endif
 }
 
 void
@@ -139,8 +141,10 @@ AppendASCIItoUTF16(const nsACString& aSource, nsAString& aDest,
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
 
+#if _TAINT_ON_
   //Lossy does not need any special handling
   TAINT_APPEND_TAINT(aDest, aSource.getTopTaintRef());
+#endif
 
   return true;
 }
@@ -203,10 +207,10 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
     // All ready? Time to convert
 
 #if _TAINT_ON_
-    ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length);
-#else
     ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length,
       aSource.getTopTaintRef());
+#else
+    ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length);
 #endif
 
     copy_string(aSource.BeginReading(source_start),
@@ -707,7 +711,9 @@ ToUpperCase(const nsACString& aSource, nsACString& aDest)
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
 
+#if _TAINT_ON_
   TAINT_ASSIGN_TAINT(aDest, aSource.getTopTaintRef());
+#endif
 }
 
 /**
@@ -790,7 +796,9 @@ ToLowerCase(const nsACString& aSource, nsACString& aDest)
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
 
+#if _TAINT_ON_
   TAINT_ASSIGN_TAINT(aDest, aSource.getTopTaintRef());
+#endif
 }
 
 bool

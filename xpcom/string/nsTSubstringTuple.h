@@ -55,9 +55,11 @@ public:
 
   ~nsTSubstringTuple_CharT()
   {
+#if _TAINT_ON_
     if(isTainted()) {
       removeAllTaint();
     }
+#endif
   }
 
   /**

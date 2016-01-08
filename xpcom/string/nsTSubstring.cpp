@@ -312,7 +312,9 @@ nsTSubstring_CharT::Assign(char_type aChar)
     AllocFailed(mLength);
   }
 
+#if _TAINT_ON_
   MOZ_ASSERT(!isTainted());
+#endif
 
   *mData = aChar;
 }
@@ -324,7 +326,9 @@ nsTSubstring_CharT::Assign(char_type aChar, const fallible_t&)
     return false;
   }
 
+#if _TAINT_ON_
   MOZ_ASSERT(!isTainted());
+#endif
 
   *mData = aChar;
   return true;
@@ -368,7 +372,9 @@ nsTSubstring_CharT::Assign(const char_type* aData, size_type aLength,
     return false;
   }
 
+#if _TAINT_ON_
   MOZ_ASSERT(!isTainted());
+#endif
 
   char_traits::copy(mData, aData, aLength);
   return true;
@@ -398,7 +404,9 @@ nsTSubstring_CharT::AssignASCII(const char* aData, size_type aLength,
     return false;
   }
 
+#if _TAINT_ON_
   MOZ_ASSERT(!isTainted());
+#endif
 
   char_traits::copyASCII(mData, aData, aLength);
   return true;
@@ -454,21 +462,27 @@ nsTSubstring_CharT::Assign(const self_type& aStr, const fallible_t& aFallible)
 
     // get an owning reference to the mData
     nsStringBuffer::FromData(mData)->AddRef();
+#if _TAINT_ON_
     TAINT_ASSIGN_TAINT(*this, aStr.startTaint);
+#endif
     return true;
   } else if (aStr.mFlags & F_LITERAL) {
     MOZ_ASSERT(aStr.mFlags & F_TERMINATED, "Unterminated literal");
 
     AssignLiteral(aStr.mData, aStr.mLength);
+#if _TAINT_ON_
     TAINT_ASSIGN_TAINT(*this, aStr.startTaint);
-    
+#endif
+
     return true;
   }
 
   // else, treat this like an ordinary assignment.
   bool ok = Assign(aStr.Data(), aStr.Length(), aFallible);
+#if _TAINT_ON_
   MOZ_ASSERT(!isTainted());
   TAINT_APPEND_TAINT(*this, aStr.startTaint);
+#endif
   return ok;
 }
 

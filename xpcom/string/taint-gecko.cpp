@@ -4,6 +4,8 @@
 #include "mozilla/dom/ToJSValue.h"
 #include "taint-gecko.h"
 
+#if _TAINT_ON_
+
 nsresult
 taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name)
 {
@@ -32,6 +34,8 @@ taint_report_sink_gecko(JSContext *cx, const nsAString &str, const char* name)
     if(!JS_CallFunctionName(cx, strobj, "reportTaint", params, &rval)) {
     	return NS_ERROR_FAILURE;
     }
-    
+
     return NS_OK;
 }
+
+#endif

@@ -22,8 +22,10 @@ nsTDependentSubstring_CharT::Rebind(const substring_type& str,
 
   SetDataFlags(F_NONE);
 
+#if _TAINT_ON_
   //present taint will be removed by Finalize above
   TAINT_APPEND_TAINT(*this, str.getTopTaintRef());
+#endif
 }
 
 void
