@@ -1453,7 +1453,11 @@ taint_domlog(JSContext *cx, unsigned argc, Value *vp)
         tofun = &fval.toObject().as<JSFunction>();
     } else {
         printf("Domlog dispatcher not installed. Compiling.");
-        const char* funbody = "if(CustomEvent && window) {var e=new window.CustomEvent('__domlog',{detail:[].slice.apply(arguments)}); window.dispatchEvent(e);}";
+        const char* funbody =
+            "if (CustomEvent && window) {\n"
+            "    var e=new window.CustomEvent('__domlog',{detail:[].slice.apply(arguments)});\n"
+            "    window.dispatchEvent(e);\n"
+            "}";
         JS::CompileOptions options(cx);
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
@@ -1523,9 +1527,29 @@ taint_js_report_flow(JSContext *cx, unsigned argc, Value *vp)
         printf("  Event dispatcher not installed. Compiling.\n");
 
         const char* argnames[3] = {"str", "sink", "stack"};
-        const char* funbody = "if (window && document) { var t = window; if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') { t = parent.window }" \
-"var pl; try { pl = parent.location.href; } catch (e) { pl = 'different origin'; } var e = document.createEvent('CustomEvent'); e.initCustomEvent('__taintreport', true, false, {subframe: t !== window, loc: location.href," \
-"parentloc: pl, str: str, sink: sink, stack: stack}); t.dispatchEvent(e);}";
+        const char* funbody =
+            "if (window && document) {\n"
+            "    var t = window;\n"
+            "    if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') {\n"
+            "        t = parent.window;\n"
+            "    }\n"
+            "    var pl;\n"
+            "    try {\n"
+            "        pl = parent.location.href;\n"
+            "    } catch (e) {\n"
+            "        pl = 'different origin';\n"
+            "    }\n"
+            "    var e = document.createEvent('CustomEvent');\n"
+            "    e.initCustomEvent('__taintreport', true, false, {\n"
+            "        subframe: t !== window,\n"
+            "        loc: location.href,\n"
+            "        parentloc: pl,\n"
+            "        str: str,\n"
+            "        sink: sink,\n"
+            "        stack: stack\n"
+            "    });\n"
+            "    t.dispatchEvent(e);\n"
+            "}";
         JS::CompileOptions options(cx);
         options.setFile("taint.cpp")
                .setCanLazilyParse(false)
