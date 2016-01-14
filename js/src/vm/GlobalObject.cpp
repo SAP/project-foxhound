@@ -343,8 +343,8 @@ GlobalObject::initStandardClasses(JSContext* cx, Handle<GlobalObject*> global)
 
 #if _TAINT_ON_
     //init taint specific hooks
-    JS_DefineFunction(cx, global, "__DOMlog__", taint_domlog, 1, JSFUN_GENERIC_NATIVE);
-    JS_ClearPendingException(cx);           // TODO HACK, FIX THIS
+    // TODO why do we need JSFUN_GENERIC_NATIVE here?
+    JS_DefineFunction(cx, global, "__DOMlog__", taint_domlog, 1, JSFUN_GENERIC_NATIVE | JSPROP_RESOLVING);
 #endif
 
     return true;
