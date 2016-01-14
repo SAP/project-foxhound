@@ -59,7 +59,7 @@ typedef struct TaintStringRef
         if(node) {
             node->increase();
         }
-        
+
         thisTaint = node;
     }
 } TaintStringRef;
@@ -106,7 +106,7 @@ void taint_tag_source(TaintedT& str, const char* name, JSContext *cx = nullptr, 
     if(str.Length() == 0) {
         return;
     }
-    
+
     TaintNode *taint_node = taint_str_add_source_node(cx, name);
     if(cx) {
         taint_node->param1 = js::DuplicateString((js::ExclusiveContext*)cx, str.Data()).release();
@@ -150,7 +150,7 @@ TaintStringRef * taint_remove_range(TaintStringRef **start, TaintStringRef **end
 // - return value has to be fed back into source, starts with
 //   the top taintref of the source (and has to be ordered!)
 TaintStringRef *
-taint_copy_exact(TaintStringRef **target, 
+taint_copy_exact(TaintStringRef **target,
     TaintStringRef *source, size_t sidx, size_t tidx, size_t soff = 0);
 
 //---------------------------------
@@ -251,8 +251,8 @@ void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringR
 }(dst, src)
 
 #else
-#define TAINT_APPEND_TAINT(dst, src)  (dst)
-#define TAINT_ASSIGN_TAINT(dst, src)  (dst)
+#define TAINT_APPEND_TAINT(dst, src)
+#define TAINT_ASSIGN_TAINT(dst, src)
 #endif
 
 //--------------------------------------------
