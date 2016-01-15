@@ -94,7 +94,7 @@ class StringBuffer
     }
 
 #if _TAINT_ON_
-  TAINT_STRING_HOOKS(startTaint, endTaint)
+  TAINT_JSSTRING_HOOKS(startTaint, endTaint)
 #endif
 
     inline bool reserve(size_t len) {
@@ -301,12 +301,12 @@ StringBuffer::infallibleAppendSubstring(JSLinearString* base, size_t off, size_t
         taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
 
         JSContext *jscx = cx->maybeJSContext();
-        
+
         next = (last ? last->next : getTopTaintRef());
         if(jscx) {
             if(next)
                 taint_inject_substring_op(jscx, next, length(), off);
-        
+
             if(isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
                 RootedValue lhsval(cx, StringValue(finishCurrentString()));
                 RootedValue rhsval(cx, StringValue(base));
@@ -315,7 +315,7 @@ StringBuffer::infallibleAppendSubstring(JSLinearString* base, size_t off, size_t
         }
 
 
-        
+
 
     }
 #endif
@@ -343,7 +343,7 @@ StringBuffer::appendSubstring(JSLinearString* base, size_t off, size_t len)
         if(jscx) {
             if(next)
                 taint_inject_substring_op(jscx, next, length(), off);
-            
+
             if(isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
                 RootedValue lhsval(cx, StringValue(finishCurrentString()));
                 RootedValue rhsval(cx, StringValue(base));

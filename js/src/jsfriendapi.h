@@ -11,6 +11,7 @@
 #include "mozilla/Casting.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/TaintCommon.h"
 
 #include "jsapi.h" // For JSAutoByteString.  See bug 1033916.
 #include "jsbytecode.h"
@@ -20,7 +21,6 @@
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 
-#include "taint.h"
 
 #if JS_STACK_GROWTH_DIRECTION > 0
 # define JS_CHECK_STACK_SIZE(limit, sp) (MOZ_LIKELY((uintptr_t)(sp) < (limit)))

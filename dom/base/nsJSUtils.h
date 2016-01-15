@@ -8,7 +8,7 @@
 #define nsJSUtils_h__
 
 /**
- * This is not a generated file. It contains common utility functions 
+ * This is not a generated file. It contains common utility functions
  * invoked from the JavaScript code generated from IDL interfaces.
  * The goal of the utility functions is to cut down on the size of
  * the generated code itself.
@@ -17,6 +17,7 @@
 #include "mozilla/Assertions.h"
 
 #include "jsapi.h"
+#include "jstaint.h"
 #include "jsfriendapi.h"
 #include "js/Conversions.h"
 #include "nsString.h"
@@ -160,7 +161,7 @@ AssignJSString(JSContext *cx, T &dest, JSString *s)
     return false;
   }
 
-  TAINT_ASSIGN_TAINT(dest, taint_get_top(s));
+  TAINT_ASSIGN_TAINT(dest, taint_str_get_top_taintref(s));
 
   return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
 }
@@ -173,7 +174,7 @@ AssignJSFlatString(nsAString &dest, JSFlatString *s)
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
 
-  TAINT_ASSIGN_TAINT(dest, taint_get_top(s));
+  TAINT_ASSIGN_TAINT(dest, taint_str_get_top_taintref(s));
 
   js::CopyFlatStringChars(dest.BeginWriting(), s, len);
 }

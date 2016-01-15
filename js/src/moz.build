@@ -91,11 +91,11 @@ EXPORTS += [
     'jsprf.h',
     'jsprototypes.h',
     'jspubtd.h',
+    'jstaint.h',
     'jstypes.h',
     'jsversion.h',
     'jswrapper.h',
     'perf/jsperf.h',
-    'taint.h'
 ]
 
 # If you add a header here, add it to js/src/jsapi-tests/testIntTypesABI.cpp so
@@ -270,6 +270,7 @@ UNIFIED_SOURCES += [
     'jspropertytree.cpp',
     'jsscript.cpp',
     'jsstr.cpp',
+    'jstaint.cpp',
     'jswatchpoint.cpp',
     'jsweakmap.cpp',
     'perf/jsperf.cpp',
@@ -283,7 +284,6 @@ UNIFIED_SOURCES += [
     'proxy/ScriptedIndirectProxyHandler.cpp',
     'proxy/SecurityWrapper.cpp',
     'proxy/Wrapper.cpp',
-    'taint.cpp',
     'vm/ArgumentsObject.cpp',
     'vm/ArrayBufferObject.cpp',
     'vm/CallNonGenericMethod.cpp',
@@ -567,6 +567,7 @@ if CONFIG['ENABLE_INTL_API']:
     ]
 
 USE_LIBS += [
+    'mfbt',             # TaintCommon.cpp
     'nspr',
     'zlib',
 ]

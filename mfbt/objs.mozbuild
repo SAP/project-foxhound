@@ -20,6 +20,7 @@ mfbt_src_lcppsrcs = [
     'Poison.cpp',
     'SHA1.cpp',
     'TaggedAnonymousMemory.cpp',
+    'TaintCommon.cpp',
     'unused.cpp',
 ]
 

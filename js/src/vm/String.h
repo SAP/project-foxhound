@@ -338,7 +338,7 @@ class JSString : public js::gc::TenuredCell
   public:
 
 #if _TAINT_ON_
-    TAINT_STRING_HOOKS(d.u0.startTaint, d.u0.endTaint)
+    TAINT_JSSTRING_HOOKS(d.u0.startTaint, d.u0.endTaint)
 #endif
 
     /* All strings have length. */
@@ -1047,7 +1047,7 @@ class StaticStrings
     void trace(JSTracer* trc);
 
     static bool hasUint(uint32_t u) {
-        return u < INT_STATIC_LIMIT; 
+        return u < INT_STATIC_LIMIT;
     }
 
     JSAtom* getUint(uint32_t u) {

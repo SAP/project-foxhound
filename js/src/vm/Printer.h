@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "taint.h"
+#include "jstaint.h"
 
 class JSString;
 

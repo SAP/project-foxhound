@@ -4,7 +4,7 @@
 #ifdef _TAINT_ON_
 
 #include "jsapi.h"
-#include "taint.h"
+#include "jstaint.h"
 
 //------------------------------
 //taint handling for the JSString class
