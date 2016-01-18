@@ -3717,11 +3717,19 @@ js::str_replace(JSContext* cx, unsigned argc, Value* vp)
     // TODO clean this up as well
 #if _TAINT_ON_
     auto marker = [&](bool bres) {
-        RootedValue regexVal(cx, args[0]);
-        RootedValue replaceVal(cx, args[1]);
-        RootedString resultStr(cx, args.rval().get().toString());
-        if(resultStr->isTainted())
-            taint_add_op(resultStr->getTopTaintRef(), "replace", cx, regexVal, replaceVal);
+        // It doesn't make much sense to call replace() without specifying two arguments, so in
+        // that case just do nothing (which is technically incorrect).
+        // Calling replace() without a second argument will replace the sequence with the string
+        // "undefined"...).
+        // TODO there's another problem here: arg0 can be a RegExp object or a String. Depending on
+        // the type replace() behaves differently.
+        if (args.length() >= ReplaceOptArg && args.rval().isString()) {
+            RootedValue regexVal(cx, args[0]);
+            RootedValue replaceVal(cx, args[1]);
+            RootedString resultStr(cx, args.rval().get().toString());
+            if(resultStr->isTainted())
+                taint_add_op(resultStr->getTopTaintRef(), "replace", cx, regexVal, replaceVal);
+        }
         return bres;
     };
 #else
