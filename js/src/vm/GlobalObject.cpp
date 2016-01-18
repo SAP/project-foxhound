@@ -344,6 +344,8 @@ GlobalObject::initStandardClasses(JSContext* cx, Handle<GlobalObject*> global)
 #if _TAINT_ON_
     //init taint specific hooks
     // TODO why do we need JSFUN_GENERIC_NATIVE here?
+    // TODO make __DOMlog__ read-only and permanent so it can't be tampered with by content JS.
+    // TODO this needs to go somewhere else...
     JS_DefineFunction(cx, global, "__DOMlog__", taint_domlog, 1, JSFUN_GENERIC_NATIVE | JSPROP_RESOLVING);
 #endif
 

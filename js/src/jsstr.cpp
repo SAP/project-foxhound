@@ -4199,6 +4199,13 @@ static const JSFunctionSpec string_methods[] = {
     JS_FN("normalize",         str_normalize,         0,JSFUN_GENERIC_NATIVE),
 #endif
 
+#if _TAINT_ON_
+    JS_FN("untaint",           taint_str_untaint,     0,JSFUN_GENERIC_NATIVE),
+    JS_FN("taintTestMutate",   taint_str_testop,      0,JSFUN_GENERIC_NATIVE),
+    JS_FN("taintTestReport",   taint_str_report,      0,JSFUN_GENERIC_NATIVE),
+    JS_FN("reportTaint",       taint_js_report_flow,  1,JSFUN_GENERIC_NATIVE),
+#endif
+
     /* Perl-ish methods (search is actually Python-esque). */
     JS_FN("match",             str_match,             1,JSFUN_GENERIC_NATIVE),
     JS_FN("search",            str_search,            1,JSFUN_GENERIC_NATIVE),
@@ -4227,9 +4234,6 @@ static const JSFunctionSpec string_methods[] = {
 
     JS_SELF_HOSTED_SYM_FN(iterator, "String_iterator", 0,0),
 
-#if _TAINT_ON_
-    TAINT_ADD_JSSTR_METHODS
-#endif
     JS_FS_END
 };
 
@@ -4239,7 +4243,7 @@ static const JSFunctionSpec string_methods[] = {
 
 static const
 JSPropertySpec string_properties_taint[] = {
-    TAINT_ADD_JSSTR_PROPS
+    JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT),
     JS_PS_END
 };
 
@@ -4370,9 +4374,11 @@ static const JSFunctionSpec string_static_methods[] = {
 #if EXPOSE_INTL_API
     JS_SELF_HOSTED_FN("localeCompare",   "String_static_localeCompare", 2,0),
 #endif
+
 #if _TAINT_ON_
-    TAINT_ADD_JSSTR_STATIC_METHODS
+    JS_FN("newAllTainted",              taint_str_newalltaint,          1,0),
 #endif
+
     JS_FS_END
 };
 

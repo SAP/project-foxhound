@@ -6,21 +6,6 @@
 #include "jsapi.h"
 #include "jstaint.h"
 
-//------------------------------
-//taint handling for the JSString class
-//
-#define TAINT_ADD_JSSTR_METHODS \
-JS_FN("untaint",                taint_str_untaint,              0,JSFUN_GENERIC_NATIVE),\
-JS_FN("taintTestMutate",        taint_str_testop,               0,JSFUN_GENERIC_NATIVE),\
-JS_FN("taintTestReport",        taint_str_report,               0,JSFUN_GENERIC_NATIVE),\
-JS_FN("reportTaint",            taint_js_report_flow,           1,JSFUN_GENERIC_NATIVE),
-
-#define TAINT_ADD_JSSTR_STATIC_METHODS \
-JS_FN("newAllTainted",          taint_str_newalltaint,          1,0),
-
-#define TAINT_ADD_JSSTR_PROPS \
-JS_PSG("taint",                 taint_str_prop,                 JSPROP_PERMANENT),
-
 //initialize new string instances
 #define TAINT_STR_INIT \
     do { \
