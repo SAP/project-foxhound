@@ -329,6 +329,14 @@ public:
     const value_type* end = aStart + aN;
     buffer_type* out = mBuffer;
     for (; p != end /* && *p */;) {
+#if defined(TAINT_OVERRIDE_ENABLE)
+      if(mCurrentRef) {
+        // TODO verify that we need to use mStart here and not mBuffer
+        mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
+          size_t(p - aStart), size_t(out - mStart));
+      }
+#endif
+
       bool err;
       uint32_t ucs4 = UTF8CharEnumerator::NextChar(&p, end, &err);
 
@@ -337,13 +345,6 @@ public:
         mBuffer = out;
         return;
       }
-
-#if defined(TAINT_OVERRIDE_ENABLE)
-    if(mCurrentRef) {
-      mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
-        size_t(p - aStart), size_t(out-mBuffer));
-    }
-#endif
 
       if (ucs4 >= PLANE1_BASE) {
         *out++ = (buffer_type)H_SURROGATE(ucs4);
@@ -354,10 +355,11 @@ public:
     }
 
 #if defined(TAINT_OVERRIDE_ENABLE)
-    if(mCurrentRef) {
-      mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
-        size_t(p - aStart), size_t(out-mBuffer));
-    }
+    // TODO correct to remove?
+    //if(mCurrentRef) {
+    //  mCurrentRef = taint_copy_exact(&mDestRef, mCurrentRef,
+    //    size_t(p - aStart), size_t(out-mBuffer));
+    //}
 #endif
 
     mBuffer = out;

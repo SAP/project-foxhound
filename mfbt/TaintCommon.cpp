@@ -312,7 +312,7 @@ taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
         if(sidx == source->end) {
             source = source->next;
             //do not return here, we may have to create a
-            //new TSR from the new soruce now
+            //new TSR from the new source now
         } else {
             return source;
         }
