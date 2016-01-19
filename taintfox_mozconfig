@@ -1,21 +1,16 @@
-. $topsrcdir/browser/config/mozconfig
+mk_add_options MOZ_MAKE_FLAGS="-s -j5"
 
-#. $topsrcdir/build/mozconfig.common
-#. $topsrcdir/build/mozconfig.win-common
-#. $topsrcdir/build/win32/mozconfig.vs2013-win64
-
-# enable ccache for faster builds. Make sure to increase the cache size: `ccache --max-size 20G`
+# Use ccache, make sure the path is correct
 ac_add_options --with-ccache=/usr/bin/ccache
 
-mk_add_options MOZ_MAKE_FLAGS="-s -j5"
 ac_add_options --enable-taint-tracking
-ac_add_options --enable-installer
-ac_add_options --with-branding=browser/branding/taint
+# Not custom branding for now, breaks `mach package` for some reason..
+#ac_add_options --with-branding=browser/branding/taint
 
 #
 # DEBUG BUILD
 #
-#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff-dbg
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-dbg
 #ac_add_options --enable-debug
 #ac_add_options --disable-optimize
 
@@ -23,8 +18,17 @@ ac_add_options --with-branding=browser/branding/taint
 #
 # RELEASE BUILD
 #
-mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff-release
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
 ac_add_options --enable-gczeal
 ac_add_options --enable-optimization
 ac_add_options --disable-tests
 
+
+#
+# OPTIMIZED BUILD WITH DEBUG SYMBOLS
+#
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release-with-symbols
+#ac_add_options --enable-debug-symbols
+#ac_add_options --enable-gczeal
+#ac_add_options --enable-optimization
+#ac_add_options --disable-tests
