@@ -182,6 +182,7 @@ taint_filter_source_tagging(JSContext *cx, const char *name)
     return false;
 }
 
+// Implementation of `String.newAllTainted(str);`
 bool
 taint_str_newalltaint(JSContext *cx, unsigned argc, Value *vp)
 {

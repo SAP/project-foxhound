@@ -29,18 +29,16 @@ function _MultiTaint() {
 
 
 //compare by JSONing
+/*
+ * use assertDeepEqual() instead.
 function _equalTaint(a,b) {
 	assertEq(JSON.stringify(b.taint),JSON.stringify(a.taint), a+"=t="+b);
 }
+*/
 
-function _isTainted(a) {
-	assertEq(a.taint.length > 0, true, "taint "+a);
-}
-
-function _isNotTainted(a) {
-	assertEq(a.taint.length, 0, "notaint "+a);
-}
-
+/*
 function _hasLastOp(a, op) {
 	assertEq(a.operators[0].op, op);
 }
+*/
+

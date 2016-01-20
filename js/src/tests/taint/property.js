@@ -1,4 +1,3 @@
-// |reftest| fails -- property assignment
 load("taint/taint-setup.js");
 
 //normalize
@@ -11,15 +10,14 @@ var obj2 = {"c": "d"};
 
 var notaintkey = "keyy";
 var taintkey   = _t("keyy");
-_isTainted(taintkey);
-_isNotTainted(notaintkey);
+assertTainted(taintkey);
+assertNotTainted(notaintkey);
 
 
 //taint is currently overwritten by a property assignment
 obj2[notaintkey]="val";
 obj1[taintkey]  ="val";
-_isTainted(taintkey);
-_isNotTainted(notaintkey);
-
+assertTainted(taintkey);
+assertNotTainted(notaintkey);
 
 reportCompare(true, true);
