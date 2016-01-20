@@ -4,7 +4,7 @@
 #ifdef _TAINT_ON_
 
 #include "jsapi.h"
-#include "mozilla/TaintCommon.h"
+#include "Taint.h"
 
 class JSAtom;
 

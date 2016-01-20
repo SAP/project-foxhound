@@ -112,6 +112,10 @@ src_list += [
     '/xpcom/threads/%s' % s for s in xpcom_threads_src
 ]
 
+src_list += [
+    '../../taint/Taint.cpp'
+]
+
 
 SOURCES += sorted(src_list)
 

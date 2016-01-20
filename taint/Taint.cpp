@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <string>
 
-#include "mozilla/TaintCommon.h"
+#include "Taint.h"
 
 #define VALIDATE_NODE(validate_tsr) \
     MOZ_ASSERT((validate_tsr)->end > (validate_tsr)->begin);

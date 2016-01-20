@@ -11,7 +11,7 @@
 #include "mozilla/Casting.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/TaintCommon.h"
+#include "Taint.h"
 
 #include "jsapi.h" // For JSAutoByteString.  See bug 1033916.
 #include "jsbytecode.h"

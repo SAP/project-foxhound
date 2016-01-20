@@ -80,7 +80,6 @@ EXPORTS.mozilla = [
     'Snprintf.h',
     'SplayTree.h',
     'TaggedAnonymousMemory.h',
-    'TaintCommon.h',
     'TemplateLib.h',
     'ThreadLocal.h',
     'ToString.h',

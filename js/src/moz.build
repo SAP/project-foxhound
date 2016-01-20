@@ -139,7 +139,6 @@ EXPORTS.js += [
 ]
 
 UNIFIED_SOURCES += [
-    '../../mfbt/TaintCommon.cpp',
     'asmjs/AsmJSCompile.cpp',
     'asmjs/AsmJSFrameIterator.cpp',
     'asmjs/AsmJSLink.cpp',
@@ -568,8 +567,8 @@ if CONFIG['ENABLE_INTL_API']:
     ]
 
 USE_LIBS += [
-#    'mfbt',             # TaintCommon.cpp
     'nspr',
+    'taint',
     'zlib',
 ]
 

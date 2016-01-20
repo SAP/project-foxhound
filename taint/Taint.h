@@ -25,8 +25,6 @@ typedef struct TaintNode
 
     void setPrev(TaintNode *other);
 
-    //struct FrameStateElement;
-
     const char *op;
     uint32_t refCount;
     struct TaintNode *prev;
@@ -34,7 +32,6 @@ typedef struct TaintNode
     size_t param1len;
     char16_t *param2;
     size_t param2len;
-    //FrameStateElement *stack;
 private:
     // No copy/assign
     TaintNode(const TaintNode& other) = delete;

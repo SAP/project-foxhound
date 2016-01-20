@@ -3,7 +3,6 @@
 
 #if _TAINT_ON_
 
-#include "mozilla/TaintCommon.h"
 #include "jstaint.h"
 
 class nsAString;
