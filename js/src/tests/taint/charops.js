@@ -31,7 +31,7 @@ assertEq(taint.taint[0].end, trim1.taint[0].end);
 assertEq(taint.taint[1].begin, trim1.taint[1].begin);
 assertEq(taint.taint[1].end, trim1.taint[1].end);
 //no spaces trimmed -> nothing changed
-_equalTaint(taint, trim2);
+assertDeepEq(taint, trim2);
 
 
 var rep = taint.repeat(3);

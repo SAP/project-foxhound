@@ -11,6 +11,7 @@ for(var i = 0; i < spacesplitidx.length; i++) {
 	assertEq(sstr[spacesplitidx[i]].length, 1);
 	assertEq(sstr[spacesplitidx[i]][0].operators.length >= 4, true);
 }
+
 //taintedstr
 var ststr = taint.split(_t(" ")).map(function(r) { return r.taint; });
 for(var i = 0; i < spacesplitidx.length; i++) {

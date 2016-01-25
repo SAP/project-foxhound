@@ -7,6 +7,7 @@ var taint = _MultiTaint();
 
 eval("var ev = \""+ escape(taint) +"\"");
 //ev should be tainted here
+assertFullTainted(ev)
 assertEq(ev.taint.length, 2);
 
 /*

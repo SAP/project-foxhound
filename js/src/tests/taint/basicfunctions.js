@@ -21,30 +21,29 @@ assertEq(untaintedStr.taint.length, 0);
 
 //Explicit tainted string should be tainted
 //also test basic source reporting here
-//[{begin:0, end:4, operators:[{op:"Manual Taint", param:(void 0)}]}]
+//[{begin:0, end:4, operators:[{op:"Manual Taint", param1:"is it tainted?"}]}]
 var taintedStr = String.newAllTainted("is it tainted?");
 assertEq(taintedStr.taint.length, 1); //tainted copy should have a taint attached
-assertEq(taintedStr.taint[0].begin, 0); 
+assertEq(taintedStr.taint[0].begin, 0);
 assertEq(taintedStr.taint[0].end, taintedStr.length); // spans the whole string
 assertEq(taintedStr.taint[0].operators.length, 1); //one op
 assertEq(taintedStr.taint[0].operators[0].op.length > 0, true); //which has a name set
 assertEq("param1" in taintedStr.taint[0].operators[0], true); //param1 exists
-assertEq(taintedStr.taint[0].operators[0].param1, undefined); //no param1 set
+assertEq(taintedStr.taint[0].operators[0].param1, "is it tainted?"); //param1 is set to the string value
 assertEq("param2" in taintedStr.taint[0].operators[0], true); //param2 exists
-assertEq(taintedStr.taint[0].operators[0].param2, undefined); //no param2 set
+assertEq(taintedStr.taint[0].operators[0].param2, ""); //no param2 set
 
-//taint copy allocator should work
-//new string tainted, source remains untainted
+// Taint copy allocator should work
+// New string tainted, source remains untainted
 var taintStrCopySrc = "is it tainted?"
 var taintStrCopy = String.newAllTainted(taintStrCopySrc);
 assertEq(taintStrCopySrc.taint.length, 0);
 assertEq(taintStrCopy.taint.length, 1);
-//untainted and tained strings should equal the same by comparison
+// Untainted and tained strings should equal the same by comparison
 assertEq(taintStrCopySrc === taintStrCopy, true);
 
 
-//untaint should work
-//[]
+// Test untaint()
 var taintStrUntaint = String.newAllTainted("is it tainted?");
 taintStrUntaint.untaint();
 assertEq(taintStrUntaint.taint.length, 0);
@@ -56,12 +55,11 @@ assertEq(taintStrUntaint.taint.length, 0);
 var taintStrMutator = String.newAllTainted("is it tainted?");
 taintStrMutator.taintTestMutate();
 assertEq(taintStrMutator.taint.length, 1); // one taintref
-assertEq(taintStrMutator.taint[0].begin, 0); 
+assertEq(taintStrMutator.taint[0].begin, 0);
 assertEq(taintStrMutator.taint[0].end, taintStrMutator.length); //spans the whole string
-assertEq(taintStrMutator.taint[0].operators.length, 3); // source + 2 mutating OPs
 //the list is built backwards, so start w/o param
 assertEq(taintStrMutator.taint[0].operators[0].op.length > 0, true);
-assertEq(taintStrMutator.taint[0].operators[0].param1, undefined);
+assertEq(taintStrMutator.taint[0].operators[0].param1, "");
 //now check the OP with param
 assertEq(taintStrMutator.taint[0].operators[1].op.length > 0, true);
 assertEq(typeof taintStrMutator.taint[0].operators[1].param1, "string");
