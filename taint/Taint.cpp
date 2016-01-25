@@ -1,6 +1,7 @@
 #ifdef _TAINT_ON_
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 
 #include "Taint.h"
@@ -473,6 +474,7 @@ taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
 TaintStringRef *
 taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin, uint32_t end_offset)
 {
+    // TODO add a test for this method
     //what can happen
     //nothing (no in range of any TSR - before/behind)
     //modify 0-n TSRs (begin OR end in range of any TSR)
@@ -490,36 +492,51 @@ taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin,
         return nullptr;
     }*/
 
-    uint32_t del_len = end_offset -begin;
     TaintStringRef *tsr = *start;
     TaintStringRef *before = nullptr;
 
     //process all affected elements
-    for(; tsr != nullptr; before = tsr, tsr = tsr->next) {
-        if(begin >= tsr->end)
+    for (; tsr != nullptr; before = tsr, tsr = tsr->next) {
+        if (begin >= tsr->end)
             continue;
+        // TODO shortcut, if end < tsr-> begin, break
 
         //check for full deletion
-        if(begin <= tsr->begin && end_offset >= tsr->end) {
-            if(before) {
+        if (begin <= tsr->begin && end_offset >= tsr->end) {
+            if (before) {
                 before->next = tsr->next;
             }
 
-            if(*start == tsr) {
+            if (*start == tsr) {
                 *start = tsr->next;
             }
-            if(*end == tsr) {
+            if (*end == tsr) {
                 *end = before;
             }
 
             taint_delete_taintref(tsr);
             tsr = before;
-        }
-        else {
-            if(begin < tsr->end)
-                tsr->end -= del_len;
-            if(end_offset >= tsr->begin)
-                tsr->begin -= del_len;
+        } else {
+            // There are three different cases now that we need to take care of:
+            // Case 1: Taint should be removed at the start of the current taint range, i.e. |end > range->begin|.
+            //         In this case we just need to increase |range->begin| to start at |end|.
+            // Case 2: Taint should be removed at the end of the current taint range, i.e. |start < range->end|.
+            //         Here we also just need to set |range->end| to |start|.
+            // Case 3: The range to be removed is inside the current range, i.e. |start > range->begin && end < range->end|.
+            //         Here we need to split the current range into two ranges.
+            if (end_offset < tsr->end && begin > tsr->begin) {
+                // Case 3
+                TaintStringRef* new_range = taint_str_taintref_build(end_offset, tsr->end, tsr->thisTaint);
+                new_range->next = tsr->next;
+                tsr->next = new_range;
+                tsr->end = begin;
+            } else if (begin < tsr->end) {
+                // Case 2
+                tsr->end = begin;
+            } else if (end_offset > tsr->begin) {
+                // Case 1
+                tsr->begin = end_offset;
+            }
 
             VALIDATE_NODE(tsr);
         }
