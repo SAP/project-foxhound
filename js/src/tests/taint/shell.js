@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// Token to indicate the end of a string.
+var STR_END = -1;
+
 if (typeof assertDeepEq === 'undefined') {
     var assertDeepEq = (function(){
         var call = Function.prototype.call,
@@ -168,29 +171,69 @@ if (typeof assertDeepEq === 'undefined') {
     })();
 }
 
+// TODO throw an error here instead of using assert().
+
 if (typeof assertTainted === 'undefined') {
-// Assert that at least part of the given string is tainted.
+    // Assert that at least part of the given string is tainted.
     var assertTainted = function (str) {
         assertEq(str.taint.length > 0, true, "string not tainted: " + str);
     }
 }
 
-if (typeof assertFullTainted === 'undefined') {
-// Assert that every character of the given string is tainted.
-    var assertFullTainted = function(str) {
-        if (str.length > 0) {
-            assertEq(str.taint[0].begin, 0, "first character not tainted");
-            var last = 0;
-            for (var i = 0; i < str.taint.length; i++) {
-                assertEq(str.taint[i].begin, last, i + "th character not tainted");
-                last = str.taint[i].end;
+if (typeof assertRangeTainted === 'undefined') {
+    // Assert that the given range is fully tainted in the provided string.
+    var assertRangeTainted = function(str, range) {
+        function rangeToString(range) {
+            return "[" + range[0] + ", " + (range[1] === STR_END ? "STR_END" : range[1]) + "]";
+        }
+
+        var begin = range[0];
+        var end = range[1] === STR_END ? str.length : range[1];
+
+        if (begin === end)
+            return;
+
+        if (begin > end)
+            throw Error("Invalid range: " + rangeToString(range));
+
+        var end_of_last_range = 0;
+        for (var i = 0; i < str.taint.length; i++) {
+            var cur_range = str.taint[i];
+            if (begin >= cur_range.begin) {
+                if (end_of_last_range !== 0 && end_of_last_range != cur_range.begin) {
+                    // There's a gap
+                    break;
+                }
+                end_of_last_range = cur_range.end;
+                if (end_of_last_range >= end) {
+                    return;
+                }
             }
-            assertEq(last, str.length, "last character not tainted");
+        }
+
+        throw Error("Range " + rangeToString(range) + " not tainted");
+    }
+}
+
+if (typeof assertRangesTainted === 'undefined') {
+    // Assert that the provided ranges (varargs arguments) are tainted.
+    // Example usage: assertRangesTainted(str, [0,3], [5, 8], [10, STR_END]);
+    var assertRangesTainted = function(str) {
+        var ranges = arguments;
+        for (var i = 0; i < range.length; i++) {
+            assertRangeTainted(str, ranges[i]);
         }
     }
 }
 
-function assertNotTainted(str) {
+if (typeof assertFullTainted === 'undefined') {
+    // Assert that every character of the given string is tainted.
+    var assertFullTainted = function(str) {
+        assertRangeTainted(str, [0, STR_END]);
+    }
+}
+
+if (typeof assertNotTainted === 'undefined') {
     // Assert that the given string is not tainted.
     var assertNotTainted = function(a) {
         assertEq(a.taint.length, 0, "string tainted: " + a);

@@ -4,6 +4,17 @@ load("taint/taint-setup.js");
 
 var taint = _MultiTaint();
 
+// Basic replace() test
+var taintedString = String.newAllTainted("asdf");
+assertFullTainted(taintedString.replace('s', ''));
+// Short strings are potentially stored inline, so test larger strings as well
+taintedString = String.newAllTainted("asdfasdfasdfasdf");
+assertFullTainted(taintedString.replace('s', ''));
+
+// Now replace with non tainted data
+taintedString = String.newAllTainted("asdf");
+assertRangesTainted(taintStr.replace('s', 'x'), [0, 1], [2, STR_END]);
+
 //str->empty
 var stremp = taint.replace("String", "").taint;
 assertEq(stremp.length, 2);
