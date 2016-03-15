@@ -85,11 +85,10 @@ XPCStringConvert::ReadableToJSVal(JSContext* cx,
                                              length, &sLiteralFinalizer);
         if (!str)
             return false;
-#if _TAINT_ON_
-        //TODO: Optimize: Do not copy the taints, this probably involves ownership management
-        if(readable.isTainted())
-            taint_str_addref(str, taint_duplicate_range(readable.getTopTaintRef()));
-#endif
+
+        // TaintFox: copy taint information.
+        JS_SetStringTaint(str, readable.taint());
+
         vp.setString(str);
         return true;
     }
@@ -101,6 +100,7 @@ XPCStringConvert::ReadableToJSVal(JSContext* cx,
             return false;
         if (shared)
             *sharedBuffer = buf;
+
         return true;
     }
 
@@ -108,10 +108,12 @@ XPCStringConvert::ReadableToJSVal(JSContext* cx,
     JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
     if (!str)
         return false;
-#if _TAINT_ON_
-    if(readable.isTainted())
-        taint_str_addref(str, taint_duplicate_range(readable.getTopTaintRef()));
-#endif
+
+    // TaintFox: copy taint information.
+    // |str| could be cx->names().emptyString, but we don't taint atoms currently, so that's ok.
+    // TODO(samuel) verify readable.taint() is sane
+    JS_SetStringTaint(str, readable.taint());
+
     vp.setString(str);
     return true;
 }

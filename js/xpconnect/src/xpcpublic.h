@@ -8,7 +8,6 @@
 #define xpcpublic_h
 
 #include "jsapi.h"
-#include "jstaint.h"
 #include "js/HeapAPI.h"
 #include "js/GCAPI.h"
 #include "js/Proxy.h"
@@ -244,12 +243,10 @@ public:
         if (!str) {
             return false;
         }
-#if _TAINT_ON_
-        //at this point we can just assign the taint pointers
-        //as their ownership will be transfered with the buffer
-        if(buf->isTainted())
-            taint_str_addref(str, taint_duplicate_range(buf->getTopTaintRef()));
-#endif
+
+        // TaintFox: Transfer taint information to newly created JS string.
+        JS_SetStringTaint(str, buf->taint());
+
         rval.setString(str);
         if (!cache) {
             cache = new ZoneStringCache();

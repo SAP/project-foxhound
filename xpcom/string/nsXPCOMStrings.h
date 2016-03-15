@@ -21,8 +21,6 @@
 
 #include "nscore.h"
 
-#include "taint-gecko.h"
-
 /* The base string types */
 class nsAString;
 class nsACString;
@@ -109,12 +107,11 @@ class nsStringContainer;
 struct nsStringContainer_base
 {
 protected:
-#if _TAINT_ON_
-  void *t1, *t2;
-#endif
+  // TaintFox: add taint property.
   void* d1;
   uint32_t d2;
   uint32_t d3;
+  void *t;      // Note: Taint.h guarantees that a StringTaint instance is compatible with a void*.
 };
 
 /**
@@ -749,44 +746,5 @@ XPCOM_API(nsresult) NS_CStringToUTF16(const nsACString& aSource,
 XPCOM_API(nsresult) NS_UTF16ToCString(const nsAString& aSource,
                                       nsCStringEncoding aDestEncoding,
                                       nsACString& aDest);
-
-
-/* ------------------------------------------------------------------------- */
-
-#if _TAINT_ON_
-
-XPCOM_API(bool) TAINT_NS_StringTainted(const nsAString& aString);
-
-XPCOM_API(TaintStringRef*) TAINT_NS_StringTopTaint(nsAString& aString);
-
-XPCOM_API(TaintStringRef*) TAINT_NS_StringBottomTaint(nsAString& aString);
-
-XPCOM_API(void) TAINT_NS_StringAddTaintRef(nsAString& aString, TaintStringRef *ref);
-
-XPCOM_API(void) TAINT_NS_StringFfTaint(nsAString& aString);
-
-XPCOM_API(void) TAINT_NS_StringRemoveAll(nsAString& aString);
-
-XPCOM_API(void) TAINT_NS_StringRemoveRangeTaint(nsAString &aString, uint32_t start, uint32_t end);
-
-
-XPCOM_API(bool) TAINT_NS_CStringTainted(const nsACString& aString);
-
-XPCOM_API(TaintStringRef*) TAINT_NS_CStringTopTaint(nsACString& aString);
-
-XPCOM_API(TaintStringRef*) TAINT_NS_CStringBottomTaint(nsACString& aString);
-
-XPCOM_API(void) TAINT_NS_CStringAddTaintRef(nsACString& aString, TaintStringRef *ref);
-
-XPCOM_API(void) TAINT_NS_CStringFfTaint(nsACString& aString);
-
-XPCOM_API(void) TAINT_NS_CStringRemoveAll(nsACString& aString);
-
-XPCOM_API(void) TAINT_NS_CStringRemoveRangeTaint(nsACString &aString, uint32_t start, uint32_t end);
-
-
-XPCOM_API(TaintStringRef*) TAINT_NS_DUPLICATE_RANGE(TaintStringRef *src, TaintStringRef **taint_end, uint32_t frombegin, int32_t offset, uint32_t fromend);
-
-#endif
 
 #endif // nsXPCOMStrings_h__

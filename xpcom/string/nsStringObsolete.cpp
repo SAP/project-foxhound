@@ -392,7 +392,7 @@ Compare1To2(const char* aStr1,const char16_t* aStr2,uint32_t aCount,bool aIgnore
  * @return  the new length of the given buffer
  */
 static int32_t
-CompressChars1(char* aString,uint32_t aLength,const char* aSet){ 
+CompressChars1(char* aString,uint32_t aLength,const char* aSet){
 
   char*  from = aString;
   char*  end =  aString + aLength;
@@ -930,11 +930,7 @@ nsString::ReplaceChar( const char16_t* aSet, char16_t aNewChar )
     if (i == kNotFound)
       break;
 
-#if _TAINT_ON_
-    if(isTainted()) {
-      taint_remove_range(&startTaint, &endTaint, i, i + 1);
-    }
-#endif
+    // TaintFox: TODO(samuel) is this used somewhere? Do we need to make this taint aware?
 
     data[i++] = aNewChar;
     data += i;

@@ -1725,6 +1725,11 @@ CloneProperties(JSContext* cx, HandleNativeObject selfHostedObject, HandleObject
 static JSString*
 CloneString(JSContext* cx, JSFlatString* selfHostedString)
 {
+    // TaintFox: TODO(samuel) just curious, can these ever be tainted?
+    RootedString rooted(cx, selfHostedString);
+    if (selfHostedString->isTainted())
+        JS_ReportTaintSink(cx, rooted, "SelfHosting::CloneString");
+
     size_t len = selfHostedString->length();
     {
         JS::AutoCheckCannotGC nogc;
@@ -1733,18 +1738,22 @@ CloneString(JSContext* cx, JSFlatString* selfHostedString)
             clone = NewStringCopyN<NoGC>(cx, selfHostedString->latin1Chars(nogc), len);
         else
             clone = NewStringCopyNDontDeflate<NoGC>(cx, selfHostedString->twoByteChars(nogc), len);
-        if (clone)
-            return TAINT_STR_COPY(clone, selfHostedString);
+        if (clone) {
+            // TaintFox: clone taint information as well.
+            clone->setTaint(selfHostedString->taint());
+            return clone;
+        }
     }
 
     AutoStableStringChars chars(cx);
     if (!chars.init(cx, selfHostedString))
         return nullptr;
 
-    return TAINT_STR_COPY(chars.isLatin1()
+    JSString* clone = chars.isLatin1()
            ? NewStringCopyN<CanGC>(cx, chars.latin1Range().start().get(), len)
-           : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len),
-            selfHostedString);
+           : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len);
+    clone->setTaint(selfHostedString->taint());             // TODO see above, might want to remove this
+    return clone;
 }
 
 static JSObject*

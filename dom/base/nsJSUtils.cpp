@@ -332,3 +332,19 @@ bool nsAutoJSString::init(const JS::Value &v)
   return init(nsContentUtils::RootingCxForThread(), v);
 }
 
+// TaintFox: ReportTaintSink implementation.
+nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
+{
+    MOZ_ASSERT(str.isTainted());
+
+    JS::RootedValue strval(cx);
+    if (!mozilla::dom::ToJSValue(cx, str, &strval))
+      return NS_ERROR_FAILURE;;
+
+    MOZ_ASSERT(strval.isString());
+    JS::RootedString strobj(cx, strval.toString());
+
+    JS_ReportTaintSink(cx, strobj, name);
+
+    return NS_OK;
+}

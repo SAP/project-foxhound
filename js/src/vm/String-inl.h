@@ -74,10 +74,9 @@ NewInlineString(ExclusiveContext* cx, HandleLinearString base, size_t start, siz
     if (!s)
         return nullptr;
 
-#if _TAINT_ON_
-    if(base->isTainted())
-        taint_str_substr(s, cx->asJSContext(), base, start, length);
-#endif
+    // TaintFox: Copy taint information.
+    if (base->isTainted())
+        s->setTaint(StringTaint::substr(base->taint(), start, start + length));
 
     JS::AutoCheckCannotGC nogc;
     mozilla::PodCopy(chars, base->chars<CharT>(nogc) + start, length);
@@ -118,10 +117,10 @@ JSRope::init(js::ExclusiveContext* cx, JSString* left, JSString* right, size_t l
     d.s.u2.left = left;
     d.s.u3.right = right;
 
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-    taint_str_concat(cx->maybeJSContext(), this, left, right);
-#endif
+    // TaintFox: Construct new taint information.
+    initTaint();
+    if (left->isTainted() || right->isTainted())
+        setTaint(StringTaint::concat(left->taint(), left->length(), right->taint()));
 
     js::StringWriteBarrierPost(cx, &d.s.u2.left);
     js::StringWriteBarrierPost(cx, &d.s.u3.right);
@@ -162,11 +161,10 @@ JSDependentString::init(js::ExclusiveContext* cx, JSLinearString* base, size_t s
         js::StringWriteBarrierPost(cx, reinterpret_cast<JSString**>(&d.s.u3.base));
     }
 
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-    if(base->isTainted())
-        taint_str_substr(this, cx->asJSContext(), base, start, length);
-#endif
+    // TaintFox: copy taint information from the base string.
+    initTaint();
+    if (base->isTainted())
+        setTaint(StringTaint::substr(base->taint(), start, start + length));
 }
 
 MOZ_ALWAYS_INLINE JSLinearString*
@@ -217,23 +215,23 @@ JSDependentString::new_(js::ExclusiveContext* cx, JSLinearString* baseArg, size_
 MOZ_ALWAYS_INLINE void
 JSFlatString::init(const char16_t* chars, size_t length)
 {
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = FLAT_BIT;
     d.s.u2.nonInlineCharsTwoByte = chars;
+
+    // TaintFox
+    initTaint();
 }
 
 MOZ_ALWAYS_INLINE void
 JSFlatString::init(const JS::Latin1Char* chars, size_t length)
 {
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = FLAT_BIT | LATIN1_CHARS_BIT;
     d.s.u2.nonInlineCharsLatin1 = chars;
+
+    // TaintFox
+    initTaint();
 }
 
 template <js::AllowGC allowGC, typename CharT>
@@ -287,11 +285,12 @@ MOZ_ALWAYS_INLINE JS::Latin1Char*
 JSThinInlineString::init<JS::Latin1Char>(size_t length)
 {
     MOZ_ASSERT(lengthFits<JS::Latin1Char>(length));
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = INIT_THIN_INLINE_FLAGS | LATIN1_CHARS_BIT;
+
+    // TaintFox
+    initTaint();
+
     return d.inlineStorageLatin1;
 }
 
@@ -300,11 +299,12 @@ MOZ_ALWAYS_INLINE char16_t*
 JSThinInlineString::init<char16_t>(size_t length)
 {
     MOZ_ASSERT(lengthFits<char16_t>(length));
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = INIT_THIN_INLINE_FLAGS;
+
+    // TaintFox
+    initTaint();
+
     return d.inlineStorageTwoByte;
 }
 
@@ -313,11 +313,12 @@ MOZ_ALWAYS_INLINE JS::Latin1Char*
 JSFatInlineString::init<JS::Latin1Char>(size_t length)
 {
     MOZ_ASSERT(lengthFits<JS::Latin1Char>(length));
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = INIT_FAT_INLINE_FLAGS | LATIN1_CHARS_BIT;
+
+    // TaintFox
+    initTaint();
+
     return d.inlineStorageLatin1;
 }
 
@@ -326,11 +327,12 @@ MOZ_ALWAYS_INLINE char16_t*
 JSFatInlineString::init<char16_t>(size_t length)
 {
     MOZ_ASSERT(lengthFits<char16_t>(length));
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = INIT_FAT_INLINE_FLAGS;
+
+    // TaintFox
+    initTaint();
+
     return d.inlineStorageTwoByte;
 }
 
@@ -339,13 +341,13 @@ JSExternalString::init(const char16_t* chars, size_t length, const JSStringFinal
 {
     MOZ_ASSERT(fin);
     MOZ_ASSERT(fin->finalize);
-#if _TAINT_ON_
-    TAINT_STR_INIT;
-#endif
     d.u1.length = length;
     d.u1.flags = EXTERNAL_FLAGS;
     d.s.u2.nonInlineCharsTwoByte = chars;
     d.s.u3.externalFinalizer = fin;
+
+    // TaintFox
+    initTaint();
 }
 
 MOZ_ALWAYS_INLINE JSExternalString*
@@ -397,9 +399,8 @@ JSString::finalize(js::FreeOp* fop)
     else
         MOZ_ASSERT(isDependent() || isRope());
 
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+    // TaintFox
+    TaintableString::finalize();
 }
 
 inline void
@@ -410,9 +411,8 @@ JSFlatString::finalize(js::FreeOp* fop)
     if (!isInline())
         fop->free_(nonInlineCharsRaw());
 
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+    // TaintFox
+    TaintableString::finalize();
 }
 
 inline void
@@ -423,9 +423,8 @@ JSFatInlineString::finalize(js::FreeOp* fop)
     if (!isInline())
         fop->free_(nonInlineCharsRaw());
 
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+    // TaintFox
+    TaintableString::finalize();
 }
 
 inline void
@@ -437,9 +436,8 @@ JSAtom::finalize(js::FreeOp* fop)
     if (!isInline())
         fop->free_(nonInlineCharsRaw());
 
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+    // TaintFox
+    TaintableString::finalize();
 }
 
 inline void
@@ -447,9 +445,9 @@ JSExternalString::finalize(js::FreeOp* fop)
 {
     const JSStringFinalizer* fin = externalFinalizer();
     fin->finalize(fin, const_cast<char16_t*>(rawTwoByteChars()));
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+
+    // TaintFox
+    TaintableString::finalize();
 }
 
 #endif /* vm_String_inl_h */

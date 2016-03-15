@@ -35,23 +35,6 @@
 #include "ScriptSettings.h"
 #include "mozilla/dom/LocationBinding.h"
 
-#if _TAINT_ON_
-#define TAINT_LOCATION_REPORT(value, sink) \
-  do { \
-    JSContext *cx = nsContentUtils::GetCurrentJSContext();\
-    if(cx && value.isTainted()) \
-    { \
-      taint_report_sink_gecko(cx, value, sink); \
-    } \
-  } while(false)
-  //TAINT TODO: else: we are missing a sink access report here if we
-  //cannot aquire a JSContext, but this means we are not called
-  //by some JS code and thus this is probably not a sink access from JS
-  //in the first place
-#else
-  #define TAINT_LOCATION_REPORT
-#endif
-
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -344,10 +327,8 @@ nsLocation::GetHash(nsAString& aHash)
     }
   }
 
-#if _TAINT_ON_
-      taint_tag_source(aHash, "location.hash",
-        nsContentUtils::GetCurrentJSContext(), 1);
-#endif
+  // TaintFox: location.hash source.
+  aHash.AssignTaint(StringTaint(0, aHash.Length(), TaintSource("location.hash")));
 
   if (aHash == mCachedHash) {
     // Work around ShareThis stupidly polling location.hash every
@@ -379,7 +360,11 @@ nsLocation::SetHash(const nsAString& aHash)
     return rv;
   }
 
-  TAINT_LOCATION_REPORT(aHash, "location.hash");
+  // TaintFox: location.hash sink.
+  // TODO(samuel) why?
+  if (aHash.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHash, "location.hash");
+
   return SetURI(uri);
 }
 
@@ -403,9 +388,9 @@ nsLocation::GetHost(nsAString& aHost)
 
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(hostport, aHost);
-#if _TAINT_ON_
-      taint_tag_source(aHost, "location.host", nsContentUtils::GetCurrentJSContext());
-#endif
+
+      // TaintFox: location.host source.
+      aHost.AssignTaint(StringTaint(0, aHost.Length(), TaintSource("location.host")));
     }
   }
 
@@ -429,7 +414,10 @@ nsLocation::SetHost(const nsAString& aHost)
     return rv;
   }
 
-  TAINT_LOCATION_REPORT(aHost, "location.host");
+  // TaintFox: location.host sink.
+  if (aHost.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHost, "location.host");
+
   return SetURI(uri);
 }
 
@@ -445,9 +433,9 @@ nsLocation::GetHostname(nsAString& aHostname)
   GetURI(getter_AddRefs(uri), true);
   if (uri) {
     nsContentUtils::GetHostOrIPv6WithBrackets(uri, aHostname);
-#if _TAINT_ON_
-    taint_tag_source(aHostname, "location.hostname", nsContentUtils::GetCurrentJSContext());
-#endif
+
+    // TaintFox: location.hostname source.
+    aHostname.AssignTaint(StringTaint(0, aHostname.Length(), TaintSource("location.hostname")));
   }
 
   return NS_OK;
@@ -470,7 +458,10 @@ nsLocation::SetHostname(const nsAString& aHostname)
     return rv;
   }
 
-  TAINT_LOCATION_REPORT(aHostname, "location.hostname");
+  // TaintFox: location.hostname sink.
+  if (aHostname.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHostname, "location.hostname");
+
   return SetURI(uri);
 }
 
@@ -494,9 +485,9 @@ nsLocation::GetHref(nsAString& aHref)
 
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(uriString, aHref);
-#if _TAINT_ON_
-      taint_tag_source(aHref, "location.href", nsContentUtils::GetCurrentJSContext());
-#endif
+
+      // TaintFox: location.href source.
+      aHref.AssignTaint(StringTaint(0, aHref.Length(), TaintSource("location.href")));
     }
   }
 
@@ -525,6 +516,10 @@ nsLocation::SetHref(const nsAString& aHref)
       }
     }
   }
+
+  // TaintFox: location.href sink.
+  if (aHref.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aHref, "location.href");
 
   return rv;
 }
@@ -563,13 +558,13 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
   if (newUri) {
     /* Check with the scriptContext if it is currently processing a script tag.
      * If so, this must be a <script> tag with a location.href in it.
-     * we want to do a replace load, in such a situation. 
+     * we want to do a replace load, in such a situation.
      * In other cases, for example if a event handler or a JS timer
      * had a location.href in it, we want to do a normal load,
      * so that the new url will be appended to Session History.
      * This solution is tricky. Hopefully it isn't going to bite
      * anywhere else. This is part of solution for bug # 39938, 72197
-     * 
+     *
      */
     bool inScriptTag = false;
     nsIScriptContext* scriptContext = nullptr;
@@ -588,8 +583,6 @@ nsLocation::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
         inScriptTag = (ourGlobal == scriptContext->GetGlobalObject());
       }
     }
-
-    TAINT_LOCATION_REPORT(aHref, "location.href");
 
     return SetURI(newUri, aReplace || inScriptTag);
   }
@@ -615,9 +608,10 @@ nsLocation::GetOrigin(nsAString& aOrigin)
   NS_ENSURE_SUCCESS(rv, rv);
 
   aOrigin = origin;
-#if _TAINT_ON_
-      taint_tag_source(aOrigin, "location.origin", nsContentUtils::GetCurrentJSContext());
-#endif
+
+  // TaintFox: location.origin source.
+  aOrigin.AssignTaint(StringTaint(0, aOrigin.Length(), TaintSource("location.origin")));
+
   return NS_OK;
 }
 
@@ -642,9 +636,9 @@ nsLocation::GetPathname(nsAString& aPathname)
 
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(file, aPathname);
-#if _TAINT_ON_
-      taint_tag_source(aPathname, "location.pathname", nsContentUtils::GetCurrentJSContext());
-#endif
+
+      // TaintFox: location.pathname source.
+      aPathname.AssignTaint(StringTaint(0, aPathname.Length(), TaintSource("location.pathname")));
     }
   }
 
@@ -668,7 +662,10 @@ nsLocation::SetPathname(const nsAString& aPathname)
     return rv;
   }
 
-  TAINT_LOCATION_REPORT(aPathname, "location.pathname");
+  // TaintFox: location.pathname sink.
+  if (aPathname.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPathname, "location.pathname");
+
   return SetURI(uri);
 }
 
@@ -693,9 +690,6 @@ nsLocation::GetPort(nsAString& aPort)
       nsAutoString portStr;
       portStr.AppendInt(port);
       aPort.Append(portStr);
-#if _TAINT_ON_
-      taint_tag_source(aPort, "location.port", nsContentUtils::GetCurrentJSContext());
-#endif
     }
 
     // Don't propagate this exception to caller
@@ -736,7 +730,10 @@ nsLocation::SetPort(const nsAString& aPort)
     return rv;
   }
 
-  TAINT_LOCATION_REPORT(aPort, "location.port");
+  // TaintFox: location.port sink.
+  if (aPort.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPort, "location.port");
+
   return SetURI(uri);
 }
 
@@ -760,9 +757,6 @@ nsLocation::GetProtocol(nsAString& aProtocol)
 
     if (NS_SUCCEEDED(result)) {
       CopyASCIItoUTF16(protocol, aProtocol);
-#if _TAINT_ON_
-      taint_tag_source(aProtocol, "location.protocol", nsContentUtils::GetCurrentJSContext());
-#endif
       aProtocol.Append(char16_t(':'));
     }
   }
@@ -787,7 +781,10 @@ nsLocation::SetProtocol(const nsAString& aProtocol)
     return rv;
   }
 
-  TAINT_LOCATION_REPORT(aProtocol, "location.protocol");
+  // TaintFox: location.protocol sink.
+  if (aProtocol.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aProtocol, "location.protocol");
+
   return SetURI(uri);
 }
 
@@ -807,9 +804,9 @@ nsLocation::GetUsername(nsAString& aUsername, ErrorResult& aError)
     result = uri->GetUsername(username);
     if (NS_SUCCEEDED(result)) {
       CopyUTF8toUTF16(username, aUsername);
-#if _TAINT_ON_
-      taint_tag_source(aUsername, "location.username", nsContentUtils::GetCurrentJSContext());
-#endif
+
+      // TaintFox: location.username source.
+      aUsername.AssignTaint(StringTaint(0, aUsername.Length(), TaintSource("location.username")));
     }
   }
 }
@@ -839,7 +836,10 @@ nsLocation::SetUsername(const nsAString& aUsername, ErrorResult& aError)
     return;
   }
 
-  TAINT_LOCATION_REPORT(aUsername, "location.username");
+  // TaintFox: location.username sink.
+  if (aUsername.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aUsername, "location.username");
+
   rv = SetURI(uri);
 }
 
@@ -859,9 +859,9 @@ nsLocation::GetPassword(nsAString& aPassword, ErrorResult& aError)
     result = uri->GetPassword(password);
     if (NS_SUCCEEDED(result)) {
       CopyUTF8toUTF16(password, aPassword);
-#if _TAINT_ON_
-      taint_tag_source(aPassword, "location.password", nsContentUtils::GetCurrentJSContext());
-#endif
+
+      // TaintFox: location.password source.
+      aPassword.AssignTaint(StringTaint(0, aPassword.Length(), TaintSource("location.password")));
     }
   }
 }
@@ -891,7 +891,10 @@ nsLocation::SetPassword(const nsAString& aPassword, ErrorResult& aError)
     return;
   }
 
-  TAINT_LOCATION_REPORT(aPassword, "location.password");
+  // TaintFox: location.password sink.
+  if (aPassword.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aPassword, "location.password");
+
   rv = SetURI(uri);
 }
 
@@ -918,10 +921,9 @@ nsLocation::GetSearch(nsAString& aSearch)
     if (NS_SUCCEEDED(result) && !search.IsEmpty()) {
       aSearch.Assign(char16_t('?'));
       AppendUTF8toUTF16(search, aSearch);
-#if _TAINT_ON_
-      taint_tag_source(aSearch, "location.search",
-        nsContentUtils::GetCurrentJSContext(), 1);
-#endif
+
+      // TaintFox: location.search source.
+      aSearch.AssignTaint(StringTaint(0, aSearch.Length(), TaintSource("location.search")));
     }
   }
 
@@ -931,7 +933,10 @@ nsLocation::GetSearch(nsAString& aSearch)
 NS_IMETHODIMP
 nsLocation::SetSearch(const nsAString& aSearch)
 {
-  TAINT_LOCATION_REPORT(aSearch, "location.search");
+  // TaintFox: location.search sink.
+  if (aSearch.isTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aSearch, "location.search");
+
   nsresult rv = SetSearchInternal(aSearch);
   if (NS_FAILED(rv)) {
     return rv;
@@ -996,7 +1001,7 @@ nsLocation::Reload(bool aForceget)
     uint32_t reloadFlags = nsIWebNavigation::LOAD_FLAGS_NONE;
 
     if (aForceget) {
-      reloadFlags = nsIWebNavigation::LOAD_FLAGS_BYPASS_CACHE | 
+      reloadFlags = nsIWebNavigation::LOAD_FLAGS_BYPASS_CACHE |
                     nsIWebNavigation::LOAD_FLAGS_BYPASS_PROXY;
     }
     rv = webNav->Reload(reloadFlags);

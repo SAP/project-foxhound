@@ -803,12 +803,8 @@ JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str)
     if (!out.writePair(tag, lengthAndEncoding))
         return false;
 
-#if _TAINT_ON_
-    const char* taintsink = JS_TaintGetDynamicSink();
-    RootedString strroot(context(), str);
-    if(str->isTainted() && taintsink)
-        taint_report_sink_js(context(), strroot, taintsink);
-#endif
+    // TaintFox: TODO(samuel) Depending on the current context, this might be a sink.
+    // On the other hand, should probably just make the JSStructuredCloneWriter taint aware.
 
     JS::AutoCheckCannotGC nogc;
     return linear->hasLatin1Chars()
@@ -1346,17 +1342,6 @@ JSStructuredCloneReader::readStringImpl(uint32_t nchars)
     JSString* str = NewString<CanGC>(context(), chars.get(), nchars);
     if (str)
         chars.forget();
-
-#if _TAINT_ON_
-    //TAIN TODO
-    /*
-    RootedString strroot(context(), str);
-    if(strroot->isTainted()) {
-        taint_add_op(strroot->getTopTaintRef(), "postMessage.message", context());
-    } else {
-        taint_tag_source_js(strroot, "postMessage.message", context());
-    }*/
-#endif
 
     return str;
 }

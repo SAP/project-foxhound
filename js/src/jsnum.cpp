@@ -1279,9 +1279,6 @@ NumberToStringWithBase(ExclusiveContext* cx, double d, int base)
             if (i < 10)
                 return cx->staticStrings().getInt(i);
             char16_t c = 'a' + i - 10;
-#ifndef _TAINT_ON_
-            MOZ_ASSERT(StaticStrings::hasUnit(c));
-#endif
             return cx->staticStrings().getUnit(c);
         }
 

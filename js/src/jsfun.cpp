@@ -1836,12 +1836,10 @@ FunctionConstructor(JSContext* cx, unsigned argc, Value* vp, GeneratorKind gener
     if (!stableChars.initTwoByte(cx, bodyText))
         return false;
 
-#if _TAINT_ON_
-    // TODO maybe move below 'AutoStableStringChars above again?
+    // TaintFox: Function.ctor sink.
     if(bodyText->isTainted()) {
-        taint_report_sink_js(cx, bodyText, "Function.ctor");
+        JS_ReportTaintSink(cx, bodyText, "Function.ctor");
     }
-#endif
 
     bool hasRest = false;
 

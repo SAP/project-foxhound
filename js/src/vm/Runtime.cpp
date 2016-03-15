@@ -83,10 +83,6 @@ const JSSecurityCallbacks js::NullSecurityCallbacks = { };
 PerThreadData::PerThreadData(JSRuntime* runtime)
   : PerThreadDataFriendFields(),
     runtime_(runtime),
-#if _TAINT_ON_
-    taintStackOptions(TAINT_OPT_MARK_SB),
-    taintDynamicSinkName(nullptr),
-#endif
 #ifdef JS_TRACE_LOGGING
     traceLogger(nullptr),
 #endif
@@ -235,10 +231,6 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
     largeAllocationFailureCallback(nullptr),
     oomCallback(nullptr),
     debuggerMallocSizeOf(ReturnZeroSize),
-#if _TAINT_ON_
-    taintCaptureStack(true),
-    taintCaptureStackSource(true),
-#endif
     lastAnimationTime(0),
     stopwatch(thisFromCtor())
 {
@@ -880,36 +872,6 @@ js::AssertCurrentThreadCanLock(RuntimeLock which)
 }
 
 #endif // DEBUG
-
-#if _TAINT_ON_
-void
-JSRuntime::setTaintParameter(JSTaintParamKey key, uint32_t value)
-{
-    switch(key) {
-        case JSTAINT_CAPTURESTACK:
-            taintCaptureStack = value;
-            break;
-        case JSTAINT_CAPTURESTACKSOURCE:
-            taintCaptureStackSource = value;
-            break;
-        default:
-            break;
-    }
-}
-
-uint32_t
-JSRuntime::getTaintParameter(JSTaintParamKey key)
-{
-    switch(key) {
-        case JSTAINT_CAPTURESTACK:
-            return taintCaptureStack;
-        case JSTAINT_CAPTURESTACKSOURCE:
-            return taintCaptureStackSource;
-        default:
-            return -1;
-    }
-}
-#endif
 
 JS_FRIEND_API(void)
 JS::UpdateJSRuntimeProfilerSampleBufferGen(JSRuntime* runtime, uint32_t generation,

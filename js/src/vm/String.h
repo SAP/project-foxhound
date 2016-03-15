@@ -23,7 +23,6 @@
 #include "js/GCAPI.h"
 #include "js/RootingAPI.h"
 
-#include "taint-private.h"
 
 class JSDependentString;
 class JSExtensibleString;
@@ -147,23 +146,19 @@ static const size_t UINT32_CHAR_BUFFER_LENGTH = sizeof("4294967295") - 1;
  *
  * The ensureX() operations mutate 'this' in place to effectively the type to be
  * at least X (e.g., ensureLinear will change a JSRope to be a JSFlatString).
+ *
+ * TaintFox: the JSString class (and all subclasses) are taint aware.
  */
-
-class JSString : public js::gc::TenuredCell
+class JSString : public js::gc::TenuredCell, public TaintableString
 {
   protected:
-    static const size_t NUM_INLINE_CHARS_LATIN1   = 2 * sizeof(void*) / sizeof(JS::Latin1Char);
-    static const size_t NUM_INLINE_CHARS_TWO_BYTE = 2 * sizeof(void*) / sizeof(char16_t);
+    // TaintFox: We add another pointer size of inline chars here to make the total size of JString
+    // evenly divisible by the gc::CellSize on 32 bit platforms.
+    static const size_t NUM_INLINE_CHARS_LATIN1   = 3 * sizeof(void*) / sizeof(JS::Latin1Char);
+    static const size_t NUM_INLINE_CHARS_TWO_BYTE = 3 * sizeof(void*) / sizeof(char16_t);
 
     /* Fields only apply to string types commented on the right. */
-    struct Data
-    {
-#if _TAINT_ON_
-        struct {
-            TaintStringRef *startTaint;
-            TaintStringRef *endTaint;
-        } u0;
-#endif
+    struct Data {
         union {
             struct {
                 uint32_t           flags;               /* JSString */
@@ -299,12 +294,10 @@ class JSString : public js::gc::TenuredCell
 
         /* Ensure js::shadow::String has the same layout. */
         using js::shadow::String;
-#if _TAINT_ON_
-        static_assert(offsetof(JSString, d.u0.startTaint) == offsetof(String, startTaint),
-                      "shadow::String startTaint offset must match JSString");
-        static_assert(offsetof(JSString, d.u0.endTaint) == offsetof(String, endTaint),
-                      "shadow::String endTaint offset must match JSString");
-#endif
+
+        /* TaintFox: taint info offset assertion. */
+        static_assert(offsetof(JSString, taint_) == offsetof(String, taint),
+                      "shadow::String taint offset must match JSString");
         static_assert(offsetof(JSString, d.u1.length) == offsetof(String, length),
                       "shadow::String length offset must match JSString");
         static_assert(offsetof(JSString, d.u1.flags) == offsetof(String, flags),
@@ -337,9 +330,18 @@ class JSString : public js::gc::TenuredCell
 
   public:
 
-#if _TAINT_ON_
-    TAINT_JSSTRING_HOOKS(d.u0.startTaint, d.u0.endTaint)
-#endif
+    // TaintFox: (statically) overwrite setTaint to avoid tainting the empty string.
+    // We should avoid tainting atoms here, but that causes some trouble since all string literals
+    // are atomized. FIXME(samuel)
+    void setTaint(const StringTaint& taint) {
+        if (length() != 0)
+            TaintableString::setTaint(taint);
+    }
+
+    void setTaint(StringTaint&& taint) {
+        if (length() != 0)
+            TaintableString::setTaint(taint);
+    }
 
     /* All strings have length. */
 
@@ -497,14 +499,10 @@ class JSString : public js::gc::TenuredCell
 
     /* Offsets for direct field from jit code. */
 
-#if _TAINT_ON_
-    static size_t offsetOfStartTaint() {
-        return offsetof(JSString, d.u0.startTaint);
+    /* TaintFox: taint property offset calculation. */
+    static size_t offsetOfTaint() {
+        return offsetof(JSString, taint_);
     }
-    static size_t offsetOfEndTaint() {
-        return offsetof(JSString, d.u0.endTaint);
-    }
-#endif
 
     static size_t offsetOfLength() {
         return offsetof(JSString, d.u1.length);
@@ -904,8 +902,10 @@ static_assert(sizeof(JSThinInlineString) == sizeof(JSString),
  */
 class JSFatInlineString : public JSInlineString
 {
-    static const size_t INLINE_EXTENSION_CHARS_LATIN1 = 24 - NUM_INLINE_CHARS_LATIN1;
-    static const size_t INLINE_EXTENSION_CHARS_TWO_BYTE = 12 - NUM_INLINE_CHARS_TWO_BYTE;
+    // TaintFox: similar to JSString, add another pointer size of inline characters here for
+    // alignment.
+    static const size_t INLINE_EXTENSION_CHARS_LATIN1 = 24 - NUM_INLINE_CHARS_LATIN1 + (sizeof(void*) / sizeof(JS::Latin1Char));
+    static const size_t INLINE_EXTENSION_CHARS_TWO_BYTE = 12 - NUM_INLINE_CHARS_TWO_BYTE + (sizeof(void*) / sizeof(char16_t));
 
   protected: /* to fool clang into not warning this is unused */
     union {
@@ -1065,22 +1065,10 @@ class StaticStrings
     }
 
     static bool hasUnit(char16_t c) {
-/*
-//TAINT TODO, atoms: losing taint
-#if _TAINT_ON_
-        return false;
-#endif
-*/
         return c < UNIT_STATIC_LIMIT;
     }
 
     JSAtom* getUnit(char16_t c) {
-/*
-//TAINT TODO, atoms: losing taint
-#ifndef _TAINT_ON_
-        MOZ_ASSERT(hasUnit(c));
-#endif
-*/
         return unitStaticTable[c];
     }
 
@@ -1094,11 +1082,6 @@ class StaticStrings
     /* Return null if no static atom exists for the given (chars, length). */
     template <typename CharT>
     JSAtom* lookup(const CharT* chars, size_t length) {
-/*
-//TAINT TODO, atoms: losing taint
-#if _TAINT_ON_
-        return nullptr;
-#endif */
         switch (length) {
           case 1: {
             char16_t c = chars[0];

@@ -75,16 +75,9 @@ nsScriptElement::CharacterDataChanged(nsIDocument *aDocument,
                                       nsIContent* aContent,
                                       CharacterDataChangeInfo* aInfo)
 {
+  // TaintFox: TODO(samuel) this and the three methods below might be sinks,
+  // discuss.
   MaybeProcessScript();
-#if _TAINT_ON_
-  //TAINT TODO
-  /*
-  nsString aCont;
-  bool contResult = nsContentUtils::GetNodeTextContent(aContent, false, aCont);
-  if(contResult && aCont.isTainted()) {
-    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aCont, "script.text");
-  }*/
-#endif
 }
 
 void
@@ -96,18 +89,6 @@ nsScriptElement::AttributeChanged(nsIDocument* aDocument,
                                   const nsAttrValue* aOldValue)
 {
   MaybeProcessScript();
-#if _TAINT_ON_
-  //TAINT TODO: need to dispatch, because currently script execution is blocked
-  //maybe see ScriptErrorEvent in nsJSEnvironment.cpp?
-  /*
-  if(aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::src) {
-    nsString aContentText;
-    aElement->GetAttr(aNameSpaceID, aAttribute, aContentText);
-    if(aContentText.isTainted()) {
-      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.src");
-    }
-  }*/
-#endif
 }
 
 void
@@ -117,15 +98,6 @@ nsScriptElement::ContentAppended(nsIDocument* aDocument,
                                  int32_t aNewIndexInContainer)
 {
   MaybeProcessScript();
-#if _TAINT_ON_
-    //TAINT TODO
-  /*
-    nsString aContentText;
-    bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
-    if(contResult && aContentText.isTainted()) {
-      taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
-    }*/
-#endif
 }
 
 void
@@ -135,14 +107,6 @@ nsScriptElement::ContentInserted(nsIDocument *aDocument,
                                  int32_t aIndexInContainer)
 {
   MaybeProcessScript();
-#if _TAINT_ON_
-    //TAINT TODO
-    /*nsString aContentText;*/
-    //bool contResult = nsContentUtils::GetNodeTextContent(aContainer, false, aContentText);
-    //if(contResult && aContentText.isTainted()) {
-      //taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aContentText, "script.text");
-    /*}*/
-#endif
 }
 
 bool

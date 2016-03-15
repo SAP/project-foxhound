@@ -5,6 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
+StringTaint nsTSubstringTuple_CharT::Taint() const
+{
+  StringTaint res;
+  uint32_t len;
+  if (mHead) {
+    res = mHead->Taint();
+    len = mHead->Length();
+  } else {
+    res = TO_SUBSTRING(mFragA).taint();
+    len = TO_SUBSTRING(mFragA).Length();
+  }
+
+  res.concat(TO_SUBSTRING(mFragB).taint(), len);
+  return res;
+}
+
 /**
  * computes the aggregate string length
  */

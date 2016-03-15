@@ -23,8 +23,6 @@
 #include "nsISMILAttr.h"
 #include "mozilla/dom/ShadowRoot.h"
 
-#include "taint-gecko.h"
-
 class nsIDocument;
 class nsIDOMText;
 
@@ -134,13 +132,10 @@ public:
   nsresult SetText(const nsAString& aStr, bool aNotify)
   {
     nsresult res = SetText(aStr.BeginReading(), aStr.Length(), aNotify);
-#if _TAINT_ON_
-    //this is quite ugly, but the last chance to grab the value's taint
-    if(aStr.isTainted()) {
-      mText.removeAllTaint();
-      mText.addTaintRef(taint_duplicate_range(aStr.getTopTaintRef()));
-    }
-#endif
+
+    // TaintFox: propagate taint.
+    mText.AssignTaint(aStr.Taint());
+
     return res;
   }
   virtual nsresult AppendText(const char16_t* aBuffer, uint32_t aLength,
@@ -336,7 +331,7 @@ public:
   {
     mRefCnt.RemovePurple();
   }
-  
+
 private:
   already_AddRefed<nsIAtom> GetCurrentValueAtom();
 };

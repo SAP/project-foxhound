@@ -14,6 +14,8 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/UniquePtr.h"
 
+#include <iostream>
+
 #include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
@@ -1624,15 +1626,6 @@ JS_UpdateWeakPointerAfterGCUnbarriered(JSObject** objp)
     if (IsAboutToBeFinalizedUnbarriered(objp))
         *objp = nullptr;
 }
-
-
-#if _TAINT_ON_
-JS_PUBLIC_API(void)
-JS_SetTaintParameter(JSRuntime* rt, JSTaintParamKey key, uint32_t value)
-{
-    rt->setTaintParameter(key, value);
-}
-#endif
 
 JS_PUBLIC_API(void)
 JS_SetGCParameter(JSRuntime* rt, JSGCParamKey key, uint32_t value)
@@ -5323,7 +5316,7 @@ JS_ParseJSON(JSContext* cx, const char16_t* chars, uint32_t len, MutableHandleVa
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    return TAINT_JSON_PARSE_CALL_NULL(cx, mozilla::Range<const char16_t>(chars, len), NullHandleValue, vp);
+    return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len), NullHandleValue, vp, nullptr);
 }
 
 JS_PUBLIC_API(bool)
@@ -5337,7 +5330,7 @@ JS_ParseJSONWithReviver(JSContext* cx, const char16_t* chars, uint32_t len, Hand
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    return TAINT_JSON_PARSE_CALL_NULL(cx, mozilla::Range<const char16_t>(chars, len), reviver, vp);
+    return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len), reviver, vp, nullptr);
 }
 
 JS_PUBLIC_API(bool)
@@ -5352,8 +5345,8 @@ JS_ParseJSONWithReviver(JSContext* cx, HandleString str, HandleValue reviver, Mu
         return false;
 
     return stableChars.isLatin1()
-           ? TAINT_JSON_PARSE_CALL(cx, stableChars.latin1Range(), reviver, vp, str)
-           : TAINT_JSON_PARSE_CALL(cx, stableChars.twoByteRange(), reviver, vp, str);
+           ? ParseJSONWithReviver(cx, stableChars.latin1Range(), reviver, vp, &str->taint())
+           : ParseJSONWithReviver(cx, stableChars.twoByteRange(), reviver, vp, &str->taint());
 }
 
 /************************************************************************/
@@ -6242,35 +6235,99 @@ JS_DecodeInterpretedFunction(JSContext* cx, const void* data, uint32_t length)
     return funobj;
 }
 
-#if _TAINT_ON_
+// TaintFox: Taint related JSAPI code.
+JS_PUBLIC_API(const StringTaint&)
+JS_GetStringTaint(const JSString* str)
+{
+    return str->taint();
+}
+
+JS_PUBLIC_API(const StringTaint&)
+JS_GetStringTaint(const JSFlatString* str)
+{
+    return str->taint();
+}
+
 JS_PUBLIC_API(void)
-JS_TaintSetDynamicSink(const char *name)
+JS_SetStringTaint(JSString* str, const StringTaint& taint)
 {
-    js::PerThreadData *pt = js::TlsPerThreadData.get();
-    if(pt) {
-        pt->taintDynamicSinkName = name;
-    }
+    str->setTaint(taint);
 }
 
-JS_PUBLIC_API(const char*)
-JS_TaintGetDynamicSink()
+
+JS_PUBLIC_API(void)
+JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink)
 {
-    js::PerThreadData *pt = js::TlsPerThreadData.get();
-    if(pt) {
-        return pt->taintDynamicSinkName;
+    MOZ_ASSERT(str->isTainted());
+    MOZ_ASSERT(!cx->isExceptionPending());
+    const unsigned TAINT_REPORT_FUNCTION_SLOT = 5;
+
+    // Print a message to stdout. Also include the current JS backtrace.
+    auto& firstRange = *str->taint().begin();
+    std::cerr << "!!! Tainted flow into " << sink << " from " << firstRange.flow().source().name() << " !!!" << std::endl;
+    DumpBacktrace(cx);
+
+    // Trigger a custom event that can be caught by an extension.
+    // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
+    // this code everytime we detect a tainted flow, we store the compiled function into a reserved
+    // slot of the current global object.
+    RootedFunction report(cx);
+
+    JSObject* global = cx->global();
+    MOZ_ASSERT(global->isNative());
+
+    RootedValue slot(cx, JS_GetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT));
+    if (slot.isUndefined()) {
+        // Need to compile.
+        const char* argnames[3] = {"str", "sink", "stack"};
+        const char* funbody =
+            "if (window && document) {\n"
+            "    var t = window;\n"
+            "    if (location.protocol == 'javascript:' || location.protocol == 'data:' || location.protocol == 'about:') {\n"
+            "        t = parent.window;\n"
+            "    }\n"
+            "    var pl;\n"
+            "    try {\n"
+            "        pl = parent.location.href;\n"
+            "    } catch (e) {\n"
+            "        pl = 'different origin';\n"
+            "    }\n"
+            "    var e = document.createEvent('CustomEvent');\n"
+            "    e.initCustomEvent('__taintreport', true, false, {\n"
+            "        subframe: t !== window,\n"
+            "        loc: location.href,\n"
+            "        parentloc: pl,\n"
+            "        str: str,\n"
+            "        sink: sink,\n"
+            "        stack: stack\n"
+            "    });\n"
+            "    t.dispatchEvent(e);\n"
+            "}";
+        CompileOptions options(cx);
+        options.setFile("taint_reporting.js");
+
+        AutoObjectVector emptyScopeChain(cx);
+        CompileFunction(cx, emptyScopeChain, options, "ReportTaintSink", 3, argnames, funbody, strlen(funbody), &report);
+        MOZ_ASSERT(report);
+
+        // Store the compiled function into the current global object.
+        JS_SetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT, ObjectValue(*report));
+    } else {
+        report = JS_ValueToFunction(cx, slot);
     }
-    return nullptr;
-}
 
-TaintSetDynamicSink::TaintSetDynamicSink(const char* name) {
-    JS_TaintSetDynamicSink(name);
-}
+    RootedObject stack(cx);
+    CaptureCurrentStack(cx, &stack);
 
+    JS::AutoValueArray<3> arguments(cx);
+    arguments[0].setString(str);
+    arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));
+    arguments[2].setObject(*stack);
 
-TaintSetDynamicSink::~TaintSetDynamicSink() {
-    JS_TaintSetDynamicSink(nullptr);
+    RootedValue rval(cx);
+    JS_CallFunction(cx, nullptr, report, arguments, &rval);
+    MOZ_ASSERT(!cx->isExceptionPending());
 }
-#endif
 
 JS_PUBLIC_API(void)
 JS::SetAsmJSCacheOps(JSRuntime* rt, const JS::AsmJSCacheOps* ops)

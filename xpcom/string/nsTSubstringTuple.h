@@ -15,8 +15,6 @@
  * referenced outside the string code.
  */
 
-#include "taint-gecko.h"
-
 class nsTSubstringTuple_CharT
 {
 public:
@@ -36,9 +34,6 @@ public:
     : mHead(nullptr)
     , mFragA(aStrA)
     , mFragB(aStrB)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 
@@ -47,20 +42,11 @@ public:
     : mHead(&aHead)
     , mFragA(nullptr) // this fragment is ignored when aHead != nullptr
     , mFragB(aStrB)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 
-  ~nsTSubstringTuple_CharT()
-  {
-#if _TAINT_ON_
-    if(isTainted()) {
-      removeAllTaint();
-    }
-#endif
-  }
+  // TaintFox: Computes the combined taint information.
+  StringTaint Taint() const;
 
   /**
    * computes the aggregate string length
@@ -80,19 +66,11 @@ public:
    */
   bool IsDependentOn(const char_type* aStart, const char_type* aEnd) const;
 
-#if _TAINT_ON_
-  TAINT_STRING_HOOKS(startTaint, endTaint)
-#endif
-
 private:
 
   const self_type*        mHead;
   const base_string_type* mFragA;
   const base_string_type* mFragB;
-#if _TAINT_ON_
-  TaintStringRef *startTaint;
-  TaintStringRef *endTaint;
-#endif
 };
 
 inline const nsTSubstringTuple_CharT

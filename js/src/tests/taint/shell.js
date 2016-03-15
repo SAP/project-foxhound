@@ -176,7 +176,9 @@ if (typeof assertDeepEq === 'undefined') {
 if (typeof assertTainted === 'undefined') {
     // Assert that at least part of the given string is tainted.
     var assertTainted = function (str) {
-        assertEq(str.taint.length > 0, true, "string not tainted: " + str);
+        if (str.taint.length == 0) {
+            throw Error("String is not tainted");
+        }
     }
 }
 
@@ -220,7 +222,7 @@ if (typeof assertRangesTainted === 'undefined') {
     // Example usage: assertRangesTainted(str, [0,3], [5, 8], [10, STR_END]);
     var assertRangesTainted = function(str) {
         var ranges = arguments;
-        for (var i = 0; i < range.length; i++) {
+        for (var i = 1; i < ranges.length; i++) {
             assertRangeTainted(str, ranges[i]);
         }
     }
@@ -236,6 +238,31 @@ if (typeof assertFullTainted === 'undefined') {
 if (typeof assertNotTainted === 'undefined') {
     // Assert that the given string is not tainted.
     var assertNotTainted = function(a) {
-        assertEq(a.taint.length, 0, "string tainted: " + a);
+        if (a.taint.length != 0) {
+            throw Error("String is tainted");
+        }
     }
 }
+
+if (typeof randomString === 'undefined') {
+    var randomString = function() {
+        var len = Math.floor(Math.random() * 10) + 1;
+
+        var text = "";
+        var charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";
+
+        for(var i = 0; i < len; i++)
+            text += charset.charAt(Math.floor(Math.random() * possible.length));
+
+        return text;
+    }
+}
+
+if (typeof randomTaintedString === 'undefined') {
+    var randomTaintedString = function() {
+        return taint(randomString());
+    }
+}
+
+if (typeof randomMultiTaintedString === 'undefined') {
+    var randomMultiTaintedString = function() {

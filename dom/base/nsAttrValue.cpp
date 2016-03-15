@@ -174,7 +174,7 @@ nsAttrValue::Init()
 
   sEnumTableArray = new nsTArray<const EnumTable*>;
   NS_ENSURE_TRUE(sEnumTableArray, NS_ERROR_OUT_OF_MEMORY);
-  
+
   return NS_OK;
 }
 
@@ -280,7 +280,7 @@ nsAttrValue::SetTo(const nsAttrValue& aOther)
     {
       ResetIfSet();
       mBits = aOther.mBits;
-      return;      
+      return;
     }
   }
 
@@ -828,13 +828,13 @@ nsAttrValue::AtomAt(int32_t aIndex) const
 {
   NS_PRECONDITION(aIndex >= 0, "Index must not be negative");
   NS_PRECONDITION(GetAtomCount() > uint32_t(aIndex), "aIndex out of range");
-  
+
   if (BaseType() == eAtomBase) {
     return GetAtomValue();
   }
 
   NS_ASSERTION(Type() == eAtomArray, "GetAtomCount must be confused");
-  
+
   return GetAtomArrayValue()->ElementAt(aIndex);
 }
 
@@ -1102,7 +1102,7 @@ nsAttrValue::Equals(nsIAtom* aValue, nsCaseTreatment aCaseSensitive) const
     aValue->ToString(value);
     return Equals(value, aCaseSensitive);
   }
-  
+
   switch (BaseType()) {
     case eStringBase:
     {
@@ -1248,7 +1248,7 @@ nsAttrValue::ParseAtomArray(const nsAString& aValue)
   aValue.BeginReading(iter);
   aValue.EndReading(end);
   bool hasSpace = false;
-  
+
   // skip initial whitespace
   while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
     hasSpace = true;
@@ -1294,7 +1294,7 @@ nsAttrValue::ParseAtomArray(const nsAString& aValue)
   }
 
   AtomArray* array = GetAtomArrayValue();
-  
+
   if (!array->AppendElement(classAtom)) {
     Reset();
     return;
@@ -1650,7 +1650,7 @@ nsAttrValue::LoadImage(nsIDocument* aDocument)
 
   MiscContainer* cont = GetMiscContainer();
   mozilla::css::URLValue* url = cont->mValue.mURL;
-  mozilla::css::ImageValue* image = 
+  mozilla::css::ImageValue* image =
     new css::ImageValue(url->GetURI(), url->mString, url->mReferrer,
                         url->mOriginPrincipal, aDocument);
 
@@ -1888,11 +1888,11 @@ nsAttrValue::GetStringBuffer(const nsAString& aValue) const
   char16_t *data = static_cast<char16_t*>(buf->Data());
   CopyUnicodeTo(aValue, 0, data, len);
   data[len] = char16_t(0);
-#if _TAINT_ON_
-  if(aValue.isTainted()) {
-    buf->addTaintRef(taint_duplicate_range(aValue.getTopTaintRef()));
-  }
-#endif
+
+  // TaintFox: propagate taint.
+  if (aValue.IsTainted())
+    buf->AssignTaint(aValue.Taint());
+
   return buf.forget();
 }
 

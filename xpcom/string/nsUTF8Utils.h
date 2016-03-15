@@ -16,11 +16,6 @@
 
 #include "nsCharTraits.h"
 
-#if defined(_TAINT_ON_) && !defined(_TAINT_NO_TRACK_) && !defined(NS_NO_XPCOM)
-#define TAINT_OVERRIDE_ENABLE
-#include "taint-gecko.h"
-#endif
-
 class UTF8traits
 {
 public:
@@ -285,26 +280,9 @@ public:
   typedef char value_type;
   typedef char16_t buffer_type;
 
-#if defined(TAINT_OVERRIDE_ENABLE)
-  explicit ConvertUTF8toUTF16(buffer_type* aBuffer, TaintStringRef *source = nullptr)
-#else
   explicit ConvertUTF8toUTF16(buffer_type* aBuffer)
-#endif
     : mStart(aBuffer), mBuffer(aBuffer), mErrorEncountered(false)
-#if defined(TAINT_OVERRIDE_ENABLE)
-    , mDestRef(nullptr), mCurrentRef(source)
-#endif
   {
-  }
-
-  ~ConvertUTF8toUTF16()
-  {
-#if defined(TAINT_OVERRIDE_ENABLE)
-    if(mDestRef) {
-        taint_remove_all(&mDestRef, nullptr);
-        mDestRef = nullptr;
-    }
-#endif
   }
 
   size_t Length() const
@@ -370,22 +348,10 @@ public:
     *mBuffer = buffer_type(0);
   }
 
-#if defined(TAINT_OVERRIDE_ENABLE)
-  TaintStringRef *takeTaintResult() {
-    TaintStringRef *r = mDestRef;
-    mDestRef = nullptr;
-    return r;
-  }
-#endif
-
 private:
   buffer_type* const mStart;
   buffer_type* mBuffer;
   bool mErrorEncountered;
-#if defined(TAINT_OVERRIDE_ENABLE)
-  TaintStringRef *mDestRef;
-  TaintStringRef *mCurrentRef;
-#endif
 };
 
 /**
@@ -504,26 +470,9 @@ public:
   // |ConvertUTF8toUTF16|, but it's that way for backwards
   // compatibility.
 
-#if defined(TAINT_OVERRIDE_ENABLE)
-  explicit ConvertUTF16toUTF8(buffer_type* aBuffer, TaintStringRef *source = nullptr)
-#else
   explicit ConvertUTF16toUTF8(buffer_type* aBuffer)
-#endif
     : mStart(aBuffer), mBuffer(aBuffer)
-#if defined(TAINT_OVERRIDE_ENABLE)
-    , mDestRef(nullptr), mCurrentRef(source)
-#endif
   {
-  }
-
-  ~ConvertUTF16toUTF8()
-  {
-#if defined(TAINT_OVERRIDE_ENABLE)
-    if(mDestRef) {
-        taint_remove_all(&mDestRef, nullptr);
-        mDestRef = nullptr;
-    }
-#endif
   }
 
   size_t Size() const
@@ -627,21 +576,9 @@ public:
     *mBuffer = buffer_type(0);
   }
 
-#if defined(TAINT_OVERRIDE_ENABLE)
-  TaintStringRef *takeTaintResult() {
-    TaintStringRef *r = mDestRef;
-    mDestRef = nullptr;
-    return r;
-  }
-#endif
-
 private:
   buffer_type* const mStart;
   buffer_type* mBuffer;
-#if defined(TAINT_OVERRIDE_ENABLE)
-  TaintStringRef *mDestRef;
-  TaintStringRef *mCurrentRef;
-#endif
 };
 
 /**

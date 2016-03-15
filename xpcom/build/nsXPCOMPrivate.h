@@ -112,32 +112,6 @@ typedef void       (*CycleCollectorSuspect3Func)(void*,
                                                  nsCycleCollectingAutoRefCnt*,
                                                  bool*);
 
-#if _TAINT_ON_
-typedef bool       (*TaintStringTainted)(const nsAString& aString);
-typedef TaintStringRef*
-                   (*TaintStringTopTaint)(nsAString& aString);
-typedef TaintStringRef*
-                   (*TaintStringBottomTaint)(nsAString& aString);
-typedef void       (*TaintStringAddTaintRef)(nsAString& aString, TaintStringRef *ref);
-typedef void       (*TaintStringFfTaint)(nsAString& aString);
-typedef void       (*TaintStringRemoveAll)(nsAString& aString);
-typedef void       (*TaintStringRemoveRangeTaint)(nsAString &aString, uint32_t start, uint32_t end);
-
-typedef bool       (*TaintCStringTainted)(const nsACString& aString);
-typedef TaintStringRef*
-                   (*TaintCStringTopTaint)(nsACString& aString);
-typedef TaintStringRef*
-                   (*TaintCStringBottomTaint)(nsACString& aString);
-typedef void       (*TaintCStringAddTaintRef)(nsACString& aString, TaintStringRef *ref);
-typedef void       (*TaintCStringFfTaint)(nsACString& aString);
-typedef void       (*TaintCStringRemoveAll)(nsACString& aString);
-typedef void       (*TaintCStringRemoveRangeTaint)(nsACString &aString, uint32_t start, uint32_t end);
-
-typedef TaintStringRef*
-                   (*TaintDuplicateRange)(TaintStringRef *src, TaintStringRef **taint_end, uint32_t frombegin, int32_t offset, uint32_t fromend);
-
-#endif
-
 // PRIVATE AND DEPRECATED
 typedef NS_CALLBACK(XPCOMExitRoutine)(void);
 
@@ -219,26 +193,6 @@ typedef struct XPCOMFunctions
   CycleCollectorForget2Func cycleForget2Func; // obsolete
 
   CycleCollectorSuspect3Func cycleSuspect3Func;
-
-#if _TAINT_ON_
-  TaintStringTainted taintStringTaintedFunc;
-  TaintStringTopTaint taintStringTopTaintFunc;
-  TaintStringBottomTaint taintStringBottomTaintFunc;
-  TaintStringAddTaintRef taintStringAddTaintRefFunc;
-  TaintStringFfTaint taintStringFfTaintFunc;
-  TaintStringRemoveAll taintStringRemoveAllFunc;
-  TaintStringRemoveRangeTaint taintStringRemoveRangeTaintFunc;
-
-  TaintCStringTainted taintCStringTaintedFunc;
-  TaintCStringTopTaint taintCStringTopTaintFunc;
-  TaintCStringBottomTaint taintCStringBottomTaintFunc;
-  TaintCStringAddTaintRef taintCStringAddTaintRefFunc;
-  TaintCStringFfTaint taintCStringFfTaintFunc;
-  TaintCStringRemoveAll taintCStringRemoveAllFunc;
-  TaintCStringRemoveRangeTaint taintCStringRemoveRangeTaintFunc;
-
-  TaintDuplicateRange taintDuplicateRangeFunc;
-#endif
 
 } XPCOMFunctions;
 

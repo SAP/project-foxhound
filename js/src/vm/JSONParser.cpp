@@ -123,41 +123,12 @@ JSONParser<CharT>::readString()
         return token(Error);
     }
 
-#if _TAINT_ON_
-    TaintStringRef *current_tsr = sourceRef;
-    TaintStringRef *target_first_tsr = nullptr;
-    TaintStringRef *target_last_tsr = nullptr;
-    //offset of the beginning of the string literal from
-    //the whole string-to-parse
-    size_t s_off = current - begin;
-
-    //TAINT TODO: Losing taint here due to atomization
-    #define TAINT_JSON_PARSE_OPT \
-        if(ST != JSONParser::PropertyName) { \
-            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, current - start, s_off); \
-            if(target_first_tsr == nullptr && target_last_tsr != nullptr) \
-                target_first_tsr = target_last_tsr; \
-        }
-
-    #define TAINT_JSON_PARSE_APPLY \
-        if(ST != JSONParser::PropertyName) { \
-            if(target_first_tsr) { \
-                str->addTaintRef(target_first_tsr); \
-                taint_add_op(str->getTopTaintRef(), "JSON.parse", cx); \
-            } \
-        }
-
-#endif
-
     /*
      * Optimization: if the source contains no escaped characters, create the
      * string directly from the source text.
      */
     CharPtr start = current;
     for (; current < end; current++) {
-#if _TAINT_ON_
-        TAINT_JSON_PARSE_OPT
-#endif
         if (*current == '"') {
             size_t length = current - start;
             current++;
@@ -166,9 +137,14 @@ JSONParser<CharT>::readString()
                                 : NewStringCopyN<CanGC>(cx, start.get(), length);
             if (!str)
                 return token(OOM);
-#if _TAINT_ON_
-            TAINT_JSON_PARSE_APPLY
-#endif
+
+            // TaintFox: propagate taint.
+            if (ST != JSONParser::PropertyName && inputTaint) {
+                // The 'if' is currently required since we don't handle atom tainting.
+                ptrdiff_t offset = start - begin;
+                StringTaint taint = StringTaint::substr(*inputTaint, offset, offset + length);
+                str->setTaint(taint.extend(TaintOperation("JSON.parse")));
+            }
             return stringToken(str);
         }
 
@@ -181,10 +157,6 @@ JSONParser<CharT>::readString()
         }
     }
 
-#if _TAINT_ON_
-    TAINT_JSON_PARSE_OPT
-#endif
-
     /*
      * Slow case: string contains escaped characters.  Copy a maximal sequence
      * of unescaped characters into a temporary buffer, then an escaped
@@ -192,6 +164,12 @@ JSONParser<CharT>::readString()
      */
     StringBuffer buffer(cx);
     do {
+        // TaintFox: add taint information for next chunk of characters.
+        if (inputTaint && inputTaint->hasTaint()) {
+            buffer.appendTaint(StringTaint::substr(*inputTaint, start - begin, current - begin), buffer.length());
+            //buffer.appendTaint(inputTaint->between(start - begin, current - begin), buffer.length());
+        }
+
         if (start < current && !buffer.append(start.get(), current.get()))
             return token(OOM);
 
@@ -205,9 +183,10 @@ JSONParser<CharT>::readString()
                                 : buffer.finishString();
             if (!str)
                 return token(OOM);
-#if _TAINT_ON_
-            TAINT_JSON_PARSE_APPLY
-#endif
+
+            // TaintFox: Add taint operation.
+            str->taint().extend(TaintOperation("JSON.parse"));
+
             return stringToken(str);
         }
 
@@ -265,18 +244,19 @@ JSONParser<CharT>::readString()
             error("bad escaped character");
             return token(Error);
         }
+
+        // TaintFox: add taint information for next output character.
+        if (inputTaint && inputTaint->hasTaint()) {
+            if (auto flow = inputTaint->at(current - 1 - begin))
+                buffer.taint().append(TaintRange(buffer.length(), buffer.length() + 1, *flow));
+        }
+
         if (!buffer.append(c))
             return token(OOM);
 
+
         start = current;
         for (; current < end; current++) {
-#if _TAINT_ON_
-            if(ST != JSONParser::PropertyName) {
-                current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, current - begin, buffer.length() + (size_t)(current - start));
-                if(target_first_tsr == nullptr && target_last_tsr != nullptr)
-                    target_first_tsr = target_last_tsr;
-            }
-#endif
             if (*current == '"' || *current == '\\' || *current <= 0x001F)
                 break;
         }

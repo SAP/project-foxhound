@@ -755,10 +755,10 @@ js::Invoke(JSContext* cx, const CallArgs& args, MaybeConstruct construct)
 
     /* Invoke native functions. */
     JSFunction* fun = &args.callee().as<JSFunction>();
-#if _TAINT_ON_
-    //scan for tainted args
-    TAINT_CALL_MARK_ALL(fun, args);
-#endif
+
+    // TaintFox: mark tainted function call arguments for tracing purposes.
+    MarkTaintedFunctionArguments(cx, fun, args);
+
     if (construct != CONSTRUCT && fun->isClassConstructor()) {
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_CANT_CALL_CLASS_CONSTRUCTOR);
         return false;
@@ -3085,10 +3085,8 @@ CASE(JSOP_FUNCALL)
         if (!funScript)
             goto error;
 
-#if _TAINT_ON_
-        //scan for tainted args
-        TAINT_CALL_MARK_ALL(fun, args);
-#endif
+        // TaintFox: mark tainted function call arguments for tracing purposes.
+        MarkTaintedFunctionArguments(cx, fun, args);
 
         InitialFrameFlags initial = construct ? INITIAL_CONSTRUCT : INITIAL_NONE;
         bool createSingleton = ObjectGroup::useSingletonForNewObject(cx, script, REGS.pc);

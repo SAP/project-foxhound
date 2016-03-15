@@ -20,8 +20,6 @@
 #include "nsReadableUtils.h"
 #include "nsISupportsImpl.h"
 
-#include "taint-gecko.h"
-
 class nsString;
 
 // XXX should this normalize the code to keep a \u0000 at the end?
@@ -36,8 +34,10 @@ class nsString;
  *
  * This class does not have a virtual destructor therefore it is not
  * meant to be subclassed.
+ *
+ * TaintFox: This class is taint aware.
  */
-class nsTextFragment final {
+class nsTextFragment final : public TaintableString {
 public:
   static nsresult Init();
   static void Shutdown();
@@ -46,11 +46,7 @@ public:
    * Default constructor. Initialize the fragment to be empty.
    */
   nsTextFragment()
-    :
-#if _TAINT_ON_
-    startTaint(nullptr), endTaint(nullptr),
-#endif
-    m1b(nullptr), mAllBits(0)
+    : m1b(nullptr), mAllBits(0)
 
   {
     MOZ_COUNT_CTOR(nsTextFragment);
@@ -151,17 +147,9 @@ public:
         return false;
       }
 
-#if _TAINT_ON_
-      TAINT_APPEND_TAINT(aString, startTaint);
-#endif
-
       return true;
     } else {
       nsDependentCSubstring sub = Substring(m1b, mState.mLength);
-
-#if _TAINT_ON_
-      TAINT_APPEND_TAINT(sub, startTaint);
-#endif
 
       return AppendASCIItoUTF16(sub, aString, aFallible);
     }
@@ -195,19 +183,10 @@ public:
         return false;
       }
 
-#if _TAINT_ON_
-      TAINT_APPEND_TAINT(aString, startTaint);
-#endif
-
       return true;
     } else {
       auto substr = Substring(m1b + aOffset, aLength);
-#if _TAINT_ON_
-      return AppendASCIItoUTF16(TAINT_APPEND_TAINT(substr, startTaint), aString,
-                                                   aFallible);
-#else
       return AppendASCIItoUTF16(substr, aString, aFallible);
-#endif
     }
   }
 
@@ -243,9 +222,11 @@ public:
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
-#if _TAINT_ON_
-  TAINT_STRING_HOOKS(startTaint, endTaint)
-#endif
+  // TaintFox: helper method for appending taint.
+  void AppendTaint(const StringTaint& aTaint)
+  {
+    taint_.concat(aTaint, GetLength());
+  }
 
 private:
   void ReleaseText();
@@ -255,11 +236,6 @@ private:
    * includes any Bidi characters.
    */
   void UpdateBidiFlag(const char16_t* aBuffer, uint32_t aLength);
-
-#if _TAINT_ON_
-  TaintStringRef* startTaint;
-  TaintStringRef* endTaint;
-#endif
 
   union {
     char16_t *m2b;

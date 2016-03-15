@@ -96,25 +96,6 @@ static const XPCOMFunctions kFrozenFunctions = {
   nullptr,
 
   &NS_CycleCollectorSuspect3,
-
-#if _TAINT_ON_
-  &TAINT_NS_StringTainted,
-  &TAINT_NS_StringTopTaint,
-  &TAINT_NS_StringBottomTaint,
-  &TAINT_NS_StringAddTaintRef,
-  &TAINT_NS_StringFfTaint,
-  &TAINT_NS_StringRemoveAll,
-  &TAINT_NS_StringRemoveRangeTaint,
-  &TAINT_NS_CStringTainted,
-  &TAINT_NS_CStringTopTaint,
-  &TAINT_NS_CStringBottomTaint,
-  &TAINT_NS_CStringAddTaintRef,
-  &TAINT_NS_CStringFfTaint,
-  &TAINT_NS_CStringRemoveAll,
-  &TAINT_NS_CStringRemoveRangeTaint,
-
-  &TAINT_NS_DUPLICATE_RANGE,
-#endif
 };
 
 EXPORT_XPCOM_API(nsresult)

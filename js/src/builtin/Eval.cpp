@@ -171,14 +171,10 @@ EvalStringMightBeJSON(const mozilla::Range<const CharT> chars)
     return false;
 }
 
+// TaintFox: modified to accept input taint information as well.
 template <typename CharT>
 static EvalJSONResult
-#if _TAINT_ON_
-ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval,
-    TaintStringRef *ref)
-#else
-ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval)
-#endif
+ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, MutableHandleValue rval, const StringTaint* taint)
 {
     size_t len = chars.length();
     MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||
@@ -188,11 +184,7 @@ ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, Mu
                      ? chars
                      : mozilla::Range<const CharT>(chars.start().get() + 1U, len - 2);
 
-#if _TAINT_ON_
-    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, jsonChars, ref, JSONParserBase::NoError));
-#else
-    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, jsonChars, JSONParserBase::NoError));
-#endif
+    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, jsonChars, taint, JSONParserBase::NoError));
     if (!parser.parse(rval))
         return EvalJSON_Failure;
 
@@ -217,8 +209,8 @@ TryEvalJSON(JSContext* cx, JSLinearString* str, MutableHandleValue rval)
         return EvalJSON_Failure;
 
     return linearChars.isLatin1()
-           ? TAINT_JSON_EVAL_CALL(cx, linearChars.latin1Range(), rval)
-           : TAINT_JSON_EVAL_CALL(cx, linearChars.twoByteRange(), rval);
+           ? ParseEvalStringAsJSON(cx, linearChars.latin1Range(), rval, &str->taint())
+           : ParseEvalStringAsJSON(cx, linearChars.twoByteRange(), rval, &str->taint());
 }
 
 // Define subset of ExecuteType so that casting performs the injection.
@@ -298,11 +290,9 @@ EvalKernel(JSContext* cx, const CallArgs& args, EvalType evalType, AbstractFrame
     if (ejr != EvalJSON_NotJSON)
         return ejr == EvalJSON_Success;
 
-#if _TAINT_ON_
-    if(str->isTainted()) {
-        taint_report_sink_js(cx, str, "eval");
-    }
-#endif
+    // TaintFox: eval() sink.
+    if (str->isTainted())
+        JS_ReportTaintSink(cx, str, "eval");
 
     EvalScriptGuard esg(cx);
 
@@ -392,11 +382,9 @@ js::DirectEvalStringFromIon(JSContext* cx,
     if (ejr != EvalJSON_NotJSON)
         return ejr == EvalJSON_Success;
 
-#if _TAINT_ON_
-    if(str->isTainted()) {
-        taint_report_sink_js(cx, str, "eval");
-    }
-#endif
+    // TaintFox: eval() sink.
+    if (str->isTainted())
+        JS_ReportTaintSink(cx, str, "eval");
 
     EvalScriptGuard esg(cx);
 

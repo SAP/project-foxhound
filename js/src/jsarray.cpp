@@ -1011,9 +1011,6 @@ ArrayJoinKernel(JSContext* cx, SeparatorOp sepOp, HandleObject obj, uint32_t len
 {
     uint32_t i = 0;
 
-#if _TAINT_ON_
-    TaintAutoMarkSBAppend sbmark;
-#endif
     if (!Locale && !ObjectMayHaveExtraIndexedProperties(obj)) {
         ArrayJoinDenseKernelFunctor<SeparatorOp> functor(cx, sepOp, obj, length, sb, &i);
         DenseElementResult result = CallBoxedOrUnboxedSpecialization(functor, obj);
@@ -1153,6 +1150,9 @@ ArrayJoin(JSContext* cx, CallArgs& args)
     JSString* res = js::ArrayJoin<Locale>(cx, obj, sepstr, length);
     if (!res)
         return false;
+
+    // TaintFox: add taint operation.
+    res->taint().extend(TaintOperation("Array.join"));
 
     args.rval().setString(res);
     return true;

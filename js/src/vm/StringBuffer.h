@@ -13,7 +13,6 @@
 #include "jscntxt.h"
 
 #include "js/Vector.h"
-#include "taint-private.h"
 
 namespace js {
 
@@ -27,8 +26,10 @@ namespace js {
  * Well-sized extractions (which waste no more than 1/4 of their char
  * buffer space) are guaranteed for strings built by this interface.
  * See |extractWellSized|.
+ *
+ * TaintFox: the StringBuffer class is taint aware.
  */
-class StringBuffer
+class StringBuffer : public TaintableString
 {
     /*
      * The Vector's buffer may be either stolen or copied, so we need to use
@@ -54,11 +55,6 @@ class StringBuffer
     /* Number of reserve()'d chars, see inflateChars. */
     size_t reserved_;
 
-#if _TAINT_ON_
-    TaintStringRef* startTaint;
-    TaintStringRef* endTaint;
-#endif
-
     StringBuffer(const StringBuffer& other) = delete;
     void operator=(const StringBuffer& other) = delete;
 
@@ -80,22 +76,9 @@ class StringBuffer
   public:
     explicit StringBuffer(ExclusiveContext* cx)
       : cx(cx), hasEnsuredTwoByteChars_(false), reserved_(0)
-#if _TAINT_ON_
-      , startTaint(nullptr), endTaint(nullptr)
-#endif
     {
         cb.construct<Latin1CharBuffer>(cx);
     }
-
-    ~StringBuffer() {
-#if _TAINT_ON_
-        removeAllTaint();
-#endif
-    }
-
-#if _TAINT_ON_
-  TAINT_JSSTRING_HOOKS(startTaint, endTaint)
-#endif
 
     inline bool reserve(size_t len) {
         if (len > reserved_)
@@ -261,20 +244,8 @@ StringBuffer::append(const char16_t* begin, const char16_t* end)
 inline bool
 StringBuffer::append(JSLinearString* str)
 {
-
-#if _TAINT_ON_
-    if(str->isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB)) {
-        taint_copy_range(this, str->getTopTaintRef(), 0, length(), 0);
-        MOZ_ASSERT(isTainted());
-
-        JSContext *jscx = cx->maybeJSContext();
-        if(jscx && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
-            RootedValue lhsval(cx, StringValue(finishCurrentString()));
-            RootedValue rhsval(cx, StringValue(str));
-            taint_add_op(getTopTaintRef(), "concat", jscx, lhsval, rhsval);
-        }
-    }
-#endif
+    // TaintFox: append taint information.
+    taint_.concat(str->taint(), length());
 
     JS::AutoCheckCannotGC nogc;
     if (isLatin1()) {
@@ -294,31 +265,8 @@ StringBuffer::infallibleAppendSubstring(JSLinearString* base, size_t off, size_t
     MOZ_ASSERT(off + len <= base->length());
     MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
-#if _TAINT_ON_
-    if(base->isTainted() && len > 0 && taint_threadbit_set(TAINT_OPT_MARK_SB)) {
-        TaintStringRef *last = getBottomTaintRef();
-        TaintStringRef *next = nullptr;
-        taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
-
-        JSContext *jscx = cx->maybeJSContext();
-
-        next = (last ? last->next : getTopTaintRef());
-        if(jscx) {
-            if(next)
-                taint_inject_substring_op(jscx, next, length(), off);
-
-            if(isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
-                RootedValue lhsval(cx, StringValue(finishCurrentString()));
-                RootedValue rhsval(cx, StringValue(base));
-                taint_add_op(getTopTaintRef(), "concat", jscx, lhsval, rhsval);
-            }
-        }
-
-
-
-
-    }
-#endif
+    // TaintFox: append taint information.
+    taint_.concat(StringTaint::substr(base->taint(), off, off + len), length());
 
     JS::AutoCheckCannotGC nogc;
     if (base->hasLatin1Chars())
@@ -332,26 +280,9 @@ StringBuffer::appendSubstring(JSLinearString* base, size_t off, size_t len)
 {
     MOZ_ASSERT(off + len <= base->length());
 
-#if _TAINT_ON_
-    if(base->isTainted() && len > 0 && taint_threadbit_set(TAINT_OPT_MARK_SB)) {
-        TaintStringRef *last = getBottomTaintRef();
-        TaintStringRef *next = nullptr;
-
-        taint_copy_range(this, base->getTopTaintRef(), off, length(), off + len);
-        JSContext *jscx = cx->maybeJSContext();
-        next = (last ? last->next : getTopTaintRef());
-        if(jscx) {
-            if(next)
-                taint_inject_substring_op(jscx, next, length(), off);
-
-            if(isTainted() && taint_threadbit_set(TAINT_OPT_MARK_SB_APPEND)) {
-                RootedValue lhsval(cx, StringValue(finishCurrentString()));
-                RootedValue rhsval(cx, StringValue(base));
-                taint_add_op(getTopTaintRef(), "concat", jscx, lhsval, rhsval);
-            }
-        }
-    }
-#endif
+    // TaintFox: append taint information.
+    // This probably behaves incorrectly if the appendSubstring operation fails..
+    taint_.concat(StringTaint::substr(base->taint(), off, off + len), length());
 
     JS::AutoCheckCannotGC nogc;
     if (isLatin1()) {

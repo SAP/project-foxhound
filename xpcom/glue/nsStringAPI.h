@@ -24,8 +24,6 @@
 #include "mozilla/Logging.h"
 #include "nsTArray.h"
 
-#include "taint-gecko.h"
-
 /**
  * Comparison function for use with nsACString::Equals
  */
@@ -458,22 +456,6 @@ public:
                                   uint32_t aRadix = 10) const;
 #endif // XPCOM_GLUE_AVOID_NSPR
 
-#if _TAINT_ON_
-  NS_HIDDEN_(bool) isTainted() const;
-
-  NS_HIDDEN_(TaintStringRef*) getTopTaintRef();
-
-  NS_HIDDEN_(TaintStringRef*) getBottomTaintRef();
-
-  NS_HIDDEN_(void) addTaintRef(TaintStringRef *tsr);
-
-  NS_HIDDEN_(void) removeRangeTaint(uint32_t start, uint32_t end);
-
-  NS_HIDDEN_(void) ffTaint();
-
-  NS_HIDDEN_(void) removeAllTaint();
-#endif
-
 protected:
   // Prevent people from allocating a nsAString directly.
   ~nsAString() {}
@@ -886,22 +868,6 @@ public:
   NS_HIDDEN_(int64_t) ToInteger64(nsresult* aErrorCode,
                                   uint32_t aRadix = 10) const;
 #endif // XPCOM_GLUE_AVOID_NSPR
-
-#if _TAINT_ON_
-  NS_HIDDEN_(bool) isTainted() const;
-
-  NS_HIDDEN_(TaintStringRef*) getTopTaintRef();
-
-  NS_HIDDEN_(TaintStringRef*) getBottomTaintRef();
-
-  NS_HIDDEN_(void) addTaintRef(TaintStringRef *tsr);
-
-  NS_HIDDEN_(void) ffTaint();
-
-  NS_HIDDEN_(void) removeAllTaint();
-
-  NS_HIDDEN_(void) removeRangeTaint(uint32_t start, uint32_t end);
-#endif
 
 protected:
   // Prevent people from allocating a nsAString directly.

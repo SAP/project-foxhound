@@ -2390,23 +2390,6 @@ mozilla::dom::StartupJSEnvironment()
   sExpensiveCollectorPokes = 0;
 }
 
-#if _TAINT_ON_
-
-static void
-SetTaintBoolPrefChangedCallbackStack(const char* aPrefName, void* aClosure)
-{
-  bool pref = Preferences::GetBool(aPrefName, true);
-  JS_SetTaintParameter(sRuntime, (JSTaintParamKey)(intptr_t)aClosure, pref);
-}
-static void
-SetTaintBoolPrefChangedCallbackSource(const char* aPrefName, void* aClosure)
-{
-  bool pref = Preferences::GetBool(aPrefName, false);
-  JS_SetTaintParameter(sRuntime, (JSTaintParamKey)(intptr_t)aClosure, pref);
-}
-
-#endif
-
 static void
 ReportAllJSExceptionsPrefChangedCallback(const char* aPrefName, void* aClosure)
 {
@@ -2631,15 +2614,6 @@ nsJSContext::EnsureStatics()
   Preferences::RegisterCallbackAndCall(SetMemoryGCPrefChangedCallback,
                                        "javascript.options.mem.gc_max_empty_chunk_count",
                                        (void *)JSGC_MAX_EMPTY_CHUNK_COUNT);
-
-#if _TAINT_ON_
-  Preferences::RegisterCallbackAndCall(SetTaintBoolPrefChangedCallbackStack,
-                                       "javascript.options.taint.capture_stack",
-                                       (void *)JSTAINT_CAPTURESTACK);
-  Preferences::RegisterCallbackAndCall(SetTaintBoolPrefChangedCallbackSource,
-                                       "javascript.options.taint.capture_source",
-                                       (void *)JSTAINT_CAPTURESTACKSOURCE);
-#endif
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (!obs) {

@@ -309,18 +309,20 @@ CopyStringPure(JSContext* cx, JSString* str)
             copy = NewStringCopyNDontDeflate<NoGC>(cx, str->asLinear().twoByteChars(nogc), len);
         }
         if (copy) {
-            return TAINT_STR_COPY(copy, str);
+            // TaintFox: Here and below, propagate taint when wrapping strings.
+            copy->setTaint(str->taint());
+            return copy;
         }
 
         AutoStableStringChars chars(cx);
         if (!chars.init(cx, str))
             return nullptr;
 
-        return TAINT_STR_COPY(chars.isLatin1()
+        copy = chars.isLatin1()
                ? NewStringCopyN<CanGC>(cx, chars.latin1Range().start().get(), len)
-               : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len),
-                str);
-
+               : NewStringCopyNDontDeflate<CanGC>(cx, chars.twoByteRange().start().get(), len);
+        copy->setTaint(str->taint());
+        return copy;
     }
 
     if (str->hasLatin1Chars()) {
@@ -328,14 +330,18 @@ CopyStringPure(JSContext* cx, JSString* str)
         if (!str->asRope().copyLatin1CharsZ(cx, copiedChars))
             return nullptr;
 
-        return TAINT_STR_COPY(NewString<CanGC>(cx, copiedChars.forget(), len), str);
+        copy = NewString<CanGC>(cx, copiedChars.forget(), len);
+        copy->setTaint(str->taint());
+        return copy;
     }
 
     ScopedJSFreePtr<char16_t> copiedChars;
     if (!str->asRope().copyTwoByteCharsZ(cx, copiedChars))
         return nullptr;
 
-    return TAINT_STR_COPY(NewStringDontDeflate<CanGC>(cx, copiedChars.forget(), len), str);
+    copy = NewStringDontDeflate<CanGC>(cx, copiedChars.forget(), len);
+    copy->setTaint(str->taint());
+    return copy;
 }
 
 bool

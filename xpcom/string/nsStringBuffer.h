@@ -10,7 +10,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 
-#include "taint-gecko.h"
+#include "Taint.h"
 
 template<class T> struct already_AddRefed;
 
@@ -22,64 +22,18 @@ template<class T> struct already_AddRefed;
  * When this header is in use, it enables reference counting, and capacity
  * tracking.  NOTE: A string buffer can be modified only if its reference
  * count is 1.
+ *
+ * TaintFox: nsStringBuffer is taint aware.
  */
-class nsStringBuffer
+class nsStringBuffer : public TaintableString
 {
 private:
   friend class CheckStaticAtomSizes;
 
   mozilla::Atomic<int32_t> mRefCount;
   uint32_t mStorageSize;
-#if _TAINT_ON_
-  TaintStringRef *startTaint;
-  TaintStringRef *endTaint;
-//  uintptr_t ownTaint;
-#endif
 
 public:
-
-#if _TAINT_ON_
-  TAINT_STRING_HOOKS(startTaint, endTaint);
-    /*
-    bool isTainted() const {
-        return startTaint;
-    }
-    
-    TaintStringRef *getTopTaintRef() const {
-        return startTaint;
-    }
-
-    
-    TaintStringRef *getBottomTaintRef() const {
-        return endTaint;
-    }
-
-    
-    void addTaintRef(TaintStringRef *tsr)  {
-        MOZ_ASSERT(!isTainted() || ownTaint == 1,
-          "StringBuffer only allows taint modification if not externally tainted before");
-        //or else we can't decide what to delete
-        //!!! GC
-        startTaint = endTaint = tsr;
-        ownTaint = 1;
-
-        ffTaint();
-    }
-
-    
-    void ffTaint() {
-        if(endTaint)
-            for(; endTaint->next != nullptr; endTaint = endTaint->next);
-    }
-
-    
-    void removeAllTaint() {
-      if(!isTainted())
-        return;
-      MOZ_ASSERT(ownTaint == 1, "Do not delete foreign taint.");
-      taint_remove_all(&startTaint, &endTaint);
-    }*/
-#endif
 
   /**
    * Allocates a new string buffer, with given size in bytes and a

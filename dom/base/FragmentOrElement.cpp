@@ -2803,10 +2803,9 @@ FragmentOrElement::SetInnerHTMLInternal(const nsAString& aInnerHTML, ErrorResult
     target = frag;
   }
 
-#if _TAINT_ON_
-  if(aInnerHTML.isTainted())
-    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aInnerHTML, "innerHTML");
-#endif
+  // TaintFox: innerHTML sink.
+  if (aInnerHTML.IsTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aInnerHTML, "innerHTML");
 
   // Fast-path for strings with no markup. Limit this to short strings, to
   // avoid ContainsMarkup taking too long. The choice for 100 is based on

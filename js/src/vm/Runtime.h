@@ -104,13 +104,6 @@ class Simulator;
 #endif
 } // namespace jit
 
-#if _TAINT_ON_
-enum TaintMarker {
-    TAINT_OPT_MARK_SB = 1,
-    TAINT_OPT_MARK_SB_APPEND = 2
-};
-#endif
-
 /*
  * GetSrcNote cache to avoid O(n^2) growth in finding a source note for a
  * given pc in a script. We use the script->code pointer to tag the cache,
@@ -518,10 +511,6 @@ class PerThreadData : public PerThreadDataFriendFields
     JSRuntime* runtime_;
 
   public:
-#if _TAINT_ON_
-    uint8_t             taintStackOptions;
-    const char*         taintDynamicSinkName;
-#endif
 #ifdef JS_TRACE_LOGGING
     TraceLoggerThread*  traceLogger;
 #endif
@@ -1494,14 +1483,6 @@ struct JSRuntime : public JS::shadow::Runtime,
      * function to assess the size of malloc'd blocks of memory.
      */
     mozilla::MallocSizeOf debuggerMallocSizeOf;
-
-#if _TAINT_ON_
-    bool taintCaptureStack;
-    bool taintCaptureStackSource;
-
-    void setTaintParameter(JSTaintParamKey key, uint32_t value);
-    uint32_t getTaintParameter(JSTaintParamKey key);
-#endif
 
     /* Last time at which an animation was played for this runtime. */
     int64_t lastAnimationTime;

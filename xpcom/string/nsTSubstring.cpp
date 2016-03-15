@@ -16,9 +16,6 @@ nsTSubstring_CharT::nsTSubstring_CharT(char_type* aData, size_type aLength,
   : mData(aData),
     mLength(aLength),
     mFlags(aFlags)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
 {
   if (aFlags & F_OWNED) {
     STRING_STAT_INCREMENT(Adopt);
@@ -160,9 +157,9 @@ nsTSubstring_CharT::MutatePrep(size_type aCapacity, char_type** aOldData,
 void
 nsTSubstring_CharT::Finalize()
 {
-#if _TAINT_ON_
-  removeAllTaint();
-#endif
+  // TaintFox: clear taint.
+  ClearTaint();
+
   ::ReleaseData(mData, mFlags);
   // mData, mLength, and mFlags are purposefully left dangling
 }
@@ -233,20 +230,11 @@ nsTSubstring_CharT::ReplacePrepInternal(index_type aCutStart, size_type aCutLen,
     }
   }
 
-#if _TAINT_ON_
-  if(isTainted()) {
-    if(aCutStart == 0 && aCutLen == mLength) {
-      removeAllTaint(); //optimize a full remove-cut
-    } else if(aCutLen > 0) {
-      taint_remove_range(&startTaint, &endTaint, aCutStart, aCutStart + aCutLen);
-      MOZ_ASSERT(isTainted());
-    }
-    if(isTainted() && aFragLen > 0) {
-      taint_insert_offset(startTaint, aCutStart, aFragLen);
-      ffTaint();
-    }
+  // TaintFox: remove and adjust taint information.
+  if (IsTainted()) {
+    taint_.clearBetween(aCutStart, aCutStart + aCutLen);
+    taint_.shift(aCutStart, aFragLen - aCutLen);
   }
-#endif
 
   // add null terminator (mutable mData always has room for the null-
   // terminator).
@@ -311,10 +299,8 @@ nsTSubstring_CharT::Assign(char_type aChar)
   if (!ReplacePrep(0, mLength, 1)) {
     AllocFailed(mLength);
   }
-
-#if _TAINT_ON_
-  MOZ_ASSERT(!isTainted());
-#endif
+  // TaintFox: cannot be tainted anymore.
+  MOZ_ASSERT(!IsTainted());
 
   *mData = aChar;
 }
@@ -325,10 +311,8 @@ nsTSubstring_CharT::Assign(char_type aChar, const fallible_t&)
   if (!ReplacePrep(0, mLength, 1)) {
     return false;
   }
-
-#if _TAINT_ON_
-  MOZ_ASSERT(!isTainted());
-#endif
+  // TaintFox: cannot be tainted anymore.
+  MOZ_ASSERT(!IsTainted());
 
   *mData = aChar;
   return true;
@@ -371,10 +355,8 @@ nsTSubstring_CharT::Assign(const char_type* aData, size_type aLength,
   if (!ReplacePrep(0, mLength, aLength)) {
     return false;
   }
-
-#if _TAINT_ON_
-  MOZ_ASSERT(!isTainted());
-#endif
+  // TaintFox: cannot be tainted anymore.
+  MOZ_ASSERT(!IsTainted());
 
   char_traits::copy(mData, aData, aLength);
   return true;
@@ -403,10 +385,8 @@ nsTSubstring_CharT::AssignASCII(const char* aData, size_type aLength,
   if (!ReplacePrep(0, mLength, aLength)) {
     return false;
   }
-
-#if _TAINT_ON_
-  MOZ_ASSERT(!isTainted());
-#endif
+  // TaintFox: cannot be tainted anymore.
+  MOZ_ASSERT(!IsTainted());
 
   char_traits::copyASCII(mData, aData, aLength);
   return true;
@@ -415,9 +395,9 @@ nsTSubstring_CharT::AssignASCII(const char* aData, size_type aLength,
 void
 nsTSubstring_CharT::AssignLiteral(const char_type* aData, size_type aLength)
 {
-#if _TAINT_ON_
-  removeAllTaint();
-#endif
+  // TaintFox: clear taint here.
+  ClearTaint();
+
   ::ReleaseData(mData, mFlags);
   mData = const_cast<char_type*>(aData);
   mLength = aLength;
@@ -462,27 +442,28 @@ nsTSubstring_CharT::Assign(const self_type& aStr, const fallible_t& aFallible)
 
     // get an owning reference to the mData
     nsStringBuffer::FromData(mData)->AddRef();
-#if _TAINT_ON_
-    TAINT_ASSIGN_TAINT(*this, aStr.startTaint);
-#endif
+
+    // TaintFox: propagate taint information.
+    setTaint(aStr.Taint());
+
     return true;
   } else if (aStr.mFlags & F_LITERAL) {
     MOZ_ASSERT(aStr.mFlags & F_TERMINATED, "Unterminated literal");
 
     AssignLiteral(aStr.mData, aStr.mLength);
-#if _TAINT_ON_
-    TAINT_ASSIGN_TAINT(*this, aStr.startTaint);
-#endif
+
+    // TaintFox: propagate taint information.
+    setTaint(aStr.Taint());
 
     return true;
   }
 
   // else, treat this like an ordinary assignment.
   bool ok = Assign(aStr.Data(), aStr.Length(), aFallible);
-#if _TAINT_ON_
-  MOZ_ASSERT(!isTainted());
-  TAINT_APPEND_TAINT(*this, aStr.startTaint);
-#endif
+
+  // TaintFox: propagate taint information.
+  setTaint(aStr.Taint());
+
   return ok;
 }
 
@@ -520,10 +501,8 @@ nsTSubstring_CharT::Assign(const substring_tuple_type& aTuple,
   mData[length] = 0;
   mLength = length;
 
-#if _TAINT_ON_
-  removeAllTaint();
-  TAINT_ASSIGN_TAINT(*this, aTuple.getTopTaintRef());
-#endif
+  // TaintFox: propagate taint.
+  taint_ = aTuple.Taint();
 
   return true;
 }
@@ -534,9 +513,9 @@ nsTSubstring_CharT::Adopt(char_type* aData, size_type aLength)
   if (aData) {
     ::ReleaseData(mData, mFlags);
 
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+    // TaintFox: remove taint here. Caller is responsible to propagate taint in
+    // this case.
+    ClearTaint();
 
     if (aLength == size_type(-1)) {
       aLength = char_traits::length(aData);
@@ -684,12 +663,9 @@ nsTSubstring_CharT::Replace(index_type aCutStart, size_type aCutLength,
 
   if (ReplacePrep(aCutStart, aCutLength, length) && length > 0) {
     aTuple.WriteTo(mData + aCutStart, length);
-#if _TAINT_ON_
-    if(aTuple.isTainted() && isTainted())
-      taint_copy_merge(&startTaint, &endTaint, aTuple.getTopTaintRef(), aCutStart);
-    else if(aTuple.isTainted())
-      addTaintRef(taint_duplicate_range(aTuple.getTopTaintRef(), &endTaint, 0, aCutStart, 0));
-#endif
+
+    // TaintFox: propagate taint.
+    taint_.replace(aCutStart, aCutStart + aCutLength, aTuple.Length(), aTuple.Taint());
   }
 }
 
@@ -725,9 +701,10 @@ nsTSubstring_CharT::SetCapacity(size_type aCapacity, const fallible_t&)
     mData = char_traits::sEmptyBuffer;
     mLength = 0;
     SetDataFlags(F_TERMINATED);
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+
+    // TaintFox: clear taint.
+    ClearTaint();
+
     return true;
   }
 
@@ -751,11 +728,9 @@ nsTSubstring_CharT::SetCapacity(size_type aCapacity, const fallible_t&)
 
   // adjust mLength if our buffer shrunk down in size
   if (newLen < mLength) {
-#if _TAINT_ON_
-    if(isTainted()) {
-      taint_remove_range(&startTaint, &endTaint, newLen, mLength);
-    }
-#endif
+    // TaintFox: remove taint at the end.
+    taint_.clearAfter(newLen);
+
     mLength = newLen;
   }
 
@@ -908,25 +883,15 @@ nsTSubstring_CharT::StripChar(char_type aChar, int32_t aOffset)
   char_type* from = mData + aOffset;
   char_type* end  = mData + mLength;
 
-#if _TAINT_ON_
-  TaintStringRef **current = &startTaint;
-#endif
-
   while (from < end) {
     char_type theChar = *from++;
     if (aChar != theChar) {
       *to++ = theChar;
     } else {
-#if _TAINT_ON_
-      if(isTainted()) {
-        uint32_t cur_offset = from - mData - aOffset;
-        TaintStringRef *last = taint_remove_range(current, &endTaint, cur_offset, cur_offset + 1);
-        //if not start being removed, speed-up next time & update pointer accordingly
-        if(last) {
-          current = &last->next;
-        }
+      // TaintFox: remove taint information for the removed character.
+      if (IsTainted()) {
+        taint_.clearAt(from - mData - 1);
       }
-#endif
     }
   }
   *to = char_type(0); // add the null
@@ -950,10 +915,6 @@ nsTSubstring_CharT::StripChars(const char_type* aChars, uint32_t aOffset)
   char_type* from = mData + aOffset;
   char_type* end  = mData + mLength;
 
-#if _TAINT_ON_
-  TaintStringRef **current = &startTaint;
-#endif
-
   while (from < end) {
     char_type theChar = *from++;
     const char_type* test = aChars;
@@ -964,16 +925,10 @@ nsTSubstring_CharT::StripChars(const char_type* aChars, uint32_t aOffset)
       // Not stripped, copy this char.
       *to++ = theChar;
     } else {
-#if _TAINT_ON_
-      if(isTainted()) {
-        uint32_t offset = from - mData - aOffset;
-        TaintStringRef *last = taint_remove_range(current, &endTaint, offset, offset + 1);
-        //if not start being removed, speed-up next time & update pointer accordingly
-        if(last) {
-          current = &last->next;
-        }
+      // TaintFox: remove taint information for the removed character.
+      if (IsTainted()) {
+        taint_.clearAt(from - mData - 1);
       }
-#endif
     }
   }
   *to = char_type(0); // add the null

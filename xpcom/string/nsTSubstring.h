@@ -7,7 +7,8 @@
 
 #include "mozilla/Casting.h"
 #include "mozilla/MemoryReporting.h"
-#include "taint-gecko.h"
+
+#include "Taint.h"
 
 #ifndef MOZILLA_INTERNAL_API
 #error Cannot use internal string classes without MOZILLA_INTERNAL_API defined. Use the frozen header nsStringAPI.h instead.
@@ -58,8 +59,10 @@ public:
  *   nsACString for narrow characters
  *
  * Many of the accessors on nsTSubstring are inlined as an optimization.
+ *
+ * TaintFox: the (internal) XPCOM string classes are taint aware.
  */
-class nsTSubstring_CharT
+class nsTSubstring_CharT : public TaintableString
 {
 public:
   typedef mozilla::fallible_t                 fallible_t;
@@ -93,7 +96,6 @@ public:
   // this acts like a virtual destructor
   ~nsTSubstring_CharT()
   {
-    //Finalize handles taint removal
     Finalize();
   }
 
@@ -494,6 +496,10 @@ public:
                const self_type& aStr)
   {
     Replace(aCutStart, aCutLength, aStr.Data(), aStr.Length());
+    // TaintFox: copy taint from replacement string.
+    // At this point taint_ will already have been "reshaped" correctly, we just
+    // need to insert the new taint.
+    taint_.insert(aCutStart, aStr.Taint());
   }
   MOZ_WARN_UNUSED_RESULT bool Replace(index_type aCutStart,
                                       size_type aCutLength,
@@ -502,6 +508,8 @@ public:
   {
     return Replace(aCutStart, aCutLength, aStr.Data(), aStr.Length(),
                    aFallible);
+    // TaintFox: copy taint from replacement string.
+    taint_.insert(aCutStart, aStr.Taint());
   }
   void NS_FASTCALL Replace(index_type aCutStart, size_type aCutLength,
                            const substring_tuple_type& aTuple);
@@ -845,9 +853,9 @@ public:
       mData = char_traits::sEmptyBuffer;
       mLength = 0;
       mFlags = F_TERMINATED;
-#if _TAINT_ON_
-      removeAllTaint();
-#endif
+
+      // TaintFox: clear taint here.
+      ClearTaint();
     }
   }
 
@@ -861,9 +869,6 @@ public:
     : mData(nullptr)
     , mLength(0)
     , mFlags(F_NONE)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
     Assign(aTuple);
   }
@@ -884,9 +889,6 @@ public:
     : mData(aData)
     , mLength(aLength)
     , mFlags(aFlags)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 #endif /* DEBUG || FORCE_BUILD_REFCNT_LOGGING */
@@ -912,10 +914,6 @@ public:
   size_t SizeOfIncludingThisEvenIfShared(mozilla::MallocSizeOf aMallocSizeOf)
   const;
 
-#if _TAINT_ON_
-  TAINT_STRING_HOOKS(startTaint, endTaint)
-#endif
-
   template<class T>
   void NS_ABORT_OOM(T)
   {
@@ -930,6 +928,19 @@ public:
     ::NS_ABORT_OOM(aLength * sizeof(char_type));
   }
 
+  // TaintFox: Helper function for appending taint information at the end of
+  // this string.
+  // The common usage pattern of this method is
+  //    string.AppendTaint(some_taint);
+  //    string.Append(some_data);
+  //
+  // Note that the order is important, otherwise string.Length() will have
+  // been changed by the Append().
+  void AppendTaint(const StringTaint& aTaint)
+  {
+    taint_.concat(aTaint, Length());
+  }
+
 protected:
 
   friend class nsTObsoleteAStringThunk_CharT;
@@ -942,19 +953,11 @@ protected:
   size_type   mLength;
   uint32_t    mFlags;
 
-#if _TAINT_ON_
-  TaintStringRef *startTaint;
-  TaintStringRef *endTaint;
-#endif
-
   // default initialization
   nsTSubstring_CharT()
     : mData(char_traits::sEmptyBuffer)
     ,  mLength(0)
     ,  mFlags(F_TERMINATED)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 
@@ -962,9 +965,6 @@ protected:
   explicit
   nsTSubstring_CharT(uint32_t aFlags)
     : mFlags(aFlags)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 
@@ -974,9 +974,6 @@ protected:
     : mData(aStr.mData)
     ,  mLength(aStr.mLength)
     ,  mFlags(aStr.mFlags & (F_TERMINATED | F_VOIDED))
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 

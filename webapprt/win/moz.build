@@ -13,8 +13,6 @@ SOURCES += [
     'webapprt.cpp',
 ]
 
-DEFINES['_TAINT_NO_TRACK_'] = True
-
 DEFINES['XPCOM_GLUE'] = True
 
 DEFINES['APP_VERSION'] = CONFIG['FIREFOX_VERSION']

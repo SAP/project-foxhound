@@ -15,8 +15,6 @@
 #include "nsDOMString.h"
 #include "nsIAtom.h"
 
-#include "taint-gecko.h"
-
 namespace mozilla {
 namespace dom {
 
@@ -52,42 +50,6 @@ public:
     MOZ_ASSERT(!mString || !mStringBuffer,
                "Shouldn't have both present!");
   }
-
-#if _TAINT_ON_
-  //mimic the common taint interface here, but
-  //keep it readonly and redirect to nsAString/StringBuffer
-  //members as needed
-  #define TAINT_FORWARD_FN(fn, def)     \
-    if(mIsNull || mLength == 0)         \
-      return def;                       \
-                                        \
-    if(!mString.isNothing())            \
-      return mString.ref().fn();        \
-                                        \
-    if(mStringBuffer)                   \
-      return mStringBuffer->fn();       \
-                                        \
-    return def;                         
-
-
-
-  MOZ_ALWAYS_INLINE
-  bool isTainted() {
-    TAINT_FORWARD_FN(isTainted, false)
-  }
-
-  MOZ_ALWAYS_INLINE
-  TaintStringRef *getTopTaintRef() {
-    TAINT_FORWARD_FN(getTopTaintRef, nullptr)
-  }
-
-  MOZ_ALWAYS_INLINE
-  TaintStringRef *getBottomTaintRef() {
-    TAINT_FORWARD_FN(getBottomTaintRef, nullptr);
-  }
-
-  #undef TAINT_FORWARD_FN
-#endif
 
   operator nsString&()
   {

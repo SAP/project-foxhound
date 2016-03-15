@@ -293,23 +293,9 @@ const char js_EscapeMap[] = {
     '\0'
 };
 
-#if _TAINT_ON_
-    #define TAINT_QUOTE_STRING_MATCH \
-        if(current_tsr) {               \
-            current_tsr = taint_copy_exact(&target_last_tsr, current_tsr, t - s_start, sp->getOffset() + (t - s)); \
-            if(targetref && *targetref == nullptr && target_last_tsr != nullptr) \
-                *targetref = target_last_tsr; \
-        }
-#endif
-
 template <typename CharT>
 static char *
-#if _TAINT_ON_
-QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote,
-    TaintStringRef **targetref = nullptr, TaintStringRef *sourceref = nullptr)
-#else
 QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote)
-#endif
 {
     /* Sample off first for later return value pointer computation. */
     ptrdiff_t offset = sp->getOffset();
@@ -319,22 +305,11 @@ QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote)
 
     const CharT* end = s + length;
 
-#if _TAINT_ON_
-    TaintStringRef *current_tsr = sourceref;
-    TaintStringRef *target_last_tsr = nullptr;
-    const CharT *s_start = s;
-    if(targetref)
-        target_last_tsr = *targetref;
-#endif
-
     /* Loop control variables: end points at end of string sentinel. */
     for (const CharT* t = s; t < end; s = ++t) {
         /* Move t forward from s past un-quote-worthy characters. */
         char16_t c = *t;
         while (c < 127 && isprint(c) && c != quote && c != '\\' && c != '\t') {
-#if _TAINT_ON_
-            TAINT_QUOTE_STRING_MATCH
-#endif
             c = *++t;
             if (t == end)
                 break;
@@ -350,10 +325,6 @@ QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote)
                 (*sp)[base + i] = char(*s++);
             (*sp)[base + len] = 0;
         }
-
-#if _TAINT_ON_
-        TAINT_QUOTE_STRING_MATCH
-#endif
 
         if (t == end)
             break;
@@ -389,26 +360,16 @@ QuoteString(Sprinter *sp, const CharT *s, size_t length, char16_t quote)
 }
 
 char*
-#if _TAINT_ON_
-QuoteString(Sprinter *sp, JSString *str, char16_t quote, TaintStringRef **targetref)
-#else
 QuoteString(Sprinter *sp, JSString *str, char16_t quote)
-#endif
 {
     JSLinearString* linear = str->ensureLinear(sp->context);
     if (!linear)
         return nullptr;
 
     JS::AutoCheckCannotGC nogc;
-#if _TAINT_ON_
-    return linear->hasLatin1Chars()
-           ? QuoteString(sp, linear->latin1Chars(nogc), linear->length(), quote, targetref, linear->getTopTaintRef())
-           : QuoteString(sp, linear->twoByteChars(nogc), linear->length(), quote, targetref, linear->getTopTaintRef());
-#else
     return linear->hasLatin1Chars()
            ? QuoteString(sp, linear->latin1Chars(nogc), linear->length(), quote)
            : QuoteString(sp, linear->twoByteChars(nogc), linear->length(), quote);
-#endif
 }
 
 JSString*
@@ -417,22 +378,11 @@ QuoteString(ExclusiveContext* cx, JSString* str, char16_t quote)
     Sprinter sprinter(cx);
     if (!sprinter.init())
         return nullptr;
-#if _TAINT_ON_
-    TaintStringRef *targetref = nullptr;
-    char* bytes = QuoteString(&sprinter, str, quote, &targetref);
-#else
     char* bytes = QuoteString(&sprinter, str, quote);
-#endif
     if (!bytes)
         return nullptr;
 
     JSString* res = NewStringCopyZ<CanGC>(cx, bytes);
-#if _TAINT_ON_
-    if(targetref) {
-        res->addTaintRef(targetref);
-        taint_add_op(res->getTopTaintRef(), "quote", cx->asJSContext());
-    }
-#endif
     return res;
 }
 

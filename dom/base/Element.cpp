@@ -2129,13 +2129,12 @@ Element::SetEventHandler(nsIAtom* aEventName,
     return NS_OK;
   }
 
-#if _TAINT_ON_
-  if(aValue.isTainted()) {
-    nsCString taintEventName;
-    aEventName->ToUTF8String(taintEventName);
-    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aValue, taintEventName.get());
+  // TaintFox: Event handler sink.
+  if (aValue.IsTainted()) {
+    nsCString eventName;
+    aEventName->ToUTF8String(eventName);
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aValue, eventName.get());
   }
-#endif
 
   defer = defer && aDefer; // only defer if everyone agrees...
   manager->SetEventHandler(aEventName, aValue,
@@ -3348,10 +3347,9 @@ Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError)
     return;
   }
 
-#if _TAINT_ON_
-  if(aOuterHTML.isTainted())
-    taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
-#endif
+  // TaintFox: outerHTML sink.
+  if (aOuterHTML.IsTainted())
+    ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aOuterHTML, "outerHTML");
 
   if (OwnerDoc()->IsHTMLDocument()) {
     nsIAtom* localName;

@@ -93,10 +93,6 @@ nsAString::AssignLiteral(const char* aStr)
   for (; *aStr; ++aStr, ++buf) {
     *buf = *aStr;
   }
-
-#if _TAINT_ON_
-  removeAllTaint();
-#endif
 }
 
 void
@@ -132,10 +128,6 @@ nsAString::StripChars(const char* aSet)
     return;
   }
 
-#if _TAINT_ON_
-  const char_type *source_start = source;
-#endif
-
   char_type* curDest = dest;
 
   for (; source < sourceEnd; ++source) {
@@ -150,11 +142,6 @@ nsAString::StripChars(const char* aSet)
       // not stripped, copy this char
       *curDest = *source;
       ++curDest;
-    } else {
-#if _TAINT_ON_
-      uint32_t cur_offset = source - source_start;
-      removeRangeTaint(cur_offset, cur_offset + 1);
-#endif
     }
   }
 
@@ -690,10 +677,6 @@ nsACString::StripChars(const char* aSet)
     return;
   }
 
-#if _TAINT_ON_
-  const char_type *source_start = source;
-#endif
-
   char_type* curDest = dest;
 
   for (; source < sourceEnd; ++source) {
@@ -708,11 +691,6 @@ nsACString::StripChars(const char* aSet)
       // not stripped, copy this char
       *curDest = *source;
       ++curDest;
-    } else {
-#if _TAINT_ON_
-      uint32_t cur_offset = source - source_start;
-      removeRangeTaint(cur_offset, cur_offset + 1);
-#endif
     }
   }
 
@@ -1108,13 +1086,6 @@ nsDependentSubstring::nsDependentSubstring(const abstract_string_type& aStr,
   NS_StringContainerInit2(*this, data + aStartPos, len - aStartPos,
                           NS_STRING_CONTAINER_INIT_DEPEND |
                           NS_STRING_CONTAINER_INIT_SUBSTRING);
-#if _TAINT_ON_
-  if(TAINT_NS_StringTainted(aStr)) {
-    TAINT_NS_StringAddTaintRef(*this, TAINT_NS_DUPLICATE_RANGE(
-      TAINT_NS_StringTopTaint(const_cast<nsAString&>(aStr)),
-      nullptr, aStartPos, 0, len));
-  }
-#endif
 }
 
 nsDependentSubstring::nsDependentSubstring(const abstract_string_type& aStr,
@@ -1135,14 +1106,6 @@ nsDependentSubstring::nsDependentSubstring(const abstract_string_type& aStr,
   NS_StringContainerInit2(*this, data + aStartPos, aLength,
                           NS_STRING_CONTAINER_INIT_DEPEND |
                             NS_STRING_CONTAINER_INIT_SUBSTRING);
-#if 0
-# _TAINT_ON_
-  if(TAINT_NS_StringTainted(aStr)) {
-    TAINT_NS_StringAddTaintRef(*this, taint_duplicate_range(
-      TAINT_NS_StringTopTaint(const_cast<nsAString&>(aStr)),
-      nullptr, aStartPos, 0, aStartPos + aLength));
-  }
-#endif
 }
 
 nsDependentCSubstring::nsDependentCSubstring(const abstract_string_type& aStr,
@@ -1345,64 +1308,5 @@ ParseString(const nsACString& aSource, char aDelimiter,
 
   return true;
 }
-
-#if _TAINT_ON_
-bool nsACString::isTainted() const {
-  return TAINT_NS_CStringTainted(*this);
-}
-
-TaintStringRef* nsACString::getTopTaintRef() {
-  return TAINT_NS_CStringTopTaint(*this);
-}
-
-TaintStringRef* nsACString::getBottomTaintRef() {
-  return TAINT_NS_CStringBottomTaint(*this);
-}
-
-void nsACString::addTaintRef(TaintStringRef *tsr)  {
-  TAINT_NS_CStringAddTaintRef(*this, tsr);
-}
-
-void nsACString::ffTaint() {
-  TAINT_NS_CStringFfTaint(*this);
-}
-
-void nsACString::removeAllTaint() {
-  TAINT_NS_CStringRemoveAll(*this);
-}
-
-void nsACString::removeRangeTaint(uint32_t start, uint32_t end) {
-  TAINT_NS_CStringRemoveRangeTaint(*this, start, end);
-}
-
-
-bool nsAString::isTainted() const {
-  return TAINT_NS_StringTainted(*this);
-}
-
-TaintStringRef* nsAString::getTopTaintRef() {
-  return TAINT_NS_StringTopTaint(*this);
-}
-
-TaintStringRef* nsAString::getBottomTaintRef() {
-  return TAINT_NS_StringBottomTaint(*this);
-}
-
-void nsAString::addTaintRef(TaintStringRef *tsr)  {
-  TAINT_NS_StringAddTaintRef(*this, tsr);
-}
-
-void nsAString::removeRangeTaint(uint32_t start, uint32_t end) {
-  TAINT_NS_StringRemoveRangeTaint(*this, start, end);
-}
-
-void nsAString::ffTaint() {
-    TAINT_NS_StringFfTaint(*this);
-}
-
-void nsAString::removeAllTaint() {
-  TAINT_NS_StringRemoveAll(*this);
-}
-#endif
 
 #undef snprintf

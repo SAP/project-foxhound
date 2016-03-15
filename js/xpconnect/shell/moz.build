@@ -31,7 +31,6 @@ if CONFIG['_MSC_VER']:
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     RCINCLUDE = 'xpcshell.rc'
-    DEFINES['_TAINT_NO_TRACK_'] = True
 
 CFLAGS += CONFIG['TK_CFLAGS']
 CXXFLAGS += CONFIG['TK_CFLAGS']

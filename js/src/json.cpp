@@ -62,11 +62,6 @@ Quote(StringBuffer& sb, JSLinearString* str)
     if (!sb.append('"'))
         return false;
 
-#if _TAINT_ON_
-    TAINT_JSON_QUOTE_PRE
-    TaintAutoDisableMarkSB sbmarker;
-#endif
-
     /* Step 2. */
     JS::AutoCheckCannotGC nogc;
     const RangedPtr<const CharT> buf(str->chars<CharT>(nogc), len);
@@ -74,9 +69,6 @@ Quote(StringBuffer& sb, JSLinearString* str)
         /* Batch-append maximal character sequences containing no escapes. */
         size_t mark = i;
         do {
-#if _TAINT_ON_
-    TAINT_JSON_QUOTE_MATCH(i, i - mark)
-#endif
             if (IsQuoteSpecialCharacter(buf[i]))
                 break;
         } while (++i < len);
@@ -86,6 +78,8 @@ Quote(StringBuffer& sb, JSLinearString* str)
             if (i == len)
                 break;
         }
+
+        uint32_t taint_begin = sb.length();
 
         char16_t c = buf[i];
         if (c == '"' || c == '\\') {
@@ -115,11 +109,11 @@ Quote(StringBuffer& sb, JSLinearString* str)
                 return false;
             }
         }
-    }
 
-#if _TAINT_ON_
-    TAINT_JSON_QUOTE_MATCH(len, 0)
-#endif
+        // TaintFox: append taint information for current char.
+        if (auto flow = str->taint().at(i))
+            sb.taint().append(TaintRange(taint_begin, sb.length(), *flow));
+    }
 
     /* Steps 3-4. */
     return sb.append('"');
@@ -830,15 +824,11 @@ Revive(JSContext* cx, HandleValue reviver, MutableHandleValue vp)
 
 template <typename CharT>
 bool
-js::TAINT_JSON_PARSE_DEF(JSContext *cx, const mozilla::Range<const CharT> chars, HandleValue reviver,
-                     MutableHandleValue vp)
+js::ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const CharT> chars, HandleValue reviver,
+                         MutableHandleValue vp, const StringTaint* taint)
 {
     /* 15.12.2 steps 2-3. */
-#if _TAINT_ON_
-    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars, ref));
-#else
-    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars));
-#endif
+    Rooted<JSONParser<CharT>> parser(cx, JSONParser<CharT>(cx, chars, taint));
     if (!parser.parse(vp))
         return false;
 
@@ -849,12 +839,12 @@ js::TAINT_JSON_PARSE_DEF(JSContext *cx, const mozilla::Range<const CharT> chars,
 }
 
 template bool
-js::TAINT_JSON_PARSE_DEF(JSContext *cx, const mozilla::Range<const Latin1Char> chars,
-                         HandleValue reviver, MutableHandleValue vp);
+js::ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const Latin1Char> chars,
+                         HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
 
 template bool
-js::TAINT_JSON_PARSE_DEF(JSContext *cx, const mozilla::Range<const char16_t> chars, HandleValue reviver,
-                         MutableHandleValue vp);
+js::ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const char16_t> chars, HandleValue reviver,
+                         MutableHandleValue vp, const StringTaint* taint);
 
 #if JS_HAS_TOSOURCE
 static bool
@@ -891,8 +881,8 @@ json_parse(JSContext* cx, unsigned argc, Value* vp)
 
     /* Steps 2-5. */
     return linearChars.isLatin1()
-           ? TAINT_JSON_PARSE_CALL(cx, linearChars.latin1Range(), reviver, args.rval(), linear)
-           : TAINT_JSON_PARSE_CALL(cx, linearChars.twoByteRange(), reviver, args.rval(), linear);
+           ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver, args.rval(), &linear->taint())
+           : ParseJSONWithReviver(cx, linearChars.twoByteRange(), reviver, args.rval(), &linear->taint());
 }
 
 /* ES5 15.12.3. */
@@ -915,9 +905,10 @@ json_stringify(JSContext* cx, unsigned argc, Value* vp)
         JSString* str = sb.finishString();
         if (!str)
             return false;
-#if _TAINT_ON_
-        taint_add_op(str->getTopTaintRef(), "JSON.stringify", cx);
-#endif
+
+        // TaintFox: Add stringify operation to taint flows.
+        str->taint().extend(TaintOperation("JSON.stringify"));
+
         args.rval().setString(str);
     } else {
         args.rval().setUndefined();

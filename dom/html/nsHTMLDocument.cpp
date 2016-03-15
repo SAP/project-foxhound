@@ -555,7 +555,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
       mCompatMode = eCompatibility_FullStandards;
       loadAsHtml5 = false;
   }
-  
+
   // TODO: Proper about:blank treatment is bug 543435
   if (loadAsHtml5 && view) {
     // mDocumentURI hasn't been set, yet, so get the URI from the channel
@@ -568,13 +568,13 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
       nsAutoCString str;
       uri->GetSpec(str);
       if (str.EqualsLiteral("about:blank")) {
-        loadAsHtml5 = false;    
+        loadAsHtml5 = false;
       }
     }
   }
-  
+
   CSSLoader()->SetCompatibilityMode(mCompatMode);
-  
+
   nsresult rv = nsDocument::StartDocumentLoad(aCommand,
                                               aChannel, aLoadGroup,
                                               aContainer,
@@ -656,7 +656,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
   nsAutoCString parserCharset;
 
   nsCOMPtr<nsIWyciwygChannel> wyciwygChannel;
-  
+
   // For error reporting and referrer policy setting
   nsHtml5TreeOpExecutor* executor = nullptr;
   if (loadAsHtml5) {
@@ -718,7 +718,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
       parserCharset = "UTF-16";
       parserCharsetSource = charsetSource < kCharsetFromChannel ?
         kCharsetFromChannel : charsetSource;
-        
+
       nsAutoCString cachedCharset;
       int32_t cachedSource;
       rv = wyciwygChannel->GetCharsetAndSource(&cachedSource, cachedCharset);
@@ -731,7 +731,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
         // Don't propagate this error.
         rv = NS_OK;
       }
-      
+
     } else {
       parserCharset = charset;
       parserCharsetSource = charsetSource;
@@ -1252,7 +1252,7 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
     rv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
-  
+
   // not having a cookie service isn't an error
   nsCOMPtr<nsICookieService> service = do_GetService(NS_COOKIESERVICE_CONTRACTID);
   if (service) {
@@ -1282,13 +1282,11 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
     // because it assumes that the input is valid.
     nsContentUtils::ConvertStringFromEncoding(NS_LITERAL_CSTRING("UTF-8"),
                                               cookie, aCookie);
-#if _TAINT_ON_
-    if(!aCookie.isTainted() && aCookie.Length() > 0) {
-      JSContext *cx = nsContentUtils::GetCurrentJSContext();
-      JS::RootedValue stringval(cx);
-      taint_tag_source(aCookie, "document.cookie", cx);
+    // TaintFox: document.cookie source.
+    // TODO(samuel) what's the use case for this?
+    if (!aCookie.isTainted() && aCookie.Length() > 0) {
+      aCookie.AssignTaint(StringTaint(0, aCookie.Length(), TaintSource("document.cookie")));
     }
-#endif
   }
 }
 
@@ -1328,16 +1326,10 @@ nsHTMLDocument::SetCookie(const nsAString& aCookie, ErrorResult& rv)
       return;
     }
 
-#if _TAINT_ON_
-    if(aCookie.isTainted()) {
-      nsresult taintrv = taint_report_sink_gecko(nsContentUtils::GetCurrentJSContext(), 
-        aCookie, "document.cookie");
-      if(NS_FAILED(taintrv)) {
-        rv = taintrv;
-        return;
-      }
+    // TaintFox: document.cookie sink.
+    if (aCookie.isTainted()) {
+      ReportTaintSink(nsContentUtils::GetCurrentJSContext(), aCookie, "document.cookie");
     }
-#endif
 
     nsCOMPtr<nsIChannel> channel(mChannel);
     if (!channel) {
@@ -1898,13 +1890,10 @@ nsHTMLDocument::WriteCommon(JSContext *cx,
                "Open() succeeded but JS exception is pending");
   }
 
-#if _TAINT_ON_
-  if(aText.isTainted()) {
-    rv = taint_report_sink_gecko(cx, aText, "document.write");
-    if(NS_FAILED(rv))
-      return rv;
+  // TaintFox: document.write sink.
+  if (aText.isTainted()) {
+    ReportTaintSink(cx, aText, "document.write");
   }
-#endif
 
   static NS_NAMED_LITERAL_STRING(new_line, "\n");
 
@@ -1993,7 +1982,7 @@ nsHTMLDocument::GetElementsByName(const nsAString& aElementName,
   return NS_OK;
 }
 
-static bool MatchItems(nsIContent* aContent, int32_t aNameSpaceID, 
+static bool MatchItems(nsIContent* aContent, int32_t aNameSpaceID,
                        nsIAtom* aAtom, void* aData)
 {
   if (!aContent->IsHTMLElement()) {
@@ -2010,7 +1999,7 @@ static bool MatchItems(nsIContent* aContent, int32_t aNameSpaceID,
   if (tokens->IsEmpty()) {
     return true;
   }
- 
+
   const nsAttrValue* attr = elem->GetParsedAttr(nsGkAtoms::itemtype);
   if (!attr)
     return false;
@@ -2035,7 +2024,7 @@ static void* CreateTokens(nsINode* aRootNode, const nsString* types)
   nsAString::const_iterator iter, end;
   types->BeginReading(iter);
   types->EndReading(end);
-  
+
   // skip initial whitespace
   while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
     ++iter;
@@ -2930,7 +2919,7 @@ nsHTMLDocument::EditingStateChanged()
   if (spellRecheckAll) {
     nsCOMPtr<nsISelectionController> selcon;
     nsresult rv = editor->GetSelectionController(getter_AddRefs(selcon));
-    NS_ENSURE_SUCCESS(rv, rv); 
+    NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsISelection> spellCheckSelection;
     rv = selcon->GetSelection(nsISelectionController::SELECTION_SPELLCHECK,

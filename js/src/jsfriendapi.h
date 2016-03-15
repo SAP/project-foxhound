@@ -604,10 +604,13 @@ struct String
     static const uint32_t LATIN1_CHARS_BIT = JS_BIT(6);
     static const uint32_t ROPE_FLAGS       = 0;
     static const uint32_t TYPE_FLAGS_MASK  = JS_BIT(6) - 1;
-#if _TAINT_ON_
-        TaintStringRef *startTaint;
-        TaintStringRef *endTaint;
-#endif
+
+    // TaintFox: make shadow::String compatible with JSString.
+    //
+    // Superclasses come first in the object layout, thus the taint
+    // property will be at offset zero in JSString.
+    StringTaint taint;
+
     uint32_t flags;
     uint32_t length;
     union {

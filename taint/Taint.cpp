@@ -1,603 +1,421 @@
-#ifdef _TAINT_ON_
+#include "Taint.h"
 
 #include <algorithm>
 #include <iostream>
-#include <string>
 
-#include "Taint.h"
+TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args) : name_(name), arguments_(args) { }
 
-#define VALIDATE_NODE(validate_tsr) \
-    MOZ_ASSERT((validate_tsr)->end > (validate_tsr)->begin);
+TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args) : name_(name), arguments_(args) { }
 
-#if DEBUG
-    #define VALIDATE_CHAIN(validate_tsr) \
-        do { \
-            TaintStringRef *vl = validate_tsr; \
-            if(!vl) \
-                break; \
-            VALIDATE_NODE(vl); \
-            TaintStringRef *ve = vl->next; \
-            for(;ve != nullptr; vl = ve, ve = ve->next) \
-            { \
-                VALIDATE_NODE(ve); \
-                MOZ_ASSERT(ve->begin >= vl->end); \
-            } \
-        } while(false)
-#else
-    #define VALIDATE_CHAIN(validate_tsr) ;
-#endif
+TaintOperation::TaintOperation(const char* name) : name_(name), arguments_() { }
 
-//------------------------------------
-// Local helpers
-inline void
-taint_delete_taintref(TaintStringRef *tsr)
+TaintOperation::TaintOperation(TaintOperation&& other) : name_(other.name_), arguments_(std::move(other.arguments_)) { }
+
+TaintOperation& TaintOperation::operator=(TaintOperation&& other)
 {
-    // TODO(samuel) use AllocPolicy or just new + delete.
-    tsr->~TaintStringRef();
-    free(tsr);
+    name_ = other.name_;
+    arguments_ = std::move(other.arguments_);
+    return *this;
 }
 
-inline void*
-taint_new_tainref_mem()
+TaintNode::TaintNode(TaintNode* parent, TaintOperation operation) : parent_(parent), refcount_(1), operation_(operation)
 {
-    return malloc(sizeof(TaintStringRef));
+    MOZ_ASSERT(parent);
+    parent_->addref();
 }
 
-TaintNode*
-taint_str_add_source_node(const char *fn)
+TaintNode::TaintNode(TaintOperation operation) : parent_(nullptr), refcount_(1), operation_(operation) { }
+
+void TaintNode::addref()
 {
-    void *p = malloc(sizeof(TaintNode));
-    TaintNode *node = new (p) TaintNode(fn);
-    return node;
+    if (refcount_ == 0xffffffff)
+        MOZ_CRASH("TaintNode refcount overflow");
+
+    refcount_++;
 }
 
-//create a new taintstringref
-TaintStringRef*
-taint_str_taintref_build(uint32_t begin, uint32_t end, TaintNode *node)
+void TaintNode::release()
 {
-    void *p = taint_new_tainref_mem();
-    return new (p) TaintStringRef(begin, end, node);
-}
+    MOZ_ASSERT(refcount_ > 0);
 
-//create (copy) a new taintstringref
-TaintStringRef*
-taint_str_taintref_build(const TaintStringRef &ref)
-{
-    void *p = taint_new_tainref_mem();
-    return new (p) TaintStringRef(ref);
-}
-
-TaintStringRef*
-taint_str_taintref_build()
-{
-    void *p = taint_new_tainref_mem();
-    return new (p) TaintStringRef();
-}
-
-
-TaintNode::TaintNode(const char* opname) :
-    op(opname),
-    refCount(0),
-    prev(nullptr),
-    param1(nullptr),
-    param1len(0),
-    param2(nullptr),
-    param2len(0)
-{
+    refcount_--;
+    if (refcount_ == 0)
+        delete this;
 }
 
 TaintNode::~TaintNode()
 {
-    if(param1) {
-        free(param1);
-        param1 = nullptr;
-        param1len = 0;
-    }
-
-    if(param2) {
-        free(param2);
-        param2 = nullptr;
-        param2len = 0;
-    }
+    if (parent_)
+        parent_->release();
 }
 
-void
-TaintNode::decrease()
+
+TaintFlow::Iterator::Iterator(TaintNode* head) : current_(head) { }
+TaintFlow::Iterator::Iterator() : current_(nullptr) { }
+TaintFlow::Iterator::Iterator(const Iterator& other) : current_(other.current_) { }
+
+TaintFlow::Iterator& TaintFlow::Iterator::operator++()
 {
-    //decrease/remove us and our ancestors
-    for(TaintNode *old = this; old != nullptr;) {
-        TaintNode *prev = old->prev;
-        old->refCount--;
-        if(old->refCount > 0)
-            break;
+    current_ = current_->parent();
+    return *this;
+}
 
-        old->~TaintNode();
-        free(old);
+TaintNode& TaintFlow::Iterator::operator*() const
+{
+    return *current_;
+}
 
-        old = prev;
+bool TaintFlow::Iterator::operator==(const Iterator& other) const
+{
+    return current_ == other.current_;
+}
+
+bool TaintFlow::Iterator::operator!=(const Iterator& other) const
+{
+    return current_ != other.current_;
+}
+
+TaintFlow::TaintFlow() : head_(nullptr) { }
+
+TaintFlow::TaintFlow(TaintNode* head) : head_(head) { }
+
+TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
+{
+    head_->addref();
+}
+
+TaintFlow::TaintFlow(TaintFlow&& other) : head_(other.head_)
+{
+    other.head_ = nullptr;
+}
+
+
+TaintFlow::~TaintFlow()
+{
+    if (head_) {
+        head_->release();
     }
 }
 
-void
-TaintNode::setPrev(TaintNode *other)
+TaintFlow& TaintFlow::operator=(const TaintFlow& other)
 {
-    MOZ_ASSERT(other != this);
-    if(prev) {
-        prev->decrease();
-        prev = nullptr;
-    }
-    if(other) {
-        other->increase();
-    }
-    prev = other;
-}
+    other.head_->addref();
 
-
-//--------------------------------------
-// String Taint Reference
-
-TaintStringRef::TaintStringRef(uint32_t s, uint32_t e, TaintNode* node) :
-    begin(s),
-    end(e),
-    thisTaint(nullptr),
-    next(nullptr)
-{
-    if(node)
-        attachTo(node);
-}
-
-TaintStringRef::TaintStringRef(const TaintStringRef &ref) :
-    begin(ref.begin),
-    end(ref.end),
-    thisTaint(nullptr),
-    next(nullptr)
-{
-    if(ref.thisTaint)
-        attachTo(ref.thisTaint);
-}
-
-TaintStringRef::~TaintStringRef()
-{
-    if(thisTaint) {
-        thisTaint->decrease();
-        thisTaint = nullptr;
-    }
-}
-
-void taint_addtaintref(TaintStringRef *tsr, TaintStringRef **start, TaintStringRef **end) {
-    MOZ_ASSERT(start && end && tsr);
-
-    VALIDATE_CHAIN(tsr);
-
-    if(taint_istainted(start, end)) {
-        (*end)->next = tsr;
-        (*end) = tsr;
-    } else
-        (*start) = (*end) = tsr;
-
-    taint_ff_end(end);
-
-    VALIDATE_CHAIN(*start);
-}
-
-void taint_ff_end(TaintStringRef **end) {
-    MOZ_ASSERT(end);
-
-    if(*end) {
-        for(; (*end)->next != nullptr; (*end) = (*end)->next);
-    }
-}
-
-
-//----------------------------------
-// Taint output
-
-//remove all taintref associated to a string
-void
-taint_remove_all(TaintStringRef **start, TaintStringRef **end)
-{
-    MOZ_ASSERT(end && start);
-
-    VALIDATE_CHAIN(*start);
-
-#if DEBUG
-    bool found_end = false;
-#endif
-
-    for(TaintStringRef *tsr = *start; tsr != nullptr; ) {
-#if DEBUG
-        if(end && tsr == *end)
-            found_end = true;
-#endif
-        TaintStringRef *next = tsr->next;
-        tsr->next = nullptr;
-        taint_delete_taintref(tsr);
-        tsr = next;
+    if (head_) {
+        head_->release();
     }
 
-    MOZ_ASSERT(!end || !(*end) || found_end);
-    *start = nullptr;
-    if(end)
-        *end = nullptr;
+    head_ = other.head_;
+
+    return *this;
+}
+
+const TaintSource& TaintFlow::source() const
+{
+    TaintNode* source = head_;
+    while (source->parent() != nullptr)
+        source = source->parent();
+
+    return source->operation();
+}
+
+TaintFlow& TaintFlow::extend(TaintOperation operation)
+{
+    TaintNode* newhead = new TaintNode(head_, operation);
+    head_->release();
+    head_ = newhead;
+    return *this;
+}
+
+TaintFlow::iterator TaintFlow::begin() const
+{
+    return Iterator(head_);
+}
+
+TaintFlow::iterator TaintFlow::end() const
+{
+    return Iterator();
+}
+
+TaintFlow TaintFlow::extend(const TaintFlow& flow, TaintOperation operation)
+{
+    return TaintFlow(new TaintNode(flow.head_, operation));
 }
 
 
-//----------------------------------------------
-//General taint management operations
-
-//duplicate all taintstringrefs form a string to another
-//and point to the same nodes (shallow copy)
-template <typename TaintedT>
-TaintedT *taint_copy_range(TaintedT *dst, TaintStringRef *src,
-    uint32_t frombegin, int32_t offset, uint32_t fromend)
+TaintRange::TaintRange() : begin_(0), end_(0), flow_() { }
+TaintRange::TaintRange(uint32_t begin, uint32_t end, TaintFlow flow) : begin_(begin), end_(end), flow_(flow)
 {
-    MOZ_ASSERT(dst && src);
-    TaintStringRef *tsr = taint_duplicate_range(src, NULL, frombegin, offset, fromend);
-    if(tsr) { //do not overwrite
-        dst->addTaintRef(tsr);
+    MOZ_ASSERT(begin <= end);
+}
+TaintRange::TaintRange(const TaintRange& other) : begin_(other.begin_), end_(other.end_), flow_(other.flow_) { }
+
+TaintRange& TaintRange::operator=(const TaintRange& other)
+{
+    begin_ = other.begin_, end_ = other.end_;
+    flow_ = other.flow_;
+
+    return *this;
+}
+
+void TaintRange::resize(uint32_t begin, uint32_t end)
+{
+    MOZ_ASSERT(begin <= end);
+
+    begin_ = begin;
+    end_ = end;
+}
+
+StringTaint::StringTaint() : ranges_(nullptr) { }
+
+StringTaint::StringTaint(TaintRange range)
+{
+    ranges_ = new std::vector<TaintRange>;
+    ranges_->push_back(range);
+}
+
+StringTaint::StringTaint(uint32_t begin, uint32_t end, TaintOperation operation)
+{
+    ranges_ = new std::vector<TaintRange>;
+    TaintRange range(begin, end, TaintFlow(new TaintNode(operation)));
+    ranges_->push_back(range);
+}
+
+StringTaint& StringTaint::operator=(const StringTaint& other)
+{
+    if (this == &other) {
+        return *this;
     }
 
-    return dst;
+    delete ranges_;
+
+    if (other.ranges_)
+        ranges_ = new std::vector<TaintRange>(*other.ranges_);
+
+    return *this;
 }
 
-TaintStringRef *taint_duplicate_range(TaintStringRef *src, TaintStringRef **taint_end,
-    uint32_t frombegin, int32_t offset, uint32_t fromend)
+StringTaint& StringTaint::operator=(StringTaint&& other)
 {
-    MOZ_ASSERT(src);
+    delete ranges_;
 
-    VALIDATE_CHAIN(src);
+    ranges_ = other.ranges_;
+    other.ranges_ = nullptr;
 
-    TaintStringRef *start = nullptr;
-    TaintStringRef *last = nullptr;
-
-    for(TaintStringRef *tsr = src; tsr; tsr = tsr->next)
-    {
-        if(tsr->end <= frombegin || (fromend > 0 && tsr->begin >= fromend))
-            continue;
-
-        uint32_t begin = (std::max)(frombegin, tsr->begin);
-        uint32_t end   = tsr->end;
-        if(fromend > 0 && fromend < end)
-            end = fromend;
-
-        TaintStringRef *newtsr = taint_str_taintref_build(*tsr);
-        newtsr->begin = begin - frombegin + offset;
-        newtsr->end   = end - frombegin + offset;
-
-        VALIDATE_NODE(newtsr);
-
-        //add the first element directly to the string
-        //all others will be appended to it
-        if(!start)
-            start = newtsr;
-        if(last)
-            last->next = newtsr;
-
-        last = newtsr;
-    }
-
-    VALIDATE_CHAIN(start);
-
-    if(taint_end)
-        *taint_end = last;
-
-    return start;
+    return *this;
 }
 
-
-TaintStringRef *
-taint_copy_exact(TaintStringRef **target, TaintStringRef *source,
-    size_t sidx, size_t tidx, size_t soff)
+StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
 {
-    MOZ_ASSERT(target);
+    if (other.ranges_)
+        ranges_ = new std::vector<TaintRange>(*other.ranges_);
+}
 
-    if(!source)
-        return nullptr;
+StringTaint::~StringTaint()
+{
+    clear();
+}
 
-    VALIDATE_CHAIN(source);
-    VALIDATE_CHAIN(*target);
+void StringTaint::clear()
+{
+    delete ranges_;
+    ranges_ = nullptr;
+}
 
-    //skip taint before sidx
-    for(;source && sidx > source->end; source = source->next);
+void StringTaint::clearBetween(uint32_t begin, uint32_t end)
+{
+    MOZ_ASSERT(begin <= end);
 
-    if(!source)
-        return nullptr;
-
-    if(sidx > (std::max)((size_t)source->begin, soff)) {
-        //if we were called every idx a new tsr should've been created in *target
-        MOZ_ASSERT(sidx <= source->end); //this will trigger len(str) times //<=
-        MOZ_ASSERT(*target);
-        (*target)->end = tidx;
-        VALIDATE_NODE(*target);
-        //if we completed the last TSR advance the source pointer
-        if(sidx == source->end) {
-            source = source->next;
-            //do not return here, we may have to create a
-            //new TSR from the new source now
+    auto ranges = new std::vector<TaintRange>();
+    for (auto& range : *this) {
+        if (range.end() <= begin || range.begin() >= end) {
+            ranges->emplace_back(range.begin(), range.end(), range.flow());
         } else {
-            return source;
+            if (range.begin() < begin)
+                ranges->emplace_back(range.begin(), begin, range.flow());
+            if (range.end() > end)
+                ranges->emplace_back(end, range.end(), range.flow());
         }
     }
 
-    //new TSR currently not in range -> no more taint to copy
-    if(!source || sidx < (std::max)((size_t)source->begin, soff))
-        return source;
-
-    //as we are called for every index
-    //we can assume sidx is the smallest idx with sidx >= source->begin
-    TaintStringRef *tsr = taint_str_taintref_build(*source);
-    tsr->begin = tidx;
-    tsr->end = tidx + 1;
-
-    VALIDATE_NODE(tsr);
-
-    if(*target) {
-        MOZ_ASSERT(!(*target)->next); //memleak
-        (*target)->next = tsr;
-        VALIDATE_CHAIN(*target);
-    }
-    *target = tsr;
-
-    //return source so we get this for comparison later
-    return source;
+    assign(ranges);
 }
 
-static TaintStringRef *taint_split_ref(TaintStringRef* tsr, uint32_t idx)
+void StringTaint::shift(uint32_t index, int amount)
 {
-    MOZ_ASSERT(tsr);
-    VALIDATE_CHAIN(tsr);
+    MOZ_ASSERT(index + amount >= 0);        // amount can be negative
 
-    TaintStringRef *split = taint_str_taintref_build(
-        tsr->begin + idx, tsr->end, tsr->thisTaint);
-    //there should be an extra substring operator, but we have no JS context here :-(
-
-    split->next = tsr->next;
-    tsr->next = split;
-    tsr->end = tsr->begin + idx;
-
-    VALIDATE_CHAIN(tsr);
-
-    return split;
-}
-
-void
-taint_copy_merge(TaintStringRef **dst_start, TaintStringRef **dst_end,
-    TaintStringRef *src_start, uint32_t offset)
-{
-    MOZ_ASSERT(dst_start && *dst_start && dst_end && src_start);
-
-    VALIDATE_CHAIN(src_start);
-    VALIDATE_CHAIN(*dst_start);
-
-    /*
-    //optimize for non-tainted dst
-    if(*dst_start == nullptr) {
-        MOZ_ASSERT(*dst_end == nullptr);
-        *dst_start = taint_duplicate_range(src_start, dst_end, 0, offset, 0);
-        return;
-    } */
-
-    TaintStringRef *current_src =  src_start;
-    TaintStringRef *last_dst = nullptr;
-    TaintStringRef *current_dst = *dst_start;
-
-    for(;current_src != nullptr; ) {
-        TaintStringRef *insert = taint_str_taintref_build(*current_src);
-        insert->begin += offset;
-        insert->end += offset;
-
-        VALIDATE_NODE(insert);
-
-        if(current_dst == nullptr) {
-            //finished processing current dst chain
-            //-> just append
-            last_dst->next = insert;
-            insert->next = nullptr;
-
-            last_dst = insert;
-            current_src = current_src->next;
-            continue;
-        }
-
-        //completely before
-        if(insert->end <= current_dst->begin) {
-            insert->next = current_dst;
-            if(last_dst) {
-                //insert between two
-                last_dst->next = insert;
-            } else {
-                //we are actually inserting before the first dst taint
-                insert->next = current_dst;
-                *dst_start = insert;
-            }
-            last_dst = insert;
-            current_src = current_src->next;
-            //do not advance current_dst as there may be more to insert before current_dst
-        }
-        //completely behind
-        else if(insert->begin >= current_dst->end) {
-            //do not handle this case but advance until we are overlapping/before
-            last_dst = current_dst;
-            current_dst = current_dst->next;
+    auto ranges = new std::vector<TaintRange>();
+    StringTaint newtaint;
+    for (auto& range : *this) {
+        if (range.begin() >= index) {
+            MOZ_ASSERT_IF(ranges_, range.begin() + amount >= ranges_->back().end());
+            ranges->emplace_back(range.begin() + amount, range.end() + amount, range.flow());
+        } else if (range.end() > index) {
+            MOZ_ASSERT(amount >= 0);
+            ranges->emplace_back(range.begin(), index, range.flow());
+            ranges->emplace_back(index + amount, range.end() + amount, range.flow());
         } else {
-            MOZ_ASSERT(false, "Overlapping refs not allowed.");
+            ranges->emplace_back(range.begin(), range.end(), range.flow());
         }
     }
-    VALIDATE_CHAIN(*dst_start);
 
-    taint_ff_end(dst_end);
+    assign(ranges);
 }
 
-TaintStringRef*
-taint_insert_offset(TaintStringRef *start, uint32_t position, uint32_t offset)
+void StringTaint::insert(uint32_t index, const StringTaint& taint)
 {
-    MOZ_ASSERT(start);
+    auto ranges = new std::vector<TaintRange>();
+    auto it = begin();
+    StringTaint newtaint;
 
-    VALIDATE_CHAIN(start);
-
-    TaintStringRef *mod = nullptr;
-    TaintStringRef *last_before = nullptr;
-    //find the first TaintStringRef on/behind position
-    for(TaintStringRef *tsr = start; tsr != nullptr; tsr = tsr->next) {
-        if(position < tsr->end) {
-            mod = tsr;
-            break;
-        }
-
-        last_before = tsr;
+    while (it != end() && it->begin() < index) {
+        auto& range = *it;
+        MOZ_ASSERT(range.end() <= index);
+        ranges->emplace_back(range.begin(), range.end(), range.flow());
+        it++;
     }
 
-    //nothing affected, end
-    if(!mod)
-        return nullptr;
-
-    //at this point mod can either be completely behind or overlapping position
-    if(position > mod->begin) {
-        //so we have to split
-        last_before = mod;
-        mod = taint_split_ref(mod, position - mod->begin);
+    uint32_t last = index;
+    for (auto& range : taint) {
+        ranges->emplace_back(range.begin() + index, range.end() + index, range.flow());
+        last = range.end() + index;
     }
 
-    for(TaintStringRef *tsr = mod; tsr != nullptr; tsr = tsr->next) {
-        tsr->begin += offset;
-        tsr->end   += offset;
-
-        VALIDATE_NODE(tsr);
+    while (it != end()) {
+        auto& range = *it;
+        MOZ_ASSERT(range.begin() >= last);
+        ranges->emplace_back(range.begin(), range.end(), range.flow());
+        it++;
     }
 
-    VALIDATE_CHAIN(start);
-
-    return last_before;
+    assign(ranges);
 }
 
-//remove a range of taint
-TaintStringRef *
-taint_remove_range(TaintStringRef **start, TaintStringRef **end, uint32_t begin, uint32_t end_offset)
+const TaintFlow* StringTaint::at(uint32_t index) const
 {
-    // TODO add a test for this method
-    //what can happen
-    //nothing (no in range of any TSR - before/behind)
-    //modify 0-n TSRs (begin OR end in range of any TSR)
-    //delete 0-n TSRs (begin <= tsr->begin && end >= tsr->end)
-    MOZ_ASSERT(start && end && *start && *end);
-    MOZ_ASSERT(end_offset > begin);
-
-    VALIDATE_CHAIN(*start);
-
-    //OPTIMIZE
-    MOZ_ASSERT(!(begin <= (*start)->begin && end_offset >= (*end)->end),
-        "Call removeAllTaint instead.");
-    /*if(begin <= (*start)->begin && end_offset >= (*end)->end) {
-        taint_remove_all(start, end);
-        return nullptr;
-    }*/
-
-    TaintStringRef *tsr = *start;
-    TaintStringRef *before = nullptr;
-
-    //process all affected elements
-    for (; tsr != nullptr; before = tsr, tsr = tsr->next) {
-        if (begin >= tsr->end)
-            continue;
-        // TODO shortcut, if end < tsr-> begin, break
-
-        //check for full deletion
-        if (begin <= tsr->begin && end_offset >= tsr->end) {
-            if (before) {
-                before->next = tsr->next;
-            }
-
-            if (*start == tsr) {
-                *start = tsr->next;
-            }
-            if (*end == tsr) {
-                *end = before;
-            }
-
-            taint_delete_taintref(tsr);
-            tsr = before;
-        } else {
-            // There are three different cases now that we need to take care of:
-            // Case 1: Taint should be removed at the start of the current taint range, i.e. |end > range->begin|.
-            //         In this case we just need to increase |range->begin| to start at |end|.
-            // Case 2: Taint should be removed at the end of the current taint range, i.e. |start < range->end|.
-            //         Here we also just need to set |range->end| to |start|.
-            // Case 3: The range to be removed is inside the current range, i.e. |start > range->begin && end < range->end|.
-            //         Here we need to split the current range into two ranges.
-            if (end_offset < tsr->end && begin > tsr->begin) {
-                // Case 3
-                TaintStringRef* new_range = taint_str_taintref_build(end_offset, tsr->end, tsr->thisTaint);
-                new_range->next = tsr->next;
-                tsr->next = new_range;
-                tsr->end = begin;
-            } else if (begin < tsr->end) {
-                // Case 2
-                tsr->end = begin;
-            } else if (end_offset > tsr->begin) {
-                // Case 1
-                tsr->begin = end_offset;
-            }
-
-            VALIDATE_NODE(tsr);
-        }
+    // TODO make this a binary search
+    for (auto& range : *this) {
+        if (range.begin() <= index && range.end() > index)
+            return &range.flow();
     }
-
-    VALIDATE_CHAIN(*start);
-
-    return before;
+    return nullptr;
 }
 
-//----------------------------------------------
-// Reporting
-
-template <typename T>
-static void
-taint_write_string_buffer(const T *s, size_t n, std::string *writer)
+StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
 {
-    writer->reserve(writer->length()+n);
+    MOZ_ASSERT(begin <= end);
 
-    if (n == SIZE_MAX) {
-        n = 0;
-        while (s[n])
-            n++;
+    StringTaint newtaint;
+    for (auto& range : *this) {
+        if (range.begin() < end && range.end() > begin)
+            newtaint.append(TaintRange(std::max(range.begin(), begin) - begin, std::min(range.end(), end) - begin, range.flow()));
     }
 
-    char buf[5] = "0000";
-    for (size_t i = 0; i < n; i++) {
-        char16_t c = s[i];
-        if(c == '|')
-            writer->append("\\|");
-        else if(c == '&')
-            writer->append("&amp;");
-        else if(c == '"')
-            writer->append("&quot;");
-        else if(c == '<')
-            writer->append("&lt;");
-        else if(c == '>')
-            writer->append("&gt;");
-        else if (c == '\n')
-            writer->append("<br/>");
-        else if (c == '\t')
-            writer->append("\\t");
-        else if(c == '\\' && i+1 < n) {
-            if((char16_t)s[i+1] == 'n') {
-                writer->append("<br/>");
-                i++;
-            }
+    return newtaint;
+}
+
+StringTaint& StringTaint::extend(TaintOperation operation)
+{
+    for (auto& range : *this)
+        range.flow().extend(operation);
+
+    return *this;
+}
+
+StringTaint& StringTaint::append(TaintRange range)
+{
+    MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= range.begin());
+
+    if (!ranges_)
+        ranges_ = new std::vector<TaintRange>;
+
+    // See if we can merge the two taint ranges.
+    if (ranges_->size() > 0) {
+        TaintRange& last = ranges_->back();
+        if (last.end() == range.begin() && last.flow() == range.flow()) {
+            last.resize(last.begin(), range.end());
+            return *this;
         }
-        else if (c >= 32 && c < 127)
-            writer->push_back((char)s[i]);
-        else if (c <= 255) {
-            snprintf(buf, 3, "%02x", unsigned(c));
-            writer->append("\\x");
-            writer->append(buf);
-        }
-        else {
-            snprintf(buf, 5, "%04x", unsigned(c));
-            writer->append("\\u");
-            writer->append(buf);
-        }
+    }
+
+    ranges_->push_back(range);
+
+    return *this;
+}
+
+StringTaint& StringTaint::concat(const StringTaint& other, uint32_t offset)
+{
+    MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= offset);
+
+    for (auto& range : other)
+        append(TaintRange(range.begin() + offset, range.end() + offset, range.flow()));
+
+    return *this;
+}
+
+// Slight hack, see below.
+static std::vector<TaintRange> empty_taint_range_vector;
+
+StringTaint::iterator StringTaint::begin()
+{
+    // We still need to return an iterator even if there are no ranges stored in this instance.
+    // In that case we don't have a std::vector though. Solution: use a static std::vector.
+    if (!ranges_)
+        return empty_taint_range_vector.begin();
+    return ranges_->begin();
+}
+
+StringTaint::iterator StringTaint::end()
+{
+    if (!ranges_)
+        return empty_taint_range_vector.end();
+    return ranges_->end();
+}
+
+StringTaint::const_iterator StringTaint::begin() const
+{
+    if (!ranges_)
+        return empty_taint_range_vector.begin();
+    return ranges_->begin();
+}
+
+StringTaint::const_iterator StringTaint::end() const
+{
+    if (!ranges_)
+        return empty_taint_range_vector.end();
+    return ranges_->end();
+}
+
+StringTaint StringTaint::concat(const StringTaint& left, uint32_t leftlen, const StringTaint& right)
+{
+    StringTaint newtaint = left;
+    return newtaint.concat(right, leftlen);
+}
+
+StringTaint StringTaint::substr(const StringTaint& taint, uint32_t begin, uint32_t end)
+{
+    return taint.subtaint(begin, end);
+}
+
+StringTaint StringTaint::extend(const StringTaint& taint, const TaintOperation& operation)
+{
+    StringTaint newtaint;
+    for (auto& range : taint)
+        newtaint.append(TaintRange(range.begin(), range.end(), TaintFlow::extend(range.flow(), operation)));
+
+    return newtaint;
+}
+
+void StringTaint::assign(std::vector<TaintRange>* ranges)
+{
+    delete ranges_;
+    if (ranges->size() > 0) {
+        ranges_ = ranges;
+    } else {
+        ranges_ = nullptr;
+        delete ranges;
     }
 }
 
-#endif
+const StringTaint EmptyTaint;

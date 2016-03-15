@@ -36,7 +36,6 @@ EXPORTS += [
     'string-template-def-char.h',
     'string-template-def-unichar.h',
     'string-template-undef.h',
-    'taint-gecko.h'
 ]
 
 UNIFIED_SOURCES += [
@@ -49,7 +48,6 @@ UNIFIED_SOURCES += [
     'nsStringObsolete.cpp',
     'nsSubstring.cpp',
     'nsSubstringTuple.cpp',
-    'taint-gecko.cpp'
 ]
 
 # Are we targeting x86 or x86-64?  If so, compile the SSE2 functions for

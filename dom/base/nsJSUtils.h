@@ -17,7 +17,6 @@
 #include "mozilla/Assertions.h"
 
 #include "jsapi.h"
-#include "jstaint.h"
 #include "jsfriendapi.h"
 #include "js/Conversions.h"
 #include "nsString.h"
@@ -161,7 +160,8 @@ AssignJSString(JSContext *cx, T &dest, JSString *s)
     return false;
   }
 
-  TAINT_ASSIGN_TAINT(dest, taint_str_get_top_taintref(s));
+  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  dest.setTaint(JS_GetStringTaint(s));
 
   return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
 }
@@ -174,7 +174,8 @@ AssignJSFlatString(nsAString &dest, JSFlatString *s)
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
 
-  TAINT_ASSIGN_TAINT(dest, taint_str_get_top_taintref(s));
+  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  dest.setTaint(JS_GetStringTaint(s));
 
   js::CopyFlatStringChars(dest.BeginWriting(), s, len);
 }
@@ -222,5 +223,8 @@ public:
 
   ~nsAutoJSString() {}
 };
+
+// TaintFox: Report taint flows into DOM related sinks.
+nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
 
 #endif /* nsJSUtils_h__ */

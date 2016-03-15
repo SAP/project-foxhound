@@ -19,8 +19,6 @@
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 
-#include "taint-private.h"
-
 using namespace js;
 
 using mozilla::IsSame;
@@ -625,13 +623,11 @@ js::ConcatStrings(ExclusiveContext* cx,
             }
         }
 
-#if _TAINT_ON_
-        taint_str_concat(cx->asJSContext(), str, left, right);
-#endif
-
+        str->setTaint(StringTaint::concat(left->taint(), left->length(), right->taint()));
         return str;
     }
 
+    // TaintFox: JSRope handles taint propagation itself.
     return JSRope::new_<allowGC>(cx, left, right, wholeLength);
 }
 
@@ -849,11 +845,6 @@ template <typename CharT>
 /* static */ bool
 StaticStrings::isStatic(const CharT* chars, size_t length)
 {
-/*
-//TAINT TODO, atoms: loosing taint
-#if _TAINT_ON_
-    return false;
-#endif*/
     switch (length) {
       case 1: {
         char16_t c = chars[0];

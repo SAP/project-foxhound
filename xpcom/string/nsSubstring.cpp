@@ -144,12 +144,14 @@ public:
     return mFlags;
   }
 
-  void set(char_type* aData, size_type aLen, uint32_t aFlags)
+  // TaintFox: also set taint information here.
+  void set(char_type* aData, size_type aLen, uint32_t aFlags, const StringTaint& aTaint)
   {
     ReleaseData(mData, mFlags);
     mData = aData;
     mLength = aLen;
     mFlags = aFlags;
+    taint_ = aTaint;
   }
 };
 
@@ -172,12 +174,14 @@ public:
     return mFlags;
   }
 
-  void set(char_type* aData, size_type aLen, uint32_t aFlags)
+  // TaintFox: also set taint information here.
+  void set(char_type* aData, size_type aLen, uint32_t aFlags, const StringTaint& aTaint)
   {
     ReleaseData(mData, mFlags);
     mData = aData;
     mLength = aLen;
     mFlags = aFlags;
+    taint_ = aTaint;
   }
 };
 
@@ -198,9 +202,7 @@ nsStringBuffer::Release()
   NS_LOG_RELEASE(this, count, "nsStringBuffer");
   if (count == 0) {
     STRING_STAT_INCREMENT(Free);
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+    ClearTaint();       // TaintFox: clear() is guaranteed to free all resources.
     free(this); // we were allocated with |malloc|
   }
 }
@@ -223,10 +225,7 @@ nsStringBuffer::Alloc(size_t aSize)
 
     hdr->mRefCount = 1;
     hdr->mStorageSize = aSize;
-#if _TAINT_ON_
-    hdr->startTaint = nullptr;
-    hdr->endTaint = nullptr;
-#endif
+    hdr->InitTaint();         // TaintFox: initialize taint information.
     NS_LOG_ADDREF(hdr, 1, "nsStringBuffer", sizeof(*hdr));
   }
   return dont_AddRef(hdr);
@@ -271,34 +270,9 @@ nsStringBuffer::FromString(const nsAString& aStr)
 
   nsStringBuffer *buf = FromData(accessor->data());
 
-#if _TAINT_ON_
-  //as we are using the same buffer for
-  //both the StringBuffer and the string,
-  //we assume the taint to be the same
-  //and thus just copy the refs on first access
-  /*
-  if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
-    if(buf->isTainted() && buf->ownTaint == 1) {
-      buf->removeAllTaint();
-      !!! ROOTING buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
-    }
-    else {
-      //overwrite if not tainted or taint originates another FromString
-      buf->startTaint = aStr.getTopTaintRef();
-      !!! ROOTING buf->endTaint = aStr.getBottomTaintRef();
-    }
-
-    buf->ownTaint = 0;
-  } */
-
-  //optimize: do not use TAINT_ASSIGN_TAINT to set the endTaint pointer
-  if(buf->isTainted()) {
-    buf->removeAllTaint();
-  }
-  if(aStr.isTainted()) {
-    buf->addTaintRef(taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint));
-  }
-#endif
+  // TaintFox: copy taint into StringBuffer.
+  if (aStr.IsTainted())
+    buf->AssignTaint(aStr.Taint());
 
   return buf;
 }
@@ -315,32 +289,9 @@ nsStringBuffer::FromString(const nsACString& aStr)
 
   nsStringBuffer *buf = FromData(accessor->data());
 
-#if _TAINT_ON_
-  /*
-  if(aStr.isTainted() && (aStr.getTopTaintRef() != buf->startTaint || aStr.getBottomTaintRef() != buf->endTaint)) {
-    if(buf->isTainted() && buf->ownTaint == 1) {
-      buf->removeAllTaint();
-      buf->startTaint = taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint);
-    }
-    else {
-      buf->startTaint = aStr.getTopTaintRef();
-      buf->endTaint = aStr.getBottomTaintRef();
-    }
-
-    buf->ownTaint = 0;
-
-  } */
-
-  //optimize: do not use TAINT_ASSIGN_TAINT to set the endTaint pointer
-  if(buf->isTainted()) {
-    buf->removeAllTaint();
-  }
-  if(aStr.isTainted()) {
-    buf->addTaintRef(taint_duplicate_range(aStr.getTopTaintRef(), &buf->endTaint));
-  }
-
-
-#endif
+  // TaintFox: copy taint into StringBuffer.
+  if (aStr.IsTainted())
+    buf->AssignTaint(aStr.Taint());
 
   return buf;
 }
@@ -361,10 +312,7 @@ nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
   if (!aMoveOwnership) {
     AddRef();
   }
-  accessor->set(data, aLen, flags);
-#if _TAINT_ON_
-  TAINT_ASSIGN_TAINT(aStr, startTaint);
-#endif
+  accessor->set(data, aLen, flags, Taint());
 }
 
 void
@@ -383,10 +331,7 @@ nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
   if (!aMoveOwnership) {
     AddRef();
   }
-  accessor->set(data, aLen, flags);
-#if _TAINT_ON_
-  TAINT_ASSIGN_TAINT(aStr, startTaint);
-#endif
+  accessor->set(data, aLen, flags, Taint());
 }
 
 size_t

@@ -94,6 +94,9 @@ FinishStringFlat(ExclusiveContext* cx, StringBuffer& sb, Buffer& cb)
      */
     str->zone()->updateMallocCounter(sizeof(CharT) * len);
 
+    // TaintFox: Propagate taint to newly created string.
+    str->setTaint(sb.taint());
+
     buf.forget();
     return str;
 }
@@ -114,18 +117,22 @@ StringBuffer::finishString()
     if (isLatin1()) {
         if (JSInlineString::lengthFits<Latin1Char>(len)) {
             mozilla::Range<const Latin1Char> range(latin1Chars().begin(), len);
-            return TAINT_REF_COPY(NewInlineString<CanGC>(cx, range), startTaint);
+            JSFlatString* res = NewInlineString<CanGC>(cx, range);
+            res->setTaint(taint());
+            return res;
         }
     } else {
         if (JSInlineString::lengthFits<char16_t>(len)) {
             mozilla::Range<const char16_t> range(twoByteChars().begin(), len);
-            return TAINT_REF_COPY(NewInlineString<CanGC>(cx, range), startTaint);
+            JSFlatString* res = NewInlineString<CanGC>(cx, range);
+            res->setTaint(taint());
+            return res;
         }
     }
 
-    return TAINT_REF_COPY(isLatin1()
+    return isLatin1()
         ? FinishStringFlat<Latin1Char>(cx, *this, latin1Chars())
-        : FinishStringFlat<char16_t>(cx, *this, twoByteChars()), startTaint);
+        : FinishStringFlat<char16_t>(cx, *this, twoByteChars());
 }
 
 template <typename CharT, class Buffer>
@@ -169,7 +176,8 @@ StringBuffer::finishAtom()
 
     JSAtom* atom = AtomizeChars(cx, twoByteChars().begin(), len);
     twoByteChars().clear();
-    //TAINT FIXME: we lose taint here. TAINT_REF_COPY
+
+    // TaintFox: We loose taint here, can't taint atoms..
     return atom;
 }
 

@@ -4475,6 +4475,12 @@ EntryPoints(JSContext* cx, unsigned argc, Value* vp)
     return false;
 }
 
+static bool
+Taint(JSContext* cx, unsigned argc, Value* vp)
+{
+    return str_newAllTainted(cx, argc, vp);
+}
+
 static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("version", Version, 0, 0,
 "version([number])",
@@ -4849,6 +4855,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "operation. Each element is the name of the function invoked, or the\n"
 "string 'eval:FILENAME' if the code was invoked by 'eval' or something\n"
 "similar.\n"),
+
+    JS_FN_HELP("taint", Taint, 1, 0,
+"taint(str)",
+"  Return a copy of the provided string that is fully tainted.\n"),
 
     JS_FS_HELP_END
 };

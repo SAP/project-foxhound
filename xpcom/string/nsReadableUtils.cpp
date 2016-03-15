@@ -88,6 +88,9 @@ CopyUTF8toUTF16(const char* aSource, nsAString& aDest)
 void
 LossyAppendUTF16toASCII(const nsAString& aSource, nsACString& aDest)
 {
+  // TaintFox: copy taint information.
+  aDest.AppendTaint(aSource.Taint());
+
   uint32_t old_dest_length = aDest.Length();
   aDest.SetLength(old_dest_length + aSource.Length());
 
@@ -103,11 +106,6 @@ LossyAppendUTF16toASCII(const nsAString& aSource, nsACString& aDest)
 
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
-
-#if _TAINT_ON_
-  //Lossy does not need any special handling
-  TAINT_APPEND_TAINT(aDest, aSource.getTopTaintRef());
-#endif
 }
 
 void
@@ -122,6 +120,9 @@ bool
 AppendASCIItoUTF16(const nsACString& aSource, nsAString& aDest,
                    const mozilla::fallible_t& aFallible)
 {
+  // TaintFox: copy taint information.
+  aDest.AppendTaint(aSource.Taint());
+
   uint32_t old_dest_length = aDest.Length();
   if (!aDest.SetLength(old_dest_length + aSource.Length(),
                        aFallible)) {
@@ -140,11 +141,6 @@ AppendASCIItoUTF16(const nsACString& aSource, nsAString& aDest,
 
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
-
-#if _TAINT_ON_
-  //Lossy does not need any special handling
-  TAINT_APPEND_TAINT(aDest, aSource.getTopTaintRef());
-#endif
 
   return true;
 }
@@ -197,6 +193,10 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
   uint32_t count = calculator.Size();
 
   if (count) {
+    // TaintFox: taint information is stored per symbol (not byte, etc.) so
+    // we can simply copy the taint information here.
+    aDest.AppendTaint(aSource.Taint());
+
     uint32_t old_dest_length = aDest.Length();
 
     // Grow the buffer if we need to.
@@ -206,12 +206,7 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
 
     // All ready? Time to convert
 
-#if _TAINT_ON_
-    ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length,
-      aSource.getTopTaintRef());
-#else
     ConvertUTF16toUTF8 converter(aDest.BeginWriting() + old_dest_length);
-#endif
 
     copy_string(aSource.BeginReading(source_start),
                 aSource.EndReading(source_end), converter);
@@ -219,11 +214,6 @@ AppendUTF16toUTF8(const nsAString& aSource, nsACString& aDest,
     NS_ASSERTION(converter.Size() == count,
                  "Unexpected disparity between CalculateUTF8Size and "
                  "ConvertUTF16toUTF8");
-
-#if _TAINT_ON_
-    if(aSource.isTainted())
-      TAINT_APPEND_TAINT(aDest, converter.takeTaintResult());
-#endif
 
   }
 
@@ -251,6 +241,10 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
 
   // Avoid making the string mutable if we're appending an empty string
   if (count) {
+    // TaintFox: taint information is stored per symbol (not byte, etc.) so
+    // we can simply copy the taint information here.
+    aDest.AppendTaint(aSource.Taint());
+
     uint32_t old_dest_length = aDest.Length();
 
     // Grow the buffer if we need to.
@@ -260,12 +254,7 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
 
     // All ready? Time to convert
 
-#if _TAINT_ON_
-    ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length,
-      aSource.getTopTaintRef());
-#else
     ConvertUTF8toUTF16 converter(aDest.BeginWriting() + old_dest_length);
-#endif
     copy_string(aSource.BeginReading(source_start),
                 aSource.EndReading(source_end), converter);
 
@@ -276,11 +265,6 @@ AppendUTF8toUTF16(const nsACString& aSource, nsAString& aDest,
     if (converter.ErrorEncountered()) {
       NS_ERROR("Input wasn't UTF8 or incorrect length was calculated");
       aDest.SetLength(old_dest_length);
-    } else {
-#if _TAINT_ON_
-    if(aSource.isTainted())
-      TAINT_APPEND_TAINT(aDest, converter.takeTaintResult());
-#endif
     }
   }
 
@@ -711,9 +695,9 @@ ToUpperCase(const nsACString& aSource, nsACString& aDest)
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
 
-#if _TAINT_ON_
-  TAINT_ASSIGN_TAINT(aDest, aSource.getTopTaintRef());
-#endif
+  // TaintFox: propagate taint into aDest.
+  aDest.AssignTaint(aSource.Taint());
+  aDest.Taint().extend(TaintOperation("ToUpperCase"));
 }
 
 /**
@@ -796,9 +780,9 @@ ToLowerCase(const nsACString& aSource, nsACString& aDest)
   copy_string(aSource.BeginReading(fromBegin), aSource.EndReading(fromEnd),
               converter);
 
-#if _TAINT_ON_
-  TAINT_ASSIGN_TAINT(aDest, aSource.getTopTaintRef());
-#endif
+  // TaintFox: propagate taint into aDest.
+  aDest.AssignTaint(aSource.Taint());
+  aDest.Taint().extend(TaintOperation("ToLowerCase"));
 }
 
 bool

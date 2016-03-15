@@ -218,11 +218,7 @@ extern JSString*
 QuoteString(ExclusiveContext* cx, JSString* str, char16_t quote);
 
 extern char*
-#if _TAINT_ON_
-QuoteString(Sprinter *sp, JSString *str, char16_t quote, TaintStringRef **targetref);
-#else
 QuoteString(Sprinter *sp, JSString *str, char16_t quote);
-#endif
 
 
 } // namespace js

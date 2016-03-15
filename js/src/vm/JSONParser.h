@@ -199,28 +199,22 @@ class MOZ_STACK_CLASS JSONParser : public JSONParserBase,
     CharPtr current;
     const CharPtr begin, end;
 
-#if _TAINT_ON_
-    TaintStringRef *sourceRef;
-#endif
+    // TaintFox: Pointer to the taint information associated with the input string. Can be nullptr
+    // since this class may have been constructed from raw character ranges that were never
+    // associated with a string instance.
+    const StringTaint* inputTaint;
 
   public:
     /* Public API */
 
     /* Create a parser for the provided JSON data. */
-#if _TAINT_ON_
-    JSONParser(JSContext *cx, mozilla::Range<const CharT> data,
-               TaintStringRef *ref, ErrorHandling errorHandling = RaiseError)
-#else
-    JSONParser(JSContext *cx, mozilla::Range<const CharT> data,
-               ErrorHandling errorHandling = RaiseError)
-#endif
+    JSONParser(JSContext* cx, mozilla::Range<const CharT> data,
+               const StringTaint* taint, ErrorHandling errorHandling = RaiseError)
       : JSONParserBase(cx, errorHandling),
         current(data.start()),
         begin(current),
-        end(data.end())
-#if _TAINT_ON_
-        , sourceRef(ref)
-#endif
+        end(data.end()),
+        inputTaint(taint)
     {
         MOZ_ASSERT(current <= end);
     }
@@ -230,10 +224,8 @@ class MOZ_STACK_CLASS JSONParser : public JSONParserBase,
       : JSONParserBase(mozilla::Forward<JSONParser>(other)),
         current(other.current),
         begin(other.begin),
-        end(other.end)
-#if _TAINT_ON_
-        , sourceRef(other.sourceRef)
-#endif
+        end(other.end),
+        inputTaint(other.inputTaint)
     {}
 
     /*

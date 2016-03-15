@@ -3005,13 +3005,13 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler& masm)
 {
     MOZ_ASSERT(engine_ == Engine::Baseline);
 
+    // TaintFox: If we want to taint the characters of a string (accessed by index) then we need to
+    // patch this code.
+
     Label failure;
     masm.branchTestString(Assembler::NotEqual, R0, &failure);
     masm.branchTestInt32(Assembler::NotEqual, R1, &failure);
 
-#if _TAINT_ON_
-    masm.jump(&failure);
-#else
     AllocatableGeneralRegisterSet regs(availableGeneralRegs(2));
     Register scratchReg = regs.takeAny();
 
@@ -3042,7 +3042,6 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler& masm)
     // Return.
     masm.tagValue(JSVAL_TYPE_STRING, str, R0);
     EmitReturnFromIC(masm);
-#endif
 
     // Failure case - jump to next stub
     masm.bind(&failure);
@@ -9764,6 +9763,13 @@ ICCall_StringSplit::Compiler::generateStubCode(MacroAssembler& masm)
         Register thisvString = masm.extractString(thisvVal, ExtractTemp0);
         masm.branchPtr(Assembler::NotEqual, Address(ICStubReg, offsetOfExpectedThis()),
                        thisvString, &failureRestoreArgc);
+
+        // TaintFox: bail out if thisv is tainted.
+        masm.branchPtr(Assembler::NotEqual,
+                       Address(thisvString, JSString::offsetOfTaint()),
+                       ImmPtr(nullptr),
+                       &failureRestoreArgc);
+
         regs.add(thisvVal);
     }
 

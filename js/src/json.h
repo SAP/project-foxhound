@@ -12,7 +12,7 @@
 #include "NamespaceImports.h"
 
 #include "js/RootingAPI.h"
-#include "taint-private.h"
+#include "jstaint.h"
 
 namespace js {
 class StringBuffer;
@@ -26,8 +26,9 @@ Stringify(JSContext* cx, js::MutableHandleValue vp, JSObject* replacer,
 
 template <typename CharT>
 extern bool
-TAINT_JSON_PARSE_DEF(JSContext *cx, const mozilla::Range<const CharT> chars,
-                     HandleValue reviver, MutableHandleValue vp);
+// TaintFox: need to pass taint information when working with raw character ranges.
+ParseJSONWithReviver(JSContext *cx, const mozilla::Range<const CharT> chars,
+                     HandleValue reviver, MutableHandleValue vp, const StringTaint* taint);
 
 } // namespace js
 

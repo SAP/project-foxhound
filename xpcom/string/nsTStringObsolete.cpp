@@ -388,11 +388,7 @@ nsTString_CharT::SetCharAt( char16_t aChar, uint32_t aIndex )
   if (!EnsureMutable())
     AllocFailed(mLength);
 
-#if _TAINT_ON_
-  if(isTainted()) {
-    taint_remove_range(&startTaint, &endTaint, aIndex, aIndex + 1);
-  }
-#endif
+  // TaintFox: TODO(samuel) are these still used?
 
   mData[aIndex] = CharT(aChar);
   return true;
@@ -433,11 +429,7 @@ nsTString_CharT::ReplaceChar( char_type aOldChar, char_type aNewChar )
   {
     if (mData[i] == aOldChar) {
       mData[i] = aNewChar;
-#if _TAINT_ON_
-      if(isTainted()) {
-        taint_remove_range(&startTaint, &endTaint, i, i + 1);
-      }
-#endif
+      // TaintFox: TODO(samuel) are these still used?
     }
   }
 }
@@ -457,11 +449,7 @@ nsTString_CharT::ReplaceChar( const char* aSet, char_type aNewChar )
     if (i == kNotFound)
       break;
 
-#if _TAINT_ON_
-    if(isTainted()) {
-      taint_remove_range(&startTaint, &endTaint, i, i + 1);
-    }
-#endif
+    // TaintFox: TODO(samuel) are these still used?
 
     data[i++] = aNewChar;
     data += i;

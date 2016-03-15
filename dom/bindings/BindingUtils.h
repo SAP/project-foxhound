@@ -37,8 +37,6 @@
 #include "nsIVariant.h"
 
 
-#include "taint-gecko.h"
-
 #include "nsWrapperCacheInlines.h"
 
 class nsIJSID;
@@ -123,7 +121,7 @@ IsNonProxyDOMClass(const JSClass* clasp)
   return IsNonProxyDOMClass(js::Valueify(clasp));
 }
 
-// Returns true if the JSClass is used for DOM interface and interface 
+// Returns true if the JSClass is used for DOM interface and interface
 // prototype objects.
 inline bool
 IsDOMIfaceAndProtoClass(const JSClass* clasp)
@@ -1873,12 +1871,9 @@ namespace binding_detail {
 // A struct that has the same layout as an nsString but much faster
 // constructor and destructor behavior. FakeString uses inline storage
 // for small strings and a nsStringBuffer for longer strings.
-struct FakeString {
+struct FakeString : public TaintableString {
   FakeString() :
     mFlags(nsString::F_TERMINATED)
-#if _TAINT_ON_
-    , startTaint(nullptr), endTaint(nullptr)
-#endif
   {
   }
 
@@ -1886,27 +1881,24 @@ struct FakeString {
     if (mFlags & nsString::F_SHARED) {
       nsStringBuffer::FromData(mData)->Release();
     }
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
   }
 
   void Rebind(const nsString::char_type* aData, nsString::size_type aLength) {
     MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
     mData = const_cast<nsString::char_type*>(aData);
     mLength = aLength;
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+
+    // TaintFox: clear previous taint information.
+    clearTaint();
   }
 
   void Truncate() {
     MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
     mData = nsString::char_traits::sEmptyBuffer;
     mLength = 0;
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+
+    // TaintFox: clear previous taint information.
+    clearTaint();
   }
 
   void SetIsVoid(bool aValue) {
@@ -1945,14 +1937,10 @@ struct FakeString {
       SetData(static_cast<nsString::char_type*>(buf->Data()));
       mFlags = nsString::F_SHARED | nsString::F_TERMINATED;
     }
-#if _TAINT_ON_
-    if(isTainted()) {
-      if(aLength < mLength) {
-        removeRangeTaint(aLength, mLength);
-      } else
-        removeAllTaint();
-    }
-#endif
+
+    // TaintFox: this method should only be called on empty strings it seems.
+    MOZ_ASSERT(!isTainted());
+
     mLength = aLength;
     mData[mLength] = char16_t(0);
     return true;
@@ -1964,13 +1952,9 @@ struct FakeString {
     return reinterpret_cast<const nsString*>(this);
   }
 
-operator const nsAString& () const {
+  operator const nsAString& () const {
     return *reinterpret_cast<const nsString*>(this);
   }
-
-#if _TAINT_ON_
-  TAINT_STRING_HOOKS(startTaint, endTaint)
-#endif
 
 private:
   nsAString* ToAStringPtr() {
@@ -1980,11 +1964,6 @@ private:
   nsString::char_type* mData;
   nsString::size_type mLength;
   uint32_t mFlags;
-
-#if _TAINT_ON_
-  TaintStringRef *startTaint;
-  TaintStringRef *endTaint;
-#endif
 
   static const size_t sInlineCapacity = 64;
   nsString::char_type mInlineStorage[sInlineCapacity];
@@ -1998,9 +1977,9 @@ private:
       nsStringBuffer::FromData(mData)->Release();
     }
     mData = const_cast<nsString::char_type*>(aData);
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+
+    // TaintFox: clear previous taint information.
+    clearTaint();
   }
 
   friend class NonNull<nsAString>;
@@ -2025,6 +2004,9 @@ private:
       static_assert(offsetof(FakeString, mFlags) ==
                       offsetof(StringAsserter, mFlags),
                     "Offset of mFlags should match");
+      static_assert(offsetof(FakeString, taint_) ==
+                      offsetof(StringAsserter, taint_),
+                    "Offset of taint_ should match");
     }
   };
 };
@@ -2578,7 +2560,7 @@ HasConstructor(JSObject* obj)
          js::GetObjectClass(obj)->construct;
 }
  #endif
- 
+
 template<class T, bool hasCallback=NativeHasMember<T>::JSBindingFinalized>
 struct JSBindingFinalized
 {

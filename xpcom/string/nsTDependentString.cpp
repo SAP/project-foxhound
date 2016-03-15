@@ -23,7 +23,6 @@ nsTDependentString_CharT::Rebind(const string_type& str, uint32_t startPos)
 
   SetDataFlags(str.Flags() & (F_TERMINATED | F_LITERAL));
 
-#if _TAINT_ON_
-  TAINT_APPEND_TAINT(*this, str.getTopTaintRef());
-#endif
+  // TaintFox: propagate taint.
+  AssignTaint(str.Taint().subtaint(startPos, str.Length()));
 }

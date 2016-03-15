@@ -1536,7 +1536,7 @@ nsIDocument::nsIDocument()
 {
   SetInDocument();
 
-  PR_INIT_CLIST(&mDOMMediaQueryLists);  
+  PR_INIT_CLIST(&mDOMMediaQueryLists);
 }
 
 // NOTE! nsDocument::operator new() zeroes out all members, so don't
@@ -3303,9 +3303,9 @@ nsIDocument::GetReferrer(nsAString& aReferrer) const
       mParentDocument->GetReferrer(aReferrer);
   else
     CopyUTF8toUTF16(mReferrer, aReferrer);
-#if _TAINT_ON_
-  taint_tag_source(aReferrer, "document.referrer", nsContentUtils::GetCurrentJSContext());
-#endif
+
+  // TaintFox: document.referrer taint source.
+  aReferrer.AssignTaint(StringTaint(0, aReferrer.Length(), TaintSource("document.referrer")));
 }
 
 nsresult
@@ -7529,9 +7529,9 @@ nsIDocument::GetDocumentURI(nsString& aDocumentURI) const
     nsAutoCString uri;
     mDocumentURI->GetSpec(uri);
     CopyUTF8toUTF16(uri, aDocumentURI);
-#if _TAINT_ON_
-  taint_tag_source(aDocumentURI, "document.documentURI", nsContentUtils::GetCurrentJSContext());
-#endif
+
+    // TaintFox: document.documentURI taint source.
+    aDocumentURI.AssignTaint(StringTaint(0, aDocumentURI.Length(), TaintSource("document.documentURI")));
   } else {
     aDocumentURI.Truncate();
   }
@@ -7560,9 +7560,9 @@ nsIDocument::GetDocumentURIFromJS(nsString& aDocumentURI) const
   nsAutoCString uri;
   mChromeXHRDocURI->GetSpec(uri);
   CopyUTF8toUTF16(uri, aDocumentURI);
-#if _TAINT_ON_
-  taint_tag_source(aDocumentURI, "document.documentURI", nsContentUtils::GetCurrentJSContext());
-#endif
+
+  // TaintFox: document.documentURI taint source.
+  aDocumentURI.AssignTaint(StringTaint(0, aDocumentURI.Length(), TaintSource("document.documentURI")));
 }
 
 nsIURI*
@@ -13055,7 +13055,7 @@ nsDocument::ReportUseCounters()
     for (int32_t c = 0;
          c < eUseCounter_Count; ++c) {
       UseCounter uc = static_cast<UseCounter>(c);
-      
+
       Telemetry::ID id =
         static_cast<Telemetry::ID>(Telemetry::HistogramFirstUseCounter + uc * 2);
       bool value = GetUseCounter(uc);

@@ -15,6 +15,8 @@
 #include "mozilla/RangedPtr.h"
 #include "mozilla/RefPtr.h"
 
+#include "Taint.h"
+
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -1808,16 +1810,6 @@ typedef enum JSGCParamKey {
     JSGC_COMPACTING_ENABLED = 23
 } JSGCParamKey;
 
-#if _TAINT_ON_
-typedef enum JSTaintParamKey {
-    /* Capture stack during taint tracking */
-    JSTAINT_CAPTURESTACK = 0,
-
-    /* Capture line source when capturing stack */
-    JSTAINT_CAPTURESTACKSOURCE = 1
-} JSTaintParamKey;
-
-#endif
 
 extern JS_PUBLIC_API(void)
 JS_SetGCParameter(JSRuntime* rt, JSGCParamKey key, uint32_t value);
@@ -5087,25 +5079,23 @@ JS_DecodeScript(JSContext* cx, const void* data, uint32_t length);
 extern JS_PUBLIC_API(JSObject*)
 JS_DecodeInterpretedFunction(JSContext* cx, const void* data, uint32_t length);
 
-#if _TAINT_ON_
+// TaintFox: Get and set string taint information.
+//
+// We need this since JSStrings are opaque pointers outside the engine.
+extern JS_PUBLIC_API(const StringTaint&)
+JS_GetStringTaint(const JSString* str);
+
+extern JS_PUBLIC_API(const StringTaint&)
+JS_GetStringTaint(const JSFlatString* str);
 
 extern JS_PUBLIC_API(void)
-JS_TaintSetDynamicSink(const char *name);
+JS_SetStringTaint(JSString* str, const StringTaint& taint);
 
-extern JS_PUBLIC_API(const char*)
-JS_TaintGetDynamicSink();
-
-class  MOZ_STACK_CLASS JS_PUBLIC_API(TaintSetDynamicSink)
-{
-    public:
-        TaintSetDynamicSink(const char*name);
-        ~TaintSetDynamicSink();
-};
-
+// TaintFox: Report tainted flows into a sink.
+//
+// This will print to stdout and trigger a custom JavaScript event on the current page.
 extern JS_PUBLIC_API(void)
-JS_SetTaintParameter(JSRuntime* rt, JSTaintParamKey key, uint32_t value);
-
-#endif
+JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink);
 
 namespace JS {
 

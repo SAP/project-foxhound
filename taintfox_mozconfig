@@ -3,6 +3,10 @@ mk_add_options MOZ_MAKE_FLAGS="-s -j5"
 # Use ccache, make sure the path is correct
 ac_add_options --with-ccache=/usr/bin/ccache
 
+# On OS X we only support newer releases so that clang uses libc++ (llvm) instead of stdlibc++
+# We could work around this (typedef basic_string<char16_t> u16string), but this should be fine.
+ac_add_options --enable-macos-target=10.10
+
 ac_add_options --enable-taint-tracking
 # Not custom branding for now, breaks `mach package` for some reason..
 #ac_add_options --with-branding=browser/branding/taint

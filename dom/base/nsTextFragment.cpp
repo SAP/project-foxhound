@@ -97,9 +97,8 @@ nsTextFragment::ReleaseText()
   // Set mState.mIs2b, mState.mInHeap, and mState.mLength = 0 with mAllBits;
   mAllBits = 0;
 
-#if _TAINT_ON_
-  removeAllTaint();
-#endif
+  // TaintFox: clear all taint.
+  ClearTaint();
 }
 
 nsTextFragment&
@@ -107,14 +106,12 @@ nsTextFragment::operator=(const nsTextFragment& aOther)
 {
   ReleaseText();
 
-  if (aOther.mState.mLength) {
-#if _TAINT_ON_
-    removeAllTaint();
-#endif
+  // TaintFox: propagate taint.
+  AssignTaint(aOther.Taint());
 
+  if (aOther.mState.mLength) {
     if (!aOther.mState.mInHeap) {
       m1b = aOther.m1b; // This will work even if aOther is using m2b
-      TAINT_APPEND_TAINT(*this, aOther.startTaint);
     }
     else {
       CheckedUint32 m2bSize = aOther.mState.mLength;
@@ -125,7 +122,6 @@ nsTextFragment::operator=(const nsTextFragment& aOther)
       }
 
       if (m2b) {
-        TAINT_APPEND_TAINT(*this, aOther.startTaint);
         memcpy(m2b, aOther.m2b, m2bSize.value());
       } else {
         // allocate a buffer for a single REPLACEMENT CHARACTER
